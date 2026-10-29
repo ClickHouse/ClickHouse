@@ -165,7 +165,7 @@ template <>
   * Explanation:
   *
   * https://stackoverflow.com/questions/33692969/assembler-mmx-errors
-  * https://web.archive.org/web/20190117031545/https://software.intel.com/en-us/node/524274
+  * https://software.intel.com/en-us/node/524274
   *
   * Actually it's possible to use 'emms' instruction after decompression routine.
   * But it's more easy to just use 'xmm' registers and avoid using 'mm' registers.
@@ -684,7 +684,7 @@ bool decompress(
     /// When a specific method is forced, always use it regardless of block size.
     /// The size threshold below only applies to the adaptive bandit algorithm
     /// where timing very small blocks would add too much noise.
-    if (statistics.choose_method >= 0 || dest_size >= MIN_BLOCK_SIZE_TO_CHOOSE_VARIANT)
+    if (statistics.choose_method >= 0 || dest_size >= 32768)
     {
         size_t variant_size = PerformanceStatistics::NUM_ELEMENTS;
         size_t best_variant = statistics.select(variant_size);

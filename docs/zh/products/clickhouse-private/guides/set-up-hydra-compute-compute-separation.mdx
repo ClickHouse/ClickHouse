@@ -1,0 +1,124 @@
+---
+noindex: true
+title: "设置 Hydra（计算资源分离）"
+sidebarTitle: "设置 Hydra（计算资源分离）"
+description: "本指南将指导你为现有 ClickHouse 私网集群预配 Hydra 子实例。"
+---
+
+本指南将指导你为现有 ClickHouse 私网集群预配 Hydra 子实例。Hydra 支持在同一个共享数据集上运行多个彼此独立的计算组，每个计算组都有各自的资源规格和端点。
+
+如需从概念层面了解 Hydra 的工作原理，请参阅 [Hydra 计算资源分离](/zh/products/clickhouse-private/explanation/hydra-compute-separation)。
+
+<div id="prerequisites">
+  ## 前置条件
+</div>
+
+* 一个正在运行的 ClickHouse 私网集群，作为**父**集群 (本指南使用 `default-xx-01`)
+
+* 已安装并启用 Hydra 功能标志的 ClickHouse Operator：
+
+  ```text
+  --set operator.featureFlags.privateHydraEnabled="true"
+  ```
+
+  如果安装 Operator 时未设置此标志，请先升级并将该标志设为 `true`，然后再继续。
+
+* 拥有 Helm registry 以及 `onprem-clickhouse-cluster` Helm 图表的访问权限
+
+<Steps>
+  <Step>
+    ## 1. 确认父集群
+
+    在创建子实例之前，先记下父集群的**名称**和**命名空间**。父集群必须处于运行状态——如果父集群已停止、已终止或处于休眠状态，则无法预配子实例。
+
+    对于名为 `default-xx-01` 的集群，默认值如下：
+
+    | 属性   | 值                  |
+    | ---- | ------------------ |
+    | 集群名称 | `default-xx-01`    |
+    | 命名空间 | `ns-default-xx-01` |
+  </Step>
+
+  <Step>
+    ## 2. 创建子实例
+
+    <Warning>
+      每个 ClickHouseCluster 实例都必须位于各自独立的命名空间中。不要将子实例部署到与父集群相同的命名空间中。Operator 假定每个命名空间只有一个 ClickHouseCluster，违反这一约束会导致集群降级。
+    </Warning>
+
+    使用与父集群相同的 Helm 图表部署一个新的 `ClickHouseCluster`，并添加 `parentCluster` 配置值来建立关联：
+
+    ```bash
+    helm install default-xx-02 oci://$HELM_REGISTRY/helm/onprem-clickhouse-cluster \
+        --version=$CR_HELM_TAG \
+        --namespace ns-default-xx-02 \
+        --create-namespace \
+        --set-json='parentCluster.name="c-default-xx-01"' \
+        --set-json='parentCluster.namespace="ns-default-xx-01"' \
+        --set-json="server.replicas=$SERVER_REPLICAS" \
+        --set-json="server.podPolicy.resources.requests.cpu=\"$SERVER_CPU\"" \
+        --set-json="server.podPolicy.resources.requests.memory=\"$SERVER_MEMORY\""
+    ```
+
+    该子实例将：
+
+    * 共享父集群的 ClickHouse Keeper 集群 (无需单独部署 Keeper)
+    * 共享父集群的 S3 数据前缀
+    * 运行自己的 ClickHouse Server pod (容器组) ，并拥有独立的资源分配
+    * 暴露其自己的 Kubernetes Service 端点
+  </Step>
+
+  <Step>
+    ## 3. 创建只读子实例 (可选)
+
+    如果要创建一个可以查询数据但不能写入数据的子实例，请添加 `isReadonly` 标志：
+
+    ```bash
+    helm install default-xx-03 oci://$HELM_REGISTRY/helm/onprem-clickhouse-cluster \
+        --version=$CR_HELM_TAG \
+        --namespace ns-default-xx-03 \
+        --create-namespace \
+        --set-json='parentCluster.name="c-default-xx-01"' \
+        --set-json='parentCluster.namespace="ns-default-xx-01"' \
+        --set-json='isReadonly=true' \
+        --set-json="server.replicas=$SERVER_REPLICAS" \
+        --set-json="server.podPolicy.resources.requests.cpu=\"$SERVER_CPU\"" \
+        --set-json="server.podPolicy.resources.requests.memory=\"$SERVER_MEMORY\""
+    ```
+
+    只读子实例适用于报表、仪表盘或分析工作负载等不需要写入权限的场景。
+  </Step>
+
+  <Step>
+    ## 4. 验证子实例
+
+    子实例部署完成后，确认其是否正在运行：
+
+    ```bash
+    kubectl get clickhousecluster -n ns-default-xx-02
+    ```
+
+    通过子实例自己的 Service 端点连接：
+
+    ```bash
+    kubectl port-forward svc/c-default-xx-02-server-any 9000:9000 -n ns-default-xx-02
+    clickhouse client --host localhost --port 9000 --password $PASSWORD
+    ```
+
+    运行查询以确认可以访问数据：
+
+    ```sql
+    SELECT count() FROM system.tables;
+    ```
+  </Step>
+</Steps>
+
+<div id="limitations">
+  ## 限制
+</div>
+
+1. **父实例必须处于运行状态。** 如果父实例已停止、终止或休眠，则无法预配子实例。父实例必须保持运行，因为子实例依赖父实例的 Keeper 集群和共享数据配置。
+
+2. **先删除子实例，再删除父实例。** 删除父集群之前，必须先删除所有子实例。尝试删除仍有子实例处于活动状态的父实例将会失败。
+
+3. **密码重置适用于父实例。** 无法在 Hydra 子实例上重置密码。若要重置子实例的密码，请改为在父实例上重置。请参阅 [how-to/reset-passwords.md](/zh/products/clickhouse-private/guides/reset-user-passwords)。

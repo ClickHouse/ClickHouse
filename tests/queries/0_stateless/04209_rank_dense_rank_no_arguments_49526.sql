@@ -53,5 +53,7 @@ SELECT id, PRT,
 
 -- 5. Setting also applies under the analyzer (default) and the legacy one.
 
+SET enable_analyzer = 0;
+SELECT DENSE_RANK(a) OVER (ORDER BY a) FROM (SELECT 1 AS a);
 SET enable_analyzer = 1;
 SELECT DENSE_RANK(a) OVER (ORDER BY a) FROM (SELECT 1 AS a);

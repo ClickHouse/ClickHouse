@@ -1,6 +1,0 @@
-<!-- LIKE and match with a non-constant pattern of 10 distinct values, over a String, a FixedString and a constant haystack. -->
-<test>
-    <query>SELECT count() FROM numbers_mt(20000000) WHERE like(toString(number), '%' || toString(number % 10) || '_')</query>
-    <query>SELECT count() FROM numbers_mt(20000000) WHERE like(toFixedString(toString(number), 8), '%' || toString(number % 10) || '_')</query>
-    <query>SELECT count() FROM numbers_mt(20000000) WHERE match('12345', '.*' || toString(number % 10) || '.')</query>
-</test>

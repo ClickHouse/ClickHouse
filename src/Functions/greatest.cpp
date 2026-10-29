@@ -17,10 +17,8 @@ struct GreatestBaseImpl
     template <typename Result = ResultType>
     static Result apply(A a, B b)
     {
-        const auto x = static_cast<Result>(a);
-        const auto y = static_cast<Result>(b);
-        /// Unlike the variadic form, a tie returns the right operand.
-        return candidateReplacesBest<LeastGreatest::Greatest>(y, x) ? x : y;
+        return static_cast<Result>(a) > static_cast<Result>(b) ?
+               static_cast<Result>(a) : static_cast<Result>(b);
     }
 
 #if USE_EMBEDDED_COMPILER
@@ -30,9 +28,8 @@ struct GreatestBaseImpl
     {
         if (!left->getType()->isIntegerTy())
         {
-            /// Same as `apply`.
-            auto * left_wins = b.CreateOr(b.CreateFCmpOGT(left, right), b.CreateFCmpUNO(right, right));
-            return b.CreateSelect(left_wins, left, right);
+            /// Follows the IEEE-754 semantics for maxNum except for the handling of signaling NaNs. This matches the behavior of libc fmax.
+            return b.CreateMaxNum(left, right);
         }
 
         auto * compare_value = is_signed ? b.CreateICmpSGT(left, right) : b.CreateICmpUGT(left, right);
@@ -75,10 +72,10 @@ Returns the greatest value among the arguments.
 - For arrays, returns the lexicographically greatest array.
 - For `DateTime` types, the result type is promoted to the largest type (e.g., `DateTime64` if mixed with `DateTime32`).
 
-<Note title="Use setting `least_greatest_legacy_null_behavior` to change `NULL` behavior">
-Version [24.12](/resources/changelogs/oss/2024#a-id2412a-clickhouse-release-2412-2024-12-19) introduced a backwards-incompatible change such that `NULL` values are ignored, while previously it returned `NULL` if one of the arguments was `NULL`.
+:::note Use setting `least_greatest_legacy_null_behavior` to change `NULL` behavior
+Version [24.12](/whats-new/changelog/2024#a-id2412a-clickhouse-release-2412-2024-12-19) introduced a backwards-incompatible change such that `NULL` values are ignored, while previously it returned `NULL` if one of the arguments was `NULL`.
 To retain the previous behavior, set setting `least_greatest_legacy_null_behavior` (default: `false`) to `true`.
-</Note>
+:::
     )";
     FunctionDocumentation::Syntax syntax = "greatest(x1[, x2, ...])";
     FunctionDocumentation::Arguments arguments = {
@@ -116,9 +113,9 @@ SELECT greatest(['hello'], ['there'], ['world']);
 SELECT greatest(toDateTime32('2025-01-02 12:00:00'), toDateTime64('2025-01-01 12:00:00.000', 3));
         )",
         R"(
-┌─greatest(toDateTime32('2025-01-02 12:00:00'), toDateTime64('2025-01-01 12:00:00.000', 3))─┐
-│                                                                   2025-01-02 12:00:00.000 │
-└───────────────────────────────────────────────────────────────────────────────────────────┘
+┌─greatest(toD⋯0.000', 3))─┐
+│  2025-01-02 12:00:00.000 │
+└──────────────────────────┘
         )"
     }
     };

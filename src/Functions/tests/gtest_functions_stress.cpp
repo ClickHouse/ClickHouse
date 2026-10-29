@@ -4,11 +4,8 @@
 #include <absl/log/globals.h>
 #include <boost/program_options.hpp>
 #include <fmt/ranges.h>
-#include <csignal>
-#include <pthread.h>
 #include <thread>
 
-#include <base/demangle.h>
 #include <base/phdr_cache.h>
 #include <base/scope_guard.h>
 #include <Columns/ColumnArray.h>
@@ -17,15 +14,11 @@
 #include <Columns/ColumnLowCardinality.h>
 #include <Columns/ColumnNothing.h>
 #include <Columns/ColumnNullable.h>
-#include <Columns/ColumnTuple.h>
 #include <Columns/ColumnsNumber.h>
 #include <Common/CurrentThread.h>
 #include <Common/FieldAccurateComparison.h>
 #include <Common/logger_useful.h>
 #include <Common/SignalHandlers.h>
-#include <Common/StackTrace.h>
-#include <Common/StackTraceServiceSignal.h>
-#include <Common/SymbolIndex.h>
 #include <Common/tests/gtest_global_context.h>
 #include <Common/tests/gtest_global_register.h>
 #include <Common/thread_local_rng.h>
@@ -34,7 +27,6 @@
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypesNumber.h>
-#include <DataTypes/TypeTree.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionGenerateRandomStructure.h>
 #include <Interpreters/CancellationChecker.h>
@@ -42,10 +34,6 @@
 #include <Interpreters/ProcessList.h>
 #include <IO/WriteHelpers.h>
 #include <Storages/StorageGenerateRandom.h>
-
-#if defined(ADDRESS_SANITIZER)
-#include <sanitizer/asan_interface.h>
-#endif
 
 using namespace DB;
 namespace po = boost::program_options;
@@ -288,16 +276,13 @@ const std::unordered_set<int> late_typecheck_errors = {
 const std::unordered_set<std::string_view> excluded_functions = {
     /// Avoid depending on environment (e.g. current query, configuration, settings).
     "synonyms",
+    "catboostEvaluate",
     "aiGenerate",
     "aiClassify",
-    "aiFilter",
     "aiExtract",
     "aiTranslate",
-    "aiRedact",
     "aiEmbed",
-    "aiSimilarity",
     "naiveBayesClassifier",
-    "predictXGBoost",
     "transactionLatestSnapshot",
     "transactionOldestSnapshot",
     "showCertificate",
@@ -576,7 +561,6 @@ ContextMutablePtr makeContext()
     context->setSetting("allow_experimental_time_time64_type", 1);
     context->setSetting("allow_introspection_functions", 1);
     context->setSetting("allow_experimental_full_text_index", 1);
-    context->setSetting("enable_ipcrypt", 1);
     return context;
 }
 
@@ -811,7 +795,7 @@ struct Operation
                 else
                     arg.type->insertDefaultInto(*mutable_column);
                 ColumnPtr column = std::move(mutable_column);
-                column = column->convertToFullIfWrapped();
+                column = column->convertToFullColumnIfConst()->convertToFullColumnIfReplicated()->convertToFullColumnIfSparse();
 
                 auto serialization = arg.type->getDefaultSerialization();
                 serialization->serializeTextQuoted(*column, /*row_num=*/ 0, buf, FormatSettings());
@@ -918,7 +902,7 @@ struct Operation
                     /// Wrap the column value in array.
                     DataTypePtr array_type = std::make_shared<DataTypeArray>(arg.type);
                     array_type_name = array_type->getName();
-                    ColumnPtr column = arg.column->convertToFullIfWrapped();
+                    ColumnPtr column = arg.column->convertToFullColumnIfConst()->convertToFullColumnIfReplicated()->convertToFullColumnIfSparse();
                     MutableColumnPtr mutable_column = IColumn::mutate(std::move(column));
                     MutableColumnPtr offsets_column = ColumnArray::ColumnOffsets::create();
                     offsets_column->insert(UInt64(mutable_column->size()));
@@ -1107,8 +1091,9 @@ bool isStringEnumComparisonQuirk(const String & function_name, const ColumnsWith
             has_string |= isStringOrFixedString(type);
             found_enum |= isEnum(type);
         };
+        apply(*arg.type);
         /// The string and enum may be inside a tuple, nullable, low-cardinality, maybe other things.
-        forEachInTypeTree(*arg.type, apply);
+        arg.type->forEachChild(apply);
         found_const_string |= has_string && arg.column->isConst();
     }
     return found_const_string && found_enum;
@@ -1123,7 +1108,8 @@ bool isAnyArgumentNullable(const ColumnsWithTypeAndName & args)
         {
             found_nullable |= type.isNullable();
         };
-        forEachInTypeTree(*arg.type, apply);
+        apply(*arg.type);
+        arg.type->forEachChild(apply);
     }
     return found_nullable;
 }
@@ -1144,7 +1130,8 @@ bool typeCanHaveNanOrIncomparableFields(const DataTypePtr & type)
         found |= isFloat(t) || isVariant(t) || isDynamic(t) || isObject(t) || isIPv4(t) || isIPv6(t)
             || isDecimal(t) || isDateTime64(t);
     };
-    forEachInTypeTree(*type, check);
+    check(*type);
+    type->forEachChild(check);
     return found;
 }
 
@@ -1157,38 +1144,11 @@ bool isAnyArgumentDynamicallyTyped(const ColumnsWithTypeAndName & args)
         {
             found |= isVariant(type) || isDynamic(type) || isObject(type);
         };
-        forEachInTypeTree(*arg.type, apply);
+        apply(*arg.type);
+        arg.type->forEachChild(apply);
     }
     return found;
 }
-
-/// `IColumnDummy::isDefaultAt` throws. A dummy (`Nothing`) column holds no values, so its rows count as default.
-bool isDefaultOrDummyAt(const IColumn & column, size_t n)
-{
-    if (column.isDummy())
-        return true;
-    if (const auto * tuple = typeid_cast<const ColumnTuple *>(&column))
-        return std::ranges::all_of(tuple->getColumns(), [n](const auto & element) { return isDefaultOrDummyAt(*element, n); });
-    return column.isDefaultAt(n);
-}
-
-#if defined(ADDRESS_SANITIZER)
-/// ASan frees fake frames leaked by exceptions only at the next fake-frame allocation after `__asan_handle_no_return`,
-/// and only those below it. Called from the worker loop, this frees the frames of all previous iterations.
-NO_INLINE void allocateAsanFakeFrame()
-{
-    char anchor = 0;
-    __asan_address_is_poisoned(&anchor);
-}
-
-ALWAYS_INLINE void collectAsanFakeStackGarbage()
-{
-    __asan_handle_no_return();
-    allocateAsanFakeFrame();
-}
-#else
-void collectAsanFakeStackGarbage() {}
-#endif
 
 }
 
@@ -1331,8 +1291,6 @@ struct FunctionsStressTestThread
 
         while (!thread_should_stop.load(std::memory_order_relaxed))
         {
-            collectAsanFakeStackGarbage();
-
             /// Pick random function, biased toward less-tested functions.
             /// Pick two random candidates and choose the one with fewer iterations.
             size_t a = thread_local_rng() % testable_functions.size();
@@ -1425,7 +1383,7 @@ struct FunctionsStressTestThread
                     /// guards we set up ourselves.
                     stats.add(S_QUERY_CANCELLED, 1);
                 }
-                else if (e.code() == ErrorCodes::LOGICAL_ERROR && e.message().contains("incorrect data types"))
+                else if (e.code() == ErrorCodes::LOGICAL_ERROR && e.message().find("incorrect data types") != String::npos)
                 {
                     /// Known issue: some arithmetic functions (plus, minus, etc.) accept types in
                     /// getReturnTypeImpl but fail in executeImpl with LowCardinality arguments.
@@ -1757,7 +1715,7 @@ struct FunctionsStressTestThread
                         /// Note: this is incorrect (?) for nullable enums, where the IColumn's
                         /// "default" value (0) is different from the IDataType's "default" value
                         /// (first enumerand) and may not be a valid enum value.
-                        if (null_map[i] && !isDefaultOrDummyAt(nested, i))
+                        if (null_map[i] && !nested.isDefaultAt(i))
                         {
                             if (stats)
                                 stats->add(S_NONDEFAULT_NULL, 1);
@@ -2019,7 +1977,7 @@ struct FunctionsStressTestThread
 
             /// Avoid insertRangeFrom between columns of different constness (if the function is
             /// being weird and returning different constness for different rows).
-            row_result = row_result->convertToFullIfWrapped();
+            row_result = row_result->convertToFullColumnIfConst()->convertToFullColumnIfReplicated()->convertToFullColumnIfSparse();
             if (!mutable_result)
             {
                 chassert(mutable_valid_args.empty());
@@ -2326,79 +2284,6 @@ void __tsan_on_report(void * /*report*/) // NOLINT(bugprone-reserved-identifier,
 #pragma clang diagnostic pop
 }
 
-namespace
-{
-
-#if defined(OS_LINUX)
-/// `sa_sigaction`, `sigemptyset`, `sigaddset` and `errno` are recursive macros in glibc.
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Wdisabled-macro-expansion"
-std::atomic<uintptr_t> stack_capture_thread{0};
-std::atomic<bool> stack_captured{false};
-StackTrace captured_stack{NoCapture{}};
-
-void captureStackOfStuckThread(int, siginfo_t *, void * context)
-{
-    DENY_ALLOCATIONS_IN_SCOPE;
-    if (reinterpret_cast<uintptr_t>(pthread_self()) != stack_capture_thread.load(std::memory_order_acquire))
-        return;
-    auto saved_errno = errno;
-    captured_stack = StackTrace(*reinterpret_cast<const ucontext_t *>(context));
-    stack_captured.store(true, std::memory_order_release);
-    errno = saved_errno;
-}
-
-std::optional<StackTrace> collectStackTrace(std::thread & thread, std::chrono::seconds timeout)
-{
-    struct sigaction sa{};
-    sa.sa_sigaction = captureStackOfStuckThread;
-    sa.sa_flags = SA_SIGINFO | SA_RESTART;
-    sigemptyset(&sa.sa_mask);
-    for (int sig : {STACK_TRACE_SERVICE_SIGNAL, SIGUSR1, SIGUSR2, SIGTSTP})
-        sigaddset(&sa.sa_mask, sig);
-    /// Stays installed: a late delivery must find this handler, not the default action (terminate).
-    if (sigaction(STACK_TRACE_SERVICE_SIGNAL, &sa, nullptr) != 0)
-        return std::nullopt;
-
-    pthread_t handle = thread.native_handle();
-    stack_captured.store(false);
-    stack_capture_thread.store(reinterpret_cast<uintptr_t>(handle), std::memory_order_release);
-    SCOPE_EXIT({ stack_capture_thread.store(0, std::memory_order_release); });
-    if (pthread_kill(handle, STACK_TRACE_SERVICE_SIGNAL) != 0)
-        return std::nullopt;
-
-    auto deadline = std::chrono::steady_clock::now() + timeout;
-    while (!stack_captured.load(std::memory_order_acquire))
-    {
-        if (std::chrono::steady_clock::now() >= deadline)
-            return std::nullopt;
-        std::this_thread::sleep_for(std::chrono::milliseconds(10));
-    }
-    return captured_stack;
-}
-
-/// Uses only primitives that never build or wait for the symbol index: the stuck thread may hold it.
-String formatStackTrace(const StackTrace & stack_trace)
-{
-    const SymbolIndex * symbol_index = SymbolIndex::instanceIfInitialized();
-    String res;
-    for (size_t i = stack_trace.getOffset(); i < stack_trace.getSize(); ++i)
-    {
-        const void * frame = stack_trace.getFramePointers()[i];
-        const auto resolved = StackTrace::tryResolveAddress(frame);
-        const SymbolIndex::Symbol * symbol = symbol_index ? symbol_index->findSymbol(frame) : nullptr;
-        String address = resolved.address ? fmt::format("{}", resolved.address) : "<unknown>";
-        if (resolved.kind == StackTrace::AddressKind::OtherObject)
-            address += fmt::format(" in {}", resolved.object);
-        res += fmt::format("\n{}. {} {}", i, address, symbol ? demangle(symbol->name) : "?");
-    }
-    return res;
-}
-#pragma clang diagnostic pop
-#endif
-
-}
-
 TEST(FunctionsStress, stress)
 {
     chassert(!logger);
@@ -2413,10 +2298,6 @@ TEST(FunctionsStress, stress)
 
     /// (This makes exception stack traces much faster, and this test spends a lot of time throwing and catching exceptions.)
     updatePHDRCache();
-#if defined(OS_LINUX)
-    /// Built before the workers start: the stuck-thread report only reads it.
-    SymbolIndex::instance();
-#endif
 
     options.parse(getTestCommandLineOptions().argc, getTestCommandLineOptions().argv);
 
@@ -2534,46 +2415,21 @@ TEST(FunctionsStress, stress)
     /// after `signal_listener_thread` has been joined. `request_shutdown` reads `threads`, so
     /// any concurrent mutation would be a data race.
     std::vector<size_t> stuck_indices;
-    [[maybe_unused]] bool stack_collected_once = false;
 
     auto deadline = std::chrono::steady_clock::now() + stop_timeout;
     for (size_t i = 0; i < threads.size(); ++i)
     {
         auto & t = threads[i];
         std::optional<Operation> stuck_operation;
-        [[maybe_unused]] bool stack_requested = false;
-        [[maybe_unused]] std::optional<StackTrace> stuck_stack;
         {
             std::unique_lock lock(t->mutex);
             t->thread_stop_cv.wait_until(lock, deadline, [&] { return t->thread_stopped; });
             if (!t->thread_stopped)
-            {
                 stuck_operation = t->operation;
-#if defined(OS_LINUX)
-                /// Captured under `t->mutex`, so the worker cannot leave the step copied above.
-                if (!stack_collected_once && hasAsyncSignalSafeUnwind())
-                {
-                    stack_collected_once = true;
-                    stack_requested = true;
-                    stuck_stack = collectStackTrace(t->thread, std::chrono::seconds(10));
-                }
-#endif
-            }
         }
         if (stuck_operation.has_value())
         {
-            String age;
-            if (stuck_operation->step != Operation::Step::None)
-                age = fmt::format(" for {:.1f}s", std::chrono::duration<double>(std::chrono::steady_clock::now() - stuck_operation->iteration_start_time).count());
-            LOG_ERROR(logger, "Thread is stuck{} while {}", age, stuck_operation->describe());
-#if defined(OS_LINUX)
-            if (stuck_stack && stuck_stack->getSize() > stuck_stack->getOffset())
-                LOG_ERROR(logger, "Stack trace of the stuck thread:{}", formatStackTrace(*stuck_stack));
-            else if (stuck_stack)
-                LOG_ERROR(logger, "Could not unwind the stack of the stuck thread");
-            else if (stack_requested)
-                LOG_ERROR(logger, "The stuck thread did not answer the stack trace request within 10 seconds");
-#endif
+            LOG_ERROR(logger, "Thread is stuck while {}", stuck_operation->describe());
             ++stuck_threads;
             /// Detach the still-joinable `std::thread` so its destructor doesn't `std::terminate`.
             /// Detaching mutates only `t->thread`, which `request_shutdown` does not read, so it

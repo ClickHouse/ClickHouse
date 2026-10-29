@@ -7,7 +7,7 @@ doc_type: 'guide'
 keywords: ['clickstack', '可观测性', 'materialized views', '性能', '优化', '可视化', '聚合']
 ---
 
-import { BetaBadge } from "/snippets/zh/components/BetaBadge/BetaBadge.jsx";
+import BetaBadge from "/snippets/zh/components/BetaBadge/BetaBadge.jsx";
 import { Image } from "/snippets/zh/components/Image.jsx";
 
 <BetaBadge />
@@ -30,15 +30,15 @@ ClickStack 可以利用[增量materialized view (IMV)](/zh/concepts/features/mat
 
 增量materialized view 允许将计算成本从查询时转移到写入时，从而显著加快 `SELECT` 查询。
 
-与 Postgres 这类事务型数据库不同，ClickHouse 的 materialized view 并不是存储的快照。相反，它更像一个 trigger：当数据块写入源表时，它会对这些数据块执行查询。该查询的输出会写入一个单独的目标表。随着更多数据写入，新的部分结果会被追加并合并到目标表中。合并后的结果等同于对整个原始数据集执行聚合。
+与 Postgres 这类事务型数据库不同，ClickHouse 的 materialized view 并不是存储的快照。相反，它更像一个 trigger：当数据块写入源表时，它会对这些数据块执行查询。该查询的输出会写入一个单独的目标表。随着更多数据写入，新的部分结果会被追加并合并到目标表中。合并后的结果等同于对整个原始数据集执行 aggregation。
 
-使用 materialized view 的主要原因在于，写入目标表的数据代表的是聚合、过滤或转换的结果。在 ClickStack 中，它们仅用于聚合。这些结果通常远小于原始输入数据，而且往往表示部分聚合状态。再加上查询预聚合目标表本身更简单，相比在查询时对原始数据执行相同计算，这能显著降低查询延迟。
+使用 materialized view 的主要原因在于，写入目标表的数据代表的是 aggregation、过滤或转换的结果。在 ClickStack 中，它们仅用于 aggregations。这些结果通常远小于原始输入数据，而且往往表示部分 aggregation 状态。再加上查询预聚合目标表本身更简单，相比在查询时对原始数据执行相同计算，这能显著降低查询延迟。
 
 ClickHouse 中的 materialized view 会随着数据流入源表而持续更新，行为更像始终保持最新的索引。这与许多其他数据库不同：在那些数据库中，materialized view 是静态快照，必须定期刷新，类似于 ClickHouse 的 [可刷新materialized view](/zh/concepts/features/materialized-views/refreshable-materialized-view)。
 
 <Image img="/images/materialized-view/materialized-view-diagram.webp" size="md" alt="materialized view 示意图" />
 
-增量materialized view 只会在新数据到达时计算视图的变更，将计算前移到写入时。由于 ClickHouse 对摄取进行了高度优化，因此，相比查询执行时获得的收益，为每个写入块维护视图所增加的成本很小。聚合的计算成本被分摊到多次写入中，而不是在每次读取时反复付出。因此，查询预聚合结果的代价远低于重新计算这些结果，即使在 PB 级规模下，也能为下游可视化带来更低的运营成本和接近实时的性能。
+增量materialized view 只会在新数据到达时计算视图的变更，将计算前移到写入时。由于 ClickHouse 对摄取进行了高度优化，因此，相比查询执行时获得的收益，为每个写入块维护视图所增加的成本很小。aggregation 的计算成本被分摊到多次写入中，而不是在每次读取时反复付出。因此，查询预聚合结果的代价远低于重新计算这些结果，即使在 PB 级规模下，也能为下游可视化带来更低的运营成本和接近实时的性能。
 
 这种模型与那些在每次更新时重新计算整个视图，或依赖定时刷新的系统有本质区别。若要更深入了解 materialized view 的工作原理以及如何创建它们，请参阅上方链接的指南。
 
@@ -223,42 +223,52 @@ GROUP BY
   ### 注册 materialized view 以便使用
 </div>
 
-materialized view 应注册到 HyperDX 中与其所派生自的**原始源表**对应的 **数据源** 上。
+materialized view 应注册到 HyperDX 中与其所派生自的**原始源表**对应的 **source** 上。
 
 <Steps>
-  <Step title="编辑 数据源" id="edit-the-source">
-    在 HyperDX 中找到相应的 **数据源**，然后打开 **编辑配置** 对话框。滚动到 materialized view 部分。
+  <Step>
+    #### 编辑 source
+
+    在 HyperDX 中找到相应的 **source**，然后打开 **编辑配置** 对话框。滚动到 materialized view 部分。
 
     <Image img="/images/clickstack/materialized_views/edit_source.webp" size="lg" alt="编辑 source" />
   </Step>
 
-  <Step title="添加 materialized view" id="add-the-materialized-view">
+  <Step>
+    #### 添加 materialized view
+
     选择 **添加 materialized view**，然后选择作为该 materialized view 后端的数据库和目标表。
 
     <Image img="/images/clickstack/materialized_views/add_view.webp" size="lg" alt="编辑 source" />
   </Step>
 
-  <Step title="选择指标" id="select-metrics">
-    大多数情况下，时间戳、维度和指标列都会自动推断出来。若未自动推断，请手动指定。
+  <Step>
+    #### 选择指标
+
+    大多数情况下，timestamp、维度和指标列都会自动推断出来。若未自动推断，请手动指定。
 
     对于指标，你必须映射：
 
     * 原始列名，例如 `Duration`，到
     * materialized view 中对应的聚合列，例如 `avg__Duration`
 
-    对于维度，请指定除 时间戳 之外，该视图用于分组的所有列。
+    对于维度，请指定除 timestamp 之外，该视图用于分组的所有列。
 
     <Image img="/images/clickstack/materialized_views/select_metrics.webp" size="lg" alt="选择指标" />
   </Step>
 
-  <Step title="选择时间粒度" id="select-time-granularity">
+  <Step>
+    #### 选择时间粒度
+
     选择 materialized view 的**时间粒度**，例如 1 分钟。
 
     <Image img="/images/clickstack/materialized_views/select_time_granularity.webp" size="lg" alt="选择时间粒度" />
   </Step>
 
-  <Step title="选择最小日期" id="specify-the-minimum-date">
-    指定 materialized view 包含数据的最早日期。这表示该视图中可用的最早 时间戳；如果摄取始终持续进行，通常就是该视图的创建时间。
+  <Step>
+    #### 选择最小日期
+
+    指定 materialized view 包含数据的最早日期。这表示该视图中可用的最早 timestamp；如果摄取始终持续进行，通常就是该视图的创建时间。
 
     <Note>
       materialized view 在创建时**不会自动回填**，因此它们只会包含创建后插入的数据所生成的行。
@@ -267,15 +277,17 @@ materialized view 应注册到 HyperDX 中与其所派生自的**原始源表**�
 
     <Image img="/images/clickstack/materialized_views/select_min_time.webp" size="lg" alt="选择最小时间" />
 
-    如果无法确定确切的开始时间，可以通过查询目标表中的最小 时间戳 来确定，例如：
+    如果无法确定确切的开始时间，可以通过查询目标表中的最小 timestamp 来确定，例如：
 
     ```sql
     SELECT min(Timestamp) FROM otel_traces_1m
     ```
   </Step>
 
-  <Step title="保存 数据源" id="save-the-source">
-    保存 数据源 配置。
+  <Step>
+    #### 保存 source
+
+    保存 source 配置。
 
     <Image img="/images/clickstack/materialized_views/save_source.webp" size="lg" alt="保存 Source" />
   </Step>
@@ -469,7 +481,9 @@ GROUP BY
 这种方法最适合**较小的数据集**或**相对较轻量的聚合查询**：能够在合理时间内完成整个回填，同时不会耗尽集群资源。通常适用于回填查询可在几分钟内完成，最多不超过几小时，且可以接受 CPU 和 I/O 使用量的临时上升。对于更大的数据集或成本更高的聚合，建议改用下面介绍的增量回填或基于块的回填方法。
 
 <Steps>
-  <Step title="确定视图当前的覆盖范围" id="determine-current-coverage-of-view">
+  <Step>
+    ##### 确定视图当前的覆盖范围
+
     在尝试任何回填之前，首先需要确认 materialized view 已经包含了哪些数据。这可以通过查询目标表中的最小时间戳来完成：
 
     ```sql
@@ -480,7 +494,9 @@ GROUP BY
     该时间戳表示此视图能够满足查询的最早时间点。ClickStack 中任何请求早于该时间戳数据的查询，都会回退到基表。
   </Step>
 
-  <Step title="判断是否需要回填" id="decide-whether-backfilling-is-neccessary">
+  <Step>
+    ##### 判断是否需要回填
+
     在大多数 ClickStack 部署中，查询通常聚焦于最近的数据，例如过去 24 小时。在这种情况下，新创建的视图在创建后不久就能完全投入使用，因此无需回填。
 
     如果上一步返回的时间戳对你的使用场景来说已经足够早，就不需要回填。只有在以下情况下才应考虑回填：
@@ -490,7 +506,9 @@ GROUP BY
     * 数据集规模和聚合成本使回填具备可行性。
   </Step>
 
-  <Step title="回填缺失的历史数据" id="backfill-missing-historical-data">
+  <Step>
+    ##### 回填缺失的历史数据
+
     如果需要回填，请基于该视图的查询进行修改，使其只读取早于上述时间戳的数据，从而为 materialized view 的目标表补齐当前最小时间戳之前的历史数据。由于目标表使用的是 AggregatingMergeTree，回填查询**必须插入聚合状态，而不是最终值**。
 
     <Warning>
@@ -539,7 +557,9 @@ GROUP BY
 核心思路是使用 [**Null 表**](/zh/reference/engines/table-engines/special/null) 作为摄取缓冲区。虽然 Null 表本身不存储数据，但挂接到它的 materialized view 仍然会执行，因此可以在数据流经时增量计算聚合状态。
 
 <Steps>
-  <Step title="为回填创建一个 Null 表" id="create-null-table">
+  <Step>
+    ##### 为回填创建一个 Null 表
+
     创建一个轻量级的 Null 表，只包含 materialized view 聚合所需的列。这样可以将 I/O 和内存占用降到最低。
 
     ```sql
@@ -554,7 +574,9 @@ GROUP BY
     ```
   </Step>
 
-  <Step title="将 materialized view 挂接到 Null 表" id="attach-mv-to-null-table">
+  <Step>
+    ##### 将 materialized view 挂接到 Null 表
+
     接下来，在 Null 表上创建一个 materialized view，并让它指向与你的主 materialized view 相同的聚合表。
 
     ```sql
@@ -579,7 +601,9 @@ GROUP BY
     当行被插入 Null 表时，这个 materialized view 会以增量方式执行，并以小数据块生成聚合状态。
   </Step>
 
-  <Step title="以增量方式回填数据" id="incremental-backfill">
+  <Step>
+    ##### 以增量方式回填数据
+
     最后，将历史数据插入 Null 表。materialized view 会按数据块逐步处理这些数据，将聚合状态写入目标表，而不会持久化原始行。
 
     ```sql

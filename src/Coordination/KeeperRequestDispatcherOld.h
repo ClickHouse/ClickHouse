@@ -27,8 +27,6 @@ namespace DB
 class KeeperRequestDispatcherOld
 {
 private:
-    friend class KeeperRequestDispatcherOldTestAccessor;
-
     using RequestsQueue = ConcurrentBoundedQueue<KeeperRequestForSession>;
     using ResponsesQueue = ConcurrentBoundedQueue<KeeperResponseForSession>;
     using SessionToResponseCallback = std::unordered_map<int64_t, ZooKeeperResponseCallback>;
@@ -54,9 +52,6 @@ private:
     LoggerPtr log;
 
     KeeperContextPtr keeper_context;
-
-    /// Consulted before responses_queue; see KeeperSpecialResponseRouter.
-    KeeperSpecialResponseRouter special_response_router;
 
     using SessionAndXID = std::pair</*session ID*/ int64_t, Coordination::XID>;
 
@@ -94,7 +89,7 @@ private:
         RaftAppendResult & result, KeeperRequestsForSessions & requests_for_sessions, bool clear_requests_on_success);
 
 public:
-    KeeperRequestDispatcherOld(KeeperServer * server_, KeeperSpecialResponseRouter special_response_router_);
+    explicit KeeperRequestDispatcherOld(KeeperServer * server_);
 
     void shutdown();
 

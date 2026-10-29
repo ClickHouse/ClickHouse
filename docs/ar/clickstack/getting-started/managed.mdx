@@ -9,418 +9,54 @@ keywords: ['ClickStack المُدار', 'البدء', 'ClickHouse Cloud']
 
 import { Image } from "/snippets/ar/components/Image.jsx";
 
-import ExampleOTelConfig from '/snippets/ar/clickstack/_config_example_otel.mdx';
+import SetupManagedIngestion from '/snippets/ar/clickstack/_setup_managed_ingestion.mdx';
+import ProviderSelection from '/snippets/ar/clickstack/_select_provider.mdx';
+import NavigateClickStackUI from '/snippets/ar/clickstack/_navigate_managed.mdx';
 
-انشر ClickStack المُدار على ClickHouse Cloud، وأرسل حدثًا تجريبيًا عبر مسار الاستيعاب لديك، وتأكد من أن الحدث متاح في واجهة ClickStack.
-
-تشغّل ClickHouse Cloud الواجهة الخلفية لـ ClickHouse بينما تحتفظ بالتحكّم في مسار الاستيعاب والمخطط. يوفّر ClickStack المُدار ما يلي:
+أسهل طريقة للبدء هي نشر **Managed ClickStack** على **ClickHouse Cloud**، الذي يوفّر واجهة خلفية آمنة ومُدارة بالكامل مع الاحتفاظ بتحكّم كامل في الاستيعاب، والمخطط، ومسارات عمل observability. وهذا يلغي الحاجة إلى تشغيل ClickHouse بنفسك ويقدّم مجموعة من المزايا:
 
 * التوسّع التلقائي لقدرات المعالجة بشكل مستقل عن التخزين
 * احتفاظ منخفض التكلفة وغير محدود عمليًا استنادًا إلى تخزين الكائنات
-* عزل مستقل لأعباء عمل القراءة والكتابة باستخدام [warehouses](/ar/products/cloud/features/infrastructure/warehouses)
+* إمكانية عزل أعباء عمل القراءة والكتابة بشكل مستقل باستخدام warehouses.
 * مصادقة متكاملة
 * نسخ احتياطية مؤتمتة
 * ميزات الأمان والامتثال
 * ترقيات سلسة
 
-<div id="before-you-begin">
-  ## قبل البدء
-</div>
+<Steps>
+  <Step>
+    ## التسجيل في ClickHouse Cloud
 
-يمكنك أيضًا إرسال البيانات مباشرةً إلى ClickHouse باستخدام [تكامل مدعوم](/ar/integrations/home) ومخطط بيانات خاص بك.
+    لإنشاء خدمة Managed ClickStack في [ClickHouse Cloud](https://console.clickhouse.cloud)، أكمل أولًا **الخطوة الأولى** من [دليل البدء السريع لـ ClickHouse Cloud](/ar/get-started/setup/cloud).
 
-<div id="create-a-managed-clickstack-service">
-  ### إنشاء خدمة ClickHouse Cloud
-</div>
+    <ProviderSelection />
+  </Step>
 
-أكمِل خطوة [إنشاء خدمة ClickHouse](/ar/get-started/setup/cloud#1-create-a-clickhouse-service) في دليل البدء السريع لـ ClickHouse Cloud. قبل المتابعة، تأكد من أن الخدمة تعمل.
+  <Step>
+    ## إعداد الاستيعاب
 
-<View title="OpenTelemetry">
-  <Tip>
-    تعرض هذه الصفحة مسار **OpenTelemetry**. استخدم محدد الدليل أعلى الصفحة للتبديل بين **OpenTelemetry** (موصى به) و**Vector**.
-  </Tip>
+    بعد توفير خدمتك، تأكد من تحديد الخدمة ثم انقر على &quot;ClickStack&quot; من القائمة اليمنى.
 
-  ### تجهيز بيئة الاستيعاب
+    <SetupManagedIngestion />
+  </Step>
 
-  * لبدء استخدام [OpenTelemetry Collector](/ar/clickstack/ingesting-data/collector) جديد، ثبّت [Docker](https://docs.docker.com/get-docker/). أما في Kubernetes، فانشر الـ collector باستخدام [Helm](/ar/clickstack/ingesting-data/collector#configuring-the-collector).
-  * لاستخدام collector موجود، شغّله بصفته [gateway role](/ar/clickstack/ingesting-data/collector#collector-roles)، وتأكد من أن توزيعه يتضمن [ClickHouse exporter](https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/exporter/clickhouseexporter). ستضيف الإعدادات المطلوبة في هذا الدليل.
+  <Step>
+    ## الانتقال إلى واجهة ClickStack
 
-  ## إعداد ClickStack المُدار
+    <NavigateClickStackUI />
+  </Step>
 
-  <Steps titleSize="h3">
-    <Step title="اختر مصدر الإدخال وإعدادات المُجمِّع" id="choose-an-ingestion-source">
-      من خدمة ClickHouse Cloud، شغّل ClickStack. في صفحة **بدء الاستخدام** في ClickStack، اختر **بدء الاستيعاب**.
+  <Step>
+    ## الخطوات التالية
 
-      <Image img="/images/clickstack/getting-started/start_ingestion.webp" size="lg" alt="بدء الاستيعاب" border />
+    <Warning>
+      **سجّل بيانات الاعتماد الافتراضية**
 
-      في صفحة **اختيار مصدر الاستيعاب**، اختر [OpenTelemetry](https://opentelemetry.io/).
+      إذا لم تكن قد سجّلت بيانات الاعتماد الافتراضية أثناء الخطوات أعلاه، فانتقل إلى الخدمة واختر `Connect`، مع تسجيل كلمة المرور ونقاط نهاية HTTP وnative. خزّن بيانات اعتماد المسؤول هذه بأمان، إذ يمكن إعادة استخدامها في الأدلة اللاحقة.
+    </Warning>
 
-      <Info>
-        **يُنصح باستخدام OpenTelemetry**
+    <Image img="/images/_snippets/service_connect.webp" size="lg" alt="الاتصال بالخدمة" border />
 
-        يوفّر OpenTelemetry مخططات مُهيّأة مسبقًا للسجلات والتتبعات والمقاييس والجلسات.
-      </Info>
-
-      <Image img="/images/clickstack/getting-started/select_source_toggle.webp" size="lg" alt="اختيار OpenTelemetry كمصدر للاستيعاب" border />
-
-      <Tabs>
-        <Tab title="بدء مُجمِّع جديد">
-          يُنشئ ClickStack أمر المُجمِّع باستخدام بيانات اعتماد المسؤول `default`. نوصي باستخدام بيانات اعتماد مخصصة للاستيعاب لفصل صلاحية الوصول الخاصة بالاستيعاب عن الإدارة وتجنب الاعتماد على كلمة مرور المسؤول.
-
-          <Accordion title="إنشاء بيانات اعتماد مخصصة للاستيعاب (موصى به)">
-            في ClickHouse Cloud، افتح وحدة تحكم SQL لخدمتك ونفّذ:
-
-            ```sql
-            CREATE USER `clickstack-ingest` IDENTIFIED WITH sha256_password BY '<password>';
-            GRANT SELECT, INSERT, CREATE DATABASE, CREATE TABLE, CREATE VIEW ON default.* TO `clickstack-ingest`;
-            ```
-
-            في الأمر المُنشأ، استبدل `CLICKHOUSE_USER="default"` بـ `CLICKHOUSE_USER="clickstack-ingest"` واضبط `CLICKHOUSE_PASSWORD` على كلمة مرور المستخدم المخصص.
-          </Accordion>
-
-          للمتابعة باستخدام بيانات اعتماد المسؤول `default`، انسخ الأمر من علامة التبويب **بدء المُجمِّع**. يملأ ClickStack نقطة نهاية الخدمة مسبقًا. استبدل العنصر النائب لكلمة المرور بكلمة مرور خدمتك. إذا لم تعد تملكها، [اجمع تفاصيل الاتصال أو أعد تعيينها](/ar/products/cloud/guides/sql-console/connection-details).
-
-          يتبع الأمر التنسيق التالي:
-
-          ```shell
-          docker run -e CLICKHOUSE_ENDPOINT="https://<host>:8443" \
-              -e CLICKHOUSE_USER="default" \
-              -e CLICKHOUSE_PASSWORD="<your_password_here>" \
-              -p 4317:4317 -p 4318:4318 \
-              clickhouse/clickstack-otel-collector:latest
-          ```
-
-          استبدل `<host>` و`<your_password_here>` بالقيم الخاصة بخدمة ClickHouse Cloud، ثم شغّل الأمر.
-
-          يعمل المُجمِّع في الواجهة الأمامية. اترك هذه الطرفية مفتوحة واستخدم طرفية ثانية لتنفيذ الأوامر المتبقية في هذا الدليل.
-
-          <Note>
-            يكشف هذا الأمر منافذ OTLP دون مصادقة، وهو مخصص للتقييم المحلي. قبل إرسال حركة بيانات الإنتاج، [أمّن المُجمِّع](/ar/clickstack/ingesting-data/collector#securing-the-collector).
-          </Note>
-        </Tab>
-
-        <Tab title="استخدام مُجمِّع حالي">
-          اختر **تهيئة مُجمِّع حالي**، ثم عدّل تهيئة المُجمِّع لديك.
-
-          شغّل المُجمِّع كبوابة بين تطبيقاتك وClickHouse Cloud. تضيف التهيئة أدناه مُصدِّرات ClickHouse ومسارات الإشارات المطلوبة.
-
-          يستخدم المثال بيانات اعتماد `default` التي أنشأها ClickStack. لاستخدام بيانات اعتماد مخصصة للاستيعاب، اتبع الإعداد الاختياري في علامة التبويب **بدء مُجمِّع جديد**. في كتلتي مُصدِّر ClickHouse، استبدل `username: default` بـ `username: clickstack-ingest` واضبط `password` على كلمة مرور المستخدم المخصص.
-
-          ادمج المكونات التالية في تهيئتك الحالية بدلًا من استبدال أجهزة الاستقبال أو المعالجات أو المُصدِّرات أو الامتدادات غير ذات الصلة.
-
-          <Info>
-            **مكونات المُجمِّع المطلوبة**
-
-            يجب أن تتضمن توزيعة المُجمِّع لديك [مُصدِّر ClickHouse](https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/exporter/clickhouseexporter) و[موصل التوجيه](https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/connector/routingconnector). تتضمن توزيعة OpenTelemetry Collector Contrib كلا المكونين.
-          </Info>
-
-          يضيف المثال أجهزة استقبال OTLP، والتجميع على دفعات وتقييد الذاكرة، وتوجيه Session Replay، ومُصدِّرات ClickHouse.
-
-          <ExampleOTelConfig />
-
-          أعد استخدام جهاز استقبال OTLP الحالي وحافظ على إعدادات المصادقة وTLS الخاصة به. إذا كانت تهيئتك تستخدم بالفعل معرّفات المكونات أو المسارات الواردة في المثال، فادمجها أو أعد تسميتها بدلًا من إنشاء معرّفات مكررة. يؤدي تشغيل جهازي استقبال على المنفذين `4317` و`4318` إلى تعارض في المنافذ.
-
-          بعد دمج التهيئة، أعد تحميل المُجمِّع أو أعد تشغيله باستخدام عملية النشر الحالية لديك.
-
-          لمزيد من التفاصيل حول تهيئة مُجمِّعات OpenTelemetry، راجع [الاستيعاب باستخدام OpenTelemetry](/ar/clickstack/ingesting-data/opentelemetry).
-        </Tab>
-      </Tabs>
-    </Step>
-
-    <Step title="إرسال بيانات تجريبية" id="send-test-data">
-      أرسل سجل اختبار بالطابع الزمني الحالي:
-
-      ```shell
-      NOW_NANO="$(date +%s)000000000"
-
-      curl -i "http://localhost:4318/v1/logs" \
-        -H "Content-Type: application/json" \
-        --data-binary @- <<EOF
-      {
-        "resourceLogs": [{
-          "resource": {
-            "attributes": [{
-              "key": "service.name",
-              "value": {"stringValue": "clickstack-docs-test"}
-            }]
-          },
-          "scopeLogs": [{
-            "scope": {"name": "clickstack-docs-test"},
-            "logRecords": [{
-              "timeUnixNano": "${NOW_NANO}",
-              "severityText": "INFO",
-              "body": {"stringValue": "ClickStack ingestion test"}
-            }]
-          }]
-        }]
-      }
-      EOF
-      ```
-
-      إذا كنت تستخدم مُجمِّعًا موجودًا، فاستبدل `http://localhost:4318` بنقطة نهاية OTLP عبر HTTP الخاصة به. إذا كان المستقبِل يتطلب مصادقة، فأضف الترويسة المطلوبة إلى أمر `curl`.
-
-      يعيد الطلب الناجح `HTTP/1.1 200 OK`.
-    </Step>
-
-    <Step title="ابدأ الاستكشاف وتأكد من استيعاب البيانات" id="open-clickstack-and-confirm-ingestion">
-      بعد أن يكتشف ClickStack مصادر بيانات OpenTelemetry، اختر **بدء الاستكشاف** لفتح عرض **البحث**. ابحث عن `ClickStack ingestion test`.
-
-      يجب أن تتضمن النتائج حدث الاختبار باسم الخدمة `clickstack-docs-test`.
-
-      <Image img="/images/clickstack/getting-started/clickstack_ingestion_test.webp" size="lg" alt="عرض سجلات ClickStack يُظهر حدث اختبار استيعاب ClickStack" border />
-    </Step>
-  </Steps>
-</View>
-
-<View title="Vector">
-  ### تجهيز بيئة استقبال البيانات
-
-  ابدأ بـ[خط أنابيب Vector قائم](/ar/clickstack/ingesting-data/vector) قادر على إرسال البيانات إلى ClickHouse.
-
-  ## إعداد Managed ClickStack
-
-  <Steps titleSize="h3">
-    <Step title="اختر Vector وهيِّئ استيعاب البيانات" id="choose-an-ingestion-source-vector">
-      من خدمة ClickHouse Cloud الخاصة بك، شغّل ClickStack. في صفحة **بدء الاستخدام** في ClickStack، حدد **بدء الاستيعاب**.
-
-      <Image img="/images/clickstack/getting-started/start_ingestion.webp" size="lg" alt="بدء إدخال البيانات" border />
-
-      في صفحة **Choose an ingestion source** (اختيار مصدر الاستيعاب)، حدّد [Vector](https://vector.dev/).
-
-      <Image img="/images/clickstack/getting-started/select_source_vector_toggle.webp" size="lg" alt="اختر Vector كمصدر لاستيعاب البيانات" border />
-
-      [Vector](https://vector.dev) هو خط أنابيب لبيانات المراقبة عالي الأداء ومحايد تجاه المورّدين، ويحظى بشعبية خاصة في استيعاب السجلات نظرًا لمرونته واستهلاكه المنخفض للموارد.
-
-      عند استخدام Vector مع ClickStack، تكون أنت من يحدد المخطط (schema)، وبإمكانه اتباع اصطلاحات OpenTelemetry أو استخدام حقول خاصة بأحداثك.
-
-      <Info>
-        **يتطلب وجود خط أنابيب Vector مسبقًا**
-
-        تابع هذا الدليل إذا كنت تشغّل Vector بالفعل مع خط أنابيب إدخال. يجب أن تتضمن البيانات المُرسلة عبر خط الأنابيب **عمود طابع زمني** أو حقل وقت مكافئًا، تحدده عند تهيئة مصدر البيانات في واجهة مستخدم ClickStack.
-
-        تضيف الخطوات أدناه وجهة ClickHouse إلى خط الأنابيب الحالي.
-      </Info>
-
-      #### إنشاء قاعدة بيانات وجدول
-
-      أنشئ قاعدة بيانات وجدولاً قبل تكوين sink في Vector.
-
-      في ClickHouse Cloud، افتح SQL Console الخاص بـ service الخاصة بك وأنشئ قاعدة بيانات:
-
-      على سبيل المثال، أنشئ قاعدة بيانات للسجلات (logs):
-
-      ```sql
-      CREATE DATABASE IF NOT EXISTS logs
-      ```
-
-      بعد ذلك، أنشئ جدولاً يتطابق مخططه مع بنية بيانات السجلات لديك. ويفترض المثال التالي استخدام تنسيق سجل وصول Nginx الكلاسيكي:
-
-      ```sql
-      CREATE TABLE logs.nginx_logs
-      (
-          `time_local` DateTime,
-          `remote_addr` IPv4,
-          `remote_user` LowCardinality(String),
-          `request` String,
-          `status` UInt16,
-          `body_bytes_sent` UInt64,
-          `http_referer` String,
-          `http_user_agent` String,
-          `http_x_forwarded_for` LowCardinality(String),
-          `request_time` Float32,
-          `upstream_response_time` Float32,
-          `http_host` String
-      )
-      ENGINE = MergeTree
-      ORDER BY (toStartOfMinute(time_local), status, remote_addr);
-      ```
-
-      يجب أن يتوافق جدولك مع مخطط الخرج الذي ينتجه Vector. عدّل المخطط بما يلائم بياناتك، مع اتباع [أفضل الممارسات الموصى بها للمخططات](/ar/concepts/best-practices/select-data-type).
-
-      نوصي بشدة بفهم كيفية عمل [المفاتيح الأساسية](/ar/concepts/core-concepts/primary-indexes) في ClickHouse واختيار مفتاح ترتيب يتوافق مع أنماط الوصول الخاصة بك. راجع الإرشادات [الخاصة بـ ClickStack](/ar/clickstack/managing/performance-tuning#choosing-a-primary-key) بشأن اختيار المفتاح الأساسي.
-
-      #### تهيئة وجهة الإخراج (sink) في ClickHouse
-
-      بعد التأكد من وجود الجدول، أضف وجهة إخراج (sink) لـ ClickHouse إلى تكوين Vector:
-
-      ```yaml
-      sinks:
-        clickhouse:
-          type: clickhouse
-          inputs:
-            - your_input
-          endpoint: "https://<host>:8443"
-          database: logs
-          table: nginx_logs
-          format: json_each_row
-          skip_unknown_fields: true
-          auth:
-            strategy: basic
-            user: default
-            password: "<your_password_here>"
-      ```
-
-      استبدل `your_input` بالإدخال الخاص بـ pipeline الحالي لديك. واستبدل `<host>` و`<your_password_here>` بالقيم الخاصة بخدمة ClickHouse Cloud لديك. وإذا لزم الأمر، غيّر قاعدة البيانات أو الجدول الهدف.
-
-      <Accordion title="استخدم بيانات اعتماد مخصصة لتلقّي البيانات (موصى به)">
-        لبيئة production، أنشئ مستخدمًا مخصصًا وامنحه صلاحية الوصول إلى جدول الهدف لـ Vector. في ClickHouse Cloud، افتح SQL Console لخدمتك وشغّل:
-
-        ```sql
-        CREATE USER `clickstack-ingest` IDENTIFIED WITH sha256_password BY '<password>';
-        GRANT SELECT, INSERT ON logs.nginx_logs TO `clickstack-ingest`;
-        ```
-
-        استبدل `default` بـ `clickstack-ingest` في وجهة Vector، واضبط `password` على كلمة مرور المستخدم المخصص.
-      </Accordion>
-
-      احفظ التكوين المُحدَّث، ثم أعد تحميل Vector أو أعد تشغيله باستخدام عملية النشر الحالية لديك.
-
-      لمزيد من الأمثلة على استيعاب البيانات باستخدام Vector، راجع [الاستيعاب باستخدام Vector](/ar/clickstack/ingesting-data/vector)، أو راجع [توثيق وجهة (sink) ClickHouse في Vector](https://vector.dev/docs/reference/configuration/sinks/clickhouse/) للاطلاع على الخيارات المتقدمة.
-
-      #### إنشاء مصدر بيانات ClickStack
-
-      أنشئ مصدر بيانات للجدول الذي يعبّئه خط أنابيب Vector لديك. سيطالبك ClickStack بإنشاء مصدر عند أول تسجيل دخول.
-
-      يقوم النموذج تلقائيًا بتعبئة التعبيرات الخاصة بمخطط OpenTelemetry الافتراضي. أما بالنسبة إلى جدول Nginx الذي أنشأته في هذا الدليل، فقم بتهيئة المصدر بالقيم التالية:
-
-      | الإعداد                        | القيمة                                                                                                          |
-      | ------------------------------ | --------------------------------------------------------------------------------------------------------------- |
-      | **الاسم**                      | `سجلات Nginx`                                                                                                   |
-      | **نوع بيانات المصدر**          | السجل                                                                                                           |
-      | **اتصال الخادم**               | `default`                                                                                                       |
-      | **قاعدة البيانات**             | `logs`                                                                                                          |
-      | **الجدول**                     | `nginx_logs`                                                                                                    |
-      | **عمود الطابع الزمني**         | `time_local`                                                                                                    |
-      | **SELECT الافتراضي**           | `time_local, remote_addr, status, request`                                                                      |
-      | **تعبير اسم الخدمة**           | `'nginx'`                                                                                                       |
-      | **تعبير مستوى السجل**          | `multiIf(status >= 500, 'ERROR', status >= 400, 'WARN', 'INFO')`                                                |
-      | **تعبير سمات السجل**           | `map('http.remote_addr', toString(remote_addr), 'http.status_code', toString(status), 'http.request', request)` |
-      | **تعبير سمات المورد**          | `map('service.name', 'nginx')`                                                                                  |
-      | **عمود الطابع الزمني المعروض** | `time_local`                                                                                                    |
-      | **تعبير معرّف التتبّع**        | `''`                                                                                                            |
-      | **تعبير معرّف الامتداد**       | `''`                                                                                                            |
-      | **تعبير العمود التلقائي**      | `request`                                                                                                       |
-
-      لا يحتوي جدول Nginx على عمود `Body`. اضبط **Body Expression** على:
-
-      ```sql
-      concat(
-        remote_addr, ' ',
-        remote_user, ' ',
-        '[', formatDateTime(time_local, '%d/%b/%Y:%H:%i:%S %z'), '] ',
-        '"', request, '" ',
-        toString(status), ' ',
-        toString(body_bytes_sent), ' ',
-        '"', http_referer, '" ',
-        '"', http_user_agent, '" ',
-        '"', http_x_forwarded_for, '" ',
-        toString(request_time), ' ',
-        toString(upstream_response_time), ' ',
-        '"', http_host, '"'
-      )
-      ```
-
-      للتعرف على إعدادات المصدر الأخرى، راجع [مرجع تكوين ClickStack](/ar/clickstack/managing/config).
-    </Step>
-
-    <Step title="إرسال بيانات اختبارية" id="send-test-data-vector">
-      أرسل حدثًا نموذجيًا عبر مُدخل مسار Vector الحالي لديك.
-
-      للاطّلاع على مزيد من أمثلة مصادر Vector وعمليات التحويل، راجع [الاستيعاب باستخدام Vector](/ar/clickstack/ingesting-data/vector).
-    </Step>
-
-    <Step title="ابدأ الاستكشاف وتحقّق من استيعاب البيانات" id="open-clickstack-and-confirm-ingestion-vector">
-      بعد إنشاء مصدر البيانات، اختر **بدء الاستكشاف** لفتح عرض **Search**. اختر مصدر البيانات الخاص بجدولك وتأكد من احتوائه على الحدث الذي أرسلته.
-
-      <Image img="/images/clickstack/getting-started/clickstack_managed_ui.webp" size="lg" alt="السجلات في واجهة مستخدم ClickStack" />
-    </Step>
-  </Steps>
-</View>
-
-لديك الآن خدمة ClickStack المُدار، ومسار استيعاب فعّال، وحدث اختباري يمكنك فحصه في ClickStack.
-
-<div id="next-steps">
-  ## الخطوات التالية
-</div>
-
-إذا تطلّب دليل آخر نقطة نهاية ClickHouse Cloud أو كلمة مرورك، [احصل على تفاصيل الاتصال أو أعد تعيينها](/ar/products/cloud/guides/sql-console/connection-details) قبل المتابعة.
-
-<div id="send-application-and-infrastructure-data">
-  ### إرسال بيانات التطبيق والبنية التحتية
-</div>
-
-اختر دليلاً لنوع البيانات التي تريد إرسالها إلى ClickStack:
-
-<CardGroup cols={2}>
-  <Card title="إضافة إمكانات القياس عن بُعد إلى تطبيق" icon="code" href="/ar/clickstack/ingesting-data/sdks/index">
-    أرسل تتبعات التطبيق وسجلاته باستخدام SDK مدعوم من OpenTelemetry.
-  </Card>
-
-  <Card title="جمع سجلات المضيف" icon="server" href="/ar/clickstack/integration-examples/host-logs">
-    أعد توجيه سجلات المضيف من OpenTelemetry Collector يعمل بدور agent.
-  </Card>
-
-  <Card title="مراقبة Kubernetes" icon="cubes" href="/ar/clickstack/integration-examples/kubernetes">
-    اجمع السجلات والمقاييس والتتبعات من مجموعة Kubernetes.
-  </Card>
-
-  <Card title="استكشاف تكاملات أخرى" icon="plug" href="/ar/clickstack/integration-examples/index">
-    اعثر على أدلة لتطبيقات إضافية ومصادر للقياس عن بُعد.
-  </Card>
-</CardGroup>
-
-<div id="explore-sample-data">
-  ### استكشف بيانات نموذجية
-</div>
-
-استخدم مجموعة بيانات نموذجية لاستكشاف ClickStack ببيانات قياس عن بُعد أكثر ثراءً:
-
-<CardGroup cols={2}>
-  <Card title="سجلات وآثار ومقاييس نموذجية" href="/ar/clickstack/example-datasets/sample-data">
-    <img src="/images/clickstack/example-trace-dashboard.webp" alt="" />
-
-    حمّل بيانات العرض التوضيحي العام وشخّص مشكلة. يفترض هذا الدليل أنك شغّلت OpenTelemetry Collector محليًا جديدًا. إذا هيّأت مجمّعًا قائمًا، فعدّل إعدادات نقطة النهاية والمصادقة بما يتناسب مع عملية النشر لديك.
-  </Card>
-
-  <Card title="السجلات والمقاييس المحلية" href="/ar/clickstack/example-datasets/local-data">
-    <img src="/images/clickstack/host-logs/host-logs-dashboard.webp" alt="" />
-
-    اجمع الملفات المحلية ومقاييس النظام على macOS أو Linux.
-  </Card>
-</CardGroup>
-
-<div id="generate-synthetic-data">
-  ### إنشاء بيانات اصطناعية
-</div>
-
-استخدم مولّدًا لاختبار استيعاب البيانات دون الحاجة إلى تطبيق أو مجموعة بيانات موجودة:
-
-<CardGroup cols={2}>
-  <Card title="إنشاء بيانات باستخدام otelgen" icon="terminal" href="/ar/clickstack/example-datasets/otelgen">
-    أرسل دفعة قصيرة من السجلات والآثار والمقاييس الاصطناعية عبر OTLP.
-  </Card>
-
-  <Card title="إنشاء بيانات باستخدام telemetrygen" icon="terminal" href="/ar/clickstack/example-datasets/telemetrygen">
-    أنشئ إشارات OpenTelemetry قابلة للتهيئة عبر عدة خدمات.
-  </Card>
-</CardGroup>
-
-اطّلع على [جميع البيانات النموذجية والعروض التوضيحية لـ ClickStack](/ar/clickstack/example-datasets/index).
-
-<div id="prepare-for-production">
-  ### الاستعداد للإنتاج
-</div>
-
-راجع إرشادات الإنتاج وتقدير الموارد قبل استخدام ClickStack لأحمال العمل المستمرة:
-
-<CardGroup cols={2}>
-  <Card title="الانتقال إلى بيئة الإنتاج" icon="shield" href="/ar/clickstack/managing/production">
-    راجع بيانات اعتماد الاستيعاب والأمان والاحتفاظ بالبيانات والإرشادات التشغيلية.
-  </Card>
-
-  <Card title="تقدير الموارد" icon="chart-line" href="/ar/clickstack/managing/estimating-resources">
-    حدّد موارد الحوسبة اللازمة لحجم الاستيعاب المتوقع.
-  </Card>
-</CardGroup>
-
-لمهام النشر، راجع [دليل نشر ClickStack المُدار](/ar/clickstack/deployment/managed#additional-tasks).
+    لتنفيذ مهام مثل توفير مستخدمين جدد أو إضافة المزيد من مصادر البيانات، راجع [دليل النشر لـ Managed ClickStack](/ar/clickstack/deployment/managed#additional-tasks).
+  </Step>
+</Steps>

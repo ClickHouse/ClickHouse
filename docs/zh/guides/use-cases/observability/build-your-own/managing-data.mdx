@@ -64,7 +64,7 @@ ORDER BY c DESC
 └────────────┴─────────┘
 
 5 rows in set. Elapsed: 0.058 sec. Processed 10.37 million rows, 82.92 MB (177.96 million rows/s., 1.42 GB/s.)
-Peak memory usage: 4.41 MiB.
+峰值内存占用: 4.41 MiB.
 ```
 
 可以使用一个简单的系统表查询来查看当前分区：
@@ -91,10 +91,10 @@ WHERE `table` = 'otel_logs'
 
 ```sql
 CREATE TABLE otel_logs_archive AS otel_logs
---move data to archive table
+--将数据移至归档表
 ALTER TABLE otel_logs
         (MOVE PARTITION tuple('2019-01-26') TO TABLE otel_logs_archive
---confirm data has been moved
+--确认数据已移动
 SELECT
         Timestamp::Date AS day,
         count() AS c
@@ -163,7 +163,7 @@ ORDER BY c DESC
 ```
 
 <Note>
-  使用设置 [`ttl_only_drop_parts=1`](/zh/reference/settings/merge-tree-settings/other#ttl_only_drop_parts) 时，生存时间 (TTL) 会利用这一特性。更多详情，请参见[使用 生存时间 (TTL) 进行数据管理](#data-management-with-ttl-time-to-live)。
+  使用设置 [`ttl_only_drop_parts=1`](/zh/reference/settings/merge-tree-settings#ttl_only_drop_parts) 时，生存时间 (TTL) 会利用这一特性。更多详情，请参见[使用 生存时间 (TTL) 进行数据管理](#data-management-with-ttl-time-to-live)。
 </Note>
 
 <div id="applications">
@@ -221,7 +221,7 @@ SETTINGS ttl_only_drop_parts = 1
   生存时间 (TTL) 不会立即生效，而是如上所述按计划执行。MergeTree 表设置 `merge_with_ttl_timeout` 用于设置再次执行带删除生存时间 (TTL) 的合并前的最小延迟时间 (秒) 。默认值为 14400 秒 (4 小时) 。但这只是最小延迟，实际触发生存时间 (TTL) 合并可能还需要更长时间。如果该值过低，会执行大量计划外合并，并可能消耗大量资源。可以使用命令 `ALTER TABLE my_table MATERIALIZE TTL` 强制触发生存时间 (TTL) 过期处理。
 </Info>
 
-**重要：我们建议使用设置 [`ttl_only_drop_parts=1`](/zh/reference/settings/merge-tree-settings/other#ttl_only_drop_parts) ** (默认 schema 会应用该设置) 。启用此设置后，当某个 part 中的所有行都已过期时，ClickHouse 会直接删除整个 part。相比清理 part 中部分已过期的 生存时间 (TTL) 行 (在 `ttl_only_drop_parts=0` 时，这需要通过资源密集型变更来完成) ，直接删除整个 part 可以使用更短的 `merge_with_ttl_timeout`，并降低对系统性能的影响。如果数据按执行 生存时间 (TTL) 过期所依据的相同单位进行分区，例如按天分区，那么 part 自然只会包含该时间间隔内的数据。这将确保 `ttl_only_drop_parts=1` 能够被高效应用。
+**重要：我们建议使用设置 [`ttl_only_drop_parts=1`](/zh/reference/settings/merge-tree-settings#ttl_only_drop_parts) ** (默认 schema 会应用该设置) 。启用此设置后，当某个 part 中的所有行都已过期时，ClickHouse 会直接删除整个 part。相比清理 part 中部分已过期的 生存时间 (TTL) 行 (在 `ttl_only_drop_parts=0` 时，这需要通过资源密集型变更来完成) ，直接删除整个 part 可以使用更短的 `merge_with_ttl_timeout`，并降低对系统性能的影响。如果数据按执行 生存时间 (TTL) 过期所依据的相同单位进行分区，例如按天分区，那么 part 自然只会包含该时间间隔内的数据。这将确保 `ttl_only_drop_parts=1` 能够被高效应用。
 
 <div id="column-level-ttl">
   ### 列级生存时间 (TTL)

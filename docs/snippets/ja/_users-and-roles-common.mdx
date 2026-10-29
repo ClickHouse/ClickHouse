@@ -51,17 +51,21 @@ DROP DATABASE db1;
 以降の例で使用するこれらのテーブルとユーザーを作成します。
 
 <div id="creating-a-sample-database-table-and-rows">
-  #### サンプルのデータベース、テーブル、行を作成する
+  #### サンプルのデータベース、テーブル、および行を作成する
 </div>
 
 <Steps>
-  <Step title="テスト用データベースを作成する" id="create-a-test-database">
+  <Step>
+    ##### テスト用データベースを作成する
+
     ```sql
     CREATE DATABASE db1;
     ```
   </Step>
 
-  <Step title="テーブルを作成する" id="create-a-table">
+  <Step>
+    ##### テーブルを作成する
+
     ```sql
     CREATE TABLE db1.table1 (
        id UInt64,
@@ -73,7 +77,9 @@ DROP DATABASE db1;
     ```
   </Step>
 
-  <Step title="テーブルにサンプル行を追加する" id="populate">
+  <Step>
+    ##### テーブルにサンプル行を追加する
+
     ```sql
     INSERT INTO db1.table1
        (id, column1, column2)
@@ -85,7 +91,9 @@ DROP DATABASE db1;
     ```
   </Step>
 
-  <Step title="テーブルを確認する" id="verify">
+  <Step>
+    ##### テーブルを確認する
+
     ```sql title="クエリ"
     SELECT *
     FROM db1.table1
@@ -103,16 +111,20 @@ DROP DATABASE db1;
     ```
   </Step>
 
-  <Step title={<>Create <code>column_user</code></>} id="create-a-user-with-restricted-access-to-columns">
-    特定のカラムへのアクセス制限を実演するために使用する一般ユーザーを作成します。
+  <Step>
+    ##### `column_user` を作成する
+
+    特定のカラムへのアクセス制限を示すために使用する一般ユーザーを作成します。
 
     ```sql
     CREATE USER column_user IDENTIFIED BY 'password';
     ```
   </Step>
 
-  <Step title={<>Create <code>row_user</code></>} id="create-a-user-with-restricted-access-to-rows-with-certain-values">
-    特定の値を持つ行へのアクセス制限を実演するために使用する一般ユーザーを作成します。
+  <Step>
+    ##### `row_user` を作成する
+
+    特定の値を持つ行へのアクセス制限を示すために使用する一般ユーザーを作成します。
 
     ```sql
     CREATE USER row_user IDENTIFIED BY 'password';
@@ -133,49 +145,65 @@ DROP DATABASE db1;
 ロールは、ユーザーごとに個別に管理する代わりに、特定の権限を持つユーザーのグループを定義するために使用します。
 
 <Steps>
-  <Step title={<>このロールのユーザーが database <code>db1</code> の <code>table1</code> で <code>column1</code> のみを参照できるよう制限するロールを作成します:</>} id="create-column-role">
+  <Step>
+    ##### このロールのユーザーが database `db1` の `table1` で `column1` のみを参照できるよう制限するロールを作成します
+
     ```sql
     CREATE ROLE column1_users;
     ```
   </Step>
 
-  <Step title={<> <code>column1</code> の参照を許可する権限を設定します</>} id="set-column-privileges">
+  <Step>
+    ##### `column1` の参照を許可する権限を設定します
+
     ```sql
     GRANT SELECT(id, column1) ON db1.table1 TO column1_users;
     ```
   </Step>
 
-  <Step title={<>ユーザー <code>column_user</code> を <code>column1_users</code> ロールに追加します</>} id="add-column-user-to-role">
+  <Step>
+    ##### ユーザー `column_user` を `column1_users` ロールに追加します
+
     ```sql
     GRANT column1_users TO column_user;
     ```
   </Step>
 
-  <Step title={<>このロールのユーザーが選択された行のみを参照できるよう制限するロールを作成します。この例では、<code>column1</code> に <code>A</code> を含む行のみです</>} id="create-row-role">
+  <Step>
+    ##### このロールのユーザーが選択された行のみを参照できるよう制限するロールを作成します。この例では、`column1` に `A` を含む行のみです
+
     ```sql
     CREATE ROLE A_rows_users;
     ```
   </Step>
 
-  <Step title={<> <code>row_user</code> を <code>A_rows_users</code> ロールに追加します</>} id="add-row-user-to-role">
+  <Step>
+    ##### `row_user` を `A_rows_users` ロールに追加します
+
     ```sql
     GRANT A_rows_users TO row_user;
     ```
   </Step>
 
-  <Step title={<> <code>column1</code> の値が <code>A</code> の場合にのみ参照を許可するポリシーを作成します</>} id="create-row-policy">
+  <Step>
+    ##### `column1` の値が `A` の場合にのみ参照を許可するポリシーを作成します
+
     ```sql
     CREATE ROW POLICY A_row_filter ON db1.table1 FOR SELECT USING column1 = 'A' TO A_rows_users;
     ```
   </Step>
 
-  <Step title="database と table に対する権限を設定します" id="set-db-table-privileges">
+  <Step>
+    ##### database と table に対する権限を設定します
+
     ```sql
     GRANT SELECT(id, column1, column2) ON db1.table1 TO A_rows_users;
     ```
   </Step>
 
-  <Step title="他のロールが引き続きすべての行にアクセスできるよう、明示的な権限を付与します" id="grant-other-roles-access">
+  <Step>
+    ##### 他のロールが引き続きすべての行にアクセスできるよう、明示的な権限を付与します
+
     ```sql
     CREATE ROW POLICY allow_other_users_filter 
     ON db1.table1 FOR SELECT USING 1 TO clickhouse_admin, column1_users;
@@ -196,13 +224,17 @@ DROP DATABASE db1;
 </div>
 
 <Steps>
-  <Step title={<>`clickhouse_admin` ユーザーで ClickHouse client にログインします</>} id="login-admin-user">
+  <Step>
+    ##### `clickhouse_admin` ユーザーで ClickHouse client にログインします
+
     ```bash
     clickhouse-client --user clickhouse_admin --password password
     ```
   </Step>
 
-  <Step title="admin ユーザーでデータベース、テーブル、およびすべての行へのアクセスを確認します。" id="verify-admin-access">
+  <Step>
+    ##### admin ユーザーでデータベース、テーブル、およびすべての行へのアクセスを確認します。
+
     ```sql
     SELECT *
     FROM db1.table1
@@ -220,13 +252,17 @@ DROP DATABASE db1;
     ```
   </Step>
 
-  <Step title={<>`column_user` ユーザーで ClickHouse client にログインします</>} id="login-column-user">
+  <Step>
+    ##### `column_user` ユーザーで ClickHouse client にログインします
+
     ```bash
     clickhouse-client --user column_user --password password
     ```
   </Step>
 
-  <Step title={<>すべてのカラムを指定して <code>SELECT</code> をテストします</>} id="test-select-all-columns">
+  <Step>
+    ##### すべてのカラムを指定して `SELECT` をテストします
+
     ```sql
     SELECT *
     FROM db1.table1
@@ -249,7 +285,9 @@ DROP DATABASE db1;
     </Note>
   </Step>
 
-  <Step title={<>指定されていて、かつ許可されているカラムのみを使った <code>SELECT</code> クエリを確認します:</>} id="verify-allowed-columns">
+  <Step>
+    ##### 指定されていて、かつ許可されているカラムのみを使った `SELECT` クエリを確認します:
+
     ```sql
     SELECT
         id,
@@ -275,13 +313,17 @@ DROP DATABASE db1;
 </div>
 
 <Steps>
-  <Step title={<>`row_user` を使用して ClickHouse client にログインする</>} id="login-row-user">
+  <Step>
+    ##### `row_user` を使用して ClickHouse client にログインする
+
     ```bash
     clickhouse-client --user row_user --password password
     ```
   </Step>
 
-  <Step title="表示される行を確認する" id="view-available-rows">
+  <Step>
+    ##### 表示される行を確認する
+
     ```sql
     SELECT *
     FROM db1.table1
@@ -311,31 +353,41 @@ DROP DATABASE db1;
 たとえば、`role1` が `column1` に対する SELECT のみを許可し、`role2` が `column1` と `column2` に対する SELECT を許可している場合、ユーザーは両方のカラムにアクセスできます。
 
 <Steps>
-  <Step title="管理者アカウントを使用して、デフォルトロール付きで行とカラムの両方に制限をかけた新しいユーザーを作成する" id="create-restricted-user">
+  <Step>
+    ##### admin アカウントを使用して、デフォルトロール付きで行とカラムの両方に制限をかけた新しいユーザーを作成する
+
     ```sql
     CREATE USER row_and_column_user IDENTIFIED BY 'password' DEFAULT ROLE A_rows_users;
     ```
   </Step>
 
-  <Step title={<>`A_rows_users` ロールの既存の権限を取り消す</>} id="remove-prior-privileges">
+  <Step>
+    ##### `A_rows_users` ロールの既存の権限を取り消す
+
     ```sql
     REVOKE SELECT(id, column1, column2) ON db1.table1 FROM A_rows_users;
     ```
   </Step>
 
-  <Step title={<>`A_row_users` ロールが `column1` のみを SELECT できるようにする</>} id="allow-column1-select">
+  <Step>
+    ##### `A_row_users` ロールが `column1` のみを SELECT できるようにする
+
     ```sql
     GRANT SELECT(id, column1) ON db1.table1 TO A_rows_users;
     ```
   </Step>
 
-  <Step title={<>`row_and_column_user` で ClickHouse client にログインする</>} id="login-restricted-user">
+  <Step>
+    ##### `row_and_column_user` で ClickHouse client にログインする
+
     ```bash
     clickhouse-client --user row_and_column_user --password password;
     ```
   </Step>
 
-  <Step title="すべてのカラムでテストする:" id="test-all-columns-restricted">
+  <Step>
+    ##### すべてのカラムでテストする:
+
     ```sql
     SELECT *
     FROM db1.table1
@@ -354,7 +406,9 @@ DROP DATABASE db1;
     ```
   </Step>
 
-  <Step title="許可されたカラムのみに絞ってテストする:" id="test-limited-columns">
+  <Step>
+    ##### 許可されたカラムのみに絞ってテストする:
+
     ```sql
     SELECT
         id,

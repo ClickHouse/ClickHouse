@@ -1,0 +1,690 @@
+---
+noindex: true
+title: "Teleport と ClickHouse Private の統合"
+sidebarTitle: "Teleport の統合"
+description: "政府機関/FIPS 環境における ClickHouse Private クラスターへの安全なデータベースアクセスのために、Teleport Enterprise を設定します。"
+---
+
+政府機関/FIPS 環境における ClickHouse Private クラスターへの安全なデータベースアクセスのために、Teleport Enterprise を設定します。このガイドでは、EKS への Teleport のデプロイ、データベースアクセスの設定、SAML 認証、証明書のローテーションについて説明します。
+
+<div id="prerequisites">
+  ## 前提条件
+</div>
+
+* [FIPS/Government デプロイ](/ja/products/clickhouse-private/tutorials/deploy-clickhouse-with-fips-compliance-government) が、`SERVER_VERIFICATION_MODE=relaxed` および `KEEPER_VERIFICATION_MODE=relaxed` を指定して完了していること (Teleport mTLS に必要)
+* Teleport Enterprise ライセンス
+* サーバー証明書の SAN には `DNS.2 = c-${CLUSTER_NAME}-server-any.ns-${CLUSTER_NAME}.svc.${KUBERNETES_DOMAIN}` が含まれている必要があります ([FIPS 準拠証明書の生成](/ja/products/clickhouse-private/guides/generate-fips-compliant-certificates-for-clickhouse) を参照)
+
+***
+
+<div id="create-a-node-group-for-teleport">
+  ## Teleport 用のノードグループを作成する
+</div>
+
+Teleport 専用のノードグループは必須ではありません。利用可能な Bottlerocket ARM FIPS ノードがない場合は、EKS コンソールの Compute で次の設定でノードグループを作成します。
+
+* **名前**: fips-arm64
+* **Node IAM role**: 新しい推奨ロールを作成
+* **Kubernetes taints**:
+  * **Key**: `group`, **Value**: `fips-arm64`, **Effect**: `NoSchedule`
+* **AMI type**: Bottlerocket ARM FIPS
+* **Instance types**: m7g.large
+* **スケーリング**: Desired 2、Min 2、Max 3
+
+***
+
+<div id="install-teleport-cluster-on-eks">
+  ## EKS に Teleport クラスターをインストール
+</div>
+
+<div id="create-namespace-and-license-secret">
+  ### ネームスペースとライセンス用シークレットを作成する
+</div>
+
+```bash
+kubectl create namespace teleport
+kubectl label namespace teleport 'pod-security.kubernetes.io/enforce=baseline'
+
+# Download the Teleport Enterprise license, then:
+kubectl --namespace teleport create secret generic license --from-file=/Downloads/license.pem
+```
+
+<div id="generate-fips-certificates-for-teleport">
+  ### Teleport 用の FIPS 証明書を生成する
+</div>
+
+以下のスクリプト (`generate_fips_certs_in_container_for_teleport.sh`) を作成します：
+
+```bash expandable
+#!/bin/bash
+set -e
+
+CLUSTER_FQDN=${CLUSTER_FQDN:-"teleport.example.com"}
+NAMESPACE=${NAMESPACE:-"teleport"}
+KUBERNETES_DOMAIN=${KUBERNETES_DOMAIN:-"cluster.local"}
+COUNTRY=${COUNTRY:-"US"}
+STATE=${STATE:-"YourState"}
+CITY=${CITY:-"YourCity"}
+ORG=${ORG:-"YourOrganization"}
+ORG_UNIT=${ORG_UNIT:-"YourOrganizationalUnit"}
+CN=${CN:-"YourRootCA"}
+
+# Only run inside a container, prevent accidental execution on host.
+if [ ! -f /.dockerenv ]; then
+    echo "Not running inside Docker"
+    exit 1
+fi
+
+dnf -y install openssl crypto-policies-scripts
+fips-mode-setup --enable
+
+mkdir -p /certs/{ca_teleport,server_teleport}
+
+# Generate CA certificate
+cd /certs/ca_teleport
+openssl genrsa -out ca.key 3072
+
+cat > ca.cnf << EOF
+[ req ]
+distinguished_name = req_distinguished_name
+req_extensions     = v3_ca
+prompt             = no
+
+[ req_distinguished_name ]
+C  = ${COUNTRY}
+ST = ${STATE}
+L  = ${CITY}
+O  = ${ORG}
+OU = ${ORG_UNIT}
+CN = ${CN}
+
+[ v3_ca ]
+subjectKeyIdentifier = hash
+authorityKeyIdentifier = keyid:always,issuer:always
+basicConstraints = critical, CA:true
+keyUsage = critical, digitalSignature, cRLSign, keyCertSign
+EOF
+
+openssl req -new -x509 -days 3650 -key ca.key -out ca.crt -config ca.cnf
+
+# Generate server certificate
+cd /certs/server_teleport
+cat > server.cnf << EOF
+[ req ]
+distinguished_name = req_distinguished_name
+req_extensions     = v3_req
+prompt             = no
+
+[ req_distinguished_name ]
+C  = ${COUNTRY}
+ST = ${STATE}
+L  = ${CITY}
+O  = ${ORG}
+OU = ${ORG_UNIT}
+CN = clickhouse-server
+
+[ v3_req ]
+subjectKeyIdentifier = hash
+basicConstraints = CA:FALSE
+keyUsage = digitalSignature, keyEncipherment
+extendedKeyUsage = serverAuth, clientAuth
+subjectAltName = @alt_names
+
+[ alt_names ]
+DNS.1 = ${CLUSTER_FQDN}
+DNS.2 = teleport.${NAMESPACE}.svc.${KUBERNETES_DOMAIN}
+EOF
+
+openssl genrsa -out server.key 3072
+openssl req -new -key server.key -out server.csr -config server.cnf
+openssl x509 -req -days 365 -in server.csr -CA /certs/ca_teleport/ca.crt -CAkey /certs/ca_teleport/ca.key \
+    -CAcreateserial -out server.crt -extensions v3_req -extfile server.cnf
+
+echo 'Verifying FIPS compliance of generated certificates:'
+openssl version
+openssl rsa -in /certs/server_teleport/server.key -text -noout | grep 'Private-Key'
+openssl x509 -in /certs/server_teleport/server.crt -text -noout | grep 'Signature Algorithm'
+echo 'FIPS-compliant certificates have been generated successfully!'
+```
+
+次を実行します (`<CLUSTER_FQDN>` は Teleport サービスの FQDN に置き換えてください) :
+
+```bash
+export CLUSTER_FQDN=<CLUSTER_FQDN>
+export NAMESPACE=teleport
+export KUBERNETES_DOMAIN=cluster.local
+export COUNTRY=US
+export STATE=YourState
+export CITY=YourCity
+export ORG=YourOrganization
+export ORG_UNIT=YourOrganizationalUnit
+export CN=YourRootCA
+
+docker run -it --rm \
+    -e CLUSTER_FQDN=${CLUSTER_FQDN} \
+    -e NAMESPACE=${NAMESPACE} \
+    -e KUBERNETES_DOMAIN=${KUBERNETES_DOMAIN} \
+    -e COUNTRY=${COUNTRY} \
+    -e STATE=${STATE} \
+    -e CITY=${CITY} \
+    -e ORG=${ORG} \
+    -e ORG_UNIT=${ORG_UNIT} \
+    -e CN=${CN} \
+    -v $(pwd):/certs \
+    registry.access.redhat.com/ubi8/ubi \
+    /certs/generate_fips_certs_in_container_for_teleport.sh
+```
+
+<div id="create-certificate-secrets">
+  ### 証明書用のシークレットを作成する
+</div>
+
+```bash
+kubectl create secret generic teleport-proxy-cert \
+  --from-file=tls.crt=server_teleport/server.crt \
+  --from-file=tls.key=server_teleport/server.key \
+  --namespace=teleport \
+  --dry-run=client -o yaml | kubectl apply -f -
+
+kubectl create secret generic teleport-proxy-ca \
+  --from-file=ca.pem=ca_teleport/ca.crt \
+  --namespace=teleport \
+  --dry-run=client -o yaml | kubectl apply -f -
+```
+
+<div id="create-helm-values">
+  ### Helm values を作成する
+</div>
+
+`eks_teleport_values.yaml` を作成します。プレースホルダーを置き換えてください。
+
+* `<CLUSTER_NAME>`: クラスターの FQDN
+* `<VPN_SUBNETS>`: VPN のプライベートサブネット (カンマ区切り、例: `private-subnet-us-east-2a,private-subnet-us-east-2b,private-subnet-us-east-2c`)
+* `<BUCKET_NAME>`: Teleport のセッション記録用 S3 バケット
+* `<NODE_SELECTOR>`: ノードセレクターの値 (例: `fips-arm64`)
+
+```yaml expandable
+chartMode: aws
+clusterName: "<CLUSTER_NAME>"
+
+enterprise: true
+enterpriseImage: public.ecr.aws/gravitational/teleport-ent-fips-distroless
+authentication:
+  localAuth: false
+
+service:
+  type: LoadBalancer
+  annotations:
+    service.beta.kubernetes.io/aws-load-balancer-type: "nlb"
+    service.beta.kubernetes.io/aws-load-balancer-scheme: "internal"
+    service.beta.kubernetes.io/aws-load-balancer-subnets: "<VPN_SUBNETS>"
+    service.beta.kubernetes.io/aws-load-balancer-cross-zone-load-balancing-enabled: "true"
+
+proxyListenerMode: multiplex
+aws:
+  region: us-east-2
+  backendTable: teleport-helm-backend
+  auditLogTable: teleport-helm-events
+  auditLogMirrorOnStdout: false
+  sessionRecordingBucket: <BUCKET_NAME>
+  backups: true
+  dynamoAutoScaling: false
+
+highAvailability:
+  replicaCount: 2
+
+nodeSelector:
+  eks.amazonaws.com/nodegroup: <NODE_SELECTOR>
+
+publicAddr: [<CLUSTER_NAME>:443, teleport.teleport.svc.cluster.local:443]
+
+tls:
+  existingSecretName: teleport-proxy-cert
+  existingCASecretName: teleport-proxy-ca
+
+tolerations:
+- key: "group"
+  operator: "Equal"
+  value: "teleport"
+  effect: "NoSchedule"
+
+podSecurityPolicy:
+  enabled: false
+
+log:
+  level: INFO
+  output: stderr
+
+operator:
+  enabled: true
+  installCRDs: dynamic
+
+serviceAccount:
+  create: true
+  name: "teleport"
+
+rbac:
+  create: true
+```
+
+> この例では、EKS に FIPS 対応の Teleport をデプロイします。その他のクラウドプロバイダーについては、[Teleport のドキュメント](https://goteleport.com/docs/zero-trust-access/deploy-a-cluster/helm-deployments/)を参照してください。
+
+<div id="deploy-teleport-cluster">
+  ### Teleport クラスターをデプロイする
+</div>
+
+```bash
+helm repo add teleport https://charts.releases.teleport.dev
+helm repo update
+
+helm upgrade --install teleport teleport/teleport-cluster \
+  --namespace teleport \
+  --values eks_teleport_values.yaml \
+  --version 18.2.2
+```
+
+<div id="get-the-teleport-service-external-ip">
+  ### Teleport Service の外部 IP を取得する
+</div>
+
+```bash
+kubectl get svc teleport -n teleport -o jsonpath='{.status.loadBalancer.ingress[0].hostname}'
+```
+
+外部 IP を使って、Route53 またはお使いの DNS プロバイダーで CNAME レコードを作成します。ロードバランサーにホスト名がない場合:
+
+```bash
+kubectl get svc teleport -n teleport -o jsonpath='{.status.loadBalancer.ingress[0].ip}'
+```
+
+その場合は、代わりにAレコードを作成してください。
+
+***
+
+<div id="create-a-teleport-provision-token">
+  ## Teleport のプロビジョニングトークンを作成する
+</div>
+
+プロビジョニングトークンを使うと、Teleport エージェントをクラスターに参加させることができます。`teleport_provision_token_for_clickhouse.yaml` を作成します。
+
+```yaml
+apiVersion: resources.teleport.dev/v2
+kind: TeleportProvisionToken
+metadata:
+  name: kube-agent-token
+  namespace: teleport
+spec:
+  roles:
+    - Db
+  join_method: kubernetes
+  kubernetes:
+    type: in_cluster
+    allow:
+      - service_account: teleport-agent:teleport-kube-agent
+```
+
+```bash
+kubectl apply -f teleport_provision_token_for_clickhouse.yaml
+```
+
+***
+
+<div id="set-up-the-teleport-agent">
+  ## Teleport エージェント の設定
+</div>
+
+<div id="create-agent-namespace">
+  ### エージェント用のネームスペースを作成
+</div>
+
+```bash
+kubectl create namespace teleport-agent
+kubectl label namespace teleport-agent 'pod-security.kubernetes.io/enforce=baseline'
+```
+
+<div id="create-agent-secrets">
+  ### エージェント用シークレットを作成する
+</div>
+
+エージェントのネームスペースに、Teleport プロキシの CA 用シークレットを作成します。
+
+```bash
+kubectl create secret generic teleport-proxy-ca \
+  --from-file=ca.pem=ca_teleport/ca.crt \
+  --namespace=teleport-agent \
+  --dry-run=client -o yaml | kubectl apply -f-
+```
+
+データベース用のCAのシークレットを作成します (異なるCAを使用する複数のデータベースを使う場合は、CAを連結してください) 。`db_cas.pem` という名前のファイルを作成し、次を実行します:
+
+```bash
+kubectl create secret generic db-ca \
+  --from-file=ca.pem=db_cas.pem \
+  --namespace=teleport-agent \
+  --dry-run=client -o yaml | kubectl apply -f-
+```
+
+<div id="configure-agent-values">
+  ### エージェント の values を設定する
+</div>
+
+`teleport_agent_values.yaml` を作成します。以下を置き換えます。
+
+* `<CLICKHOUSE_CLUSTER_NAME>`: プロビジョニングしたクラスターの名前 (例: `default-aa-01`)
+* `<ENV>`: このデータベースの静的ラベル (例: `dev`)
+
+```yaml expandable
+roles: db
+proxyAddr: teleport.teleport.svc.cluster.local:443
+enterprise: true
+enterpriseImage: public.ecr.aws/gravitational/teleport-ent-fips-distroless
+joinParams:
+  method: kubernetes
+  tokenName: kube-agent-token
+tls:
+  existingCASecretName: teleport-proxy-ca
+databases:
+  - name: <CLICKHOUSE_CLUSTER_NAME>-https
+    uri: c-<CLICKHOUSE_CLUSTER_NAME>-server-any.<CLICKHOUSE_CLUSTER_NAME>.svc.cluster.local:8443
+    protocol: clickhouse-https
+    tls:
+      ca_cert_file: "/etc/teleport-tls-db/db-ca/ca.pem"
+    static_labels:
+      env: <ENV>
+  - name: <CLICKHOUSE_CLUSTER_NAME>-native
+    uri: c-<CLICKHOUSE_CLUSTER_NAME>-server-any.<CLICKHOUSE_CLUSTER_NAME>.svc.cluster.local:9440
+    protocol: clickhouse
+    tls:
+      ca_cert_file: "/etc/teleport-tls-db/db-ca/ca.pem"
+    static_labels:
+      env: <ENV>
+extraVolumes:
+  - name: db-ca
+    secret:
+      secretName: db-ca
+extraVolumeMounts:
+  - name: db-ca
+    mountPath: /etc/teleport-tls-db/db-ca
+    readOnly: true
+```
+
+> ClickHouse は 2 つのプロトコル (8443 の HTTPS と 9440 のネイティブ TLS) をサポートしているため、この YAML では 1 つのデータベースに対して 2 つのデータベースリソースが作成されます。不要な方を削除してください。
+
+<div id="deploy-the-agent">
+  ### エージェントをデプロイする
+</div>
+
+```ini
+VERSION="18.2.2"
+helm upgrade --install teleport-kube-agent teleport/teleport-kube-agent \
+  --namespace teleport-agent \
+  --version ${VERSION} \
+  -f teleport_agent_values.yaml
+```
+
+***
+
+<div id="add-teleport-ca-to-clickhouse-trusted-list">
+  ## Teleport CA を ClickHouse の信頼済みリストに追加する
+</div>
+
+Teleport のルート CA を取得し、ClickHouse のサーバー証明書用 シークレット に追加します。
+
+```bash
+kubectl exec -it -n teleport deployment/teleport-auth -- tctl auth export --type=db-client > teleport_ca.crt
+
+cat teleport_ca.crt  # Ensure it is not empty
+
+CLUSTER_NAME="<CLUSTER_NAME>"
+NAMESPACE="ns-${CLUSTER_NAME}"
+
+kubectl get secret -n ${NAMESPACE} ${CLUSTER_NAME}-server-cert-secret -o jsonpath="{.data.ca\.crt}" | base64 -d > current_ca.crt
+cat current_ca.crt teleport_ca.crt > combined_ca.crt
+
+kubectl create secret generic -n ${NAMESPACE} ${CLUSTER_NAME}-server-cert-secret \
+  --from-file=server.crt=<(kubectl get secret -n ${NAMESPACE} ${CLUSTER_NAME}-server-cert-secret -o jsonpath='{.data.server\.crt}' | base64 -d) \
+  --from-file=server.key=<(kubectl get secret -n ${NAMESPACE} ${CLUSTER_NAME}-server-cert-secret -o jsonpath='{.data.server\.key}' | base64 -d) \
+  --from-file=client.crt=<(kubectl get secret -n ${NAMESPACE} ${CLUSTER_NAME}-server-cert-secret -o jsonpath='{.data.client\.crt}' | base64 -d) \
+  --from-file=client.key=<(kubectl get secret -n ${NAMESPACE} ${CLUSTER_NAME}-server-cert-secret -o jsonpath='{.data.client\.key}' | base64 -d) \
+  --from-file=ca.crt=combined_ca.crt \
+  --namespace=${NAMESPACE} \
+  --dry-run=client -o yaml | kubectl apply -f -
+
+rm teleport_ca.crt current_ca.crt combined_ca.crt
+```
+
+新しいCAを適用するには、ClickHouseサーバーのポッドを再起動します。
+
+***
+
+<div id="configure-saml-authentication">
+  ## SAML認証を設定する
+</div>
+
+<div id="create-a-database-access-role">
+  ### データベースアクセス用ロールを作成する
+</div>
+
+`saml_clickhouse_user_role.yaml` を作成します。user trait のキーは、使用している ID プロバイダーの属性に置き換えてください (例: `http://schemas.xmlsoap.org/ws/2005/05/identity/claims/emailaddress`) :
+
+```yaml
+apiVersion: resources.teleport.dev/v1
+kind: TeleportRoleV8
+metadata:
+  name: saml-clickhouse-user-dev-role
+  namespace: teleport
+spec:
+  allow:
+    db_labels:
+      env: dev
+    db_users:
+      - '{{external["http://schemas.xmlsoap.org/ws/2005/05/identity/claims/emailaddress"]}}'
+    db_names:
+    - '*'
+```
+
+```bash
+kubectl apply -f saml_clickhouse_user_role.yaml
+```
+
+ロールの詳細については、[Teleportのドキュメント](https://goteleport.com/docs/reference/infrastructure-as-code/operator-resources/resources-teleport-dev-rolesv8/)を参照してください。
+
+<div id="create-a-saml-connector">
+  ### SAML コネクタを作成する
+</div>
+
+`saml_connector.yaml` を作成します。`<DOMAIN>` は使用している Route53 ドメインに、`<Entity Descriptor>` はご利用の ID プロバイダの値に置き換えてください。
+
+```text
+# Example Auth0 integration -- rename and adjust role mappings as needed
+kind: TeleportSAMLConnector
+apiVersion: resources.teleport.dev/v2
+metadata:
+  name: samlconnector
+  namespace: teleport
+spec:
+  acs: https://teleport.<DOMAIN>/v1/webapi/saml/acs/samlconnector
+  service_provider_issuer: https://teleport.<DOMAIN>
+  display: Auth0
+  attributes_to_roles:
+  - name: http://schemas.xmlsoap.org/claims/Roles
+    value: clickhouse-dev
+    roles:
+    - saml-clickhouse-user-dev-role
+  - name: http://schemas.xmlsoap.org/claims/Roles
+    value: admin
+    roles:
+    - access
+    - editor
+  entity_descriptor: <Entity Descriptor>
+```
+
+SAML コネクタの詳細については、[Teleport のドキュメント](https://goteleport.com/docs/reference/infrastructure-as-code/operator-resources/resources-teleport-dev-samlconnectors/)を参照してください。
+
+```bash
+kubectl apply -f saml_connector.yaml
+```
+
+***
+
+<div id="create-database-users">
+  ## データベースユーザーを作成
+</div>
+
+ClickHouse serverのポッドに入ります：
+
+```bash
+kubectl exec -ti <CLICKHOUSE_SERVER_POD> -n ns-<CLUSTER_NAME> -- /bin/bash
+```
+
+データベースに接続します:
+
+```bash
+cat <<EOF > client-config.xml
+<config>
+    <openSSL>
+        <client>
+            <caConfig>/etc/clickhouse-server/certs/ca.crt</caConfig>
+        </client>
+    </openSSL>
+</config>
+EOF
+PASSWORD='My super secret p@$$w0rd'
+clickhouse client --host localhost --port 9440 --password "$PASSWORD" --secure --config=client-config.xml
+```
+
+SSL証明書の CN で認証されるユーザーを作成します (`<DB_USER>` をユーザー名に置き換えてください。通常は identity provider のユーザーのメールアドレスです) :
+
+```sql
+CREATE USER '<DB_USER>' IDENTIFIED WITH ssl_certificate CN '<DB_USER>';
+GRANT SELECT ON default.* TO '<DB_USER>';
+```
+
+***
+
+<div id="connect-via-teleport">
+  ## Teleport 経由で接続する
+</div>
+
+Teleport の CA をシステムの信頼済み CA に追加するか、開発用途では `--insecure` フラグを使用してください。
+
+```text
+# Log in to Teleport
+tsh login --proxy=teleport.<DOMAIN>:443 --auth=<AUTH_TYPE> --user=<TELEPORT_USER> teleport.<DOMAIN>
+
+# Create a proxy tunnel
+tsh proxy db --tunnel <CLICKHOUSE_CLUSTER_NAME>-native --db-user=<DB_USER> --port 59215 &
+
+# Connect
+clickhouse client --host localhost --port 59215 --user <DB_USER>
+```
+
+置き換えてください: - `<DOMAIN>`: Route53 のドメイン - `<AUTH_TYPE>`: 認証タイプ (例: `samlconnector`)  - `<TELEPORT_USER>`: Teleport のユーザー名 - `<DB_USER>`: データベースのユーザー名 - `<CLICKHOUSE_CLUSTER_NAME>`: ClickHouse クラスター名 (例: `default-aa-01`)
+
+***
+
+<div id="day-2-certificate-rotation">
+  ## 2日目: 証明書のローテーション
+</div>
+
+Teleport の証明書には有効期限があるため、期限切れになる前にローテーションする必要があります。
+
+<div id="rotate-teleport-proxy-certificates">
+  ### Teleport Proxy 証明書をローテーションする
+</div>
+
+1. [Generate FIPS Certificates for Teleport](#generate-fips-certificates-for-teleport) のスクリプトを使用して、**新しい証明書を生成**します。`CLUSTER_FQDN` とその他の変数が、使用するクラスターに一致していることを確認してください。
+
+   > このスクリプトは、FIPS が有効なホスト上で実行する必要があります。Docker は `/proc` を自動的にマウントするため、コンテナーが FIPS が有効なホスト上で実行されていれば、生成される証明書は FIPS 準拠になります。
+
+2. 両方のネームスペースで、**既存のバンドルに新しい CA を追加**します。
+
+   ```bash
+   kubectl get secret teleport-proxy-ca -n teleport -o jsonpath='{.data.ca\.pem}' | base64 -d > current_teleport_ca.pem
+   cat current_teleport_ca.pem ca_teleport/ca.crt > combined_ca.pem
+
+   kubectl create secret generic teleport-proxy-ca \
+     --from-file=ca.pem=combined_ca.pem \
+     --namespace=teleport \
+     --dry-run=client -o yaml | kubectl apply -f -
+
+   kubectl create secret generic teleport-proxy-ca \
+     --from-file=ca.pem=combined_ca.pem \
+     --namespace=teleport-agent \
+     --dry-run=client -o yaml | kubectl apply -f -
+   ```
+
+3. **Teleport をローリング再起動**します。
+
+   ```bash
+   kubectl rollout restart deployment -n teleport
+   kubectl rollout restart deployment -n teleport-agent
+   ```
+
+4. **新しい Teleport CA を ClickHouse の信頼済みリストに追加**します。
+
+   ```bash
+   kubectl exec -it -n teleport deployment/teleport-auth -- tctl auth export --type=db-client > teleport_ca.crt
+
+   CLICKHOUSE_CLUSTER_NAME="<CLICKHOUSE_CLUSTER_NAME>"
+   NAMESPACE="ns-${CLICKHOUSE_CLUSTER_NAME}"
+
+   kubectl get secret -n ${NAMESPACE} ${CLICKHOUSE_CLUSTER_NAME}-server-cert-secret -o jsonpath="{.data.ca\.crt}" | base64 -d > current_ca.crt
+   cat current_ca.crt teleport_ca.crt > combined_ca.crt
+
+   kubectl create secret generic -n ${NAMESPACE} ${CLICKHOUSE_CLUSTER_NAME}-server-cert-secret \
+     --from-file=server.crt=<(kubectl get secret -n ${NAMESPACE} ${CLICKHOUSE_CLUSTER_NAME}-server-cert-secret -o jsonpath='{.data.server\.crt}' | base64 -d) \
+     --from-file=server.key=<(kubectl get secret -n ${NAMESPACE} ${CLICKHOUSE_CLUSTER_NAME}-server-cert-secret -o jsonpath='{.data.server\.key}' | base64 -d) \
+     --from-file=client.crt=<(kubectl get secret -n ${NAMESPACE} ${CLICKHOUSE_CLUSTER_NAME}-server-cert-secret -o jsonpath='{.data.client\.crt}' | base64 -d) \
+     --from-file=client.key=<(kubectl get secret -n ${NAMESPACE} ${CLICKHOUSE_CLUSTER_NAME}-server-cert-secret -o jsonpath='{.data.client\.key}' | base64 -d) \
+     --from-file=ca.crt=combined_ca.crt \
+     --namespace=${NAMESPACE} \
+     --dry-run=client -o yaml | kubectl apply -f -
+
+   rm -f teleport_ca.crt current_ca.crt combined_ca.crt
+
+   kubectl rollout restart statefulset -n ${NAMESPACE}
+   ```
+
+5. **プロキシ証明書を置き換え**ます。
+
+   ```bash
+   kubectl create secret generic teleport-proxy-cert \
+     --from-file=tls.crt=server_teleport/server.crt \
+     --from-file=tls.key=server_teleport/server.key \
+     --namespace=teleport \
+     --dry-run=client -o yaml | kubectl apply -f -
+
+   kubectl rollout restart deployment -n teleport
+   ```
+
+6. バンドルから**古い CA を削除**します。
+
+   ```bash
+   kubectl create secret generic teleport-proxy-ca \
+     --from-file=ca.pem=ca_teleport/ca.crt \
+     --namespace=teleport \
+     --dry-run=client -o yaml | kubectl apply -f -
+
+   kubectl create secret generic teleport-proxy-ca \
+     --from-file=ca.pem=ca_teleport/ca.crt \
+     --namespace=teleport-agent \
+     --dry-run=client -o yaml | kubectl apply -f -
+
+   kubectl rollout restart deployment -n teleport
+   kubectl rollout restart deployment -n teleport-agent
+   ```
+
+7. **クリーンアップ**します。
+
+   ```bash
+   rm -f current_teleport_ca.pem combined_ca.pem
+   ```
+
+***
+
+<div id="reference">
+  ## リファレンス
+</div>
+
+* [Teleport のドキュメント](https://goteleport.com/docs/)

@@ -1,21 +1,21 @@
 ---
-description: 'O motor permite importar e exportar dados para o SQLite e oferece suporte a consultas
+description: 'O mecanismo permite importar e exportar dados para o SQLite e oferece suporte a consultas
   a tabelas do SQLite diretamente no ClickHouse.'
 sidebarTitle: 'SQLite'
 slug: /engines/table-engines/integrations/sqlite
-title: 'Motor de tabela SQLite'
+title: 'Mecanismo de tabela SQLite'
 doc_type: 'reference'
 ---
 
-{/*GERADO AUTOMATICAMENTE_START*/}
-
-import { CloudNotSupportedBadge } from "/snippets/pt-BR/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
+import CloudNotSupportedBadge from "/snippets/pt-BR/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
 
 <CloudNotSupportedBadge />
 
 O motor permite importar e exportar dados para o SQLite e oferece suporte a consultas em tabelas do SQLite diretamente do ClickHouse.
 
-## Criando uma tabela {#creating-a-table}
+<div id="creating-a-table">
+  ## Criando uma tabela
+</div>
 
 ```sql
     CREATE TABLE [IF NOT EXISTS] [db.]table_name
@@ -28,30 +28,13 @@ O motor permite importar e exportar dados para o SQLite e oferece suporte a cons
 **Parâmetros do motor**
 
 * `db_path` — Caminho para o arquivo SQLite que contém um banco de dados.
-* `table` — Nome de uma tabela no banco de dados SQLite ou uma consulta passada ao SQLite tal como está (consulte [Passando uma consulta em vez de um nome de tabela](#passing-a-query)).
+* `table` — Nome de uma tabela no banco de dados SQLite.
 
-## Passando uma consulta em vez de um nome de tabela {#passing-a-query}
+<div id="data-types-support">
+  ## Suporte a tipos de dados
+</div>
 
-Em vez de um nome de tabela, o argumento `table` pode ser uma consulta `SELECT`, repassada ao SQLite sem alterações. A estrutura da tabela é inferida a partir do resultado da consulta. O SQLite informa um tipo declarado apenas quando a coluna do resultado corresponde diretamente a uma coluna de uma tabela; para uma expressão, um literal ou uma agregação, ele não informa nada. Um tipo declarado que é mapeado para `String` (consulte o [mapeamento de tipos](/pt-BR/reference/engines/database-engines/sqlite#data_types-support)) é usado sem alterações. Uma coluna sem tipo declarado tem seu tipo definido pela classe de armazenamento do seu valor na primeira linha do resultado da consulta: um valor `INTEGER` resulta em `Int64`, um valor `REAL` resulta em `Float64`, e qualquer outro valor (`TEXT`, `BLOB`, `NULL`), bem como um resultado vazio, resulta em `String`. Um tipo numérico declarado também é verificado em relação a essa primeira linha, pois o SQLite informa um tipo declarado inclusive para um `SELECT` composto, obtido de um de seus ramos, embora as linhas venham de todos eles. Ele é mantido quando a classe de armazenamento do valor é compatível com ele (`INTEGER` para um tipo inteiro, `INTEGER` ou `REAL` para um tipo de ponto flutuante), e também quando o valor é `NULL` ou o resultado está vazio, já que nenhum dos dois carrega informação de tipo que possa contradizê-lo; caso contrário, a coluna tem seu tipo definido pela classe de armazenamento, como ocorre com uma coluna sem tipo declarado. Portanto, o tipo inferido só pode ser ampliado, nunca reduzido. A inferência de uma coluna desse tipo inicia a execução da consulta no SQLite. A primeira linha não é representativa das demais: o SQLite pode retornar uma classe de armazenamento diferente em cada linha (por exemplo, `CASE WHEN id = 1 THEN 1 ELSE 1.5 END`), de modo que uma leitura baseada em consulta é fail-closed para toda coluna lida por meio de um tipo numérico - e não apenas para as que não têm tipo declarado. Um valor cuja classe de armazenamento não corresponda a esse tipo, ou que não possa ser representado exatamente nele (uma célula `INTEGER` com `300` em uma coluna `UInt8`, uma célula `REAL` com `16777217` em uma coluna `Float32`), faz a leitura falhar em vez de ser convertido silenciosamente. Para ler uma coluna com valores de classes de armazenamento diferentes, declare-a como `String` ou converta-a para texto na consulta do SQLite. Toda coluna inferida é `Nullable`. A consulta pode ser escrita como uma subconsulta ou encapsulada na função `query`:
-
-```sql
-CREATE TABLE sqlite_table ENGINE = SQLite('sqlite.db', (SELECT col1, col2 FROM table1 WHERE col2 > 1));
-CREATE TABLE sqlite_table ENGINE = SQLite('sqlite.db', query('SELECT col1, col2 FROM table1 WHERE col2 > 1'));
-```
-
-A passagem de uma consulta é compatível a partir da versão 26.7. O ClickHouse encapsula a consulta em `SELECT ... FROM (<query>)` antes de enviá-la ao SQLite, portanto ela não deve terminar com ponto e vírgula.
-
-Essa tabela é read-only: não é permitido executar `INSERT` nela. A mesma sintaxe também é compatível com a função de tabela [`sqlite`](/pt-BR/reference/functions/table-functions/sqlite).
-
-<Note>
-  A forma de subconsulta `(SELECT ...)` é convertida pelo ClickHouse e reserializada antes de ser enviada ao SQLite. Portanto, ela deve ser um ClickHouse SQL válido. Para passar uma sintaxe específica do SQLite que o ClickHouse não interpreta, use a forma `query('...')`, cujo texto é enviado ao SQLite literalmente.
-
-  Qualquer `WHERE`, `LIMIT`, agregação etc. externo da consulta ClickHouse ao redor **não** é enviado para execução na consulta passada — ele é aplicado no ClickHouse depois que o resultado completo da consulta é recuperado. Para restringir os dados lidos do SQLite, coloque o filtro dentro da consulta passada. Com [`external_table_strict_query = 1`](/pt-BR/reference/settings/session-settings/external-table#external_table_strict_query), um filtro externo nas colunas da tabela é rejeitado com uma exceção, em vez de ser aplicado localmente, pois não pode ser enviado para execução na consulta passada. A verificação abrange o predicado `WHERE` de nível superior e cada conjunção de um `AND` de nível superior. Um `PREWHERE` nas colunas desta tabela não é um caso para essa configuração: este motor de tabela não oferece suporte a `PREWHERE`, e essa consulta é rejeitada com `ILLEGAL_PREWHERE` independentemente da configuração. A verificação é executada apenas onde um filtro poderia ser enviado para execução: quando esta tabela é a única tabela da consulta, em qualquer lado de um `INNER JOIN` ou no lado preservado de um join externo (o lado esquerdo de um `LEFT JOIN`, o lado direito de um `RIGHT JOIN`). No lado não preservado de um `LEFT`/`RIGHT JOIN` e em qualquer lado de um `FULL JOIN`, nada é enviado para execução e nada é verificado; portanto, um filtro nas colunas desta tabela é aplicado localmente após o join mesmo no modo estrito. Onde a verificação é executada, um predicado que faz referência a outras tabelas unidas na consulta ao redor não é enviado para execução e é excluído da verificação, quer faça referência apenas ao lado unido ou o misture com esta tabela em uma expressão que não seja `AND` (por exemplo, um `OR`); esse predicado mantém seu ponto de avaliação usual do ClickHouse (`WHERE` após o join, `PREWHERE` antes dele) e não é rejeitado.
-</Note>
-
-## Suporte a tipos de dados {#data-types-support}
-
-Ao especificar explicitamente os tipos de coluna do ClickHouse na definição da tabela, os tipos a seguir do ClickHouse podem ser convertidos a partir de colunas TEXT do SQLite:
+Ao especificar explicitamente os tipos de coluna do ClickHouse na definição da tabela, os tipos a seguir do ClickHouse podem ser interpretados a partir de colunas TEXT do SQLite:
 
 * [Date](/pt-BR/reference/data-types/date), [Date32](/pt-BR/reference/data-types/date32)
 * [DateTime](/pt-BR/reference/data-types/datetime), [DateTime64](/pt-BR/reference/data-types/datetime64)
@@ -59,14 +42,14 @@ Ao especificar explicitamente os tipos de coluna do ClickHouse na definição da
 * [Enum8, Enum16](/pt-BR/reference/data-types/enum)
 * [Decimal32, Decimal64, Decimal128, Decimal256](/pt-BR/reference/data-types/decimal)
 * [FixedString](/pt-BR/reference/data-types/fixedstring)
-* Todos os tipos inteiros ([UInt8, UInt16, UInt32, UInt64, UInt128, UInt256, Int8, Int16, Int32, Int64, Int128, Int256](/pt-BR/reference/data-types/int-uint))
+* Todos os tipos inteiros ([UInt8, UInt16, UInt32, UInt64, Int8, Int16, Int32, Int64](/pt-BR/reference/data-types/int-uint))
 * [Float32, Float64](/pt-BR/reference/data-types/float)
 
 Consulte o [motor de banco de dados SQLite](/pt-BR/reference/engines/database-engines/sqlite#data_types-support) para ver o mapeamento de tipos padrão.
 
-Um `NULL` do SQLite lido em uma coluna do ClickHouse explicitamente declarada como não `Nullable` gera a exceção `CANNOT_INSERT_NULL_IN_ORDINARY_COLUMN`. Declare a coluna como [Nullable](/pt-BR/reference/data-types/nullable) para ler valores `NULL`. Um schema inferido segue os metadados do SQLite: uma coluna é `Nullable`, a menos que seja declarada como `NOT NULL`.
-
-## Exemplo de uso {#usage-example}
+<div id="usage-example">
+  ## Exemplo de uso
+</div>
 
 Exibe uma consulta que cria a tabela SQLite:
 
@@ -77,7 +60,7 @@ SHOW CREATE TABLE sqlite_db.table2;
 ```text
 CREATE TABLE SQLite.table2
 (
-    `col1` Nullable(Int64),
+    `col1` Nullable(Int32),
     `col2` Nullable(String)
 )
 ENGINE = SQLite('sqlite.db','table2');
@@ -101,5 +84,3 @@ SELECT * FROM sqlite_db.table2 ORDER BY col1;
 
 * motor [SQLite](/pt-BR/reference/engines/database-engines/sqlite)
 * função de tabela [sqlite](/pt-BR/reference/functions/table-functions/sqlite)
-
-{/*AUTOGENERATED_END*/}

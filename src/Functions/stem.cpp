@@ -34,6 +34,22 @@ namespace ErrorCodes
 namespace
 {
 
+bool isValidStemWordType(const IDataType & type)
+{
+    if (isStringOrFixedString(type))
+        return true;
+    if (const auto * array_type = typeid_cast<const DataTypeArray *>(&type))
+    {
+        const IDataType & nested = *array_type->getNestedType();
+        if (isStringOrFixedString(nested))
+            return true;
+        if (const auto * nullable_type = typeid_cast<const DataTypeNullable *>(&nested))
+            return isStringOrFixedString(*nullable_type->getNestedType());
+    }
+    return false;
+}
+
+
 /// RAII wrapper around sb_stemmer. Constructed from a language code; throws
 /// ILLEGAL_TYPE_OF_ARGUMENT in the constructor if the language is unsupported.
 class Stemmer
@@ -147,12 +163,30 @@ public:
     bool useDefaultImplementationForConstants() const override { return true; }
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; }
 
-    String getSignatureString() const override
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
-        return
-            "(StringOrFixedString, const String) -> String"
-            " OR (Array(StringOrFixedString), const String) -> Array(String)"
-            " OR (Array(Nullable(StringOrFixedString)), const String) -> Array(Nullable(String))";
+        FunctionArgumentDescriptors args{
+            {"word", &isValidStemWordType, nullptr, "String, FixedString, Array(String), Array(FixedString), Array(Nullable(String)), or Array(Nullable(FixedString))"},
+            {"language", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isString), isColumnConst, "const String"},
+        };
+        validateFunctionArguments(*this, arguments, args);
+
+        const IDataType & arg0 = *arguments[0].type;
+
+        if (isStringOrFixedString(arg0))
+            return std::make_shared<DataTypeString>();
+
+        const auto & array_type = assert_cast<const DataTypeArray &>(arg0);
+        const IDataType & nested = *array_type.getNestedType();
+
+        if (isStringOrFixedString(nested))
+            return std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>());
+
+        /// Array(Nullable(String/FixedString))
+        const auto & nullable_type = assert_cast<const DataTypeNullable &>(nested);
+        chassert(isStringOrFixedString(*nullable_type.getNestedType()));
+        return std::make_shared<DataTypeArray>(
+            std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>()));
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
@@ -199,7 +233,7 @@ Each input string must be a single, lowercase word — strings containing whites
 Passing uppercase characters produces undefined results.
 Returns String for scalar inputs (including FixedString) and Array(String) for array inputs.
 Nullable and LowCardinality variants of String and FixedString are supported.
-The list of supported language identifiers is available in [system.stemmers](/reference/system-tables/stemmers).
+The list of supported language identifiers is available in [system.stemmers](/operations/system-tables/stemmers).
 )";
     FunctionDocumentation::Syntax syntax = "stem(word, language)";
     FunctionDocumentation::Arguments arguments = {
@@ -210,7 +244,7 @@ The list of supported language identifiers is available in [system.stemmers](/re
          "Array(Nullable(String)), or Array(Nullable(FixedString)).",
          {"String", "FixedString", "Array(String)", "Array(FixedString)"}},
         {"language",
-         "Language whose stemming rules will be applied. The canonical identifiers are listed in [system.stemmers](/reference/system-tables/stemmers) (e.g. 'english', 'german', 'porter'). "
+         "Language whose stemming rules will be applied. The canonical identifiers are listed in [system.stemmers](/operations/system-tables/stemmers) (e.g. 'english', 'german', 'porter'). "
          "Snowball also accepts 2- or 3-letter ISO 639 codes (e.g. 'en', 'eng') as aliases where defined, but coverage varies by language — prefer the names from `system.stemmers` for portability.",
          {"String"}},
     };

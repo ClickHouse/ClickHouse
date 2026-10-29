@@ -6,6 +6,10 @@ tags: ['トラブルシューティング']
 keywords: ['compact パーツ', 'wide パーツ']
 ---
 
+{frontMatter.description}
+
+{/* truncate */}
+
 <br />
 
 次のクエリを使用すると、種類別のパーツ数を数えられます。
@@ -25,7 +29,7 @@ ORDER BY
     part_type ASC
 ```
 
-以下に応答例を示します:
+応答例を以下に示します。
 
 ```response
 ┌─table───────────────────┬─part_type─┬─count()─┐

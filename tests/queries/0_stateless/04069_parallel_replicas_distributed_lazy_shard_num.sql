@@ -1,4 +1,4 @@
--- Tags: no-random-settings, no-random-merge-tree-settings, no-parallel, no-fasttest
+-- Tags: no-random-settings, no-random-merge-tree-settings, no-parallel
 -- Tag no-parallel: failpoint use_delayed_remote_source is global and can force
 -- DelayedSource on concurrent tests, causing "Unexpected lazy remote read from
 -- a non-replicated table" crashes (same pattern as 02863).

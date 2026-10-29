@@ -3,7 +3,6 @@
 #include <cstring>
 
 #include <Common/CurrentThread.h>
-#include <Common/Scheduler/CurrentCPULease.h>
 
 #include <Common/Stopwatch.h>
 #include <Common/logger_useful.h>
@@ -222,26 +221,23 @@ void AsynchronousBoundedReadBuffer::appendToPrefetchLog(
     int64_t size,
     const std::unique_ptr<Stopwatch> & execution_watch)
 {
-    if (prefetches_log)
+    FilesystemReadPrefetchesLogElement elem
     {
-        prefetches_log->add([&](FilesystemReadPrefetchesLogElement & element)
-        {
-            element = FilesystemReadPrefetchesLogElement
-            {
-                .event_time = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now()),
-                .query_id = query_id,
-                .path = impl->getFileName(),
-                .offset = file_offset_of_buffer_end,
-                .size = size,
-                .prefetch_submit_time = last_prefetch_info.submit_time,
-                .execution_watch = execution_watch ? std::optional<Stopwatch>(*execution_watch) : std::nullopt,
-                .priority = last_prefetch_info.priority,
-                .state = state,
-                .thread_id = getThreadId(),
-                .reader_id = current_reader_id,
-            };
-        });
-    }
+        .event_time = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now()),
+        .query_id = query_id,
+        .path = impl->getFileName(),
+        .offset = file_offset_of_buffer_end,
+        .size = size,
+        .prefetch_submit_time = last_prefetch_info.submit_time,
+        .execution_watch = execution_watch ? std::optional<Stopwatch>(*execution_watch) : std::nullopt,
+        .priority = last_prefetch_info.priority,
+        .state = state,
+        .thread_id = getThreadId(),
+        .reader_id = current_reader_id,
+    };
+
+    if (prefetches_log)
+        prefetches_log->add(std::move(elem));
 }
 
 
@@ -257,8 +253,6 @@ bool AsynchronousBoundedReadBuffer::nextImpl()
     if (prefetch_future.valid())
     {
         {
-            /// Park the CPU lease while waiting for the prefetch
-            CPULeaseParkGuard cpu_park;
             ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::AsynchronousRemoteReadWaitMicroseconds);
             CurrentMetrics::Increment metric_increment{CurrentMetrics::AsynchronousReadWait};
 
@@ -284,8 +278,6 @@ bool AsynchronousBoundedReadBuffer::nextImpl()
             memory.resize(buffer_size);
 
         {
-            /// Park the CPU lease during the remote read
-            CPULeaseParkGuard cpu_park;
             ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::SynchronousRemoteReadWaitMicroseconds);
             result = readSync(memory.data(), buffer_size);
         }

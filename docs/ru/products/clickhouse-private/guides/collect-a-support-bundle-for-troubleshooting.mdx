@@ -1,0 +1,90 @@
+---
+noindex: true
+title: "Соберите пакет поддержки для диагностики неполадок"
+sidebarTitle: "Собрать пакет поддержки"
+description: "Используйте Helm-чарт support-bundle для сбора диагностических данных из кластера ClickHouse Private."
+---
+
+Используйте Helm-чарт `support-bundle` для сбора диагностических данных из кластера ClickHouse Private. Полученный архив можно передать в службу поддержки ClickHouse, чтобы ускорить решение инцидента.
+
+<div id="prerequisites">
+  ## Предварительные требования
+</div>
+
+Для работы чарта требуется [Troubleshoot](https://troubleshoot.sh/) — плагин для kubectl, предназначенный для диагностики кластера. Установите его через [Krew](https://krew.sigs.k8s.io/):
+
+```bash
+kubectl krew install support-bundle
+```
+
+Или см. [документацию Troubleshoot](https://troubleshoot.sh/docs/) с описанием других способов установки.
+
+<div id="generating-and-running-the-bundle">
+  ## Генерация и запуск пакета
+</div>
+
+Этот чарт не устанавливает в cluster никаких ресурсов. Вместо этого он генерирует manifest `SupportBundle`, который обрабатывается плагином `kubectl support-bundle`.
+
+Для кластера ClickHouse с именем `default-xx-01` локально сгенерируйте чарт и запустите пакет:
+
+```bash
+helm template oci://$HELM_REGISTRY/helm/support-bundle \
+  --set-json='supportBundle.clickhouseClusterName="default-xx-01"' > support-bundle.yaml
+
+kubectl support-bundle support-bundle.yaml
+```
+
+Плагин собирает данные и сохраняет архив `tar.gz` в текущем каталоге.
+
+<div id="what-is-collected">
+  ## Что собирается
+</div>
+
+Пакет собирает данные из двух источников: из пространства имен ClickHouse Operator и из пространства имен кластера (формируется как `ns-<cluster-name>`).
+
+**ClickHouse Operator** (включается или отключается с помощью `supportBundle.collectors.operator.enabled`):
+
+* Журналы контейнера из развертывания оператора
+* Ресурсы Kubernetes в пространстве имен оператора (Pods, Services, ConfigMaps, Events и т. д.)
+* Значения релиза Helm для чартов, установленных в пространстве имен оператора
+
+**ClickHouse Cluster** (включается или отключается с помощью `supportBundle.collectors.clickhouseCluster.enabled`):
+
+* Журналы контейнера ClickHouse Server
+* Журналы контейнера ClickHouse Keeper
+* Ресурсы Kubernetes в пространстве имен кластера
+* Значения релиза Helm для чартов, установленных в пространстве имен кластера
+* Вывод `SELECT version()` из первого пода ClickHouse Server
+* Вывод команды `mntr` Keeper из первого пода Keeper
+
+Конфиденциальные данные — пароли, учетные данные S3, секреты кластера и хэши паролей — автоматически маскируются.
+
+<div id="customizing-collection">
+  ## Настройка сбора
+</div>
+
+Параметры по умолчанию подходят для большинства сценариев, но при необходимости их можно изменить. Например, чтобы собирать журналы только за последние 24 часа и пропускать данные оператора:
+
+```yaml
+supportBundle:
+  clickhouseClusterName: "default-xx-01"
+  collectors:
+    operator:
+      enabled: false
+    clickhouseCluster:
+      enabled: true
+      logs:
+        maxAge: "24h"
+        maxLines: 50000
+```
+
+Выполните рендеринг, используя пользовательский файл значений:
+
+```bash
+helm template oci://$HELM_REGISTRY/helm/support-bundle \
+  -f custom-values.yaml > support-bundle.yaml
+
+kubectl support-bundle support-bundle.yaml
+```
+
+Если ClickHouse Operator установлен не в пространстве имен по умолчанию, укажите это в `supportBundle.collectors.operator.namespace`.

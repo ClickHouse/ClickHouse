@@ -48,13 +48,17 @@ El gráfico admite las buenas prácticas estándar de Kubernetes, entre ellas:
 <br />
 
 <Steps>
-  <Step title="Requisitos previos" id="prerequisites">
+  <Step>
+    ### Requisitos previos
+
     * [Helm](https://helm.sh/) v3+
     * Clúster de Kubernetes (se recomienda v1.20+)
     * `kubectl` configurado para interactuar con su clúster
   </Step>
 
-  <Step title="Añadir el repositorio de Helm de ClickStack" id="add-the-clickstack-helm-repository">
+  <Step>
+    ### Añadir el repositorio de Helm de ClickStack
+
     Añada el repositorio de Helm de ClickStack:
 
     ```shell
@@ -63,7 +67,9 @@ El gráfico admite las buenas prácticas estándar de Kubernetes, entre ellas:
     ```
   </Step>
 
-  <Step title="Instalación de ClickStack" id="installing-clickstack">
+  <Step>
+    ### Instalación de ClickStack
+
     Para instalar el chart de ClickStack con los valores predeterminados:
 
     ```shell
@@ -71,7 +77,9 @@ El gráfico admite las buenas prácticas estándar de Kubernetes, entre ellas:
     ```
   </Step>
 
-  <Step title="Verificar la instalación" id="verify-the-installation">
+  <Step>
+    ### Verificar la instalación
+
     Verifique la instalación:
 
     ```shell
@@ -81,7 +89,9 @@ El gráfico admite las buenas prácticas estándar de Kubernetes, entre ellas:
     Cuando todos los pods estén listos, continúe.
   </Step>
 
-  <Step title="Reenvío de puertos" id="forward-ports">
+  <Step>
+    ### Reenvío de puertos
+
     El reenvío de puertos permite acceder a HyperDX y configurarlo. Quienes desplieguen en producción deberían, en su lugar, exponer el servicio mediante un Ingreso o un balanceador de carga para garantizar un acceso de red adecuado, la terminación de TLS y la escalabilidad. El reenvío de puertos es más adecuado para el desarrollo local o para tareas administrativas puntuales, no para entornos de larga duración o de alta disponibilidad.
 
     ```shell
@@ -97,7 +107,9 @@ El gráfico admite las buenas prácticas estándar de Kubernetes, entre ellas:
     </Tip>
   </Step>
 
-  <Step title="Accede a la UI" id="navigate-to-the-ui">
+  <Step>
+    ### Accede a la UI
+
     Visita [http://localhost:8080](http://localhost:8080) para acceder a la UI de HyperDX.
 
     Crea un usuario e introduce un nombre de usuario y una contraseña que cumplan los requisitos.
@@ -113,7 +125,9 @@ El gráfico admite las buenas prácticas estándar de Kubernetes, entre ellas:
     </Info>
   </Step>
 
-  <Step title="Personalizar valores (opcional)" id="customizing-values">
+  <Step>
+    ### Personalizar valores (opcional)
+
     Puedes personalizar la configuración con las opciones `--set`. Por ejemplo:
 
     ```shell
@@ -153,7 +167,9 @@ El gráfico admite las buenas prácticas estándar de Kubernetes, entre ellas:
     ```
   </Step>
 
-  <Step title="Uso de secretos (opcional)" id="using-secrets">
+  <Step>
+    ### Uso de secretos (opcional)
+
     Para gestionar datos sensibles, como claves de API o credenciales de base de datos, usa secretos de Kubernetes. Los gráficos de Helm de HyperDX proporcionan archivos de secretos predeterminados que puedes modificar y aplicar a tu clúster.
 
     #### Uso de secretos preconfigurados

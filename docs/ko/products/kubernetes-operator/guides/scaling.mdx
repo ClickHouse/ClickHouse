@@ -12,10 +12,12 @@ doc_type: 'guide'
 이 가이드에서는 `ClickHouseCluster`의 레플리카와 세그먼트를 스케일링하는 방법, `KeeperCluster` 쿼럼을 안전하게 스케일링하는 방법, 그리고 스케일 작업이 진행되는 동안 어떤 조건을 확인해야 하는지를 설명합니다.
 
 <Note>
-  `ClickHouseCluster`에는 항상 Keeper가 필요하며, `spec.keeperClusterRef` 또는 `spec.externalKeeper`를 통해 설정합니다. 연산자는 클러스터 크기와 관계없이 이를 통해 클러스터를 조정합니다. 세그먼트당 2개 이상의 레플리카를 실행하려면 데이터도 `ReplicatedMergeTree` 테이블에 있어야 합니다. 복제가 있어야 두 번째 레플리카가 동일한 행을 제공할 수 있기 때문입니다.
+  `ClickHouseCluster`에는 항상 Keeper가 필요하며, 필수 `spec.keeperClusterRef` 필드를 통해 이를 참조합니다. 연산자는 클러스터 크기와 관계없이 이를 통해 클러스터를 조정합니다. 세그먼트당 2개 이상의 레플리카를 실행하려면 데이터도 `ReplicatedMergeTree` 테이블에 있어야 합니다. 복제가 있어야 두 번째 레플리카가 동일한 행을 제공할 수 있기 때문입니다.
 </Note>
 
-## 레플리카 스케일링 {#scaling-replicas}
+<div id="scaling-replicas">
+  ## 레플리카 스케일링
+</div>
 
 `spec.replicas`는 모든 세그먼트의 레플리카 수를 설정합니다. 각 레플리카는 `<cluster>-clickhouse-<shard>-<replica>`라는 이름의 개별 StatefulSet에서 실행되므로, `shards: 2` 및 `replicas: 3`인 클러스터는 총 6개의 StatefulSet을 실행합니다.
 
@@ -30,7 +32,9 @@ spec:
 
 확장 시 연산자는 레플리카별 새 StatefulSets를 생성하고, 각 파드가 준비 상태가 될 때까지 기다린 다음 새 레플리카에 스키마(schema)를 동기화합니다([Automatic schema sync](#automatic-schema-sync) 참조). 축소 시에는 초과 StatefulSets를 제거하고, 제거된 레플리카가 남긴 오래된 복제된 데이터베이스의 레플리카 등록 정보를 정리합니다.
 
-## 세그먼트 스케일링 {#scaling-shards}
+<div id="scaling-shards">
+  ## 세그먼트 스케일링
+</div>
 
 `spec.shards`는 세그먼트 수를 설정합니다. 새 세그먼트가 추가될 때마다 각 레플리카에 대한 StatefulSet 전체가 추가되며, 연산자는 세그먼트마다 [파드 중단 예산](/ko/products/kubernetes-operator/guides/configuration#pod-disruption-budgets) 1개를 생성하므로 한 세그먼트의 중단이 다른 세그먼트에 반영되지 않습니다.
 
@@ -42,7 +46,9 @@ spec:
 
 각 세그먼트는 데이터의 서로 다른 일부를 보유하며, 연산자는 세그먼트 간에 행을 복사하거나 이동하지 않습니다. `Distributed` 테이블 또는 명시적으로 지정된 라우팅 방식이 행이 어느 세그먼트에 저장될지를 결정하므로, 세그먼트를 추가하면 기존 세그먼트에 이미 저장된 행은 건드리지 않은 채 새로 쓰는 데이터가 저장될 위치만 추가됩니다.
 
-## 자동 스키마 동기화 {#automatic-schema-sync}
+<div id="automatic-schema-sync">
+  ## 자동 스키마 동기화
+</div>
 
 `spec.settings.enableDatabaseSync`가 `true`(기본값)로 설정되면 토폴로지가 변경될 때 연산자가 스키마가 계속 일치하도록 유지합니다.
 
@@ -53,7 +59,9 @@ spec:
 
 예를 들어 외부 도구가 스키마 전파를 관리하는 경우 `enableDatabaseSync: false`로 설정해 이 동작을 끌 수 있습니다. 그러면 연산자는 `SchemaInSync` 조건에 `SchemaSyncDisabled` 사유를 보고합니다.
 
-## 확인할 상태 {#scaling-conditions}
+<div id="scaling-conditions">
+  ## 확인할 상태
+</div>
 
 스케일 조정 작업이 진행되는 동안 사용자 지정 리소스의 진행 상태를 확인하십시오:
 
@@ -75,7 +83,9 @@ kubectl get clickhousecluster sample -o yaml | sed -n '/conditions:/,/^[^ ]/p'
 
 `ClusterSizeAligned`가 `UpToDate`이고, `SchemaInSync`가 `ReplicasInSync`이며, `Ready`가 `AllShardsReady`를 보고하면 스케일 작업이 완료된 것입니다.
 
-## Keeper 스케일링 {#scaling-keeper}
+<div id="scaling-keeper">
+  ## Keeper 스케일링
+</div>
 
 `KeeperCluster`는 RAFT 쿼럼을 실행하므로, 연산자는 **한 번에 레플리카 하나씩만** 멤버십을 변경하며 클러스터가 안정적인 상태일 때만 이를 수행합니다. 이렇게 하면 쿼럼을 보호할 수 있습니다. `2F+1` 클러스터는 `F`개의 멤버 장애를 허용하므로, 3개 노드 클러스터는 멤버 1개가 없어도 계속 동작하고 5개 노드 클러스터는 2개가 없어도 계속 동작합니다.
 

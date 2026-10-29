@@ -1,6 +1,5 @@
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnFunction.h>
-#include <Common/CurrentThread.h>
 #include <Common/Exception.h>
 #include <Common/VectorWithMemoryTracking.h>
 #include <DataTypes/DataTypeArray.h>
@@ -32,22 +31,17 @@ class FunctionArrayFold final : public IFunction
 {
 public:
     static constexpr auto name = "arrayFold";
-    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionArrayFold>(); }
+    static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionArrayFold>(context); }
+
+    explicit FunctionArrayFold(ContextPtr context)
+        : process_list_element(context ? context->getProcessListElement() : nullptr)
+    {
+    }
 
     bool isVariadic() const override { return true; }
     size_t getNumberOfArguments() const override { return 0; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
     bool isHigherOrderFunction() const override { return true; }
-
-    /// Documentation-only — folds the parallel arrays into a single
-    /// accumulator value. The lambda's first argument is the accumulator
-    /// (whose type is taken from the trailing `acc_initial` argument),
-    /// followed by one element per parallel array; the lambda must return
-    /// the accumulator type, which is also the result type.
-    String getSignatureString() const override
-    {
-        return "(Function((A : Any, Any, ...), A), Array, ..., A) -> A";
-    }
 
     /// Avoid the default adaptors since they modify the inputs and that makes knowing the lambda argument types
     /// (getLambdaArgumentTypes) more complex, as it requires knowing what the adaptors will do
@@ -99,12 +93,6 @@ public:
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
-        /// Resolved from the executing thread rather than captured: this instance can be stored in table
-        /// metadata and then run by any later query.
-        QueryStatusPtr process_list_element;
-        if (auto query_context = CurrentThread::tryGetQueryContext())
-            process_list_element = query_context->getProcessListElementSafe();
-
         const auto & lambda_function_with_type_and_name = arguments[0];
 
         if (!lambda_function_with_type_and_name.column)
@@ -204,7 +192,7 @@ public:
         {
             /// This loop is O(total array elements) and also runs uninterruptibly inside executeImpl().
             if ((i & 0xFFFFF) == 0)
-                checkQueryTimeLimit(process_list_element);
+                checkQueryTimeLimit();
 
             selector[i] = cur_element_in_cur_array;
             ++cur_element_in_cur_array;
@@ -256,7 +244,7 @@ public:
             /// a very long array (e.g. range(number) with a result-growing lambda) ignores KILL QUERY and
             /// max_execution_time and keeps running. Each iteration performs a full lambda->reduce(), so the
             /// per-iteration check is negligible.
-            checkQueryTimeLimit(process_list_element);
+            checkQueryTimeLimit();
 
             IColumn::Selector prev_selector(unfinished_rows); /// 1 for rows which have slice_i-many elements, otherwise 0
             size_t prev_index = 0;
@@ -331,12 +319,14 @@ public:
     }
 
 private:
+    QueryStatusPtr process_list_element;
+
     /// checkTimeLimit() throws for KILL QUERY and the 'throw' overflow mode; for the 'break' overflow
     /// mode it returns false instead. A fold has no meaningful partial result (a half-folded accumulator
     /// is a wrong value, not a smaller one), so we throw on the false (break) return to stop the runaway
     /// fold. In 'break' mode the pipeline absorbs this timeout into a clean cancellation, so the query
     /// ends without a client-visible error and yields no rows for the cancelled fold.
-    static void checkQueryTimeLimit(const QueryStatusPtr & process_list_element)
+    void checkQueryTimeLimit() const
     {
         if (process_list_element && !process_list_element->checkTimeLimit())
             throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Timeout exceeded: elapsed time limit reached in function {}", name);

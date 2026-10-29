@@ -1,0 +1,185 @@
+---
+description: 'Documentation de la bibliothèque client C++ pour ClickHouse et son intégration
+  au framework u-server'
+sidebarTitle: 'C++'
+slug: /interfaces/cpp
+title: 'Bibliothèque client C++'
+doc_type: 'reference'
+---
+
+`clickhouse-cpp` est la bibliothèque client C++ officielle pour ClickHouse. Elle fournit une interface rapide et sûre du point de vue des types
+à ClickHouse à l’aide de son protocole binaire natif.
+
+Les instructions de compilation, des exemples d’utilisation et de la documentation supplémentaire sont disponibles dans le
+dépôt GitHub du projet : [https://github.com/ClickHouse/clickhouse-cpp](https://github.com/ClickHouse/clickhouse-cpp).
+
+<Note>
+  La bibliothèque est en cours de développement actif. Bien qu’elle prenne déjà en charge les fonctionnalités principales de ClickHouse,
+  certaines fonctionnalités et certains types de données peuvent ne pas encore être entièrement implémentés ou pris en charge.
+
+  Vos retours sont très précieux et aident à orienter la priorisation des nouvelles fonctionnalités et
+  améliorations. Si vous rencontrez des limitations, des fonctionnalités manquantes ou un comportement inattendu, veuillez
+  partager vos observations ou demandes de fonctionnalités via le suivi des issues à 
+  [https://github.com/ClickHouse/clickhouse-cpp/issues](https://github.com/ClickHouse/clickhouse-cpp/issues)
+</Note>
+
+<div id="including-library-into-project">
+  ## Inclure la bibliothèque dans votre projet
+</div>
+
+La façon la plus simple d’intégrer la bibliothèque à votre projet consiste à utiliser le module
+`FetchContent` de CMake. Cette approche vous permet de fixer une version précise de la bibliothèque et de la compiler dans le cadre de votre workflow
+CMake habituel.
+
+```cmake
+include(FetchContent)
+
+set(WITH_OPENSSL YES CACHE BOOL "Enable OpenSSL in clickhouse-cpp" FORCE)
+FetchContent_Declare(
+    clickhouse-cpp
+    GIT_REPOSITORY https://github.com/ClickHouse/clickhouse-cpp.git
+    GIT_TAG v2.6.0   # can also be `master` or other banch
+)
+FetchContent_MakeAvailable(clickhouse-cpp)
+```
+
+L’option `WITH_OPENSSL` active la prise en charge de TLS dans la bibliothèque et est nécessaire pour se connecter à
+ClickHouse Cloud ou à d’autres déploiements ClickHouse avec SSL activé. Bien qu’elle puisse être omise pour les connexions sans TLS,
+il est généralement recommandé de l’activer.
+
+La compilation avec la prise en charge de SSL nécessite l’installation des paquets de développement OpenSSL. Installez
+`libssl-dev` sur Debian, Ubuntu ou leurs dérivés ; `openssl-devel` sur Fedora, Red Hat ; ou
+`openssl` sur macOS, à l’aide de Homebrew.
+
+Une fois la dépendance disponible, liez votre cible à la cible de bibliothèque exportée :
+
+```cmake
+target_link_libraries(your-target PRIVATE clickhouse-cpp-lib)
+```
+
+<div id="examples">
+  ## Exemples
+</div>
+
+<div id="example-setup-client">
+  ### Définition de l’objet `Client`
+</div>
+
+Créez une instance de `Client` pour établir une connexion à ClickHouse. L’exemple suivant
+montre comment se connecter à une instance ClickHouse locale, pour laquelle aucun password n’est requis et SSL n’est pas
+activé.
+
+```cpp
+#include <clickhouse/client.h>
+
+clickhouse::Client client{clickhouse::ClientOptions().SetHost("localhost")};
+```
+
+Dans les configurations plus avancées, des paramètres supplémentaires sont nécessaires. L’exemple suivant montre
+comment se connecter à une instance ClickHouse Cloud à l’aide de plusieurs paramètres supplémentaires :
+
+```cpp
+#include <clickhouse/client.h>
+
+clickhouse::Client client{
+    clickhouse::ClientOptions{}
+      .SetHost("your.instance.clickhouse.cloud")
+      .SetUser("default")
+      .SetPassword("your-password")
+      .SetSSLOptions({})   // Enable SSL
+      .SetPort(9440)       // for connections over SSL ClickHouse Cloud uses port 9440
+    };
+```
+
+<div id="example-create-table">
+  ### Création de tables et exécution de requêtes sans données
+</div>
+
+Pour exécuter une requête qui ne renvoie aucune donnée, par exemple pour créer des tables, utilisez la méthode `Execute`.
+La même approche s’applique à d’autres instructions, telles que `ALTER TABLE`, `DROP`, etc.
+
+```cpp
+client.Execute(R"(
+    CREATE TABLE IF NOT EXISTS greetings (
+        id UInt64,
+        message String,
+        language String) 
+    ENGINE = MergeTree ORDER BY id)");
+```
+
+<div id="example-insert-data">
+  ### Insertion de données
+</div>
+
+Pour insérer des données dans une table, construisez un `Block` et remplissez-le avec des objets de colonne correspondant au
+schéma de la table. Les données sont ajoutées colonne par colonne, puis insérées en une seule opération à l’aide de la
+méthode `Insert`, optimisée pour des écritures par lot efficaces.
+
+```cpp
+auto id = std::make_shared<clickhouse::ColumnUInt64>();
+auto message = std::make_shared<clickhouse::ColumnString>();
+auto language = std::make_shared<clickhouse::ColumnString>();
+
+id->Append(1);
+message->Append("Hello, World!");
+language->Append("English");
+
+id->Append(2);
+message->Append("¡Hola, Mundo!");
+language->Append("Spanish");
+
+id->Append(3);
+message->Append("Hallo wereld!");
+language->Append("Dutch");
+
+clickhouse::Block block{};
+block.AppendColumn("id", id);
+block.AppendColumn("message", message);
+block.AppendColumn("language", language);
+
+client.Insert("greetings", block);
+```
+
+<div id="example-select">
+  ### Sélection des données
+</div>
+
+Pour exécuter une requête qui renvoie des données, utilisez la méthode `Select` et fournissez une fonction de rappel pour traiter le
+résultat. Les résultats de la requête sont renvoyés sous forme d’objets `Block`, ce qui reflète la représentation native
+des données en colonnes de ClickHouse.
+
+```cpp
+client.Select(
+    "SELECT id, message, language FROM greetings",
+    [](const clickhouse::Block & block){
+        for (size_t i = 0; i < block.GetRowCount(); ++i) {
+            auto id = block[0]->AsStrict<clickhouse::ColumnUInt64>()->At(i);
+            auto message = block[1]->AsStrict<clickhouse::ColumnString>()->At(i);
+            auto language = block[2]->AsStrict<clickhouse::ColumnString>()->At(i);
+            std::cout << id << "\t" << message << "\t" << language << "\n";
+        }
+    });
+```
+
+<div id="supported-data-types">
+  ## Types de données pris en charge
+</div>
+
+* `UInt8`, `UInt16`, `UInt32`, `UInt64`, `Int8`, `Int16`, `Int32`, `Int64`
+* `UInt128`, `Int128`
+* `Decimal32`, `Decimal64`, `Decimal128`
+* `Float32`, `Float64`
+* `Date`
+* `DateTime`, `DateTime64`
+* `DateTime([timezone])`, `DateTime64(N, [timezone])`
+* `UUID`
+* `Enum8`, `Enum16`
+* `String`
+* `FixedString(N)`
+* `LowCardinality(String)` et `LowCardinality(FixedString(N))`
+* `Nullable(T)`
+* `Array(T)`
+* `Tuple`
+* `Map`
+* `IPv4`, `IPv6`
+* `Point`, `Ring`, `Polygon`, `MultiPolygon`

@@ -17,11 +17,6 @@ struct AreaCalculator
         return static_cast<Float64>(boost::geometry::area(object));
     }
 
-    Float64 operator()(const MultiPoint<Point> & object)
-    {
-        return static_cast<Float64>(boost::geometry::area(object));
-    }
-
     Float64 operator()(const LineString<Point> & object)
     {
         return static_cast<Float64>(boost::geometry::area(object));
@@ -88,7 +83,7 @@ REGISTER_FUNCTION(Area)
             {"object", "geometry object", {"Geometry"}}
         };
         FunctionDocumentation::ReturnedValue returned_value = {
-            "Returns the area on a sphere of radius 1, in steradians (coordinates are longitude and latitude in degrees). Multiply by the square of the radius of the sphere to get an area.",
+            "Returns the area of the object.",
             {"Float64"}
         };
         FunctionDocumentation::Examples examples;

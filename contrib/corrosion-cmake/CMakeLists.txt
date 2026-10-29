@@ -194,14 +194,6 @@ elseif (SANITIZE STREQUAL "address" OR SANITIZE STREQUAL "address,undefined")
     list(APPEND RUSTFLAGS "-Zsanitizer=address")
 endif()
 
-# rustc refuses to combine a sanitizer with a statically linked libc (the musl Rust target
-# defaults to `crt-static`). Disabling it only switches Rust's thread-locals to the
-# general-dynamic TLS model, which calls __tls_get_addr - already provided by musl's static
-# libc for exactly this case - so the resulting staticlib still needs no dynamic loader.
-if (USE_MUSL AND NOT SANITIZE STREQUAL "")
-    list(APPEND RUSTFLAGS "-C" "target-feature=-crt-static")
-endif()
-
 # Force `rustix` to use its libc backend under sanitizers.
 # On Linux `rustix` defaults to the `linux_raw` backend, which issues `mmap`, `munmap` and
 # other syscalls directly via the `syscall` instruction, bypassing libc. The sanitizers
@@ -213,19 +205,15 @@ endif()
 # affects MemorySanitizer (freshly mapped memory looks uninitialized) and AddressSanitizer.
 # `--cfg=rustix_use_libc` is the mechanism `rustix` provides for transitive consumers to select
 # the libc backend; it also activates the `libc` dependency (already pinned in `Cargo.lock`).
-#
-# Note: "no sanitizer" must be tested with CMake truthiness, not `STREQUAL ""`: in build
-# directories configured before SANITIZE became a STRING cache variable, the cache holds
-# the BOOL value `OFF`, which is not equal to the empty string (see cmake/sanitize.cmake).
-if (SANITIZE)
+if (NOT SANITIZE STREQUAL "")
     list(APPEND RUSTFLAGS "--cfg" "rustix_use_libc")
 endif()
 
 # Set metadata flag to force different hashes for different sanitizers
-if (SANITIZE)
-    list(APPEND RUSTFLAGS "-C" "metadata=with-sanitizer-${SANITIZE}")
-else()
+if (SANITIZE STREQUAL "")
     list(APPEND RUSTFLAGS "-C" "metadata=no-sanitizer")
+else()
+    list(APPEND RUSTFLAGS "-C" "metadata=with-sanitizer-${SANITIZE}")
 endif()
 
 # Use v0 symbol mangling for shorter symbol names.
@@ -257,19 +245,11 @@ set(RUST_VENDOR_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../rust_vendor")
 # causes LLVM to use too much memory while compiling large crates like cranelift-codegen
 # and polyglot-sql (with all-dialects). Set opt-level and codegen-units via the Cargo
 # profile so that there is no conflict with the default profile flags.
-#
-# This condition used to be `NOT SANITIZE STREQUAL ""`, which also matched the value `OFF`
-# that the cache holds when the user does not pass -DSANITIZE=... (see cmake/sanitize.cmake),
-# so every default-configured local build silently compiled all vendored Rust crates with
-# `opt-level = 0` — up to an order of magnitude slower at runtime (e.g. the `PCO` codec,
-# Delta Lake reads). CI was unaffected only because it always passes -DSANITIZE= explicitly.
-if (SANITIZE)
-    set(RUST_RELEASE_PROFILE_EXTRA "opt-level = 1
+if (NOT SANITIZE STREQUAL "")
+    set(RUST_RELEASE_PROFILE_EXTRA "opt-level = 0
 codegen-units = 4")
-    message(STATUS "Rust release profile: opt-level = 1, to limit LLVM memory usage under sanitizers")
 else()
     set(RUST_RELEASE_PROFILE_EXTRA "")
-    message(STATUS "Rust release profile: optimized")
 endif()
 
 # The vendored Rust crates otherwise build with cargo's default dev profile (full DWARF debug=2 +
@@ -321,9 +301,6 @@ function(clickhouse_import_crate)
             LOCKED
             FLAGS --offline
             NO_DEFAULT_FEATURES
-            # Without it every cargo build runs in the Ninja `console` pool, which has depth 1,
-            # so the cargo builds run one after another and block the C++ compilation that waits for them
-            NO_USES_TERMINAL
     )
     enable_dummy_launchers_if_needed()
 endfunction()
@@ -401,7 +378,7 @@ function(clickhouse_config_crate_flags target_name)
         # caller of this function.
         set(_localize_ref_libs "")
         set(_localize_ref_deps "")
-        foreach (_ref_target libllvmlibc aor clang_rt_builtins)
+        foreach (_ref_target libllvmlibc clang_rt_builtins)
             if (TARGET ${_ref_target})
                 list(APPEND _localize_ref_libs "$<TARGET_FILE:${_ref_target}>")
                 list(APPEND _localize_ref_deps ${_ref_target})

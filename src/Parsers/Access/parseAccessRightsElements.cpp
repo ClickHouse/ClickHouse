@@ -1,7 +1,7 @@
-#include <Common/StringUtils.h>
 #include <Parsers/Access/parseAccessRightsElements.h>
 
 #include <Access/Common/AccessRightsElement.h>
+#include <Common/re2.h>
 #include <Parsers/ASTIdentifier_fwd.h>
 #include <Parsers/CommonParsers.h>
 #include <Parsers/ExpressionListParsers.h>
@@ -9,6 +9,8 @@
 #include <Parsers/IParserBase.h>
 #include <Parsers/parseDatabaseAndTableName.h>
 #include <Parsers/parseIdentifierOrStringLiteral.h>
+
+#include <boost/algorithm/string/predicate.hpp>
 
 
 namespace DB
@@ -26,8 +28,13 @@ namespace
             if (!parseIdentifierOrStringLiteral(pos, expected, parameter_regexp))
                 return false;
 
-            /// Whether the pattern actually compiles is checked by `InterpreterGrantQuery`:
-            /// that is semantics, and it keeps a regex engine out of the parser.
+            re2::RE2::Options options;
+            options.set_log_errors(false);
+            if (const re2::RE2 re(parameter_regexp, options); !re.ok())
+            {
+                expected.add(pos, "valid regexp");
+                return false;
+            }
 
             if (!ParserToken{TokenType::ClosingRoundBracket}.ignore(pos, expected))
                 return false;
@@ -67,7 +74,7 @@ bool parseAccessFlags(IParser::Pos & pos, Expected & expected, AccessFlags & acc
         if (pos_->type != TokenType::BareWord)
             return false;
         std::string_view word{pos_->begin, pos_->size()};
-        return !(equalsCaseInsensitive(word, toStringView(Keyword::ON)) || equalsCaseInsensitive(word, toStringView(Keyword::TO)) || equalsCaseInsensitive(word, toStringView(Keyword::FROM)));
+        return !(boost::iequals(word, toStringView(Keyword::ON)) || boost::iequals(word, toStringView(Keyword::TO)) || boost::iequals(word, toStringView(Keyword::FROM)));
     };
 
     expected.add(pos, "access type");
@@ -87,7 +94,16 @@ bool parseAccessFlags(IParser::Pos & pos, Expected & expected, AccessFlags & acc
         }
         while (is_one_of_access_type_words(pos));
 
-        return AccessFlags::tryFromKeyword(str, access_flags);
+        try
+        {
+            access_flags = AccessFlags{str};
+        }
+        catch (const Exception &)
+        {
+            return false;
+        }
+
+        return true;
     });
 }
 

@@ -1,1 +1,15 @@
-WITH\n    x AS\n    (\n        SELECT number\n        FROM numbers(10)\n    ),\n    cross_sales AS\n    (\n        SELECT 1 AS xx\n        FROM x, x AS d1, x AS d2, x AS d3, x AS d4, x AS d5, x AS d6, x AS d7, x AS d8, x AS d9\n        WHERE equals(x.number, d9.number)\n    )\nSELECT xx\nFROM cross_sales\nWHERE equals(xx, 2000)
+WITH
+    x AS
+    (
+        SELECT number
+        FROM numbers(10)
+    ),
+    cross_sales AS
+    (
+        SELECT 1 AS xx
+        FROM x, x AS d1, x AS d2, x AS d3, x AS d4, x AS d5, x AS d6, x AS d7, x AS d8, x AS d9
+        WHERE equals(x.number, d9.number)
+    )
+SELECT xx
+FROM cross_sales
+WHERE equals(xx, 2000)

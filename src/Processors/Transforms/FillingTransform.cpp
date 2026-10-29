@@ -10,7 +10,6 @@
 #include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <Functions/FunctionDateOrDateTimeAddInterval.h>
-#include <Functions/IFunction.h>
 #include <Common/FieldVisitorScale.h>
 #include <Common/FieldVisitorSum.h>
 #include <Common/FieldVisitorToString.h>
@@ -42,7 +41,6 @@ inline static void logDebug(const char * key, const T & value, const char * sepa
 namespace ErrorCodes
 {
     extern const int INVALID_WITH_FILL_EXPRESSION;
-    extern const int LOGICAL_ERROR;
 }
 
 Block FillingTransform::transformHeader(Block header, const SortDescription & sort_description/*, const InterpolateDescription & interpolate_description*/)
@@ -59,13 +57,6 @@ Block FillingTransform::transformHeader(Block header, const SortDescription & so
     return header;
 }
 
-/// Multiply through UInt64 so the result wraps by construction (FillingRow::doLongJump relies on
-/// well-defined wraparound to detect the overflowed jump). A signed Int64 multiply is UB on overflow.
-static Int64 mulStepWrapping(Int64 step, Int64 jumps_count)
-{
-    return static_cast<Int64>(static_cast<UInt64>(step) * static_cast<UInt64>(jumps_count));
-}
-
 template <typename T>
 static FillColumnDescription::StepFunction getStepFunction(
     IntervalKind::Kind kind, Int64 step, const DateLUTImpl & date_lut, UInt16 scale = DataTypeDateTime64::default_scale)
@@ -77,7 +68,7 @@ static FillColumnDescription::StepFunction getStepFunction(
         case IntervalKind::Kind::NAME: \
             return [step, scale, &date_lut](Field & field, Int64 jumps_count) { \
                 field = Add##NAME##sImpl::execute(static_cast<T>(\
-                    field.safeGet<T>()), mulStepWrapping(step, jumps_count), date_lut, utc_time_zone, scale); };
+                    field.safeGet<T>()), step * jumps_count, date_lut, utc_time_zone, scale); };
 
         FOR_EACH_INTERVAL_KIND(DECLARE_CASE)
 #undef DECLARE_CASE
@@ -121,7 +112,7 @@ static FillColumnDescription::StepFunction getStepFunction(const Field & step, c
                     return [converted_step, &time_zone = date_time64->getTimeZone()](Field & field, Int64 jumps_count) \
                     { \
                         auto field_decimal = field.safeGet<DecimalField<DateTime64>>(); \
-                        auto res = Add##NAME##sImpl::execute(field_decimal.getValue(), mulStepWrapping(converted_step, jumps_count), time_zone, utc_time_zone, static_cast<UInt16>(field_decimal.getScale())); \
+                        auto res = Add##NAME##sImpl::execute(field_decimal.getValue(), converted_step * jumps_count, time_zone, utc_time_zone, static_cast<UInt16>(field_decimal.getScale())); \
                         field = DecimalField<decltype(res)>(res, field_decimal.getScale()); \
                     }; \
                     break;
@@ -349,17 +340,8 @@ FillingTransform::FillingTransform(
     }
 
     if (interpolate_description)
-    {
         for (const auto & name : interpolate_description->result_columns_order)
             interpolate_column_positions.push_back(header_->getPositionByName(name));
-
-        /// `insertFromFillingRow` pairs the executed expression's output columns with these positions by
-        /// index, so one position per output is what keeps that pairing in range.
-        if (interpolate_column_positions.size() != interpolate_description->actions.getResultColumns().size())
-            throw Exception(ErrorCodes::LOGICAL_ERROR,
-                "Interpolate description has {} result columns, but its expression produces {}",
-                interpolate_column_positions.size(), interpolate_description->actions.getResultColumns().size());
-    }
 
     /// check conflict in positions between interpolate and sorting prefix columns
     if (!sort_prefix_positions.empty() && !interpolate_column_positions.empty())
@@ -438,30 +420,11 @@ bool FillingTransform::isCancelledOrTimeLimitExceeded()
     return false;
 }
 
-void FillingTransform::onCancel() noexcept
-{
-    ISimpleTransform::onCancel();
-    if (interpolate_actions)
-    {
-        for (const auto & node : interpolate_actions->getNodes())
-        {
-            if (node.type == ActionsDAG::ActionType::FUNCTION && node.function)
-                node.function->cancelExecution();
-        }
-    }
-}
-
 void FillingTransform::interpolate(const MutableColumns & result_columns, Block & interpolate_block)
 {
     if (interpolate_description)
     {
         interpolate_block.clear();
-
-        /// The query is being cancelled and the result is discarded anyway, so do not start evaluating
-        /// the `INTERPOLATE` expressions: the cancellation flag passed to `execute` is checked only after
-        /// each action completes. An empty `interpolate_block` makes `insertFromFillingRow` insert defaults.
-        if (isCancelled())
-            return;
 
         if (!input_positions.empty())
         {
@@ -484,18 +447,13 @@ void FillingTransform::interpolate(const MutableColumns & result_columns, Block 
 
                 interpolate_block.insert({std::move(column), name_type.type, name_type.name});
             }
-            interpolate_actions->execute(interpolate_block, false, false, &getCancellationFlag());
+            interpolate_actions->execute(interpolate_block);
         }
         else /// all INTERPOLATE expressions are constants
         {
             size_t n = 1;
-            interpolate_actions->execute(interpolate_block, n, false, false, &getCancellationFlag());
+            interpolate_actions->execute(interpolate_block, n);
         }
-
-        /// If `execute` stopped early because of cancellation, the block does not have the structure
-        /// of the `INTERPOLATE` result, so it must not be inserted into the result columns.
-        if (isCancelled())
-            interpolate_block.clear();
     }
 }
 
@@ -573,7 +531,7 @@ void FillingTransform::initColumns(
     non_const_columns.reserve(input_columns.size());
 
     for (const auto & column : input_columns)
-        non_const_columns.push_back(column->convertToFullIfWrapped());
+        non_const_columns.push_back(column->convertToFullColumnIfReplicated()->convertToFullColumnIfConst()->convertToFullColumnIfSparse());
 
     for (const auto & column : non_const_columns)
         output_columns.push_back(column->cloneEmpty());
@@ -905,18 +863,6 @@ void FillingTransform::transformRange(
 
 void FillingTransform::transform(Chunk & chunk)
 {
-    transformImpl(chunk);
-
-    /// On a hard cancellation (`KILL QUERY`, Ctrl+C) the loops above only stop generating rows, and an
-    /// interrupted `INTERPOLATE` makes `insertFromFillingRow` insert defaults, so the chunk may hold partial
-    /// or default-filled rows of the cancelled range. Drop it instead of publishing it.
-    /// A soft `timeout_overflow_mode = 'break'` timeout keeps the partial result.
-    if (isCancelled())
-        chunk.clear();
-}
-
-void FillingTransform::transformImpl(Chunk & chunk)
-{
     logDebug("new chunk rows", chunk.getNumRows());
     logDebug("all chunks processed", all_chunks_processed);
 
@@ -954,11 +900,8 @@ void FillingTransform::transformImpl(Chunk & chunk)
 
         if (generateSuffixIfNeeded(input.getHeader().getColumns(), result_columns))
         {
-            /// A true return only means the fill constraints were satisfied, not that rows were produced:
-            /// STALENESS with an exhausted window leaves result_columns freshly cloneEmpty()'d and empty.
             size_t num_output_rows = result_columns[0]->size();
-            if (num_output_rows)
-                chunk.setColumns(std::move(result_columns), num_output_rows);
+            chunk.setColumns(std::move(result_columns), num_output_rows);
         }
 
         return;

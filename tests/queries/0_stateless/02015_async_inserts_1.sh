@@ -32,7 +32,7 @@ ${CLICKHOUSE_CURL} -sS "$url" -d 'INSERT INTO async_inserts FORMAT CSVWithNames
 12,"l"
 ' &
 
-${CLICKHOUSE_CURL} -sS "$url" -H 'X-ClickHouse-Format: XML' -d 'INSERT INTO async_inserts FORMAT JSONEachRow {"id": 13, "s": "m"}' &
+${CLICKHOUSE_CURL} -sS "$url" -H 'X-Clickhouse-Format: XML' -d 'INSERT INTO async_inserts FORMAT JSONEachRow {"id": 13, "s": "m"}' &
 
 wait
 

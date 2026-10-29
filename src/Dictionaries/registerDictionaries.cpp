@@ -20,6 +20,7 @@ void registerDictionarySourcePostgreSQL(DictionarySourceFactory & source_factory
 void registerDictionarySourceExecutable(DictionarySourceFactory & source_factory);
 void registerDictionarySourceExecutablePool(DictionarySourceFactory & source_factory);
 void registerDictionarySourceHTTP(DictionarySourceFactory & source_factory);
+void registerDictionarySourceLibrary(DictionarySourceFactory & source_factory);
 void registerDictionarySourceYAMLRegExpTree(DictionarySourceFactory & source_factory);
 void registerDictionarySourceYTsaurus(DictionarySourceFactory & source_factory);
 
@@ -35,7 +36,6 @@ void registerDictionaryCache(DictionaryFactory & factory);
 void registerDictionaryPolygon(DictionaryFactory & factory);
 void registerDictionaryDirect(DictionaryFactory & factory);
 void registerDictionaryNaiveBayes(DictionaryFactory & factory);
-void registerDictionaryXGBoost(DictionaryFactory & factory);
 
 
 void registerDictionaries();
@@ -56,6 +56,7 @@ void registerDictionaries()
         registerDictionarySourceExecutable(source_factory);
         registerDictionarySourceExecutablePool(source_factory);
         registerDictionarySourceHTTP(source_factory);
+        registerDictionarySourceLibrary(source_factory);
         registerDictionarySourceYAMLRegExpTree(source_factory);
         registerDictionarySourceYTsaurus(source_factory);
     }
@@ -72,7 +73,6 @@ void registerDictionaries()
         registerDictionaryPolygon(factory);
         registerDictionaryDirect(factory);
         registerDictionaryNaiveBayes(factory);
-        registerDictionaryXGBoost(factory);
     }
 }
 

@@ -1,7 +1,7 @@
 ---
 slug: /changelogs/25.8
 title: 'Cloud向け v25.8 の変更履歴'
-description: 'v25.8 の変更履歴'
+description: 'v25.8 の高速リリースの変更履歴'
 keywords: ['changelog', 'cloud']
 sidebarTitle: '25.8'
 doc_type: 'changelog'
@@ -16,7 +16,7 @@ doc_type: 'changelog'
 </div>
 
 * デフォルトで、JSON フォーマットでの 64 ビット整数のクォートを無効化。 [#74079](https://github.com/ClickHouse/ClickHouse/pull/74079) ([Pavel Kruglov](https://github.com/Avogar)).
-* JSON で異なる型の値を含む配列について、名前なしの `Tuple` ではなく `Array(Dynamic)` を推論するように変更。以前の動作を使用するには、設定 [`input_format_json_infer_array_of_dynamic_from_array_of_different_types`](/ja/reference/settings/formats/input-format#input_format_json_infer_array_of_dynamic_from_array_of_different_types) を無効にしてください。 [#80859](https://github.com/ClickHouse/ClickHouse/pull/80859) ([Pavel Kruglov](https://github.com/Avogar)).
+* JSON で異なる型の値を含む配列について、名前なしの `Tuple` ではなく `Array(Dynamic)` を推論するように変更。以前の動作を使用するには、設定 [`input_format_json_infer_array_of_dynamic_from_array_of_different_types`](/ja/reference/settings/formats#input_format_json_infer_array_of_dynamic_from_array_of_different_types) を無効にしてください。 [#80859](https://github.com/ClickHouse/ClickHouse/pull/80859) ([Pavel Kruglov](https://github.com/Avogar)).
 * デフォルトで、`Enum` 型の値を Parquet 出力フォーマットでは `ENUM` 論理型を持つ `BYTE_ARRAY` として書き出すように変更。 [#84169](https://github.com/ClickHouse/ClickHouse/pull/84169) ([Pavel Kruglov](https://github.com/Avogar)).
 
 <div id="storage-and-partitioning">
@@ -24,7 +24,7 @@ doc_type: 'changelog'
 </div>
 
 * Hive パーティション形式での書き込みのサポートを追加し、読み取り実装をリファクタリングしました (Hive パーティションカラムは仮想カラムではなくなりました) 。 [#76802](https://github.com/ClickHouse/ClickHouse/pull/76802) ([Arthur Passos](https://github.com/arthurpassos)).
-* MergeTree 設定 [`write_marks_for_substreams_in_compact_parts`](/ja/reference/settings/merge-tree-settings/write#write_marks_for_substreams_in_compact_parts) をデフォルトで有効化しました。これにより、新しく作成された Compact パーツからのサブカラムの読み取り性能が大幅に向上します。25.5 未満のバージョンのサーバーでは、新しい Compact パーツを読み取れません。 [#84171](https://github.com/ClickHouse/ClickHouse/pull/84171) ([Pavel Kruglov](https://github.com/Avogar)).
+* MergeTree 設定 [`write_marks_for_substreams_in_compact_parts`](/ja/reference/settings/merge-tree-settings#write_marks_for_substreams_in_compact_parts) をデフォルトで有効化しました。これにより、新しく作成された Compact パーツからのサブカラムの読み取り性能が大幅に向上します。25.5 未満のバージョンのサーバーでは、新しい Compact パーツを読み取れません。 [#84171](https://github.com/ClickHouse/ClickHouse/pull/84171) ([Pavel Kruglov](https://github.com/Avogar)).
 * SummingMergeTree で合計対象として明示的に指定されたカラムに対する `RENAME COLUMN` または `DROP COLUMN` を禁止しました。 [#81836](https://github.com/ClickHouse/ClickHouse/issues/81836) をクローズします。 [#82821](https://github.com/ClickHouse/ClickHouse/pull/82821) ([Alexey Milovidov](https://github.com/alexey-milovidov)).
 
 <div id="function-enhancements">
@@ -45,8 +45,8 @@ doc_type: 'changelog'
 </div>
 
 * 以前は、`BACKUP` クエリ、マージ、ミューテーションでは、ローカル (`max_local_read_bandwidth_for_server` および `max_local_write_bandwidth_for_server`) およびリモート (`max_remote_read_network_bandwidth_for_server` および `max_remote_write_network_bandwidth_for_server`) トラフィックに対するサーバー全体のスロットラーは使用されず、専用のサーバー設定 (`max_backup_bandwidth_for_server`、`max_mutations_bandwidth_for_server`、`max_merges_bandwidth_for_server`) によってのみ帯域が制限されていました。現在は、両方の種類のスロットラーが同時に使用されます。[#81753](https://github.com/ClickHouse/ClickHouse/pull/81753) ([Sergei Trifonov](https://github.com/serxa)).
-* 新しい設定 [`cluster_function_process_archive_on_multiple_nodes`](/ja/reference/settings/session-settings/cluster#cluster_function_process_archive_on_multiple_nodes) が追加されました。この設定を true (デフォルト) にすると、クラスター関数でアーカイブを処理する際の性能が向上します。以前のバージョンでアーカイブを含むクラスター関数を使用している場合は、互換性を保ち、25.7+ へのアップグレード時のエラーを回避するため、`false` に設定する必要があります。[#82355](https://github.com/ClickHouse/ClickHouse/pull/82355) ([Kseniia Sumarokova](https://github.com/kssenii)).
-* 以前の [`concurrent_threads_scheduler`](/ja/reference/settings/server-settings/settings/concurrent-threads#concurrent_threads_scheduler) のデフォルト値は `round_robin` でしたが、多数の単一スレッドクエリ (例: `INSERT`) がある場合には不公平であることが判明しました。この変更により、より安全な代替である `fair_round_robin` スケジューラがデフォルトになります。[#84747](https://github.com/ClickHouse/ClickHouse/pull/84747) ([Sergei Trifonov](https://github.com/serxa)).
+* 新しい設定 [`cluster_function_process_archive_on_multiple_nodes`](/ja/reference/settings/session-settings#cluster_function_process_archive_on_multiple_nodes) が追加されました。この設定を true (デフォルト) にすると、クラスター関数でアーカイブを処理する際の性能が向上します。以前のバージョンでアーカイブを含むクラスター関数を使用している場合は、互換性を保ち、25.7+ へのアップグレード時のエラーを回避するため、`false` に設定する必要があります。[#82355](https://github.com/ClickHouse/ClickHouse/pull/82355) ([Kseniia Sumarokova](https://github.com/kssenii)).
+* 以前の [`concurrent_threads_scheduler`](/ja/reference/settings/server-settings/settings#concurrent_threads_scheduler) のデフォルト値は `round_robin` でしたが、多数の単一スレッドクエリ (例: `INSERT`) がある場合には不公平であることが判明しました。この変更により、より安全な代替である `fair_round_robin` スケジューラがデフォルトになります。[#84747](https://github.com/ClickHouse/ClickHouse/pull/84747) ([Sergei Trifonov](https://github.com/serxa)).
 * 遅延マテリアライゼーションは、アナライザなしでの保守を避けるため、アナライザ使用時にのみ有効になります。アナライザなしでは問題が発生する可能性があるためです (たとえば、条件で `indexHint()` を使用する場合) 。[#83791](https://github.com/ClickHouse/ClickHouse/pull/83791) ([Igor Nikonov](https://github.com/devcrafter)).
 
 <div id="schema-and-sql-syntax">
@@ -140,21 +140,21 @@ doc_type: 'changelog'
 
 * `DESCRIBE (SELECT ...)` に加えて、`DESCRIBE SELECT` もサポートしました。[#82947](https://github.com/ClickHouse/ClickHouse/pull/82947) ([Yarik Briukhovetskyi](https://github.com/yariks5s)).
 * `USE DATABASE {name}` の記述もサポートしました。[#81307](https://github.com/ClickHouse/ClickHouse/pull/81307) ([Yarik Briukhovetskyi](https://github.com/yariks5s)).
-* 並列レプリカでプロジェクションからの読み取りを実装しました。プロジェクションのサポートを有効にするかどうかを制御するため、新しい設定 [`parallel_replicas_support_projection`](/ja/reference/settings/session-settings/parallel-replicas#parallel_replicas_support_projection) が追加されました。実装を簡素化するため、プロジェクションのサポートは `parallel_replicas_local_plan` が有効な場合にのみ有効になります。[#82807](https://github.com/ClickHouse/ClickHouse/pull/82807) ([zoomxi](https://github.com/zoomxi)).
+* 並列レプリカでプロジェクションからの読み取りを実装しました。プロジェクションのサポートを有効にするかどうかを制御するため、新しい設定 [`parallel_replicas_support_projection`](/ja/reference/settings/session-settings#parallel_replicas_support_projection) が追加されました。実装を簡素化するため、プロジェクションのサポートは `parallel_replicas_local_plan` が有効な場合にのみ有効になります。[#82807](https://github.com/ClickHouse/ClickHouse/pull/82807) ([zoomxi](https://github.com/zoomxi)).
 
 <div id="formats">
   ### フォーマット
 </div>
 
-* `format_schema` の取得元を定義する [`format_schema_source`](/ja/reference/settings/formats/format-schema#format_schema_source) 設定を追加しました。[#80874](https://github.com/ClickHouse/ClickHouse/pull/80874) ([Tuan Pham Anh](https://github.com/tuanpach)).
+* `format_schema` の取得元を定義する [`format_schema_source`](/ja/reference/settings/formats#format_schema_source) 設定を追加しました。[#80874](https://github.com/ClickHouse/ClickHouse/pull/80874) ([Tuan Pham Anh](https://github.com/tuanpach)).
 * 新しい出力フォーマット `Hash` を追加しました。これは、結果のすべてのカラムと行に対する単一のハッシュ値を計算します。たとえば、データ転送がボトルネックになるユースケースで、結果の「フィンガープリント」を計算するのに役立ちます。例: `SELECT arrayJoin(['abc', 'def']), 42 FORMAT Hash` は `e5f9e676db098fdb9530d2059d8c23ef` を返します。[#84607](https://github.com/ClickHouse/ClickHouse/pull/84607) ([Robert Schulze](https://github.com/rschu1ze)).
 
 <div id="server-configuration-and-workload-management">
   ### サーバー設定とワークロード管理
 </div>
 
-* サーバー設定 [`cpu_slot_preemption`](/ja/reference/settings/server-settings/settings/cpu-slot#cpu_slot_preemption) により、ワークロードに対するプリエンプティブな CPU スケジューリングが有効になり、ワークロード間で CPU 時間の max-min 公平な配分が保証されます。CPU スロットリング向けの新しいワークロード設定 `max_cpus`、`max_cpu_share`、`max_burst_cpu_seconds` が追加されました。[#80879](https://github.com/ClickHouse/ClickHouse/pull/80879) ([Sergei Trifonov](https://github.com/serxa)).
-* ワークロード設定 [`max_waiting_queries`](/ja/reference/settings/server-settings/settings/max#max_waiting_queries) がサポートされるようになりました。これはクエリキューのサイズ制限に使用できます。制限に達すると、それ以降のすべてのクエリは `SERVER_OVERLOADED` エラーで終了します。[#81250](https://github.com/ClickHouse/ClickHouse/pull/81250) ([Oleg Doronin](https://github.com/dorooleg)).
+* サーバー設定 [`cpu_slot_preemption`](/ja/reference/settings/server-settings/settings#cpu_slot_preemption) により、ワークロードに対するプリエンプティブな CPU スケジューリングが有効になり、ワークロード間で CPU 時間の max-min 公平な配分が保証されます。CPU スロットリング向けの新しいワークロード設定 `max_cpus`、`max_cpu_share`、`max_burst_cpu_seconds` が追加されました。[#80879](https://github.com/ClickHouse/ClickHouse/pull/80879) ([Sergei Trifonov](https://github.com/serxa)).
+* ワークロード設定 [`max_waiting_queries`](/ja/reference/settings/server-settings/settings#max_waiting_queries) がサポートされるようになりました。これはクエリキューのサイズ制限に使用できます。制限に達すると、それ以降のすべてのクエリは `SERVER_OVERLOADED` エラーで終了します。[#81250](https://github.com/ClickHouse/ClickHouse/pull/81250) ([Oleg Doronin](https://github.com/dorooleg)).
 * 設定されたクエリ数または時間のしきい値に達すると、TCP 接続を切断するようになりました。[#68000](https://github.com/ClickHouse/ClickHouse/issues/68000) を解決します。[#81472](https://github.com/ClickHouse/ClickHouse/pull/81472) ([Kenny Sun](https://github.com/hwabis)).
 
 <div id="cloud-storage">
@@ -206,7 +206,7 @@ doc_type: 'changelog'
 </div>
 
 * `-If` 集約関数コンビネーターに対する軽微な最適化。 [#78454](https://github.com/ClickHouse/ClickHouse/pull/78454) ([李扬](https://github.com/taiyang-li)).
-* メモリ効率の高い集計時に、一部のバケットを順不同で送信できるようにする新しいロジック (設定 [`enable_producing_buckets_out_of_order_in_aggregation`](/ja/reference/settings/session-settings/enable#enable_producing_buckets_out_of_order_in_aggregation) で制御され、デフォルトで有効) を追加しました。一部の集計バケットのマージに他より大幅に時間がかかる場合でも、その間にイニシエーターがより大きい bucket id のバケットをマージできるため、パフォーマンスが向上します。欠点として、メモリ使用量が増える可能性があります (増加は大きくない想定です) 。 [#80179](https://github.com/ClickHouse/ClickHouse/pull/80179) ([Nikita Taranov](https://github.com/nickitat)).
+* メモリ効率の高い集計時に、一部のバケットを順不同で送信できるようにする新しいロジック (設定 [`enable_producing_buckets_out_of_order_in_aggregation`](/ja/reference/settings/session-settings#enable_producing_buckets_out_of_order_in_aggregation) で制御され、デフォルトで有効) を追加しました。一部の集計バケットのマージに他より大幅に時間がかかる場合でも、その間にイニシエーターがより大きい bucket id のバケットをマージできるため、パフォーマンスが向上します。欠点として、メモリ使用量が増える可能性があります (増加は大きくない想定です) 。 [#80179](https://github.com/ClickHouse/ClickHouse/pull/80179) ([Nikita Taranov](https://github.com/nickitat)).
 * `TOTALS` ステップ後のパイプラインをマルチスレッド化。 [#80331](https://github.com/ClickHouse/ClickHouse/pull/80331) ([UnamedRus](https://github.com/UnamedRus)).
 * 集計クエリに `NOT NULL` カラムに対する単一の `COUNT()` 関数しか含まれない場合、ハッシュテーブルのプロービング中に集計ロジック全体が完全にインライン化されます。これにより、集計状態の割り当てや維持が不要になり、メモリ使用量と CPU オーバーヘッドを大幅に削減できます。これは [#81982](https://github.com/ClickHouse/ClickHouse/issues/81982) に部分的に対応するものです。 [#82104](https://github.com/ClickHouse/ClickHouse/pull/82104) ([Amos Bird](https://github.com/amosbird)).
 * 複数の文字列カラムまたは数値カラムで group by する際、シリアライズされた key を列指向で計算するようにしました。 [#83884](https://github.com/ClickHouse/ClickHouse/pull/83884) ([李扬](https://github.com/taiyang-li)).
@@ -216,7 +216,7 @@ doc_type: 'changelog'
   ### JOIN の最適化
 </div>
 
-* JOIN の入力 ブロック と出力 ブロック の最小サイズ (行数) を制御する新しい設定 [`min_joined_block_size_rows`](/ja/reference/settings/session-settings/min-joined#min_joined_block_size_rows) を追加しました (`min_joined_block_size_bytes` と同様。デフォルトは 65409) 。join algorithm が対応している場合に有効で、小さな ブロック はまとめられます。[#81886](https://github.com/ClickHouse/ClickHouse/pull/81886) ([Nikita Taranov](https://github.com/nickitat)).
+* JOIN の入力 block と出力 block の最小サイズ (行数) を制御する新しい設定 [`min_joined_block_size_rows`](/ja/reference/settings/session-settings#min_joined_block_size_rows) を追加しました (`min_joined_block_size_bytes` と同様。デフォルトは 65409) 。join algorithm が対応している場合に有効で、小さな block はまとめられます。[#81886](https://github.com/ClickHouse/ClickHouse/pull/81886) ([Nikita Taranov](https://github.com/nickitat)).
 * キーカラムが 1 つだけの典型的なケースで hash map への追加ループを削除し、`HashJoin` の性能を最適化しました。また、常に `true`/`false` となる場合の `null_map` と `join_mask` のチェックも省略しました。[#82308](https://github.com/ClickHouse/ClickHouse/pull/82308) ([Nikita Taranov](https://github.com/nickitat)).
 * [#82308](https://github.com/ClickHouse/ClickHouse/issues/82308) の `null_map` と `JoinMask` の最適化を、複数の論理和条件を持つ JOIN のケースにも適用しました。あわせて、`KnownRowsHolder` data structure も最適化しました。[#83041](https://github.com/ClickHouse/ClickHouse/pull/83041) ([Nikita Taranov](https://github.com/nickitat)).
 * フラグにアクセスするたびに hash を計算しないよう、join フラグには単純な `std::vector<std::atomic_bool>` を使用します。[#83043](https://github.com/ClickHouse/ClickHouse/pull/83043) ([Nikita Taranov](https://github.com/nickitat)).
@@ -352,8 +352,8 @@ doc_type: 'changelog'
 
 * PostgreSQL、MySQL、DataLake データベースのバックアップをサポートしました。こうしたデータベースのバックアップでは、内部のデータは保存されず、定義のみが保存されます。[#79982](https://github.com/ClickHouse/ClickHouse/pull/79982) ([Nikolay Degterinsky](https://github.com/evillique)).
 * バックアップファイルの書き込みに関するすべてのログメッセージを TRACE レベルに設定しました。[#82907](https://github.com/ClickHouse/ClickHouse/pull/82907) ([Hans Krutzer](https://github.com/hkrutzer)).
-* バックアップおよびリストア操作中に使用される S3 の再試行バックオフ戦略を設定するため、[`backup_restore_s3_retry_initial_backoff_ms`](/ja/reference/settings/session-settings/backup-restore#backup_restore_s3_retry_initial_backoff_ms)、[`backup_restore_s3_retry_max_backoff_ms`](/ja/reference/settings/session-settings/backup-restore#backup_restore_s3_retry_max_backoff_ms)、[`backup_restore_s3_retry_jitter_factor`](/ja/reference/settings/session-settings/backup-restore#backup_restore_s3_retry_jitter_factor) を導入しました。[#84421](https://github.com/ClickHouse/ClickHouse/pull/84421) ([Julia Kartseva](https://github.com/jkartseva)).
-* `SlowDown` などのエラーによって発生する再試行ストーム時の S3 への負荷を軽減するため、新しい [`backup_slow_all_threads_after_retryable_s3_error`](/ja/reference/settings/session-settings/other#backup_slow_all_threads_after_retryable_s3_error) 設定を導入しました。1 件でも再試行可能なエラーが検出されると、すべてのスレッドを低速化します。[#84854](https://github.com/ClickHouse/ClickHouse/pull/84854) ([Julia Kartseva](https://github.com/jkartseva)).
+* バックアップおよびリストア操作中に使用される S3 の再試行バックオフ戦略を設定するため、[`backup_restore_s3_retry_initial_backoff_ms`](/ja/reference/settings/session-settings#backup_restore_s3_retry_initial_backoff_ms)、[`backup_restore_s3_retry_max_backoff_ms`](/ja/reference/settings/session-settings#backup_restore_s3_retry_max_backoff_ms)、[`backup_restore_s3_retry_jitter_factor`](/ja/reference/settings/session-settings#backup_restore_s3_retry_jitter_factor) を導入しました。[#84421](https://github.com/ClickHouse/ClickHouse/pull/84421) ([Julia Kartseva](https://github.com/jkartseva)).
+* `SlowDown` などのエラーによって発生する再試行ストーム時の S3 への負荷を軽減するため、新しい [`backup_slow_all_threads_after_retryable_s3_error`](/ja/reference/settings/session-settings#backup_slow_all_threads_after_retryable_s3_error) 設定を導入しました。1 件でも再試行可能なエラーが検出されると、すべてのスレッドを低速化します。[#84854](https://github.com/ClickHouse/ClickHouse/pull/84854) ([Julia Kartseva](https://github.com/jkartseva)).
 
 <div id="data-integrity-and-validation">
   ### データ整合性と検証
@@ -374,9 +374,9 @@ doc_type: 'changelog'
 * pyiceberg から読み取れる Iceberg への書き込みをサポートしました。 [#84466](https://github.com/ClickHouse/ClickHouse/pull/84466) ([scanhex12](https://github.com/scanhex12)).
 * データレイクのテーブルエンジンにスナップショットバージョンを追加しました。 [#84659](https://github.com/ClickHouse/ClickHouse/pull/84659) ([Pete Hampton](https://github.com/pjhampton)).
 * Iceberg で version-hint ファイルの書き込みをサポートしました。これにより [#85097](https://github.com/ClickHouse/ClickHouse/issues/85097) はクローズされます。 [#85130](https://github.com/ClickHouse/ClickHouse/pull/85130) ([scanhex12](https://github.com/scanhex12)).
-* [`iceberg_metadata_compression_method`](/ja/reference/settings/session-settings/iceberg-metadata#iceberg_metadata_compression_method) 設定で、圧縮された `.metadata.json` ファイルをサポートしました。ClickHouse のすべての圧縮方式に対応しています。これにより [#84895](https://github.com/ClickHouse/ClickHouse/issues/84895) はクローズされます。 [#85196](https://github.com/ClickHouse/ClickHouse/pull/85196) ([scanhex12](https://github.com/scanhex12)).
+* [`iceberg_metadata_compression_method`](/ja/reference/settings/session-settings#iceberg_metadata_compression_method) 設定で、圧縮された `.metadata.json` ファイルをサポートしました。ClickHouse のすべての圧縮方式に対応しています。これにより [#84895](https://github.com/ClickHouse/ClickHouse/issues/84895) はクローズされます。 [#85196](https://github.com/ClickHouse/ClickHouse/pull/85196) ([scanhex12](https://github.com/scanhex12)).
 * Iceberg の positional delete ファイルのメモリ使用量を最適化しました。すべての delete ファイルのデータをメモリに読み込む代わりに、Parquet の delete ファイルでは現在の row-group のみを RAM に保持します。これにより、大きな positional delete ファイルを扱う際のメモリ消費を大幅に削減できます。 [#85329](https://github.com/ClickHouse/ClickHouse/pull/85329) ([scanhex12](https://github.com/scanhex12)).
-* 各 データファイル の object を明示的に保持しなくても、Iceberg テーブルから object を非同期に反復処理できるようにしました。 [#85369](https://github.com/ClickHouse/ClickHouse/pull/85369) ([Daniil Ivanik](https://github.com/divanik)).
+* 各 data file の object を明示的に保持しなくても、Iceberg テーブルから object を非同期に反復処理できるようにしました。 [#85369](https://github.com/ClickHouse/ClickHouse/pull/85369) ([Daniil Ivanik](https://github.com/divanik)).
 * Iceberg の equality delete をサポートしました。 [#85843](https://github.com/ClickHouse/ClickHouse/pull/85843) ([Han Fei](https://github.com/hanfei1991)).
 
 <div id="deltalake-table-engine">
@@ -388,8 +388,8 @@ doc_type: 'changelog'
 * `DeltaLakeCluster` テーブル関数でパーティション化されたデータの読み取りを修正。この PR ではクラスター関数のプロトコルバージョンを引き上げ、イニシエーターからレプリカへ追加情報を送信できるようにしました。この追加情報には、パーティションカラム (および今後は generated columns など) をパースするために必要な delta-kernel の変換式が含まれます。 [#82132](https://github.com/ClickHouse/ClickHouse/pull/82132) ([Kseniia Sumarokova](https://github.com/kssenii)).
 * database Datalake が、よりわかりやすい例外を返すようになりました。[#81211](https://github.com/ClickHouse/ClickHouse/issues/81211) を修正。 [#82304](https://github.com/ClickHouse/ClickHouse/pull/82304) ([alesapin](https://github.com/alesapin)).
 * storage `DeltaLake` に、内部 `delta-kernel-rs` フィルタリング (統計およびパーティションプルーニング) を実装。 [#84006](https://github.com/ClickHouse/ClickHouse/pull/84006) ([Kseniia Sumarokova](https://github.com/kssenii)).
-* デバッグ時には test log level であっても expression visitor のログが冗長になりすぎる場合があるため、それを無効化する設定 [`delta_lake_enable_expression_visitor_logging`](/ja/reference/settings/session-settings/delta-lake#delta_lake_enable_expression_visitor_logging) を追加。 [#84315](https://github.com/ClickHouse/ClickHouse/pull/84315) ([Kseniia Sumarokova](https://github.com/kssenii)).
-* テーブルエンジン `DeltaLake` で特定の スナップショットバージョン を読み取れるようにする設定 [`delta_lake_snapshot_version`](/ja/reference/settings/session-settings/delta-lake#delta_lake_snapshot_version) を追加。 [#85295](https://github.com/ClickHouse/ClickHouse/pull/85295) ([Kseniia Sumarokova](https://github.com/kssenii)).
+* デバッグ時には test log level であっても expression visitor のログが冗長になりすぎる場合があるため、それを無効化する設定 [`delta_lake_enable_expression_visitor_logging`](/ja/reference/settings/session-settings#delta_lake_enable_expression_visitor_logging) を追加。 [#84315](https://github.com/ClickHouse/ClickHouse/pull/84315) ([Kseniia Sumarokova](https://github.com/kssenii)).
+* テーブルエンジン `DeltaLake` で特定の スナップショットバージョン を読み取れるようにする設定 [`delta_lake_snapshot_version`](/ja/reference/settings/session-settings#delta_lake_snapshot_version) を追加。 [#85295](https://github.com/ClickHouse/ClickHouse/pull/85295) ([Kseniia Sumarokova](https://github.com/kssenii)).
 
 <div id="data-lake-integration">
   ### データレイク インテグレーション
@@ -483,7 +483,7 @@ doc_type: 'changelog'
 * TCP サーバーのキュー (デフォルトは 64) を、listen&#95;backlog (デフォルトは 4096) に基づいて調整しました。[#82045](https://github.com/ClickHouse/ClickHouse/pull/82045) ([Azat Khuzhin](https://github.com/azat)).
 * サーバーを再起動せずに `max_local_read_bandwidth_for_server` と `max_local_write_bandwidth_for_server` を動的に再読み込みできるようにしました。[#82083](https://github.com/ClickHouse/ClickHouse/pull/82083) ([Kai Zhu](https://github.com/nauu)).
 * ベクトル類似度索引を使用するために有効化が必要な `enable_vector_similarity_index` 設定を導入しました。既存の `allow_experimental_vector_similarity_index` 設定は現在廃止されています。必要な場合は引き続き使用できます。[#83459](https://github.com/ClickHouse/ClickHouse/pull/83459) ([Robert Schulze](https://github.com/rschu1ze)).
-* サイズの大きいカラムを含む JOIN のメモリ使用量を制限するため、`max_joined_block_size_rows` に加えて [`max_joined_block_size_bytes`](/ja/reference/settings/session-settings/max-joined#max_joined_block_size_bytes) を追加しました。[#83869](https://github.com/ClickHouse/ClickHouse/pull/83869) ([Nikolai Kochetov](https://github.com/KochetovNicolai)).
+* サイズの大きいカラムを含む JOIN のメモリ使用量を制限するため、`max_joined_block_size_rows` に加えて [`max_joined_block_size_bytes`](/ja/reference/settings/session-settings#max_joined_block_size_bytes) を追加しました。[#83869](https://github.com/ClickHouse/ClickHouse/pull/83869) ([Nikolai Kochetov](https://github.com/KochetovNicolai)).
 * cluster&#95;function&#95;process&#95;archive&#95;on&#95;multiple&#95;nodes の互換性を修正しました。[#83968](https://github.com/ClickHouse/ClickHouse/pull/83968) ([Kseniia Sumarokova](https://github.com/kssenii)).
 * 相関サブクエリのサポートをデフォルトで有効にしました。[#85107](https://github.com/ClickHouse/ClickHouse/pull/85107) ([Dmitry Novik](https://github.com/novikd)).
 * DatabaseReplicatedSettings のデフォルト値を定義する `database_replicated` 設定を追加しました。この設定が Replicated DB の CREATE クエリに存在しない場合は、この設定の値が使用されます。[#85127](https://github.com/ClickHouse/ClickHouse/pull/85127) ([Tuan Pham Anh](https://github.com/tuanpach)).
@@ -567,7 +567,7 @@ doc_type: 'changelog'
 * MergeTree setting `search_orphaned_parts_drives` を追加し、たとえばローカルメタデータを持つディスクごとに、パーツを探索する範囲を制限できるようにしました。[#84710](https://github.com/ClickHouse/ClickHouse/pull/84710) ([Ilya Golshtein](https://github.com/ilejn)).
 * `WHERE` に対する `read_in_order_use_virtual_row` の不足していたサポートを追加しました。これにより、フィルターが `PREWHERE` に完全にプッシュダウンされていないクエリで、追加のパーツの読み取りをスキップできるようになります。[#84835](https://github.com/ClickHouse/ClickHouse/pull/84835) ([Nikolai Kochetov](https://github.com/KochetovNicolai)).
 * MergeTree における「compact」な Variant 判別子のシリアライゼーションの使用を修正しました。以前は、使用可能なケースでも一部で使われていませんでした。[#84141](https://github.com/ClickHouse/ClickHouse/pull/84141) ([Pavel Kruglov](https://github.com/Avogar)).
-* パッチパート内の非圧縮バイト総量に対する制限 (テーブル設定 [`max_uncompressed_bytes_in_patches`](/ja/reference/settings/merge-tree-settings/max#max_uncompressed_bytes_in_patches)) を追加しました。これにより、論理更新後の `SELECT` クエリの大幅な遅延を防ぎ、論理更新の不適切な使用も抑制します。[#85641](https://github.com/ClickHouse/ClickHouse/pull/85641) ([Anton Popov](https://github.com/CurtizJ)).
+* パッチパート内の非圧縮バイト総量に対する制限 (テーブル設定 [`max_uncompressed_bytes_in_patches`](/ja/reference/settings/merge-tree-settings#max_uncompressed_bytes_in_patches)) を追加しました。これにより、論理更新後の `SELECT` クエリの大幅な遅延を防ぎ、論理更新の不適切な使用も抑制します。[#85641](https://github.com/ClickHouse/ClickHouse/pull/85641) ([Anton Popov](https://github.com/CurtizJ)).
 
 <div id="cache-and-memory-management">
   ### キャッシュとメモリ管理

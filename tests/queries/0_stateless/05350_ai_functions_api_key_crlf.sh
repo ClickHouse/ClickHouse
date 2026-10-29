@@ -18,6 +18,7 @@ $CLICKHOUSE_CLIENT -m -q "
 "
 
 $CLICKHOUSE_CLIENT -m -q "
+    SET allow_experimental_ai_functions = 1;
     SET ai_function_max_retries = 0;
     SELECT aiGenerate('hi', map('credentials', '${OPENAI}')); -- { serverError BAD_ARGUMENTS }
     SELECT aiEmbed('hi', 'm', map('credentials', '${OPENAI}')); -- { serverError BAD_ARGUMENTS }

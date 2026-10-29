@@ -25,6 +25,7 @@ namespace DB
 namespace ErrorCodes
 {
 extern const int BAD_ARGUMENTS;
+extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 }
 
 namespace Setting
@@ -49,10 +50,15 @@ public:
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
-    String getSignatureString() const override
+    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
-        static const String sig = String("(StringOrFixedString) -> ") + ReturnDataTypeName().getName();
-        return sig;
+        if (checkAndGetDataType<DataTypeString>(arguments[0].get()) == nullptr
+            && checkAndGetDataType<DataTypeFixedString>(arguments[0].get()) == nullptr)
+        {
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "First argument should be String");
+        }
+
+        return DataTypeFactory::instance().get(ReturnDataTypeName().getName());
     }
 
     ColumnPtr
@@ -98,11 +104,6 @@ struct ReadWKBLineStringNameHolder
     static constexpr const char * name = "readWKBLineString";
 };
 
-struct ReadWKBMultiPointNameHolder
-{
-    static constexpr const char * name = "readWKBMultiPoint";
-};
-
 struct ReadWKBMultiLineStringNameHolder
 {
     static constexpr const char * name = "readWKBMultiLineString";
@@ -121,7 +122,6 @@ struct ReadWKBMultiPolygonNameHolder
 class FunctionReadWKBCommon final : public IFunction
 {
 public:
-    /// Must match the global discriminators of the Geometry Variant type.
     enum class WKBTypes
     {
         LineString,
@@ -129,8 +129,6 @@ public:
         MultiPolygon,
         Point,
         Polygon,
-        Ring,
-        MultiPoint,
     };
 
     explicit FunctionReadWKBCommon(UInt32 max_wkb_elements_) : max_wkb_elements(max_wkb_elements_) {}
@@ -149,14 +147,21 @@ public:
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
-    String getSignatureString() const override { return "(String) -> Geometry"; }
+    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    {
+        if (checkAndGetDataType<DataTypeString>(arguments[0].get()) == nullptr)
+        {
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "First argument should be String");
+        }
+
+        return DataTypeFactory::instance().get("Geometry");
+    }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & /*result_type*/, size_t input_rows_count) const override
     {
         auto column = arguments[0].column;
 
         PointSerializer<CartesianPoint> point_serializer;
-        MultiPointSerializer<CartesianPoint> multipoint_serializer;
         LineStringSerializer<CartesianPoint> linestring_serializer;
         PolygonSerializer<CartesianPoint> polygon_serializer;
         MultiLineStringSerializer<CartesianPoint> multilinestring_serializer;
@@ -197,11 +202,6 @@ public:
                 multipolygon_serializer.add(std::get<MultiPolygon<CartesianPoint>>(object));
                 converted_type = static_cast<UInt8>(WKBTypes::MultiPolygon);
             }
-            else if (std::holds_alternative<MultiPoint<CartesianPoint>>(object))
-            {
-                multipoint_serializer.add(std::get<MultiPoint<CartesianPoint>>(object));
-                converted_type = static_cast<UInt8>(WKBTypes::MultiPoint);
-            }
             else
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Incorrect WKB format value: {}", str);
 
@@ -215,7 +215,6 @@ public:
         result_columns.push_back(point_serializer.finalize());
         result_columns.push_back(polygon_serializer.finalize());
         result_columns.push_back(ring_serializer.finalize());
-        result_columns.push_back(multipoint_serializer.finalize());
 
         return ColumnVariant::create(std::move(discriminators_column), result_columns);
     }
@@ -255,7 +254,7 @@ Parses a Well-Known Binary (WKB) representation of a Point geometry and returns 
 SELECT toTypeName(readWKBPoint(unhex('0101000000333333333333f33f3333333333330b40')));
         )",
         R"(
-Point
+(1.2,3.4)
         )"
     }
     };
@@ -288,30 +287,6 @@ SELECT readWKBLineString(unhex('010200000004000000000000000000f03f000000000000f0
     FunctionDocumentation function_documentation_linestring = {description_linestring, syntax_linestring, arguments_linestring, {}, returned_value_linestring, examples_linestring, introduced_in_linestring, category_linestring};
 
     factory.registerFunction<FunctionReadWKB<DataTypeLineStringName, CartesianLineString, LineStringSerializer<CartesianPoint>, ReadWKBLineStringNameHolder>>(function_documentation_linestring);
-
-    FunctionDocumentation::Description description_multipoint = R"(
-Parses a Well-Known Binary (WKB) representation of a MultiPoint geometry and returns it in the internal ClickHouse format.
-    )";
-    FunctionDocumentation::Syntax syntax_multipoint = "readWKBMultiPoint(wkb_string)";
-    FunctionDocumentation::Arguments arguments_multipoint = {{"wkb_string", "The input WKB string representing a MultiPoint geometry.", {"String"}}};
-    FunctionDocumentation::ReturnedValue returned_value_multipoint = {"Returns a ClickHouse internal representation of the multipoint geometry.", {"Geo"}};
-    FunctionDocumentation::Examples examples_multipoint =
-    {
-    {
-        "Usage example",
-        R"(
-SELECT readWKBMultiPoint(unhex('0104000000020000000101000000000000000000f03f000000000000f03f010100000000000000000000400000000000000040'));
-        )",
-        R"(
-[(1,1),(2,2)]
-        )"
-    }
-    };
-    FunctionDocumentation::IntroducedIn introduced_in_multipoint = {26, 7};
-    FunctionDocumentation::Category category_multipoint = FunctionDocumentation::Category::GeoPolygon;
-    FunctionDocumentation function_documentation_multipoint = {description_multipoint, syntax_multipoint, arguments_multipoint, {}, returned_value_multipoint, examples_multipoint, introduced_in_multipoint, category_multipoint};
-
-    factory.registerFunction<FunctionReadWKB<DataTypeMultiPointName, CartesianMultiPoint, MultiPointSerializer<CartesianPoint>, ReadWKBMultiPointNameHolder>>(function_documentation_multipoint);
 
     FunctionDocumentation::Description description_multilinestring = R"(
 Parses a Well-Known Binary (WKB) representation of a MultiLineString geometry and returns it in the internal ClickHouse format.
@@ -352,9 +327,9 @@ SELECT
     toTypeName(readWKBPolygon(unhex('010300000001000000050000000000000000000040000000000000000000000000000024400000000000000000000000000000244000000000000024400000000000000000000000000000244000000000000000400000000000000000'))) AS type,
     readWKBPolygon(unhex('010300000001000000050000000000000000000040000000000000000000000000000024400000000000000000000000000000244000000000000024400000000000000000000000000000244000000000000000400000000000000000'));
         )",
-        R"DOCS_MD(
-Polygon	[[(2,0),(10,0),(10,10),(0,10),(2,0)]]
-        )DOCS_MD"
+        R"(
+Polygon [[(2,0),(10,0),(10,10),(0,10),(2,0)]]
+        )"
     }
     };
     FunctionDocumentation::IntroducedIn introduced_in_polygon = {25, 6};
@@ -379,10 +354,8 @@ SELECT
     readWKBMultiPolygon(unhex('0106000000020000000103000000020000000500000000000000000000400000000000000000000000000000244000000000000000000000000000002440000000000000244000000000000000000000000000002440000000000000004000000000000000000500000000000000000010400000000000001040000000000000144000000000000010400000000000001440000000000000144000000000000010400000000000001440000000000000104000000000000010400103000000010000000400000000000000000024c000000000000024c000000000000024c000000000000022c000000000000022c0000000000000244000000000000024c000000000000024c0')) FORMAT Vertical;
         )",
         R"(
-Row 1:
-──────
-type:                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         MultiPolygon
-readWKBMultiPolygon(unhex('0106000000020000000103000000020000000500000000000000000000400000000000000000000000000000244000000000000000000000000000002440000000000000244000000000000000000000000000002440000000000000004000000000000000000500000000000000000010400000000000001040000000000000144000000000000010400000000000001440000000000000144000000000000010400000000000001440000000000000104000000000000010400103000000010000000400000000000000000024c000000000000024c000000000000024c000000000000022c000000000000022c0000000000000244000000000000024c000000000000024c0')): [[[(2,0),(10,0),(10,10),(0,10),(2,0)],[(4,4),(5,4),(5,5),(4,5),(4,4)]],[[(-10,-10),(-10,-9),(-9,10),(-10,-10)]]]
+type:                     MultiPolygon
+readWKBMulti~000024c0')): [[[(2,0),(10,0),(10,10),(0,10),(2,0)],[(4,4),(5,4),(5,5),(4,5),(4,4)]],[[(-10,-10),(-10,-9),(-9,10),(-10,-10)]]]
         )"
     }
     };
@@ -394,7 +367,6 @@ readWKBMultiPolygon(unhex('01060000000200000001030000000200000005000000000000000
 
     factory.registerAlias("ST_PointFromWKB", ReadWKBPointNameHolder::name);
     factory.registerAlias("ST_LineFromWKB", ReadWKBLineStringNameHolder::name);
-    factory.registerAlias("ST_MPointFromWKB", ReadWKBMultiPointNameHolder::name);
     factory.registerAlias("ST_MLineFromWKB", ReadWKBMultiLineStringNameHolder::name);
     factory.registerAlias("ST_PolyFromWKB", ReadWKBPolygonNameHolder::name);
     factory.registerAlias("ST_MPolyFromWKB", ReadWKBMultiPolygonNameHolder::name);

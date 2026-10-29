@@ -59,20 +59,20 @@ struct CallbackRunnerTask
             if constexpr (std::is_void_v<Result>)
             {
                 {
-                    ThreadGroupSwitcher switcher(std::move(thread_group), thread_name);
+                    ThreadGroupSwitcher switcher(thread_group, thread_name);
                     SCOPE_EXIT_SAFE({ [[maybe_unused]] auto tmp = std::move(callback); });
                     callback();
                 }
-                /// The ThreadGroupSwitcher (which took the task's group reference) is destroyed and the callback
-                /// released before satisfying the promise: otherwise the waiter could race with the detaching
-                /// thread, or end the query and free what the group's trackers point to.
+                /// The ThreadGroupSwitcher is destroyed (thread group detached) and the callback is
+                /// released before satisfying the promise, otherwise the waiter could race with the
+                /// detaching thread (see "Destroy ThreadGroupSwitcher before set value in std::future").
                 promise.set_value();
             }
             else
             {
                 std::optional<Result> res;
                 {
-                    ThreadGroupSwitcher switcher(std::move(thread_group), thread_name);
+                    ThreadGroupSwitcher switcher(thread_group, thread_name);
                     SCOPE_EXIT_SAFE({ [[maybe_unused]] auto tmp = std::move(callback); });
                     res.emplace(callback());
                 }
@@ -90,15 +90,15 @@ struct CallbackRunnerTask
         if (was_run)
             return;
 
-        /// Release the callback (under the task's thread group) and the group reference BEFORE satisfying the
-        /// promise, so a woken waiter cannot tear down state they reference (same ordering as run()).
+        /// Release the callback under the task's thread group and BEFORE satisfying the promise, so a
+        /// woken waiter cannot tear down state the captures reference (same ordering as run()).
         /// When scheduleOrThrowOnError() throws synchronously, this destructor runs during stack
         /// unwinding on the SCHEDULING thread, which is usually a query thread already attached to its
         /// own group; only then allow borrowing it (the switcher saves and restores that group, instead
         /// of the LOGICAL_ERROR that would abort debug/sanitizer builds). A drop that is not an unwind
         /// (e.g. shutdown drain) runs on a group-less pool worker and must keep asserting.
         {
-            ThreadGroupSwitcher switcher(std::move(thread_group), thread_name, /*allow_existing_group=*/ std::uncaught_exceptions() > 0);
+            ThreadGroupSwitcher switcher(thread_group, thread_name, /*allow_existing_group=*/ std::uncaught_exceptions() > 0);
             SCOPE_EXIT_SAFE({ [[maybe_unused]] auto released = std::move(callback); });
         }
 
@@ -135,13 +135,8 @@ struct CallbackRunnerTask
 template <typename Result, typename Callback = std::function<Result()>>
 ThreadPoolCallbackRunnerUnsafe<Result, Callback> threadPoolCallbackRunnerUnsafe(ThreadPool & pool, ThreadName thread_name)
 {
-    return [my_pool = &pool, thread_name](Callback && callback, Priority priority) mutable -> std::future<Result>
+    return [my_pool = &pool, thread_group = getCurrentThreadGroup(), thread_name](Callback && callback, Priority priority) mutable -> std::future<Result>
     {
-        /// Since it is a wrapper for a task that will be reused for each task
-        /// we need to obtain ThreadGroup here not during creating the task wrapper,
-        /// otherwise the accounting will be incorrect
-        auto thread_group = getCurrentThreadGroup();
-
         auto task = std::make_shared<detail::CallbackRunnerTask<Result, Callback>>(thread_group, thread_name, std::move(callback));
 
         auto future = task->promise.get_future();
@@ -229,7 +224,7 @@ private:
         {
             FunctionResult res;
             {
-                ThreadGroupSwitcher switcher(std::move(thread_group), thread_name);
+                ThreadGroupSwitcher switcher(thread_group, thread_name);
                 res = callback();
                 callback = {};
             }
@@ -251,7 +246,7 @@ private:
         try
         {
             {
-                ThreadGroupSwitcher switcher(std::move(thread_group), thread_name);
+                ThreadGroupSwitcher switcher(thread_group, thread_name);
                 callback();
                 callback = {};
             }
@@ -282,7 +277,7 @@ public:
     [[nodiscard]] std::shared_ptr<Task> enqueueAndGiveOwnership(
         std::reference_wrapper<Fn> callback,
         Priority priority = {},
-        std::optional<Int64> wait_microseconds = {}) = delete;
+        std::optional<uint64_t> wait_microseconds = {}) = delete;
     // If you hit this error, you're passing std::ref(lambda) or capturing by reference.
     // Change [&my_lambda] to [my_lambda] (capture by value).
     //
@@ -293,7 +288,7 @@ public:
     /// You are responsible for handling it from now on, checking its status and so on. You must implement your own waitForAllToFinish* equivalent
     /// You must ensure that all returned tasks are waited upon (i.e., their futures are completed) before the ThreadPool is destroyed.
     /// Otherwise, the task's lambda may reference a destroyed pool state, leading to undefined behavior.
-    [[nodiscard]] std::shared_ptr<Task> enqueueAndGiveOwnership(Callback && callback, Priority priority = {}, std::optional<Int64> wait_microseconds = {})
+    [[nodiscard]] std::shared_ptr<Task> enqueueAndGiveOwnership(Callback && callback, Priority priority = {}, std::optional<uint64_t> wait_microseconds = {})
     {
         auto promise = std::make_shared<std::promise<Result>>();
         auto task = std::make_shared<Task>();
@@ -337,14 +332,7 @@ public:
         return task;
     }
 
-    /// Reserve tracking capacity up front. With enough capacity reserved for every
-    /// enqueueAndKeepTrack call, the internal emplace_back cannot reallocate (and moving a
-    /// shared_ptr is noexcept), so enqueueAndKeepTrack can only throw from scheduling itself,
-    /// before the task is accepted by the pool. That lets callers safely run a task inline on
-    /// failure without risking a scheduled-but-untracked duplicate.
-    void reserve(size_t n) { tasks.reserve(n); }
-
-    void enqueueAndKeepTrack(Callback && callback, Priority priority = {}, std::optional<Int64> wait_microseconds = {})
+    void enqueueAndKeepTrack(Callback && callback, Priority priority = {}, std::optional<uint64_t> wait_microseconds = {})
     {
         tasks.emplace_back(enqueueAndGiveOwnership(std::move(callback), priority, wait_microseconds));
     }
@@ -380,25 +368,6 @@ public:
     }
 
     void waitForAllToFinishAndRethrowFirstError() { waitForAllToFinishAndRethrowFirstError(tasks); }
-
-    /// Cancel the tasks that have not started yet, wait for the started ones and rethrow the first error.
-    /// Useful when the caller also does the work itself (e.g. takes work items from a shared counter until
-    /// there are none left): when the pool is busy, it should not wait for the tasks to be picked up
-    /// only to find nothing to do.
-    void cancelScheduledAndWaitForStartedAndRethrowFirstError()
-    {
-        cancelScheduledTasks();
-        waitForAllToFinish(tasks);
-
-        for (auto & task : tasks)
-        {
-            /// The future of a cancelled task is never set.
-            if (task->state != CANCELLED && task->future.valid())
-                task->future.get();
-        }
-
-        tasks.clear();
-    }
 };
 
 /// Has a task queue and a set of threads from ThreadPool.

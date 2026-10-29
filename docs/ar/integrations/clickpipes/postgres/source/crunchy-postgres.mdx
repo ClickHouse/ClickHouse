@@ -70,13 +70,13 @@ SHOW max_replication_slots; -- should be 10
     CREATE PUBLICATION clickpipes FOR TABLES IN SCHEMA "public";
     ```
 
-يحدّد المنشور `clickpipes` مجموعة الجداول التي ستُبثّ أحداث التغيير الخاصة بها إلى ClickPipes. نوصي بعدم استخدام `FOR ALL TABLES` ما لم تكن تنوي نسخ جميع الجداول متماثلًا، لأن تضمين جداول غير ضرورية يزيد من حركة WAL من Postgres إلى ClickPipes ويقلّل من الكفاءة الإجمالية للنسخ المتماثل.
+سيحتوي المنشور `clickpipes` على مجموعة أحداث التغييرات الناتجة عن الجداول المحددة، وسيُستخدم لاحقًا لإدخال تدفق النسخ المتماثل.
 
 <div id="safe-list-clickpipes-ips">
   ## إضافة عناوين IP الخاصة بـ ClickPipes إلى قائمة السماح
 </div>
 
-أضِف [ClickPipes IPs](/ar/integrations/clickpipes/networking/static-ips) إلى قائمة السماح عبر إضافة قواعد جدار الحماية في Crunchy Bridge.
+أضِف [ClickPipes IPs](/ar/integrations/clickpipes/home#list-of-static-ips) إلى قائمة السماح عبر إضافة قواعد جدار الحماية في Crunchy Bridge.
 
 <Image size="lg" img="/images/integrations/data-ingestion/clickpipes/postgres/source/setup/crunchy-postgres/firewall_rules_crunchy_bridge.webp" alt="أين تجد قواعد جدار الحماية في Crunchy Bridge؟" border />
 

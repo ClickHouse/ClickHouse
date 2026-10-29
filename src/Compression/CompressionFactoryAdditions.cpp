@@ -21,9 +21,7 @@
 #include <DataTypes/DataTypeNullable.h>
 #include <Common/Exception.h>
 #include <Common/SetWithMemoryTracking.h>
-#include <Common/StringUtils.h>
 #include <Common/VectorWithMemoryTracking.h>
-#include <Core/Settings.h>
 
 #include <limits>
 
@@ -33,91 +31,39 @@ namespace DB
 
 namespace ErrorCodes
 {
-extern const int UNEXPECTED_AST_STRUCTURE;
-extern const int UNKNOWN_CODEC;
-extern const int BAD_ARGUMENTS;
-extern const int LOGICAL_ERROR;
+    extern const int UNEXPECTED_AST_STRUCTURE;
+    extern const int UNKNOWN_CODEC;
+    extern const int BAD_ARGUMENTS;
+    extern const int LOGICAL_ERROR;
 }
 
-namespace Setting
-{
-extern const SettingsBool allow_suspicious_codecs;
-}
-
-
-void CompressionCodecFactory::checkCodecIsNotColumnLevelOnly(const String & family_name) const
-{
-    if (equalsCaseInsensitive(family_name, DEFAULT_CODEC_NAME) || isDeclarativeCodec(family_name))
-        throw Exception(ErrorCodes::BAD_ARGUMENTS,
-            "Codec {} can only be specified in the column definition", family_name);
-}
-
-namespace
-{
-
-/// Calls `check` with the family name of every codec of the chain in `ast`.
-template <typename Check>
-void forEachCodecFamilyNameInChain(const ASTPtr & ast, Check && check)
-{
-    const auto * func = ast->as<ASTFunction>();
-    if (!func || !func->arguments)
-        return;
-
-    for (const auto & inner_codec_ast : func->arguments->children)
-    {
-        if (const auto * identifier = inner_codec_ast->as<ASTIdentifier>())
-            check(identifier->name());
-        else if (const auto * inner_func = inner_codec_ast->as<ASTFunction>())
-            check(inner_func->name);
-    }
-}
-
-}
-
-void CompressionCodecFactory::checkCodecChainIsNotColumnLevelOnly(const ASTPtr & ast) const
-{
-    forEachCodecFamilyNameInChain(ast, [this](const String & family_name) { checkCodecIsNotColumnLevelOnly(family_name); });
-}
-
-void CompressionCodecFactory::checkCodecChainIsNotDeclarative(const ASTPtr & ast) const
-{
-    forEachCodecFamilyNameInChain(ast, [this](const String & family_name)
-    {
-        if (isDeclarativeCodec(family_name))
-            throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                "Codec {} can only be specified in the column definition", family_name);
-    });
-}
 
 void CompressionCodecFactory::validateCodec(
-    const String & family_name, std::optional<int> level, const CodecValidationSettings & validation_settings) const
+    const String & family_name, std::optional<int> level, bool sanity_check, bool allow_experimental_codecs) const
 {
     if (family_name.empty())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Compression codec name cannot be empty");
 
-    checkCodecIsNotColumnLevelOnly(family_name);
-
     if (level)
     {
         auto literal = make_intrusive<ASTLiteral>(static_cast<UInt64>(*level));
-        validateCodecAndGetPreprocessedAST(
-            makeASTFunction("CODEC", makeASTFunction(family_name, literal)), {}, validation_settings);
+        validateCodecAndGetPreprocessedAST(makeASTFunction("CODEC", makeASTFunction(Poco::toUpper(family_name), literal)),
+            {}, sanity_check, allow_experimental_codecs);
     }
     else
     {
-        auto identifier = make_intrusive<ASTIdentifier>(family_name);
-        validateCodecAndGetPreprocessedAST(makeASTFunction("CODEC", identifier), {}, validation_settings);
+        auto identifier = make_intrusive<ASTIdentifier>(Poco::toUpper(family_name));
+        validateCodecAndGetPreprocessedAST(makeASTFunction("CODEC", identifier),
+            {}, sanity_check, allow_experimental_codecs);
     }
 }
 
 void CompressionCodecFactory::validateCodecString(
-    const String & compression_codec, const CodecValidationSettings & validation_settings) const
+    const String & compression_codec, bool sanity_check, bool allow_experimental_codecs) const
 {
     ParserCodec codec_parser;
-    auto ast = parseQuery(codec_parser, "(" + compression_codec + ")", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
-    checkCodecChainIsNotColumnLevelOnly(ast);
-
-    validateCodecAndGetPreprocessedASTImpl(ast, {}, validation_settings.settings, /*sanity_check=*/ false);
+    auto ast = parseQuery(codec_parser, "(" + Poco::toUpper(compression_codec) + ")", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
+    validateCodecAndGetPreprocessedAST(ast, {}, sanity_check, allow_experimental_codecs);
 }
 
 namespace
@@ -162,14 +108,7 @@ bool typeContainsMap(const DataTypePtr & type)
 }
 
 ASTPtr CompressionCodecFactory::validateCodecAndGetPreprocessedAST(
-    const ASTPtr & ast, const DataTypePtr & column_type, const CodecValidationSettings & validation_settings) const
-{
-    const bool sanity_check = validation_settings.settings && !(*validation_settings.settings)[Setting::allow_suspicious_codecs];
-    return validateCodecAndGetPreprocessedASTImpl(ast, column_type, validation_settings.settings, sanity_check);
-}
-
-ASTPtr CompressionCodecFactory::validateCodecAndGetPreprocessedASTImpl(
-    const ASTPtr & ast, const DataTypePtr & column_type, const Settings * settings, bool sanity_check) const
+    const ASTPtr & ast, const DataTypePtr & column_type, bool sanity_check, bool allow_experimental_codecs) const
 {
     if (const auto * func = ast->as<ASTFunction>())
     {
@@ -220,7 +159,7 @@ ASTPtr CompressionCodecFactory::validateCodecAndGetPreprocessedASTImpl(
             /// Default codec replaced with current default codec which may depend on different
             /// settings (and properties of data) in runtime.
             CompressionCodecPtr result_codec;
-            if (equalsCaseInsensitive(codec_family_name, DEFAULT_CODEC_NAME))
+            if (codec_family_name == DEFAULT_CODEC_NAME)
             {
                 if (codec_arguments != nullptr)
                     throw Exception(ErrorCodes::BAD_ARGUMENTS,
@@ -268,30 +207,11 @@ ASTPtr CompressionCodecFactory::validateCodecAndGetPreprocessedASTImpl(
                     result_codec = getImpl(codec_family_name, codec_arguments, nullptr);
                 }
 
-                if (settings)
-                {
-                    const String gate_setting_name = getGateSettingName(codec_family_name);
-                    const std::optional<SettingsTierType> tier = getGateTier(gate_setting_name);
-                    if (tier && !settings->get(gate_setting_name).safeGet<bool>())
-                    {
-                        std::string_view reason;
-                        /// `getGateTier` maps OBSOLETE to nullopt (the codec is GA). Included for switch exhaustiveness.
-                        switch (*tier)
-                        {
-                            case SettingsTierType::EXPERIMENTAL: reason = "is experimental and not meant to be used in production"; break;
-                            case SettingsTierType::BETA: reason = "is in beta and not yet recommended for production use"; break;
-                            case SettingsTierType::PRODUCTION:
-                            case SettingsTierType::PRIVATE_PREVIEW:
-                            case SettingsTierType::OBSOLETE: reason = "is disabled"; break;
-                        }
-                        throw Exception(
-                            ErrorCodes::BAD_ARGUMENTS,
-                            "Codec {} {}. You can enable it with the '{}' setting",
-                            codec_family_name,
-                            reason,
-                            gate_setting_name);
-                    }
-                }
+                if (!allow_experimental_codecs && result_codec->isExperimental())
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                        "Codec {} is experimental and not meant to be used in production."
+                        " You can enable it with the 'allow_experimental_codecs' setting",
+                        codec_family_name);
 
                 /// Lossy codecs must not be applied to Map columns: a Map exposes its keys as a substream
                 /// (a float key would be accepted by a float-only codec like SZ3), and lossily compressing
@@ -318,14 +238,7 @@ ASTPtr CompressionCodecFactory::validateCodecAndGetPreprocessedASTImpl(
                         "codec, or in any other context where the column data type is unknown",
                         codec_family_name);
 
-                /// A codec that needs the column type to compress (e.g. `PCO`) cannot be used where the codec is
-                /// resolved without one: the marks, primary key, default and TTL recompression codecs.
-                if (!column_type && result_codec->requiresColumnTypeToCompress())
-                    throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                        "Codec {} requires the column type to compress and can only be specified for a column",
-                        codec_family_name);
-
-                codecs_descriptions->children.emplace_back(result_codec->getCodecDescription());
+                codecs_descriptions->children.emplace_back(result_codec->getCodecDesc());
             }
 
             /// A codec that was not resolved per substream is the same one for all of them.
@@ -375,7 +288,7 @@ ASTPtr CompressionCodecFactory::validateCodecAndGetPreprocessedASTImpl(
                         throw Exception(ErrorCodes::BAD_ARGUMENTS,
                             "Too many codecs in the codec chain: {}. The size they reserve for compressing a block "
                             "overflows 4 GiB at codec {} ({}), so no block could be compressed. Use fewer codecs.",
-                            chain.size(), i + 1, chain[i]->getCodecDescription()->formatForErrorMessage());
+                            chain.size(), i + 1, chain[i]->getCodecDesc()->formatForErrorMessage());
                     reserve_size = next_reserve_size;
                 }
             }

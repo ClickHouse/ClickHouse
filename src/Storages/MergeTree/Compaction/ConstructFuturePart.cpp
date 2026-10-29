@@ -4,7 +4,7 @@
 namespace DB
 {
 
-static std::expected<MergeTreeDataPartsVector, PreformattedMessage> findPartsInMemory(const MergeTreeData & data, const PartsRange & range, const MergeTreeData::DataPartStates & lookup_statuses)
+static std::optional<MergeTreeDataPartsVector> findPartsInMemory(const MergeTreeData & data, const PartsRange & range, const MergeTreeData::DataPartStates & lookup_statuses)
 {
     MergeTreeDataPartsVector data_parts;
 
@@ -13,24 +13,22 @@ static std::expected<MergeTreeDataPartsVector, PreformattedMessage> findPartsInM
         if (auto part = data.getPartIfExists(properties.info, lookup_statuses))
             data_parts.push_back(std::move(part));
         else
-            return std::unexpected(PreformattedMessage::create("Part {} is not found", properties.name));
+            return std::nullopt;
     }
 
     return data_parts;
 }
 
-std::expected<FutureMergedMutatedPartPtr, PreformattedMessage> constructFuturePart(
+FutureMergedMutatedPartPtr constructFuturePart(
     const MergeTreeData & data,
     const MergeSelectorChoice & choice,
     MergeTreeData::DataPartStates lookup_statuses)
 {
     auto parts = findPartsInMemory(data, choice.range, lookup_statuses);
-    if (!parts)
-        return std::unexpected(std::move(parts.error()));
-
     auto patch_parts = findPartsInMemory(data, choice.range_patches, lookup_statuses);
-    if (!patch_parts)
-        return std::unexpected(std::move(patch_parts.error()));
+
+    if (!parts.has_value() || !patch_parts.has_value())
+        return nullptr;
 
     auto future_part = std::make_shared<FutureMergedMutatedPart>();
     future_part->merge_type = choice.merge_type;

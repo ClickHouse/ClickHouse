@@ -1,7 +1,7 @@
 #pragma once
 
 #include <Interpreters/Context_fwd.h>
-#include <Processors/IProcessor_fwd.h>
+#include <Processors/IProcessor.h>
 #include <QueryPipeline/QueryPlanResourceHolder.h>
 #include <Core/Block_fwd.h>
 

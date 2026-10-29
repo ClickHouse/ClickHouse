@@ -24,11 +24,6 @@ throw, Date32 rejects what it cannot represent instead of substituting a default
 throw, an unquoted numeric token is checked too
 2023-11-14 22:13:20
 2106-02-07 06:28:15
-2023-12-23 20:37:33
-throw, the last second keeps its fractional ticks
-9999-12-31 23:59:59.500
-9999-12-31 23:59:59.999
-9999-12-31 23:59:59.500
 throw, the range is checked after the timezone offset is applied
 2106-02-07 06:28:15	1970-01-01 00:00:00
 2106-02-07 06:28:15	2106-02-07 06:28:15

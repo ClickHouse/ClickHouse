@@ -1,13 +1,18 @@
 --- SETTINGS before FORMAT ---
-{"explain":"INSERT INTO FUNCTION `null`('x UInt64')\nSETTINGS max_threads = 1\nSELECT 1\nFROM system.one\nSETTINGS max_threads = 1"}
+{"explain":"INSERT INTO FUNCTION `null`('x UInt64')"}
+{"explain":"SETTINGS max_threads = 1"}
+{"explain":"SELECT 1"}
+{"explain":"SETTINGS max_threads = 1"}
 --- FORMAT Values ---
-('INSERT INTO FUNCTION `null`(\'x UInt64\') SELECT 1\nFROM system.one')
+('INSERT INTO FUNCTION `null`(\'x UInt64\') SELECT 1')
 --- SETTINGS after FORMAT ---
-{"explain":"INSERT INTO FUNCTION `null`('x UInt64')\nSETTINGS max_threads = 1\nSELECT 1\nFROM system.one"}
+{"explain":"INSERT INTO FUNCTION `null`('x UInt64')"}
+{"explain":"SETTINGS max_threads = 1"}
+{"explain":"SELECT 1"}
 --- double FORMAT ---
-{"explain":"INSERT INTO FUNCTION `null`('x UInt64') SELECT 1\nFROM system.one FORMAT Values"}
+{"explain":"INSERT INTO FUNCTION `null`('x UInt64') SELECT 1 FORMAT Values"}
 --- trailing semicolon ---
-{"explain":"INSERT INTO FUNCTION `null`('x UInt64') SELECT 1\nFROM system.one"}
+{"explain":"INSERT INTO FUNCTION `null`('x UInt64') SELECT 1"}
 --- INTO OUTFILE after moved FORMAT ---
 ok
 --- roundtrip stability ---

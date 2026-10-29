@@ -1,0 +1,49 @@
+---
+noindex: true
+title: "ClickHouse のアラート設定"
+sidebarTitle: "アラート設定"
+description: "ClickHouse Server、Keeper、Operator 向けの Prometheus スクレイプターゲットとアラートを設定します。"
+---
+
+ClickHouse Server、Keeper、Operator 向けの Prometheus スクレイプターゲットとアラートを設定します。
+
+<div id="set-up-prometheus-scrape-targets-for-clickhouse-server">
+  ## ClickHouse Server の Prometheus スクレイプターゲットを設定する
+</div>
+
+ClickHouse server のポッドには、基本的なメトリクスを公開する `prometheus.io/*` アノテーションが含まれています。すべてのメトリクス (`ClickHouse_CustomMetrics_*` を含む) を取得するには、PodMonitor または同等の仕組みを使用して、各 ClickHouse server ポッドの `:8123/metrics` エンドポイントを Prometheus のスクレイプターゲットとして設定します。
+
+このエンドポイントは**認証が必要**です。読み取り専用権限を持つ専用ユーザーで認証してください。
+
+<div id="set-up-podmonitor-for-keeper">
+  ## Keeper 用の PodMonitor を設定する
+</div>
+
+Keeper のポッドの `:8001/metrics` エンドポイントを対象とする PodMonitor を作成し、Keeper のメトリクスを収集します。
+
+<div id="alert-rules">
+  ## アラートルール
+</div>
+
+推奨されるアラート定義 (Prometheus 式、しきい値、アクション) の一覧については、[reference/metrics-and-alerts.md](/ja/products/clickhouse-private/reference/metrics-and-alerts-reference)を参照してください。
+
+主なアラートは次のとおりです。
+
+| アラート                  | メトリクス                                                  | 目的                                  |
+| --------------------- | ------------------------------------------------------ | ----------------------------------- |
+| Operator がリコンサイルしていない | `last_cluster_reconcile`                               | Operator が想定された時間内にリコンサイルしていない      |
+| Operator のリコンサイルエラー   | `controller_runtime_reconcile_errors_total`            | エラー率がリコンサイル試行の 5% を超えている            |
+| 破損したデタッチ済みパーツ         | `ClickHouse_CustomMetric_NumberOfBrokenDetachedParts`  | 破損したデタッチ済みパーツが 60 分を超えて 100 個を超えている |
+| データ損失                 | `ClickHouse_CustomMetric_LostPartCount`                | 失われたパーツが検出された (データ損失の可能性)           |
+| シャットダウン処理が終わらないサーバー   | `ClickHouseMetrics_IsServerShuttingDown`               | サーバーが 1 時間を超えてシャットダウン中である           |
+| テーブルレプリカが読み取り専用       | `ClickHouse_CustomMetric_TableReadOnlyDurationSeconds` | テーブルが 1 時間を超えて読み取り専用モードになっている       |
+
+<div id="standard-kubernetes-alerts">
+  ## 標準的な Kubernetes アラート
+</div>
+
+ClickHouse 固有のアラートに加えて、以下についても標準的な Kubernetes アラートを追加します。
+
+* クラッシュループ状態のポッド
+* スケジュール不能なポッド
+* ご利用の環境に特有の、その他のインフラストラクチャ関連の問題

@@ -1,38 +1,27 @@
 #include <Interpreters/JoinUtils.h>
-#include <Interpreters/FullSortingMergeJoin.h>
-#include <Interpreters/JoinOperator.h>
-#include <Interpreters/MergeJoin.h>
 
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnLowCardinality.h>
-#include <Columns/ColumnReplicated.h>
 #include <Columns/ColumnSparse.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/FilterDescription.h>
 
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
-#include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypesNumber.h>
-#include <DataTypes/NullableUtils.h>
-#include <DataTypes/getMostSubtype.h>
 
 #include <Interpreters/ActionsDAG.h>
 #include <Interpreters/TableJoin.h>
 
 #include <IO/WriteHelpers.h>
 
-#include <Common/CurrentThread.h>
 #include <Common/HashTable/Hash.h>
-#include <Common/MemoryTracker.h>
-#include <Common/typeid_cast.h>
 
 #include <Core/BlockNameMap.h>
 
 #include <base/FnTraits.h>
 #include <algorithm>
 #include <ranges>
-#include <unordered_map>
 
 namespace DB
 {
@@ -111,108 +100,6 @@ LowcardAndNull getLowcardAndNullability(const ColumnPtr & col)
 namespace JoinCommon
 {
 
-bool canBeExecutedByEnabledAlgorithm(const JoinSettings & join_settings, JoinKind kind, JoinStrictness strictness)
-{
-    const auto & join_algorithms = join_settings.join_algorithms;
-    for (auto algorithm : join_algorithms)
-    {
-        switch (algorithm)
-        {
-            case JoinAlgorithm::FULL_SORTING_MERGE:
-            case JoinAlgorithm::PARALLEL_FULL_SORTING_MERGE:
-                if (FullSortingMergeJoin::isMergeAlgorithmStrictnessAndKindSupported(kind, strictness))
-                    return true;
-                break;
-            case JoinAlgorithm::PARTIAL_MERGE:
-                if (MergeJoin::isSupported(kind, strictness))
-                    return true;
-                break;
-            case JoinAlgorithm::DIRECT:
-                /// Only over a key-value right table, and only for the strictness it already has.
-                break;
-            case JoinAlgorithm::IE_JOIN:
-                /// Only for an inequality `ON` condition, which no rewrite introduces.
-                break;
-            case JoinAlgorithm::DEFAULT:
-            case JoinAlgorithm::AUTO:
-            case JoinAlgorithm::HASH:
-            case JoinAlgorithm::PARALLEL_HASH:
-                /// The hash-based algorithms implement every kind and strictness.
-                return true;
-            case JoinAlgorithm::GRACE_HASH:
-                /// So does `grace_hash`, but without a spill threshold `tryCreateJoin` passes it over for
-                /// the next algorithm of the list, so there it cannot execute anything.
-                if (join_settings.canRunGraceHash())
-                    return true;
-                break;
-            case JoinAlgorithm::PREFER_PARTIAL_MERGE:
-                /// `prefer_partial_merge` means `partial_merge` with a hash fallback for everything
-                /// `MergeJoin` cannot execute, so it can execute every kind and strictness as well.
-                return true;
-        }
-    }
-
-    return false;
-}
-
-Int64 getCurrentQueryMemoryUsage()
-{
-    /// Use query-level memory tracker.
-    if (auto * memory_tracker_child = CurrentThread::getMemoryTracker())
-        if (auto * memory_tracker = memory_tracker_child->getParent())
-            return memory_tracker->get();
-    return 0;
-}
-
-Block materializeColumnsFromRightBlock(Block block, const Block & sample_block)
-{
-    std::unordered_map<std::string_view, std::vector<ColumnWithTypeAndName *>> block_index;
-    for (auto & column : block)
-        block_index[column.name].push_back(&column);
-
-    for (const auto & sample_column : sample_block.getColumnsWithTypeAndName())
-    {
-        for (auto * column_ptr : block_index[sample_column.name])
-        {
-            auto & column = *column_ptr;
-
-            /// There's no optimization for right side const columns. Remove constness if any.
-            column.column = column.column->convertToFullColumnIfConst();
-            auto actual_column = column.column;
-
-            /// We support replicated columns on the right side.
-            const auto * replicated_column = typeid_cast<const ColumnReplicated *>(actual_column.get());
-            /// Keep an owning reference: `column.column` is reassigned below, which can drop the last
-            /// reference to this `ColumnReplicated` and free the indexes it owns.
-            ColumnPtr replicated_indexes;
-            if (replicated_column)
-            {
-                replicated_indexes = replicated_column->getIndexesColumn();
-                actual_column = replicated_column->getNestedColumn();
-            }
-
-            /// Sparse columns are not supported on the right side.
-            actual_column = recursiveRemoveSparse(actual_column);
-
-            if (actual_column->lowCardinality() && !sample_column.column->lowCardinality())
-            {
-                actual_column = actual_column->convertToFullColumnIfLowCardinality();
-                column.type = removeLowCardinality(column.type);
-            }
-
-            column.column = actual_column;
-
-            if (sample_column.column->isNullable())
-                JoinCommon::convertColumnToNullable(column);
-
-            if (replicated_indexes)
-                column.column = ColumnReplicated::create(column.column, replicated_indexes);
-        }
-    }
-
-    return block;
-}
-
 void changeLowCardinalityInplace(ColumnWithTypeAndName & column)
 {
     if (column.type->lowCardinality())
@@ -227,108 +114,6 @@ void changeLowCardinalityInplace(ColumnWithTypeAndName & column)
         typeid_cast<ColumnLowCardinality &>(*lc).insertRangeFromFullColumn(*column.column, 0, column.column->size());
         column.column = std::move(lc);
     }
-}
-
-/// Mirrors `validateNestedTypesForAccurateCastOrNull` in CastOverloadResolver.cpp: `accurateCastOrNull`
-/// reports an inexact conversion of a Tuple element by a NULL in place of that element, so every element
-/// of the outermost Tuple has to be able to hold it. `Tuple(Array(UInt64))` is an example of a type that cannot.
-static bool isSupportedByAccurateCastOrNull(const DataTypePtr & type, bool is_nested_tuple = false)
-{
-    /// `getMostSubtype` reports the absence of a common subtype for a Tuple element by `Nothing` in its place.
-    if (isNothing(type))
-        return false;
-    if (const auto * tuple_type = typeid_cast<const DataTypeTuple *>(type.get()))
-    {
-        /// The join null-key map only extracts nullable elements of the outermost Tuple.
-        /// A NULL in a nested Tuple would otherwise remain a regular hash key and match another NULL.
-        if (is_nested_tuple)
-            return false;
-
-        const auto & elements = tuple_type->getElements();
-        return std::ranges::all_of(elements, [](const auto & element) { return isSupportedByAccurateCastOrNull(element, true); });
-    }
-    if (type->isNullable())
-        return isSupportedByAccurateCastOrNull(removeNullable(type), is_nested_tuple);
-    return type->canBeInsideNullable() || canContainNull(*type);
-}
-
-static bool hasOnlyIntegerLeaves(const DataTypePtr & type)
-{
-    if (const auto * tuple_type = typeid_cast<const DataTypeTuple *>(type.get()))
-    {
-        return std::ranges::all_of(tuple_type->getElements(), hasOnlyIntegerLeaves);
-    }
-
-    return isInteger(removeNullable(type));
-}
-
-/// An `accurateCastOrNull` of a `LowCardinality(Nullable(T))` Tuple element to a non-Nullable element throws
-/// instead of reporting the NULL in the null map of the whole Tuple. Only the elements are converted
-/// element-wise, so a `LowCardinality` or `Nullable` wrapper around the whole key is not affected.
-static bool hasNullableLowCardinalityTupleElement(const DataTypePtr & type)
-{
-    const auto * tuple_type = typeid_cast<const DataTypeTuple *>(removeNullable(type).get());
-    if (!tuple_type)
-        return false;
-
-    return std::ranges::any_of(
-        tuple_type->getElements(),
-        [](const auto & element)
-        { return element->isLowCardinalityNullable() || hasNullableLowCardinalityTupleElement(element); });
-}
-
-DataTypePtr tryGetCommonSubtypeForJoinKeys(
-    const DataTypePtr & left_type, const DataTypePtr & right_type, bool force_support_conversion)
-{
-    if (hasNullableLowCardinalityTupleElement(left_type) || hasNullableLowCardinalityTupleElement(right_type))
-        return nullptr;
-
-    DataTypes types{
-        removeNullable(recursiveRemoveLowCardinality(left_type)),
-        removeNullable(recursiveRemoveLowCardinality(right_type))};
-
-    /// Only integer keys need this fallback: a floating-point common subtype can change equality semantics.
-    if (!std::ranges::all_of(types, hasOnlyIntegerLeaves))
-        return nullptr;
-
-    auto subtype = getMostSubtype(types, /* throw_if_result_is_nothing= */ false, force_support_conversion);
-    /// `accurateCastOrNull` reports an inexact conversion by returning NULL, so the type has to be
-    /// allowed inside Nullable, and the same holds for the elements of a Tuple, recursively.
-    if (isNothing(subtype) || !subtype->canBeInsideNullable() || !isSupportedByAccurateCastOrNull(subtype))
-        return nullptr;
-
-    return subtype;
-}
-
-DataTypePtr removeNullableInsideTuple(const DataTypePtr & type)
-{
-    const auto * tuple_type = typeid_cast<const DataTypeTuple *>(type.get());
-    if (!tuple_type)
-        return type;
-
-    DataTypes elements;
-    elements.reserve(tuple_type->getElements().size());
-    for (const auto & element : tuple_type->getElements())
-        elements.push_back(removeNullableInsideTuple(removeNullable(element)));
-
-    /// `accurateCastOrNull` matches the elements of two named Tuples by name and the elements of
-    /// unnamed ones by position, so the names have to be carried over.
-    if (tuple_type->hasExplicitNames())
-        return std::make_shared<DataTypeTuple>(elements, tuple_type->getElementNames());
-    return std::make_shared<DataTypeTuple>(elements);
-}
-
-bool keyMatchesValuesEqualsRejects(const DataTypePtr & type)
-{
-    /// A top-level NULL of Nullable and LowCardinality(Nullable) never matches.
-    auto key_type = removeLowCardinalityAndNullable(type);
-    /// A JOIN key can match a NaN to a NaN, while `nan = nan` is false.
-    if (canContainNull(*key_type) || isFloat(key_type))
-        return true;
-
-    const auto * tuple_type = typeid_cast<const DataTypeTuple *>(key_type.get());
-    return tuple_type && std::ranges::any_of(tuple_type->getElements(), [](const DataTypePtr & element)
-        { return canContainNull(*element) || keyMatchesValuesEqualsRejects(element); });
 }
 
 bool canBecomeNullable(const DataTypePtr & type)
@@ -875,7 +660,8 @@ Blocks scatterBlockByHash(const Strings & key_columns_names, const BlocksList & 
 
 bool hasNonJoinedBlocks(const TableJoin & table_join)
 {
-    return hasNonJoinedBlocks(table_join.kind(), table_join.strictness());
+    return table_join.strictness() != JoinStrictness::Asof && table_join.strictness() != JoinStrictness::Semi
+        && isRightOrFull(table_join.kind());
 }
 
 ColumnPtr filterWithBlanks(ColumnPtr src_column, const IColumn::Filter & filter, bool inverse_filter)

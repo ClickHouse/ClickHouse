@@ -14,7 +14,7 @@ doc_type: 'reference'
 Execute SQL query using chDB engine.
 
 This is the main query function that executes SQL statements using the embedded
-ClickHouse engine. Supports various output formats and can work with temporary
+ClickHouse engine. Supports various output formats and can work with in-memory
 or file-based databases.
 
 **Syntax**
@@ -29,8 +29,8 @@ chdb.query(sql, output_format='CSV', path='', udf_path='')
 |-----------------|-------|------------|-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
 | `sql`           | str   | *required* | SQL query string to execute                                                                                                                                                                                                                                                                                     |
 | `output_format` | str   | `"CSV"`    | Output format for results. Supported formats:<br/>• `"CSV"` - Comma-separated values<br/>• `"JSON"` - JSON format<br/>• `"Arrow"` - Apache Arrow format<br/>• `"Parquet"` - Parquet format<br/>• `"DataFrame"` - Pandas DataFrame<br/>• `"ArrowTable"` - PyArrow Table<br/>• `"Debug"` - Enable verbose logging |
-| `path`          | str   | `""`       | Database file path. Defaults to a temporary, non-persistent database (equivalent to `":memory:"`).<br/>Pass a file path to persist to disk                                                                                                                                                                                               |
-| `udf_path`      | str   | `""`       | Path to legacy subprocess-based UDF directory. Not needed for native Python UDFs ([`@func`](#func-decorator) / [`create_function`](#create-function))                                                                                                                                                                                                                                                                        |
+| `path`          | str   | `""`       | Database file path. Defaults to in-memory database.<br/>Can be a file path or `":memory:"` for in-memory database                                                                                                                                                                                               |
+| `udf_path`      | str   | `""`       | Path to User-Defined Functions directory                                                                                                                                                                                                                                                                        |
 
 **Returns**
 
@@ -72,6 +72,11 @@ Returns the query result in the specified format:
 >>> result = chdb.query("CREATE TABLE test (id INT) ENGINE = Memory", path="mydb.chdb")
 ```
 
+```pycon
+>>> # Query with UDF
+>>> result = chdb.query("SELECT my_udf('test')", udf_path="/path/to/udfs")
+```
+
 ---
 
 ### `chdb.sql` {#chdb_sql}
@@ -79,7 +84,7 @@ Returns the query result in the specified format:
 Execute SQL query using chDB engine.
 
 This is the main query function that executes SQL statements using the embedded
-ClickHouse engine. Supports various output formats and can work with temporary
+ClickHouse engine. Supports various output formats and can work with in-memory
 or file-based databases.
 
 **Syntax**
@@ -94,8 +99,8 @@ chdb.sql(sql, output_format='CSV', path='', udf_path='')
 |-----------------|-------|------------|----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
 | `sql`           | str   | *required* | SQL query string to execute                                                                                                                                                                                                                                                                              |
 | `output_format` | str   | `"CSV"`    | Output format for results. Supported formats:<br/>• `"CSV"` - Comma-separated values<br/>• `"JSON"` - JSON format<br/>• `"Arrow"` - Apache Arrow format<br/>• `"Parquet"` - Parquet format<br/>• `"DataFrame"` - Pandas DataFrame<br/>• `"ArrowTable"` - PyArrow Table<br/>• `"Debug"` - Enable verbose logging |
-| `path`          | str   | `""`       | Database file path. Defaults to a temporary, non-persistent database (equivalent to `":memory:"`).<br/>Pass a file path to persist to disk                                                                                                                                                                                         |
-| `udf_path`      | str   | `""`       | Path to legacy subprocess-based UDF directory. Not needed for native Python UDFs ([`@func`](#func-decorator) / [`create_function`](#create-function))                                                                                                                                                                                                                                                                 |
+| `path`          | str   | `""`       | Database file path. Defaults to in-memory database.<br/>Can be a file path or `":memory:"` for in-memory database                                                                                                                                                                                         |
+| `udf_path`      | str   | `""`       | Path to User-Defined Functions directory                                                                                                                                                                                                                                                                 |
 
 **Returns**
 
@@ -135,6 +140,11 @@ Returns the query result in the specified format:
 ```pycon
 >>> # Query with file-based database
 >>> result = chdb.query("CREATE TABLE test (id INT) ENGINE = Memory", path="mydb.chdb")
+```
+
+```pycon
+>>> # Query with UDF
+>>> result = chdb.query("SELECT my_udf('test')", udf_path="/path/to/udfs")
 ```
 
 ---
@@ -232,7 +242,8 @@ The following Session Functions are available:
 Create a connection to chDB background server.
 
 This function establishes a [Connection](#chdb-state-sqlitelike-connection) to the chDB (ClickHouse) database engine.
-Each call returns an independent connection, and any number of connections to the same database path may be open at the same time.
+Only one open connection is allowed per process.
+Multiple calls with the same connection string will return the same connection object.
 
 ```python
 chdb.connect(connection_string: str = ':memory:') → Connection
@@ -248,7 +259,7 @@ chdb.connect(connection_string: str = ':memory:') → Connection
 
 | Format                    | Description                  |
 |---------------------------|------------------------------|
-| `":memory:"`              | Temporary database (default) |
+| `":memory:"`              | In-memory database (default) |
 | `"test.db"`               | Relative path database file  |
 | `"file:test.db"`          | Same as relative path        |
 | `"/path/to/test.db"`      | Absolute path database file  |
@@ -259,7 +270,7 @@ chdb.connect(connection_string: str = ':memory:') → Connection
 | Format                                             | Description               |
 |----------------------------------------------------|---------------------------|
 | `"file:test.db?param1=value1&param2=value2"`       | Relative path with params |
-| `"file::memory:?verbose&log-level=test"`           | Temporary with params     |
+| `"file::memory:?verbose&log-level=test"`           | In-memory with params     |
 | `"///path/to/test.db?param1=value1&param2=value2"` | Absolute path with params |
 
 **Query parameter handling**
@@ -287,14 +298,15 @@ For a complete parameter list, see `clickhouse local --help --verbose`
 |----------------|---------------------------------|
 | `RuntimeError` | If connection to database fails |
 
-<Note>
-A process runs one embedded engine bound to one database path. Multiple connections to the same path can coexist and run queries concurrently. Opening a *different* path while any connection is open raises a `RuntimeError`; close the open ones first.
-</Note>
+<Warning>
+Only one connection per process is supported.
+Creating a new connection will close any existing connection.
+</Warning>
 
 **Examples**
 
 ```pycon
->>> # Temporary database
+>>> # In-memory database
 >>> conn = connect()
 >>> conn = connect(":memory:")
 >>>
@@ -336,7 +348,8 @@ provides error information from the underlying ClickHouse engine.
 Bases: `object`
 
 Session will keep the state of query.
-If path is None, the session uses the process-wide temporary (`:memory:`) database, so all path-less sessions see each other's tables; its temporary directory is removed only when the last such session or connection closes.
+If path is None, it will create a temporary directory and use it as the database path
+and the temporary directory will be removed when the session is closed.
 You can also pass in a path to create a database at that path where will keep your data.
 
 You can also use a connection string to pass in the path and other parameters.
@@ -349,13 +362,13 @@ class chdb.session.Session(path=None)
 
 | Connection String                                  | Description                          |
 |----------------------------------------------------|--------------------------------------|
-| `":memory:"`                                       | Temporary database                   |
+| `":memory:"`                                       | In-memory database                   |
 | `"test.db"`                                        | Relative path                        |
 | `"file:test.db"`                                   | Same as above                        |
 | `"/path/to/test.db"`                               | Absolute path                        |
 | `"file:/path/to/test.db"`                          | Same as above                        |
 | `"file:test.db?param1=value1&param2=value2"`       | Relative path with query params      |
-| `"file::memory:?verbose&log-level=test"`           | Temporary database with query params |
+| `"file::memory:?verbose&log-level=test"`           | In-memory database with query params |
 | `"///path/to/test.db?param1=value1&param2=value2"` | Absolute path with query params      |
 
 <Info>
@@ -370,12 +383,12 @@ Some special args handling:
 - “mode=ro” would be “–readonly=1” for clickhouse (read-only mode)
 </Info>
 
-<Note>
+<Warning>
 **Important**
 
-- Multiple sessions can coexist, as long as they share the same database path.
-- To use a different database path, close the open session(s) first.
-</Note>
+- There can be only one session at a time. If you want to create a new session, you need to close the existing one.
+- Creating a new session will close the existing one.
+</Warning>
 
 ---
 
@@ -469,7 +482,7 @@ query(sql, fmt='CSV', udf_path='')
 |------------|-------|------------|------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
 | `sql`      | str   | *required* | SQL query string to execute                                                                                                                                                                                                                                                                                                  |
 | `fmt`      | str   | `"CSV"`    | Output format for results. Available formats:<br/>• `"CSV"` - Comma-separated values<br/>• `"JSON"` - JSON format<br/>• `"TabSeparated"` - Tab-separated values<br/>• `"Pretty"` - Pretty-printed table format<br/>• `"JSONCompact"` - Compact JSON format<br/>• `"Arrow"` - Apache Arrow format<br/>• `"Parquet"` - Parquet format |
-| `udf_path` | str   | `""`       | Path to legacy subprocess-based UDF directory. Not needed for native Python UDFs ([`@func`](#func-decorator) / [`create_function`](#create-function)). If not specified, uses the UDF path from session initialization                                                                                                                                                                                                                              |
+| `udf_path` | str   | `""`       | Path to user-defined functions. If not specified, uses the UDF path from session initialization                                                                                                                                                                                                                              |
 
 **Returns**
 
@@ -629,7 +642,7 @@ sql(sql, fmt='CSV', udf_path='')
 |------------|-------|------------|------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
 | `sql`      | str   | *required* | SQL query string to execute                                                                                                                                                                                                                                                                                                  |
 | `fmt`      | str   | `"CSV"`    | Output format for results. Available formats:<br/>• `"CSV"` - Comma-separated values<br/>• `"JSON"` - JSON format<br/>• `"TabSeparated"` - Tab-separated values<br/>• `"Pretty"` - Pretty-printed table format<br/>• `"JSONCompact"` - Compact JSON format<br/>• `"Arrow"` - Apache Arrow format<br/>• `"Parquet"` - Parquet format |
-| `udf_path` | str   | `""`       | Path to legacy subprocess-based UDF directory. Not needed for native Python UDFs ([`@func`](#func-decorator) / [`create_function`](#create-function)). If not specified, uses the UDF path from session initialization                                                                                                                                                                                                                              |
+| `udf_path` | str   | `""`       | Path to user-defined functions. If not specified, uses the UDF path from session initialization                                                                                                                                                                                                                              |
 
 **Returns**
 
@@ -700,7 +713,8 @@ id,name
 Create a [Connection](#chdb-state-sqlitelike-connection) to the chDB background server.
 
 This function establishes a connection to the chDB (ClickHouse) database engine.
-Each call returns an independent connection, and any number of connections to the same database path may be open at the same time.
+Only one open connection is allowed per process. Multiple calls with the same
+connection string will return the same connection object.
 
 **Syntax**
 
@@ -720,7 +734,7 @@ Supported connection string formats:
 
 | Format                    | Description                  |
 |---------------------------|------------------------------|
-| `":memory:"`              | Temporary database (default) |
+| `":memory:"`              | In-memory database (default) |
 | `"test.db"`               | Relative path database file  |
 | `"file:test.db"`          | Same as relative path        |
 | `"/path/to/test.db"`      | Absolute path database file  |
@@ -731,7 +745,7 @@ Supported connection string formats:
 | Format                                             | Description               |
 |----------------------------------------------------|---------------------------|
 | `"file:test.db?param1=value1&param2=value2"`       | Relative path with params |
-| `"file::memory:?verbose&log-level=test"`           | Temporary with params     |
+| `"file::memory:?verbose&log-level=test"`           | In-memory with params     |
 | `"///path/to/test.db?param1=value1&param2=value2"` | Absolute path with params |
 
 **Query parameter handling**
@@ -759,14 +773,17 @@ For a complete parameter list, see `clickhouse local --help --verbose`
 |----------------|---------------------------------|
 | `RuntimeError` | If connection to database fails |
 
-<Note>
-A process runs one embedded engine bound to one database path. Multiple connections to the same path can coexist and run queries concurrently. Opening a *different* path while any connection is open raises a `RuntimeError`; close the open ones first.
-</Note>
+<Warning>
+**Warning**
+
+Only one connection per process is supported.
+Creating a new connection will close any existing connection.
+</Warning>
 
 **Examples**
 
 ```pycon
->>> # Temporary database
+>>> # In-memory database
 >>> conn = connect()
 >>> conn = connect(":memory:")
 >>>
@@ -1740,7 +1757,7 @@ chdb.dbapi.connect(*args, **kwargs)
 
 | Parameter  | Type  | Default  | Description                                     |
 |------------|-------|----------|-------------------------------------------------|
-| `path`     | str   | `None`   | Database file path. None for a temporary, non-persistent database |
+| `path`     | str   | `None`   | Database file path. None for in-memory database |
 
 **Raises**
 
@@ -1808,7 +1825,7 @@ Bases: `object`
 DB-API 2.0 compliant connection to chDB database.
 
 This class provides a standard DB-API interface for connecting to and interacting
-with chDB databases. It supports both temporary and file-based databases.
+with chDB databases. It supports both in-memory and file-based databases.
 
 The connection manages the underlying chDB engine and provides methods for
 executing queries, managing transactions (no-op for ClickHouse), and creating cursors.
@@ -1821,7 +1838,7 @@ class chdb.dbapi.connections.Connection(path=None)
 
 | Parameter  | Type  | Default  | Description                                                                                                        |
 |------------|-------|----------|--------------------------------------------------------------------------------------------------------------------|
-| `path`     | str   | `None`   | Database file path. If None (the default), uses a temporary, non-persistent database (equivalent to `':memory:'`). Pass a file path like 'database.db' to persist to disk. |
+| `path`     | str   | `None`   | Database file path. If None, uses in-memory database. Can be a file path like 'database.db' or None for ':memory:' |
 
 **Variables**
 
@@ -1833,7 +1850,7 @@ class chdb.dbapi.connections.Connection(path=None)
 **Examples**
 
 ```pycon
->>> # Temporary database
+>>> # In-memory database
 >>> conn = Connection()
 >>> cursor = conn.cursor()
 >>> cursor.execute("SELECT 1")
@@ -3228,7 +3245,7 @@ Connection Management:
 ```python
 import chdb.dbapi as dbapi
 
-# Temporary database (default)
+# In-memory database (default)
 conn1 = dbapi.connect()
 
 # Persistent database file
@@ -3273,270 +3290,15 @@ with dbapi.connect("test.chdb") as conn:
 - Parameter binding syntax follows format style: `%s`
 </Warning>
 
-## Python user-defined functions (UDF) {#user-defined-functions}
+## User-Defined Functions (UDF) {#user-defined-functions}
 
-chDB supports native Python UDFs that run in-process with typed arguments, automatic type inference, and configurable NULL/exception handling. Python functions registered as UDFs can be called directly from SQL queries.
+User-defined functions module for chDB.
 
-Examples below use the default CSV output format. Inline comments show the logical result values; the raw output prints `NULL` as `\N` and applies CSV quoting to string and date values.
+This module provides functionality for creating and managing user-defined functions (UDFs)
+in chDB. It allows you to extend chDB’s capabilities by writing custom Python functions
+that can be called from SQL queries.
 
-### `chdb.create_function` {#create-function}
-
-Register a Python function as a chDB SQL function.
-
-**Syntax**
-
-```python
-chdb.create_function(name, func, arg_types=None, return_type=None, *, on_null=None, on_error=None)
-```
-
-**Parameters**
-
-| Parameter     | Type            | Default       | Description                                                                 |
-|---------------|-----------------|---------------|-----------------------------------------------------------------------------|
-| `name`        | str             | *(required)*  | Name of the SQL function to register                                        |
-| `func`        | callable        | *(required)*  | Python function to register                                                 |
-| `arg_types`   | list of ChdbType/str/type, or None | `None`        | List of argument types. If `None`, inferred from type annotations           |
-| `return_type` | ChdbType/str/type, or None    | `None`        | Return type. If `None`, inferred from the function's return annotation; registration fails if the annotation is also missing      |
-| `on_null`     | str or NullHandling | `None` (skip) | How to handle NULL inputs: `"skip"` or `"pass"`. Keyword-only        |
-| `on_error`    | str or ExceptionHandling | `None` (propagate) | How to handle exceptions: `"propagate"` or `"ignore"`. Keyword-only |
-
-Each type parameter (`arg_types` elements and `return_type`) accepts:
-
-- A `ChdbType` constant: `INT64`, `STRING`, `FLOAT64`, etc.
-- A ClickHouse type string: `"Int64"`, `"String"`, `"DateTime64(6)"`, `"DateTime('UTC')"`, etc.
-- A Python type: `int`, `float`, `str`, `bool`, `bytes`, `datetime.date`, `datetime.datetime` — mapped per [Automatic type mapping](#udf-automatic-type-mapping)
-
-Registering a name that is already registered raises an error — UDFs are not silently replaced. Call [`drop_function`](#drop-function) first to re-register a function.
-
-**Example**
-
-```python
-from chdb import create_function, drop_function, query
-from chdb.sqltypes import INT64, STRING
-
-create_function("strlen", len, arg_types=[STRING], return_type=INT64)
-print(query("SELECT strlen('hello')"))  # 5
-
-drop_function("strlen")
-```
-
----
-
-### `chdb.drop_function` {#drop-function}
-
-Remove a previously registered Python UDF. Does nothing if the function is not registered, so it is safe to call unconditionally.
-
-**Syntax**
-
-```python
-chdb.drop_function(name)
-```
-
-**Parameters**
-
-| Parameter | Type | Description                          |
-|-----------|------|--------------------------------------|
-| `name`    | str  | Name of the SQL function to remove   |
-
----
-
-### `@func` decorator {#func-decorator}
-
-Decorator to register a Python function as a chDB SQL function. The function remains callable as normal Python and is simultaneously available in SQL queries by its `__name__`.
-
-**Syntax**
-
-```python
-from chdb import func
-
-@func(arg_types=None, return_type=None, *, on_null=None, on_error=None)
-def my_function(...):
-    ...
-```
-
-**Parameters**
-
-Same as [`create_function`](#create-function) (excluding `name` and `func`, which are derived from the decorated function).
-
-**Examples**
-
-```python
-from chdb import func, query
-from chdb.sqltypes import INT64, STRING
-
-# Explicit types
-@func([INT64, INT64], INT64)
-def add(a, b):
-    return a + b
-
-# Types inferred from annotations
-@func()
-def multiply(a: int, b: int) -> int:
-    return a * b
-
-# Explicit return_type, arg_types inferred from annotations
-@func(return_type=STRING)
-def greet(name: str):
-    return f"Hello, {name}!"
-
-print(query("SELECT add(12, 22)"))       # 34
-print(query("SELECT multiply(3, 7)"))    # 21
-print(query("SELECT greet('world')"))    # Hello, world!
-```
-
----
-
-### Type system {#udf-type-system}
-
-#### Available types {#udf-available-types}
-
-Import types from `chdb.sqltypes`:
-
-```python
-from chdb.sqltypes import (
-    BOOL,
-    INT8, INT16, INT32, INT64, INT128, INT256,
-    UINT8, UINT16, UINT32, UINT64, UINT128, UINT256,
-    FLOAT32, FLOAT64,
-    STRING,
-    DATE, DATE32, DATETIME, DATETIME64,
-)
-```
-
-#### Automatic type mapping {#udf-automatic-type-mapping}
-
-When types are inferred from Python annotations, the following mapping is used:
-
-| Python Type          | ClickHouse Type  |
-|----------------------|------------------|
-| `bool`               | `Bool`           |
-| `int`                | `Int64`          |
-| `float`              | `Float64`        |
-| `str`                | `String`         |
-| `bytes`              | `String`         |
-| `bytearray`          | `String`         |
-| `datetime.date`      | `Date`           |
-| `datetime.datetime`  | `DateTime64(6)`  |
-
-#### Type specification methods {#udf-type-specification-methods}
-
-Types can be specified in multiple ways:
-
-```python
-from chdb import create_function, func
-from chdb.sqltypes import INT64
-
-# 1. ChdbType constants
-create_function("f1", lambda x: x, arg_types=[INT64], return_type=INT64)
-
-# 2. ClickHouse type strings
-create_function("f2", lambda x: x, arg_types=["Int64"], return_type="Int64")
-
-# 3. Parameterized type strings
-create_function("f3", lambda x: x, arg_types=["DateTime('UTC')"], return_type="DateTime('UTC')")
-
-# 4. Python types — passed directly or used as annotations
-create_function("f4", lambda x: x, arg_types=[int], return_type=int)
-
-@func()
-def f5(x: int) -> int:
-    return x
-```
-
----
-
-### NULL handling {#udf-null-handling}
-
-Control how NULL values are handled with the `on_null` parameter.
-
-| Value    | Enum                    | Behavior                                              |
-|----------|-------------------------|-------------------------------------------------------|
-| `"skip"` | `NullHandling.SKIP`     | Return NULL without calling the function (default)    |
-| `"pass"` | `NullHandling.PASS`     | Convert NULL to `None` and call the function          |
-
-```python
-from chdb import func, query, NullHandling
-
-# Default: NULL in → NULL out, function not called
-@func(return_type="Int64")
-def add_one(x: int) -> int:
-    return x + 1
-
-print(query("SELECT add_one(NULL)"))  # NULL
-
-# Pass NULL as None
-@func(return_type="Int64", on_null="pass")
-def null_safe(x):
-    return 0 if x is None else x + 1
-
-print(query("SELECT null_safe(NULL)"))  # 0
-```
-
----
-
-### Exception handling {#udf-exception-handling}
-
-Control how exceptions are handled with the `on_error` parameter.
-
-| Value         | Enum                           | Behavior                                    |
-|---------------|--------------------------------|---------------------------------------------|
-| `"propagate"` | `ExceptionHandling.PROPAGATE` | Raise the exception as a SQL error (default) |
-| `"ignore"`    | `ExceptionHandling.IGNORE`    | Catch the exception and return NULL          |
-
-```python
-from chdb import func, query
-
-# Default: exception propagates
-@func(arg_types=["Int64", "Int64"], return_type="Int64")
-def divide(a, b):
-    return a // b
-
-# print(query("SELECT divide(1, 0)"))  # Error: division by zero
-
-# Ignore: exception → NULL
-@func(arg_types=["Int64", "Int64"], return_type="Int64", on_error="ignore")
-def safe_divide(a, b):
-    return a // b
-
-print(query("SELECT safe_divide(1, 0)"))   # NULL
-print(query("SELECT safe_divide(10, 2)"))  # 5
-```
-
----
-
-### DateTime and timezone support {#udf-datetime}
-
-UDFs fully support `Date`, `Date32`, `DateTime`, and `DateTime64` types with timezone awareness.
-
-```python
-from chdb import func, query
-from datetime import datetime, timedelta, date
-
-@func(arg_types=["DateTime('UTC')"], return_type="DateTime('UTC')")
-def add_one_hour(dt):
-    return dt + timedelta(hours=1)
-
-@func()
-def get_year(d: date) -> int:
-    return d.year
-
-print(query("SELECT add_one_hour(toDateTime('2024-01-01 12:00:00', 'UTC'))"))  # 2024-01-01 13:00:00
-print(query("SELECT get_year(toDate('2024-06-15'))"))  # 2024
-```
-
-- Input ClickHouse `DateTime`/`DateTime64` values are converted to Python `datetime` objects with timezone info
-- Output Python `datetime` objects preserve timezone info when returned to ClickHouse
-- The `DATETIME64` type from `chdb.sqltypes` defaults to scale 6 (microseconds), equivalent to `DateTime64(6)`
-
----
-
-### Legacy API {#legacy-udf}
-
-<Warning>
-**Deprecated:** The `@chdb_udf` decorator is the legacy subprocess-based UDF mechanism: it runs your function in a separate Python process and passes all arguments as strings. It is still available, but the native Python UDF API ([`@func`](#func-decorator) / [`create_function`](#create-function)) is recommended — native UDFs run in-process with typed arguments, NULL handling, and exception control. See the [Python UDF guide](/chdb/guides/python-udf) for a complete walkthrough.
-</Warning>
-
-#### `chdb.udf.chdb_udf` {#chdb-udf}
+### `chdb.udf.chdb_udf` {#chdb-udf}
 
 Decorator for chDB Python UDF(User Defined Function).
 
@@ -3576,7 +3338,7 @@ def func_use_json(arg):
 
 ---
 
-#### `chdb.udf.generate_udf` {#generate-udf}
+### `chdb.udf.generate_udf` {#generate-udf}
 
 Generate UDF configuration and executable script files.
 

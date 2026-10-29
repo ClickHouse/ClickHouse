@@ -1,0 +1,867 @@
+---
+description: 'اعثر بسرعة على عبارات البحث داخل النص.'
+keywords: ['البحث في النص الكامل', 'فهرس نصي', 'فهرس', 'فهارس']
+sidebarTitle: 'البحث في النص الكامل باستخدام الفهارس النصية'
+slug: /engines/table-engines/mergetree-family/invertedindexes
+title: 'البحث في النص الكامل باستخدام الفهارس النصية'
+doc_type: 'reference'
+---
+
+import {PrivatePreviewBadge} from '/snippets/ar/components/PrivatePreviewBadge/PrivatePreviewBadge.jsx'
+
+<PrivatePreviewBadge />
+
+توفّر الفهارس النصية في ClickHouse (المعروفة أيضًا باسم [&quot;الفهارس المعكوسة&quot;](https://en.wikipedia.org/wiki/Inverted_index)) إمكانات بحث نصي كامل سريعة في البيانات النصية.
+يربط الفهرس كل رمز في العمود بالصفوف التي تحتوي عليه.
+وتُنشأ هذه الرموز من خلال عملية تُسمى تجزئة النص إلى رموز.
+على سبيل المثال، يُجزِّئ ClickHouse الجملة الإنجليزية &quot;All cat like mice.&quot; افتراضيًا إلى [&quot;All&quot;, &quot;cat&quot;, &quot;like&quot;, &quot;mice&quot;] (لاحظ أن النقطة في نهاية الجملة يتم تجاهلها).
+تتوفر مُجزِّئات أكثر تقدمًا، على سبيل المثال لبيانات السجلات.
+
+<div id="creating-a-text-index">
+  ## إنشاء فهرس نصي
+</div>
+
+لإنشاء فهرس نصي، فعِّل أولًا الإعداد التجريبي المقابل:
+
+```sql
+SET allow_experimental_full_text_index = true;
+```
+
+يمكن تعريف فهرس نصي على عمود من النوع [String](/ar/reference/data-types/string)، أو [FixedString](/ar/reference/data-types/fixedstring)، أو [Array(String)](/ar/reference/data-types/array)، أو [Array(FixedString)](/ar/reference/data-types/array)، أو [Map](/ar/reference/data-types/map) (باستخدام دالّتَي map ‏[mapKeys](/ar/reference/functions/regular-functions/tuple-map-functions#mapkeys) و[mapValues](/ar/reference/functions/regular-functions/tuple-map-functions#mapvalues)) وفقًا للصياغة التالية:
+
+```sql
+CREATE TABLE tab
+(
+    `key` UInt64,
+    `str` String,
+    INDEX text_idx(str) TYPE text(
+                                -- Mandatory parameters:
+                                tokenizer = splitByNonAlpha|splitByString(S)|ngrams(N)|array
+                                -- Optional parameters:
+                                [, preprocessor = expression(str)]
+                                -- Optional advanced parameters:
+                                [, dictionary_block_size = D]
+                                [, dictionary_block_frontcoding_compression = B]
+                                [, max_cardinality_for_embedded_postings = M]
+                                [, bloom_filter_false_positive_rate = R]
+                            ) [GRANULARITY 64]
+)
+ENGINE = MergeTree
+ORDER BY key
+```
+
+**وسيطة `tokenizer`**. تحدد وسيطة `tokenizer` أداة التقسيم إلى رموز:
+
+* `splitByNonAlpha` يقسم السلاسل النصية عند محارف ASCII غير الأبجدية الرقمية (راجع أيضًا الدالة [splitByNonAlpha](/ar/reference/functions/regular-functions/splitting-merging-functions#splitByNonAlpha)).
+* `splitByString(S)` يقسم السلاسل النصية باستخدام سلاسل الفواصل `S` التي يحددها المستخدم (راجع أيضًا الدالة [splitByString](/ar/reference/functions/regular-functions/splitting-merging-functions#splitByString)).
+  يمكن تحديد الفواصل باستخدام معلمة اختيارية، على سبيل المثال `tokenizer = splitByString([', ', '; ', '\n', '\\'])`.
+  لاحظ أن كل سلسلة يمكن أن تتكون من عدة محارف (`', '` في المثال).
+  قائمة الفواصل الافتراضية، إذا لم تُحدَّد صراحةً (على سبيل المثال، `tokenizer = splitByString`)، هي مسافة بيضاء واحدة `[' ']`.
+* `ngrams(N)` يقسم السلاسل النصية إلى `N`-grams متساوية الحجم (راجع أيضًا الدالة [ngrams](/ar/reference/functions/regular-functions/splitting-merging-functions#ngrams)).
+  يمكن تحديد طول ngram باستخدام معلمة عددية صحيحة اختيارية بين 2 و8، على سبيل المثال `tokenizer = ngrams(3)`.
+  الحجم الافتراضي لـ ngram، إذا لم يُحدَّد صراحةً (على سبيل المثال، `tokenizer = ngrams`)، هو 3.
+* `array` لا يجري أي تقسيم إلى رموز، أي إن قيمة كل صف هي رمز واحد (راجع أيضًا الدالة [array](/ar/reference/functions/regular-functions/array-functions#array)).
+* `sparseGrams(min_length, max_length, min_cutoff_length)` — يستخدم الخوارزمية نفسها كما في الدالة [sparseGrams](/ar/reference/functions/regular-functions/string-functions#sparseGrams) لتقسيم سلسلة نصية إلى جميع ngrams ذات الطول `min_length` وعدة ngrams بأطوال أكبر حتى `max_length`، شاملًا. إذا تم تحديد `min_cutoff_length`، فلن تُحفَظ في الفهرس إلا N-grams التي يكون طولها أكبر من أو مساويًا لـ `min_cutoff_length`. بخلاف `ngrams(N)`، التي تولّد فقط N-grams بطول ثابت، تنتج `sparseGrams` مجموعة من N-grams ذات أطوال متغيرة ضمن النطاق المحدد، مما يتيح تمثيلًا أكثر مرونة لسياق النص. على سبيل المثال، `tokenizer = sparseGrams(3, 5, 4)` سيولّد 3- و4- و5-grams من سلسلة الإدخال، ولن يحفظ في الفهرس إلا 4- و5-grams.
+
+<Note>
+  تطبّق أداة التقسيم `splitByString` فواصل التقسيم من اليسار إلى اليمين.
+  وقد يؤدي ذلك إلى حالات التباس.
+  على سبيل المثال، سلاسل الفواصل `['%21', '%']` ستؤدي إلى تقسيم `%21abc` إلى `['abc']`، بينما سيؤدي تبديل ترتيب سلسلتي الفواصل إلى `['%', '%21']` إلى إخراج `['21abc']`.
+  في معظم الحالات، ستحتاج إلى أن تُفضَّل مطابقة الفواصل الأطول أولًا.
+  ويمكن تنفيذ ذلك عمومًا بتمرير سلاسل الفواصل بترتيب تنازلي حسب الطول.
+  وإذا كانت سلاسل الفواصل تشكّل [prefix code](https://en.wikipedia.org/wiki/Prefix_code)، فيمكن تمريرها بأي ترتيب.
+</Note>
+
+<Warning>
+  لا يُنصح حاليًا ببناء فهارس نصية فوق نصوص بلغات غير غربية، مثل الصينية.
+  فقد تؤدي أدوات التقسيم المدعومة حاليًا إلى أحجام فهارس ضخمة وأزمنة استعلام طويلة.
+  ونخطط إلى إضافة أدوات تقسيم متخصصة حسب اللغة في المستقبل للتعامل مع هذه الحالات بصورة أفضل.
+</Warning>
+
+لاختبار كيفية تقسيم المُقسِّمات النصية لسلسلة الإدخال، يمكنك استخدام دالة [tokens](/ar/reference/functions/regular-functions/splitting-merging-functions#tokens) في ClickHouse:
+
+على سبيل المثال،
+
+```sql
+SELECT tokens('abc def', 'ngrams', 3) AS tokens;
+```
+
+القيمة المُعادة
+
+```result
++-tokens--------------------------+
+| ['abc','bc ','c d',' de','def'] |
++---------------------------------+
+```
+
+**وسيطة المُعالج المسبق**. الوسيطة الاختيارية `preprocessor` هي تعبير يحوّل سلسلة الإدخال قبل تقسيمها إلى رموز.
+
+تشمل حالات الاستخدام الشائعة لوسيطة المُعالج المسبق ما يلي
+
+1. تحويل سلاسل الإدخال إلى أحرف صغيرة (أو كبيرة) لتمكين المطابقة غير الحساسة لحالة الأحرف، مثل [lower](/ar/reference/functions/regular-functions/string-functions#lower) و[lowerUTF8](/ar/reference/functions/regular-functions/string-functions#lowerUTF8)، انظر المثال الأول أدناه.
+2. تطبيع UTF-8، مثل [normalizeUTF8NFC](/ar/reference/functions/regular-functions/string-functions#normalizeUTF8NFC) و[normalizeUTF8NFD](/ar/reference/functions/regular-functions/string-functions#normalizeUTF8NFD) و[normalizeUTF8NFKC](/ar/reference/functions/regular-functions/string-functions#normalizeUTF8NFKC) و[normalizeUTF8NFKD](/ar/reference/functions/regular-functions/string-functions#normalizeUTF8NFKD) و[toValidUTF8](/ar/reference/functions/regular-functions/string-functions#toValidUTF8).
+3. إزالة المحارف أو السلاسل الفرعية غير المرغوب فيها أو تحويلها، مثل [extractTextFromHTML](/ar/reference/functions/regular-functions/string-functions#extractTextFromHTML) و[substring](/ar/reference/functions/regular-functions/string-functions#substring) و[idnaEncode](/ar/reference/functions/regular-functions/string-functions#idnaEncode).
+
+يجب أن يحوّل تعبير المُعالج المسبق قيمة إدخال من النوع [String](/ar/reference/data-types/string) أو [FixedString](/ar/reference/data-types/fixedstring) إلى قيمة من النوع نفسه.
+
+أمثلة:
+
+* `INDEX idx(col) TYPE text(tokenizer = 'splitByNonAlpha', preprocessor = lower(col))`
+* `INDEX idx(col) TYPE text(tokenizer = 'splitByNonAlpha', preprocessor = substringIndex(col, '\n', 1))`
+* `INDEX idx(col) TYPE text(tokenizer = 'splitByNonAlpha', preprocessor = lower(extractTextFromHTML(col))`
+
+كذلك، يجب ألا يشير تعبير المُعالج المسبق إلا إلى العمود الذي تم تعريف فهرس النص عليه.
+ولا يُسمح باستخدام الدوال غير الحتمية.
+
+تستخدم الدوال [hasToken](/ar/reference/functions/regular-functions/string-search-functions#hasToken) و[hasAllTokens](/ar/reference/functions/regular-functions/string-search-functions#hasAllTokens) و[hasAnyTokens](/ar/reference/functions/regular-functions/string-search-functions#hasAnyTokens) المُعالج المسبق لتحويل مصطلح البحث أولًا قبل تقسيمه إلى رموز.
+
+على سبيل المثال:
+
+```sql
+CREATE TABLE tab
+(
+    key UInt64,
+    str String,
+    INDEX idx(str) TYPE text(tokenizer = 'splitByNonAlpha', preprocessor = lower(str))
+)
+ENGINE = MergeTree
+ORDER BY tuple();
+
+SELECT count() FROM tab WHERE hasToken(str, 'Foo');
+```
+
+يعادل ما يلي:
+
+```sql
+CREATE TABLE tab
+(
+    key UInt64,
+    str String,
+    INDEX idx(lower(str)) TYPE text(tokenizer = 'splitByNonAlpha')
+)
+ENGINE = MergeTree
+ORDER BY tuple();
+
+SELECT count() FROM tab WHERE hasToken(str, lower('Foo'));
+```
+
+**وسائط أخرى**. تُنفَّذ الفهارس النصية في ClickHouse على هيئة [فهارس ثانوية](/ar/reference/engines/table-engines/mergetree-family/mergetree#skip-index-types).
+ومع ذلك، بخلاف فهارس التخطي الأخرى، تمتلك الفهارس النصية قيمة GRANULARITY افتراضية للفهرس تبلغ 64.
+وقد اختيرت هذه القيمة تجريبيًا، وهي توفّر توازنًا جيدًا بين السرعة وحجم الفهرس في معظم حالات الاستخدام.
+يمكن للمستخدمين المتقدمين تحديد قيمة granularity مختلفة للفهرس (ولا نوصي بذلك).
+
+<AccordionGroup>
+  <Accordion title="معلمات متقدمة اختيارية">
+    ستعمل القيم الافتراضية للمعلمات المتقدمة التالية جيدًا في جميع الحالات تقريبًا.
+    ولا نوصي بتغييرها.
+
+    تحدد المعلمة الاختيارية `dictionary_block_size` (الافتراضي: 128) حجم كتل القاموس بالصفوف.
+
+    تحدد المعلمة الاختيارية `dictionary_block_frontcoding_compression` (الافتراضي: 1) ما إذا كانت كتل القاموس تستخدم الترميز الأمامي كآلية ضغط.
+
+    تحدد المعلمة الاختيارية `max_cardinality_for_embedded_postings` (الافتراضي: 16) عتبة cardinality التي يجب دونها تضمين قوائم الترحيل داخل كتل القاموس.
+
+    تحدد المعلمة الاختيارية `bloom_filter_false_positive_rate` (الافتراضي: 0.1) معدل الإيجابيات الكاذبة لمرشح bloom الخاص بالقاموس.
+  </Accordion>
+</AccordionGroup>
+
+يمكن إضافة الفهارس النصية إلى عمود أو إزالتها منه بعد إنشاء الجدول:
+
+```sql
+ALTER TABLE tab DROP INDEX text_idx;
+ALTER TABLE tab ADD INDEX text_idx(s) TYPE text(tokenizer = splitByNonAlpha);
+```
+
+<div id="using-a-text-index">
+  ## استخدام فهرس نصي
+</div>
+
+يُعد استخدام فهرس نصي في استعلامات `SELECT` أمرًا مباشرًا، إذ تستخدم دوال البحث النصي الشائعة الفهرس تلقائيًا.
+إذا لم يكن هناك فهرس، فسترجع دوال البحث النصي الواردة أدناه إلى عمليات مسح بطيئة بالقوة الغاشمة.
+
+<div id="supported-functions">
+  ### الدوال المدعومة
+</div>
+
+يمكن استخدام فهرس النص عند استخدام دوال نصية في عبارة `WHERE` ضمن استعلام SELECT:
+
+```sql
+SELECT [...]
+FROM [...]
+WHERE string_search_function(column_with_text_index)
+```
+
+<div id="and">
+  #### `=` and `!=`
+</div>
+
+`=` ([equals](/ar/reference/functions/regular-functions/comparison-functions#equals)) و `!=` ([notEquals](/ar/reference/functions/regular-functions/comparison-functions#notEquals) ) يطابقان مصطلح البحث المُعطى بالكامل.
+
+مثال:
+
+```sql
+SELECT * from tab WHERE str = 'Hello';
+```
+
+يدعم فهرس النص العاملين `=` و`!=`، لكن البحث بالمساواة أو عدم المساواة لا يكون ذا معنى إلا عند استخدام أداة التقسيم إلى رموز `array` (إذ يجعل الفهرس يخزّن قيم الصف كاملة).
+
+<div id="in-and-not-in">
+  #### `IN` and `NOT IN`
+</div>
+
+تتشابه `IN` ([in](/ar/reference/functions/regular-functions/in-functions)) و`NOT IN` ([notIn](/ar/reference/functions/regular-functions/in-functions)) مع الدالتين `equals` و`notEquals`، لكنهما تطابقان جميع عبارات البحث (`IN`) أو لا تطابقان أيًا منها (`NOT IN`).
+
+مثال:
+
+```sql
+SELECT * from tab WHERE str IN ('Hello', 'World');
+```
+
+تنطبق القيود نفسها المطبقة على `=` و `!=`، أي إن `IN` و `NOT IN` لا يكون لهما معنى إلا عند استخدام أداة التقسيم إلى رموز `array`.
+
+<div id="like-not-like-and-match">
+  #### `LIKE` و`NOT LIKE` و`match`
+</div>
+
+<Note>
+  تستخدم هذه الدوال حاليًا الفهرس النصي للتصفية فقط إذا كانت `أداة التقسيم إلى رموز` الخاصة بالفهرس هي `splitByNonAlpha` أو `ngrams`.
+</Note>
+
+لاستخدام `LIKE` [like](/ar/reference/functions/regular-functions/string-search-functions#like) و`NOT LIKE` ([notLike](/ar/reference/functions/regular-functions/string-search-functions#notLike)) والدالة [match](/ar/reference/functions/regular-functions/string-search-functions#match) مع الفهارس النصية، يجب أن يتمكن ClickHouse من استخراج وحدات كاملة من عبارة البحث.
+
+مثال:
+
+```sql
+SELECT count() FROM tab WHERE comment LIKE 'support%';
+```
+
+يمكن أن يطابق `support` في المثال كلمات مثل `support` و`supports` و`supporting` وما إلى ذلك.
+هذا النوع من الاستعلامات هو استعلام عن سلسلة فرعية، ولا يمكن تسريعه باستخدام فهرس نصي.
+
+للاستفادة من فهرس نصي في استعلامات LIKE، يجب إعادة كتابة نمط LIKE على النحو التالي:
+
+```sql
+SELECT count() FROM tab WHERE comment LIKE ' support %'; -- or `% support %`
+```
+
+تضمن المسافات على يسار `support` ويمينها إمكانية استخراج هذا المصطلح بوصفه رمز.
+
+<div id="startswith-and-endswith">
+  #### `startsWith` و `endsWith`
+</div>
+
+على غرار `LIKE`، لا يمكن للدالتين [startsWith](/ar/reference/functions/regular-functions/string-functions#startsWith) و [endsWith](/ar/reference/functions/regular-functions/string-functions#endsWith) استخدام فهرس نصي إلا إذا أمكن استخراج رموز كاملة من عبارة البحث.
+
+مثال:
+
+```sql
+SELECT count() FROM tab WHERE startsWith(comment, 'clickhouse support');
+```
+
+في هذا المثال، لا يُعدّ رمز سوى `clickhouse`.
+ولا يُعدّ `support` رمز لأنه قد يطابق `support` و`supports` و`supporting` وما إلى ذلك.
+
+للعثور على جميع الصفوف التي تبدأ بـ `clickhouse supports`، أنهِ نمط البحث بمسافة في النهاية:
+
+```sql
+startsWith(comment, 'clickhouse supports ')`
+```
+
+وبالمثل، ينبغي استخدام `endsWith` مع مسافة في البداية:
+
+```sql
+SELECT count() FROM tab WHERE endsWith(comment, ' olap engine');
+```
+
+<div id="hastoken-and-hastokenornull">
+  #### `hasToken` و `hasTokenOrNull`
+</div>
+
+تُطابِق الدالتان [hasToken](/ar/reference/functions/regular-functions/string-search-functions#hasToken) و [hasTokenOrNull](/ar/reference/functions/regular-functions/string-search-functions#hasTokenOrNull) `رمز` واحدًا محددًا.
+
+وخلافًا للدوال المذكورة سابقًا، فإنهما لا تُجزِّئان مصطلح البحث إلى `رمز`ات (إذ تفترضان أن المُدخل عبارة عن `رمز` واحد).
+
+مثال:
+
+```sql
+SELECT count() FROM tab WHERE hasToken(comment, 'clickhouse');
+```
+
+الدالتان `hasToken` و`hasTokenOrNull` هما الأكثر كفاءةً للاستخدام مع فهرس `text`.
+
+<div id="hasanytokens-and-hasalltokens">
+  #### `hasAnyTokens` and `hasAllTokens`
+</div>
+
+تُطابِق الدالتان [hasAnyTokens](/ar/reference/functions/regular-functions/string-search-functions#hasAnyTokens) و[hasAllTokens](/ar/reference/functions/regular-functions/string-search-functions#hasAllTokens) واحدًا أو جميع الرموز المحددة.
+
+تقبل هاتان الدالتان رموز البحث إما كسلسلة نصية ستُجزَّأ إلى رموز باستخدام أداة التقسيم إلى رموز نفسها المستخدمة لعمود الفهرس، أو كمصفوفة من الرموز المُعالَجة مسبقًا، والتي لن يُطبَّق عليها أي تجزئة قبل البحث.
+راجع توثيق الدالة لمزيد من المعلومات.
+
+مثال:
+
+```sql
+-- Search tokens passed as string argument
+SELECT count() FROM tab WHERE hasAnyTokens(comment, 'clickhouse olap');
+SELECT count() FROM tab WHERE hasAllTokens(comment, 'clickhouse olap');
+
+-- Search tokens passed as Array(String)
+SELECT count() FROM tab WHERE hasAnyTokens(comment, ['clickhouse', 'olap']);
+SELECT count() FROM tab WHERE hasAllTokens(comment, ['clickhouse', 'olap']);
+```
+
+<div id="has">
+  #### `has`
+</div>
+
+تُطابق دالة المصفوفات [has](/ar/reference/functions/regular-functions/array-functions#has) ‏رمز واحدًا ضمن مصفوفة من السلاسل النصية.
+
+مثال:
+
+```sql
+SELECT count() FROM tab WHERE has(array, 'clickhouse');
+```
+
+<div id="mapcontains">
+  #### `mapContains`
+</div>
+
+الدالة [mapContains](/ar/reference/functions/regular-functions/tuple-map-functions#mapcontainskey)(اسم مستعار لـ: `mapContainsKey`) تطابق رمزًا واحدًا ضمن مفاتيح الخريطة.
+
+مثال:
+
+```sql
+SELECT count() FROM tab WHERE mapContainsKey(map, 'clickhouse');
+-- OR
+SELECT count() FROM tab WHERE mapContains(map, 'clickhouse');
+```
+
+<div id="operator">
+  #### `operator[]`
+</div>
+
+يمكن استخدام [operator[]](/ar/reference/operators/index#access-operators) كعامل وصول مع الفهرس النصي لتصفية المفاتيح والقيم.
+
+مثال:
+
+```sql
+SELECT count() FROM tab WHERE map['engine'] = 'clickhouse'; -- will use the text index if defined
+```
+
+اطّلع على الأمثلة التالية لاستخدام `Array(T)` و`Map(K, V)` مع الفهرس النصّي.
+
+<div id="examples-for-the-text-index-array-and-map-support">
+  ### أمثلة على دعم `Array` و`Map` في الفهرس النصي.
+</div>
+
+<div id="indexing-arraystring">
+  #### فهرسة Array(String)
+</div>
+
+في منصة تدوين بسيطة، يضيف الكُتّاب كلمات مفتاحية إلى منشوراتهم لتصنيف المحتوى.
+ومن الميزات الشائعة التي تتيح للمستخدمين اكتشاف محتوى ذي صلة النقر على الكلمات المفتاحية أو البحث حسب الموضوع.
+
+تأمل تعريف الجدول التالي:
+
+```sql
+CREATE TABLE posts (
+    post_id UInt64,
+    title String,
+    content String,
+    keywords Array(String) COMMENT 'Author-defined keywords'
+)
+ENGINE = MergeTree
+ORDER BY (post_id);
+```
+
+من دون فهرس نصي، يتطلب العثور على منشورات تتضمن كلمة محددة (مثل `clickhouse`) فحص جميع السجلات:
+
+```sql
+SELECT count() FROM posts WHERE has(keywords, 'clickhouse'); -- slow full-table scan - checks every keyword in every post
+```
+
+مع توسّع المنصة، يصبح هذا أبطأ بشكل متزايد لأن الاستعلام يجب أن يفحص كل مصفوفة `keywords` في كل صف.
+
+للتغلب على مشكلة الأداء هذه، يمكننا تعريف فهرس نصي لـ `keywords` ينشئ بنية مُحسّنة للبحث تُعالج جميع الكلمات المفتاحية مسبقًا، مما يتيح عمليات بحث فورية:
+
+```sql
+ALTER TABLE posts ADD INDEX keywords_idx(keywords) TYPE text(tokenizer = splitByNonAlpha);
+```
+
+<Note>
+  مهم: بعد إضافة الفهرس النصي، يجب إعادة بنائه على البيانات الموجودة:
+
+  ```sql
+  ALTER TABLE posts MATERIALIZE INDEX keywords_idx;
+  ```
+</Note>
+
+<div id="indexing-map">
+  #### فهرسة Map
+</div>
+
+في نظام تسجيل السجلات، غالبًا ما تخزّن طلبات الخادم البيانات الوصفية في أزواج المفتاح والقيمة. تحتاج فرق العمليات إلى البحث بكفاءة في السجلات لأغراض استكشاف الأخطاء وإصلاحها، والتحقيق في الحوادث الأمنية، والمراقبة.
+
+انظر إلى جدول السجلات هذا:
+
+```sql
+CREATE TABLE logs (
+    id UInt64,
+    timestamp DateTime,
+    message String,
+    attributes Map(String, String)
+)
+ENGINE = MergeTree
+ORDER BY (timestamp);
+```
+
+من دون فهرس نصي، يتطلب البحث في بيانات [Map](/ar/reference/data-types/map) إجراء مسح كامل للجدول:
+
+1. يعثر على جميع السجلات التي تحتوي على تقييد المعدل:
+
+```sql
+SELECT count() FROM logs WHERE has(mapKeys(attributes), 'rate_limit'); -- slow full-table scan
+```
+
+2. يعثر على جميع السجلات الواردة من عنوان IP محدد:
+
+```sql
+SELECT count() FROM logs WHERE has(mapValues(attributes), '192.168.1.1'); -- slow full-table scan
+```
+
+مع ازدياد حجم السجلات، تصبح هذه الاستعلامات بطيئة.
+
+يكمن الحل في إنشاء فهرس نصي لمفاتيح [Map](/ar/reference/data-types/map) وقيمها.
+
+استخدم [mapKeys](/ar/reference/functions/regular-functions/tuple-map-functions#mapkeys) لإنشاء فهرس نصي عندما تحتاج إلى العثور على السجلات حسب أسماء الحقول أو أنواع السمات:
+
+```sql
+ALTER TABLE logs ADD INDEX attributes_keys_idx mapKeys(attributes) TYPE text(tokenizer = array);
+```
+
+استخدم [mapValues](/ar/reference/functions/regular-functions/tuple-map-functions#mapvalues) لإنشاء فهرس نصي عندما تحتاج إلى البحث في المحتوى الفعلي للسمات نفسها:
+
+```sql
+ALTER TABLE logs ADD INDEX attributes_vals_idx mapValues(attributes) TYPE text(tokenizer = array);
+```
+
+<Note>
+  مهم: بعد إضافة الفهرس النصي، يجب إعادة بنائه للبيانات الحالية:
+
+  ```sql
+  ALTER TABLE posts MATERIALIZE INDEX attributes_keys_idx;
+  ALTER TABLE posts MATERIALIZE INDEX attributes_vals_idx;
+  ```
+</Note>
+
+1. اعثر على جميع الطلبات التي طُبِّق عليها تحديد المعدل:
+
+```sql
+SELECT * FROM logs WHERE mapContainsKey(attributes, 'rate_limit'); -- fast
+```
+
+2. يعرض جميع السجلات الواردة من عنوان IP محدد:
+
+```sql
+SELECT * FROM logs WHERE has(mapValues(attributes), '192.168.1.1'); -- fast
+```
+
+<div id="implementation">
+  ## التنفيذ
+</div>
+
+<div id="index-layout">
+  ### بنية الفهرس
+</div>
+
+يتكوّن كل فهرس نصي من بنيتَي بيانات (مجرّدتين):
+
+* قاموس يربط كل token بـ posting list، و
+* مجموعة من posting lists، تمثّل كلٌّ منها مجموعة من أرقام الصفوف.
+
+وبما أن الفهرس النصي هو skip index، فإن بنيات البيانات هذه توجد منطقيًا لكل index granule.
+
+أثناء إنشاء الفهرس، تُنشأ ثلاثة ملفات (لكل part):
+
+**ملف كتل القاموس (.dct)**
+
+تُرتَّب الـ tokens في كل index granule وتُخزَّن في كتل قاموس، تضم كل كتلة 128 token (حجم الكتلة قابل للتهيئة عبر parameter `dictionary_block_size`).
+ويتكوّن ملف كتل القاموس (.dct) من جميع كتل القاموس لكل index granules ضمن part.
+
+**ملف index granules (.idx)**
+
+يحتوي ملف index granules، لكل كتلة قاموس، على أول token في الكتلة، وإزاحتها النسبية في ملف كتل القاموس، وbloom filter لجميع الـ tokens في الكتلة.
+وتشبه بنية sparse index هذه [فهرس المفتاح الأساسي المتناثر في ClickHouse](/ar/guides/clickhouse/data-modelling/sparse-primary-indexes)).
+ويتيح bloom filter تخطّي كتل القاموس مبكرًا إذا لم يكن token المطلوب البحث عنه موجودًا في كتلة القاموس.
+
+**ملف posting lists (.pst)**
+
+تُرتَّب posting lists لجميع الـ tokens ترتيبًا تسلسليًا داخل ملف posting lists.
+ولتوفير المساحة مع السماح في الوقت نفسه بإجراء عمليتَي intersect وunion بسرعة، تُخزَّن posting lists على هيئة [roaring bitmaps](https://roaringbitmap.org/).
+وإذا كانت cardinality الخاصة بـ posting list أقل من 16 (وقابلة للتهيئة عبر parameter `max_cardinality_for_embedded_postings`)، فسيتم تضمينها داخل القاموس.
+
+<div id="direct-read">
+  ### القراءة المباشرة
+</div>
+
+يمكن تسريع أنواع معيّنة من الاستعلامات النصية بشكل كبير باستخدام تحسين يُسمى &quot;القراءة المباشرة&quot;.
+وبشكل أكثر تحديدًا، يمكن تطبيق هذا التحسين إذا كان استعلام SELECT *لا* يضمّن عمود النص في الناتج.
+
+مثال:
+
+```sql
+SELECT column_a, column_b, ... -- not: column_with_text_index
+FROM [...]
+WHERE string_search_function(column_with_text_index)
+```
+
+تُجيب آلية تحسين القراءة المباشرة في ClickHouse عن الاستعلام بالاعتماد حصريًا على فهرس النص (أي عمليات البحث في فهرس النص) من دون الوصول إلى عمود النص الأساسي.
+وتقرأ عمليات البحث في فهرس النص قدرًا قليلًا نسبيًا من البيانات، لذا فهي أسرع بكثير من فهارس التخطي المعتادة في ClickHouse (التي تُجري بحثًا في فهرس التخطي، ثم يتبع ذلك تحميل الحبيبات المتبقية وتصفيتها).
+
+تتحكم إعدادان في القراءة المباشرة:
+
+* الإعداد [query&#95;plan&#95;direct&#95;read&#95;from&#95;text&#95;index](/ar/reference/settings/session-settings#query_plan_direct_read_from_text_index) (الافتراضي: 1) الذي يحدد ما إذا كانت القراءة المباشرة مفعّلة بشكل عام.
+* الإعداد [use&#95;skip&#95;indexes&#95;on&#95;data&#95;read](/ar/reference/settings/session-settings#use_skip_indexes_on_data_read) (الافتراضي: 1)، وهو شرط مسبق آخر للقراءة المباشرة. لاحظ أنه في قواعد بيانات ClickHouse التي تكون فيها [compatibility](/ar/reference/settings/session-settings#compatibility) &lt; 25.10، يكون `use_skip_indexes_on_data_read` معطّلًا، لذا تحتاج إما إلى رفع قيمة إعداد compatibility أو تنفيذ `SET use_skip_indexes_on_data_read = 1` صراحةً.
+
+كذلك، يجب أن يكون فهرس النص مُنشأً فعليًا بالكامل لاستخدام القراءة المباشرة (استخدم `ALTER TABLE ... MATERIALIZE INDEX` لهذا الغرض).
+
+**الدوال المدعومة**
+تدعم آلية تحسين القراءة المباشرة الدوال `hasToken` و`hasAllTokens` و`hasAnyTokens`.
+ويمكن أيضًا دمج هذه الدوال باستخدام العوامل AND وOR وNOT.
+كما يمكن أن تحتوي عبارة WHERE على مرشحات إضافية لا تتعلق بدوال البحث النصي (لأعمدة النص أو الأعمدة الأخرى) — وفي هذه الحالة ستظل آلية تحسين القراءة المباشرة مستخدمة، لكنها ستكون أقل فعالية (إذ إنها تنطبق فقط على دوال البحث النصي المدعومة).
+
+لمعرفة ما إذا كان الاستعلام يستخدم القراءة المباشرة، شغّل الاستعلام مع `EXPLAIN PLAN actions = 1`.
+وكمثال، استعلام مع تعطيل القراءة المباشرة
+
+```sql
+EXPLAIN PLAN actions = 1
+SELECT count()
+FROM tab
+WHERE hasToken(col, 'some_token')
+SETTINGS query_plan_direct_read_from_text_index = 0;
+```
+
+القيمة المعادة
+
+```text
+[...]
+Filter ((WHERE + Change column names to column identifiers))
+Filter column: hasToken(__table1.col, 'some_token'_String) (removed)
+Actions: INPUT : 0 -> col String : 0
+         COLUMN Const(String) -> 'some_token'_String String : 1
+         FUNCTION hasToken(col :: 0, 'some_token'_String :: 1) -> hasToken(__table1.col, 'some_token'_String) UInt8 : 2
+[...]
+```
+
+بينما يُنفَّذ الاستعلام نفسه مع `query_plan_direct_read_from_text_index = 1`
+
+```sql
+EXPLAIN PLAN actions = 1
+SELECT count()
+FROM tab
+WHERE hasToken(col, 'some_token')
+SETTINGS query_plan_direct_read_from_text_index = 1;
+```
+
+القيمة المُعادة
+
+```text
+[...]
+Expression (Before GROUP BY)
+Positions:
+  Filter
+  Filter column: __text_index_idx_hasToken_94cc2a813036b453d84b6fb344a63ad3 (removed)
+  Actions: INPUT :: 0 -> __text_index_idx_hasToken_94cc2a813036b453d84b6fb344a63ad3 UInt8 : 0
+[...]
+```
+
+يحتوي ناتج EXPLAIN PLAN الثاني على عمود افتراضي `__text_index_<index_name>_<function_name>_<id>`.
+إذا كان هذا العمود موجودًا، فهذا يعني أنه تم استخدام القراءة المباشرة.
+
+<div id="example-hackernews-dataset">
+  ## مثال: مجموعة بيانات Hacker News
+</div>
+
+لنلقِ نظرة على تحسينات الأداء التي توفّرها الفهارس النصية على مجموعة بيانات كبيرة تضم قدرًا كبيرًا من النصوص.
+سنستخدم 28.7M صفًا من التعليقات على موقع Hacker News الشهير.
+فيما يلي الجدول من دون فهرس نصي:
+
+```sql
+CREATE TABLE hackernews (
+    id UInt64,
+    deleted UInt8,
+    type String,
+    author String,
+    timestamp DateTime,
+    comment String,
+    dead UInt8,
+    parent UInt64,
+    poll UInt64,
+    children Array(UInt32),
+    url String,
+    score UInt32,
+    title String,
+    parts Array(UInt32),
+    descendants UInt32
+)
+ENGINE = MergeTree
+ORDER BY (type, author);
+```
+
+توجد 28.7M صفًا في ملف Parquet على S3 - فلنُدرجها في جدول `hackernews`:
+
+```sql
+INSERT INTO hackernews
+    SELECT * FROM s3Cluster(
+        'default',
+        'https://datasets-documentation.s3.eu-west-3.amazonaws.com/hackernews/hacknernews.parquet',
+        'Parquet',
+        '
+    id UInt64,
+    deleted UInt8,
+    type String,
+    by String,
+    time DateTime,
+    text String,
+    dead UInt8,
+    parent UInt64,
+    poll UInt64,
+    kids Array(UInt32),
+    url String,
+    score UInt32,
+    title String,
+    parts Array(UInt32),
+    descendants UInt32');
+```
+
+سنستخدم `ALTER TABLE` ونضيف فهرسًا نصيًا إلى عمود comment، ثم نُطبّقه فعليًا:
+
+```sql
+-- Add the index
+ALTER TABLE hackernews ADD INDEX comment_idx(comment) TYPE text(tokenizer = splitByNonAlpha);
+
+-- Materialize the index for existing data
+ALTER TABLE hackernews MATERIALIZE INDEX comment_idx SETTINGS mutations_sync = 2;
+```
+
+الآن، لنشغّل الاستعلامات باستخدام الدوال `hasToken` و`hasAnyTokens` و`hasAllTokens`.
+ستوضّح الأمثلة التالية الفارق الكبير في الأداء بين فحص الفهرس القياسي وتحسين القراءة المباشرة.
+
+<div id="1-using-hastoken">
+  ### 1. استخدام `hasToken`
+</div>
+
+يتحقق `hasToken` مما إذا كان النص يحتوي على token واحد محدد.
+سنبحث عن token حساس لحالة الأحرف وهو &#39;ClickHouse&#39;.
+
+**تعطيل القراءة المباشرة (Standard scan)**
+بشكل افتراضي، يستخدم ClickHouse فهرس التخطي لتصفية الحبيبات، ثم يقرأ بيانات الأعمدة الخاصة بهذه الحبيبات.
+يمكننا محاكاة هذا السلوك من خلال تعطيل القراءة المباشرة.
+
+```sql
+SELECT count()
+FROM hackernews
+WHERE hasToken(comment, 'ClickHouse')
+SETTINGS query_plan_direct_read_from_text_index = 0, use_skip_indexes_on_data_read = 0;
+
+┌─count()─┐
+│     516 │
+└─────────┘
+
+1 row in set. Elapsed: 0.362 sec. Processed 24.90 million rows, 9.51 GB
+```
+
+**القراءة المباشرة مفعّلة (قراءة سريعة من الفهرس)**
+نشغّل الآن الاستعلام نفسه مع تفعيل القراءة المباشرة (وهو الإعداد الافتراضي).
+
+```sql
+SELECT count()
+FROM hackernews
+WHERE hasToken(comment, 'ClickHouse')
+SETTINGS query_plan_direct_read_from_text_index = 1, use_skip_indexes_on_data_read = 1;
+
+┌─count()─┐
+│     516 │
+└─────────┘
+
+1 row in set. Elapsed: 0.008 sec. Processed 3.15 million rows, 3.15 MB
+```
+
+استعلام القراءة المباشرة أسرع بأكثر من 45 مرة (0.362s مقابل 0.008s)، ويعالج كمية أقل بكثير من البيانات (9.51 GB مقابل 3.15 MB) لأنه يقرأ من الفهرس وحده.
+
+<div id="2-using-hasanytokens">
+  ### 2. استخدام `hasAnyTokens`
+</div>
+
+تتحقق `hasAnyTokens` مما إذا كان النص يحتوي على توكن واحد على الأقل من التوكنات المحددة.
+سنبحث عن التعليقات التي تحتوي على &#39;love&#39; أو &#39;ClickHouse&#39;.
+
+**القراءة المباشرة معطّلة (المسح القياسي)**
+
+```sql
+SELECT count()
+FROM hackernews
+WHERE hasAnyTokens(comment, 'love ClickHouse')
+SETTINGS query_plan_direct_read_from_text_index = 0, use_skip_indexes_on_data_read = 0;
+
+┌─count()─┐
+│  408426 │
+└─────────┘
+
+1 row in set. Elapsed: 1.329 sec. Processed 28.74 million rows, 9.72 GB
+```
+
+**القراءة المباشرة مفعّلة (قراءة سريعة من الفهرس)**
+
+```sql
+SELECT count()
+FROM hackernews
+WHERE hasAnyTokens(comment, 'love ClickHouse')
+SETTINGS query_plan_direct_read_from_text_index = 1, use_skip_indexes_on_data_read = 1;
+
+┌─count()─┐
+│  408426 │
+└─────────┘
+
+1 row in set. Elapsed: 0.015 sec. Processed 27.99 million rows, 27.99 MB
+```
+
+تكون الزيادة في السرعة أكثر وضوحًا في عملية البحث الشائعة هذه باستخدام &quot;OR&quot;.
+يصبح الاستعلام أسرع بما يقارب 89 مرة (1.329s مقابل 0.015s) من خلال تجنّب المسح الكامل للعمود.
+
+<div id="3-using-hasalltokens">
+  ### 3. استخدام `hasAllTokens`
+</div>
+
+يتحقق `hasAllTokens` مما إذا كان النص يحتوي على جميع الرموز المميّزة المحددة.
+سنبحث عن التعليقات التي تحتوي على كلٍّ من &#39;love&#39; و&#39;ClickHouse&#39;.
+
+**القراءة المباشرة معطّلة (المسح القياسي)**
+حتى مع تعطيل القراءة المباشرة، يظل فهرس التخطي القياسي فعّالًا.
+فهو يقلّص عدد الصفوف من 28.7 مليون صف إلى 147.46 ألف صف فقط، لكنه لا يزال بحاجة إلى قراءة 57.03 ميغابايت من العمود.
+
+```sql
+SELECT count()
+FROM hackernews
+WHERE hasAllTokens(comment, 'love ClickHouse')
+SETTINGS query_plan_direct_read_from_text_index = 0, use_skip_indexes_on_data_read = 0;
+
+┌─count()─┐
+│      11 │
+└─────────┘
+
+1 row in set. Elapsed: 0.184 sec. Processed 147.46 thousand rows, 57.03 MB
+```
+
+**القراءة المباشرة مفعّلة (قراءة سريعة من الفهرس)**
+تُجيب القراءة المباشرة عن الاستعلام بالاعتماد على بيانات الفهرس، ولا تقرأ سوى 147.46 KB.
+
+```sql
+SELECT count()
+FROM hackernews
+WHERE hasAllTokens(comment, 'love ClickHouse')
+SETTINGS query_plan_direct_read_from_text_index = 1, use_skip_indexes_on_data_read = 1;
+
+┌─count()─┐
+│      11 │
+└─────────┘
+
+1 row in set. Elapsed: 0.007 sec. Processed 147.46 thousand rows, 147.46 KB
+```
+
+في عملية البحث &quot;AND&quot; هذه، يكون تحسين القراءة المباشرة أسرع بأكثر من 26 مرة (0.184s مقابل 0.007s) من المسح القياسي لفهرس التخطي.
+
+<div id="4-compound-search-or-and-not">
+  ### 4. البحث المركّب: OR، AND، NOT، ...
+</div>
+
+ينطبق تحسين القراءة المباشرة أيضًا على التعبيرات المنطقية المركّبة.
+هنا، سنُجري بحثًا غير حساس لحالة الأحرف عن &#39;ClickHouse&#39; OR &#39;clickhouse&#39;.
+
+**القراءة المباشرة معطّلة (المسح القياسي)**
+
+```sql
+SELECT count()
+FROM hackernews
+WHERE hasToken(comment, 'ClickHouse') OR hasToken(comment, 'clickhouse')
+SETTINGS query_plan_direct_read_from_text_index = 0, use_skip_indexes_on_data_read = 0;
+
+┌─count()─┐
+│     769 │
+└─────────┘
+
+1 row in set. Elapsed: 0.450 sec. Processed 25.87 million rows, 9.58 GB
+```
+
+**تم تفعيل القراءة المباشرة (قراءة سريعة للفهرس)**
+
+```sql
+SELECT count()
+FROM hackernews
+WHERE hasToken(comment, 'ClickHouse') OR hasToken(comment, 'clickhouse')
+SETTINGS query_plan_direct_read_from_text_index = 1, use_skip_indexes_on_data_read = 1;
+
+┌─count()─┐
+│     769 │
+└─────────┘
+
+1 row in set. Elapsed: 0.013 sec. Processed 25.87 million rows, 51.73 MB
+```
+
+بدمج النتائج المستخرجة من الفهرس، يصبح استعلام القراءة المباشرة أسرع بمقدار 34 مرة (0.450s مقابل 0.013s)، كما يتجنب قراءة 9.58 GB من بيانات الأعمدة.
+في هذه الحالة تحديدًا، ستكون الصياغة `hasAnyTokens(comment, ['ClickHouse', 'clickhouse'])` هي المفضلة والأكثر كفاءة.
+
+<div id="tuning-the-text-index">
+  ## ضبط فهرس النص
+</div>
+
+حاليًا، تتوفر ذاكرات تخزين مؤقت لكتل القاموس بعد إلغاء التسلسل، وللرؤوس، ولقوائم الترحيل الخاصة بفهرس النص لتقليل عمليات الإدخال/الإخراج.
+
+يمكن تمكينها عبر الإعدادات [use&#95;text&#95;index&#95;dictionary&#95;cache](/ar/reference/settings/session-settings#use_text_index_dictionary_cache) و[use&#95;text&#95;index&#95;header&#95;cache](/ar/reference/settings/session-settings#use_text_index_header_cache) و[use&#95;text&#95;index&#95;postings&#95;cache](/ar/reference/settings/session-settings#use_text_index_postings_cache) على التوالي. وهي معطلة افتراضيًا.
+
+راجع إعدادات الخادم التالية لتهيئة ذاكرة التخزين المؤقت.
+
+<div id="server-settings">
+  ### إعدادات الخادم
+</div>
+
+<div id="dictionary-blocks-cache-settings">
+  #### إعدادات ذاكرة التخزين المؤقت لكتل القاموس
+</div>
+
+| الإعداد                                                                                                                                                             | الوصف                                                                                                     | القيمة الافتراضية |
+| ------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------- | ----------------- |
+| [text&#95;index&#95;dictionary&#95;block&#95;cache&#95;policy](/ar/reference/settings/server-settings/settings#text_index_dictionary_block_cache_policy)               | اسم سياسة ذاكرة التخزين المؤقت لكتل قاموس فهرس النص.                                                      | `SLRU`            |
+| [text&#95;index&#95;dictionary&#95;block&#95;cache&#95;size](/ar/reference/settings/server-settings/settings#text_index_dictionary_block_cache_size)                   | الحد الأقصى لحجم ذاكرة التخزين المؤقت بالبايت.                                                            | `1073741824`      |
+| [text&#95;index&#95;dictionary&#95;block&#95;cache&#95;max&#95;entries](/ar/reference/settings/server-settings/settings#text_index_dictionary_block_cache_max_entries) | الحد الأقصى لعدد كتل القاموس التي فُكّ تسلسلها في ذاكرة التخزين المؤقت.                                   | `1'000'000`       |
+| [text&#95;index&#95;dictionary&#95;block&#95;cache&#95;size&#95;ratio](/ar/reference/settings/server-settings/settings#text_index_dictionary_block_cache_size_ratio)   | حجم الطابور المحمي في ذاكرة التخزين المؤقت لكتل قاموس فهرس النص مقارنةً بإجمالي حجم ذاكرة التخزين المؤقت. | `0.5`             |
+
+<div id="header-cache-settings">
+  #### إعدادات ذاكرة التخزين المؤقت لرأس الفهرس النصي
+</div>
+
+| الإعداد                                                                                                                                     | الوصف                                                                                                        | القيمة الافتراضية |
+| ------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------ | ----------------- |
+| [text&#95;index&#95;header&#95;cache&#95;policy](/ar/reference/settings/server-settings/settings#text_index_header_cache_policy)               | اسم سياسة ذاكرة التخزين المؤقت لرأس الفهرس النصي.                                                            | `SLRU`            |
+| [text&#95;index&#95;header&#95;cache&#95;size](/ar/reference/settings/server-settings/settings#text_index_header_cache_size)                   | الحد الأقصى لحجم ذاكرة التخزين المؤقت بالبايت.                                                               | `1073741824`      |
+| [text&#95;index&#95;header&#95;cache&#95;max&#95;entries](/ar/reference/settings/server-settings/settings#text_index_header_cache_max_entries) | الحد الأقصى لعدد الرؤوس في ذاكرة التخزين المؤقت بعد إلغاء تسلسلها.                                           | `100'000`         |
+| [text&#95;index&#95;header&#95;cache&#95;size&#95;ratio](/ar/reference/settings/server-settings/settings#text_index_header_cache_size_ratio)   | حجم الطابور المحمي في ذاكرة التخزين المؤقت لرأس الفهرس النصي نسبةً إلى الحجم الإجمالي لذاكرة التخزين المؤقت. | `0.5`             |
+
+<div id="posting-lists-cache-settings">
+  #### إعدادات ذاكرة التخزين المؤقت لقوائم الترحيل
+</div>
+
+| الإعداد                                                                                                                                         | الوصف                                                                                                                        | القيمة الافتراضية |
+| ----------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------- | ----------------- |
+| [text&#95;index&#95;postings&#95;cache&#95;policy](/ar/reference/settings/server-settings/settings#text_index_postings_cache_policy)               | اسم سياسة ذاكرة التخزين المؤقت لقوائم الترحيل في الفهرس النصي.                                                            | `SLRU`            |
+| [text&#95;index&#95;postings&#95;cache&#95;size](/ar/reference/settings/server-settings/settings#text_index_postings_cache_size)                   | الحد الأقصى لحجم ذاكرة التخزين المؤقت بالبايت.                                                                               | `2147483648`      |
+| [text&#95;index&#95;postings&#95;cache&#95;max&#95;entries](/ar/reference/settings/server-settings/settings#text_index_postings_cache_max_entries) | الحد الأقصى لعدد قوائم الترحيل التي أُلغي تسلسلها في ذاكرة التخزين المؤقت.                                                | `1'000'000`       |
+| [text&#95;index&#95;postings&#95;cache&#95;size&#95;ratio](/ar/reference/settings/server-settings/settings#text_index_postings_cache_size_ratio)   | حجم الطابور المحمي في ذاكرة التخزين المؤقت لقوائم الترحيل في الفهرس النصي نسبةً إلى الحجم الإجمالي لذاكرة التخزين المؤقت. | `0.5`             |
+
+<div id="related-content">
+  ## محتوى مرتبط
+</div>
+
+* مدونة: [التعريف بالفهارس المعكوسة في ClickHouse](https://clickhouse.com/blog/clickhouse-search-with-inverted-indices)
+* مدونة: [البحث النصي الكامل في ClickHouse من الداخل: سريع، مدمج، وقائم على الأعمدة](https://clickhouse.com/blog/clickhouse-full-text-search)
+* فيديو: [فهارس النص الكامل: التصميم والتجارب](https://www.youtube.com/watch?v=O_MnyUkrIq8)

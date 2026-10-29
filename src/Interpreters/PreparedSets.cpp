@@ -18,7 +18,6 @@
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
 #include <Processors/QueryPlan/CreatingSetsStep.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
-#include <Processors/QueryPlan/DistributedPlanSets.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/Sinks/EmptySink.h>
 #include <Processors/Sinks/NullSink.h>
@@ -51,7 +50,7 @@ bool hasCorrelatedExpressions(QueryPlan::Node * node)
         if (hasCorrelatedExpressions(child))
             return true;
 
-    for (auto * child_plan : node->step->getChildPlans(/*for_explain=*/ false))
+    for (auto * child_plan : node->step->getChildPlans())
         if (child_plan && hasCorrelatedExpressions(child_plan->getRootNode()))
             return true;
 
@@ -60,18 +59,16 @@ bool hasCorrelatedExpressions(QueryPlan::Node * node)
 
 }
 
-bool planHasCorrelatedExpressions(const QueryPlan & plan)
-{
-    return hasCorrelatedExpressions(plan.getRootNode());
-}
-
 namespace Setting
 {
+    extern const SettingsUInt64 max_bytes_in_set;
     extern const SettingsUInt64 max_bytes_to_transfer;
     extern const SettingsUInt64 interactive_delay;
-    extern const SettingsBool make_distributed_plan;
+    extern const SettingsUInt64 max_rows_in_set;
     extern const SettingsUInt64 max_rows_to_transfer;
+    extern const SettingsOverflowMode set_overflow_mode;
     extern const SettingsOverflowMode transfer_overflow_mode;
+    extern const SettingsBool transform_null_in;
     extern const SettingsBool use_index_for_in_with_subqueries;
     extern const SettingsUInt64 use_index_for_in_with_subqueries_max_values;
 }
@@ -80,17 +77,11 @@ namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int NOT_IMPLEMENTED;
-    extern const int QUERY_WAS_CANCELLED;
 }
 
-/// The build plan has `CreatingSetStep` at its root, which cannot be serialized for remote
-/// execution, so it is never converted to a distributed plan itself; only the source below
-/// it is (`convertSetSourceForDistributedPlan`).
-static QueryPlanOptimizationSettings makeInplaceBuildOptimizationSettings(const ContextPtr & context)
+SizeLimits PreparedSets::getSizeLimitsForSet(const Settings & settings)
 {
-    QueryPlanOptimizationSettings optimization_settings(context);
-    optimization_settings.make_distributed_plan = false;
-    return optimization_settings;
+    return SizeLimits(settings[Setting::max_rows_in_set], settings[Setting::max_bytes_in_set], settings[Setting::set_overflow_mode]);
 }
 
 static bool equals(const DataTypes & lhs, const DataTypes & rhs)
@@ -122,10 +113,8 @@ SetPtr FutureSet::getOrderedSetIfAlreadyBuilt(const ContextPtr & context)
 }
 
 
-FutureSetFromStorage::FutureSetFromStorage(
-    Hash hash_, ASTPtr ast_, SetPtr set_, std::optional<StorageID> storage_id_, bool is_mutable_during_query_)
-    : hash(hash_), ast(std::move(ast_)), storage_id(std::move(storage_id_)), set(std::move(set_))
-    , is_mutable_during_query(is_mutable_during_query_) {}
+FutureSetFromStorage::FutureSetFromStorage(Hash hash_, ASTPtr ast_, SetPtr set_, std::optional<StorageID> storage_id_)
+    : hash(hash_), ast(std::move(ast_)), storage_id(std::move(storage_id_)), set(std::move(set_)) {}
 SetPtr FutureSetFromStorage::get() const { return set; }
 FutureSet::Hash FutureSetFromStorage::getHash() const { return hash; }
 DataTypes FutureSetFromStorage::getTypes() const { return set->getElementsTypes(); }
@@ -272,14 +261,15 @@ FutureSetFromSubquery::FutureSetFromSubquery(
     std::unique_ptr<QueryPlan> source_,
     StoragePtr external_table,
     std::shared_ptr<FutureSetFromSubquery> external_table_set_,
-    FutureSetSettings set_settings_)
-    : hash(hash_), ast(std::move(ast_)), set_settings(std::move(set_settings_)), external_table_set(std::move(external_table_set_))
-    , source(std::move(source_))
+    bool transform_null_in,
+    SizeLimits size_limits,
+    size_t max_size_for_index)
+    : hash(hash_), ast(std::move(ast_)), external_table_set(std::move(external_table_set_)), source(std::move(source_))
 {
     set_and_key = std::make_shared<SetAndKey>();
     set_and_key->key = PreparedSets::toString(hash_, {});
 
-    set_and_key->set = std::make_shared<Set>(set_settings.size_limits, set_settings.max_size_for_index, set_settings.transform_null_in);
+    set_and_key->set = std::make_shared<Set>(size_limits, max_size_for_index, transform_null_in);
     set_and_key->set->setHeader(source->getCurrentHeader()->getColumnsWithTypeAndName());
 
     set_and_key->external_table = std::move(external_table);
@@ -289,12 +279,14 @@ FutureSetFromSubquery::FutureSetFromSubquery(
     Hash hash_,
     ASTPtr ast_,
     QueryTreeNodePtr query_tree_,
-    FutureSetSettings set_settings_)
-    : hash(hash_), ast(std::move(ast_)), set_settings(std::move(set_settings_)), query_tree(std::move(query_tree_))
+    bool transform_null_in,
+    SizeLimits size_limits,
+    size_t max_size_for_index)
+    : hash(hash_), ast(std::move(ast_)), query_tree(std::move(query_tree_))
 {
     set_and_key = std::make_shared<SetAndKey>();
     set_and_key->key = PreparedSets::toString(hash_, {});
-    set_and_key->set = std::make_shared<Set>(set_settings.size_limits, set_settings.max_size_for_index, set_settings.transform_null_in);
+    set_and_key->set = std::make_shared<Set>(size_limits, max_size_for_index, transform_null_in);
 }
 
 FutureSetFromSubquery::~FutureSetFromSubquery() = default;
@@ -390,30 +382,12 @@ DataTypes FutureSetFromSubquery::getTypes() const
     return set_and_key->set->getElementsTypes();
 }
 
-bool FutureSetFromSubquery::hasExternalTable() const
-{
-    /// Deliberately does not consult `set_and_key->external_table_expected`: this predicate feeds the
-    /// distributed-plan validation, which must reject only sets already entangled with an external
-    /// table. An expected-but-unattached table could only be attached later by a classic remote read,
-    /// and a distributed plan has no such read: the set stays plain, is built once on the initiator and
-    /// its values are shipped with the worker tasks, which matches the `GLOBAL IN` semantics.
-    return external_table_set != nullptr || (set_and_key && set_and_key->external_table != nullptr);
-}
-
 FutureSet::Hash FutureSetFromSubquery::getHash() const { return hash; }
 
-std::unique_ptr<QueryPlan> FutureSetFromSubquery::build(
-    const SizeLimits & network_transfer_limits, const PreparedSetsCachePtr & prepared_sets_cache, bool recoverable_build)
+std::unique_ptr<QueryPlan> FutureSetFromSubquery::build(const SizeLimits & network_transfer_limits, const PreparedSetsCachePtr & prepared_sets_cache)
 {
     if (set_and_key->set->isCreated())
         return nullptr;
-
-    /// A destructive in-place build consumed `source` and then threw, so this set can never be built.
-    /// Every caller treats a null plan as "nothing to build" and moves on, which leaves the set unready
-    /// and makes `FunctionIn` report "Not-ready Set is passed as the second argument" once the main
-    /// pipeline evaluates the condition. Report the real reason instead. See `buildOrderedSetInplace`.
-    if (in_place_build_failure)
-        std::rethrow_exception(in_place_build_failure);
 
     auto plan = std::move(source);
 
@@ -424,32 +398,10 @@ std::unique_ptr<QueryPlan> FutureSetFromSubquery::build(
         plan->getCurrentHeader(),
         set_and_key,
         network_transfer_limits,
-        prepared_sets_cache,
-        set_settings,
-        recoverable_build);
+        prepared_sets_cache);
     creating_set->setStepDescription("Create set for subquery");
     plan->addStep(std::move(creating_set));
     return plan;
-}
-
-void FutureSetFromSubquery::prepareForDistributedPlan(const ContextPtr & context)
-{
-    if (set_and_key->set->isCreated())
-        return;
-
-    /// Correlated subqueries contain PLACEHOLDER actions that cannot be executed standalone.
-    /// They will be decorrelated and executed as part of the outer query instead.
-    if (source && hasCorrelatedExpressions(source->getRootNode()))
-        return;
-
-    if (!set_and_key->set->hasExplicitSetElements())
-        set_and_key->set->fillSetElements();
-
-    /// TODO: Support spilling for the sets that a distributed plan ships.
-    set_settings.disableSpilling();
-
-    if (source)
-        convertSetSourceForDistributedPlan(*source, context);
 }
 
 void FutureSetFromSubquery::buildSetInplace(const ContextPtr & context)
@@ -466,42 +418,22 @@ void FutureSetFromSubquery::buildSetInplace(const ContextPtr & context)
     SizeLimits network_transfer_limits(settings[Setting::max_rows_to_transfer], settings[Setting::max_bytes_to_transfer], settings[Setting::transfer_overflow_mode]);
     auto prepared_sets_cache = context->getPreparedSetsCache();
 
-    if (settings[Setting::make_distributed_plan])
-    {
-        prepareForDistributedPlan(context);
-        prepared_sets_cache = nullptr;
-    }
-
-    auto plan = build(network_transfer_limits, prepared_sets_cache, /*recoverable_build=*/false);
+    auto plan = build(network_transfer_limits, prepared_sets_cache);
 
     if (!plan)
         return;
 
-    auto builder = plan->buildQueryPipeline(makeInplaceBuildOptimizationSettings(context), BuildQueryPipelineSettings(context));
+    auto builder = plan->buildQueryPipeline(QueryPlanOptimizationSettings(context), BuildQueryPipelineSettings(context));
     auto pipeline = QueryPipelineBuilder::getPipeline(std::move(*builder));
     pipeline.complete(std::make_shared<EmptySink>(std::make_shared<const Block>(Block())));
 
-    /// A callback that merely returns `true` stops the executor without throwing. Remember that
-    /// cancellation so a source already consumed by `build` cannot leave an uncreated set behind.
-    bool observed_cancel = false;
     CompletedPipelineExecutor executor(pipeline);
     if (context->hasQueryContext())
     {
         if (auto cancel_callback = context->getQueryContext()->getInteractiveCancelCallback())
-            executor.setCancelCallback(
-                [&observed_cancel, is_cancelled = std::move(cancel_callback)]
-                {
-                    if (!is_cancelled())
-                        return false;
-                    observed_cancel = true;
-                    return true;
-                },
-                std::max(UInt64(100), context->getSettingsRef()[Setting::interactive_delay] / 1000));
+            executor.setCancelCallback(std::move(cancel_callback), std::max(UInt64(100), context->getSettingsRef()[Setting::interactive_delay] / 1000));
     }
     executor.execute();
-
-    if (observed_cancel && !set_and_key->set->isCreated())
-        throw Exception(ErrorCodes::QUERY_WAS_CANCELLED, "Query was cancelled while building a set for subquery");
 
     /// Finalize write in query cache to save subquery result (no-op if no cache writers exist in the pipeline)
     pipeline.finalizeWriteInQueryResultCache();
@@ -511,11 +443,6 @@ SetPtr FutureSetFromSubquery::buildOrderedSetInplace(const ContextPtr & context)
 {
     if (!context->getSettingsRef()[Setting::use_index_for_in_with_subqueries])
         return nullptr;
-
-    /// Concurrent index analyses may share this set through cloned filter DAGs, and the build mutates
-    /// `set_and_key->set` and `source`. A mutex and not `callOnce` because this build may stop without
-    /// creating the set (e.g. a subquery timeout with `overflow_mode = 'break'`) and then be retried.
-    std::lock_guard lock(inplace_build_mutex);
 
     if (auto set = get())
     {
@@ -531,7 +458,6 @@ SetPtr FutureSetFromSubquery::buildOrderedSetInplace(const ContextPtr & context)
         if (set)
         {
             set_and_key->set = set;
-            set_and_key->spill_state = external_table_set->getSetAndKey()->spill_state;
             return set_and_key->set;
         }
     }
@@ -547,10 +473,6 @@ SetPtr FutureSetFromSubquery::buildOrderedSetInplace(const ContextPtr & context)
     const auto & settings = context->getSettingsRef();
     SizeLimits network_transfer_limits(settings[Setting::max_rows_to_transfer], settings[Setting::max_bytes_to_transfer], settings[Setting::transfer_overflow_mode]);
 
-    /// TODO: Support spilling for the sets that a distributed plan ships.
-    if (settings[Setting::make_distributed_plan])
-        set_settings.disableSpilling();
-
     /// This is a *speculative* build, run during primary key / skip index analysis so that index
     /// analysis can use the set. Prefer a build that does not destroy the canonical `source` plan: if
     /// the in-place pipeline stops without creating the set (e.g. a subquery timeout with
@@ -560,19 +482,18 @@ SetPtr FutureSetFromSubquery::buildOrderedSetInplace(const ContextPtr & context)
     /// permanently unbuilt and `FunctionIn` throws "Not-ready Set is passed as the second argument"
     /// when the main pipeline runs.
     ///
-    /// So run the pipeline against a clone of `source`, leaving the original intact. Some source plans
-    /// cannot be cloned — most notably one reading through `ReadFromPreparedSource`, which wraps an
-    /// already-materialized, single-use `Pipe` (dictionary, many system table, and remote reads go
-    /// through it), and one holding a `DelayedCreatingSetsStep` with sets, which a nested `IN` subquery
-    /// adds. `QueryPlan::cloneSubplanAndReplace` rejects the latter: the step holds the inner
-    /// subqueries by shared pointer, and building it consumes each inner `source`
-    /// (`DelayedCreatingSetsStep::makePlansForSets` calls `FutureSetFromSubquery::build`, which moves
-    /// the inner `source` out), so a shallow clone would share them and a speculative pass would
-    /// consume the inner sources and mutate the canonical inner sets anyway — giving no real
-    /// preservation. A `MATERIALIZED` CTE referenced by a local `IN` subquery is the same kind of
-    /// shape: its source plan contains a `DelayedMaterializingCTEsStep`, which is also non-clonable, so
-    /// it takes the destructive fallback too — again identical to the pre-PR behavior for that shape.
-    /// For any non-clonable source, fall back to the original destructive build so
+    /// So run the pipeline against a clone of `source`, leaving the original intact. Some source steps
+    /// cannot be cloned — most notably `ReadFromPreparedSource`, which wraps an already-materialized,
+    /// single-use `Pipe` (dictionary, many system table, and remote reads go through it), and
+    /// `DelayedCreatingSetsStep`, which a nested `IN` subquery adds to the source plan. The latter is left
+    /// non-clonable on purpose: it holds the inner subqueries by shared pointer, and building it consumes
+    /// each inner `source` (`DelayedCreatingSetsStep::makePlansForSets` calls `FutureSetFromSubquery::build`,
+    /// which moves the inner `source` out). A shallow clone would share those inner subqueries, so a
+    /// speculative pass would consume the inner sources and mutate the canonical inner sets anyway — giving
+    /// no real preservation. A `MATERIALIZED` CTE referenced by a local `IN` subquery is the same kind of
+    /// shape: its source plan contains a `DelayedMaterializingCTEsStep`, which is also non-clonable, so it
+    /// takes the destructive fallback too — again identical to the pre-PR behavior for that shape. For any
+    /// non-clonable source, fall back to the original destructive build so
     /// primary key analysis is still performed for such subqueries (as it always was); only the rare
     /// silent-failure case stays unrecoverable there, exactly as before this change.
     ///
@@ -602,69 +523,43 @@ SetPtr FutureSetFromSubquery::buildOrderedSetInplace(const ContextPtr & context)
         }
     }
 
-    /// Run the cloned subquery as a distributed plan; `source` itself stays untouched. The
-    /// fallback below runs locally: a plan that cannot be cloned (e.g. it reads from an
-    /// already-created `Pipe`) cannot be serialized for a worker either.
-    if (plan && context->getSettingsRef()[Setting::make_distributed_plan])
-        convertSetSourceForDistributedPlan(*plan, context);
+    /// On the non-destructive path the speculative pipeline builds into this temporary set; it is
+    /// published into `set_and_key` only after the build fully succeeds (see below). It stays null on the
+    /// destructive fallback, which builds directly into the canonical `set_and_key->set`.
+    SetPtr speculative_set;
 
-    /// Holds the speculative build, published into `set_and_key` only once it succeeded; null on the
-    /// destructive fallback. Read the built set through this member: a cache hit rebinds it.
-    SetAndKeyPtr tmp_set_and_key;
-
-    /// The destructive fallback below leaves the set unbuildable if anything throws after `build` has
-    /// consumed `source`: every `build` caller treats a null plan as "nothing to do", so the set stays
-    /// not-ready and `FunctionIn` reports "Not-ready Set is passed as the second argument" once the main
-    /// pipeline evaluates the condition. That is exactly what a caller which deliberately ignores an
-    /// in-place build failure produces — primary key, skip index, and statistics analysis all run this
-    /// build speculatively and continue without the set when it throws. Remember the failure so that
-    /// `build` can report the real reason instead. Nothing is remembered on the non-destructive path:
-    /// `source` is intact there and the deferred build simply runs the subquery again.
-    try
+    if (source_preserved)
     {
-    auto prepared_sets_cache = context->getPreparedSetsCache();
-    /// A distributed plan ships the set's values to worker tasks, and a cached set has none.
-    if (settings[Setting::make_distributed_plan])
-        prepared_sets_cache = nullptr;
-
-    /// Completes `plan_to_complete` with a `CreatingSetStep` that builds into a fresh temporary `Set`
-    /// bound to the canonical key. The canonical `set_and_key->set` is never
-    /// mutated unless the build fully succeeds: with `overflow_mode = 'break'` the pipeline can stop
-    /// after `CreatingSetsTransform::consume` has inserted a prefix of rows but before `generate` calls
-    /// `Set::finishInsert`, and building into a temporary set keeps those partial rows out of the
-    /// canonical set, which the deferred build reuses.
-    ///
-    /// There is no external table here (this path requires `set_and_key->external_table` to be null),
-    /// and the canonical key is kept so a cache lookup finds a set built by a sibling task.
-    auto build_into_temporary_set = [&](QueryPlan & plan_to_complete, const PreparedSetsCachePtr & cache)
-    {
+        /// Non-destructive path. Build into a *temporary* `Set` so the canonical `set_and_key->set` is
+        /// never mutated unless the build fully succeeds. With `overflow_mode = 'break'` the pipeline can
+        /// stop after `CreatingSetsTransform::consume` has inserted a prefix of rows but before
+        /// `generate` calls `Set::finishInsert`; building into a temporary set keeps those partial rows
+        /// out of the canonical set, which the deferred build reuses. Publishing only a created set means
+        /// a non-deterministic subquery (e.g. one using `rand`) is evaluated against a single result.
+        ///
+        /// Do not share this speculative build through `PreparedSetsCache`: if the in-place pipeline stops
+        /// silently, the `CreatingSetsTransform` destructor stores an exception into the cache for this
+        /// key, and the later deferred build would rethrow it via `shared_future::get` instead of
+        /// rebuilding from the preserved `source`. The deferred build still uses the cache.
         const auto & canonical_set = *set_and_key->set;
-        auto speculative_set = std::make_shared<Set>(canonical_set.limits, canonical_set.max_elements_to_fill, canonical_set.transform_null_in);
-        speculative_set->setHeader(plan_to_complete.getCurrentHeader()->getColumnsWithTypeAndName());
+        speculative_set = std::make_shared<Set>(canonical_set.limits, canonical_set.max_elements_to_fill, canonical_set.transform_null_in);
+        speculative_set->setHeader(plan->getCurrentHeader()->getColumnsWithTypeAndName());
         speculative_set->fillSetElements();
 
-        tmp_set_and_key = std::make_shared<SetAndKey>();
+        /// The temporary `SetAndKey` has no external table (the non-destructive path is only taken when
+        /// `set_and_key->external_table` is null, see above), so the speculative `CreatingSetsTransform`
+        /// only builds the set and never touches a `GLOBAL IN` temporary table.
+        auto tmp_set_and_key = std::make_shared<SetAndKey>();
         tmp_set_and_key->key = set_and_key->key;
         tmp_set_and_key->set = speculative_set;
 
         auto creating_set = std::make_unique<CreatingSetStep>(
-            plan_to_complete.getCurrentHeader(),
+            plan->getCurrentHeader(),
             tmp_set_and_key,
             network_transfer_limits,
-            cache,
-            set_settings,
-            /*recoverable_build_=*/true);
+            /*prepared_sets_cache=*/ nullptr);
         creating_set->setStepDescription("Create set for subquery");
-        plan_to_complete.addStep(std::move(creating_set));
-
-        return speculative_set;
-    };
-
-    SetPtr speculative_set;
-    if (source_preserved)
-    {
-        /// Non-destructive path.
-        speculative_set = build_into_temporary_set(*plan, prepared_sets_cache);
+        plan->addStep(std::move(creating_set));
     }
     else
     {
@@ -672,7 +567,8 @@ SetPtr FutureSetFromSubquery::buildOrderedSetInplace(const ContextPtr & context)
         /// `CreatingSetStep` to the canonical `set_and_key` (as this code always did). On a silent failure
         /// `source` is gone, so the deferred build cannot rebuild — exactly the previous behavior; the set
         /// is never reused with partial rows, because the deferred build throws "Not-ready Set" instead.
-        plan = build(network_transfer_limits, prepared_sets_cache, /*recoverable_build=*/false);
+        auto prepared_sets_cache = context->getPreparedSetsCache();
+        plan = build(network_transfer_limits, prepared_sets_cache);
         if (!plan)
             return nullptr;
 
@@ -682,35 +578,25 @@ SetPtr FutureSetFromSubquery::buildOrderedSetInplace(const ContextPtr & context)
             set_and_key->set->fillSetElements();
     }
 
-    /// Runs the speculative pipeline in its own scope so that `executor`, `pipeline`, and the pipeline
-    /// builder are destroyed before `source` is reset below. `QueryPlan::clone` copies the shared resource
-    /// handles onto the cloned plan, so the speculative pipeline holds the interpreter contexts, storage
-    /// holders, and table locks itself rather than depending on `source` outliving it. On the destructive
-    /// fallback `build` moved the resources into the plan, which outlives this call.
-    ///
-    /// Returns false when the pipeline stopped without creating the set.
-    auto run_plan = [&](QueryPlan & plan_to_run)
+    /// Run the speculative pipeline in its own scope so that `executor`, `pipeline`, and the pipeline
+    /// builder are destroyed before `source` is reset below. On the non-destructive path the cloned `plan`
+    /// carries an *empty* `QueryPlanResourceHolder` (`QueryPlan::clone` copies the plan nodes only, not the
+    /// resources), so the speculative pipeline relies on the original `source` plan to keep the interpreter
+    /// contexts, storage holders, and table locks alive: processors may use them implicitly, including in
+    /// their destructors — this is exactly what the resource holder normally guarantees for the lifetime of
+    /// the pipeline. Resetting `source` while the pipeline is still alive would release them too early. On
+    /// the destructive fallback `build` moved the resources into `plan`, which outlives this scope, so the
+    /// ordering is safe there too.
     {
-        auto builder = plan_to_run.buildQueryPipeline(makeInplaceBuildOptimizationSettings(context), BuildQueryPipelineSettings(context));
+        auto builder = plan->buildQueryPipeline(QueryPlanOptimizationSettings(context), BuildQueryPipelineSettings(context));
         auto pipeline = QueryPipelineBuilder::getPipeline(std::move(*builder));
         pipeline.complete(std::make_shared<EmptySink>(std::make_shared<const Block>(Block())));
 
-        /// A callback that merely returns `true` stops the executor without throwing. Remember that
-        /// cancellation so a source already consumed by `build` cannot leave an uncreated set behind.
-        bool observed_cancel = false;
         CompletedPipelineExecutor executor(pipeline);
         if (context->hasQueryContext())
         {
             if (auto cancel_callback = context->getQueryContext()->getInteractiveCancelCallback())
-                executor.setCancelCallback(
-                    [&observed_cancel, is_cancelled = std::move(cancel_callback)]
-                    {
-                        if (!is_cancelled())
-                            return false;
-                        observed_cancel = true;
-                        return true;
-                    },
-                    std::max(UInt64(100), context->getSettingsRef()[Setting::interactive_delay] / 1000));
+                executor.setCancelCallback(std::move(cancel_callback), std::max(UInt64(100), context->getSettingsRef()[Setting::interactive_delay] / 1000));
         }
         executor.execute();
 
@@ -719,46 +605,24 @@ SetPtr FutureSetFromSubquery::buildOrderedSetInplace(const ContextPtr & context)
         /// the pipeline without setting `is_created` to true. On the non-destructive path the cloned source
         /// above keeps `source` intact, so `DelayedCreatingSetsStep::makePlansForSets` can still build the set
         /// later (on the destructive fallback `source` is already gone, as it always was).
-        ///
-        /// On a cache hit the transform rebound `tmp_set_and_key` and left the set this task created
-        /// empty, so the created one would read "not created".
-        Set & built_set = tmp_set_and_key ? *tmp_set_and_key->set : *set_and_key->set;
-        /// The wording differs from the unordered path on purpose: it is the only way to tell from the
-        /// outside which of the two builds observed the cancellation, and the regression test relies on it.
-        if (observed_cancel && !built_set.isCreated())
-            throw Exception(ErrorCodes::QUERY_WAS_CANCELLED, "Query was cancelled while building an ordered set for subquery");
+        Set & built_set = speculative_set ? *speculative_set : *set_and_key->set;
         if (!built_set.isCreated())
-            return false;
+            return nullptr;
 
         logProcessorProfile(context, pipeline.getProcessors());
 
         /// Finalize write in query cache to save subquery result (no-op if no cache writers exist in the pipeline)
         pipeline.finalizeWriteInQueryResultCache();
-        return true;
-    };
-
-    if (!run_plan(*plan))
-        return nullptr;
-    }
-    catch (...)
-    {
-        if (!source_preserved)
-            in_place_build_failure = std::current_exception();
-        throw;
     }
 
     /// In-place build succeeded. On the non-destructive path, publish the fully-created temporary set into
-    /// the canonical `set_and_key`; the deferred build is then skipped, because it checks `isCreated()` /
-    /// `get()` before looking at `source`. `source` is kept: it is the subquery plan `serializeSets` writes
-    /// when this set is referenced by a plan fragment shipped to parallel replicas, which re-build the set
-    /// themselves. Discarding it would make that serialization fail with `Cannot serialize
-    /// FutureSetFromSubquery with no query plan`, and keeping it cannot cause a rebuild. On the destructive
-    /// fallback `source` was already consumed by `build` and is gone.
-    if (tmp_set_and_key)
-    {
-        set_and_key->set = tmp_set_and_key->set;
-        set_and_key->spill_state = tmp_set_and_key->spill_state;
-    }
+    /// the canonical `set_and_key`; the deferred build is then skipped (it checks `isCreated()` / `get()`),
+    /// so the original `source` plan is no longer needed. On the destructive fallback `source` was already
+    /// consumed by `build`, so `reset` is a no-op there. Reset only now, after the pipeline and executor have
+    /// been destroyed, so the resources held by `source` outlive every processor.
+    if (speculative_set)
+        set_and_key->set = speculative_set;
+    source.reset();
 
     return set_and_key->set;
 }
@@ -786,10 +650,10 @@ String PreparedSets::toString(const PreparedSets::Hash & key, const DataTypes & 
 
 FutureSetFromTuplePtr PreparedSets::addFromTuple(const Hash & key, ASTPtr ast, ColumnsWithTypeAndName block, const Settings & settings)
 {
-    const FutureSetSettings set_settings(settings);
+    auto size_limits = getSizeLimitsForSet(settings);
     auto from_tuple = std::make_shared<FutureSetFromTuple>(
         key, std::move(ast), std::move(block),
-        set_settings.transform_null_in, set_settings.size_limits);
+        settings[Setting::transform_null_in], size_limits);
 
     const auto & set_types = from_tuple->getTypes();
     auto & sets_by_hash = sets_from_tuple[key];
@@ -804,8 +668,7 @@ FutureSetFromTuplePtr PreparedSets::addFromTuple(const Hash & key, ASTPtr ast, C
 
 FutureSetFromStoragePtr PreparedSets::addFromStorage(const Hash & key, ASTPtr ast, SetPtr set_, StorageID storage_id)
 {
-    auto from_storage = std::make_shared<FutureSetFromStorage>(
-        key, std::move(ast), std::move(set_), std::move(storage_id), /*is_mutable_during_query_=*/ true);
+    auto from_storage = std::make_shared<FutureSetFromStorage>(key, std::move(ast), std::move(set_), std::move(storage_id));
     auto [it, inserted] = sets_from_storage.emplace(key, from_storage);
 
     if (!inserted)
@@ -822,9 +685,10 @@ FutureSetFromSubqueryPtr PreparedSets::addFromSubquery(
     FutureSetFromSubqueryPtr external_table_set,
     const Settings & settings)
 {
+    auto size_limits = getSizeLimitsForSet(settings);
     auto from_subquery = std::make_shared<FutureSetFromSubquery>(
         key, std::move(ast), std::move(source), std::move(external_table), std::move(external_table_set),
-        FutureSetSettings(settings));
+        settings[Setting::transform_null_in], size_limits, settings[Setting::use_index_for_in_with_subqueries_max_values]);
 
     auto [it, inserted] = sets_from_subqueries.emplace(key, from_subquery);
 
@@ -840,8 +704,10 @@ FutureSetFromSubqueryPtr PreparedSets::addFromSubquery(
     QueryTreeNodePtr query_tree,
     const Settings & settings)
 {
+    auto size_limits = getSizeLimitsForSet(settings);
     auto from_subquery = std::make_shared<FutureSetFromSubquery>(
-        key, std::move(ast), std::move(query_tree), FutureSetSettings(settings));
+        key, std::move(ast), std::move(query_tree),
+        settings[Setting::transform_null_in], size_limits, settings[Setting::use_index_for_in_with_subqueries_max_values]);
 
     auto [it, inserted] = sets_from_subqueries.emplace(key, from_subquery);
 
@@ -903,8 +769,16 @@ std::variant<std::promise<SetPtr>, SharedSet> PreparedSetsCache::findOrPromiseTo
         if (it->second.future.wait_for(std::chrono::seconds(0)) != std::future_status::ready)
             return it->second.future;
 
-        /// The build has finished. Reuse it only if it produced a set: a null set (an abandoned build)
-        /// and a stored exception are both dropped below, handing this caller a fresh promise.
+        /// The build has finished. Reuse the result only if it succeeded and produced a set. A ready
+        /// future can still be unusable in two ways, and both must be rebuilt rather than inherited by a
+        /// later caller:
+        ///  - it holds a null set (a deliberately retryable outcome), or
+        ///  - it holds an exception - e.g. the builder's pipeline was stopped by cancellation, in which
+        ///    case `CreatingSetsTransform`'s destructor stores a "Failed to build set" exception here.
+        /// Rethrowing a builder's cancellation to an unrelated caller is wrong: for mutations this cache
+        /// is shared across the part tasks of a single mutation, so cancelling one part (e.g. one whose
+        /// partition was dropped) must not poison the shared set and break sibling parts that keep
+        /// running. Drop the poisoned/empty entry below and hand out a fresh promise so the set is rebuilt.
         try
         {
             if (it->second.future.get() != nullptr)

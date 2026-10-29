@@ -2,6 +2,7 @@
 
 #include <memory>
 #include <vector>
+#include <deque>
 
 #include <Parsers/IAST_fwd.h>
 #include <Common/Exception.h>
@@ -17,7 +18,6 @@ namespace DB
 namespace ErrorCodes
 {
 extern const int UNSUPPORTED_METHOD;
-extern const int LOGICAL_ERROR;
 }
 
 class IDataType;
@@ -36,7 +36,6 @@ enum class QueryTreeNodeType : uint8_t
     FUNCTION,
     COLUMN,
     LAMBDA,
-    LAMBDA_ARGS,
     SORT,
     INTERPOLATE,
     WINDOW,
@@ -66,21 +65,14 @@ const char * toString(QueryTreeNodeType type);
 class IQueryTreeNode;
 using QueryTreeNodePtr = std::shared_ptr<IQueryTreeNode>;
 using QueryTreeNodes = std::vector<QueryTreeNodePtr>;
-
-class ITableExpressionNode;
-using TableExpressionNodePtr = std::shared_ptr<ITableExpressionNode>;
-using TableExpressionNodeWeakPtr = std::weak_ptr<ITableExpressionNode>;
-using TableExpressionNodes = std::vector<TableExpressionNodePtr>;
+using QueryTreeNodesDeque = std::deque<QueryTreeNodePtr>;
+using QueryTreeNodeWeakPtr = std::weak_ptr<IQueryTreeNode>;
+using QueryTreeWeakNodes = std::vector<QueryTreeNodeWeakPtr>;
 
 struct ConvertToASTOptions
 {
     /// Add _CAST if constant literal type is different from column type
     bool add_cast_for_constants = true;
-
-    /// Render a `DateTime` constant as its raw Unix timestamp instead of local date-time text, which two
-    /// instants share across a DST overlap. Valid wherever the consumer re-applies the literal's declared
-    /// type; clear it for a consumer that parses the text itself, such as an external database.
-    bool date_time_constants_as_numbers = true;
 
     bool use_source_expression_for_constants = false;
 
@@ -164,13 +156,13 @@ public:
       * If node to clone is key in replacement map, then instead of clone it
       * use value node from replacement map.
       */
-    using ReplacementMap = std::unordered_map<const ITableExpressionNode *, TableExpressionNodePtr>;
+    using ReplacementMap = std::unordered_map<const IQueryTreeNode *, QueryTreeNodePtr>;
     QueryTreeNodePtr cloneAndReplace(const ReplacementMap & replacement_map) const;
 
     /** Get a deep copy of the query tree.
       * If node to clone is node to replace, then instead of clone it use replacement node.
       */
-    QueryTreeNodePtr cloneAndReplace(const TableExpressionNodePtr & node_to_replace, TableExpressionNodePtr replacement_node) const;
+    QueryTreeNodePtr cloneAndReplace(const QueryTreeNodePtr & node_to_replace, QueryTreeNodePtr replacement_node) const;
 
     /// Returns true if node has alias, false otherwise
     bool hasAlias() const
@@ -292,18 +284,13 @@ public:
         return children;
     }
 
-    virtual const ITableExpressionNode * asTableExpression() const { return nullptr; }
-
-    const ITableExpressionNode & assertTableExpression() const
-    {
-        const auto * ptr = asTableExpression();
-        if (!ptr)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "{} is not a table expression", getNodeTypeName());
-
-        return *ptr;
-    }
-
 protected:
+    /** Construct query tree node.
+      * Resize children to children size.
+      * Resize weak pointers to weak pointers size.
+      */
+    explicit IQueryTreeNode(size_t children_size, size_t weak_pointers_size);
+
     /// Construct query tree node and resize children to children size
     explicit IQueryTreeNode(size_t children_size);
 
@@ -326,6 +313,7 @@ protected:
     virtual ASTPtr toASTImpl(const ConvertToASTOptions & options) const = 0;
 
     QueryTreeNodes children;
+    QueryTreeWeakNodes weak_pointers;
 
 private:
     String alias;
@@ -335,14 +323,6 @@ private:
     ASTPtr original_ast;
     /// If the expression has extra parentheses around it in the original query
     bool parenthesized = false;
-};
-
-class ITableExpressionNode : public IQueryTreeNode
-{
-public:
-    using IQueryTreeNode::IQueryTreeNode;
-
-    const ITableExpressionNode * asTableExpression() const final { return this; }
 };
 
 }

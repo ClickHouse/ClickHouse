@@ -1,0 +1,78 @@
+---
+noindex: true
+title: "术语表"
+description: "ClickHouse 私网相关组件、概念和术语的定义。"
+---
+
+<div id="clickhouse-components">
+  ## ClickHouse 组件
+</div>
+
+**ClickHouse Server**
+ClickHouse 的主数据库进程。在 ClickHouse Private 中，每个 server 副本都以 pod（容器组）形式运行，并由各自的 StatefulSet 管理。参见[上游文档](https://clickhouse.com/docs/operations/server-configuration-parameters/settings)。
+
+**ClickHouse Keeper**
+用于管理复制元数据的分布式协调服务。实现 HA 至少需要 3 个实例。参见[上游文档](https://clickhouse.com/docs/operations/clickhouse-keeper)。
+
+**ClickHouse Operator**
+用于管理 ClickHouseCluster 自定义资源生命周期的 Kubernetes operator，包括预配、扩缩容、备份和协调。
+
+**ClickHouseCluster (CR)**
+用于定义 ClickHouse 集群期望状态的 Kubernetes 自定义资源——包括副本、存储、网络和配置。通过 `onprem-clickhouse-cluster` Helm 图表创建。
+
+**Airgap Management API**
+用于管理 ClickHouse Private 集群的可选 REST API 组件。提供用于备份、垂直扩缩容、密码重置和状态监控的端点。
+
+<div id="architecture-concepts">
+  ## 架构概念
+</div>
+
+**MultiStatefulSet (MultiSTS)**
+operator 的 StatefulSet 模型，其中每个 ClickHouse server 副本都由各自独立的 StatefulSet 管理 (1 个 STS = 1 个 pod（容器组） ) 。这使滚动更新更安全，并可对各个副本进行独立管理。MultiSTS 取代了传统的 SingleSTS 模型，后者已弃用。
+
+**ReplicaStateMap**
+ClickHouseCluster CR 的 status 中的内部数据结构，用于在 MultiSTS 模式下跟踪每个副本的状态。这些状态包括 **Pending**、**Ready**、**Stopped**、**废弃**、**Dropped**、**VolumeRestoring** 和 **VolumeRestored**。这仅供 operator 内部使用，不应由外部系统使用。
+
+**废弃 Replica**
+在缩容操作期间被标记为待删除的副本。operator 会先在 ReplicaStateMap 中将其从 **Ready** 转为 **废弃**，然后在数据同步后安全地将其移除。
+
+**Hydra (Compute Separation)**
+一项功能，可在单个 ClickHouse 集群内启用多个 compute profile (节点组) 。每个 profile 都可以具有不同的资源分配和独立的端点，同时共享同一个 Keeper 实例和 S3 数据。子实例可以是只读或读写。
+
+**Backup Pod**
+在 MultiSTS 模式下，会指定一个副本作为 backup pod (在 ReplicaStateMap 中为 `isBackupPod: true`) 。备份始终在该 pod（容器组）上运行，并且它在缩容期间绝不会被标记为废弃。
+
+<div id="infrastructure-terms">
+  ## 基础设施术语
+</div>
+
+**IRSA (IAM Roles for Service Accounts)**
+一种 AWS 机制，允许 Kubernetes 服务账号承担 IAM 角色。用于在不使用静态凭证的情况下，授予 ClickHouse pod（容器组）访问 S3 的权限。
+
+**Workload Identity**
+GCP 中与 IRSA 对应的机制。它将 Kubernetes 服务账号绑定到 GCP 服务账号，以访问 GCS 和其他 GCP 服务。
+
+**FIPS 140-2**
+美国政府针对加密模块制定的一项标准。ClickHouse Private 支持符合 FIPS 要求的部署，使用专门构建的服务器镜像以及经过 FIPS 验证的 TLS 证书生成机制。
+
+**NVMe Cache**
+挂载到服务器节点上的本地 NVMe SSD 存储，用作存储在 S3/GCS 中数据的磁盘缓存。通过在本地缓存频繁访问的数据来提升查询性能。可通过 Helm 图表中的 `bytesPerGiRAM` 或 `cacheDiskSize` 进行配置。
+
+**S3 Key Prefix**
+用于在 S3 bucket 中为 cluster 的数据划分命名空间的唯一标识符 (通常为 UUID) 。多个 cluster 可以通过不同的 key prefix 共享同一个 bucket。
+
+<div id="operational-terms">
+  ## 运维术语
+</div>
+
+**协调**
+Operator 会将期望状态 (CR spec) 与实际状态 (正在运行的 pod（容器组） 、StatefulSet) 进行比对并修正差异。可通过 `last_cluster_reconcile` 指标进行监控。
+
+**跳过协调注解**
+ClickHouseCluster CR 上的 `clickhouse.com/skip-reconcile` 注解。存在该注解时，Operator 不会协调该集群。通常用于移除副本等手动操作期间。
+
+**预检**
+一种验证工具 (基于 Troubleshoot.sh) ，用于在部署 ClickHouse 前检查集群前置条件——包括节点标签、存储类、CRD 等。
+
+**PDB (PodDisruptionBudget)**
+一种 Kubernetes 资源，用于限制可同时处于不可用状态的 pod（容器组）数量。Operator 会在滚动更新期间遵循 PDB，以维持可用性。

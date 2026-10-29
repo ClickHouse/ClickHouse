@@ -1,0 +1,3912 @@
+---
+title: 'chDB Python API 参考文档'
+sidebarTitle: 'Python API'
+slug: /chdb/api/python
+description: 'chDB 的完整 Python API 参考文档'
+keywords: ['chdb', '嵌入式', 'clickhouse-lite', 'python', 'api', '参考文档']
+doc_type: 'reference'
+---
+
+<div id="core-query-functions">
+  ## 核心查询函数
+</div>
+
+<div id="chdb-query">
+  ### `chdb.query`
+</div>
+
+使用 chDB 引擎执行 SQL 查询。
+
+这是主要的查询函数，使用嵌入式
+ClickHouse 引擎执行 SQL 语句。支持多种输出格式，并且可用于内存数据库
+或基于文件的数据库。
+
+**语法**
+
+```python
+chdb.query(sql, output_format='CSV', path='', udf_path='')
+```
+
+**参数**
+
+| 参数              | 类型  | 默认值        | 描述                                                                                                                                                                                                                                         |
+| --------------- | --- | ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `sql`           | str | *required* | 要执行的 SQL 查询字符串                                                                                                                                                                                                                             |
+| `output_format` | str | `"CSV"`    | 结果的输出格式。支持的格式：<br />• `"CSV"` - 逗号分隔值<br />• `"JSON"` - JSON 格式<br />• `"Arrow"` - Apache Arrow 格式<br />• `"Parquet"` - Parquet 格式<br />• `"DataFrame"` - Pandas DataFrame<br />• `"ArrowTable"` - PyArrow Table<br />• `"Debug"` - 启用详细日志 |
+| `path`          | str | `""`       | 数据库文件路径。默认为内存数据库。<br />可以是文件路径，或使用 `":memory:"` 表示内存数据库                                                                                                                                                                                    |
+| `udf_path`      | str | `""`       | 用户自定义函数目录的路径                                                                                                                                                                                                                               |
+
+**返回值**
+
+以指定的格式返回查询结果：
+
+| 返回类型               | 条件                                                    |
+| ------------------ | ----------------------------------------------------- |
+| `str`              | 用于 CSV、JSON 等文本格式                                     |
+| `pd.DataFrame`     | 当 `output_format` 为 `"DataFrame"` 或 `"dataframe"` 时   |
+| `pa.Table`         | 当 `output_format` 为 `"ArrowTable"` 或 `"arrowtable"` 时 |
+| chdb result object | 用于其他格式                                                |
+
+**引发异常**
+
+| 异常            | 条件                            |
+| ------------- | ----------------------------- |
+| `ChdbError`   | 如果 SQL 查询执行失败                 |
+| `ImportError` | 如果 DataFrame/Arrow 格式所需的依赖项缺失 |
+
+**示例**
+
+```pycon
+>>> # 基础 CSV 查询
+>>> result = chdb.query("SELECT 1, 'hello'")
+>>> print(result)
+"1,hello"
+```
+
+```pycon
+>>> # 输出 DataFrame 格式的查询
+>>> df = chdb.query("SELECT 1 as id, 'hello' as msg", "DataFrame")
+>>> print(df)
+   id    msg
+0   1  hello
+```
+
+```pycon
+>>> # 使用基于文件的数据库进行查询
+>>> result = chdb.query("CREATE TABLE test (id INT) ENGINE = Memory", path="mydb.chdb")
+```
+
+```pycon
+>>> # 使用 UDF 进行查询
+>>> result = chdb.query("SELECT my_udf('test')", udf_path="/path/to/udfs")
+```
+
+***
+
+<div id="chdb_sql">
+  ### `chdb.sql`
+</div>
+
+使用 chDB 引擎执行 SQL 查询。
+
+这是主要的查询函数，使用嵌入式
+ClickHouse 引擎执行 SQL 语句。支持多种输出格式，并且可用于内存
+或文件数据库。
+
+**语法**
+
+```python
+chdb.sql(sql, output_format='CSV', path='', udf_path='')
+```
+
+**参数**
+
+| 参数              | 类型  | 默认值        | 描述                                                                                                                                                                                                                                         |
+| --------------- | --- | ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `sql`           | str | *required* | 要执行的 SQL 查询字符串                                                                                                                                                                                                                             |
+| `output_format` | str | `"CSV"`    | 结果的输出格式。支持的格式：<br />• `"CSV"` - 逗号分隔值<br />• `"JSON"` - JSON 格式<br />• `"Arrow"` - Apache Arrow 格式<br />• `"Parquet"` - Parquet 格式<br />• `"DataFrame"` - Pandas DataFrame<br />• `"ArrowTable"` - PyArrow Table<br />• `"Debug"` - 启用详细日志 |
+| `path`          | str | `""`       | 数据库文件路径。默认使用内存数据库。<br />可以是文件路径，或使用 `":memory:"` 表示内存数据库                                                                                                                                                                                   |
+| `udf_path`      | str | `""`       | 用户自定义函数目录路径                                                                                                                                                                                                                                |
+
+**返回值**
+
+按指定格式返回查询结果：
+
+| 返回类型               | 条件                                                    |
+| ------------------ | ----------------------------------------------------- |
+| `str`              | 适用于 CSV、JSON 等文本格式                                    |
+| `pd.DataFrame`     | 当 `output_format` 为 `"DataFrame"` 或 `"dataframe"` 时   |
+| `pa.Table`         | 当 `output_format` 为 `"ArrowTable"` 或 `"arrowtable"` 时 |
+| chdb result object | 适用于其他格式                                               |
+
+**引发异常**
+
+| 异常                        | 条件                            |
+| ------------------------- | ----------------------------- |
+| [`ChdbError`](#chdberror) | 如果 SQL 查询执行失败                 |
+| `ImportError`             | 如果缺少 DataFrame/Arrow 格式所需的依赖项 |
+
+**示例**
+
+```pycon
+>>> # 基础 CSV 查询
+>>> result = chdb.query("SELECT 1, 'hello'")
+>>> print(result)
+"1,hello"
+```
+
+```pycon
+>>> # 以 DataFrame 格式输出的查询
+>>> df = chdb.query("SELECT 1 as id, 'hello' as msg", "DataFrame")
+>>> print(df)
+   id    msg
+0   1  hello
+```
+
+```pycon
+>>> # 使用基于文件的数据库进行查询
+>>> result = chdb.query("CREATE TABLE test (id INT) ENGINE = Memory", path="mydb.chdb")
+```
+
+```pycon
+>>> # 使用 UDF 进行查询
+>>> result = chdb.query("SELECT my_udf('test')", udf_path="/path/to/udfs")
+```
+
+***
+
+<div id="chdb-state-sqlitelike-to_arrowtable">
+  ### `chdb.to_arrowTable`
+</div>
+
+将查询结果转换为 PyArrow 表。
+
+将 chDB 的查询结果转换为 PyArrow 表，以高效处理列式数据。
+如果结果为空，则返回空表。
+
+**语法**
+
+```python
+chdb.to_arrowTable(res)
+```
+
+**参数**
+
+| 参数    | 描述                          |
+| ----- | --------------------------- |
+| `res` | 包含二进制 Arrow 数据的 chDB 查询结果对象 |
+
+**返回值**
+
+| 返回类型       | 描述                |
+| ---------- | ----------------- |
+| `pa.Table` | 包含查询结果的 PyArrow 表 |
+
+**引发的异常**
+
+| 错误类型          | 描述                     |
+| ------------- | ---------------------- |
+| `ImportError` | 如果未安装 pyarrow 或 pandas |
+
+**示例**
+
+```pycon
+>>> result = chdb.query("SELECT 1 as id, 'hello' as msg", "Arrow")
+>>> table = chdb.to_arrowTable(result)
+>>> print(table.to_pandas())
+   id    msg
+0   1  hello
+```
+
+***
+
+<div id="chdb_to_df">
+  ### `chdb.to_df`
+</div>
+
+将查询结果转换为 pandas DataFrame。
+
+先将 chDB 的查询结果转换为 PyArrow Table，再使用多线程将其转换为 pandas，以提升性能。
+
+**语法**
+
+```python
+chdb.to_df(r)
+```
+
+**参数**
+
+| 参数  | 描述                          |
+| --- | --------------------------- |
+| `r` | 包含二进制 Arrow 数据的 chDB 查询结果对象 |
+
+**返回值**
+
+| 返回类型           | 描述                       |
+| -------------- | ------------------------ |
+| `pd.DataFrame` | 包含查询结果的 pandas DataFrame |
+
+**引发异常**
+
+| 异常            | 条件                     |
+| ------------- | ---------------------- |
+| `ImportError` | 如果未安装 pyarrow 或 pandas |
+
+**示例**
+
+```pycon
+>>> result = chdb.query("SELECT 1 as id, 'hello' as msg", "Arrow")
+>>> df = chdb.to_df(result)
+>>> print(df)
+   id    msg
+0   1  hello
+```
+
+<div id="connection-session-management">
+  ## 连接与会话管理
+</div>
+
+可使用以下会话函数：
+
+<div id="chdb-connect">
+  ### `chdb.connect`
+</div>
+
+创建到 chDB 后台 server 的连接。
+
+此函数会建立一个到 chDB (ClickHouse) database engine 的 [Connection](#chdb-state-sqlitelike-connection)。
+每个进程只允许存在一个打开的连接。
+使用相同连接字符串的多次调用将返回同一个 connection object。
+
+```python
+chdb.connect(connection_string: str = ':memory:') → Connection
+```
+
+**参数：**
+
+| 参数                  | 类型  | 默认值          | 说明               |
+| ------------------- | --- | ------------ | ---------------- |
+| `connection_string` | str | `":memory:"` | 数据库连接字符串。参见下方格式。 |
+
+**基础版格式**
+
+| 格式                        | 说明          |
+| ------------------------- | ----------- |
+| `":memory:"`              | 内存数据库 (默认)  |
+| `"test.db"`               | 相对路径数据库文件   |
+| `"file:test.db"`          | 与相对路径相同     |
+| `"/path/to/test.db"`      | 绝对路径数据库文件   |
+| `"file:/path/to/test.db"` | 与绝对路径相同     |
+
+**带查询参数**
+
+| 格式                                                 | 说明        |
+| -------------------------------------------------- | --------- |
+| `"file:test.db?param1=value1&param2=value2"`       | 带参数的相对路径  |
+| `"file::memory:?verbose&log-level=test"`           | 带参数的内存数据库 |
+| `"///path/to/test.db?param1=value1&param2=value2"` | 带参数的绝对路径  |
+
+**查询参数处理**
+
+查询参数会作为启动参数传递给 ClickHouse engine。
+特殊参数处理如下：
+
+| 特殊参数             | 转换为            | 说明     |
+| ---------------- | -------------- | ------ |
+| `mode=ro`        | `--readonly=1` | 只读模式   |
+| `verbose`        | (flag)         | 启用详细日志 |
+| `log-level=test` | (setting)      | 设置日志级别 |
+
+如需完整参数列表，请参见 `clickhouse local --help --verbose`
+
+**返回值**
+
+| 返回类型         | 说明                                                                                                                                                        |
+| ------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `Connection` | 数据库连接对象，支持：<br />• 使用 `Connection.cursor()` 创建游标<br />• 使用 `Connection.query()` 直接执行查询<br />• 使用 `Connection.send_query()` 执行流式查询<br />• 支持上下文管理器协议，可自动清理 |
+
+**抛出异常**
+
+| 异常             | 条件       |
+| -------------- | -------- |
+| `RuntimeError` | 连接数据库失败时 |
+
+<Warning>
+  每个进程仅支持一个连接。
+  创建新连接会关闭任何现有连接。
+</Warning>
+
+**示例**
+
+```pycon
+>>> # 内存数据库
+>>> conn = connect()
+>>> conn = connect(":memory:")
+>>>
+>>> # 基于文件的数据库
+>>> conn = connect("my_data.db")
+>>> conn = connect("/path/to/data.db")
+>>>
+>>> # 带参数
+>>> conn = connect("data.db?mode=ro")  # 只读模式
+>>> conn = connect(":memory:?verbose&log-level=debug")  # 调试日志
+>>>
+>>> # 使用上下文管理器自动清理资源
+>>> with connect("data.db") as conn:
+...     result = conn.query("SELECT 1")
+...     print(result)
+>>> # 连接已自动关闭
+```
+
+**另请参阅**
+
+* [`Connection`](#chdb-state-sqlitelike-connection) - 数据库连接类
+* [`Cursor`](#chdb-state-sqlitelike-cursor) - 用于 DB-API 2.0 操作的数据库游标
+
+<div id="chdb-exceptions">
+  ## 异常处理
+</div>
+
+<div id="chdb_chdbError">
+  ### **class** `chdb.ChdbError`
+</div>
+
+基类：`Exception`
+
+与 chDB 相关错误的基础异常类。
+
+当 chDB 查询执行失败或发生
+错误时，会引发此异常。它继承自标准 Python 的 Exception 类，
+并提供来自底层 ClickHouse 引擎的错误信息。
+
+***
+
+<div id="chdb_session_session">
+  ### **class** `chdb.session.Session`
+</div>
+
+基类：`object`
+
+Session 会保留查询状态。
+如果 path 为 None，它会创建一个临时目录，并将其用作数据库路径；
+当 session 关闭时，该临时目录会被删除。
+你也可以传入一个 path，在该 path 创建数据库，数据将保存在那里。
+
+你也可以使用连接字符串传入该 path 和其他参数。
+
+```python
+class chdb.session.Session(path=None)
+```
+
+**示例**
+
+| Connection String                                  | 描述          |
+| -------------------------------------------------- | ----------- |
+| `":memory:"`                                       | 内存数据库       |
+| `"test.db"`                                        | 相对路径        |
+| `"file:test.db"`                                   | 同上          |
+| `"/path/to/test.db"`                               | 绝对路径        |
+| `"file:/path/to/test.db"`                          | 同上          |
+| `"file:test.db?param1=value1&param2=value2"`       | 带查询参数的相对路径  |
+| `"file::memory:?verbose&log-level=test"`           | 带查询参数的内存数据库 |
+| `"///path/to/test.db?param1=value1&param2=value2"` | 带查询参数的绝对路径  |
+
+<Info>
+  **连接字符串参数处理**
+
+  对于包含查询参数的连接字符串，例如 “[file:test.db?param1=value1&amp;param2=value2](file:test.db?param1=value1\&param2=value2)”，
+  其中的 “param1=value1” 会作为启动参数传递给 ClickHouse 引擎。
+
+  更多详情，请参见 `clickhouse local –help –verbose`
+
+  一些特殊参数的处理方式：
+
+  * “mode=ro” 在 clickhouse 中会转换为 “–readonly=1” (只读模式) 
+</Info>
+
+<Warning>
+  **重要**
+
+  * 同一时间只能有一个会话。如果要创建新会话，需要先关闭现有会话。
+  * 创建新会话会关闭现有会话。
+</Warning>
+
+***
+
+<div id="cleanup">
+  #### `cleanup`
+</div>
+
+在处理异常时清理会话资源。
+
+此方法会尝试关闭会话，同时抑制清理过程中可能发生的任何异常。在异常处理场景中，或者当你需要确保无论会话处于何种状态都能执行清理时，它尤其有用。
+
+**语法**
+
+```python
+cleanup()
+```
+
+<Note>
+  此方法绝不会抛出异常，因此可安全地在
+  finally 块或析构函数中调用。
+</Note>
+
+**示例**
+
+```pycon
+>>> session = Session("test.db")
+>>> try:
+...     session.query("INVALID SQL")
+... finally:
+...     session.cleanup()  # 无论是否发生错误，均可安全清理
+```
+
+**另请参阅**
+
+* [`close()`](#chdb-session-session-close) - 用于显式关闭会话，并传播错误
+
+***
+
+<div id="close">
+  #### `close`
+</div>
+
+关闭会话并清理资源。
+
+此方法会关闭底层连接并重置全局会话状态。
+调用此方法后，会话将失效，无法再用于
+后续查询。
+
+**语法**
+
+```python
+close()
+```
+
+<Note>
+  当会话用作上下文管理器时，
+  或会话对象被销毁时，此方法会自动调用。
+</Note>
+
+<Warning>
+  **重要**
+
+  调用 &#96;close()&#96;&#96; 后，任何尝试继续使用该会话的操作都会报错。
+</Warning>
+
+**示例**
+
+```pycon
+>>> session = Session("test.db")
+>>> session.query("SELECT 1")
+>>> session.close()  # 显式关闭会话
+```
+
+***
+
+<div id="chdb-session-session-query">
+  #### `query`
+</div>
+
+执行 SQL 查询并返回结果。
+
+此方法会在会话的数据库中执行 SQL 查询，并以指定格式返回结果。该方法支持多种输出格式，并在多次查询之间保持会话状态。
+
+**语法**
+
+```python
+query(sql, fmt='CSV', udf_path='')
+```
+
+**参数**
+
+| Parameter  | Type | Default    | Description                                                                                                                                                                                                                       |
+| ---------- | ---- | ---------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `sql`      | str  | *required* | 要执行的 SQL 查询字符串                                                                                                                                                                                                                    |
+| `fmt`      | str  | `"CSV"`    | 结果的输出格式。可用格式：<br />• `"CSV"` - 逗号分隔值<br />• `"JSON"` - JSON 格式<br />• `"TabSeparated"` - 制表符分隔值<br />• `"Pretty"` - 美化表格格式<br />• `"JSONCompact"` - 紧凑 JSON 格式<br />• `"Arrow"` - Apache Arrow 格式<br />• `"Parquet"` - Parquet 格式 |
+| `udf_path` | str  | `""`       | 用户自定义函数的路径。如果未指定，则使用会话初始化时的 UDF 路径                                                                                                                                                                                                |
+
+**返回值**
+
+以指定格式返回查询结果。
+具体返回类型取决于 `fmt` 参数：
+
+* String 格式 (CSV、JSON 等) 返回 `str`
+* 二进制格式 (Arrow、Parquet) 返回 `bytes`
+
+**引发异常**
+
+| Exception      | Condition     |
+| -------------- | ------------- |
+| `RuntimeError` | 如果会话已关闭或无效    |
+| `ValueError`   | 如果 SQL 查询格式有误 |
+
+<Note>
+  不支持 “Debug” 格式，系统会自动将其转换为 “CSV” 并发出警告。
+  如需调试，请改用 connection string 参数。
+</Note>
+
+<Warning>
+  **警告**
+
+  此方法会同步执行查询，并将所有结果加载到内存中。对于较大的结果集，请考虑使用 [`send_query()`](#chdb-session-session-send_query) 获取流式结果。
+</Warning>
+
+**示例**
+
+```pycon
+>>> session = Session("test.db")
+>>>
+>>> # 使用默认 CSV 格式的基础查询
+>>> result = session.query("SELECT 1 as number")
+>>> print(result)
+number
+1
+```
+
+```pycon
+>>> # 使用 JSON 格式进行查询
+>>> result = session.query("SELECT 1 as number", fmt="JSON")
+>>> print(result)
+{"number": "1"}
+```
+
+```pycon
+>>> # Complex query with table creation
+>>> session.query("CREATE TABLE test (id INT, name String) ENGINE = Memory")
+>>> session.query("INSERT INTO test VALUES (1, 'Alice'), (2, 'Bob')")
+>>> result = session.query("SELECT * FROM test ORDER BY id")
+>>> print(result)
+id,name
+1,Alice
+2,Bob
+```
+
+**参见**
+
+* [`send_query()`](#chdb-session-session-send_query) - 用于以流式方式执行查询
+* [`sql`](#chdb-session-session-sql) - 该方法的别名
+
+***
+
+<div id="chdb-session-session-send_query">
+  #### `send_query`
+</div>
+
+执行 SQL 查询，并返回一个流式结果迭代器。
+
+此方法会针对会话的数据库执行 SQL 查询，并返回一个流式结果对象，让你能够遍历结果，而无需一次将全部内容加载到内存中。这对于大型结果集尤其有用。
+
+**语法**
+
+```python
+send_query(sql, fmt='CSV') → StreamingResult
+```
+
+**参数**
+
+| 参数    | 类型  | 默认值        | 描述                                                                                                                                                                                                     |
+| ----- | --- | ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `sql` | str | *required* | 要执行的 SQL 查询字符串                                                                                                                                                                                         |
+| `fmt` | str | `"CSV"`    | 结果的输出格式。可用格式：<br />• `"CSV"` - 逗号分隔值<br />• `"JSON"` - JSON 格式<br />• `"TabSeparated"` - 制表符分隔值<br />• `"JSONCompact"` - 紧凑 JSON 格式<br />• `"Arrow"` - Apache Arrow 格式<br />• `"Parquet"` - Parquet 格式 |
+
+**返回值**
+
+| 返回类型              | 描述                                                  |
+| ----------------- | --------------------------------------------------- |
+| `StreamingResult` | 一个流式结果迭代器，会以增量方式返回查询结果。该迭代器可用于 `for` 循环，也可转换为其他数据结构 |
+
+**抛出异常**
+
+| 异常             | 条件            |
+| -------------- | ------------- |
+| `RuntimeError` | 如果会话已关闭或无效    |
+| `ValueError`   | 如果 SQL 查询格式有误 |
+
+<Note>
+  不支持 “Debug” 格式，并会在发出警告后自动转换为 “CSV”。
+  如需调试，请改用 connection string 参数。
+</Note>
+
+<Warning>
+  返回的 StreamingResult 对象应尽快消费或妥善保存，因为它会保持与数据库的 connection。
+</Warning>
+
+**示例**
+
+```pycon
+>>> session = Session("test.db")
+>>> session.query("CREATE TABLE big_table (id INT, data String) ENGINE = MergeTree() order by id")
+>>>
+>>> # 插入大型数据集
+>>> for i in range(1000):
+...     session.query(f"INSERT INTO big_table VALUES ({i}, 'data_{i}')")
+>>>
+>>> # 流式传输结果以避免内存问题
+>>> streaming_result = session.send_query("SELECT * FROM big_table ORDER BY id")
+>>> for chunk in streaming_result:
+...     print(f"Processing chunk: {len(chunk)} bytes")
+...     # 处理数据块，无需将整个结果集加载到内存中
+```
+
+```pycon
+>>> # Using with context manager
+>>> with session.send_query("SELECT COUNT(*) FROM big_table") as stream:
+...     for result in stream:
+...         print(f"Count result: {result}")
+```
+
+**另请参见**
+
+* [`query()`](#chdb-session-session-query) - 用于执行非流式查询
+* `chdb.state.sqlitelike.StreamingResult` - 流式结果迭代器
+
+***
+
+<div id="chdb-session-session-sql">
+  #### `sql`
+</div>
+
+执行 SQL 查询并返回结果。
+
+此方法会在会话的数据库中执行 SQL 查询，并以指定格式返回结果。该方法支持多种输出格式，并在多次查询之间保持会话状态。
+
+**语法**
+
+```python
+sql(sql, fmt='CSV', udf_path='')
+```
+
+**参数**
+
+| Parameter  | Type | Default    | Description                                                                                                                                                                                                                        |
+| ---------- | ---- | ---------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `sql`      | str  | *required* | 要执行的 SQL 查询字符串                                                                                                                                                                                                                     |
+| `fmt`      | str  | `"CSV"`    | 结果的输出格式。可用格式：<br />• `"CSV"` - 逗号分隔值<br />• `"JSON"` - JSON 格式<br />• `"TabSeparated"` - 制表符分隔值<br />• `"Pretty"` - 格式化表格输出<br />• `"JSONCompact"` - 紧凑 JSON 格式<br />• `"Arrow"` - Apache Arrow 格式<br />• `"Parquet"` - Parquet 格式 |
+| `udf_path` | str  | `""`       | 用户自定义函数路径。如果未指定，则使用会话初始化时的 UDF 路径                                                                                                                                                                                                  |
+
+**返回值**
+
+以指定格式返回查询结果。
+具体返回类型取决于 `fmt` 参数：
+
+* 字符串格式 (CSV、JSON 等) 返回 str
+* 二进制格式 (Arrow、Parquet) 返回 bytes
+
+**引发：**
+
+| Exception      | Condition     |
+| -------------- | ------------- |
+| `RuntimeError` | 如果会话已关闭或无效    |
+| `ValueError`   | 如果 SQL 查询格式错误 |
+
+<Note>
+  不支持 “Debug” 格式，并会自动将其转换为 “CSV”，同时发出警告。
+  如需调试，请改用连接字符串参数。
+</Note>
+
+<Warning>
+  **警告**
+
+  此方法会同步执行查询，并将所有结果加载到内存中。
+  对于大型结果集，建议使用 [`send_query()`](#chdb-session-session-send_query) 以流式方式获取结果。
+</Warning>
+
+**示例**
+
+```pycon
+>>> session = Session("test.db")
+>>>
+>>> # 使用默认 CSV 格式的基础查询
+>>> result = session.query("SELECT 1 as number")
+>>> print(result)
+number
+1
+```
+
+```pycon
+>>> # 使用 JSON 格式查询
+>>> result = session.query("SELECT 1 as number", fmt="JSON")
+>>> print(result)
+{"number": "1"}
+```
+
+```pycon
+>>> # Complex query with table creation
+>>> session.query("CREATE TABLE test (id INT, name String) ENGINE = MergeTree() order by id")
+>>> session.query("INSERT INTO test VALUES (1, 'Alice'), (2, 'Bob')")
+>>> result = session.query("SELECT * FROM test ORDER BY id")
+>>> print(result)
+id,name
+1,Alice
+2,Bob
+```
+
+**另请参见**
+
+* [`send_query()`](#chdb-session-session-send_query) - 用于流式执行查询
+* [`sql`](#chdb-session-session-sql) - 该方法的别名
+
+<div id="chdb-state-management">
+  ## 状态管理
+</div>
+
+<div id="chdb_state_connect">
+  ### `chdb.state.connect`
+</div>
+
+创建一个到 chDB 后台服务器的 [Connection](#chdb-state-sqlitelike-connection)。
+
+此函数会建立与 chDB (ClickHouse) 数据库引擎的连接。
+每个进程只允许有一个打开的连接。对相同
+连接字符串的多次调用将返回同一个连接对象。
+
+**语法**
+
+```python
+chdb.state.connect(connection_string: str = ':memory:') → Connection
+```
+
+**参数**
+
+| Parameter                          | Type | Default      | Description       |
+| ---------------------------------- | ---- | ------------ | ----------------- |
+| `connection_string(str, optional)` | str  | `":memory:"` | 数据库连接字符串。请参见下方格式。 |
+
+**基础格式**
+
+支持的连接字符串格式：
+
+| Format                    | Description |
+| ------------------------- | ----------- |
+| `":memory:"`              | 内存数据库 (默认)  |
+| `"test.db"`               | 相对路径数据库文件   |
+| `"file:test.db"`          | 与相对路径相同     |
+| `"/path/to/test.db"`      | 绝对路径数据库文件   |
+| `"file:/path/to/test.db"` | 与绝对路径相同     |
+
+**带查询参数**
+
+| Format                                             | Description |
+| -------------------------------------------------- | ----------- |
+| `"file:test.db?param1=value1&param2=value2"`       | 带参数的相对路径    |
+| `"file::memory:?verbose&log-level=test"`           | 带参数的内存数据库   |
+| `"///path/to/test.db?param1=value1&param2=value2"` | 带参数的绝对路径    |
+
+**查询参数处理**
+
+查询参数会作为启动参数传递给 ClickHouse 引擎。
+特殊参数处理如下：
+
+| Special Parameter | Becomes        | Description |
+| ----------------- | -------------- | ----------- |
+| `mode=ro`         | `--readonly=1` | 只读模式        |
+| `verbose`         | (flag)         | 启用详细日志      |
+| `log-level=test`  | (setting)      | 设置日志级别      |
+
+完整参数列表请参见 `clickhouse local --help --verbose`
+
+**返回值**
+
+| Return Type  | Description                                                                                                                                              |
+| ------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `Connection` | 数据库连接对象，支持：<br />• 使用 `Connection.cursor()` 创建游标<br />• 使用 `Connection.query()` 直接执行查询<br />• 使用 `Connection.send_query()` 执行流式查询<br />• 支持上下文管理器协议以自动清理 |
+
+**抛出异常**
+
+| Exception      | Condition |
+| -------------- | --------- |
+| `RuntimeError` | 连接数据库失败时  |
+
+<Warning>
+  **警告**
+
+  每个进程仅支持一个连接。
+  创建新连接时会关闭任何现有连接。
+</Warning>
+
+**示例**
+
+```pycon
+>>> # 内存数据库
+>>> conn = connect()
+>>> conn = connect(":memory:")
+>>>
+>>> # 基于文件的数据库
+>>> conn = connect("my_data.db")
+>>> conn = connect("/path/to/data.db")
+>>>
+>>> # 带参数
+>>> conn = connect("data.db?mode=ro")  # 只读模式
+>>> conn = connect(":memory:?verbose&log-level=debug")  # 调试日志
+>>>
+>>> # 使用上下文管理器自动清理资源
+>>> with connect("data.db") as conn:
+...     result = conn.query("SELECT 1")
+...     print(result)
+>>> # 连接自动关闭
+```
+
+**另请参见**
+
+* `Connection` - 数据库连接类
+* `Cursor` - 用于 DB-API 2.0 操作的数据库游标
+
+<div id="chdb-state-sqlitelike-connection">
+  ### **class** `chdb.state.sqlitelike.Connection`
+</div>
+
+基类：`object`
+
+**语法**
+
+```python
+class chdb.state.sqlitelike.Connection(connection_string: str)
+```
+
+***
+
+<div id="close">
+  #### `close`
+</div>
+
+关闭连接并清理资源。
+
+此方法会关闭数据库连接，并清理所有相关资源，
+包括活动游标。调用此方法后，
+该连接将失效，无法再用于后续操作。
+
+**语法**
+
+```python
+close() → None
+```
+
+<Note>
+  此方法是幂等的——多次调用也很安全。
+</Note>
+
+<Warning>
+  **警告**
+
+  关闭连接时，任何正在进行的流式查询都会被取消。
+  请确保在关闭前，所有重要数据都已处理完毕。
+</Warning>
+
+**示例**
+
+```pycon
+>>> conn = connect("test.db")
+>>> # 使用连接执行查询
+>>> conn.query("CREATE TABLE test (id INT) ENGINE = Memory")
+>>> # 完成后关闭连接
+>>> conn.close()
+```
+
+```pycon
+>>> # 使用上下文管理器（自动清理）
+>>> with connect("test.db") as conn:
+...     conn.query("SELECT 1")
+...     # 连接自动关闭
+```
+
+***
+
+<div id="chdb-state-sqlitelike-connection-cursor">
+  #### `cursor`
+</div>
+
+创建一个用于执行查询的 [Cursor](#chdb-state-sqlitelike-cursor) 对象。
+
+此方法会创建一个数据库游标，提供执行查询和获取结果所需的标准
+DB-API 2.0 接口。
+该游标可对查询执行
+和结果获取进行更细粒度的控制。
+
+**语法**
+
+```python
+cursor() → Cursor
+```
+
+**返回值**
+
+| 返回类型     | 描述           |
+| -------- | ------------ |
+| `Cursor` | 用于数据库操作的游标对象 |
+
+<Note>
+  创建新游标会替换与此连接关联的现有游标。每个连接仅支持一个游标。
+</Note>
+
+**示例**
+
+```pycon
+>>> conn = connect(":memory:")
+>>> cursor = conn.cursor()
+>>> cursor.execute("CREATE TABLE test (id INT, name String) ENGINE = Memory")
+>>> cursor.execute("INSERT INTO test VALUES (1, 'Alice')")
+>>> cursor.execute("SELECT * FROM test")
+>>> rows = cursor.fetchall()
+>>> print(rows)
+((1, 'Alice'),)
+```
+
+**另请参见**
+
+* [`Cursor`](#chdb-state-sqlitelike-cursor) - 数据库游标的实现
+
+***
+
+<div id="chdb-session-session-query">
+  #### `query`
+</div>
+
+执行 SQL 查询并返回完整结果。
+
+此方法会同步执行 SQL 查询，并返回完整的
+结果集。它支持多种输出格式，并会自动进行
+格式特定的后处理。
+
+**语法**
+
+```python
+query(query: str, format: str = 'CSV') → Any
+```
+
+**参数：**
+
+| 参数       | 类型  | 默认值        | 说明                                                                                                                                                                                                                              |
+| -------- | --- | ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `query`  | str | *required* | 要执行的 SQL 查询字符串                                                                                                                                                                                                                  |
+| `format` | str | `"CSV"`    | 结果的输出格式。支持的格式：<br />• `"CSV"` - 逗号分隔值 (字符串) <br />• `"JSON"` - JSON 格式 (字符串) <br />• `"Arrow"` - Apache Arrow 格式 (字节) <br />• `"Dataframe"` - Pandas DataFrame (需要 pandas) <br />• `"Arrowtable"` - PyArrow Table (需要 pyarrow)  |
+
+**返回值**
+
+| 返回类型               | 说明                  |
+| ------------------ | ------------------- |
+| `str`              | 用于字符串格式 (CSV、JSON)  |
+| `bytes`            | 用于 Arrow 格式         |
+| `pandas.DataFrame` | 用于 dataframe 格式     |
+| `pyarrow.Table`    | 用于 arrowtable 格式    |
+
+**引发的异常**
+
+| 异常             | 条件             |
+| -------------- | -------------- |
+| `RuntimeError` | 如果查询执行失败       |
+| `ImportError`  | 如果未安装该格式所需的依赖包 |
+
+<Warning>
+  **警告**
+
+  此方法会将整个结果集加载到内存中。对于大型
+  结果，建议使用 [`send_query()`](#chdb-state-sqlitelike-connection-send_query) 进行流式处理。
+</Warning>
+
+**示例**
+
+```pycon
+>>> conn = connect(":memory:")
+>>>
+>>> # 基础 CSV 查询
+>>> result = conn.query("SELECT 1 as num, 'hello' as text")
+>>> print(result)
+num,text
+1,hello
+```
+
+```pycon
+>>> # DataFrame 格式
+>>> df = conn.query("SELECT number FROM numbers(5)", "dataframe")
+>>> print(df)
+   number
+0       0
+1       1
+2       2
+3       3
+4       4
+```
+
+**另请参见**
+
+* [`send_query()`](#chdb-state-sqlitelike-connection-send_query) - 用于以流式方式执行查询
+
+***
+
+<div id="chdb-session-session-send_query">
+  #### `send_query`
+</div>
+
+执行 SQL 查询并返回一个流式结果迭代器。
+
+此方法会执行 SQL 查询，并返回一个 StreamingResult 对象，
+让你能够遍历结果，而不必一次性将所有内容
+加载到内存中。这非常适合处理大型结果集。
+
+**语法**
+
+```python
+send_query(query: str, format: str = 'CSV') → StreamingResult
+```
+
+**参数**
+
+| 参数       | 类型  | 默认值     | 描述                                                                                                                                                                                                                   |
+| -------- | --- | ------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `query`  | str | *必填*    | 要执行的 SQL 查询字符串                                                                                                                                                                                                       |
+| `format` | str | `"CSV"` | 结果的输出格式。支持的格式：<br />• `"CSV"` - 逗号分隔值<br />• `"JSON"` - JSON 格式<br />• `"Arrow"` - Apache Arrow 格式 (启用 `record&#95;batch()` 方法) <br />• `"dataframe"` - Pandas DataFrame 分块<br />• `"arrowtable"` - PyArrow Table 分块 |
+
+**返回**
+
+| 返回类型              | 描述                                                                                                                                           |
+| ----------------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
+| `StreamingResult` | 用于处理查询结果的流式迭代器，支持：<br />• 迭代器协议 (for 循环) <br />• 上下文管理器协议 (with 语句) <br />• 使用 fetch() 方法手动拉取<br />• PyArrow RecordBatch 流式传输 (仅限 Arrow 格式)  |
+
+**引发**
+
+| 异常             | 条件          |
+| -------------- | ----------- |
+| `RuntimeError` | 查询执行失败时     |
+| `ImportError`  | 未安装该格式所需的包时 |
+
+<Note>
+  只有 “Arrow” 格式支持对返回的 StreamingResult 调用 `record_batch()` 方法。
+</Note>
+
+**示例**
+
+```pycon
+>>> conn = connect(":memory:")
+>>>
+>>> # 基础流式传输
+>>> stream = conn.send_query("SELECT number FROM numbers(1000)")
+>>> for 数据块 in stream:
+...     print(f"正在处理数据块：{len(chunk)} 字节")
+```
+
+```pycon
+>>> # 使用上下文管理器进行清理
+>>> with conn.send_query("SELECT * FROM large_table") as stream:
+...     数据块 = stream.fetch()
+...     while chunk:
+...         process_data(chunk)
+...         chunk = stream.fetch()
+```
+
+```pycon
+>>> # Arrow 格式与 RecordBatch 流式传输
+>>> stream = conn.send_query("SELECT * FROM data", "Arrow")
+>>> reader = stream.record_batch(rows_per_batch=10000)
+>>> for batch in reader:
+...     print(f"Batch shape: {batch.num_rows} x {batch.num_columns}")
+```
+
+**另请参阅**
+
+* [`query()`](#chdb-state-sqlitelike-connection-query) - 用于执行非流式查询
+* [`StreamingResult`](#chdb-state-sqlitelike-streamingresult) - 流式结果迭代器
+
+***
+
+<div id="chdb-state-sqlitelike-streamingresult">
+  ### **class** `chdb.state.sqlitelike.StreamingResult`
+</div>
+
+基类：`object`
+
+用于处理大型查询结果的流式结果迭代器。
+
+此类提供迭代器接口，可在不将整个结果集加载到内存中的情况下流式处理查询结果。它支持多种输出格式，并提供用于手动拉取结果和流式传输 PyArrow RecordBatch 的方法。
+
+```python
+class chdb.state.sqlitelike.StreamingResult
+```
+
+***
+
+<div id="streamingresult-fetch">
+  #### `fetch`
+</div>
+
+拉取下一批流式结果。
+
+此方法会从流式查询结果中拉取下一批可用数据。返回数据的格式取决于发起流式查询时指定的格式。
+
+**语法**
+
+```python
+fetch() → Any
+```
+
+**返回值**
+
+| 返回类型    | 描述                       |
+| ------- | ------------------------ |
+| `str`   | 用于文本格式 (CSV、JSON)        |
+| `bytes` | 用于二进制格式 (Arrow、Parquet)  |
+| `None`  | 当结果流已耗尽时                 |
+
+**示例**
+
+```pycon
+>>> stream = conn.send_query("SELECT * FROM large_table")
+>>> chunk = stream.fetch()
+>>> while chunk is not None:
+...     process_data(chunk)
+...     chunk = stream.fetch()
+```
+
+***
+
+<div id="streamingresult-cancel">
+  #### `cancel`
+</div>
+
+取消流式查询并清理资源。
+
+此方法会取消任何正在进行的流式查询，并释放相关
+资源。当你希望在流耗尽之前停止处理结果时，
+应调用它。
+
+**语法**
+
+```python
+cancel() → None
+```
+
+**示例**
+
+```pycon
+>>> stream = conn.send_query("SELECT * FROM very_large_table")
+>>> for i, 数据块 in enumerate(stream):
+...     if i >= 10:  # 仅处理前 10 个 数据块
+...         stream.cancel()
+...         break
+...     process_data(chunk)
+```
+
+***
+
+<div id="close">
+  #### `close`
+</div>
+
+关闭流式结果并清理资源。
+
+[`cancel()`](#streamingresult-cancel) 的别名。用于关闭流式结果迭代器，
+并释放相关资源。
+
+**语法**
+
+```python
+close() → None
+```
+
+***
+
+<div id="streamingresult-record_batch">
+  #### `record_batch`
+</div>
+
+创建一个 PyArrow RecordBatchReader，以高效进行批次处理。
+
+该方法会创建一个 PyArrow RecordBatchReader，使您能够高效地
+迭代 Arrow 格式的查询结果。这是在使用 PyArrow 时处理大型
+结果集的最高效方式。
+
+**语法**
+
+```python
+record_batch(rows_per_batch: int = 1000000) → pa.RecordBatchReader
+```
+
+**参数**
+
+| Parameter        | Type | Default   | Description |
+| ---------------- | ---- | --------- | ----------- |
+| `rows_per_batch` | int  | `1000000` | 每个批次的行数     |
+
+**返回值**
+
+| Return Type            | Description                        |
+| ---------------------- | ---------------------------------- |
+| `pa.RecordBatchReader` | 用于遍历各批次的 PyArrow RecordBatchReader |
+
+<Note>
+  该方法仅在流式查询以
+  `format="Arrow"` 启动时可用。与其他格式一起使用会引发错误。
+</Note>
+
+**示例**
+
+```pycon
+>>> stream = conn.send_query("SELECT * FROM data", format="Arrow")
+>>> reader = stream.record_batch(rows_per_batch=10000)
+>>> for batch in reader:
+...     print(f"Processing batch: {batch.num_rows} rows")
+...     df = batch.to_pandas()
+...     process_dataframe(df)
+```
+
+***
+
+<div id="streamingresult-iterator">
+  #### 迭代器协议
+</div>
+
+StreamingResult 支持 Python 的迭代器协议，因此可以
+直接用于 for 循环：
+
+```pycon
+>>> stream = conn.send_query("SELECT number FROM numbers(1000000)")
+>>> for 数据块 in stream:
+...     print(f"Chunk size: {len(chunk)} bytes")
+```
+
+***
+
+<div id="streamingresult-context-manager">
+  #### 上下文管理器协议
+</div>
+
+StreamingResult 支持上下文管理器协议，可自动清理资源：
+
+```pycon
+>>> with conn.send_query("SELECT * FROM data") as stream:
+...     for chunk in stream:
+...         process(chunk)
+>>> # Stream 已自动关闭
+```
+
+***
+
+<div id="chdb-state-sqlitelike-cursor">
+  ### **类** `chdb.state.sqlitelike.Cursor`
+</div>
+
+基类：`object`
+
+```python
+class chdb.state.sqlitelike.Cursor(connection)
+```
+
+***
+
+<div id="close">
+  #### `close`
+</div>
+
+关闭游标并释放资源。
+
+此方法会关闭游标并释放所有相关资源。
+调用此方法后，游标将失效，且无法再
+用于后续操作。
+
+**语法**
+
+```python
+close() → None
+```
+
+<Note>
+  此方法具有幂等性——多次调用也是安全的。
+  连接关闭时，游标也会自动关闭。
+</Note>
+
+**示例**
+
+```pycon
+>>> cursor = conn.cursor()
+>>> cursor.execute("SELECT 1")
+>>> result = cursor.fetchone()
+>>> cursor.close()  # 清理游标资源
+```
+
+***
+
+<div id="chdb-state-sqlitelike-cursor-column_names">
+  #### `column_names`
+</div>
+
+返回最近一次执行的查询的列名列表。
+
+此方法返回最近一次执行的
+SELECT 查询的列名。返回的名称顺序与它们在结果集中的顺序
+一致。
+
+**语法**
+
+```python
+column_names() → list
+```
+
+**返回值**
+
+| 返回类型   | 说明                                     |
+| ------ | -------------------------------------- |
+| `list` | 由列名字符串组成的列表；如果尚未执行任何查询，或查询未返回任何列，则为空列表 |
+
+**示例**
+
+```pycon
+>>> cursor = conn.cursor()
+>>> cursor.execute("SELECT id, name, email FROM users LIMIT 1")
+>>> print(cursor.column_names())
+['id', 'name', 'email']
+```
+
+**另请参阅**
+
+* [`column_types()`](#chdb-state-sqlitelike-cursor-column_types) - 获取列类型信息
+* [`description`](#chdb-state-sqlitelike-cursor-description) - DB-API 2.0 列描述
+
+***
+
+<div id="chdb-state-sqlitelike-cursor-column_types">
+  #### `column_types`
+</div>
+
+返回上一次执行的查询中的列类型列表。
+
+此方法返回最近一次执行的 SELECT 查询的 ClickHouse 列类型名称。返回的类型顺序与其在结果集中的出现顺序一致。
+
+**语法**
+
+```python
+column_types() → list
+```
+
+**返回值**
+
+| 返回类型   | 说明                                                    |
+| ------ | ----------------------------------------------------- |
+| `list` | 由 ClickHouse 类型名称字符串组成的列表；如果尚未执行任何查询，或查询未返回任何列，则返回空列表 |
+
+**示例**
+
+```pycon
+>>> cursor = conn.cursor()
+>>> cursor.execute("SELECT toInt32(1), toString('hello')")
+>>> print(cursor.column_types())
+['Int32', 'String']
+```
+
+**另请参阅**
+
+* [`column_names()`](#chdb-state-sqlitelike-cursor-column_names) - 获取列名信息
+* [`description`](#chdb-state-sqlitelike-cursor-description) - DB-API 2.0 列说明
+
+***
+
+<div id="commit">
+  #### `commit`
+</div>
+
+提交所有待处理的事务。
+
+此方法会提交所有待处理的数据库事务。在 ClickHouse 中，
+大多数操作都会自动提交，但提供此方法是为了兼容
+DB-API 2.0。
+
+<Note>
+  ClickHouse 通常会自动提交操作，因此通常无需显式提交。
+  提供此方法是为了兼容标准的 DB-API 2.0 工作流程。
+</Note>
+
+**语法**
+
+```python
+commit() → None
+```
+
+**示例**
+
+```pycon
+>>> cursor = conn.cursor()
+>>> cursor.execute("INSERT INTO test VALUES (1, 'data')")
+>>> cursor.commit()
+```
+
+***
+
+<div id="chdb-state-sqlitelike-cursor-description">
+  #### `property description : list`
+</div>
+
+按照 DB-API 2.0 规范返回列描述。
+
+此属性会返回一个包含 7 项 Tuple 的列表，用于描述最近一次执行的 SELECT 查询结果集中的每一列。每个 Tuple 包含：
+(name, type&#95;code, display&#95;size, internal&#95;size, precision, scale, null&#95;ok)
+
+目前，仅提供 name 和 type&#95;code，其他字段均设为 None。
+
+**返回值**
+
+| 返回类型   | 描述                                              |
+| ------ | ----------------------------------------------- |
+| `list` | 由描述各列的 7 项 Tuple 组成的列表；如果尚未执行任何 SELECT 查询，则为空列表 |
+
+<Note>
+  这符合 DB-API 2.0 中对 `cursor.description` 的规范。
+  在此实现中，只有前两个元素 (name 和 type&#95;code) 包含有效
+  数据。
+</Note>
+
+**示例**
+
+```pycon
+>>> cursor = conn.cursor()
+>>> cursor.execute("SELECT id, name FROM users LIMIT 1")
+>>> for desc in cursor.description:
+...     print(f"Column: {desc[0]}, Type: {desc[1]}")
+Column: id, Type: Int32
+Column: name, Type: String
+```
+
+**另请参见**
+
+* [`column_names()`](#chdb-state-sqlitelike-cursor-column_names) - 仅获取列名
+* [`column_types()`](#chdb-state-sqlitelike-cursor-column_types) - 仅获取列类型
+
+***
+
+<div id="execute">
+  #### `execute`
+</div>
+
+执行 SQL 查询，并为后续拉取结果做好准备。
+
+此方法执行 SQL 查询，并将结果准备为可通过 fetch 方法获取。它会处理结果数据的解析，以及 ClickHouse 数据类型的自动转换。
+
+**语法**
+
+```python
+execute(query: str) → None
+```
+
+**参数：**
+
+| Parameter | Type | Description    |
+| --------- | ---- | -------------- |
+| `query`   | str  | 要执行的 SQL 查询字符串 |
+
+**引发**
+
+| Exception   | Condition        |
+| ----------- | ---------------- |
+| `Exception` | 如果查询执行失败，或结果解析失败 |
+
+<Note>
+  此方法遵循 DB-API 2.0 中 `cursor.execute()` 的规范。
+  执行后，请使用 `fetchone()`、`fetchmany()` 或 `fetchall()`
+  获取结果。
+</Note>
+
+<Note>
+  该方法会自动将 ClickHouse 数据类型转换为相应的
+  Python 类型：
+
+  * Int/UInt 类型 → int
+  * Float 类型 → float
+  * String/FixedString → str
+  * DateTime → datetime.datetime
+  * Date → datetime.date
+  * Bool → bool
+</Note>
+
+**示例**
+
+```pycon
+>>> cursor = conn.cursor()
+>>>
+>>> # 执行 DDL
+>>> cursor.execute("CREATE TABLE test (id INT, name String) ENGINE = Memory")
+>>>
+>>> # 执行 DML
+>>> cursor.execute("INSERT INTO test VALUES (1, 'Alice')")
+>>>
+>>> # 执行 SELECT 并获取结果
+>>> cursor.execute("SELECT * FROM test")
+>>> rows = cursor.fetchall()
+>>> print(rows)
+((1, 'Alice'),)
+```
+
+**另请参见**
+
+* [`fetchone()`](#chdb-state-sqlitelike-cursor-fetchone) - 获取单行
+* [`fetchmany()`](#chdb-state-sqlitelike-cursor-fetchmany) - 获取多行
+* [`fetchall()`](#chdb-state-sqlitelike-cursor-fetchall) - 获取所有剩余行
+
+***
+
+<div id="chdb-state-sqlitelike-cursor-fetchall">
+  #### `fetchall`
+</div>
+
+从查询结果中拉取所有剩余行。
+
+此方法从当前游标位置开始，
+拉取当前查询结果集中所有剩余行。它返回一个由行 Tuple 组成的
+Tuple，并应用适当的 Python 类型转换。
+
+**语法**
+
+```python
+fetchall() → tuple
+```
+
+**返回值：**
+
+| Return Type | Description                           |
+| ----------- | ------------------------------------- |
+| `tuple`     | 包含结果集中所有剩余行的 Tuple。若没有可用的行，则返回空 Tuple |
+
+<Warning>
+  **警告**
+
+  此方法会一次性将所有剩余行加载到内存中。对于较大的
+  结果集，建议使用 [`fetchmany()`](#chdb-state-sqlitelike-cursor-fetchmany) 按
+  批次处理结果。
+</Warning>
+
+**示例**
+
+```pycon
+>>> cursor = conn.cursor()
+>>> cursor.execute("SELECT id, name FROM users")
+>>> all_users = cursor.fetchall()
+>>> for user_id, user_name in all_users:
+...     print(f"User {user_id}: {user_name}")
+```
+
+**另请参阅**
+
+* [`fetchone()`](#chdb-state-sqlitelike-cursor-fetchone) - 拉取单行数据
+* [`fetchmany()`](#chdb-state-sqlitelike-cursor-fetchmany) - 分批拉取多行数据
+
+***
+
+<div id="chdb-state-sqlitelike-cursor-fetchmany">
+  #### `fetchmany`
+</div>
+
+从查询结果中拉取多行。
+
+此方法会从当前查询结果集中最多拉取 ‘size’ 行。它返回一个由行 Tuple 组成的 Tuple，其中每一行都包含经过适当 Python 类型转换的列值。
+
+**语法**
+
+```python
+fetchmany(size: int = 1) → tuple
+```
+
+**参数**
+
+| 参数     | 类型  | 默认值 | 描述       |
+| ------ | --- | --- | -------- |
+| `size` | int | `1` | 最多可拉取的行数 |
+
+**返回值**
+
+| 返回类型    | 描述                                                    |
+| ------- | ----------------------------------------------------- |
+| `tuple` | 包含最多 &#39;size&#39; 个行元组的 `tuple`。如果结果集已耗尽，返回的行数可能会更少 |
+
+<Note>
+  此方法遵循 DB-API 2.0 规范。如果结果集已耗尽，返回的行数
+  会少于 ‘size’。
+</Note>
+
+**示例**
+
+```pycon
+>>> cursor = conn.cursor()
+>>> cursor.execute("SELECT * FROM large_table")
+>>>
+>>> # 批量处理结果
+>>> while True:
+...     batch = cursor.fetchmany(100)  # 每次拉取 100 行
+...     if not batch:
+...         break
+...     process_batch(batch)
+```
+
+**另请参阅**
+
+* [`fetchone()`](#chdb-state-sqlitelike-cursor-fetchone) - 拉取单行
+* [`fetchall()`](#chdb-state-sqlitelike-cursor-fetchall) - 拉取所有剩余行
+
+***
+
+<div id="chdb-state-sqlitelike-cursor-fetchone">
+  #### `fetchone`
+</div>
+
+从查询结果中拉取下一行。
+
+此方法会从当前查询结果集
+中拉取下一条可用记录。它会返回一个包含各列值的 Tuple，
+并进行适当的 Python 类型转换。
+
+**语法**
+
+```python
+fetchone() → tuple | None
+```
+
+**返回：**
+
+| 返回类型              | 描述                               |
+| ----------------- | -------------------------------- |
+| `Optional[tuple]` | 下一行，以由各列值组成的 Tuple 返回；如果没有更多行，则为 None |
+
+<Note>
+  此方法遵循 DB-API 2.0 规范。列值会根据
+  ClickHouse 列类型自动转换为相应的 Python
+  类型。
+</Note>
+
+**示例**
+
+```pycon
+>>> cursor = conn.cursor()
+>>> cursor.execute("SELECT id, name FROM users")
+>>> row = cursor.fetchone()
+>>> while row is not None:
+...     user_id, user_name = row
+...     print(f"User {user_id}: {user_name}")
+...     row = cursor.fetchone()
+```
+
+**另请参阅**
+
+* [`fetchmany()`](#chdb-state-sqlitelike-cursor-fetchmany) - 拉取多行
+* [`fetchall()`](#chdb-state-sqlitelike-cursor-fetchall) - 拉取所有剩余行
+
+***
+
+<div id="state-sqlitelike-to_arrowtable">
+  ### `chdb.state.sqlitelike`
+</div>
+
+将查询结果转换为 PyArrow Table。
+
+此函数会将 chdb 的查询结果转换为 PyArrow Table 格式，
+从而实现高效的列式数据访问，并可与其他数据处理库
+互操作。
+
+**语法**
+
+```python
+chdb.state.sqlitelike.to_arrowTable(res)
+```
+
+**参数：**
+
+| Parameter | Type | Description                           |
+| --------- | ---- | ------------------------------------- |
+| `res`     | -    | 来自 chdb 的查询结果对象，包含 Arrow 格式 格式的数据 |
+
+**返回值**
+
+| Return Type     | Description              |
+| --------------- | ------------------------ |
+| `pyarrow.Table` | 包含查询结果的 PyArrow Table 对象 |
+
+**引发异常**
+
+| Exception     | Condition                |
+| ------------- | ------------------------ |
+| `ImportError` | 如果未安装 pyarrow 或 pandas 包 |
+
+<Note>
+  此函数要求同时安装 pyarrow 和 pandas。
+  可使用以下命令安装：`pip install pyarrow pandas`
+</Note>
+
+<Warning>
+  **警告**
+
+  空结果会返回一个不包含 schema 的空 PyArrow Table。
+</Warning>
+
+**示例**
+
+```pycon
+>>> import chdb
+>>> result = chdb.query("SELECT 1 as num, 'hello' as text", "Arrow")
+>>> table = to_arrowTable(result)
+>>> print(table.schema)
+num: int64
+text: string
+>>> print(table.to_pandas())
+   num   text
+0    1  hello
+```
+
+***
+
+<div id="state-sqlitelike-to_df">
+  ### `chdb.state.sqlitelike.to_df`
+</div>
+
+将查询结果转换为 Pandas DataFrame。
+
+此函数会先将 chdb 查询结果转换为 PyArrow Table，然后再转换为 DataFrame，从而能够通过 Pandas API 方便地进行数据分析。
+
+**语法**
+
+```python
+chdb.state.sqlitelike.to_df(r)
+```
+
+**参数：**
+
+| 参数  | Type | 说明                                 |
+| --- | ---- | ---------------------------------- |
+| `r` | -    | 来自 chdb 的查询结果对象，包含 Arrow 格式 数据 |
+
+**返回：**
+
+| 返回类型               | 说明                              |
+| ------------------ | ------------------------------- |
+| `pandas.DataFrame` | 包含查询结果的 DataFrame，并具有相应的列名和数据类型 |
+
+**引发**
+
+| Exception     | 条件                       |
+| ------------- | ------------------------ |
+| `ImportError` | 如果未安装 pyarrow 或 pandas 包 |
+
+<Note>
+  此函数使用多线程将 Arrow 转换为 Pandas，
+  以提升大型数据集的处理性能。
+</Note>
+
+**另请参阅**
+
+* [`to_arrowTable()`](#chdb-state-sqlitelike-to_arrowtable) - 用于转换为 PyArrow Table 格式
+
+**示例**
+
+```pycon
+>>> import chdb
+>>> result = chdb.query("SELECT 1 as num, 'hello' as text", "Arrow")
+>>> df = to_df(result)
+>>> print(df)
+   num   text
+0    1  hello
+>>> print(df.dtypes)
+num      int64
+text    object
+dtype: object
+```
+
+<div id="dataframe-integration">
+  ## DataFrame 集成
+</div>
+
+<div id="chdb-dataframe-table">
+  ### **类** `chdb.dataframe.Table`
+</div>
+
+基类：
+
+```python
+class chdb.dataframe.Table(*args: Any, **kwargs: Any)
+```
+
+<div id="database-api-interface">
+  ## 数据库 API (DBAPI) 2.0 接口
+</div>
+
+chDB 提供兼容 Python DB-API 2.0 的数据库连接接口，使你能够将 chDB 与需要标准数据库接口的工具和框架配合使用。
+
+chDB DB-API 2.0 接口包括：
+
+* **连接**：使用 connection string 管理数据库连接
+* **游标**：执行查询并获取结果
+* **类型系统**：符合 DB-API 2.0 规范的类型常量和转换器
+* **错误处理**：标准的数据库异常层次结构
+* **线程安全**：1 级线程安全 (线程可共享模块，但不可共享连接) 
+
+***
+
+<div id="core-functions">
+  ### 核心函数
+</div>
+
+Database API (DBAPI) 2.0 接口提供以下核心函数：
+
+<div id="dbapi-connect">
+  #### `chdb.dbapi.connect`
+</div>
+
+初始化新的数据库连接。
+
+**语法**
+
+```python
+chdb.dbapi.connect(*args, **kwargs)
+```
+
+**参数**
+
+| 参数     | 类型  | 默认值    | 描述                     |
+| ------ | --- | ------ | ---------------------- |
+| `path` | str | `None` | 数据库文件路径。内存数据库时为 `None` |
+
+**抛出**
+
+| 异常                                   | 条件       |
+| ------------------------------------ | -------- |
+| [`err.Error`](#chdb-dbapi-err-error) | 如果无法建立连接 |
+
+***
+
+<div id="dbapi-get-client-info">
+  #### `chdb.dbapi.get_client_info()`
+</div>
+
+获取客户端版本信息。
+
+以字符串形式返回 chDB 客户端版本号，以兼容 MySQLdb。
+
+**语法**
+
+```python
+chdb.dbapi.get_client_info()
+```
+
+**返回值**
+
+| 返回类型  | 描述                                      |
+| ----- | --------------------------------------- |
+| `str` | 采用 &#39;major.minor.patch&#39; 格式的版本字符串 |
+
+***
+
+<div id="type-constructors">
+  ### 类型构造器
+</div>
+
+<div id="dbapi-binary">
+  #### `chdb.dbapi.Binary(x)`
+</div>
+
+将 x 以二进制类型返回。
+
+此函数会将输入转换为 bytes 类型，以便根据 DB-API 2.0 规范用于二进制
+database 字段。
+
+**语法**
+
+```python
+chdb.dbapi.Binary(x)
+```
+
+**参数**
+
+| 参数  | 类型 | 描述             |
+| --- | -- | -------------- |
+| `x` | -  | 要转换为二进制格式的输入数据 |
+
+**返回值**
+
+| 返回类型    | 描述          |
+| ------- | ----------- |
+| `bytes` | 转换为字节后的输入数据 |
+
+***
+
+<div id="connection-class">
+  ### 连接类
+</div>
+
+<div id="chdb-dbapi-connections-connection">
+  #### **类** `chdb.dbapi.connections.Connection(path=None)`
+</div>
+
+基类：`object`
+
+符合 DB-API 2.0 规范的 chDB 数据库连接。
+
+此类提供标准的 DB-API 接口，用于连接到 chDB 数据库并与之交互。它同时支持内存数据库和基于文件的数据库。
+
+该连接管理底层的 chDB engine，并提供用于
+执行查询、管理事务 (对 ClickHouse 而言是空操作) 以及创建游标的方法。
+
+```python
+class chdb.dbapi.connections.Connection(path=None)
+```
+
+**参数**
+
+| 参数     | 类型  | 默认值    | 描述                                                                                          |
+| ------ | --- | ------ | ------------------------------------------------------------------------------------------- |
+| `path` | str | `None` | 数据库文件路径。如果为 None，则使用内存数据库。可以是类似 &#39;database.db&#39; 的文件路径，或者使用 None 表示 &#39;:memory:&#39; |
+
+**变量**
+
+| 变量         | 类型   | 描述                                |
+| ---------- | ---- | --------------------------------- |
+| `encoding` | str  | 查询的字符编码，默认为 &#39;utf8&#39;        |
+| `open`     | bool | 如果连接处于打开状态，则为 True；如果已关闭，则为 False |
+
+**示例**
+
+```pycon
+>>> # 内存数据库
+>>> conn = Connection()
+>>> cursor = conn.cursor()
+>>> cursor.execute("SELECT 1")
+>>> result = cursor.fetchall()
+>>> conn.close()
+```
+
+```pycon
+>>> # 基于文件的数据库
+>>> conn = Connection('mydata.db')
+>>> with conn.cursor() as cur:
+...     cur.execute("CREATE TABLE users (id INT, name STRING) ENGINE = MergeTree() order by id")
+...     cur.execute("INSERT INTO users VALUES (1, 'Alice')")
+>>> conn.close()
+```
+
+```pycon
+>>> # 上下文管理器用法
+>>> with Connection() as cur:
+...     cur.execute("SELECT version()")
+...     version = cur.fetchone()
+```
+
+<Note>
+  ClickHouse 不支持传统事务，因此 commit() 和 rollback()
+  操作实际上都是空操作，但为了符合 DB-API 规范，仍提供了这两个方法。
+</Note>
+
+***
+
+<div id="close">
+  #### `close`
+</div>
+
+关闭数据库连接。
+
+关闭底层的 chDB 连接，并将该连接标记为已关闭。
+此后对该连接执行的操作将引发 Error。
+
+**语法**
+
+```python
+close()
+```
+
+**抛出**
+
+| 异常                                   | 条件      |
+| ------------------------------------ | ------- |
+| [`err.Error`](#chdb-dbapi-err-error) | 如果连接已关闭 |
+
+***
+
+<div id="commit">
+  #### `commit`
+</div>
+
+提交当前事务。
+
+**语法**
+
+```python
+commit()
+```
+
+<Note>
+  对于 chDB/ClickHouse，这属于空操作，因为它不支持传统的
+  事务。提供此项是为了符合 DB-API 2.0 规范。
+</Note>
+
+***
+
+<div id="chdb-state-sqlitelike-connection-cursor">
+  #### `cursor`
+</div>
+
+创建一个用于执行查询的新游标。
+
+**语法**
+
+```python
+cursor(cursor=None)
+```
+
+**参数**
+
+| 参数       | 类型 | 描述           |
+| -------- | -- | ------------ |
+| `cursor` | -  | 已忽略，仅为兼容性而保留 |
+
+**返回值**
+
+| 返回类型     | 描述                  |
+| -------- | ------------------- |
+| `Cursor` | 此 连接 的新游标对象 |
+
+**引发**
+
+| 异常                                   | 条件                |
+| ------------------------------------ | ----------------- |
+| [`err.Error`](#chdb-dbapi-err-error) | 如果 连接 已关闭 |
+
+**示例**
+
+```pycon
+>>> conn = Connection()
+>>> cur = conn.cursor()
+>>> cur.execute("SELECT 1")
+>>> result = cur.fetchone()
+```
+
+***
+
+<div id="escape">
+  #### `escape`
+</div>
+
+对值进行转义，以便安全地插入 SQL 查询中。
+
+**语法**
+
+```python
+escape(obj, mapping=None)
+```
+
+**参数**
+
+| 参数        | 类型 | 描述                  |
+| --------- | -- | ------------------- |
+| `obj`     | -  | 要转义的值 (字符串、字节、数值等)  |
+| `mapping` | -  | 用于转义的可选字符映射         |
+
+**返回值**
+
+| 返回类型 | 描述                    |
+| ---- | --------------------- |
+| -    | 经过转义后的输入内容，可用于 SQL 查询 |
+
+**示例**
+
+```pycon
+>>> conn = Connection()
+>>> safe_value = conn.escape("O'Reilly")
+>>> query = f"SELECT * FROM users WHERE name = {safe_value}"
+```
+
+***
+
+<div id="escape-string">
+  #### `escape_string`
+</div>
+
+对字符串值进行转义，以用于 SQL 查询。
+
+**语法**
+
+```python
+escape_string(s)
+```
+
+**参数**
+
+| 参数  | 类型  | 描述      |
+| --- | --- | ------- |
+| `s` | str | 要转义的字符串 |
+
+**返回值**
+
+| 返回类型  | 描述                   |
+| ----- | -------------------- |
+| `str` | 适合安全包含在 SQL 中的转义后字符串 |
+
+***
+
+<div id="property-open">
+  #### `property open`
+</div>
+
+检查连接是否已打开。
+
+**返回值**
+
+| 返回类型   | 描述                       |
+| ------ | ------------------------ |
+| `bool` | 连接已打开时为 True，已关闭时为 False |
+
+***
+
+<div id="chdb-session-session-query">
+  #### `query`
+</div>
+
+直接执行 SQL 查询并返回原始结果。
+
+此方法会绕过游标接口，直接执行查询。
+对于标准的 DB-API 用法，建议优先使用 cursor() 方法。
+
+**语法**
+
+```python
+query(sql, fmt='CSV')
+```
+
+**参数：**
+
+| Parameter | Type         | Default    | Description                                                                            |
+| --------- | ------------ | ---------- | -------------------------------------------------------------------------------------- |
+| `sql`     | str or bytes | *required* | 要执行的 SQL 查询                                                                            |
+| `fmt`     | str          | `"CSV"`    | 输出格式。支持的格式包括 &quot;CSV&quot;、&quot;JSON&quot;、&quot;Arrow&quot;、&quot;Parquet&quot; 等。 |
+
+**返回值**
+
+| Return Type | Description |
+| ----------- | ----------- |
+| -           | 指定格式的查询结果   |
+
+**引发异常**
+
+| Exception                                              | Condition    |
+| ------------------------------------------------------ | ------------ |
+| [`err.InterfaceError`](#chdb-dbapi-err-interfaceerror) | 如果连接已关闭或查询失败 |
+
+**示例**
+
+```pycon
+>>> conn = Connection()
+>>> result = conn.query("SELECT 1, 'hello'", "CSV")
+>>> print(result)
+"1,hello\n"
+```
+
+***
+
+<div id="property-resp">
+  #### `property resp`
+</div>
+
+获取最后一次查询的响应。
+
+**返回值**
+
+| 返回类型 | 描述                      |
+| ---- | ----------------------- |
+| -    | 最后一次调用 query() 时返回的原始响应 |
+
+<Note>
+  每次直接调用 query() 时，此属性都会更新。
+  通过游标执行的查询不会反映在此属性中。
+</Note>
+
+***
+
+<div id="rollback">
+  #### `rollback`
+</div>
+
+回滚当前事务。
+
+**语法**
+
+```python
+rollback()
+```
+
+<Note>
+  对于 chDB/ClickHouse，这属于空操作，因为它不支持传统的
+  事务。提供此项是为了符合 DB-API 2.0 规范。
+</Note>
+
+***
+
+<div id="cursor-class">
+  ### Cursor 类
+</div>
+
+<div id="chdb-dbapi-cursors-cursor">
+  #### **class** `chdb.dbapi.cursors.Cursor`
+</div>
+
+基类：`object`
+
+用于执行查询并获取结果的 DB-API 2.0 游标。
+
+该游标提供用于执行 SQL 语句、管理查询结果以及浏览结果集的方法。它支持参数绑定、批量操作，
+并遵循 DB-API 2.0 规范。
+
+不要直接创建 Cursor 实例。请改用 `Connection.cursor()`。
+
+```python
+class chdb.dbapi.cursors.Cursor(connection)
+```
+
+| Variable          | 类型    | 描述                                   |
+| ----------------- | ----- | ------------------------------------ |
+| `description`     | tuple | 上一次查询结果的列元数据                         |
+| `rowcount`        | int   | 上一次查询影响的行数 (如果未知则为 -1)               |
+| `arraysize`       | int   | 一次默认拉取的行数 (默认值：1)                    |
+| `lastrowid`       | -     | 最后一条插入行的 ID (如适用)                    |
+| `max_stmt_length` | int   | executemany() 的最大语句长度 (默认值：1024000)  |
+
+**示例**
+
+```pycon
+>>> conn = Connection()
+>>> cur = conn.cursor()
+>>> cur.execute("SELECT 1 as id, 'test' as name")
+>>> result = cur.fetchone()
+>>> print(result)  # (1, 'test')
+>>> cur.close()
+```
+
+<Note>
+  完整的规范说明请参见 [DB-API 2.0 Cursor Objects](https://www.python.org/dev/peps/pep-0249/#cursor-objects)。
+</Note>
+
+***
+
+<div id="callproc">
+  #### `callproc`
+</div>
+
+执行存储过程 (占位用实现) 。
+
+**语法**
+
+```python
+callproc(procname, args=())
+```
+
+**参数**
+
+| 参数         | Type     | 描述         |
+| ---------- | -------- | ---------- |
+| `procname` | str      | 要执行的存储过程名称 |
+| `args`     | sequence | 传递给存储过程的参数 |
+
+**返回值**
+
+| Return Type | 描述                  |
+| ----------- | ------------------- |
+| `sequence`  | 原始 `args` 参数 (未修改)  |
+
+<Note>
+  chDB/ClickHouse 并不支持传统意义上的存储过程。
+  提供此 method 是为了符合 DB-API 2.0 规范，但它实际上
+  不会执行任何操作。所有 SQL 操作都请使用 execute()。
+</Note>
+
+<Warning>
+  **兼容性**
+
+  这是一个占位实现。底层 ClickHouse engine 不支持传统存储过程的
+  功能，例如 OUT/INOUT 参数、多个结果集 以及 server
+  变量。
+</Warning>
+
+***
+
+<div id="close">
+  #### `close`
+</div>
+
+关闭游标并释放相关资源。
+
+关闭后，游标将无法再使用，任何操作都会抛出异常。
+关闭游标会读取完所有剩余数据，并释放底层游标。
+
+**语法**
+
+```python
+close()
+```
+
+***
+
+<div id="execute">
+  #### `execute`
+</div>
+
+执行 SQL 查询，并可选择绑定参数。
+
+此方法执行单条 SQL 语句，并可选择进行参数替换。
+它支持多种参数占位符形式，使用更灵活。
+
+**语法**
+
+```python
+execute(query, args=None)
+```
+
+**参数**
+
+| 参数      | 类型              | 默认值        | 描述          |
+| ------- | --------------- | ---------- | ----------- |
+| `query` | str             | *required* | 要执行的 SQL 查询 |
+| `args`  | tuple/list/dict | `None`     | 要绑定到占位符的参数  |
+
+**返回值**
+
+| 返回类型  | 描述                |
+| ----- | ----------------- |
+| `int` | 受影响的行数 (未知时为 -1)  |
+
+**参数风格**
+
+| 风格                  | 示例                                            |
+| ------------------- | --------------------------------------------- |
+| Question mark style | `"SELECT * FROM users WHERE id = ?"`          |
+| Named style         | `"SELECT * FROM users WHERE name = %(name)s"` |
+| Format style        | `"SELECT * FROM users WHERE age = %s"` (旧版)   |
+
+**示例**
+
+```pycon
+>>> # 问号参数
+>>> cur.execute("SELECT * FROM users WHERE id = ? AND age > ?", (123, 18))
+>>>
+>>> # 命名参数
+>>> cur.execute("SELECT * FROM users WHERE name = %(name)s", {'name': 'Alice'})
+>>>
+>>> # 无参数
+>>> cur.execute("SELECT COUNT(*) FROM users")
+```
+
+**抛出**
+
+| Exception                                              | 条件              |
+| ------------------------------------------------------ | --------------- |
+| [`ProgrammingError`](#chdb-dbapi-err-programmingerror) | 如果游标已关闭或查询格式不正确 |
+| [`InterfaceError`](#chdb-dbapi-err-interfaceerror)     | 如果执行期间发生数据库错误   |
+
+***
+
+<div id="chdb-dbapi-cursors-cursor-executemany">
+  #### `executemany(query, args)`
+</div>
+
+使用不同的参数集多次执行查询。
+
+该方法可高效地对同一 SQL 查询执行多次，
+每次使用不同的参数值。它尤其适用于批量 INSERT 操作。
+
+**语法**
+
+```python
+executemany(query, args)
+```
+
+**参数**
+
+| 参数      | 类型       | 说明                  |
+| ------- | -------- | ------------------- |
+| `query` | str      | 要多次执行的 SQL 查询       |
+| `args`  | sequence | 每次执行对应的参数元组/字典/列表序列 |
+
+**返回值**
+
+| 返回类型  | 说明           |
+| ----- | ------------ |
+| `int` | 所有执行中受影响的行总数 |
+
+**示例**
+
+```pycon
+>>> # 使用问号参数进行批量插入
+>>> users_data = [(1, 'Alice'), (2, 'Bob'), (3, 'Charlie')]
+>>> cur.executemany("INSERT INTO users VALUES (?, ?)", users_data)
+>>>
+>>> # 使用命名参数进行批量插入
+>>> users_data = [
+...     {'id': 1, 'name': 'Alice'},
+...     {'id': 2, 'name': 'Bob'}
+... ]
+>>> cur.executemany(
+...     "INSERT INTO users VALUES (%(id)s, %(name)s)",
+...     users_data
+... )
+```
+
+<Note>
+  该方法通过优化查询执行流程，提高多行 INSERT 和 UPDATE 操作的性能。
+</Note>
+
+***
+
+<div id="dbapi-fetchall">
+  #### `fetchall()`
+</div>
+
+从查询结果中获取所有剩余行。
+
+**语法**
+
+```python
+fetchall()
+```
+
+**返回值**
+
+| 返回类型   | 描述                |
+| ------ | ----------------- |
+| `list` | 表示所有剩余行的 Tuple 列表 |
+
+**抛出**
+
+| 异常                                                     | 条件                 |
+| ------------------------------------------------------ | ------------------ |
+| [`ProgrammingError`](#chdb-dbapi-err-programmingerror) | 如果尚未调用 `execute()` |
+
+<Warning>
+  **警告**
+
+  对于大型结果集，此方法可能会消耗大量内存。
+  处理大量数据时，请考虑使用 `fetchmany()`。
+</Warning>
+
+**示例**
+
+```pycon
+>>> cursor.execute("SELECT id, name FROM users")
+>>> all_rows = cursor.fetchall()
+>>> print(len(all_rows))  # 总行数
+```
+
+***
+
+<div id="chdb-state-sqlitelike-cursor-fetchmany">
+  #### `fetchmany`
+</div>
+
+从查询结果中获取多行。
+
+**语法**
+
+```python
+fetchmany(size=1)
+```
+
+**参数**
+
+| 参数     | 类型  | 默认值 | 描述                               |
+| ------ | --- | --- | -------------------------------- |
+| `size` | int | `1` | 要拉取的行数。若未指定，则使用 cursor.arraysize |
+
+**返回值**
+
+| 返回类型   | 描述           |
+| ------ | ------------ |
+| `list` | 由已拉取行组成的元组列表 |
+
+**引发异常**
+
+| 异常                                                     | 条件                |
+| ------------------------------------------------------ | ----------------- |
+| [`ProgrammingError`](#chdb-dbapi-err-programmingerror) | 如果尚未先调用 execute() |
+
+**示例**
+
+```pycon
+>>> cursor.execute("SELECT id, name FROM users")
+>>> rows = cursor.fetchmany(3)
+>>> print(rows)  # [(1, 'Alice'), (2, 'Bob'), (3, 'Charlie')]
+```
+
+***
+
+<div id="chdb-state-sqlitelike-cursor-fetchone">
+  #### `fetchone`
+</div>
+
+从查询结果中获取下一行。
+
+**语法**
+
+```python
+fetchone()
+```
+
+**返回值**
+
+| 返回类型            | 说明                        |
+| --------------- | ------------------------- |
+| `tuple or None` | 返回下一行的元组；如果没有更多行，则返回 None |
+
+**抛出**
+
+| 异常                                                     | 条件                  |
+| ------------------------------------------------------ | ------------------- |
+| [`ProgrammingError`](#chdb-dbapi-err-programmingerror) | 如果尚未先调用 `execute()` |
+
+**示例**
+
+```pycon
+>>> cursor.execute("SELECT id, name FROM users LIMIT 3")
+>>> row = cursor.fetchone()
+>>> print(row)  # (1, 'Alice')
+>>> row = cursor.fetchone()
+>>> print(row)  # (2, 'Bob')
+```
+
+***
+
+<div id="max-stmt-length">
+  #### `max_stmt_length = 1024000`
+</div>
+
+[`executemany()`](#chdb-dbapi-cursors-cursor-executemany) 生成的最大语句大小。
+
+默认值为 1024000。
+
+***
+
+<div id="mogrify">
+  #### `mogrify`
+</div>
+
+返回将发送到数据库的精确查询字符串。
+
+此方法会显示参数替换后的最终 SQL 查询，
+这对调试和日志很有帮助。
+
+**语法**
+
+```python
+mogrify(query, args=None)
+```
+
+**参数**
+
+| 参数      | 类型              | 默认值    | 描述              |
+| ------- | --------------- | ------ | --------------- |
+| `query` | str             | *必填*   | 包含参数占位符的 SQL 查询 |
+| `args`  | tuple/list/dict | `None` | 用于替换占位符的参数      |
+
+**返回值**
+
+| 返回类型  | 描述                 |
+| ----- | ------------------ |
+| `str` | 参数替换后的最终 SQL 查询字符串 |
+
+**示例**
+
+```pycon
+>>> cur.mogrify("SELECT * FROM users WHERE id = ?", (123,))
+"SELECT * FROM users WHERE id = 123"
+```
+
+<Note>
+  此方法遵循 Psycopg 所采用的 DB-API 2.0 扩展规范。
+</Note>
+
+***
+
+<div id="nextset">
+  #### `nextset`
+</div>
+
+切换到下一个结果集 (不支持) 。
+
+**语法**
+
+```python
+nextset()
+```
+
+**返回**
+
+| 返回类型   | 描述                     |
+| ------ | ---------------------- |
+| `None` | 由于不支持多个结果集，因此始终返回 None |
+
+<Note>
+  chDB/ClickHouse 不支持单个查询返回多个结果集。
+  提供此方法是为了符合 DB-API 2.0 规范，但它始终返回 None。
+</Note>
+
+***
+
+<div id="setinputsizes">
+  #### `setinputsizes`
+</div>
+
+设置参数输入大小 (实际为空操作) 。
+
+**语法**
+
+```python
+setinputsizes(*args)
+```
+
+**参数**
+
+| 参数      | 类型 | 描述           |
+| ------- | -- | ------------ |
+| `*args` | -  | 参数大小说明 (忽略)  |
+
+<Note>
+  此方法不执行任何操作，但 DB-API 2.0 规范要求必须提供该方法。
+  chDB 会在内部自动处理参数大小。
+</Note>
+
+***
+
+<div id="setoutputsizes">
+  #### `setoutputsizes`
+</div>
+
+设置输出列的大小 (空操作实现) 。
+
+**语法**
+
+```python
+setoutputsizes(*args)
+```
+
+**参数**
+
+| 参数      | 类型 | 说明            |
+| ------- | -- | ------------- |
+| `*args` | -  | 列大小说明 (将被忽略)  |
+
+<Note>
+  此方法本身不执行任何操作，但 DB-API 2.0 规范要求必须提供。
+  chDB 会自动在内部处理输出大小。
+</Note>
+
+***
+
+<div id="error-classes">
+  ### 错误类
+</div>
+
+用于 chdb database 操作的异常类。
+
+该模块提供了完整的异常类层次结构，用于处理 chdb 中与 database 相关的 error，并遵循 Python Database API Specification v2.0。
+
+异常类层次结构如下：
+
+```default
+StandardError
+├── Warning
+└── Error
+    ├── InterfaceError
+    └── DatabaseError
+        ├── DataError
+        ├── OperationalError
+        ├── IntegrityError
+        ├── InternalError
+        ├── ProgrammingError
+        └── NotSupportedError
+```
+
+每个异常类都表示一类特定的数据库错误：
+
+| Exception           | Description         |
+| ------------------- | ------------------- |
+| `Warning`           | 数据库操作期间的非致命警告       |
+| `InterfaceError`    | 数据库接口本身存在的问题        |
+| `DatabaseError`     | 所有与数据库相关错误的基类       |
+| `DataError`         | 数据处理问题 (如无效值、类型错误)  |
+| `OperationalError`  | 数据库运行问题 (如连接性、资源等)  |
+| `IntegrityError`    | 违反约束 (如外键、唯一性约束)    |
+| `InternalError`     | 数据库内部错误和数据损坏        |
+| `ProgrammingError`  | SQL 语法错误和 API 使用不当  |
+| `NotSupportedError` | 不受支持的功能或操作          |
+
+<Note>
+  这些异常类符合 Python DB API 2.0 规范，
+  可在不同的数据库操作中提供一致的错误处理。
+</Note>
+
+**另请参阅**
+
+* [Python Database API Specification v2.0](https://peps.python.org/pep-0249/)
+* `chdb.dbapi.connections` - 数据库连接管理
+* `chdb.dbapi.cursors` - 数据库游标操作
+
+**示例**
+
+```pycon
+>>> try:
+...     cursor.execute("SELECT * FROM nonexistent_table")
+... except ProgrammingError as e:
+...     print(f"SQL Error: {e}")
+...
+SQL Error: Table 'nonexistent_table' doesn't exist
+```
+
+```pycon
+>>> try:
+...     cursor.execute("INSERT INTO users (id) VALUES (1), (1)")
+... except IntegrityError as e:
+...     print(f"Constraint violation: {e}")
+...
+Constraint violation: Duplicate entry '1' for key 'PRIMARY'
+```
+
+***
+
+<div id="chdb-dbapi-err-dataerror">
+  #### **异常** `chdb.dbapi.err.DataError`
+</div>
+
+基类：[`DatabaseError`](#chdb-dbapi-err-databaseerror)
+
+因处理中的数据存在问题而引发的异常。
+
+当数据库操作因正在处理的数据出现问题而失败时，会引发此异常，例如：
+
+* 除零操作
+* 数值超出范围
+* 无效的日期/时间值
+* 字符串截断错误
+* 类型转换失败
+* 不符合列类型的数据格式
+
+**引发**
+
+| Exception                                | Condition   |
+| ---------------------------------------- | ----------- |
+| [`DataError`](#chdb-dbapi-err-dataerror) | 当数据验证或处理失败时 |
+
+**示例**
+
+```pycon
+>>> # SQL 中的除零操作
+>>> cursor.execute("SELECT 1/0")
+DataError: Division by zero
+```
+
+```pycon
+>>> # 无效的日期格式
+>>> cursor.execute("INSERT INTO table VALUES ('invalid-date')")
+DataError: Invalid date format
+```
+
+***
+
+<div id="chdb-dbapi-err-databaseerror">
+  #### **异常** `chdb.dbapi.err.DatabaseError`
+</div>
+
+基类：[`Error`](#chdb-dbapi-err-error)
+
+为与数据库相关的错误而引发的异常。
+
+这是所有数据库相关错误的基类。它涵盖数据库操作期间发生的、
+与数据库本身相关而非与接口相关的
+所有错误。
+
+常见场景包括：
+
+* SQL 执行错误
+* 数据库连接问题
+* 与事务相关的问题
+* 违反数据库特定约束
+
+<Note>
+  这是更具体的数据库错误类型的父类，
+  例如 [`DataError`](#chdb-dbapi-err-dataerror)、[`OperationalError`](#chdb-dbapi-err-operationalerror) 等。
+</Note>
+
+***
+
+<div id="chdb-dbapi-err-error">
+  #### **异常** `chdb.dbapi.err.Error`
+</div>
+
+基类：[`StandardError`](#chdb-dbapi-err-standarderror)
+
+作为所有其他错误异常 (Warning 除外) 的基类异常。
+
+这是 chdb 中所有错误异常的基类，不包括警告。
+它是所有会导致操作无法成功完成的数据库错误情况的父类。
+
+<Note>
+  此异常层次结构遵循 Python DB API 2.0 规范。
+</Note>
+
+**另请参阅**
+
+* [`Warning`](#chdb-dbapi-err-warning) - 用于不会阻止操作完成的非致命警告
+
+<div id="chdb-dbapi-err-integrityerror">
+  #### **异常** `chdb.dbapi.err.IntegrityError`
+</div>
+
+基类：[`DatabaseError`](#chdb-dbapi-err-databaseerror)
+
+当数据库的关系完整性遭到破坏时引发的异常。
+
+当数据库操作违反完整性约束时，会引发此异常，
+包括：
+
+* 违反外键约束
+* 违反主键或唯一约束 (键重复) 
+* 违反检查约束
+* 违反 NOT NULL 约束
+* 违反参照完整性
+
+**引发**
+
+| 异常                                                 | 条件           |
+| -------------------------------------------------- | ------------ |
+| [`IntegrityError`](#chdb-dbapi-err-integrityerror) | 当违反数据库完整性约束时 |
+
+**示例**
+
+```pycon
+>>> # 重复的主键
+>>> cursor.execute("INSERT INTO users (id, name) VALUES (1, 'John')")
+>>> cursor.execute("INSERT INTO users (id, name) VALUES (1, 'Jane')")
+IntegrityError: Duplicate entry '1' for key 'PRIMARY'
+```
+
+```pycon
+>>> # 外键违规
+>>> cursor.execute("INSERT INTO orders (user_id) VALUES (999)")
+IntegrityError: Cannot add or update a child row: foreign key constraint fails
+```
+
+***
+
+<div id="chdb-dbapi-err-interfaceerror">
+  #### **异常** `chdb.dbapi.err.InterfaceError`
+</div>
+
+基类：[`Error`](#chdb-dbapi-err-error)
+
+当错误与数据库接口而不是数据库本身相关时，会引发此异常。
+
+当数据库接口实现出现问题时，会引发此异常，例如：
+
+* 无效的连接参数
+* API 使用不当 (在已关闭的连接上调用方法) 
+* 接口层协议错误
+* 模块导入或初始化失败
+
+**引发**
+
+| Exception                                          | Condition            |
+| -------------------------------------------------- | -------------------- |
+| [`InterfaceError`](#chdb-dbapi-err-interfaceerror) | 当数据库接口遇到与数据库操作无关的错误时 |
+
+<Note>
+  这些错误通常属于编程错误或配置问题，
+  可通过修正客户端代码或配置来解决。
+</Note>
+
+***
+
+<div id="chdb-dbapi-err-internalerror">
+  #### **异常** `chdb.dbapi.err.InternalError`
+</div>
+
+基类：[`DatabaseError`](#chdb-dbapi-err-databaseerror)
+
+当数据库遇到内部错误时引发的异常。
+
+当数据库系统遇到并非由应用程序导致的内部错误时，会引发此异常，例如：
+
+* 游标状态无效 (游标已失效) 
+* 事务状态不一致 (事务不同步) 
+* 数据库损坏
+* 内部数据结构损坏
+* 系统级数据库错误
+
+**引发**
+
+| 异常                                               | 条件           |
+| ------------------------------------------------ | ------------ |
+| [`InternalError`](#chdb-dbapi-err-internalerror) | 当数据库出现内部不一致时 |
+
+<Warning>
+  **警告**
+
+  内部错误可能表明数据库存在需要数据库管理员关注的严重问题。这类错误通常无法通过应用层重试逻辑恢复。
+</Warning>
+
+<Note>
+  这些错误通常不在应用程序的控制范围内，可能需要重启数据库或执行修复操作。
+</Note>
+
+***
+
+<div id="chdb-dbapi-err-notsupportederror">
+  #### **异常** `chdb.dbapi.err.NotSupportedError`
+</div>
+
+基类：[`DatabaseError`](#chdb-dbapi-err-databaseerror)
+
+在某个方法或数据库 API 不受支持时引发的异常。
+
+当应用程序尝试使用当前数据库配置或版本不支持的数据库功能或 API 方法时，会引发此异常，例如：
+
+* 在不支持事务的连接上调用 `rollback()`
+* 使用当前数据库版本不支持的高级 SQL 功能
+* 调用当前 driver 中未实现的方法
+* 尝试使用已禁用的数据库功能
+
+**引发**
+
+| 异常                                                       | 条件            |
+| -------------------------------------------------------- | ------------- |
+| [`NotSupportedError`](#chdb-dbapi-err-notsupportederror) | 访问不受支持的数据库功能时 |
+
+**示例**
+
+```pycon
+>>> # 在非事务性连接上回滚事务
+>>> connection.rollback()
+NotSupportedError: Transactions are not supported
+```
+
+```pycon
+>>> # 使用不支持的 SQL 语法
+>>> cursor.execute("SELECT * FROM table WITH (NOLOCK)")
+NotSupportedError: WITH clause not supported in this database version
+```
+
+<Note>
+  请查阅数据库文档并确认驱动支持的功能，以避免
+  这些错误。可行时，请考虑采用平稳的回退机制。
+</Note>
+
+***
+
+<div id="chdb-dbapi-err-operationalerror">
+  #### **异常** `chdb.dbapi.err.OperationalError`
+</div>
+
+基类：[`DatabaseError`](#chdb-dbapi-err-databaseerror)
+
+因与数据库操作相关的错误而引发的异常。
+
+当数据库操作期间发生错误，
+且这些错误不一定在程序员的控制范围内时，会引发此异常，包括：
+
+* 与数据库的连接意外中断
+* 找不到数据库服务器或无法连接
+* 事务处理失败
+* 处理过程中发生内存分配错误
+* 磁盘空间不足或资源耗尽
+* 数据库服务器内部错误
+* 身份验证或授权失败
+
+**引发**
+
+| 异常                                                     | 条件                 |
+| ------------------------------------------------------ | ------------------ |
+| [`OperationalError`](#chdb-dbapi-err-operationalerror) | 当数据库操作因运行层面的问题而失败时 |
+
+<Note>
+  这些错误通常是暂时性的，可通过重试操作
+  或解决系统级问题来恢复。
+</Note>
+
+<Warning>
+  **警告**
+
+  某些操作错误可能表明存在严重的系统问题，
+  需要管理员介入处理。
+</Warning>
+
+***
+
+<div id="chdb-dbapi-err-programmingerror">
+  #### **异常** `chdb.dbapi.err.ProgrammingError`
+</div>
+
+基类：[`DatabaseError`](#chdb-dbapi-err-databaseerror)
+
+在数据库操作中发生编程错误时引发的异常。
+
+当应用程序使用数据库时存在编程错误，就会引发此异常，包括：
+
+* 找不到表或列
+* 创建时表或索引已存在
+* 语句中的 SQL 语法错误
+* 预处理语句中指定的参数个数不正确
+* 无效的 SQL 操作 (例如，对不存在的对象执行 DROP) 
+* 数据库 API 方法使用不当
+
+**引发**
+
+| Exception                                              | Condition             |
+| ------------------------------------------------------ | --------------------- |
+| [`ProgrammingError`](#chdb-dbapi-err-programmingerror) | 当 SQL 语句或 API 用法存在错误时 |
+
+**示例**
+
+```pycon
+>>> # 表未找到
+>>> cursor.execute("SELECT * FROM nonexistent_table")
+ProgrammingError: Table 'nonexistent_table' doesn't exist
+```
+
+```pycon
+>>> # SQL 语法错误
+>>> cursor.execute("SELCT * FROM users")
+ProgrammingError: You have an error in your SQL syntax
+```
+
+```pycon
+>>> # 参数数量错误
+>>> cursor.execute("INSERT INTO users (name, age) VALUES (%s)", ('John',))
+ProgrammingError: Column count doesn't match value count
+```
+
+***
+
+<div id="chdb-dbapi-err-standarderror">
+  #### **异常** `chdb.dbapi.err.StandardError`
+</div>
+
+基类：`Exception`
+
+与 chdb 操作相关的异常。
+
+这是所有 chdb 相关异常的基类。它继承自
+Python 内置的 Exception 类，并作为数据库操作异常层级结构的根类。
+
+<Note>
+  该异常类遵循 Python DB API 2.0 规范，
+  用于处理数据库异常。
+</Note>
+
+***
+
+<div id="chdb-dbapi-err-warning">
+  #### **异常** `chdb.dbapi.err.Warning`
+</div>
+
+基类：[`StandardError`](#chdb-dbapi-err-standarderror)
+
+在插入过程中发生数据截断等重要警告时引发的异常。
+
+当数据库操作已完成，但伴有
+需要提醒应用程序注意的重要警告时，就会引发此异常。
+常见场景包括：
+
+* 插入过程中的数据截断
+* 数值转换中的精度丢失
+* 字符集转换警告
+
+<Note>
+  这遵循 Python DB API 2.0 对警告类异常的规范。
+</Note>
+
+***
+
+<div id="module-constants">
+  ### 模块常量
+</div>
+
+<div id="apilevel">
+  #### `chdb.dbapi.apilevel = '2.0'`
+</div>
+
+```python
+str(object=’’) -> str
+str(bytes_or_buffer[, encoding[, errors]]) -> str
+```
+
+根据给定对象创建一个新的字符串对象。如果指定了 encoding 或
+errors，则该对象必须提供一个数据缓冲区，
+该缓冲区将使用给定的编码和错误处理器进行解码。
+否则，返回 `object._\_str_\_()` (如果已定义) 
+或 `repr(object)` 的结果。
+
+* encoding 默认为‘utf-8’。
+* errors 默认为‘strict’。
+
+***
+
+<div id="threadsafety">
+  #### `chdb.dbapi.threadsafety = 1`
+</div>
+
+```python
+int([x]) -> integer
+int(x, base=10) -> integer
+```
+
+将数值或字符串转换为整数；如果未提供参数，则返回 0。
+如果 x 是数值，则返回 x.*&#95;int*&#95;()。对于浮点数，
+会向零方向截断。
+
+如果 x 不是数值，或者给定了 base，那么 x 必须是一个表示给定
+进制整数字面量的字符串、bytes 或 bytearray 实例。
+该字面量前面可以有 ‘+’ 或 ‘-’，并且两侧可以包含空白字符。
+base 默认为 10。有效的进制为 0 和 2-36。
+base 为 0 表示根据字符串中的整数字面量来解释其进制。
+
+```python
+>>> int(‘0b100’, base=0)
+4
+```
+
+***
+
+<div id="paramstyle">
+  #### `chdb.dbapi.paramstyle = 'format'`
+</div>
+
+```python
+str(object=’’) -> str
+str(bytes_or_buffer[, encoding[, errors]]) -> str
+```
+
+根据给定对象创建一个新的字符串对象。如果指定了 encoding 或
+errors，那么该对象必须暴露一个数据缓冲区，
+该缓冲区将使用给定的编码和错误处理程序进行解码。
+否则，返回 object.*&#95;str*&#95;() 的结果 (如果已定义) 
+或 repr(object)。
+encoding 默认为‘utf-8’。
+errors 默认为‘strict’。
+
+***
+
+<div id="type-constants">
+  ### 类型常量
+</div>
+
+<div id="string-type">
+  #### `chdb.dbapi.STRING = frozenset({247, 253, 254})`
+</div>
+
+用于 DB-API 2.0 类型比较的扩展型 frozenset。
+
+此类扩展了 frozenset，以支持 DB-API 2.0 的类型比较语义。
+它可实现更灵活的类型检查，既可以使用相等运算符，也可以使用不等运算符，
+将单个项与该集合进行比较。
+
+这类用法适用于 STRING、BINARY、NUMBER 等类型常量，以便进行
+诸如“field&#95;type == STRING”之类的比较，其中 field&#95;type 是单个类型值。
+
+**示例**
+
+```pycon
+>>> string_types = DBAPISet([FIELD_TYPE.STRING, FIELD_TYPE.VAR_STRING])
+>>> FIELD_TYPE.STRING == string_types  # 返回 True
+>>> FIELD_TYPE.INT != string_types     # 返回 True
+>>> FIELD_TYPE.BLOB in string_types    # 返回 False
+```
+
+***
+
+<div id="binary-type">
+  #### `chdb.dbapi.BINARY = frozenset({249, 250, 251, 252})`
+</div>
+
+为 DB-API 2.0 类型比较扩展的 frozenset。
+
+此类扩展了 frozenset，以支持 DB-API 2.0 的类型比较语义。
+它支持灵活的类型检查，允许使用相等和不等运算符
+将单个项与该集合进行比较。
+
+这用于 STRING、BINARY、NUMBER 等类型常量，从而支持
+诸如 “field&#95;type == STRING” 这样的比较，其中 field&#95;type 是单个类型值。
+
+**示例**
+
+```pycon
+>>> string_types = DBAPISet([FIELD_TYPE.STRING, FIELD_TYPE.VAR_STRING])
+>>> FIELD_TYPE.STRING == string_types  # 返回 True
+>>> FIELD_TYPE.INT != string_types     # 返回 True
+>>> FIELD_TYPE.BLOB in string_types    # 返回 False
+```
+
+***
+
+<div id="number-type">
+  #### `chdb.dbapi.NUMBER = frozenset({0, 1, 3, 4, 5, 8, 9, 13})`
+</div>
+
+用于 DB-API 2.0 类型比较的扩展型 frozenset。
+
+此类扩展了 frozenset，以支持 DB-API 2.0 的类型比较语义。
+它支持更灵活的类型检查，使单个项既可以使用相等运算符，
+也可以使用不等运算符与该集合进行比较。
+
+这用于 STRING、BINARY、NUMBER 等类型常量，以支持
+类似“field&#95;type == STRING”这样的比较，其中 field&#95;type 是单个类型值。
+
+**示例**
+
+```pycon
+>>> string_types = DBAPISet([FIELD_TYPE.STRING, FIELD_TYPE.VAR_STRING])
+>>> FIELD_TYPE.STRING == string_types  # 返回 True
+>>> FIELD_TYPE.INT != string_types     # 返回 True
+>>> FIELD_TYPE.BLOB in string_types    # 返回 False
+```
+
+***
+
+<div id="date-type">
+  #### `chdb.dbapi.DATE = frozenset({10, 14})`
+</div>
+
+用于 DB-API 2.0 类型比较的扩展型 frozenset。
+
+该类扩展了 frozenset，以支持 DB-API 2.0 的类型比较语义。
+它支持更灵活的类型检查，即可使用相等和不等运算符将单个项
+与该集合进行比较。
+
+它用于 STRING、BINARY、NUMBER 等类型常量，以便支持
+诸如 “field&#95;type == STRING” 这样的比较，其中 field&#95;type 是单个类型值。
+
+**示例**
+
+```pycon
+>>> string_types = DBAPISet([FIELD_TYPE.STRING, FIELD_TYPE.VAR_STRING])
+>>> FIELD_TYPE.STRING == string_types  # 返回 True
+>>> FIELD_TYPE.INT != string_types     # 返回 True
+>>> FIELD_TYPE.BLOB in string_types    # 返回 False
+```
+
+***
+
+<div id="time-type">
+  #### `chdb.dbapi.TIME = frozenset({11})`
+</div>
+
+用于 DB-API 2.0 类型比较的扩展版 frozenset。
+
+此类在 frozenset 的基础上进行了扩展，以支持 DB-API 2.0 的类型比较语义。
+它支持更灵活的类型检查，使单个项既可以通过相等运算符，也可以通过不等运算符
+与该集合进行比较。
+
+这可用于 STRING、BINARY、NUMBER 等类型常量，从而支持
+诸如“field&#95;type == STRING”这样的比较，其中 field&#95;type 是单个类型值。
+
+**示例**
+
+```pycon
+>>> string_types = DBAPISet([FIELD_TYPE.STRING, FIELD_TYPE.VAR_STRING])
+>>> FIELD_TYPE.STRING == string_types  # 返回 True
+>>> FIELD_TYPE.INT != string_types     # 返回 True
+>>> FIELD_TYPE.BLOB in string_types    # 返回 False
+```
+
+***
+
+<div id="timestamp-type">
+  #### `chdb.dbapi.TIMESTAMP = frozenset({7, 12})`
+</div>
+
+用于 DB-API 2.0 类型比较的扩展版 frozenset。
+
+此类扩展了 frozenset，以支持 DB-API 2.0 的类型比较语义。
+它支持更灵活的类型检查，可以使用相等或不等运算符，
+将单个项与该集合进行比较。
+
+它用于 STRING、BINARY、NUMBER 等类型常量，以支持
+“field&#95;type == STRING”这类比较，其中 field&#95;type 是单个类型值。
+
+**示例**
+
+```pycon
+>>> string_types = DBAPISet([FIELD_TYPE.STRING, FIELD_TYPE.VAR_STRING])
+>>> FIELD_TYPE.STRING == string_types  # 返回 True
+>>> FIELD_TYPE.INT != string_types     # 返回 True
+>>> FIELD_TYPE.BLOB in string_types    # 返回 False
+```
+
+<div id="datetime-type">
+  #### `chdb.dbapi.DATETIME = frozenset({7, 12})`
+</div>
+
+用于 DB-API 2.0 类型比较的扩展型 frozenset。
+
+此类扩展了 frozenset，以支持 DB-API 2.0 的类型比较语义。
+它支持更灵活的类型检查，使单个项既可使用相等运算符，也可使用不等运算符
+与该集合进行比较。
+
+这类对象用于 STRING、BINARY、NUMBER 等类型常量，从而支持
+类似“field&#95;type == STRING”的比较，其中 field&#95;type 是单个类型值。
+
+**示例**
+
+```pycon
+>>> string_types = DBAPISet([FIELD_TYPE.STRING, FIELD_TYPE.VAR_STRING])
+>>> FIELD_TYPE.STRING == string_types  # 返回 True
+>>> FIELD_TYPE.INT != string_types     # 返回 True
+>>> FIELD_TYPE.BLOB in string_types    # 返回 False
+```
+
+***
+
+<div id="rowid-type">
+  #### `chdb.dbapi.ROWID = frozenset({})`
+</div>
+
+为 DB-API 2.0 类型比较扩展的 frozenset。
+
+此类扩展了 frozenset，以支持 DB-API 2.0 的类型比较语义。
+它支持灵活的类型检查，使单个项既可使用相等运算符，也可使用不等运算符
+与该集合进行比较。
+
+这用于 STRING、BINARY、NUMBER 等类型常量，以支持
+诸如“field&#95;type == STRING”这样的比较，其中 field&#95;type 是单个类型值。
+
+**示例**
+
+```pycon
+>>> string_types = DBAPISet([FIELD_TYPE.STRING, FIELD_TYPE.VAR_STRING])
+>>> FIELD_TYPE.STRING == string_types  # 返回 True
+>>> FIELD_TYPE.INT != string_types     # 返回 True
+>>> FIELD_TYPE.BLOB in string_types    # 返回 False
+```
+
+**使用示例**
+
+基本查询示例：
+
+```python
+import chdb.dbapi as dbapi
+
+print("chdb driver version: {0}".format(dbapi.get_client_info()))
+
+# 创建连接和游标
+conn = dbapi.connect()
+cur = conn.cursor()
+
+# 执行查询
+cur.execute('SELECT version()')
+print("description:", cur.description)
+print("data:", cur.fetchone())
+
+# 清理资源
+cur.close()
+conn.close()
+```
+
+使用数据：
+
+```python
+import chdb.dbapi as dbapi
+
+conn = dbapi.connect()
+cur = conn.cursor()
+
+# 创建表
+cur.execute("""
+    CREATE TABLE employees (
+        id UInt32,
+        name String,
+        department String,
+        salary Decimal(10,2)
+    ) ENGINE = Memory
+""")
+
+# 插入数据
+cur.execute("""
+    INSERT INTO employees VALUES
+    (1, 'Alice', 'Engineering', 75000.00),
+    (2, 'Bob', 'Marketing', 65000.00),
+    (3, 'Charlie', 'Engineering', 80000.00)
+""")
+
+# 查询数据
+cur.execute("SELECT * FROM employees WHERE department = 'Engineering'")
+
+# 获取结果
+print("Column names:", [desc[0] for desc in cur.description])
+for row in cur.fetchall():
+    print(row)
+
+conn.close()
+```
+
+连接管理：
+
+```python
+import chdb.dbapi as dbapi
+
+# 内存数据库（默认）
+conn1 = dbapi.connect()
+
+# 持久化数据库文件
+conn2 = dbapi.connect("./my_database.chdb")
+
+# 带参数的连接
+conn3 = dbapi.connect("./my_database.chdb?log-level=debug&verbose")
+
+# 只读连接
+conn4 = dbapi.connect("./my_database.chdb?mode=ro")
+
+# 自动清理连接
+with dbapi.connect("test.chdb") as conn:
+    cur = conn.cursor()
+    cur.execute("SELECT count() FROM numbers(1000)")
+    result = cur.fetchone()
+    print(f"Count: {result[0]}")
+    cur.close()
+```
+
+**最佳实践**
+
+1. **连接管理**：使用完毕后务必关闭连接和游标
+2. **上下文管理器**：使用 `with` 语句自动清理资源
+3. **批次处理**：对于较大的结果集，使用 `fetchmany()`
+4. **错误处理**：将数据库操作放在 try-except 块中
+5. **参数绑定**：尽可能使用参数化查询
+6. **内存管理**：对于非常大的数据集，避免使用 `fetchall()`
+
+<Note>
+  * chDB 的 DB-API 2.0 接口与大多数 Python 数据库工具兼容
+  * 该接口提供 Level 1 线程安全 (线程可以共享模块，但不能共享连接) 
+  * 连接字符串支持与 chDB 会话相同的参数
+  * 支持所有标准的 DB-API 2.0 异常
+</Note>
+
+<Warning>
+  **警告**
+
+  * 务必关闭游标和连接，避免资源泄漏
+  * 较大的结果集应按批次处理
+  * 参数绑定语法遵循 `format` 风格：`%s`
+</Warning>
+
+<div id="user-defined-functions">
+  ## 用户自定义函数 (UDF)
+</div>
+
+chDB 的用户自定义函数模块。
+
+该模块提供了在 chDB 中创建和管理用户自定义函数 (UDF) 的功能。
+你可以通过编写自定义 Python 函数来扩展 chDB 的能力，
+并在 SQL 查询中调用这些函数。
+
+<div id="chdb-udf">
+  ### `chdb.udf.chdb_udf`
+</div>
+
+chDB Python UDF (用户自定义函数) 装饰器。
+
+**语法**
+
+```python
+chdb.udf.chdb_udf(return_type='String')
+```
+
+**参数**
+
+| 参数            | 类型  | 默认值        | 描述                            |
+| ------------- | --- | ---------- | ----------------------------- |
+| `return_type` | str | `"String"` | 函数的返回类型。应为 ClickHouse 数据类型之一。 |
+
+**注意**
+
+1. 函数应为无状态。仅支持 UDFs，不支持 UDAFs。
+2. 默认返回类型为 String。返回类型应为 ClickHouse 数据类型之一。
+3. 函数应接受 String 类型的参数。所有参数均为字符串。
+4. 函数会对输入的每一行调用一次。
+5. 函数应为纯 Python 函数。请导入函数中使用的所有模块。
+6. 所用的 Python 解释器与运行脚本时使用的解释器相同。
+
+**示例**
+
+```python
+@chdb_udf()
+def sum_udf(lhs, rhs):
+    return int(lhs) + int(rhs)
+
+@chdb_udf()
+def func_use_json(arg):
+    import json
+    # ... 使用 json 模块
+```
+
+***
+
+<div id="generate-udf">
+  ### `chdb.udf.generate_udf`
+</div>
+
+生成 UDF 配置文件和可执行脚本。
+
+此函数会为 chDB 中的用户自定义函数 (UDF) 创建所需的文件：
+
+1. 用于处理输入数据的 Python 可执行脚本
+2. 用于在 ClickHouse 中注册 UDF 的 XML 配置文件
+
+**语法**
+
+```python
+chdb.udf.generate_udf(func_name, args, return_type, udf_body)
+```
+
+**参数**
+
+| 参数            | 类型   | 描述                   |
+| ------------- | ---- | -------------------- |
+| `func_name`   | str  | UDF 函数名称             |
+| `args`        | list | 函数的参数名称列表            |
+| `return_type` | str  | 函数的 ClickHouse 返回类型  |
+| `udf_body`    | str  | UDF 函数的 Python 源代码主体 |
+
+<Note>
+  此函数通常由 @chdb&#95;udf 装饰器调用，用户不应直接调用。
+</Note>
+
+***
+
+<div id="utilities">
+  ## 工具
+</div>
+
+适用于 chDB 的实用函数和辅助工具。
+
+本模块包含各种用于 chDB 的实用函数，例如数据类型推断、数据转换辅助函数以及调试工具。
+
+***
+
+<div id="convert-to-columnar">
+  ### `chdb.utils.convert_to_columnar`
+</div>
+
+将字典列表转换为列式格式。
+
+该函数接受一个字典列表，并将其转换为一个字典，
+其中每个键对应一列，每个值则是该列的值列表。
+字典中缺失的值会表示为 None。
+
+**语法**
+
+```python
+chdb.utils.convert_to_columnar(items: List[Dict[str, Any]]) → Dict[str, List[Any]]
+```
+
+**参数**
+
+| 参数      | 类型                     | 描述       |
+| ------- | ---------------------- | -------- |
+| `items` | `List[Dict[str, Any]]` | 要转换的字典列表 |
+
+**返回值**
+
+| 返回类型                   | 描述                  |
+| ---------------------- | ------------------- |
+| `Dict[str, List[Any]]` | 一个字典，键为列名，值为对应列值的列表 |
+
+**示例**
+
+```pycon
+>>> items = [
+...     {"name": "Alice", "age": 30, "city": "New York"},
+...     {"name": "Bob", "age": 25},
+...     {"name": "Charlie", "city": "San Francisco"}
+... ]
+>>> convert_to_columnar(items)
+{
+    'name': ['Alice', 'Bob', 'Charlie'],
+    'age': [30, 25, None],
+    'city': ['New York', None, 'San Francisco']
+}
+```
+
+***
+
+<div id="flatten-dict">
+  ### `chdb.utils.flatten_dict`
+</div>
+
+将嵌套字典扁平化。
+
+此函数接收一个嵌套字典并将其扁平化，使用分隔符拼接嵌套键。
+由字典组成的列表会被序列化为 JSON 字符串。
+
+**语法**
+
+```python
+chdb.utils.flatten_dict(d: Dict[str, Any], parent_key: str = '', sep: str = '_') → Dict[str, Any]
+```
+
+**参数**
+
+| 参数           | 类型               | 默认值   | 描述            |
+| ------------ | ---------------- | ----- | ------------- |
+| `d`          | `Dict[str, Any]` | *必填*  | 要扁平化的字典       |
+| `parent_key` | str              | `""`  | 要添加到每个键前的基础键名 |
+| `sep`        | str              | `"_"` | 用于连接拼接键的分隔符   |
+
+**返回值**
+
+| 返回类型             | 描述      |
+| ---------------- | ------- |
+| `Dict[str, Any]` | 扁平化后的字典 |
+
+**示例**
+
+```pycon
+>>> nested_dict = {
+...     "a": 1,
+...     "b": {
+...         "c": 2,
+...         "d": {
+...             "e": 3
+...         }
+...     },
+...     "f": [4, 5, {"g": 6}],
+...     "h": [{"i": 7}, {"j": 8}]
+... }
+>>> flatten_dict(nested_dict)
+{
+    'a': 1,
+    'b_c': 2,
+    'b_d_e': 3,
+    'f_0': 4,
+    'f_1': 5,
+    'f_2_g': 6,
+    'h': '[{"i": 7}, {"j": 8}]'
+}
+```
+
+***
+
+<div id="infer-data-type">
+  ### `chdb.utils.infer_data_type`
+</div>
+
+为一组值推断最合适的数据类型。
+
+此函数会检查一组值，并确定能够表示列表中所有值的最合适数据类型。它会考虑整数、无符号整数、Decimal 和浮点类型；如果这些值无法用任何数值类型表示，或者所有值均为 None，则默认使用“string”。
+
+**语法**
+
+```python
+chdb.utils.infer_data_type(values: List[Any]) → str
+```
+
+**参数**
+
+| 参数       | 类型          | 描述                 |
+| -------- | ----------- | ------------------ |
+| `values` | `List[Any]` | 要分析的值列表。这些值可以是任意类型 |
+
+**返回值**
+
+| 返回类型  | 描述                                                                                                                                                                                        |
+| ----- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `str` | 表示推断出的数据类型的字符串。可能的返回值包括：“int8”、“int16”、“int32”、“int64”、“int128”、“int256”、“uint8”、“uint16”、“uint32”、“uint64”、“uint128”、“uint256”、“decimal128”、“decimal256”、“float32”、“float64” 或 “string”。 |
+
+<Note>
+  * 如果列表中的所有值都是 None，函数将返回 “string”。
+  * 如果列表中的任意值是字符串，函数会立即返回 “string”。
+  * 该函数假定数值可根据其范围和精度表示为整数、
+    Decimal 或浮点数。
+</Note>
+
+***
+
+<div id="infer-data-types">
+  ### `chdb.utils.infer_data_types`
+</div>
+
+为列式数据结构中的每一列推断数据类型。
+
+此函数会分析各列中的值，并根据数据样本为每一列推断出最合适的
+数据类型。
+
+**语法**
+
+```python
+chdb.utils.infer_data_types`(column_data: Dict[str, List[Any]], n_rows: int = 10000) → List[tuple]
+```
+
+**参数**
+
+| 参数            | 类型                     | 默认值     | 描述                    |
+| ------------- | ---------------------- | ------- | --------------------- |
+| `column_data` | `Dict[str, List[Any]]` | *必填*    | 一个字典，其中键为列名，值为对应列的值列表 |
+| `n_rows`      | int                    | `10000` | 用于类型推断的采样行数           |
+
+**返回值**
+
+| 返回类型          | 描述                          |
+| ------------- | --------------------------- |
+| `List[tuple]` | 一个元组列表，其中每个元组包含列名及其推断出的数据类型 |
+
+<div id="abstract-base-classes">
+  ## 抽象基类
+</div>
+
+<div id="pyreader">
+  ### **类** `chdb.rwabc.PyReader`(data: Any)&#96;
+</div>
+
+基类：`ABC`
+
+```python
+class chdb.rwabc.PyReader(data: Any)
+```
+
+***
+
+<div id="read">
+  #### **abstractmethod** `read`
+</div>
+
+从给定列中读取指定数量的行，并返回一个对象列表，
+其中每个对象对应一列的值序列。
+
+```python
+abstractmethod (col_names: List[str], count: int) → List[Any]
+```
+
+**参数**
+
+| 参数          | 类型          | 说明       |
+| ----------- | ----------- | -------- |
+| `col_names` | `List[str]` | 要读取的列名列表 |
+| `count`     | int         | 要读取的最大行数 |
+
+**返回值**
+
+| 返回类型        | 说明             |
+| ----------- | -------------- |
+| `List[Any]` | 序列列表，每一列对应一个序列 |
+
+<div id="pywriter">
+  ### **类** `chdb.rwabc.PyWriter`
+</div>
+
+基类：`ABC`
+
+```python
+class chdb.rwabc.PyWriter(col_names: List[str], types: List[type], data: Any)
+```
+
+***
+
+<div id="finalize">
+  #### **abstractmethod** finalize
+</div>
+
+组装并返回各个块中的最终数据。必须由子类实现。
+
+```python
+abstractmethod finalize() → bytes
+```
+
+**返回值**
+
+| 返回类型    | 说明       |
+| ------- | -------- |
+| `bytes` | 最终的序列化数据 |
+
+***
+
+<div id="write">
+  #### **abstractmethod** `write`
+</div>
+
+将数据列写入块中。必须由子类实现。
+
+```python
+abstractmethod write(col_names: List[str], columns: List[List[Any]]) → None
+```
+
+**参数**
+
+| 参数          | 类型                | 描述                 |
+| ----------- | ----------------- | ------------------ |
+| `col_names` | `List[str]`       | 正在写入的列名列表          |
+| `columns`   | `List[List[Any]]` | 列数据列表，其中每列都由一个列表表示 |
+
+<div id="chdb-exceptions">
+  ## 异常处理
+</div>
+
+<div id="chdberror">
+  ### **类** `chdb.ChdbError`
+</div>
+
+基类：`Exception`
+
+与 chDB 相关错误的基础异常类。
+
+当 chDB 查询执行失败或发生错误时，会引发此异常。它继承自标准 Python 的 Exception 类，并提供来自底层 ClickHouse engine 的错误信息。
+
+异常消息通常包含来自 ClickHouse 的详细错误信息，包括语法错误、类型不匹配、缺失的表/列，以及其他查询执行问题。
+
+**变量**
+
+| 变量     | 类型 | 描述                   |
+| ------ | -- | -------------------- |
+| `args` | -  | 包含错误消息及其他附加参数的 Tuple |
+
+**示例**
+
+```pycon
+>>> try:
+...     result = chdb.query("SELECT * FROM non_existent_table")
+... except chdb.ChdbError as e:
+...     print(f"Query failed: {e}")
+Query failed: Table 'non_existent_table' doesn't exist
+```
+
+```pycon
+>>> try:
+...     result = chdb.query("SELECT invalid_syntax FROM")
+... except chdb.ChdbError as e:
+...     print(f"Syntax error: {e}")
+Syntax error: Syntax error near 'FROM'
+```
+
+<Note>
+  当底层 ClickHouse 引擎报告错误时，chdb.query() 及相关
+  函数会自动引发此异常。
+  在处理可能失败的查询时，您应捕获此异常，
+  以便在应用程序中进行适当的错误处理。
+</Note>
+
+<div id="version-information">
+  ## 版本信息
+</div>
+
+<div id="chdb-version">
+  ### `chdb.chdb_version = ('3', '6', '0')`
+</div>
+
+内置的不可变序列。
+
+如果未提供参数，构造函数会返回一个空元组。
+如果指定了 iterable，则会用 iterable 中的项初始化该元组。
+
+如果参数本身就是元组，返回值就是该对象本身。
+
+***
+
+<div id="engine-version">
+  ### `chdb.engine_version = '25.5.2.1'`
+</div>
+
+```python
+str(object=’’) -> str
+str(bytes_or_buffer[, encoding[, errors]]) -> str
+```
+
+根据给定对象创建一个新的字符串对象。如果指定了 encoding 或
+errors，则该对象必须提供一个数据缓冲区，
+并将使用给定的编码和错误处理器对其进行解码。
+否则，返回 object.*&#95;str*&#95;() 的结果 (如果已定义) ，
+或 repr(object)。
+
+* encoding 默认为 ‘utf-8’。
+* errors 默认为 ‘strict’。
+
+***
+
+<div id="version">
+  ### `chdb.__version__ = '3.6.0'`
+</div>
+
+```python
+str(object=’’) -> str
+str(bytes_or_buffer[, encoding[, errors]]) -> str
+```
+
+根据给定对象创建一个新的字符串对象。如果指定了 encoding 或
+errors，则该对象必须提供一个数据缓冲区，
+该缓冲区将使用给定的编码和错误处理程序进行解码。
+否则，返回 object.*&#95;str*&#95;() 的结果 (如果已定义) 
+或 repr(object)。
+
+* encoding 默认为 ‘utf-8’。
+* errors 默认为 ‘strict’。

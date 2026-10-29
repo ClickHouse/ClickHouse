@@ -102,10 +102,6 @@ FractionalLimitTransform::Status FractionalLimitTransform::prepare()
     /// Check can we still pull data from input?
     if (num_finished_input_ports != ports_data.size())
     {
-        if (!was_output_needed && !isAnyOutputNeeded())
-            return Status::PortFull;
-        was_output_needed = true;
-
         auto process_port = [&](size_t port_idx)
         {
             auto status = pullData(ports_data[port_idx]);

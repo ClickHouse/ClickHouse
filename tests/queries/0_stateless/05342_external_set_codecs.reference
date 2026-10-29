@@ -1,9 +1,0 @@
-String	25000
-UInt64	25000
-FixedString(16)	25000
-String	25000
-UInt64	25000
-FixedString(16)	25000
-String	2	=	=
-UInt64	2	<	=
-FixedString(16)	2	<	=

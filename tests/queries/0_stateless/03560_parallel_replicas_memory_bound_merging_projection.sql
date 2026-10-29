@@ -1,12 +1,6 @@
 -- Tags: no-random-merge-tree-settings
 -- no-random-merge-tree-settings: to fix pipeline structure
 
--- Both explains below run on the default implementation of parallel replicas. The plan-based one
--- carries the shipped fragment as the read step description, which reads the table rather than the
--- projection, so the plan check matches the projection name next to the step name. The two
--- implementations also name the read step differently, which the pipeline check normalizes; the
--- pipeline itself is the same.
-
 SET explain_query_plan_default = 'legacy';
 drop table if exists pr_t;
 
@@ -14,6 +8,7 @@ create table pr_t(a UInt64, b UInt64) engine=MergeTree order by a;
 ALTER TABLE pr_t ADD PROJECTION p_agg (SELECT a, sum(b) GROUP BY a);
 insert into pr_t select number % 1000, number % 1000 from numbers_mt(1e6);
 
+set parallel_replicas_only_with_analyzer = 0;  -- necessary for CI run with disabled analyzer
 
 set max_threads = 4;
 SET automatic_parallel_replicas_mode = 0;
@@ -27,9 +22,9 @@ set max_estimated_execution_time = 0;
 
 -- { echoOn } --
 set optimize_aggregation_in_order = 0;
-SELECT trimLeft(*) FROM (explain select sum(b) from pr_t group by a order by a limit 5 offset 500) WHERE explain LIKE '%ReadFromMergeTree%' AND explain LIKE '%p_agg%';
+SELECT trimLeft(*) FROM (explain select sum(b) from pr_t group by a order by a limit 5 offset 500) WHERE explain LIKE '%ReadFromMergeTree%';
 set optimize_aggregation_in_order = 1;
-SELECT replaceOne(explain, 'ReadFromRemoteParallelReplicas', 'ReadFromParallelReplicas') FROM (explain pipeline select sum(b) from pr_t group by a order by a limit 5 offset 500);
+explain pipeline select sum(b) from pr_t group by a order by a limit 5 offset 500;
 select sum(b) from pr_t group by a order by a limit 5 offset 500;
 -- { echoOff } --
 

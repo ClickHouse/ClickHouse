@@ -1,4 +1,3 @@
--- Tags: no-parallel, no-fasttest
 -- Regression test for plan-based parallel replicas over a branching fragment. With
 -- parallel_replicas_allow_view_over_mergetree a view that expands to UNION ALL over MergeTree yields
 -- a fragment with multiple sources. The fragment builder must clone the subtree structurally
@@ -32,11 +31,10 @@ SELECT count(), sum(a), min(a), max(a) FROM v_pr_union;
 
 SYSTEM DISABLE FAILPOINT slowdown_parallel_replicas_local_plan_read;
 
--- Plan shape. Before optimization the planner produces a plain local plan: the view's UNION over both
--- reads, with no split marker and no remote read (has_union, has_read). After optimization the
--- parallel-replicas analysis inserts a split above the view's UNION and converts it into a UNION of a
--- local read and a remote parallel-replicas read of the shipped fragment (no split; union, local read
--- and remote read present).
+-- Plan shape. Before optimization the marker sits above the view's UNION over both reads
+-- (has_split, has_union, has_read; no remote read yet). After optimization the split is converted
+-- into a UNION of a local read and a remote parallel-replicas read of the shipped fragment
+-- (no split; union, local read and remote read present).
 SELECT
     countIf(explain LIKE '%ParallelReplicasSplit%') > 0 AS has_split,
     countIf(explain LIKE '%Union%') > 0 AS has_union,

@@ -5,7 +5,6 @@
 #include <Columns/ColumnDecimal.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDateTime.h>
-#include <IO/WriteHelpers.h>
 #include <base/AlignedUnion.h>
 
 namespace DB
@@ -38,9 +37,6 @@ struct SingleValueDataBase
     virtual bool setIfSmaller(const SingleValueDataBase &, Arena *) = 0;
     virtual bool setIfGreater(const IColumn &, size_t row_num, Arena *) = 0;
     virtual bool setIfGreater(const SingleValueDataBase &, Arena *) = 0;
-    /// Whether `setIfSmaller` / `setIfGreater` with the same argument would replace the value, without replacing it.
-    virtual bool wouldSetIfSmaller(const SingleValueDataBase &) const = 0;
-    virtual bool wouldSetIfGreater(const SingleValueDataBase &) const = 0;
 
     /// Given a column, sets the internal value to the smallest or greatest value from the column
     /// Used to implement batch min/max
@@ -95,20 +91,9 @@ struct SingleValueDataFixed
     /// This is necessary for AggregateFunctionIf, merging states, JIT (where simple add is used), etc
     bool has_value = false;
 
-    static constexpr size_t serialized_size_bound = sizeof(bool) + sizeof(T);
-
     bool has() const { return has_value; }
     void insertResultInto(IColumn & to, const DataTypePtr & type) const;
-
-    /// `out` is either a WriteBuffer or a raw `char *` cursor; both are advanced past the state.
-    template <typename Out>
-    void write(Out & out, const ISerialization &) const
-    {
-        writeBinary(has(), out);
-        if (has())
-            writeBinaryLittleEndian(value, out);
-    }
-
+    void write(WriteBuffer & buf, const ISerialization &) const;
     void read(ReadBuffer & buf, const ISerialization &, const DataTypePtr &, Arena *);
     bool isEqualTo(const IColumn & column, size_t index) const;
     bool isEqualTo(const Self & to) const;
@@ -121,8 +106,6 @@ struct SingleValueDataFixed
 
     bool setIfSmaller(const Self & to, Arena * arena);
     bool setIfGreater(const Self & to, Arena * arena);
-    bool wouldSetIfSmaller(const Self & to) const;
-    bool wouldSetIfGreater(const Self & to) const;
     bool setIfSmaller(const IColumn & column, size_t row_num, Arena * arena);
     bool setIfGreater(const IColumn & column, size_t row_num, Arena * arena);
     void setSmallest(const IColumn & column, size_t row_begin, size_t row_end, Arena *);
@@ -233,8 +216,6 @@ public:
 
     bool setIfSmaller(const SingleValueDataBase & to, Arena * arena) override;
     bool setIfGreater(const SingleValueDataBase & to, Arena * arena) override;
-    bool wouldSetIfSmaller(const SingleValueDataBase & other) const override;
-    bool wouldSetIfGreater(const SingleValueDataBase & other) const override;
     bool setIfSmaller(const IColumn & column, size_t row_num, Arena * arena) override;
     bool setIfGreater(const IColumn & column, size_t row_num, Arena * arena) override;
     void setSmallest(const IColumn & column, size_t row_begin, size_t row_end, Arena * arena) override;
@@ -329,8 +310,6 @@ public:
 
     bool setIfGreater(const IColumn & column, size_t row_num, Arena * arena) override;
     bool setIfGreater(const SingleValueDataBase &, Arena * arena) override;
-    bool wouldSetIfSmaller(const SingleValueDataBase & other) const override;
-    bool wouldSetIfGreater(const SingleValueDataBase & other) const override;
 
     static bool allocatesMemoryInArena() { return true; }
 };
@@ -361,8 +340,6 @@ public:
     bool setIfSmaller(const SingleValueDataBase & other, Arena *) override;
     bool setIfGreater(const IColumn & column, size_t row_num, Arena * arena) override;
     bool setIfGreater(const SingleValueDataBase & other, Arena *) override;
-    bool wouldSetIfSmaller(const SingleValueDataBase & other) const override;
-    bool wouldSetIfGreater(const SingleValueDataBase & other) const override;
 
     static bool allocatesMemoryInArena() { return false; }
 };
@@ -396,8 +373,6 @@ public:
     bool setIfSmaller(const SingleValueDataBase & other, Arena *) override;
     bool setIfGreater(const IColumn & column, size_t row_num, Arena * arena) override;
     bool setIfGreater(const SingleValueDataBase & other, Arena *) override;
-    bool wouldSetIfSmaller(const SingleValueDataBase & other) const override;
-    bool wouldSetIfGreater(const SingleValueDataBase & other) const override;
 
     static bool allocatesMemoryInArena() { return false; }
 };
@@ -428,8 +403,6 @@ struct SingleValueReference final : public SingleValueDataBase
 
     bool setIfGreater(const IColumn & column, size_t row_num, Arena * arena) override;
     bool setIfGreater(const SingleValueDataBase &, Arena * arena) override;
-    bool wouldSetIfSmaller(const SingleValueDataBase & other) const override;
-    bool wouldSetIfGreater(const SingleValueDataBase & other) const override;
 
     static bool allocatesMemoryInArena() { return false; }
 };
@@ -490,18 +463,4 @@ static_assert(alignof(SingleValueDataBaseMemoryBlock) == 8);
 void generateSingleValueFromType(const DataTypePtr & type, SingleValueDataBaseMemoryBlock & data);
 
 bool singleValueTypeAllocatesMemoryInArena(TypeIndex idx);
-
-/// Bridges the single-value Data classes to IAggregateFunction's bulk serialization hooks: only the
-/// fixed-width ones declare a bound, the string and generic ones keep the per-state path.
-template <typename Data>
-concept HasSerializedSizeBound = requires { Data::serialized_size_bound; };
-
-template <typename Data>
-constexpr std::optional<size_t> singleValueSerializedSizeBound()
-{
-    if constexpr (HasSerializedSizeBound<Data>)
-        return Data::serialized_size_bound;
-    else
-        return std::nullopt;
-}
 }

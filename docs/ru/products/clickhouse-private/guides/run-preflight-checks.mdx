@@ -1,0 +1,72 @@
+---
+noindex: true
+title: "Запуск проверок Preflight"
+sidebarTitle: "Запуск проверок Preflight"
+description: "Чтобы проверить готовность вашей среды или выполнить валидацию перед обновлением, мы предлагаем проверки Preflight."
+---
+
+Чтобы проверить готовность вашей среды или выполнить валидацию перед обновлением, мы предлагаем проверки Preflight. Проверки Preflight используют [Troubleshoot](https://troubleshoot.sh/) — плагин Kubernetes для диагностики кластера. В ходе этого процесса никакие данные не экспортируются.
+
+В этом практическом руководстве объясняется, как запускать проверки Preflight."
+
+<div id="install-the-plugin">
+  ## Установите плагин
+</div>
+
+```bash
+kubectl krew install preflight
+```
+
+Или см. [документацию Troubleshoot](https://troubleshoot.sh/docs/) с описанием других вариантов установки.
+
+<div id="copy-the-preflight-helm-chart">
+  ## Скопируйте Helm-чарт Preflight
+</div>
+
+Добавьте чарт Preflight на этапе копирования в ECR:
+
+```text
+skopeo copy --all docker://$SOURCE_ECR_REPO/helm/preflight-check:<<PREFLIGHT_CHART_TAG>> docker://$TARGET_ECR_REPO/helm/preflight-check:<<PREFLIGHT_CHART_TAG>>
+```
+
+<div id="run-the-checks">
+  ## Выполните проверки
+</div>
+
+Используйте `helm template`, чтобы сгенерировать спецификацию Preflight, а затем передайте результат в `kubectl preflight`:
+
+```ini
+ECR_HOST=0000000000.dkr.ecr.us-west-2.amazonaws.com
+CHART_VERSION=<<PREFLIGHT_CHART_TAG>>
+CLUSTER_NAME=default-xx-01
+
+helm template clickhouse-preflight \
+    oci://$ECR_HOST/helm/preflight-check \
+    --version=$CHART_VERSION \
+    --set preflight.clickhouseClusterName=$CLUSTER_NAME | \
+kubectl preflight -
+```
+
+Здесь проверяются метки узлов, конфигурация StorageClass и другие требования. Также проверяется готовность к обновлению существующего кластера ClickHouse, а в отчёте указываются устаревшие feature flags и новые требования.
+
+В выводе показывается каждая проверка и её статус. Если какая-либо проверка не проходит, приводятся рекомендации по устранению проблемы.
+
+Чтобы выполнить проверку для пользовательского StorageClass:
+
+```text
+    --set preflight.checks.prerequisites.storageClassName=<your-storage-class>
+```
+
+<div id="required-permissions">
+  ### Требуемые разрешения
+</div>
+
+Для выполнения `kubectl preflight` пользователю или сервисной учетной записи требуется доступ на чтение к следующим ресурсам:
+
+| Область действия                                           | Ресурсы                                                                                   |
+| ---------------------------------------------------------- | ----------------------------------------------------------------------------------------- |
+| На уровне всего кластера                                   | `nodes`, `namespaces`, `persistentvolumes`, `storageclasses`, `customresourcedefinitions` |
+| Пространство имен оператора (`clickhouse-operator-system`) | `deployments`, `replicasets`, `pods`, `services`, `configmaps`, `events`                  |
+| Пространство имен кластера (`ns-<cluster-name>`)           | `statefulsets`, `pods`, `persistentvolumeclaims`, `services`, `configmaps`, `events`      |
+
+Достаточно, чтобы у субъекта была встроенная РольКластера `view` и доступ `view` к соответствующим пространствам имен.

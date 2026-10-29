@@ -15,6 +15,10 @@
 
 namespace DB
 {
+namespace ErrorCodes
+{
+extern const int TOO_FEW_ARGUMENTS_FOR_FUNCTION;
+}
 
 using namespace GatherUtils;
 
@@ -44,15 +48,12 @@ public:
 
     bool useDefaultImplementationForConstants() const override { return true; }
 
-    String getSignatureString() const override
+    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
-        /// Accept zero or at least two arguments, but not exactly one: a single argument hits the
-        /// passthrough in `executeImpl` that returns the input column unchanged, which would
-        /// contradict the declared `String` result type (legacy rejected it with
-        /// `TOO_FEW_ARGUMENTS_FOR_FUNCTION`). The `concat` overload resolver routes a single
-        /// argument to `toString` separately, so only the direct `ConcatImpl`
-        /// (`concatAssumeInjective`) relies on this.
-        return "() -> String OR (Any, Any, ...) -> String";
+        if (arguments.size() == 1)
+            throw Exception(ErrorCodes::TOO_FEW_ARGUMENTS_FOR_FUNCTION, "Number of arguments for function {} should not be 1", getName());
+
+        return std::make_shared<DataTypeString>();
     }
 
     DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
@@ -213,10 +214,8 @@ public:
 
     bool isInjective(const ColumnsWithTypeAndName & arguments) const override
     {
-        /// When called with a single argument, concat delegates to toString, so the claim has to be
-        /// the one toString makes: it depends on the argument type, because rendering a date-time in a
-        /// time zone that has a UTC offset transition maps two distinct instants onto one string.
-        return arguments.size() == 1 && to_string->isInjective(arguments);
+        /// When called with a single argument, concat delegates to toString which is injective.
+        return arguments.size() == 1;
     }
 
     FunctionBasePtr buildImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & return_type) const override
@@ -235,10 +234,10 @@ public:
             return_type);
     }
 
-    String getSignatureString() const override
+    DataTypePtr getReturnTypeImpl(const DataTypes &) const override
     {
-        /// We always return String from concat, even if arguments were fixed strings.
-        return "([Any], ...) -> String";
+        /// We always return Strings from concat, even if arguments were fixed strings.
+        return std::make_shared<DataTypeString>();
     }
 
     DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
@@ -260,7 +259,7 @@ REGISTER_FUNCTION(Concat)
     FunctionDocumentation::Description description = R"(
 Concatenates the given arguments.
 
-Arguments which are not of types [`String`](/reference/data-types/string) or [`FixedString`](/reference/data-types/fixedstring) are converted to strings using their default serialization.
+Arguments which are not of types [`String`](../data-types/string.md) or [`FixedString`](../data-types/fixedstring.md) are converted to strings using their default serialization.
 As this decreases performance, it is not recommended to use non-String/FixedString arguments.
 )";
     FunctionDocumentation::Syntax syntax = "concat([s1, s2, ...])";
@@ -312,17 +311,13 @@ Can be used for optimization of `GROUP BY`.
     FunctionDocumentation::Examples examples_injective = {
     {
         "Group by optimization",
+        "SELECT concat(key1, key2), sum(value) FROM key_val GROUP BY concatAssumeInjective(key1, key2)",
         R"(
-CREATE TABLE key_val (key1 String, key2 String, value UInt32) ENGINE = Memory;
-INSERT INTO key_val VALUES ('Hello, ', 'World!', 1), ('Hello, ', 'World!', 2), ('Hello, ', 'World', 3);
-
-SELECT concatAssumeInjective(key1, key2) AS key, sum(value) FROM key_val GROUP BY key ORDER BY key;
-        )",
-        R"(
-┌─key───────────┬─sum(value)─┐
-│ Hello, World  │          3 │
-│ Hello, World! │          3 │
-└───────────────┴────────────┘
+┌─concat(key1, key2)─┬─sum(value)─┐
+│ Hello, World!      │          3 │
+│ Hello, World!      │          2 │
+│ Hello, World       │          3 │
+└────────────────────┴────────────┘
         )"
     }
     };

@@ -1,0 +1,218 @@
+---
+slug: /cloud/managed-postgres/migrations/clickhouse-cloud
+sidebarTitle: 'ClickHouse Cloud'
+title: الترحيل إلى Managed Postgres باستخدام ClickHouse Cloud
+description: 'تعرّف على كيفية ترحيل قاعدة بيانات PostgreSQL الخاصة بك إلى ClickHouse Managed Postgres باستخدام معالج استيراد مصادر البيانات المضمّن في ClickHouse Cloud.'
+keywords: ['Postgres', 'PostgreSQL', 'النسخ المنطقي', 'الترحيل', 'نقل البيانات', 'Managed Postgres', 'مصادر البيانات', 'استيراد']
+doc_type: 'guide'
+---
+
+import BetaBadge from "/snippets/ar/components/BetaBadge/BetaBadge.jsx";
+import { Image } from "/snippets/ar/components/Image.jsx";
+
+<BetaBadge />
+
+يتضمن ClickHouse Cloud معالج استيراد مضمّنًا ينقل قاعدة بيانات PostgreSQL الخارجية لديك إلى خدمة Managed Postgres. ويتولى هذا المعالج الاتصال بالمصدر، وتصدير المخطط واستيراده، وإعدادات النسخ المتماثل، واختيار الجداول، عبر خمس خطوات موجَّهة.
+
+<div id="prerequisites">
+  ## المتطلبات الأساسية
+</div>
+
+* إمكانية الوصول إلى قاعدة بيانات PostgreSQL المصدر لديك باستخدام مستخدم لديه صلاحيات النسخ المتماثل.
+* خدمة ClickHouse Managed Postgres كوجهة لعملية الترحيل. إذا لم تكن لديك واحدة بعد، فراجع [دليل البدء السريع](/ar/products/managed-postgres/quickstart).
+* تثبيت `pg_dump` و`psql` على جهازك المحلي. يأتي كلاهما ضمن أدوات عميل PostgreSQL القياسية.
+
+<div id="considerations">
+  ## اعتبارات قبل الترحيل
+</div>
+
+* **نشر تغييرات DDL**: يلتقط النسخ المستمر (CDC) عمليات DML و`ADD COLUMN`. أما تغييرات DDL الأخرى، مثل `DROP COLUMN` و`ALTER COLUMN`، فلا يتم نشرها ويجب تطبيقها يدويًا على الجهة الهدف.
+
+<div id="step-1-connect">
+  ## الخطوة 1: الاتصال بقاعدة بيانات المصدر
+</div>
+
+افتح [ClickHouse Cloud console](https://clickhouse.cloud) وحدد خدمة Managed Postgres الخاصة بك.
+
+<Image img="/images/managed-postgres/pgpg/servicecard.webp" alt="بطاقة خدمة Managed Postgres في قائمة خدمات ClickHouse Cloud" size="lg" border />
+
+في الشريط الجانبي الأيسر، انقر على **مصادر البيانات**.
+
+<Image img="/images/managed-postgres/pgpg/overview.webp" alt="إدخال مصادر البيانات في الشريط الجانبي لخدمة Managed Postgres" size="lg" border />
+
+انقر على **Start import**.
+
+<Image img="/images/managed-postgres/pgpg/startimport.webp" alt="صفحة مصادر البيانات مع زر Start import" size="lg" border />
+
+أدخل تفاصيل الاتصال بقاعدة بيانات PostgreSQL المصدر: المضيف، والمنفذ، واسم المستخدم، وكلمة المرور، واسم قاعدة البيانات. فعّل **TLS** إذا كانت قاعدة البيانات المصدر تتطلب ذلك.
+
+إذا كنت بحاجة إلى اتصال خاص بقاعدة بيانات المصدر، يمكنك اختيار **SSH tunneling** وإدخال تفاصيل SSH المطلوبة. يتيح ذلك لعملية الترحيل الاتصال بأمان بقواعد البيانات غير المتاحة عبر الإنترنت العام.
+
+اختر طريقة الإدخال:
+
+* **Initial load + CDC** — ينسخ البيانات الحالية أولًا، ثم يُبقي الوجهة متزامنة مع التغييرات اللاحقة.
+* **Initial load only** — نسخ لمرة واحدة فقط، من دون تكرار مستمر.
+* **CDC only** — يتجاوز النسخ الأولي ويكرّر فقط التغييرات الجديدة من هذه النقطة فصاعدًا.
+
+<Image img="/images/managed-postgres/pgpg/migrationform.webp" alt="الخطوة 1: نموذج الاتصال بقاعدة بيانات المصدر مع خيارات طريقة الإدخال" size="lg" border />
+
+انقر على **Next**.
+
+<div id="step-2-export-schema">
+  ## الخطوة 2: صدّر مخطط قاعدة بياناتك
+</div>
+
+يعرض المعالج أمر `pg_dump` مُعبّأً مسبقًا بتفاصيل اتصال المصدر. شغّله في الطرفية:
+
+<Image img="/images/managed-postgres/pgpg/nextexport.webp" alt="الخطوة 2: أمر pg_dump لتصدير المخطط" size="lg" border />
+
+```shell
+pg_dump \
+  -h <source_host> \
+  -U <source_user> \
+  -d <source_database> \
+  --schema-only \
+  -f pg.sql
+```
+
+سيُنشئ هذا الملف `pg.sql` في الدليل الحالي.
+
+<Image img="/images/managed-postgres/pgpg/psqlexport.webp" alt="مخرجات الطرفية بعد تشغيل pg_dump" size="lg" border />
+
+انقر على **التالي**.
+
+<div id="step-3-import-schema">
+  ## الخطوة 3: استيراد المخطط إلى خدمة Managed Postgres الخاصة بك
+</div>
+
+اختر قاعدة البيانات الوجهة من القائمة المنسدلة، أو انقر على **إنشاء قاعدة بيانات جديدة** لإنشاء واحدة.
+
+يعرض المعالج أمر `psql` لتطبيق ملف تفريغ المخطط على خدمة Managed Postgres الخاصة بك. شغِّله في الطرفية:
+
+<Image img="/images/managed-postgres/pgpg/nextimport.webp" alt="الخطوة 3: أمر psql لاستيراد المخطط" size="lg" border />
+
+```shell
+psql \
+  -h <target_host> \
+  -p 5432 \
+  -U <target_user> \
+  -d <target_database> \
+  -f pg.sql
+```
+
+<Image img="/images/managed-postgres/pgpg/psqlimport.webp" alt="مخرجات الطرفية بعد تشغيل استيراد المخطط عبر psql" size="lg" border />
+
+انقر على **Next**.
+
+<div id="step-4-ingestion-settings">
+  ## الخطوة 4: ضبط إعدادات الإدخال
+</div>
+
+حدّد الـ publication المطلوب استخدامه للنسخ المتماثل المنطقي. إذا تركت هذا الحقل فارغًا، فسيتم إنشاء publication تلقائيًا.
+
+وسّع **إعدادات النسخ المتماثل المتقدمة** لضبط معدل النقل:
+
+| الإعداد                                | الافتراضي | الوصف                                           |
+| -------------------------------------- | --------- | ----------------------------------------------- |
+| فترة المزامنة (بالثواني)               | 10        | مدى تكرار استطلاع replication slot              |
+| الخيوط المتوازية للتحميل الأولي        | 4         | عدد الخيوط المستخدمة في مرحلة النسخ المجمّع     |
+| حجم دفعة السحب                         | 100,000   | عدد الصفوف التي يتم جلبها في كل دفعة نسخ متماثل |
+| عدد الصفوف في اللقطة لكل partition     | 100000    | حجم partition للقطات الجداول الكبيرة            |
+| عدد الجداول التي تؤخذ لقطاتها بالتوازي | 1         | الجداول التي تؤخذ لقطاتها بشكل متزامن           |
+
+<Image img="/images/managed-postgres/pgpg/advancedsettings.webp" alt="الخطوة 4: نموذج إعدادات الإدخال مع publication وخيارات النسخ المتماثل المتقدمة" size="lg" border />
+
+انقر **التالي**.
+
+<div id="step-5-select-tables">
+  ## الخطوة 5: حدِّد الجداول
+</div>
+
+حدِّد الجداول التي تريد مزامنتها. الجداول مُجمَّعة حسب المخططات. حدِّد جداول فردية أو وسِّع مخططًا لاختيارها جميعًا.
+
+<Image img="/images/managed-postgres/pgpg/tablepicker.webp" alt="الخطوة 5: منتقي الجداول مُجمَّع حسب المخطط مع زر Create migration" size="lg" border />
+
+انقر على **Create migration**.
+
+<div id="monitor">
+  ## راقب الترحيل
+</div>
+
+بعد إنشاء الترحيل، ستراه مُدرجًا ضمن **مصادر البيانات** بحالة **قيد التشغيل**.
+
+<Image img="/images/managed-postgres/pgpg/migrationlist.webp" alt="قائمة مصادر البيانات تعرض ترحيلاً قيد التشغيل" size="lg" border />
+
+انقر على الترحيل لفتح عرض التفاصيل. تعرض علامة التبويب **الجداول** تقدّم التحميل الأولي لكل جدول، بما في ذلك الصفوف المُعالَجة، والتقسيمات، ومتوسط الوقت لكل تقسيم. وتعرض علامة التبويب **المقاييس** تأخر النسخ المتماثل ومعدل النقل بمجرد بدء CDC.
+
+<Image img="/images/managed-postgres/pgpg/initialload.webp" alt="عرض تفاصيل الترحيل يُظهر إحصاءات التحميل الأولي لكل جدول" size="lg" border />
+
+<div id="post-migration">
+  ## مهام ما بعد الترحيل
+</div>
+
+بمجرد اكتمال التحميل الأوّلي، وإذا كنت تستخدم CDC، ووصول تأخر النسخ المتماثل إلى ما يقارب الصفر:
+
+**تحقق من أعداد الصفوف.** أجرِ تحققًا سريعًا من الجداول المهمة في كلٍّ من المصدر والوجهة قبل تحويل حركة المرور:
+
+```sql
+SELECT COUNT(*) FROM public.orders;
+```
+
+**أوقِف عمليات الكتابة إلى المصدر.** أوقِف عمليات الكتابة من التطبيق مؤقتًا. لفرض وضع القراءة فقط أثناء التحويل:
+
+```sql
+ALTER DATABASE <source_db> SET default_transaction_read_only = on;
+```
+
+**تأكّد من اكتمال مزامنة النسخ المتماثل.** قارِن أحدث صفّ في المصدر والوجهة:
+
+```sql
+-- Run on both source and target
+SELECT MAX(id), MAX(updated_at) FROM public.orders;
+```
+
+**أعد ضبط التسلسلات.** اضبط التسلسلات لتتوافق مع القيم القصوى الحالية في كل جدول:
+
+```sql
+DO $$
+DECLARE r RECORD;
+BEGIN
+    FOR r IN
+        SELECT
+            n.nspname AS schema_name,
+            c.relname AS table_name,
+            a.attname AS column_name,
+            pg_get_serial_sequence(format('%I.%I', n.nspname, c.relname), a.attname) AS seq_name
+        FROM pg_class c
+        JOIN pg_namespace n ON n.oid = c.relnamespace
+        JOIN pg_attribute a ON a.attrelid = c.oid
+        WHERE c.relkind = 'r'
+            AND a.attnum > 0
+            AND NOT a.attisdropped
+            AND n.nspname NOT IN ('pg_catalog', 'information_schema')
+    LOOP
+        IF r.seq_name IS NOT NULL THEN
+            EXECUTE format(
+                'SELECT setval(%L, COALESCE((SELECT MAX(%I) FROM %I.%I), 0) + 1, false)',
+                r.seq_name, r.column_name, r.schema_name, r.table_name
+            );
+        END IF;
+    END LOOP;
+END $$;
+```
+
+**حوِّل حركة مرور التطبيق.** وجِّه عمليات القراءة والكتابة إلى خدمة Managed Postgres، وراقب الأخطاء ومخالفات القيود وحالة النسخ المتماثل.
+
+**نظِّف.**  بعد تحويل حركة المرور والتأكد من أن الخدمة الجديدة تعمل بشكل سليم، احذف الترحيل من **مصادر البيانات**. إذا كنت قد استخدمت CDC، فاحذف replication slot من المصدر لتحرير الموارد:
+
+```sql
+SELECT pg_drop_replication_slot('<slot_name>');
+```
+
+<div id="next-steps">
+  ## الخطوات التالية
+</div>
+
+* [دليل البدء السريع لـ Managed Postgres](/ar/products/managed-postgres/quickstart)
+* [تفاصيل الاتصال بـ Managed Postgres](/ar/products/managed-postgres/connection)
+* [الأسئلة الشائعة حول Postgres في ClickPipes](/ar/integrations/clickpipes/postgres/faq)

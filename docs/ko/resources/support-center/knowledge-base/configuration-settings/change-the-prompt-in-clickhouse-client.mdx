@@ -1,12 +1,16 @@
 ---
 title: clickhouse-client에서 프롬프트 변경
-description: "이 문서에서는 ClickHouse client와 clickhouse-local 터미널 창의 프롬프트를 :)에서 접두사 뒤에 :)가 붙는 형식으로 변경하는 방법을 설명합니다"
+description: "이 문서에서는 clickhouse client와 clickhouse-local 터미널 창의 프롬프트를 :)에서 접두사 뒤에 :)가 붙는 형식으로 변경하는 방법을 설명합니다"
 date: 2023-11-16
 tags: ['설정', '네이티브 클라이언트 및 인터페이스']
 keywords: ['ClickHouse Client', '프롬프트 변경']
 ---
 
 import { Image } from "/snippets/ko/components/Image.jsx";
+
+{frontMatter.description}
+
+{/* 생략 */}
 
 `clickhouse client` 및 clickhouse-local이 터미널 창에 프롬프트를 표시하는 방식이 마음에 들지 않는다면, 접두사를 추가하도록 변경할 수 있습니다.
 이 문서에서는 프롬프트를 원하는 대로 변경하는 방법을 설명합니다.
@@ -78,7 +82,9 @@ clickhouse -C christmas.yaml
 
 <Image img="/images/knowledgebase/change-the-prompt-in-clickhouse-client/4_prompt.webp" size="md" alt="노란 원형 이모지가 표시된 clickhouse client 프롬프트" />
 
-## 구성 파일 - connections_credentials {#config-file---connections_credentials}
+<div id="config-file---connections_credentials">
+  ## 구성 파일 - connections_credentials
+</div>
 
 또는 각 연결 자격 증명에 대해 프롬프트를 지정할 수도 있습니다.
 이는 `clickhouse-client`를 사용할 때만 의미가 있습니다.
@@ -87,7 +93,7 @@ clickhouse -C christmas.yaml
 <config>
     <connections_credentials>
         <connection>
-            <n>prod</n>
+            <n>prod<n>
             <hostname>127.0.0.1</hostname>
             <port>9000</port>
             <secure>0</secure>
@@ -95,7 +101,7 @@ clickhouse -C christmas.yaml
             <prompt>\e[31m[PRODUCTION]\e[0m {user}@prod</prompt>
         </connection>
         <connection>
-            <n>dev</n>
+            <n>dev<n>
             <hostname>127.0.0.1</hostname>
             <port>9000</port>
             <secure>0</secure>

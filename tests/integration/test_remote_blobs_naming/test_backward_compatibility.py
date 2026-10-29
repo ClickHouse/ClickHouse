@@ -264,15 +264,7 @@ def test_replicated_merge_tree(cluster, test_case):
         [node_old, node_new], ["test_replicated_merge_tree"], [create_table_statement]
     ):
         node_old.query("INSERT INTO test_replicated_merge_tree VALUES (0, 'a')")
-        # The new server materializes column statistics on INSERT by default, which would write an
-        # extra statistics.packed file and change the number of remote blobs. Disable it for this
-        # INSERT. Pass it as a client-level setting rather than an inline `SETTINGS` clause: the
-        # latter is invalid after `VALUES` and also breaks under async INSERT, while the client
-        # setting is understood by both versions, unlike the table-level auto_statistics_types.
-        node_new.query(
-            "INSERT INTO test_replicated_merge_tree VALUES (1, 'b')",
-            settings={"materialize_statistics_on_insert": 0},
-        )
+        node_new.query("INSERT INTO test_replicated_merge_tree VALUES (1, 'b')")
 
         # node_old have to fetch metadata from node_new and vice versa
         node_old.query("SYSTEM SYNC REPLICA test_replicated_merge_tree")

@@ -7,10 +7,10 @@
 #include <cerrno>
 
 #if USE_SSL
-#include <Common/Exception.h>
 #include <Poco/Net/SecureStreamSocketImpl.h>
 #include <openssl/ssl.h>
 #include <openssl/err.h>
+#include <fcntl.h>
 #endif
 
 #if USE_SILK && USE_SSL
@@ -106,7 +106,7 @@ SSLSocketStateResult getSSLSocketStateImpl(ssl_st * ssl)
 }
 
 /// Force the socket into non-blocking mode for the duration of a call, restoring the original
-/// mode afterwards, so that `SSL_peek` on an idle pooled connection can never block.
+/// flags afterwards, so that `SSL_peek` on an idle pooled connection can never block.
 class ScopedNonBlocking
 {
 public:
@@ -119,24 +119,15 @@ public:
         if (dynamic_cast<Silk::SecureFiberStreamSocketImpl *>(&socket_impl))
             return;
 #endif
-        was_blocking = socket_impl.getBlocking();
-        if (was_blocking)
-            socket_impl.setBlocking(false);
+        flags = ::fcntl(socket_impl.sockfd(), F_GETFL, 0);
+        if (flags >= 0 && !(flags & O_NONBLOCK))
+            ::fcntl(socket_impl.sockfd(), F_SETFL, flags | O_NONBLOCK);
     }
 
     ~ScopedNonBlocking()
     {
-        if (!was_blocking)
-            return;
-
-        try
-        {
-            socket_impl.setBlocking(true);
-        }
-        catch (...)
-        {
-            tryLogCurrentException(__PRETTY_FUNCTION__);
-        }
+        if (flags >= 0 && !(flags & O_NONBLOCK))
+            ::fcntl(socket_impl.sockfd(), F_SETFL, flags);
     }
 
     ScopedNonBlocking(const ScopedNonBlocking &) = delete;
@@ -144,13 +135,13 @@ public:
 
 private:
     Poco::Net::SocketImpl & socket_impl;
-    /// Whether a regular (non-Silk) socket was blocking before the probe.
-    bool was_blocking = false;
+    /// Original file status flags of a regular (non-Silk) socket; -1 when untouched.
+    int flags = -1;
 };
 
 }
 
-SocketState getSSLSocketState(ssl_st * ssl)
+SocketState getSslSocketState(ssl_st * ssl)
 {
     return getSSLSocketStateImpl(ssl).state;
 }
@@ -189,9 +180,9 @@ bool isSocketPeerClosed(const Poco::Net::StreamSocket & socket)
 
 #if USE_SSL
 
-bool isSSLPeerClosed(ssl_st * ssl)
+bool isSslPeerClosed(ssl_st * ssl)
 {
-    return getSSLSocketState(ssl) == SocketState::Closed;
+    return getSslSocketState(ssl) == SocketState::Closed;
 }
 
 #endif

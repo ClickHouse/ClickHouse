@@ -27,7 +27,6 @@ public:
                                                          IParser::Pos & pos,
                                                          Expected & expected,
                                                          bool enable_shorthand_syntax);
-    std::map<String, Documentation> getDocumentation() const override;
 
 protected:
     const char * getName() const override { return "SET query"; }
@@ -36,10 +35,5 @@ protected:
     bool parse_only_internals;
     bool shorthand_syntax;
 };
-
-/// True if the input starts with an unambiguous SET statement prefix. Raw-text dialect parsers
-/// (PromQL, polyglot) use this to decide between `ParserSetQuery` and their own grammar, because
-/// the `SET <setting>` shorthand would otherwise swallow queries over a metric named `set`.
-bool isCommittedToSetQuery(IParser::Pos pos);
 
 }

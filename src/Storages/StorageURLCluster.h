@@ -38,11 +38,7 @@ public:
         StorageMetadataPtr) const override;
 
 private:
-    void updateQueryToSendIfNeeded(
-        ASTPtr & query,
-        const StorageSnapshotPtr & storage_snapshot,
-        const ContextPtr & context,
-        const String & target_cluster_name) override;
+    void updateQueryToSendIfNeeded(ASTPtr & query, const StorageSnapshotPtr & storage_snapshot, const ContextPtr & context) override;
 
     String uri;
     String format_name;

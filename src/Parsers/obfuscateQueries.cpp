@@ -14,6 +14,7 @@
 #include <algorithm>
 #include <iterator>
 
+#include <boost/algorithm/string.hpp>
 #include <pcg_random.hpp>
 
 
@@ -66,14 +67,10 @@ const std::unordered_set<std::string> & getObfuscateKeywords()
         {
             /// The keyword may consist of several tokens (ORDER BY or GROUP BY)
             /// We will split them and add separately.
-            for (size_t begin = 0; begin <= keyword.size();)
-            {
-                size_t end = keyword.find(' ', begin);
-                if (end == std::string::npos)
-                    end = keyword.size();
-                instance.insert(keyword.substr(begin, end - begin));
-                begin = end + 1;
-            }
+            std::vector<std::string> tokens;
+            boost::split(tokens, keyword, [](char c) { return c == ' '; });
+            for (const auto & token : tokens)
+                instance.insert(token);
         }
 
         /// Additional words used in SYSTEM commands, dictionary definitions, special SQL

@@ -5,28 +5,12 @@
 #include <Processors/Formats/IOutputFormat.h>
 #include <Interpreters/Context.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/SchemaProcessor.h>
-#include <IO/WriteBufferFromFileBase.h>
 
 
 namespace DB
 {
 
 #if USE_AVRO
-
-static std::vector<Int64> fieldIdsOfWrittenColumns(const ColumnMapper & mapper, const Block & written_block)
-{
-    const auto & field_id_by_name = mapper.getStorageColumnEncoding();
-    std::vector<Int64> field_ids;
-    field_ids.reserve(written_block.columns());
-    for (const auto & column : written_block)
-    {
-        auto it = field_id_by_name.find(column.name);
-        if (it == field_id_by_name.end())
-            return {};
-        field_ids.push_back(it->second);
-    }
-    return field_ids;
-}
 
 MultipleFileWriter::MultipleFileWriter(
     UInt64 max_data_file_num_rows_,
@@ -42,8 +26,8 @@ MultipleFileWriter::MultipleFileWriter(
     : max_data_file_num_rows(max_data_file_num_rows_)
     , max_data_file_num_bytes(max_data_file_num_bytes_)
     , schema(schema_)
-    , column_mapper(Iceberg::createColumnMapperFromFields(schema_))
-    , stats(schema_, fieldIdsOfWrittenColumns(*column_mapper, *sample_block_))
+    , stats(schema_)
+    , column_mapper(std::make_shared<ColumnMapper>())
     , filename_generator(filename_generator_)
     , path_resolver(path_resolver_)
     , object_storage(object_storage_)
@@ -52,6 +36,7 @@ MultipleFileWriter::MultipleFileWriter(
     , write_format(std::move(write_format_))
     , sample_block(sample_block_)
 {
+    column_mapper->setStorageColumnEncoding(Iceberg::IcebergSchemaProcessor::traverseSchema(schema_));
 }
 
 void MultipleFileWriter::startNewFile()
@@ -59,7 +44,7 @@ void MultipleFileWriter::startNewFile()
     if (buffer)
         finalize();
 
-    current_file_stats = std::make_shared<DataFileStatistics>(schema, fieldIdsOfWrittenColumns(*column_mapper, *sample_block));
+    current_file_stats = std::make_shared<DataFileStatistics>(schema);
     current_file_num_rows = 0;
     current_file_num_bytes = 0;
     auto metadata_path = filename_generator.generateDataFileName();
@@ -75,8 +60,6 @@ void MultipleFileWriter::startNewFile()
         format_settings->parquet.bloom_filter_push_down = true;
         format_settings->parquet.filter_push_down = true;
     }
-    /// The ORC String/FixedString logical-type handling lives in ORCBlockOutputFormat, keyed on
-    /// the column mapper, so it covers the compaction/mutation rewrite paths too.
     FormatFilterInfoPtr format_filter_info = std::make_shared<FormatFilterInfo>(nullptr, context, column_mapper, nullptr, nullptr);
     output_format = FormatFactory::instance().getOutputFormatParallelIfPossible(
         write_format, *buffer, *sample_block, context, format_settings, format_filter_info);

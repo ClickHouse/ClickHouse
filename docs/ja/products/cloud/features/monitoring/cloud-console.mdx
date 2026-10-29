@@ -76,34 +76,34 @@ Infrastructure ダッシュボードでは、ClickHouse プロセスが使用し
 
 以下の表は、高度なダッシュボード内の各グラフと、対応する ClickHouse メトリクス、取得元のシステムテーブル、および集計タイプの対応関係を示しています。
 
-| グラフ                       | 対応する ClickHouse メトリクス名                                                                                                                                                  | システムテーブル                  | 集計タイプ                   |
-| ------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------- | ----------------------- |
-| クエリ/秒                     | `ProfileEvent_Query`                                                                                                                                                    | `metric_log`              | Sum / bucketSizeSeconds |
-| 実行中のクエリ                   | `CurrentMetric_Query`                                                                                                                                                   | `metric_log`              | Avg                     |
-| 実行中のマージ                   | `CurrentMetric_Merge`                                                                                                                                                   | `metric_log`              | Avg                     |
-| 読み取りバイト数/秒                | `ProfileEvent_SelectedBytes`                                                                                                                                            | `metric_log`              | Sum / bucketSizeSeconds |
-| IO 待機                     | `ProfileEvent_OSIOWaitMicroseconds`                                                                                                                                     | `metric_log`              | Sum / bucketSizeSeconds |
-| S3 読み取り待機                 | `ProfileEvent_ReadBufferFromS3Microseconds`                                                                                                                             | `metric_log`              | Sum / bucketSizeSeconds |
-| S3 読み取りエラー/秒              | `ProfileEvent_ReadBufferFromS3RequestsErrors`                                                                                                                           | `metric_log`              | Sum / bucketSizeSeconds |
-| CPU 待機                    | `ProfileEvent_OSCPUWaitMicroseconds`                                                                                                                                    | `metric_log`              | Sum / bucketSizeSeconds |
-| OS CPU 使用率 (ユーザー空間、正規化済み) | `OSUserTimeNormalized`                                                                                                                                                  | `asynchronous_metric_log` |                         |
-| OS CPU 使用率 (カーネル、正規化済み)   | `OSSystemTimeNormalized`                                                                                                                                                | `asynchronous_metric_log` |                         |
-| ディスクからの読み取り               | `ProfileEvent_OSReadBytes`                                                                                                                                              | `metric_log`              | Sum / bucketSizeSeconds |
-| ファイルシステムからの読み取り           | `ProfileEvent_OSReadChars`                                                                                                                                              | `metric_log`              | Sum / bucketSizeSeconds |
-| メモリ (追跡対象、バイト)            | `CurrentMetric_MemoryTracking`                                                                                                                                          | `metric_log`              |                         |
-| MergeTree パーツ総数           | `TotalPartsOfMergeTreeTables`                                                                                                                                           | `asynchronous_metric_log` |                         |
-| パーティションあたりの最大パーツ数         | `MaxPartCountForPartition`                                                                                                                                              | `asynchronous_metric_log` |                         |
-| S3 からの読み取り                | `ProfileEvent_ReadBufferFromS3Bytes`                                                                                                                                    | `metric_log`              | Sum / bucketSizeSeconds |
-| ファイルシステムキャッシュサイズ          | `CurrentMetric_FilesystemCacheSize`                                                                                                                                     | `metric_log`              |                         |
-| Disk S3 書き込みリクエスト/秒       | `ProfileEvent_DiskS3PutObject` + `ProfileEvent_DiskS3UploadPart` + `ProfileEvent_DiskS3CreateMultipartUpload` + `ProfileEvent_DiskS3CompleteMultipartUpload`            | `metric_log`              | Sum / bucketSizeSeconds |
-| Disk S3 読み取りリクエスト/秒       | `ProfileEvent_DiskS3GetObject` + `ProfileEvent_DiskS3HeadObject` + `ProfileEvent_DiskS3ListObjects`                                                                     | `metric_log`              | Sum / bucketSizeSeconds |
-| FS cache ヒット率             | `sum(ProfileEvent_CachedReadBufferReadFromCacheBytes) / (sum(ProfileEvent_CachedReadBufferReadFromCacheBytes) + sum(ProfileEvent_CachedReadBufferReadFromSourceBytes))` | `metric_log`              |                         |
-| Page cache ヒット率           | `greatest(0, (sum(ProfileEvent_OSReadChars) - sum(ProfileEvent_OSReadBytes)) / (sum(ProfileEvent_OSReadChars) + sum(ProfileEvent_ReadBufferFromS3Bytes)))`              | `metric_log`              |                         |
-| ネットワーク受信バイト数/秒            | `NetworkReceiveBytes`                                                                                                                                                   | `asynchronous_metric_log` | Sum / bucketSizeSeconds |
-| ネットワーク送信バイト数/秒            | `NetworkSendBytes`                                                                                                                                                      | `asynchronous_metric_log` | Sum / bucketSizeSeconds |
-| 同時 TCP 接続数                | `CurrentMetric_TCPConnection`                                                                                                                                           | `metric_log`              |                         |
-| 同時 MySQL 接続数              | `CurrentMetric_MySQLConnection`                                                                                                                                         | `metric_log`              |                         |
-| 同時 HTTP 接続数               | `CurrentMetric_HTTPConnection`                                                                                                                                          | `metric_log`              |                         |
+| グラフ                        | 対応する ClickHouse メトリクス名                                                                                                                                                  | システムテーブル                  | 集計タイプ                   |
+| -------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------- | ----------------------- |
+| クエリ/秒                      | `ProfileEvent_Query`                                                                                                                                                    | `metric_log`              | Sum / bucketSizeSeconds |
+| 実行中のクエリ                    | `CurrentMetric_Query`                                                                                                                                                   | `metric_log`              | Avg                     |
+| 実行中のマージ                    | `CurrentMetric_Merge`                                                                                                                                                   | `metric_log`              | Avg                     |
+| 読み取りバイト数/秒                 | `ProfileEvent_SelectedBytes`                                                                                                                                            | `metric_log`              | Sum / bucketSizeSeconds |
+| IO 待機                      | `ProfileEvent_OSIOWaitMicroseconds`                                                                                                                                     | `metric_log`              | Sum / bucketSizeSeconds |
+| S3 読み取り待機                  | `ProfileEvent_ReadBufferFromS3Microseconds`                                                                                                                             | `metric_log`              | Sum / bucketSizeSeconds |
+| S3 読み取りエラー/秒               | `ProfileEvent_ReadBufferFromS3RequestsErrors`                                                                                                                           | `metric_log`              | Sum / bucketSizeSeconds |
+| CPU 待機                     | `ProfileEvent_OSCPUWaitMicroseconds`                                                                                                                                    | `metric_log`              | Sum / bucketSizeSeconds |
+| OS CPU 使用率 (ユーザー空間、正規化済み)  | `OSUserTimeNormalized`                                                                                                                                                  | `asynchronous_metric_log` |                         |
+| OS CPU 使用率 (カーネル、正規化済み)    | `OSSystemTimeNormalized`                                                                                                                                                | `asynchronous_metric_log` |                         |
+| ディスクからの読み取り                | `ProfileEvent_OSReadBytes`                                                                                                                                              | `metric_log`              | Sum / bucketSizeSeconds |
+| ファイルシステムからの読み取り            | `ProfileEvent_OSReadChars`                                                                                                                                              | `metric_log`              | Sum / bucketSizeSeconds |
+| メモリ (追跡対象、バイト)             | `CurrentMetric_MemoryTracking`                                                                                                                                          | `metric_log`              |                         |
+| MergeTree パーツ総数            | `TotalPartsOfMergeTreeTables`                                                                                                                                           | `asynchronous_metric_log` |                         |
+| パーティションあたりの最大パーツ数          | `MaxPartCountForPartition`                                                                                                                                              | `asynchronous_metric_log` |                         |
+| S3 からの読み取り                 | `ProfileEvent_ReadBufferFromS3Bytes`                                                                                                                                    | `metric_log`              | Sum / bucketSizeSeconds |
+| ファイルシステムキャッシュサイズ           | `CurrentMetric_FilesystemCacheSize`                                                                                                                                     | `metric_log`              |                         |
+| Disk S3 書き込みリクエスト/秒        | `ProfileEvent_DiskS3PutObject` + `ProfileEvent_DiskS3UploadPart` + `ProfileEvent_DiskS3CreateMultipartUpload` + `ProfileEvent_DiskS3CompleteMultipartUpload`            | `metric_log`              | Sum / bucketSizeSeconds |
+| Disk S3 読み取りリクエスト/秒        | `ProfileEvent_DiskS3GetObject` + `ProfileEvent_DiskS3HeadObject` + `ProfileEvent_DiskS3ListObjects`                                                                     | `metric_log`              | Sum / bucketSizeSeconds |
+| FS cache ヒット率              | `sum(ProfileEvent_CachedReadBufferReadFromCacheBytes) / (sum(ProfileEvent_CachedReadBufferReadFromCacheBytes) + sum(ProfileEvent_CachedReadBufferReadFromSourceBytes))` | `metric_log`              |                         |
+| Page cache ヒット率            | `greatest(0, (sum(ProfileEvent_OSReadChars) - sum(ProfileEvent_OSReadBytes)) / (sum(ProfileEvent_OSReadChars) + sum(ProfileEvent_ReadBufferFromS3Bytes)))`              | `metric_log`              |                         |
+| ネットワーク受信バイト数/秒             | `NetworkReceiveBytes`                                                                                                                                                   | `asynchronous_metric_log` | Sum / bucketSizeSeconds |
+| ネットワーク送信バイト数/秒             | `NetworkSendBytes`                                                                                                                                                      | `asynchronous_metric_log` | Sum / bucketSizeSeconds |
+| 同時 TCP 接続数                 | `CurrentMetric_TCPConnection`                                                                                                                                           | `metric_log`              |                         |
+| 同時 MySQL 接続数               | `CurrentMetric_MySQLConnection`                                                                                                                                         | `metric_log`              |                         |
+| 同時 HTTP 接続数                | `CurrentMetric_HTTPConnection`                                                                                                                                          | `metric_log`              |                         |
 
 各可視化の詳細と、トラブルシューティングでの活用方法については、[高度なダッシュボードのドキュメント](/ja/products/cloud/features/monitoring/advanced-dashboard)を参照してください。
 
@@ -137,7 +137,7 @@ Infrastructure ダッシュボードでは、ClickHouse プロセスが使用し
   ### クエリのドリルダウン
 </div>
 
-最近のクエリ テーブルでクエリを選択すると、選択したクエリに固有のメトリクスや情報を表示するフライアウトが開きます。
+Recent queries テーブルでクエリを選択すると、選択したクエリに固有のメトリクスや情報を表示するフライアウトが開きます。
 
 <Image img="/images/cloud/sqlconsole/insights_drilldown.webp" size="md" alt="クエリインサイト UI のクエリドリルダウン" border />
 
@@ -151,7 +151,7 @@ Infrastructure ダッシュボードでは、ClickHouse プロセスが使用し
   ## 関連ページ
 </div>
 
-* [通知](/ja/products/cloud/features/monitoring/notifications) — スケーリング イベント、エラー、請求に関するアラートを設定します
+* [Notifications](/ja/products/cloud/features/monitoring/notifications) — スケーリングイベント、エラー、請求に関するアラートを設定します
 * [高度なダッシュボード](/ja/products/cloud/features/monitoring/advanced-dashboard) — 各ダッシュボードの可視化についての詳細なリファレンス
-* [システムテーブルへのクエリ](/ja/products/cloud/features/monitoring/system-tables) — 詳細な内部診断のために、システムテーブルに対してカスタム SQL クエリを実行します
-* [Prometheus エンドポイント](/ja/products/cloud/features/monitoring/prometheus) — メトリクスを Grafana、Datadog、そのほかの Prometheus 対応ツールにエクスポートします
+* [システムテーブルのクエリ](/ja/products/cloud/features/monitoring/system-tables) — 詳細な内部診断のために、システムテーブルに対してカスタム SQL クエリを実行します
+* [Prometheus エンドポイント](/ja/products/cloud/features/monitoring/prometheus) — メトリクスを Grafana、Datadog、その他の Prometheus 互換ツールにエクスポートします

@@ -1,0 +1,520 @@
+---
+title: 'توافق DataStore مع Pandas'
+sidebarTitle: 'التوافق مع Pandas'
+slug: /chdb/datastore/pandas-compat
+description: 'القائمة الكاملة بالأساليب المتوافقة مع pandas في DataStore (209 من أساليب DataFrame)'
+keywords: ['chdb', 'datastore', 'pandas', 'التوافق', 'dataframe', 'الأساليب']
+doc_type: 'reference'
+---
+
+يوفّر DataStore **209 من أساليب pandas DataFrame** لتوافق كامل مع واجهة برمجة التطبيقات. تعمل شيفرة pandas الحالية لديك بأقل قدر من التغييرات.
+
+<div id="approach">
+  ## نهج التوافق
+</div>
+
+```python
+# Typical migration - just change the import
+- import pandas as pd
++ from chdb import datastore as pd
+
+# Your code works unchanged
+df = pd.read_csv("data.csv")
+result = df[df['age'] > 25].groupby('city')['salary'].mean()
+```
+
+**المبادئ الأساسية:**
+
+* تنفيذ جميع أساليب pandas DataFrame الـ209
+* التقييم المؤجل لتحسين SQL
+* تغليف تلقائي للأنواع (DataFrame → DataStore, Series → ColumnExpr)
+* عمليات غير قابلة للتعديل (بدون `inplace=True`)
+
+***
+
+<div id="attributes">
+  ## السمات والخصائص
+</div>
+
+| الخاصية   | الوصف                       | يُحفّز التنفيذ |
+| --------- | --------------------------- | -------------- |
+| `shape`   | زوج مرتب (صفوف، أعمدة)      | نعم            |
+| `columns` | أسماء الأعمدة (الفهرس)      | نعم            |
+| `dtypes`  | أنواع بيانات الأعمدة        | نعم            |
+| `values`  | مصفوفة NumPy                | نعم            |
+| `index`   | فهرس الصف                   | نعم            |
+| `size`    | عدد العناصر                 | نعم            |
+| `ndim`    | عدد الأبعاد                 | لا             |
+| `empty`   | ما إذا كان DataFrame فارغًا | نعم            |
+| `T`       | المنقول                     | نعم            |
+| `axes`    | قائمة المحاور               | نعم            |
+
+**أمثلة:**
+
+```python
+from chdb import datastore as pd
+
+ds = pd.read_csv("data.csv")
+
+print(ds.shape)      # (1000, 5)
+print(ds.columns)    # Index(['name', 'age', 'city', 'salary', 'dept'])
+print(ds.dtypes)     # name: object, age: int64, ...
+print(ds.empty)      # False
+```
+
+***
+
+<div id="indexing">
+  ## الفهرسة والاختيار
+</div>
+
+| الطريقة                | الوصف                          | مثال                                 |
+| ---------------------- | ------------------------------ | ------------------------------------ |
+| `df['col']`            | اختيار عمود                    | `ds['age']`                          |
+| `df[['col1', 'col2']]` | اختيار أعمدة                   | `ds[['name', 'age']]`                |
+| `df[condition]`        | الفهرسة المنطقية               | `ds[ds['age'] > 25]`                 |
+| `df.loc[...]`          | وصول معتمد على التسميات        | `ds.loc[0:10, 'name']`               |
+| `df.iloc[...]`         | وصول معتمد على الأعداد الصحيحة | `ds.iloc[0:10, 0:3]`                 |
+| `df.at[...]`           | قيمة واحدة حسب التسمية         | `ds.at[0, 'name']`                   |
+| `df.iat[...]`          | قيمة واحدة حسب الموضع          | `ds.iat[0, 0]`                       |
+| `df.head(n)`           | أول n صفوف                     | `ds.head(10)`                        |
+| `df.tail(n)`           | آخر n صفوف                     | `ds.tail(10)`                        |
+| `df.sample(n)`         | عينة عشوائية                   | `ds.sample(100)`                     |
+| `df.select_dtypes()`   | اختيار حسب Dtype               | `ds.select_dtypes(include='number')` |
+| `df.query()`           | تعبير استعلام                  | `ds.query('age > 25')`               |
+| `df.where()`           | استبدال شرطي                   | `ds.where(ds['age'] > 0, 0)`         |
+| `df.mask()`            | معكوس where                    | `ds.mask(ds['age'] < 0, 0)`          |
+| `df.isin()`            | احتواء القيمة                  | `ds['city'].isin(['NYC', 'LA'])`     |
+| `df.get()`             | وصول آمن إلى عمود              | `ds.get('col', default=None)`        |
+| `df.xs()`              | مقطع عرضي                      | `ds.xs('key')`                       |
+| `df.pop()`             | إزالة عمود                     | `ds.pop('col')`                      |
+
+***
+
+<div id="statistical">
+  ## الأساليب الإحصائية
+</div>
+
+| الطريقة          | الوصف                | المكافئ في SQL |
+| ---------------- | -------------------- | -------------- |
+| `mean()`         | المتوسط الحسابي      | `AVG()`        |
+| `median()`       | الوسيط               | `MEDIAN()`     |
+| `mode()`         | المنوال              | -              |
+| `std()`          | الانحراف المعياري    | `STDDEV()`     |
+| `var()`          | التباين              | `VAR()`        |
+| `min()`          | القيمة الدنيا        | `MIN()`        |
+| `max()`          | القيمة العليا        | `MAX()`        |
+| `sum()`          | المجموع              | `SUM()`        |
+| `prod()`         | حاصل الضرب           | -              |
+| `count()`        | عدد القيم غير NULL   | `COUNT()`      |
+| `nunique()`      | عدد القيم الفريدة    | `UNIQ()`       |
+| `value_counts()` | تكرارات القيم        | `GROUP BY`     |
+| `quantile()`     | الكوانتايل           | `QUANTILE()`   |
+| `describe()`     | الإحصاءات الموجزة    | -              |
+| `corr()`         | مصفوفة الارتباط      | `CORR()`       |
+| `cov()`          | مصفوفة التغاير       | `COV()`        |
+| `corrwith()`     | الارتباط الثنائي     | -              |
+| `rank()`         | ترتيب القيم          | `RANK()`       |
+| `abs()`          | القيم المطلقة        | `ABS()`        |
+| `round()`        | تقريب القيم          | `ROUND()`      |
+| `clip()`         | حصر القيم            | -              |
+| `cumsum()`       | المجموع التراكمي     | دالة نافذة     |
+| `cumprod()`      | حاصل الضرب التراكمي  | دالة نافذة     |
+| `cummin()`       | الحد الأدنى التراكمي | دالة نافذة     |
+| `cummax()`       | الحد الأقصى التراكمي | دالة نافذة     |
+| `diff()`         | الفرق                | دالة نافذة     |
+| `pct_change()`   | التغير المئوي        | دالة نافذة     |
+| `skew()`         | الالتواء             | `SKEW()`       |
+| `kurt()`         | التفلطح              | `KURT()`       |
+| `sem()`          | الخطأ المعياري       | -              |
+| `all()`          | جميعها true          | -              |
+| `any()`          | أيّ منها true        | -              |
+| `idxmin()`       | فهرس القيمة الدنيا   | -              |
+| `idxmax()`       | فهرس القيمة العليا   | -              |
+
+**أمثلة:**
+
+```python
+ds = pd.read_csv("data.csv")
+
+# Basic statistics
+print(ds['salary'].mean())
+print(ds['age'].std())
+print(ds.describe())
+
+# Group statistics
+print(ds.groupby('department')['salary'].mean())
+print(ds.groupby('city').agg({'salary': ['mean', 'std'], 'age': 'count'}))
+```
+
+***
+
+<div id="manipulation">
+  ## معالجة البيانات
+</div>
+
+| الطريقة             | الوصف                      |
+| ------------------- | -------------------------- |
+| `drop()`            | حذف الصفوف/الأعمدة         |
+| `drop_duplicates()` | إزالة التكرارات            |
+| `duplicated()`      | تمييز التكرارات            |
+| `dropna()`          | إزالة القيم المفقودة       |
+| `fillna()`          | ملء القيم المفقودة         |
+| `ffill()`           | ملء للأمام                 |
+| `bfill()`           | ملء للخلف                  |
+| `interpolate()`     | استيفاء القيم              |
+| `replace()`         | استبدال القيم              |
+| `rename()`          | إعادة تسمية الأعمدة/الفهرس |
+| `rename_axis()`     | إعادة تسمية المحور         |
+| `assign()`          | إضافة أعمدة جديدة          |
+| `astype()`          | تحويل الأنواع              |
+| `convert_dtypes()`  | استدلال الأنواع            |
+| `copy()`            | نسخ DataFrame              |
+
+**أمثلة:**
+
+```python
+ds = pd.read_csv("data.csv")
+
+# Drop operations
+result = ds.drop(columns=['unused_col'])
+result = ds.drop_duplicates(subset=['user_id'])
+result = ds.dropna(subset=['email'])
+
+# Fill operations
+result = ds.fillna(0)
+result = ds.fillna({'age': 0, 'name': 'Unknown'})
+
+# Transform operations
+result = ds.rename(columns={'old_name': 'new_name'})
+result = ds.assign(
+    full_name=lambda x: x['first_name'] + ' ' + x['last_name'],
+    age_group=lambda x: pd.cut(x['age'], bins=[0, 25, 50, 100])
+)
+```
+
+***
+
+<div id="sorting">
+  ## الفرز والترتيب
+</div>
+
+| الطريقة         | الوصف          |
+| --------------- | -------------- |
+| `sort_values()` | فرز حسب القيم  |
+| `sort_index()`  | فرز حسب الفهرس |
+| `nlargest()`    | أكبر N قيمة    |
+| `nsmallest()`   | أصغر N قيمة    |
+
+**أمثلة:**
+
+```python
+# Sort by single column
+result = ds.sort_values('salary', ascending=False)
+
+# Sort by multiple columns
+result = ds.sort_values(['department', 'salary'], ascending=[True, False])
+
+# Get top/bottom N
+result = ds.nlargest(10, 'salary')
+result = ds.nsmallest(5, 'age')
+```
+
+***
+
+<div id="reshaping">
+  ## إعادة تشكيل البيانات
+</div>
+
+| الطريقة             | الوصف                     |
+| ------------------- | ------------------------- |
+| `pivot()`           | جدول محوري                |
+| `pivot_table()`     | جدول محوري مع التجميع     |
+| `melt()`            | إلغاء الجدول المحوري      |
+| `stack()`           | تكديس الأعمدة في الفهرس   |
+| `unstack()`         | فك تكديس الفهرس إلى أعمدة |
+| `transpose()` / `T` | منقول                    |
+| `explode()`         | تفكيك القوائم إلى صفوف    |
+| `squeeze()`         | تقليل الأبعاد             |
+| `droplevel()`       | حذف مستوى من الفهرس       |
+| `swaplevel()`       | تبديل مستويات الفهرس      |
+| `reorder_levels()`  | إعادة ترتيب المستويات     |
+
+**أمثلة:**
+
+```python
+# Pivot table
+result = ds.pivot_table(
+    values='amount',
+    index='region',
+    columns='product',
+    aggfunc='sum'
+)
+
+# Melt (unpivot)
+result = ds.melt(
+    id_vars=['name'],
+    value_vars=['score1', 'score2', 'score3'],
+    var_name='test',
+    value_name='score'
+)
+
+# Explode arrays
+result = ds.explode('tags')
+```
+
+***
+
+<div id="combining">
+  ## الدمج / الربط
+</div>
+
+| الطريقة           | الوصف               |
+| ----------------- | ------------------- |
+| `merge()`         | دمج بأسلوب SQL      |
+| `join()`          | ربط باستخدام الفهرس |
+| `concat()`        | ضمّ                 |
+| `append()`        | إلحاق الصفوف        |
+| `combine()`       | دمج باستخدام دالة   |
+| `combine_first()` | دمج وفق الأولوية    |
+| `update()`        | تحديث القيم         |
+| `compare()`       | إظهار الاختلافات    |
+
+**أمثلة:**
+
+```python
+# Merge (join)
+result = pd.merge(df1, df2, on='id', how='left')
+result = df1.join(df2, on='id')
+
+# Concatenate
+result = pd.concat([df1, df2, df3])
+result = pd.concat([df1, df2], axis=1)
+```
+
+***
+
+<div id="binary">
+  ## العمليات الثنائية
+</div>
+
+| الطريقة                      | الوصف                 |
+| ---------------------------- | --------------------- |
+| `add()` / `radd()`           | الجمع                 |
+| `sub()` / `rsub()`           | الطرح                 |
+| `mul()` / `rmul()`           | الضرب                 |
+| `div()` / `rdiv()`           | القسمة                |
+| `truediv()` / `rtruediv()`   | القسمة الحقيقية       |
+| `floordiv()` / `rfloordiv()` | القسمة بالتقريب لأسفل |
+| `mod()` / `rmod()`           | باقي القسمة           |
+| `pow()` / `rpow()`           | الأُس                 |
+| `dot()`                      | ضرب المصفوفات         |
+
+**أمثلة:**
+
+```python
+# Arithmetic operations
+result = ds['col1'].add(ds['col2'])
+result = ds['price'].mul(ds['quantity'])
+
+# With fill_value for missing data
+result = ds['col1'].add(ds['col2'], fill_value=0)
+```
+
+***
+
+<div id="comparison">
+  ## عمليات المقارنة
+</div>
+
+| الطريقة     | الوصف               |
+| ----------- | ------------------- |
+| `eq()`      | يساوي               |
+| `ne()`      | لا يساوي            |
+| `lt()`      | أقل من              |
+| `le()`      | أقل من أو يساوي     |
+| `gt()`      | أكبر من             |
+| `ge()`      | أكبر من أو يساوي    |
+| `equals()`  | التحقق من التساوي   |
+| `compare()` | إظهار الاختلافات |
+
+***
+
+<div id="application">
+  ## تطبيق الدوال
+</div>
+
+| الطريقة                 | الوصف             |
+| ----------------------- | ----------------- |
+| `apply()`               | تطبيق الدالة      |
+| `applymap()`            | تطبيق على كل عنصر |
+| `map()`                 | تعيين القيم       |
+| `agg()` / `aggregate()` | تجميع             |
+| `transform()`           | تحويل             |
+| `pipe()`                | تمرير إلى الدوال  |
+| `groupby()`             | التجميع وفقًا لـ  |
+
+**أمثلة:**
+
+```python
+# Apply function
+result = ds['name'].apply(lambda x: x.upper())
+result = ds.apply(lambda row: row['a'] + row['b'], axis=1)
+
+# Aggregate
+result = ds.agg({'col1': 'sum', 'col2': 'mean'})
+result = ds.agg(['sum', 'mean', 'std'])
+
+# Pipe
+result = (ds
+    .pipe(filter_active)
+    .pipe(calculate_metrics)
+    .pipe(format_output)
+)
+```
+
+***
+
+<div id="timeseries">
+  ## السلاسل الزمنية
+</div>
+
+| الطريقة              | الوصف                           |
+| -------------------- | ------------------------------- |
+| `rolling()`          | نافذة متحركة                    |
+| `expanding()`        | نافذة متوسعة                    |
+| `ewm()`              | مرجّح أسيًا                     |
+| `resample()`         | إعادة أخذ عينات السلاسل الزمنية |
+| `shift()`            | إزاحة القيم                     |
+| `asfreq()`           | تحويل التكرار                   |
+| `asof()`             | أحدث قيمة حتى وقت معيّن         |
+| `at_time()`          | التحديد عند وقت معيّن           |
+| `between_time()`     | تحديد نطاق زمني                 |
+| `first()` / `last()` | الفترات الأولى/الأخيرة          |
+| `to_period()`        | تحويل إلى فترة                  |
+| `to_timestamp()`     | تحويل إلى طابع زمني             |
+| `tz_convert()`       | تحويل المنطقة الزمنية           |
+| `tz_localize()`      | تعيين المنطقة الزمنية           |
+
+**أمثلة:**
+
+```python
+# Rolling window
+result = ds['value'].rolling(window=7).mean()
+
+# Expanding window
+result = ds['value'].expanding().sum()
+
+# Shift
+result = ds['value'].shift(1)  # Lag
+result = ds['value'].shift(-1)  # Lead
+```
+
+***
+
+<div id="missing">
+  ## البيانات المفقودة
+</div>
+
+| الطريقة                 | الوصف                  |
+| ----------------------- | ---------------------- |
+| `isna()` / `isnull()`   | كشف القيم المفقودة     |
+| `notna()` / `notnull()` | كشف القيم غير المفقودة |
+| `dropna()`              | حذف القيم المفقودة     |
+| `fillna()`              | ملء القيم المفقودة     |
+| `ffill()`               | ملء للأمام             |
+| `bfill()`               | ملء للخلف              |
+| `interpolate()`         | استيفاء                |
+| `replace()`             | استبدال القيم          |
+
+***
+
+<div id="io">
+  ## أساليب الإدخال/الإخراج
+</div>
+
+| الطريقة          | الوصف                      |
+| ---------------- | -------------------------- |
+| `to_csv()`       | تصدير إلى CSV              |
+| `to_json()`      | تصدير إلى JSON             |
+| `to_excel()`     | تصدير إلى Excel            |
+| `to_parquet()`   | تصدير إلى Parquet          |
+| `to_feather()`   | تصدير إلى Feather          |
+| `to_sql()`       | تصدير إلى قاعدة بيانات SQL |
+| `to_pickle()`    | Pickle                     |
+| `to_html()`      | جدول HTML                  |
+| `to_latex()`     | جدول LaTeX                 |
+| `to_markdown()`  | جدول Markdown              |
+| `to_string()`    | تمثيل نصي                  |
+| `to_dict()`      | قاموس                      |
+| `to_records()`   | سجلات                      |
+| `to_numpy()`     | مصفوفة NumPy               |
+| `to_clipboard()` | الحافظة                    |
+
+راجع [عمليات الإدخال/الإخراج](/ar/products/chdb/datastore/io) للاطلاع على الوثائق التفصيلية.
+
+***
+
+<div id="iteration">
+  ## التكرار
+</div>
+
+| الطريقة        | الوصف                           |
+| -------------- | ------------------------------- |
+| `items()`      | التكرار عبر (عمود، Series)      |
+| `iterrows()`   | التكرار عبر (فهرس، Series)      |
+| `itertuples()` | التكرار على هيئة tuples مُسمّاة |
+
+***
+
+<div id="differences">
+  ## أهم الاختلافات عن Pandas
+</div>
+
+<div id="return-types">
+  ### 1. أنواع الإرجاع
+</div>
+
+```python
+# Pandas returns Series
+pdf['col']  # → pd.Series
+
+# DataStore returns ColumnExpr (lazy)
+ds['col']   # → ColumnExpr
+```
+
+<div id="lazy-execution">
+  ### 2. التنفيذ المؤجل
+</div>
+
+```python
+# DataStore operations are lazy
+result = ds.filter(ds['age'] > 25)  # Not executed yet
+df = result.to_df()  # Executed here
+```
+
+<div id="no-inplace-parameter">
+  ### 3. لا توجد مَعلمة `inplace`
+</div>
+
+```python
+# Pandas
+df.drop(columns=['col'], inplace=True)
+
+# DataStore (always returns new object)
+ds = ds.drop(columns=['col'])
+```
+
+<div id="comparing-results">
+  ### 4. مقارنة النتائج
+</div>
+
+```python
+# Use to_pandas() for comparison
+pd.testing.assert_frame_equal(
+    ds.to_pandas(),
+    expected_df
+)
+```
+
+اطّلع على [الاختلافات الرئيسية](/ar/products/chdb/guides/pandas-differences) للاطّلاع على التفاصيل الكاملة.

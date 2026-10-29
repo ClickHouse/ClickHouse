@@ -19,7 +19,9 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int ILLEGAL_COLUMN;
+    extern const int BAD_ARGUMENTS;
 }
 
 namespace
@@ -75,6 +77,31 @@ private:
     size_t next_separator_pos = 0;
 };
 
+}
+
+DataTypePtr FunctionReverseBySeparator::getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const
+{
+    size_t number_of_arguments = arguments.size();
+
+    if (number_of_arguments < 1 || number_of_arguments > 2)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "Number of arguments for function {} doesn't match: passed {}, should be 1 or 2",
+            getName(), number_of_arguments);
+
+    if (!isString(arguments[0].type))
+        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+            "First argument for function {} must be String, got {}",
+            getName(), arguments[0].type->getName());
+
+    if (number_of_arguments == 2)
+    {
+        if (!isString(arguments[1].type))
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                "Second argument for function {} must be String, got {}",
+                getName(), arguments[1].type->getName());
+    }
+
+    return std::make_shared<DataTypeString>();
 }
 
 ColumnPtr FunctionReverseBySeparator::executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & /*result_type*/, size_t input_rows_count) const
@@ -231,12 +258,12 @@ REGISTER_FUNCTION(ReverseBySeparator)
     };
 
     FunctionDocumentation::Examples examples = {
-        {"Basic domain reversal", "SELECT reverseBySeparator('www.google.com')", "com.google.www"},
-        {"Path reversal", "SELECT reverseBySeparator('a/b/c', '/')", "c/b/a"},
-        {"Custom separator", "SELECT reverseBySeparator('x::y::z', '::')", "z::y::x"},
-        {"Edge case with dots", "SELECT reverseBySeparator('.a.b.', '.')", ".b.a."},
-        {"Single element", "SELECT reverseBySeparator('single')", "single"},
-        {"Empty separator", "SELECT reverseBySeparator('abcde', '')", "edcba"}
+        {"Basic domain reversal", "SELECT reverseBySeparator('www.google.com')", "'com.google.www'"},
+        {"Path reversal", "SELECT reverseBySeparator('a/b/c', '/')", "'c/b/a'"},
+        {"Custom separator", "SELECT reverseBySeparator('x::y::z', '::')", "'z::y::x'"},
+        {"Edge case with dots", "SELECT reverseBySeparator('.a.b.', '.')", "'.b.a.'"},
+        {"Single element", "SELECT reverseBySeparator('single')", "'single'"},
+        {"Empty separator", "SELECT reverseBySeparator('abcde', '')", "'edcba'"}
     };
 
     FunctionDocumentation::IntroducedIn introduced_in = {26, 2};

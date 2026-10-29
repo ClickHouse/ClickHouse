@@ -7,12 +7,6 @@
 #include <Disks/DiskFactory.h>
 #include <Disks/IDisk.h>
 
-#include "config.h"
-
-#if USE_AZURE_BLOB_STORAGE
-#include <Disks/DiskObjectStorage/ObjectStorages/AzureBlobStorage/AzureBlobStorageCommon.h>
-#endif
-
 #include <fmt/ranges.h>
 
 namespace DB
@@ -36,8 +30,7 @@ void registerDiskObjectStorage(DiskFactory & factory, bool global_skip_access_ch
         bool attach,
         bool custom_disk) -> DiskPtr
     {
-        bool run_access_check = !config.getBool(config_prefix + ".skip_access_check", false) && !global_skip_access_check;
-        const bool run_local_paths_check = custom_disk && !attach;
+        const bool skip_access_check = global_skip_access_check || config.getBool(config_prefix + ".skip_access_check", false);
         /// Custom disk from a query: a rejection throws. Custom disk loaded from existing metadata (attach:
         /// server start, UNDROP): a rejection is reported. A user ATTACH, short or with a definition, is not attach here.
         const auto remote_host_filter_check = !custom_disk ? RemoteHostFilterCheck::None
@@ -56,25 +49,17 @@ void registerDiskObjectStorage(DiskFactory & factory, bool global_skip_access_ch
                 const std::string object_storage_config_prefix = config_prefix + ".locations." + location;
                 const bool local = config.getBool(object_storage_config_prefix + ".local");
                 const bool enabled = config.getBool(object_storage_config_prefix + ".enabled");
-                const ObjectStoragePtr object_storage = ObjectStorageFactory::instance().create(fmt::format("{}.{}", name, location), config, object_storage_config_prefix, context, run_access_check && enabled, run_local_paths_check, remote_host_filter_check);
+                const ObjectStoragePtr object_storage = ObjectStorageFactory::instance().create(fmt::format("{}.{}", name, location), config, object_storage_config_prefix, context, /*skip_access_check=*/skip_access_check || !enabled, remote_host_filter_check);
                 object_storage_registry[location] = object_storage;
                 cluster_registry[location] = {enabled, local, object_storage_config_prefix};
             }
         }
         else
         {
-            const ObjectStoragePtr object_storage = ObjectStorageFactory::instance().create(name, config, config_prefix, context, run_access_check, run_local_paths_check, remote_host_filter_check);
+            const ObjectStoragePtr object_storage = ObjectStorageFactory::instance().create(name, config, config_prefix, context, skip_access_check, remote_host_filter_check);
             object_storage_registry["main"] = object_storage;
             cluster_registry["main"] = { .enabled = true, .local = true, .config_prefix = config_prefix };
         }
-
-#if USE_AZURE_BLOB_STORAGE
-        /// A custom Azure disk loaded without the server's identity is inaccessible on purpose, but its table must still load.
-        for (const auto & [_, object_storage] : object_storage_registry)
-            if (object_storage->getType() == ObjectStorageType::Azure
-                && object_storage->getAzureBlobStorageConnectionParams()->checkOrDropServerManagedCredentials())
-                run_access_check = false;
-#endif
 
         ClusterConfigurationPtr cluster = std::make_shared<ClusterConfiguration>(name, std::move(cluster_registry));
         ObjectStorageRouterPtr object_storages = std::make_shared<ObjectStorageRouter>(std::move(object_storage_registry));
@@ -95,8 +80,9 @@ void registerDiskObjectStorage(DiskFactory & factory, bool global_skip_access_ch
         }
 
         LOG_DEBUG(getLogger("registerDiskObjectStorage"), "Metadata type hint: {}", compatibility_metadata_type_hint);
-        auto metadata_storage = MetadataStorageFactory::instance().create(name, config, config_prefix, cluster, object_storages, compatibility_metadata_type_hint, run_local_paths_check);
+        auto metadata_storage = MetadataStorageFactory::instance().create(name, config, config_prefix, cluster, object_storages, compatibility_metadata_type_hint);
 
+        bool use_fake_transaction = config.getBool(config_prefix + ".use_fake_transaction", metadata_storage->getType() != MetadataStorageType::Keeper);
         DiskPtr disk = std::make_shared<DiskObjectStorage>(
             name,
             std::move(cluster),
@@ -104,7 +90,8 @@ void registerDiskObjectStorage(DiskFactory & factory, bool global_skip_access_ch
             std::move(object_storages),
             /*wrapped_disk=*/nullptr,
             config,
-            config_prefix);
+            config_prefix,
+            use_fake_transaction);
 
         /// If this disk was created "on the fly" in order to serve as a temporary read-only disk.
         bool is_read_only_disk = config.getBool(config_prefix + ".read_only", false);
@@ -114,7 +101,7 @@ void registerDiskObjectStorage(DiskFactory & factory, bool global_skip_access_ch
             disk = std::make_shared<ReadOnlyDiskWrapper>(disk);
         }
 
-        disk->startup(/*skip_access_check=*/!run_access_check);
+        disk->startup(skip_access_check);
         return disk;
     };
 

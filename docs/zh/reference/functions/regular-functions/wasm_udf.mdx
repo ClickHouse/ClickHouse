@@ -6,16 +6,22 @@ title: 'WebAssembly 用户自定义函数'
 doc_type: 'guide'
 ---
 
-import { CloudNotSupportedBadge } from "/snippets/zh/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
-import { ExperimentalBadge } from "/snippets/zh/components/ExperimentalBadge/ExperimentalBadge.jsx";
+import CloudNotSupportedBadge from "/snippets/zh/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
+import ExperimentalBadge from "/snippets/zh/components/ExperimentalBadge/ExperimentalBadge.jsx";
 
-ClickHouse 支持创建以 WebAssembly 编写的用户自定义函数 (UDF) 。这样一来，你可以将 Rust、C、C++ 等语言编译为 WebAssembly 模块，并执行用这些语言编写的自定义逻辑。
+<div id="webassembly-user-defined-functions">
+  # WebAssembly 用户自定义函数
+</div>
+
+ClickHouse 支持创建以 WebAssembly 编写的用户自定义函数 (UDF) 。这样，你就可以将 Rust、C、C++ 等语言编写的自定义逻辑编译为 WebAssembly 模块并执行。
 
 <CloudNotSupportedBadge />
 
 <ExperimentalBadge />
 
-## 概述 {#overview}
+<div id="overview">
+  ## 概述
+</div>
 
 WebAssembly 模块是已编译的二进制文件，其中包含一个或多个可由 ClickHouse 调用的函数。
 可以将模块看作一个只需加载一次、却能重复多次使用的库或共享对象。
@@ -32,7 +38,9 @@ guest 代码会导出 ClickHouse 可调用的函数——这些函数既包括�
 编译完成后，需要将模块的二进制代码插入 `system.webassembly_modules` 表中，以将其加载到 ClickHouse。
 之后，你可以使用 `CREATE FUNCTION ... LANGUAGE WASM` 语句创建引用该模块导出函数的 UDF。
 
-## 前置条件 {#prerequisites}
+<div id="prerequisites">
+  ## 前置条件
+</div>
 
 在 ClickHouse 配置中启用 WebAssembly 支持：
 
@@ -45,9 +53,12 @@ guest 代码会导出 ClickHouse 可调用的函数——这些函数既包括�
 
 可用的引擎实现：
 
-* `wasmtime` (默认且目前唯一的实现) — 基于 [Wasmtime](https://github.com/bytecodealliance/wasmtime)
+* `wasmtime` (默认，推荐) — 基于 [WasmTime](https://github.com/bytecodealliance/wasmtime)
+* `wasmedge` — 基于 [WasmEdge](https://github.com/WasmEdge/WasmEdge)
 
-## 快速入门 {#quick-start}
+<div id="quick-start">
+  ## 快速入门
+</div>
 
 本示例通过实现 [Collatz conjecture](https://en.wikipedia.org/wiki/Collatz_conjecture) 计算器，演示创建 WebAssembly UDF 的完整流程。
 
@@ -103,7 +114,9 @@ FORMAT TSV
 [0,1,7,2,5,8,16,3,19,6,14,9,9,17,17,4,12,20,20,7,7,15,15,10,23,10,111,18,18,18,106,5,26,13,13,21,21,21,34,8,109,8,29,16,16,16,104,11,24,24,24,11,11,112,112,19,32,19,32,19,19,107,107,6,27,27,27,14,14,14,102,22,115,22,14,22,22,35,35,9,22,110,110,9,9,30,30,17,30,17,92,17,17,105,105,12,118,25,25,25]
 ```
 
-## 通过系统表管理 WASM 模块 {#manage-wasm-modules-via-system-table}
+<div id="manage-wasm-modules-via-system-table">
+  ## 通过系统表管理 WASM 模块
+</div>
 
 WebAssembly 模块存储在 `system.webassembly_modules` 表中，其结构如下：
 
@@ -114,7 +127,9 @@ WebAssembly 模块存储在 `system.webassembly_modules` 表中，其结构如�
 
 模块管理通过对该表执行标准 SQL 操作进行：
 
-### 插入模块 {#insert-a-module}
+<div id="insert-a-module">
+  ### 插入模块
+</div>
 
 ```sql
 INSERT INTO system.webassembly_modules (name, code)
@@ -130,7 +145,9 @@ SELECT 'my_module', base64Decode('...'), reinterpretAsUInt256(unhex('369f...c57d
 
 如果提供的哈希值与模块代码计算出的 SHA256 不一致，则插入会失败。在从 S3 或 HTTP 等外部来源加载模块时，这会很有用。
 
-### 在 cluster 中分发模块 {#distribute-a-module-across-a-cluster}
+<div id="distribute-a-module-across-a-cluster">
+  ### 在 cluster 中分发模块
+</div>
 
 `system.webassembly_modules` 是按实例划分的表——`INSERT` 只会写入处理该 connection 的副本。`INSERT` statement 没有 `ON CLUSTER` 这种形式，因此后续执行 `CREATE FUNCTION ... ON CLUSTER` 时，会在没有该模块的副本上失败：
 
@@ -169,7 +186,9 @@ SELECT hostName(), name FROM clusterAllReplicas('default', system.webassembly_mo
 
 向 `system.webassembly_modules` 执行插入时，对于相同的 `(name, hash)` 组合是幂等的，因此重新运行分发式插入是安全的，也是在某个副本被替换后修复状态的合理方式。请注意，新加入的服务器不会自动补收已有模块——你必须针对更新后的集群重新运行插入，或者将该 binary 放到新 host 上的 `user_scripts/wasm/` 目录中。
 
-### 列出模块 {#list-modules}
+<div id="list-modules">
+  ### 列出模块
+</div>
 
 ```sql
 SELECT name, lower(hex(reinterpretAsFixedString(hash))) AS sha256 FROM system.webassembly_modules
@@ -179,7 +198,9 @@ SELECT name, lower(hex(reinterpretAsFixedString(hash))) AS sha256 FROM system.we
    └─────────┴──────────────────────────────────────────────────────────────────┘
 ```
 
-### 删除模块 {#delete-a-module}
+<div id="delete-a-module">
+  ### 删除模块
+</div>
 
 通过执行 `DELETE FROM system.webassembly_modules WHERE name = '...'` 语句删除模块。
 该谓词必须是精确匹配的 `name = 'literal'`，或用于删除所有名称匹配该模式的模块的 `name LIKE 'pattern'`；不接受其他形态。
@@ -193,9 +214,11 @@ DELETE FROM system.webassembly_modules WHERE name LIKE 'tmp\_%';
 
 如果现有 UDFs 中有任何一个引用了某个匹配模块，删除操作将失败，因此必须先删除这些 UDFs。
 
-## 创建 WebAssembly UDF {#create-a-webassembly-udf}
+<div id="create-a-webassembly-udf">
+  ## 创建 WebAssembly UDF
+</div>
 
-**语法**：
+**语法**:
 
 ```sql
 CREATE [OR REPLACE] FUNCTION function_name
@@ -221,10 +244,12 @@ RETURNS return_type
 * `DETERMINISTIC`：将该函数声明为确定性的——对于相同输入始终返回相同输出。指定后，当所有参数都是常量时，ClickHouse 可能会对调用进行常量折叠：函数会在查询分析阶段求值一次，结果会复用于每一行。
 * `SHA256_HASH`：用于校验的预期模块哈希 (若省略则自动填充) ，可用于确保不同副本上加载的是正确的 WASM 模块。
 * `SETTINGS`：函数级设置
-  * `serialization_format` String —— 用于序列化传递给模块的参数块并解析返回结果的格式。仅由 `ABI BUFFERED_V1` 使用。支持的值：`MsgPack`、`JSONEachRow`、`CSV`、`TSV`、`TSVRaw`、`RowBinary` 和 `Buffers`。默认值：`MsgPack`。像 `Buffers` 这样基于块的格式必须返回单列，且该列的类型必须与声明的函数签名匹配。
-  * `webassembly_udf_enable_fuel` Bool —— 为该函数启用有限 fuel 预算。默认值：`true`。当为 `false` 时，查询级设置 `webassembly_udf_max_fuel` 会被该函数忽略。禁用 fuel 限制可能会提升性能。但是，对于不受信任或有缺陷的 guest 代码，这可能会增加失控执行的风险。
+  * `serialization_format` String —— ABI 要求的序列化格式。支持的值：`MsgPack`、`JSONEachRow`、`CSV`、`TSV`、`TSVRaw`、`RowBinary` 和 `Buffers`。默认值：`MsgPack`。像 `Buffers` 这样基于块的格式必须返回单列，且该列的类型必须与声明的函数签名匹配。
+  * `webassembly_udf_enable_fuel` Bool —— 为该函数启用有限 fuel 预算。默认值：`true`。当为 `false` 时，查询级设置 `webassembly_udf_max_fuel` 会被该函数忽略。使用 `wasmtime` engine 时，禁用 fuel 限制可能会提升性能。但是，对于不受信任或有缺陷的 guest 代码，这可能会增加失控执行的风险。
 
-## ABI 版本 {#abis-versions}
+<div id="abis-versions">
+  ## ABI 版本
+</div>
 
 要与 ClickHouse 交互，WebAssembly 模块必须遵循受支持的 ABI (应用程序二进制接口) 之一。
 
@@ -232,7 +257,9 @@ RETURNS return_type
 * `BUFFERED_V1`：通过序列化处理复杂类型
 * `ASSEMBLYSCRIPT`：与 [AssemblyScript](https://www.assemblyscript.org) 模块按行互操作；支持数值类型和 `String`。
 
-### ABI ROW_DIRECT {#abi-row_direct}
+<div id="abi-row_direct">
+  ### ABI ROW_DIRECT
+</div>
 
 按行直接调用导出的 WASM 函数。
 
@@ -255,170 +282,62 @@ CREATE FUNCTION my_func ARGUMENTS (Int32, UInt64, Float32) RETURNS Float64 ...
 
 WebAssembly 不区分有符号参数和无符号参数，而是通过不同的指令来解释这些值。因此，参数的大小必须严格一致，而是否有符号则由函数内部的操作决定。
 
-### ABI BUFFERED_V1 {#abi-buffered_v1}
+<div id="abi-buffered_v1">
+  ### ABI BUFFERED_V1
+</div>
 
 <Note>
-  此 ABI 仍处于实验阶段，未来的发行版中可能会有所变更。
+  此 ABI 仍处于 Experimental 阶段，未来版本中可能会发生变化。
 </Note>
 
-通过 WASM 内存进行 (反) 序列化，一次处理整个块。支持任意参数类型和返回类型。
+通过 WASM 内存中的 (反) 序列化一次处理整个块。支持任意参数和返回类型。
 
-数据通过 WASM 内存中的缓冲区交换。缓冲区是一个 8 字节的结构，包含一个指向数据的指针和数据大小 (两个小端序 `u32` 值) 。缓冲区通过句柄传递——即指向该结构的指针，而非指向数据本身的指针。guest 代码必须导出两个函数，用于创建和销毁这些缓冲区。当大小非零时，数据指针也必须非零：声明了正的大小却指向线性内存偏移 `0` 的缓冲区不是有效缓冲区，guest 代码不得产生这样的缓冲区；ClickHouse 会拒绝此类缓冲区，并以 `WASM_ERROR` 使查询失败。
+序列化后的数据会被复制到 WASM 内存中，并将指向缓冲区的指针 (缓冲区由数据指针和数据大小组成) 以及输入中的行数一并传递给 UDF 函数。因此，WASM 侧的用户自定义函数始终接收两个 `i32` 参数，并返回单个 `i32` 值。
+guest 侧代码处理数据后，会返回一个指向结果缓冲区的指针，其中包含序列化后的结果数据。
 
-对于每个输入块，ClickHouse 会：
-
-1. 使用函数的 `serialization_format` (默认为 `MsgPack`) 序列化参数列。基于行的格式会逐行写入值，参数值的顺序与其在 `ARGUMENTS` 中声明的顺序一致；具有命名字段的格式使用参数名称，因此使用此类格式时，请在 `ARGUMENTS` 中声明参数名称。
-2. 调用模块导出的 `clickhouse_create_buffer`，并将序列化数据复制到返回的缓冲区所指向的内存中。
-3. 使用两个 `i32` 参数调用用户自定义函数：输入缓冲区句柄 (如果函数没有参数，则为 `0`) 和行数。该函数返回一个 `i32`——由 guest 代码自行分配的结果缓冲区句柄；返回 `0` 会导致查询报错失败。
-4. 读取结果缓冲区：其中必须恰好包含一列，且行数必须与输入完全相同，并以相同格式序列化。对于具有命名字段的格式，例如 `JSONEachRow`，结果列必须命名为 `result`。
-5. 对输入缓冲区 (如有) 和结果缓冲区的句柄调用 `clickhouse_destroy_buffer`。guest 代码不得自行释放结果缓冲区，也不得将输入句柄作为结果返回——否则该缓冲区会被销毁两次。
-
-函数会对每个输入块调用一次：大型查询会由查询管道拆分为多个块，因此每次调用传入的行数是该块的大小，而不是整个查询的大小。
-
-管道块仍可能过宽，超出模块的线性内存，因此会被进一步拆分。默认情况下，`webassembly_udf_input_split_memory_ratio` 会动态拆分：ClickHouse 会度量已序列化的行，并在输入超过 guest 线性内存的该比例之前开始新的调用，因此行数会随数据而变化。将 `webassembly_udf_max_input_block_size` 设为非零值则会以每次调用固定的行数上限取代该机制，而比例为 `0` 时会在一次调用中传入整个块。一次调用的行数永远不会低于一行，因此单独一行若过大而超出模块内存，仍会在 guest 内部失败。
-
-<Note>
-  缓冲区中的确切字节由所选格式定义，guest 代码必须自行解码和编码。对于 `String` 值，尤其需要注意：
-
-  * `MsgPack`：ClickHouse 使用 `bin` 类型家族 (`0xc4`/`0xc5`/`0xc6`) 写入 `String` 值，而非 `str` 家族。解析结果时，两种家族均可接受。
-  * `RowBinary`：每个 `String` 前面都会附加以无符号 varint ([LEB128](https://en.wikipedia.org/wiki/LEB128)) 编码的字节长度，而不是定长整数。
-  * `JSONEachRow`：每个结果行必须是包含 `result` 键的对象，例如 `{"result":"value"}`。
-</Note>
+guest 侧代码必须提供两个函数，用于创建和销毁这些缓冲区。
 
 ```
 (module
-  ;; Allocate a new buffer of specified size
-  ;; Returns: handle to Buffer structure (not direct data pointer!) with pointer to data and size
+  ;; 分配指定大小的新缓冲区
+  ;; 返回：Buffer 结构的句柄（非直接数据指针！），包含指向数据的指针及数据大小
   (func (export "clickhouse_create_buffer")
-    (param $size i32)    ;; Size of data to allocate
-    (result i32))        ;; Returns buffer handle with enough space
+    (param $size i32)    ;; 要分配的数据大小
+    (result i32))        ;; 返回具有足够空间的缓冲区句柄
 
-  ;; Free a buffer by its handle
+  ;; 通过句柄释放缓冲区
   (func (export "clickhouse_destroy_buffer")
-    (param $handle i32)  ;; Buffer handle to free
-    (result))            ;; No return value
+    (param $handle i32)  ;; 要释放的缓冲区句柄
+    (result))            ;; 无返回值
 
-    ;; User-defined function
+    ;; 用户自定义函数
     (func (export "user_defined_function1")
-      (param $input_buffer_handle i32)  ;; Input buffer handle
-      (param $n i32)                    ;; Number of rows in input
-      (result i32))                     ;; Returns output buffer handle
+      (param $input_buffer_handle i32)  ;; 输入缓冲区句柄
+      (param $n i32)                    ;; 输入的行数
+      (result i32))                     ;; 返回输出缓冲区句柄
 )
 ```
 
-一个完整的 freestanding C 示例：`str_reverse` 使用 `serialization_format = 'RowBinary'` 反转每个输入字符串的字节。模块实例会在多个块之间复用，因此 `clickhouse_destroy_buffer` 必须真正回收内存——这里的分配器会在所有缓冲区都被销毁后进行重置。
+C 定义示例：
 
 ```c
-#include <stdint.h>
-
 typedef struct {
     uint8_t * data;
     uint32_t size;
-} ClickHouseBuffer;
+} ClickhouseBuffer;
 
-#define HEAP_SIZE (1 << 24)
-static _Alignas(16) uint8_t heap[HEAP_SIZE];
-static uint32_t heap_pos = 0;
-static uint32_t live_buffers = 0;
+ClickhouseBuffer * clickhouse_create_buffer(uint32_t size) { /* ... */ }
 
-__attribute__((export_name("clickhouse_create_buffer")))
-ClickHouseBuffer * clickhouse_create_buffer(uint32_t size)
-{
-    uint32_t total = (sizeof(ClickHouseBuffer) + size + 15u) & ~15u;
-    if (heap_pos + total > HEAP_SIZE)
-        return 0; /* a zero handle makes the host fail the query with an error */
-    ClickHouseBuffer * buf = (ClickHouseBuffer *) &heap[heap_pos];
-    buf->data = &heap[heap_pos + sizeof(ClickHouseBuffer)];
-    buf->size = size;
-    heap_pos += total;
-    ++live_buffers;
-    return buf;
-}
+void clickhouse_destroy_buffer(ClickhouseBuffer * data) { /* ... */ }
 
-__attribute__((export_name("clickhouse_destroy_buffer")))
-void clickhouse_destroy_buffer(ClickHouseBuffer * buf)
-{
-    if (--live_buffers == 0)
-        heap_pos = 0;
-}
-
-/* RowBinary prefixes each String with its byte length as an unsigned varint (LEB128) */
-static uint64_t read_varint(const uint8_t ** pp)
-{
-    uint64_t value = 0;
-    for (int shift = 0;; shift += 7)
-    {
-        uint8_t b = *(*pp)++;
-        value |= (uint64_t)(b & 0x7f) << shift;
-        if (!(b & 0x80))
-            return value;
-    }
-}
-
-static void write_varint(uint8_t ** pp, uint64_t value)
-{
-    while (value >= 0x80)
-    {
-        *(*pp)++ = (uint8_t)(value | 0x80);
-        value >>= 7;
-    }
-    *(*pp)++ = (uint8_t)value;
-}
-
-/* Reverses the bytes of each input string */
-__attribute__((export_name("str_reverse")))
-ClickHouseBuffer * str_reverse(ClickHouseBuffer * input, uint32_t num_rows)
-{
-    ClickHouseBuffer * out = clickhouse_create_buffer(input->size);
-    if (!out)
-        return 0;
-    const uint8_t * in = input->data;
-    uint8_t * o = out->data;
-    for (uint32_t row = 0; row < num_rows; ++row)
-    {
-        uint64_t len = read_varint(&in);
-        write_varint(&o, len);
-        for (uint64_t i = 0; i < len; ++i)
-            o[i] = in[len - 1 - i];
-        in += len;
-        o += len;
-    }
-    out->size = (uint32_t)(o - out->data);
-    return out;
-}
+/// 示例用户自定义函数
+ClickhouseBuffer * user_defined_function1(ClickhouseBuffer * span, uint32_t n) { /* ... */ }
+ClickhouseBuffer * user_defined_function2(ClickhouseBuffer * span, uint32_t n) { /* ... */ }
 ```
 
-使用 clang 和 `wasm-ld` (随 LLVM/lld 提供) 构建：
-
-```bash
-clang --target=wasm32 -ffreestanding -nostdlib -fno-builtin -c str_reverse.c
-wasm-ld --no-entry str_reverse.o -o str_reverse.wasm
-```
-
-函数必须在模块导出中可见：要么如上所示使用 `__attribute__((export_name("...")))` 标记，要么通过 `wasm-ld --export-all` 链接。`-fno-builtin` 可防止 clang 将普通的字节循环优化为对 `memcpy`/`memset` 的调用；在没有标准库时，这些函数不可用。
-
-加载模块并创建函数：
-
-```bash
-cat str_reverse.wasm | clickhouse client -q "INSERT INTO system.webassembly_modules (name, code) SELECT 'str_reverse', code FROM input('code String') FORMAT RawBlob"
-```
-
-```sql
-CREATE FUNCTION str_reverse LANGUAGE WASM ABI BUFFERED_V1
-FROM 'str_reverse' :: 'str_reverse'
-ARGUMENTS (s String) RETURNS String
-SETTINGS serialization_format = 'RowBinary';
-
-SELECT str_reverse(toString(number + 100)) FROM numbers(3);
-```
-
-```text
-001
-101
-201
-```
-
-### ABI ASSEMBLYSCRIPT {#abi-assemblyscript}
+<div id="abi-assemblyscript">
+  ### ABI ASSEMBLYSCRIPT
+</div>
 
 适用于由 [AssemblyScript](https://www.assemblyscript.org) 编译器生成的模块。每一行都会触发一次对导出函数的调用，将 ClickHouse 值映射为 AssemblyScript 基本类型和字符串对象。
 
@@ -467,7 +386,9 @@ CREATE FUNCTION as_greet
     ARGUMENTS (name String) RETURNS String;
 ```
 
-### 关于用 Rust 开发 UDF 的说明 {#note-for-developing-udfs-in-rust}
+<div id="note-for-developing-udfs-in-rust">
+  ### 关于用 Rust 开发 UDF 的说明
+</div>
 
 对于 Rust 程序，我们提供了一个辅助 crate [clickhouse-wasm-udf](https://crates.io/crates/clickhouse-wasm-udf)，可简化为 ClickHouse 开发 WebAssembly UDF 的过程。该 crate 提供了内存管理功能，因此你无需手动实现 `clickhouse_create_buffer` 和 `clickhouse_destroy_buffer` 函数，只需将该 crate 添加为依赖即可。此外，还提供了宏 `#[clickhouse_wasm_udf]`，可将普通的 Rust 函数封装为所需的 ABI 格式。
 
@@ -486,7 +407,9 @@ pub fn some_udf(data: String) -> HashMap<String, String> {
 
 宏会生成一个包装函数，用于接收并返回缓冲区结构，并使用 `serde` 自动处理序列化和反序列化。
 
-## 模块可用的宿主 API {#host-api-available-to-modules}
+<div id="host-api-available-to-modules">
+  ## 模块可用的宿主 API
+</div>
 
 模块可导入并使用以下宿主函数：
 
@@ -496,17 +419,17 @@ pub fn some_udf(data: String) -> HashMap<String, String> {
 * `clickhouse_random(ptr: i32, size: i32)` — 用随机字节填充内存。
 * `env.abort(message: i32, fileName: i32, line: i32, column: i32)` — 为与 AssemblyScript 兼容的模块提供。调用它 (或触发会调用它的 AssemblyScript 运行时陷阱) 会以包含已解码消息和源代码位置的 `WASM_ERROR` 异常终止 UDF。未导入 &#96;env.abort&#96;&#96; 的模块不受影响。
 
-## 设置 {#settings}
+<div id="settings">
+  ## 设置
+</div>
 
 以下查询级设置用于控制 WebAssembly UDF 的执行：
 
-* `webassembly_udf_max_fuel` — 每个 WebAssembly UDF 实例每次执行的 fuel 上限。每条 WebAssembly 指令都会消耗一定数量的 fuel。在传递给运行时之前，该值会先按 1024 进行缩放，因此 `webassembly_udf_max_fuel = 1` 对应大约 1024 个 fuel 单位。设为 0 表示没有有限上限。仅适用于每函数设置 `webassembly_udf_enable_fuel` 为 true 的函数，默认即为如此。
+* `webassembly_udf_max_fuel` — 每个 WebAssembly UDF 实例每次执行的 fuel 上限。每条 WebAssembly 指令都会消耗一定数量的 fuel。在传递给 runtime 之前，该值会先按 1024 进行缩放，因此 `webassembly_udf_max_fuel = 1` 对应大约 1024 个 fuel 单位。设为 0 表示没有有限上限。仅适用于每函数设置 `webassembly_udf_enable_fuel` 为 true 的函数，默认即为如此。
 
 * `webassembly_udf_max_memory` — 每个 WebAssembly UDF 实例的内存上限 (以字节为单位) 。
 
-* `webassembly_udf_max_input_block_size` — 对所有 ABI 而言，单个块中传递给 WebAssembly UDF 的最大行数。设为 0 时，`ABI BUFFERED_V1` 函数每次调用的大小由 `webassembly_udf_input_split_memory_ratio` 决定；其他 ABI 则会接收整个管道块。
-
-* `webassembly_udf_input_split_memory_ratio` — 单次调用的输入可占用的线性内存比例，其基准为 module 声明的初始线性内存 (对于初始没有数据页的 module，则以其内存上限为基准) 。当 `webassembly_udf_max_input_block_size` 为 0 时，用于对 `ABI BUFFERED_V1` 函数的块进行 split；其他 ABI 不携带序列化的输入块，因此会忽略该设置。默认值：`0.5`，其余内存留给 guest 自身的 working set — 接近 1 的 ratio 仍可能导致 guest 的 allocator 内部失败。设为 0，或将 `compatibility` 设为 26.9 之前的版本，即可在一次调用中传递整个管道块。取值必须不小于 0 且不大于 1。
+* `webassembly_udf_max_input_block_size` — 单个块中传递给 WebAssembly UDF 的最大行数。设为 0 表示一次处理所有行。
 
 * `webassembly_udf_max_instances` — 每个函数可并行运行的 WebAssembly UDF 实例最大数量。
 
@@ -517,6 +440,8 @@ SET webassembly_udf_max_fuel = 200000;
 SELECT my_wasm_udf(column) FROM table;
 ```
 
-## 另请参阅 {#see-also}
+<div id="see-also">
+  ## 另请参阅
+</div>
 
 * [ClickHouse UDF 概述](/zh/reference/functions/regular-functions/udf)

@@ -23,7 +23,7 @@ keywords: ['Согласованность чтения']
 Если вы используете собственный протокол или сеанс для записи/чтения, то должны быть подключены к одной и той же реплике: в этом случае вы читаете напрямую с узла, в который записываете данные, поэтому чтение всегда будет согласованным.
 
 <div id="talking-to-a-random-node">
-  ### Подключение к случайно выбранному узлу
+  ### Подключение к случайному узлу
 </div>
 
 Если вы не можете гарантировать, что обращаетесь к одному и тому же узлу (например, если обращаетесь к узлу через HTTPS-запросы, которые распределяет балансировщик нагрузки), вы можете либо:
@@ -49,6 +49,6 @@ SETTINGS select_sequential_consistency = 1
 
 Обратите внимание: при использовании ClickHouse Cloud и его движка таблиц [SharedMergeTree](/ru/products/cloud/features/infrastructure/shared-merge-tree) по умолчанию параметр `insert_quorum_parallel` не требуется — все вставки в SharedMergeTree по умолчанию являются quorum inserts.
 
-Использование [`SYSTEM SYNC REPLICAS`](/ru/reference/statements/system#sync-replica) или [`select_sequential_consistency`](/ru/reference/settings/session-settings/other#select_sequential_consistency) увеличит нагрузку на ClickHouse Keeper и может снизить производительность в зависимости от нагрузки на сервис.
+Использование [`SYSTEM SYNC REPLICAS`](/ru/reference/statements/system#sync-replica) или [`select_sequential_consistency`](/ru/reference/settings/session-settings#select_sequential_consistency) увеличит нагрузку на ClickHouse Keeper и может снизить производительность в зависимости от нагрузки на сервис.
 
 Рекомендуется выполнять запись и чтение в рамках одного и того же сеанса или через собственный протокол (sticky connection).
