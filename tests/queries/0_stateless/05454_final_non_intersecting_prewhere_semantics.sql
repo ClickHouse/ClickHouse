@@ -131,3 +131,14 @@ SELECT count(), sum(key) FROM t_final_prewhere_sample FINAL SAMPLE 1/2 WHERE toU
 SELECT count(), sum(key) FROM t_final_prewhere_sample FINAL SAMPLE 1/2 WHERE toUInt64(s) % 3 = 1
 SETTINGS query_plan_optimize_lazy_final = 1, min_filtered_ratio_for_lazy_final = 0;
 DROP TABLE t_final_prewhere_sample;
+
+SELECT 'Not applied with a stateful function in the WHERE, which depends on the rows it sees';
+DROP TABLE IF EXISTS t_final_prewhere_stateful;
+CREATE TABLE t_final_prewhere_stateful (key UInt64, v UInt64) ENGINE = ReplacingMergeTree ORDER BY key SETTINGS index_granularity = 128;
+INSERT INTO t_final_prewhere_stateful SELECT number, number % 2 FROM numbers(20000);
+OPTIMIZE TABLE t_final_prewhere_stateful FINAL;
+SELECT count() FROM t_final_prewhere_stateful FINAL WHERE v = 1 AND rowNumberInAllBlocks() < 10
+SETTINGS max_threads = 1, query_plan_optimize_lazy_final = 0;
+SELECT count() FROM t_final_prewhere_stateful FINAL WHERE v = 1 AND rowNumberInAllBlocks() < 10
+SETTINGS max_threads = 1, query_plan_optimize_lazy_final = 1, min_filtered_ratio_for_lazy_final = 0;
+DROP TABLE t_final_prewhere_stateful;

@@ -1180,9 +1180,13 @@ The ranges that need merging still apply only the conditions on the sorting key 
 This lets a `FINAL` query with a selective condition on columns outside the sorting key read only the rows that pass it in most of the table,
 like the same query without `FINAL` does.
 
+The conditions are applied in the order of `WHERE`, and only the conditions before the first one that cannot be applied early,
+so a condition is still evaluated only on the rows that passed the conditions before it.
+
 Requires [optimize_move_to_prewhere](#optimize_move_to_prewhere) and [optimize_move_to_prewhere_if_final](#optimize_move_to_prewhere_if_final).
 Not applied to [GraphiteMergeTree](/reference/engines/table-engines/mergetree-family/graphitemergetree) tables,
-with a row policy that has to be applied after `FINAL`, or with parallel replicas.
+with a row policy that has to be applied after `FINAL`, with `SAMPLE`, with stateful functions like `runningDifference` in `WHERE`,
+or with parallel replicas.
 
 Possible values:
 

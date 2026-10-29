@@ -391,8 +391,10 @@ void optimizePrewhere(QueryPlan::Node & parent_node, const bool remove_unused_co
     /// The conditions that a `FINAL` read can apply as PREWHERE to the key ranges it reads without merging. A row of such a range
     /// has no other version, so any deterministic condition gives the same result before and after `FINAL`. They are collected
     /// before the conditions on the sorting key are moved out of the filter below, and stay in the filter.
+    /// Not with stateful functions in the WHERE, like `runningDifference`: their results depend on the rows they see.
     std::list<const ActionsDAG::Node *> non_intersecting_final_conditions;
-    if (is_final && read_from_merge_tree_step && settings[Setting::optimize_move_to_prewhere_if_final_non_intersecting])
+    if (is_final && read_from_merge_tree_step && settings[Setting::optimize_move_to_prewhere_if_final_non_intersecting]
+        && !filter_step->getExpression().hasStatefulFunctions())
         non_intersecting_final_conditions = where_optimizer.optimize(filter_step->getExpression(),
             filter_step->getFilterColumnName(),
             source_step_with_filter->getContext(),

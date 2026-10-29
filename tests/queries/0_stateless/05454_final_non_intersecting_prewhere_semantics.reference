@@ -30,3 +30,6 @@ The conditions applied early keep the order of the WHERE
 Not applied with SAMPLE, which drops rows after reading
 3320	33262499
 3320	33262499
+Not applied with a stateful function in the WHERE, which depends on the rows it sees
+5
+5
