@@ -59,13 +59,6 @@ def log_query(query):
     return result.stdout.strip()
 
 
-# Resolve the symbol ranges once: scanning `system.symbols` per attempt is slow in debug builds.
-# Numeric symbol ranges avoid demangling every frame in the allocation samples.
-decoder_ranges = log_query(
-    "SELECT groupArray((address_begin, address_end)) FROM system.symbols "
-    "WHERE position(symbol, 'receiveProfileTraces') > 0"
-)
-assert decoder_ranges != "[]", "no symbols for receiveProfileTraces"
 start_time = log_query("SELECT now() - 60")
 
 query = (
@@ -94,10 +87,10 @@ for asynchronous in (0, 1):
             log_query("SYSTEM FLUSH LOGS trace_log")
             # `Connection::receiveProfileTraces` must still be sampled in `system.trace_log`.
             # The time bound uses the primary key of `system.trace_log`, which grows large under test load.
+            # Look up the mangled names of this query's frames only: scanning `system.symbols` exceeds
+            # the time limit in debug builds.
             decoder_samples = int(log_query(
-                f"WITH {decoder_ranges} AS ranges "
-                "SELECT countIf(arrayExists(address -> arrayExists(bounds -> "
-                "address >= bounds.1 AND address < bounds.2, ranges), trace)) "
+                "SELECT countIf(arrayExists(address -> position(addressToSymbol(address), 'receiveProfileTraces') > 0, trace)) "
                 f"FROM system.trace_log WHERE event_date >= toDate('{start_time}') "
                 f"AND event_time >= '{start_time}' AND query_id = '{query_id}'"
             ))

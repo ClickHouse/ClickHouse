@@ -11,6 +11,7 @@ import socket
 import struct
 import subprocess
 import sys
+import time
 import uuid
 
 client_command, database, host, port, helpers = sys.argv[1:]
@@ -98,10 +99,20 @@ try:
         assert all(len(sample["trace"]) == len(sample["symbols"]) for sample in samples), samples[:1]
         assert all(sample["trace_type"] not in ("Dropped", "Incomplete") for sample in samples), samples[:1]
         assert any(sample["trace_type"] == "MemorySample" and sample["size"] > 0 and any("NativeReader::" in symbol for symbol in sample["symbols"]) for sample in samples), "missing Native upload samples"
+        expected_sum = rows * (rows - 1) // 2
+        inserted = None
         if not wait:
             control(f"SYSTEM FLUSH ASYNC INSERT QUEUE {qualified_table}")
-        expected_sum = rows * (rows - 1) // 2
-        inserted = control(f"SELECT count(), sum(c0), sum(c63) FROM {qualified_table} FORMAT TSV")
+            # A background flush that already took the entry can still be writing it when the queue
+            # flush returns, so wait for its rows.
+            deadline = time.monotonic() + 30
+            while time.monotonic() < deadline:
+                inserted = control(f"SELECT count(), sum(c0), sum(c63) FROM {qualified_table} FORMAT TSV")
+                if inserted == f"{rows}\t{expected_sum}\t{expected_sum}":
+                    break
+                time.sleep(0.1)
+        else:
+            inserted = control(f"SELECT count(), sum(c0), sum(c63) FROM {qualified_table} FORMAT TSV")
         if inserted != f"{rows}\t{expected_sum}\t{expected_sum}":
             control("SYSTEM FLUSH LOGS asynchronous_insert_log")
             raise AssertionError((wait, inserted, control(
