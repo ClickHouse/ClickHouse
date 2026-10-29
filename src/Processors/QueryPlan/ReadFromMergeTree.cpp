@@ -2556,9 +2556,10 @@ std::optional<FilterDAGInfo> ReadFromMergeTree::getSamplingFilter() const
     return FilterDAGInfo{sampling.filter_expression->clone(), sampling.filter_function->getColumnName(), /*do_remove_column=*/false};
 }
 
-void ReadFromMergeTree::setNonIntersectingFinalFilter(FilterDAGInfoPtr filter)
+void ReadFromMergeTree::setNonIntersectingFinalFilter(FilterDAGInfoPtr filter, UInt64 token)
 {
     non_intersecting_final_filter = std::move(filter);
+    non_intersecting_final_filter_token = token;
 
     /// The filter is evaluated during reading, like PREWHERE, so its sets are built the same way (see `updatePrewhereInfo`).
     if (non_intersecting_final_filter && indexes.has_value())
@@ -2704,13 +2705,16 @@ Pipe ReadFromMergeTree::readNonIntersectingWithEngineFilter(
     size_t num_streams,
     const Names & origin_column_names)
 {
-    return readNonIntersectingFinalWithEngineFilter(
+    bool filtered = false;
+    Pipe pipe = readNonIntersectingFinalWithEngineFilter(
         data.merging_params, origin_column_names, context,
         [&](const Names & columns)
         {
             auto filters = makeNonIntersectingFinalFilters(columns);
             if (!filters)
                 return spreadMarkRangesAmongStreams(std::move(parts), index_build_context, num_streams, columns);
+
+            filtered = true;
 
             MergeTreeReaderSettings non_intersecting_reader_settings = reader_settings;
             /// FINAL never consults the query condition cache, and the filter of these ranges is not the filter of the whole read.
@@ -2734,6 +2738,14 @@ Pipe ReadFromMergeTree::readNonIntersectingWithEngineFilter(
 
             return spreadMarkRangesAmongStreams(std::move(parts), index_build_context, num_streams, columns);
         });
+
+    /// After the filter of the engine, which drops rows: the mark holds the number of rows of the chunk.
+    if (filtered && !pipe.empty())
+    {
+        pipe.addSimpleTransform([&](const SharedHeader & header)
+            { return std::make_shared<MarkPrefilteredChunksTransform>(header, non_intersecting_final_filter_token); });
+    }
+    return pipe;
 }
 
 Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsFinal(
@@ -5159,6 +5171,8 @@ QueryPlanStepPtr ReadFromMergeTree::clone() const
     cloned_step->deferred_prewhere_info = deferred_prewhere_info;
     if (non_intersecting_final_filter)
         cloned_step->non_intersecting_final_filter = std::make_shared<FilterDAGInfo>(non_intersecting_final_filter->clone());
+    cloned_step->non_intersecting_final_filter_token = non_intersecting_final_filter_token;
+    cloned_step->prefiltered_chunks_token = prefiltered_chunks_token;
     /// Carry over the TopK marker: without it the clone would use the unsalted query condition cache key.
     /// It is copied rather than set with `setTopKColumn`, which would fold the part-set salt into `condition_hash` again.
     cloned_step->top_k_filter_info = top_k_filter_info;
@@ -6345,6 +6359,12 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, [[ma
         {
             return std::make_shared<ExpressionTransform>(header, converting_dag_expr);
         });
+    }
+
+    if (prefiltered_chunks_token && !pipe.empty())
+    {
+        pipe.addSimpleTransform([&](const SharedHeader & header)
+            { return std::make_shared<MarkPrefilteredChunksTransform>(header, *prefiltered_chunks_token); });
     }
 
     for (const auto & processor : pipe.getProcessors())

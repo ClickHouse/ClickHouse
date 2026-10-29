@@ -64,6 +64,8 @@
     <query>SELECT sum(c6), max(c1) FROM final_non_intersecting_prewhere FINAL WHERE c5 BETWEEN 6000000 AND 6200000 FORMAT Null</query>
     <!-- About 1% of rows pass the condition, spread over all granules. -->
     <query>SELECT * FROM final_non_intersecting_prewhere FINAL WHERE selector &lt; 10 FORMAT Null</query>
+    <!-- Most rows pass an expensive condition: it must not be evaluated again after FINAL. -->
+    <query>SELECT sum(c5) FROM final_non_intersecting_prewhere FINAL WHERE NOT match(c2, '^9.*7$') FORMAT Null</query>
 
     <drop_query>DROP TABLE IF EXISTS final_non_intersecting_prewhere</drop_query>
 </test>

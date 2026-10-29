@@ -18,6 +18,7 @@
 #include <Storages/StorageMerge.h>
 #include <Storages/VirtualColumnUtils.h>
 #include <Common/Exception.h>
+#include <Common/thread_local_rng.h>
 
 namespace DB
 {
@@ -406,14 +407,30 @@ void optimizePrewhere(QueryPlan::Node & parent_node, const bool remove_unused_co
 
     /// The filter stays above the read, so a filter built by an earlier call is replaced only by a filter
     /// built from the same or more conditions (see `optimize_prewhere_after_pushdown`).
+    /// The read marks the chunks of the non-intersecting ranges with a token, and the filter above it skips
+    /// the conditions they already passed for them.
+    std::optional<std::pair<UInt64, std::unordered_set<UInt64>>> prefiltered_conditions;
     if (!non_intersecting_final_conditions.empty())
     {
         if (auto filter = buildNonIntersectingFinalFilter(non_intersecting_final_conditions, optimize_result.prewhere_nodes))
-            read_from_merge_tree_step->setNonIntersectingFinalFilter(std::move(filter));
+        {
+            const UInt64 token = thread_local_rng();
+            std::unordered_set<UInt64> condition_hashes;
+            for (const auto * condition : non_intersecting_final_conditions)
+                if (!optimize_result.prewhere_nodes.contains(condition))
+                    condition_hashes.insert(condition->getHash());
+
+            read_from_merge_tree_step->setNonIntersectingFinalFilter(std::move(filter), token);
+            prefiltered_conditions.emplace(token, std::move(condition_hashes));
+        }
     }
 
     if (optimize_result.prewhere_nodes.empty())
+    {
+        if (prefiltered_conditions)
+            filter_step->setPrefilteredConditions(prefiltered_conditions->first, std::move(prefiltered_conditions->second));
         return;
+    }
 
     PrewhereInfoPtr prewhere_info = std::make_shared<PrewhereInfo>();
 
@@ -477,11 +494,14 @@ void optimizePrewhere(QueryPlan::Node & parent_node, const bool remove_unused_co
     QueryPlanStepPtr new_step;
     if (!optimize_result.fully_moved_to_prewhere)
     {
-        new_step = std::make_unique<FilterStep>(
+        auto new_filter_step = std::make_unique<FilterStep>(
             source_step_with_filter->getOutputHeader(),
             std::move(remaining_expr),
             filter_step->getFilterColumnName(),
             filter_step->removesFilterColumn());
+        if (prefiltered_conditions)
+            new_filter_step->setPrefilteredConditions(prefiltered_conditions->first, std::move(prefiltered_conditions->second));
+        new_step = std::move(new_filter_step);
     }
     else
     {

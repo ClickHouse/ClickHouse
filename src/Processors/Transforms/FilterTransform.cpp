@@ -38,6 +38,12 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
+void MarkPrefilteredChunksTransform::transform(Chunk & chunk)
+{
+    chunk.getChunkInfos().extract<PrefilteredChunkInfo>();
+    chunk.getChunkInfos().add(std::make_shared<PrefilteredChunkInfo>(token, chunk.getNumRows()));
+}
+
 bool FilterTransform::canUseType(const DataTypePtr & filter_type)
 {
     return filter_type->canBeUsedInBooleanContext();
@@ -228,6 +234,12 @@ IProcessor::Status FilterTransform::prepare()
 }
 
 
+void FilterTransform::setPrefilteredExpression(ExpressionActionsPtr prefiltered_expression_, UInt64 token)
+{
+    prefiltered_expression = std::move(prefiltered_expression_);
+    prefiltered_token = token;
+}
+
 void FilterTransform::removeFilterIfNeed(Columns & columns) const
 {
     if (remove_filter_column)
@@ -298,6 +310,18 @@ void updateRowNumbersInfo(const Chunk & chunk, const IColumn::Filter & filter)
     }
 }
 
+/// The rows left after filtering still passed the conditions of `PrefilteredChunkInfo`.
+void prefilteredInfoPartiallyFiltered(Chunk & chunk, size_t num_rows_before_filtration, size_t num_filtered_rows)
+{
+    auto prefiltered_info = chunk.getChunkInfos().get<PrefilteredChunkInfo>();
+    if (!prefiltered_info || prefiltered_info->num_rows != num_rows_before_filtration)
+        return;
+
+    /// `ChunkInfo` objects are held by `shared_ptr` and may be aliased, so don't mutate in place.
+    chunk.getChunkInfos().extract<PrefilteredChunkInfo>();
+    chunk.getChunkInfos().add(std::make_shared<PrefilteredChunkInfo>(prefiltered_info->token, num_filtered_rows));
+}
+
 /// After this filter removes some rows, the rows of the chunk are no longer at the positions given by
 /// `MarkRangesInfo::rows_per_mark`, e.g. for the next filter of a split `AND` chain (`FilterStep`).
 void markRangesInfoPartiallyFiltered(Chunk & chunk)
@@ -318,6 +342,15 @@ void markRangesInfoPartiallyFiltered(Chunk & chunk)
 void FilterTransform::doTransform(Chunk & chunk)
 {
     size_t num_rows_before_filtration = chunk.getNumRows();
+
+    const ExpressionActionsPtr * expression_to_execute = &expression;
+    if (prefiltered_expression)
+    {
+        auto prefiltered_info = chunk.getChunkInfos().get<PrefilteredChunkInfo>();
+        if (prefiltered_info && prefiltered_info->token == prefiltered_token && prefiltered_info->num_rows == num_rows_before_filtration)
+            expression_to_execute = &prefiltered_expression;
+    }
+
     auto columns = chunk.detachColumns();
     DataTypes types;
 
@@ -331,8 +364,8 @@ void FilterTransform::doTransform(Chunk & chunk)
             return;
         }
 
-        if (expression)
-            expression->execute(block, num_rows_before_filtration, false, false, &getCancellationFlag());
+        if (*expression_to_execute)
+            (*expression_to_execute)->execute(block, num_rows_before_filtration, false, false, &getCancellationFlag());
 
         if (isCancelled())
         {
@@ -434,6 +467,7 @@ void FilterTransform::doTransform(Chunk & chunk)
     {
         writeMarksWithoutMatchesIntoQueryConditionCache(chunk.getChunkInfos().get<MarkRangesInfo>(), *filter_description);
         markRangesInfoPartiallyFiltered(chunk);
+        prefilteredInfoPartiallyFiltered(chunk, num_rows_before_filtration, num_filtered_rows);
     }
 
     /// If all the rows pass through the filter.

@@ -1,30 +1,12 @@
-Only deterministic conditions are applied to the non-intersecting ranges
-Filter of non-intersecting FINAL ranges column: v = 5 AND notEmpty(s)
+Only deterministic conditions are applied
 Filter of non-intersecting FINAL ranges column: equals(v, 5_UInt8)
-0
-0
-Conditions do not see the rows FINAL hides
-2000
+Conditions do not see the rows that FINAL hides
 2000
 1990
-1990
-Row policies
-667	16734169093458771478
-667	16734169093458771478
-1002	13029526825395379813
-1002	13029526825395379813
+A row policy applied after FINAL disables it
 0
-The query condition cache
-19	13970115097911804685
-20	9600602210596935217
-20	9600602210596935217
-19	13970115097911804685
-19	13970115097911804685
-Lightweight updates
+1002	13029526825395379813
+1002	13029526825395379813
+Conditions see the values of lightweight updates
 20	190140
 20	190140
-180	1801260
-180	1801260
-Mutations on the fly
-20	190180
-20	190180

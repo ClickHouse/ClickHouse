@@ -7,6 +7,7 @@
 #include <stack>
 #include <unordered_map>
 #include <unordered_set>
+#include <Columns/ColumnConst.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
@@ -500,9 +501,77 @@ FilterStep::FilterStep(
     actions_dag.removeUnusedActions(false, false);
 }
 
+void FilterStep::setPrefilteredConditions(UInt64 token, std::unordered_set<UInt64> condition_hashes)
+{
+    prefiltered_conditions = PrefilteredConditions{.token = token, .condition_hashes = std::move(condition_hashes)};
+}
+
+/// The actions of a filter for the rows that already passed the conditions with `condition_hashes`: the atoms of the AND
+/// chain of the filter column with these hashes are replaced by constant true, which is their value for these rows.
+/// Nullopt if no atom is replaced, or if the replacement would change the constness of a column of the result.
+static std::optional<ActionsDAG> makePrefilteredActions(
+    const ActionsDAG & dag,
+    const String & filter_column_name,
+    bool remove_filter_column,
+    const std::unordered_set<UInt64> & condition_hashes,
+    const Block & input_header)
+{
+    ActionsDAG prefiltered = dag.clone();
+
+    std::unordered_map<const ActionsDAG::Node *, ColumnWithTypeAndName> substitutions;
+    std::vector<const ActionsDAG::Node *> stack{&prefiltered.findInOutputs(filter_column_name)};
+    while (!stack.empty())
+    {
+        const auto * node = stack.back();
+        stack.pop_back();
+
+        if (node->type != ActionsDAG::ActionType::FUNCTION)
+            continue;
+
+        if (node->function_base->getName() == "and")
+        {
+            stack.insert(stack.end(), node->children.begin(), node->children.end());
+            continue;
+        }
+
+        if (!condition_hashes.contains(node->getHash()) || !WhichDataType(removeNullable(node->result_type)).isUInt8())
+            continue;
+
+        substitutions.emplace(node, ColumnWithTypeAndName(node->result_type->createColumnConst(1, Field(UInt64(1))), node->result_type, node->result_name));
+    }
+
+    if (substitutions.empty())
+        return std::nullopt;
+
+    prefiltered.substitute(substitutions);
+    prefiltered.removeUnusedActions(false, false);
+
+    /// A constant column instead of a full one may break the transforms after the filter.
+    const Block header = FilterTransform::transformHeader(input_header, &dag, filter_column_name, remove_filter_column);
+    const Block prefiltered_header = FilterTransform::transformHeader(input_header, &prefiltered, filter_column_name, remove_filter_column);
+    if (!blocksHaveEqualStructure(header, prefiltered_header))
+        return std::nullopt;
+    auto is_const = [](const ColumnWithTypeAndName & column) { return column.column && isColumnConst(*column.column); };
+    for (size_t i = 0; i < header.columns(); ++i)
+        if (is_const(header.getByPosition(i)) != is_const(prefiltered_header.getByPosition(i)))
+            return std::nullopt;
+
+    return prefiltered;
+}
+
 void FilterStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings & settings)
 {
     std::vector<ActionsAndName> and_atoms;
+
+    auto make_prefiltered_expression = [&](const ActionsDAG & dag, const String & name, bool remove) -> ExpressionActionsPtr
+    {
+        if (!prefiltered_conditions)
+            return nullptr;
+        auto prefiltered = makePrefilteredActions(dag, name, remove, prefiltered_conditions->condition_hashes, pipeline.getHeader());
+        if (!prefiltered)
+            return nullptr;
+        return std::make_shared<ExpressionActions>(std::move(*prefiltered), settings.getActionsSettings());
+    };
 
     /// Splitting AND filter condition to steps under the setting, which is enabled with merge_filters optimization.
     /// This is needed to support short-circuit properly.
@@ -520,6 +589,7 @@ void FilterStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQ
     /// of the DAG, and there is one transform per stream.
     for (auto & and_atom : and_atoms)
     {
+        auto prefiltered_expression = make_prefiltered_expression(and_atom.dag, and_atom.name, true);
         auto expression = std::make_shared<ExpressionActions>(std::move(and_atom.dag), settings.getActionsSettings());
         auto transformed_header = std::make_shared<const Block>(expression->getActionsDAG().updateHeader(pipeline.getHeader()));
         pipeline.addSimpleTransform([&](const SharedHeader & header, QueryPipelineBuilder::StreamType stream_type)
@@ -527,17 +597,24 @@ void FilterStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQ
             bool on_totals = stream_type == QueryPipelineBuilder::StreamType::Totals;
 
             /// Each split atom gets the same query condition cache key.
-            return std::make_shared<FilterTransform>(header, transformed_header, expression, and_atom.name, true, on_totals, nullptr, condition);
+            auto transform = std::make_shared<FilterTransform>(header, transformed_header, expression, and_atom.name, true, on_totals, nullptr, condition);
+            if (prefiltered_expression)
+                transform->setPrefilteredExpression(prefiltered_expression, prefiltered_conditions->token);
+            return transform;
         });
     }
 
+    auto prefiltered_expression = make_prefiltered_expression(actions_dag, filter_column_name, remove_filter_column);
     auto expression = std::make_shared<ExpressionActions>(std::move(actions_dag), settings.getActionsSettings());
 
     auto transformed_header = std::make_shared<const Block>(expression->getActionsDAG().updateHeader(pipeline.getHeader()));
     pipeline.addSimpleTransform([&](const SharedHeader & header, QueryPipelineBuilder::StreamType stream_type)
     {
         bool on_totals = stream_type == QueryPipelineBuilder::StreamType::Totals;
-        return std::make_shared<FilterTransform>(header, transformed_header, expression, filter_column_name, remove_filter_column, on_totals, nullptr, condition);
+        auto transform = std::make_shared<FilterTransform>(header, transformed_header, expression, filter_column_name, remove_filter_column, on_totals, nullptr, condition);
+        if (prefiltered_expression)
+            transform->setPrefilteredExpression(prefiltered_expression, prefiltered_conditions->token);
+        return transform;
     });
 
     if (!blocksHaveEqualStructure(pipeline.getHeader(), *output_header))

@@ -705,7 +705,13 @@ public:
 
     /// The deterministic conditions of the `WHERE` above a `FINAL` read, which it applies as PREWHERE to the key ranges
     /// it reads without merging (see `optimize_move_to_prewhere_if_final_non_intersecting`). The conditions stay in the `WHERE`.
-    void setNonIntersectingFinalFilter(FilterDAGInfoPtr filter);
+    /// The read marks the chunks of these ranges with `PrefilteredChunkInfo` with `token`, so that the `WHERE` does not
+    /// evaluate the conditions again for them (see `FilterStep::setPrefilteredConditions`).
+    void setNonIntersectingFinalFilter(FilterDAGInfoPtr filter, UInt64 token);
+    UInt64 getNonIntersectingFinalFilterToken() const { return non_intersecting_final_filter_token; }
+
+    /// Mark all output chunks with `PrefilteredChunkInfo` with `token`: the read applies the conditions they stand for.
+    void setPrefilteredChunksToken(UInt64 token) { prefiltered_chunks_token = token; }
 
     /// The row-level filter and PREWHERE for reading `columns_to_read` of the key ranges that this `FINAL` read reads without
     /// merging, or nullopt if they are the same as for the other ranges. The row-level filter drops the rows that `FINAL` hides
@@ -815,6 +821,9 @@ private:
 
     /// See `setNonIntersectingFinalFilter`
     FilterDAGInfoPtr non_intersecting_final_filter;
+    UInt64 non_intersecting_final_filter_token = 0;
+    /// See `setPrefilteredChunksToken`
+    std::optional<UInt64> prefiltered_chunks_token;
 
     /// Row policy / prewhere deferred to after FINAL, if needed
     FilterDAGInfoPtr deferred_row_level_filter;

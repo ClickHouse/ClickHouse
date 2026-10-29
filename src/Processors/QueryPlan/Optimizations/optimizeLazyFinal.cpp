@@ -172,10 +172,11 @@ static std::optional<QueryPlan> createNonIntersectingPlan(
 
     /// No row of these parts has another version, so all deterministic conditions of the `WHERE` can be applied as PREWHERE
     /// (see `optimize_move_to_prewhere_if_final_non_intersecting`). The filters are new objects, so they can be changed below.
-    if (auto filters = reading_step->makeNonIntersectingFinalFilters(columns))
+    auto non_intersecting_filters = reading_step->makeNonIntersectingFinalFilters(columns);
+    if (non_intersecting_filters)
     {
-        non_final_query_info.row_level_filter = std::move(filters->row_level_filter);
-        non_final_query_info.prewhere_info = std::move(filters->prewhere_info);
+        non_final_query_info.row_level_filter = std::move(non_intersecting_filters->row_level_filter);
+        non_final_query_info.prewhere_info = std::move(non_intersecting_filters->prewhere_info);
     }
 
     if (!merging_params.is_deleted_column.empty())
@@ -238,6 +239,10 @@ static std::optional<QueryPlan> createNonIntersectingPlan(
         false);
 
     non_final_reading->disableQueryConditionCache();
+
+    /// The `WHERE` above does not evaluate again the conditions that the read applied.
+    if (non_intersecting_filters)
+        non_final_reading->setPrefilteredChunksToken(reading_step->getNonIntersectingFinalFilterToken());
 
     /// The synthetic step inherits the filter rewritten to `__text_index_*` virtual columns, but not the read tasks that produce them
     /// from the index.

@@ -13,6 +13,33 @@ using ExpressionActionsPtr = std::shared_ptr<ExpressionActions>;
 class ActionsDAG;
 class QueryConditionCache;
 
+/// All rows of the chunk passed the conditions that the reader applied before the `FilterStep` with `token` evaluates them
+/// again, e.g. the conditions that a `FINAL` read applies as PREWHERE to its non-intersecting ranges. `num_rows` is the
+/// number of rows of the chunk: a transform that drops rows keeps the property, and `FilterTransform` updates it, while a
+/// transform that combines chunks may add rows without it, so the info is valid only while the number matches.
+struct PrefilteredChunkInfo : public ChunkInfoCloneable<PrefilteredChunkInfo>
+{
+    PrefilteredChunkInfo(UInt64 token_, size_t num_rows_) : token(token_), num_rows(num_rows_) {}
+
+    UInt64 token;
+    size_t num_rows;
+};
+
+/// Adds `PrefilteredChunkInfo` with `token` to every chunk.
+class MarkPrefilteredChunksTransform final : public ISimpleTransform
+{
+public:
+    MarkPrefilteredChunksTransform(SharedHeader header_, UInt64 token_)
+        : ISimpleTransform(header_, header_, false), token(token_) {}
+
+    String getName() const override { return "MarkPrefilteredChunksTransform"; }
+
+    void transform(Chunk & chunk) override;
+
+private:
+    UInt64 token;
+};
+
 /** Implements WHERE, HAVING operations.
   * Takes an expression, which adds to the block one ColumnUInt8 column containing the filtering conditions.
   * The expression is evaluated and result chunks contain only the filtered rows.
@@ -51,8 +78,14 @@ public:
 
     static bool canUseType(const DataTypePtr & type);
 
+    /// Evaluate `prefiltered_expression_` instead of the expression for the chunks with `PrefilteredChunkInfo` with
+    /// `token`. It must give the same result for them: it treats the conditions they already passed as true.
+    void setPrefilteredExpression(ExpressionActionsPtr prefiltered_expression_, UInt64 token);
+
 private:
     ExpressionActionsPtr expression;
+    ExpressionActionsPtr prefiltered_expression;
+    UInt64 prefiltered_token = 0;
     SetSpillables set_spillables;
     String filter_column_name;
     bool remove_filter_column;
