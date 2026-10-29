@@ -15,6 +15,7 @@
 #include <DataTypes/DataTypeMapHelpers.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeTuple.h>
+#include <DataTypes/getLeastSupertype.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/BloomFilterHash.h>
@@ -911,6 +912,21 @@ static bool searchFunctionCoercesConstant(const DataTypePtr & value_type, const 
         && isStringOrFixedString(actual_type);
 }
 
+/// The search functions compare a `Date32` with a `DateTime` as their least supertype, a `DateTime64` in the
+/// session time zone, while a direct conversion to the `DateTime` reads the date in that type's time zone.
+static Field convertConstantLikeSearchFunction(
+    const Field & field, const DataTypePtr & value_type, const DataTypePtr & actual_type, bool cast_to_supertype)
+{
+    const DataTypePtr value = value_type ? removeLowCardinalityAndNullable(value_type) : nullptr;
+    if (cast_to_supertype && value && isDate32(value) && isDateTime(actual_type))
+    {
+        const DataTypePtr supertype = getLeastSupertype(DataTypes{actual_type, value});
+        const Field supertype_value = convertFieldToType(field, *supertype, value.get());
+        return convertFieldToType(supertype_value, *actual_type, supertype.get(), {}, /*strict=*/ true);
+    }
+    return convertFieldToType(field, *actual_type, value_type.get());
+}
+
 /// Convert a constant for hashing against the elements of an indexed array column, the way the
 /// functions built on arrayIndex.h (`has`, `indexOf`, `mapContainsKey`, `mapContainsValue`,
 /// `mapContains`, and `has` over a `Map`) compare it. Over a plain `String` element they compare
@@ -943,7 +959,7 @@ static Field convertConstantForArrayIndexFunction(
         return std::move(*enum_value);
 
     if (WhichDataType(removeNullable(nested_type)).isString() || !searchFunctionCoercesConstant(value_type, actual_type))
-        return convertFieldToType(value_field, *actual_type, value_type.get());
+        return convertConstantLikeSearchFunction(value_field, value_type, actual_type, /*cast_to_supertype=*/ !nested_type->lowCardinality());
 
     return coerceStringFieldLikeSearchFunction(value_field, value_type, actual_type, /*cast_to_supertype=*/ !nested_type->lowCardinality());
 }
@@ -983,7 +999,7 @@ static ColumnPtr createColumnFromConstantArray(
         else if (coerce)
             converted = coerceStringFieldLikeSearchFunction(f, element_type, actual_type, /*cast_to_supertype=*/ true);
         else
-            converted = convertFieldToType(f, *actual_type, element_type.get());
+            converted = convertConstantLikeSearchFunction(f, element_type, actual_type, /*cast_to_supertype=*/ true);
         if (converted.isNull())
             return nullptr;
 
@@ -1227,7 +1243,7 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeEquals(
                 return true;
             }
 
-            auto converted_field = convertFieldToType(value_field, *actual_type, value_type.get());
+            auto converted_field = convertConstantLikeSearchFunction(value_field, value_type, actual_type, /*cast_to_supertype=*/ true);
             if (converted_field.isNull())
                 return false;
 
@@ -1365,6 +1381,24 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeEquals(
                         map_value_field = tryConvertFieldToType(value_field, *map_value_type, value_type.get(), {}, /* strict */ true);
 
                     if (map_value_field.isNull() || map_value_field == Field(Int64(0)) || map_value_field == map_value_type->getDefault())
+                        return false;
+                }
+                else if (isDateOrDate32OrDateTimeOrDateTime64(map_value_type)
+                    && isDateOrDate32OrDateTimeOrDateTime64(removeLowCardinalityAndNullable(value_type)))
+                {
+                    /// A missing key yields the column default, zero even for `Date32` (whose `getDefault` is `1900-01-01`),
+                    /// and `equals` compares it with the constant in their least supertype.
+                    const DataTypePtr constant_type = removeLowCardinalityAndNullable(value_type);
+                    const DataTypePtr supertype = getLeastSupertype(DataTypes{map_value_type, constant_type});
+                    auto missing_value = map_value_type->createColumn();
+                    missing_value->insertDefault();
+                    const Field missing_in_supertype = convertFieldToType((*missing_value)[0], *supertype, map_value_type.get());
+                    const Field constant_in_supertype = convertFieldToType(value_field, *supertype, constant_type.get());
+                    if (missing_in_supertype.isNull() || constant_in_supertype.isNull() || missing_in_supertype == constant_in_supertype)
+                        return false;
+
+                    map_value_field = convertConstantLikeSearchFunction(value_field, value_type, map_value_type, /*cast_to_supertype=*/ true);
+                    if (map_value_field.isNull())
                         return false;
                 }
             }
