@@ -761,6 +761,14 @@ bool QueryPipeline::tryGetResultRowsAndBytes(UInt64 & result_rows, UInt64 & resu
     return true;
 }
 
+std::optional<UInt64> QueryPipeline::tryGetRowsBeforeLimitAtLeast() const
+{
+    if (!output_format)
+        return {};
+
+    return output_format->getRowsBeforeLimitAtLeast();
+}
+
 void QueryPipeline::writeResultIntoQueryResultCache(std::shared_ptr<QueryResultCacheWriter> query_result_cache_writer)
 {
     chassert(pulling());
