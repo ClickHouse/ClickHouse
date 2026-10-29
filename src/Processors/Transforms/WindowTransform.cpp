@@ -243,19 +243,7 @@ void WindowTransform::computeReadyRows()
         }
 
         peers.advancePeerGroupBounds(blocks, partition.bounds());
-
-        const RowPoint & current = peers.current();
-        if (params.separate_order_by_peer_groups && order_by_peer_group_start.location != current.location
-            && blocks.blockAt(current.location.block).index.order_by_peer_group_starts[current.location.row])
-        {
-            order_by_peer_group_start = RowPoint{
-                .location = current.location,
-                .row_index_in_partition = current.row_index_in_partition,
-                .peer_group_index_in_partition = order_by_peer_group_start.peer_group_index_in_partition + 1,
-            };
-        }
-
-        frame.advance(blocks, current, partition.bounds());
+        frame.advance(blocks, peers.current(), partition.bounds());
         if (!frame.bounds().fully_visible)
             break;
 
@@ -284,11 +272,9 @@ void WindowTransform::appendCurrentRow()
     bounds.row.push_back(current.row_index_in_partition);
     bounds.frame_start.push_back(current_frame.start.row_index_in_partition);
     bounds.frame_end.push_back(current_frame.end.row_index_in_partition);
-    /// Under ROWS the peers of the frame are single rows, while rank() and dense_rank() count ORDER BY peer groups.
-    const RowPoint & peer_group_start = params.separate_order_by_peer_groups ? order_by_peer_group_start : current_peers.start;
-    bounds.peers_start.push_back(peer_group_start.row_index_in_partition);
+    bounds.peers_start.push_back(current_peers.start.row_index_in_partition);
     bounds.peers_end.push_back(current_peers.end.row_index_in_partition);
-    bounds.peer_group_index.push_back(params.separate_order_by_peer_groups ? order_by_peer_group_start.peer_group_index_in_partition : current.peer_group_index_in_partition);
+    bounds.peer_group_index.push_back(current.peer_group_index_in_partition);
     if (partition.bounds().fully_visible)
         bounds.partition_end.push_back(partition.bounds().end.row_index_in_partition);
     ++bounds.rows;
@@ -307,11 +293,35 @@ void WindowTransform::flushBatch()
             slot.arguments.setBlocks(argument_blocks);
     }
 
+    if (params.separate_order_by_peer_groups)
+        assignOrderByPeerGroups();
+
     const SlidingBlock & block = blocks.blockAt(batch_start.block);
     for (const auto & slot : general_functions)
         slot.function->evaluate(slot.state, bounds, slot.arguments, *block.result_columns[slot.result_column]);
 
     clearBounds(bounds);
+}
+
+void WindowTransform::assignOrderByPeerGroups()
+{
+    /// Under ROWS the peers of the frame are single rows, while rank() and dense_rank() count ORDER BY peer groups.
+    /// A batch holds consecutive rows of one block and one partition.
+    const std::vector<bool> & starts = blocks.blockAt(batch_start.block).index.order_by_peer_group_starts;
+    const size_t first_row = static_cast<size_t>(batch_start.row);
+    chassert(first_row + bounds.rows <= starts.size());
+
+    for (size_t i = 0; i < bounds.rows; ++i)
+    {
+        const Int64 row_in_partition = bounds.row[i];
+        if (row_in_partition == 0 || starts[first_row + i])
+        {
+            order_by_peer_group_index = row_in_partition == 0 ? 0 : order_by_peer_group_index + 1;
+            order_by_peer_group_start = row_in_partition;
+        }
+        bounds.peers_start[i] = order_by_peer_group_start;
+        bounds.peer_group_index[i] = order_by_peer_group_index;
+    }
 }
 
 void WindowTransform::startNextPartition()
@@ -323,7 +333,6 @@ void WindowTransform::startNextPartition()
     partition.advance(blocks);
 
     peers.enterPartition(partition_start);
-    order_by_peer_group_start = RowPoint{.location = partition_start};
     frame.enterPartition(partition_start);
     prev_frame = FrameBounds{.start = {.location = partition_start}, .end = {.location = partition_start}, .fully_visible = true};
 

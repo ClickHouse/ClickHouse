@@ -65,6 +65,7 @@ class WindowTransform final : public IProcessor
     void computeReadyRows();
     void appendCurrentRow();
     void flushBatch();
+    void assignOrderByPeerGroups();
     void updateAggregationState();
     void writeOutCurrentRow();
     void startNextPartition();
@@ -110,11 +111,13 @@ private:
     Partition partition;
     Frame frame;
     Peers peers;
-    /// The first row of the current row's ORDER BY peer group, updated only if params.separate_order_by_peer_groups is set.
-    RowPoint order_by_peer_group_start;
 
     /// The frame the aggregate states hold; the next frame is compared with it to add only the new rows.
     FrameBounds prev_frame;
+
+    /// The ORDER BY peer group of the last row of the previous batch, used only if params.separate_order_by_peer_groups is set.
+    Int64 order_by_peer_group_start = 0;
+    Int64 order_by_peer_group_index = 0;
 };
 
 }
