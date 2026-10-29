@@ -19,12 +19,12 @@ SETTINGS min_bytes_for_wide_part = 0;
 
 INSERT INTO t_lc_count
 SELECT
-    toString(cityHash64(number) % 150000),
+    toString(cityHash64(number) % 25000),
     if(number % 7 = 0, NULL, toString(number % 3000)),
     toUInt32(number % 1000),
     toFixedString(toString(number % 300), 4),
     number
-FROM numbers(600000)
+FROM numbers(100000)
 SETTINGS max_block_size = 65536;
 
 SELECT 'string',
@@ -70,6 +70,12 @@ SELECT 'no_prefetch',
 SELECT 'function_key',
     (SELECT count(), sum(c), sum(cityHash64(k, c)) FROM (SELECT toLowCardinality(toString(number % 70000)) AS k, count() AS c FROM numbers(100000) GROUP BY k) SETTINGS max_block_size = 100000)
     = (SELECT count(), sum(c), sum(cityHash64(k, c)) FROM (SELECT toString(number % 70000) AS k, count() AS c FROM numbers(100000) GROUP BY k));
+
+-- With one thread the table outgrows the L2 cache, and the later blocks prefetch the cells of their positions.
+SELECT 'prefetch',
+    (SELECT count(), sum(c), sum(cityHash64(k, c)) FROM (SELECT toLowCardinality(toString(intDiv(number, 2) % 50000)) AS k, count() AS c FROM numbers(200000) GROUP BY k)
+        SETTINGS max_block_size = 1000, max_threads = 1, enable_software_prefetch_in_aggregation = 1)
+    = (SELECT count(), sum(c), sum(cityHash64(k, c)) FROM (SELECT toString(intDiv(number, 2) % 50000) AS k, count() AS c FROM numbers(200000) GROUP BY k));
 
 -- With one thread and no spill, a group that is kept after the table stops taking new keys counts all its rows.
 SELECT 'no_more_keys', count() > 0, countIf(c != tc)

@@ -8,10 +8,11 @@ two_level	1
 external	1
 no_prefetch	1
 function_key	1
+prefetch	1
 no_more_keys	1	0
 overflow_row
 
-	600000
+	100000
 remote	1
 keys128	1
 top_k_heap	1
