@@ -20,8 +20,7 @@ performing test: union_all
 1	2
 3	4
 performing test: closed_stdout
-exit code: 75
-write error reported
+exit code: 0
 0
 performing test: full_file
 exit code: 75
