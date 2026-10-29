@@ -2974,15 +2974,17 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(TableExpressionNodePtr table_
                         // (3) if parallel replicas still enabled - replace reading step
                         if (reading_node && planner_context->getQueryContext()->canUseParallelReplicasOnInitiator())
                         {
-                            /// A stable-reference table function takes the query-text path even when the
+                            /// A stable-reference table function takes the query-tree path even when the
                             /// plan-based mode is on. That mode ships a `ReadFromMergeTree` fragment, which
                             /// carries the id of the storage the call resolved to here - a hidden inner table
                             /// named after a UUID this server assigned - so a replica that assigned a
-                            /// different one cannot find it. Carrying the call in the fragment instead needs a
-                            /// query-plan serialization version; sending the query text needs nothing, and the
-                            /// replicas resolve the call themselves and coordinate exactly as they do without
-                            /// the plan-based mode. (Only a stable reference reaches here: the branch
-                            /// condition above admits no other table function.)
+                            /// different one cannot find it. Such a read is planned as if the plan-based mode
+                            /// were off: none of its decisions apply to it, including where the plan is split
+                            /// between the initiator and the replicas. This keeps the result correct, and the
+                            /// read parallel on the replicas that find the table it resolved to here. Shipping
+                            /// the call in the fragment instead needs a query-plan serialization version.
+                            /// (Only a stable reference reaches here: the branch condition above admits no
+                            /// other table function.)
                             if (!settings[Setting::parallel_replicas_plan_based] || table_function_node)
                             {
                                 till_stage = QueryProcessingStage::WithMergeableState;
@@ -3006,10 +3008,9 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(TableExpressionNodePtr table_
                                 /// local/remote boundary is done later, as an analysis of the whole plan
                                 /// (QueryPlanOptimizations::applyParallelReplicas), which inserts the split step.
                                 ///
-                                /// A read through a stable-reference table function never gets here - it is
-                                /// sent as query text above - because the fragment this builds would name the
-                                /// storage the call resolved to on this server. Teaching the fragment to carry
-                                /// the call instead needs a query-plan serialization version.
+                                /// A read through a stable-reference table function never gets here - it takes
+                                /// the query-tree path above - because the fragment this builds would name the
+                                /// storage the call resolved to on this server.
                                 QueryPlan query_plan_parallel_replicas;
                                 storage->read(
                                     query_plan_parallel_replicas,
