@@ -20,6 +20,7 @@
 #include <DataTypes/Serializations/ISerialization.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
+#include <IO/WriteHelpers.h>
 
 #include <algorithm>
 #include <cmath>
@@ -69,6 +70,43 @@ std::string_view getTextValue(sqlite3_stmt * statement, int idx)
         throw Exception(ErrorCodes::SQLITE_ENGINE_ERROR, "Cannot read text value from SQLite database");
 
     return {data ? data : "", static_cast<size_t>(len)};
+}
+
+Int64 readIntegerCell(const String & column_name, const IDataType & column_type, sqlite3_stmt * statement, int idx)
+{
+    const int storage_class = sqlite3_column_type(statement, idx);
+    if (storage_class == SQLITE_INTEGER)
+        return sqlite3_column_int64(statement, idx);
+
+    String value_text;
+    if (storage_class == SQLITE_FLOAT)
+    {
+        /// Both bounds are exact doubles (-2^63 and 2^63), and a NaN fails every comparison.
+        static constexpr double min_value = static_cast<double>(std::numeric_limits<Int64>::min());
+        const double value = sqlite3_column_double(statement, idx);
+        if (value >= min_value && value < -min_value && value == std::trunc(value))
+            return static_cast<Int64>(value);
+        value_text = fmt::format("{} ", getTextValue(statement, idx));
+    }
+    else if (storage_class == SQLITE_TEXT)
+    {
+        const auto text = getTextValue(statement, idx);
+        Int64 value = 0;
+        if (tryParse(value, text))
+            return value;
+        value_text = fmt::format("'{}' ", text);
+    }
+
+    throw Exception(
+        ErrorCodes::INCORRECT_DATA,
+        "Cannot read the SQLite {} value {}into column {} of type {}: the value is not an integer in the `Int64` range. "
+        "A column of an ordinary (non-STRICT) SQLite table can hold a value of any storage class, whatever its declared type. "
+        "To read such values, declare the column as `String` (or `Float64` for REAL values) in a `SQLite` table, "
+        "or cast it to text in a query passed to SQLite",
+        storageClassName(storage_class),
+        value_text,
+        column_name,
+        column_type.getName());
 }
 
 /// Whether a SQLite INTEGER cell holds a value that the native accessor of `value_type` reads back
@@ -217,7 +255,9 @@ SQLiteStatementReader::SQLiteStatementReader(
                 || !isDescribedByExternalResultDescription(type_not_nullable))
             {
                 sample_block.insert(column.cloneEmpty());
-                columns_info.push_back(createColumnReadInfoForText(column));
+                auto info = createColumnReadInfoForText(column);
+                info.is_integer_read_as_text = which.isInteger();
+                columns_info.push_back(std::move(info));
                 continue;
             }
 
@@ -451,7 +491,10 @@ void SQLiteStatementReader::insertValue(IColumn & column, const ColumnReadInfo &
 {
     if (!info.native_value_type)
     {
-        insertTextValue(column, info, statement, idx);
+        if (info.is_integer_read_as_text)
+            insertIntegerTextValue(column, info, statement, idx);
+        else
+            insertTextValue(column, info, statement, idx);
         return;
     }
 
@@ -461,13 +504,13 @@ void SQLiteStatementReader::insertValue(IColumn & column, const ColumnReadInfo &
     switch (*info.native_value_type)
     {
         case ValueType::vtUInt8:
-            assert_cast<ColumnUInt8 &>(column).insertValue(static_cast<UInt8>(sqlite3_column_int(statement, idx)));
+            assert_cast<ColumnUInt8 &>(column).insertValue(static_cast<UInt8>(readIntegerCell(info.name, *info.data_type, statement, idx)));
             break;
         case ValueType::vtUInt16:
-            assert_cast<ColumnUInt16 &>(column).insertValue(static_cast<UInt16>(sqlite3_column_int(statement, idx)));
+            assert_cast<ColumnUInt16 &>(column).insertValue(static_cast<UInt16>(readIntegerCell(info.name, *info.data_type, statement, idx)));
             break;
         case ValueType::vtUInt32:
-            assert_cast<ColumnUInt32 &>(column).insertValue(static_cast<UInt32>(sqlite3_column_int64(statement, idx)));
+            assert_cast<ColumnUInt32 &>(column).insertValue(static_cast<UInt32>(readIntegerCell(info.name, *info.data_type, statement, idx)));
             break;
         case ValueType::vtUInt64:
             /// SQLite has no unsigned 64-bit integer type, so the sink writes `UInt64` as text to preserve
@@ -475,19 +518,19 @@ void SQLiteStatementReader::insertValue(IColumn & column, const ColumnReadInfo &
             /// clamp such a cell to `INT64_MAX`, so read it back as text and parse the whole unsigned range.
             /// A value that fit in signed 64-bit and was stored as INTEGER still renders as its decimal text
             /// here, so this path round-trips both cases.
-            insertTextValue(column, info, statement, idx);
+            insertIntegerTextValue(column, info, statement, idx);
             break;
         case ValueType::vtInt8:
-            assert_cast<ColumnInt8 &>(column).insertValue(static_cast<Int8>(sqlite3_column_int(statement, idx)));
+            assert_cast<ColumnInt8 &>(column).insertValue(static_cast<Int8>(readIntegerCell(info.name, *info.data_type, statement, idx)));
             break;
         case ValueType::vtInt16:
-            assert_cast<ColumnInt16 &>(column).insertValue(static_cast<Int16>(sqlite3_column_int(statement, idx)));
+            assert_cast<ColumnInt16 &>(column).insertValue(static_cast<Int16>(readIntegerCell(info.name, *info.data_type, statement, idx)));
             break;
         case ValueType::vtInt32:
-            assert_cast<ColumnInt32 &>(column).insertValue(sqlite3_column_int(statement, idx));
+            assert_cast<ColumnInt32 &>(column).insertValue(static_cast<Int32>(readIntegerCell(info.name, *info.data_type, statement, idx)));
             break;
         case ValueType::vtInt64:
-            assert_cast<ColumnInt64 &>(column).insertValue(sqlite3_column_int64(statement, idx));
+            assert_cast<ColumnInt64 &>(column).insertValue(readIntegerCell(info.name, *info.data_type, statement, idx));
             break;
         case ValueType::vtFloat32:
         {
@@ -591,6 +634,20 @@ void SQLiteStatementReader::insertValue(IColumn & column, const ColumnReadInfo &
             insertTextValue(column, info, statement, idx);
             break;
     }
+}
+
+void SQLiteStatementReader::insertIntegerTextValue(IColumn & column, const ColumnReadInfo & info, sqlite3_stmt * statement, int idx) const
+{
+    const int storage_class = sqlite3_column_type(statement, idx);
+    if (storage_class == SQLITE_INTEGER || storage_class == SQLITE_TEXT || info.requires_exact_storage_class)
+    {
+        insertTextValue(column, info, statement, idx);
+        return;
+    }
+
+    const String text = toString(readIntegerCell(info.name, *info.data_type, statement, idx));
+    ReadBufferFromString buffer(text);
+    info.serialization->deserializeWholeText(column, buffer, format_settings);
 }
 
 void SQLiteStatementReader::insertTextValue(IColumn & column, const ColumnReadInfo & info, sqlite3_stmt * statement, int idx) const
