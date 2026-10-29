@@ -792,7 +792,7 @@ CompressionCodecPtr MergeTreeDataPartWriterOnDisk::getSubstreamCodec(
 
     /// Adaptive could pick an unencrypted codec for some blocks and drop the encryption. Thus skip adaptivity for an encrypting codec.
     if (settings.apply_adaptive_codec && use_default_codec && !codec->isEncryption())
-        return std::make_shared<CompressionCodecAdaptive>(substream_type, codec);
+        return std::make_shared<CompressionCodecAdaptive>(substream_type, codec, settings.adaptive_codec_selection_period);
 
     return codec;
 }
