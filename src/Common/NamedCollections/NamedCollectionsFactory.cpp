@@ -490,6 +490,21 @@ std::vector<typename Index::iterator> findEntriesByUUID(Index & idx, const Stora
     return entries_of_this_name.empty() ? all_entries : entries_of_this_name;
 }
 
+/// The entry of exactly this collection and table, if registered. Looked up by the name of the table,
+/// not by the collection: a collection can be used by many tables, and scanning all of its dependents
+/// on every registration would make loading many tables that share one collection quadratic.
+template <typename Index>
+typename Index::iterator findDependency(Index & idx, const String & collection_name, const StorageID & table_id)
+{
+    auto range = idx.equal_range(std::make_tuple(table_id.database_name, table_id.table_name));
+    for (auto it = range.first; it != range.second; ++it)
+    {
+        if (it->collection_name == collection_name && it->table_id.uuid == table_id.uuid)
+            return it;
+    }
+    return idx.end();
+}
+
 /// A dependency of a database engine is recorded with an empty table name, and the accessors of
 /// `StorageID` reject such an identifier, so it cannot be formatted the usual way.
 String getDependencyNameForLogs(const StorageID & table_id)
@@ -509,14 +524,9 @@ void NamedCollectionFactory::addDependency(const String & collection_name, const
     /// The same dependency can be registered more than once for one table - a lazily loaded table
     /// registers it from its metadata and again when its proxy is materialized - and a duplicate would
     /// only make the same table be listed twice in the error message of `DROP NAMED COLLECTION`.
-    const auto & idx = dependencies.get<Collection>();
-    auto range = idx.equal_range(collection_name);
-    for (auto it = range.first; it != range.second; ++it)
-    {
-        if (it->table_id.database_name == table_id.database_name && it->table_id.table_name == table_id.table_name
-            && it->table_id.uuid == table_id.uuid)
-            return;
-    }
+    auto & idx = dependencies.get<TableName>();
+    if (findDependency(idx, collection_name, table_id) != idx.end())
+        return;
 
     dependencies.emplace(collection_name, table_id);
 
@@ -540,14 +550,9 @@ NamedCollectionPtr NamedCollectionFactory::getAndAddDependency(
         return nullptr;
     }
 
-    auto & dependencies_by_collection = dependencies.get<Collection>();
-    auto range = dependencies_by_collection.equal_range(collection_name);
-    for (auto it = range.first; it != range.second; ++it)
-    {
-        if (it->table_id.database_name == table_id.database_name && it->table_id.table_name == table_id.table_name
-            && it->table_id.uuid == table_id.uuid)
-            return collection;
-    }
+    auto & idx = dependencies.get<TableName>();
+    if (findDependency(idx, collection_name, table_id) != idx.end())
+        return collection;
 
     dependencies.emplace(collection_name, table_id);
     return collection;
@@ -588,17 +593,9 @@ void NamedCollectionFactory::removeDependency(const String & collection_name, co
 {
     std::lock_guard lock(mutex);
 
-    auto & idx = dependencies.get<Collection>();
-    auto range = idx.equal_range(collection_name);
-    for (auto it = range.first; it != range.second; ++it)
-    {
-        if (it->table_id.database_name == table_id.database_name && it->table_id.table_name == table_id.table_name
-            && it->table_id.uuid == table_id.uuid)
-        {
-            idx.erase(it);
-            return;
-        }
-    }
+    auto & idx = dependencies.get<TableName>();
+    if (auto it = findDependency(idx, collection_name, table_id); it != idx.end())
+        idx.erase(it);
 }
 
 void NamedCollectionFactory::removeDependenciesOfFailedCreate(const StorageID & table_id)
