@@ -852,7 +852,18 @@ namespace
             }
             on_finish_call_callback();
         };
-        call_thread = ThreadFromGlobalPool{ThreadFromGlobalPoolScheduleMode::FailIfNoWorker, runner_function};
+        try
+        {
+            call_thread = ThreadFromGlobalPool{ThreadFromGlobalPoolScheduleMode::FailIfNoWorker, runner_function};
+        }
+        catch (...)
+        {
+            /// The RPC is already accepted, and destroying the responder neither finishes nor cancels it:
+            /// gRPC keeps the call alive, so the client would wait for a status forever, and so would
+            /// `grpc::Server::Shutdown`. Cancel it, so that the client gets a terminal status right away.
+            responder->cancel();
+            throw;
+        }
     }
 
     void Call::run()
@@ -2015,8 +2026,8 @@ private:
                     throw;
 
                 /// Letting the saturation exception escape would kill the completion-queue
-                /// thread. Treat the call as a rejected connection instead: destroying it drops
-                /// the responder (the same way a connection established after `should_stop` is dropped above).
+                /// thread. Treat the call as a rejected connection instead: `Call::start` has
+                /// already cancelled the RPC, so destroying the call only releases the responder.
                 tryLogCurrentException(log, "Cannot start a worker thread for a new call");
             }
         }
