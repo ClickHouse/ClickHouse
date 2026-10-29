@@ -1003,7 +1003,9 @@ RemoteQueryExecutor::ReadResult RemoteQueryExecutor::processPacket(Packet packet
 
         case Protocol::Server::ProfileTraces:
         {
-            ProfileTracesBlocker blocker;
+            /// The block was decoded with tracked memory, so free it with tracked memory as well: the stronger
+            /// `ProfileTracesBlocker` would hide the frees and leave phantom usage. `pushBlock` guards its own copies.
+            ProfileTracesStreamBlocker blocker;
             if (auto profile_traces_queue = CurrentThread::getInternalProfileTracesQueue())
                 profile_traces_queue->pushBlock(packet.block);
             packet.block = {};
@@ -1243,7 +1245,9 @@ void RemoteQueryExecutor::finishUnlocked()
 
             case Protocol::Server::ProfileTraces:
             {
-                ProfileTracesBlocker blocker;
+                /// The block was decoded with tracked memory, so free it with tracked memory as well: the stronger
+                /// `ProfileTracesBlocker` would hide the frees and leave phantom usage. `pushBlock` guards its own copies.
+                ProfileTracesStreamBlocker blocker;
                 if (auto profile_traces_queue = CurrentThread::getInternalProfileTracesQueue())
                     profile_traces_queue->pushBlock(packet.block);
                 packet.block = {};
