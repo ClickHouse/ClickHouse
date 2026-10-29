@@ -196,4 +196,69 @@ SELECT groupArray(id) FROM tab WHERE startsWith(search, 'fa');
 SELECT 'splitByString', countIf(explain LIKE '%\_\_text_index\_%') > 0, countIf(explain LIKE '%FUNCTION hasTokenStartingWith(%') > 0
 FROM (EXPLAIN actions = 1 SELECT count() FROM tab WHERE hasTokenStartingWith(search, 'fa'));
 
+SELECT 'A preprocessor that makes the value Nullable: the index is not used, NULL stays NULL under NOT';
+
+DROP TABLE IF EXISTS tab;
+
+CREATE TABLE tab
+(
+    id UInt32,
+    s String,
+    INDEX idx(s) TYPE text(tokenizer = array, preprocessor = nullIf(s, 'skip'))
+)
+ENGINE = MergeTree
+ORDER BY id;
+
+INSERT INTO tab VALUES (1, 'far'), (2, 'skip'), (3, 'bar');
+
+SELECT groupArray(id) FROM tab WHERE NOT hasTokenStartingWith(s, 'far');
+SELECT groupArray(id) FROM tab WHERE NOT hasTokenStartingWith(s, 'far') SETTINGS use_skip_indexes = 0;
+SELECT groupArray(id) FROM tab WHERE NOT hasTokenStartingWith(toNullable(s), 'far');
+SELECT groupArray(id) FROM tab WHERE NOT hasTokenStartingWith(toNullable(s), 'far') SETTINGS use_skip_indexes = 0;
+SELECT groupArray(id) FROM tab PREWHERE NOT hasTokenStartingWith(s, 'far');
+SELECT groupArray(id) FROM tab PREWHERE NOT hasTokenStartingWith(s, 'far') SETTINGS use_skip_indexes = 0;
+SELECT groupArray(id) FROM tab WHERE hasTokenStartingWith(s, 'far');
+SELECT groupArray(id) FROM tab WHERE hasTokenStartingWith(s, 'far') SETTINGS use_skip_indexes = 0;
+
+SELECT 'nullable preprocessor', countIf(explain LIKE '%\_\_text_index\_%') > 0, countIf(explain LIKE '%FUNCTION hasTokenStartingWith(%') > 0
+FROM (EXPLAIN actions = 1 SELECT count() FROM tab WHERE hasTokenStartingWith(s, 'far'));
+
+SELECT 'A two-character prefix seeks the dictionary to its key range instead of scanning every block';
+
+SET log_queries = 1;
+SET log_profile_events = 1;
+SET max_threads = 1;
+
+DROP TABLE IF EXISTS tab;
+
+-- dictionary_block_size = 4 with the 16 tokens below gives 4 dictionary blocks whose first tokens are
+-- 'aaa0', 'bbb0', 'ccc0' and 'ddd0', so the key ranges of 'fa' and 'xy' both lie inside the last block.
+CREATE TABLE tab
+(
+    id UInt32,
+    message String,
+    INDEX idx(message) TYPE text(tokenizer = splitByNonAlpha, dictionary_block_size = 4) GRANULARITY 1
+)
+ENGINE = MergeTree
+ORDER BY id;
+
+INSERT INTO tab VALUES
+    (1, 'aaa0'), (2, 'aaa1'), (3, 'aaa2'), (4, 'aaa3'),
+    (5, 'bbb0'), (6, 'bbb1'), (7, 'bbb2'), (8, 'bbb3'),
+    (9, 'ccc0'), (10, 'ccc1'), (11, 'ccc2'), (12, 'ccc3'),
+    (13, 'ddd0'), (14, 'fa0'), (15, 'fa1'), (16, 'xyz0');
+
+SELECT groupArray(id) FROM tab WHERE hasTokenStartingWith(message, 'fa') SETTINGS log_comment = '05443_prefix_fa';
+SELECT groupArray(id) FROM tab WHERE hasTokenStartingWith(message, 'xy') SETTINGS log_comment = '05443_prefix_xy';
+SELECT groupArray(id) FROM tab WHERE hasTokenStartingWith(message, 'fa') SETTINGS use_skip_indexes = 0;
+SELECT groupArray(id) FROM tab WHERE hasTokenStartingWith(message, 'xy') SETTINGS use_skip_indexes = 0;
+
+SYSTEM FLUSH LOGS query_log;
+
+SELECT log_comment, ProfileEvents['TextIndexReadDictionaryBlocks'] AS dictionary_blocks_read
+FROM system.query_log
+WHERE event_date >= yesterday() AND event_time >= now() - 600 AND current_database = currentDatabase()
+  AND type = 'QueryFinish' AND log_comment IN ('05443_prefix_fa', '05443_prefix_xy')
+ORDER BY log_comment;
+
 DROP TABLE tab;

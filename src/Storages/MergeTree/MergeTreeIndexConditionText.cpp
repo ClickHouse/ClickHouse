@@ -1448,18 +1448,26 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
 
         String prefix = value_field.safeGet<String>();
         if (has_preprocessor)
+        {
+            /// The preprocessor can make the value `Nullable` (e.g. `nullIf`), and the virtual column cannot carry
+            /// the NULL the predicate returns then, which NOT flips to true.
+            const auto & preprocessed_type = preprocessor->getOriginalActionsDAG().getOutputs().front()->result_type;
+            if (isNullableOrLowCardinalityNullable(preprocessed_type))
+                return leave_to_scan();
+
             prefix = preprocessor->processConstant(prefix);
+        }
 
         /// A short prefix matches too many dictionary tokens; the threshold is shared with `LIKE`. An empty prefix
-        /// matches every token. re2 does not compile an invalid UTF-8 needle.
+        /// matches every token.
         const size_t min_prefix_length = std::max<size_t>(1, settings[Setting::text_index_like_min_pattern_length]);
-        if (prefix.size() < min_prefix_length || !UTF8::isValidUTF8(reinterpret_cast<const UInt8 *>(prefix.data()), prefix.size()))
+        if (prefix.size() < min_prefix_length)
             return leave_to_scan();
 
-        /// `^prefix`: the analyzer seeks the sorted dictionary to the key range of the prefix, see `getPatternTokenKeyRanges`.
+        /// A literal `^prefix` comparison: the analyzer seeks the sorted dictionary to the key range of the prefix,
+        /// see `getPatternTokenKeyRanges`. The regexp analysis would drop a required literal shorter than three bytes.
         std::vector<OptimizedRegularExpression> patterns;
-        patterns.emplace_back(Regexps::createRegexp</*like=*/ true, /*similar_to=*/ false, /*no_capture=*/ true, /*case_insensitive=*/ false>(
-            escapeForLikePattern(prefix) + '%'));
+        patterns.emplace_back(std::move(prefix), RegexpMatchKind::Prefix);
 
         out.function = RPNElement::FUNCTION_LIKE;
         out.text_search_queries.emplace_back(std::make_shared<TextSearchQuery>(

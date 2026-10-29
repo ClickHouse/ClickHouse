@@ -67,3 +67,20 @@ Fields joined with a separator and the splitByString tokenizer: prefix search ov
 []
 []
 splitByString	1	0
+A preprocessor that makes the value Nullable: the index is not used, NULL stays NULL under NOT
+[3]
+[3]
+[3]
+[3]
+[3]
+[3]
+[1]
+[1]
+nullable preprocessor	0	1
+A two-character prefix seeks the dictionary to its key range instead of scanning every block
+[14,15]
+[16]
+[14,15]
+[16]
+05443_prefix_fa	1
+05443_prefix_xy	1

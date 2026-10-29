@@ -20,6 +20,7 @@ namespace DB
     namespace ErrorCodes
     {
         extern const int CANNOT_COMPILE_REGEXP;
+        extern const int LOGICAL_ERROR;
     }
 }
 
@@ -776,6 +777,24 @@ OptimizedRegularExpression::OptimizedRegularExpression(const std::string & regex
             case_sensitive_substring_searcher = std::make_unique<CaseSensitiveStringSearcher>(
                 reinterpret_cast<UInt8 *>(required_substring.data()), required_substring.size());
     }
+}
+
+OptimizedRegularExpression::OptimizedRegularExpression(std::string literal, RegexpMatchKind match_kind_)
+    : required_substring(std::move(literal))
+    , is_trivial(match_kind_ == RegexpMatchKind::Substring)
+    , required_substring_is_prefix(match_kind_ == RegexpMatchKind::Prefix || match_kind_ == RegexpMatchKind::Exact)
+    , is_case_insensitive(false)
+    , match_kind(match_kind_)
+    , number_of_subpatterns(0)
+{
+    if (match_kind == RegexpMatchKind::General)
+        throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "OptimizedRegularExpression: a literal pattern cannot have the General match kind");
+
+    if (required_substring.empty())
+        throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "OptimizedRegularExpression: a literal pattern cannot be empty");
+
+    case_sensitive_substring_searcher = std::make_unique<CaseSensitiveStringSearcher>(
+        reinterpret_cast<UInt8 *>(required_substring.data()), required_substring.size());
 }
 
 OptimizedRegularExpression::OptimizedRegularExpression(OptimizedRegularExpression && rhs) noexcept
