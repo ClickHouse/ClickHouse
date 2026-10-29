@@ -256,10 +256,11 @@ QueryPipelineBuilderPtr QueryPlan::buildQueryPipeline(
         convertToDistributed(effective_settings);
 
     /// The query hash for plan-time probes of the partial aggregate cache is computed before the plan is optimized,
-    /// but the optimization can apply the GROUP BY top-K heap, which makes per-part states unsuitable for the cache.
+    /// but the optimization can apply the GROUP BY top-K heap, which makes per-part states unsuitable for the cache,
+    /// or switch the aggregation to in-order, which does not consume plan-time hits.
     std::optional<BuildQueryPipelineSettings> build_pipeline_settings_without_partial_aggregate_cache;
     const BuildQueryPipelineSettings * effective_build_pipeline_settings = &build_pipeline_settings;
-    if (build_pipeline_settings.partial_aggregate_cache_query_hash && planHasGroupByTopK(*this))
+    if (build_pipeline_settings.partial_aggregate_cache_query_hash && (planHasGroupByTopK(*this) || planHasAggregationInOrder(*this)))
     {
         build_pipeline_settings_without_partial_aggregate_cache.emplace(build_pipeline_settings);
         build_pipeline_settings_without_partial_aggregate_cache->partial_aggregate_cache_query_hash.reset();

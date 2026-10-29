@@ -731,10 +731,7 @@ PartialAggregateInfoPtr MergeTreeSelectProcessor::buildPartialAggregateInfoFromC
     if (!data_part_info || !data_part_info->getDataPart())
         return nullptr;
 
-    auto info = partialAggregateInfoFromMergeTreePart(*data_part_info->getDataPart());
-    if (reader_settings.skip_partial_aggregate_execution_cache_lookup)
-        info->skip_execution_time_cache_lookup = true;
-    return info;
+    return partialAggregateInfoFromMergeTreePart(*data_part_info->getDataPart(), reader_settings);
 }
 
 /// Cancels all internal operations for this select processor, including cancelling any ongoing index reads.

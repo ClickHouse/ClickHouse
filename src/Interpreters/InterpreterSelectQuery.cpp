@@ -149,7 +149,6 @@ namespace Setting
     extern const SettingsUInt64 aggregation_memory_efficient_merge_threads;
     extern const SettingsUInt64 allow_experimental_parallel_reading_from_replicas;
     extern const SettingsUInt64 automatic_parallel_replicas_mode;
-    extern const SettingsBool apply_deleted_mask;
     extern const SettingsBool use_partial_aggregate_cache;
     extern const SettingsBool async_socket_for_remote;
     extern const SettingsBool collect_hash_table_stats_during_aggregation;
@@ -2970,13 +2969,12 @@ static Aggregator::Params getAggregatorParams(
 {
     const bool has_row_level_filter = static_cast<bool>(select_query_info.row_level_filter);
     const bool has_additional_table_filters = !settings[Setting::additional_table_filters].value.empty();
-    const bool apply_deleted_mask_value = settings[Setting::apply_deleted_mask];
     /// The partial aggregate cache key analyzes the whole query: compute it only when the cache is enabled.
     const bool use_partial_aggregate_cache = settings[Setting::use_partial_aggregate_cache];
     const UInt64 partial_aggregate_semantic_key = !use_partial_aggregate_cache ? 0 : partialAggregateCacheSemanticKey(
         query_ptr,
         context.getCurrentDatabase(),
-        apply_deleted_mask_value,
+        settings,
         has_row_level_filter,
         has_additional_table_filters,
         /*has_non_merge_tree_inputs=*/ !storage || !storage->isMergeTree());

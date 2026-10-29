@@ -123,7 +123,6 @@ namespace Setting
     extern const SettingsUInt64 aggregation_in_order_max_block_bytes;
     extern const SettingsUInt64 aggregation_memory_efficient_merge_threads;
     extern const SettingsUInt64 allow_experimental_parallel_reading_from_replicas;
-    extern const SettingsBool apply_deleted_mask;
     extern const SettingsBool use_partial_aggregate_cache;
     extern const SettingsBool collect_hash_table_stats_during_aggregation;
     extern const SettingsBool distributed_aggregation_memory_efficient;
@@ -792,13 +791,12 @@ Aggregator::Params getAggregatorParams(const PlannerContextPtr & planner_context
 
     const bool has_row_level_filter = hasRowPolicyOnTableInputs(select_query_info, query_context);
     const bool has_additional_table_filters = !settings[Setting::additional_table_filters].value.empty();
-    const bool apply_deleted_mask_value = settings[Setting::apply_deleted_mask];
     /// The partial aggregate cache key analyzes the whole query: compute it only when the cache is enabled.
     const bool use_partial_aggregate_cache = settings[Setting::use_partial_aggregate_cache];
     const UInt64 partial_aggregate_semantic_key = !use_partial_aggregate_cache ? 0 : partialAggregateCacheSemanticKey(
         select_query_info.query,
         query_context->getCurrentDatabase(),
-        apply_deleted_mask_value,
+        settings,
         has_row_level_filter,
         has_additional_table_filters,
         hasNonMergeTreeTableInputs(select_query_info));

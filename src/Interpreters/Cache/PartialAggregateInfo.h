@@ -21,10 +21,12 @@ public:
     PartialAggregateInfo(
         UUID table_uuid_,
         const String & part_name_,
-        UInt64 part_mutation_version_)
+        UInt64 part_mutation_version_,
+        UInt64 metadata_identity_)
         : table_uuid(table_uuid_)
         , part_name(part_name_)
         , part_mutation_version(part_mutation_version_)
+        , metadata_identity(metadata_identity_)
     {
     }
 
@@ -32,6 +34,9 @@ public:
 
     String part_name;
     UInt64 part_mutation_version = 0;
+
+    /// See `MergeTreeReaderSettings::partial_aggregate_metadata_identity`.
+    UInt64 metadata_identity = 0;
 
     /// When `ReadFromMergeTree` already probed `PartialAggregateCache` at plan time and missed, skip a redundant `get` in `AggregatingTransform`.
     bool skip_execution_time_cache_lookup = false;

@@ -38,7 +38,8 @@ bool PartialAggregateCache::Key::operator==(const Key & other) const
     return query_hash == other.query_hash
         && table_uuid == other.table_uuid
         && part_name == other.part_name
-        && part_mutation_version == other.part_mutation_version;
+        && part_mutation_version == other.part_mutation_version
+        && metadata_identity == other.metadata_identity;
 }
 
 size_t PartialAggregateCache::KeyHasher::operator()(const Key & key) const
@@ -49,6 +50,7 @@ size_t PartialAggregateCache::KeyHasher::operator()(const Key & key) const
     hash.update(key.table_uuid);
     hash.update(key.part_name);
     hash.update(key.part_mutation_version);
+    hash.update(key.metadata_identity);
     return hash.get64();
 }
 

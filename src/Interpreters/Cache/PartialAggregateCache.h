@@ -13,7 +13,7 @@ namespace DB
 {
 
 /// Per-part intermediate GROUP BY cache (`use_partial_aggregate_cache`). Key from `computePartialAggregateCacheQueryHash`
-/// (`query_hash`, `table_uuid`, `part_name`, `part_mutation_version`). `part_mutation_version` comes from the data part, not from parsing `part_name`.
+/// (`query_hash`, `table_uuid`, `part_name`, `part_mutation_version`, `metadata_identity`). `part_mutation_version` comes from the data part, not from parsing `part_name`.
 /// Merge/mutation yields a new part identity and thus a new key; stale entries expire by eviction. `SYSTEM DROP AGGREGATE CACHE` clears explicitly.
 /// `get` at plan (`ReadFromMergeTree`) and execution (`AggregatingTransform`); skip execution `get` when `PartialAggregateInfo::skip_execution_time_cache_lookup`.
 /// `put` after a miss in `AggregatingTransform::flushPartialAggregateMissBuffers`. `PartialAggregateCacheHits`/`Misses` count every `get`.
@@ -31,6 +31,9 @@ public:
         /// Part identity (`name` + authoritative mutation counter from the data part, not inferred by parsing `part_name`).
         String part_name;
         UInt64 part_mutation_version = 0;
+
+        /// Columns of the table metadata the part was read with, see `MergeTreeReaderSettings::partial_aggregate_metadata_identity`.
+        UInt64 metadata_identity = 0;
 
         bool operator==(const Key & other) const;
     };

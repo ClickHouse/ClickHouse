@@ -27,6 +27,11 @@ bool planHasArrayJoinStep(const QueryPlan & query_plan);
 /// for an optimized plan that has an aggregation with the heap.
 bool planHasGroupByTopK(const QueryPlan & query_plan);
 
+/// In-order aggregation (`AggregatingInOrderTransform`) does not consume the zero-row plan-hit chunks, so the parts
+/// removed from the read by plan-time hits would contribute nothing. `optimize_aggregation_in_order` can switch an
+/// aggregation to in-order after the query hash for plan-time probing was computed, so the hash must be dropped then.
+bool planHasAggregationInOrder(const QueryPlan & query_plan);
+
 /// Single SipHash implementation for `PartialAggregateCache::Key::query_hash` (must stay in sync with
 /// `AggregatingTransform` and `ReadFromMergeTree` planning probes).
 ///

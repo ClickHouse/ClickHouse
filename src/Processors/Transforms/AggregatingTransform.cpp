@@ -1650,6 +1650,7 @@ void AggregatingTransform::consume(Chunk chunk)
             key.table_uuid = part_info->table_uuid;
             key.part_name = part_info->part_name;
             key.part_mutation_version = part_info->part_mutation_version;
+            key.metadata_identity = part_info->metadata_identity;
 
             /// The part is already represented by cached states, but its rows were still read from the source,
             /// so they must be accounted for in the progress and `rows_before_aggregation` counters.
@@ -1706,7 +1707,15 @@ void AggregatingTransform::consume(Chunk chunk)
             partial_aggregate_miss_buffered_input_bytes += chunk.bytes();
             auto & buf = partial_aggregate_miss_buffers[key];
             if (!buf.local_aggregator)
-                buf.local_aggregator = std::make_unique<Aggregator>(getInputs().front().getHeader(), params->params);
+            {
+                /// The per-part aggregator must not spill: it is not in `aggregator_list_ptr`, so the external merge
+                /// would never read its temporary files, and the spilled states would be lost (and the resident rest
+                /// cached as the complete part). Its memory is bounded by `tryFlushPartialAggregateMissBuffersIfNeeded`.
+                Aggregator::Params local_params = params->params;
+                local_params.max_bytes_before_external_group_by = 0;
+                local_params.min_bytes_before_external_group_by = 0;
+                buf.local_aggregator = std::make_unique<Aggregator>(getInputs().front().getHeader(), local_params);
+            }
 
             ColumnRawPtrs local_key_columns(params->params.keys_size);
             Aggregator::AggregateColumns local_aggregate_columns(params->params.aggregates_size);

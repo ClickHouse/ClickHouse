@@ -602,6 +602,56 @@ ReadFromMergeTree::ReadFromMergeTree(
     setStepDescription(description, context->getSettingsRef()[Setting::query_plan_max_step_description_length]);
     enable_vertical_final = query_info.isFinal() && context->getSettingsRef()[Setting::enable_vertical_final]
         && data.merging_params.mode == MergeTreeData::MergingParams::Replacing;
+
+    if (reader_settings.use_partial_aggregate_cache)
+        initPartialAggregateCacheReaderSettings();
+}
+
+void ReadFromMergeTree::initPartialAggregateCacheReaderSettings()
+{
+    /// The per-part cache key identifies the part by its name and mutation version, and the query by its text.
+    /// Do not read from or write to the partial aggregate cache when the rows a read produces from a part depend
+    /// on anything else:
+    /// - a parallel replica reads only the mark ranges the coordinator assigned to it;
+    /// - masking policies change the values per user, and are not represented in the key;
+    /// - with a `UNIQUE KEY`, the delete bitmap of a part changes on insertion into other parts
+    ///   (the query condition cache is disabled for the same reason);
+    /// - nondeterministic virtual columns, like `_part_index`, depend on the other parts selected by the query.
+    bool can_use = !is_parallel_reading_from_replicas
+        && !storage_snapshot->metadata->hasUniqueKey()
+        && !data.hasEnabledMaskingPolicies(context);
+
+    if (can_use)
+    {
+        const auto & columns = storage_snapshot->metadata->getColumns();
+        const auto & virtuals = storage_snapshot->metadata->virtuals;
+        for (const auto & column_name : all_column_names)
+        {
+            if (columns.has(column_name))
+                continue;
+            const auto * virtual_column = virtuals.tryGetDescription(column_name, VirtualsKind::All, VirtualsMaterializationPlace::All);
+            if (virtual_column && !virtual_column->deterministic)
+            {
+                can_use = false;
+                break;
+            }
+        }
+    }
+
+    if (!can_use)
+    {
+        reader_settings.use_partial_aggregate_cache = false;
+        return;
+    }
+
+    /// A metadata-only `ALTER`, like a change of the `DEFAULT` of a column missing in a part, changes the values read
+    /// from the part without changing its name or mutation version, so the columns of the metadata snapshot of the
+    /// read are part of the cache key.
+    SipHash hash;
+    const String columns_description = storage_snapshot->metadata->getColumns().toString(/*include_comments=*/ false);
+    hash.update(columns_description.size());
+    hash.update(columns_description);
+    reader_settings.partial_aggregate_metadata_identity = hash.get64();
 }
 
 std::unique_ptr<ReadFromMergeTree> ReadFromMergeTree::createLocalParallelReplicasReadingStep(
@@ -1235,10 +1285,7 @@ Pipe ReadFromMergeTree::readInOrder(
         PartialAggregateInfoPtr partial_aggregate_plan_identity;
         if (reader_settings.use_partial_aggregate_cache)
         {
-            partial_aggregate_plan_identity = partialAggregateInfoFromMergeTreePart(*part_with_ranges.data_part);
-            /// Same as `MergeTreeSelectProcessor::buildPartialAggregateInfoFromCurrentTask` for pooled reads: honor plan-time probe skip.
-            partial_aggregate_plan_identity->skip_execution_time_cache_lookup
-                = reader_settings.skip_partial_aggregate_execution_cache_lookup;
+            partial_aggregate_plan_identity = partialAggregateInfoFromMergeTreePart(*part_with_ranges.data_part, reader_settings);
         }
 
         if (use_virtual_row_per_block)
@@ -5415,6 +5462,11 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, cons
     if (mutations_snapshot && (mutations_snapshot->hasDataMutations() || mutations_snapshot->hasPatchParts()))
         reader_settings.use_partial_aggregate_cache = false;
 
+    /// A parallel replica or a distributed read bucket reads only the mark ranges assigned to it, not the whole part
+    /// that keys the cache. The flag can be set after the step was created, so check it again here.
+    if (is_parallel_reading_from_replicas || distributed_read_bucket_count > 0)
+        reader_settings.use_partial_aggregate_cache = false;
+
     /// Before any pool or processor copies the settings: both build the PREWHERE steps and must agree on them.
     reader_settings.read_ahead_prewhere_columns = canReadPrewhereColumnsAhead(result.parts_with_ranges);
 
@@ -6105,8 +6157,13 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, cons
 
             for (const auto & part_range : result.parts_with_ranges)
             {
-                const auto part_identity = partialAggregateInfoFromMergeTreePart(*part_range.data_part);
-                PartialAggregateCache::Key key{query_hash, part_identity->table_uuid, part_identity->part_name, part_identity->part_mutation_version};
+                const auto part_identity = partialAggregateInfoFromMergeTreePart(*part_range.data_part, reader_settings);
+                PartialAggregateCache::Key key{
+                    query_hash,
+                    part_identity->table_uuid,
+                    part_identity->part_name,
+                    part_identity->part_mutation_version,
+                    part_identity->metadata_identity};
                 if (std::optional<Block> cached = cache->get(key))
                 {
                     Block materialized = materializeBlock(*cached);

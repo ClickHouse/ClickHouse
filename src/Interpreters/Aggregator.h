@@ -37,6 +37,7 @@ namespace DB
 {
 
 class Arena;
+struct Settings;
 using ArenaPtr = std::shared_ptr<Arena>;
 using Arenas = std::vector<ArenaPtr>;
 
@@ -1776,7 +1777,9 @@ UInt64 calculateCacheKey(const DB::ASTPtr & select_query);
 
 /// Extends `calculateCacheKey` with `current_database` for partial aggregate cache correctness
 /// when `StorageID::uuid` is nil (e.g. Ordinary) and unqualified table names resolve per database.
-/// `apply_deleted_mask` affects which rows are visible for MergeTree reads; `has_row_level_filter` disables
+/// The changed `settings` are part of the key (e.g. `session_timezone` affects `toDateTime`), as is `apply_deleted_mask`,
+/// which affects which rows are visible for MergeTree reads; settings that can stop reading a part early
+/// (`read_overflow_mode = 'break'` etc.), parallel replicas and `SAMPLE` disable the key. `has_row_level_filter` disables
 /// caching because row policies are not represented in the AST hash. Non-empty `additional_table_filters`
 /// is applied outside that AST and also disables the semantic key. Predicate subqueries in `PREWHERE`/`WHERE`
 /// also disable the key because external source freshness is not tracked. `has_non_merge_tree_inputs` disables
@@ -1785,7 +1788,7 @@ UInt64 calculateCacheKey(const DB::ASTPtr & select_query);
 UInt64 partialAggregateCacheSemanticKey(
     const DB::ASTPtr & select_query,
     const String & current_database,
-    bool apply_deleted_mask,
+    const DB::Settings & settings,
     bool has_row_level_filter,
     bool has_additional_table_filters,
     bool has_non_merge_tree_inputs);

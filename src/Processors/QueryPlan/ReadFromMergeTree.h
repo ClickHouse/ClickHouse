@@ -739,6 +739,10 @@ public:
     static std::unique_ptr<IQueryPlanStep> deserialize(Deserialization & ctx);
 
 private:
+    /// Disables the partial aggregate cache for reads whose rows are not determined by the part identity alone,
+    /// and computes `MergeTreeReaderSettings::partial_aggregate_metadata_identity` otherwise.
+    void initPartialAggregateCacheReaderSettings();
+
     /// What removing the columns at `unneeded_output_positions` comes to, worked out without changing anything.
     struct ColumnPruning
     {

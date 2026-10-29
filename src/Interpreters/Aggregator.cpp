@@ -1,6 +1,7 @@
 #include <optional>
 #include <unordered_map>
 #include <Core/Settings.h>
+#include <Common/FieldVisitorHash.h>
 #include <IO/NullWriteBuffer.h>
 #include <Poco/Util/Application.h>
 
@@ -94,6 +95,17 @@ namespace CurrentMetrics
 
 namespace DB
 {
+
+namespace Setting
+{
+    extern const SettingsUInt64 allow_experimental_parallel_reading_from_replicas;
+    extern const SettingsBool apply_deleted_mask;
+    extern const SettingsBool partial_result_on_first_cancel;
+    extern const SettingsOverflowMode read_overflow_mode;
+    extern const SettingsOverflowMode read_overflow_mode_leaf;
+    extern const SettingsOverflowMode timeout_overflow_mode;
+    extern const SettingsOverflowMode timeout_overflow_mode_leaf;
+}
 
 namespace ErrorCodes
 {
@@ -6771,7 +6783,7 @@ UInt64 calculateCacheKey(const DB::ASTPtr & select_query)
 UInt64 partialAggregateCacheSemanticKey(
     const DB::ASTPtr & select_query,
     const String & current_database,
-    bool apply_deleted_mask,
+    const DB::Settings & settings,
     bool has_row_level_filter,
     bool has_additional_table_filters,
     bool has_non_merge_tree_inputs)
@@ -6779,7 +6791,25 @@ UInt64 partialAggregateCacheSemanticKey(
     if (has_row_level_filter || has_additional_table_filters || has_non_merge_tree_inputs)
         return 0;
 
+    /// The cache stores the state of a whole part, but these modes can stop reading a part early and still finish
+    /// the aggregation successfully, so the state of a prefix of the part would be cached as the complete part.
+    if (settings[DB::Setting::read_overflow_mode] == DB::OverflowMode::BREAK
+        || settings[DB::Setting::read_overflow_mode_leaf] == DB::OverflowMode::BREAK
+        || settings[DB::Setting::timeout_overflow_mode] == DB::OverflowMode::BREAK
+        || settings[DB::Setting::timeout_overflow_mode_leaf] == DB::OverflowMode::BREAK
+        || settings[DB::Setting::partial_result_on_first_cancel])
+        return 0;
+
+    /// A parallel replica reads only the mark ranges assigned to it by the coordinator, not the whole part.
+    if (settings[DB::Setting::allow_experimental_parallel_reading_from_replicas] > 0)
+        return 0;
+
     const auto & select = select_query->as<DB::ASTSelectQuery &>();
+
+    /// An absolute `SAMPLE n` is converted to a fraction from the row count of all selected parts, so the rows read
+    /// from a part depend on the other parts. Disable the key for any `SAMPLE` fail-close.
+    if (select.sampleSize())
+        return 0;
 
     /// JOINs/table functions/subqueries can introduce mutable inputs whose identity is not fully represented in the per-part key.
     if (hasJoinOrMutableTableInputs(select))
@@ -6798,8 +6828,48 @@ UInt64 partialAggregateCacheSemanticKey(
 
     SipHash hash;
     hash.update(base);
+    hash.update(current_database.size());
     hash.update(current_database);
-    hash.update(static_cast<UInt8>(apply_deleted_mask));
+    hash.update(static_cast<UInt8>(settings[DB::Setting::apply_deleted_mask]));
+
+    /// The pre-aggregation expressions can depend on settings that are not visible in the query text, e.g. the
+    /// implicit time zone of `toDateTime` comes from `session_timezone`. Represent every changed setting in the key
+    /// (fail-close), except the ones known to affect only logging, resources or the choice of the execution
+    /// strategy, which would otherwise needlessly split the entries. Settings that change the result of the
+    /// aggregation strategy (e.g. `optimize_aggregation_in_order`, top-K) disable the cache by themselves.
+    static const std::unordered_set<std::string_view> settings_not_affecting_partial_aggregate_states = {
+        "use_partial_aggregate_cache",
+        "partial_aggregate_cache_allow_parallel_aggregation_streams",
+        "log_comment",
+        "log_queries",
+        "log_query_threads",
+        "log_profile_events",
+        "log_processors_profiles",
+        "send_logs_level",
+        "max_threads",
+        "max_block_size",
+        "max_streams_for_merge_tree_reading",
+        "max_execution_time",
+        "max_memory_usage",
+        "optimize_aggregation_in_order",
+        "optimize_move_to_prewhere",
+        "optimize_use_projections",
+        "force_optimize_projection",
+        "force_optimize_projection_name",
+        "collect_hash_table_stats_during_aggregation",
+        "use_query_cache",
+        "use_query_condition_cache",
+    };
+    auto changes = settings.changes();
+    std::sort(changes.begin(), changes.end(), [](const auto & lhs, const auto & rhs) { return lhs.name < rhs.name; });
+    for (const auto & change : changes)
+    {
+        if (settings_not_affecting_partial_aggregate_states.contains(change.name))
+            continue;
+        hash.update(change.name.size());
+        hash.update(change.name);
+        applyVisitor(DB::FieldVisitorHash(hash), change.value);
+    }
     return hash.get64();
 }
 }
