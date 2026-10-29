@@ -1,4 +1,4 @@
--- Tags: no-parallel-replicas
+-- Tags: no-parallel-replicas, no-object-storage
 
 DROP TABLE IF EXISTS t_small_read;
 CREATE TABLE t_small_read (p UInt8, k UInt64) ENGINE = MergeTree PARTITION BY p ORDER BY k
