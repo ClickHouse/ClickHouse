@@ -29,5 +29,10 @@
     <!-- The last argument is unreachable, as the second one cannot be NULL: the same as the previous queries. -->
     <query>SELECT sum(coalesce(nullIf(length(replaceRegexpAll(s, '[0-9]', 'x')) % 3, 0), length(replaceRegexpAll(s, '[0-9]', 'x')) + 1, 0)) FROM coalesce_short_circuit</query>
 
+    <!-- Skipped rows of an `Enum` argument with a mixed mask: with and without the value 0 in the enum. -->
+    <query>SELECT sum(toInt8(if(number % 2, CAST('a' AS Enum8('a' = 0, 'b' = 1)), CAST(number % 2 AS Enum8('a' = 0, 'b' = 1))))) FROM numbers(100000000)</query>
+    <query>SELECT sum(toInt8(if(number % 2, CAST('a' AS Enum8('a' = 1, 'b' = 2)), CAST(number % 2 + 1 AS Enum8('a' = 1, 'b' = 2))))) FROM numbers(100000000)</query>
+    <query>SELECT count() FROM coalesce_short_circuit WHERE coalesce(CAST(n_50 % 2 + 1 AS Nullable(Enum8('a' = 1, 'b' = 2))), CAST(length(s) % 2 + 1 AS Enum8('a' = 1, 'b' = 2))) = 'a'</query>
+
     <drop_query>DROP TABLE IF EXISTS coalesce_short_circuit</drop_query>
 </test>
