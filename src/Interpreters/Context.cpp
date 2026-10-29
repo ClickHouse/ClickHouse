@@ -342,7 +342,6 @@ namespace Setting
     extern const SettingsBool enable_blob_storage_log;
     extern const SettingsBool enable_blob_storage_log_for_read_operations;
     extern const SettingsUInt64 filesystem_cache_boundary_alignment;
-    extern const SettingsUInt64 filesystem_cache_max_download_size;
     extern const SettingsUInt64 filesystem_cache_reserve_space_wait_lock_timeout_milliseconds;
     extern const SettingsUInt64 filesystem_cache_wait_for_concurrent_download_timeout_milliseconds;
     extern const SettingsUInt64 filesystem_cache_segments_batch_size;
@@ -395,7 +394,6 @@ namespace Setting
     extern const SettingsUInt64 remote_fs_read_backoff_max_tries;
     extern const SettingsUInt64 remote_read_min_bytes_for_seek;
     extern const SettingsBool throw_on_error_from_cache_on_write_operations;
-    extern const SettingsBool filesystem_cache_skip_download_if_exceeds_per_query_cache_write_limit;
     extern const SettingsBool s3_allow_parallel_part_upload;
     extern const SettingsBool s3_allow_server_credentials_in_user_queries;
     extern const SettingsBool use_reader_executor;
@@ -9992,10 +9990,6 @@ ReadSettings Context::getReadSettings() const
 
     if (settings_ref[Setting::filesystem_cache_boundary_alignment])
         res.filesystem_cache_settings.boundary_alignment = settings_ref[Setting::filesystem_cache_boundary_alignment];
-
-    res.filesystem_cache_settings.max_download_size_per_query = settings_ref[Setting::filesystem_cache_max_download_size];
-    res.filesystem_cache_settings.skip_download_if_exceeds_per_query_cache_write_limit
-        = settings_ref[Setting::filesystem_cache_skip_download_if_exceeds_per_query_cache_write_limit];
 
     res.use_page_cache_for_disks_without_file_cache = settings_ref[Setting::use_page_cache_for_disks_without_file_cache];
     res.use_page_cache_with_distributed_cache = settings_ref[Setting::use_page_cache_with_distributed_cache];

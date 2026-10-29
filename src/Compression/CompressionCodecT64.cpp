@@ -281,7 +281,7 @@ void), transposeImpl, MULTITARGET_FUNCTION_BODY((const T * src, char * dst, UInt
 template <typename T, bool full = false>
 ALWAYS_INLINE void transpose(const T * src, char * dst, UInt32 num_bits, UInt32 tail = 64)
 {
-#if USE_MULTITARGET_CODE
+#if USE_X86_64_MULTITARGET_CODE
     if (isArchSupported(TargetArch::x86_64_v4))
     {
         transposeImpl_x86_64_v4<T, full>(src, dst, num_bits, tail);
@@ -449,7 +449,7 @@ void), reverseTransposeImpl, MULTITARGET_FUNCTION_BODY((
 template <typename T, bool full = false>
 ALWAYS_INLINE void reverseTranspose(const char * src, char * dst, UInt32 num_bits, T common_negative, T common_positive, T sign_bit, UInt32 tail = 64)
 {
-#if USE_MULTITARGET_CODE
+#if USE_X86_64_MULTITARGET_CODE
     if (isArchSupported(TargetArch::x86_64_v4))
     {
         reverseTransposeImpl_x86_64_v4<T, full>(src, dst, num_bits, common_negative, common_positive, sign_bit, tail);
