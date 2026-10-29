@@ -175,7 +175,7 @@ For data lake reads, `_data_lake_snapshot_version` contains the Lance dataset ve
 - Writing to Lance datasets is not supported.
 - Lance indexes and vector search are not supported.
 - Unsupported Lance or Arrow types fail with an `Unsupported Lance column` exception.
-- `lanceS3` does not support custom S3 request headers (`headers(...)` or headers from the server configuration), or server-side encryption with customer-provided keys (SSE-C); such reads fail with `NOT_IMPLEMENTED`. Datasets with external base paths (e.g. shallow clones) are rejected with `BAD_ARGUMENTS`.
+- `lanceS3` does not support custom S3 request headers (`headers(...)` or headers from the server configuration), or server-side encryption with customer-provided keys (SSE-C), or GCS OAuth authentication (`http_client = 'gcp_oauth'`); such reads fail with `NOT_IMPLEMENTED`. Datasets with external base paths (e.g. shallow clones) are rejected with `BAD_ARGUMENTS`.
 
 ## See also {#see-also}
 

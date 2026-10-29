@@ -34,6 +34,7 @@
 #include <Common/ProfileEvents.h>
 #if USE_AWS_S3
 #include <IO/S3/Client.h>
+#include <boost/algorithm/string/predicate.hpp>
 #include <Storages/ObjectStorage/S3/Configuration.h>
 #endif
 #include <Storages/StorageInMemoryMetadata.h>
@@ -88,6 +89,7 @@ extern const SettingsMaxThreads max_threads;
 #if USE_AWS_S3
 namespace S3AuthSetting
 {
+extern const S3AuthSettingsString http_client;
 extern const S3AuthSettingsString region;
 extern const S3AuthSettingsBool no_sign_request;
 extern const S3AuthSettingsString server_side_encryption_customer_key_base64;
@@ -1388,6 +1390,10 @@ Lance::DatasetOptions LanceMetadata::getDatasetOptions(const ContextPtr & local_
         /// unable to decrypt the objects.
         if (!auth_settings.getHeaders().empty())
             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Custom S3 request headers are not supported for `Lance` datasets");
+        /// With `http_client = 'gcp_oauth'`, the S3 client authenticates with a bearer token added by its own
+        /// HTTP client, which the `Lance` object store does not have, so the requests would be anonymous.
+        if (boost::iequals(auth_settings[S3AuthSetting::http_client].value, "gcp_oauth"))
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "GCS OAuth authentication (`http_client = 'gcp_oauth'`) is not supported for `Lance` datasets");
         if (!auth_settings[S3AuthSetting::server_side_encryption_customer_key_base64].value.empty())
             throw Exception(
                 ErrorCodes::NOT_IMPLEMENTED,
