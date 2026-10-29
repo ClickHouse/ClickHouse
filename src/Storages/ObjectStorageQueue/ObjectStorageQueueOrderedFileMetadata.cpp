@@ -214,7 +214,6 @@ ObjectStorageQueueOrderedFileMetadata::BucketHolder::BucketHolder(
     const std::string & bucket_lock_path_,
     const std::string & processor_info_,
     const std::string & active_registry_id_,
-    const std::atomic<size_t> & persistent_processing_node_ttl_seconds_,
     LoggerPtr log_,
     const std::string & zookeeper_name_)
     : bucket_info(std::make_shared<BucketInfo>(BucketInfo{
@@ -223,7 +222,6 @@ ObjectStorageQueueOrderedFileMetadata::BucketHolder::BucketHolder(
         .processor_info = processor_info_,
         .zookeeper_name = zookeeper_name_ }))
     , active_registry_id(active_registry_id_)
-    , persistent_processing_node_ttl_seconds(persistent_processing_node_ttl_seconds_)
     , log(log_)
 {
 #ifdef DEBUG_OR_SANITIZER_BUILD
@@ -271,7 +269,6 @@ void ObjectStorageQueueOrderedFileMetadata::BucketHolder::refresh()
         return;
 
     bool ownership_lost = false;
-    bool active_registry_lost = false;
     std::optional<std::string> current_owner;
     auto zk_retry = ObjectStorageQueueMetadata::getKeeperRetriesControl(log);
     zk_retry.retryLoop([&]
@@ -288,33 +285,11 @@ void ObjectStorageQueueOrderedFileMetadata::BucketHolder::refresh()
             return;
         }
 
-        Coordination::Error code = {};
-        Coordination::Responses responses;
-        if (active_registry_id.empty())
-        {
-            Coordination::Stat set_stat;
-            code = zk_client->trySet(bucket_info->bucket_lock_path, data, stat.version, &set_stat);
-        }
-        else
-        {
-            Coordination::Requests requests;
-            requests.push_back(zkutil::makeCheckRequest(getActiveRegistryPath(), -1));
-            requests.push_back(zkutil::makeSetRequest(bucket_info->bucket_lock_path, data, stat.version));
-            code = zk_client->tryMulti(requests, responses);
-        }
+        Coordination::Stat set_stat;
+        const auto code = zk_client->trySet(bucket_info->bucket_lock_path, data, stat.version, &set_stat);
         if (code == Coordination::Error::ZOK)
         {
-            bucket_lock_version = stat.version + 1;
-            return;
-        }
-        if (code == Coordination::Error::ZNONODE
-            && !active_registry_id.empty()
-            && !responses.empty()
-            && responses.front()->error == Coordination::Error::ZNONODE)
-        {
-            /// Preserve ownership so the holder destructor releases the persistent
-            /// lock. The next streaming cycle recreates this process's registry entry.
-            active_registry_lost = true;
+            bucket_lock_version = set_stat.version;
             return;
         }
         if (code == Coordination::Error::ZBADVERSION)
@@ -324,7 +299,8 @@ void ObjectStorageQueueOrderedFileMetadata::BucketHolder::refresh()
             if (zk_client->tryGet(bucket_info->bucket_lock_path, current_data, &current_stat)
                 && current_data == bucket_info->processor_info)
             {
-                /// Another refresh by this owner won the race.
+                /// A concurrent refresh, or a refresh whose response was lost, already
+                /// renewed this exact lock. Use its version for the release fence.
                 bucket_lock_version = current_stat.version;
                 return;
             }
@@ -338,7 +314,8 @@ void ObjectStorageQueueOrderedFileMetadata::BucketHolder::refresh()
 
     if (ownership_lost)
     {
-        /// Not a logical error: the lock of a process which was unregistered and did not
+        /// This is an expected ownership-loss exception: the lock of a process which was
+        /// unregistered and did not
         /// refresh for longer than the abandoned-reclaim TTL (e.g. it was paused with
         /// SYSTEM STOP, or lost its Keeper session for that long) is legitimately reclaimed
         /// by cleanup and possibly acquired by another server. Fencing on commit prevents
@@ -351,11 +328,6 @@ void ObjectStorageQueueOrderedFileMetadata::BucketHolder::refresh()
             "Lost ownership of bucket lock {} (processor: {}, current owner: {})",
             bucket_info->bucket_lock_path, bucket_info->processor_info, current_owner.value_or("none"));
     }
-    if (active_registry_lost)
-        throw zkutil::KeeperException::fromPath(
-            Coordination::Error::ZNONODE,
-            getActiveRegistryPath());
-
     ProfileEvents::increment(ProfileEvents::ObjectStorageQueueBucketLockRefreshes);
     LOG_TEST(log, "Refreshed bucket lock {}", bucket_info->bucket_lock_path);
     age_watch.restart();
@@ -372,46 +344,42 @@ void ObjectStorageQueueOrderedFileMetadata::BucketHolder::release()
 
     Coordination::Error code = {};
     bool ownership_lost = false;
+    bool lock_missing = false;
     auto zk_retry = ObjectStorageQueueMetadata::getKeeperRetriesControl(log);
     zk_retry.retryLoop([&]
     {
         auto zk_client = ObjectStorageQueueMetadata::getZooKeeper(log, bucket_info->zookeeper_name);
 
-        if (zk_retry.isRetry() && !checkBucketOwnership(zk_client))
+        Coordination::Stat stat;
+        std::string data;
+        /// A versioned remove alone is insufficient because a recreated lock can reuse
+        /// the same version. Fence every attempt with the exact current owner.
+        if (!zk_client->tryGet(bucket_info->bucket_lock_path, data, &stat))
         {
-            /// We could have failed "after operation": the node was removed without
-            /// confirmation and could be re-created by another server since then.
+            lock_missing = true;
+            code = Coordination::Error::ZNONODE;
+            return;
+        }
+        if (data != bucket_info->processor_info)
+        {
             LOG_TEST(log, "Will not remove bucket lock node, ownership changed");
+            ownership_lost = true;
             code = Coordination::Error::ZOK;
             return;
         }
-        /// A lock not refreshed for longer than the TTL could have been removed by the
-        /// cleanup and re-created by another server colliding on the version (e.g. both
-        /// at the creation version 0), so the version check alone cannot prove ownership.
-        const size_t ttl_seconds = persistent_processing_node_ttl_seconds.load();
-        if (ttl_seconds
-            && age_watch.elapsedSeconds() >= static_cast<double>(ttl_seconds)
-            && !checkBucketOwnership(zk_client))
+
+        bucket_lock_version = stat.version;
+        if (active_registry_id.empty())
+            code = zk_client->tryRemove(bucket_info->bucket_lock_path, bucket_lock_version);
+        else
         {
-            ownership_lost = true;
-            return;
-        }
-        /// The version check below protects from removing a lock re-created by
-        /// another server; on the first attempt also assert ownership in debug builds.
-        chassert(zk_retry.isRetry() || checkBucketOwnership(zk_client));
-        code = zk_client->tryRemove(bucket_info->bucket_lock_path, bucket_lock_version);
-        if (code == Coordination::Error::ZBADVERSION)
-        {
-            /// The version is stale if a refresh succeeded without confirmation.
-            /// Re-read to distinguish that from a lock re-created by another server.
-            Coordination::Stat stat;
-            std::string data;
-            if (zk_client->tryGet(bucket_info->bucket_lock_path, data, &stat)
-                && data == bucket_info->processor_info)
-            {
-                bucket_lock_version = stat.version;
-                code = zk_client->tryRemove(bucket_info->bucket_lock_path, bucket_lock_version);
-            }
+            Coordination::Requests requests;
+            /// Keep abandoned-lock cleanup from deleting and recreating the lock
+            /// between the exact-owner read above and the versioned remove.
+            requests.push_back(zkutil::makeCheckRequest(getActiveRegistryPath(), -1));
+            requests.push_back(zkutil::makeRemoveRequest(bucket_info->bucket_lock_path, bucket_lock_version));
+            Coordination::Responses responses;
+            code = zk_client->tryMulti(requests, responses);
         }
     });
 
@@ -420,14 +388,14 @@ void ObjectStorageQueueOrderedFileMetadata::BucketHolder::release()
         LOG_TEST(log, "Released bucket {}", bucket_info->bucket);
         return;
     }
-    else if (!ownership_lost && zk_retry.isRetry() && code == Coordination::Error::ZNONODE)
+    else if (lock_missing)
     {
-        LOG_TEST(log, "Released bucket {} (has zk session loss)", bucket_info->bucket);
+        LOG_TEST(log, "Bucket {} was already released", bucket_info->bucket);
         return;
     }
     else if (ownership_lost || code == Coordination::Error::ZNONODE || code == Coordination::Error::ZBADVERSION)
     {
-        /// Not a logical error: see the ownership_lost comment in refresh().
+        /// This is an expected ownership-loss exception; see the comment in `refresh`.
         ProfileEvents::increment(ProfileEvents::ObjectStorageQueueBucketLockLostOwnership);
         throw Exception(
             ErrorCodes::ABORTED,
@@ -718,8 +686,6 @@ ObjectStorageQueueOrderedFileMetadata::BucketHolderPtr ObjectStorageQueueOrdered
     const std::filesystem::path & zk_path,
     const Bucket & bucket,
     const std::string & registry_id,
-    bool /*use_persistent_processing_nodes_*/,
-    const std::atomic<size_t> & persistent_processing_node_ttl_seconds_,
     const std::string & zookeeper_name_,
     LoggerPtr log_)
 {
@@ -768,7 +734,6 @@ ObjectStorageQueueOrderedFileMetadata::BucketHolderPtr ObjectStorageQueueOrdered
             bucket_lock_path,
             processor_info,
             registry_id,
-            persistent_processing_node_ttl_seconds_,
             log_,
             zookeeper_name_);
     }

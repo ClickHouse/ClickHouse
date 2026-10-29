@@ -77,11 +77,12 @@ public:
         void releaseFinishedBuckets();
 
         /// Refresh bucket locks which were not refreshed for more than a quarter of
-        /// the TTL, after which the cleanup removes them as abandoned (the TTL is
-        /// meant to remove locks of dead servers).
-        void refreshExpiringBucketLocks();
+        /// the TTL, after which the cleanup removes them as abandoned. With `force`,
+        /// validate every held lock before preparing a commit.
+        void refreshExpiringBucketLocks(bool force = false);
 
         bool useBucketsForProcessing() const { return use_buckets_for_processing; }
+        bool isInvalidated() const { return iterator_invalidated; }
 
     private:
         using Bucket = ObjectStorageQueueMetadata::Bucket;
@@ -225,12 +226,6 @@ public:
         Coordination::Requests & requests,
         const PartitionLastProcessedFileInfoMap & last_processed_file_per_partition);
 
-    /// Mark all processed files' metadata so that their destructors check ownership
-    /// before removing the processing node (rather than asserting).
-    /// Called when a commit may have succeeded in ZK but the connection was lost before
-    /// we received the response ("failed after operation").
-    void setUncertainCommit();
-
     /// Do some work after Processed/Failed files were successfully committed to keeper.
     void finalizeCommit(
         bool insert_succeeded,
@@ -280,6 +275,7 @@ private:
     const bool add_deduplication_info;
     /// Effective dedup: gates whether shutdown can abort mid-file.
     const bool is_deduplication_v2;
+    bool commit_suppressed_due_to_ownership_loss = false;
     time_t transaction_start_time;
 
     LoggerPtr log;

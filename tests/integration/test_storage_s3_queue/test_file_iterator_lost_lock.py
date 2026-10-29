@@ -13,6 +13,16 @@ from helpers.s3_queue_common import (
 )
 
 
+def wait_until(predicate, timeout=30, interval=0.1):
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        result = predicate()
+        if result:
+            return result
+        time.sleep(interval)
+    return None
+
+
 def wait_for_processed_files_in_log(node, table_name, expected_count):
     """A file row reaches the destination table before the file is committed
     as processed in Keeper, so the s3queue log can lag behind the data."""
@@ -53,8 +63,7 @@ def started_cluster():
 
         yield cluster
     finally:
-        # The test deliberately provokes a logical error
-        # about lost bucket lock ownership.
+        # The test deliberately provokes an ownership-loss exception.
         cluster.shutdown(ignore_logical_errors=True)
 
 
@@ -64,7 +73,7 @@ def test_streaming_recovers_after_lost_bucket_lock(started_cluster):
     if node.is_debug_build() or node.is_built_with_sanitizer():
         pytest.skip(
             "Debug and sanitizer builds abort on the deliberately provoked "
-            "logical error about lost bucket lock ownership"
+            "ownership-loss exception"
         )
 
     table_name = f"test_lost_bucket_lock_{uuid.uuid4().hex[:8]}"
@@ -186,7 +195,7 @@ def test_streaming_recovers_after_lost_bucket_lock(started_cluster):
 
     # The ownership loss must have been detected exactly once: after the
     # iterator invalidation the fresh iterator must not fail on it again.
-    # ForcedCriticalErrorsLogger mirrors every logical error into the log,
+    # ForcedCriticalErrorsLogger mirrors every logical exception into the log,
     # so filter its duplicate of the same single exception out.
     detections = [
         line
@@ -215,6 +224,10 @@ def test_streaming_recovers_after_lost_bucket_lock(started_cluster):
         f"SELECT file_name, count() FROM system.s3queue_log "
         f"WHERE table = '{table_name}' AND status = 'Processed' "
         f"GROUP BY file_name HAVING count() > 1"
+    )
+    assert "" == node.query(
+        f"SELECT file_name FROM system.s3queue_log "
+        f"WHERE table = '{table_name}' AND status = 'Failed'"
     )
 
 
@@ -376,13 +389,104 @@ def test_reclaims_persistent_claims_after_process_restart(started_cluster):
             node.start_clickhouse()
 
 
+def test_inflight_claim_survives_keeper_session_reconnect(started_cluster):
+    node = started_cluster.instances["instance"]
+
+    table_name = f"test_session_reconnect_{uuid.uuid4().hex[:8]}"
+    dst_table_name = f"{table_name}_dst"
+    keeper_path = f"/clickhouse/test_{table_name}"
+    files_path = f"{table_name}_data"
+
+    create_table(
+        started_cluster,
+        node,
+        table_name,
+        "unordered",
+        files_path,
+        additional_settings={
+            "keeper_path": keeper_path,
+            "processing_threads_num": 1,
+            "persistent_processing_node_ttl_seconds": 21600,
+            "persistent_processing_node_abandoned_reclaim_ttl_seconds": 20,
+            "cleanup_interval_min_ms": 100,
+            "cleanup_interval_max_ms": 100,
+            "max_processed_files_before_commit": 1,
+            "polling_min_timeout_ms": 100,
+        },
+    )
+    generate_random_files(started_cluster, files_path, 1, start_ind=0, row_num=1)
+
+    node.query(
+        f"""
+        CREATE TABLE {dst_table_name}
+        (column1 UInt32, column2 UInt32, column3 UInt32, _path String)
+        ENGINE = MergeTree ORDER BY column1
+        """
+    )
+    node.query(
+        f"""
+        CREATE MATERIALIZED VIEW {table_name}_mv TO {dst_table_name} AS
+        SELECT column1, column2, column3, _path
+        FROM {table_name}
+        WHERE ignore(sleepEachRow(10)) = 0
+        """
+    )
+
+    zk = started_cluster.get_kazoo_client("zoo1")
+
+    def get_claim():
+        try:
+            for child in zk.get_children(f"{keeper_path}/processing"):
+                path = f"{keeper_path}/processing/{child}"
+                data, _ = zk.get(path)
+                registry_id = json.loads(data).get("active_registry_id")
+                if registry_id:
+                    return path, f"{keeper_path}/registry/{registry_id}"
+        except NoNodeError:
+            pass
+        return None
+
+    claim = wait_until(get_claim, timeout=30)
+    assert claim is not None
+    processing_path, registry_path = claim
+    assert zk.exists(registry_path)
+
+    old_session_id = int(
+        node.query(
+            "SELECT client_id FROM system.zookeeper_connection WHERE name = 'default'"
+        ).strip()
+    )
+    node.query("SYSTEM RECONNECT ZOOKEEPER")
+
+    # The persistent claim survives the session replacement. The absence of the old
+    # ephemeral node can be too short to observe because the source recreates it promptly.
+    assert zk.exists(processing_path)
+
+    assert wait_until(
+        lambda: int(
+            node.query(
+                "SELECT client_id FROM system.zookeeper_connection WHERE name = 'default'"
+            ).strip()
+        )
+        != old_session_id,
+        timeout=10,
+    )
+    assert wait_until(lambda: zk.exists(registry_path), timeout=10)
+    assert wait_until(
+        lambda: int(node.query(f"SELECT count() FROM {dst_table_name}")) == 1,
+        timeout=30,
+    )
+    assert wait_until(lambda: not zk.exists(processing_path), timeout=10)
+    assert 1 == wait_for_processed_files_in_log(node, table_name, 1)
+
+
 def test_lost_bucket_lock_detected_during_release(started_cluster):
     node = started_cluster.instances["instance"]
 
     if node.is_debug_build() or node.is_built_with_sanitizer():
         pytest.skip(
             "Debug and sanitizer builds abort on the deliberately provoked "
-            "logical error about lost bucket lock ownership"
+            "ownership-loss exception"
         )
 
     table_name = f"test_lost_lock_release_{uuid.uuid4().hex[:8]}"

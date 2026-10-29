@@ -380,8 +380,6 @@ ObjectStorageQueueMetadata::tryAcquireBucket(const Bucket & bucket, const std::s
         zookeeper_path,
         bucket,
         active_registry_id,
-        use_persistent_processing_nodes,
-        persistent_processing_node_ttl_seconds,
         zookeeper_name,
         log);
 }
@@ -1339,7 +1337,8 @@ void ObjectStorageQueueMetadata::cleanupThreadFuncImpl()
         return;
     }
 
-    /// Both settings are changeable at runtime and zero disables the corresponding cleanup condition.
+    /// Zero disables the corresponding cleanup condition. The legacy TTL is alterable;
+    /// the active-registry reclaim TTL is fixed when the table is created.
     if (cleanup_processing_files
         && (persistent_processing_node_ttl_seconds || persistent_processing_node_abandoned_reclaim_ttl_seconds))
         cleanupPersistentProcessingNodes();
@@ -1581,8 +1580,6 @@ void ObjectStorageQueueMetadata::updateSettings(const SettingsChanges & changes)
             use_persistent_processing_nodes = change.value.safeGet<bool>();
         if (change.name == "persistent_processing_node_ttl_seconds")
             persistent_processing_node_ttl_seconds = change.value.safeGet<UInt64>();
-        if (change.name == "persistent_processing_node_abandoned_reclaim_ttl_seconds")
-            persistent_processing_node_abandoned_reclaim_ttl_seconds = change.value.safeGet<UInt64>();
         if (change.name == "processing_state_cache_ttl_seconds")
             processing_state_cache_ttl_seconds = change.value.safeGet<UInt64>();
     }
@@ -1651,7 +1648,7 @@ void ObjectStorageQueueMetadata::cleanupPersistentProcessingNodes()
 
             const auto node_mtime = response[i].stat.mtime / 1000;
             const size_t ttl_seconds = persistent_processing_node_ttl_seconds.load();
-            const size_t reclaim_ttl_seconds = persistent_processing_node_abandoned_reclaim_ttl_seconds.load();
+            const size_t reclaim_ttl_seconds = persistent_processing_node_abandoned_reclaim_ttl_seconds;
             LOG_TEST(
                 log,
                 "Node: {}, mtime: {}, ttl sec: {}, reclaim ttl sec: {}, current time: {}",
@@ -1663,6 +1660,8 @@ void ObjectStorageQueueMetadata::cleanupPersistentProcessingNodes()
 
             if (ttl_seconds && node_mtime + ttl_seconds < current_time)
             {
+                /// Preserve the pre-existing long-TTL safety valve. It also covers legacy,
+                /// malformed, and direct-`SELECT` claims which have no active registry ID.
                 nodes_to_remove.push_back({get_batch[i], response[i].stat.version, {}});
                 continue;
             }

@@ -12,8 +12,6 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
 }
 
-class ZooKeeperWithFaultInjection;
-
 /// A base class to work with single file metadata in keeper.
 /// Metadata can have type Ordered or Unordered.
 class ObjectStorageQueueIFileMetadata
@@ -157,7 +155,7 @@ public:
     /// Try set file as Processing.
     bool trySetProcessing();
     /// Renew the persistent processing claim and verify that it still belongs to this process.
-    void refreshProcessingNode(size_t refresh_interval_seconds, bool force = false);
+    void refreshProcessingNode(size_t refresh_interval_seconds);
     /// Reset processing
     /// (file will not be set neither as Failed nor Processed,
     /// simply Processing state will be cancelled).
@@ -208,7 +206,7 @@ public:
     /// which we find out after unsuccessfully attempting to set file as processing.
     void afterSetProcessing(bool success, std::optional<FileStatus::State> file_state);
 
-    void setUncertainCommit() { uncertain_commit = true; }
+    bool wasProcessingOwnershipLost() const { return processing_ownership_lost; }
 
     /// A struct, representing information stored in keeper for a single file.
     struct NodeMetadata
@@ -265,11 +263,9 @@ protected:
 
     /// Whether processing node was created by us.
     bool created_processing_node = false;
-    /// Set when a commit failed after a ZooKeeper retry (possible "failed after operation"):
-    /// the multi-op may have succeeded in ZK but the connection was lost before we received
-    /// the response. In this case the destructor must check ownership before removing the
-    /// processing node rather than asserting it.
-    bool uncertain_commit = false;
+    /// Set after a refresh proves that the persistent claim no longer belongs to us.
+    /// No Keeper commit or local finalization is allowed for this processing attempt.
+    bool processing_ownership_lost = false;
     /// Whether prepareFailedRequests just reset processing without actually
     /// marking the file as failed (when reduce_retry_count was false).
     bool processing_reset_without_failure = false;
@@ -283,7 +279,6 @@ protected:
     Stopwatch processing_node_age_watch;
     int32_t processing_node_version = 0;
 
-    bool checkProcessingOwnership(std::shared_ptr<ZooKeeperWithFaultInjection> zk_client);
     std::string getActiveRegistryPath() const;
     void addProcessingNodeRemovalRequest(Coordination::Requests & requests) const;
 

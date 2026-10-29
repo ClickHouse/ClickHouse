@@ -211,12 +211,12 @@ public:
     size_t getPersistentProcessingNodeTTLSeconds() const { return persistent_processing_node_ttl_seconds; }
     size_t getPersistentProcessingNodeAbandonedReclaimTTLSeconds() const
     {
-        return persistent_processing_node_abandoned_reclaim_ttl_seconds.load();
+        return persistent_processing_node_abandoned_reclaim_ttl_seconds;
     }
-    size_t getPersistentProcessingNodeRefreshIntervalSeconds() const
+    size_t getProcessingNodeRefreshIntervalSeconds() const
     {
         const size_t ttl_seconds = persistent_processing_node_ttl_seconds.load();
-        const size_t reclaim_ttl_seconds = persistent_processing_node_abandoned_reclaim_ttl_seconds.load();
+        const size_t reclaim_ttl_seconds = persistent_processing_node_abandoned_reclaim_ttl_seconds;
         const size_t lease_seconds = ttl_seconds && reclaim_ttl_seconds
             ? std::min(ttl_seconds, reclaim_ttl_seconds)
             : std::max(ttl_seconds, reclaim_ttl_seconds);
@@ -266,7 +266,7 @@ private:
     std::atomic<size_t> cleanup_interval_max_ms;
     std::atomic<bool> use_persistent_processing_nodes;
     std::atomic<size_t> persistent_processing_node_ttl_seconds;
-    std::atomic<size_t> persistent_processing_node_abandoned_reclaim_ttl_seconds;
+    const size_t persistent_processing_node_abandoned_reclaim_ttl_seconds;
     std::atomic<size_t> processing_state_cache_ttl_seconds;
 
     /// Watermarks for the pipeline-lag metrics, see updateNewestSeenTimestamp().

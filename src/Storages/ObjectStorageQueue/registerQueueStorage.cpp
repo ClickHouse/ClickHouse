@@ -548,11 +548,13 @@ Default value: `21600` (6 hours).
 
 ### `persistent_processing_node_abandoned_reclaim_ttl_seconds` {#persistent-processing-node-abandoned-reclaim-ttl-seconds}
 
-Persistent processing nodes and bucket locks are periodically refreshed while they are owned by an active server process. If the exact active-registry entry recorded in a claim is absent and the claim has not been refreshed for this TTL, the claim can be cleaned up before `persistent_processing_node_ttl_seconds` expires.
+Persistent processing nodes and bucket locks created by background materialized-view consumption are periodically refreshed while they are owned by an active server process. If the exact active-registry entry recorded in a claim is absent and the claim has not been refreshed for this TTL, the claim can be cleaned up before `persistent_processing_node_ttl_seconds` expires.
 
 The active-registry check and this TTL are both required. A transient Keeper session loss therefore does not make a claim immediately eligible for cleanup.
 
 A replica that stays inactive for longer than this TTL while holding claims — for example, one paused with `SYSTEM STOP`, one whose queue has no attached materialized views, or one disconnected from Keeper for that long — has its claims reclaimed so that other replicas can process the corresponding buckets and files. This is intended behavior, not an error: when the replica becomes active again, it detects the loss, releases the reclaimed work without finalizing it, and re-acquires what it needs on the next streaming cycle.
+
+Direct `SELECT` claims do not participate in the active registry and are cleaned up only by `persistent_processing_node_ttl_seconds`. This setting is fixed when the table is created and cannot be changed with `ALTER TABLE ... MODIFY SETTING`.
 
 Default value: `600` (10 minutes).
 ### `processing_state_cache_ttl_seconds` {#processing_state_cache_ttl_seconds}

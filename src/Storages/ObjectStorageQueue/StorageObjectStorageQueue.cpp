@@ -1375,12 +1375,8 @@ void StorageObjectStorageQueue::commit(
                 DimensionalMetrics::ObjectStorageQueueFailures,
                 {getStorageID().getDatabaseName(), getStorageID().getTableName(), "commit", String(magic_enum::enum_name(e.code))});
 
-            /// A tryMulti attempt may have succeeded in Keeper before the connection dropped
-            /// ("failed after operation") - we never received its response, so the commit outcome
-            /// is unknown. Mark all metadata objects so their destructors check ownership before
-            /// removing the processing node, same as the replay-error branch below.
-            for (auto & source : sources)
-                source->setUncertainCommit();
+            /// The commit outcome may be unknown after a connection loss. File metadata
+            /// destructors always re-read and fence ownership before removing a claim.
             throw;
         }
 
@@ -1406,15 +1402,6 @@ void StorageObjectStorageQueue::commit(
             DimensionalMetrics::add(
                 DimensionalMetrics::ObjectStorageQueueFailures,
                 {getStorageID().getDatabaseName(), getStorageID().getTableName(), "commit", String(magic_enum::enum_name(reported_code))});
-            if (try_num > 1)
-            {
-                /// We had at least one hardware error retry, so the first attempt may have succeeded
-                /// ("failed after operation"): the multi-op applied in ZK but the connection was lost
-                /// before we received the response. Mark all metadata objects so their destructors
-                /// check ownership before removing the processing node instead of asserting.
-                for (auto & source : sources)
-                    source->setUncertainCommit();
-            }
             throw zkutil::KeeperMultiException(code.value(), requests, responses);
         }
     }
@@ -1486,7 +1473,6 @@ static const std::unordered_set<std::string_view> changeable_settings_unordered_
     "cleanup_interval_min_ms",
     "use_persistent_processing_nodes",
     "persistent_processing_node_ttl_seconds",
-    "persistent_processing_node_abandoned_reclaim_ttl_seconds",
     "processing_state_cache_ttl_seconds",
     "after_processing_retries",
     "after_processing_move_uri",
@@ -1522,7 +1508,6 @@ static const std::unordered_set<std::string_view> changeable_settings_ordered_mo
     "cleanup_interval_min_ms",
     "use_persistent_processing_nodes",
     "persistent_processing_node_ttl_seconds",
-    "persistent_processing_node_abandoned_reclaim_ttl_seconds",
     "processing_state_cache_ttl_seconds",
     "after_processing_retries",
     "after_processing_move_uri",
