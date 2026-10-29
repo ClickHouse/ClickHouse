@@ -17,6 +17,7 @@ DROP TABLE IF EXISTS t_h3_set;
 DROP TABLE IF EXISTS t_h3_bloom;
 DROP TABLE IF EXISTS t_h3_geo;
 DROP TABLE IF EXISTS t_h3_lambda;
+DROP TABLE IF EXISTS t_h3_pk_part;
 
 -- 608009741498580991: latitude 80.007, longitude 9.99. 610315033787760639: latitude -0.0005, longitude 69.99.
 CREATE TABLE t_h3_pk (h UInt64, v UInt32) ENGINE = MergeTree ORDER BY tupleElement(h3ToGeo(h), 1);
@@ -49,6 +50,10 @@ INSERT INTO t_h3_geo VALUES (0.0, 70.0, 2);
 CREATE TABLE t_h3_lambda (h UInt64, v UInt32) ENGINE = MergeTree ORDER BY arrayMap(x -> tupleElement(h3ToGeo(x), 1), [h]);
 INSERT INTO t_h3_lambda VALUES (608009741498580991, 1);
 INSERT INTO t_h3_lambda VALUES (610315033787760639, 2);
+
+CREATE TABLE t_h3_pk_part (p UInt8, h UInt64) ENGINE = MergeTree PARTITION BY p ORDER BY tupleElement(h3ToGeo(h), 1);
+INSERT INTO t_h3_pk_part VALUES (0, 608009741498580991);
+INSERT INTO t_h3_pk_part VALUES (1, 610315033787760639);
 
 SELECT '-- baseline session: the key is used and the result is right';
 SELECT h FROM t_h3_pk WHERE tupleElement(h3ToGeo(h), 1) > 50;
@@ -102,6 +107,9 @@ SELECT count() FROM (EXPLAIN SELECT min(tupleElement(h3ToGeo(h), 1)) FROM t_h3_p
 SELECT round(min(tupleElement(h3ToGeo(h), 1)), 6), round(max(tupleElement(h3ToGeo(h), 1)), 6) FROM t_h3_pk SETTINGS optimize_use_projections = 1, optimize_use_implicit_projections = 1;
 SELECT count() FROM (EXPLAIN SELECT toInt32(tupleElement(h3ToGeo(h), 1)) AS p, count() FROM t_h3_part GROUP BY p SETTINGS optimize_use_projections = 1, optimize_use_implicit_projections = 1, enable_parallel_replicas = 0) WHERE explain LIKE '%_minmax_count_projection%';
 SELECT toInt32(tupleElement(h3ToGeo(h), 1)) AS p, count() FROM t_h3_part GROUP BY p ORDER BY p SETTINGS optimize_use_projections = 1, optimize_use_implicit_projections = 1;
+-- The projection still serves the columns that do not depend on h3ToGeo.
+SELECT count() FROM (EXPLAIN SELECT p, count() FROM t_h3_pk_part GROUP BY p SETTINGS optimize_use_projections = 1, optimize_use_implicit_projections = 1, enable_parallel_replicas = 0) WHERE explain LIKE '%_minmax_count_projection%';
+SELECT count() FROM (EXPLAIN SELECT min(v) FROM t_h3_part SETTINGS optimize_use_projections = 1, optimize_use_implicit_projections = 1, enable_parallel_replicas = 0) WHERE explain LIKE '%_minmax_count_projection%';
 SET h3togeo_lon_lat_result_order = 0;
 
 SELECT '-- deviating session for geoToH3: the arguments are exchanged, the result type is not';
@@ -122,3 +130,4 @@ DROP TABLE t_h3_set;
 DROP TABLE t_h3_bloom;
 DROP TABLE t_h3_geo;
 DROP TABLE t_h3_lambda;
+DROP TABLE t_h3_pk_part;

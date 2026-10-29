@@ -756,17 +756,39 @@ static bool canMinMaxCountProjectionMatchAggregates(const AggregateDescriptions 
     return true;
 }
 
-/// The implicit `minmax_count` projection answers from the stored partition values and the first primary key
-/// column of the part index, which hold what those expressions produced under the server baseline.
-static bool minMaxCountProjectionKeysFollowSessionSettings(const StorageMetadataPtr & metadata, const ContextPtr & context)
+/// The implicit `minmax_count` projection answers the partition values and min/max of the first primary key
+/// column from what the parts store, which those expressions produced under the server baseline. Whether
+/// `required_columns` include such a column whose expression the query session computes differently.
+static bool minMaxCountProjectionReadsSessionDependentValues(
+    const Names & required_columns, const StorageMetadataPtr & metadata, const ContextPtr & context)
 {
-    const auto & primary_key = metadata->getPrimaryKey();
-    if (primary_key.expression && !primary_key.column_names.empty()
-        && getKeySubexpressionsWithSessionDependentValues(*primary_key.expression, context).contains(primary_key.column_names.front()))
-        return true;
+    const auto & projection = *metadata->minmax_count_projection;
+    const auto names = projection.sample_block.getNames();
+    NameSet session_dependent_columns;
 
+    /// Same layout as in MergeTreeData::getMinMaxCountProjectionBlock.
     const auto & partition_key = metadata->getPartitionKey();
-    return partition_key.expression && !getKeySubexpressionsWithSessionDependentValues(*partition_key.expression, context).empty();
+    if (partition_key.expression)
+    {
+        const auto session_dependent = getKeySubexpressionsWithSessionDependentValues(*partition_key.expression, context);
+        size_t pos = 0;
+        for (size_t i : projection.partition_value_indices)
+        {
+            if (session_dependent.contains(partition_key.column_names[i]))
+                session_dependent_columns.insert(names[pos]);
+            ++pos;
+        }
+    }
+
+    const auto & primary_key = metadata->getPrimaryKey();
+    if (!projection.primary_key_max_column_name.empty() && primary_key.expression
+        && getKeySubexpressionsWithSessionDependentValues(*primary_key.expression, context).contains(primary_key.column_names.front()))
+    {
+        session_dependent_columns.insert(names[names.size() - 3]);
+        session_dependent_columns.insert(names[names.size() - 2]);
+    }
+
+    return std::ranges::any_of(required_columns, [&](const auto & name) { return session_dependent_columns.contains(name); });
 }
 
 static AggregateProjectionCandidates getAggregateProjectionCandidates(
@@ -796,8 +818,7 @@ static AggregateProjectionCandidates getAggregateProjectionCandidates(
     bool can_use_minmax_projection = allow_implicit_projections
         && metadata->minmax_count_projection
         && !reading.getMutationsSnapshot()->hasLightweightDeletedMask()
-        && canMinMaxCountProjectionMatchAggregates(aggregates)
-        && !minMaxCountProjectionKeysFollowSessionSettings(metadata, context);
+        && canMinMaxCountProjectionMatchAggregates(aggregates);
 
     if (!can_use_minmax_projection && agg_projections.empty())
         return candidates;
@@ -820,7 +841,12 @@ static AggregateProjectionCandidates getAggregateProjectionCandidates(
     {
         const auto * projection = &*(metadata->minmax_count_projection);
         auto info = getAggregatingProjectionInfo(*projection, context, metadata, key_virtual_columns);
-        if (auto proj_dag = analyzeAggregateProjection(info, dag, query_index, keys, aggregates, max_set_size_for_match))
+        auto proj_dag = analyzeAggregateProjection(info, dag, query_index, keys, aggregates, max_set_size_for_match);
+        if (proj_dag && minMaxCountProjectionReadsSessionDependentValues(proj_dag->getRequiredColumnsNames(), metadata, context))
+        {
+            candidates.reject_reasons.try_emplace(projection->name, "the implicit projection would answer a key expression the query session computes differently");
+        }
+        else if (proj_dag)
         {
             AggregateProjectionCandidate candidate{.info = std::move(info), .dag = std::move(*proj_dag)};
             candidate.has_filter = (dag.filter_node != nullptr);

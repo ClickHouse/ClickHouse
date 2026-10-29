@@ -31,6 +31,8 @@
 0
 9	1
 69	1
+1
+1
 -- deviating session for geoToH3: the arguments are exchanged, the result type is not
 1
 -- a metadata-changing ALTER under the deviating session does not exchange the stored geoToH3 key either
