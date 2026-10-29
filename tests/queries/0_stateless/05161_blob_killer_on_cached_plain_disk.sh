@@ -10,6 +10,9 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
+# Bounds the `system.text_log` scans below: late in a long CI run the whole log exceeds `max_rows_to_read`.
+test_start=$(${CLICKHOUSE_CLIENT} --query="SELECT toUnixTimestamp(now())")
+
 ${CLICKHOUSE_CLIENT} --multiline -q "
 CREATE TABLE t_cached_plain_rewritable (a Int32) ENGINE = MergeTree ORDER BY a
 SETTINGS disk = disk(
@@ -40,8 +43,10 @@ SELECT 'disks', count() FROM system.disks
 WHERE name IN ('05161_cache_over_plain_rewritable', '05161_plain_rewritable_under_cache');
 
 SELECT 'cache layer, blob killer started', count() > 0 FROM system.text_log
-WHERE logger_name = '05161_cache_over_plain_rewritable::BlobKillerThread' AND message LIKE 'Execution started%';
+WHERE event_date >= yesterday() AND event_time >= toDateTime(${test_start})
+    AND logger_name = '05161_cache_over_plain_rewritable::BlobKillerThread' AND message LIKE 'Execution started%';
 
 SELECT 'disk under the cache, blob killer started', count() FROM system.text_log
-WHERE logger_name = '05161_plain_rewritable_under_cache::BlobKillerThread' AND message LIKE 'Execution started%';
+WHERE event_date >= yesterday() AND event_time >= toDateTime(${test_start})
+    AND logger_name = '05161_plain_rewritable_under_cache::BlobKillerThread' AND message LIKE 'Execution started%';
 "
