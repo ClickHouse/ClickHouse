@@ -40,6 +40,7 @@ PulsarSource::PulsarSource(
     , log(log_)
     , max_execution_time(max_execution_time_)
     , handle_error_mode(storage.getStreamingHandleErrorMode())
+    , skip_broken_messages(handle_error_mode == StreamingHandleErrorMode::DEFAULT ? storage.getSkipBrokenMessages() : 0)
     , commit_in_suffix(commit_in_suffix_)
     , direct_reader(direct_reader_)
     , cancel_epoch(cancel_epoch_.value_or(storage_.currentCancelEpoch()))
@@ -131,9 +132,22 @@ Chunk PulsarSource::generateImpl()
 
     std::optional<std::string> exception_message;
     size_t total_rows = 0;
+    /// The budget of `pulsar_skip_broken_messages` covers the whole block, not a single message:
+    /// the parser and its own error counters are reset after every message.
+    size_t skipped_broken_messages = 0;
 
-    auto on_error = [&](const MutableColumns & result_columns, const ColumnCheckpoints & checkpoints, Exception & e)
+    auto on_error = [&](const MutableColumns & result_columns, const ColumnCheckpoints & checkpoints, Exception & e) -> size_t
     {
+        if (skipped_broken_messages < skip_broken_messages)
+        {
+            ++skipped_broken_messages;
+            /// Drop the rows of the broken message that were parsed before the error.
+            for (size_t i = 0; i < result_columns.size(); ++i)
+                result_columns[i]->rollback(*checkpoints[i]);
+            LOG_DEBUG(log, "Skipped a broken message ({} of {} allowed per block): {}", skipped_broken_messages, skip_broken_messages, e.message());
+            return 0;
+        }
+
         if (put_error_to_stream)
         {
             exception_message = e.message();

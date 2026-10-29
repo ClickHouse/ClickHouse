@@ -77,6 +77,7 @@ public:
     size_t getPollMaxBatchSize() const;
     size_t getMaxBlockSize() const;
     StreamingHandleErrorMode getStreamingHandleErrorMode() const;
+    UInt64 getSkipBrokenMessages() const;
 
 private:
     std::unique_ptr<PulsarSettings> pulsar_settings;

@@ -46,6 +46,8 @@ private:
     LoggerPtr log;
     UInt64 max_execution_time;
     StreamingHandleErrorMode handle_error_mode;
+    /// How many broken messages a block may skip in the `default` error handling mode.
+    const UInt64 skip_broken_messages;
     bool commit_in_suffix;
     const bool direct_reader;
     /// SYSTEM STOP/CANCEL STREAMING advances the epoch; the source snapshots it at creation

@@ -14,6 +14,7 @@
 #include <Interpreters/InterpreterInsertQuery.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTInsertQuery.h>
+#include <Parsers/ASTSetQuery.h>
 #include <Processors/Executors/CompletedPipelineExecutor.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/ReadFromStreamLikeEngine.h>
@@ -490,12 +491,11 @@ ContextMutablePtr StoragePulsar::addSettings(ContextPtr local_context) const
     auto modified_context = Context::createCopy(local_context);
     modified_context->setSetting("input_format_skip_unknown_fields", true);
     modified_context->setSetting("input_format_allow_errors_ratio", 0.);
-    if ((*pulsar_settings)[PulsarSetting::pulsar_handle_error_mode] == StreamingHandleErrorMode::DEFAULT)
-        modified_context->setSetting("input_format_allow_errors_num", (*pulsar_settings)[PulsarSetting::pulsar_skip_broken_messages].value);
-    else if ((*pulsar_settings)[PulsarSetting::pulsar_handle_error_mode] == StreamingHandleErrorMode::DEAD_LETTER_QUEUE)
+    if ((*pulsar_settings)[PulsarSetting::pulsar_handle_error_mode] == StreamingHandleErrorMode::DEAD_LETTER_QUEUE)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "DEAD_LETTER_QUEUE is not supported by the table engine");
-    else
-        modified_context->setSetting("input_format_allow_errors_num", Field{0});
+    /// The parser is reset after every message, so its own error allowance would apply per message.
+    /// `PulsarSource` counts the broken messages of the whole block against `pulsar_skip_broken_messages` instead.
+    modified_context->setSetting("input_format_allow_errors_num", Field{0});
 
     /// Since we are reusing the same context for all queries executed simultaneously, we don't want to used shared `analyze_count`
     modified_context->setSetting("max_analyze_depth", Field{0});
@@ -597,6 +597,11 @@ size_t StoragePulsar::getMaxBlockSize() const
 StreamingHandleErrorMode StoragePulsar::getStreamingHandleErrorMode() const
 {
     return (*pulsar_settings)[PulsarSetting::pulsar_handle_error_mode];
+}
+
+UInt64 StoragePulsar::getSkipBrokenMessages() const
+{
+    return (*pulsar_settings)[PulsarSetting::pulsar_skip_broken_messages].value;
 }
 
 Names StoragePulsar::parseTopics(String topic_list) const
@@ -902,6 +907,41 @@ void registerStoragePulsar(StorageFactory & factory)
         if (!(*pulsar_settings)[PulsarSetting::pulsar_service_url].changed)
             throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "You must specify `pulsar_service_url` setting");
 
+        /// Unfold the `{database}` and `{table}` macros on table creation and store the result in
+        /// the definition. Otherwise a renamed table would expand them to the new name on the next
+        /// load, silently switching to another topic or subscription (and replaying the backlog).
+        if (args.mode < LoadingStrictnessLevel::ATTACH)
+        {
+            const std::pair<const char *, const PulsarSettingsString *> broker_identity_settings[] = {
+                {"pulsar_service_url", &PulsarSetting::pulsar_service_url},
+                {"pulsar_topic_list", &PulsarSetting::pulsar_topic_list},
+                {"pulsar_group_name", &PulsarSetting::pulsar_group_name},
+                {"pulsar_schema", &PulsarSetting::pulsar_schema},
+            };
+            for (const auto & [setting_name, setting] : broker_identity_settings)
+            {
+                auto & field = (*pulsar_settings)[*setting];
+                const String value = field.value;
+                Macros::MacroExpansionInfo info;
+                /// NOTE: it's not recursive
+                info.expand_special_macros_only = true;
+                info.table_id = args.table_id;
+                info.table_id.uuid = UUIDHelpers::Nil;
+                const auto expanded = args.getContext()->getMacros()->expand(value, info);
+                if (expanded == value)
+                    continue;
+
+                field = expanded;
+                if (!args.storage_def->settings)
+                {
+                    auto settings_ast = make_intrusive<ASTSetQuery>();
+                    settings_ast->is_standalone = false;
+                    args.storage_def->set(args.storage_def->settings, settings_ast);
+                }
+                args.storage_def->settings->changes.setSetting(setting_name, expanded);
+            }
+        }
+
         /// Validate the address the server is about to dial against `remote_url_allow_hosts`.
         /// Unconditionally - for an `ATTACH` too, so that a table created before the allowlist was
         /// tightened cannot keep connecting to a host that is no longer allowed.
@@ -1066,7 +1106,7 @@ Optional parameters:
 - `pulsar_schema` – Parameter that must be used if the format requires a schema definition. For example, [Cap'n Proto](https://capnproto.org/) requires the path to the schema file and the name of the root `schema.capnp:Message` object.
 - `pulsar_num_consumers` – The number of consumers per table. Default: `1`. Specify more consumers if the throughput of one consumer is insufficient. The value can not exceed the number of CPU cores (but at least `16` is always allowed).
 - `pulsar_max_block_size` – The maximum batch size (in messages) for a poll. Default: `max(1, max_insert_block_size / pulsar_num_consumers)`.
-- `pulsar_skip_broken_messages` – Parser tolerance to schema-incompatible messages per block. Default: `0`. If `pulsar_skip_broken_messages = N` then the engine skips *N* Pulsar messages that cannot be parsed (a message equals a row of data).
+- `pulsar_skip_broken_messages` – Parser tolerance to schema-incompatible messages per block. Default: `0`. If `pulsar_skip_broken_messages = N` then the engine skips up to *N* Pulsar messages that cannot be parsed in each block (a message equals a row of data); a skipped message is dropped as a whole and is acknowledged together with the block. One more broken message in the same block fails the block, and its messages are not acknowledged.
 - `pulsar_poll_timeout_ms` – Timeout for a single poll from Pulsar. Default: [stream_poll_timeout_ms](/reference/settings/session-settings/stream#stream_poll_timeout_ms).
 - `pulsar_poll_max_batch_size` – The maximum number of messages to be polled in a single Pulsar poll. Default: [max_block_size](/reference/settings/session-settings/max-block-size#max_block_size).
 - `pulsar_flush_interval_ms` – Timeout for flushing data read from Pulsar. Default: [stream_flush_interval_ms](/reference/settings/session-settings/stream#stream_flush_interval_ms).

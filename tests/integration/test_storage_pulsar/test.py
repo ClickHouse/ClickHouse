@@ -997,6 +997,154 @@ def test_macros_expansion(pulsar_cluster):
     wait_query_result(expected, "SELECT key, value FROM test.view ORDER BY key")
 
 
+def topic_subscriptions(pulsar_cluster, topic):
+    stats = subprocess.check_output(
+        [
+            "docker",
+            "exec",
+            pulsar_cluster.pulsar_docker_id,
+            "curl",
+            "-sf",
+            f"http://localhost:8080/admin/v2/persistent/public/default/{topic}/stats",
+        ]
+    )
+    return set(json.loads(stats).get("subscriptions", {}).keys())
+
+
+def test_macros_are_unfolded_on_create(pulsar_cluster):
+    # The {database}/{table} macros are expanded once, on CREATE, and stored in the
+    # definition, so a renamed table keeps its topic and subscription after a reload.
+    instance.query("CREATE DATABASE IF NOT EXISTS test")
+    instance.query("DROP TABLE IF EXISTS test.pulsar_renamed SYNC")
+    instance.query(
+        """
+        CREATE TABLE test.pulsar_reader (key UInt64, value UInt64)
+        ENGINE = Pulsar
+        SETTINGS pulsar_service_url = 'pulsar://pulsar1:6650',
+                 pulsar_topic_list = '{table}_rename_topic',
+                 pulsar_group_name = '{database}_{table}_rename_group',
+                 pulsar_format = 'JSONEachRow'
+        """
+    )
+    create_query = instance.query("SHOW CREATE TABLE test.pulsar_reader")
+    assert "pulsar_reader_rename_topic" in create_query
+    assert "test_pulsar_reader_rename_group" in create_query
+    assert "{table}" not in create_query and "{database}" not in create_query
+
+    instance.query("RENAME TABLE test.pulsar_reader TO test.pulsar_renamed")
+    instance.query("DETACH TABLE test.pulsar_renamed")
+    instance.query("ATTACH TABLE test.pulsar_renamed")
+
+    instance.query(
+        pulsar_table(
+            "test.pulsar_writer", "pulsar_reader_rename_topic", "rename_writer_group"
+        )
+    )
+    instance.query(
+        """
+        CREATE TABLE test.view (key UInt64, value UInt64)
+        ENGINE = MergeTree ORDER BY key
+        """
+    )
+    instance.query(
+        """
+        CREATE MATERIALIZED VIEW test.consumer TO test.view AS
+        SELECT key, value FROM test.pulsar_renamed
+        """
+    )
+
+    num_rows = 10
+    instance.query(
+        f"INSERT INTO test.pulsar_writer SELECT number, number FROM numbers({num_rows})"
+    )
+    expected = "\n".join(f"{i}\t{i}" for i in range(num_rows))
+    wait_query_result(expected, "SELECT key, value FROM test.view ORDER BY key")
+
+    subscriptions = topic_subscriptions(pulsar_cluster, "pulsar_reader_rename_topic")
+    assert "test_pulsar_reader_rename_group" in subscriptions
+    assert "test_pulsar_renamed_rename_group" not in subscriptions
+
+    instance.query("DROP TABLE test.consumer SYNC")
+    instance.query("DROP TABLE test.pulsar_renamed SYNC")
+
+
+def test_skip_broken_messages_budget_is_per_block(pulsar_cluster):
+    # `pulsar_skip_broken_messages` limits the broken messages of a whole block, not of
+    # each message: with an allowance of one, two broken messages followed by a valid one
+    # fail the block, so nothing is inserted or acknowledged. A reader with an allowance of
+    # two consumes the same messages through another subscription and gets the valid row.
+    instance.query("CREATE DATABASE IF NOT EXISTS test")
+    budget_tables = [
+        "budget_strict_mv",
+        "budget_lenient_mv",
+        "pulsar_budget_strict",
+        "pulsar_budget_lenient",
+        "budget_strict",
+        "budget_lenient",
+    ]
+    for name in budget_tables:
+        instance.query(f"DROP TABLE IF EXISTS test.{name} SYNC")
+
+    # One block must contain all three messages, so let it wait for them long enough.
+    block_settings = ", pulsar_flush_interval_ms = 30000, pulsar_poll_timeout_ms = 5000"
+    instance.query(
+        pulsar_table(
+            "test.pulsar_budget_strict",
+            "budget_topic",
+            "budget_strict_group",
+            extra_settings=", pulsar_skip_broken_messages = 1" + block_settings,
+        )
+    )
+    instance.query(
+        pulsar_table(
+            "test.pulsar_budget_lenient",
+            "budget_topic",
+            "budget_lenient_group",
+            extra_settings=", pulsar_skip_broken_messages = 2" + block_settings,
+        )
+    )
+    instance.query(
+        """
+        CREATE TABLE test.pulsar_writer (data String)
+        ENGINE = Pulsar
+        SETTINGS pulsar_service_url = 'pulsar://pulsar1:6650',
+                 pulsar_topic_list = 'budget_topic',
+                 pulsar_group_name = 'budget_writer_group',
+                 pulsar_format = 'TSV'
+        """
+    )
+    for kind in ["strict", "lenient"]:
+        instance.query(
+            f"CREATE TABLE test.budget_{kind} (key UInt64, value UInt64) "
+            "ENGINE = MergeTree ORDER BY key"
+        )
+        instance.query(
+            f"""
+            CREATE MATERIALIZED VIEW test.budget_{kind}_mv TO test.budget_{kind} AS
+            SELECT key, value FROM test.pulsar_budget_{kind}
+            """
+        )
+
+    instance.query(
+        "INSERT INTO test.pulsar_writer VALUES "
+        """('not json'), ('not json either'), ('{"key": 1, "value": 1}')"""
+    )
+
+    wait_query_result("1\t1", "SELECT key, value FROM test.budget_lenient")
+    instance.wait_for_log_line(
+        r"Storage Pulsar\(pulsar_budget_strict\).*Skipped a broken message \(1 of 1 allowed per block\)",
+        timeout=120,
+    )
+    instance.wait_for_log_line(
+        r"Storage Pulsar\(pulsar_budget_strict\).*StoragePulsar::streaming",
+        timeout=120,
+    )
+    assert instance.query("SELECT count() FROM test.budget_strict") == "0\n"
+
+    for name in budget_tables:
+        instance.query(f"DROP TABLE test.{name} SYNC")
+
+
 def test_aborted_select_redelivers_prefetched_messages(pulsar_cluster):
     # A direct SELECT that stops early (LIMIT) leaves both uncommitted returned
     # messages and a prefetched unread tail of the current batch on the consumer.
