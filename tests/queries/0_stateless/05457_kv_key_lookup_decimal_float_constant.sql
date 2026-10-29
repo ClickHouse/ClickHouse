@@ -57,6 +57,9 @@ SELECT '(a, b) IN (SELECT 19.99, 1)', arraySort(groupArray(id)) FROM kv_multi WH
 SELECT trim(explain) FROM (EXPLAIN actions = 1 SELECT id FROM kv_multi WHERE (a, b) = (12.5, 1)) WHERE explain ILIKE '%ReadType%';
 SELECT '(a, b) = (SELECT (19.99, 1))', arraySort(groupArray(id)) FROM kv_multi WHERE (a, b) = (SELECT (19.99, 1));
 SELECT trim(explain) FROM (EXPLAIN actions = 1 SELECT id FROM kv_multi WHERE (a, b) = (SELECT (12.5, 1))) WHERE explain ILIKE '%ReadType%';
+INSERT INTO kv_multi VALUES (0.29, 1, 3);
+SELECT '(a, b) IN (SELECT toFloat32(0.29), 1)', arraySort(groupArray(id)) FROM kv_multi WHERE (a, b) IN (SELECT toFloat32(0.29), 1);
+SELECT trim(explain) FROM (EXPLAIN actions = 1 SELECT id FROM kv_multi WHERE (a, b) IN (SELECT toFloat32(12.5), 1)) WHERE explain ILIKE '%ReadType%';
 DROP TABLE kv_multi;
 
 DROP TABLE IF EXISTS kv_keeper;

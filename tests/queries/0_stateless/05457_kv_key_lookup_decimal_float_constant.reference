@@ -19,4 +19,6 @@ a = 19.99 AND b = 1	[1]
 ReadType: GetKeys
 (a, b) = (SELECT (19.99, 1))	[1]
 ReadType: GetKeys
+(a, b) IN (SELECT toFloat32(0.29), 1)	[3]
+ReadType: GetKeys
 KeeperMap	[1]

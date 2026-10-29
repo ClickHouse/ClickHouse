@@ -431,9 +431,22 @@ bool traverseDAGFilter(
 
             /// `IN` compares each key column with its set column in the type of that column.
             for (size_t col = 0; col < primary_keys.size() && col < set_element_types.size(); ++col)
+            {
+                ColumnPtr elements = set_elements[col];
+                DataTypePtr elements_type = set_element_types[col];
+                /// The keys below are converted from a `Field`, which holds a `Float32` as `Float64`.
+                if (WhichDataType(removeLowCardinalityAndNullable(elements_type)).isFloat32())
+                {
+                    DataTypePtr float64_type = std::make_shared<DataTypeFloat64>();
+                    if (isNullableOrLowCardinalityNullable(elements_type))
+                        float64_type = makeNullable(float64_type);
+                    elements = castColumn({elements, elements_type, ""}, float64_type);
+                    elements_type = float64_type;
+                }
                 if (floatValuesMissKeyValues(
-                        set_elements[col], set_element_types[col], primary_key_types[col], removeLowCardinalityAndNullable(set_element_types[col])))
+                        elements, elements_type, primary_key_types[col], removeLowCardinalityAndNullable(set_element_types[col])))
                     return false;
+            }
 
             size_t num_rows = set_elements[0]->size();
 
