@@ -241,6 +241,7 @@ static struct InitFiu
     ONCE(column_aggregate_function_ensureOwnership_exception) \
     ONCE(space_saving_copy_arena_throw) \
     ONCE(adaptive_aggregation_drain_create_states_throw) \
+    REGULAR(adaptive_aggregation_spill_no_room_to_append) \
     REGULAR(keepermap_fail_drop_data) \
     PAUSEABLE_ONCE(keepermap_create_pause_before_drop_lock_version) \
     REGULAR(keeper_fault_on_watch_request) \
@@ -304,6 +305,8 @@ static struct InitFiu
     PAUSEABLE_ONCE(hudi_pause_before_iterate) \
     PAUSEABLE_ONCE(hudi_pause_in_listing_data_files) \
     REGULAR(storage_cluster_read_sleep) \
+    REGULAR(s3_slow_response) \
+    REGULAR(local_object_storage_slow_response) \
     ONCE(backup_add_empty_memory_table) \
     ONCE(backup_from_snapshot_fail_after_batch) \
     ONCE(backup_from_snapshot_fail_after_lock_file_creation) \
