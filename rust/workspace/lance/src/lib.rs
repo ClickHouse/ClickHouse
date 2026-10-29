@@ -12,6 +12,7 @@ use lance::table::format::{Manifest, MAGIC as LANCE_MAGIC};
 use lance::Dataset;
 use object_store::aws::{AmazonS3Builder, AmazonS3ConfigKey};
 use object_store::client::{HttpClient, HttpConnector};
+use object_store::prefix::PrefixStore;
 use object_store::{ClientOptions, DynObjectStore, RetryConfig};
 use sha2::{Digest, Sha256};
 use std::any::Any;
@@ -1155,23 +1156,10 @@ async fn open_dataset(options: DatasetOpenOptions) -> FfiResult<OpenedDataset> {
         origin,
     } = options;
     if let Some(storage_options) = storage_options {
-        let object_store = build_s3_store(&uri, &storage_options)?;
-        let location = Url::parse(&uri).map_err(|err| {
-            FfiError::new(ChLanceErrorKind::InvalidArgument, origin, err.to_string())
-        })?;
-        #[allow(deprecated)]
-        let store_options = ObjectStoreParams {
-            object_store: Some((object_store, location)),
-            ..Default::default()
-        };
-        let dataset = DatasetBuilder::from_uri(&uri)
-            .with_read_params(ReadParams {
-                store_options: Some(store_options),
-                ..Default::default()
-            })
-            .load()
-            .await
-            .map_err(|err| FfiError::from_lance(LanceOperation::Open, origin, err))?;
+        let (bucket, key) = split_s3_uri(&uri).map_err(|error| error.with_origin(origin))?;
+        let bucket_uri = format!("s3://{}/", bucket);
+        let object_store = build_s3_store(&bucket_uri, &storage_options)?;
+        let dataset = open_dataset_under_key(object_store, &bucket_uri, key, origin).await?;
         ensure_no_external_base_paths(&dataset, origin)?;
         Ok(OpenedDataset { dataset, origin })
     } else {
@@ -1182,6 +1170,53 @@ async fn open_dataset(options: DatasetOpenOptions) -> FfiResult<OpenedDataset> {
         ensure_no_external_base_paths(&dataset, origin)?;
         Ok(OpenedDataset { dataset, origin })
     }
+}
+
+/// Opens the dataset under `key` in `object_store`, whose root is `root_uri`.
+///
+/// `Lance` takes the dataset path of a custom object store from its URL without decoding it, so a key
+/// would be cut at `#` or `?` and re-encoded, and could name a different dataset. Pass the key verbatim
+/// as the prefix of the object store instead, with the dataset at its root.
+async fn open_dataset_under_key(
+    object_store: Arc<DynObjectStore>,
+    root_uri: &str,
+    key: &str,
+    origin: ChLanceErrorOrigin,
+) -> FfiResult<Dataset> {
+    let prefix = object_store::path::Path::parse(key).map_err(|err| {
+        FfiError::new(
+            ChLanceErrorKind::InvalidArgument,
+            origin,
+            format!("Invalid Lance dataset key {:?}: {}", key, err),
+        )
+    })?;
+    let object_store: Arc<DynObjectStore> = Arc::new(PrefixStore::new(object_store, prefix));
+    let location = Url::parse(root_uri)
+        .map_err(|err| FfiError::new(ChLanceErrorKind::InvalidArgument, origin, err.to_string()))?;
+    #[allow(deprecated)]
+    let store_options = ObjectStoreParams {
+        object_store: Some((object_store, location)),
+        ..Default::default()
+    };
+    DatasetBuilder::from_uri(root_uri)
+        .with_read_params(ReadParams {
+            store_options: Some(store_options),
+            ..Default::default()
+        })
+        .load()
+        .await
+        .map_err(|err| FfiError::from_lance(LanceOperation::Open, origin, err))
+}
+
+/// Splits `s3://bucket/key` into the bucket and the key, taking the key verbatim.
+fn split_s3_uri(uri: &str) -> FfiResult<(&str, &str)> {
+    let invalid = || FfiError::invalid_argument(format!("Invalid Lance S3 dataset URI {:?}", uri));
+    let rest = uri.strip_prefix("s3://").ok_or_else(invalid)?;
+    let (bucket, key) = rest.split_once('/').unwrap_or((rest, ""));
+    if bucket.is_empty() {
+        return Err(invalid());
+    }
+    Ok((bucket, key))
 }
 
 // ClickHouse checks only that the dataset directory is inside `user_files_path`, while Lance reads the
@@ -4782,6 +4817,63 @@ mod tests {
             Duration::from_millis(2500)
         );
         assert!(parse_timeout_duration("not-a-duration").is_err());
+    }
+
+    #[test]
+    fn split_s3_uri_keeps_key_verbatim() {
+        assert_eq!(
+            split_s3_uri("s3://bucket/a/hash#data.lance").unwrap(),
+            ("bucket", "a/hash#data.lance")
+        );
+        assert_eq!(
+            split_s3_uri("s3://bucket/x%23y?z").unwrap(),
+            ("bucket", "x%23y?z")
+        );
+        assert_eq!(split_s3_uri("s3://bucket").unwrap(), ("bucket", ""));
+        assert!(split_s3_uri("s3:///key").is_err());
+        assert!(split_s3_uri("http://bucket/key").is_err());
+    }
+
+    #[test]
+    fn open_dataset_under_key_with_url_special_characters() {
+        let root = tempfile::tempdir().unwrap();
+        let write = |name: &str, values: Vec<i32>| {
+            let batch = make_batch(values);
+            let schema = batch.schema();
+            let reader = RecordBatchIterator::new(vec![Ok(batch)].into_iter(), schema);
+            Runtime::new()
+                .unwrap()
+                .block_on(Dataset::write(
+                    reader,
+                    root.path().join(name).to_str().unwrap(),
+                    None,
+                ))
+                .unwrap();
+        };
+        // As URL paths, these keys would name the datasets `hash` and `pct#data.lance`.
+        write("hash", vec![1]);
+        write("hash#data.lance", vec![1, 2]);
+        write("pct#data.lance", vec![1, 2, 3]);
+        write("pct%23data.lance", vec![1, 2, 3, 4]);
+
+        let store: Arc<DynObjectStore> =
+            Arc::new(object_store::local::LocalFileSystem::new_with_prefix(root.path()).unwrap());
+        for (key, rows) in [("hash#data.lance", 2), ("pct%23data.lance/", 4)] {
+            let dataset = Runtime::new()
+                .unwrap()
+                .block_on(open_dataset_under_key(
+                    Arc::clone(&store),
+                    "s3://bucket/",
+                    key,
+                    ChLanceErrorOrigin::S3,
+                ))
+                .unwrap();
+            let count = Runtime::new()
+                .unwrap()
+                .block_on(dataset.count_rows(None))
+                .unwrap();
+            assert_eq!(count, rows, "{}", key);
+        }
     }
 
     #[test]
