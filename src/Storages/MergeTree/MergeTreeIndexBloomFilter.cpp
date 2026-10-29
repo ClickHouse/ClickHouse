@@ -294,13 +294,16 @@ std::optional<MapIndexInfo> tryResolveMapIndexInfo(
 /// against the bloom filter index header. The subcolumn name format is produced by
 /// `FunctionToSubcolumnsPass`.
 std::optional<MapIndexInfo> tryParseMapSubcolumn(
-    const String & column_name, const Block & header, const NameSet & shadowing_columns)
+    const String & column_name, const Block & header, const StorageMetadataPtr & metadata_snapshot)
 {
-    auto parsed = tryParseMapSubcolumnName(column_name, shadowing_columns);
+    auto parsed = tryParseMapSubcolumnName(column_name);
     if (!parsed)
         return std::nullopt;
 
     auto & [map_column_name, serialized_key] = *parsed;
+
+    if (!metadata_snapshot || !isKeySubcolumnOfMap(metadata_snapshot->getColumns(), column_name, map_column_name))
+        return std::nullopt;
 
     auto map_keys_index_column_name = fmt::format("mapKeys({})", map_column_name);
     if (!header.has(map_keys_index_column_name))
@@ -325,7 +328,7 @@ std::optional<MapIndexInfo> tryParseMapSubcolumn(
 /// Try to resolve a `MapIndexInfo` from a key node that is either an `arrayElement(map, key)`
 /// function call or a `map.key_<serialized_key>` subcolumn reference.
 std::optional<MapIndexInfo> tryResolveMapInfoFromNode(
-    const RPNBuilderTreeNode & key_node, const Block & header, const NameSet & shadowing_columns)
+    const RPNBuilderTreeNode & key_node, const Block & header, const StorageMetadataPtr & metadata_snapshot)
 {
     if (key_node.isFunction())
     {
@@ -351,7 +354,7 @@ std::optional<MapIndexInfo> tryResolveMapInfoFromNode(
         }
     }
 
-    return tryParseMapSubcolumn(key_node.getColumnName(), header, shadowing_columns);
+    return tryParseMapSubcolumn(key_node.getColumnName(), header, metadata_snapshot);
 }
 
 }
@@ -361,12 +364,12 @@ MergeTreeIndexConditionBloomFilter::MergeTreeIndexConditionBloomFilter(
     ContextPtr context_,
     const Block & header_,
     size_t hash_functions_,
-    NameSet columns_shadowing_map_subcolumns_,
+    StorageMetadataPtr metadata_snapshot_,
     JSONIndexArgumentTypes json_argument_types_)
     : WithContext(context_)
     , header(header_)
     , hash_functions(hash_functions_)
-    , columns_shadowing_map_subcolumns(std::move(columns_shadowing_map_subcolumns_))
+    , metadata_snapshot(std::move(metadata_snapshot_))
     , json_argument_types(std::move(json_argument_types_))
     , validate_enum_literals_in_operators(context_->getSettingsRef()[Setting::validate_enum_literals_in_operators])
 {
@@ -757,7 +760,7 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeIn(
     }
 
     /// Handle both `arrayElement(map, 'key') IN (set)` and `map.key_<serialized_key> IN (set)`.
-    if (auto map_info = tryResolveMapInfoFromNode(key_node, header, columns_shadowing_map_subcolumns))
+    if (auto map_info = tryResolveMapInfoFromNode(key_node, header, metadata_snapshot))
     {
         /** It is important to ignore keys like column_map['Key'] IN ('') because if the key does not exist in the map
           * we return the default value for arrayElement.
@@ -1337,7 +1340,7 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeEquals(
     /// Handle both `arrayElement(map, 'key') = value` and `map.key_<serialized_key> = value`.
     if (function_name == "equals")
     {
-        if (auto map_info = tryResolveMapInfoFromNode(key_node, header, columns_shadowing_map_subcolumns))
+        if (auto map_info = tryResolveMapInfoFromNode(key_node, header, metadata_snapshot))
         {
             /** It is important to ignore keys like column_map['Key'] = '' because if the key does not exist in the map
               * we return the default value for arrayElement.
@@ -1475,7 +1478,7 @@ MergeTreeIndexAggregatorPtr MergeTreeIndexBloomFilter::createIndexAggregator() c
 MergeTreeIndexConditionPtr MergeTreeIndexBloomFilter::createIndexCondition(const ActionsDAG::Node * predicate, ContextPtr context) const
 {
     return std::make_shared<MergeTreeIndexConditionBloomFilter>(
-        predicate, context, index.sample_block, hash_functions, getColumnsShadowingMapSubcolumns(), collectJSONIndexArgumentTypes(*index.expression));
+        predicate, context, index.sample_block, hash_functions, metadata_snapshot, collectJSONIndexArgumentTypes(*index.expression));
 }
 
 static void assertIndexColumnsType(const Block & header)
