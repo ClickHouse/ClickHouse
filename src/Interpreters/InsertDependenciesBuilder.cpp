@@ -1488,7 +1488,11 @@ bool InsertDependenciesBuilder::observePath(const DependencyPath & path)
     if (current != init_table_id && !storage->isView() && !metadata_snapshots.contains(current))
         storage->updateExternalDynamicMetadataIfExists(insert_contexts.at(parent));
 
-    auto metadata = storage->getInMemoryMetadataPtr(init_context, false);
+    /// The snapshot of a dependency target must be taken under its insert lock above, which an `ALTER` that has to
+    /// repair the existing data waits for. A snapshot cached for the query earlier, e.g. by the `SELECT` of
+    /// `INSERT ... SELECT` reading this table, may predate the lock, so it is bypassed. The root target is
+    /// already locked by `InterpreterInsertQuery` before its first snapshot.
+    auto metadata = storage->getInMemoryMetadataPtr(init_context, /*bypass_metadata_cache=*/ current != init_table_id);
     auto * materialized_view = dynamic_cast<StorageMaterializedView *>(storage.get());
 
     if (materialized_view && current != init_table_id)

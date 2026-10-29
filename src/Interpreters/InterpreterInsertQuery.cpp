@@ -1492,6 +1492,12 @@ BlockIO InterpreterInsertQuery::execute()
     auto & query = query_ptr->as<ASTInsertQuery &>();
 
     StoragePtr table = getTable(query);
+
+    /// Taken before the first metadata snapshot (`setInsertContextValues`), which the query caches with
+    /// `enable_shared_storage_snapshot_in_query`: an `ALTER` that has to repair the existing data waits for
+    /// the inserts holding this lock, so a part written from a snapshot taken without it could miss the repair.
+    auto insert_lock = table->lockForInsert(context->getInitialQueryId(), settings[Setting::lock_acquire_timeout]);
+
     setInsertContextValues(context, query, table);
     if (context->getServerSettings()[ServerSetting::disable_insertion_and_mutation]
         && query.table_id.database_name != DatabaseCatalog::SYSTEM_DATABASE
@@ -1534,8 +1540,6 @@ BlockIO InterpreterInsertQuery::execute()
                 checkClientSupportsReturningWithDataSentSeparately(context);
         }
     }
-
-    auto insert_lock = table->lockForInsert(context->getInitialQueryId(), settings[Setting::lock_acquire_timeout]);
 
     /// Handed to the async insert queue transform on the queue route, which drops it once the queue has
     /// the block, so it does not outlive the flush wait. The SELECT side's own lock does outlive it, and
