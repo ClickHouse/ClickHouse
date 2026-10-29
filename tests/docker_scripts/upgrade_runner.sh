@@ -156,6 +156,10 @@ sudo sed -i "s|<main><disk>s3</disk></main>|<main><disk>s3</disk></main><default
 sudo chown clickhouse /etc/clickhouse-server/config.d/s3_storage_policy_by_default.xml
 sudo chgrp clickhouse /etc/clickhouse-server/config.d/s3_storage_policy_by_default.xml
 
+# The previous release's tests create projections with positional arguments under a session setting, and loading
+# such a projection again (ATTACH, a restart, the upgraded server) needs it in the profile. Both servers read this file.
+echo "<clickhouse><profiles><default><enable_positional_arguments_for_projections>1</enable_positional_arguments_for_projections></default></profiles></clickhouse>" > /etc/clickhouse-server/users.d/enable_positional_arguments_for_projections.xml
+
 start_server || (echo "Failed to start server" && exit 1)
 
 clickhouse-client --receive_timeout 30 --query="SELECT 'Server version: ', version()"
@@ -732,8 +736,6 @@ echo "<clickhouse>
     <profiles>
         <default>
             <compatibility>$old_major_version</compatibility>
-            <!-- Allow loading projections with positional arguments (e.g., GROUP BY 1, 2) created by the old server. -->
-            <enable_positional_arguments_for_projections>1</enable_positional_arguments_for_projections>
         </default>
     </profiles>
 </clickhouse>" > /etc/clickhouse-server/users.d/compatibility.xml
