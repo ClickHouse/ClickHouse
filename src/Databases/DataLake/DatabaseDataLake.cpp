@@ -4,6 +4,8 @@
 #include <array>
 #include <memory>
 #include <Databases/DataLake/DatabaseDataLake.h>
+#include <Access/ContextAccess.h>
+#include <Access/Common/AccessFlags.h>
 #include <Core/SettingsEnums.h>
 #include <Core/UUID.h>
 #include <Databases/DataLake/HiveCatalog.h>
@@ -20,6 +22,7 @@
 #include <IO/ReadHelpers.h>
 #include <Poco/JSON/Parser.h>
 #include <Poco/JSON/Object.h>
+#include <Poco/URI.h>
 
 
 #if USE_AVRO && USE_PARQUET
@@ -166,6 +169,21 @@ namespace
 /// In refresh-token mode a single token, minted with `auth_scope`, serves both the OneLake
 /// catalog and Azure storage requests, so the scope must be the Azure storage audience.
 constexpr auto ONELAKE_STORAGE_AUTH_SCOPE = "https://storage.azure.com/.default";
+
+/// Normalizes a URI the same way `ITableFunction::getFunctionURINormalized` does, so source grant filters match alike.
+String normalizeSourceURI(const String & uri_str)
+{
+    try
+    {
+        Poco::URI uri(uri_str);
+        uri.normalize();
+        return uri.toString();
+    }
+    catch (const Poco::Exception &)
+    {
+        return "";
+    }
+}
 
 /// Translate the database-layer `TablesFilter` into the catalog-layer
 /// `TableNameFilter` so the catalog can restrict which namespaces it lists.
@@ -1140,6 +1158,12 @@ StoragePtr DatabaseDataLake::tryGetTableImpl(
 
     const auto table_endpoint = args[0]->as<ASTLiteral>()->value.safeGet<String>();
     LOG_TEST(log, "Using table endpoint: {}", table_endpoint);
+
+    /// HDFS is read with the server's own identity, so require the same `READ ON HDFS` grant as `icebergHDFS`.
+    /// Checked before the stateful cache below, so that a cached storage is not handed to a user without the grant.
+    if (storage_type == DatabaseDataLakeStorageType::HDFS)
+        context_->getAccess()->checkAccessWithFilter(
+            AccessType::READ, toStringSource(AccessTypeObjects::Source::HDFS), normalizeSourceURI(table_endpoint));
 
     auto storage_settings = std::make_shared<DataLakeStorageSettings>();
     storage_settings->loadFromSettingsChanges(settings.allChanged());

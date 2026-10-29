@@ -2,7 +2,8 @@
 
 The catalog reports the location as `hdfs://...`, and with the default `vended_credentials = 1`
 it vends no credentials for it: HDFS authenticates through the server's `hdfs` configuration.
-Neither may stop the table from resolving.
+Neither may stop the table from resolving. Reading it still needs `READ ON HDFS` for its location,
+as reading it through `icebergHDFS` does.
 """
 
 import json
@@ -20,7 +21,12 @@ if is_arm():
 CATALOG_PORT = 8182
 
 cluster = ClickHouseCluster(__file__)
-node = cluster.add_instance("node", with_hdfs=True)
+node = cluster.add_instance(
+    "node", main_configs=["configs/enable_grants.xml"], with_hdfs=True
+)
+
+USER = "hdfs_catalog_reader"
+LOCATION = "hdfs://hdfs1:9000/warehouse/ns/events"
 
 
 @pytest.fixture(scope="module")
@@ -37,7 +43,8 @@ def started_cluster():
         cluster.shutdown()
 
 
-def test_hdfs_location_with_vended_credentials(started_cluster):
+@pytest.fixture(scope="module")
+def hdfs_catalog(started_cluster):
     # Write the table metadata the catalog serves to the location it advertises for it.
     # The table has no snapshot, so this one file is the whole table.
     load_table = json.loads(
@@ -61,20 +68,58 @@ def test_hdfs_location_with_vended_credentials(started_cluster):
         ENGINE = DataLakeCatalog('http://localhost:{CATALOG_PORT}/v1')
         SETTINGS catalog_type = 'rest', warehouse = 'warehouse'
         """)
-    try:
-        create_query = node.query(
-            "SHOW CREATE TABLE hdfs_catalog.`ns.events` FORMAT TSVRaw"
-        )
-        assert (
-            "ENGINE = Iceberg('hdfs://hdfs1:9000/warehouse/ns/events" in create_query
-        ), create_query
+    yield
+    node.query("DROP DATABASE IF EXISTS hdfs_catalog")
 
+
+def test_hdfs_location_with_vended_credentials(hdfs_catalog):
+    create_query = node.query(
+        "SHOW CREATE TABLE hdfs_catalog.`ns.events` FORMAT TSVRaw"
+    )
+    assert f"ENGINE = Iceberg('{LOCATION}" in create_query, create_query
+
+    assert (
+        node.query(
+            "DESCRIBE hdfs_catalog.`ns.events` FORMAT TSVRaw SETTINGS describe_compact_output = 1"
+        )
+        == "id\tInt64\nname\tNullable(String)\n"
+    )
+    assert node.query("SELECT count() FROM hdfs_catalog.`ns.events`") == "0\n"
+
+
+def test_hdfs_location_requires_hdfs_source_grant(hdfs_catalog):
+    node.query(f"""
+        DROP USER IF EXISTS {USER};
+        CREATE USER {USER};
+        GRANT SELECT, SHOW ON hdfs_catalog.* TO {USER};
+        REVOKE SOURCES ON *.* FROM {USER};
+        """)
+
+    def assert_denied():
+        for query in [
+            "DESCRIBE hdfs_catalog.`ns.events`",
+            "SELECT count() FROM hdfs_catalog.`ns.events`",
+        ]:
+            error = node.query_and_get_error(query, user=USER)
+            assert "ACCESS_DENIED" in error, error
+
+    try:
+        assert_denied()
+
+        node.query(f"GRANT READ ON HDFS('hdfs://hdfs1:9000/elsewhere/.*') TO {USER}")
+        assert_denied()
+
+        node.query(f"GRANT READ ON HDFS('hdfs://hdfs1:9000/warehouse/.*') TO {USER}")
         assert (
             node.query(
-                "DESCRIBE hdfs_catalog.`ns.events` FORMAT TSVRaw SETTINGS describe_compact_output = 1"
+                "DESCRIBE hdfs_catalog.`ns.events` FORMAT TSVRaw SETTINGS describe_compact_output = 1",
+                user=USER,
             )
             == "id\tInt64\nname\tNullable(String)\n"
         )
-        assert node.query("SELECT count() FROM hdfs_catalog.`ns.events`") == "0\n"
+        assert (
+            node.query("SELECT count() FROM hdfs_catalog.`ns.events`", user=USER)
+            == "0\n"
+        )
     finally:
-        node.query("DROP DATABASE IF EXISTS hdfs_catalog")
+        node.query(f"DROP USER IF EXISTS {USER}")
