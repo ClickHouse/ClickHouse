@@ -11,6 +11,7 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/IFunction.h>
+#include <Functions/IFunctionWithFixedStringToStringMode.h>
 #include <Common/SipHash.h>
 
 
@@ -30,7 +31,7 @@ namespace
 /// Implements the function coalesce which takes a set of arguments and
 /// returns the value of the leftmost non-null argument. If no such value is
 /// found, coalesce() returns NULL.
-class FunctionCoalesce final : public IFunction
+class FunctionCoalesce final : public IFunction, public IFunctionWithFixedStringToStringMode
 {
 public:
     static constexpr auto name = "coalesce";
@@ -60,6 +61,8 @@ public:
 
     /// The `multiIf` created from the context follows this setting for a `FixedString` argument converted to `String`.
     void updateHash(SipHash & hash) const override { hash.update(cast_fixed_string_to_string_strip_trailing_zeros); }
+
+    std::optional<bool> getFixedStringToStringStripTrailingZeros() const override { return cast_fixed_string_to_string_strip_trailing_zeros; }
 
     bool useDefaultImplementationForNulls() const override { return false; }
     bool isVariadic() const override { return true; }

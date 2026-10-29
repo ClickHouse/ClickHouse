@@ -3496,6 +3496,16 @@ std::optional<bool> getCastFixedStringToStringStripTrailingZeros(const IFunction
     return {};
 }
 
+std::optional<bool> getFixedStringToStringStripTrailingZeros(const IFunctionBase & function)
+{
+    if (auto cast_mode = getCastFixedStringToStringStripTrailingZeros(function))
+        return cast_mode;
+    if (const auto * adaptor = typeid_cast<const FunctionToFunctionBaseAdaptor *>(&function))
+        if (const auto * function_with_mode = dynamic_cast<const IFunctionWithFixedStringToStringMode *>(adaptor->getFunction().get()))
+            return function_with_mode->getFixedStringToStringStripTrailingZeros();
+    return {};
+}
+
 FunctionBasePtr createFunctionBaseCast(
     const FunctionConvertSettingsPtr & settings,
     const char * name,

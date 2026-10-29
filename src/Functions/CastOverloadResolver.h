@@ -42,6 +42,10 @@ FunctionBasePtr createInternalCast(
 /// or nullopt if `function` is not a cast.
 std::optional<bool> getCastFixedStringToStringStripTrailingZeros(const IFunctionBase & function);
 
+/// The same for a cast or another function that captures the setting `cast_fixed_string_to_string_strip_trailing_zeros`
+/// (see `IFunctionWithFixedStringToStringMode`), or nullopt if the result of `function` does not depend on it.
+std::optional<bool> getFixedStringToStringStripTrailingZeros(const IFunctionBase & function);
+
 /// Whether CastType::accurateOrNull accepts this target. Failure is reported by wrapping the target in
 /// Nullable, so the target itself must be able to be inside Nullable; a nested type is also accepted
 /// when it can carry a NULL of its own, as Dynamic and Variant do.

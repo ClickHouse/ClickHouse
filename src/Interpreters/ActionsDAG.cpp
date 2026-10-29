@@ -5511,11 +5511,13 @@ void ActionsDAG::serialize(WriteBuffer & out, SerializedSetsRegistry & registry,
             column_flags |= 4;
 
         /// A cast can remove the trailing zero bytes of a `FixedString` converted to `String` regardless of the
-        /// setting `cast_fixed_string_to_string_strip_trailing_zeros` (the `JOIN` keys do it), so the receiver
-        /// cannot rebuild it from its own settings. Older receivers ignore these bits.
+        /// setting `cast_fixed_string_to_string_strip_trailing_zeros` (the `JOIN` keys do it), and the other functions
+        /// that depend on it (`toString`, `multiIf`, `transform`, ...) capture it from the scope where they were built,
+        /// such as a subquery with its own `SETTINGS`. So the receiver cannot rebuild them from its own settings.
+        /// Older receivers ignore these bits.
         if (node.type == ActionType::FUNCTION)
         {
-            if (auto strip_trailing_zeros = getCastFixedStringToStringStripTrailingZeros(*node.function_base))
+            if (auto strip_trailing_zeros = getFixedStringToStringStripTrailingZeros(*node.function_base))
             {
                 column_flags |= 8;
                 if (*strip_trailing_zeros)
@@ -5700,7 +5702,7 @@ ActionsDAG ActionsDAG::deserialize(
                 ContextPtr function_context = context;
                 if (column_flags & 8)
                 {
-                    /// A cast, which keeps the mode of the conversion of `FixedString` to `String` it was built with.
+                    /// A function that keeps the mode of the conversion of `FixedString` to `String` it was built with.
                     const bool strip_trailing_zeros = (column_flags & 16) != 0;
                     if (!context || context->getSettingsRef()[Setting::cast_fixed_string_to_string_strip_trailing_zeros] != strip_trailing_zeros)
                     {

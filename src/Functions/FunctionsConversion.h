@@ -62,6 +62,7 @@
 #include <Functions/FunctionHelpers.h>
 #include <Functions/FunctionsCodingIP.h>
 #include <Functions/IFunctionAdaptors.h>
+#include <Functions/IFunctionWithFixedStringToStringMode.h>
 #include <Functions/TransformDateTime64.h>
 #include <Functions/TransformTime64.h>
 #include <Functions/castTypeToEither.h>
@@ -3807,7 +3808,7 @@ inline bool renderingCollapsesDistinctValues(const DataTypePtr & type, const For
 }
 
 template <typename ToDataType, typename Name, typename MonotonicityImpl>
-class FunctionConvert final : public IFunction
+class FunctionConvert final : public IFunction, public IFunctionWithFixedStringToStringMode
 {
 public:
     using Monotonic = MonotonicityImpl;
@@ -3843,6 +3844,13 @@ public:
     }
 
     void updateHash(SipHash & hash) const override { settings.updateHash(hash); }
+
+    std::optional<bool> getFixedStringToStringStripTrailingZeros() const override
+    {
+        if constexpr (std::is_same_v<ToDataType, DataTypeString>)
+            return settings.cast_fixed_string_to_string_strip_trailing_zeros;
+        return {};
+    }
 
     bool isVariadic() const override { return true; }
     size_t getNumberOfArguments() const override { return 0; }

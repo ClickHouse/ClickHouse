@@ -8,6 +8,7 @@
 #include <DataTypes/DataTypeString.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/IFunction.h>
+#include <Functions/IFunctionWithFixedStringToStringMode.h>
 #include <Functions/FunctionFactory.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/castColumn.h>
@@ -37,7 +38,7 @@ namespace
 {
 
 /// Joins an array of type serializable to string into one string via a separator.
-class FunctionArrayStringConcat final : public IFunction
+class FunctionArrayStringConcat final : public IFunction, public IFunctionWithFixedStringToStringMode
 {
 private:
     static void executeInternal(
@@ -153,6 +154,8 @@ public:
 
     /// The captured setting decides the value of a `FixedString` element converted to `String`.
     void updateHash(SipHash & hash) const override { hash.update(cast_fixed_string_to_string_strip_trailing_zeros); }
+
+    std::optional<bool> getFixedStringToStringStripTrailingZeros() const override { return cast_fixed_string_to_string_strip_trailing_zeros; }
 
     bool isVariadic() const override { return true; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }

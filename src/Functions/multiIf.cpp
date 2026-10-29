@@ -1,6 +1,7 @@
 #include <Functions/multiIf.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionIfBase.h>
+#include <Functions/IFunctionWithFixedStringToStringMode.h>
 #include <Functions/IFunctionAdaptors.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnConst.h>
@@ -57,7 +58,7 @@ namespace
 ///
 /// Additionally the arguments, conditions or branches, support nullable types
 /// and the NULL value, with a NULL condition treated as false.
-class FunctionMultiIf final : public FunctionIfBase
+class FunctionMultiIf final : public FunctionIfBase, public IFunctionWithFixedStringToStringMode
 {
 public:
     static constexpr auto name = "multiIf";
@@ -86,6 +87,8 @@ public:
 
     /// The captured setting decides the value of a `FixedString` branch converted to `String`.
     void updateHash(SipHash & hash) const override { hash.update(cast_fixed_string_to_string_strip_trailing_zeros); }
+
+    std::optional<bool> getFixedStringToStringStripTrailingZeros() const override { return cast_fixed_string_to_string_strip_trailing_zeros; }
 
     bool isVariadic() const override { return true; }
     bool isShortCircuit(ShortCircuitSettings & settings, size_t number_of_arguments) const override

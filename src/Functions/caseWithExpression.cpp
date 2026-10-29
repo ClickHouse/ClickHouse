@@ -1,6 +1,7 @@
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/getLeastSupertype.h>
 #include <Functions/FunctionFactory.h>
+#include <Functions/IFunctionWithFixedStringToStringMode.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeLowCardinality.h>
@@ -31,7 +32,7 @@ namespace
 
 /// Implements the CASE construction when it is
 /// provided an expression. Users should not call this function.
-class FunctionCaseWithExpression final : public IFunction
+class FunctionCaseWithExpression final : public IFunction, public IFunctionWithFixedStringToStringMode
 {
 public:
     static constexpr auto name = "caseWithExpression";
@@ -60,6 +61,8 @@ public:
 
     /// `transform` and `multiIf` created from the context follow this setting for a `FixedString` value converted to `String`.
     void updateHash(SipHash & hash) const override { hash.update(cast_fixed_string_to_string_strip_trailing_zeros); }
+
+    std::optional<bool> getFixedStringToStringStripTrailingZeros() const override { return cast_fixed_string_to_string_strip_trailing_zeros; }
 
     String getSignatureString() const override
     {

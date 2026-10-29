@@ -16,6 +16,7 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/IFunction.h>
+#include <Functions/IFunctionWithFixedStringToStringMode.h>
 #include <Functions/IFunctionAdaptors.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/castColumn.h>
@@ -88,7 +89,7 @@ namespace
     TransformCachePtr initializeTransformCache(
         const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, bool cast_fixed_string_to_string_strip_trailing_zeros);
 
-    class FunctionTransform final : public IFunction
+    class FunctionTransform final : public IFunction, public IFunctionWithFixedStringToStringMode
     {
     public:
         static constexpr auto name = "transform";
@@ -103,6 +104,8 @@ namespace
 
         /// The captured setting decides the value of a `FixedString` argument converted to `String`.
         void updateHash(SipHash & hash) const override { hash.update(cast_fixed_string_to_string_strip_trailing_zeros); }
+
+        std::optional<bool> getFixedStringToStringStripTrailingZeros() const override { return cast_fixed_string_to_string_strip_trailing_zeros; }
 
         bool isVariadic() const override { return true; }
         bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
