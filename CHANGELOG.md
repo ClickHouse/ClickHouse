@@ -24,6 +24,64 @@
 
 # 2026 Changelog
 
+<!-- CHANGELOG-RAW-BEGIN: auto-generated entries below are edited and removed by the nightly changelog CI job; do not edit them manually -->
+### ClickHouse release 474f3e327db3b2d947433adac57e79bc2155a923 (474f3e327db) FIXME as compared to b4fae473345e73ce794e39c673ad154167fb69f5 (b4fae473345)
+
+#### Backward Incompatible Change
+* Removed the per-query filesystem cache write limit, which capped how much a single query could write into one filesystem cache. Its accounting never reflected what a query had actually written, and it cost a second priority queue per query on the cache reservation hot path. The settings `filesystem_cache_max_download_size` and `filesystem_cache_skip_download_if_exceeds_per_query_cache_write_limit` (with its alias `skip_download_if_exceeds_query_cache`), and the cache configuration setting `enable_filesystem_query_cache_limit`, are now obsolete and ignored, so queries and disk definitions that set them keep working. It is recommended to just use SLRU cache policy instead. [#114165](https://github.com/ClickHouse/ClickHouse/pull/114165) ([Kseniia Sumarokova](https://github.com/kssenii)).
+* By default (when `--path` is not specified), `clickhouse-local` now stores its data in a designated directory inside the home directory (`$XDG_DATA_HOME/clickhouse-local` or `~/.local/share/clickhouse-local` on Linux, `~/Library/Application Support/clickhouse-local` on macOS), so the data survives between runs. The previous behavior of using a unique temporary directory that is removed on exit is available with the new `--tmp` option. Only one instance can work with the same directory at a time: for concurrent instances, use `--tmp` or `--path`. [#116042](https://github.com/ClickHouse/ClickHouse/pull/116042) ([Alexey Milovidov](https://github.com/alexey-milovidov)).
+
+#### Experimental Feature
+* Switch the samples inner table of the TimeSeries engine to a bucketed schema:. [#117344](https://github.com/ClickHouse/ClickHouse/pull/117344) ([Vitaly Baranov](https://github.com/vitlibar)).
+
+#### Performance Improvement
+* Improve performance of min, max, argMin, argMax and their -If variants on AArch64 CPUs with SVE (e.g., AWS Graviton3/Graviton4) via runtime-dispatched SVE implementations. [#122860](https://github.com/ClickHouse/ClickHouse/pull/122860) ([Chiranmoy Bhattacharya](https://github.com/chiranmoyf)).
+
+#### Improvement
+* The rule-based distributed query plan (`make_distributed_plan`) now chooses the number of read tasks from the rows to read and the number of workers (`distributed_plan_default_reader_bucket_count = 0` by default, sized by the new setting `distributed_plan_min_rows_per_reader`), removes the exchange between a read and a partial aggregation or sort, and caps `max_threads` on stateless workers at their number of CPU cores. [#126945](https://github.com/ClickHouse/ClickHouse/pull/126945) ([Shankar Iyer](https://github.com/shankar-iyer)).
+* This patch changes how `WindowTransform` executes window functions by introducing batched execution over sliding blocks. Also, a general window function interface will be introduced in this patch. [#127389](https://github.com/ClickHouse/ClickHouse/pull/127389) ([Mikhail Artemenko](https://github.com/Michicosun)).
+
+#### Bug Fix (user-visible misbehavior in an official stable release)
+* Fix the `remote_url_allow_hosts` check for MySQL dictionary sources validating the wrong port when a `REPLICA(...)` clause has no `PORT` of its own: the check used the default port 3306 while the connection used the top-level `PORT`, so an allow-list entry pinned to a specific port could be bypassed. [#109736](https://github.com/ClickHouse/ClickHouse/pull/109736) ([Shaohua Wang](https://github.com/tiandiwonder)).
+* Fixed the Delta Lake writer committing `add.stats` one level too deep, as `{"stats_json":"{\"numRecords\":N}"}` instead of `{"numRecords":N}`, so no reader saw the per-file row count: `SELECT count()` could not use the row count from the log, external readers such as Spark and delta-rs could not answer `count(*)` from the log either, and an `INSERT` into a table whose protocol supports the `rowTracking` writer feature was rejected outright. Closes [#120522](https://github.com/ClickHouse/ClickHouse/issues/120522). [#120635](https://github.com/ClickHouse/ClickHouse/pull/120635) ([Groene AI](https://github.com/groeneai)).
+* Fixed wrong results when `WHERE` wraps a `Nullable` partition key in a NULL-erasing function: `assumeNotNull`, `isNull`/`isNotNull` compared with a constant (`(c IS NULL) >= true`), or `ifNull`/`coalesce` under `NOT` or with `allow_key_condition_coalesce_rewrite = 0`. Partition pruning discarded the `NULL` partition instead of evaluating the predicate on its rows, so rows disappeared from both a predicate and its negation. [#121154](https://github.com/ClickHouse/ClickHouse/pull/121154) ([Groene AI](https://github.com/groeneai)).
+* Fixed wrong query results after one `ALTER TABLE ... RENAME COLUMN` statement renamed columns onto names it freed (for example `RENAME COLUMN a TO tmp, RENAME COLUMN b TO a, RENAME COLUMN c TO b`) on a Wide part: the mutated part kept another column's statistics, so part pruning by statistics skipped parts that matched the filter. [#126140](https://github.com/ClickHouse/ClickHouse/pull/126140) ([Groene AI](https://github.com/groeneai)).
+* Fixed wrong results when an outer `WHERE` compares columns of a `remote()` or `Distributed` subquery that gives a column the name of another one (`SELECT w AS k ...`) and `optimize_and_compare_chain` derives an `indexHint` from it. Such derived hints are now also used for primary key analysis below `GROUP BY` and `LIMIT BY`. [#126219](https://github.com/ClickHouse/ClickHouse/pull/126219) ([Groene AI](https://github.com/groeneai)).
+* Fixed `ARGUMENT_OUT_OF_BOUND` (`Decimal value is too big`) in `remote`, `Distributed` and parallel-replicas queries with a `Decimal` constant that has more digits than the precision of its type, such as `toDecimal32(0.6, 9) + toDecimal32(0.6, 9)` (a `Decimal(9, 9)` equal to `1.2`) or `toDecimal64(1, 18)`. [#126652](https://github.com/ClickHouse/ClickHouse/pull/126652) ([Groene AI](https://github.com/groeneai)).
+* Fixed an abort of `clickhouse-local`, and of the whole server for web terminal and SSH sessions, when an `INSERT` failed after its query had already finished, for example an `INSERT` whose `SELECT` names the `input` table function without reading it. [#127364](https://github.com/ClickHouse/ClickHouse/pull/127364) ([Groene AI](https://github.com/groeneai)).
+* Fixed `ssd_cache` and `complex_key_ssd_cache` dictionaries returning another key's value from `dictGet` after the cache had wrapped around its partitions, for a key whose value was cached twice (fetched again after it expired, or returned twice by the source). Closes [#127031](https://github.com/ClickHouse/ClickHouse/issues/127031). [#127369](https://github.com/ClickHouse/ClickHouse/pull/127369) ([Groene AI](https://github.com/groeneai)).
+* Pad the buffer an Azure read owns with PADDING_FOR_SIMD. [#127593](https://github.com/ClickHouse/ClickHouse/pull/127593) ([Azat Khuzhin](https://github.com/azat)).
+* Fixed a possible server crash (use-after-free) when a web terminal session is closed while the client asks whether to output a binary format such as `RowBinary`. [#127912](https://github.com/ClickHouse/ClickHouse/pull/127912) ([Groene AI](https://github.com/groeneai)).
+
+#### Build/Testing/Packaging Improvement
+* Printing of pointers in ClickHouse code is now a compile-time error, so memory addresses cannot leak into exception messages and logs. [#127088](https://github.com/ClickHouse/ClickHouse/pull/127088) ([Alexey Milovidov](https://github.com/alexey-milovidov)).
+
+#### NOT FOR CHANGELOG / INSIGNIFICANT
+
+* Add synth io lags to Iceberg perf CI. [#119976](https://github.com/ClickHouse/ClickHouse/pull/119976) ([Arsen Muk](https://github.com/arsenmuk)).
+* Not applicable — test-only change. [#124887](https://github.com/ClickHouse/ClickHouse/pull/124887) ([ClickGap AI Bot](https://github.com/clickgapai)).
+* Inject the Keeper failure at commit in test_kafka_no_holes_when_write_suffix_failed. [#127666](https://github.com/ClickHouse/ClickHouse/pull/127666) ([Groene AI](https://github.com/groeneai)).
+* Fix flaky `test_writes_split_offsets_read_by_spark`. [#127787](https://github.com/ClickHouse/ClickHouse/pull/127787) ([Groene AI](https://github.com/groeneai)).
+* Fix flaky test `test_limited_replicated_fetches`. [#127794](https://github.com/ClickHouse/ClickHouse/pull/127794) ([Groene AI](https://github.com/groeneai)).
+* Fix flaky test `05055_format_schema_source_query_background_access` when the session date is ahead of the server date. [#127797](https://github.com/ClickHouse/ClickHouse/pull/127797) ([Groene AI](https://github.com/groeneai)).
+* CI-only change, no changelog entry required. [#127861](https://github.com/ClickHouse/ClickHouse/pull/127861) ([Groene AI](https://github.com/groeneai)).
+* Test-only change, no changelog entry required. [#127865](https://github.com/ClickHouse/ClickHouse/pull/127865) ([Groene AI](https://github.com/groeneai)).
+* Fix the flaky test `03254_prewarm_mark_cache_rmt`, which failed with a randomized `use_columns_cache = 1` since the columns cache also serves compact parts. [#127866](https://github.com/ClickHouse/ClickHouse/pull/127866) ([Groene AI](https://github.com/groeneai)).
+* Raise the lower bound of the randomized `merge_max_block_size` in the `03209_json_type_horizontal_merges` and `03209_json_type_vertical_merges` tests to 100. [#127877](https://github.com/ClickHouse/ClickHouse/pull/127877) ([Groene AI](https://github.com/groeneai)).
+* Split the coverage queries of the test selection by file. [#127879](https://github.com/ClickHouse/ClickHouse/pull/127879) ([Groene AI](https://github.com/groeneai)).
+* Fix `LOGICAL_ERROR` reading a `JSON` or `Dynamic` column with its subcolumn from a compact part with the columns cache. [#127881](https://github.com/ClickHouse/ClickHouse/pull/127881) ([Groene AI](https://github.com/groeneai)).
+* Remove the FIFO-backed SYSTEM RELOAD DICTIONARY case from 04666_run_query_in_background. [#127900](https://github.com/ClickHouse/ClickHouse/pull/127900) ([Groene AI](https://github.com/groeneai)).
+* Fix the flaky test `05304_json_shared_typed_paths_replication_backup`, which read replica `p2` before it had fetched the part inserted into `p1`. [#127914](https://github.com/ClickHouse/ClickHouse/pull/127914) ([Groene AI](https://github.com/groeneai)).
+* Fix rare failures of the tests `04105_system_pause_view` and `04319_system_stop_all_background` where the `SYSTEM STOP` or `SYSTEM CANCEL` of a refresh reached the server after that refresh had already finished. [#127917](https://github.com/ClickHouse/ClickHouse/pull/127917) ([Groene AI](https://github.com/groeneai)).
+* Fix flaky test `05227_mutate_part_ahead_of_table_metadata_version_mergetree`. [#127925](https://github.com/ClickHouse/ClickHouse/pull/127925) ([Groene AI](https://github.com/groeneai)).
+* Overlap the slow CREATE AS SELECT cases of 04666_run_query_in_background and run it on macOS again. [#127994](https://github.com/ClickHouse/ClickHouse/pull/127994) ([Groene AI](https://github.com/groeneai)).
+* Fix flaky test `test_admission_timeout_shared_budget_across_slot_and_memory`: time the waiter on the server. [#128010](https://github.com/ClickHouse/ClickHouse/pull/128010) ([Groene AI](https://github.com/groeneai)).
+* Not required: CI-only change. [#128022](https://github.com/ClickHouse/ClickHouse/pull/128022) ([Groene AI](https://github.com/groeneai)).
+* Not required. [#128027](https://github.com/ClickHouse/ClickHouse/pull/128027) ([Groene AI](https://github.com/groeneai)).
+* CI: "Build profile diff" is green when the read-only CI logs cluster rejects the readiness probe for load. [#128067](https://github.com/ClickHouse/ClickHouse/pull/128067) ([Alexey Milovidov](https://github.com/alexey-milovidov)).
+* Rename `USE_MULTITARGET_CODE` to `USE_X86_64_MULTITARGET_CODE`. [#128073](https://github.com/ClickHouse/ClickHouse/pull/128073) ([Groene AI](https://github.com/groeneai)).
+<!-- CHANGELOG-RAW-END -->
+
 ### <a id="2611"></a> ClickHouse release 26.11, FIXME (in progress)
 
 #### Backward Incompatible Change
