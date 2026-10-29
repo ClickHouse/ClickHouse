@@ -104,6 +104,8 @@ struct Optimization
         bool filter_push_down_below_limit_by = true;
         bool filter_push_down = false;
         bool lift_up_array_join = false;
+        bool split_filter = false;
+        bool merge_expressions = false;
     };
 
     using Function = size_t (*)(QueryPlan::Node *, QueryPlan::Nodes &, const ExtraSettings &);

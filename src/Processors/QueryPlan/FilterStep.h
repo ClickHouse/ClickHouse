@@ -62,6 +62,9 @@ public:
         bool nondeterministic_before_expansion = false;
         bool filter_push_down = false;
         bool lift_up_array_join = false;
+        /// Whether a pushed conjunct runs before the join argument is evaluated, which needs `mergeExpressions`
+        /// and `splitFilter`; otherwise it runs between the argument and the join.
+        bool push_down_below_join_argument = false;
     };
     void setArrayJoinLowering(ArrayJoinLowering lowering) { array_join_lowering = lowering; }
     const std::optional<ArrayJoinLowering> & getArrayJoinLowering() const { return array_join_lowering; }

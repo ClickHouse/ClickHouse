@@ -627,22 +627,29 @@ void FilterStep::addFilterTransforms(
 
 void FilterStep::addLoweredArrayJoins(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings & settings)
 {
+    /// The conjuncts of `dag` that read only `available_inputs` are pushed down below the remaining joins,
+    /// as `filterPushDown` would do, so a conjunct that becomes available after a join filters the rows before the next one.
+    auto push_down = [&](ActionsDAG & dag, const Names & available_inputs)
+    {
+        auto pushed = dag.splitActionsForFilterPushDown(
+            filter_column_name, remove_filter_column, available_inputs, pipeline.getHeader().getColumnsWithTypeAndName(),
+            /*allow_non_deterministic_functions=*/ false);
+        if (pushed)
+        {
+            String pushed_filter_name = pushed->dag.getOutputs()[pushed->filter_pos]->result_name;
+            addFilterTransforms(pipeline, std::move(pushed->dag), pushed_filter_name, pushed->remove_filter, std::nullopt, settings);
+        }
+    };
+
     while (actions_dag.hasArrayJoin())
     {
-        /// The conjuncts that do not depend on the remaining joins are pushed down below them, as `filterPushDown`
-        /// would do, so a conjunct that becomes available after a join filters the rows before the next one.
         /// Like `filterPushDown`, this does not happen with stateful functions, which depend on the rows they see.
-        if (array_join_lowering->filter_push_down && remove_filter_column && !actions_dag.hasStatefulFunctions())
-        {
-            auto pushed = actions_dag.splitActionsForFilterPushDown(
-                filter_column_name, remove_filter_column, pipeline.getHeader().getNames(), pipeline.getHeader().getColumnsWithTypeAndName(),
-                /*allow_non_deterministic_functions=*/ false);
-            if (pushed)
-            {
-                String pushed_filter_name = pushed->dag.getOutputs()[pushed->filter_pos]->result_name;
-                addFilterTransforms(pipeline, std::move(pushed->dag), pushed_filter_name, pushed->remove_filter, std::nullopt, settings);
-            }
-        }
+        bool can_push_down = array_join_lowering->filter_push_down && remove_filter_column && !actions_dag.hasStatefulFunctions();
+
+        /// In the normal plan a conjunct pushed below a join lands above the expression computing the join argument,
+        /// and only `mergeExpressions` with `splitFilter` move it before that expression.
+        if (can_push_down && array_join_lowering->push_down_below_join_argument)
+            push_down(actions_dag, pipeline.getHeader().getNames());
 
         auto extracted = actions_dag.extractFirstArrayJoin(array_join_lowering->nondeterministic_before_expansion);
         if (!extracted)
@@ -674,6 +681,15 @@ void FilterStep::addLoweredArrayJoins(QueryPipelineBuilder & pipeline, const Bui
                 add_expression(std::move(lifted.first));
                 extracted->after = std::move(lifted.second);
             }
+        }
+
+        if (can_push_down && !array_join_lowering->push_down_below_join_argument)
+        {
+            Names available_inputs;
+            for (const auto & column : pipeline.getHeader())
+                if (column.name != extracted->array_join_column_name)
+                    available_inputs.push_back(column.name);
+            push_down(extracted->after, available_inputs);
         }
 
         Names array_join_columns{extracted->array_join_column_name};

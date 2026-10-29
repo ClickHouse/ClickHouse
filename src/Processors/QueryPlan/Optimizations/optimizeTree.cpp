@@ -103,6 +103,8 @@ static Optimization::ExtraSettings makeExtraSettings(const QueryPlanOptimization
         optimization_settings.filter_push_down_below_limit_by,
         optimization_settings.filter_push_down,
         optimization_settings.lift_up_array_join,
+        optimization_settings.split_filter,
+        optimization_settings.merge_expressions,
     };
 }
 
