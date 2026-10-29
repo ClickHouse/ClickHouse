@@ -7,8 +7,16 @@
 #include <unordered_set>
 #include "delta_kernel_ffi.hpp"
 
+namespace DB
+{
+struct StreamingCursor;
+}
+
 namespace DeltaLake
 {
+
+/// User domain of the `domainMetadata` action holding the incremental refreshable-MV cursor.
+static constexpr auto REFRESH_CURSOR_DOMAIN = "clickhouse.refresh-cursor";
 
 class WriteTransaction
 {
@@ -25,7 +33,8 @@ public:
     void create(const DB::Names & partition_columns);
 
     /// Create a brand-new Delta table by writing the initial commit. Throws if `_delta_log` already has commits.
-    void createTable();
+    /// `enable_domain_metadata` adds the `domainMetadata` writer feature to the table protocol.
+    void createTable(bool enable_domain_metadata);
 
     struct CommitFile
     {
@@ -34,6 +43,10 @@ public:
         size_t size_rows;
         DB::Map paritition_values;
     };
+
+    /// Set by an incremental refreshable-MV write (null for plain inserts): `commit` then embeds the
+    /// cursor the streaming source advanced to, so it commits atomically with the data files.
+    void setStreamingCursor(std::shared_ptr<DB::StreamingCursor> streaming_cursor_) { streaming_cursor = std::move(streaming_cursor_); }
 
     /// Commit written files to DeltaLake.
     void commit(const std::vector<CommitFile> & files);
@@ -66,6 +79,7 @@ private:
     KernelWriteContext unpartitioned_write_context;
     DB::NamesAndTypesList write_schema;
     std::unordered_set<String> write_timestamp_ntz_paths;
+    std::shared_ptr<DB::StreamingCursor> streaming_cursor;
 
     void assertTransactionCreated() const;
 };
