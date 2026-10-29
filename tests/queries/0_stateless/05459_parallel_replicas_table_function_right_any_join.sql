@@ -13,17 +13,20 @@ SET enable_parallel_replicas = 2, max_parallel_replicas = 3, cluster_for_paralle
 SET automatic_parallel_replicas_mode = 0;
 SET any_join_distinct_right_table_keys = 1;
 
+-- Several parts, so the replicas get a share each. Merges are disabled on the samples table itself:
+-- `SYSTEM STOP MERGES ts` does not reach the inner tables of a `TimeSeries` table.
 DROP TABLE IF EXISTS ts;
-CREATE TABLE ts ENGINE = TimeSeries;
+CREATE TABLE ts ENGINE = TimeSeries
+    SAMPLES ENGINE = MergeTree ORDER BY (id, timestamp) SETTINGS max_bytes_to_merge_at_max_space_in_pool = 0;
 
--- Several parts, so the replicas get a share each.
-SYSTEM STOP MERGES ts;
 INSERT INTO ts (metric_name, tags, samples) SELECT 'm', map('i', toString(number)), [(toDateTime64(number, 3), toFloat64(number % 5))] FROM numbers(0, 10);
 INSERT INTO ts (metric_name, tags, samples) SELECT 'm', map('i', toString(number)), [(toDateTime64(number, 3), toFloat64(number % 5))] FROM numbers(10, 10);
 INSERT INTO ts (metric_name, tags, samples) SELECT 'm', map('i', toString(number)), [(toDateTime64(number, 3), toFloat64(number % 5))] FROM numbers(20, 10);
 INSERT INTO ts (metric_name, tags, samples) SELECT 'm', map('i', toString(number)), [(toDateTime64(number, 3), toFloat64(number % 5))] FROM numbers(30, 10);
 INSERT INTO ts (metric_name, tags, samples) SELECT 'm', map('i', toString(number)), [(toDateTime64(number, 3), toFloat64(number % 5))] FROM numbers(40, 10);
 INSERT INTO ts (metric_name, tags, samples) SELECT 'm', map('i', toString(number)), [(toDateTime64(number, 3), toFloat64(number % 5))] FROM numbers(50, 10);
+
+SELECT count() FROM system.parts WHERE database = currentDatabase() AND table LIKE '.inner_id.samples.%' AND active;
 
 SELECT count() FROM timeSeriesSamples({CLICKHOUSE_DATABASE:Identifier}.ts) AS l
     ANY RIGHT JOIN timeSeriesSamples({CLICKHOUSE_DATABASE:Identifier}.ts) AS r ON l.value = r.value
