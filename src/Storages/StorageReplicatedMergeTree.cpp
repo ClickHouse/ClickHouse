@@ -2924,7 +2924,12 @@ bool StorageReplicatedMergeTree::executeFetch(LogEntry & entry, bool need_to_che
                         * (*getSettings())[MergeTreeSetting::geo_replication_control_leader_wait].totalSeconds();
                     if (same_region_waited_seconds < (*getSettings())[MergeTreeSetting::geo_replication_control_leader_wait_timeout].totalSeconds())
                     {
-                        entry.wait_for_fetching_from_same_region++;
+                        {
+                            /// `ReplicatedMergeTreeQueue::getEntries` copies the entry under `state_mutex`
+                            /// (e.g. for `system.replication_queue`) while it is being executed here.
+                            std::lock_guard lock(queue.state_mutex);
+                            entry.wait_for_fetching_from_same_region++;
+                        }
                         LOG_TRACE(
                             log,
                             "Region {} doesn't have part {} or covering part yet, will defer executing {} : {}, deferred for total {} "
@@ -2937,7 +2942,10 @@ bool StorageReplicatedMergeTree::executeFetch(LogEntry & entry, bool need_to_che
                     }
                     else
                     {
-                        entry.wait_for_fetching_from_same_region = -1;
+                        {
+                            std::lock_guard lock(queue.state_mutex);
+                            entry.wait_for_fetching_from_same_region = -1;
+                        }
                         LOG_INFO(
                             log,
                             "Entry {} deferred for too long ({} seconds) to fetch from a replica in region {}, stop waiting and fetch from anywhere",
@@ -6291,6 +6299,9 @@ void StorageReplicatedMergeTree::partialShutdown()
     partial_shutdown_called = true;
     partial_shutdown_event.set();
     queue.notifySubscribersOnPartialShutdown();
+    /// Stop the geo replication controller while `is_active` still exists: it removes the `region` node only while
+    /// this session owns `is_active` (see `ReplicatedMergeTreeGeoReplicationController::removeRegionNodeIfOwned`).
+    geo_replication_controller.stop();
     replica_is_active_node = nullptr;
 
     LOG_TRACE(log, "Waiting for threads to finish");
@@ -6302,7 +6313,6 @@ void StorageReplicatedMergeTree::partialShutdown()
     cleanup_thread.stop();
     deduplication_hashes_cache.stop();
     part_check_thread.stop();
-    geo_replication_controller.stop();
 
     /// Stop queue processing
     {
@@ -8836,6 +8846,8 @@ void StorageReplicatedMergeTree::fetchPartition(
                 /// smaller parts (e.g. not merged yet) that span the whole block range of that part without gaps.
                 /// A gap may also be a block number that was allocated but never committed, then the replica is
                 /// conservatively considered incomplete: it only makes us miss the preference of the region.
+                /// The smaller parts must also be as fresh as that part: a part that has not got the mutations
+                /// applied to that part yet (e.g. `1_1_1_0` for `1_1_1_0_5`) spans the same blocks but has stale data.
                 const ActiveDataPartSet replica_partition_state(format_version, it->second);
                 const bool covers_whole_partition = std::all_of(
                     current_partition_parts.begin(), current_partition_parts.end(), [&](const String & part)
@@ -8847,7 +8859,7 @@ void StorageReplicatedMergeTree::fetchPartition(
                         Int64 next_block = part_info.min_block;
                         for (const auto & covered_info : replica_partition_state.getPartInfosCoveredBy(part_info))
                         {
-                            if (covered_info.min_block != next_block)
+                            if (covered_info.min_block != next_block || covered_info.getDataVersion() < part_info.getDataVersion())
                                 return false;
                             next_block = covered_info.max_block + 1;
                         }

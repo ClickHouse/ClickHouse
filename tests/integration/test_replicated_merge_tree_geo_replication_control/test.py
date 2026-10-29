@@ -739,6 +739,46 @@ def test_fetch_partition_falls_back_when_same_region_has_stale_partition(start_c
         apac1.query("DROP TABLE IF EXISTS stale_dst SYNC")
 
 
+def test_fetch_partition_falls_back_when_same_region_misses_mutation(start_cluster):
+    src_path = "/clickhouse/tables/fetch_partition_unmutated_src"
+    try:
+        for node, replica in [(apac2, "apac2"), (us3, "us3")]:
+            node.query(
+                f"CREATE TABLE unmutated_src(key UInt64, data String) ENGINE = ReplicatedMergeTree('{src_path}', '{replica}') ORDER BY tuple() PARTITION BY key"
+                + " SETTINGS geo_replication_control_leader_wait = 1, geo_replication_control_leader_wait_timeout = 60"
+            )
+
+        apac1.query(
+            "CREATE TABLE unmutated_dst(key UInt64, data String) ENGINE = ReplicatedMergeTree('/clickhouse/tables/fetch_partition_unmutated_dst', 'apac1') ORDER BY tuple() PARTITION BY key"
+        )
+
+        # The same-region replica has the part, but neither executes nor fetches the mutation of it.
+        us3.query("INSERT INTO unmutated_src SELECT 1, 'old'")
+        apac2.query("SYSTEM SYNC REPLICA unmutated_src")
+        apac2.query("SYSTEM STOP MERGES unmutated_src")
+        apac2.query("SYSTEM STOP FETCHES unmutated_src")
+        us3.query(
+            "ALTER TABLE unmutated_src UPDATE data = 'new' WHERE 1 SETTINGS mutations_sync = 1"
+        )
+
+        assert (
+            apac2.query(
+                "SELECT groupArray(name) FROM system.parts WHERE table = 'unmutated_src' AND active"
+            )
+            == "['1_0_0_0']\n"
+        ), "The same-region replica must have only the unmutated part for this test to be meaningful"
+
+        # The unmutated part spans the same blocks, but it is stale, so the out-of-region replica has to be used.
+        apac1.query(f"ALTER TABLE unmutated_dst FETCH PARTITION 1 FROM '{src_path}'")
+        apac1.query("ALTER TABLE unmutated_dst ATTACH PARTITION 1")
+        assert apac1.query("SELECT data FROM unmutated_dst") == "new\n"
+
+    finally:
+        for node in [apac2, us3]:
+            node.query("DROP TABLE IF EXISTS unmutated_src SYNC")
+        apac1.query("DROP TABLE IF EXISTS unmutated_dst SYNC")
+
+
 def test_region_requires_experimental_setting(start_cluster):
     try:
         # The region comes from the server config here, so a plain CREATE opts the table into the feature.

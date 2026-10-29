@@ -403,27 +403,26 @@ void ReplicatedMergeTreeGeoReplicationController::removeRegionNodeIfOwned()
             return;
 
         /// Another startup that does not see `is_active` replaces the `region` node with its own (see
-        /// `createEphemeralRegionNode`). If that startup then wins `activateReplica`, this one unwinds through
-        /// `stop` and must not delete the winner's node: remove it only while it is still the node this session
-        /// created, and only while no other server owns the replica name. The checks and the removal go into one
-        /// `multi`.
+        /// `createEphemeralRegionNode`), and the new node can have the same data version as ours, so neither the
+        /// `ephemeralOwner` read below nor the versioned remove can tell the two nodes apart if the replacement
+        /// happens between them. Remove the node only while this session owns `is_active`: nobody else can replace
+        /// `region` while it does, because a replacement requires `is_active` to be absent or owned by the
+        /// replacing server. Without `is_active` the node is left in place: it describes a replica that is not
+        /// active, and the next startup that owns the replica name replaces it. The `is_active` check and the
+        /// removal go into one `multi`.
         Coordination::Stat region_stat;
         if (!zookeeper->exists(region_path, &region_stat) || region_stat.ephemeralOwner != zookeeper->getClientID())
             return;
 
-        Coordination::Requests ops;
         String is_active_content;
         Coordination::Stat is_active_stat;
-        if (zookeeper->tryGet(is_active_path, is_active_content, &is_active_stat))
-        {
-            if (is_active_content != active_node_identifier)
-                return;
-            ops.emplace_back(zkutil::makeCheckRequest(is_active_path, is_active_stat.version));
-        }
-        else
-        {
-            zkutil::addCheckNotExistsRequest(ops, *zookeeper, is_active_path);
-        }
+        if (!zookeeper->tryGet(is_active_path, is_active_content, &is_active_stat)
+            || is_active_content != active_node_identifier
+            || is_active_stat.ephemeralOwner != zookeeper->getClientID())
+            return;
+
+        Coordination::Requests ops;
+        ops.emplace_back(zkutil::makeCheckRequest(is_active_path, is_active_stat.version));
         ops.emplace_back(zkutil::makeRemoveRequest(region_path, region_stat.version));
 
         Coordination::Responses responses;
