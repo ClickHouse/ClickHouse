@@ -41,7 +41,7 @@ WHERE name IN ('05161_cache_over_plain_rewritable', '05161_plain_rewritable_unde
 
 -- The disk stays registered after its table is dropped, so a rerun of the test in the same server finds the
 -- message from the first run only: the scans cannot be bounded by the start of the test. Late in a long CI run
--- the whole log exceeds the `max_rows_to_read` limit of the test profile.
+-- the whole log exceeds the max_rows_to_read limit of the test profile.
 SELECT 'cache layer, blob killer started', count() > 0 FROM system.text_log
 WHERE logger_name = '05161_cache_over_plain_rewritable::BlobKillerThread' AND message LIKE 'Execution started%'
 SETTINGS max_rows_to_read = 0;
