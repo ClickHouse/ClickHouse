@@ -2504,6 +2504,10 @@ bool ReadFromMergeTree::doNotMergePartsAcrossPartitionsFinal() const
     else if (!settings[Setting::enable_automatic_decision_for_merging_across_partitions_for_final])
         return false;
 
+    /// Graphite rolls up rows with different values of the time column, so the primary key is not its merge key.
+    if (data.merging_params.mode == MergeTreeData::MergingParams::Graphite)
+        return false;
+
     if (!storage_snapshot->metadata->hasPrimaryKey() || !storage_snapshot->metadata->hasPartitionKey())
         return false;
 
@@ -2610,6 +2614,8 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsFinal(
     parts_to_merge_ranges.push_back(it);
 
     bool do_not_merge_across_partitions_select_final = doNotMergePartsAcrossPartitionsFinal();
+    /// Graphite rolls up across time values and merged parts roll up further as they age: every row needs the rollup.
+    const bool is_graphite = data.merging_params.mode == MergeTreeData::MergingParams::Graphite;
     if (do_not_merge_across_partitions_select_final)
     {
         while (it != parts_with_ranges.end())
@@ -2697,7 +2703,8 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsFinal(
         bool no_merging_final = do_not_merge_across_partitions_select_final &&
             std::distance(parts_to_merge_ranges[range_index], parts_to_merge_ranges[range_index + 1]) == 1 &&
             parts_to_merge_ranges[range_index]->data_part->info.level > 0 &&
-            !reader_settings.read_in_order;
+            !reader_settings.read_in_order &&
+            !is_graphite;
 
         if (no_merging_final)
         {
@@ -2762,9 +2769,10 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsFinal(
                 /// deleted rows.
                 bool split_parts_ranges_into_intersecting_and_non_intersecting_final
                     = settings[Setting::split_parts_ranges_into_intersecting_and_non_intersecting_final] &&
-                          !reader_settings.read_in_order;
+                          !reader_settings.read_in_order && !is_graphite;
 
-                bool split_intersecting_parts_ranges_into_layers = settings[Setting::split_intersecting_parts_ranges_into_layers_final];
+                bool split_intersecting_parts_ranges_into_layers
+                    = settings[Setting::split_intersecting_parts_ranges_into_layers_final] && !is_graphite;
 
                 /// In case of read-in-order, all layer streams are consumed by a single downstream merging transform,
                 /// which cannot start until every layer produces its first block. With a small query limit the result
