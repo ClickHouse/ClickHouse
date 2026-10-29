@@ -102,6 +102,25 @@ SELECT replaceOne(explain, currentDatabase() || '.', '') FROM
 )
 WHERE explain LIKE '%Join (%' OR explain LIKE '%ReadFromMergeTree%';
 
+-- A second key between `customer` and `supplier` that is in no key class (`<=>`) keeps the old estimate of the composite key.
+SELECT replaceOne(explain, currentDatabase() || '.', '') FROM
+(
+    EXPLAIN
+    SELECT n_name, sum(l_extendedprice * (1 - l_discount)) AS revenue
+    FROM customer
+    INNER JOIN orders ON c_custkey = o_custkey
+    INNER JOIN lineitem ON l_orderkey = o_orderkey
+    INNER JOIN supplier ON l_suppkey = s_suppkey AND c_nationkey = s_nationkey AND (c_custkey <=> s_suppkey)
+    INNER JOIN nation ON s_nationkey = n_nationkey
+    INNER JOIN region ON n_regionkey = r_regionkey
+    WHERE r_name = 'ASIA'
+        AND o_orderdate >= DATE '1994-01-01'
+        AND o_orderdate < DATE '1995-01-01'
+    GROUP BY n_name
+    ORDER BY revenue DESC
+)
+WHERE explain LIKE '%Join (%' OR explain LIKE '%ReadFromMergeTree%';
+
 SET query_plan_optimize_join_order_algorithm = 'dpsub';
 
 SELECT replaceOne(explain, currentDatabase() || '.', '') FROM
@@ -116,6 +135,24 @@ SELECT replaceOne(explain, currentDatabase() || '.', '') FROM
         AND s_nationkey = n_nationkey
         AND n_regionkey = r_regionkey
         AND r_name = 'ASIA'
+        AND o_orderdate >= DATE '1994-01-01'
+        AND o_orderdate < DATE '1995-01-01'
+    GROUP BY n_name
+    ORDER BY revenue DESC
+)
+WHERE explain LIKE '%Join (%' OR explain LIKE '%ReadFromMergeTree%';
+
+SELECT replaceOne(explain, currentDatabase() || '.', '') FROM
+(
+    EXPLAIN
+    SELECT n_name, sum(l_extendedprice * (1 - l_discount)) AS revenue
+    FROM customer
+    INNER JOIN orders ON c_custkey = o_custkey
+    INNER JOIN lineitem ON l_orderkey = o_orderkey
+    INNER JOIN supplier ON l_suppkey = s_suppkey AND c_nationkey = s_nationkey AND (c_custkey <=> s_suppkey)
+    INNER JOIN nation ON s_nationkey = n_nationkey
+    INNER JOIN region ON n_regionkey = r_regionkey
+    WHERE r_name = 'ASIA'
         AND o_orderdate >= DATE '1994-01-01'
         AND o_orderdate < DATE '1995-01-01'
     GROUP BY n_name
