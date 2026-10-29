@@ -20,13 +20,14 @@ SELECT 'placeholder: a different KILL variant is not matched';
 SET query_rules = '';
 DROP RULE rule_05454_placeholder;
 
--- Typed-parameter transparency: a literal rule source matches the same predicate supplied as `{p:UInt64}`.
-CREATE RULE rule_05454_literal AS (KILL QUERY WHERE 0 TEST) REJECT WITH 'blocked';
+-- Typed-parameter transparency: a literal rule source matches the same predicate supplied as `{p:String}`.
+-- The predicates select no queries, so the unmatched `KILL ... TEST` does not list concurrently running queries.
+CREATE RULE rule_05454_literal AS (KILL QUERY WHERE query_id = 'nonexistent_05454_a' TEST) REJECT WITH 'blocked';
 SET query_rules = 'rule_05454_literal';
-SET param_p = 0;
-KILL QUERY WHERE {p:UInt64} TEST; -- { serverError REWRITE_RULE_REJECTION }
-SET param_p = 1;
-KILL QUERY WHERE {p:UInt64} TEST;
+SET param_p = 'nonexistent_05454_a';
+KILL QUERY WHERE query_id = {p:String} TEST; -- { serverError REWRITE_RULE_REJECTION }
+SET param_p = 'nonexistent_05454_b';
+KILL QUERY WHERE query_id = {p:String} TEST;
 SELECT 'literal: a different parameter value is not matched';
 SET query_rules = '';
 DROP RULE rule_05454_literal;

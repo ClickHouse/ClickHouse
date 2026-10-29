@@ -26,7 +26,7 @@ $CLICKHOUSE_CLIENT -q "
         REWRITE TO (SELECT ${nested} FROM s3('http://localhost:11111/test/05458.csv', 'key_05458', 'secret_05458', 'CSV', 'number UInt64'));
 "
 
-query_id="background_parse_failure_${CLICKHOUSE_DATABASE}"
+query_id="background_parse_error_${CLICKHOUSE_DATABASE}"
 $CLICKHOUSE_CURL -sS "${CLICKHOUSE_URL}&query_rules=${rule}&run_query_in_background=1&max_parser_depth=128&query_id=${query_id}" -d "SELECT 12345" \
     | grep -o -m1 "TOO_DEEP_AST"
 
