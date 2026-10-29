@@ -17,6 +17,9 @@ namespace DB
   * (a `Float64` key is looked up in a `UInt64` hash table, and composite keys are packed or serialized
   * as raw bytes), so by the time a key is hashed, the information that it is a floating point value
   * is already lost. That is why the canonicalization is done on the columns.
+  * A nested `LowCardinality` column, such as an element of `Array(LowCardinality(Float64))` or a typed path
+  * of `JSON(a LowCardinality(Float64))`, is canonicalized as well, but a top-level one is not -
+  * see `canonicalizeNegativeZeroThroughLowCardinality`.
   *
   * Returns `nullptr` if the column contains no negative zeros, which is by far the most common case,
   * so that the caller can use the original column and avoid making a copy.

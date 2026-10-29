@@ -69,6 +69,14 @@ ColumnPtr canonicalizeNegativeZeroInVector(const IColumn & column)
     return res;
 }
 
+/// For a column nested in another one: an element of `Array` or `Tuple`, a variant of `Variant` or `Dynamic`,
+/// a typed path of `JSON`. Such a column can be `LowCardinality`, e.g. a `JSON(a LowCardinality(Float64))` path,
+/// and unlike at the top level, there is no caller that handles its dictionary, so it is canonicalized here.
+ColumnPtr canonicalizeNestedNegativeZero(const IColumn & column)
+{
+    return canonicalizeNegativeZeroThroughLowCardinality(column);
+}
+
 /// Whether a floating point value can be found somewhere inside a value of this type.
 bool mayContainNegativeZero(const IDataType & type)
 {
@@ -127,7 +135,7 @@ ColumnPtr canonicalizeNegativeZeroInVariant(const ColumnVariant & column, std::o
 
         ColumnPtr canonical_variant = encoded_values_discriminator == i
             ? canonicalizeNegativeZeroInEncodedValues(*variant)
-            : canonicalizeNegativeZero(*variant);
+            : canonicalizeNestedNegativeZero(*variant);
 
         if (canonical_variant)
         {
@@ -264,7 +272,7 @@ ColumnPtr canonicalizeNegativeZero(const IColumn & column)
 
     if (const auto * column_array = typeid_cast<const ColumnArray *>(&column))
     {
-        if (ColumnPtr data = canonicalizeNegativeZero(column_array->getData()))
+        if (ColumnPtr data = canonicalizeNestedNegativeZero(column_array->getData()))
             return ColumnArray::create(data, column_array->getOffsetsPtr());
         return nullptr;
     }
@@ -304,7 +312,7 @@ ColumnPtr canonicalizeNegativeZero(const IColumn & column)
             UnorderedMapWithMemoryTracking<String, ColumnPtr> res;
             for (const auto & [path, path_column] : paths)
             {
-                if (ColumnPtr canonical_path_column = canonicalizeNegativeZero(*path_column))
+                if (ColumnPtr canonical_path_column = canonicalizeNestedNegativeZero(*path_column))
                 {
                     res[path] = std::move(canonical_path_column);
                     canonicalized = true;
@@ -347,7 +355,7 @@ ColumnPtr canonicalizeNegativeZero(const IColumn & column)
 
         for (auto & element : elements)
         {
-            if (ColumnPtr canonical_element = canonicalizeNegativeZero(*element))
+            if (ColumnPtr canonical_element = canonicalizeNestedNegativeZero(*element))
             {
                 element = std::move(canonical_element);
                 canonicalized = true;
