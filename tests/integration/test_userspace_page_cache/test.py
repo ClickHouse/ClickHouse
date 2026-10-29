@@ -29,7 +29,7 @@ def _is_sanitizer_build():
             text=True,
             timeout=30,
         )
-        return "-fsanitize=" in result.stdout
+        return "-DSANITIZER" in result.stdout
     except Exception:
         return False
 
