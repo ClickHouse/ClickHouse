@@ -121,6 +121,15 @@ static std::optional<JoinActionRef> resolveInput(const JoinActionRef & ref)
 
 void QueryGraph::buildColumnEquivalences()
 {
+    std::unordered_map<const ActionsDAG::Node *, bool> constant_columns;
+    auto is_constant = [&](size_t relation, const JoinActionRef & column)
+    {
+        auto [it, inserted] = constant_columns.try_emplace(column.getNode(), false);
+        if (inserted && is_constant_column)
+            it->second = is_constant_column(relation, column.getColumnName());
+        return it->second;
+    };
+
     for (const auto & edge : edges)
     {
         if (!edge)
@@ -138,13 +147,6 @@ void QueryGraph::buildColumnEquivalences()
         auto lhs_rel = lhs_resolved->getSourceRelations().getSingleBit();
         auto rhs_rel = rhs_resolved->getSourceRelations().getSingleBit();
 
-        auto is_constant = [this](size_t relation, const JoinActionRef & column)
-        {
-            return relation < relation_constant_columns.size() && relation_constant_columns[relation].contains(column.getColumnName());
-        };
-        if (is_constant(*lhs_rel, *lhs_resolved) || is_constant(*rhs_rel, *rhs_resolved))
-            continue;
-
         /// Skip predicates involving outer-joined relations: when a LEFT/RIGHT/FULL JOIN
         /// doesn't match, the outer side produces NULLs, so the equality doesn't hold
         /// for all rows and the transitive equivalence would be invalid.
@@ -157,6 +159,9 @@ void QueryGraph::buildColumnEquivalences()
             continue;
 
         if (outer_join_conditions.contains(edge))
+            continue;
+
+        if (is_constant(*lhs_rel, *lhs_resolved) || is_constant(*rhs_rel, *rhs_resolved))
             continue;
 
         column_equivalences.add(*lhs_resolved, *rhs_resolved);
