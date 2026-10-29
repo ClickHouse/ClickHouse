@@ -1,4 +1,5 @@
 #include <iostream>
+#include <fmt/format.h>
 #include <dlfcn.h>
 #include <Core/Defines.h>
 #include <base/demangle.h>
@@ -27,20 +28,20 @@ int mainEntryExampleSymbolIndex(int argc, char ** argv)
     const SymbolIndex & symbol_index = SymbolIndex::instance();
 
     for (const auto & elem : symbol_index.symbols())
-        std::cout << elem.name << ": " << elem.offset_begin << " ... " << elem.offset_end << "\n";
+        std::cout << fmt::format("{}: {:#x} ... {:#x}\n", elem.name, reinterpret_cast<uintptr_t>(elem.offset_begin), reinterpret_cast<uintptr_t>(elem.offset_end));
     std::cout << "\n";
 
     const void * address = reinterpret_cast<void*>(std::stoull(argv[1], nullptr, 16));
 
     const auto * symbol = symbol_index.findSymbol(address);
     if (symbol)
-        std::cerr << symbol->name << ": " << symbol->offset_begin << " ... " << symbol->offset_end << "\n";
+        std::cerr << fmt::format("{}: {:#x} ... {:#x}\n", symbol->name, reinterpret_cast<uintptr_t>(symbol->offset_begin), reinterpret_cast<uintptr_t>(symbol->offset_end));
     else
         std::cerr << "SymbolIndex: Not found\n";
 
     Dl_info info;
     if (dladdr(address, &info) && info.dli_sname)
-        std::cerr << demangle(info.dli_sname) << ": " << info.dli_saddr << "\n";
+        std::cerr << fmt::format("{}: {:#x}\n", demangle(info.dli_sname), reinterpret_cast<uintptr_t>(info.dli_saddr));
     else
         std::cerr << "dladdr: Not found\n";
 
