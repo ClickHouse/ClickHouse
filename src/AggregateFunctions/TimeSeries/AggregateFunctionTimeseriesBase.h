@@ -1262,7 +1262,7 @@ private:
 
         State * state = data(place);
 
-#if USE_MULTITARGET_CODE
+#if USE_X86_64_MULTITARGET_CODE
         if (isArchSupported(TargetArch::x86_64_v4))
         {
             addSamplesToBucketsImpl_x86_64_v4(state, timestamps, values, row_begin, row_end);

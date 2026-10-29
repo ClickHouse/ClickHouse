@@ -52,7 +52,7 @@
 #else
 #  define RAND_ARS_NEON 0
 #endif
-#if defined(__AVX2__) && USE_MULTITARGET_CODE
+#if defined(__AVX2__) && USE_X86_64_MULTITARGET_CODE
 #  define RAND_ARS_VAES 1
 #else
 #  define RAND_ARS_VAES 0

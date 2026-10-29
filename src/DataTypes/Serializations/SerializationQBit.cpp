@@ -18,7 +18,7 @@
 #include <base/BFloat16.h>
 #include <base/types.h>
 
-#if USE_MULTITARGET_CODE
+#if USE_X86_64_MULTITARGET_CODE
 #include <immintrin.h>
 #endif
 
@@ -574,7 +574,7 @@ DECLARE_X86_64_V4_SPECIFIC_CODE(
         }
     })
 
-#if USE_MULTITARGET_CODE
+#if USE_X86_64_MULTITARGET_CODE
 
 /// Use explicit AVX512BW target instead of x86-64-v4 for better performance
 /// The generic x86-64-v4 arch seems to generate slower code for this specific workload
@@ -635,7 +635,7 @@ _Pragma("clang attribute pop")
 template <typename T>
 SerializationQBit::UntransposeBitPlaneFn<T> SerializationQBit::resolveUntransposeBitPlane()
 {
-#if USE_MULTITARGET_CODE
+#if USE_X86_64_MULTITARGET_CODE
     if (isArchSupported(TargetArch::x86_64_v4))
     {
         if constexpr (std::is_same_v<T, UInt64>)

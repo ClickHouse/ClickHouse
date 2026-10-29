@@ -819,7 +819,7 @@ struct ImplXXH3_128
     static constexpr bool return_bigint_instead_of_fixedstring = true;
 };
 
-DECLARE_MULTITARGET_CODE(
+DECLARE_X86_64_MULTITARGET_CODE(
 
 template <typename Impl, typename Name>
 class FunctionIntHash : public IFunction
@@ -919,7 +919,7 @@ public:
     }
 };
 
-) // DECLARE_MULTITARGET_CODE
+) // DECLARE_X86_64_MULTITARGET_CODE
 
 /// The implementation is picked once, from what the CPU supports. Everything except execution comes from
 /// the default implementation, which this class derives from.
@@ -929,14 +929,14 @@ class FunctionIntHash : public TargetSpecific::Default::FunctionIntHash<Impl, Na
 public:
     explicit FunctionIntHash([[maybe_unused]] ContextPtr context)
     {
-#if USE_MULTITARGET_CODE
+#if USE_X86_64_MULTITARGET_CODE
         if (isArchSupported(TargetArch::x86_64_v4))
         {
             impl = std::make_unique<TargetSpecific::x86_64_v4::FunctionIntHash<Impl, Name>>();
             return;
         }
 #endif
-#if USE_MULTITARGET_CODE && !defined(__AVX2__)
+#if USE_X86_64_MULTITARGET_CODE && !defined(__AVX2__)
         /// Only reached from the translation units pinned to `-march=x86-64-v2` in
         /// `src/Functions/CMakeLists.txt` (`FunctionsHashingMisc.cpp`), where `Default` inherits v2
         /// codegen and this per-function body is the only AVX2 one. Everywhere else `Default` is
@@ -964,7 +964,7 @@ private:
     std::unique_ptr<IFunction> impl;
 };
 
-DECLARE_MULTITARGET_CODE(
+DECLARE_X86_64_MULTITARGET_CODE(
 
 template <typename Impl, bool Keyed, typename KeyType, typename KeyColumnsType>
 class FunctionAnyHash : public IFunction
@@ -1704,7 +1704,7 @@ public:
     }
 };
 
-) // DECLARE_MULTITARGET_CODE
+) // DECLARE_X86_64_MULTITARGET_CODE
 
 struct ImplWyHash64;
 
@@ -1745,7 +1745,7 @@ class FunctionAnyHash : public TargetSpecific::Default::FunctionAnyHash<Impl, Ke
 public:
     explicit FunctionAnyHash([[maybe_unused]] ContextPtr context)
     {
-#if USE_MULTITARGET_CODE
+#if USE_X86_64_MULTITARGET_CODE
         if constexpr (hash_avx512_usage<Impl> != HashAVX512Usage::Never)
         {
             if (isArchSupported(TargetArch::x86_64_v4))
@@ -1770,7 +1770,7 @@ public:
 private:
     static std::unique_ptr<IFunction> makeBaselineImpl()
     {
-#if USE_MULTITARGET_CODE && !defined(__AVX2__)
+#if USE_X86_64_MULTITARGET_CODE && !defined(__AVX2__)
         /// See the note in `FunctionIntHash`: only the v2-pinned translation units get here.
         if (isArchSupported(TargetArch::x86_64_v3))
             return std::make_unique<TargetSpecific::x86_64_v3::FunctionAnyHash<Impl, Keyed, KeyType, KeyColumnsType>>();

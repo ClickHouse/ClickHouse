@@ -39,7 +39,6 @@ class ReadBuffer;
 class WriteBuffer;
 class IColumn;
 class IDataType;
-class IWindowFunction;
 
 using DataTypePtr = std::shared_ptr<const IDataType>;
 using DataTypes = VectorWithMemoryTracking<DataTypePtr>;

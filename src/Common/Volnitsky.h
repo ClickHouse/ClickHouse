@@ -397,7 +397,7 @@ protected:
     /// and ARM NEON). Case-insensitive uses a cache searcher that only beats the hash with the AVX2 kernel;
     /// on ARM NEON and SSE-only the hash wins for selective needles, so it is kept there. AVX2 availability
     /// is what matters, independent of multitarget dispatch (which is off at non-v3 baselines).
-#if USE_MULTITARGET_CODE || defined(__SSE4_1__) || (defined(__aarch64__) && defined(__ARM_NEON))
+#if USE_X86_64_MULTITARGET_CODE || defined(__SSE4_1__) || (defined(__aarch64__) && defined(__ARM_NEON))
     static constexpr bool case_sensitive_can_bypass = true;
 #else
     static constexpr bool case_sensitive_can_bypass = false;
