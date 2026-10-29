@@ -1529,6 +1529,9 @@ Do you want to output it anyway? [y/N] )", current_format);
 }
 catch (...)
 {
+    /// The format refers to the buffers reset below.
+    output_format.reset();
+
     if (out_file_buf)
         out_file_buf->cancel();
     out_file_buf.reset();
