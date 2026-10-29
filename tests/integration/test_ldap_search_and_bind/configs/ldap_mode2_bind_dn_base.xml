@@ -1,0 +1,27 @@
+<clickhouse>
+    <ldap_servers>
+        <openldap_strict>
+            <host>openldap_strict</host>
+            <port>1389</port>
+            <enable_tls>no</enable_tls>
+            <!-- Direct bind with a lookup identity whose `user_dn_detection` depends on the
+                 login only through `{bind_dn}` (the substituted `bind_dn` template). For an
+                 unknown user the substituted base does not exist and the directory answers the
+                 search itself with `LDAP_NO_SUCH_OBJECT`; that must count as "user not found"
+                 exactly like for `{user_name}` written directly into `base_dn`. -->
+            <bind_dn>cn={user_name},ou=users,dc=example,dc=org</bind_dn>
+            <lookup_bind_dn>cn=svc.clickhouse,ou=service,dc=example,dc=org</lookup_bind_dn>
+            <lookup_password>svcsecret</lookup_password>
+            <user_dn_detection>
+                <base_dn>{bind_dn}</base_dn>
+                <scope>base</scope>
+                <search_filter>(objectClass=inetOrgPerson)</search_filter>
+            </user_dn_detection>
+        </openldap_strict>
+    </ldap_servers>
+    <user_directories>
+        <ldap>
+            <server>openldap_strict</server>
+        </ldap>
+    </user_directories>
+</clickhouse>
