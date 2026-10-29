@@ -348,6 +348,10 @@ void ActionsDAG::Node::updateHash(
         /// conversion captures how it parses), and two expressions that differ only in those are not
         /// the same expression.
         function_base->updateHash(hash_state);
+
+        /// An index hint's predicate is in its own DAG, not in its name or children.
+        if (const auto * index_hint = FunctionIndexHint::tryGet(function_base); index_hint && !build_independent)
+            index_hint->getActions().updateHash(hash_state, build_independent, input_header, with_variable_size_constant_values);
     }
 
     if (function)
@@ -2962,6 +2966,52 @@ void ActionsDAG::mergeInplace(ActionsDAG && second, std::unordered_map<const Nod
     /// second: x (1), x (2), x (3) ==> x (3), x (2), x (1)
     /// merge: x (1), x (2), x (3), y =(first)=> x (2), z, x (4), x (3) =(second)=> x (3), x (4), x (2), z
 
+    /// An implied hint reads `first`'s outputs by name, like `second`'s inputs: rebind it to what computes them, or drop it if a name has another type there.
+    {
+        std::unordered_map<std::string_view, const Node *> first_output_by_name;
+        for (auto & node : second.nodes)
+        {
+            if (node.type != ActionType::FUNCTION)
+                continue;
+            const auto * index_hint = FunctionIndexHint::tryGet(node.function_base);
+            if (!index_hint || !index_hint->isImplied())
+                continue;
+
+            if (first_output_by_name.empty())
+                for (const auto * output_node : first.outputs)
+                    first_output_by_name.emplace(output_node->result_name, output_node);
+
+            NodeRawConstPtrs sources;
+            bool renamed = false;
+            bool retyped = false;
+            for (const auto * hint_input : index_hint->getActions().getInputs())
+            {
+                auto it = first_output_by_name.find(hint_input->result_name);
+                if (it == first_output_by_name.end())
+                    continue;
+                sources.push_back(it->second);
+                renamed |= it->second->type != ActionType::INPUT;
+                retyped |= !it->second->result_type->equals(*hint_input->result_type);
+            }
+            if (!renamed && !retyped)
+                continue;
+
+            ActionsDAG rebound_actions;
+            if (!retyped)
+            {
+                auto prefix = cloneSubDAG(sources, /*remove_aliases=*/ false);
+                if (!prefix.hasArrayJoin() && !prefix.hasNonDeterministic())
+                    rebound_actions = merge(std::move(prefix), index_hint->getActions().clone());
+            }
+
+            auto rebound = std::make_shared<FunctionIndexHint>();
+            rebound->setActions(std::move(rebound_actions));
+            rebound->setImplied(true);
+            node.function_base = FunctionToOverloadResolverAdaptor(std::move(rebound)).build({});
+            node.function = node.function_base->prepare({});
+        }
+    }
+
     /// Will store merged result in `first`.
 
     /// This map contains nodes which should be removed from `first` outputs, cause they are used as inputs for `second`.
@@ -3693,15 +3743,21 @@ struct ConjunctionNodes
 
 /// indexHint keeps its arguments in its own dag, so they are not children of the node, and hints may nest
 template <typename Predicate>
-bool allIndexHintInputs(const ActionsDAG::Node & node, const Predicate & predicate)
+bool allIndexHintsAllowed(const ActionsDAG::Node & node, ActionsDAG::PushDownIndexHints index_hints, const Predicate & is_input_allowed)
 {
     if (node.type != ActionsDAG::ActionType::FUNCTION || node.function_base->getName() != "indexHint")
         return true;
 
     const auto & adaptor = assert_cast<const FunctionToFunctionBaseAdaptor &>(*node.function_base);
-    const auto & dag = assert_cast<const FunctionIndexHint &>(*adaptor.getFunction()).getActions();
-    return std::ranges::all_of(dag.getInputs(), predicate)
-        && std::ranges::all_of(dag.getNodes(), [&](const auto & inner) { return allIndexHintInputs(inner, predicate); });
+    const auto & index_hint = assert_cast<const FunctionIndexHint &>(*adaptor.getFunction());
+    if (index_hints == ActionsDAG::PushDownIndexHints::None
+        || (index_hints == ActionsDAG::PushDownIndexHints::Implied && !index_hint.isImplied()))
+        return false;
+
+    const auto & dag = index_hint.getActions();
+    return std::ranges::all_of(dag.getInputs(), is_input_allowed)
+        && std::ranges::all_of(
+            dag.getNodes(), [&](const auto & inner) { return allIndexHintsAllowed(inner, index_hints, is_input_allowed); });
 }
 
 /// Take a node which result is a predicate.
@@ -3713,7 +3769,7 @@ ConjunctionNodes getConjunctionNodes(
     const ActionsDAG::NodeRawConstPtrs & inputs,
     std::unordered_set<const ActionsDAG::Node *> allowed_nodes,
     bool allow_non_deterministic_functions,
-    bool allow_index_hints = true)
+    ActionsDAG::PushDownIndexHints index_hints = ActionsDAG::PushDownIndexHints::All)
 {
     ConjunctionNodes conjunction;
     std::unordered_set<const ActionsDAG::Node *> allowed;
@@ -3726,7 +3782,7 @@ ConjunctionNodes getConjunctionNodes(
 
     auto is_index_hint_input_allowed = [&](const ActionsDAG::Node * input)
     {
-        return allow_index_hints && !rejected_input_names.contains(input->result_name);
+        return !rejected_input_names.contains(input->result_name);
     };
 
     /// Parts of predicate in case predicate is conjunction (or just predicate itself).
@@ -3801,7 +3857,7 @@ ConjunctionNodes getConjunctionNodes(
                 if (cur.node->type != ActionsDAG::ActionType::ARRAY_JOIN
                     && cur.node->type != ActionsDAG::ActionType::INPUT
                     && !is_deprecated_function
-                    && allIndexHintInputs(*cur.node, is_index_hint_input_allowed))
+                    && allIndexHintsAllowed(*cur.node, index_hints, is_index_hint_input_allowed))
                     allowed_nodes.emplace(cur.node);
             }
 
@@ -4009,7 +4065,7 @@ std::optional<ActionsDAG::ActionsForFilterPushDown> ActionsDAG::splitActionsForF
     const Names & available_inputs,
     const ColumnsWithTypeAndName & all_inputs,
     bool allow_non_deterministic_functions,
-    bool allow_index_hints)
+    PushDownIndexHints index_hints)
 {
     Node * predicate = const_cast<Node *>(tryFindInOutputs(filter_name));
     if (!predicate)
@@ -4042,7 +4098,7 @@ std::optional<ActionsDAG::ActionsForFilterPushDown> ActionsDAG::splitActionsForF
         }
     }
 
-    auto conjunction = getConjunctionNodes(predicate, inputs, allowed_nodes, allow_non_deterministic_functions, allow_index_hints);
+    auto conjunction = getConjunctionNodes(predicate, inputs, allowed_nodes, allow_non_deterministic_functions, index_hints);
 
     if (conjunction.allowed.empty())
         return {};
@@ -4675,6 +4731,7 @@ std::optional<ActionsDAG> buildFilterActionsDAGImpl(
 
                             auto index_hint_function_clone = std::make_shared<FunctionIndexHint>();
                             index_hint_function_clone->setActions(std::move(index_hint_filter_dag));
+                            index_hint_function_clone->setImplied(index_hint->isImplied());
                             function_overload_resolver = std::make_shared<FunctionToOverloadResolverAdaptor>(std::move(index_hint_function_clone));
                             /// Keep the unique name like "indexHint(foo)" instead of replacing it
                             /// with "indexHint()". Otherwise index analysis (which does look at
