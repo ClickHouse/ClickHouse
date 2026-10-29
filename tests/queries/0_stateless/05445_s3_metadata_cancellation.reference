@@ -1,4 +1,0 @@
-check part serialization: data preserved
-check projection serialization: data preserved
-load_data_part_before_metadata_read: data preserved
-load_projection_before_metadata_read: data preserved

@@ -45,6 +45,18 @@
                 <load_metadata_asynchronously>0</load_metadata_asynchronously>
                 <use_real_disk_size>1</use_real_disk_size>
             </s3_cache>
+            <!-- Dedicated cache for cancellation checks: unrelated background reads must not
+                 change the cached segments compared before and after a cancelled `CHECK TABLE`. -->
+            <s3_cache_cancellation>
+                <type>cache</type>
+                <disk>s3_disk</disk>
+                <path>s3_cache_cancellation/</path>
+                <max_size>128Mi</max_size>
+                <cache_on_write_operations>1</cache_on_write_operations>
+                <background_download_threads>0</background_download_threads>
+                <background_download_queue_size_limit>0</background_download_queue_size_limit>
+                <load_metadata_asynchronously>0</load_metadata_asynchronously>
+            </s3_cache_cancellation>
             <s3_cache_02933>
                 <type>cache</type>
                 <disk>s3_disk</disk>
@@ -172,6 +184,13 @@
             </s3_no_cache_encrypted_double>
         </disks>
         <policies>
+            <s3_cache_cancellation>
+                <volumes>
+                    <main>
+                        <disk>s3_cache_cancellation</disk>
+                    </main>
+                </volumes>
+            </s3_cache_cancellation>
             <local_remote>
                 <volumes>
                     <local><disk>default</disk></local>
