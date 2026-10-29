@@ -2835,7 +2835,7 @@ class TestCase:
         return {
             setting: 0
             for tag, settings in self.FEATURE_TAG_OVERRIDES.items()
-            if tag in tags
+            if tag in tags and (tag != "no-random-detach" or self.detach_tag_override_needed)
             for setting in settings
         }
 
@@ -2857,7 +2857,16 @@ class TestCase:
         same order, so the last one wins. The MergeTree settings are left out: the client applies
         them by rewriting `CREATE TABLE` queries, which only `clickhouse-client` does."""
         args = self.testcase_args
-        settings = [(name, str(value)) for name, value in self.effective_settings.items()]
+        settings = []
+        # The randomized `DETACH`/`ATTACH` probability goes first, as in `add_effective_settings`.
+        if self.randomize_detach:
+            settings.append(
+                (
+                    "reattach_tables_before_query_execution_probability",
+                    str(self.reattach_tables_probability),
+                )
+            )
+        settings += [(name, str(value)) for name, value in self.effective_settings.items()]
         settings += [option.split("=", 1) for option in args.client_option or []]
         settings += [(name, str(value)) for name, value in self.feature_tag_overrides().items()]
         settings.append(("log_comment", f"{args.testcase_basename}-{database}"))
@@ -3663,6 +3672,20 @@ class TestCase:
             os.environ["CLICKHOUSE_CLIENT_OPT"]
             if "CLICKHOUSE_CLIENT_OPT" in os.environ
             else ""
+        )
+
+        # The `no-random-detach` tag forces the `DETACH`/`ATTACH` hook settings to zero. Under
+        # `--no-random-detach` nothing in this runner enables the hook, so the forced zeros are needed only
+        # against an externally supplied option that names these settings. Otherwise they are left out:
+        # the upgrade check runs with `--no-random-detach` against the previous release, which may not
+        # know these settings, and rejects unknown settings in HTTP requests with `UNKNOWN_SETTING`.
+        self.detach_tag_override_needed = not args.no_random_detach or any(
+            "reattach_tables_before_query_execution" in options
+            for options in (
+                " ".join(args.client_option or []),
+                self.base_url_params,
+                self.base_client_options,
+            )
         )
 
         self.show_whitespaces_in_diff = args.show_whitespaces_in_diff
