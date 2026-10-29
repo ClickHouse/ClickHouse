@@ -100,10 +100,11 @@ void ReplxxLineReader::fixTrailingNewline(int * pos, std::u32string * text)
     if (pos)
     {
         int length = static_cast<int>(text->length());
+        /* In normal mode the cursor is on a character, not after the end of a nonempty line, also
+         * when that line is followed by the empty last line. Only a cursor that is already after the
+         * trailing newline stays on the empty last line. */
         if (*pos > 0 && *pos == length && (*text)[*pos - 1] != '\n')
             --*pos;
-        if (*pos > 0 && *pos == length - 1 && (*text)[*pos] == '\n' && (*text)[*pos - 1] != '\n')
-            ++*pos;
         else if (*pos > 0 && *pos < length && (*text)[*pos] == '\n' && (*text)[*pos - 1] != '\n')
             --*pos;
     }
@@ -1106,6 +1107,11 @@ void ReplxxLineReader::setupVimKeybindings(bool allow_editor)
         '~',
         [this](int & pos, std::u32string & text, char32_t)
         {
+            if (op)
+            {
+                resetVim();
+                return;
+            }
             /* Toggle the case of up to count characters until the end of the line, and move past
              * them, but not past the last character of the line. */
             int length = static_cast<int>(text.length());
@@ -1145,6 +1151,11 @@ void ReplxxLineReader::setupVimKeybindings(bool allow_editor)
         'I',
         [this](int & pos, std::u32string & text, char32_t)
         {
+            if (op)
+            {
+                resetVim();
+                return;
+            }
             int length = static_cast<int>(text.length());
             for (; pos > 0 && text[pos - 1] != '\n'; pos--)
                 ;
@@ -1178,6 +1189,11 @@ void ReplxxLineReader::setupVimKeybindings(bool allow_editor)
         'A',
         [this](int & pos, std::u32string & text, char32_t)
         {
+            if (op)
+            {
+                resetVim();
+                return;
+            }
             int length = static_cast<int>(text.length());
             for (; pos < length && text[pos] != '\n'; pos++)
                 ;
@@ -1683,6 +1699,11 @@ void ReplxxLineReader::setupVimKeybindings(bool allow_editor)
         's',
         [this](int & pos, std::u32string & text, char32_t)
         {
+            if (op)
+            {
+                resetVim();
+                return;
+            }
             int length = static_cast<int>(text.length());
             int reps = vimReps();
             int count = 0;
@@ -1699,6 +1720,11 @@ void ReplxxLineReader::setupVimKeybindings(bool allow_editor)
         'r',
         [this](int & pos, std::u32string & text, char32_t)
         {
+            if (op)
+            {
+                resetVim();
+                return;
+            }
             /* Keep the count the replacement character handler will reset it. */
             if (pos < static_cast<int>(text.length()) && text[pos] != '\n')
                 rx.set_editing_mode(MODE_REPLACE);
@@ -1711,6 +1737,12 @@ void ReplxxLineReader::setupVimKeybindings(bool allow_editor)
         'x',
         [this](int & pos, std::u32string & text, char32_t)
         {
+            /* Not a motion: cancel a pending operator, like vim does for e.g. `dx`. */
+            if (op)
+            {
+                resetVim();
+                return;
+            }
             int length = static_cast<int>(text.length());
             int reps = vimReps();
             int count = 0;
@@ -1774,6 +1806,11 @@ void ReplxxLineReader::setupVimKeybindings(bool allow_editor)
         'o',
         [this](int & pos, std::u32string & text, char32_t)
         {
+            if (op)
+            {
+                resetVim();
+                return;
+            }
             int length = static_cast<int>(text.length());
 
             for (; pos < length && text[pos] != '\n'; pos++)
@@ -1789,6 +1826,11 @@ void ReplxxLineReader::setupVimKeybindings(bool allow_editor)
         'O',
         [this](int & pos, std::u32string & text, char32_t)
         {
+            if (op)
+            {
+                resetVim();
+                return;
+            }
             for (; pos > 0 && text[pos - 1] != '\n'; pos--)
                 ;
             text.insert(pos, 1, '\n');

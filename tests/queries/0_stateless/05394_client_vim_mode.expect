@@ -531,5 +531,29 @@ submit
 expect "3000456"
 expect ":) "
 
+# A command that is not a motion cancels the pending operator instead of editing the text.
+send -- "SELECT 1000+123"
+escape
+send -- "dxx"
+submit
+expect "1012"
+expect ":) "
+
+send -- "SELECT 2000+123"
+escape
+send -- "dr7"
+submit
+expect "2123"
+expect ":) "
+
+# Deleting the last character of a line followed by the empty last line keeps the cursor on that line.
+send -- "SELECT 1000\r+ 234\r"
+escape
+send -- "k\$xi+1 -- "
+escape
+submit
+expect "1003"
+expect ":) "
+
 send -- "\4"
 expect eof
