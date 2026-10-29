@@ -167,6 +167,29 @@ bool isNodeOverSortingKey(const ActionsDAG::Node * node, const NameSet & sorting
     return true;
 }
 
+/// `Graphite` FINAL rolls rows with different times into one row, so the indexes may prune only by the path,
+/// and only when the path leads the sorting key: a rollup group is a run of adjacent rows of one path
+std::optional<ActionsDAG> buildGraphiteFinalIndexFilter(const ActionsDAG & filter, const MergeTreeData & data, const StorageInMemoryMetadata & metadata)
+{
+    /// virtual columns select parts and rows as for the other engines
+    NameSet safe_columns;
+    for (const auto & column : metadata.virtuals)
+        safe_columns.insert(column.name);
+
+    const auto & path = data.merging_params.graphite_params.path_column_name;
+    const auto & sorting_key_columns = metadata.getSortingKeyColumns();
+    if (!sorting_key_columns.empty() && sorting_key_columns.front() == path)
+        safe_columns.insert(path);
+
+    ActionsDAG::NodeRawConstPtrs atoms;
+    for (const auto * atom : ActionsDAG::extractConjunctionAtoms(filter.getOutputs().front()))
+    {
+        if (isNodeOverSortingKey(atom, safe_columns))
+            atoms.push_back(atom);
+    }
+    return ActionsDAG::buildFilterActionsDAG(atoms);
+}
+
 bool isNodeDeterministic(const ActionsDAG::Node * node)
 {
     /// A `COLUMN` node is not always an innocent literal. `node->isDeterministic` covers the function of a
@@ -3230,6 +3253,13 @@ void ReadFromMergeTree::buildIndexes(
     const auto & settings = query_context->getSettingsRef();
     const bool skip_constant_folding = skip_partition_pruning_ || !settings[Setting::use_constant_folding_in_index_analysis];
 
+    std::optional<ActionsDAG> graphite_final_filter;
+    if (filter_actions_dag_ && query_info_.isFinal() && data.merging_params.mode == MergeTreeData::MergingParams::Graphite)
+    {
+        graphite_final_filter = buildGraphiteFinalIndexFilter(*filter_actions_dag_, data, *metadata_snapshot);
+        filter_actions_dag_ = graphite_final_filter ? &*graphite_final_filter : nullptr;
+    }
+
     auto filter_dag_ptr = std::make_shared<ActionsDAGWithInversionPushDown>(filter_actions_dag_ ? filter_actions_dag_->getOutputs().front() : nullptr, query_context, /* boolean_context */ true);
     const auto & filter_dag = *filter_dag_ptr;
 
@@ -3921,6 +3951,8 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
             /// parent part, so per-part analysis results cannot be attributed back, and remote replicas
             /// resolve part names against the parent table. Analyze projection parts locally.
             && !projection_parts_exist
+            /// The replicas analyze the whole filter, which `Graphite` FINAL must not prune by (see `buildIndexes`).
+            && !(query_info_.isFinal() && data.merging_params.mode == MergeTreeData::MergingParams::Graphite)
             && settings[Setting::distributed_index_analysis]
             && (settings[Setting::distributed_index_analysis_for_non_shared_merge_tree] || data.isSharedStorage())
             && (total_parts >= distributed_index_analysis_min_parts_to_activate)
