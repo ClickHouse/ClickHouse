@@ -78,6 +78,7 @@ namespace FailPoints
     extern const char object_storage_queue_sleep_in_generate[];
     extern const char object_storage_queue_fail_tags_fetch[];
     extern const char object_storage_queue_pause_after_blocked_files_replay_cap[];
+    extern const char object_storage_queue_fail_bucket_acquisition[];
 }
 
 namespace ErrorCodes
@@ -91,6 +92,7 @@ namespace ErrorCodes
     extern const int TABLE_IS_READ_ONLY;
     extern const int TABLE_IS_BEING_RESTARTED;
     extern const int OBJECT_STORAGE_QUEUE_POST_PROCESSING_FAILED;
+    extern const int FAULT_INJECTED;
 }
 
 ObjectStorageQueueSource::ObjectStorageQueueObjectInfo::ObjectStorageQueueObjectInfo(
@@ -1511,7 +1513,24 @@ ObjectInfoPtr ObjectStorageQueueSource::FileIterator::next(size_t processor)
                 LOG_WARNING(log, "Bucket lock refresh or preparing a batch of files failed, stopping the file iterator");
                 return {};
             }
-            auto result = getNextKeyFromAcquiredBucket(processor);
+            NextKeyFromBucket result;
+            try
+            {
+                result = getNextKeyFromAcquiredBucket(processor);
+            }
+            catch (...)
+            {
+                /// Ordered mode: the bucket acquisition (Keeper I/O) can throw after a file was taken
+                /// from the listing or from the replay queue. That file is neither handed out nor queued
+                /// any more, and a taken replay stays in `in_flight_replays_per_domain`, deferring the
+                /// later files of its domain forever. Continuing would also let the later files of the
+                /// listing be committed past the lost one. Stop this iterator instead, as on a failure
+                /// in `filterProcessableFiles`: the next one does not inherit anything from it, and its
+                /// fresh listing pass lists the lost file again in order.
+                if (mode == ObjectStorageQueueMode::ORDERED)
+                    iterator_invalidated = true;
+                throw;
+            }
             object_info = result.object_info;
             file_metadata = result.file_metadata;
             bucket_info = result.bucket_info;
@@ -1792,6 +1811,11 @@ ObjectStorageQueueSource::BucketHolderPtr ObjectStorageQueueSource::FileIterator
             "Bucket already has a processor: {} (attempted processor: {})",
             bucket_info.processor.value(), processor);
     }
+
+    fiu_do_on(FailPoints::object_storage_queue_fail_bucket_acquisition,
+    {
+        throw Exception(ErrorCodes::FAULT_INJECTED, "Failpoint-triggered failure to acquire bucket {}", bucket);
+    });
 
     auto holder = metadata->tryAcquireBucket(bucket);
     if (!holder)

@@ -1362,3 +1362,87 @@ def test_ordering_barriers_are_capped_in_ordered_mode(started_cluster):
         DROP TABLE IF EXISTS {table_name};
         """
         )
+
+
+BUCKET_ACQUISITION_FAILPOINT = "object_storage_queue_fail_bucket_acquisition"
+
+
+def test_files_are_not_lost_after_bucket_acquisition_failure_in_ordered_mode(started_cluster):
+    """A failed bucket acquisition must not lose the file taken for it.
+
+    With buckets, the file iterator takes a file from the listing (or from the queue of
+    replays of files released by a foreign processor) before it acquires the bucket of the
+    file in keeper. When the acquisition throws, that file is neither handed out nor queued
+    any more, and a taken replay stayed an ordering barrier of its domain, deferring the later
+    files of the domain forever. The iterator must be stopped instead, so that the next
+    listing pass lists the files again in order.
+
+    A foreign processor holds `test_1.csv`; the acquisition fails once after the hold is
+    released, when the released file and the files behind it are replayed. Every file must be
+    ingested.
+    """
+    node = started_cluster.instances["instance"]
+
+    table_name = f"test_bucket_acquisition_failure_{generate_random_string()}"
+    dst_table_name = f"{table_name}_dst"
+    keeper_path = f"/clickhouse/test_{table_name}"
+    files_path = f"{table_name}_data"
+
+    files_to_generate = 5
+    generate_random_files(started_cluster, files_path, files_to_generate, start_ind=0, row_num=1)
+
+    create_table(
+        started_cluster,
+        node,
+        table_name,
+        "ordered",
+        files_path,
+        additional_settings={
+            "keeper_path": keeper_path,
+            "s3queue_processing_threads_num": 1,
+            "s3queue_buckets": 2,
+            "s3queue_loading_retries": 100,
+            "s3queue_processing_state_cache_ttl_seconds": 5,
+        },
+    )
+
+    conflict_file = f"{files_path}/test_1.csv"
+    conflict_node = node.query(f"SELECT sipHash64('{conflict_file}')").strip()
+    zk = started_cluster.get_kazoo_client("zoo1")
+    zk.ensure_path(f"{keeper_path}/processing")
+    zk.create(f"{keeper_path}/processing/{conflict_node}", b"another processor")
+
+    try:
+        create_mv(node, table_name, dst_table_name)
+
+        def get_count():
+            return int(node.query(f"SELECT count() FROM {dst_table_name}").strip())
+
+        # The table observed the foreign hold.
+        run_with_retry(
+            lambda x: x == "Processing",
+            lambda: node.query(
+                f"SELECT status FROM system.s3queue_metadata_cache WHERE file_path LIKE '%{conflict_file}'"
+            ).strip(),
+        )
+        assert node.query(f"SELECT count() FROM {dst_table_name} WHERE _path LIKE '%test_1.csv'").strip() == "0"
+
+        # The foreign processor releases the file without committing it, and the next
+        # bucket acquisition fails.
+        node.query(f"SYSTEM ENABLE FAILPOINT {BUCKET_ACQUISITION_FAILPOINT}")
+        zk.delete(f"{keeper_path}/processing/{conflict_node}")
+
+        run_with_retry(
+            lambda x: x,
+            lambda: node.contains_in_log("Failpoint-triggered failure to acquire bucket"),
+        )
+        run_with_retry(lambda x: x == files_to_generate, get_count)
+        assert get_count() == files_to_generate
+    finally:
+        node.query(f"SYSTEM DISABLE FAILPOINT {BUCKET_ACQUISITION_FAILPOINT}")
+        node.query(
+            f"""
+        DROP TABLE IF EXISTS {dst_table_name};
+        DROP TABLE IF EXISTS {table_name};
+        """
+        )
