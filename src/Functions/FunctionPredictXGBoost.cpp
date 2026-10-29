@@ -2,7 +2,8 @@
 
 #if USE_XGBOOST
 
-#include <atomic>
+#include <mutex>
+#include <optional>
 #include <limits>
 
 #include <Access/Common/AccessFlags.h>
@@ -177,6 +178,10 @@ public:
 
         auto dictionary = loader.getDictionary(dictionary_name, context);
 
+        /// The name may load another dictionary than the one checked above: a hierarchical name (see `DatabaseCatalog`)
+        /// may denote another dictionary after a rename between two blocks.
+        checkAccess(QualifiedTableName{.database = dictionary->getDatabaseOrNoDatabaseTag(), .table = dictionary->getDictionaryID().getTableName()});
+
         const auto * xgb_dict = typeid_cast<const XGBoostDictionary *>(dictionary.get());
         if (!xgb_dict)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Dictionary '{}' is not an XGBoost dictionary", dictionary_name);
@@ -211,12 +216,18 @@ public:
 
 private:
     ContextPtr context;
-    mutable std::atomic<bool> access_checked{false};
+
+    /// The dictionary the access was checked for.
+    mutable std::mutex access_checked_mutex;
+    mutable std::optional<QualifiedTableName> access_checked_for TSA_GUARDED_BY(access_checked_mutex);
 
     void checkAccess(const String & dictionary_name) const
     {
-        if (access_checked.load(std::memory_order_relaxed))
-            return;
+        {
+            std::lock_guard lock(access_checked_mutex);
+            if (access_checked_for)
+                return;
+        }
 
         /// The same identity as the loader resolves the name to: a qualified name is hierarchical (see `DatabaseCatalog`),
         /// so inside `USE db` the name `ns.model` may be the dictionary `db`.`ns.model` rather than `ns`.`model`.
@@ -226,11 +237,23 @@ private:
             qualified = std::move(*bound);
         else
             qualified = loader.qualifyDictionaryNameWithDatabase(dictionary_name, context);
-        context->checkAccess(
-            AccessType::dictGet,
-            qualified.database.empty() ? IDictionary::NO_DATABASE_TAG : qualified.database,
-            qualified.table);
-        access_checked.store(true, std::memory_order_relaxed);
+        if (qualified.database.empty())
+            qualified.database = IDictionary::NO_DATABASE_TAG;
+        checkAccess(qualified);
+    }
+
+    void checkAccess(const QualifiedTableName & dictionary_id) const
+    {
+        {
+            std::lock_guard lock(access_checked_mutex);
+            if (access_checked_for == dictionary_id)
+                return;
+        }
+
+        context->checkAccess(AccessType::dictGet, dictionary_id.database, dictionary_id.table);
+
+        std::lock_guard lock(access_checked_mutex);
+        access_checked_for = dictionary_id;
     }
 
     /// Index one past the last feature argument. The trailing `params` (a Map) is excluded; everything
