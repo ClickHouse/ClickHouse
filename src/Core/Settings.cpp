@@ -11223,6 +11223,11 @@ When `send_logs_level` forwards stateless-worker task logs to the coordinator, e
 Experimental table engine for integration with YTsaurus.
 )", EXPERIMENTAL, \
         {"25.8", false, false, "New setting."}) \
+    DECLARE(Bool, allow_experimental_map_key_columns, false, R"(
+Allow creating MergeTree tables with `map_serialization_version = 'with_key_columns'` or switching an empty table to it.
+Existing tables with this layout are loaded regardless of this setting.
+)", EXPERIMENTAL, \
+        {"26.11", false, false, "New setting to allow the experimental per-key Map serialization."}) \
     DECLARE(Bool, allow_experimental_ytsaurus_table_function, false, R"(
 Experimental table engine for integration with YTsaurus.
 )", EXPERIMENTAL, \

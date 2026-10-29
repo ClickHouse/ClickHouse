@@ -9,6 +9,7 @@
 #include <Core/NamesAndTypes.h>
 #include <Core/UUID.h>
 #include <DataTypes/Serializations/SerializationInfo.h>
+#include <DataTypes/Serializations/SerializationMapWithKeyColumns.h>
 #include <IO/WriteSettings.h>
 #include <Storages/ColumnSize.h>
 #include <Storages/ColumnsDescription.h>
@@ -499,6 +500,17 @@ public:
 
     Checksums checksums;
 
+    /// Key lists of `with_key_columns` Map columns, loaded from `<column>.key_columns.txt`.
+    std::unordered_map<String, MapKeyManifest> map_key_columns_manifests;
+
+    const MapKeyManifest * tryGetMapKeyColumnsManifest(const String & column_name) const
+    {
+        auto it = map_key_columns_manifests.find(column_name);
+        if (it == map_key_columns_manifests.end())
+            return nullptr;
+        return &it->second;
+    }
+
     /// Columns with no values to store: every value zeroed by a column TTL, or no source part stores the column
     /// (e.g. added by `ADD COLUMN` without a default and never written).
     NameSet expired_columns;
@@ -682,6 +694,12 @@ public:
 
     /// If checksums.txt exists, reads file's checksums (and sizes) from it
     void loadChecksums(bool require);
+
+    /// Read `<column>.key_columns.txt` for every `with_key_columns` Map column. Requires columns and checksums.
+    void loadMapKeyColumnsManifests();
+    /// Resolve the effective Map serialization from the recorded sidecar layout and reject
+    /// layouts that the target table cannot produce.
+    void applyMapKeyColumnsLayoutFromChecksums();
     bool areChecksumsLoaded() const { return !checksums.empty(); }
 
     /// Whether this part's column and secondary index sizes are already computed.

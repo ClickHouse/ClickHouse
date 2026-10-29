@@ -1,0 +1,6 @@
+map_serialization_version	basic
+map_serialization_version_for_zero_level_parts	basic
+max_map_key_columns_keys	10000
+1	{'a':1,'b':2}
+2
+1	{'a':1,'b':2}

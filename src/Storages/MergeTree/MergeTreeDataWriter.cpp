@@ -7,6 +7,7 @@
 #include <Core/UUID.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDateTime.h>
+#include <DataTypes/Serializations/SerializationMapWithKeyColumns.h>
 #include <Disks/createVolume.h>
 #include <IO/HashingWriteBuffer.h>
 #include <IO/WriteHelpers.h>
@@ -79,6 +80,20 @@ namespace ProfileEvents
 
 namespace DB
 {
+void MergeTreeDataWriter::canonicalizeMapKeyColumns(
+    Block & block, MergeTreeMapSerializationVersion map_serialization_version)
+{
+    if (map_serialization_version != MergeTreeMapSerializationVersion::WITH_KEY_COLUMNS)
+        return;
+
+    for (auto & column : block)
+    {
+        if (SerializationMapWithKeyColumns::hasMap(*column.type))
+            column.column = SerializationMapWithKeyColumns::canonicalizeMapKeys(
+                column.column->convertToFullIfWrapped(), *column.type);
+    }
+}
+
 namespace Setting
 {
     extern const SettingsBool finalize_projection_parts_synchronously;
@@ -1297,7 +1312,7 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeProjectionPartImpl(
         (*data_settings)[MergeTreeSetting::serialization_info_version],
         (*data_settings)[MergeTreeSetting::string_serialization_version],
         (*data_settings)[MergeTreeSetting::nullable_serialization_version],
-        (*data_settings)[MergeTreeSetting::map_serialization_version_for_zero_level_parts],
+        MergeTreeMapSerializationVersion::BASIC,
         (*data_settings)[MergeTreeSetting::propagate_types_serialization_versions_to_nested_types],
     };
     SerializationInfoByName infos(columns, settings);

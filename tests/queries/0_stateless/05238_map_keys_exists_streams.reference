@@ -1,0 +1,6 @@
+keys_match_full_read	1
+values_match_full_read	1
+absent_row_omits_hot	1
+map_keys_fewer_files_than_full	1
+map_keys_less_bytes_than_cold_value	1
+nonconst_contains_less_bytes_than_full	1

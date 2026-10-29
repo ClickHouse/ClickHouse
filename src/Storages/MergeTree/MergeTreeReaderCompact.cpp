@@ -1,8 +1,10 @@
 #include <Storages/MergeTree/MergeTreeReaderCompact.h>
 #include <Storages/MergeTree/MergeTreeDataPartCompact.h>
+#include <Storages/MergeTree/IMergeTreeDataPart.h>
 #include <Storages/MergeTree/checkDataPart.h>
 #include <Storages/MergeTree/DeserializationPrefixesCache.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
+#include <Compression/CompressedReadBufferFromFile.h>
 #include <DataTypes/Serializations/getSubcolumnsDeserializationOrder.h>
 #include <DataTypes/Serializations/SerializationQuantizedVector.h>
 #include <DataTypes/NestedUtils.h>
@@ -241,8 +243,11 @@ void MergeTreeReaderCompact::readData(
 
         if (seek_to_substream_mark)
         {
-            size_t substream_position = columns_substreams.getSubstreamPosition(*column_positions[column_idx], name_and_type, substream_path, storage_settings);
-            stream.seekToMarkAndColumn(from_mark, substream_position);
+            auto substream_position = columns_substreams.tryGetSubstreamPosition(
+                *column_positions[column_idx], name_and_type, substream_path, storage_settings);
+            if (!substream_position)
+                return nullptr;
+            stream.seekToMarkAndColumn(from_mark, *substream_position);
         }
 
         return stream.getDataBuffer();
@@ -287,8 +292,11 @@ void MergeTreeReaderCompact::readData(
 
             deserialize_settings.seek_stream_to_current_mark_callback = [&](const ISerialization::SubstreamPath & substream_path)
             {
-                size_t substream_position = columns_substreams.getSubstreamPosition(*column_positions[column_idx], name_and_type, substream_path, storage_settings);
-                stream.seekToMarkAndColumn(from_mark, substream_position);
+                auto substream_position = columns_substreams.tryGetSubstreamPosition(
+                    *column_positions[column_idx], name_and_type, substream_path, storage_settings);
+                if (!substream_position)
+                    return;
+                stream.seekToMarkAndColumn(from_mark, *substream_position);
             };
         }
 
@@ -497,8 +505,11 @@ void MergeTreeReaderCompact::readPrefix(size_t column_idx, size_t from_mark, Mer
 
         if (seek_to_substream_mark)
         {
-            size_t substream_position = columns_substreams.getSubstreamPosition(*column_positions[column_idx], column, substream_path, storage_settings);
-            stream.seekToMarkAndColumn(from_mark, substream_position);
+            auto substream_position = columns_substreams.tryGetSubstreamPosition(
+                *column_positions[column_idx], column, substream_path, storage_settings);
+            if (!substream_position)
+                return nullptr;
+            stream.seekToMarkAndColumn(from_mark, *substream_position);
         }
 
         return stream.getDataBuffer();
@@ -563,6 +574,8 @@ void MergeTreeReaderCompact::readPrefix(
     {
         ISerialization::DeserializeBinaryBulkSettings deserialize_settings;
         deserialize_settings.getter = buffer_getter;
+        if (const auto part = data_part_info_for_read->getDataPart())
+            deserialize_settings.map_key_columns_manifest = part->tryGetMapKeyColumnsManifest(name_and_type.getNameInStorage());
         deserialize_settings.read_statistics = true;
         deserialize_settings.use_specialized_prefixes_and_suffixes_substreams = true;
         deserialize_settings.data_part_type = MergeTreeDataPartType::Compact;

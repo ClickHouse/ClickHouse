@@ -290,9 +290,9 @@ std::optional<MapIndexInfo> tryResolveMapIndexInfo(
     return info;
 }
 
-/// Try to parse a Map subcolumn reference like `map.key_<serialized_key>` and resolve it
-/// against the bloom filter index header. The subcolumn name format is produced by
-/// `FunctionToSubcolumnsPass`.
+/// Try to parse a Map subcolumn reference like `map.key_<serialized_key>` or
+/// `map.exists_<serialized_key>` and resolve it against the bloom filter index header.
+/// `FunctionToSubcolumnsPass` produces `exists_` for `has` / `mapContains` and `key_` for `m['k']`.
 std::optional<MapIndexInfo> tryParseMapSubcolumn(
     const String & column_name, const Block & header, const NameSet & shadowing_columns)
 {
@@ -323,7 +323,7 @@ std::optional<MapIndexInfo> tryParseMapSubcolumn(
 }
 
 /// Try to resolve a `MapIndexInfo` from a key node that is either an `arrayElement(map, key)`
-/// function call or a `map.key_<serialized_key>` subcolumn reference.
+/// function call or a `map.key_<serialized_key>` / `map.exists_<serialized_key>` subcolumn reference.
 std::optional<MapIndexInfo> tryResolveMapInfoFromNode(
     const RPNBuilderTreeNode & key_node, const Block & header, const NameSet & shadowing_columns)
 {

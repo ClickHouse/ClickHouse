@@ -2,6 +2,7 @@
 
 #include <Columns/IColumn_fwd.h>
 #include <DataTypes/IDataType_fwd.h>
+#include <DataTypes/Serializations/SerializationMapWithKeyColumns.h>
 #include <Storages/MergeTree/IDataPartStorage.h>
 #include <Storages/MergeTree/MergeTreeDataPartType.h>
 #include <Storages/MergeTree/MergeTreeIOSettings.h>
@@ -12,6 +13,8 @@
 #include <Storages/Statistics/Statistics.h>
 #include <Storages/VirtualColumnsDescription.h>
 #include <Formats/MarkInCompressedFile.h>
+
+#include <unordered_map>
 
 
 namespace DB
@@ -80,6 +83,11 @@ public:
 
     virtual const ColumnsSubstreams & getColumnsSubstreams() const = 0;
 
+    /// Key lists written to `<column>.key_columns.txt` by `fillChecksums`, including an empty list.
+    /// The in-memory part copies these. The files stay unreadable on object storage until `finish`
+    /// finalizes the buffers and publishes their names.
+    const std::unordered_map<String, MapKeyManifest> & getMapKeyColumnsManifests() const { return map_key_columns_manifests; }
+
 protected:
     SerializationPtr getSerialization(const String & column_name) const;
 
@@ -102,6 +110,14 @@ protected:
     PlainMarksByName cached_marks;
     /// Index marks (for secondary indices) that will be saved to cache on finish.
     PlainMarksByName cached_index_marks;
+
+    void rememberMapKeyColumnsManifest(const String & column_name, const MapKeyManifest & manifest)
+    {
+        map_key_columns_manifests.insert_or_assign(column_name, manifest);
+    }
+
+    /// Same lists as `<column>.key_columns.txt`. An empty list is still recorded.
+    std::unordered_map<String, MapKeyManifest> map_key_columns_manifests;
 };
 
 using MergeTreeDataPartWriterPtr = std::unique_ptr<IMergeTreeDataPartWriter>;

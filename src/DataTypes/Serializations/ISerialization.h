@@ -74,6 +74,8 @@ char getHiveTextDelimiter(const FormatSettings & settings, size_t nesting_level)
  *  Currently there is only one special serialization: Sparse.
  *  Each serialization has its own implementation of IColumn as its in-memory representation.
  */
+struct MapKeyManifest;
+
 class ISerialization : private boost::noncopyable, public std::enable_shared_from_this<ISerialization>
 {
 protected:
@@ -342,6 +344,11 @@ public:
             Bucket,
             MapBucketsInfo,
             MapBucketIndexes,
+            MapKeysInfo,
+            MapKey,
+            MapKeyExists,
+            MapKeyValueTemplate,
+            MapKeyExistsTemplate,
 
             QuantizedCodes,
             ProductQuantizationCodebook,
@@ -359,6 +366,12 @@ public:
 
         /// Name of substream for type from 'named_types'.
         String name_of_substream;
+
+        /// Physical naming version for `MapKey` and `MapKeyExists`. Version 1 concatenates
+        /// the escaped key with nested value substreams and can lose the key boundary.
+        /// Version 2 prefixes the key with its byte length. Logical subcolumn names are
+        /// unchanged.
+        UInt8 map_key_stream_name_version = 2;
 
         /// Path name for Object type elements.
         String object_path_name;
@@ -458,6 +471,10 @@ public:
         using CheckStreamExistsCallback = std::function<bool(const SubstreamPath &)>;
         CheckStreamExistsCallback check_stream_exists_callback;
 
+        /// Keys of a `with_key_columns` Map in the current data part. Without a deserialize state
+        /// or a sample column, the per-key streams of the part can be enumerated only from it.
+        const MapKeyManifest * map_key_columns_manifest = nullptr;
+
         /// Current level of array. Needed to differentiate stream names of nested array offsets.
         size_t array_level = 0;
     };
@@ -554,12 +571,29 @@ public:
         /// Type of MergeTree data part we serialize data from if any.
         /// Some serializations may differ from type part for more optimal deserialization.
         MergeTreeDataPartType data_part_type = MergeTreeDataPartType::Unknown;
+
+        /// When false, granule-scoped streams (e.g. Map `key_presence`) must
+        /// buffer until a later call or `serializeBinaryBulkStateSuffix`.
+        /// Wide MergeTree may append several blocks into one granule.
+        bool granule_is_complete = true;
+
+        /// For `with_key_columns` Map on Compact parts: the frozen, part-wide key set, in the
+        /// order the writer lays keys out. When non-null the serialization runs in "frozen" mode:
+        /// it registers exactly these keys in the prefix, writes no template streams (rows missing
+        /// a key are serialized as default/absent in place). The part writer records the key list
+        /// in `<column>.key_columns.txt`, not in a data stream. Null selects the Wide path, which
+        /// discovers keys block by block and writes the rows a late key is absent from when it appears.
+        const std::vector<Field> * map_key_columns_frozen_keys = nullptr;
     };
 
     struct DeserializeBinaryBulkSettings
     {
         InputStreamGetter getter;
         SubstreamPath path;
+
+        /// Key list of a `with_key_columns` Map, loaded from `<column>.key_columns.txt` when the
+        /// part is opened. Prefix deserialization copies it; it does not open a data stream.
+        const MapKeyManifest * map_key_columns_manifest = nullptr;
 
         /// True if continue reading from previous positions in file. False if made fseek to the start of new granule.
         bool continuous_reading = true;

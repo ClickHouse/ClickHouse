@@ -181,6 +181,8 @@ const std::set<SubstreamType> ISerialization::Substream::named_types
     ObjectDistinctPaths,
     ObjectSubObject,
     ObjectCombinedPath,
+    MapKey,
+    MapKeyExists,
 };
 
 String ISerialization::Substream::toString() const
@@ -342,6 +344,28 @@ void appendNameForSubstreamPath(
             append(".repl");
         else if (it->type == Substream::ReplicatedIndexes)
             append(".repl.idx");
+        else if (it->type == Substream::MapKeysInfo)
+            append(".keys_info");
+        else if (it->type == Substream::MapKey)
+        {
+            if (escape_for_file_name && it->map_key_stream_name_version >= 2)
+                append(".key_" + toString(it->name_of_substream.size()) + "_" + escapeForFileName(it->name_of_substream));
+            else
+                append(".key_" + (escape_for_file_name ? escapeForFileName(it->name_of_substream) : it->name_of_substream));
+        }
+        else if (it->type == Substream::MapKeyExists)
+        {
+            /// Version 2 includes the serialized key length, preserving the
+            /// boundary between the key and nested value substreams.
+            if (escape_for_file_name && it->map_key_stream_name_version >= 2)
+                append(".exists_" + toString(it->name_of_substream.size()) + "_" + escapeForFileName(it->name_of_substream));
+            else
+                append(".exists_" + (escape_for_file_name ? escapeForFileName(it->name_of_substream) : it->name_of_substream));
+        }
+        else if (it->type == Substream::MapKeyValueTemplate)
+            append(".key_template");
+        else if (it->type == Substream::MapKeyExistsTemplate)
+            append(".exists_template");
         else if (Substream::named_types.contains(it->type))
         {
             /// For compatibility reasons, we use %2E (escaped dot) instead of dot.
@@ -791,7 +815,9 @@ bool ISerialization::hasSubcolumnForPath(const SubstreamPath & path, size_t pref
             || path[last_elem].type == Substream::VariantElement
             || path[last_elem].type == Substream::VariantElementNullMap
             || path[last_elem].type == Substream::QuantizedCodes
-            || path[last_elem].type == Substream::ProductQuantizationCodebook;
+            || path[last_elem].type == Substream::ProductQuantizationCodebook
+            || path[last_elem].type == Substream::MapKey
+            || path[last_elem].type == Substream::MapKeyExists;
 }
 
 bool ISerialization::isEphemeralSubcolumn(const DB::ISerialization::SubstreamPath & path, size_t prefix_len)
@@ -824,7 +850,9 @@ bool ISerialization::isDynamicSubcolumn(const DB::ISerialization::SubstreamPath 
     for (size_t i = 0; i != prefix_len; ++i)
     {
         if (path[i].type == SubstreamType::DynamicData || path[i].type == SubstreamType::DynamicStructure
-            || path[i].type == SubstreamType::ObjectData || path[i].type == SubstreamType::ObjectStructure)
+            || path[i].type == SubstreamType::ObjectData || path[i].type == SubstreamType::ObjectStructure
+            || path[i].type == SubstreamType::MapKey || path[i].type == SubstreamType::MapKeyExists
+            || path[i].type == SubstreamType::MapKeyValueTemplate || path[i].type == SubstreamType::MapKeyExistsTemplate)
             return true;
     }
 
@@ -845,7 +873,9 @@ bool ISerialization::isMetadataStream(const DB::ISerialization::SubstreamPath & 
         return false;
 
     return path[path.size() - 1].type == SubstreamType::DynamicStructure || path[path.size() - 1].type == SubstreamType::ObjectStructure
-        || path[path.size() - 1].type == SubstreamType::MapBucketsInfo || path[path.size() - 1].type == SubstreamType::ObjectTypedSharedDataHeader;
+        || path[path.size() - 1].type == SubstreamType::MapBucketsInfo
+        || path[path.size() - 1].type == SubstreamType::MapKeysInfo
+        || path[path.size() - 1].type == SubstreamType::ObjectTypedSharedDataHeader;
 }
 
 bool ISerialization::isSingleValuePerPartStream(const DB::ISerialization::SubstreamPath & path)
@@ -854,7 +884,8 @@ bool ISerialization::isSingleValuePerPartStream(const DB::ISerialization::Substr
     /// only when the column itself is enumerated; when the subcolumn is read on its own, the path of its stream
     /// is `ProductQuantizationCodebook` followed by the `Regular` substream of the underlying `FixedString`.
     for (const auto & elem : path)
-        if (elem.type == SubstreamType::ProductQuantizationCodebook)
+        if (elem.type == SubstreamType::ProductQuantizationCodebook
+            || elem.type == SubstreamType::MapKeysInfo)
             return true;
 
     return false;
@@ -872,6 +903,7 @@ bool ISerialization::hasPrefix(const DB::ISerialization::SubstreamPath & path, b
         case SubstreamType::DeprecatedObjectStructure: [[fallthrough]];
         case SubstreamType::DictionaryKeysPrefix: [[fallthrough]];
         case SubstreamType::VariantDiscriminatorsPrefix: [[fallthrough]];
+        case SubstreamType::MapKeysInfo:
         case SubstreamType::ObjectTypedSharedDataHeader:
             return true;
         case SubstreamType::DictionaryKeys: [[fallthrough]];

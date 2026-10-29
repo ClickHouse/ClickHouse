@@ -63,6 +63,7 @@ namespace Setting
 
 namespace MergeTreeSetting
 {
+    extern const MergeTreeSettingsMergeTreeMapSerializationVersion map_serialization_version_for_zero_level_parts;
     extern const MergeTreeSettingsMilliseconds sleep_before_commit_local_part_in_replicated_table_ms;
     extern const MergeTreeSettingsUInt64 replicated_deduplication_window;
 }
@@ -307,6 +308,8 @@ void ReplicatedMergeTreeSink::consume(Chunk & chunk)
         storage.delayInsertOrThrowIfNeeded(&storage.partial_shutdown_event, context, false);
 
     auto block = getHeader().cloneWithColumns(chunk.getColumns());
+    MergeTreeDataWriter::canonicalizeMapKeyColumns(
+        block, (*storage.getSettings())[MergeTreeSetting::map_serialization_version_for_zero_level_parts]);
 
     const auto & settings = context->getSettingsRef();
 

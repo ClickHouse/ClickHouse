@@ -3,6 +3,8 @@
 
 #include <Columns/ColumnArray.h>
 #include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeObject.h>
+#include <DataTypes/Serializations/SerializationMapWithKeyColumns.h>
 #include <DataTypes/NestedUtils.h>
 #include <DataTypes/DataTypeNested.h>
 #include <Interpreters/inplaceBlockConversions.h>
@@ -95,6 +97,20 @@ MergeTreeReaderWide::MergeTreeReaderWide(
 
     try
     {
+        part_uses_map_key_columns
+            = data_part_info_for_read->getSerializationInfos().getSettings().map_serialization_version
+            == MergeTreeMapSerializationVersion::WITH_KEY_COLUMNS;
+        std::unordered_map<String, size_t> columns_per_storage_name;
+        for (const auto & column : columns_to_read)
+            ++columns_per_storage_name[column.getNameInStorage()];
+        read_without_substreams_cache.resize(columns_to_read.size());
+        for (size_t pos = 0; pos < columns_to_read.size(); ++pos)
+        {
+            read_without_substreams_cache[pos] = part_uses_map_key_columns
+                && columns_per_storage_name[columns_to_read[pos].getNameInStorage()] == 1
+                && SerializationMapWithKeyColumns::hasMap(*columns_to_read[pos].getTypeInStorage());
+        }
+
         for (size_t i = 0; i < columns_to_read.size(); ++i)
         {
             /// Column was dropped by a pending mutation or invalidated. Don't read stale data;
@@ -324,6 +340,14 @@ size_t MergeTreeReaderWide::readSegmentFromDisk(
 
         const auto & column_to_read = columns_to_read[pos];
 
+        if (part_uses_map_key_columns
+            && SerializationMapWithKeyColumns::hasMap(*column_to_read.getTypeInStorage())
+            && !data_part_info_for_read->getColumnsDescription().hasPhysical(column_to_read.getNameInStorage()))
+        {
+            res_columns[pos] = nullptr;
+            continue;
+        }
+
         /// The column may already be present (we append the values to the end) or empty; either way it is
         /// uniquely owned here, so we read into it directly without cloning.
         auto & column = takeColumnForAppending(res_columns, shared_columns, pos);
@@ -347,7 +371,8 @@ size_t MergeTreeReaderWide::readSegmentFromDisk(
                 *continue_reading,
                 max_rows_to_read,
                 cache,
-                deserialize_states_cache);
+                deserialize_states_cache,
+                !read_without_substreams_cache[pos]);
 
             /// For elements of Nested, column_size_before_reading may be greater than column size
             ///  if offsets are not empty and were already read, but elements are empty.
@@ -981,7 +1006,20 @@ void MergeTreeReaderWide::addStreams(
         has_any_stream = true;
     };
 
-    serialization->enumerateStreams(callback);
+    /// Let serializations whose subcolumn streams may or may not exist in a given
+    /// part (e.g. a per-key `with_key_columns` Map key that is absent from this
+    /// part's manifest) enumerate only the streams that actually exist, so the
+    /// column is not wrongly marked partially-read and refilled with defaults.
+    ISerialization::EnumerateStreamsSettings enumerate_settings;
+    enumerate_settings.check_stream_exists_callback = [&](const ISerialization::SubstreamPath & substream_path) -> bool
+    {
+        return IMergeTreeDataPart::getStreamNameForColumn(
+            name_and_type, substream_path, ".bin", data_part_info_for_read->getChecksums(), storage_settings).has_value();
+    };
+    if (const auto part = data_part_info_for_read->getDataPart())
+        enumerate_settings.map_key_columns_manifest = part->tryGetMapKeyColumnsManifest(name_and_type.getNameInStorage());
+    auto enumerate_data = ISerialization::SubstreamData(serialization).withType(name_and_type.type);
+    serialization->enumerateStreams(enumerate_settings, callback, enumerate_data);
 
     if (has_any_stream && !has_all_streams)
         partially_read_columns.insert(name_and_type.name);
@@ -1258,6 +1296,8 @@ void MergeTreeReaderWide::deserializePrefix(
     if (!deserialize_state_map.contains(name))
     {
         ISerialization::DeserializeBinaryBulkSettings deserialize_settings;
+        if (const auto part = data_part_info_for_read->getDataPart())
+            deserialize_settings.map_key_columns_manifest = part->tryGetMapKeyColumnsManifest(name_and_type.getNameInStorage());
         deserialize_settings.read_statistics = true;
         deserialize_settings.prefixes_prefetch_callback = prefixes_prefetch_callback;
         deserialize_settings.data_part_type = MergeTreeDataPartType::Wide;
@@ -1484,7 +1524,8 @@ void MergeTreeReaderWide::readData(
     bool continue_reading,
     size_t max_rows_to_read,
     ISerialization::SubstreamsCache & cache,
-    ISerialization::SubstreamsDeserializeStatesCache & deserialize_states_cache)
+    ISerialization::SubstreamsDeserializeStatesCache & deserialize_states_cache,
+    bool use_substreams_cache)
 {
     ISerialization::DeserializeBinaryBulkSettings deserialize_settings;
     deserialize_settings.data_part_type = MergeTreeDataPartType::Wide;
@@ -1561,7 +1602,7 @@ void MergeTreeReaderWide::readData(
     auto & deserialize_state = deserialize_binary_bulk_state_map[name_and_type.name];
 
     serialization->deserializeBinaryBulkWithMultipleStreams(
-        column, max_rows_to_read, deserialize_settings, deserialize_state, &cache);
+        column, max_rows_to_read, deserialize_settings, deserialize_state, use_substreams_cache ? &cache : nullptr);
 }
 
 std::unordered_map<String, std::vector<StreamWithSizeHint>> MergeTreeReaderWide::getAllColumnsSubstreams()

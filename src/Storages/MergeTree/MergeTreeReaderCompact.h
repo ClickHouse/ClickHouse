@@ -14,6 +14,8 @@ using DataPartCompactPtr = std::shared_ptr<const MergeTreeDataPartCompact>;
 class IMergeTreeDataPart;
 using DataPartPtr = std::shared_ptr<const IMergeTreeDataPart>;
 
+class CompressedReadBufferFromFile;
+
 /// Base class of readers for compact parts.
 class MergeTreeReaderCompact : public IMergeTreeReader
 {

@@ -84,6 +84,10 @@ public:
         ContextPtr context,
         IColumn::Selector * out_selector = nullptr);
 
+    /// Convert Map columns to the exact row representation persisted by
+    /// `with_key_columns` before partition/sorting keys and projections are calculated.
+    static void canonicalizeMapKeyColumns(Block & block, MergeTreeMapSerializationVersion map_serialization_version);
+
     /// This structure contains not completely written temporary part.
     /// Some writes may happen asynchronously, e.g. for blob storages.
     /// You should call finalize() to wait until all data is written.

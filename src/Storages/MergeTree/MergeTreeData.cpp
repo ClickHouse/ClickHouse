@@ -277,6 +277,7 @@ namespace DB
 namespace Setting
 {
     extern const SettingsBool allow_drop_detached;
+    extern const SettingsBool allow_experimental_map_key_columns;
     extern const SettingsBool enable_full_text_index;
     extern const SettingsBool allow_non_metadata_alters;
     extern const SettingsBool allow_suspicious_indexes;
@@ -407,6 +408,8 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsMergeTreeNullableSerializationVersion nullable_serialization_version;
     extern const MergeTreeSettingsMergeTreeMapSerializationVersion map_serialization_version;
     extern const MergeTreeSettingsMergeTreeMapSerializationVersion map_serialization_version_for_zero_level_parts;
+    extern const MergeTreeSettingsBool write_marks_for_substreams_in_compact_parts;
+    extern const MergeTreeSettingsUInt64 max_bytes_for_compact_map_key_columns;
     extern const MergeTreeSettingsMergeTreeObjectSerializationVersion object_serialization_version;
     extern const MergeTreeSettingsMergeTreeObjectSharedDataSerializationVersion object_shared_data_serialization_version;
     extern const MergeTreeSettingsMergeTreeObjectSharedDataSerializationVersion object_shared_data_serialization_version_for_zero_level_parts;
@@ -1762,6 +1765,19 @@ void MergeTreeData::checkProperties(
     /// lets us detect an `ALTER` that flips a gate from enabled to disabled.
     const MergeTreeSettings & live_settings = *getSettings();
 
+    if (!attach)
+    {
+        const bool zero_level_uses_with_key_columns
+            = effective_settings[MergeTreeSetting::map_serialization_version_for_zero_level_parts]
+            == MergeTreeMapSerializationVersion::WITH_KEY_COLUMNS;
+        if (zero_level_uses_with_key_columns && !effective_settings[MergeTreeSetting::write_marks_for_substreams_in_compact_parts])
+        {
+            throw Exception(
+                ErrorCodes::INVALID_SETTING_VALUE,
+                "Map serialization version 'with_key_columns' requires write_marks_for_substreams_in_compact_parts = 1");
+        }
+    }
+
     for (const auto & projection : new_metadata.projections)
     {
         /// `allow_part_offset_column_in_projections` and `allow_commit_order_projection` are
@@ -1881,6 +1897,45 @@ void MergeTreeData::checkProperties(
 
     /// On CREATE, `old_metadata` and `new_metadata` are the same object; on ALTER they differ.
     const bool is_alter = &old_metadata != &new_metadata;
+
+    const bool new_uses_key_columns
+        = effective_settings[MergeTreeSetting::map_serialization_version] == MergeTreeMapSerializationVersion::WITH_KEY_COLUMNS;
+    const bool zero_level_uses_key_columns
+        = effective_settings[MergeTreeSetting::map_serialization_version_for_zero_level_parts]
+        == MergeTreeMapSerializationVersion::WITH_KEY_COLUMNS;
+    const bool live_uses_key_columns
+        = live_settings[MergeTreeSetting::map_serialization_version] == MergeTreeMapSerializationVersion::WITH_KEY_COLUMNS;
+
+    if (!attach && !new_uses_key_columns && zero_level_uses_key_columns)
+    {
+        throw Exception(
+            ErrorCodes::SUPPORT_IS_DISABLED,
+            "map_serialization_version_for_zero_level_parts = 'with_key_columns' requires "
+            "map_serialization_version = 'with_key_columns'");
+    }
+
+    if (new_uses_key_columns && merging_params.mode != MergingParams::Ordinary)
+    {
+        throw Exception(
+            ErrorCodes::SUPPORT_IS_DISABLED,
+            "Map serialization version 'with_key_columns' is supported only for MergeTree and ReplicatedMergeTree");
+    }
+
+    if (!attach && is_alter && new_uses_key_columns && !live_uses_key_columns
+        && !(local_context && local_context->getSettingsRef()[Setting::allow_experimental_map_key_columns]))
+    {
+        throw Exception(
+            ErrorCodes::SUPPORT_IS_DISABLED,
+            "Map serialization version 'with_key_columns' is experimental. "
+            "Set the session setting `allow_experimental_map_key_columns = 1` to enable it");
+    }
+
+    if (!attach && is_alter && new_uses_key_columns != live_uses_key_columns && getActivePartsCount() > 0)
+    {
+        throw Exception(
+            ErrorCodes::SUPPORT_IS_DISABLED,
+            "Cannot change map_serialization_version to or from 'with_key_columns' while the table has data parts");
+    }
 
     for (const auto & col : new_metadata.columns)
     {
@@ -7474,6 +7529,25 @@ MergeTreeDataPartFormat MergeTreeData::choosePartFormat(
     auto part_type = PartType::Wide;
     if (satisfies((*settings)[MergeTreeSetting::min_bytes_for_wide_part], (*settings)[MergeTreeSetting::min_rows_for_wide_part], (*settings)[MergeTreeSetting::min_level_for_wide_part]))
         part_type = PartType::Compact;
+
+    /// `with_key_columns` freezes the key set from the first written block. Compact
+    /// is only safe for small zero-level inserts; merge output is always Wide.
+    if (part_type == PartType::Compact)
+    {
+        const bool zero_level_with_key_columns
+            = (*settings)[MergeTreeSetting::map_serialization_version_for_zero_level_parts]
+                == MergeTreeMapSerializationVersion::WITH_KEY_COLUMNS;
+        const bool merged_with_key_columns
+            = (*settings)[MergeTreeSetting::map_serialization_version] == MergeTreeMapSerializationVersion::WITH_KEY_COLUMNS;
+        const bool writing_with_key_columns
+            = (part_level == 0) ? zero_level_with_key_columns : (zero_level_with_key_columns || merged_with_key_columns);
+        if (writing_with_key_columns)
+        {
+            const UInt64 max_bytes_for_compact = (*settings)[MergeTreeSetting::max_bytes_for_compact_map_key_columns];
+            if (part_level != 0 || max_bytes_for_compact == 0 || bytes_uncompressed >= max_bytes_for_compact)
+                part_type = PartType::Wide;
+        }
+    }
 
     /// TODO(unique-key): support Packed storage; SSTIndexWriter needs Full parts.
     auto storage_type = PartStorageType::Full;

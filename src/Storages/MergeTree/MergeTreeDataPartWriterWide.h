@@ -2,6 +2,8 @@
 
 #include <Storages/MergeTree/MergeTreeDataPartWriterOnDisk.h>
 #include <Formats/MarkInCompressedFile.h>
+#include <Core/Field.h>
+#include <optional>
 
 
 namespace DB
@@ -94,11 +96,52 @@ private:
 
     void addStreams(const NameAndTypePair & name_and_type) override;
 
-    /// The stream count is derived from the substreams inventory and read by addStreams(), so the
-    /// three initializations must happen in this order.
+    /// Create one stream for a resolved substream path. Split out of addStreams so that
+    /// late per-key Map streams can be opened mid-part when a key first appears in a later block.
+    void addStreamForPath(
+        const NameAndTypePair & name_and_type,
+        const ISerialization::SubstreamPath & substream_path);
+
+    /// For a `with_key_columns` Map: discover keys of `column` not yet registered in `state`,
+    /// create their `.key_<name>`/`.exists_<name>` streams (writing the rows they are absent from
+    /// when the part already has written history), register them, and refresh the sample column.
+    /// A no-op for any other serialization.
+    void ensureMapKeyColumnsStreams(
+        const NameAndTypePair & name_and_type,
+        const IColumn & column,
+        ISerialization::SerializeBinaryBulkStatePtr & state);
+
+    /// Write the granules and marks already written for the column into the new streams of
+    /// `keys`, with every row absent.
+    void writeMapKeyColumnsHistory(
+        const NameAndTypePair & name_and_type,
+        const SerializationMapWithKeyColumns & per_key,
+        const std::vector<Field> & keys,
+        ISerialization::SerializeBinaryBulkStatePtr & state);
+
+    void updateMapKeyColumnsSampleColumn(const NameAndTypePair & name_and_type, const std::vector<Field> & keys);
+
+    /// Walk the streams this writer has created for `name_and_type`, resolving names. For a
+    /// per-key Map this reads the key set from the serialize state (which the generic
+    /// `enumerateStreams` cannot see) and optionally includes the two template streams.
+    void enumerateWrittenStreams(
+        const NameAndTypePair & name_and_type,
+        const ISerialization::StreamCallback & callback,
+        bool with_template_streams) const;
+
+    bool isMapKeyColumnsTemplateStreamName(const String & stream_name) const;
+
+    /// Ordinary columns are counted from `columns_substreams`. A `with_key_columns` Map is counted
+    /// from the template streams `addStreams` opens; `ensureMapKeyColumnsStreams` raises the count
+    /// when per-key streams are opened. `addStreamForPath` reads the count, so it is set first.
     void initStreamsAndSubstreamsIfNeeded();
 
     void initStreamsToOpenCount();
+
+    /// Stream name `addStreamForPath` would insert for this path, when it would insert one.
+    std::optional<String> newStreamNameForPath(
+        const NameAndTypePair & name_and_type,
+        const ISerialization::SubstreamPath & substream_path) const;
 
     /// Method for self check (used in debug-build only). Checks that written
     /// data and corresponding marks are consistent. Otherwise throws logical
@@ -140,6 +183,9 @@ private:
     using ColumnStreams = std::map<String, StreamPtr>;
     ColumnStreams column_streams;
 
+    /// Plain `<column>.key_columns.txt` files, kept until finish so they are synced with the data files.
+    std::vector<std::unique_ptr<WriteBufferFromFileBase>> key_columns_files;
+
     /// Some long column names may be replaced to hashes.
     /// Below are mapping from original stream name to actual
     /// stream name (probably hash of the stream) and vice versa.
@@ -163,6 +209,16 @@ private:
     std::optional<size_t> streams_to_open_in_part;
 
     String already_written_stream_holder;
+
+    /// Names of the two `with_key_columns` Map template streams (`.key_template`,
+    /// `.exists_template`). They are removed before checksums unless the column saw no key.
+    NameSet per_key_template_stream_names;
+    /// Template streams of Map columns that never saw a key. They stay in the part so
+    /// `columns_substreams.txt` names a file that exists. Columns that did see keys drop theirs.
+    NameSet kept_map_key_columns_template_streams;
+    /// Per per-key Map column: whether any granule has been written yet. A late key that appears
+    /// after this is true gets the rows written so far as absent rows (`writeMapKeyColumnsHistory`).
+    std::unordered_map<String, bool> map_key_columns_has_history;
 };
 
 }

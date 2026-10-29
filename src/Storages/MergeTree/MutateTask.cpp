@@ -11,6 +11,7 @@
 #include <Parsers/ASTSubquery.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
 #include <Storages/MergeTree/MergeTreeDataPartTTLInfo.h>
+#include <Storages/MergeTree/MapWithKeyColumnsMerge.h>
 #include <Storages/MergeTree/MutateTask.h>
 
 #include <Columns/ColumnsNumber.h>
@@ -26,6 +27,7 @@
 #include <IO/HashingWriteBuffer.h>
 #include <IO/ReadHelpers.h>
 #include <Interpreters/Context.h>
+#include <Processors/ISimpleTransform.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/MergeTreeTransaction.h>
 #include <Interpreters/MergeTreeTransaction/VersionMetadata.h>
@@ -312,6 +314,41 @@ static bool hasStableRowMaskKeyTypes(
         || type == TypeIndex::UInt64;
     const auto key_type = key->type->getTypeId();
     return valid_prefix && (first.key_from_uint128_array_join ? key_type == TypeIndex::UInt128 : key_type == TypeIndex::String);
+}
+
+class CanonicalizeMapKeyColumnsTransform final : public ISimpleTransform
+{
+public:
+    CanonicalizeMapKeyColumnsTransform(SharedHeader header_, MergeTreeMapSerializationVersion version_)
+        : ISimpleTransform(header_, header_, false)
+        , version(version_)
+    {
+    }
+
+    String getName() const override { return "CanonicalizeMapKeyColumnsTransform"; }
+
+protected:
+    void transform(Chunk & chunk) override
+    {
+        auto block = getInputPort().getHeader().cloneWithColumns(chunk.detachColumns());
+        MergeTreeDataWriter::canonicalizeMapKeyColumns(block, version);
+        chunk.setColumns(block.getColumns(), block.rows());
+    }
+
+private:
+    MergeTreeMapSerializationVersion version;
+};
+
+static void addCanonicalizeMapKeyColumnsTransform(QueryPipelineBuilder & builder, const MergeTreeData & data)
+{
+    const auto version = (*data.getSettings())[MergeTreeSetting::map_serialization_version];
+    if (version != MergeTreeMapSerializationVersion::WITH_KEY_COLUMNS)
+        return;
+
+    builder.addSimpleTransform([version](const SharedHeader & header)
+    {
+        return std::make_shared<CanonicalizeMapKeyColumnsTransform>(header, version);
+    });
 }
 
 static MutationCommands coalesceSingletonRowMaskUpdates(
@@ -1598,6 +1635,19 @@ static NameSet collectFilesToSkip(
 {
     NameSet files_to_skip = source_part->getFileNamesWithoutChecksums();
 
+    /// A rewritten `with_key_columns` Map gets a new `<column>.key_columns.txt` from the writer.
+    /// Skip the source file so the hardlink is not overwritten in place.
+    /// The new part's header can name columns the source part does not store
+    /// (`_row_exists`, `_block_number`, a name produced by `RENAME`). No serialization
+    /// means there is no `<column>.key_columns.txt` to skip.
+    for (const auto & column : updated_header.getNamesAndTypesList())
+    {
+        if (!partUsesMapWithKeyColumns(*source_part, column.name))
+            continue;
+        if (auto file_name = findMapKeyColumnsFileName(column.name, source_part->checksums))
+            files_to_skip.insert(*file_name);
+    }
+
     /// The new part writes its own version metadata, and the source's is rewritten concurrently
     /// (`txn_version.txt.tmp` is renamed over `txn_version.txt`), so neither file is carried over.
     files_to_skip.insert(VersionMetadata::TXN_VERSION_METADATA_FILE_NAME);
@@ -1871,6 +1921,32 @@ static NameToNameVector collectFilesForRenames(
     /// Remove old data
     for (const auto & command : commands_for_renames)
     {
+        if (command.type == MutationCommand::Type::DROP_COLUMN || command.type == MutationCommand::Type::RENAME_COLUMN)
+        {
+            /// An older part may not store a column added and then dropped. No serialization
+            /// means there is no `<column>.key_columns.txt` to drop or rename. The source name
+            /// comes from checksums so a later change of the filename-hashing settings still matches.
+            if (partUsesMapWithKeyColumns(*source_part, command.column_name))
+            {
+                if (auto file_from = findMapKeyColumnsFileName(command.column_name, source_part->checksums))
+                {
+                    if (command.type == MutationCommand::Type::DROP_COLUMN
+                        || updated_columns_in_patches.contains(command.rename_to))
+                    {
+                        add_rename(*file_from, "");
+                    }
+                    else
+                    {
+                        const auto & storage_settings = *source_part->storage.getSettings();
+                        const auto file_to = getMapKeyColumnsFileName(
+                            command.rename_to, storage_settings, &new_part->getDataPartStorage());
+                        if (*file_from != file_to)
+                            add_rename(*file_from, file_to);
+                    }
+                }
+            }
+        }
+
         if (command.type == MutationCommand::Type::DROP_INDEX)
         {
             /// The index type is gone from metadata by now, so enumerate every suffix any skip
@@ -2502,6 +2578,12 @@ static void finalizeMutatedPart(
         reallocateByCopy(new_data_part->ttl_infos);
         if (new_data_part->index_granularity)
             new_data_part->index_granularity = new_data_part->index_granularity->clone();
+    }
+
+    /// Same as `MergedBlockOutputStream::finalizePartAsync`: the mutated part is queried in memory.
+    {
+        ScopedJemallocThreadArena mergetree_arena_scope(JemallocMergeTreeArena::getArenaIndex());
+        new_data_part->loadMapKeyColumnsManifests();
     }
 }
 
@@ -3523,6 +3605,8 @@ private:
         if (!subqueries.empty())
             builder = addCreatingSetsTransform(std::move(builder), std::move(subqueries), ctx->context);
 
+        MutationHelpers::addCanonicalizeMapKeyColumnsTransform(*builder, *ctx->data);
+
         /// The primary key and the skip indices are calculated after the TTL transforms, because TTL rewrites the data:
         /// `TTL ... GROUP BY ... SET` assigns new values to the columns of the aggregated rows, and a column TTL resets
         /// the expired values to the defaults. Calculating the index expressions before that would write indices
@@ -3974,6 +4058,7 @@ private:
             if (!subqueries.empty())
                 builder = addCreatingSetsTransform(std::move(builder), std::move(subqueries), ctx->context);
 
+            MutationHelpers::addCanonicalizeMapKeyColumnsTransform(*builder, *ctx->data);
             addIndicesRecalculationTransform(*builder, ctx);
 
             /// Some columns may be present in the interpreter output only for
