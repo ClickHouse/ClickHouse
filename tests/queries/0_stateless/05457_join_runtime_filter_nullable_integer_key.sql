@@ -17,6 +17,7 @@ DROP TABLE IF EXISTS build_empty;
 
 CREATE TABLE probe (k Nullable(Int64), v UInt64) ENGINE = MergeTree ORDER BY v;
 CREATE TABLE build (k Nullable(Int64)) ENGINE = MergeTree ORDER BY tuple();
+SYSTEM STOP MERGES build;
 CREATE TABLE build_null (k Nullable(Int64)) ENGINE = MergeTree ORDER BY tuple();
 CREATE TABLE build_empty (k Nullable(Int64)) ENGINE = MergeTree ORDER BY tuple();
 
@@ -46,15 +47,15 @@ SELECT 'empty inner', count(), sum(v) FROM probe AS p INNER JOIN build_empty AS 
 SELECT 'empty anti', count(), sum(v) FROM probe AS p LEFT ANTI JOIN build_empty AS b ON p.k = b.k;
 SELECT 'empty anti', count(), sum(v) FROM probe AS p LEFT ANTI JOIN build_empty AS b ON p.k = b.k SETTINGS enable_join_runtime_filters = 0;
 
-SELECT 'UInt8 inner', count(), sum(v) FROM (SELECT CAST(k % 200, 'Nullable(UInt8)') AS k, v FROM probe) AS p INNER JOIN (SELECT CAST(k % 200, 'Nullable(UInt8)') AS k FROM build) AS b ON p.k = b.k;
+SELECT 'UInt8 inner', count(), sum(v) FROM (SELECT CAST(k % 200, 'Nullable(UInt8)') AS k, v FROM probe) AS p INNER JOIN (SELECT CAST(k % 200, 'Nullable(UInt8)') AS k FROM build) AS b ON p.k = b.k SETTINGS log_comment = 'UInt8 inner';
 SELECT 'UInt8 inner', count(), sum(v) FROM (SELECT CAST(k % 200, 'Nullable(UInt8)') AS k, v FROM probe) AS p INNER JOIN (SELECT CAST(k % 200, 'Nullable(UInt8)') AS k FROM build) AS b ON p.k = b.k SETTINGS enable_join_runtime_filters = 0;
 SELECT 'UInt8 anti', count(), sum(v) FROM (SELECT CAST(k % 200, 'Nullable(UInt8)') AS k, v FROM probe) AS p LEFT ANTI JOIN (SELECT CAST(k % 200, 'Nullable(UInt8)') AS k FROM build) AS b ON p.k = b.k;
 SELECT 'UInt8 anti', count(), sum(v) FROM (SELECT CAST(k % 200, 'Nullable(UInt8)') AS k, v FROM probe) AS p LEFT ANTI JOIN (SELECT CAST(k % 200, 'Nullable(UInt8)') AS k FROM build) AS b ON p.k = b.k SETTINGS enable_join_runtime_filters = 0;
-SELECT 'UInt128 inner', count(), sum(v) FROM (SELECT CAST(k, 'Nullable(UInt128)') AS k, v FROM probe) AS p INNER JOIN (SELECT CAST(k, 'Nullable(UInt128)') AS k FROM build) AS b ON p.k = b.k;
+SELECT 'UInt128 inner', count(), sum(v) FROM (SELECT CAST(k, 'Nullable(UInt128)') AS k, v FROM probe) AS p INNER JOIN (SELECT CAST(k, 'Nullable(UInt128)') AS k FROM build) AS b ON p.k = b.k SETTINGS log_comment = 'UInt128 inner';
 SELECT 'UInt128 inner', count(), sum(v) FROM (SELECT CAST(k, 'Nullable(UInt128)') AS k, v FROM probe) AS p INNER JOIN (SELECT CAST(k, 'Nullable(UInt128)') AS k FROM build) AS b ON p.k = b.k SETTINGS enable_join_runtime_filters = 0;
 SELECT 'UInt128 anti', count(), sum(v) FROM (SELECT CAST(k, 'Nullable(UInt128)') AS k, v FROM probe) AS p LEFT ANTI JOIN (SELECT CAST(k, 'Nullable(UInt128)') AS k FROM build) AS b ON p.k = b.k;
 SELECT 'UInt128 anti', count(), sum(v) FROM (SELECT CAST(k, 'Nullable(UInt128)') AS k, v FROM probe) AS p LEFT ANTI JOIN (SELECT CAST(k, 'Nullable(UInt128)') AS k FROM build) AS b ON p.k = b.k SETTINGS enable_join_runtime_filters = 0;
-SELECT 'Date inner', count(), sum(v) FROM (SELECT CAST(k, 'Nullable(Date)') AS k, v FROM probe) AS p INNER JOIN (SELECT CAST(k, 'Nullable(Date)') AS k FROM build) AS b ON p.k = b.k;
+SELECT 'Date inner', count(), sum(v) FROM (SELECT CAST(k, 'Nullable(Date)') AS k, v FROM probe) AS p INNER JOIN (SELECT CAST(k, 'Nullable(Date)') AS k FROM build) AS b ON p.k = b.k SETTINGS log_comment = 'Date inner';
 SELECT 'Date inner', count(), sum(v) FROM (SELECT CAST(k, 'Nullable(Date)') AS k, v FROM probe) AS p INNER JOIN (SELECT CAST(k, 'Nullable(Date)') AS k FROM build) AS b ON p.k = b.k SETTINGS enable_join_runtime_filters = 0;
 SELECT 'Date anti', count(), sum(v) FROM (SELECT CAST(k, 'Nullable(Date)') AS k, v FROM probe) AS p LEFT ANTI JOIN (SELECT CAST(k, 'Nullable(Date)') AS k FROM build) AS b ON p.k = b.k;
 SELECT 'Date anti', count(), sum(v) FROM (SELECT CAST(k, 'Nullable(Date)') AS k, v FROM probe) AS p LEFT ANTI JOIN (SELECT CAST(k, 'Nullable(Date)') AS k FROM build) AS b ON p.k = b.k SETTINGS enable_join_runtime_filters = 0;
@@ -66,6 +67,21 @@ SELECT 'inner filter rows',
     ProfileEvents['RuntimeFilterRowsPassed'] = (SELECT count() FROM probe WHERE k IN (SELECT k FROM build WHERE k IS NOT NULL))
 FROM system.query_log
 WHERE current_database = currentDatabase() AND log_comment = 'inner' AND type = 'QueryFinish';
+SELECT 'UInt8 inner filter rows',
+    ProfileEvents['RuntimeFilterRowsChecked'] > 0,
+    ProfileEvents['RuntimeFilterRowsPassed'] = (SELECT count() FROM probe WHERE CAST(k % 200, 'Nullable(UInt8)') IN (SELECT CAST(k % 200, 'Nullable(UInt8)') FROM build WHERE k IS NOT NULL))
+FROM system.query_log
+WHERE current_database = currentDatabase() AND log_comment = 'UInt8 inner' AND type = 'QueryFinish';
+SELECT 'UInt128 inner filter rows',
+    ProfileEvents['RuntimeFilterRowsChecked'] > 0,
+    ProfileEvents['RuntimeFilterRowsPassed'] = (SELECT count() FROM probe WHERE CAST(k, 'Nullable(UInt128)') IN (SELECT CAST(k, 'Nullable(UInt128)') FROM build WHERE k IS NOT NULL))
+FROM system.query_log
+WHERE current_database = currentDatabase() AND log_comment = 'UInt128 inner' AND type = 'QueryFinish';
+SELECT 'Date inner filter rows',
+    ProfileEvents['RuntimeFilterRowsChecked'] > 0,
+    ProfileEvents['RuntimeFilterRowsPassed'] = (SELECT count() FROM probe WHERE CAST(k, 'Nullable(Date)') IN (SELECT CAST(k, 'Nullable(Date)') FROM build WHERE k IS NOT NULL))
+FROM system.query_log
+WHERE current_database = currentDatabase() AND log_comment = 'Date inner' AND type = 'QueryFinish';
 
 DROP TABLE probe;
 DROP TABLE build;

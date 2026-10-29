@@ -29,3 +29,6 @@ Date inner	2600	130011300
 Date anti	97400	4869938700
 Date anti	97400	4869938700
 inner filter rows	1	1
+UInt8 inner filter rows	1	1
+UInt128 inner filter rows	1	1
+Date inner filter rows	1	1
