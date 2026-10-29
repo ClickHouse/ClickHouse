@@ -124,7 +124,6 @@ SelectivityEstimate computeSelectivity(
         /// since min(1/max(l,r)) = 1/max(all l's and r's).
         UInt64 max_ndv = 0;
         UInt64 max_ndv_upper_bound = 0;
-        UInt64 class_min_size = 0;
         bool has_left = false;
         bool has_right = false;
         for (const auto & equiv_member : *equiv_class)
@@ -132,13 +131,6 @@ SelectivityEstimate computeSelectivity(
             auto relation = equiv_member.getSourceRelations().getSingleBit();
             if (!relation)
                 continue;
-            if (query_graph.equivalence_class_ndv_bound)
-            {
-                UInt64 member_size
-                    = getColumnStats(query_graph, dp_table, equiv_member.getSourceRelations(), equiv_member.getColumnName()).upper_bound;
-                if (member_size > 0)
-                    class_min_size = class_min_size ? std::min(class_min_size, member_size) : member_size;
-            }
             if (left.test(*relation))
                 has_left = true;
             else if (right.test(*relation))
@@ -153,7 +145,7 @@ SelectivityEstimate computeSelectivity(
         {
             applyEquiKeyDistinctValues(estimate, max_ndv, max_ndv_upper_bound);
             if (query_graph.equivalence_class_ndv_bound)
-                applyEquivalenceClassBound(estimate, class_min_size);
+                applyEquivalenceClassBound(estimate, query_graph.getClassMinSize(member));
         }
     }
 

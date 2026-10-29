@@ -1,6 +1,7 @@
 #pragma once
 
 #include <concepts>
+#include <unordered_set>
 #include <vector>
 #include <Core/Joins.h>
 #include <Interpreters/JoinExpressionActions.h>
@@ -166,8 +167,19 @@ struct QueryGraph
 
     bool equivalence_class_ndv_bound = false;
 
+    /// For each member of `column_equivalences`: the smallest row count (or NDV) over the single-relation
+    /// members of its class, 0 when none is known.
+    std::unordered_map<JoinActionRef, UInt64> class_min_size;
+
+    /// Equi edges whose operands are not in one class of `column_equivalences`.
+    std::unordered_set<JoinActionRef> equi_edges_outside_classes;
+
     /// Build equivalence classes from existing edges. Call after all edges are populated.
     void buildColumnEquivalences();
+
+    /// Fill `class_min_size` and `equi_edges_outside_classes`. Call after `buildColumnEquivalences`.
+    void buildEquivalenceClassBounds();
+    UInt64 getClassMinSize(const JoinActionRef & member) const;
 
     /// Check if two relation sets are transitively connected through column equivalences
     /// (i.e., there exists at least one equivalence class with members in both sets).

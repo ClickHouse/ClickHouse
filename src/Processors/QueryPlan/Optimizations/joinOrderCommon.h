@@ -97,20 +97,16 @@ template <typename Connects>
 void countUnclassifiedEquiKeys(
     const QueryGraph & query_graph, SelectivityEstimate & estimate, const std::vector<JoinActionRef *> & edges, Connects && connects)
 {
-    if (estimate.reliable || estimate.connecting_keys != 1 || estimate.class_bound_value <= 0)
+    if (query_graph.equi_edges_outside_classes.empty() || estimate.reliable || estimate.connecting_keys != 1
+        || estimate.class_bound_value <= 0)
         return;
     for (const auto * edge : edges)
     {
-        auto [op, lhs, rhs] = edge->asBinaryPredicate();
-        if (op != JoinConditionOperator::Equals && op != JoinConditionOperator::NullSafeEquals)
-            continue;
-        if (!connects(*edge))
-            continue;
-        auto lhs_class = query_graph.column_equivalences.getClass(lhs.resolveAliases());
-        if (lhs_class && lhs_class == query_graph.column_equivalences.getClass(rhs.resolveAliases()))
-            continue;
-        ++estimate.connecting_keys;
-        return;
+        if (query_graph.equi_edges_outside_classes.contains(*edge) && connects(*edge))
+        {
+            ++estimate.connecting_keys;
+            return;
+        }
     }
 }
 

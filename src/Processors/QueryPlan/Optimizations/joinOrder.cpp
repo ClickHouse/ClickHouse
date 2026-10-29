@@ -1,5 +1,6 @@
 #include <Processors/QueryPlan/Optimizations/joinOrder.h>
 #include <Processors/QueryPlan/Optimizations/joinOrderAlgorithms.h>
+#include <Processors/QueryPlan/Optimizations/joinOrderCommon.h>
 #include <Processors/QueryPlan/Optimizations/RelationStatistics.h>
 #include <Common/CurrentThread.h>
 
@@ -158,6 +159,55 @@ void QueryGraph::buildColumnEquivalences()
             "Column equivalence: relation {} `{}` = relation {} `{}`",
             *lhs_rel, lhs_resolved->getColumnName(), *rhs_rel, rhs_resolved->getColumnName());
     }
+}
+
+void QueryGraph::buildEquivalenceClassBounds()
+{
+    const auto & member_to_class = column_equivalences.getMemberToClassMap();
+    if (member_to_class.empty())
+        return;
+
+    const PlanMemo no_joins;
+    std::unordered_map<const EquivalenceClasses<JoinActionRef>::Class *, UInt64> min_size_by_class;
+    for (const auto & [member, class_ptr] : member_to_class)
+    {
+        if (!class_ptr)
+            continue;
+        auto [it, inserted] = min_size_by_class.try_emplace(class_ptr.get(), 0);
+        if (inserted)
+        {
+            for (const auto & equiv_member : *class_ptr)
+            {
+                const auto & sources = equiv_member.getSourceRelations();
+                auto relation = sources.getSingleBit();
+                if (!relation || *relation >= relation_stats.size())
+                    continue;
+                UInt64 size = getColumnStats(*this, no_joins, sources, equiv_member.getColumnName()).upper_bound;
+                if (size > 0)
+                    it->second = it->second ? std::min(it->second, size) : size;
+            }
+        }
+        class_min_size[member] = it->second;
+    }
+
+    for (const auto & edge : edges)
+    {
+        if (!edge)
+            continue;
+        auto [op, lhs, rhs] = edge.asBinaryPredicate();
+        if (op != JoinConditionOperator::Equals && op != JoinConditionOperator::NullSafeEquals)
+            continue;
+        auto lhs_class = column_equivalences.getClass(lhs.resolveAliases());
+        if (lhs_class && lhs_class == column_equivalences.getClass(rhs.resolveAliases()))
+            continue;
+        equi_edges_outside_classes.insert(edge);
+    }
+}
+
+UInt64 QueryGraph::getClassMinSize(const JoinActionRef & member) const
+{
+    auto it = class_min_size.find(member);
+    return it != class_min_size.end() ? it->second : 0;
 }
 
 bool QueryGraph::areTransitivelyConnected(const BitSet & left, const BitSet & right) const
@@ -450,6 +500,8 @@ DPJoinEntryPtr optimizeJoinOrder(QueryGraph query_graph, const QueryPlanOptimiza
     query_graph.conflict_detector = optimization_settings.query_plan_optimize_join_order_conflict_detector;
     query_graph.join_swap_table = optimization_settings.join_swap_table;
     query_graph.equivalence_class_ndv_bound = optimization_settings.query_plan_join_order_equivalence_class_ndv_bound;
+    if (query_graph.equivalence_class_ndv_bound)
+        query_graph.buildEquivalenceClassBounds();
 
     JoinOrderOptimizer reorderer(
         std::move(query_graph),

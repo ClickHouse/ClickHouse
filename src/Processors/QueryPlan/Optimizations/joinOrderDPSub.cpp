@@ -336,7 +336,7 @@ void DPSubJoinOrderOptimizer::initDPsubScratch()
         {
             auto & members = dpsub_data.equiv_classes.emplace_back();
             auto & relations = dpsub_data.class_relations.emplace_back(0);
-            auto & min_size = dpsub_data.class_min_size.emplace_back(0);
+            dpsub_data.class_min_size.push_back(query_graph.getClassMinSize(member));
             for (const auto & equiv_member : *class_ptr)
             {
                 const auto & sources = equiv_member.getSourceRelations();
@@ -346,8 +346,6 @@ void DPSubJoinOrderOptimizer::initDPsubScratch()
                 auto ndv = getColumnStats(query_graph, dp_table, sources, equiv_member.getColumnName());
                 members.push_back({static_cast<UInt32>(1) << *relation, ndv.ndv, ndv.upper_bound});
                 relations |= members.back().relation_bit;
-                if (ndv.upper_bound > 0)
-                    min_size = min_size ? std::min(min_size, ndv.upper_bound) : ndv.upper_bound;
             }
         }
         dpsub_data.rel_to_classes[*rel].push_back(it->second);
