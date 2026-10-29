@@ -102,8 +102,8 @@ void registerBlocksMarshallingStep(QueryPlanStepRegistry & registry);
 void registerBlocksMarshallingStep(QueryPlanStepRegistry & registry)
 {
     /// Declared with the version that introduced it, not the default "since version 0": unlike the
-    /// steps that only `make_distributed_plan` ships, this one is put on an ordinary shard plan by
-    /// the planner, so without an introduction version it could be written into a stream an older
+    /// steps that only `make_distributed_plan` ships, this one is put on a parallel replica's plan
+    /// fragment, so without an introduction version it could be written into a stream an older
     /// peer accepts and then fails to parse.
     registry.registerStep(
         "BlocksMarshalling",
