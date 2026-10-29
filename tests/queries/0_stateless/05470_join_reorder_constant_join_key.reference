@@ -9,6 +9,9 @@ randomized estimates	0
 union	0
 union	0
 union, different constants	1
+function	0
+function of a column	1
+limit by	0
 sub-join	0
 sub-join	0
 100000

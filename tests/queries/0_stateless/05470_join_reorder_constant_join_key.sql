@@ -22,6 +22,9 @@ CREATE VIEW p_union AS SELECT materialize('wlr') AS src, id, k FROM tp WHERE id 
     UNION ALL SELECT materialize('wlr'), id, k FROM tp WHERE id >= 500;
 CREATE VIEW p_union_mixed AS SELECT materialize('wlr') AS src, id, k FROM tp WHERE id < 500
     UNION ALL SELECT materialize('xyz'), id, k FROM tp WHERE id >= 500;
+CREATE VIEW p_function AS SELECT reverse(materialize('rlw')) AS src, id, k FROM tp;
+CREATE VIEW p_function_of_column AS SELECT reverse(toString(id)) AS src, id, k FROM tp;
+CREATE VIEW p_limit_by AS SELECT materialize('wlr') AS src, id, k FROM tp LIMIT 100 BY id;
 
 -- Each query counts the joins whose only condition is the constant key.
 SELECT 'default', count() FROM (EXPLAIN PLAN
@@ -81,6 +84,24 @@ SELECT 'union, different constants', count() FROM (EXPLAIN PLAN
     SETTINGS query_plan_optimize_join_order_randomize = 3)
 WHERE explain ILIKE '%Join conditions: src = src';
 
+-- There it is a deterministic function of a constant.
+SELECT 'function', count() FROM (EXPLAIN PLAN
+    SELECT count() FROM p_function AS p JOIN tw AS w ON w.src = p.src AND w.k = p.k JOIN tc AS r ON r.src = p.src AND r.id = p.id
+    SETTINGS query_plan_optimize_join_order_randomize = 3)
+WHERE explain ILIKE '%Join conditions: src = src';
+
+-- A function of a column gives no constant column, so `w.src = r.src` is still inferred and used.
+SELECT 'function of a column', count() FROM (EXPLAIN PLAN
+    SELECT count() FROM p_function_of_column AS p JOIN tw AS w ON w.src = p.src AND w.k = p.k JOIN tc AS r ON r.src = p.src AND r.id = p.id
+    SETTINGS query_plan_optimize_join_order_randomize = 3)
+WHERE explain ILIKE '%Join conditions: src = src';
+
+-- There it passes through LIMIT BY.
+SELECT 'limit by', count() FROM (EXPLAIN PLAN
+    SELECT count() FROM p_limit_by AS p JOIN tw AS w ON w.src = p.src AND w.k = p.k JOIN tc AS r ON r.src = p.src AND r.id = p.id
+    SETTINGS query_plan_optimize_join_order_randomize = 3)
+WHERE explain ILIKE '%Join conditions: src = src';
+
 -- There it comes from the preserved side of a join that enters the join graph as one relation.
 SELECT 'sub-join', count() FROM (EXPLAIN PLAN
     SELECT count() FROM (SELECT p.src AS src, p.id AS id, p.k AS k FROM p ANY LEFT JOIN tc ON p.id = tc.id) AS p
@@ -96,6 +117,9 @@ WHERE explain ILIKE '%Join conditions: src = src';
 
 SELECT count() FROM p JOIN w ON w.src = p.src AND w.k = p.k JOIN r ON r.src = p.src AND r.id = p.id;
 
+DROP VIEW p_limit_by;
+DROP VIEW p_function_of_column;
+DROP VIEW p_function;
 DROP VIEW p_union_mixed;
 DROP VIEW p_union;
 DROP VIEW r;
