@@ -130,7 +130,7 @@ SELECT count() FROM stackoverflow.posts_updateable
 1 row in set. Elapsed: 0.002 sec.
 ```
 
-We now update our post-answer statistics. Rather than updating these values, we insert new copies of 5000 rows and add one to their version number (this means 150 rows will exist in the table). We can simulate this with a simple `INSERT INTO SELECT`:
+We now update our post-answer statistics. Rather than updating these values, we insert new copies of 5000 rows and add one to their version number (this means 15000 rows will exist in the table). We can simulate this with a simple `INSERT INTO SELECT`:
 
 ```sql
 INSERT INTO posts_updateable SELECT
