@@ -72,6 +72,7 @@ void SerializationAggregateFunction::deserializeBinary(IColumn & column, ReadBuf
     try
     {
         function->deserialize(place, istr, version, &arena);
+        checkMemoryLimitAfterReadingState(*function);
         /// Inside the guard: `push_back` can throw, and until it succeeds nothing owns `place`.
         column_concrete.getData().push_back(place);
     }
@@ -121,6 +122,8 @@ void SerializationAggregateFunction::deserializeBinaryBulk(IColumn & column, Rea
 
     vec.reserve(vec.size() + std::min<size_t>(limit, DEFAULT_INSERT_BLOCK_SIZE));
 
+    const MemoryTracker * memory_tracker = getMemoryTrackerToWatchForStates(*function);
+
     for (size_t remaining = limit; remaining != 0 && !istr.eof();)
     {
         const size_t states_in_block = std::min(remaining, states_per_block);
@@ -133,7 +136,7 @@ void SerializationAggregateFunction::deserializeBinaryBulk(IColumn & column, Rea
         char * place = arena.alignedAlloc(size_of_block, align_of_state);
 
         /// Reads less than the whole block when the data ends, and then the loop stops on `eof`.
-        function->createAndDeserializeBatch(vec, place, total_size_of_state, states_in_block, istr, version, &arena);
+        function->createAndDeserializeBatch(vec, place, total_size_of_state, states_in_block, istr, version, &arena, memory_tracker);
 
         remaining -= states_in_block;
     }
@@ -171,6 +174,7 @@ static void deserializeFromString(const AggregateFunctionPtr & function, IColumn
                 trailing_bytes);
         }
 
+        checkMemoryLimitAfterReadingState(*function);
         column_concrete.getData().push_back(place);
     }
     catch (...)
