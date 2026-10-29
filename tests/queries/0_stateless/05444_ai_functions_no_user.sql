@@ -38,8 +38,16 @@ SELECT x, d, m FROM t_default ORDER BY x;
 OPTIMIZE TABLE t_default FINAL;
 SELECT x, d, m FROM t_default ORDER BY x;
 
+-- A lightweight update is evaluated by the query, which has a user.
+CREATE TABLE t_lwu (x String, y String) ENGINE = MergeTree ORDER BY x
+    SETTINGS enable_block_number_column = 1, enable_block_offset_column = 1;
+INSERT INTO t_lwu VALUES ('a', 'old');
+UPDATE t_lwu SET y = aiGenerate(x, map('credentials', 'nc_05444', 'model', 'm')) WHERE 1 SETTINGS enable_lightweight_update = 1;
+SELECT x, y FROM t_lwu;
+
 DROP TABLE b;
 DROP TABLE t;
 DROP TABLE t_update;
 DROP TABLE t_default;
+DROP TABLE t_lwu;
 DROP NAMED COLLECTION nc_05444;

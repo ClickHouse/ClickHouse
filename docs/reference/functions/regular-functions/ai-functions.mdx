@@ -63,6 +63,22 @@ GRANT aiGenerate, aiClassify ON *.* TO ai_analyst_role;
 GRANT NAMED COLLECTION ON ai_text_credentials TO ai_user_role, ai_analyst_role;
 ```
 
+AI functions are executed only in queries run by a user. Background operations, such as mutations (`ALTER TABLE ... UPDATE`, `MATERIALIZE COLUMN`), merges evaluating a TTL, and `Buffer` flushes, throw an exception when they evaluate an AI function. `DEFAULT` and `MATERIALIZED` columns are evaluated by the insert.
+
+To fill a column of existing rows, use a lightweight [`UPDATE`](/reference/statements/update), which is executed by the query and writes only the updated column:
+
+```sql
+UPDATE t SET y = aiEmbed(x, 'model') WHERE empty(y) SETTINGS enable_lightweight_update = 1;
+```
+
+For a table that does not meet the [lightweight update requirements](/reference/statements/update#lightweight-update-requirements), use `INSERT ... SELECT`, for example one partition at a time:
+
+```sql
+CREATE TABLE t_tmp AS t;
+INSERT INTO t_tmp SELECT x, aiEmbed(x, 'model') AS y FROM t WHERE _partition_id = '202610';
+ALTER TABLE t REPLACE PARTITION ID '202610' FROM t_tmp;
+```
+
 ### Named collection parameters {#named-collection-parameters}
 
 | Parameter | Type | Default | Description |
