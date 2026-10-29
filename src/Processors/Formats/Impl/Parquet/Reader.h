@@ -115,6 +115,13 @@ struct SharedFileColumnChunks
     std::mutex mutex;
     /// By Parquet column index, nullptr if not parsed yet. Protected by `mutex`.
     std::vector<FileColumnChunksPtr> column_chunks;
+
+    /// Sorted offsets of all structures in the file, to find where a bloom filter without
+    /// `bloom_filter_length` ends (see `Reader::initializePrefetches`). Built once by the first reader
+    /// that needs it, the others wait for it. Protected by `bloom_filter_bounds_mutex`, which is
+    /// taken before `mutex`.
+    std::mutex bloom_filter_bounds_mutex;
+    std::shared_ptr<const std::vector<size_t>> bloom_filter_bounds;
 };
 using SharedFileColumnChunksPtr = std::shared_ptr<SharedFileColumnChunks>;
 
@@ -682,6 +689,8 @@ struct Reader
     /// that are not in `column_chunks` yet.
     /// Never replaces an entry: ColumnChunk::meta points into them.
     void ensureColumnChunks(const std::vector<size_t> & column_indices);
+    /// Sorted offsets of everything in the file that a bloom filter may be followed by, see initializePrefetches.
+    std::shared_ptr<const std::vector<size_t>> collectSortedMetadataOffsets();
     /// Only for the columns of `primitive_columns`, see parseColumnChunks.
     const parq::ColumnChunk & getColumnChunk(size_t row_group_idx, size_t column_idx) const;
     /// By Parquet column index, nullptr for the columns that are not parsed.
