@@ -267,7 +267,7 @@ bool equalsCanDisagreeWithHashTable(const IDataType & type)
 }
 
 /// A runtime filter key comes from an `=` predicate, which never matches NULL, so a `Nullable` integer key keeps
-/// only its non-NULL values, in the set of the nested type. Wider keys are left as is: their plain set has larger cells.
+/// only its non-NULL values, in the set of the nested type.
 bool canDropNullKeys(const DataTypePtr & type)
 {
     if (!type->isNullable())
