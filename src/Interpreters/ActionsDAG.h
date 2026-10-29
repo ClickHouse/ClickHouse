@@ -104,6 +104,8 @@ public:
         ExecutableFunctionPtr function;
         /// If function is a compiled statement.
         bool is_function_compiled = false;
+        /// Set when constant folding erases edges to a function; transient analysis metadata, not serialized or hashed.
+        bool has_folded_function = false;
 
         /// It is a constant calculated from deterministic functions (See IFunction::isDeterministic).
         /// This property is kept after constant folding of non-deterministic functions like 'now', 'today'.
@@ -359,7 +361,10 @@ public:
     bool hasInputNameShadowedByComputedNode() const;
 
 #if USE_EMBEDDED_COMPILER
-    void compileExpressions(size_t min_count_to_compile_expression, const std::unordered_set<const Node *> & lazy_executed_nodes = {});
+    void compileExpressions(
+        size_t min_count_to_compile_expression,
+        const std::unordered_set<const Node *> & lazy_executed_nodes = {},
+        std::shared_ptr<const ActionsDAG> * uncompiled_actions_dag = nullptr);
 #endif
 
     using NodeMapping = std::unordered_map<const Node *, const Node *>;
@@ -682,7 +687,10 @@ private:
         bool all_const);
 
 #if USE_EMBEDDED_COMPILER
-    void compileFunctions(size_t min_count_to_compile_expression, const std::unordered_set<const Node *> & lazy_executed_nodes = {});
+    void compileFunctions(
+        size_t min_count_to_compile_expression,
+        const std::unordered_set<const Node *> & lazy_executed_nodes = {},
+        std::shared_ptr<const ActionsDAG> * uncompiled_actions_dag = nullptr);
 #endif
 
     bool removeUnusedConjunctions(NodeRawConstPtrs rejected_conjunctions, Node * predicate, bool removes_filter);

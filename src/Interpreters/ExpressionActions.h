@@ -91,7 +91,13 @@ private:
     ExpressionActionsSettings settings;
 
 public:
-    explicit ExpressionActions(ActionsDAG actions_dag_, const ExpressionActionsSettings & settings_ = {}, bool project_inputs_ = false);
+    /// If requested, preserve the DAG immediately before the first successful JIT replacement.
+    /// The output stays empty when no expression is compiled.
+    explicit ExpressionActions(
+        ActionsDAG actions_dag_,
+        const ExpressionActionsSettings & settings_ = {},
+        bool project_inputs_ = false,
+        std::shared_ptr<const ActionsDAG> * uncompiled_actions_dag = nullptr);
     ExpressionActions(ExpressionActions &&) = default;
     ExpressionActions & operator=(ExpressionActions &&) = default;
 
