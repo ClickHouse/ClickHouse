@@ -508,10 +508,24 @@ void FilterStep::setPrefilteredConditions(UInt64 token, std::unordered_set<UInt6
     prefiltered_conditions = PrefilteredConditions{.token = token, .condition_hashes = std::move(condition_hashes)};
 }
 
+/// The atoms of the AND chain of `node` from left to right, the order of short-circuit evaluation.
+static void collectConjunctionAtoms(const ActionsDAG::Node * node, ActionsDAG::NodeRawConstPtrs & atoms)
+{
+    if (node->type == ActionsDAG::ActionType::FUNCTION && node->function_base->getName() == "and")
+    {
+        for (const auto * child : node->children)
+            collectConjunctionAtoms(child, atoms);
+        return;
+    }
+    atoms.push_back(node);
+}
+
 /// The actions of a filter for the rows that already passed the conditions with `condition_hashes`: the filter column
-/// is the conjunction of the other atoms of its AND chain. A row that passed a condition has it true, so the conjunction
-/// keeps the same rows. The atoms themselves are not changed: other columns may use their values.
-/// Nullopt if no atom is dropped, or if the result would have another structure.
+/// is the conjunction of the other atoms of its AND chain, in the same order. A row that passed a condition has it true,
+/// so the conjunction keeps the same rows. The atoms themselves are not changed: other columns may use their values.
+/// Only for a filter column that is removed: the conjunction has the same truth value, but may have another type.
+/// Not for stateful functions: the actions would have their own state, separate from the state of the actions of the
+/// other chunks. Nullopt if no atom is dropped, or if the result would have another structure.
 static std::optional<ActionsDAG> makePrefilteredActions(
     const ActionsDAG & dag,
     const String & filter_column_name,
@@ -519,38 +533,34 @@ static std::optional<ActionsDAG> makePrefilteredActions(
     const std::unordered_set<UInt64> & condition_hashes,
     const Block & input_header)
 {
+    if (!remove_filter_column || dag.hasStatefulFunctions())
+        return std::nullopt;
+
     ActionsDAG prefiltered = dag.clone();
     auto & outputs = prefiltered.getOutputs();
     const auto filter_it = std::ranges::find_if(outputs, [&](const auto * node) { return node->result_name == filter_column_name; });
     if (filter_it == outputs.end())
         return std::nullopt;
 
-    ActionsDAG::NodeRawConstPtrs remaining_atoms;
-    bool dropped = false;
-    for (const auto * atom : ActionsDAG::extractConjunctionAtoms(*filter_it))
-    {
-        if (atom->type == ActionsDAG::ActionType::FUNCTION && condition_hashes.contains(atom->getHash()))
-            dropped = true;
-        else
-            remaining_atoms.push_back(atom);
-    }
+    ActionsDAG::NodeRawConstPtrs atoms;
+    collectConjunctionAtoms(*filter_it, atoms);
 
-    if (!dropped)
+    ActionsDAG::NodeRawConstPtrs remaining_atoms;
+    for (const auto * atom : atoms)
+        if (atom->type != ActionsDAG::ActionType::FUNCTION || !condition_hashes.contains(atom->getHash()))
+            remaining_atoms.push_back(atom);
+
+    if (remaining_atoms.size() == atoms.size())
         return std::nullopt;
 
-    const ActionsDAG::Node * filter_node = nullptr;
-    if (remaining_atoms.empty())
+    auto true_type = std::make_shared<DataTypeUInt8>();
+    const auto * true_node = &prefiltered.addColumn(true_type->createColumnConst(1, Field(UInt64(1))), true_type, "__prefiltered_true");
+    const ActionsDAG::Node * filter_node = true_node;
+    if (!remaining_atoms.empty())
     {
-        auto type = std::make_shared<DataTypeUInt8>();
-        filter_node = &prefiltered.addColumn(
-            type->createColumnConst(1, Field(UInt64(1))), type, "__prefiltered_true");
-    }
-    else if (remaining_atoms.size() == 1)
-    {
-        filter_node = remaining_atoms.front();
-    }
-    else
-    {
+        /// `and` with a constant true also converts a single atom to the truth value of the original conjunction.
+        if (remaining_atoms.size() == 1)
+            remaining_atoms.push_back(true_node);
         FunctionOverloadResolverPtr func_builder_and = std::make_unique<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionAnd>());
         filter_node = &prefiltered.addFunction(func_builder_and, std::move(remaining_atoms), {});
     }
@@ -559,7 +569,7 @@ static std::optional<ActionsDAG> makePrefilteredActions(
     *filter_it = &prefiltered.addAlias(*filter_node, filter_column_name);
     prefiltered.removeUnusedActions(false, false);
 
-    /// A changed type or a constant column instead of a full one may break the transforms after the filter.
+    /// A constant column instead of a full one may break the transforms after the filter.
     const Block header = FilterTransform::transformHeader(input_header, &dag, filter_column_name, remove_filter_column);
     const Block prefiltered_header = FilterTransform::transformHeader(input_header, &prefiltered, filter_column_name, remove_filter_column);
     if (!blocksHaveEqualStructure(header, prefiltered_header))

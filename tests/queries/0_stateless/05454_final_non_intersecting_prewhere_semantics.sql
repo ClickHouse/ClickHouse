@@ -71,4 +71,11 @@ SELECT count(), sum(key) FROM t_final_prewhere_shared FINAL WHERE toUInt8(v) AND
 SELECT count(), sum(key) FROM t_final_prewhere_shared FINAL WHERE toUInt8(v) AND (toUInt8(v) = 2 OR rowNumberInAllBlocks() > 1000000000) SETTINGS optimize_move_to_prewhere_if_final_non_intersecting = 0;
 SELECT sum(toUInt8(v)) FROM t_final_prewhere_shared FINAL WHERE toUInt8(v);
 SELECT sum(toUInt8(v)) FROM t_final_prewhere_shared FINAL WHERE toUInt8(v) SETTINGS optimize_move_to_prewhere_if_final_non_intersecting = 0;
+-- The filter column is a result column: a condition with the value 3 is true, but the conjunction is 1.
+SELECT sum(f), sum(key) FROM (SELECT key, (v = 2 AND toUInt8(key % 2 + 2)) AS f FROM t_final_prewhere_shared FINAL WHERE f);
+SELECT sum(f), sum(key) FROM (SELECT key, (v = 2 AND toUInt8(key % 2 + 2)) AS f FROM t_final_prewhere_shared FINAL WHERE f)
+SETTINGS optimize_move_to_prewhere_if_final_non_intersecting = 0;
+-- The conditions left in the WHERE keep their order: the guard, which is never true, comes before the division by zero.
+SELECT count() FROM t_final_prewhere_shared FINAL WHERE v = 2 AND rand() < 0 AND intDiv(1, rand() % 1) > 0
+SETTINGS short_circuit_function_evaluation = 'force_enable';
 DROP TABLE t_final_prewhere_shared;
