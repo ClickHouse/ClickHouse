@@ -33,7 +33,8 @@ do
     sleep 0.1
 done
 
-${CLICKHOUSE_CLIENT} -q "DROP DICTIONARY ${DB}.d"
+# Do not wait for the reader to release the dictionary: it holds it until it is killed below.
+${CLICKHOUSE_CLIENT} -q "DROP DICTIONARY ${DB}.d SETTINGS database_atomic_wait_for_drop_and_detach_synchronously = 0"
 
 # `UNDROP` moves the metadata and takes the dictionary out of the queue, then waits for the reader to finish.
 ${CLICKHOUSE_CLIENT} -q "UNDROP TABLE ${DB}.d" > "${CLICKHOUSE_TMP}/undrop.log" 2>&1 &
