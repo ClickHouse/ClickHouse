@@ -21,6 +21,9 @@ check_if_not_detached "WITH unused AS (SELECT * FROM t_reattach_cte_src) SELECT 
 check_if_not_detached "WITH unused AS (SELECT * FROM t_reattach_cte_src), unused2 AS (SELECT * FROM unused) SELECT 1" "t_reattach_cte_src"
 check_if_detached "WITH used AS (SELECT * FROM t_reattach_cte_src) SELECT * FROM used" "t_reattach_cte_src"
 check_if_detached "WITH used AS (SELECT * FROM t_reattach_cte_src), used2 AS (SELECT * FROM used) SELECT * FROM used2" "t_reattach_cte_src"
+# The same holds for a scalar `WITH expr AS alias` binding: it is only registered as an alias.
+check_if_not_detached "WITH (SELECT count() FROM t_reattach_cte_src) AS unused SELECT 1" "t_reattach_cte_src"
+check_if_detached "WITH (SELECT count() FROM t_reattach_cte_src) AS used SELECT used" "t_reattach_cte_src"
 
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE t_reattach_cte_src"
 

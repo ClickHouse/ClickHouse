@@ -96,6 +96,7 @@
 #include <Interpreters/ApplyWithGlobalVisitor.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/InterpreterFactory.h>
+#include <Interpreters/InterpreterAlterQuery.h>
 #include <Interpreters/InterpreterInsertQuery.h>
 #include <Interpreters/InterpreterCreateQuery.h>
 #include <Interpreters/InterpreterExplainQuery.h>
@@ -131,6 +132,7 @@
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeVirtualColumns.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
+#include <Storages/StorageAlias.h>
 #include <Storages/StorageProxy.h>
 #include <Storages/StorageSet.h>
 #include <Interpreters/IInterpreter.h>
@@ -2020,6 +2022,43 @@ StoragePtr tryResolveMutationTarget(
     return DatabaseCatalog::instance().tryGetTable(resolved, context);
 }
 
+/// `tryResolveMutationTarget` for the probes of the mutation carriers (`DELETE`, `UPDATE`, `ALTER`), which ask
+/// the target's own capability and check methods. Their interpreters check the caller's access to the target
+/// before they resolve it, so do the same here: probing first could resolve a forwarding storage on behalf of
+/// a user who may not mutate it and disclose what it resolves to in a probe's exception. Forwarding storages
+/// are not probed at all: `Alias` resolves its target without an access check, and a table created `AS` a
+/// table function builds its storage only when first used. Both cases return nullptr, which the callers treat
+/// as a statement that stops on its target.
+StoragePtr tryResolveAuthorizedMutationTarget(
+    const String & database_name,
+    const String & table_name,
+    Context::StorageNamespace resolve_namespace,
+    AccessRightsElements required_access,
+    const ContextPtr & context)
+{
+    if (table_name.empty())
+        return nullptr;
+
+    const auto resolved = context->tryResolveStorageID(
+        database_name.empty() ? StorageID("", table_name) : StorageID(database_name, table_name),
+        resolve_namespace);
+    if (!resolved)
+        return nullptr;
+
+    required_access.replaceEmptyDatabase(resolved.getDatabaseName());
+    if (!context->getAccess()->isGranted(required_access))
+        return nullptr;
+
+    auto table = tryResolveMutationTarget(database_name, table_name, resolve_namespace, context);
+    if (!table || typeid_cast<const StorageAlias *>(table.get()))
+        return nullptr;
+
+    if (const auto * proxy = dynamic_cast<const StorageProxy *>(table.get()); proxy && !proxy->isLazyStandIn())
+        return nullptr;
+
+    return table;
+}
+
 /// The single `DELETE` mutation command `InterpreterDeleteQuery::execute` builds for its heavy
 /// (`supportsDelete`) path. The lightweight path rewrites the statement into
 /// `UPDATE _row_exists = 0 WHERE <predicate>` instead, but for the checks the probes below exercise
@@ -2105,7 +2144,10 @@ bool deleteQueryStopsBeforeSources(const ASTDeleteQuery & delete_query, const Co
     if (udfSubstitutionFails(delete_query, context))
         return true;
 
-    const auto table = tryResolveMutationTarget(delete_query.getDatabase(), delete_query.getTable(), Context::ResolveOrdinary, context);
+    /// `InterpreterDeleteQuery::execute` checks `ALTER DELETE` on the target before anything else.
+    const auto table = tryResolveAuthorizedMutationTarget(
+        delete_query.getDatabase(), delete_query.getTable(), Context::ResolveOrdinary,
+        {AccessRightsElement(AccessType::ALTER_DELETE, delete_query.getDatabase(), delete_query.getTable())}, context);
     if (!table)
         return true;
 
@@ -2241,10 +2283,13 @@ bool updateColumnsCanBeRejected(const StoragePtr & table, const NameSet & update
         const auto metadata_snapshot = table->getInMemoryMetadataPtr(context, false);
         const auto & storage_columns = metadata_snapshot->getColumns();
 
-        /// `getKeyColumns`: only a `MergeTree`-family target has key columns to protect.
+        /// `getKeyColumns`: only a `MergeTree`-family target has key columns to protect. `key_storage_columns`
+        /// adds the storage columns of key subcolumns, as `validateUpdateColumns` does.
         NameSet key_columns;
+        NameSet key_storage_columns;
         if (const auto merge_tree_data = castStorage<const MergeTreeData>(table, DeferredTable::Load))
         {
+            key_storage_columns = metadata_snapshot->getStorageColumnsRequiredForKeys();
             for (const auto & column : metadata_snapshot->getColumnsRequiredForPartitionKey())
                 key_columns.insert(column);
             for (const auto & column : metadata_snapshot->getColumnsRequiredForSortingKey())
@@ -2307,7 +2352,7 @@ bool updateColumnsCanBeRejected(const StoragePtr & table, const NameSet & update
                 affected != column_to_affected_materialized.end())
             {
                 for (const auto & materialized : affected->second)
-                    if (key_columns.contains(materialized))
+                    if (key_columns.contains(materialized) || key_storage_columns.contains(materialized))
                         return true;
             }
 
@@ -2361,7 +2406,18 @@ bool updateQueryStopsBeforeSources(const ASTUpdateQuery & update_query, const Co
     if (udfSubstitutionFails(update_query, context))
         return true;
 
-    const auto table = tryResolveMutationTarget(update_query.getDatabase(), update_query.getTable(), Context::ResolveOrdinary, context);
+    /// `InterpreterUpdateQuery::execute` checks `ALTER UPDATE`, or `ALTER DELETE` for a `_row_exists`
+    /// assignment, before it resolves the target. Which of them a `_row_exists` assignment needs depends on
+    /// the target, so require both for it.
+    AccessFlags required_flags = AccessType::ALTER_UPDATE;
+    if (update_query.assignments)
+        for (const auto & child : update_query.assignments->children)
+            if (const auto * assignment = child->as<ASTAssignment>(); !assignment || assignment->column_name == RowExistsColumn::name)
+                required_flags |= AccessType::ALTER_DELETE;
+
+    const auto table = tryResolveAuthorizedMutationTarget(
+        update_query.getDatabase(), update_query.getTable(), Context::ResolveOrdinary,
+        {AccessRightsElement(required_flags, update_query.getDatabase(), update_query.getTable())}, context);
     if (!table)
         return true;
 
@@ -2485,7 +2541,17 @@ bool alterQueryStopsBeforeSources(const ASTAlterQuery & alter, const ContextPtr 
             return true;
     }
 
-    const auto table = tryResolveMutationTarget(alter.getDatabase(), alter.getTable(), Context::ResolveAll, context);
+    /// `InterpreterAlterQuery::execute` checks the access of every command before it resolves the target.
+    /// Whether `_row_exists` is the lightweight-delete marker depends on the target, so take the conservative
+    /// answer that requires both `ALTER DELETE` and `ALTER UPDATE` for it.
+    AccessRightsElements required_access;
+    for (const auto & child : alter.command_list->children)
+        required_access.append_range(InterpreterAlterQuery::getRequiredAccessForCommand(
+            child->as<const ASTAlterCommand &>(), alter.getDatabase(), alter.getTable(),
+            InterpreterAlterQuery::RowExistsColumnKind::Unknown, context));
+
+    const auto table = tryResolveAuthorizedMutationTarget(
+        alter.getDatabase(), alter.getTable(), Context::ResolveAll, std::move(required_access), context);
     if (!table)
         return true;
 
@@ -2985,6 +3051,15 @@ void collectTablesInQuery(const ASTPtr & ast, CollectTablesData & data, std::uno
             /// reachable when its name occurs anywhere in the statement outside this `WITH` clause, or in the body
             /// of another reachable definition of this clause. Any identifier with that name counts, which errs
             /// toward walking a definition, never toward missing the tables of a used one.
+            /// A scalar `WITH expr AS alias` binding is only registered as an alias too, and resolved only where
+            /// it is referenced, so the same applies to it: `WITH (SELECT count() FROM src) AS unused SELECT 1`
+            /// must not reattach `src` either. A binding without a name is always walked.
+            const auto with_child_name = [](const ASTPtr & with_child) -> String
+            {
+                if (const auto * with_element = with_child->as<ASTWithElement>())
+                    return with_element->name;
+                return with_child->tryGetAlias();
+            };
             std::unordered_set<const IAST *> reachable_ctes;
             if (data.root_query)
             {
@@ -2996,8 +3071,10 @@ void collectTablesInQuery(const ASTPtr & ast, CollectTablesData & data, std::uno
                     changed = false;
                     for (const auto & with_child : with->children)
                     {
-                        const auto * with_element = with_child->as<ASTWithElement>();
-                        if (!with_element || reachable_ctes.contains(with_child.get()) || !referenced_names.contains(with_element->name))
+                        if (reachable_ctes.contains(with_child.get()))
+                            continue;
+                        const auto name = with_child_name(with_child);
+                        if (!name.empty() && !referenced_names.contains(name))
                             continue;
                         reachable_ctes.insert(with_child.get());
                         collectReferencedNames(*with_child, nullptr, referenced_names);
@@ -3026,7 +3103,7 @@ void collectTablesInQuery(const ASTPtr & ast, CollectTablesData & data, std::uno
 
                 const auto * with_element = with_child->as<ASTWithElement>();
 
-                if (with_element && data.root_query && !reachable_ctes.contains(with_child.get()))
+                if (data.root_query && !reachable_ctes.contains(with_child.get()))
                     continue;
 
                 if (!select->recursive_with || !with_element)

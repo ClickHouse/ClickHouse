@@ -348,3 +348,48 @@ fi
 
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS t_reattach_update"
 ${CLICKHOUSE_CLIENT} -q "DROP USER IF EXISTS ${UPDATE_USER}"
+
+# The mutation carriers probe their target's capabilities (`supportsDelete`, `supportsLightweightUpdate`) to
+# predict whether the statement stops on it. Those probes must not run before the caller's mutation access
+# to the target is established, as in the interpreters: an `Alias` whose target is missing resolves it in
+# the probe, and the exception would disclose the target's name to a user who may not mutate the alias.
+# Such a user must get `ACCESS_DENIED`, as without the hook, with nothing detached.
+MUT_USER="user_reattach_mut_${CLICKHOUSE_DATABASE}"
+${CLICKHOUSE_CLIENT} -q "DROP USER IF EXISTS ${MUT_USER}"
+${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS t_reattach_mut_alias"
+${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS t_reattach_mut_secret_target"
+${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS t_reattach_mut_access_src"
+${CLICKHOUSE_CLIENT} -q "CREATE TABLE t_reattach_mut_secret_target (a UInt64) ENGINE = MergeTree ORDER BY a"
+${CLICKHOUSE_CLIENT} -q "CREATE TABLE t_reattach_mut_alias ENGINE = Alias('t_reattach_mut_secret_target')"
+${CLICKHOUSE_CLIENT} -q "DROP TABLE t_reattach_mut_secret_target"
+${CLICKHOUSE_CLIENT} -q "CREATE TABLE t_reattach_mut_access_src (a UInt64) ENGINE = MergeTree ORDER BY a"
+${CLICKHOUSE_CLIENT} -q "CREATE USER ${MUT_USER} IDENTIFIED WITH no_password"
+# Everything the hook needs to reattach the source, but no mutation access to the alias.
+${CLICKHOUSE_CLIENT} -q "GRANT TABLE ENGINE ON MergeTree TO ${MUT_USER}"
+${CLICKHOUSE_CLIENT} -q "GRANT SELECT, DROP TABLE, CREATE TABLE ON ${CLICKHOUSE_DATABASE}.t_reattach_mut_access_src TO ${MUT_USER}"
+${CLICKHOUSE_CLIENT} -q "GRANT SELECT ON ${CLICKHOUSE_DATABASE}.t_reattach_mut_alias TO ${MUT_USER}"
+
+for query in \
+    "DELETE FROM t_reattach_mut_alias WHERE a IN (SELECT a FROM t_reattach_mut_access_src)" \
+    "UPDATE t_reattach_mut_alias SET a = 1 WHERE a IN (SELECT a FROM t_reattach_mut_access_src)"
+do
+    REATTACH_OUTPUT=$(${MY_CLICKHOUSE_CLIENT} --user "${MUT_USER}" \
+        --reattach_tables_before_query_execution=1 --enable_lightweight_update=1 \
+        --query "$query" 2>&1)
+    REATTACH_STATUS=$?
+    if [ "$REATTACH_STATUS" -eq 0 ]; then
+        echo "FAIL (query unexpectedly succeeded)"
+    elif ! echo "$REATTACH_OUTPUT" | grep -q "ACCESS_DENIED"; then
+        echo "FAIL (unexpected error: $REATTACH_OUTPUT)"
+    elif echo "$REATTACH_OUTPUT" | grep -q "t_reattach_mut_secret_target"; then
+        echo "FAIL (the alias target was disclosed)"
+    elif echo "$REATTACH_OUTPUT" | grep -q "DETACH TABLE $CLICKHOUSE_DATABASE.t_reattach_mut_access_src"; then
+        echo "FAIL (source detached for an access-rejected query)"
+    else
+        echo "OK"
+    fi
+done
+
+${CLICKHOUSE_CLIENT} -q "DROP TABLE t_reattach_mut_alias"
+${CLICKHOUSE_CLIENT} -q "DROP TABLE t_reattach_mut_access_src"
+${CLICKHOUSE_CLIENT} -q "DROP USER ${MUT_USER}"
