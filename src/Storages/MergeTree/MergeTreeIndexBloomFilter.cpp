@@ -641,6 +641,15 @@ static bool bloomFilterHashDomainMatches(const DataTypePtr & value_type, const D
     return (isInteger(value) && isInteger(element)) || value->equals(*element);
 }
 
+/// `IN` casts the key into the type of the set, where a `FixedString` element pads the key, so
+/// `s IN (SELECT toFixedString('a', 2))` matches both `'a'` and `'a\0'` of a `String` column. The cast
+/// of the set into the type of the index keeps the padding and would hash `'a\0'` only, so such a set is declined.
+static bool setCastChangesFixedStringMembership(const DataTypePtr & set_type, const DataTypePtr & index_type)
+{
+    return anyInTypeTree(*set_type, [](const IDataType & t) { return isFixedString(t); })
+        && !recursiveRemoveLowCardinality(removeNullable(set_type))->equals(*recursiveRemoveLowCardinality(removeNullable(index_type)));
+}
+
 /// LEFT ARRAY JOIN is arrayJoin(emptyArrayToSingle(col)), the default element it adds is not in an index on col
 static String getArrayJoinColumnName(const RPNBuilderTreeNode & node, const Block & header, bool & padded)
 {
@@ -672,11 +681,7 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeIn(
         if (nullable_column && !index_type->isNullable() && std::ranges::any_of(nullable_column->getNullMapData(), [](UInt8 is_null) { return is_null != 0; }))
             return false;
 
-        /// `IN` casts the key into the type of the set, where a `FixedString` element pads the key, so
-        /// `s IN (SELECT toFixedString('a', 2))` matches both `'a'` and `'a\0'` of a `String` column. The cast
-        /// of the set into the type of the index keeps the padding and would hash `'a\0'` only, so decline.
-        if (anyInTypeTree(*type, [](const IDataType & t) { return isFixedString(t); })
-            && !recursiveRemoveLowCardinality(removeNullable(type))->equals(*recursiveRemoveLowCardinality(removeNullable(index_type))))
+        if (setCastChangesFixedStringMembership(type, index_type))
             return false;
 
         const auto & converted_column = castColumn(ColumnWithTypeAndName{column, type, ""}, index_type);
@@ -816,6 +821,8 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeIn(
             const DataTypePtr & index_type = header.getByPosition(position).type;
             const auto & array_type = assert_cast<const DataTypeArray &>(*index_type);
             const auto & array_nested_type = array_type.getNestedType();
+            if (setCastChangesFixedStringMembership(type, array_nested_type))
+                return false;
             const auto & converted_column = castColumn(ColumnWithTypeAndName{column, type, ""}, array_nested_type);
             out.predicate.emplace_back(std::make_pair(position, BloomFilterHash::hashWithColumn(array_nested_type, converted_column, 0, row_size)));
         }
