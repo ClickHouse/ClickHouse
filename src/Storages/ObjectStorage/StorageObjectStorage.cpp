@@ -988,8 +988,6 @@ SinkToStoragePtr StorageObjectStorage::write(
     ContextPtr local_context,
     bool /* async_insert */)
 {
-    checkCatalogSourceWriteAccess(local_context);
-
     /// For data lake we did update in getExternalDynamicMetadata.
     if (!is_table_function && !configuration->isDataLakeConfiguration())
     {
@@ -1068,7 +1066,6 @@ bool StorageObjectStorage::optimize(
     [[maybe_unused]] ContextPtr context)
 {
     checkSessionMayUseServerIdentity(*object_storage, context);
-    checkCatalogSourceWriteAccess(context);
     return configuration->optimize(object_storage, metadata_snapshot, context, format_settings, catalog);
 }
 
@@ -1128,23 +1125,7 @@ void StorageObjectStorage::checkTableCanBeDropped(ContextPtr query_context) cons
     if (configuration->isDataLakeConfiguration()
         && (query_context->getSettingsRef()[Setting::iceberg_delete_data_on_drop]
             || query_context->getGlobalContext()->getSettingsRef()[Setting::iceberg_delete_data_on_drop]))
-    {
         checkSessionMayUseServerIdentity(*object_storage, query_context);
-        checkCatalogSourceWriteAccess(query_context);
-    }
-}
-
-void StorageObjectStorage::checkInsertIsAllowed(ContextPtr context) const
-{
-    /// Also reached on the initiator of an asynchronous insert, which does not build a sink until the flush.
-    checkCatalogSourceWriteAccess(context);
-}
-
-void StorageObjectStorage::checkCatalogSourceWriteAccess(const ContextPtr & context) const
-{
-    /// `DatabaseDataLake` checks `READ` when it resolves the table.
-    if (catalog && configuration->getType() == ObjectStorageType::HDFS)
-        checkCatalogHDFSAccess(context, AccessType::WRITE, configuration->getRawURI() + configuration->getRawPath().path);
 }
 
 void StorageObjectStorage::drop()
@@ -1329,7 +1310,6 @@ SchemaCache & StorageObjectStorage::getSchemaCache(const ContextPtr & context, c
 void StorageObjectStorage::mutate([[maybe_unused]] const MutationCommands & commands, [[maybe_unused]] ContextPtr context_)
 {
     checkSessionMayUseServerIdentity(*object_storage, context_);
-    checkCatalogSourceWriteAccess(context_);
 
     /// For datalake tables (e.g. Iceberg), refresh external metadata so that the
     /// storage snapshot contains the `datalake_table_state`. Without this the mutation
@@ -1351,7 +1331,6 @@ void StorageObjectStorage::checkMutationIsPossible(const MutationCommands & comm
 Pipe StorageObjectStorage::executeCommand(const String & command_name, const ASTPtr & args, ContextPtr context)
 {
     checkSessionMayUseServerIdentity(*object_storage, context);
-    checkCatalogSourceWriteAccess(context);
     auto metadata = getExternalMetadata(context);
     if (!metadata)
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "EXECUTE command '{}' is not supported by this storage", command_name);
@@ -1362,7 +1341,6 @@ void StorageObjectStorage::alter(const AlterCommands & params, ContextPtr contex
 {
     /// These entrypoints reuse the client without refreshing it for the session, so check its policy first.
     checkSessionMayUseServerIdentity(*object_storage, context);
-    checkCatalogSourceWriteAccess(context);
 
     /// Do not interleave with the hive partitioning resolution, which also updates the metadata.
     std::lock_guard lock(hive_partitioning_resolution_mutex);
@@ -1447,7 +1425,6 @@ Pipe StorageObjectStorage::alterPartition(
     const StorageMetadataPtr & /*metadata_snapshot*/, const PartitionCommands & commands, ContextPtr context)
 {
     checkSessionMayUseServerIdentity(*object_storage, context);
-    checkCatalogSourceWriteAccess(context);
     return configuration->alterPartition(commands, std::move(context), catalog, getStorageID());
 }
 

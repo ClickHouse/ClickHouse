@@ -110,8 +110,6 @@ public:
 
     void checkTableCanBeDropped(ContextPtr query_context) const override;
 
-    void checkInsertIsAllowed(ContextPtr context) const override;
-
     bool supportsPartitionBy() const override { return true; }
 
     bool supportsSubcolumns() const override { return true; }
@@ -254,9 +252,6 @@ public:
     }
 
 protected:
-    /// Throws `ACCESS_DENIED` unless the session of `context` may write to the HDFS location of a data lake catalog table.
-    void checkCatalogSourceWriteAccess(const ContextPtr & context) const;
-
     /// `ALTER TABLE ... MODIFY SETTING` and `RESET SETTING` of a data lake table.
     void alterSettings(const StorageInMemoryMetadata & new_metadata, ContextPtr context);
 
