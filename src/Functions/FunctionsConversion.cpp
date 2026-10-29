@@ -2906,6 +2906,24 @@ FunctionCast::WrapperType FunctionCast::createEnumToStringWrapper() const
 
             auto res = res_type->createColumn();
 
+            if (auto * res_string = typeid_cast<ColumnString *>(res.get()))
+            {
+                const auto * null_map = nullable_col ? &nullable_col->getNullMapData() : nullptr;
+                auto & chars = res_string->getChars();
+                auto & offsets = res_string->getOffsets();
+                offsets.resize(size);
+                for (size_t i = 0; i < size; ++i)
+                {
+                    if (!null_map || !(*null_map)[i])
+                    {
+                        auto name = enum_type->getNameForValue(enum_data[i]);
+                        chars.insert(name.data(), name.data() + name.size());
+                    }
+                    offsets[i] = chars.size();
+                }
+                return res;
+            }
+
             if (nullable_col)
             {
                 for (size_t i = 0; i < size; ++i)
