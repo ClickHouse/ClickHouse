@@ -20,6 +20,7 @@
 #   `05448_reattach_tables_review_followups_3` - unused `WITH` definitions, storages reading other tables, stored constraints, `joinGet` in refreshable views
 #   `05449_reattach_tables_review_followups_4` - chained unused `WITH` definitions, nested settings profiles, constraints reading the table itself
 #   `05453_reattach_tables_stored_function_access` - stored expressions calling functions that check access, legacy `MergeTree` definitions
+#   `05454_reattach_tables_review_followups_5` - stored expressions in joins, materialized view reads, inserts into `Buffer` and tables with views
 
 MY_CLICKHOUSE_CLIENT=$(echo ${CLICKHOUSE_CLIENT} | sed 's/'"--send_logs_level=${CLICKHOUSE_CLIENT_SERVER_LOGS_LEVEL}"'/--send_logs_level=trace/g')
 

@@ -96,7 +96,6 @@
 #include <Storages/StorageInput.h>
 #include <Storages/StorageProxy.h>
 #include <Storages/StorageSet.h>
-#include <Storages/StorageView.h>
 
 #include <Access/Common/AccessFlags.h>
 #include <Access/Common/AccessRightsElement.h>
@@ -3488,26 +3487,47 @@ static void reattachTablesUsedInQuery(const ASTPtr & query, ContextMutablePtr co
     /// (under the invoker or the definer, see `StorageInMemoryMetadata::getSQLSecurityOverriddenContext`),
     /// and the collector does not look inside stored view definitions. A query reading a view could then
     /// fail on the access to an inner table only after the other tables of the query were reattached, so
-    /// any read of a view skips the hook. Views are never loaded lazily, so the cast does not load anything.
+    /// any read of a view skips the hook. The same holds for a materialized view, whose `read` checks the
+    /// access to its target table under its definer (`StorageMaterializedView::readImpl`).
+    ///
+    /// The storages that read or write other tables (`Buffer`, `Merge`, `Distributed`, `Alias`, ...) check
+    /// the access to them only in their `read` or in their sink (e.g. `BufferSink::consume` checks `INSERT`
+    /// on the destination), and those tables are not collected either, so such a read or write skips the
+    /// hook as well. An insert into a table with dependent views is pushed to them under their definers,
+    /// which is checked only during the insert, so it skips the hook too. A lazily loaded table that is not
+    /// loaded yet may be any of them, and telling it would require loading it, so it skips the hook too.
+    ///
+    /// A stored column expression (e.g. `f String ALIAS file('anything', '')`, or a `DEFAULT` evaluated by
+    /// an insert) is expanded only during the analysis of the query, after the hook, so the privileges such
+    /// a function checks when it is built (see `functionChecksOwnAccess`) cannot be preflighted. Any
+    /// collected table with such an expression skips the hook for the whole query: otherwise the other
+    /// tables of the query would be reattached before it fails.
     for (const auto & table : data.tables)
     {
-        if (!table.required_access.contains(AccessType::SELECT))
-            continue;
         const auto database = DatabaseCatalog::instance().tryGetDatabase(table.id.getDatabaseName());
         if (!database || !database->supportsDetachingTables())
             continue;
-        const auto storage = database->tryGetTable(table.id.getTableName(), context);
-        if (castStorage<const StorageView>(storage, DeferredTable::Skip))
-            return;
 
-        /// The storages that read other tables (`Buffer`, `Merge`, `Distributed`, `Alias`, ...) check the
-        /// access to them only in their `read`, and those tables are not collected either, so such a read
-        /// skips the hook as well. A lazily loaded table that is not loaded yet may be one of them, and
-        /// telling it would require loading it, so it skips the hook too.
+        if (const auto create_query = database->tryGetCreateTableQuery(table.id.getTableName(), context))
+            if (const auto * create = create_query->as<ASTCreateQuery>();
+                create && create->columns_list && astCallsFunctionCheckingOwnAccess(create->columns_list->ptr()))
+                return;
+
+        const bool reads = table.required_access.contains(AccessType::SELECT);
+        const bool writes = table.required_access.contains(AccessType::INSERT);
+        if (!reads && !writes)
+            continue;
+
+        const auto storage = database->tryGetTable(table.id.getTableName(), context);
         if (const auto * proxy = dynamic_cast<const StorageProxy *>(storage.get());
             proxy && proxy->isLazyStandIn() && !proxy->tryGetNested())
             return;
-        if (storage && storage->readsFromOtherTables())
+        /// Resolve the loaded proxies: a proxy forwards `isView`, but `StorageTableFunctionProxy` reports
+        /// `false` for the view it wraps.
+        const auto resolved = castStorage<const IStorage>(storage, DeferredTable::Skip);
+        if (resolved && (resolved->isView() || resolved->readsFromOtherTables()))
+            return;
+        if (writes && !DatabaseCatalog::instance().getDependentViews(table.id).empty())
             return;
     }
 
@@ -3856,12 +3876,6 @@ static void reattachTablesUsedInQuery(const ASTPtr & query, ContextMutablePtr co
             /// `allow_nonconst_timezone_arguments = 1` — would be rejected there, and by the recovery `ATTACH`
             /// as well, leaving the table detached. Analyze them the same way here and skip the table if that
             /// fails.
-            /// A stored column expression (e.g. `f String ALIAS file('anything', '')`) is expanded only
-            /// during the analysis of the query, after the reattach hook, so the privileges such a function
-            /// checks when it is built (see `functionChecksOwnAccess`) cannot be preflighted. Skip the table.
-            if (create && create->columns_list && astCallsFunctionCheckingOwnAccess(create->columns_list->ptr()))
-                continue;
-
             if (create && create->columns_list && create->columns_list->columns)
             {
                 auto validation_context = Context::createCopy(context);
