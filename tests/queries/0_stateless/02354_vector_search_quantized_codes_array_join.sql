@@ -13,7 +13,6 @@
 -- The `Quantized` codec is experimental and gated behind `enable_quantized_codec`.
 SET enable_quantized_codec = 1;
 SET vector_search_use_quantized_codes = 1;
-SET enable_analyzer = 1;
 SET enable_parallel_replicas = 0;
 
 DROP TABLE IF EXISTS t_04893;

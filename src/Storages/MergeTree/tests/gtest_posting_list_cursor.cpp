@@ -10,6 +10,7 @@
 #include <Storages/MergeTree/MergeTreeIOSettings.h>
 #include <Storages/MergeTree/DataPartStorageOnDiskFull.h>
 #include <Storages/MergeTree/MergeTreeIndexTextPostingListCodec.h>
+#include <Storages/MergeTree/TextIndexPostingsRankCursor.h>
 #include <Columns/ColumnsNumber.h>
 #include <DataTypes/Serializations/SerializationNumber.h>
 #include <DataTypes/Serializations/SerializationString.h>
@@ -31,6 +32,11 @@
 #include <random>
 #include <set>
 #include <vector>
+
+namespace DB::ErrorCodes
+{
+    extern const int CORRUPTED_DATA;
+}
 
 using namespace DB;
 namespace fs = std::filesystem;
@@ -3909,5 +3915,25 @@ TEST(PostingListCursorTest, LazyIntersectIncludesRowAtUInt32Max)
         EXPECT_EQ(data[1], 0u);
         EXPECT_EQ(data[2], 0u);
         EXPECT_EQ(data[3], 1u);
+    }
+}
+
+/// Corrupted token metadata may declare a compressed posting list with no documents and no segments.
+TEST(PostingListCursorTest, RankCursorRejectsEmptyPostingList)
+{
+    MultiBlockTestData data;
+    data.buffer = {0};
+    data.info.header = PostingsSerialization::Flags::IsCompressed | PostingsSerialization::Flags::HasBlockIndex;
+    data.info.cardinality = 0;
+    makeMultiBlockCursor(data);
+
+    try
+    {
+        TextIndexPostingsRankCursor cursor(std::make_shared<PostingListCursor>(*data.stream, data.info), data.info);
+        FAIL() << "Expected CORRUPTED_DATA";
+    }
+    catch (const Exception & e)
+    {
+        EXPECT_EQ(e.code(), ErrorCodes::CORRUPTED_DATA) << e.message();
     }
 }
