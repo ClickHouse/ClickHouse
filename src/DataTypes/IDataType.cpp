@@ -11,6 +11,7 @@
 
 #include <DataTypes/IDataType.h>
 #include <DataTypes/DataTypeCustom.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/NestedUtils.h>
 #include <DataTypes/Serializations/SerializationArray.h>
 #include <DataTypes/Serializations/SerializationSparse.h>
@@ -406,6 +407,12 @@ ColumnPtr IDataType::tryGetSubcolumn(std::string_view subcolumn_name, const Colu
         return ColumnConst::create(subcolumn, column_const->size());
     }
 
+    /// A column stored with automatic LowCardinality serialization flows through the pipeline as a
+    /// non-native `ColumnLowCardinality`, whose dictionary encoding does not expose the regular
+    /// subcolumns of the data type. Materialize it to extract the subcolumn in memory.
+    if (hasNonNativeLowCardinality(*column))
+        return tryGetSubcolumn(subcolumn_name, recursiveRemoveNonNativeLowCardinality(column));
+
     auto data = SubstreamData(getSerialization(*getSerializationInfo(*column))).withType(getPtr()).withColumn(column);
     auto subcolumn_data = getSubcolumnInfo(subcolumn_name, data, {}, false);
     return subcolumn_data ? subcolumn_data->data.column : nullptr;
@@ -415,6 +422,10 @@ ColumnPtr IDataType::getSubcolumn(std::string_view subcolumn_name, const ColumnP
 {
     if (const auto * column_const = checkAndGetColumn<ColumnConst>(column.get()))
         return ColumnConst::create(getSubcolumn(subcolumn_name, column_const->getDataColumnPtr()), column_const->size());
+
+    /// See the comment in `tryGetSubcolumn`.
+    if (hasNonNativeLowCardinality(*column))
+        return getSubcolumn(subcolumn_name, recursiveRemoveNonNativeLowCardinality(column));
 
     auto data = SubstreamData(getSerialization(*getSerializationInfo(*column))).withType(getPtr()).withColumn(column);
     auto subcolumn = getSubcolumnInfo(subcolumn_name, data, {}, true)->data.column;
