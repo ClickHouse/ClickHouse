@@ -548,6 +548,39 @@ struct PlainStringDecoder : public PageDecoder
         {
             /// Fast path for directly appending to ColumnString.
             auto & col_str = assert_cast<ColumnString &>(col);
+            const StringValueFilter * active_value_filter = value_filter && value_filter->isEnabled() ? value_filter : nullptr;
+            if (!filter && !active_value_filter)
+            {
+                /// Rows written so far are committed before the chars grow, so the column stays consistent if this throws.
+                auto & chars = col_str.getChars();
+                auto & col_offsets = col_str.getOffsets();
+                const size_t old_rows = col_offsets.size();
+                col_str.reserve(old_rows + num_values);
+                size_t pos = chars.size();
+                size_t capacity = chars.capacity();
+                for (size_t i = 0; i < num_values; ++i)
+                {
+                    UInt32 x = 0;
+                    memcpy(&x, data, 4); /// omitting range check because input is padded
+                    size_t len = 4 + size_t(x);
+                    requireRemainingBytes(len);
+                    if (pos + x > capacity) [[unlikely]]
+                    {
+                        col_offsets.resize_assume_reserved(old_rows + i);
+                        chars.resize_assume_reserved(pos);
+                        chars.reserve(pos + x);
+                        capacity = chars.capacity();
+                    }
+                    memcpy(chars.data() + pos, data + 4, x);
+                    pos += x;
+                    col_offsets.data()[old_rows + i] = pos;
+                    data += len;
+                }
+                col_offsets.resize_assume_reserved(old_rows + num_values);
+                chars.resize_assume_reserved(pos);
+                return;
+            }
+
             size_t to_reserve = filter ? 0 : num_values;
             for (size_t i = 0; filter && i < num_values; ++i)
                 to_reserve += filter[filter_offset + i];
@@ -555,7 +588,6 @@ struct PlainStringDecoder : public PageDecoder
                 to_reserve = num_values;
             col_str.reserve(col_str.size() + to_reserve);
 
-            const StringValueFilter * active_value_filter = value_filter && value_filter->isEnabled() ? value_filter : nullptr;
             size_t values_checked = 0;
             size_t values_replaced = 0;
             size_t bytes_skipped = 0;
@@ -1844,13 +1876,28 @@ void Dictionary::appendIndexes(const UInt32 * indexes, size_t n, IColumn & out, 
                 string_value_filter->updateStatsWithoutPerValueChecks(n, values_replaced, bytes_skipped);
                 break;
             }
+            size_t total_size = 0;
+            for (size_t i = 0; i < n; ++i)
+            {
+                UInt32 idx = indexes[i];
+                total_size += offsets[idx] - (offsets[ssize_t(idx) - 1] + 4); // offsets[-1] is ok because of padding
+            }
+            auto & col_offsets = c.getOffsets();
+            auto & chars = c.getChars();
+            const size_t old_rows = col_offsets.size();
+            size_t pos = chars.size();
+            /// Offsets are reserved above, so a failed chars allocation leaves the column unchanged.
+            chars.resize(pos + total_size);
+            col_offsets.resize_assume_reserved(old_rows + n);
             for (size_t i = 0; i < n; ++i)
             {
                 UInt32 idx = indexes[i];
                 size_t start = offsets[ssize_t(idx) - 1] + 4; // offsets[-1] is ok because of padding
                 size_t len = offsets[idx] - start;
                 /// TODO [parquet]: Try optimizing short memcpy by taking advantage of padding (maybe memcpySmall.h helps). Also in PlainStringDecoder.
-                c.insertData(data.data() + start, len);
+                memcpy(chars.data() + pos, data.data() + start, len);
+                pos += len;
+                col_offsets[old_rows + i] = pos;
             }
             break;
         }
@@ -1911,8 +1958,23 @@ void Dictionary::appendRepeated(size_t idx, size_t n, IColumn & out)
                 string_value_filter->updateStatsWithoutPerValueChecks(n, 0, 0);
             }
             c.reserve(c.size() + n);
+            if (len == 0)
+            {
+                c.insertManyDefaults(n);
+                break;
+            }
+            auto & col_offsets = c.getOffsets();
+            auto & chars = c.getChars();
+            const size_t old_rows = col_offsets.size();
+            const size_t old_size = chars.size();
+            /// Offsets are reserved above, so a failed chars allocation leaves the column unchanged.
+            chars.resize(old_size + len * n);
+            const char * src = data.data() + start;
             for (size_t i = 0; i < n; ++i)
-                c.insertData(data.data() + start, len);
+                memcpy(chars.data() + old_size + i * len, src, len);
+            col_offsets.resize_assume_reserved(old_rows + n);
+            for (size_t i = 0; i < n; ++i)
+                col_offsets[old_rows + i] = old_size + (i + 1) * len;
             break;
         }
         case Mode::Column:
