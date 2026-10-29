@@ -96,6 +96,19 @@ void setUpConfig(const std::string & file_name)
                 <path>local_plain_rewritable_dir/</path>
                 <metadata_type>plain_rewritable</metadata_type>
             </local_plain_rewritable_disk>
+            <local_plain_rewritable_read_only_disk>
+                <type>object_storage</type>
+                <metadata_type>plain_rewritable</metadata_type>
+                <read_only>true</read_only>
+                <locations>
+                    <main>
+                        <object_storage_type>local_blob_storage</object_storage_type>
+                        <path>local_plain_rewritable_read_only_dir/</path>
+                        <enabled>true</enabled>
+                        <local>true</local>
+                    </main>
+                </locations>
+            </local_plain_rewritable_read_only_disk>
         </disks>
     </storage_configuration>
 
@@ -195,6 +208,7 @@ public:
         fs::remove_all("./local_blob_storage_dir");
         fs::remove_all("./metadata_storage_dir");
         fs::remove_all("./local_plain_rewritable_dir");
+        fs::remove_all("./local_plain_rewritable_read_only_dir");
     }
 
     void waitBlobsCount(DB::DiskPtr disk, size_t needed_count)
@@ -1205,3 +1219,28 @@ catch (...)
     FAIL() << DB::getCurrentExceptionMessage(true);
 }
 #endif
+
+/// `read_only` is a setting of the disk, also when its object storage is configured under `locations`.
+/// The startup of such a disk must not remove the staging files abandoned by a killed writer of the directory:
+/// the reader may have no permission to, or the directory may be mounted read-only.
+TEST_F(DiskObjectStorageTest, ReadOnlyDiskWithLocationsKeepsAbandonedStagingFiles)
+{
+#if defined(OS_LINUX)
+    const fs::path directory = "./local_plain_rewritable_read_only_dir";
+    const fs::path abandoned = directory / ".tmp_prefix.path_abcdefgh";
+    fs::create_directories(directory);
+    {
+        DB::WriteBufferFromFile wb(abandoned.string());
+        DB::writeText(std::string("partial"), wb);
+        wb.finalize();
+    }
+    /// The mark of a staging file, see `setStagingMark`.
+    fs::permissions(abandoned, fs::perms::sticky_bit, fs::perm_options::add);
+
+    auto disk = getDiskObjectStorage("local_plain_rewritable_read_only_disk");
+    EXPECT_TRUE(disk->isReadOnly());
+    EXPECT_TRUE(fs::exists(abandoned)) << "the startup of a read-only disk must not remove anything";
+#else
+    GTEST_SKIP() << "Staging files are marked only on Linux";
+#endif
+}
