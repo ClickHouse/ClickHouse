@@ -242,8 +242,8 @@ struct VisitedFrame
     fs::path canonical;
     /// On the walk's stack: arriving here again is a cycle.
     bool walking = false;
-    /// The first path below `prefix` that the last walk skipped on an `ELOOP` caused by the symlinks
-    /// of `prefix` itself. A name that resolves it walks the frame again, once.
+    /// The first path below `prefix` that the last walk skipped on an `ELOOP` or `ENAMETOOLONG` caused
+    /// by the symlinks or length of `prefix` itself. A name that resolves it walks the frame again, once.
     std::optional<std::string> unresolved;
     bool retried = false;
     size_t matches_before_retry = 0;
@@ -268,12 +268,14 @@ struct PruningState
     std::vector<std::pair<const VisitedFrame *, bool>> pending_collisions;
 };
 
-/// Records an `ELOOP` on `path` in the frames being walked, unless no name for them can do better: it
-/// also fails from the innermost canonical directory, or it is a directory walked with `descent_suffix`.
-void noteSymlinkLimitSkip(
+/// Records an `ELOOP` or `ENAMETOOLONG` on `path` in the frames being walked, unless no name for them
+/// can do better: a loop that also fails from the innermost canonical directory, or a directory walked
+/// with `descent_suffix`.
+void notePathLimitSkip(
     const std::error_code & ec, const std::string & path, const std::string * descent_suffix, PruningState & pruning)
 {
-    if (ec != std::errc::too_many_symbolic_link_levels || pruning.active_frames.empty()
+    const bool symlink_limit = ec == std::errc::too_many_symbolic_link_levels;
+    if ((!symlink_limit && ec != std::errc::filename_too_long) || pruning.active_frames.empty()
         || !path.starts_with(pruning.active_frames.back()->prefix))
         return;
 
@@ -282,7 +284,7 @@ void noteSymlinkLimitSkip(
     tail.erase(0, tail.find_first_not_of('/'));
     std::error_code target_ec;
     const fs::path target = fs::canonical(innermost.canonical / tail, target_ec);
-    if (target_ec == std::errc::too_many_symbolic_link_levels)
+    if (symlink_limit && target_ec == std::errc::too_many_symbolic_link_levels)
         return;
     if (!target_ec && descent_suffix && pruning.visited_frames.contains(target.string() + '\0' + *descent_suffix))
         return;
@@ -408,7 +410,7 @@ void listFilesWithRegexpMatchingImpl(
         if (canon_ec)
         {
             skipUnresolvableOrThrow(canon_ec, candidate);
-            noteSymlinkLimitSkip(canon_ec, candidate, nullptr, pruning);
+            notePathLimitSkip(canon_ec, candidate, nullptr, pruning);
             return;
         }
         /// `checkCreationIsAllowed` normalizes its own copy of this path, so a `..` must not
@@ -454,7 +456,7 @@ void listFilesWithRegexpMatchingImpl(
     if (prefix_exists_ec)
     {
         skipUnresolvableOrThrow(prefix_exists_ec, prefix_without_globs);
-        noteSymlinkLimitSkip(prefix_exists_ec, prefix_without_globs, nullptr, pruning);
+        notePathLimitSkip(prefix_exists_ec, prefix_without_globs, nullptr, pruning);
     }
     if (!prefix_exists)
         return;
@@ -474,7 +476,7 @@ void listFilesWithRegexpMatchingImpl(
             if (canon_ec)
             {
                 skipUnresolvableOrThrow(canon_ec, prefix_without_globs);
-                noteSymlinkLimitSkip(canon_ec, prefix_without_globs, nullptr, pruning);
+                notePathLimitSkip(canon_ec, prefix_without_globs, nullptr, pruning);
             }
             else
                 dir_canonical = std::move(canonical_path);
@@ -524,7 +526,7 @@ void listFilesWithRegexpMatchingImpl(
                 pruning.pending_collisions.emplace_back(&frame, !frame.retried);
             /// What the frame could not resolve is also unresolved under the frames reaching it now.
             if (!frame.walking && frame.unresolved)
-                noteSymlinkLimitSkip(std::make_error_code(std::errc::too_many_symbolic_link_levels),
+                notePathLimitSkip(std::make_error_code(std::errc::too_many_symbolic_link_levels),
                                      prefix_without_globs + *frame.unresolved, nullptr, pruning);
             return; /// This directory has already been walked with this remaining pattern.
         }
@@ -611,7 +613,7 @@ void listFilesWithRegexpMatchingImpl(
             skipUnresolvableOrThrow(is_dir_ec, full_path);
             /// Only an entry this level can select may hide a match.
             if (recursive || skip_regex || re2::RE2::FullMatch(file_name, matcher))
-                noteSymlinkLimitSkip(is_dir_ec, full_path, recursive ? &suffix_with_globs : nullptr, pruning);
+                notePathLimitSkip(is_dir_ec, full_path, recursive ? &suffix_with_globs : nullptr, pruning);
             continue;
         }
 
