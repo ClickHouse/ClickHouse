@@ -45,3 +45,6 @@ A condition that can throw is not applied early before another condition, which 
 8	41
 A column with the name of the filter of the conditions applied early
 1250
+Not applied to a column that a part lacks, whose default the reader computes before the other filters
+1	1
+1	1

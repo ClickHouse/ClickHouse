@@ -2644,9 +2644,15 @@ static bool haveSameColumns(const Block & lhs, const Block & rhs)
     return true;
 }
 
-std::optional<ReadFromMergeTree::NonIntersectingFinalFilters> ReadFromMergeTree::makeNonIntersectingFinalFilters(const Names & columns_to_read) const
+std::optional<ReadFromMergeTree::NonIntersectingFinalFilters> ReadFromMergeTree::makeNonIntersectingFinalFilters(
+    const Names & columns_to_read, const RangesInDataParts & parts) const
 {
     if (!canUseNonIntersectingFinalFilter())
+        return std::nullopt;
+
+    /// The reader fills a column that a part lacks from its default expression, and converts a column of another type,
+    /// on the rows it reads before the filters run, which may throw on the rows that the other filters drop.
+    if (!partsStoreColumnsAsRead(non_intersecting_final_filter->actions.getRequiredColumnsNames(), parts))
         return std::nullopt;
 
     /// The filter can read only the columns of the read: after the plan optimizations a condition may use columns that are
@@ -2718,7 +2724,7 @@ Pipe ReadFromMergeTree::readNonIntersectingWithEngineFilter(
         data.merging_params, origin_column_names, context,
         [&](const Names & columns)
         {
-            auto filters = makeNonIntersectingFinalFilters(columns);
+            auto filters = makeNonIntersectingFinalFilters(columns, parts);
             if (!filters)
                 return spreadMarkRangesAmongStreams(std::move(parts), index_build_context, num_streams, columns);
 
@@ -3647,9 +3653,11 @@ bool ReadFromMergeTree::isPrewhereDeferredAfterFinal() const
 /// read time. The decision is per query because the steps are built once for all parts.
 bool ReadFromMergeTree::canReadPrewhereColumnsAhead(const RangesInDataParts & parts) const
 {
-    if (!query_info.prewhere_info)
-        return false;
+    return query_info.prewhere_info && partsStoreColumnsAsRead(query_info.prewhere_info->prewhere_actions.getRequiredColumnsNames(), parts);
+}
 
+bool ReadFromMergeTree::partsStoreColumnsAsRead(const Names & column_names, const RangesInDataParts & parts) const
+{
     if (mutations_snapshot
         && (mutations_snapshot->hasDataMutations() || mutations_snapshot->hasAlterMutations() || mutations_snapshot->hasMetadataMutations()))
         return false;
@@ -3660,7 +3668,7 @@ bool ReadFromMergeTree::canReadPrewhereColumnsAhead(const RangesInDataParts & pa
     const auto & columns = storage_snapshot->metadata->getColumns();
     std::vector<NameAndTypePair> storage_columns;
     NameSet seen_storage_columns;
-    for (const auto & column_name : query_info.prewhere_info->prewhere_actions.getRequiredColumnsNames())
+    for (const auto & column_name : column_names)
     {
         auto column = columns.tryGetColumnOrSubcolumn(GetColumnsOptions::AllPhysical, column_name);
         if (!column || !seen_storage_columns.insert(column->getNameInStorage()).second)

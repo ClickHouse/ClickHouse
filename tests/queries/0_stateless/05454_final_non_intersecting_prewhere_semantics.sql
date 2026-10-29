@@ -193,3 +193,15 @@ INSERT INTO t_final_prewhere_column_name SELECT number, number % 4, number FROM 
 OPTIMIZE TABLE t_final_prewhere_column_name FINAL;
 SELECT sum(__prefiltered_conditions) FROM t_final_prewhere_column_name FINAL WHERE v = 2 SETTINGS query_plan_optimize_lazy_final = 0;
 DROP TABLE t_final_prewhere_column_name;
+
+SELECT 'Not applied to a column that a part lacks, whose default the reader computes before the other filters';
+DROP TABLE IF EXISTS t_final_prewhere_default;
+CREATE TABLE t_final_prewhere_default (key UInt64, payload String) ENGINE = ReplacingMergeTree ORDER BY key;
+INSERT INTO t_final_prewhere_default SELECT number, toString(number) FROM numbers(10);
+OPTIMIZE TABLE t_final_prewhere_default FINAL;
+ALTER TABLE t_final_prewhere_default ADD COLUMN b UInt64 DEFAULT intDiv(1, key);
+SELECT sum(key), sum(length(payload)) FROM t_final_prewhere_default FINAL WHERE key != 0 AND b > 0
+SETTINGS apply_prewhere_after_final = 0, enable_multiple_prewhere_read_steps = 0, query_plan_optimize_lazy_final = 0;
+SELECT sum(key), sum(length(payload)) FROM t_final_prewhere_default FINAL WHERE key != 0 AND b > 0
+SETTINGS apply_prewhere_after_final = 0, enable_multiple_prewhere_read_steps = 0, query_plan_optimize_lazy_final = 1, min_filtered_ratio_for_lazy_final = 0;
+DROP TABLE t_final_prewhere_default;

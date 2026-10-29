@@ -702,6 +702,9 @@ public:
     /// Whether PREWHERE (present or moved from WHERE later) is applied after FINAL instead of during reading
     bool isPrewhereDeferredAfterFinal() const;
     bool canReadPrewhereColumnsAhead(const RangesInDataParts & parts) const;
+    /// Whether all `parts` store the columns with these names as they are read: with the type of the table, and with no
+    /// mutation or masking policy that rewrites them on read. Otherwise the reader computes their values for all rows it reads.
+    bool partsStoreColumnsAsRead(const Names & column_names, const RangesInDataParts & parts) const;
 
     /// The deterministic conditions of the `WHERE` above a `FINAL` read, which it applies as PREWHERE to the key ranges
     /// it reads without merging (see `optimize_move_to_prewhere_if_final_non_intersecting`). The conditions stay in the `WHERE`.
@@ -722,7 +725,7 @@ public:
         FilterDAGInfoPtr row_level_filter;
         PrewhereInfoPtr prewhere_info;
     };
-    std::optional<NonIntersectingFinalFilters> makeNonIntersectingFinalFilters(const Names & columns_to_read) const;
+    std::optional<NonIntersectingFinalFilters> makeNonIntersectingFinalFilters(const Names & columns_to_read, const RangesInDataParts & parts) const;
 
     const FilterDAGInfoPtr & getDeferredRowLevelFilter() const { return deferred_row_level_filter; }
     const PrewhereInfoPtr & getDeferredPrewhereInfo() const { return deferred_prewhere_info; }

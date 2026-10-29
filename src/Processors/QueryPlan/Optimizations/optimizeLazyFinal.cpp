@@ -172,7 +172,7 @@ static std::optional<QueryPlan> createNonIntersectingPlan(
 
     /// No row of these parts has another version, so all deterministic conditions of the `WHERE` can be applied as PREWHERE
     /// (see `optimize_move_to_prewhere_if_final_non_intersecting`). The filters are new objects, so they can be changed below.
-    auto non_intersecting_filters = reading_step->makeNonIntersectingFinalFilters(columns);
+    auto non_intersecting_filters = reading_step->makeNonIntersectingFinalFilters(columns, parts);
     if (non_intersecting_filters)
     {
         non_final_query_info.row_level_filter = std::move(non_intersecting_filters->row_level_filter);
