@@ -3,7 +3,6 @@
 #include <Storages/ObjectStorage/DataLakes/DataLakeStorageSettings.h>
 #include <Storages/StorageFactory.h>
 #include <Parsers/IAST_fwd.h>
-#include <Access/Common/AccessType.h>
 
 namespace DB
 {
@@ -33,11 +32,6 @@ void validateSupportedColumns(
 /// Throws `ACCESS_DENIED` if the client of `object_storage` uses the server's own Azure identity and the session of
 /// `context` may not. For entrypoints that do not refresh the client for the session, e.g. `ALTER` of a data lake.
 void checkSessionMayUseServerIdentity(const IObjectStorage & object_storage, const ContextPtr & context);
-
-/// A data lake catalog table on HDFS is read and written with the server's own HDFS identity, so it needs the same
-/// `READ`/`WRITE ON HDFS` grant as `icebergHDFS`. Throws `ACCESS_DENIED` unless the session of `context` has `type`
-/// on HDFS for `location`, normalized as `ITableFunction::getFunctionURINormalized` does.
-void checkCatalogHDFSAccess(const ContextPtr & context, AccessType type, const String & location);
 
 /// An empty column name has no identifier to render it with, so it cannot survive analysis.
 void validateLakeSchemaColumnNames(const NamesAndTypesList & schema, std::string_view lake_name);

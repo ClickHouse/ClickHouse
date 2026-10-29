@@ -13,9 +13,6 @@
 #include <Interpreters/DatabaseCatalog.h>
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
 #include <Storages/ObjectStorage/Utils.h>
-#include <Poco/URI.h>
-#include <Access/ContextAccess.h>
-#include <Access/Common/AccessFlags.h>
 #include <Common/FullyQualifiedObjectPath.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTFunction.h>
@@ -423,23 +420,6 @@ extern const SettingsUInt64 max_download_buffer_size;
 extern const SettingsBool use_cache_for_count_from_files;
 extern const SettingsString filesystem_cache_name;
 extern const SettingsUInt64 filesystem_cache_boundary_alignment;
-}
-
-void checkCatalogHDFSAccess(const ContextPtr & context, AccessType type, const String & location)
-{
-    String normalized_location;
-    try
-    {
-        Poco::URI uri(location);
-        uri.normalize();
-        normalized_location = uri.toString();
-    }
-    catch (const Poco::Exception &)
-    {
-        /// An unparsable location matches only an unfiltered grant.
-        normalized_location.clear();
-    }
-    context->getAccess()->checkAccessWithFilter(type, toStringSource(AccessTypeObjects::Source::HDFS), normalized_location);
 }
 
 void checkSessionMayUseServerIdentity([[maybe_unused]] const IObjectStorage & object_storage, [[maybe_unused]] const ContextPtr & context)

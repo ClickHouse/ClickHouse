@@ -3,7 +3,7 @@
 The catalog reports the location as `hdfs://...`, and with the default `vended_credentials = 1`
 it vends no credentials for it: HDFS authenticates through the server's `hdfs` configuration.
 Neither may stop the table from resolving. Reading it still needs `READ ON HDFS` for its location,
-and writing it `WRITE ON HDFS`, as reading and writing it through `icebergHDFS` do.
+as reading it through `icebergHDFS` does. Writing it would use the server's HDFS identity, so it is read-only.
 """
 
 import json
@@ -23,7 +23,9 @@ CATALOG_PORT = 8182
 
 cluster = ClickHouseCluster(__file__)
 node = cluster.add_instance(
-    "node", main_configs=["configs/enable_grants.xml"], with_hdfs=True
+    "node",
+    main_configs=["configs/enable_grants.xml", "configs/remote_servers.xml"],
+    with_hdfs=True,
 )
 
 USER = "hdfs_catalog_reader"
@@ -122,7 +124,7 @@ def test_hdfs_location_requires_hdfs_source_grant(started_cluster, hdfs_catalog)
         node.query(f"GRANT READ ON HDFS('hdfs://hdfs1:9000/elsewhere/.*') TO {USER}")
         assert_denied()
 
-        node.query(f"GRANT READ ON HDFS('hdfs://hdfs1:9000/warehouse/.*') TO {USER}")
+        node.query(f"GRANT READ ON HDFS('{LOCATION}') TO {USER}")
         assert (
             node.query(
                 "DESCRIBE hdfs_catalog.`ns.events` FORMAT TSVRaw SETTINGS describe_compact_output = 1",
@@ -134,20 +136,22 @@ def test_hdfs_location_requires_hdfs_source_grant(started_cluster, hdfs_catalog)
             node.query("SELECT count() FROM hdfs_catalog.`ns.events`", user=USER)
             == "0\n"
         )
-
-        # Reading the location does not allow writing to it.
-        table_path = urlparse(LOCATION).path
-        files_before = list_hdfs_dir(started_cluster.hdfs_api, table_path)
-        node.query(f"GRANT INSERT ON hdfs_catalog.* TO {USER}")
-        for settings in [
-            "allow_insert_into_iceberg = 1",
-            "allow_insert_into_iceberg = 1, async_insert = 1, wait_for_async_insert = 1",
-        ]:
-            error = node.query_and_get_error(
-                f"INSERT INTO hdfs_catalog.`ns.events` SETTINGS {settings} VALUES (1, 'a')",
-                user=USER,
-            )
-            assert "ACCESS_DENIED" in error, error
-        assert list_hdfs_dir(started_cluster.hdfs_api, table_path) == files_before
     finally:
         node.query(f"DROP USER IF EXISTS {USER}")
+
+
+def test_hdfs_location_is_read_only(started_cluster, hdfs_catalog):
+    # Even the default user, who has every grant, cannot write: the object storage rejects it.
+    table_path = urlparse(LOCATION).path
+    files_before = list_hdfs_dir(started_cluster.hdfs_api, table_path)
+    for settings in [
+        "allow_insert_into_iceberg = 1",
+        "allow_insert_into_iceberg = 1, async_insert = 1, wait_for_async_insert = 1",
+        "allow_insert_into_iceberg = 1, enable_parallel_replicas = 2, max_parallel_replicas = 2, "
+        "cluster_for_parallel_replicas = 'one_shard'",
+    ]:
+        error = node.query_and_get_error(
+            f"INSERT INTO hdfs_catalog.`ns.events` SETTINGS {settings} VALUES (1, 'a')"
+        )
+        assert "READONLY" in error, error
+    assert list_hdfs_dir(started_cluster.hdfs_api, table_path) == files_before
