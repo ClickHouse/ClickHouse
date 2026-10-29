@@ -47,6 +47,7 @@
 #include <Storages/AlterCommands.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/SubcolumnCodecs.h>
+#include <Storages/IndicesDescription.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/StorageProxy.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
@@ -1917,6 +1918,22 @@ void AlterCommands::apply(
         {
             throw Exception(exception.code(), "Cannot apply ALTER because it breaks skip index {}: {}", index.name, exception.message());
         }
+    }
+
+    /// Only the indices this statement declares, and only now: the rebuild above resolves them against
+    /// the schema every command produced, which is what gets stored, and a later command can change
+    /// what an alias in a transform expands to. Existing indices stay unauthorised on purpose.
+    NameSet declared_indices;
+    for (const AlterCommand & command : *this)
+    {
+        if (!command.ignore && command.type == AlterCommand::ADD_INDEX)
+            declared_indices.insert(command.index_name);
+    }
+
+    for (const auto & index : metadata_copy.secondary_indices)
+    {
+        if (declared_indices.contains(index.name))
+            checkTextIndexPreAndPostProcessorPermissions(index, context);
     }
 
     /// Changes in columns may lead to changes in projections

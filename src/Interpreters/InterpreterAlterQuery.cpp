@@ -33,10 +33,12 @@
 #include <Parsers/ASTAlterQuery.h>
 #include <Parsers/ASTAssignment.h>
 #include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTIndexDeclaration.h>
 #include <Parsers/ASTIdentifier_fwd.h>
 #include <Parsers/ASTColumnDeclaration.h>
 #include <QueryPipeline/QueryPlanResourceHolder.h>
 #include <Storages/AlterCommands.h>
+#include <Storages/IndicesDescription.h>
 #include <Storages/MutationCommands.h>
 #include <Storages/PartitionCommands.h>
 #include <Storages/ExecuteCommands.h>
@@ -98,6 +100,28 @@ namespace ErrorCodes
 
 namespace
 {
+
+/// `ON CLUSTER` and `Replicated`-database hosts run the query without the submitting user.
+void checkAddedIndexPermissions(const ASTAlterQuery & alter, const StoragePtr & table, const ContextPtr & context)
+{
+    /// A host without the table cannot expand aliases.
+    StorageMetadataHandle metadata;
+    if (table)
+        metadata = table->getInMemoryMetadataPtr(context, /*bypass_metadata_cache=*/ false);
+
+    static const ColumnsDescription no_columns;
+    const ColumnsDescription & columns = metadata ? metadata->getColumns() : no_columns;
+
+    for (const auto & child : alter.command_list->children)
+    {
+        const auto & command = child->as<const ASTAlterCommand &>();
+        if (command.type != ASTAlterCommand::ADD_INDEX || !command.index_decl)
+            continue;
+
+        if (const auto * declaration = command.index_decl->as<ASTIndexDeclaration>())
+            checkTextIndexPreAndPostProcessorPermissions(*declaration, columns, context);
+    }
+}
 
 void normalizeLegacyToTimeInAlterMetadataDefinitions(ASTAlterQuery & alter)
 {
@@ -572,7 +596,7 @@ BlockIO InterpreterAlterQuery::executeToTable(const ASTAlterQuery & alter)
 
         DDLQueryOnClusterParams params;
         params.access_to_check = getRequiredAccess(table);
-        params.additional_access_check = [captured_query_ptr = query_ptr, context = getContext()](const String & cluster_default_database, bool throw_if_unresolved)
+        params.additional_access_check = [captured_query_ptr = query_ptr, context = getContext(), table](const String & cluster_default_database, bool throw_if_unresolved)
         {
             const auto & captured_alter = captured_query_ptr->as<const ASTAlterQuery &>();
             const auto default_database = captured_alter.getDatabase().empty() ? cluster_default_database : captured_alter.getDatabase();
@@ -582,6 +606,7 @@ BlockIO InterpreterAlterQuery::executeToTable(const ASTAlterQuery & alter)
                 if (command.type == ASTAlterCommand::DELETE || command.type == ASTAlterCommand::UPDATE)
                     checkNoRowPolicyForSetOperands(child, default_database, context, throw_if_unresolved);
             }
+            checkAddedIndexPermissions(captured_alter, table, context);
         };
         return executeDDLQueryOnCluster(query_ptr, getContext(), params);
     }
@@ -603,6 +628,8 @@ BlockIO InterpreterAlterQuery::executeToTable(const ASTAlterQuery & alter)
             checkNoRowPolicyForSetOperands(child, table_id.database_name, getContext());
         }
     }
+
+    checkAddedIndexPermissions(alter, table, getContext());
 
     if (database->shouldReplicateQuery(getContext(), query_ptr))
     {
