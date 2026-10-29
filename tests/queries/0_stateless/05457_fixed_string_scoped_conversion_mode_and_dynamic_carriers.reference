@@ -1,0 +1,26 @@
+if chain to multiIf with scoped settings
+0	78
+1	6100
+null-safe comparison with an untyped NULL tuple element
+0
+1
+1
+serialized plan
+1
+1
+1
+1
+bloom_filter over mapValues
+[1,3]
+[1,3]
+[1,3]
+FixedString in Dynamic
+1
+1
+1
+1
+1
+1
+1
+1
+1
