@@ -3430,15 +3430,12 @@ void Reader::decodePrimitiveColumn(ColumnChunk & column, const PrimitiveColumnIn
         !column.need_null_map;
     const size_t subgroup_end_row_idx = row_subgroup.start_row_idx + row_subgroup.filter.rows_total;
 
-    /// Reading many short runs of passing rows one at a time (seek, then decode a few values) costs
-    /// much more than decoding all rows between the first and the last passing row and filtering
-    /// the decoded column, e.g. after a PREWHERE step that keeps 10-90% of scattered rows.
+    /// Decodes all rows from the first to the last passing row and filters them, instead of seeking to each run.
     auto try_decode_densely = [&]() -> bool
     {
         if (column_info.levels.back().rep != 0 || row_subgroup.filter.filter.empty())
             return false;
-        /// Not for strings and other large values (also when dictionary-encoded: the dictionary may
-        /// fall back to plain pages): filtering would copy the passing values a second time.
+        /// Not for large values, even dictionary-encoded (a chunk may fall back to plain pages): filtering copies them again.
         if (!column_info.decoded_type->haveMaximumSizeOfValue() || column_info.decoded_type->getMaximumSizeOfValueInMemory() > 16)
             return false;
         /// Nor when converting a value can throw: the rows filtered out must not be converted.
@@ -3454,7 +3451,7 @@ void Reader::decodePrimitiveColumn(ColumnChunk & column, const PrimitiveColumnIn
             return false;
 
         /// Ranges of rows to decode, relative to the row subgroup. With an offset index, a range must
-        /// not cover a page without passing rows (or a page not listed at all): it may be not fetched.
+        /// not cover a page without passing rows (or a page not listed at all): it may not be fetched.
         const size_t subgroup_start = row_subgroup.start_row_idx;
         std::vector<std::pair<size_t, size_t>> ranges;
         if (column.data_pages.empty())
