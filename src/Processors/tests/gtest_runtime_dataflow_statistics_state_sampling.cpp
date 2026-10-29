@@ -29,6 +29,7 @@
 #include <Formats/NativeWriter.h>
 #include <IO/NullWriteBuffer.h>
 #include <IO/WriteBufferFromString.h>
+#include <Interpreters/Aggregator.h>
 #include <Processors/Chunk.h>
 #include <Processors/QueryPlan/Optimizations/RuntimeDataflowStatistics.h>
 #include <Common/Arena.h>
@@ -1854,4 +1855,133 @@ TEST(RuntimeDataflowStatisticsStateSampling, UnsampledReplicatedArrayChunksSizeR
     ASSERT_TRUE(stats.has_value());
     EXPECT_GE(stats->output_bytes, wire_bytes * 4 / 5);
     EXPECT_LE(stats->output_bytes, wire_bytes * 5 / 4);
+}
+
+/// Independent aggregation of partitions (`ConvertingAggregatedToChunksSource`) records one hash table per
+/// partition into the same `AggregationState` statistic. Each table is sampled to a different extent - a
+/// large table at ~1000 of its states, a small one in full - so the raw samples must be scaled to the bytes
+/// each table represents before they are pooled. Otherwise a small, fully sampled, highly compressible table
+/// dominates the pooled compression ratio and the estimate of a large incompressible table collapses.
+TEST(RuntimeDataflowStatisticsStateSampling, AggregationStateSamplesOfDifferentTablesAreNormalized)
+{
+    tryRegisterAggregateFunctions();
+
+    DataTypes argument_types = {std::make_shared<DataTypeUInt64>()};
+    AggregateFunctionProperties properties;
+    AggregateFunctionPtr function
+        = AggregateFunctionFactory::instance().get("groupArray", NullsAction::EMPTY, argument_types, {}, properties);
+    const auto state_type = std::make_shared<DataTypeAggregateFunction>(function, argument_types, Array{});
+
+    AggregateDescription description;
+    description.function = function;
+    description.column_name = "st";
+
+    Block header;
+    header.insert({std::make_shared<DataTypeUInt32>()->createColumn(), std::make_shared<DataTypeUInt32>(), "k"});
+    header.insert({state_type->createColumn(), state_type, "st"});
+
+    Aggregator::Params params(
+        Names{"k"},
+        AggregateDescriptions{description},
+        /*overflow_row_=*/false,
+        /*max_rows_to_group_by_=*/0,
+        OverflowMode::THROW,
+        /*group_by_two_level_threshold_=*/0,
+        /*group_by_two_level_threshold_bytes_=*/0,
+        /*max_bytes_before_external_group_by_=*/0,
+        /*min_bytes_before_external_group_by_=*/0,
+        /*empty_result_for_aggregation_by_empty_set_=*/false,
+        /*tmp_data_scope_=*/nullptr,
+        /*max_threads_=*/1,
+        /*min_free_disk_space_=*/0,
+        /*compile_aggregate_expressions_=*/false,
+        /*min_count_to_compile_aggregate_expression_=*/0,
+        /*max_block_size_=*/65536,
+        /*enable_prefetch_=*/false,
+        /*only_merge_=*/true,
+        /*optimize_group_by_constant_keys_=*/true,
+        /*min_hit_rate_to_use_consecutive_keys_optimization_=*/0.5,
+        StatsCollectingParams{},
+        /*enable_producing_buckets_out_of_order_in_aggregation_=*/false,
+        /*serialize_string_with_zero_byte_=*/false,
+        /*enable_parallel_single_level_merge_=*/false,
+        /*enable_packed_string_keys_=*/false,
+        /*enable_adaptive_aggregator_=*/false,
+        /*adaptive_aggregator_freeze_threshold_=*/0,
+        /*adaptive_aggregator_freeze_threshold_bytes_=*/0,
+        /*adaptive_aggregator_disable_thaw_=*/false,
+        /*use_aggregation_memory_tracker_=*/true);
+    Aggregator aggregator(header, params);
+
+    /// `groups` states of `values_per_group` values each; the values are pseudo-random (incompressible) or zeros.
+    auto make_states = [&](size_t groups, size_t values_per_group, bool random_values)
+    {
+        auto values = ColumnUInt64::create();
+        UInt64 random = 0x111985;
+        for (size_t i = 0; i < groups * values_per_group; ++i)
+        {
+            random = random * 6364136223846793005ULL + 1442695040888963407ULL;
+            values->insert(random_values ? random : UInt64(0));
+        }
+        const IColumn * arguments[1] = {values.get()};
+
+        auto states = state_type->createColumn();
+        auto & state_column = assert_cast<ColumnAggregateFunction &>(*states);
+        for (size_t group = 0; group < groups; ++group)
+        {
+            state_column.insertDefault();
+            for (size_t i = 0; i < values_per_group; ++i)
+                function->add(state_column.getData()[group], arguments, group * values_per_group + i, &state_column.createOrGetArena());
+        }
+        return states;
+    };
+
+    /// The ground truth for one table: all of its states compressed with the default codec, as they are sent.
+    auto compressed_states_size = [&](const IColumn & states)
+    {
+        const auto & state_column = assert_cast<const ColumnAggregateFunction &>(states);
+        NullWriteBuffer null_buf;
+        CompressedWriteBuffer compressed_buf(null_buf, CompressionCodecFactory::instance().getDefaultCodec());
+        for (size_t row = 0; row < state_column.size(); ++row)
+            function->serialize(state_column.getData()[row], compressed_buf, std::nullopt);
+        compressed_buf.finalize();
+        return null_buf.count();
+    };
+
+    auto make_variants = [&](MutableColumnPtr & states)
+    {
+        const size_t groups = states->size();
+        auto key_column = ColumnUInt32::create();
+        for (size_t group = 0; group < groups; ++group)
+            key_column->insert(UInt64(group));
+
+        auto variants = std::make_shared<AggregatedDataVariants>();
+        bool no_more_keys = false;
+        std::atomic<bool> is_cancelled{false};
+        Columns columns = {std::move(key_column), states->getPtr()};
+        aggregator.mergeOnBlock(columns, groups, /*is_overflows=*/false, *variants, no_more_keys, is_cancelled);
+        return variants;
+    };
+
+    /// A large table of incompressible states, sampled at ~1000 of its 20000 states, and a small table of
+    /// highly compressible states of a comparable total size, sampled in full.
+    auto large_states = make_states(/*groups=*/20000, /*values_per_group=*/8, /*random_values=*/true);
+    auto small_states = make_states(/*groups=*/10, /*values_per_group=*/10000, /*random_values=*/false);
+    const size_t exact_compressed_bytes = compressed_states_size(*large_states) + compressed_states_size(*small_states);
+
+    auto large_variants = make_variants(large_states);
+    auto small_variants = make_variants(small_states);
+
+    const size_t cache_key = 0x111985 + 55;
+    {
+        RuntimeDataflowStatisticsCacheUpdater updater(std::make_shared<RuntimeDataflowStatisticsBlock>(cache_key, /*total_rows_to_read_=*/20010));
+        updater.recordAggregationStateSizes(*large_variants, /*bucket=*/-1);
+        updater.recordAggregationStateSizes(*small_variants, /*bucket=*/-1);
+    }
+
+    /// Pooling the raw samples gives an estimate about eight times too small here.
+    const auto stats = getRuntimeDataflowStatisticsCache().getStats(cache_key);
+    ASSERT_TRUE(stats.has_value());
+    EXPECT_GE(stats->output_bytes, exact_compressed_bytes / 2);
+    EXPECT_LE(stats->output_bytes, exact_compressed_bytes * 2);
 }

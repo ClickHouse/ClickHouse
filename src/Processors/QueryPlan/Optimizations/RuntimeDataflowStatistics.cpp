@@ -1115,8 +1115,18 @@ void RuntimeDataflowStatisticsCacheUpdater::recordAggregationStateSizes(Aggregat
     auto & statistics = block->output_bytes_statistics[OutputStatisticsType::AggregationState];
     std::lock_guard lock(statistics.mutex);
     statistics.bytes += estimate.bytes;
-    statistics.sample_bytes += estimate.sample_bytes;
-    statistics.compressed_bytes += estimate.compressed_bytes;
+    /// `estimate.bytes` covers the whole hash table, but the sample covers only a bounded part of it, and
+    /// tables of different sizes are sampled to different extents. The pooled `sample_bytes / compressed_bytes`
+    /// ratio is applied to the whole `bytes` total, so scale each sample to the bytes it represents, keeping
+    /// its compression ratio - the same normalization `recordColumns` applies to its components. Otherwise a
+    /// small, fully sampled table would dominate the ratio of a large, sparsely sampled one.
+    if (estimate.sample_bytes)
+    {
+        statistics.sample_bytes += estimate.bytes;
+        statistics.compressed_bytes += static_cast<size_t>(
+            static_cast<double>(estimate.compressed_bytes) * static_cast<double>(estimate.bytes)
+            / static_cast<double>(estimate.sample_bytes));
+    }
     const auto elapsed_nanoseconds = watch.elapsedNanoseconds();
     statistics.elapsed_microseconds += elapsed_nanoseconds / 1000;
     ProfileEvents::increment(ProfileEvents::RuntimeDataflowStatisticsOutputNanoseconds, elapsed_nanoseconds);
