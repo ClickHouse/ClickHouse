@@ -237,8 +237,8 @@ bool isAllowedTableFunction(const String & name)
 }
 
 /// The allowed table functions that take the structure of the table they generate as a string:
-/// `values('x UInt8, y UInt64 ALIAS ...', 1)`, `generateRandom('x UInt8 ...')` and
-/// `format(JSONEachRow, 'x UInt8 DEFAULT ...', '{}')`. A column declaration there can carry an
+/// `values('x UInt8, y UInt64 ALIAS ...', 1)`, `generateRandom('x UInt8 ...')`,
+/// `format(JSONEachRow, 'x UInt8 DEFAULT ...', '{}')` and `null('x UInt8, y String ALIAS ...')`. A column declaration there can carry an
 /// expression - `DEFAULT`, `MATERIALIZED`, `ALIAS`, `EPHEMERAL`, `TTL` - that the server parses out of
 /// the string and evaluates when the table is read, after this validation, which sees only a string.
 /// So every string argument that parses as a list of column declarations must declare nothing but the
@@ -246,15 +246,16 @@ bool isAllowedTableFunction(const String & name)
 /// for its default limits fails the validation with the error of the parser rather than being taken
 /// for something else.
 ///
-/// `format` and `generateRandom` also evaluate an argument that is an expression and use the string it
-/// computes as the structure, and they take an identifier for its name, so only literals and
+/// `format`, `generateRandom` and `null` also evaluate an argument that is an expression and use the string
+/// it computes as the structure, and they take an identifier for its name, so only literals and
 /// identifiers are accepted as their arguments. `values` takes the structure only from a literal; the
 /// other arguments are values, and the rest of this validation judges them.
 void checkStructureArgumentsOfTableFunction(const ASTFunction & function)
 {
     const String lowercase_name = Poco::toLower(function.name);
     const bool is_values = lowercase_name == "values";
-    if ((!is_values && lowercase_name != "generaterandom" && lowercase_name != "format") || !function.arguments)
+    if ((!is_values && lowercase_name != "generaterandom" && lowercase_name != "format" && lowercase_name != "null")
+        || !function.arguments)
         return;
 
     for (const auto & argument : function.arguments->children)
