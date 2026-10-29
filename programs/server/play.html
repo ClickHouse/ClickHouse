@@ -7546,6 +7546,8 @@ class QueryResultElement extends HTMLElement
             text += '\n\nReset the profiler period to the server default in the Flame view, or uncheck Flame graph before running again.';
         if (String(message).includes('send_profile_traces'))
             text += '\n\nThis server did not accept live profiling. Uncheck Flame graph before running again.';
+        else if (this._ownerCell?.tab?.profileTraces && /\bINTROSPECTION\b|addressToSymbol|allow_introspection_functions/.test(String(message)))
+            text += '\n\nLive profiling requires the INTROSPECTION grant and the permission to enable allow_introspection_functions. Uncheck Flame graph before running again.';
         this._error.innerText = text;
         this._error.style.display = 'block';
     }
@@ -7618,6 +7620,11 @@ class QueryResultElement extends HTMLElement
         const cell = this._ownerCell;
         if (cell)
         {
+            /// The statement results of a multi-query cell share its Flame toggle: keep it while another
+            /// result still requested or received samples.
+            const siblings = cell.multiContainer && this.parentElement === cell.multiContainer ? [...cell.multiContainer.children] : [];
+            if (siblings.some((el) => el !== this && el._flame_requested))
+                return;
             cell.flameAvailable = false;
             if (!cellOwnsChrome(cell)) return;
         }
@@ -12197,7 +12204,8 @@ async function postImpl(cell, posted_request_num, query, targetResultEl, abortCo
     const connection_params = new URLSearchParams(server_address.split('#', 1)[0].split('?').slice(1).join('?'));
     const framing_settings = await detectFramingSetting(query, paramValuesSnapshot, connection_params);
     const profile_traces = requested_profile_traces && !framing_settings.user_disables_profile_traces;
-    if (profile_traces) url += '&send_profile_traces=1';
+    /// The server delivers samples only with the access that `addressToSymbol` requires.
+    if (profile_traces) url += '&send_profile_traces=1&allow_introspection_functions=1';
     if (profile_traces && profiler_period_ns)
         url += `&query_profiler_real_time_period_ns=${profiler_period_ns}&query_profiler_cpu_time_period_ns=${profiler_period_ns}`;
 

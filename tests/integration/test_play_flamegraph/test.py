@@ -68,6 +68,7 @@ def test_play_flamegraph(started_cluster, nodejs_container):
     for line in (
         "PASS request settings respect SQL opt-outs",
         "PASS Flame activates only after local preflight accepts a profiling request",
+        "PASS a failed statement keeps the Flame toggle of a sibling with samples",
         "PASS all-node and per-node trees agree; selector preserves selection",
         "PASS producers sharing a host name stay separate by query_id",
         "PASS shared node, symbol, and depth budgets",

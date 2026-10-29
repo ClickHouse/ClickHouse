@@ -45,7 +45,7 @@ async function main()
     };
     const RequestResult = vm.runInNewContext('(class {'
         + extract('    _markFlameAvailable()\n', '    appendProfileTraces(')
-        + '})', { cellOwnsChrome: () => true, progressEl: { showFlameToggle() {} } });
+        + '})', { cellOwnsChrome: () => true, progressEl: { showFlameToggle() {}, hideFlameToggle() {} } });
     const makeRequestResult = () => Object.assign(new RequestResult(), {
         _flame_requested: false, _ownerCell: { tab: { id: 'request' }, flameAvailable: false },
     });
@@ -248,6 +248,31 @@ async function main()
         assert.equal(result._ownerCell.flameAvailable, enabled, query);
     }
     console.log('PASS Flame activates only after local preflight accepts a profiling request');
+
+    {
+        /// A statement whose request fails before a response must not hide the Flame toggle of a sibling with samples.
+        const multiContainer = { children: [] };
+        const cell = { tab: { id: 'multi' }, flameAvailable: false, multiContainer };
+        const [healthy, failed] = [0, 1].map(() => Object.assign(new RequestResult(), {
+            _flame_requested: false, _flame_data: { types: new Map() }, _ownerCell: cell, parentElement: multiContainer,
+        }));
+        multiContainer.children.push(healthy, failed);
+        healthy.startProfileTraces(true);
+        healthy._flame_data.types.set('CPU', {});
+        failed.startProfileTraces(true);
+        failed.abandonProfileTraces();
+        assert.equal(failed._flame_requested, false);
+        assert.equal(healthy._flame_requested, true);
+        assert.equal(cell.flameAvailable, true);
+
+        const single = Object.assign(new RequestResult(), {
+            _flame_requested: false, _flame_data: { types: new Map() }, _ownerCell: { tab: { id: 'single' }, flameAvailable: false },
+        });
+        single.startProfileTraces(true);
+        single.abandonProfileTraces();
+        assert.equal(single._ownerCell.flameAvailable, false);
+    }
+    console.log('PASS a failed statement keeps the Flame toggle of a sibling with samples');
 
     const api = vm.runInNewContext(extract('const MAX_FLAME_NODES', 'async function getServerStatus')
         + extract('function makeEventStreamHandler(', '/// Parse one SSE event block')
