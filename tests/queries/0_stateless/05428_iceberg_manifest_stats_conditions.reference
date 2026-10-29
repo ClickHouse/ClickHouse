@@ -67,3 +67,7 @@ rows: 5000
 Expect ~1: the default 1% of 12 rows truncates to 0, and a read with rows is estimated at 1 row at least (true 1).
 Join: dim[5] ⋈ t[no_stats~1]
 rows: 1
+--- T8: GROUP BY v of s = 'rare' on the 12-row table
+Expect ~1: the numbers of distinct values are raised to 1 with the rows, so the aggregation keeps 1 group (true 1).
+Join: dim[5] ⋈ t[no_stats~1]
+rows: 1

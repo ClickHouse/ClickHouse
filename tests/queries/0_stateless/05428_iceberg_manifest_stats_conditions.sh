@@ -14,7 +14,7 @@
 # - T5: a filter above a `LIMIT` stays out of the read, and is still estimated, then capped by the `LIMIT`.
 # - T6: a row policy prunes and is estimated.
 # - T7: a filter right above the read is also the read's own filter, and is counted once.
-# - T8: a string equality on a 12-row table is estimated at 1 row, not 0.
+# - T8: a string equality on a 12-row table is estimated at 1 row, not 0, also below an aggregation.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -152,6 +152,9 @@ labels t v 't.k % 2 = 0' ${ON}
 echo "--- T8: s = 'rare' on a 12-row table"
 echo 'Expect ~1: the default 1% of 12 rows truncates to 0, and a read with rows is estimated at 1 row at least (true 1).'
 labels small v "t.s = 'rare'" ${ON}
+echo "--- T8: GROUP BY v of s = 'rare' on the 12-row table"
+echo 'Expect ~1: the numbers of distinct values are raised to 1 with the rows, so the aggregation keeps 1 group (true 1).'
+labels "(SELECT v, count() AS c FROM small WHERE s = 'rare' GROUP BY v)" v '1' ${ON}
 
 ${CLICKHOUSE_CLIENT} --query "DROP ROW POLICY ${CLICKHOUSE_DATABASE}_rp ON ${CLICKHOUSE_DATABASE}.t_rp"
 rm -rf "${LAKE}"
