@@ -95,7 +95,8 @@ bool isUnknownCommitStatus();
 /// Without it (a commit whose metadata file is already visible to listing-based readers, which may
 /// have built on it), removes only the hint and returns normally, so the commit is kept without a
 /// hint; `files_to_take_back` is not used. A failed read leaves everything in place.
-void takeBackVersionHintWithoutETag(
+/// Returns whether the hint was taken back (or its removal was attempted), so the commit is kept without it.
+bool takeBackVersionHintWithoutETag(
     const DB::ObjectStoragePtr & object_storage,
     const std::string & storage_version_hint_path,
     Int32 version,

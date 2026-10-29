@@ -498,7 +498,7 @@ bool isUnknownCommitStatus()
         reason);
 }
 
-void takeBackVersionHintWithoutETag(
+bool takeBackVersionHintWithoutETag(
     const DB::ObjectStoragePtr & object_storage,
     const std::string & storage_version_hint_path,
     Int32 version,
@@ -541,17 +541,17 @@ void takeBackVersionHintWithoutETag(
             "unable to advance it under a compare-and-swap.",
             storage_version_hint_path,
             getCurrentExceptionMessage(false));
-        return;
+        return false;
     }
 
     /// Another writer has replaced the hint since it was created (that takes a compare-and-swap
     /// under a tag it has read, so the tag is evidently there), and its metadata file builds on
     /// the one published here. Neither file is ours to take back anymore.
     if (!hint.exists || hint.version != version)
-        return;
+        return false;
 
     if (!hint.etag.empty())
-        return;
+        return false;
 
     if (!no_concurrent_writer)
     {
@@ -572,7 +572,7 @@ void takeBackVersionHintWithoutETag(
             "`iceberg_use_version_hint` for this object storage.",
             storage_version_hint_path,
             removal == RemovalOutcome::Removed ? "Removed" : "Tried to remove");
-        return;
+        return true;
     }
 
     /// Nobody can have built on the files of this operation yet, so take all of them back. Remove the
@@ -728,14 +728,17 @@ bool tryWriteVersionHintFile(
             /// rule applied above to an existing hint. If it is not, it is taken back, while the
             /// already published metadata file stays and the commit succeeds without a hint (see
             /// `takeBackVersionHintWithoutETag`).
-            if (!version_hint.exists)
-                takeBackVersionHintWithoutETag(
+            /// Exact mode cannot confirm a hint that has been taken back, and creating it again would
+            /// only be taken back again, so it reports the hint as not confirmed right away.
+            if (!version_hint.exists
+                && takeBackVersionHintWithoutETag(
                     object_storage,
                     storage_version_hint_path,
                     metadata_file_info.version,
                     /*files_to_take_back=*/ {},
                     context,
-                    /*no_concurrent_writer=*/ false);
+                    /*no_concurrent_writer=*/ false))
+                return !assert_version_exactly;
 
             if (!assert_version_exactly)
                 return true;

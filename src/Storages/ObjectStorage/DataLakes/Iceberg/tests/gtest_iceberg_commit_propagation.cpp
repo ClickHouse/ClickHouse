@@ -419,6 +419,33 @@ struct CommitOverExistingVersionHint
             try_write_version_hint);
     }
 
+    /// The commit of full compaction: it publishes the metadata file, then creates the hint in the exact
+    /// mode, which confirms that the hint resolves to that metadata file.
+    bool runExactHintUpdate() const
+    {
+        Iceberg::IcebergPathResolver resolver(
+            "/table",
+            "/table",
+            Iceberg::BlobStorageDescription{.type_name = "local", .namespace_name = "", .allow_foreign_namespaces = false});
+        GeneratedMetadataFileWithInfo metadata_file_info{
+            .path = Iceberg::IcebergPathFromMetadata::deserialize("/table/metadata/v2.metadata.json"),
+            .version = 2,
+            .compression_method = CompressionMethod::None,
+        };
+
+        if (!Iceberg::writeMetadataFile(resolver, metadata_file_info, "{}", object_storage, getContext().context))
+            return false;
+
+        return Iceberg::tryWriteVersionHintFile(
+            resolver,
+            metadata_file_info,
+            Iceberg::IcebergPathFromMetadata::deserialize("/table/metadata/version-hint.text"),
+            object_storage,
+            getContext().context,
+            /* create */ true,
+            /* assert_version_exactly */ true);
+    }
+
     const std::vector<ExistingVersionHintObjectStorage::Write> & writes() const { return object_storage->writes; }
     const std::vector<std::string> & removed() const { return object_storage->removed; }
 
@@ -575,6 +602,38 @@ TEST(IcebergCommitPropagation, CreatedVersionHintWithoutETagIsTakenBackAndTheCom
     EXPECT_FALSE(commit.object_storage->hintPresent());
     EXPECT_FALSE(commit.object_storage->metadataRemovalAttempted());
     EXPECT_TRUE(commit.object_storage->metadataPresent());
+}
+
+TEST(IcebergCommitPropagation, CreatedVersionHintWithoutETagIsNotRecreatedInExactMode)
+{
+    /// Full compaction creates the hint and then confirms that it resolves to its metadata file. When
+    /// the backend reports no tag, the created hint is taken back, and it cannot be confirmed: creating
+    /// it again would only be taken back again, for every retry. The hint is written and removed once,
+    /// and the confirmation fails, so that compaction keeps the old files.
+    CommitOverExistingVersionHint commit("", CommitOverExistingVersionHint::Race::CreatedByThisCommit);
+    EXPECT_FALSE(commit.runExactHintUpdate());
+
+    const auto & writes = commit.writes();
+    ASSERT_EQ(writes.size(), 2u);
+    EXPECT_TRUE(writes[0].path.ends_with("v2.metadata.json")) << writes[0].path;
+    EXPECT_TRUE(writes[1].path.ends_with("version-hint.text")) << writes[1].path;
+    EXPECT_EQ(writes[1].write_if_none_match, "*");
+
+    const auto & removed = commit.removed();
+    ASSERT_EQ(removed.size(), 1u);
+    EXPECT_EQ(removed[0], writes[1].path);
+    EXPECT_FALSE(commit.object_storage->hintPresent());
+    EXPECT_TRUE(commit.object_storage->metadataPresent());
+}
+
+TEST(IcebergCommitPropagation, CreatedVersionHintWithETagIsConfirmedInExactMode)
+{
+    /// The control for the test above: with a tag the created hint stays and is confirmed after one write.
+    CommitOverExistingVersionHint commit("\"abc\"", CommitOverExistingVersionHint::Race::CreatedByThisCommit);
+    EXPECT_TRUE(commit.runExactHintUpdate());
+
+    ASSERT_EQ(commit.writes().size(), 2u);
+    EXPECT_TRUE(commit.removed().empty());
 }
 
 TEST(IcebergCommitPropagation, CreatedVersionHintIsJudgedByTheTagTheNextCommitReads)
