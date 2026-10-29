@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# Tags: no-fasttest
+# no-fasttest: Too slow for fast test (~14s), covered by regular stateless runs.
 # In a FileLog directory, a file that cannot be opened and a file with lines that do not parse
 # (default handle_error_mode) must not stop the table: both are logged and the other rows still arrive.
 
