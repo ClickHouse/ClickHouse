@@ -589,6 +589,10 @@ std::optional<DecimalEncodingResult<T>> encodeDecimal(
         alignas(64) std::array<T, WALLABY_VECTOR_VALUES> adjustments[2];
         std::array<UInt16, WALLABY_VECTOR_VALUES> exception_positions[2];
         std::array<bool, WALLABY_VECTOR_VALUES> exception_flags[2];
+        /// The walk of the delta chain from position zero, used to cut the walks from later
+        /// anchors short in `walk_delta`.
+        alignas(64) std::array<SignedType, WALLABY_VECTOR_VALUES> zero_walk_chain;
+        std::array<UInt32, WALLABY_VECTOR_VALUES> zero_walk_exceptions;
     };
     static thread_local std::unique_ptr<QuantizationBuffers> buffers_holder;
     if (!buffers_holder)
@@ -705,22 +709,22 @@ std::optional<DecimalEncodingResult<T>> encodeDecimal(
       */
     const auto walk_delta = [&](UInt8 cap_bits, T * delta_lanes, UInt16 * exiled_positions, SignedType & base) -> UInt32
     {
-        const auto delta_fits = [&](SignedType from, SignedType to) -> bool
+        /// One step of the chain walk: whether the delta from `chain` to position `i` fits the cap
+        /// (a quantization exception never fits), with its zigzag form in `zigzag`.
+        const auto step_fits = [&](SignedType chain, UInt32 i, T & zigzag) -> bool
         {
-            SignedType needed;
-            if (__builtin_sub_overflow(to, from, &needed))
+            SignedType needed = 0;
+            if (is_quantization_exception[i] || __builtin_sub_overflow(quantized[i], chain, &needed))
                 return false;
-            const T zigzag = (static_cast<T>(needed) << 1) ^ static_cast<T>(needed >> (Traits::width_bits - 1));
+            zigzag = (static_cast<T>(needed) << 1) ^ static_cast<T>(needed >> (Traits::width_bits - 1));
             return cap_bits >= Traits::width_bits || zigzag < (T{1} << cap_bits);
         };
 
         /// Runs the chain walk anchored at `start`: every position before it is exiled (its
         /// lane holds a zero delta and the true value is patched from an exception), the chain
         /// takes the quantized value at `start`, and each later position either extends the
-        /// chain or is exiled when its delta does not fit the cap. A measuring walk (no output
-        /// buffers) stops as soon as it reaches `stop_at` exceptions, because the caller only
-        /// needs to know that it cannot beat that count.
-        const auto walk_from = [&](UInt32 start, T * lanes_out, UInt16 * exiled_out, UInt32 stop_at) -> UInt32
+        /// chain or is exiled when its delta does not fit the cap.
+        const auto walk_from = [&](UInt32 start, T * lanes_out, UInt16 * exiled_out) -> UInt32
         {
             UInt32 exceptions = 0;
             for (UInt32 i = 0; i < start; ++i)
@@ -742,17 +746,8 @@ std::optional<DecimalEncodingResult<T>> encodeDecimal(
             SignedType chain = quantized[start];
             for (UInt32 i = start + 1; i < count; ++i)
             {
-                if (exceptions >= stop_at)
-                    return exceptions;
-                SignedType needed = 0;
-                bool fits = !is_quantization_exception[i] && !__builtin_sub_overflow(quantized[i], chain, &needed);
                 T zigzag = 0;
-                if (fits)
-                {
-                    zigzag = (static_cast<T>(needed) << 1) ^ static_cast<T>(needed >> (Traits::width_bits - 1));
-                    fits = cap_bits >= Traits::width_bits || zigzag < (T{1} << cap_bits);
-                }
-                if (fits)
+                if (step_fits(chain, i, zigzag))
                 {
                     chain = quantized[i];
                     if (lanes_out)
@@ -779,36 +774,91 @@ std::optional<DecimalEncodingResult<T>> encodeDecimal(
           * leading prefix of any length: exiling the whole prefix costs one exception per
           * position, which is often far cheaper than losing the delta lanes altogether.
           *
-          * The exact walk is run from every anchor that can still win, and the fewest exceptions
-          * win (ties keep the earliest anchor), so the choice is never worse than position zero.
-          * Two observations keep this cheap. Anchoring at `s` exiles the `s` positions before
-          * it, so only anchors below the best exception count found so far can win, and a
-          * smooth vector, whose walk from position zero has few exceptions, tries almost
-          * nothing else. And an anchor `s` whose predecessor is not a quantization exception
-          * and steps to it with a fitting delta is dominated by that predecessor: the walk from
-          * `s - 1` reaches `s` with the same chain value and one exception fewer, so only the
-          * starts of fitting runs are tried. Every candidate walk stops once it reaches the best
-          * count. The measuring and packing phases replay the same deterministic search.
+          * The walk is measured from every candidate anchor that can still win, and the fewest
+          * exceptions win (ties keep the earliest anchor), so the choice is never worse than
+          * position zero. Anchoring at `s` exiles the `s` positions before it, so only anchors
+          * below the best exception count found so far can win, and a smooth vector, whose walk
+          * from position zero has few exceptions, tries almost nothing else. A candidate is the
+          * start of a smooth segment: it opens a fitting adjacent pair, and its predecessor does
+          * not step to it with a fitting delta (otherwise the walk from the predecessor reaches it
+          * with the same chain value and one exception fewer).
+          *
+          * Measuring every candidate to the end would be quadratic in the vector size for noisy
+          * data, where the best count stays high and many positions open a fitting pair, so the
+          * candidate walks are cut short in three ways. The rest of a walk depends only on its
+          * chain value, so a candidate that reaches the chain value of the walk from position
+          * zero at the same position finishes with exactly its remaining exceptions; a candidate
+          * stops as soon as it reaches the best count; and all candidates share a budget of
+          * steps proportional to the vector size, after which the search keeps the best anchor
+          * found so far. The search is deterministic, so the measuring and packing phases replay
+          * it exactly.
           */
-        UInt32 chain_start = 0;
-        UInt32 best_exceptions = walk_from(0, nullptr, nullptr, std::numeric_limits<UInt32>::max());
-        const UInt32 prefix_limit = std::min(count - 1, initial_exception_budget);
-        for (UInt32 s = 1; s <= prefix_limit && s < best_exceptions; ++s)
+        SignedType * const zero_walk_chain = buffers.zero_walk_chain.data();
+        UInt32 * const zero_walk_exceptions = buffers.zero_walk_exceptions.data();
         {
-            if (is_quantization_exception[s])
-                continue;
-            if (!is_quantization_exception[s - 1] && delta_fits(quantized[s - 1], quantized[s]))
-                continue;
-            const UInt32 walked = walk_from(s, nullptr, nullptr, best_exceptions);
-            if (walked < best_exceptions)
+            SignedType chain = quantized[0];
+            UInt32 exceptions = is_quantization_exception[0] ? 1 : 0;
+            zero_walk_chain[0] = chain;
+            zero_walk_exceptions[0] = exceptions;
+            for (UInt32 i = 1; i < count; ++i)
             {
-                best_exceptions = walked;
+                T zigzag = 0;
+                if (step_fits(chain, i, zigzag))
+                    chain = quantized[i];
+                else
+                    ++exceptions;
+                zero_walk_chain[i] = chain;
+                zero_walk_exceptions[i] = exceptions;
+            }
+        }
+        const UInt32 zero_walk_total = zero_walk_exceptions[count - 1];
+
+        /// Measures the walk anchored at a candidate `start` (not a quantization exception).
+        /// Returns at least `stop_at` when the walk cannot beat it or the step budget runs out.
+        UInt32 steps_left = 4 * count;
+        const auto measure_from = [&](UInt32 start, UInt32 stop_at) -> UInt32
+        {
+            UInt32 exceptions = start;
+            SignedType chain = quantized[start];
+            for (UInt32 i = start;;)
+            {
+                if (chain == zero_walk_chain[i])
+                    return exceptions + (zero_walk_total - zero_walk_exceptions[i]);
+                if (++i == count)
+                    return exceptions;
+                if (exceptions >= stop_at || steps_left == 0)
+                    return stop_at;
+                --steps_left;
+                T zigzag = 0;
+                if (step_fits(chain, i, zigzag))
+                    chain = quantized[i];
+                else
+                    ++exceptions;
+            }
+        };
+
+        UInt32 chain_start = 0;
+        UInt32 best_exceptions = zero_walk_total;
+        const UInt32 prefix_limit = std::min(count - 2, initial_exception_budget);
+        for (UInt32 s = 1; count > 2 && s <= prefix_limit && s < best_exceptions && steps_left != 0; ++s)
+        {
+            T zigzag = 0;
+            if (is_quantization_exception[s] || !step_fits(quantized[s], s + 1, zigzag))
+                continue;
+            if (step_fits(quantized[s - 1], s, zigzag) && !is_quantization_exception[s - 1])
+                continue;
+            const UInt32 measured = measure_from(s, best_exceptions);
+            if (measured < best_exceptions)
+            {
+                best_exceptions = measured;
                 chain_start = s;
             }
         }
 
         base = quantized[chain_start];
-        return walk_from(chain_start, delta_lanes, exiled_positions, std::numeric_limits<UInt32>::max());
+        if (!delta_lanes && !exiled_positions)
+            return best_exceptions;
+        return walk_from(chain_start, delta_lanes, exiled_positions);
     };
 
     /** Chooses between Frame-of-Reference and zigzag delta packing for the quantized vector and
