@@ -85,6 +85,15 @@ RelationStats estimateAggregatingStepStats(const AggregatingStep & aggregating_s
     return aggregation_stats;
 }
 
+/// Raises a read with rows to 1 row and 1 value per column: 1% of `=` and the 10% guess of distinct values truncate to 0
+/// on a table of a few rows, and the joins and aggregations above multiply them.
+void floorReadWithRows(RelationProfile & profile)
+{
+    profile.rows = std::max<UInt64>(profile.rows, 1);
+    for (auto & [_, column_stats] : profile.column_stats)
+        column_stats.num_distinct_values = std::max<UInt64>(column_stats.num_distinct_values, 1);
+}
+
 /// Rows dropped by a limit are not a value-uniform sample (e.g. a TopN keeps one end of the
 /// sorted range), so the child's value ranges and NULL fraction do not describe the output.
 /// Applied whenever a limit is present: the row estimate cannot prove the limit does not
@@ -306,7 +315,12 @@ RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::No
         {
             stats.estimated_rows = rows;
             if (estimate->estimator)
-                stats.column_stats = estimate->estimator->estimateRelationProfile().column_stats;
+            {
+                auto profile = estimate->estimator->estimateRelationProfile();
+                if (rows != 0)
+                    floorReadWithRows(profile);
+                stats.column_stats = std::move(profile.column_stats);
+            }
             /// Without conditions, the rows of the remaining files, imprecise with delete files.
             stats.imprecise_estimate = rows != 0 && estimate->has_delete_files;
             return stats;
@@ -315,14 +329,7 @@ RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::No
         if (estimate->estimator)
         {
             auto filtered = estimate->estimator->estimateRelationProfile(reading->getStorageMetadata(), conditions);
-            /// At least 1 row: the default 1% of a table of a few rows truncates to 0, which makes the joins above it look empty.
-            if (filtered.rows == 0)
-            {
-                filtered.rows = 1;
-                /// The numbers of distinct values were capped at the 0 rows, and an aggregation multiplies them.
-                for (auto & [_, column_stats] : filtered.column_stats)
-                    column_stats.num_distinct_values = 1;
-            }
+            floorReadWithRows(filtered);
             stats.estimated_rows = filtered.rows;
             stats.column_stats = std::move(filtered.column_stats);
             return stats;

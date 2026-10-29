@@ -71,3 +71,7 @@ rows: 1
 Expect ~1: the numbers of distinct values are raised to 1 with the rows, so the aggregation keeps 1 group (true 1).
 Join: dim[5] ⋈ t[no_stats~1]
 rows: 1
+--- T8: GROUP BY v, s of a 5-row table without a filter
+Expect 5: s has no counted NDV and 10% of 5 rows truncates to 0, so it is raised to 1: 5 * 1 groups (true 5).
+Join: t[5] ⋈ dim[5]
+rows: 5

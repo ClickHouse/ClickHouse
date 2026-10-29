@@ -14,7 +14,8 @@
 # - T5: a filter above a `LIMIT` stays out of the read, and is still estimated, then capped by the `LIMIT`.
 # - T6: a row policy prunes and is estimated.
 # - T7: a filter right above the read is also the read's own filter, and is counted once.
-# - T8: a string equality on a 12-row table is estimated at 1 row, not 0, also below an aggregation.
+# - T8: a string equality on a 12-row table is estimated at 1 row, not 0, also below an aggregation; a 5-row table
+#   without a filter keeps 1 value per column.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -67,6 +68,8 @@ ${CLICKHOUSE_CLIENT} ${PINS} --query "
     INSERT INTO p SELECT number, if(number % 10 < 3, 'us', 'eu') FROM numbers(10000);
     CREATE TABLE small (v Int32, s String) ENGINE = IcebergLocal('${LAKE}/small');
     INSERT INTO small SELECT number % 5, if(number = 0, 'rare', 'common') FROM numbers(12);
+    CREATE TABLE tiny (v Int32, s String) ENGINE = IcebergLocal('${LAKE}/tiny');
+    INSERT INTO tiny SELECT number, toString(number) FROM numbers(5);
     CREATE TABLE dim (v Int32) ENGINE = MergeTree ORDER BY v SETTINGS auto_statistics_types = 'uniq';
     INSERT INTO dim SELECT number FROM numbers(5);
 "
@@ -155,6 +158,9 @@ labels small v "t.s = 'rare'" ${ON}
 echo "--- T8: GROUP BY v of s = 'rare' on the 12-row table"
 echo 'Expect ~1: the numbers of distinct values are raised to 1 with the rows, so the aggregation keeps 1 group (true 1).'
 labels "(SELECT v, count() AS c FROM small WHERE s = 'rare' GROUP BY v)" v '1' ${ON}
+echo "--- T8: GROUP BY v, s of a 5-row table without a filter"
+echo 'Expect 5: s has no counted NDV and 10% of 5 rows truncates to 0, so it is raised to 1: 5 * 1 groups (true 5).'
+labels "(SELECT v, s, count() AS c FROM tiny GROUP BY v, s)" v '1' ${ON}
 
 ${CLICKHOUSE_CLIENT} --query "DROP ROW POLICY ${CLICKHOUSE_DATABASE}_rp ON ${CLICKHOUSE_DATABASE}.t_rp"
 rm -rf "${LAKE}"
