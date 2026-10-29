@@ -24,6 +24,8 @@ CONFIG_OVERRIDE = SCRIPT_DIR / "config.sh"
 TEMP_PATH = SCRIPT_DIR.parents[2] / "tmp"  # parents[2] is `ci`
 REPO_ROOT = SCRIPT_DIR.parents[3]
 OFFICIAL_IMAGES_REPO = "docker-library/official-images"
+# One `run.sh` run; the slowest healthy one took 157 s over 90 days.
+RUN_SH_TIMEOUT = 600
 
 # A test is a `clickhouse-*` or `keeper-*` directory, the names `config.sh` runs; `tests/lib.sh` is a shared helper.
 _TEST_FILE_RE = re.compile(
@@ -137,7 +139,11 @@ def test_docker_library(test_results, check_images=None) -> None:
                 cmd = f"{shlex.quote(run_sh.as_posix())} {shlex.quote(image)} {config_args}"
                 test_results.append(
                     Result.from_commands_run(
-                        name=f"{test_name} ({image})", command=cmd, with_info=True
+                        name=f"{test_name} ({image})",
+                        command=Shell.check,
+                        command_args=[cmd],
+                        command_kwargs={"verbose": True, "timeout": RUN_SH_TIMEOUT},
+                        with_info=True,
                     )
                 )
             finally:
@@ -165,6 +171,7 @@ def validate_bugfix_tests(test_results, master_images, tests) -> None:
     repo_path = TEMP_PATH / OFFICIAL_IMAGES_REPO
     run_sh = repo_path / "test/run.sh"
     configs = f"-c {shlex.quote((repo_path / 'test/config.sh').as_posix())} -c {shlex.quote(CONFIG_OVERRIDE.as_posix())}"
+    log_file = TEMP_PATH / "docker_library_bugfix_validation.log"
     failed_on = {test: [] for test in tests}
     passed_on = {test: [] for test in tests}
     logs = {test: [] for test in tests}
@@ -184,28 +191,28 @@ def validate_bugfix_tests(test_results, master_images, tests) -> None:
             continue
         for test in tests:
             cmd = f"{shlex.quote(run_sh.as_posix())} -t {shlex.quote(test)} {shlex.quote(image)} {configs}"
-            exit_code, stdout, stderr = Shell.get_res_stdout_stderr(cmd, verbose=True)
-            if "image has no tests" in stdout:
+            exit_code = Shell.run(
+                cmd, log_file=log_file, verbose=True, timeout=RUN_SH_TIMEOUT
+            )
+            output = log_file.read_text(errors="replace").strip()
+            if "image has no tests" in output:
                 continue
             if exit_code == 0:
                 passed_on[test].append(image)
-            elif f"'{test}' [" in stdout:
+            elif exit_code > 0 and f"'{test}' [" in output:
                 failed_on[test].append(image)
-                logs[test].extend(part for part in (stdout, stderr) if part)
+                logs[test].append(output)
             else:
+                reason = (
+                    f"{test} did not finish on {image} within {RUN_SH_TIMEOUT}s"
+                    if exit_code < 0
+                    else f"{test} did not run on {image}"
+                )
                 test_results.append(
                     Result(
                         name=f"bugfix validation: {test} ({image})",
                         status=Result.Status.ERROR,
-                        info="\n".join(
-                            part
-                            for part in (
-                                f"{test} did not run on {image}",
-                                stdout,
-                                stderr,
-                            )
-                            if part
-                        ),
+                        info="\n".join(part for part in (reason, output) if part),
                     )
                 )
     for test in tests:
