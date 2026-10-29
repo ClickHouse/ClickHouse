@@ -46,7 +46,7 @@ query --allow_deprecated_database_ordinary=1 --query "
     CREATE TABLE ${database}.survival (n UInt8) ENGINE=Memory;
     INSERT INTO ${database}.survival VALUES (1);
     CREATE TABLE ${database}.replica (n UInt64)
-    ENGINE=ReplicatedMergeTree('/clickhouse/tables/${CLICKHOUSE_TEST_ZOOKEEPER_PREFIX}/drop_cancellation', 'r1') ORDER BY n
+    ENGINE=ReplicatedMergeTree('/clickhouse/tables/$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX/drop_cancellation', 'r1') ORDER BY n
     SETTINGS storage_policy='s3_no_cache', allow_remote_fs_zero_copy_replication=1,
              old_parts_lifetime=3600, min_bytes_for_wide_part=0,
              prewarm_mark_cache=0, prewarm_primary_key_cache=0;
