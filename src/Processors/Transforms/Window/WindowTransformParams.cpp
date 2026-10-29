@@ -5,7 +5,7 @@
 
 #include <Interpreters/convertFieldToType.h>
 
-#include <WindowFunctions/IWindowFunction.h>
+#include <WindowFunctions/IGeneralWindowFunction.h>
 
 #include <Common/Exception.h>
 #include <Common/FieldAccurateComparison.h>
@@ -190,22 +190,22 @@ WindowFrame applyFunctionDefaultFrame(const WindowFrame & frame, const std::vect
     if (!frame.is_default || functions.size() != 1)
         return frame;
 
-    const auto * window_function = dynamic_cast<const IWindowFunction *>(functions[0].aggregate_function.get());
+    const auto window_function = asGeneralWindowFunction(functions[0].aggregate_function);
     if (!window_function)
         return frame;
 
     return window_function->getDefaultFrame().value_or(frame);
 }
 
-bool needsSeparateOrderByPeerGroups(const WindowFrame & frame, const std::vector<WindowFunctionDescription> & functions)
+bool needsSeparateOrderByPeerGroups(const WindowDescription & description, const std::vector<WindowFunctionDescription> & functions)
 {
-    if (frame.type != WindowFrame::FrameType::ROWS)
+    if (description.frame.type != WindowFrame::FrameType::ROWS)
         return false;
 
-    return std::ranges::any_of(functions, [](const WindowFunctionDescription & function)
+    return std::ranges::any_of(functions, [&](const WindowFunctionDescription & function)
     {
-        const auto * window_function = dynamic_cast<const IWindowFunction *>(function.aggregate_function.get());
-        return window_function && window_function->needsOrderByPeerGroup();
+        const auto window_function = asGeneralWindowFunction(function.aggregate_function);
+        return window_function && window_function->getRequirements(description).peers;
     });
 }
 
@@ -260,8 +260,8 @@ WindowTransformParams WindowTransformParams::create(
     auto should_materialize = markColumnsToMaterialize(header, window_description.partition_by, window_description.order_by, functions);
     auto frame = applyFunctionDefaultFrame(window_description.frame, functions);
     auto range_offset_comparator = chooseRangeOffsetComparator(header, frame, window_description.order_by, order_by_indices);
-    auto separate_order_by_peer_groups = needsSeparateOrderByPeerGroups(frame, functions);
     auto description = prepareDescriptionForExecution(header, window_description, frame, order_by_indices);
+    auto separate_order_by_peer_groups = needsSeparateOrderByPeerGroups(description, functions);
 
     return WindowTransformParams{
         std::move(header),
@@ -272,19 +272,6 @@ WindowTransformParams WindowTransformParams::create(
         std::move(range_offset_comparator),
         separate_order_by_peer_groups,
     };
-}
-
-bool WindowTransformParams::arePeers(const Columns & lhs, size_t lhs_row, const Columns & rhs, size_t rhs_row) const
-{
-    if (window_description.frame.type == WindowFrame::FrameType::ROWS)
-        return false;
-
-    // For RANGE and GROUPS frames, rows that compare equal on the ORDER BY key are peers; without ORDER BY all rows are.
-    for (const size_t key : order_by_indices)
-        if (lhs[key]->compareAt(lhs_row, rhs_row, *rhs[key], /*nan_direction_hint=*/1) != 0)
-            return false;
-
-    return true;
 }
 
 }

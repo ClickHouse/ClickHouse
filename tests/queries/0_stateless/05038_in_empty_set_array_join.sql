@@ -47,7 +47,6 @@ CREATE TABLE t_in_empty_set_storage (x Int) ENGINE = Set;
 -- A `Set` table can be filled after a query referencing it is planned, so its emptiness must not
 -- be folded into a constant. The plan keeps the function while a literal empty list becomes one.
 -- The old analyzer folds both, so the plan-shape assertions below pin the new one.
-SET enable_analyzer = 1;
 SELECT count() FROM (EXPLAIN actions = 1 SELECT sum(b) FROM t_in_empty_set WHERE a IN ()) WHERE explain ILIKE '%Filter column: 0%';
 SELECT count() FROM (EXPLAIN actions = 1 SELECT sum(b) FROM t_in_empty_set WHERE a IN t_in_empty_set_storage) WHERE explain ILIKE '%Filter column: 0%';
 -- Only the filter column names the set: a `ReadFromRemote*` step echoes the whole remote query,

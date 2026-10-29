@@ -1,47 +1,13 @@
 #include <Processors/Transforms/WindowTransform.h>
 
-#include <Columns/ColumnAggregateFunction.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 
-
-#include <Functions/FunctionHelpers.h>
-
-#include <Common/Arena.h>
-
 #include <algorithm>
-#include <utility>
 #include <ranges>
-
-/// See https://fmt.dev/latest/api.html#formatting-user-defined-types
-template <>
-struct fmt::formatter<DB::RowNumber>
-{
-    static constexpr auto parse(format_parse_context & ctx)
-    {
-        const auto * it = ctx.begin();
-        const auto * end = ctx.end();
-
-        /// Only support {}.
-        if (it != end && *it != '}')
-            throw fmt::format_error("Invalid format");
-
-        return it;
-    }
-
-    template <typename FormatContext>
-    auto format(const DB::RowNumber & x, FormatContext & ctx) const
-    {
-        return fmt::format_to(ctx.out(), "{}:{}", x.block, x.row);
-    }
-};
+#include <utility>
 
 namespace DB
 {
-
-namespace ErrorCodes
-{
-    extern const int BAD_ARGUMENTS;
-}
 
 namespace
 {
@@ -55,240 +21,188 @@ Columns materializeColumns(Columns columns, const std::vector<bool> & should_mat
     return columns;
 }
 
+std::vector<size_t> argumentColumnIndices(const Block & input_header, const WindowFunctionDescription & function)
+{
+    return function.argument_names
+        | std::views::transform([&](const String & argument_name) { return input_header.getPositionByName(argument_name); })
+        | std::ranges::to<std::vector<size_t>>();
 }
 
-WindowTransform::WindowTransform(SharedHeader input_header_,
-        SharedHeader output_header_,
-        const WindowDescription & window_description_,
-        const std::vector<WindowFunctionDescription> & functions)
+WindowFunctionWorkspace createWorkspace(const Block & input_header, const WindowFunctionDescription & function, size_t result_column)
+{
+    WindowFunctionWorkspace workspace;
+    workspace.aggregate_function = function.aggregate_function;
+    workspace.result_column = result_column;
+    const auto & aggregate_function = workspace.aggregate_function;
+
+    workspace.argument_column_indices.reserve(function.argument_names.size());
+    for (const auto & argument_name : function.argument_names)
+        workspace.argument_column_indices.push_back(input_header.getPositionByName(argument_name));
+    workspace.argument_columns.assign(function.argument_names.size(), nullptr);
+
+    workspace.is_aggregate_function_state = aggregate_function->isState();
+    workspace.aggregate_function_state.reset(aggregate_function->sizeOfData(), aggregate_function->alignOfData());
+    aggregate_function->create(workspace.aggregate_function_state.data());
+    return workspace;
+}
+
+GeneralWindowFunctionSlot createSlot(const Block & input_header, const WindowFunctionDescription & function, GeneralWindowFunctionPtr general, size_t result_column, Arena & states_arena)
+{
+    GeneralWindowFunctionSlot slot{
+        .function = std::move(general),
+        .state = nullptr,
+        .result_column = result_column,
+        .arguments = WindowArguments(argumentColumnIndices(input_header, function)),
+    };
+
+    if (slot.function->sizeOfState() != 0)
+    {
+        slot.state = states_arena.alignedAlloc(slot.function->sizeOfState(), slot.function->alignOfState());
+        slot.function->createState(slot.state);
+    }
+
+    return slot;
+}
+
+void destroyStates(std::vector<GeneralWindowFunctionSlot> & general_functions, std::vector<WindowFunctionWorkspace> & workspaces)
+{
+    for (auto & slot : general_functions)
+        if (slot.state)
+            slot.function->destroyState(slot.state);
+
+    for (auto & ws : workspaces)
+        ws.aggregate_function->destroy(ws.aggregate_function_state.data());
+}
+
+std::vector<WindowArguments::Block> collectArgumentBlocks(const SlidingBlocks & blocks, RowNumber batch_start, Int64 batch_start_position)
+{
+    Int64 first_position = batch_start_position - batch_start.row;
+    for (int64_t block_number = batch_start.block; block_number > blocks.begin().block; --block_number)
+        first_position -= blocks.blockAt(block_number - 1).rows_count;
+
+    std::vector<WindowArguments::Block> argument_blocks;
+    argument_blocks.reserve(blocks.end().block - blocks.begin().block);
+    for (int64_t block_number = blocks.begin().block; block_number < blocks.end().block; ++block_number)
+    {
+        const SlidingBlock & block = blocks.blockAt(block_number);
+        argument_blocks.push_back(WindowArguments::Block{.columns = block.materialized_columns, .first_position = first_position, .end_position = first_position + block.rows_count});
+        first_position += block.rows_count;
+    }
+    return argument_blocks;
+}
+
+}
+
+WindowTransform::WindowTransform(
+    SharedHeader input_header_, SharedHeader output_header_,
+    const WindowDescription & window_description_, const std::vector<WindowFunctionDescription> & functions)
     : IProcessor({input_header_}, {output_header_})
     , params(WindowTransformParams::create(*input_header_, window_description_, functions))
-    , input(inputs.front())
-    , output(outputs.front())
     , indexes(params)
     , frame(params)
 {
-    initWorkspaces(functions);
-}
+    for (const auto & function : functions)
+        if (const auto general = asGeneralWindowFunction(function.aggregate_function))
+            general->checkWindowFrameType(params.window_description);
 
-void WindowTransform::initWorkspaces(const std::vector<WindowFunctionDescription> & functions)
-{
-    workspaces.reserve(functions.size());
-    for (const auto & f : functions)
+    try
     {
-        WindowFunctionWorkspace workspace;
-        workspace.aggregate_function = f.aggregate_function;
-        const auto & aggregate_function = workspace.aggregate_function;
-        if (!arena && aggregate_function->allocatesMemoryInArena())
+        general_functions.reserve(functions.size());
+        workspaces.reserve(functions.size());
+        for (size_t result_column = 0; result_column < functions.size(); ++result_column)
         {
-            arena = std::make_unique<Arena>();
+            const WindowFunctionDescription & function = functions[result_column];
+            if (auto general = asGeneralWindowFunction(function.aggregate_function))
+            {
+                general_functions.push_back(createSlot(params.input_header, function, std::move(general), result_column, states_arena));
+            }
+            else
+            {
+                workspaces.push_back(createWorkspace(params.input_header, function, result_column));
+                if (!arena && function.aggregate_function->allocatesMemoryInArena())
+                    arena = std::make_unique<Arena>();
+            }
         }
-
-        workspace.argument_column_indices.reserve(f.argument_names.size());
-        for (const auto & argument_name : f.argument_names)
-        {
-            workspace.argument_column_indices.push_back(
-                params.input_header.getPositionByName(argument_name));
-        }
-        workspace.argument_columns.assign(f.argument_names.size(), nullptr);
-
-        /// Currently we have slightly wrong mixup of the interfaces of Window and Aggregate functions.
-        workspace.window_function_impl = dynamic_cast<IWindowFunction *>(const_cast<IAggregateFunction *>(aggregate_function.get()));
-
-        if (workspace.window_function_impl && !workspace.window_function_impl->checkWindowFrameType(this))
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unsupported window frame type for function '{}'", workspace.aggregate_function->getName());
-
-        workspace.is_aggregate_function_state = workspace.aggregate_function->isState();
-        workspace.aggregate_function_state.reset(
-            aggregate_function->sizeOfData(),
-            aggregate_function->alignOfData());
-        aggregate_function->create(workspace.aggregate_function_state.data());
-
-        workspaces.push_back(std::move(workspace));
+    }
+    catch (...)
+    {
+        destroyStates(general_functions, workspaces);
+        throw;
     }
 }
 
 WindowTransform::~WindowTransform()
 {
-    // Some states may be not created yet if the creation failed.
-    for (auto & ws : workspaces)
-    {
-        ws.aggregate_function->destroy(
-            ws.aggregate_function_state.data());
-    }
+    destroyStates(general_functions, workspaces);
 }
 
-bool WindowTransform::arePeers(const RowNumber & x, const RowNumber & y) const
-{
-    if (x == y)
-    {
-        // For convenience, a row is always its own peer.
-        return true;
-    }
-
-    return params.arePeers(blocks.blockAt(x.block).materialized_columns, x.row, blocks.blockAt(y.block).materialized_columns, y.row);
-}
-
-void WindowTransform::checkInvariants() const
-{
-#ifndef NDEBUG
-    const RowNumber partition_end = partition.bounds().end.location;
-
-    chassert(partition.bounds().start.location <= peer_group_start.location);
-    chassert(peer_group_start.location <= current.location);
-    chassert(current.location < partition_end);
-    chassert(peer_group_start.peer_group_index_in_partition == current.peer_group_index_in_partition);
-    chassert(current.peer_group_index_in_partition <= current.row_index_in_partition);
-
-    const int64_t rows_count = partition.bounds().end.row_index_in_partition;
-    chassert(0 <= prev_frame.start.row_index_in_partition);
-    chassert(prev_frame.start.row_index_in_partition <= prev_frame.end.row_index_in_partition);
-    chassert(prev_frame.end.row_index_in_partition <= rows_count);
-    if (frame.bounds().fully_visible)
-    {
-        chassert(prev_frame.start.row_index_in_partition <= frame.bounds().start.row_index_in_partition);
-        chassert(frame.bounds().start.row_index_in_partition <= frame.bounds().end.row_index_in_partition);
-        chassert(prev_frame.end.row_index_in_partition <= frame.bounds().end.row_index_in_partition);
-        chassert(frame.bounds().end.row_index_in_partition <= rows_count);
-    }
-
-    chassert(blocks.begin().block <= std::min(prev_frame.start.location.block, current.location.block));
-    chassert(next_output_block_number <= current.location.block);
-#endif
-}
-
-// Update the aggregation states after the frame has changed.
 void WindowTransform::updateAggregationState()
 {
     const FrameBounds & current_frame = frame.bounds();
-    chassert(current_frame.fully_visible);
 
-    // We might have to reset aggregation state and/or add some rows to it.
-    // Figure out what to do.
-    bool reset_aggregation = false;
-    RowNumber rows_to_add_start;
-    RowNumber rows_to_add_end;
-    if (current_frame.start.row_index_in_partition == prev_frame.start.row_index_in_partition)
-    {
-        // The frame start didn't change, add the tail rows.
-        reset_aggregation = false;
-        rows_to_add_start = prev_frame.end.location;
-        rows_to_add_end = current_frame.end.location;
-    }
-    else
-    {
-        // The frame start changed, reset the state and aggregate over the
-        // entire frame. This can be made per-function after we learn to
-        // subtract rows from some types of aggregation states, but for now we
-        // always have to reset when the frame start changes.
-        reset_aggregation = true;
-        rows_to_add_start = current_frame.start.location;
-        rows_to_add_end = current_frame.end.location;
-    }
+    /// While the frame start stands still only the new tail rows are added; once it moves the whole frame is aggregated again.
+    const bool frame_start_moved = current_frame.start.row_index_in_partition != prev_frame.start.row_index_in_partition;
+    const RowNumber rows_to_add_start = frame_start_moved ? current_frame.start.location : prev_frame.end.location;
+    const RowNumber rows_to_add_end = current_frame.end.location;
 
     for (auto & ws : workspaces)
     {
-        if (ws.window_function_impl)
-        {
-            // No need to do anything for true window functions.
-            continue;
-        }
-
         const auto * a = ws.aggregate_function.get();
         auto * buf = ws.aggregate_function_state.data();
-
-        if (reset_aggregation)
+        if (frame_start_moved)
         {
             a->destroy(buf);
             a->create(buf);
         }
 
-        // To achieve better performance, we will have to loop over blocks and
-        // rows manually, instead of using advanceRowNumber().
-        // For this purpose, the past-the-end block can be different than the
-        // block of the past-the-end row (it's usually the next block).
-        const auto past_the_end_block = rows_to_add_end.row == 0
-            ? rows_to_add_end.block
-            : rows_to_add_end.block + 1;
-
-        for (auto block_number = rows_to_add_start.block;
-             block_number < past_the_end_block;
-             ++block_number)
+        for (int64_t block_number = rows_to_add_start.block; RowNumber{block_number, 0} < rows_to_add_end; ++block_number)
         {
-            const auto & block = blocks.blockAt(block_number);
-
+            const SlidingBlock & block = blocks.blockAt(block_number);
             if (ws.cached_block_number != block_number)
             {
                 for (size_t i = 0; i < ws.argument_column_indices.size(); ++i)
-                {
-                    ws.argument_columns[i] = block.materialized_columns[
-                        ws.argument_column_indices[i]].get();
-                }
+                    ws.argument_columns[i] = block.materialized_columns[ws.argument_column_indices[i]].get();
                 ws.cached_block_number = block_number;
             }
 
-            // First and last blocks may be processed partially, and other blocks
-            // are processed in full.
-            const auto first_row = block_number == rows_to_add_start.block
-                ? rows_to_add_start.row : 0;
-            const auto past_the_end_row = block_number == rows_to_add_end.block
-                ? rows_to_add_end.row : block.rows_count;
-
-            // We should add an addBatch analog that can accept a starting offset.
-            // For now, add the values one by one.
-            auto * columns = ws.argument_columns.data();
-            // Removing arena.get() from the loop makes it faster somehow...
-            auto * arena_ptr = arena.get();
-            a->addBatchSinglePlace(first_row, past_the_end_row, buf, columns, arena_ptr);
+            const int64_t first_row = block_number == rows_to_add_start.block ? rows_to_add_start.row : 0;
+            const int64_t past_the_end_row = block_number == rows_to_add_end.block ? rows_to_add_end.row : block.rows_count;
+            a->addBatchSinglePlace(first_row, past_the_end_row, buf, ws.argument_columns.data(), arena.get());
         }
     }
 }
 
 void WindowTransform::writeOutCurrentRow()
 {
-    chassert(current.location < partition.bounds().end.location);
-    chassert(current.location.block >= blocks.begin().block);
-
-    // Whether this row's frame equals the previous row's. The first row of the partition has no
-    // previous row in this partition (and thus no previous frame) to compare against.
+    const RowPoint & current = peers.current();
     const FrameBounds & current_frame = frame.bounds();
-    const bool frame_unchanged = current.row_index_in_partition > 0 && current_frame.start.row_index_in_partition == prev_frame.start.row_index_in_partition && current_frame.end.row_index_in_partition == prev_frame.end.row_index_in_partition;
 
-    const auto & block = blocks.blockAt(current.location.block);
-    for (size_t wi = 0; wi < workspaces.size(); ++wi)
+    /// The first row of a partition has no previous frame to compare with.
+    const bool frame_unchanged = current.row_index_in_partition > 0
+        && current_frame.start.row_index_in_partition == prev_frame.start.row_index_in_partition
+        && current_frame.end.row_index_in_partition == prev_frame.end.row_index_in_partition;
+
+    const SlidingBlock & block = blocks.blockAt(current.location.block);
+    for (auto & ws : workspaces)
     {
-        auto & ws = workspaces[wi];
-
-        if (ws.window_function_impl)
-        {
-            ws.window_function_impl->windowInsertResultInto(this, wi);
-            continue;
-        }
-
-        IColumn * result_column = block.result_columns[wi].get();
+        IColumn & result_column = *block.result_columns[ws.result_column];
         const auto * a = ws.aggregate_function.get();
         auto * buf = ws.aggregate_function_state.data();
-
         if (frame_unchanged && !ws.is_aggregate_function_state && current.location.row > 0)
         {
-            // Same frame as the previous row -> same result. When that row is in this same block its
-            // result is already in result_column one position back, so copy it instead of
-            // re-finalizing. We copy the column into itself with insertRangeFrom (not insertFrom):
-            // insertRangeFrom appends via resize + memcpy from a disjoint source range, which is
-            // self-safe even if the append reallocates and even for nested columns (Array, Variant,
-            // Dynamic, JSON) whose sub-columns are not covered by the top-level reserve.
-            chassert(std::cmp_equal(result_column->size(), current.location.row));
-            result_column->insertRangeFrom(*result_column, current.location.row - 1, 1);
+            /// Same frame as the previous row of this block, so its result is copied instead of finalized again.
+            /// insertRangeFrom is safe on the column itself: it appends from a disjoint range, also for nested columns.
+            chassert(std::cmp_equal(result_column.size(), current.location.row));
+            result_column.insertRangeFrom(result_column, current.location.row - 1, 1);
         }
         else if (ws.is_aggregate_function_state)
         {
-            /// We should use insertMergeResultInto to insert result into ColumnAggregateFunction
-            /// correctly if result contains AggregateFunction's states
-            a->insertMergeResultInto(buf, *result_column, arena.get());
+            /// A -State result is merged into the arena of the output column.
+            a->insertMergeResultInto(buf, result_column, arena.get());
         }
         else
         {
-            a->insertResultInto(buf, *result_column, arena.get());
+            a->insertResultInto(buf, result_column, arena.get());
         }
     }
 }
@@ -301,254 +215,187 @@ void WindowTransform::addInputBlock(Chunk chunk)
     auto & block = blocks.add(std::move(chunk), std::move(materialized_columns), std::move(index));
     partition.advance(blocks);
 
-    // Initialize output columns.
-    for (auto & ws : workspaces)
-    {
-        block.result_columns.push_back(ws.aggregate_function->getResultType()->createColumn());
-        block.result_columns.back()->reserve(block.rows_count);
-    }
+    block.result_columns.resize(general_functions.size() + workspaces.size());
+    for (const auto & slot : general_functions)
+        block.result_columns[slot.result_column] = slot.function->getResultType()->createColumn();
+    for (const auto & ws : workspaces)
+        block.result_columns[ws.result_column] = ws.aggregate_function->getResultType()->createColumn();
+    for (auto & column : block.result_columns)
+        column->reserve(block.rows_count);
 }
 
 void WindowTransform::computeReadyRows()
 {
-    for (;;)
+    /// Cancellation is checked per row here; general window functions evaluate each batch without cancellation checks
+    while (!isCancelled())
     {
-        // Either we ran out of data or we found the end of partition (maybe
-        // both, but this only happens at the total end of data).
-        const RowNumber partition_end = partition.bounds().end.location;
-        chassert(partition.bounds().fully_visible || partition_end == blocks.end());
-        if (partition.bounds().fully_visible && partition_end == blocks.end())
+        if (bounds.rows != 0 && peers.current().location.block != batch_start.block)
+            flushBatch();
+
+        if (peers.current().location == partition.bounds().end.location)
         {
-            chassert(input_is_finished);
+            /// The rest of this partition is not read yet, or the last partition is done.
+            if (!partition.bounds().fully_visible || input_is_finished)
+                break;
+
+            flushBatch();
+            startNextPartition();
         }
 
-        // After that, try to calculate window functions for each next row.
-        // We can continue until the end of partition or current end of data,
-        // which is precisely the definition of the known end of the partition.
-        while (current.location < partition_end)
+        peers.advancePeerGroupBounds(blocks, partition.bounds());
+
+        const RowPoint & current = peers.current();
+        if (params.separate_order_by_peer_groups && order_by_peer_group_start.location != current.location
+            && blocks.blockAt(current.location.block).index.order_by_peer_group_starts[current.location.row])
         {
-            // We now know that the current row is valid, so its peer group can be settled.
-            current.peer_group_index_in_partition = params.window_description.frame.type == WindowFrame::FrameType::ROWS ? current.row_index_in_partition : blocks.blockAt(current.location.block).index.peer_group_indexes[current.location.row];
-            if (current.peer_group_index_in_partition != peer_group_start.peer_group_index_in_partition)
-                peer_group_start = current;
-            checkInvariants();
-
-            if (params.separate_order_by_peer_groups && order_by_peer_group_start.location != current.location
-                && blocks.blockAt(current.location.block).index.order_by_peer_group_starts[current.location.row])
-            {
-                order_by_peer_group_start = RowPoint{
-                    .location = current.location,
-                    .row_index_in_partition = current.row_index_in_partition,
-                    .peer_group_index_in_partition = order_by_peer_group_start.peer_group_index_in_partition + 1,
-                };
-            }
-
-            frame.advance(blocks, current, partition);
-            if (!frame.bounds().fully_visible)
-            {
-                // Wait for more input data to find the frame.
-                chassert(!input_is_finished);
-                chassert(!partition.bounds().fully_visible);
-                return;
-            }
-
-            // The frame can be empty sometimes, e.g. the boundaries coincide
-            // or the start is after the partition end.
-            checkInvariants();
-
-            // Now that we know the new frame boundaries, update the aggregation
-            // states. Theoretically we could do this simultaneously with moving
-            // the frame boundaries, but it would require some care not to
-            // perform unnecessary work while we are still looking for the frame
-            // start, so do it the simple way for now.
-            updateAggregationState();
-
-            // Write out the aggregation results.
-            writeOutCurrentRow();
-
-            if (isCancelled())
-            {
-                // Good time to check if the query is cancelled. Checking once
-                // per block might not be enough in severe quadratic cases.
-                // Just leave the work halfway through and return, the 'prepare'
-                // method will figure out what to do. Note that this doesn't
-                // handle 'max_execution_time' and other limits, because these
-                // limits are only updated between blocks. Eventually we should
-                // start updating them in background and canceling the processor,
-                // like we do for Ctrl+C handling.
-                //
-                // This class is final, so the check should hopefully be
-                // devirtualized and become a single never-taken branch that is
-                // basically free.
-                return;
-            }
-
-            prev_frame = frame.bounds();
-
-            // Move to the next row. The frame will have to be recalculated.
-            // The peer group start is updated at the beginning of the loop,
-            // because the current row might now be past-the-end.
-            current.location = blocks.next(current.location);
-            ++current.row_index_in_partition;
+            order_by_peer_group_start = RowPoint{
+                .location = current.location,
+                .row_index_in_partition = current.row_index_in_partition,
+                .peer_group_index_in_partition = order_by_peer_group_start.peer_group_index_in_partition + 1,
+            };
         }
 
-        if (input_is_finished)
-        {
-            // We finalized the last partition in the above loop, and don't have
-            // to do anything else.
-            return;
-        }
+        frame.advance(blocks, current, partition.bounds());
+        if (!frame.bounds().fully_visible)
+            break;
 
-        if (!partition.bounds().fully_visible)
-        {
-            // Wait for more input data to find the end of partition.
-            // Assert that we processed all the data we currently have, and that
-            // we are going to receive more data.
-            chassert(partition_end == blocks.end());
-            chassert(!input_is_finished);
-            return;
-        }
+        updateAggregationState();
+        writeOutCurrentRow();
+        appendCurrentRow();
 
-        startNextPartition();
-        checkInvariants();
+        prev_frame = frame.bounds();
+        peers.advanceCurrentRow(blocks, partition.bounds());
     }
+
+    flushBatch();
+}
+
+void WindowTransform::appendCurrentRow()
+{
+    if (general_functions.empty())
+        return;
+
+    const RowPoint & current = peers.current();
+    const FrameBounds & current_frame = frame.bounds();
+    const PeersBounds & current_peers = peers.bounds();
+    if (bounds.rows == 0)
+        batch_start = current.location;
+
+    bounds.row.push_back(current.row_index_in_partition);
+    bounds.frame_start.push_back(current_frame.start.row_index_in_partition);
+    bounds.frame_end.push_back(current_frame.end.row_index_in_partition);
+    /// Under ROWS the peers of the frame are single rows, while rank() and dense_rank() count ORDER BY peer groups.
+    const RowPoint & peer_group_start = params.separate_order_by_peer_groups ? order_by_peer_group_start : current_peers.start;
+    bounds.peers_start.push_back(peer_group_start.row_index_in_partition);
+    bounds.peers_end.push_back(current_peers.end.row_index_in_partition);
+    bounds.peer_group_index.push_back(params.separate_order_by_peer_groups ? order_by_peer_group_start.peer_group_index_in_partition : current.peer_group_index_in_partition);
+    if (partition.bounds().fully_visible)
+        bounds.partition_end.push_back(partition.bounds().end.row_index_in_partition);
+    ++bounds.rows;
+}
+
+void WindowTransform::flushBatch()
+{
+    if (bounds.rows == 0)
+        return;
+
+    const bool has_arguments = std::ranges::any_of(general_functions, [](const GeneralWindowFunctionSlot & slot) { return slot.arguments.size() != 0; });
+    if (has_arguments)
+    {
+        const std::vector<WindowArguments::Block> argument_blocks = collectArgumentBlocks(blocks, batch_start, bounds.row[0]);
+        for (auto & slot : general_functions)
+            slot.arguments.setBlocks(argument_blocks);
+    }
+
+    const SlidingBlock & block = blocks.blockAt(batch_start.block);
+    for (const auto & slot : general_functions)
+        slot.function->evaluate(slot.state, bounds, slot.arguments, *block.result_columns[slot.result_column]);
+
+    clearBounds(bounds);
 }
 
 void WindowTransform::startNextPartition()
 {
     const RowNumber partition_start = partition.bounds().end.location;
+    chassert(peers.current().location == partition_start);
+
     partition.beginAt(blocks, partition_start);
     partition.advance(blocks);
-    // We have to reset the frame and other pointers when the new partition
-    // starts.
-    chassert(current.location == partition_start);
-    current = {partition_start};
-    peer_group_start = {partition_start};
-    order_by_peer_group_start = {partition_start};
+
+    peers.enterPartition(partition_start);
+    order_by_peer_group_start = RowPoint{.location = partition_start};
     frame.enterPartition(partition_start);
-    prev_frame = FrameBounds{.start = {partition_start}, .end = {partition_start}, .fully_visible = true};
+    prev_frame = FrameBounds{.start = {.location = partition_start}, .end = {.location = partition_start}, .fully_visible = true};
 
-    // Reinitialize the aggregate function states because the new partition
-    // has started.
+    for (const auto & slot : general_functions)
+        slot.function->resetPartition(slot.state);
+
     for (auto & ws : workspaces)
-    {
-        if (ws.window_function_impl)
-        {
-            continue;
-        }
+        ws.aggregate_function->destroy(ws.aggregate_function_state.data());
 
-        const auto * a = ws.aggregate_function.get();
-        auto * buf = ws.aggregate_function_state.data();
-
-        a->destroy(buf);
-    }
-
-    // Replace the arena so that it does not grow across partitions. All states
-    // were destroyed above and no result lives in it, see the field comment.
+    /// Replaced between destroy and create, so it does not grow across partitions.
     if (arena)
-    {
         arena = std::make_unique<Arena>();
-    }
 
     for (auto & ws : workspaces)
-    {
-        if (ws.window_function_impl)
-        {
-            continue;
-        }
-
-        const auto * a = ws.aggregate_function.get();
-        auto * buf = ws.aggregate_function_state.data();
-
-        a->create(buf);
-    }
+        ws.aggregate_function->create(ws.aggregate_function_state.data());
 }
 
 IProcessor::Status WindowTransform::prepare()
 {
+    InputPort & input = inputs.front();
+    OutputPort & output = outputs.front();
+
+    /// The consumer closed the port early, or the query was cancelled: nothing more to produce.
     if (output.isFinished() || isCancelled())
     {
-        // output.isFinished(): the consumer closed the port early, e.g. LIMIT is
-        // satisfied. isCancelled(): KILL QUERY, a client disconnect or Ctrl+C
-        // cancelled the processor. Either way there is nothing more to produce.
         input.close();
         return Status::Finished;
     }
 
-    chassert(current.location.block >= blocks.begin().block);
-    // The the current row might be past-the-end if we have already calculated the
-    // window functions for all input rows. That's why the equality is also
-    // valid here.
-    chassert(current.location.block <= blocks.end().block);
-
-    // Output the ready data prepared by work(). A block is ready when the
-    // current row has left it, because rows are computed in order.
-    // We inspect the calculation state and create the output chunk right here,
-    // because this is pretty lightweight.
-    if (next_output_block_number < current.location.block)
+    /// A block is ready once the current row has left it, because rows are computed in order.
+    if (next_output_block_number < peers.current().location.block)
     {
         if (output.canPush())
         {
-            // Output the ready block.
-            const auto & block = blocks.blockAt(next_output_block_number);
+            const SlidingBlock & block = blocks.blockAt(next_output_block_number);
             auto columns = block.input_columns;
             for (auto & res : block.result_columns)
                 columns.push_back(std::move(res));
 
             Chunk chunk;
             chunk.setColumns(columns, block.rows_count);
-
             ++next_output_block_number;
-
             output.push(std::move(chunk));
         }
-
-        // We don't need input.setNotNeeded() here, because we already pull with
-        // the set_not_needed flag.
         return Status::PortFull;
     }
 
+    /// The input ended at the previous cycle and no output is ready, so everything is out.
     if (input_is_finished)
     {
-        // The input data ended at the previous prepare() + work() cycle,
-        // and we don't have ready output data (checked above). We must be
-        // finished.
         chassert(next_output_block_number == blocks.end().block);
-        chassert(current.location == blocks.end());
-
-        // The consumer learns that the data ended only from the closed output port.
+        chassert(peers.current().location == blocks.end());
         output.finish();
-
         return Status::Finished;
     }
 
-    // Consume input data if we have any ready.
+    /// Pulling with set_not_needed and an explicit setNeeded later makes the producer generate the next block in
+    /// this thread right before our work, so the data is still hot.
     if (!pending_input && input.hasData())
     {
-        // Pulling with set_not_needed = true and using an explicit setNeeded()
-        // later is somewhat more efficient, because after the setNeeded(), the
-        // required input block will be generated in the same thread and passed
-        // to our prepare() + work() methods in the same thread right away, so
-        // hopefully we will work on hot (cached) data.
         pending_input = input.pull(true /* set_not_needed */);
-
-        // Now we have new input and can try to generate more output in work().
         return Status::Ready;
     }
 
-    // We 1) don't have any ready output (checked above),
-    // 2) don't have any more input (also checked above).
-    // Will we get any more input?
+    /// No ready output and no more input: finalize once in work if the input is over, wait otherwise.
     if (input.isFinished())
     {
-        // We won't, time to finalize the calculation in work(). We should only
-        // do this once.
         chassert(!input_is_finished);
         input_is_finished = true;
         return Status::Ready;
     }
 
-    // We have to wait for more input.
     input.setNeeded();
     return Status::NeedData;
 }
@@ -576,14 +423,9 @@ void WindowTransform::work()
 
 void WindowTransform::releaseUnusedBlocks()
 {
-    // We don't really have to keep the entire partition, and it can be big, so
-    // we want to drop the starting blocks to save memory. We can drop the old
-    // blocks if we already returned them as output, and the frame and the
-    // current row are already past them. The previous frame start is never
-    // after the current frame start, so we don't have to check the latter. Note
-    // that the frame start can be further than current row for some frame specs
-    // (e.g. EXCLUDE CURRENT ROW), so we have to check both.
-    const auto first_used_block = std::min({next_output_block_number, prev_frame.start.location.block, current.location.block});
+    /// A block is dropped once it is output and both the previous frame start and the current row have left it.
+    /// The previous frame start is never after the current one, and the frame can start after the current row.
+    const auto first_used_block = std::min({next_output_block_number, prev_frame.start.location.block, peers.current().location.block});
     while (blocks.begin().block < first_used_block)
         blocks.pop();
 }
