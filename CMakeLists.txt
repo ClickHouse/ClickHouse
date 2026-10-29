@@ -435,6 +435,13 @@ if (NOT ENABLE_FUZZING)
     set (COMPILER_FLAGS "${COMPILER_FLAGS} -fstack-protector-strong")
 endif()
 
+# Trap when execution reaches `__builtin_unreachable()` (release `UNREACHABLE()`, `std::unreachable()`) or returns from a call to
+# a `noreturn` function. Not in sanitizer and fuzzer builds (the UBSan ones report it), nor with Emscripten, which links its UBSan
+# runtime for any UBSan check.
+if (NOT SANITIZE AND NOT ENABLE_FUZZING AND NOT OS_WASM)
+    set (COMPILER_FLAGS "${COMPILER_FLAGS} -fsanitize=unreachable -fsanitize-trap=unreachable")
+endif ()
+
 # Probe every page of a large stack allocation (big frames, `alloca`, VLAs) so that it cannot jump over
 # the guard page into another mapping. Only functions with frames larger than a page pay for it.
 # Clang ignores it (and `-Werror` turns the warning into an error) on Darwin, SunOS, WebAssembly and LoongArch.
