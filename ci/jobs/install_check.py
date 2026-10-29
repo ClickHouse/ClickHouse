@@ -114,6 +114,19 @@ def test_install_deb(image: DockerImage) -> List[Result]:
     tests = {
         "Install server deb": r"""#!/bin/bash -ex
 apt-get install /packages/clickhouse-{server,client,common}*deb -y
+# A reinstall invokes `postinst configure` with the previously configured version,
+# just like an upgrade. Exercise the packaged script with real systemd state.
+[ "$(systemctl is-enabled clickhouse-server)" = enabled ]
+systemctl disable clickhouse-server
+dpkg -i /packages/clickhouse-server_*.deb
+[ "$(systemctl is-enabled clickhouse-server)" = disabled ]
+systemctl mask clickhouse-server
+dpkg -i /packages/clickhouse-server_*.deb
+[ "$(systemctl is-enabled clickhouse-server)" = masked ]
+systemctl unmask clickhouse-server
+systemctl enable clickhouse-server
+dpkg -i /packages/clickhouse-server_*.deb
+[ "$(systemctl is-enabled clickhouse-server)" = enabled ]
 bash -ex /packages/server_test.sh""",
         "Run server init.d (proxy to systemd)": r"""#!/bin/bash -ex
 apt-get install /packages/clickhouse-{server,client,common-static}_*deb -y
