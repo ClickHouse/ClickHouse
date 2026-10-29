@@ -243,8 +243,7 @@ struct VisitedFrame
     /// On the walk's stack: arriving here again is a cycle.
     bool walking = false;
     /// The first path below `prefix` that the last walk skipped on an `ELOOP` caused by the symlinks
-    /// of `prefix` itself. A name that resolves it walks the frame again, once: a retry under every
-    /// better name re-walks long symlink chains once per link.
+    /// of `prefix` itself. A name that resolves it walks the frame again, once.
     std::optional<std::string> unresolved;
     bool retried = false;
     size_t matches_before_retry = 0;
@@ -264,15 +263,13 @@ struct PruningState
     /// with, so the answer is deferred until the walk is over and every count is final. Deciding
     /// at the collision instead would read a count that is not yet final whenever the collision
     /// comes from inside the claiming frame's own subtree, which is what an ancestor loop is: the
-    /// loop can re-enter the root before the root has matched anything. A collision queued before
-    /// the frame's retry is charged with the matches from before it: the retry runs under a name
-    /// with fewer symlinks than the pruned one, which cannot reach what only the retry found.
+    /// loop can re-enter the root before the root has matched anything. A collision before the frame's
+    /// retry counts only earlier matches: the pruned name has more symlinks than the retry's name.
     std::vector<std::pair<const VisitedFrame *, bool>> pending_collisions;
 };
 
-/// Records an `ELOOP` on `path` in the frames being walked: a name for their directories with fewer
-/// symlinks may still reach what is behind it. Not when it also fails from the innermost frame's
-/// canonical directory, nor when it is a directory already walked with `descent_suffix`.
+/// Records an `ELOOP` on `path` in the frames being walked, unless no name for them can do better: it
+/// also fails from the innermost canonical directory, or it is a directory walked with `descent_suffix`.
 void noteSymlinkLimitSkip(
     const std::error_code & ec, const std::string & path, const std::string * descent_suffix, PruningState & pruning)
 {
