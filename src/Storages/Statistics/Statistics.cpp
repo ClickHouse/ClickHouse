@@ -401,7 +401,7 @@ std::optional<Float64> ColumnStatistics::estimateEqual(const Field & val) const
         return stats.at(StatisticsType::CountMinSketch)->estimateEqual(val);
     }
 #endif
-    if (hasMeasuredCardinality())
+    if (hasCardinality())
     {
         UInt64 distinct_values = estimateCardinality();
         if (distinct_values == 0 || rows == 0)
@@ -438,15 +438,15 @@ std::optional<Float64> ColumnStatistics::estimateRange(const Range & range) cons
     return *right_count - *left_count;
 }
 
-bool ColumnStatistics::hasMeasuredCardinality() const
+bool ColumnStatistics::hasCardinality() const
 {
-    return (external_cardinality && external_cardinality->measured) || findUniqStats(stats) != nullptr;
+    return external_cardinality || findUniqStats(stats) != nullptr;
 }
 
 UInt64 ColumnStatistics::estimateCardinality() const
 {
     if (external_cardinality)
-        return external_cardinality->value;
+        return *external_cardinality;
     if (const IStatistics * uniq_stats = findUniqStats(stats))
     {
         return uniq_stats->estimateCardinality();

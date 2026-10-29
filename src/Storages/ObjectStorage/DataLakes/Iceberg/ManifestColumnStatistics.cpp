@@ -239,7 +239,7 @@ void ManifestColumnStatistics::addFile(const ProcessedManifestFileEntry & entry,
     }
 }
 
-std::optional<ManifestColumnStatistics::DistinctValues> ManifestColumnStatistics::estimateDistinctValues(
+std::optional<UInt64> ManifestColumnStatistics::estimateDistinctValues(
     const Target & target, const DistinctValuesInputs & inputs, const ColumnStats & column, UInt64 rows)
 {
     /// `value_or`: the optimizer may call `llround` before checking the optional, and MSan reports the empty value it reads.
@@ -251,28 +251,19 @@ std::optional<ManifestColumnStatistics::DistinctValues> ManifestColumnStatistics
         range_width = valueRangeWidth(*column.min_value, *column.max_value);
 
     UInt64 num_distinct_values = 1;
-    bool measured = false;
     if (non_null_rows == 0)
         num_distinct_values = 1;
     else if (inputs.identity_partition_known)
-    {
         num_distinct_values = inputs.identity_partition_values.size();
-        measured = true;
-    }
-    /// A timestamp counts microseconds, but its values usually step by thousands of them or more, so its range is far
-    /// above the rows and the clamp below gives the estimate.
-    else if (range_width)
-    {
+    /// As MergeTree interpolates ranges between min and max, the values are taken to fill the range, so a column with
+    /// gaps looks more selective than it is. A range above the rows (sparse keys, timestamps) counts nothing.
+    else if (range_width && *range_width <= non_null_rows)
         num_distinct_values = *range_width;
-        /// As MergeTree interpolates ranges between min and max, the values are taken to fill the range, so equality and
-        /// `IN` use it; a column with gaps would look more selective than it is
-        measured = *range_width <= non_null_rows;
-    }
     else
         return std::nullopt;
 
     /// A distinct count excludes NULL, as for MergeTree statistics, and 0 would make a join a cross product.
-    return DistinctValues{std::clamp<UInt64>(num_distinct_values, 1, std::max<UInt64>(non_null_rows, 1)), measured};
+    return std::clamp<UInt64>(num_distinct_values, 1, std::max<UInt64>(non_null_rows, 1));
 }
 
 void ManifestColumnStatistics::finalize(DataLakeReadEstimate & estimate)
@@ -300,7 +291,7 @@ void ManifestColumnStatistics::finalize(DataLakeReadEstimate & estimate)
         const auto & distinct_value_input = distinct_values_inputs[i];
         /// Without one, the estimator keeps its own guess, as for MergeTree without a `uniq` statistic.
         if (const auto distinct_values = estimateDistinctValues(col_target, distinct_value_input, column_stats, total_rows))
-            statistics_builder.setCardinality(col_name, distinct_values->count, distinct_values->measured);
+            statistics_builder.setCardinality(col_name, *distinct_values);
     }
     estimate.estimator = estimator;
 }

@@ -23,10 +23,10 @@ ResultRows: 400
 Expect no estimate for ice_keys and no result rows: the manifests are not read; dim10 rows are imprecise.
 Join: ice_keys ⋈ dim10[no_stats~10]
 ResultRows: unknown
---- T6: rule 2, sparse integer: range clamped to the rows
-Expect 10: the range is far above the rows, so NDV = 100000: 100000 * 10 / 100000 (true NDV 2500, result 40).
+--- T6: rule 3, sparse integer: range above the rows
+Expect 100: the range is far above the rows, so 10% of them: 100000 * 10 / 10000 (true NDV 2500, result 40).
 Join: ice_keys[100000] ⋈ dim10[10]
-ResultRows: 10
+ResultRows: 100
 --- T7: rule 3, String: 10% of the rows
 Expect 100: 10% of the 100000 rows, as MergeTree without `uniq`: 100000 * 10 / 10000 (true NDV 2500, result 400).
 Join: ice_keys[100000] ⋈ dim10[10]

@@ -129,16 +129,9 @@ private:
     /// Adds the identity-partition value that a file gives for a target.
     static void addToDistinctValuesInputs(DistinctValuesInputs & inputs, const ColumnMetrics & metrics);
 
-    struct DistinctValues
-    {
-        UInt64 count;
-        /// Rule 1, or rule 2 below the clamp: a count or a bound from the values, not a guess.
-        bool measured;
-    };
-
     /// The number of distinct values of a target by the first rule that applies, clamped to [1, non-NULL rows]; std::nullopt
     /// if none does. `column` holds its merged statistics over `rows` rows.
-    static std::optional<DistinctValues> estimateDistinctValues(
+    static std::optional<UInt64> estimateDistinctValues(
         const Target & target, const DistinctValuesInputs & inputs, const ColumnStats & column, UInt64 rows);
 
     /// Resolves field ids and the column types of each file's schema.

@@ -8,7 +8,7 @@
 # applies, clamped to the non-NULL rows; and that the min/max reach an optimizer decision.
 # - T1: `ie_join` picks its two key conditions by the min/max (port of `05023` to Iceberg).
 # - T2: the `Estimated statistics` trace line: rows, then NDV [NULL fraction] per column.
-# - T3: files without values of a column count as NULLs, and its NDV is clamped to the non-NULL rows.
+# - T3: files without values of a column count as NULLs, and a range above the non-NULL rows counts nothing.
 # - T4: range conditions estimated on the bounds of each type, since the trace line prints no min/max.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
@@ -83,13 +83,13 @@ relation()
 }
 
 echo '--- T2: rows, then NDV [NULL fraction] per column'
-echo 'Expect NDV id 1000, day 365, nullable_int 99 (75 true) by range, decimal_value and string_value 10% of rows,'
-echo 'event_time range clamped to rows; nullable_int NULL every 4th row.'
+echo 'Expect NDV id 1000, day 365, nullable_int 99 (75 true) by range; decimal_value, string_value and event_time'
+echo '(range above the rows) 10% of rows; nullable_int NULL every 4th row.'
 relation ice_types "SELECT ice_types.nullable_int, ice_types.day, ice_types.event_time, ice_types.decimal_value,
     ice_types.string_value FROM ice_types JOIN dim10 ON ice_types.id = dim10.id"
 
 echo '--- T3: a file before ADD COLUMN and an all-NULL file, then values'
-echo 'Expect added 2000, null 0.5: 2000 of the 4000 rows count as NULLs; the range 3999 is clamped to the 2000 others.'
+echo 'Expect added 400, null 0.5: 2000 of the 4000 rows count as NULLs; the range 3999 is above the 2000 others: 10% of rows.'
 relation ice_added_column "SELECT ice_added_column.added FROM ice_added_column
     JOIN dim10 ON ice_added_column.id = dim10.id"
 

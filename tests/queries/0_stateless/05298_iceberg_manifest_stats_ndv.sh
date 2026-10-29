@@ -10,7 +10,7 @@
 # - T3: rule 1 on a decimal partition.
 # - T4: rule 2 on a dense integer.
 # - T5: T4 with `use_statistics = 0`: no estimate.
-# - T6: rule 2 on a sparse integer, clamped to the rows.
+# - T6: rule 3 on a sparse integer, whose range is above the rows.
 # - T7: rule 3 on `String`.
 # - T8: bounds written before `MODIFY COLUMN ... Int64` keep their values after the column is renamed.
 
@@ -93,8 +93,8 @@ echo '--- T5: use_statistics = 0'
 echo 'Expect no estimate for ice_keys and no result rows: the manifests are not read; dim10 rows are imprecise.'
 labels "${T4}" ${NO_STATS}
 
-echo '--- T6: rule 2, sparse integer: range clamped to the rows'
-echo 'Expect 10: the range is far above the rows, so NDV = 100000: 100000 * 10 / 100000 (true NDV 2500, result 40).'
+echo '--- T6: rule 3, sparse integer: range above the rows'
+echo 'Expect 100: the range is far above the rows, so 10% of them: 100000 * 10 / 10000 (true NDV 2500, result 40).'
 labels "SELECT count() FROM ice_keys JOIN dim10 ON ice_keys.sparse_int = dim10.int_key" ${ON}
 
 echo '--- T7: rule 3, String: 10% of the rows'
