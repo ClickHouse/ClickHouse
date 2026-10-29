@@ -143,6 +143,10 @@ public:
     /// target vector size when the model supports it.
     static AIParamSpecs embeddingParams();
 
+    /// Throws if the context has no user. Background work (merges, mutations, `Buffer` flushes) evaluates
+    /// expressions with such a context, which has full access, so the privilege checks do not apply to it.
+    static void checkHasUser(const ContextPtr & context);
+
     /// Result of `embedTexts`. `embeddings` is aligned 1:1 with the `inputs` argument of `embedTexts`. An
     /// entry is empty when that input was not embedded (quota exceeded, or a failed request with
     /// `ai_function_throw_on_error` disabled).

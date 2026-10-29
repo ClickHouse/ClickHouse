@@ -369,6 +369,13 @@ void FunctionBaseAI::insertProcessedResult(IColumn & column, const String & proc
     column.insertData(processed.data(), processed.size());
 }
 
+void FunctionBaseAI::checkHasUser(const ContextPtr & context)
+{
+    if (!context->getUserID())
+        throw Exception(ErrorCodes::ACCESS_DENIED,
+            "AI functions cannot be executed without a user, e.g. in background merges, mutations or `Buffer` flushes");
+}
+
 AIParamSpecs FunctionBaseAI::embeddingParams()
 {
     return {
@@ -512,6 +519,8 @@ ColumnPtr FunctionBaseAI::executeImpl(const ColumnsWithTypeAndName & arguments, 
     UInt64 retry_delay_ms = settings[Setting::ai_function_retry_initial_delay_ms].value;
 
     bool throw_on_error = settings[Setting::ai_function_throw_on_error].value;
+
+    checkHasUser(getContext());
 
     /// Shared across every AI function call in the query
     auto quota_tracker = getContext()->getAIQuotaTracker();
