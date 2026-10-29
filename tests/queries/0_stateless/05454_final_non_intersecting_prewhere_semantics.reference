@@ -24,3 +24,6 @@ Nullable and LowCardinality conditions, with the AND chain of the WHERE split in
 6567
 A condition after one that stays in the WHERE stays there too
 19803	198015300
+The conditions applied early keep the order of the WHERE
+19800	88002
+19800	88002

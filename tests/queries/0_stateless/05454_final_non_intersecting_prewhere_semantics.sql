@@ -105,3 +105,17 @@ INSERT INTO t_final_prewhere_guard SELECT number, toString(number), 2 FROM numbe
 SELECT count(), sum(key) FROM t_final_prewhere_guard FINAL WHERE (s != 'bad' OR key = 4294967295) AND toUInt64(s) > 0
 SETTINGS query_plan_optimize_lazy_final = 0;
 DROP TABLE t_final_prewhere_guard;
+
+SELECT 'The conditions applied early keep the order of the WHERE';
+DROP TABLE IF EXISTS t_final_prewhere_order;
+CREATE TABLE t_final_prewhere_order (key UInt64, guard UInt64, s String, payload String)
+ENGINE = ReplacingMergeTree ORDER BY key SETTINGS index_granularity = 128;
+INSERT INTO t_final_prewhere_order
+SELECT number, if(number % 100 = 0, 0, cityHash64(number)), if(number % 100 = 0, 'bad', '1'), toString(number) FROM numbers(20000);
+OPTIMIZE TABLE t_final_prewhere_order FINAL;
+-- The column `s` is smaller than `guard`, but `toUInt64(s)` must not see 'bad', which only the rows with `guard = 0` have.
+SELECT count(), sum(length(payload)) FROM t_final_prewhere_order FINAL WHERE guard != 0 AND toUInt64(s) > 0
+SETTINGS query_plan_optimize_lazy_final = 0;
+SELECT count(), sum(length(payload)) FROM t_final_prewhere_order FINAL WHERE guard != 0 AND toUInt64(s) > 0
+SETTINGS query_plan_optimize_lazy_final = 1, min_filtered_ratio_for_lazy_final = 0;
+DROP TABLE t_final_prewhere_order;

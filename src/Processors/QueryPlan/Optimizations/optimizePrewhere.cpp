@@ -406,8 +406,8 @@ void optimizePrewhere(QueryPlan::Node & parent_node, const bool remove_unused_co
         columns_read_before_filter);
 
     /// The WHERE evaluates a condition only on the rows that passed the conditions before it, e.g. `toUInt64(s) > 0` in
-    /// `WHERE s != 'bad' AND toUInt64(s) > 0`. Keep that for the conditions that stay in it: apply early only the conditions
-    /// before the first one that is applied neither early on these ranges nor as the PREWHERE of all ranges.
+    /// `WHERE s != 'bad' AND toUInt64(s) > 0`. Keep that: apply early only the conditions before the first one that is
+    /// applied neither early on these ranges nor as the PREWHERE of all ranges, in the order of the WHERE.
     if (!non_intersecting_final_conditions.empty())
     {
         std::unordered_set<const ActionsDAG::Node *> applied_early(non_intersecting_final_conditions.begin(), non_intersecting_final_conditions.end());
@@ -425,14 +425,15 @@ void optimizePrewhere(QueryPlan::Node & parent_node, const bool remove_unused_co
                 atoms.push_back(node);
         }
 
-        std::unordered_set<const ActionsDAG::Node *> guarded_prefix;
+        std::unordered_set<const ActionsDAG::Node *> non_intersecting(non_intersecting_final_conditions.begin(), non_intersecting_final_conditions.end());
+        non_intersecting_final_conditions.clear();
         for (const auto * atom : atoms)
         {
             if (!applied_early.contains(atom))
                 break;
-            guarded_prefix.insert(atom);
+            if (non_intersecting.contains(atom))
+                non_intersecting_final_conditions.push_back(atom);
         }
-        std::erase_if(non_intersecting_final_conditions, [&](const auto * condition) { return !guarded_prefix.contains(condition); });
     }
 
     /// The filter stays above the read, so a filter built by an earlier call is replaced only by a filter
