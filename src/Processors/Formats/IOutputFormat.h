@@ -1,6 +1,7 @@
 #pragma once
 
 #include <mutex>
+#include <optional>
 #include <unordered_map>
 #include <Core/Block_fwd.h>
 #include <IO/Progress.h>
@@ -48,6 +49,14 @@ public:
 
     /// Counter to calculate rows_before_limit_at_least in processors pipeline.
     void setRowsBeforeLimitCounter(RowsBeforeStepCounterPtr counter) override { rows_before_limit_counter.swap(counter); }
+
+    /// Value of the rows_before_limit_at_least field, if the query has a limit. It is final only after the pipeline has finished.
+    std::optional<UInt64> getRowsBeforeLimitAtLeast() const
+    {
+        if (rows_before_limit_counter && rows_before_limit_counter->hasAppliedStep())
+            return rows_before_limit_counter->get();
+        return {};
+    }
 
     /// Value for rows_before_aggregation field.
     virtual void setRowsBeforeAggregation(size_t /*rows_before_aggregation*/) {}

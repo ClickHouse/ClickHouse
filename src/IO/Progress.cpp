@@ -31,7 +31,8 @@ bool Progress::empty() const
         && written_bytes == 0
         && total_rows_to_read == 0
         && result_rows == 0
-        && result_bytes == 0;
+        && result_bytes == 0
+        && !has_rows_before_limit_at_least;
     /// We deliberately don't include "elapsed_ns" and "memory_usage" as a volatile value.
 }
 
@@ -83,7 +84,7 @@ void ProgressValues::write(WriteBuffer & out, UInt64 client_revision) const
     }
 }
 
-void ProgressValues::writeJSON(WriteBuffer & out, bool write_zero_values) const
+void ProgressValues::writeJSON(WriteBuffer & out, bool verbose) const
 {
     /// Numbers are written in double quotes (as strings) to avoid loss of precision
     ///  of 64-bit integers after interpretation by JavaScript.
@@ -92,7 +93,7 @@ void ProgressValues::writeJSON(WriteBuffer & out, bool write_zero_values) const
 
     auto write = [&](const char * name, UInt64 value)
     {
-        if (!value && !write_zero_values)
+        if (!value && !verbose)
             return;
         if (has_value)
             writeChar(',', out);
@@ -113,6 +114,8 @@ void ProgressValues::writeJSON(WriteBuffer & out, bool write_zero_values) const
     write("\"result_bytes\"", result_bytes);
     write("\"elapsed_ns\"", elapsed_ns);
     write("\"memory_usage\"", memory_usage);
+    if (verbose && has_rows_before_limit_at_least)
+        write("\"rows_before_limit_at_least\"", rows_before_limit_at_least);
     writeCString("}", out);
 }
 
@@ -134,6 +137,12 @@ bool Progress::incrementPiecewiseAtomically(const Progress & rhs)
 
     memory_usage += rhs.memory_usage;
 
+    if (rhs.has_rows_before_limit_at_least)
+    {
+        rows_before_limit_at_least = rhs.rows_before_limit_at_least.load(std::memory_order_relaxed);
+        has_rows_before_limit_at_least = true;
+    }
+
     return rhs.read_rows || rhs.written_rows;
 }
 
@@ -154,6 +163,9 @@ void Progress::reset()
     elapsed_ns = 0;
 
     memory_usage = 0;
+
+    rows_before_limit_at_least = 0;
+    has_rows_before_limit_at_least = false;
 }
 
 ProgressValues Progress::getValues() const
@@ -175,6 +187,9 @@ ProgressValues Progress::getValues() const
     res.elapsed_ns = elapsed_ns.load(std::memory_order_relaxed);
 
     res.memory_usage = memory_usage.load(std::memory_order_relaxed);
+
+    res.rows_before_limit_at_least = rows_before_limit_at_least.load(std::memory_order_relaxed);
+    res.has_rows_before_limit_at_least = has_rows_before_limit_at_least.load(std::memory_order_relaxed);
 
     return res;
 }
@@ -199,6 +214,9 @@ ProgressValues Progress::fetchValuesAndResetPiecewiseAtomically()
 
     res.memory_usage = memory_usage.fetch_and(0);
 
+    res.rows_before_limit_at_least = rows_before_limit_at_least.fetch_and(0);
+    res.has_rows_before_limit_at_least = has_rows_before_limit_at_least.exchange(false);
+
     return res;
 }
 
@@ -222,6 +240,9 @@ Progress Progress::fetchAndResetPiecewiseAtomically()
 
     res.memory_usage = memory_usage.fetch_and(0);
 
+    res.rows_before_limit_at_least = rows_before_limit_at_least.fetch_and(0);
+    res.has_rows_before_limit_at_least = has_rows_before_limit_at_least.exchange(false);
+
     return res;
 }
 
@@ -242,6 +263,9 @@ Progress & Progress::operator=(Progress && other) noexcept
     elapsed_ns = other.elapsed_ns.load(std::memory_order_relaxed);
 
     memory_usage = other.memory_usage.load(std::memory_order_relaxed);
+
+    rows_before_limit_at_least = other.rows_before_limit_at_least.load(std::memory_order_relaxed);
+    has_rows_before_limit_at_least = other.has_rows_before_limit_at_least.load(std::memory_order_relaxed);
 
     return *this;
 }

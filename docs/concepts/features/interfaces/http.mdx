@@ -696,6 +696,18 @@ curl -sS 'http://localhost:8123/?max_result_bytes=4000000&buffer_size=3000000&wa
 Use buffering to avoid situations where a query processing error occurred after the response code and HTTP headers were sent to the client. In this situation, an error message is written at the end of the response body, and on the client-side, the error can only be detected at the parsing stage.
 </Tip>
 
+Buffering also makes the `X-ClickHouse-Summary` header complete. This header is sent together with the other HTTP headers, so without buffering it reflects only the progress made before the first part of the body was sent. When the whole response is buffered, the header contains the final values, and for a query with a `LIMIT` it also contains `rows_before_limit_at_least`, with the same value as the `rows_before_limit_at_least` field of the `JSON` output formats. This lets clients that read the result in other formats, such as `RowBinary`, find out whether the `LIMIT` cut the result off:
+
+```bash
+curl -sS -D - -o /dev/null 'http://localhost:8123/?wait_end_of_query=1' -d 'SELECT number FROM numbers(100) WHERE number % 2 = 0 LIMIT 10 FORMAT RowBinary' | grep X-ClickHouse-Summary
+```
+
+```response
+X-ClickHouse-Summary: {"read_rows":"100","read_bytes":"800","written_rows":"0","written_bytes":"0","total_rows_to_read":"100","result_rows":"10","result_bytes":"256","elapsed_ns":"2569805","memory_usage":"7477457","rows_before_limit_at_least":"50"}
+```
+
+As in the `JSON` formats, the value is a lower bound unless [`exact_rows_before_limit`](/reference/settings/session-settings/other#exact_rows_before_limit) is enabled. The field is absent for queries without a limit.
+
 ## Setting a role with query parameters {#setting-role-with-query-parameters}
 
 This feature was added in ClickHouse 24.4.
