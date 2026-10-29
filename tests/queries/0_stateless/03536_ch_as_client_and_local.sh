@@ -17,6 +17,12 @@ ln -s "${CLICKHOUSE_BINARY_REAL}" "${CLICKHOUSE_BINARY_DIR}/ch"
 CLICKHOUSE_BINARY="${CLICKHOUSE_BINARY_DIR}/clickhouse"
 CLICKHOUSE_BINARY_CH=${CLICKHOUSE_BINARY/%clickhouse/ch}
 
+# Without --tmp or --path, clickhouse-local locks its default data directory in the home, so parallel tests
+# that run it through the bare binary must each get a home of their own.
+home_dir="${CLICKHOUSE_TMP}/home_${CLICKHOUSE_DATABASE}"
+rm -rf "$home_dir"
+mkdir -p "$home_dir"
+
 # Invocation with unknown tool name prints help:
 ${CLICKHOUSE_BINARY} test 2>&1 | grep -F 'Use one of the following commands'
 
@@ -25,11 +31,11 @@ ${CLICKHOUSE_BINARY} --help 2>&1 | grep -F 'Use one of the following commands'
 ${CLICKHOUSE_BINARY_CH} --help 2>&1 | grep -F 'Use one of the following commands'
 
 # This is recognized as clickhouse-local:
-${CLICKHOUSE_BINARY} --query "SELECT engine FROM system.databases WHERE name = currentDatabase()"
-${CLICKHOUSE_BINARY_CH} --query "SELECT engine FROM system.databases WHERE name = currentDatabase()"
+HOME="$home_dir" XDG_DATA_HOME="" ${CLICKHOUSE_BINARY} --query "SELECT engine FROM system.databases WHERE name = currentDatabase()"
+HOME="$home_dir" XDG_DATA_HOME="" ${CLICKHOUSE_BINARY_CH} --query "SELECT engine FROM system.databases WHERE name = currentDatabase()"
 
 # This is recognized as clickhouse-client:
 ${CLICKHOUSE_BINARY} --host ${CLICKHOUSE_HOST} --port ${CLICKHOUSE_PORT_TCP} --query "SELECT engine FROM system.databases WHERE name = currentDatabase()"
 ${CLICKHOUSE_BINARY_CH} --query "SELECT engine FROM system.databases WHERE name = currentDatabase()" -h${CLICKHOUSE_HOST} --port=${CLICKHOUSE_PORT_TCP}
 
-rm -rf "${CLICKHOUSE_BINARY_DIR}"
+rm -rf "${CLICKHOUSE_BINARY_DIR}" "$home_dir"
