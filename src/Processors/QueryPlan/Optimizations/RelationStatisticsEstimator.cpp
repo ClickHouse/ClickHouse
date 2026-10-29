@@ -429,13 +429,11 @@ RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::No
 namespace
 {
 
-/// Column name -> the `ColumnConst` with the value the column holds in every row,
-/// or nullptr when the column holds one value in every row that is not known here.
+/// Column name -> the `ColumnConst` holding its value in every row, or nullptr when that value is unknown.
 using ConstantColumnValues = std::unordered_map<String, ColumnPtr>;
 
 ConstantColumnValues collectConstantColumnValues(const QueryPlan::Node & node);
 
-/// Constants of `child` that `header` has under the same name and type.
 void addPassedThroughConstants(const QueryPlan::Node & child, const Block & header, ConstantColumnValues & result)
 {
     const auto child_constants = collectConstantColumnValues(child);
