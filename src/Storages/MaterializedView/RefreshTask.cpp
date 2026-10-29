@@ -17,7 +17,7 @@
 #include <IO/WriteBufferFromString.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/InterpreterInsertQuery.h>
-#include <Interpreters/InterpreterSystemQuery.h>
+#include <Interpreters/SystemCommands/SystemCommandsReplication.h>
 #include <Interpreters/OpenTelemetrySpanLog.h>
 #include <Interpreters/ProcessList.h>
 #include <Interpreters/executeQuery.h>
@@ -2123,7 +2123,7 @@ std::tuple<StoragePtr, TableLockHolder> RefreshTask::getAndLockTargetTable(const
             {
                 try
                 {
-                    InterpreterSystemQuery::trySyncReplica(storage, SyncReplicaMode::DEFAULT, {}, context);
+                    trySyncReplica(storage, SyncReplicaMode::DEFAULT, {}, context);
                     ProfileEvents::increment(ProfileEvents::RefreshableViewSyncReplicaSuccess);
                 }
                 catch (Exception & e)
@@ -2195,7 +2195,7 @@ void RefreshTask::syncForDependentRefresh(const ContextPtr & context)
             /// Useful if there are many dependent views.
             return;
 
-        InterpreterSystemQuery::trySyncReplica(storage, SyncReplicaMode::DEFAULT, {}, context);
+        trySyncReplica(storage, SyncReplicaMode::DEFAULT, {}, context);
         ProfileEvents::increment(ProfileEvents::RefreshableViewSyncReplicaSuccess);
 
         last_synced_refresh_end_time = last_success_end_time;

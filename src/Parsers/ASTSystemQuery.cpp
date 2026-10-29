@@ -869,7 +869,7 @@ void ASTSystemQuery::readJSON(const Poco::JSON::Object & json)
     if (table)
         children.push_back(table);
     if_exists = r.getBool("if_exists");
-    /// `query_settings` is parser-produced as an `ASTSetQuery`; `InterpreterSystemQuery` reads it as
+    /// `query_settings` is parser-produced as an `ASTSetQuery`; `SYSTEM FLUSH DISTRIBUTED` reads it as
     /// `query.query_settings->as<ASTSetQuery>()->changes`, so reject any other node type here.
     query_settings = r.readChildOfType<ASTSetQuery>("query_settings");
     if (query_settings)
@@ -882,7 +882,7 @@ void ASTSystemQuery::readJSON(const Poco::JSON::Object & json)
     replica_zk_path = r.getString("replica_zk_path");
     /// For `SYSTEM DROP REPLICA ... FROM ZKPATH` the parser derives `zk_name` and `replica_zk_path`
     /// from `full_replica_zk_path`; they are a single invariant, not three independent inputs.
-    /// `formatImpl` prints `full_replica_zk_path`, while `InterpreterSystemQuery::dropReplica` /
+    /// `formatImpl` prints `full_replica_zk_path`, while `DropReplicaCommands::dropReplica` /
     /// `dropDatabaseReplica` operate on `replica_zk_path`/`zk_name`. Restoring them independently
     /// would let `clickhouse_json` display one ZooKeeper path and execute against another, so
     /// reject payloads where the derived fields disagree with (or appear without)
@@ -901,7 +901,7 @@ void ASTSystemQuery::readJSON(const Poco::JSON::Object & json)
     is_drop_whole_replica = r.getBool("is_drop_whole_replica");
     /// The parser sets `is_drop_whole_replica` only for `SYSTEM DROP [DATABASE] REPLICA 'r'` with no
     /// `FROM DATABASE`/`FROM TABLE`/`FROM ZKPATH` target (the replica name itself and `FROM SHARD`
-    /// are still allowed). `InterpreterSystemQuery::dropReplica`/`dropDatabaseReplica` check
+    /// are still allowed). `DropReplicaCommands::dropReplica`/`dropDatabaseReplica` check
     /// `is_drop_whole_replica` before the scoped ZooKeeper-path branch, so a `clickhouse_json`
     /// payload combining it with a target would execute the whole-replica drop while `formatImpl`
     /// prints the scoped form. Reject the parser-impossible combination.
