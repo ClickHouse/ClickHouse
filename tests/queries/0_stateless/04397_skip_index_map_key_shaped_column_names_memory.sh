@@ -7,16 +7,17 @@
 # a `Tuple` column: its subcolumns `wide.key_*` have that shape, `wide.val_*` do not. The same filter
 # over 64 `bloom_filter` indexes must peak at about the same memory on both.
 # The names are carried by a single `Tuple` column rather than by many top-level columns, because
-# `CREATE TABLE` analyzes every index expression over the full list of columns and gets slow with
-# many long column names.
+# `CREATE TABLE` analyzes every index expression over the full list of columns and subcolumns and
+# copies every name many times. A few very long names keep the same number of bytes to copy, but
+# need far fewer allocations than many shorter ones, which are slow under the thread fuzzer in CI.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
 num_indexes=64
-num_elements=100
-name_padding=$(printf 'p%.0s' $(seq 1 4000))
+num_elements=4
+name_padding=$(printf '%100000s' '' | tr ' ' 'p')
 
 indexed_columns=$(seq 1 $num_indexes | awk '{printf ", s%d String", $1}')
 indexes=$(seq 1 $num_indexes | awk '{printf ", INDEX i%d s%d TYPE bloom_filter GRANULARITY 1", $1, $1}')
