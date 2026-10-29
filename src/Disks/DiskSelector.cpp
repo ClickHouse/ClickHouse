@@ -42,38 +42,66 @@ MetadataStoragePtr unwrapEncryptedAndCacheLayers(DiskPtr disk)
     return metadata_storage;
 }
 
-/// Unwraps encryption and cache layers like `unwrapEncryptedAndCacheLayers` does, but returns
-/// nothing instead of dereferencing a null pointer when the disk is not backed by object storage.
-/// This one runs for every pair of registered disks, local disks included.
-MetadataStoragePtr tryUnwrapEncryptedAndCacheLayers(DiskPtr disk)
+/// The storage a disk stands on, and whether a layer had to be removed to reach it.
+struct UnwrappedStorage
 {
-    while (disk && disk->getDataSourceDescription().is_encrypted)
-        disk = disk->getDelegateDiskIfExists();
+    /// Nothing when the disk is not backed by object storage, a local disk for example.
+    MetadataStoragePtr metadata_storage;
+    /// Whether the disk is a layer at all: an `encrypted` disk, a read-only wrapper or a `cache` disk.
+    bool removed_a_layer = false;
+};
 
-    if (!disk)
-        return nullptr;
+/// Unwraps the layers over a disk - an `encrypted` disk and a read-only wrapper delegate to another
+/// disk, a `cache` disk puts a metadata storage over the metadata storage of the disk it caches.
+/// Unlike `unwrapEncryptedAndCacheLayers`, this one returns nothing instead of dereferencing a null
+/// pointer when the disk is not backed by object storage; it runs for every pair of registered disks.
+UnwrappedStorage tryUnwrapLayers(DiskPtr disk)
+{
+    UnwrappedStorage result;
+
+    /// Any disk that delegates to another one is a layer over it, whatever the layer does.
+    while (disk)
+    {
+        DiskPtr delegate = disk->getDelegateDiskIfExists();
+        if (!delegate)
+            break;
+
+        disk = std::move(delegate);
+        result.removed_a_layer = true;
+    }
 
     DiskObjectStoragePtr object_storage_disk = std::dynamic_pointer_cast<DiskObjectStorage>(disk);
     if (!object_storage_disk)
-        return nullptr;
+        return result;
 
-    MetadataStoragePtr metadata_storage = object_storage_disk->getMetadataStorage();
-    while (auto * cache_metadata = dynamic_cast<MetadataStorageFromCacheObjectStorage *>(metadata_storage.get()))
-        metadata_storage = cache_metadata->getUnderlying();
+    result.metadata_storage = object_storage_disk->getMetadataStorage();
+    while (auto * cache_metadata = dynamic_cast<MetadataStorageFromCacheObjectStorage *>(result.metadata_storage.get()))
+    {
+        result.metadata_storage = cache_metadata->getUnderlying();
+        result.removed_a_layer = true;
+    }
 
-    return metadata_storage;
+    return result;
 }
 
-/// Whether both disks are layers over one and the same storage, as a `cache` or `encrypted` disk and
-/// the disk it wraps are. Such a pair reports one storage namespace by design: the layers share the
-/// metadata storage, while two separately configured disks have one each.
-bool areLayersOverOneStorage(const DiskPtr & lhs, const DiskPtr & rhs)
+/// Whether one of the two disks is a layer over the other, as a `cache` or `encrypted` disk is over the
+/// disk it wraps. Such a pair reports one storage namespace by design and is not a duplicate registration.
+///
+/// Sharing the metadata storage is not enough to tell the two apart, because two separately configured
+/// disks over one storage are handed the same cached metadata storage object as well. What distinguishes
+/// a layer is that a layer had to be removed to reach the storage: when neither disk removed one, both
+/// stand directly on the storage and the pair is a duplicate registration after all.
+bool isOneDiskALayerOverTheOther(const DiskPtr & lhs, const DiskPtr & rhs)
 {
-    const auto lhs_metadata_storage = tryUnwrapEncryptedAndCacheLayers(lhs);
-    if (!lhs_metadata_storage)
+    const auto lhs_unwrapped = tryUnwrapLayers(lhs);
+    if (!lhs_unwrapped.metadata_storage)
         return false;
 
-    return lhs_metadata_storage.get() == tryUnwrapEncryptedAndCacheLayers(rhs).get();
+    const auto rhs_unwrapped = tryUnwrapLayers(rhs);
+    if (lhs_unwrapped.metadata_storage.get() != rhs_unwrapped.metadata_storage.get())
+        return false;
+
+    return lhs_unwrapped.removed_a_layer || rhs_unwrapped.removed_a_layer;
 }
 
 /// Identity of the storage that a disk reads and writes.
@@ -175,15 +203,23 @@ void DiskSelector::recordDisk(const std::string & disk_name, DiskPtr disk)
 
     /// Two disks that resolve to the same storage namespace read and write the same files. A storage policy built
     /// from both of them makes `MergeTree` enumerate every part twice, which it reports as duplicate parts.
+    ///
+    /// Only two writable disks can do that: the duplicate is removed, which is what deletes the data. A read-only
+    /// or write-once disk over the same storage removes nothing, and reading one storage through a second disk is
+    /// a supported setup - a reader disk beside a writer disk, or a cache layer over a read-only copy. The
+    /// plain-rewritable check above makes the same exclusion.
     for (const auto & [saved_disk_name, saved_disk] : disks)
     {
         if (saved_disk_name == disk_name)
             continue;
 
+        if (disk->isReadOnly() || disk->isWriteOnce() || saved_disk->isReadOnly() || saved_disk->isWriteOnce())
+            continue;
+
         /// A `cache` or `encrypted` disk sits on top of another disk and reports the namespace of the
         /// disk it wraps. The two are one storage behind one metadata storage, not a duplicate
         /// registration, so they are not a clash.
-        if (areLayersOverOneStorage(disk, saved_disk))
+        if (isOneDiskALayerOverTheOther(disk, saved_disk))
             continue;
 
         if (haveSameStorageNamespace(disk, saved_disk))

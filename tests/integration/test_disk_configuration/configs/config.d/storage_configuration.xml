@@ -11,20 +11,22 @@
                 <access_key_id>minio</access_key_id>
                 <secret_access_key>ClickHouse_Minio_P@ssw0rd</secret_access_key>
             </s3>
-            <s3_plain_bucket_root>
-                <type>s3_plain</type>
-                <endpoint>http://minio1:9001/root/data/disks/shared_plain/</endpoint>
+            <!-- Writable, because only two writable disks on one storage lose data: the duplicate part is
+                 removed. Reading one storage through a read-only or write-once second disk is supported. -->
+            <s3_bucket_root>
+                <type>s3</type>
+                <endpoint>http://minio1:9001/root/data/disks/shared/</endpoint>
                 <access_key_id>minio</access_key_id>
                 <secret_access_key>ClickHouse_Minio_P@ssw0rd</secret_access_key>
-                <readonly>true</readonly>
-            </s3_plain_bucket_root>
-            <s3_plain_bucket_root2>
-                <type>s3_plain</type>
-                <endpoint>http://minio1:9001/root2/data/disks/shared_plain/</endpoint>
+                <metadata_path>/var/lib/clickhouse/disks/s3_bucket_root_metadata/</metadata_path>
+            </s3_bucket_root>
+            <s3_bucket_root2>
+                <type>s3</type>
+                <endpoint>http://minio1:9001/root2/data/disks/shared/</endpoint>
                 <access_key_id>minio</access_key_id>
                 <secret_access_key>ClickHouse_Minio_P@ssw0rd</secret_access_key>
-                <readonly>true</readonly>
-            </s3_plain_bucket_root2>
+                <metadata_path>/var/lib/clickhouse/disks/s3_bucket_root2_metadata/</metadata_path>
+            </s3_bucket_root2>
         </disks>
         <policies>
             <local>
@@ -54,10 +56,10 @@
             <object_storage_different_buckets>
                 <volumes>
                     <root>
-                        <disk>s3_plain_bucket_root</disk>
+                        <disk>s3_bucket_root</disk>
                     </root>
                     <root2>
-                        <disk>s3_plain_bucket_root2</disk>
+                        <disk>s3_bucket_root2</disk>
                     </root2>
                 </volumes>
             </object_storage_different_buckets>
