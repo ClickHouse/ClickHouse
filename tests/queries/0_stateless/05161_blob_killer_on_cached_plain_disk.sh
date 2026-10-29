@@ -10,9 +10,6 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
-# Bounds the `system.text_log` scans below: late in a long CI run the whole log exceeds `max_rows_to_read`.
-test_start=$(${CLICKHOUSE_CLIENT} --query="SELECT toUnixTimestamp(now())")
-
 ${CLICKHOUSE_CLIENT} --multiline -q "
 CREATE TABLE t_cached_plain_rewritable (a Int32) ENGINE = MergeTree ORDER BY a
 SETTINGS disk = disk(
@@ -42,11 +39,14 @@ SYSTEM FLUSH LOGS text_log;
 SELECT 'disks', count() FROM system.disks
 WHERE name IN ('05161_cache_over_plain_rewritable', '05161_plain_rewritable_under_cache');
 
+-- The disk stays registered after its table is dropped, so a rerun of the test in the same server finds the
+-- message from the first run only: the scans cannot be bounded by the start of the test. Late in a long CI run
+-- the whole log exceeds the `max_rows_to_read` limit of the test profile.
 SELECT 'cache layer, blob killer started', count() > 0 FROM system.text_log
-WHERE event_date >= yesterday() AND event_time >= toDateTime(${test_start})
-    AND logger_name = '05161_cache_over_plain_rewritable::BlobKillerThread' AND message LIKE 'Execution started%';
+WHERE logger_name = '05161_cache_over_plain_rewritable::BlobKillerThread' AND message LIKE 'Execution started%'
+SETTINGS max_rows_to_read = 0;
 
 SELECT 'disk under the cache, blob killer started', count() FROM system.text_log
-WHERE event_date >= yesterday() AND event_time >= toDateTime(${test_start})
-    AND logger_name = '05161_plain_rewritable_under_cache::BlobKillerThread' AND message LIKE 'Execution started%';
+WHERE logger_name = '05161_plain_rewritable_under_cache::BlobKillerThread' AND message LIKE 'Execution started%'
+SETTINGS max_rows_to_read = 0;
 "
