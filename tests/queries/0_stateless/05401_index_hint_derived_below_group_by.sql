@@ -77,3 +77,14 @@ SELECT count() FROM (SELECT a, max(b) AS m FROM (SELECT a, b FROM t_hint_gs GROU
 SELECT countIf(explain LIKE '%indexHint(%') > 0 FROM (EXPLAIN SYNTAX run_query_tree_passes = 1 SELECT * FROM (SELECT a, max(b) AS m FROM t_hint_gs GROUP BY a WITH TOTALS) WHERE a < m AND m < 120);
 SELECT * FROM (SELECT a, max(b) AS m FROM t_hint_gs GROUP BY a WITH TOTALS) WHERE a < m AND m < 120;
 DROP TABLE t_hint_gs;
+
+-- a derived hint on a GROUPING SETS key expression does not keep the other conjuncts above the aggregation
+DROP TABLE IF EXISTS t_gs_expr_key;
+CREATE TABLE t_gs_expr_key (k UInt32, v UInt32, w UInt8) ENGINE = MergeTree ORDER BY v SETTINGS index_granularity = 128, index_granularity_bytes = '10Mi', min_bytes_for_wide_part = 0;
+INSERT INTO t_gs_expr_key SELECT number % 30, intDiv(number, 100), number % 7 FROM numbers(10000);
+OPTIMIZE TABLE t_gs_expr_key FINAL;
+SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT intDiv(k, 10) AS g, v, count() FROM t_gs_expr_key GROUP BY GROUPING SETS ((g, v), (g, v, w)) HAVING g < v AND v < 3) WHERE explain LIKE '%Granules: %/%';
+SELECT g, v, sum(c) FROM (SELECT intDiv(k, 10) AS g, v, count() AS c FROM t_gs_expr_key GROUP BY GROUPING SETS ((g, v), (g, v, w)) HAVING g < v AND v < 3) GROUP BY g, v ORDER BY g, v;
+-- nor above MergingAggregated
+SELECT extract(explain, 'Granules: \\d+/\\d+') FROM (EXPLAIN indexes = 1 SELECT intDiv(k, 10) AS g, v, count() FROM remote('127.0.0.{1,1}', currentDatabase(), t_gs_expr_key) GROUP BY GROUPING SETS ((g, v), (g, v, w)) HAVING g < v AND v < 3 SETTINGS prefer_localhost_replica = 1) WHERE explain LIKE '%Granules: %/%';
+DROP TABLE t_gs_expr_key;
