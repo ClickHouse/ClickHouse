@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Tags: no-fasttest, no-parallel
 # no-fasttest: requires S3.
-# no-parallel: pauses server-wide restore and S3 read failpoints.
+# no-parallel: pauses a server-wide restore failpoint.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -15,7 +15,7 @@ query_id="${CLICKHOUSE_TEST_UNIQUE_NAME}_restore"
 output="${CLICKHOUSE_TMP}/${CLICKHOUSE_TEST_UNIQUE_NAME}.out"
 error="${CLICKHOUSE_TMP}/${CLICKHOUSE_TEST_UNIQUE_NAME}.err"
 client_pid=""
-failpoints=(restore_pause_before_data_restore_tasks s3_read_before_get_object)
+failpoints=(restore_part_before_metadata_read)
 
 query()
 {
@@ -50,7 +50,7 @@ query --query "
 for detach_if_broken in 0 1; do
     restore_id="${query_id}_${detach_if_broken}"
     damage_before=$(query --query "SELECT sum(value) FROM system.errors WHERE name='BACKUP_DAMAGED'")
-    query --query "SYSTEM DROP PAGE CACHE; SYSTEM ENABLE FAILPOINT restore_pause_before_data_restore_tasks"
+    query --query "SYSTEM DROP PAGE CACHE; SYSTEM ENABLE FAILPOINT restore_part_before_metadata_read"
     query --query_id "$query_id" --query "
         RESTORE TABLE ${database}.source AS ${database}.restored FROM ${backup}
         SETTINGS id='${restore_id}', restore_broken_parts_as_detached=${detach_if_broken}
@@ -58,16 +58,13 @@ for detach_if_broken in 0 1; do
     " >"$output" 2>"$error" &
     client_pid=$!
 
-    query --query "SYSTEM WAIT FAILPOINT restore_pause_before_data_restore_tasks PAUSE"
-    # The backup is local: copying it only writes to S3. The first S3 read validates
-    # the restored part, after its files have been copied to the destination.
+    # Pause the restored part itself: a background merge can consume a global S3 read failpoint.
     query --query "
-        SYSTEM ENABLE FAILPOINT s3_read_before_get_object;
-        SYSTEM DISABLE FAILPOINT restore_pause_before_data_restore_tasks;
-        SYSTEM WAIT FAILPOINT s3_read_before_get_object PAUSE;
+        SYSTEM WAIT FAILPOINT restore_part_before_metadata_read PAUSE;
         KILL QUERY WHERE query_id='${query_id}' ASYNC FORMAT Null;
-        SYSTEM DISABLE FAILPOINT s3_read_before_get_object;
     "
+    [[ $(query --query "SELECT count() FROM system.processes WHERE query_id='${query_id}' AND is_cancelled") == 1 ]]
+    query --query "SYSTEM DISABLE FAILPOINT restore_part_before_metadata_read"
 
     result=0
     wait "$client_pid" || result=$?

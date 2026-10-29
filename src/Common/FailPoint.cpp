@@ -99,6 +99,7 @@ static struct InitFiu
     PAUSEABLE_ONCE(check_data_part_before_serialization_read) \
     PAUSEABLE_ONCE(load_data_part_before_metadata_read) \
     PAUSEABLE_ONCE(load_projection_before_metadata_read) \
+    PAUSEABLE_ONCE(restore_part_before_metadata_read) \
     REGULAR(s3_read_inject_etag_mismatch) \
     REGULAR(file_read_inject_version_token_mismatch) \
     REGULAR(file_top_k_query_condition_cache_inject_file_change) \
@@ -380,6 +381,7 @@ static struct InitFiu
     REGULAR(merge_tree_load_statistics_throw) \
     REGULAR(merge_tree_load_outdated_parts_retryable_error) \
     PAUSEABLE(merge_tree_load_outdated_parts_pause) \
+    PAUSEABLE_ONCE(merge_tree_outdated_parts_loading_cancelled) \
     ONCE(merge_tree_load_part_io_error) \
     REGULAR(restore_part_inject_no_space_error) \
     PAUSEABLE(smt_mutate_task_pause_in_prepare) \

@@ -511,9 +511,11 @@ namespace FailPoints
     /// Pauses every worker that loads an outdated part in the background until the failpoint is disabled.
     /// Used to cancel the loading (e.g. with `DETACH TABLE`) while the workers are in flight.
     extern const char merge_tree_load_outdated_parts_pause[];
+    extern const char merge_tree_outdated_parts_loading_cancelled[];
     /// Throws a `CANNOT_WRITE_TO_FILE_DESCRIPTOR` error with `ENOSPC` while loading a part restored from a backup,
     /// after its files have been read. Used to test that a failure of the destination is not reported as a damaged backup.
     extern const char restore_part_inject_no_space_error[];
+    extern const char restore_part_before_metadata_read[];
     /// Throws an I/O error (EIO) once while loading the metadata of a part.
     extern const char merge_tree_load_part_io_error[];
 }
@@ -4158,6 +4160,12 @@ catch (...)
 void MergeTreeData::loadOutdatedDataParts(bool is_async)
 try
 {
+    /// A foreground `DROP TABLE` must finish loading the parts needed for zero-copy cleanup,
+    /// even after its query is cancelled.
+    std::optional<QueryCancellationBlockerInThread> cancellation_blocker;
+    if (!is_async)
+        cancellation_blocker.emplace();
+
     /// Started before the metadata commit of a `table_readonly` 1 -> 0 `ALTER`, see `StorageMergeTree::alter`.
     /// Loading detaches broken parts, removes duplicates, and prepares parts for removal, so it waits
     /// for the commit. A rolled-back commit restores `table_readonly` and the task then stays idle
@@ -4283,6 +4291,11 @@ try
         runner.enqueueAndKeepTrack([this, my_part = part, &num_loaded_parts, &failed_parts_mutex, &failed_parts,
                                     &retryable_exception, &has_retryable_exception, replicated, is_async]()
         {
+            /// The pool inherits the query's thread group, but not its thread-local blocker.
+            std::optional<QueryCancellationBlockerInThread> worker_cancellation_blocker;
+            if (!is_async)
+                worker_cancellation_blocker.emplace();
+
             FailPointInjection::pauseFailPoint(FailPoints::mt_pause_before_loading_queued_outdated_part);
 
             /// This load was queued while the table was still writable. The pool runs a bounded
@@ -4499,6 +4512,7 @@ void MergeTreeData::stopOutdatedAndUnexpectedDataPartsLoadingTask()
             outdated_data_parts_loading_canceled = true;
         }
 
+        FailPointInjection::pauseFailPoint(FailPoints::merge_tree_outdated_parts_loading_cancelled);
         outdated_data_parts_loading_task->deactivate();
         outdated_data_parts_cv.notify_all();
     }
@@ -10865,6 +10879,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeData::loadPartRestoredFromBackup(cons
         part->version->setAndStoreCreationTID(Tx::NonTransactionalTID, nullptr);
         IMergeTreeDataPart::writeInvalidatedSystemColumnsFile(*part->getDataPartStoragePtr(), "", IMergeTreeDataPart::getSystemColumnsToInvalidate(part->info), getContext()->getWriteSettings());
         in_local_step = false;
+        FailPointInjection::pauseFailPoint(FailPoints::restore_part_before_metadata_read);
         part->loadColumnsChecksumsIndexes(/* require_columns_checksums= */ false, /* check_consistency= */ true);
         fiu_do_on(FailPoints::restore_part_inject_no_space_error,
         {
