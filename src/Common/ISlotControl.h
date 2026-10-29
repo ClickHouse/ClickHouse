@@ -71,6 +71,10 @@ public:
     /// Returns false if the slot is released and holder should stop using it (e.g. thread should be stopped).
     virtual bool renew() = 0;
 
+    /// `renew` from inside a task of the slot holder (a nested pipeline runs on this lease). A preempted thread
+    /// keeps its task: the holder is not notified and the thread is not stopped. A lost slot is reported by `renew`.
+    virtual void renewInTask() {}
+
     /// Park the slot during a non-CPU wait, so it does not count against the CPU concurrency limit.
     /// Never blocks. Returns true if parked; then `unpark` must be called once.
     [[nodiscard]] virtual bool park() { return false; }

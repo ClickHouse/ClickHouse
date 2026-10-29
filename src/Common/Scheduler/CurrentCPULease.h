@@ -27,4 +27,17 @@ private:
     bool parked; /// true iff this guard is the outermost one that actually parked.
 };
 
+/// RAII: publishes `lease` on the current thread for a wait outside its executor, so `CPULeaseParkGuard` parks it.
+class ScopedCPULease
+{
+public:
+    explicit ScopedCPULease(ISlotLease * lease);
+    ~ScopedCPULease();
+    ScopedCPULease(const ScopedCPULease &) = delete;
+    ScopedCPULease & operator=(const ScopedCPULease &) = delete;
+
+private:
+    ISlotLease * const previous;
+};
+
 }

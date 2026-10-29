@@ -6,6 +6,7 @@
 
 #include <Common/NetException.h>
 #include <Common/CurrentThread.h>
+#include <Common/Scheduler/CurrentCPULease.h>
 #include <Interpreters/ClientInfo.h>
 #include <Interpreters/InternalTextLogsQueue.h>
 #include <IO/ConnectionTimeouts.h>
@@ -151,7 +152,12 @@ void RemoteInserter::onFinish()
     /// Wait for EndOfStream or Exception packet, skip Log packets.
     while (true)
     {
-        Packet packet = connection.receivePacket();
+        Packet packet;
+        {
+            /// The shard may need this thread's CPU slot to finish the insert.
+            CPULeaseParkGuard cpu_park;
+            packet = connection.receivePacket();
+        }
 
         if (Protocol::Server::EndOfStream == packet.type)
             break;
