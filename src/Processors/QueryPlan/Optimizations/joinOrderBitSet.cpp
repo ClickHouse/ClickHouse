@@ -124,6 +124,7 @@ SelectivityEstimate computeSelectivity(
         /// since min(1/max(l,r)) = 1/max(all l's and r's).
         UInt64 max_ndv = 0;
         UInt64 max_ndv_upper_bound = 0;
+        UInt64 class_min_size = 0;
         bool has_left = false;
         bool has_right = false;
         for (const auto & equiv_member : *equiv_class)
@@ -131,6 +132,14 @@ SelectivityEstimate computeSelectivity(
             auto relation = equiv_member.getSourceRelations().getSingleBit();
             if (!relation)
                 continue;
+            if (query_graph.equivalence_class_ndv_bound)
+            {
+                /// Over the whole class, not only the two sides, see `applyEquivalenceClassBound`.
+                UInt64 member_size
+                    = getColumnStats(query_graph, dp_table, equiv_member.getSourceRelations(), equiv_member.getColumnName()).upper_bound;
+                if (member_size > 0)
+                    class_min_size = class_min_size ? std::min(class_min_size, member_size) : member_size;
+            }
             if (left.test(*relation))
                 has_left = true;
             else if (right.test(*relation))
@@ -142,9 +151,21 @@ SelectivityEstimate computeSelectivity(
             max_ndv_upper_bound = std::max(max_ndv_upper_bound, ndv.upper_bound);
         }
         if (has_left && has_right)
+        {
             applyEquiKeyDistinctValues(estimate, max_ndv, max_ndv_upper_bound);
+            if (query_graph.equivalence_class_ndv_bound)
+                applyEquivalenceClassBound(estimate, class_min_size);
+        }
     }
 
+    if (query_graph.equivalence_class_ndv_bound)
+    {
+        countUnclassifiedEquiKeys(query_graph, estimate, edges, [&](const JoinActionRef & edge)
+        {
+            const auto & sources = edge.getSourceRelations();
+            return areIntersecting(sources, left) && areIntersecting(sources, right);
+        });
+    }
     return estimate;
 }
 

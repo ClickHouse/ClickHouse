@@ -159,6 +159,7 @@ private:
         std::vector<std::vector<EquivMember>> equiv_classes; /// members of each distinct equivalence class
         std::vector<std::vector<TUInt>> rel_to_classes; /// relation id -> indices into equiv_classes
         std::vector<TUInt> class_relations;             /// per equivalence class: relations of its members
+        std::vector<UInt64> class_min_size;             /// per equivalence class: smallest known row count (or NDV) of its members
 
         std::vector<UInt64> class_visited;        /// generation stamp per equivalence class
         UInt64 equiv_generation = 0;              /// bumped on each computeSelectivityMask call
@@ -319,6 +320,7 @@ void DPSubJoinOrderOptimizer::initDPsubScratch()
     /// visits the classes touching the left side instead of rescanning the whole member map
     dpsub_data.equiv_classes.clear();
     dpsub_data.class_relations.clear();
+    dpsub_data.class_min_size.clear();
     dpsub_data.rel_to_classes.assign(num_relations, {});
     std::unordered_map<const EquivClass *, UInt32> class_index;
     for (const auto & [member, class_ptr] : query_graph.column_equivalences.getMemberToClassMap())
@@ -334,6 +336,7 @@ void DPSubJoinOrderOptimizer::initDPsubScratch()
         {
             auto & members = dpsub_data.equiv_classes.emplace_back();
             auto & relations = dpsub_data.class_relations.emplace_back(0);
+            auto & min_size = dpsub_data.class_min_size.emplace_back(0);
             for (const auto & equiv_member : *class_ptr)
             {
                 const auto & sources = equiv_member.getSourceRelations();
@@ -343,6 +346,8 @@ void DPSubJoinOrderOptimizer::initDPsubScratch()
                 auto ndv = getColumnStats(query_graph, dp_table, sources, equiv_member.getColumnName());
                 members.push_back({static_cast<UInt32>(1) << *relation, ndv.ndv, ndv.upper_bound});
                 relations |= members.back().relation_bit;
+                if (ndv.upper_bound > 0)
+                    min_size = min_size ? std::min(min_size, ndv.upper_bound) : ndv.upper_bound;
             }
         }
         dpsub_data.rel_to_classes[*rel].push_back(it->second);
@@ -718,10 +723,22 @@ SelectivityEstimate DPSubJoinOrderOptimizer::computeSelectivityMask(
                 max_ndv_upper_bound = std::max(max_ndv_upper_bound, equiv_member.ndv_upper_bound);
             }
             if (has_left && has_right)
+            {
                 applyEquiKeyDistinctValues(estimate, max_ndv, max_ndv_upper_bound);
+                if (query_graph.equivalence_class_ndv_bound)
+                    applyEquivalenceClassBound(estimate, dpsub_data.class_min_size[class_idx]);
+            }
         }
     }
 
+    if (query_graph.equivalence_class_ndv_bound)
+    {
+        countUnclassifiedEquiKeys(query_graph, estimate, edges, [&](const JoinActionRef & edge)
+        {
+            const UInt32 sources = toMask(edge.getSourceRelations());
+            return (sources & left_mask) && (sources & right_mask);
+        });
+    }
     return estimate;
 }
 

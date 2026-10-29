@@ -148,6 +148,9 @@ struct QueryPlanOptimizationSettings
     /// Infer transitive equi-join predicates (e.g., A.x=B.x AND B.x=C.x implies A.x=C.x)
     bool enable_join_transitive_predicates = false;
 
+    /// Without NDV statistics, assume FK->PK consistently within each equivalence class of join keys.
+    bool query_plan_join_order_equivalence_class_ndv_bound = false;
+
     /// --- Second-pass optimizations
     bool optimize_prewhere;
     bool optimize_prewhere_after_pushdown;

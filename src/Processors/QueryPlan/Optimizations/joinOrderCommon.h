@@ -25,6 +25,11 @@ struct SelectivityEstimate
     double reported_value = 1.0;
     bool reliable = false;
     bool has_equi = false;
+    /// 1 / the smallest known row count (or NDV) over all members of a key class connecting the two sides,
+    /// 0 when unknown: the class has at most that many distinct values. See `estimateJoinedRows`.
+    double class_bound_value = 0;
+    /// Number of distinct join keys connecting the two sides, counted only with `QueryGraph::equivalence_class_ndv_bound`.
+    UInt32 connecting_keys = 0;
 };
 
 using SelectivityCache = std::unordered_map<JoinActionRef, SelectivityEstimate>;
@@ -77,6 +82,38 @@ inline void applyEquiKeyDistinctValues(SelectivityEstimate & estimate, UInt64 ma
     }
     if (max_ndv_upper_bound > 0)
         estimate.reported_value = std::min(estimate.reported_value, 1.0 / static_cast<double>(max_ndv_upper_bound));
+}
+
+/// Accounts for one key class with members on both sides; `class_min_size` is the smallest known row count
+/// (or NDV) over all its members, including relations on neither side.
+inline void applyEquivalenceClassBound(SelectivityEstimate & estimate, UInt64 class_min_size)
+{
+    ++estimate.connecting_keys;
+    if (class_min_size > 0)
+        estimate.class_bound_value = std::max(estimate.class_bound_value, 1.0 / static_cast<double>(class_min_size));
+}
+
+/// Counts an equi condition between the two sides whose operands are not in one key class as another join key.
+/// `connects(edge)` tells whether the edge has sources on both sides.
+template <typename Connects>
+void countUnclassifiedEquiKeys(
+    const QueryGraph & query_graph, SelectivityEstimate & estimate, const std::vector<JoinActionRef *> & edges, Connects && connects)
+{
+    if (estimate.reliable || estimate.connecting_keys != 1 || estimate.class_bound_value <= 0)
+        return;
+    for (const auto * edge : edges)
+    {
+        auto [op, lhs, rhs] = edge->asBinaryPredicate();
+        if (op != JoinConditionOperator::Equals && op != JoinConditionOperator::NullSafeEquals)
+            continue;
+        if (!connects(*edge))
+            continue;
+        auto lhs_class = query_graph.column_equivalences.getClass(lhs.resolveAliases());
+        if (lhs_class && lhs_class == query_graph.column_equivalences.getClass(rhs.resolveAliases()))
+            continue;
+        ++estimate.connecting_keys;
+        return;
+    }
 }
 
 inline SelectivityEstimate computeSelectivity(
@@ -142,7 +179,12 @@ inline double estimateJoinedRows(
     if (selectivity.reliable)
         return selectivity.value * lhs * rhs;
     if (selectivity.has_equi)
+    {
+        /// A single key whose class has a member smaller than both sides is unique on neither side.
+        if (selectivity.connecting_keys == 1 && selectivity.class_bound_value > 0)
+            return std::max({lhs, rhs, selectivity.class_bound_value * lhs * rhs});
         return std::max(lhs, rhs);
+    }
     return lhs * rhs;
 }
 
