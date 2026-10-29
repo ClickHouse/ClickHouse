@@ -88,7 +88,6 @@ namespace ErrorCodes
     extern const int SUPPORT_IS_DISABLED;
     extern const int ILLEGAL_SYNTAX_FOR_DATA_TYPE;
     extern const int NO_SUCH_COLUMN_IN_TABLE;
-    extern const int SUPPORT_IS_DISABLED;
 }
 
 namespace MergeTreeSetting
