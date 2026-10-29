@@ -2350,6 +2350,22 @@ static bool fixedStringConstantLosesPadding(
     return !fixed_string_input_type || fixed_string_input_type->getN() < constant_bytes.size();
 }
 
+/// Whether a value of `type` (without `Nullable` and `LowCardinality`) can have a `FixedString` nested in a composite
+/// type. `Dynamic` and `JSON` do not show the types of their values, so `CAST(tuple(toFixedString('a', 2)) AS Dynamic)`
+/// and `tuple(CAST(toFixedString('a', 2) AS Dynamic))` are such values as well. A top-level `Dynamic` holding a scalar,
+/// known from `value` if it is given, is handled by the callers like a top-level `FixedString` (see `isFixedStringConstant`).
+static bool valueMayHaveNestedFixedString(const DataTypePtr & type, const Field * value)
+{
+    if (isFixedString(type))
+        return false;
+
+    if (isDynamic(type) && value && value->getType() != Field::Types::Array && value->getType() != Field::Types::Tuple
+        && value->getType() != Field::Types::Map && value->getType() != Field::Types::Object)
+        return false;
+
+    return anyInTypeTree(*type, [](const IDataType & t) { return isFixedString(t) || isDynamic(t) || isObject(t); });
+}
+
 /// A `FixedString` inside a composite type, such as `Array(FixedString(N))`, is compared with a `String` element of the
 /// other side zero-padded (`[toFixedString('a', 2)] = ['a']`), but the conversion of a value to another type keeps its
 /// padding (unless `cast_fixed_string_to_string_strip_trailing_zeros`). So a constant or a set element of such a type
@@ -2358,7 +2374,7 @@ static bool fixedStringConstantLosesPadding(
 /// The padding matters only where the other side can hold a string: a `FixedString` converted to a number is parsed
 /// both by the conversion and by the comparison, so `(toFixedString('123', 3), 5)` over `Tuple(UInt64, UInt64)` is safe.
 /// `Dynamic` and `JSON` can hold a string without showing it in the type.
-static bool nestedFixedStringConversionChangesValues(const DataTypePtr & value_type, const DataTypePtr & input_type)
+static bool nestedFixedStringConversionChangesValues(const DataTypePtr & value_type, const DataTypePtr & input_type, const Field * value)
 {
     auto has_nested_fixed_string = [](const DataTypePtr & type)
     {
@@ -2373,7 +2389,7 @@ static bool nestedFixedStringConversionChangesValues(const DataTypePtr & value_t
     const auto value_type_not_null = removeNullable(recursiveRemoveLowCardinality(value_type));
     const auto input_type_not_null = removeNullable(recursiveRemoveLowCardinality(input_type));
     return !value_type_not_null->equals(*input_type_not_null)
-        && ((has_nested_fixed_string(value_type_not_null) && can_hold_string(input_type_not_null))
+        && ((valueMayHaveNestedFixedString(value_type_not_null, value) && can_hold_string(input_type_not_null))
             || (has_nested_fixed_string(input_type_not_null) && can_hold_string(value_type_not_null)));
 }
 
@@ -2584,7 +2600,7 @@ std::vector<KeyCondition::TransformedConstant> KeyCondition::transformConstantBy
             /// The chain casts the constant to the argument type of its first function.
             const auto transform_input_type = getArgumentTypeOfMonotonicFunction(*chain.functions_chain.front());
             if (fixedStringConstantLosesPadding(value, is_fixed_string, transform_input_type)
-                || nestedFixedStringConversionChangesValues(constant.type, transform_input_type)
+                || nestedFixedStringConversionChangesValues(constant.type, transform_input_type, &value)
                 || floatValuesMissKeyValues(constant.column, constant.type, transform_input_type, std::make_shared<DataTypeFloat64>())
                 || !tryNormalizeTextConstantForZonelessDateTimeInput(transform_input_type, normalized_constant))
                 continue;
@@ -3338,7 +3354,7 @@ std::vector<KeyCondition::TransformedConstant> KeyCondition::transformConstantBy
     {
         /// The DAG casts the constant to its input type.
         if (fixedStringConstantLosesPadding(value, is_fixed_string, candidate.dag.input_type)
-            || nestedFixedStringConversionChangesValues(constant.type, candidate.dag.input_type)
+            || nestedFixedStringConversionChangesValues(constant.type, candidate.dag.input_type, &value)
             || floatValuesMissKeyValues(constant.column, constant.type, candidate.dag.input_type, std::make_shared<DataTypeFloat64>()))
             continue;
 
@@ -3638,7 +3654,7 @@ bool KeyCondition::tryPrepareSetColumnsForIndex(
         /// The membership of a value in a set with a `FixedString` nested in a composite type compares the `FixedString`
         /// zero-padded, but the conversion of the elements keeps the padding.
         if (nestedFixedStringConversionChangesValues(
-                set_element_type, mapping.set_transform ? mapping.set_transform->input_type : key_column_type))
+                set_element_type, mapping.set_transform ? mapping.set_transform->input_type : key_column_type, /*value=*/ nullptr))
             return false;
 
         /// A float element over a `Decimal`, `DateTime64` or `Time64` input names a key point that misses matching values,
@@ -6218,7 +6234,8 @@ std::optional<KeyCondition::RPNElement> KeyCondition::tryBuildComparisonAtom(
                     return !isFixedString(type) && anyInTypeTree(*type, [](const IDataType & t) { return isFixedString(t); });
                 };
                 if ((!key_expr_type_not_null->equals(*common_type) || !const_type->equals(*common_type))
-                    && (has_nested_fixed_string(key_expr_type_not_null) || has_nested_fixed_string(const_type)))
+                    && (has_nested_fixed_string(key_expr_type_not_null)
+                        || valueMayHaveNestedFixedString(removeNullable(recursiveRemoveLowCardinality(const_type)), &const_value)))
                     return std::nullopt;
 
                 if (!const_type->equals(*common_type))
