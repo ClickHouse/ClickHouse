@@ -650,7 +650,17 @@ String getInsertDataSchemaMismatchDescription(
             {
                 Block header;
                 for (const auto & column : inferred)
-                    header.insert(ColumnWithTypeAndName(column.type, column.name));
+                {
+                    /// With `schema_inference_make_columns_nullable = 0` a JSON `null` is inferred as a
+                    /// plain `String`, and `input_format_null_as_default` would replay it as an empty
+                    /// string, indistinguishable from a real `""` token. Parse the sample into `Nullable`
+                    /// types so that a `null` stays a `NULL` and is recognized as an inference placeholder.
+                    DataTypePtr type = column.type;
+                    if (format_reads_typed_json_value_tokens)
+                        if (auto nullable_type = makeNullableRecursively(type, format_settings))
+                            type = nullable_type;
+                    header.insert(ColumnWithTypeAndName(type, column.name));
+                }
                 columns = header.cloneEmptyColumns();
 
                 /// The insertion table is cleared for the same reason as in the schema inference above.
@@ -1538,6 +1548,30 @@ String getInsertDataSchemaMismatchDescription(
         if (const auto * inferred_tuple = typeid_cast<const DataTypeTuple *>(inferred_unwrapped.get()))
         {
             const auto * expected_tuple = typeid_cast<const DataTypeTuple *>(expected_unwrapped.get());
+
+            /// The cast of a named `Tuple` maps the elements by name (`FunctionCast::createTupleWrapper`,
+            /// and the struct conversion of the `Arrow`-based readers), so it may project away or reorder
+            /// the source elements. Follow the same mapping; a destination element without a same-named
+            /// source element leaves the comparison inconclusive.
+            if (format_casts_string_source_columns && expected_tuple && inferred_tuple->hasExplicitNames()
+                && expected_tuple->hasExplicitNames())
+            {
+                const auto & expected_elements = expected_tuple->getElements();
+                const auto & expected_element_names = expected_tuple->getElementNames();
+                for (size_t i = 0; i < expected_elements.size(); ++i)
+                {
+                    auto inferred_position = inferred_tuple->tryGetPositionByName(expected_element_names[i]);
+                    if (!inferred_position)
+                        return true;
+                    if (!types_are_compatible(
+                            inferred_tuple->getElement(*inferred_position),
+                            expected_elements[i],
+                            nested_evidence(evidence, {SampledValueStep::Kind::TupleElement, *inferred_position})))
+                        return false;
+                }
+                return true;
+            }
+
             if (expected_tuple && inferred_tuple->getElements().size() == expected_tuple->getElements().size())
             {
                 const auto & inferred_elements = inferred_tuple->getElements();
@@ -1713,9 +1747,53 @@ String getInsertDataSchemaMismatchDescription(
             expected_present[position] = true;
         }
 
-        if (corresponds && !format_allows_missing_named_columns
-            && std::find(expected_present.begin(), expected_present.end(), false) != expected_present.end())
-            corresponds = false;
+        if (corresponds && !format_allows_missing_named_columns)
+        {
+            /// The columnar readers also resolve a requested column such as `a.x` by extracting it from a
+            /// source column `a` (`NestedColumnExtractHelper`), which the inferred schema does not show as
+            /// a separate column. Treat a destination column that may be such a subcolumn of an inferred
+            /// column as present, rather than reporting it as missing.
+            CaseAwareBlockNameMap inferred_by_name(matching_case_sensitivity);
+            inferred_by_name.setSize(inferred.size());
+            size_t inferred_position = 0;
+            for (const auto & column : inferred)
+            {
+                /// The map reserves the empty name as its empty key.
+                if (!column.name.empty())
+                    inferred_by_name.add(column.name, inferred_position);
+                ++inferred_position;
+            }
+
+            auto may_be_subcolumn_of_inferred = [&](const String & name)
+            {
+                for (size_t dot = name.find('.'); dot != String::npos; dot = name.find('.', dot + 1))
+                {
+                    if (dot == 0)
+                        continue;
+                    try
+                    {
+                        if (inferred_by_name.get(name.substr(0, dot)) != CaseAwareBlockNameMap::NOT_FOUND)
+                            return true;
+                    }
+                    catch (...)
+                    {
+                        /// An ambiguous case-insensitive match: stay on the low-false-positive side.
+                        return true;
+                    }
+                }
+                return false;
+            };
+
+            size_t expected_position = 0;
+            for (const auto & column : expected)
+            {
+                if (!expected_present[expected_position++] && !may_be_subcolumn_of_inferred(column.name))
+                {
+                    corresponds = false;
+                    break;
+                }
+            }
+        }
     }
     else
     {
