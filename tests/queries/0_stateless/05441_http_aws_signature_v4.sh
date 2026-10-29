@@ -44,6 +44,7 @@ import hashlib
 import hmac
 import http.client
 import re
+import socket
 import sys
 import urllib.parse
 
@@ -100,6 +101,17 @@ def send(method, path, params=(), headers=None, body=b"", tamper_url=None):
     data = response.read()
     conn.close()
     return response, data
+
+
+def send_close_delimited(method, path, params, body):
+    # A raw request without `Content-Length` and `Transfer-Encoding`: the body ends with the connection.
+    url = quote(path, "/") + "?" + "&".join(f"{quote(k)}={quote(v)}" for k, v in params)
+    with socket.create_connection((host, port)) as sock:
+        sock.sendall(f"{method} {url} HTTP/1.1\r\nHost: {host_header}\r\nConnection: close\r\n\r\n".encode() + body)
+        sock.shutdown(socket.SHUT_WR)
+        response = http.client.HTTPResponse(sock, method=method)
+        response.begin()
+        return response, response.read()
 
 
 def signed_request(method, path, params=(), headers=None, body=b"", payload_hash=None, access_key=user, secret="secret",
@@ -175,6 +187,12 @@ show("signed X-ClickHouse header", signed_request("GET", table_path, headers={"X
 show("tampered query", send("GET", "/", [(k, "SELECT 43" if k == "query" else v) for k, v in presigned_params("GET", "/", [("query", "SELECT 42")])]))
 show("presigned with a body", send("POST", "/", presigned_params("POST", "/"), body=b"SELECT 1"))
 show("unsigned payload with a body", signed_request("POST", "/", body=b"SELECT 1", payload_hash="UNSIGNED-PAYLOAD"))
+# A body delimited by the end of the connection is not covered by the signature either.
+# A `GET` request without `Content-Length` has no body, and a `POST` request requires it.
+show("presigned GET with a close-delimited body", send_close_delimited("GET", "/", presigned_params("GET", "/", [("query", "SELECT 42")]),
+     b" + 1"))
+show("presigned POST with a close-delimited body", send_close_delimited("POST", "/", presigned_params("POST", "/", [("query", "SELECT 42")]),
+     b" + 1"))
 show("signed payload with a body", signed_request("POST", "/", body=b"SELECT 1"))
 
 # Modifications of a signed request which would change its meaning without changing the signature.

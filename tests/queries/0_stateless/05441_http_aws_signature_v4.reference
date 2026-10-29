@@ -20,6 +20,8 @@ signed X-ClickHouse header: 200 1,"Hello"
 tampered query: 403 Code: 516
 presigned with a body: 403 Code: 516
 unsigned payload with a body: 403 Code: 516
+presigned GET with a close-delimited body: 200 42
+presigned POST with a close-delimited body: 411 Code: 381
 signed payload with a body: 200 1
 signed query in a comment: 200 1
 unsigned Content-Type: 403 Code: 516
