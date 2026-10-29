@@ -1,4 +1,5 @@
 #include <Storages/PostgreSQL/MaterializedPostgreSQLConsumer.h>
+#include <Core/PostgreSQL/Utils.h>
 
 #include <Common/CurrentThread.h>
 #include <Common/quoteString.h>
@@ -67,7 +68,7 @@ MaterializedPostgreSQLConsumer::MaterializedPostgreSQLConsumer(
     bool coordinated_,
     StorageInfos storages_info_,
     const String & name_for_logger,
-    std::function<void()> verify_source_)
+    std::function<void(const String &)> verify_source_)
     : log(getLogger("PostgreSQLReplicaConsumer(" + name_for_logger + ")"))
     , context(context_)
     , replication_slot_name(replication_slot_name_)
@@ -1237,7 +1238,13 @@ pqxx::connection & MaterializedPostgreSQLConsumer::getVerifiedConnection()
     {
         try
         {
-            verify_source();
+            /// Read the identifier through this very connection: a separate connection to the same endpoint
+            /// may reach another backend (the endpoint could have been switched in between, or a proxy routes
+            /// each connection on its own), which would prove nothing about the one the slot is used through.
+            pqxx::nontransaction tx(result);
+            const String source_system_identifier = postgres::fetchSystemIdentifier(tx);
+            tx.commit();
+            verify_source(source_system_identifier);
         }
         catch (...)
         {

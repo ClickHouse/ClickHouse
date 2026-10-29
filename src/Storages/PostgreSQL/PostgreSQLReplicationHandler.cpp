@@ -1664,11 +1664,11 @@ void PostgreSQLReplicationHandler::startSynchronization(bool throw_on_error)
                 nested_storages,
                 (is_materialized_postgresql_database ? postgres_database : postgres_database + '.' + tables_list),
                 /// The consumer reconnects on its own after a connection failure, so it checks every new
-                /// connection as well. `IDENTIFY_SYSTEM` needs a replication connection, which the consumer's
-                /// connection is not, so the check opens a separate one to the same endpoint.
+                /// connection as well, with the identifier it reads through that connection.
                 coordination_enabled
-                    ? std::function<void()>([this] { checkSourceIsRecordedSourceCluster(fetchSourceSystemIdentifier()); })
-                    : std::function<void()>{});
+                    ? std::function<void(const String &)>([this](const String & source_system_identifier)
+                        { checkSourceIsRecordedSourceCluster(source_system_identifier); })
+                    : std::function<void(const String &)>{});
     }
 
     replication_handler_initialized = true;
@@ -2862,7 +2862,7 @@ void PostgreSQLReplicationHandler::checkSourceIsRecordedSourceCluster(const Stri
 }
 
 
-void PostgreSQLReplicationHandler::checkTeardownTargetIsRecordedSourceCluster()
+void PostgreSQLReplicationHandler::checkTeardownTargetIsRecordedSourceCluster(pqxx::nontransaction & tx)
 {
     auto component_guard = Coordination::setCurrentComponent("PostgreSQLReplicationHandler::checkTeardownTargetIsRecordedSourceCluster");
 
@@ -2878,7 +2878,9 @@ void PostgreSQLReplicationHandler::checkTeardownTargetIsRecordedSourceCluster()
             "is not recorded at {}, so the shared replication slot and publication are not dropped by name",
             coordination_keeper_path, path);
 
-    const String target_system_identifier = fetchSourceSystemIdentifier();
+    /// Read through the session that runs the drop: another connection to the same endpoint may reach another
+    /// backend, for example after the endpoint was switched in between.
+    const String target_system_identifier = postgres::fetchSystemIdentifier(tx);
     if (target_system_identifier != recorded_system_identifier)
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
             "The coordinated MaterializedPostgreSQL setup at Keeper path '{}' replicates the PostgreSQL cluster with "
@@ -4129,15 +4131,16 @@ void PostgreSQLReplicationHandler::shutdownFinal()
         /// Do not use fault injection during cleanup: leaked replication slots
         /// can exhaust PostgreSQL's max_replication_slots and break subsequent
         /// MaterializedPostgreSQL databases.
-        /// The slot and publication are dropped by name, so make sure that the connection still points to the
-        /// PostgreSQL cluster they were created on. A mismatch throws, and the objects are reported below as
-        /// requiring manual cleanup.
-        if (coordination_enabled)
-            checkTeardownTargetIsRecordedSourceCluster();
-
+        /// The slot and publication are dropped by name, so make sure that the session that drops them is
+        /// connected to the PostgreSQL cluster they were created on. `execWithRetry` may reconnect, so every
+        /// attempt checks its own session. A mismatch throws, and the objects are reported below as requiring
+        /// manual cleanup.
         postgres::Connection connection(connection_info);
         connection.execWithRetry([&](pqxx::nontransaction & tx)
         {
+            if (coordination_enabled)
+                checkTeardownTargetIsRecordedSourceCluster(tx);
+
             /// `shutdownFinal` can be called before the database startup task has built a handler.
             /// Adopt the persisted deployment's legacy identity here as well, so this cleanup path
             /// drops the slot and publication that actually belong to an attached pre-schema-aware
@@ -4149,6 +4152,9 @@ void PostgreSQLReplicationHandler::shutdownFinal()
 
         connection.execWithRetry([&](pqxx::nontransaction & tx)
         {
+            if (coordination_enabled)
+                checkTeardownTargetIsRecordedSourceCluster(tx);
+
             if (isReplicationSlotExist(tx, last_committed_lsn, /* temporary */true))
                 dropReplicationSlot(tx, /* temporary */true);
         });
@@ -4157,6 +4163,9 @@ void PostgreSQLReplicationHandler::shutdownFinal()
         {
             connection.execWithRetry([&](pqxx::nontransaction & tx)
             {
+                if (coordination_enabled)
+                    checkTeardownTargetIsRecordedSourceCluster(tx);
+
                 if (isReplicationSlotExist(tx, last_committed_lsn, /* temporary */false))
                     dropReplicationSlot(tx, /* temporary */false);
             });

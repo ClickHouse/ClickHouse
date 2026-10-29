@@ -31,6 +31,11 @@ String formatNameForLogs(const String & postgres_database_name, const String & p
 /// free-text `PQerrorMessage`. Unrecognized messages are not transient, so they stay logged at Error.
 bool isTransientConnectionError(std::string_view message);
 
+/// The `system_identifier` of the PostgreSQL cluster the session of `tx` is connected to, formatted as
+/// `IDENTIFY_SYSTEM` reports it. Unlike `IDENTIFY_SYSTEM`, it works on an ordinary (non-replication)
+/// connection, so it identifies the very backend that the following queries of the session run on.
+String fetchSystemIdentifier(pqxx::transaction_base & tx);
+
 }
 
 #endif

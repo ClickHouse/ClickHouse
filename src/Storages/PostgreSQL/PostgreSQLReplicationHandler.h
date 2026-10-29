@@ -345,11 +345,11 @@ private:
     void checkSourceIsRecordedSourceCluster(const String & source_system_identifier);
 
     /// Called by the last-replica teardown right before it drops the shared slot and publication by name.
-    /// Throws unless the PostgreSQL cluster `connection_info` currently points to is the one recorded at
+    /// Throws unless the PostgreSQL cluster the session of `tx` is connected to is the one recorded at
     /// <keeper_path>/source_system_identifier: after the endpoint of an established replica was repointed to
     /// another cluster with the same database and table names, the by-name drops would delete that cluster's
     /// objects instead of the ones this setup created.
-    void checkTeardownTargetIsRecordedSourceCluster();
+    void checkTeardownTargetIsRecordedSourceCluster(pqxx::nontransaction & tx);
 
     /// Publish this replica's derived table set at <keeper_path>/table_set (first replica) or check it
     /// against the already published one (joining replica), throwing on a mismatch. This fences the
