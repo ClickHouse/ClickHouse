@@ -1867,6 +1867,18 @@ IdentifierResolveResult QueryAnalyzer::tryResolveIdentifier(const IdentifierLook
         it = insert_it;
     }
 
+    /// The registration is removed also on exception, so that a failed speculative resolution
+    /// (see `expandMatchersInsideProjectionExpression`) does not make a later lookup of the identifier look recursive.
+    bool lookup_finished = false;
+    SCOPE_EXIT({
+        if (!lookup_finished)
+        {
+            auto lookup_it = scope.identifier_in_lookup_process.find(identifier_lookup);
+            if (lookup_it != scope.identifier_in_lookup_process.end() && --lookup_it->second.count == 0)
+                scope.identifier_in_lookup_process.erase(lookup_it);
+        }
+    });
+
     /// Resolve identifier from current scope
 
     IdentifierResolveResult resolve_result;
@@ -1997,6 +2009,7 @@ IdentifierResolveResult QueryAnalyzer::tryResolveIdentifier(const IdentifierLook
         }
     }
 
+    lookup_finished = true;
     it->second.count--;
     if (it->second.count == 0)
     {
@@ -4238,6 +4251,14 @@ ProjectionName QueryAnalyzer::resolveWindow(QueryTreeNodePtr & node, IdentifierR
     ProjectionName result_projection_name;
     QueryTreeNodePtr parent_window_node;
 
+    /// The registration is removed also on exception, so that a failed speculative resolution
+    /// (see `expandMatchersInsideProjectionExpression`) does not make a later resolution of the window recursive.
+    IQueryTreeNode * window_in_resolve_process = nullptr;
+    SCOPE_EXIT({
+        if (window_in_resolve_process)
+            windows_in_resolve_process.erase(window_in_resolve_process);
+    });
+
     if (identifier_node)
         parent_window_name = identifier_node->getIdentifier().getFullName();
     else if (auto * window_node = node->as<WindowNode>())
@@ -4274,6 +4295,7 @@ ProjectionName QueryAnalyzer::resolveWindow(QueryTreeNodePtr & node, IdentifierR
                 "Recursive window {}. In scope {}",
                 node->formatASTForErrorMessage(),
                 scope.scope_node->formatASTForErrorMessage());
+        window_in_resolve_process = parent_window_node.get();
 
         if (identifier_node)
         {
@@ -4362,7 +4384,6 @@ ProjectionName QueryAnalyzer::resolveWindow(QueryTreeNodePtr & node, IdentifierR
             frame_end_offset_projection_names.empty() ? "" : frame_end_offset_projection_names.front());
     }
 
-    windows_in_resolve_process.erase(parent_window_node.get());
     return result_projection_name;
 }
 
@@ -8296,6 +8317,9 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
       * aliases still compares the projection expression with the conflicting definition.
       */
     std::unordered_set<std::string> projection_alias_definitions;
+    /// The expressions with duplicated aliases that are equal to the definition of such an alias before the matchers
+    /// are expanded, as `count(t.*) OVER w AS cnt`. They are replaced together with the definition.
+    std::unordered_set<const IQueryTreeNode *> duplicates_of_projection_alias_definitions;
 
     if (!scope.group_by_use_nulls)
     {
@@ -8334,7 +8358,14 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
             {
                 auto it = scope.aliases.alias_name_to_expression_node.find(aliased_node->getAlias());
                 if (it != scope.aliases.alias_name_to_expression_node.end() && it->second->isEqual(*aliased_node))
+                {
                     projection_alias_definitions.insert(aliased_node->getAlias());
+                    for (const auto & duplicated_node : scope.aliases.nodes_with_duplicated_aliases)
+                    {
+                        if (duplicated_node->getAlias() == aliased_node->getAlias() && duplicated_node->isEqual(*it->second))
+                            duplicates_of_projection_alias_definitions.insert(duplicated_node.get());
+                    }
+                }
             }
 
             auto node_type = aliased_node->getNodeType();
@@ -8367,8 +8398,9 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
         {
             /** A matcher produces only the columns of the table expressions of this query, or, if it is qualified,
               * the elements of a compound expression. So, without ARRAY JOIN, a name that is not a column of any table
-              * expression is not produced by an unqualified matcher, and by a qualified one whose qualifier names
-              * a table expression of this query and can refer neither to a column nor to an alias.
+              * expression is not produced by an unqualified matcher, and a name that is not a column of the table expression
+              * named by the qualifier is not produced by a qualified matcher whose qualifier can refer neither to a column
+              * nor to an alias.
               * A matcher inside a lambda can be qualified by a lambda argument, so it is not checked.
               */
             std::unordered_set<std::string> source_column_names;
@@ -8383,11 +8415,11 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
 
             auto matcher_may_produce_column = [&](const MatcherNode & matcher_node, bool is_inside_lambda, const std::string & column_name)
             {
-                if (has_array_join || source_column_names.contains(column_name))
+                if (has_array_join)
                     return true;
 
                 if (matcher_node.isUnqualified())
-                    return false;
+                    return source_column_names.contains(column_name);
 
                 if (is_inside_lambda)
                     return true;
@@ -8405,7 +8437,13 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
 
                     if (table_expression_data.table_expression_name == qualifier.getFullName()
                         || table_expression_data.table_name == qualifier.getFullName())
+                    {
+                        /// Only the columns of the table expression the qualifier names are produced.
+                        if (std::ranges::any_of(table_expression_data.column_names_and_types,
+                                [&](const auto & column) { return column.name == column_name; }))
+                            return true;
                         qualifier_names_table_expression = true;
+                    }
                 }
 
                 return !qualifier_names_table_expression;
@@ -8420,6 +8458,10 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
             {
                 const auto [node, is_inside_lambda] = nodes_to_process.back();
                 nodes_to_process.pop_back();
+
+                /// A dropped matcher is removed together with the matchers nested in its transformers.
+                if (dropped_matchers.contains(node))
+                    continue;
 
                 if (const auto * function_node = node->as<FunctionNode>())
                 {
@@ -8439,7 +8481,7 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
                   * removed by a preceding `EXCEPT` is not replaced, as `c` in `* EXCEPT (c) REPLACE (1 AS c)`.
                   */
                 const auto * matcher_node = node->as<MatcherNode>();
-                if (matcher_node && !dropped_matchers.contains(node))
+                if (matcher_node)
                 {
                     std::vector<const ExceptColumnTransformerNode *> preceding_except_transformers;
                     for (const auto & transformer : matcher_node->getColumnTransformers().getNodes())
@@ -8675,7 +8717,21 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
                 {
                     auto cloned_node = node->clone();
                     if (copyNamedWindowSnapshots(node, cloned_node))
+                    {
                         it->second = std::move(cloned_node);
+
+                        /// The matchers of the copies are not expanded, so they are compared before the expansion.
+                        for (auto & duplicated_node : scope.aliases.nodes_with_duplicated_aliases)
+                        {
+                            if (duplicated_node->getAlias() == node->getAlias()
+                                && duplicates_of_projection_alias_definitions.contains(duplicated_node.get()))
+                            {
+                                auto cloned_duplicated_node = node->clone();
+                                copyNamedWindowSnapshots(node, cloned_duplicated_node);
+                                duplicated_node = std::move(cloned_duplicated_node);
+                            }
+                        }
+                    }
                 }
             }
 
