@@ -432,9 +432,44 @@ namespace
 /// The `ColumnConst` holding a column's value in every row (nullptr when unknown), or std::nullopt when not constant.
 using ConstantValue = std::optional<ColumnPtr>;
 
-ConstantValue findConstantValue(const QueryPlan::Node & node, const String & column_name);
+/// Classifies each plan column and DAG node once: an output can depend on several columns that share inputs.
+class ConstantColumnFinder
+{
+public:
+    ConstantValue findConstantValue(const QueryPlan::Node & node, const String & column_name);
 
-ConstantValue findPassedThroughConstant(const QueryPlan::Node & child, const ColumnWithTypeAndName & column)
+private:
+    ConstantValue findStepConstant(const QueryPlan::Node & node, const String & column_name);
+    ConstantValue findInputConstant(const QueryPlan::Node & node, const String & input_name);
+    ConstantValue findPassedThroughConstant(const QueryPlan::Node & child, const ColumnWithTypeAndName & column);
+    ConstantValue findExpressionConstant(const QueryPlan::Node & node, const ActionsDAG & actions, const String & column_name);
+    ConstantValue findUnionConstant(const QueryPlan::Node & node, const Block & header, const String & column_name);
+    bool isConstantNode(const QueryPlan::Node & node, const ActionsDAG::Node & dag_node);
+
+    std::unordered_map<const QueryPlan::Node *, std::unordered_map<String, ConstantValue>> column_values;
+    std::unordered_map<const ActionsDAG::Node *, bool> constant_dag_nodes;
+};
+
+ConstantValue ConstantColumnFinder::findConstantValue(const QueryPlan::Node & node, const String & column_name)
+{
+    if (auto it = column_values.find(&node); it != column_values.end())
+    {
+        if (auto value_it = it->second.find(column_name); value_it != it->second.end())
+            return value_it->second;
+    }
+    auto value = findStepConstant(node, column_name);
+    column_values[&node].emplace(column_name, value);
+    return value;
+}
+
+ConstantValue ConstantColumnFinder::findInputConstant(const QueryPlan::Node & node, const String & input_name)
+{
+    if (node.children.size() != 1)
+        return std::nullopt;
+    return findConstantValue(*node.children.front(), input_name);
+}
+
+ConstantValue ConstantColumnFinder::findPassedThroughConstant(const QueryPlan::Node & child, const ColumnWithTypeAndName & column)
 {
     const auto * child_column = child.step->getOutputHeader()->findByName(column.name);
     if (!child_column || !child_column->type->equals(*column.type))
@@ -442,40 +477,28 @@ ConstantValue findPassedThroughConstant(const QueryPlan::Node & child, const Col
     return findConstantValue(child, column.name);
 }
 
-ConstantValue findExpressionConstant(const QueryPlan::Node & node, const ActionsDAG & actions, const String & column_name)
+/// A deterministic, stateless function of constants holds one value in every row.
+bool ConstantColumnFinder::isConstantNode(const QueryPlan::Node & node, const ActionsDAG::Node & dag_node)
 {
-    std::unordered_map<String, ConstantValue> input_constants;
-    auto find_input_constant = [&](const String & input_name) -> ConstantValue
-    {
-        if (node.children.size() != 1)
-            return std::nullopt;
-        auto [it, inserted] = input_constants.try_emplace(input_name);
-        if (inserted)
-            it->second = findConstantValue(*node.children.front(), input_name);
+    if (auto it = constant_dag_nodes.find(&dag_node); it != constant_dag_nodes.end())
         return it->second;
-    };
+    bool constant = false;
+    if (dag_node.type == ActionsDAG::ActionType::COLUMN)
+        constant = dag_node.column != nullptr;
+    else if (dag_node.type == ActionsDAG::ActionType::INPUT)
+        constant = findInputConstant(node, dag_node.result_name).has_value();
+    else if (dag_node.type == ActionsDAG::ActionType::ALIAS)
+        constant = isConstantNode(node, *dag_node.children.front());
+    else if (dag_node.type == ActionsDAG::ActionType::FUNCTION)
+        constant = dag_node.function_base && dag_node.function_base->isDeterministic() && !dag_node.function_base->isStateful()
+            && !dag_node.children.empty()
+            && std::ranges::all_of(dag_node.children, [&](const auto * child) { return isConstantNode(node, *child); });
+    constant_dag_nodes.emplace(&dag_node, constant);
+    return constant;
+}
 
-    /// A deterministic, stateless function of constants holds one value in every row.
-    std::unordered_map<const ActionsDAG::Node *, bool> is_constant_cache;
-    std::function<bool(const ActionsDAG::Node &)> is_constant = [&](const ActionsDAG::Node & dag_node)
-    {
-        if (auto it = is_constant_cache.find(&dag_node); it != is_constant_cache.end())
-            return it->second;
-        bool constant = false;
-        if (dag_node.type == ActionsDAG::ActionType::COLUMN)
-            constant = dag_node.column != nullptr;
-        else if (dag_node.type == ActionsDAG::ActionType::INPUT)
-            constant = find_input_constant(dag_node.result_name).has_value();
-        else if (dag_node.type == ActionsDAG::ActionType::ALIAS)
-            constant = is_constant(*dag_node.children.front());
-        else if (dag_node.type == ActionsDAG::ActionType::FUNCTION)
-            constant = dag_node.function_base && dag_node.function_base->isDeterministic() && !dag_node.function_base->isStateful()
-                && !dag_node.children.empty()
-                && std::ranges::all_of(dag_node.children, [&](const auto * child) { return is_constant(*child); });
-        is_constant_cache.emplace(&dag_node, constant);
-        return constant;
-    };
-
+ConstantValue ConstantColumnFinder::findExpressionConstant(const QueryPlan::Node & node, const ActionsDAG & actions, const String & column_name)
+{
     for (const auto * output : actions.getOutputs())
     {
         if (output->result_name != column_name)
@@ -494,17 +517,17 @@ ConstantValue findExpressionConstant(const QueryPlan::Node & node, const Actions
             return source->column;
         if (source->type == ActionsDAG::ActionType::INPUT)
         {
-            if (auto value = find_input_constant(source->result_name))
+            if (auto value = findInputConstant(node, source->result_name))
                 return value;
         }
-        if (is_constant(*output))
+        if (isConstantNode(node, *output))
             return ColumnPtr{};
     }
     return std::nullopt;
 }
 
 /// A column of a union is constant when it holds one value in every branch.
-ConstantValue findUnionConstant(const QueryPlan::Node & node, const Block & header, const String & column_name)
+ConstantValue ConstantColumnFinder::findUnionConstant(const QueryPlan::Node & node, const Block & header, const String & column_name)
 {
     for (size_t position = 0; position < header.columns(); ++position)
     {
@@ -543,7 +566,7 @@ bool keepsInputValues(const IQueryPlanStep & step)
         || typeid_cast<const NegativeOffsetStep *>(&step);
 }
 
-ConstantValue findConstantValue(const QueryPlan::Node & node, const String & column_name)
+ConstantValue ConstantColumnFinder::findStepConstant(const QueryPlan::Node & node, const String & column_name)
 {
     const IQueryPlanStep * step = node.step.get();
     const auto & header = *step->getOutputHeader();
@@ -601,7 +624,7 @@ ConstantValue findConstantValue(const QueryPlan::Node & node, const String & col
 
 bool isConstantColumn(const QueryPlan::Node & node, const String & column_name)
 {
-    return findConstantValue(node, column_name).has_value();
+    return ConstantColumnFinder().findConstantValue(node, column_name).has_value();
 }
 
 }
