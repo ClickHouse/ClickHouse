@@ -28,6 +28,7 @@ The fix (NuRaft PR #91) adds an `is_shutdown_` flag to `peer` and a check in
 
 import json
 import os
+import re
 import time
 import uuid
 from typing import NamedTuple
@@ -132,6 +133,46 @@ def started_cluster():
                 pass
 
 
+def _relax_timeouts_for_sanitizer(config_path):
+    """Rewrite a keeper config with relaxed Raft timeouts for sanitizer builds.
+
+    Under sanitizers (ASan, MSan, TSan) CPU overhead can delay Raft
+    heartbeats enough to trigger spurious leader elections. This bumps
+    the heartbeat interval and election timeout so the cluster stays
+    stable even with 3-5x slowdown.
+    """
+    with open(config_path) as f:
+        content = f.read()
+
+    content = re.sub(
+        r"<heart_beat_interval_ms>\d+</heart_beat_interval_ms>",
+        "<heart_beat_interval_ms>2000</heart_beat_interval_ms>",
+        content,
+    )
+    content = re.sub(
+        r"<election_timeout_lower_bound_ms>\d+</election_timeout_lower_bound_ms>",
+        "<election_timeout_lower_bound_ms>5000</election_timeout_lower_bound_ms>",
+        content,
+    )
+    content = re.sub(
+        r"<election_timeout_upper_bound_ms>\d+</election_timeout_upper_bound_ms>",
+        "<election_timeout_upper_bound_ms>10000</election_timeout_upper_bound_ms>",
+        content,
+    )
+    # Configs for nodes 1/2/3 omit election timeouts — add them.
+    if "<election_timeout_lower_bound_ms>" not in content:
+        content = re.sub(
+            r"([ \t]*)</coordination_settings>",
+            r"\g<1>    <election_timeout_lower_bound_ms>5000</election_timeout_lower_bound_ms>\n"
+            r"\g<1>    <election_timeout_upper_bound_ms>10000</election_timeout_upper_bound_ms>\n"
+            r"\g<1></coordination_settings>",
+            content,
+        )
+
+    with open(config_path, "w") as f:
+        f.write(content)
+
+
 def send_rcfg(cluster, node, command, timeout_sec=60):
     result_str = keeper_utils.send_4lw_cmd(
         cluster,
@@ -182,6 +223,30 @@ def test_leader_election_after_rolling_membership_change(started_cluster):
 
     for n in [node1, node2, node3]:
         keeper_utils.wait_until_connected(cluster, n, timeout=60.0)
+
+    # Under sanitizers, Raft heartbeats can be delayed enough to trigger
+    # spurious leader elections.  Detect and relax timeouts if needed.
+    if node1.is_built_with_sanitizer():
+        # Patch all 6 config files on disk.  Nodes 4/5/6 will pick them
+        # up later when start_keeper copies them into the container.
+        for i in range(1, 7):
+            _relax_timeouts_for_sanitizer(
+                os.path.join(CONFIG_DIR, _get_generated_cfg(node_names, i))
+            )
+
+        # Rolling-restart nodes 1/2/3 so they pick up the relaxed
+        # timeouts.  Only one node is down at a time, so quorum is kept.
+        for node_obj in [node1, node2, node3]:
+            cfg_name = _get_generated_cfg(node_names, node_id(node_obj))
+            node_obj.stop_clickhouse()
+            node_obj.copy_file_to_container(
+                os.path.join(CONFIG_DIR, cfg_name),
+                "/etc/clickhouse-server/config.d/" + cfg_name,
+            )
+            node_obj.start_clickhouse()
+
+        for n in [node1, node2, node3]:
+            keeper_utils.wait_until_connected(cluster, n, timeout=60.0)
 
     # Identify the current leader and the two followers dynamically so the
     # test does not depend on which node wins the initial election.
