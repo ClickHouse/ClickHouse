@@ -1084,6 +1084,7 @@ static QueryPlan::Node chooseJoinOrder(QueryGraphBuilder query_graph_builder, Qu
     {
         if (typeid_cast<const JoinStepLogicalLookup *>(query_graph_builder.inputs[i]->step.get()))
             query_graph.prepared_storage_relations.set(i);
+        query_graph.relation_constant_columns.push_back(collectConstantColumns(*query_graph_builder.inputs[i]));
     }
 
     LOG_DEBUG(&Poco::Logger::get("QueryPlanOptimizations"), "Optimizing join order for query graph with {} relations", query_graph.relation_stats.size());

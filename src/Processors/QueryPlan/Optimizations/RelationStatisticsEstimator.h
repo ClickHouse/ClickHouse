@@ -16,4 +16,8 @@ namespace DB::QueryPlanOptimizations
 RelationStats estimateReadRowsCount(
     QueryPlan::Node & node, const ActionsDAG::Node * filter = nullptr, bool for_runtime_filter_transport = false);
 
+/// Output columns of the subtree rooted at `node` that hold the same value in every row: constants,
+/// and columns that pass a constant through unchanged. Not exhaustive.
+NameSet collectConstantColumns(const QueryPlan::Node & node);
+
 }

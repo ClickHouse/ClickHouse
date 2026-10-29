@@ -5,11 +5,13 @@
 
 #include <fmt/ranges.h>
 
+#include <Columns/ColumnConst.h>
 #include <Core/Settings.h>
 #include <Interpreters/ActionsDAG.h>
 #include <Interpreters/Context.h>
 #include <Processors/QueryPlan/AggregatingStep.h>
 #include <Processors/QueryPlan/CommonSubplanReferenceStep.h>
+#include <Processors/QueryPlan/DistinctStep.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/ITransformingStep.h>
@@ -17,10 +19,12 @@
 #include <Processors/QueryPlan/LimitStep.h>
 #include <Processors/QueryPlan/LogicalExchangeStep.h>
 #include <Processors/QueryPlan/Optimizations/RelationStatisticsUtils.h>
+#include <Processors/QueryPlan/Optimizations/actionsDAGUtils.h>
 #include <Processors/QueryPlan/ReadFromMemoryStorageStep.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Processors/QueryPlan/ReadFromObjectStorageStep.h>
 #include <Processors/QueryPlan/SortingStep.h>
+#include <Processors/QueryPlan/UnionStep.h>
 #include <Storages/Statistics/ConditionSelectivityEstimator.h>
 #include <Common/logger_useful.h>
 #include <Common/typeid_cast.h>
@@ -412,6 +416,154 @@ RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::No
         return estimateReadRowsCount(*node.children.front(), filter, for_runtime_filter_transport);
 
     return {};
+}
+
+namespace
+{
+
+/// Column name -> the `ColumnConst` with the value the column holds in every row.
+using ConstantColumnValues = std::unordered_map<String, ColumnPtr>;
+
+ConstantColumnValues collectConstantColumnValues(const QueryPlan::Node & node);
+
+/// Constants of `child` that `header` has under the same name and type.
+void addPassedThroughConstants(const QueryPlan::Node & child, const Block & header, ConstantColumnValues & result)
+{
+    const auto child_constants = collectConstantColumnValues(child);
+    const auto & child_header = *child.step->getOutputHeader();
+    for (const auto & column : header)
+    {
+        auto it = child_constants.find(column.name);
+        if (it == child_constants.end())
+            continue;
+        const auto * child_column = child_header.findByName(column.name);
+        if (child_column && child_column->type->equals(*column.type))
+            result.emplace(column.name, it->second);
+    }
+}
+
+void addExpressionConstants(const QueryPlan::Node & node, const ActionsDAG & actions, ConstantColumnValues & result)
+{
+    ConstantColumnValues input_constants;
+    if (node.children.size() == 1)
+        input_constants = collectConstantColumnValues(*node.children.front());
+
+    for (const auto * output : actions.getOutputs())
+    {
+        const auto * source = output;
+        while (true)
+        {
+            auto hop = describeActionsDAGLineageHop(*source);
+            if (!hop || (hop->kind != ActionsDAGLineageKind::Identity && hop->kind != ActionsDAGLineageKind::ValuePreserving))
+                break;
+            source = source->children.front();
+        }
+
+        if (source->type == ActionsDAG::ActionType::COLUMN && source->column)
+            result.emplace(output->result_name, source->column);
+        else if (source->type == ActionsDAG::ActionType::INPUT)
+        {
+            if (auto it = input_constants.find(source->result_name); it != input_constants.end())
+                result.emplace(output->result_name, it->second);
+        }
+    }
+}
+
+/// A column of a union is constant when it holds one value in every branch.
+void addUnionConstants(const QueryPlan::Node & node, const Block & header, ConstantColumnValues & result)
+{
+    std::vector<ConstantColumnValues> children_constants;
+    for (const auto * child : node.children)
+        children_constants.push_back(collectConstantColumnValues(*child));
+
+    for (size_t position = 0; position < header.columns(); ++position)
+    {
+        const auto & column = header.getByPosition(position);
+        if (!column.type->isComparable())
+            continue;
+
+        ColumnPtr value;
+        bool is_constant = !node.children.empty();
+        for (size_t i = 0; i < node.children.size() && is_constant; ++i)
+        {
+            const auto & child_header = *node.children[i]->step->getOutputHeader();
+            auto it = position < child_header.columns() ? children_constants[i].find(child_header.getByPosition(position).name)
+                                                        : children_constants[i].end();
+            is_constant = it != children_constants[i].end()
+                && (!value || (value->structureEquals(*it->second) && value->compareAt(0, 0, *it->second, 1) == 0));
+            if (is_constant)
+                value = it->second;
+        }
+        if (is_constant)
+            result.emplace(column.name, value);
+    }
+}
+
+ConstantColumnValues collectConstantColumnValues(const QueryPlan::Node & node)
+{
+    const IQueryPlanStep * step = node.step.get();
+    const auto & header = *step->getOutputHeader();
+
+    ConstantColumnValues result;
+    for (const auto & column : header)
+    {
+        if (column.column && isColumnConst(*column.column))
+            result.emplace(column.name, column.column);
+    }
+
+    if (const auto * expression_step = typeid_cast<const ExpressionStep *>(step))
+        addExpressionConstants(node, expression_step->getExpression(), result);
+    else if (const auto * filter_step = typeid_cast<const FilterStep *>(step))
+        addExpressionConstants(node, filter_step->getExpression(), result);
+    else if (typeid_cast<const UnionStep *>(step))
+        addUnionConstants(node, header, result);
+    else if (const auto * aggregating_step = typeid_cast<const AggregatingStep *>(step))
+    {
+        if (!aggregating_step->isGroupingSets() && node.children.size() == 1)
+        {
+            const auto child_constants = collectConstantColumnValues(*node.children.front());
+            for (const auto & key : aggregating_step->getParams().keys)
+            {
+                if (auto it = child_constants.find(key); it != child_constants.end())
+                    result.emplace(key, it->second);
+            }
+        }
+    }
+    else if (typeid_cast<const SortingStep *>(step) || typeid_cast<const LimitStep *>(step) || typeid_cast<const DistinctStep *>(step))
+    {
+        if (node.children.size() == 1)
+            addPassedThroughConstants(*node.children.front(), header, result);
+    }
+    else if (const auto * reference_step = typeid_cast<const CommonSubplanReferenceStep *>(step))
+    {
+        if (const auto * subplan_root = reference_step->getSubplanReferenceRoot())
+            addPassedThroughConstants(*subplan_root, header, result);
+    }
+    else if (const auto * join_step = typeid_cast<const JoinStepLogical *>(step))
+    {
+        /// The rows of a null-supplying side can hold NULL or default values.
+        const auto kind = join_step->getJoinOperator().kind;
+        const bool keeps_both_sides = kind == JoinKind::Inner || kind == JoinKind::Cross || kind == JoinKind::Comma;
+        if (node.children.size() == 2)
+        {
+            if (keeps_both_sides || kind == JoinKind::Left)
+                addPassedThroughConstants(*node.children[0], header, result);
+            if (keeps_both_sides || kind == JoinKind::Right)
+                addPassedThroughConstants(*node.children[1], header, result);
+        }
+    }
+
+    return result;
+}
+
+}
+
+NameSet collectConstantColumns(const QueryPlan::Node & node)
+{
+    NameSet result;
+    for (const auto & [name, _] : collectConstantColumnValues(node))
+        result.insert(name);
+    return result;
 }
 
 }

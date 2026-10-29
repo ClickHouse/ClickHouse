@@ -164,6 +164,10 @@ struct QueryGraph
     /// looked up by a fixed key.
     BitSet prepared_storage_relations;
 
+    /// Output columns of each relation that hold one value in every row, indexed by relation id.
+    /// An equality with such a column links no two relations, so it gives no column equivalence.
+    std::vector<NameSet> relation_constant_columns;
+
     /// Build equivalence classes from existing edges. Call after all edges are populated.
     void buildColumnEquivalences();
 

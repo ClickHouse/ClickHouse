@@ -138,6 +138,13 @@ void QueryGraph::buildColumnEquivalences()
         auto lhs_rel = lhs_resolved->getSourceRelations().getSingleBit();
         auto rhs_rel = rhs_resolved->getSourceRelations().getSingleBit();
 
+        auto is_constant = [this](size_t relation, const JoinActionRef & column)
+        {
+            return relation < relation_constant_columns.size() && relation_constant_columns[relation].contains(column.getColumnName());
+        };
+        if (is_constant(*lhs_rel, *lhs_resolved) || is_constant(*rhs_rel, *rhs_resolved))
+            continue;
+
         /// Skip predicates involving outer-joined relations: when a LEFT/RIGHT/FULL JOIN
         /// doesn't match, the outer side produces NULLs, so the equality doesn't hold
         /// for all rows and the transitive equivalence would be invalid.
