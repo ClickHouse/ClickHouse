@@ -752,6 +752,7 @@
     M(DictCacheKeysHit, "Number of keys looked up in the dictionaries of 'cache' types and found in the cache.", ValueType::Number) \
     M(DictCacheRequestTimeNs, "Number of nanoseconds spend in querying the external data sources for the dictionaries of 'cache' types.", ValueType::Nanoseconds) \
     M(DictCacheRequests, "Number of bulk requests to the external data sources for the dictionaries of 'cache' types.", ValueType::Number) \
+    M(DictCacheKeysRequestedDuplicate, "Number of redundant per-unit key requests eliminated by batching updates of dictionaries of 'cache' types.", ValueType::Number) \
     M(DictCacheLockWriteNs, "Number of nanoseconds spend in waiting for write lock to update the data for the dictionaries of 'cache' types.", ValueType::Nanoseconds) \
     M(DictCacheLockReadNs, "Number of nanoseconds spend in waiting for read lock to lookup the data for the dictionaries of 'cache' types.", ValueType::Nanoseconds) \
     \
