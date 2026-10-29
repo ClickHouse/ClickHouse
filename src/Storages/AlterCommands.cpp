@@ -231,26 +231,6 @@ void applyNullModifier(DataTypePtr & data_type, const std::optional<bool> & null
         data_type = makeNullable(data_type);
 }
 
-ASTPtr makeStoredDefaultExpressionList(const ColumnsDescription & columns, const NameSet & excluded_columns = {})
-{
-    auto default_expr_list = make_intrusive<ASTExpressionList>();
-
-    for (const auto & column : columns)
-    {
-        if (!column.default_desc.expression || excluded_columns.contains(column.name))
-            continue;
-
-        /// The conversion holds its own copy of the default expression rather than referring to the
-        /// alias of the expression below, for the reason explained in `getDefaultExpressionInfoInto`.
-        const auto tmp_column_name = column.name + "_tmp_alter" + toString(randomSeed());
-        default_expr_list->children.emplace_back(setAlias(
-            addTypeConversionToAST(column.default_desc.expression->clone(), column.type->getName()), column.name));
-        default_expr_list->children.emplace_back(setAlias(column.default_desc.expression->clone(), tmp_column_name));
-    }
-
-    return default_expr_list;
-}
-
 void renameColumnInStoredExpressions(ColumnsDescription & columns, const String & from, const String & to)
 {
     RenameColumnData rename_data{from, to};
@@ -2891,6 +2871,9 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
             ColumnsDescription preexisting_columns = metadata->columns;
             for (const auto & [from, to] : renames)
             {
+                /// A column added by the same ALTER (`ADD COLUMN z, RENAME COLUMN z TO w`) is not in the old schema.
+                if (!preexisting_columns.has(from))
+                    continue;
                 preexisting_columns.rename(from, to);
                 renameColumnInStoredExpressions(preexisting_columns, from, to);
             }

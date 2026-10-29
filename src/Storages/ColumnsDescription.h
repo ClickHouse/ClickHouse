@@ -390,6 +390,10 @@ void validateAliasExpansionNotCapturedByLambda(
 /// their default expressions). Rejects definitions whose evaluation would capture an ALIAS body
 /// inside a lambda, e.g. `m MATERIALIZED arrayMap(x -> y, arr)` with `y ALIAS x + 1`.
 void validateNoAliasLambdaCaptureInStoredExpressions(const ColumnsDescription & columns);
+/// The stored default expressions of `columns` (except `excluded_columns`) as an expression list for
+/// `validateColumnsDefaultsAndGetSampleBlock`, each with the conversion to the type of its column.
+ASTPtr makeStoredDefaultExpressionList(const ColumnsDescription & columns, const NameSet & excluded_columns = {});
+
 void expandColumnMatchersInExpression(ASTPtr & expression, const ColumnsDescription & columns);
 void expandColumnMatchersInExpressionList(ASTPtr & expression_list, const ColumnsDescription & columns);
 
@@ -416,6 +420,10 @@ struct MaterializedColumnInputInfo
 
     std::optional<String> findFirstUnsafeColumn(const NameSet & columns) const;
 };
+
+/// Conservative raw dependencies of a stored expression that predates alias-lambda capture validation and
+/// cannot be analysed: the columns it references, following table-scope `ALIAS` columns, without expanding them.
+Names collectInputsOfLegacyCaptureExpression(const ColumnDefault & column_default, const ColumnsDescription & columns);
 
 /// Map every `MATERIALIZED` column of `columns` to the storage columns its expression reads.
 /// Safe expressions have matchers and `ALIAS` bodies expanded and subcolumn references

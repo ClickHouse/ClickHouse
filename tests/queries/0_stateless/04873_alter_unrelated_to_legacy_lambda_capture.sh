@@ -55,4 +55,17 @@ local_query "SELECT x, z, m FROM db.legacy_clear"
 local_query "ALTER TABLE db.legacy_clear UPDATE z = 7 WHERE 1 SETTINGS mutations_sync = 2"
 local_query "SELECT x, z, m FROM db.legacy_clear"
 
+# A column added and renamed by the same ALTER is absent from the old schema the tolerated violations are
+# compared against.
+local_query "ALTER TABLE db.legacy ADD COLUMN z UInt8, RENAME COLUMN z TO w; SELECT 'ADD and RENAME of the same column succeeded'"
+
+# Applying an unrelated mutation on read does not have to recalculate the legacy expression either.
+local_query "SYSTEM STOP MERGES db.legacy_clear; ALTER TABLE db.legacy_clear UPDATE z = 8 WHERE 1; SELECT x, z, m FROM db.legacy_clear SETTINGS apply_mutations_on_fly = 1"
+
+# Neither does `MATERIALIZE TTL` when only an independent column TTL can change.
+local_query "CREATE TABLE db.legacy_ttl (x UInt8, arr Array(UInt8), y UInt8, ts DateTime, z UInt8 TTL ts + INTERVAL 1 DAY, m Array(UInt8) MATERIALIZED arrayMap(x -> y, arr)) ENGINE = MergeTree ORDER BY tuple()"
+local_query "SYSTEM STOP TTL MERGES db.legacy_ttl; INSERT INTO db.legacy_ttl (x, arr, y, ts, z) VALUES (1, [1], 2, '2000-01-01 00:00:00', 5)"
+sed -i 's/`y` UInt8/`y` UInt8 ALIAS `x` + 1/' "${WORK_DIR}/metadata/db/legacy_ttl.sql"
+local_query "ALTER TABLE db.legacy_ttl MATERIALIZE TTL SETTINGS mutations_sync = 2; SELECT x, z, m FROM db.legacy_ttl"
+
 rm -rf "${WORK_DIR}"

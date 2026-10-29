@@ -1338,6 +1338,27 @@ ASTs makeIdentifiers(const NamesAndTypesList & columns)
     return result;
 }
 
+/// `*` and `COLUMNS('regexp')` expand to unqualified identifiers of table columns. Inside a lambda, an identifier
+/// whose root is a parameter of an enclosing lambda would bind to that parameter instead of the table column the
+/// matcher selected (e.g. the expansion of `COLUMNS('^a$')` in `arrayMap(a -> COLUMNS('^a$'), arr)`), silently
+/// changing the stored values and the dependencies of the expression. Such definitions are rejected.
+void checkMatchedColumnsNotCapturedByLambda(const ASTPtr & matcher, const ASTs & matched_columns, const NameSet & lambda_parameters)
+{
+    if (lambda_parameters.empty())
+        return;
+
+    for (const auto & column : matched_columns)
+    {
+        const String name = column->getColumnName();
+        const String root = name.substr(0, name.find('.'));
+        if (lambda_parameters.contains(name) || lambda_parameters.contains(root))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "Column matcher {} cannot be expanded inside a lambda: it selects the column {}, which would be "
+                "bound by the lambda parameter {} instead. Rename the lambda parameter",
+                matcher->formatForErrorMessage(), backQuote(name), backQuote(lambda_parameters.contains(name) ? name : root));
+    }
+}
+
 void applyColumnTransformers(ASTs & columns, const ASTPtr & transformers)
 {
     if (!transformers)
@@ -1347,7 +1368,30 @@ void applyColumnTransformers(ASTs & columns, const ASTPtr & transformers)
         applyColumnsTransformer(transformer, columns);
 }
 
-ASTs expandColumnMatcher(const ASTPtr & matcher, const ColumnsDescription & columns)
+/// The columns are checked after the leading `EXCEPT` transformers, which may remove the colliding column
+/// (`arrayMap(a -> tuple(a, COLUMNS('^(a|b)$') EXCEPT a), arr)`), and before the others embed them into expressions.
+void applyColumnTransformersCheckingLambdaCapture(
+    const ASTPtr & matcher, ASTs & columns, const ASTPtr & transformers, const NameSet & lambda_parameters)
+{
+    bool checked = false;
+    if (transformers)
+    {
+        for (const auto & transformer : transformers->children)
+        {
+            if (!checked && !transformer->as<ASTColumnsExceptTransformer>())
+            {
+                checkMatchedColumnsNotCapturedByLambda(matcher, columns, lambda_parameters);
+                checked = true;
+            }
+            applyColumnsTransformer(transformer, columns);
+        }
+    }
+
+    if (!checked)
+        checkMatchedColumnsNotCapturedByLambda(matcher, columns, lambda_parameters);
+}
+
+ASTs expandColumnMatcher(const ASTPtr & matcher, const ColumnsDescription & columns, const NameSet & lambda_parameters)
 {
     ASTs result;
 
@@ -1357,7 +1401,7 @@ ASTs expandColumnMatcher(const ASTPtr & matcher, const ColumnsDescription & colu
             throw Exception(ErrorCodes::UNKNOWN_IDENTIFIER, "Compound asterisk matcher is not allowed in column expression");
 
         result = makeIdentifiers(getColumnsForAsteriskMatcher(columns));
-        applyColumnTransformers(result, asterisk->transformers);
+        applyColumnTransformersCheckingLambdaCapture(matcher, result, asterisk->transformers, lambda_parameters);
         return result;
     }
 
@@ -1387,7 +1431,7 @@ ASTs expandColumnMatcher(const ASTPtr & matcher, const ColumnsDescription & colu
             if (re2::RE2::PartialMatch(column.name, regexp))
                 result.push_back(make_intrusive<ASTIdentifier>(column.name));
 
-        applyColumnTransformers(result, columns_regexp_matcher->transformers);
+        applyColumnTransformersCheckingLambdaCapture(matcher, result, columns_regexp_matcher->transformers, lambda_parameters);
         return result;
     }
 
@@ -1400,6 +1444,8 @@ ASTs expandColumnMatcher(const ASTPtr & matcher, const ColumnsDescription & colu
         for (const auto & identifier : columns_list_matcher->column_list->children)
             result.push_back(identifier->clone());
 
+        /// Unlike the matchers above, the identifiers listed in `COLUMNS(a, b)` are resolved in the lambda scope,
+        /// like in a `SELECT`, so they may refer to a lambda parameter.
         applyColumnTransformers(result, columns_list_matcher->transformers);
         return result;
     }
@@ -1433,17 +1479,27 @@ bool isColumnMatcher(const ASTPtr & node)
         || node->as<ASTQualifiedColumnsListMatcher>();
 }
 
-void expandColumnMatchersImpl(ASTPtr & node, const ColumnsDescription & columns)
+void expandColumnMatchersImpl(ASTPtr & node, const ColumnsDescription & columns, const NameSet & lambda_parameters = {})
 {
     if (!node)
         return;
+
+    if (auto * function = node->as<ASTFunction>(); function && function->name == "lambda"
+        && function->arguments && function->arguments->children.size() == 2)
+    {
+        NameSet lambda_parameters_inside = lambda_parameters;
+        for (const auto & name : getASTLambdaArgumentNames(*function))
+            lambda_parameters_inside.insert(name);
+        expandColumnMatchersImpl(function->arguments->children[1], columns, lambda_parameters_inside);
+        return;
+    }
 
     if (node->as<ASTSelectQuery>() || node->as<ASTSelectWithUnionQuery>() || node->as<ASTSubquery>())
         return;
 
     if (isColumnMatcher(node))
     {
-        auto expanded_columns = expandColumnMatcher(node, columns);
+        auto expanded_columns = expandColumnMatcher(node, columns, lambda_parameters);
         if (expanded_columns.size() != 1)
             throw Exception(
                 ErrorCodes::NUMBER_OF_COLUMNS_DOESNT_MATCH,
@@ -1455,7 +1511,7 @@ void expandColumnMatchersImpl(ASTPtr & node, const ColumnsDescription & columns)
             expanded_columns.front()->setAlias(alias);
 
         node = std::move(expanded_columns.front());
-        expandColumnMatchersImpl(node, columns);
+        expandColumnMatchersImpl(node, columns, lambda_parameters);
         return;
     }
 
@@ -1466,19 +1522,19 @@ void expandColumnMatchersImpl(ASTPtr & node, const ColumnsDescription & columns)
         {
             if (isColumnMatcher(child))
             {
-                auto expanded_columns = expandColumnMatcher(child, columns);
+                auto expanded_columns = expandColumnMatcher(child, columns, lambda_parameters);
                 if (auto alias = child->tryGetAlias(); !alias.empty() && expanded_columns.size() == 1)
                     expanded_columns.front()->setAlias(alias);
 
                 for (auto & expanded_column : expanded_columns)
                 {
-                    expandColumnMatchersImpl(expanded_column, columns);
+                    expandColumnMatchersImpl(expanded_column, columns, lambda_parameters);
                     new_children.push_back(std::move(expanded_column));
                 }
             }
             else
             {
-                expandColumnMatchersImpl(child, columns);
+                expandColumnMatchersImpl(child, columns, lambda_parameters);
                 new_children.push_back(std::move(child));
             }
         }
@@ -1489,7 +1545,7 @@ void expandColumnMatchersImpl(ASTPtr & node, const ColumnsDescription & columns)
 
     for (auto & child : node->children)
         if (child)
-            expandColumnMatchersImpl(child, columns);
+            expandColumnMatchersImpl(child, columns, lambda_parameters);
 }
 
 ColumnsDescription clearDefaultExpressions(const ColumnsDescription & columns)
@@ -1917,6 +1973,26 @@ std::optional<Block> validateColumnsDefaultsAndGetSampleBlockImpl(
 }
 }
 
+ASTPtr makeStoredDefaultExpressionList(const ColumnsDescription & columns, const NameSet & excluded_columns)
+{
+    auto default_expr_list = make_intrusive<ASTExpressionList>();
+
+    for (const auto & column : columns)
+    {
+        if (!column.default_desc.expression || excluded_columns.contains(column.name))
+            continue;
+
+        /// The conversion holds its own copy of the default expression rather than referring to the
+        /// alias of the expression below, for the reason explained in `getDefaultExpressionInfoInto`.
+        const auto tmp_column_name = column.name + "_tmp_alter" + toString(randomSeed());
+        default_expr_list->children.emplace_back(setAlias(
+            addTypeConversionToAST(column.default_desc.expression->clone(), column.type->getName()), column.name));
+        default_expr_list->children.emplace_back(setAlias(column.default_desc.expression->clone(), tmp_column_name));
+    }
+
+    return default_expr_list;
+}
+
 void expandColumnMatchersInExpression(ASTPtr & expression, const ColumnsDescription & columns)
 {
     expandColumnMatchersImpl(expression, columns);
@@ -2041,6 +2117,43 @@ std::optional<String> MaterializedColumnInputInfo::findFirstUnsafeColumn(const N
     return result;
 }
 
+Names collectInputsOfLegacyCaptureExpression(const ColumnDefault & column_default, const ColumnsDescription & columns)
+{
+    NameSet all_column_names;
+    for (const auto & column : columns)
+        all_column_names.insert(column.name);
+    for (const auto & column : columns.getEphemeral())
+        all_column_names.insert(column.name);
+
+    auto expression = cloneAndExpandColumnDefaultExpression(column_default, columns);
+    NameSet dependencies;
+    collectColumnDependenciesFromAST(expression, all_column_names, columns, dependencies);
+
+    std::vector<String> worklist(dependencies.begin(), dependencies.end());
+    for (size_t pos = 0; pos < worklist.size(); ++pos)
+    {
+        if (!columns.has(worklist[pos]))
+            continue;
+
+        const auto & dependency_column = columns.get(worklist[pos]);
+        if (dependency_column.default_desc.kind != ColumnDefaultKind::Alias || !dependency_column.default_desc.expression)
+            continue;
+
+        auto alias_expression = cloneAndExpandColumnDefaultExpression(dependency_column.default_desc, columns);
+        NameSet alias_inputs;
+        collectColumnDependenciesFromAST(alias_expression, all_column_names, columns, alias_inputs);
+        for (const auto & input : alias_inputs)
+        {
+            if (dependencies.insert(input).second)
+                worklist.push_back(input);
+        }
+    }
+
+    Names result(dependencies.begin(), dependencies.end());
+    std::sort(result.begin(), result.end());
+    return result;
+}
+
 MaterializedColumnInputInfo collectMaterializedColumnInputsAfterExpansion(const ColumnsDescription & columns, ContextPtr context)
 {
     /// EPHEMERAL columns are included in the analysis set so TreeRewriter can resolve
@@ -2059,43 +2172,6 @@ MaterializedColumnInputInfo collectMaterializedColumnInputsAfterExpansion(const 
         return std::ranges::any_of(inputs, [&](const auto & input) { return ephemeral_names.contains(input); });
     };
 
-    NameSet all_column_names;
-    for (const auto & column : columns)
-        all_column_names.insert(column.name);
-    for (const auto & column : columns.getEphemeral())
-        all_column_names.insert(column.name);
-
-    auto collect_raw_inputs_following_aliases = [&](const ColumnDefault & column_default)
-    {
-        auto expression = cloneAndExpandColumnDefaultExpression(column_default, columns);
-        NameSet dependencies;
-        collectColumnDependenciesFromAST(expression, all_column_names, columns, dependencies);
-
-        std::vector<String> worklist(dependencies.begin(), dependencies.end());
-        for (size_t pos = 0; pos < worklist.size(); ++pos)
-        {
-            if (!columns.has(worklist[pos]))
-                continue;
-
-            const auto & dependency_column = columns.get(worklist[pos]);
-            if (dependency_column.default_desc.kind != ColumnDefaultKind::Alias || !dependency_column.default_desc.expression)
-                continue;
-
-            auto alias_expression = cloneAndExpandColumnDefaultExpression(dependency_column.default_desc, columns);
-            NameSet alias_inputs;
-            collectColumnDependenciesFromAST(alias_expression, all_column_names, columns, alias_inputs);
-            for (const auto & input : alias_inputs)
-            {
-                if (dependencies.insert(input).second)
-                    worklist.push_back(input);
-            }
-        }
-
-        Names result(dependencies.begin(), dependencies.end());
-        std::sort(result.begin(), result.end());
-        return result;
-    };
-
     MaterializedColumnInputInfo result;
     /// Metadata loading deliberately retains stored expressions that predate the alias-lambda
     /// capture rule. They must not make an unrelated `CLEAR COLUMN` fail while computing its
@@ -2111,7 +2187,7 @@ MaterializedColumnInputInfo collectMaterializedColumnInputsAfterExpansion(const 
         bool is_unsafe_legacy = legacy_capture_violations.contains(column.name);
         if (is_unsafe_legacy)
         {
-            inputs = collect_raw_inputs_following_aliases(column.default_desc);
+            inputs = collectInputsOfLegacyCaptureExpression(column.default_desc, columns);
         }
         else
         {

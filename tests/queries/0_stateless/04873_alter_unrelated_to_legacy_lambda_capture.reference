@@ -3,3 +3,6 @@ BAD_ARGUMENTS
 1	1001	1001
 1	0	[2]
 1	7	[2]
+ADD and RENAME of the same column succeeded
+1	8	[2]
+1	0	[2]

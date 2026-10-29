@@ -4,11 +4,18 @@
 #include <Interpreters/replaceSubcolumnsToGetSubcolumnFunctionInQuery.h>
 #include <Parsers/IAST.h>
 #include <Storages/ColumnsDescription.h>
+#include <Common/Exception.h>
+#include <Common/quoteString.h>
 
 #include <ranges>
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int BAD_ARGUMENTS;
+}
 
 static bool isMaterializedColumn(const ColumnDescription & column)
 {
@@ -49,12 +56,27 @@ MaterializedColumnDependencies::findNode(const String & column_name) const
     if (it == materialized_columns.end())
         return nullptr;
 
-    if (it->second.expression)
+    if (it->second.expression || it->second.legacy_alias_capture)
         return &it->second;
 
     const auto & source_columns_ = getSourceColumns();
 
     MaterializedDependencyNode materialized;
+
+    if (!legacy_capture_violations)
+        legacy_capture_violations = collectAliasLambdaCaptureViolationsInStoredExpressions(columns);
+
+    /// Analysing such an expression throws, but an operation that does not recalculate the column must not
+    /// fail because of it, so only the raw inputs are collected. `willBeRecalculated` rejects a recalculation.
+    if (legacy_capture_violations->contains(column_name))
+    {
+        materialized.legacy_alias_capture = true;
+        materialized.dependencies = collectInputsOfLegacyCaptureExpression(columns.get(column_name).default_desc, columns);
+        materialized.reads_ephemeral = std::ranges::any_of(
+            materialized.dependencies, [&](const auto & dependency) { return ephemeral_columns.contains(dependency); });
+        it->second = std::move(materialized);
+        return &it->second;
+    }
 
     /// Column matchers (`*`, `COLUMNS(...)`) in the stored default expression are expanded first, and
     /// an ALIAS is computed on read and never stored, so a reference to one has to be replaced by what
@@ -122,6 +144,11 @@ bool MaterializedColumnDependencies::willBeRecalculated(const String & column_na
     {
         return changed_columns.contains(dependency) || willBeRecalculated(dependency, changed_columns);
     });
+
+    if (result && materialized->legacy_alias_capture)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "The MATERIALIZED column {} has to be recalculated, but its expression contains a legacy ALIAS reference "
+            "captured by a lambda and cannot be evaluated safely", backQuote(column_name));
 
     /// Not through `it`: the recursion above can rehash the map, which invalidates iterators.
     will_be_recalculated[column_name] = result;

@@ -71,6 +71,7 @@
 #include <Interpreters/DDLTask.h>
 #include <Interpreters/InterpreterFactory.h>
 #include <Interpreters/InterpreterCreateQuery.h>
+#include <Interpreters/ExpressionContainsColumnMatcher.h>
 #include <Interpreters/replaceLegacyToTime.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Interpreters/InterpreterInsertQuery.h>
@@ -848,8 +849,9 @@ ColumnsDescription InterpreterCreateQuery::getColumnsDescription(
     /// expand differently (or to nothing) at runtime than during validation — e.g. `length(COLUMNS('^n$'))` over a
     /// `Nested` column `n` would validate against `n` but execute against `n.x`, persisting a default that throws on
     /// insert. Flatten the validation columns under the same condition as `res` below.
-    if (mode < LoadingStrictnessLevel::SECONDARY_CREATE && !already_normalized_on_initiator
-        && !is_restore_from_backup && context_->getSettingsRef()[Setting::flatten_nested])
+    const bool flatten_nested = mode < LoadingStrictnessLevel::SECONDARY_CREATE && !already_normalized_on_initiator
+        && !is_restore_from_backup && context_->getSettingsRef()[Setting::flatten_nested];
+    if (flatten_nested)
         columns_for_default_validation.flattenNested();
 
     Block defaults_sample_block;
@@ -959,9 +961,26 @@ ColumnsDescription InterpreterCreateQuery::getColumnsDescription(
         res.add(std::move(column));
     }
 
-    if (mode < LoadingStrictnessLevel::SECONDARY_CREATE && !already_normalized_on_initiator
-        && !is_restore_from_backup && context_->getSettingsRef()[Setting::flatten_nested])
+    if (flatten_nested)
+    {
         res.flattenNested();
+
+        /// A column declared without a type has a placeholder type in `columns_for_default_validation`, and its
+        /// type is inferred only by the validation, so an inferred `Nested` type was not flattened there. Validate
+        /// the defaults with column matchers again against the final schema, which they are expanded against when
+        /// executed: `COLUMNS('^n$')` must not validate against `n` and then expand to nothing against `n.x`.
+        if (default_expr_info.has_columns_with_default_without_type && is_fresh_definition)
+        {
+            NameSet columns_without_matchers;
+            for (const auto & column : res)
+                if (!column.default_desc.expression || !findColumnMatcherInExpression(*column.default_desc.expression))
+                    columns_without_matchers.insert(column.name);
+
+            if (columns_without_matchers.size() != res.size())
+                validateColumnsDefaultsAndGetSampleBlock(
+                    makeStoredDefaultExpressionList(res, columns_without_matchers), res, context_);
+        }
+    }
 
     /// `columns_for_default_validation` above carries no default expressions, so the alias-capture
     /// check inside `validateColumnsDefaultsAndGetSampleBlock` has nothing to expand at CREATE time.
