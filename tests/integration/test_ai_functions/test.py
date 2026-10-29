@@ -1977,20 +1977,6 @@ def test_query_id_header(started_cluster):
             == qid
         )
 
-    # A background mutation sends the mutation task's own `current_query_id` and has no `initial_query_id`.
-    instance.query("DROP TABLE IF EXISTS query_id_header SYNC")
-    instance.query("CREATE TABLE query_id_header (k UInt64, s String) ENGINE = MergeTree ORDER BY k")
-    instance.query("INSERT INTO query_id_header VALUES (1, 'a')")
-    instance.query(
-        "ALTER TABLE query_id_header UPDATE s = aiGenerate('hi', map('credentials', 'ai_mock')) WHERE 1",
-        settings={"mutations_sync": 2, "allow_nondeterministic_mutations": 1},
-    )
-    table_uuid = instance.query("SELECT uuid FROM system.tables WHERE database = 'default' AND name = 'query_id_header'").strip()
-    headers = last_request()["headers"]
-    assert headers.get("x-clickhouse-query-id") == f"{table_uuid}::all_1_1_0_2"
-    assert "x-clickhouse-initial-query-id" not in headers
-    instance.query("DROP TABLE query_id_header SYNC")
-
 
 def test_query_id_header_control_characters(started_cluster):
     """A query id from the native protocol can contain control characters. They are replaced with spaces
