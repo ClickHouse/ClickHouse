@@ -277,9 +277,10 @@ mkdir -p "$TEST_DIR_ABS/latematch/root/aaa" "$TEST_DIR_ABS/latematch/root/mmm"
 ln -s .. "$TEST_DIR_ABS/latematch/root/aaa/back"
 printf "row1\n" > "$TEST_DIR_ABS/latematch/root/mmm/zzz.txt"
 
-# Two names for one directory with different symlink budgets: `budget/root/a` resolves through
-# 40 links (the Linux limit), so `root/a/child` fails with `ELOOP`, while `root/z` reaches the
-# same `data/A` through one link and can read `child/missing.txt`. The walk enters `root/a` first.
+# Three names for one directory with different symlink budgets: `budget/root/a` and `root/b`
+# resolve through 40 links (the Linux limit), so `child` below them fails with `ELOOP`, while
+# `root/z` reaches the same `data/A` through one link and can read `child/missing.txt`. The walk
+# enters `root/a` and `root/b` first.
 mkdir -p "$TEST_DIR_ABS/budget/root" "$TEST_DIR_ABS/budget/chains" "$TEST_DIR_ABS/budget/data/A" "$TEST_DIR_ABS/budget/data/B"
 printf "A\n" > "$TEST_DIR_ABS/budget/data/A/visible.txt"
 printf "B\n" > "$TEST_DIR_ABS/budget/data/B/missing.txt"
@@ -289,6 +290,7 @@ for i in $(seq 1 38); do
 done
 ln -s ../data/A "$TEST_DIR_ABS/budget/chains/s39"
 ln -s ../chains/s1 "$TEST_DIR_ABS/budget/root/a"
+ln -s ../chains/s1 "$TEST_DIR_ABS/budget/root/b"
 ln -s ../data/A "$TEST_DIR_ABS/budget/root/z"
 
 trap 'rm -rf "$TEST_DIR_ABS"' EXIT
@@ -485,7 +487,8 @@ $CLICKHOUSE_CLIENT --query "INSERT INTO TABLE FUNCTION file('$TEST_DIR_NAME/late
 $CLICKHOUSE_CLIENT --query "SELECT count() FROM file('$TEST_DIR_NAME/latematch/root/*/*.txt', 'TSV', 'val String')"
 $CLICKHOUSE_CLIENT --query "SELECT count() FROM file('$TEST_DIR_NAME/latematch/root/*/*/*/*.txt', 'TSV', 'val String')"
 
-# A walk that skipped an entry on `ELOOP` must not prune the shorter name: both files are found.
+# A walk that skipped an entry on `ELOOP` must not prune a name with fewer symlinks, even after a
+# second name that fails the same way: both files are found.
 echo "shorter-alias-after-symlink-budget-skip"
 $CLICKHOUSE_CLIENT --query "SELECT val FROM file('$TEST_DIR_NAME/budget/root/**/*.txt', 'TSV', 'val String') ORDER BY val"
 $CLICKHOUSE_CLIENT --query "SELECT val FROM file('$TEST_DIR_NAME/budget/root/**/child/missing.txt', 'TSV', 'val String')"
