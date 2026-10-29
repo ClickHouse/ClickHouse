@@ -117,6 +117,7 @@ namespace FailPoints
 {
     extern const char merge_task_projection_stage_pause[];
     extern const char merge_task_pause_after_reserving_tmp_dir[];
+    extern const char merge_mutate_task_pause_after_part_handoff[];
 }
 
 namespace Setting
@@ -2631,7 +2632,10 @@ bool MergeTask::MergeProjectionsStage::finalizeProjectionsAndWholeMerge() const
         global_ctx->new_data_part->getPreferredFileOrder());
 
     global_ctx->new_data_part->getDataPartStorage().precommitTransaction();
+    global_ctx->handed_off_part = global_ctx->new_data_part;
     global_ctx->promise.set_value(std::exchange(global_ctx->new_data_part, nullptr));
+    if (!global_ctx->parent_part)
+        FailPointInjection::pauseFailPoint(FailPoints::merge_mutate_task_pause_after_part_handoff);
 
     return false;
 }
@@ -2964,8 +2968,31 @@ void MergeTask::cancel() noexcept
     if (global_ctx->to)
         global_ctx->to->cancel();
 
-    if (global_ctx->new_data_part)
-        global_ctx->new_data_part->removeIfNeeded();
+    if (global_ctx->temporary_text_index_storage)
+        tryUndoTransaction(*global_ctx->temporary_text_index_storage);
+
+    auto part = global_ctx->new_data_part;
+    if (!part && !global_ctx->future_retrieved)
+        part = global_ctx->handed_off_part.lock();
+
+    if (part)
+    {
+        /// The transaction is uncommitted, and on object storage its blobs are staged only there.
+        tryUndoTransaction(part->getDataPartStorage());
+        part->removeIfNeeded();
+    }
+}
+
+void tryUndoTransaction(IDataPartStorage & storage) noexcept
+{
+    try
+    {
+        storage.undoTransaction();
+    }
+    catch (...)
+    {
+        tryLogCurrentException(__PRETTY_FUNCTION__);
+    }
 }
 
 
