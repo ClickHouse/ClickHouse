@@ -3756,7 +3756,7 @@ MultiQueryProcessingStage ClientBase::analyzeMultiQueryText(
             const auto * pos_newline = find_first_symbols<'\n'>(this_query_end, all_queries_end);
             if (pos_newline != this_query_end)
             {
-                TestHint hint(String(this_query_end, pos_newline - this_query_end));
+                TestHint hint = parseTestHint(std::string_view(this_query_end, pos_newline - this_query_end));
                 if (hint.hasClientErrors() || hint.hasServerErrors())
                     this_query_end = pos_newline;
             }
@@ -3832,13 +3832,23 @@ void ClientBase::echoQuery(std::string_view full_query, const ASTPtr & parsed_qu
 }
 
 
+TestHint ClientBase::parseTestHint(std::string_view text) const
+{
+#if USE_CLIENT_AI
+    if (ai_running_query)
+        return TestHint(std::string_view{});
+#endif
+    return TestHint(text);
+}
+
+
 bool ClientBase::executeMultiQuery(const String & all_queries_text)
 {
     bool echo_query = echo_queries;
 
     {
         /// disable logs if expects errors
-        TestHint test_hint(all_queries_text);
+        TestHint test_hint = parseTestHint(all_queries_text);
         if (test_hint.hasClientErrors() || test_hint.hasServerErrors())
         {
             auto u = processTextAsSingleQuery("SET send_logs_level = 'fatal'");
@@ -3929,7 +3939,7 @@ bool ClientBase::executeMultiQuery(const String & all_queries_text)
                 // Try to find test hint for syntax error. We don't know where
                 // the query ends because we failed to parse it, so we consume
                 // the entire line.
-                TestHint hint(String(this_query_begin, this_query_end - this_query_begin));
+                TestHint hint = parseTestHint(std::string_view(this_query_begin, this_query_end - this_query_begin));
                 if (hint.hasServerErrors() && !hint.hasClientErrors())
                 {
                     // Syntax errors are considered as client errors.
@@ -3998,7 +4008,7 @@ bool ClientBase::executeMultiQuery(const String & all_queries_text)
                 // Look for the hint in the text of query + insert data + trailing
                 // comments, e.g. insert into t format CSV 'a' -- { serverError 123 }.
                 // Use the updated query boundaries we just calculated.
-                TestHint test_hint(full_query);
+                TestHint test_hint = parseTestHint(full_query);
 
                 // Echo all queries if asked; makes for a more readable reference file.
                 echo_query = test_hint.echoQueries().value_or(echo_query);
