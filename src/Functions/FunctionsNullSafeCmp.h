@@ -268,6 +268,16 @@ public:
         auto res = ColumnUInt8::create(input_rows_count);
         auto & res_data = res->getData();
 
+        /// An untyped `NULL` (such as a tuple element `NULL`) has no nested values to compare: only both `NULL` are not distinct.
+        if (left.type->onlyNull() || right.type->onlyNull())
+        {
+            ColumnPtr left_full = left.column->convertToFullColumnIfConst();
+            ColumnPtr right_full = right.column->convertToFullColumnIfConst();
+            for (size_t i = 0; i < input_rows_count; ++i)
+                res_data[i] = left_full->isNullAt(i) && right_full->isNullAt(i);
+            return res;
+        }
+
         if (left.type->equals(*right.type) || (!hasFixedString(left.type) && !hasFixedString(right.type)))
         {
             DataTypePtr common_type = getLeastSupertype(DataTypes{left.type, right.type});
