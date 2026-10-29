@@ -31,6 +31,7 @@
 #include <city.h>
 #include <Common/BufferAllocationPolicy.h>
 #include <Common/MemoryTracker.h>
+#include <Common/StringUtils.h>
 #include <Common/escapeForFileName.h>
 #include <Common/typeid_cast.h>
 #include <IO/S3Defines.h>
@@ -84,6 +85,8 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsBool materialize_projections_on_merge;
     extern const MergeTreeSettingsBool materialize_skip_indexes_on_merge;
     extern const MergeTreeSettingsString exclude_materialize_skip_indexes_on_merge;
+    extern const MergeTreeSettingsString marks_compression_codec;
+    extern const MergeTreeSettingsUInt64 max_bytes_to_buffer_for_packed_part;
     extern const MergeTreeSettingsUInt64 max_bytes_to_merge_at_max_space_in_pool;
     extern const MergeTreeSettingsUInt64 max_bytes_to_merge_at_min_space_in_pool;
     extern const MergeTreeSettingsUInt64 max_compress_block_size;
@@ -306,7 +309,8 @@ size_t countColumnStreams(const NamesAndTypesList & columns)
     return streams;
 }
 
-/// The number of compressors a compact part writer keeps alive. `MergeTreeDataPartWriterCompact` shares one
+/// The resolved codecs of the writer streams of `columns`, keyed like the compressors of a compact part writer
+/// (their number is the number of compressors it keeps alive). `MergeTreeDataPartWriterCompact` shares one
 /// `CompressedWriteBuffer` between all streams whose resolved codec has the same hash (`streams_by_codec`), and
 /// creates every such compressor at the default `DBMS_DEFAULT_BUFFER_SIZE`, not at `max_compress_block_size`.
 /// This mirrors its keying (`MergeTreeDataPartWriterCompact::addStreams`): the codec of every stream is resolved
@@ -317,7 +321,7 @@ size_t countColumnStreams(const NamesAndTypesList & columns)
 /// shared. Streams with the same file name (the shared offsets of `Nested`) are counted once. The dynamic
 /// substreams of a JSON / Dynamic column can bring types the default serialization does not know; their
 /// compressors are the residual left to the reactive `background_memory_tracker`.
-size_t countCompactWriterCompressors(
+std::unordered_map<UInt64, CompressionCodecPtr> collectWriterStreamCodecs(
     const NamesAndTypesList & columns,
     const StorageInMemoryMetadata & metadata,
     const MergeTreeData::PartCompressionCodec & part_codec,
@@ -331,7 +335,7 @@ size_t countCompactWriterCompressors(
     const auto & columns_description = metadata.getColumns();
 
     std::unordered_set<String> stream_names;
-    std::unordered_set<UInt64> codec_ids;
+    std::unordered_map<UInt64, CompressionCodecPtr> codecs;
     for (const auto & column : columns)
     {
         const String name_in_storage = column.getNameInStorage();
@@ -367,10 +371,19 @@ size_t countCompactWriterCompressors(
                 codec_hash.update(stream_name.data(), stream_name.size());
                 codec_id = codec_hash.get64();
             }
-            codec_ids.insert(codec_id);
+            codecs.emplace(codec_id, std::move(codec));
         }, column.type);
     }
-    return std::max<size_t>(codec_ids.size(), 1);
+    return codecs;
+}
+
+size_t countCompactWriterCompressors(
+    const NamesAndTypesList & columns,
+    const StorageInMemoryMetadata & metadata,
+    const MergeTreeData::PartCompressionCodec & part_codec,
+    const MergeTreeSettings & settings)
+{
+    return std::max<size_t>(collectWriterStreamCodecs(columns, metadata, part_codec, settings).size(), 1);
 }
 
 /// A count of writer streams together with the share of them the writer opens WITHOUT an adaptive write
@@ -389,6 +402,9 @@ struct WriterStreamCounts
 {
     size_t total = 0;
     size_t non_adaptive = 0;
+    /// The number of streams the writer is proven to open, when `total` is only an upper bound (a union of
+    /// the source parts' streams). Unset when `total` is exact.
+    std::optional<size_t> proven_total;
 };
 
 /// Streams of a column's default-serialization skeleton the writer does NOT treat as dynamic subcolumns:
@@ -500,6 +516,13 @@ struct PartColumnsIndex
     }
 };
 
+/// Whether a stream file name has the form `replaceFileNameToHashIfNeeded` gives a hashed name: the 32 hex
+/// digits of `sipHash128String`.
+bool isHashedStreamFileName(std::string_view name)
+{
+    return name.size() == 32 && std::ranges::all_of(name, [](char c) { return isHexDigit(c); });
+}
+
 class PartsColumnsIndex
 {
 public:
@@ -527,25 +550,52 @@ public:
         if (part.getType() != MergeTreeDataPartType::Wide)
             return index;
 
+        /// A stream name longer than max_file_name_length (or any name on a case-insensitive disk) is stored under
+        /// its hash (replaceFileNameToHashIfNeeded), which keeps no column prefix. Map the hashes of the static
+        /// stream names back to the names, so those files are attributed like any other.
+        const auto & storage_settings = *part.storage.getSettings();
+        std::unordered_map<String, String> static_name_by_hash;
+        for (const auto & name : collectStaticStreamFileNames(part.getColumns(), ISerialization::StreamFileNameSettings(storage_settings)))
+            if (String file_name = replaceFileNameToHashIfNeeded(name, storage_settings, &part.getDataPartStorage()); file_name != name)
+                static_name_by_hash.emplace(std::move(file_name), name);
+
         const std::string_view extension(IMergeTreeDataPart::DATA_FILE_EXTENSION);
         for (const auto & [file_name, checksum] : part.checksums.files)
-            if (file_name.ends_with(extension))
-                index.data_files.emplace(file_name.substr(0, file_name.size() - extension.size()), &checksum);
+        {
+            if (!file_name.ends_with(extension))
+                continue;
+            String stream_name = file_name.substr(0, file_name.size() - extension.size());
+            if (const auto hashed = static_name_by_hash.find(stream_name); hashed != static_name_by_hash.end())
+                stream_name = hashed->second;
+            index.data_files.emplace(std::move(stream_name), &checksum);
+        }
 
         /// A stream belongs to every column whose escaped name is the whole stream name or its prefix followed
         /// by '.' or '%2E' (see column_data_files), so look the column up by each such prefix.
         for (const auto & [stream_name, checksum] : index.data_files)
         {
             const std::string_view stream(stream_name);
+            bool has_owner = false;
             const auto add_to_owner = [&](std::string_view prefix)
             {
                 if (const auto owner = column_by_escaped_name.find(std::string(prefix)); owner != column_by_escaped_name.end())
+                {
                     index.column_data_files[owner->second].emplace_back(stream, checksum);
+                    has_owner = true;
+                }
             };
             add_to_owner(stream);
             for (size_t pos = 1; pos < stream.size(); ++pos)
                 if (stream[pos] == '.' || stream.substr(pos).starts_with("%2E"))
                     add_to_owner(stream.substr(0, pos));
+
+            /// A hashed name that is not a static stream is a dynamic substream (a long JSON path) whose column
+            /// cannot be recovered. Attribute it to every dynamic-structure column of the part: that can only
+            /// over-count, while dropping it would price the legacy part below its real streams and bytes.
+            if (!has_owner && isHashedStreamFileName(stream))
+                for (const auto & column : part.getColumns())
+                    if (column.type->hasDynamicStructure())
+                        index.column_data_files[column.name].emplace_back(stream, checksum);
         }
         return index;
     }
@@ -1336,7 +1386,14 @@ WriterStreamCounts countOutputStreams(
         streams = max_source_streams;
     }
 
-    return {.total = streams, .non_adaptive = non_adaptive_streams};
+    /// The union above is an upper bound: a stream recorded by some source part need not be written by the
+    /// merge (a column that is sparse in one part and dense in another unions `c` and `c.sparse.idx`, while
+    /// the merged serialization can be the full one). The streams of the default serialization of every
+    /// output column are always written, so they are the proven count.
+    return {
+        .total = streams,
+        .non_adaptive = non_adaptive_streams,
+        .proven_total = std::min(streams, countDistinctColumnStreams(output_columns, stream_file_name_settings))};
 }
 
 /// The rows a column has to be SYNTHESIZED for: only the rows of the source parts that do not physically
@@ -1990,7 +2047,7 @@ static UInt64 estimateNeededMemoryForMergeImpl(
     /// vertical-merge checks), and its buffers are priced by compact_eager_buffers / compact_worst_case below.
     const auto output_stream_counts = future_part.part_format.part_type == MergeTreeDataPartType::Wide
         ? countOutputStreams(part_view_output_columns, source_and_patch_parts, settings, default_filled_dynamic_columns, parts_index)
-        : WriterStreamCounts{.total = 1, .non_adaptive = 1};
+        : WriterStreamCounts{.total = 1, .non_adaptive = 1, .proven_total = {}};
     const size_t output_streams = output_stream_counts.total;
 
     /// Fixed-size values synthesized for a missing column are output bytes just as much as values read
@@ -2099,14 +2156,25 @@ static UInt64 estimateNeededMemoryForMergeImpl(
     /// The number of blocks of a stream is bounded by one block per granule (the wide writer may cut a block
     /// at every granule boundary), one per full compressor buffer (at least the smallest block size any
     /// written column resolves to) and the final one.
-    const auto encoded_written_bytes = [&](UInt64 written_bytes, UInt64 blocks, UInt64 compress_block_size) -> UInt64
+    /// The codecs are the ones the streams are really written with: a column's own codec (an expanding one
+    /// such as FPC can exceed the part codec's bound) is resolved like MergeTreeDataPartWriterOnDisk::getSubstreamCodec
+    /// does, and the marks go through marks_compression_codec.
+    std::vector<CompressionCodecPtr> data_codecs{part_codec.codec};
+    for (auto & [_, codec] : collectWriterStreamCodecs(output_columns, *metadata_snapshot, part_codec, settings))
+        data_codecs.push_back(std::move(codec));
+    const std::vector<CompressionCodecPtr> marks_codecs{
+        CompressionCodecFactory::instance().get(settings[MergeTreeSetting::marks_compression_codec].value)};
+    const auto encoded_written_bytes
+        = [&](UInt64 written_bytes, UInt64 blocks, UInt64 compress_block_size, const std::vector<CompressionCodecPtr> & codecs) -> UInt64
     {
         const auto none_codec = CompressionCodecFactory::instance().get("NONE", {});
         const auto block_overhead = [&](UInt64 block_size) -> UInt64
         {
             const auto size = static_cast<UInt32>(std::min<UInt64>(block_size, std::numeric_limits<UInt32>::max() / 2));
-            return std::max(part_codec.codec->getCompressedReserveSize(size), none_codec->getCompressedReserveSize(size)) - size
-                + sizeof(CityHash_v1_0_2::uint128);
+            UInt32 reserve = none_codec->getCompressedReserveSize(size);
+            for (const auto & codec : codecs)
+                reserve = std::max(reserve, codec->getCompressedReserveSize(size));
+            return reserve - size + sizeof(CityHash_v1_0_2::uint128);
         };
         const UInt64 fixed_overhead = block_overhead(1);
         const UInt64 full_block_overhead = std::max(fixed_overhead, block_overhead(compress_block_size));
@@ -2132,17 +2200,18 @@ static UInt64 estimateNeededMemoryForMergeImpl(
         const size_t block_streams = output_is_compact ? std::max<size_t>(1, output_columns.size()) : output_streams;
         const UInt64 data_blocks = saturatingAdd(
             saturatingStreamsTimesBuffer(block_streams, saturatingAdd(output_granules, 1)), multipart_written_bytes / min_block_size);
-        multipart_written_bytes = encoded_written_bytes(multipart_written_bytes, data_blocks, base_max_compress_block_size);
+        multipart_written_bytes = encoded_written_bytes(multipart_written_bytes, data_blocks, base_max_compress_block_size, data_codecs);
     }
     /// The marks file of a stream receives the marks through the marks compressor when compress_marks is on.
-    UInt64 output_encoded_marks_bytes_per_stream = output_marks_bytes_per_stream;
-    if (settings[MergeTreeSetting::compress_marks])
+    const auto encoded_marks_bytes = [&](UInt64 marks_bytes, const MergeTreeSettings & writer_settings) -> UInt64
     {
+        if (!writer_settings[MergeTreeSetting::compress_marks])
+            return marks_bytes;
         const UInt64 marks_block_size = std::max<UInt64>(
-            1, std::min<UInt64>(settings[MergeTreeSetting::marks_compress_block_size], MergeTreeWriterSettings::MAX_COMPRESS_BLOCK_SIZE));
-        output_encoded_marks_bytes_per_stream = encoded_written_bytes(
-            output_marks_bytes_per_stream, output_marks_bytes_per_stream / marks_block_size + 1, marks_block_size);
-    }
+            1, std::min<UInt64>(writer_settings[MergeTreeSetting::marks_compress_block_size], MergeTreeWriterSettings::MAX_COMPRESS_BLOCK_SIZE));
+        return encoded_written_bytes(marks_bytes, marks_bytes / marks_block_size + 1, marks_block_size, marks_codecs);
+    };
+    const UInt64 output_encoded_marks_bytes_per_stream = encoded_marks_bytes(output_marks_bytes_per_stream, settings);
 
     if (!remote_write_buffer_memories.empty())
     {
@@ -2165,21 +2234,26 @@ static UInt64 estimateNeededMemoryForMergeImpl(
     /// remote_write_buffer_size, when the output is not written through multipart upload buffers. Without
     /// adaptive write buffers the writer of a marks file starts from MARKS_FILE_BUFFER_SIZE, the buf_size the
     /// marks file is opened with, not from DBMS_DEFAULT_BUFFER_SIZE.
-    UInt64 marks_remote_write_buffer_size = 0;
-    if (!remote_write_buffer_memories.empty())
+    /// A rebuilt projection replays its own marks volume (its granularity can differ from the table's).
+    const auto marks_remote_write_buffer_size_for = [&](UInt64 marks_file_bytes) -> UInt64
     {
-        for (const auto & remote_write_buffer_memory : remote_write_buffer_memories)
-            marks_remote_write_buffer_size = std::max(
-                marks_remote_write_buffer_size,
-                getMultipartUploadMemoryCeilingForWrittenBytes(
-                    getMultipartUploadMemoryForBufferSize(remote_write_buffer_memory.memory, MergeTreeWriterStream::MARKS_FILE_BUFFER_SIZE),
-                    output_encoded_marks_bytes_per_stream));
-    }
-    else if (guessed_s3_write_buffer_memory.has_value())
-        marks_remote_write_buffer_size = std::max<UInt64>(
-            {S3::DEFAULT_MAX_SINGLE_PART_UPLOAD_SIZE,
-             getMultipartUploadMemoryCeilingForWrittenBytes(*guessed_s3_write_buffer_memory, output_encoded_marks_bytes_per_stream),
-             getMultipartUploadMemoryCeilingForWrittenBytes(*guessed_azure_write_buffer_memory, output_encoded_marks_bytes_per_stream)});
+        UInt64 result = 0;
+        if (!remote_write_buffer_memories.empty())
+        {
+            for (const auto & remote_write_buffer_memory : remote_write_buffer_memories)
+                result = std::max(
+                    result,
+                    getMultipartUploadMemoryCeilingForWrittenBytes(
+                        getMultipartUploadMemoryForBufferSize(remote_write_buffer_memory.memory, MergeTreeWriterStream::MARKS_FILE_BUFFER_SIZE),
+                        marks_file_bytes));
+        }
+        else if (guessed_s3_write_buffer_memory.has_value())
+            result = std::max<UInt64>(
+                {S3::DEFAULT_MAX_SINGLE_PART_UPLOAD_SIZE,
+                 getMultipartUploadMemoryCeilingForWrittenBytes(*guessed_s3_write_buffer_memory, marks_file_bytes),
+                 getMultipartUploadMemoryCeilingForWrittenBytes(*guessed_azure_write_buffer_memory, marks_file_bytes)});
+        return result;
+    };
 
     /// A compressor holds a scratch buffer next to its block once it flushes a block that does not fit into
     /// what is left of its output buffer: CompressedWriteBuffer::nextImpl compresses directly into the output
@@ -2287,8 +2361,10 @@ static UInt64 estimateNeededMemoryForMergeImpl(
     /// column with many substreams (a Map with many buckets, a deep Tuple / Nested) opens every one of them
     /// with the adaptive buffer once the threshold is reached, so keying the rule off the column count would
     /// price such a writer at full-size eager buffers per stream it never allocates - the
-    /// over-reservation/starvation pattern this estimate unwinds. `counts.total` is exactly that writer's
-    /// deduplicated stream count.
+    /// over-reservation/starvation pattern this estimate unwinds. `counts.total` is that writer's deduplicated
+    /// stream count, or an upper bound of it; the rule is applied only when it holds for the count the writer is
+    /// proven to open (`proven_total`), otherwise the streams of a sparse / dense mix that the merged serialization
+    /// does not write could switch the eager full-size buffers it does allocate to the adaptive price.
     /// The memory-ratio rule of the same function (writeBuffersWouldTakeSignificantMemory): every stream
     /// is adaptive when the writer's streams would preallocate two buffers of the stream's
     /// max_compress_block_size each, summing to at least max_memory_ratio_to_activate_adaptive_write_buffer
@@ -2307,9 +2383,10 @@ static UInt64 estimateNeededMemoryForMergeImpl(
     };
     const auto non_adaptive_stream_count = [&](const WriterStreamCounts & counts, UInt64 min_compress_block_size) -> size_t
     {
-        if (min_columns_for_adaptive != 0 && counts.total >= min_columns_for_adaptive)
+        const size_t proven_streams = counts.proven_total.value_or(counts.total);
+        if (min_columns_for_adaptive != 0 && proven_streams >= min_columns_for_adaptive)
             return 0;
-        if (ratio_triggers_adaptive(counts.total, min_compress_block_size))
+        if (ratio_triggers_adaptive(proven_streams, min_compress_block_size))
             return 0;
         return adaptive_for_dynamic_subcolumns ? counts.non_adaptive : counts.total;
     };
@@ -2382,27 +2459,31 @@ static UInt64 estimateNeededMemoryForMergeImpl(
                 saturatingStreamsTimesBuffer(2, written_bytes),
                 saturatingStreamsTimesBuffer(streams, 2 * codec_overhead)));
     };
-    const auto marks_worst_case_write_buffer_size = [&](bool adaptive_stream) -> UInt64
+    /// `marks_file_bytes` is the encoded marks volume of one marks file of the writer being priced.
+    const auto marks_worst_case_write_buffer_size = [&](bool adaptive_stream, UInt64 marks_file_bytes) -> UInt64
     {
         if (remote_write_buffer_size == 0)
             return marks_compress_block_size + marks_compression_scratch + MergeTreeWriterStream::MARKS_FILE_BUFFER_SIZE;
         return saturatingAdd(
             stream_remote_write_buffer_size(
-                MergeTreeWriterStream::MARKS_FILE_BUFFER_SIZE, adaptive_stream, output_encoded_marks_bytes_per_stream, marks_remote_write_buffer_size),
+                MergeTreeWriterStream::MARKS_FILE_BUFFER_SIZE, adaptive_stream, marks_file_bytes,
+                marks_remote_write_buffer_size_for(marks_file_bytes)),
             marks_compress_block_size + marks_compression_scratch);
     };
-    const auto worst_case_write_buffer_size = [&](UInt64 max_compress_block_size, bool adaptive_stream)
+    const auto worst_case_write_buffer_size = [&](UInt64 max_compress_block_size, bool adaptive_stream, UInt64 marks_file_bytes)
     {
         const UInt64 data_worst_case = remote_write_buffer_size != 0
             ? saturatingAdd(
                 stream_remote_write_buffer_size(max_compress_block_size, adaptive_stream, multipart_written_bytes, remote_write_buffer_size),
                 max_compress_block_size + compression_scratch(max_compress_block_size))
             : 2 * max_compress_block_size + compression_scratch(max_compress_block_size);
-        return saturatingAdd(data_worst_case, marks_worst_case_write_buffer_size(adaptive_stream));
+        return saturatingAdd(data_worst_case, marks_worst_case_write_buffer_size(adaptive_stream, marks_file_bytes));
     };
     /// The worst case of a non-adaptive stream, also used where the adaptive split is not known.
-    const UInt64 write_buffer_size = worst_case_write_buffer_size(base_max_compress_block_size, /*adaptive_stream=*/ false);
-    const UInt64 adaptive_write_buffer_size = worst_case_write_buffer_size(base_max_compress_block_size, /*adaptive_stream=*/ true);
+    const UInt64 write_buffer_size
+        = worst_case_write_buffer_size(base_max_compress_block_size, /*adaptive_stream=*/ false, output_encoded_marks_bytes_per_stream);
+    const UInt64 adaptive_write_buffer_size
+        = worst_case_write_buffer_size(base_max_compress_block_size, /*adaptive_stream=*/ true, output_encoded_marks_bytes_per_stream);
     /// The worst case of a wide writer's streams, split by the per-stream adaptive decision.
     const auto wide_worst_case
         = [&](const WriterStreamCounts & counts, UInt64 non_adaptive_size, UInt64 adaptive_size, UInt64 min_compress_block_size)
@@ -2434,7 +2515,7 @@ static UInt64 estimateNeededMemoryForMergeImpl(
             file_buffer_size + marks_eager_buffers(/*adaptive_stream=*/ false),
             saturatingStreamsTimesBuffer(compressors, DBMS_DEFAULT_BUFFER_SIZE));
     };
-    const auto compact_worst_case = [&](UInt64 compact_block_size, size_t compressors)
+    const auto compact_worst_case = [&](UInt64 compact_block_size, size_t compressors, UInt64 marks_file_bytes)
     {
         const UInt64 compressors_size
             = saturatingStreamsTimesBuffer(compressors, DBMS_DEFAULT_BUFFER_SIZE + compression_scratch(DBMS_DEFAULT_BUFFER_SIZE));
@@ -2445,7 +2526,7 @@ static UInt64 estimateNeededMemoryForMergeImpl(
                 stream_remote_write_buffer_size(compact_block_size, /*adaptive_stream=*/ false, multipart_written_bytes, remote_write_buffer_size),
                 compressors_size)
             : saturatingAdd(compact_block_size, compressors_size);
-        return saturatingAdd(data_worst_case, marks_worst_case_write_buffer_size(/*adaptive_stream=*/ false));
+        return saturatingAdd(data_worst_case, marks_worst_case_write_buffer_size(/*adaptive_stream=*/ false, marks_file_bytes));
     };
     const UInt64 output_compact_block_size = resolve_compact_block_size(settings);
     const size_t output_compact_compressors = output_is_compact
@@ -2453,7 +2534,7 @@ static UInt64 estimateNeededMemoryForMergeImpl(
         : 0;
 
     const UInt64 output_worst_case = output_is_compact
-        ? compact_worst_case(output_compact_block_size, output_compact_compressors)
+        ? compact_worst_case(output_compact_block_size, output_compact_compressors, output_encoded_marks_bytes_per_stream)
         : wide_worst_case(output_stream_counts, write_buffer_size, adaptive_write_buffer_size, base_min_compress_block_size);
 
     /// A stream whose data volume this estimate cannot derive from the source parts - a rebuilt projection,
@@ -2780,7 +2861,24 @@ static UInt64 estimateNeededMemoryForMergeImpl(
                 const UInt64 vertical_input_memory = saturatingAdd(
                     saturatingAdd(base_reader_memory(part_view_merging_read_columns), patch_input_memory),
                     saturatingStreamsTimesBuffer(2, max_gathering_column_reader_memory));
-                input_memory = std::min(input_memory, vertical_input_memory);
+                /// A column missing from some source part is filled from its default expression, and the reader
+                /// of its stage also reads every column that expression depends on (`injectRequiredColumns` in
+                /// `getReadTaskColumnsForMerge`), which the single-column reader sets above do not count. The
+                /// horizontal reader set reads all physical columns, so keep it when such an expression refers to
+                /// any identifier.
+                const bool reads_default_dependencies = std::ranges::any_of(output_columns, [&](const NameAndTypePair & column)
+                {
+                    if (!default_filled_columns.contains(column.name))
+                        return false;
+                    const auto * column_desc = columns_description.tryGet(column.name);
+                    if (!column_desc || !column_desc->default_desc.expression)
+                        return false;
+                    IdentifierNameSet dependencies;
+                    column_desc->default_desc.expression->collectIdentifierNames(dependencies);
+                    return !dependencies.empty();
+                });
+                if (!reads_default_dependencies)
+                    input_memory = std::min(input_memory, vertical_input_memory);
             }
         }
     }
@@ -2817,6 +2915,20 @@ static UInt64 estimateNeededMemoryForMergeImpl(
         return buffers;
     };
     output_memory = saturatingAdd(output_memory, primary_index_eager_buffers(metadata_snapshot, settings));
+
+    /// A packed output part does not stream its files out: `DataPartStorageOnDiskPacked::writeFile` routes them
+    /// into `PackedFilesWriter`, which keeps the encoded contents of every file until the part is finalized,
+    /// moving the largest ones to temporary files only past `max_bytes_to_buffer_for_packed_part` (0 means no
+    /// limit). That archive grows with the part, so the per-stream bounds above do not cover it: price the
+    /// encoded data and marks the merge writes, capped by the spill budget.
+    if (future_part.part_format.storage_type == MergeTreeDataPartStorageType::Packed)
+    {
+        UInt64 packed_archive_bytes = saturatingAdd(
+            multipart_written_bytes, saturatingStreamsTimesBuffer(output_encoded_marks_bytes_per_stream, output_streams));
+        if (const UInt64 max_bytes_to_buffer = settings[MergeTreeSetting::max_bytes_to_buffer_for_packed_part]; max_bytes_to_buffer != 0)
+            packed_archive_bytes = std::min(packed_archive_bytes, max_bytes_to_buffer);
+        output_memory = saturatingAdd(output_memory, packed_archive_bytes);
+    }
 
     /// Projections: the merge also reads and writes projection parts, and none of that IO flows through
     /// the base parts' readers and writers priced above. Mirror the decision made in
@@ -3195,14 +3307,29 @@ static UInt64 estimateNeededMemoryForMergeImpl(
                 const UInt64 projection_compact_block_size = resolve_compact_block_size(projection_settings);
                 const size_t projection_compact_compressors = countCompactWriterCompressors(
                     projection_column_list, *projection.metadata, part_codec, projection_settings);
+                const UInt64 projection_granules
+                    = estimate_output_granules(projection_rows, projection_uncompressed_bytes, projection_settings);
+                size_t projection_compact_marks_per_granule = projection.sample_block.columns();
+                if (projection_settings[MergeTreeSetting::write_marks_for_substreams_in_compact_parts])
+                    projection_compact_marks_per_granule
+                        = std::max(projection_compact_marks_per_granule, projection_stream_counts.compact_marks_streams);
+                /// The multipart worst case of a projection marks file is replayed from the projection's own marks
+                /// volume, not the base part's: its granularity settings can differ.
+                const auto projection_encoded_marks_bytes_per_stream = [&](bool is_compact)
+                {
+                    return encoded_marks_bytes(
+                        marks_bytes_for_stream(projection_granules, is_compact ? projection_compact_marks_per_granule : 1),
+                        projection_settings);
+                };
                 const auto projection_format_worst_case = [&](bool is_compact)
                 {
+                    const UInt64 marks_file_bytes = projection_encoded_marks_bytes_per_stream(is_compact);
                     return is_compact
-                        ? compact_worst_case(projection_compact_block_size, projection_compact_compressors)
+                        ? compact_worst_case(projection_compact_block_size, projection_compact_compressors, marks_file_bytes)
                         : wide_worst_case(
                             projection_wide_stream_counts,
-                            worst_case_write_buffer_size(projection_max_compress_block_size, /*adaptive_stream=*/ false),
-                            worst_case_write_buffer_size(projection_max_compress_block_size, /*adaptive_stream=*/ true),
+                            worst_case_write_buffer_size(projection_max_compress_block_size, /*adaptive_stream=*/ false, marks_file_bytes),
+                            worst_case_write_buffer_size(projection_max_compress_block_size, /*adaptive_stream=*/ true, marks_file_bytes),
                             projection_min_compress_block_size);
                 };
                 const UInt64 projection_worst_case = std::max(
@@ -3229,12 +3356,6 @@ static UInt64 estimateNeededMemoryForMergeImpl(
                 /// with write_marks_for_substreams_in_compact_parts. Those are counted by
                 /// countRebuiltProjectionStreams per column, without deduplicating stream names across columns,
                 /// matching the per-column ColumnsSubstreams the compact writer marks (see the base output above).
-                const UInt64 projection_granules
-                    = estimate_output_granules(projection_rows, projection_uncompressed_bytes, projection_settings);
-                size_t projection_compact_marks_per_granule = projection.sample_block.columns();
-                if (projection_settings[MergeTreeSetting::write_marks_for_substreams_in_compact_parts])
-                    projection_compact_marks_per_granule
-                        = std::max(projection_compact_marks_per_granule, projection_stream_counts.compact_marks_streams);
                 const auto projection_marks_bytes = [&](bool is_compact, size_t streams)
                 {
                     return saturatingStreamsTimesBuffer(
