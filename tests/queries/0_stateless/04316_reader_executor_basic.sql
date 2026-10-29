@@ -1,9 +1,10 @@
--- Tags: no-distributed-cache, no-encrypted-storage
+-- Tags: no-distributed-cache, no-encrypted-storage, no-parallel-replicas
 -- The executor does not implement the distributed cache or decryption, so it
 -- falls back on those storage configs and the activation check below would not
 -- hold. Those stages can't be turned off from the test (unlike async prefetch
 -- and the filesystem cache), so skip them; the test still runs on local disk and
 -- plain object storage where the executor engages.
+-- no-parallel-replicas: the test does not target parallel replicas yet.
 --
 -- Smoke test for the experimental ReaderExecutor read path. Reads a MergeTree
 -- table with `use_reader_executor = 1`, checks the data comes back correct (full

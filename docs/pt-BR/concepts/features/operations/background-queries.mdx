@@ -1,0 +1,212 @@
+---
+description: 'Execute queries de forma independente da conexão do cliente e monitore sua execução.'
+sidebarTitle: 'consultas em segundo plano'
+slug: /operations/background-queries
+title: 'consultas em segundo plano'
+doc_type: 'guide'
+---
+
+## Visão geral {#overview}
+
+As consultas em segundo plano permitem que os clientes enviem consultas que são executadas independentemente da sessão do cliente, bastando definir `run_query_in_background=1`. Após o envio, o servidor ClickHouse responde imediatamente ao cliente, enquanto a consulta segue sendo executada até a conclusão (com sucesso ou falha) no lado do servidor
+
+Ao desacoplar a execução da consulta da conexão de rede do cliente, as tarefas em segundo plano tornam-se totalmente resilientes a desconexões do lado do cliente ou a falhas de rede transitórias.
+
+As consultas em segundo plano destinam-se principalmente a operações de longa duração, como `INSERT ... SELECT`,
+`CREATE TABLE ... AS SELECT`, `CREATE MATERIALIZED VIEW ... POPULATE` ou `OPTIMIZE TABLE ... FINAL`,
+que não devem ser interrompidas caso a conexão do cliente caia.
+
+Nem toda consulta pode ser desanexada de sua conexão. Consulte [Formas de consulta sem suporte](#unsupported-query-forms)
+para saber quais requisições são rejeitadas.
+
+<Warning>
+  O resultado de uma consulta em segundo plano é descartado. Ele não pode ser recuperado nem anexado posteriormente.
+  Use o `query_id` da consulta para monitorá-la em `system.processes` enquanto ela estiver em execução e em `system.query_log` após sua conclusão.
+</Warning>
+
+Uma consulta em segundo plano não sobrevive à reinicialização do servidor. O comportamento no desligamento do servidor é controlado por
+`shutdown_wait_unfinished_queries` e `shutdown_wait_unfinished`.
+
+## Formas de consulta sem suporte {#unsupported-query-forms}
+
+Uma consulta em segundo plano continua ativa após o encerramento da conexão que a enviou, portanto o servidor já deve
+ter tudo o que precisa para executá-la no momento em que a aceita. As requisições que não atendem a essa condição são rejeitadas de forma síncrona, na
+conexão que as enviou, e a consulta nunca é iniciada.
+
+### Dados que trafegam pela conexão {#data-that-streams-over-the-connection}
+
+Um `INSERT` é rejeitado quando o servidor ainda precisaria ler dados da conexão que o enviou após o encaminhamento
+da consulta.
+
+Isso pode afetar tanto `INSERT ... FORMAT ...` quanto consultas que leem por meio de `input`. Uma requisição desse tipo é rejeitada
+com `A query whose data streams over the connection cannot be run in the background`:
+
+```sql
+-- Rejected over the native protocol: the client sends the data separately
+INSERT INTO target_table FORMAT TSV
+INSERT INTO target_table SELECT * FROM input('n UInt64') FORMAT TSV
+
+-- Accepted: the server produces the data itself
+INSERT INTO target_table SELECT number FROM numbers(1000000)
+```
+
+O `clickhouse-client` envia os dados de um `INSERT ... FORMAT ...` em pacotes separados, portanto essa forma nunca pode ser executada em segundo plano pelo protocolo nativo.
+
+Por HTTP, qualquer uma das formas pode ser aceita quando a consulta completa e seus dados cabem no buffer inicial de parsing, limitado por `max_query_size`.
+
+Isso inclui uma consulta HTTP que lê um payload inline por meio de `input`. Um corpo maior continua sendo transmitido além do texto da consulta armazenado em buffer e é rejeitado.
+
+Não dependa desse limite de tamanho: use `INSERT ... SELECT` ou uma table function como `url` ou `s3` para dados que precisam ser carregados em segundo plano.
+
+### Outras requisições rejeitadas {#other-rejected-requests}
+
+| Requisição                                                                                                                                                | Erro                                                                                         |
+| --------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------- |
+| `SET run_query_in_background = 1`                                                                                                                         | `run_query_in_background cannot be changed with SET, because it must be requested per query` |
+| Uma consulta dentro de uma transação explícita                                                                                                            | `Background queries inside transactions are not supported`                                   |
+| Uma consulta com `implicit_transaction = 1`                                                                                                               | `Background queries with 'implicit_transaction' are not supported`                           |
+| Uma consulta secundária, solicitada por exemplo com `clickhouse-client --query_kind secondary_query`                                                      | `run_query_in_background cannot be used for a secondary query`                               |
+| Um estágio de processamento de consulta diferente de `Complete`, solicitado por exemplo com `clickhouse-client --stage with_mergeable_state`              | `run_query_in_background cannot be used with the WithMergeableState query processing stage`  |
+| A cláusula `SETTINGS` de um `CREATE` ou `ATTACH` que contém uma definição de armazenamento, pois o cliente envia essa cláusula ao servidor sem resolvê-la | `run_query_in_background cannot be changed in the SETTINGS clause of this particular query`  |
+
+A configuração nunca é propagada para as consultas secundárias de uma consulta distribuída: um `INSERT` distribuído em segundo plano
+executa suas consultas por shard em primeiro plano, dentro da consulta inicial em segundo plano.
+
+## Enviar uma consulta em segundo plano {#submit-a-background-query}
+
+### Protocolo TCP nativo {#native-tcp-protocol}
+
+Com o `clickhouse-client`, passe `run_query_in_background` como uma configuração de linha de comando:
+
+```bash
+clickhouse-client --echo-query-id --run_query_in_background=1 \
+  -q "INSERT INTO target_table SELECT number FROM numbers(1000000)"
+```
+
+Você também pode usar uma cláusula `SETTINGS` inline:
+
+```bash
+clickhouse-client --echo-query-id \
+  -q "INSERT INTO target_table SELECT number FROM numbers(1000000) SETTINGS run_query_in_background=1"
+```
+
+O protocolo nativo transporta as configurações de consulta separadamente do texto SQL.
+O `clickhouse-client` analisa a maioria das configurações de consulta inline e as envia nessa seção de configurações.
+
+Já os drivers de protocolo nativo podem passar `run_query_in_background` no seu map de configurações por consulta, mantendo o texto SQL inalterado.
+
+O protocolo nativo não retorna um `query_id` gerado pelo servidor. Os clientes nativos devem gerar um ID único e enviá-lo junto com a consulta.
+
+O `clickhouse-client --echo-query-id` faz isso e imprime o ID antes de enviar a consulta:
+
+```response
+Query id: 6b57dffd-8aac-4be5-b331-fa8b2e70227e
+```
+
+### Protocolo HTTP {#http-protocol}
+
+Para requisições HTTP, passe `run_query_in_background` como parâmetro de URL:
+
+```bash
+curl -sS -D - -o /dev/null \
+  'http://localhost:8123/?run_query_in_background=1' \
+  --data-binary 'INSERT INTO target_table SELECT number FROM numbers(1000000)'
+```
+
+A resposta inclui o ID da consulta gerado no header `X-ClickHouse-Query-Id`:
+
+```response
+X-ClickHouse-Query-Id: 689d4147-7531-46ee-b74e-8dced676b397
+```
+
+Esse header só chega a um cliente que lê a resposta. Quando você precisa de um identificador da consulta que não dependa da chegada da resposta, envie seu próprio `query_id` como URL parameter.
+
+Assim, o cliente já conhece o ID antes de fazer a requisição e pode monitorar a consulta ou executar `KILL` nela no nó que a aceitou, mesmo que nunca veja a resposta:
+
+```bash
+curl -sS 'http://localhost:8123/?run_query_in_background=1&query_id=nightly_load_2026_09_03' \
+  --data-binary 'INSERT INTO target_table SELECT number FROM numbers(1000000)'
+```
+
+Ao contrário do protocolo nativo, o HTTP não permite habilitar a execução em segundo plano por meio de uma cláusula SQL `SETTINGS` inline:
+
+```bash
+curl 'http://localhost:8123/' \
+  --data-binary 'INSERT INTO target_table SELECT number FROM numbers(1000000) SETTINGS run_query_in_background=1'
+```
+
+Essa requisição retorna uma exceção `BAD_ARGUMENTS`. O HTTP handler precisa decidir se cria um contexto de consulta desanexado antes que o corpo da requisição seja convertido.
+
+Passe o SETTING na URL ou configure-o no nível de USER ou de profile.
+
+## Monitorar a execução {#monitor-execution}
+
+Use o `query_id` para verificar se uma consulta está em execução no momento:
+
+```sql
+SELECT
+    query_id,
+    elapsed,
+    query
+FROM system.processes
+WHERE query_id = '6b57dffd-8aac-4be5-b331-fa8b2e70227e';
+```
+
+Após a conclusão da consulta, inspecione `system.query_log` para verificar seu status final:
+
+```sql
+SELECT
+    type,
+    query_duration_ms,
+    exception_code,
+    exception
+FROM system.query_log
+WHERE query_id = '6b57dffd-8aac-4be5-b331-fa8b2e70227e'
+  AND type IN ('QueryFinish', 'ExceptionBeforeStart', 'ExceptionWhileProcessing')
+ORDER BY event_time_microseconds DESC
+LIMIT 1;
+```
+
+A requisição de envio pode ser bem-sucedida mesmo que a execução em segundo plano falhe posteriormente. Nesse caso, a exceção é registrada
+em `system.query_log` em vez de ser retornada pela conexão original.
+
+<Note title="Implantações em cluster e com balanceamento de carga">
+  `system.processes`, `system.query_log` e `KILL QUERY` são locais ao nó: cada um enxerga apenas as consultas do servidor que os atende.
+
+  Uma consulta em segundo plano pertence ao servidor que a aceitou, que não é necessariamente aquele que sua próxima requisição alcançará por meio de um balanceador de carga. Em vez disso, consulte o cluster inteiro:
+
+  ```sql
+  SELECT hostName(), query_id, elapsed, query
+  FROM clusterAllReplicas(my_cluster, system.processes)
+  WHERE query_id = '6b57dffd-8aac-4be5-b331-fa8b2e70227e';
+  ```
+
+  O mesmo se aplica a `system.query_log`, e o cancelamento requer a forma em todo o cluster:
+
+  ```sql
+  KILL QUERY ON CLUSTER my_cluster WHERE query_id = '6b57dffd-8aac-4be5-b331-fa8b2e70227e';
+  ```
+</Note>
+
+## Atraso no flush do query log {#query-log-flush-delay}
+
+As entradas ficam em buffer antes de aparecerem em `system.query_log`.
+No ClickHouse autogerenciado, o exemplo de configuração do servidor define `query_log.flush_interval_milliseconds` como `7500`.
+
+No ClickHouse Cloud, as entradas podem levar até 30 segundos para aparecer. Leve esse atraso em conta ao monitorar consultas em segundo plano de curta duração.
+
+Em um servidor autogerenciado, usuários com privilégios suficientes podem forçar o flush do query log. Informe o nome do log explicitamente para que os demais system logs não sejam afetados:
+
+```sql
+SYSTEM FLUSH LOGS query_log;
+```
+
+O flush ocorre no servidor que recebe o statement.
+
+Uma consulta em segundo plano é rastreada pelo servidor que a aceitou, que não é necessariamente aquele ao qual a sua sessão atual está conectada; portanto, em um cluster, execute o flush em todos os nós antes de consultar essa consulta:
+
+```sql
+SYSTEM FLUSH LOGS ON CLUSTER my_cluster query_log;
+```
+
+Fazer o flush em todo o cluster apenas faz com que cada servidor grave suas próprias entradas em buffer. Isso não torna o `system.query_log` de outro servidor visível localmente, portanto continue lendo o log por meio de `clusterAllReplicas`, conforme descrito em [Monitorar a execução](#monitor-execution).

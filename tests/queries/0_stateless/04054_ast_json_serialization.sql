@@ -1110,6 +1110,9 @@ SELECT 'ShowTablesQuery_databases' AS t,
     JSONExtractBool(j, 'databases') AS db_flag
 FROM (SELECT parseQueryToJSON('SHOW DATABASES') AS j);
 
+SELECT formatQueryFromJSON('{"type":"ShowTablesQuery","settings":true}'); -- { serverError BAD_ARGUMENTS }
+SELECT formatQueryFromJSON('{"type":"ShowTablesQuery","settings":true,"not_like":true,"like":"x"}'); -- { serverError BAD_ARGUMENTS }
+
 -- ==========================================================================
 -- 61. ASTShowColumnsQuery
 -- Fields: database(string), table(string)
@@ -1480,6 +1483,7 @@ SELECT 'RT_system_stop' AS t, formatQueryFromJSON(parseQueryToJSON('SYSTEM STOP 
 -- SHOW queries
 SELECT 'RT_show_tables' AS t, formatQueryFromJSON(parseQueryToJSON('SHOW TABLES FROM db'));
 SELECT 'RT_show_tables_like' AS t, formatQueryFromJSON(parseQueryToJSON('SHOW TABLES LIKE \'%test%\''));
+SELECT 'RT_show_tables_empty_like' AS t, formatQueryFromJSON(parseQueryToJSON('SHOW TABLES LIKE \'\''));
 SELECT 'RT_show_databases' AS t, formatQueryFromJSON(parseQueryToJSON('SHOW DATABASES'));
 SELECT 'RT_show_columns' AS t, formatQueryFromJSON(parseQueryToJSON('SHOW COLUMNS FROM t'));
 

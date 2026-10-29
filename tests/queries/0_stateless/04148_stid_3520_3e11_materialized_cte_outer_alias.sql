@@ -16,7 +16,6 @@
 -- with `TYPE_MISMATCH` (error code 53) instead of crashing the server with a
 -- `LOGICAL_ERROR`. Verify that all known reproducer shapes are rejected cleanly.
 
-SET enable_analyzer = 1;
 SET enable_materialized_cte = 1;
 
 -- Original reproducer from issue #103813. The CTE body references `a` which is not

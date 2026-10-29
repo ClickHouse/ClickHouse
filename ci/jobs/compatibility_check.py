@@ -56,7 +56,7 @@ def process_glibc_check():
 
 
 def process_pie_check():
-    # Nothing in the build fails when the binary comes out position dependent: -fPIC only makes the
+    # Nothing in the build fails when the binary comes out position dependent: -fPIE only makes the
     # code relocatable, and whether the executable itself is position independent is the linker's
     # decision, so it is checked on the packaged binary instead.
     header = Shell.get_output(
@@ -140,7 +140,7 @@ def main():
             Result.from_commands_run(
                 name="ubuntu12",
                 command=[
-                    f"docker run --volume={temp_path}/clickhouse:/clickhouse ubuntu:12.04 /clickhouse local --query 'select 1'",
+                    f"docker run --volume={temp_path}/clickhouse:/clickhouse ubuntu:12.04 /clickhouse local --tmp --query 'select 1'",
                 ],
                 with_info=True,
             )
@@ -158,7 +158,7 @@ def main():
             Result.from_commands_run(
                 name="centos5",
                 command=[
-                    f"docker run --volume={temp_path}/clickhouse:/clickhouse centos:5 /clickhouse local --query 'select 1'"
+                    f"docker run --volume={temp_path}/clickhouse:/clickhouse centos:5 /clickhouse local --tmp --query 'select 1'"
                 ],
                 with_info=True,
             )

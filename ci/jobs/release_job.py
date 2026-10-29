@@ -166,11 +166,22 @@ def main():
 
     results = []
     ok = True
+    log_files = ["/tmp/reprepro.log", "/tmp/createrepo_c.log", os.path.expanduser("~/fuse_mount.log")]
+    for log_file in log_files:
+        Path(log_file).touch()
+    log_files.append(RELEASE_INFO_FILE)
+
+    def existing_files():
+        return [p for p in log_files if os.path.isfile(p)]
 
     def step(**kwargs):
         nonlocal ok
         if not ok:
             return
+        # A timeout kill skips complete_job, so the runner uploads the files of the last checkpoint
+        Result.create_from(
+            results=results, stopwatch=stopwatch, status=Result.Status.RUNNING, files=existing_files()
+        ).dump_atomically()
         results.append(Result.from_commands_run(**kwargs))
         if results[-1].status != Result.Status.OK:
             ok = False
@@ -753,17 +764,9 @@ def main():
             )
         )
 
-    log_files = [
-        p
-        for p in [
-            "/tmp/reprepro.log",
-            "/tmp/createrepo_c.log",
-            os.path.expanduser("~/fuse_mount.log"),
-            RELEASE_INFO_FILE,
-        ]
-        if os.path.isfile(p)
-    ]
-    Result.create_from(results=results, stopwatch=stopwatch, files=log_files).complete_job()
+    Result.create_from(
+        results=results, stopwatch=stopwatch, files=existing_files()
+    ).complete_job()
 
 
 if __name__ == "__main__":

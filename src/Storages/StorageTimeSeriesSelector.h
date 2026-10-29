@@ -9,6 +9,7 @@
 namespace DB
 {
 
+class StorageTimeSeries;
 struct TimeSeriesSettings;
 
 /// Represents a storage for table function timeSeriesSelector().
@@ -19,11 +20,13 @@ public:
     {
         StorageID time_series_storage_id = StorageID::createEmpty();
 
-        /// Data types of the columns `id`, `timestamp` and `value` in the TimeSeries table.
-        /// The columns returned by table function timeSeriesSelector() have these data types.
+        /// Data types of the `id` column, the timestamps and the values in the TimeSeries table.
         DataTypePtr table_id_type;
         DataTypePtr table_timestamp_type;
         DataTypePtr table_value_type;
+
+        /// Whether the samples table stores buckets of samples (see `TimeSeriesSettings::hasBucketedSamples`):
+        /// the column `samples` with an array of samples per row, or the columns `timestamp` and `value` with one sample per row.
 
         PrometheusQueryTree selector;
 
@@ -33,6 +36,16 @@ public:
         UInt32 time_scale = 0;
         DateTime64 min_time{};
         DateTime64 max_time{};
+
+        /// The columns the table function timeSeriesSelector() returns besides `id`:
+        /// `samples` (of type `Array(Tuple(table_timestamp_type, table_value_type))`); or
+        /// `timestamp` and `value` with one sample per row.
+        enum class ReturnColumns
+        {
+            Samples,
+            TimestampAndValue,
+        };
+        ReturnColumns return_columns = ReturnColumns::Samples;
     };
 
     /// What the arguments of timeSeriesSelector() determine without reading the catalog. The time bounds stay
@@ -46,6 +59,8 @@ public:
         DataTypePtr min_time_type;
         Field max_time;
         DataTypePtr max_time_type;
+
+        Configuration::ReturnColumns return_columns = Configuration::ReturnColumns::Samples;
     };
 
     /// `parseArgumentsOnly()` must not read the catalog: a stored `AS timeSeriesSelector(...)` definition is replayed
@@ -59,10 +74,13 @@ public:
 
     static VirtualColumnsDescription createVirtuals();
 
-    /// Makes a SELECT query for the ids (`series_id`) of the series matching the matchers and optional time bounds (need stored min_time/max_time), registering their tags for timeSeriesIdToTags().
-    /// The time bounds have the scale `time_scale`; they are converted to the type of the timestamps in the table, and the query
-    /// reads from a `null` table (returns no ids) if no timestamp of the table is in the time range.
+    /// Makes a SELECT query for the ids (`series_id`) of the series matching the matchers and optional time bounds,
+    /// registering their tags for timeSeriesIdToTags(). The time bounds have the scale `time_scale`; they are converted
+    /// to the type of the timestamps in the table and applied to the stored time ranges of the series if the table
+    /// stores them. The query reads from a `null` table (returns no ids) if no timestamp of the table is in the time range.
+    /// The query must be executed with the settings set by applySettingsForSelectIDsQuery.
     static ASTPtr makeSelectIDsQuery(
+        const StorageTimeSeries & time_series_storage,
         const StorageID & tags_table_id,
         const TimeSeriesSettings & time_series_settings,
         const DataTypePtr & table_timestamp_type,
@@ -70,7 +88,12 @@ public:
         const PrometheusQueryTree::MatcherList & matchers,
         const std::optional<DateTime64> & min_time,
         const std::optional<DateTime64> & max_time,
-        UInt32 time_scale);
+        UInt32 time_scale,
+        const ContextPtr & context);
+
+    /// Sets the settings the query made by makeSelectIDsQuery relies on: the time ranges table is joined by a merge join
+    /// over tables read in the order of `id`.
+    static void applySettingsForSelectIDsQuery(Context & context);
 
     void readImpl(
         QueryPlan & query_plan,

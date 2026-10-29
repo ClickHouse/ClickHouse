@@ -1,5 +1,6 @@
 #include <Access/ContextAccess.h>
 #include <Backups/BackupFactory.h>
+#include <Interpreters/FunctionSecretArgumentsFinder.h>
 #include <Interpreters/Context.h>
 #include <Common/Exception.h>
 
@@ -124,11 +125,35 @@ void BackupFactory::registerBackupEngine(
     const String & engine_name,
     const CreatorFn & creator_fn,
     const DestinationIdentityFn & destination_identity_fn,
-    const SourceAccessFn & source_access_fn)
+    const SourceAccessFn & source_access_fn,
+    SecretArgumentsSpec secret_arguments)
 {
     if (engines.contains(engine_name))
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Backup engine '{}' was registered twice", engine_name);
-    engines.emplace(engine_name, RegisteredEngine{creator_fn, destination_identity_fn, source_access_fn});
+    engines.emplace(engine_name, RegisteredEngine{creator_fn, destination_identity_fn, source_access_fn, std::move(secret_arguments)});
+}
+
+const SecretArgumentsSpec * BackupFactory::tryGetSecretArgumentsSpec(const String & engine_name) const
+{
+    auto it = engines.find(engine_name);
+    return it == engines.end() ? nullptr : &it->second.secret_arguments;
+}
+
+SecretArgumentsSpec credentialFreeBackupSecretArguments(size_t arity)
+{
+    return {.custom = [arity](FunctionSecretArgumentsFinder & finder)
+    {
+        /// An engine that takes fewer arguments rejects the rest only after the statement has been formatted
+        /// for logging, so the count has to be checked here too. Each of these reads every argument of its own
+        /// as a string, so another shape - an array among them - is read by none of them and can carry a string
+        /// of its own. Anything else (an override, a nested map, a surplus slot) can carry a credential.
+        const auto & arguments = *finder.function->arguments;
+        bool credential_free = arguments.size() == arity;
+        for (size_t i = 0; credential_free && i < arity; ++i)
+            credential_free = arguments.at(i)->tryGetString(nullptr, /* allow_identifier= */ false);
+        if (!credential_free)
+            finder.maskEveryArgument();
+    }};
 }
 
 void registerBackupEnginesFileAndDisk(BackupFactory &);

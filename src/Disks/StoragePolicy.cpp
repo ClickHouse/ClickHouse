@@ -117,8 +117,37 @@ StoragePolicy::StoragePolicy(
                         "Disk move factor have to be in [0., 1.] interval, but set to {} in storage policy {}",
                         move_factor, backQuote(name));
 
+    backup_metadata_only = config.getBool(config_prefix + ".backup_metadata_only", false);
+    if (backup_metadata_only)
+        checkVolumesAreReadOnly();
+
     buildVolumeIndices();
     LOG_TRACE(log, "Storage policy {} created, total volumes {}", name, volumes.size());
+}
+
+
+bool StoragePolicy::isBackupMetadataOnly() const
+{
+    /// Rechecked on every call, because a disk can become writable while the policy is live: `DiskLocal` clears its
+    /// read-only flag itself once its periodic check writes to the root directory again, and a reload of the
+    /// configuration that makes a disk writable keeps this policy, since the policy built from the new configuration
+    /// fails the check in the constructor and is discarded. So the check cannot be left to where a policy is built.
+    if (backup_metadata_only)
+        checkVolumesAreReadOnly();
+    return backup_metadata_only;
+}
+
+void StoragePolicy::checkVolumesAreReadOnly() const
+{
+    /// The data of a table on such a policy is not backed up, so it must come from the storage, not from writes to it.
+    for (const auto & volume : volumes)
+    {
+        if (!volume->isReadOnly())
+            throw Exception(ErrorCodes::INVALID_CONFIG_PARAMETER,
+                            "Storage policy {} is marked backup_metadata_only, but its volume {} is not read-only, "
+                            "so BACKUP would leave out the data written to it",
+                            backQuote(name), backQuote(volume->getName()));
+    }
 }
 
 

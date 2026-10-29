@@ -57,21 +57,27 @@ public:
     }
 
     String getName() const override { return name; }
+
+    /// The captured parser settings decide whether a query is formatted or rejected, and how the
+    /// data types in it are rendered, see `IFunctionBase::updateHash`.
+    void updateHash(SipHash & hash) const override
+    {
+        hash.update(max_query_size);
+        hash.update(max_parser_depth);
+        hash.update(max_parser_backtracks);
+        hash.update(print_pretty_type_names);
+        hash.update(implicit_select);
+    }
+
     size_t getNumberOfArguments() const override { return 1; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
     bool useDefaultImplementationForConstants() const override { return true; }
 
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    String getSignatureString() const override
     {
-        FunctionArgumentDescriptors args{
-            {"query", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isString), nullptr, "String"}
-        };
-        validateFunctionArguments(*this, arguments, args);
-
-        DataTypePtr string_type = std::make_shared<DataTypeString>();
-        if (error_handling == ErrorHandling::Null)
-            return std::make_shared<DataTypeNullable>(string_type);
-        return string_type;
+        return error_handling == ErrorHandling::Null
+            ? "(String) -> Nullable(String)"
+            : "(String) -> String";
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override

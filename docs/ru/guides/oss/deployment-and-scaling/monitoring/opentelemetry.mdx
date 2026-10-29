@@ -9,17 +9,13 @@ doc_type: 'guide'
 
 [OpenTelemetry](https://opentelemetry.io/) — это открытый стандарт для сбора трейсов и метрик в распределённых приложениях. ClickHouse в некоторой степени поддерживает OpenTelemetry.
 
-<div id="supplying-trace-context-to-clickhouse">
-  ## Передача контекста трассировки в ClickHouse
-</div>
+## Передача контекста трассировки в ClickHouse {#supplying-trace-context-to-clickhouse}
 
 ClickHouse принимает HTTP-заголовки контекста трассировки, как описано в [рекомендации W3C](https://www.w3.org/TR/trace-context/). Он также принимает контекст трассировки через собственный протокол, который используется для обмена данными между серверами ClickHouse или между клиентом и сервером. Для ручного тестирования заголовки контекста трассировки, соответствующие рекомендации Trace Context, можно передать в `clickhouse-client` с помощью флагов `--opentelemetry-traceparent` и `--opentelemetry-tracestate`.
 
 Если родительский контекст трассировки не передан или переданный контекст трассировки не соответствует указанному выше стандарту W3C, ClickHouse может начать новую трассировку с вероятностью, задаваемой настройкой [opentelemetry&#95;start&#95;trace&#95;probability](/ru/reference/settings/session-settings/opentelemetry-start#opentelemetry_start_trace_probability).
 
-<div id="propagating-the-trace-context">
-  ## Передача контекста трассировки
-</div>
+## Передача контекста трассировки {#propagating-the-trace-context}
 
 Контекст трассировки передаётся в сервисы ниже по цепочке в следующих случаях:
 
@@ -27,15 +23,27 @@ ClickHouse принимает HTTP-заголовки контекста тра�
 
 * Табличная функция [url](/ru/reference/functions/table-functions/url). Информация о контексте трассировки отправляется в заголовках HTTP.
 
-<div id="tracing-clickhouse-keeper-requests">
-  ## Трассировка запросов ClickHouse Keeper
-</div>
+## Спаны распределённых запросов {#spans-of-distributed-queries}
+
+Для распределённого `SELECT` каждое чтение с удалённого сегмента покрывается спаном `RemoteQueryExecutor::execute`. Такие спаны содержат атрибуты, идентифицирующие query fragment:
+
+* `clickhouse.cluster` и `clickhouse.shard_num` — cluster и сегмент, с которого читает исполнитель;
+* `clickhouse.query_id` и `clickhouse.initial_query_id` — query ids с точки зрения initiator;
+* `clickhouse.target_host` — адреса установленных соединений.
+
+`status_code` такого спана показывает, чем завершился fragment:
+
+* `OK` — сегмент вернул полный результат.
+* `ERROR` — fragment завершился с ошибкой: сегмент вернул exception, initiator не смог прочитать данные либо не удалось отменить работу сегмента.
+* `UNSET` — ни успех, ни ошибка. Такие спаны содержат атрибут, дающий дополнительный контекст.
+
+Запросы `INSERT` в `Distributed` table порождают аналогичные спаны в `DistributedSink` с теми же ключами атрибутов `clickhouse.cluster` и `clickhouse.shard_num`.
+
+## Трассировка запросов ClickHouse Keeper {#tracing-clickhouse-keeper-requests}
 
 ClickHouse поддерживает трассировку OpenTelemetry для запросов [ClickHouse Keeper](/ru/guides/oss/deployment-and-scaling/keeper/index) (сервиса координации, совместимого с ZooKeeper). Эта возможность обеспечивает подробную видимость всего жизненного цикла операций Keeper — от отправки клиентского запроса до его обработки на стороне сервера.
 
-<div id="enabling-keeper-tracing">
-  ### Включение трассировки запросов Keeper
-</div>
+### Включение трассировки запросов Keeper {#enabling-keeper-tracing}
 
 Чтобы включить трассировку запросов Keeper, настройте следующие параметры в конфигурации клиента ZooKeeper/Keeper:
 
@@ -52,9 +60,7 @@ ClickHouse поддерживает трассировку OpenTelemetry для 
 </clickhouse>
 ```
 
-<div id="keeper-span-types">
-  ### Типы спанов Keeper
-</div>
+### Типы спанов Keeper {#keeper-span-types}
 
 Когда трассировка включена, ClickHouse создает спаны как для клиентских, так и для серверных операций Keeper:
 
@@ -75,20 +81,16 @@ ClickHouse поддерживает трассировку OpenTelemetry для 
 * `keeper.dispatcher.requests_queue` — Ожидание запроса в очереди диспетчера
 * `keeper.write.pre_commit` — Предварительная обработка запросов на запись перед фиксацией в Raft
 * `keeper.write.commit` — Обработка запросов на запись после фиксации в Raft
-* `keeper.read.wait_for_write` — Ожидание запросов на чтение, зависящих от записи
+* `keeper.read.wait_for_write` — Ожидание запросов на чтение в очереди до завершения обработки текущего батча запросов
 * `keeper.read.process` — Обработка запросов на чтение
 * `keeper.dispatcher.responses_queue` — Ожидание ответа в очереди диспетчера
 * `keeper.send_response` — Отправка ответа клиенту
 
-<div id="sampling-and-performance">
-  ### Сэмплирование и производительность
-</div>
+### Сэмплирование и производительность {#sampling-and-performance}
 
 Чтобы снизить накладные расходы на трассировку, Keeper использует динамическое сэмплирование. Частота сэмплирования автоматически регулируется в диапазоне от 1/10,000 до 1/10 в зависимости от размера запроса. Для мониторинга производительности значения длительности всех запросов (как сэмплированных, так и несэмплированных) записываются в метрики-гистограммы.
 
-<div id="tracing-the-clickhouse-itself">
-  ## Трассировка самого ClickHouse
-</div>
+## Трассировка самого ClickHouse {#tracing-the-clickhouse-itself}
 
 ClickHouse создает `trace spans` для каждого запроса и некоторых этапов его выполнения, таких как планирование запроса или распределенные запросы.
 
@@ -98,15 +100,11 @@ ClickHouse создает `trace spans` для каждого запроса и 
 
 Теги или атрибуты сохраняются в виде двух параллельных массивов, содержащих ключи и значения. Используйте [ARRAY JOIN](/ru/reference/statements/select/array-join), чтобы работать с ними.
 
-<div id="log-query-settings">
-  ## Журналирование настроек запроса
-</div>
+## Журналирование настроек запроса {#log-query-settings}
 
 Настройка [log&#95;query&#95;settings](/ru/reference/settings/session-settings/log-query#log_query_settings) позволяет журналировать изменения настроек запроса во время выполнения запроса. Когда она включена, любые изменения, внесенные в настройки запроса, будут записаны в журнал спана OpenTelemetry. Эта возможность особенно полезна в продакшн-средах для отслеживания изменений конфигурации, которые могут повлиять на производительность запросов.
 
-<div id="integration-with-monitoring-systems">
-  ## Интеграция с системами мониторинга
-</div>
+## Интеграция с системами мониторинга {#integration-with-monitoring-systems}
 
 На данный момент не существует готового инструмента, который мог бы экспортировать данные трассировки из ClickHouse в систему мониторинга.
 
@@ -133,8 +131,6 @@ FROM system.opentelemetry_span_log
 
 В случае ошибок соответствующая часть данных журнала будет незаметно потеряна. Если данные не поступают, проверьте журнал сервера на наличие сообщений об ошибках.
 
-<div id="related-content">
-  ## Материалы по теме
-</div>
+## Материалы по теме {#related-content}
 
 * Блог: [Создание решения для обсервабилити на базе ClickHouse — часть 2 — трейсы](https://clickhouse.com/blog/storing-traces-and-spans-open-telemetry-in-clickhouse)

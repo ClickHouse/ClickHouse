@@ -5,14 +5,17 @@
 
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTSubquery.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
+#include <Parsers/stripQuerySettings.h>
 
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseAndTableWithAlias.h>
 #include <Interpreters/DatabaseCatalog.h>
+#include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Interpreters/interpretSubquery.h>
 
 namespace DB
@@ -30,15 +33,20 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-std::shared_ptr<InterpreterSelectWithUnionQuery> interpretSubquery(
-    const ASTPtr & table_expression, ContextPtr context, size_t subquery_depth, const Names & required_source_columns)
+namespace
 {
-    auto subquery_options = SelectQueryOptions(QueryProcessingStage::Complete, subquery_depth);
-    return interpretSubquery(table_expression, context, required_source_columns, subquery_options);
-}
 
-std::shared_ptr<InterpreterSelectWithUnionQuery> interpretSubquery(
-    const ASTPtr & table_expression, ContextPtr context, const Names & required_source_columns, const SelectQueryOptions & options)
+/// The subquery, the context it is interpreted in and the options to interpret it with,
+/// shared by every interpreter below.
+struct PreparedSubquery
+{
+    ASTPtr query;
+    ContextMutablePtr context;
+    SelectQueryOptions options;
+};
+
+PreparedSubquery prepareSubquery(
+    const ASTPtr & table_expression, const ContextPtr & context, const SelectQueryOptions & options)
 {
     if (auto * expr = table_expression->as<ASTTableExpression>())
     {
@@ -50,7 +58,7 @@ std::shared_ptr<InterpreterSelectWithUnionQuery> interpretSubquery(
         else if (expr->database_and_table_name)
             table = expr->database_and_table_name;
 
-        return interpretSubquery(table, context, required_source_columns, options);
+        return prepareSubquery(table, context, options);
     }
 
     /// Subquery or table name. The name of the table is similar to the subquery `SELECT * FROM t`.
@@ -113,10 +121,14 @@ std::shared_ptr<InterpreterSelectWithUnionQuery> interpretSubquery(
             select_query->replaceDatabaseAndTable(table_id);
         }
 
-        select_expression_list->children.reserve(columns.size());
+        select_expression_list->children.reserve(std::max<size_t>(columns.size(), 1));
         /// manually substitute column names in place of asterisk
         for (const auto & column : columns)
             select_expression_list->children.emplace_back(make_intrusive<ASTIdentifier>(column.name));
+        /// A storage without ordinary columns, such as a parameterized view, is read as a single constant column,
+        /// as `buildQueryToReadColumnsFromTableExpression` does, so that `x IN table` keeps one column of the set.
+        if (select_expression_list->children.empty())
+            select_expression_list->children.emplace_back(make_intrusive<ASTLiteral>(Field(static_cast<UInt64>(1))));
     }
     else
     {
@@ -124,7 +136,63 @@ std::shared_ptr<InterpreterSelectWithUnionQuery> interpretSubquery(
         subquery_options.removeDuplicates();
     }
 
-    return std::make_shared<InterpreterSelectWithUnionQuery>(query, subquery_context, subquery_options, required_source_columns);
+    return PreparedSubquery{std::move(query), std::move(subquery_context), std::move(subquery_options)};
+}
+
+}
+
+std::shared_ptr<InterpreterSelectWithUnionQuery> interpretSubquery(
+    const ASTPtr & table_expression, ContextPtr context, size_t subquery_depth, const Names & required_source_columns)
+{
+    auto subquery_options = SelectQueryOptions(QueryProcessingStage::Complete, subquery_depth);
+    return interpretSubquery(table_expression, context, required_source_columns, subquery_options);
+}
+
+std::shared_ptr<InterpreterSelectWithUnionQuery> interpretSubquery(
+    const ASTPtr & table_expression, ContextPtr context, const Names & required_source_columns, const SelectQueryOptions & options)
+{
+    auto prepared = prepareSubquery(table_expression, context, options);
+    return std::make_shared<InterpreterSelectWithUnionQuery>(
+        prepared.query, prepared.context, prepared.options, required_source_columns);
+}
+
+std::shared_ptr<InterpreterSelectQueryAnalyzer> interpretSubqueryWithAnalyzer(
+    const ASTPtr & table_expression, ContextPtr context, size_t subquery_depth, const Names & required_source_columns)
+{
+    auto prepared = prepareSubquery(
+        table_expression, context, SelectQueryOptions(QueryProcessingStage::Complete, subquery_depth));
+    /// The analyzer plans this subquery as a query of its own, so it would read it with parallel replicas,
+    /// which the interpreter never did for a subquery - including one built by a background merge for a `TTL`
+    /// expression, whose context carries the settings of the default profile.
+    prepared.context->setSetting("allow_experimental_parallel_reading_from_replicas", Field(0));
+    /// The context of an `INSERT` carries the insertion table, and the analyzer would take the structure of a table
+    /// function in the subquery from it. `QueryAnalyzer` reads this setting from the scope context only, so the query
+    /// context - shared with the rest of the `INSERT` - is left alone, as `evaluateScalarSubqueryIfNeeded` does.
+    prepared.context->setSetting("use_structure_from_insertion_table_in_table_functions", Field(0));
+    /// A standalone expression - a `CHECK` constraint, a `TTL` expression, a row policy - may be analysed with
+    /// a context that never went through `makeQueryContext` and so carries a zero client version, which a read
+    /// from a `Distributed` table refuses to send. The plan keeps this context, so fill it here,
+    /// as `ExecuteScalarSubqueriesVisitor` does.
+    prepared.context->setInitiatorVersionIfUnset();
+    /// The analyzer re-applies the subquery's own `SETTINGS` clause over this context, so strip the settings
+    /// pinned above from it as well. The AST belongs to the analysed statement, whose text is persisted,
+    /// so strip a clone.
+    static constexpr std::array pinned_settings{
+        std::string_view{"allow_experimental_parallel_reading_from_replicas"},
+        std::string_view{"enable_parallel_replicas"},
+        std::string_view{"use_structure_from_insertion_table_in_table_functions"},
+    };
+    ASTPtr query = prepared.query->clone();
+    removeSettingsFromQuery(query, pinned_settings);
+    /// The plan is extracted before anything else could add the materialization of the subquery's
+    /// `MATERIALIZED` CTEs, so it has to carry it; `collectMaterializedCTEs` returns nothing for subquery
+    /// options unless materialization is forced.
+    prepared.options.forceMaterializeCTE();
+    /// Under a materialized view the source table is read from the inserted block, as the interpreter did by
+    /// resolving it through the context; the analyzer substitutes it only when given the storage explicitly.
+    return std::make_shared<InterpreterSelectQueryAnalyzer>(
+        query, prepared.context, prepared.options,
+        prepared.context->isViewInnerQuery() ? nullptr : prepared.context->getViewSource(), required_source_columns);
 }
 
 }
