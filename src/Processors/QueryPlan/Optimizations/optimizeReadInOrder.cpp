@@ -2031,6 +2031,21 @@ void optimizeReadInOrder(QueryPlan::Node & node, QueryPlan::Nodes & nodes, const
     }
 }
 
+void disableSpreadingSmallReadUnderFullSorting(QueryPlan::Node & node)
+{
+    const auto * sorting = typeid_cast<const SortingStep *>(node.step.get());
+    if (!sorting || sorting->getType() != SortingStep::Type::Full || sorting->getLimit() != 0 || node.children.size() != 1)
+        return;
+
+    QueryPlan::Node * child = node.children.front();
+    while ((typeid_cast<const ExpressionStep *>(child->step.get()) || typeid_cast<const FilterStep *>(child->step.get()))
+           && child->children.size() == 1)
+        child = child->children.front();
+
+    if (auto * reading = typeid_cast<ReadFromMergeTree *>(child->step.get()))
+        reading->disableSpreadingSmallRead();
+}
+
 void optimizeAggregationInOrder(QueryPlan::Node & node, QueryPlan::Nodes &, const QueryPlanOptimizationSettings & optimization_settings)
 {
     if (node.children.size() != 1)

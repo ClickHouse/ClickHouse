@@ -19,5 +19,8 @@ SELECT trimBoth(explain) FROM (EXPLAIN PIPELINE SELECT sum(k) FROM t_small_read)
 SELECT trimBoth(explain) FROM (EXPLAIN PIPELINE SELECT sum(k) FROM t_small_read WHERE k < 17 * 8192) WHERE explain ILIKE '%MergeTreeSelect%';
 -- 20 marks in 1 part: still one stream read in order.
 SELECT trimBoth(explain) FROM (EXPLAIN PIPELINE SELECT sum(k) FROM t_small_read WHERE p = 0 AND k < 20 * 8192) WHERE explain ILIKE '%MergeTreeSelect%';
+-- A full sort without LIMIT keeps the default streams, with LIMIT the read is spread.
+SELECT trimBoth(explain) FROM (EXPLAIN PIPELINE SELECT k FROM t_small_read ORDER BY k % 7) WHERE explain ILIKE '%MergeTreeSelect%';
+SELECT trimBoth(explain) FROM (EXPLAIN PIPELINE SELECT k FROM t_small_read ORDER BY k % 7 LIMIT 10) WHERE explain ILIKE '%MergeTreeSelect%';
 
 DROP TABLE t_small_read;
