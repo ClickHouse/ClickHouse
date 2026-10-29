@@ -3868,6 +3868,23 @@ ColumnSize IMergeTreeDataPart::getTotalColumnsSize() const
     return total_columns_size;
 }
 
+ColumnSize IMergeTreeDataPart::getTotalColumnsReadSize() const
+{
+    {
+        std::lock_guard lock(total_columns_read_size_mutex);
+        if (total_columns_read_size)
+            return *total_columns_read_size;
+    }
+
+    /// Calculated outside the lock, since it reads the part's prefixes.
+    auto size = calculateTotalColumnsReadSize();
+
+    std::lock_guard lock(total_columns_read_size_mutex);
+    if (!total_columns_read_size)
+        total_columns_read_size = size;
+    return *total_columns_read_size;
+}
+
 IndexSize IMergeTreeDataPart::getSecondaryIndexSize(const String & secondary_index_name) const
 {
     UniqueLock lock(columns_and_secondary_indices_sizes_mutex);

@@ -1,4 +1,5 @@
 #pragma once
+#include <functional>
 #include <optional>
 #include <Storages/MergeTree/MarkRange.h>
 
@@ -108,16 +109,17 @@ size_t getBlockSizeForGranularity(const Block & block);
 struct MergeTreeSettings;
 struct MergeTreeIndexGranularityInfo;
 
+/// get_bytes_uncompressed is called only when the constant-granularity path uses the size, since
+/// its sources are costly: the block size serializes AggregateFunction states, the size of the
+/// source parts of a merge reads their prefixes.
 MergeTreeIndexGranularityPtr createMergeTreeIndexGranularity(
     size_t rows,
-    size_t bytes_uncompressed,
+    const std::function<size_t()> & get_bytes_uncompressed,
     const MergeTreeSettings & settings,
     const MergeTreeIndexGranularityInfo & info,
     bool blocks_are_granules);
 
-/// Overload for the write path: computes the block size (which serializes AggregateFunction
-/// states) only when the constant-granularity path will use it, avoiding a wasted sizing pass
-/// on the non-const adaptive path where the per-block writer recomputes it anyway.
+/// Overload for the write path, sized by getBlockSizeForGranularity.
 MergeTreeIndexGranularityPtr createMergeTreeIndexGranularity(
     const Block & block,
     const MergeTreeSettings & settings,

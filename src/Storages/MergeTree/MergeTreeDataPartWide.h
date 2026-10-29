@@ -67,6 +67,8 @@ private:
 
     std::vector<ColumnSize> calculateSubcolumnSizes(const NamesAndTypesList & subcolumns) const override;
 
+    ColumnSize calculateTotalColumnsReadSize() const override;
+
     void addStreamToColumnSize(const String & stream_name, ColumnSize & size) const;
 
     /// Adds the stream's share of its file where it has a size hint, else the whole file.
