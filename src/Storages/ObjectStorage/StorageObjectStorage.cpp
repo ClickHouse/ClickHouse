@@ -1,8 +1,5 @@
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
 
-#include <Access/ContextAccess.h>
-#include <Access/Common/AccessFlags.h>
-
 #include <Analyzer/ArrayJoinNode.h>
 #include <Analyzer/QueryNode.h>
 #include <Analyzer/TableNode.h>
@@ -1145,13 +1142,9 @@ void StorageObjectStorage::checkInsertIsAllowed(ContextPtr context) const
 
 void StorageObjectStorage::checkCatalogSourceWriteAccess(const ContextPtr & context) const
 {
-    /// A data lake catalog table on HDFS is written with the server's own HDFS identity, so writing it needs the same
-    /// `WRITE ON HDFS` grant as `icebergHDFS`. `DatabaseDataLake` checks `READ` when it resolves the table.
+    /// `DatabaseDataLake` checks `READ` when it resolves the table.
     if (catalog && configuration->getType() == ObjectStorageType::HDFS)
-        context->getAccess()->checkAccessWithFilter(
-            AccessType::WRITE,
-            toStringSource(AccessTypeObjects::Source::HDFS),
-            normalizeSourceURI(configuration->getRawURI() + configuration->getRawPath().path));
+        checkCatalogHDFSAccess(context, AccessType::WRITE, configuration->getRawURI() + configuration->getRawPath().path);
 }
 
 void StorageObjectStorage::drop()
