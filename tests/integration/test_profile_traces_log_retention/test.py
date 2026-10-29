@@ -13,6 +13,7 @@ leaf = cluster.add_instance("leaf", main_configs=["configs/trace_log.xml"])
 
 SETTINGS = {
     "send_profile_traces": 1,
+    "allow_introspection_functions": 1,
     "send_profile_events": 0,
     "send_logs_level": "none",
     "query_profiler_cpu_time_period_ns": 0,

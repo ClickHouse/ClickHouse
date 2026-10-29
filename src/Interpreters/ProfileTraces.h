@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Core/Block.h>
+#include <Interpreters/Context_fwd.h>
 #include <Common/TraceSender.h>
 
 #include <condition_variable>
@@ -21,7 +22,9 @@ using InternalProfileTracesQueuePtr = std::shared_ptr<InternalProfileTracesQueue
 class InternalProfileTracesQueue
 {
 public:
-    static InternalProfileTracesQueuePtr create(const String & query_id);
+    /// Samples disclose symbol names and offsets in the server executable, so delivering them requires
+    /// the same access as `addressToSymbol`: the `INTROSPECTION` grant and `allow_introspection_functions`.
+    static InternalProfileTracesQueuePtr create(const ContextPtr & context);
     ~InternalProfileTracesQueue();
 
     UInt64 getId() const { return id; }

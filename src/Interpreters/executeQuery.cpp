@@ -4195,7 +4195,7 @@ void syncFramingProfileTracesWithSettings(const ContextMutablePtr & context, Fra
     {
         if (!queues.profile_traces_queue)
         {
-            queues.profile_traces_queue = InternalProfileTracesQueue::create(context->getCurrentQueryId());
+            queues.profile_traces_queue = InternalProfileTracesQueue::create(context);
             CurrentThread::attachInternalProfileTracesQueue(queues.profile_traces_queue);
         }
     }

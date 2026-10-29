@@ -833,7 +833,7 @@ The `value` column's element type is not fixed across packets — older servers 
 
 ### ProfileTraces (packet type 19) {#profiletraces}
 
-Server → Client, available at negotiated revision `54496` and above when `send_profile_traces = 1`. This setting is independent of `send_profile_events`. Existing profiler settings control which traces are sampled; enabling delivery alone does not enable a sampler.
+Server → Client, available at negotiated revision `54496` and above when `send_profile_traces = 1`. This setting is independent of `send_profile_events`. Like `addressToSymbol`, delivery requires the `INTROSPECTION` grant and `allow_introspection_functions = 1`; otherwise the query fails with an `Exception`. Existing profiler settings control which traces are sampled; enabling delivery alone does not enable a sampler.
 
 The server's trace collector must be enabled by the `trace_log` server configuration. Streaming does not read or flush `system.trace_log` and does not require permission to select from that table.
 
@@ -846,7 +846,7 @@ The envelope is a packet-type `VarUInt` of `19`, an empty `table_name` binary st
 | 3 | `trace_type` | `String` | Sample kind: `CPU`, `Real`, `Memory`, `MemorySample`, or `MemoryPeak`; delivery status: `Dropped` or `Incomplete`. |
 | 4 | `thread_id` | `UInt64` | OS thread ID on the originating host. |
 | 5 | `event_time_microseconds` | `UInt64` | Sample timestamp in microseconds since the Unix epoch. |
-| 6 | `trace` | `Array(UInt64)` | Normalized instruction addresses, ordered from the leaf frame outward. |
+| 6 | `trace` | `Array(UInt64)` | Instruction offsets in the server executable, ordered from the leaf frame outward. A frame outside the executable has the address `0`, so the packet does not disclose runtime addresses. |
 | 7 | `symbols` | `Array(String)` | Symbol corresponding to each address; an empty string denotes an unresolved frame. |
 | 8 | `size` | `Int64` | Allocation size for `Memory`; signed allocation/deallocation size for `MemorySample`; total tracked usage at a new peak for `MemoryPeak` (all in bytes); zero for `CPU`, `Real`, and `Incomplete`; positive loss delta for `Dropped`. |
 

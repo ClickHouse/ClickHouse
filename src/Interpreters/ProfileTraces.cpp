@@ -1,14 +1,17 @@
 #include <Interpreters/ProfileTraces.h>
 
+#include <Access/Common/AccessFlags.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <Interpreters/Context.h>
 #include <Common/Exception.h>
 #include <Common/FailPoint.h>
 #include <Common/ProfileTracesBlocker.h>
+#include <Common/StackTrace.h>
 #include <Common/SymbolIndex.h>
 #include <Common/logger_useful.h>
 #include <base/EnumReflection.h>
@@ -101,8 +104,10 @@ InternalProfileTracesQueue::InternalProfileTracesQueue(
 {
 }
 
-InternalProfileTracesQueuePtr InternalProfileTracesQueue::create(const String & query_id)
+InternalProfileTracesQueuePtr InternalProfileTracesQueue::create(const ContextPtr & context)
 {
+    context->checkAccess(AccessType::addressToSymbol);
+    const String & query_id = context->getCurrentQueryId();
     auto registry = getRegistry();
     auto id = registry->next_id.fetch_add(1, std::memory_order_relaxed);
     if (!id)
@@ -289,24 +294,31 @@ Block InternalProfileTracesQueue::getBlock()
     auto columns = block.cloneEmptyColumns();
     /// Symbolization belongs to the consumer, so a client cannot stall the shared collector.
     /// Cache only this batch to bound memory independently of query duration.
-    std::unordered_map<UInt64, String> symbol_cache;
+    /// A local sample holds runtime addresses. Only an offset in the main executable is published,
+    /// any other address becomes 0, so the stream does not disclose the address space layout.
+    std::unordered_map<UInt64, std::pair<UInt64, String>> frame_cache;
     for (auto & sample : batch)
     {
         bool local = !sample.symbolized;
         if (local)
         {
             sample.symbols.reserve(sample.trace.size());
-            for (UInt64 address : sample.trace)
+            for (UInt64 & address : sample.trace)
             {
-                auto [it, inserted] = symbol_cache.try_emplace(address);
+                auto [it, inserted] = frame_cache.try_emplace(address);
                 if (inserted)
                 {
+                    const void * runtime_address = reinterpret_cast<const void *>(address);
+                    const auto resolved = StackTrace::resolveAddress(runtime_address);
+                    if (resolved.kind == StackTrace::AddressKind::MainObject)
+                        it->second.first = reinterpret_cast<UInt64>(resolved.address);
 #if (defined(__ELF__) || defined(OS_DARWIN)) && !defined(OS_FREEBSD)
-                    if (const auto * symbol = SymbolIndex::instance().findSymbol(reinterpret_cast<const void *>(address)))
-                        it->second = demangle(symbol->name);
+                    if (const auto * symbol = SymbolIndex::instance().findSymbol(runtime_address))
+                        it->second.second = demangle(symbol->name);
 #endif
                 }
-                sample.symbols.push_back(it->second);
+                address = it->second.first;
+                sample.symbols.push_back(it->second.second);
             }
         }
 

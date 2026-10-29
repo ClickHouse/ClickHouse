@@ -162,10 +162,20 @@ try:
     restricted_parameters = [(key, value) for key, value in parse_qsl(parts.query) if key not in ("user", "password")]
     restricted_parameters.append(("user", restricted_user))
     restricted_url = urlunsplit(parts._replace(query=urlencode(restricted_parameters)))
+    # Samples disclose symbols and executable offsets, so they require the access of `addressToSymbol`.
+    denied = request(parameters + "&send_profile_traces=1", "SELECT 1 FORMAT Null", restricted_url)
+    assert "ACCESS_DENIED" in denied and '"profile_traces"' not in denied, denied
+    print("samples require the INTROSPECTION grant")
+
+    subprocess.run(client + ["--query", f"GRANT INTROSPECTION ON *.* TO {restricted_user}"], check=True)
+    denied = request(parameters + "&send_profile_traces=1&allow_introspection_functions=0", "SELECT 1 FORMAT Null", restricted_url)
+    assert "FUNCTION_NOT_ALLOWED" in denied and '"profile_traces"' not in denied, denied
+    print("samples require allow_introspection_functions")
+
     denied = packets(request(parameters, "SELECT count() FROM system.trace_log", restricted_url), framing)
     assert denied[-1]["packet"] == "exception" and "ACCESS_DENIED" in denied[-1]["exception"], denied
     check_query_samples(
-        parameters + "&send_profile_traces=1",
+        parameters + "&send_profile_traces=1&allow_introspection_functions=1",
         "SELECT ignore(range(1000000)) FORMAT Null",
         framing, url=restricted_url,
     )

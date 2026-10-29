@@ -6,11 +6,12 @@ from helpers.cluster import ClickHouseCluster
 
 cluster = ClickHouseCluster(__file__)
 main_configs = ["configs/remote_servers.xml", "configs/backups_disk.xml"]
-coordinator = cluster.add_instance("coordinator", main_configs=main_configs, external_dirs=["/backups/"], with_zookeeper=True, use_keeper=False)
-current = cluster.add_instance("current", main_configs=main_configs, external_dirs=["/backups/"], with_zookeeper=True, use_keeper=False)
+user_configs = ["configs/introspection.xml"]
+coordinator = cluster.add_instance("coordinator", main_configs=main_configs, user_configs=user_configs, external_dirs=["/backups/"], with_zookeeper=True, use_keeper=False)
+current = cluster.add_instance("current", main_configs=main_configs, user_configs=user_configs, external_dirs=["/backups/"], with_zookeeper=True, use_keeper=False)
 older = cluster.add_instance(
     "older",
-    main_configs=main_configs,
+    main_configs=main_configs, user_configs=user_configs,
     external_dirs=["/backups/"],
     image="clickhouse/clickhouse-server",
     tag="26.5.1.882",

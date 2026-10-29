@@ -11,9 +11,9 @@ import requests
 from helpers.cluster import ClickHouseCluster
 
 cluster = ClickHouseCluster(__file__)
-coordinator = cluster.add_instance("coordinator", stay_alive=True, main_configs=["configs/profile_sampling.xml"])
-middle = cluster.add_instance("middle", user_configs=["configs/delay.xml"], main_configs=["configs/profile_sampling.xml"])
-leaf = cluster.add_instance("leaf", main_configs=["configs/profile_sampling.xml"])
+coordinator = cluster.add_instance("coordinator", stay_alive=True, user_configs=["configs/introspection.xml"], main_configs=["configs/profile_sampling.xml"])
+middle = cluster.add_instance("middle", user_configs=["configs/delay.xml", "configs/introspection.xml"], main_configs=["configs/profile_sampling.xml"])
+leaf = cluster.add_instance("leaf", user_configs=["configs/introspection.xml"], main_configs=["configs/profile_sampling.xml"])
 nodes = (coordinator, middle, leaf)
 
 SETTINGS = {
@@ -182,7 +182,7 @@ def test_forwarded_losses(transport, coordinator_overflow):
             # Secondary settings are clamped before the request's memory tracker is configured.
             leaf.query(f"CREATE USER {user} IDENTIFIED WITH no_password SETTINGS memory_profiler_sample_probability = {probability} MIN {probability} MAX {probability}")
             users.callback(leaf.query, f"DROP USER {user}")
-            leaf.query(f"GRANT SELECT ON *.* TO {user}")
+            leaf.query(f"GRANT SELECT, INTROSPECTION ON *.* TO {user}")
             queries[probability] = remote("middle", f"SELECT * FROM remote('leaf', view({WORKLOAD}), '{user}')") + " FORMAT TSV"
 
         with failpoint(leaf, "profile_traces_queue_overflow"):

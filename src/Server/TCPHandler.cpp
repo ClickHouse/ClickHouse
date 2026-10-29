@@ -2071,7 +2071,7 @@ void TCPHandler::updateProfileTracesQueue(QueryState & state) const
         && state.query_context->getSettingsRef()[Setting::send_profile_traces];
     if (enabled && !state.profile_traces_queue)
     {
-        state.profile_traces_queue = InternalProfileTracesQueue::create(state.query_context->getCurrentQueryId());
+        state.profile_traces_queue = InternalProfileTracesQueue::create(state.query_context);
         CurrentThread::attachInternalProfileTracesQueue(state.profile_traces_queue);
     }
     else if (!enabled && state.profile_traces_queue)
@@ -2153,7 +2153,7 @@ void TCPHandler::sendProfileTraces(QueryState & state, const Block & block)
         initMaybeCompressedOut(state);
         state.profile_traces_block_out = std::make_unique<NativeWriter>(
             *state.maybe_compressed_out, client_tcp_protocol_version,
-            std::make_shared<const Block>(block.cloneEmpty()), getFormatSettings(state.query_context));
+            std::make_shared<const Block>(block.cloneEmpty()), getNativeWireFormatSettings(state.query_context));
     }
 
     writeVarUInt(Protocol::Server::ProfileTraces, *out);
