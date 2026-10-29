@@ -326,3 +326,16 @@ dot11 = (
 write_pcap(out_dir / "dot11.pcap", [(dot11, len(dot11))], linktype=105)
 radiotap = struct.pack("<BBHI", 0, 0, 9, 0x2) + bytes([0]) + dot11
 write_pcap(out_dir / "radiotap.pcap", [(radiotap, len(radiotap))], linktype=127)
+
+# Complete IPv6 TCP packets behind a BSD loopback header with the values of
+# `AF_INET6` that are in captures (`LINKTYPE_NULL`): 24 (NetBSD, OpenBSD), 28
+# (FreeBSD), 30 (macOS), little-endian, and 30 big-endian, written by a
+# big-endian host. The transport layer is decoded in every packet.
+loopback_ipv6 = [struct.pack(fmt, family) + ipv6(6, tcp) for fmt, family in (("<I", 24), ("<I", 28), ("<I", 30), (">I", 30))]
+write_pcap(out_dir / "null_ipv6.pcap", [(packet, len(packet)) for packet in loopback_ipv6], linktype=0)
+
+# Complete frames behind a PPI header that are dissected like the same frames
+# without it: the IEEE 802.3 frame with `SNAP` from `dot3.pcap` (`LINKTYPE_ETHERNET`)
+# and a raw IPv4 UDP packet (`LINKTYPE_RAW`, 101, which is not the value of `DLT_RAW`).
+ppi_frames = [struct.pack("<BBHI", 0, 0, 8, 1) + snap_ip, struct.pack("<BBHI", 0, 0, 8, 101) + ipv4(17, udp)]
+write_pcap(out_dir / "ppi_frames.pcap", [(packet, len(packet)) for packet in ppi_frames], linktype=192)

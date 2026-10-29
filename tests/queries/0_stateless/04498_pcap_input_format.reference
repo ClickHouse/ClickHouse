@@ -190,6 +190,14 @@ truncated_null.pcap	1	14	66	LOOPBACK	['LOOPBACK','RAW']	\N		4	TCP	14
 truncated_sll.pcap	1	26	44	SLL	['SLL','RAW']	\N		4	UDP	26
 ppi.pcap	1	84	84	PPI	['PPI','ETHERNET_II','IP','TCP','RAW']	\N		4	TCP	84
 ppi.pcap	2	26	84	PPI	['PPI','ETHERNET_II','RAW']	\N		4		26
+--- IPv6 behind BSD loopback headers with the address families of the capturing systems ---
+1	LOOPBACK	['LOOPBACK','IPv6','TCP','RAW']	6	2001:db8::1	2001:db8::2	TCP	12345	80	ACK,PSH	22
+2	LOOPBACK	['LOOPBACK','IPv6','TCP','RAW']	6	2001:db8::1	2001:db8::2	TCP	12345	80	ACK,PSH	22
+3	LOOPBACK	['LOOPBACK','IPv6','TCP','RAW']	6	2001:db8::1	2001:db8::2	TCP	12345	80	ACK,PSH	22
+4	LOOPBACK	['LOOPBACK','IPv6','TCP','RAW']	6	2001:db8::1	2001:db8::2	TCP	12345	80	ACK,PSH	22
+--- complete frames behind a PPI header: IEEE 802.3 with SNAP and raw IP ---
+1	PPI	['PPI','IEEE802_3','SNAP','IP','UDP']		4	::ffff:192.0.2.1	::ffff:192.0.2.2	UDP	68	67
+2	PPI	['PPI','IP','UDP']		4	::ffff:192.0.2.1	::ffff:192.0.2.2	UDP	68	67
 --- a link type that is not dissected yields rows with the capture metadata only ---
 1	RAW	['RAW']	48	48	\N		\N
 --- IEEE 802.3 frames: LLC, and IP behind SNAP ---

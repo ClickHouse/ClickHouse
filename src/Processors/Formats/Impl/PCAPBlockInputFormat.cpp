@@ -328,15 +328,103 @@ Tins::PDU * dissectDot3(const uint8_t * data, UInt32 caplen, UInt16 length)
     return dot3.release();
 }
 
+/// The protocol named by the address family of a BSD loopback header. The address family is in the
+/// byte order of the capturing host. `AF_INET` is 2 everywhere, while `AF_INET6` is 24 on NetBSD and
+/// OpenBSD, 28 on FreeBSD and 30 on macOS (see `LINKTYPE_NULL`). Returns `UNKNOWN` for the other
+/// address families.
+Tins::PDU::PDUType loopbackFamilyProtocol(UInt32 family)
+{
+    if (family > 0xFFFF)
+        family = std::byteswap(family);
+    if (family == 2)
+        return Tins::PDU::IP;
+    if (family == 24 || family == 28 || family == 30)
+        return Tins::PDU::IPv6;
+    return Tins::PDU::UNKNOWN;
+}
+
+/// The size of the BSD loopback header: the address family of the packet.
+constexpr UInt32 loopback_header_size = 4;
+
+/// Dissects a BSD loopback frame that has at least the complete header. `Tins::Loopback` takes
+/// the address family for the value of `PF_INET6` of the reading host, which is not one of the
+/// values in a capture file, and does not handle the byte order, so the layers are assembled here.
+/// When `dissect_packet` is false, the carried packet is kept as a raw PDU.
+Tins::PDU * dissectLoopback(const uint8_t * data, UInt32 caplen, bool dissect_packet)
+{
+    auto loopback = std::make_unique<Tins::Loopback>();
+    UInt32 family = 0;
+    memcpy(&family, data, loopback_header_size);
+    /// `Tins::Loopback` keeps the address family as it was read.
+    loopback->family(family);
+
+    if (caplen > loopback_header_size)
+    {
+        const uint8_t * packet = data + loopback_header_size;
+        const UInt32 packet_size = caplen - loopback_header_size;
+        const auto protocol = dissect_packet ? loopbackFamilyProtocol(family) : Tins::PDU::UNKNOWN;
+        if (protocol == Tins::PDU::IP)
+            loopback->inner_pdu(new Tins::IP(packet, packet_size));
+        else if (protocol == Tins::PDU::IPv6)
+            loopback->inner_pdu(new Tins::IPv6(packet, packet_size));
+        else
+            loopback->inner_pdu(new Tins::RawPDU(packet, packet_size));
+    }
+    return loopback.release();
+}
+
+/// The PPI header names the link type of the frame it carries with a `LINKTYPE_` value. The
+/// `LINKTYPE_` values are the same as the `DLT_` values for all the link types dissected here except
+/// `LINKTYPE_RAW`, which is not the same as `DLT_RAW`.
+int pcapLinkTypeToDLT(UInt32 link_type)
+{
+    static constexpr UInt32 linktype_raw = 101;
+    if (link_type == linktype_raw)
+        return DLT_RAW;
+    return static_cast<int>(link_type);
+}
+
+/// The size of the fixed part of the PPI header: a version, flags, the length of the whole header,
+/// little-endian, which includes the fields that follow the fixed part, and the link type of the
+/// carried frame.
+constexpr UInt32 ppi_fixed_header_size = 8;
+
+Tins::PDU * dissectFrame(int dlt, const uint8_t * data, UInt32 caplen);
+
+/// Dissects a PPI frame: the PPI header, and the frame it carries, which is dissected by
+/// `dissectFrame` according to the link type named in the header. `Tins::PPI` dissects the
+/// carried frame itself, but neither as a raw IP packet nor as an IEEE 802.3 frame with `SNAP`,
+/// so only the header is given to it. A frame whose PPI header was cut or is invalid is kept raw.
+Tins::PDU * dissectPPI(const uint8_t * data, UInt32 caplen)
+{
+    if (caplen < ppi_fixed_header_size)
+        return new Tins::RawPDU(data, caplen);
+
+    const UInt32 ppi_length = static_cast<UInt32>(data[2] | (data[3] << 8));
+    if (ppi_length < ppi_fixed_header_size || ppi_length > caplen)
+        return new Tins::RawPDU(data, caplen);
+
+    auto ppi = std::make_unique<Tins::PPI>(data, ppi_length);
+    if (ppi_length < caplen)
+        ppi->inner_pdu(dissectFrame(pcapLinkTypeToDLT(ppi->dlt()), data + ppi_length, caplen - ppi_length));
+    return ppi.release();
+}
+
 /// Dissects a captured frame into a PDU chain according to the link type of the capture.
 /// `libtins` dissects Ethernet, Linux cooked capture, BSD loopback, PPI and 802.11 frames, but
 /// returns a raw PDU for the raw IP link types, so they are dispatched here: `DLT_RAW` carries
 /// either IP version, told apart by the version nibble, while `DLT_IPV4` and `DLT_IPV6` carry
 /// only one. `libtins` also takes every `DLT_EN10MB` frame for Ethernet II, so the IEEE 802.3
-/// frames, whose type field is a length of at most 1500, are dispatched here as well. The frames
-/// of all the other link types are kept as a single raw PDU.
+/// frames, whose type field is a length of at most 1500, are dispatched here as well, and so are
+/// the BSD loopback frames (see `dissectLoopback`) and the PPI frames (see `dissectPPI`). The
+/// frames of all the other link types are kept as a single raw PDU.
 Tins::PDU * dissectFrameLayers(int dlt, const uint8_t * data, UInt32 caplen)
 {
+    if (dlt == DLT_NULL && caplen >= loopback_header_size)
+        return dissectLoopback(data, caplen, /*dissect_packet=*/ true);
+    if (dlt == DLT_PPI)
+        return dissectPPI(data, caplen);
+
     if (dlt == DLT_EN10MB && caplen >= ethernet_header_size)
     {
         const UInt16 type_or_length = static_cast<UInt16>((data[12] << 8) | data[13]);
@@ -416,13 +504,11 @@ Tins::PDU * dissectCompleteEthernetHeaders(const uint8_t * data, UInt32 caplen)
     return root.release();
 }
 
-Tins::PDU * dissectFrame(int dlt, const uint8_t * data, UInt32 caplen);
-
 /// Rebuilds the PDU chain of a frame that `libtins` rejected with `malformed_packet` from its outer
 /// headers that were captured completely, and keeps the rest of the frame as a raw PDU: the
 /// Ethernet headers (see `dissectCompleteEthernetHeaders`), the Linux cooked capture header and
-/// its 802.1Q tags, the BSD loopback header, or the PPI header followed by the frame it carries,
-/// which is dissected according to the link type named in the PPI header. A frame cut inside its
+/// its 802.1Q tags, or the BSD loopback header. A PPI frame never gets here: the frame it carries
+/// is dissected by `dissectFrame` on its own (see `dissectPPI`). A frame cut inside its
 /// outermost header, a raw IP frame and a frame of another link type are kept raw as a whole.
 /// `libtins` offers no way to build a radiotap header without the 802.11 frame it carries, so a
 /// radiotap frame whose 802.11 header was cut is kept raw as well.
@@ -442,35 +528,8 @@ Tins::PDU * dissectCompleteOuterHeaders(int dlt, const uint8_t * data, UInt32 ca
         return sll.release();
     }
 
-    /// The address family is in the byte order of the capturing host, and `Tins::Loopback` keeps it
-    /// as it was read. Its constructor from bytes always dissects the carried packet, so the header
-    /// is filled in here.
-    static constexpr UInt32 loopback_header_size = 4;
     if (dlt == DLT_NULL && caplen >= loopback_header_size)
-    {
-        auto loopback = std::make_unique<Tins::Loopback>();
-        UInt32 family = 0;
-        memcpy(&family, data, loopback_header_size);
-        loopback->family(family);
-        if (caplen > loopback_header_size)
-            loopback->inner_pdu(new Tins::RawPDU(data + loopback_header_size, caplen - loopback_header_size));
-        return loopback.release();
-    }
-
-    /// The PPI header starts with a version, flags and its own length, little-endian, which
-    /// includes the fields that follow the fixed part.
-    static constexpr UInt32 ppi_fixed_header_size = 8;
-    if (dlt == DLT_PPI && caplen >= ppi_fixed_header_size)
-    {
-        const UInt32 ppi_length = static_cast<UInt32>(data[2] | (data[3] << 8));
-        if (ppi_length >= ppi_fixed_header_size && ppi_length <= caplen)
-        {
-            auto ppi = std::make_unique<Tins::PPI>(data, ppi_length);
-            if (ppi_length < caplen)
-                ppi->inner_pdu(dissectFrame(static_cast<int>(ppi->dlt()), data + ppi_length, caplen - ppi_length));
-            return ppi.release();
-        }
-    }
+        return dissectLoopback(data, caplen, /*dissect_packet=*/ false);
 
     return new Tins::RawPDU(data, caplen);
 }
@@ -526,18 +585,7 @@ Tins::PDU::PDUType carriedProtocol(const Tins::PDU & layer)
     else if (const auto * sll = dynamic_cast<const Tins::SLL *>(&layer))
         type = sll->protocol();
     else if (const auto * loopback = dynamic_cast<const Tins::Loopback *>(&layer))
-    {
-        /// The address family is in the byte order of the capturing host. `AF_INET` is 2 everywhere,
-        /// while `AF_INET6` is 24 on NetBSD and OpenBSD, 28 on FreeBSD and 30 on macOS.
-        UInt32 family = loopback->family();
-        if (family > 0xFFFF)
-            family = std::byteswap(family);
-        if (family == 2)
-            return Tins::PDU::IP;
-        if (family == 24 || family == 28 || family == 30)
-            return Tins::PDU::IPv6;
-        return Tins::PDU::UNKNOWN;
-    }
+        return loopbackFamilyProtocol(loopback->family());
     else
         return Tins::PDU::UNKNOWN;
     return Tins::Internals::ether_type_to_pdu_flag(static_cast<Tins::Constants::Ethernet::e>(type));

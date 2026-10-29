@@ -52,3 +52,9 @@ rewrite each other's files.
 - `dot11.pcap`, `radiotap.pcap` — an IEEE 802.11 data frame carrying an IPv4
   UDP packet behind an LLC header with `SNAP` (`LINKTYPE_IEEE802_11`), and the
   same frame behind a radiotap header (`LINKTYPE_IEEE802_11_RADIOTAP`).
+- `null_ipv6.pcap` — complete IPv6 TCP packets behind a BSD loopback header with
+  the `AF_INET6` values of NetBSD and OpenBSD (24), FreeBSD (28) and macOS (30),
+  in both byte orders, so the transport layer is decoded in each of them.
+- `ppi_frames.pcap` — the IEEE 802.3 frame with `SNAP` from `dot3.pcap` and a raw
+  IPv4 UDP packet (`LINKTYPE_RAW`) behind a PPI header, so they are dissected
+  like the same frames without it.

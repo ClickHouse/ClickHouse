@@ -244,6 +244,18 @@ for f in truncated_null.pcap truncated_sll.pcap ppi.pcap; do
     ORDER BY number FORMAT TSV"
 done
 
+echo "--- IPv6 behind BSD loopback headers with the address families of the capturing systems ---"
+$CLICKHOUSE_LOCAL -q "
+SELECT number, link_type, protocols, ip_version, src_addr, dst_addr, ip_protocol, src_port, dst_port, tcp_flags, payload_length
+FROM file('$DATA_DIR/null_ipv6.pcap', PCAP)
+ORDER BY number FORMAT TSV"
+
+echo "--- complete frames behind a PPI header: IEEE 802.3 with SNAP and raw IP ---"
+$CLICKHOUSE_LOCAL -q "
+SELECT number, link_type, protocols, eth_type, ip_version, src_addr, dst_addr, ip_protocol, src_port, dst_port
+FROM file('$DATA_DIR/ppi_frames.pcap', PCAP)
+ORDER BY number FORMAT TSV"
+
 echo "--- a link type that is not dissected yields rows with the capture metadata only ---"
 $CLICKHOUSE_LOCAL -q "
 SELECT number, link_type, protocols, capture_length, length(raw), ip_version, ip_protocol, src_port
