@@ -3013,6 +3013,13 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsFinal(
             partition_minmax.push_back(std::move(per_col));
         }
 
+        /// The layers of a partition are ordered by the primary key ascending. When reading in reverse,
+        /// reverse them, so that the outputs of the partition follow the read direction: the
+        /// sequential-partition path below concatenates them as they are. Other consumers do not
+        /// depend on the order of the outputs.
+        if (read_in_reverse)
+            std::reverse(pipes.begin(), pipes.end());
+
         merging_pipes.emplace_back(Pipe::unitePipes(std::move(pipes)));
     }
 
@@ -3076,6 +3083,23 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsFinal(
             {
                 if (sorting_key_columns[sk] == minmax_column_names[mm])
                 {
+                    /// The minmax bounds must cover every key in the partition, otherwise the
+                    /// non-overlap check below proves nothing. `ColumnVector::getExtremes` skips
+                    /// `NaN`, so a partition with both `0` and `NaN` gets bounds `[0, 0]`, while
+                    /// `NaN` sorts after every finite value. Allow only types whose values are all
+                    /// covered by the bounds.
+                    const auto partition_key_type = removeLowCardinalityAndNullable(
+                        storage_snapshot->metadata->getSortingKey().data_types.at(sk));
+                    if (!isInteger(partition_key_type)
+                        && !isDecimal(partition_key_type)
+                        && !isEnum(partition_key_type)
+                        && !isDateOrDate32OrTimeOrTime64OrDateTimeOrDateTime64(partition_key_type)
+                        && !isStringOrFixedString(partition_key_type)
+                        && !isUUID(partition_key_type)
+                        && !isIPv4(partition_key_type)
+                        && !isIPv6(partition_key_type))
+                        break;
+
                     /// Partitions must be consumed in the order the streams produce rows: a
                     /// `reverse` sorting key column flips it, and so does reading in reverse
                     /// order (`Replacing` with `optimize_read_in_reverse_order_final`). Both
