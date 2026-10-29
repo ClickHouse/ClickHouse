@@ -3,6 +3,8 @@
 -- Such rows must not be counted towards `limit_hint`, otherwise `SELECT DISTINCT ... LIMIT N` stops
 -- a stream after N repeats of a single key and loses the distinct values that come after them.
 
+-- The CI config sets `max_rows_in_distinct`, which disables the bloom filter and `check_only` modes.
+SET max_rows_in_distinct = 0;
 SET distinct_set_limit_for_enabling_bloom_filter = 1;
 -- An unreachable pass ratio disables the bloom filter after the first chunk, so the plain hash set
 -- grows past twice the limit above and the transform switches to `check_only` almost immediately.
