@@ -4359,6 +4359,92 @@ def test_user_managed_slot_with_unique_consumer_identifier_rejected(started_clus
     ).strip()
 
 
+@pytest.mark.parametrize("use_schema_list", [True, False])
+def test_detach_table_interrupted_by_server_termination(started_cluster, use_schema_list):
+    # The server is terminated after `DETACH TABLE ... PERMANENTLY` removed the table from the publication, but before
+    # it dropped the nested table. On attach, the detach is finished: with `materialized_postgresql_schema_list` the
+    # leftover nested table must not be required in the publication, which would stop the replication of all tables,
+    # and with `materialized_postgresql_tables_list` it must not hide the table from a later `ATTACH TABLE`.
+    table_a = "interrupted_detach_a"
+    table_b = "interrupted_detach_b"
+    mat_db = "interrupted_detach_database"
+    failpoint = "materialized_postgresql_pause_before_detach_table_drop"
+    for table in (table_a, table_b):
+        pg_manager.create_postgres_table(table)
+        instance.query(
+            f"INSERT INTO postgres_database.{table} SELECT number, number FROM numbers(0, 10)"
+        )
+    if use_schema_list:
+        # Two schemas, so that the table names have the schema prefix that the replication stream uses.
+        pg_manager.create_postgres_schema("interrupted_detach_schema")
+        settings = ["materialized_postgresql_schema_list = 'public, interrupted_detach_schema'"]
+        name_b = f"public.{table_b}"
+        schema_name = "public"
+    else:
+        settings = [f"materialized_postgresql_tables_list = '{table_a},{table_b}'"]
+        name_b = table_b
+        schema_name = ""
+    pg_manager.create_materialized_db(
+        ip=started_cluster.postgres_ip,
+        port=started_cluster.postgres_port,
+        materialized_database=mat_db,
+        settings=settings
+        + [
+            "materialized_postgresql_backoff_min_ms = 100",
+            "materialized_postgresql_backoff_max_ms = 100",
+        ],
+    )
+    for table in (table_a, table_b):
+        check_tables_are_synchronized(
+            instance, table, materialized_database=mat_db, schema_name=schema_name
+        )
+
+    cursor = pg_manager.get_db_cursor()
+    publication = get_single_publication(cursor)
+
+    def is_published(table):
+        cursor.execute(
+            "SELECT count(*) FROM pg_publication_tables WHERE pubname = %s AND tablename = %s",
+            (publication, table),
+        )
+        return cursor.fetchone()[0] == 1
+
+    def detach_table():
+        try:
+            instance.query(f"DETACH TABLE {mat_db}.`{name_b}` PERMANENTLY")
+        except Exception:
+            pass  # The server is terminated while the query runs.
+
+    instance.query(f"SYSTEM ENABLE FAILPOINT {failpoint}")
+    detach_thread = threading.Thread(target=detach_table)
+    detach_thread.start()
+    instance.query(f"SYSTEM WAIT FAILPOINT {failpoint} PAUSE")
+    assert not is_published(table_b)
+    instance.stop_clickhouse(kill=True)
+    detach_thread.join()
+    instance.start_clickhouse()
+
+    instance.query(
+        f"INSERT INTO postgres_database.{table_a} SELECT number, number FROM numbers(10, 10)"
+    )
+    check_tables_are_synchronized(
+        instance, table_a, materialized_database=mat_db, schema_name=schema_name
+    )
+    assert 0 == int(instance.query(f"EXISTS TABLE {mat_db}.`{name_b}`"))
+    assert not is_published(table_b)
+
+    instance.query(f"ATTACH TABLE {mat_db}.`{name_b}`")
+    instance.query(
+        f"INSERT INTO postgres_database.{table_b} SELECT number, number FROM numbers(10, 10)"
+    )
+    check_tables_are_synchronized(
+        instance, table_b, materialized_database=mat_db, schema_name=schema_name
+    )
+    assert 20 == int(instance.query(f"SELECT count() FROM {mat_db}.`{name_b}`"))
+
+    pg_manager.drop_materialized_db(mat_db)
+
+
 if __name__ == "__main__":
     cluster.start()
     input("Cluster created, press any key to destroy...")

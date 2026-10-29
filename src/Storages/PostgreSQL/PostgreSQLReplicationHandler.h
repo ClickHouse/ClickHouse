@@ -78,9 +78,18 @@ public:
     /// Removes the entry written by markSnapshotIncomplete, if the nested table could not be created.
     void removeSnapshotPosition(const String & table_name) const;
 
-    /// Called by `DETACH TABLE ... PERMANENTLY` before the table is removed from the persisted table list: if the
-    /// detach is interrupted after that, the publication entry of the table is removed on the next attach.
-    void markPublicationEntryOwned(const String & table_name) const;
+    /// The file where the database engine persists the tables whose `DETACH TABLE ... PERMANENTLY` has started (see
+    /// `detaching_tables_path`). Must be called before startSynchronization.
+    void setDetachingTablesFile(const String & path);
+
+    /// Called by `DETACH TABLE ... PERMANENTLY` before the table is removed from the persisted table list or from the
+    /// publication. If the detach is interrupted after that, the next attach finishes it: drops the nested table and
+    /// removes the publication entry of the table.
+    void markTableDetaching(const String & table_name) const;
+
+    /// Called once the nested table of a detached table is dropped, if the detach did not reach the point after which
+    /// it is finished on attach, or before `ATTACH TABLE` creates a new nested table.
+    void removeDetachingTable(const String & table_name) const;
 
     ASTPtr getCreateNestedTableQuery(StorageMaterializedPostgreSQL * storage, const String & table_name);
 
@@ -182,8 +191,8 @@ private:
         /// was terminated while loading it) holds only a part of the rows, so it is dropped and loaded again.
         bool completed = false;
         /// True if the publication entry of the table is removed when the table turns out not to be replicated on
-        /// attach (an interrupted `ATTACH TABLE` or `DETACH TABLE ... PERMANENTLY`). False if `ATTACH TABLE` reused
-        /// a publication entry that existed before it: then it is kept, as the rollback of a failed `ATTACH TABLE` does.
+        /// attach (an interrupted `ATTACH TABLE`). False if `ATTACH TABLE` reused a publication entry that existed
+        /// before it: then it is kept, as the rollback of a failed `ATTACH TABLE` does.
         bool owns_publication_entry = false;
     };
     /// `table_name` -> its snapshot position.
@@ -191,6 +200,15 @@ private:
     SnapshotPositions loadSnapshotPositions() const;
     void saveSnapshotPositions(const SnapshotPositions & positions) const;
     void markSnapshotCompleted(const String & table_name) const;
+
+    /// See `detaching_tables_path`.
+    std::set<String> loadDetachingTables() const;
+    void saveDetachingTables(const std::set<String> & tables) const;
+
+    /// Finishes the `DETACH TABLE ... PERMANENTLY` queries interrupted by a server termination, or forgets the ones
+    /// that did not reach the point after which the table is not replicated anymore. Runs on attach before the
+    /// replication state is checked: a half-detached table must not be required in the publication.
+    void finishInterruptedDetaches(pqxx::nontransaction & tx);
 
     /// Drops the nested table of a table whose snapshot did not complete.
     void dropNestedTable(StorageMaterializedPostgreSQL * materialized_storage) const;
@@ -290,6 +308,11 @@ private:
     /// instead, because it does not stream changes of other tables.
     DiskPtr snapshot_positions_disk;
     String snapshot_positions_path;
+
+    /// The tables whose `DETACH TABLE ... PERMANENTLY` has started and whose nested table is not dropped yet, so that
+    /// a detach interrupted by a server termination is finished on attach, rather than leaving a nested table that is
+    /// neither replicated nor published (one table per line). Stored on `snapshot_positions_disk`.
+    String detaching_tables_path;
 
     bool replication_handler_initialized = false;
 

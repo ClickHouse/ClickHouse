@@ -64,6 +64,7 @@ namespace FailPoints
 {
     extern const char database_materialized_postgresql_pause_before_table_drop[];
     extern const char materialized_postgresql_pause_after_attach_table_nested_created[];
+    extern const char materialized_postgresql_pause_before_detach_table_drop[];
 }
 
 namespace ErrorCodes
@@ -136,6 +137,8 @@ void DatabaseMaterializedPostgreSQL::startSynchronization()
     /// A dot-prefixed file is not taken for table metadata, and is removed with the metadata directory by `DROP DATABASE`.
     replication_handler->setSnapshotPositionsFile(
         getDisk(), (std::filesystem::path(getMetadataPath()) / ".materialized_postgresql_snapshot_positions").string());
+    replication_handler->setDetachingTablesFile(
+        (std::filesystem::path(getMetadataPath()) / ".materialized_postgresql_detaching_tables").string());
 
     std::set<String> tables_to_replicate;
     std::set<String> new_unmaterialized_published_tables;
@@ -500,11 +503,13 @@ void DatabaseMaterializedPostgreSQL::createTable(ContextPtr local_context, const
 
     /// The nested table is persisted below, before its snapshot is loaded. Mark its snapshot incomplete first: otherwise,
     /// after a restart in between, a table discovered from `materialized_postgresql_schema_list` would be resumed with
-    /// an empty nested table. An existing table is not marked: the creation below fails for it.
+    /// an empty nested table. An existing table is not marked: the creation below fails for it. A leftover record of
+    /// a detach whose nested table is dropped already is removed, so that the next attach does not detach this table.
     bool marked_snapshot_incomplete = false;
     if (!DatabaseAtomic::tryGetTable(table_name, getContext()))
     {
         std::lock_guard lock(handler_mutex);
+        replication_handler->removeDetachingTable(table_name);
         replication_handler->markSnapshotIncomplete(table_name);
         marked_snapshot_incomplete = true;
     }
@@ -725,21 +730,42 @@ void DatabaseMaterializedPostgreSQL::detachTablePermanently(ContextPtr, const St
             addUnmaterializedTablesListChange(new_settings, table_name);
         }
 
+        /// If the server is terminated from now on until the nested table is dropped, the next attach finishes the
+        /// detach (see `PostgreSQLReplicationHandler::finishInterruptedDetaches`). Otherwise the nested table would be
+        /// left behind: with `materialized_postgresql_schema_list` the table would be discovered from it and required
+        /// in the publication, which would stop the replication of all tables, and with a table list it would hide the
+        /// table from a later `ATTACH TABLE`.
+        {
+            std::lock_guard lock(handler_mutex);
+            replication_handler->markTableDetaching(table_name);
+        }
+
         /// See the comment in attachTable about `materialized_postgresql_schema_list`.
         if ((*settings)[MaterializedPostgreSQLSetting::materialized_postgresql_schema_list].value.empty())
         {
-            /// If the server is terminated after the table list is updated, the next attach finishes the detach, and it
-            /// must remove the publication entry even if the `ATTACH TABLE` of this table reused an existing one.
+            try
             {
-                std::lock_guard lock(handler_mutex);
-                replication_handler->markPublicationEntryOwned(table_name);
+                auto alter_query = createAlterSettingsQuery(new_settings);
+
+                auto current_context = Context::createCopy(getContext()->getGlobalContext());
+                current_context->setInternalQuery(true);
+                InterpreterAlterQuery(alter_query, current_context).execute();
             }
-
-            auto alter_query = createAlterSettingsQuery(new_settings);
-
-            auto current_context = Context::createCopy(getContext()->getGlobalContext());
-            current_context->setInternalQuery(true);
-            InterpreterAlterQuery(alter_query, current_context).execute();
+            catch (...)
+            {
+                /// The table is still replicated. If the record cannot be removed, the next attach does it, because
+                /// the table is still in the persisted table list.
+                try
+                {
+                    std::lock_guard lock(handler_mutex);
+                    replication_handler->removeDetachingTable(table_name);
+                }
+                catch (...)
+                {
+                    tryLogCurrentException(log, "Failed to remove the detach record after a failed DETACH TABLE PERMANENTLY");
+                }
+                throw;
+            }
         }
 
         auto nested = table_to_delete->as<StorageMaterializedPostgreSQL>()->getNested();
@@ -749,6 +775,8 @@ void DatabaseMaterializedPostgreSQL::detachTablePermanently(ContextPtr, const St
         std::lock_guard lock(handler_mutex);
         replication_handler->removeTableFromReplication(table_name, /* remove_from_publication */ true);
 
+        FailPointInjection::pauseFailPoint(FailPoints::materialized_postgresql_pause_before_detach_table_drop);
+
         try
         {
             auto current_context = Context::createCopy(getContext()->getGlobalContext());
@@ -757,12 +785,8 @@ void DatabaseMaterializedPostgreSQL::detachTablePermanently(ContextPtr, const St
         }
         catch (Exception & e)
         {
-            /// We already removed this table from replication and adding it back will be an overkill..
-            /// TODO: this is bad, we leave a table lying somewhere not dropped, and if user will want
-            /// to move it back into replication, he will fail to do so because there is undropped nested with the same name.
-            /// This can also happen if we crash after removing table from replication and before dropping nested.
-            /// As a solution, we could drop a table if it already exists and add a fresh one instead for these two cases.
-            /// TODO: sounds good.
+            /// We already removed this table from replication and adding it back will be an overkill. The record of the
+            /// detach is kept, so that the next attach drops the nested table that is left behind.
             {
                 std::lock_guard tables_lock(tables_mutex);
                 materialized_tables.erase(table_name);
@@ -776,6 +800,8 @@ void DatabaseMaterializedPostgreSQL::detachTablePermanently(ContextPtr, const St
             std::lock_guard tables_lock(tables_mutex);
             materialized_tables.erase(table_name);
         }
+
+        replication_handler->removeDetachingTable(table_name);
     }
 }
 

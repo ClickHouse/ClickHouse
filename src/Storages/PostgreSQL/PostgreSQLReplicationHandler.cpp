@@ -550,15 +550,122 @@ void PostgreSQLReplicationHandler::removeSnapshotPosition(const String & table_n
 }
 
 
-void PostgreSQLReplicationHandler::markPublicationEntryOwned(const String & table_name) const
+void PostgreSQLReplicationHandler::setDetachingTablesFile(const String & path)
 {
-    auto positions = loadSnapshotPositions();
-    auto it = positions.find(table_name);
-    if (it == positions.end() || it->second.owns_publication_entry)
+    detaching_tables_path = path;
+}
+
+
+std::set<String> PostgreSQLReplicationHandler::loadDetachingTables() const
+{
+    std::set<String> tables;
+    if (!snapshot_positions_disk || detaching_tables_path.empty() || !snapshot_positions_disk->existsFile(detaching_tables_path))
+        return tables;
+
+    const String content = readMetadataFile(snapshot_positions_disk, detaching_tables_path);
+    ReadBufferFromString in(content);
+    while (!in.eof())
+    {
+        String table_name;
+        readEscapedString(table_name, in);
+        assertChar('\n', in);
+        tables.insert(std::move(table_name));
+    }
+    return tables;
+}
+
+
+void PostgreSQLReplicationHandler::saveDetachingTables(const std::set<String> & tables) const
+{
+    if (!snapshot_positions_disk || detaching_tables_path.empty())
         return;
 
-    it->second.owns_publication_entry = true;
-    saveSnapshotPositions(positions);
+    if (tables.empty())
+    {
+        snapshot_positions_disk->removeFileIfExists(detaching_tables_path);
+        return;
+    }
+
+    WriteBufferFromOwnString out;
+    for (const auto & table_name : tables)
+    {
+        writeEscapedString(table_name, out);
+        writeChar('\n', out);
+    }
+
+    const String tmp_path = detaching_tables_path + ".tmp";
+    writeMetadataFile(snapshot_positions_disk, tmp_path, out.str(), /* fsync_metadata */ true);
+    snapshot_positions_disk->replaceFile(tmp_path, detaching_tables_path);
+}
+
+
+void PostgreSQLReplicationHandler::markTableDetaching(const String & table_name) const
+{
+    auto tables = loadDetachingTables();
+    if (tables.insert(table_name).second)
+        saveDetachingTables(tables);
+}
+
+
+void PostgreSQLReplicationHandler::removeDetachingTable(const String & table_name) const
+{
+    auto tables = loadDetachingTables();
+    if (tables.erase(table_name))
+        saveDetachingTables(tables);
+}
+
+
+void PostgreSQLReplicationHandler::finishInterruptedDetaches(pqxx::nontransaction & tx)
+{
+    auto detaching_tables = loadDetachingTables();
+    if (detaching_tables.empty())
+        return;
+
+    auto snapshot_positions = loadSnapshotPositions();
+    std::optional<std::set<std::pair<String, String>>> published;
+
+    for (const auto & table_name : detaching_tables)
+    {
+        /// Without `materialized_postgresql_schema_list` the detach removes the table from the persisted table list
+        /// first. If the table is still replicated, the server was terminated before that, and nothing else was done:
+        /// the table stays replicated. With `materialized_postgresql_schema_list` the table is discovered from its
+        /// nested table, so nothing tells whether its publication entry was removed already: finish the detach.
+        if (schema_list.empty() && materialized_storages.contains(table_name))
+        {
+            LOG_INFO(log, "`DETACH TABLE ... PERMANENTLY` of table {}.{} was interrupted before it took effect, the table "
+                     "stays replicated", postgres_database, table_name);
+            continue;
+        }
+
+        LOG_INFO(log, "`DETACH TABLE ... PERMANENTLY` of table {}.{} was interrupted, finishing it", postgres_database, table_name);
+
+        auto nested_context = StorageMaterializedPostgreSQL::makeNestedTableContext(getContext()->getGlobalContext());
+        const StorageID nested_table_id(current_database_name, table_name);
+        if (DatabaseCatalog::instance().tryGetTable(nested_table_id, nested_context))
+        {
+            /// The drop query is executed in a copy of the first context, which must be internal too: otherwise the
+            /// database does not find the nested table of a table that it does not replicate.
+            InterpreterDropQuery::executeDropQuery(
+                ASTDropQuery::Kind::Drop, nested_context, nested_context, nested_table_id,
+                /* sync */ true, /* ignore_sync_setting */ true);
+        }
+
+        if (!published)
+            published = fetchPublishedTablePairs(tx);
+        const auto resolved_table = resolveSchemaAndTableName(tx, table_name);
+        if (published->contains(resolved_table))
+        {
+            removeTableFromPublication(tx, table_name);
+            published->erase(resolved_table);
+        }
+
+        snapshot_positions.erase(table_name);
+        if (materialized_storages.erase(table_name))
+            tables_skipped_on_attach.insert(table_name);
+    }
+
+    saveSnapshotPositions(snapshot_positions);
+    saveDetachingTables({});
 }
 
 
@@ -950,6 +1057,8 @@ void PostgreSQLReplicationHandler::startSynchronization(bool throw_on_error)
     postgres::Connection replication_connection(connection_info, /* replication */true);
     pqxx::nontransaction tx(replication_connection.getRef());
     adoptLegacyReplicationIdentityIfNeeded(tx);
+    if (is_attach && is_materialized_postgresql_database)
+        finishInterruptedDetaches(tx);
     const bool bootstrap_after_never_synchronized_run = is_attach && checkReplicationStateOnAttach(tx);
     createPublicationIfNeeded(tx);
 
@@ -1057,9 +1166,9 @@ void PostgreSQLReplicationHandler::startSynchronization(bool throw_on_error)
         auto snapshot_positions = loadSnapshotPositions();
 
         /// A snapshot position of a table that is not replicated is left by an `ATTACH TABLE` that did not complete (the
-        /// server was terminated before `materialized_postgresql_tables_list` was updated), or by a `DETACH TABLE ...
-        /// PERMANENTLY` that did not complete after it was updated. Finish the rollback, or the detach: the nested table
-        /// would otherwise hide the table from a retried `ATTACH TABLE`, and the publication would stream its changes.
+        /// server was terminated before `materialized_postgresql_tables_list` was updated). Finish the rollback: the
+        /// nested table would otherwise hide the table from a retried `ATTACH TABLE`, and the publication would stream
+        /// its changes. An interrupted `DETACH TABLE ... PERMANENTLY` is finished by finishInterruptedDetaches.
         for (const auto & [table_name, position] : snapshot_positions)
         {
             if (materialized_storages.contains(table_name))
@@ -1069,8 +1178,8 @@ void PostgreSQLReplicationHandler::startSynchronization(bool throw_on_error)
             const StorageID nested_table_id(current_database_name, table_name);
             if (DatabaseCatalog::instance().tryGetTable(nested_table_id, nested_context))
             {
-                LOG_INFO(log, "Table {}.{} is not replicated, but has a nested table left by an interrupted `ATTACH TABLE` "
-                         "or `DETACH TABLE ... PERMANENTLY`, it will be dropped", postgres_database, table_name);
+                LOG_INFO(log, "Table {}.{} is not replicated, but has a nested table left by an interrupted `ATTACH TABLE`, "
+                         "it will be dropped", postgres_database, table_name);
                 /// The drop query is executed in a copy of the first context, which must be internal too: otherwise the
                 /// database does not find the nested table of a table that it does not replicate.
                 InterpreterDropQuery::executeDropQuery(
