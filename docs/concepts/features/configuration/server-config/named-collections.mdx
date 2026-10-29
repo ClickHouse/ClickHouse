@@ -492,8 +492,6 @@ SELECT * FROM remote(remote1, database = default, table = test);
 
 <Note title="ClickHouse Cloud">
 When creating a dictionary that reads from a ClickHouse table, include a dedicated user's username and password in the `SOURCE` clause. That user needs `SELECT` permission on the source table. See the [ClickHouse dictionary source example](/reference/statements/create/dictionary/sources/clickhouse).
-
-The same credential rule applies to named collections. Replace the example credentials with those of a source user that has `SELECT` on the source table.
 </Note>
 
 ```sql
