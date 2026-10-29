@@ -67,6 +67,8 @@
     <!-- Most rows pass an expensive condition: it must not be evaluated again after FINAL. -->
     <query>SELECT sum(c5) FROM final_non_intersecting_prewhere FINAL WHERE NOT match(c2, '^9.*7$') FORMAT Null</query>
     <query>SELECT sum(c5) FROM final_non_intersecting_prewhere FINAL WHERE NOT match(c2, '^9.*7$') AND NOT match(c3, '^8.*6$') FORMAT Null</query>
+    <!-- The condition shares an expensive computation with the result, which must not be done twice. -->
+    <query>SELECT sum(length(extractAll(c1, '[0-5]+'))) FROM final_non_intersecting_prewhere FINAL WHERE notEmpty(extractAll(c1, '[0-5]+')) FORMAT Null</query>
 
     <drop_query>DROP TABLE IF EXISTS final_non_intersecting_prewhere</drop_query>
 </test>

@@ -919,4 +919,30 @@ std::vector<RuntimeFilterIndexAnalysisDescriptor> findAppliedRuntimeFilters(cons
     return findAppliedRuntimeFilters(dag.tryFindInOutputs(filter_column_name));
 }
 
+
+bool isComputedOnlyForItself(const ActionsDAG & dag, const ActionsDAG::Node * root, const NodeSet & root_users, bool root_may_be_output)
+{
+    NodeSet computed;
+    for (const auto * node : findReachableNodes({root}))
+        if (node->type != ActionsDAG::ActionType::INPUT && node->type != ActionsDAG::ActionType::COLUMN)
+            computed.insert(node);
+
+    for (const auto & node : dag.getNodes())
+    {
+        for (const auto * child : node.children)
+        {
+            if (!computed.contains(child) || computed.contains(&node))
+                continue;
+            if (child != root || !root_users.contains(&node))
+                return false;
+        }
+    }
+
+    for (const auto * output : dag.getOutputs())
+        if (computed.contains(output) && !(output == root && root_may_be_output))
+            return false;
+
+    return true;
+}
+
 }

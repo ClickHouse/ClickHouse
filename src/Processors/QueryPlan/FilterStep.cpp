@@ -561,8 +561,8 @@ static bool haveSameStructureAndConstness(const Block & lhs, const Block & rhs)
     return true;
 }
 
-/// Splits off the leading atoms of the AND chain of the filter with `condition_hashes`. Only if the atoms are used only by
-/// the AND chain: otherwise the rest still needs their values. Not for stateful functions: the rest would see fewer rows.
+/// Splits off the leading atoms of the AND chain of the filter with `condition_hashes`. Only if their values are used only by
+/// the AND chain: otherwise the rest computes them once more. Not for stateful functions: the rest would see fewer rows.
 static std::optional<PrefilteredConditionsSplit> splitPrefilteredConditions(
     const ActionsDAG & dag,
     const String & filter_column_name,
@@ -588,15 +588,9 @@ static std::optional<PrefilteredConditionsSplit> splitPrefilteredConditions(
         return std::nullopt;
 
     const ActionsDAG::NodeRawConstPtrs prefiltered_atoms(atoms.begin(), atoms.begin() + num_prefiltered);
-    const std::unordered_set<const ActionsDAG::Node *> prefiltered_set(prefiltered_atoms.begin(), prefiltered_atoms.end());
-    for (const auto * output : outputs)
-        if (prefiltered_set.contains(output) && !(output == filter_node && remove_filter_column))
+    for (const auto * atom : prefiltered_atoms)
+        if (!isComputedOnlyForItself(dag, atom, and_nodes, atom == filter_node && remove_filter_column))
             return std::nullopt;
-    for (const auto & node : dag.getNodes())
-        if (!and_nodes.contains(&node))
-            for (const auto * child : node.children)
-                if (prefiltered_set.contains(child))
-                    return std::nullopt;
 
     String conditions_column_name = "__prefiltered_conditions";
     while (input_header.has(conditions_column_name))

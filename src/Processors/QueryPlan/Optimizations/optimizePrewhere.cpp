@@ -10,6 +10,7 @@
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
+#include <Processors/QueryPlan/Optimizations/actionsDAGUtils.h>
 #include <Processors/QueryPlan/Optimizations/optimizePrewhere.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Processors/QueryPlan/SourceStepWithFilter.h>
@@ -442,14 +443,20 @@ void optimizePrewhere(QueryPlan::Node & parent_node, const bool remove_unused_co
     /// so a condition that can throw is applied early only if it is the only condition, and there is no other PREWHERE.
     if (!non_intersecting_final_conditions.empty())
     {
+        const auto & filter_dag = filter_step->getExpression();
+        const auto * filter_node = &filter_dag.findInOutputs(filter_step->getFilterColumnName());
         ActionsDAG::NodeRawConstPtrs atoms;
-        std::vector<const ActionsDAG::Node *> stack{&filter_step->getExpression().findInOutputs(filter_step->getFilterColumnName())};
+        std::unordered_set<const ActionsDAG::Node *> and_nodes;
+        std::vector<const ActionsDAG::Node *> stack{filter_node};
         while (!stack.empty())
         {
             const auto * node = stack.back();
             stack.pop_back();
             if (node->type == ActionsDAG::ActionType::FUNCTION && node->function_base->getName() == "and")
+            {
+                and_nodes.insert(node);
                 stack.insert(stack.end(), node->children.rbegin(), node->children.rend());
+            }
             else
                 atoms.push_back(node);
         }
@@ -462,6 +469,10 @@ void optimizePrewhere(QueryPlan::Node & parent_node, const bool remove_unused_co
             if (optimize_result.prewhere_nodes.contains(atom))
                 continue;
             if (!non_intersecting.contains(atom) || ((atoms.size() != 1 || has_prewhere) && !canBeEvaluatedOnMoreRows(atom)))
+                break;
+            /// A condition that shares a computation with another column of the WHERE, e.g. `notEmpty(extractAll(s, 'x'))`
+            /// in `SELECT length(extractAll(s, 'x')) ... WHERE notEmpty(extractAll(s, 'x'))`, would compute it once more.
+            if (!isComputedOnlyForItself(filter_dag, atom, and_nodes, atom == filter_node && filter_step->removesFilterColumn()))
                 break;
             non_intersecting_final_conditions.push_back(atom);
         }
