@@ -117,6 +117,13 @@ public:
             auto it = files.find({st.st_dev, st.st_ino});
             if (it == files.end())
                 continue;
+
+            /// The snapshot above is stale: another call could have released this file already, and its inode
+            /// could be reused for a new file, whose fsync failed as well. So check again that the file is unlinked.
+            struct stat current_st{};
+            if (::fstat(it->second, &current_st) != 0 || current_st.st_nlink != 0)
+                continue;
+
             [[maybe_unused]] int err = ::close(it->second);
             files.erase(it);
         }
