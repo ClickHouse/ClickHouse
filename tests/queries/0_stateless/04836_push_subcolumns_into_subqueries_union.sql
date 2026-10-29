@@ -1,5 +1,6 @@
 -- Tags: no-parallel-replicas, no-random-settings
 -- The test checks EXPLAIN output, which differs with parallel replicas and randomized plan-related settings.
+-- The indentation of a plan step under the union is collapsed: the steps between the union and its branches vary.
 
 SET enable_analyzer = 1;
 SET optimize_push_subcolumns_into_subqueries = 1;
@@ -19,35 +20,35 @@ INSERT INTO t_push_union VALUES (1, '{"a": 1, "b": "x"}', (1, 'one')), (2, '{"a"
 INSERT INTO t_push_union_2 VALUES (3, '{"a": 3, "b": "z"}', (3, 'three'));
 
 SELECT 'UNION ALL subquery';
-SELECT trimLeft(explain) FROM (EXPLAIN actions = 1 SELECT json.a FROM (SELECT json FROM t_push_union UNION ALL SELECT json FROM t_push_union_2)) WHERE explain LIKE '%Output%';
+SELECT replaceRegexpOne(trimLeft(explain), '^│ +', '│ ') FROM (EXPLAIN actions = 1 SELECT json.a FROM (SELECT json FROM t_push_union UNION ALL SELECT json FROM t_push_union_2)) WHERE explain LIKE '%Output%';
 SELECT json.a FROM (SELECT json FROM t_push_union UNION ALL SELECT json FROM t_push_union_2) ORDER BY ALL;
 SELECT json.a FROM (SELECT json FROM t_push_union UNION ALL SELECT json FROM t_push_union_2) ORDER BY ALL SETTINGS optimize_push_subcolumns_into_subqueries = 0;
 
 SELECT 'UNION ALL with different column names in branches';
-SELECT trimLeft(explain) FROM (EXPLAIN actions = 1 SELECT tup.a FROM (SELECT tup FROM t_push_union UNION ALL SELECT tup AS tup2 FROM t_push_union_2)) WHERE explain LIKE '%Output%';
+SELECT replaceRegexpOne(trimLeft(explain), '^│ +', '│ ') FROM (EXPLAIN actions = 1 SELECT tup.a FROM (SELECT tup FROM t_push_union UNION ALL SELECT tup AS tup2 FROM t_push_union_2)) WHERE explain LIKE '%Output%';
 SELECT tup.a FROM (SELECT tup FROM t_push_union UNION ALL SELECT tup AS tup2 FROM t_push_union_2) ORDER BY ALL;
 
 SELECT 'UNION ALL CTE';
-SELECT trimLeft(explain) FROM (EXPLAIN actions = 1 WITH u AS (SELECT tup FROM t_push_union UNION ALL SELECT tup FROM t_push_union_2) SELECT tup.a, tup.b FROM u) WHERE explain LIKE '%Output%';
+SELECT replaceRegexpOne(trimLeft(explain), '^│ +', '│ ') FROM (EXPLAIN actions = 1 WITH u AS (SELECT tup FROM t_push_union UNION ALL SELECT tup FROM t_push_union_2) SELECT tup.a, tup.b FROM u) WHERE explain LIKE '%Output%';
 WITH u AS (SELECT tup FROM t_push_union UNION ALL SELECT tup FROM t_push_union_2) SELECT tup.a, tup.b FROM u ORDER BY ALL;
 
 SELECT 'view over UNION ALL';
 DROP TABLE IF EXISTS v_push_union;
 CREATE VIEW v_push_union AS SELECT json FROM t_push_union UNION ALL SELECT json FROM t_push_union_2;
-SELECT trimLeft(explain) FROM (EXPLAIN actions = 1 SELECT json.a FROM v_push_union) WHERE explain LIKE '%Output%';
+SELECT replaceRegexpOne(trimLeft(explain), '^│ +', '│ ') FROM (EXPLAIN actions = 1 SELECT json.a FROM v_push_union) WHERE explain LIKE '%Output%';
 SELECT json.a FROM v_push_union ORDER BY ALL;
 DROP TABLE v_push_union;
 
 SELECT 'nested UNION ALL';
-SELECT trimLeft(explain) FROM (EXPLAIN actions = 1 SELECT json.a FROM (SELECT json FROM t_push_union UNION ALL (SELECT json FROM t_push_union_2 UNION ALL SELECT json FROM t_push_union))) WHERE explain LIKE '%Output%';
+SELECT replaceRegexpOne(trimLeft(explain), '^│ +', '│ ') FROM (EXPLAIN actions = 1 SELECT json.a FROM (SELECT json FROM t_push_union UNION ALL (SELECT json FROM t_push_union_2 UNION ALL SELECT json FROM t_push_union))) WHERE explain LIKE '%Output%';
 SELECT json.a FROM (SELECT json FROM t_push_union UNION ALL (SELECT json FROM t_push_union_2 UNION ALL SELECT json FROM t_push_union)) ORDER BY ALL;
 
 SELECT 'two levels of subqueries under UNION ALL';
-SELECT trimLeft(explain) FROM (EXPLAIN actions = 1 SELECT json.a FROM (SELECT json FROM (SELECT json FROM t_push_union) UNION ALL SELECT json FROM t_push_union_2)) WHERE explain LIKE '%Output%';
+SELECT replaceRegexpOne(trimLeft(explain), '^│ +', '│ ') FROM (EXPLAIN actions = 1 SELECT json.a FROM (SELECT json FROM (SELECT json FROM t_push_union) UNION ALL SELECT json FROM t_push_union_2)) WHERE explain LIKE '%Output%';
 SELECT json.a FROM (SELECT json FROM (SELECT json FROM t_push_union) UNION ALL SELECT json FROM t_push_union_2) ORDER BY ALL;
 
 SELECT 'UNION ALL subquery under a subquery';
-SELECT trimLeft(explain) FROM (EXPLAIN actions = 1 SELECT json.a FROM (SELECT json FROM (SELECT json FROM t_push_union UNION ALL SELECT json FROM t_push_union_2))) WHERE explain LIKE '%Output%';
+SELECT replaceRegexpOne(trimLeft(explain), '^│ +', '│ ') FROM (EXPLAIN actions = 1 SELECT json.a FROM (SELECT json FROM (SELECT json FROM t_push_union UNION ALL SELECT json FROM t_push_union_2))) WHERE explain LIKE '%Output%';
 SELECT json.a FROM (SELECT json FROM (SELECT json FROM t_push_union UNION ALL SELECT json FROM t_push_union_2)) ORDER BY ALL;
 
 SELECT 'alias list over UNION ALL';
@@ -56,23 +57,23 @@ SELECT 'alias list over UNION ALL';
 SELECT s.x.a FROM (SELECT tup FROM t_push_union UNION ALL SELECT tup FROM t_push_union_2) AS s(x) ORDER BY ALL;
 
 SELECT 'UNION DISTINCT is not rewritten';
-SELECT trimLeft(explain) FROM (EXPLAIN actions = 1 SELECT tup.a FROM (SELECT tup FROM t_push_union UNION DISTINCT SELECT tup FROM t_push_union_2)) WHERE explain LIKE '%Output%';
+SELECT replaceRegexpOne(trimLeft(explain), '^│ +', '│ ') FROM (EXPLAIN actions = 1 SELECT tup.a FROM (SELECT tup FROM t_push_union UNION DISTINCT SELECT tup FROM t_push_union_2)) WHERE explain LIKE '%Output%';
 SELECT tup.a FROM (SELECT tup FROM t_push_union UNION DISTINCT SELECT tup FROM t_push_union_2) ORDER BY ALL;
 
 SELECT 'INTERSECT is not rewritten';
-SELECT trimLeft(explain) FROM (EXPLAIN actions = 1 SELECT tup.a FROM (SELECT tup FROM t_push_union INTERSECT ALL SELECT tup FROM t_push_union)) WHERE explain LIKE '%Output%';
+SELECT replaceRegexpOne(trimLeft(explain), '^│ +', '│ ') FROM (EXPLAIN actions = 1 SELECT tup.a FROM (SELECT tup FROM t_push_union INTERSECT ALL SELECT tup FROM t_push_union)) WHERE explain LIKE '%Output%';
 SELECT tup.a FROM (SELECT tup FROM t_push_union INTERSECT ALL SELECT tup FROM t_push_union) ORDER BY ALL;
 
 SELECT 'whole column and subcolumn';
-SELECT trimLeft(explain) FROM (EXPLAIN actions = 1 SELECT tup, tup.a FROM (SELECT tup FROM t_push_union UNION ALL SELECT tup FROM t_push_union_2)) WHERE explain LIKE '%Output%';
+SELECT replaceRegexpOne(trimLeft(explain), '^│ +', '│ ') FROM (EXPLAIN actions = 1 SELECT tup, tup.a FROM (SELECT tup FROM t_push_union UNION ALL SELECT tup FROM t_push_union_2)) WHERE explain LIKE '%Output%';
 SELECT tup, tup.a FROM (SELECT tup FROM t_push_union UNION ALL SELECT tup FROM t_push_union_2) ORDER BY ALL;
 
 SELECT 'diverging branch types are not rewritten';
-SELECT trimLeft(explain) FROM (EXPLAIN actions = 1 SELECT tup.a FROM (SELECT tup FROM t_push_union UNION ALL SELECT CAST(tup, 'Tuple(a UInt64, b String)') AS tup FROM t_push_union_2)) WHERE explain LIKE '%Output%';
+SELECT replaceRegexpOne(trimLeft(explain), '^│ +', '│ ') FROM (EXPLAIN actions = 1 SELECT tup.a FROM (SELECT tup FROM t_push_union UNION ALL SELECT CAST(tup, 'Tuple(a UInt64, b String)') AS tup FROM t_push_union_2)) WHERE explain LIKE '%Output%';
 SELECT tup.a FROM (SELECT tup FROM t_push_union UNION ALL SELECT CAST(tup, 'Tuple(a UInt64, b String)') AS tup FROM t_push_union_2) ORDER BY ALL;
 
 SELECT 'setting disabled in a branch';
-SELECT trimLeft(explain) FROM (EXPLAIN actions = 1 SELECT tup.a FROM (SELECT tup FROM t_push_union UNION ALL SELECT tup FROM t_push_union_2 SETTINGS optimize_push_subcolumns_into_subqueries = 0)) WHERE explain LIKE '%Output%';
+SELECT replaceRegexpOne(trimLeft(explain), '^│ +', '│ ') FROM (EXPLAIN actions = 1 SELECT tup.a FROM (SELECT tup FROM t_push_union UNION ALL SELECT tup FROM t_push_union_2 SETTINGS optimize_push_subcolumns_into_subqueries = 0)) WHERE explain LIKE '%Output%';
 SELECT tup.a FROM (SELECT tup FROM t_push_union UNION ALL SELECT tup FROM t_push_union_2 SETTINGS optimize_push_subcolumns_into_subqueries = 0) ORDER BY ALL;
 
 SELECT 'UNION ALL on a defaultable JOIN side is not rewritten';
