@@ -201,6 +201,8 @@ struct FormatSettings
         bool read_json_as_string = false;
         bool write_json_as_string = false;
         bool read_bool_field_as_int = false;
+        /// Write and read `AggregateFunction` `Field` values in the column binary form (the state without a length).
+        bool aggregate_function_field_as_column = false;
         UInt64 max_object_size = 100000;
         /// Max number of type nodes when decoding binary types. 0 == unlimited. The guard applies only to
         /// untrusted input: FormatFactory populates this from input_format_binary_max_type_complexity for real

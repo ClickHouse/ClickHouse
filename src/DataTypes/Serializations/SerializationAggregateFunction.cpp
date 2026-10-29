@@ -41,17 +41,31 @@ UInt128 SerializationAggregateFunction::getHash(const AggregateFunctionPtr & fun
     return hash.get128();
 }
 
-void SerializationAggregateFunction::serializeBinary(const Field & field, WriteBuffer & ostr, const FormatSettings &) const
+void SerializationAggregateFunction::serializeBinary(const Field & field, WriteBuffer & ostr, const FormatSettings & settings) const
 {
     const AggregateFunctionStateData & state = field.safeGet<AggregateFunctionStateData>();
-    writeBinary(state.data, ostr);
+    if (settings.binary.aggregate_function_field_as_column)
+        ostr.write(state.data.data(), state.data.size());
+    else
+        writeBinary(state.data, ostr);
 }
 
-void SerializationAggregateFunction::deserializeBinary(Field & field, ReadBuffer & istr, const FormatSettings &) const
+void SerializationAggregateFunction::deserializeBinary(Field & field, ReadBuffer & istr, const FormatSettings & settings) const
 {
     field = AggregateFunctionStateData();
     AggregateFunctionStateData & s = field.safeGet<AggregateFunctionStateData>();
-    readBinary(s.data, istr);
+    if (settings.binary.aggregate_function_field_as_column)
+    {
+        /// The state has no length, so only deserializing it finds where it ends.
+        auto column = ColumnAggregateFunction::create(function, version);
+        deserializeBinary(*column, istr, settings);
+        WriteBufferFromString buf(s.data);
+        function->serialize(column->getData()[0], buf, version);
+    }
+    else
+    {
+        readBinary(s.data, istr);
+    }
     s.name = type_name;
 }
 
