@@ -492,6 +492,11 @@ $CLICKHOUSE_CLIENT --query "SELECT count() FROM file('$TEST_DIR_NAME/latematch/r
 echo "shorter-alias-after-symlink-budget-skip"
 $CLICKHOUSE_CLIENT --query "SELECT val FROM file('$TEST_DIR_NAME/budget/root/**/*.txt', 'TSV', 'val String') ORDER BY val"
 $CLICKHOUSE_CLIENT --query "SELECT val FROM file('$TEST_DIR_NAME/budget/root/**/child/missing.txt', 'TSV', 'val String')"
+# Only `root/z` reaches `missing.txt`, so the two names that cannot are not second names for it and
+# the write is allowed, as through `root/z` alone. The row count afterwards shows it landed.
+$CLICKHOUSE_CLIENT --query "INSERT INTO TABLE FUNCTION file('$TEST_DIR_NAME/budget/root/**/missing.txt', 'TSV', 'val String') VALUES ('written')" </dev/null 2>&1 \
+    | grep -qF "readonly mode because of globs" && echo "unexpectedly refused"
+$CLICKHOUSE_CLIENT --query "SELECT count() FROM file('$TEST_DIR_NAME/budget/data/B/missing.txt', 'TSV', 'val String')"
 
 # Server alive afterwards.
 $CLICKHOUSE_CLIENT --query "SELECT 'alive'"

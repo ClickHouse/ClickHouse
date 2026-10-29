@@ -519,9 +519,15 @@ void listFilesWithRegexpMatchingImpl(
             /// claimed the frame: that is a second name for the same place, whereas re-entering
             /// under the SAME path is a globstar re-applying at one directory and is not a second
             /// name. Whether the pruned frame would have matched anything is decided after the
-            /// walk, because the claiming frame may still be finding matches right now.
+            /// walk when the claiming frame may still be finding matches right now. A finished
+            /// frame is charged at once, so a later retry under a shorter name does not count.
             if (frame.lexical_dir != lexical_dir)
-                pruning.pending_collisions.push_back(&frame);
+            {
+                if (frame.walking)
+                    pruning.pending_collisions.push_back(&frame);
+                else if (frame.matches > 0)
+                    collapsed_a_match = true;
+            }
             /// What the frame could not resolve is also unresolved under the frames reaching it now.
             if (!frame.walking && frame.unresolved)
                 noteSymlinkLimitSkip(std::make_error_code(std::errc::too_many_symbolic_link_levels),
