@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# Tags: no-darwin
+# no-darwin: the test holds the `status` lock with util-linux `flock(1)`, which macOS does not have.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -17,14 +19,8 @@ touch "$data_dir/tmp/tmp_spill_file"
 touch "$data_dir/access/00000000-0000-0000-0000-000000000001.tmp"
 touch "$data_dir/access/need_rebuild_lists.mark"
 
-# Hold an exclusive lock on the status file while the second instance runs, like a running instance does.
-# Python's `fcntl.flock` instead of `flock(1)`, which macOS does not have.
-python3 -c '
-import fcntl, os, subprocess, sys
-fd = os.open(sys.argv[1], os.O_WRONLY | os.O_CREAT, 0o666)
-fcntl.flock(fd, fcntl.LOCK_EX)
-sys.exit(subprocess.call(sys.argv[2:]))
-' "$data_dir/status" ${CLICKHOUSE_BINARY} local --path "$data_dir" --query "SELECT 1" 2>&1 \
+# `flock` holds an exclusive lock on the status file while the second instance runs, like a running instance does.
+flock -x "$data_dir/status" ${CLICKHOUSE_BINARY} local --path "$data_dir" --query "SELECT 1" 2>&1 \
     | grep -o -m1 "Another server instance in same directory is already running"
 
 [ -f "$data_dir/tmp/tmp_spill_file" ] && echo "spill file kept"
