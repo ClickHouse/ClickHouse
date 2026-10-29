@@ -2,6 +2,8 @@
 
 #include <Core/Types.h>
 
+/// `fiu.h` includes `<stdatomic.h>` inside `extern "C"`, which compiles only if `<atomic>` comes first.
+#include <atomic>
 #include <mutex>
 
 #include "config.h"

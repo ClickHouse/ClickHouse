@@ -7,8 +7,6 @@
 --   normalize to MAX_LEVEL, breaking `contains` checks for REPLACE/MOVE PARTITION
 --   virtual drop-range parts created on/before 21.6.
 
-SET enable_analyzer = 1;
-
 -- Parsed level is normalized from LEGACY_MAX_LEVEL (4294967295) to MAX_LEVEL (999999999).
 SELECT mergeTreePartInfo('all_0_5_4294967295').level;
 
