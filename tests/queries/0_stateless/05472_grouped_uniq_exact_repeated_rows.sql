@@ -46,9 +46,9 @@ SELECT g, uniqExactIf(x, nullIf(c, 0)), uniqExactIf(s, nullIf(c, 0)) FROM t_grou
 
 -- Keys that arrive after the GROUP BY limit get no place: k = 2, 3 are dropped.
 SELECT intDiv(number, 25000) AS k, uniqExact(intDiv(number, 3) % 1000), uniqExact(toString(intDiv(number, 3) % 1000)),
-    uniqExactIf(number % 997, number % 2 = 0)
+    uniqExactIf(number % 997, number % 2 = 0), uniqExact(number)
 FROM numbers(100000) GROUP BY k ORDER BY k
-SETTINGS max_threads = 1, max_block_size = 1000, max_rows_to_group_by = 1, group_by_overflow_mode = 'any',
+SETTINGS max_threads = 1, max_block_size = 1024, max_rows_to_group_by = 1, group_by_overflow_mode = 'any',
     optimize_injective_functions_inside_uniq = 0;
 
 DROP TABLE t_grouped_uniq_exact;
