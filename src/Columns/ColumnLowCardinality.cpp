@@ -2,7 +2,6 @@
 
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
-#include <Columns/IColumnImpl.h>
 #include <DataTypes/IDataType.h>
 #include <DataTypes/NumberTraits.h>
 #include <Common/Exception.h>
@@ -360,8 +359,6 @@ char * ColumnLowCardinality::serializeValueIntoMemory(size_t n, char * memory, c
 
 void ColumnLowCardinality::serializeAsComparable(size_t n, String & out) const
 {
-    /// IColumnUnique has no serializeAsComparable; its nested column is index-aligned
-    /// (for a nullable dictionary the null mask marks getNullValueIndex()), so delegate there.
     getDictionary().getNestedColumn()->serializeAsComparable(getIndexes().getUInt(n), out);
 }
 
