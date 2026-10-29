@@ -448,11 +448,14 @@ public:
         /// address the filter then rejects would ask the generator past the limit while another stream
         /// already reads the one survivor. One stream reads exactly what a ready filter would have
         /// selected; it prunes the batch on its first `next`.
+        /// The limit is on the addresses of both stages, but `totalCount` only counts the URLs, so it
+        /// tells that the whole pattern fits only when no URL has failover options (`|`): with
+        /// `first,b{1|2},c` and a limit of three the URLs are three, but the addresses are four.
         if (filter_deferred)
         {
             /// Not exhausted, so there is a generator: a single URI is exhausted at once.
             const auto total = generator->totalCount();
-            if (total && *total <= max_addresses_upper_bound)
+            if (!limit_exceeded && description.find('|') == String::npos && total && *total <= max_addresses_upper_bound)
                 return upperBound();
             return 1;
         }
