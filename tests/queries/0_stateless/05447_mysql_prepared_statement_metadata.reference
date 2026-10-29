@@ -30,6 +30,16 @@ name=const org_name=const schema= table= org_table= type=1 length=3
 name=id org_name=id schema= table= org_table= type=8 length=20
 --- query: SELECT id FROM t UNION ALL SELECT id FROM t
 name=id org_name=id schema= table= org_table= type=8 length=20
+--- query: SELECT length(a) AS len, if(1, id, id) AS expr, a FROM arrays
+name=len org_name=len schema= table= org_table= type=8 length=20
+name=expr org_name=expr schema= table= org_table= type=8 length=20
+name=a org_name=a schema=<database> table=arrays org_table=arrays type=254 length=0
+--- prepare: SELECT length(a) AS len, if(1, id, id) AS expr, a FROM arrays
+num_columns=3 num_params=0
+name=len org_name=len schema= table= org_table= type=8 length=20
+name=expr org_name=expr schema= table= org_table= type=8 length=20
+name=a org_name=a schema=<database> table=arrays org_table=arrays type=254 length=0
+execute: 1 rows, column definitions are the same as the prepared ones
 --- prepare: SELECT * FROM t ORDER BY id
 num_columns=3 num_params=0
 name=id org_name=id schema=<database> table=t org_table=t type=8 length=20

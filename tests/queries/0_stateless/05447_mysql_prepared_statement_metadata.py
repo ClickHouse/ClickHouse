@@ -251,6 +251,18 @@ def main():
         query_metadata(sock, "SELECT id FROM (SELECT id FROM t)")
         query_metadata(sock, "SELECT id FROM t UNION ALL SELECT id FROM t")
 
+        # The query tree optimizations can rewrite an expression into a column (`length(a)` into the subcolumn `a.size0`,
+        # `if(1, id, id)` into `id`), but the result of an expression still has no origin.
+        query(sock, "DROP TABLE IF EXISTS arrays")
+        query(sock, "CREATE TABLE arrays (id UInt64, a Array(UInt8)) ENGINE = MergeTree ORDER BY id")
+        query(sock, "INSERT INTO arrays VALUES (1, [1, 2])")
+        optimized = "SELECT length(a) AS len, if(1, id, id) AS expr, a FROM arrays"
+        query_metadata(sock, optimized)
+        statement_id, columns = prepare(sock, optimized)
+        execute(sock, statement_id, columns)
+        close(sock, statement_id)
+        query(sock, "DROP TABLE arrays")
+
         for text in [
             "SELECT * FROM t ORDER BY id",
             "SELECT id AS x, a.s, flag + 1 AS expr FROM t AS a ORDER BY id LIMIT 2",
