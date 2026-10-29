@@ -1723,7 +1723,6 @@ void NO_INLINE Aggregator::executeImplBatch(
     {
         if constexpr (Method::low_cardinality_optimization && !top_k)
         {
-            /// Count the rows of every dictionary position, then add each count to its group with one lookup.
             if (!all_keys_are_const && state.canCountPositions(row_begin, row_end))
             {
                 if (!no_more_keys)
@@ -1739,7 +1738,6 @@ void NO_INLINE Aggregator::executeImplBatch(
 
                     if constexpr (prefetch && requires { method.data.prefetchByHash(size_t{}); })
                     {
-                        /// The first rows relative to `row_begin` and the counts.
                         PODArrayWithStackMemory<std::pair<UInt32, UInt32>, 4096> position_rows;
                         state.forEachPositionCount(row_begin, row_end, [&](size_t first_row, UInt64 count)
                         {
