@@ -28,6 +28,7 @@
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeTuple.h>
+#include <Formats/SchemaInferenceUtils.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Common/typeid_cast.h>
 #include <Formats/FormatFactory.h>
