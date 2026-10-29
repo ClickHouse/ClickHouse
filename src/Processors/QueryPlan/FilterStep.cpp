@@ -13,6 +13,8 @@
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/IFunction.h>
+#include <Functions/IFunctionAdaptors.h>
+#include <Functions/FunctionsLogical.h>
 #include <IO/Operators.h>
 #include <Interpreters/ActionsDAG.h>
 #include <Interpreters/ExpressionActions.h>
@@ -506,9 +508,10 @@ void FilterStep::setPrefilteredConditions(UInt64 token, std::unordered_set<UInt6
     prefiltered_conditions = PrefilteredConditions{.token = token, .condition_hashes = std::move(condition_hashes)};
 }
 
-/// The actions of a filter for the rows that already passed the conditions with `condition_hashes`: the atoms of the AND
-/// chain of the filter column with these hashes are replaced by constant true, which is their value for these rows.
-/// Nullopt if no atom is replaced, or if the replacement would change the constness of a column of the result.
+/// The actions of a filter for the rows that already passed the conditions with `condition_hashes`: the filter column
+/// is the conjunction of the other atoms of its AND chain. A row that passed a condition has it true, so the conjunction
+/// keeps the same rows. The atoms themselves are not changed: other columns may use their values.
+/// Nullopt if no atom is dropped, or if the result would have another structure.
 static std::optional<ActionsDAG> makePrefilteredActions(
     const ActionsDAG & dag,
     const String & filter_column_name,
@@ -517,36 +520,46 @@ static std::optional<ActionsDAG> makePrefilteredActions(
     const Block & input_header)
 {
     ActionsDAG prefiltered = dag.clone();
-
-    std::unordered_map<const ActionsDAG::Node *, ColumnWithTypeAndName> substitutions;
-    std::vector<const ActionsDAG::Node *> stack{&prefiltered.findInOutputs(filter_column_name)};
-    while (!stack.empty())
-    {
-        const auto * node = stack.back();
-        stack.pop_back();
-
-        if (node->type != ActionsDAG::ActionType::FUNCTION)
-            continue;
-
-        if (node->function_base->getName() == "and")
-        {
-            stack.insert(stack.end(), node->children.begin(), node->children.end());
-            continue;
-        }
-
-        if (!condition_hashes.contains(node->getHash()) || !WhichDataType(removeNullable(node->result_type)).isUInt8())
-            continue;
-
-        substitutions.emplace(node, ColumnWithTypeAndName(node->result_type->createColumnConst(1, Field(UInt64(1))), node->result_type, node->result_name));
-    }
-
-    if (substitutions.empty())
+    auto & outputs = prefiltered.getOutputs();
+    const auto filter_it = std::ranges::find_if(outputs, [&](const auto * node) { return node->result_name == filter_column_name; });
+    if (filter_it == outputs.end())
         return std::nullopt;
 
-    prefiltered.substitute(substitutions);
+    ActionsDAG::NodeRawConstPtrs remaining_atoms;
+    bool dropped = false;
+    for (const auto * atom : ActionsDAG::extractConjunctionAtoms(*filter_it))
+    {
+        if (atom->type == ActionsDAG::ActionType::FUNCTION && condition_hashes.contains(atom->getHash()))
+            dropped = true;
+        else
+            remaining_atoms.push_back(atom);
+    }
+
+    if (!dropped)
+        return std::nullopt;
+
+    const ActionsDAG::Node * filter_node = nullptr;
+    if (remaining_atoms.empty())
+    {
+        auto type = std::make_shared<DataTypeUInt8>();
+        filter_node = &prefiltered.addColumn(
+            type->createColumnConst(1, Field(UInt64(1))), type, "__prefiltered_true");
+    }
+    else if (remaining_atoms.size() == 1)
+    {
+        filter_node = remaining_atoms.front();
+    }
+    else
+    {
+        FunctionOverloadResolverPtr func_builder_and = std::make_unique<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionAnd>());
+        filter_node = &prefiltered.addFunction(func_builder_and, std::move(remaining_atoms), {});
+    }
+
+    /// The filter column keeps its name and its position among the outputs: `FilterTransform` finds it by position.
+    *filter_it = &prefiltered.addAlias(*filter_node, filter_column_name);
     prefiltered.removeUnusedActions(false, false);
 
-    /// A constant column instead of a full one may break the transforms after the filter.
+    /// A changed type or a constant column instead of a full one may break the transforms after the filter.
     const Block header = FilterTransform::transformHeader(input_header, &dag, filter_column_name, remove_filter_column);
     const Block prefiltered_header = FilterTransform::transformHeader(input_header, &prefiltered, filter_column_name, remove_filter_column);
     if (!blocksHaveEqualStructure(header, prefiltered_header))

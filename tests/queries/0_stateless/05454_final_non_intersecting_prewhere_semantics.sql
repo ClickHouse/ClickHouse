@@ -57,3 +57,18 @@ UPDATE t_final_prewhere_update SET v = 1000 WHERE key % 1000 = 7 SETTINGS enable
 SELECT count(), sum(key) FROM t_final_prewhere_update FINAL WHERE v = 1000 SETTINGS apply_patch_parts = 1;
 SELECT count(), sum(key) FROM t_final_prewhere_update FINAL WHERE v = 1000 SETTINGS apply_patch_parts = 1, optimize_move_to_prewhere_if_final_non_intersecting = 0;
 DROP TABLE t_final_prewhere_update;
+
+SELECT 'The WHERE does not evaluate the conditions again, but keeps their values';
+DROP TABLE IF EXISTS t_final_prewhere_shared;
+CREATE TABLE t_final_prewhere_shared (key UInt64, v UInt64, ver UInt64)
+ENGINE = ReplacingMergeTree(ver) ORDER BY key SETTINGS index_granularity = 128;
+INSERT INTO t_final_prewhere_shared SELECT number, 2, 1 FROM numbers(20000);
+OPTIMIZE TABLE t_final_prewhere_shared FINAL;
+SYSTEM STOP MERGES t_final_prewhere_shared;
+INSERT INTO t_final_prewhere_shared SELECT number, 3, 2 FROM numbers(5000, 300);
+-- `toUInt8(v)` passes with the value 2, which the other condition and the result still use.
+SELECT count(), sum(key) FROM t_final_prewhere_shared FINAL WHERE toUInt8(v) AND (toUInt8(v) = 2 OR rowNumberInAllBlocks() > 1000000000);
+SELECT count(), sum(key) FROM t_final_prewhere_shared FINAL WHERE toUInt8(v) AND (toUInt8(v) = 2 OR rowNumberInAllBlocks() > 1000000000) SETTINGS optimize_move_to_prewhere_if_final_non_intersecting = 0;
+SELECT sum(toUInt8(v)) FROM t_final_prewhere_shared FINAL WHERE toUInt8(v);
+SELECT sum(toUInt8(v)) FROM t_final_prewhere_shared FINAL WHERE toUInt8(v) SETTINGS optimize_move_to_prewhere_if_final_non_intersecting = 0;
+DROP TABLE t_final_prewhere_shared;
