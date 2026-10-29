@@ -141,6 +141,7 @@ struct Estimate
 };
 
 using Estimates = std::unordered_map<String, Estimate>;
+using EstimatesPtr = std::shared_ptr<const Estimates>;
 
 /// All statistics objects for a column in a part
 class ColumnStatistics

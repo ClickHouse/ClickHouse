@@ -1002,7 +1002,7 @@ static Block makeBlockWithMinMaxFromStatistics(
 
     /// The estimates of the parts whose statistics may answer the query, loaded in parallel and released once
     /// consumed; `std::nullopt` for a part that is read instead.
-    std::vector<std::optional<Estimates>> parts_estimates(parts_with_ranges.size());
+    std::vector<EstimatesPtr> parts_estimates(parts_with_ranges.size());
     auto part_may_use_statistics = [&](size_t part_index)
     {
         const auto & part_with_ranges = parts_with_ranges[part_index];
@@ -1031,11 +1031,11 @@ static Block makeBlockWithMinMaxFromStatistics(
         try
         {
             if (!need_estimates)
-                parts_estimates[part_index] = Estimates{};
+                parts_estimates[part_index] = std::make_shared<const Estimates>();
             else if (!only_from_memory)
                 parts_estimates[part_index] = part->getEstimates();
             else if (auto estimates = part->tryGetEstimatesFromMemory())
-                parts_estimates[part_index] = std::move(*estimates);
+                parts_estimates[part_index] = std::move(estimates);
             else
                 return false;
         }

@@ -262,14 +262,15 @@ public:
     /// `statistics_cache_prewarm_ratio`. Best-effort: an error is logged, not thrown.
     void loadStatisticsToCache(StatisticsCache & cache) const;
     void removeStatisticsFromCache(StatisticsCache * cache) const;
-    /// The estimates of the statistics of all columns, memoized.
-    Estimates getEstimates() const;
+    /// The estimates of the statistics of all columns, memoized. The result is shared with other
+    /// callers instead of copied, so that a lookup does not cost time proportional to the table width.
+    EstimatesPtr getEstimates() const;
     void setEstimates(const Estimates & new_estimates);
     /// The result of `loadStatistics(required_columns, cache)` if the statistics of the part are in the cache,
     /// otherwise `std::nullopt`. It never reads from disk.
     std::optional<ColumnsStatistics> tryLoadStatisticsFromCache(const NameSet & required_columns, StatisticsCache * cache) const;
-    /// The result of `getEstimates` if it needs nothing read from disk, otherwise `std::nullopt`.
-    std::optional<Estimates> tryGetEstimatesFromMemory() const;
+    /// The result of `getEstimates` if it needs nothing read from disk, otherwise nullptr.
+    EstimatesPtr tryGetEstimatesFromMemory() const;
 
     /// Initialize columns (from columns.txt if exists, or create from column files if not).
     /// Load various metadata into memory: checksums from checksums.txt, index if required, etc.
@@ -971,7 +972,7 @@ private:
     /// Small state of finalized statistics for suitable statistics types.
     /// Lazily initialized on a first access.
     mutable std::mutex estimates_mutex;
-    mutable std::optional<Estimates> estimates TSA_GUARDED_BY(estimates_mutex);
+    mutable EstimatesPtr estimates TSA_GUARDED_BY(estimates_mutex);
 
     /// Reads part unique identifier (if exists) from uuid.txt
     void loadUUID();
@@ -1027,7 +1028,7 @@ private:
     static ColumnsStatistics filterStatistics(const StatisticsCacheCell & cell, const NameSet & required_columns);
 
     /// `getEstimates`, or `tryGetEstimatesFromMemory` if `only_from_memory`.
-    std::optional<Estimates> getEstimatesImpl(bool only_from_memory) const;
+    EstimatesPtr getEstimatesImpl(bool only_from_memory) const;
     /// The path that identifies the part in the caches shared between tables.
     String getPathForCacheKey() const;
 

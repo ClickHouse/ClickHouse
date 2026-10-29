@@ -869,7 +869,7 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByStatistics(
 
     RangesInDataParts res_parts;
     size_t total_parts_before = parts.size();
-    std::vector<Estimates> parts_estimates(parts.size());
+    std::vector<EstimatesPtr> parts_estimates(parts.size());
     MergeTreeData::loadStatisticsOfPartsInParallel(
         parts.size(),
         settings[Setting::max_threads],
@@ -878,7 +878,7 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByStatistics(
             auto estimates = parts[part_index].data_part->tryGetEstimatesFromMemory();
             if (!estimates)
                 return false;
-            parts_estimates[part_index] = std::move(*estimates);
+            parts_estimates[part_index] = std::move(estimates);
             return true;
         },
         [&](size_t part_index)
@@ -888,10 +888,10 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByStatistics(
         [&](size_t part_index)
         {
             const auto & part = parts[part_index];
-            const Estimates estimates = std::move(parts_estimates[part_index]);
+            const EstimatesPtr estimates = std::move(parts_estimates[part_index]);
             try
             {
-                if (!statistics_pruner.checkPartCanMatch(estimates).can_be_true)
+                if (!statistics_pruner.checkPartCanMatch(*estimates).can_be_true)
                 {
                     LOG_TRACE(log, "Part {} pruned by statistics", part.data_part->name);
                     return;

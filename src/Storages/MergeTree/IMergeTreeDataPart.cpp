@@ -1543,17 +1543,17 @@ String IMergeTreeDataPart::getPathForCacheKey() const
     return getDataPartStorage().getDiskName() + ":" + getRelativePathOfActivePart();
 }
 
-Estimates IMergeTreeDataPart::getEstimates() const
+EstimatesPtr IMergeTreeDataPart::getEstimates() const
 {
-    return *getEstimatesImpl(/* only_from_memory = */ false);
+    return getEstimatesImpl(/* only_from_memory = */ false);
 }
 
-std::optional<Estimates> IMergeTreeDataPart::tryGetEstimatesFromMemory() const
+EstimatesPtr IMergeTreeDataPart::tryGetEstimatesFromMemory() const
 {
     return getEstimatesImpl(/* only_from_memory = */ true);
 }
 
-std::optional<Estimates> IMergeTreeDataPart::getEstimatesImpl(bool only_from_memory) const
+EstimatesPtr IMergeTreeDataPart::getEstimatesImpl(bool only_from_memory) const
 {
     std::lock_guard lock(estimates_mutex);
 
@@ -1568,7 +1568,7 @@ std::optional<Estimates> IMergeTreeDataPart::getEstimatesImpl(bool only_from_mem
         {
             cell = tryGetStatisticsFromCache(statistics_cache.get());
             if (!cell)
-                return std::nullopt;
+                return nullptr;
         }
         else
         {
@@ -1576,9 +1576,9 @@ std::optional<Estimates> IMergeTreeDataPart::getEstimatesImpl(bool only_from_mem
         }
 
         ScopedJemallocThreadArena mergetree_arena_scope(JemallocMergeTreeArena::getArenaIndex());
-        Estimates loaded_estimates;
+        auto loaded_estimates = std::make_shared<Estimates>();
         for (const auto & [column_name, stats] : cell->stats)
-            loaded_estimates.emplace(column_name, stats->getEstimate());
+            loaded_estimates->emplace(column_name, stats->getEstimate());
         estimates = std::move(loaded_estimates);
     }
     return estimates;
@@ -1591,10 +1591,10 @@ void IMergeTreeDataPart::setEstimates(const Estimates & new_estimates)
     /// Statistics are built from table metadata, which can name columns this part does not store:
     /// an expired column `TTL` removes a column from the part after the statistics set is decided.
     const auto & part_columns = getColumnsDescription();
-    Estimates stored_estimates;
+    auto stored_estimates = std::make_shared<Estimates>();
     for (const auto & [column_name, estimate] : new_estimates)
         if (part_columns.tryGet(column_name))
-            stored_estimates.emplace(column_name, estimate);
+            stored_estimates->emplace(column_name, estimate);
 
     std::lock_guard lock(estimates_mutex);
     estimates = std::move(stored_estimates);

@@ -154,12 +154,12 @@ void StorageSystemPartsColumns::processNextStorage(
 
         auto index_size_in_bytes = part->getIndexSizeInBytes();
         auto index_size_in_allocated_bytes = part->getIndexSizeInAllocatedBytes();
-        std::optional<Estimates> estimates;
+        EstimatesPtr estimates;
 
         /// Lazy initialize statistics estimates if they are queried.
         auto find_estimate = [&](const auto & column_name)
         {
-            if (!estimates.has_value())
+            if (!estimates)
                 estimates = part->getEstimates();
 
             return estimates->find(column_name);
