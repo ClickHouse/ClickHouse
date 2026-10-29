@@ -1,7 +1,8 @@
 # Building ClickHouse with Bazel
 
-`//:clickhouse` builds the Linux executable for x86-64 or ARM64. Use Bazel
-[9.3.0](.bazelversion). Bazel fetches the pinned third-party sources and builds
+`//:clickhouse` builds the Linux executable for x86-64 or ARM64. Use the Bazel
+nightly pinned in [.bazelversion](.bazelversion) (commit `beb40084`).
+Bazel fetches the pinned third-party sources and builds
 [ClickHouse's LLVM 22.1.1 compiler](bazel/llvm.MODULE.bazel) from source;
 a Bazel build does not need initialized Git submodules. Run commands from the
 repository root. On a Linux x86-64 host:
@@ -36,6 +37,8 @@ bazel build --config=cmake_match_aarch64 //:clickhouse
 
 [`common:remote`](.bazelrc) sets `--jobs=500`, uses the BuildBuddy remote
 executor and cache, and disables local fallback for remote execution.
+`common:remote` disables the client's remote action preparation and upload semaphore with
+`--noexperimental_throttle_remote_action_building`.
 `x86_64` and `aarch64` select the target CPU. The `remote` configuration
 selects the Linux x86-64 execution platform; `cmake_match_aarch64` adds
 native Linux ARM64 compiler and test platforms and selects the ARM64 target.
@@ -89,8 +92,27 @@ cache and a fresh target `--action_env` value. BuildBuddy executed the final
 | BuildBuddy timing profile | ClickHouse SHA-256 | Bytes |
 | --- | --- | ---: |
 | [`-c fastbuild` before source directories](https://app.buildbuddy.io/invocation/b5f2d5ff-b97e-423b-bec7-b32127aee8cf#timing) | `66bfdb7a22d08f7076721fa1cd68ee7c5167b4d8d6620965a0db72858280c522` | 2,175,634,528 |
-| [`-c fastbuild` at `2918c740`](https://app.buildbuddy.io/invocation/e6da7d62-83b2-4ff2-a0b0-89660ff6b747#timing) | `66bfdb7a22d08f7076721fa1cd68ee7c5167b4d8d6620965a0db72858280c522` | 2,175,634,528 |
+| [Bazel 9.3.0 fastbuild with Merkle throttling disabled](https://app.buildbuddy.io/invocation/e6da7d62-83b2-4ff2-a0b0-89660ff6b747#timing) | `66bfdb7a22d08f7076721fa1cd68ee7c5167b4d8d6620965a0db72858280c522` | 2,175,634,528 |
+| [Bazel 9.3.0 fastbuild with Merkle throttling](https://app.buildbuddy.io/invocation/538a43d9-ad59-4110-9e14-92afac1f42ac#timing) | `66bfdb7a22d08f7076721fa1cd68ee7c5167b4d8d6620965a0db72858280c522` | 2,175,634,528 |
+| [Bazel nightly fastbuild at `c57e487c`](https://app.buildbuddy.io/invocation/9524b4f0-06d7-464f-9b18-5a4311f939b7#timing) | `66bfdb7a22d08f7076721fa1cd68ee7c5167b4d8d6620965a0db72858280c522` | 2,175,634,528 |
 | [`-c opt --features=thin_lto`](https://app.buildbuddy.io/invocation/841c82aa-2b17-4df6-890f-8ac960d94733#timing) | `79d90fd7278aa71960be5ebf109b1ee14927d068884a94458f42863a58308353` | 828,248,440 |
+
+On the 10-core macOS client with `--jobs=2000`, the throttled Bazel 9.3.0 build
+spent 457 seconds of its critical path waiting to prepare remote actions or
+upload their inputs. With throttling disabled, the longest recorded Merkle span
+was 48.3 seconds on 9.3.0 and 15.2 seconds on nightly. Cache and queue conditions
+differed. Bazel 9.3.0 recorded 38 rewind plans and nightly recorded zero.
+
+`--rewind_lost_inputs` stays enabled so Bazel can rerun the producer of a
+missing remote input. Its `action.enterActionExecution` lock protects readers
+while Bazel rebuilds that input.
+
+ClickHouse records compiler and linker flags in `system.build_options`.
+The nightly configuration preserves the Bazel 9.3 target output directory names
+embedded in those flags and in generated filenames. Python build tools use the
+bundled interpreter on Linux workers. The
+[fastbuild of `30df64d2b`](https://app.buildbuddy.io/invocation/1c01861c-afd5-4122-8d35-1e47a3c3c389#timing)
+reused the nightly run's target cache-buster and reproduced its executable.
 
 ## Linux headers and link inputs
 
@@ -120,12 +142,12 @@ A [previous ARM64 build](https://app.buildbuddy.io/invocation/c8f333e4-b619-4fa2
 
 ## Binary comparison
 
-At [4df76c1a2](https://github.com/dzbarsky/clickhouse/commit/4df76c1a2ad71c61dec54712a48c8639a5171fd4), both `-c opt` builds matched the native CMake stripped SHA-256 and byte count. The unstripped executables also matched the preceding Bazel builds.
+At [`30df64d2b`](https://github.com/dzbarsky/clickhouse/commit/30df64d2b73a951a1b0cc2d57e1aad0412d94ec1), both `-c opt` builds matched the native CMake stripped SHA-256 and byte count. The unstripped executables also matched the preceding Bazel builds.
 
 | Native Bazel build | Stripped ClickHouse SHA-256 | Bytes |
 | --- | --- | ---: |
-| [x86-64](https://app.buildbuddy.io/invocation/e7297809-f5ab-4dea-84bd-bb30c36dad21#timing) | `ccf17074f256c8cbc48d64d0aea0cf7b6a178b7412f16f337ba240aa130f1585` | 710693736 |
-| [ARM64](https://app.buildbuddy.io/invocation/a14ff9cf-312d-4809-bf34-9ca88524dff0#timing) | `a29d49408309ba5719e5ab5d7c3eac2334584f91e2bcbc30d9df7feb55284d03` | 637316696 |
+| [x86-64](https://app.buildbuddy.io/invocation/a40f0163-29e6-4bb1-bd1c-01fa45039763#timing) | `ccf17074f256c8cbc48d64d0aea0cf7b6a178b7412f16f337ba240aa130f1585` | 710693736 |
+| [ARM64](https://app.buildbuddy.io/invocation/71685783-2329-46df-8262-5920e8877d92#timing) | `a29d49408309ba5719e5ab5d7c3eac2334584f91e2bcbc30d9df7feb55284d03` | 637316696 |
 
 The [validation history](bazel/initial_migration/validation-history.md#5549bc23a) records the unstripped hashes and compiler checks for the previous comparison.
 
