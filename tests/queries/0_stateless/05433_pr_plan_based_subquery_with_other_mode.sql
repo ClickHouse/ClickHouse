@@ -1,7 +1,5 @@
--- One query reads with replicas using one implementation. A subquery carries its own context, so its
--- `SETTINGS` clause can name the other one, but the two split the work at different points and a plan
--- mixing them loses parallel replicas for the subtree instead of combining them. So such a query is
--- rejected while parallel replicas can be used, and runs as usual when they cannot.
+-- Query-based and plan-based parallel replicas cannot be mixed in one query: a subquery setting a different
+-- `parallel_replicas_plan_based` is rejected, unless parallel replicas are disabled for it.
 
 DROP TABLE IF EXISTS t_05433;
 CREATE TABLE t_05433 (x UInt64, y UInt64) ENGINE = MergeTree ORDER BY x;
@@ -13,8 +11,7 @@ SET automatic_parallel_replicas_mode = 0, enable_parallel_replicas = 1,
     cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost',
     parallel_replicas_local_plan = 0;
 
--- The subquery repeating the query's implementation is not a mix: the read step is the one of that
--- implementation, and the aggregation stays where the data is read.
+-- The same setting in the subquery: the read step matches it and aggregation stays on the replicas.
 SELECT '-- query-based';
 SELECT countIf(explain ILIKE '%ReadFromRemoteParallelReplicas%') > 0, countIf(explain ILIKE '%ReadFromParallelReplicas%') = 0, countIf(explain ILIKE '%MergingAggregated%') > 0
 FROM (EXPLAIN description = 0 SELECT sum(c) FROM (SELECT y, count() AS c FROM t_05433 GROUP BY y SETTINGS parallel_replicas_plan_based = 0))
@@ -31,31 +28,31 @@ SETTINGS parallel_replicas_plan_based = 0; -- { serverError INCORRECT_QUERY }
 SELECT sum(c) FROM (SELECT y, count() AS c FROM t_05433 GROUP BY y SETTINGS parallel_replicas_plan_based = 0)
 SETTINGS parallel_replicas_plan_based = 1; -- { serverError INCORRECT_QUERY }
 
--- A subquery that builds an `IN` set has its own context and its own planner too.
+-- `IN` subquery.
 SELECT count() FROM t_05433 WHERE x IN (SELECT x FROM t_05433 WHERE y < 5 SETTINGS parallel_replicas_plan_based = 1)
 SETTINGS parallel_replicas_plan_based = 0; -- { serverError INCORRECT_QUERY }
 SELECT count() FROM t_05433 WHERE x IN (SELECT x FROM t_05433 WHERE y < 5 SETTINGS parallel_replicas_plan_based = 0)
 SETTINGS parallel_replicas_plan_based = 1; -- { serverError INCORRECT_QUERY }
 
--- So does an arm of a `UNION` at the root of the query, which is planned by its own planner.
+-- Root `UNION` arm.
 SET parallel_replicas_plan_based = 0;
 (SELECT sum(x) FROM t_05433 SETTINGS parallel_replicas_plan_based = 1) UNION ALL SELECT sum(x) FROM t_05433; -- { serverError INCORRECT_QUERY }
 SET parallel_replicas_plan_based = 1;
 (SELECT sum(x) FROM t_05433 SETTINGS parallel_replicas_plan_based = 0) UNION ALL SELECT sum(x) FROM t_05433; -- { serverError INCORRECT_QUERY }
 SET parallel_replicas_plan_based = DEFAULT;
 
--- So does the automatic mode, which decides on parallel replicas only while optimizing the plan.
+-- Automatic mode.
 SELECT sum(c) FROM (SELECT y, count() AS c FROM t_05433 GROUP BY y SETTINGS parallel_replicas_plan_based = 0)
 SETTINGS enable_parallel_replicas = 0, automatic_parallel_replicas_mode = 1, parallel_replicas_plan_based = 1; -- { serverError INCORRECT_QUERY }
 
--- Without parallel replicas the setting has no effect, so the same queries run.
+-- Parallel replicas disabled for the query.
 SELECT '-- without parallel replicas';
 SELECT sum(c) FROM (SELECT y, count() AS c FROM t_05433 GROUP BY y SETTINGS parallel_replicas_plan_based = 1)
 SETTINGS enable_parallel_replicas = 0, parallel_replicas_plan_based = 0;
 SELECT count() FROM t_05433 WHERE x IN (SELECT x FROM t_05433 WHERE y < 5 SETTINGS parallel_replicas_plan_based = 0)
 SETTINGS enable_parallel_replicas = 0, parallel_replicas_plan_based = 1;
 
--- Neither has it in a subquery that switches parallel replicas off for itself.
+-- Parallel replicas disabled for the subquery.
 SELECT sum(c) FROM (SELECT y, count() AS c FROM t_05433 GROUP BY y SETTINGS enable_parallel_replicas = 0, parallel_replicas_plan_based = 1)
 SETTINGS parallel_replicas_plan_based = 0;
 SELECT sum(c) FROM (SELECT y, count() AS c FROM t_05433 GROUP BY y SETTINGS enable_parallel_replicas = 0, parallel_replicas_plan_based = 0)
@@ -66,7 +63,7 @@ SET parallel_replicas_plan_based = 0;
 (SELECT sum(x) FROM t_05433 SETTINGS enable_parallel_replicas = 0, parallel_replicas_plan_based = 1) UNION ALL SELECT sum(x) FROM t_05433;
 SET parallel_replicas_plan_based = DEFAULT;
 
--- Setting the implementation for the whole query reaches its subqueries.
+-- The query's setting applies to its subqueries.
 SELECT '-- whole query';
 SELECT sum(c) FROM (SELECT y, count() AS c FROM t_05433 GROUP BY y) SETTINGS parallel_replicas_plan_based = 1;
 SELECT sum(c) FROM (SELECT y, count() AS c FROM t_05433 GROUP BY y) SETTINGS parallel_replicas_plan_based = 0;
