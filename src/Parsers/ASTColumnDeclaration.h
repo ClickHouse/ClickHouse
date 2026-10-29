@@ -98,6 +98,7 @@ public:
     void setDefaultExpression(ASTPtr && node) { setChild(DEFAULT_EXPR, std::move(node)); }
     void resetDefaultExpression() { resetChild(DEFAULT_EXPR); }
     void setComment(ASTPtr && node) { setChild(COMMENT, std::move(node)); }
+    void resetComment() { resetChild(COMMENT); }
     void setCodec(ASTPtr && node) { setChild(CODEC, std::move(node)); }
     void setStatisticsDesc(ASTPtr && node) { setChild(STATS, std::move(node)); }
     void setTTL(ASTPtr && node) { setChild(TTL, std::move(node)); }
