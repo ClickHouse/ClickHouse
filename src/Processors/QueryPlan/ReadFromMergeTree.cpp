@@ -1971,11 +1971,9 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreams(
         const bool is_local_unordered_read
             = !is_parallel_reading_from_replicas && !isQueryWithFinal() && !checkAnyPartOnRemoteFS(parts_with_ranges);
 
-        /// If that left some streams without a task, use a few smaller tasks per stream, not below
-        /// `merge_tree_min_read_task_size`, and as many streams as the parts give whole tasks of that size. A single
-        /// stream stays one (it reads in order). Only for the plain read pool, which cuts tasks of exactly this size
-        /// (adaptive granularity, no columns cache, local prefetched pool not allowed), and for no more streams than
-        /// `capStreamsByReadBytes` leaves alone.
+        /// If that left some streams without a task, use smaller tasks, not below `merge_tree_min_read_task_size`.
+        /// A single stream stays one (it reads in order). Only the plain read pool cuts tasks of exactly this size
+        /// (adaptive granularity, no columns cache, local prefetched pool not allowed).
         if (is_local_unordered_read && data.canUseAdaptiveGranularity() && !info.use_columns_cache
             && !settings[Setting::allow_prefetched_read_pool_for_local_filesystem]
             && initial_num_streams <= MIN_STREAMS_TO_CAP_BY_READ_BYTES && num_streams > 1 && num_streams < initial_num_streams)
