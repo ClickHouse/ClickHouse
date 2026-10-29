@@ -92,7 +92,7 @@ SELECT '--- the same time series is written to the tags table once, the time ran
 INSERT INTO ts (metric_name, tags, samples) VALUES ('http_requests', {'job': 'api'}, [(toDateTime64('2026-01-01 00:00:00', 3), 1.)]);
 INSERT INTO ts (metric_name, tags, samples) VALUES ('http_requests', {'job': 'api'}, [(toDateTime64('2026-01-01 00:00:01', 3), 2.)]), ('http_requests', {'job': 'web'}, [(toDateTime64('2026-01-01 00:00:02', 3), 3.)]);
 SELECT count() FROM timeSeriesTags({CLICKHOUSE_DATABASE:Identifier}.ts);
-SELECT count() FROM timeSeriesSamples({CLICKHOUSE_DATABASE:Identifier}.ts);
+SELECT sum(length(samples)) FROM timeSeriesSamples({CLICKHOUSE_DATABASE:Identifier}.ts);
 SELECT min(min_time), max(max_time) FROM timeSeriesTimeRanges({CLICKHOUSE_DATABASE:Identifier}.ts)
 WHERE id IN (SELECT id FROM timeSeriesTags({CLICKHOUSE_DATABASE:Identifier}.ts) WHERE tags['job'] = 'api');
 SYSTEM CLEAR TIME SERIES CACHES ts;
