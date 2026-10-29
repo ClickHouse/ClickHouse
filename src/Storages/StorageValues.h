@@ -39,6 +39,21 @@ public:
         size_t max_block_size,
         size_t num_streams) override;
 
+    /// The prepared pipe is taken by the step only when it builds its pipeline: a step that an optimization of the query plan
+    /// removes leaves the pipe to `extractPreparedPipe`.
+    void read(
+        QueryPlan & query_plan,
+        const Names & column_names,
+        const StorageSnapshotPtr & storage_snapshot,
+        SelectQueryInfo & query_info,
+        ContextPtr context,
+        QueryProcessingStage::Enum processed_stage,
+        size_t max_block_size,
+        size_t num_streams) override;
+
+    /// Returns the prepared pipe with the columns `column_names`.
+    Pipe takePreparedPipe(const Names & column_names, const StorageSnapshotPtr & storage_snapshot, ContextPtr context);
+
 
     /// FIXME probably it should return false, but StorageValues is used in ExecutingInnerQueryFromViewTransform (whatever it is)
     bool supportsTransactions() const override { return true; }
@@ -48,18 +63,21 @@ public:
 
     bool parallelizeOutputAfterReading(ContextPtr) const override { return false; }
 
-    /// Returns the prepared pipe if it was not read.
+    /// Returns the prepared pipe if no step has taken it.
     std::optional<Pipe> extractPreparedPipe();
 
     /// While it is not allowed, reading the prepared pipe throws.
     void setPreparedPipeReadAllowed(bool value) { prepared_pipe_read_allowed = value; }
 
 private:
+    void checkPreparedPipeCanBeRead();
+
     Block res_block;
     Pipe prepared_pipe;
     /// The prepared pipe can be read only once.
     bool has_prepared_pipe = false;
     bool prepared_pipe_was_read = false;
+    bool prepared_pipe_was_taken = false;
     bool prepared_pipe_read_allowed = true;
 };
 
