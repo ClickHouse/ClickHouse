@@ -4,6 +4,14 @@ watermark that affords the hash vectors: the dictionary filter still prunes, onl
 {"result":[{"count()":1}],"rows_read":16384}
 watermark just below what the value set needs: pruning must be skipped, all 32768 rows are read
 {"result":[{"count()":1}],"rows_read":32768}
+same watermark, one constant: the stored values are compared directly without a value set, only 16384 rows are read
+{"result":[{"count()":1}],"rows_read":16384}
+same watermark, 41 constants: compared in one pass with a binary search, only 16384 rows are read
+{"result":[{"count()":1}],"rows_read":16384}
+same watermark, two conditions of 151 constants, 201 distinct: compared directly, only 16384 rows are read
+{"result":[{"count()":1}],"rows_read":16384}
+same watermark, a tuple set of 301 rows with one distinct category: compared directly, only 16384 rows are read
+{"result":[{"count()":1}],"rows_read":16384}
 extreme memory budget (1 byte): pruning is skipped, result is still correct
 {"result":[{"count()":1}],"rows_read":32768}
 results are identical regardless of the memory budget

@@ -225,6 +225,13 @@ struct Reader
         /// row groups using the smaller atoms.
         std::vector<UInt64> bloom_filter_hashes;
 
+        /// (hash, INT32/INT64 physical value sign-extended to 64 bits) of each query constant hashed for this column,
+        /// sorted, each once. Used only while `physical_constants_complete`: every hash produced for the column is here.
+        std::vector<std::pair<UInt64, Int64>> physical_constants;
+        /// Indices of `physical_constants` in the order of their values.
+        std::vector<UInt32> physical_constants_by_value;
+        bool physical_constants_complete = true;
+
         PrimitiveColumnInfo() = default;
         PrimitiveColumnInfo(PrimitiveColumnInfo &&) = default;
         ~PrimitiveColumnInfo();
