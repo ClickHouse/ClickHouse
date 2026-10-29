@@ -2741,8 +2741,10 @@ TEST(SchedulerWorkloadResourceManager, RetiredAllocationQueueOutlivesWorkload)
     ResourceTest t;
 
     t.query("CREATE RESOURCE memory (MEMORY RESERVATION)");
-    t.query("CREATE WORKLOAD A SETTINGS max_memory = 100");
-    t.query("CREATE WORKLOAD B SETTINGS max_memory = 100");
+    // This branch allows a single root workload, so `A` and `B` share a parent.
+    t.query("CREATE WORKLOAD all");
+    t.query("CREATE WORKLOAD A IN all SETTINGS max_memory = 100");
+    t.query("CREATE WORKLOAD B IN all SETTINGS max_memory = 100");
 
     // Only `B`'s classifier retains the old hierarchy version after the temporary classifier for `A` is released.
     ClassifierPtr classifier_b = t.manager->acquire("B");
