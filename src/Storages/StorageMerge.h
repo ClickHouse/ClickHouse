@@ -315,6 +315,11 @@ private:
         /// rows that are not conform to row level policy
         void addFilterTransform(QueryPlan &, ContextPtr) const;
 
+        /// The policy AND-ed with `forwarded`, as the row-level filter of the `storage` read; null if it cannot evaluate it.
+        FilterDAGInfoPtr makeRowLevelFilter(const IStorage & storage, const FilterDAGInfoPtr & forwarded, ContextPtr) const;
+
+        void addCreatingSetsStep(QueryPlan &, ContextPtr) const;
+
     private:
         std::string filter_column_name; // complex filter, may contain logic operations
         ActionsDAG actions_dag;
@@ -332,7 +337,7 @@ private:
         QueryProcessingStage::Enum stage;
         /// Set for a child aggregated by keys of other types than the `Merge` table.
         bool forget_aggregation_buckets = false;
-        /// Set when the child's plan was built by the interpreter, which applies the child's row policy itself.
+        /// Set when the child's plan applies the child's row policy itself (interpreter plan, or the read's row-level filter).
         bool applies_row_policy = false;
     };
 

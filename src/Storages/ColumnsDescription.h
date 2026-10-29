@@ -378,4 +378,11 @@ Block validateColumnsDefaultsAndGetSampleBlock(ASTPtr default_expr_list, const N
 bool prewhereSupportedColumnsContain(
     const NameSet & supported_columns, bool include_subcolumns, const ColumnsDescription & columns, const String & column_name);
 
+class IStorage;
+
+/// Whether the read of `storage` can evaluate a row policy over `required_columns` as its row-level filter.
+/// A remote storage ships only query text and would drop it. Wrappers (Merge, Buffer) re-derive it against
+/// their children's types, so every column must be in the PREWHERE contract.
+bool canPushDownRowPolicyFilter(const IStorage & storage, const ColumnsDescription & columns, const Names & required_columns);
+
 }
