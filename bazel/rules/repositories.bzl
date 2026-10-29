@@ -6,6 +6,24 @@ load("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive")
 def _shell_quote(value):
     return "'" + value.replace("'", "'\"'\"'") + "'"
 
+def _llvm_build_repository_impl(ctx):
+    for child in ctx.path(ctx.attr.source).dirname.readdir():
+        if child.basename in ["BUILD", "BUILD.bazel", "MODULE.bazel", "REPO.bazel", "WORKSPACE", "WORKSPACE.bazel"]:
+            continue
+        ctx.symlink(child, child.basename)
+        if ctx.os.name.startswith("windows") and not child.is_dir:
+            ctx.watch(child)
+    ctx.file("BUILD.bazel", ctx.read(ctx.attr.build_file))
+
+_llvm_build_repository = repository_rule(
+    implementation = _llvm_build_repository_impl,
+    attrs = {
+        "source": attr.label(mandatory = True),
+        "build_file": attr.label(mandatory = True),
+    },
+    local = True,
+)
+
 def _cargo_sources_impl(ctx):
     # Cargo keeps the upstream relative path dependencies. Assemble only its
     # metadata layout; compilation still belongs to rules_rs repositories.
@@ -145,12 +163,20 @@ def _contrib_impl(module_ctx):
         else:
             commands = ["rm -f -- " + " ".join([_shell_quote(path) for path in remove])] if remove else []
         if repository["name"] == "clickhouse_llvm_project":
+            # Editing ClickHouse's BUILD file must not fetch the LLVM Git objects again.
+            source = "clickhouse_llvm_sources_" + repository["commit"]
             git_repository(
-                name = repository["name"],
+                name = source,
                 remote = repository["repository"] + ".git",
                 commit = repository["commit"],
-                build_file = Label("//bazel/dependencies:" + repository["name"] + ".BUILD.bazel"),
+                build_file_content = 'exports_files(["LICENSE.TXT"])\n',
                 patch_cmds = commands,
+                sparse_checkout_patterns = ["/*", "!/llvm/test/*", "!/clang/test/*"],
+            )
+            _llvm_build_repository(
+                name = repository["name"],
+                source = "@" + source + "//:LICENSE.TXT",
+                build_file = Label("//bazel/dependencies:" + repository["name"] + ".BUILD.bazel"),
             )
             continue
         http_archive(

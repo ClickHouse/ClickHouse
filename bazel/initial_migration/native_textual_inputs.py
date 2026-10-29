@@ -32,7 +32,7 @@ from initial_migration.native_gcp_proto_inputs import (
 from initial_migration.prune_inherited_headers import (
     ARCHES, CC_COMPILERS, CC_PROVIDERS, Document, Rewrite, label,
 )
-from initial_migration.repository_inputs import CC_HEADER_SUFFIXES, REPOSITORIES, ROOT
+from initial_migration.repository_inputs import CC_HEADER_SUFFIXES, REPOSITORIES, ROOT, llvm_source_call
 
 
 def libcxx_headers(root, archive, registry, inventory):
@@ -58,14 +58,14 @@ def libcxx_headers(root, archive, registry, inventory):
                         for node in ast.walk(llvm_module) if isinstance(node, ast.Call)
                         and getattr(node.func, 'attr', '') == 'version'
                         for kw in node.keywords if kw.arg == 'llvm_version')
-    llvm_sha = next(ast.literal_eval(kw.value)
-                   for node in ast.walk(llvm_module) if isinstance(node, ast.Call)
-                   and getattr(node.func, 'attr', '') == 'from_archive'
-                   for kw in node.keywords if kw.arg == 'sha256')
+    source = llvm_source_call(llvm_module)
+    pin = 'commit' if source.func.attr == 'from_git' else 'sha256'
+    expected = next((ast.literal_eval(kw.value) for kw in source.keywords if kw.arg == pin), None)
     import gzip
     with gzip.open(inventory, 'rt') as file:
         pinned = json.load(file)['contrib/llvm-project']
-    if pinned['sha256'] != llvm_sha or llvm_sha != REPOSITORIES['contrib/llvm-project']['sha256']:
+    if (not expected or pinned.get(pin) != expected
+            or REPOSITORIES['contrib/llvm-project'].get(pin) != expected):
         raise ValueError('LLVM source inventory does not match llvm.MODULE.bazel')
     major = llvm_version.partition('.')[0]
     with tarfile.open(archive) as tar:
@@ -563,7 +563,8 @@ def main():
     parser.add_argument('--llvm-archive', type=Path,
                         help='pinned @llvm module archive for C++ header ownership')
     parser.add_argument('--llvm-registry', type=Path, help='@llvm source.json from MODULE.bazel.lock')
-    parser.add_argument('--llvm-inventory', type=Path, help='SHA-checked ClickHouse LLVM source inventory')
+    parser.add_argument('--llvm-inventory', type=Path,
+                        help='ClickHouse LLVM source inventory with files and the pinned commit or sha256')
     parser.add_argument('--proto-archive', action='append', default=[], metavar='CONTRIB_OWNER=ARCHIVE',
                         help='pinned source archive for regular protoc schema/import verification')
     parser.add_argument('--write', action='store_true')

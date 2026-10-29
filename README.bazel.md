@@ -14,6 +14,11 @@ bazel test --config=x86_64 //src:unit_tests_dbms
 The default is `-c opt`: ClickHouse C and C++ targets use `-O3` and define
 `NDEBUG`. Use `-c fastbuild` or `-c dbg` to keep assertions enabled.
 
+The compiler and ClickHouse's LLVM libraries use the same Git revision.
+`@llvm-project` applies the compiler patches. `@clickhouse_llvm_project`
+loads the [ClickHouse LLVM BUILD file](bazel/dependencies/clickhouse_llvm_project.BUILD.bazel)
+over a separately cached source checkout. Editing the BUILD file reuses that checkout.
+
 ## BuildBuddy remote execution
 
 Use a BuildBuddy API key with remote execution permission. Put these entries
@@ -76,16 +81,15 @@ counts for local configured compile actions:
 - `src/Functions/area.cpp` (x86_64, normal): 15,752 to 13,452 inputs.
 - `src/Functions/area.cpp` (aarch64, normal): 15,693 to 13,393 inputs.
 
-These x86-64 timing profiles predate the source directory changes.
-They used a local Bazel client with `--jobs=2000`
-and a warm repository cache. Each run set a fresh target `--action_env` cache
-buster, kept the host action environment unchanged, and executed the final
-`ClickHouseNativeLink` on BuildBuddy. The hashes identify the `//:clickhouse` executables;
-the [CMake comparison](#binary-comparison) below uses separate builds.
+These x86-64 builds used a local Bazel client, `--jobs=2000`, a warm repository
+cache and a fresh target `--action_env` value. BuildBuddy executed the final
+`ClickHouseNativeLink` in each build. The table gives the SHA-256 of
+`//:clickhouse`. The [CMake comparison](#binary-comparison) uses separate builds.
 
 | BuildBuddy timing profile | ClickHouse SHA-256 | Bytes |
 | --- | --- | ---: |
-| [`-c fastbuild`](https://app.buildbuddy.io/invocation/b5f2d5ff-b97e-423b-bec7-b32127aee8cf#timing) | `66bfdb7a22d08f7076721fa1cd68ee7c5167b4d8d6620965a0db72858280c522` | 2,175,634,528 |
+| [`-c fastbuild` before source directories](https://app.buildbuddy.io/invocation/b5f2d5ff-b97e-423b-bec7-b32127aee8cf#timing) | `66bfdb7a22d08f7076721fa1cd68ee7c5167b4d8d6620965a0db72858280c522` | 2,175,634,528 |
+| [`-c fastbuild` at `2918c740`](https://app.buildbuddy.io/invocation/e6da7d62-83b2-4ff2-a0b0-89660ff6b747#timing) | `66bfdb7a22d08f7076721fa1cd68ee7c5167b4d8d6620965a0db72858280c522` | 2,175,634,528 |
 | [`-c opt --features=thin_lto`](https://app.buildbuddy.io/invocation/841c82aa-2b17-4df6-890f-8ac960d94733#timing) | `79d90fd7278aa71960be5ebf109b1ee14927d068884a94458f42863a58308353` | 828,248,440 |
 
 ## Linux headers and link inputs

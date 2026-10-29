@@ -37,7 +37,7 @@ from initial_migration.build_file import (
 )
 from initial_migration.repository_inputs import (
     REPOSITORIES, cmake_has_source_prefix_map, comparison_root, configuration_owner, execution_path, repository,
-    CC_HEADER_SUFFIXES, HeaderDirectory, directory_sources, input_key,
+    CC_HEADER_SUFFIXES, HeaderDirectory, directory_sources, input_key, llvm_source_call,
     package_sources, source_label, source_path, write_overlays,
 )
 
@@ -840,15 +840,10 @@ def declare_unit_test_private_hdrs(path):
 def llvm_source_overlays():
     """Read ClickHouse source files supplied to the LLVM module extension."""
     tree = ast.parse((ROOT / 'bazel/llvm.MODULE.bazel').read_text())
-    for stmt in tree.body:
-        if (isinstance(stmt, ast.Expr) and isinstance(stmt.value, ast.Call)
-                and isinstance(stmt.value.func, ast.Attribute)
-                and stmt.value.func.attr == 'from_archive'
-                and isinstance(stmt.value.func.value, ast.Name)
-                and stmt.value.func.value.id == 'llvm'):
-            files = next(kw.value for kw in stmt.value.keywords if kw.arg == 'files')
-            return {dest: source_path(label) for dest, label in ast.literal_eval(files).items()}
-    raise ValueError('Missing llvm.from_archive files in bazel/llvm.MODULE.bazel')
+    source = llvm_source_call(tree)
+    files = next((ast.literal_eval(kw.value) for kw in source.keywords if kw.arg == 'files'), {})
+    return {dest: source_path(label) for dest, label in files.items()}
+
 BUILD_OPTIONS_OUTPUT = 'src/Storages/System/StorageSystemBuildOptions.generated.cpp'
 # CMake installs these headers unchanged beside the configured conf.h.
 # Keep the upstream source tree authoritative instead of checking in copies.

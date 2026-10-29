@@ -299,6 +299,17 @@ def source_label(path):
     return '//:' + path
 
 
+def llvm_source_call(module):
+    for stmt in module.body:
+        if not isinstance(stmt, ast.Expr) or not isinstance(stmt.value, ast.Call):
+            continue
+        func = stmt.value.func
+        if (isinstance(func, ast.Attribute) and isinstance(func.value, ast.Name)
+                and func.value.id == 'llvm' and func.attr in ('from_git', 'from_archive')):
+            return stmt.value
+    raise ValueError('Missing llvm.from_git or llvm.from_archive in bazel/llvm.MODULE.bazel')
+
+
 def source_path(label):
     for prefix, spec in REPOSITORIES.items():
         repo_label = '@' + spec['name'] + '//:'
