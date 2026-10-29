@@ -3444,8 +3444,8 @@ void Reader::decodePrimitiveColumn(ColumnChunk & column, const PrimitiveColumnIn
 
         const auto & filter = row_subgroup.filter.filter;
         const auto [first, last, runs] = countFilterRuns(filter.data(), row_subgroup.filter.rows_total);
-        /// A run costs about as much as decoding 16 values.
-        if (runs < 2 || runs * 16 < (last - first) - row_subgroup.filter.rows_pass)
+        /// Seeking to a run costs about as much as decoding and filtering 16 rows.
+        if (runs < 2 || runs * 16 < last - first)
             return false;
 
         /// Ranges of rows to decode, relative to the row subgroup. With an offset index, a range must

@@ -63,6 +63,11 @@ SELECT count(), sum(cityHash64(formatRow('TSV', *))) FROM pq_idx PREWHERE cityHa
 SELECT count(), sum(cityHash64(formatRow('TSV', *))) FROM pq_noidx PREWHERE cityHash64(k) % 10 = 0;
 SELECT count(), sum(cityHash64(formatRow('TSV', *))) FROM src WHERE cityHash64(k) % 10 = 0;
 
+SELECT '90%, scattered';
+SELECT count(), sum(cityHash64(formatRow('TSV', *))) FROM pq_idx PREWHERE cityHash64(k) % 10 != 0;
+SELECT count(), sum(cityHash64(formatRow('TSV', *))) FROM pq_noidx PREWHERE cityHash64(k) % 10 != 0;
+SELECT count(), sum(cityHash64(formatRow('TSV', *))) FROM src WHERE cityHash64(k) % 10 != 0;
+
 SELECT '3%, scattered';
 SELECT count(), sum(cityHash64(formatRow('TSV', *))) FROM pq_idx PREWHERE cityHash64(k) % 100 < 3;
 SELECT count(), sum(cityHash64(formatRow('TSV', *))) FROM pq_noidx PREWHERE cityHash64(k) % 100 < 3;
