@@ -247,6 +247,7 @@ struct VisitedFrame
     /// better name re-walks long symlink chains once per link.
     std::optional<std::string> unresolved;
     bool retried = false;
+    size_t matches_before_retry = 0;
 };
 
 /// State the traversal pruning carries across one expanded pattern.
@@ -263,8 +264,10 @@ struct PruningState
     /// with, so the answer is deferred until the walk is over and every count is final. Deciding
     /// at the collision instead would read a count that is not yet final whenever the collision
     /// comes from inside the claiming frame's own subtree, which is what an ancestor loop is: the
-    /// loop can re-enter the root before the root has matched anything.
-    std::vector<const VisitedFrame *> pending_collisions;
+    /// loop can re-enter the root before the root has matched anything. A collision queued before
+    /// the frame's retry is charged with the matches from before it: the retry runs under a name
+    /// with fewer symlinks than the pruned one, which cannot reach what only the retry found.
+    std::vector<std::pair<const VisitedFrame *, bool>> pending_collisions;
 };
 
 /// Records an `ELOOP` on `path` in the frames being walked: a name for their directories with fewer
@@ -519,15 +522,9 @@ void listFilesWithRegexpMatchingImpl(
             /// claimed the frame: that is a second name for the same place, whereas re-entering
             /// under the SAME path is a globstar re-applying at one directory and is not a second
             /// name. Whether the pruned frame would have matched anything is decided after the
-            /// walk when the claiming frame may still be finding matches right now. A finished
-            /// frame is charged at once, so a later retry under a shorter name does not count.
+            /// walk, because the claiming frame may still be finding matches right now.
             if (frame.lexical_dir != lexical_dir)
-            {
-                if (frame.walking)
-                    pruning.pending_collisions.push_back(&frame);
-                else if (frame.matches > 0)
-                    collapsed_a_match = true;
-            }
+                pruning.pending_collisions.emplace_back(&frame, !frame.retried);
             /// What the frame could not resolve is also unresolved under the frames reaching it now.
             if (!frame.walking && frame.unresolved)
                 noteSymlinkLimitSkip(std::make_error_code(std::errc::too_many_symbolic_link_levels),
@@ -535,6 +532,7 @@ void listFilesWithRegexpMatchingImpl(
             return; /// This directory has already been walked with this remaining pattern.
         }
         frame.retried = !is_new;
+        frame.matches_before_retry = frame.matches;
         frame.lexical_dir = lexical_dir;
         frame.prefix = prefix_without_globs;
         frame.canonical = prefix_canonical;
@@ -703,9 +701,9 @@ std::vector<std::string> listFilesWithRegexpMatching(
         /// name for a file: a pruned frame would have emitted exactly what its claiming frame did,
         /// so it collapsed something only if that frame matched something. Deciding here rather
         /// than at the collision keeps the answer independent of the order the walk took.
-        for (const auto * claimed : pruning.pending_collisions)
+        for (const auto & [claimed, before_retry] : pruning.pending_collisions)
         {
-            if (claimed->matches > 0)
+            if ((before_retry && claimed->retried ? claimed->matches_before_retry : claimed->matches) > 0)
             {
                 collapsed_a_match = true;
                 break;
