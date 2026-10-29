@@ -739,6 +739,8 @@ void Connection::receiveHello()
         if (server_revision >= DBMS_MIN_REVISION_WITH_QUERY_PLAN_SERIALIZATION)
         {
             readVarUInt(server_query_plan_serialization_version, *in);
+            server_query_plan_serialization_version = QueryPlan::limitSerializationVersionForPeer(
+                server_query_plan_serialization_version, server_version_major, server_version_minor);
         }
 
         worker_cluster_function_protocol_version = DBMS_CLUSTER_INITIAL_PROCESSING_PROTOCOL_VERSION;
