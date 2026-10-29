@@ -1,9 +1,11 @@
 -- `CLEAR COLUMN` of a whole `Nested` group recalculates the `MATERIALIZED` columns that read its members,
 -- and `CLEAR COLUMN` must not rewrite the sign, version or `is_deleted` column of a merging engine.
+-- The `Nested` tables use compact parts: on wide parts, `CLEAR COLUMN` of a whole `Nested` group leaves the
+-- stored values in place (also without matchers), so the recalculated `MATERIALIZED` value is unchanged there.
 
 DROP TABLE IF EXISTS t_nested;
 CREATE TABLE t_nested (k UInt64, t Nested(a UInt64, b UInt64), m UInt64 MATERIALIZED arraySum(t.a) + 1)
-ENGINE = MergeTree ORDER BY k SETTINGS share_nested_offsets = 1;
+ENGINE = MergeTree ORDER BY k SETTINGS share_nested_offsets = 1, min_bytes_for_wide_part = '1G', min_rows_for_wide_part = 1000000000;
 INSERT INTO t_nested (k, `t.a`, `t.b`) VALUES (1, [5], [6]);
 ALTER TABLE t_nested CLEAR COLUMN t SETTINGS mutations_sync = 2;
 SELECT k, t.a, t.b, m FROM t_nested ORDER BY k;
@@ -11,7 +13,7 @@ DROP TABLE t_nested;
 
 DROP TABLE IF EXISTS t_nested_key;
 CREATE TABLE t_nested_key (k UInt64, t Nested(a UInt64, b UInt64), m UInt64 MATERIALIZED arraySum(t.a) + 1)
-ENGINE = MergeTree ORDER BY k PARTITION BY m SETTINGS share_nested_offsets = 1;
+ENGINE = MergeTree ORDER BY k PARTITION BY m SETTINGS share_nested_offsets = 1, min_bytes_for_wide_part = '1G', min_rows_for_wide_part = 1000000000;
 INSERT INTO t_nested_key (k, `t.a`, `t.b`) VALUES (1, [5], [6]);
 ALTER TABLE t_nested_key CLEAR COLUMN t SETTINGS mutations_sync = 2; -- { serverError ALTER_OF_COLUMN_IS_FORBIDDEN }
 SELECT k, t.a, m FROM t_nested_key ORDER BY k;
