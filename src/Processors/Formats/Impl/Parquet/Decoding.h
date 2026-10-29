@@ -142,6 +142,8 @@ struct FixedSizeConverter
     /// If true, we can just memcpy into IColumn::insertRawUninitialized instead of calling
     /// convertColumn.
     virtual bool isTrivial() const { return false; }
+    /// True if convertColumn throws for some values, e.g. the ones the output type can't hold.
+    virtual bool canRejectValues() const { return false; }
 
     virtual void convertColumn(std::span<const char> data, size_t num_values, IColumn & col) const
     {
@@ -173,6 +175,8 @@ struct StringConverter
 {
     /// If true, the output is ColumnString, and no special conversion is needed.
     virtual bool isTrivial() const { return false; }
+    /// True if convertColumn throws for some values, e.g. the ones the output type can't hold.
+    virtual bool canRejectValues() const { return false; }
 
     /// i-th string is range [offsets[i-1], offsets[i]-separator_bytes) in `chars`.
     /// `offsets[-1]` must be valid and is not necessarily 0.
@@ -291,6 +295,7 @@ struct IntConverter : public FixedSizeConverter
     {
         return !output_size.has_value() && date_overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Ignore;
     }
+    bool canRejectValues() const override { return date_overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Throw; }
 
     void convertColumn(std::span<const char> data, size_t num_values, IColumn & col) const override;
     std::optional<Field> convertField(std::span<const char> data, bool /*is_max*/) const override;
@@ -412,6 +417,7 @@ struct BigEndianDecimalWideIntegerConverter : public FixedSizeConverter
         input_size = input_size_;
     }
 
+    bool canRejectValues() const override { return true; }
     void convertColumn(std::span<const char> data, size_t num_values, IColumn & col) const override;
     std::optional<Field> convertField(std::span<const char> data, bool /*is_max*/) const override;
 };
@@ -427,6 +433,7 @@ extern template struct BigEndianDecimalWideIntegerConverter<UInt256>;
 template <typename T>
 struct BigEndianDecimalWideIntegerStringConverter : public StringConverter
 {
+    bool canRejectValues() const override { return true; }
     void convertColumn(std::span<const char> chars, const UInt64 * offsets, size_t separator_bytes, size_t num_values, IColumn & col) const override;
     std::optional<Field> convertField(std::span<const char> data, bool /*is_max*/) const override;
 };
@@ -446,6 +453,7 @@ struct BigEndianDecimalStringConverter : public StringConverter
 
     explicit BigEndianDecimalStringConverter(UInt32 scale_) : scale(scale_) {}
 
+    bool canRejectValues() const override { return true; }
     void convertColumn(std::span<const char> chars, const UInt64 * offsets, size_t separator_bytes, size_t num_values, IColumn & col) const override;
     std::optional<Field> convertField(std::span<const char> data, bool /*is_max*/) const override;
 };
@@ -459,6 +467,7 @@ struct Int96Converter : public FixedSizeConverter
 {
     Int96Converter();
 
+    bool canRejectValues() const override { return true; }
     void convertColumn(std::span<const char> data, size_t num_values, IColumn & col) const override;
 };
 

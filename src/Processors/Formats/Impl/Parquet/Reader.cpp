@@ -3441,6 +3441,11 @@ void Reader::decodePrimitiveColumn(ColumnChunk & column, const PrimitiveColumnIn
         /// fall back to plain pages): filtering would copy the passing values a second time.
         if (!column_info.decoded_type->haveMaximumSizeOfValue() || column_info.decoded_type->getMaximumSizeOfValueInMemory() > 16)
             return false;
+        /// Nor when converting a value can throw: the rows filtered out must not be converted.
+        const PageDecoderInfo & decoder_info = column_info.decoder;
+        if ((decoder_info.fixed_size_converter && decoder_info.fixed_size_converter->canRejectValues())
+            || (decoder_info.string_converter && decoder_info.string_converter->canRejectValues()))
+            return false;
 
         const auto & filter = row_subgroup.filter.filter;
         const auto [first, last, runs] = countFilterRuns(filter.data(), row_subgroup.filter.rows_total);
