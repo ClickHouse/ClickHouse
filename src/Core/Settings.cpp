@@ -9628,6 +9628,11 @@ Allow parsing Iceberg `geometry` and `geography` field types as ClickHouse `Geom
 )", 0, allow_experimental_geo_types_in_iceberg, \
         {"26.9", false, false, "Added an alias for setting `allow_experimental_geo_types_in_iceberg`."}, \
         {"26.5", false, false, "New setting to allow parsing Iceberg geometry/geography fields as Geometry type. At the time the setting was named `allow_experimental_geo_types_in_iceberg`, which is now an alias of it."}) \
+    DECLARE(Bool, iceberg_time_as_int64, false, R"(
+Read the Iceberg `time` type as `Int64` (microseconds since midnight) instead of `Time64(6)`.
+The setting is applied when the metadata of a table is loaded.
+)", 0, \
+        {"26.11", true, false, "Iceberg `time` is read as `Time64(6)` instead of `Int64`."}) \
     DECLARE(Bool, show_data_lake_catalogs_in_system_tables, false, R"(
 Enables showing data lake catalogs in system tables.
 )", 0, \

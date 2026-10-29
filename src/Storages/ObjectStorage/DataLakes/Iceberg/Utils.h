@@ -32,6 +32,7 @@ class GenericDatum;
 namespace DB
 {
 struct StorageID;
+class ColumnMapper;
 }
 
 namespace DataLake
@@ -116,6 +117,17 @@ Poco::JSON::Object::Ptr deepCopy(const Poco::JSON::Object::Ptr & object);
 
 std::pair<Poco::Dynamic::Var, bool> getIcebergType(DataTypePtr type, Int32 & iter);
 Poco::Dynamic::Var getAvroType(DataTypePtr type, Int32 field_id);
+Poco::Dynamic::Var getAvroLogicalType(DataTypePtr type);
+
+/// Iceberg `time` is microseconds since midnight in [00:00:00, 24:00:00).
+constexpr Int64 ICEBERG_TIME_OF_DAY_MAX_MICROS = 24LL * 60 * 60 * 1'000'000;
+
+void validateIcebergTimeOfDayMicroseconds(Int64 microseconds);
+
+/// Throws if a column of an Iceberg `time` field (including nested ones) is not `Time` or `Time64`,
+/// which is the case with setting `iceberg_time_as_int64`: the data file would store a plain integer
+/// where Iceberg requires a time of day.
+void checkIcebergTimeColumnsAreWritable(const ColumnMapper & column_mapper, const Block & header);
 
 /// Spec: https://iceberg.apache.org/spec/?h=metadata.json#table-metadata-fields
 std::pair<Poco::JSON::Object::Ptr, String> createEmptyMetadataFile(

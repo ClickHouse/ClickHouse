@@ -18,6 +18,7 @@
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDate32.h>
 #include <DataTypes/DataTypeDateTime64.h>
+#include <DataTypes/DataTypeTime64.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeFixedString.h>
 #include <DataTypes/DataTypeIPv4andIPv6.h>
@@ -310,6 +311,14 @@ static bool isDictionaryEncoded(const orc::StripeInformation * stripe_info, cons
     return encoding == orc::ColumnEncodingKind_DICTIONARY || encoding == orc::ColumnEncodingKind_DICTIONARY_V2;
 }
 
+/// Iceberg has no ORC counterpart for its `time` type and writes it as an ORC `long` of microseconds
+/// since midnight, marked with this attribute (see `ORCSchemaUtil` in Iceberg).
+static bool isIcebergTimeLong(const orc::Type & orc_type)
+{
+    return orc_type.getKind() == orc::LONG && orc_type.hasAttributeKey("iceberg.long-type")
+        && orc_type.getAttributeValue("iceberg.long-type") == "TIME";
+}
+
 static DataTypePtr parseORCType(
     const orc::Type * orc_type,
     bool skip_columns_with_unsupported_types,
@@ -423,6 +432,8 @@ static DataTypePtr parseORCType(
         case orc::TypeKind::INT:
             return std::make_shared<DataTypeInt32>();
         case orc::TypeKind::LONG:
+            if (isIcebergTimeLong(*orc_type))
+                return std::make_shared<DataTypeTime64>(6);
             return std::make_shared<DataTypeInt64>();
         case orc::TypeKind::FLOAT:
             return std::make_shared<DataTypeFloat32>();
@@ -585,6 +596,15 @@ convertFieldToORCLiteral(const orc::Type & orc_type, const Field & field, DataTy
                 ///   SELECT * FROM file('t.orc', ORC, 'x UInt8') WHERE x > 10
                 /// We have to reject this, otherwise it would miss values > 127 (because
                 /// they're treated as negative by ORC).
+                ///
+                /// An Iceberg `time` read as `Time64(6)` stores the same microseconds as the ORC `long`.
+                if (isIcebergTimeLong(orc_type) && field.getType() == Field::Types::Decimal64)
+                {
+                    const auto & time = field.safeGet<DecimalField<Decimal64>>();
+                    if (time.getScale() != 6)
+                        return std::nullopt;
+                    return orc::Literal(time.getValue().value);
+                }
                 auto val = field.safeGet<Int64>();
                 return orc::Literal(val);
             }
@@ -2328,6 +2348,11 @@ static bool orcUnionBranchMatchesType(const orc::Type * orc_branch_type, const D
         case orc::TypeKind::INT:
             return which.isInt32() || which.isUInt32() || which.isIPv4() || orcIntegerBranchWidensTo(type, 4);
         case orc::TypeKind::LONG:
+            /// An Iceberg `time` is read as `Time64(6)`, which casts to any `Time` or `Time64`, and still as is to
+            /// an integer (see `readColumnFromORCColumn`); a plain `long` never matches a time of day, so in a union
+            /// of both kinds the plain `long` takes the integer alternative and the `time` one the `Time64`.
+            if (isIcebergTimeLong(*orc_branch_type) && (which.isTime64() || which.isTime()))
+                return true;
             return which.isInt64() || which.isUInt64() || orcIntegerBranchWidensTo(type, 8);
         case orc::TypeKind::FLOAT:
             return which.isFloat32() || which.isFloat64();
@@ -2454,7 +2479,7 @@ static bool orcUnionBranchPrefersType(const orc::Type * orc_branch_type, const D
         case orc::TypeKind::INT:
             return which.isInt32();
         case orc::TypeKind::LONG:
-            return which.isInt64();
+            return isIcebergTimeLong(*orc_branch_type) ? which.isTime64() || which.isTime() : which.isInt64();
         case orc::TypeKind::FLOAT:
             return which.isFloat32();
         case orc::TypeKind::DOUBLE:
@@ -2868,7 +2893,23 @@ ColumnWithTypeAndName ORCColumnToCHColumn::readColumnFromORCColumn(
             return readColumnWithNumericData<Int32, orc::LongVectorBatch>(orc_column, column_name);
         }
         case orc::LONG:
+        {
+            /// The microseconds of an Iceberg `time` are the ticks of `Time64(6)`, while the cast of an
+            /// integer to `Time64` would take them as seconds. An integer type is still read as is.
+            if (isIcebergTimeLong(*orc_type) && !(type_hint && WhichDataType(type_hint).isNativeInteger()))
+            {
+                auto column = readColumnWithNumericData<Int64, orc::LongVectorBatch>(orc_column, column_name);
+                auto time_type = std::make_shared<DataTypeTime64>(6);
+                auto time_column = time_type->createColumn();
+                const auto & values = assert_cast<const ColumnInt64 &>(*column.column).getData();
+                auto & time_values = assert_cast<ColumnDecimal<Time64> &>(*time_column).getData();
+                time_values.reserve(values.size());
+                for (Int64 value : values)
+                    time_values.push_back(Time64(value));
+                return {std::move(time_column), time_type, column_name};
+            }
             return readColumnWithNumericData<Int64, orc::LongVectorBatch>(orc_column, column_name);
+        }
         case orc::FLOAT:
             return readColumnWithNumericData<Float32, orc::DoubleVectorBatch>(orc_column, column_name);
         case orc::DOUBLE:
@@ -3181,6 +3222,7 @@ The table below compares supported ORC data types and their corresponding ClickH
 | `Decimal`                             | [Decimal](/reference/data-types/decimal)                                                           | `Decimal`                |
 | `Date`                                | [Date32](/reference/data-types/date32)                                                             | `Date`                   |
 | `Timestamp`                           | [DateTime64](/reference/data-types/datetime64)                                                     | `Timestamp`              |
+| `Bigint` (time of day) \*             | [Time/Time64](/reference/data-types/time64)                                                        | `Bigint` (time of day) \* |
 | `String`, `Varchar`, `Binary`         | [String](/reference/data-types/string)                                                             | `String`                 |
 | `Char`                                | [FixedString](/reference/data-types/fixedstring)                                                   | `String`                 |
 | `List`                                | [Array](/reference/data-types/array)                                                               | `List`                   |
@@ -3193,6 +3235,7 @@ The table below compares supported ORC data types and their corresponding ClickH
 | `Union`                               | [Variant](/reference/data-types/variant)                                                           | `Union`                  |
 
 - Other types are not supported.
+- \* ORC has no time-of-day type. Like Iceberg, ClickHouse writes [Time](/reference/data-types/time) and [Time64](/reference/data-types/time64) (with scale up to 6) as microseconds since midnight in a `Bigint` with the attribute `iceberg.long-type` = `TIME`, and reads such a column as `Time64(6)`. The values must be in the range `[00:00:00, 24:00:00)`.
 - An ORC `Union` column is read as a [Variant](/reference/data-types/variant) over the union's branch types, and a `Variant` column is written as an ORC `Union` over its branch types. Note that `Variant` sorts its branch types, so the branch order may differ from the ORC file. Unions with duplicate branch types (e.g. `uniontype<int,int>`) are not supported.
 - Arrays can be nested and can have a value of the `Nullable` type as an argument. `Tuple` and `Map` types also can be nested.
 - The data types of ClickHouse table columns do not have to match the corresponding ORC data fields. When inserting data, ClickHouse interprets data types according to the table above and then [casts](/reference/functions/regular-functions/type-conversion-functions#CAST) the data to the data type set for the ClickHouse table column.

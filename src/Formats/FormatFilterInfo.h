@@ -94,7 +94,8 @@ public:
     }
     bool isLocalTimestampPath(const String & path) const { return local_timestamp_paths.contains(path); }
 
-    /// Field ids whose Iceberg type is `time` (microseconds since midnight, exposed as `Int64`).
+    /// Field ids whose Iceberg type is `time` (microseconds since midnight). They matter when such a column
+    /// is read as `Int64` (setting `iceberg_time_as_int64`) rather than as `Time64(6)`.
     void setIcebergTimeFieldIds(std::unordered_set<Int64> && iceberg_time_field_ids_)
     {
         iceberg_time_field_ids = std::move(iceberg_time_field_ids_);

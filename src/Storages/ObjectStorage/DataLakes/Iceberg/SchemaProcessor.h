@@ -99,7 +99,10 @@ public:
         ManifestFile,
     };
 
-    explicit IcebergSchemaProcessor(bool allow_geo_parser_ = false) : allow_geo_parser(allow_geo_parser_) {}
+    explicit IcebergSchemaProcessor(bool allow_geo_parser_ = false, bool time_as_int64_ = false)
+        : allow_geo_parser(allow_geo_parser_), time_as_int64(time_as_int64_)
+    {
+    }
 
     void addIcebergTableSchema(
         Poco::JSON::Object::Ptr schema_ptr,
@@ -115,7 +118,8 @@ public:
     bool hasClickHouseTableSchemaById(Int32 id) const;
     bool isSchemaRegisteredFromMetadata(Int32 id) const;
 
-    static DataTypePtr getSimpleType(const String & type_name, bool allow_geo_parser = true);
+    /// `time_as_int64` maps `time` to `Int64` microseconds instead of `Time64(6)` (setting `iceberg_time_as_int64`).
+    static DataTypePtr getSimpleType(const String & type_name, bool allow_geo_parser = true, bool time_as_int64 = false);
 
     static std::unordered_map<String, Int64> traverseSchema(Poco::JSON::Array::Ptr schema);
 
@@ -175,6 +179,7 @@ private:
 
     mutable SharedMutex mutex;
     bool allow_geo_parser = true;
+    bool time_as_int64 = false;
 };
 
 using IcebergSchemaProcessorPtr = std::shared_ptr<IcebergSchemaProcessor>;

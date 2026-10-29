@@ -72,6 +72,7 @@ namespace DB::FailPoints
 namespace DB::Setting
 {
     extern const SettingsUInt64 s3_max_redirects;
+    extern const SettingsBool iceberg_time_as_int64;
     extern const SettingsUInt64 s3_retry_attempts;
     extern const SettingsBool s3_slow_all_threads_after_network_error;
     extern const SettingsBool enable_s3_requests_logging;
@@ -427,7 +428,7 @@ bool GlueCatalog::tryGetTableMetadata(
                     column_type = getActualTimestampType(column.GetName(), result, column_type);
                 }
 
-                schema.push_back({column.GetName(), getType(column_type, can_be_nullable)});
+                schema.push_back({column.GetName(), getType(column_type, can_be_nullable, getContext()->getSettingsRef()[DB::Setting::iceberg_time_as_int64])});
             }
             result.setSchema(schema);
         }

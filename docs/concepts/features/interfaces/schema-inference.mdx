@@ -1788,7 +1788,11 @@ In Avro format ClickHouse reads its schema from the data and converts it to Clic
 | `boolean`                          | [Bool](/reference/data-types/boolean)                                 |
 | `int`                              | [Int32](/reference/data-types/int-uint)                               |
 | `int (date)` \*                    | [Date32](/reference/data-types/date32)                                |
+| `int (time-millis)` \*             | [Time64(3)](/reference/data-types/time64)                             |
 | `long`                             | [Int64](/reference/data-types/int-uint)                               |
+| `long (timestamp-millis)` \*       | [DateTime64(3)](/reference/data-types/datetime64)                     |
+| `long (timestamp-micros)` \*       | [DateTime64(6)](/reference/data-types/datetime64)                     |
+| `long (time-micros)` \*            | [Time64(6)](/reference/data-types/time64)                             |
 | `float`                            | [Float32](/reference/data-types/float)                                |
 | `double`                           | [Float64](/reference/data-types/float)                                |
 | `bytes`, `string`                  | [String](/reference/data-types/string)                                |
@@ -1822,8 +1826,10 @@ In Parquet format ClickHouse reads its schema from the data and converts it to C
 | `FLOAT`                      | [Float32](/reference/data-types/float)         |
 | `DOUBLE`                     | [Float64](/reference/data-types/float)         |
 | `DATE`                       | [Date32](/reference/data-types/date32)         |
-| `TIME (ms)`                  | [DateTime](/reference/data-types/datetime)     |
-| `TIMESTAMP`, `TIME (us, ns)` | [DateTime64](/reference/data-types/datetime64) |
+| `TIME (ms)`                  | [Time64(3)](/reference/data-types/time64)      |
+| `TIME (us)`                  | [Time64(6)](/reference/data-types/time64)      |
+| `TIME (ns)`                  | [Time64(9)](/reference/data-types/time64)      |
+| `TIMESTAMP`                  | [DateTime64](/reference/data-types/datetime64) |
 | `STRING`, `BINARY`           | [String](/reference/data-types/string)         |
 | `DECIMAL`                    | [Decimal](/reference/data-types/decimal)       |
 | `LIST`                       | [Array](/reference/data-types/array)           |
@@ -1851,7 +1857,8 @@ In Arrow format ClickHouse reads its schema from the data and converts it to Cli
 | `DOUBLE`                        | [Float64](/reference/data-types/float)         |
 | `DATE32`                        | [Date32](/reference/data-types/date32)         |
 | `DATE64`                        | [DateTime](/reference/data-types/datetime)     |
-| `TIMESTAMP`, `TIME32`, `TIME64` | [DateTime64](/reference/data-types/datetime64) |
+| `TIMESTAMP`                     | [DateTime64](/reference/data-types/datetime64) |
+| `TIME32`, `TIME64`              | [Time64](/reference/data-types/time64)         |
 | `STRING`, `BINARY`              | [String](/reference/data-types/string)         |
 | `DECIMAL128`, `DECIMAL256`      | [Decimal](/reference/data-types/decimal)       |
 | `LIST`                          | [Array](/reference/data-types/array)           |
@@ -1871,6 +1878,7 @@ In ORC format ClickHouse reads its schema from the data and converts it to Click
 | `Smallint`                           | [Int16](/reference/data-types/int-uint)        |
 | `Int`                                | [Int32](/reference/data-types/int-uint)        |
 | `Bigint`                             | [Int64](/reference/data-types/int-uint)        |
+| `Bigint` with attribute `iceberg.long-type` = `TIME` \* | [Time64(6)](/reference/data-types/time64) |
 | `Float`                              | [Float32](/reference/data-types/float)         |
 | `Double`                             | [Float64](/reference/data-types/float)         |
 | `Date`                               | [Date32](/reference/data-types/date32)         |
@@ -1883,6 +1891,8 @@ In ORC format ClickHouse reads its schema from the data and converts it to Click
 | `Union`                              | [Variant](/reference/data-types/variant)       |
 
 Other ORC types are not supported.
+
+\* ORC has no time-of-day type; Iceberg (and the ClickHouse ORC writer for [Time](/reference/data-types/time) and [Time64](/reference/data-types/time64)) stores it as microseconds since midnight in a `Bigint` marked with this attribute.
 
 ### Native {#native}
 

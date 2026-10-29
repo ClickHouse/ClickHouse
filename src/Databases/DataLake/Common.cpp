@@ -61,7 +61,7 @@ std::vector<String> splitTypeArguments(const String & type_str)
     return args;
 }
 
-DB::DataTypePtr getType(const String & type_name, bool nullable, const String & prefix)
+DB::DataTypePtr getType(const String & type_name, bool nullable, bool time_as_int64, const String & prefix)
 {
     String name = trim(type_name);
 
@@ -71,7 +71,7 @@ DB::DataTypePtr getType(const String & type_name, bool nullable, const String & 
     {
         const size_t open = name.find('<');
         String inner = name.substr(open + 1, name.size() - open - 2);
-        return std::make_shared<DB::DataTypeArray>(getType(inner, nullable));
+        return std::make_shared<DB::DataTypeArray>(getType(inner, nullable, time_as_int64));
     }
 
     if (name.starts_with("map<") && name.ends_with(">"))
@@ -82,7 +82,7 @@ DB::DataTypePtr getType(const String & type_name, bool nullable, const String & 
         if (args.size() != 2)
             throw DB::Exception(DB::ErrorCodes::DATALAKE_DATABASE_ERROR, "Invalid data type {}", type_name);
 
-        return std::make_shared<DB::DataTypeMap>(getType(args[0], false), getType(args[1], nullable));
+        return std::make_shared<DB::DataTypeMap>(getType(args[0], false, time_as_int64), getType(args[1], nullable, time_as_int64));
     }
 
     if (name.starts_with("struct<") && name.ends_with(">"))
@@ -104,13 +104,13 @@ DB::DataTypePtr getType(const String & type_name, bool nullable, const String & 
             String full_field_name = prefix.empty() ? field_name : prefix + "." + field_name;
 
             field_names.push_back(full_field_name);
-            field_types.push_back(getType(field_type, nullable, full_field_name));
+            field_types.push_back(getType(field_type, nullable, time_as_int64, full_field_name));
         }
         return std::make_shared<DB::DataTypeTuple>(field_types, field_names);
     }
 
-    return nullable ? DB::makeNullable(DB::Iceberg::IcebergSchemaProcessor::getSimpleType(name))
-                    : DB::Iceberg::IcebergSchemaProcessor::getSimpleType(name);
+    auto type = DB::Iceberg::IcebergSchemaProcessor::getSimpleType(name, /*allow_geo_parser=*/ true, time_as_int64);
+    return nullable ? DB::makeNullable(type) : type;
 }
 
 std::pair<std::string, std::string> parseTableName(const std::string & name)

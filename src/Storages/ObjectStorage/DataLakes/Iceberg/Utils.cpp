@@ -8,11 +8,14 @@
 #include <Core/Settings.h>
 #include <Core/TypeId.h>
 #include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/NestedUtils.h>
+#include <Formats/FormatFilterInfo.h>
 #include <DataTypes/DataTypeCustom.h>
+#include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeNullable.h>
-#include <DataTypes/DataTypesDecimal.h>
 #include <Common/assert_cast.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <IO/CompressionMethod.h>
@@ -795,6 +798,12 @@ std::pair<Poco::Dynamic::Var, bool> getIcebergType(DataTypePtr type, Int32 & ite
         case TypeIndex::DateTime:
         case TypeIndex::DateTime64:
             return {"timestamp", true};
+        case TypeIndex::Time:
+            return {"time", true};
+        case TypeIndex::Time64:
+            if (getDecimalScale(*type) <= 6)
+                return {"time", true};
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unsupported type for iceberg {}", type->getName());
         case TypeIndex::String:
             return {"string", true};
         case TypeIndex::UUID:
@@ -873,8 +882,105 @@ std::pair<Poco::Dynamic::Var, bool> getIcebergType(DataTypePtr type, Int32 & ite
     }
 }
 
+void validateIcebergTimeOfDayMicroseconds(Int64 microseconds)
+{
+    if (microseconds < 0 || microseconds >= ICEBERG_TIME_OF_DAY_MAX_MICROS)
+        throw Exception(
+            ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION,
+            "Iceberg time value {} microseconds is out of allowed range [0, {}) for time of day",
+            microseconds,
+            ICEBERG_TIME_OF_DAY_MAX_MICROS);
+}
+
+namespace
+{
+
+void checkIcebergTimeColumnIsWritable(const ColumnMapper & column_mapper, const DataTypePtr & type, const String & path)
+{
+    const auto unwrapped = removeNullable(removeLowCardinality(type));
+    const auto & encoding = column_mapper.getStorageColumnEncoding();
+    if (auto it = encoding.find(path); it != encoding.end() && column_mapper.isIcebergTimeFieldId(it->second)
+        && !WhichDataType(unwrapped).isTime() && !WhichDataType(unwrapped).isTime64())
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "Cannot write column {} of type {} into the Iceberg `time` field, which requires `Time` or `Time64`. "
+            "If the table is read with setting `iceberg_time_as_int64`, disable it for writing",
+            path,
+            type->getName());
+
+    if (const auto * tuple = typeid_cast<const DataTypeTuple *>(unwrapped.get()))
+    {
+        for (size_t i = 0; i < tuple->getElements().size(); ++i)
+            checkIcebergTimeColumnIsWritable(column_mapper, tuple->getElement(i), Nested::concatenateName(path, tuple->getNameByPosition(i + 1)));
+    }
+    else if (const auto * array = typeid_cast<const DataTypeArray *>(unwrapped.get()))
+    {
+        checkIcebergTimeColumnIsWritable(column_mapper, array->getNestedType(), Nested::concatenateName(path, "element"));
+    }
+    else if (const auto * map = typeid_cast<const DataTypeMap *>(unwrapped.get()))
+    {
+        checkIcebergTimeColumnIsWritable(column_mapper, map->getKeyType(), Nested::concatenateName(path, "key"));
+        checkIcebergTimeColumnIsWritable(column_mapper, map->getValueType(), Nested::concatenateName(path, "value"));
+    }
+}
+
+}
+
+void checkIcebergTimeColumnsAreWritable(const ColumnMapper & column_mapper, const Block & header)
+{
+    if (!column_mapper.hasIcebergTimeFieldIds())
+        return;
+    for (const auto & column : header)
+        checkIcebergTimeColumnIsWritable(column_mapper, column.type, column.name);
+}
+
+Poco::Dynamic::Var getAvroLogicalType(DataTypePtr type)
+{
+    if (type->isNullable())
+    {
+        auto type_nullable = std::static_pointer_cast<const DataTypeNullable>(type);
+        return getAvroLogicalType(type_nullable->getNestedType());
+    }
+
+    const WhichDataType which(type);
+    if (which.isTime())
+        return "time-micros";
+    if (which.isTime64())
+    {
+        auto scale = getDecimalScale(*type);
+        if (scale <= 6)
+            return "time-micros";
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unsupported time precision for avro {}({})", type->getName(), scale);
+    }
+    return Poco::Dynamic::Var();
+}
+
 Poco::Dynamic::Var getAvroType(DataTypePtr type, Int32 field_id)
 {
+    if (type->isNullable())
+    {
+        /// Iceberg manifest partition fields backed by ClickHouse `Nullable(T)`
+        /// must be encoded as an Avro `["null", T]` union so the manifest can
+        /// distinguish NULL from the inner type's default value (issue #105852).
+        auto type_nullable = std::static_pointer_cast<const DataTypeNullable>(type);
+        Poco::JSON::Array::Ptr union_array = new Poco::JSON::Array;
+        union_array->add("null");
+        union_array->add(getAvroType(type_nullable->getNestedType(), field_id));
+        return union_array;
+    }
+
+    const auto logical_type = getAvroLogicalType(type);
+    const auto wrap_with_logical_type = [&](Poco::Dynamic::Var primitive_type)
+    {
+        if (logical_type.isEmpty())
+            return primitive_type;
+
+        Poco::JSON::Object::Ptr type_object = new Poco::JSON::Object;
+        type_object->set(Iceberg::f_type, primitive_type);
+        type_object->set(Iceberg::f_logicalType, logical_type);
+        return Poco::Dynamic::Var(type_object);
+    };
+
     switch (type->getTypeId())
     {
         case TypeIndex::UInt8:
@@ -884,13 +990,16 @@ Poco::Dynamic::Var getAvroType(DataTypePtr type, Int32 field_id)
         case TypeIndex::Int32:
         case TypeIndex::Date:
         case TypeIndex::Date32:
-        case TypeIndex::Time:
             return "int";
         case TypeIndex::UInt32:
         case TypeIndex::UInt64:
         case TypeIndex::Int64:
         case TypeIndex::DateTime:
             return "long";
+        case TypeIndex::Time:
+        case TypeIndex::Time64:
+            /// Scale > 6 is rejected in getAvroLogicalType (called above).
+            return wrap_with_logical_type("long");
         case TypeIndex::DateTime64:
         {
             if (getDecimalScale(*type) != 6)
@@ -927,17 +1036,6 @@ Poco::Dynamic::Var getAvroType(DataTypePtr type, Int32 field_id)
             decimal_type->set("precision", precision);
             decimal_type->set("scale", scale);
             return decimal_type;
-        }
-        case TypeIndex::Nullable:
-        {
-            /// Iceberg manifest partition fields backed by ClickHouse `Nullable(T)`
-            /// must be encoded as an Avro `["null", T]` union so the manifest can
-            /// distinguish NULL from the inner type's default value (issue #105852).
-            auto type_nullable = std::static_pointer_cast<const DataTypeNullable>(type);
-            Poco::JSON::Array::Ptr union_array = new Poco::JSON::Array;
-            union_array->add("null");
-            union_array->add(getAvroType(type_nullable->getNestedType(), field_id));
-            return union_array;
         }
         default:
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unsupported type for iceberg {}", type->getName());
@@ -2083,6 +2181,26 @@ Field normalizePartitionValue(const Field & value, const DataTypePtr & type)
     /// ClickHouse used to write a timestamp partition value as a simple long in Avro.
     if (value.getType() == Field::Types::Int64 && WhichDataType(value_type).isDateTime64())
         return DecimalField<Decimal64>(value.safeGet<Int64>(), getDecimalScale(*value_type));
+
+    /// An Iceberg `time` partition value is microseconds since midnight. A manifest declaring it as
+    /// `time-micros` is read as `Time64(6)`, one declaring a plain `long` is read as `Int64`; bring
+    /// either to the type of the column, which is `Int64` with setting `iceberg_time_as_int64`.
+    if (value.getType() == Field::Types::Int64 && WhichDataType(value_type).isTime64())
+    {
+        const UInt32 scale = getDecimalScale(*value_type);
+        if (scale != 6)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected type {} of an Iceberg `time` partition column", value_type->getName());
+        return DecimalField<Decimal64>(value.safeGet<Int64>(), scale);
+    }
+    if (value.getType() == Field::Types::Decimal64 && WhichDataType(value_type).isInt64())
+    {
+        const auto & decimal = value.safeGet<DecimalField<Decimal64>>();
+        if (decimal.getScale() != 6)
+            throw Exception(ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION,
+                "Iceberg partition value {} of an `Int64` column has scale {}, expected an Iceberg `time` of scale 6",
+                value.dump(), decimal.getScale());
+        return decimal.getValue().value;
+    }
 
     if (value.getType() == Field::Types::String && WhichDataType(value_type).isDecimal())
         return decodePartitionDecimalByType(value.safeGet<String>(), *value_type);

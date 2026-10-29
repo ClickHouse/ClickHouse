@@ -323,6 +323,7 @@ static std::optional<WriteDataFilesResult> writeDataFiles(
                         context->getWriteSettings());
 
                     ColumnMapperPtr data_column_mapper = createColumnMapper(data_schema);
+                    checkIcebergTimeColumnsAreWritable(*data_column_mapper, data_block);
                     FormatFilterInfoPtr data_format_filter_info = std::make_shared<FormatFilterInfo>(nullptr, context, data_column_mapper, nullptr, nullptr);
                     auto data_output_format = FormatFactory::instance().getOutputFormat(
                         write_format, *data_write_buffer, data_block, context, format_settings, data_format_filter_info);

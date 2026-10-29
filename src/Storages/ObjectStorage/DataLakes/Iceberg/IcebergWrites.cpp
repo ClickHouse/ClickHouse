@@ -12,6 +12,7 @@
 #include <Core/TypeId.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>
+#include <DataTypes/DataTypeTime64.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/IDataType.h>
 #include <Databases/DataLake/Common.h>
@@ -105,6 +106,7 @@ namespace ErrorCodes
     extern const int DATALAKE_DATABASE_ERROR;
     extern const int NOT_IMPLEMENTED;
     extern const int ICEBERG_SPECIFICATION_VIOLATION;
+    extern const int VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE;
 }
 
 namespace FailPoints
@@ -138,6 +140,8 @@ bool canDumpIcebergStats(const Field & field, DataTypePtr type)
         case TypeIndex::UInt32:
         case TypeIndex::Int64:
         case TypeIndex::DateTime64:
+        case TypeIndex::Time:
+        case TypeIndex::Time64:
         case TypeIndex::String:
         case TypeIndex::FixedString:
         case TypeIndex::Decimal32:
@@ -193,6 +197,50 @@ std::vector<uint8_t> dumpValue(T value)
     std::vector<uint8_t> bytes(sizeof(T));
     std::memcpy(bytes.data(), &value, sizeof(T));
     return bytes;
+}
+
+Int64 getTimeValueInMicroseconds(const Field & field, DataTypePtr type)
+{
+    if (type->isNullable())
+        return getTimeValueInMicroseconds(field, assert_cast<const DataTypeNullable *>(type.get())->getNestedType());
+
+    const WhichDataType which(type);
+    if (which.isTime())
+    {
+        const Int64 seconds = field.safeGet<Int64>();
+
+        Int64 microseconds = 0;
+        if (common::mulOverflow(seconds, Int64(1'000'000), microseconds))
+            throw Exception(
+                ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE,
+                "Time value {} is out of range for Iceberg time (microseconds since midnight)",
+                seconds);
+
+        validateIcebergTimeOfDayMicroseconds(microseconds);
+        return microseconds;
+    }
+
+    if (which.isTime64())
+    {
+        const auto scale = getDecimalScale(*type);
+        if (scale > 6)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unsupported type for iceberg {}", type->getName());
+
+        const auto value = field.safeGet<Decimal64>().getValue().value;
+        const auto multiplier = DataTypeTime64::getScaleMultiplier(6 - scale).value;
+
+        Int64 microseconds = 0;
+        if (common::mulOverflow(value, multiplier, microseconds))
+            throw Exception(
+                ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE,
+                "Time64 value {} is out of range for Iceberg time (microseconds since midnight)",
+                value);
+
+        validateIcebergTimeOfDayMicroseconds(microseconds);
+        return microseconds;
+    }
+
+    throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected Time or Time64, got {}", type->getName());
 }
 
 template <typename DecimalType>
@@ -293,8 +341,12 @@ std::vector<uint8_t> dumpFieldToBytes(const Field & field, DataTypePtr type)
             /// Iceberg writes `int` and `date` as 4 bytes, while a `Field` keeps them in its 8-byte
             /// slot; `dumpValue` takes the width from its argument type, so narrow before dumping.
             return dumpValue(static_cast<Int32>(field.safeGet<Int32>()));
+        case TypeIndex::Time:
+            return dumpValue(getTimeValueInMicroseconds(field, type));
         case TypeIndex::Int64:
             return dumpValue(field.safeGet<Int64>());
+        case TypeIndex::Time64:
+            return dumpValue(getTimeValueInMicroseconds(field, type));
         case TypeIndex::UInt8:
             if (isBool(type))
                 return dumpValue(static_cast<UInt8>(field.safeGet<UInt64>() != 0));
@@ -721,6 +773,13 @@ void generateManifestFile(
             /// Build the Avro datum holding the partition value; throws on an unsupported type.
             auto make_value_datum = [&](const avro::NodePtr & value_schema) -> avro::GenericDatum
             {
+                if (!partition_values[i].isNull())
+                {
+                    const WhichDataType which_partition(removeNullable(partition_types[i]));
+                    if (which_partition.isTime() || which_partition.isTime64())
+                        return avro::GenericDatum(getTimeValueInMicroseconds(partition_values[i], partition_types[i]));
+                }
+
                 /// Decimals are dispatched on the column type rather than on the `Field` type, because
                 /// `DateTime64` also lives in a `DecimalField` while Iceberg writes it as a plain `long`.
                 switch (removeNullable(partition_types[i])->getTypeId())

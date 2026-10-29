@@ -16,12 +16,19 @@
 #include <Common/RemoteHostFilter.h>
 #include <Databases/DataLake/Common.h>
 #include <Common/FailPoint.h>
+#include <Core/Settings.h>
+#include <Interpreters/Context.h>
 
 namespace DB::ErrorCodes
 {
     extern const int DATALAKE_DATABASE_ERROR;
     extern const int FAULT_INJECTED;
     extern const int NO_HIVEMETASTORE;
+}
+
+namespace DB::Setting
+{
+    extern const SettingsBool iceberg_time_as_int64;
 }
 
 namespace DB::FailPoints
@@ -247,9 +254,10 @@ bool HiveCatalog::tryGetTableMetadata(const std::string & namespace_name, const 
     {
         DB::NamesAndTypesList schema;
         auto columns = table.sd.cols;
+        const bool time_as_int64 = getContext()->getSettingsRef()[DB::Setting::iceberg_time_as_int64];
         for (const auto & column : columns)
         {
-            schema.push_back({column.name, getType(column.type, true)});
+            schema.push_back({column.name, getType(column.type, true, time_as_int64)});
         }
         result.setSchema(schema);
     }

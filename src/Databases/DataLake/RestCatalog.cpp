@@ -70,6 +70,7 @@ namespace DB::ErrorCodes
 namespace DB::Setting
 {
     extern const SettingsBool allow_geo_types_in_iceberg;
+    extern const SettingsBool iceberg_time_as_int64;
 }
 
 namespace DB::FailPoints
@@ -1779,9 +1780,9 @@ bool RestCatalog::getTableMetadataImpl(
 
     if (result.requiresSchema())
     {
-        const bool allow_geo_parser
-            = getContext()->getSettingsRef()[DB::Setting::allow_geo_types_in_iceberg].value;
-        auto schema_processor = DB::Iceberg::IcebergSchemaProcessor(allow_geo_parser);
+        const auto & settings = getContext()->getSettingsRef();
+        auto schema_processor = DB::Iceberg::IcebergSchemaProcessor(
+            settings[DB::Setting::allow_geo_types_in_iceberg], settings[DB::Setting::iceberg_time_as_int64]);
         auto id = DB::IcebergMetadata::parseTableSchema(metadata_object, schema_processor, log);
         auto schema = schema_processor.getClickHouseTableSchemaById(id);
         result.setSchema(*schema);

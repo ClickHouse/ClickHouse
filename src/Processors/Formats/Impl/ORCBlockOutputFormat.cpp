@@ -7,11 +7,14 @@
 #if USE_ORC
 
 #include <Common/assert_cast.h>
+#include <base/arithmeticOverflow.h>
 #include <Formats/FormatFactory.h>
+#include <IO/WriteBufferFromString.h>
 
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnVector.h>
+#include <Columns/ColumnDecimal.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnTuple.h>
@@ -21,6 +24,7 @@
 
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeDateTime64.h>
+#include <DataTypes/DataTypeTime64.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypeArray.h>
@@ -40,6 +44,7 @@ namespace ErrorCodes
 {
     extern const int ILLEGAL_COLUMN;
     extern const int NOT_IMPLEMENTED;
+    extern const int VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE;
 }
 
 namespace
@@ -68,7 +73,8 @@ orc::CompressionKind getORCCompression(FormatSettings::ORCCompression method)
 }
 
 /// Two ORC types get the same key exactly when `parseORCType` (NativeORCBlockInputFormat.cpp) reads
-/// them back as the same ClickHouse type: `BINARY` and `STRING` both read as `String`, and a nested
+/// them back as the same ClickHouse type: `BINARY` and `STRING` both read as `String`, a `LONG` with
+/// the attribute `iceberg.long-type` = `TIME` reads as `Time64(6)` unlike a plain `LONG`, and a nested
 /// `UNION` reads as a `Variant`, which sorts its branches, while ORC keeps them positional.
 /// A field name is length-prefixed so a name containing `:` or `,` cannot forge another key.
 String orcTypeDedupKey(const orc::Type & type)
@@ -78,6 +84,9 @@ String orcTypeDedupKey(const orc::Type & type)
         return "string";
     if (kind == orc::TypeKind::DECIMAL)
         return fmt::format("decimal({},{})", type.getPrecision(), type.getScale());
+    /// A `long` marked as an Iceberg `time` is read as `Time64(6)`, not as `Int64`.
+    if (kind == orc::TypeKind::LONG && type.hasAttributeKey("iceberg.long-type") && type.getAttributeValue("iceberg.long-type") == "TIME")
+        return "time";
 
     std::vector<String> children;
     for (size_t i = 0; i < type.getSubtypeCount(); ++i)
@@ -192,6 +201,20 @@ std::unique_ptr<orc::Type> ORCBlockOutputFormat::getORCType(const DataTypePtr & 
         case TypeIndex::DateTime64:
         {
             result = orc::createPrimitiveType(orc::TypeKind::TIMESTAMP);
+            break;
+        }
+        case TypeIndex::Time: [[fallthrough]];
+        case TypeIndex::Time64:
+        {
+            /// ORC has no time-of-day type. Write microseconds since midnight as a `long` marked the
+            /// way Iceberg marks its `time`, so that the type can be recognized when reading.
+            if (WhichDataType(unwrapped).isTime64() && getDecimalScale(*unwrapped) > 6)
+                throw Exception(
+                    ErrorCodes::ILLEGAL_COLUMN,
+                    "Type {} is not supported for ORC output format: time of day is written as microseconds",
+                    unwrapped->getName());
+            result = orc::createPrimitiveType(orc::TypeKind::LONG);
+            result->setAttribute("iceberg.long-type", "TIME");
             break;
         }
         case TypeIndex::Int128: [[fallthrough]];
@@ -316,6 +339,49 @@ std::unique_ptr<orc::Type> ORCBlockOutputFormat::getORCType(const DataTypePtr & 
     }
 
     return result;
+}
+
+/// Writes `Time` or `Time64` as an ORC `long` of microseconds since midnight, which has to be a time of
+/// day: [00:00:00, 24:00:00).
+template <typename ColumnType>
+static void writeTimes(
+    orc::ColumnVectorBatch & orc_column,
+    const IColumn & column,
+    Int64 multiplier,
+    const PaddedPODArray<UInt8> * null_bytemap,
+    const DataTypePtr & type)
+{
+    const auto & values = assert_cast<const ColumnType &>(column).getData();
+    static constexpr Int64 microseconds_per_day = 24LL * 60 * 60 * 1'000'000;
+
+    auto & long_orc_column = dynamic_cast<orc::LongVectorBatch &>(orc_column);
+    long_orc_column.data.resize(values.size());
+    for (size_t i = 0; i != values.size(); ++i)
+    {
+        if (null_bytemap && (*null_bytemap)[i])
+        {
+            long_orc_column.data[i] = 0;
+            continue;
+        }
+
+        Int64 value = 0;
+        if constexpr (is_decimal<typename ColumnType::ValueType>)
+            value = values[i].value;
+        else
+            value = values[i];
+        Int64 microseconds = 0;
+        if (common::mulOverflow(value, multiplier, microseconds) || microseconds < 0
+            || microseconds >= microseconds_per_day)
+        {
+            WriteBufferFromOwnString text;
+            type->getDefaultSerialization()->serializeText(column, i, text, FormatSettings{});
+            throw Exception(
+                ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE,
+                "Value {} of type {} is out of range [00:00:00, 24:00:00) of a time of day for ORC output format",
+                text.str(), type->getName());
+        }
+        long_orc_column.data[i] = microseconds;
+    }
 }
 
 template <typename NumberType, typename NumberVectorBatch, typename ConvertFunc>
@@ -517,6 +583,17 @@ void ORCBlockOutputFormat::writeColumn(
         case TypeIndex::IPv6:
         {
             writeStrings<ColumnIPv6>(orc_column, column, null_bytemap);
+            break;
+        }
+        case TypeIndex::Time:
+        {
+            writeTimes<ColumnInt32>(orc_column, column, 1'000'000, null_bytemap, type);
+            break;
+        }
+        case TypeIndex::Time64:
+        {
+            const Int64 multiplier = DecimalUtils::scaleMultiplier<Int64>(6 - getDecimalScale(*type));
+            writeTimes<ColumnDecimal<Time64>>(orc_column, column, multiplier, null_bytemap, type);
             break;
         }
         case TypeIndex::DateTime:
