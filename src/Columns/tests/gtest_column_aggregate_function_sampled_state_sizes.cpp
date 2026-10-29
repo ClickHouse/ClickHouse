@@ -305,6 +305,70 @@ TEST(ColumnAggregateFunctionSampledStateSizes, RepeatedPayloadWindowFollowsTheCo
     EXPECT_EQ(repeated.compressed_bytes, one_copy.compressed_bytes * repetitions);
 }
 
+/// The `LZ4` match offset is a 16-bit field, so the farthest byte a match can reference is 65535 bytes back.
+/// A copy of exactly 64 KiB therefore cannot reference its predecessor, and the repeated copies of a
+/// truncated sample of it must not be measured together: 16 repetitions of a ~1 KiB periodic sample of
+/// random one-byte states cross-compress almost perfectly, while the full copies do not compress at all.
+TEST(ColumnAggregateFunctionSampledStateSizes, RepeatedPayloadAtTheLZ4MatchDistanceBoundary)
+{
+    tryRegisterAggregateFunctions();
+
+    AggregateFunctionProperties properties;
+    auto function = AggregateFunctionFactory::instance().get(
+        "sumWithOverflow", NullsAction::EMPTY, DataTypes{std::make_shared<DataTypeUInt8>()}, Array{}, properties);
+
+    /// Each state serializes to one byte, so a copy of the column is exactly 64 KiB on the wire.
+    constexpr size_t rows = 64 * 1024;
+    auto column = ColumnAggregateFunction::create(function);
+    auto values = ColumnUInt8::create();
+    UInt64 random = 0x111985;
+    for (size_t row = 0; row < rows; ++row)
+    {
+        random = random * 6364136223846793005ULL + 1442695040888963407ULL;
+        values->insert(UInt64(random >> 56));
+    }
+    const IColumn * arguments[1] = {values.get()};
+    for (size_t row = 0; row < rows; ++row)
+    {
+        column->insertDefault();
+        function->add(column->getData()[row], arguments, row, &column->createOrGetArena());
+    }
+
+    const auto lz4 = CompressionCodecFactory::instance().get("LZ4", {});
+    EXPECT_EQ(compressionMatchDistance(*lz4), 64 * 1024 - 1u);
+    EXPECT_EQ(compressionCopiesPerBlock(*lz4, 64 * 1024), 1u);
+    EXPECT_GT(compressionCopiesPerBlock(*lz4, 64 * 1024 - 1), 1u);
+
+    const auto one_copy = column->sampledStateSizes(/*max_states_to_serialize=*/1000, /*repetitions=*/1, /*skip_rows=*/0, lz4);
+    ASSERT_EQ(one_copy.bytes, rows);
+    ASSERT_LT(one_copy.sample_bytes, rows / 16);
+
+    constexpr size_t repetitions = 16;
+    const auto repeated = column->sampledStateSizes(/*max_states_to_serialize=*/1000, repetitions, /*skip_rows=*/0, lz4);
+    EXPECT_EQ(repeated.compressed_bytes, one_copy.compressed_bytes * repetitions);
+
+    /// The ground truth: the materialized repeated payload as `NativeWriter` compresses it.
+    auto repeated_column = column->cloneEmpty();
+    for (size_t repetition = 0; repetition < repetitions; ++repetition)
+        repeated_column->insertRangeFrom(*column, 0, rows);
+    NullWriteBuffer null_buf;
+    CompressedWriteBuffer compressed_buf(null_buf, lz4);
+    const ColumnWithTypeAndName materialized{
+        std::move(repeated_column),
+        std::make_shared<DataTypeAggregateFunction>(function, DataTypes{std::make_shared<DataTypeUInt8>()}, Array{}),
+        "state"};
+    auto [serialization, _, column_to_write] = NativeWriter::getSerializationAndColumn(DBMS_TCP_PROTOCOL_VERSION, materialized);
+    NativeWriter::writeData(
+        *serialization, column_to_write, compressed_buf, std::nullopt, 0, column_to_write->size(), DBMS_TCP_PROTOCOL_VERSION);
+    compressed_buf.finalize();
+    const size_t actual_compressed_bytes = null_buf.count();
+
+    const double estimated_compressed_bytes = static_cast<double>(repeated.bytes) * static_cast<double>(repeated.compressed_bytes)
+        / static_cast<double>(repeated.sample_bytes);
+    EXPECT_GE(estimated_compressed_bytes * 2, static_cast<double>(actual_compressed_bytes));
+    EXPECT_LE(estimated_compressed_bytes, static_cast<double>(actual_compressed_bytes) * 2);
+}
+
 TEST(ColumnAggregateFunctionSampledStateSizes, EmptyColumn)
 {
     tryRegisterAggregateFunctions();

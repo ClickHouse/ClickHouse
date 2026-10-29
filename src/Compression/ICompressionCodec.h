@@ -138,7 +138,7 @@ using CompressionCodecPtr = std::shared_ptr<ICompressionCodec>;
 using Codecs = VectorWithMemoryTracking<CompressionCodecPtr>;
 
 /// How far back `codec` can reference already-seen data, in bytes. `LZ4` cannot reference data farther
-/// than 64 KiB back; other codecs are reported as reaching a whole compressed block, which is exact for the
+/// than 65535 bytes back; other codecs are reported as reaching a whole compressed block, which is exact for the
 /// only other codecs the interserver protocol can pick (`NONE` and `ZSTD`, see
 /// `chooseNetworkCompressionCodec`) and an upper estimate elsewhere.
 size_t compressionMatchDistance(const ICompressionCodec & codec);

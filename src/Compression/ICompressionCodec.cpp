@@ -128,9 +128,10 @@ uint8_t ICompressionCodec::readMethod(const char * source)
 
 size_t compressionMatchDistance(const ICompressionCodec & codec)
 {
-    /// `LZ4` and `LZ4HC` share the method byte.
+    /// `LZ4` and `LZ4HC` share the method byte. The `LZ4` match offset is a 16-bit field, so the farthest
+    /// reachable byte is 65535 bytes back: an exactly 64 KiB copy cannot reference its predecessor.
     if (codec.getMethodByte() == static_cast<uint8_t>(CompressionMethodByte::LZ4))
-        return 64 * 1024;
+        return 64 * 1024 - 1;
     return DBMS_DEFAULT_BUFFER_SIZE;
 }
 
