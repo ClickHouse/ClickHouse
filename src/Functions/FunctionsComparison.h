@@ -60,6 +60,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int NOT_IMPLEMENTED;
     extern const int BAD_ARGUMENTS;
+    extern const int ARGUMENT_OUT_OF_BOUND;
 }
 
 /// For the array/tuple element-comparison path, when there is a scalar position pair a `String`/`FixedString` on one side
@@ -214,7 +215,7 @@ ColumnPtr executeDecimal(const ColumnWithTypeAndName & col_left, const ColumnWit
   */
 
 
-#if USE_MULTITARGET_CODE
+#if USE_X86_64_MULTITARGET_CODE
 /// Compares `size` 16-byte values ordered by their bytes (`IPv6`, `FixedString(16)`); `Op` is over `int`.
 template <typename Op, bool b_is_constant>
 X86_64_V4_FUNCTION_SPECIFIC_ATTRIBUTE void compareBigEndian16_x86_64_v4(
@@ -267,14 +268,14 @@ struct NumComparisonImpl
         }
     }))
 
-#if USE_MULTITARGET_CODE
+#if USE_X86_64_MULTITARGET_CODE
     using OrderedOpOverInt = typename OrderedComparisonOverInt<Op>::Type;
     static constexpr bool is_ordered_ipv6 = std::is_same_v<A, IPv6> && std::is_same_v<B, IPv6> && !std::is_void_v<OrderedOpOverInt>;
 #endif
 
     static void NO_INLINE vectorVector(const ContainerA & a, const ContainerB & b, PaddedPODArray<UInt8> & c)
     {
-#if USE_MULTITARGET_CODE
+#if USE_X86_64_MULTITARGET_CODE
         if (isArchSupported(TargetArch::x86_64_v4))
         {
             if constexpr (is_ordered_ipv6)
@@ -307,7 +308,7 @@ struct NumComparisonImpl
         }
     }))
 
-#if USE_MULTITARGET_CODE
+#if USE_X86_64_MULTITARGET_CODE
     /// Takes `b` by value, so that only the AVX-512 path needs it in memory.
     static void X86_64_V4_FUNCTION_SPECIFIC_ATTRIBUTE vectorConstantOrderedIPv6_x86_64_v4(const ContainerA & a, B b, PaddedPODArray<UInt8> & c)
     {
@@ -318,7 +319,7 @@ struct NumComparisonImpl
 
     static void NO_INLINE vectorConstant(const ContainerA & a, B b, PaddedPODArray<UInt8> & c)
     {
-#if USE_MULTITARGET_CODE
+#if USE_X86_64_MULTITARGET_CODE
         if (isArchSupported(TargetArch::x86_64_v4))
         {
             if constexpr (is_ordered_ipv6)
@@ -438,7 +439,7 @@ struct StringComparisonImpl
         const ColumnString::Chars & b_data,
         PaddedPODArray<UInt8> & c)
     {
-#if USE_MULTITARGET_CODE
+#if USE_X86_64_MULTITARGET_CODE
         if (isArchSupported(TargetArch::x86_64_v4))
         {
             compareBigEndian16_x86_64_v4<Op, false>(a_data.data(), b_data.data(), c.data(), a_data.size() / 16);
@@ -457,7 +458,7 @@ struct StringComparisonImpl
         const ColumnString::Chars & b_data,
         PaddedPODArray<UInt8> & c)
     {
-#if USE_MULTITARGET_CODE
+#if USE_X86_64_MULTITARGET_CODE
         if (isArchSupported(TargetArch::x86_64_v4))
         {
             compareBigEndian16_x86_64_v4<Op, true>(a_data.data(), b_data.data(), c.data(), a_data.size() / 16);
@@ -1233,6 +1234,20 @@ private:
         return c_res;
     }
 
+    bool acceptsArgumentTypes(const DataTypes & arguments, const DataTypePtr & result_type) const
+    {
+        try
+        {
+            return getReturnTypeImpl(arguments)->equals(*result_type);
+        }
+        catch (const Exception & e)
+        {
+            if (e.code() == ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT)
+                return false;
+            throw;
+        }
+    }
+
     ColumnPtr executeWithConstString(
             const DataTypePtr & result_type, const IColumn * col_left_untyped, const IColumn * col_right_untyped,
             const DataTypePtr & left_type, const DataTypePtr & right_type, size_t input_rows_count) const
@@ -1274,17 +1289,55 @@ private:
 
         Field converted = convertFieldToType(string_value, *type_to_compare, type_string, params.format_settings);
 
-        /// If not possible to convert, comparison with =, <, >, <=, >= yields to false and comparison with != yields to true.
+        DataTypePtr type_of_converted = type_to_compare;
         if (converted.isNull())
         {
-            return DataTypeUInt8().createColumnConst(input_rows_count, IsOperation<Op>::not_equals);
+            converted = convertFieldToTypeWithWiderIntegers(string_value, type_of_converted, type_string, params.format_settings);
+            const DataTypes wider_arguments
+                = left_const ? DataTypes{type_of_converted, type_to_compare} : DataTypes{type_to_compare, type_of_converted};
+            /// `executeImpl` is safe only for argument types that `getReturnTypeImpl` accepts.
+            if (!converted.isNull() && !acceptsArgumentTypes(wider_arguments, result_type))
+                converted = Field();
         }
 
-        ColumnPtr column_converted = type_to_compare->createColumnConst(input_rows_count, converted);
+        /// If not possible to convert, != yields true and = false; ordering yields false unless the constant is outside the type's range.
+        if (converted.isNull())
+        {
+            if constexpr (IsOperation<Op>::less || IsOperation<Op>::less_or_equals
+                       || IsOperation<Op>::greater || IsOperation<Op>::greater_or_equals)
+            {
+                /// Every value of the type is on one known side of an out-of-range integer constant.
+                /// `x <= C` and `x > C` must stay complementary: an inverting rewrite relies on it.
+                const auto range = string_value.getType() == Field::Types::String
+                    ? classifyIntegerLiteralRange(string_value.safeGet<String>(), *type_to_compare)
+                    : IntegerLiteralRange::NotApplicable;
+
+                if (range == IntegerLiteralRange::AboveMax || range == IntegerLiteralRange::BelowMin)
+                {
+                    const bool left_is_less
+                        = left_const ? range == IntegerLiteralRange::BelowMin : range == IntegerLiteralRange::AboveMax;
+                    const bool result = left_is_less
+                        ? IsOperation<Op>::less || IsOperation<Op>::less_or_equals
+                        : IsOperation<Op>::greater || IsOperation<Op>::greater_or_equals;
+                    return result_type->createColumnConst(input_rows_count, static_cast<UInt8>(result));
+                }
+
+                /// A composite constant that could not be read with wider integer elements has no single side to answer for.
+                const WhichDataType which_to_compare(removeNullable(type_to_compare));
+                if (which_to_compare.isArray() || which_to_compare.isTuple() || which_to_compare.isMap())
+                    throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND,
+                        "Cannot compare with '{}': an integer in it does not fit {}, and the constant cannot be compared by value",
+                        string_value.safeGet<String>(), type_to_compare->getName());
+            }
+
+            return result_type->createColumnConst(input_rows_count, IsOperation<Op>::not_equals);
+        }
+
+        ColumnPtr column_converted = type_of_converted->createColumnConst(input_rows_count, converted);
 
         ColumnsWithTypeAndName tmp_columns{
-            {left_const ? column_converted : col_left_untyped->getPtr(), type_to_compare, ""},
-            {!left_const ? column_converted : col_right_untyped->getPtr(), type_to_compare, ""},
+            {left_const ? column_converted : col_left_untyped->getPtr(), left_const ? type_of_converted : type_to_compare, ""},
+            {!left_const ? column_converted : col_right_untyped->getPtr(), !left_const ? type_of_converted : type_to_compare, ""},
         };
 
         return executeImpl(tmp_columns, result_type, input_rows_count);

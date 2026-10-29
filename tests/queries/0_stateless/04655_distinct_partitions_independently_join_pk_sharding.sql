@@ -4,11 +4,6 @@
 -- The independent-partitions optimization is disabled under parallel replicas.
 SET enable_parallel_replicas = 0;
 
--- Some CI configurations set DISTINCT size limits at the server level; pin them to unlimited so that
--- independent per-partition DISTINCT is applied.
-SET max_rows_in_distinct = 0;
-SET max_bytes_in_distinct = 0;
-
 -- The pretty EXPLAIN output decorates plan lines with tree-drawing characters; use the legacy format
 -- so the assertions below match plain marker lines.
 SET explain_query_plan_default = 'legacy';
