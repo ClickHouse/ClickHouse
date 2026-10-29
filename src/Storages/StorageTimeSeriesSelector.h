@@ -48,12 +48,12 @@ public:
         ReturnColumns return_columns = ReturnColumns::Samples;
     };
 
-    /// What the arguments of timeSeriesSelector() determine without reading the catalog. The time bounds stay
-    /// unconverted: converting them needs the scale of the TimeSeries table's timestamps.
+    /// What the arguments of timeSeriesSelector() determine without reading the catalog. The selector and the time
+    /// bounds stay unparsed: the TimeSeries table is checked first, and the bounds need the scale of its timestamps.
     struct Arguments
     {
         StorageID time_series_storage_id = StorageID::createEmpty();
-        PrometheusQueryTree selector;
+        String selector;
 
         Field min_time;
         DataTypePtr min_time_type;

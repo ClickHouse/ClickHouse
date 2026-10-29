@@ -312,7 +312,7 @@ StorageTimeSeriesSelector::Arguments StorageTimeSeriesSelector::parseArgumentsOn
 
     Arguments parsed_args;
     parsed_args.time_series_storage_id = std::move(time_series_storage_id);
-    parsed_args.selector = PrometheusQueryTree{getStringConstArgument(args[argument_index++], context, "selector")};
+    parsed_args.selector = getStringConstArgument(args[argument_index++], context, "selector");
     std::tie(parsed_args.min_time, parsed_args.min_time_type) = evaluateConstantExpression(args[argument_index++], context);
     std::tie(parsed_args.max_time, parsed_args.max_time_type) = evaluateConstantExpression(args[argument_index++], context);
 
@@ -337,6 +337,8 @@ StorageTimeSeriesSelector::resolveConfiguration(const Arguments & parsed_args, c
     auto tags_target_metadata = tags_target->getInMemoryMetadataPtr(context, false);
     DataTypePtr table_id_type = tags_target_metadata->columns.get(TimeSeriesColumnNames::ID).type;
 
+    PrometheusQueryTree selector{parsed_args.selector};
+
     UInt32 table_timestamp_scale = tryGetDecimalScale(*table_timestamp_type).value_or(0);
     UInt32 parameters_scale = getTimeScale(table_timestamp_scale, parsed_args.min_time_type, parsed_args.max_time_type);
 
@@ -346,7 +348,7 @@ StorageTimeSeriesSelector::resolveConfiguration(const Arguments & parsed_args, c
     config.table_timestamp_type = std::move(table_timestamp_type);
     config.table_value_type = std::move(table_value_type);
     config.return_columns = parsed_args.return_columns;
-    config.selector = parsed_args.selector;
+    config.selector = std::move(selector);
     config.time_scale = parameters_scale;
     config.min_time = parseTimeSeriesTimestamp(parsed_args.min_time, parsed_args.min_time_type, parameters_scale);
     config.max_time = parseTimeSeriesTimestamp(parsed_args.max_time, parsed_args.max_time_type, parameters_scale);
