@@ -1,7 +1,7 @@
 # Building ClickHouse with Bazel
 
-`//:clickhouse` builds the Linux executable for x86-64 or ARM64. Use the Bazel
-nightly pinned in [.bazelversion](.bazelversion) (commit `beb40084`).
+`//:clickhouse` builds the Linux executable for x86-64 or ARM64. Bazelisk reads
+[.bazelversion](.bazelversion) and downloads `dzbarsky/10.0.0-pre.20261028.1`.
 Bazel fetches the pinned third-party sources and builds
 [ClickHouse's LLVM 22.1.1 compiler](bazel/llvm.MODULE.bazel) from source;
 a Bazel build does not need initialized Git submodules. Run commands from the
