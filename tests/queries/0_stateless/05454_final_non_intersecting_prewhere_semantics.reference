@@ -27,3 +27,6 @@ A condition after one that stays in the WHERE stays there too
 The conditions applied early keep the order of the WHERE
 19800	88002
 19800	88002
+Not applied with SAMPLE, which drops rows after reading
+3320	33262499
+3320	33262499

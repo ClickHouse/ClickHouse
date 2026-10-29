@@ -2584,6 +2584,10 @@ bool ReadFromMergeTree::canUseNonIntersectingFinalFilter() const
     if (is_parallel_reading_from_replicas || top_k_filter_info || vector_search_parameters || !index_read_tasks.empty())
         return false;
 
+    /// The sampling filter is applied after reading, so the conditions would see the rows that it drops.
+    if (isQueryWithSampling())
+        return false;
+
     return true;
 }
 

@@ -119,3 +119,15 @@ SETTINGS query_plan_optimize_lazy_final = 0;
 SELECT count(), sum(length(payload)) FROM t_final_prewhere_order FINAL WHERE guard != 0 AND toUInt64(s) > 0
 SETTINGS query_plan_optimize_lazy_final = 1, min_filtered_ratio_for_lazy_final = 0;
 DROP TABLE t_final_prewhere_order;
+
+SELECT 'Not applied with SAMPLE, which drops rows after reading';
+DROP TABLE IF EXISTS t_final_prewhere_sample;
+CREATE TABLE t_final_prewhere_sample (key UInt64, s String, h UInt64 MATERIALIZED cityHash64(key))
+ENGINE = ReplacingMergeTree ORDER BY (key, h) SAMPLE BY h SETTINGS index_granularity = 128;
+-- Only the rows outside of `SAMPLE 1/2` have 'bad'.
+INSERT INTO t_final_prewhere_sample SELECT number, if(cityHash64(number) < 9223372036854775808, toString(number), 'bad') FROM numbers(20000);
+OPTIMIZE TABLE t_final_prewhere_sample FINAL;
+SELECT count(), sum(key) FROM t_final_prewhere_sample FINAL SAMPLE 1/2 WHERE toUInt64(s) % 3 = 1 SETTINGS query_plan_optimize_lazy_final = 0;
+SELECT count(), sum(key) FROM t_final_prewhere_sample FINAL SAMPLE 1/2 WHERE toUInt64(s) % 3 = 1
+SETTINGS query_plan_optimize_lazy_final = 1, min_filtered_ratio_for_lazy_final = 0;
+DROP TABLE t_final_prewhere_sample;
