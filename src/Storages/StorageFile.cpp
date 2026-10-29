@@ -679,13 +679,11 @@ bool allGlobAlternativesStartWith(const String & path_with_globs, const String &
 
 ReadSettings getUserFilesDiskReadSettings(ReadSettings settings)
 {
-    settings.use_page_cache_for_disks_without_file_cache = false;
-    settings.use_page_cache_with_distributed_cache = false;
-    settings.use_page_cache_for_local_disks = false;
-    settings.use_page_cache_for_object_storage = false;
-    /// The key of the filesystem cache of a `cache` disk is the object path only, without a generation,
-    /// and a rewrite by another server sharing the disk does not invalidate the cache of this one.
-    settings.enable_filesystem_cache = false;
+    /// User files are mutable and can be rewritten in place under the same name. The keys of the
+    /// page cache, the filesystem cache of a `cache` disk, and the distributed cache are the object
+    /// path without a generation, and a rewrite (possibly by another server sharing the disk) does
+    /// not invalidate them, so a read could return stale bytes. Disable all of them.
+    settings.disableCaches();
     if (settings.local_fs_settings.method == LocalFSReadMethod::mmap)
         settings.local_fs_settings.method = LocalFSReadMethod::pread;
     return settings;
