@@ -288,11 +288,23 @@ ReplicatedMergeTreeTableMetadata ReplicatedMergeTreeTableMetadata::parseAndNorma
     const bool add_minmax_index_for_string_columns
         = stored_and_enabled("add_minmax_index_for_string_columns", table_metadata.add_minmax_index_for_string_columns);
 
+    /// The local table has generated this implicit index itself. A replica created from the original
+    /// index-free definition of a table whose policy was inherited (not stored) has no local declaration
+    /// that the Keeper one could belong to, so an identical Keeper declaration is the implicit index of an
+    /// older replica. A local user-declared index of the same name is explicit, so it is not matched here.
+    const auto is_local_implicit = [&](const String & index_name)
+    {
+        return table_metadata.secondary_indices.has(index_name)
+            && table_metadata.secondary_indices.getByName(index_name).isImplicitlyCreated();
+    };
+    const bool has_local_implicit = std::ranges::any_of(
+        table_metadata.secondary_indices, [](const IndexDescription & index) { return index.isImplicitlyCreated(); });
+
     /// Backward compatibility: older replicas (before 25.12) stored implicit indices in Keeper
     /// metadata. Newer replicas only store explicit indices. Strip implicit indices from the
     /// parsed metadata so that all downstream comparisons work against the new format.
     if (result.skip_indices.empty()
-        || (!add_minmax_index_for_numeric_columns && !add_minmax_index_for_string_columns))
+        || (!add_minmax_index_for_numeric_columns && !add_minmax_index_for_string_columns && !has_local_implicit))
         return result;
 
     ParserIndexDeclarationList parser;
@@ -316,7 +328,8 @@ ReplicatedMergeTreeTableMetadata ReplicatedMergeTreeTableMetadata::parseAndNorma
                 /// need to be checked here. The temporal setting (`add_minmax_index_for_temporal_columns`)
                 /// was introduced in 26.2 and never stored implicit indices in Keeper metadata.
                 is_implicit = ((add_minmax_index_for_numeric_columns && isNumber(col_type))
-                        || (add_minmax_index_for_string_columns && isString(col_type)))
+                        || (add_minmax_index_for_string_columns && isString(col_type))
+                        || is_local_implicit(index_name))
                     && index->formatWithSecretsOneLine() == createImplicitMinMaxIndexAST(column_name)->formatWithSecretsOneLine();
             }
         }
