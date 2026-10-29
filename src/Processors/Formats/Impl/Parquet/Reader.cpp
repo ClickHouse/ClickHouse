@@ -354,6 +354,19 @@ std::shared_ptr<const FileFooter> Reader::readFileFooter(Prefetcher & prefetcher
     return footer;
 }
 
+/// The length of the dictionary page of a column chunk with a declared `dictionary_page_offset`.
+static size_t getDictionaryPageLength(const parq::ColumnChunk & column_meta)
+{
+    /// We assume that the dictionary page is immediately followed by the first data page.
+    size_t dict_page_offset = size_t(column_meta.meta_data.dictionary_page_offset);
+    size_t data_page_offset = size_t(column_meta.meta_data.data_page_offset);
+    if (data_page_offset < dict_page_offset)
+        throw Exception(ErrorCodes::INCORRECT_DATA,
+            "Invalid Parquet metadata: the dictionary page offset {} of a column chunk is after its data page offset {}",
+            dict_page_offset, data_page_offset);
+    return data_page_offset - dict_page_offset;
+}
+
 void Reader::fixUpColumnChunk(parq::ColumnChunk & column, bool written_by_old_duckdb)
 {
     /// Some writers incorrectly set dictionary_page_offset offset to 0 when there's no dictionary
@@ -1619,9 +1632,8 @@ void Reader::initializePrefetches()
             size_t dict_page_length = 0;
             if (column.meta->meta_data.__isset.dictionary_page_offset)
             {
-                /// We assume that the dictionary page is immediately followed by the first data page.
                 size_t start = size_t(column.meta->meta_data.dictionary_page_offset);
-                dict_page_length = size_t(column.meta->meta_data.data_page_offset) - start;
+                dict_page_length = getDictionaryPageLength(*column.meta);
 
                 /// Dictionary filter. We only enable it if prepareBloomFilterCondition produced query
                 /// hashes for this column (use_bloom_filter), i.e. the condition has an equality/IN on
@@ -1731,6 +1743,10 @@ void Reader::initializePrefetches()
             if (column.served_from_cache)
                 continue;
 
+            if (size_t(column.meta->meta_data.total_compressed_size) < dict_page_length)
+                throw Exception(ErrorCodes::INCORRECT_DATA,
+                    "Invalid Parquet metadata: the dictionary page of a column chunk is longer than its total compressed size ({} > {})",
+                    dict_page_length, size_t(column.meta->meta_data.total_compressed_size));
             column.data_pages_bytes = size_t(column.meta->meta_data.total_compressed_size) - dict_page_length;
 
             /// Old versions of parquet-mr wrote incorrect total_compressed_size, see PARQUET-816.
@@ -2358,8 +2374,7 @@ bool Reader::columnChunkCanUseDictionaryFilter(const parq::ColumnChunk & column_
     /// missed optimization (a full row-group scan), never a wrong result.
     if (!column_meta.meta_data.__isset.dictionary_page_offset)
         return false;
-    /// We assume that the dictionary page is immediately followed by the first data page.
-    size_t dict_page_length = size_t(column_meta.meta_data.data_page_offset) - size_t(column_meta.meta_data.dictionary_page_offset);
+    size_t dict_page_length = getDictionaryPageLength(column_meta);
     /// The limit is the maximum dictionary page size for which pruning applies, so the boundary is
     /// inclusive: a dictionary page of exactly `dictionary_filter_limit_bytes` is still eligible.
     if (dict_page_length > options.dictionary_filter_limit_bytes)
