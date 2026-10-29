@@ -1,0 +1,26 @@
+input_format_vortex_filter_push_down = 0
+s IN (SELECT k FROM fixed_keys): 1
+s NOT IN (SELECT k FROM fixed_keys): 0
+u IN (SELECT k FROM bool_keys): 1
+u NOT IN (SELECT k FROM bool_keys): 0
+t IN (SELECT k FROM date_keys): 1
+t NOT IN (SELECT k FROM date_keys): 0
+s = toFixedString('a', 2): 1
+s != toFixedString('a', 2): 0
+s >= toFixedString('a', 2): 1
+s < toFixedString('a', 2): 0
+z = toFixedString('a', 1): 1
+z <= toFixedString('a', 1): 1
+input_format_vortex_filter_push_down = 1
+s IN (SELECT k FROM fixed_keys): 1
+s NOT IN (SELECT k FROM fixed_keys): 0
+u IN (SELECT k FROM bool_keys): 1
+u NOT IN (SELECT k FROM bool_keys): 0
+t IN (SELECT k FROM date_keys): 1
+t NOT IN (SELECT k FROM date_keys): 0
+s = toFixedString('a', 2): 1
+s != toFixedString('a', 2): 0
+s >= toFixedString('a', 2): 1
+s < toFixedString('a', 2): 0
+z = toFixedString('a', 1): 1
+z <= toFixedString('a', 1): 1

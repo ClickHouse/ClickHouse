@@ -262,12 +262,12 @@ bool isCreatedOnBackupMetadataOnlyStoragePolicy(const ASTCreateQuery & create_qu
         return false;
 
     /// Only the plain family reopens the parts it finds on the storage: the replicated and shared engines are
-    /// registered with `supports_replication`. Decided before the policy is resolved, which throws when the policy is
-    /// not configured on this host: that is allowed for a table whose data the other replicas provide.
+    /// registered with `supports_replication`.
     if (it->second.features.supports_replication)
         return false;
 
-    return context->getStoragePolicy(policy_name->safeGet<String>())->isBackupMetadataOnly();
+    auto policy = context->tryGetStoragePolicy(policy_name->safeGet<String>());
+    return policy && policy->isBackupMetadataOnly();
 }
 
 }
