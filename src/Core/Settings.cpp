@@ -5202,7 +5202,7 @@ The memory size at which the adaptive aggregator freezes a thread's local hash t
     DECLARE(Bool, adaptive_aggregator_disable_thaw, false, R"(
 Disables the per-thread thaw guard of the adaptive aggregator (see `enable_adaptive_aggregator`). By default, a thread whose staged records keep repeating the same keys can thaw its table and resume ordinary aggregation. When at least half of the frozen threads have repeat-dominated staged streams, the verdict is remembered in the hash-table statistics (`collect_hash_table_stats_during_aggregation`), so that later runs of the query do not use the adaptive aggregator.
 
-With this setting, repeated staged keys do not thaw a table, and a remembered verdict is ignored. Aggregations with descending top-K pruning already keep their tables frozen independently of this setting. The external aggregation settings still allow a growing frozen table to be written to disk and replaced with a new learning table.
+With this setting, repeated staged keys do not thaw a table, and a remembered verdict is ignored. Aggregations by a lone `count()` with descending top-K pruning keep their tables frozen independently of this setting, and aggregations with descending top-K pruning neither record nor use the verdict. The external aggregation settings still allow a growing frozen table to be written to disk and replaced with a new learning table.
 )", 0, \
         {"26.11", false, false, "New setting to keep the adaptive aggregator's local tables frozen whatever the repeats of the staged keys, ignoring a thaw verdict remembered in the hash-table statistics."}) \
     DECLARE(Bool, read_in_order_use_buffering, true, R"(
