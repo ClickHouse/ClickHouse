@@ -13,8 +13,9 @@ sys.path.append("./")
 
 from ci.jobs.scripts.coverage_selection import (
     attach_bracket_owners,
-    build_bracket_owners_query,
-    build_bracket_spans_query,
+    build_bracket_owners_queries,
+    build_bracket_spans_queries,
+    build_candidate_queries,
     build_candidate_query,
     build_selector_smoke_seed_query,
     canonical_coverage_path,
@@ -854,6 +855,15 @@ class Targeting:
             changed_lines, hunk_ranges or {}, self.coverage_snapshots(), self.config
         )
 
+    def _query_rows(self, queries):
+        """The rows of `queries` one after another, and their size in bytes."""
+        rows, size = [], 0
+        for query in queries:
+            raw = self._ci_db().query(query, log_level="")
+            rows += parse_rows(raw)
+            size += len(raw.encode())
+        return rows, size
+
     def check_coverage_canary(self):
         if self.selection_diagnostics.get("canary", {}).get("status") == "OK":
             return self.selection_diagnostics["canary"]
@@ -920,15 +930,16 @@ class Targeting:
             self._coverage_regions = []
             return []
         self.check_coverage_canary()
-        query = self.build_coverage_query(coverage_lines, hunk_ranges)
+        queries = build_candidate_queries(
+            coverage_lines, hunk_ranges or {}, self.coverage_snapshots(), self.config
+        )
         started = time.monotonic()
-        raw = self._ci_db().query(query, log_level="")
-        self._coverage_regions = parse_rows(raw)
+        self._coverage_regions, response_bytes = self._query_rows(queries)
         self.selection_diagnostics.update(
             {
-                "query": query,
+                "queries": queries,
                 "query_seconds": time.monotonic() - started,
-                "response_bytes": len(raw.encode()),
+                "response_bytes": response_bytes,
                 "region_count": len(self._coverage_regions),
                 "coverage_state": (
                     "precise_matches"
@@ -960,18 +971,13 @@ class Targeting:
         if not hunks:
             return []
         snapshots = self.coverage_snapshots()
-        spans = parse_rows(
-            self._ci_db().query(
-                build_bracket_spans_query(hunks, snapshots, self.config), log_level=""
-            )
+        spans, _ = self._query_rows(
+            build_bracket_spans_queries(hunks, snapshots, self.config)
         )
         brackets = find_brackets(hunks, spans, self.config)
         if brackets:
-            owners = parse_rows(
-                self._ci_db().query(
-                    build_bracket_owners_query(brackets, snapshots, self.config),
-                    log_level="",
-                )
+            owners, _ = self._query_rows(
+                build_bracket_owners_queries(brackets, snapshots, self.config)
             )
             attach_bracket_owners(brackets, owners)
         self.selection_diagnostics["brackets"] = [

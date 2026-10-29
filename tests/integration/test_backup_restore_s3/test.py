@@ -1458,7 +1458,7 @@ def test_backup_restore_s3_plain_backup_metadata_only(cluster):
     instance.query(
         f"""
         CREATE TABLE ts ENGINE = TimeSeries SETTINGS recent_samples_ttl_seconds = 0
-        DATA INNER ENGINE = MergeTree SETTINGS storage_policy = '{policy}'
+        DATA INNER ENGINE = AggregatingMergeTree SETTINGS storage_policy = '{policy}'
         TAGS INNER ENGINE = Memory
         METRICS INNER ENGINE = ReplacingMergeTree SETTINGS storage_policy = '{policy}'
         """,
