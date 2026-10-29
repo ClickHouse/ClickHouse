@@ -134,11 +134,13 @@ public:
 
     /// Returns the name of a virtual column whose value may differ between replicas (`_table`, `_database`,
     /// `_disk_name`, ...), if the `UPDATE` or `DELETE` commands read it, directly or through `ALIAS` columns,
-    /// or if a projection that the mutation may rebuild reads it.
+    /// or if a projection that the mutation may rebuild reads it. The mutation is checked against
+    /// `metadata_snapshot`, the metadata it will be executed with, or the current metadata of `storage` if it is null.
     static std::optional<String> findNonDeterministicVirtualColumn(
         const StoragePtr & storage,
         const MutationCommands & commands,
-        ContextPtr context);
+        ContextPtr context,
+        StorageMetadataHandle metadata_snapshot = nullptr);
 
     /// The resulting stream will return blocks containing only changed columns and columns, that we need to recalculate indices.
     QueryPipelineBuilder execute();

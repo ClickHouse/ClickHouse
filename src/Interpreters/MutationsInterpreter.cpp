@@ -2563,7 +2563,8 @@ void collectColumnsReadFromTable(const QueryTreeNodePtr & node, const QueryTreeN
 std::optional<String> MutationsInterpreter::findNonDeterministicVirtualColumn(
     const StoragePtr & storage,
     const MutationCommands & commands,
-    ContextPtr context)
+    ContextPtr context,
+    StorageMetadataHandle metadata_snapshot)
 {
     /// A real column with the same name shadows the virtual one and is deterministic.
     /// `_sample_factor` is non-deterministic only because of the `SAMPLE` clause of a `SELECT`; no `SAMPLE`
@@ -2572,7 +2573,8 @@ std::optional<String> MutationsInterpreter::findNonDeterministicVirtualColumn(
     /// always 0.
     static const NameSet deterministic_in_mutations = {"_sample_factor", "_part_index", "_part_starting_offset"};
 
-    auto metadata_snapshot = storage->getInMemoryMetadataPtr(context, /*bypass_metadata_cache=*/ false);
+    if (!metadata_snapshot)
+        metadata_snapshot = storage->getInMemoryMetadataPtr(context, /*bypass_metadata_cache=*/ false);
     const auto & real_columns = metadata_snapshot->getColumns();
     NameSet nondeterministic_virtual_columns;
     for (const auto & virtual_column : metadata_snapshot->virtuals)
