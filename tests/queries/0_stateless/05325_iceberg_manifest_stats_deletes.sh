@@ -8,7 +8,7 @@
 # - T2: a position delete file covering several data files is not; `IcebergRowEstimateSkippedPositionDeleteFiles` counts it.
 # - T3: per partition: no filter, a filter that prunes the partition with the deletes, one that keeps only it.
 # - T4: equality deletes are not subtracted, nor a removed delete entry (Spark fixture, see data_minio/deletes_db/README.md).
-# - T5: the NDV of a key is clamped to the rows left after the deletes.
+# - T5: a key whose range fits the rows but not the rows left after the deletes gets no counted NDV.
 # - T6: a filter is estimated on the rows left after the deletes.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
@@ -93,7 +93,7 @@ echo "--- T3: WHERE r = 'us' keeps only that partition"
 labels p "t.r = 'us'"
 echo '--- T4: 1010 rows, a live file-scoped position delete of 30, a removed one of 20, equality deletes removing 99'
 labels "(SELECT id AS k FROM icebergLocal('${LAKE}/eq_deletes_table/'))"
-echo '--- T5: k is 0..199 and the deletes leave 180 rows, so the range 200 is clamped to 180'
+echo '--- T5: k is 0..199 and the deletes leave 180 rows, so the range 200 is not counted: 10% of the 200 rows'
 ${CLICKHOUSE_CLIENT_TRACE} ${PINS} --query "EXPLAIN SELECT count() FROM mt AS m JOIN u AS t ON m.k = t.k" 2>&1 >/dev/null \
     | grep -oE 'Estimated statistics for [A-Za-z]+ t: .*' | head -n 1 | grep -oE 't: [0-9]+ rows|__table[0-9]+\.k: [0-9]+'
 echo '--- T6: WHERE v = 1, 500 of 2000 rows deleted'
