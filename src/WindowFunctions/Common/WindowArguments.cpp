@@ -46,23 +46,23 @@ void ArgumentValue::appendTo(IColumn & result) const
     result.insertFrom(*column, row);
 }
 
-WindowArguments::WindowArguments(std::vector<size_t> column_indices_)
+WindowArguments::WindowArguments(std::vector<size_t> column_indices_, const std::deque<Block> & blocks_)
     : column_indices(std::move(column_indices_))
-    , last_used_block_for_arg(column_indices.size(), nullptr)
+    , blocks(blocks_)
+    , last_used_block_for_arg(column_indices.size())
 {
 }
 
-void WindowArguments::setBlocks(const Blocks & blocks_, Int64 partition_start_)
+void WindowArguments::setPartitionStart(Int64 partition_start_)
 {
-    blocks = &blocks_;
     partition_start = partition_start_;
-    std::ranges::fill(last_used_block_for_arg, nullptr);
+    std::ranges::fill(last_used_block_for_arg, Block{});
 }
 
-const WindowArguments::Block & WindowArguments::findBlock(Int64 position) const
+void WindowArguments::findBlock(size_t argument, Int64 position) const
 {
-    const auto after = std::upper_bound(blocks->begin(), blocks->end(), position, [](Int64 value, const Block & block) { return value < block.first_position; });
-    return *std::prev(after);
+    const auto after = std::upper_bound(blocks.begin(), blocks.end(), position, [](Int64 value, const Block & block) { return value < block.first_position; });
+    last_used_block_for_arg[argument] = *std::prev(after);
 }
 
 size_t WindowArguments::size() const
@@ -73,10 +73,10 @@ size_t WindowArguments::size() const
 ArgumentValue WindowArguments::at(size_t argument, Int64 position) const
 {
     position += partition_start;
-    const Block *& block = last_used_block_for_arg[argument];
-    if (!block || position < block->first_position || block->end_position <= position)
-        block = &findBlock(position);
-    return ArgumentValue(*block->columns[column_indices[argument]], position - block->first_position);
+    const Block & block = last_used_block_for_arg[argument];
+    if (position < block.first_position || block.end_position <= position)
+        findBlock(argument, position);
+    return ArgumentValue(*block.columns[column_indices[argument]], position - block.first_position);
 }
 
 }

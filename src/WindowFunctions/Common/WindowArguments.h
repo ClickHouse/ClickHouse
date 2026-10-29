@@ -31,6 +31,8 @@ private:
 
 class WindowArguments
 {
+    void findBlock(size_t argument, Int64 position) const;
+
 public:
     struct Block
     {
@@ -39,23 +41,19 @@ public:
         Int64 end_position = 0;
     };
 
-    using Blocks = std::deque<Block>;
+    explicit WindowArguments(std::vector<size_t> column_indices_, const std::deque<Block> & blocks_);
 
-    explicit WindowArguments(std::vector<size_t> column_indices_);
-
-    /// `at` takes positions counted from the partition start; `partition_start_` is that row's position in `blocks_`.
-    void setBlocks(const Blocks & blocks_, Int64 partition_start_);
+    /// `at` takes positions counted from the partition start; `partition_start_` is that row's position in `blocks`.
+    void setPartitionStart(Int64 partition_start_);
 
     size_t size() const;
     ArgumentValue at(size_t argument, Int64 position) const;
 
 private:
-    const Block & findBlock(Int64 position) const;
-
     std::vector<size_t> column_indices;
-    const Blocks * blocks = nullptr;
+    const std::deque<Block> & blocks;
     Int64 partition_start = 0;
-    mutable std::vector<const Block *> last_used_block_for_arg;
+    mutable std::vector<Block> last_used_block_for_arg;
 };
 
 }

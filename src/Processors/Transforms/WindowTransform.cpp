@@ -46,13 +46,15 @@ WindowFunctionWorkspace createWorkspace(const Block & input_header, const Window
     return workspace;
 }
 
-GeneralWindowFunctionSlot createSlot(const Block & input_header, const WindowFunctionDescription & function, GeneralWindowFunctionPtr general, size_t result_column, Arena & states_arena)
+GeneralWindowFunctionSlot createSlot(
+    const Block & input_header, const WindowFunctionDescription & function, GeneralWindowFunctionPtr general, size_t result_column, Arena & states_arena,
+    const std::deque<WindowArguments::Block> & argument_blocks)
 {
     GeneralWindowFunctionSlot slot{
         .function = std::move(general),
         .state = nullptr,
         .result_column = result_column,
-        .arguments = WindowArguments(argumentColumnIndices(input_header, function)),
+        .arguments = WindowArguments(argumentColumnIndices(input_header, function), argument_blocks),
     };
 
     if (slot.function->sizeOfState() != 0)
@@ -97,7 +99,7 @@ WindowTransform::WindowTransform(
             const WindowFunctionDescription & function = functions[result_column];
             if (auto general = asGeneralWindowFunction(function.aggregate_function))
             {
-                general_functions.push_back(createSlot(params.input_header, function, std::move(general), result_column, states_arena));
+                general_functions.push_back(createSlot(params.input_header, function, std::move(general), result_column, states_arena, argument_blocks));
             }
             else
             {
@@ -279,7 +281,7 @@ void WindowTransform::flushBatch()
     {
         const Int64 partition_start = argument_blocks[batch_start.block - blocks.begin().block].first_position + batch_start.row - bounds.row[0];
         for (auto & slot : general_functions)
-            slot.arguments.setBlocks(argument_blocks, partition_start);
+            slot.arguments.setPartitionStart(partition_start);
     }
 
     const SlidingBlock & block = blocks.blockAt(batch_start.block);
