@@ -13,10 +13,12 @@
 #include <functional>
 
 #include <Common/logger_useful.h>
+#include <Common/FailPoint.h>
 #include <Common/HTTPConnectionInfo.h>
 #include <Common/Stopwatch.h>
 #include <Common/Throttler.h>
 #include <Common/re2.h>
+#include <base/sleep.h>
 #include <IO/Expect404ResponseScope.h>
 #include <IO/GCPOAuth.h>
 #include <IO/HTTPCommon.h>
@@ -92,6 +94,11 @@ namespace DB::ErrorCodes
     extern const int DNS_ERROR;
     extern const int AUTHENTICATION_FAILED;
     extern const int BAD_ARGUMENTS;
+}
+
+namespace DB::FailPoints
+{
+    extern const char s3_slow_response[];
 }
 
 namespace HistogramMetrics
@@ -478,6 +485,7 @@ void PocoHTTPClient::makeRequestInternalImpl(
     Aws::Utils::RateLimits::RateLimiterInterface *) const
 {
     LoggerPtr log = getLogger("AWSClient");
+    constexpr UInt64 simulated_network_latency_ms = 50;
 
     auto uri = request.GetUri().GetURIString();
     auto method = getMethod(request);
@@ -687,6 +695,9 @@ void PocoHTTPClient::makeRequestInternalImpl(
                 request_body->finalize();
 
                 setTimeouts(*session, getTimeouts(method, first_attempt, /*first_byte*/ false));
+
+                /// Test-only slow-S3 simulation: delay each request after sending and before receiving its response.
+                fiu_do_on(FailPoints::s3_slow_response, { sleepForMilliseconds(simulated_network_latency_ms); });
 
                 if (enable_s3_requests_logging)
                     LOG_TEST(log, "Receiving response...");

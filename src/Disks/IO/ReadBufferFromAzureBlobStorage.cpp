@@ -102,7 +102,7 @@ ReadBufferFromAzureBlobStorage::ReadBufferFromAzureBlobStorage(
     {
         tmp_buffer.resize(tmp_buffer_size);
         data_ptr = tmp_buffer.data();
-        data_capacity = tmp_buffer_size;
+        data_capacity = tmp_buffer.size();
     }
 }
 
