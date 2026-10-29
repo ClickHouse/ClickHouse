@@ -1,6 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-ordinary-database, no-darwin
-# no-darwin: hangs until the timeout on macOS ARM, https://github.com/ClickHouse/ClickHouse/issues/127841
+# Tags: no-ordinary-database
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
