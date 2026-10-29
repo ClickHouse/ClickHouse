@@ -6987,9 +6987,11 @@ def test_snapshot_load_failure_per_waiter(started_cluster):
         ), "The second query must wait for the paused build of the first one"
 
         # The paused build fails once released: the table is gone when the kernel reads its log.
+        # The listed names are relative to the prefix.
         objects = list_s3_objects(minio_client, bucket, prefix=f"{TABLE_NAME}/")
+        assert objects
         errors = minio_client.remove_objects(
-            bucket, [DeleteObject(obj) for obj in objects]
+            bucket, [DeleteObject(f"{TABLE_NAME}/{obj}") for obj in objects]
         )
         assert len(list(errors)) == 0
     finally:
@@ -7537,8 +7539,12 @@ def test_table_replaced_at_same_location(started_cluster):
     assert int(instance.query(f"SELECT count() FROM {TABLE_NAME}")) == 30
 
     # Replace the table: a new one at the same location starts again at version 0.
+    # The listed names are relative to the prefix.
     objects = list_s3_objects(minio_client, bucket, prefix=f"{TABLE_NAME}/")
-    errors = minio_client.remove_objects(bucket, [DeleteObject(obj) for obj in objects])
+    assert objects
+    errors = minio_client.remove_objects(
+        bucket, [DeleteObject(f"{TABLE_NAME}/{obj}") for obj in objects]
+    )
     assert len(list(errors)) == 0
     write_deltalake_with_retry(table_uri, rows(5), storage_options, mode="overwrite")
 
