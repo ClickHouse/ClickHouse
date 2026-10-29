@@ -37,6 +37,13 @@ an out-of-range Date32
 1
 1
 1
+an out-of-range DateTime64, Time and Time64
+1
+1
+1
+1
+1
+1
 a too narrow target width still throws
 1
 a width that is not an unsigned integer still throws
@@ -55,6 +62,8 @@ an ARRAY JOIN alias that shadows a sorting key column
 1
 2
 distinct NaN payloads
+1
+1
 1
 1
 1

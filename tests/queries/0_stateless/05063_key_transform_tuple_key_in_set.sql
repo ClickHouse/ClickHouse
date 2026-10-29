@@ -1,10 +1,9 @@
 -- A Tuple-typed key column wrapped in a key transform: `k IN (<tuple literal>)` builds the set
 -- unpacked, one column per tuple element, so key analysis must re-pack it against the transform's
 -- input type. Master raises TYPE_MISMATCH on that layout, or silently returns a wrong count where the
--- bad cast happens to parse. Re-packing it is not enough on its own: nothing is known about whether the
--- transform keeps distinct key values distinct, so a layout admitted here for the first time must not
--- yield an exact atom. A layout that the key expression result type re-packs by itself is left exactly
--- as it was, and the last two arms hold that line.
+-- bad cast happens to parse. Whether an atom over this layout is exact follows the transform's own
+-- injectivity claim, as for any other layout. A layout that the key expression result type re-packs
+-- by itself is left exactly as it was, and arms 12 and 13 hold that line.
 
 DROP TABLE IF EXISTS t_str;
 DROP TABLE IF EXISTS t_float;
@@ -16,6 +15,10 @@ DROP TABLE IF EXISTS t_mm;
 DROP TABLE IF EXISTS t_set;
 DROP TABLE IF EXISTS t_id;
 DROP TABLE IF EXISTS t_hex;
+DROP TABLE IF EXISTS t_inj;
+DROP TABLE IF EXISTS t_time;
+DROP TABLE IF EXISTS t_qbit;
+DROP TABLE IF EXISTS t_dt64;
 
 -- 1. The set element is a String that itself parses as a tuple, so the bad cast used to succeed
 -- with an unrelated value and prune the matching granule: silent row loss, no error.
@@ -53,7 +56,7 @@ SELECT count() FROM t_null WHERE k IN (tuple(CAST(NULL, 'Nullable(Float64)'), to
 
 -- 5. `toString` maps every NaN payload to `nan` while `IN` compares floats bitwise, so the
 -- transformed set covers rows the predicate does not. Both directions are asserted because the
--- merge is unsound in opposite ways: without the guard the answers are `0` and `1`.
+-- merge is unsound in opposite ways: an exact atom here answers `0` and `1`.
 CREATE TABLE t_nan (k Tuple(Float64, Float64)) ENGINE = MergeTree ORDER BY toString(k);
 INSERT INTO t_nan SELECT tuple(reinterpretAsFloat64(toUInt64(9221120237041090561)), toFloat64(1));
 SELECT count() FROM t_nan WHERE k NOT IN (tuple(reinterpretAsFloat64(toUInt64(9221120237041090562)), toFloat64(1)));
@@ -62,8 +65,7 @@ SELECT count() FROM t_nan WHERE k IN (tuple(reinterpretAsFloat64(toUInt64(922112
 -- 6. `toString` of a date-time in a timezone with a fall-back transition renders two distinct
 -- instants as one local time, so the layout the re-pack newly admits is not exact for it either.
 -- The timezone is named in the column type and in both literals, so the arm does not depend on the
--- server timezone, which the runner randomizes. Master throws TYPE_MISMATCH here; admitting the
--- layout without the guard answers `0` and `1`.
+-- server timezone, which the runner randomizes. An exact atom here answers `0` and `1`.
 CREATE TABLE t_dt (k Tuple(DateTime('Europe/Berlin'), UInt8)) ENGINE = MergeTree ORDER BY toString(k);
 INSERT INTO t_dt SELECT tuple(toDateTime(1698539400, 'Europe/Berlin'), 1);
 SELECT count() FROM t_dt WHERE k NOT IN (tuple(toDateTime(1698543000, 'Europe/Berlin'), 1));
@@ -89,9 +91,8 @@ SELECT extract(explain, 'Condition:.*') FROM (
     EXPLAIN indexes = 1 SELECT count() FROM t_float WHERE k IN (tuple(toFloat64(3), toFloat64(1)))
 ) WHERE explain ILIKE '%Condition:%';
 
--- 9. `NOT IN` over a newly admitted layout falls back to a scan, since the transform is not known to
--- keep distinct key values distinct; the count must stay right either way. The `Condition:` line is
--- what separates that fall-back from an atom admitted as a relaxed one, which counts right as well.
+-- 9. `NOT IN` over this layout is analysed like `IN`. `toString` of a `Float64` is not injective, so
+-- the atom is relaxed and does not prune on its own; the count must stay right.
 SELECT count() FROM t_float WHERE k NOT IN (tuple(toFloat64(3), toFloat64(1)));
 SELECT extract(explain, 'Condition:.*') FROM (
     EXPLAIN indexes = 1 SELECT * FROM t_float WHERE k NOT IN (tuple(toFloat64(3), toFloat64(1)))
@@ -137,6 +138,56 @@ SELECT extract(explain, 'Condition:.*') FROM (
     EXPLAIN indexes = 1 SELECT * FROM t_hex WHERE k NOT IN (toFloat64(3), toFloat64(7))
 ) WHERE explain ILIKE '%Condition: (hex(k) notIn%';
 
+-- 14. An injective transform keeps an exact atom over this layout: `toString` keeps distinct
+-- `Tuple(Int64, String)` values distinct, so `NOT IN` prunes the part holding only the excluded value.
+-- Merges are stopped so each part stays one key value. `Parts:` is the exactness oracle, since a
+-- relaxed atom prints the same `Condition:` line and reads both parts.
+CREATE TABLE t_inj (k Tuple(Int64, String)) ENGINE = MergeTree ORDER BY toString(k);
+SYSTEM STOP MERGES t_inj;
+INSERT INTO t_inj SELECT tuple(toInt64(1), 'a');
+INSERT INTO t_inj SELECT tuple(toInt64(2), 'b');
+SELECT count() FROM t_inj WHERE k NOT IN (tuple(toInt64(1), 'a'));
+SELECT extract(explain, '(?:Condition|Parts): .*') FROM (
+    EXPLAIN indexes = 1 SELECT * FROM t_inj WHERE k NOT IN (tuple(toInt64(1), 'a'))
+) WHERE explain ILIKE '%Condition:%' OR explain ILIKE '%Parts:%';
+
+-- 15. `toString` of a `Time` beyond `999:59:59` saturates, so the two rows below render alike and the
+-- atom must stay relaxed: an exact one answers `0` for `NOT IN`, and `2` for `IN` when counted from the index.
+CREATE TABLE t_time (k Tuple(Time, UInt8)) ENGINE = MergeTree ORDER BY toString(k);
+SYSTEM STOP MERGES t_time;
+INSERT INTO t_time SELECT tuple(t, 1) FROM format(RowBinary, 't Time', unhex('80EE3600'));
+INSERT INTO t_time SELECT tuple(t, 1) FROM format(RowBinary, 't Time', unhex('81EE3600'));
+SELECT count() FROM t_time WHERE k IN (SELECT t, toUInt8(1) FROM format(RowBinary, 't Time', unhex('80EE3600')));
+SELECT count() FROM t_time WHERE k NOT IN (SELECT t, toUInt8(1) FROM format(RowBinary, 't Time', unhex('80EE3600')));
+
+-- 16. `toString` renders every `NaN` payload of a `QBit` element as `nan`, so the two rows below render alike and the
+-- atom must stay relaxed: an exact one answers `0` for `NOT IN`, and `2` for `IN` when counted from the index.
+-- Parallel replicas are off: a `QBit` constant sent to a replica arrives as a `Tuple` of `String` and fails to cast.
+CREATE TABLE t_qbit (k Tuple(QBit(Float32, 1), UInt8)) ENGINE = MergeTree ORDER BY toString(k);
+SYSTEM STOP MERGES t_qbit;
+INSERT INTO t_qbit SELECT tuple(CAST([reinterpretAsFloat32(toUInt32(2143289345))], 'QBit(Float32, 1)'), 1);
+INSERT INTO t_qbit SELECT tuple(CAST([reinterpretAsFloat32(toUInt32(2143289346))], 'QBit(Float32, 1)'), 1);
+SELECT count() FROM t_qbit WHERE k IN (SELECT CAST([reinterpretAsFloat32(toUInt32(2143289345))], 'QBit(Float32, 1)'), toUInt8(1)) SETTINGS enable_parallel_replicas = 0;
+SELECT count() FROM t_qbit WHERE k NOT IN (SELECT CAST([reinterpretAsFloat32(toUInt32(2143289345))], 'QBit(Float32, 1)'), toUInt8(1)) SETTINGS enable_parallel_replicas = 0;
+
+-- 17. The same holds for `has`, whose array elements arrive packed already: `NOT has` prunes the part
+-- holding only the excluded value.
+SELECT count() FROM t_inj WHERE NOT has([tuple(toInt64(1), 'a')], k) SETTINGS optimize_rewrite_has_to_in = 0;
+SELECT extract(explain, '(?:Condition|Parts): .*') FROM (
+    EXPLAIN indexes = 1 SELECT * FROM t_inj WHERE NOT has([tuple(toInt64(1), 'a')], k) SETTINGS optimize_rewrite_has_to_in = 0
+) WHERE explain ILIKE '%Condition:%' OR explain ILIKE '%Parts:%';
+
+-- 18. `toString` of a `DateTime64` past `9999-12-31` saturates, so the two rows below render alike and the atom
+-- must stay relaxed: an exact one answers `2` for `IN` when counted from the index, and `0` for `NOT IN` and `NOT has`.
+-- Parallel replicas are off: such a constant sent to a replica is rendered as text, which saturates the same way.
+CREATE TABLE t_dt64 (k Tuple(DateTime64(0, 'UTC'), UInt8)) ENGINE = MergeTree ORDER BY toString(k);
+SYSTEM STOP MERGES t_dt64;
+INSERT INTO t_dt64 SELECT tuple(toDateTime64('9999-12-31 23:59:59', 0, 'UTC') + 1, 1);
+INSERT INTO t_dt64 SELECT tuple(toDateTime64('9999-12-31 23:59:59', 0, 'UTC') + 2, 1);
+SELECT count() FROM t_dt64 WHERE k IN (SELECT toDateTime64('9999-12-31 23:59:59', 0, 'UTC') + 1, toUInt8(1)) SETTINGS enable_parallel_replicas = 0;
+SELECT count() FROM t_dt64 WHERE k NOT IN (SELECT toDateTime64('9999-12-31 23:59:59', 0, 'UTC') + 1, toUInt8(1)) SETTINGS enable_parallel_replicas = 0;
+SELECT count() FROM t_dt64 WHERE NOT has([tuple(toDateTime64('9999-12-31 23:59:59', 0, 'UTC') + 1, toUInt8(1))], k) SETTINGS optimize_rewrite_has_to_in = 0, enable_parallel_replicas = 0;
+
 DROP TABLE t_str;
 DROP TABLE t_float;
 DROP TABLE t_null;
@@ -147,3 +198,7 @@ DROP TABLE t_mm;
 DROP TABLE t_set;
 DROP TABLE t_id;
 DROP TABLE t_hex;
+DROP TABLE t_inj;
+DROP TABLE t_time;
+DROP TABLE t_qbit;
+DROP TABLE t_dt64;
