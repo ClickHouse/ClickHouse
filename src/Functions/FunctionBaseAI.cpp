@@ -478,6 +478,9 @@ void FunctionBaseAI::embedTexts(
 
 ColumnPtr FunctionBaseAI::executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const
 {
+    /// Before resolving the credentials: their validation errors must not reveal a named collection.
+    checkHasUser(getContext());
+
     const auto & settings = getContext()->getSettingsRef();
     auto params = resolveAIParams(getContext(), arguments, allParams(), settings[Setting::ai_function_text_default_credentials]);
 
@@ -508,8 +511,6 @@ ColumnPtr FunctionBaseAI::executeImpl(const ColumnsWithTypeAndName & arguments, 
         prompt_column = arguments[0].column->convertToFullColumnIfConst();
         prompt_nullable = typeid_cast<const ColumnNullable *>(prompt_column.get());
     }
-
-    checkHasUser(getContext());
 
     /// Shared across every AI function call in the query
     auto quota_tracker = getContext()->getAIQuotaTracker();

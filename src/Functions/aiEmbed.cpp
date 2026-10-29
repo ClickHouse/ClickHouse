@@ -100,6 +100,9 @@ public:
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
+        /// Before resolving the credentials: their validation errors must not reveal a named collection.
+        FunctionBaseAI::checkHasUser(getContext());
+
         const auto & settings = getContext()->getSettingsRef();
         auto params = FunctionBaseAI::resolveAIParams(
             getContext(), arguments, FunctionBaseAI::embeddingParams(), settings[Setting::ai_function_embedding_default_credentials]);
@@ -118,8 +121,6 @@ public:
 
         size_t max_batch_size = static_cast<size_t>(settings[Setting::ai_function_embedding_max_batch_size].value);
         size_t max_concurrent_requests = static_cast<size_t>(settings[Setting::ai_function_max_concurrent_requests_per_thread].value);
-
-        FunctionBaseAI::checkHasUser(getContext());
 
         /// Shared across every AI function call in the query
         auto quota_tracker = getContext()->getAIQuotaTracker();
