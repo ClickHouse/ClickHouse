@@ -113,10 +113,9 @@ public:
     /// Get storage snapshot, throws exception if function node is not resolved
     const StorageSnapshotPtr & getStorageSnapshot() const;
 
-    /// The table this call is only a reference to, empty when it builds a storage of its own.
-    /// See `ITableFunction::getReferencedTableID`. Resolved once and stored, rather than asked of
+    /// See `ITableFunction::getParallelReplicasReadID`. Resolved once and stored, rather than asked of
     /// `table_function`, because a cloned node does not carry the `ITableFunction` object.
-    const StorageID & getReferencedTableID() const { return referenced_table_id; }
+    const std::optional<String> & getParallelReplicasReadID() const { return parallel_replicas_read_id; }
 
     /// Rewrite the leading arguments that name a table to `'database', 'table'`, so the call resolves to the
     /// same table on a server whose current database is different. See `ITableFunction::getTableArgument`.
@@ -181,7 +180,7 @@ private:
     TableFunctionPtr table_function;
     StoragePtr storage;
     StorageID storage_id;
-    StorageID referenced_table_id = StorageID::createEmpty();
+    std::optional<String> parallel_replicas_read_id;
     StorageID table_argument_id = StorageID::createEmpty();
     size_t num_table_arguments = 0;
     StorageSnapshotPtr storage_snapshot;

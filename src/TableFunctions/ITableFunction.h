@@ -65,24 +65,22 @@ public:
 
     virtual void parseArguments(const ASTPtr & /*ast_function*/, ContextPtr /*context*/) {}
 
-    /** If this table function is nothing but a stable reference to a table that already exists, returns the
-      * `StorageID` of that table. "Stable" means the call denotes the same table on every server of a
-      * cluster - so a server that receives the call resolves it to its own copy of that table - and that
-      * evaluating it has no effect beyond looking the table up. `timeSeriesSamples(db, ts)` is such a
-      * reference: it names the samples table of the `TimeSeries` table `db.ts`, and every replica has one.
+    /** The identity of the source this call reads, if a parallel-replicas read can be coordinated over it.
+      * Each replica resolves the call itself, so the call must denote the same logical source on every
+      * replica, and evaluating it must have no effect beyond looking that source up. The identity names the
+      * read to the coordinator, so every replica must compute the same one: it must not depend on anything
+      * local to a server, such as the UUID of a hidden inner table, nor on the alias the call was written
+      * with, and calls that read different sources must get different ones. `timeSeriesSamples(db, ts)`
+      * reads the samples table of `db.ts`, and is identified as `timeSeriesSamples(db.ts)`.
       *
-      * The returned id is the *user-visible* table the call names (`db.ts`), not whatever internal table it
-      * currently resolves to.
-      *
-      * Returns an empty `StorageID` for a table function that produces a storage of its own (`s3`, `numbers`,
-      * `view`, `merge`), which is the default. Parallel replicas use this to decide whether a table function
-      * can anchor a distributed read: the read is coordinated across replicas that each resolve the call
-      * locally, so it is only correct for a stable reference. Such a read is always planned the query-tree
-      * way, even under `parallel_replicas_plan_based`, because a shipped plan fragment can only name the
-      * storage the call resolved to on the initiator. It is only a predicate - the read is still addressed by
-      * the storage it resolved to, see `getStorageIDForParallelReplicas`.
+      * No value, the default, means the call cannot be the coordinated read: one that produces a storage of
+      * its own (`s3`, `numbers`, `view`, `merge`) is not the same table on any two replicas, even when that
+      * storage is a `MergeTree`. A value does not make the read eligible by itself - the storage it resolves
+      * to is checked as for a table. Such a read is planned the query-tree way, even under
+      * `parallel_replicas_plan_based`, because a shipped plan fragment can only name the storage the call
+      * resolved to on the initiator.
       */
-    virtual StorageID getReferencedTableID() const { return StorageID::createEmpty(); }
+    virtual std::optional<String> getParallelReplicasReadID() const { return std::nullopt; }
 
     /// The table named by the leading arguments of a call, and how many leading arguments name it.
     struct TableArgument

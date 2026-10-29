@@ -21,7 +21,7 @@ struct SelectQueryOptions;
 const QueryNode * findQueryForParallelReplicas(const QueryTreeNodePtr & query_tree_node, const SelectQueryOptions & select_query_options);
 
 /// Find a table from which we should read on follower replica. It's the left-most table within all JOINs and UNIONs.
-/// It's either a table, or a table function that is only a reference to a table (`ITableFunction::getReferencedTableID`).
+/// It's either a table, or a table function that denotes the same source on every replica (`ITableFunction::getParallelReplicasReadID`).
 const ITableExpressionNode * findTableForParallelReplicas(const QueryTreeNodePtr & query_tree_node, const SelectQueryOptions & select_query_options);
 
 /// The table each replica is asked about before it joins the read (`RemoteQueryExecutor::main_table`).

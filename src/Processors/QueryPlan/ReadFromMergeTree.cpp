@@ -4093,14 +4093,13 @@ void ReadFromMergeTree::updateSortDescription()
 
 String ReadFromMergeTree::getParallelReplicasStreamId() const
 {
-    /// A read through a table function that only references a table (`ITableFunction::getReferencedTableID`)
-    /// reads a storage whose name may be local to each server: the target of a `TimeSeries` table is named
-    /// after a UUID the server assigned. Replicas that announced it under that name would get a coordinator
-    /// each and read everything, so it is named after the call and the table it references instead.
+    /// A read through a table function may read a storage whose name is local to each server: the target of
+    /// a `TimeSeries` table is named after a UUID the server assigned. Replicas that announced it under that
+    /// name would get a coordinator each and read everything, so it goes by the identity of its source.
     if (const auto * table_function_node = query_info.table_expression ? query_info.table_expression->as<TableFunctionNode>() : nullptr)
     {
-        if (const auto & referenced_table_id = table_function_node->getReferencedTableID(); !referenced_table_id.empty())
-            return fmt::format("{}({})", table_function_node->getTableFunctionName(), referenced_table_id.getFullTableName());
+        if (const auto & read_id = table_function_node->getParallelReplicasReadID())
+            return *read_id;
     }
 
     return data.getStorageID().getFullTableName();

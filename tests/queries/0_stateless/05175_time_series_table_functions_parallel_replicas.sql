@@ -105,7 +105,7 @@ SELECT count() FROM mt AS l INNER JOIN prometheusQuery(ts, 'm1', toDateTime64(10
 SELECT count() FROM mt AS l INNER JOIN (SELECT toUInt64(arrayMax(x -> x.2, samples)) AS x FROM prometheusQueryRange(ts, 'm1', toDateTime64(0, 3), toDateTime64(10, 3), INTERVAL 1 SECOND)) AS r ON l.x = r.x;
 
 -- A parameterized view is also resolved as a table function node, but one carrying no `ITableFunction`
--- and therefore no referenced table, so the gate above does not admit it as an anchor. It still reads with
+-- and therefore no read identity, so the gate above does not admit it as an anchor. It still reads with
 -- parallel replicas, because the view's own read descends into a planner where the table underneath it is
 -- an ordinary table - which is what this pins.
 SELECT '-- a parameterized view still reads with parallel replicas';

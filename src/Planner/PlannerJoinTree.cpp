@@ -1757,7 +1757,7 @@ bool allowParallelReplicasForJoinTree(const QueryTreeNodePtr & join_tree_node, c
 
         const auto * left_table_function = left_table_expr->as<TableFunctionNode>();
         if (left_table_function)
-            return !left_table_function->getReferencedTableID().empty()
+            return left_table_function->getParallelReplicasReadID()
                 && parallelReplicasEnabledForStorage(left_table_function->getStorage(), context, query_settings);
 
         // check if left one is not subquery
@@ -2914,7 +2914,7 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(TableExpressionNodePtr table_
                     /// happens to be a `MergeTree`.
                     else if (
                         ClusterProxy::canUseParallelReplicasOnInitiator(query_context)
-                        && (!table_function_node || !table_function_node->getReferencedTableID().empty())
+                        && (!table_function_node || table_function_node->getParallelReplicasReadID())
                         && allowParallelReplicasForJoinTree(parent_join_tree, query_context, settings))
                     {
                         // (1) find read step

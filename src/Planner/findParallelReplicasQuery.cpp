@@ -73,14 +73,13 @@ bool isTableNodeEligibleForParallelReplicas(const TableNode & table_node, const 
     return isStorageEligibleForParallelReplicas(storage, has_final, context);
 }
 
-/// A table function that is only a stable reference to an existing table (see
-/// `ITableFunction::getReferencedTableID`) reads that table, so it can anchor a parallel-replicas read just
-/// like a `TableNode` over the same table: every replica resolves the call locally and reads its own copy.
-/// A table function that builds a storage of its own cannot - it is not the same table on every replica -
-/// so it is not enough for the resolved storage to look like a `MergeTree`.
+/// A table function that denotes the same source on every replica (`ITableFunction::getParallelReplicasReadID`)
+/// can anchor a parallel-replicas read just like a `TableNode`: every replica resolves the call locally and
+/// reads its own copy. A table function that builds a storage of its own cannot - it is not the same table on
+/// every replica - so it is not enough for the resolved storage to look like a `MergeTree`.
 static bool canUseTableFunctionForParallelReplicas(const TableFunctionNode & table_function_node, const ContextPtr & context)
 {
-    if (table_function_node.getReferencedTableID().empty())
+    if (!table_function_node.getParallelReplicasReadID())
         return false;
 
     const bool has_final
