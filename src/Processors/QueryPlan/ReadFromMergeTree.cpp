@@ -2450,9 +2450,28 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsWithOrder(
     return Pipe::unitePipes(std::move(pipes));
 }
 
+/// Columns the merging transform reads besides the sorting key.
+static Names getMergingParamsColumns(const MergeTreeData::MergingParams & merging_params)
+{
+    Names columns;
+    for (const auto & name :
+         {merging_params.is_deleted_column,
+          merging_params.sign_column,
+          merging_params.version_column,
+          merging_params.graphite_params.path_column_name,
+          merging_params.graphite_params.time_column_name,
+          merging_params.graphite_params.version_column_name,
+          merging_params.graphite_params.value_column_name})
+    {
+        if (!name.empty())
+            columns.push_back(name);
+    }
+    return columns;
+}
+
 /// Returns the list of column names required for the transforms in addMergingFinal
 static NameSet getColumnsRequiredForMergingFinal(
-    const SortDescription & sort_description, const StorageMetadataPtr & metadata_snapshot, MergeTreeData::MergingParams merging_params)
+    const SortDescription & sort_description, const StorageMetadataPtr & metadata_snapshot, const MergeTreeData::MergingParams & merging_params)
 {
     NameSet required_columns = sort_description | std::views::transform([](const SortColumnDescription & desc) { return desc.column_name; })
         | std::ranges::to<NameSet>();
@@ -2461,35 +2480,8 @@ static NameSet getColumnsRequiredForMergingFinal(
     /// the output header would otherwise be dropped, leaving the merge without its key column).
     for (const auto & column : metadata_snapshot->getColumnsRequiredForFinal())
         required_columns.insert(column);
-    switch (merging_params.mode)
-    {
-        case MergeTreeData::MergingParams::Ordinary:
-            [[fallthrough]];
-        case MergeTreeData::MergingParams::Aggregating:
-            [[fallthrough]];
-        case MergeTreeData::MergingParams::Coalescing:
-            [[fallthrough]];
-        case MergeTreeData::MergingParams::Summing:
-            break;
-        case MergeTreeData::MergingParams::VersionedCollapsing:
-            [[fallthrough]];
-        case MergeTreeData::MergingParams::Collapsing: {
-            required_columns.insert(merging_params.sign_column);
-            break;
-        }
-        case MergeTreeData::MergingParams::Replacing: {
-            required_columns.insert(merging_params.is_deleted_column);
-            required_columns.insert(merging_params.version_column);
-            break;
-        }
-        case MergeTreeData::MergingParams::Graphite:
-            required_columns.insert(merging_params.graphite_params.path_column_name);
-            required_columns.insert(merging_params.graphite_params.time_column_name);
-            required_columns.insert(merging_params.graphite_params.version_column_name);
-            required_columns.insert(merging_params.graphite_params.value_column_name);
-            break;
-    }
-    required_columns.erase(""); // remove empty column names
+    for (const auto & column : getMergingParamsColumns(merging_params))
+        required_columns.insert(column);
     return required_columns;
 }
 
@@ -2645,12 +2637,8 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsFinal(
         NameSet columns_to_restore;
         for (const auto & column : storage_snapshot->metadata->getSortingKey().expression->getRequiredColumnsWithTypes())
             columns_to_restore.insert(column.name);
-        if (!data.merging_params.version_column.empty())
-            columns_to_restore.insert(data.merging_params.version_column);
-        if (!data.merging_params.sign_column.empty())
-            columns_to_restore.insert(data.merging_params.sign_column);
-        if (!data.merging_params.is_deleted_column.empty())
-            columns_to_restore.insert(data.merging_params.is_deleted_column);
+        for (const auto & column : getMergingParamsColumns(data.merging_params))
+            columns_to_restore.insert(column);
         restorePrewhereInputs(query_info.row_level_filter.get(), query_info.prewhere_info.get(), columns_to_restore);
     }
 
@@ -4801,19 +4789,18 @@ Pipe ReadFromMergeTree::spreadMarkRanges(
 
         auto original_column_names = column_names_to_read;
 
-        /// Add columns needed to calculate the sorting expression and the sign.
+        /// Add columns needed to calculate the sorting expression and the columns the merging transform reads.
         for (const auto & column : storage_snapshot->metadata->getColumnsRequiredForSortingKey())
         {
             if (names.emplace(column).second)
                 column_names_to_read.push_back(column);
         }
 
-        if (!data.merging_params.is_deleted_column.empty() && names.emplace(data.merging_params.is_deleted_column).second)
-            column_names_to_read.push_back(data.merging_params.is_deleted_column);
-        if (!data.merging_params.sign_column.empty() && names.emplace(data.merging_params.sign_column).second)
-            column_names_to_read.push_back(data.merging_params.sign_column);
-        if (!data.merging_params.version_column.empty() && names.emplace(data.merging_params.version_column).second)
-            column_names_to_read.push_back(data.merging_params.version_column);
+        for (const auto & column : getMergingParamsColumns(data.merging_params))
+        {
+            if (names.emplace(column).second)
+                column_names_to_read.push_back(column);
+        }
 
         return spreadMarkRangesAmongStreamsFinal(
             std::move(parts_with_ranges),

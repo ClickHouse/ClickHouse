@@ -29,5 +29,9 @@ OPTIMIZE TABLE t_graphite_final_partitions FINAL;
 
 SELECT 'merged parts', Path, toUnixTimestamp(Time), Value, Version FROM t_graphite_final_partitions FINAL ORDER BY ALL;
 
+-- the rollup reads its columns that the query does not select
+SELECT 'merged parts value', Value FROM t_graphite_final_partitions FINAL;
+SELECT 'merged parts value', Value FROM t_graphite_final_partitions FINAL ORDER BY Value SETTINGS do_not_merge_across_partitions_select_final = 1;
+
 DROP TABLE t_graphite_final_layers;
 DROP TABLE t_graphite_final_partitions;
