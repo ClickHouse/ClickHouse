@@ -23,6 +23,8 @@ SELECT s, toTypeName(s) FROM t_shadowed_fold;
 DROP TABLE t_shadowed_fold;
 
 SELECT '-- azure';
+-- `extra_credentials` without an account key resolves to the server's own identity, which user queries must opt into.
+SET s3_allow_server_credentials_in_user_queries = 1;
 DROP VIEW IF EXISTS v_azure_settings;
 DROP VIEW IF EXISTS v_azure_credentials;
 DROP VIEW IF EXISTS v_azure_cluster;
