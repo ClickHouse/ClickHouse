@@ -1,0 +1,38 @@
+-- comparison key matching no dictionary key, CUBE, group_by_use_nulls
+0	0	[1]	3
+\N	0	[1]	3
+0	0	[1]	3
+\N	0	[1]	3
+-- LIKE key, GROUPING SETS, group_by_use_nulls
+0	4
+1	2
+\N	6
+0	4
+1	2
+\N	6
+-- comparisons of a dictGet key in SELECT and HAVING
+p	1	2
+p	1	2
+-- comparison of a dictGet key in HAVING, ROLLUP
+p	0	2
+p	1	1
+p	5	1
+p	0	2
+p	1	1
+p	5	1
+-- comparison of a dictGet key in LIMIT AFTER and LIMIT UNTIL
+p	2
+q	1
+p	2
+q	1
+	3
+	3
+-- comparison key, ROLLUP, group_by_use_nulls, remote
+0	2
+\N	2
+0	2
+\N	2
+-- WHERE and aggregate arguments are still rewritten, HAVING is not
+2
+-- a comparison key without group_by_use_nulls is still rewritten
+2
