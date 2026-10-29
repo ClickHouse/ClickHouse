@@ -72,6 +72,23 @@ static DistributionColumns partitionKeyColumns(const WindowStep & window_step)
     return columns;
 }
 
+/// The window needs each stream sorted by its sort description and each partition in one
+/// stream (or one stream in total if the partition keys cannot be hashed). The planner can
+/// omit the sort before a window, so this cannot be taken from that sort. A window without
+/// `ORDER BY` and `PARTITION BY` needs nothing: `WindowStep` merges the streams itself.
+static ExpressionProperties windowInputRequirement(const WindowStep & window_step, const DistributionColumns & partition_columns)
+{
+    ExpressionProperties required;
+    required.sorting = window_step.getWindowDescription().full_sort_description;
+    if (required.sorting.empty())
+        return required;
+    if (partition_columns.empty())
+        required.stream_layout = StreamLayout::Single;
+    else
+        required.setDisjointStreams(partition_columns);
+    return required;
+}
+
 std::vector<GroupExpressionPtr> WindowImplementation::applyImpl(GroupExpressionPtr expression, const ExpressionProperties & required_properties, Memo & memo) const
 {
     const auto * window_step = typeid_cast<const WindowStep *>(expression->getQueryPlanStep());
@@ -85,12 +102,15 @@ std::vector<GroupExpressionPtr> WindowImplementation::applyImpl(GroupExpressionP
             expression->inputs.size(), expression->getDescription());
 
     std::vector<GroupExpressionPtr> result;
+    const DistributionColumns partition_columns = partitionKeyColumns(*window_step);
+    const ExpressionProperties window_input_requirement = windowInputRequirement(*window_step, partition_columns);
 
     /// Single-node implementation - always available, and the only one when the window
     /// cannot be distributed.
     {
         auto single_node = std::make_shared<GroupExpression>(*expression);
         single_node->strategy = strategySingleton<WindowStrategy>();
+        single_node->inputs[0].required_properties = window_input_requirement;
         single_node->properties = ExpressionProperties{};    /// node_count=1 (default)
         /// `WindowTransform` emits rows in input order and within their stream, so the
         /// sorting and the stream layout required from the input also hold for the output.
@@ -106,7 +126,6 @@ std::vector<GroupExpressionPtr> WindowImplementation::applyImpl(GroupExpressionP
         addPhysicalToMemo(single_node, required_properties, memo, result);
     }
 
-    const DistributionColumns partition_columns = partitionKeyColumns(*window_step);
     if (partition_columns.empty())
         return result;
 
@@ -126,13 +145,9 @@ std::vector<GroupExpressionPtr> WindowImplementation::applyImpl(GroupExpressionP
         distributed->plan_step = std::move(new_step);
         distributed->strategy = strategySingleton<WindowStrategy>();
 
-        ExpressionProperties input_required;
+        ExpressionProperties input_required = window_input_requirement;
         input_required.distribution.node_count = candidate_node_count;
         input_required.distribution.columns = partition_columns;
-        input_required.sorting = window_step->getWindowDescription().full_sort_description;
-        /// Streams disjoint on the partition keys let each node run the window on several
-        /// streams at once: every partition lands whole in one stream.
-        input_required.setDisjointStreams(partition_columns);
         distributed->inputs[0].required_properties = input_required;
 
         distributed->properties = ExpressionProperties{};

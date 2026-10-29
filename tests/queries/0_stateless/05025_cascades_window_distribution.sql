@@ -129,5 +129,21 @@ SELECT count(), sum(t), sum(s2) FROM (
     FROM (SELECT k, sum(v) OVER (PARTITION BY k) AS s1, k + 1 AS t FROM t_win)
 ) SETTINGS enable_cascades_optimizer = 0, make_distributed_plan = 0;
 
+-- The planner omits the sort before a window whose order the previous window already
+-- provides. The global window must still get one sorted stream: on several streams each
+-- `WindowTransform` would number only its own rows. The query uses `s`, so the partitioned
+-- window is kept and runs per node.
+SELECT '-- 13. a global window after a partitioned window in the same SELECT numbers all rows';
+SELECT countIf(min_rn != 100 * k + 1 OR max_rn != 100 * k + 100), sum(sum_s) FROM (
+    SELECT k, min(rn) AS min_rn, max(rn) AS max_rn, sum(s) AS sum_s
+    FROM (SELECT k, sum(v) OVER (PARTITION BY k ORDER BY v) AS s, row_number() OVER (ORDER BY k) AS rn FROM t_win)
+    GROUP BY k
+) SETTINGS max_threads = 1;
+SELECT countIf(min_rn != 100 * k + 1 OR max_rn != 100 * k + 100), sum(sum_s) FROM (
+    SELECT k, min(rn) AS min_rn, max(rn) AS max_rn, sum(s) AS sum_s
+    FROM (SELECT k, sum(v) OVER (PARTITION BY k ORDER BY v) AS s, row_number() OVER (ORDER BY k) AS rn FROM t_win)
+    GROUP BY k
+) SETTINGS max_threads = 1, enable_cascades_optimizer = 0, make_distributed_plan = 0;
+
 DROP TABLE t_win;
 DROP TABLE t_wfloat;

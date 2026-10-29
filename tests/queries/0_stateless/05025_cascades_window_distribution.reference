@@ -104,3 +104,6 @@ GatherExchange
 -- 12. same-key stacked window results match the single-node plan
 100000	50050000	49999500000000
 100000	50050000	49999500000000
+-- 13. a global window after a partitioned window in the same SELECT numbers all rows
+0	169172475000
+0	169172475000
