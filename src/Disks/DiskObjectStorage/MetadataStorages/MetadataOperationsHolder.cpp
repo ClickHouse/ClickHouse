@@ -1,5 +1,6 @@
 #include <Disks/DiskObjectStorage/MetadataStorages/MetadataOperationsHolder.h>
 
+#include <Common/ThreadStatus.h>
 #include <Common/Exception.h>
 #include <Common/ProfileEvents.h>
 
@@ -21,6 +22,8 @@ extern const int FS_METADATA_ERROR;
 
 std::optional<String> MetadataOperationsHolder::rollback(size_t until_pos) noexcept
 {
+    /// Rollback restores live names/data under the caller's locks; deferring or cancelling it exposes partial state.
+    ThreadStatus::QueryCancellationBlocker cleanup;
     ProfileEvents::increment(ProfileEvents::MetadataTransactionRollbacks);
 
     for (int64_t i = until_pos; i >= 0; --i)

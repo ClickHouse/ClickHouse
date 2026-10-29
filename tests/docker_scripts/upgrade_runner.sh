@@ -1000,6 +1000,7 @@ cp /var/log/clickhouse-server/clickhouse-server.upgrade.log /test_output/clickho
 echo "Check for Error messages in server log:"
 rg -Fav -e "Code: 236. DB::Exception: Cancelled merging parts" \
            -e "Code: 236. DB::Exception: Cancelled mutating parts" \
+           -e "Code: 236. DB::Exception: Cancelled merging or mutating parts" \
            -e "REPLICA_IS_ALREADY_ACTIVE" \
            -e "REPLICA_ALREADY_EXISTS" \
            -e "ALL_REPLICAS_LOST" \

@@ -42,6 +42,9 @@ public:
 
     virtual void undo() noexcept = 0;
 
+    /// Whether undo is safe after stopping writers: exclusively owned fresh objects, with no commit attempt.
+    virtual bool canUndoBeforeCommit() const { return false; }
+
     virtual ~IDiskTransaction() = default;
 
     /// Create directory.

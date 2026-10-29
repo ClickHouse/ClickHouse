@@ -4,6 +4,7 @@
 #include <Common/logger_useful.h>
 #include <Common/ProfileEvents.h>
 #include <Common/FailPoint.h>
+#include <Common/ThreadGroupSwitcher.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Interpreters/Context.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
@@ -54,6 +55,19 @@ MutateFromLogEntryTask::~MutateFromLogEntryTask()
     /// cleanup (MergeTreeBackgroundExecutor::routine), so set one explicitly here.
     auto component_guard = Coordination::setCurrentComponent("MutateFromLogEntryTask::~MutateFromLogEntryTask");
     zero_copy_lock.reset();
+}
+
+void MutateFromLogEntryTask::cancel() noexcept
+{
+    ThreadGroupSwitcher operation_group(
+        merge_mutate_entry ? (*merge_mutate_entry)->thread_group : nullptr, ThreadName::MERGE_MUTATE, /*allow_existing_group*/ true);
+    if (mutate_task)
+        mutate_task->cancel();
+    /// Keeper may have published despite an error; retain metadata-backed removal and shared-data checks.
+    if (new_part)
+        new_part->removeIfNeeded();
+    mutate_task.reset();
+    new_part.reset();
 }
 
 ReplicatedMergeMutateTaskBase::PrepareResult MutateFromLogEntryTask::prepare()
@@ -266,7 +280,9 @@ ReplicatedMergeMutateTaskBase::PrepareResult MutateFromLogEntryTask::prepare()
     merge_mutate_entry = storage.getContext()->getMergeList().insert(
         storage.getStorageID(),
         future_mutated_part,
-        task_context);
+        task_context,
+        storage.merger_mutator.merges_blocker.getCancellationRequestPredicate(future_mutated_part->part_info.getPartitionId()));
+    ThreadGroupSwitcher preparation_group((*merge_mutate_entry)->thread_group, ThreadName::MERGE_MUTATE, /*allow_existing_group*/ true);
 
     storage.writePartLog(
         PartLogElement::MUTATE_PART_START, {}, 0,

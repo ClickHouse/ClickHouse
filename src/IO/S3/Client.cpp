@@ -111,9 +111,6 @@ bool Client::RetryStrategy::ShouldRetry(const Aws::Client::AWSError<Aws::Client:
     if (attemptedRetries >= config.max_retries)
         return false;
 
-    if (CurrentThread::isInitialized() && CurrentThread::get().isQueryCanceled())
-        return false;
-
     /// It does not make sense to retry when GCS suggest to use Rewrite
     if (useGCSRewrite(error))
         return false;
@@ -189,6 +186,36 @@ void Client::RetryStrategy::RequestBookkeeping(
 
 namespace
 {
+
+/// The AWS SDK calls the request's retry handler before waiting for the next attempt.
+/// Check for cancellation there, and restore the original handler when this scope ends.
+class RequestRetryScope
+{
+public:
+    explicit RequestRetryScope(Aws::AmazonWebServiceRequest & request_)
+        : request(request_)
+        , previous(request.GetRequestRetryHandler())
+    {
+        request.SetRequestRetryHandler([this](const Aws::AmazonWebServiceRequest & retry_request)
+        {
+            CurrentThread::checkIfNotCancelled();
+            if (previous)
+                previous(retry_request);
+            CurrentThread::checkIfNotCancelled();
+        });
+    }
+
+    ~RequestRetryScope()
+    {
+        request.SetRequestRetryHandler(std::move(previous));
+    }
+    RequestRetryScope(const RequestRetryScope &) = delete;
+    RequestRetryScope & operator=(const RequestRetryScope &) = delete;
+
+private:
+    Aws::AmazonWebServiceRequest & request;
+    Aws::RequestRetryHandler previous;
+};
 
 void verifyClientConfiguration(const Aws::Client::ClientConfiguration & client_config)
 {
@@ -431,6 +458,8 @@ Model::HeadObjectOutcome Client::HeadObject(HeadObjectRequest & request) const
 
 Model::HeadObjectOutcome Client::headObjectInternal(HeadObjectRequest & request) const
 {
+    RequestRetryScope retry_scope(request);
+    CurrentThread::checkIfNotCancelled();
     const auto & bucket = request.GetBucket();
 
     request.setApiMode(api_mode);
@@ -454,12 +483,14 @@ Model::HeadObjectOutcome Client::headObjectInternal(HeadObjectRequest & request)
     if (result.IsSuccess())
         return result;
 
+    CurrentThread::checkIfNotCancelled();
     const auto & error = result.GetError();
 
     std::string new_region;
     if (checkIfWrongRegionDefined(bucket, error, new_region))
     {
         request.overrideRegion(new_region);
+        CurrentThread::checkIfNotCancelled();
         return Aws::S3::S3Client::HeadObject(request);
     }
 
@@ -506,6 +537,7 @@ Model::HeadObjectOutcome Client::headObjectInternal(HeadObjectRequest & request)
     }
 
     request.overrideURI(std::move(*bucket_uri));
+    CurrentThread::checkIfNotCancelled();
 
     /// The next call is NOT a recurcive call
     /// This is a virtuall call Aws::S3::S3Client::HeadObject(const Model::HeadObjectRequest&)
@@ -737,6 +769,8 @@ template <typename RequestType, typename RequestFn>
 std::invoke_result_t<RequestFn, RequestType &>
 Client::doRequest(RequestType & request, RequestFn request_fn) const
 {
+    CurrentThread::checkIfNotCancelled();
+    RequestRetryScope retry_scope(request);
     addAdditionalAMZHeadersToCanonicalHeadersList(request, client_configuration.extra_headers);
     const auto & bucket = request.GetBucket();
     request.setApiMode(api_mode);
@@ -776,6 +810,7 @@ Client::doRequest(RequestType & request, RequestFn request_fn) const
         if (effective_redirect_attempt > max_redirects)
             break;
 
+        CurrentThread::checkIfNotCancelled();
         auto result = request_fn(request);
         if (result.IsSuccess())
             return result;
@@ -904,13 +939,14 @@ Client::doRequestWithRetryNetworkErrors(RequestType & request, RequestFn request
                 /*message*/ fmt::format("All {} retry attempts failed. Last exception: {}", max_attempts, getCurrentExceptionMessage(false)),
                 /*retryable*/ true);
 
-            // network exceptions are always retryable, we could just return true here
-            // but we have to check cancellation points for query, ShouldRetry method does it already
+            CurrentThread::checkIfNotCancelled();
             return client_configuration.retryStrategy->ShouldRetry(outcome.GetError(), /*attemptedRetries*/ -1);
         };
 
         for (attempt_no = 1; attempt_no <= max_attempts; ++attempt_no)
         {
+            CurrentThread::checkIfNotCancelled();
+
             incrementProfileEvents<IsReadMethod>(ProfileEvents::S3ReadRequestAttempts, ProfileEvents::S3WriteRequestAttempts);
             if (isClientForDisk())
                 incrementProfileEvents<IsReadMethod>(ProfileEvents::DiskS3ReadRequestAttempts, ProfileEvents::DiskS3WriteRequestAttempts);
@@ -932,6 +968,7 @@ Client::doRequestWithRetryNetworkErrors(RequestType & request, RequestFn request
 
             /// Slowing down due to a previously encountered retryable error, possibly from another thread.
             slowDownAfterRetryableError();
+            CurrentThread::checkIfNotCancelled();
 
             try
             {
@@ -947,6 +984,7 @@ Client::doRequestWithRetryNetworkErrors(RequestType & request, RequestFn request
                     break;
 
                 /// Retry attempts are managed by the outer loop, so the attemptedRetries argument can be ignored.
+                CurrentThread::checkIfNotCancelled();
                 if (!client_configuration.retryStrategy->ShouldRetry(outcome.GetError(), /*attemptedRetries*/ -1))
                     break;
             }
@@ -1016,7 +1054,8 @@ void Client::slowDownAfterRetryableError() const
     if (!client_configuration.s3_slow_all_threads_after_network_error && !client_configuration.s3_slow_all_threads_after_retryable_error)
         return;
 
-    /// Wait until `next_time_to_retry_after_retryable_error`.
+    /// Unlike finite per-request backoff, `next_time_to_retry_after_retryable_error` can be extended
+    /// indefinitely by other requests. Poll cancellation during the wait.
     for (;;)
     {
         UInt64 current_time_ms = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now().time_since_epoch()).count();
@@ -1036,7 +1075,8 @@ void Client::slowDownAfterRetryableError() const
         sleep_ms = static_cast<UInt64>(jitter * static_cast<double>(sleep_ms));
 
         LOG_TRACE(log, "Request failed from a retryable error, now waiting {} ms before retrying", sleep_ms);
-        sleepForMilliseconds(sleep_ms);
+
+        sleepForMilliseconds(sleep_ms, [] { CurrentThread::checkIfNotCancelled(); });
     }
 }
 
@@ -1108,6 +1148,8 @@ std::string Client::getRegionForBucket(const std::string & bucket, bool force_de
 
     LOG_INFO(log, "Resolving region for bucket {}", bucket);
     Aws::S3::Model::HeadBucketRequest req;
+    RequestRetryScope retry_scope(req);
+    CurrentThread::checkIfNotCancelled();
     req.SetBucket(bucket);
 
     addAdditionalAMZHeadersToCanonicalHeadersList(req, client_configuration.extra_headers);

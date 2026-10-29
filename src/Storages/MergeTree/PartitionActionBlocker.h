@@ -7,6 +7,7 @@
 #include <Common/ActionLock.h>
 #include <Common/ActionBlocker.h>
 #include <Common/SharedMutex.h>
+#include <Common/OperationCancellation.h>
 
 namespace DB
 {
@@ -33,19 +34,25 @@ class PartitionActionBlocker
 {
 public:
     PartitionActionBlocker() = default;
+    PartitionActionBlocker(const PartitionActionBlocker &) = delete;
+    PartitionActionBlocker & operator=(const PartitionActionBlocker &) = delete;
 
-    bool isCancelled() const { return global_blocker.isCancelled(); }
+    bool isCancelled() const { return state->global_blocker.isCancelled(); }
     bool isCancelledForPartition(const std::string & /*partition_id*/) const;
+
+    /// Observes live blockers, including partitions blocked after this predicate was created.
+    /// Retains only blocker state, so asynchronous work may safely outlive the owner.
+    CancellationRequestPredicate getCancellationRequestPredicate(std::string partition_id) const;
 
     /// Temporarily blocks corresponding actions (while the returned object is alive)
     friend class ActionLock;
-    ActionLock cancel() { return ActionLock(global_blocker); }
+    ActionLock cancel() { return ActionLock(state->global_blocker); }
     ActionLock cancelForPartition(const std::string & partition_id);
 
     /// Cancel the actions forever.
-    void cancelForever() { global_blocker.cancelForever(); }
+    void cancelForever() { state->global_blocker.cancelForever(); }
 
-    const std::atomic<int> & getCounter() const { return global_blocker.getCounter(); }
+    const std::atomic<int> & getCounter() const { return state->global_blocker.getCounter(); }
 
     size_t countPartitionBlockers() const;
 
@@ -56,13 +63,17 @@ public:
 
 private:
     void compactPartitionBlockersLocked();
-    bool isCancelledForPartitionOnlyLocked(const std::string & partition_id) const;
+    struct State
+    {
+        bool isCancelledForPartition(const std::string & partition_id) const;
 
-    ActionBlocker global_blocker;
+        ActionBlocker global_blocker;
+        mutable SharedMutex mutex;
+        std::unordered_map<std::string, ActionBlocker> partition_blockers;
+        size_t cleanup_counter = 0;
+    };
 
-    mutable SharedMutex mutex;
-    std::unordered_map<std::string, ActionBlocker> partition_blockers;
-    size_t cleanup_counter = 0;
+    const std::shared_ptr<State> state = std::make_shared<State>();
 };
 
 

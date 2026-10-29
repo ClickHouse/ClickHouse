@@ -37,6 +37,7 @@ protected:
     MetadataTransactionPtr metadata_transaction;
     std::vector<std::function<void(MetadataTransactionPtr tx)>> operations_to_execute;
     std::unordered_map<Location, StoredObjects> written_blobs;
+    bool commit_started = false;
 
     /// Execute the operation right away if the metadata storage applies operations eagerly,
     /// otherwise queue it until commit.
@@ -63,6 +64,7 @@ public:
     void commit() override;
     TransactionCommitOutcomeVariant tryCommit(const TransactionCommitOptionsVariant & options) override;
     void undo() noexcept override;
+    bool canUndoBeforeCommit() const override;
 
     void createDirectory(const std::string & path) override;
 

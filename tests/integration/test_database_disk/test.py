@@ -75,6 +75,124 @@ def run_disks_query(query):
     )
 
 
+def test_cancelled_database_rename_restores_metadata(started_cluster):
+    db = "cancelled_rename"
+    renamed_db = "cancelled_rename_target"
+    failpoint = "rename_database_cancel_before_catalog_update"
+    try:
+        node_pr.query(f"CREATE DATABASE {db} ENGINE = Atomic")
+        node_pr.query(f"CREATE TABLE {db}.t (x UInt64) ENGINE = MergeTree ORDER BY x")
+        node_pr.query(f"INSERT INTO {db}.t VALUES (42)")
+        node_pr.query(f"SYSTEM ENABLE FAILPOINT {failpoint}")
+
+        # Cancel after the metadata move, before the catalog can adopt the new name.
+        error = node_pr.query_and_get_error(f"RENAME DATABASE {db} TO {renamed_db}")
+        assert "QUERY_WAS_CANCELLED" in error
+        node_pr.query(f"SYSTEM DISABLE FAILPOINT {failpoint}")
+
+        metadata_files = run_disks_query("ls metadata").splitlines()
+        assert f"{db}.sql" in metadata_files
+        assert f"{renamed_db}.sql" not in metadata_files
+        assert node_pr.query(f"SELECT * FROM {db}.t") == "42\n"
+        assert node_pr.query(f"EXISTS DATABASE {renamed_db}") == "0\n"
+
+        node_pr.restart_clickhouse()
+        assert node_pr.query(f"SELECT * FROM {db}.t") == "42\n"
+        assert node_pr.query(f"EXISTS DATABASE {renamed_db}") == "0\n"
+    finally:
+        node_pr.query(f"SYSTEM DISABLE FAILPOINT {failpoint}")
+        node_pr.query(f"DROP DATABASE IF EXISTS {db} SYNC")
+        node_pr.query(f"DROP DATABASE IF EXISTS {renamed_db} SYNC")
+
+
+@pytest.mark.parametrize(
+    "case, create_query, failpoint, expected_rows",
+    [
+        (
+            "materialized_view",
+            "CREATE MATERIALIZED VIEW {db}.mv TO {db}.target POPULATE "
+            "AS SELECT x FROM {db}.source",
+            "atomic_populate_pause_before_population",
+            "1\n2\n3\n42\n",
+        ),
+        (
+            "replace_table",
+            "CREATE OR REPLACE TABLE {db}.target (x UInt64) "
+            "ENGINE = MergeTree ORDER BY x AS SELECT x FROM {db}.source",
+            "create_or_replace_before_rename",
+            "1\n2\n",
+        ),
+    ],
+    ids=["materialized_view", "replace_table"],
+)
+def test_cancelled_create_rolls_back_remote_metadata(
+    started_cluster, case, create_query, failpoint, expected_rows
+):
+    db = f"cancelled_create_{case}"
+    query_id = db
+    create_query = create_query.format(db=db)
+    try:
+        node_pr.query(f"CREATE DATABASE {db} ENGINE = Atomic")
+        for table in ("source", "target"):
+            node_pr.query(
+                f"CREATE TABLE {db}.{table} (x UInt64) ENGINE = MergeTree ORDER BY x"
+            )
+        node_pr.query(f"INSERT INTO {db}.source VALUES (1), (2)")
+        node_pr.query(f"INSERT INTO {db}.target VALUES (42)")
+        metadata_path = node_pr.query(
+            "SELECT metadata_path FROM system.tables "
+            f"WHERE database = '{db}' AND name = 'source'"
+        ).strip()
+        metadata_dir = os.path.dirname(metadata_path)
+        original_metadata = sorted(run_disks_query(f"ls {metadata_dir}").splitlines())
+        assert original_metadata
+
+        node_pr.query(f"SYSTEM ENABLE FAILPOINT {failpoint}")
+        request = node_pr.get_query_request(create_query, query_id=query_id, timeout=30)
+        node_pr.query(f"SYSTEM WAIT FAILPOINT {failpoint} PAUSE", timeout=30)
+
+        # Both pauses occur after creation, before the operation can succeed.
+        assert (
+            node_pr.query(f"SELECT count() FROM system.tables WHERE database = '{db}'")
+            == "3\n"
+        )
+        # `KILL QUERY` keeps cancellation active during the remote metadata rollback.
+        node_pr.query(f"KILL QUERY WHERE query_id = '{query_id}' ASYNC")
+        node_pr.query(f"SYSTEM DISABLE FAILPOINT {failpoint}")
+        assert "QUERY_WAS_CANCELLED" in request.get_error()
+
+        assert (
+            node_pr.query(
+                f"SELECT name FROM system.tables WHERE database = '{db}' ORDER BY name"
+            )
+            == "source\ntarget\n"
+        )
+        assert (
+            sorted(run_disks_query(f"ls {metadata_dir}").splitlines()) == original_metadata
+        )
+        assert node_pr.query(f"SELECT x FROM {db}.source ORDER BY x") == "1\n2\n"
+        assert node_pr.query(f"SELECT x FROM {db}.target ORDER BY x") == "42\n"
+        assert (
+            node_pr.query(
+                "SELECT empty(dependencies_table) FROM system.tables "
+                f"WHERE database = '{db}' AND name = 'source'"
+            )
+            == "1\n"
+        )
+
+        node_pr.query(create_query)
+        node_pr.query(f"INSERT INTO {db}.source VALUES (3)")
+        assert node_pr.query(f"SELECT x FROM {db}.source ORDER BY x") == "1\n2\n3\n"
+        assert node_pr.query(f"SELECT x FROM {db}.target ORDER BY x") == expected_rows
+    finally:
+        node_pr.query(f"SYSTEM DISABLE FAILPOINT {failpoint}")
+        node_pr.query(
+            f"KILL QUERY WHERE query_id = '{query_id}' SYNC SETTINGS kill_throw_if_noop = false",
+            timeout=30,
+        )
+        node_pr.query(f"DROP DATABASE IF EXISTS {db} SYNC")
+
+
 def kill_before_publishing_rename(db, table="t", replace_existing=False):
     """Kills the server inside `CREATE OR REPLACE TABLE {db}.{table}`, after the temporary table is created
     and filled and before it replaces `{table}`. Returns the temporary table's name, UUID and metadata path.

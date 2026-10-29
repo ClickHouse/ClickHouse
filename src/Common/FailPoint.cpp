@@ -52,6 +52,8 @@ static struct InitFiu
     REGULAR(replicated_sends_sleep_before_file_send) \
     REGULAR(use_delayed_remote_source) \
     ONCE(remote_query_executor_cancel_before_send) \
+    ONCE(temporary_part_cancel_after_remove_rename) \
+    ONCE(temporary_projection_fail_after_finalize) \
     ONCE(remote_query_executor_cancel_and_drain_in_receive_window) \
     ONCE(remote_query_executor_cancel_in_finish_drain) \
     PAUSEABLE_ONCE(distributed_sink_pause_before_push) \
@@ -317,6 +319,7 @@ static struct InitFiu
     ONCE(backup_fail_reading_archive_size) \
     PAUSEABLE_ONCE(backup_pause_before_lock_file_creation) \
     PAUSEABLE_ONCE(backup_pause_after_lock_file_creation) \
+    ONCE(backup_cancel_after_lock_file_creation) \
     PAUSEABLE(backup_pause_before_reading_file_contents) \
     PAUSEABLE(backup_from_snapshot_pause_holding_admin_lock) \
     PAUSEABLE(backup_from_snapshot_pause_after_admin_lock_release) \
@@ -338,10 +341,13 @@ static struct InitFiu
     ONCE(database_replicated_drop_before_removing_keeper_failed) \
     ONCE(database_replicated_drop_after_removing_keeper_failed) \
     PAUSEABLE_ONCE(mt_mutate_task_pause_in_prepare) \
+    PAUSEABLE(packed_part_freeze_pause_before_copy) \
+    PAUSEABLE(text_index_pause_before_write_temporary_segment) \
     PAUSEABLE(mt_mutate_task_pause_before_rename_part) \
     PAUSEABLE_ONCE(merge_task_pause_after_reserving_tmp_dir) \
     REGULAR(mutate_task_random_sleep_in_prepare) \
     PAUSEABLE(merge_task_projection_stage_pause) \
+    PAUSEABLE_ONCE(merge_task_pause_after_write) \
     PAUSEABLE(rmt_mutate_task_pause_in_prepare) \
     PAUSEABLE(rmt_mutate_task_pause_before_rename_part) \
     PAUSEABLE(rmt_mutate_task_pause_after_temporary_part_released) \
@@ -404,6 +410,7 @@ static struct InitFiu
     REGULAR(datalake_simulate_missing_table_state) \
     PAUSEABLE_ONCE(drop_database_before_exclusive_ddl_lock) \
     PAUSEABLE_ONCE(rename_database_after_dependency_check) \
+    ONCE(rename_database_cancel_before_catalog_update) \
     PAUSEABLE_ONCE(create_or_replace_before_rename) \
     REGULAR(atomic_populate_fail_before_subscription) \
     PAUSEABLE(atomic_populate_pause_before_subscription) \

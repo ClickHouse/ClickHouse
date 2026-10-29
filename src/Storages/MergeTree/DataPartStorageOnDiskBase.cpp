@@ -5,6 +5,8 @@
 #include <Disks/IDiskTransaction.h>
 #include <Disks/SingleDiskVolume.h>
 #include <Common/Jemalloc.h>
+#include <Common/CurrentThread.h>
+#include <Common/FailPoint.h>
 #include <Common/JemallocMergeTreeArena.h>
 #include <Disks/TemporaryFileOnDisk.h>
 #include <IO/Expect404ResponseScope.h>
@@ -32,6 +34,11 @@
 
 namespace DB
 {
+
+namespace FailPoints
+{
+    extern const char temporary_part_cancel_after_remove_rename[];
+}
 
 namespace ErrorCodes
 {
@@ -907,6 +914,13 @@ void DataPartStorageOnDiskBase::remove(
         try
         {
             disk->moveDirectory(from, to);
+            if (is_temp)
+            {
+                fiu_do_on(FailPoints::temporary_part_cancel_after_remove_rename, {
+                    if (auto query_context = CurrentThread::tryGetQueryContext())
+                        query_context->killCurrentQuery();
+                });
+            }
             /// NOTE: we intentionally don't update part_dir here because it would cause a data race
             /// with concurrent readers (e.g. system.parts table queries calling getFullPath()).
             /// The part is being removed anyway, so the path doesn't need to be updated.
@@ -1144,6 +1158,20 @@ void DataPartStorageOnDiskBase::createDirectories()
 bool DataPartStorageOnDiskBase::hasActiveTransaction() const
 {
     return transaction != nullptr;
+}
+
+void DataPartStorageOnDiskBase::undoTransactionIfUncommitted() noexcept
+{
+    try
+    {
+        /// A projection's borrowed transaction may also own sibling output.
+        if (transaction && !has_shared_transaction && transaction->canUndoBeforeCommit())
+            undoTransaction();
+    }
+    catch (...)
+    {
+        tryLogCurrentException(__PRETTY_FUNCTION__);
+    }
 }
 
 bool DataPartStorageOnDiskBase::isCaseInsensitive() const

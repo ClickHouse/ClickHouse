@@ -13,8 +13,8 @@ namespace DB
   * An `undo` that stops halfway leaves its earlier writes behind while the failed transaction publishes nothing, so
   * object storage describes a filesystem this process does not have until the next load. What is stored is unknown
   * from here, so the reversal does not give up; a stage that succeeded never repeats. A stage that keeps failing holds
-  * the thread, and the metadata lock with it, which is deliberate - a disk whose metadata cannot be repaired must not
-  * accept more metadata.
+  * the thread, and the metadata lock with it, until it succeeds. `QueryCancellationBlocker` prevents cancellation from
+  * interrupting rollback.
   *
   * `LOGICAL_ERROR` and `CORRUPTED_DATA` are not repeated, because asking again repairs nothing. A stage throws
   * `CORRUPTED_DATA` when the blob it has to restore exists nowhere; `MetadataOperationsHolder::rollback` then stops, and

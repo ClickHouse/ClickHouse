@@ -1,5 +1,6 @@
 #include <gtest/gtest.h>
 
+#include <Core/ServerUUID.h>
 #include <IO/ReadPipeline.h>
 #include <IO/ReadBufferFromFileBase.h>
 #include <IO/ReadHelpers.h>
@@ -17,6 +18,7 @@
 #include <Common/PageCache.h>
 #include <base/scope_guard.h>
 
+#include <algorithm>
 #include <chrono>
 #include <cstring>
 #include <filesystem>
@@ -184,6 +186,7 @@ std::unique_ptr<ReadBufferFromFileBase> buildLocalPipeline(const String & path, 
 
 FileCachePtr createTestFileCache(const String & name)
 {
+    ServerUUID::setRandomForUnitTests();
     const auto cache_path = fs::current_path() / (name + "_cache");
     fs::remove_all(cache_path);
     fs::create_directories(cache_path);

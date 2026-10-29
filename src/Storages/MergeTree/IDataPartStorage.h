@@ -388,6 +388,9 @@ public:
     /// (e.g. uploaded blobs on object storage). Does nothing if there is no uncommitted transaction.
     virtual void undoTransaction() = 0;
 
+    /// After stopping writers, best-effort undo of an owned transaction satisfying `IDiskTransaction::canUndoBeforeCommit`.
+    virtual void undoTransactionIfUncommitted() noexcept = 0;
+
     /// Commits the accumulated operations and starts a fresh transaction, keeping the storage
     /// writable (commit->begin). Used mid-build to bound the volume of a single commit; a storage
     /// that accumulates no per-file operations may make it a no-op.

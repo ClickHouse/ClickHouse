@@ -1,6 +1,12 @@
+#include <Disks/DiskObjectStorage/MetadataStorages/MetadataOperationsHolder.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/PlainRewritable/UndoWithRetries.h>
 
 #include <Common/Exception.h>
+#include <Common/CurrentThread.h>
+#include <Common/ThreadGroupSwitcher.h>
+#include <Common/ThreadStatus.h>
+#include <Common/tests/gtest_global_context.h>
+#include <future>
 #include <Common/ProfileEvents.h>
 
 #include <gtest/gtest.h>
@@ -45,6 +51,84 @@ TEST(UndoWithRetries, DoesNotRepeatAStageThatSucceeds)
 
     EXPECT_EQ(attempts, 1u);
     EXPECT_EQ(ProfileEvents::global_counters[ProfileEvents::DiskPlainRewritableUndoStageRetries], retries_before);
+}
+
+TEST(UndoWithRetries, CleanupRetriesDespiteCancellation)
+{
+    std::async(std::launch::async, []
+    {
+        ThreadStatus status;
+        auto state = std::make_shared<OperationCancellationState>();
+        auto group = ThreadGroup::createForMergeMutate(getContext().context, [state] { return state->getRequest(); });
+        ThreadGroupSwitcher attached(group, ThreadName::MERGE_MUTATE);
+        bool metadata_changed = false;
+        size_t attempts = 0;
+
+        struct ChangeMetadata : IMetadataOperation
+        {
+            bool & metadata_changed;
+            size_t & attempts;
+
+            ChangeMetadata(bool & metadata_changed_, size_t & attempts_)
+                : metadata_changed(metadata_changed_), attempts(attempts_)
+            {
+            }
+
+            void execute() override
+            {
+                metadata_changed = true;
+            }
+
+            void undo() override
+            {
+                EXPECT_TRUE(metadata_changed);
+                undoWithRetries(getLogger("UndoWithRetries"), "restore metadata", [&]
+                {
+                    /// A missing rollback blocker must fail this test instead of retrying cancellation indefinitely.
+                    if (++attempts > 2)
+                        throw Exception(ErrorCodes::CORRUPTED_DATA, "Metadata rollback exceeded the test retry limit");
+                    CurrentThread::checkIfNotCancelled();
+                    if (attempts == 1)
+                        throw Exception(ErrorCodes::FAULT_INJECTED, "Object storage is unavailable");
+                    metadata_changed = false;
+                });
+            }
+        };
+
+        struct CancelAndFail : IMetadataOperation
+        {
+            OperationCancellationState & state;
+
+            explicit CancelAndFail(OperationCancellationState & state_) : state(state_)
+            {
+            }
+
+            void execute() override
+            {
+                state.request(CancellationRequest::StopWork);
+                throw Exception(ErrorCodes::FAULT_INJECTED, "Metadata operation failed");
+            }
+        };
+
+        MetadataOperationsHolder operations;
+        operations.addOperation(std::make_unique<ChangeMetadata>(metadata_changed, attempts));
+        operations.addOperation(std::make_unique<CancelAndFail>(*state));
+        try
+        {
+            operations.commit();
+            FAIL() << "The metadata operation must fail";
+        }
+        catch (const Exception & e)
+        {
+            EXPECT_EQ(e.code(), ErrorCodes::FAULT_INJECTED);
+            EXPECT_NE(e.message().find("Metadata operation failed"), String::npos);
+        }
+        EXPECT_FALSE(metadata_changed);
+        EXPECT_EQ(attempts, 2u);
+        EXPECT_FALSE(ThreadStatus::QueryCancellationBlocker::isActive());
+        EXPECT_EQ(CurrentThread::get().getCancellationRequest(), CancellationRequest::StopWork);
+        EXPECT_THROW(CurrentThread::checkIfNotCancelled(), Exception);
+    }).get();
 }
 
 /// A stage that finds its blob gone reports `CORRUPTED_DATA`, and asking again cannot bring the blob back. The stage

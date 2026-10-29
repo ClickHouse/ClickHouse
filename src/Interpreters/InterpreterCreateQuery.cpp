@@ -21,6 +21,7 @@
 #include <Common/PoolId.h>
 #include <Common/SipHash.h>
 #include <Common/StringUtils.h>
+#include <Common/ThreadStatus.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/atomicRename.h>
 #include <Common/filesystemHelpers.h>
@@ -3474,6 +3475,8 @@ BlockIO InterpreterCreateQuery::doCreateOrReplaceTable(ASTCreateQuery & create,
             auto drop_context = is_plain_create ? make_internal_context(/*bypass_size_guard=*/true) : make_drop_context(/*bypass_size_guard=*/true);
             try
             {
+                /// Cancellation must not leave this unpublished table registered after its storage is shut down.
+                ThreadStatus::QueryCancellationBlocker cleanup;
                 InterpreterDropQuery(ast_drop, drop_context).execute();
             }
             catch (...)
@@ -3828,6 +3831,8 @@ std::optional<BlockIO> InterpreterCreateQuery::fillMaterializedViewAtomically(co
 
         try
         {
+            /// `DROP` unsubscribes the view before removing its metadata. Cancellation must not interrupt that removal.
+            ThreadStatus::QueryCancellationBlocker cleanup;
             InterpreterDropQuery::executeDropQuery(
                 ASTDropQuery::Kind::Drop,
                 getContext()->getGlobalContext(),
