@@ -39,6 +39,8 @@ common --cxxopt=-D_LIBCPP_HARDENING_MODE=_LIBCPP_HARDENING_MODE_FAST
 common --verbose_failures
 common --@rules_rust//rust/toolchain/channel=nightly
 common --@rules_python//python/config_settings:bootstrap_impl=script
+# Python build tools must start the bundled interpreter on BuildBuddy executors.
+common --experimental_propagate_custom_flag=@rules_python//python/config_settings:bootstrap_impl
 common --@llvm//toolchain:bootstrap_stage=stage1_from_source
 # Match contrib/llvm-project-cmake/config/llvm-config.h.in. ClickHouse links
 # its own compression libraries; the compiler retains its compression support.
@@ -72,6 +74,7 @@ common:remote --bes_results_url=https://app.buildbuddy.io/invocation/
 common:remote --remote_cache_compression
 common:remote --remote_download_outputs=minimal
 common:remote --jobs=500
+common:remote --noexperimental_throttle_remote_action_building
 common:remote --remote_timeout=3600
 common:remote --noremote_local_fallback
 common:remote --shell_executable=/bin/bash
