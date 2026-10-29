@@ -810,7 +810,9 @@ DatabaseDataLake::TableEngineArgs DatabaseDataLake::buildTableEngineArgs(
             static_credentials->addCredentialsToEngineArgs(result.args);
             result.static_credentials_applied = true;
         }
-        else if (!lightweight && table_metadata.requiresCredentials() && !catalogConfiguresStorageAccess(catalog))
+        /// HDFS authenticates (e.g. with Kerberos) through the server's `hdfs` configuration, not through engine arguments.
+        else if (!lightweight && table_metadata.requiresCredentials() && !catalogConfiguresStorageAccess(catalog)
+                 && result.storage_type != DatabaseDataLakeStorageType::HDFS)
         {
             throw Exception(
                ErrorCodes::BAD_ARGUMENTS,
