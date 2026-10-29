@@ -99,7 +99,7 @@ StorageType parseStorageTypeFromString(const std::string & type)
     return *storage_type;
 }
 
-void TableMetadata::setLocation(const std::string & location_)
+void TableMetadata::setLocation(std::string_view location_)
 {
     if (!with_location)
         throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Data location was not requested");
@@ -146,7 +146,7 @@ void TableMetadata::setLocation(const std::string & location_)
 
     /// For Azure ABFSS format: abfss://container@account.dfs.core.windows.net/path
     /// The bucket (container) is the part before '@', not the whole string before '/'
-    String bucket_part = location_.substr(pos_to_bucket, pos_to_path - pos_to_bucket);
+    String bucket_part(location_.substr(pos_to_bucket, pos_to_path - pos_to_bucket));
     auto at_pos = bucket_part.find('@');
     if (at_pos != std::string::npos)
     {
@@ -344,7 +344,7 @@ DB::SettingsChanges CatalogSettings::allChanged() const
     DB::SettingsChanges changes;
     changes.emplace_back("storage_endpoint", storage_endpoint);
     changes.emplace_back("aws_access_key_id", aws_access_key_id);
-    changes.emplace_back("aws_secret_access_key", aws_secret_access_key);
+    changes.emplace_back("aws_secret_access_key", String(aws_secret_access_key));
     changes.emplace_back("region", region);
     changes.emplace_back("aws_role_arn", aws_role_arn);
     changes.emplace_back("aws_role_session_name", aws_role_session_name);

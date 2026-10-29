@@ -13,13 +13,13 @@ namespace DB
 
 void BlobStorageLogWriter::addEvent(
     BlobStorageLogElement::EventType event_type,
-    const String & bucket,
-    const String & remote_path,
+    std::string_view bucket,
+    std::string_view remote_path,
     const String & local_path_,
     size_t data_size,
     size_t elapsed_microseconds,
     Int32 error_code,
-    const String & error_message,
+    std::string_view error_message,
     BlobStorageLogElement::EvenTime time_now)
 {
     addEventImpl(
@@ -34,7 +34,7 @@ void BlobStorageLogWriter::addCopyEvent(
     size_t data_size,
     size_t elapsed_microseconds,
     Int32 error_code,
-    const String & error_message)
+    std::string_view error_message)
 {
     addEventImpl(
         BlobStorageLogElement::EventType::Copy,
@@ -52,15 +52,15 @@ void BlobStorageLogWriter::addCopyEvent(
 
 void BlobStorageLogWriter::addEventImpl(
     BlobStorageLogElement::EventType event_type,
-    const String & bucket,
-    const String & remote_path,
+    std::string_view bucket,
+    std::string_view remote_path,
     const String & local_path_,
     const String & source_bucket,
     const String & source_remote_path,
     size_t data_size,
     size_t elapsed_microseconds,
     Int32 error_code,
-    const String & error_message,
+    std::string_view error_message,
     BlobStorageLogElement::EvenTime time_now)
 {
     if (!log)

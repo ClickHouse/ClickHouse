@@ -23,8 +23,8 @@ namespace
 
 std::string headerOrEmpty(const Aws::Http::HeaderValueCollection & headers, const std::string & name)
 {
-    auto it = headers.find(name);
-    return it == headers.end() ? "" : it->second;
+    auto it = headers.find(Aws::String(name));
+    return it == headers.end() ? "" : std::string(it->second);
 }
 
 }
@@ -137,7 +137,7 @@ TEST(GCSHeaderTranslation, NormalizesHeaderNames)
     for (const auto & header : headers)
     {
         names.push_back(header.name);
-        values.push_back(header.value);
+        values.emplace_back(header.value);
     }
 
     EXPECT_EQ(names, (std::vector<std::string>{"x-amz-meta-owner", "x-amz-storage-class", "custom-auth-token"}));

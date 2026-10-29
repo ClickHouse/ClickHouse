@@ -199,14 +199,14 @@ ssize_t XMLGenerator::generateKey(std::string name, bool multiple)
         if (!next(8))
             return -1;
 
-        key_holder = xml_document->createElement("key[id=" + std::to_string(id) + "]");
+        key_holder = xml_document->createElement(Poco::XML::toXMLString("key[id=" + std::to_string(id) + "]"));
 
     }
     else
     {
         key_holder = xml_document->createElement("key");
     }
-    AutoPtr<Text> key(xml_document->createTextNode(std::string(data, data + size)));
+    AutoPtr<Text> key(xml_document->createTextNode(Poco::XML::toXMLString(std::string(data, data + size))));
     key_holder->appendChild(key);
     algo->appendChild(key_holder);
 
@@ -221,7 +221,7 @@ bool XMLGenerator::generateAlgorithmKeys(
     /// check if algorithm is enabled, then add multiple keys or single key
     if (first_byte & mask_for_algo)
     {
-        algo = xml_document->createElement(name);
+        algo = xml_document->createElement(Poco::XML::toXMLString(name));
         document_root->appendChild(algo);
 
         if (first_byte & mask_for_multiple_keys)
@@ -255,7 +255,7 @@ bool XMLGenerator::generateAlgorithmKeys(
         }
 
         AutoPtr<Poco::XML::Element> nonce_holder(xml_document->createElement("nonce"));
-        AutoPtr<Text> nonce(xml_document->createTextNode(std::string(data, data + nonce_size)));
+        AutoPtr<Text> nonce(xml_document->createTextNode(Poco::XML::toXMLString(std::string(data, data + nonce_size))));
         nonce_holder->appendChild(nonce);
         algo->appendChild(nonce_holder);
     }
@@ -268,7 +268,7 @@ bool XMLGenerator::generateAlgorithmKeys(
             return false;
 
         AutoPtr<Poco::XML::Element> cur_key_holder(xml_document->createElement("nonce"));
-        AutoPtr<Text> cur_key(xml_document->createTextNode(std::to_string(current_key)));
+        AutoPtr<Text> cur_key(xml_document->createTextNode(Poco::XML::toXMLString(std::to_string(current_key))));
         cur_key_holder->appendChild(cur_key);
         algo->appendChild(cur_key_holder);
     }

@@ -958,7 +958,7 @@ void StorageAzureConfiguration::fromAST(ASTs & engine_args, ContextPtr context, 
             parsed_arguments.connection_params.auth_method = std::make_shared<Azure::Identity::ClientSecretCredential>(
                 onelake_tenant_id,
                 onelake_client_id,
-                onelake_client_secret
+                std::string(onelake_client_secret)
             );
         }
     }

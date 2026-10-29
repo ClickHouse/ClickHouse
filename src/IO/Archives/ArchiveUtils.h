@@ -25,7 +25,7 @@ bool hasSupported7zExtension(std::string_view path);
 
 bool hasSupportedArchiveExtension(std::string_view path);
 
-std::pair<std::string, std::optional<std::string>> getURIAndArchivePattern(const std::string & source);
+std::pair<std::string, std::optional<std::string>> getURIAndArchivePattern(std::string_view source);
 
 /// Splits the archive path syntax (e.g. `archive.zip::file*.parquet`) into the path to the archive
 /// (`archive.zip`) and the path inside it (`file*.parquet`).

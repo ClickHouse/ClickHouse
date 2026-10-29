@@ -8,7 +8,7 @@
 #include <Databases/IDatabase.h>
 #include <Databases/DatabaseOrdinary.h>
 
-#include <Backups/BackupInfo.h>
+#include <Common/SecretString.h>
 
 namespace DB
 {
@@ -23,7 +23,7 @@ public:
     struct Configuration
     {
         std::string database_name;
-        BackupInfo backup_info;
+        SecretString backup_info;
     };
 
     DatabaseBackup(const String & name, const String & metadata_path, const Configuration & config, ContextPtr context);

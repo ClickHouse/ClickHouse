@@ -3,9 +3,9 @@
 namespace DB::DatabaseDataLakeSetting
 {
     extern const DatabaseDataLakeSettingsString aws_access_key_id;
-    extern const DatabaseDataLakeSettingsString aws_secret_access_key;
+    extern const DatabaseDataLakeSettingsSecretString aws_secret_access_key;
     extern const DatabaseDataLakeSettingsString storage_aws_access_key_id;
-    extern const DatabaseDataLakeSettingsString storage_aws_secret_access_key;
+    extern const DatabaseDataLakeSettingsSecretString storage_aws_secret_access_key;
 }
 
 namespace DataLake
@@ -13,7 +13,7 @@ namespace DataLake
 
 namespace
 {
-std::shared_ptr<IStorageCredentials> tryMakeStaticS3Credentials(const String & access_key_id, const String & secret_access_key)
+std::shared_ptr<IStorageCredentials> tryMakeStaticS3Credentials(const String & access_key_id, std::string_view secret_access_key)
 {
     if (access_key_id.empty() || secret_access_key.empty())
         return nullptr;

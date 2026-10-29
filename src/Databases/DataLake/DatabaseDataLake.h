@@ -10,6 +10,7 @@
 #include <Disks/DiskType.h>
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
 #include <Common/MultiVersion.h>
+#include <Common/SecretString.h>
 #include <Poco/Net/HTTPBasicCredentials.h>
 
 namespace DB
@@ -105,7 +106,7 @@ private:
     /// SETTINGS from CREATE query.
     MultiVersion<DatabaseDataLakeSettings> database_settings;
     /// Database engine definition taken from initial CREATE DATABASE query.
-    ASTPtr database_engine_definition TSA_GUARDED_BY(mutex);
+    SecretString database_engine_definition TSA_GUARDED_BY(mutex);
     const ASTPtr table_engine_definition;
     const LoggerPtr log;
     /// Crendetials to authenticate Iceberg Catalog.

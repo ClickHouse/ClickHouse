@@ -4,6 +4,7 @@
 #include <Core/NamesAndTypes.h>
 #include <Core/SettingsEnums.h>
 #include <Common/SettingsChanges.h>
+#include <Common/SecretString.h>
 #include <Interpreters/StorageID.h>
 #include <Databases/DataLake/StorageCredentials.h>
 #include <Storages/ObjectStorage/StorageObjectStorageSettings.h>
@@ -77,7 +78,7 @@ public:
     bool hasStorageCredentials() const;
     bool hasDataLakeSpecificProperties() const;
 
-    void setLocation(const std::string & location_);
+    void setLocation(std::string_view location_);
     std::string getLocation() const;
     std::string getLocationWithEndpoint(const std::string & endpoint_, DB::S3UriStyle uri_style = DB::S3UriStyle::AUTO) const;
     std::string getMetadataLocation(const std::string & iceberg_metadata_file_location) const;
@@ -201,7 +202,7 @@ struct CatalogSettings
 {
     String storage_endpoint;
     String aws_access_key_id;
-    String aws_secret_access_key;
+    DB::SecretString aws_secret_access_key;
     String region;
     String aws_role_arn;
     String aws_role_session_name;

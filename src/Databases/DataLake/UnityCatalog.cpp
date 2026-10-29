@@ -575,7 +575,7 @@ DataLake::ICatalog::Namespaces UnityCatalog::getSchemas(const std::string & base
 UnityCatalog::UnityCatalog(
     const std::string & catalog_,
     const std::string & base_url_,
-    const std::string & catalog_credential_,
+    std::string_view catalog_credential_,
     DB::ContextPtr context_)
     : ICatalog(catalog_)
     , DB::WithContext(context_)

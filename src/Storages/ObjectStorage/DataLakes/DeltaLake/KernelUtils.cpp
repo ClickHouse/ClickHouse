@@ -67,7 +67,7 @@ DB::Chunk castChunkToDeltaWriteSchema(const DB::Chunk & chunk, const DB::Block &
     return DB::Chunk(std::move(out_columns), chunk.getNumRows());
 }
 
-ffi::KernelStringSlice KernelUtils::toDeltaString(const std::string & string)
+ffi::KernelStringSlice KernelUtils::toDeltaString(std::string_view string)
 {
     return ffi::KernelStringSlice{ .ptr = string.data(), .len = string.size() };
 }

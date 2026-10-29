@@ -15,6 +15,8 @@
 #include "Poco/XML/XMLString.h"
 
 
+#include <cstdlib>
+#include <new>
 #if defined(XML_UNICODE_WCHAR_T)
 #include <stdlib.h>
 #endif
@@ -22,6 +24,20 @@
 
 namespace Poco {
 namespace XML {
+
+
+__attribute__((weak)) void* allocateNoDump(std::size_t bytes)
+{
+	if (void* ptr = std::malloc(bytes))
+		return ptr;
+	throw std::bad_alloc();
+}
+
+
+__attribute__((weak)) void deallocateNoDump(void* ptr) noexcept
+{
+	std::free(ptr);
+}
 
 
 #if defined(XML_UNICODE_WCHAR_T)

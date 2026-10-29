@@ -20,14 +20,14 @@ namespace DB
 class AnthropicProvider : public IAIProvider
 {
 public:
-    AnthropicProvider(const String & endpoint_, const String & api_key_, const String & api_version_);
+    AnthropicProvider(const String & endpoint_, std::string_view api_key_, const String & api_version_);
 
     void call(const AIChatRequest & request, const ConnectionTimeouts & timeouts, AIResponse & response) override;
     HTTPHeaderEntries getHeaders() const override;
 
 private:
     const String endpoint;
-    const String api_key;
+    const SecretString api_key;
     const String api_version;
     const Poco::URI uri;
 };

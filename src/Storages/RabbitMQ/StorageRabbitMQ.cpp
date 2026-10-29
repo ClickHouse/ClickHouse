@@ -58,7 +58,7 @@ namespace Setting
 
 namespace RabbitMQSetting
 {
-    extern const RabbitMQSettingsString rabbitmq_address;
+    extern const RabbitMQSettingsSecretString rabbitmq_address;
     extern const RabbitMQSettingsBool rabbitmq_commit_on_select;
     extern const RabbitMQSettingsUInt64 rabbitmq_empty_queue_backoff_end_ms;
     extern const RabbitMQSettingsUInt64 rabbitmq_empty_queue_backoff_start_ms;
@@ -73,7 +73,7 @@ namespace RabbitMQSetting
     extern const RabbitMQSettingsUInt64 rabbitmq_max_rows_per_message;
     extern const RabbitMQSettingsUInt64 rabbitmq_num_consumers;
     extern const RabbitMQSettingsUInt64 rabbitmq_num_queues;
-    extern const RabbitMQSettingsString rabbitmq_password;
+    extern const RabbitMQSettingsSecretString rabbitmq_password;
     extern const RabbitMQSettingsBool rabbitmq_persistent;
     extern const RabbitMQSettingsString rabbitmq_queue_base;
     extern const RabbitMQSettingsBool rabbitmq_queue_consume;
@@ -175,13 +175,13 @@ StorageRabbitMQ::StorageRabbitMQ(
     auto setting_rabbitmq_username = (*rabbitmq_settings)[RabbitMQSetting::rabbitmq_username].value;
     auto setting_rabbitmq_password = (*rabbitmq_settings)[RabbitMQSetting::rabbitmq_password].value;
     String username;
-    String password;
+    SecretString password;
 
     /// The connection is TLS when either the `rabbitmq_secure` setting is on or the
     /// `rabbitmq_address` URI uses the `amqps` scheme; OpenSSL must be initialized in both cases.
     bool secure_connection = (*rabbitmq_settings)[RabbitMQSetting::rabbitmq_secure].value;
 
-    const auto address_string = getContext()->getMacros()->expand((*rabbitmq_settings)[RabbitMQSetting::rabbitmq_address]);
+    const auto address_string = getContext()->getMacros()->expand(String((*rabbitmq_settings)[RabbitMQSetting::rabbitmq_address].value));
 
     if (!address_string.empty())
     {
@@ -213,7 +213,10 @@ StorageRabbitMQ::StorageRabbitMQ(
     else if ((*rabbitmq_settings)[RabbitMQSetting::rabbitmq_host_port].changed)
     {
         username = setting_rabbitmq_username.empty() ? config.getString("rabbitmq.username", "") : setting_rabbitmq_username;
-        password = setting_rabbitmq_password.empty() ? config.getString("rabbitmq.password", "") : setting_rabbitmq_password;
+        if (setting_rabbitmq_password.empty())
+            password = config.getString("rabbitmq.password", "");
+        else
+            password = setting_rabbitmq_password;
         if (username.empty() || password.empty())
             throw Exception(
                 ErrorCodes::BAD_ARGUMENTS,
@@ -238,7 +241,7 @@ StorageRabbitMQ::StorageRabbitMQ(
         .password = password,
         .vhost = config.getString("rabbitmq.vhost", getContext()->getMacros()->expand((*rabbitmq_settings)[RabbitMQSetting::rabbitmq_vhost])),
         .secure = secure_connection,
-        .connection_string = address_string
+        .connection_string = SecretString(address_string)
     };
 
     if (secure_connection)

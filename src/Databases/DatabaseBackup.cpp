@@ -42,6 +42,7 @@
 #include <Access/ContextAccess.h>
 
 #include <Backups/BackupFactory.h>
+#include <Backups/BackupInfo.h>
 
 #include <Disks/DiskBackup.h>
 #include <Disks/SingleDiskVolume.h>
@@ -100,7 +101,7 @@ public:
 /// identical on every open of the same database.
 String buildStoragePolicyName(const String & local_database_name, const DatabaseBackup::Configuration & config)
 {
-    const auto backup_info_string = config.backup_info.toString();
+    const std::string_view backup_info_string = config.backup_info;
 
     SipHash hash;
     hash.update(local_database_name.size());
@@ -242,7 +243,7 @@ void DatabaseBackup::beforeLoadingMetadata(ContextMutablePtr local_context, Load
     BackupFactory::CreateParams backup_open_params;
     backup_open_params.open_mode = IBackup::OpenMode::READ;
     backup_open_params.context = getContext();
-    backup_open_params.backup_info = config.backup_info;
+    backup_open_params.backup_info = BackupInfo::fromString(config.backup_info);
 
     try
     {
@@ -477,7 +478,7 @@ ASTPtr DatabaseBackup::getCreateDatabaseQueryImpl() const
     /// definition is what `ALTER DATABASE ... MODIFY COMMENT` writes back into the metadata file, and
     /// the load path parses the second argument with `BackupInfo::fromAST`, which takes a function.
     const String query = fmt::format("CREATE DATABASE {} ENGINE = Backup({}, {})",
-        backQuoteIfNeed(database_name), quoteString(config.database_name), config.backup_info.toString());
+        backQuoteIfNeed(database_name), quoteString(config.database_name), config.backup_info);
 
     ParserCreateQuery parser;
     ASTPtr ast = parseQuery(parser,
@@ -536,7 +537,7 @@ DatabaseBackup::Configuration parseArguments(ASTs engine_args, ContextPtr, bool 
     {
         if (const auto * locator = engine_args[1]->as<ASTLiteral>(); locator && locator->value.getType() == Field::Types::String)
         {
-            result.backup_info = BackupInfo::fromString(locator->value.safeGet<String>());
+            result.backup_info = locator->value.safeGet<String>();
             return result;
         }
     }
@@ -550,7 +551,7 @@ DatabaseBackup::Configuration parseArguments(ASTs engine_args, ContextPtr, bool 
             "function it is, such as `File('backup')` or `S3(...)`. The text given is not shown, because a "
             "destination held in a string literal cannot be redacted and may carry credentials");
 
-    result.backup_info = BackupInfo::fromAST(*engine_args[1]);
+    result.backup_info = BackupInfo::fromAST(*engine_args[1]).toString();
 
     return result;
 }
@@ -573,7 +574,7 @@ void DatabaseBackup::parseAndAuthorizeLocator(const ASTs & engine_args, ContextP
       * not be echoed.
       */
     auto config = parseArguments(engine_args, query_context, /*allow_locator_in_string_literal=*/ false);
-    BackupFactory::instance().checkSourceAccess(config.backup_info, query_context, IBackup::OpenMode::READ);
+    BackupFactory::instance().checkSourceAccess(BackupInfo::fromString(config.backup_info), query_context, IBackup::OpenMode::READ);
 }
 
 namespace
@@ -832,7 +833,7 @@ void registerDatabaseBackup(DatabaseFactory & factory)
 
         auto config = parseArguments(engine_args, args.context, /*allow_locator_in_string_literal=*/ from_existing_metadata);
         if (has_real_user && !from_existing_metadata)
-            BackupFactory::instance().checkSourceAccess(config.backup_info, args.context, IBackup::OpenMode::READ);
+            BackupFactory::instance().checkSourceAccess(BackupInfo::fromString(config.backup_info), args.context, IBackup::OpenMode::READ);
 
         return std::make_shared<DatabaseBackup>(args.database_name, args.metadata_path, config, args.context);
     };

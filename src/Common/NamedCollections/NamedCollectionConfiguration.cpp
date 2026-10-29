@@ -3,6 +3,7 @@
 #include <Common/Exception.h>
 #include <Common/FieldVisitorToString.h>
 #include <Common/NamedCollections/NamedCollectionConfiguration.h>
+#include <Common/SecretString.h>
 #include <Common/SettingsChanges.h>
 
 
@@ -50,6 +51,8 @@ template <typename T> T getConfigValueOrDefault(
     {
         if constexpr (std::is_same_v<T, String>)
             return config.getString(path);
+        else if constexpr (std::is_same_v<T, SecretString>)
+            return SecretString(config.getString(path));
         else if constexpr (std::is_same_v<T, UInt64>)
             return config.getUInt64(path);
         else if constexpr (std::is_same_v<T, Int64>)
@@ -62,7 +65,7 @@ template <typename T> T getConfigValueOrDefault(
             throw Exception(
                 ErrorCodes::NOT_IMPLEMENTED,
                 "Unsupported type in getConfigValueOrDefault(). "
-                "Supported types are String, UInt64, Int64, Float64, bool");
+                "Supported types are String, SecretString, UInt64, Int64, Float64, bool");
     }
     catch (const Poco::SyntaxException &)
     {
@@ -149,7 +152,7 @@ ConfigurationPtr createEmptyConfiguration(const std::string & root_name)
     using ElementPtr = Poco::AutoPtr<Poco::XML::Element>;
 
     DocumentPtr xml_document(new Poco::XML::Document());
-    ElementPtr root_element(xml_document->createElement(root_name));
+    ElementPtr root_element(xml_document->createElement(Poco::XML::toXMLString(root_name)));
     xml_document->appendChild(root_element);
 
     ConfigurationPtr config(new Poco::Util::XMLConfiguration(xml_document));
@@ -239,6 +242,8 @@ void setOverridable(Poco::Util::AbstractConfiguration & config, const std::strin
 
 template String getConfigValue<String>(const Poco::Util::AbstractConfiguration & config,
                                        const std::string & path);
+template SecretString getConfigValue<SecretString>(const Poco::Util::AbstractConfiguration & config,
+                                                         const std::string & path);
 template UInt64 getConfigValue<UInt64>(const Poco::Util::AbstractConfiguration & config,
                                        const std::string & path);
 template Int64 getConfigValue<Int64>(const Poco::Util::AbstractConfiguration & config,
@@ -250,6 +255,8 @@ template bool getConfigValue<bool>(const Poco::Util::AbstractConfiguration & con
 
 template String getConfigValueOrDefault<String>(const Poco::Util::AbstractConfiguration & config,
                                                 const std::string & path, const String * default_value);
+template SecretString getConfigValueOrDefault<SecretString>(const Poco::Util::AbstractConfiguration & config,
+                                                const std::string & path, const SecretString * default_value);
 template UInt64 getConfigValueOrDefault<UInt64>(const Poco::Util::AbstractConfiguration & config,
                                                 const std::string & path, const UInt64 * default_value);
 template Int64 getConfigValueOrDefault<Int64>(const Poco::Util::AbstractConfiguration & config,

@@ -373,6 +373,18 @@ void SettingFieldString::readBinary(ReadBuffer & in)
     *this = std::move(str);
 }
 
+void SettingFieldSecretString::writeBinary(WriteBuffer & out) const
+{
+    writeStringBinary(value, out);
+}
+
+void SettingFieldSecretString::readBinary(ReadBuffer & in)
+{
+    String str;
+    readStringBinary(str, in);
+    *this = str;
+}
+
 SettingFieldMap::SettingFieldMap(const Field & f) : value(fieldToMap(f)) {}
 
 String SettingFieldMap::toString() const

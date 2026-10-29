@@ -28,7 +28,7 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
-EncryptionMethod toEncryptionMethod(const std::string & name)
+EncryptionMethod toEncryptionMethod(std::string_view name)
 {
     if (name == "AES_128_GCM_SIV")
         return AES_128_GCM_SIV;
@@ -122,7 +122,7 @@ const char * getMethod(EncryptionMethod Method)
 /// This function get key and nonce and encrypt text with their help.
 /// If something went wrong (can't init context or can't encrypt data) it throws exception.
 /// It returns length of encrypted text.
-size_t encrypt(std::string_view plaintext, char * ciphertext_and_tag, EncryptionMethod method, const String & key, const String & nonce)
+size_t encrypt(std::string_view plaintext, char * ciphertext_and_tag, EncryptionMethod method, const SecretString & key, const String & nonce)
 {
     int out_len = 0;
     int ciphertext_len = 0;
@@ -179,7 +179,7 @@ size_t encrypt(std::string_view plaintext, char * ciphertext_and_tag, Encryption
 /// This function get key and nonce and encrypt text with their help.
 /// If something went wrong (can't init context or can't encrypt data) it throws exception.
 /// It returns length of encrypted text.
-size_t decrypt(std::string_view ciphertext, char * plaintext, EncryptionMethod method, const String & key, const String & nonce)
+size_t decrypt(std::string_view ciphertext, char * plaintext, EncryptionMethod method, const SecretString & key, const String & nonce)
 {
     int out_len = 0;
     int plaintext_len = 0;
@@ -325,7 +325,7 @@ void CompressionCodecEncrypted::Configuration::loadImpl(
     config.keys(config_prefix, config_keys);
     for (const std::string & config_key : config_keys)
     {
-        String key;
+        SecretString key;
         UInt64 key_id = 0;
 
         if ((config_key == "key") || config_key.starts_with("key["))
@@ -428,7 +428,7 @@ void CompressionCodecEncrypted::Configuration::load(const Poco::Util::AbstractCo
         params.set(std::move(new_params));
 }
 
-void CompressionCodecEncrypted::Configuration::getCurrentKeyAndNonce(EncryptionMethod method, UInt64 & current_key_id, String &current_key, String & nonce) const
+void CompressionCodecEncrypted::Configuration::getCurrentKeyAndNonce(EncryptionMethod method, UInt64 & current_key_id, SecretString &current_key, String & nonce) const
 {
     /// It parameters were not set, throw exception
     if (!params.get())
@@ -454,9 +454,9 @@ void CompressionCodecEncrypted::Configuration::getCurrentKeyAndNonce(EncryptionM
         nonce = empty_nonce;
 }
 
-String CompressionCodecEncrypted::Configuration::getKey(EncryptionMethod method, const UInt64 & key_id) const
+SecretString CompressionCodecEncrypted::Configuration::getKey(EncryptionMethod method, const UInt64 & key_id) const
 {
-    String key;
+    SecretString key;
     /// See description of previous finction, logic is the same.
     if (!params.get())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Empty params in CompressionCodecEncrypted configuration");
@@ -515,7 +515,7 @@ UInt32 CompressionCodecEncrypted::doCompressData(const char * source, UInt32 sou
 
     /// Get key and nonce for encryption
     UInt64 current_key_id = 0;
-    String current_key;
+    SecretString current_key;
     String nonce;
     Configuration::instance().getCurrentKeyAndNonce(encryption_method, current_key_id, current_key, nonce);
 
@@ -551,7 +551,7 @@ UInt32 CompressionCodecEncrypted::doDecompressData(const char * source, UInt32 s
     /// Size of text should be decreased by key_size, because key_size bytes were not participating in encryption process.
     size_t keyid_size = ciphertext_with_nonce - source;
     String nonce;
-    String key = Configuration::instance().getKey(encryption_method, key_id);
+    SecretString key = Configuration::instance().getKey(encryption_method, key_id);
 
     /// try to read nonce from file (if it was set while encrypting)
     const char * ciphertext = readNonce(nonce, ciphertext_with_nonce);

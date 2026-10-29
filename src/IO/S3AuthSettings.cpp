@@ -32,10 +32,10 @@ namespace DB
 
 #define AUTH_SETTINGS(DECLARE, ALIAS) \
     DECLARE(String, access_key_id, "", "", 0) \
-    DECLARE(String, secret_access_key, "", "", 0) \
-    DECLARE(String, session_token, "", "", 0) \
+    DECLARE(SecretString, secret_access_key, "", "", 0) \
+    DECLARE(SecretString, session_token, "", "", 0) \
     DECLARE(String, region, "", "", 0) \
-    DECLARE(String, server_side_encryption_customer_key_base64, "", "", 0) \
+    DECLARE(SecretString, server_side_encryption_customer_key_base64, "", "", 0) \
     DECLARE(String, role_arn, "", "", 0) \
     DECLARE(String, role_session_name, "", "", 0) \
     DECLARE(String, external_id, "", "", 0) \
@@ -44,8 +44,8 @@ namespace DB
     DECLARE(String, metadata_service, "", "", 0) \
     DECLARE(String, request_token_path, "", "", 0) \
     DECLARE(String, google_adc_client_id, "", "", 0) \
-    DECLARE(String, google_adc_client_secret, "", "", 0) \
-    DECLARE(String, google_adc_refresh_token, "", "", 0) \
+    DECLARE(SecretString, google_adc_client_secret, "", "", 0) \
+    DECLARE(SecretString, google_adc_refresh_token, "", "", 0) \
 
 /// `max_connections` used to bound the per-endpoint session pool of the S3 client, which was
 /// removed in 21.4; the global pool that replaced it is bounded by the `disk_connections_*`,

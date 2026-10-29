@@ -45,12 +45,12 @@ constexpr auto BIGQUERY_OAUTH_SCOPE = "https://www.googleapis.com/auth/bigquery"
 #endif
 constexpr auto GOOGLE_OAUTH2_TOKEN_ENDPOINT = "https://oauth2.googleapis.com/token";
 
-Poco::JSON::Object::Ptr parseJSONObject(const String & data, const String & what)
+Poco::JSON::Object::Ptr parseJSONObject(std::string_view data, const String & what)
 {
     try
     {
         Poco::JSON::Parser parser;
-        auto object = parser.parse(data).extract<Poco::JSON::Object::Ptr>();
+        auto object = parser.parse(String(data)).extract<Poco::JSON::Object::Ptr>();
         if (!object)
             throw Exception(ErrorCodes::INCORRECT_DATA, "{} is not a JSON object", what);
         return object;
@@ -63,7 +63,7 @@ Poco::JSON::Object::Ptr parseJSONObject(const String & data, const String & what
 
 /// Build an RS256-signed JWT assertion for the OAuth 2.0 service account flow.
 /// Returns the assertion and the token endpoint to POST it to.
-std::pair<String, String> makeServiceAccountAssertion(const String & service_account_key, const String & token_url_override)
+std::pair<String, String> makeServiceAccountAssertion(std::string_view service_account_key, const String & token_url_override)
 {
     auto key_object = parseJSONObject(service_account_key, "BigQuery service account key");
 
@@ -119,7 +119,7 @@ BigQueryTokenProvider::BigQueryTokenProvider(BigQueryConfiguration configuration
 {
 }
 
-std::pair<String, Int64> BigQueryTokenProvider::fetchTokenWithExpiration(const ContextPtr & context) const
+std::pair<SecretString, Int64> BigQueryTokenProvider::fetchTokenWithExpiration(const ContextPtr & context) const
 {
     const auto timeouts = ConnectionTimeouts::getHTTPTimeouts(context->getSettingsRef(), context->getServerSettings());
 
@@ -152,7 +152,7 @@ std::pair<String, Int64> BigQueryTokenProvider::fetchTokenWithExpiration(const C
     }
 }
 
-String BigQueryTokenProvider::getToken(const ContextPtr & context, bool force_refresh)
+SecretString BigQueryTokenProvider::getToken(const ContextPtr & context, bool force_refresh)
 {
     std::lock_guard lock(mutex);
 
@@ -216,7 +216,7 @@ Poco::JSON::Object::Ptr BigQueryClient::requestJSON(
     auto do_request = [&](bool force_new_token)
     {
         HTTPHeaderEntries headers;
-        headers.emplace_back("Authorization", "Bearer " + token_provider->getToken(context, force_new_token));
+        headers.emplace_back("Authorization", fmt::format("Bearer {}", token_provider->getToken(context, force_new_token)));
         if (!configuration.billing_project.empty())
             headers.emplace_back("X-Goog-User-Project", configuration.billing_project);
 

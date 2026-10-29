@@ -18,6 +18,7 @@
 #define Foundation_URI_INCLUDED
 
 
+#include <string_view>
 #include <utility>
 #include <vector>
 #include "Poco/Foundation.h"
@@ -284,11 +285,11 @@ public:
     /// Places the single path segments (delimited by slashes) into the
     /// given vector.
 
-    static void encode(const std::string & str, const std::string & reserved, std::string & encodedStr);
+    static void encode(std::string_view str, std::string_view reserved, std::string & encodedStr);
     /// URI-encodes the given string by escaping reserved and non-ASCII
     /// characters. The encoded string is appended to encodedStr.
 
-    static void decode(const std::string & str, std::string & decodedStr, bool plusAsSpace = false);
+    static void decode(std::string_view str, std::string & decodedStr, bool plusAsSpace = false);
     /// URI-decodes the given string by replacing percent-encoded
     /// characters with the actual character. The decoded string
     /// is appended to decodedStr.

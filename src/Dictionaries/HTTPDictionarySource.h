@@ -3,7 +3,6 @@
 #include <Core/Block.h>
 #include <IO/ConnectionTimeouts.h>
 #include <IO/ReadWriteBufferFromHTTP.h>
-#include <Poco/Net/HTTPBasicCredentials.h>
 #include <Poco/URI.h>
 #include <Common/LocalDateTime.h>
 #include <Dictionaries/DictionaryStructure.h>
@@ -30,6 +29,8 @@ public:
         const std::string format;
         const std::string update_field;
         const UInt64 update_lag;
+        const String user;
+        const SecretString password;
         const HTTPHeaderEntries header_entries;
         /// Whether the dictionary was created via DDL (`CREATE DICTIONARY`). For such dictionaries the
         /// source URL is untrusted, so every HTTP request (including redirect hops) must be validated
@@ -40,7 +41,6 @@ public:
     HTTPDictionarySource(
         const DictionaryStructure & dict_struct_,
         const Configuration & configuration,
-        const Poco::Net::HTTPBasicCredentials & credentials_,
         Block & sample_block_,
         ContextPtr context_);
 
@@ -78,7 +78,6 @@ private:
     std::chrono::time_point<std::chrono::system_clock> update_time;
     const DictionaryStructure dict_struct;
     const Configuration configuration;
-    Poco::Net::HTTPBasicCredentials credentials;
     Block sample_block;
     ContextPtr context;
     ConnectionTimeouts timeouts;
