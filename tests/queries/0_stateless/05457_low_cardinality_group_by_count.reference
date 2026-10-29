@@ -1,0 +1,18 @@
+string	1
+nullable	1
+number	1
+fixed_string	1
+count_and_sum	1
+small_blocks	1
+two_level	1
+external	1
+no_prefetch	1
+function_key	1
+no_more_keys	1	0
+overflow_row
+
+	600000
+remote	1
+keys128	1
+top_k_heap	1
+top_k_heap_plan	1
