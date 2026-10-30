@@ -35,6 +35,7 @@
 #include <IO/Operators.h>
 #include <QueryPipeline/Pipe.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
+#include <QueryPipeline/StreamLocalLimits.h>
 #include <Processors/ISource.h>
 #include <Processors/QueryPlan/QueryPlanFormat.h>
 #include <Processors/Sources/NullSource.h>
@@ -128,6 +129,72 @@ struct MemorySourceFilter
     String getQueryConditionCachePartName(size_t block_index) const
     {
         return fmt::format("{}_{:016x}_{}", generation, columns_hash, first_block_number + block_index);
+    }
+
+    /// Returns the granules of a block that may have rows satisfying both conditions, or std::nullopt if nothing
+    /// is known. If `granules_skipped_by_filter_condition` is set, it receives the granules that the entry of the
+    /// filter of the query skips.
+    std::optional<QueryConditionCache::MatchingMarks> readMatchingGranules(
+        const String & part_name,
+        size_t num_granules,
+        bool increment_profile_events,
+        QueryConditionCache::MatchingMarks * granules_skipped_by_filter_condition) const
+    {
+        std::optional<QueryConditionCache::MatchingMarks> matching_granules;
+        for (const auto & condition_hash : {prewhere_condition_hash, filter_condition_hash})
+        {
+            if (!condition_hash)
+                continue;
+
+            auto entry = query_condition_cache->read(table_uuid, part_name, *condition_hash, increment_profile_events);
+            if (!entry)
+                continue;
+
+            if (entry->size() != num_granules)
+                throw Exception(ErrorCodes::LOGICAL_ERROR,
+                    "The query condition cache entry for block {} of a Memory table has {} granules instead of {}",
+                    part_name, entry->size(), num_granules);
+
+            if (granules_skipped_by_filter_condition && condition_hash == filter_condition_hash)
+            {
+                granules_skipped_by_filter_condition->resize(num_granules);
+                for (size_t granule = 0; granule < num_granules; ++granule)
+                    (*granules_skipped_by_filter_condition)[granule] = !(*entry)[granule];
+            }
+
+            if (!matching_granules)
+                matching_granules = std::move(entry);
+            else
+                for (size_t granule = 0; granule < num_granules; ++granule)
+                    (*matching_granules)[granule] = (*matching_granules)[granule] && (*entry)[granule];
+        }
+        return matching_granules;
+    }
+
+    /// The number of rows of the blocks that the source scans, i.e. without the granules skipped by the cache.
+    size_t countRowsToScan(const Blocks & blocks) const
+    {
+        size_t num_rows_to_scan = 0;
+        for (size_t block_index = 0; block_index < blocks.size(); ++block_index)
+        {
+            const size_t num_rows = blocks[block_index].rows();
+            const size_t num_granules = (num_rows + query_condition_cache_granule_rows - 1) / query_condition_cache_granule_rows;
+            if (!num_granules)
+                continue;
+
+            auto matching_granules = readMatchingGranules(
+                getQueryConditionCachePartName(block_index), num_granules, /*increment_profile_events=*/ false, nullptr);
+            if (!matching_granules)
+            {
+                num_rows_to_scan += num_rows;
+                continue;
+            }
+
+            for (size_t granule = 0; granule < num_granules; ++granule)
+                if ((*matching_granules)[granule])
+                    num_rows_to_scan += std::min(query_condition_cache_granule_rows, num_rows - granule * query_condition_cache_granule_rows);
+        }
+        return num_rows_to_scan;
     }
 };
 
@@ -323,7 +390,7 @@ public:
     String getName() const override { return "Memory"; }
 
 protected:
-    Chunk generate() override
+    std::optional<Chunk> tryGenerate() override
     {
         if (initializer_func)
         {
@@ -348,45 +415,45 @@ protected:
             initializer_func = {};
         }
 
-        while (true)
+        /// `ISource::prepare` checks for cancellation only after it pushes a chunk with rows, so after an empty
+        /// chunk the source checks it here, e.g. when the executor cancels it at a read limit in `break` mode.
+        if (isCancelled())
+            return {};
+
+        size_t current_index = getAndIncrementExecutionIndex();
+
+        if (!data || current_index >= data->size())
+            return {};
+
+        const Block & src = (*data)[current_index];
+
+        if (filter)
         {
-            size_t current_index = getAndIncrementExecutionIndex();
+            if (auto chunk = generateFiltered(src, current_index))
+                return chunk;
 
-            if (!data || current_index >= data->size())
-                return {};
-
-            const Block & src = (*data)[current_index];
-
-            if (filter)
-            {
-                if (auto chunk = generateFiltered(src, current_index))
-                    return std::move(*chunk);
-
-                /// Every row of this block was filtered out; move on to the next block
-                /// without reading the rest of its columns. `generateFiltered` has already
-                /// reported the block's scanned rows as read.
-                if (isCancelled())
-                    return {};
-                continue;
-            }
-
-            Columns columns;
-            fillPhysicalColumns(src, columns);
-
-            UInt64 num_rows = columns.empty() ? 0 : columns.front()->size();
-            if (!columns.empty())
-                fillVirtualColumns(columns, num_rows);
-
-            if (block_start_rows)
-            {
-                num_rows = src.rows();
-                auto global_row_index = ColumnUInt64::create(num_rows);
-                std::iota(global_row_index->getData().begin(), global_row_index->getData().end(), (*block_start_rows)[current_index]);
-                columns.push_back(std::move(global_row_index));
-            }
-
-            return Chunk(std::move(columns), num_rows);
+            /// Every row of this block was filtered out, so the rest of its columns are not read.
+            /// `generateFiltered` has already reported the block's scanned rows as read. An empty
+            /// chunk returns control to the executor, which checks the read limits before the next block.
+            return Chunk();
         }
+
+        Columns columns;
+        fillPhysicalColumns(src, columns);
+
+        UInt64 num_rows = columns.empty() ? 0 : columns.front()->size();
+        if (!columns.empty())
+            fillVirtualColumns(columns, num_rows);
+
+        if (block_start_rows)
+        {
+            num_rows = src.rows();
+            auto global_row_index = ColumnUInt64::create(num_rows);
+            std::iota(global_row_index->getData().begin(), global_row_index->getData().end(), (*block_start_rows)[current_index]);
+            columns.push_back(std::move(global_row_index));
+        }
+
+        return Chunk(std::move(columns), num_rows);
     }
 
 private:
@@ -451,35 +518,9 @@ private:
         {
             query_condition_cache_part_name = filter->getQueryConditionCachePartName(block_index);
 
-            /// The granules that may have rows satisfying both conditions, or std::nullopt if nothing is known.
-            std::optional<QueryConditionCache::MatchingMarks> matching_granules;
-            for (const auto & condition_hash : {filter->prewhere_condition_hash, filter->filter_condition_hash})
-            {
-                if (!condition_hash)
-                    continue;
-
-                auto entry = filter->query_condition_cache->read(filter->table_uuid, query_condition_cache_part_name, *condition_hash);
-                if (!entry)
-                    continue;
-
-                if (entry->size() != num_granules)
-                    throw Exception(ErrorCodes::LOGICAL_ERROR,
-                        "The query condition cache entry for block {} of a Memory table has {} granules instead of {}",
-                        query_condition_cache_part_name, entry->size(), num_granules);
-
-                if (condition_hash == filter->filter_condition_hash && filter->write_prewhere_condition)
-                {
-                    granules_skipped_by_filter_condition.resize(num_granules);
-                    for (size_t granule = 0; granule < num_granules; ++granule)
-                        granules_skipped_by_filter_condition[granule] = !(*entry)[granule];
-                }
-
-                if (!matching_granules)
-                    matching_granules = std::move(entry);
-                else
-                    for (size_t granule = 0; granule < num_granules; ++granule)
-                        (*matching_granules)[granule] = (*matching_granules)[granule] && (*entry)[granule];
-            }
+            auto matching_granules = filter->readMatchingGranules(
+                query_condition_cache_part_name, num_granules, /*increment_profile_events=*/ true,
+                filter->write_prewhere_condition ? &granules_skipped_by_filter_condition : nullptr);
 
             if (matching_granules)
             {
@@ -944,6 +985,10 @@ void ReadFromMemoryStorageStep::initializePipeline(QueryPipelineBuilder & pipeli
         pipe = Pipe(std::make_shared<NullSource>(output_header));
     }
 
+    /// Add storage limits.
+    for (const auto & processor : pipe.getProcessors())
+        processor->setStorageLimits(query_info.storage_limits);
+
     pipeline.init(std::move(pipe));
 }
 
@@ -1390,13 +1435,29 @@ Pipe ReadFromMemoryStorageStep::makePipe()
     auto parallel_execution_index = std::make_shared<std::atomic<size_t>>(0);
     auto block_start_rows = read_global_row_index ? makeBlockStartRows(*current_data) : nullptr;
 
+    /// `max_rows_to_read` with `read_overflow_mode = 'throw'` is checked against this estimate, so then it leaves out
+    /// the granules skipped by the query condition cache, which the sources do not report as read. Finding them
+    /// takes a cache lookup per block, so it is done only for such a limit.
+    const bool row_limit_checks_estimate = query_info.storage_limits
+        && std::ranges::any_of(*query_info.storage_limits, [](const StorageLimits & limits)
+        {
+            return limits.local_limits.size_limits.overflow_mode == OverflowMode::THROW
+                && (limits.local_limits.size_limits.max_rows || limits.leaf_limits.max_rows);
+        });
+    size_t total_rows_approx = row_limit_checks_estimate && source_filter && source_filter->query_condition_cache
+        ? source_filter->countRowsToScan(*current_data)
+        : snapshot_data.rows;
+    /// A trivial `LIMIT` stops the read early, so it caps the estimate, as in `ReadFromMergeTree`.
+    if (query_info.trivial_limit > 0 && query_info.trivial_limit < total_rows_approx)
+        total_rows_approx = query_info.trivial_limit;
+
     for (size_t stream = 0; stream < num_streams; ++stream)
     {
         auto source = std::make_shared<MemorySource>(
             physical_columns, virtual_columns, current_data, parallel_execution_index, nullptr, nullptr, source_filter, output_header, block_start_rows,
             nested_arrays);
         if (stream == 0)
-            source->addTotalRowsApprox(snapshot_data.rows);
+            source->addTotalRowsApprox(total_rows_approx);
         pipes.emplace_back(std::move(source));
     }
     return Pipe::unitePipes(std::move(pipes));
