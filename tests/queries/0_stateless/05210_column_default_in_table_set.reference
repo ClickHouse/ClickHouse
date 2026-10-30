@@ -16,6 +16,8 @@ ALIAS through a Merge table
 1
 0
 1
+ALIAS through a Merge table builds the set once
+1
 mutation over the ALIAS carrier
 2
 DEFAULT on INSERT

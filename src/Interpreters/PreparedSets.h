@@ -321,6 +321,9 @@ public:
         QueryTreeNodePtr query_tree,
         const Settings & settings);
 
+    /// Register a set created elsewhere under its own key, replacing a set already registered under it.
+    void addOrReplaceSubquery(FutureSetFromSubqueryPtr subquery);
+
     FutureSetFromTuplePtr findTuple(const Hash & key, const DataTypes & types) const;
     FutureSetFromStoragePtr findStorage(const Hash & key) const;
     FutureSetFromSubqueryPtr findSubquery(const Hash & key) const;

@@ -46,6 +46,11 @@ INSERT INTO t_default_in_set_alias_copy (p, x) VALUES (1, 3), (5, 4);
 SELECT x, flag FROM merge(currentDatabase(), '^t_default_in_set_alias') ORDER BY x;
 SELECT x FROM merge(currentDatabase(), '^t_default_in_set_alias') WHERE flag ORDER BY x;
 SELECT flag FROM merge(currentDatabase(), '^t_default_in_set_alias') ORDER BY x DESC NULLS LAST;
+-- The set is shared by the tables and built once for the whole query, like the one of the direct
+-- spelling `p IN t_default_in_set_keys`, rather than once per table.
+SELECT 'ALIAS through a Merge table builds the set once';
+SELECT count() FROM (EXPLAIN PIPELINE compact = 0 SELECT x, flag FROM merge(currentDatabase(), '^t_default_in_set_alias'))
+WHERE explain LIKE '%CreatingSetsTransform%';
 DROP TABLE t_default_in_set_alias_copy;
 
 SELECT 'mutation over the ALIAS carrier';
