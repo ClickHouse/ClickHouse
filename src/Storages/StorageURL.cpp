@@ -455,7 +455,7 @@ public:
         {
             /// Not exhausted, so there is a generator: a single URI is exhausted at once.
             const auto total = generator->totalCount();
-            if (!limit_exceeded && description.find('|') == String::npos && total && *total <= max_addresses_upper_bound)
+            if (!limit_exceeded && !description.contains('|') && total && *total <= max_addresses_upper_bound)
                 return upperBound();
             return 1;
         }
