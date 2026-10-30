@@ -53,6 +53,13 @@ DOLOR_FAILURES = (
 # logical error.
 SERVER_LOG_FAILURES = ("Crash in instance", "Sanitizer error in instance")
 LOGICAL_ERROR_FAILURE = "Logical error in instance"
+# Teardown failures, which fail the run on their own. Such an OOM explains one only when it is
+# the teardown re-raising the OOM's sanitizer report (a Keeper's is reported by `_keeper_failure`).
+CLEANUP_FAILURES = (
+    "Cluster shutdown failed or found a problem",
+    "Failed to close the Spark HTTP server",
+)
+CLEANUP_SANITIZER_ASSERT = "Exception: Sanitizer assert found for instance"
 
 
 def _start_docker_in_docker():
@@ -291,6 +298,19 @@ def _dolor_failure_records(dolor_log: Path) -> list[str]:
     return ["\n".join(record) for record in records]
 
 
+def _cleanup_failure_not_from_oom(record: str) -> bool:
+    """Whether a `dolor.log` ERROR record is a teardown failure an accepted OOM does not explain."""
+    if not any(m in record for m in CLEANUP_FAILURES):
+        return False
+    # Only the teardown's own sanitizer check, not another exception raised along with it.
+    return not (
+        CLEANUP_FAILURES[0] in record
+        and CLEANUP_SANITIZER_ASSERT in record
+        and "During handling of the above exception" not in record
+        and "The above exception was the direct cause" not in record
+    )
+
+
 def _classify_dolor_failure(
     dolor_log: Path,
     passed_as_oom: bool,
@@ -300,7 +320,8 @@ def _classify_dolor_failure(
     fuzzer_out: Path,
 ):
     """Name why `dolor.py` failed a run that the log analysis passed, or return None when
-    the analysis already explains it (an OOM it passed the run for)."""
+    the analysis already explains it (an OOM it passed the run for, with no teardown
+    failure the OOM does not account for)."""
     if watchdog_expired:
         return Result(
             name="Watchdog timeout",
@@ -329,7 +350,15 @@ def _classify_dolor_failure(
             status=Result.Status.FAIL,
         )
     if passed_as_oom:
-        return None
+        unexplained = [r for r in records if _cleanup_failure_not_from_oom(r)]
+        if not unexplained:
+            return None
+        return Result(
+            name="Cluster shutdown",
+            info="The teardown failed for a reason the accepted OOM does not explain.\n"
+            + "\n".join(unexplained[:20]),
+            status=Result.Status.FAIL,
+        )
     return Result(
         name="Unclassified failure",
         info="dolor.py exited with non-zero code but no specific error was identified. "
