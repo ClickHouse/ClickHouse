@@ -33,6 +33,7 @@
 #include <Interpreters/extractStringValueFilters.h>
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/PredicateStatisticsLog.h>
+#include <Interpreters/ProcessList.h>
 #include <Interpreters/TreeRewriter.h>
 #include <Interpreters/ClusterProxy/executeQuery.h>
 #include <Parsers/ASTFunction.h>
@@ -6073,6 +6074,45 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, [[ma
         }
 
         projection_index_reader = std::make_shared<MergeTreeProjectionIndexReader>(std::move(readers));
+
+        /// A read over a throwing `max_rows_to_read` fails as soon as it announces its rows, before the projection index
+        /// drops any granule during the read. Drop them now instead, as `IndexReadRangesRefiner` does.
+        if (result.exceeded_row_limits && !is_parallel_reading_from_replicas)
+        {
+            auto query_status = context->getProcessListElement();
+            for (auto & part : result.parts_with_ranges)
+            {
+                auto it = projection_index_read_desc.read_ranges.find(part.part_index_in_query);
+                if (it == projection_index_read_desc.read_ranges.end())
+                    continue;
+
+                if (query_status)
+                    query_status->checkTimeLimit();
+
+                MergeTreeIndexReadResult index_read_result;
+                index_read_result.projection_index_read_result = projection_index_reader->read(it->second);
+
+                MarkRanges ranges;
+                for (const auto & range : part.ranges)
+                {
+                    for (size_t mark = range.begin; mark < range.end; ++mark)
+                    {
+                        if (index_read_result.canSkipMark(mark, *part.data_part->index_granularity))
+                            continue;
+
+                        if (!ranges.empty() && ranges.back().end == mark)
+                            ranges.back().end = mark + 1;
+                        else
+                            ranges.emplace_back(mark, mark + 1);
+                    }
+                }
+                part.ranges = std::move(ranges);
+            }
+
+            std::erase_if(result.parts_with_ranges, [](const auto & part) { return part.ranges.empty(); });
+            projection_index_read_desc.read_ranges.clear();
+            projection_index_reader = nullptr;
+        }
     }
 
     if (skip_index_reader || projection_index_reader)
