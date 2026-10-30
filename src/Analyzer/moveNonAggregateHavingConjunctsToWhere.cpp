@@ -28,30 +28,44 @@ namespace DB
 namespace
 {
 
+/// Whether the type is or contains, at any depth of `Nullable`, `LowCardinality`, `Array`, `Map`, `Tuple` or `Variant`,
+/// a type satisfying the predicate.
+template <typename Predicate>
+bool containsType(const DataTypePtr & type, const Predicate & predicate)
+{
+    if (predicate(type))
+        return true;
+    auto recurse = [&predicate](const DataTypePtr & nested) { return containsType(nested, predicate); };
+    if (const auto * nullable = typeid_cast<const DataTypeNullable *>(type.get()))
+        return recurse(nullable->getNestedType());
+    if (const auto * low_cardinality = typeid_cast<const DataTypeLowCardinality *>(type.get()))
+        return recurse(low_cardinality->getDictionaryType());
+    if (const auto * array = typeid_cast<const DataTypeArray *>(type.get()))
+        return recurse(array->getNestedType());
+    if (const auto * map = typeid_cast<const DataTypeMap *>(type.get()))
+        return recurse(map->getKeyType()) || recurse(map->getValueType());
+    if (const auto * tuple = typeid_cast<const DataTypeTuple *>(type.get()))
+        return std::ranges::any_of(tuple->getElements(), recurse);
+    if (const auto * variant = typeid_cast<const DataTypeVariant *>(type.get()))
+        return std::ranges::any_of(variant->getVariants(), recurse);
+    return false;
+}
+
 /// Whether the type is or may contain a `DateTime` or `DateTime64` without an explicit time zone.
 /// Such values are converted from and to their calendar representation in the time zone of the executing server.
 /// `Dynamic` and `JSON` may hold such a value at runtime, so they are treated as having one.
 bool hasImplicitTimeZone(const DataTypePtr & type)
 {
-    if (isDynamic(type) || isObject(type))
-        return true;
-    if (const auto * date_time = typeid_cast<const DataTypeDateTime *>(type.get()))
-        return !date_time->hasExplicitTimeZone();
-    if (const auto * date_time64 = typeid_cast<const DataTypeDateTime64 *>(type.get()))
-        return !date_time64->hasExplicitTimeZone();
-    if (const auto * nullable = typeid_cast<const DataTypeNullable *>(type.get()))
-        return hasImplicitTimeZone(nullable->getNestedType());
-    if (const auto * low_cardinality = typeid_cast<const DataTypeLowCardinality *>(type.get()))
-        return hasImplicitTimeZone(low_cardinality->getDictionaryType());
-    if (const auto * array = typeid_cast<const DataTypeArray *>(type.get()))
-        return hasImplicitTimeZone(array->getNestedType());
-    if (const auto * map = typeid_cast<const DataTypeMap *>(type.get()))
-        return hasImplicitTimeZone(map->getKeyType()) || hasImplicitTimeZone(map->getValueType());
-    if (const auto * tuple = typeid_cast<const DataTypeTuple *>(type.get()))
-        return std::ranges::any_of(tuple->getElements(), hasImplicitTimeZone);
-    if (const auto * variant = typeid_cast<const DataTypeVariant *>(type.get()))
-        return std::ranges::any_of(variant->getVariants(), hasImplicitTimeZone);
-    return false;
+    return containsType(type, [](const DataTypePtr & nested)
+    {
+        if (isDynamic(nested) || isObject(nested))
+            return true;
+        if (const auto * date_time = typeid_cast<const DataTypeDateTime *>(nested.get()))
+            return !date_time->hasExplicitTimeZone();
+        if (const auto * date_time64 = typeid_cast<const DataTypeDateTime64 *>(nested.get()))
+            return !date_time64->hasExplicitTimeZone();
+        return false;
+    });
 }
 
 /// The type of a function argument, or `nullptr` for a subquery or a table, like the right-hand side of `IN`.
@@ -124,7 +138,21 @@ bool dependsOnServerTimeZone(const FunctionNode & function_node)
         return !time_zone_independent_functions.contains(function_name);
     }
 
-    if (!first_argument_type || !isNumber(first_argument_type))
+    if (!first_argument_type)
+        return false;
+
+    /// A cast of a container, like `CAST([k] AS Array(Date))`, `CAST(tuple(k) AS Tuple(Date))` or
+    /// `CAST(map('a', k) AS Map(String, Date))`, converts each nested number as a Unix timestamp to a `Date` or `Date32`.
+    static const std::unordered_set<std::string_view> cast_functions
+    {
+        "CAST", "_CAST", "accurateCast", "accurateCastOrNull", "accurateCastOrDefault",
+    };
+    if (cast_functions.contains(function_name)
+        && containsType(function_node.getResultType(), [](const DataTypePtr & type) { return isDateOrDate32(type); })
+        && containsType(first_argument_type, [](const DataTypePtr & type) { return isNumber(type); }))
+        return true;
+
+    if (!isNumber(first_argument_type))
         return false;
 
     /// `toDate(k)`, `toDate32(k)` and `CAST(k AS Date)` take a number as a Unix timestamp.
@@ -220,7 +248,7 @@ bool hasRowSensitiveFunction(const QueryTreeNodePtr & node)
   * Such a conjunct also stays in `HAVING` if it has a value of type `DateTime` or `DateTime64` without an explicit time zone
   * (like `toHour(toDateTime(k))`), uses `toUnixTimestamp` or the `parseDateTime` family without the time zone argument
   * (or with an empty one) to parse a string, converts a number as a Unix timestamp
-  * to a `Date` or `Date32` (like `toDate(k)`) or to a string (like `fromUnixTimestamp(k, '%F')`), or converts a `Date`
+  * to a `Date` or `Date32` (like `toDate(k)`, also inside a container, like `CAST([k] AS Array(Date))`) or to a string (like `fromUnixTimestamp(k, '%F')`), or converts a `Date`
   * or `Date32` to a point in time (like `toRelativeSecondNum(d)`): the result depends
   * on the time zone of the server, which may differ between the shards and the initiator.
   * The right-hand side of the `GLOBAL IN` family is an exception: the initiator computes the set once and sends the same
