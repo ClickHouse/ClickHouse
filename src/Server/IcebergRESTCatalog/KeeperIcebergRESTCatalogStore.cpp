@@ -16,6 +16,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
+    extern const int ICEBERG_CATALOG_CONCURRENT_UPDATE;
     extern const int INCORRECT_DATA;
     extern const int KEEPER_EXCEPTION;
 }
@@ -251,7 +252,7 @@ std::optional<UpdateNamespacePropertiesResult> KeeperIcebergRESTCatalogStore::up
             throw zkutil::KeeperException::fromPath(code, path);
     }
 
-    throw Exception(ErrorCodes::KEEPER_EXCEPTION, "Cannot update properties of namespace at {}: too many concurrent updates", path);
+    throw Exception(ErrorCodes::ICEBERG_CATALOG_CONCURRENT_UPDATE, "Cannot update properties of namespace at {}: too many concurrent updates", path);
 }
 
 std::vector<IcebergNamespaceName> KeeperIcebergRESTCatalogStore::listNamespaces(const IcebergNamespaceName & parent) const

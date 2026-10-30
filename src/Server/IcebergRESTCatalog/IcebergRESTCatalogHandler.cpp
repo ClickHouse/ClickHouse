@@ -51,6 +51,7 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
     extern const int QUERY_IS_PROHIBITED;
     extern const int READONLY;
+    extern const int ICEBERG_CATALOG_CONCURRENT_UPDATE;
     extern const int KEEPER_EXCEPTION;
     extern const int NO_ZOOKEEPER;
     extern const int REQUIRED_PASSWORD;
@@ -401,6 +402,13 @@ void IcebergRESTCatalogHandler::handleRequest(HTTPServerRequest & request, HTTPS
             status = Poco::Net::HTTPResponse::HTTP_SERVICE_UNAVAILABLE;
             type = "ServiceUnavailableException";
             message = "Catalog storage is unavailable";
+        }
+        /// The catalog is healthy, the client should retry the request.
+        else if (code == ErrorCodes::ICEBERG_CATALOG_CONCURRENT_UPDATE)
+        {
+            status = Poco::Net::HTTPResponse::HTTP_SERVICE_UNAVAILABLE;
+            type = "ServiceUnavailableException";
+            message = getCurrentExceptionMessage(false);
         }
 
         tryLogCurrentException(log, "Failed to process Iceberg REST catalog request");
