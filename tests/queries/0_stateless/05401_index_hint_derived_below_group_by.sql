@@ -2,6 +2,8 @@
 -- https://github.com/ClickHouse/ClickHouse/issues/124502: a derived hint still prunes below GROUP BY and LIMIT BY
 
 SET optimize_and_compare_chain = 1;
+-- Pinned (randomized in CI): a tiny work budget stops deriving the hints the checks below count.
+SET optimize_and_compare_chain_max_hash_work = 5000000;
 SET query_plan_filter_push_down = 1;
 SET use_query_condition_cache = 0;
 SET optimize_or_like_chain = 1;
