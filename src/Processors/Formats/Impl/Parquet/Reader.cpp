@@ -615,7 +615,6 @@ bool Reader::topKShouldSkipRowGroup(const RowGroup & row_group) const
     const auto & top_k = format_filter_info->top_k_filter;
     if (!top_k)
         return false;
-    /// See `refineTopKRangeFromDictionary`.
     if (row_group.top_k_no_value_passes)
         return true;
     if (!row_group.top_k_sort_column_range.has_value())
@@ -653,8 +652,6 @@ bool Reader::topKRowGroupMayBeBoundedByDictionary(size_t row_group_idx, const st
     return columnChunkCanUseDictionaryFilter(getColumnChunk(row_group_idx, primitive_columns[*top_k_primitive_idx].column_idx));
 }
 
-/// TopN dynamic filtering: the maximum length of the bounds of a `RowGroup::top_k_sort_column_range` taken from a
-/// dictionary, see `Reader::refineTopKRangeFromDictionary`.
 static constexpr size_t max_top_k_dictionary_bound_size = 256;
 
 void Reader::refineTopKRangeFromDictionary(RowGroup & row_group) const
@@ -694,11 +691,10 @@ void Reader::refineTopKRangeFromDictionary(RowGroup & row_group) const
         return;
     }
 
-    /// The range outlives the dictionary, so long values are cut, which only widens it.
+    /// Cutting long values only widens the range. A cut maximum of only 0xFF bytes has no successor, so the statistic stays.
     String max_bound(max_value.substr(0, max_top_k_dictionary_bound_size));
     if (max_value.size() > max_top_k_dictionary_bound_size)
         max_bound = firstStringThatIsGreaterThanAllStringsWithPrefix(max_bound);
-    /// Empty if every byte of the cut maximum is 0xFF: then the maximum statistic bounds the row group.
     Field right = max_bound.empty() ? row_group.top_k_sort_column_range->right : Field(std::move(max_bound));
     row_group.top_k_sort_column_range = Range(
         Field(String(min_value->substr(0, max_top_k_dictionary_bound_size))), true, std::move(right), true);
@@ -1305,8 +1301,7 @@ void Reader::prefilterAndInitRowGroups(const std::optional<std::unordered_set<UI
                     {
                         const String & column_name = format_filter_info->top_k_filter->column_name;
                         const auto & prewhere = format_filter_info->prewhere_info;
-                        /// The filter pushed down to the source is applied to every row it returns, like PREWHERE
-                        /// (that is why `key_condition` can prune row groups by it).
+                        /// The filter pushed down to the source is applied to every row it returns, like PREWHERE.
                         const auto & filter_dag = format_filter_info->filter_actions_dag;
                         top_k_dictionary_bound = (prewhere && prewhere->need_filter
                                 && filterRejectsEmptyString(prewhere->prewhere_actions, prewhere->prewhere_column_name, column_name))
@@ -1466,8 +1461,7 @@ void Reader::prefilterAndInitRowGroups(const std::optional<std::unordered_set<UI
             can_skip = accurateLess(a, b) || accurateLess(b, a);
         }
 
-        /// A row group bounded by its dictionary can be skipped only if the threshold is set when the row group
-        /// starts, so the row groups are started gradually (see `ReadManager::admitTopKRowGroups`).
+        /// The dictionary bound needs the threshold set when the row group starts, so the row groups are started gradually.
         for (size_t i = 0; !can_skip && i < candidates.size(); ++i)
             can_skip = topKRowGroupMayBeBoundedByDictionary(candidates[i].row_group_idx, candidates[i].top_k_sort_column_range);
 

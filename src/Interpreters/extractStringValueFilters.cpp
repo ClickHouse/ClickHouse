@@ -56,7 +56,6 @@ std::optional<String> tryGetStringInputName(const ActionsDAG::Node * node)
     return node->result_name;
 }
 
-/// Like `tryGetStringInputName`, also for a `LowCardinality(String)` or `LowCardinality(Nullable(String))` input.
 std::optional<String> tryGetStringOrLowCardinalityInputName(const ActionsDAG::Node * node)
 {
     node = skipAliases(node);
@@ -335,7 +334,6 @@ void tryExtractConditionsFromAtom(const ActionsDAG::Node * atom, ConditionsByCol
 
 bool filterNodeRejectsEmptyString(const ActionsDAG::Node * filter_node, const String & column_name)
 {
-    /// Only conjuncts: every row that one of them rejects is filtered out.
     std::vector<const ActionsDAG::Node *> stack;
     stack.push_back(skipAliases(filter_node));
     while (!stack.empty())
@@ -360,7 +358,6 @@ bool filterNodeRejectsEmptyString(const ActionsDAG::Node * filter_node, const St
             continue;
         }
 
-        /// `s != ''`, `s > ''`, and the same with the arguments swapped.
         if ((name == "notEquals" || name == "greater" || name == "less") && node->children.size() == 2)
         {
             for (size_t column_pos : {0, 1})

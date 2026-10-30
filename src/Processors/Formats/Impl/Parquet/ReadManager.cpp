@@ -296,8 +296,7 @@ void ReadManager::finishRowGroupStage(size_t row_group_idx, ReadStage stage, Mem
     }
     else if (stage == ReadStage::Dictionary)
     {
-        /// Without a condition, the stage only decoded the dictionaries for `ColumnChunk::decode_dictionary_early`
-        /// or `ColumnChunk::decode_dictionary_for_top_k`.
+        /// Without a condition, the stage only decoded the dictionaries for `decode_dictionary_early` or `decode_dictionary_for_top_k`.
         if (reader.bloom_filter_condition && !reader.applyBloomAndDictionaryFilters(row_group, pruningMemoryReservation(diff)))
         {
             ProfileEvents::increment(ProfileEvents::ParquetDictionaryFilterPrunedRowGroups);
@@ -305,9 +304,7 @@ void ReadManager::finishRowGroupStage(size_t row_group_idx, ReadStage stage, Mem
         }
         else
         {
-            /// Checked against the threshold in the `OffsetIndex` stage.
             reader.refineTopKRangeFromDictionary(row_group);
-            /// If the row group is read, the data read decodes the dictionary again.
             for (auto & c : row_group.columns)
             {
                 if (!c.decode_dictionary_for_top_k)
@@ -355,7 +352,6 @@ void ReadManager::finishRowGroupStage(size_t row_group_idx, ReadStage stage, Mem
                 for (size_t i = 0; i < row_group.columns.size(); ++i)
                 {
                     auto & column = row_group.columns[i];
-                    /// Before the TopN threshold is set, the bound could not skip the row group.
                     column.decode_dictionary_for_top_k = column.top_k_bound_from_dictionary
                         && reader.format_filter_info->top_k_filter->threshold_tracker->isSet()
                         && !column.use_dictionary_filter && !column.decode_dictionary_early;
@@ -1324,10 +1320,9 @@ void ReadManager::runTask(Task task, bool last_in_batch, MemoryUsageDiff & diff)
                 /// `Reader::applyBloomFilters` evaluates the condition.
                 break;
             case ReadStage::Dictionary:
-                /// The dictionary is decoded here for the dictionary filter, to estimate the size of the decoded
-                /// strings (see `ColumnChunk::decode_dictionary_early`), or to bound the row group for the TopN
-                /// threshold. The same budget is used for all: if the dictionary does not fit, the size of the
-                /// strings stays unknown.
+                /// The dictionary is decoded here for the dictionary filter, to estimate the size of the decoded strings
+                /// (see `ColumnChunk::decode_dictionary_early`), or to bound the row group for the TopN threshold. The same
+                /// budget is used for all: if the dictionary does not fit, the size of the strings stays unknown.
                 if (column.use_dictionary_filter || column.decode_dictionary_early || column.decode_dictionary_for_top_k)
                 {
                     /// Reserve the decoded dictionary's footprint live against the shared pruning-stage

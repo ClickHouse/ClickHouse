@@ -27,8 +27,8 @@ class Field;
 StringValueFiltersPtr extractStringValueFilters(
     const ActionsDAG & filter_dag, const String & filter_column_name, const ActionsDAG * row_level_filter = nullptr);
 
-/// Whether the filter expression rejects every row in which the `String` (or `LowCardinality(String)`) column `column_name` is empty,
-/// i.e. one of its conjuncts is `s != ''`, `notEmpty(s)`, `s > ''` or a condition that `extractStringValueFilters` extracts.
+/// Whether a conjunct of the filter rejects every row with an empty `column_name`: `s != ''`, `notEmpty(s)` or `s > ''` (either argument
+/// order; also on `LowCardinality(String)`), or a condition that `extractStringValueFilters` extracts from a `String` column.
 bool filterRejectsEmptyString(const ActionsDAG & filter_dag, const String & filter_column_name, const String & column_name);
 /// Same for a filter DAG whose only output is the filter.
 bool filterRejectsEmptyString(const ActionsDAG & filter_dag, const String & column_name);
