@@ -804,7 +804,7 @@ endif ()
 
 # Keep the stack non-executable even if an input object asks for an executable one (for GNU ld, an assembly source
 # without a `.note.GNU-stack` section does), and forbid loading the executable with `dlopen`. Same exclusions as above.
-if (NOT OS_DARWIN AND NOT OS_WASM AND NOT LINKER_IS_SOLARIS)
+if (NOT OS_DARWIN AND NOT OS_WASM AND NOT OS_WINDOWS AND NOT LINKER_IS_SOLARIS)
     set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,-z,noexecstack -Wl,-z,nodlopen")
 endif ()
 
