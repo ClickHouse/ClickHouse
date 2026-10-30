@@ -2155,10 +2155,11 @@ static ColumnPtr NO_SANITIZE_UNDEFINED convertNumericGeneral(
 
     /// For the plain conversion from float to integer, the range of the values is checked for the whole column
     /// after the loop, so that the loop has no early exit and can be vectorized.
-    /// The conversion of a value outside the range of the result type (including inf and nan) is undefined, and the
-    /// vectorized and the scalar code convert it differently: for example, 5e9 becomes 2147483648 or 705032704 in `UInt32`,
-    /// depending on the position of the row in the block. So a column with such a value is converted again by the loop below,
-    /// which reports inf and nan, and converts the other values the same way in every row.
+    /// The conversion of a value outside the range of the result type (including inf and nan) is undefined, so this loop
+    /// stores zero in its place, and a column with such a value is converted again by the loop below, which reports
+    /// inf and nan. The loop below converts the finite values outside the range one by one, so that they are converted
+    /// the same way in every row: the vectorized code would convert them differently, for example, 5e9 becomes 2147483648
+    /// or 705032704 in `UInt32`, depending on the position of the row in the block.
     if constexpr (is_floating_point<FromFieldType> && !is_floating_point<ToFieldType> && !is_big_int_v<ToFieldType>
         && !std::is_same_v<Additions, AccurateOrNullConvertStrategyAdditions>
         && !std::is_same_v<Additions, AccurateConvertStrategyAdditions>)
@@ -2176,8 +2177,11 @@ static ColumnPtr NO_SANITIZE_UNDEFINED convertNumericGeneral(
         for (size_t i = 0; i < input_rows_count; ++i)
         {
             const auto value = static_cast<CompareType>(from[i]);
-            all_in_range &= value > lower_bound && value < upper_bound;
-            to[i] = static_cast<ToFieldType>(from[i]);
+            const bool in_range = value > lower_bound && value < upper_bound;
+            all_in_range &= in_range;
+            /// Not `static_cast<ToFieldType>(in_range ? value : 0)`: the conversion to a 64-bit integer is scalar,
+            /// and it would have to extract every value from a vector register instead of loading it from memory.
+            to[i] = in_range ? static_cast<ToFieldType>(value) : ToFieldType(0);
         }
         if (all_in_range)
             return std::move(col_to);
