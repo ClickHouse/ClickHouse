@@ -2,8 +2,6 @@
 -- A leading `^` whose quantifier allows zero repetitions (`^?`, `^*`, `^{0,3}`) is optional, so the pattern can match at any offset
 -- and `replaceRegexpAll` must stay a global replace. A `^` that has to match at least once (`^+`, `^{1,3}`) still anchors it.
 
-SET enable_analyzer = 1;
-
 SELECT replaceRegexpAll(materialize('xfx'), '^?x', 'Z'), replaceRegexpAll(materialize('xfx'), '^*x', 'Z'), replaceRegexpAll(materialize('xfx'), '^{0,3}x', 'Z'), replaceRegexpAll(materialize('xfx'), '^??x', 'Z'), regexp_replace(materialize('xfx'), '^?x', 'Z');
 SELECT replaceRegexpAll(materialize('xfx'), '^\\Q\\E?x', 'Z'), replaceRegexpAll(materialize('xfx'), '^(?i)?x', 'Z');
 SELECT replaceRegexpAll(materialize('xfx'), '^?x', 'Z'), replaceRegexpAll(materialize('xfx'), '^*x', 'Z'), replaceRegexpAll(materialize('xfx'), '^{0,3}x', 'Z'), replaceRegexpAll(materialize('xfx'), '^??x', 'Z'), regexp_replace(materialize('xfx'), '^?x', 'Z') SETTINGS optimize_rewrite_regexp_functions = 0;

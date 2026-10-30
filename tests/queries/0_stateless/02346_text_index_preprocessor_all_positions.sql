@@ -1,4 +1,3 @@
-SET enable_analyzer = 1;
 SET enable_full_text_index = 1;
 SET enable_lightweight_update = 1;
 SET use_query_condition_cache = 0;

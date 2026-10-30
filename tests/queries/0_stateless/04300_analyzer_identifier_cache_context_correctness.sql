@@ -2,8 +2,6 @@
 -- change results. Each scenario is run with the cache disabled and then enabled; the two
 -- output blocks must be identical. These cover two context-sensitivity bugs found in review.
 
-SET enable_analyzer = 1;
-
 -- 1. Compound-alias shadowing. `value` is an alias for a tuple; a later `value.a` must bind
 -- to that alias (the rewritten field), not to the source column `value.a` resolved while the
 -- alias itself was being built. Caching keyed on the first identifier component prevents the

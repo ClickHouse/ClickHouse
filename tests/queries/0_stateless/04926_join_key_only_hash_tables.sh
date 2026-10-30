@@ -57,8 +57,8 @@ SELECT count() FROM l_num AS l ANTI LEFT JOIN r_num AS r ON l.k = r.k OR l.small
 SELECT count() FROM l_num AS l SEMI LEFT JOIN r_num AS r ON l.k = r.k OR l.s = r.s;
 SELECT l.k, r.p FROM l_num AS l ANTI LEFT JOIN r_num AS r ON l.k = r.k OR l.n = r.n ORDER BY l.k;
 SELECT '-- mixed join expression keeps every right row';
-SELECT count() FROM l_num AS l ANTI LEFT JOIN r_num AS r ON l.k = r.k AND l.v < r.p SETTINGS enable_analyzer = 1;
-SELECT count() FROM l_num AS l SEMI LEFT JOIN r_num AS r ON l.k = r.k AND l.v < r.p SETTINGS enable_analyzer = 1;
+SELECT count() FROM l_num AS l ANTI LEFT JOIN r_num AS r ON l.k = r.k AND l.v < r.p;
+SELECT count() FROM l_num AS l SEMI LEFT JOIN r_num AS r ON l.k = r.k AND l.v < r.p;
 SELECT '-- dense small range, converted to a flat array';
 SELECT count() FROM l_num AS l ANTI LEFT JOIN r_num AS r ON l.k = r.k SETTINGS enable_join_fixed_hash_table_conversion = 1;
 SELECT '-- other join algorithms';

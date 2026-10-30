@@ -3,8 +3,6 @@
 -- that is built on top of another recursive CTE used to fail with a logical error:
 -- `UNION query t1 AS (...) is not recursive`.
 
-SET enable_analyzer = 1;
-
 -- The query from the issue, keeping its exact shape: `subquery2` is a plain CTE over the
 -- recursive `subquery1`, and the recursive part of `subquery3` has two branches, one of
 -- them joining `subquery3` with `subquery2`. The original query is valid but does not
