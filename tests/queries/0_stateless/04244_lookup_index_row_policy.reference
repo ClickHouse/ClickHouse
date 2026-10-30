@@ -1,0 +1,12 @@
+set: no row policy
+1
+2
+3
+join: no row policy
+1	a
+2	b
+3	c
+set: with row policy id = 1
+1
+join: with row policy id = 1
+1	a
