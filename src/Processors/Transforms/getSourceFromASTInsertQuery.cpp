@@ -1776,9 +1776,10 @@ String getInsertDataSchemaMismatchDescription(
                         if (inferred_by_name.get(name.substr(0, dot)) != CaseAwareBlockNameMap::NOT_FOUND)
                             return true;
                     }
-                    catch (...)
+                    catch (...) // NOLINT(bugprone-empty-catch)
                     {
-                        /// An ambiguous case-insensitive match: stay on the low-false-positive side.
+                        /// An ambiguous case-insensitive match: stay on the low-false-positive side, so it
+                        /// is Ok to ignore the exception here.
                         return true;
                     }
                 }
