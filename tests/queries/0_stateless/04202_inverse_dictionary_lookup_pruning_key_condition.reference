@@ -1,6 +1,5 @@
 -- { echo }
 
-SET enable_analyzer = 1;
 SET optimize_or_like_chain = 0;
 DROP TABLE IF EXISTS pruning_ref;
 DROP TABLE IF EXISTS pruning_data;

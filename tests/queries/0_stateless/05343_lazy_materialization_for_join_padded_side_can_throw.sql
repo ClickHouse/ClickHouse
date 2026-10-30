@@ -4,7 +4,6 @@
 -- different scales are rescaled to a common scale, which can overflow. Such a comparison is computed below the LIMIT,
 -- where the join pads its result, while a comparison of decimals of the same scale is computed above it.
 
-SET enable_analyzer = 1;
 SET query_plan_optimize_lazy_materialization = 1;
 SET query_plan_lazy_materialization_for_join = 1;
 SET query_plan_max_limit_for_lazy_materialization = 100;

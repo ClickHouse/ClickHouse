@@ -14,7 +14,6 @@ ${CLICKHOUSE_CLIENT} -q "INSERT INTO t_repro_04034 SELECT number % 5 FROM number
 
 # Settings sent via client flags go through TCPHandler's passed_settings path, matching how the stress test randomiser injects settings
 ${CLICKHOUSE_CLIENT} \
-    --enable_analyzer=1 \
     --compatibility='23.8' \
     --enable_parallel_replicas=1 \
     --max_parallel_replicas=3 \
