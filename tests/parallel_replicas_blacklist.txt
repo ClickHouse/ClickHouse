@@ -1,13 +1,5 @@
     # BUGS
 
-    Can't select from temporary table
-    ReadFromParallelRemoteReplicasStep: There is no table `_temporary_and_external_tables`.`_tmp_fad23aad-ce65-4447-81fe-114409a5f0f9` on server: 127.0.0.2:9000
-00542_access_to_temporary_table_in_readonly_mode
-03156_nullable_number_tips
-03143_cte_scope
-02995_bad_formatting_union_intersect
-03045_unknown_identifier_alias_substitution
-
     https://github.com/ClickHouse/ClickHouse/issues/74367
     Cannot find column in source stream
 01358_mutation_delete_null_rows
