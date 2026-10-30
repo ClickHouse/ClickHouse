@@ -1302,7 +1302,7 @@ void AlterCommand::apply(
         for (const auto & column : as_select_sample->getNamesAndTypesList())
         {
             const auto * previous_column = metadata.columns.tryGet(column.name);
-            new_columns.add(ColumnDescription(column.name, column.type, previous_column ? previous_column->comment : String{}));
+            new_columns.add(ColumnDescription(column.name, removeQuantizeSerializations(column.type), previous_column ? previous_column->comment : String{}));
         }
         metadata.columns = std::move(new_columns);
     }
