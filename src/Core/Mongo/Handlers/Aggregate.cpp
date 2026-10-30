@@ -8,7 +8,16 @@
 #include <Parsers/Mongo/parseMongoQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
 
+#include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeFactory.h>
+#include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeMap.h>
+#include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeTuple.h>
+#include <IO/ReadBufferFromString.h>
+#include <IO/ReadHelpers.h>
 #include <IO/WriteBufferFromString.h>
+#include <IO/WriteHelpers.h>
 #include <Common/Exception.h>
 
 #include <rapidjson/document.h>
@@ -54,7 +63,47 @@ bool pipelineReadsOtherCollections(const rapidjson::Value & pipeline)
     return false;
 }
 
-/// The names of the columns a select produces, in their order.
+/** The field names a value of the type has inside it: the names of the elements of a named tuple,
+  * which is a subdocument, and of the tuples inside arrays, maps and other tuples. A tuple without
+  * names is an array of the reply, and has no names of its own.
+  */
+void writeNestedFieldNames(const DataTypePtr & type, WriteBuffer & out)
+{
+    if (const auto * nullable = typeid_cast<const DataTypeNullable *>(type.get()))
+        return writeNestedFieldNames(nullable->getNestedType(), out);
+    if (const auto * low_cardinality = typeid_cast<const DataTypeLowCardinality *>(type.get()))
+        return writeNestedFieldNames(low_cardinality->getDictionaryType(), out);
+    if (const auto * array = typeid_cast<const DataTypeArray *>(type.get()))
+    {
+        writeCString("[", out);
+        writeNestedFieldNames(array->getNestedType(), out);
+        writeCString("]", out);
+        return;
+    }
+    if (const auto * map = typeid_cast<const DataTypeMap *>(type.get()))
+    {
+        writeCString("{", out);
+        writeNestedFieldNames(map->getValueType(), out);
+        writeCString("}", out);
+        return;
+    }
+    if (const auto * tuple = typeid_cast<const DataTypeTuple *>(type.get()))
+    {
+        writeCString(tuple->hasExplicitNames() ? "(named" : "(", out);
+        for (size_t i = 0; i < tuple->getElements().size(); ++i)
+        {
+            writeChar(' ', out);
+            if (tuple->hasExplicitNames())
+                writeQuotedString(tuple->getNameByPosition(i + 1), out);
+            writeNestedFieldNames(tuple->getElement(i), out);
+        }
+        writeCString(")", out);
+    }
+}
+
+/** The fields of the documents a select produces, in their order: the name of each column, with
+  * the names of the fields of the subdocuments its type holds.
+  */
 std::vector<String> resultColumnNames(const ASTPtr & select, std::shared_ptr<QueryExecutor> executor)
 {
     String select_text;
@@ -68,7 +117,17 @@ std::vector<String> resultColumnNames(const ASTPtr & select, std::shared_ptr<Que
     {
         if (line.empty())
             continue;
-        names.push_back(line.substr(0, line.find('\t')));
+        ReadBufferFromString in(line);
+        String name;
+        String type_name;
+        readEscapedString(name, in);
+        assertChar('\t', in);
+        readEscapedString(type_name, in);
+
+        WriteBufferFromOwnString fields;
+        writeEscapedString(name, fields);
+        writeNestedFieldNames(DataTypeFactory::instance().get(type_name), fields);
+        names.push_back(fields.str());
     }
     return names;
 }
@@ -77,7 +136,9 @@ std::vector<String> resultColumnNames(const ASTPtr & select, std::shared_ptr<Que
   * positions, while Mongo keeps the field names of every document: a collection `b(y, x)` united
   * with `a(x, y)` would have its `y` returned as `x`. The fields are not known until the selects are
   * analyzed, so the union is refused when its selects do not produce the same names in the same
-  * order, rather than answered with values under the wrong fields.
+  * order, rather than answered with values under the wrong fields. The same holds for the fields
+  * of a subdocument, a named tuple: the common type of two tuples with different names has no
+  * names at all, and would be returned as an array.
   */
 void checkUnionColumnNames(const ASTPtr & node, std::shared_ptr<QueryExecutor> executor)
 {

@@ -266,8 +266,10 @@ static void applyReplyOutputSettings(ContextMutablePtr & query_context)
     query_context->setSetting("transfer_overflow_mode", String("throw"));
 
     /// The dates of the result are parsed back into BSON dates, so they must be formatted the
-    /// way the parsing expects rather than the way the user's profile asks.
-    query_context->setSetting("date_time_output_format", String("simple"));
+    /// way the parsing expects rather than the way the user's profile asks. A BSON date is an
+    /// instant, so it is written in UTC: the local time of a column's time zone names two
+    /// instants in the hour the clocks are set back.
+    query_context->setSetting("date_time_output_format", String("iso"));
 
     /// Everything the handlers run through this executor is ClickHouse SQL that they wrote
     /// themselves - the Mongo request has already been translated by then. A profile that turns
@@ -309,6 +311,12 @@ static void applyAcknowledgedWriteSettings(ContextMutablePtr & query_context)
     query_context->setSetting("input_format_allow_errors_num", Field(UInt64(0)));
     query_context->setSetting("input_format_allow_errors_ratio", Field(Float64(0)));
     query_context->setSetting("skip_unavailable_shards", false);
+    /// A field the document supplies must be stored as it was supplied: an empty string must not
+    /// be replaced by the default of its column, and a member of a nested object that the named
+    /// tuple it goes into has no place for must be an error rather than dropped, the same as an
+    /// unknown top-level field is.
+    query_context->setSetting("input_format_json_empty_as_default", false);
+    query_context->setSetting("input_format_json_ignore_unknown_keys_in_named_tuple", false);
 }
 
 ContextMutablePtr QueryExecutor::makeQueryContext()

@@ -26,6 +26,7 @@
 #include <bson/bson.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
+#include <IO/parseDateTimeBestEffort.h>
 #include <Common/Exception.h>
 #include <Common/FailPoint.h>
 #include <Common/StringUtils.h>
@@ -435,28 +436,76 @@ Int64 dateTime64ToMilliseconds(DateTime64 value, UInt32 scale)
 /** The events of a JSON text passed on to a document, except that the parser hands over every
   * number as its text (`kParseNumbersAsStringsFlag`): the ones that fit a 64-bit integer or are not
   * integers become the numbers RapidJSON would have built, and an integer that does not fit 64 bits
-  * becomes the string of its digits, which RapidJSON would have rounded into a double - but only in
-  * a column whose type holds such integers. In any other column - a `Dynamic` or a `JSON` value, a
-  * float written as its digits - it stays the double RapidJSON would have built, because the type
-  * of that column cannot tell the string of a number from a string.
+  * becomes the string of its digits, which RapidJSON would have rounded into a double - but only
+  * where the type of the value is such an integer. The type of every value is followed down from
+  * the type of its column, through the elements of arrays, tuples and maps, so that anywhere else -
+  * a `Dynamic` or a `JSON` value, even inside a tuple next to a wide integer, or a float written as
+  * its digits - the number stays the double RapidJSON would have built: the type of such a value
+  * cannot tell the string of a number from a string.
   */
 struct WideIntegerPreservingHandler
 {
     rapidjson::Document & target;
-    /// For each column of a positional row, whether its type holds integers wider than 64 bits.
-    const std::vector<bool> & wide_columns;
+    /// The type of each column of a positional row.
+    const std::vector<DataTypePtr> & column_types;
 
-    /// How deep the current value is: 1 inside the array of the row, more inside a value of it.
-    size_t depth = 0;
-    /// The column of the row the current value belongs to.
-    size_t column = 0;
+    /// An array or an object being read, with the type it is a value of: the row itself, an array,
+    /// a tuple (an array, or an object when its elements have names), or a map (an object).
+    struct Frame
+    {
+        bool is_row = false;
+        DataTypePtr type;
+        /// The position of the next value inside it.
+        size_t position = 0;
+        /// The type of the value of the last key of an object.
+        DataTypePtr type_of_key;
+    };
+    std::vector<Frame> frames;
 
-    /// A value of the row ended: the next one is of the next column.
+    static DataTypePtr unwrap(DataTypePtr type)
+    {
+        return type ? removeLowCardinalityAndNullable(type) : type;
+    }
+
+    /// The type of the value that starts now, or nothing when it is not known.
+    DataTypePtr expectedType() const
+    {
+        if (frames.empty())
+            return nullptr;
+        const auto & frame = frames.back();
+        if (frame.is_row)
+            return frame.position < column_types.size() ? unwrap(column_types[frame.position]) : nullptr;
+        if (!frame.type)
+            return nullptr;
+        if (const auto * array = typeid_cast<const DataTypeArray *>(frame.type.get()))
+            return unwrap(array->getNestedType());
+        if (const auto * tuple = typeid_cast<const DataTypeTuple *>(frame.type.get()))
+        {
+            if (tuple->hasExplicitNames())
+                return frame.type_of_key;
+            return frame.position < tuple->getElements().size() ? unwrap(tuple->getElement(frame.position)) : nullptr;
+        }
+        if (typeid_cast<const DataTypeMap *>(frame.type.get()))
+            return frame.type_of_key;
+        return nullptr;
+    }
+
+    /// A value ended: the next one is at the next position of the array or the object it is in.
     bool endValue(bool result)
     {
-        if (depth == 1)
-            ++column;
+        if (!frames.empty())
+            ++frames.back().position;
         return result;
+    }
+
+    bool startContainer(bool is_row)
+    {
+        Frame frame;
+        frame.is_row = is_row;
+        if (!is_row)
+            frame.type = expectedType();
+        frames.push_back(std::move(frame));
+        return true;
     }
 
     bool Null() { return endValue(target.Null()); }
@@ -469,23 +518,36 @@ struct WideIntegerPreservingHandler
     bool String(const char * str, rapidjson::SizeType length, bool copy) { return endValue(target.String(str, length, copy)); }
     bool StartObject()
     {
-        ++depth;
+        startContainer(/* is_row = */ false);
         return target.StartObject();
     }
-    bool Key(const char * str, rapidjson::SizeType length, bool copy) { return target.Key(str, length, copy); }
+    bool Key(const char * str, rapidjson::SizeType length, bool copy)
+    {
+        auto & frame = frames.back();
+        frame.type_of_key = nullptr;
+        if (const auto * tuple = typeid_cast<const DataTypeTuple *>(frame.type.get()); tuple && tuple->hasExplicitNames())
+        {
+            if (auto position = tuple->tryGetPositionByName(std::string_view(str, length)))
+                frame.type_of_key = unwrap(tuple->getElement(*position));
+        }
+        else if (const auto * map = typeid_cast<const DataTypeMap *>(frame.type.get()))
+            frame.type_of_key = unwrap(map->getValueType());
+        return target.Key(str, length, copy);
+    }
     bool EndObject(rapidjson::SizeType member_count)
     {
-        --depth;
+        frames.pop_back();
         return endValue(target.EndObject(member_count));
     }
     bool StartArray()
     {
-        ++depth;
+        /// The outermost array is the row, whose elements are the columns.
+        startContainer(/* is_row = */ frames.empty());
         return target.StartArray();
     }
     bool EndArray(rapidjson::SizeType element_count)
     {
-        --depth;
+        frames.pop_back();
         return endValue(target.EndArray(element_count));
     }
 
@@ -512,8 +574,12 @@ struct WideIntegerPreservingHandler
                 if (auto [ptr, error] = std::from_chars(str, end, unsigned_value); error == std::errc() && ptr == end)
                     return target.Uint64(unsigned_value);
             }
-            if (depth >= 1 && column < wide_columns.size() && wide_columns[column])
-                return target.String(str, length, copy);
+            if (auto type = expectedType())
+            {
+                WhichDataType which(type);
+                if (which.isInt128() || which.isUInt128() || which.isInt256() || which.isUInt256())
+                    return target.String(str, length, copy);
+            }
         }
 
         rapidjson::Document number;
@@ -525,15 +591,15 @@ struct WideIntegerPreservingHandler
 
 }
 
-bool parseResultRow(rapidjson::Document & row, std::string_view line, const std::vector<bool> & wide_columns)
+bool parseResultRow(rapidjson::Document & row, std::string_view line, const std::vector<DataTypePtr> & column_types)
 {
-    if (std::find(wide_columns.begin(), wide_columns.end(), true) == wide_columns.end())
+    if (std::none_of(column_types.begin(), column_types.end(), [](const auto & type) { return type && hasWideIntegers(type); }))
         return !row.Parse(line.data(), line.size()).HasParseError();
 
     bool parsed = false;
     auto generator = [&](rapidjson::Document & target)
     {
-        WideIntegerPreservingHandler handler{.target = target, .wide_columns = wide_columns};
+        WideIntegerPreservingHandler handler{.target = target, .column_types = column_types, .frames = {}};
         rapidjson::MemoryStream stream(line.data(), line.size());
         rapidjson::Reader reader;
         parsed = !reader.Parse<rapidjson::kParseNumbersAsStringsFlag>(stream, handler).IsError();
@@ -576,7 +642,10 @@ void appendTypedValue(bson_t * document, const String & key, const rapidjson::Va
         const auto & datetime_type = assert_cast<const DataTypeDateTime64 &>(*unwrapped);
         DateTime64 datetime(0);
         ReadBufferFromString in(std::string_view(value.GetString(), value.GetStringLength()));
-        readDateTime64Text(datetime, datetime_type.getScale(), in, datetime_type.getTimeZone());
+        /// The value is written in UTC with an explicit `Z` (`date_time_output_format = 'iso'`, see
+        /// `MongoProtocol.cpp`): the local time of the column's time zone is ambiguous when the
+        /// clocks are set back, and would read back as the later of the two instants.
+        parseDateTime64BestEffort(datetime, datetime_type.getScale(), in, datetime_type.getTimeZone(), DateLUT::instance("UTC"));
         bson_append_date_time(document, key.data(), key_length, dateTime64ToMilliseconds(datetime, datetime_type.getScale()));
         return;
     }
@@ -585,7 +654,7 @@ void appendTypedValue(bson_t * document, const String & key, const rapidjson::Va
         const auto & datetime_type = assert_cast<const DataTypeDateTime &>(*unwrapped);
         time_t datetime = 0;
         ReadBufferFromString in(std::string_view(value.GetString(), value.GetStringLength()));
-        readDateTimeText(datetime, in, datetime_type.getTimeZone());
+        parseDateTimeBestEffort(datetime, in, datetime_type.getTimeZone(), DateLUT::instance("UTC"));
         bson_append_date_time(document, key.data(), key_length, static_cast<Int64>(datetime) * 1000);
         return;
     }
@@ -910,7 +979,7 @@ std::vector<Document> executeSelectIntoCursor(
     std::vector<std::pair<String, DataTypePtr>> columns;
     FieldTree tree;
     /// Set once the types of the columns are known, for the rows that follow them.
-    std::vector<bool> wide_columns;
+    std::vector<DataTypePtr> column_types;
 
     auto append_row_document = [&](bson_t * row_document)
     {
@@ -933,7 +1002,7 @@ std::vector<Document> executeSelectIntoCursor(
     auto on_row = [&](std::string_view line)
     {
         rapidjson::Document json;
-        if (!parseResultRow(json, line, wide_columns))
+        if (!parseResultRow(json, line, column_types))
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Can not parse the result of the query");
 
         if (holds_documents)
@@ -973,7 +1042,7 @@ std::vector<Document> executeSelectIntoCursor(
                 if (!type.IsString())
                     throw Exception(ErrorCodes::BAD_ARGUMENTS, "The column list of the result is malformed");
                 columns.emplace_back(names[i], DataTypeFactory::instance().get(type.GetString()));
-                wide_columns.push_back(hasWideIntegers(columns.back().second));
+                column_types.push_back(columns.back().second);
             }
 
             /// A conflict - the columns `a` and `a.b` in one result - keeps the dotted names of both as

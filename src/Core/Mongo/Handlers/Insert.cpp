@@ -160,6 +160,13 @@ void flattenDocument(
 
         if (it->value.IsObject())
         {
+            /// A subdocument becomes the columns of its paths, and an empty one has no path: it
+            /// would disappear from the document without anything refusing the field.
+            if (it->value.ObjectEmpty())
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS,
+                    "The field '{}' is an empty document, which has no column to be written into in this table",
+                    full_name);
             flattenDocument(it->value, full_name, out, allocator, wrapper_types, drop_object_id);
             continue;
         }

@@ -169,8 +169,9 @@ def test_find_query(started_cluster):
         {"name": "Charlie Brown", "age": 24, "city": "Los Angeles"},
     ]
 
-    # An inclusion projection keeps `_id` unless it excludes it, as MongoDB does.
-    find_docs = [doc for doc in collection.find(projection={"abacaba": "name"})]
+    # An inclusion projection keeps `_id` unless it excludes it, as MongoDB does. A string that
+    # starts with `$` is a field path, and any other string is a literal.
+    find_docs = [doc for doc in collection.find(projection={"abacaba": "$name"})]
     assert all("_id" in doc for doc in find_docs)
     find_docs = sorted(without_ids(find_docs), key=lambda x: x["abacaba"])
     assert find_docs == [
@@ -178,6 +179,8 @@ def test_find_query(started_cluster):
         {"abacaba": "Charlie Brown"},
         {"abacaba": "David Williams"},
     ]
+    find_docs = [doc for doc in collection.find(projection={"_id": 0, "label": "name"})]
+    assert find_docs == [{"label": "name"}] * 3
 
     find_docs = [doc for doc in collection.find().sort("city", 1)]
     assert without_ids(find_docs) == [
@@ -1261,14 +1264,15 @@ def test_readback_preserves_document_shape(started_cluster):
     assert without_ids(collection.find({"id": 1}, {"profile.name": 1})) == [{"profile": {"name": "alpha"}}]
 
     # A value a projection or a pipeline computes is returned with the type its JSON carries: the
-    # documents a `find` reads as they are stored are the ones that keep their dates.
+    # documents a `find` reads as they are stored are the ones that keep their dates. A date there
+    # is the ISO 8601 text of the instant, in UTC.
     assert without_ids(collection.aggregate([{"$match": {"id": 2}}, {"$project": {"when": 1}}])) == [
-        {"when": "2022-07-02 13:30:00.000000000"}
+        {"when": "2022-07-02T13:30:00.000000000Z"}
     ]
 
     assert collection.distinct("when") == [
-        "2021-06-01 12:00:00.000000000",
-        "2022-07-02 13:30:00.000000000",
+        "2021-06-01T12:00:00.000000000Z",
+        "2022-07-02T13:30:00.000000000Z",
     ]
 
 
@@ -1986,13 +1990,13 @@ def test_wide_integers_keep_their_digits(started_cluster):
     node.query("DROP TABLE IF EXISTS db.wide_integers", password="123")
     node.query(
         "CREATE TABLE db.wide_integers (id Int64, a Int128, b UInt128, c Int256, d UInt256, e Array(Int128), f Float64, "
-        "g Dynamic) "
+        "g Dynamic, t Tuple(w Int128, d Dynamic)) "
         "ENGINE = MergeTree ORDER BY id",
         password="123",
     )
     node.query(
         "INSERT INTO db.wide_integers VALUES (1, 18446744073709551617, 340282366920938463463374607431768211455, "
-        "-18446744073709551617, 12, [18446744073709551617, 3], 1e20, 1e20::Float64)",
+        "-18446744073709551617, 12, [18446744073709551617, 3], 1e20, 1e20::Float64, (toInt128('18446744073709551617'), 1e20::Float64))",
         password="123",
     )
 
@@ -2006,15 +2010,84 @@ def test_wide_integers_keep_their_digits(started_cluster):
     assert document["f"] == 1e20 and isinstance(document["f"], float)
     # A value of a column without a type of its own is not a wide integer because another column is.
     assert document["g"] == 1e20 and isinstance(document["g"], float)
+    # The same inside a subdocument that holds a wide integer next to it.
+    assert document["t"]["w"] == bson.Decimal128("18446744073709551617")
+    assert document["t"]["d"] == 1e20 and isinstance(document["t"]["d"], float)
     assert collection.distinct("a") == [bson.Decimal128("18446744073709551617")]
 
     node.query("DROP TABLE db.wide_integers", password="123")
 
 
+def test_written_and_read_values_are_kept(started_cluster):
+    """A write keeps every field it is acknowledged for, and a read returns the instants it stores.
+
+    An empty subdocument has no column to be written into, and a member of a nested object that
+    its named tuple has no element for is not dropped. Two instants that the clocks set back read
+    as the same local time are told apart. A union whose subdocuments name their fields in another
+    order is refused rather than returned as arrays. A message that asks for no reply is refused
+    by closing the connection, because every command here is answered."""
+    node = cluster.instances["node"]
+    node.query("CREATE DATABASE IF NOT EXISTS db", password="123")
+    tables = ["kept_values", "kept_tuples", "kept_dates", "union_a", "union_b"]
+    for table in tables:
+        node.query(f"DROP TABLE IF EXISTS db.{table}", password="123")
+    node.query("CREATE TABLE db.kept_values (id Int64) ENGINE = MergeTree ORDER BY id", password="123")
+    node.query(
+        "CREATE TABLE db.kept_tuples (id Int64, a Array(Tuple(known Int64))) ENGINE = MergeTree ORDER BY id",
+        password="123",
+    )
+    node.query(
+        "CREATE TABLE db.kept_dates (id Int64, d DateTime('America/New_York')) ENGINE = MergeTree ORDER BY id",
+        password="123",
+    )
+    node.query(
+        "CREATE TABLE db.union_a (profile Tuple(name String, city String)) ENGINE = MergeTree ORDER BY tuple()",
+        password="123",
+    )
+    node.query(
+        "CREATE TABLE db.union_b (profile Tuple(city String, name String)) ENGINE = MergeTree ORDER BY tuple()",
+        password="123",
+    )
+    database = make_client()["db"]
+
+    with pytest.raises(pymongo.errors.OperationFailure, match="empty document"):
+        database["kept_values"].insert_one({"id": 1, "extra": {}})
+    with pytest.raises(pymongo.errors.OperationFailure):
+        database["kept_tuples"].insert_one({"id": 1, "a": [{"known": 1, "extra": 2}]})
+    assert database["kept_values"].count_documents({}) == 0
+    assert database["kept_tuples"].count_documents({}) == 0
+
+    first = datetime.datetime(2026, 11, 1, 5, 30)
+    second = datetime.datetime(2026, 11, 1, 6, 30)
+    node.query(
+        "INSERT INTO db.kept_dates VALUES (1, toDateTime('2026-11-01 05:30:00', 'UTC')), "
+        "(2, toDateTime('2026-11-01 06:30:00', 'UTC'))",
+        password="123",
+    )
+    dates = [document["d"] for document in database["kept_dates"].find({}, {"_id": 0}).sort("id", 1)]
+    assert dates == [first, second]
+
+    with pytest.raises(pymongo.errors.OperationFailure, match="same fields"):
+        list(database["union_a"].aggregate([{"$unionWith": "union_b"}]))
+
+    sock = connect_raw()
+    try:
+        message = bytearray(encode_op_msg({"ping": 1, "$db": "admin"}))
+        message[16] |= 0x02  # `moreToCome`
+        sock.sendall(bytes(message))
+        assert sock.recv(16) == b""
+    finally:
+        sock.close()
+
+    for table in tables:
+        node.query(f"DROP TABLE db.{table}", password="123")
+
+
 def test_update_operator_values_are_data(started_cluster):
     """An update statement carries data, not an aggregation pipeline: a string that starts with
-    a dollar sign is stored as it is written rather than read as a field path, and a document
-    assigns the fields it names. An update writes columns, so the table is one created in
+    a dollar sign is stored as it is written rather than read as a field path, and a dotted name
+    sets one field of a subdocument while assigning a whole subdocument, which would have to drop
+    the fields it leaves out, is refused. An update writes columns, so the table is one created in
     ClickHouse - `test_increment_update` covers what a collection of documents answers."""
     node = cluster.instances["node"]
     client = make_client()
@@ -2023,19 +2096,27 @@ def test_update_operator_values_are_data(started_cluster):
     collection.drop()
     node.query("CREATE DATABASE IF NOT EXISTS db", password="123")
     node.query(
-        "CREATE TABLE db.update_values (id Int64, name String, other String, `profile.name` String) "
+        "CREATE TABLE db.update_values (id Int64, name String, other String, `profile.name` String, `profile.age` Int64) "
         "ENGINE = MergeTree ORDER BY id",
         password="123",
     )
     collection.insert_many(
-        [{"id": 1, "name": "alpha", "other": "beta", "profile": {"name": "x"}}]
+        [{"id": 1, "name": "alpha", "other": "beta", "profile": {"name": "x", "age": 30}}]
     )
 
     collection.update_many({"id": 1}, {"$set": {"name": "$other"}})
     assert wait_for(lambda: collection.find_one({"id": 1})["name"] == "$other")
 
-    collection.update_many({"id": 1}, {"$set": {"profile": {"name": "y"}}})
-    assert wait_for(lambda: collection.find_one({"id": 1})["profile"] == {"name": "y"})
+    collection.update_many({"id": 1}, {"$set": {"profile.name": "y"}})
+    assert wait_for(
+        lambda: collection.find_one({"id": 1})["profile"] == {"name": "y", "age": 30}
+    )
+
+    # Mongo replaces the whole subdocument here, dropping `age`, which only assigning `name`
+    # would keep.
+    with pytest.raises(pymongo.errors.OperationFailure, match="dotted names"):
+        collection.update_many({"id": 1}, {"$set": {"profile": {"name": "beta"}}})
+    assert collection.find_one({"id": 1})["profile"] == {"name": "y", "age": 30}
 
 
 def test_aggregation_regex_options_are_applied(started_cluster):

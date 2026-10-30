@@ -8,6 +8,7 @@
 namespace DB::ErrorCodes
 {
 extern const int BAD_ARGUMENTS;
+extern const int NOT_IMPLEMENTED;
 }
 
 namespace DB::MongoProtocol
@@ -127,9 +128,26 @@ void OpMessage::deserialize(ReadBuffer & in)
 {
     readBinaryLittleEndian(flags, in);
 
+    /** The low 16 bits of the flags are required: a receiver that does not know one of them must
+      * not act on the message. Of the known ones, `checksumPresent` (bit 0) appends a checksum
+      * that is not read here, and `moreToCome` (bit 1) asks for no reply, which every command of
+      * this endpoint sends - a reply the client does not read would answer its next command. So
+      * the message is refused, and the connection, whose stream can no longer be trusted, is
+      * closed by the caller. The high bits, such as `exhaustAllowed`, are optional hints.
+      */
+    static constexpr UInt32 CHECKSUM_PRESENT = 1U << 0;
+    static constexpr UInt32 MORE_TO_COME = 1U << 1;
+    static constexpr UInt32 REQUIRED_FLAGS = 0xFFFFU;
+    if (flags & CHECKSUM_PRESENT)
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "A Mongo message with a checksum (the 'checksumPresent' flag) is not supported");
+    if (flags & MORE_TO_COME)
+        throw Exception(
+            ErrorCodes::NOT_IMPLEMENTED, "A Mongo message that asks for no reply (the 'moreToCome' flag) is not supported");
+    if (flags & REQUIRED_FLAGS)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "A Mongo message has unknown required flags {:#x}", flags & REQUIRED_FLAGS);
+
     /// `in` holds exactly the payload of one message, so reading until it is exhausted
     /// can neither consume a part of the next message nor stop in the middle of this one.
-    /// The optional checksum at the end of the message is not supported.
     /// The budget is shared by all the sections, so that repeating a section cannot bypass it.
     size_t remaining_documents = MAX_DOCUMENTS_IN_MESSAGE;
     while (!in.eof())
