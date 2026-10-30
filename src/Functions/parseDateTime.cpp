@@ -571,8 +571,10 @@ namespace
         [[nodiscard]]
         Int64OrError buildDateTime(const DateLUTImpl & time_zone)
         {
-            if (is_hour_of_half_day && !is_am)
-                hour += 12;
+            /// The hour of a half-day clock is stored in [0, 11], and PM adds 12 hours to it. They are added to a copy: for a
+            /// time zone name in the string (`z` in Joda syntax), this function also runs before the final conversion, so
+            /// adding them to `hour` itself added them twice.
+            const Int32 hour_of_day = is_hour_of_half_day && !is_am ? hour + 12 : hour;
 
             // Convert the parsed date/time into a timestamp.
             Int32 days_since_epoch = 0;
@@ -583,11 +585,33 @@ namespace
             else
                 ASSIGN_RESULT_OR_RETURN_ERROR(days_since_epoch, daysSinceEpochFromDate(year, month, day))
 
-            Int64 seconds_since_epoch = days_since_epoch * 86400UZ + hour * 3600UZ + minute * 60UZ + second;
+            Int64 seconds_since_epoch = days_since_epoch * 86400UZ + hour_of_day * 3600UZ + minute * 60UZ + second;
 
             /// Time zone is not specified, use local time zone
             if (!has_time_zone_offset)
-                time_zone_offset = time_zone.timezoneOffset(seconds_since_epoch);
+            {
+                /// Convert the local time as `toDateTime` does. The offset at `seconds_since_epoch`, which is the local
+                /// time read as UTC, can be the one from the other side of a daylight saving time change.
+                auto local_year = static_cast<Int16>(year);
+                auto local_month = static_cast<UInt8>(month);
+                auto local_day = static_cast<UInt8>(day);
+                /// For a week date or a day of the year, take the calendar date from the day number.
+                if (week_date_format || day_of_year_format)
+                {
+                    const auto values = time_zone.getValues(ExtendedDayNum(days_since_epoch));
+                    local_year = values.year;
+                    local_month = values.month;
+                    local_day = values.day_of_month;
+                }
+                time_zone_offset = seconds_since_epoch
+                    - time_zone.makeDateTime(
+                        local_year,
+                        local_month,
+                        local_day,
+                        static_cast<UInt8>(hour_of_day),
+                        static_cast<UInt8>(minute),
+                        static_cast<UInt8>(second));
+            }
 
             /// Time zone is specified in format string.
             seconds_since_epoch -= time_zone_offset;
@@ -1842,12 +1866,17 @@ namespace
             {
                 std::string_view read_time_zone{cur, end};
                 const DateLUTImpl & date_time_zone = DateLUT::instance(read_time_zone);
+                const bool has_offset_before_time_zone = parsed_value.has_time_zone_offset;
                 const auto result = parsed_value.buildDateTime(date_time_zone);
                 if (result.has_value())
                 {
-                    const DateLUTImpl::Time timezone_offset = date_time_zone.timezoneOffset(*result);
+                    /// An offset parsed before the time zone name selects the instant, for example one of the two occurrences
+                    /// of a repeated local time, and the time zone gives its offset at that instant. Without such an offset,
+                    /// keep the offset that `buildDateTime` resolved for the local time: the offset at the resulting instant
+                    /// differs from it for a local time that does not exist.
+                    if (has_offset_before_time_zone)
+                        parsed_value.time_zone_offset = date_time_zone.timezoneOffset(*result);
                     parsed_value.has_time_zone_offset = true;
-                    parsed_value.time_zone_offset = timezone_offset;
                     return end;
                 }
                 else
