@@ -257,7 +257,7 @@ Chunk PostgreSQLSource<T>::generate()
 
     while (!isCancelled() && !stop_requested.load())
     {
-        const std::vector<pqxx::zview> * row{nullptr}; // STYLE_CHECK_ALLOW_STD_CONTAINERS -- `pqxx::stream_from::read_row` returns a std::vector owned by the library
+        const std::vector<std::string_view> * row{nullptr}; // STYLE_CHECK_ALLOW_STD_CONTAINERS -- `pqxx::stream_from::read_row` returns a std::vector owned by the library
         try
         {
             row = stream->read_row();
@@ -288,8 +288,8 @@ Chunk PostgreSQLSource<T>::generate()
         {
             const auto & sample = description.sample_block.getByPosition(idx);
 
-            /// if got NULL type, then pqxx::zview will return nullptr in c_str()
-            if ((*row)[idx].c_str())
+            /// A SQL NULL is reported as a view with a null data pointer.
+            if ((*row)[idx].data())
             {
                 try
                 {

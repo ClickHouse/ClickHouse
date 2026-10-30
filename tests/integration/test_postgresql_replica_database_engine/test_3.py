@@ -735,7 +735,7 @@ def test_failed_load_from_snapshot(started_cluster):
     )
 
     # Create a table with wrong table structure
-    assert "Could not convert string to i" in instance.query_and_get_error(
+    assert "Cannot parse PostgreSQL value '{1,2}' as Int32" in instance.query_and_get_error(
         f"""
         SET enable_materialized_postgresql_table=1;
         CREATE TABLE {table} (a Int32, b Int32) ENGINE=MaterializedPostgreSQL('{started_cluster.postgres_ip}:{started_cluster.postgres_port}', 'postgres_database', '{table}', 'postgres', '{pg_pass}') ORDER BY a
