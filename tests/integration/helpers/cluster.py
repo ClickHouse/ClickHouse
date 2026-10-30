@@ -5119,10 +5119,35 @@ class ClickHouseCluster:
     def add_zookeeper_startup_command(self, command):
         self.pre_zookeeper_commands.append(command)
 
+    def wait_integration_nodes_stopped(self, nodes, timeout: float = 30) -> None:
+        # Docker Engine before 28.3 returns from `stop` and `kill` before its container list shows the container
+        # stopped (moby/moby#50133), and `docker compose start` skips every container that list shows as running.
+        names = {"/" + self.get_instance_docker_id(node) for node in nodes}
+        deadline = time.monotonic() + timeout
+        while True:
+            running = sorted(
+                name
+                for container in self.docker_client.api.containers(
+                    all=True,
+                    filters={"label": f"com.docker.compose.project={self.project_name}"},
+                )
+                if container["State"] == "running"
+                for name in container["Names"]
+                if name in names
+            )
+            if not running:
+                return
+            if time.monotonic() > deadline:
+                raise Exception(
+                    f"Containers {running} are still listed as running {timeout}s after being stopped"
+                )
+            time.sleep(0.1)
+
     def stop_zookeeper_nodes(self, zk_nodes):
         for n in zk_nodes:
             logging.info("Stopping zookeeper node: %s", n)
             subprocess_check_call(self.base_zookeeper_cmd + ["stop", n])
+        self.wait_integration_nodes_stopped(zk_nodes)
 
     def process_integration_nodes(self, integration: str, nodes: list, action: str):
         base_cmd = getattr(self, f"base_{integration}_cmd")
@@ -5131,6 +5156,8 @@ class ClickHouseCluster:
         # action. compose parallelizes the services internally.
         logging.info("%sing %s nodes: %s", action.capitalize(), integration, nodes)
         subprocess_check_call(base_cmd + [action] + list(nodes))
+        if action in ("stop", "kill"):
+            self.wait_integration_nodes_stopped(nodes)
         logging.info("%sed %s nodes: %s", action.capitalize(), integration, nodes)
 
     # Faster than waiting for clean stop
