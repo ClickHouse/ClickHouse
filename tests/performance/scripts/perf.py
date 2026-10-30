@@ -330,7 +330,9 @@ args = parser.parse_args()
 
 if args.table_engine:
     # Imported only here: a `release_base` run replaces this directory with the
-    # reference vintage of the tests, which can predate the module.
+    # reference vintage of the tests, which can predate the module. The directory
+    # of the script is not on `sys.path` when Python runs in safe-path mode.
+    sys.path.insert(0, os.path.dirname(os.path.realpath(__file__)))
     import iceberg_engine
 
 if args.min_runs is not None:
