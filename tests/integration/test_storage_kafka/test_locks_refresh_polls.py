@@ -125,7 +125,6 @@ def test_locks_refresh_polls_reload(kafka_cluster):
 
         set_locks_refresh_polls(3)
         assert current_value() == 3
-        instance.wait_for_log_line(rf"Changed {SETTING} from 15 to 3")
 
         # Running consumers pick the new value up without recreating the table.
         instance.wait_for_log_line(
@@ -138,7 +137,6 @@ def test_locks_refresh_polls_reload(kafka_cluster):
         # Removing the override restores the default on the next reload.
         set_locks_refresh_polls(None)
         assert current_value() == 15
-        instance.wait_for_log_line(rf"Changed {SETTING} from 3 to 15")
 
 
 def test_locks_refresh_polls_zero_still_consumes(kafka_cluster):

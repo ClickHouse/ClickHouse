@@ -7792,9 +7792,6 @@ UInt64 Context::getKafkaLocksRefreshPolls() const
 void Context::setKafkaLocksRefreshPolls(UInt64 stream_kafka_locks_refresh_polls) const
 {
     std::lock_guard lock(shared->mutex);
-    const UInt64 previous = shared->server_settings[ServerSetting::stream_kafka_locks_refresh_polls];
-    if (previous != stream_kafka_locks_refresh_polls)
-        LOG_INFO(shared->log, "Changed stream_kafka_locks_refresh_polls from {} to {}", previous, stream_kafka_locks_refresh_polls);
     shared->server_settings.set("stream_kafka_locks_refresh_polls", stream_kafka_locks_refresh_polls);
 }
 
