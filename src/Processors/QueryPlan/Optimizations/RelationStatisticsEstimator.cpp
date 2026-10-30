@@ -315,7 +315,8 @@ namespace
 /// Whether a read limit with a non-throwing overflow mode can end the read early instead of failing the
 /// query. Row and byte limits, including the leaf ones, are checked against the progress of the whole query
 /// and `max_execution_time` against the elapsed time, so the read can stop however few rows it selects.
-/// These are the limits that the sources of the read enforce.
+/// These are the limits that the sources of the read enforce; leaf limits are set only on a leaf of a distributed
+/// query (`distributed_depth > 0`).
 bool mayStopReadingEarly(const SelectQueryInfo & query_info)
 {
     if (!query_info.storage_limits)

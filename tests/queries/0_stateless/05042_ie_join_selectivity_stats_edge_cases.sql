@@ -164,7 +164,12 @@ SELECT extract(explain, 'Conditions: .*') FROM (
     SETTINGS max_rows_to_read = 100, read_overflow_mode = 'break'
 ) WHERE explain LIKE '%Conditions:%';
 
-SELECT '-- a non-throwing leaf read limit drops value ranges';
+-- Leaf read limits apply only to the leaves of a distributed query (`distributed_depth > 0`), so a local read
+-- is not cut short by them and keeps its value ranges.
+SELECT '-- a non-throwing leaf read limit does not apply to a local read: value ranges preserved';
+SELECT count() = 1000 FROM t_sel_edge_chunks WHERE b2 >= 1000
+SETTINGS max_rows_to_read_leaf = 100, read_overflow_mode_leaf = 'break', max_block_size = 128, max_threads = 1;
+
 SELECT extract(explain, 'Conditions: .*') FROM (
     EXPLAIN actions = 1
     SELECT count() FROM t_sel_edge_l AS l JOIN t_sel_edge_chunks AS r

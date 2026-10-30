@@ -28,8 +28,9 @@ Conditions: __table1.a1 < __table2.b1 AND __table1.a3 < __table2.b3
 -- a non-throwing read limit drops value ranges
 1
 Conditions: __table1.a1 < __table2.b1 AND __table1.a2 < __table2.b2
--- a non-throwing leaf read limit drops value ranges
-Conditions: __table1.a1 < __table2.b1 AND __table1.a2 < __table2.b2
+-- a non-throwing leaf read limit does not apply to a local read: value ranges preserved
+1
+Conditions: __table1.a1 < __table2.b1 AND __table1.a3 < __table2.b3
 -- a non-throwing timeout drops value ranges
 Conditions: __table1.a1 < __table2.b1 AND __table1.a2 < __table2.b2
 -- top-K read with a limit equal to the table size preserves value ranges
