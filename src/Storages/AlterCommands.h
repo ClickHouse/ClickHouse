@@ -210,6 +210,12 @@ struct AlterCommand
         const ColumnsDescription * columns_before_alter = nullptr,
         const MergeTreeSettings * settings_defaults = nullptr) const;
 
+    /// The column of `ADD COLUMN`, before the Nested expansion and the IF NOT EXISTS filter.
+    ColumnDescription getAddedColumnDescription() const;
+
+    /// Changes `column` as `MODIFY COLUMN` does. The implicit indices of `metadata`, if given, follow a type change.
+    void modifyColumnDescription(ColumnDescription & column, StorageInMemoryMetadata * metadata, const ContextPtr & context) const;
+
     /// Determines whether this command requires a mutation and identifies every setting
     /// that enables a matching lazy metadata conversion.
     MutationStageDecision getMutationStageDecision(const StorageInMemoryMetadata & metadata, const ContextPtr & context) const;
@@ -229,12 +235,12 @@ struct AlterCommand
     /// Checks that command will drop something or rename column.
     bool isDropOrRename() const;
 
-    /// If possible, convert alter command to mutation command. In other case
-    /// return empty optional. Some storages may execute mutations after
-    /// metadata changes.
+    /// If possible, convert alter command to mutation commands. In other case
+    /// return an empty list. Some storages may execute mutations after
+    /// metadata changes. `DROP COLUMN n` of the Nested group `n.a`, `n.b` converts to a drop of each member.
     /// share_nested_offsets is forwarded to the internal apply() so mutation-planning replay
     /// treats IF NOT EXISTS nested existence the same way as the real commands.apply().
-    std::optional<MutationCommand> tryConvertToMutationCommand(StorageInMemoryMetadata & metadata, ContextPtr context, bool share_nested_offsets = true) const;
+    MutationCommands tryConvertToMutationCommand(StorageInMemoryMetadata & metadata, ContextPtr context, bool share_nested_offsets = true) const;
 };
 
 class Context;
@@ -253,8 +259,8 @@ public:
     void validate(const StoragePtr & table, ContextPtr context) const;
 
     /// Prepare alter commands. Set ignore flag to some of them and set some
-    /// parts to commands from storage's metadata (for example, absent default)
-    void prepare(const StorageInMemoryMetadata & metadata, bool share_nested_offsets = true);
+    /// parts to commands from storage's metadata (for example, absent default).
+    void prepare(const StorageInMemoryMetadata & metadata, ContextPtr context, bool share_nested_offsets = true);
 
     /// Apply all alter command in sequential order to storage metadata.
     /// Commands have to be prepared before apply.
