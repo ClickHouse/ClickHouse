@@ -61,5 +61,18 @@ $CLICKHOUSE_CLIENT -q "
         parallel_replicas_plan_based = 1;
 "
 
+# The filters set only in the body of a materialized CTE, which is planned on its own.
+for plan_based in 0 1; do
+    $CLICKHOUSE_CLIENT -q "
+        WITH c AS MATERIALIZED (
+            SELECT id, samples FROM timeSeriesSamples(${CLICKHOUSE_DATABASE}.ts) SETTINGS additional_table_filters = $filters)
+        SELECT count(), sum(l.samples[1].2) FROM c AS l INNER JOIN c AS r ON l.id = r.id
+        SETTINGS enable_parallel_replicas = 2, max_parallel_replicas = 3, cluster_for_parallel_replicas = 'parallel_replicas',
+            parallel_replicas_for_non_replicated_merge_tree = 1, automatic_parallel_replicas_mode = 0, enable_analyzer = 1,
+            serialize_query_plan = 1, parallel_replicas_local_plan = 0, parallel_replicas_prefer_local_join = 1,
+            enable_materialized_cte = 1, parallel_replicas_plan_based = $plan_based;
+    "
+done
+
 $CLICKHOUSE_CLIENT -q "DROP TABLE rhs"
 $CLICKHOUSE_CLIENT -q "DROP TABLE ts"

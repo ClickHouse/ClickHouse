@@ -1735,8 +1735,8 @@ bool parallelReplicasEnabledForStorage(const StoragePtr & current_storage, const
 /// path.  Callers should compute this once for the join tree and gate the
 /// per-leaf parallel-replicas activation accordingly.  `plan_based` says whether the plan-based
 /// implementation decides the distribution of this read, which is not always the case when
-/// `parallel_replicas_plan_based` is on.  `query_sets_additional_table_filters` is
-/// `GlobalPlannerContext::query_sets_additional_table_filters`.
+/// `parallel_replicas_plan_based` is on.  `query_sets_additional_table_filters` says whether the
+/// query sent to the replicas sets `additional_table_filters` anywhere.
 bool allowParallelReplicasForJoinTree(
     const QueryTreeNodePtr & join_tree_node,
     const ContextPtr & context,
@@ -2928,7 +2928,7 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(TableExpressionNodePtr table_
                     /// mode (see below), so the join around it must be one the query-tree way can distribute.
                     else if (
                         const bool query_sets_additional_table_filters
-                            = planner_context->getGlobalPlannerContext()->query_sets_additional_table_filters;
+                            = queryTreeSetsAdditionalTableFilters(table_expression_query_info.query_tree.get());
                         ClusterProxy::canUseParallelReplicasOnInitiator(query_context)
                         && (!table_function_node || tableFunctionCanDriveParallelReplicasRead(*table_function_node, query_sets_additional_table_filters))
                         && allowParallelReplicasForJoinTree(

@@ -2262,8 +2262,7 @@ void addBuildSubqueriesForSetsStepIfNeeded(
             query_tree,
             subquery_options,
             std::make_shared<GlobalPlannerContext>(
-                nullptr, nullptr, nullptr, collectFiltersForAnalysis(query_tree, subquery_options, nullptr),
-                queryTreeSetsAdditionalTableFilters(query_tree.get())));
+                nullptr, nullptr, nullptr, collectFiltersForAnalysis(query_tree, subquery_options, nullptr)));
         subquery_planner.buildQueryPlanIfNeeded();
 
         auto subquery_plan = std::move(subquery_planner).extractQueryPlan();
@@ -2455,8 +2454,7 @@ Planner::Planner(const QueryTreeNodePtr & query_tree_,
             findQueryForParallelReplicas(query_tree, select_query_options),
             findTableForParallelReplicas(query_tree, select_query_options),
             findTableUnionForParallelReplicas(query_tree, select_query_options),
-            collectFiltersForAnalysis(query_tree, select_query_options, post_filter_),
-            queryTreeSetsAdditionalTableFilters(query_tree.get()))))
+            collectFiltersForAnalysis(query_tree, select_query_options, post_filter_))))
 {
 }
 
