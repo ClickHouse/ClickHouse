@@ -3040,7 +3040,7 @@ static FunctionCast::WrapperType createEnumToLowCardinalityStringWrapper(const D
             else if (pos < value_to_index.size() && value_to_index[pos] != missing)
                 indexes_data[i] = value_to_index[pos];
             else
-                enum_type->getNameForValue(data[i]); /// Throws for a value missing in the enum.
+                (void)enum_type->getNameForValue(data[i]); /// Throws for a value missing in the enum.
         }
 
         /// A private source dictionary makes `insertRangeFrom` copy only the used names instead of adopting all of them.
