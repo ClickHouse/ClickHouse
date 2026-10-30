@@ -2596,3 +2596,176 @@ def test_stateless_task_cancel_while_waiting_in_queue(started_cluster):
         wait_for_queue_length(stateless_worker, 0)
         for n in [worker_coordinator, stateless_worker]:
             n.query(f"DROP TABLE IF EXISTS default.{table}")
+
+
+def occupy_both_slots(pool, prefix):
+    """Start two `sleep(30)` blockers holding both admission slots of `node`, and wait until they run."""
+    blocker_ids = [f"cancel_blocker_{prefix}_{i}" for i in range(2)]
+
+    def run_blocker(qid):
+        node.query(
+            "SELECT sleep(30) FORMAT Null",
+            settings={"function_sleep_max_microseconds_per_block": 0, "queue_max_wait_ms": 60000},
+            query_id=qid,
+            ignore_error=True,
+        )
+
+    for qid in blocker_ids:
+        pool.apply_async(run_blocker, (qid,))
+    for qid in blocker_ids:
+        wait_for_query_start(node, qid)
+    return blocker_ids
+
+
+def kill_blockers(blocker_ids):
+    for qid in blocker_ids:
+        node.query(f"KILL QUERY WHERE query_id = '{qid}' SYNC SETTINGS kill_throw_if_noop = false")
+
+
+def assert_marker_query_never_started(marker):
+    """Like `assert_query_never_started`, for protocols that do not let the client choose the query ID."""
+    node.query("SYSTEM FLUSH LOGS query_log")
+    started = node.query(
+        f"SELECT count() FROM system.query_log WHERE query LIKE '%{marker}%' "
+        f"AND query NOT LIKE '%query_log%' AND type = 'QueryStart'"
+    ).strip()
+    assert started == "0", f"the cancelled waiter with {marker} was admitted and started"
+
+
+def create_protocol_user(name):
+    node.query(f"DROP USER IF EXISTS {name}")
+    node.query(f"CREATE USER {name} IDENTIFIED WITH plaintext_password BY 'pw'")
+    node.query(f"GRANT SELECT ON *.* TO {name}")
+
+
+def test_native_cancel_while_waiting_in_queue(started_cluster):
+    """
+    A native client that cancels its queued query (Ctrl+C sends `Cancel` without closing the
+    connection) must have it removed from the admission queue while the blockers are still
+    running, even though the `Cancel` packet follows the external-tables terminator in the input.
+    """
+    prefix = uuid.uuid4().hex[:8]
+    waiter_id = f"native_cancel_waiter_{prefix}"
+    pool = Pool(4)
+    blocker_ids = occupy_both_slots(pool, prefix)
+    try:
+        node.exec_in_container(
+            ["bash", "-c", f"clickhouse client --query_id {waiter_id} --queue_max_wait_ms 30000 -q 'SELECT 1' >/dev/null 2>&1"],
+            detach=True,
+        )
+        wait_for_queue_length(node, 1)
+
+        # `clickhouse-client` sends `Cancel` on SIGINT and then waits for the server to reply. The pattern is
+        # anchored, so that it does not match the `bash -c` wrappers, whose command lines contain it as well.
+        node.exec_in_container(["bash", "-c", f"pkill -INT -f '^clickhouse client --query_id {waiter_id}'"])
+
+        assert_abandoned_waiter_was_cancelled(node, blocker_ids, waiter_id)
+    finally:
+        kill_blockers(blocker_ids)
+        pool.close()
+        pool.join()
+
+    assert_query_never_started(node, waiter_id)
+    assert node.query(
+        f"SELECT exception_code FROM system.query_log WHERE query_id = '{waiter_id}' AND type = 'ExceptionBeforeStart'"
+    ).strip() == "735"  # QUERY_WAS_CANCELLED_BY_CLIENT
+
+
+def test_postgresql_cancel_request_while_waiting_in_queue(started_cluster):
+    """
+    A PostgreSQL `CancelRequest` must reach a statement that is still waiting for admission (it is
+    not registered in the process list yet), and the statement must not run once a slot frees up.
+    """
+    import psycopg2
+
+    create_protocol_user("aq_pg_user")
+    prefix = uuid.uuid4().hex[:8]
+    marker = f"pg_cancel_marker_{prefix}"
+    pool = Pool(4)
+    blocker_ids = occupy_both_slots(pool, prefix)
+    conn = psycopg2.connect(
+        host=node.ip_address, port=5433, user="aq_pg_user", password="pw", database="default"
+    )
+    try:
+        result = {}
+
+        def run_waiter():
+            try:
+                with conn.cursor() as cursor:
+                    cursor.execute(f"SELECT '{marker}'")
+                    result["rows"] = cursor.fetchall()
+            except Exception as e:
+                result["error"] = str(e)
+
+        waiter = threading.Thread(target=run_waiter)
+        waiter.start()
+        wait_for_queue_length(node, 1)
+
+        conn.cancel()
+
+        wait_for_queue_length(node, 0, timeout=DISCONNECT_DETECTION_TIMEOUT)
+        waiter.join(timeout=DISCONNECT_DETECTION_TIMEOUT)
+        assert not waiter.is_alive()
+        assert "cancelled while waiting for admission" in result.get("error", ""), result
+        blocker_list = ", ".join(f"'{qid}'" for qid in blocker_ids)
+        assert node.query(
+            f"SELECT count() FROM system.processes WHERE query_id IN ({blocker_list})"
+        ).strip() == "2", "blockers finished before the queue drained"
+    finally:
+        conn.close()
+        kill_blockers(blocker_ids)
+        pool.close()
+        pool.join()
+
+    assert_marker_query_never_started(marker)
+
+
+def test_mysql_kill_query_while_waiting_in_queue(started_cluster):
+    """
+    MySQL `KILL QUERY <connection_id>` must cancel the query of that connection while it is still
+    waiting for admission (it is not in `system.processes` yet), and report success.
+    """
+    import pymysql
+
+    create_protocol_user("aq_mysql_user")
+    prefix = uuid.uuid4().hex[:8]
+    marker = f"mysql_kill_marker_{prefix}"
+    pool = Pool(4)
+    blocker_ids = occupy_both_slots(pool, prefix)
+    victim = pymysql.connect(host=node.ip_address, port=9004, user="aq_mysql_user", password="pw")
+    killer = pymysql.connect(host=node.ip_address, port=9004, user="aq_mysql_user", password="pw")
+    try:
+        result = {}
+
+        def run_waiter():
+            try:
+                with victim.cursor() as cursor:
+                    cursor.execute(f"SELECT '{marker}'")
+                    result["rows"] = cursor.fetchall()
+            except Exception as e:
+                result["error"] = str(e)
+
+        waiter = threading.Thread(target=run_waiter)
+        waiter.start()
+        wait_for_queue_length(node, 1)
+
+        with killer.cursor() as cursor:
+            # `KILL QUERY` is not subject to the admission limit; it must not fail with `NOTHING_TO_KILL`.
+            cursor.execute(f"KILL QUERY {victim.thread_id()}")
+
+        wait_for_queue_length(node, 0, timeout=DISCONNECT_DETECTION_TIMEOUT)
+        waiter.join(timeout=DISCONNECT_DETECTION_TIMEOUT)
+        assert not waiter.is_alive()
+        assert "cancelled while waiting for admission" in result.get("error", ""), result
+        blocker_list = ", ".join(f"'{qid}'" for qid in blocker_ids)
+        assert node.query(
+            f"SELECT count() FROM system.processes WHERE query_id IN ({blocker_list})"
+        ).strip() == "2", "blockers finished before the queue drained"
+    finally:
+        victim.close()
+        killer.close()
+        kill_blockers(blocker_ids)
+        pool.close()
+        pool.join()
+
+    assert_marker_query_never_started(marker)

@@ -7,6 +7,9 @@
     <config_reload_interval_ms>1000</config_reload_interval_ms>
     <!-- For `test_grpc_client_cancel_while_waiting_in_queue`. -->
     <grpc_port>9100</grpc_port>
+    <!-- For `test_postgresql_cancel_request_while_waiting_in_queue` and `test_mysql_kill_query_while_waiting_in_queue`. -->
+    <postgresql_port>5433</postgresql_port>
+    <mysql_port>9004</mysql_port>
     <prometheus>
         <port>9363</port>
         <handlers>

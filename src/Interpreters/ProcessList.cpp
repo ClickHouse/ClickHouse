@@ -268,6 +268,17 @@ ProcessList::EntryPtr ProcessList::insert(
             query_context->getServerSettings()[ServerSetting::admission_queue_alive_check_interval_ms]),
             UInt64(500), UInt64(10000));
 
+        /// Call `is_alive` without holding `mutex`: the native protocol's callback reads the packets the client
+        /// has sent meanwhile (to notice its `Cancel`, see `TCPHandler`), which may wait for the rest of a
+        /// packet. Every caller below rechecks the state guarded by `mutex` afterwards. `mutex` is taken back
+        /// even if the callback throws, because the cleanup guards of the waits need it.
+        auto client_alive = [&]
+        {
+            lock.unlock();
+            SCOPE_EXIT(lock.lock());
+            return is_alive();
+        };
+
         /// Replacing a query must happen before taking an admission slot. The old query can take up to
         /// `replace_running_query_max_wait_ms` to leave the process list; occupying a FIFO slot during
         /// that wait would block unrelated queries despite no replacement query executing yet.
@@ -317,7 +328,7 @@ ProcessList::EntryPtr ProcessList::insert(
                                 std::chrono::duration_cast<std::chrono::milliseconds>(replace_deadline - now));
                             query_finished.wait_for(lock, chunk, old_query_finished);
 
-                            if (!old_query_finished() && !is_alive())
+                            if (!old_query_finished() && !client_alive())
                                 throw Exception(ErrorCodes::QUERY_WAS_CANCELLED,
                                                 "Query replacement cancelled: client disconnected while waiting for the old query");
                         }
@@ -329,7 +340,7 @@ ProcessList::EntryPtr ProcessList::insert(
                                         client_info.current_query_id);
                     }
 
-                    if (is_alive && !is_alive())
+                    if (is_alive && !client_alive())
                         throw Exception(ErrorCodes::QUERY_WAS_CANCELLED,
                                         "Query replacement cancelled: client disconnected while waiting for the old query");
 
@@ -354,10 +365,24 @@ ProcessList::EntryPtr ProcessList::insert(
         /// release would ever grant it a slot; a stale `0` would let it bypass a newly finite limit.
         const bool needs_admission = admission_tracked && max_size;
 
+        /// From here until the registration below, the waits can park the query for a long time while it is
+        /// not reachable through `processes`. Publish it in `admission_waiters`, so that the out-of-band
+        /// cancellation paths can still cancel it (see `cancelAdmissionWaitersLocked`).
+        AdmissionWaiter waiter{
+            .query_id = client_info.current_query_id, .user = client_info.current_user, .user_id = user_id, .interface = client_info.interface,
+            .granted = false, .cancelled = false, .cv = {}};
+        admission_waiters.push_back(&waiter);
+        SCOPE_EXIT(std::erase(admission_waiters, &waiter));
+
+        auto throw_if_cancelled = [&]
+        {
+            if (waiter.cancelled)
+                throw Exception(ErrorCodes::QUERY_WAS_CANCELLED, "Query was cancelled while waiting for admission");
+        };
+
         if (needs_admission && admission_running >= max_size)
         {
-            /// Stack-allocate a waiter and enqueue it (FIFO).
-            AdmissionWaiter waiter;
+            /// Enqueue the waiter (FIFO).
             admission_queue.push_back(&waiter);
 
             /// Guard: on exception, clean up our deque entry or release a
@@ -389,8 +414,8 @@ ProcessList::EntryPtr ProcessList::insert(
                     ProfileEvents::QueryAdmissionQueueWaitMicroseconds, admission_watch.elapsedMicroseconds());
             });
 
-            /// Predicate: the releaser has granted us the slot.
-            auto my_turn = [&] { return waiter.granted; };
+            /// Predicate: the releaser has granted us the slot, or the query was cancelled.
+            auto my_turn = [&] { return waiter.granted || waiter.cancelled; };
 
             if (is_alive && alive_check_interval_ms > 0)
             {
@@ -411,7 +436,7 @@ ProcessList::EntryPtr ProcessList::insert(
 
                     waiter.cv.wait_for(lock, chunk, my_turn);
 
-                    if (!my_turn() && is_alive && !is_alive())
+                    if (!my_turn() && is_alive && !client_alive())
                     {
                         throw Exception(ErrorCodes::QUERY_WAS_CANCELLED,
                                         "Query admission cancelled: client disconnected while waiting in queue");
@@ -429,13 +454,15 @@ ProcessList::EntryPtr ProcessList::insert(
                 }
             }
 
+            throw_if_cancelled();
+
             /// Final alive-check after the slot has been granted but before we commit to using it.
             /// The periodic loop above only checks liveness while still waiting (`!my_turn()`). If the
             /// releaser transferred the slot to us between two periodic checks, a client that disconnected
             /// in the meantime would otherwise be admitted and execute its query. Re-check here so that a
             /// disconnected waiter is cancelled before consuming the slot; the `SCOPE_EXIT` above releases
             /// the already-granted slot when we throw.
-            if (is_alive && !is_alive())
+            if (is_alive && !client_alive())
                 throw Exception(ErrorCodes::QUERY_WAS_CANCELLED,
                                 "Query admission cancelled: client disconnected while waiting in queue");
 
@@ -510,7 +537,8 @@ ProcessList::EntryPtr ProcessList::insert(
             /// clients queued behind a dead one for up to the fallback timeout. Reaching the deadline is
             /// not an error here: fall through and let `under_limit()` decide, so the caller throws the
             /// precise `TOO_MANY_SIMULTANEOUS_QUERIES` message for the limit in question.
-            auto should_stop = [&] { return under_limit() || !drain_can_clear(); };
+            auto should_stop = [&] { return waiter.cancelled || under_limit() || !drain_can_clear(); };
+            bool waited = false;
             if (is_alive && alive_check_interval_ms > 0)
             {
                 while (!should_stop())
@@ -524,9 +552,10 @@ ProcessList::EntryPtr ProcessList::insert(
                         std::chrono::duration_cast<std::chrono::milliseconds>(admission_deadline - now));
 
                     limits_waited = true;
+                    waited = true;
                     query_finished.wait_for(lock, chunk, should_stop);
 
-                    if (!should_stop() && is_alive && !is_alive())
+                    if (!should_stop() && is_alive && !client_alive())
                         throw Exception(ErrorCodes::QUERY_WAS_CANCELLED,
                                         "Query admission cancelled: client disconnected while waiting at a secondary limit");
                 }
@@ -534,16 +563,21 @@ ProcessList::EntryPtr ProcessList::insert(
             else if (!should_stop() && std::chrono::steady_clock::now() < admission_deadline)
             {
                 limits_waited = true;
+                waited = true;
                 query_finished.wait_until(lock, admission_deadline, should_stop);
             }
+
+            throw_if_cancelled();
 
             /// Post-wakeup liveness recheck, mirroring the FIFO admission wait. The loop above exits as
             /// soon as `should_stop()` holds, so a client that hung up during the very interval in which
             /// the finishing query dropped the counter would otherwise slip through and run its query
             /// while holding the transferred admission slot. Only a successful outcome needs the check:
             /// if we are still over the limit, the caller throws `TOO_MANY_SIMULTANEOUS_QUERIES` anyway.
+            /// Only a wait can let the client go away unnoticed, and the check releases `mutex` (so the limits
+            /// are checked again, see `limits_waited`), so do it only after a wait.
             const bool passes = under_limit();
-            if (passes && is_alive && !is_alive())
+            if (passes && waited && is_alive && !client_alive())
                 throw Exception(ErrorCodes::QUERY_WAS_CANCELLED,
                                 "Query admission cancelled: client disconnected while waiting at a secondary limit");
 
@@ -568,7 +602,9 @@ ProcessList::EntryPtr ProcessList::insert(
             if (!queue_max_wait_ms || std::chrono::steady_clock::now() >= legacy_limits_deadline)
                 return false;
             limits_waited = true;
-            return query_finished.wait_until(lock, legacy_limits_deadline, under_limit);
+            query_finished.wait_until(lock, legacy_limits_deadline, [&] { return waiter.cancelled || under_limit(); });
+            throw_if_cancelled();
+            return under_limit();
         };
 
         /// Every wait below releases `mutex`, and another query may register meanwhile, so a limit that
@@ -733,6 +769,10 @@ ProcessList::EntryPtr ProcessList::insert(
             }
         }
         while (limits_waited);
+
+        /// Nothing between this check and the registration below releases `mutex`, so a cancellation that
+        /// arrived during any of the waits above (or after the last of them) is not lost.
+        throw_if_cancelled();
 
         /// Check other users running query with our query_id
         if (auto query_user = queries_to_user.find(client_info.current_query_id); query_user != queries_to_user.end() && query_user->second != client_info.current_user)
@@ -1377,7 +1417,17 @@ CancellationCode ProcessList::sendCancelToQueryImpl(
     {
         LockAndBlocker lock(mutex);
         elem = tryGetProcessListElement(current_query_id, current_user);
-        if (!elem || (expected_user_id && elem->user_id != *expected_user_id))
+        if (!elem)
+        {
+            /// The query may still be waiting for admission, before it is registered in `processes`.
+            const size_t cancelled = cancelAdmissionWaitersLocked([&](const AdmissionWaiter & waiter)
+            {
+                return waiter.query_id == current_query_id && waiter.user == current_user
+                    && (!expected_user_id || waiter.user_id == *expected_user_id);
+            });
+            return cancelled ? CancellationCode::CancelSent : CancellationCode::NotFound;
+        }
+        if (expected_user_id && elem->user_id != *expected_user_id)
             return CancellationCode::NotFound;
         elem->is_cancelling = true;
     }
@@ -1459,7 +1509,14 @@ CancellationCode ProcessList::sendCancelToPostgreSQLQuery(Int32 process_id, UInt
         const String & current_query_id = cancellation_key->second;
         auto query_user = queries_to_user.find(current_query_id);
         if (query_user == queries_to_user.end())
-            return CancellationCode::NotFound;
+        {
+            /// The query may still be waiting for admission, before it is registered in `queries_to_user`.
+            const size_t cancelled = cancelAdmissionWaitersLocked([&](const AdmissionWaiter & waiter)
+            {
+                return waiter.query_id == current_query_id && waiter.interface == ClientInfo::Interface::POSTGRESQL;
+            });
+            return cancelled ? CancellationCode::CancelSent : CancellationCode::NotFound;
+        }
 
         /// Other interfaces can forge this query-id shape, so only cancel PostgreSQL queries.
         elem = tryGetProcessListElement(current_query_id, query_user->second);
@@ -1757,6 +1814,37 @@ void ProcessList::decreaseAdmissionPendingTeardowns(const IAST::QueryKind & quer
 }
 
 /// --- Admission control helpers ---
+
+size_t ProcessList::cancelAdmissionWaitersLocked(const std::function<bool(const AdmissionWaiter &)> & predicate)
+{
+    size_t cancelled = 0;
+    for (AdmissionWaiter * waiter : admission_waiters)
+    {
+        if (!predicate(*waiter))
+            continue;
+        waiter->cancelled = true;
+        waiter->cv.notify_one();
+        ++cancelled;
+    }
+
+    /// The waits at the concurrency limits in `insert` sleep on `query_finished`.
+    if (cancelled)
+        query_finished.notify_all();
+
+    return cancelled;
+}
+
+size_t ProcessList::cancelAdmissionOfMySQLConnection(UInt64 connection_id, const String & current_user, bool may_kill_other_users)
+{
+    const String query_id_prefix = fmt::format("mysql:{}:", connection_id);
+
+    LockAndBlocker lock(mutex);
+    return cancelAdmissionWaitersLocked([&](const AdmissionWaiter & waiter)
+    {
+        return waiter.interface == ClientInfo::Interface::MYSQL && waiter.query_id.starts_with(query_id_prefix)
+            && (may_kill_other_users || waiter.user == current_user);
+    });
+}
 
 void ProcessList::releaseAdmissionSlotLocked(Lock & /* acquired_lock */)
 {

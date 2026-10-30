@@ -974,8 +974,10 @@ void TCPHandler::runImpl()
             if (client_tcp_protocol_version < DBMS_MIN_REVISION_WITH_OUT_OF_ORDER_BUCKETS_IN_AGGREGATION)
                 query_state->query_context->setSetting("enable_producing_buckets_out_of_order_in_aggregation", false);
 
-            /// For admission queue disconnect detection.
-            query_state->query_context->setConnectionAliveCheck(makeSocketAliveCheckCallback(socket()));
+            /// For admission queue disconnect and cancellation detection.
+            query_state->query_context->setConnectionAliveCheck(query_state->run_query_in_background
+                ? makeSocketAliveCheckCallback(socket())
+                : makeConnectionAliveCheck(query_state));
             /// If `collect_connection_metrics` was `false` after authentication, register the connection now.
             registerConnectionIfNeeded();
             /// Set the connection to idle in `system.connections` at each exit from this scope. This includes exceptions.
@@ -1448,13 +1450,53 @@ void TCPHandler::readTemporaryTables(QueryState & state)
     /// no sense in partial_result_on_first_cancel setting when temporary data is read.
     auto off_setting_guard = TurnOffBoolSettingTemporary(state.allow_partial_result_on_first_cancel);
 
-    while (receivePacketsExpectData(state))
+    /// The terminating block may have been read ahead while the query waited for admission.
+    while (!state.received_external_tables && receivePacketsExpectData(state))
     {
         /// Data upload can take a long time, so send logs and profile events without waiting for it to finish.
         sendLogs(state);
         sendInsertProfileEvents(state);
         out->sync();
     }
+    state.received_external_tables = true;
+}
+
+
+std::function<bool()> TCPHandler::makeConnectionAliveCheck(std::shared_ptr<QueryState> & query_state)
+{
+    /// Used by `ProcessList::insert` while the query waits for admission, which happens before the external
+    /// tables are read (by the external tables initializer). The client may have sent `Cancel` meanwhile, but
+    /// it follows the external tables in the input (an ordinary query sends at least their terminating empty
+    /// block). Read the external tables ahead to reach it, but at most one non-empty block of them, so that a
+    /// queued query does not buffer an unbounded amount of client data before it is admitted. Past that block
+    /// only check that the client is still connected. Called without `ProcessList::mutex`.
+    return [this, &query_state, socket_alive = makeSocketAliveCheckCallback(socket())]() -> bool
+    {
+        std::lock_guard lock(*callback_mutex);
+        QueryState & state = *query_state;
+
+        if (state.read_ahead_external_tables_block || !in->poll(0))
+            return socket_alive();
+
+        if (in->isCanceled() || in->eof())
+            return false;
+
+        /// As in `readTemporaryTables`: `Cancel` must cancel the query rather than return a partial result.
+        auto off_setting_guard = TurnOffBoolSettingTemporary(state.allow_partial_result_on_first_cancel);
+
+        if (!state.received_external_tables)
+        {
+            if (receivePacketsExpectData(state))
+                state.read_ahead_external_tables_block = true;
+            else
+                state.received_external_tables = true;
+            return true;
+        }
+
+        /// Throws on `Cancel`.
+        receivePacketsExpectCancel(state, /* force= */ true);
+        return true;
+    };
 }
 
 

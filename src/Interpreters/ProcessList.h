@@ -26,6 +26,7 @@
 
 #include <condition_variable>
 #include <deque>
+#include <functional>
 #include <list>
 #include <memory>
 #include <mutex>
@@ -504,15 +505,33 @@ protected:
     /// directly (transferred, not freed-then-reacquired) and is notified via
     /// `notify_one` on its own CV.
 
-    /// Stack-allocated by the waiting thread; pointer lives in `admission_queue`.
+    /// Stack-allocated by the thread admitting a query in `insert`. Its pointer lives in `admission_waiters`
+    /// from the end of the `replace_running_query` stage until the query is registered (or `insert` fails),
+    /// and in `admission_queue` while it waits for an admission slot.
     struct AdmissionWaiter
     {
+        const String & query_id;
+        const String & user;
+        const std::optional<UUID> & user_id;
+        ClientInfo::Interface interface;
         bool granted = false;
+        /// Set by `cancelAdmissionWaitersLocked`; `insert` throws `QUERY_WAS_CANCELLED` once it observes it.
+        bool cancelled = false;
         std::condition_variable cv;
     };
 
     size_t admission_running = 0;
     std::deque<AdmissionWaiter *> admission_queue;
+
+    /// Queries that are being admitted by `insert` and are not registered in `processes` yet. They are not
+    /// reachable through `processes` or `queries_to_user`, but may wait for a long time (for an admission
+    /// slot or at a concurrency limit), so the out-of-band cancellation paths (`sendCancelToQuery`, the
+    /// PostgreSQL `CancelRequest`, MySQL `KILL QUERY <connection_id>`) look them up here.
+    std::vector<AdmissionWaiter *> admission_waiters;
+
+    /// Mark the matching `admission_waiters` as cancelled and wake them up. Returns the number of them.
+    /// Caller must hold `mutex`.
+    size_t cancelAdmissionWaitersLocked(const std::function<bool(const AdmissionWaiter &)> & predicate);
 
     /// Number of queries that released their admission slot early (via `releaseAdmissionSlot`)
     /// but whose `ProcessListEntry` is not destroyed yet, so they still count toward
@@ -722,6 +741,11 @@ public:
     /// Cancel an unauthenticated PostgreSQL request. Cancels only the query of the connection that
     /// was given exactly this pair; queries from other interfaces never match.
     CancellationCode sendCancelToPostgreSQLQuery(Int32 process_id, UInt32 secret_key);
+
+    /// Cancel the queries of the MySQL connection `connection_id` that are still being admitted (see
+    /// `admission_waiters`), for MySQL `KILL QUERY <connection_id>`. Queries of other users are cancelled
+    /// only if `may_kill_other_users` (the `KILL QUERY` privilege). Returns the number of cancelled queries.
+    size_t cancelAdmissionOfMySQLConnection(UInt64 connection_id, const String & current_user, bool may_kill_other_users);
 
     /// With except_ddl_backups_and_restores, BACKUP and RESTORE parts of ON CLUSTER operations run by the DDL worker are not cancelled.
     void killAllQueries(bool except_ddl_backups_and_restores = false);

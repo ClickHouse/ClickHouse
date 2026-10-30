@@ -5,6 +5,7 @@
 #include <array>
 #include <optional>
 #include <Access/AccessControl.h>
+#include <Access/ContextAccess.h>
 #include <Access/Authentication.h>
 #include <Access/Common/AccessFlags.h>
 #include <Access/User.h>
@@ -25,6 +26,7 @@
 #include <IO/WriteBuffer.h>
 #include <IO/copyData.h>
 #include <Interpreters/DatabaseCatalog.h>
+#include <Interpreters/ProcessList.h>
 #include <Interpreters/Session.h>
 #include <Interpreters/executeQuery.h>
 #include <Interpreters/Context.h>
@@ -269,8 +271,8 @@ static std::optional<String> setSettingReplacementQuery(const String & query, co
     return "SET " + clickhouse_setting + " = " + value;
 }
 
-/// Replace "KILL QUERY [connection_id]" into "KILL QUERY WHERE query_id LIKE 'mysql:[connection_id]:xxx'".
-static String killConnectionIdReplacementQuery(const String & query)
+/// The connection id of "KILL QUERY [connection_id]", or nothing if `query` is not of this form.
+static std::optional<String> killQueryConnectionId(const String & query)
 {
     const String prefix = "KILL QUERY ";
     /// The dispatcher matched the key "KILL QUERY" (10 chars, no separator) but we slice at
@@ -288,11 +290,16 @@ static String killConnectionIdReplacementQuery(const String & query)
         static const re2::RE2 expr(R"(^\s*([0-9]+)\s*;?\s*$)");
         String connection_id_str;
         if (re2::RE2::FullMatch(suffix, expr, &connection_id_str))
-        {
-            String replacement = fmt::format("KILL QUERY WHERE query_id LIKE 'mysql:{}:%'", connection_id_str);
-            return replacement;
-        }
+            return connection_id_str;
     }
+    return {};
+}
+
+/// Replace "KILL QUERY [connection_id]" into "KILL QUERY WHERE query_id LIKE 'mysql:[connection_id]:xxx'".
+static String killConnectionIdReplacementQuery(const String & query)
+{
+    if (auto connection_id_str = killQueryConnectionId(query))
+        return fmt::format("KILL QUERY WHERE query_id LIKE 'mysql:{}:%'", *connection_id_str);
     return query;
 }
 
@@ -954,8 +961,26 @@ void MySQLHandler::comQuery(ReadBuffer & payload, bool binary_protocol)
 
         if (should_replace)
         {
-            ReadBufferFromString replacement(replacement_query);
-            executeQuery(replacement, *out, query_context, set_result_details, QueryFlags{}, format_settings);
+            /// The replacement of `KILL QUERY <connection_id>` looks for the query in `system.processes`, which
+            /// does not list the queries still waiting for admission, so cancel such a query first. A connection
+            /// runs one query at a time, and a query stays reachable for this cancellation until it is
+            /// registered in `system.processes`, so if one was cancelled here there is nothing left to kill.
+            size_t cancelled_admissions = 0;
+            if (checkShouldReplaceQuery(query, "KILL QUERY"))
+            {
+                UInt64 kill_connection_id = 0;
+                if (auto connection_id_str = killQueryConnectionId(query); connection_id_str && tryParse(kill_connection_id, *connection_id_str))
+                    cancelled_admissions = query_context->getProcessList().cancelAdmissionOfMySQLConnection(
+                        kill_connection_id,
+                        query_context->getClientInfo().current_user,
+                        query_context->getAccess()->isGranted(AccessType::KILL_QUERY));
+            }
+
+            if (!cancelled_admissions)
+            {
+                ReadBufferFromString replacement(replacement_query);
+                executeQuery(replacement, *out, query_context, set_result_details, QueryFlags{}, format_settings);
+            }
         }
         else
             executeQuery(payload, *out, query_context, set_result_details, QueryFlags{}, format_settings);

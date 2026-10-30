@@ -123,6 +123,11 @@ struct QueryState
     /// Data was read.
     bool read_all_data = true;
 
+    /// The empty block terminating the external tables (and scalars) has been read.
+    bool received_external_tables = false;
+    /// A non-empty block of them was read ahead while the query waited for admission (see `makeConnectionAliveCheck`).
+    bool read_ahead_external_tables_block = false;
+
     /// Request requires data from client for function input() or for INSERT ... RETURNING
     bool need_receive_data_for_input = false;
     /// The data for input() is received completely (or receiving failed). Set by the thread of the pipeline reading the data.
@@ -322,6 +327,8 @@ private:
     void processClusterNameAndSalt();
 
     void readTemporaryTables(QueryState & state) TSA_REQUIRES(callback_mutex);
+    /// The connection liveness check for the admission wait of the query, which also notices its `Cancel`.
+    std::function<bool()> makeConnectionAliveCheck(std::shared_ptr<QueryState> & query_state);
     void skipData(QueryState & state) TSA_REQUIRES(callback_mutex);
     bool skipDataPacket(QueryState & state) TSA_REQUIRES(callback_mutex);
 
