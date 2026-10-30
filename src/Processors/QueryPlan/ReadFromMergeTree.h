@@ -161,6 +161,9 @@ public:
         /// - search_algorithm
     };
 
+    /// Name of the synthetic skip-index stat that reports the AND/OR combination of all skip indexes.
+    static constexpr auto COMBINED_SKIP_INDEXES_STAT_NAME = "<Combined skip indexes>";
+
     /// This is a struct with information about applied indexes.
     /// Is used for introspection only, in EXPLAIN query.
     struct IndexStat

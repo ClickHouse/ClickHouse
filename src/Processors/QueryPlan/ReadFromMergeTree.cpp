@@ -88,6 +88,7 @@
 #include <Common/checkStackSize.h>
 #include <Common/getNumberOfCPUCoresToUse.h>
 #include <Common/logger_useful.h>
+#include <Common/quoteString.h>
 #include <Common/thread_local_rng.h>
 
 #include <algorithm>
@@ -287,6 +288,9 @@ namespace ProfileEvents
     extern const Event SelectedRanges;
     extern const Event SelectedMarks;
     extern const Event SelectedMarksTotal;
+    extern const Event GranulesDroppedByPartitionKey;
+    extern const Event GranulesDroppedByPrimaryKey;
+    extern const Event GranulesDroppedBySkipIndexes;
     extern const Event SelectQueriesWithPrimaryKeyUsage;
     extern const Event DistributedPlanWorkerPartsReceived;
     extern const Event DistributedPlanWorkerPartsScanned;
@@ -5253,6 +5257,28 @@ bool ReadFromMergeTree::supportsSkipIndexesOnDataRead() const
 
 static const char * indexTypeToString(ReadFromMergeTree::IndexType type);
 
+/// Calls `callback(stat, granules_before)` for every per-query index layer in the order the analysis applied them.
+/// Skips the initial total and the per-part entries added by `per_part_index_stats`.
+template <typename Callback>
+static void forEachIndexLayer(const ReadFromMergeTree::IndexStats & index_stats, Callback && callback)
+{
+    UInt64 granules_before = 0;
+    for (const auto & stat : index_stats)
+    {
+        if (stat.type == ReadFromMergeTree::IndexType::None)
+        {
+            granules_before = stat.num_granules_after;
+            continue;
+        }
+
+        if (!stat.part_name.empty())
+            continue;
+
+        callback(stat, granules_before > 0 ? granules_before : stat.num_granules_after);
+        granules_before = stat.num_granules_after;
+    }
+}
+
 void ReadFromMergeTree::logPredicateStatistics(const AnalysisResult & result) const
 {
     UInt64 sample_rate = context->getSettingsRef()[Setting::predicate_statistics_sample_rate];
@@ -5298,19 +5324,8 @@ void ReadFromMergeTree::logPredicateStatistics(const AnalysisResult & result) co
         element.table = storage_id.table_name;
         element.query_id = String(CurrentThread::getQueryId());
 
-        UInt64 prev_granules = 0;
-        for (const auto & stat : result.index_stats)
+        forEachIndexLayer(result.index_stats, [&](const IndexStat & stat, UInt64 total)
         {
-            if (stat.type == IndexType::None)
-            {
-                prev_granules = stat.num_granules_after;
-                continue;
-            }
-
-            if (!stat.part_name.empty())
-                continue;
-
-            UInt64 total = prev_granules > 0 ? prev_granules : stat.num_granules_after;
             UInt64 after = stat.num_granules_after;
 
             element.index_names.push_back(stat.name.empty() ? indexTypeToString(stat.type) : stat.name);
@@ -5318,9 +5333,7 @@ void ReadFromMergeTree::logPredicateStatistics(const AnalysisResult & result) co
             element.total_granules.push_back(total);
             element.granules_after.push_back(after);
             element.index_selectivities.push_back(total > 0 ? static_cast<Float64>(after) / static_cast<Float64>(total) : 1.0);
-
-            prev_granules = after;
-        }
+        });
     });
 }
 
@@ -5609,7 +5622,38 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, [[ma
                 fmt::format("{}.{}", data.getStorageID().getFullNameNotQuoted(), part.data_part->info.getPartitionId()));
         }
         context->getQueryContext()->addQueryAccessInfo(partition_names);
+
+        Names index_names;
+        for (const auto & stat : result.index_stats)
+        {
+            if (stat.type == IndexType::Skip && stat.name != COMBINED_SKIP_INDEXES_STAT_NAME)
+                index_names.emplace_back(fmt::format("{}.{}", data.getStorageID().getFullTableName(), backQuoteIfNeed(stat.name)));
+        }
+        context->getQueryContext()->addUsedDataSkippingIndices(index_names);
     }
+
+    forEachIndexLayer(result.index_stats, [](const IndexStat & stat, UInt64 granules_before)
+    {
+        UInt64 dropped = granules_before > stat.num_granules_after ? granules_before - stat.num_granules_after : 0;
+        switch (stat.type)
+        {
+            case IndexType::MinMax:
+            case IndexType::Partition:
+                ProfileEvents::increment(ProfileEvents::GranulesDroppedByPartitionKey, dropped);
+                break;
+            case IndexType::PrimaryKey:
+                ProfileEvents::increment(ProfileEvents::GranulesDroppedByPrimaryKey, dropped);
+                break;
+            case IndexType::Skip:
+                ProfileEvents::increment(ProfileEvents::GranulesDroppedBySkipIndexes, dropped);
+                break;
+            case IndexType::None:
+            case IndexType::PrimaryKeyExpand:
+            case IndexType::Statistics:
+            case IndexType::NonIntersectingSplit:
+                break;
+        }
+    });
 
     ProfileEvents::increment(ProfileEvents::SelectedParts, result.selected_parts);
     ProfileEvents::increment(ProfileEvents::SelectedPartsTotal, result.total_parts);

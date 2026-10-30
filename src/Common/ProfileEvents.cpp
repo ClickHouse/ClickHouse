@@ -582,6 +582,9 @@
     M(SelectedRanges, "Number of (non-adjacent) ranges in all data parts selected to read from a MergeTree table.", ValueType::Number) \
     M(SelectedMarks, "Number of marks (index granules) selected to read from a MergeTree table.", ValueType::Number) \
     M(SelectedMarksTotal, "Number of total marks (index granules) before selecting which ones to read from a MergeTree table.", ValueType::Number) \
+    M(GranulesDroppedByPartitionKey, "Number of marks (index granules) excluded from reading a MergeTree table by the partition key and its min-max index during index analysis.", ValueType::Number) \
+    M(GranulesDroppedByPrimaryKey, "Number of marks (index granules) excluded from reading a MergeTree table by the primary key during index analysis.", ValueType::Number) \
+    M(GranulesDroppedBySkipIndexes, "Number of marks (index granules) excluded from reading a MergeTree table by data skipping indexes during index analysis. Indexes applied at read time (`use_skip_indexes_on_data_read`) are not counted.", ValueType::Number) \
     M(SelectedRows, "Number of rows SELECTed from all tables.", ValueType::Number) \
     M(SelectedBytes, "Number of bytes (uncompressed; for columns as they stored in memory) SELECTed from all tables.", ValueType::Bytes) \
     M(RowsReadByMainReader, "Number of rows read from MergeTree tables by the main reader (after PREWHERE step).", ValueType::Number) \
