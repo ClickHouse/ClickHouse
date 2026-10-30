@@ -374,6 +374,7 @@ ContextPtr IMergeTreeReader::createContextForDefaultExpressions() const
             "min_free_disk_space_for_temporary_data", "temporary_files_codec", "temporary_files_buffer_size",
             "max_rows_to_read", "max_bytes_to_read", "read_overflow_mode",
             "max_rows_to_read_leaf", "max_bytes_to_read_leaf", "read_overflow_mode_leaf",
+            "max_rows_to_transfer", "max_bytes_to_transfer", "transfer_overflow_mode",
             "max_execution_time", "timeout_overflow_mode",
         };
         for (std::string_view name : reader_settings)
