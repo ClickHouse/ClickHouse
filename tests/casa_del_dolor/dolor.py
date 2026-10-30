@@ -374,6 +374,10 @@ parser.add_argument(
 )
 
 args = parser.parse_args()
+# The load generator runs in `--tmp-files-dir` to keep its cores, so its paths must not be relative to the
+# invocation directory. `absolute`, not `resolve`: the name of a symlink picks the tool the binary runs as.
+args.client_binary = args.client_binary.absolute()
+args.tmp_files_dir = args.tmp_files_dir.absolute()
 
 if len(args.replica_values) != len(args.shard_values):
     raise Exception(
