@@ -37,7 +37,7 @@ KNOWN_ISSUES = [
     ),
     KnownIssue(
         "paimon_schema_change_without_snapshot",
-        "not filed yet: found by this fuzzer, see the README",
+        "https://github.com/ClickHouse/ClickHouse/issues/128308",
         "Paimon `ALTER TABLE` writes a new schema without a new snapshot; ClickHouse keeps reading with the schema of the latest snapshot, so an added column is unknown until the next commit. The checks are skipped until the next snapshot.",
     ),
     KnownIssue(
@@ -47,7 +47,7 @@ KNOWN_ISSUES = [
     ),
     KnownIssue(
         "paimon_date_before_epoch",
-        "not filed yet: found by this fuzzer, see the README",
+        "https://github.com/ClickHouse/ClickHouse/issues/128306",
         "Paimon `DATE` is read as `Date` instead of `Date32`, so a date before 1970-01-01 fails with `VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE`; the Paimon writer does not use `DATE`.",
     ),
     KnownIssue(
@@ -57,17 +57,17 @@ KNOWN_ISSUES = [
     ),
     KnownIssue(
         "paimon_row_type",
-        "not filed yet: found by this fuzzer, see the README",
+        "https://github.com/ClickHouse/ClickHouse/issues/128307",
         "A Paimon `ROW` (struct) column makes the table unreadable (`Unsupported Paimon type: ROW`, `Paimon/Types.h`); the Paimon writer does not use structs.",
     ),
     KnownIssue(
         "clickhouse_iceberg_v1_metadata",
-        "not filed yet: found by this fuzzer, see the README",
+        "https://github.com/ClickHouse/ClickHouse/issues/128301",
         "ClickHouse-written Iceberg format version 1 metadata lacks the required `schema` field, so PyIceberg cannot open the table; the ClickHouse Iceberg writer uses format version 2.",
     ),
     KnownIssue(
         "clickhouse_iceberg_bool",
-        "not filed yet: found by this fuzzer, see the README",
+        "https://github.com/ClickHouse/ClickHouse/issues/128303",
         "ClickHouse cannot create an Iceberg table with a `Bool` column (`Unsupported type for iceberg Bool`); the ClickHouse Iceberg writer does not use `Bool`.",
     ),
     KnownIssue(
