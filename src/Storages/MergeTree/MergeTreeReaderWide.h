@@ -62,6 +62,9 @@ public:
     /// size hints of a stream reported several times are summed).
     std::unordered_map<String, std::vector<StreamWithSizeHint>> getAllColumnsSubstreams();
 
+    std::optional<size_t> takeCompressedBytesRead() override;
+    void countCompressedBytesRead(CountedCompressedBlocksPtr counted) override;
+
 private:
     /// Prefixes or data of a single column can be deserialized in parallel from different streams, so
     /// these containers are mutated concurrently and all of the reader's synchronization lives here.
@@ -81,6 +84,7 @@ private:
         void release(const String & stream_name);
         /// Valid only while no task runs: a running task can `release` streams.
         std::vector<MergeTreeReaderStream *> getAll() const;
+        void forEach(const std::function<void(const String & stream_name, MergeTreeReaderStream & stream)> & callback) const;
 
         bool isPrefetched(const String & stream_name) const;
         void markPrefetched(const String & stream_name);
@@ -94,6 +98,17 @@ private:
     };
 
     FileStreams streams;
+
+    /// The ranges in the files of the compressed blocks read, and of those that hold the granules served from the columns
+    /// cache, by stream, since `takeCompressedBytesRead` was called, see `CompressedReadBufferBase::setBlocksReadSink`. Only
+    /// after `countCompressedBytesRead`. The buffers of the streams append to the ranges of their own stream, the map is guarded.
+    std::mutex ranges_read_mutex;
+    std::unordered_map<String, CompressedBlockRanges> ranges_read;
+    CompressedBlockRanges & getRangesRead(const String & stream_name);
+    void addGranuleServedFromColumnsCache(size_t mark, const std::vector<bool> & from_disk);
+    /// A granule served from the cache is priced by the blocks of its streams, which are not all known for some columns:
+    /// then the bytes read are not measured, and the ranges are not kept.
+    bool served_from_cache_without_known_streams = false;
 
     struct StreamInfo
     {

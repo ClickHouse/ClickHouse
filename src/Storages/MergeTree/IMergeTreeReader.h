@@ -100,16 +100,16 @@ public:
     /// `fillMissingColumns` runs and must not be consumed as regular columns before that.
     const NameSet & getPartiallyReadColumns() const { return partially_read_columns; }
 
-    /// Returns the total size of the values that the string value filters replaced with empty strings since
-    /// the previous call, keyed by the column name in the part, and resets it. The in-memory size of the read
-    /// columns misses these values, although they were read from disk.
-    std::unordered_map<String, size_t> takeBytesSkippedByStringValueFilters();
-
-    /// For a reader that knows how many bytes it read from disk as they are stored, compressed: returns the compressed
-    /// size of the blocks it read since the previous call. A compact part has no per-column sizes to estimate it from.
-    /// Only after `countCompressedBytesRead`, since counting may cost more than reading, see `MergeTreeReaderCompact`.
+    /// Returns the compressed size of the blocks the reader loaded from the part since the previous call, the blocks
+    /// served from the uncompressed cache included, but not those counted already in the `CountedCompressedBlocks` given
+    /// to `countCompressedBytesRead`. `nullopt` if the reader cannot tell.
     virtual std::optional<size_t> takeCompressedBytesRead() { return std::nullopt; }
-    void countCompressedBytesRead() { count_compressed_bytes_read = true; }
+
+    /// For a caller that takes `takeCompressedBytesRead`: makes it count the granules served from the columns cache as well,
+    /// as the compressed size of the data reading them from the part would load. Costs loading the marks of the columns
+    /// served, and keeping the granules until they are taken, so a reader whose caller does not take them does not count them.
+    /// The readers of a read share `counted`, so a block that several of them load is counted once, as it is one replica's.
+    virtual void countCompressedBytesRead(CountedCompressedBlocksPtr counted) { counted_compressed_blocks = std::move(counted); }
 
     size_t getFirstMarkToRead() const { return all_mark_ranges.front().begin; }
 
@@ -165,16 +165,15 @@ protected:
     /// Returns true if requested column is a subcolumn with offsets of Array which is part of Nested column.
     bool isSubcolumnOffsetsOfNested(const String & name_in_storage, const String & subcolumn_name) const;
 
-    /// Sets the string value filter to apply during deserialization of the column, or resets it if there is none,
-    /// together with the counter of the bytes it skips (see `takeBytesSkippedByStringValueFilters`).
+    /// Returns the string value filter to apply during deserialization of the column, or nullptr.
     /// Takes the column as it is named in the part (an element of `columns_to_read`).
     /// See `MergeTreeReaderSettings::string_value_filters`.
-    void setStringValueFilter(const NameAndTypePair & column_in_part, ISerialization::DeserializeBinaryBulkSettings & deserialize_settings);
+    StringValueFilterPtr getStringValueFilter(const NameAndTypePair & column_in_part) const;
 
     void checkNumberOfColumns(size_t num_columns_to_read) const;
 
     /// See `countCompressedBytesRead`.
-    bool count_compressed_bytes_read = false;
+    CountedCompressedBlocksPtr counted_compressed_blocks;
 
     String getMessageForDiagnosticOfBrokenPart(size_t from_mark, size_t max_rows_to_read) const;
 
@@ -348,16 +347,9 @@ private:
     /// The same as above but with converted Arrays to subcolumns of Nested.
     NamesAndTypesList converted_requested_columns;
 
-    struct StringValueFilterForColumn
-    {
-        StringValueFilterPtr filter;
-        /// The total size of the values replaced with empty strings, see `takeBytesSkippedByStringValueFilters`.
-        size_t bytes_skipped = 0;
-    };
-
     /// String value filters from `settings.string_value_filters` for the columns that pass all
     /// the applicability checks, keyed by the column name in the part. Filled in the constructor.
-    std::unordered_map<String, StringValueFilterForColumn> string_value_filters_by_part_column_name;
+    std::unordered_map<String, StringValueFilterPtr> string_value_filters_by_part_column_name;
 
     /// Fields of virtual columns that were filled in previous stages.
     VirtualFields virtual_fields;

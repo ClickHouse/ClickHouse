@@ -38,6 +38,9 @@ public:
 
     bool canReadIncompleteGranules() const override { return main_reader->canReadIncompleteGranules(); }
 
+    /// Reading the rows only applies the result of the index analysis: it loads nothing from the part.
+    std::optional<size_t> takeCompressedBytesRead() override { return 0; }
+
     bool canSkipMark(size_t mark) override;
 
     bool canSkipAnyMark() const override;

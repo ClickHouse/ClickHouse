@@ -4,6 +4,11 @@
 #include <Compression/CompressedReadBufferFromFile.h>
 #include <Storages/MergeTree/MergeTreeIOSettings.h>
 #include <Storages/MergeTree/MergeTreeMarksLoader.h>
+#include <base/defines.h>
+
+#include <map>
+#include <mutex>
+#include <unordered_map>
 
 
 namespace DB
@@ -14,6 +19,22 @@ using DataPartStoragePtr = std::shared_ptr<const IDataPartStorage>;
 
 class UncompressedCache;
 class CachedCompressedReadBuffer;
+
+/// The parts of the files counted already, as merged ranges by file, for the readers of a read: a compressed block may hold
+/// the data of several columns, read or served from the columns cache, and may be loaded more than once, by one reader or
+/// by several, each reading other granules of it. It is counted once.
+class CountedCompressedBlocks
+{
+public:
+    /// The bytes of the ranges in the file not counted yet, which become counted. Clears the ranges.
+    size_t take(const String & file, CompressedBlockRanges & ranges);
+
+private:
+    std::mutex mutex;
+    std::unordered_map<String, std::map<size_t, size_t>> counted TSA_GUARDED_BY(mutex);
+};
+
+using CountedCompressedBlocksPtr = std::shared_ptr<CountedCompressedBlocks>;
 
 /// Basic and the most low-level class
 /// for reading single columns or indexes.
@@ -63,6 +84,11 @@ public:
 
     /// See `CompressedReadBufferBase::setBlocksReadSink`. Must not be called for a stream of uncompressed data.
     void setBlocksReadSink(CompressedBlockRanges * blocks_read_);
+
+    /// Appends the range in the file, [begin, end), of the compressed blocks that hold the data of the granule `mark` of a
+    /// stream of one column: from its mark to the next one. If the next mark is inside a compressed block, which then holds
+    /// the end of this data too, or is the same, up to the next mark at a later offset.
+    void addRangeOfMark(size_t mark, CompressedBlockRanges & ranges);
 
     /// Announces the new map if the buffer exists.
     void updateReadRequestMap(MarkRangesPtr request_map_);
