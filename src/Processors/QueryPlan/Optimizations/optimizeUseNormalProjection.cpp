@@ -878,6 +878,10 @@ UseProjectionsResult optimizeUseNormalProjections(
     if (projection_replaced_with_prepared_source && !has_parent_parts && reading->isParallelReadingEnabled())
         reading->announceEmptyReadRangesToCoordinatorIfInitiator();
 
+    /// For the same reason the projection step reports the index usage of `reading`.
+    if (!has_parent_parts)
+        reading->reportIndexUsageWith(*projection_reading, parent_reading_select_result);
+
     projection_reading->setStepDescription(best_candidate->projection->name, optimization_settings.max_step_description_length);
 
     auto & projection_reading_node = nodes.emplace_back(QueryPlan::Node{.step = std::move(projection_reading)});
@@ -928,7 +932,7 @@ UseProjectionsResult optimizeUseNormalProjections(
     }
 
     /// Filter out parts in parent_ranges that overlap with those already read by the best candidate projection
-    filterPartsByProjection(*parent_reading_select_result, best_candidate->parent_parts);
+    filterPartsByProjection(*parent_reading_select_result, best_candidate->parent_parts, /*parts_read_from_projection=*/true);
 
     if (!query_info.is_internal && context->hasQueryContext())
     {

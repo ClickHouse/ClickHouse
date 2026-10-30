@@ -85,6 +85,7 @@
 #include <Common/JSONBuilder.h>
 #include <Common/Logger.h>
 #include <Common/SipHash.h>
+#include <Common/assert_cast.h>
 #include <Common/checkStackSize.h>
 #include <Common/getNumberOfCPUCoresToUse.h>
 #include <Common/logger_useful.h>
@@ -5300,6 +5301,17 @@ void ReadFromMergeTree::recordIndexUsage(const AnalysisResult & result, const St
 ContextMutablePtr ReadFromMergeTree::getAccessInfoContext() const
 {
     return context->hasQueryContext() && !query_info.is_internal ? context->getQueryContext() : nullptr;
+}
+
+void ReadFromMergeTree::reportIndexUsageWith(IQueryPlanStep & step, AnalysisResultPtr analysis, UInt64 granules_dropped_by_partition_key) const
+{
+    assert_cast<ISourceStep &>(step).setOnInitializePipeline(
+        [replaced_analysis = std::move(analysis), storage_id = data.getStorageID(), access_info_context = getAccessInfoContext(), granules_dropped_by_partition_key]
+        {
+            if (replaced_analysis)
+                recordIndexUsage(*replaced_analysis, storage_id, access_info_context);
+            ProfileEvents::increment(ProfileEvents::GranulesDroppedByPartitionKey, granules_dropped_by_partition_key);
+        });
 }
 
 void ReadFromMergeTree::logPredicateStatistics(const AnalysisResult & result) const

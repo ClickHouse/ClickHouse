@@ -1252,6 +1252,8 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
                 query_status->checkTimeLimit();
 
             auto & ranges = parts_with_ranges[part_index];
+            ranges.marks_dropped_by_primary_key = 0;
+            ranges.marks_dropped_by_skip_indexes = 0;
             if (metadata_snapshot->hasPrimaryKey() || part_offset_condition || total_offset_condition)
             {
                 CurrentMetrics::Increment metric(CurrentMetrics::FilteringMarksWithPrimaryKey);
@@ -1274,7 +1276,8 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
                     log);
 
                 pk_stat.search_algorithm.store(ranges.ranges.search_algorithm, std::memory_order_relaxed);
-                pk_stat.granules_dropped.fetch_add(total_marks_count - ranges.getMarksCount(), std::memory_order_relaxed);
+                ranges.marks_dropped_by_primary_key = total_marks_count - ranges.getMarksCount();
+                pk_stat.granules_dropped.fetch_add(ranges.marks_dropped_by_primary_key, std::memory_order_relaxed);
                 if (ranges.ranges.empty())
                     pk_stat.parts_dropped.fetch_add(1, std::memory_order_relaxed);
                 pk_stat.elapsed_us.fetch_add(watch.elapsed(), std::memory_order_relaxed);
@@ -1409,7 +1412,8 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
                     sum_marks_union.fetch_add(ranges.getMarksCount(), std::memory_order_relaxed);
                 }
 
-                sum_marks_dropped_by_skip_indexes.fetch_add(marks_before_skip_indexes - std::min(marks_before_skip_indexes, ranges.getMarksCount()), std::memory_order_relaxed);
+                ranges.marks_dropped_by_skip_indexes = marks_before_skip_indexes - std::min(marks_before_skip_indexes, ranges.getMarksCount());
+                sum_marks_dropped_by_skip_indexes.fetch_add(ranges.marks_dropped_by_skip_indexes, std::memory_order_relaxed);
 
                 /// the dynamic top-K filter reads this index when the part is read
                 if (skip_indexes.skip_index_for_top_k_filtering && skip_indexes.threshold_tracker && !ranges.ranges.empty()
@@ -1531,10 +1535,12 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
                                                        top_k_handle_ties, parts_top_k_granules, top_k_granules_result);
         for (size_t part_index = 0; part_index < parts_with_ranges.size(); ++part_index)
         {
-            sum_marks_before_top_k += parts_with_ranges[part_index].getMarksCount();
+            const size_t marks_before_top_k = parts_with_ranges[part_index].getMarksCount();
+            sum_marks_before_top_k += marks_before_top_k;
             if (!parts_top_k_granules[part_index].empty())
             {
                 parts_with_ranges[part_index].ranges = std::move(top_k_granules_result[part_index]);
+                parts_with_ranges[part_index].marks_dropped_by_skip_indexes += marks_before_top_k - std::min(marks_before_top_k, parts_with_ranges[part_index].getMarksCount());
             }
             if (!parts_with_ranges[part_index].ranges.empty())
             {

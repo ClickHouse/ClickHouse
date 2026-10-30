@@ -1,7 +1,6 @@
 #pragma once
 
 #include <Processors/QueryPlan/ISourceStep.h>
-#include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Storages/MergeTree/MergeTreeIOSettings.h>
 #include <Storages/MergeTree/MergeTreeIndexConditionText.h>
 #include <Storages/MergeTree/MergeTreeIndices.h>
@@ -25,15 +24,12 @@ public:
         TextSearchQueryPtr query;
     };
 
-    /// `replaced_reading` is the read this step replaces entirely, its index usage is reported when the
-    /// pipeline is built; nullptr when that read stays in the plan and reports it itself.
     ReadFromTextIndexCount(
         RangesInDataParts parts_,
         ResolvedQuery resolved_,
         MergeTreeReaderSettings reader_settings_,
         const String & count_column_name,
-        size_t num_streams_,
-        const ReadFromMergeTree * replaced_reading);
+        size_t num_streams_);
 
     String getName() const override { return "ReadFromTextIndexCount"; }
     void initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings & settings) override;
@@ -43,10 +39,6 @@ private:
     std::shared_ptr<const ResolvedQuery> resolved;
     MergeTreeReaderSettings reader_settings;
     size_t num_streams;
-
-    ReadFromMergeTree::AnalysisResultPtr replaced_analysis;
-    StorageID storage_id = StorageID::createEmpty();
-    ContextMutablePtr access_info_context;
 };
 
 }

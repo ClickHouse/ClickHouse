@@ -14,6 +14,9 @@ QueryPipelineBuilderPtr ISourceStep::updatePipeline(QueryPipelineBuilders, const
 {
     auto pipeline = std::make_unique<QueryPipelineBuilder>();
 
+    if (on_initialize_pipeline)
+        on_initialize_pipeline();
+
     /// For `Source` step, since it's not add new Processors to `pipeline->pipe`
     /// in `initializePipeline`, but make an assign with new created Pipe.
     /// And Processors for the Step is added here. So we do not need to use

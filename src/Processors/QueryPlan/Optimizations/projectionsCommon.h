@@ -81,8 +81,12 @@ struct ProjectionCandidate
 
 /// Removes parts not in valid_parts from reading_select_result and updates related counters.
 /// Returns the number of parts removed.
+/// With `parts_read_from_projection` the removed parts are read from the projection, whose read reports
+/// its own index analysis of them, so the marks that reading_select_result excluded in them are not counted.
 size_t filterPartsByProjection(
-    ReadFromMergeTree::AnalysisResult & reading_select_result, const std::unordered_set<const IMergeTreeDataPart *> & valid_parts);
+    ReadFromMergeTree::AnalysisResult & reading_select_result,
+    const std::unordered_set<const IMergeTreeDataPart *> & valid_parts,
+    bool parts_read_from_projection = false);
 
 /// This function fills ProjectionCandidate structure for specified projection.
 /// It returns false if for some reason we cannot read from projection.

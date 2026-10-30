@@ -439,6 +439,10 @@ public:
     /// The query context that collects the access info of this read, nullptr for an internal read.
     ContextMutablePtr getAccessInfoContext() const;
 
+    /// `step` replaces this read entirely: it reports the index usage of `analysis` (if set) when its pipeline is built,
+    /// with `granules_dropped_by_partition_key` that `step` excluded itself.
+    void reportIndexUsageWith(IQueryPlanStep & step, AnalysisResultPtr analysis, UInt64 granules_dropped_by_partition_key = 0) const;
+
     /// The query condition cache is keyed by (table UUID, part name, condition hash), so it must not
     /// see filters whose value can change while that key stays the same: non-deterministic virtual
     /// columns (query-wide part numbering, catalog names, disk placement).

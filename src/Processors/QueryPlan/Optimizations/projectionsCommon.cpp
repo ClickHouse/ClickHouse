@@ -295,7 +295,9 @@ bool QueryDAG::build(QueryPlan::Node & node)
 }
 
 size_t filterPartsByProjection(
-    ReadFromMergeTree::AnalysisResult & reading_select_result, const std::unordered_set<const IMergeTreeDataPart *> & valid_parts)
+    ReadFromMergeTree::AnalysisResult & reading_select_result,
+    const std::unordered_set<const IMergeTreeDataPart *> & valid_parts,
+    bool parts_read_from_projection)
 {
     size_t filtered_parts = 0;
     auto & parts_with_ranges = reading_select_result.parts_with_ranges;
@@ -316,6 +318,13 @@ size_t filterPartsByProjection(
             reading_select_result.selected_marks -= part.getMarksCount();
             reading_select_result.selected_rows -= part.getRowsCount();
             reading_select_result.selected_ranges -= part.ranges.size();
+            if (parts_read_from_projection)
+            {
+                auto & dropped_by_primary_key = reading_select_result.granules_dropped_by_primary_key;
+                auto & dropped_by_skip_indexes = reading_select_result.granules_dropped_by_skip_indexes;
+                dropped_by_primary_key -= std::min<UInt64>(dropped_by_primary_key, part.marks_dropped_by_primary_key);
+                dropped_by_skip_indexes -= std::min<UInt64>(dropped_by_skip_indexes, part.marks_dropped_by_skip_indexes);
+            }
             ++filtered_parts;
         }
     }

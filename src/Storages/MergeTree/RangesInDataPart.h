@@ -121,6 +121,10 @@ struct RangesInDataPart
     /// currently done only for use_skip_indexes_if_final_exact_mode=1
     std::optional<MarkRanges> ranges_snapshot_after_pk_analysis;
 
+    /// Marks of this part that index analysis excluded by the primary key and by skip indexes.
+    size_t marks_dropped_by_primary_key = 0;
+    size_t marks_dropped_by_skip_indexes = 0;
+
     /// Offset ranges from parent part, used during projection index reading.
     PartOffsetRanges parent_ranges;
 

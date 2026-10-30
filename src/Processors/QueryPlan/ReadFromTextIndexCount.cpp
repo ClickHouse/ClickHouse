@@ -424,27 +424,17 @@ ReadFromTextIndexCount::ReadFromTextIndexCount(
     ResolvedQuery resolved_,
     MergeTreeReaderSettings reader_settings_,
     const String & count_column_name,
-    size_t num_streams_,
-    const ReadFromMergeTree * replaced_reading)
+    size_t num_streams_)
     : ISourceStep(makeCountHeader(count_column_name))
     , parts(std::move(parts_))
     , resolved(std::make_shared<const ResolvedQuery>(std::move(resolved_)))
     , reader_settings(std::move(reader_settings_))
     , num_streams(num_streams_)
 {
-    if (replaced_reading)
-    {
-        replaced_analysis = replaced_reading->getAnalyzedResult();
-        storage_id = replaced_reading->getStorageID();
-        access_info_context = replaced_reading->getAccessInfoContext();
-    }
 }
 
 void ReadFromTextIndexCount::initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings & settings)
 {
-    if (replaced_analysis)
-        ReadFromMergeTree::recordIndexUsage(*replaced_analysis, storage_id, access_info_context);
-
     auto state = std::make_shared<TextIndexCountSource::State>();
     state->parts = std::move(parts);
 
