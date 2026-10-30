@@ -1416,7 +1416,8 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
                 sum_marks_dropped_by_skip_indexes.fetch_add(ranges.marks_dropped_by_skip_indexes, std::memory_order_relaxed);
 
                 /// the dynamic top-K filter reads this index when the part is read
-                if (skip_indexes.skip_index_for_top_k_filtering && skip_indexes.threshold_tracker && !ranges.ranges.empty()
+                if (use_skip_indexes_on_data_read_ && skip_indexes.skip_index_for_top_k_filtering && skip_indexes.threshold_tracker
+                    && !ranges.ranges.empty()
                     && skip_indexes.skip_index_for_top_k_filtering->getDeserializedFormat(
                         *part_info_for_reader, skip_indexes.skip_index_for_top_k_filtering->getFileName()))
                     top_k_index_applied.store(true, std::memory_order_relaxed);
