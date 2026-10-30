@@ -1009,16 +1009,25 @@ void StorageMaterializedView::alter(
     /// `alterRefreshParams` makes a refresh that races with this `ALTER` discard its watermark and run
     /// again under the new definition, which in `APPEND` mode appends the same rows twice. So skip it for
     /// an `ALTER` that does not change what a refresh reads and produces, e.g. a `MODIFY COMMENT`.
-    auto refresh_definition_hash = [](const StorageInMemoryMetadata & metadata)
+    auto refresh_definition_hash = [&](const StorageInMemoryMetadata & metadata)
     {
         SipHash hash;
         if (metadata.refresh)
             metadata.refresh->updateTreeHash(hash, /*ignore_aliases=*/ false);
         /// The operational entries of the query's own `SETTINGS` are left out, the same as in the persisted
         /// definition hash (`computeViewDefinitionHash`): a `MODIFY QUERY` that changes only `log_comment`
-        /// reads and produces the same rows.
+        /// reads and produces the same rows. So are its `additional_table_filters` entries keyed by a table
+        /// the query never reads. The names are resolved the way a refresh resolves them: in the view's
+        /// database, with the query's own `SETTINGS` applied.
         if (metadata.select.select_query)
-            updateHashWithQueryIgnoringOperationalSettings(hash, *metadata.select.select_query);
+        {
+            auto query_context = Context::createCopy(getContext());
+            query_context->setCurrentDatabase(table_id.database_name);
+            InterpreterSetQuery::applySettingsFromQuery(metadata.select.select_query->clone(), query_context);
+            auto matchable_names = collectNamesMatchableByAdditionalTableFilters(metadata.select.select_query, query_context);
+            updateHashWithQueryIgnoringOperationalSettings(
+                hash, *metadata.select.select_query, matchable_names ? &*matchable_names : nullptr);
+        }
         /// Only the effective security: the definer is ignored under `SQL SECURITY NONE`, so a
         /// `MODIFY DEFINER` there must not discard the watermark of a racing refresh.
         updateHashWithEffectiveSQLSecurity(hash, metadata);

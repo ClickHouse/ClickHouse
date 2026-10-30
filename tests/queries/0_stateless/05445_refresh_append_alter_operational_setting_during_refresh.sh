@@ -78,6 +78,36 @@ $CLICKHOUSE_CLIENT -q "
     DROP TABLE src_05445 SYNC;
 "
 
+# The same interleaving with a `MODIFY QUERY` that adds only an `additional_table_filters` entry for a table
+# the query never reads, so the filter cannot apply.
+$CLICKHOUSE_CLIENT -q "
+    CREATE TABLE src_05445 (x UInt64) ENGINE = MergeTree ORDER BY x;
+    CREATE TABLE dst_05445 (x UInt64) ENGINE = MergeTree ORDER BY x;
+    SYSTEM STOP MERGES src_05445;
+    INSERT INTO src_05445 VALUES (1);
+    CREATE MATERIALIZED VIEW mv_05445 REFRESH EVERY 1 SECOND IF CHANGED APPEND TO dst_05445
+        AS SELECT x FROM src_05445;
+"
+
+echo "filter initial: $(wait_for_dst '[1]')"
+
+$CLICKHOUSE_CLIENT -q "SYSTEM ENABLE FAILPOINT $FP"
+$CLICKHOUSE_CLIENT -q "INSERT INTO src_05445 VALUES (2)"
+timeout 60 $CLICKHOUSE_CLIENT -q "SYSTEM WAIT FAILPOINT $FP PAUSE" || echo "the refresh did not reach $FP"
+
+$CLICKHOUSE_CLIENT -q "ALTER TABLE mv_05445 MODIFY QUERY SELECT x FROM src_05445 SETTINGS additional_table_filters = {'unrelated_table_05445': 'x > 0'}"
+$CLICKHOUSE_CLIENT -q "SYSTEM DISABLE FAILPOINT $FP"
+echo "filter appended: $(wait_for_dst '[1,1,2]')"
+
+sleep 3
+echo "filter after: $(dst)"
+
+$CLICKHOUSE_CLIENT -q "
+    DROP TABLE mv_05445 SYNC;
+    DROP TABLE dst_05445 SYNC;
+    DROP TABLE src_05445 SYNC;
+"
+
 # The same interleaving with an `ALTER` that changes only the definer of a `SQL SECURITY NONE` view.
 $CLICKHOUSE_CLIENT -q "
     DROP USER IF EXISTS $USER;
