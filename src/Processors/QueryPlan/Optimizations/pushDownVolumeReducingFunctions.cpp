@@ -283,7 +283,7 @@ collectVolumeReducingFunctionsReplacingTheirArgument(const ActionsDAG & actions)
 }
 
 std::unordered_set<const ActionsDAG::Node *> collectVolumeReducingFunctionsToKeepBelow(
-    const ActionsDAG & actions, const ActionsDAG::Node * low_part_root)
+    const ActionsDAG & actions, const ActionsDAG::NodeRawConstPtrs & low_part_roots, bool is_filter)
 {
     /// A column the DAG surfaces crosses the step no matter where the function is computed, so the
     /// function may be lifted as before.
@@ -293,9 +293,12 @@ std::unordered_set<const ActionsDAG::Node *> collectVolumeReducingFunctionsToKee
 
     std::unordered_set<const ActionsDAG::Node *> split_nodes;
     std::unordered_set<const ActionsDAG::Node *> low_part_nodes;
-    if (low_part_root)
     {
-        ActionsDAG::NodeRawConstPtrs stack{low_part_root};
+        ActionsDAG::NodeRawConstPtrs stack;
+        for (const auto * root : low_part_roots)
+            if (root)
+                stack.push_back(root);
+
         while (!stack.empty())
         {
             const auto * node = stack.back();
@@ -333,7 +336,7 @@ std::unordered_set<const ActionsDAG::Node *> collectVolumeReducingFunctionsToKee
         /// a subquery projection. Keep a function below a filter only when the dedicated rewrite
         /// could have moved it there: the predicate must read its argument, the function must be
         /// cheap on every input row, and the predicate must not already calculate the same scalar.
-        if (low_part_root)
+        if (is_filter)
         {
             if (!low_part_nodes.contains(argument)
                 || !isCheapToEvaluateBeforeFilter(*node.function_base, argument->result_type))
@@ -391,7 +394,7 @@ std::unordered_set<const ActionsDAG::Node *> collectVolumeReducingFunctionsToKee
                 /// `lengthUTF8` scans the payload, so neither can stay below a filter that
                 /// reads their shared argument.
                 const bool can_keep_sibling_below = is_another_supported_volume_reducing_function
-                    && (!low_part_root || isCheapToEvaluateBeforeFilter(*reader.function_base, argument->result_type));
+                    && (!is_filter || isCheapToEvaluateBeforeFilter(*reader.function_base, argument->result_type));
 
                 if (&reader != &node && !can_keep_sibling_below)
                 {
