@@ -204,3 +204,130 @@ TEST(PackedStringRef, EqualityMediumVersusLargeLowCollision)
     EXPECT_FALSE(medium == large);
     EXPECT_FALSE(large == medium);
 }
+
+namespace
+{
+
+/// Fills the bytes past the end of the string with garbage: `build` must zero them.
+struct GarbagePaddedString
+{
+    explicit GarbagePaddedString(std::string_view s)
+    {
+        chassert(s.size() <= sizeof(buf) - 16);
+        buf.fill('#');
+        std::memcpy(buf.data(), s.data(), s.size());
+        size = s.size();
+    }
+
+    const char * data() const { return buf.data(); }
+
+    std::array<char, 64> buf{};
+    size_t size = 0;
+};
+
+std::array<uint8_t, 16> rawBytesOf(UnhashedPackedStringRef ref)
+{
+    std::array<uint8_t, 16> bytes{};
+    std::memcpy(bytes.data(), &ref, sizeof(ref));
+    return bytes;
+}
+
+std::array<uint8_t, 16> unhashedSmallImage(std::string_view s)
+{
+    std::array<uint8_t, 16> bytes{};
+    std::memcpy(bytes.data(), s.data(), s.size());
+    bytes[15] = static_cast<uint8_t>(s.size() << 3);
+    return bytes;
+}
+
+UnhashedPackedStringRef buildUnhashed(std::string_view s)
+{
+    const GarbagePaddedString padded(s);
+    return UnhashedPackedStringRef::build(padded.data(), padded.size);
+}
+
+}
+
+TEST(UnhashedPackedStringRef, EmptyIsAllZeros)
+{
+    UnhashedPackedStringRef ref = UnhashedPackedStringRef::build(nullptr, 0);
+    EXPECT_EQ(ref.low, 0u);
+    EXPECT_EQ(ref.high, 0u);
+    EXPECT_TRUE(ref.isEmpty());
+    EXPECT_EQ(static_cast<std::string_view>(ref), std::string_view{});
+}
+
+TEST(UnhashedPackedStringRef, SmallLayout)
+{
+    static_assert(UnhashedPackedStringRef::MAX_SMALL_LEN == 15);
+
+    const std::string alphabet = "abcdefghijklmno";
+    for (size_t len = 1; len <= UnhashedPackedStringRef::MAX_SMALL_LEN; ++len)
+    {
+        const std::string s = alphabet.substr(0, len);
+        UnhashedPackedStringRef ref = buildUnhashed(s);
+
+        EXPECT_TRUE(ref.isSmall()) << "len=" << len;
+        EXPECT_FALSE(ref.isLarge()) << "len=" << len;
+        EXPECT_FALSE(ref.isMedium()) << "len=" << len;
+        EXPECT_EQ(ref.getSmallSize(), len) << "len=" << len;
+        EXPECT_EQ(static_cast<std::string_view>(ref), std::string_view(s)) << "len=" << len;
+        EXPECT_EQ(rawBytesOf(ref), unhashedSmallImage(s)) << "len=" << len;
+    }
+}
+
+TEST(UnhashedPackedStringRef, ZeroBytesAreContent)
+{
+    using namespace std::literals;
+    /// The length is in the tag byte, so a trailing zero byte makes a different value.
+    const std::array<std::string_view, 8> strings
+        = {"a"sv, "a\0"sv, "a\0\0"sv, "\0"sv, "\0\0"sv, "abcdefghijklmn"sv, "abcdefghijklmn\0"sv, "abcdefghijklmnX"sv};
+
+    for (size_t i = 0; i < strings.size(); ++i)
+    {
+        UnhashedPackedStringRef ref = buildUnhashed(strings[i]);
+        EXPECT_TRUE(ref.isSmall()) << "i=" << i;
+        EXPECT_EQ(static_cast<std::string_view>(ref), strings[i]) << "i=" << i;
+        EXPECT_EQ(rawBytesOf(ref), unhashedSmallImage(strings[i])) << "i=" << i;
+
+        for (size_t j = 0; j < i; ++j)
+            EXPECT_NE(rawBytesOf(ref), rawBytesOf(buildUnhashed(strings[j]))) << "i=" << i << " j=" << j;
+    }
+}
+
+TEST(UnhashedPackedStringRef, AllOnesSmallStringIsNotLarge)
+{
+    const std::string s(UnhashedPackedStringRef::MAX_SMALL_LEN, '\xFF');
+    UnhashedPackedStringRef ref = buildUnhashed(s);
+
+    EXPECT_TRUE(ref.isSmall());
+    EXPECT_FALSE(ref.isLarge());
+    EXPECT_EQ(ref.getSmallSize(), s.size());
+    EXPECT_EQ(static_cast<std::string_view>(ref), std::string_view(s));
+    EXPECT_EQ(rawBytesOf(ref), unhashedSmallImage(s));
+}
+
+TEST(UnhashedPackedStringRef, LargeLayout)
+{
+    for (size_t len : {16ul, 17ul, 100ul, 100000ul})
+    {
+        const std::string s(len, 'x');
+        UnhashedPackedStringRef ref = UnhashedPackedStringRef::build(s.data(), s.size());
+
+        EXPECT_TRUE(ref.isLarge()) << "len=" << len;
+        EXPECT_FALSE(ref.isSmall()) << "len=" << len;
+        EXPECT_FALSE(ref.isMedium()) << "len=" << len;
+        EXPECT_EQ(ref.getLargeSize(), len) << "len=" << len;
+        EXPECT_EQ(ref.getLargePtr(), s.data()) << "len=" << len;
+        EXPECT_EQ(ref.heapSize(), len) << "len=" << len;
+        EXPECT_EQ(static_cast<std::string_view>(ref), std::string_view(s)) << "len=" << len;
+    }
+
+    /// `build` does not read the content of a large string.
+    const char * ptr = reinterpret_cast<const char *>(0x0000123456789ABCull);
+    const size_t len = (1ull << 32) + 5;
+    UnhashedPackedStringRef ref = UnhashedPackedStringRef::build(ptr, len);
+    EXPECT_TRUE(ref.isLarge());
+    EXPECT_EQ(ref.getLargeSize(), len);
+    EXPECT_EQ(ref.getLargePtr(), ptr);
+}

@@ -2,13 +2,16 @@
 
 #include <bit>
 #include <cstring>
+#include <limits>
 #include <string_view>
+#include <type_traits>
 
 #include <base/StringViewHash.h>
 #include <base/defines.h>
 
-/// PackedStringRef is a compact, 16-byte string representation that encodes
-/// payload and tag bits inside two 64-bit words.
+/// `BasicPackedStringRef` is a compact, 16-byte string representation that encodes
+/// payload and tag bits inside two 64-bit words. `hash_bytes` is the size of the content
+/// hash that starts a small or medium value: 4 in `PackedStringRef`, 0 in `UnhashedPackedStringRef`.
 ///
 /// Every field lives at a fixed byte offset inside the struct. The packed
 /// pointer and the 64-bit large length are stored in little-endian byte order
@@ -20,7 +23,7 @@
 /// values built by the same code on the same host.
 ///
 /// ------------------------------------------------------------
-/// Byte layout (16 bytes total):
+/// Byte layout of `PackedStringRef` (16 bytes total):
 ///
 ///   bytes  0..3  : hash32         (small / medium)
 ///                  low 32 bits of length (large)
@@ -34,6 +37,10 @@
 ///                    bits 3-6 : SMALL length (4 bits, 0 if not small)
 ///                    bits 0-2 : reserved (0)
 ///
+/// `UnhashedPackedStringRef` has no hash and no medium encoding: a small string of
+/// up to 15 bytes starts at byte 0, and every longer string is large. The tag byte
+/// and the large encoding are the same as above.
+///
 /// Empty: all 16 bytes are 0 (in particular, `high == 0`).
 ///
 /// ------------------------------------------------------------
@@ -42,17 +49,23 @@
 ///   - isSmall()  : !isLarge() && SMALL length nibble != 0
 ///   - isMedium() : !isLarge() && !isSmall() && high != 0
 ///   - isEmpty()  : high == 0
-struct PackedStringRef
+template <size_t hash_bytes>
+struct BasicPackedStringRef
 {
+    static_assert(hash_bytes == 0 || hash_bytes == 4, "the hash is 32 bits or absent");
+
     uint64_t low;
     uint64_t high;
 
-    static constexpr size_t HASH_SIZE_BYTES = 4;
+    static constexpr size_t HASH_SIZE_BYTES = hash_bytes;
     static constexpr size_t SMALL_PAYLOAD_OFFSET = HASH_SIZE_BYTES;
     static constexpr size_t MEDIUM_LENGTH_OFFSET = HASH_SIZE_BYTES;
     static constexpr size_t TAG_BYTE_OFFSET = 15;
     static constexpr size_t PACKED_POINTER_BYTES = 7;
-    static constexpr uint64_t MAX_SMALL_LEN = 11;
+    static constexpr uint64_t MAX_SMALL_LEN = TAG_BYTE_OFFSET - HASH_SIZE_BYTES;
+
+    /// The medium encoding keeps the hash next to a 32-bit length, so it exists only in a layout with a hash.
+    static constexpr bool HAS_MEDIUM = HASH_SIZE_BYTES != 0;
 
     /// Tag byte bit layout.
     static constexpr uint8_t LARGE_TAG_BYTE = 0x80;
@@ -67,6 +80,12 @@ struct PackedStringRef
     static constexpr uint64_t POINTER_MASK = (uint64_t(1) << (PACKED_POINTER_BYTES * 8)) - 1;
 
 private:
+    /// `UnhashedPackedStringRef::build(ptr, len)` passes this as the hash function and stores no hash.
+    struct NoHash
+    {
+        uint32_t operator()(const char *, size_t) const { return 0; }
+    };
+
     ALWAYS_INLINE uint8_t * rawBytes() { return reinterpret_cast<uint8_t *>(this); }
     ALWAYS_INLINE const uint8_t * rawBytes() const { return reinterpret_cast<const uint8_t *>(this); }
 
@@ -161,6 +180,7 @@ public:
     }
 
     ALWAYS_INLINE uint32_t getHash() const
+    requires(HASH_SIZE_BYTES == sizeof(uint32_t))
     {
         if constexpr (std::endian::native == std::endian::little)
             return static_cast<uint32_t>(low);
@@ -216,16 +236,20 @@ public:
     /// so the caller must guarantee at least 7 readable bytes past the end of the string
     /// (`ColumnString::Chars` is a `PaddedPODArray` and provides more than that).
     template <typename HashFn>
-    static ALWAYS_INLINE PackedStringRef build(const char * ptr, size_t len, HashFn && hash_fn)
+    static ALWAYS_INLINE BasicPackedStringRef build(const char * ptr, size_t len, HashFn && hash_fn)
     {
-        PackedStringRef r{};
+        static_assert(
+            HASH_SIZE_BYTES != 0 || std::is_same_v<std::remove_cvref_t<HashFn>, NoHash>,
+            "a value without a hash is built by `build(ptr, len)`");
+
+        BasicPackedStringRef r{};
 
         if (len == 0)
             return r;
 
         if (len <= MAX_SMALL_LEN)
         {
-            const uint32_t hash = hash_fn(ptr, len);
+            [[maybe_unused]] const uint32_t hash = hash_fn(ptr, len);
             if constexpr (std::endian::native == std::endian::little)
             {
                 /// Compose both words in registers. Byte-offset stores followed by a reload
@@ -245,19 +269,28 @@ public:
                     std::memcpy(&w1, ptr + sizeof(w0), sizeof(w1));
                     w1 &= ~uint64_t(0) >> ((2 * sizeof(w0) - len) * 8);
                 }
-                r.low = hash | ((w0 & 0xFFFFFFFF) << 32);
-                r.high = (w0 >> 32) | (w1 << 32) | (len << (56 + SMALL_LEN_SHIFT_IN_BYTE));
+                if constexpr (HASH_SIZE_BYTES != 0)
+                {
+                    r.low = hash | ((w0 & 0xFFFFFFFF) << 32);
+                    r.high = (w0 >> 32) | (w1 << 32) | (len << (56 + SMALL_LEN_SHIFT_IN_BYTE));
+                }
+                else
+                {
+                    r.low = w0;
+                    r.high = w1 | (len << (56 + SMALL_LEN_SHIFT_IN_BYTE));
+                }
             }
             else
             {
-                std::memcpy(r.rawBytes(), &hash, sizeof(hash));
+                if constexpr (HASH_SIZE_BYTES != 0)
+                    std::memcpy(r.rawBytes(), &hash, sizeof(hash));
                 std::memcpy(r.rawBytes() + SMALL_PAYLOAD_OFFSET, ptr, len);
                 r.rawBytes()[TAG_BYTE_OFFSET] = static_cast<uint8_t>(static_cast<uint8_t>(len) << SMALL_LEN_SHIFT_IN_BYTE);
             }
             return r;
         }
 
-        if (len <= std::numeric_limits<uint32_t>::max())
+        if (HAS_MEDIUM && len <= std::numeric_limits<uint32_t>::max())
         {
             const uint32_t hash = hash_fn(ptr, len);
             if constexpr (std::endian::native == std::endian::little)
@@ -289,7 +322,17 @@ public:
         }
         return r;
     }
+
+    /// Build a value without a hash. The same padding requirement applies.
+    static ALWAYS_INLINE BasicPackedStringRef build(const char * ptr, size_t len)
+    requires(HASH_SIZE_BYTES == 0)
+    {
+        return build(ptr, len, NoHash{});
+    }
 };
+
+using PackedStringRef = BasicPackedStringRef<4>;
+using UnhashedPackedStringRef = BasicPackedStringRef<0>;
 
 /// Default string-view based hash function for PackedStringRef
 struct PackedStringRefHash
