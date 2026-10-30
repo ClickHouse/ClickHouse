@@ -79,10 +79,9 @@ def run(query, *, sql_framing=False, url_traces=0, expected_status=None, error=F
     return samples
 
 
-def require_worker_allocation(samples, operation):
-    # The starter executes in a background thread inherited from the query's group.
-    # Its allocations distinguish real interpreter work from trailing response samples.
-    symbol = f"DB::BackupsWorker::{operation}Starter::do{operation}"
+def require_worker_allocation(samples, operation, symbol):
+    # The work executes in background threads inherited from the query's group.
+    # Their allocations distinguish real interpreter work from trailing response samples.
     assert any(
         sample["trace_type"] == "MemorySample"
         and int(sample["size"]) > 0
@@ -106,7 +105,7 @@ try:
             sql_framing=sql_framing,
             expected_status="BACKUP_CREATED",
         )
-        require_worker_allocation(samples, "Backup")
+        require_worker_allocation(samples, "Backup", "DB::BackupsWorker::BackupStarter::doBackup")
         print(f"{name} BACKUP captures background allocations")
 
     samples = run(
@@ -114,7 +113,8 @@ try:
         sql_framing=True,
         expected_status="RESTORED",
     )
-    require_worker_allocation(samples, "Restore")
+    # The restore starter reads the table data in tasks it schedules on the restore thread pool.
+    require_worker_allocation(samples, "Restore", "DB::StorageMemory::restoreDataImpl")
     assert control(f"SELECT count(), sum(x) FROM {restored} FORMAT TSV") == "100000\t4999950000"
     print("SQL RESTORE captures background allocations and restores rows")
 
