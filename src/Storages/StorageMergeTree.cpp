@@ -56,6 +56,7 @@
 #include <Storages/MergeTree/UniqueKey/UniqueKeyTxn.h>
 #include <Storages/MergeTree/PatchParts/PatchPartsUtils.h>
 #include <Storages/MergeTree/checkDataPart.h>
+#include <Storages/MergeTree/retryTransientStoreError.h>
 #include <Storages/PartitionCommands.h>
 #include <Storages/buildQueryTreeForShard.h>
 #include <base/sleep.h>
@@ -143,6 +144,7 @@ namespace Setting
 namespace MergeTreeSetting
 {
     extern const MergeTreeSettingsBool allow_experimental_replacing_merge_with_cleanup;
+    extern const MergeTreeSettingsBool fsync_part_directory;
     extern const MergeTreeSettingsMergeTreePatchPartsVersion patch_parts_version;
     extern const MergeTreeSettingsBool always_use_copy_instead_of_hardlinks;
     extern const MergeTreeSettingsBool assign_part_uuids;
@@ -1445,11 +1447,23 @@ void StorageMergeTree::setMutationCSN(const String & mutation_id, CSN csn)
     LOG_INFO(log, "Writing CSN {} for mutation {}", csn, mutation_id);
     UInt64 version = MergeTreeMutationEntry::parseFileName(mutation_id);
 
-    std::lock_guard lock(currently_processing_in_background_mutex);
-    auto it = current_mutations_by_version.find(version);
-    if (it == current_mutations_by_version.end())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot find mutation {}", mutation_id);
-    it->second.writeCSN(csn);
+    /// A transient storage error is retried here when the caller is the `noexcept` commit
+    /// callback of a transaction, which could only terminate otherwise. Every attempt takes
+    /// the mutex and looks the entry up again, so no lock is held while an attempt waits.
+    retryTransientStoreError(log.load(), fmt::format("mutation {} at {}", mutation_id, relative_data_path), [&]
+    {
+        std::lock_guard lock(currently_processing_in_background_mutex);
+        auto it = current_mutations_by_version.find(version);
+        if (it == current_mutations_by_version.end())
+        {
+            /// `KILL MUTATION` erases the entry before the committing transaction stores the CSN,
+            /// and cannot roll that transaction back any more. The parts are already mutated; the
+            /// file, if its deletion is still pending or failed, is resolved at the next load.
+            LOG_WARNING(log, "Mutation {} was killed before its CSN {} could be stored", mutation_id, csn);
+            return;
+        }
+        it->second.writeCSN(csn, (*getSettings())[MergeTreeSetting::fsync_part_directory]);
+    });
 }
 
 void StorageMergeTree::mutate(const MutationCommands & commands, ContextPtr query_context)
@@ -1937,22 +1951,30 @@ void StorageMergeTree::loadMutations()
 
     for (const auto & disk : getDisks())
     {
+        /// The names are taken before any file is touched: repairing a record rewrites
+        /// `mutation_N.txt` through a temporary file, and a directory iterator gives no
+        /// guarantee about entries that change under it. `iterateDirectory`, not `listFiles`:
+        /// it is empty, not an error, on a broken disk or a disk without this table's directory.
+        std::vector<String> names;
         for (auto it = disk->iterateDirectory(relative_data_path); it->isValid(); it->next())
+            names.push_back(it->name());
+        for (const auto & name : names)
         {
-            if (startsWith(it->name(), "mutation_"))
+            const String path = fs::path(relative_data_path) / name;
+            if (startsWith(name, "mutation_"))
             {
                 FailPointInjection::pauseFailPoint(FailPoints::storage_merge_tree_load_mutations_pause_before_read);
 
-                MergeTreeMutationEntry entry = loadMutationEntry(disk, it->name());
+                MergeTreeMutationEntry entry = loadMutationEntry(disk, name);
                 UInt64 block_number = entry.block_number;
-                LOG_DEBUG(log, "Loading mutation: {} entry, commands size: {}", it->name(), entry.commands->size());
+                LOG_DEBUG(log, "Loading mutation: {} entry, commands size: {}", name, entry.commands->size());
 
                 if (!entry.tid.isNonTransactional() && !entry.csn)
                 {
                     if (auto csn = TransactionManager::getCSN(entry.tid))
                     {
                         /// Transaction is committed => mutation is finished, but let's load it anyway (so it will be shown in system.mutations)
-                        entry.writeCSN(csn);
+                        entry.writeCSN(csn, (*getSettings())[MergeTreeSetting::fsync_part_directory]);
                     }
                     else
                     {
@@ -1960,8 +1982,8 @@ void StorageMergeTree::loadMutations()
                         /// was garbage-collected (e.g. after upgrade from a version that advanced tail_ptr).
                         /// In either case the mutation was not committed and should be removed.
                         LOG_DEBUG(log, "Mutation entry {} was created by transaction {}, but it was not committed. Removing mutation entry",
-                                  it->name(), entry.tid);
-                        disk->removeFile(it->path());
+                                  name, entry.tid);
+                        disk->removeFile(path);
                         continue;
                     }
                 }
@@ -1972,9 +1994,10 @@ void StorageMergeTree::loadMutations()
 
                 incrementMutationsCounters(mutation_counters, *entry_it->second.commands);
             }
-            else if (startsWith(it->name(), "tmp_mutation_"))
+            else if (startsWith(name, "tmp_mutation_"))
             {
-                disk->removeFile(it->path());
+                /// A record repaired earlier in this pass may have consumed its temporary file.
+                disk->removeFileIfExists(path);
             }
         }
     }
