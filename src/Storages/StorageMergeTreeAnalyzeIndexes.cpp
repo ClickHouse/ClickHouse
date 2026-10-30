@@ -225,7 +225,10 @@ protected:
             .check_row_limits = true,
             .result = analysis_result,
         };
-        return MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipIndexes(filter_context, parts_ranges, analysis_result.index_stats);
+        auto res = MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipIndexes(filter_context, parts_ranges, analysis_result.index_stats);
+        /// a replica of distributed index analysis records its share in its own `query_log` entry
+        ReadFromMergeTree::recordIndexUsage(analysis_result, storage->getStorageID(), context->hasQueryContext() ? context->getQueryContext() : nullptr);
+        return res;
     }
 
 private:

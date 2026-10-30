@@ -161,9 +161,6 @@ public:
         /// - search_algorithm
     };
 
-    /// Name of the synthetic skip-index stat that reports the AND/OR combination of all skip indexes.
-    static constexpr auto COMBINED_SKIP_INDEXES_STAT_NAME = "<Combined skip indexes>";
-
     /// This is a struct with information about applied indexes.
     /// Is used for introspection only, in EXPLAIN query.
     struct IndexStat
@@ -229,6 +226,10 @@ public:
         /// `force_primary_key` check uses). A projection whose own key is not used may not serve
         /// the read.
         bool pk_condition_useful = false;
+        /// Marks excluded by the primary key and by skip indexes, and the skip indexes applied to at least one part.
+        UInt64 granules_dropped_by_primary_key = 0;
+        UInt64 granules_dropped_by_skip_indexes = 0;
+        NameSet used_skip_indexes;
         std::atomic<bool> exceeded_row_limits = false;
 
         AnalysisResult() = default;
@@ -253,6 +254,9 @@ public:
             , exact_ranges_excluded(other.exact_ranges_excluded)
             , index_analysis_was_already_done_on_initiator(other.index_analysis_was_already_done_on_initiator)
             , pk_condition_useful(other.pk_condition_useful)
+            , granules_dropped_by_primary_key(other.granules_dropped_by_primary_key)
+            , granules_dropped_by_skip_indexes(other.granules_dropped_by_skip_indexes)
+            , used_skip_indexes(other.used_skip_indexes)
             , exceeded_row_limits(other.exceeded_row_limits.load())
         {}
 
@@ -276,6 +280,9 @@ public:
             , exact_ranges_excluded(other.exact_ranges_excluded)
             , index_analysis_was_already_done_on_initiator(other.index_analysis_was_already_done_on_initiator)
             , pk_condition_useful(other.pk_condition_useful)
+            , granules_dropped_by_primary_key(other.granules_dropped_by_primary_key)
+            , granules_dropped_by_skip_indexes(other.granules_dropped_by_skip_indexes)
+            , used_skip_indexes(std::move(other.used_skip_indexes))
             , exceeded_row_limits(other.exceeded_row_limits.load())
         {}
 
@@ -428,6 +435,10 @@ public:
     /// The query condition cache is keyed by (table UUID, part name, condition hash), so it must not
     /// see filters whose value can change while that key stays the same: non-deterministic virtual
     /// columns (query-wide part numbering, catalog names, disk placement).
+    /// Adds the marks that `result` excluded by the primary key and by skip indexes to ProfileEvents,
+    /// and its used skip indexes to the access info of `query_context` if it is set.
+    static void recordIndexUsage(const AnalysisResult & result, const StorageID & storage_id, const ContextMutablePtr & query_context);
+
     static bool filterDependsOnNonDeterministicVirtuals(const VirtualColumnsDescription & virtuals, const SelectQueryInfo & query_info_);
 
     /// Returns `false` if requested reading cannot be performed.

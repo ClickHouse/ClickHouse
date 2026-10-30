@@ -5278,6 +5278,20 @@ static void forEachIndexLayer(const ReadFromMergeTree::IndexStats & index_stats,
     }
 }
 
+void ReadFromMergeTree::recordIndexUsage(const AnalysisResult & result, const StorageID & storage_id, const ContextMutablePtr & query_context)
+{
+    ProfileEvents::increment(ProfileEvents::GranulesDroppedByPrimaryKey, result.granules_dropped_by_primary_key);
+    ProfileEvents::increment(ProfileEvents::GranulesDroppedBySkipIndexes, result.granules_dropped_by_skip_indexes);
+
+    if (!query_context || result.used_skip_indexes.empty())
+        return;
+
+    Names index_names;
+    for (const auto & index_name : result.used_skip_indexes)
+        index_names.emplace_back(fmt::format("{}.{}", storage_id.getFullTableName(), backQuoteIfNeed(index_name)));
+    query_context->addUsedDataSkippingIndices(index_names);
+}
+
 void ReadFromMergeTree::logPredicateStatistics(const AnalysisResult & result) const
 {
     UInt64 sample_rate = context->getSettingsRef()[Setting::predicate_statistics_sample_rate];
@@ -5621,38 +5635,14 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, [[ma
                 fmt::format("{}.{}", data.getStorageID().getFullNameNotQuoted(), part.data_part->info.getPartitionId()));
         }
         context->getQueryContext()->addQueryAccessInfo(partition_names);
-
-        Names index_names;
-        for (const auto & stat : result.index_stats)
-        {
-            if (stat.type == IndexType::Skip && stat.name != COMBINED_SKIP_INDEXES_STAT_NAME)
-                index_names.emplace_back(fmt::format("{}.{}", data.getStorageID().getFullTableName(), backQuoteIfNeed(stat.name)));
-        }
-        context->getQueryContext()->addUsedDataSkippingIndices(index_names);
     }
 
     forEachIndexLayer(result.index_stats, [](const IndexStat & stat, UInt64 granules_before)
     {
-        UInt64 dropped = granules_before > stat.num_granules_after ? granules_before - stat.num_granules_after : 0;
-        switch (stat.type)
-        {
-            case IndexType::MinMax:
-            case IndexType::Partition:
-                ProfileEvents::increment(ProfileEvents::GranulesDroppedByPartitionKey, dropped);
-                break;
-            case IndexType::PrimaryKey:
-                ProfileEvents::increment(ProfileEvents::GranulesDroppedByPrimaryKey, dropped);
-                break;
-            case IndexType::Skip:
-                ProfileEvents::increment(ProfileEvents::GranulesDroppedBySkipIndexes, dropped);
-                break;
-            case IndexType::None:
-            case IndexType::PrimaryKeyExpand:
-            case IndexType::Statistics:
-            case IndexType::NonIntersectingSplit:
-                break;
-        }
+        if (stat.type == IndexType::MinMax || stat.type == IndexType::Partition)
+            ProfileEvents::increment(ProfileEvents::GranulesDroppedByPartitionKey, granules_before - std::min<UInt64>(granules_before, stat.num_granules_after));
     });
+    recordIndexUsage(result, data.getStorageID(), context->hasQueryContext() && !query_info.is_internal ? context->getQueryContext() : nullptr);
 
     ProfileEvents::increment(ProfileEvents::SelectedParts, result.selected_parts);
     ProfileEvents::increment(ProfileEvents::SelectedPartsTotal, result.total_parts);
