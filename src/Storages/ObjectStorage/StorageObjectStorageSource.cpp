@@ -1211,8 +1211,11 @@ Chunk StorageObjectStorageSource::generate()
                     .best_values = input_format->getTopKBestValuesOfBuckets()});
         }
 
+        /// Do not cache filtered cardinality: `hasFilter` covers the filter DAG, `PREWHERE`, row
+        /// policies, and top-K. Any of them reduces rows seen by `generate`, while the cache key is
+        /// file identity only.
         if (reader.getInputFormat() && read_context->getSettingsRef()[Setting::use_cache_for_count_from_files]
-            && !format_filter_info->hasFilter()
+            && format_filter_info && !format_filter_info->hasFilter()
             && !hasAttachedDeletes(*reader.getObjectInfo())
             && !reader.getObjectInfo()->rows_to_read)
             addNumRowsToCache(*reader.getObjectInfo(), total_rows_in_file);

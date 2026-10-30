@@ -200,12 +200,14 @@ public:
     /// If a previous init attempt threw an exception, rethrows it instead of retrying.
     void initKeyConditionOnce(const Block & keys);
 
-    /// The query condition cache key of the rows `filter_actions_dag` and `prewhere_info` keep, if
-    /// the condition is deterministic and covers `prewhere_info`.
+    /// The query condition cache key of the rows `filter_actions_dag`, `prewhere_info`, and
+    /// `row_level_filter` keep, if the condition is deterministic and covers `prewhere_info`.
+    /// `row_level_filter` defaults to empty so callers that refuse a row policy keep the `WHERE` key.
     static std::optional<size_t> computeConditionHash(
         const ActionsDAG & filter_actions_dag,
         const PrewhereInfoPtr & prewhere_info,
-        const ContextPtr & context);
+        const ContextPtr & context,
+        const FilterDAGInfoPtr & row_level_filter = nullptr);
 
     /// Returns `base` extended with columns required by PREWHERE / row-level filter.
     /// Hint: pass `base` with `std::move` to avoid copying
