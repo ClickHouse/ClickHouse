@@ -176,6 +176,14 @@
           ]
         },
         {
+          "group": "Striim",
+          "pages": [
+            "integrations/connectors/data-ingestion/etl-tools/striim/index",
+            "integrations/connectors/data-ingestion/etl-tools/striim/get-started",
+            "integrations/connectors/data-ingestion/etl-tools/striim/sample-pipeline"
+          ]
+        },
+        {
           "expanded": false,
           "group": "Community integrations",
           "pages": [

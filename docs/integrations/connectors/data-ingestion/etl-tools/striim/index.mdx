@@ -1,0 +1,91 @@
+---
+title: "Striim for ClickHouse"
+sidebarTitle: "Overview"
+slug: /integrations/connectors/data-ingestion/etl-tools/striim
+description: "Replicate data from databases, data warehouses, data lakes, and SaaS applications to ClickHouse with Striim for ClickHouse."
+doc_type: guide
+keywords: ['striim', 'clickhouse', 'cdc', 'data ingestion', 'real-time replication']
+---
+
+[Striim for ClickHouse](https://www.striim.com/docs/striimforclickhouse/en/introducing-striim-for-clickhouse.html) is a fully-managed SaaS that brings data from databases, data warehouses, data lakes, and SaaS applications into ClickHouse, including enterprise sources such as Oracle, Microsoft SQL Server and Snowflake. Load existing records, then use change data capture (CDC) to stream inserts, updates and deletes, keeping ClickHouse data current for AI workloads, dashboards and data applications.
+
+Striim for ClickHouse is hosted on Striim Cloud in AWS, with self-service signup, monthly usage-based billing and no annual commitment. Sign up at striim.com or through AWS Marketplace, start a 14-day free trial and build a pipeline using a natural language prompt, a wizard or the flow designer.
+
+## Key features {#key-features}
+
+- **Change data capture and initial load:** Load existing data, then switch to continuous real-time replication of inserts, updates and deletes. Automated pipeline wizards help create and link both phases and transition automatically from initial load to CDC replication.
+- **ClickHouse writer:** Choose the table engine per pipeline (`MergeTree`, `ReplacingMergeTree`, `CollapsingMergeTree`, `CoalescingMergeTree` and others). Striim creates target tables, handles updates and deletes for the engine you pick, and sets sorting keys.
+- **Schema handling:** Automatic target schema creation from the source for supported sources, and propagation of selected DDL changes (`CREATE TABLE`, `ADD COLUMN`, `ALTER TABLE ... MODIFY COLUMN`, `DROP COLUMN`, `DROP TABLE`, and `TRUNCATE TABLE`) for supported CDC sources.
+- **In-flight processing:** Filter, enrich and transform data between source and ClickHouse.
+- **AI-assisted operations:** Striim Clara AI, a conversational AI agent, builds pipelines from a natural-language description, reports lag and throughput, and explains failures. Review generated output before deploying to production.
+- **Private connectivity:** AWS PrivateLink, SSH tunnels and IP allowlisting to sources and ClickHouse.
+- **Monitoring and alerts:** Built-in pipeline monitoring and alerts sent by email, Slack, Microsoft Teams, and the Striim web UI.
+
+## Use cases {#use-cases}
+
+| **Use case** | **How Striim for ClickHouse fits** |
+| --- | --- |
+| Real-time analytics | CDC readers keep ClickHouse tables current, so interactive dashboards reflect activity from seconds ago rather than the last batch cycle. |
+| AI agents and RAG | Keeps ClickHouse tables current, including those used for vector search or an MCP server, so agents read recent operational data. |
+| Feature stores and model inference | Keeps entity-level features current for models scoring in near real time, such as fraud detection or personalization. |
+| Data warehousing | Direct path from sources such as Oracle, SQL Server, Snowflake and Salesforce into ClickHouse without an intermediate staging or streaming layer. |
+| Observability | Streams database and application logs into the same ClickHouse instance as telemetry, so both can be queried together. Complements ClickStack and OpenTelemetry ingestion. |
+
+## Supported sources {#supported-sources}
+
+The table below lists sources by category. Change data capture (CDC) continuously replicates inserts, updates and deletes from supported sources. Initial load copies existing records. Non-CDC ingestion includes file reads, application API reads and message streams.
+
+See the [product summary](https://www.striim.com/docs/striimforclickhouse/en/product-summary.html) for plan availability and the [Striim for ClickHouse documentation](https://www.striim.com/docs/striimforclickhouse/en/pipelines.html#supported-sources-and-targets-for-striim-for-clickhouse) for source-specific capabilities and setup requirements.
+
+| **Category** | **Sources** |
+| --- | --- |
+| CDC Sources | Azure CosmosDB<br/>MariaDB (including Galera Cluster, XPand, SkySQL, Amazon RDS)<br/>MongoDB (including self-managed deployments, and MongoDB Atlas on AWS, Azure, Google Cloud)<br/>MySQL (including self-managed deployments, Amazon Aurora, Amazon RDS, Azure Database, Google Cloud SQL)<br/>Oracle (including self-managed deployments, Amazon RDS)<br/>PostgreSQL (including self-managed deployments, Amazon Aurora, Amazon RDS, Azure Database, Crunchy Postgres, Google AlloyDB, Google Cloud SQL, Neon)<br/>SQL Server (including self-managed deployments, Amazon RDS, Azure SQL Database)<br/>Salesforce<br/>Snowflake<br/>Yugabyte |
+| Other databases | Teradata |
+| Data warehouses | BigQuery, Snowflake |
+| Data lakes &amp; files | Amazon S3, Azure Data Lake Service, Google Cloud Storage<br/>HDFS, MapR file system, local files<br/>File formats: Avro, Parquet, JSON, XML, delimited, free-form, binary, Apache access logs, Cobol copybook, CollectD, HL7v2, Netflow, name-value pairs |
+| SaaS applications | Atlassian Jira<br/>Google Ads<br/>HubSpot<br/>Intercom<br/>Microsoft Dynamics 365, Microsoft Dynamics 365 Business Central<br/>Salesforce, Salesforce Pardot, Salesforce Platform Event and PushTopic<br/>ServiceNow<br/>Stripe<br/>Zendesk |
+| Messaging, IoT and network | Apache Kafka<br/>JMS, MQTT, OPC UA, HTTP, TCP, UDP, JMX, Windows Event Log |
+
+## Plans, trial and billing {#plans-trial-and-billing}
+
+| Setting | **Standard** | **Premium** |
+| --- | --- | --- |
+| Compute | 4 vCPU | 8 vCPU |
+| Sources | Non-CDC sources; CDC for PostgreSQL, MySQL, MariaDB, MongoDB, YugabyteDB | Everything in Standard, plus CDC for Oracle, SQL Server, Snowflake and Salesforce |
+| Targets | ClickHouse and File Writer | ClickHouse and File Writer |
+| Regions | AWS us-east-1, us-east-2, us-west-2 | AWS us-east-1, us-east-2, us-west-2 |
+
+Billing is monthly and usage-based with no annual commitment: compute infrastructure plus events processed. You can pay by credit card on striim.com or through AWS Marketplace. See [pricing details](https://www.striim.com/docs/striimforclickhouse/en/product-summary.html) for more information.
+
+## Operational considerations {#operational-considerations}
+
+- Delivery is at-least-once. After a restart or recovery, already-written events can be written again. Resultant data records depend on the table engine (see [How data lands in ClickHouse](/integrations/connectors/data-ingestion/etl-tools/striim/get-started#how-data-lands-in-clickhouse)).
+- Schema evolution does not support column renames or nullability changes, and does not apply to `AggregatingMergeTree`, `Replicated` or `Distributed` targets. `VersionedCollapsingMergeTree` and `GraphiteMergeTree` are not supported.
+- Some source types do not map to ClickHouse and are skipped during automatic schema creation, for example `SQL Server GEOGRAPHY`, `GEOMETRY`, `HIERARCHYID` and `SQL_VARIANT`; `Oracle BFILE`, `LONG`, `LONG RAW`, `SDO_GEOMETRY` and `UROWID`; `MySQL GEOMETRY` and `SET`.
+
+## Contact and support {#contact-and-support}
+
+Striim for ClickHouse is supported by Striim under the same [Striim support policy](https://www.striim.com/msa/) as other Striim services. Current customers can submit a ticket through the [Striim support portal](https://support.striim.com/hc/en-us) or by selecting **Create ticket** from the help menu in the Striim cloud console.
+
+| **Channel** | **Availability** |
+| --- | --- |
+| Support portal | 24 x 7 x 365 |
+| Email (support@striim.com) | 24 x 7 x 365 |
+| Telephone (+1 650 241-0680) | 8 am to 7 pm Pacific Time, Monday to Friday, excluding Striim holidays |
+
+### Support ownership {#support-ownership}
+
+| **Area** | **Owner** | **Examples** |
+| --- | --- | --- |
+| Striim for ClickHouse service | Striim | Sign-up, billing, trial, service creation, regions, plan changes, Clara AI |
+| Source connectivity and CDC | Striim | Source readers and setup, initial load, lag, schema evolution |
+| ClickHouse Writer | Striim | Table engine behavior, Striim metadata columns, type mapping, batch and upload settings, at-least-once replay behavior |
+| Networking from Striim | Striim | AWS PrivateLink, SSH and IP allowlisting on the Striim side |
+| ClickHouse database or Cloud service | ClickHouse | Service availability, query performance, server settings, grants, merges, and the ClickHouse side of PrivateLink and allow lists |
+| Joint issues | Start with Striim | Write errors or slow inserts where the cause is unclear. Striim triages and involves ClickHouse if the root cause is in the database. |
+
+## Related pages {#related-pages}
+
+- [Get started with Striim for ClickHouse](/integrations/connectors/data-ingestion/etl-tools/striim/get-started): sign up, set up ClickHouse, choose table engines.
+- [Sample pipeline: SQL Server to ClickHouse](/integrations/connectors/data-ingestion/etl-tools/striim/sample-pipeline): initial load and CDC with the automated pipeline wizard.
+- [Striim for ClickHouse documentation](https://www.striim.com/docs/striimforclickhouse/en/index-en.html)
