@@ -396,7 +396,12 @@ scope_guard FileSegment::tryTakeDownloaderOfPartiallyDownloaded()
     /// Every transition to `PARTIALLY_DOWNLOADED` resets the downloader under the same lock.
     chassert(getDownloaderUnlocked(lk).empty());
 
-    getOrCreateDownloadDataUnlocked(lk).downloader_id = getCallerId();
+    auto & download = getOrCreateDownloadDataUnlocked(lk);
+    /// The idle reader may still be bound to the I/O scheduling links of a previous downloader's query.
+    /// Unbind it like `getOrSetDownloader` does, because `complete` keeps the links while there is a downloader
+    /// and they would outlive the holder they belong to.
+    setReaderIOSchedulingUnlocked(download, {});
+    download.downloader_id = getCallerId();
     setDownloadState(State::DOWNLOADING, lk);
     return [this]
     {
