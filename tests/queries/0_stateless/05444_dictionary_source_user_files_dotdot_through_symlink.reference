@@ -1,0 +1,6 @@
+YAMLRegExpTree escw/../secret: is not inside
+YAMLRegExpTree escw/via_symlink: VIA_SYMLINK
+YAMLRegExpTree sub/../back_inside: BACK_INSIDE
+File escw/../secret: is not inside
+File escw/via_symlink: VIA_SYMLINK
+File sub/../back_inside: BACK_INSIDE

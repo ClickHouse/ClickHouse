@@ -27,6 +27,10 @@ Block blockForKeys(
 SettingsChanges readSettingsFromDictionaryConfig(const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix);
 ContextMutablePtr copyContextAndApplySettingsFromDictionaryConfig(const ContextPtr & context, const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix);
 
+/// Throws `PATH_ACCESS_DENIED` unless `path` is inside `user_files_path`. A symlink inside `user_files_path`
+/// that leaves it is followed, but a `..` after such a symlink cannot be used to step out.
+void checkDictionarySourcePathIsInsideUserFiles(const String & path, const String & user_files_path);
+
 /** A stream, adds additional columns to each block that it will read from inner stream.
      *
      *  block_to_add rows size must be equal to final sum rows size of all inner stream blocks.
