@@ -356,6 +356,7 @@ The hierarchy of privileges in ClickHouse is shown below:
     - `ALTER ROW POLICY`
     - `ALTER SETTINGS PROFILE`
     - `ALTER USER`
+    - `ALTER USER SELF AUTHENTICATION`
     - `CREATE QUOTA`
     - `CREATE ROLE`
     - `CREATE ROW POLICY`
@@ -769,7 +770,8 @@ Allows a user to execute queries that manage users, roles and row policies.
 
 - `ACCESS MANAGEMENT`. Level: `GROUP`
   - `CREATE USER`. Level: `GLOBAL`
-  - `ALTER USER`. Level: `GLOBAL`
+  - `ALTER USER`. Level: `USER_NAME`
+  - `ALTER USER SELF AUTHENTICATION`. Level: `GLOBAL`
   - `DROP USER`. Level: `GLOBAL`
   - `CREATE TOKEN`. Level: `GLOBAL`
   - `CREATE ROLE`. Level: `GLOBAL`
@@ -796,6 +798,49 @@ Allows a user to execute queries that manage users, roles and row policies.
 The `ROLE ADMIN` privilege allows a user to assign and revoke any roles including those which are not assigned to the user with the admin option.
 
 The `CREATE TOKEN` privilege allows a user to add an authentication method to its own account, with [`CREATE TOKEN`](/reference/statements/create/token) or with the equivalent `ALTER USER <current user> ADD IDENTIFIED ...` statement, without being able to administer accounts otherwise. It is separate from `ALTER USER` because it lets a user lower the security level of its own account, for example by adding a long-lived password to an account which is otherwise reachable only with a certificate.
+
+#### Self-service authentication {#self-service-authentication}
+
+`ALTER USER SELF AUTHENTICATION` permits a user to replace, add, or reset authentication methods on their own account. It is a global privilege attached to the recipient, rather than a privilege on a target user name. Its standalone syntax has no object-target `ON` clause.
+
+Granting or revoking this privilege requires the experimental server setting `experimental_self_service_password_change` (default `false`, restart required).
+Explicit requests are rejected while disabled, including grant-option changes, mixed lists, and explicit current-grants selections, even if nothing would be copied.
+While disabled, ordinary `ALL`, `ACCESS MANAGEMENT`, and broad current-grants copying remain available but omit this privilege from the request.
+Group revokes preserve any existing self-service grant and its grant option. Other requested privileges follow their normal rules.
+When enabled, these groups include the privilege normally, and group revokes may remove it.
+Privilege `WITH REPLACE OPTION` is an exception to preservation: it clears all direct privileges, including the self-service bit and its grant option,
+regardless of the setting. The subsequent grant follows the setting, so disabled group replacement omits the bit; enabled requests may grant it again
+with only the grant option specified by the new request. Role memberships and privileges inherited through them are unaffected.
+The full implicit revoke is authorized normally. Local replacement can require self-service grant option when a target holds the bit;
+distributed replacement requires that grant option even if remote targets do not hold it. Full `ALTER USER` does not supply it.
+Existing direct and role-derived grants remain effective when the setting is disabled. Loading, restoring, replicating, and displaying them remain supported.
+Enable the setting on participating executors for distributed grant/revoke statements. Disabling it is not a downgrade procedure:
+before downgrade, enable it for cleanup, remove the privilege from users, roles, and configuration, and verify that persisted definitions contain no new keyword.
+
+For example:
+
+```sql
+GRANT ALTER USER SELF AUTHENTICATION TO alice;
+GRANT ALTER USER SELF AUTHENTICATION TO self_credential_rotation;
+REVOKE ALTER USER SELF AUTHENTICATION FROM alice;
+```
+
+When `self_credential_rotation` is an enabled role, each member can manage their own credentials. Administrative account renames preserve this permission. Supported authentication methods include `no_password`; the privilege does not restrict users to password-based methods.
+
+You can use self-service to change authentication only for the user you are logged in as. The statement must name only that user and omit `IN <storage>`. This privilege alone does not authorize `VALID UNTIL` or `VALID FOR`. `CREATE TOKEN` independently permits adding authentication methods with method-local expiry. Changing user-level expiry or other account properties requires `ALTER USER`, including statements that also change authentication. Existing credential validation, read-only restrictions, and storage restrictions still apply.
+
+Self-service changes can run locally or with `ON CLUSTER`. Distributed execution uses the usual `CLUSTER` privilege check and distributed DDL restrictions, subject to server configuration. Read-only sessions and sessions restricted by an authentication method's `GRANTS` clause cannot dispatch credential changes. By default, DDL workers execute in their own context. With `distributed_ddl_use_initial_user_and_roles` enabled and a supporting DDL entry format, they execute as the initiating user with the initiating roles. Remote accounts are resolved by name; local UUID checks do not protect against replacement of a remote account under the same name. Changes across servers are not atomic and use the usual distributed DDL completion, error, and retry behavior.
+
+Grant options are independent:
+
+```sql
+GRANT ALTER USER SELF AUTHENTICATION TO alice WITH GRANT OPTION;
+REVOKE GRANT OPTION FOR ALTER USER SELF AUTHENTICATION FROM alice;
+```
+
+Full `ALTER USER` on a target allows altering that target, but does not authorize granting the global self-service privilege. `ALL` and `ACCESS MANAGEMENT` include the self-service privilege directly. Revoking full `ALTER USER` from these group grants does not remove self-service authority; revoke the self-service privilege and any role supplying it to remove that authority.
+
+Standalone `ON bob`, `ON *.*`, and column lists are rejected. `ON CLUSTER` remains an execution modifier. Mixed global groups, such as `GRANT SELECT, ALTER USER SELF AUTHENTICATION ON *.* TO alice`, retain normal scope syntax; an explicitly named self-service entry cannot be combined with a table or user-name scope. Ordinary grant display and persistence use the short standalone form. `GRANT CURRENT GRANTS(ALTER USER SELF AUTHENTICATION) TO alice` copies explicit grantable self-service rights.
 
 ### SYSTEM {#system}
 

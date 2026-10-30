@@ -860,8 +860,8 @@ const std::vector<SettingHistoryEntry> * findSettingHistory(const SettingsHistor
 
 /// For the settings collections (`Settings`, `MergeTreeSettings`, `ServerSettings`), which expose the name,
 /// description, type, default value and tier of every registered setting. All settings of a collection are
-/// declared in a single source file, passed as `source`. `history` is the change history of the collection, which
-/// is empty for the collections that do not have one (server settings are not covered by `compatibility`).
+/// declared in a single source file, passed as `source`. `history` is the change history of the collection;
+/// recording server-setting history does not make it subject to session `compatibility`.
 template <typename SettingsCollection>
 void addSettingsLike(
     MutableColumns & res_columns,
@@ -1286,8 +1286,7 @@ void StorageSystemDocumentation::fillData(MutableColumns & res_columns, ContextP
 
     const SettingsHistory settings_history = buildSettingsHistory(Settings{}, getSettingsChangesHistory());
     const SettingsHistory merge_tree_settings_history = buildSettingsHistory(MergeTreeSettings{}, getMergeTreeSettingsChangesHistory());
-    /// Server settings are not covered by the `compatibility` setting, so no history of their changes is recorded.
-    const SettingsHistory server_settings_history;
+    const SettingsHistory server_settings_history = buildSettingsHistory(ServerSettings{}, getServerSettingsChangesHistory());
 
     addSettingsLike(res_columns, EntityType::Setting, Settings{}, SETTINGS_SOURCE, settings_history);
     addSettingAliases(res_columns, EntityType::Setting, Settings{}, SETTINGS_SOURCE, settings_history);
