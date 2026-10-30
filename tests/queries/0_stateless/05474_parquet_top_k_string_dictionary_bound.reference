@@ -11,6 +11,10 @@ another conjunct: skipped >= 10: True
 PREWHERE: skipped >= 10: True
 long values: skipped >= 10: True
 0xFF maximum: skipped >= 10: True
+LowCardinality: skipped >= 10: True
+LowCardinality(Nullable): skipped >= 9: True
+position: skipped >= 10: True
+no PREWHERE: skipped >= 10: True
 OR: skipped == 0: True
 indexHint: skipped == 0: True
 no statistics: skipped == 0: True

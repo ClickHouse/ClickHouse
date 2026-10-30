@@ -56,6 +56,15 @@ std::optional<String> tryGetStringInputName(const ActionsDAG::Node * node)
     return node->result_name;
 }
 
+/// Like `tryGetStringInputName`, also for a `LowCardinality(String)` or `LowCardinality(Nullable(String))` input.
+std::optional<String> tryGetStringOrLowCardinalityInputName(const ActionsDAG::Node * node)
+{
+    node = skipAliases(node);
+    if (node->type != ActionsDAG::ActionType::INPUT || !isString(removeNullable(removeLowCardinality(node->result_type))))
+        return {};
+    return node->result_name;
+}
+
 std::optional<String> tryGetConstString(const ActionsDAG::Node * node)
 {
     node = skipAliases(node);
@@ -346,7 +355,7 @@ bool filterNodeRejectsEmptyString(const ActionsDAG::Node * filter_node, const St
 
         if (name == "notEmpty" && node->children.size() == 1)
         {
-            if (tryGetStringInputName(node->children[0]) == column_name)
+            if (tryGetStringOrLowCardinalityInputName(node->children[0]) == column_name)
                 return true;
             continue;
         }
@@ -359,10 +368,9 @@ bool filterNodeRejectsEmptyString(const ActionsDAG::Node * filter_node, const St
                 if ((name == "greater" && column_pos != 0) || (name == "less" && column_pos != 1))
                     continue;
                 auto constant = tryGetConstString(node->children[1 - column_pos]);
-                if (constant && constant->empty() && tryGetStringInputName(node->children[column_pos]) == column_name)
+                if (constant && constant->empty() && tryGetStringOrLowCardinalityInputName(node->children[column_pos]) == column_name)
                     return true;
             }
-            continue;
         }
 
         /// The conditions of string value filters never match the empty string.

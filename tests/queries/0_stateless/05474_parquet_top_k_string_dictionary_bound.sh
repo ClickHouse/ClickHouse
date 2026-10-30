@@ -102,6 +102,10 @@ queries=(
     "SELECT hex(r), v FROM ${L} WHERE r != '' ORDER BY r LIMIT 5"
     "SELECT hex(u), v FROM ${L} WHERE u != '' ORDER BY u LIMIT 5"
     "SELECT w, v FROM ${L} WHERE w != '' ORDER BY w, v LIMIT 5"
+    "SELECT e FROM file('${DIR}/t.parquet', Parquet, 'e LowCardinality(String), v UInt64') WHERE e != '' ORDER BY e LIMIT 5"
+    "SELECT n, v FROM file('${DIR}/t.parquet', Parquet, 'n LowCardinality(Nullable(String)), v UInt64') WHERE n != '' ORDER BY n LIMIT 5"
+    "SELECT e FROM ${T} WHERE position(e, '1') > 0 ORDER BY e LIMIT 5"
+    "SELECT e FROM ${T} WHERE e != '' ORDER BY e LIMIT 5 SETTINGS optimize_move_to_prewhere = 0"
 )
 compare
 
@@ -123,6 +127,10 @@ check "another conjunct" "SELECT e, v FROM ${T} WHERE e != '' AND v % 2 = 1 ORDE
 check "PREWHERE" "SELECT e FROM ${T} PREWHERE e != '' ORDER BY e LIMIT 5" "skipped >= 10"
 check "long values" "SELECT q FROM ${L} WHERE q != '' ORDER BY q LIMIT 5" "skipped >= 10"
 check "0xFF maximum" "SELECT hex(r) FROM ${L} WHERE r != '' ORDER BY r LIMIT 5" "skipped >= 10"
+check "LowCardinality" "SELECT e FROM file('${DIR}/t.parquet', Parquet, 'e LowCardinality(String), v UInt64') WHERE e != '' ORDER BY e LIMIT 5" "skipped >= 10"
+check "LowCardinality(Nullable)" "SELECT n, v FROM file('${DIR}/t.parquet', Parquet, 'n LowCardinality(Nullable(String)), v UInt64') WHERE n != '' ORDER BY n LIMIT 5" "skipped >= 9"
+check "position" "SELECT e FROM ${T} WHERE position(e, '1') > 0 ORDER BY e LIMIT 5" "skipped >= 10"
+check "no PREWHERE" "SELECT e FROM ${T} WHERE e != '' ORDER BY e LIMIT 5 SETTINGS optimize_move_to_prewhere = 0" "skipped >= 10"
 # The filter does not reject every row with '', or the chunks have no statistics.
 check "OR" "SELECT e, v FROM ${T} WHERE e != '' OR v = 10007 ORDER BY e, v LIMIT 5" "skipped == 0"
 check "indexHint" "SELECT e, v FROM ${T} WHERE indexHint(e != '') ORDER BY e, v DESC LIMIT 5" "skipped == 0"
@@ -147,7 +155,7 @@ touch -d '2020-01-01 00:00:00' "${USER_FILES_PATH}/${DATA_DIR}/t.parquet"
 QCC="${ST}, ${OPT_IN}, use_query_condition_cache = 1, use_query_condition_cache_for_top_k = 1,
     query_plan_max_limit_for_top_k_optimization = 1000, input_format_parquet_filter_push_down = 1,
     input_format_parquet_preserve_order = 0, input_format_parquet_dictionary_filter_push_down = 1048576,
-    max_block_size = 65409, optimize_move_to_prewhere = 1, query_plan_optimize_prewhere = 1, enable_parallel_replicas = 0"
+    max_block_size = 65409, optimize_move_to_prewhere = 1, enable_parallel_replicas = 0"
 # The second query reads the entries of the first one.
 ${CLICKHOUSE_CLIENT} --query "
     CREATE TABLE t_05474 (e String, v UInt64) ENGINE = File(Parquet, '${DATA_DIR}/t.parquet');
