@@ -6,6 +6,7 @@
 #include <Core/Block.h>
 #include <Core/Settings.h>
 #include <Interpreters/Context.h>
+#include <Databases/enableAllExperimentalSettings.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/TreeRewriter.h>
@@ -762,6 +763,11 @@ NameSet getNonDeterministicDefaults(
 {
     const auto defaults = columns.getDefaults();
 
+    /// The functions of a default are made as a reader makes them to fill a column, with the settings of the features they
+    /// can use turned on (see `IMergeTreeReader::createContextForDefaultExpressions`): the query can have the settings the
+    /// default was created with off.
+    ContextMutablePtr context_for_defaults;
+
     /// For each column with a default visited, whether its default is non-deterministic. A subcolumn, which a default
     /// can read as well, is filled together with its column.
     std::unordered_map<String, bool> visited;
@@ -782,7 +788,13 @@ NameSet getNonDeterministicDefaults(
         auto expression = it->second.expression->clone();
         RequiredSourceColumnsVisitor(required_columns).visit(expression);
 
-        const bool result = callsNonDeterministicFunction(*it->second.expression, context)
+        if (!context_for_defaults)
+        {
+            context_for_defaults = Context::createCopy(context);
+            enableAllExperimentalSettings(context_for_defaults);
+        }
+
+        const bool result = callsNonDeterministicFunction(*it->second.expression, context_for_defaults)
             || std::ranges::any_of(required_columns.requiredColumns(), is_non_deterministic);
         visited.emplace(it->first, result);
         return result;

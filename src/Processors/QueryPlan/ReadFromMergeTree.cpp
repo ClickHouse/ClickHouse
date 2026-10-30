@@ -4947,7 +4947,8 @@ QueryPlanStepPtr ReadFromMergeTree::clone() const
 /// Whether the read fills the column of storage from its default in some of `parts`, as the reader sees a part: where the
 /// part lacks the column, or holds it as `Nullable` while the table does not. A pending `RENAME COLUMN` leaves the old
 /// name in a part, and a pending `DROP COLUMN` leaves stale data, which the reader does not read - that of a column
-/// dropped and added again.
+/// dropped and added again. Before the analysis of ranges, `parts` has the parts it would leave out as well, so the
+/// defaults of their missing columns are looked at too, which can need the privileges their functions need.
 static bool isFilledFromDefaultInSomePart(
     const String & column_name,
     const RangesInDataParts & parts,
