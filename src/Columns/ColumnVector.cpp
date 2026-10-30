@@ -36,7 +36,7 @@
 
 #include "config.h"
 
-#if USE_MULTITARGET_CODE || defined(__SSSE3__)
+#if USE_X86_64_MULTITARGET_CODE || defined(__SSSE3__)
 #    include <immintrin.h>
 #endif
 
@@ -341,7 +341,7 @@ void ColumnVector<T>::compareColumn(
         return;
     }
 
-#if USE_MULTITARGET_CODE
+#if USE_X86_64_MULTITARGET_CODE
     if (isArchSupported(TargetArch::x86_64_v4))
     {
         compareColumnImpl_x86_64_v4<T>(data, value, compare_results, direction, nan_direction_hint);
@@ -408,7 +408,7 @@ static size_t getEqualRangeEndAssumeSortedImpl(const T * d, size_t begin, size_t
     size_t window_end = std::min(begin + window, end);
 
     size_t hit = 0;
-#if USE_MULTITARGET_CODE
+#if USE_X86_64_MULTITARGET_CODE
     if (isArchSupported(TargetArch::x86_64_v4))
         hit = findFirstNotEqualImpl_x86_64_v4<T>(d, begin, window_end, ref, nan_direction_hint);
     else
@@ -1246,7 +1246,7 @@ ColumnPtr ColumnVector<T>::replicate(const IColumn::Offsets & offsets) const
     const size_t window_size = static_cast<size_t>(sqrt(1 + size / offsets.back()));
     bool use_window = window_size > 16;
 
-#if USE_MULTITARGET_CODE
+#if USE_X86_64_MULTITARGET_CODE
     if (isArchSupported(TargetArch::x86_64_v4))
         if (use_window)
             replicateImpl_x86_64_v4<T, true>(data.data(), size, window_size, offsets, res->getData().data());
@@ -1515,7 +1515,7 @@ ColumnPtr ColumnVector<T>::indexImpl(const PaddedPODArray<Type> & indexes, size_
 
     auto res = this->create(limit);
     typename Self::Container & res_data = res->getData();
-#if USE_MULTITARGET_CODE
+#if USE_X86_64_MULTITARGET_CODE
     if constexpr (sizeof(T) == 1 && sizeof(Type) == 1)
     {
         /// VBMI optimization only applicable for (U)Int8 types
