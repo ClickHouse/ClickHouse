@@ -266,6 +266,18 @@ def test_namespaces(started_cluster):
     assert_error_shape(response, "NoSuchNamespaceException")
 
 
+def test_namespace_location_with_embedded_bucket(started_cluster):
+    # `s3://warehouse/s3://other/x` names bucket `warehouse` on the surface, but the S3 layer
+    # re-parses the key and would write to `other`. Refuse it like a plain other-bucket location.
+    ns = f"esc_{uuid.uuid4().hex[:8]}"
+    for location in (
+        f"s3://other/{ns}",
+        f"s3://{BUCKET}/s3://other/{ns}",
+        f"s3://{BUCKET}/{ns}/s3://other/x",
+    ):
+        create_namespace([ns], properties={"location": location}, expected_code=400)
+
+
 def test_create_namespace_creates_parents(started_cluster):
     ns = f"parents_{uuid.uuid4().hex[:8]}"
 

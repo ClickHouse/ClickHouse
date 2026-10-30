@@ -569,15 +569,6 @@ void IcebergRESTCatalogHandler::handleCreateNamespace(const IcebergRESTCatalogWa
                 properties[key] = std::move(value_string);
             }
         }
-
-        /// Tables of the namespace go under `location`. The server has credentials for one bucket only, so refuse others now.
-        if (const auto it = properties.find("location"); it != properties.end())
-        {
-            if (!hasS3Scheme(it->second))
-                throw Poco::Exception("the 'location' property must be an s3:// URI");
-            if (!warehouse.isInBucket(it->second))
-                throw Poco::Exception("the 'location' property must be inside the warehouse bucket");
-        }
     }
     catch (const Poco::Exception & e)
     {
@@ -589,6 +580,10 @@ void IcebergRESTCatalogHandler::handleCreateNamespace(const IcebergRESTCatalogWa
         return;
     }
     validateNamespace(name);
+
+    /// Tables of the namespace go under `location`.
+    if (const auto it = properties.find("location"); it != properties.end())
+        warehouse.validateLocation(it->second);
 
     if (!warehouse.store->createNamespace(name, properties))
     {

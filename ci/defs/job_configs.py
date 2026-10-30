@@ -284,6 +284,9 @@ common_stress_job_config = Job.Config(
             "./ci/jobs/scripts/functional_tests/setup_log_cluster.sh",
             "./ci/jobs/scripts/stress/stress.py",
             "./tests/clickhouse-test",
+            # Runs the tests over the protocols other than native, see `clickhouse-test --protocols`.
+            "./tests/protocol_client.py",
+            "./utils/grpc-client/pb2",
             "./tests/config",
             "./tests/*.txt",
             "./tests/docker_scripts/",

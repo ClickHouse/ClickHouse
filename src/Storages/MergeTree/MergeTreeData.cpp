@@ -11,6 +11,9 @@
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/PartitionCommands.h>
 #include <Common/CurrentThread.h>
+#include <Common/ThreadGroupSwitcher.h>
+#include <Common/ThreadPool.h>
+#include <Common/setThreadName.h>
 #include <Common/threadPoolCallbackRunner.h>
 
 #include <Access/AccessControl.h>
@@ -36,11 +39,13 @@
 #include <Compression/CompressionCodecQuantized.h>
 #include <Compression/CompressionFactory.h>
 #include <Core/BackgroundSchedulePool.h>
+#include <Core/DecimalFunctions.h>
 #include <Core/QueryProcessingStage.h>
 #include <Core/ServerSettings.h>
 #include <Core/Settings.h>
 #include <Core/UUID.h>
 #include <DataTypes/DataTypeCustomSimpleAggregateFunction.h>
+#include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/DataTypeEnum.h>
 #include <DataTypes/DataTypeLowCardinality.h>
@@ -253,6 +258,9 @@ namespace CurrentMetrics
     extern const Metric FreezePartThreads;
     extern const Metric FreezePartThreadsActive;
     extern const Metric FreezePartThreadsScheduled;
+    extern const Metric MergeTreeStatisticsLoaderThreads;
+    extern const Metric MergeTreeStatisticsLoaderThreadsActive;
+    extern const Metric MergeTreeStatisticsLoaderThreadsScheduled;
     extern const Metric ColumnsDescriptionsCacheSize;
 }
 
@@ -1192,17 +1200,166 @@ ConditionSelectivityEstimatorPtr MergeTreeData::getConditionSelectivityEstimator
     auto statistics_cache = getContext()->getStatisticsCache();
     NameSet required_columns_set(required_columns.begin(), required_columns.end());
 
+    /// The statistics are loaded in parallel, and merged in the order of parts, so that the estimator does not depend on the scheduling.
+    /// The statistics of a part are released right after merging, so only the statistics of one batch of parts are held at once.
+    std::vector<ColumnsStatistics> parts_statistics(parts.size());
     ConditionSelectivityEstimatorBuilder estimator_builder(local_context);
-    for (const auto & part : parts)
-    {
-        ProfileEvents::increment(ProfileEvents::LoadedStatistics);
-        auto stats = part.data_part->loadStatistics(required_columns_set, statistics_cache.get());
-        estimator_builder.incrementRowCount(part.data_part->rows_count);
-        for (const auto & [column_name, stat] : stats)
-            estimator_builder.addStatistics(column_name, stat);
-    }
+    loadStatisticsOfPartsInParallel(
+        parts.size(),
+        local_context->getSettingsRef()[Setting::max_threads],
+        [&](size_t part_index)
+        {
+            auto statistics = parts[part_index].data_part->tryLoadStatisticsFromCache(required_columns_set, statistics_cache.get());
+            if (!statistics)
+                return false;
+            ProfileEvents::increment(ProfileEvents::LoadedStatistics);
+            parts_statistics[part_index] = std::move(*statistics);
+            return true;
+        },
+        [&](size_t part_index)
+        {
+            ProfileEvents::increment(ProfileEvents::LoadedStatistics);
+            parts_statistics[part_index] = parts[part_index].data_part->loadStatistics(required_columns_set, statistics_cache.get());
+        },
+        [&](size_t part_index)
+        {
+            estimator_builder.incrementRowCount(parts[part_index].data_part->rows_count);
+            for (const auto & [column_name, stat] : parts_statistics[part_index])
+                estimator_builder.addStatistics(column_name, stat);
+            parts_statistics[part_index] = {};
+        });
 
     return estimator_builder.getEstimator();
+}
+
+void MergeTreeData::loadStatisticsOfPartsInParallel(
+    size_t num_parts,
+    size_t max_threads,
+    const std::function<bool(size_t)> & try_load_part_from_memory,
+    const std::function<void(size_t)> & load_part,
+    const std::function<void(size_t)> & consume_part)
+{
+    if (max_threads <= 1)
+    {
+        for (size_t part_index = 0; part_index < num_parts; ++part_index)
+        {
+            load_part(part_index);
+            consume_part(part_index);
+        }
+        return;
+    }
+
+    /// The parts are processed in windows of consecutive parts, and every window is consumed before the next one is
+    /// loaded, so that the loaded statistics of at most `window_size` parts are held at once, whether they were in
+    /// memory or not. They may be large, they are not freed by the eviction from the statistics cache while held,
+    /// and they are loaded without accounting in the memory tracker of the query.
+    const size_t window_size = std::min(num_parts, max_threads * 4);
+
+    /// The parts of the current window that are not in memory, and their exceptions, by the position in `parts_to_load`.
+    std::vector<size_t> parts_to_load;
+    parts_to_load.reserve(window_size);
+    std::vector<std::exception_ptr> exceptions(window_size);
+    std::atomic<size_t> next_index = 0;
+    std::atomic<bool> has_exception = false;
+
+    /// Created on the first window with more than one part to load, so a warm query does not use the pool at all.
+    /// A pool of its own, like the analysis of indexes in `filterPartsByPrimaryKeyAndSkipIndexes`: the caller
+    /// may run in a thread of any shared pool, and waiting there for the jobs of the same pool could deadlock.
+    /// Declared after the variables above to be destroyed first: its destructor joins the jobs that still use them
+    /// when scheduling throws.
+    std::optional<ThreadPool> pool;
+
+    /// Loads the parts of `parts_to_load` from `next_index` until all of them are taken.
+    /// The parts are taken in their order, so when a part throws, every part before it has been taken and is loaded
+    /// to the end: the exception of the first failed part is the same for any scheduling.
+    /// The pool is finished once its destructor has started (scheduling has thrown), then the other parts are abandoned.
+    auto load_parts = [&]
+    {
+        while (!has_exception.load(std::memory_order_relaxed) && !(pool && pool->isFinished()))
+        {
+            const size_t index = next_index.fetch_add(1, std::memory_order_relaxed);
+            if (index >= parts_to_load.size())
+                break;
+
+            try
+            {
+                load_part(parts_to_load[index]);
+            }
+            catch (...)
+            {
+                exceptions[index] = std::current_exception();
+                has_exception.store(true, std::memory_order_relaxed);
+            }
+        }
+    };
+
+    /// The next part to consume.
+    size_t consumed_end = 0;
+
+    for (size_t window_begin = 0; window_begin < num_parts;)
+    {
+        const size_t window_end = std::min(num_parts, window_begin + window_size);
+
+        /// The parts whose statistics are already in memory are loaded in the calling thread in a single pass, without
+        /// checking first whether they are in memory: that is only a copy, much cheaper than scheduling a job, and it
+        /// does not look up the statistics twice. Such a part is consumed at once if no part before it is left to load.
+        parts_to_load.clear();
+        for (size_t part_index = window_begin; part_index < window_end; ++part_index)
+        {
+            if (!try_load_part_from_memory(part_index))
+                parts_to_load.push_back(part_index);
+            else if (parts_to_load.empty())
+            {
+                consume_part(part_index);
+                consumed_end = part_index + 1;
+            }
+        }
+
+        next_index.store(0, std::memory_order_relaxed);
+        if (parts_to_load.size() == 1)
+        {
+            load_parts();
+        }
+        else if (parts_to_load.size() > 1)
+        {
+            const size_t num_threads = std::min(max_threads, window_size);
+            if (!pool)
+                pool.emplace(
+                    CurrentMetrics::MergeTreeStatisticsLoaderThreads,
+                    CurrentMetrics::MergeTreeStatisticsLoaderThreadsActive,
+                    CurrentMetrics::MergeTreeStatisticsLoaderThreadsScheduled,
+                    num_threads);
+
+            const size_t num_jobs = std::min(num_threads, parts_to_load.size());
+            for (size_t job = 0; job < num_jobs; ++job)
+            {
+                pool->scheduleOrThrowOnError(
+                    [&, thread_group = CurrentThread::getGroup()]
+                    {
+                        ThreadGroupSwitcher switcher(thread_group, ThreadName::MERGETREE_LOAD_STATISTICS);
+                        load_parts();
+                    });
+            }
+
+            pool->wait();
+        }
+
+        /// Consume the rest of the window in the order of parts, the loaded parts together with the parts in between,
+        /// which were loaded from memory.
+        for (size_t index = 0; consumed_end < window_end; ++consumed_end)
+        {
+            if (index < parts_to_load.size() && parts_to_load[index] == consumed_end)
+            {
+                if (auto & exception = exceptions[index])
+                    std::rethrow_exception(exception);
+                ++index;
+            }
+
+            consume_part(consumed_end);
+        }
+
+        window_begin = window_end;
+    }
 }
 
 bool MergeTreeData::supportsFinal() const
@@ -10807,6 +10964,26 @@ MergeTreeData::MutableDataPartPtr MergeTreeData::loadPartRestoredFromBackup(cons
     UNREACHABLE();
 }
 
+/// The date part of a string that a conversion to `Date` or `Date32` reads, such as `toDate` or `CAST`. Like
+/// `ConvertThroughParsing::isAllRead`, they ignore what follows the date, without checking it, if it starts with a space
+/// or `T` and the string has the length of `YYYY-MM-DD hh:mm:ss`, optionally followed by a fraction of a second. So
+/// `toDate('2024-02-29 25:00:00')` is `2024-02-29`, while `toDate('2024-02-2/')` is an error.
+static std::string_view getDatePartOfDateText(std::string_view text)
+{
+    LocalDate date;
+    ReadBufferFromString in(text);
+    if (!tryReadDateText(date, in) || in.eof() || (*in.position() != ' ' && *in.position() != 'T'))
+        return text;
+
+    const size_t date_size = in.count();
+    if (text.size() == strlen("YYYY-MM-DD hh:mm:ss"))
+        return text.substr(0, date_size);
+    if (text.size() >= strlen("YYYY-MM-DD hh:mm:ss.x") && text[19] == '.'
+        && std::all_of(text.begin() + 20, text.end(), [](char c) { return isNumericASCII(c); }))
+        return text.substr(0, date_size);
+    return text;
+}
+
 /// Converts one field of a partition value to the type of the partition key column.
 ///
 /// Text parsing of the date and time types is lenient: a day or a time of day that does not exist rolls over
@@ -10823,11 +11000,14 @@ static Field convertPartitionFieldToType(const Field & value, const DataTypePtr 
     if (value.getType() != Field::Types::String || !which.isDateOrDate32OrDateTimeOrDateTime64())
         return convertFieldToTypeOrThrow(value, *type);
 
+    /// A time of day after a date is ignored the same way as by `toDate`.
+    const String & text = value.safeGet<String>();
+    const std::string_view literal = which.isDateOrDate32() ? getDatePartOfDateText(text) : std::string_view(text);
+
     FormatSettings format_settings;
     format_settings.date_time_overflow_behavior = FormatSettings::DateTimeOverflowBehavior::Throw;
-    Field converted = convertFieldToTypeOrThrow(value, *type, nullptr, format_settings);
+    Field converted = convertFieldToTypeOrThrow(Field(literal), *type, nullptr, format_settings);
 
-    const String & literal = value.safeGet<String>();
     auto column = nested_type->createColumn();
     column->insert(converted);
     WriteBufferFromOwnString parsed_text;
@@ -10895,48 +11075,9 @@ static Field convertPartitionFieldToType(const Field & value, const DataTypePtr 
     if (!spells_parsed_value)
         throw Exception(ErrorCodes::INVALID_PARTITION_VALUE,
                         "Partition value '{}' is not a valid value of type {}: it is read as {}",
-                        literal, type->getName(), parsed_text.str());
+                        text, type->getName(), parsed_text.str());
 
     return converted;
-}
-
-/// Checks a string that a conversion turns into a date or a time the same way as a partition literal. A tuple is
-/// checked element by element.
-static void checkDateTimeConversionArgument(const Field & value, const DataTypePtr & type)
-{
-    if (value.getType() == Field::Types::String)
-    {
-        if (WhichDataType(removeLowCardinalityAndNullable(type)).isDateOrDate32OrDateTimeOrDateTime64())
-            convertPartitionFieldToType(value, type);
-    }
-    else if (value.getType() == Field::Types::Tuple)
-    {
-        const auto * tuple_type = typeid_cast<const DataTypeTuple *>(removeNullable(type).get());
-        const auto & elements = value.safeGet<Tuple>();
-        if (tuple_type && tuple_type->getElements().size() == elements.size())
-            for (size_t i = 0; i < elements.size(); ++i)
-                checkDateTimeConversionArgument(elements[i], tuple_type->getElement(i));
-    }
-}
-
-/// A conversion such as `CAST('2024-02-30', 'Date')` or `toDate(concat('2024-02-', '30'))` in a partition value is
-/// folded to `2024-03-01` before `convertPartitionFieldToType` sees it, so the string it converts is checked first.
-static void checkDateTimeConversionsInPartitionValue(const ASTPtr & ast, ContextPtr context)
-{
-    const auto * function = ast->as<ASTFunction>();
-    if (!function || !function->arguments)
-        return;
-
-    for (const auto & child : function->arguments->children)
-        checkDateTimeConversionsInPartitionValue(child, context);
-
-    static const std::unordered_set<std::string_view> date_time_conversions
-        = {"toDate", "toDate32", "toDateTime", "toDateTime32", "toDateTime64"};
-    if (function->arguments->children.empty() || (!isFunctionCast(function) && !date_time_conversions.contains(function->name)))
-        return;
-
-    const Field argument = evaluateConstantExpression(function->arguments->children[0], context).first;
-    checkDateTimeConversionArgument(argument, evaluateConstantExpression(ast, context).second);
 }
 
 String MergeTreeData::getPartitionIDFromQuery(const ASTPtr & ast, ContextPtr local_context, const DataPartsLock * acquired_lock) const
@@ -11037,8 +11178,6 @@ String MergeTreeData::getPartitionIDFromQuery(const ASTPtr & ast, ContextPtr loc
         throw Exception(ErrorCodes::INVALID_PARTITION_VALUE,
                         "Wrong number of fields in the partition expression: {}, must be: {}",
                         partition_ast_fields_count, fields_count);
-
-    checkDateTimeConversionsInPartitionValue(partition_value_ast, local_context);
 
     Row partition_row(fields_count);
     if (fields_count == 0)
@@ -13391,8 +13530,8 @@ std::optional<StreamFileNameCollision> findStreamFileNameCollision(
     ISerialization::EnumerateStreamsSettings enumerate_settings;
     enumerate_settings.object_serialization_version = settings[MergeTreeSetting::object_serialization_version];
     enumerate_settings.object_shared_data_serialization_version = object_shared_data_serialization_version;
-    /// Dynamic paths and bucket counts are properties of the data, not of the type, so they are unknown here.
-    enumerate_settings.enumerate_dynamic_streams = false;
+    /// Dynamic streams stay enumerated (the default), so the typed paths and the typed shared data of JSON take part in
+    /// the check.
 
     std::unordered_map<String, std::pair<String, NameAndTypePair>> stream_name_to_column;
 

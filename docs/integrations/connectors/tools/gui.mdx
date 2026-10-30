@@ -776,3 +776,21 @@ Features:
 A free Community Edition is available, with paid editions for additional features.
 
 </Accordion>
+
+<Accordion title="TableStudio">
+
+[TableStudio](https://tablestudio.sh/databases/clickhouse) is a native macOS database client with ClickHouse support, alongside PostgreSQL, MySQL, SQLite, SQL Server, and other databases.
+
+Features:
+
+- Connects to ClickHouse Cloud and self-hosted servers over the HTTP interface, directly or through an SSH tunnel.
+- Estimates the rows a query would read with `EXPLAIN ESTIMATE` before it runs, and reads only the visible columns when browsing a table.
+- Query insights from `system.query_log`, with skip index suggestions tested with `EXPLAIN WHATIF`.
+- Schema checks for sorting keys, partitioning, `Nullable` columns, and `LowCardinality` candidates.
+- Health checks for long-running mutations, failing merges, stuck replication queues, and distributed inserts.
+- Starts, stops, and creates local ClickHouse servers on the Mac, and takes restore points before risky changes.
+- MCP server and plugin for coding agents such as Claude Code, Codex, and Cursor, with read-only reads and production changes staged for review.
+
+A free 7-day trial is available, followed by a one-time license.
+
+</Accordion>

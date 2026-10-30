@@ -301,6 +301,29 @@ String getBuildIDFromProgramHeaders(DynamicLinkingProgramHeaderInfo * info)
     }
     return {};
 }
+
+
+/// Whether the object described by `info` is the one containing this code, i.e. the main executable.
+/// glibc reports the main executable with an empty name, but other loaders (e.g. FreeBSD's) report its path.
+bool containsThisCode(DynamicLinkingProgramHeaderInfo * info)
+{
+    const auto this_code = reinterpret_cast<uintptr_t>(&containsThisCode);
+    __msan_unpoison(&info->addr, sizeof(info->addr));
+    __msan_unpoison(&info->phnum, sizeof(info->phnum));
+    __msan_unpoison(&info->phdr, sizeof(info->phdr));
+    for (size_t header_index = 0; header_index < info->phnum; ++header_index)
+    {
+        const ElfProgramHeader & phdr = info->phdr[header_index];
+        __msan_unpoison(&phdr, sizeof(phdr));
+        if (phdr.type != ProgramHeaderType::LOAD)
+            continue;
+
+        const uintptr_t segment_begin = info->addr + phdr.vaddr;
+        if (this_code >= segment_begin && this_code - segment_begin < phdr.memsz)
+            return true;
+    }
+    return false;
+}
 #endif
 
 
@@ -520,6 +543,8 @@ void collectSymbolsFromELF(
         if (self_build_id.empty())
             self_build_id = build_id;
     }
+    else
+        is_main_executable = containsThisCode(info);
 #endif
 
     /// Note: we load ELF from file; this doesn't work for vdso because it's only present in memory.
