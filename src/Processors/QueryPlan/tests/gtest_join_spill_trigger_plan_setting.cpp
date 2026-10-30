@@ -590,3 +590,27 @@ TEST(JoinBlockNestedLoopPlanSetting, GatedOnThePlanVersion)
     EXPECT_FALSE(JoinSettings(serializeAt(makeJoinSettings({}), pre_block_nested_loop_version), pre_block_nested_loop_version)
                      .allow_block_nested_loop_join);
 }
+
+/// `enable_join_robin_hood_hash_tables` is written only towards a peer that knows the name, and a plan from a peer that
+/// predates it is read back with the Robin Hood mode on, which is how that peer built its join hash tables.
+TEST(JoinRobinHoodHashTablesPlanSetting, GatedOnThePlanVersion)
+{
+    constexpr UInt64 pre_robin_hood_version = DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_JOIN_ROBIN_HOOD_HASH_TABLES - 1;
+    const auto enabled = makeJoinSettings({{"enable_join_robin_hood_hash_tables", true}});
+
+    auto carries_setting = [](const QueryPlanSerializationSettings & settings)
+    {
+        WriteBufferFromOwnString out;
+        settings.writeChangedBinary(out);
+        return out.str().contains("enable_join_robin_hood_hash_tables");
+    };
+
+    EXPECT_TRUE(carries_setting(serializeAt(makeJoinSettings({}), current_version)));
+    EXPECT_FALSE(JoinSettings(serializeAt(makeJoinSettings({}), current_version), current_version).enable_join_robin_hood_hash_tables);
+    EXPECT_TRUE(JoinSettings(serializeAt(enabled, current_version), current_version).enable_join_robin_hood_hash_tables);
+
+    EXPECT_FALSE(carries_setting(serializeAt(makeJoinSettings({}), pre_robin_hood_version)));
+    EXPECT_FALSE(carries_setting(serializeAt(enabled, pre_robin_hood_version)));
+    EXPECT_TRUE(JoinSettings(serializeAt(makeJoinSettings({}), pre_robin_hood_version), pre_robin_hood_version)
+                    .enable_join_robin_hood_hash_tables);
+}

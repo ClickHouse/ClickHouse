@@ -336,7 +336,8 @@ static_assert(sizeof(HashTableGrowerWithPrecalculation<>) == DB::CH_CACHE_LINE_S
 /** Like `HashTableGrowerWithPrecalculation`, but adapts to large hash tables.
   *
   * For large hash tables, random memory access is the main bottleneck, not the computations.
-  * When the buffer reaches 2^robin_hood_size_degree cells, the grower switches the hash table to the Robin Hood mode:
+  * When the buffer reaches 2^robin_hood_size_degree cells, the grower switches the hash table to the Robin Hood mode
+  * (unless it is disabled with `setRobinHoodAllowed`):
   * the max load factor is increased from 0.5 to robin_hood_max_load_factor_percent / 100 (the hash table becomes up to two times smaller),
   * and the elements inside collision resolution chains are ordered by their optimal positions,
   * so a lookup of a missing key can stop early instead of walking to the end of the chain.
@@ -357,6 +358,7 @@ class alignas(DB::CH_CACHE_LINE_SIZE) HashTableGrowerWithPrecalculationAndRobinH
 
     UInt8 size_degree = initial_size_degree;
     bool robin_hood = false;
+    bool robin_hood_allowed = true;
     size_t precalculated_mask = (1ULL << initial_size_degree) - 1;
     size_t precalculated_max_fill = 1ULL << (initial_size_degree - 1);
 
@@ -375,10 +377,17 @@ public:
     UInt8 sizeDegree() const { return size_degree; }
     bool isRobinHood() const { return robin_hood; }
 
+    /// Whether the hash table may switch to the Robin Hood mode. Can be disabled only before the switch.
+    void setRobinHoodAllowed(bool allowed)
+    {
+        chassert(allowed || !robin_hood);
+        robin_hood_allowed = allowed;
+    }
+
     void increaseSizeDegree(UInt8 delta)
     {
         UInt8 new_size_degree = size_degree + delta;
-        setSizeDegree(new_size_degree, robin_hood || new_size_degree > robin_hood_size_degree);
+        setSizeDegree(new_size_degree, robin_hood || (robin_hood_allowed && new_size_degree > robin_hood_size_degree));
     }
 
     static constexpr auto initial_count = 1ULL << initial_size_degree;
@@ -401,7 +410,7 @@ public:
     /// Increase the size of the hash table, or switch it to the Robin Hood mode without changing the size.
     void increaseSize()
     {
-        if (!robin_hood && size_degree >= robin_hood_size_degree)
+        if (robin_hood_allowed && !robin_hood && size_degree >= robin_hood_size_degree)
             setSizeDegree(size_degree, true);
         else
             increaseSizeDegree(robin_hood || size_degree >= max_size_degree_quadratic ? 1 : 2);
@@ -414,7 +423,7 @@ public:
         if (num_elems > 1)
             new_size_degree = std::max(new_size_degree, static_cast<size_t>(log2(num_elems - 1)) + 2);
 
-        if (new_size_degree <= robin_hood_size_degree)
+        if (!robin_hood_allowed || new_size_degree <= robin_hood_size_degree)
         {
             setSizeDegree(static_cast<UInt8>(new_size_degree), false);
             return;
@@ -430,7 +439,7 @@ public:
     void setBufSize(size_t buf_size_)
     {
         UInt8 new_size_degree = static_cast<UInt8>(log2(buf_size_ - 1) + 1);
-        setSizeDegree(new_size_degree, new_size_degree > robin_hood_size_degree);
+        setSizeDegree(new_size_degree, robin_hood_allowed && new_size_degree > robin_hood_size_degree);
     }
 };
 
