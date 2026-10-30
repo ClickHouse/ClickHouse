@@ -439,7 +439,7 @@ struct OperationApplier
     template <typename Columns, typename ResultData>
     static void apply(Columns & in, ResultData & result_data, bool use_result_data_as_input = false)
     {
-#if USE_MULTITARGET_CODE
+#if USE_X86_64_MULTITARGET_CODE
         if (isArchSupported(TargetArch::x86_64_v4))
         {
             if (!use_result_data_as_input)
@@ -489,7 +489,7 @@ struct OperationApplier
         BATCH_BODY(doBatchedApply)
     }
 
-#if USE_MULTITARGET_CODE
+#if USE_X86_64_MULTITARGET_CODE
     template <bool CarryResult, typename Columns, typename Result>
     static void doBatchedApplyAVX512BW(Columns & in, Result * __restrict result_data, size_t size) X86_64_V4_FUNCTION_SPECIFIC_ATTRIBUTE
     {
@@ -510,7 +510,7 @@ struct OperationApplier<Op, OperationApplierImpl, 0>
         throw Exception(ErrorCodes::LOGICAL_ERROR, "OperationApplier<...>::apply(...): not enough arguments to run this method");
     }
 
-#if USE_MULTITARGET_CODE
+#if USE_X86_64_MULTITARGET_CODE
     template <bool, typename Columns, typename Result>
     static void doBatchedApplyAVX512BW(Columns &, Result &, size_t)
     {
@@ -573,7 +573,7 @@ struct TypedExecutorInvoker<Op, Type, Types ...>
     {
         if (const auto column = typeid_cast<const ColumnVector<Type> *>(&y))
         {
-#if USE_MULTITARGET_CODE
+#if USE_X86_64_MULTITARGET_CODE
             if (isArchSupported(TargetArch::x86_64_v4))
             {
                 applyImpl_x86_64_v4<T, Result>(x, *column, result);
