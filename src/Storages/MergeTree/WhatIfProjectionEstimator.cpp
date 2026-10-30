@@ -34,6 +34,7 @@
 #include <Storages/MergeTree/WhatIfSettings.h>
 #include <Storages/ColumnsDescription.h>
 #include <Storages/ProjectionsDescription.h>
+#include <Storages/getEffectiveRowPolicyFilter.h>
 
 #include <algorithm>
 #include <array>
@@ -43,6 +44,11 @@
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int ACCESS_DENIED;
+}
 
 namespace FailPoints
 {
@@ -937,7 +943,8 @@ std::optional<ProjectionDescription> refreshHypotheticalProjection(
     String & reason)
 {
     if (!stored.required_columns.empty())
-        context->checkAccess(AccessType::SELECT, data.getStorageID(), stored.required_columns);
+        context->checkAccess(
+            AccessType::SELECT, data.getStorageID(), metadata->getColumns().getColumnNamesForSelectAccessCheck(stored.required_columns, context, data.getStorageID()));
     context->checkAccess(AccessType::ALTER_ADD_PROJECTION, data.getStorageID());
 
     std::optional<ProjectionDescription> fresh;
@@ -955,7 +962,8 @@ std::optional<ProjectionDescription> refreshHypotheticalProjection(
 
     /// an ALTER may retarget an ALIAS, so check the columns actually read
     if (!fresh->required_columns.empty())
-        context->checkAccess(AccessType::SELECT, data.getStorageID(), fresh->required_columns);
+        context->checkAccess(
+            AccessType::SELECT, data.getStorageID(), metadata->getColumns().getColumnNamesForSelectAccessCheck(fresh->required_columns, context, data.getStorageID()));
     return fresh;
 }
 
@@ -990,6 +998,13 @@ WhatIfCandidateResult evaluateProjection(
     auto projection = refreshHypotheticalProjection(stored_projection, data, metadata, context, result.not_applicable_reason);
     if (!projection)
         return result;
+
+    /// Same as for indexes: building the projection reads every row, including the rows a row policy hides
+    if (getEffectiveRowPolicyFilter(data, context))
+        throw Exception(ErrorCodes::ACCESS_DENIED,
+            "Cannot use `EXPLAIN WHATIF` because a row policy is applied on table {}. "
+            "The projection estimate is derived from all rows, so it could violate the row policy",
+            data.getStorageID().getNameForLogs());
 
     if (!context->getSettingsRef()[Setting::optimize_use_projections])
     {
