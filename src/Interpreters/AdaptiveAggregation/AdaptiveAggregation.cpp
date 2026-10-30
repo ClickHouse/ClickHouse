@@ -458,9 +458,8 @@ void Aggregator::spillAdaptivePartitions(
     const size_t num_partitions = shared.layout.numPartitions();
     const size_t block_bytes = shared.spill_scope->getSettings().buffer_size;
 
-    /// Every write of this spill goes to its producer's stream, created on a disk of the temporary volume with room for
-    /// the spill, the records the partitions keep in memory (less than a block each), which it may write with its own,
-    /// and the minimum free space, or whose disk is checked for that room, as the file of an ordinary spill is.
+    /// The producer's stream is created on a disk with room for the spill, the records the partitions keep in memory
+    /// (under a block each, which it may write too) and the minimum free space, or its disk is checked for that room.
     const size_t reserve_size = partitions.allocatedChunkBytes() + num_partitions * block_bytes + params.min_free_disk_space;
     TemporaryAppendSpaceCheck space_check;
 

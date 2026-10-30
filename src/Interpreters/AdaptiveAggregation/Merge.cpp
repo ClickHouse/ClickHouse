@@ -289,10 +289,10 @@ namespace
     }
 
     /// The staged records of the bucket that a merge task merges, partition by partition: the producers' chunks of a
-    /// partition and its blocks in the spill streams (see `AdaptiveAggregationSession::SpilledPartition`). A merge unit
-    /// takes the partitions [first_sub, end_sub): `forEachInMemoryPartition` hands out their records in memory, valid
-    /// until `release`, and `forEachSpilledBlock` reads their spilled records back a block at a time, once per pass of
-    /// the caller, each block valid only during its call. `release` frees both.
+    /// partition and its spilled blocks (see `AdaptiveAggregationSession::SpilledPartition`). A merge unit takes the
+    /// partitions [first_sub, end_sub): `forEachInMemoryPartition` hands out their records in memory, valid until
+    /// `release`, and `forEachSpilledBlock` reads their spilled records back a block at a time, once per pass of the
+    /// caller, each block valid only during its call. `release` frees both.
     class AdaptiveBucketRecords
     {
     public:
@@ -302,8 +302,7 @@ namespace
         {
         }
 
-        /// The record count of partition `sub` of the bucket, in the producers' chunks and in its blocks in the spill
-        /// streams.
+        /// The record count of partition `sub` of the bucket, in the producers' chunks and in its spilled blocks.
         size_t recordsOf(size_t sub) const
         {
             size_t records = spilledOf(sub).recordCount();
@@ -345,9 +344,8 @@ namespace
             }
         }
 
-        /// Frees the records of partition `sub` of the bucket: the producers' chunks and its blocks in the spill
-        /// streams, which a unit that the top-K pruning skips leaves unread. The streams this leaves with no block wait
-        /// for `removeEmptiedStreams`.
+        /// Frees the records of partition `sub` of the bucket: the producers' chunks and its spilled blocks, which a unit
+        /// that the top-K pruning skips leaves unread. The streams left with no block wait for `removeEmptiedStreams`.
         void release(size_t sub)
         {
             for (const auto & producer : session.producer_buffers)
@@ -355,9 +353,7 @@ namespace
             spilledOf(sub).release(emptied_streams);
         }
 
-        /// Removes the spill streams that the releases left with no block. Every stream holds blocks of every bucket,
-        /// so they empty together at the release of the merge's last unit, and they are removed on `pool` in parallel
-        /// rather than one after another by this task.
+        /// Removes the spill streams that the releases left with no block, on `pool` in parallel.
         void removeEmptiedStreams(ThreadPool & pool, size_t max_threads)
         {
             if (emptied_streams.empty())
@@ -377,7 +373,6 @@ namespace
             };
 
             ThreadPoolCallbackRunnerLocal<void> runner(pool, ThreadName::AGGREGATOR_POOL);
-            /// The calling task takes part in the removal too, so one job less is enqueued.
             const size_t threads = std::min(max_threads, removal->streams.size());
             runner.reserve(threads);
             for (size_t i = 1; i < threads && removal->next.load(std::memory_order_relaxed) < removal->streams.size(); ++i)

@@ -243,7 +243,6 @@ public:
     /// Reads the data from `position` returned by `startNewBlock`, finishes writing if needed.
     std::unique_ptr<ReadBuffer> readFromPosition(size_t position);
     /// Reads the data written between two positions returned by `startNewBlock`, finishes writing if needed.
-    /// The read of the file requests only that range.
     std::unique_ptr<ReadBuffer> readRange(size_t begin, size_t end);
 
     CompressedWriteBuffer & getCompressedWriteBuffer();

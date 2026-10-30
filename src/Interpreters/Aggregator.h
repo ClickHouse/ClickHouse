@@ -1170,9 +1170,9 @@ private:
     void addMergeCountedTablesToBounds(
         ManyAggregatedDataVariants & data, Int32 bucket, const AdaptiveTopKPruning & pruning, std::span<UInt64> bounds, Arena * arena) const;
 
-    /// Writes the staged records of `partitions`, a producer's or a finished producer's handed over to `shared`, to
-    /// stream `spill_stream` of the session, a block per partition, and frees them; a producer then keeps appending
-    /// into new chunks. Called over the external-aggregation threshold and on request of the memory scheduler (see
+    /// Writes the staged records of `partitions`, a producer's or a finished producer's handed over to `shared`, to the
+    /// session's spill stream `spill_stream`, and frees them; a producer then keeps appending into new chunks.
+    /// Called over the external-aggregation threshold and on request of the memory scheduler (see
     /// `spillAdaptiveProducer` and `spillHandedOverStagedRecords`).
     void spillAdaptivePartitions(AdaptiveAggregationSession & shared, PartitionedRecordBuffer & partitions, size_t spill_stream) const;
 

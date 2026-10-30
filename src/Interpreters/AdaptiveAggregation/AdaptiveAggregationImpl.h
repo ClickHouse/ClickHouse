@@ -71,12 +71,12 @@ constexpr size_t adaptive_drain_prefetch_min_table_bytes = 512 << 10;
 /// partition, and a written table learns its keys again from empty, so a producer that just wrote must not write a
 /// trickle of new bytes on every block that follows.
 constexpr size_t adaptive_spill_min_bytes = 16 << 20;
-/// The spill streams of a session are open together, and each holds about three buffers of the streams' buffer size:
-/// the compression input, the compressed block and the file's write buffer. Each partition keeps up to one buffer
-/// size of spilled records in memory until they make a block. The buffer size therefore follows the
-/// external-aggregation threshold, so that the streams and the partitions together take at most an eighth of it, but
-/// not below this floor, under which the writes and the blocks get too small, and not above the buffer size configured
-/// for temporary files. Without a threshold they take the floor.
+/// The spill streams of a session, one per producer, are open together, and each holds about three buffers of the
+/// streams' buffer size: the compression input, the compressed block and the file's write buffer. Their buffer size
+/// therefore follows the external-aggregation threshold, so that the streams and the records each partition keeps in
+/// memory (under one buffer size) take at most an eighth of it, but not below this floor, under which the writes and
+/// the compressed blocks get too small, and not above the buffer size configured for temporary files. Without a
+/// threshold they take the floor.
 constexpr size_t adaptive_spill_min_buffer_bytes = 4 << 10;
 /// The merge takes a bucket's partitions in units of about this many records and source cells each, so a unit's
 /// table, grown to hold them, stays in the cache while the unit is drained and converted; a bucket smaller than a
@@ -184,7 +184,7 @@ struct AdaptiveAggregationSession
     /// mutex: they are created after the finish barrier, which ordered every hand-over and spill before them.
     std::mutex producer_buffers_mutex;
     std::vector<std::unique_ptr<PartitionedRecordBuffer>> producer_buffers;
-    /// The spill stream of the producer of each buffer in `producer_buffers`, which the spills of the buffer write to.
+    /// The spill stream of each buffer's producer, paired with `producer_buffers`.
     std::vector<size_t> producer_buffer_spill_streams;
     /// The memory of the records in `producer_buffers` that a spill can still free, changed under the mutex. Read
     /// without it: the scheduler reads it around every job of a producer, which must not wait for a spill.
@@ -192,7 +192,7 @@ struct AdaptiveAggregationSession
 
     /// Ends the spills of the records in `producer_buffers` at the finish barrier: waits for a spill in progress, and
     /// zeroes `spillable_handed_over_bytes`, which no hand-over raises again, so the later requests find nothing to
-    /// spill. Removes the spill streams that got no block, which no spill can reach any more.
+    /// spill. Removes the spill streams that got no block.
     void endHandedOverSpills();
 
     /// Published under the same mutex and read after the finish barrier. Retained states contribute their
@@ -207,50 +207,39 @@ struct AdaptiveAggregationSession
     size_t frozen_producers = 0;
     size_t repeat_dominated_producers = 0;
 
-    /// A temporary file of the staged records that one producer spilled over the external-aggregation threshold (see
-    /// `Aggregator::spillAdaptivePartitions` and `AdaptiveAggregationProducer::spill_stream`): written by the producer
-    /// while it runs, then by the spills of the buffer it handed over, so by one spill at a time and without a lock.
-    /// Created by the first such spill.
+    /// The temporary file of one producer's spilled staged records, written by one spill at a time, so without a lock.
     struct SpillStream
     {
         std::unique_ptr<TemporaryDataBuffer> buffer;
-        /// The blocks in the file that the merge has not released yet. The release that takes it to 0 hands the stream
-        /// over for removal.
         std::atomic<size_t> unreleased_blocks = 0;
     };
     /// One per producer.
     std::vector<SpillStream> spill_streams;
 
-    /// The staged records of a partition that the producers spilled, so that a merge unit reads back the records of
-    /// its own partitions only: blocks {UInt64 bytes, the records} at known positions of the spill streams, and the
-    /// records not written yet, which wait in memory until they make a block.
+    /// The spilled staged records of a partition, so that a merge unit reads back its own only: blocks {UInt64 bytes,
+    /// the records} in the spill streams, and the records kept in memory until they make a block.
     class SpilledPartition
     {
     public:
-        /// Adds the records of partition `partition` of `partitions` and returns their bytes. Once the records kept in
-        /// memory and these take `block_bytes`, they are written to `spill_stream`, the stream of the spilling
-        /// producer, as one block. Producers append concurrently.
+        /// Adds the records of partition `partition` of `partitions`, returns their bytes, and writes the records kept
+        /// in memory to `spill_stream` as one block once they reach `block_bytes`. Producers append concurrently.
         UInt64 append(SpillStream & spill_stream, const PartitionedRecordBuffer & partitions, size_t partition, size_t block_bytes);
 
-        /// Reads the records back in the order the producers wrote them, the blocks and then the records kept in
-        /// memory, and calls `callback(block)` with each in a padded buffer like a chunk's, valid only during its
-        /// call. The read stops when `callback` returns false. The records stay, so a merge unit that passes over
-        /// its records twice reads them again; the merge removes them once the unit no longer needs them. Called by
-        /// the one task that merges the partition's bucket, after the finish barrier, so no producer appends any more.
+        /// Calls `callback(block)` with the blocks in the order the producers wrote them, then the records kept in
+        /// memory, each in a padded buffer like a chunk's, valid only during its call, until `callback` returns false.
+        /// The records stay for a second pass. Called by the one merge task of the bucket, after the finish barrier.
         void readBack(const std::function<bool(const PaddedPODArray<char> &)> & callback);
 
         /// The records appended, which the merge counts before it reads them back.
         size_t recordCount() const { return record_count; }
 
-        /// Removes the records, read back or not, and adds to `emptied_streams` each stream that has no block left,
-        /// which the caller removes.
+        /// Removes the records, read back or not, and adds each stream left with no block to `emptied_streams`.
         void release(std::vector<SpillStream *> & emptied_streams);
 
     private:
         /// Serializes the producers' appends.
         std::mutex mutex;
         PaddedPODArray<char> pending;
-        /// A block in a stream, at the positions `TemporaryDataBuffer::startNewBlock` returned.
         struct Block
         {
             SpillStream * stream;
@@ -523,8 +512,7 @@ struct AdaptiveAggregationProducer
     void standDown() { phase = BaselineState{}; }
 
     AdaptiveAggregationSessionPtr session;
-    /// The session's spill stream that this producer writes its staged records to (see
-    /// `AdaptiveAggregationSession::SpillStream`), the index of its aggregation stream.
+    /// This producer's stream in `AdaptiveAggregationSession::spill_streams`: the index of its aggregation stream.
     const size_t spill_stream;
 
     /// The records this producer staged, created by its freeze; a producer that stands down keeps them for the
