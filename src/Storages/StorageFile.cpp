@@ -4172,7 +4172,22 @@ public:
             const bool truncate = (flags & O_TRUNC) != 0;
             UInt64 existing_size = 0;
             WriteMode mode = WriteMode::Rewrite;
-            if (!truncate)
+            if (!truncate && isPlainLocalDisk(*user_files_disk))
+            {
+                /// A plain local disk opens `WriteMode::Append` with `O_APPEND | O_CREAT`, so the file
+                /// is created or appended to atomically, exactly as on the legacy local path: servers
+                /// sharing the directory (e.g. over NFS) cannot overwrite each other's inserts, as they
+                /// could after deciding between appending and rewriting from a separate existence probe.
+                /// The size is taken from the opened file for the same reason.
+                auto disk_buffer = user_files_disk->writeFile(
+                    user_files_disk_relative_path, DBMS_DEFAULT_BUFFER_SIZE, WriteMode::Append, getContext()->getWriteSettings());
+                auto * file_buffer = typeid_cast<WriteBufferFromFile *>(disk_buffer.get());
+                if (!file_buffer)
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "A plain local disk returned an unexpected write buffer for {}", path);
+                do_not_write_prefix = file_buffer->size();
+                naked_buffer = std::move(disk_buffer);
+            }
+            else if (!truncate)
             {
                 /// Resolve append-mode and the existing-prefix flag from an existence
                 /// check followed by a size lookup. The two operations are not atomic,
@@ -4202,11 +4217,14 @@ public:
                         mode = WriteMode::Append;
                 }
             }
-            do_not_write_prefix = (mode == WriteMode::Append) && existing_size != 0;
-            /// Pass the write settings of the query, so that e.g. `max_remote_write_network_bandwidth`
-            /// and `s3_allow_parallel_part_upload` apply to a remote disk.
-            naked_buffer = user_files_disk->writeFile(
-                user_files_disk_relative_path, DBMS_DEFAULT_BUFFER_SIZE, mode, getContext()->getWriteSettings());
+            if (!naked_buffer)
+            {
+                do_not_write_prefix = (mode == WriteMode::Append) && existing_size != 0;
+                /// Pass the write settings of the query, so that e.g. `max_remote_write_network_bandwidth`
+                /// and `s3_allow_parallel_part_upload` apply to a remote disk.
+                naked_buffer = user_files_disk->writeFile(
+                    user_files_disk_relative_path, DBMS_DEFAULT_BUFFER_SIZE, mode, getContext()->getWriteSettings());
+            }
         }
         else
         {
