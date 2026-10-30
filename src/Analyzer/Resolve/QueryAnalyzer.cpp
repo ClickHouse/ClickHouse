@@ -418,6 +418,176 @@ void hideLambdaArgumentsShadowingAliasExpression(
     }
 }
 
+/// Equal structure, and the table columns come from the same table expressions.
+bool isSameExpression(const IQueryTreeNode & lhs, const IQueryTreeNode & rhs)
+{
+    if (!lhs.isEqual(rhs, {.compare_aliases = false}))
+        return false;
+
+    std::vector<std::pair<const IQueryTreeNode *, const IQueryTreeNode *>> nodes_to_compare{{&lhs, &rhs}};
+    while (!nodes_to_compare.empty())
+    {
+        auto [lhs_node, rhs_node] = nodes_to_compare.back();
+        nodes_to_compare.pop_back();
+
+        if (const auto * lhs_column_node = lhs_node->as<ColumnNode>())
+        {
+            auto lhs_source = lhs_column_node->getColumnSourceOrNull();
+            if (lhs_source && lhs_source->getNodeType() != QueryTreeNodeType::LAMBDA_ARGS
+                && lhs_source != rhs_node->as<const ColumnNode &>().getColumnSourceOrNull())
+                return false;
+        }
+
+        const auto & lhs_children = lhs_node->getChildren();
+        const auto & rhs_children = rhs_node->getChildren();
+        for (size_t i = 0; i < lhs_children.size(); ++i)
+            if (lhs_children[i])
+                nodes_to_compare.emplace_back(lhs_children[i].get(), rhs_children[i].get());
+    }
+
+    return true;
+}
+
+bool isConstantTargetColumn(const IQueryTreeNode & node, const QueryTreeNodePtr & own_target)
+{
+    const auto * column_node = node.as<ColumnNode>();
+    auto column_source = column_node ? column_node->getColumnSourceOrNull() : nullptr;
+    return column_source && column_source != own_target && column_source->getNodeType() == QueryTreeNodeType::INTERPOLATE
+        && column_source->as<const InterpolateNode &>().getExpression()->getNodeType() == QueryTreeNodeType::CONSTANT;
+}
+
+/// `node` with the columns of the constant targets other than `own_target` replaced by the constants.
+QueryTreeNodePtr unbindConstantTargetReads(const QueryTreeNodePtr & node, const QueryTreeNodePtr & own_target)
+{
+    std::vector<const IQueryTreeNode *> nodes_to_check{node.get()};
+    bool has_constant_target_column = false;
+    while (!nodes_to_check.empty() && !has_constant_target_column)
+    {
+        const auto * current_node = nodes_to_check.back();
+        nodes_to_check.pop_back();
+
+        has_constant_target_column = isConstantTargetColumn(*current_node, own_target);
+        for (const auto & child : current_node->getChildren())
+            if (child)
+                nodes_to_check.push_back(child.get());
+    }
+
+    if (!has_constant_target_column)
+        return node;
+
+    auto result = node->clone();
+    std::vector<QueryTreeNodePtr *> nodes_to_visit{&result};
+    while (!nodes_to_visit.empty())
+    {
+        auto & current_node = *nodes_to_visit.back();
+        nodes_to_visit.pop_back();
+
+        if (isConstantTargetColumn(*current_node, own_target))
+        {
+            current_node = current_node->as<const ColumnNode &>().getColumnSource()->as<const InterpolateNode &>().getExpression()->clone();
+            continue;
+        }
+
+        for (auto & child : current_node->getChildren())
+            if (child)
+                nodes_to_visit.push_back(&child);
+    }
+
+    return result;
+}
+
+/// Replaces each subtree of `node` that is the expression of one of `targets` with a column of that target.
+/// The `ready_columns`, aggregates and window functions are computed before the fill and are read as they are,
+/// so the constant targets they read are constants there.
+void bindInterpolateTargetReads(
+    QueryTreeNodePtr & node, const QueryTreeNodePtr & own_target, const QueryTreeNodes & targets, const QueryTreeNodes & ready_columns)
+{
+    /// Each subtree is compared with the expressions in its form with the constants.
+    std::vector<std::pair<QueryTreeNodePtr *, QueryTreeNodePtr>> nodes_to_visit{{&node, unbindConstantTargetReads(node, own_target)}};
+    while (!nodes_to_visit.empty())
+    {
+        auto [current_node_ptr, unbound_node] = std::move(nodes_to_visit.back());
+        nodes_to_visit.pop_back();
+        auto & current_node = *current_node_ptr;
+
+        auto is_same_expression = [&](const QueryTreeNodePtr & expression)
+        {
+            const auto * constant_node = expression->as<ConstantNode>();
+            return isSameExpression(*unbound_node, *expression)
+                || (constant_node && constant_node->hasSourceExpression() && isSameExpression(*unbound_node, *constant_node->getSourceExpression()));
+        };
+
+        auto target_it = std::ranges::find_if(targets, [&](const QueryTreeNodePtr & target)
+            { return is_same_expression(target->as<const InterpolateNode &>().getExpression()); });
+        if (target_it != targets.end())
+        {
+            const auto & target = (*target_it)->as<const InterpolateNode &>();
+            current_node = std::make_shared<ColumnNode>(
+                NameAndTypePair(target.getExpressionName(), target.getExpression()->getResultType()),
+                std::static_pointer_cast<ITableExpressionNode>(*target_it));
+            continue;
+        }
+
+        if (current_node->getNodeType() == QueryTreeNodeType::COLUMN)
+            continue;
+
+        const auto * function_node = current_node->as<FunctionNode>();
+        if ((function_node && !function_node->isOrdinaryFunction()) || std::ranges::any_of(ready_columns, is_same_expression))
+        {
+            current_node = std::move(unbound_node);
+            continue;
+        }
+
+        auto & children = current_node->getChildren();
+        const auto & unbound_children = unbound_node->getChildren();
+        chassert(children.size() == unbound_children.size());
+        for (size_t i = 0; i < children.size(); ++i)
+            if (children[i])
+                nodes_to_visit.emplace_back(&children[i], unbound_children[i]);
+    }
+}
+
+/// Replaces the identifiers of `target_columns` in the unresolved `node` with the columns. Subqueries, aggregate, window
+/// and `arrayJoin` functions are computed before the fill, and the sets and the arguments a function needs constant stay constants.
+void bindConstantTargetIdentifiers(QueryTreeNodePtr & node, const std::unordered_map<std::string, QueryTreeNodePtr> & target_columns, const ContextPtr & context)
+{
+    if (const auto * identifier_node = node->as<IdentifierNode>())
+    {
+        auto it = target_columns.find(identifier_node->getIdentifier().getFullName());
+        /// The other reads of an alias resolve the original identifier, so an aliased one stays as it is.
+        if (it != target_columns.end() && !node->hasAlias())
+            node = it->second->clone();
+    }
+    else if (auto * lambda_node = node->as<LambdaNode>())
+    {
+        auto lambda_target_columns = target_columns;
+        for (const auto & argument_name : lambda_node->getArguments().getNames())
+            lambda_target_columns.erase(argument_name);
+
+        bindConstantTargetIdentifiers(lambda_node->getExpression(), lambda_target_columns, context);
+    }
+    else if (auto * function_node = node->as<FunctionNode>())
+    {
+        auto function = FunctionFactory::instance().tryGet(function_node->getFunctionName(), context);
+        if (!function || function->getName() == "arrayJoin")
+            return;
+
+        auto constant_arguments = function->getArgumentsThatAreAlwaysConstant();
+        if (isNameOfInFunction(function->getName()))
+            constant_arguments.push_back(1);
+
+        auto & arguments = function_node->getArguments().getNodes();
+        for (size_t i = 0; i < arguments.size(); ++i)
+            if (!std::ranges::contains(constant_arguments, i))
+                bindConstantTargetIdentifiers(arguments[i], target_columns, context);
+    }
+    else if (node->getNodeType() == QueryTreeNodeType::LIST)
+    {
+        for (auto & child : node->getChildren())
+            bindConstantTargetIdentifiers(child, target_columns, context);
+    }
+}
+
 }
 
 QueryAnalyzer::QueryAnalyzer(bool only_analyze_, bool positional_arguments_already_resolved_)
@@ -4940,7 +5110,8 @@ void QueryAnalyzer::resolveInterpolateColumnsNodeList(QueryTreeNodePtr & interpo
     /// input header, by position, so a column may be an `INTERPOLATE` output at most once.
     NameSet interpolate_column_names;
 
-    for (auto & interpolate_node : interpolate_node_list_typed.getNodes())
+    auto & interpolate_nodes = interpolate_node_list_typed.getNodes();
+    for (auto & interpolate_node : interpolate_nodes)
     {
         auto & interpolate_node_typed = interpolate_node->as<InterpolateNode &>();
 
@@ -4953,8 +5124,52 @@ void QueryAnalyzer::resolveInterpolateColumnsNodeList(QueryTreeNodePtr & interpo
                 scope.scope_node->formatASTForErrorMessage());
 
         resolveExpressionNode(interpolate_node_typed.getExpression(), scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
+    }
+
+    /// The interpolated values are only in the target columns, so a read of a target's expression is bound to the target,
+    /// unless the fill writes that expression or several targets share it.
+    QueryTreeNodes bound_targets;
+    for (const auto & target_node : interpolate_nodes)
+    {
+        const auto & expression = *target_node->as<const InterpolateNode &>().getExpression();
+        auto is_expression = [&](const QueryTreeNodePtr & other) { return isSameExpression(*other, expression); };
+
+        /// A constant would also match the literals of the same value, its reads are bound by name below.
+        if (expression.getNodeType() == QueryTreeNodeType::CONSTANT
+            || std::ranges::any_of(query_node_typed.getOrderBy().getNodes(),
+                [&](const QueryTreeNodePtr & sort_node) { return is_expression(sort_node->as<const SortNode &>().getExpression()); })
+            || std::ranges::count_if(interpolate_nodes,
+                [&](const QueryTreeNodePtr & other) { return is_expression(other->as<const InterpolateNode &>().getExpression()); }) > 1)
+            continue;
+
+        bound_targets.push_back(target_node);
+    }
+
+    for (auto & interpolate_node : interpolate_nodes)
+    {
+        auto & interpolate_node_typed = interpolate_node->as<InterpolateNode &>();
+
+        auto column_to_interpolate_name = interpolate_node_typed.getExpressionName();
 
         auto & interpolation_to_resolve = interpolate_node_typed.getInterpolateExpression();
+
+        /// A read of another constant target would resolve to the constant itself, so it is bound to the target here.
+        std::unordered_map<std::string, QueryTreeNodePtr> constant_target_columns;
+        for (const auto & target_node : interpolate_nodes)
+        {
+            const auto & target = target_node->as<const InterpolateNode &>();
+            if (target_node == interpolate_node || target.getExpression()->getNodeType() != QueryTreeNodeType::CONSTANT)
+                continue;
+
+            auto target_column_node = std::make_shared<ColumnNode>(
+                NameAndTypePair(target.getExpressionName(), target.getExpression()->getResultType()),
+                static_pointer_cast<ITableExpressionNode>(target_node));
+            constant_target_columns.emplace(target.getExpressionName(), std::move(target_column_node));
+        }
+
+        if (!constant_target_columns.empty())
+            bindConstantTargetIdentifiers(interpolation_to_resolve, constant_target_columns, scope.context);
+
         IdentifierResolveScope & interpolate_scope = createIdentifierResolveScope(interpolation_to_resolve, &scope /*parent_scope*/);
 
         auto fake_column_node = std::make_shared<ColumnNode>(NameAndTypePair(column_to_interpolate_name, interpolate_node_typed.getExpression()->getResultType()), static_pointer_cast<ITableExpressionNode>(interpolate_node));
@@ -4964,6 +5179,8 @@ void QueryAnalyzer::resolveInterpolateColumnsNodeList(QueryTreeNodePtr & interpo
 
         /// a fill row is computed from one previous row, it cannot multiply rows
         assertNoArrayJoinOutside(interpolation_to_resolve, ready_columns, ErrorCodes::UNSUPPORTED_METHOD, "in INTERPOLATE");
+
+        bindInterpolateTargetReads(interpolation_to_resolve, interpolate_node, bound_targets, ready_columns);
     }
 }
 

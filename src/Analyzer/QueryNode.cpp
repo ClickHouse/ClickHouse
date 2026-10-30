@@ -109,10 +109,41 @@ void QueryNode::removeUnusedProjectionColumns(const std::unordered_set<size_t> &
 
         auto & interpolate_node = getInterpolate();
         auto & interpolate_list_nodes = interpolate_node->as<ListNode &>().getNodes();
+
+        std::unordered_set<const IQueryTreeNode *> used_interpolate_nodes;
+        QueryTreeNodes nodes_to_visit;
+        auto use_interpolate_node = [&](const IQueryTreeNode & interpolate)
+        {
+            if (used_interpolate_nodes.insert(&interpolate).second)
+                nodes_to_visit.push_back(interpolate.as<const InterpolateNode &>().getInterpolateExpression());
+        };
+
+        for (const auto & interpolate : interpolate_list_nodes)
+            if (used_projection_columns.contains(interpolate->as<InterpolateNode &>().getExpressionName()))
+                use_interpolate_node(*interpolate);
+
+        /// An INTERPOLATE expression reads the interpolated values of the targets through columns whose source is the target's node.
+        while (!nodes_to_visit.empty())
+        {
+            auto node = std::move(nodes_to_visit.back());
+            nodes_to_visit.pop_back();
+
+            if (const auto * column_node = node->as<ColumnNode>())
+            {
+                auto column_source = column_node->getColumnSourceOrNull();
+                if (column_source && column_source->getNodeType() == QueryTreeNodeType::INTERPOLATE)
+                    use_interpolate_node(*column_source);
+                continue;
+            }
+
+            for (const auto & child : node->getChildren())
+                if (child)
+                    nodes_to_visit.push_back(child);
+        }
+
         std::erase_if(
             interpolate_list_nodes,
-            [&used_projection_columns](const QueryTreeNodePtr & interpolate)
-            { return !used_projection_columns.contains(interpolate->as<InterpolateNode &>().getExpressionName()); });
+            [&used_interpolate_nodes](const QueryTreeNodePtr & interpolate) { return !used_interpolate_nodes.contains(interpolate.get()); });
 
         if (interpolate_list_nodes.empty())
             interpolate_node = nullptr;

@@ -1559,15 +1559,26 @@ void addWithFillStepIfNeeded(QueryPlan & query_plan,
                 auto & interpolate_node_typed = interpolate_node->as<InterpolateNode &>();
                 const auto & column_name = target_column_names.at(interpolate_node_typed.getExpressionName());
 
-                /// The expression reads the previous value of its target through a column named by the target name.
+                /// The expression reads the previous values of the targets through columns named by the target names.
                 QueryTreeNodePtr interpolate_expression_node = interpolate_node_typed.getInterpolateExpression();
-                if (column_name != interpolate_node_typed.getExpressionName())
+                bool is_expression_cloned = false;
+                for (const auto & target_node : interpolate_list_nodes)
                 {
-                    interpolate_expression_node = interpolate_expression_node->clone();
+                    const auto & target = target_node->as<InterpolateNode &>();
+                    const auto & target_column_name = target_column_names.at(target.getExpressionName());
+                    if (target_column_name == target.getExpressionName())
+                        continue;
+
+                    if (!is_expression_cloned)
+                    {
+                        interpolate_expression_node = interpolate_expression_node->clone();
+                        is_expression_cloned = true;
+                    }
+
                     auto target_column_node = std::make_shared<ColumnNode>(
-                        NameAndTypePair(column_name, interpolate_node_typed.getExpression()->getResultType()),
-                        std::static_pointer_cast<ITableExpressionNode>(interpolate_node));
-                    replaceColumns(interpolate_expression_node, interpolate_node, {{interpolate_node_typed.getExpressionName(), target_column_node}});
+                        NameAndTypePair(target_column_name, target.getExpression()->getResultType()),
+                        std::static_pointer_cast<ITableExpressionNode>(target_node));
+                    replaceColumns(interpolate_expression_node, target_node, {{target.getExpressionName(), target_column_node}});
                 }
 
                 ColumnNodePtrWithHashSet empty_correlated_columns_set;
