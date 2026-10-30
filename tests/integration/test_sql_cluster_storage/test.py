@@ -375,6 +375,62 @@ def test_keeper_drop_removes_stale_cluster_when_reload_cannot_materialize(cluste
         node_b.query(f"DROP CLUSTER IF EXISTS {name}")
 
 
+def test_keeper_drop_other_cluster_while_reload_cannot_materialize(cluster):
+    """A definition this replica cannot materialize must not block `DROP` of a different cluster.
+
+    B loads `a` and `b`. A stores a definition of `b` that B cannot construct (`secure = 1`, no
+    `port`) and then drops `a`. If B materializes before applying confirmed deletions, every reload
+    throws on `b` and B keeps serving `a` (and its secret).
+    """
+    keeper_path = KEEPER_METADATA_PATHS["cluster_metadata_keeper.xml"]
+    install_metadata_storage(
+        cluster,
+        "cluster_metadata_keeper.xml",
+        keeper_metadata_path=keeper_path,
+    )
+
+    node_a = cluster.instances["clickhouse1"]
+    node_b = cluster.instances["clickhouse2"]
+    dropped = "reload_drop_other_cluster"
+    kept = "reload_keep_unmaterializable_cluster"
+    dropped_count = f"SELECT count() FROM system.clusters WHERE cluster = '{dropped}'"
+    kept_count = f"SELECT count() FROM system.clusters WHERE cluster = '{kept}'"
+    kept_topology = (
+        f"SELECT host_name, port FROM system.clusters WHERE cluster = '{kept}' "
+        "ORDER BY replica_num FORMAT TSV"
+    )
+
+    for name in (dropped, kept):
+        node_a.query(f"DROP CLUSTER IF EXISTS {name}")
+    try:
+        node_a.query(f"CREATE CLUSTER {dropped} (SHARD (REPLICA (host = 'clickhouse1', port = 9000)))")
+        node_a.query(f"CREATE CLUSTER {kept} (SHARD (REPLICA (host = 'clickhouse1', port = 9000)))")
+        assert_eq_with_retry(node_b, dropped_count, "1\n")
+        assert_eq_with_retry(node_b, kept_count, "1\n")
+        assert node_b.query(kept_topology).strip() == "clickhouse1\t9000"
+
+        zk = cluster.get_kazoo_client("zoo1")
+        unmaterializable = (
+            f"CREATE CLUSTER {kept} (SHARD (REPLICA (host = 'clickhouse1', secure = 1)))"
+        )
+        zk.set(f"{keeper_path}/{kept}.sql", unmaterializable.encode())
+        root_data, _ = zk.get(keeper_path)
+        zk.set(keeper_path, root_data)
+
+        node_b.wait_for_log_line("Port is not specified in cluster configuration")
+        assert node_b.query(dropped_count).strip() == "1"
+        assert node_b.query(kept_topology).strip() == "clickhouse1\t9000"
+
+        node_a.query(f"DROP CLUSTER {dropped}")
+        assert_eq_with_retry(node_b, dropped_count, "0\n")
+        assert node_b.query(kept_count).strip() == "1"
+        assert node_b.query(kept_topology).strip() == "clickhouse1\t9000"
+    finally:
+        for name in (dropped, kept):
+            node_a.query(f"DROP CLUSTER IF EXISTS {name}")
+            node_b.query(f"DROP CLUSTER IF EXISTS {name}")
+
+
 def test_keeper_drop_keeps_config_cluster_with_same_name(cluster):
     """A SQL cluster created on one node is skipped on a node which has a configured cluster with the same name.
     `DROP CLUSTER` on that node removes the shared metadata but must keep its configured cluster."""

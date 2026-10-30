@@ -361,7 +361,20 @@ void SQLClusterFactory::reloadFromStorage()
     for (const auto & [cluster_name, _] : clusters)
         snapshot_names.insert(cluster_name);
 
-    /// Materialize first: a throw must not clear `stored_cluster_names` for clusters still in `Context`.
+    /// Names absent from a consistent snapshot are already dropped. Remove them before materializing
+    /// the rest: a surviving definition can throw and must not keep serving an unrelated deleted cluster.
+    for (auto it = stored_cluster_names.begin(); it != stored_cluster_names.end();)
+    {
+        if (snapshot_names.contains(*it))
+        {
+            ++it;
+            continue;
+        }
+
+        context->removeSQLCluster(*it);
+        it = stored_cluster_names.erase(it);
+    }
+
     std::vector<std::pair<String, ClusterPtr>> materialized;
     materialized.reserve(clusters.size());
     std::unordered_set<String> new_stored_cluster_names;
@@ -388,16 +401,13 @@ void SQLClusterFactory::reloadFromStorage()
         if (new_stored_cluster_names.contains(cluster_name))
             continue;
 
-        /// Dropped from metadata, or skipped because another source owns the name.
+        /// Still in the snapshot but skipped: another source owns the name.
         /// `DISCOVERY` / `REPLICATED_DATABASE` clusters live outside the static map, so a previously
         /// loaded SQL cluster with the same name is still there and must be removed. `CONFIG` clusters
         /// share that map and must survive (`removeSQLCluster` also refuses them).
-        if (snapshot_names.contains(cluster_name))
-        {
-            auto existing = context->tryGetCluster(cluster_name);
-            if (!existing || existing->getSourceId() == Cluster::SourceId::CONFIG)
-                continue;
-        }
+        auto existing = context->tryGetCluster(cluster_name);
+        if (!existing || existing->getSourceId() == Cluster::SourceId::CONFIG)
+            continue;
 
         context->removeSQLCluster(cluster_name);
     }
