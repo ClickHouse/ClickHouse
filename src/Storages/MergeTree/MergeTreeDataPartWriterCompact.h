@@ -47,14 +47,15 @@ private:
     void fillIndexGranularity(size_t index_granularity_for_block, size_t rows_in_block) override;
 
     /// Write block of rows into .bin file and marks in .mrk files
-    void writeDataBlock(const Block & block, const Granules & granules);
+    /// `block_bytes` is the uncompressed size of the block estimated by `getBlockSizeForGranularity`.
+    void writeDataBlock(const Block & block, size_t block_bytes, const Granules & granules);
 
     /// Write a stripe: the given granules of the block, column after column.
     void writeStripe(const Block & block, const Granules & granules);
 
     /// Write block of rows into .bin file and marks in .mrk files, primary index in .idx file
     /// and skip indices in their corresponding files.
-    void writeDataBlockPrimaryIndexAndSkipIndices(const Block & block, const Granules & granules);
+    void writeDataBlockPrimaryIndexAndSkipIndices(const Block & block, size_t block_bytes, const Granules & granules);
 
     void addToChecksums(MergeTreeDataPartChecksums & checksums);
 
@@ -71,12 +72,16 @@ private:
     class ColumnsBuffer
     {
     public:
-        void add(MutableColumns && columns);
+        /// `bytes` is the size of the added columns estimated by `getBlockSizeForGranularity`.
+        void add(MutableColumns && columns, size_t bytes);
         size_t size() const;
-        size_t bytes() const;
+        size_t bytes() const { return accumulated_bytes; }
         Columns releaseColumns();
     private:
         MutableColumns accumulated_columns;
+        /// Tracked incrementally to avoid recomputing the size of the whole buffer: `IColumn::byteSize`
+        /// does not count the states of `AggregateFunction` columns, so the size is estimated by serializing them.
+        size_t accumulated_bytes = 0;
     };
 
     struct CompleteGranules

@@ -255,9 +255,12 @@ void MergeTreeDataPartWriterCompact::write(const Block & block, const IColumnPer
     /// Fill index granularity for this block
     /// if it's unknown (in case of insert data or horizontal merge,
     /// but not in case of vertical merge)
+    /// Unlike `Block::bytes`, this includes the states of `AggregateFunction` columns, which can be big.
+    size_t block_bytes = getBlockSizeForGranularity(result_block);
+
     if (compute_granularity)
     {
-        size_t index_granularity_for_block = computeIndexGranularity(result_block);
+        size_t index_granularity_for_block = computeIndexGranularity(result_block.rows(), block_bytes);
         chassert(index_granularity_for_block >= 1);
         fillIndexGranularity(index_granularity_for_block, result_block.rows());
     }
@@ -272,28 +275,33 @@ void MergeTreeDataPartWriterCompact::write(const Block & block, const IColumnPer
     /// so the beginning of an incomplete granule stays in the buffer until the next blocks complete it, and the
     /// incomplete granule of the very last block is written by `finalizeIndexGranularity`.
     Block flushed_block;
-    if (columns_buffer.size() == 0 && shouldWriteStripe(result_block.rows(), result_block.bytes()))
+    size_t flushed_bytes = 0;
+    if (columns_buffer.size() == 0 && shouldWriteStripe(result_block.rows(), block_bytes))
     {
         flushed_block = std::move(result_block);
+        flushed_bytes = block_bytes;
     }
     else
     {
-        columns_buffer.add(result_block.mutateColumns());
+        columns_buffer.add(result_block.mutateColumns(), block_bytes);
         if (shouldWriteStripe(columns_buffer.size(), columns_buffer.bytes()))
+        {
+            flushed_bytes = columns_buffer.bytes();
             flushed_block = header.cloneWithColumns(columns_buffer.releaseColumns());
+        }
     }
 
     if (!flushed_block.empty())
     {
         auto granules_to_write = getGranulesToWrite(*index_granularity, flushed_block.rows(), getCurrentMark(), /* last_block = */ false);
-        writeDataBlockPrimaryIndexAndSkipIndices(flushed_block, granules_to_write);
+        writeDataBlockPrimaryIndexAndSkipIndices(flushed_block, flushed_bytes, granules_to_write);
         setCurrentMark(getCurrentMark() + granules_to_write.size());
     }
 }
 
-void MergeTreeDataPartWriterCompact::writeDataBlockPrimaryIndexAndSkipIndices(const Block & block, const Granules & granules_to_write)
+void MergeTreeDataPartWriterCompact::writeDataBlockPrimaryIndexAndSkipIndices(const Block & block, size_t block_bytes, const Granules & granules_to_write)
 {
-    writeDataBlock(block, granules_to_write);
+    writeDataBlock(block, block_bytes, granules_to_write);
 
     /// `block` here is already fully permuted by `permuteBlockIfNeeded` in `write`,
     /// so we pass `permutation = nullptr` and no cache — only Wide writer benefits
@@ -308,14 +316,14 @@ void MergeTreeDataPartWriterCompact::writeDataBlockPrimaryIndexAndSkipIndices(co
     calculateAndSerializeSkipIndices(skip_indices_block, granules_to_write);
 }
 
-void MergeTreeDataPartWriterCompact::writeDataBlock(const Block & block, const Granules & granules)
+void MergeTreeDataPartWriterCompact::writeDataBlock(const Block & block, size_t block_bytes, const Granules & granules)
 {
     /// The block is written in stripes of at most `compact_parts_max_granules_to_buffer` granules and about
     /// `compact_parts_max_bytes_to_buffer` bytes (a block accumulated in the buffer fits into one stripe, but a big
     /// block that is written directly may need several). When all columns of a granule must share a compressed
     /// block, the columns of a granule have to be adjacent, so every granule is written as a separate stripe.
     size_t max_granules_per_stripe = settings.compress_per_column_in_compact_parts ? settings.compact_parts_max_granules_to_buffer : 1;
-    size_t bytes_per_row = block.rows() ? block.bytes() / block.rows() : 0;
+    size_t bytes_per_row = block.rows() ? block_bytes / block.rows() : 0;
 
     size_t begin = 0;
     while (begin < granules.size())
@@ -503,6 +511,7 @@ void MergeTreeDataPartWriterCompact::finalizeIndexGranularity()
 
     if (columns_buffer.size() != 0)
     {
+        size_t block_bytes = columns_buffer.bytes();
         auto block = header.cloneWithColumns(columns_buffer.releaseColumns());
         auto granules_to_write = getGranulesToWrite(*index_granularity, block.rows(), getCurrentMark(), /*last_block=*/ true);
         if (!granules_to_write.back().is_complete)
@@ -510,7 +519,7 @@ void MergeTreeDataPartWriterCompact::finalizeIndexGranularity()
             /// Correct last mark as it should contain exact amount of rows.
             index_granularity->adjustLastMark(granules_to_write.back().rows_to_write);
         }
-        writeDataBlockPrimaryIndexAndSkipIndices(block, granules_to_write);
+        writeDataBlockPrimaryIndexAndSkipIndices(block, block_bytes, granules_to_write);
     }
 
 #ifndef NDEBUG
@@ -639,8 +648,10 @@ void MergeTreeDataPartWriterCompact::addToChecksums(MergeTreeDataPartChecksums &
     checksums.files[marks_file_name].file_hash = marks_file_hashing->getHash();
 }
 
-void MergeTreeDataPartWriterCompact::ColumnsBuffer::add(MutableColumns && columns)
+void MergeTreeDataPartWriterCompact::ColumnsBuffer::add(MutableColumns && columns, size_t bytes)
 {
+    accumulated_bytes += bytes;
+
     if (accumulated_columns.empty())
         accumulated_columns = std::move(columns);
     else
@@ -659,6 +670,7 @@ Columns MergeTreeDataPartWriterCompact::ColumnsBuffer::releaseColumns()
     Columns res(std::make_move_iterator(accumulated_columns.begin()),
         std::make_move_iterator(accumulated_columns.end()));
     accumulated_columns.clear();
+    accumulated_bytes = 0;
     return res;
 }
 
@@ -667,14 +679,6 @@ size_t MergeTreeDataPartWriterCompact::ColumnsBuffer::size() const
     if (accumulated_columns.empty())
         return 0;
     return accumulated_columns.at(0)->size();
-}
-
-size_t MergeTreeDataPartWriterCompact::ColumnsBuffer::bytes() const
-{
-    size_t res = 0;
-    for (const auto & column : accumulated_columns)
-        res += column->byteSize();
-    return res;
 }
 
 void MergeTreeDataPartWriterCompact::fillChecksums(MergeTreeDataPartChecksums & checksums, NameSet & /*checksums_to_remove*/)
