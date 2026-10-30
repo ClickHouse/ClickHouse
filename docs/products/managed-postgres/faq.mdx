@@ -25,6 +25,18 @@ Backup storage equal to the provisioned disk capacity is included. Additional ba
 
 For complete details on backup frequency, retention, and how to perform point-in-time recovery, see the [Backup and restore](/products/managed-postgres/backup-and-restore) documentation.
 
+## Billing {#billing}
+
+### What does Managed Postgres cost, and what's included? {#billing-what-is-included}
+
+On AWS, from November 9, 2026, compute is billed at list price. Backup storage equal to your provisioned disk is included, and additional backup storage is billed at the ClickHouse Cloud storage price for your region. Data transfer is billed at ClickHouse Cloud rates. ClickPipes and WalShadow are free for replicating data from Managed Postgres to ClickHouse. GCP is free during the Private Preview. See [Managed Postgres pricing](/products/managed-postgres/pricing#cloud-provider-pricing).
+
+### What happens to my service if my organization's billing isn't paid? {#service-deactivation}
+
+The service is deactivated, which is similar to stopping it. Existing and new connections are blocked and the service isn't billed. Your data and backups are kept, not deleted. For data and backup retention, see [billing compliance](/products/cloud/reference/billing/billing-compliance).
+
+To restore access, pay the outstanding balance, then click **Start** in the service's **Settings** tab. The button only appears when the service is deactivated, and it's disabled until billing is paid. For payment timelines, see [billing compliance](/products/cloud/reference/billing/billing-compliance). See also [Service deactivation](/products/managed-postgres/pricing#service-deactivation).
+
 ## Infrastructure and automation {#infrastructure-and-automation}
 
 ### Which cloud providers are supported? {#supported-cloud-providers}
