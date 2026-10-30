@@ -85,7 +85,19 @@ void DatabaseMemory::dropTable(
         if (table->storesDataOnDisk())
         {
             auto metdata_disk = getDisk();
-            metdata_disk->removeRecursive(getTableDataPath(table_name));
+            const String table_data_path = getTableDataPath(table_name);
+            metdata_disk->removeRecursive(table_data_path);
+
+            /// Engines that take a disk directly (e.g. `StripeLog`, `Set`, `Join`) keep their data under the
+            /// same relative path on their own disk, and not all of them remove it in `drop`. Remove it there
+            /// as well, as `DatabaseOnDisk::dropTable` does, otherwise the files of a dropped temporary table
+            /// stay on that disk (and, for a `borrow_from_cache` disk, keep their cache space borrowed).
+            for (const auto & disk : table->getDataDisks())
+            {
+                if (!disk || disk == metdata_disk || disk->isReadOnly() || !disk->existsDirectory(table_data_path))
+                    continue;
+                disk->removeRecursive(table_data_path);
+            }
         }
     }
     catch (...)
