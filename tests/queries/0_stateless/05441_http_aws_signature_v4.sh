@@ -227,6 +227,12 @@ show("profile after a setting", send("GET", table_path, presigned_params("GET", 
      [("order", "x"), ("limit", "2"), ("profile", profile)])))
 show("header with sequential spaces", signed_request("GET", table_path, headers={"X-ClickHouse-Database": "a b"},
      tamper_headers={"x-clickhouse-database": "a  b"}))
+# Other signed headers are visible to SQL by `getClientHTTPHeader`, so they must not be changed either.
+show("signed custom header", signed_request("GET", table_path, headers={"X-Tenant": "alice,bob"}))
+show("signed custom header split in two", signed_request("GET", table_path, headers={"X-Tenant": "alice,bob"},
+     tamper_headers={"x-tenant": "alice", "X-Tenant": "bob"}))
+show("signed custom header with sequential spaces", signed_request("GET", table_path, headers={"X-Tenant": "a b"},
+     tamper_headers={"x-tenant": "a  b"}))
 
 # Range requests are not supported, except for a range from the beginning, which is ignored.
 show("range from the beginning", signed_request("GET", table_path, headers={"Range": "bytes=0-15"}, params=[("order", "x")]))

@@ -651,9 +651,9 @@ AWSSignatureV4Request parseAWSSignatureV4Request(const HTTPServerRequest & reque
     /// `Content-Type` and `Content-Encoding` change the interpretation of the body. With a presigned URL the body
     /// is not signed and is accepted only as the data of an upload into a table, and `multipart/form-data` is not
     /// accepted at all (see `HTTPHandler::processQuery`), so it is not required for them there.
-    /// The values of such headers are used as is, so they must be already canonical: otherwise different values,
-    /// e.g. database names with a different number of spaces, or two headers instead of one with a comma, would
-    /// have the same signature.
+    /// The values of signed headers are used as is (by the handler, or by SQL through `getClientHTTPHeader`), so they
+    /// must be already canonical: otherwise different values, e.g. database names with a different number of spaces,
+    /// or two headers instead of one with a comma, would have the same signature.
     std::unordered_set<String> seen_headers;
     for (const auto & [header_name, header_value] : request)
     {
@@ -661,10 +661,11 @@ AWSSignatureV4Request parseAWSSignatureV4Request(const HTTPServerRequest & reque
         bool must_be_signed = lower_name.starts_with("x-clickhouse-")
             || (!presigned && (lower_name == "x-amz-content-sha256" || lower_name == "x-amz-date"
                 || lower_name == "content-type" || lower_name == "content-encoding"));
-        if (!must_be_signed)
-            continue;
-        if (!std::ranges::binary_search(signed_headers, lower_name))
+        bool is_signed = std::ranges::binary_search(signed_headers, lower_name);
+        if (must_be_signed && !is_signed)
             throwInvalid(fmt::format("the header '{}' must be signed", header_name));
+        if (!is_signed)
+            continue;
         if (!seen_headers.insert(lower_name).second)
             throwInvalid(fmt::format("the header '{}' is specified more than once", header_name));
         if (canonicalizeHeaderValue(header_value) != header_value)

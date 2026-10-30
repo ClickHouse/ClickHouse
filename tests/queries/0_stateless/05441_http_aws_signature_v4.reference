@@ -41,6 +41,10 @@ profile before a setting: 200 1	Hello
 profile after a setting: 200 1	Hello
 2	World
 header with sequential spaces: 403 Code: 516
+signed custom header: 200 1	Hello
+2	World
+signed custom header split in two: 403 Code: 516
+signed custom header with sequential spaces: 403 Code: 516
 range from the beginning: 200 1	Hello
 2	World
 range: 400 Code: 36
