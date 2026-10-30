@@ -2092,6 +2092,7 @@ bool RestCatalog::updateMetadata(const String & namespace_name, const String & t
     }
 
     {
+        /// TODO: carry the table UUID from the start of the insert and send `assert-table-uuid`, so a dropped and recreated table rejects the stale commit.
         Poco::JSON::Object::Ptr requirement = new Poco::JSON::Object;
         requirement->set("type", "assert-ref-snapshot-id");
         requirement->set("ref", "main");
