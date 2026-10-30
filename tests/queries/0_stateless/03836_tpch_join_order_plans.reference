@@ -365,23 +365,24 @@ Expression ((Project names + Projection))
   MergingAggregated
     GatherExchange
       Aggregating
-        Expression ((Before GROUP BY + ))
-          JoinLogical (Broadcast HashJoin  swapped)
-            Expression (Change column names to column identifiers)
-              ReadFromMergeTree (ParallelRead default.lineitem)
-            BroadcastExchange
-              GatherExchange
-                JoinLogical (Shuffle HashJoin )
-                  Expression ((Create renaming actions for scalar subquery + (Create correlated subquery result alias + (Project names + Projection))))
-                    MergingAggregated
+        Expression (Before GROUP BY)
+          Filter (WHERE)
+            JoinLogical (Broadcast HashJoin  swapped)
+              Expression (Change column names to column identifiers)
+                ReadFromMergeTree (ParallelRead default.lineitem)
+              BroadcastExchange
+                GatherExchange
+                  JoinLogical (Shuffle HashJoin )
+                    Expression ((Create renaming actions for scalar subquery + (Create correlated subquery result alias + (Project names + Projection))))
+                      MergingAggregated
+                        ShuffleExchange
+                          Aggregating
+                            Expression (Before GROUP BY)
+                              Expression ((WHERE + (Renaming correlated columns to equivalent expressions in subquery + Change column names to column identifiers)))
+                                ReadFromMergeTree (ParallelRead default.lineitem)
+                    Expression ((WHERE + Change column names to column identifiers))
                       ShuffleExchange
-                        Aggregating
-                          Expression (Before GROUP BY)
-                            Expression ((WHERE + (Renaming correlated columns to equivalent expressions in subquery + Change column names to column identifiers)))
-                              ReadFromMergeTree (ParallelRead default.lineitem)
-                  Expression ((WHERE + Change column names to column identifiers))
-                    ShuffleExchange
-                      ReadFromMergeTree (ParallelRead default.part)
+                        ReadFromMergeTree (ParallelRead default.part)
 -- Q18
 DelayedCreatingSets
   Expression (Project names)

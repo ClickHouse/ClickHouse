@@ -131,7 +131,7 @@ SELECT 'R4-float', 1, count(), sum(cityHash64(lid, rid)) FROM (SELECT l.id AS li
 SELECT 'R4-mixed', 0, count(), sum(cityHash64(lid, rid)) FROM (SELECT l.id AS lid, r.id AS rid FROM rf_l l JOIN rf_r r ON l.k = r.k WHERE l.u < r.x) SETTINGS query_plan_merge_filter_into_join_condition = 0;
 SELECT 'R4-mixed', 1, count(), sum(cityHash64(lid, rid)) FROM (SELECT l.id AS lid, r.id AS rid FROM rf_l l JOIN rf_r r ON l.k = r.k WHERE l.u < r.x) SETTINGS query_plan_merge_filter_into_join_condition = 1;
 
-SELECT 'R5', countIf(explain LIKE '%Expression: %greater(%') > 0 FROM (EXPLAIN PLAN keep_logical_steps = 1, actions = 1 SELECT * FROM rf_l l JOIN rf_r r ON l.k = r.k WHERE r.dt > l.dt + 5 SETTINGS query_plan_optimize_join_order_limit = 1, query_plan_merge_filter_into_join_condition = 1);
+SELECT 'R5', countIf(explain LIKE '%Expression: %greater(%') = 0 FROM (EXPLAIN PLAN keep_logical_steps = 1, actions = 1 SELECT * FROM rf_l l JOIN rf_r r ON l.k = r.k WHERE r.dt > l.dt + 5 SETTINGS query_plan_optimize_join_order_limit = 1, query_plan_merge_filter_into_join_condition = 1);
 SELECT 'R5', 0, count(), sum(cityHash64(lid, rid)) FROM (SELECT l.id AS lid, r.id AS rid FROM rf_l l JOIN rf_r r ON l.k = r.k WHERE r.dt > l.dt + 5) SETTINGS query_plan_merge_filter_into_join_condition = 0;
 SELECT 'R5', 1, count(), sum(cityHash64(lid, rid)) FROM (SELECT l.id AS lid, r.id AS rid FROM rf_l l JOIN rf_r r ON l.k = r.k WHERE r.dt > l.dt + 5) SETTINGS query_plan_merge_filter_into_join_condition = 1;
 SELECT 'R6', countIf(explain LIKE '%Expression: %less(%') > 0 FROM (EXPLAIN PLAN keep_logical_steps = 1, actions = 1 SELECT * FROM rf_l l JOIN rf_r r ON l.k = r.k WHERE l.x + l.z < r.y SETTINGS query_plan_optimize_join_order_limit = 1, query_plan_merge_filter_into_join_condition = 1);
@@ -147,14 +147,14 @@ SELECT 'R6b-same-side', 1, count(), sum(cityHash64(lid, rid)) FROM (SELECT l.id 
 SELECT 'R7', countIf(explain LIKE '%Expression: %less(%') = 0 FROM (EXPLAIN PLAN keep_logical_steps = 1, actions = 1 SELECT * FROM rf_l l JOIN rf_r r ON l.k = r.k WHERE l.x + r.y < r.z SETTINGS query_plan_optimize_join_order_limit = 1, query_plan_merge_filter_into_join_condition = 1);
 SELECT 'R7', 0, count(), sum(cityHash64(lid, rid)) FROM (SELECT l.id AS lid, r.id AS rid FROM rf_l l JOIN rf_r r ON l.k = r.k WHERE l.x + r.y < r.z) SETTINGS query_plan_merge_filter_into_join_condition = 0;
 SELECT 'R7', 1, count(), sum(cityHash64(lid, rid)) FROM (SELECT l.id AS lid, r.id AS rid FROM rf_l l JOIN rf_r r ON l.k = r.k WHERE l.x + r.y < r.z) SETTINGS query_plan_merge_filter_into_join_condition = 1;
-SELECT 'R8', countIf(explain LIKE '%Expression: %less(%rand%') = 0, countIf(explain LIKE '%Filter column: %<%rand%') > 0, countIf(explain LIKE '%Expression: %greater(%') > 0
+SELECT 'R8', countIf(explain LIKE '%Expression: %less(%rand%') = 0, countIf(explain LIKE '%Filter column: %<%rand%') > 0, countIf(explain LIKE '%Expression: %greater(%') = 0
 FROM (EXPLAIN PLAN keep_logical_steps = 1, actions = 1 SELECT * FROM rf_l l JOIN rf_r r ON l.k = r.k WHERE l.x < r.y + rand() % 2 AND l.z > r.z SETTINGS query_plan_optimize_join_order_limit = 1, query_plan_merge_filter_into_join_condition = 1);
-SELECT 'R9', countIf(explain LIKE '%Expression: %less(%sleepEachRow%') = 0, countIf(explain LIKE '%Filter column: %<%sleepEachRow%') > 0, countIf(explain LIKE '%Expression: %greater(%') > 0
+SELECT 'R9', countIf(explain LIKE '%Expression: %less(%sleepEachRow%') = 0, countIf(explain LIKE '%Filter column: %<%sleepEachRow%') > 0, countIf(explain LIKE '%Expression: %greater(%') = 0
 FROM (EXPLAIN PLAN keep_logical_steps = 1, actions = 1 SELECT * FROM rf_l l JOIN rf_r r ON l.k = r.k WHERE l.x < r.y + sleepEachRow(0) AND l.z > r.z SETTINGS query_plan_optimize_join_order_limit = 1, query_plan_merge_filter_into_join_condition = 1);
 SELECT 'R9', 0, count(), sum(cityHash64(lid, rid)) FROM (SELECT l.id AS lid, r.id AS rid FROM rf_l l JOIN rf_r r ON l.k = r.k WHERE l.x < r.y + sleepEachRow(0) AND l.z > r.z) SETTINGS query_plan_merge_filter_into_join_condition = 0;
 SELECT 'R9', 1, count(), sum(cityHash64(lid, rid)) FROM (SELECT l.id AS lid, r.id AS rid FROM rf_l l JOIN rf_r r ON l.k = r.k WHERE l.x < r.y + sleepEachRow(0) AND l.z > r.z) SETTINGS query_plan_merge_filter_into_join_condition = 1;
 
-SELECT 'R10', countIf(explain LIKE '%Expression: %less(%arrayJoin%') = 0, countIf(explain LIKE '%Filter column: %<%arrayJoin%') > 0, countIf(explain LIKE '%Expression: %greater(%') > 0
+SELECT 'R10', countIf(explain LIKE '%Expression: %less(%arrayJoin%') = 0, countIf(explain LIKE '%Filter column: %<%arrayJoin%') > 0, countIf(explain LIKE '%Expression: %greater(%') = 0
 FROM (EXPLAIN PLAN keep_logical_steps = 1, actions = 1 SELECT * FROM rf_l l JOIN rf_r r ON l.k = r.k WHERE l.x < r.y + arrayJoin(r.arr) AND l.z > r.z SETTINGS query_plan_lower_array_join_function = 0, query_plan_optimize_join_order_limit = 1, query_plan_merge_filter_into_join_condition = 1);
 SELECT 'R10', 0, count(), sum(cityHash64(lid, rid, larr, rarr)) FROM (SELECT l.id AS lid, r.id AS rid, l.arr AS larr, r.arr AS rarr FROM rf_l l JOIN rf_r r ON l.k = r.k WHERE l.x < r.y + arrayJoin(r.arr) AND l.z > r.z) SETTINGS query_plan_merge_filter_into_join_condition = 0;
 SELECT 'R10', 1, count(), sum(cityHash64(lid, rid, larr, rarr)) FROM (SELECT l.id AS lid, r.id AS rid, l.arr AS larr, r.arr AS rarr FROM rf_l l JOIN rf_r r ON l.k = r.k WHERE l.x < r.y + arrayJoin(r.arr) AND l.z > r.z) SETTINGS query_plan_merge_filter_into_join_condition = 1;
@@ -253,3 +253,51 @@ SELECT 'G1-greedy', 1, count(), sum(cityHash64(a.id, b.id, c.id)) FROM (SELECT a
 SELECT 'G1-dpsub-greedy', 0, count(), sum(cityHash64(a.id, b.id, c.id)) FROM (SELECT a.id, b.id, c.id FROM ro_a a JOIN ro_b b ON a.k = b.ak JOIN ro_c c ON b.ck = c.k WHERE a.x < c.x) SETTINGS join_algorithm = 'direct,parallel_hash,hash,ie_join', query_plan_optimize_join_order_algorithm = 'dpsub,greedy', query_plan_optimize_join_order_limit = 3, allow_block_nested_loop_join = 0, query_plan_merge_filter_into_join_condition = 0;
 SELECT 'G1-dpsub-greedy', 1, count(), sum(cityHash64(a.id, b.id, c.id)) FROM (SELECT a.id, b.id, c.id FROM ro_a a JOIN ro_b b ON a.k = b.ak JOIN ro_c c ON b.ck = c.k WHERE a.x < c.x) SETTINGS join_algorithm = 'direct,parallel_hash,hash,ie_join', query_plan_optimize_join_order_algorithm = 'dpsub,greedy', query_plan_optimize_join_order_limit = 3, allow_block_nested_loop_join = 0, query_plan_merge_filter_into_join_condition = 1;
 SELECT 'G1-count', count() = 6667 FROM (SELECT a.id, b.id, c.id FROM ro_a a JOIN ro_b b ON a.k = b.ak JOIN ro_c c ON b.ck = c.k WHERE a.x < c.x) SETTINGS query_plan_merge_filter_into_join_condition = 0, query_plan_optimize_join_order_limit = 1;
+
+-- A later range must not run before the conjunct that would have rejected the row.
+SELECT 'R18-short-circuit', 0, count()
+FROM values('s String, x Int64', ('bad', 0), ('1', 5)) AS l
+CROSS JOIN values('y Int64, z Int64', (1, 3), (1, 3)) AS r
+WHERE l.x >= r.y AND toInt64(l.s) < r.z
+SETTINGS query_plan_optimize_join_order_limit = 1, query_plan_merge_filter_into_join_condition = 0;
+SELECT 'R18-short-circuit', 1, count()
+FROM values('s String, x Int64', ('bad', 0), ('1', 5)) AS l
+CROSS JOIN values('y Int64, z Int64', (1, 3), (1, 3)) AS r
+WHERE l.x >= r.y AND toInt64(l.s) < r.z
+SETTINGS query_plan_optimize_join_order_limit = 1, query_plan_merge_filter_into_join_condition = 1;
+SELECT 'R18-plan', countIf(explain LIKE '%Expression: %toInt64%') = 0 AND countIf(explain LIKE '%Expression: %greaterOrEquals%') > 0
+FROM (EXPLAIN PLAN keep_logical_steps = 1, actions = 1
+    SELECT count()
+    FROM values('s String, x Int64', ('bad', 0), ('1', 5)) AS l
+    CROSS JOIN values('y Int64, z Int64', (1, 3), (1, 3)) AS r
+    WHERE l.x >= r.y AND toInt64(l.s) < r.z
+    SETTINGS query_plan_optimize_join_order_limit = 1, query_plan_merge_filter_into_join_condition = 1);
+
+-- A pure range must not remove rows before a stateful conjunct of the same filter.
+SELECT 'R19-stateful', 0, x, y, rn
+FROM
+(
+    SELECT l.x AS x, r.y AS y, rowNumberInAllBlocks() AS rn
+    FROM values('x UInt64, k UInt8', (0, 1), (1, 1), (2, 1), (3, 1)) AS l
+    JOIN values('y UInt64, k UInt8', (0, 1)) AS r ON l.k = r.k
+    WHERE l.x > r.y AND rn % 2 = 0
+    ORDER BY x
+    SETTINGS max_threads = 1, query_plan_optimize_join_order_limit = 1, query_plan_merge_filter_into_join_condition = 0
+);
+SELECT 'R19-stateful', 1, x, y, rn
+FROM
+(
+    SELECT l.x AS x, r.y AS y, rowNumberInAllBlocks() AS rn
+    FROM values('x UInt64, k UInt8', (0, 1), (1, 1), (2, 1), (3, 1)) AS l
+    JOIN values('y UInt64, k UInt8', (0, 1)) AS r ON l.k = r.k
+    WHERE l.x > r.y AND rn % 2 = 0
+    ORDER BY x
+    SETTINGS max_threads = 1, query_plan_optimize_join_order_limit = 1, query_plan_merge_filter_into_join_condition = 1
+);
+SELECT 'R19-plan', countIf(explain LIKE '%Expression: %greater(%') = 0
+FROM (EXPLAIN PLAN keep_logical_steps = 1, actions = 1
+    SELECT l.x, r.y, rowNumberInAllBlocks() AS rn
+    FROM values('x UInt64, k UInt8', (0, 1), (1, 1), (2, 1), (3, 1)) AS l
+    JOIN values('y UInt64, k UInt8', (0, 1)) AS r ON l.k = r.k
+    WHERE l.x > r.y AND rn % 2 = 0
+    SETTINGS max_threads = 1, query_plan_optimize_join_order_limit = 1, query_plan_merge_filter_into_join_condition = 1);

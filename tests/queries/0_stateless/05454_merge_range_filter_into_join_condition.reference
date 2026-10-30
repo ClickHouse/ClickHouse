@@ -146,3 +146,9 @@ G1-greedy	1	6667	2999397547801183885
 G1-dpsub-greedy	0	6667	2999397547801183885
 G1-dpsub-greedy	1	6667	2999397547801183885
 G1-count	1
+R18-short-circuit	0	2
+R18-short-circuit	1	2
+R18-plan	1
+R19-stateful	0	2	0	2
+R19-stateful	1	2	0	2
+R19-plan	1
