@@ -1371,8 +1371,6 @@ namespace
             compressing_write_buffer = write_buffer.get();
         }
 
-        auto has_output = [&] { return (nested_write_buffer->position() != output.data()) || (compressing_write_buffer && compressing_write_buffer->offset()); };
-
         output_format_processor = query_context->getOutputFormat(output_format, *write_buffer, header);
         Stopwatch after_send_progress;
 
@@ -1417,9 +1415,7 @@ namespace
                 }
 
                 addLogsToResult();
-
-                if (has_output() || result.has_progress() || result.logs_size())
-                    sendResult();
+                sendResult();
 
                 throwIfFailedToSendResult();
                 if (!check_for_cancel())
@@ -1442,7 +1438,7 @@ namespace
                 addProgressToResult();
                 addLogsToResult();
 
-                if (has_output() || result.has_progress() || result.logs_size())
+                if (result.has_progress() || result.logs_size())
                     sendResult();
 
                 throwIfFailedToSendResult();
@@ -1478,6 +1474,8 @@ namespace
 
     void Call::onException(const Exception & exception)
     {
+        /// Stops the format's writing thread before the output buffer is finalized.
+        output_format_processor.reset();
         io.onException();
 
         LOG_ERROR(log, getExceptionMessageAndPattern(exception, send_exception_with_stacktrace));
@@ -1806,32 +1804,39 @@ namespace
         if (!send_final_message && !isOutputStreaming(call_type))
             return;
 
-        /// Copy output to `result.output`, with optional compressing.
-        /// A canceled buffer holds incomplete output which can be neither finalized nor sent.
-        if (write_buffer && !write_buffer->isCanceled())
         {
-            size_t output_size = 0;
-            if (send_final_message)
-            {
-                if (compressing_write_buffer)
-                    LOG_DEBUG(log, "Compressing final {} bytes", compressing_write_buffer->offset());
-                write_buffer->finalize();
-                output_size = output.size();
-            }
-            else
-            {
-                if (compressing_write_buffer && compressing_write_buffer->offset())
-                {
-                    LOG_DEBUG(log, "Compressing {} bytes", compressing_write_buffer->offset());
-                    compressing_write_buffer->sync();
-                }
-                output_size = nested_write_buffer->position() - output.data();
-            }
+            /// Until the output format is finalized, it can write to the buffer from another thread.
+            std::unique_lock<std::mutex> writing_lock;
+            if (!send_final_message && output_format_processor)
+                writing_lock = output_format_processor->lockWriting();
 
-            if (output_size)
+            /// Copy output to `result.output`, with optional compressing.
+            /// A canceled buffer holds incomplete output which can be neither finalized nor sent.
+            if (write_buffer && !write_buffer->isCanceled())
             {
-                result.mutable_output()->assign(output.data(), output_size);
-                nested_write_buffer->restart(); /// We're going to reuse the same buffer again for next block of data.
+                size_t output_size = 0;
+                if (send_final_message)
+                {
+                    if (compressing_write_buffer)
+                        LOG_DEBUG(log, "Compressing final {} bytes", compressing_write_buffer->offset());
+                    write_buffer->finalize();
+                    output_size = output.size();
+                }
+                else
+                {
+                    if (compressing_write_buffer && compressing_write_buffer->offset())
+                    {
+                        LOG_DEBUG(log, "Compressing {} bytes", compressing_write_buffer->offset());
+                        compressing_write_buffer->sync();
+                    }
+                    output_size = nested_write_buffer->position() - output.data();
+                }
+
+                if (output_size)
+                {
+                    result.mutable_output()->assign(output.data(), output_size);
+                    nested_write_buffer->restart(); /// We're going to reuse the same buffer again for next block of data.
+                }
             }
         }
 

@@ -43,6 +43,10 @@ public:
     void flush();
     void setAutoFlush() { auto_flush = true; }
 
+    /// Locks the writing methods. A format can also write from a background thread under this lock (`Pretty` formats
+    /// write the squashed blocks there), so the owner of the output buffer holds it to access the buffer between the calls.
+    std::unique_lock<std::mutex> lockWriting() { return std::unique_lock(writing_mutex); }
+
     /// Value for rows_before_limit_at_least field.
     virtual void setRowsBeforeLimit(size_t /*rows_before_limit*/) {}
 
