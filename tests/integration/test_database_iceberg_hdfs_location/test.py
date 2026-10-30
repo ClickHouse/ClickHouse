@@ -34,8 +34,9 @@ LOCATION = "hdfs://hdfs1:9000/warehouse/ns/events"
 
 def list_hdfs_dir(hdfs_api, path):
     response = requests.get(
-        f"{hdfs_api.protocol}://{hdfs_api.host}:{hdfs_api.proxy_port}/webhdfs/v1{path}",
+        f"{hdfs_api.protocol}://{hdfs_api.hdfs_ip}:{hdfs_api.proxy_port}/webhdfs/v1{path}",
         params={"op": "LISTSTATUS", "user.name": hdfs_api.user},
+        headers={"host": str(hdfs_api.hdfs_ip)},
         timeout=hdfs_api.timeout,
     )
     response.raise_for_status()
