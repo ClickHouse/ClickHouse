@@ -101,8 +101,8 @@ public:
         if constexpr (std::is_same_v<DataLakeMetadata, IcebergMetadata>)
         {
             /// Iceberg records the format of every data file in its manifest and honours it on
-            /// read, so all three data file formats of the Iceberg specification work.
-            return {"Parquet", "ORC", "Avro"};
+            /// read: the three data file formats of the Iceberg specification, plus `Vortex`.
+            return {"Parquet", "ORC", "Avro", "Vortex"};
         }
         if constexpr (std::is_same_v<DataLakeMetadata, PaimonMetadata>)
         {

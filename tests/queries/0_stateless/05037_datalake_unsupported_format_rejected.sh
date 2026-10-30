@@ -10,7 +10,7 @@
 #  - on read it silently returns garbage rows instead of throwing.
 #
 # `DeltaLake` accepts `Parquet` only (its log records no per-file format);
-# `Iceberg` and `Paimon` also accept `ORC` and `Avro`; `Hudi` base files are
+# `Iceberg` and `Paimon` also accept `ORC` and `Avro` (`Iceberg` also `Vortex`); `Hudi` base files are
 # columnar, so `Parquet` and `ORC`.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)

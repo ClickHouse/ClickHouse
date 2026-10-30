@@ -1234,7 +1234,7 @@ CREATE TABLE iceberg_table_local
 ## Engine arguments {#engine-arguments}
 
 Description of the arguments coincides with description of arguments in engines `S3`, `AzureBlobStorage`, `HDFS` and `File` correspondingly.
-`format` stands for the format of data files in the Iceberg table, and accepts only `Parquet`, `ORC` or `Avro`; any other value is rejected with `BAD_ARGUMENTS`. Omitting the argument or passing `auto` selects `Parquet`.
+`format` stands for the format of data files in the Iceberg table, and accepts only `Parquet`, `ORC`, `Avro` or `Vortex`; any other value is rejected with `BAD_ARGUMENTS`. Omitting the argument or passing `auto` selects `Parquet`.
 
 Unlike the plain object-storage engines, data lake engines do not accept a `compression_method` (or `compression`) argument other than `auto` (the default; an empty string means the same): the data files use the format's own internal codec, so the outer codec would be silently dropped on write and misinterpreted on read. Control file compression with the format-specific setting (for example, `output_format_parquet_compression_method`) instead.
 
