@@ -841,16 +841,16 @@ private:
                     return;
                 case nk_f32_k:
                 {
-                    nk_f32_t value;
+                    nk_f32_t value = 0;
                     function(x, y, dims, &value);
-                    *result = value;
+                    *result = static_cast<Float64>(value);
                     return;
                 }
                 case nk_i32_k:
                 {
-                    nk_i32_t value;
+                    nk_i32_t value = 0;
                     function(x, y, dims, &value);
-                    *result = value;
+                    *result = static_cast<Float64>(value);
                     return;
                 }
                 default:
@@ -877,7 +877,11 @@ private:
         /// in a wider or compensated sum.
         if (Kernel::kernel_kind == nk_kernel_dot_k && is_floating_point<CalcT> && used_capability == nk_cap_serial_k)
             return {};
+        /// NumKong marks its header-only helpers `unused` so that unused ones do not warn.
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wused-but-marked-unused"
         const nk_dtype_t output_dtype = nk_kernel_output_dtype(Kernel::kernel_kind, dtype);
+#pragma clang diagnostic pop
         if (output_dtype != nk_f64_k && output_dtype != nk_f32_k && output_dtype != nk_i32_k)
             throw Exception(
                 ErrorCodes::LOGICAL_ERROR, "Unexpected output type {} of the NumKong kernel for {}", static_cast<int>(output_dtype), Kernel::name);

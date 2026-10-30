@@ -39,13 +39,16 @@ if (ARCH_AMD64 OR (ARCH_AARCH64 AND NOT NO_ARMV81_OR_HIGHER))
     # Left out:
     # - AMX (`SAPPHIREAMX`, `GRANITEAMX`) and SME: only used by matrix kernels, which ClickHouse does not call;
     # - `DIAMOND` (AVX10.2) and `NEONFP8`: need newer compilers than the minimum supported Clang;
+    # - `GENOA` (AVX-512 BF16): its `bf16` squared Euclidean distance computes `a^2 + b^2 - 2ab` in `f32`, which cancels
+    #   catastrophically for close vectors (e.g. `[32768, 1]` and `[32768, 2]` give 0 instead of 1) and overflows to NaN
+    #   for large ones. Without it, `bf16` uses the Haswell kernels, which subtract before squaring;
     # - SVE: LLVM's MemorySanitizer cannot instrument SVE scalable vector types and emits an unconditional
     #   `__msan_warning_noreturn` at every SVE function entry.
     if (ARCH_AMD64)
         target_compile_definitions(_numkong PRIVATE
-            NK_TARGET_HASWELL=1 NK_TARGET_SKYLAKE=1 NK_TARGET_ICELAKE=1 NK_TARGET_GENOA=1 NK_TARGET_SAPPHIRE=1
+            NK_TARGET_HASWELL=1 NK_TARGET_SKYLAKE=1 NK_TARGET_ICELAKE=1 NK_TARGET_SAPPHIRE=1
             NK_TARGET_TURIN=1 NK_TARGET_ALDER=1 NK_TARGET_SIERRA=1
-            NK_TARGET_SAPPHIREAMX=0 NK_TARGET_GRANITEAMX=0 NK_TARGET_DIAMOND=0)
+            NK_TARGET_GENOA=0 NK_TARGET_SAPPHIREAMX=0 NK_TARGET_GRANITEAMX=0 NK_TARGET_DIAMOND=0)
     else ()
         target_compile_definitions(_numkong PRIVATE
             NK_TARGET_NEON=1 NK_TARGET_NEONHALF=1 NK_TARGET_NEONSDOT=1 NK_TARGET_NEONBFDOT=1 NK_TARGET_NEONFHM=1
