@@ -21,6 +21,7 @@
 #include <Common/StringUtils.h>
 #include <boost/algorithm/string/predicate.hpp>
 
+#include <unordered_set>
 #include <vector>
 #include <boost/algorithm/string/trim.hpp>
 
@@ -117,6 +118,8 @@ Poco::AutoPtr<Poco::XML::Document> getDiskConfigurationFromASTImpl(const ASTs & 
             || k == "server_side_encryption_kms_encryption_context" || startsWith(k, "header") || startsWith(k, "access_header");
     };
 
+    std::unordered_set<std::string> seen_keys;
+
     for (const auto & arg : disk_args)
     {
         const auto * setting_function = arg->as<const ASTFunction>();
@@ -152,24 +155,33 @@ Poco::AutoPtr<Poco::XML::Document> getDiskConfigurationFromASTImpl(const ASTs & 
         if (indirect && is_s3_credential_or_auth_field(key))
             has_indirect_auth_field = true;
 
+        /// A key given more than once becomes several elements with the same name, and the configuration
+        /// resolves a key to the first of them. So only the first occurrence of a key decides the backend and
+        /// the credentials: a later `type = local` or `access_key_id = '...'` is ignored by the disk, and it
+        /// must be ignored here as well, or it would hide an S3 backend relying on the server's credentials.
+        const bool is_first_occurrence = seen_keys.insert(key).second;
+
         if (key == "include")
             has_include = true;
+        else if (!is_first_occurrence)
+        {
+            /// A repeated key: the disk does not use this value.
+        }
         else if (key == "type" || key == "object_storage_type")
         {
-            /// A key given more than once is resolved conservatively: any S3 or indirect occurrence counts.
             const bool is_s3_value = (value_str == "s3" || value_str.starts_with("s3_"));
             if (key == "type")
             {
                 has_type = true;
-                type_is_s3 |= is_s3_value;
-                type_is_local |= (!indirect && value_str == "local");
-                type_is_indirect |= indirect;
+                type_is_s3 = is_s3_value;
+                type_is_local = !indirect && value_str == "local";
+                type_is_indirect = indirect;
             }
             else
             {
                 has_object_storage_type = true;
-                object_storage_type_is_s3 |= is_s3_value;
-                object_storage_type_is_indirect |= indirect;
+                object_storage_type_is_s3 = is_s3_value;
+                object_storage_type_is_indirect = indirect;
             }
         }
         else if (key == "access_key_id")
