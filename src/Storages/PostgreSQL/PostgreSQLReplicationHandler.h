@@ -409,6 +409,9 @@ private:
     /// registers, so trusting them there would make a concurrently fenced foreign table set authoritative.
     bool hasSurvivingCoordinationState(bool include_refused_drop_metadata);
     bool isInitialSnapshotCompleted();
+    /// Removes the `snapshot_completed` marker if no replica other than this one's exists in the shared tree of
+    /// a nested table, so that the next active worker redoes the snapshot instead of resuming from the slot.
+    void invalidateInitialSnapshotIfNoOtherNestedReplica(const NestedTableEngineSpec & engine_spec);
     void markInitialSnapshotCompleted(const String & lsn);
 
     /// Throws when the Keeper session backing this worker's /leader node is no longer alive. Fences the

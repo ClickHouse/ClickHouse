@@ -933,6 +933,24 @@ PostgreSQLReplicationHandler::~PostgreSQLReplicationHandler()
     {
         tryLogCurrentException(log);
     }
+
+    /// A handler can be destroyed without `shutdown`, for example when a standalone coordinated `CREATE TABLE`
+    /// fails after its constructor has scheduled the coordination task, which may already have won the election.
+    /// The holder destructor only makes a best-effort removal of the leader node, and if that fails during a
+    /// transient Keeper disconnect, the node survives under the server's shared session with no handler left to
+    /// remove it, so every peer stays on standby. Release it the same confirmed way as `shutdown` does. After
+    /// `shutdown` the leader node is already reset, so this does nothing.
+    try
+    {
+        is_active_worker.store(false);
+        releaseLeadershipAtShutdown();
+    }
+    catch (...)
+    {
+        tryLogCurrentException(log, "Failed to release the replication leader node in the destructor");
+    }
+    leader_node.reset();
+    coordination_zookeeper.reset();
 }
 
 
@@ -1674,7 +1692,14 @@ void PostgreSQLReplicationHandler::startSynchronization(bool throw_on_error)
     replication_handler_initialized = true;
 
     consumer_task->activateAndSchedule();
-    cleanup_task->activateAndSchedule();
+
+    /// The cleanup task drops a leaked temporary replication slot, which only `addTableToReplication` creates.
+    /// A coordinated setup refuses that, so it never has a temporary slot of its own. The task also opens its
+    /// own connection, which nothing checks against the recorded source cluster, so on a repointed endpoint it
+    /// could drop another deployment's slot with the same derived name. Do not arm it in coordinated mode;
+    /// `shutdownFinal` still drops a leftover temporary slot after checking the source cluster.
+    if (!coordination_enabled)
+        cleanup_task->activateAndSchedule();
 
     /// Do not rely anymore on saved storage pointers.
     /// Exception: when coordination is enabled this handler may be re-elected as the active worker after a
@@ -1955,6 +1980,17 @@ void PostgreSQLReplicationHandler::ensureNestedTablesExist()
                 "the shared replicated tree",
                 postgres_database, table_name);
 
+            /// Dropping the dead copy deletes its data. If no other replica of the shared tree holds the data,
+            /// it was the last copy: the recreated table is empty, but the shared slot and the `snapshot_completed`
+            /// marker survive, so the next active worker would resume from the slot and never reload the rows.
+            /// Invalidate the completed snapshot before discarding the last copy, so the next active worker redoes
+            /// it (`startSynchronization` reloads every table when the slot exists without the marker). A peer can
+            /// drop its own copy between this check and the drop below, so the shared tree is checked once more
+            /// after the drop.
+            const auto shut_down_engine_spec = makeNestedEngineSpec(table_name);
+            if (coordination_enabled && shut_down_engine_spec.replicated)
+                invalidateInitialSnapshotIfNoOtherNestedReplica(shut_down_engine_spec);
+
             /// Use the wrapper's internal nested-table context: for the database engine the nested table
             /// lives inside the coordinated DatabaseMaterializedPostgreSQL, whose `dropTable` refuses a
             /// non-internal (user) DROP; an internal context bypasses that guard exactly as the DROP DATABASE
@@ -1970,6 +2006,9 @@ void PostgreSQLReplicationHandler::ensureNestedTablesExist()
             if (nested_uuid != UUIDHelpers::Nil)
                 DatabaseCatalog::instance().waitTableFinallyDropped(nested_uuid);
             materialized_storage->resetNested();
+
+            if (coordination_enabled && shut_down_engine_spec.replicated)
+                invalidateInitialSnapshotIfNoOtherNestedReplica(shut_down_engine_spec);
         }
 
         if (!materialized_storage->tryGetNested())
@@ -3485,6 +3524,27 @@ bool PostgreSQLReplicationHandler::isInitialSnapshotCompleted()
 }
 
 
+void PostgreSQLReplicationHandler::invalidateInitialSnapshotIfNoOtherNestedReplica(const NestedTableEngineSpec & engine_spec)
+{
+    auto component_guard = Coordination::setCurrentComponent("PostgreSQLReplicationHandler::invalidateInitialSnapshotIfNoOtherNestedReplica");
+
+    auto zookeeper = getContext()->getZooKeeper();
+    Strings replicas;
+    zookeeper->tryGetChildren(engine_spec.zookeeper_path + "/replicas", replicas);
+    for (const auto & replica : replicas)
+        if (replica != engine_spec.replica_name)
+            return;
+
+    const String marker_path = coordination_keeper_path + "/snapshot_completed";
+    if (zookeeper->tryRemove(marker_path) == Coordination::Error::ZOK)
+        LOG_WARNING(log,
+            "No other replica of the shared nested table at {} holds its data, so this replica's copy, which is "
+            "being recreated, is the last one. Removed the initial snapshot marker {}, so the next active worker "
+            "reloads all tables from a new snapshot",
+            engine_spec.zookeeper_path, marker_path);
+}
+
+
 void PostgreSQLReplicationHandler::assertReplicationLeadershipIsLive() const
 {
     if (!coordination_enabled)
@@ -3689,6 +3749,42 @@ void PostgreSQLReplicationHandler::assertPublicationPublishesReplicatedTables(pq
             "externally. Refusing to adopt it; specify the schema explicitly (`materialized_postgresql_schema`) or make "
             "the publication publish these tables",
             doubleQuoteString(publication_name), unpublished_tables);
+
+    /// The check above proves only that the expected relations are a subset of the publication. The publication
+    /// may also legitimately publish relations that are not replicated (see `published_but_not_materialized`),
+    /// and the consumer skips their changes. But it identifies a relation by its ClickHouse table name, which
+    /// drops the PostgreSQL schema unless `schema_as_a_part_of_table_name`. So another published relation that
+    /// maps to the name of a replicated table (for example, `b.t` next to `a.t`) would have its changes applied
+    /// to the nested table of that replicated table. Reject any published relation whose ClickHouse table name
+    /// is the name of a replicated table but which is not the relation that table resolves to.
+    String expected_names_array;
+    for (const auto & [table_name, _] : materialized_storages)
+    {
+        if (!expected_names_array.empty())
+            expected_names_array += ", ";
+        expected_names_array += quoteStringPostgreSQL(table_name);
+    }
+
+    query_str = fmt::format(
+        "SELECT coalesce(string_agg(format('%I.%I', p.schemaname, p.tablename), ', '), '') "
+        "FROM pg_publication_tables AS p "
+        "JOIN unnest(ARRAY[{}]::text[], ARRAY[{}]::text[]) AS e(relation, clickhouse_name) "
+        "ON {} = e.clickhouse_name "
+        "WHERE p.pubname = {} AND to_regclass(format('%I.%I', p.schemaname, p.tablename)) IS DISTINCT FROM to_regclass(e.relation)",
+        tables_array, expected_names_array,
+        schema_as_a_part_of_table_name ? "p.schemaname || '.' || p.tablename" : "p.tablename",
+        quoteStringPostgreSQL(publication_name));
+    result = tx.exec(query_str);
+    chassert(!result.empty());
+
+    auto colliding_relations = result[0][0].as<std::string>();
+    if (!colliding_relations.empty())
+        throw Exception(ErrorCodes::POSTGRESQL_REPLICATION_INTERNAL_ERROR,
+            "The shared publication {} of the coordinated MaterializedPostgreSQL database publishes the relations {}, "
+            "which have the same ClickHouse table name as a replicated table, but are not the relation it resolves to. "
+            "Their changes would be applied to the nested table of the replicated table. The publication was most likely "
+            "altered externally. Refusing to adopt it; remove these relations from the publication",
+            doubleQuoteString(publication_name), colliding_relations);
 }
 
 

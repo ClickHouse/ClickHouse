@@ -3863,6 +3863,79 @@ def test_single_table_refuses_adopted_publication_with_other_tables(started_clus
         pg_query("DROP TABLE IF EXISTS test_table_foreign")
 
 
+def test_database_refuses_adopted_publication_with_same_named_relation(started_cluster):
+    # The consumer of a database over a single schema identifies a relation by its bare name. So if the
+    # shared publication was altered externally to publish a same-named table of another schema as well,
+    # the changes of that table would be applied to the nested table of the replicated one. The
+    # re-elected worker must refuse such a publication until it is repaired, and then resume replication.
+    pg_manager.create_postgres_table("test_table")
+    pg_query("CREATE SCHEMA IF NOT EXISTS coord_other_schema")
+    pg_query(
+        "CREATE TABLE IF NOT EXISTS coord_other_schema.test_table (key Integer NOT NULL, value Integer, PRIMARY KEY(key))"
+    )
+    instance.query(
+        "INSERT INTO postgres_database.test_table SELECT number, number FROM numbers(100)"
+    )
+
+    demotion_line = "Keeper session expired, releasing replication leadership"
+    refusal_line = "which have the same ClickHouse table name as a replicated table"
+    pg_manager.create_materialized_db(
+        ip=cluster.postgres_ip,
+        port=cluster.postgres_port,
+        settings=COORDINATION_SETTINGS
+        + ["materialized_postgresql_tables_list = 'test_table'"],
+    )
+
+    def wait_for_count(expected, timeout=90):
+        for _ in range(timeout):
+            try:
+                if (
+                    int(instance.query("SELECT count() FROM test_database.test_table"))
+                    == expected
+                ):
+                    return
+            except Exception:
+                pass
+            time.sleep(1)
+        raise AssertionError(f"test_database.test_table did not reach {expected} rows")
+
+    pm = PartitionManager()
+    try:
+        wait_for_count(100)
+
+        publications = pg_query("SELECT pubname FROM pg_publication")
+        assert len(publications) == 1, publications
+        publication_name = publications[0][0]
+        pg_query(
+            f'ALTER PUBLICATION "{publication_name}" ADD TABLE ONLY coord_other_schema.test_table'
+        )
+
+        # Re-run startSynchronization -> createPublicationIfNeeded on the adopted publication.
+        refusal_baseline = count_in_all_logs(instance, refusal_line)
+        demotion_baseline = count_in_all_logs(instance, demotion_line)
+        pm.drop_instance_zk_connections(instance)
+        wait_for_new_log_occurrence(
+            instance, demotion_line, demotion_baseline, timeout=120
+        )
+        pm.heal_all()
+        wait_for_new_log_occurrence(
+            instance, refusal_line, refusal_baseline, timeout=120
+        )
+
+        # Repair the publication: the next election attempt adopts it and replication resumes.
+        pg_query(
+            f'ALTER PUBLICATION "{publication_name}" DROP TABLE coord_other_schema.test_table'
+        )
+        instance.query(
+            "INSERT INTO postgres_database.test_table SELECT number, number FROM numbers(100, 100)"
+        )
+        wait_for_count(200, timeout=180)
+    finally:
+        pm.heal_all()
+        pg_manager.drop_materialized_db()
+        pg_query("DROP SCHEMA IF EXISTS coord_other_schema CASCADE")
+
+
 def test_failed_single_table_snapshot_releases_leadership(started_cluster):
     # A coordinated single-table worker whose initial snapshot load fails must abort the startup
     # instead of constructing a consumer with no nested storage: such a consumer would keep advancing
