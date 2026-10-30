@@ -1,0 +1,121 @@
+Output: count()
+
+Expression ((Project names + Projection))
+└──MergingAggregated (merge)
+   └──GatherExchange
+      └──Aggregating (partial)
+         └──Expression (Before GROUP BY)
+            └──JoinLogical
+               ├──Union
+               │  ├──ShuffleExchange (by hash([k]))
+               │  │  └──Expression ((Change column names to column identifiers + (Project names + (Projection + Change column names to column identifiers))))
+               │  │     └──ReadFromMergeTree (default.t1)
+               │  └──ShuffleExchange (by hash([k]))
+               │     └──Expression ((Change column names to column identifiers + (Project names + (Projection + Change column names to column identifiers))))
+               │        └──ReadFromMergeTree (default.t2)
+               └──ShuffleExchange (by hash([k]))
+                  └──Expression (Change column names to column identifiers)
+                     └──ReadFromMergeTree (default.t3)
+6144
+6144
+P3	2	1	0
+536258204344569508
+536258204344569508
+P4a	1	1	0
+536258204344569508
+536258204344569508
+P4b	0	1	0
+8192	16773120
+8192	16773120
+Query fragment 2 (main) · tasks=1
+Output: k, count()
+
+GatherSend (final_result)
+└──GatherReceive (exchange_1)
+
+Query fragment 1 (stage_1) · tasks=4
+Output: k, count()
+
+GatherSend (exchange_1)
+└──MergingAggregated (merge)
+   │  Keys: k
+   │  Aggregates: count()
+   └──ShuffleReceive (exchange_0)
+
+Query fragment 0 (stage_0) · tasks=4
+Output: k, count()
+
+ShuffleSend (exchange_0)
+└──Aggregating (partial)
+   │  Keys: k
+   │  Aggregates: count()
+   │  Skip merging: 0
+   └──Union
+      ├──ReadFromMergeTree (default.t1)
+      │     Read type: Default
+      │     Parts: 1 | Granules: 16
+      │     Output: k
+      └──ReadFromMergeTree (default.t2)
+            Read type: Default
+            Parts: 1 | Granules: 16
+            Output: k
+
+Exchanges:
+  exchange_0: hash(k), streaming, F0 -> F1, buckets 4 -> 4
+  exchange_1: gather, streaming, F1 -> F2, buckets 4 -> 1
+Levels: [F0] -> [F1] -> [F2]
+P5	3	1	0
+536258204344569508
+536258204344569508
+P6a	0	1	0
+0
+0
+1
+2
+2
+0
+0
+1
+2
+2
+P6b	0	1	0
+0
+0
+1
+2
+2
+3
+4
+4
+5
+6
+6
+7
+8
+8
+9
+10
+10
+11
+12
+12
+0
+0
+1
+2
+2
+3
+4
+4
+5
+6
+6
+7
+8
+8
+9
+10
+10
+11
+12
+12
