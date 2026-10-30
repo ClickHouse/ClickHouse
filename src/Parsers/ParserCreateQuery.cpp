@@ -3781,8 +3781,10 @@ COMMENT 'Comment'
 
 <CloudNotSupportedBadge/>
 
-<Note>
-Creating a dictionary with a configuration file is not applicable to ClickHouse Cloud. Please use DDL (see above), and create your dictionary as the `default` user.
+<Note title="ClickHouse Cloud">
+ClickHouse Cloud does not support creating dictionaries with configuration files. Use [`CREATE DICTIONARY`](#creating-a-dictionary-with-a-ddl-query) instead.
+
+When creating a dictionary that reads from a ClickHouse table, include a dedicated user's username and password in the `SOURCE` clause. That user needs `SELECT` permission on the source table. See the [ClickHouse dictionary source example](/reference/statements/create/dictionary/sources/clickhouse).
 </Note>
 
 The dictionary configuration file has the following format:
