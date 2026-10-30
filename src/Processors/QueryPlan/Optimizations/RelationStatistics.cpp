@@ -9,6 +9,51 @@
 namespace DB::QueryPlanOptimizations
 {
 
+void addTransformation(std::unordered_map<String, ColumnStats> & column_stats, ColumnStatsTransformation transformation)
+{
+    for (auto & [_, stats] : column_stats)
+    {
+        stats.ndv_provenance.add(transformation);
+        stats.range_provenance.add(transformation);
+    }
+}
+
+bool isExactDistinctCount(const ColumnStatsProvenance & provenance)
+{
+    constexpr UInt16 allowed = ValuePreservingExpression | ExactRowCountClamp;
+    const bool has_exact_row_coverage = provenance.origin == ColumnStatsOrigin::PartStatistics
+        || provenance.origin == ColumnStatsOrigin::SyntheticOverride;
+    return has_exact_row_coverage && provenance.hasOnly(allowed);
+}
+
+bool isDistinctCountUpperBound(const ColumnStatsProvenance & provenance)
+{
+    constexpr UInt16 forbidden = PartialPartCoverage | EstimatedRowCountClamp | Unsupported;
+    const bool has_upper_bound = provenance.origin == ColumnStatsOrigin::PartStatistics
+        || provenance.origin == ColumnStatsOrigin::SyntheticOverride
+        || provenance.origin == ColumnStatsOrigin::ExactRowCount;
+    return has_upper_bound && !provenance.hasAny(forbidden);
+}
+
+bool isExactValueRange(const ColumnStatsProvenance & provenance)
+{
+    constexpr UInt16 forbidden = RowSubset | NonUniformRowSubset | NDVBoundExpression | PartialPartCoverage | Unsupported;
+    return provenance.origin == ColumnStatsOrigin::PartStatistics && !provenance.hasAny(forbidden);
+}
+
+bool isValueRangeSuperset(const ColumnStatsProvenance & provenance)
+{
+    constexpr UInt16 forbidden = NDVBoundExpression | PartialPartCoverage | Unsupported;
+    return provenance.origin == ColumnStatsOrigin::PartStatistics && !provenance.hasAny(forbidden);
+}
+
+bool isRepresentativeValueRange(const ColumnStatsProvenance & provenance)
+{
+    /// Today an exact range is the only range known to be representative. Consumers must still call
+    /// the predicate that names the guarantee they need; the two may diverge (e.g. a uniform sample).
+    return isExactValueRange(provenance);
+}
+
 void updateJoinKeyDistinctCounts(
     ColumnStats & left_stats,
     ColumnStats & right_stats,
@@ -61,24 +106,35 @@ void remapColumnStats(std::unordered_map<String, ColumnStats> & mapped, const Ac
         if (stats_it == original.end())
             continue;
 
+        const auto & output = *outputs[output_lineage.output_position];
         ColumnStats stats = stats_it->second;
         /// Add the offset, guarding against overflow when the source NDV is near the maximum.
         if (stats.num_distinct_values <= std::numeric_limits<UInt64>::max() - output_lineage.input->ndv_delta)
             stats.num_distinct_values += output_lineage.input->ndv_delta;
-        /// A hop that changes the type (e.g. `toString(k)`) changes the value bytes, so drop the
-        /// width to unknown.
-        if (!output_lineage.input->preserves_width)
-            stats.avg_bytes = 0;
-        /// The value range and NULL set survive only lineage known to pass the value through
-        /// unchanged; unlike NDV, they do not survive a generic deterministic function (e.g. `negate(k)`)
-        /// or a `CAST`, which may rewrite NULL rows into real values.
         if (output_lineage.input->kind == ActionsDAGLineageKind::DistinctValuesBound)
         {
-            stats.min_value.reset();
-            stats.max_value.reset();
+            stats.ndv_provenance.add(NDVBoundExpression);
+            stats.range_provenance.add(NDVBoundExpression);
+            /// A generic function can turn NULLs into values or values into NULLs, so the input's
+            /// NULL fraction is not even an approximation of the output's. Unlike the range, it
+            /// cannot remain as a diagnostic superset.
             stats.null_fraction.reset();
         }
-        mapped[outputs[output_lineage.output_position]->result_name] = stats;
+        else if (
+            output_lineage.input->kind == ActionsDAGLineageKind::ValuePreserving
+            || &output != inputs[output_lineage.input->input_position])
+        {
+            /// The pointer inequality distinguishes an alias chain from an input exported directly;
+            /// aliases intentionally remain `Identity` in the generic lineage utility.
+            stats.ndv_provenance.add(ValuePreservingExpression);
+            stats.range_provenance.add(ValuePreservingExpression);
+        }
+        /// A hop that changes the type (e.g. `toString(k)`) changes the value bytes, so drop the
+        /// width to unknown. Keep ranges as diagnostic facts; consumers reject them through
+        /// `NDVBoundExpression` when the expression may have changed their meaning.
+        if (!output_lineage.input->preserves_width)
+            stats.avg_bytes = 0;
+        mapped[output.result_name] = stats;
     }
 }
 
