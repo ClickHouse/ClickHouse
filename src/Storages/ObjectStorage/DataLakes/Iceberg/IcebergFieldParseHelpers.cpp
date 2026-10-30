@@ -156,10 +156,11 @@ std::optional<Field> deserializeDecimalBound(const String & str, UInt32 scale, b
         for (UInt32 i = 1; i < scale; ++i)
             scaler *= 10;
 
-        /// Widening can leave the type: a `Decimal(38, 38)` bound of magnitude above roughly 0.7
-        /// needs almost `2 * 10^38` while `Int128` holds `1.7 * 10^38`.
+        /// A widened bound outside the precision is unbounded: the data can exceed the precision, and
+        /// decimal functions such as `round` and `negate` overflow on such an endpoint.
         NativeType widened_value;
-        if (common::addOverflow(unscaled_value, scaler, widened_value))
+        if (common::addOverflow(unscaled_value, scaler, widened_value) || widened_value >= rounding_limit
+            || widened_value <= -rounding_limit)
             return lower_bound ? Field(NEGATIVE_INFINITY) : Field(POSITIVE_INFINITY);
 
         unscaled_value = widened_value;
