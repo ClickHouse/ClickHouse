@@ -378,12 +378,12 @@ void FunctionBaseAI::checkHasUser(const ContextPtr & context)
             "AI functions cannot be executed without a user, e.g. in background merges, mutations or `Buffer` flushes");
 }
 
-void FunctionBaseAI::checkNotInMutation(const ContextPtr & context)
+void FunctionBaseAI::throwIfBackgroundExpression(const ContextPtr & context)
 {
-    if (context->isValidatingMutation())
+    if (context->isAnalyzingBackgroundExpressions())
         throw Exception(ErrorCodes::NOT_IMPLEMENTED,
-            "AI functions cannot be used in mutations, which are executed in the background. "
-            "Use a lightweight `UPDATE` or `INSERT ... SELECT` instead");
+            "AI functions cannot be used in expressions executed in the background: mutations, keys, TTL, skip indexes "
+            "and projections. Use a lightweight `UPDATE` or `INSERT ... SELECT` instead");
 }
 
 AIParamSpecs FunctionBaseAI::embeddingParams()

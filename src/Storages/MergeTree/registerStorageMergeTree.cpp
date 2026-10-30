@@ -217,38 +217,6 @@ static void evaluateEngineArgs(ASTs & engine_args, const ContextPtr & context)
     }
 }
 
-/// Stored expressions (keys, TTL, indices, projections) are built with the global context, which has full access,
-/// so access checks done when a function is created do not apply to the user defining the table.
-/// Build them again with the query context to run these checks. The result is discarded.
-static void checkAccessToStoredExpressions(const StorageInMemoryMetadata & metadata, const ContextPtr & local_context)
-{
-    const auto & columns = metadata.columns;
-    const auto & virtuals = metadata.virtuals;
-
-    for (const auto * key : {&metadata.partition_key, &metadata.sorting_key, &metadata.sampling_key, &metadata.unique_key})
-    {
-        if (key->definition_ast)
-            KeyDescription::getKeyFromAST(key->definition_ast, columns, virtuals, local_context);
-    }
-    if (metadata.primary_key.definition_ast)
-        KeyDescription::getPrimaryKeyFromAST(metadata.primary_key.definition_ast, metadata.sorting_key, columns, virtuals, local_context);
-
-    for (const auto & index : metadata.secondary_indices)
-    {
-        if (!index.isImplicitlyCreated())
-            IndexDescription::getIndexFromAST(index.definition_ast, columns, false, index.escape_filenames, local_context);
-    }
-
-    for (const auto & projection : metadata.projections)
-        ProjectionDescription::getProjectionFromAST(projection.definition_ast, columns, &metadata.partition_key, local_context);
-
-    for (const auto & [name, ttl_ast] : columns.getColumnTTLs())
-        TTLDescription::getTTLFromAST(ttl_ast, columns, local_context, metadata.primary_key, TTLValidationMode::SkipValidation);
-    if (metadata.table_ttl.definition_ast)
-        TTLTableDescription::getTTLForTableFromAST(
-            metadata.table_ttl.definition_ast, columns, local_context, metadata.primary_key, TTLValidationMode::SkipValidation);
-}
-
 /// Returns whether this is a Replicated table engine?
 static bool isReplicated(const String & engine_name)
 {
@@ -1241,7 +1209,7 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         MergeTreeData::checkColumnTTLsForKeyColumns(metadata, metadata);
 
     if (is_fresh_definition && !is_ddl_replay && !is_stored_definition)
-        checkAccessToStoredExpressions(metadata, args.getLocalContext());
+        MergeTreeData::checkStoredExpressions(metadata, args.getLocalContext());
 
     DataTypes data_types = metadata.partition_key.data_types;
     if (args.mode <= LoadingStrictnessLevel::CREATE && !(*storage_settings)[MergeTreeSetting::allow_floating_point_partition_key])
