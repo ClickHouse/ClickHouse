@@ -327,7 +327,9 @@ void optimizePrewhere(QueryPlan::Node & parent_node, const bool remove_unused_co
     /// and the total number of rows.
     const auto& columns = storage_snapshot->metadata->getColumns();
     UInt64 total_rows = 0;
-    if (selectivity_estimator)
+    if (use_pruned_parts)
+        total_rows = prewhere_parts.getRowsCountAllParts();
+    else if (selectivity_estimator)
         total_rows = selectivity_estimator->getTotalRows();
 
     for (const auto& name: queried_columns)
@@ -343,10 +345,10 @@ void optimizePrewhere(QueryPlan::Node & parent_node, const bool remove_unused_co
         if (name_and_type->getTypeInStorage()->haveMaximumSizeOfValue())  /// fixed-width, including Nullable of fixed-width
         {
             std::size_t bytes_per_row = name_and_type->getTypeInStorage()->getMaximumSizeOfValueInMemory();
-            column_compressed_sizes[name] = total_rows * bytes_per_row;
+            column_compressed_sizes[name] = total_rows * bytes_per_row; /// TODO: compression factor?
         }
-        /// else: missing / zero, afterwards, the algorithm will fallback to type-based defaults 
-        /// (approximateBytesPerRowAndColumn) and the column will rank later in the WHERE clauses
+        /// else: missing / zero. The algorithm will fallback to type-based defaults 
+        /// (approximateBytesPerRowAndColumn) and the column will rank later
     }
 
     MergeTreeWhereOptimizer where_optimizer{
