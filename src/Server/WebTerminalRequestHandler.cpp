@@ -8,6 +8,7 @@
 #include <Server/ClientEmbedded/PtyClientDescriptorSet.h>
 #include <Access/Credentials.h>
 #include <Core/ServerSettings.h>
+#include <Core/Settings.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/Session.h>
 #include <Common/Exception.h>
@@ -45,6 +46,13 @@ namespace ErrorCodes
 namespace ServerSetting
 {
     extern const ServerSettingsString default_session_user;
+}
+
+namespace Setting
+{
+    extern const SettingsUInt64 idle_connection_timeout;
+    extern const SettingsSeconds receive_timeout;
+    extern const SettingsSeconds send_timeout;
 }
 
 namespace
@@ -610,7 +618,6 @@ void WebTerminalRequestHandler::handleWebSocket(HTTPServerRequest & request, HTT
     /// close frame and the browser would see an abnormal close (1006). Send
     /// an explicit policy-violation close (1008) instead so clients can
     /// distinguish login failure from network errors deterministically.
-    /// Note: do not call makeSessionContext() here - it will be called by ClientEmbedded's constructor.
     auto session = std::make_unique<Session>(server.context(), ClientInfo::Interface::HTTP, request.isSecure());
     try
     {
@@ -638,6 +645,38 @@ void WebTerminalRequestHandler::handleWebSocket(HTTPServerRequest & request, HTT
         sendWebSocketClose(socket, 1008, "Authentication failed");
         return;
     }
+
+    /// Create the session context here rather than in the embedded client thread, so that the
+    /// same limits as for other interfaces apply before any PTY or thread is allocated:
+    /// `max_sessions_for_user` is checked by `makeSessionContext`, and the user's
+    /// `idle_connection_timeout`, `receive_timeout` and `send_timeout` settings are applied below.
+    try
+    {
+        session->makeSessionContext();
+    }
+    catch (...)
+    {
+        tryLogCurrentException(log, "Failed to create WebSocket session");
+        sendWebSocketClose(socket, 1008, "Cannot create session");
+        return;
+    }
+
+    /// The session context is shared with the embedded client, so `SET` queries typed in the
+    /// terminal change it. The timeouts are re-read whenever the client returns to the prompt, as
+    /// `TCPHandler` re-reads them after each query.
+    ContextPtr session_context = session->sessionContext();
+    Poco::Timespan receive_timeout;
+    Poco::Timespan send_timeout;
+    UInt64 idle_connection_timeout = 0;
+    auto read_timeouts = [&]
+    {
+        /// The embedded client thread may change the settings concurrently, so take a locked copy.
+        const Settings settings = session_context->getSettingsCopy();
+        receive_timeout = settings[Setting::receive_timeout];
+        send_timeout = settings[Setting::send_timeout];
+        idle_connection_timeout = settings[Setting::idle_connection_timeout];
+    };
+    read_timeouts();
 
     LOG_DEBUG(log, "WebSocket connection established for user {}", auth_user);
 
@@ -673,7 +712,7 @@ void WebTerminalRequestHandler::handleWebSocket(HTTPServerRequest & request, HTT
     int pty_master_fd = server_descriptors.out;
 
     /// Set a send timeout to avoid hanging indefinitely on slow/non-reading clients
-    socket.setSendTimeout(Poco::Timespan(30, 0)); /// 30 seconds
+    socket.setSendTimeout(send_timeout);
 
     /// Make PTY master non-blocking for polling. If we cannot put it into
     /// non-blocking mode, the read loop below would deadlock on the first
@@ -712,10 +751,38 @@ void WebTerminalRequestHandler::handleWebSocket(HTTPServerRequest & request, HTT
     /// handler thread by trickling bytes after poll() indicates readability.
     /// If a timeout fires mid-frame, the catch block below terminates the
     /// connection (rather than continuing), so there is no protocol desync.
-    socket.setReceiveTimeout(Poco::Timespan(30, 0)); /// 30 seconds per socket read
+    socket.setReceiveTimeout(receive_timeout);
+
+    /// Close the session after `idle_connection_timeout` seconds without any traffic in either
+    /// direction while the embedded client waits at the prompt, as `TCPHandler` does for native
+    /// protocol connections waiting for the next query. A running query is never interrupted by
+    /// this timeout, even if it produces no output.
+    Stopwatch idle_time;
+    UInt64 last_prompts_count = 0;
 
     while (running && !server.isCancelled() && !client_runner->hasFinished())
     {
+        if (!client_runner->isWaitingForQueryInput())
+            idle_time.restart();
+
+        if (UInt64 prompts_count = client_runner->getPromptsCount(); prompts_count != last_prompts_count)
+        {
+            /// The client has returned to the prompt: apply the settings changed by the last query.
+            /// The counter is used instead of the flag, because a short query such as `SET` may
+            /// start and finish between two iterations of this loop.
+            last_prompts_count = prompts_count;
+            read_timeouts();
+            socket.setSendTimeout(send_timeout);
+            socket.setReceiveTimeout(receive_timeout);
+        }
+
+        if (idle_time.elapsedSeconds() > static_cast<double>(idle_connection_timeout))
+        {
+            LOG_DEBUG(log, "Closing idle WebSocket connection");
+            send_close_once(1000, "Idle timeout");
+            break;
+        }
+
         struct pollfd fds[2];
         fds[0].fd = socket.impl()->sockfd();
         fds[0].events = POLLIN;
@@ -741,6 +808,7 @@ void WebTerminalRequestHandler::handleWebSocket(HTTPServerRequest & request, HTT
             if (n > 0)
             {
                 sendWebSocketBinary(socket, pty_buf, static_cast<size_t>(n));
+                idle_time.restart();
             }
             else if (n == 0)
             {
@@ -763,7 +831,10 @@ void WebTerminalRequestHandler::handleWebSocket(HTTPServerRequest & request, HTT
                 /// the per-read timeout to hold the handler thread indefinitely.
                 /// The absolute deadline closes that hole by capping the total
                 /// time spent reading a single frame.
-                UInt64 frame_deadline = clock_gettime_ns() + 30'000'000'000ULL; /// 30 seconds per frame
+                /// A zero `receive_timeout` disables the timeout, as for other interfaces.
+                UInt64 frame_deadline = 0;
+                if (receive_timeout.totalMicroseconds() > 0)
+                    frame_deadline = clock_gettime_ns() + static_cast<UInt64>(receive_timeout.totalMicroseconds()) * 1000;
                 WebSocketFrame frame = readWebSocketFrame(socket, frame_deadline);
 
                 if (frame.message_too_big)
@@ -785,6 +856,8 @@ void WebTerminalRequestHandler::handleWebSocket(HTTPServerRequest & request, HTT
                     running = false;
                     continue;
                 }
+
+                idle_time.restart();
 
                 /// Handle control frames (can appear between fragmented data frames)
                 if (frame.opcode >= 0x08)

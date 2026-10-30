@@ -1,0 +1,8 @@
+-- the columns of the file next to the row number
+0	0	val_0
+1	10	val_1
+2	20	val_2
+-- a lazily materialized read
+90	val_9
+80	val_8
+70	val_7
