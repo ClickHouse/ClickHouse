@@ -69,40 +69,6 @@ static constexpr const char * block_datafile_path = "_iceberg_metadata_file_path
 static constexpr const char * block_row_number = "_row_number";
 static constexpr auto MAX_TRANSACTION_RETRIES = 100;
 
-/// True if a data manifest of the current snapshot was written under a spec id other than the default one.
-static bool existingDataUsesDifferentPartitionSpec(
-    Poco::JSON::Object::Ptr metadata,
-    Int64 default_spec_id,
-    ObjectStoragePtr object_storage,
-    const PersistentTableComponents & persistent_table_components,
-    ContextPtr context,
-    LoggerPtr log)
-{
-    if (!metadata->has(Iceberg::f_current_snapshot_id))
-        return false;
-    Int64 current_snapshot_id = metadata->getValue<Int64>(Iceberg::f_current_snapshot_id);
-    if (current_snapshot_id < 0 || !metadata->has(Iceberg::f_snapshots))
-        return false;
-
-    auto snapshots = metadata->getArray(Iceberg::f_snapshots);
-    for (size_t i = 0; i < snapshots->size(); ++i)
-    {
-        auto snapshot = snapshots->getObject(static_cast<UInt32>(i));
-        if (snapshot->getValue<Int64>(Iceberg::f_metadata_snapshot_id) != current_snapshot_id)
-            continue;
-
-        auto manifest_list = Iceberg::IcebergPathFromMetadata::deserialize(
-            snapshot->getValue<String>(Iceberg::f_manifest_list));
-        for (const auto & manifest : getManifestList(object_storage, persistent_table_components, context, manifest_list, log))
-        {
-            if (manifest.content_type == Iceberg::ManifestFileContentType::DATA && manifest.partition_spec_id != default_spec_id)
-                return true;
-        }
-        return false;
-    }
-    return false;
-}
-
 struct DeleteFileWriteResult
 {
     /// Metadata path (e.g. "wasb://container@account/table/data/uuid-deletes.parquet")
@@ -661,7 +627,8 @@ void validateSnapshotForMutation(
     const PersistentTableComponents & persistent_table_components,
     ContextPtr context,
     LoggerPtr log,
-    Int32 current_schema_id)
+    Int32 current_schema_id,
+    Int64 default_spec_id)
 {
     if (!metadata->has(f_current_snapshot_id) || metadata->isNull(f_current_snapshot_id))
         return;
@@ -692,8 +659,18 @@ void validateSnapshotForMutation(
     {
         auto files_handle = getManifestFileEntriesHandle(
             object_storage, persistent_table_components, context, log, manifest_list_entry, current_schema_id);
+        const auto & data_files = files_handle.getFilesWithoutDeleted(FileContentType::DATA);
 
-        for (const auto & file_entry : files_handle.getFilesWithoutDeleted(FileContentType::DATA))
+        /// Position deletes carry the default spec id, and readers apply them only to data files of the
+        /// same spec id, even when another spec id has an identical layout.
+        if (manifest_list_entry.partition_spec_id != default_spec_id && !data_files.empty())
+            throw Exception(
+                ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION,
+                "Cannot mutate an Iceberg table whose data was written under a partition spec other "
+                "than the current default-spec-id {}: partition-spec evolution is not supported for mutations",
+                default_spec_id);
+
+        for (const auto & file_entry : data_files)
         {
             const String & file_format = file_entry->parsed_entry->file_format;
             if (Poco::toLower(file_format) != "parquet")
@@ -801,21 +778,11 @@ void mutate(
                 "Iceberg table metadata has no partition spec matching default-spec-id {}",
                 partition_spec_id);
 
-        /// Position deletes carry the default spec id, and readers apply them only to data files of the
-        /// same spec id, even when another spec id has an identical layout.
-        if (existingDataUsesDifferentPartitionSpec(
-                metadata, partition_spec_id, object_storage, persistent_table_components, context, log))
-            throw Exception(
-                ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION,
-                "Cannot mutate an Iceberg table whose data was written under a partition spec other "
-                "than the current default-spec-id {}: partition-spec evolution is not supported for mutations",
-                partition_spec_id);
-
         /// Validate against the freshly-fetched snapshot. Bound to this exact
         /// metadata version, so a concurrent writer that commits non-Parquet
         /// data files between iterations is caught by the next retry.
         validateSnapshotForMutation(
-            metadata, object_storage, persistent_table_components, context, log, static_cast<Int32>(current_schema_id));
+            metadata, object_storage, persistent_table_components, context, log, static_cast<Int32>(current_schema_id), partition_spec_id);
 
         TableStateSnapshot current_iceberg_snapshot;
         current_iceberg_snapshot.metadata_file_path = metadata_path;
