@@ -338,6 +338,13 @@ bool isInitiatorOnlySettingName(std::string_view name)
     return false;
 }
 
+bool isInitiatorOnlyDDLSettingName(std::string_view name)
+{
+    /// A `DDL` worker initiates the `SELECT` in `CREATE ... AS SELECT`, and a stored view body
+    /// keeps the setting that decides how the view reads its table.
+    return name != "parallel_replicas_for_object_storage_tables" && isInitiatorOnlySettingName(name);
+}
+
 void stripInitiatorOnlySettingsFromQuery(const ASTPtr & query)
 {
     /// `removeSettingsFromQuery` clears the names from every query-level `SETTINGS` carrier, covering both
@@ -347,10 +354,9 @@ void stripInitiatorOnlySettingsFromQuery(const ASTPtr & query)
 
 void stripInitiatorOnlySettingsFromDDLQuery(const ASTPtr & query)
 {
-    /// A stored view body keeps the setting that decides how the view reads its table.
     std::vector<std::string_view> names;
     for (std::string_view name : initiator_only_setting_names)
-        if (name != "parallel_replicas_for_object_storage_tables")
+        if (isInitiatorOnlyDDLSettingName(name))
             names.push_back(name);
     removeSettingsFromQuery(query, names);
 }

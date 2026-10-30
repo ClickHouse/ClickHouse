@@ -7,6 +7,8 @@
 #include <Common/ZooKeeper/Types.h>
 #include <filesystem>
 #include <optional>
+#include <span>
+#include <string_view>
 #include <utility>
 #include <vector>
 
@@ -34,6 +36,10 @@ class ASTQueryWithOnCluster;
 using ZooKeeperPtr = std::shared_ptr<zkutil::ZooKeeper>;
 using ClusterPtr = std::shared_ptr<Cluster>;
 class DatabaseReplicated;
+
+/// Settings which only select the parser used by the initiator. They must not be forwarded to `DDL` workers:
+/// the queued query is already normalized to the `ClickHouse` dialect, and older workers may not know newer settings.
+std::span<const std::string_view> getDDLQueryParserOnlySettingNames();
 
 class ZooKeeperMetadataTransaction;
 using ZooKeeperMetadataTransactionPtr = std::shared_ptr<ZooKeeperMetadataTransaction>;
