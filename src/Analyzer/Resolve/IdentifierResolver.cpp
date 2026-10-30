@@ -717,7 +717,8 @@ static const JoinNode * findLateralJoinWithRightSideContaining(const IQueryTreeN
   * in this spelling), so flipping it is a compatibility decision rather than a bug fix.
   *
   * Either way the name is only hidden when an enclosing scope carries it: a qualifier that means nothing
-  * outside the subquery keeps resolving to the aliased table expression.
+  * outside the subquery keeps resolving to the aliased table expression. Besides a table name, the enclosing
+  * scope can carry it as an `ARRAY JOIN` alias or as a column whose subcolumn the rest of the identifier names.
   *
   * The rule is about the qualifier, not about the shape of the lookup, so it applies to the qualifier of a
   * matcher (`t.*`, `t.COLUMNS(...)`, `db.t.*`) as well. That qualifier is resolved as an expression first
@@ -856,6 +857,33 @@ bool IdentifierResolver::tableNameIsHiddenByAlias(
                     outer_table_node && outer_table_node->isMaterializedCTE()
                     && identifier.getParts().front() == outer_table_node->getMaterializedCTE()->cte_name)
                     return true;
+            }
+
+            /// The qualifier can also name a column of the enclosing query, e.g. a `Tuple` column `t` with an
+            /// element `val` gives `t.val` a reading there. Only a column the rest of the identifier can be
+            /// read from counts, so an unrelated column with the same name as the table does not hide it.
+            if (identifier_lookup.isExpressionLookup()
+                && (outer_table_expression_data.hasFullIdentifierName(identifier)
+                    || outer_table_expression_data.tryGetSubcolumnInfo(identifier.getFullName())))
+                return true;
+        }
+
+        /// An `ARRAY JOIN` expression alias of the enclosing query is a name a qualifier can read as well.
+        if (identifier_lookup.isExpressionLookup() && identifier_column_qualifier_parts == 1)
+        {
+            for (const auto & outer_table_expression_node : outer_scope->registered_table_expression_nodes)
+            {
+                const auto * array_join_node = outer_table_expression_node->as<ArrayJoinNode>();
+                if (!array_join_node)
+                    continue;
+                if (visible_join_subtree && !joinSubtreeContains(visible_join_subtree, array_join_node))
+                    continue;
+                if (isTableExpressionHiddenBySemiAntiJoin(array_join_node, *outer_scope))
+                    continue;
+
+                for (const auto & array_join_expression : array_join_node->getJoinExpressions())
+                    if (array_join_expression->getAlias() == identifier.getParts().front())
+                        return true;
             }
         }
     }

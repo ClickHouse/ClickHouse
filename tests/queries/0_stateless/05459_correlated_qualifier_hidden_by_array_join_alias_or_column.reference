@@ -1,0 +1,10 @@
+ARRAY JOIN alias
+1
+1
+0
+Tuple column
+1
+1
+0
+a column without such a subcolumn does not hide the name
+0
