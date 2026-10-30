@@ -518,7 +518,8 @@ void MetadataGenerator::generateAddColumnMetadata(const String & column_name, Da
     /// last-column-id must record so every added child gets a globally unique id.
     Int32 new_field_id = last_column_id + 1;
     Int32 iter = new_field_id;
-    auto new_type = Iceberg::getIcebergType(type, iter);
+    auto format_version = metadata_object->getValue<UInt64>(Iceberg::f_format_version);
+    auto new_type = Iceberg::getIcebergType(type, iter, format_version);
     metadata_object->set(Iceberg::f_last_column_id, iter);
 
     Poco::JSON::Object::Ptr new_field = new Poco::JSON::Object;
@@ -552,8 +553,9 @@ void MetadataGenerator::generateModifyColumnMetadata(const String & column_name,
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Not found schema with id {}", current_schema_id);
     current_schema = Iceberg::deepCopy(current_schema);
     auto last_column_id = metadata_object->getValue<Int32>(Iceberg::f_last_column_id);
+    auto format_version = metadata_object->getValue<UInt64>(Iceberg::f_format_version);
 
-    auto new_type = Iceberg::getIcebergType(type, last_column_id);
+    auto new_type = Iceberg::getIcebergType(type, last_column_id, format_version);
     auto schema_fields = current_schema->getArray(Iceberg::f_fields);
 
     bool found = false;
