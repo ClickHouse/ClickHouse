@@ -358,7 +358,7 @@ std::optional<UInt32> decimalScaleOfNumberText(std::string_view text)
         return scale;
     /// A number, but one that no `Decimal128` holds exactly.
     ReadBufferFromMemory buffer(normalized.data(), normalized.size());
-    Float64 number;
+    Float64 number = 0;
     if (tryReadText(number, buffer) && buffer.eof())
         return std::numeric_limits<UInt32>::max();
     return std::nullopt;
