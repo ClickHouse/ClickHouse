@@ -476,10 +476,11 @@ private:
             tmp.resize(total);
 
         Runs merged_runs;
-        Sample * level_out = out;
+        size_t written = 0;
         for (size_t level = 0; level < levels; ++level)
         {
-            level_out = (levels - 1 - level) % 2 == 0 ? out : tmp.data();
+            Sample * const level_begin = (levels - 1 - level) % 2 == 0 ? out : tmp.data();
+            Sample * level_out = level_begin;
             merged_runs.clear();
             for (size_t i = 0; i < runs.size(); i += 2)
             {
@@ -491,8 +492,10 @@ private:
                 merged_runs.push_back({begin, level_out});
             }
             runs.swap(merged_runs);
+            written = level_out - level_begin;
         }
-        return level_out;
+        /// The last level wrote to `out`. The count is returned as an offset so that the pointer into `tmp` does not escape.
+        return out + written;
     }
 
     /// Writes the samples of two sorted runs to `out` in timestamp order; samples of both runs with the same timestamp become one.
