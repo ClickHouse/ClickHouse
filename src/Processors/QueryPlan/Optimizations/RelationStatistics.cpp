@@ -2,6 +2,8 @@
 
 #include <algorithm>
 #include <limits>
+#include <string_view>
+#include <unordered_set>
 
 #include <Interpreters/ActionsDAG.h>
 #include <Processors/QueryPlan/Optimizations/actionsDAGUtils.h>
@@ -52,9 +54,24 @@ void remapColumnStats(std::unordered_map<String, ColumnStats> & mapped, const Ac
     const auto lineage = traceActionsDAGLineage(actions);
     const auto & inputs = actions.getInputs();
     const auto & outputs = actions.getOutputs();
+
+    /// The result map is still name-keyed. If multiple positional outputs use the same
+    /// name, retaining either output's statistics would silently attribute them to both.
+    /// Drop the name regardless of whether the duplicate outputs have equal lineage.
+    std::unordered_set<std::string_view> output_names;
+    std::unordered_set<std::string_view> ambiguous_output_names;
+    output_names.reserve(outputs.size());
+    for (const auto * output : outputs)
+    {
+        const std::string_view output_name = output->result_name;
+        if (!output_names.insert(output_name).second)
+            ambiguous_output_names.insert(output_name);
+    }
+
     for (const auto & output_lineage : lineage)
     {
-        if (!output_lineage.input)
+        const auto & output = *outputs[output_lineage.output_position];
+        if (!output_lineage.input || ambiguous_output_names.contains(output.result_name))
             continue;
 
         const auto stats_it = original.find(inputs[output_lineage.input->input_position]->result_name);
@@ -62,8 +79,11 @@ void remapColumnStats(std::unordered_map<String, ColumnStats> & mapped, const Ac
             continue;
 
         ColumnStats stats = stats_it->second;
-        /// Add the offset, guarding against overflow when the source NDV is near the maximum.
-        if (stats.num_distinct_values <= std::numeric_limits<UInt64>::max() - output_lineage.input->ndv_delta)
+        /// Add the offset, guarding against overflow when the source NDV is near the maximum. A zero NDV is
+        /// unknown - the entry may only carry a width - and must stay unknown: with the offset it would turn
+        /// into a known NDV of 1.
+        if (stats.num_distinct_values != 0
+            && stats.num_distinct_values <= std::numeric_limits<UInt64>::max() - output_lineage.input->ndv_delta)
             stats.num_distinct_values += output_lineage.input->ndv_delta;
         /// A hop that changes the type (e.g. `toString(k)`) changes the value bytes, so drop the
         /// width to unknown.
@@ -78,7 +98,7 @@ void remapColumnStats(std::unordered_map<String, ColumnStats> & mapped, const Ac
             stats.max_value.reset();
             stats.null_fraction.reset();
         }
-        mapped[outputs[output_lineage.output_position]->result_name] = stats;
+        mapped[output.result_name] = stats;
     }
 }
 
