@@ -56,7 +56,7 @@ def test_check_table_name_length_2(started_cluster):
             node.query(f"create or replace table {db}.{long_name} {on_cluster} (x Int64) engine MergeTree order by x")
         # RENAME TABLE
         with pytest.raises(QueryRuntimeException, match="ARGUMENT_OUT_OF_BOUND"):
-            node.query(f"rename table {db}.{ok_name} to atomic.{long_name} {on_cluster}")
+            node.query(f"rename table {db}.{ok_name} to {db}.{long_name} {on_cluster}")
         # RENAME DATABASE
         with pytest.raises(QueryRuntimeException, match="ARGUMENT_OUT_OF_BOUND"):
             node.query(f"rename database {db} to f{long_db} {on_cluster}")
