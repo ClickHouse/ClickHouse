@@ -41,7 +41,7 @@ err --mutations_sync 2 --query 'db.mongo_t.updateMany({"$sub" : [1, 2]}, {"$set"
 err --query 'db.mongo_t.aggregate([{"$match" : {"$div" : [1, 2]}}]);'
 ${CLICKHOUSE_CLIENT} --query "SELECT id, s FROM mongo_t ORDER BY id"
 ids '{"$or" : [{"id" : 1}], "$comment" : "c"}'
-mongo --query 'db.mongo_t.find({"id" : 2}, {"_id" : 0, "x" : {"$add" : [{"$add" : ["id", 1]}, 1]}});'
+mongo --query 'db.mongo_t.find({"id" : 2}, {"_id" : 0, "x" : {"$add" : [{"$add" : ["$id", 1]}, 1]}});'
 err --query 'db.mongo_t.find({}, {"x" : {"$add" : [1, {"$comment" : "c"}]}});'
 
 echo '-- $all, $pull and $pullAll'

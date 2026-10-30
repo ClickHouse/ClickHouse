@@ -11,6 +11,7 @@
 #include <Parsers/ASTQueryParameter.h>
 #include <Parsers/IAST_fwd.h>
 
+#include <Parsers/Mongo/ParserMongoAggregateExpression.h>
 #include <Parsers/Mongo/ParserMongoQuery.h>
 #include <Parsers/Mongo/Utils.h>
 
@@ -82,10 +83,10 @@ bool ParserMongoProjection::addMember(
         return true;
     }
 
-    ASTPtr child_node;
-    auto parser = createParser(copyValue(value, metadata->getAllocator()), metadata, name, true);
-    if (!parser->parseImpl(child_node))
-        return false;
+    /// Anything else computes the field with an aggregation expression, as Mongo allows in a
+    /// projection of `find`: a string is a literal, `"$a"` refers to the field `a`, and a document
+    /// is an operator such as `{"$add": ["$a", 1]}`.
+    auto child_node = parseMongoAggregateExpression(value);
     child_node->setAlias(name);
     result->children.push_back(child_node);
     return true;

@@ -101,7 +101,7 @@ bool ParserMongoQuery::parseImpl(Pos & /*pos*/, ASTPtr & node, Expected & /*expe
 }
 
 std::shared_ptr<IMongoParser>
-createParser(rapidjson::Value data_, std::shared_ptr<QueryMetadata> metadata_, const std::string & edge_name_, bool literal_as_default)
+createParser(rapidjson::Value data_, std::shared_ptr<QueryMetadata> metadata_, const std::string & edge_name_)
 {
     if (edge_name_ == "$or")
     {
@@ -119,38 +119,11 @@ createParser(rapidjson::Value data_, std::shared_ptr<QueryMetadata> metadata_, c
     {
         return std::make_shared<MongoExprFunction>(std::move(data_), metadata_, edge_name_);
     }
-    if (edge_name_ == "$add")
-    {
-        return std::make_shared<MongoSumFunction>(std::move(data_), metadata_, edge_name_);
-    }
-    if (edge_name_ == "$mul")
-    {
-        return std::make_shared<MongoMultiplyFunction>(std::move(data_), metadata_, edge_name_);
-    }
-    if (edge_name_ == "$div")
-    {
-        return std::make_shared<MongoDivideFunction>(std::move(data_), metadata_, edge_name_);
-    }
-    if (edge_name_ == "$sub")
-    {
-        return std::make_shared<MongoMinusFunction>(std::move(data_), metadata_, edge_name_);
-    }
     if (edge_name_.empty())
     {
         return std::make_shared<ParserMongoFilter>(std::move(data_), metadata_, edge_name_);
     }
-    if (edge_name_ == "$arithmetic_function_element")
-    {
-        return std::make_shared<MongoArithmeticFunctionElement>(std::move(data_), metadata_, edge_name_);
-    }
-    if (!literal_as_default)
-    {
-        return std::make_shared<MongoIdentityFunction>(std::move(data_), metadata_, edge_name_);
-    }
-    else
-    {
-        return std::make_shared<MongoLiteralFunction>(std::move(data_), metadata_, edge_name_);
-    }
+    return std::make_shared<MongoIdentityFunction>(std::move(data_), metadata_, edge_name_);
 }
 
 }

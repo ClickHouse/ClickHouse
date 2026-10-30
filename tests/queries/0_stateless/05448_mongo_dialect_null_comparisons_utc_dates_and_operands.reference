@@ -15,8 +15,8 @@
 {"v":"2024-01-01T00:00:00.000Z"}
 -- arithmetic operands that are not expressions
 (BAD_ARGUMENTS)
-(BAD_ARGUMENTS)
-(BAD_ARGUMENTS)
+(NOT_IMPLEMENTED)
+(NOT_IMPLEMENTED)
 {"x":4}
 -- constants assigned through a subdocument, a wrapper or a nested array
 (CANNOT_CONVERT_TYPE)

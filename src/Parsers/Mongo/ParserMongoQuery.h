@@ -46,7 +46,7 @@ public:
 
 /// Creates a parser based on edge name and data.
 std::shared_ptr<IMongoParser> createParser(
-    rapidjson::Value data_, std::shared_ptr<QueryMetadata> metadata_, const std::string & edge_name_, bool literal_as_default = false);
+    rapidjson::Value data_, std::shared_ptr<QueryMetadata> metadata_, const std::string & edge_name_);
 
 /// Class to connect mongo and clickhouse parsers
 class ParserMongoQuery : public IParserBase

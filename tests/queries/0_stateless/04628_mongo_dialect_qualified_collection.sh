@@ -33,7 +33,7 @@ ${MONGO_CLIENT} --query "${FIRST}.users.find({\"id\" : 1});"
 ${MONGO_CLIENT} --query "${SECOND}.users.find({\"id\" : 1});"
 
 echo 'a projection'
-${MONGO_CLIENT} --query "${FIRST}.users.find({\"\$projection\" : {\"who\" : \"name\"}});"
+${MONGO_CLIENT} --query "${FIRST}.users.find({\"\$projection\" : {\"who\" : \"\$name\"}});"
 
 echo 'deleteMany affects the named database only'
 ${MONGO_CLIENT} --query "${FIRST}.users.deleteMany({\"id\" : 1});"

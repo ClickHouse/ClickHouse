@@ -8,7 +8,7 @@
 2	x
 1 
 {"x":4}
-(BAD_ARGUMENTS)
+(NOT_IMPLEMENTED)
 -- $all, $pull and $pullAll
 
 1 

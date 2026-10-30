@@ -53,7 +53,7 @@ echo '-- arithmetic operands that are not expressions'
 err --query 'db.mongo_t.find({}, {"x" : {"$add" : [{}, 1]}});'
 err --query 'db.mongo_t.find({}, {"x" : {"$add" : [{"id" : 1}, 1]}});'
 err --query 'db.mongo_t.find({}, {"x" : {"$add" : [1, {"$comment" : "c"}]}});'
-mongo --query 'db.mongo_t.find({"id" : 2}, {"_id" : 0, "x" : {"$add" : [{"$add" : ["id", 1]}, 1]}});'
+mongo --query 'db.mongo_t.find({"id" : 2}, {"_id" : 0, "x" : {"$add" : [{"$add" : ["$id", 1]}, 1]}});'
 
 echo '-- constants assigned through a subdocument, a wrapper or a nested array'
 err --mutations_sync 2 --query 'db.mongo_t.updateMany({}, {"$set" : {"profile" : {"age" : 2147483648}}});'

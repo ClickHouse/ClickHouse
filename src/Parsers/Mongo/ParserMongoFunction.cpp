@@ -19,7 +19,6 @@
 #include <map>
 #include <string_view>
 #include <unordered_map>
-#include <unordered_set>
 
 namespace DB
 {
@@ -28,7 +27,6 @@ namespace ErrorCodes
 {
 extern const int BAD_ARGUMENTS;
 extern const int NOT_IMPLEMENTED;
-extern const int TOO_DEEP_AST;
 }
 
 namespace Mongo
@@ -368,37 +366,6 @@ bool MongoIdentityFunction::parseImpl(ASTPtr & node)
     return true;
 }
 
-bool MongoLiteralFunction::parseImpl(ASTPtr & node)
-{
-    if (data.IsString())
-    {
-        auto literal = make_intrusive<ASTIdentifier>(data.GetString());
-        node = literal;
-        return true;
-    }
-    if (data.IsObject())
-    {
-        if (data.MemberCount() != 1)
-        {
-            return false;
-        }
-
-        auto it = data.MemberBegin();
-
-        const char * name = it->name.GetString();
-        auto parser = createParser(copyValue(it->value, metadata->getAllocator()), metadata, name);
-        ASTPtr child_node;
-        if (!parser->parseImpl(child_node))
-        {
-            return false;
-        }
-        node = child_node;
-        return true;
-    }
-    return false;
-}
-
-
 bool MongoExprFunction::parseImpl(ASTPtr & node)
 {
     node = parseMongoAggregateCondition(data);
@@ -454,112 +421,6 @@ bool IMongoLogicalFunction::parseImpl(ASTPtr & node)
         node = makeASTFunction("not", makeASTFunction("ifNull", node, make_intrusive<ASTLiteral>(Field(false))));
     return true;
 }
-
-
-bool IMongoArithmeticFunction::parseImpl(ASTPtr & node)
-{
-    if (!data.IsArray() || data.Size() < 2)
-    {
-        return false;
-    }
-
-    if (data.Size() > max_folded_operands)
-        throw Exception(
-            ErrorCodes::TOO_DEEP_AST,
-            "'{}' has {} operands, more than {}: the operations are nested one into another",
-            getFunctionName(),
-            data.Size(),
-            max_folded_operands);
-
-    std::vector<ASTPtr> children;
-    for (unsigned int i = 0; i < data.Size(); ++i)
-    {
-        auto parser = createParser(copyValue(data[i], metadata->getAllocator()), metadata, "$arithmetic_function_element");
-        ASTPtr child_node;
-        if (!parser->parseImpl(child_node))
-        {
-            return false;
-        }
-        if (!child_node)
-            throw Exception(
-                ErrorCodes::BAD_ARGUMENTS, "The operand at the position {} of '{}' holds no expression", i, getFunctionName());
-        children.push_back(std::move(child_node));
-    }
-
-    /// Wrap function as tree of binary operators like
-    ///
-    ///      +
-    ///     / \
-    ///    c0  +
-    ///       / \
-    ///      c1  c2
-    ///
-    auto function = makeASTFunction(getFunctionAlias(), children[0], children[1]);
-    for (size_t i = 2; i < children.size(); ++i)
-    {
-        function = makeASTFunction(getFunctionAlias(), function, children[i]);
-    }
-    node = function;
-
-    return true;
-}
-
-bool MongoArithmeticFunctionElement::parseImpl(ASTPtr & node)
-{
-    if (data.IsBool())
-    {
-        auto literal = make_intrusive<ASTLiteral>(Field(data.GetBool()));
-        node = literal;
-        return true;
-    }
-    if (data.IsInt())
-    {
-        auto literal = make_intrusive<ASTLiteral>(Field(data.GetInt()));
-        node = literal;
-        return true;
-    }
-    if (data.IsInt64())
-    {
-        auto literal = make_intrusive<ASTLiteral>(Field(data.GetInt64()));
-        node = literal;
-        return true;
-    }
-    if (data.IsNumber())
-    {
-        auto literal = make_intrusive<ASTLiteral>(Field(data.GetDouble()));
-        node = literal;
-        return true;
-    }
-    if (data.IsString())
-    {
-        auto identifier = make_intrusive<ASTIdentifier>(data.GetString());
-        node = identifier;
-        return true;
-    }
-    if (data.IsObject())
-    {
-        /// An object operand is an operator expression such as `{"$add" : [...]}`; anything else,
-        /// for example an empty object or a filter, is not an arithmetic operand.
-        if (data.MemberCount() != 1 || data.MemberBegin()->name.GetStringLength() == 0 || data.MemberBegin()->name.GetString()[0] != '$')
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "An object operand of an arithmetic operator must be a single operator expression");
-        /// The operator is dispatched by its name directly, as the filter only accepts the operators
-        /// of a filter. Any other name would be taken for a field named `$...`.
-        const auto & member = *data.MemberBegin();
-        static const std::unordered_set<std::string_view> operand_operators
-            = {"$add", "$mul", "$div", "$sub", "$and", "$or", "$nor", "$expr"};
-        if (!operand_operators.contains(stringView(member.name)))
-            throw Exception(
-                ErrorCodes::BAD_ARGUMENTS, "'{}' is not an operator that an operand of an arithmetic operator can be", stringView(member.name));
-        auto parser = createParser(copyValue(member.value, metadata->getAllocator()), metadata, member.name.GetString());
-        if (!parser->parseImpl(node))
-        {
-            return false;
-        }
-        return true;
-    }
-    return false;
-}
-
 
 }
 
