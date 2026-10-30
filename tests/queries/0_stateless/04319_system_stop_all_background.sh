@@ -22,14 +22,30 @@ wait_status() {
     done
 }
 
-# Helper: wait until the refresh is running AND has read at least one row, so that a cancellation
-# issued right after has a concrete pipeline to interrupt (see 04105_system_pause_view).
-wait_running_with_progress() {
+# Helper: create refreshable view `$1` over `src` (10 rows, 1 second each) with refresh settings `$3`,
+# refresh it, and send the statements `$2` while the refresh is still running. The check and `$2` go
+# in one client call, so no client start-up separates them; if a slow server let the refresh get too
+# far before the check, the view is re-created and the attempt repeated. Prints 1 if `$2` was sent
+# while the refresh was running.
+interrupt_running_refresh() {
     local view_name=$1
-    while [ "`$CLICKHOUSE_CLIENT -q "select status = 'Running' and read_rows > 0 from refreshes where view = '$view_name' -- $LINENO" | xargs`" != '1' ]
+    local statements=$2
+    local view_settings=$3
+    local running=0
+    for _ in {1..10}
     do
-        sleep 0.1
+        $CLICKHOUSE_CLIENT -q "
+            drop table if exists $view_name;
+            create materialized view $view_name refresh every 1 year $view_settings (x Int64) engine Memory empty as
+                select x + sleepEachRow(1) as x from src settings max_block_size = 1, max_threads = 1;
+            system refresh $view_name;"
+        # At most 8 of the 10 rows read: at least 2 seconds of the refresh are left.
+        running=`$CLICKHOUSE_CLIENT -q "
+            select status = 'Running' and read_rows between 1 and 8 from refreshes where view = '$view_name';
+            $statements"`
+        [ "$running" = 1 ] && break
     done
+    echo "$running"
 }
 
 # ---------------------------------------------------------------------------
@@ -38,15 +54,25 @@ wait_running_with_progress() {
 
 $CLICKHOUSE_CLIENT -q "
     create table src (x Int64) engine Memory;
-    insert into src select * from numbers(2) settings max_block_size=1;
-    create materialized view p refresh every 1 year (x Int64) engine Memory empty as
-        select x + sleepEachRow(1) as x from src settings max_block_size = 1, max_threads = 1;
-    system refresh p;"
+    insert into src select * from numbers(2) settings max_block_size=1;"
 
-wait_status p Running
-
-# Pause while the refresh is running. This should NOT cancel the ongoing refresh.
-$CLICKHOUSE_CLIENT -q "system pause p;"
+# Pause while a slow refresh (2 rows * 1 second) is running; PAUSE must not cancel it. On a slow server
+# the pause can land before the refresh starts or after it ends, so retry with a new view until the
+# refresh is still running right after the pause.
+for _ in {1..10}
+do
+    $CLICKHOUSE_CLIENT -q "
+        drop table if exists p;
+        create materialized view p refresh every 1 year (x Int64) engine Memory empty as
+            select x + sleepEachRow(1) as x from src settings max_block_size = 1, max_threads = 1;
+        system refresh p;"
+    # 1 = the refresh started before the pause (`Running`) and had not swapped in its result yet (`p` empty).
+    running=`$CLICKHOUSE_CLIENT -q "
+        system pause p;
+        select status = 'Running' and (select count() from p) = 0 from refreshes where view = 'p' -- $LINENO"`
+    [ "$running" = 1 ] && break
+done
+echo "<1: refresh running after pause: $running>"
 
 # The currently running refresh must complete successfully.
 $CLICKHOUSE_CLIENT -q "system wait view p;"
@@ -70,14 +96,10 @@ $CLICKHOUSE_CLIENT -q "
 
 $CLICKHOUSE_CLIENT -q "
     create table src (x Int64) engine Memory;
-    insert into src select * from numbers(10) settings max_block_size=1;
-    create materialized view s refresh every 1 year (x Int64) engine Memory empty as
-        select x + sleepEachRow(1) as x from src settings max_block_size = 1, max_threads = 1;
-    system refresh s;"
+    insert into src select * from numbers(10) settings max_block_size=1;"
 
-wait_running_with_progress s
-
-$CLICKHOUSE_CLIENT -q "system stop s;"
+running=`interrupt_running_refresh s "system stop s;"`
+echo "<2: refresh running before stop: $running>"
 
 wait_status s Disabled
 
@@ -109,14 +131,10 @@ $CLICKHOUSE_CLIENT -q "
 # 02932_refreshable_materialized_views_2.
 $CLICKHOUSE_CLIENT -q "
     create table src (x Int64) engine Memory;
-    insert into src select * from numbers(10) settings max_block_size=1;
-    create materialized view c refresh every 1 year settings refresh_retries = 0 (x Int64) engine Memory empty as
-        select x + sleepEachRow(1) as x from src settings max_block_size = 1, max_threads = 1;
-    system refresh c;"
+    insert into src select * from numbers(10) settings max_block_size=1;"
 
-wait_running_with_progress c
-
-$CLICKHOUSE_CLIENT -q "system cancel c;"
+running=`interrupt_running_refresh c "system cancel c;" "settings refresh_retries = 0"`
+echo "<3: refresh running before cancel: $running>"
 
 # After cancel, the view is not disabled: the interrupted refresh leaves the view empty
 # and the next refresh stays on schedule (a year away), so the status returns to Scheduled.

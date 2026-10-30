@@ -1162,9 +1162,12 @@ arrow::Status ArrowFlightServer::DoGet(
                 Block block;
                 while (executor.pull(block))
                 {
-                    /// PullingPipelineExecutor returns sparse and other special column representations, which CHColumnToArrowColumn does not read.
-                    removeSpecialColumnRepresentations(block);
-                    chunks.emplace_back(Chunk(block.getColumns(), block.rows()));
+                    if (!block.empty())
+                    {
+                        /// PullingPipelineExecutor returns sparse and other special column representations, which CHColumnToArrowColumn does not read.
+                        removeSpecialColumnRepresentations(block);
+                        chunks.emplace_back(Chunk(block.getColumns(), block.rows()));
+                    }
                 }
 
                 auto header = executor.getHeader();

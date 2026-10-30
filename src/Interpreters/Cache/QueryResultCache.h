@@ -243,6 +243,10 @@ public:
     };
     void buffer(Chunk && chunk, ChunkType chunk_type);
 
+    /// Called when a consumer stopped reading the query result before the end, so only a prefix of it was buffered.
+    /// finalizeWrite() then does not insert anything.
+    void markResultIncomplete();
+
     void finalizeWrite();
 private:
     using Cache = QueryResultCache::Cache;
@@ -262,6 +266,7 @@ private:
     bool skip_memory_insert = false; /// (set in the ctor, then accessed only in finalizeWrite)
     bool skip_disk_insert = false; /// (set in the ctor, then accessed only in finalizeWrite)
     std::atomic<bool> skip_insert = false; /// both of the above: don't even buffer the result
+    std::atomic<bool> result_is_incomplete = false; /// a consumer stopped reading before the end, see markResultIncomplete()
     std::atomic<bool> was_finalized = false;
     LoggerPtr logger = getLogger("QueryResultCache");
 
