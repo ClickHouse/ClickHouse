@@ -205,10 +205,10 @@ DROP TABLE IF EXISTS add_nested_rename_child;
 DROP TABLE IF EXISTS add_nested_cond_rename;
 
 -- The mutation-planning replay (getMutationCommands -> tryConvertToMutationCommand) must not diverge from
--- the committed metadata when a later command is ignored by prepare(). With share_nested_offsets = 0 and
--- only `n.a`, `ADD COLUMN IF NOT EXISTS n Nested(a, b), RENAME COLUMN IF EXISTS n.b TO m` adds the missing
--- `n.b`; the RENAME is ignored because the prepare-time snapshot had no `n.b`. An ignored command reports
--- isRequireMutationStage() == false, so no RENAME_COLUMN mutation is queued and the final schema keeps `n.b`.
+-- the committed metadata. With share_nested_offsets = 0 and only `n.a`, `ADD COLUMN IF NOT EXISTS n Nested(a, b),
+-- RENAME COLUMN IF EXISTS n.b TO m` adds the missing `n.b` and the RENAME sees it (prepare advances the
+-- column snapshot per command, like validate/apply), so `n.b` becomes `m` and a RENAME_COLUMN mutation
+-- is queued for it.
 CREATE TABLE add_nested_cond_rename
 (
     `n.a` Array(UInt32)
