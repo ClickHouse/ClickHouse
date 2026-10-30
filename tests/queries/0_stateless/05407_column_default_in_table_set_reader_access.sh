@@ -4,6 +4,10 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
+# With parallel replicas a part may be read by a replica, which runs the query as the user of the
+# cluster (the test cluster has no secret), so the set would not be built on behalf of the test user.
+CLICKHOUSE_CLIENT="$CLICKHOUSE_CLIENT --enable_parallel_replicas=0"
+
 # A column added by `ALTER` with `DEFAULT p IN <table>` is physically missing from the parts written
 # before, so reading it builds the set while the part is read. That has to happen on behalf of the
 # reading user: with their privileges and row policies, not with the full access of the storage.

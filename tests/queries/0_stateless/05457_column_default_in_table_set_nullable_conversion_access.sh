@@ -4,6 +4,10 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
+# With parallel replicas a part may be read by a replica, which runs the query as the user of the
+# cluster (the test cluster has no secret), so the set would not be built on behalf of the test user.
+CLICKHOUSE_CLIENT="$CLICKHOUSE_CLIENT --enable_parallel_replicas=0"
+
 # A part written before `MODIFY COLUMN f UInt8` still stores `f` as `Nullable(UInt8)` until the mutation
 # rewrites it, so reading it converts `f` while the part is read and substitutes the default of `f` for
 # `NULL`. If that default reads a table (`DEFAULT 1 IN <table>`), the set has to be built on behalf of the
