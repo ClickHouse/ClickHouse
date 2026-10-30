@@ -598,6 +598,10 @@ bool ObjectStorageParallelListingIterator::listRange(const ListRange & range, st
             auto result = list_level(range.prefix, delimiter, send_start_after ? range.start_after : std::string{}, continuation_token);
             first = false;
 
+            /// Whether the storage returned no entries at all. `ListObjectsV2` may return an empty page with
+            /// `IsTruncated` set and a continuation token, so an empty page proves nothing by itself.
+            const bool page_empty = result.objects.empty() && result.common_prefixes.empty();
+
             /// Common prefixes and objects are each returned in ascending order, so once one is past
             /// `range.end` every following key is too: stop this range (a bounded keyspace-split slice
             /// that runs into a sibling sub-directory of the next slice must not keep paginating it).
@@ -658,12 +662,21 @@ bool ObjectStorageParallelListingIterator::listRange(const ListRange & range, st
             std::vector<ListRange> follow_up = std::move(new_ranges);
             bool keep_paginating = false;
 
-            /// A marker-only range is done after its first page: the marker sorts before every other key
-            /// under the prefix, so this page either returned it or proved it absent, and no later page can
-            /// hold a matching key. Neither paginate nor keyspace-split (which is why the flag is checked
-            /// before the split decision below): doing so would scan the whole subtree of every matching
-            /// directory just to prove the marker is absent.
-            if (!reached_end && result.is_truncated && !range.marker_only)
+            /// A marker-only range is done after its first non-empty page: the marker sorts before every
+            /// other key under the prefix, so the first entry either is the marker or proves it absent, and
+            /// no later page can hold a matching key. Neither paginate past that nor keyspace-split (which is
+            /// why the flag is checked before the split decision below): doing so would scan the whole
+            /// subtree of every matching directory just to prove the marker is absent. Only empty truncated
+            /// pages, which establish nothing, are followed.
+            if (!reached_end && result.is_truncated && range.marker_only)
+            {
+                if (page_empty)
+                {
+                    continuation_token = result.next_continuation_token;
+                    keep_paginating = true;
+                }
+            }
+            else if (!reached_end && result.is_truncated)
             {
                 continuation_token = result.next_continuation_token;
                 if (had_common_prefixes)
@@ -721,7 +734,7 @@ bool ObjectStorageParallelListingIterator::listRange(const ListRange & range, st
                 enqueueLocked(follow_up, batch, local_frontier, lock);
             }
 
-            if (reached_end || !result.is_truncated || range.marker_only || !keep_paginating)
+            if (reached_end || !result.is_truncated || !keep_paginating)
                 return true;
         }
     }

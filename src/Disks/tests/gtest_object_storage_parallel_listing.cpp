@@ -1763,6 +1763,60 @@ TEST(ObjectStorageParallelListing, TrailingSlashGlobStopsAtTheFirstPageOfEachDir
     }
 }
 
+TEST(ObjectStorageParallelListing, TrailingSlashGlobFollowsEmptyTruncatedPages)
+{
+    /// Regression: `ListObjectsV2` may return a page with no entries but `IsTruncated` set and a
+    /// continuation token. Such a page does not prove that the directory marker is absent, so a marker-only
+    /// range must follow it until an entry (or the end of pagination) settles the question.
+    const std::string glob = "root/*/";
+    std::atomic<size_t> requests{0};
+    auto list_level = [&](const std::string & prefix, const std::string &, const std::string &, const std::string & token)
+        -> ObjectStorageListResult
+    {
+        requests.fetch_add(1, std::memory_order_relaxed);
+        ObjectStorageListResult result;
+        if (prefix == "root/")
+        {
+            result.common_prefixes = {"root/d/"};
+        }
+        else if (prefix == "root/d/" && token.empty())
+        {
+            result.is_truncated = true;
+            result.next_continuation_token = "t1";
+        }
+        else if (prefix == "root/d/" && token == "t1")
+        {
+            result.objects.push_back(std::make_shared<RelativePathWithMetadata>("root/d/"));
+            result.objects.push_back(std::make_shared<RelativePathWithMetadata>("root/d/file.csv"));
+            result.is_truncated = true;
+            result.next_continuation_token = "t2";
+        }
+        else
+        {
+            throw std::logic_error("unexpected listing request: " + prefix + " token " + token);
+        }
+        return result;
+    };
+
+    for (size_t threads : {1, 4})
+    {
+        requests.store(0);
+        ObjectStorageParallelListingIterator iterator(
+            "root/", threads, /* max_buffered_keys */ 256, list_level, list_level,
+            makeShouldDescendPredicate(glob),
+            /* allow_keyspace_split */ true, /* check_cancellation */ {},
+            /* max_pending_range_bytes */ ObjectStorageParallelListingIterator::DEFAULT_MAX_PENDING_RANGE_BYTES,
+            /* max_buffered_object_bytes */ ObjectStorageParallelListingIterator::DEFAULT_MAX_BUFFERED_OBJECT_BYTES,
+            /* allow_start_after */ true,
+            /* root_range_end */ {},
+            makeIsMarkerOnlyPrefixPredicate(glob));
+        EXPECT_EQ(drain(iterator), std::vector<std::string>{"root/d/"}) << "threads=" << threads;
+        /// The root level, the empty truncated page, and the page settling the marker; the marker's page
+        /// is not paginated further even though it is truncated.
+        EXPECT_EQ(requests.load(), 3) << "threads=" << threads;
+    }
+}
+
 TEST(ObjectStorageParallelListing, ExceptionPropagates)
 {
     auto list_level = [](const std::string & prefix, const std::string &, const std::string &, const std::string &) -> ObjectStorageListResult
