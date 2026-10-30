@@ -203,9 +203,46 @@ StorageObjectStorageCluster::StorageObjectStorageCluster(
     setInMemoryMetadata(metadata);
 }
 
+StorageObjectStorageCluster::StorageObjectStorageCluster(
+    const String & cluster_name_,
+    StorageObjectStorageConfigurationPtr configuration_,
+    ObjectStoragePtr object_storage_,
+    const StorageID & table_id_,
+    const StorageMetadataPtr & metadata_,
+    NamesAndTypesList hive_partition_columns_to_read_from_file_path_,
+    std::optional<FormatSettings> format_settings_,
+    std::shared_ptr<DataLake::ICatalog> catalog_,
+    ConstStoragePtr table_)
+    : IStorageCluster(
+        cluster_name_, table_id_, getLogger(fmt::format("{}({})", configuration_->getEngineName(), table_id_.table_name)))
+    , configuration{configuration_}
+    , object_storage(object_storage_)
+    , format_settings(std::move(format_settings_))
+    , catalog(std::move(catalog_))
+    , hive_partition_columns_to_read_from_file_path(std::move(hive_partition_columns_to_read_from_file_path_))
+    , table(std::move(table_))
+{
+    setInMemoryMetadata(*metadata_);
+}
+
 std::string StorageObjectStorageCluster::getName() const
 {
     return configuration->getEngineName();
+}
+
+std::optional<QualifiedTableName> StorageObjectStorageCluster::getTableReadOnReplicas() const
+{
+    if (!table)
+        return {};
+    const auto table_id = getStorageID();
+    return QualifiedTableName{table_id.database_name, table_id.table_name};
+}
+
+void StorageObjectStorageCluster::updateConfigurationIfNeeded(ContextPtr context)
+{
+    /// The same per-query update as `StorageObjectStorage::read` does for the table.
+    if (table && !configuration->isDataLakeConfiguration())
+        configuration->update(object_storage, context);
 }
 
 SinkToStoragePtr StorageObjectStorageCluster::write(
@@ -370,7 +407,8 @@ void StorageObjectStorageCluster::updateQueryToSendIfNeeded(
     ASTPtr & query,
     const DB::StorageSnapshotPtr & storage_snapshot,
     const ContextPtr & context,
-    const String & target_cluster_name)
+    const String & target_cluster_name,
+    bool add_structure_and_format)
 {
     auto * table_function = extractTableFunctionFromSelectQuery(query);
     if (!table_function)
@@ -408,7 +446,8 @@ void StorageObjectStorageCluster::updateQueryToSendIfNeeded(
 
     if (!endsWith(table_function->name, "Cluster"))
     {
-        configuration->addStructureAndFormatToArgsIfNeeded(args, structure, configuration->format, context, /*with_structure=*/true);
+        if (add_structure_and_format)
+            configuration->addStructureAndFormatToArgsIfNeeded(args, structure, configuration->format, context, /*with_structure=*/true);
 
         /// When a non-cluster table function (e.g. `s3`) was auto-converted to cluster mode
         /// by the `parallel_replicas_for_cluster_engines` setting, rename it to the Cluster variant
@@ -434,7 +473,8 @@ void StorageObjectStorageCluster::updateQueryToSendIfNeeded(
         /// by it.
         ASTPtr cluster_name_arg = args.front();
         args.erase(args.begin());
-        configuration->addStructureAndFormatToArgsIfNeeded(args, structure, configuration->format, context, /*with_structure=*/true);
+        if (add_structure_and_format)
+            configuration->addStructureAndFormatToArgsIfNeeded(args, structure, configuration->format, context, /*with_structure=*/true);
         if (!target_cluster_name.empty())
             cluster_name_arg = make_intrusive<ASTLiteral>(target_cluster_name);
         args.insert(args.begin(), std::move(cluster_name_arg));
