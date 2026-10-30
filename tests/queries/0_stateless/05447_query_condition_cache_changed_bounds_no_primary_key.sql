@@ -1,4 +1,6 @@
--- Tags: no-parallel-replicas
+-- Tags: no-parallel, no-parallel-replicas
+-- no-parallel: the query condition cache is instance-wide, and concurrent tests clear it (dropping a table without UUID
+-- clears all caches), while the test needs its entries to stay between queries
 -- no-parallel-replicas: the query condition cache is populated per replica
 
 -- With `use_primary_key = 0`, the query condition cache does not use the primary key to check whether a
