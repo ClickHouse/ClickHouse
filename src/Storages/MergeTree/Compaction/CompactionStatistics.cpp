@@ -1084,6 +1084,11 @@ RebuiltProjectionStreamCounts countRebuiltProjectionStreams(
         counts.wide.total += written_streams;
         counts.wide.non_adaptive += nonAdaptiveStreamsShare(column, written_streams);
     }
+    /// As for the base output (countOutputStreams), the visible arm unions the source parts' streams, which
+    /// is only an upper bound: writeTempProjectionPart recomputes the serialization from the merged block,
+    /// so a column that is sparse in one source part and dense in another may be written without
+    /// `c.sparse.idx`. The streams of the default serialization are always written, so they are the proven count.
+    counts.wide.proven_total = std::min(counts.wide.total, countDistinctColumnStreams(projection_columns, stream_file_name_settings));
     return counts;
 }
 
