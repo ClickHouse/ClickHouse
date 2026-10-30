@@ -3,6 +3,7 @@
 #include <Core/Settings.h>
 #include <Formats/FormatFactory.h>
 #include <Formats/FormatParserSharedResources.h>
+#include <Formats/ParseError.h>
 #include <IO/EmptyReadBuffer.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ExpressionActions.h>
@@ -138,7 +139,9 @@ Chunk PulsarSource::generateImpl()
 
     auto on_error = [&](const MutableColumns & result_columns, const ColumnCheckpoints & checkpoints, Exception & e) -> size_t
     {
-        if (skipped_broken_messages < skip_broken_messages)
+        /// Only genuine input errors may be skipped. Resource and internal failures (such as `MEMORY_LIMIT_EXCEEDED`)
+        /// are not caused by the message, so skipping them would acknowledge and lose a valid message.
+        if (isParseError(e.code()) && skipped_broken_messages < skip_broken_messages)
         {
             ++skipped_broken_messages;
             /// Drop the rows of the broken message that were parsed before the error.
