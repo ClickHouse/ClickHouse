@@ -180,8 +180,8 @@ def test_optimize_manifest_files(started_cluster_iceberg_with_spark, storage_typ
 def test_optimize_manifest_files_preserves_stats(started_cluster_iceberg_with_spark):
     """
     OPTIMIZE TABLE ... MANIFEST must preserve the per-column statistics carried by the source
-    manifest entries (column_sizes, value_counts, null_value_counts, lower_bounds, upper_bounds).
-    Dropping them would weaken predicate pushdown / file pruning after compaction.
+    manifest entries (column_sizes, value_counts, null_value_counts, nan_value_counts, lower_bounds,
+    upper_bounds). Dropping them would weaken predicate pushdown / file pruning after compaction.
     """
     instance = started_cluster_iceberg_with_spark.instances["node1"]
     spark = started_cluster_iceberg_with_spark.spark_session
@@ -189,13 +189,14 @@ def test_optimize_manifest_files_preserves_stats(started_cluster_iceberg_with_sp
     TABLE_NAME = "test_optimize_manifest_stats_" + storage_type + "_" + get_uuid_str()
 
     spark.sql(
-        f"CREATE TABLE {TABLE_NAME} (id long, data string) USING iceberg "
+        f"CREATE TABLE {TABLE_NAME} (id long, data string, x double) USING iceberg "
         f"TBLPROPERTIES ('format-version' = '2')"
     )
     # Several separate inserts so the current snapshot has several data manifests (> threshold).
     for lo in range(0, 50, 10):
         spark.sql(
-            f"INSERT INTO {TABLE_NAME} SELECT id, char(id + ascii('a')) FROM range({lo}, {lo + 10})"
+            f"INSERT INTO {TABLE_NAME} SELECT id, char(id + ascii('a')), "
+            f"IF(id = 25, CAST('NaN' AS DOUBLE), id / 2) FROM range({lo}, {lo + 10})"
         )
 
     default_upload_directory(
@@ -224,7 +225,55 @@ def test_optimize_manifest_files_preserves_stats(started_cluster_iceberg_with_sp
             .splitlines()
         )
 
+    def data_file_stats(manifest):
+        result = instance.query(
+            f"""
+            SELECT
+                tupleElement(data_file, 'content')                  AS content,
+                length(tupleElement(data_file, 'column_sizes'))     AS n_column_sizes,
+                length(tupleElement(data_file, 'value_counts'))     AS n_value_counts,
+                length(tupleElement(data_file, 'null_value_counts')) AS n_null_value_counts,
+                length(tupleElement(data_file, 'nan_value_counts')) AS n_nan_value_counts,
+                length(tupleElement(data_file, 'lower_bounds'))     AS n_lower_bounds,
+                length(tupleElement(data_file, 'upper_bounds'))     AS n_upper_bounds
+            FROM file('{manifest}', Avro)
+            FORMAT TSV
+            """
+        ).strip()
+        for line in result.splitlines():
+            content, *counts = map(int, line.split("\t"))
+            if content == 0:  # data files only
+                yield counts
+
+    def nan_counts_by_file(manifests):
+        counts = {}
+        for manifest in manifests:
+            result = instance.query(
+                f"""
+                SELECT
+                    tupleElement(data_file, 'file_path'),
+                    arrayStringConcat(arrayMap(t -> concat(toString(t.1), ':', toString(t.2)),
+                        tupleElement(data_file, 'nan_value_counts')), ',')
+                FROM file('{manifest}', Avro)
+                WHERE tupleElement(data_file, 'content') = 0
+                FORMAT TSV
+                """
+            ).strip()
+            for line in result.splitlines():
+                path, pairs = line.split("\t")
+                counts[os.path.basename(path)] = sorted(
+                    tuple(map(int, pair.split(":"))) for pair in pairs.split(",") if pair
+                )
+        return counts
+
     manifests_before = list_data_manifests()
+
+    # Only the double column has a NaN count, and one file holds a NaN, so the rewrite must carry
+    # both a zero and a non-zero count.
+    before = nan_counts_by_file(manifests_before)
+    assert len(before) == 5 and all(len(pairs) == 1 for pairs in before.values()), before
+    nan_counts = sorted(pairs[0][1] for pairs in before.values())
+    assert nan_counts[:4] == [0, 0, 0, 0] and nan_counts[4] >= 1, before
 
     instance.query(
         f"OPTIMIZE TABLE {TABLE_NAME} MANIFEST",
@@ -241,34 +290,20 @@ def test_optimize_manifest_files_preserves_stats(started_cluster_iceberg_with_sp
 
     entries_checked = 0
     for manifest in new_manifests:
-        result = instance.query(
-            f"""
-            SELECT
-                tupleElement(data_file, 'content')                  AS content,
-                length(tupleElement(data_file, 'column_sizes'))     AS n_column_sizes,
-                length(tupleElement(data_file, 'value_counts'))     AS n_value_counts,
-                length(tupleElement(data_file, 'null_value_counts')) AS n_null_value_counts,
-                length(tupleElement(data_file, 'lower_bounds'))     AS n_lower_bounds,
-                length(tupleElement(data_file, 'upper_bounds'))     AS n_upper_bounds
-            FROM file('{manifest}', Avro)
-            FORMAT TSV
-            """
-        ).strip()
-        if not result:
-            continue
-        for line in result.splitlines():
-            content, n_col, n_val, n_null, n_lower, n_upper = map(int, line.split("\t"))
-            if content != 0:  # data files only
-                continue
-            # The table has two columns (id, data); both carry stats in the source manifests.
-            assert n_col == 2, f"column_sizes dropped: {n_col}"
-            assert n_val == 2, f"value_counts dropped: {n_val}"
-            assert n_null == 2, f"null_value_counts dropped: {n_null}"
-            assert n_lower == 2, f"lower_bounds dropped: {n_lower}"
-            assert n_upper == 2, f"upper_bounds dropped: {n_upper}"
+        for n_col, n_val, n_null, n_nan, n_lower, n_upper in data_file_stats(manifest):
+            # The table has three columns (id, data, x); all carry stats in the source manifests.
+            assert n_col == 3, f"column_sizes dropped: {n_col}"
+            assert n_val == 3, f"value_counts dropped: {n_val}"
+            assert n_null == 3, f"null_value_counts dropped: {n_null}"
+            assert n_nan == 1, f"nan_value_counts dropped: {n_nan}"
+            assert n_lower == 3, f"lower_bounds dropped: {n_lower}"
+            assert n_upper == 3, f"upper_bounds dropped: {n_upper}"
             entries_checked += 1
 
     assert entries_checked > 0, "no data-file entries found in consolidated manifest(s)"
+
+    after = nan_counts_by_file(new_manifests)
+    assert after == before, (before, after)
 
 
 def test_optimize_manifest_files_preserves_sort_order_id(started_cluster_iceberg_with_spark):
