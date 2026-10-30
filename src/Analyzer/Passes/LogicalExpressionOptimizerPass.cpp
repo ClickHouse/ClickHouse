@@ -7,12 +7,13 @@
 #include <Analyzer/InDepthQueryTreeVisitor.h>
 #include <Analyzer/JoinNode.h>
 #include <Analyzer/LambdaNode.h>
-#include <Analyzer/ListNode.h>
+#include <Analyzer/Passes/OptimizeKeyExpressionsUtils.h>
 #include <Analyzer/QueryNode.h>
 #include <Analyzer/Utils.h>
 #include <Analyzer/ValidationUtils.h>
 #include <Common/FieldAccurateComparison.h>
 #include <Common/NaNUtils.h>
+#include <Common/SipHash.h>
 #include <Core/AccurateComparison.h>
 #include <Core/Settings.h>
 #include <DataTypes/DataTypeDateTime64.h>
@@ -339,14 +340,41 @@ static void insertFunctionsAndSubqueries(const QueryTreeNodePtr & node, std::uno
     }
 }
 
+/// The same for the nodes that `compareGroupByKeys` matches. Column sources and subqueries are not hashed.
+static UInt64 getGroupByKeyHash(const IQueryTreeNode & node)
+{
+    SipHash hash;
+    std::vector<const IQueryTreeNode *> nodes_to_process{&node};
+    while (!nodes_to_process.empty())
+    {
+        const auto * current = nodes_to_process.back();
+        nodes_to_process.pop_back();
+
+        const auto node_type = current->getNodeType();
+        hash.update(static_cast<size_t>(node_type));
+        if (node_type == QueryTreeNodeType::QUERY || node_type == QueryTreeNodeType::UNION)
+            continue;
+
+        if (const auto * function_node = current->as<FunctionNode>())
+            hash.update(function_node->getFunctionName());
+        else if (const auto * column_node = current->as<ColumnNode>())
+            hash.update(column_node->getColumnName());
+        else if (const auto * constant_node = current->as<ConstantNode>())
+            constant_node->getColumn()->updateHashFast(hash);
+
+        for (const auto & child : current->getChildren())
+            if (child)
+                nodes_to_process.push_back(child.get());
+    }
+    return hash.get64();
+}
+
 /// The comparison and `and` nodes of `query_node`, outside of its subqueries, that are equal to one of its `GROUP BY` keys,
 /// or under `group_by_use_nulls` to the `Nullable` shape of a key that the analyzer puts after `GROUP BY`, with the functions below them.
 /// Collected before the query is rewritten, because the rewrites change `or`/`and` nodes inside a key in place.
 static std::unordered_set<QueryTreeNodePtr> collectGroupByKeyNodes(const QueryNode & query_node, bool group_by_use_nulls)
 {
     std::unordered_set<QueryTreeNodePtr> result;
-    if (!query_node.hasGroupBy())
-        return result;
 
     auto is_candidate = [](const QueryTreeNodePtr & node)
     {
@@ -357,37 +385,32 @@ static std::unordered_set<QueryTreeNodePtr> collectGroupByKeyNodes(const QueryNo
     const bool add_nullable_shape = group_by_use_nulls
         && (query_node.isGroupByWithGroupingSets() || query_node.isGroupByWithRollup() || query_node.isGroupByWithCube());
 
-    QueryTreeNodes keys;
-    auto add_key = [&](const QueryTreeNodePtr & key)
+    std::unordered_map<UInt64, QueryTreeNodes> keys_by_hash;
+    for (const auto & key : getGroupByKeys(query_node))
     {
         if (!is_candidate(key))
-            return;
+            continue;
 
-        keys.push_back(key);
+        keys_by_hash[getGroupByKeyHash(*key)].push_back(key);
         if (add_nullable_shape)
         {
             auto nullable_key = key->clone();
             nullable_key->convertToNullable();
-            keys.push_back(std::move(nullable_key));
-        }
-    };
-
-    for (const auto & node : query_node.getGroupBy().getNodes())
-    {
-        if (query_node.isGroupByWithGroupingSets())
-        {
-            for (const auto & key : node->as<ListNode &>().getNodes())
-                add_key(key);
-        }
-        else
-        {
-            add_key(node);
+            keys_by_hash[getGroupByKeyHash(*nullable_key)].push_back(std::move(nullable_key));
         }
     }
 
-    if (keys.empty())
+    if (keys_by_hash.empty())
         return result;
 
+    auto is_key = [&](const QueryTreeNodePtr & node)
+    {
+        auto it = keys_by_hash.find(getGroupByKeyHash(*node));
+        return it != keys_by_hash.end()
+            && std::ranges::any_of(it->second, [&](const QueryTreeNodePtr & key) { return compareGroupByKeys(node, key); });
+    };
+
+    std::unordered_set<const IQueryTreeNode *> visited;
     std::vector<const IQueryTreeNode *> nodes_to_process{&query_node};
     while (!nodes_to_process.empty())
     {
@@ -397,11 +420,10 @@ static std::unordered_set<QueryTreeNodePtr> collectGroupByKeyNodes(const QueryNo
         for (const auto & child : node->getChildren())
         {
             if (!child || child->getNodeType() == QueryTreeNodeType::QUERY || child->getNodeType() == QueryTreeNodeType::UNION
-                || result.contains(child))
+                || result.contains(child) || !visited.insert(child.get()).second)
                 continue;
 
-            if (is_candidate(child)
-                && std::ranges::any_of(keys, [&](const QueryTreeNodePtr & key) { return compareGroupByKeys(child, key); }))
+            if (is_candidate(child) && is_key(child))
                 insertFunctionsAndSubqueries(child, result);
             else
                 nodes_to_process.push_back(child.get());
