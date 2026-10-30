@@ -348,18 +348,18 @@ namespace
         const auto & addresses = hosts->getAddresses();
         hash_state.update(addresses.size());
         for (const auto & address : addresses)
-            hash_state.update(address.toString());
+            updateTreeHashField(hash_state, address.toString());
 
         const auto & subnets = hosts->getSubnets();
         hash_state.update(subnets.size());
         for (const auto & subnet : subnets)
-            hash_state.update(subnet.toString());
+            updateTreeHashField(hash_state, subnet.toString());
 
         auto update_strings = [&](const std::vector<String> & values)
         {
             hash_state.update(values.size());
             for (const auto & value : values)
-                hash_state.update(value);
+                updateTreeHashField(hash_state, value);
         };
         update_strings(hosts->getNames());
         update_strings(hosts->getNameRegexps());

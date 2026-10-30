@@ -1135,16 +1135,15 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
         }
     }
 
-    /// Attach each member once: `setDatabase` / `setTable` (used for some statement types) already put
-    /// it into `children`. A duplicate would make the tree hash differ from that of `clone`.
-    auto attach_child = [&](const ASTPtr & child)
-    {
-        if (child && std::find(res->children.begin(), res->children.end(), child) == res->children.end())
+    /// Rebuild `children` from the members in the same order as `ASTSystemQuery::clone` and `readJSON`.
+    /// Some statement types already put a member into `children` while parsing (`setDatabase` / `setTable`,
+    /// `backup_source`, `scheduled_merge_parts`), possibly in a different order. A duplicate or a different
+    /// order would make the tree hash and the structure differ from those of `clone`, so a rewrite rule
+    /// (whose source template is cloned) would not match its own source statement.
+    res->children.clear();
+    for (const auto & child : {res->database, res->table, res->query_settings, res->backup_source, res->scheduled_merge_parts})
+        if (child)
             res->children.push_back(child);
-    };
-    attach_child(res->database);
-    attach_child(res->table);
-    attach_child(res->query_settings);
 
     node = std::move(res);
     return true;
