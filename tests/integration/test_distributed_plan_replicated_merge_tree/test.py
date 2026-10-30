@@ -776,26 +776,24 @@ def test_distributed_order_by_without_distributed_read(started_cluster):
         assert distributed == baseline
 
 
-def test_read_in_order_across_surviving_exchange(started_cluster):
-    """An ordered read may only skip the sort when nothing separates it from the sorting step. With the
-    reader bucket count different from the scatter's, the fused exchange is a real redistribution that
-    stays in the plan and delivers each partition its rows in arrival order, so the sorting has to keep
-    sorting. While the read was asked to read in order here anyway, the query returned rows from the
-    wrong part of the table - intermittently, hence the repeats."""
+def test_read_in_order_with_reader_buckets_unlike_scatter(started_cluster):
+    """The scatter under the sorting takes the bucket count of the distributed read below it, not
+    `distributed_plan_default_shuffle_join_bucket_count`, so even with the two settings different the pair
+    collapses and the ordered read feeds the sorting directly. The window straddles a part boundary, where
+    a stream ordered only within its own part would be wrong; the repeats catch an intermittent order."""
     query = "SELECT id FROM big ORDER BY id ASC LIMIT 20 OFFSET 24990"
     baseline = INITIATOR.query(f"{query} SETTINGS make_distributed_plan = 0")
 
-    # 2 reader buckets against the 3 scatter partitions of DISTRIBUTED_SETTINGS: the shuffle they fuse
-    # into is not an identity, so optimizeExchanges keeps it.
-    mismatched_buckets = "distributed_plan_default_reader_bucket_count = 2, " + READ_IN_ORDER
+    # 2 reader buckets against the 3 of `distributed_plan_default_shuffle_join_bucket_count`.
+    reader_buckets = "distributed_plan_default_reader_bucket_count = 2, " + READ_IN_ORDER
     plan = INITIATOR.query(
-        f"EXPLAIN PLAN {query} SETTINGS {DISTRIBUTED_SETTINGS}, {mismatched_buckets}"
+        f"EXPLAIN PLAN {query} SETTINGS {DISTRIBUTED_SETTINGS}, {reader_buckets}"
     )
-    assert "ShuffleExchange" in plan, plan
+    assert "ShuffleExchange" not in plan and "ScatterExchange" not in plan, plan
 
     for _ in range(5):
         distributed = INITIATOR.query(
-            f"{query} SETTINGS {DISTRIBUTED_SETTINGS}, {mismatched_buckets}"
+            f"{query} SETTINGS {DISTRIBUTED_SETTINGS}, {reader_buckets}"
         )
         assert distributed == baseline
 
