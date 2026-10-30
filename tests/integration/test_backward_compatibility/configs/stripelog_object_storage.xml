@@ -1,0 +1,22 @@
+<clickhouse>
+    <storage_configuration>
+        <disks>
+            <stripelog_s3>
+                <type>s3</type>
+                <endpoint>http://minio1:9001/root/data/stripelog_upgrade/</endpoint>
+                <access_key_id>minio</access_key_id>
+                <secret_access_key>ClickHouse_Minio_P@ssw0rd</secret_access_key>
+            </stripelog_s3>
+            <stripelog_s3_cache>
+                <type>cache</type>
+                <disk>stripelog_s3</disk>
+                <path>stripelog_s3_cache</path>
+                <max_size>104857600</max_size>
+            </stripelog_s3_cache>
+        </disks>
+        <policies>
+            <stripelog_s3><volumes><main><disk>stripelog_s3</disk></main></volumes></stripelog_s3>
+            <stripelog_s3_cache><volumes><main><disk>stripelog_s3_cache</disk></main></volumes></stripelog_s3_cache>
+        </policies>
+    </storage_configuration>
+</clickhouse>
