@@ -15,3 +15,4 @@ SELECT id, m.keys, m.values FROM file(currentDatabase() || '_map_subcolumns.parq
 SELECT id, m.key, m.value FROM file(currentDatabase() || '_map_subcolumns.parquet', Parquet, 'id UInt64, m Array(Tuple(key String, value UInt64))') ORDER BY id;
 SELECT id, mt.values.a, t.x.keys, am.keys FROM file(currentDatabase() || '_map_subcolumns.parquet') ORDER BY id;
 SELECT id FROM file(currentDatabase() || '_map_subcolumns.parquet') WHERE has(m.keys, 'k1');
+SELECT id, m.keys FROM file(currentDatabase() || '_map_subcolumns.parquet') PREWHERE id = 1;
