@@ -2056,9 +2056,7 @@ std::shared_ptr<DistributedAsyncInsertDirectoryQueue> StorageDistributed::getDir
 
     std::lock_guard lock(cluster_nodes_mutex);
     auto & node_data = cluster_nodes_data[key];
-    /// If the node changes, you need to recreate the DistributedAsyncInsertDirectoryQueue
-    if (!node_data.directory_queue
-        || (node_data.clusters_version < getContext()->getClustersVersion() && node_data.addresses != parseAddresses(name)))
+    if (!node_data.directory_queue)
     {
         node_data.addresses = parseAddresses(name);
         node_data.clusters_version = getContext()->getClustersVersion();
@@ -2068,6 +2066,27 @@ std::shared_ptr<DistributedAsyncInsertDirectoryQueue> StorageDistributed::getDir
             node_data.connection_pool,
             async_insert_blocker,
             getContext()->getDistributedSchedulePool());
+    }
+    else if (node_data.clusters_version < getContext()->getClustersVersion())
+    {
+        /// If the node changed (e.g. remote_servers was reloaded), update the connection
+        /// pool of the existing queue in place. Recreating the queue would let two queues
+        /// own the same directory for a while: the replaced queue is kept alive by an
+        /// in-flight send or by a DistributedSink, so a file it sends and removes leaves
+        /// the replacement queue retrying FILE_DOESNT_EXIST forever (such a file is not
+        /// "broken" and is never moved aside), and a file both queues pick up is sent twice.
+        ///
+        /// The version is captured before parsing: if another reload lands in between, the
+        /// stored version stays behind the current one and the next call re-checks.
+        const auto clusters_version = getContext()->getClustersVersion();
+        auto new_addresses = parseAddresses(name);
+        node_data.clusters_version = clusters_version;
+        if (node_data.addresses != new_addresses)
+        {
+            node_data.addresses = std::move(new_addresses);
+            node_data.connection_pool = DistributedAsyncInsertDirectoryQueue::createPool(node_data.addresses, *this);
+            node_data.directory_queue->updatePool(node_data.connection_pool);
+        }
     }
     return node_data.directory_queue;
 }
