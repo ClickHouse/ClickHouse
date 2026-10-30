@@ -1,4 +1,5 @@
 #include <Storages/MergeTree/MergeTreeSettings.h>
+#include <Storages/MergeTree/MergeType.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeLogEntry.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeMergeStrategyPicker.h>
 #include <Storages/StorageReplicatedMergeTree.h>
@@ -20,10 +21,14 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsBool allow_remote_fs_zero_copy_replication;
     extern const MergeTreeSettingsSeconds execute_merges_on_single_replica_time_threshold;
     extern const MergeTreeSettingsSeconds remote_fs_execute_merges_on_single_replica_time_threshold;
+    extern const MergeTreeSettingsSeconds try_fetch_recompressed_part_timeout;
 }
 
 /// minimum interval (seconds) between checks if chosen replica finished the merge.
 static const auto RECHECK_MERGE_READYNESS_INTERVAL_SECONDS = 1;
+
+/// minimum interval (seconds) between checks if source replica finished TTL recompression.
+static const auto RECHECK_TTL_RECOMPRESS_READYNESS_INTERVAL_SECONDS = 1;
 
 /// don't refresh state too often (to limit number of zookeeper ops)
 static const auto REFRESH_STATE_MINIMUM_INTERVAL_SECONDS = 3;
@@ -48,6 +53,38 @@ bool ReplicatedMergeTreeMergeStrategyPicker::isMergeFinishedByReplica(const Stri
     if (time(nullptr) - reference_timestamp >= RECHECK_MERGE_READYNESS_INTERVAL_SECONDS)
     {
         return storage.checkReplicaHavePart(replica, entry.new_part_name);
+    }
+
+    return false;
+}
+
+
+bool ReplicatedMergeTreeMergeStrategyPicker::shouldWaitForTTLRecompression(const ReplicatedMergeTreeLogEntryData & entry) const
+{
+    const auto settings = storage.getSettings();
+    time_t threshold = (*settings)[MergeTreeSetting::try_fetch_recompressed_part_timeout].totalSeconds();
+
+    return (
+        threshold > 0
+        && entry.type == ReplicatedMergeTreeLogEntry::MERGE_PARTS
+        && entry.merge_type == MergeType::TTLRecompress
+        && !entry.source_replica.empty()
+        && entry.source_replica != storage.replica_name
+        && entry.create_time + threshold > time(nullptr)
+    );
+}
+
+
+bool ReplicatedMergeTreeMergeStrategyPicker::isTTLRecompressFinishedByReplica(const String & source_replica, const ReplicatedMergeTreeLogEntryData & entry)
+{
+    auto reference_timestamp = entry.last_postpone_time;
+    if (reference_timestamp == 0)
+        reference_timestamp = entry.create_time;
+
+    /// Throttle ZooKeeper checks
+    if (time(nullptr) - reference_timestamp >= RECHECK_TTL_RECOMPRESS_READYNESS_INTERVAL_SECONDS)
+    {
+        return storage.checkReplicaHavePart(source_replica, entry.new_part_name);
     }
 
     return false;
