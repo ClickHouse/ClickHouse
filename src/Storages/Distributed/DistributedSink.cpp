@@ -714,11 +714,24 @@ bool DistributedSink::localJobsRequireSequentialQuorum()
         /// Fail closed when the local target of a quorum insert cannot be resolved.
         /// `remote_storage` is never empty here: a table-function target is rejected by
         /// `StorageDistributed::write` before a sink is created.
-        auto target = DatabaseCatalog::instance().tryGetTable(storage.remote_storage, context);
-        local_jobs_require_sequential_quorum = target
-            ? InsertDependenciesBuilder::mayCreateSequentialQuorumPart(target, context)
-                || InsertDependenciesBuilder::dependentViewMayCreateSequentialQuorumPart(target, context)
-            : isSequentialQuorumInsert(context->getSettingsRef());
+        /// Without local jobs nothing is written through the local catalog, so a same-named
+        /// local object must not be probed (its probes may even throw).
+        if (local_jobs_count == 0)
+        {
+            local_jobs_require_sequential_quorum = false;
+        }
+        else
+        {
+            /// Resolve an empty database the same way the nested `INSERT` of a local job does.
+            StorageID target_id = storage.remote_storage;
+            if (target_id.database_name.empty())
+                target_id.database_name = context->getCurrentDatabase();
+            auto target = DatabaseCatalog::instance().tryGetTable(target_id, context);
+            local_jobs_require_sequential_quorum = target
+                ? InsertDependenciesBuilder::mayCreateSequentialQuorumPart(target, context)
+                    || InsertDependenciesBuilder::dependentViewMayCreateSequentialQuorumPart(target, context)
+                : isSequentialQuorumInsert(context->getSettingsRef());
+        }
     }
 
     return *local_jobs_require_sequential_quorum;
