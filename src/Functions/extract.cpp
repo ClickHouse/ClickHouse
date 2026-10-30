@@ -94,7 +94,7 @@ struct ExtractImpl
 
                     const uint8_t * src = nullptr;
                     size_t length = 0;
-                    if (matcher.func(str_begin, str_end, str_begin, capture_starts.data(), capture_ends.data()) == 1
+                    if (callJITFunction(matcher.func, str_begin, str_end, str_begin, capture_starts.data(), capture_ends.data()) == 1
                         && capture_starts[group] != nullptr && capture_ends[group] != nullptr)
                     {
                         src = capture_starts[group];
