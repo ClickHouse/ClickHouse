@@ -1,14 +1,14 @@
 ---
 slug: /use-cases/observability/clickstack/api-reference
 title: 'API reference'
-description: 'ClickStack API reference for managing dashboards, alerts, and sources programmatically'
+description: 'ClickStack API reference for managing dashboards, alerts, sources, and other resources programmatically'
 doc_type: 'guide'
 keywords: ['ClickStack', 'observability', 'API', 'REST API', 'dashboards', 'alerts', 'HyperDX']
 ---
 
 import { Image } from "/snippets/components/Image.jsx";
 
-ClickStack exposes a REST API for programmatically managing dashboards, alerts, and data sources. The API is available for both **Managed ClickStack** (ClickHouse Cloud) and **ClickStack Open Source** deployments, though the endpoints and authentication differ between the two.
+ClickStack exposes a REST API for programmatically managing dashboards, alerts, data sources, and related resources. The API is available for both **Managed ClickStack** (ClickHouse Cloud) and **ClickStack Open Source** deployments, though the endpoints and authentication differ between the two.
 
 ## API reference documentation {#api-docs}
 
@@ -21,9 +21,14 @@ The following endpoints are available:
 
 | Resource | Operations |
 |---|---|
-| **Dashboards** | Create, list, get, update, and delete dashboards |
+| **Dashboards** | Create, list, get, update, delete, and validate dashboards |
 | **Alerts** | Create, list, get, update, and delete alerts |
-| **Sources** | List data sources |
+| **Sources** | Create, list, get, update, and delete data sources |
+| **Saved searches** | Create, list, get, update, and delete saved searches |
+| **Webhooks** | Create, list, update, delete, and validate webhooks |
+| **Roles** | Create, list, get, update, and delete roles |
+
+Updates replace the whole resource, so send the complete definition.
 
 </Tab>
 <Tab title="Open Source ClickStack">
@@ -133,11 +138,28 @@ curl -X POST --user $KEY_ID:$KEY_SECRET \
       "type": "webhook",
       "webhookId": "<WEBHOOK_ID>"
     },
-    "name": "Error Spike Alert",
+    "displayName": "Error Spike Alert",
     "message": "Error rate exceeded 100 in the last hour"
   }' \
   https://api.clickhouse.cloud/v1/organizations/<ORG_ID>/services/<SERVICE_ID>/clickstack/alerts
 ```
+
+`displayName` is the name shown in the alerts list. The optional `name` field is a template for the notification title.
+
+### Using clickhousectl {#clickhousectl-managed}
+
+[`clickhousectl`](/concepts/features/interfaces/cli) wraps the same endpoints under `clickhousectl cloud clickstack`. List commands print the IDs you need; `cloud org list` and `cloud service list` give you the organization and service IDs:
+
+```bash
+clickhousectl cloud org list
+clickhousectl cloud service list
+
+clickhousectl cloud clickstack dashboard list <SERVICE_ID>
+clickhousectl cloud clickstack alert create <SERVICE_ID> --file alert.json
+clickhousectl cloud clickstack alert get <SERVICE_ID> <ALERT_ID>
+```
+
+`alert.json` holds the same request body as the curl example above; `--file -` reads it from stdin. Reads work with a browser login (`clickhousectl cloud auth login`). Creating, updating, or deleting resources needs an API key. Run `clickhousectl cloud clickstack --help` for the other resources.
 
 </Tab>
 <Tab title="Open Source ClickStack">

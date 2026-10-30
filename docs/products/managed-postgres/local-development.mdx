@@ -78,6 +78,19 @@ psql -h localhost -U postgres -p 15432 -d app
 
 At this point PostgreSQL is running locally but doesn't yet contain the application schema or any development data.
 
+### Using clickhousectl {#using-clickhousectl}
+
+[clickhousectl](/concepts/features/interfaces/cli) can run the same Docker-backed PostgreSQL for you, with no compose file. Start an instance on the major version you use in production, connect with `psql`, write its connection details to `.env.local`, and stop it when you're done:
+
+```bash
+clickhousectl local postgres start --version 18
+clickhousectl local postgres client
+clickhousectl local postgres dotenv --local
+clickhousectl local postgres stop
+```
+
+`start` uses port 5432 if it's free, and otherwise picks a free port. It generates a password and prints it once; `dotenv --local` writes `POSTGRES_HOST`, `POSTGRES_PORT`, `POSTGRES_USER`, `POSTGRES_PASSWORD`, and `POSTGRES_DATABASE` to `.env.local`, so keep that file out of version control. Docker must be running. No Cloud credentials are needed.
+
 ## Apply the application schema {#apply-the-application-schema}
 
 There's no single required approach for creating the schema in a local environment. Most organizations already have an established schema management workflow that can be reused unchanged.

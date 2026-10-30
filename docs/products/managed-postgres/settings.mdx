@@ -27,6 +27,17 @@ The **Service actions** toolbar provides controls for managing your ClickHouse M
 The **Scaling** section allows you to change the instance types of your primary and standbys to increase or decrease computing resources and storage capacity. 
 See [scaling page](/products/managed-postgres/scaling) for more details.
 
+With [clickhousectl](/concepts/features/interfaces/cli), the same actions are:
+
+```bash
+clickhousectl cloud postgres reset-password <postgres-id> --generate
+clickhousectl cloud postgres restart <postgres-id>
+clickhousectl cloud postgres delete <postgres-id>
+clickhousectl cloud postgres update <postgres-id> --size c6gd.xlarge
+```
+
+`reset-password --generate` prints the new password once. `delete` removes the service and its data permanently, from any state. These commands need an API key; OAuth login is read-only.
+
 ## Changing configuration parameters {#changing-configuration}
 
 <Image img="/images/managed-postgres/postgres-parameters.webp" alt="Postgres parameters configuration" size="md" border/>
@@ -34,6 +45,16 @@ See [scaling page](/products/managed-postgres/scaling) for more details.
 To modify a parameter, select the **Edit parameters** button. Select the parameters you need to modify and change their values accordingly. Once you're satisfied with your changes, press the **Save Changes** button.
 
 All changes made to the configuration parameters are typically persisted to the instance within one minute. Some parameters require a database restart to take effect. These changes will be applied after the next restart, which you can trigger manually from the **Service actions** toolbar.
+
+With clickhousectl, read the current configuration, change selected parameters, and read it back:
+
+```bash
+clickhousectl cloud postgres config get <postgres-id> --json
+clickhousectl cloud postgres config patch <postgres-id> --set max_connections=1000
+clickhousectl cloud postgres config get <postgres-id> --json
+```
+
+`config patch --set` changes Postgres parameters only; to change PgBouncer parameters, pass a JSON file with `--file`. `config replace --file` replaces the whole configuration, so start from the output of `config get --json`. A successful patch means the change was accepted. If the parameter needs a restart, run `clickhousectl cloud postgres restart <postgres-id>`, then check the value with `SHOW <parameter>` in `psql`.
 
 Refer to the official [documentation](https://www.postgresql.org/docs/current/runtime-config.html) on the configuration parameters. The list of parameters available to set will be extended soon. In the meantime, contact [support](https://clickhouse.com/support/program) to request a parameter not currently supported.
 

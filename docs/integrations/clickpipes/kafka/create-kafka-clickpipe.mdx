@@ -14,7 +14,7 @@ import { Image } from "/snippets/components/Image.jsx";
 
 > In this guide, we will walk you through the process of creating your first Kafka ClickPipe.
 
-Kafka ClickPipes can be deployed and managed manually using the ClickPipes UI, as well as programmatically using [OpenAPI](/integrations/clickpipes/programmatic-access/openapi) and [Terraform](/integrations/clickpipes/programmatic-access/terraform).
+Kafka ClickPipes can be deployed and managed manually using the ClickPipes UI, as well as programmatically using [OpenAPI](/integrations/clickpipes/programmatic-access/openapi), [Terraform](/integrations/clickpipes/programmatic-access/terraform), and [clickhousectl](#create-with-clickhousectl).
 
 <Steps>
 <Step title="Navigate to data sources" id="1-load-sql-console">
@@ -86,3 +86,30 @@ Clicking on "Create ClickPipe" will create and run your ClickPipe. It will now b
 <Image img="/images/integrations/data-ingestion/clickpipes/cp_overview.webp" alt="View overview" size="md"/>
 </Step>
 </Steps>
+
+## Create a Kafka ClickPipe with clickhousectl {#create-with-clickhousectl}
+
+You can also create the ClickPipe from the command line with [clickhousectl](/concepts/features/interfaces/cli). Schema discovery and creation need an API key, even though discovery only reads. Log in with `clickhousectl cloud auth login --interactive`.
+
+Sample the topic to see the fields ClickPipes infers, without creating a pipe:
+
+```bash
+clickhousectl cloud clickpipe schema-discover kafka <service-id> \
+  --kafka-type confluent --brokers broker.example.com:9092 --topics my_topic \
+  --format JSONEachRow --username my_user --password "$KAFKA_PASSWORD"
+```
+
+Discovery prints an inferred name and type for each field. Pass the fields you want as `--column name:type`, with the same source flags. `--start-paused` creates the pipe in the `Stopped` state, so you can review it before ingestion starts:
+
+```bash
+clickhousectl cloud clickpipe create kafka <service-id> \
+  --name my-kafka-pipe --kafka-type confluent --brokers broker.example.com:9092 \
+  --topics my_topic --format JSONEachRow \
+  --username my_user --password "$KAFKA_PASSWORD" \
+  --database default --table my_table \
+  --column 'id:UInt64' --column 'message:String' --start-paused
+clickhousectl cloud clickpipe get <service-id> <clickpipe-id>
+clickhousectl cloud clickpipe start <service-id> <clickpipe-id>
+```
+
+The authentication method is inferred from the credential flags (`PLAIN` here); pass `--auth` to choose another, such as `SCRAM-SHA-512`. Credentials passed as flags can be visible in process listings. Run `clickhousectl cloud clickpipe create kafka --help` for schema registry, Protobuf, and reverse private endpoint flags, and see the [ClickPipes guide](https://github.com/ClickHouse/clickhousectl/blob/main/docs/guides/clickpipes.md) for the full workflow.
