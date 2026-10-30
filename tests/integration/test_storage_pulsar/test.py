@@ -1129,7 +1129,7 @@ def test_skip_broken_messages_does_not_skip_resource_errors(pulsar_cluster):
     )
 
     big_size = 3000000
-    instance.query(f"INSERT INTO test.pulsar_raw_writer SELECT repeat('x', {big_size})")
+    instance.query(f"INSERT INTO test.pulsar_raw_writer SELECT repeat(repeat('x', 1000), {big_size // 1000})")
     instance.query("INSERT INTO test.pulsar_raw_writer VALUES ('small')")
 
     # Wait until the large message is polled and fails the query on the memory limit.
