@@ -1,5 +1,6 @@
--- Tags: no-parallel
+-- Tags: no-parallel, no-replicated-database
 -- no-parallel: creates a global user with a fixed name
+-- no-replicated-database: DDL in a `Replicated` database is executed with a context without the user, so it is not checked
 
 -- Expressions stored in a table definition are checked against the user who defines the table.
 
