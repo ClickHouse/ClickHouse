@@ -66,7 +66,6 @@ ALWAYS_INLINE inline UInt64 getFilterBits(const UInt64 * bits, size_t pos, size_
     return x;
 }
 
-/// The number of set bits among bits [pos, pos + len) of `bits`.
 ALWAYS_INLINE inline size_t countFilterBits(const UInt64 * bits, size_t pos, size_t len)
 {
     size_t count = 0;
