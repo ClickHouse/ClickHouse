@@ -738,6 +738,15 @@ std::unique_ptr<QueryPipelineBuilder> QueryPipelineBuilder::joinPipelinesRightLe
     }
     else
     {
+        /// A build selected by `parallel_hash_join_threshold` can still have a large probe side.
+        /// Widen it under the same ordering and totals restrictions as the parallel-build branch.
+        /// Remote reads can otherwise leave the probe and subsequent steps at 1 or 2 streams. See #127983.
+        if (join->resizeProbeSideToMaxStreams() && !right->hasTotals() && !keep_left_read_in_order && num_streams < max_streams)
+        {
+            left->resize(max_streams);
+            num_streams = max_streams;
+        }
+
         right->resize(1);
 
         auto filling_finish_counter = std::make_shared<FinishCounter>(1);

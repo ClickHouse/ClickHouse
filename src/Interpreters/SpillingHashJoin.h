@@ -98,6 +98,9 @@ public:
     size_t spill(size_t at_least_bytes);
 
     bool supportParallelJoin() const override { return concurrent_join != nullptr; }
+    /// Single-thread mode only; the concurrent mode uses the parallel-build path.
+    bool resizeProbeSideToMaxStreams() const override { return resize_probe_side_to_max_streams; }
+    void setResizeProbeSideToMaxStreams(bool value) { resize_probe_side_to_max_streams = value; }
     bool supportParallelNonJoinedBlocksProcessing() const override;
     bool isParallelNonJoinedProcessingEnabled() const override;
 
@@ -152,6 +155,7 @@ private:
     size_t initial_num_buckets;
     size_t max_num_buckets;
     bool any_take_last_row;
+    bool resize_probe_side_to_max_streams = false;
     size_t max_bytes_before_external_join;
 
     SharedMutex switch_mutex;

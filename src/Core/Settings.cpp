@@ -10291,6 +10291,12 @@ The former is used when we know that the right table size is below the threshold
         {"25.5", 0, 100'000, "New setting"}, \
         {"25.4", 0, 0, "New setting"}, \
         {"25.3", 0, 0, "New setting"}) \
+    DECLARE(Bool, join_probe_resize_to_max_threads, true, R"(
+When `parallel_hash_join_threshold` selects `hash` instead of `parallel_hash`, allow the probe side to use up to `max_threads` streams, as it would with `parallel_hash`.
+This can improve joins with a large probe input, but adds processors and scheduling overhead for small probe inputs. It can also change row order and which matching row is selected by `ANY` joins when these depend on processing order.
+Disable this setting to preserve the input stream count for threshold-selected `hash` joins without changing the choice of build algorithm. Explicit `join_algorithm = 'hash'` is unaffected.
+)", 0, \
+        {"26.11", false, true, "Preserve probe parallelism when the build-size threshold selects `hash` instead of `parallel_hash`."}) \
     DECLARE(Bool, apply_settings_from_server, true, R"(
 Whether the client should accept settings from server.
 
