@@ -86,6 +86,29 @@ public:
 
     bool usesReplicatedStorage();
 
+    /// Properties of the metadata storage needed by BACKUP and RESTORE
+    /// (see Common/NamedCollections/NamedCollectionsBackup.cpp).
+    struct MetadataStorageProperties
+    {
+        bool is_encrypted = false;
+        bool is_replicated = false;
+        /// Only set when `is_replicated` is true: identifies the shared storage for backup coordination.
+        std::string replication_id;
+    };
+    MetadataStorageProperties getMetadataStorageProperties();
+
+    /// Stored bytes of the SQL-created collections, exactly as the metadata storage holds them,
+    /// keyed by the collection name. Never decrypts anything.
+    std::map<std::string, std::string> getRawEntriesForBackup();
+
+    /// Appends a message authentication code to stored bytes exported into a backup, see
+    /// NamedCollectionsMetadataStorage::authenticateStoredForBackup.
+    std::string authenticateStoredEntryForBackup(const std::string & stored);
+
+    /// Turns the bytes of a backup entry back into the `CREATE NAMED COLLECTION` statement, see
+    /// NamedCollectionsMetadataStorage::decryptStoredFromBackup.
+    std::string decryptStoredEntryFromBackup(const std::string & data);
+
     void loadIfNot();
 
     void shutdown();

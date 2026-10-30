@@ -1,0 +1,5 @@
+backup
+1
+a restore with a PARTITIONS clause is rejected before anything is restored
+1
+1

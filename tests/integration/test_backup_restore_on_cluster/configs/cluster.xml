@@ -20,5 +20,21 @@
                 </replica>
             </shard>
         </cluster1>
+        <!-- Addresses with a default database: an unqualified table name in an ON CLUSTER query
+             resolves on every host to this database, not to the initiator's current database. -->
+        <cluster_address_default_db>
+            <shard>
+                <replica>
+                    <host>node1</host>
+                    <port>9000</port>
+                    <default_database>addrdb</default_database>
+                </replica>
+                <replica>
+                    <host>node2</host>
+                    <port>9000</port>
+                    <default_database>addrdb</default_database>
+                </replica>
+            </shard>
+        </cluster_address_default_db>
     </remote_servers>
 </clickhouse>

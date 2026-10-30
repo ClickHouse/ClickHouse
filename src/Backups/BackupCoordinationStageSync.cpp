@@ -48,7 +48,16 @@ namespace
 
         /// Now we create the 'finish' node both if the work is done or if the error handling is done.
 
-        kCurrentVersion = 2,
+        /// Since this version the initiating host takes the named collections access decisions
+        /// before dispatching the query: a BACKUP ON CLUSTER initiator authorizes exporting the
+        /// collections against the initiating user (see `backupNamedCollections`), and a RESTORE
+        /// ON CLUSTER initiator requires the right restoring them needs (`CREATE NAMED COLLECTION`,
+        /// see `RestorerFromBackup::getRequiredAccess`). The hosts executing the dispatched query -
+        /// possibly with full access - may trust it only then: a host receiving a query dispatched
+        /// by an older initiator must neither export nor restore the collections.
+        kVersionWithNamedCollectionsAccessDecisions = 3,
+
+        kCurrentVersion = 3,
     };
 }
 
@@ -1219,6 +1228,12 @@ int BackupCoordinationStageSync::getInitiatorVersion() const
 {
     std::lock_guard lock{mutex};
     return state.hosts.at(String{kInitiator}).version;
+}
+
+
+bool BackupCoordinationStageSync::doesInitiatorTakeNamedCollectionsAccessDecisions() const
+{
+    return getInitiatorVersion() >= kVersionWithNamedCollectionsAccessDecisions;
 }
 
 

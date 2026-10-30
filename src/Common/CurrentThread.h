@@ -74,6 +74,22 @@ public:
                                             LogsLevel client_logs_level);
     static std::shared_ptr<InternalTextLogsQueue> getInternalTextLogsQueue();
 
+    /// Hides the log records of the current thread from the client while alive: detaches the
+    /// internal text logs queue (`send_logs_level`) of the current thread and of its thread group,
+    /// and restores it on exit, so a thread attaching to the group within the scope stays detached
+    /// too. The records still reach the server-side logs. For sections whose diagnostics may carry
+    /// data the client's user has no right to see.
+    struct HideLogsFromClientScope : private boost::noncopyable
+    {
+        HideLogsFromClientScope();
+        ~HideLogsFromClientScope();
+
+    private:
+        std::shared_ptr<InternalTextLogsQueue> logs_queue_to_restore;
+        LogsLevel client_logs_level_to_restore = LogsLevel::none;
+        bool restore = false;
+    };
+
     static void attachInternalProfileEventsQueue(const InternalProfileEventsQueuePtr & queue);
     static InternalProfileEventsQueuePtr getInternalProfileEventsQueue();
 

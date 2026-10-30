@@ -1,3 +1,4 @@
+import os
 import random
 
 import pytest
@@ -12,7 +13,9 @@ main_configs = [
     "configs/cluster_different_versions.xml",
 ]
 
-user_configs = ["configs/user_config.xml"]
+# `named_collections_users.xml` lets the default user read the values of named collections, which
+# exporting them to a backup requires (see `test_old_initiator_does_not_export_named_collections`).
+user_configs = ["configs/user_config.xml", "configs/named_collections_users.xml"]
 
 new_node = cluster.add_instance(
     "new_node",
@@ -123,3 +126,110 @@ def test_different_versions():
         )
         == ""
     )
+
+
+# Returns the paths of all the files of a backup written to the shared Disk('backups') disk.
+def list_backup_files(backup_id):
+    backup_dir = os.path.join(cluster.instances_dir, "backups", backup_id)
+    return [
+        os.path.join(dir_path, file_name)
+        for dir_path, _, file_names in os.walk(backup_dir)
+        for file_name in file_names
+    ]
+
+
+# Whether a backup file is an exported named collection entry (a file inside a
+# `.../data/system/named_collections/` directory; the table metadata file
+# `metadata/system/named_collections.sql` is the table's definition, not an entry).
+def is_named_collection_entry(path):
+    return os.path.basename(os.path.dirname(path)) == "named_collections"
+
+
+def test_old_initiator_does_not_export_named_collections():
+    # The new node holds an SQL-created named collection; the old node predates the export of
+    # named collections to backups.
+    new_node.query(
+        "CREATE NAMED COLLECTION nc_mixed_version AS key1 = 'nc_mixed_version_secret'"
+    )
+    # A user who may back up everything on the cluster but may not read the values of the named
+    # collections (no `SHOW NAMED COLLECTIONS`, `SHOW NAMED COLLECTIONS SECRETS`).
+    new_node.query("CREATE USER backup_user_mixed ON CLUSTER 'cluster_ver'")
+    new_node.query(
+        "GRANT CLUSTER, BACKUP ON *.* TO backup_user_mixed ON CLUSTER 'cluster_ver'"
+    )
+    try:
+        # The old initiator dispatches the query without taking the authorization decision for
+        # exporting the named collections, so the upgraded node must not export them, even though
+        # it executes the dispatched query with full access.
+        old_node.query(
+            "BACKUP ALL ON CLUSTER 'cluster_ver' TO Disk('backups', 'old_initiator_nc')",
+            user="backup_user_mixed",
+        )
+        backup_files = list_backup_files("old_initiator_nc")
+        assert backup_files
+        assert [f for f in backup_files if is_named_collection_entry(f)] == []
+
+        # The same backup initiated by the new node with a user holding every right does export the
+        # collection, so the check above would catch an unauthorized export.
+        new_node.query(
+            "BACKUP ALL ON CLUSTER 'cluster_ver' TO Disk('backups', 'new_initiator_nc')"
+        )
+        backup_files = list_backup_files("new_initiator_nc")
+        assert [f for f in backup_files if is_named_collection_entry(f)] != []
+    finally:
+        new_node.query("DROP NAMED COLLECTION nc_mixed_version")
+        new_node.query("DROP USER backup_user_mixed ON CLUSTER 'cluster_ver'")
+
+
+def test_old_initiator_does_not_restore_named_collections():
+    # A backup taken by an upgraded host holds the collection's entry.
+    new_node.query(
+        "CREATE NAMED COLLECTION nc_restore_mixed AS key1 = 'nc_restore_mixed_secret'"
+    )
+    new_node.query(
+        "BACKUP TABLE system.named_collections TO Disk('backups', 'old_initiator_restore_nc')"
+    )
+    new_node.query("DROP NAMED COLLECTION nc_restore_mixed")
+
+    # A user who may run the restore on the cluster but may not create named collections
+    # (`CREATE NAMED COLLECTION` belongs to `NAMED COLLECTION ADMIN`, not to `CREATE`).
+    new_node.query("CREATE USER restore_user_mixed ON CLUSTER 'cluster_ver'")
+    new_node.query(
+        "GRANT CLUSTER, SELECT, INSERT, CREATE, DROP ON *.* TO restore_user_mixed ON CLUSTER 'cluster_ver'"
+    )
+    # The DISK source grant exists only on the new node; the old node predates source grants and
+    # checks nothing for the backup location.
+    new_node.query("GRANT READ ON DISK TO restore_user_mixed")
+    try:
+        # `replica_num = 1` selects the upgraded node as the only host executing the restore; the
+        # old node predates the restore of named collections and would fail on the backed up
+        # `system.named_collections` table in its own unrelated way.
+        restore_query = (
+            "RESTORE ALL ON CLUSTER 'cluster_ver' FROM Disk('backups', 'old_initiator_restore_nc') "
+            "SETTINGS replica_num = 1"
+        )
+
+        # The old initiator dispatches the query without requiring `CREATE NAMED COLLECTION` of
+        # the initiating user, so the upgraded host must reject restoring the entries, even though
+        # it executes the dispatched query with full access.
+        error = old_node.query_and_get_error(restore_query, user="restore_user_mixed")
+        assert "too old to check the rights" in error
+        assert (
+            new_node.query(
+                "SELECT count() FROM system.named_collections WHERE name = 'nc_restore_mixed'"
+            )
+            == "0\n"
+        )
+
+        # An upgraded initiator requires the right before dispatching the query.
+        error = new_node.query_and_get_error(restore_query, user="restore_user_mixed")
+        assert "CREATE NAMED COLLECTION" in error
+        assert (
+            new_node.query(
+                "SELECT count() FROM system.named_collections WHERE name = 'nc_restore_mixed'"
+            )
+            == "0\n"
+        )
+    finally:
+        new_node.query("DROP USER restore_user_mixed ON CLUSTER 'cluster_ver'")
+        new_node.query("DROP NAMED COLLECTION IF EXISTS nc_restore_mixed")

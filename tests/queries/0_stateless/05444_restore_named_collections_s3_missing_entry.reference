@@ -1,0 +1,9 @@
+backup to S3
+1
+delete the entry object from S3
+0
+the restore fails without naming the collection in the error or in the streamed logs
+1
+0
+0
+0
