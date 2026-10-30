@@ -1,4 +1,5 @@
 #include <DataTypes/DataTypesNumber.h>
+#include <Columns/ColumnSparse.h>
 #include <Columns/ColumnsNumber.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
@@ -13,10 +14,11 @@ namespace
 
 /** byteSize() - get the value size in number of bytes for accounting purposes.
   */
+template <bool include_sparse_overhead>
 class FunctionByteSize final : public IFunction
 {
 public:
-    static constexpr auto name = "byteSize";
+    static constexpr auto name = include_sparse_overhead ? "__byteSizeWithSparseOverhead" : "byteSize";
     static FunctionPtr create(ContextPtr)
     {
         return std::make_shared<FunctionByteSize>();
@@ -38,43 +40,106 @@ public:
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
-        size_t num_args = arguments.size();
-
-        /// If the resulting size is constant, return constant column.
-
-        bool all_constant = true;
-        UInt64 constant_size = 0;
-        for (size_t arg_num = 0; arg_num < num_args; ++arg_num)
+        if constexpr (!include_sparse_overhead)
         {
-            if (arguments[arg_num].type->isValueUnambiguouslyRepresentedInFixedSizeContiguousMemoryRegion())
+            size_t num_args = arguments.size();
+
+            /// If the resulting size is constant, return constant column.
+            bool all_constant = true;
+            UInt64 constant_size = 0;
+            for (size_t arg_num = 0; arg_num < num_args; ++arg_num)
             {
-                constant_size += arguments[arg_num].type->getSizeOfValueInMemory();
+                if (arguments[arg_num].type->isValueUnambiguouslyRepresentedInFixedSizeContiguousMemoryRegion())
+                {
+                    constant_size += arguments[arg_num].type->getSizeOfValueInMemory();
+                }
+                else
+                {
+                    all_constant = false;
+                    break;
+                }
             }
-            else
+
+            if (all_constant)
+                return result_type->createColumnConst(input_rows_count, constant_size);
+
+            auto result_col = ColumnUInt64::create(input_rows_count);
+            auto & vec_res = result_col->getData();
+            for (size_t arg_num = 0; arg_num < num_args; ++arg_num)
             {
-                all_constant = false;
-                break;
+                const IColumn * column = arguments[arg_num].column.get();
+
+                if (arg_num == 0)
+                    for (size_t row = 0; row < input_rows_count; ++row)
+                        vec_res[row] = column->byteSizeAt(row);
+                else
+                    for (size_t row = 0; row < input_rows_count; ++row)
+                        vec_res[row] += column->byteSizeAt(row);
             }
+
+            return result_col;
         }
-
-        if (all_constant)
-            return result_type->createColumnConst(input_rows_count, constant_size);
-
-        auto result_col = ColumnUInt64::create(input_rows_count);
-        auto & vec_res = result_col->getData();
-        for (size_t arg_num = 0; arg_num < num_args; ++arg_num)
+        else
         {
-            const IColumn * column = arguments[arg_num].column.get();
+            const size_t num_args = arguments.size();
+            UInt64 constant_size = 0;
+            bool all_constant = true;
 
-            if (arg_num == 0)
-                for (size_t row = 0; row < input_rows_count; ++row)
-                    vec_res[row] = column->byteSizeAt(row);
-            else
-                for (size_t row = 0; row < input_rows_count; ++row)
-                    vec_res[row] += column->byteSizeAt(row);
+            /// Fold each sparse column's default size into the initial result.
+            /// Only non-default sparse rows then need per-row corrections.
+            for (size_t arg_num = 0; arg_num < num_args; ++arg_num)
+            {
+                const auto & argument = arguments[arg_num];
+                if (const auto * sparse_column = typeid_cast<const ColumnSparse *>(argument.column.get()))
+                {
+                    constant_size += sparse_column->getValuesColumn().byteSizeAt(0);
+                    if (!sparse_column->getOffsetsData().empty())
+                        all_constant = false;
+                }
+                else if (argument.type->isValueUnambiguouslyRepresentedInFixedSizeContiguousMemoryRegion())
+                {
+                    constant_size += argument.type->getSizeOfValueInMemory();
+                }
+                else
+                {
+                    all_constant = false;
+                }
+            }
+
+            if (all_constant)
+                return result_type->createColumnConst(input_rows_count, constant_size);
+
+            auto result_col = ColumnUInt64::create(input_rows_count, constant_size);
+            auto & vec_res = result_col->getData();
+
+            for (size_t arg_num = 0; arg_num < num_args; ++arg_num)
+            {
+                const auto & argument = arguments[arg_num];
+                const IColumn * column = argument.column.get();
+
+                if (const auto * sparse_column = typeid_cast<const ColumnSparse *>(column))
+                {
+                    const auto & offsets = sparse_column->getOffsetsData();
+                    if (offsets.empty())
+                        continue;
+
+                    const auto & values = sparse_column->getValuesColumn();
+                    const size_t default_size = values.byteSizeAt(0);
+                    for (size_t offset = 0; offset < offsets.size(); ++offset)
+                    {
+                        const size_t row = offsets[offset];
+                        vec_res[row] = vec_res[row] - default_size + values.byteSizeAt(offset + 1) + sizeof(UInt64);
+                    }
+                }
+                else if (!argument.type->isValueUnambiguouslyRepresentedInFixedSizeContiguousMemoryRegion())
+                {
+                    for (size_t row = 0; row < input_rows_count; ++row)
+                        vec_res[row] += column->byteSizeAt(row);
+                }
+            }
+
+            return result_col;
         }
-
-        return result_col;
     }
 };
 
@@ -84,7 +149,9 @@ REGISTER_FUNCTION(ByteSize)
 {
     FunctionDocumentation::Description description = R"(
 Returns an estimation of the uncompressed byte size of its arguments in memory.
-For `String` arguments, the function returns the string length + 8 (length).
+For non-sparse `String` arguments, the function returns the string length + 8 bytes for the offset.
+When all arguments have fixed-size types, their type sizes are used, including for sparse columns.
+Otherwise, the result includes representation-dependent sparse overhead.
 If the function has multiple arguments, the function accumulates their byte sizes.
     )";
     FunctionDocumentation::Syntax syntax = "byteSize(arg1[, arg2, ...])";
@@ -120,7 +187,8 @@ SELECT byteSize(NULL, 1, 0.3, '')
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Other;
     FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
-    factory.registerFunction<FunctionByteSize>(documentation);
+    factory.registerFunction<FunctionByteSize<false>>(documentation);
+    factory.registerFunction<FunctionByteSize<true>>(FunctionDocumentation::INTERNAL_FUNCTION_DOCS);
 }
 
 }
