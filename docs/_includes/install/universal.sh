@@ -84,8 +84,8 @@ do
     i=$(($i+1))
 done
 
-BRANCH="${CLICKHOUSE_BRANCH:-latest}"
-if [ "${BRANCH}" = "latest" ]
+BRANCH="${CLICKHOUSE_BRANCH}"
+if [ -z "${BRANCH}" -o "${BRANCH}" = "latest" ]
 then
     BRANCH=$(curl -fsSL https://clickhouse.com/data/version_date.tsv | sed -n 's/^v\([0-9]*\.[0-9]*\)\..*/\1/p' | sort -uV | tail -n 1)
     [ -n "${BRANCH}" ] || { echo "Cannot find the latest release branch in version_date.tsv."; exit 1; }
