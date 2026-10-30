@@ -3497,8 +3497,10 @@ void StorageMergeTree::detachPartAfterFailedFsync(const DataPartPtr & part)
 
     /// The deduplication record is removed first: if detaching fails afterwards, a retry of the insert duplicates the data,
     /// but if it were the other way around, a retry would be acknowledged without the data.
+    /// The removal is synced before detaching for the same reason: otherwise, after a power loss, the detach could be durable
+    /// while the old deduplication record is restored. If the sync fails, the part is not detached.
     if (deduplication_log)
-        deduplication_log->dropPart(part->info);
+        deduplication_log->dropPart(part->info, /*sync_to_disk=*/ true);
 
     forcefullyMovePartToDetachedAndRemoveFromMemory(part, "fsync-failed");
 }

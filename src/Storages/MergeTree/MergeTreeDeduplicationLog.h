@@ -153,8 +153,9 @@ public:
     /// Whether at least one of the block ids is already present, so `addPart` would report a duplicate.
     bool containsAny(const std::vector<std::string> & block_ids);
 
-    /// Remove all covered parts from in memory table and add DROP records to the disk
-    void dropPart(const MergeTreePartInfo & drop_part_info);
+    /// Remove all covered parts from in memory table and add DROP records to the disk.
+    /// With `sync_to_disk`, the records are fsynced before returning, and a failure to sync them is propagated.
+    void dropPart(const MergeTreePartInfo & drop_part_info, bool sync_to_disk = false);
 
     /// Load history from disk. Ignores broken logs.
     void load();

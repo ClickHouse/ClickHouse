@@ -368,7 +368,7 @@ std::vector<MergeTreeDeduplicationLog::AddPartResult> MergeTreeDeduplicationLog:
     return {};
 }
 
-void MergeTreeDeduplicationLog::dropPart(const MergeTreePartInfo & drop_part_info)
+void MergeTreeDeduplicationLog::dropPart(const MergeTreePartInfo & drop_part_info, bool sync_to_disk)
 {
     MemoryTrackerBlockerInThread table_state_not_charged_to_the_query;
     ScopedJemallocThreadArena table_state_arena_scope(JemallocMergeTreeArena::getArenaIndex());
@@ -386,6 +386,7 @@ void MergeTreeDeduplicationLog::dropPart(const MergeTreePartInfo & drop_part_inf
         throw Exception(ErrorCodes::ABORTED, "Storage has been shutdown when we drop this part.");
     }
 
+    bool written_records = false;
     for (auto itr = deduplication_map.begin(); itr != deduplication_map.end(); /* no increment here, we erasing from map */)
     {
         const auto & part_info = itr->value;
@@ -410,12 +411,26 @@ void MergeTreeDeduplicationLog::dropPart(const MergeTreePartInfo & drop_part_inf
             /// Remove block_id from in-memory table
             deduplication_map.erase(record.block_id);
 
+            /// Sync before the rotation, which only logs a failure to sync the log it finalizes.
+            if (sync_to_disk)
+            {
+                current_writer->sync();
+                written_records = true;
+            }
+
             rotateAndDropIfNeededAfterWrite();
         }
         else
         {
             ++itr;
         }
+    }
+
+    /// The record may be in a log that was created just now, so its directory entry must be durable too.
+    if (written_records)
+    {
+        if (auto guard = disk->getDirectorySyncGuard(logs_dir))
+            guard->sync();
     }
 }
 
