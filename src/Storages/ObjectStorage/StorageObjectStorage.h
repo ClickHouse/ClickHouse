@@ -176,6 +176,10 @@ public:
 
     void updateExternalDynamicMetadataIfExists(ContextPtr query_context) override;
 
+    /// For a data lake table, returns the metadata published by `updateExternalDynamicMetadataIfExists`
+    /// for this query, so a concurrent query refreshing the same table cannot replace the analyzed snapshot.
+    StorageMetadataHandle getInMemoryMetadataPtr(ContextPtr query_context, bool bypass_metadata_cache) const override;
+
     std::shared_ptr<IDataLakeMetadata> getExternalMetadata(ContextPtr query_context);
 
     std::shared_ptr<DataLake::ICatalog> getCatalog() const { return catalog; }
@@ -252,6 +256,9 @@ public:
     }
 
 protected:
+    /// Remembers `metadata` as the metadata of this table for the rest of the query of `query_context`.
+    void pinQueryMetadata(const ContextPtr & query_context, StorageMetadataPtr metadata) const;
+
     /// `ALTER TABLE ... MODIFY SETTING` and `RESET SETTING` of a data lake table.
     void alterSettings(const StorageInMemoryMetadata & new_metadata, ContextPtr context);
 

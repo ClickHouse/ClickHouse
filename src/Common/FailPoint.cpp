@@ -405,6 +405,7 @@ static struct InitFiu
     REGULAR(datalake_distributed_worker_latest_snapshot) \
     PAUSEABLE_ONCE(lance_metadata_schema_pause) \
     PAUSEABLE_ONCE(lance_metadata_iterate_pause) \
+    PAUSEABLE_ONCE(object_storage_after_update_external_metadata_pause) \
     PAUSEABLE_ONCE(drop_database_before_exclusive_ddl_lock) \
     PAUSEABLE_ONCE(rename_database_after_dependency_check) \
     PAUSEABLE_ONCE(create_or_replace_before_rename) \

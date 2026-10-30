@@ -440,6 +440,73 @@ def test_lance_s3_query_pins_dataset_version(started_cluster, failpoint, reuse_d
             query_executor.shutdown(wait=True)
 
 
+def test_lance_s3_table_concurrent_refresh_keeps_query_snapshot(started_cluster):
+    """A query refreshing a named table keeps its own snapshot when another query publishes a newer one."""
+    skip_if_lance_s3_unavailable()
+
+    remote_prefix = "data/lance/versions_refresh.lance"
+    remove_minio_prefix(started_cluster, remote_prefix)
+    upload_lance_files_to_minio(
+        started_cluster,
+        remote_prefix,
+        "versions.lance",
+        [
+            "data/101110110111010110111111ca31c045e49cba0cf12615f6a3.lance",
+            "_transactions/0-9e7942fd-8397-4e82-b2be-d4688d628047.txn",
+            "_versions/18446744073709551614.manifest",
+        ],
+    )
+    set_lance_latest_version(started_cluster, remote_prefix, 1)
+
+    node.query("DROP TABLE IF EXISTS lance_s3_concurrent_refresh SYNC")
+    node.query(
+        """
+        CREATE TABLE lance_s3_concurrent_refresh
+        ENGINE = LanceS3(nc_s3, filename = 'lance/versions_refresh.lance')
+        """
+    )
+
+    failpoint = "object_storage_after_update_external_metadata_pause"
+    query = """
+        SELECT count(), sum(id), min(_data_lake_snapshot_version), max(_data_lake_snapshot_version)
+        FROM lance_s3_concurrent_refresh
+        """
+
+    node.query(f"SYSTEM ENABLE FAILPOINT {failpoint}")
+    query_executor = concurrent.futures.ThreadPoolExecutor(max_workers=2)
+    try:
+        wait_future = query_executor.submit(
+            lambda: node.query(f"SYSTEM WAIT FAILPOINT {failpoint} PAUSE", timeout=30)
+        )
+        paused_future = query_executor.submit(
+            lambda: node.query(query, query_id="lance_concurrent_refresh_paused", timeout=60)
+        )
+        wait_future.result(timeout=30)
+
+        # Advance the dataset and let another query publish the newer snapshot into the shared table metadata.
+        upload_lance_files_to_minio(
+            started_cluster,
+            remote_prefix,
+            "versions.lance",
+            [
+                "data/010000010001111010111000942f4c499e86a6951e1774c786.lance",
+                "_transactions/1-b97f116d-e6ae-4cc4-ba38-2b525803283d.txn",
+                "_versions/18446744073709551613.manifest",
+            ],
+        )
+        set_lance_latest_version(started_cluster, remote_prefix, 2)
+        assert node.query(query, timeout=60) == "4\t10\t2\t2\n"
+
+        node.query(f"SYSTEM NOTIFY FAILPOINT {failpoint}")
+        assert paused_future.result(timeout=60) == "3\t6\t1\t1\n"
+    finally:
+        try:
+            node.query(f"SYSTEM DISABLE FAILPOINT {failpoint}")
+        finally:
+            query_executor.shutdown(wait=True)
+            node.query("DROP TABLE IF EXISTS lance_s3_concurrent_refresh SYNC")
+
+
 def test_lance_s3_pinned_version_deleted_error(started_cluster):
     """After analysis pins a version, deleting that version's objects must fail cleanly (no hang)."""
     skip_if_lance_s3_unavailable()

@@ -17,6 +17,7 @@
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
+#include <Interpreters/QueryMetadataCache.h>
 
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/ReadFromObjectStorageStep.h>
@@ -88,6 +89,7 @@ namespace FailPoints
 {
     extern const char datalake_simulate_missing_table_state[];
     extern const char datalake_distributed_worker_latest_snapshot[];
+    extern const char object_storage_after_update_external_metadata_pause[];
 }
 
 namespace
@@ -664,7 +666,7 @@ void StorageObjectStorage::updateExternalDynamicMetadataIfExists(ContextPtr quer
     if (!state)
         return;
 
-    auto current_metadata = getInMemoryMetadataPtr(query_context, false);
+    auto current_metadata = getInMemoryMetadataPtr(query_context, /*bypass_metadata_cache=*/ true);
     auto new_metadata = *current_metadata;
     /// Always pin the current snapshot version to prevent logical races between query
     /// analysis (which picks the schema) and query execution (which iterates files).
@@ -684,10 +686,43 @@ void StorageObjectStorage::updateExternalDynamicMetadataIfExists(ContextPtr quer
         format_settings,
         configuration->partition_strategy_type));
 
-    std::lock_guard lock(settings_changes_mutex);
-    auto latest_metadata = getInMemoryMetadataPtr(query_context, false);
-    metadata_with_virtuals.settings_changes = latest_metadata->settings_changes;
-    setInMemoryMetadata(metadata_with_virtuals);
+    {
+        std::lock_guard lock(settings_changes_mutex);
+        auto latest_metadata = getInMemoryMetadataPtr(query_context, /*bypass_metadata_cache=*/ true);
+        metadata_with_virtuals.settings_changes = latest_metadata->settings_changes;
+        setInMemoryMetadata(metadata_with_virtuals);
+    }
+
+    /// The shared metadata can be replaced by a concurrent query before the caller reads it back,
+    /// so keep the metadata of this query's snapshot for the rest of the query.
+    pinQueryMetadata(query_context, std::make_shared<const StorageInMemoryMetadata>(std::move(metadata_with_virtuals)));
+
+    FailPointInjection::pauseFailPoint(FailPoints::object_storage_after_update_external_metadata_pause);
+}
+
+void StorageObjectStorage::pinQueryMetadata(const ContextPtr & query_context, StorageMetadataPtr metadata) const
+{
+    if (!query_context || !query_context->hasQueryContext())
+        return;
+    auto query_metadata_cache = query_context->getQueryMetadataCache();
+    if (!query_metadata_cache)
+        return;
+    auto [cache, lock] = query_metadata_cache->getStorageMetadataCache();
+    (*cache)[this] = std::move(metadata);
+}
+
+StorageMetadataHandle StorageObjectStorage::getInMemoryMetadataPtr(ContextPtr query_context, bool bypass_metadata_cache) const
+{
+    if (!bypass_metadata_cache && configuration->isDataLakeConfiguration() && query_context && query_context->hasQueryContext())
+    {
+        if (auto query_metadata_cache = query_context->getQueryMetadataCache())
+        {
+            auto [cache, lock] = query_metadata_cache->getStorageMetadataCache();
+            if (auto it = cache->find(this); it != cache->end())
+                return it->second;
+        }
+    }
+    return IStorage::getInMemoryMetadataPtr(query_context, bypass_metadata_cache);
 }
 
 
@@ -1373,7 +1408,7 @@ void StorageObjectStorage::alter(const AlterCommands & params, ContextPtr contex
     /// Do not interleave with the hive partitioning resolution, which also updates the metadata.
     std::lock_guard lock(hive_partitioning_resolution_mutex);
 
-    auto metadata_snapshot = getInMemoryMetadataPtr(context, false);
+    auto metadata_snapshot = getInMemoryMetadataPtr(context, /*bypass_metadata_cache=*/ true);
     StorageInMemoryMetadata new_metadata = *metadata_snapshot;
     params.apply(new_metadata, context);
 
@@ -1395,6 +1430,7 @@ void StorageObjectStorage::alter(const AlterCommands & params, ContextPtr contex
         .getDatabase(storage_id.database_name)
         ->alterTable(context, storage_id, new_metadata, /*validate_new_create_query=*/true);
     setInMemoryMetadata(new_metadata);
+    pinQueryMetadata(context, std::make_shared<const StorageInMemoryMetadata>(std::move(new_metadata)));
 }
 void StorageObjectStorage::alterSettings(const StorageInMemoryMetadata & new_metadata, ContextPtr context)
 {
@@ -1436,10 +1472,11 @@ void StorageObjectStorage::alterSettings(const StorageInMemoryMetadata & new_met
             throw;
         }
         std::lock_guard lock(settings_changes_mutex);
-        auto latest_metadata_snapshot = getInMemoryMetadataPtr(context, false);
+        auto latest_metadata_snapshot = getInMemoryMetadataPtr(context, /*bypass_metadata_cache=*/ true);
         auto latest_metadata = *latest_metadata_snapshot;
         latest_metadata.settings_changes = new_metadata.settings_changes;
         setInMemoryMetadata(latest_metadata);
+        pinQueryMetadata(context, std::make_shared<const StorageInMemoryMetadata>(std::move(latest_metadata)));
     }
     catch (...)
     {
