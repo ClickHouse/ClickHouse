@@ -147,6 +147,25 @@ def _has_keeper_stress_changes(changed_files):
     return False
 
 
+ICEBERG_PERFORMANCE_JOBS = [j.name for j in JobConfigs.performance_comparison_iceberg_jobs]
+
+# The code that the Iceberg configuration of the performance comparison measures, and its harness.
+ICEBERG_PERFORMANCE_PATHS = (
+    "src/Storages/ObjectStorage/",
+    "src/Databases/DataLake/",
+    "src/Processors/Formats/Impl/Parquet",
+    "tests/performance/scripts/",
+    "tests/performance/iceberg_skip_list.txt",
+    "ci/jobs/performance_tests.py",
+    "ci/jobs/scripts/perf/",
+)
+
+
+def _has_iceberg_performance_changes(changed_files):
+    """True if any changed file is under `ICEBERG_PERFORMANCE_PATHS`."""
+    return any(f.removeprefix(".").removeprefix("/").startswith(ICEBERG_PERFORMANCE_PATHS) for f in changed_files)
+
+
 def _has_build_digest_changes(changed_files):
     """True if any changed file may affect the compiled ClickHouse binary,
     per `build_digest_config.include_paths`/`exclude_paths` - the same paths
@@ -760,6 +779,13 @@ def should_skip_job(job_name):
                 "Skipped, no changes in src/Coordination, tests/stress/keeper, or keeper_stress_job.py",
             )
         return False, ""
+
+    if (
+        job_name in ICEBERG_PERFORMANCE_JOBS
+        and Labels.CI_PERFORMANCE not in _info_cache.pr_labels
+        and not _has_iceberg_performance_changes(changed_files)
+    ):
+        return True, "Skipped, no changes in the Iceberg, object storage or Parquet code (add the 'ci-performance' label to run)"
 
     # Skip the stress tests, fuzzers and SQL conformance suites on small PRs. Each
     # of these jobs takes up to 1-3 hours and they rarely catch anything a change

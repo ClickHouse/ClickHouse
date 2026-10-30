@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 # `--resolve` (workflow pre-hook): picks the tested and reference master builds, stores their SHAs in KV data.
 # Job mode: downloads those builds and execs the performance harness.
+# Also the pre-hook and job command of NightlyIcebergPerformance: the reference lookup is per workflow name.
 
 import argparse
 import os

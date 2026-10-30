@@ -1,0 +1,75 @@
+# The performance tests that the Iceberg configuration (`perf.py --table-engine`) does not run,
+# with the reason. See the "Iceberg configuration" section of README.md.
+ColumnMap.xml                                            # type UInt64 in CREATE ... AS SELECT
+aggregate_functions_deserialization.xml                  # AggregateFunction column
+aggregate_state_serialization.xml                        # AggregateFunction column
+aggregation_in_order_if_null_map.xml                     # a function needs the original narrow type
+alter_select.xml                                         # ReplicatedMergeTree
+and_compare_chain_derived.xml                            # type UInt64 in CREATE ... AS SELECT
+apply_patch_parts_join.xml                               # lightweight UPDATE
+apply_patch_parts_join_intersecting.xml                  # lightweight UPDATE
+apply_patch_parts_merge.xml                              # lightweight UPDATE
+apply_patch_parts_steps.xml                              # lightweight UPDATE
+avg_weighted.xml                                         # MATERIALIZED column
+codecs_t64_select.xml                                    # loop() over the table
+compact_part_subcolumns.xml                              # JSON column
+distinct_json_paths.xml                                  # JSON column
+dynamic_compact_read.xml                                 # Dynamic column
+dynamic_field_serialization_cache.xml                    # JSON column
+enum.xml                                                 # Enum widened to String
+enum_to_low_cardinality_string.xml                       # type Enum16 in CREATE ... AS SELECT
+group_by_dynamic_keys.xml                                # JSON column
+group_by_low_cardinality_array_join.xml                  # UInt128 widened to Decimal
+hash_join_gather.xml                                     # UInt256 widened to Decimal
+hash_join_stats_update.xml                               # MATERIALIZE STATISTICS
+index_bulk_filtering.xml                                 # assertion on the parts of a MergeTree table
+jit_aggregate_functions.xml                              # a function needs the original narrow type
+join_convert_outer_to_inner.xml                          # assertion on the parts of a MergeTree table
+join_planning_pruned_statistics.xml                      # ReplacingMergeTree
+join_swap_bool_literal_json_path.xml                     # JSON column
+json_advanced_shared_data_read_paths.xml                 # JSON column
+json_compact_shared_path_cache.xml                       # JSON column
+json_merge_shared_data_statistics.xml                    # JSON column
+json_order_by_shared_data.xml                            # JSON column
+json_shared_data_compact.xml                             # JSON column
+json_shared_data_wide.xml                                # JSON column
+json_shared_typed_paths.xml                              # JSON column
+json_subcolumn_serialization_cache.xml                   # JSON column
+json_subcolumns_required_conversions.xml                 # JSON column
+json_to_string.xml                                       # JSON column
+json_typed_path_subcolumn_lookup.xml                     # JSON column
+json_typed_paths_insert.xml                              # JSON column
+merge_table_function_many_columns.xml                    # ALTER ADD COLUMN
+merge_tree_huge_pk.xml                                   # type UInt8 in CREATE ... AS SELECT
+merge_tree_many_partitions.xml                           # iceberg_insert_max_partitions
+merge_tree_many_partitions_2.xml                         # iceberg_insert_max_partitions
+min_max_index.xml                                        # a function needs the original narrow type
+min_max_index_with_cast.xml                              # ALIAS column
+mingroupby-orderbylimit1.xml                             # type UInt64 in CREATE ... AS SELECT
+mv_analyzer.xml                                          # MATERIALIZED column
+new_json_type.xml                                        # JSON column
+numeric_indexed_vector.xml                               # a function needs the original narrow type
+optimize_window_funnel.xml                               # a function needs the original narrow type
+partition_pruning_trace_formatting.xml                   # iceberg_insert_max_partitions
+prewhere_column_sizes_pruned_parts.xml                   # JSON column
+prewhere_subcolumns.xml                                  # JSON column
+projection_materialize.xml                               # ALTER ADD_PROJECTION, ALTER DROP_PROJECTION
+qbit_one_bit_distance.xml                                # QBit column
+read_from_comp_parts.xml                                 # type UInt64 in CREATE ... AS SELECT
+scalar.xml                                               # AggregateFunction column
+scalar2.xml                                              # AggregateFunction column
+serialization_pool_lookup.xml                            # PREWHERE on a Nested subcolumn
+skip_index_order_after_partition_pruning.xml             # iceberg_insert_max_partitions
+sorted_key_prefix_runs.xml                               # ReplacingMergeTree
+streaming_queries_read_round.xml                         # STREAM, MATERIALIZE STATISTICS
+subcolumn_deserialization_variant_json_string_array.xml  # Variant column
+text_index_merge.xml                                     # OPTIMIZE DRY RUN
+text_index_partially_materialized.xml                    # ALTER ADD_INDEX
+text_index_trivial_count.xml                             # assertion on the parts of a MergeTree table
+timeseries_to_grid_deserialization.xml                   # AggregateFunction column
+uniq_combined_large_states.xml                           # AggregateFunction column
+uniq_combined_merge.xml                                  # AggregateFunction column
+uniq_states_read_merge.xml                               # AggregateFunction column
+uniq_stored.xml                                          # AggregateFunction column
+vector_binary_serialization.xml                          # AggregateFunction column
+window_transform.xml                                     # type UInt64 in CREATE ... AS SELECT

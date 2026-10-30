@@ -311,6 +311,14 @@ parser.add_argument(
     "purges to do asymmetric work during measured queries.",
 )
 parser.add_argument(
+    "--table-engine",
+    choices=["iceberg_local", "iceberg_s3"],
+    default=None,
+    help="Create the plain MergeTree tables of the test as Iceberg tables of this "
+    "kind instead (see iceberg_engine.py). The rewrite formats each CREATE TABLE "
+    "with `clickhouse format` of the last --binary.",
+)
+parser.add_argument(
     "--pr-number",
     type=int,
     default=0,
@@ -319,6 +327,11 @@ parser.add_argument(
     "server. With the default 0 no failure is tolerated.",
 )
 args = parser.parse_args()
+
+if args.table_engine:
+    # Imported only here: a `release_base` run replaces this directory with the
+    # reference vintage of the tests, which can predate the module.
+    import iceberg_engine
 
 if args.min_runs is not None:
     # An explicit --min-runs means the caller speaks the adaptive-policy
@@ -652,6 +665,10 @@ if not args.long:
 else:
     # Termination must reach the teardown, and prewarm re-raises this class.
     signal.signal(signal.SIGTERM, signal.default_int_handler)
+
+if args.table_engine and root.get("iceberg", "1") in ("0", "false"):
+    print(f"skipped\tTest opts out of --table-engine {args.table_engine}.")
+    sys.exit(0)
 
 # Shell-script queries do not yet carry the connection options that the SQL path
 # honours. SQL queries connect through `clickhouse_driver.Client` with `--user` /
@@ -1032,6 +1049,8 @@ for conn_index, c in enumerate(all_connections):
         c.settings[key] = str(value)
     for s in inline_settings:
         c.settings[s.tag] = s.text
+    if args.table_engine:
+        c.settings.update(iceberg_engine.SETTINGS)
     # We have to perform a query to make sure the settings work. Otherwise an
     # unknown setting will lead to failing precondition check, and we will skip
     # the test, which is wrong.
@@ -1102,6 +1121,14 @@ if not args.use_existing_tables:
         create_queries += [
             (q, tolerate_on_reference) for q in substitute_parameters([template])
         ]
+
+    if args.table_engine:
+        # The same rewritten statements run on every server.
+        rewritten, tables = iceberg_engine.rewrite_setup_queries(
+            [q for q, _ in create_queries], args.table_engine, test_name, args.binary[-1]
+        )
+        create_queries = [(q, tolerate) for q, (_, tolerate) in zip(rewritten, create_queries)]
+        print(f"table-engine\t{args.table_engine}\t{tables}")
 
     # Disallow temporary tables, because the clickhouse_driver reconnects on
     # errors, and temporary tables are destroyed. We want to be able to continue

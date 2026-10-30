@@ -11,6 +11,7 @@ ci/ imports; this module is deliberately the harness-side counterpart only.
 """
 
 import os
+import re
 from xml.etree import ElementTree
 
 
@@ -113,4 +114,35 @@ def test_has_failpoint(test_path):
     return any(
         e.get("action") == "enable"
         for e in _iter_elements(root, source_dir, {os.path.realpath(test_path)}, "failpoint")
+    )
+
+
+# Tests that `perf.py --table-engine` cannot run, one name per line with the reason.
+ICEBERG_SKIP_LIST = "iceberg_skip_list.txt"
+
+_MERGE_TREE_ENGINE = re.compile(r"ENGINE\s*=\s*MergeTree\b", re.IGNORECASE)
+
+
+def iceberg_skip_list(perf_dir):
+    """The test files listed in `tests/performance/iceberg_skip_list.txt`."""
+    path = os.path.join(perf_dir, ICEBERG_SKIP_LIST)
+    if not os.path.exists(path):
+        return set()
+    with open(path, encoding="utf-8") as f:
+        return {line.split("#", 1)[0].strip() for line in f} - {""}
+
+
+def test_runs_with_table_engine(test_path, skip_list):
+    """Whether the Iceberg configuration runs a test: one of its `create_query`s
+    creates a plain `MergeTree` table, it is not `long`, does not opt out with
+    `<test iceberg="0">` and is not in the skip list."""
+    if os.path.basename(test_path) in skip_list or test_is_long(test_path):
+        return False
+    root = ElementTree.parse(test_path).getroot()
+    if root.get("iceberg", "1") in ("0", "false"):
+        return False
+    source_dir = os.path.dirname(os.path.abspath(test_path))
+    return any(
+        _MERGE_TREE_ENGINE.search(e.text or "")
+        for e in _iter_elements(root, source_dir, {os.path.realpath(test_path)}, "create_query")
     )

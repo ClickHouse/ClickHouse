@@ -160,6 +160,22 @@ Nightly results are comparable only under the same conditions. Append a dated li
 
 Each job log also carries the resolved docker image digest (printed by the praktika runner) and the host identity (kernel, OS, CPU, memory, instance).
 
+### Iceberg configuration
+
+The same tests also run with their MergeTree tables created as Iceberg tables, so that their queries measure the Iceberg read and write path: `perf.py --table-engine iceberg_local` (`IcebergLocal` under `user_files`) or `--table-engine iceberg_s3` (`IcebergS3` through the `perf_s3` named collection of the job-local S3 endpoint). `tests/performance/scripts/iceberg_engine.py` formats each `CREATE TABLE` of the setup with `clickhouse format --oneline` and rewrites a plain `MergeTree` table:
+
+* the engine becomes `IcebergLocal` or `IcebergS3`, with the path `perf_iceberg/<test>/<table>/`; a `CREATE TABLE b AS a` of a rewritten `a` gets its own path;
+* the leading plain columns of `ORDER BY` stay as the Iceberg sort order; `PARTITION BY`, `PRIMARY KEY`, `SAMPLE BY`, `TTL`, `SETTINGS`, skip indexes, projections, constraints, codecs and column TTLs are dropped;
+* the column types Iceberg cannot store are widened: `UInt8`, `UInt16`, `Int8`, `Int16`, `Bool` to `Int32`, `UInt64` to `Int64`, `LowCardinality(T)` to `T`, `Enum`, `FixedString` and `IPv6` to `String`, `IPv4` to `UInt32`, 128- and 256-bit integers to `Decimal(38, 0)`, `DateTime64` to microseconds. The types of `CREATE TABLE ... AS SELECT` come from the `SELECT` and are not widened.
+
+Other statements run as written, with `allow_insert_into_iceberg`, `allow_experimental_iceberg_compaction` (for `OPTIMIZE`) and `iceberg_delete_data_on_drop` set. A table that cannot be converted without changing what the test measures (another MergeTree engine, an `AggregateFunction`, `JSON`, `Dynamic` or `Variant` column, a `MATERIALIZED` or `ALIAS` column) is an error.
+
+The configuration runs the tests with a plain `MergeTree` table in a `create_query`, except the `long` ones, those with `<test iceberg="0">`, and those in `tests/performance/iceberg_skip_list.txt` (one file name per line, with the reason after `#`). Add a test to the skip list when it cannot run on Iceberg tables (`FINAL`, `SAMPLE`, `_part`, lightweight updates, assertions on the number of parts, a type that widening breaks); remove it once it can. A failure of a test that is not in the list is a real error of the configuration.
+
+Where it runs: `Performance Comparison (arm_release, master_head, iceberg_local|iceberg_s3, N/2)` in pull requests that change the Iceberg, object storage or Parquet code (or the harness; the `ci-performance` label runs it always), not as a gate yet, and every night in `NightlyIcebergPerformance` (`ci/workflows/nightly_iceberg_performance.py`), every query of every test against the previous night's binary. The results are in the usual tables with `arch = 'arm_iceberg_local'` or `'arm_iceberg_s3'`, so that the history, the learned thresholds and the dashboard gate of the MergeTree runs do not read them; the configuration has no learned thresholds and no dashboard gate.
+
+Run one test locally against two running servers: `tests/performance/scripts/perf.py --table-engine iceberg_local --host localhost localhost --port 9001 9002 --binary <old> <new> --http-port 8123 8124 tests/performance/<test>.xml`.
+
 ### How to run performance test
 
 TODO

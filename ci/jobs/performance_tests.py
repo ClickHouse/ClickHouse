@@ -562,6 +562,21 @@ def escape_sql_string(value):
     )
 
 
+# The Iceberg configuration (`iceberg_local` / `iceberg_s3` in `--test-options`):
+# `perf.py --table-engine` creates the MergeTree tables of the tests as Iceberg
+# tables. Set once in `main`.
+TABLE_ENGINE = None
+TABLE_ENGINES = ("iceberg_local", "iceberg_s3")
+
+
+def get_results_arch():
+    """The `arch` of the uploaded rows. The CIDB tables of the performance
+    comparison and the dashboard filters have no column for the job, so the rows
+    of the Iceberg configuration carry it in `arch` (`arm_iceberg_local`), and
+    neither history nor the dashboard gate of the MergeTree jobs reads them."""
+    return f"{get_perf_arch()}_{TABLE_ENGINE}" if TABLE_ENGINE else get_perf_arch()
+
+
 def get_perf_arch():
     if Utils.is_arm():
         return "arm"
@@ -710,6 +725,7 @@ SELECT
 FROM {table}
 WHERE pull_request_number = 0
     AND check_name LIKE '{cn}'
+    AND (check_name LIKE '%iceberg%') = {'1' if 'iceberg' in cn else '0'}
     AND check_start_time >= now() - INTERVAL 14 DAY
     AND test_name = '{tn}'
 ORDER BY test, check_start_time
@@ -760,7 +776,7 @@ def build_check_results_children(tests_result, check_name_pattern):
 
 def get_insert_metadata(info, compare_against_release):
     return {
-        "ARCH": escape_sql_string(get_perf_arch()),
+        "ARCH": escape_sql_string(get_results_arch()),
         "BASELINE_KIND": "release_base" if compare_against_release else "master_head",
         "WORKFLOW_NAME": escape_sql_string(info.workflow_name),
         "BASE_BRANCH": escape_sql_string(info.base_branch),
@@ -1458,7 +1474,8 @@ class CHServer:
 
     @classmethod
     def run_test(
-        cls, test_file, runs=None, max_queries=0, pr_number=0, results_path=f"{temp_dir}/perf_wd/", long=False
+        cls, test_file, runs=None, max_queries=0, pr_number=0, results_path=f"{temp_dir}/perf_wd/", long=False,
+        table_engine=None,
     ):
         test_name = test_file.split("/")[-1].removesuffix(".xml")
         sw = Utils.Stopwatch()
@@ -1477,7 +1494,7 @@ class CHServer:
                 --profile-seconds 10 \
                 --pr-number {pr_number} \
                 --stop-merges \
-                {test_file}{' --long' if long else ''}",
+                {f'--table-engine {table_engine} ' if table_engine else ''}{test_file}{' --long' if long else ''}",
             verbose=True,
             strip=False,
         )
@@ -2728,12 +2745,16 @@ def main():
             compare_against_release = True
 
     nightly = "nightly" in test_options
+    global TABLE_ENGINE
+    TABLE_ENGINE = next((option for option in test_options if option in TABLE_ENGINES), None)
     batch_num -= 1
     assert 0 <= batch_num < total_batches and total_batches >= 1
 
     assert (
         compare_against_master or compare_against_release
     ), "test option: head_master or release_base must be selected"
+    # `release_base` replaces the tests with their vintage of the release branch point.
+    assert not (TABLE_ENGINE and compare_against_release), "the Iceberg configuration runs in master_head mode only"
 
     # release_version = CHVersion.get_release_version()
     info = Info()
@@ -2806,6 +2827,15 @@ def main():
     # changed_files = info.get_custom_data("changed_files")
     if test_keyword:
         test_files = [file for file in test_files if test_keyword in file]
+    elif TABLE_ENGINE:
+        # Round-robin over the tests the rewrite applies to, also in the nightly run: the placement of
+        # `NIGHTLY_PERF_PLACEMENT` balances the `long` tests, which this configuration does not run.
+        skip_list = test_discovery.iceberg_skip_list("./tests/performance/")
+        test_files = [
+            file
+            for file in test_files
+            if test_discovery.test_runs_with_table_engine(f"./tests/performance/{file}", skip_list)
+        ][batch_num::total_batches]
     elif nightly:
         # This job, the last test option: `N/M`, or the name of an extra job (`NIGHTLY_PERF_PLACEMENT`).
         job = test_options[-1]
@@ -2832,7 +2862,8 @@ def main():
     if not nightly:
         run_paths = [path for path in run_paths if not test_discovery.test_is_long(path)]
     s3_paths = [path for path in run_paths if test_discovery.test_requires_s3(path)]
-    needs_s3 = bool(s3_paths)
+    # Every test of `iceberg_s3` writes its tables into the job-local object store.
+    needs_s3 = bool(s3_paths) or TABLE_ENGINE == "iceberg_s3"
     needs_s3_read_dataset = any(map(test_discovery.test_requires_read_dataset, run_paths))
     needs_iceberg_read_dataset = needs_s3_read_dataset or any(
         map(test_discovery.test_requires_local_read_dataset, run_paths)
@@ -2990,7 +3021,11 @@ def main():
         installed_sha = get_binary_commit_sha(f"{perf_left}/clickhouse")
         assert installed_sha == reference_sha, f"installed reference {installed_sha} is not --reference-path {reference_sha}"
 
-    if res and not info.is_local_run:
+    if res and TABLE_ENGINE:
+        # The learned thresholds are those of the MergeTree tables on `MasterCI`.
+        print(f"No historical thresholds for the {TABLE_ENGINE} configuration")
+        Shell.check(f"touch {perf_wd}/historical-thresholds.tsv", verbose=True)
+    elif res and not info.is_local_run:
 
         def prepare_historical_data():
             cidb = CIDBCluster(
@@ -3254,10 +3289,12 @@ def main():
                     pr_number=info.pr_number,
                     results_path=perf_wd,
                     long=nightly,
+                    table_engine=TABLE_ENGINE,
                 )
                 cleanup_user_files()
+                writes_s3 = TABLE_ENGINE == "iceberg_s3" or (nightly and f"./tests/performance/{test}" in s3_paths)
                 # After a complete teardown; a failed S3 cleanup is an error record and ends the batch, the report still runs.
-                if clean and nightly and f"./tests/performance/{test}" in s3_paths and not s3_service.clear_write_namespaces():
+                if clean and writes_s3 and not s3_service.clear_write_namespaces():
                     name = test.removesuffix(".xml")
                     with open(f"{perf_wd}/{name}-err.log", "a") as f:
                         f.write(f"{name}: S3 cleanup failed, stopping the batch\n")
@@ -3546,6 +3583,9 @@ def main():
             status = Result.Status.OK
             if "errors" in message.lower():
                 status = Result.Status.FAIL
+            elif TABLE_ENGINE:
+                # The dashboard and its history know the MergeTree tables only, see `get_results_arch`.
+                print(f"{TABLE_ENGINE} configuration: no performance dashboard gate")
             elif nightly:
                 print("Nightly run: no performance dashboard or delta gate")
             elif compare_against_release and message:
@@ -3652,7 +3692,7 @@ def main():
             check_sub_results += [
                 sub
                 for sub in build_check_results_children(
-                    tests_result, f"%Performance%{arch}%master_head%"
+                    tests_result, f"%Performance%{arch}%master_head%{TABLE_ENGINE or ''}%"
                 )
                 if sub.name not in dashboard_names
             ]
