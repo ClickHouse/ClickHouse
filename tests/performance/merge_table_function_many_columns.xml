@@ -1,0 +1,114 @@
+<test>
+    <substitutions>
+        <substitution>
+            <name>i</name>
+            <values>
+                <value>0</value>
+                <value>1</value>
+                <value>2</value>
+                <value>3</value>
+                <value>4</value>
+                <value>5</value>
+                <value>6</value>
+                <value>7</value>
+                <value>8</value>
+                <value>9</value>
+                <value>10</value>
+                <value>11</value>
+                <value>12</value>
+                <value>13</value>
+                <value>14</value>
+                <value>15</value>
+                <value>16</value>
+                <value>17</value>
+                <value>18</value>
+                <value>19</value>
+                <value>20</value>
+                <value>21</value>
+                <value>22</value>
+                <value>23</value>
+                <value>24</value>
+                <value>25</value>
+                <value>26</value>
+                <value>27</value>
+                <value>28</value>
+                <value>29</value>
+                <value>30</value>
+                <value>31</value>
+            </values>
+        </substitution>
+    </substitutions>
+
+    <create_query>CREATE TABLE merge_many_columns (c UInt8) ENGINE = MergeTree ORDER BY tuple()</create_query>
+    <create_query>ALTER TABLE merge_many_columns
+        ADD COLUMN c{i}_0 UInt8,
+        ADD COLUMN c{i}_1 UInt8,
+        ADD COLUMN c{i}_2 UInt8,
+        ADD COLUMN c{i}_3 UInt8,
+        ADD COLUMN c{i}_4 UInt8,
+        ADD COLUMN c{i}_5 UInt8,
+        ADD COLUMN c{i}_6 UInt8,
+        ADD COLUMN c{i}_7 UInt8,
+        ADD COLUMN c{i}_8 UInt8,
+        ADD COLUMN c{i}_9 UInt8,
+        ADD COLUMN c{i}_10 UInt8,
+        ADD COLUMN c{i}_11 UInt8,
+        ADD COLUMN c{i}_12 UInt8,
+        ADD COLUMN c{i}_13 UInt8,
+        ADD COLUMN c{i}_14 UInt8,
+        ADD COLUMN c{i}_15 UInt8,
+        ADD COLUMN c{i}_16 UInt8,
+        ADD COLUMN c{i}_17 UInt8,
+        ADD COLUMN c{i}_18 UInt8,
+        ADD COLUMN c{i}_19 UInt8,
+        ADD COLUMN c{i}_20 UInt8,
+        ADD COLUMN c{i}_21 UInt8,
+        ADD COLUMN c{i}_22 UInt8,
+        ADD COLUMN c{i}_23 UInt8,
+        ADD COLUMN c{i}_24 UInt8,
+        ADD COLUMN c{i}_25 UInt8,
+        ADD COLUMN c{i}_26 UInt8,
+        ADD COLUMN c{i}_27 UInt8,
+        ADD COLUMN c{i}_28 UInt8,
+        ADD COLUMN c{i}_29 UInt8,
+        ADD COLUMN c{i}_30 UInt8,
+        ADD COLUMN c{i}_31 UInt8,
+        ADD COLUMN c{i}_32 UInt8,
+        ADD COLUMN c{i}_33 UInt8,
+        ADD COLUMN c{i}_34 UInt8,
+        ADD COLUMN c{i}_35 UInt8,
+        ADD COLUMN c{i}_36 UInt8,
+        ADD COLUMN c{i}_37 UInt8,
+        ADD COLUMN c{i}_38 UInt8,
+        ADD COLUMN c{i}_39 UInt8,
+        ADD COLUMN c{i}_40 UInt8,
+        ADD COLUMN c{i}_41 UInt8,
+        ADD COLUMN c{i}_42 UInt8,
+        ADD COLUMN c{i}_43 UInt8,
+        ADD COLUMN c{i}_44 UInt8,
+        ADD COLUMN c{i}_45 UInt8,
+        ADD COLUMN c{i}_46 UInt8,
+        ADD COLUMN c{i}_47 UInt8,
+        ADD COLUMN c{i}_48 UInt8,
+        ADD COLUMN c{i}_49 UInt8,
+        ADD COLUMN c{i}_50 UInt8,
+        ADD COLUMN c{i}_51 UInt8,
+        ADD COLUMN c{i}_52 UInt8,
+        ADD COLUMN c{i}_53 UInt8,
+        ADD COLUMN c{i}_54 UInt8,
+        ADD COLUMN c{i}_55 UInt8,
+        ADD COLUMN c{i}_56 UInt8,
+        ADD COLUMN c{i}_57 UInt8,
+        ADD COLUMN c{i}_58 UInt8,
+        ADD COLUMN c{i}_59 UInt8,
+        ADD COLUMN c{i}_60 UInt8,
+        ADD COLUMN c{i}_61 UInt8,
+        ADD COLUMN c{i}_62 UInt8,
+        ADD COLUMN c{i}_63 UInt8</create_query>
+    <fill_query>INSERT INTO merge_many_columns (c) VALUES (1)</fill_query>
+
+    <!-- 20 merge() queries timed as one, so that the measured time is above 0.1 s. -->
+    <query file="merge_table_function_many_columns.sql"/>
+
+    <drop_query>DROP TABLE IF EXISTS merge_many_columns</drop_query>
+</test>

@@ -13,7 +13,6 @@ import pytest
 
 from helpers.client import QueryRuntimeException
 from helpers.cluster import ClickHouseCluster
-from helpers.network import PartitionManager
 from helpers.test_tools import TSV, assert_eq_with_retry
 from google.protobuf.internal.encoder import _VarintBytes
 from helpers.kafka import message_with_repeated_pb2
@@ -1933,6 +1932,57 @@ def test_kafka_producer_consumer_separate_settings(
 
 
 @pytest.mark.parametrize(
+    "create_query_generator",
+    [
+        k.generate_old_create_table_query,
+        k.generate_new_create_table_query,
+    ],
+)
+def test_kafka_password_not_logged(kafka_cluster, create_query_generator):
+    suffix = k.random_string(6)
+    kafka_table = f"kafka_{suffix}"
+    username = f"kafka_user_{suffix}"
+    password = f"secret_kafka_password_{suffix}"
+
+    instance.rotate_logs()
+    instance.query(
+        create_query_generator(
+            kafka_table,
+            "key UInt64",
+            topic_list="password_not_logged",
+            consumer_group="test",
+            settings={
+                "kafka_sasl_username": username,
+                "kafka_sasl_password": password,
+            },
+        )
+    )
+
+    # Create an mv to initialize the librdkafka consumers
+    instance.query(f"CREATE MATERIALIZED VIEW test.{kafka_table}_view ENGINE=MergeTree ORDER BY tuple() AS SELECT * FROM test.{kafka_table}")
+    instance.wait_for_log_line(f"{kafka_table}.*Created #0 consumer")
+    instance.query(f"DROP TABLE test.{kafka_table}_view")
+    instance.query(f"INSERT INTO test.{kafka_table} VALUES (1)")
+
+    assert instance.contains_in_log(f"{kafka_table}.*Kafka producer created")
+
+    # The property-logging loops ran for both the consumer and the producer,
+    # but they hid the values of the sensitive properties. `sasl.username` is
+    # hidden because librdkafka marks it with the _RK_SENSITIVE flag, not
+    # because of the name, so it validates the generated blacklist.
+    for client_type in ["Consumer", "Producer"]:
+        for property_name in ["sasl.username", "sasl.password"]:
+            assert instance.contains_in_log(
+                f"{kafka_table}.*{client_type} set property {property_name}:\\[HIDDEN\\]"
+            )
+    # The username still appears in the logged CREATE TABLE text (only
+    # kafka_sasl_password is masked there), so check only the password value.
+    assert not instance.contains_in_log(password)
+
+    instance.query(f"DROP TABLE test.{kafka_table}")
+
+
+@pytest.mark.parametrize(
     "create_query_generator, log_line",
     [
         (k.generate_new_create_table_query, "Saved offset 5"),
@@ -2456,17 +2506,19 @@ def test_kafka_lot_of_partitions_partial_commit_of_bulk(
         """)
 
 
-# TODO(antaljanosbenjamin): find another way to make insertion fail
 @pytest.mark.parametrize(
-    "create_query_generator",
+    "create_query_generator, log_line",
     [
-        k.generate_old_create_table_query,
-        # k.generate_new_create_table_query,
+        (k.generate_new_create_table_query, "Saved offset 22"),
+        (k.generate_old_create_table_query, "Committed offset 22"),
     ],
 )
-def test_kafka_no_holes_when_write_suffix_failed(kafka_cluster, create_query_generator):
+def test_kafka_no_holes_when_write_suffix_failed(
+    kafka_cluster, create_query_generator, log_line
+):
     suffix = k.random_string(6)
     kafka_table = f"kafka_{suffix}"
+    definer = f"{kafka_table}_definer"
 
     admin_client = k.get_admin_client(kafka_cluster)
     topic_name = "no_holes_when_write_suffix_failed" + k.get_topic_postfix(
@@ -2496,28 +2548,29 @@ def test_kafka_no_holes_when_write_suffix_failed(kafka_cluster, create_query_gen
             CREATE TABLE test.{kafka_table}_view (key UInt64, value String)
                 ENGINE = ReplicatedMergeTree('/clickhouse/kafkatest/tables/{topic_name}', 'node1')
                 ORDER BY key;
+
+            CREATE USER {definer} SETTINGS insert_keeper_fault_injection_probability = 1;
+            GRANT SELECT ON test.{kafka_table} TO {definer};
+            GRANT INSERT ON test.{kafka_table}_view TO {definer};
+
+            CREATE MATERIALIZED VIEW test.{kafka_table}_consumer TO test.{kafka_table}_view
+                DEFINER = {definer} SQL SECURITY DEFINER
+                AS SELECT * FROM test.{kafka_table};
         """)
 
-        # init PartitionManager (it starts container) earlier
-        instance.query(f"""
-            CREATE MATERIALIZED VIEW test.{kafka_table}_consumer TO test.{kafka_table}_view AS
-                SELECT * FROM test.{kafka_table}
-                WHERE NOT sleepEachRow(0.25);
-        """)
+        # The push runs as the definer, so it fails at its first Keeper request. No push can
+        # succeed before the setting is switched off, so a written part proves that the failure
+        # came after the write.
+        instance.wait_for_log_line(
+            f"Fault injection before operation.*while pushing to view test.{kafka_table}_consumer",
+            timeout=60,
+        )
+        assert instance.contains_in_log(f"{kafka_table}_view.*Wrote block with")
+        instance.query(
+            f"ALTER USER {definer} SETTINGS insert_keeper_fault_injection_probability = 0"
+        )
 
-        instance.wait_for_log_line(f"{kafka_table}.*Polled batch of 20 messages")
-        # the tricky part here is that disconnect should happen after write prefix, but before write suffix
-        # we have 0.25 (sleepEachRow) * 20 ( Rows ) = 5 sec window after "Polled batch of 20 messages"
-        # while materialized view is working to inject zookeeper failure
-        with PartitionManager() as pm:
-            pm.drop_instance_zk_connections(instance)
-            # FIXME: we need to make sure that this happens during writing to RMT
-            instance.wait_for_log_line(
-                "Error.*(Connection loss|Coordination::Exception|DB::Exception: Coordination error: Operation timeout).*while pushing to view",
-                timeout=60,
-            )
-
-        instance.wait_for_log_line(f"{kafka_table}.*Committed offset 22")
+        instance.wait_for_log_line(f"{kafka_table}.*{log_line}")
 
         result = instance.query(
             f"SELECT count(), uniqExact(key), max(key) FROM test.{kafka_table}_view"
@@ -2529,6 +2582,7 @@ def test_kafka_no_holes_when_write_suffix_failed(kafka_cluster, create_query_gen
         instance.query(f"""
             DROP TABLE test.{kafka_table}_consumer;
             DROP TABLE test.{kafka_table}_view SYNC;
+            DROP USER {definer};
         """)
 
         assert TSV(result) == TSV("22\t22\t22")

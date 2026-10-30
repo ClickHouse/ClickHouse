@@ -5,6 +5,10 @@
 -- as a worker for another node's query, a parallel replicas participant or a cluster table function
 -- worker: a fuzzed copy would take part in the initiator's read a second time. The initiator is fuzzed.
 
+-- The parallel replicas arms are pinned to the query-based implementation: the skip is counted on a worker
+-- that parses the statement it was sent, while a plan-based worker receives a plan fragment, has no AST to
+-- fuzz, and so never reaches the skip.
+
 -- Only the statements that set `ast_fuzzer_runs` themselves are fuzzed, never the measurements.
 SET ast_fuzzer_runs = 0;
 SET ast_fuzzer_any_query = 0;
@@ -87,7 +91,7 @@ SETTINGS enable_parallel_replicas = 1, max_parallel_replicas = 3,
          parallel_distributed_insert_select = 2,
          parallel_replicas_local_plan = 0,
          parallel_replicas_insert_select_local_pipeline = 0,
-         automatic_parallel_replicas_mode = 0, parallel_replicas_mode = 'read_tasks',
+         automatic_parallel_replicas_mode = 0, parallel_replicas_mode = 'read_tasks', parallel_replicas_plan_based = 0,
          ast_fuzzer_runs = 5, ast_fuzzer_any_query = 1;
 
 SYSTEM FLUSH LOGS query_log;
@@ -140,9 +144,16 @@ SELECT 'worker_no_internal_workers',
                                    WHERE event_date >= yesterday() AND is_initial_query = 1 AND is_internal = 0
                                      AND current_database = currentDatabase())) = 0;
 
--- Every source row arrived. The row count is not asserted: fuzzed copies of the `INSERT` write rows too.
-SELECT 'source_rows_written', count(DISTINCT id) = (SELECT count() FROM t05288_worker_src)
-FROM t05288_dst WHERE id < (SELECT count() FROM t05288_worker_src);
+-- Every source row arrived. The statement's own `query_log` row is read, not the table: fuzzed copies of
+-- the `INSERT` write to the table too, and a copy turned into a join can write millions of rows.
+SELECT 'source_rows_written',
+       (SELECT count() > 0 AND countIf(written_rows != (SELECT count() FROM t05288_worker_src)) = 0
+        FROM system.query_log
+        WHERE event_date >= yesterday() AND type = 'QueryFinish'
+          AND is_initial_query = 1 AND is_internal = 0 AND current_database = currentDatabase()
+          AND query_kind = 'Insert'
+          AND has(tables, currentDatabase() || '.t05288_dst')
+          AND has(tables, currentDatabase() || '.t05288_worker_src'));
 
 -- Control: an ordinary statement produces no worker queries. It reads no table, because the fuzzer can
 -- rewrite a table read into a distributed one; the alias makes its rows selectable.
@@ -177,7 +188,7 @@ SETTINGS allow_experimental_parallel_reading_from_replicas = 1, max_parallel_rep
          parallel_distributed_insert_select = 2,
          parallel_replicas_local_plan = 0,
          parallel_replicas_insert_select_local_pipeline = 0,
-         automatic_parallel_replicas_mode = 0, parallel_replicas_mode = 'read_tasks',
+         automatic_parallel_replicas_mode = 0, parallel_replicas_mode = 'read_tasks', parallel_replicas_plan_based = 0,
          ast_fuzzer_runs = 5, ast_fuzzer_any_query = 1;
 
 SYSTEM FLUSH LOGS query_log;
@@ -316,7 +327,7 @@ SETTINGS enable_parallel_replicas = 1, max_parallel_replicas = 3,
          cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost',
          parallel_replicas_for_non_replicated_merge_tree = 1,
          parallel_replicas_local_plan = 0,
-         automatic_parallel_replicas_mode = 0, parallel_replicas_mode = 'read_tasks',
+         automatic_parallel_replicas_mode = 0, parallel_replicas_mode = 'read_tasks', parallel_replicas_plan_based = 0,
          ast_fuzzer_runs = 5, ast_fuzzer_any_query = 1;
 
 SYSTEM FLUSH LOGS query_log;

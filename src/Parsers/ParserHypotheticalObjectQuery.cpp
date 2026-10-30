@@ -10,8 +10,6 @@
 #include <Parsers/ParserCreateIndexQuery.h>
 #include <Parsers/ParserCreateQuery.h>
 #include <Parsers/parseDatabaseAndTableName.h>
-#include <Parsers/StatementFactory.h>
-#include <Parsers/registerStatements.h>
 
 namespace DB
 {
@@ -148,14 +146,11 @@ bool ParserHypotheticalObjectQuery::parseImpl(Pos & pos, ASTPtr & node, Expected
     return true;
 }
 
-}
-
-namespace DB
+std::map<String, Documentation> ParserHypotheticalObjectQuery::getDocumentation() const
 {
+    std::map<String, Documentation> documentation;
 
-void registerStatementHypotheticalIndex(StatementFactory & factory)
-{
-    factory.registerStatement("HYPOTHETICAL INDEX",
+    documentation["HYPOTHETICAL INDEX"] =
     {
         .description = R"DOCS_MD(
 Hypothetical indexes are virtual, session-scoped skip indexes that you can attach to a `MergeTree` family table without actually building or storing them. They exist only inside the current session and are used by [`EXPLAIN WHATIF`](/reference/statements/explain#explain-whatif) to estimate how a real skip index would affect a query — typically the skip ratio (fraction of marks that could be skipped) and a rough cost in marks and bytes.
@@ -294,17 +289,14 @@ CREATE HYPOTHETICAL INDEX [IF NOT EXISTS] name ON [db.]table_name (expression) T
 DROP HYPOTHETICAL INDEX [IF EXISTS] name ON [db.]table_name
 )",
         .related = {"EXPLAIN", "ALTER TABLE ... INDEX", "CREATE TABLE"},
-    });
-}
+    };
 
-void registerStatementHypotheticalProjection(StatementFactory & factory)
-{
-    factory.registerStatement("HYPOTHETICAL PROJECTION",
+    documentation["HYPOTHETICAL PROJECTION"] =
     {
         .description = R"DOCS_MD(
 Hypothetical projections are virtual, session-scoped projections that you can attach to a `MergeTree` family table without actually building or storing them. They exist only inside the current session and are listed by [`EXPLAIN WHATIF`](/reference/statements/explain#explain-whatif).
 
-`EXPLAIN WHATIF` estimates normal (sorted) hypothetical projections: how many marks and rows the projection read would touch for a query, and whether the optimizer would choose it over the base table. Not every projection is estimated: aggregate projections and projections with a `WHERE` clause are two such cases, and a candidate that is not estimated is listed with the reason why. See [`EXPLAIN WHATIF`](/reference/statements/explain#explain-whatif) for the full list. The session's hypothetical projections are also visible in [`system.hypothetical_projections`](/reference/system-tables/hypothetical_projections).
+`EXPLAIN WHATIF` estimates normal (sorted) hypothetical projections. For a query, it shows how many marks and rows a read of the projection would touch. It also shows whether the optimizer would choose the projection over the base table. It does not estimate aggregate projections and some other projections, and it lists each such candidate with the reason. See [`EXPLAIN WHATIF`](/reference/statements/explain#explain-whatif) for the full list. The session's hypothetical projections are also visible in [`system.hypothetical_projections`](/reference/system-tables/hypothetical_projections).
 
 ## CREATE HYPOTHETICAL PROJECTION {#create-hypothetical-projection}
 
@@ -373,7 +365,9 @@ DROP HYPOTHETICAL PROJECTION [IF EXISTS] name ON [db.]table_name
 DROP ALL HYPOTHETICAL PROJECTIONS
 )",
         .related = {"EXPLAIN", "ALTER TABLE ... PROJECTION", "CREATE TABLE"},
-    });
+    };
+
+    return documentation;
 }
 
 }

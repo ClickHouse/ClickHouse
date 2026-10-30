@@ -130,11 +130,8 @@
     </asynchronous_metric_log>
 
     <opentelemetry_span_log>
-        <engine>
-            engine MergeTree
-            partition by toYYYYMM(finish_date)
-            order by (finish_date, finish_time_us, trace_id)
-        </engine>
+        <partition_by>toYYYYMM(event_date)</partition_by>
+        <order_by>event_date, finish_time_us</order_by>
         <database>system</database>
         <table>opentelemetry_span_log</table>
         <flush_interval_milliseconds>7500</flush_interval_milliseconds>

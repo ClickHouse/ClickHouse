@@ -175,10 +175,23 @@ RedisType::Ptr Client::readReply()
 	RedisType::Ptr result = RedisType::createRedisType(c);
 	if (result.isNull())
 	{
+		/// The stream is not at a reply boundary anymore, so the connection cannot be reused.
+		disconnect();
 		throw RedisException("Invalid Redis type returned");
 	}
 
-	result->read(*_input);
+	try
+	{
+		result->read(*_input);
+	}
+	catch (...)
+	{
+		/// A partially read reply leaves unread data in the stream.
+		/// If the connection were reused (e.g. returned to a pool), the next request
+		/// would read the remainder of this reply instead of its own one.
+		disconnect();
+		throw;
+	}
 
 	return result;
 }

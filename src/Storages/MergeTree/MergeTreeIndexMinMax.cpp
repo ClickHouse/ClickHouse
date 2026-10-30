@@ -1,4 +1,5 @@
 #include <Storages/MergeTree/MergeTreeIndexMinMax.h>
+#include <DataTypes/TypeTree.h>
 
 #include <Interpreters/ExpressionAnalyzer.h>
 
@@ -225,6 +226,7 @@ bool MergeTreeIndexConditionMinMax::alwaysUnknownOrTrue() const
          KeyCondition::RPNElement::FUNCTION_NOT_IN_SET,
          KeyCondition::RPNElement::FUNCTION_ARGS_IN_HYPERRECTANGLE,
          KeyCondition::RPNElement::FUNCTION_POINT_IN_POLYGON,
+         KeyCondition::RPNElement::FUNCTION_ATOM_GROUP,
          KeyCondition::RPNElement::FUNCTION_IS_NULL,
          KeyCondition::RPNElement::FUNCTION_IS_NOT_NULL,
          KeyCondition::RPNElement::ALWAYS_FALSE});
@@ -269,21 +271,6 @@ MergeTreeIndexFormat MergeTreeIndexMinMax::getPhysicalFormat(
         return {1, {{MergeTreeIndexSubstream::Type::Regular, "", ".idx"}}};
 
     return {0 /* unknown */, {}};
-}
-
-MergeTreeIndexSubstreams MergeTreeIndexMinMax::getAllSubstreamsInPart(
-    const MergeTreeDataPartChecksums & checksums,
-    const std::string & relative_path_prefix,
-    const IDataPartStorage * storage) const
-{
-    /// minmax format changed `.idx` (v1) -> `.idx2` (v2); a part may carry both. Return every
-    /// extension present, not just the preferred one, so cleanup does not miss the stale file.
-    MergeTreeIndexSubstreams substreams;
-    if (indexFileExistsInChecksums(checksums, relative_path_prefix, ".idx2", storage))
-        substreams.push_back({MergeTreeIndexSubstream::Type::Regular, "", ".idx2"});
-    if (indexFileExistsInChecksums(checksums, relative_path_prefix, ".idx", storage))
-        substreams.push_back({MergeTreeIndexSubstream::Type::Regular, "", ".idx"});
-    return substreams;
 }
 
 MergeTreeIndexBulkGranulesMinMax::MergeTreeIndexBulkGranulesMinMax(const String & index_name_, const Block & index_sample_block_,
@@ -521,8 +508,7 @@ void minmaxIndexValidator(const IndexDescription & index, bool attach, const Mer
                     "with different data types. Consider using typed subcolumns or cast column to a specific data type",
                     column.type->getName(), column.name);
         };
-        check_not_dynamic_or_variant(*column.type);
-        column.type->forEachChild(check_not_dynamic_or_variant);
+        forEachInTypeTree(*column.type, check_not_dynamic_or_variant);
     }
 }
 

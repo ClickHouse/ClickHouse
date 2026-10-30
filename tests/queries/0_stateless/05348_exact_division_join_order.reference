@@ -1,0 +1,17 @@
+baseline	Join
+baseline	Join
+baseline	Read(t1)
+baseline	Read(t2)
+baseline	Read(t3)
+legacy	Join
+legacy	Read(t1)
+legacy	Join
+legacy	Read(t2)
+legacy	Read(t3)
+exact	Join
+exact	Read(t1)
+exact	Join
+exact	Read(t2)
+exact	Read(t3)
+2	9	4
+2	9	4

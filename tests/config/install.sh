@@ -8,6 +8,24 @@ set -x -e
 DEST_SERVER_PATH="${1:-/etc/clickhouse-server}"
 DEST_CLIENT_PATH="${2:-/etc/clickhouse-client}"
 SRC_PATH="$( cd "$(dirname "$0")" >/dev/null 2>&1 ; pwd -P )"
+
+# Below we rm -rf config.d and write into config.d, users.d and the client config directory; refuse if any of them
+# is the same directory as the source tree or one of its subdirectories, since that would destroy or pollute the tracked test configs.
+# Compare directory identity (device + inode) with -ef, so that bind mounts are detected as well as symlinks.
+function refuse_if_dest_aliases_source()
+{
+    for dest_dir in "$@"; do
+        for src_dir in "$SRC_PATH" "$SRC_PATH/config.d" "$SRC_PATH/users.d" "$SRC_PATH/top_level_domains"; do
+            if [ "$dest_dir" -ef "$src_dir" ]; then
+                echo "Refusing to install: destination directory $dest_dir is the same directory as source directory $src_dir. This script deletes and repopulates the destination configs, which would destroy or pollute the tracked test configs." >&2
+                exit 1
+            fi
+        done
+    done
+}
+
+refuse_if_dest_aliases_source "$DEST_SERVER_PATH" "$DEST_SERVER_PATH/config.d" "$DEST_SERVER_PATH/users.d" "$DEST_CLIENT_PATH"
+
 if [ $# -ge 2 ]; then
     shift 2
 fi
@@ -59,6 +77,17 @@ while [[ "$#" -gt 0 ]]; do
     shift
 done
 
+# The helper queries below only read `system.build_options`, so they must not touch the persistent
+# default data directory of `clickhouse-local` in the home: a table persisted there by an unrelated
+# invocation, or a concurrent instance holding the directory, would make the probe fail instead of
+# answering. The `--tmp` option asks for a throwaway directory, but the previous-release binary of
+# the upgrade check does not know it (and defaults to a temporary directory anyway), so ask the
+# binary at hand whether it supports the option.
+LOCAL_TMP_OPTION=""
+if clickhouse local --tmp --query "SELECT 1" > /dev/null 2>&1; then
+    LOCAL_TMP_OPTION="--tmp"
+fi
+
 function check_clickhouse_version()
 {
     local required_version=$1 && shift
@@ -88,11 +117,11 @@ function is_fast_build()
     # system.build_options; the coverage flags are applied per-directory, so they never
     # reach CXX_FLAGS and cannot be probed from there. An unanswerable probe declines,
     # because CXX_FLAGS cannot distinguish a coverage build.
-    if [[ "$(clickhouse local --query "SELECT upper(value) NOT IN ('ON', '1') FROM system.build_options WHERE name = 'WITH_COVERAGE'")" != "1" ]]; then
+    if [[ "$(clickhouse local $LOCAL_TMP_OPTION --query "SELECT upper(value) NOT IN ('ON', '1') FROM system.build_options WHERE name = 'WITH_COVERAGE'")" != "1" ]]; then
         return 1
     fi
     # sanitizers and debug builds are slow
-    [ "$(clickhouse local --query "SELECT value NOT LIKE '%-fsanitize=%' AND value LIKE '%-DNDEBUG%' FROM system.build_options WHERE name = 'CXX_FLAGS'")" == "1" ]
+    [ "$(clickhouse local $LOCAL_TMP_OPTION --query "SELECT value NOT LIKE '%-fsanitize=%' AND value LIKE '%-DNDEBUG%' FROM system.build_options WHERE name = 'CXX_FLAGS'")" == "1" ]
 }
 
 # Print 1 or 0 for a CXX_FLAGS pattern in the installed binary, or fail. An unanswered probe
@@ -101,7 +130,7 @@ function is_fast_build()
 function build_option_flag()
 {
     local description=$1 pattern=$2 value rc=0
-    value=$(clickhouse local --query \
+    value=$(clickhouse local $LOCAL_TMP_OPTION --query \
         "SELECT countIf(name = 'CXX_FLAGS' AND value LIKE '$pattern') > 0 FROM system.build_options") || rc=$?
     if [ "$rc" != "0" ] || { [ "$value" != "0" ] && [ "$value" != "1" ]; }; then
         echo "install.sh: cannot determine whether this is a $description (exit $rc, output '$value')" >&2
@@ -116,7 +145,7 @@ function build_option_flag()
 function build_option_enabled()
 {
     local description=$1 name=$2 value rc=0
-    value=$(clickhouse local --query \
+    value=$(clickhouse local $LOCAL_TMP_OPTION --query \
         "SELECT multiIf(count() = 0, 'missing', countIf(upper(value) IN ('ON', '1')) > 0, '1', '0') \
          FROM system.build_options WHERE name = '$name'") || rc=$?
     if [ "$rc" != "0" ] || { [ "$value" != "0" ] && [ "$value" != "1" ]; }; then
@@ -206,6 +235,7 @@ ln -sf $SRC_PATH/config.d/text_log.xml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/blob_storage_log.xml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/predicate_statistics_log.xml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/custom_settings_prefixes.xml $DEST_SERVER_PATH/config.d/
+ln -sf $SRC_PATH/config.d/collect_connection_metrics.xml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/database_catalog_drop_table_concurrency.xml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/enable_access_control_improvements.xml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/macros.xml $DEST_SERVER_PATH/config.d/
@@ -214,6 +244,7 @@ ln -sf $SRC_PATH/config.d/clusters.xml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/graphite.xml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/graphite_alternative.xml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/grpc_protocol.xml $DEST_SERVER_PATH/config.d/
+ln -sf $SRC_PATH/config.d/arrowflight.xml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/database_atomic.xml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/max_concurrent_queries.xml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/merge_tree_settings.xml $DEST_SERVER_PATH/config.d/
@@ -236,6 +267,9 @@ ln -sf $SRC_PATH/config.d/top_level_domains_lists.xml $DEST_SERVER_PATH/config.d
 ln -sf $SRC_PATH/config.d/top_level_domains_path.xml $DEST_SERVER_PATH/config.d/
 
 ln -sf $SRC_PATH/config.d/transactions_info_log.xml $DEST_SERVER_PATH/config.d/
+if [[ "$BUGFIX_VALIDATE_CHECK" -eq 0 && "$PREVIOUS_RELEASE_CONFIG" -eq 0 ]]; then
+    ln -sf $SRC_PATH/config.d/columns_cache.xml $DEST_SERVER_PATH/config.d/
+fi
 ln -sf $SRC_PATH/config.d/transactions.xml $DEST_SERVER_PATH/config.d/
 # `enable_silk_runtime` and the `silk` section first exist in 26.9, so an older server rejects
 # them as unknown config elements and refuses to start. Gate the drop-in on the installed
@@ -314,6 +348,7 @@ ln -sf $SRC_PATH/config.d/enable_wait_for_shutdown_replicated_tables.xml $DEST_S
 cp $SRC_PATH/config.d/storage_conf_backups.xml $DEST_SERVER_PATH/config.d/
 cp $SRC_PATH/config.d/backups.xml $DEST_SERVER_PATH/config.d/
 cp $SRC_PATH/config.d/filesystem_caches_path.xml $DEST_SERVER_PATH/config.d/
+ln -sf $SRC_PATH/config.d/query_result_cache_on_disk.xml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/validate_tcp_client_information.xml $DEST_SERVER_PATH/config.d/
 # distributed_query.xml sets distributed_query.streaming_exchange_port, which the server rejects on
 # platforms without the streaming exchange (only Linux and macOS support it); install it there only.
@@ -329,9 +364,11 @@ ln -sf $SRC_PATH/config.d/threadpool_writer_pool_size.yaml $DEST_SERVER_PATH/con
 install_build_type_configs
 ln -sf $SRC_PATH/config.d/memory_profiler.yaml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/rocksdb.xml $DEST_SERVER_PATH/config.d/
+ln -sf $SRC_PATH/config.d/cache_policy.xml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/process_query_plan_packet.xml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/storage_conf_03008.xml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/storage_conf_05212.xml $DEST_SERVER_PATH/config.d/
+ln -sf $SRC_PATH/config.d/storage_conf_05104.xml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/memory_access.xml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/jemalloc_enable_global_profiler.yaml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/jemalloc_flush_profile.yaml $DEST_SERVER_PATH/config.d/
@@ -351,7 +388,7 @@ fi
 # SSH protocol support (not supported with fasttest or OpenSSL FIPS).
 function is_openssl_fips_build()
 {
-    [ "$(clickhouse local --query "SELECT value FROM system.build_options where name = 'USE_OPENSSL_FIPS' LIMIT 1")" -eq 1 ]
+    [ "$(clickhouse local $LOCAL_TMP_OPTION --query "SELECT value FROM system.build_options where name = 'USE_OPENSSL_FIPS' LIMIT 1")" -eq 1 ]
 }
 if [ "$FAST_TEST" != "1" ] && ! is_openssl_fips_build; then
     ln -sf $SRC_PATH/config.d/ssh.xml $DEST_SERVER_PATH/config.d/
@@ -573,11 +610,16 @@ if [[ "$EXPORT_S3_STORAGE_POLICIES" == "1" ]]; then
     fi
     # storage_conf.xml may carry settings unknown to the previous-release server: strip them by version.
     # allow_dynamic_cache_resize was added in 25.5; keep_free_space_eviction_threads and
-    # reserve_granularity in 26.7.
+    # reserve_granularity in 26.7. `use_real_disk_size` is introduced by this feature and is not
+    # present in any released version yet: 26.8 was released without it, so gate on 26.9 (the first
+    # version that can contain it) to keep the previous-release server of the upgrade check bootable.
+    # This gate must always be bumped to master's current `VERSION_MINOR` while the feature is
+    # unmerged: the upgrade check boots the previous release, which never has the setting.
     # --remove-destination: an earlier install may have left this path as a symlink to the
     # source; without it cp would follow the link and fail with "same file" under set -e.
     cp --remove-destination $SRC_PATH/config.d/storage_conf.xml $DEST_SERVER_PATH/config.d/storage_conf.xml
     check_clickhouse_version 25.5 || sed -i "s|<allow_dynamic_cache_resize>1</allow_dynamic_cache_resize>||" $DEST_SERVER_PATH/config.d/storage_conf.xml
+    check_clickhouse_version 26.10 || sed -i "s|<use_real_disk_size>1</use_real_disk_size>||" $DEST_SERVER_PATH/config.d/storage_conf.xml
     check_clickhouse_version 26.7 || sed -i "s|<keep_free_space_eviction_threads>4</keep_free_space_eviction_threads>||" $DEST_SERVER_PATH/config.d/storage_conf.xml
     # reserve_granularity was added in 26.7: apply the randomized s3_cache value for new-enough
     # servers, strip it entirely (unknown setting) for older ones in the upgrade/bugfix checks.
@@ -632,6 +674,10 @@ if [[ "$USE_DATABASE_REPLICATED" == "1" ]]; then
     ch_server_2_path=$DEST_SERVER_PATH/../clickhouse-server2
     mkdir -p $ch_server_1_path
     mkdir -p $ch_server_2_path
+    # The configs are copied into and edited in these sibling directories; check them only now, when they exist,
+    # so that `..` is resolved the same way as by the commands below.
+    refuse_if_dest_aliases_source "$ch_server_1_path" "$ch_server_1_path/config.d" "$ch_server_1_path/users.d" \
+        "$ch_server_2_path" "$ch_server_2_path/config.d" "$ch_server_2_path/users.d"
 #    chown clickhouse $ch_server_1_path
 #    chown clickhouse $ch_server_2_path
 #    chgrp clickhouse $ch_server_1_path
@@ -661,6 +707,8 @@ if [[ "$USE_DATABASE_REPLICATED" == "1" ]]; then
     # Remove SSH config from replicas to avoid port conflicts on tcp_ssh_port.
     rm -f $ch_server_1_path/config.d/ssh.xml $ch_server_1_path/config.d/ssh_host_rsa_key
     rm -f $ch_server_2_path/config.d/ssh.xml $ch_server_2_path/config.d/ssh_host_rsa_key
+    # Same for the Arrow Flight port.
+    rm -f $ch_server_1_path/config.d/arrowflight.xml $ch_server_2_path/config.d/arrowflight.xml
 fi
 
 ln -sf $SRC_PATH/config.d/wasm_udf.xml $DEST_SERVER_PATH/config.d/

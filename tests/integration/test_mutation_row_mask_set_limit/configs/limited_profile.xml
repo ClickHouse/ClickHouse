@@ -1,0 +1,8 @@
+<clickhouse>
+    <profiles>
+        <row_mask_limited>
+            <max_rows_in_set>1</max_rows_in_set>
+            <set_overflow_mode>throw</set_overflow_mode>
+        </row_mask_limited>
+    </profiles>
+</clickhouse>

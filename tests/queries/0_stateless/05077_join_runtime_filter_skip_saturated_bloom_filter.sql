@@ -15,7 +15,7 @@ INSERT INTO t_rf_left_pair SELECT number, 0 FROM numbers(100000);
 -- Many distinct pairs, but only 100000 distinct values of `a` and 20 of `b`.
 INSERT INTO t_rf_right_pair SELECT number % 100000, intDiv(number, 100000) FROM numbers(2000000);
 
-SET enable_analyzer = 1, enable_parallel_replicas = 0;
+SET enable_parallel_replicas = 0;
 SET enable_join_runtime_filters = 1, join_algorithm = 'parallel_hash', collect_hash_table_stats_during_joins = 1,
     join_runtime_filter_size_from_hash_table_stats = 1, join_runtime_bloom_filter_max_ratio_of_set_bits = 0.05,
     query_plan_join_swap_table = 0;

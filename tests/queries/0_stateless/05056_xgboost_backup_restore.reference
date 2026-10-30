@@ -1,0 +1,6 @@
+The dictionary predicts before the backup
+1
+RESTORE succeeds while enable_xgboost is off
+The restored dictionary predicts the same target
+1
+1

@@ -14,9 +14,7 @@ import { BetaBadge } from "/snippets/zh/components/BetaBadge/BetaBadge.jsx";
 
 这些设置可在 [system.settings](/zh/reference/system-tables/settings) 中查看，且由 [源文件](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp) 自动生成。
 
-<div id="optimize_trivial_approximate_count_query">
-  ## optimize_trivial_approximate_count_query
-</div>
+## optimize_trivial_approximate_count_query {#optimize_trivial_approximate_count_query}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -27,9 +25,7 @@ import { BetaBadge } from "/snippets/zh/components/BetaBadge/BetaBadge.jsx";
 * 0 — 禁用优化。
   * 1 — 启用优化。
 
-<div id="optimize_trivial_count_query">
-  ## optimize_trivial_count_query
-</div>
+## optimize_trivial_count_query {#optimize_trivial_count_query}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -44,9 +40,7 @@ import { BetaBadge } from "/snippets/zh/components/BetaBadge/BetaBadge.jsx";
 
 * [optimize&#95;functions&#95;to&#95;subcolumns](/zh/reference/settings/session-settings/optimize#optimize_functions_to_subcolumns)
 
-<div id="optimize_trivial_count_with_sparsity_filter">
-  ## optimize_trivial_count_with_sparsity_filter
-</div>
+## optimize_trivial_count_with_sparsity_filter {#optimize_trivial_count_with_sparsity_filter}
 
 <BetaBadge />
 
@@ -96,26 +90,26 @@ import { BetaBadge } from "/snippets/zh/components/BetaBadge/BetaBadge.jsx";
 
 * [optimize&#95;trivial&#95;count&#95;query](/zh/reference/settings/session-settings/optimize-trivial#optimize_trivial_count_query)
 
-<div id="optimize_trivial_group_by_limit_query">
-  ## optimize_trivial_group_by_limit_query
-</div>
+## optimize_trivial_group_by_limit_query {#optimize_trivial_group_by_limit_query}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.5"},{"label": "1"},{"label": "用于将 `SELECT key_expr FROM t GROUP BY key_expr LIMIT n` 查询的聚合最多限制为 LIMIT 个不同键的新设置。"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.5"},{"label": "1"},{"label": "新增设置：对于 `SELECT key_expr FROM t GROUP BY key_expr LIMIT n` 查询，将聚合限制为最多 LIMIT 个不同的键。"}]}]} />
 
-通过设置 `max_rows_to_group_by = n + offset` 和 `group_by_overflow_mode = 'any'`，启用或禁用对简单查询 `SELECT key_expr FROM table GROUP BY key_expr LIMIT n` 的优化 (要求投影中没有聚合函数、窗口函数或 `arrayJoin`，且不存在 `HAVING`/`ORDER BY`/`QUALIFY`/`LIMIT BY`/`DISTINCT`/窗口子句，也没有 `GROUP BY` 修饰符) 。当产生 `n + offset` 个不同键后，聚合会停止。
+启用或禁用针对简单查询 `SELECT ... FROM table GROUP BY key_expr LIMIT n` (不含 `HAVING`/`ORDER BY`/`QUALIFY`/`LIMIT BY`/`DISTINCT`/窗口子句，且不含 `GROUP BY` 修饰符) 的优化：将聚合的不同键数量上限设为 `n + offset`。
 
-当用户显式将 `group_by_overflow_mode` 设置为非 `any` 值时 (以保留其显式指定的 `throw`/`break` 行为) ，以及当用户已设置了更严格的 `max_rows_to_group_by` 时 (此时该优化会成为空操作) ，将不会应用此优化。
+若投影中不含聚合函数，则通过设置 `max_rows_to_group_by = n + offset` 并配合 `group_by_overflow_mode = 'any'` 来施加该上限 (此方式同样适用于分布式查询中的各个分片) 。若投影中含有聚合函数，则仅当服务器在本地完成全部聚合时才会施加该上限：一旦任一聚合线程超出上限，所有线程都将被限制为共用同一个包含 `n + offset` 个保留键的集合，从而确保所返回键的聚合值依然精确。
 
-可选值：
+以下情况下该优化不会生效：用户已显式将 `group_by_overflow_mode` 设为 `any` 以外的值 (以遵循其显式指定的 `throw`/`break` 契约) ；用户已设置了更严格的 `max_rows_to_group_by`；或启用了 [exact&#95;rows&#95;before&#95;limit](/zh/reference/settings/session-settings/other#exact_rows_before_limit) (此时该上限会导致 `rows_before_limit_at_least` 报告的值不超过 `n + offset`) 。
 
-* 0 — 禁用该优化。
-* 1 — 启用该优化。
+对于同一查询，聚合函数方式与 [enable&#95;group&#95;by&#95;top&#95;k&#95;optimization](/zh/reference/settings/session-settings/enable#enable_group_by_top_k_optimization) 所使用的 `GROUP BY` top-K 堆互斥。由于堆方式更快，因此仅在堆方式不适用时才会应用该截断，即：堆优化被禁用、`n + offset` 超过 [query&#95;plan&#95;max&#95;limit&#95;for&#95;top&#95;k&#95;optimization](/zh/reference/settings/session-settings/query-plan#query_plan_max_limit_for_top_k_optimization)、设置了 `max_rows_to_group_by`，或查询计划被序列化。
 
-<div id="optimize_trivial_insert_select">
-  ## optimize_trivial_insert_select
-</div>
+可能的值：
+
+* 0 — 禁用优化。
+* 1 — 启用优化。
+
+## optimize_trivial_insert_select {#optimize_trivial_insert_select}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -123,9 +117,10 @@ import { BetaBadge } from "/snippets/zh/components/BetaBadge/BetaBadge.jsx";
 
 对简单的 &#39;INSERT INTO table SELECT ... FROM TABLES&#39; 查询进行优化
 
-<div id="optimize_trivial_view_pushdown_to_distributed">
-  ## optimize_trivial_view_pushdown_to_distributed
-</div>
+建议同时显式设置 `max_insert_threads`：该优化会将 `SELECT` 的读取线程数限制为
+`max_insert_threads`，进而改变 `SELECT` 生成的块数量。
+
+## optimize_trivial_view_pushdown_to_distributed {#optimize_trivial_view_pushdown_to_distributed}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 

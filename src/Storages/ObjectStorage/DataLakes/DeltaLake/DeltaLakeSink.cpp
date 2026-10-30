@@ -33,6 +33,7 @@ DeltaLakeSink::DeltaLakeSink(
     ContextPtr context_,
     SharedHeader sample_block_,
     const std::optional<FormatSettings> & format_settings_,
+    FormatFilterInfoPtr format_filter_info_,
     const String & format,
     const String & compression_method)
     : SinkToStorage(sample_block_)
@@ -40,6 +41,7 @@ DeltaLakeSink::DeltaLakeSink(
     , delta_transaction(delta_transaction_)
     , object_storage(object_storage_)
     , format_settings(format_settings_)
+    , format_filter_info(std::move(format_filter_info_))
     , sample_block(sample_block_)
     , write_header(DeltaLake::makeDeltaWriteHeader(*sample_block_, delta_transaction_->getWriteSchema()))
     , data_file_max_rows(context_->getSettingsRef()[Setting::delta_lake_insert_max_rows_in_data_file])
@@ -94,7 +96,8 @@ DeltaLakeSink::StorageSinkPtr DeltaLakeSink::createStorageSink() const
         write_header,
         getContext(),
         write_format,
-        write_compression_method);
+        write_compression_method,
+        format_filter_info);
 }
 
 void DeltaLakeSink::consume(Chunk & chunk)

@@ -42,6 +42,29 @@ wait_for_log_rows()
     echo "timed out waiting for ${expected} rows in system.${log_table}, got ${LOG_ROW_COUNT}"
 }
 
+# Drains the block query `$1` queued for table `$2`, before the table is dropped. A query killed or timed out
+# before its SELECT finished queued nothing (`AsyncInsertQuery` = 0), so there is nothing to wait for.
+drain_queued_insert()
+{
+    local query_id=$1 && shift
+    local table=$1 && shift
+
+    local queued
+    queued=$(${CLICKHOUSE_CLIENT} -q "
+        SELECT sum(ProfileEvents['AsyncInsertQuery'])
+        FROM system.query_log
+        WHERE event_date >= yesterday() AND event_time >= now() - 600
+          AND current_database = currentDatabase() AND type != 'QueryStart'
+          AND query_id = '$query_id'
+    ")
+    wait_for_log_rows asynchronous_insert_log "$queued" "
+        SELECT count()
+        FROM system.asynchronous_insert_log
+        WHERE event_date >= yesterday() AND event_time >= now() - 600
+          AND database = currentDatabase() AND table = '$table'
+    "
+}
+
 # Case 1: the routed insert and the same insert on the synchronous route report the same write.
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS test_04633_acc"
 ${CLICKHOUSE_CLIENT} -q "CREATE TABLE test_04633_acc (n UInt64) ENGINE = MergeTree ORDER BY n"
@@ -255,7 +278,18 @@ ${CLICKHOUSE_CLIENT} --query_id="$KILL_ID" -q "
              $PINNED_SETTINGS_SQL
 " > "$KILL_OUT" 2>&1 &
 INSERT_PID=$!
-wait_for_query_to_start "$KILL_ID" 30
+# Kill only once the block is queued, so that the kill lands in the wait for the flush.
+KILL_QUEUED=0
+for _ in $(seq 1 60); do
+    KILL_QUEUED=$(${CLICKHOUSE_CLIENT} -q "
+        SELECT count()
+        FROM system.asynchronous_inserts
+        WHERE database = currentDatabase() AND table = 'test_04633_kill' AND has(entries.query_id, '$KILL_ID')
+    ")
+    [ "$KILL_QUEUED" -ge 1 ] && break
+    sleep 0.5
+done
+[ "$KILL_QUEUED" -ge 1 ] || echo "timed out waiting for query $KILL_ID to queue its block"
 ${CLICKHOUSE_CLIENT} -q "KILL QUERY WHERE query_id = '$KILL_ID' SYNC FORMAT Null"
 wait "$INSERT_PID"
 INSERT_EXIT=$?
@@ -315,12 +349,7 @@ wait_for_log_rows query_log 1 "
 "
 echo "$LOG_ROW_COUNT"
 
-# The block was queued before the limit expired, so the flush may still commit it: not asserted,
-# drained only to keep the queue off a dropped table.
-wait_for_log_rows asynchronous_insert_log 1 "
-    SELECT count()
-    FROM system.asynchronous_insert_log
-    WHERE event_date >= yesterday() AND event_time >= now() - 600
-      AND database = currentDatabase() AND table = 'test_04633_ready_race'
-"
+# A block queued before the limit expired may still be committed by the flush: not asserted, drained only to
+# keep the queue off a dropped table.
+drain_queued_insert "$RACE_ID" test_04633_ready_race
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE test_04633_ready_race"
