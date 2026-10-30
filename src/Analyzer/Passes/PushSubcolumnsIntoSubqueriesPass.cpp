@@ -38,7 +38,12 @@
 #include <Parsers/parseQuery.h>
 #include <Storages/IStorage.h>
 #include <Storages/MergeTree/MergeTreeData.h>
+#include <Storages/StorageAlias.h>
+#include <Storages/StorageBuffer.h>
 #include <Storages/StorageInMemoryMetadata.h>
+#include <Storages/StorageMaterializedView.h>
+#include <Storages/StorageMerge.h>
+#include <Storages/StorageProxy.h>
 #include <Storages/StorageSnapshot.h>
 #include <Storages/getEffectiveRowPolicyFilter.h>
 
@@ -940,13 +945,62 @@ bool composedSubcolumnPreservesStructure(const DataTypePtr & argument_type, cons
     return std::ranges::equal(composed_info->substreams_path, expected_path, isSameSubstream);
 }
 
+/// Whether `predicate` holds for the storage of the snapshot or for any storage it reads from. `Merge`,
+/// `MaterializedView`, `Buffer`, `Alias` and storage proxies forward the read (with the requested subcolumns)
+/// to the underlying tables, and their own metadata and data describe neither the keys and projections nor
+/// the parts of the data actually read. Fails closed (the predicate is considered to hold) when the underlying
+/// storages cannot be determined.
+bool anyStorageReadFrom(
+    const StorageSnapshotPtr & storage_snapshot,
+    const std::function<bool(const StorageSnapshotPtr &)> & predicate,
+    size_t depth = 0)
+{
+    if (predicate(storage_snapshot))
+        return true;
+
+    const IStorage & storage = storage_snapshot->storage;
+    bool is_known_wrapper = dynamic_cast<const StorageMerge *>(&storage) || dynamic_cast<const StorageMaterializedView *>(&storage)
+        || dynamic_cast<const StorageBuffer *>(&storage) || dynamic_cast<const StorageAlias *>(&storage)
+        || dynamic_cast<const StorageProxy *>(&storage);
+    if (!is_known_wrapper && !storage.readsFromOtherTables())
+        return false;
+
+    /// A chain of wrappers this deep (or a cycle) is not analyzed.
+    static constexpr size_t max_depth = 16;
+    if (depth >= max_depth)
+        return true;
+
+    auto check_underlying = [&](const StoragePtr & underlying) -> bool
+    {
+        if (!underlying)
+            return true;
+        auto metadata_handle = underlying->getInMemoryMetadataPtr(/*context=*/ nullptr, /*bypass_metadata_cache=*/ false);
+        StorageMetadataPtr underlying_metadata = metadata_handle;
+        auto underlying_snapshot = std::make_shared<StorageSnapshot>(*underlying, underlying_metadata);
+        return anyStorageReadFrom(underlying_snapshot, predicate, depth + 1);
+    };
+
+    if (const auto * merge = dynamic_cast<const StorageMerge *>(&storage))
+        return merge->hasChildTable(check_underlying);
+    if (const auto * materialized_view = dynamic_cast<const StorageMaterializedView *>(&storage))
+        return check_underlying(materialized_view->tryGetTargetTable());
+    if (const auto * buffer = dynamic_cast<const StorageBuffer *>(&storage))
+        return buffer->readsFromOtherTables() && check_underlying(buffer->getDestinationTable());
+    if (const auto * alias = dynamic_cast<const StorageAlias *>(&storage))
+        return check_underlying(alias->tryGetTargetTable());
+    if (const auto * proxy = dynamic_cast<const StorageProxy *>(&storage))
+        return check_underlying(proxy->getNested());
+
+    return true;
+}
+
 /// Whether a data part of the table still stores the column `column_name` (or the column it is a subcolumn
 /// of) with a type with dynamic subcolumns other than the type in the metadata, e.g. after a lazy (metadata
 /// only) `ALTER MODIFY COLUMN` of `JSON` type hints. The reader resolves a subcolumn of such a column against
 /// the type of the part, where any name is a valid dynamic path, and returns defaults instead of the values
 /// (https://github.com/ClickHouse/ClickHouse/issues/123339), while a read of the whole column converts it,
 /// so the subcolumn is extracted from the whole column there.
-bool hasPartsWithDifferentDynamicColumnType(const StorageSnapshotPtr & storage_snapshot, const String & column_name)
+bool hasPartsWithDifferentDynamicColumnTypeInStorage(const StorageSnapshotPtr & storage_snapshot, const String & column_name)
 {
     const auto * merge_tree = dynamic_cast<const MergeTreeData *>(&storage_snapshot->storage);
     if (!merge_tree)
@@ -977,6 +1031,14 @@ bool hasPartsWithDifferentDynamicColumnType(const StorageSnapshotPtr & storage_s
     }
 
     return std::ranges::any_of(merge_tree->getDataPartsVectorForInternalUsage(), part_has_different_type);
+}
+
+/// The same through the storages the storage of the snapshot reads from (see `anyStorageReadFrom`).
+bool hasPartsWithDifferentDynamicColumnType(const StorageSnapshotPtr & storage_snapshot, const String & column_name)
+{
+    return anyStorageReadFrom(
+        storage_snapshot,
+        [&](const StorageSnapshotPtr & snapshot) { return hasPartsWithDifferentDynamicColumnTypeInStorage(snapshot, column_name); });
 }
 
 /// Build the expression that reads the subcolumn inside the subquery, or nullptr if it cannot be built.
@@ -1119,7 +1181,7 @@ bool resolvedSubcolumnMatchesPath(
 /// Whether the column `column_name` (or the column it is a subcolumn of) is required by the sorting
 /// key (including its part beyond the primary key), the partition key, a secondary index, an
 /// aggregate projection or the sorting key or the `WHERE` of a normal projection of the storage.
-bool isColumnUsedByIndexes(const StorageSnapshotPtr & storage_snapshot, const String & column_name)
+bool isColumnUsedByIndexesOfStorage(const StorageSnapshotPtr & storage_snapshot, const String & column_name)
 {
     auto get_name_in_storage = [&](const String & name)
     {
@@ -1161,6 +1223,14 @@ bool isColumnUsedByIndexes(const StorageSnapshotPtr & storage_snapshot, const St
             }
             return false;
         });
+}
+
+/// The same through the storages the storage of the snapshot reads from (see `anyStorageReadFrom`):
+/// the keys and projections of the tables under `Merge` or a materialized view are matched literally too.
+bool isColumnUsedByIndexes(const StorageSnapshotPtr & storage_snapshot, const String & column_name)
+{
+    return anyStorageReadFrom(
+        storage_snapshot, [&](const StorageSnapshotPtr & snapshot) { return isColumnUsedByIndexesOfStorage(snapshot, column_name); });
 }
 
 bool functionCarrierReachesIndexedColumn(ColumnNode & column);
@@ -2243,8 +2313,16 @@ std::unordered_set<String> collectDeadExports(
 
 }
 
-void PushSubcolumnsIntoSubqueriesPass::run(QueryTreeNodePtr & query_tree_node, ContextPtr /*context*/)
+void PushSubcolumnsIntoSubqueriesPass::run(QueryTreeNodePtr & query_tree_node, ContextPtr context)
 {
+    /// A secondary query (sent to a shard or to a parallel replica) is built from the query tree of the
+    /// initiator, where the pushdown is already applied, and the initiator expects the header of its own
+    /// plan. The pass is not idempotent: a function-form carrier over a pushed subcolumn
+    /// (`isNull(c1.1)` over the pushed `c1.1`) is lowered only by a second run, which would change the
+    /// header of the secondary query (`notEquals(c1.1.null, 0)`) and break the reading of its result.
+    if (context->getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY)
+        return;
+
     /// An ordinary (non-materialized) CTE referenced several times is a single query node
     /// shared by all the referencing queries, so the query graph is a DAG rather than a tree.
     /// Queries are processed in topological order: a shared subquery is processed only after
