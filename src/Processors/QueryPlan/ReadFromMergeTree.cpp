@@ -653,6 +653,8 @@ std::unique_ptr<ReadFromMergeTree> ReadFromMergeTree::createLocalParallelReplica
     parallel_replicas_step->allow_query_condition_cache = allow_query_condition_cache;
     parallel_replicas_step->allow_top_k_prewhere_query_condition_cache = allow_top_k_prewhere_query_condition_cache;
     parallel_replicas_step->top_k_filter_info = top_k_filter_info;
+    /// A plan-based fragment's local copy must announce the read under the name the replicas use.
+    parallel_replicas_step->coordinated_under_storage_name = coordinated_under_storage_name;
     /// Same for the text-index read tasks: `createLocalPlanForParallelReplicas` runs the full plan
     /// optimization, so the replaced step can already have a predicate rewritten to `__text_index_*`
     /// virtual columns that only this task map materializes.
@@ -4272,17 +4274,15 @@ void ReadFromMergeTree::updateSortDescription()
         enable_vertical_final);
 }
 
-bool ReadFromMergeTree::readsThroughTableFunction() const
-{
-    return query_info.table_expression && query_info.table_expression->as<TableFunctionNode>();
-}
-
 String ReadFromMergeTree::getParallelReplicasStreamId() const
 {
     /// A read through a table function may read a storage whose name is local to each server: the target of
     /// a `TimeSeries` table is named after a UUID the server assigned. Replicas that announced it under that
     /// name would get a coordinator each and read everything, so it goes by the identity of its source.
-    if (const auto * table_function_node = query_info.table_expression ? query_info.table_expression->as<TableFunctionNode>() : nullptr)
+    /// A read shipped in a plan fragment names the storage itself, which a replica without it cannot read.
+    const auto * table_function_node
+        = !coordinated_under_storage_name && query_info.table_expression ? query_info.table_expression->as<TableFunctionNode>() : nullptr;
+    if (table_function_node)
     {
         if (const auto & read_id = table_function_node->getParallelReplicasReadID())
             return *read_id;
@@ -4996,6 +4996,7 @@ QueryPlanStepPtr ReadFromMergeTree::clone() const
         number_of_current_replica);
     cloned_step->allow_query_condition_cache = allow_query_condition_cache;
     cloned_step->allow_top_k_prewhere_query_condition_cache = allow_top_k_prewhere_query_condition_cache;
+    cloned_step->coordinated_under_storage_name = coordinated_under_storage_name;
     cloned_step->distributed_read_bucket_count = distributed_read_bucket_count;
     /// The coordinator-computed mark buckets and their per-task grouping; without them the
     /// fan-out has nothing to ship in the per-read bucket task parameters, and a FINAL read

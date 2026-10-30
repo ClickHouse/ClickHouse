@@ -133,13 +133,6 @@ bool mergeTreeReadCanBeShipped(const ReadFromMergeTree & read)
     if (!read.getIndexReadTasks().empty())
         return false;
 
-    /// A shipped read names the storage it resolved to here, which for a table function is not a table the
-    /// replicas share: the target of a `TimeSeries` table is named after a UUID this server assigned. The
-    /// replica would also coordinate it under a different stream than the initiator's own read (see
-    /// `ReadFromMergeTree::getParallelReplicasStreamId`). Such a read is distributed by the query-tree way only.
-    if (read.readsThroughTableFunction())
-        return false;
-
     /// The pinned block-number boundary is not serialized: a follower rebuilds the read with
     /// max_block_numbers_to_read = nullptr and would read past the initiator's snapshot boundary.
     if (read.hasPinnedBlockNumbers())

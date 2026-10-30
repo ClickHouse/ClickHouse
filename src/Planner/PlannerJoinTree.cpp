@@ -1733,15 +1733,12 @@ bool parallelReplicasEnabledForStorage(const StoragePtr & current_storage, const
 /// that a single leaf (the leftmost) takes the WithMergeableState path with the
 /// whole join query tree; the other leaves must take the plain `storage->read`
 /// path.  Callers should compute this once for the join tree and gate the
-/// per-leaf parallel-replicas activation accordingly.  `plan_based` says whether the plan-based
-/// implementation decides the distribution of this read, which is not always the case when
-/// `parallel_replicas_plan_based` is on.  `query_sets_additional_table_filters` says whether the
-/// query sent to the replicas sets `additional_table_filters` anywhere.
+/// per-leaf parallel-replicas activation accordingly.  `query_sets_additional_table_filters` says
+/// whether the query sent to the replicas sets `additional_table_filters` anywhere.
 bool allowParallelReplicasForJoinTree(
     const QueryTreeNodePtr & join_tree_node,
     const ContextPtr & context,
     const Settings & query_settings,
-    bool plan_based,
     bool query_sets_additional_table_filters)
 {
     if (!join_tree_node)
@@ -1783,7 +1780,7 @@ bool allowParallelReplicasForJoinTree(
     /// RightAny picks one right row per left row out of the whole right table, so its right side cannot be split.
     /// In plan-based mode this gate only sizes the read, and `liftSplitAboveJoin` keeps such a join local.
     if (join_kind == JoinKind::Right
-        && (join_strictness != JoinStrictness::RightAny || plan_based))
+        && (join_strictness != JoinStrictness::RightAny || query_settings[Setting::parallel_replicas_plan_based]))
     {
         // parallel replicas is allowed only simple RIGHT JOINs i.e. t1 RIGHT JOIN t2
         if (left_table_expr->getNodeType() != QueryTreeNodeType::TABLE
@@ -2924,17 +2921,13 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(TableExpressionNodePtr table_
                     /// own copy of the same table. A table function that builds a storage of its own resolves to
                     /// something local to this server, so it stays on a single replica even when that storage
                     /// happens to be a `MergeTree`.
-                    /// A read through a table function is planned the query-tree way even in the plan-based
-                    /// mode (see below), so the join around it must be one the query-tree way can distribute.
                     else if (
                         const bool query_sets_additional_table_filters
                             = queryTreeSetsAdditionalTableFilters(table_expression_query_info.query_tree.get());
                         ClusterProxy::canUseParallelReplicasOnInitiator(query_context)
                         && (!table_function_node || tableFunctionCanDriveParallelReplicasRead(*table_function_node, query_sets_additional_table_filters))
                         && allowParallelReplicasForJoinTree(
-                            parent_join_tree, query_context, settings,
-                            /*plan_based=*/ settings[Setting::parallel_replicas_plan_based] && !table_function_node,
-                            query_sets_additional_table_filters))
+                            parent_join_tree, query_context, settings, query_sets_additional_table_filters))
                     {
                         // (1) find read step
 
@@ -2994,18 +2987,7 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(TableExpressionNodePtr table_
                         // (3) if parallel replicas still enabled - replace reading step
                         if (reading_node && planner_context->getQueryContext()->canUseParallelReplicasOnInitiator())
                         {
-                            /// A stable-reference table function takes the query-tree path even when the
-                            /// plan-based mode is on. That mode ships a `ReadFromMergeTree` fragment, which
-                            /// carries the id of the storage the call resolved to here - a hidden inner table
-                            /// named after a UUID this server assigned - so a replica that assigned a
-                            /// different one cannot find it. Such a read is planned as if the plan-based mode
-                            /// were off: none of its decisions apply to it, including where the plan is split
-                            /// between the initiator and the replicas. This keeps the result correct, and the
-                            /// read parallel on the replicas that find the table it resolved to here. Shipping
-                            /// the call in the fragment instead needs a query-plan serialization version.
-                            /// (Only a stable reference reaches here: the branch condition above admits no
-                            /// other table function.)
-                            if (!settings[Setting::parallel_replicas_plan_based] || table_function_node)
+                            if (!settings[Setting::parallel_replicas_plan_based])
                             {
                                 till_stage = QueryProcessingStage::WithMergeableState;
                                 QueryPlan query_plan_parallel_replicas;
@@ -3028,9 +3010,10 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(TableExpressionNodePtr table_
                                 /// local/remote boundary is done later, as an analysis of the whole plan
                                 /// (QueryPlanOptimizations::applyParallelReplicas), which inserts the split step.
                                 ///
-                                /// A read through a stable-reference table function never gets here - it takes
-                                /// the query-tree path above - because the fragment this builds would name the
-                                /// storage the call resolved to on this server.
+                                /// For a read through a table function the fragment names the storage the call
+                                /// resolved to here. The inner table of a `TimeSeries` table is named after the
+                                /// table's UUID, so a replica that created its table on its own, with another UUID,
+                                /// fails to find it rather than reading something else.
                                 QueryPlan query_plan_parallel_replicas;
                                 storage->read(
                                     query_plan_parallel_replicas,
