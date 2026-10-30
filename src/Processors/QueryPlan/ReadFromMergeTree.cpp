@@ -5305,7 +5305,8 @@ ContextMutablePtr ReadFromMergeTree::getAccessInfoContext() const
 
 void ReadFromMergeTree::reportIndexUsageWith(IQueryPlanStep & step, AnalysisResultPtr analysis, UInt64 granules_dropped_by_partition_key) const
 {
-    assert_cast<ISourceStep &>(step).setOnInitializePipeline(
+    /// `assert_cast` checks the exact type, `step` is a subclass
+    dynamic_cast<ISourceStep &>(step).setOnInitializePipeline(
         [replaced_analysis = std::move(analysis), storage_id = data.getStorageID(), access_info_context = getAccessInfoContext(), granules_dropped_by_partition_key]
         {
             if (replaced_analysis)
