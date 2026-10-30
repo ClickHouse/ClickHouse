@@ -582,9 +582,10 @@ SchemaCache::Key getKeyForSchemaCache(
     const String & format,
     const std::optional<FormatSettings> & format_settings,
     const ContextPtr & context,
-    const String & compression_method)
+    const String & compression_method,
+    const String & headers)
 {
-    return getKeysForSchemaCache({source}, format, format_settings, context, compression_method).front();
+    return getKeysForSchemaCache({source}, format, format_settings, context, compression_method, headers).front();
 }
 
 static SchemaCache::Key makeSchemaCacheKey(
@@ -592,9 +593,10 @@ static SchemaCache::Key makeSchemaCacheKey(
     const String & format,
     const String & additional_format_info,
     const String & schema_inference_mode,
-    const String & compression_method)
+    const String & compression_method,
+    const String & headers)
 {
-    return SchemaCache::Key{source, format, additional_format_info, schema_inference_mode, compression_method};
+    return SchemaCache::Key{source, format, additional_format_info, schema_inference_mode, compression_method, headers};
 }
 
 SchemaCache::Keys getKeysForSchemaCache(
@@ -602,7 +604,8 @@ SchemaCache::Keys getKeysForSchemaCache(
     const String & format,
     const std::optional<FormatSettings> & format_settings,
     const ContextPtr & context,
-    const String & compression_method)
+    const String & compression_method,
+    const String & headers)
 {
     /// For some formats data schema depends on some settings, so it's possible that
     /// two queries to the same source will get two different schemas. To process this
@@ -617,7 +620,7 @@ SchemaCache::Keys getKeysForSchemaCache(
         sources.begin(),
         sources.end(),
         std::back_inserter(cache_keys),
-        [&](const auto & source) { return makeSchemaCacheKey(source, format, additional_format_info, schema_inference_mode, compression_method); });
+        [&](const auto & source) { return makeSchemaCacheKey(source, format, additional_format_info, schema_inference_mode, compression_method, headers); });
     return cache_keys;
 }
 

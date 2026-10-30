@@ -151,3 +151,32 @@ FROM system.schema_inference_cache
 WHERE storage = 'File' AND format = 'LineAsString' AND source LIKE '%${CLICKHOUSE_TEST_UNIQUE_NAME}_same.raw%'
 SETTINGS schema_inference_use_cache_for_file=0
 "
+
+# Case J: Header sensitivity: plain request first, gzip request second
+echo "Case J: Header sensitivity plain first then gzip"
+url_hdr_plain="http://127.0.0.1:${CLICKHOUSE_PORT_HTTP}/?query=SELECT+number+FROM+numbers(50)+FORMAT+CSV&enable_http_compression=1&query_id=${CLICKHOUSE_TEST_UNIQUE_NAME}_hdr_plain"
+$CLICKHOUSE_CLIENT $url_settings -q "SELECT count() FROM url('$url_hdr_plain', 'CSV', 'x UInt64', 'none')"
+$CLICKHOUSE_CLIENT $url_settings -q "SELECT count() FROM url('$url_hdr_plain', 'CSV', 'x UInt64', 'gzip', headers('Accept-Encoding' = 'gzip'))"
+
+# Case K: Header sensitivity: gzip request first, plain request second with compression mismatch
+echo "Case K: Header sensitivity gzip first then plain"
+url_hdr_rev="http://127.0.0.1:${CLICKHOUSE_PORT_HTTP}/?query=SELECT+number+FROM+numbers(50)+FORMAT+CSV&enable_http_compression=1&query_id=${CLICKHOUSE_TEST_UNIQUE_NAME}_hdr_rev"
+$CLICKHOUSE_CLIENT $url_settings -q "SELECT count() FROM url('$url_hdr_rev', 'CSV', 'x UInt64', 'gzip', headers('Accept-Encoding' = 'gzip'))"
+assert_exception "CANNOT_DECOMPRESS" $CLICKHOUSE_CLIENT $url_settings -q "SELECT count() FROM url('$url_hdr_rev', 'CSV', 'x UInt64', 'gzip', headers('Accept-Encoding' = 'identity'))"
+
+# Case L: Header case and whitespace normalization reuse
+echo "Case L: Header canonicalization reuse"
+url_hdr_canon="http://127.0.0.1:${CLICKHOUSE_PORT_HTTP}/?query=SELECT+number+FROM+numbers(50)+FORMAT+CSV&enable_http_compression=1&query_id=${CLICKHOUSE_TEST_UNIQUE_NAME}_hdr_canon"
+$CLICKHOUSE_CLIENT $url_settings -q "SELECT count() FROM url('$url_hdr_canon', 'CSV', 'x UInt64', 'gzip', headers('Accept-Encoding' = 'gzip'))"
+$CLICKHOUSE_CLIENT $url_settings -q "SELECT count() FROM url('$url_hdr_canon', 'CSV', 'x UInt64', 'gzip', headers(' accept-encoding ' = ' gzip '))"
+
+# Case M: Secret header redaction in schema inference cache
+echo "Case M: Secret header redaction"
+url_secret="http://127.0.0.1:${CLICKHOUSE_PORT_HTTP}/?query=SELECT+number+FROM+numbers(50)+FORMAT+CSV&query_id=${CLICKHOUSE_TEST_UNIQUE_NAME}_secret"
+$CLICKHOUSE_CLIENT $url_settings -q "SELECT count() FROM url('$url_secret', 'CSV', 'x UInt64', 'none', headers('Authorization' = 'Bearer secret-key-value-12345'))"
+$CLICKHOUSE_CLIENT -q "
+SELECT storage, format, headers LIKE '%secret-key-value%', headers LIKE 'authorization:hash:%'
+FROM system.schema_inference_cache
+WHERE storage = 'URL' AND source LIKE '%${CLICKHOUSE_TEST_UNIQUE_NAME}_secret%'
+SETTINGS schema_inference_use_cache_for_url=0
+"

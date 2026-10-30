@@ -134,12 +134,14 @@ SchemaCache::Key getKeyForSchemaCache(
     const String & format,
     const std::optional<FormatSettings> & format_settings,
     const ContextPtr & context,
-    const String & compression_method = "");
+    const String & compression_method = "",
+    const String & headers = "");
 SchemaCache::Keys getKeysForSchemaCache(
     const Strings & sources,
     const String & format,
     const std::optional<FormatSettings> & format_settings,
     const ContextPtr & context,
-    const String & compression_method = "");
+    const String & compression_method = "",
+    const String & headers = "");
 
 }

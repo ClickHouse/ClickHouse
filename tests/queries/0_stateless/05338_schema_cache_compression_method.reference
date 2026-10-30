@@ -27,3 +27,15 @@ Case I: Schema cache system table inspection
 URL	CSV		50
 URL	CSV	gzip	50
 File	LineAsString	gzip	50
+Case J: Header sensitivity plain first then gzip
+50
+50
+Case K: Header sensitivity gzip first then plain
+50
+CANNOT_DECOMPRESS
+Case L: Header canonicalization reuse
+50
+50
+Case M: Secret header redaction
+50
+URL	CSV	0	1

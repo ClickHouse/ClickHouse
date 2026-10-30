@@ -52,7 +52,9 @@
 #include <Common/ProfileEvents.h>
 #include <Common/thread_local_rng.h>
 #include <Common/logger_useful.h>
+#include <Common/SipHash.h>
 
+#include <base/hex.h>
 #include <base/EnumReflection.h>
 
 #include <TableFunctions/TableFunctionURL.h>
@@ -179,6 +181,80 @@ bool urlPathHasListableGlobs(std::string_view uri)
     const auto path = uri.substr(path_start, path_end == std::string_view::npos ? std::string_view::npos : path_end - path_start);
     return path.contains('*');
 }
+String canonicalizeHTTPHeadersForSchemaCache(const HTTPHeaderEntries & headers)
+{
+    if (headers.empty())
+        return "";
+
+    auto is_sensitive = [](std::string_view name) -> bool
+    {
+        if (name == "authorization" || name == "proxy-authorization"
+            || name == "cookie" || name == "set-cookie"
+            || name == "x-api-key" || name == "api-key")
+            return true;
+        if (name.ends_with("-key") || name.ends_with("-token")
+            || name.ends_with("_key") || name.ends_with("_token"))
+            return true;
+        return false;
+    };
+
+    auto trim = [](std::string_view s) -> std::string_view
+    {
+        while (!s.empty() && (s.front() == ' ' || s.front() == '	'))
+            s.remove_prefix(1);
+        while (!s.empty() && (s.back() == ' ' || s.back() == '	'))
+            s.remove_suffix(1);
+        return s;
+    };
+
+    std::vector<std::pair<String, String>> normalized;
+    normalized.reserve(headers.size());
+
+    for (const auto & entry : headers)
+    {
+        auto trimmed_name = trim(entry.name);
+        if (trimmed_name.empty())
+            continue;
+
+        String lower_name;
+        lower_name.reserve(trimmed_name.size());
+        for (char c : trimmed_name)
+            lower_name.push_back(static_cast<char>(std::tolower(static_cast<unsigned char>(c))));
+
+        auto trimmed_val = trim(entry.value);
+
+        if (is_sensitive(lower_name))
+        {
+            SipHash h;
+            h.update(trimmed_val.data(), trimmed_val.size());
+            UInt64 hash_val = h.get64();
+            normalized.emplace_back(std::move(lower_name), "hash:" + getHexUIntLowercase(hash_val));
+        }
+        else
+        {
+            normalized.emplace_back(std::move(lower_name), String(trimmed_val));
+        }
+    }
+
+    std::sort(normalized.begin(), normalized.end(), [](const auto & a, const auto & b)
+    {
+        if (a.first != b.first)
+            return a.first < b.first;
+        return a.second < b.second;
+    });
+
+    String result;
+    for (size_t i = 0; i < normalized.size(); ++i)
+    {
+        if (i > 0)
+            result.push_back(';');
+        result.append(normalized[i].first);
+        result.push_back(':');
+        result.append(normalized[i].second);
+    }
+    return result;
+}
+
 
 String getSampleURI(String uri, ContextPtr context)
 {
@@ -1200,14 +1276,14 @@ std::pair<Poco::URI, std::unique_ptr<ReadWriteBufferFromHTTP>> StorageURLSource:
 void StorageURLSource::addNumRowsToCache(const String & uri, size_t num_rows)
 {
     auto compression_name = toContentEncodingName(compression_method);
-    auto cache_key = getKeyForSchemaCache(uri, format, format_settings, getContext(), compression_name);
+    auto cache_key = getKeyForSchemaCache(uri, format, format_settings, getContext(), compression_name, canonicalizeHTTPHeadersForSchemaCache(headers));
     StorageURL::getSchemaCache(getContext()).addNumRows(cache_key, num_rows);
 }
 
 std::optional<size_t> StorageURLSource::tryGetNumRowsFromCache(const String & uri, std::optional<time_t> last_mod_time)
 {
     auto compression_name = toContentEncodingName(compression_method);
-    auto cache_key = getKeyForSchemaCache(uri, format, format_settings, getContext(), compression_name);
+    auto cache_key = getKeyForSchemaCache(uri, format, format_settings, getContext(), compression_name, canonicalizeHTTPHeadersForSchemaCache(headers));
     auto get_last_mod_time = [&]() -> std::optional<time_t>
     {
         /// Some URLs could not have Last-Modified header, in this case we cannot be sure that
@@ -1504,7 +1580,7 @@ namespace
                 return;
 
             auto compression_name = toContentEncodingName(compression_method);
-            auto key = getKeyForSchemaCache(current_url_option, *format, format_settings, getContext(), compression_name);
+            auto key = getKeyForSchemaCache(current_url_option, *format, format_settings, getContext(), compression_name, canonicalizeHTTPHeadersForSchemaCache(headers));
             StorageURL::getSchemaCache(getContext()).addNumRows(key, num_rows);
         }
 
@@ -1514,7 +1590,7 @@ namespace
                 return;
 
             auto compression_name = toContentEncodingName(compression_method);
-            auto key = getKeyForSchemaCache(current_url_option, *format, format_settings, getContext(), compression_name);
+            auto key = getKeyForSchemaCache(current_url_option, *format, format_settings, getContext(), compression_name, canonicalizeHTTPHeadersForSchemaCache(headers));
             StorageURL::getSchemaCache(getContext()).addColumns(key, columns);
         }
 
@@ -1626,7 +1702,7 @@ namespace
                 auto compression_name = toContentEncodingName(compression_method);
                 if (format)
                 {
-                    auto cache_key = getKeyForSchemaCache(url, *format, format_settings, context, compression_name);
+                    auto cache_key = getKeyForSchemaCache(url, *format, format_settings, context, compression_name, canonicalizeHTTPHeadersForSchemaCache(headers));
                     if (auto columns = schema_cache.tryGetColumns(cache_key, get_last_mod_time))
                         return columns;
                 }
@@ -1637,7 +1713,7 @@ namespace
                     /// If we have such entry for some format, we can use this format to read the file.
                     for (const auto & format_name : FormatFactory::instance().getAllInputFormats())
                     {
-                        auto cache_key = getKeyForSchemaCache(url, format_name, format_settings, context, compression_name);
+                        auto cache_key = getKeyForSchemaCache(url, format_name, format_settings, context, compression_name, canonicalizeHTTPHeadersForSchemaCache(headers));
                         if (auto columns = schema_cache.tryGetColumns(cache_key, get_last_mod_time))
                         {
                             format = format_name;

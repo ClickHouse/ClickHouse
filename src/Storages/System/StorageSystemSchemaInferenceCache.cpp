@@ -49,6 +49,7 @@ ColumnsDescription StorageSystemSchemaInferenceCache::getColumnsDescription()
         {"number_of_rows", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>()), "Number of rows in the file in given format. It's used for caching trivial count() from data files and for caching number of rows from the metadata during schema inference."},
         {"schema_inference_mode", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>()), "Scheme inference mode."},
         {"compression_method", std::make_shared<DataTypeString>(), "Compression method name."},
+        {"headers", std::make_shared<DataTypeString>(), "Request headers used for URL storage."},
     };
 }
 
@@ -74,6 +75,7 @@ static void fillDataImpl(MutableColumns & res_columns, SchemaCache & schema_cach
             res_columns[6]->insertDefault();
         res_columns[7]->insert(key.schema_inference_mode);
         res_columns[8]->insert(key.compression_method);
+        res_columns[9]->insert(key.headers);
     }
 }
 

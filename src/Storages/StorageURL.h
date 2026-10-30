@@ -31,6 +31,7 @@ struct StorageID;
 class PullingPipelineExecutor;
 
 bool urlPathHasListableGlobs(std::string_view uri);
+String canonicalizeHTTPHeadersForSchemaCache(const HTTPHeaderEntries & headers);
 
 struct FormatParserSharedResources;
 using FormatParserSharedResourcesPtr = std::shared_ptr<FormatParserSharedResources>;

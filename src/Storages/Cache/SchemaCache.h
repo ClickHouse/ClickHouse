@@ -31,6 +31,7 @@ public:
         String additional_format_info;
         String schema_inference_mode;
         String compression_method;
+        String headers;
 
         bool operator==(const Key & other) const
         {
@@ -38,7 +39,8 @@ public:
                 && format == other.format
                 && additional_format_info == other.additional_format_info
                 && schema_inference_mode == other.schema_inference_mode
-                && compression_method == other.compression_method;
+                && compression_method == other.compression_method
+                && headers == other.headers;
         }
     };
 
@@ -48,7 +50,7 @@ public:
     {
         size_t operator()(const Key & key) const
         {
-            return std::hash<String>()(key.source + key.format + key.additional_format_info + key.schema_inference_mode + key.compression_method);
+            return std::hash<String>()(key.source + key.format + key.additional_format_info + key.schema_inference_mode + key.compression_method + key.headers);
         }
     };
 
