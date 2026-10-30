@@ -13,10 +13,15 @@
 namespace DB
 {
 
+/// The single definition point of the constants declared in `ActionLockTypes.h`.
+#define ACTION_LOCK_DEFINE(ID, VALUE, NAME) const StorageActionBlockType ID = VALUE;
+
 namespace ActionLocks
 {
     ACTION_LOCK_TYPES(ACTION_LOCK_DEFINE)
 }
+
+#undef ACTION_LOCK_DEFINE
 
 
 namespace
@@ -46,7 +51,10 @@ StoragePtr resolveActionLockOwner(const StoragePtr & table, StorageActionBlockTy
     StoragePtr owner = table;
     /// A chain is one hop in practice. Only broken metadata can make it cyclic, so detect a repeat
     /// rather than capping the depth: a legal chain of any length still resolves to its real owner.
-    std::vector<const IStorage *> seen;
+    /// Hold the visited storages rather than their addresses: a forwarding storage may be a temporary
+    /// that the database creates on every lookup (an `Overlay` alias), and the hop that leaves it
+    /// releases it, so the next hop could be allocated at the same address and look like a repeat.
+    std::vector<StoragePtr> seen;
     while (true)
     {
         if (load)
@@ -56,10 +64,11 @@ StoragePtr resolveActionLockOwner(const StoragePtr & table, StorageActionBlockTy
         if (!next || next.get() == owner.get())
             return owner;
 
-        if (std::ranges::find(seen, owner.get()) != seen.end())
+        const auto is_visited = [&owner](const StoragePtr & visited) { return visited.get() == owner.get(); };
+        if (std::ranges::any_of(seen, is_visited))
             return owner;
 
-        seen.push_back(owner.get());
+        seen.push_back(owner);
         owner = std::move(next);
     }
 }
@@ -67,23 +76,12 @@ StoragePtr resolveActionLockOwner(const StoragePtr & table, StorageActionBlockTy
 /// The storage that holds the registry entry for a table as `system.tables` names it. A proxy is a
 /// transparent stand-in for the same logical table, so the entry lives on the storage it wraps; an
 /// `Alias` or a materialized view is a table in its own right and keeps its own (empty) entry.
-/// Never loads a stand-in: a listing must not materialize a table.
+/// Never loads a stand-in: a listing must not materialize a table. Uses the shared `castStorage`
+/// unwrap rule, so it cannot drift from the other places that look through proxies. The write path
+/// deliberately resolves differently: it loads stand-ins and follows `getActionLockOwner`.
 StoragePtr resolveEntryOwner(const StoragePtr & table)
 {
-    StoragePtr owner = table;
-    for (size_t depth = 0; depth < max_storage_proxy_depth && owner; ++depth)
-    {
-        const auto * proxy = dynamic_cast<const StorageProxy *>(owner.get());
-        if (!proxy)
-            break;
-
-        auto nested = proxy->tryGetNested();
-        if (!nested)
-            break;
-
-        owner = std::move(nested);
-    }
-    return owner;
+    return castStorage<IStorage>(table, DeferredTable::Skip);
 }
 }
 

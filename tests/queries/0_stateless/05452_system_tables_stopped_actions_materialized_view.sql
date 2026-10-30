@@ -19,6 +19,18 @@ SELECT stopped_actions FROM system.tables WHERE database = currentDatabase() AND
 DROP TABLE stopped_actions_mv SYNC;
 DROP TABLE stopped_actions_mv_source;
 
+-- A view created with a `TO` clause owns no blocker and has no implicit inner table: `SYSTEM STOP
+-- MERGES` on it registers nothing, and the destination table it writes to is not touched either.
+CREATE TABLE stopped_actions_mv_to_destination (x UInt64) ENGINE = MergeTree ORDER BY x;
+CREATE TABLE stopped_actions_mv_to_source (x UInt64) ENGINE = Memory;
+CREATE MATERIALIZED VIEW stopped_actions_mv_to TO stopped_actions_mv_to_destination AS SELECT x FROM stopped_actions_mv_to_source;
+SYSTEM STOP MERGES stopped_actions_mv_to;
+SELECT stopped_actions FROM system.tables WHERE database = currentDatabase() AND name = 'stopped_actions_mv_to';
+SELECT stopped_actions FROM system.tables WHERE database = currentDatabase() AND name = 'stopped_actions_mv_to_destination';
+DROP TABLE stopped_actions_mv_to SYNC;
+DROP TABLE stopped_actions_mv_to_destination SYNC;
+DROP TABLE stopped_actions_mv_to_source;
+
 -- A refreshable view keeps its refresh state in `system.view_refreshes`: `SYSTEM STOP VIEW` stops the
 -- refresher but registers no table-level action lock, so nothing is reported here.
 -- `APPEND` with `all_replicas` is the combination a `Replicated` database accepts for a non-replicated

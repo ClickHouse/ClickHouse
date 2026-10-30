@@ -26,13 +26,13 @@ namespace DB
     M(ViewRefreshPause,      13, "view_refresh_pause")     \
     M(StreamConsume,         14, "streaming_consumption")
 
-/// These helpers remain defined for the declaration and definition expansions in other files.
+/// Expands to the declarations of the constants below.
 #define ACTION_LOCK_DECLARE(ID, VALUE, NAME) extern const StorageActionBlockType ID;
-#define ACTION_LOCK_DEFINE(ID, VALUE, NAME) const StorageActionBlockType ID = VALUE;
 
 namespace ActionLocks
 {
 ACTION_LOCK_TYPES(ACTION_LOCK_DECLARE)
 }
+#undef ACTION_LOCK_DECLARE
 
 }

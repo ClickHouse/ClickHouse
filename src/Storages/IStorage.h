@@ -728,10 +728,15 @@ public:
         return {};
     }
 
-    /// The storage that owns the blocker `getActionLock` returns for this action type, or nullptr
-    /// when this storage owns it. A storage that forwards to another table returns that table, so a
-    /// registered lock is attributed to the table whose background activity it actually blocks. The
-    /// returned storage may itself forward, so callers resolve the whole chain.
+    /// The storage that owns the blocker `getActionLock` returns for this action type. A storage that
+    /// forwards to another table returns that table, so a registered lock is attributed to the table
+    /// whose background activity it actually blocks. The returned storage may itself forward, so
+    /// callers resolve the whole chain.
+    ///
+    /// nullptr covers two cases that callers treat the same way: this storage owns the blocker, or
+    /// nothing is registered at all and no storage owns an entry (a materialized view stopped on its
+    /// refresher, for example). Either way the caller still calls `getActionLock` on the storage it
+    /// ends up with, and that call is what makes `SYSTEM STOP VIEW` reach the refresher.
     virtual StoragePtr getActionLockOwner(StorageActionBlockType /* action_type */) const { return nullptr; }
 
     /// Call when lock from previous method removed
