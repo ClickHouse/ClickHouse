@@ -1,0 +1,81 @@
+-- Tags: no-fasttest
+-- no-fasttest: the MySQL integration is not available in the fast test build.
+
+-- A dictionary created with a DDL query may not set `socket`, at the source or at a replica: for `localhost`
+-- the connection goes to that Unix socket, while `remote_url_allow_hosts` checks only `host` and `port`.
+-- No MySQL server is needed: the source is rejected when the dictionary is loaded, before any connection.
+
+CREATE DICTIONARY d_socket (id UInt64, v String) PRIMARY KEY id
+SOURCE(MYSQL(HOST 'localhost' PORT 3306 SOCKET '/nonexistent/mysql.sock' USER 'u' PASSWORD 'p' DB 'd' TABLE 't'))
+LAYOUT(FLAT()) LIFETIME(0);
+SYSTEM RELOAD DICTIONARY d_socket; -- { serverError BAD_ARGUMENTS }
+DROP DICTIONARY d_socket;
+
+CREATE DICTIONARY d_socket_inherited (id UInt64, v String) PRIMARY KEY id
+SOURCE(MYSQL(USER 'u' PASSWORD 'p' DB 'd' TABLE 't' PORT 3306 SOCKET '/nonexistent/mysql.sock' REPLICA(PRIORITY 1 HOST 'localhost')))
+LAYOUT(FLAT()) LIFETIME(0);
+SYSTEM RELOAD DICTIONARY d_socket_inherited; -- { serverError BAD_ARGUMENTS }
+DROP DICTIONARY d_socket_inherited;
+
+CREATE DICTIONARY d_socket_replica (id UInt64, v String) PRIMARY KEY id
+SOURCE(MYSQL(USER 'u' PASSWORD 'p' DB 'd' TABLE 't' PORT 3306 REPLICA(PRIORITY 1 HOST '127.0.0.1') REPLICA(PRIORITY 2 HOST 'localhost' SOCKET '/nonexistent/mysql.sock')))
+LAYOUT(FLAT()) LIFETIME(0);
+SYSTEM RELOAD DICTIONARY d_socket_replica; -- { serverError BAD_ARGUMENTS }
+DROP DICTIONARY d_socket_replica;
+
+-- Also next to a named collection: `socket` is rejected before the collection is looked up.
+CREATE DICTIONARY d_socket_named (id UInt64, v String) PRIMARY KEY id
+SOURCE(MYSQL(NAME nc_05229_absent SOCKET '/nonexistent/mysql.sock'))
+LAYOUT(FLAT()) LIFETIME(0);
+SYSTEM RELOAD DICTIONARY d_socket_named; -- { serverError BAD_ARGUMENTS }
+DROP DICTIONARY d_socket_named;
+
+-- Nor through `host`: the client library parses a host that contains `;` or `=` as a list of connection
+-- options, `socket` and `protocol` included. `remote1` is a named collection of the server configuration.
+CREATE DICTIONARY d_socket_in_host (id UInt64, v String) PRIMARY KEY id
+SOURCE(MYSQL(HOST 'host=localhost;protocol=2;socket=/nonexistent/mysql.sock' PORT 3306 USER 'u' PASSWORD 'p' DB 'd' TABLE 't'))
+LAYOUT(FLAT()) LIFETIME(0);
+SYSTEM RELOAD DICTIONARY d_socket_in_host; -- { serverError BAD_ARGUMENTS }
+DROP DICTIONARY d_socket_in_host;
+
+CREATE DICTIONARY d_socket_in_replica_host (id UInt64, v String) PRIMARY KEY id
+SOURCE(MYSQL(USER 'u' PASSWORD 'p' DB 'd' TABLE 't' PORT 3306 REPLICA(PRIORITY 1 HOST 'host=localhost;protocol=2;socket=/nonexistent/mysql.sock')))
+LAYOUT(FLAT()) LIFETIME(0);
+SYSTEM RELOAD DICTIONARY d_socket_in_replica_host; -- { serverError BAD_ARGUMENTS }
+DROP DICTIONARY d_socket_in_replica_host;
+
+CREATE DICTIONARY d_socket_in_named_host (id UInt64, v String) PRIMARY KEY id
+SOURCE(MYSQL(NAME remote1 HOST 'host=localhost;protocol=2;socket=/nonexistent/mysql.sock' USER 'u' PASSWORD 'p' DB 'd' TABLE 't'))
+LAYOUT(FLAT()) LIFETIME(0);
+SYSTEM RELOAD DICTIONARY d_socket_in_named_host; -- { serverError BAD_ARGUMENTS }
+DROP DICTIONARY d_socket_in_named_host;
+
+-- A host that contains `,` is a list of `host:port` to the client library.
+CREATE DICTIONARY d_host_list (id UInt64, v String) PRIMARY KEY id
+SOURCE(MYSQL(HOST '127.0.0.1:1,localhost' PORT 3306 USER 'u' PASSWORD 'p' DB 'd' TABLE 't'))
+LAYOUT(FLAT()) LIFETIME(0);
+SYSTEM RELOAD DICTIONARY d_host_list; -- { serverError BAD_ARGUMENTS }
+DROP DICTIONARY d_host_list;
+
+-- Without `socket` the source is accepted, and `localhost` is reached over TCP at `host`:`port`,
+-- not through the client library's default Unix socket. Also at a replica and with a named collection.
+CREATE DICTIONARY d_no_socket (id UInt64, v String) PRIMARY KEY id
+SOURCE(MYSQL(HOST 'localhost' PORT 1 USER 'u' PASSWORD 'p' DB 'd' TABLE 't'))
+LAYOUT(FLAT()) LIFETIME(0);
+SYSTEM RELOAD DICTIONARY d_no_socket; -- { serverError ALL_CONNECTION_TRIES_FAILED }
+SELECT last_exception LIKE '%Can''t connect to server on ''localhost''%' FROM system.dictionaries WHERE database = currentDatabase() AND name = 'd_no_socket';
+DROP DICTIONARY d_no_socket;
+
+CREATE DICTIONARY d_no_socket_replica (id UInt64, v String) PRIMARY KEY id
+SOURCE(MYSQL(USER 'u' PASSWORD 'p' DB 'd' TABLE 't' PORT 1 REPLICA(PRIORITY 1 HOST 'localhost')))
+LAYOUT(FLAT()) LIFETIME(0);
+SYSTEM RELOAD DICTIONARY d_no_socket_replica; -- { serverError ALL_CONNECTION_TRIES_FAILED }
+SELECT last_exception LIKE '%Can''t connect to server on ''localhost''%' FROM system.dictionaries WHERE database = currentDatabase() AND name = 'd_no_socket_replica';
+DROP DICTIONARY d_no_socket_replica;
+
+CREATE DICTIONARY d_no_socket_named (id UInt64, v String) PRIMARY KEY id
+SOURCE(MYSQL(NAME remote1 HOST 'localhost' PORT 1 USER 'u' PASSWORD 'p' DB 'd' TABLE 't'))
+LAYOUT(FLAT()) LIFETIME(0);
+SYSTEM RELOAD DICTIONARY d_no_socket_named; -- { serverError ALL_CONNECTION_TRIES_FAILED }
+SELECT last_exception LIKE '%Can''t connect to server on ''localhost''%' FROM system.dictionaries WHERE database = currentDatabase() AND name = 'd_no_socket_named';
+DROP DICTIONARY d_no_socket_named;

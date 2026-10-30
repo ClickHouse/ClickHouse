@@ -58,7 +58,8 @@ PoolWithFailover::PoolWithFailover(
         const std::string & config_name_,
         const unsigned default_connections_,
         const unsigned max_connections_,
-        const size_t max_tries_)
+        const size_t max_tries_,
+        bool force_tcp)
     : max_tries(max_tries_)
     , shareable(config_.getBool(config_name_ + ".share_connection", false))
     , wait_timeout(config_.getUInt64(config_name_ + ".connection_wait_timeout", MYSQLXX_POOL_WITH_FAILOVER_DEFAULT_CONNECTION_WAIT_TIMEOUT))
@@ -93,7 +94,7 @@ PoolWithFailover::PoolWithFailover(
                 int priority = config_.getInt(replica_name + ".priority", 0);
 
                 replicas_by_priority[priority].emplace_back(
-                    std::make_shared<Pool>(config_, replica_name, default_connections_, max_connections, config_name_.c_str()));
+                    std::make_shared<Pool>(config_, replica_name, default_connections_, max_connections, config_name_.c_str(), force_tcp));
 
                 if (bg_reconnect)
                     DB::ReplicasReconnector::instance().add(connectionReestablisher(std::weak_ptr(replicas_by_priority[priority].back()), shareable));
@@ -113,7 +114,7 @@ PoolWithFailover::PoolWithFailover(
     else
     {
         replicas_by_priority[0].emplace_back(
-            std::make_shared<Pool>(config_, config_name_, default_connections_, max_connections));
+            std::make_shared<Pool>(config_, config_name_, default_connections_, max_connections, nullptr, force_tcp));
         if (bg_reconnect)
             DB::ReplicasReconnector::instance().add(connectionReestablisher(std::weak_ptr(replicas_by_priority[0].back()), shareable));
     }
@@ -145,7 +146,8 @@ PoolWithFailover::PoolWithFailover(
         size_t connect_timeout_,
         size_t rw_timeout_,
         bool bg_reconnect_,
-        bool enable_compression_)
+        bool enable_compression_,
+        bool force_tcp)
     : max_tries(max_tries_)
     , shareable(false)
     , wait_timeout(wait_timeout_)
@@ -163,7 +165,8 @@ PoolWithFailover::PoolWithFailover(
             max_connections_,
             MYSQLXX_DEFAULT_ENABLE_LOCAL_INFILE,
             MYSQLXX_DEFAULT_MYSQL_OPT_RECONNECT,
-            enable_compression_));
+            enable_compression_,
+            force_tcp));
         if (bg_reconnect)
             DB::ReplicasReconnector::instance().add(connectionReestablisher(std::weak_ptr(replicas_by_priority[0].back()), shareable));
     }
