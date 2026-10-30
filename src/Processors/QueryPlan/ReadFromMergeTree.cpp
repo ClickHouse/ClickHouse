@@ -3680,9 +3680,15 @@ bool ReadFromMergeTree::filterDependsOnNonDeterministicVirtuals(const VirtualCol
 }
 
 using PartsRangesMap = std::unordered_map<std::string, const RangesInDataPart *>;
+/// marks that the local index analysis excluded in a part by the primary key and by skip indexes
+using PartsDropsMap = std::unordered_map<std::string, std::pair<size_t, size_t>>;
 /// Same as filterPartsByPrimaryKeyAndSkipIndexes(), but accept part names and parts map to transform parts names to parts
 /// Used for distributed index analysis
-static IndexAnalysisPartsRanges filterPartsNamesByPrimaryKeyAndSkipIndexes(MergeTreeDataSelectExecutor::IndexAnalysisContext & filter_context, PartsRangesMap & parts_ranges_map, const std::vector<std::string_view> & parts_to_analyze)
+static IndexAnalysisPartsRanges filterPartsNamesByPrimaryKeyAndSkipIndexes(
+    MergeTreeDataSelectExecutor::IndexAnalysisContext & filter_context,
+    PartsRangesMap & parts_ranges_map,
+    const std::vector<std::string_view> & parts_to_analyze,
+    PartsDropsMap & parts_drops)
 {
     /// Resolve part names to RangesInDataParts
     RangesInDataParts parts_ranges_to_analyze;
@@ -3700,6 +3706,7 @@ static IndexAnalysisPartsRanges filterPartsNamesByPrimaryKeyAndSkipIndexes(Merge
     {
         const auto & part_name = part_ranges.data_part->name;
         res[part_name].insert(res[part_name].end(), part_ranges.ranges.begin(), part_ranges.ranges.end());
+        parts_drops[part_name] = {part_ranges.marks_dropped_by_primary_key, part_ranges.marks_dropped_by_skip_indexes};
     }
 
     /// Add empty parts back, to take it into account in "Parts send"
@@ -3983,9 +3990,10 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
             for (const auto & part_ranges : res_parts)
                 parts_ranges_map[part_ranges.data_part->name] = &part_ranges;
 
-            LocalIndexAnalysisCallback local_index_analysis_callback = [&filter_context, &parts_ranges_map](const std::vector<std::string_view> & parts_to_analyze) -> IndexAnalysisPartsRanges
+            PartsDropsMap local_parts_drops;
+            LocalIndexAnalysisCallback local_index_analysis_callback = [&filter_context, &parts_ranges_map, &local_parts_drops](const std::vector<std::string_view> & parts_to_analyze) -> IndexAnalysisPartsRanges
             {
-                return filterPartsNamesByPrimaryKeyAndSkipIndexes(filter_context, parts_ranges_map, parts_to_analyze);
+                return filterPartsNamesByPrimaryKeyAndSkipIndexes(filter_context, parts_ranges_map, parts_to_analyze, local_parts_drops);
             };
 
             DistributedIndexAnalysisPartsRanges distributed_index_analysis = distributedIndexAnalysisOnReplicas(data.getStorageID(),
@@ -4054,6 +4062,10 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
                 chassert(part_range_info.exact_ranges.empty());
 
                 part_range_info.ranges = ranges;
+                /// a remote replica reports the marks that it excluded itself
+                auto drops = local_parts_drops.find(part_name);
+                std::tie(part_range_info.marks_dropped_by_primary_key, part_range_info.marks_dropped_by_skip_indexes)
+                    = drops != local_parts_drops.end() ? drops->second : std::pair<size_t, size_t>{};
                 result_parts_ranges.push_back(part_range_info);
             }
 
