@@ -36,7 +36,7 @@ RUN apt_update() { apt-get update --error-on=any || { sed -i -e "s|${apt_archive
 
 ARG REPO_CHANNEL="stable"
 ARG REPOSITORY="deb [signed-by=/usr/share/keyrings/clickhouse-keyring.gpg] https://packages.clickhouse.com/deb ${REPO_CHANNEL} main"
-ARG VERSION="26.9.24.8"
+ARG VERSION="26.10.2.103"
 ARG PACKAGES="clickhouse-client clickhouse-server clickhouse-common-static"
 
 #docker-official-library:off
@@ -113,8 +113,10 @@ RUN if [ -n "${single_binary_location_url}" ]; then \
 
 # A fallback to installation from ClickHouse repository
 # It works unless the clickhouse binary already exists
-RUN apt_update() { apt-get update --error-on=any || { sed -i -e "s|${apt_archive}|http://archive.ubuntu.com|g" -e "s|${apt_ports_archive}|http://ports.ubuntu.com|g" /etc/apt/sources.list && apt-get update --error-on=any; }; } \
-    && clickhouse local -q 'SELECT 1' >/dev/null 2>&1 && exit 0 || : \
+# `--tmp` keeps `clickhouse local` from creating its default data directory in the home inside the image.
+# The check goes first, so that the whole `RUN` is a no-op when the packages are already installed.
+RUN clickhouse local --tmp -q 'SELECT 1' >/dev/null 2>&1 && exit 0 || : \
+    ; apt_update() { apt-get update --error-on=any || { sed -i -e "s|${apt_archive}|http://archive.ubuntu.com|g" -e "s|${apt_ports_archive}|http://ports.ubuntu.com|g" /etc/apt/sources.list && apt-get update --error-on=any; }; } \
     ; apt_update \
     && apt-get install --yes --no-install-recommends \
         dirmngr \
@@ -152,7 +154,7 @@ RUN apt_update() { apt-get update --error-on=any || { sed -i -e "s|${apt_archive
 # post install
 # we need to allow "others" access to clickhouse folder, because docker container
 # can be started with arbitrary uid (openshift usecase)
-RUN clickhouse-local -q 'SELECT * FROM system.build_options' \
+RUN clickhouse-local --tmp -q 'SELECT * FROM system.build_options' \
     && mkdir -p /var/lib/clickhouse /var/log/clickhouse-server /etc/clickhouse-server /etc/clickhouse-client \
     && chmod ugo+Xrw -R /var/lib/clickhouse /var/log/clickhouse-server /etc/clickhouse-server /etc/clickhouse-client
 
