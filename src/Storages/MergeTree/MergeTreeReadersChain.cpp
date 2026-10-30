@@ -339,7 +339,9 @@ MergeTreeReadersChain::ReadResult MergeTreeReadersChain::read(
             dataflow_cache_update_cb(
                 toColumnsWithTypeAndName(read_result.columns, first_reader.getReader()->getColumnsToRead()),
                 first_reader.getReader()->getPartiallyReadColumns(),
+                first_reader.getReader()->takeBytesSkippedByStringValueFilters(),
                 read_result.num_bytes_read,
+                first_reader.getReader()->takeCompressedBytesRead(),
                 should_continue_sampling);
 
         readPatches(first_reader.getReadSampleBlock(), patch_ranges, read_result);
@@ -381,7 +383,9 @@ MergeTreeReadersChain::ReadResult MergeTreeReadersChain::read(
                 dataflow_cache_update_cb(
                     toColumnsWithTypeAndName(columns, range_readers[i].getReader()->getColumnsToRead()),
                     range_readers[i].getReader()->getPartiallyReadColumns(),
+                    range_readers[i].getReader()->takeBytesSkippedByStringValueFilters(),
                     read_result.num_bytes_read - num_bytes_read_so_far,
+                    range_readers[i].getReader()->takeCompressedBytesRead(),
                     should_continue_sampling);
             }
 

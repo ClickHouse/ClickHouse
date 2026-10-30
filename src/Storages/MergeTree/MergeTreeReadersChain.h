@@ -39,7 +39,9 @@ class MergeTreeReadersChain
     using DataflowCacheUpdateCallback = std::function<void(
         const ColumnsWithTypeAndName & columns,
         const NameSet & partially_read_columns,
+        const std::unordered_map<String, size_t> & bytes_skipped_by_string_value_filters,
         size_t read_bytes,
+        std::optional<size_t> compressed_bytes_read,
         std::optional<bool> & should_continue_sampling)>;
 
 public:

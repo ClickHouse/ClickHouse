@@ -42,6 +42,71 @@ catch (...)
     throw;
 }
 
+std::optional<size_t> MergeTreeReaderCompactSingleBuffer::takeCompressedBytesRead()
+{
+    if (!count_compressed_bytes_read)
+        return std::nullopt;
+
+    /// A compressed block may hold several columns, read or served from the cache, and may be loaded more than once.
+    std::sort(ranges_read.begin(), ranges_read.end());
+    size_t bytes = 0;
+    size_t counted_until = 0;
+    for (const auto & [begin, end] : ranges_read)
+    {
+        if (end > std::max(begin, counted_until))
+            bytes += end - std::max(begin, counted_until);
+        counted_until = std::max(counted_until, end);
+    }
+    ranges_read.clear();
+    return bytes;
+}
+
+void MergeTreeReaderCompactSingleBuffer::addGranulesServedFromColumnsCache(size_t pos, size_t from_mark, size_t to_mark)
+{
+    init();
+
+    /// With marks of substreams, a subcolumn is read from the substreams it needs, and a column from all of them. A subcolumn
+    /// whose streams are not all substreams of the part (e.g. the null map of a sparse column, which is read from its offsets),
+    /// or that is a path of a dynamic column, is counted as the whole column, an upper bound.
+    const size_t column_position = *column_positions[pos];
+    const auto & column = columns_to_read[pos];
+    std::vector<size_t> positions;
+    if (!has_substream_marks)
+    {
+        positions.push_back(column_position);
+    }
+    else if (column.isSubcolumn() && !column.getTypeInStorage()->hasDynamicSubcolumns())
+    {
+        /// The streams as the reader reads them, with the prefixes in streams of their own, see `initSubcolumnsDeserializationOrder`.
+        ISerialization::EnumerateStreamsSettings enumerate_settings;
+        enumerate_settings.data_part_type = MergeTreeDataPartType::Compact;
+        enumerate_settings.use_specialized_prefixes_and_suffixes_substreams = true;
+        bool all_found = true;
+        serializations[pos]->enumerateStreams(enumerate_settings, [&](const ISerialization::SubstreamPath & substream_path)
+        {
+            if (needSkipStream(pos, substream_path))
+                return;
+            if (auto position = columns_substreams.tryGetSubstreamPosition(column_position, column, substream_path, storage_settings))
+                positions.push_back(*position);
+            else
+                all_found = false;
+        }, ISerialization::SubstreamData(serializations[pos]).withType(column.type));
+        if (!all_found)
+            positions.clear();
+    }
+
+    if (positions.empty())
+    {
+        for (size_t position = columns_substreams.getFirstSubstreamPosition(column_position);
+             position <= columns_substreams.getLastSubstreamPosition(column_position); ++position)
+            positions.push_back(position);
+    }
+
+    for (size_t mark = from_mark; mark < to_mark; ++mark)
+        for (const size_t position : positions)
+            stream->addRangeOfPosition(mark, position, ranges_read);
+}
+
 void MergeTreeReaderCompactSingleBuffer::readGranule(
     size_t mark, size_t rows_to_read, MutableColumns & res_columns, const std::vector<bool> * columns_mask)
 {
@@ -121,6 +186,8 @@ try
         data_part_info_for_read->getFileSizeOrZero(MergeTreeDataPartCompact::DATA_FILE_NAME_WITH_EXTENSION),
         marks_loader, profile_callback, clock_type);
     stream->updateReadRequestMap(read_request_map);
+    if (count_compressed_bytes_read)
+        stream->setBlocksReadSink(&ranges_read);
 
     initialized = true;
 }

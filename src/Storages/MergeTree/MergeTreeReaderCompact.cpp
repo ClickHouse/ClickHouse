@@ -350,7 +350,7 @@ void MergeTreeReaderCompact::readData(
             else
             {
                 const auto & serialization = serializations[column_idx];
-                deserialize_settings.string_value_filter = getStringValueFilter(name_and_type);
+                setStringValueFilter(name_and_type, deserialize_settings);
                 auto & states = !has_substream_marks && !columns_for_offsets[column_idx]
                     ? deserialize_binary_bulk_state_map_for_subcolumns : deserialize_binary_bulk_state_map;
                 serialization->deserializeBinaryBulkWithMultipleStreams(column, rows_to_read, deserialize_settings, states[name], substreams_cache);
@@ -787,6 +787,8 @@ size_t MergeTreeReaderCompact::readGranulesWithColumnsCache(
             const size_t chunk_end = std::min(end_mark, stripes.endMark(stripes.stripeOf(mark), index_granularity.getMarksCountWithoutFinal()));
             serveRowsFromColumnsCacheEntry(*cachedEntryFor(pos, mark), pos,
                 index_granularity.getMarkStartingRow(mark), index_granularity.getRowsCountInRange(mark, chunk_end), res_columns, shared_columns);
+            if (count_compressed_bytes_read)
+                addGranulesServedFromColumnsCache(pos, mark, chunk_end);
             mark = chunk_end;
         }
         ProfileEvents::increment(ProfileEvents::ColumnsCacheHits, end_mark - from_mark);
@@ -825,6 +827,8 @@ size_t MergeTreeReaderCompact::readGranulesWithColumnsCache(
             if (column_cacheable[pos] && isGranuleColumnCached(pos, mark))
             {
                 serveRowsFromColumnsCacheEntry(*cachedEntryFor(pos, mark), pos, granule_row_begin, granule_rows, res_columns, shared_columns);
+                if (count_compressed_bytes_read)
+                    addGranulesServedFromColumnsCache(pos, mark, mark + 1);
                 ++served_columns;
                 continue;
             }

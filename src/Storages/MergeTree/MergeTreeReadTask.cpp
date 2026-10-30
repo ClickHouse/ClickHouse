@@ -122,6 +122,13 @@ void MergeTreeReadTask::Readers::updateAllMarkRanges(const MarkRanges & ranges, 
         patches[i]->getReader()->updateAllMarkRanges(patches_ranges[i]);
 }
 
+void MergeTreeReadTask::Readers::countCompressedBytesRead()
+{
+    main->countCompressedBytesRead();
+    for (auto & reader : prewhere)
+        reader->countCompressedBytesRead();
+}
+
 void MergeTreeReadTask::Readers::updateReadRequestMap(const MarkRangesPtr & request_map, const std::vector<MarkRangesPtr> & patch_request_maps)
 {
     main->updateReadRequestMap(request_map);
@@ -154,6 +161,9 @@ MergeTreeReadTask::MergeTreeReadTask(
 {
     if (updater)
     {
+        /// The compressed bytes read are taken by `dataflow_cache_update_cb`.
+        readers.countCompressedBytesRead();
+
         /// Resolved once rather than per block, and taken from the table metadata because a part does
         /// not record the codecs of its columns: `default_codec` is only the part-wide default, and a
         /// part's `ColumnsDescription` is built from a `NamesAndTypesList`, which carries no codec.
@@ -172,7 +182,9 @@ MergeTreeReadTask::MergeTreeReadTask(
 
         dataflow_cache_update_cb = [this, default_codec, column_codecs = std::move(resolved_codecs)](const ColumnsWithTypeAndName & columns,
                                                            const NameSet & partially_read_columns,
+                                                           const std::unordered_map<String, size_t> & bytes_skipped_by_string_value_filters,
                                                            size_t read_bytes,
+                                                           std::optional<size_t> compressed_bytes_read,
                                                            std::optional<bool> & should_continue_sampling) -> void
         {
             chassert(updater);
@@ -183,11 +195,13 @@ MergeTreeReadTask::MergeTreeReadTask(
             updater->recordInputColumns(
                 columns,
                 partially_read_columns,
+                bytes_skipped_by_string_value_filters,
                 part_columns,
                 column_sizes ? *column_sizes : no_column_sizes,
                 column_codecs,
                 default_codec,
                 read_bytes,
+                compressed_bytes_read,
                 should_continue_sampling);
         };
     }
