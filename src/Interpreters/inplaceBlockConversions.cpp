@@ -757,7 +757,7 @@ static bool callsNonDeterministicFunction(const IAST & ast, const ContextPtr & c
 NameSet getNonDeterministicDefaults(
     const Names & column_names,
     const ColumnsDescription & columns,
-    const std::function<bool(const String &)> & is_missing_in_some_part,
+    const std::function<bool(const String &)> & is_filled_from_default_in_some_part,
     ContextPtr context)
 {
     const auto defaults = columns.getDefaults();
@@ -772,7 +772,7 @@ NameSet getNonDeterministicDefaults(
             return false;
 
         const auto it = defaults.find(column->getNameInStorage());
-        if (it == defaults.end() || !is_missing_in_some_part(it->first))
+        if (it == defaults.end() || !is_filled_from_default_in_some_part(it->first))
             return false;
 
         if (const auto visited_it = visited.find(it->first); visited_it != visited.end())

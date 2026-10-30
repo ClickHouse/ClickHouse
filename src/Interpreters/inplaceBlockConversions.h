@@ -53,13 +53,14 @@ void performRequiredConversions(Block & block, const NamesAndTypesList & require
 
 /// Of `column_names`, the ones a read can fill from a `DEFAULT` that calls a non-deterministic function, such as `rand64`,
 /// itself or through the defaults of the columns it reads. Two reads of a part that lacks such a column fill it with
-/// different values. A subcolumn is filled together with its column. A read fills a column from its default only where a
-/// part lacks it, which `is_missing_in_some_part` tells for a column of storage: the defaults of the others are not
-/// looked at, so that reading the stored values does not need what their defaults need, such as privileges.
+/// different values. A subcolumn is filled together with its column. A read fills a column from its default only in some
+/// parts, such as the ones that lack it, which `is_filled_from_default_in_some_part` tells for a column of storage: the
+/// defaults of the others are not looked at, so that reading the stored values does not need what their defaults need,
+/// such as privileges.
 NameSet getNonDeterministicDefaults(
     const Names & column_names,
     const ColumnsDescription & columns,
-    const std::function<bool(const String &)> & is_missing_in_some_part,
+    const std::function<bool(const String &)> & is_filled_from_default_in_some_part,
     ContextPtr context);
 
 void fillMissingColumns(

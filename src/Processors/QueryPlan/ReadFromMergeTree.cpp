@@ -4944,6 +4944,46 @@ QueryPlanStepPtr ReadFromMergeTree::clone() const
     return cloned_step;
 }
 
+/// Whether the read fills the column of storage from its default in some of `parts`, as the reader sees a part: where the
+/// part lacks the column, or holds it as `Nullable` while the table does not. A pending `RENAME COLUMN` leaves the old
+/// name in a part, and a pending `DROP COLUMN` leaves stale data, which the reader does not read - that of a column
+/// dropped and added again.
+static bool isFilledFromDefaultInSomePart(
+    const String & column_name,
+    const RangesInDataParts & parts,
+    const StorageMetadataPtr & metadata,
+    const MergeTreeData::MutationsSnapshotPtr & mutations_snapshot,
+    const ContextPtr & context)
+{
+    const bool has_metadata_mutations = mutations_snapshot && mutations_snapshot->hasMetadataMutations();
+    const auto column_in_table = metadata->getColumns().tryGetPhysical(column_name);
+    return std::ranges::any_of(parts, [&](const RangesInDataPart & part)
+    {
+        const auto & data_part = *part.data_part;
+        AlterConversionsPtr alter_conversions;
+        /// A projection part carries a fake data version, which makes every mutation look pending.
+        if (has_metadata_mutations && !data_part.isProjectionPart())
+            alter_conversions = MergeTreeData::getAlterConversionsForPart(part.data_part, mutations_snapshot, context
+#if CLICKHOUSE_CLOUD
+                , context->getAccess()->getEnabledMaskingPolicies()
+#endif
+            );
+
+        const auto name_in_part = alter_conversions && alter_conversions->isColumnRenamed(column_name)
+            ? alter_conversions->getColumnOldName(column_name)
+            : column_name;
+
+        const bool share_nested = (*data_part.storage.getSettings())[MergeTreeSetting::share_nested_offsets];
+        const auto column_in_part = data_part.tryGetColumn(name_in_part);
+        if (!column_in_part || (alter_conversions && alter_conversions->isColumnDropped(name_in_part, share_nested)))
+            return true;
+
+        /// A type changed from `Nullable` by a pending mutation: the read fills the `NULL` values from the default.
+        return column_in_table && isNullableOrLowCardinalityNullable(column_in_part->type)
+            && !isNullableOrLowCardinalityNullable(column_in_table->type);
+    });
+}
+
 Names ReadFromMergeTree::getLazilyReadColumns(const NameSet & required_outputs) const
 {
     NameSet columns_to_keep;
@@ -4974,7 +5014,10 @@ Names ReadFromMergeTree::getLazilyReadColumns(const NameSet & required_outputs) 
     /// A lazy read would fill such a column with values of its own, other than the ones the columns of the main read
     /// computed from it have.
     const auto non_deterministic = getNonDeterministicDefaults(
-        columns_to_remove, storage_snapshot->metadata->getColumns(), makeIsColumnMissingInSomePart(), context);
+        columns_to_remove, storage_snapshot->metadata->getColumns(), [&](const String & column)
+        {
+            return isFilledFromDefaultInSomePart(column, getParts(), storage_snapshot->metadata, mutations_snapshot, context);
+        }, context);
     std::erase_if(columns_to_remove, [&](const String & column_name) { return non_deterministic.contains(column_name); });
     return columns_to_remove;
 }
@@ -7051,42 +7094,6 @@ ReadFromMergeTree::removeUnusedColumns(const std::vector<size_t> & unneeded_outp
     return applyColumnPruning(pruneColumns(unneeded_output_positions));
 }
 
-std::function<bool(const String &)> ReadFromMergeTree::makeIsColumnMissingInSomePart() const
-{
-    /// As the reader resolves a column in a part: a pending `RENAME COLUMN` leaves the old name in the part, and a pending
-    /// `DROP COLUMN` leaves stale data, which the reader does not read - that of a column dropped and added again.
-    const bool has_metadata_mutations = mutations_snapshot && mutations_snapshot->hasMetadataMutations();
-    const bool share_nested = (*data.getSettings())[MergeTreeSetting::share_nested_offsets];
-
-    std::vector<std::pair<DataPartPtr, AlterConversionsPtr>> parts_with_conversions;
-    for (const auto & part : getParts())
-    {
-        AlterConversionsPtr alter_conversions;
-        /// A projection part carries a fake data version, which makes every mutation look pending.
-        if (has_metadata_mutations && !part.data_part->isProjectionPart())
-            alter_conversions = MergeTreeData::getAlterConversionsForPart(part.data_part, mutations_snapshot, context
-#if CLICKHOUSE_CLOUD
-                , context->getAccess()->getEnabledMaskingPolicies()
-#endif
-            );
-        parts_with_conversions.emplace_back(part.data_part, std::move(alter_conversions));
-    }
-
-    return [parts = std::move(parts_with_conversions), share_nested](const String & column_name)
-    {
-        return std::ranges::any_of(parts, [&](const auto & part)
-        {
-            const auto & [data_part, alter_conversions] = part;
-            if (!alter_conversions)
-                return !data_part->getColumnsDescription().has(column_name);
-
-            const auto name_in_part
-                = alter_conversions->isColumnRenamed(column_name) ? alter_conversions->getColumnOldName(column_name) : column_name;
-            return !data_part->getColumnsDescription().has(name_in_part) || alter_conversions->isColumnDropped(name_in_part, share_nested);
-        });
-    };
-}
-
 std::vector<size_t> ReadFromMergeTree::getLazilyReadablePositions(const ColumnPruning & pruning) const
 {
     const auto & virtuals = getStorageMetadata()->virtuals;
@@ -7107,7 +7114,10 @@ std::vector<size_t> ReadFromMergeTree::getLazilyReadablePositions(const ColumnPr
     /// A lazy read would fill such a column with values of its own, other than the ones the columns of the main read
     /// computed from it have.
     const auto non_deterministic = getNonDeterministicDefaults(
-        column_names, storage_snapshot->metadata->getColumns(), makeIsColumnMissingInSomePart(), context);
+        column_names, storage_snapshot->metadata->getColumns(), [&](const String & column)
+        {
+            return isFilledFromDefaultInSomePart(column, getParts(), storage_snapshot->metadata, mutations_snapshot, context);
+        }, context);
     std::vector<size_t> readable_positions;
     for (size_t i = 0; i < positions.size(); ++i)
     {
