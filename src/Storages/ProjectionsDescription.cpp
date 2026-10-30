@@ -70,6 +70,7 @@ namespace Setting
 {
 
 extern const SettingsBool enable_positional_arguments_for_projections;
+extern const SettingsBool prefer_column_name_to_alias;
 
 }
 
@@ -592,6 +593,9 @@ void ProjectionDescription::fillProjectionDescriptionByQuery(
     mut_context->setSetting("enable_positional_arguments", positional_arguments_for_projections);
     /// Projection required-columns must always expand ALIAS columns, regardless of session settings.
     mut_context->setSetting("optimize_respect_aliases", true);
+    /// Resolve aliases as a reload of the stored definition does, which analyzes it with the server settings.
+    mut_context->setSetting(
+        "prefer_column_name_to_alias", query_context->getGlobalContext()->getSettingsRef()[Setting::prefer_column_name_to_alias].value);
     mut_context->setQueryKindInitial();
 
     bool is_aggregate = false;
