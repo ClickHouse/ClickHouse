@@ -148,6 +148,12 @@ public:
     /// Process local read requests
     void processReadRequests(const KeeperRequestsForSessions & requests);
 
+    /// Extend expiry time for sessions touched by local reads on another Keeper server.
+    void touchSessions(const std::vector<int64_t> & session_ids);
+
+    /// Extend expiry time for every active session after this server becomes leader.
+    void touchAllSessions();
+
     std::vector<int64_t> getDeadSessions();
 
     int64_t getNextZxid() const;
