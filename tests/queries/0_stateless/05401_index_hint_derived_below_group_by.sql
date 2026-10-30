@@ -7,6 +7,8 @@ SET optimize_and_compare_chain_max_hash_work = 5000000;
 SET query_plan_filter_push_down = 1;
 SET use_query_condition_cache = 0;
 SET optimize_or_like_chain = 1;
+-- Pinned (randomized in CI): a threshold above 4 keeps the 4-pattern chain below from being rewritten.
+SET optimize_or_like_chain_min_substrings = 4;
 
 DROP TABLE IF EXISTS t_chain_keys;
 CREATE TABLE t_chain_keys (a UInt32, b UInt32) ENGINE = MergeTree ORDER BY a SETTINGS index_granularity = 128, index_granularity_bytes = '10Mi', min_bytes_for_wide_part = 0;
