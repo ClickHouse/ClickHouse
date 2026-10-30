@@ -2891,13 +2891,23 @@ Context::StorageNamespace mainTableResolveNamespace(const IAST & ast)
 /// a CTE is named `unused`, and `cte.x` refers to a column of `cte` only when `cte` itself also occurs in `FROM`.
 /// Any position counts, so the result still over-approximates the names a subtree can reference a CTE by,
 /// which errs toward walking a definition, never toward missing the tables of a used one.
+/// A scalar `WITH expr AS alias` binding is resolved by the first component of a compound identifier
+/// (`WITH (SELECT ...) AS stats SELECT stats.n`) and a lambda binding by the name of a function call
+/// (`WITH x -> x + 1 AS f SELECT f(a)`), so the first component and the names of called functions are added
+/// as well. That only adds names, so it keeps the same safe direction for CTEs.
 void collectReferencedNames(const IAST & ast, const IAST * skip, std::unordered_set<String> & names)
 {
     if (&ast == skip)
         return;
 
     if (const auto * identifier = dynamic_cast<const ASTIdentifier *>(&ast))
+    {
         names.insert(identifier->name());
+        if (identifier->compound())
+            names.insert(identifier->name_parts.front());
+    }
+    else if (const auto * function = ast.as<ASTFunction>())
+        names.insert(function->name);
 
     for (const auto & child : ast.children)
         collectReferencedNames(*child, skip, names);
@@ -3364,8 +3374,9 @@ static bool containsSQLUserDefinedFunctionCall(const IAST & ast)
     return false;
 }
 
-/// `joinGet`, the `dictGet` family and `hasColumnInTable` take the storage they read as a string argument,
-/// resolve it and check the access to it only when they run, so it is seen by none of the preflights.
+/// `joinGet`, the `dictGet` family, `hasColumnInTable` and the dictionary-backed models (`predictXGBoost`, the
+/// `naiveBayesClassifier` family, `assignCentroid`) take the storage they read as a string argument, resolve
+/// it and check the access to it only when they run, so it is seen by none of the preflights.
 static bool containsStorageReadingScalarFunctionCall(const IAST & ast)
 {
     std::vector<const IAST *> stack{&ast};
@@ -3377,7 +3388,8 @@ static bool containsStorageReadingScalarFunctionCall(const IAST & ast)
         if (const auto * function = node->as<ASTFunction>())
         {
             const String & name = function->name;
-            if (name.starts_with("dict") || name == "joinGet" || name == "joinGetOrNull" || name == "hasColumnInTable")
+            if (name.starts_with("dict") || name == "joinGet" || name == "joinGetOrNull" || name == "hasColumnInTable"
+                || name == "predictXGBoost" || name.starts_with("naiveBayesClassifier") || name == "assignCentroid")
                 return true;
         }
 
@@ -3840,7 +3852,7 @@ static void reattachTablesUsedInQuery(const ASTPtr & query, ContextMutablePtr co
         /// Internal `DETACH`/`ATTACH` queries must use a fresh context with their own
         /// `query_id`, otherwise `ProcessList::insert` will reject them with
         /// `QUERY_WITH_SAME_ID_IS_ALREADY_RUNNING`.
-        auto make_internal_context = [&]
+        auto make_internal_context = [&](bool recovery)
         {
             auto internal_context = Context::createCopy(context);
             internal_context->makeQueryContext();
@@ -3875,7 +3887,20 @@ static void reattachTablesUsedInQuery(const ASTPtr & query, ContextMutablePtr co
             /// loads the table's definition, i.e. `session_timezone` if it is set. Keep the outer query's
             /// one, so that the reattached table interprets its values the same way as before the reattach.
             internal_context->setSetting("session_timezone", context->getSettingsRef().get("session_timezone"));
-            internal_context->setProcessListElement(context->getProcessListElementSafe());
+            if (recovery)
+            {
+                /// The recovery `ATTACH` must not share the fate of the outer query. The usual way to get here
+                /// is the outer query being cancelled while `DETACH TABLE ... SYNC` waited for a concurrent
+                /// reader to release the detached storage: inheriting the cancelled process list element would
+                /// make the wait of this `ATTACH` throw at once, and without the wait it would throw
+                /// `TABLE_ALREADY_EXISTS` while the reader still holds the old storage. Either way the table
+                /// would stay detached with nothing left to attach it back. So run it outside the process list
+                /// and let it wait until the old storage is released.
+                internal_context->setProcessListElement({});
+                internal_context->setSetting("database_atomic_wait_for_drop_and_detach_synchronously", Field(true));
+            }
+            else
+                internal_context->setProcessListElement(context->getProcessListElementSafe());
             return internal_context;
         };
 
@@ -3902,7 +3927,7 @@ static void reattachTablesUsedInQuery(const ASTPtr & query, ContextMutablePtr co
         /// `memory_tracker_fault_probability` is in effect: an injected fault after the `DETACH` would make
         /// the recovery `ATTACH` likely to fail the same way and leave the table detached. The server logs of
         /// the pair are still sent to the client of the outer query, like those of the outer query itself.
-        auto execute_internal = [&](const String & internal_query)
+        auto execute_internal = [&](const String & internal_query, bool recovery)
         {
             /// The context and the thread group are allocated while the thread is still on the outer query's
             /// memory tracker, so an injected fault there (`memory_tracker_fault_probability`, which can hit
@@ -3913,7 +3938,7 @@ static void reattachTablesUsedInQuery(const ASTPtr & query, ContextMutablePtr co
             ThreadGroupPtr internal_thread_group;
             {
                 LockMemoryExceptionInThread lock_memory_exception(VariableContext::Global);
-                internal_context = make_internal_context();
+                internal_context = make_internal_context(recovery);
                 internal_thread_group = ThreadGroup::createForQuery(internal_context);
                 if (const auto outer_thread_group = CurrentThread::getGroup())
                 {
@@ -3923,6 +3948,8 @@ static void reattachTablesUsedInQuery(const ASTPtr & query, ContextMutablePtr co
                 }
             }
             ThreadGroupSwitcher thread_group_switcher(internal_thread_group, getThreadName(), /*allow_existing_group=*/ true);
+            /// With `inherit_process_list_element` and no element in the context (recovery), the statement
+            /// is not registered in the process list at all.
             auto io = executeQuery(internal_query, internal_context, QueryFlags{.internal = true, .inherit_process_list_element = true, .ignore_quota = true}).second;
             executeTrivialBlockIO(io, internal_context);
         };
@@ -3930,9 +3957,9 @@ static void reattachTablesUsedInQuery(const ASTPtr & query, ContextMutablePtr co
         bool detached = false;
         try
         {
-            execute_internal(detach_query);
+            execute_internal(detach_query, /*recovery=*/ false);
             detached = true;
-            execute_internal(attach_query);
+            execute_internal(attach_query, /*recovery=*/ false);
         }
         catch (...)
         {
@@ -3958,7 +3985,7 @@ static void reattachTablesUsedInQuery(const ASTPtr & query, ContextMutablePtr co
             {
                 try
                 {
-                    execute_internal(attach_query);
+                    execute_internal(attach_query, /*recovery=*/ true);
                 }
                 catch (...)
                 {
