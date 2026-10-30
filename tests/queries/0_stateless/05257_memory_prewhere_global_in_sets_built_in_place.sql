@@ -4,7 +4,6 @@
 -- `DelayedPorts` gate in the pipeline, which is what this test asserts on. A `GLOBAL IN` condition in
 -- `WHERE` is never moved to `PREWHERE` and keeps the pipeline-level set creation.
 
-SET enable_analyzer = 1;
 SET max_threads = 1;
 SET optimize_move_to_prewhere = 1;
 SET query_plan_optimize_prewhere = 1;

@@ -200,7 +200,7 @@ private:
     void finalizeBuffers();
     void releaseBuffers();
     void cancelBuffers();
-    /// Best-effort removal of the files kept across commit retries.
+    /// Best-effort removal of the written data files and manifests; never throws.
     void removeDataFilesAndManifests();
     bool initializeMetadata();
 
@@ -211,6 +211,8 @@ private:
 
     /// Generated once per insert so the manifests stay valid across commit retries.
     Int64 snapshot_id = 0;
+    /// The snapshot referencing the written files is committed, so they must never be removed.
+    bool committed = false;
 
     std::shared_ptr<IcebergStorageSinkGroup> sink_group;
     /// Writers of all the sinks committed by this one.
@@ -228,7 +230,7 @@ private:
     StorageID table_id;
     CompressionMethod metadata_compression_method;
     Iceberg::PersistentTableComponents persistent_table_components;
-    const DataLakeStorageSettings & data_lake_settings;
+    const DataLakeStorageSettingsPtr data_lake_settings;
     const String write_format;
 
 };
