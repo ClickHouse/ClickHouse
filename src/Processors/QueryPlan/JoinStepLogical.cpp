@@ -2349,6 +2349,22 @@ static QueryPlanNode buildPhysicalJoinImpl(
         {
             if (right_nullable_from_prepared_storage && JoinActionRef(action, expression_actions).fromRight())
             {
+                if (prepared_join_storage.storage_key_value)
+                {
+                    /// The whole action is merged into the right-side DAG below, so the DAG gets only its inputs.
+                    std::stack<const ActionsDAG::Node *> stack;
+                    stack.push(action);
+                    while (!stack.empty())
+                    {
+                        const auto * node = stack.top();
+                        stack.pop();
+                        if (node->type == ActionsDAG::ActionType::INPUT)
+                            used_expressions.emplace_back(node, expression_actions);
+                        for (const auto * child : node->children)
+                            stack.push(child);
+                    }
+                    continue;
+                }
                 /// x (Alias) -> toNullable(x) -> x (Input)
                 action = action->children.at(0)->children.at(0);
                 /// toNullable(x) -> x (Input)
