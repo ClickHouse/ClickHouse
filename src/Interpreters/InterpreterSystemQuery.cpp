@@ -107,6 +107,7 @@
 #include <base/sleep.h>
 #include <base/defines.h>
 
+#include <map>
 #include <mutex>
 #include <set>
 
@@ -2381,9 +2382,12 @@ std::mutex replicated_ddl_queries_mutex;
 /// Keeper name and path of the flag in Keeper, see `DatabaseReplicatedTask::getStopReplicatedDDLQueriesFlagPath`.
 using StopReplicatedDDLQueriesFlag = std::pair<String, String>;
 
-/// Flags that `SYSTEM STOP REPLICATED DDL QUERIES` has created. `START` removes all of them,
-/// even if their `Replicated` databases were detached or dropped in the meantime.
-std::set<StopReplicatedDDLQueriesFlag> created_stop_flags TSA_GUARDED_BY(replicated_ddl_queries_mutex);
+/// Flags that `SYSTEM STOP REPLICATED DDL QUERIES` has created, with the Keeper sessions that created them.
+/// `START` removes all of them, even if their `Replicated` databases were detached or dropped in the meantime.
+/// The flags are ephemeral, so a flag exists only while its session is alive. The session is referenced weakly:
+/// if it is gone (e.g. its auxiliary Keeper was removed from the configuration), the flag is gone as well,
+/// and `START` does not need to resolve the Keeper name, which may be no longer configured.
+std::map<StopReplicatedDDLQueriesFlag, std::weak_ptr<zkutil::ZooKeeper>> created_stop_flags TSA_GUARDED_BY(replicated_ddl_queries_mutex);
 
 /// Flags for all `Replicated` databases: their initial DDL entries check the flag in their replica path.
 std::set<StopReplicatedDDLQueriesFlag> getStopFlagsOfReplicatedDatabases()
@@ -2412,9 +2416,10 @@ void InterpreterSystemQuery::stopReplicatedDDLQueries()
     for (const auto & flag : getStopFlagsOfReplicatedDatabases())
     {
         const auto & [zookeeper_name, path] = flag;
+        auto zookeeper = getContext()->getDefaultOrAuxiliaryZooKeeper(zookeeper_name);
         /// Remember the flag before creating it, so `START` removes it even if this command fails midway.
-        created_stop_flags.insert(flag);
-        auto code = getContext()->getDefaultOrAuxiliaryZooKeeper(zookeeper_name)->tryCreate(path, "", zkutil::CreateMode::Ephemeral);
+        created_stop_flags[flag] = zookeeper;
+        auto code = zookeeper->tryCreate(path, "", zkutil::CreateMode::Ephemeral);
         /// `ZNONODE` means that the replica was dropped from Keeper, so its DDL entries cannot be committed anyway.
         if (code != Coordination::Error::ZOK && code != Coordination::Error::ZNODEEXISTS && code != Coordination::Error::ZNONODE)
             throw zkutil::KeeperException::fromPath(code, path);
@@ -2428,16 +2433,27 @@ void InterpreterSystemQuery::startReplicatedDDLQueries()
 
     std::lock_guard lock(replicated_ddl_queries_mutex);
 
-    std::set<StopReplicatedDDLQueriesFlag> flags = getStopFlagsOfReplicatedDatabases();
-    flags.insert(created_stop_flags.begin(), created_stop_flags.end());
-
-    for (const auto & flag : flags)
+    auto remove_flag = [](zkutil::ZooKeeper & zookeeper, const String & path)
     {
-        const auto & [zookeeper_name, path] = flag;
-        auto code = getContext()->getDefaultOrAuxiliaryZooKeeper(zookeeper_name)->tryRemove(path, -1);
+        auto code = zookeeper.tryRemove(path, -1);
         if (code != Coordination::Error::ZOK && code != Coordination::Error::ZNONODE)
             throw zkutil::KeeperException::fromPath(code, path);
+    };
+
+    /// The Keepers of the attached `Replicated` databases are configured, so remove their flags with the current sessions.
+    for (const auto & flag : getStopFlagsOfReplicatedDatabases())
+    {
+        const auto & [zookeeper_name, path] = flag;
+        remove_flag(*getContext()->getDefaultOrAuxiliaryZooKeeper(zookeeper_name), path);
         created_stop_flags.erase(flag);
+    }
+
+    /// The flags of the detached or dropped databases are removed with the sessions that created them, if they are still alive.
+    for (auto it = created_stop_flags.begin(); it != created_stop_flags.end();)
+    {
+        if (auto zookeeper = it->second.lock(); zookeeper && !zookeeper->expired())
+            remove_flag(*zookeeper, it->first.second);
+        it = created_stop_flags.erase(it);
     }
 
     DatabaseCatalog::instance().startReplicatedDDLQueries();
