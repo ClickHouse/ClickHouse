@@ -55,6 +55,9 @@ public:
         /// For a deferred check: the forwarding storage whose sink enforces it. The sinks of a nested INSERT
         /// register the deferred checks of a forwarding storage behind them (a `Buffer` behind an `Alias`)
         /// once more, but possibly after the decision has been made, see `addCheck`.
+        /// For an isolated check: the materialized view whose branch it belongs to. The sink of a view hidden
+        /// behind a forwarding sink is created by a nested INSERT, possibly after the decision has been made,
+        /// so its check is registered in advance, and the late sink observes the outcome of that check.
         std::weak_ptr<const void> enforced_by;
         /// Set for the check of a sink whose errors are ignored - a materialized view branch under
         /// `materialized_views_ignore_errors`. Its failure is stored here and rethrown only by that sink:
@@ -106,13 +109,15 @@ public:
 
         if (done)
         {
-            if (check.deferred && !check.enforced_by.expired())
+            if ((check.deferred || check.isolated) && !check.enforced_by.expired())
             {
-                for (const auto & [enforced_by, outcome] : failed_deferred)
+                const auto & failed = check.deferred ? failed_deferred : failed_isolated;
+                auto & own_outcome = check.deferred ? check.deferred : check.isolated;
+                for (const auto & [enforced_by, outcome] : failed)
                 {
                     if (sameOwner(enforced_by, check.enforced_by))
                     {
-                        check.deferred->exception = outcome->exception;
+                        own_outcome->exception = outcome->exception;
                         break;
                     }
                 }
@@ -130,7 +135,9 @@ public:
         checks.push_back(std::move(check));
     }
 
-    void run()
+    /// `forwarded` is set when the gate is run through a gate that has been merged into it, i.e. by a sink
+    /// of a participant of a group write rather than by a sink of the group write itself, see `lent_from`.
+    void run(bool forwarded = false)
     {
         std::unique_lock lock(mutex);
 
@@ -141,7 +148,7 @@ public:
         {
             auto target = forward_to;
             lock.unlock();
-            target->run();
+            target->run(/* forwarded= */ true);
             return;
         }
 
@@ -149,9 +156,14 @@ public:
         {
             /// Reserved before the checks run, so that recording a failure below cannot throw.
             size_t num_deferred = 0;
+            size_t num_isolated = 0;
             for (const auto & check : checks)
+            {
                 num_deferred += check.deferred != nullptr;
+                num_isolated += check.isolated != nullptr;
+            }
             failed_deferred.reserve(num_deferred);
+            failed_isolated.reserve(num_isolated);
 
             try
             {
@@ -173,10 +185,18 @@ public:
                         {
                             check.deferred->exception = std::current_exception();
                             failed_deferred.emplace_back(check.enforced_by, check.deferred);
+                            /// A deferred check of a pending participant, enforced by the `Buffer` this group
+                            /// write flushes: there is no `BufferSink` left to enforce it - it is this flush that
+                            /// writes the rows into the destination - so it rejects the flush.
+                            if (lent_from && !lent_to_flush_of.expired() && sameOwner(check.enforced_by, lent_to_flush_of)
+                                && !lent_flush_exception)
+                                lent_flush_exception = check.deferred->exception;
                         }
                         else
                         {
                             check.isolated->exception = std::current_exception();
+                            if (!check.enforced_by.expired())
+                                failed_isolated.emplace_back(check.enforced_by, check.isolated);
                         }
                     }
                 }
@@ -191,6 +211,11 @@ public:
 
         if (exception)
             std::rethrow_exception(exception);
+
+        /// Only the sinks of the group write are rejected: the sinks of the participants observe the outcome
+        /// of their own checks, as they would have without the group write.
+        if (!forwarded && lent_flush_exception)
+            std::rethrow_exception(lent_flush_exception);
     }
 
 private:
@@ -226,12 +251,21 @@ private:
     /// Set before the gate is published and never changed, so it is read without the lock.
     std::shared_ptr<InsertStartGate> lent_from;
 
+    /// For a gate with `lent_from`: the storage whose flush the group write is (see `InsertStartGates::flushed_by`),
+    /// and the first failure of a merged deferred check enforced by it, which rejects the group write.
+    std::weak_ptr<const void> lent_to_flush_of;
+    std::exception_ptr lent_flush_exception;
+
     /// Registered while the gate is not `done`.
     std::vector<Check> checks;
 
     /// The deferred checks that failed when the decision was made, with the forwarding storages enforcing
     /// them. Consulted by a deferred check registered after the decision, see `addCheck`.
     std::vector<std::pair<std::weak_ptr<const void>, std::shared_ptr<DeferredOutcome>>> failed_deferred;
+
+    /// The isolated checks with an owner (`Check::enforced_by`) that failed when the decision was made, with
+    /// their owners. Consulted by an isolated check registered after the decision, see `addCheck`.
+    std::vector<std::pair<std::weak_ptr<const void>, std::shared_ptr<DeferredOutcome>>> failed_isolated;
 
     /// Set only while the gate is not `done`: from then on every sink holding this gate observes the
     /// decision of `forward_to` instead. Never changes once set.
@@ -451,6 +485,7 @@ public:
                 /// pending: their checks run in a new gate before the group write writes anything.
                 gate = std::make_shared<InsertStartGate>();
                 gate->lent_from = chosen;
+                gate->lent_to_flush_of = flushed_by;
             }
             else
             {

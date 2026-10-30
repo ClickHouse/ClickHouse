@@ -5,7 +5,7 @@ namespace DB
 
 SinkToStorage::SinkToStorage(SharedHeader header) : ExceptionKeepingTransform(header, header, false) {}
 
-void SinkToStorage::setInsertStartGate(InsertStartGatePtr gate, bool isolate_check)
+void SinkToStorage::setInsertStartGate(InsertStartGatePtr gate, bool isolate_check, std::weak_ptr<const void> view)
 {
     insert_start_gate = std::move(gate);
     isolated_pre_write_outcome.reset();
@@ -18,6 +18,7 @@ void SinkToStorage::setInsertStartGate(InsertStartGatePtr gate, bool isolate_che
         {
             isolated_pre_write_outcome = std::make_shared<InsertStartGate::DeferredOutcome>();
             check.isolated = isolated_pre_write_outcome;
+            check.enforced_by = std::move(view);
         }
         insert_start_gate->addCheck(std::move(check));
     }

@@ -816,9 +816,11 @@ void registerHiddenDependentViewsPreWriteChecks(
     std::vector<SinkToStorage::HiddenPreWriteCheck> & result)
 {
     /// The errors of the views (`Too many parts` included) are ignored by the nested INSERT, so their
-    /// checks must not reject the write either.
-    if (context->getSettingsRef()[Setting::materialized_views_ignore_errors])
-        return;
+    /// checks must not reject the write either. Still, a rejected view must not write: the check of the
+    /// direct target of the view is registered as an isolated one, keyed by the view, and the sink the nested
+    /// INSERT creates for the view observes its outcome, see `InsertStartGate::Check::enforced_by`. The writes
+    /// further behind such a view (through another forwarding hop) are left to their own sinks.
+    const bool ignore_errors = context->getSettingsRef()[Setting::materialized_views_ignore_errors];
 
     const auto storage_id = storage->getStorageID();
     for (const auto & view_id : DatabaseCatalog::instance().getDependentViews(storage_id))
@@ -833,13 +835,26 @@ void registerHiddenDependentViewsPreWriteChecks(
         if (view_metadata->getSelectQuery().select_table_id != storage_id)
             continue;
 
-        registerHiddenPreWriteChecks(
-            materialized_view->tryGetTargetTable(),
-            view_metadata->getSQLSecurityOverriddenContext(context),
-            gates,
-            origin,
-            depth + 1,
-            result);
+        auto view_context = view_metadata->getSQLSecurityOverriddenContext(context);
+        auto target = materialized_view->tryGetTargetTable();
+
+        if (!ignore_errors)
+        {
+            registerHiddenPreWriteChecks(target, view_context, gates, origin, depth + 1, result);
+            continue;
+        }
+
+        if (!target || !canInsertIntoAnyColumn(*target, view_context))
+            continue;
+
+        if (const auto * merge_tree = castStorage<MergeTreeData>(target, DeferredTable::Load).get())
+        {
+            auto outcome = std::make_shared<InsertStartGate::DeferredOutcome>();
+            auto gate = gates->get(target->getStorageID());
+            gate->addCheck({view_context, merge_tree->makeTooManyPartsCheck(view_context), /*deferred=*/ nullptr, view, outcome});
+            /// Not enforced by the forwarding sink: the sink of the view does it. It is kept only to hold the context alive.
+            result.push_back({origin.forwarded_to, std::move(gate), std::move(outcome), view_context, /* enforced_here= */ false});
+        }
     }
 }
 
@@ -2606,9 +2621,11 @@ Chain InsertDependenciesBuilder::createSinkImpl(StorageIDMaybeEmpty view_id) con
         ///
         /// The error of a materialized view branch is ignored under `materialized_views_ignore_errors`, so the
         /// rejection of its check must not reject a sibling branch writing into the same table with other limits.
+        const bool isolate_check = !view_id.empty() && materialized_views_ignore_errors;
         sink->setInsertStartGate(
             insert_start_gates->get(inner_storage->getStorageID()),
-            /* isolate_check= */ !view_id.empty() && materialized_views_ignore_errors);
+            isolate_check,
+            isolate_check ? std::weak_ptr<const void>(storages.at(view_id)) : std::weak_ptr<const void>());
         /// A forwarding sink (`AliasSink`) threads the registry into the nested INSERT it runs, so
         /// the sinks created there share this query's gates. A no-op for the other sinks.
         sink->setInsertStartGateRegistry(insert_start_gates);

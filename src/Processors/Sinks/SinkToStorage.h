@@ -27,8 +27,10 @@ public:
 
     /// Registers the pre-write check of this sink in the gate (see `getPreWriteCheck`). With `isolate_check`
     /// (a materialized view branch whose errors are ignored) the failure of the check rejects only this sink,
-    /// see `InsertStartGate::Check::isolated`.
-    void setInsertStartGate(InsertStartGatePtr gate, bool isolate_check = false);
+    /// see `InsertStartGate::Check::isolated`. `view` is the materialized view of that branch: if the decision
+    /// has been made already, the sink observes the outcome of the check registered in advance for the view,
+    /// see `InsertStartGate::Check::enforced_by`.
+    void setInsertStartGate(InsertStartGatePtr gate, bool isolate_check = false, std::weak_ptr<const void> view = {});
 
     /// A sink that forwards the write through a nested INSERT running in this query's context
     /// (`AliasSink`) receives the per-query registry its gate came from and threads it into that
