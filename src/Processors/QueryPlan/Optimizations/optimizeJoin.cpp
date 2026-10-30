@@ -26,6 +26,7 @@
 #include <Processors/QueryPlan/Optimizations/Utils.h>
 #include <Processors/QueryPlan/Optimizations/joinOrder.h>
 #include <Processors/QueryPlan/Optimizations/joinOrderAlgorithms.h>
+#include <Processors/QueryPlan/Optimizations/joinOrderCommon.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/SortingStep.h>
 #include <Processors/Transforms/JoiningTransform.h>
@@ -654,10 +655,17 @@ static size_t addChildQueryGraph(
         && (!stats.estimated_rows || num_rows_from_cache.value() < stats.estimated_rows.value()))
     {
         /// A measured row count beats statistics: take the minimum and mark it a precise cache value.
+        /// The count comes from an earlier execution, so it can sit below the current row count:
+        /// precise about what was observed, but not a lower bound on what will be read now.
         stats.estimated_rows = num_rows_from_cache;
+        stats.estimated_rows_is_lower_bound = false;
         stats.imprecise_estimate = false;
         stats.source = RowEstimateSource::HashTableCache;
     }
+
+    /// Keep the pair consistent: the point estimate must never exceed the bound.
+    if (stats.estimated_rows && stats.estimated_rows_upper && *stats.estimated_rows > *stats.estimated_rows_upper)
+        stats.estimated_rows_upper = stats.estimated_rows;
 
     if (!label.empty())
         stats.table_name = label;
@@ -1064,6 +1072,40 @@ constexpr bool isSwapOnlyJoinStrictness(JoinStrictness strictness)
 
 static QueryPlan::Node chooseJoinOrder(QueryGraphBuilder query_graph_builder, QueryPlan::Nodes & nodes, JoinStrictness join_strictness)
 {
+    /// Relation estimates are taken before the join applies its ON clause: a condition on a single
+    /// relation, also one inside a disjunct of an OR, filters it first, so its estimate is not a lower
+    /// bound, and an `arrayJoin` in the join expressions can change the row count of an input either
+    /// way, so no bound holds.
+    auto drop_lower_bound_if_single_relation = [&](const JoinActionRef & condition)
+    {
+        auto relation = condition.getSourceRelations().getSingleBit();
+        if (relation && *relation < query_graph_builder.relation_stats.size())
+            query_graph_builder.relation_stats[*relation].estimated_rows_is_lower_bound = false;
+    };
+    for (const auto & edge : query_graph_builder.join_edges)
+    {
+        drop_lower_bound_if_single_relation(edge);
+        if (!edge.isFunction(JoinConditionOperator::Or))
+            continue;
+        for (const auto & disjunct : edge.getArguments())
+        {
+            if (!disjunct.isFunction(JoinConditionOperator::And))
+                drop_lower_bound_if_single_relation(disjunct);
+            else
+                for (const auto & conjunct : disjunct.getArguments())
+                    drop_lower_bound_if_single_relation(conjunct);
+        }
+    }
+
+    if (auto dag = query_graph_builder.expression_actions.getActionsDAG(); dag && dag->hasArrayJoin())
+    {
+        for (auto & stats : query_graph_builder.relation_stats)
+        {
+            stats.estimated_rows_upper.reset();
+            stats.estimated_rows_is_lower_bound = false;
+        }
+    }
+
     const bool disjunctions_optimization_applied = query_graph_builder.disjunctions_optimization_applied;
 
     QueryGraph query_graph;
@@ -1102,6 +1144,7 @@ static QueryPlan::Node chooseJoinOrder(QueryGraphBuilder query_graph_builder, Qu
             .estimated_rows = rel.estimated_rows,
             .source = rel.source,
             .imprecise_estimate = rel.imprecise_estimate,
+            .estimated_rows_is_lower_bound = rel.estimated_rows_is_lower_bound,
             .composite = rel.composite};
 
         if (isMissingStatisticsSource(rel.source))
@@ -1257,6 +1300,11 @@ static QueryPlan::Node chooseJoinOrder(QueryGraphBuilder query_graph_builder, Qu
             /// semi/anti join) a cross product among its plain joins is `All` and stays `Cross`.
             if (join_operator.strictness != JoinStrictness::All && join_operator.kind == JoinKind::Cross)
                 join_operator.kind = JoinKind::Inner;
+
+            /// The solver bounded this entry as an `All` join.
+            if (!graph_has_mixed_strictness)
+                entry->estimated_rows_upper = boundJoinRows(
+                    entry->left->estimated_rows_upper, entry->right->estimated_rows_upper, join_operator.kind, join_strictness);
             auto left_rels = entry->left->relations;
             auto right_rels = entry->right->relations;
 
@@ -1266,10 +1314,19 @@ static QueryPlan::Node chooseJoinOrder(QueryGraphBuilder query_graph_builder, Qu
             auto lhs_estimation = entry->left->estimated_rows;
             auto rhs_estimation = entry->right->estimated_rows;
 
+            /// Without a left point estimate, fall back to its upper bound. Sound only against a
+            /// right estimate that is a lower bound, giving
+            /// `left_actual <= lhs_upper < rhs_estimation <= right_actual`.
+            auto lhs_for_swap = lhs_estimation ? lhs_estimation : entry->left->estimated_rows_upper;
+            bool right_is_lower_bound = false;
+            if (auto it = relation_infos.find(right_rels); it != relation_infos.end())
+                right_is_lower_bound = it->second.estimated_rows_is_lower_bound;
+
             bool swap_on_sizes = optimization_settings.join_swap_table.has_value()
                 ? optimization_settings.join_swap_table.value()
-                : entry->join_method == JoinMethod::Hash && lhs_estimation && rhs_estimation
-                    && lhs_estimation.value() < rhs_estimation.value();
+                : entry->join_method == JoinMethod::Hash && lhs_for_swap && rhs_estimation
+                    && (lhs_estimation || right_is_lower_bound)
+                    && lhs_for_swap.value() < rhs_estimation.value();
 
             bool flip_join = has_prepared_storage_at_left || (!has_prepared_storage_at_right && swap_on_sizes);
 
@@ -1467,7 +1524,7 @@ static QueryPlan::Node chooseJoinOrder(QueryGraphBuilder query_graph_builder, Qu
                 .imprecise_estimate = imprecise_estimate,
                 .composite = true};
 
-            join_step->setOptimized(entry->estimated_rows, entry->column_stats, imprecise_estimate, entry->cost, entry->selectivity, cluster_id);
+            join_step->setOptimized(entry->estimated_rows, entry->estimated_rows_upper, entry->column_stats, imprecise_estimate, entry->cost, entry->selectivity, cluster_id);
 
             auto & new_node = nodes.emplace_back();
 

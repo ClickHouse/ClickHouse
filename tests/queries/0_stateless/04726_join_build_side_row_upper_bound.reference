@@ -1,0 +1,32 @@
+greedy	1
+dpsub	1
+dpsize	1
+dphyp	1
+unmeasured right side keeps orientation	1
+overstated right side keeps orientation	1
+deleted right side keeps orientation	1
+FINAL right side keeps orientation	1
+SAMPLE right side keeps orientation	1
+row policy right side keeps orientation	1
+one-row leaf preserves the composite bound	1
+degenerate-predicate leaf keeps orientation	1
+arrayJoin-expanded side keeps orientation	1
+single-side ON condition keeps orientation	1
+single-side condition in an OR keeps orientation	1
+nested sub-join keeps orientation	1
+nested exact-empty sub-join keeps orientation	1
+semi sub-join keeps orientation	1
+anti sub-join keeps orientation	1
+ANY sub-join keeps orientation	1
+INNER ANY sub-join keeps orientation	1
+INNER ANY ON 1 sub-join keeps orientation	1
+INNER ANY sub-join is bounded by its larger input	1
+window subqueries keep orientation	1
+limited subquery keeps orientation	1
+sorted limited subquery keeps orientation	1
+OFFSET subquery keeps orientation	1
+IN subquery keeps orientation	1
+DISTINCT subquery keeps orientation	1
+build side rows	0	4
+rows	0
+rows non-empty filter	25

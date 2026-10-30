@@ -160,7 +160,8 @@ TEST(JoinStepLogicalDecisions, DecisionsAreIndependentlyObservable)
 TEST(JoinStepLogicalDecisions, CloneCarriesTheDecisions)
 {
     auto step = makeStep();
-    step->setOptimized();
+    /// The row-count bound is what a parent graph reads back from an already optimized sub-join.
+    step->setOptimized(/*estimated_rows_=*/{}, /*estimated_rows_upper_=*/400);
     step->setRuntimeFilterDeclinedForSmallProbe();
 
     auto cloned = step->clone();
@@ -168,6 +169,7 @@ TEST(JoinStepLogicalDecisions, CloneCarriesTheDecisions)
     ASSERT_TRUE(cloned_join);
     EXPECT_TRUE(cloned_join->isOptimized());
     EXPECT_TRUE(cloned_join->isRuntimeFilterDeclinedForSmallProbe());
+    EXPECT_EQ(cloned_join->getResultRowsUpperBound(), std::optional<UInt64>(400));
 
     EXPECT_EQ(serializeStep(*cloned_join, current_version), serializeStep(*step, current_version));
 }
