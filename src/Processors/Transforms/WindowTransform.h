@@ -103,9 +103,7 @@ private:
     std::unique_ptr<Arena> arena;
 
     SlidingBlocks blocks;
-    /// Whether some general function reads arguments; `argument_blocks` is kept only then.
-    bool has_arguments = false;
-    /// One entry per block of `blocks`, in the same order; positions are counted from the first input row.
+    /// One entry per block of `blocks`, in the same order; positions are counted from the current partition start.
     std::deque<WindowArguments::Block> argument_blocks;
     SlidingIndexes indexes;
     /// The first stored block not yet passed to the consumer.

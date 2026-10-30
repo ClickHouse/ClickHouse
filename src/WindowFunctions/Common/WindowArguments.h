@@ -43,8 +43,8 @@ public:
 
     explicit WindowArguments(std::vector<size_t> column_indices_, const std::deque<Block> & blocks_);
 
-    /// `at` takes positions counted from the partition start; `partition_start_` is that row's position in `blocks`.
-    void setPartitionStart(Int64 partition_start_);
+    /// Called when `blocks` is renumbered from a new partition start.
+    void resetPartition();
 
     size_t size() const;
     ArgumentValue at(size_t argument, Int64 position) const;
@@ -52,7 +52,6 @@ public:
 private:
     std::vector<size_t> column_indices;
     const std::deque<Block> & blocks;
-    Int64 partition_start = 0;
     mutable std::vector<Block> last_used_block_for_arg;
 };
 

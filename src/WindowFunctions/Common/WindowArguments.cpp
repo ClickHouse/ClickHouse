@@ -53,9 +53,8 @@ WindowArguments::WindowArguments(std::vector<size_t> column_indices_, const std:
 {
 }
 
-void WindowArguments::setPartitionStart(Int64 partition_start_)
+void WindowArguments::resetPartition()
 {
-    partition_start = partition_start_;
     std::ranges::fill(last_used_block_for_arg, Block{});
 }
 
@@ -72,7 +71,6 @@ size_t WindowArguments::size() const
 
 ArgumentValue WindowArguments::at(size_t argument, Int64 position) const
 {
-    position += partition_start;
     const Block & block = last_used_block_for_arg[argument];
     if (position < block.first_position || block.end_position <= position)
         findBlock(argument, position);

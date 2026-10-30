@@ -114,8 +114,6 @@ WindowTransform::WindowTransform(
         destroyStates(general_functions, workspaces);
         throw;
     }
-
-    has_arguments = std::ranges::any_of(general_functions, [](const GeneralWindowFunctionSlot & slot) { return slot.arguments.size() != 0; });
 }
 
 WindowTransform::~WindowTransform()
@@ -200,11 +198,9 @@ void WindowTransform::addInputBlock(Chunk chunk)
     auto materialized_columns = materializeColumns(chunk.getColumns(), params.should_materialize);
     auto index = indexes.calculate(materialized_columns, rows_count);
     auto & block = blocks.add(std::move(chunk), std::move(materialized_columns), std::move(index));
-    if (has_arguments)
-    {
-        const Int64 first_position = argument_blocks.empty() ? 0 : argument_blocks.back().end_position;
-        argument_blocks.push_back({.columns = block.materialized_columns, .first_position = first_position, .end_position = first_position + block.rows_count});
-    }
+    /// With no stored blocks left, the new block starts at the current row.
+    const Int64 first_position = argument_blocks.empty() ? peers.current().row_index_in_partition : argument_blocks.back().end_position;
+    argument_blocks.push_back({.columns = block.materialized_columns, .first_position = first_position, .end_position = first_position + block.rows_count});
     partition.advance(blocks);
 
     block.result_columns.resize(general_functions.size() + workspaces.size());
@@ -277,12 +273,7 @@ void WindowTransform::flushBatch()
     if (bounds.rows == 0)
         return;
 
-    if (has_arguments)
-    {
-        const Int64 partition_start = argument_blocks[batch_start.block - blocks.begin().block].first_position + batch_start.row - bounds.row[0];
-        for (auto & slot : general_functions)
-            slot.arguments.setPartitionStart(partition_start);
-    }
+    chassert(argument_blocks[batch_start.block - blocks.begin().block].first_position + batch_start.row == bounds.row[0]);
 
     const SlidingBlock & block = blocks.blockAt(batch_start.block);
     for (const auto & slot : general_functions)
@@ -295,6 +286,15 @@ void WindowTransform::startNextPartition()
 {
     const RowNumber partition_start = partition.bounds().end.location;
     chassert(peers.current().location == partition_start);
+
+    const Int64 partition_start_position = argument_blocks[partition_start.block - blocks.begin().block].first_position + partition_start.row;
+    for (auto & argument_block : argument_blocks)
+    {
+        argument_block.first_position -= partition_start_position;
+        argument_block.end_position -= partition_start_position;
+    }
+    for (auto & slot : general_functions)
+        slot.arguments.resetPartition();
 
     partition.beginAt(blocks, partition_start);
     partition.advance(blocks);
@@ -405,8 +405,7 @@ void WindowTransform::releaseUnusedBlocks()
     while (blocks.begin().block < first_used_block)
     {
         blocks.pop();
-        if (has_arguments)
-            argument_blocks.pop_front();
+        argument_blocks.pop_front();
     }
 }
 
