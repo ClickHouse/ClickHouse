@@ -33,6 +33,8 @@ public:
     /// Configured from the codec, not from the type, so the identity carries the parameters.
     String getCustomSerializationIdentity() const override;
 
+    bool isProductQuantization() const { return is_product_quantization; }
+
     void enumerateStreams(
         EnumerateStreamsSettings & settings,
         const StreamCallback & callback,
