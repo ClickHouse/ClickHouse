@@ -4864,11 +4864,13 @@ void Reader::initColumnsCache()
     /// A dictionary decoded early is read before `PREWHERE`, even if no row that passes it needs the column, so only
     /// small dictionary pages are read for that: within the memory budget of the reader, and a small part of the memory
     /// limit of the query. The budget is for all the dictionary pages of a row group together, since they are read
-    /// in the same stage, all at once, before any of them is decoded (see `ReadStage::Dictionary`).
+    /// in the same stage, all at once, before any of them is decoded (see `ReadStage::Dictionary`). Both limits are for
+    /// the whole query, so the files read in parallel split the budget, each taking its share.
     const size_t memory_limit = memoryLimitOfCurrentThread();
     size_t max_early_dictionary_bytes = memoryEstimateLimit();
     if (memory_limit)
         max_early_dictionary_bytes = std::min(max_early_dictionary_bytes, memory_limit / 4);
+    max_early_dictionary_bytes = size_t(static_cast<double>(max_early_dictionary_bytes) * memory_fraction_per_reader);
     for (RowGroup & row_group : row_groups)
     {
         if (!row_group.need_to_process)

@@ -51,3 +51,6 @@ s	8	524288
 [true]
 65536	4194304
 65536	4194304
+--- small dictionary pages of a column that PREWHERE does not need, in files read in parallel
+0	0
+0	0

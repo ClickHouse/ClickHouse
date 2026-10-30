@@ -655,6 +655,10 @@ struct Reader
     bool columns_cache_writes_possible = false;
     /// Captured once, before anything is read, see `ColumnsCache::getInvalidationGeneration`.
     UInt64 columns_cache_generation = 0;
+    /// The part of the query-wide memory budgets that this reader may take, when several files are read in
+    /// parallel, see `SharedResourcesExt::getMemoryFractionPerReader`. Set by `ReadManager` before
+    /// `prefilterAndInitRowGroups`.
+    double memory_fraction_per_reader = 1.;
 
     /// These methods are listed in the order in which they're used, matching ReadStage order.
 

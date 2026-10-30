@@ -24,6 +24,8 @@
 # - a chunk to write to the cache, of a variant read as `JSON`, which takes much more memory than the binary columns of
 #   the variant in the file;
 # - a chunk to write to the cache, of GeoParquet strings decoded into a geo type, which takes much more than the strings.
+# - a column to write to the cache that `PREWHERE` does not need, with a small dictionary page, in each of several files
+#   read in parallel, of which the dictionary pages do not fit the memory limit together.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -56,6 +58,12 @@ elif kind == 'small_dictionaries':
     for c in range(6):
         columns[f's{c}'] = pa.array([str(i + c).rjust(4096, 'x') for i in range(384)])
     pq.write_table(pa.table(columns), path, row_group_size=1000000, use_dictionary=[f's{c}' for c in range(6)],
+                   compression='NONE', dictionary_pagesize_limit=64 << 20)
+elif kind == 'parallel_files':
+    # 384 rows: even numbers, and distinct values of 4 KiB in an uncompressed dictionary page of 1.5 MiB.
+    ids = pa.array([2 * i for i in range(384)], type=pa.uint64())
+    values = pa.array([str(i).rjust(4096, 'x') for i in range(384)])
+    pq.write_table(pa.table({'id': ids, 's': values}), path, row_group_size=1000000, use_dictionary=['s'],
                    compression='NONE', dictionary_pagesize_limit=64 << 20)
 elif kind == 'delta':
     # 65536 rows: the same value of 512 bytes, of which `DELTA_BYTE_ARRAY` stores only the length of the shared prefix.
@@ -223,5 +231,24 @@ touch -d "1 minute ago" "${FILE_PATH}"
 run_query "SELECT count(), sum(length(g)) FROM file('${FILE}', Parquet, 'g LineString')
     SETTINGS max_threads = 1, input_format_parquet_max_block_size = 1000, input_format_parquet_memory_low_watermark = 0,
     input_format_parquet_memory_high_watermark = '256Ki', max_memory_usage = '72Mi'"
+
+echo "--- small dictionary pages of a column that PREWHERE does not need, in files read in parallel"
+# Each of 8 files has a dictionary page of 1.5 MiB, which fits the budget of one reader, but not of all of them together.
+# The read buffers are small, so that the 8 files read at once fit the memory limit without the cache.
+write_with_pyarrow parallel_files
+for i in $(seq 0 7); do
+    cp "${FILE_PATH}" "${USER_FILES_PATH}/${CLICKHOUSE_TEST_UNIQUE_NAME}_parallel_${i}.parquet"
+    touch -d "1 minute ago" "${USER_FILES_PATH}/${CLICKHOUSE_TEST_UNIQUE_NAME}_parallel_${i}.parquet"
+done
+QUERY="SELECT count(), sum(length(s)) FROM file('${CLICKHOUSE_TEST_UNIQUE_NAME}_parallel_*.parquet', Parquet, 'id UInt64, s String')
+    PREWHERE id % 2 = 1
+    SETTINGS max_threads = 8, input_format_parquet_max_block_size = 1000, input_format_parquet_memory_low_watermark = 0,
+    input_format_parquet_memory_high_watermark = '4Mi', max_memory_usage = '8Mi', max_untracked_memory = 65536,
+    max_read_buffer_size = 65536, use_query_condition_cache = 0"
+$CLICKHOUSE_CLIENT -q "
+    SYSTEM DROP COLUMNS CACHE;
+    ${QUERY}, use_columns_cache = 0;
+    ${QUERY}, use_columns_cache = 1"
+rm -f "${USER_FILES_PATH}/${CLICKHOUSE_TEST_UNIQUE_NAME}"_parallel_*.parquet
 
 rm -f "${FILE_PATH}" "${FILE_PATH}.tmp"
