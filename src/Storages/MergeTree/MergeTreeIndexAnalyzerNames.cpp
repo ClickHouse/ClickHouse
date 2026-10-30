@@ -38,6 +38,11 @@
 namespace DB
 {
 
+namespace Setting
+{
+    extern const SettingsBool optimize_functions_to_subcolumns;
+}
+
 namespace
 {
 
@@ -385,7 +390,46 @@ bool collidesWithOtherTableColumn(
     return false;
 }
 
-AlternativeKeyExpressionPtr getAlternativeExpression(
+/// The storage columns a filter reads, including subcolumns (e.g. `m.key_k`).
+NameSet getPredicateInputNames(const ActionsDAG::Node * predicate)
+{
+    NameSet result;
+    std::unordered_set<const ActionsDAG::Node *> visited;
+    std::vector<const ActionsDAG::Node *> stack{predicate};
+    while (!stack.empty())
+    {
+        const auto * node = stack.back();
+        stack.pop_back();
+        if (!node || !visited.insert(node).second)
+            continue;
+
+        if (node->type == ActionsDAG::ActionType::INPUT)
+            result.insert(node->result_name);
+
+        for (const auto * child : node->children)
+            stack.push_back(child);
+    }
+    return result;
+}
+
+/// Whether the alternative form reads a subcolumn (e.g. `m.key_k` after `FunctionToSubcolumnsPass`)
+/// that the filter does not read. Then the query did not apply that rewrite.
+bool readsSubcolumnMissingInPredicate(
+    const AlternativeKeyExpression & alternative_key, const ExpressionActionsPtr & expression, const NameSet & predicate_inputs)
+{
+    NameSet key_source_columns;
+    for (const auto & column : expression->getRequiredColumns())
+        key_source_columns.insert(column);
+
+    for (const auto & node : alternative_key.expression->getActionsDAG().getNodes())
+        if (node.type == ActionsDAG::ActionType::INPUT && !key_source_columns.contains(node.result_name)
+            && !predicate_inputs.contains(node.result_name))
+            return true;
+
+    return false;
+}
+
+AlternativeKeyExpressionPtr getAlternativeExpressionImpl(
     const ASTPtr & expression_list_ast,
     const ExpressionActionsPtr & expression,
     const Names & column_names,
@@ -436,10 +480,45 @@ AlternativeKeyExpressionPtr getAlternativeExpression(
     }
 }
 
+/// `FunctionToSubcolumnsPass` decides for the whole query whether to rewrite the functions of a
+/// column to subcolumn reads: it does not when the query uses the column in another way (e.g.
+/// `mapKeys(m)` in the projection) or reads the table with `FINAL`. The replay against the dummy table
+/// does not see that, so it can rewrite `m['k']` to `m.key_k` while the query does not. If the
+/// alternative form reads a subcolumn that the filter does not read, compute it again without that
+/// rewrite, keeping the other ones (e.g. `multiIf` to `if`).
+AlternativeKeyExpressionPtr getAlternativeExpression(
+    const ASTPtr & expression_list_ast,
+    const ExpressionActionsPtr & expression,
+    const Names & column_names,
+    const ColumnsDescription & table_columns,
+    const std::function<void(StorageInMemoryMetadata &)> & register_key,
+    const String & key_kind,
+    const String & description_for_log,
+    const ActionsDAG::Node * predicate,
+    const ContextPtr & context)
+{
+    auto alternative_key = getAlternativeExpressionImpl(
+        expression_list_ast, expression, column_names, table_columns, register_key, key_kind, description_for_log, context);
+
+    if (!alternative_key || !predicate || !context->getSettingsRef()[Setting::optimize_functions_to_subcolumns]
+        || !readsSubcolumnMissingInPredicate(*alternative_key, expression, getPredicateInputNames(predicate)))
+        return alternative_key;
+
+    /// The changed setting is a part of the identity of the cached result.
+    auto context_without_subcolumns = Context::createCopy(context);
+    context_without_subcolumns->setSetting("optimize_functions_to_subcolumns", Field(false));
+    return getAlternativeExpressionImpl(
+        expression_list_ast, expression, column_names, table_columns, register_key, key_kind, description_for_log, context_without_subcolumns);
+}
+
 }
 
 AlternativeKeyExpressionPtr getAlternativeIndexExpression(
-    const IndexDescription & index, const StorageInMemoryMetadata & table_metadata, bool index_is_in_table, const ContextPtr & context)
+    const IndexDescription & index,
+    const StorageInMemoryMetadata & table_metadata,
+    bool index_is_in_table,
+    const ActionsDAG::Node * predicate,
+    const ContextPtr & context)
 {
     if (index_is_in_table)
         return getAlternativeExpression(
@@ -456,6 +535,7 @@ AlternativeKeyExpressionPtr getAlternativeIndexExpression(
             /// The passes see the key as an index of this type.
             fmt::format("index of type {}", index.type),
             fmt::format("the expression of index {}", index.name),
+            predicate,
             context);
 
     /// The query was analyzed against the table without this index, so the passes treat specially
@@ -497,11 +577,12 @@ AlternativeKeyExpressionPtr getAlternativeIndexExpression(
         /// The passes see the key columns of the table, which are part of the identity of the result.
         fmt::format("hypothetical index of type {} with key columns of the table: {}", index.type, fmt::join(protected_columns, ", ")),
         fmt::format("the expression of hypothetical index {}", index.name),
+        predicate,
         context);
 }
 
 AlternativeKeyExpressionPtr getAlternativeKeyExpression(
-    const KeyDescription & key, const ColumnsDescription & table_columns, const ContextPtr & context)
+    const KeyDescription & key, const ColumnsDescription & table_columns, const ActionsDAG::Node * predicate, const ContextPtr & context)
 {
     return getAlternativeExpression(
         key.expression_list_ast,
@@ -511,13 +592,14 @@ AlternativeKeyExpressionPtr getAlternativeKeyExpression(
         [&](StorageInMemoryMetadata & metadata) { metadata.primary_key = key; },
         "key",
         "the key expression",
+        predicate,
         context);
 }
 
 AlternativeKeyExpressionPtr LazyAlternativeKeyExpression::get(
-    const KeyDescription & key, const ColumnsDescription & table_columns, const ContextPtr & context) const
+    const KeyDescription & key, const ColumnsDescription & table_columns, const ActionsDAG::Node * predicate, const ContextPtr & context) const
 {
-    std::call_once(initialized, [&] { alternative_key = getAlternativeKeyExpression(key, table_columns, context); });
+    std::call_once(initialized, [&] { alternative_key = getAlternativeKeyExpression(key, table_columns, predicate, context); });
     return alternative_key;
 }
 
@@ -536,7 +618,7 @@ MergeTreeIndexConditionPtr RewriteAwareIndexConditionFactory::create(const Actio
         return nullptr;
 
     if (minmax_index)
-        std::call_once(alternative_key_initialized, [&] { alternative_key = getAlternativeIndexExpression(index_helper->index, *metadata_snapshot, index_is_in_table, context); });
+        std::call_once(alternative_key_initialized, [&] { alternative_key = getAlternativeIndexExpression(index_helper->index, *metadata_snapshot, index_is_in_table, predicate, context); });
 
     if (alternative_key)
         return minmax_index->createIndexConditionWithAlternativeKey(predicate, context, alternative_key);

@@ -1,0 +1,18 @@
+primary key, subcolumn rewritten
+Granules: 1/25
+primary key, subcolumn not rewritten
+Granules: 1/25
+98	['k']
+99	['k']
+primary key, FINAL
+Granules: 1/25
+98
+99
+skip index, subcolumn not rewritten
+Granules: 25/25
+Name: idx
+Granules: 1/25
+partition key, subcolumn not rewritten
+Parts: 2/2
+Parts: 1/2
+Parts: 1/1

@@ -3245,13 +3245,13 @@ void ReadFromMergeTree::buildIndexes(
         /// is computed once, because the factory is invoked per part for constant folding, and not
         /// at all when there is no filter to analyze.
         auto alternative_primary_key = std::make_shared<LazyAlternativeKeyExpression>();
-        auto key_condition_factory = [query_context, metadata_snapshot, alternative_primary_key](const ActionsDAG *, const ActionsDAG::Node * predicate)
+        auto key_condition_factory = [query_context, metadata_snapshot, alternative_primary_key, filter_dag_ptr](const ActionsDAG *, const ActionsDAG::Node * predicate)
         {
             ActionsDAGWithInversionPushDown wrapped(predicate, query_context, /* boolean_context */ false);
             const bool skip_primary_key_analysis = !query_context->getSettingsRef()[Setting::use_primary_key];
             return KeyCondition{
                 wrapped, query_context, metadata_snapshot->getPrimaryKey(), /* single_point_ = */ false, skip_primary_key_analysis,
-                (skip_primary_key_analysis || !predicate) ? nullptr : alternative_primary_key->get(metadata_snapshot->getPrimaryKey(), metadata_snapshot->getColumns(), query_context)};
+                (skip_primary_key_analysis || !predicate) ? nullptr : alternative_primary_key->get(metadata_snapshot->getPrimaryKey(), metadata_snapshot->getColumns(), filter_dag_ptr->predicate, query_context)};
         };
         auto key_condition_template = std::make_shared<ConditionTemplate<KeyCondition>>(filter_dag_ptr, std::move(key_condition_factory), metadata_snapshot, query_context, skip_constant_folding);
         indexes.emplace(std::move(key_condition_template));

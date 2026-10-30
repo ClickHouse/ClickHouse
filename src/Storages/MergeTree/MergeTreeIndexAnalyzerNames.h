@@ -54,12 +54,21 @@ class MergeTreeIndexMinMax;
   * The result is cached by the content of the key (its AST and the stored key expression) and the
   * query's changed settings and current database, because computing it runs the query tree passes.
   *
+  * `predicate` is the query's filter. `FunctionToSubcolumnsPass` does not rewrite the functions of a
+  * column to subcolumn reads when the query uses the column in another way or reads with `FINAL`,
+  * which the replay does not see. If the rewritten form reads a subcolumn the filter does not read,
+  * it is computed again with `optimize_functions_to_subcolumns` disabled.
+  *
   * `index_is_in_table` is false for a hypothetical index of `EXPLAIN WHATIF`: the query was analyzed
   * against `table_metadata` without the index, so the passes see only the keys and indexes of the
   * table, not this index, and the alternative form is computed the same way.
   */
 AlternativeKeyExpressionPtr getAlternativeIndexExpression(
-    const IndexDescription & index, const StorageInMemoryMetadata & table_metadata, bool index_is_in_table, const ContextPtr & context);
+    const IndexDescription & index,
+    const StorageInMemoryMetadata & table_metadata,
+    bool index_is_in_table,
+    const ActionsDAG::Node * predicate,
+    const ContextPtr & context);
 
 /** The same for a primary or partition key: index analysis matches the filter expression against the
   * key expressions by name as well, so a key on expressions (e.g. `ORDER BY multiIf(v > 0, v, NULL)`
@@ -67,7 +76,7 @@ AlternativeKeyExpressionPtr getAlternativeIndexExpression(
   * side of the comparison. Returns nullptr when not applicable, see above.
   */
 AlternativeKeyExpressionPtr getAlternativeKeyExpression(
-    const KeyDescription & key, const ColumnsDescription & table_columns, const ContextPtr & context);
+    const KeyDescription & key, const ColumnsDescription & table_columns, const ActionsDAG::Node * predicate, const ContextPtr & context);
 
 /** Computes the alternative form of a key at most once, for the query plan's condition factories,
   * which create a `KeyCondition` many times for the same query (once per part, for constant folding).
@@ -75,7 +84,8 @@ AlternativeKeyExpressionPtr getAlternativeKeyExpression(
 class LazyAlternativeKeyExpression
 {
 public:
-    AlternativeKeyExpressionPtr get(const KeyDescription & key, const ColumnsDescription & table_columns, const ContextPtr & context) const;
+    AlternativeKeyExpressionPtr get(
+        const KeyDescription & key, const ColumnsDescription & table_columns, const ActionsDAG::Node * predicate, const ContextPtr & context) const;
 
 private:
     mutable std::once_flag initialized;
