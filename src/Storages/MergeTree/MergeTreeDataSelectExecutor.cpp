@@ -1365,9 +1365,7 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
                         continue;
                     }
 
-                    if (index_and_condition.index->getDeserializedFormat(*part_info_for_reader, index_and_condition.index->getFileName()))
-                        skip_index_applied[index_idx].store(true, std::memory_order_relaxed);
-
+                    bool index_applied = false;
                     if (!is_index_supported_on_data_read(index_and_condition.index))
                     {
                         std::tie(ranges.ranges, ranges.read_hints) = filterMarksUsingIndex(
@@ -1383,8 +1381,17 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
                             vector_similarity_index_cache.get(),
                             use_skip_indexes_for_disjunctions,
                             partial_eval_results,
-                            log);
+                            log,
+                            &index_applied);
                     }
+                    else
+                    {
+                        /// filtered when the part is read
+                        index_applied = !!index_and_condition.index->getDeserializedFormat(*part_info_for_reader, index_and_condition.index->getFileName());
+                    }
+
+                    if (index_applied)
+                        skip_index_applied[index_idx].store(true, std::memory_order_relaxed);
 
                     stat.granules_dropped.fetch_add(total_granules - ranges.getMarksCount(), std::memory_order_relaxed);
                     if (ranges.ranges.empty())
@@ -3026,7 +3033,8 @@ std::pair<MarkRanges, RangesInDataPartReadHints> MergeTreeDataSelectExecutor::fi
     VectorSimilarityIndexCache * vector_similarity_index_cache,
     bool use_skip_indexes_for_disjunctions,
     PartialDisjunctionResult & partial_disjunction_result,
-    LoggerPtr log)
+    LoggerPtr log,
+    bool * index_applied)
 {
     if (!index_helper->getDeserializedFormat(*part_info, index_helper->getFileName()))
     {
@@ -3056,6 +3064,9 @@ std::pair<MarkRanges, RangesInDataPartReadHints> MergeTreeDataSelectExecutor::fi
     {
         return {ranges, in_read_hints};
     }
+
+    if (index_applied)
+        *index_applied = true;
 
     MarkRanges index_ranges;
     for (const auto & range : ranges)
