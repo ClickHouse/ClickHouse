@@ -1500,8 +1500,8 @@ bool StorageFileLog::updateFileInfos()
     /// be observed before any later `DW_ITEM_ADDED` for the source name, so
     /// that `onFileAppeared`'s filename-ownership guard sees the post-rename
     /// `file_name` in `meta_by_inode` rather than the stale pre-rename one.
-    /// Only the last add, removal or rename of a name is applied to the file found there now; earlier events of the
-    /// name only record whether the file they leave under it is read.
+    /// Each add, removal or rename of a name takes the name from the file it had and records whether the file it
+    /// leaves under the name is read. Only the last one applies the file found there now.
     std::unordered_map<String, size_t> last_change;
     for (size_t i = 0; i < events.size(); ++i)
         if (events[i].second.type != DirectoryWatcherBase::DW_ITEM_MODIFIED)
@@ -1512,6 +1512,12 @@ bool StorageFileLog::updateFileInfos()
     {
         auto it = name_is_read.find(name);
         return it != name_is_read.end() ? it->second : fileNameMatches(name) || file_infos.context_by_name.contains(name);
+    };
+    auto drop_name = [&](const String & name)
+    {
+        file_infos.other_names.erase(name);
+        if (auto it = file_infos.context_by_name.find(name); it != file_infos.context_by_name.end())
+            it->second.status = FileStatus::REMOVED;
     };
 
     for (size_t i = 0; i < events.size(); ++i)
@@ -1525,17 +1531,13 @@ bool StorageFileLog::updateFileInfos()
             case DirectoryWatcherBase::DW_ITEM_ADDED:
             {
                 name_is_read[file_name] = fileNameMatches(file_name);
+                /// A rename from outside the directory is reported as an addition, with no removal event for what it replaces.
+                drop_name(file_name);
                 if (last_change.at(file_name) != i)
                     break;
                 /// Check if it is a regular file, and new file may be renamed or removed.
                 if (!std::filesystem::is_regular_file(file_path))
-                {
                     name_is_read[file_name] = false;
-                    /// A rename from outside the directory is reported as an addition, with no removal event for what it replaces.
-                    file_infos.other_names.erase(file_name);
-                    if (auto it = file_infos.context_by_name.find(file_name); it != file_infos.context_by_name.end())
-                        it->second.status = FileStatus::REMOVED;
-                }
                 else
                 {
                     auto inode = getInode(file_path);
@@ -1609,9 +1611,7 @@ bool StorageFileLog::updateFileInfos()
                 if (event_info.type == DirectoryWatcherBase::DW_ITEM_MOVED_FROM && event_info.cookie && is_read(file_name))
                     renamed_from_read_name.insert(event_info.cookie);
                 name_is_read[file_name] = false;
-                file_infos.other_names.erase(file_name);
-                if (auto it = file_infos.context_by_name.find(file_name); it != file_infos.context_by_name.end())
-                    it->second.status = FileStatus::REMOVED;
+                drop_name(file_name);
                 break;
             }
             /// The file **arrived** in this directory
@@ -1619,6 +1619,8 @@ bool StorageFileLog::updateFileInfos()
             {
                 const bool renamed_from_read = event_info.cookie && renamed_from_read_name.contains(event_info.cookie);
                 name_is_read[file_name] = renamed_from_read || fileNameMatches(file_name);
+                /// A rename emits no removal event for what it replaces.
+                drop_name(file_name);
                 if (last_change.at(file_name) != i)
                     break;
                 /// Similar to DW_ITEM_ADDED, but if it removed from an old file
@@ -1654,14 +1656,11 @@ bool StorageFileLog::updateFileInfos()
                     }
                     /// The rename source was not tracked, e.g. it was created and renamed within one batch
                     else
+                    {
+                        /// Like an added file, it is read from offset 0.
+                        disk->removeFileIfExists(getFullMetaPath(file_name));
                         file_infos.meta_by_inode.emplace(inode, FileMeta{.file_name = file_name});
-                }
-                /// A rename emits no removal event for what it replaces.
-                else
-                {
-                    file_infos.other_names.erase(file_name);
-                    if (auto it = file_infos.context_by_name.find(file_name); it != file_infos.context_by_name.end())
-                        it->second.status = FileStatus::REMOVED;
+                    }
                 }
                 break;
             }

@@ -108,3 +108,22 @@ a.log	2
 s.log	3
 b.log	11
 b.log	12
+-- a hard link replaced twice around the removal of the read name and a link back from outside the directory: the file linked back is read from the start
+a.log	10
+a.log	20
+c.log	30
+c.log	40
+c.log	50
+c.log	60
+c.log	70
+c.log	80
+-- the read name replaced twice from inside the directory around the removal of a hard link and a link back from outside: the file linked back is read from the start
+c.log	90
+e.log	31
+e.log	32
+e.log	33
+e.log	34
+e.log	35
+e.log	36
+e.log	37
+e.log	38

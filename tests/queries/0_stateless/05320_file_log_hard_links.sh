@@ -13,11 +13,12 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 logs_dir=${USER_FILES_PATH}/${CLICKHOUSE_TEST_UNIQUE_NAME}
 rm -rf "${logs_dir}"
-mkdir -p "${logs_dir}"/{d1,d2,d3,d4,d5,d6,d7,d8}
+mkdir -p "${logs_dir}"/{d1,d2,d3,d4,d5,d6,d7,d8,d9}
 d1=${logs_dir}/d1
 held=${logs_dir}/held.log
 held2=${logs_dir}/held2.log
 held3=${logs_dir}/held3.log
+held4=${logs_dir}/held4.log
 out=${logs_dir}/out.log
 tmp=${logs_dir}/tmp.txt
 
@@ -347,6 +348,39 @@ rm "${d8}/s.log"
 printf '12\n' >> "${d8}/b.log"
 read_until file_log_recover 12
 
+echo '-- a hard link replaced twice around the removal of the read name and a link back from outside the directory: the file linked back is read from the start'
+d9=${logs_dir}/d9
+printf '10\n' > "${d9}/a.log"
+: > "${d9}/sync.log"
+${CLICKHOUSE_CLIENT} -q "CREATE TABLE file_log_replaced (id UInt64) ENGINE = FileLog('${d9}/', 'TSV') SETTINGS poll_timeout_ms = 100"
+read_log file_log_replaced
+sync_watch file_log_replaced "${d9}/sync.log"
+ln "${d9}/a.log" "${d9}/b.log"
+ln "${d9}/a.log" "${held4}"
+printf '20\n' >> "${d9}/a.log"
+read_until file_log_replaced 20
+: > "${tmp}"
+mv "${tmp}" "${d9}/b.log"
+rm "${d9}/a.log"
+printf '30\n40\n50\n60\n70\n80\n' > "${held4}"
+ln "${held4}" "${d9}/c.log"
+: > "${tmp}"
+mv "${tmp}" "${d9}/b.log"
+read_until file_log_replaced 30 40 50 60 70 80
+
+echo '-- the read name replaced twice from inside the directory around the removal of a hard link and a link back from outside: the file linked back is read from the start'
+ln "${d9}/c.log" "${d9}/d.log"
+printf '90\n' >> "${d9}/c.log"
+read_until file_log_replaced 90
+: > "${d9}/x.tmp"
+mv "${d9}/x.tmp" "${d9}/c.log"
+rm "${d9}/d.log"
+printf '31\n32\n33\n34\n35\n36\n37\n38\n' > "${held4}"
+ln "${held4}" "${d9}/e.log"
+: > "${d9}/x.tmp"
+mv "${d9}/x.tmp" "${d9}/c.log"
+read_until file_log_replaced 31 32 33 34 35 36 37 38
+
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE file_log"
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE file_log_create"
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE file_log_symlink"
@@ -355,4 +389,5 @@ ${CLICKHOUSE_CLIENT} -q "DROP TABLE file_log_glob_symlink"
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE file_log_glob_create"
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE file_log_dangling"
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE file_log_recover"
+${CLICKHOUSE_CLIENT} -q "DROP TABLE file_log_replaced"
 rm -rf "${logs_dir}"
