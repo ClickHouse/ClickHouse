@@ -80,6 +80,7 @@ CreatingSetsTransform::CreatingSetsTransform(
     , spill_settings(std::move(spill_settings_))
     , recoverable_build(recoverable_build_)
 {
+    set_spillables.add(set_and_key->spill_state);
 }
 
 IProcessor::Status CreatingSetsTransform::prepare()
@@ -191,7 +192,10 @@ void CreatingSetsTransform::startSubquery()
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Nothing to do with subquery");
 
     if (!done_with_set)
+    {
         set_and_key->set->setSpillSettings(std::move(spill_settings));
+        set_and_key->spill_state->bind(set_and_key->set);
+    }
 
     if (table_out.initialized())
     {

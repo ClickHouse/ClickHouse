@@ -13,33 +13,27 @@ import { VersionHistory } from "/snippets/zh/components/VersionHistory/VersionHi
 
 这些设置可在 [system.settings](/zh/reference/system-tables/settings) 中查看，并由 [源代码](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp) 自动生成。
 
-<div id="http_allow_database_as_path">
-  ## http_allow_database_as_path
-</div>
+## http_allow_database_as_path {#http_allow_database_as_path}
 
-<SettingsInfoBlock type="Bool" default_value="0" />
+<SettingsInfoBlock type="Bool" default_value="1" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "0"},{"label": "新增设置：识别 HTTP 请求 URL 路径中的数据库名称。"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "0"},{"label": "新增设置：识别 HTTP 请求 URL 路径中的数据库名称。"}]}, {"id": "row-2","items": [{"label": "26.10"},{"label": "1"},{"label": "默认启用：HTTP 接口会将 URL 路径中的 `\/database\/` 组件解析为当前数据库。"}]}]} />
 
 启用后，HTTP 接口会识别 URL 路径中的 `/database/` 组件，并将其用作当前数据库。
 
-这是一个按用户生效的设置，用于控制是否解析已路由的路径式请求。路由本身由服务器级配置设置 `http_allow_path_requests` 全局控制 (默认关闭) 。必须启用该设置，HTTP 接口才能将路径式请求 (例如 `/my_db/my_table.csv`) 路由到查询处理程序。由于路由决策在请求完成身份验证之前作出，因此不能依赖按用户生效的设置。`http_allow_path_requests` 关闭时，未知路径会返回普通的 `404`。路由后，会根据已通过身份验证用户的有效设置再次检查此设置，因此可针对特定用户、角色或 profile 选择性启用。
+这是一个按用户生效的设置，用于控制是否解析已路由的路径式请求。路由本身由服务器级配置设置 `http_allow_path_requests` 全局控制 (默认开启) 。必须启用该设置，HTTP 接口才能将路径式请求 (例如 `/my_db/my_table.csv`) 路由到查询处理程序。由于路由决策在请求完成身份验证之前作出，因此不能依赖按用户生效的设置。`http_allow_path_requests` 关闭时，未知路径会返回普通的 `404`。路由后，会根据已通过身份验证用户的有效设置再次检查此设置，因此可针对特定用户、角色或 profile 选择性禁用。
 
-<div id="http_allow_filters_as_path">
-  ## http_allow_filters_as_path
-</div>
+## http_allow_filters_as_path {#http_allow_filters_as_path}
 
-<SettingsInfoBlock type="Bool" default_value="0" />
+<SettingsInfoBlock type="Bool" default_value="1" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "0"},{"label": "新增设置，用于识别 HTTP 请求 URL 路径中 Hive 风格的 `name=value` 过滤器。"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "0"},{"label": "新增设置，用于识别 HTTP 请求 URL 路径中 Hive 风格的 `name=value` 过滤器。"}]}, {"id": "row-2","items": [{"label": "26.10"},{"label": "1"},{"label": "默认启用：HTTP 接口会将 `\/name=value\/` 路径组件解析为以 `AND` 组合的过滤器。"}]}]} />
 
 启用后，HTTP 接口会识别路径中的 `/name=value/` 组件 (Hive 分区风格) ，并将其转换为以 AND 组合的过滤器。还会识别运算符 `>`、`<`、`>=`、`<=`、`!=`、`<>`。
 
 与 [`http_allow_database_as_path`](/zh/reference/settings/session-settings/http#http_allow_database_as_path) 一样，这是按用户设置；路径式请求的路由由服务器级配置设置 `http_allow_path_requests` 全局控制 (路由发生在身份验证之前) 。
 
-<div id="http_allow_filters_as_unrecognized_url_parameters">
-  ## http_allow_filters_as_unrecognized_url_parameters
-</div>
+## http_allow_filters_as_unrecognized_url_parameters {#http_allow_filters_as_unrecognized_url_parameters}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -50,21 +44,19 @@ import { VersionHistory } from "/snippets/zh/components/VersionHistory/VersionHi
 * 普通的 `name=value` 会转换为等值比较 `` `name` = 'value' `` (标识符使用反引号，值会作为字符串字面量加引号) 。
 * 使用比较运算符 (`!=`、`>`、`<`、`>=`、`<=`、`<>`) 时，会将其视为比较表达式：运算符可以跨参数拆分 (`?a!=2`、`?a>=2`) ，也可以在 URL 中没有可用于拆分的 `=` 时以内联形式编写 (`?a<>2`、`?f(x)>3`) ；此时，重新组合的 `name[=value]` 会被解析为完整的 SQL 表达式。
 
-<div id="http_allow_table_as_file">
-  ## http_allow_table_as_file
-</div>
+与其他 `http_allow_*` 设置不同，此设置默认禁用：它作用于 HTTP 接口的所有请求，包括 `/?query=...` 端点，因此一旦启用，客户端附加的任何无法识别的 URL 参数 (例如请求 ID、签名、缓存破坏参数) 都会变成查询的过滤条件。此时，拼错的设置名称将不再报 `UNKNOWN_SETTING` 错误，而是以 `UNKNOWN_IDENTIFIER` 报错失败 (如果该名称恰好与某个列同名，则会在不报错的情况下直接过滤结果) ；此外，参数值会成为查询文本的一部分，不会像日志中的 `Request URI` 那样被掩码处理。
 
-<SettingsInfoBlock type="Bool" default_value="0" />
+## http_allow_table_as_file {#http_allow_table_as_file}
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "0"},{"label": "新增设置：识别 HTTP 请求 URL 路径中的表名，支持可选的格式\/压缩扩展名。"}]}]} />
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "0"},{"label": "新增设置：识别 HTTP 请求 URL 路径中的表名，支持可选的格式\/压缩扩展名。"}]}, {"id": "row-2","items": [{"label": "26.10"},{"label": "1"},{"label": "默认启用：HTTP 接口会将 URL 路径的最后一个组件解释为 `table[.format[.compression]]`，并返回 `SELECT * FROM table` 的结果作为响应。"}]}]} />
 
 启用后，HTTP 接口会将 URL 路径的最后一个组件识别为表名，其形式可以是 `table`、`table.format` 或 `table.format.compression`。该路径会被解释为 `SELECT * FROM table`。
 
 与 [`http_allow_database_as_path`](/zh/reference/settings/session-settings/http#http_allow_database_as_path) 一样，这是一个按用户生效的设置；路径式请求的路由在全局范围内受服务器级配置设置 `http_allow_path_requests` 控制 (路由发生在身份验证之前) 。
 
-<div id="http_connection_timeout">
-  ## http_connection_timeout
-</div>
+## http_connection_timeout {#http_connection_timeout}
 
 <SettingsInfoBlock type="Seconds" default_value="1" />
 
@@ -75,17 +67,13 @@ HTTP 连接超时时间 (以秒为单位) 。
 * 任意正整数。
 * 0 - 禁用 (超时时间为无限) 。
 
-<div id="http_make_head_request">
-  ## http_make_head_request
-</div>
+## http_make_head_request {#http_make_head_request}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
 `http_make_head_request` 设置允许在通过 HTTP 读取数据时执行 `HEAD` 请求，以获取待读取文件的信息，例如文件大小。该设置默认启用，因此如果服务器不支持 `HEAD` 请求，可能需要将其禁用。
 
-<div id="http_native_compression_disable_checksumming_on_decompress">
-  ## http_native_compression_disable_checksumming_on_decompress
-</div>
+## http_native_compression_disable_checksumming_on_decompress {#http_native_compression_disable_checksumming_on_decompress}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -98,9 +86,7 @@ HTTP 连接超时时间 (以秒为单位) 。
 * 0 — 禁用。
 * 1 — 启用。
 
-<div id="http_receive_timeout">
-  ## http_receive_timeout
-</div>
+## http_receive_timeout {#http_receive_timeout}
 
 <SettingsInfoBlock type="Seconds" default_value="30" />
 
@@ -112,9 +98,7 @@ HTTP 接收超时时间 (秒) 。
 
 * 任意正整数 (秒) 。`0` **不是**无限超时，且可能导致连接建立失败 (POSIX 套接字超时要求正时间间隔) 。
 
-<div id="http_send_timeout">
-  ## http_send_timeout
-</div>
+## http_send_timeout {#http_send_timeout}
 
 <SettingsInfoBlock type="Seconds" default_value="30" />
 
@@ -130,25 +114,19 @@ HTTP 发送超时时间 (以秒为单位) 。
   仅适用于 default profile。更改生效需要重启 server。
 </Note>
 
-<div id="http_skip_not_found_url_for_globs">
-  ## http_skip_not_found_url_for_globs
-</div>
+## http_skip_not_found_url_for_globs {#http_skip_not_found_url_for_globs}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
 跳过返回 HTTP&#95;NOT&#95;FOUND 错误的通配符 URL
 
-<div id="http_wait_end_of_query">
-  ## http_wait_end_of_query
-</div>
+## http_wait_end_of_query {#http_wait_end_of_query}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 启用服务器端 HTTP 响应缓冲。
 
-<div id="http_write_exception_in_output_format">
-  ## http_write_exception_in_output_format
-</div>
+## http_write_exception_in_output_format {#http_write_exception_in_output_format}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -156,9 +134,23 @@ HTTP 发送超时时间 (以秒为单位) 。
 
 将异常按输出格式写出，以生成有效的输出。适用于 JSON 和 XML 格式。
 
-<div id="http_zlib_compression_level">
-  ## http_zlib_compression_level
-</div>
+## http_x_clickhouse_format_overrides_output_format {#http_x_clickhouse_format_overrides_output_format}
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "1"},{"label": "控制 `X-ClickHouse-Format` HTTP 请求头是作为 `output_format` 的别名（覆盖查询中的 `FORMAT` 子句，即 26.8 起的行为），还是作为 `default_format` 的别名（即 26.8 之前的行为）。此条目用于追溯记录 26.8 中的变更，以便在将 `compatibility` 设置为 26.8 之前的版本时恢复旧的请求头行为。"}]}, {"id": "row-2","items": [{"label": "26.10"},{"label": "1"},{"label": "26.10 中新增的设置，用于控制 26.8 中发布的 `X-ClickHouse-Format` HTTP 请求头变更。实质性的语义变更登记在 26.8 块下，因此 `compatibility = '26.7'` 会回退该变更，而 `compatibility = '26.8'` 和 `'26.9'` 则保留相应发行版的行为；添加此条目是为了让升级检查能够接受这个新引入的名称。"}]}]} />
+
+控制 `X-ClickHouse-Format` HTTP 请求头映射到哪个设置。
+
+启用时 (默认) ，该请求头是 `output_format` 设置的别名：它会显式覆盖响应格式，优先级高于查询中的 `FORMAT` 子句和 URL 路径中的文件扩展名。
+
+禁用时，该请求头是 `default_format` 设置的别名，与 26.8 版本之前的行为相同：仅当查询中没有 `FORMAT` 子句且未应用其他格式覆盖时，才由它决定所使用的格式。
+
+无论哪种情况，该请求头都会覆盖同名的 URL 参数 (分别为 `output_format` 或 `default_format`) ，且绝不会影响 `INSERT` 请求体的解析方式。
+
+这是 HTTP 接口的兼容性设置：该请求头在查询解析之前就已被处理，因此必须通过 URL 参数或用户 profile 指定，而不能通过查询内的 `SETTINGS` 子句设置。与 `output_format` 和 `default_format` 本身一样，它在只读模式 (`readonly = 1`) 下也始终可以更改，因此只读用户同样可以通过 URL 参数传递该设置。
+
+## http_zlib_compression_level {#http_zlib_compression_level}
 
 <SettingsInfoBlock type="Int64" default_value="3" />
 

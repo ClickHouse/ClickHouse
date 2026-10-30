@@ -1,6 +1,7 @@
 #pragma once
 
 #include <base/types.h>
+#include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage_fwd.h>
 
 #include <map>
 #include <memory>
@@ -14,14 +15,32 @@ using KeeperIcebergRESTCatalogStorePtr = std::shared_ptr<KeeperIcebergRESTCatalo
 /// One warehouse of the Iceberg REST catalog (RFC: issue #114697).
 struct IcebergRESTCatalogWarehouse
 {
+    struct S3Location
+    {
+        String bucket;
+        String key;
+    };
+
+    IcebergRESTCatalogWarehouse(
+        String name_, String base_location_, KeeperIcebergRESTCatalogStorePtr store_, ObjectStoragePtr object_storage_);
+
     /// Also the REST `prefix`.
-    String name;
+    const String name;
     /// Default storage prefix for tables.
-    String base_location;
-    KeeperIcebergRESTCatalogStorePtr store;
+    const String base_location;
+    const KeeperIcebergRESTCatalogStorePtr store;
+    const ObjectStoragePtr object_storage;
+
+    void validateLocation(const String & location) const;
+    String objectKey(const String & location) const;
+
+private:
+    void validateLocation(const S3Location & location) const;
 };
 
 using IcebergRESTCatalogWarehousePtr = std::shared_ptr<const IcebergRESTCatalogWarehouse>;
+
+String stripTrailingSlashes(String location);
 
 /// Experimental scaffolding. Currently, the server config holds the warehouse definition.
 /// It is only read on startup.
