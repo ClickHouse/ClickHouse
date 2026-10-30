@@ -681,7 +681,17 @@ bool AlterDropPartitionExecutor::tryCommit(SnapshotState & state, const DropPlan
 
     auto [metadata_info, new_snapshot] = writeManifestList(state, plan, filename_generator, files_for_cleanup);
 
-    committed = commitMetadataJSON(state, filename_generator, metadata_info, new_snapshot);
+    try
+    {
+        committed = commitMetadataJSON(state, filename_generator, metadata_info, new_snapshot);
+    }
+    catch (const Exception & e)
+    {
+        /// The staged manifest list may already belong to the table's current snapshot.
+        if (Iceberg::isCommitStateUnknown(e))
+            files_for_cleanup.clear();
+        throw;
+    }
     if (!committed)
         return false;
 

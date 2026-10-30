@@ -297,6 +297,26 @@ static struct InitFiu
     PAUSEABLE_ONCE(iceberg_writes_pause_before_commit) \
     REGULAR(iceberg_slow_manifest_read) \
     PAUSEABLE_ONCE(iceberg_drop_partition_pause_after_discovery) \
+    REGULAR(iceberg_catalog_commit_response_lost) \
+    REGULAR(iceberg_catalog_commit_response_lost_net) \
+    REGULAR(iceberg_catalog_commit_response_lost_std) \
+    ONCE(iceberg_catalog_commit_superseded) \
+    REGULAR(iceberg_catalog_commit_stale_parent) \
+    REGULAR(iceberg_catalog_commit_reconcile_fail) \
+    REGULAR(iceberg_catalog_commit_reconcile_throw) \
+    REGULAR(iceberg_catalog_commit_transport_fail) \
+    REGULAR(iceberg_catalog_commit_transport_net_fail) \
+    REGULAR(iceberg_catalog_commit_rejected) \
+    REGULAR(iceberg_catalog_commit_auth_rejected) \
+    REGULAR(iceberg_catalog_commit_retried) \
+    REGULAR(iceberg_catalog_commit_timed_out) \
+    REGULAR(iceberg_catalog_commit_rejected_dispatched) \
+    REGULAR(iceberg_catalog_commit_net_fail_before_body) \
+    REGULAR(iceberg_catalog_commit_std_throw_before_body) \
+    ONCE(iceberg_catalog_commit_conflict) \
+    REGULAR(iceberg_catalog_commit_predispatch_fail) \
+    REGULAR(iceberg_catalog_commit_update_throw) \
+    REGULAR(iceberg_catalog_commit_update_throw_post_dispatch) \
     PAUSEABLE_ONCE(hudi_pause_before_iterate) \
     PAUSEABLE_ONCE(hudi_pause_in_listing_data_files) \
     REGULAR(storage_cluster_read_sleep) \
