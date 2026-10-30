@@ -291,35 +291,38 @@ SETTINGS join_algorithm = 'hash';
 -- state-machine half of what these cells cover is only exercised if one was, so assert the write
 -- directly.
 --
--- ExternalJoinWritePart alone does not do that: GraceHashJoin::addBuckets constructs both temp streams
--- of every bucket up front and each holder's constructor already increments that counter, so it counts
--- buckets rather than payload. Running these very two joins over an empty row set still reports
--- ExternalJoinWritePart = 16 -- on zero payload bytes. So pair it with a byte threshold, the way
--- 02402_external_disk_metrics does.
---
--- ExternalJoinUncompressedBytes is the counter to assert: it measures payload before compression, so
--- unlike the compressed counter it does not move with temporary_files_codec. Measured over 40 runs
--- under the test runner's own setting randomization, it stays in 12575..15305 bytes for the JSON join
--- and 4485..7513 for the Dynamic one, so 2000 leaves better than a factor of two of headroom below the
--- lowest draw while being unreachable without a real flush: bucket construction alone contributes 0,
--- and keeping everything in the in-memory bucket (grace_hash_join_initial_buckets = 1) also leaves it
--- at exactly 0. The counters are per query, so the threshold applies to both cells.
+-- `spilled_to_disk` lists `join` only once bytes reach a temporary file. ExternalJoinWritePart does not
+-- prove that: GraceHashJoin::addBuckets creates the temporary files of every bucket up front, so it is 16
+-- even with no payload (see 05046_query_log_spilled_to_disk_needs_a_write). The counters are kept only to
+-- make a failure readable.
 --
 -- currentDatabase() alone does not isolate this execution: with --database the runner reuses one
 -- database for every test, so aggregating the whole log lets an earlier spilling run keep a later
--- non-spilling one green. Both counters come out of one argMax tuple so they cannot be read from
--- different executions.
+-- non-spilling one green. So only the latest execution of each cell is checked. With parallel replicas
+-- the join can run only on remote replicas, whose query_log rows have current_database = 'default', so
+-- every row of the execution is aggregated (initial_query_id).
 SYSTEM FLUSH LOGS query_log;
 SELECT 'spilled', log_comment,
-       if(last.1 >= 1 AND last.2 >= 2000,
-          'ok',
-          'fail: write_part=' || toString(last.1) || ' uncompressed=' || toString(last.2))
-FROM (
-    SELECT log_comment,
-           argMax((ProfileEvents['ExternalJoinWritePart'], ProfileEvents['ExternalJoinUncompressedBytes']),
-                  event_time_microseconds) AS last
-    FROM system.query_log
-    WHERE current_database = currentDatabase() AND log_comment LIKE '04505_spill%' AND type = 'QueryFinish'
+       if(last.1, 'ok', 'fail: write_part=' || toString(last.2) || ' uncompressed=' || toString(last.3))
+FROM
+(
+    SELECT log_comment, argMax((spilled, write_part, uncompressed), finish_time) AS last
+    FROM
+    (
+        SELECT anyIf(log_comment, is_initial_query) AS log_comment,
+               max(event_time_microseconds) AS finish_time,
+               max(has(spilled_to_disk, 'join')) AS spilled,
+               sum(ProfileEvents['ExternalJoinWritePart']) AS write_part,
+               sum(ProfileEvents['ExternalJoinUncompressedBytes']) AS uncompressed
+        FROM system.query_log
+        WHERE event_date >= yesterday() AND type = 'QueryFinish' AND initial_query_id IN
+        (
+            SELECT query_id FROM system.query_log
+            WHERE event_date >= yesterday() AND current_database = currentDatabase() AND is_initial_query
+              AND log_comment LIKE '04505_spill%' AND type = 'QueryFinish'
+        )
+        GROUP BY initial_query_id
+    )
     GROUP BY log_comment
 )
 ORDER BY log_comment;

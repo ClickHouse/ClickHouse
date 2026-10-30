@@ -15,8 +15,8 @@ SELECT * FROM elasticsearch('http://localhost:1', 'idx', ' a', 'pw'); -- { serve
 SELECT * FROM elasticsearch('http://localhost:1', 'idx', 'u', 'pw', api_key = 'k'); -- { serverError BAD_ARGUMENTS }
 SELECT * FROM elasticsearch('http://localhost:1', 'idx', bearer_token = 't', api_key = 'k'); -- { serverError BAD_ARGUMENTS }
 
-SELECT * FROM elasticsearch('http://localhost:1', 'idx', query = 'not json'); -- { serverError BAD_ARGUMENTS }
-SELECT * FROM elasticsearch('http://localhost:1', 'idx', query = '[1, 2]'); -- { serverError BAD_ARGUMENTS }
+SELECT * FROM elasticsearch('http://localhost:1', 'idx', query('not json')); -- { serverError BAD_ARGUMENTS }
+SELECT * FROM elasticsearch('http://localhost:1', 'idx', query('[1, 2]')); -- { serverError BAD_ARGUMENTS }
 
 SELECT * FROM elasticsearch('http://localhost:1', 'idx', unknown_key = 'x'); -- { serverError BAD_ARGUMENTS }
 SELECT * FROM elasticsearch('http://localhost:1', index = 42); -- { serverError BAD_ARGUMENTS }

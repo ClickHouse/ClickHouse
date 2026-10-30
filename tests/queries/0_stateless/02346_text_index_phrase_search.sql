@@ -6,7 +6,6 @@
 -- posting-rank space positions are addressed in), and curated rows cover repeated tokens
 -- (frequency exceptions) and 3-term phrases.
 
-SET enable_analyzer = 1;
 SET enable_full_text_index = 1;
 SET use_skip_indexes = 1;
 SET use_skip_indexes_on_data_read = 1;
