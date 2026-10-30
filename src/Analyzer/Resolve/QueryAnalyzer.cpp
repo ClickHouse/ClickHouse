@@ -49,6 +49,8 @@
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTSetQuery.h>
 #include <Parsers/ASTSubquery.h>
+#include <Parsers/ExpressionListParsers.h>
+#include <Parsers/parseQuery.h>
 
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeFunction.h>
@@ -5670,6 +5672,62 @@ void QueryAnalyzer::resolveTableFunction(QueryTreeNodePtr & table_function_node,
           */
         try
         {
+            /// The key of a `key = value` argument does not resolve, so the argument below stays unresolved: fold a constant
+            /// value as positional arguments are, otherwise other servers re-evaluate it in their own context.
+            auto * key_value_argument = table_function_argument->as<FunctionNode>();
+            if (!positional_arguments_already_resolved && key_value_argument && key_value_argument->getFunctionName() == "equals")
+            {
+                auto & key_and_value = key_value_argument->getArguments().getNodes();
+                const auto * value_function = key_and_value.size() == 2 && key_and_value[0]->as<IdentifierNode>()
+                    ? key_and_value[1]->as<FunctionNode>() : nullptr;
+
+                auto refers_to_scope = [](const QueryTreeNodePtr & root)
+                {
+                    std::vector<const IQueryTreeNode *> nodes_to_process{root.get()};
+                    while (!nodes_to_process.empty())
+                    {
+                        const auto * node = nodes_to_process.back();
+                        nodes_to_process.pop_back();
+                        auto node_type = node->getNodeType();
+                        if (node_type == QueryTreeNodeType::IDENTIFIER || node_type == QueryTreeNodeType::MATCHER
+                            || node_type == QueryTreeNodeType::QUERY || node_type == QueryTreeNodeType::UNION
+                            || node_type == QueryTreeNodeType::LAMBDA)
+                            return true;
+                        for (const auto & child : node->getChildren())
+                        {
+                            if (child)
+                                nodes_to_process.push_back(child.get());
+                        }
+                    }
+                    return false;
+                };
+
+                if (value_function && !TableFunctionFactory::instance().isTableFunctionName(value_function->getFunctionName())
+                    && !refers_to_scope(key_and_value[1]))
+                {
+                    auto value = key_and_value[1]->clone();
+                    resolveExpressionNode(value, scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/, false /*ignore_alias*/, false /*allow_niladic_functions*/);
+                    if (const auto * constant = value->as<ConstantNode>())
+                    {
+                        /// Other servers parse the printed value and `IN` set names hash the tree, so build it the same way.
+                        auto value_text = std::make_shared<ConstantNode>(constant->getColumn(), constant->getResultType())
+                                              ->toAST()->formatWithSecretsOneLine();
+                        ParserExpression value_parser;
+                        auto printed_value = buildQueryTree(
+                            parseQuery(value_parser, value_text, 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS),
+                            scope.context);
+
+                        /// Keep the value as written if it prints as another constant, e.g. an aggregate state prints as a `String`.
+                        auto printed_constant = printed_value->clone();
+                        resolveExpressionNode(printed_constant, scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/, false /*ignore_alias*/, false /*allow_niladic_functions*/);
+                        const auto * reparsed = printed_constant->as<ConstantNode>();
+                        if (reparsed && reparsed->getResultType()->equals(*constant->getResultType())
+                            && reparsed->getValue() == constant->getValue())
+                            key_and_value[1] = std::move(printed_value);
+                    }
+                }
+            }
+
             resolveExpressionNode(table_function_argument, scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/, false /*ignore_alias*/, false /*allow_niladic_functions*/);
         }
         catch (const Exception & exception)
