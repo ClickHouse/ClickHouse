@@ -69,6 +69,23 @@ def process_pie_check():
     return ok
 
 
+def process_runpath_check():
+    # Only system libraries are needed, so any library search path points into the build tree.
+    dynamic = Shell.get_output(
+        f"readelf -d --wide {temp_path}/clickhouse", verbose=True, strict=True
+    )
+    paths = re.findall(r"^.*\((?:RPATH|RUNPATH)\).*$", dynamic, re.MULTILINE)
+    for path in paths:
+        print(f"FAILED: [{path.strip()}]")
+    return not paths
+
+
+def parse_args():
+    parser = argparse.ArgumentParser("Check compatibility with old distributions")
+    parser.add_argument("--check-name", required=False)
+    return parser.parse_args()
+
+
 def main():
     stopwatch = Utils.Stopwatch()
 
@@ -94,6 +111,13 @@ def main():
         Result.from_commands_run(
             name="position independent executable",
             command=process_pie_check,
+        )
+    )
+
+    test_results.append(
+        Result.from_commands_run(
+            name="no RPATH or RUNPATH",
+            command=process_runpath_check,
         )
     )
 
