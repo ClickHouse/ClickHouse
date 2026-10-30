@@ -146,10 +146,14 @@ struct ArrayCompactImpl
             executeType< UInt16>(mapped, array, res) ||
             executeType< UInt32>(mapped, array, res) ||
             executeType< UInt64>(mapped, array, res) ||
+            executeType<UInt128>(mapped, array, res) ||
+            executeType<UInt256>(mapped, array, res) ||
             executeType< Int8  >(mapped, array, res) ||
             executeType< Int16 >(mapped, array, res) ||
             executeType< Int32 >(mapped, array, res) ||
             executeType< Int64 >(mapped, array, res) ||
+            executeType< Int128>(mapped, array, res) ||
+            executeType< Int256>(mapped, array, res) ||
             executeType<Float32>(mapped, array, res) ||
             executeType<Float64>(mapped, array, res) ||
             executeType<Decimal32>(mapped, array, res) ||
