@@ -286,9 +286,32 @@ ReadFromFormatInfo updateFormatPrewhereInfo(const ReadFromFormatInfo & info, con
     /// The row-level filter is not applied, see the comment for `ReadFromFormatInfo::prewhere_info`.
     new_info.format_header = SourceStepWithFilter::applyPrewhereActions(info.format_header, /*row_level_filter=*/ nullptr, prewhere_info);
 
-    /// We assume that any format that supports prewhere also supports subset of subcolumns, so we
-    /// don't need to replace subcolumns with their nested columns etc.
-    new_info.source_header = new_info.format_header;
+    /// `requested_columns` can hold subcolumns (`n.null`) that the format reads through their whole column.
+    Block requested_header;
+    for (const auto & column : info.requested_columns)
+        requested_header.insert({column.type->createColumn(), column.type, column.name});
+    new_info.source_header = SourceStepWithFilter::applyPrewhereActions(std::move(requested_header), /*row_level_filter=*/ nullptr, prewhere_info);
+
+    std::unordered_map<std::string_view, const NameAndTypePair *> requested_column_by_name;
+    for (const auto & column : info.requested_columns)
+        requested_column_by_name.emplace(column.name, &column);
+
+    for (const auto & col : new_info.source_header)
+    {
+        auto it = requested_column_by_name.find(col.name);
+        if (it == requested_column_by_name.end())
+        {
+            /// Column produced by prewhere expression.
+            new_info.requested_columns.emplace_back(col.name, col.type);
+            continue;
+        }
+
+        new_info.requested_columns.push_back(*it->second);
+        /// An explicit PREWHERE can consume the column that a requested subcolumn is extracted from.
+        String name_in_storage = it->second->getNameInStorage();
+        if (!new_info.format_header.has(name_in_storage))
+            new_info.format_header.insert(info.format_header.getByName(name_in_storage));
+    }
 
     /// Hive partition columns come from the file path, not the data file, so prewhere column
     /// pruning above does not concern them. Carry them over and keep their position before the
@@ -304,7 +327,6 @@ ReadFromFormatInfo updateFormatPrewhereInfo(const ReadFromFormatInfo & info, con
 
     for (const auto & col : new_info.format_header)
     {
-        new_info.requested_columns.emplace_back(col.name, col.type);
         if (info.format_header.has(col.name))
         {
             /// Column read from file.
@@ -315,21 +337,6 @@ ReadFromFormatInfo updateFormatPrewhereInfo(const ReadFromFormatInfo & info, con
             /// Column produced by prewhere expression.
             new_info.columns_description.add(ColumnDescription(col.name, col.type));
         }
-    }
-
-    /// A subcolumn that the format does not read itself is extracted from its column after reading: `t.x` requested
-    /// together with `t` (see `filterTupleColumnsToRead`), or a dynamic subcolumn like `j.a` of a JSON column. Keep
-    /// requesting it while its column is still read, otherwise the filter left after PREWHERE cannot find it.
-    /// It goes before the hive partition and virtual columns, which the source appends after extracting.
-    size_t position = new_info.format_header.columns();
-    for (const auto & column : info.requested_columns)
-    {
-        if (!column.isSubcolumn() || new_info.format_header.has(column.name)
-            || !new_info.format_header.has(column.getNameInStorage()))
-            continue;
-        new_info.requested_columns.push_back(column);
-        new_info.source_header.insert(position, {column.type->createColumn(), column.type, column.name});
-        ++position;
     }
 
     return new_info;
