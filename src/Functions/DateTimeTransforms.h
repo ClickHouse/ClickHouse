@@ -1877,10 +1877,11 @@ struct TimeSlotImpl
 {
     static constexpr auto name = "timeSlot";
 
-    static UInt32 execute(const DecimalUtils::DecimalComponents<DateTime64> & t, const DateLUTImpl &)
+    static UInt32 execute(const DateTime64 & t, Int64 scale_multiplier, const DateLUTImpl & time_zone)
     {
         /// Clamped: see ToStartOfDayImpl.
-        return static_cast<UInt32>(std::clamp<Int64>(t.whole / 1800 * 1800, 0, std::numeric_limits<UInt32>::max()));
+        const Int64 seconds = executeExtendedResult(t, scale_multiplier, time_zone).value / scale_multiplier;
+        return static_cast<UInt32>(std::clamp<Int64>(seconds, 0, std::numeric_limits<UInt32>::max()));
     }
 
     static UInt32 execute(const DecimalUtils::DecimalComponents<Time64> & t, const DateLUTImpl &)
@@ -1908,9 +1909,10 @@ struct TimeSlotImpl
         throwTimeIsNotSupported(name);
     }
 
-    static DecimalUtils::DecimalComponents<DateTime64>  executeExtendedResult(const DecimalUtils::DecimalComponents<DateTime64> & t, const DateLUTImpl &)
+    /// Rounds in ticks: whole seconds rounded down and scaled back can go below the `Int64` minimum.
+    static DateTime64 executeExtendedResult(const DateTime64 & t, Int64 scale_multiplier, const DateLUTImpl &)
     {
-        return {DateLUTImpl::roundDownToMultiple(t.whole, 1800), 0};
+        return DateTime64(DateLUTImpl::roundDownToMultiple(t.value, 1800 * scale_multiplier));
     }
 
     static DecimalUtils::DecimalComponents<Time64> executeExtendedResult(const DecimalUtils::DecimalComponents<Time64> & t, const DateLUTImpl &)
