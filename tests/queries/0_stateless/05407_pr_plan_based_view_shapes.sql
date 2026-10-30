@@ -13,7 +13,6 @@ INSERT INTO t_view_optout SELECT number FROM numbers(1000);
 CREATE VIEW v_plain AS SELECT a FROM t_view_optout;
 CREATE VIEW v_optout AS SELECT a FROM t_view_optout SETTINGS parallel_replicas_for_non_replicated_merge_tree = 0;
 
-SET enable_analyzer = 1;
 SET automatic_parallel_replicas_mode = 0;
 SET enable_parallel_replicas = 1, max_parallel_replicas = 3,
     cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost',
