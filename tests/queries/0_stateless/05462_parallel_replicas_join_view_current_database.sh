@@ -45,15 +45,15 @@ echo '-- a table'
 join_view "SELECT value FROM ${shadow_t}"
 
 echo '-- a table function'
-join_view "SELECT value FROM timeSeriesSamples(${shadow_ts})"
+join_view "SELECT samples[1].2 AS value FROM timeSeriesSamples(${shadow_ts})"
 
 echo '-- a nested view'
-join_view "SELECT value FROM view(SELECT value FROM timeSeriesSamples(${shadow_ts}))"
+join_view "SELECT value FROM view(SELECT samples[1].2 AS value FROM timeSeriesSamples(${shadow_ts}))"
 
 echo '-- remote'
 ${PR_CLIENT} -q "
 SELECT x FROM mt
-WHERE x IN (SELECT toUInt64(value) FROM view(SELECT value FROM remote('127.0.0.2', timeSeriesSamples(${shadow_ts}))))
+WHERE x IN (SELECT toUInt64(value) FROM view(SELECT samples[1].2 AS value FROM remote('127.0.0.2', timeSeriesSamples(${shadow_ts}))))
 ORDER BY x"
 
 ${CLIENT} -q "

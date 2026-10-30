@@ -11,11 +11,11 @@ CREATE TABLE src ENGINE = TimeSeries;
 INSERT INTO src (metric_name, tags, samples) VALUES ('m1', {'job': 'j1'}, [(1, 1.), (2, 2.)]), ('m2', {'job': 'j2'}, [(1, 3.)]);
 
 CREATE TABLE dst ENGINE = TimeSeries
-    DATA INNER ENGINE = ReplicatedMergeTree('/clickhouse/tables/{database}/05461_dst_data', '1') ORDER BY (id, timestamp);
+    SAMPLES INNER ENGINE = ReplicatedAggregatingMergeTree('/clickhouse/tables/{database}/05461_dst_samples', '1');
 
 INSERT INTO FUNCTION timeSeriesSamples(dst) SELECT * FROM timeSeriesSamples(src)
 SETTINGS parallel_replicas_local_plan = 0, log_comment = '05461_insert';
-SELECT count(), sum(value) FROM timeSeriesSamples(dst) SETTINGS enable_parallel_replicas = 0;
+SELECT count(), sum(s.2) FROM timeSeriesSamples(dst) ARRAY JOIN samples AS s SETTINGS enable_parallel_replicas = 0;
 
 -- The insert has to have been sent to the other replicas, not run on the initiator alone.
 SYSTEM FLUSH LOGS query_log;

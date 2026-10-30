@@ -37,7 +37,7 @@ PR_CLIENT="${CLIENT} --enable_parallel_replicas 1 --max_parallel_replicas 3
     --cluster_for_parallel_replicas test_cluster_one_shard_three_replicas_localhost
     --parallel_replicas_for_non_replicated_merge_tree 1 --automatic_parallel_replicas_mode 0"
 
-remote_in="x IN (SELECT toUInt64(value) FROM remote('127.0.0.2', timeSeriesSamples(${shadow})))"
+remote_in="x IN (SELECT toUInt64(samples[1].2) FROM remote('127.0.0.2', timeSeriesSamples(${shadow})))"
 
 echo '-- remote, local plan'
 ${PR_CLIENT} --parallel_replicas_local_plan 1 -q "SELECT x FROM mt WHERE ${remote_in} ORDER BY x"

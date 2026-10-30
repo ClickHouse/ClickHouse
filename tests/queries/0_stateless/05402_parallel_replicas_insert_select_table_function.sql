@@ -18,12 +18,12 @@ CREATE TABLE res (value Float64) ENGINE = MergeTree ORDER BY value;
 CREATE MATERIALIZED VIEW dst_mv TO res AS SELECT value FROM dst;
 
 SELECT '-- local plan';
-INSERT INTO dst SELECT value FROM timeSeriesSamples(ts) SETTINGS parallel_replicas_local_plan = 1;
+INSERT INTO dst SELECT s.2 AS value FROM timeSeriesSamples(ts) ARRAY JOIN samples AS s SETTINGS parallel_replicas_local_plan = 1;
 SELECT count(), sum(value) FROM res;
 TRUNCATE TABLE res;
 
 SELECT '-- no local plan';
-INSERT INTO dst SELECT value FROM timeSeriesSamples(ts) SETTINGS parallel_replicas_local_plan = 0, log_comment = '05402_no_local_plan';
+INSERT INTO dst SELECT s.2 AS value FROM timeSeriesSamples(ts) ARRAY JOIN samples AS s SETTINGS parallel_replicas_local_plan = 0, log_comment = '05402_no_local_plan';
 SELECT count(), sum(value) FROM res;
 
 -- The insert has to have been sent to the other replicas, not run on the initiator alone.
