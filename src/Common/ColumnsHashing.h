@@ -67,8 +67,12 @@ public:
     using CachedValuesPtr = std::shared_ptr<CachedValues>;
 
     explicit LowCardinalityDictionaryCache(const HashMethodContextSettings & settings)
-        : cache(CurrentMetrics::end(), CurrentMetrics::end(), settings.max_threads)
+        : simple_count(settings.simple_count)
+        , cache(CurrentMetrics::end(), CurrentMetrics::end(), settings.max_threads)
     {}
+
+    /// See `HashMethodContextSettings::simple_count`.
+    const bool simple_count;
 
     CachedValuesPtr get(const DictionaryKey & key) { return cache.get(key); }
     void set(const DictionaryKey & key, const CachedValuesPtr & mapped) { cache.set(key, mapped); }
@@ -120,6 +124,19 @@ struct HashMethodSingleLowCardinalityColumn : public SingleColumnMethod
 
     PaddedPODArray<UInt64> filled_visit_cache_indexes;
 
+    /// With the inline count the mapped value is the counter itself, so no copy of it may be handed out:
+    /// `emplaceKey` and `findKey` then return the table cell and never fill `mapped_cache` or `visit_cache`.
+    /// The inline count runs only through `StateNoCache`, so the cached state has it off at compile time.
+    bool mapped_in_table_only = false;
+
+    ALWAYS_INLINE bool mappedInTableOnly() const { return !use_cache && mapped_in_table_only; }
+
+    /// Scratch of `forEachPositionCount`: per dictionary position, the row count (zero between calls) and the
+    /// first row relative to the range, plus the positions a call counted.
+    PaddedPODArray<UInt32> position_counts;
+    PaddedPODArray<UInt32> position_first_rows;
+    PaddedPODArray<UInt32> counted_positions;
+
     ALWAYS_INLINE void setVisited(size_t index, VisitValue value)
     {
         if (visit_cache[index] == VisitValue::Empty)
@@ -150,10 +167,9 @@ struct HashMethodSingleLowCardinalityColumn : public SingleColumnMethod
         if (!context)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Cache wasn't created for HashMethodSingleLowCardinalityColumn");
 
-        LowCardinalityDictionaryCache * lcd_cache = nullptr;
+        auto * lcd_cache = typeid_cast<LowCardinalityDictionaryCache *>(context.get());
         if constexpr (use_cache)
         {
-            lcd_cache = typeid_cast<LowCardinalityDictionaryCache *>(context.get());
             if (!lcd_cache)
             {
                 const auto & cached_val = *context;
@@ -161,6 +177,14 @@ struct HashMethodSingleLowCardinalityColumn : public SingleColumnMethod
                                 demangle(typeid(cached_val).name()));
             }
         }
+
+        if constexpr (has_mapped && !use_cache)
+            mapped_in_table_only = lcd_cache && lcd_cache->simple_count;
+        else
+            chassert(!lcd_cache || !lcd_cache->simple_count);
+
+        /// The dictionary cache shares hashes, never mapped values, so the inline count keeps it.
+        const bool use_dictionary_cache = use_cache || mappedInTableOnly();
 
         const auto * dict = column->getDictionary().getNestedNotNullableColumn().get();
         is_nullable = column->getDictionary().nestedColumnIsNullable();
@@ -173,7 +197,7 @@ struct HashMethodSingleLowCardinalityColumn : public SingleColumnMethod
         if (is_shared_dict)
         {
             dictionary_key = {column->getDictionary().getHash(), dict->size()};
-            if constexpr (use_cache)
+            if (use_dictionary_cache)
                 cached_values = lcd_cache->get(dictionary_key);
         }
 
@@ -187,7 +211,7 @@ struct HashMethodSingleLowCardinalityColumn : public SingleColumnMethod
             saved_hash = column->getDictionary().tryGetSavedHash();
             dictionary_holder = column->getDictionaryPtr();
 
-            if constexpr (use_cache)
+            if (use_dictionary_cache)
             {
                 if (is_shared_dict)
                 {
@@ -201,7 +225,10 @@ struct HashMethodSingleLowCardinalityColumn : public SingleColumnMethod
         }
 
         if constexpr (has_mapped)
-            mapped_cache.resize(key_columns[0]->size());
+        {
+            if (!mappedInTableOnly())
+                mapped_cache.resize(key_columns[0]->size());
+        }
 
         visit_cache.assign(key_columns[0]->size(), VisitValue::Empty);
 
@@ -240,6 +267,16 @@ struct HashMethodSingleLowCardinalityColumn : public SingleColumnMethod
         return Base::getKeyHolder(getIndexAt(row), pool);
     }
 
+    /// Resolves the source row through the dictionary before exposing the base method's padded key bytes.
+    /// Like `getKeyHolder`, it does not handle the `NULL` sentinel at dictionary index 0: the caller must
+    /// check `isNullAt` first. The adaptive aggregator, which uses it, rejects `LowCardinality` keys in
+    /// `adaptiveAggregatorRejectionReason`.
+    std::string_view getKeyBytes(size_t row) const
+        requires requires (const Base & base) { base.getKeyBytes(row); }
+    {
+        return Base::getKeyBytes(getIndexAt(row));
+    }
+
     template <typename Data>
     ALWAYS_INLINE EmplaceResult emplaceKey(Data & data, size_t row_, Arena & pool)
     {
@@ -247,14 +284,21 @@ struct HashMethodSingleLowCardinalityColumn : public SingleColumnMethod
 
         if (is_nullable && row == 0)
         {
-            setVisited(row, VisitValue::Found);
             bool has_null_key = data.hasNullKeyData();
             data.hasNullKeyData() = true;
 
             if constexpr (has_mapped)
+            {
+                if (mappedInTableOnly())
+                    return EmplaceResult(data.getNullKeyData(), data.getNullKeyData(), !has_null_key);
+                setVisited(row, VisitValue::Found);
                 return EmplaceResult(data.getNullKeyData(), mapped_cache[0], !has_null_key);
+            }
             else
+            {
+                setVisited(row, VisitValue::Found);
                 return EmplaceResult(!has_null_key);
+            }
         }
 
         if (visit_cache[row] == VisitValue::Found)
@@ -275,8 +319,6 @@ struct HashMethodSingleLowCardinalityColumn : public SingleColumnMethod
         else
             data.emplace(key_holder, it, inserted);
 
-        setVisited(row, VisitValue::Found);
-
         if constexpr (has_mapped)
         {
             auto & mapped = it->getMapped();
@@ -284,11 +326,17 @@ struct HashMethodSingleLowCardinalityColumn : public SingleColumnMethod
             {
                 new (&mapped) Mapped();
             }
+            if (mappedInTableOnly())
+                return EmplaceResult(mapped, mapped, inserted, std::move(key));
+            setVisited(row, VisitValue::Found);
             mapped_cache[row] = mapped;
             return EmplaceResult(mapped, mapped_cache[row], inserted, std::move(key));
         }
         else
+        {
+            setVisited(row, VisitValue::Found);
             return EmplaceResult(inserted);
+        }
     }
 
     ALWAYS_INLINE bool isNullAt(size_t i)
@@ -329,13 +377,6 @@ struct HashMethodSingleLowCardinalityColumn : public SingleColumnMethod
             it = data.find(keyHolderGetKey(key_holder));
 
         bool found = it;
-        setVisited(row, found ? VisitValue::Found : VisitValue::NotFound);
-
-        if constexpr (has_mapped)
-        {
-            if (found)
-                mapped_cache[row] = it->getMapped();
-        }
 
         size_t offset = 0;
 
@@ -343,9 +384,69 @@ struct HashMethodSingleLowCardinalityColumn : public SingleColumnMethod
             offset = found ? data.offsetInternal(it) : 0;
 
         if constexpr (has_mapped)
+        {
+            if (mappedInTableOnly())
+                return FindResult(found ? &it->getMapped() : nullptr, found, offset);
+        }
+
+        setVisited(row, found ? VisitValue::Found : VisitValue::NotFound);
+
+        if constexpr (has_mapped)
+        {
+            if (found)
+                mapped_cache[row] = it->getMapped();
             return FindResult(&mapped_cache[row], found, offset);
+        }
         else
             return FindResult(found, offset);
+    }
+
+    /// Whether `forEachPositionCount` can count the rows [row_begin, row_end) in its 32-bit scratch.
+    bool canCountPositions(size_t row_begin, size_t row_end) const
+    {
+        return size_of_index_type < sizeof(UInt64) && row_end - row_begin <= std::numeric_limits<UInt32>::max();
+    }
+
+    /// Calls `f(first_row, count)` once for every dictionary position that the rows [row_begin, row_end)
+    /// reference, in the order of their first rows, with the number of those rows. Requires `canCountPositions`.
+    template <typename F>
+    void forEachPositionCount(size_t row_begin, size_t row_end, F && f)
+    {
+        const size_t dictionary_size = key_columns[0]->size();
+        if (position_counts.size() < dictionary_size)
+        {
+            position_counts.resize_fill(dictionary_size, 0);
+            position_first_rows.resize(dictionary_size);
+        }
+
+        counted_positions.clear();
+        const auto count_rows = [&](const auto & indexes)
+        {
+            for (size_t row = row_begin; row < row_end; ++row)
+            {
+                const auto position = indexes[row];
+                if (position_counts[position]++ == 0)
+                {
+                    position_first_rows[position] = static_cast<UInt32>(row - row_begin);
+                    counted_positions.push_back(static_cast<UInt32>(position));
+                }
+            }
+        };
+
+        switch (size_of_index_type)
+        {
+            case sizeof(UInt8): count_rows(assert_cast<const ColumnUInt8 &>(*positions).getData()); break;
+            case sizeof(UInt16): count_rows(assert_cast<const ColumnUInt16 &>(*positions).getData()); break;
+            case sizeof(UInt32): count_rows(assert_cast<const ColumnUInt32 &>(*positions).getData()); break;
+            default: throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected size of index type for counting low cardinality positions.");
+        }
+
+        for (const UInt32 position : counted_positions)
+        {
+            const UInt32 count = position_counts[position];
+            position_counts[position] = 0;
+            f(row_begin + position_first_rows[position], count);
+        }
     }
 
     template <typename Data>
@@ -737,6 +838,10 @@ struct HashMethodSerialized
     }
 
     friend class columns_hashing_impl::HashMethodBase<Self, Value, Mapped, false>;
+
+    /// Batch serialization retains every key for the block. The other paths reuse scratch or roll back
+    /// the key's arena allocation on discard, so their views cannot be retained between rows.
+    bool keyViewsAreBlockStable() const { return use_batch_serialize; }
 
     ALWAYS_INLINE ArenaKeyHolder getKeyHolder(size_t row, Arena & pool) const
     requires prealloc

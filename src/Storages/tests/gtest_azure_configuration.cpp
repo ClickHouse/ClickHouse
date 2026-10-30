@@ -24,6 +24,7 @@
 #include <Parsers/parseQuery.h>
 #include <Parsers/ParserQuery.h>
 #include <Parsers/ASTFunction.h>
+#include <Parsers/ASTLiteral.h>
 #include <Parsers/TablePropertiesQueriesASTs.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
 
@@ -245,6 +246,27 @@ TEST(StorageAzureConfiguration, FromASTWithExtraCredentials)
     ASSERT_TRUE(std::holds_alternative<std::shared_ptr<Azure::Identity::WorkloadIdentityCredential>>(conf.getConnectionParams().auth_method));
 }
 
+/// The engine args are what gets persisted, so explicit IDs must survive parsing (detach/attach, restart).
+TEST(StorageAzureConfiguration, FromASTKeepsExtraCredentialsInEngineArgs)
+{
+    std::string query = "DESCRIBE TABLE azureBlobStorage('https://azurite1:10000/devstoreaccount1', 'test_container', 'test_blob.csv', extra_credentials(client_id='test_client_id', tenant_id='test_tenant_id'))";
+
+    ASTs engine_args = getEngineArgs(query);
+    StorageAzureConfigurationFriend conf;
+    conf.fromAST(engine_args, Context::getGlobalContextInstance(), false);
+
+    ASSERT_EQ(engine_args.size(), 4u);
+    const auto * credentials = engine_args.back()->as<ASTFunction>();
+    ASSERT_TRUE(credentials);
+    EXPECT_EQ(credentials->name, "extra_credentials");
+
+    /// Parsing the persisted args again still sees the explicit credentials.
+    StorageAzureConfigurationFriend reattached;
+    reattached.fromAST(engine_args, Context::getGlobalContextInstance(), false);
+    const auto & params = reattached.getConnectionParams();
+    ASSERT_TRUE(std::holds_alternative<std::shared_ptr<Azure::Identity::WorkloadIdentityCredential>>(params.auth_method));
+}
+
 TEST(StorageAzureConfiguration, FromASTWithAccount)
 {
     std::string query = "DESCRIBE TABLE azureBlobStorage('https://azurite1:10000/devstoreaccount1', 'test_container', 'test_blob.csv', 'account_name', 'account_key')";
@@ -320,6 +342,24 @@ TEST(StorageAzureConfiguration, AddStructureAndFormatTooManyArgs)
         Exception,
         ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
         "Expected 3 to");
+}
+
+/// Distributed query preparation rewrites the args; extra_credentials must be skipped and kept.
+TEST(StorageAzureConfiguration, AddStructureAndFormatKeepsExtraCredentials)
+{
+    std::string query = "DESCRIBE TABLE azureBlobStorage('https://azurite1:10000/devstoreaccount1', 'test_container', 'test_blob.csv', extra_credentials(client_id='test_client_id', tenant_id='test_tenant_id'))";
+
+    ASTs engine_args = getEngineArgs(query);
+    StorageAzureConfigurationFriend conf;
+    conf.addStructureAndFormatToArgsIfNeeded(engine_args, "a Int32", "Parquet", Context::getGlobalContextInstance(), /*with_structure=*/true);
+
+    /// (url, container, blobpath, format, compression, structure, extra_credentials)
+    ASSERT_EQ(engine_args.size(), 7u);
+    EXPECT_EQ(engine_args[3]->as<ASTLiteral>()->value.safeGet<String>(), "Parquet");
+    EXPECT_EQ(engine_args[5]->as<ASTLiteral>()->value.safeGet<String>(), "a Int32");
+    const auto * credentials = engine_args.back()->as<ASTFunction>();
+    ASSERT_TRUE(credentials);
+    EXPECT_EQ(credentials->name, "extra_credentials");
 }
 
 }

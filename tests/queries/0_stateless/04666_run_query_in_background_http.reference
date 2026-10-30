@@ -12,13 +12,14 @@ no output
 --- CREATE TABLE AS SELECT returns as soon as the SELECT has started
 no output
 still populating after the client returned
-created with rows
 --- CREATE OR REPLACE TABLE AS SELECT returns as soon as the SELECT has started
 no output
 still populating after the client returned
-replaced with rows
 --- EXECUTE AS CREATE TABLE AS SELECT returns as soon as the SELECT has started
 no output
+--- the CREATE ... AS SELECT queries above fill their tables
+created with rows
+replaced with rows
 --- enabling the setting for a whole session is rejected
 run_query_in_background cannot be changed with SET
 --- a query that cannot run in the background fails synchronously
@@ -39,9 +40,6 @@ SUPPORT_IS_DISABLED
 CANNOT_PARSE_INPUT_ASSERTION_FAILED
 BAD_ARGUMENTS
 BAD_ARGUMENTS
---- SYSTEM RELOAD DICTIONARY returns as soon as the reload has started
-no output
-loaded
 --- errors raised after the main work has started are only logged
 only logged
 --- a settings constraint of the user is enforced on a background query
