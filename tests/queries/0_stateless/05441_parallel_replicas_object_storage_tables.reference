@@ -1,0 +1,111 @@
+-- S3
+1
+same result
+179645	589
+1
+same result
+596	596
+597	597
+598	598
+599	599
+-- IcebergS3 with deletes
+1
+same result
+448755	881
+-- disabled
+0
+same result
+179700
+0
+same result
+179700
+0
+same result
+179700
+-- JOIN
+0
+same result
+600
+0
+same result
+600
+-- row policy
+0
+same result
+4950	100
+-- SQL SECURITY DEFINER and NONE views
+0
+same result
+179700
+0
+same result
+179700
+-- PREWHERE
+0
+same result
+179645
+-- correlated subquery
+0
+same result
+20
+-- the table read again in a subquery
+0
+same result
+50
+0
+same result
+50
+-- the table in a UNION subquery
+0
+same result
+50
+0
+same result
+50
+-- another source in the query
+0
+same result
+50
+0
+same result
+50
+0
+same result
+50
+0
+same result
+50
+50
+1
+50
+1
+1
+same result
+50
+50
+1
+50
+1
+-- a subquery or a set that reads no table
+1
+same result
+179699
+1
+same result
+2
+-- a server constant
+1
+same result
+1	600
+-- hive partitioning
+1
+same result
+0	135
+1	145
+2	155
+1
+same result
+60	60
+-- lazily loaded table
+448755
+1
