@@ -4643,16 +4643,19 @@ ProjectionNames QueryAnalyzer::resolveExpressionNode(
                         ///
                         /// In this example argument of function `in` is being resolve here. If CTE `test1` is not forbidden,
                         /// `test1` is resolved to CTE (not to the table) in `initializeQueryJoinTreeNode` function.
+                        /// The registration is removed also on exception: a speculative resolution under `group_by_use_nulls`
+                        /// may fail and be retried later, and a stale registration would hide the CTE as recursive.
                         ctes_in_resolve_process.insert(original_cte_node);
                         cte_definitions_in_resolve_process.insert(original_cte_node.get());
+                        SCOPE_EXIT({
+                            ctes_in_resolve_process.erase(original_cte_node);
+                            cte_definitions_in_resolve_process.erase(original_cte_node.get());
+                        });
 
                         if (subquery_node)
                             resolveQuery(resolved_identifier_node, subquery_scope);
                         else
                             resolveUnion(resolved_identifier_node, subquery_scope);
-
-                        ctes_in_resolve_process.erase(original_cte_node);
-                        cte_definitions_in_resolve_process.erase(original_cte_node.get());
                     }
                     else if (table_node != nullptr && table_node->isMaterializedCTE())
                     {
@@ -4669,17 +4672,18 @@ ProjectionNames QueryAnalyzer::resolveExpressionNode(
 
                         if (!mat_subquery_is_resolved)
                         {
-                            ctes_in_resolve_process.insert(resolved_identifier_node);
+                            {
+                                ctes_in_resolve_process.insert(resolved_identifier_node);
+                                SCOPE_EXIT({ ctes_in_resolve_process.erase(resolved_identifier_node); });
 
-                            IdentifierResolveScope & mat_subquery_scope = createIdentifierResolveScope(mat_subquery, &scope);
-                            mat_subquery_scope.subquery_depth = scope.subquery_depth + 1;
+                                IdentifierResolveScope & mat_subquery_scope = createIdentifierResolveScope(mat_subquery, &scope);
+                                mat_subquery_scope.subquery_depth = scope.subquery_depth + 1;
 
-                            if (mat_subquery->getNodeType() == QueryTreeNodeType::QUERY)
-                                resolveQuery(mat_subquery, mat_subquery_scope);
-                            else
-                                resolveUnion(mat_subquery, mat_subquery_scope);
-
-                            ctes_in_resolve_process.erase(resolved_identifier_node);
+                                if (mat_subquery->getNodeType() == QueryTreeNodeType::QUERY)
+                                    resolveQuery(mat_subquery, mat_subquery_scope);
+                                else
+                                    resolveUnion(mat_subquery, mat_subquery_scope);
+                            }
 
                             checkMaterializedCTESubqueryIsNotCorrelated(mat_subquery, materialized_cte_ptr->cte_name, scope.scope_node);
                         }
@@ -7664,19 +7668,21 @@ void QueryAnalyzer::resolveQueryJoinTreeNode(QueryTreeNodePtr & join_tree_node, 
         {
             QueryTreeNodePtr original_cte_node = try_get_original_cte_node(join_tree_node);
 
+            /// The registration is removed also on exception: a failed speculative resolution under `group_by_use_nulls` is retried later.
             if (original_cte_node)
             {
                 ctes_in_resolve_process.insert(original_cte_node);
                 cte_definitions_in_resolve_process.insert(original_cte_node.get());
             }
+            SCOPE_EXIT({
+                if (original_cte_node)
+                {
+                    ctes_in_resolve_process.erase(original_cte_node);
+                    cte_definitions_in_resolve_process.erase(original_cte_node.get());
+                }
+            });
 
             resolveExpressionNode(join_tree_node, scope, false /*allow_lambda_expression*/, true /*allow_table_expression*/, true /*ignore_alias=*/);
-
-            if (original_cte_node)
-            {
-                ctes_in_resolve_process.erase(original_cte_node);
-                cte_definitions_in_resolve_process.erase(original_cte_node.get());
-            }
             break;
         }
         case QueryTreeNodeType::TABLE_FUNCTION:
@@ -7706,30 +7712,41 @@ void QueryAnalyzer::resolveQueryJoinTreeNode(QueryTreeNodePtr & join_tree_node, 
                     }
                 }
 
+                /// The registrations are removed also on exception: a failed speculative resolution under `group_by_use_nulls` is retried later.
+                auto register_cte_map_nodes = [&]
+                {
+                    for (const auto & cte_map_node : cte_map_nodes)
+                    {
+                        ctes_in_resolve_process.insert(cte_map_node);
+                        cte_definitions_in_resolve_process.insert(cte_map_node.get());
+                    }
+                };
+                auto unregister_cte_map_nodes = [&]
+                {
+                    for (const auto & cte_map_node : cte_map_nodes)
+                    {
+                        ctes_in_resolve_process.erase(cte_map_node);
+                        cte_definitions_in_resolve_process.erase(cte_map_node.get());
+                    }
+                };
+
                 /// Each clone gets a deep-cloned subquery (IQueryTreeNode::clone deep-clones children).
                 /// Use materialized_cte->storage (shared across clones) to distinguish first vs subsequent.
                 if (!materialized_cte_ptr->isStorageInitialized())
                 {
                     auto & subquery = table_node->getMaterializedCTESubquery();
 
-                    for (const auto & cte_map_node : cte_map_nodes)
                     {
-                        ctes_in_resolve_process.insert(cte_map_node);
-                        cte_definitions_in_resolve_process.insert(cte_map_node.get());
-                    }
+                        register_cte_map_nodes();
+                        SCOPE_EXIT({ unregister_cte_map_nodes(); });
 
-                    IdentifierResolveScope & subquery_scope = createIdentifierResolveScope(subquery, &scope);
-                    subquery_scope.subquery_depth = scope.subquery_depth + 1;
+                        IdentifierResolveScope & subquery_scope = createIdentifierResolveScope(subquery, &scope);
+                        subquery_scope.subquery_depth = scope.subquery_depth + 1;
 
-                    if (subquery->getNodeType() == QueryTreeNodeType::QUERY)
-                        resolveQuery(subquery, subquery_scope);
-                    else
-                        resolveUnion(subquery, subquery_scope);
-
-                    for (const auto & cte_map_node : cte_map_nodes)
-                    {
-                        ctes_in_resolve_process.erase(cte_map_node);
-                        cte_definitions_in_resolve_process.erase(cte_map_node.get());
+                        if (subquery->getNodeType() == QueryTreeNodeType::QUERY)
+                            resolveQuery(subquery, subquery_scope);
+                        else
+                            resolveUnion(subquery, subquery_scope);
                     }
 
                     checkMaterializedCTESubqueryIsNotCorrelated(subquery, cte_name, scope.scope_node);
@@ -7759,18 +7776,11 @@ void QueryAnalyzer::resolveQueryJoinTreeNode(QueryTreeNodePtr & join_tree_node, 
                     /// then reuse the existing storage.
                     auto & subquery = table_node->getMaterializedCTESubquery();
 
-                    for (const auto & cte_map_node : cte_map_nodes)
                     {
-                        ctes_in_resolve_process.insert(cte_map_node);
-                        cte_definitions_in_resolve_process.insert(cte_map_node.get());
-                    }
+                        register_cte_map_nodes();
+                        SCOPE_EXIT({ unregister_cte_map_nodes(); });
 
-                    resolveExpressionNode(subquery, scope, false /*allow_lambda_expression*/, true /*allow_table_expression*/, true /*ignore_alias=*/);
-
-                    for (const auto & cte_map_node : cte_map_nodes)
-                    {
-                        ctes_in_resolve_process.erase(cte_map_node);
-                        cte_definitions_in_resolve_process.erase(cte_map_node.get());
+                        resolveExpressionNode(subquery, scope, false /*allow_lambda_expression*/, true /*allow_table_expression*/, true /*ignore_alias=*/);
                     }
 
                     /// A clone can resolve correlated even when the storage-initializing clone did not
@@ -8348,22 +8358,32 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
 
         /// The scope aliases hold copies of the expressions made before anything is resolved, so they are compared
         /// with the projection expressions now. As `QueryExpressionsAliasVisitor`, do not go into lambdas and subqueries.
+        /// Each alias definition is processed once, and the duplicates are indexed by alias, so that
+        /// many identical aliased projection items do not take a quadratic time.
+        std::unordered_map<std::string_view, std::vector<const IQueryTreeNode *>> nodes_with_duplicated_aliases_by_alias;
+        for (const auto & duplicated_node : scope.aliases.nodes_with_duplicated_aliases)
+            nodes_with_duplicated_aliases_by_alias[duplicated_node->getAlias()].push_back(duplicated_node.get());
+
         std::vector<const IQueryTreeNode *> aliased_nodes_to_process{query_node_typed.getProjectionNode().get()};
         while (!aliased_nodes_to_process.empty())
         {
             const auto * aliased_node = aliased_nodes_to_process.back();
             aliased_nodes_to_process.pop_back();
 
-            if (aliased_node->hasAlias())
+            if (aliased_node->hasAlias() && !projection_alias_definitions.contains(aliased_node->getAlias()))
             {
                 auto it = scope.aliases.alias_name_to_expression_node.find(aliased_node->getAlias());
                 if (it != scope.aliases.alias_name_to_expression_node.end() && it->second->isEqual(*aliased_node))
                 {
                     projection_alias_definitions.insert(aliased_node->getAlias());
-                    for (const auto & duplicated_node : scope.aliases.nodes_with_duplicated_aliases)
+                    auto duplicates_it = nodes_with_duplicated_aliases_by_alias.find(aliased_node->getAlias());
+                    if (duplicates_it != nodes_with_duplicated_aliases_by_alias.end())
                     {
-                        if (duplicated_node->getAlias() == aliased_node->getAlias() && duplicated_node->isEqual(*it->second))
-                            duplicates_of_projection_alias_definitions.insert(duplicated_node.get());
+                        for (const auto * duplicated_node : duplicates_it->second)
+                        {
+                            if (duplicated_node->isEqual(*it->second))
+                                duplicates_of_projection_alias_definitions.insert(duplicated_node);
+                        }
                     }
                 }
             }
@@ -8706,10 +8726,16 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
       * definitions of the alias must stay identical.
       */
     std::unordered_set<std::string> visited_alias_names;
+    /// The expressions with duplicated aliases are indexed by alias, so that they are not all scanned for every aliased node.
+    std::unordered_map<std::string, std::vector<QueryTreeNodePtr *>> nodes_with_duplicated_aliases_by_alias;
     std::function<void(const QueryTreeNodePtr &)> rebind_projection_aliases = [&](const QueryTreeNodePtr & node)
     {
         if (node->hasAlias())
         {
+            auto duplicates_it = nodes_with_duplicated_aliases_by_alias.find(node->getAlias());
+            static const std::vector<QueryTreeNodePtr *> no_duplicates;
+            const auto & duplicates = duplicates_it != nodes_with_duplicated_aliases_by_alias.end() ? duplicates_it->second : no_duplicates;
+
             if (projection_alias_definitions.contains(node->getAlias()) && visited_alias_names.insert(node->getAlias()).second)
             {
                 auto it = scope.aliases.alias_name_to_expression_node.find(node->getAlias());
@@ -8721,24 +8747,23 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
                         it->second = std::move(cloned_node);
 
                         /// The matchers of the copies are not expanded, so they are compared before the expansion.
-                        for (auto & duplicated_node : scope.aliases.nodes_with_duplicated_aliases)
+                        for (auto * duplicated_node : duplicates)
                         {
-                            if (duplicated_node->getAlias() == node->getAlias()
-                                && duplicates_of_projection_alias_definitions.contains(duplicated_node.get()))
+                            if (duplicates_of_projection_alias_definitions.contains(duplicated_node->get()))
                             {
                                 auto cloned_duplicated_node = node->clone();
                                 copyNamedWindowSnapshots(node, cloned_duplicated_node);
-                                duplicated_node = std::move(cloned_duplicated_node);
+                                *duplicated_node = std::move(cloned_duplicated_node);
                             }
                         }
                     }
                 }
             }
 
-            for (const auto & duplicated_node : scope.aliases.nodes_with_duplicated_aliases)
+            for (const auto * duplicated_node : duplicates)
             {
-                if (duplicated_node->getAlias() == node->getAlias() && duplicated_node->isEqual(*node))
-                    copyNamedWindowSnapshots(node, duplicated_node);
+                if ((*duplicated_node)->isEqual(*node))
+                    copyNamedWindowSnapshots(node, *duplicated_node);
             }
         }
 
@@ -8753,7 +8778,11 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
     };
 
     if (scope.group_by_use_nulls && !named_window_snapshots.empty())
+    {
+        for (auto & duplicated_node : scope.aliases.nodes_with_duplicated_aliases)
+            nodes_with_duplicated_aliases_by_alias[duplicated_node->getAlias()].push_back(&duplicated_node);
         rebind_projection_aliases(query_node_typed.getProjectionNode());
+    }
 
     if (query_node_typed.hasHaving())
         resolveExpressionNode(query_node_typed.getHaving(), scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
