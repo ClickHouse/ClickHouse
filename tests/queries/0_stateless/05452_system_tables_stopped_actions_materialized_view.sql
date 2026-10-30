@@ -21,8 +21,11 @@ DROP TABLE stopped_actions_mv_source;
 
 -- A refreshable view keeps its refresh state in `system.view_refreshes`: `SYSTEM STOP VIEW` stops the
 -- refresher but registers no table-level action lock, so nothing is reported here.
+-- `APPEND` with `all_replicas` is the combination a `Replicated` database accepts for a non-replicated
+-- inner engine, so the test runs both there and in an `Atomic` database.
 CREATE TABLE stopped_actions_refresh_source (x UInt64) ENGINE = Memory;
-CREATE MATERIALIZED VIEW stopped_actions_refreshable REFRESH EVERY 1 YEAR (x UInt64) ENGINE = Memory EMPTY
+CREATE MATERIALIZED VIEW stopped_actions_refreshable
+REFRESH EVERY 1 YEAR SETTINGS all_replicas = 1 APPEND (x UInt64) ENGINE = Memory EMPTY
 AS SELECT x FROM stopped_actions_refresh_source;
 SYSTEM STOP VIEW stopped_actions_refreshable;
 SELECT stopped_actions FROM system.tables WHERE database = currentDatabase() AND name = 'stopped_actions_refreshable';
