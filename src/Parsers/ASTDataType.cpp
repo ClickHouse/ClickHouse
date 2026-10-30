@@ -587,36 +587,66 @@ const ASTPtr * getNamedTableFunctionArgument(const ASTPtr & argument)
   * `replacement` is the explicit type name a bare `UUID` is rewritten to: `UUID2` to materialize
   * `uuid_type_version = 2`, or `UUID1` to pin the historical type.
   */
-/// Names of the lambdas declared with an alias, as in `WITH (x -> x) AS f`. Such a lambda takes precedence over
-/// a function of the same name, so a call `f('UUID')` passes an ordinary string, not a type name.
-void collectLambdaNames(const IAST & ast, LambdaNames & lambda_names)
+/// Aliases of identifiers, as in `WITH f AS g`: alias -> name of the identifier.
+using IdentifierAliases = std::vector<std::pair<String, String>>;
+
+void collectLambdaNamesImpl(const IAST & ast, LambdaNames & lambda_names, IdentifierAliases & identifier_aliases)
 {
     if (const auto * function = ast.as<ASTFunction>(); function && function->name == "lambda")
+    {
         if (auto alias = function->tryGetAlias(); !alias.empty())
             lambda_names.insert(std::move(alias));
+    }
+    else if (const auto * identifier = ast.as<ASTIdentifier>())
+    {
+        if (auto alias = identifier->tryGetAlias(); !alias.empty())
+            identifier_aliases.emplace_back(std::move(alias), identifier->name());
+    }
 
     /// The same nodes owning expressions outside of `children` as in `substituteBareUUIDInPlace`.
     if (const auto * ttl_element = ast.as<ASTTTLElement>())
     {
         for (const auto & expression : ttl_element->group_by_key)
             if (expression)
-                collectLambdaNames(*expression, lambda_names);
+                collectLambdaNamesImpl(*expression, lambda_names, identifier_aliases);
         for (const auto & assignment : ttl_element->group_by_assignments)
             if (assignment)
-                collectLambdaNames(*assignment, lambda_names);
+                collectLambdaNamesImpl(*assignment, lambda_names, identifier_aliases);
     }
     else if (const auto * apply_transformer = ast.as<ASTColumnsApplyTransformer>())
     {
         if (apply_transformer->parameters)
-            collectLambdaNames(*apply_transformer->parameters, lambda_names);
+            collectLambdaNamesImpl(*apply_transformer->parameters, lambda_names, identifier_aliases);
         if (apply_transformer->lambda)
-            collectLambdaNames(*apply_transformer->lambda, lambda_names);
+            collectLambdaNamesImpl(*apply_transformer->lambda, lambda_names, identifier_aliases);
     }
 
     for (const auto & child : ast.children)
         if (child)
-            collectLambdaNames(*child, lambda_names);
+            collectLambdaNamesImpl(*child, lambda_names, identifier_aliases);
 }
+
+}
+
+/// A call `f('UUID')` of such a name passes an ordinary string, not a type name.
+void collectLambdaNames(const IAST & ast, std::unordered_set<String> & lambda_names)
+{
+    IdentifierAliases identifier_aliases;
+    collectLambdaNamesImpl(ast, lambda_names, identifier_aliases);
+
+    /// Each iteration adds at least one name, so this ends even for a cycle of aliases.
+    bool added = true;
+    while (added)
+    {
+        added = false;
+        for (const auto & [alias, name] : identifier_aliases)
+            if (lambda_names.contains(name) && lambda_names.insert(alias).second)
+                added = true;
+    }
+}
+
+namespace
+{
 
 /// `lambda_names` are the names of the lambdas declared in the whole definition (see `collectLambdaNames`). A call of
 /// such a name is not considered a call of a function with a type name argument. This is conservative: the scope of

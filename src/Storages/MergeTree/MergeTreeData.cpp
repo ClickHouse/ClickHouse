@@ -37,6 +37,7 @@
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnDynamic.h>
 #include <Columns/ColumnTuple.h>
+#include <Columns/ColumnNullable.h>
 #include <Columns/ColumnVariant.h>
 #include <Compression/CompressedReadBuffer.h>
 #include <Compression/CompressionCodecQuantized.h>
@@ -10980,6 +10981,12 @@ static DataTypePtr getActiveTypeOfPartitionValue(const ConstantValue & constant,
     DataTypePtr type = constant.getType();
     if (tuple_element)
     {
+        /// A non-`NULL` value of `Nullable(Tuple(...))`.
+        if (const auto * nullable_column = typeid_cast<const ColumnNullable *>(column))
+        {
+            column = &nullable_column->getNestedColumn();
+            type = removeNullable(type);
+        }
         column = &assert_cast<const ColumnTuple &>(*column).getColumn(*tuple_element);
         type = assert_cast<const DataTypeTuple &>(*type).getElement(*tuple_element);
     }
@@ -11002,6 +11009,13 @@ static DataTypePtr getActiveTypeOfPartitionValue(const ConstantValue & constant,
 static bool isVariantOrDynamic(const DataTypePtr & type)
 {
     return type && (isVariant(type) || isDynamic(type));
+}
+
+/// The type of a non-`NULL` partition value, without `Nullable`, so the element types of a `Nullable(Tuple(...))`
+/// value are not lost. A `NULL` value is converted the same way with or without the `Nullable` source type.
+static DataTypePtr removeNullableFromPartitionValueType(const DataTypePtr & type)
+{
+    return type ? removeNullable(type) : type;
 }
 
 /// The active type of a `Variant` or `Dynamic` value nested in the active value of another one is not recovered,
@@ -11276,6 +11290,7 @@ String MergeTreeData::getPartitionIDFromQuery(const ASTPtr & ast, ContextPtr loc
         /// Keep the source type: `convertFieldToTypeOrThrow` needs it to convert between types that share the same
         /// `Field` representation but a different value layout, e.g. a typed `UUID` constant targeting a `UUID2` key.
         auto [partition_key_value, partition_key_value_type] = evaluateConstantExpression(partition_value_ast, local_context);
+        partition_key_value_type = removeNullableFromPartitionValueType(partition_key_value_type);
 
         /// A `Variant` or `Dynamic` constant carries its active value under the declared type, so recover the active
         /// type first: it can be a tuple (e.g. `Variant(Tuple(UUID2), String)`) whose element types are needed below.
@@ -11295,6 +11310,7 @@ String MergeTreeData::getPartitionIDFromQuery(const ASTPtr & ast, ContextPtr loc
 
             const auto * tuple_type = typeid_cast<const DataTypeTuple *>(partition_key_value_type.get());
             partition_key_value_type = (tuple_type && tuple_type->getElements().size() == 1) ? tuple_type->getElements()[0] : nullptr;
+            partition_key_value_type = removeNullableFromPartitionValueType(partition_key_value_type);
             if (isVariantOrDynamic(partition_key_value_type))
             {
                 if (value_is_in_carrier)
@@ -11309,6 +11325,7 @@ String MergeTreeData::getPartitionIDFromQuery(const ASTPtr & ast, ContextPtr loc
     {
         /// Complex key, need to evaluate, untuple and cast
         auto [partition_key_value, partition_key_value_type] = evaluateConstantExpression(partition_value_ast, local_context);
+        partition_key_value_type = removeNullableFromPartitionValueType(partition_key_value_type);
         /// The same for a whole tuple carried by a `Variant` or `Dynamic` constant.
         const bool value_is_in_carrier = isVariantOrDynamic(partition_key_value_type);
         if (value_is_in_carrier)

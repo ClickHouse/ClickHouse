@@ -2,6 +2,8 @@
 
 #include <Parsers/ASTExpressionList.h>
 
+#include <unordered_set>
+
 namespace Poco::JSON { class Object; }
 
 namespace DB
@@ -59,6 +61,12 @@ bool applyUUIDTypeVersionInPlace(IAST & ast, UInt64 uuid_type_version);
   * Returns true if anything was substituted.
   */
 bool pinHistoricalUUIDTypeNamesInPlace(IAST & ast);
+
+/** Collects the names of the lambdas declared with an alias in an AST subtree, as in `WITH (x -> x) AS f`, and the
+  * aliases of identifiers that lead to them, as in `WITH (x -> x) AS f, f AS g`. Such a lambda takes precedence over
+  * a function of the same name. Lambda scopes are not tracked, so the result is conservative.
+  */
+void collectLambdaNames(const IAST & ast, std::unordered_set<String> & lambda_names);
 
 template <typename... Args>
 boost::intrusive_ptr<ASTDataType> makeASTDataType(const String & name, Args &&... args)

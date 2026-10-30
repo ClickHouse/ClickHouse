@@ -4,6 +4,8 @@
 #include <Interpreters/InDepthNodeVisitor.h>
 #include <Common/UnorderedSetWithMemoryTracking.h>
 
+#include <unordered_set>
+
 namespace DB
 {
 
@@ -26,6 +28,9 @@ public:
     static void visit(ASTPtr & ast, ContextPtr context_);
 
 private:
+    /// `lambda_names` are the names of the lambdas declared in the whole query (see `collectLambdaNames`).
+    /// `inside_apply` tells whether `ast` is in the expression of an `APPLY` transformer.
+    static void visitImpl(ASTPtr & ast, ContextPtr context_, const std::unordered_set<String> & lambda_names, bool inside_apply);
     static ASTPtr tryToReplaceFunction(const ASTFunction & function, UnorderedSetWithMemoryTracking<std::string> & udf_in_replace_process, ContextPtr context_);
 
 };
