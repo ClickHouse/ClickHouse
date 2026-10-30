@@ -308,7 +308,7 @@ void Client::initialize(Poco::Util::Application & self)
         {
             auto history_file = overrides.history_file.value();
             if (history_file.starts_with("~/") && !home_path.empty())
-                history_file = pathToGenericString(home_path / history_file.substr(2));
+                history_file = pathToGenericString(home_path / pathFromString(history_file.substr(2)));
             configuration.setString("history_file", history_file);
         }
         if (overrides.history_max_entries.has_value())
