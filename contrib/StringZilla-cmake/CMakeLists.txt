@@ -5,6 +5,7 @@ SET(STRINGZILLA_SOURCES
     "${STRINGZILLA_SOURCE_DIR}/c/stringzilla/compare.c"
     "${STRINGZILLA_SOURCE_DIR}/c/stringzilla/memory.c"
     "${STRINGZILLA_SOURCE_DIR}/c/stringzilla/hash.c"
+    "${STRINGZILLA_SOURCE_DIR}/c/stringzilla/cipher.c"
     "${STRINGZILLA_SOURCE_DIR}/c/stringzilla/find.c"
     "${STRINGZILLA_SOURCE_DIR}/c/stringzilla/sort.c"
     "${STRINGZILLA_SOURCE_DIR}/c/stringzilla/intersect.c"
