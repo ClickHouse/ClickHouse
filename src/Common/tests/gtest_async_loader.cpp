@@ -695,6 +695,7 @@ TEST(AsyncLoader, WaitersLimit)
     auto waiters_dec = [&] (const LoadJobPtr &) {
         waiters_total.fetch_sub(1);
     };
+    t.loader.setWaiterCallbacks(waiters_inc, waiters_dec);
 
     std::barrier<std::__empty_completion> sync(2);
     t.loader.unpause();
@@ -703,7 +704,7 @@ TEST(AsyncLoader, WaitersLimit)
         sync.arrive_and_wait(); // (A)
     };
 
-    auto job = makeLoadJob({}, "job", waiters_inc, waiters_dec, job_func);
+    auto job = makeLoadJob({}, "job", job_func);
     auto task = t.schedule({job});
 
     std::atomic<int> failure{0};
@@ -738,6 +739,189 @@ TEST(AsyncLoader, WaitersLimit)
     ASSERT_EQ(success.load(), 5);
     ASSERT_EQ(failure.load(), 5);
     ASSERT_EQ(waiters_total.load(), 0);
+
+    t.loader.wait();
+}
+
+TEST(AsyncLoader, RemoveDoesNotNotifyWaiters)
+{
+    AsyncLoaderTest t(1);
+    t.loader.unpause();
+
+    // A real waiter increment callback may throw to refuse the wait (that is how `ProcessList` enforces
+    // `max_waiting_queries`), and the cleanup wait in `remove` runs in the noexcept `~LoadTask`,
+    // where a throw terminates the process. Counting is enough to pin down that the callbacks are not called.
+    std::atomic<int> increments{0};
+    std::atomic<int> decrements{0};
+    t.loader.setWaiterCallbacks(
+        [&] (const LoadJobPtr &) { increments.fetch_add(1); },
+        [&] (const LoadJobPtr &) { decrements.fetch_add(1); });
+
+    std::barrier<std::__empty_completion> sync(2);
+    auto job_func = [&] (AsyncLoader &, const LoadJobPtr &) {
+        sync.arrive_and_wait(); // (A)
+    };
+
+    auto job = makeLoadJob({}, "job", job_func);
+    auto task = t.schedule({job});
+
+    // Removal only waits for a job that is already executing, so let it get there. It cannot finish
+    // meanwhile: (A) needs this thread too.
+    auto executing = [&] {
+        for (const auto & state : t.loader.getJobStates())
+            if (state.job == job)
+                return state.is_executing;
+        return false;
+    };
+    while (!executing())
+        std::this_thread::yield();
+
+    // Dropping the last reference reaches `AsyncLoader::remove` through `~LoadTask`.
+    std::thread remover([&] { task.reset(); });
+
+    // The cleanup wait counts itself in `waiters`, which is the point where a callback would run.
+    // Without this the job could finish before `remove` sees it, and nothing would wait at all.
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(60);
+    while (job->waitersCount() == 0 && std::chrono::steady_clock::now() < deadline)
+        std::this_thread::yield();
+    EXPECT_EQ(job->waitersCount(), 1);
+
+    sync.arrive_and_wait(); // (A)
+    remover.join();
+
+    EXPECT_EQ(increments.load(), 0);
+    EXPECT_EQ(decrements.load(), 0);
+    EXPECT_EQ(job->status(), LoadStatus::OK);
+
+    t.loader.wait();
+}
+
+TEST(AsyncLoader, WaiterCallbacksBalanceOnFailedJob)
+{
+    AsyncLoaderTest t(1);
+    t.loader.unpause();
+
+    // The callbacks balance on every terminal status, not only on OK. A wait entered after the job
+    // has already failed returns early and calls neither, so this waiter has to park while pending.
+    std::atomic<int> increments{0};
+    std::atomic<int> decrements{0};
+    t.loader.setWaiterCallbacks(
+        [&] (const LoadJobPtr &) { increments.fetch_add(1); },
+        [&] (const LoadJobPtr &) { decrements.fetch_add(1); });
+
+    std::string error_message = "test job failure";
+    std::barrier<std::__empty_completion> sync(2);
+    auto job_func = [&] (AsyncLoader &, const LoadJobPtr &) {
+        sync.arrive_and_wait(); // (A)
+        throw Exception(ErrorCodes::ASYNC_LOAD_FAILED, "{}", error_message);
+    };
+
+    auto job = makeLoadJob({}, "job", job_func);
+    auto task = t.schedule({job});
+
+    std::atomic<int> caught_code{0};
+    std::thread waiter([&] {
+        try
+        {
+            t.loader.wait(job);
+        }
+        catch (Exception & e)
+        {
+            caught_code.store(e.code());
+        }
+    });
+
+    while (job->waitersCount() == 0)
+        std::this_thread::yield();
+
+    sync.arrive_and_wait(); // (A)
+    waiter.join();
+
+    ASSERT_EQ(caught_code.load(), ErrorCodes::ASYNC_LOAD_WAIT_FAILED);
+    ASSERT_EQ(job->status(), LoadStatus::FAILED);
+    ASSERT_EQ(increments.load(), 1);
+    ASSERT_EQ(decrements.load(), 1);
+
+    t.loader.wait();
+}
+
+TEST(AsyncLoader, LoaderWaiterCallbacks)
+{
+    AsyncLoaderTest t(1);
+
+    std::atomic<int> increments{0};
+    std::atomic<int> decrements{0};
+    t.loader.setWaiterCallbacks(
+        [&] (const LoadJobPtr &) { increments.fetch_add(1); },
+        [&] (const LoadJobPtr &) { decrements.fetch_add(1); });
+    t.loader.unpause();
+
+    std::barrier<std::__empty_completion> sync(2);
+    auto job_func = [&] (AsyncLoader &, const LoadJobPtr &) {
+        sync.arrive_and_wait(); // (A)
+    };
+
+    auto job = makeLoadJob({}, "job", job_func);
+    auto task = t.schedule({job});
+
+    std::thread waiter([&] { t.loader.wait(job); });
+
+    while (job->waitersCount() == 0)
+        std::this_thread::yield();
+    EXPECT_EQ(increments.load(), 1);
+    EXPECT_EQ(decrements.load(), 0);
+
+    sync.arrive_and_wait(); // (A)
+    waiter.join();
+
+    EXPECT_EQ(increments.load(), 1);
+    EXPECT_EQ(decrements.load(), 1);
+
+    t.loader.wait();
+}
+
+TEST(AsyncLoader, LoaderWaiterCallbackCancelsWait)
+{
+    AsyncLoaderTest t(1);
+
+    std::atomic<int> decrements{0};
+    t.loader.setWaiterCallbacks(
+        [] (const LoadJobPtr &) { throw Exception(ErrorCodes::ASYNC_LOAD_FAILED, "Too many waiters"); },
+        [&] (const LoadJobPtr &) { decrements.fetch_add(1); });
+    t.loader.unpause();
+
+    std::barrier<std::__empty_completion> sync(2);
+    auto job_func = [&] (AsyncLoader &, const LoadJobPtr &) {
+        sync.arrive_and_wait(); // (A)
+    };
+
+    auto job = makeLoadJob({}, "job", job_func);
+    auto task = t.schedule({job});
+
+    // The job cannot finish before (A), so the wait starts while it is pending.
+    std::atomic<bool> done{false};
+    std::atomic<int> caught_code{0};
+    std::thread waiter([&] {
+        try
+        {
+            t.loader.wait(job);
+        }
+        catch (Exception & e)
+        {
+            caught_code.store(e.code());
+        }
+        done.store(true);
+    });
+
+    // A wait that is not canceled parks instead, and is released by (A).
+    while (!done.load() && job->waitersCount() == 0)
+        std::this_thread::yield();
+
+    sync.arrive_and_wait(); // (A)
+    waiter.join();
+
+    EXPECT_EQ(caught_code.load(), ErrorCodes::ASYNC_LOAD_FAILED);
+    EXPECT_EQ(decrements.load(), 0);
 
     t.loader.wait();
 }
