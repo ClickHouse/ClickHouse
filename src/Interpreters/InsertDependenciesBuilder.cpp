@@ -1514,7 +1514,9 @@ bool InsertDependenciesBuilder::mayCreateSequentialQuorumPart(const StoragePtr &
             return false;
         const auto view_metadata = storage->getInMemoryMetadataPtr(context, false);
         auto view_context = view_metadata->getSQLSecurityOverriddenContext(context);
-        return mayCreateSequentialQuorumPart(target, view_context, depth + 1);
+        /// The nested INSERT into the view expands the dependent views of the target table as well.
+        return mayCreateSequentialQuorumPart(target, view_context, depth + 1)
+            || dependentViewMayCreateSequentialQuorumPart(target, view_context, depth + 1);
     }
     if (const auto * proxy = dynamic_cast<const StorageProxy *>(storage.get()))
         return mayCreateSequentialQuorumPart(proxy->getNested(), context, depth + 1);
