@@ -514,7 +514,12 @@ NameToDataType getSubcolumnsOfNested(const NamesAndTypesList & names_and_types)
     std::map<String, DataTypePtr> nested_types;
 
     for (const auto & [name, elems] : nested)
+    {
+        /// `size0` names the array sizes of a `Nested` column, which would shadow an element of that name.
+        if (elems.size() == 1 && elems.front().name == "size0")
+            continue;
         nested_types.emplace(name, createNested(elems.getTypes(), elems.getNames()));
+    }
 
     return nested_types;
 }
