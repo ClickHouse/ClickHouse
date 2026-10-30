@@ -257,6 +257,7 @@ DeduplicationInfo::Ptr DeduplicationInfo::cloneSelfFilterImpl() const
     new_instance->level = level;
     new_instance->visited_views = visited_views;
     new_instance->insert_dependencies = insert_dependencies;
+    new_instance->insert_column_names_hash = insert_column_names_hash;
     new_instance->retried_view_id = retried_view_id;
     new_instance->original_block_view_id = original_block_view_id;
     return new_instance;
@@ -269,6 +270,7 @@ DeduplicationInfo::Ptr DeduplicationInfo::cloneMergeImpl() const
     new_instance->level = level;
     new_instance->visited_views = visited_views;
     new_instance->insert_dependencies = insert_dependencies;
+    new_instance->insert_column_names_hash = insert_column_names_hash;
     new_instance->retried_view_id = retried_view_id;
     return new_instance;
 }
@@ -468,7 +470,13 @@ DeduplicationHash DeduplicationInfo::getBlockUnifiedHash(size_t offset, const st
     else
     {
         auto data_hash = getDataHash(offset);
-        extension = fmt::format("{}_{}", data_hash.items[0], data_hash.items[1]);
+        if (insert_column_names_hash)
+            extension = fmt::format(
+                "columns-{}_{}-{}_{}",
+                insert_column_names_hash->items[0], insert_column_names_hash->items[1],
+                data_hash.items[0], data_hash.items[1]);
+        else
+            extension = fmt::format("{}_{}", data_hash.items[0], data_hash.items[1]);
     }
 
     // for other token sources addition parts are appended
@@ -696,6 +704,7 @@ DeduplicationInfo::DeduplicationInfo(const DeduplicationInfo & other)
     : ChunkInfo(other)
     , instance_id(deduplication_info_id_counter.fetch_add(1, std::memory_order_relaxed))
     , is_async_insert(other.is_async_insert)
+    , insert_column_names_hash(other.insert_column_names_hash)
     , insert_dependencies(other.insert_dependencies)
     , disabled(other.disabled)
     , level(other.level)
@@ -901,6 +910,9 @@ void DeduplicationInfo::setRootViewID(const StorageIDMaybeEmpty & id)
     if (!insert_dependencies || !insert_dependencies->deduplicate_blocks)
         disabled = true;
 
+    if (insert_dependencies)
+        insert_column_names_hash = insert_dependencies->insert_column_names_hash;
+
     addExtraPart(TokenDefinition::Extra::asSourceID(id));
     visited_views.push_back(id);
 }
@@ -1029,6 +1041,7 @@ DeduplicationInfo::Ptr DeduplicationInfo::mergeSelf(const Ptr & right) const
     /// When dedup is disabled, parallel-insert squashing may legitimately merge chunks
     /// from different views writing to the same target, so their visited_views can differ.
     chassert(disabled || this->visited_views == right->visited_views);
+    chassert(disabled || insert_column_names_hash == right->insert_column_names_hash);
 
     if (!disabled && is_async_insert && visited_views.size() > 1)
         throw Exception(
