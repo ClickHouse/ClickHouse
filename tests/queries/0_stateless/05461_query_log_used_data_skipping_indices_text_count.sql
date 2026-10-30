@@ -10,6 +10,8 @@ SET query_plan_direct_read_from_text_index = 1;
 SET optimize_use_implicit_projections = 0;
 SET merge_tree_read_split_ranges_into_intersecting_and_non_intersecting_injection_probability = 0;
 SET distributed_index_analysis = 0;
+-- a throwing `max_rows_to_read` turns off skip indexes on data read, the test profile sets it
+SET max_rows_to_read = 0;
 
 DROP TABLE IF EXISTS t_skip_index_text_count;
 
@@ -26,11 +28,13 @@ INSERT INTO t_skip_index_text_count SELECT number + 64, if(number = 5, 'needle',
 -- the count step replaces the read of the indexed part only
 SELECT count() FROM t_skip_index_text_count WHERE hasToken(s, 'needle') SETTINGS query_plan_optimize_count_from_text_index = 0, log_comment = 'skip_index_text_count_1';
 SELECT count() FROM t_skip_index_text_count WHERE hasToken(s, 'needle') SETTINGS query_plan_optimize_count_from_text_index = 1, log_comment = 'skip_index_text_count_2';
+SELECT count() FROM t_skip_index_text_count WHERE hasToken(s, 'needle') SETTINGS query_plan_optimize_count_from_text_index = 1, use_skip_indexes_on_data_read = 1, log_comment = 'skip_index_text_count_5';
 
 -- the count step replaces the whole read
 ALTER TABLE t_skip_index_text_count MATERIALIZE INDEX idx_s SETTINGS mutations_sync = 2;
 SELECT count() FROM t_skip_index_text_count WHERE hasToken(s, 'needle') SETTINGS query_plan_optimize_count_from_text_index = 0, log_comment = 'skip_index_text_count_3';
 SELECT count() FROM t_skip_index_text_count WHERE hasToken(s, 'needle') SETTINGS query_plan_optimize_count_from_text_index = 1, log_comment = 'skip_index_text_count_4';
+SELECT count() FROM t_skip_index_text_count WHERE hasToken(s, 'needle') SETTINGS query_plan_optimize_count_from_text_index = 1, use_skip_indexes_on_data_read = 1, log_comment = 'skip_index_text_count_6';
 
 SYSTEM FLUSH LOGS query_log;
 
