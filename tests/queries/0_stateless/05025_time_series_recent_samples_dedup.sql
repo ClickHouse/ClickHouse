@@ -1,6 +1,7 @@
--- Tags: zookeeper, no-replicated-database, no-shared-merge-tree
+-- Tags: zookeeper, no-replicated-database, no-shared-merge-tree, no-parallel-replicas
 -- Tag no-replicated-database: `DatabaseReplicated` does not drop `TimeSeries` inner tables synchronously; deferred DROPs are rejected.
 -- Tag no-shared-merge-tree: the test relies on the block-hash insert deduplication of `ReplicatedMergeTree`.
+-- Tag no-parallel-replicas: `total_rows` of the inner tables is read from `system.tables` on the initiator only.
 
 -- The sink writes each samples block to both tables; identical content means a retried block deduplicates in both, so they cannot diverge.
 
@@ -14,8 +15,12 @@ SET default_table_engine = 'ReplicatedMergeTree';
 DROP TABLE IF EXISTS ts_dedup;
 
 -- The TTL is 10 years: the fixed timestamps below (byte-identical blocks are needed for dedup) must stay inside the TTL window.
+-- Background merges of the samples tables are disabled (`max_bytes_to_merge_at_max_space_in_pool = 1`): the rows of the same
+-- series and bucket would be merged otherwise, and the test counts the rows to check the deduplication of the inserts.
 CREATE TABLE ts_dedup ENGINE = TimeSeries
-SETTINGS recent_samples_ttl_seconds = 315360000;
+SETTINGS recent_samples_ttl_seconds = 315360000
+SAMPLES INNER ENGINE = ReplicatedAggregatingMergeTree SETTINGS max_bytes_to_merge_at_max_space_in_pool = 1
+RECENT SAMPLES INNER ENGINE = ReplicatedAggregatingMergeTree SETTINGS max_bytes_to_merge_at_max_space_in_pool = 1;
 
 SELECT '-- the same block inserted twice is deduplicated in both the samples and the recent samples table';
 
