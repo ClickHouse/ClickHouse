@@ -3359,6 +3359,17 @@ public:
             return;
 
         finalizeBuffers();
+        releaseBuffers();
+    }
+
+    void onPipelineFinished() override
+    {
+        /// A `timeout_overflow_mode = 'break'` stop cancels the sink before `onFinish` but is a successful exit.
+        if (isCancelled() && stage != Stage::Exception)
+        {
+            finalizeBuffers();
+            releaseBuffers();
+        }
     }
 
 private:
@@ -3464,6 +3475,12 @@ public:
             format_name,
             context,
             flags);
+    }
+
+    void onPipelineFinished() override
+    {
+        if (isCancelled() && stage != Stage::Exception)
+            PartitionedSink::onFinish();
     }
 
 private:
