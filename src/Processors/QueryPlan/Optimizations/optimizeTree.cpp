@@ -1002,6 +1002,9 @@ void optimizeTreeSecondPass(
     if (!optimization_settings.make_distributed_plan)
         optimizeParallelFullSortingMergeJoin(root, optimization_settings.max_threads);
 
+    /// After every pass that converts a full sorting or gives it partitions.
+    traverseQueryPlan(stack, root, [&](auto & frame_node) { disableSpreadingSmallReadUnderFullSorting(frame_node); });
+
     considerEnablingParallelReplicas(optimization_settings, root, query_plan);
 
     /// Run after every optimization that can rewrite aggregation, sorting, projections,
