@@ -29,6 +29,7 @@
 #include <Interpreters/DDLTask.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/InterpreterCreateQuery.h>
+#include <Interpreters/InterpreterRenameQuery.h>
 #include <Interpreters/InterpreterSetQuery.h>
 #include <Interpreters/NormalizeSelectWithUnionQueryVisitor.h>
 #include <Interpreters/SelectIntersectExceptQueryVisitor.h>
@@ -1872,8 +1873,10 @@ void DatabaseReplicated::recoverLostReplica(const ZooKeeperPtr & current_zookeep
     auto rename_table = [&](String from, String to)
     {
         LOG_DEBUG(log, "Will RENAME TABLE {} TO {}", backQuoteIfNeed(from), backQuoteIfNeed(to));
-        DDLGuardPtr table_guard = DatabaseCatalog::instance().getDDLGuard(db_name, std::min(from, to), this);
-        DDLGuardPtr to_table_guard = DatabaseCatalog::instance().getDDLGuard(db_name, std::max(from, to), this);
+        /// Guards are taken in the order of `UniqueTableName`, the same as in `RENAME`.
+        auto [first, second] = std::minmax({UniqueTableName{db_name, from}, UniqueTableName{db_name, to}});
+        DDLGuardPtr table_guard = DatabaseCatalog::instance().getDDLGuard(db_name, first.table_name, this);
+        DDLGuardPtr to_table_guard = DatabaseCatalog::instance().getDDLGuard(db_name, second.table_name, this);
 
         std::lock_guard lock{metadata_mutex};
         UInt64 new_digest = tables_metadata_digest;

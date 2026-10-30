@@ -643,16 +643,17 @@ void StorageMaterializedView::drop()
     /// Sync flag and the setting make sense for Atomic databases only.
     /// However, with Atomic databases, IStorage::drop() can be called only from a background task in DatabaseCatalog.
     /// Running synchronous DROP from that task leads to deadlock.
-    /// Usually dropInnerTableIfAny is no-op, because the inner table is dropped before enqueueing a drop task for the MV itself.
-    /// But there's a race condition with SYSTEM RESTART REPLICA: the inner table might be detached due to RESTART.
-    /// In this case, dropInnerTableIfAny will not find the inner table and will not drop it during executions of DROP query for the MV itself.
-    /// DDLGuard does not protect from that, because RESTART REPLICA acquires DDLGuard for the inner table name,
-    /// but DROP acquires DDLGuard for the name of MV. And we cannot acquire second DDLGuard for the inner name in DROP,
-    /// because it may lead to lock-order-inversion (DDLGuards must be acquired in lexicographical order).
-    dropInnerTableIfAny(/* sync */ false, getContext());
+    /// Usually this is a no-op, because the database drops the inner table with `dropInnerTableIfAny` before it drops the MV.
+    /// No DDL guard is taken here, so the drop task does not wait for DDL queries.
+    dropInnerTables(/* sync */ false, getContext(), /* need_ddl_guard */ false);
 }
 
 void StorageMaterializedView::dropInnerTableIfAny(bool sync, ContextPtr local_context)
+{
+    dropInnerTables(sync, local_context, /* need_ddl_guard */ true);
+}
+
+void StorageMaterializedView::dropInnerTables(bool sync, ContextPtr local_context, bool need_ddl_guard)
 {
     if (!has_inner_table)
         return;
@@ -661,31 +662,20 @@ void StorageMaterializedView::dropInnerTableIfAny(bool sync, ContextPtr local_co
     if (!fixed_uuid)
         to_drop.push_back(StorageID(to_drop[0].getDatabaseName(), ".tmp" + to_drop[0].getTableName()));
 
+    /// We will use `sync` argument when this function is called from a DROP query
+    /// and will ignore database_atomic_wait_for_drop_and_detach_synchronously when it's called from drop task.
+    /// See the comment in StorageMaterializedView::drop.
+    /// The guard is taken before the table is looked up, so a `SYSTEM RESTART REPLICA` of it finishes first.
     for (const StorageID & inner_table_id : to_drop)
-    {
-        /// We will use `sync` argument when this function is called from a DROP query
-        /// and will ignore database_atomic_wait_for_drop_and_detach_synchronously when it's called from drop task.
-        /// See the comment in StorageMaterializedView::drop.
-        ///
-        /// DDL queries with StorageMaterializedView are fundamentally broken: we can't lock DDLGuard
-        /// here because DDLGuards must be locked in order of increasing table name (to avoid deadlocks),
-        /// while the inner table name is almost always less than the MV name.
-        /// So we just don't lock it. It's mostly ok because DatabaseReplicatedDDLWorker doesn't
-        /// execute queries concurrently, but presumably there are other race conditions
-        /// (I'm not the author of this code and don't know for sure, just commenting).
-        /// (Why not reverse DDLGuard locking order everywhere? Because in another place we lock
-        /// DDLGuard for table "<name><suffix>" while holding DDLGuard for table "<name>".)
-        auto table_exists = DatabaseCatalog::instance().tryGetTable(inner_table_id, getContext()) != nullptr;
-        if (table_exists)
-            InterpreterDropQuery::executeDropQuery(ASTDropQuery::Kind::Drop, getContext(), local_context, inner_table_id,
-                                                   sync, /* ignore_sync_setting */ true, /*need_ddl_guard*/ false);
-    }
+        InterpreterDropQuery::executeDropQuery(ASTDropQuery::Kind::Drop, getContext(), local_context, inner_table_id,
+                                               sync, /* ignore_sync_setting */ true, need_ddl_guard);
 }
 
 void StorageMaterializedView::truncate(const ASTPtr &, const StorageMetadataPtr &, ContextPtr local_context, TableExclusiveLockHolder &)
 {
     if (has_inner_table)
-        InterpreterDropQuery::executeDropQuery(ASTDropQuery::Kind::Truncate, getContext(), local_context, getTargetTableId(), true);
+        InterpreterDropQuery::executeDropQuery(ASTDropQuery::Kind::Truncate, getContext(), local_context, getTargetTableId(), true,
+                                               /* ignore_sync_setting */ false, /* need_ddl_guard */ true);
 }
 
 void StorageMaterializedView::checkTableSizeBelowDropLimit(ContextPtr query_context) const

@@ -203,6 +203,7 @@ namespace ErrorCodes
 namespace FailPoints
 {
     extern const char restart_replica_fail_after_detach[];
+    extern const char restart_replica_pause_after_detach[];
 }
 
 namespace ActionLocks
@@ -1574,6 +1575,8 @@ StoragePtr InterpreterSystemQuery::doRestartReplica(const StorageID & replica, C
                 query_status->throwIfKilled();
         });
     }
+
+    FailPointInjection::pauseFailPoint(FailPoints::restart_replica_pause_after_detach);
 
     /// Attach actions
     /// getCreateTableQuery must return canonical CREATE query representation, there are no need for AST postprocessing
