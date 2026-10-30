@@ -404,6 +404,18 @@ static bool hasAggregateStateLeaf(const IColumn & column)
     return has_leaf;
 }
 
+/// The bytes of the `Variant` offsets anywhere inside `column`, `Dynamic` included. `SerializationVariant`
+/// writes only the discriminators and the alternatives and rebuilds the offsets on read, so they never cross
+/// the network, yet `byteSize` counts them - eight bytes per row, which dwarf small states such as `count`.
+static size_t variantOffsetsByteSize(const IColumn & column)
+{
+    size_t bytes = 0;
+    if (const auto * variant_column = typeid_cast<const ColumnVariant *>(&column))
+        bytes += variant_column->getOffsetsPtr()->byteSize();
+    column.forEachSubcolumn([&](const IColumn::WrappedPtr & subcolumn) { bytes += variantOffsetsByteSize(*subcolumn); });
+    return bytes;
+}
+
 /// The type `SerializationReplicated` writes the indexes of `column` with.
 static DataTypePtr replicatedIndexesType(const ColumnReplicated & column)
 {
@@ -612,17 +624,16 @@ static void sampleNonStatePartsCompression(
     else if (const auto * variant_column = typeid_cast<const ColumnVariant *>(column.get()))
     {
         /// `Variant` allows `AggregateFunction` alternatives, so a state leaf can sit next to plain ones -
-        /// e.g. `if(cond, groupArrayState(x), CAST(s, 'Variant(...)'))`. The discriminators, offsets and
-        /// the state-free alternatives are plain payload; sample each, and recurse into the state-bearing
-        /// alternatives. The alternatives are visited by their global discriminators, which is the order
+        /// e.g. `if(cond, groupArrayState(x), CAST(s, 'Variant(...)'))`. The discriminators and the
+        /// state-free alternatives are plain payload; sample each, and recurse into the state-bearing
+        /// alternatives. The offsets are not sent (see `variantOffsetsByteSize`), so they are not sampled
+        /// either. The alternatives are visited by their global discriminators, which is the order
         /// `DataTypeVariant::getVariants` lists the types in.
         if (const auto * variant_type = typeid_cast<const DataTypeVariant *>(type.get());
             variant_type && variant_type->getVariants().size() == variant_column->getNumVariants())
         {
             sampleNonStatePartsCompression(
                 variant_column->getLocalDiscriminatorsPtr(), std::make_shared<DataTypeUInt8>(), repetitions, codecs, sample_bytes, compressed_bytes);
-            sampleNonStatePartsCompression(
-                variant_column->getOffsetsPtr(), std::make_shared<DataTypeUInt64>(), repetitions, codecs, sample_bytes, compressed_bytes);
             for (size_t i = 0; i < variant_column->getNumVariants(); ++i)
                 sampleNonStatePartsCompression(
                     variant_column->getVariantPtrByGlobalDiscriminator(i),
@@ -687,7 +698,7 @@ static void sampleNonStatePartsCompression(
         *column,
         [&](const ColumnAggregateFunction &, size_t, const ColumnPtr &, size_t carrier_byte_size, bool, const String &)
         { leaves_byte_size += carrier_byte_size; });
-    const size_t carrier_bytes = (column->byteSize() - leaves_byte_size) * repetitions;
+    const size_t carrier_bytes = (column->byteSize() - leaves_byte_size - variantOffsetsByteSize(*column)) * repetitions;
     sample_bytes += carrier_bytes;
     compressed_bytes += carrier_bytes;
 }
@@ -848,11 +859,14 @@ void RuntimeDataflowStatisticsCacheUpdater::recordColumns(
                 state_leaves_byte_size += carrier_byte_size;
             });
         /// The carrier's own payload (null maps, sibling tuple elements, array offsets, ...) is sized by
-        /// `byteSize` like any plain column; the state leaves are sized from their serialized states below.
+        /// `byteSize` like any plain column, less the `Variant` offsets, which are not sent; the state
+        /// leaves are sized from their serialized states below.
         if (col_is_uncompacted_replicated[i])
             col_plain_bytes[i] = replicatedWireBytes(assert_cast<const ColumnReplicated &>(*column));
+        else if (col_has_states[i])
+            col_plain_bytes[i] = (column->byteSize() - state_leaves_byte_size - variantOffsetsByteSize(*column)) * repetitions;
         else
-            col_plain_bytes[i] = (column->byteSize() - state_leaves_byte_size) * repetitions;
+            col_plain_bytes[i] = column->byteSize() * repetitions;
         plain_bytes += col_plain_bytes[i];
     }
     const bool has_aggregate_states = !state_leaves.empty();

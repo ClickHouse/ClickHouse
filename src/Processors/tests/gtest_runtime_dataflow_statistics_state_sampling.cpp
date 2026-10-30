@@ -1985,3 +1985,67 @@ TEST(RuntimeDataflowStatisticsStateSampling, AggregationStateSamplesOfDifferentT
     EXPECT_GE(stats->output_bytes, exact_compressed_bytes / 2);
     EXPECT_LE(stats->output_bytes, exact_compressed_bytes * 2);
 }
+
+/// `SerializationVariant` writes the discriminators and the alternatives but not the offsets, which it
+/// rebuilds on read. Counting the offsets as plain payload - and sampling their compression - adds eight
+/// mostly incompressible bytes per row, which dwarfs small, compressible states such as `count`: the
+/// estimate came out at hundreds of times the real wire size and could wrongly disable automatic parallel
+/// replicas. The states themselves are estimated by the state sampler, so compare the `Variant` estimate
+/// with the estimate of the same states as a bare column: the carrier may add only what it really puts
+/// on the wire.
+TEST(RuntimeDataflowStatisticsStateSampling, VariantOffsetsAreNotCountedAsWirePayload)
+{
+    tryRegisterAggregateFunctions();
+
+    constexpr size_t rows = 65536;
+
+    AggregateFunctionProperties properties;
+    const auto function = AggregateFunctionFactory::instance().get("count", NullsAction::EMPTY, DataTypes{}, Array{}, properties);
+    const auto state_type = std::make_shared<DataTypeAggregateFunction>(function, DataTypes{}, Array{});
+    const auto variant_type = std::make_shared<DataTypeVariant>(DataTypes{state_type, std::make_shared<DataTypeString>()});
+    ASSERT_EQ(variant_type->getVariants()[0]->getName(), state_type->getName());
+
+    /// Every row is a `count` state equal to one.
+    auto states = ColumnAggregateFunction::create(function);
+    for (size_t row = 0; row < rows; ++row)
+    {
+        states->insertDefault();
+        function->add(states->getData()[row], nullptr, 0, &states->createOrGetArena());
+    }
+    ColumnPtr states_column = std::move(states);
+    auto discriminators = ColumnVariant::ColumnDiscriminators::create();
+    auto offsets = ColumnVariant::ColumnOffsets::create();
+    for (size_t row = 0; row < rows; ++row)
+    {
+        discriminators->insertValue(0);
+        offsets->insertValue(row);
+    }
+    Columns alternatives;
+    alternatives.emplace_back(states_column);
+    alternatives.emplace_back(ColumnString::create());
+    ColumnPtr variant_column = ColumnVariant::create(std::move(discriminators), std::move(offsets), alternatives);
+
+    const auto lz4 = CompressionCodecFactory::instance().get("LZ4", {});
+    const auto exact_compressed_bytes = compressedColumnSize({variant_column, variant_type, "variant_count"}, lz4);
+    /// The offsets alone are `rows * 8` bytes, far above the whole column on the wire.
+    ASSERT_LT(exact_compressed_bytes * 16, rows * sizeof(UInt64));
+
+    auto estimate = [&](size_t cache_key, ColumnPtr column, const DataTypePtr & type)
+    {
+        {
+            RuntimeDataflowStatisticsCacheUpdater updater(std::make_shared<RuntimeDataflowStatisticsBlock>(cache_key, rows, lz4));
+            Block header;
+            header.insert(ColumnWithTypeAndName{nullptr, type, "column"});
+            updater.recordOutputChunk(Chunk(Columns{std::move(column)}, rows), header);
+        }
+        const auto stats = getRuntimeDataflowStatisticsCache().getStats(cache_key);
+        EXPECT_TRUE(stats.has_value());
+        return stats ? stats->output_bytes : 0;
+    };
+    const size_t bare_states_bytes = estimate(0x111985 + 56, std::move(states_column), state_type);
+    const size_t variant_bytes = estimate(0x111985 + 57, std::move(variant_column), variant_type);
+
+    EXPECT_GE(variant_bytes, exact_compressed_bytes / 2);
+    EXPECT_GE(variant_bytes, bare_states_bytes);
+    EXPECT_LE(variant_bytes, bare_states_bytes + exact_compressed_bytes);
+}
