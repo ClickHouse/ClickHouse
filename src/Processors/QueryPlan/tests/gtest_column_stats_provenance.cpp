@@ -9,6 +9,7 @@
 #include <Interpreters/JoinExpressionActions.h>
 #include <Interpreters/JoinOperator.h>
 #include <Processors/QueryPlan/AggregatingStep.h>
+#include <Processors/QueryPlan/ArrayJoinStep.h>
 #include <Processors/QueryPlan/CommonSubplanReferenceStep.h>
 #include <Processors/QueryPlan/CommonSubplanStep.h>
 #include <Processors/QueryPlan/DistinctStep.h>
@@ -367,29 +368,121 @@ TEST(ColumnStatsProvenance, ExpressionLineageAppendsTransformationsAndKeepsFacts
     EXPECT_EQ(stats.at("collapsed").max_value, Field(UInt64{59}));
 }
 
-TEST(ColumnStatsProvenance, ArrayJoinExpressionIsUnsupported)
+namespace
+{
+
+/// A header with the column `passthrough` and the array column `arr`.
+SharedHeader makeArrayJoinHeader(const String & passthrough)
 {
     const auto element_type = std::make_shared<DataTypeUInt64>();
     const auto array_type = std::make_shared<DataTypeArray>(element_type);
-    const auto header = std::make_shared<const Block>(
-        Block({ColumnWithTypeAndName(array_type->createColumn(), array_type, "k")}));
+    return std::make_shared<const Block>(Block(
+        {ColumnWithTypeAndName(element_type->createColumn(), element_type, passthrough),
+         ColumnWithTypeAndName(array_type->createColumn(), array_type, "arr")}));
+}
+
+/// The `arrayJoin(arr) AS arr` form of ARRAY JOIN, which keeps `passthrough`.
+std::unique_ptr<ExpressionStep> makeArrayJoinExpressionStep(const String & passthrough)
+{
+    const auto header = makeArrayJoinHeader(passthrough);
     ActionsDAG dag(header->getColumnsWithTypeAndName());
-    const auto & array_join = dag.addArrayJoin(*dag.getInputs().front(), "k");
+    const auto & array_join = dag.addArrayJoin(*dag.getInputs().back(), "arr");
     dag.addOrReplaceInOutputs(array_join);
+    return std::make_unique<ExpressionStep>(header, std::move(dag));
+}
 
-    auto step = std::make_unique<ExpressionStep>(header, std::move(dag));
-    EXPECT_FALSE(estimateUnaryStepStats(*step, inputRelationStats()).has_value());
+}
 
-    size_t child_visits = 0;
-    QueryPlan::Node child;
-    child.step = std::make_unique<CountingSourceStep>(header, child_visits);
-    QueryPlan::Node root;
-    root.step = std::move(step);
-    root.children.emplace_back(&child);
-    const auto result = estimateReadRowsCount(root);
-    EXPECT_FALSE(result.estimated_rows.has_value());
-    EXPECT_TRUE(result.column_stats.empty());
-    EXPECT_EQ(child_visits, 0);
+TEST(ColumnStatsProvenance, ArrayJoinMultipliesRowsAndRecordsNonUniformSubset)
+{
+    const auto header = makeArrayJoinHeader("k");
+    std::vector<std::unique_ptr<IQueryPlanStep>> steps;
+    steps.push_back(makeArrayJoinExpressionStep("k"));
+    for (const bool is_left : {false, true})
+        steps.push_back(std::make_unique<ArrayJoinStep>(
+            header,
+            ArrayJoin{.columns = {"arr"}, .is_left = is_left},
+            /*is_unaligned_=*/false,
+            /*max_block_size_=*/65536,
+            /*enable_lazy_columns_replication_=*/false));
+
+    for (const auto & step : steps)
+    {
+        SCOPED_TRACE(step->getName());
+        auto input_stats = inputRelationStats();
+        input_stats.column_stats.emplace("arr", measuredColumnStats());
+        const auto result = estimateUnaryStepStats(*step, std::move(input_stats));
+        ASSERT_TRUE(result.has_value());
+        EXPECT_EQ(result->estimated_rows, 100 * 100);
+        EXPECT_FALSE(result->rows_exact);
+
+        /// The statistics of the array do not describe its elements.
+        EXPECT_FALSE(result->column_stats.contains("arr"));
+
+        /// Repeating rows keeps the values of the other columns, but not their distribution.
+        ASSERT_TRUE(result->column_stats.contains("k"));
+        const auto & stats = result->column_stats.at("k");
+        EXPECT_EQ(stats.num_distinct_values, 50);
+        EXPECT_TRUE(stats.ndv_provenance.has(NonUniformRowSubset));
+        EXPECT_TRUE(stats.range_provenance.has(NonUniformRowSubset));
+        EXPECT_TRUE(isDistinctCountUpperBound(stats.ndv_provenance));
+        EXPECT_FALSE(isExactDistinctCount(stats.ndv_provenance));
+        EXPECT_TRUE(isValueRangeSuperset(stats.range_provenance));
+        EXPECT_FALSE(isExactValueRange(stats.range_provenance));
+        EXPECT_FALSE(isRepresentativeValueRange(stats.range_provenance));
+    }
+}
+
+TEST(ColumnStatsProvenance, ArrayJoinOfExactlyEmptyInputIsExactlyEmpty)
+{
+    const auto step = makeArrayJoinExpressionStep("k");
+
+    auto empty_input = inputRelationStats();
+    empty_input.estimated_rows = 0;
+    const auto empty = estimateUnaryStepStats(*step, std::move(empty_input));
+    ASSERT_TRUE(empty.has_value());
+    EXPECT_EQ(empty->estimated_rows, 0);
+    EXPECT_TRUE(empty->rows_exact);
+
+    auto estimated_empty_input = inputRelationStats(/*rows_exact=*/false);
+    estimated_empty_input.estimated_rows = 0;
+    const auto estimated_empty = estimateUnaryStepStats(*step, std::move(estimated_empty_input));
+    ASSERT_TRUE(estimated_empty.has_value());
+    EXPECT_EQ(estimated_empty->estimated_rows, 0);
+    EXPECT_FALSE(estimated_empty->rows_exact);
+
+    auto unknown_input = inputRelationStats(/*rows_exact=*/false);
+    unknown_input.estimated_rows.reset();
+    const auto unknown = estimateUnaryStepStats(*step, std::move(unknown_input));
+    ASSERT_TRUE(unknown.has_value());
+    EXPECT_FALSE(unknown->estimated_rows.has_value());
+    EXPECT_FALSE(unknown->rows_exact);
+}
+
+TEST(ColumnStatsProvenance, FilterAboveArrayJoinIsNotPushedBelowIt)
+{
+    /// A plan-time filter would make the sub-join's estimate unknown, see `JoinEstimateUnderPlanTimeFilterIsUnknown`.
+    QueryPlan::Node join_node;
+    join_node.step = makeOptimizedJoinStep(JoinKind::Inner, JoinStrictness::All, "l");
+
+    QueryPlan::Node array_join_node;
+    array_join_node.step = makeArrayJoinExpressionStep("l");
+    array_join_node.children = {&join_node};
+
+    const auto header = makeHeader("l");
+    QueryPlan::Node filter_node;
+    filter_node.step = std::make_unique<FilterStep>(header, makeFilterDAG(header), "__filter", true);
+    filter_node.children = {&array_join_node};
+
+    const auto stats = estimateReadRowsCount(filter_node);
+    EXPECT_EQ(stats.estimated_rows, 100 * 100);
+    EXPECT_FALSE(stats.rows_exact);
+    ASSERT_TRUE(stats.column_stats.contains("l"));
+    const auto & ndv_provenance = stats.column_stats.at("l").ndv_provenance;
+    EXPECT_TRUE(ndv_provenance.has(Unsupported));
+    EXPECT_TRUE(ndv_provenance.has(NonUniformRowSubset));
+    /// The filter is still recorded, by the `FilterStep` itself.
+    EXPECT_TRUE(ndv_provenance.has(RowSubset));
 }
 
 TEST(ColumnStatsProvenance, DistinctFillingAndUnionAreUnsupportedBoundaries)

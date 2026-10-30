@@ -6,6 +6,7 @@
 #include <Interpreters/ActionsDAG.h>
 #include <Interpreters/Context.h>
 #include <Processors/QueryPlan/AggregatingStep.h>
+#include <Processors/QueryPlan/ArrayJoinStep.h>
 #include <Processors/QueryPlan/BuildRuntimeFilterStep.h>
 #include <Processors/QueryPlan/CommonSubplanReferenceStep.h>
 #include <Processors/QueryPlan/CommonSubplanStep.h>
@@ -46,6 +47,9 @@ namespace QueryPlanOptimizations
 
 namespace
 {
+
+/// The sizes of the arrays are unknown, so an array join is assumed to produce this many rows per input row.
+constexpr Float64 array_join_rows_multiplier = 100;
 
 RelationStats estimateAggregatingStepStats(const AggregatingStep & aggregating_step, const RelationStats & input_stats)
 {
@@ -105,6 +109,7 @@ enum class UnaryStepStatsKind : UInt8
     Unsupported,
     Limit,
     Expression,
+    ArrayJoin,
     Filter,
     Aggregating,
     Sorting,
@@ -118,13 +123,14 @@ UnaryStepStatsKind classifyUnaryStepStats(const IQueryPlanStep & step)
     if (typeid_cast<const LimitStep *>(&step))
         return UnaryStepStatsKind::Limit;
 
+    /// ARRAY JOIN changes the number of rows. Keep both of its forms explicit instead of relying on the
+    /// generic transforming-step traits so the supported set cannot silently widen.
+    if (typeid_cast<const ArrayJoinStep *>(&step))
+        return UnaryStepStatsKind::ArrayJoin;
+
     if (const auto * expression_step = typeid_cast<const ExpressionStep *>(&step))
     {
-        /// ARRAY JOIN changes the number of rows. Keep this explicit instead of relying on the
-        /// generic transforming-step traits so the supported set cannot silently widen.
-        return expression_step->getExpression().hasArrayJoin()
-            ? UnaryStepStatsKind::Unsupported
-            : UnaryStepStatsKind::Expression;
+        return expression_step->getExpression().hasArrayJoin() ? UnaryStepStatsKind::ArrayJoin : UnaryStepStatsKind::Expression;
     }
 
     if (typeid_cast<const FilterStep *>(&step))
@@ -227,6 +233,25 @@ std::optional<RelationStats> estimateUnaryStepStats(const IQueryPlanStep & step,
         {
             const auto & expression_step = static_cast<const ExpressionStep &>(step);
             remapColumnStats(input_stats.column_stats, expression_step.getExpression());
+            return input_stats;
+        }
+        case UnaryStepStatsKind::ArrayJoin: {
+            if (input_stats.estimated_rows)
+                input_stats.estimated_rows = toUInt64Saturating(Float64(*input_stats.estimated_rows) * array_join_rows_multiplier);
+            /// Only an empty input gives an exact output: no rows.
+            input_stats.rows_exact = input_stats.rows_exact && input_stats.estimated_rows == 0;
+
+            /// Array-joined columns lose their statistics.
+            if (const auto * expression_step = typeid_cast<const ExpressionStep *>(&step))
+                remapColumnStats(input_stats.column_stats, expression_step->getExpression());
+            else
+                for (const auto & column : static_cast<const ArrayJoinStep &>(step).getColumns())
+                    input_stats.column_stats.erase(column);
+
+            /// The other columns keep their values, but each row repeats once per array element and
+            /// ARRAY JOIN drops rows with empty arrays: the distinct set and range can only shrink, and
+            /// the distribution follows the array sizes.
+            addTransformation(input_stats.column_stats, NonUniformRowSubset);
             return input_stats;
         }
         case UnaryStepStatsKind::Filter:
@@ -601,11 +626,14 @@ RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::No
     if (const auto * reference = typeid_cast<const CommonSubplanReferenceStep *>(node.step.get()))
         return estimateReadRowsCount(*reference->getSubplanReferenceRoot(), filter, options);
 
+    const auto kind = classifyUnaryStepStats(*node.step);
     /// Unsupported steps must stop before their children are visited: the result is unknown anyway.
-    if (node.children.size() != 1 || classifyUnaryStepStats(*node.step) == UnaryStepStatsKind::Unsupported)
+    if (node.children.size() != 1 || kind == UnaryStepStatsKind::Unsupported)
         return {};
 
-    const ActionsDAG::Node * child_filter = filter;
+    /// A filter above an array join can read its output, which the statistics of the input do not describe.
+    /// Callers pass no filter, so it always comes from a `FilterStep`, which records the row subset itself.
+    const ActionsDAG::Node * child_filter = kind == UnaryStepStatsKind::ArrayJoin ? nullptr : filter;
     if (const auto * filter_step = typeid_cast<const FilterStep *>(node.step.get()))
     {
         const auto & dag = filter_step->getExpression();
