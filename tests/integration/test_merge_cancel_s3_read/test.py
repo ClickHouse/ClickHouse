@@ -601,16 +601,15 @@ def get_throttled(node):
 
 
 @pytest.mark.parametrize(
-    "via_optimize, failure",
+    "runner, failure",
     [
-        pytest.param(False, "read", id="background"),
-        pytest.param(True, "read", id="optimize"),
-        pytest.param(False, "next-column-setup", id="next-column-setup"),
+        pytest.param("background", "read", id="background"),
+        pytest.param("optimize", "read", id="optimize"),
+        pytest.param("dry-run", "read", id="dry-run"),
+        pytest.param("background", "next-column-setup", id="next-column-setup"),
     ],
 )
-def test_failed_merge_stops_its_other_s3_reads(
-    cluster, broken_s3, via_optimize, failure
-):
+def test_failed_merge_stops_its_other_s3_reads(cluster, broken_s3, runner, failure):
     """A merge that fails on one S3 read must stop its other reads that are still in flight.
 
     A vertical merge on a remote disk prefetches the next column from every part before it
@@ -621,14 +620,21 @@ def test_failed_merge_stops_its_other_s3_reads(
     the table.
 
     `background` is the executor's merge. `optimize` is the merge that `OPTIMIZE` runs in its own
-    thread, which destroys a failed task without cancelling it. Both fail on a read of `a`.
-    `next-column-setup` fails while it sets up the pipeline of `b`, with the reads of `a` in flight.
+    thread, which destroys a failed task without cancelling it. `dry-run` is `OPTIMIZE ... DRY RUN
+    PARTS`, whose reads run in the group of its query rather than of the merge. All three fail on a
+    read of `a`. `next-column-setup` fails while it sets up the pipeline of `b`, with the reads of
+    `a` in flight.
     """
     node = cluster.instances["node"]
+    via_optimize = runner != "background"
     if failure == "next-column-setup":
         table = "t_failed_setup_bg"
     else:
-        table = "t_failed_read_opt" if via_optimize else "t_failed_read_bg"
+        table = {
+            "background": "t_failed_read_bg",
+            "optimize": "t_failed_read_opt",
+            "dry-run": "t_failed_read_dry",
+        }[runner]
     # The assignee needs `min_age_to_force_merge_seconds` to pick two parts of this size, see
     # `test_shutdown_cancels_s3_read`.
     assignee_settings = (
@@ -697,10 +703,14 @@ def test_failed_merge_stops_its_other_s3_reads(
 
         throttled_before = get_throttled(node)
         node.query(f"SYSTEM START MERGES {table}")
-        if via_optimize:
+        if runner == "optimize":
             # Not `node.query`, for the same reason as in `test_stop_merges_cancels_s3_read`.
             optimize = node.get_query_request(
                 f"OPTIMIZE TABLE {table} FINAL SETTINGS optimize_throw_if_noop = 0"
+            )
+        elif runner == "dry-run":
+            optimize = node.get_query_request(
+                f"OPTIMIZE TABLE {table} DRY RUN PARTS '{parts[0]}', '{parts[1]}'"
             )
 
         # Vacuity guard: another read of the merge reached the mock, so there is a read to stop.
@@ -742,15 +752,16 @@ def test_failed_merge_stops_its_other_s3_reads(
 
         # Vacuity guard: the merge was vertical and failed as injected. Checked last: a failed task
         # writes this row only once its exception has left it, so a task stuck destroying its
-        # in-flight reads writes none.
-        node.query("SYSTEM FLUSH LOGS part_log")
-        assert int(
-            node.query(
-                f"SELECT count() FROM system.part_log WHERE database = currentDatabase() "
-                f"AND table = '{table}' AND event_type = 'MergeParts' AND error != 0 "
-                f"AND merge_algorithm = 'Vertical' AND exception LIKE '%{expected_error}%'"
-            )
-        ), "no vertical merge failed as injected, so the oracle above was vacuous"
+        # in-flight reads writes none. A dry run writes no row, and its error is checked below.
+        if runner != "dry-run":
+            node.query("SYSTEM FLUSH LOGS part_log")
+            assert int(
+                node.query(
+                    f"SELECT count() FROM system.part_log WHERE database = currentDatabase() "
+                    f"AND table = '{table}' AND event_type = 'MergeParts' AND error != 0 "
+                    f"AND merge_algorithm = 'Vertical' AND exception LIKE '%{expected_error}%'"
+                )
+            ), "no vertical merge failed as injected, so the oracle above was vacuous"
 
         if via_optimize:
             _, error = optimize.get_answer_and_error()

@@ -2859,6 +2859,9 @@ catch (...)
 {
     /// Stops the other in-flight reads of this merge: the thread group's cancellation predicates read this flag.
     (*global_ctx->merge_entry)->is_cancelled.store(true, std::memory_order_relaxed);
+    /// `OPTIMIZE ... DRY RUN` reads in the thread group of its query, whose predicates observe only the query.
+    if (auto query_status = global_ctx->context->getProcessListElementSafe())
+        query_status->cancelQuery(CancelReason::CANCELLED_BY_ERROR);
     DimensionalMetrics::add(
         DimensionalMetrics::MergeFailures,
         {String(ErrorCodes::getName(getCurrentExceptionCode()))});
