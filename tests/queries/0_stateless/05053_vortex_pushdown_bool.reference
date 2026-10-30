@@ -1,0 +1,12 @@
+The column reads back as Bool:
+n	UInt64
+b	Bool
+b = true (pushed, whole splits are dropped):
+100000
+1	0	1
+bare b (pushed, whole splits are dropped):
+100000
+1	0	1
+NOT b (pushed, whole splits are dropped):
+200000
+1	0	1
