@@ -575,9 +575,9 @@ void ASTFunction::formatImplWithoutAlias(WriteBuffer & ostr, const FormatSetting
     /// subquery. Print it back as the SQL keyword so that `SHOW CREATE`, `EXPLAIN SYNTAX`, `formatQuery`
     /// and the persisted metadata of views never expose the internal spelling. The subquery's own
     /// parentheses are dropped: `UNIQUE(SELECT ...)` is exactly what the parser accepts, and re-parsing
-    /// it yields the same AST. Shapes the parser can never produce (extra arguments, parameters, an alias
-    /// or CTE name on the subquery, a NULLS modifier or a window) take the generic path below.
-    if (name == "__unique" && arguments && !parameters && arguments->children.size() == 1
+    /// it yields the same AST. Shapes the parser can never produce (an ordinary call `__unique(...)`, extra arguments,
+    /// parameters, an alias or CTE name on the subquery, a NULLS modifier or a window) take the generic path below.
+    if (name == "__unique" && isOperator() && arguments && !parameters && arguments->children.size() == 1
         && getNullsAction() == NullsAction::EMPTY && !isWindowFunction())
     {
         if (const auto * subquery = arguments->children[0]->as<ASTSubquery>();

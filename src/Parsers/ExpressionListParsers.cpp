@@ -2368,28 +2368,29 @@ public:
     }
 };
 
+/// `UNIQUE(subquery)`. The subquery is already parsed by `tryParseUniquePredicateArgument`, this layer only takes it.
 class UniqueLayer : public Layer
 {
 public:
-    UniqueLayer() : Layer(/*allow_alias*/ true, /*allow_alias_without_as_keyword*/ true) {}
-
-    bool parse(IParser::Pos & pos, Expected & expected, Action & /*action*/) override
+    UniqueLayer(ASTPtr subquery_, TokenIterator end_pos_)
+        : Layer(/*allow_alias*/ true, /*allow_alias_without_as_keyword*/ true)
+        , subquery(std::move(subquery_))
+        , end_pos(end_pos_)
     {
-        ASTPtr node;
+    }
 
-        if (!ParserSelectWithUnionQuery().parse(pos, node, expected))
-            return false;
-
-        if (!ParserToken(TokenType::ClosingRoundBracket).ignore(pos, expected))
-            return false;
-
-        auto subquery = make_intrusive<ASTSubquery>(std::move(node));
-        elements = {makeASTOperator("__unique", subquery)};
-
+    bool parse(IParser::Pos & pos, Expected & /*expected*/, Action & /*action*/) override
+    {
+        /// Only the position is taken: the depth and backtracks counters stay with `pos`.
+        static_cast<TokenIterator &>(pos) = end_pos;
+        elements = {makeASTOperator("__unique", make_intrusive<ASTSubquery>(std::move(subquery)))};
         finished = true;
-
         return true;
     }
+
+private:
+    ASTPtr subquery;
+    TokenIterator end_pos;
 };
 
 class TrimLayer : public Layer
@@ -3218,66 +3219,26 @@ static bool isFirstIdentifier(ParserExpressionImpl::Layers & layers)
     return layers.size() == 1 && dynamic_cast<ExpressionLayer *>(layers.front().get()) != nullptr;
 }
 
-/// Whether the argument of a function call looks like a single subquery, possibly wrapped in parentheses:
-/// `SELECT ...`, `WITH ...`, `FROM ... SELECT ...`, `(SELECT ...)`, `((SELECT ...)) UNION ALL ...`.
-/// It is a cheap lookahead (no recursive parsing), used to recognize syntax sugar such as `UNIQUE(subquery)`
-/// without reserving the function name for every other call shape.
-/// A parenthesized subquery is accepted only when it is the whole argument or is followed by a set operation,
-/// so that `unique((SELECT 1), 2)` or `unique((SELECT 1) + 1)` stay regular function calls with a scalar subquery.
-static bool isSubqueryArgument(IParser::Pos pos)
+/// Parse the argument of `unique(...)` as the `UNIQUE` predicate: a single subquery that is the whole argument,
+/// e.g. `SELECT ...`, `WITH ...`, `FROM ... SELECT ...`, `(SELECT ...)`, `((SELECT ...)) UNION ALL ...`.
+/// Any other shape, such as `unique(1)`, `unique(from + 1)`, `unique((SELECT 1), 2)` or `unique((SELECT 1) + 1)`,
+/// is not the predicate, and `unique` stays a regular function name for it.
+/// The parsed subquery is handed over to `UniqueLayer`, so it is parsed only once and nested predicates stay linear.
+/// `pos` points right after the opening bracket of the function call.
+static std::unique_ptr<Layer> tryParseUniquePredicateArgument(IParser::Pos pos)
 {
-    size_t num_opening_brackets = 0;
-    IParser::Pos first_bracket = pos;
-    while (pos->type == TokenType::OpeningRoundBracket)
-    {
-        ++num_opening_brackets;
-        ++pos;
-    }
+    if (pos->type != TokenType::OpeningRoundBracket && pos->type != TokenType::BareWord)
+        return nullptr;
 
+    ASTPtr subquery;
     Expected expected;
-    if (!ParserKeyword(Keyword::SELECT).ignore(pos, expected)
-        && !ParserKeyword(Keyword::WITH).ignore(pos, expected)
-        && !ParserKeyword(Keyword::FROM).ignore(pos, expected))
-        return false;
+    if (!ParserSelectWithUnionQuery().parse(pos, subquery, expected))
+        return nullptr;
 
-    /// A lone keyword is an identifier argument, e.g. `unique(from)` or `unique(select, 1)`.
-    if (pos->type == TokenType::ClosingRoundBracket || pos->type == TokenType::Comma)
-        return false;
+    if (!ParserToken(TokenType::ClosingRoundBracket).ignore(pos, expected))
+        return nullptr;
 
-    /// An unparenthesized subquery extends to the closing bracket of the function call.
-    if (num_opening_brackets == 0)
-        return true;
-
-    /// Find the bracket that closes the first opening one and look at what follows it.
-    pos = first_bracket;
-    size_t depth = 0;
-    while (pos.isValid())
-    {
-        if (pos->type == TokenType::OpeningRoundBracket || pos->type == TokenType::OpeningSquareBracket)
-        {
-            ++depth;
-        }
-        else if (pos->type == TokenType::ClosingRoundBracket || pos->type == TokenType::ClosingSquareBracket)
-        {
-            if (depth == 0)
-                return false;
-            --depth;
-            if (depth == 0)
-            {
-                ++pos;
-                break;
-            }
-        }
-        ++pos;
-    }
-
-    if (depth != 0 || !pos.isValid())
-        return false;
-
-    return pos->type == TokenType::ClosingRoundBracket
-        || ParserKeyword(Keyword::UNION).checkWithoutMoving(pos, expected)
-        || ParserKeyword(Keyword::EXCEPT).checkWithoutMoving(pos, expected)
-        || ParserKeyword(Keyword::INTERSECT).checkWithoutMoving(pos, expected);
+    return std::make_unique<UniqueLayer>(std::move(subquery), pos);
 }
 
 /// `pos` points right after the opening bracket of the function call.
@@ -3349,8 +3310,11 @@ static std::unique_ptr<Layer> getFunctionLayer(
         return std::make_unique<ExistsLayer>();
     /// `UNIQUE(subquery)` is a predicate, but `unique` stays a regular name for any other call shape,
     /// such as a user-defined function `unique(1)` or a parameterized view `FROM unique(x = 1)`.
-    if (function_name_lowercase == "unique" && !(is_table_function && is_first_identifier) && isSubqueryArgument(pos))
-        return std::make_unique<UniqueLayer>();
+    if (function_name_lowercase == "unique" && !(is_table_function && is_first_identifier))
+    {
+        if (auto unique_layer = tryParseUniquePredicateArgument(pos))
+            return unique_layer;
+    }
     if (function_name_lowercase == "trim")
         return std::make_unique<TrimLayer>(false, false);
     if (function_name_lowercase == "ltrim")
