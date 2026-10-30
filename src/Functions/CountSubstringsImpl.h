@@ -115,11 +115,20 @@ struct CountSubstringsImpl
                 counted_up_to = pos;
 
                 auto found_offset = chars_before;
-                if (found_offset >= start)
+                if (found_offset < start)
+                {
+                    /// A skipped match may overlap a valid match at start_pos.
+                    pos = reinterpret_cast<const UInt8 *>(Impl::advancePos(
+                        reinterpret_cast<const char *>(pos),
+                        reinterpret_cast<const char *>(begin + haystack_offsets[i]),
+                        start - found_offset));
+                }
+                else
+                {
                     ++res[i];
-
-                /// Intersecting substrings in haystack accounted only once
-                pos = match_end;
+                    /// Intersecting substrings in haystack accounted only once.
+                    pos = match_end;
+                }
             }
             else
             {
