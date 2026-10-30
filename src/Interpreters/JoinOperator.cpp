@@ -86,6 +86,8 @@ namespace Setting
     extern const SettingsBool enable_join_fixed_hash_table_conversion;
     extern const SettingsBool enable_join_key_only_hash_tables;
     extern const SettingsBool join_runtime_filter_from_fixed_hash_table;
+    extern const SettingsBool enable_packed_string_keys_in_hash_join;
+    extern const SettingsUInt64 min_rows_for_packed_string_keys_in_hash_join;
     extern const SettingsBool enable_hash_join_row_store;
     extern const SettingsDouble min_rows_ratio_for_hash_join_row_store;
 }
@@ -213,6 +215,8 @@ JoinSettings::JoinSettings(const Settings & query_settings, JoinAnalyzeMode join
     enable_join_fixed_hash_table_conversion = query_settings[Setting::enable_join_fixed_hash_table_conversion];
     enable_join_key_only_hash_tables = query_settings[Setting::enable_join_key_only_hash_tables];
     join_runtime_filter_from_fixed_hash_table = query_settings[Setting::join_runtime_filter_from_fixed_hash_table];
+    enable_packed_string_keys_in_hash_join = query_settings[Setting::enable_packed_string_keys_in_hash_join];
+    min_rows_for_packed_string_keys_in_hash_join = query_settings[Setting::min_rows_for_packed_string_keys_in_hash_join];
     enable_hash_join_row_store = query_settings[Setting::enable_hash_join_row_store];
     min_rows_ratio_for_hash_join_row_store = query_settings[Setting::min_rows_ratio_for_hash_join_row_store];
 }
@@ -279,6 +283,8 @@ JoinSettings::JoinSettings(const QueryPlanSerializationSettings & settings, UInt
     enable_join_fixed_hash_table_conversion = settings[QueryPlanSerializationSetting::enable_join_fixed_hash_table_conversion];
     enable_join_key_only_hash_tables = settings[QueryPlanSerializationSetting::enable_join_key_only_hash_tables];
     join_runtime_filter_from_fixed_hash_table = settings[QueryPlanSerializationSetting::join_runtime_filter_from_fixed_hash_table];
+    enable_packed_string_keys_in_hash_join = false;
+    min_rows_for_packed_string_keys_in_hash_join = 0;
     enable_hash_join_row_store = settings[QueryPlanSerializationSetting::enable_hash_join_row_store];
     min_rows_ratio_for_hash_join_row_store = settings[QueryPlanSerializationSetting::min_rows_ratio_for_hash_join_row_store];
 }
