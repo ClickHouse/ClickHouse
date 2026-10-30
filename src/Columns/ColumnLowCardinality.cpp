@@ -380,7 +380,7 @@ void batchSerializeLowCardinalityString(
         const size_t value_size = offsets[index] - begin;
         const size_t stored_size = value_size + zero_byte;
         char * memory = memories[row];
-        memcpy(memory, &stored_size, sizeof(stored_size));
+        unalignedStoreLittleEndian<size_t>(memory, stored_size);
         memory += sizeof(stored_size);
         memcpy(memory, &chars[begin], value_size);
         if (zero_byte)
