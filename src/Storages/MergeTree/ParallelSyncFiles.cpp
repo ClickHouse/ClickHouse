@@ -42,6 +42,7 @@ namespace ErrorCodes
 namespace FailPoints
 {
     extern const char parallel_sync_paths_fail_fsync[];
+    extern const char parallel_sync_paths_interrupt_fsync[];
 }
 
 namespace
@@ -165,20 +166,40 @@ void syncPath(const std::string & path)
     if (failed_files.contains(st))
         throw Exception(ErrorCodes::CANNOT_FSYNC, "The fsync of file {} failed earlier, so its data may not be durable", path);
 
-    ProfileEvents::increment(ProfileEvents::FileSync);
-    Stopwatch watch;
-#if defined(OS_DARWIN)
-    int res = ::fsync(fd);
-#else
-    int res = ::fdatasync(fd);
-#endif
-    ProfileEvents::increment(ProfileEvents::FileSyncElapsedMicroseconds, watch.elapsedMicroseconds());
-
-    fiu_do_on(FailPoints::parallel_sync_paths_fail_fsync,
+    int res = 0;
+    [[maybe_unused]] bool injected_interrupt = false;
+    while (true)
     {
-        res = -1;
-        errno = EIO;
-    });
+        ProfileEvents::increment(ProfileEvents::FileSync);
+        Stopwatch watch;
+#if defined(OS_DARWIN)
+        res = ::fsync(fd);
+#else
+        res = ::fdatasync(fd);
+#endif
+        ProfileEvents::increment(ProfileEvents::FileSyncElapsedMicroseconds, watch.elapsedMicroseconds());
+
+        fiu_do_on(FailPoints::parallel_sync_paths_interrupt_fsync,
+        {
+            if (!injected_interrupt)
+            {
+                injected_interrupt = true;
+                res = -1;
+                errno = EINTR;
+            }
+        });
+
+        fiu_do_on(FailPoints::parallel_sync_paths_fail_fsync,
+        {
+            res = -1;
+            errno = EIO;
+        });
+
+        /// An interrupted sync says nothing about the data of the file, so it is retried instead of marking the file as failed.
+        if (res == -1 && errno == EINTR)
+            continue;
+        break;
+    }
 
     if (res == -1)
     {
