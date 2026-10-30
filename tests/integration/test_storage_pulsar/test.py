@@ -1068,6 +1068,99 @@ def test_macros_are_unfolded_on_create(pulsar_cluster):
     instance.query("DROP TABLE test.pulsar_renamed SYNC")
 
 
+def test_macros_are_unfolded_on_full_attach(pulsar_cluster):
+    # A full ATTACH supplies a fresh definition, so its {database}/{table} macros must be
+    # stored expanded as well, and a short ATTACH after a rename must keep the original names.
+    instance.query("CREATE DATABASE IF NOT EXISTS test")
+    instance.query("DROP TABLE IF EXISTS test.pulsar_full_attach SYNC")
+    instance.query("DROP TABLE IF EXISTS test.pulsar_full_attach_renamed SYNC")
+    instance.query(
+        """
+        ATTACH TABLE test.pulsar_full_attach UUID '00000000-0000-0000-0000-000000000002'
+        (key UInt64, value UInt64)
+        ENGINE = Pulsar
+        SETTINGS pulsar_service_url = 'pulsar://pulsar1:6650',
+                 pulsar_topic_list = '{table}_attach_topic',
+                 pulsar_group_name = '{database}_{table}_attach_group',
+                 pulsar_format = 'JSONEachRow'
+        """
+    )
+
+    def check_create_query(table):
+        create_query = instance.query(f"SHOW CREATE TABLE {table}")
+        assert "pulsar_full_attach_attach_topic" in create_query
+        assert "test_pulsar_full_attach_attach_group" in create_query
+        assert "{table}" not in create_query and "{database}" not in create_query
+
+    check_create_query("test.pulsar_full_attach")
+
+    instance.query("RENAME TABLE test.pulsar_full_attach TO test.pulsar_full_attach_renamed")
+    instance.query("DETACH TABLE test.pulsar_full_attach_renamed")
+    instance.query("ATTACH TABLE test.pulsar_full_attach_renamed")
+    check_create_query("test.pulsar_full_attach_renamed")
+
+    instance.query("DROP TABLE test.pulsar_full_attach_renamed SYNC")
+
+
+def test_skip_broken_messages_does_not_skip_resource_errors(pulsar_cluster):
+    # `pulsar_skip_broken_messages` covers only input errors. A valid message that fails
+    # for another reason (here `MEMORY_LIMIT_EXCEEDED`) must fail the query, so it is
+    # redelivered instead of being skipped and acknowledged together with the next message.
+    instance.query("CREATE DATABASE IF NOT EXISTS test")
+    for table in ["test.pulsar_raw_reader", "test.pulsar_raw_writer"]:
+        instance.query(f"DROP TABLE IF EXISTS {table} SYNC")
+    raw_table = """
+        CREATE TABLE {name} (data String)
+        ENGINE = Pulsar
+        SETTINGS pulsar_service_url = 'pulsar://pulsar1:6650',
+                 pulsar_topic_list = 'resource_error_topic',
+                 pulsar_group_name = '{group}',
+                 pulsar_format = 'RawBLOB'{extra_settings}
+    """
+    instance.query(
+        raw_table.format(
+            name="test.pulsar_raw_reader",
+            group="resource_error_group",
+            extra_settings=", pulsar_skip_broken_messages = 1, pulsar_commit_on_select = 1",
+        )
+    )
+    instance.query(
+        raw_table.format(name="test.pulsar_raw_writer", group="resource_error_writer_group", extra_settings="")
+    )
+
+    big_size = 3000000
+    instance.query(f"INSERT INTO test.pulsar_raw_writer SELECT repeat('x', {big_size})")
+    instance.query("INSERT INTO test.pulsar_raw_writer VALUES ('small')")
+
+    # Wait until the large message is polled and fails the query on the memory limit.
+    deadline = time.monotonic() + 120
+    failed = False
+    while time.monotonic() < deadline and not failed:
+        _, error = instance.query_and_get_answer_with_error(
+            "SELECT length(data) FROM test.pulsar_raw_reader",
+            settings={"max_memory_usage": 2000000, "max_untracked_memory": 0},
+        )
+        failed = "MEMORY_LIMIT_EXCEEDED" in error
+        if not failed:
+            time.sleep(0.2)
+    assert failed, "The query with a low memory limit never failed on the large message"
+    assert not instance.contains_in_log("Storage Pulsar(pulsar_raw_reader).*Skipped a broken message")
+
+    # Neither message was acknowledged, so both are redelivered (after the negative
+    # acknowledgement delay of the client, 60s by default).
+    seen = set()
+    deadline = time.monotonic() + 240
+    while time.monotonic() < deadline and len(seen) < 2:
+        result = instance.query("SELECT length(data) FROM test.pulsar_raw_reader")
+        for line in result.strip().splitlines():
+            seen.add(line)
+        time.sleep(1)
+    assert seen == {str(big_size), "5"}
+
+    for table in ["test.pulsar_raw_reader", "test.pulsar_raw_writer"]:
+        instance.query(f"DROP TABLE {table} SYNC")
+
+
 def test_skip_broken_messages_budget_is_per_block(pulsar_cluster):
     # `pulsar_skip_broken_messages` limits the broken messages of a whole block, not of
     # each message: with an allowance of one, two broken messages followed by a valid one
