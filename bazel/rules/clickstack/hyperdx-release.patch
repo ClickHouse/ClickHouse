@@ -1,0 +1,59 @@
+--- a/packages/app/next.config.mjs
++++ b/packages/app/next.config.mjs
+@@ -11,6 +11,16 @@
+   readFileSync(join(__dirname, 'package.json'), 'utf-8'),
+ );
+ const { version } = packageJson;
++
++// configureRuntimeEnv() writes process.env insertion order to __ENV.js.
++// Preserve the release order after Yarn inserts build:clickhouse assignments.
++if (process.env.NEXT_PUBLIC_CLICKHOUSE_BUILD) {
++  const names = ['NEXT_PUBLIC_IS_LOCAL_MODE', 'NEXT_PUBLIC_CLICKHOUSE_BUILD', 'NEXT_PUBLIC_THEME'];
++  const values = names.map(name => process.env[name]);
++  if (values.some(value => value === undefined)) throw new Error('Missing build:clickhouse variable');
++  for (const name of names) delete process.env[name];
++  for (let i = 0; i < names.length; i++) process.env[names[i]] = values[i];
++}
+ 
+ // Support legacy consumers of next-runtime-env that expect this value under window.__ENV
+ process.env.NEXT_PUBLIC_APP_VERSION = version;
+@@ -52,6 +62,31 @@
+     config,
+     { buildId, dev, isServer, defaultLoaders, nextRuntime, webpack },
+   ) => {
++    if (!dev && !isServer && process.env.NEXT_PUBLIC_CLICKHOUSE_BUILD) {
++      // Webpack's module ID collisions depend on traversal order. Use release
++      // entry order, independent of the filesystem's directory enumeration.
++      const originalEntry = config.entry;
++      config.entry = async (...args) => {
++        const entries = await (typeof originalEntry === 'function' ? originalEntry(...args) : originalEntry);
++        const ordered = Object.entries(entries).sort(([a], [b]) => a < b ? 1 : a > b ? -1 : 0);
++        return Object.fromEntries(ordered);
++      };
++      config.plugins.push({
++        apply(compiler) {
++          compiler.hooks.compilation.tap('ClickStackReleaseOrder', compilation => {
++            // MiniCSS selects shared styles in ChunkGroup.index order. Restore
++            // name order after IDs are assigned without changing those IDs.
++            compilation.hooks.afterOptimizeModuleIds.tap('ClickStackReleaseOrder', () => {
++              const named = compilation.chunkGroups.filter(group =>
++                typeof group.name === 'string' && typeof group.index === 'number');
++              const indices = named.map(group => group.index).sort((a, b) => a - b);
++              named.sort((a, b) => a.name < b.name ? -1 : a.name > b.name ? 1 : 0);
++              for (let i = 0; i < named.length; i++) named[i].index = indices[i];
++            });
++          });
++        },
++      });
++    }
+     if (isServer) {
+       config.ignoreWarnings = [{ module: /opentelemetry/ }];
+ 
+@@ -103,6 +138,7 @@
+         basePath: '/clickstack',
+         images: { unoptimized: true },
+         output: 'export',
++        generateBuildId: () => '5-YHnMehMzf0nuTPSUcNi',
+       }
+     : {}),
+   logging: {

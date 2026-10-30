@@ -1,0 +1,14 @@
+--- a/src/bsoncxx/lib/bsoncxx/v_noabi/bsoncxx/types.cpp
++++ b/src/bsoncxx/lib/bsoncxx/v_noabi/bsoncxx/types.cpp
+@@ -15 +15,11 @@
+ #include <bsoncxx/types.hpp>
++
++#define BSONCXX_ENUM(name, value) \
++    static_assert(static_cast<std::uint8_t>(bsoncxx::v_noabi::type::k_##name) == value);
++#include <bsoncxx/enums/type.hpp>
++#undef BSONCXX_ENUM
++
++#define BSONCXX_ENUM(name, value) \
++    static_assert(static_cast<std::uint8_t>(bsoncxx::v_noabi::binary_sub_type::k_##name) == value);
++#include <bsoncxx/enums/binary_sub_type.hpp>
++#undef BSONCXX_ENUM

@@ -1,0 +1,202 @@
+load("@rules_cc//cc:cc_library.bzl", "cc_library")
+load("//bazel/rules:ch_cc_library.bzl", "ch_cc_library")
+
+package(default_visibility = ["//visibility:public"])
+
+ch_cc_library(
+    name = "libc_angle_quote_c",
+    testonly = True,
+    srcs = ["libc_angle_quote.c"],
+    copts = [],
+    language = "C",
+    map_source_files = False,
+)
+
+ch_cc_library(
+    name = "libc_quote_angle_c",
+    testonly = True,
+    srcs = ["libc_quote_angle.c"],
+    copts = [],
+    language = "C",
+    map_source_files = False,
+)
+
+ch_cc_library(
+    name = "libc_angle_quote_cxx",
+    testonly = True,
+    srcs = ["libc_angle_quote.cc"],
+    copts = [],
+    local_defines = [],
+    map_source_files = False,
+)
+
+ch_cc_library(
+    name = "libc_quote_angle_cxx",
+    testonly = True,
+    srcs = ["libc_quote_angle.cc"],
+    copts = [],
+    local_defines = [],
+    map_source_files = False,
+)
+
+ch_cc_library(
+    name = "fstream_quote",
+    testonly = True,
+    srcs = ["fstream_quote.cc"],
+    copts = [],
+    local_defines = [],
+    map_source_files = False,
+)
+
+cc_library(
+    name = "guarded_unistd",
+    testonly = True,
+    hdrs = ["guarded/unistd.h"],
+)
+
+cc_library(
+    name = "guarded_bridge",
+    testonly = True,
+    hdrs = ["primer/guarded.h"],
+    deps = [":guarded_unistd"],
+)
+
+cc_library(
+    name = "once_unistd",
+    testonly = True,
+    hdrs = ["once/unistd.h"],
+)
+
+cc_library(
+    name = "once_bridge",
+    testonly = True,
+    hdrs = ["primer/once.h"],
+    deps = [":once_unistd"],
+)
+
+ch_cc_library(
+    name = "guarded_public_direct",
+    testonly = True,
+    srcs = ["guarded/consumer.c"],
+    copts = [],
+    implementation_deps = [":guarded_bridge"],
+    language = "C",
+    map_source_files = False,
+    textual_hdrs = ["guarded/api.inc"],
+    deps = [":guarded_unistd"],
+)
+
+ch_cc_library(
+    name = "negative_guarded_public_bridge",
+    testonly = True,
+    srcs = ["guarded/consumer.c"],
+    copts = [],
+    implementation_deps = [":guarded_bridge"],
+    language = "C",
+    map_source_files = False,
+    tags = ["manual"],
+    textual_hdrs = ["guarded/api.inc"],
+)
+
+ch_cc_library(
+    name = "once_public_direct",
+    testonly = True,
+    srcs = ["once/consumer.c"],
+    copts = [],
+    implementation_deps = [":once_bridge"],
+    language = "C",
+    map_source_files = False,
+    textual_hdrs = ["once/api.inc"],
+    deps = [":once_unistd"],
+)
+
+ch_cc_library(
+    name = "negative_once_public_bridge",
+    testonly = True,
+    srcs = ["once/consumer.c"],
+    copts = [],
+    implementation_deps = [":once_bridge"],
+    language = "C",
+    map_source_files = False,
+    tags = ["manual"],
+    textual_hdrs = ["once/api.inc"],
+)
+
+ch_cc_library(
+    name = "guarded_private_direct",
+    testonly = True,
+    srcs = [
+        "guarded/api.inc",
+        "guarded/consumer.c",
+    ],
+    copts = [],
+    implementation_deps = [
+        ":guarded_bridge",
+        ":guarded_unistd",
+    ],
+    language = "C",
+    map_source_files = False,
+)
+
+ch_cc_library(
+    name = "negative_guarded_private_bridge",
+    testonly = True,
+    srcs = [
+        "guarded/api.inc",
+        "guarded/consumer.c",
+    ],
+    copts = [],
+    implementation_deps = [":guarded_bridge"],
+    language = "C",
+    map_source_files = False,
+    tags = ["manual"],
+)
+
+cc_library(
+    name = "angled_detail",
+    testonly = True,
+    hdrs = ["angle/api/detail.h"],
+    includes = ["angle"],
+)
+
+cc_library(
+    name = "quoted_detail",
+    testonly = True,
+    hdrs = ["quote/api/detail.h"],
+)
+
+ch_cc_library(
+    name = "iquote_after_angle",
+    testonly = True,
+    srcs = ["quote_after_angle.c"],
+    copts = [
+        "-iquote",
+        "bazel/initial_migration/dwyu_regressions/compiler_resolution/quote",
+    ],
+    implementation_deps = [
+        ":angled_detail",
+        ":quoted_detail",
+    ],
+    language = "C",
+    map_source_files = False,
+)
+
+cc_library(
+    name = "late_unistd",
+    testonly = True,
+    hdrs = ["after/unistd.h"],
+)
+
+ch_cc_library(
+    name = "negative_idirafter_unused",
+    testonly = True,
+    srcs = ["late_system.c"],
+    copts = [
+        "-idirafter",
+        "bazel/initial_migration/dwyu_regressions/compiler_resolution/after",
+    ],
+    implementation_deps = [":late_unistd"],
+    language = "C",
+    map_source_files = False,
+    tags = ["manual"],
+)

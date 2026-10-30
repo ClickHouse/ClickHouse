@@ -1,0 +1,4 @@
+#ifndef DWYU_GUARDED_LIB_API_H
+#define DWYU_GUARDED_LIB_API_H
+#define DWYU_GUARDED_VALUE 17
+#endif

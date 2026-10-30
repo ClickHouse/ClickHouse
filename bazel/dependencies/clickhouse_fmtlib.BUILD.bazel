@@ -1,0 +1,21 @@
+load("@clickhouse//bazel/rules:ch_cc_library.bzl", "ch_cc_library")
+load("@clickhouse//bazel/rules:source_header_directories.bzl", "source_header_directories")
+
+package(default_visibility = ["//visibility:public"])
+
+exports_files([
+    "LICENSE",
+])
+
+ch_cc_library(
+    name = "_fmt",
+    srcs = [
+        "src/format.cc",
+        "src/os.cc",
+    ],
+    hdrs = glob(["include/**/*.h"]),
+    includes = [
+        "include",
+    ],
+    source_header_directories = source_header_directories(["include"]),
+)

@@ -27,7 +27,7 @@
 #
 # <ref>... are the reference libraries whose defined symbols determine what to
 # localize: libllvmlibc and clang_rt_builtins (ClickHouse-built static archives)
-# and the platform libm (a sysroot/toolchain static archive or shared object).
+# and the platform libm (an archive, shared object or GNU glibc libm.abilist).
 # At least one is required; CMake passes the ones that exist for the target.
 #
 # The ar/objcopy/nm tools must come from a compatible LLVM toolchain
@@ -84,6 +84,10 @@ trap cleanup EXIT
 # reference set comes out empty and nothing is localized (this is how the Rust
 # cbrt shadowed the llvm-libc one in release builds, which set ENABLE_THINLTO).
 defined_globals() {
+    if [[ "${1##*/}" == libm.abilist ]]; then
+        awk '$3 == "F" || $3 == "D" {print $2}' "$1"
+        return
+    fi
     { "$NM" "$1" 2>/dev/null; "$NM" -D "$1" 2>/dev/null; } \
         | grep -E '^([0-9a-f]+|-+) [TDBCWVi] ' \
         | awk '{print $3}' \

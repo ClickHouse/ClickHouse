@@ -1,0 +1,52 @@
+load("@clickhouse//bazel/rules:ch_cc_library.bzl", "ch_cc_library")
+
+package(default_visibility = ["//visibility:public"])
+
+exports_files([
+    "LICENSE",
+])
+
+_RE2_PUBLIC_HEADERS = [
+    "re2/filtered_re2.h",
+    "re2/re2.h",
+    "re2/set.h",
+    "re2/stringpiece.h",
+    "re2/regexp.h",
+    "re2/walker-inl.h",
+]
+
+ch_cc_library(
+    name = "_re2",
+    srcs = glob(["re2/*.cc"]) + [
+        "util/rune.cc",
+        "util/strutil.cc",
+    ] + glob(
+        [
+            "re2/*.h",
+            "util/*.h",
+        ],
+        exclude = _RE2_PUBLIC_HEADERS + [
+            "util/malloc_counter.h",
+            "util/pcre.h",
+        ],
+    ),
+    hdrs = _RE2_PUBLIC_HEADERS,
+    implementation_deps = [
+        "@clickhouse_abseil_cpp//:absl_hash",
+        "@clickhouse_abseil_cpp//:absl_inlined_vector_internal",
+        "@clickhouse_abseil_cpp//:absl_raw_hash_set",
+        "@clickhouse_abseil_cpp//:absl_span",
+        "@clickhouse_abseil_cpp//:absl_str_format_internal",
+        "@clickhouse_abseil_cpp//:absl_synchronization",
+    ],
+    includes = [
+        ".",
+    ],
+    deps = [
+        "@clickhouse_abseil_cpp//:absl_base",
+        "@clickhouse_abseil_cpp//:absl_base_config",
+        "@clickhouse_abseil_cpp//:absl_strings",
+        "@clickhouse_abseil_cpp//:absl_die_if_null",
+        "@clickhouse_abseil_cpp//:absl_log_internal_check_impl",
+    ],
+)

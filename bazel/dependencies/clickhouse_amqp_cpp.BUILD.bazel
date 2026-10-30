@@ -1,0 +1,52 @@
+load("@clickhouse//bazel/rules:ch_cc_library.bzl", "ch_cc_library")
+
+package(
+    default_visibility = ["//visibility:public"],
+    features = ["external_include_paths"],
+)
+
+exports_files([
+    "LICENSE",
+])
+
+ch_cc_library(
+    name = "_amqp-cpp",
+    srcs = [
+        "src/array.cpp",
+        "src/channel.cpp",
+        "src/channelimpl.cpp",
+        "src/connectionimpl.cpp",
+        "src/deferredcancel.cpp",
+        "src/deferredconfirm.cpp",
+        "src/deferredconsumer.cpp",
+        "src/deferredextreceiver.cpp",
+        "src/deferredget.cpp",
+        "src/deferredrecall.cpp",
+        "src/deferredreceiver.cpp",
+        "src/field.cpp",
+        "src/flags.cpp",
+    ] + glob(["src/linux_tcp/*.cpp"]) + [
+        "src/inbuffer.cpp",
+        "src/receivedframe.cpp",
+        "src/table.cpp",
+        "src/watchable.cpp",
+        "include/amqpcpp/linux_tcp/tcpdefines.h",
+    ] + glob(["src/**/*.h"]),
+    hdrs = glob(
+        ["include/**/*.h"],
+        exclude = [
+            "include/amqpcpp/libboostasio.h",
+            "include/amqpcpp/libev.h",
+            "include/amqpcpp/libevent.h",
+            "include/amqpcpp/linux_tcp/tcpdefines.h",
+        ],
+    ),
+    implementation_deps = ["@clickhouse_openssl//:crypto"],
+    includes = [
+        "include",
+    ],
+    deps = [
+        "@clickhouse_libuv//:_uv",
+        "@clickhouse_openssl//:ssl",
+    ],
+)

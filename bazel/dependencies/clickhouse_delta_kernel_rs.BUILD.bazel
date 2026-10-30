@@ -1,0 +1,18 @@
+load("@clickhouse//bazel/rules:cargo_sources.bzl", "cargo_repository_sources")
+
+package(default_visibility = ["//visibility:public"])
+
+exports_files([
+    "LICENSE",
+    "ffi/Cargo.toml",
+    "ffi/cbindgen.toml",
+])
+
+cargo_repository_sources(
+    name = "cbindgen_sources",
+    split_directories = [
+        "derive-macros",
+        "ffi",
+        "kernel",
+    ],
+)

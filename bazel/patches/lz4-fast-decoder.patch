@@ -1,0 +1,36 @@
+diff --git a/BUILD.bazel b/BUILD.bazel
+--- a/BUILD.bazel
++++ b/BUILD.bazel
+@@ -10,7 +10,10 @@
+     hdrs = [
+         "lib/lz4.h",
+     ],
+-    local_defines = ["XXH_NAMESPACE=LZ4_"],
++    local_defines = [
++        "LZ4_FAST_DEC_LOOP=1",
++        "XXH_NAMESPACE=LZ4_",
++    ],
+     strip_include_prefix = "lib/",
+     visibility = ["//visibility:public"],
+ )
+@@ -59,17 +62,18 @@
+     name = "lz4_frame",
+     srcs = [
+         "lib/lz4frame.c",
+-        "lib/lz4frame_static.h",
+     ],
+     hdrs = [
+         "lib/lz4frame.h",
++        "lib/lz4frame_static.h",
+     ],
+     local_defines = ["XXH_NAMESPACE=LZ4_"],
+     strip_include_prefix = "lib/",
+     visibility = ["//visibility:public"],
+-    deps = [
++    implementation_deps = [
+         ":lz4",
+         ":lz4_hc",
++        ":lz4_xxhash_include",
+     ],
+ )
+ 

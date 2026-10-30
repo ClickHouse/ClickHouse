@@ -1,0 +1,95 @@
+diff --git a/lld/COFF/COFFLinkerContext.h b/lld/COFF/COFFLinkerContext.h
+--- a/lld/COFF/COFFLinkerContext.h
++++ b/lld/COFF/COFFLinkerContext.h
+@@ -60,6 +60,7 @@
+   }
+ 
+   std::vector<ObjFile *> objFileInstances;
++  std::vector<BitcodeFile *> lazyBitcodeFileInstances;
+   std::map<std::string, PDBInputFile *> pdbInputFileInstances;
+   std::vector<ImportFile *> importFileInstances;
+   std::int64_t consumedInputsSize = 0;
+diff --git a/lld/COFF/Driver.cpp b/lld/COFF/Driver.cpp
+--- a/lld/COFF/Driver.cpp
++++ b/lld/COFF/Driver.cpp
+@@ -12,6 +12,7 @@
+ #include "DebugTypes.h"
+ #include "ICF.h"
+ #include "InputFiles.h"
++#include "LTO.h"
+ #include "MarkLive.h"
+ #include "MinGW.h"
+ #include "SymbolTable.h"
+@@ -205,10 +206,12 @@
+ void LinkerDriver::addFile(InputFile *file) {
+   Log(ctx) << "Reading " << toString(file);
+   if (file->lazy) {
+-    if (auto *f = dyn_cast<BitcodeFile>(file))
++    if (auto *f = dyn_cast<BitcodeFile>(file)) {
++      ctx.lazyBitcodeFileInstances.push_back(f);
+       f->parseLazy();
+-    else
++    } else {
+       cast<ObjFile>(file)->parseLazy();
++    }
+   } else {
+     ctx.consumedInputsSize += file->mb.getBufferSize();
+     file->parse();
+@@ -2756,6 +2759,8 @@
+   // Do LTO by compiling bitcode input files to a set of native COFF files then
+   // link those files (unless -thinlto-index-only was given, in which case we
+   // resolve symbols and write indices, but don't generate native code or link).
++  if (config->thinLTOIndexOnly)
++    thinLTOCreateEmptyIndexFiles(ctx);
+   ltoCompilationDone = true;
+   ctx.forEachSymtab([](SymbolTable &symtab) { symtab.compileBitcodeFiles(); });
+ 
+diff --git a/lld/COFF/LTO.cpp b/lld/COFF/LTO.cpp
+--- a/lld/COFF/LTO.cpp
++++ b/lld/COFF/LTO.cpp
+@@ -150,6 +150,33 @@
+ 
+ BitcodeCompiler::~BitcodeCompiler() = default;
+ 
++// If a lazy BitcodeFile has not been added to the link, emit an empty index
++// file. This matches ELF and GNU gold plugin behavior for distributed builds.
++void lld::coff::thinLTOCreateEmptyIndexFiles(COFFLinkerContext &ctx) {
++  DenseSet<StringRef> linkedBitcodeFiles;
++  ctx.forEachSymtab([&](SymbolTable &symtab) {
++    for (BitcodeFile *f : symtab.bitcodeFileInstances)
++      linkedBitcodeFiles.insert(f->getName());
++  });
++
++  for (BitcodeFile *f : ctx.lazyBitcodeFileInstances) {
++    if (!f->lazy || linkedBitcodeFiles.contains(f->getName()))
++      continue;
++    std::string path = lto::getThinLTOOutputFile(
++        f->obj->getName(), ctx.config.thinLTOPrefixReplaceOld,
++        ctx.config.thinLTOPrefixReplaceNew);
++    std::unique_ptr<raw_fd_ostream> os = openFile(path + ".thinlto.bc");
++    if (!os)
++      continue;
++
++    ModuleSummaryIndex m(/*HaveGVs=*/false);
++    m.setSkipModuleByDistributedBackend();
++    writeIndexToFile(m, *os);
++    if (ctx.config.thinLTOEmitImportsFiles)
++      openFile(path + ".imports");
++  }
++}
++
+ static void undefine(Symbol *s) { replaceSymbol<Undefined>(s, s->getName()); }
+ 
+ void BitcodeCompiler::add(BitcodeFile &f) {
+diff --git a/lld/COFF/LTO.h b/lld/COFF/LTO.h
+--- a/lld/COFF/LTO.h
++++ b/lld/COFF/LTO.h
+@@ -38,6 +38,8 @@
+ class InputFile;
+ class COFFLinkerContext;
+ 
++void thinLTOCreateEmptyIndexFiles(COFFLinkerContext &ctx);
++
+ class BitcodeCompiler {
+ public:
+   BitcodeCompiler(COFFLinkerContext &ctx);

@@ -1,0 +1,58 @@
+load("@clickhouse//bazel/rules:ch_cc_library.bzl", "CXX_RUNTIME_DEFINES", "ch_cc_library")
+
+package(default_visibility = ["//visibility:public"])
+
+exports_files([
+    "COPYING",
+])
+
+ch_cc_library(
+    name = "_sasl2",
+    srcs = [
+        "plugins/gssapi.c",
+        "common/plugin_common.c",
+        "lib/common.c",
+        "lib/canonusr.c",
+        "lib/server.c",
+        "lib/config.c",
+        "lib/auxprop.c",
+        "lib/saslutil.c",
+        "lib/external.c",
+        "lib/seterror.c",
+        "lib/md5.c",
+        "lib/dlopen.c",
+        "lib/client.c",
+        "lib/checkpw.c",
+        "common/plugin_common.h",
+        "include/hmac-md5.h",
+        "include/md5.h",
+        "include/saslplug.h",
+        "include/saslutil.h",
+        "saslauthd/md5global.h",
+    ] + glob(["lib/*.h"]) + ["configured/private/config.h"],
+    hdrs = [
+        "include/prop.h",
+        "include/sasl.h",
+    ],
+    implementation_deps = [
+        "@clickhouse_krb5//:_krb5",
+    ],
+    include_prefix = "sasl",
+    language = "C",
+    local_defines = [
+        "'CONFIGDIR=\"\"'",
+        "HAVE_CONFIG_H",
+        "OBSOLETE_CRAM_ATTR=1",
+        "OBSOLETE_DIGEST_ATTR=1",
+        "'PLUGINDIR=\"\"'",
+        "'SASLAUTHD_CONF_FILE_DEFAULT=\"\"'",
+    ] + CXX_RUNTIME_DEFINES,
+    local_includes = [
+        "include",
+        "lib",
+        "common",
+        "saslauthd",
+        "configured/private",
+    ],
+    strip_include_prefix = "include",
+)

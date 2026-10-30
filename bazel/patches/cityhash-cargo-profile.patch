@@ -1,0 +1,13 @@
+--- a/clickhouse-rs-cityhash-sys/build.rs
++++ b/clickhouse-rs-cityhash-sys/build.rs
+@@ -2,8 +2,8 @@
+
+ fn main() {
+     let mut compiler = cc::Build::new();
+-    compiler.file("src/cc/city.cc").cpp(true).opt_level(3);
+-    compiler.flag_if_supported("-Wno-return-type-c-linkage");
++    compiler.file("src/cc/city.cc").cpp(true);
++    compiler.flag_if_supported("-Wno-error=return-type-c-linkage");
+
+     compiler.compile("libchcityhash.a");
+ }

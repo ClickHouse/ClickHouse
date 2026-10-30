@@ -1,0 +1,743 @@
+"""Assign the dependencies verified by the compiler and linker reports."""
+
+import ast
+from collections import Counter
+import json
+
+from initial_migration.first_party_packages import Build, CPUS, attributes, call_name, canonical_dependency
+from initial_migration.factor_build_selections import cpu_choices, list_parts
+from initial_migration.library_runtime import HEADERS as LLVM_RUNTIME_HEADERS
+from initial_migration.prune_inherited_headers import inherited_source_headers
+from initial_migration.web_resources import constant_defs, constant_dict_field, eval_node
+
+CXX = '@clickhouse_llvm_project//:cxx'
+GLIBC_COMPATIBILITY = '//base/glibc-compatibility'
+UNWIND = '@clickhouse_llvm_project//:unwind'
+TZDATA = '@clickhouse_cctz//:tzdata'
+SPARSEHASH = '@clickhouse_sparsehash_c11//:sparsehash_c11'
+MINIZIP = '@clickhouse_minizip_ng//:_minizip'
+S2 = '@clickhouse_s2geometry//:_s2'
+UPB_WIRE = '@clickhouse_grpc//:upb_wire_lib'
+PRIVATE_VENDOR_DEPS = ['@clickhouse_libcotp//:_libcotp', '@clickhouse_libgsasl//:_gsasl', '@clickhouse_zxc//:_zxc']
+CAPNP_AND_GOOGLE_CLOUD_DEPS = [
+    '@clickhouse_capnproto//:_capnp', '@clickhouse_google_cloud_cpp//:google_cloud_cpp_common',
+    '@clickhouse_google_cloud_cpp//:google_cloud_cpp_rest_internal',
+]
+# These fileless aggregates already receive the listed libraries through their deps.
+AGGREGATE_TRANSITIVE_DEPS = [
+    *PRIVATE_VENDOR_DEPS, CXX, MINIZIP, S2, *CAPNP_AND_GOOGLE_CLOUD_DEPS,
+    '//src/Access/Common:clickhouse_common_access', '@clickhouse_ai_sdk_cpp//:_ai-sdk-cpp-anthropic',
+    '@clickhouse_arrow//:_parquet', '@clickhouse_boost//:_boost_context', '@clickhouse_openldap//:_lber',
+    '@clickhouse_silk//:_silk_fibers',
+    '@clickhouse_libstemmer_c//:_stemmer',
+    '@clickhouse_sha3iuf//:_sha3iuf',
+    '@clickhouse_ulid_c//:_ulid',
+    '@clickhouse_wordnet_blast//:_wnb',
+    '@clickhouse_yaml_cpp//:_yaml_cpp',
+]
+ARRAY_LENGTH = '//src/Functions/array:headers'
+FUNCTION_REGISTRATION = '//src/Functions:clickhouse_functions_obj__compile_0'
+UNIT_TEST_FUNCTION_DEPS = [
+    FUNCTION_REGISTRATION, '//src/Access/Common:headers', '//src/Common/ZooKeeper:headers',
+    '//src/Functions:headers', '//src/Parsers:headers',
+]
+
+def llvm_components(*names):
+    return ['@clickhouse_llvm_project//:LLVM' + name for name in names]
+
+
+# Other dependencies of these four libraries already supply the LLVM archives.
+URL_LLVM_COMPONENTS = llvm_components(
+    'AggressiveInstCombine', 'BitReader', 'BitWriter', 'InstCombine', 'MCDisassembler', 'ObjCARCOpts',
+)
+ZOOKEEPER_LLVM_COMPONENTS = URL_LLVM_COMPONENTS + llvm_components('AsmPrinter', 'RuntimeDyld', 'SelectionDAG')
+FUNCTIONS_LLVM_COMPONENTS = ZOOKEEPER_LLVM_COMPONENTS + llvm_components(
+    'BitstreamReader', 'CFGuard', 'CodeGenTypes', 'HipStdPar', 'IRPrinter', 'IRReader', 'SandboxIR',
+)
+
+# Keep the listed implementation_deps before removing libraries supplied through their deps.
+PRIVATE_PROVIDERS = {
+    ('src/Access/Common', 'clickhouse_common_access'):
+        (['//src/Common'], ['@clickhouse_openssl//:crypto']),
+    ('src/Common/ZooKeeper', 'clickhouse_common_zookeeper_no_log'):
+        ([':clickhouse_common_zookeeper_base'],
+         llvm_components('AArch64CodeGen', 'X86CodeGen') + ['@clickhouse_boost//:_boost_context']),
+    ('src/Functions/TimeSeries', 'clickhouse_functions_time_series'):
+        (['//src:dbms__compile_0', '@clickhouse_ai_sdk_cpp//:_ai-sdk-cpp-anthropic'],
+         [GLIBC_COMPATIBILITY, '@clickhouse_boost//:_boost_context', '@clickhouse_ai_sdk_cpp//:_ai-sdk-cpp-openai']),
+}
+
+# Key: (package or root repository, rule). Values: (unused dependencies, private dependencies, public dependencies).
+DEPENDENCIES = {
+    ('@clickhouse_arrow', '_arrow__compile_0'): ([], ['@clickhouse_boost//:boost_headers_no_openssl'], []),
+    ('@clickhouse_aws', '_aws'): ([
+        '@clickhouse_aws_c_auth//:aws_c_auth',
+        '@clickhouse_aws_c_cal//:aws_c_cal',
+        '@clickhouse_aws_c_event_stream//:aws_c_event_stream',
+        '@clickhouse_aws_c_common//:aws_c_common',
+        '@clickhouse_aws_c_io//:aws_c_io',
+        '@clickhouse_aws_c_http//:aws_c_http',
+    ], [], []),
+    ('@clickhouse_azure', '_azure_sdk'): (
+        ['@clickhouse//contrib/libxml2-cmake:libxml2_config_headers'], ['@clickhouse_libxml2//:_libxml2'], []),
+    ('@clickhouse_flatbuffers', 'flatc'): (list(LLVM_RUNTIME_HEADERS), [], []),
+    ('@clickhouse_grpc', 'grpc_cpp_plugin'): ([
+        '@clickhouse_abseil_cpp//:absl_examine_stack',
+        '@clickhouse_abseil_cpp//:absl_flags_private_handle_accessor',
+        '@clickhouse_abseil_cpp//:absl_flags_program_name',
+        '@clickhouse_abseil_cpp//:absl_graphcycles_internal',
+        '@clickhouse_abseil_cpp//:absl_log_internal_fnmatch',
+        '@clickhouse_abseil_cpp//:absl_log_internal_format',
+        '@clickhouse_abseil_cpp//:absl_log_internal_globals',
+        '@clickhouse_abseil_cpp//:absl_malloc_internal',
+        '@clickhouse_abseil_cpp//:absl_stacktrace',
+        '@clickhouse_abseil_cpp//:absl_symbolize',
+    ], [], []),
+    ('@clickhouse_grpc', 'grpc_plugin_support'): (['@clickhouse_google_protobuf//:_libprotoc'], [], []),
+    ('@clickhouse_isa_l', '_isal__compile_0'): (list(LLVM_RUNTIME_HEADERS), [], []),
+    ('@clickhouse_librdkafka', '_rdkafka'): (['@clickhouse_cyrus_sasl//:_sasl2'], [], []),
+    ('@clickhouse_mongo_cxx_driver', '_bsoncxx'): ([], ['@clickhouse_mongo_c_driver//:_libbson'], []),
+    ('@clickhouse_zstd', '_zstd'): ([], [':_zstd__compile_1'], []),
+    **{('contrib/libfuzzer-cmake', name): (['@clickhouse_llvm_project//:cxxabi'], [], [])
+       for name in ('_fuzzer', '_fuzzer_no_main')},
+    ('src', 'headers'): ([
+        '@clickhouse_double_conversion//:_double-conversion',
+        '@clickhouse_mongo_cxx_driver//:_bsoncxx', '@clickhouse_mongo_cxx_driver//:_mongocxx',
+    ], [], []),
+    ('src', 'clickhouse_common_io'): ([CXX, GLIBC_COMPATIBILITY, MINIZIP, '@clickhouse_openssl//:crypto'], [], []),
+    ('src/AggregateFunctions', 'clickhouse_aggregate_functions'): ([*AGGREGATE_TRANSITIVE_DEPS, UPB_WIRE], [], []),
+    ('src/Dictionaries', 'clickhouse_dictionaries'): (AGGREGATE_TRANSITIVE_DEPS, [], []),
+    ('src/Storages/System', 'clickhouse_storages_system'): ([*AGGREGATE_TRANSITIVE_DEPS, UPB_WIRE], [], []),
+    ('src', 'dbms__compile_4'): ([ARRAY_LENGTH], [], []),
+    ('src/Functions', 'clickhouse_functions_obj__compile_2'): ([ARRAY_LENGTH], [], []),
+    ('base/readpassphrase', 'readpassphrase'): ([UNWIND], [], []),
+    ('base/poco/Foundation', '_poco_foundation'): ([], [UNWIND], []),
+    ('base/widechar_width', 'widechar_width'): ([UNWIND], [], []),
+    ('contrib/bech32', '_bech32'): ([GLIBC_COMPATIBILITY], [], []),
+    ('contrib/cityhash102', '_cityhash'): ([GLIBC_COMPATIBILITY], [], []),
+    ('contrib/consistent-hashing', '_consistent_hashing'): ([GLIBC_COMPATIBILITY], [], []),
+    ('contrib/libfarmhash', '_farmhash'): ([GLIBC_COMPATIBILITY, UNWIND], [], []),
+    ('contrib/libmetrohash', '_metrohash'): ([GLIBC_COMPATIBILITY, UNWIND], [], []),
+    ('contrib/murmurhash', '_murmurhash'): ([GLIBC_COMPATIBILITY, UNWIND], [], []),
+    ('programs', 'clickhouse__compile_0'): (['//base:harmful'], [], []),
+    ('programs/client', 'clickhouse-client-lib'): (['//src/Dictionaries:clickhouse_dictionaries'], [], []),
+    ('programs/keeper', 'clickhouse-keeper-lib'): ([], ['//src/Dictionaries:clickhouse_dictionaries'], []),
+    ('src/Daemon', 'headers'): (['//base/poco/XML:_poco_xml'], [], []),
+    ('src/Dictionaries', 'headers'): (
+        [SPARSEHASH, '//src/Functions:cast_api', '//src:core_defines', '//src/Common:shared_mutex'], [], []),
+    ('src/Parsers', 'headers'): (['//base/poco/JSON:_poco_json'], [], []),
+    ('src/TableFunctions', 'headers'): (['//base:common'], [], []),
+    ('src/Access/Common', 'clickhouse_common_access'): ([TZDATA], [], []),
+    ('src/AggregateFunctions', 'clickhouse_aggregate_functions__compile_1'): ([
+        ':aggregate_api', '//src/Common:assert_cast', '//src/Common:exception_api',
+        '//src/Parsers:headers', '//src/Parsers:parser_api', '//src:column_types',
+        '//base:pcg_random', '//bazel:clickhouse_config_headers', '@clickhouse_boost//:boost_headers_no_openssl',
+        '@clickhouse_croaring//:_roaring__compile_0', '@clickhouse_datasketches_cpp//:datasketches_cpp',
+    ], ['//src:headers'], []),
+    ('src/Functions', 'clickhouse_functions_obj'): ([
+        '//base/poco/Foundation:_poco_foundation_pcre', '//base/poco/JSON:_poco_json_pdjson',
+    ], [], []),
+    ('src/Functions/array', 'clickhouse_functions_array'): ([
+        CXX, *CAPNP_AND_GOOGLE_CLOUD_DEPS, '@clickhouse_librseq//:_librseq',
+        '@clickhouse_liburing//:_liburing', '@clickhouse_libxml2//:_libxml2',
+    ], [], []),
+    ('src/Functions/URL', 'clickhouse_functions_url'): ([
+        *AGGREGATE_TRANSITIVE_DEPS,
+        '@clickhouse_mongo_c_driver//:_libbson',
+        '@clickhouse_arrow//:_orc',
+    ], [], []),
+    ('src/Functions/URL', 'clickhouse_functions_url__compile_0'): (URL_LLVM_COMPONENTS, [], []),
+    ('src/Functions/URL', 'clickhouse_functions_url__compile_1'): ([
+        '@clickhouse_llvm_project//:LLVMBitReader', '@clickhouse_llvm_project//:LLVMBitstreamReader',
+        '@clickhouse_llvm_project//:LLVMSupport', GLIBC_COMPATIBILITY,
+    ], [], []),
+    **{('src/Common', name): (['//src:headers'], [], [])
+       for name in ('clickhouse_malloc', 'clickhouse_new_delete')},
+    ('src/Common', 'Common'): (['@clickhouse_mongo_cxx_driver//:_mongocxx'], [], []),
+    ('src/Common/mysqlxx', 'mysqlxx'): ([TZDATA], ['//src/Common'], []),
+    ('src/Common/benchmarks', 'benchmark_stack_trace_objects'): ([TZDATA, '@clickhouse_boost//:_boost_context', '//contrib/lz4-cmake:_lz4'], [], []),
+    ('src/Common/benchmarks', 'integer_hash_tables_and_hashes_objects'): (['@clickhouse_libbcrypt//:_bcrypt', '@clickhouse_boost//:_boost_context'], [], []),
+    ('src/Columns/benchmarks', 'benchmark_compute_hash_into_objects'): (['@clickhouse_icu//:_icudata'], ['//src:headers'], []),
+    ('src/Columns/benchmarks', 'column_insert_many_from_objects'): (['@clickhouse_icu//:_icudata'], ['//src:headers'], []),
+    ('src/Common/ZooKeeper', 'headers'): (['//src/Parsers:headers'], [], []),
+    ('src/Common/ZooKeeper', 'clickhouse_common_zookeeper'): (llvm_components('AArch64CodeGen', 'X86CodeGen'), [], []),
+    ('src/Common/ZooKeeper', 'clickhouse_common_zookeeper_no_log'): (ZOOKEEPER_LLVM_COMPONENTS, [], []),
+    ('src/Common/ZooKeeper', 'clickhouse_common_zookeeper_base'): (['@clickhouse_replxx//:_replxx'], [], []),
+    ('src/Common/benchmarks', 'orc_string_dictionary_objects'): ([TZDATA, '@clickhouse_jemalloc//:_jemalloc', '@clickhouse_boost//:_boost_context', '//contrib/lz4-cmake:_lz4'], [], []),
+    ('src/Common/benchmarks', 'profile_events_objects'): ([TZDATA, '@clickhouse_boost//:_boost_context', '//contrib/lz4-cmake:_lz4'], [], []),
+    ('src/Common/benchmarks', 'benchmark_radix_sort_objects'): (
+        ['@clickhouse_icu//:_icudata'], ['//src:headers', '//src/Functions:headers'], []),
+    ('src/Common/benchmarks', 'wrap_in_nullable_objects'): (
+        ['@clickhouse_icu//:_icudata'], ['//src:headers', '//src/Functions:headers'], []),
+    ('src/Functions/GatherUtils', 'clickhouse_functions_gatherutils'): ([
+        '@clickhouse_isa_l//:_isal',
+        '@clickhouse_icu//:_icudata',
+        '@clickhouse_ai_sdk_cpp//:_ai-sdk-cpp-anthropic',
+        '@clickhouse_ai_sdk_cpp//:_ai-sdk-cpp-openai',
+    ], [], []),
+    ('src/Loggers', 'loggers'): ([
+        '@clickhouse_ai_sdk_cpp//:_ai-sdk-cpp-anthropic', '@clickhouse_ai_sdk_cpp//:_ai-sdk-cpp-openai',
+        '@clickhouse_arrow//:_arrow', '@clickhouse_aws//:_aws', '@clickhouse_icu//:_icudata',
+    ], ['//src/Common'], []),
+    ('src/Functions/JSONPath', 'clickhouse_functions_jsonpath'): ([], ['//src/Parsers:headers'], ['//src/Parsers:parser_api']),
+    ('src/Functions/TimeSeries', 'clickhouse_functions_time_series'): (
+        FUNCTIONS_LLVM_COMPONENTS + ['@clickhouse_icu//:_icudata', '@clickhouse_zstd//:_zstd'], [], []),
+    ('src/Storages/benchmarks', 'benchmark_statistics_objects'): (['@clickhouse_icu//:_icudata'], ['//src:headers'], []),
+    ('src/TableFunctions', 'clickhouse_table_functions'): (
+        FUNCTIONS_LLVM_COMPONENTS + ['@clickhouse_icu//:_icudata', '@clickhouse_silk//:_silk_fibers', '@clickhouse_zstd//:_zstd'], [], []),
+    ('src', 'benchmark_runtime_filter_objects'): ([], [
+        '@clickhouse_google_benchmark//:google_benchmark', '//bazel:clickhouse_config_headers',
+        '@clickhouse_fmtlib//:_fmt', '//base:common', ':dbms', ':dbms__compile_0', ':dbms__compile_1', '//src/Common',
+        '//src/Functions:headers', '//src/Common:parser_support_api', '//src:headers', '//src:column_types',
+    ], []),
+    ('src', 'clickhouse_common_io__compile_0'): ([], [
+        TZDATA, '//base:pcg_random', '//src/Common:string_utils',
+        '@clickhouse_boost//:boost_headers_no_openssl', '@clickhouse_fmtlib//:_fmt', '@clickhouse_openssl//:crypto',
+    ], []),
+    ('src', 'dbms__compile_0'): ([
+        '//base/widechar_width', '@clickhouse_libdeflate//:_libdeflate', '@clickhouse_zmij//:_zmij',
+        '@clickhouse_brotli//:_brotli', '@clickhouse_bzip2//:_bzip2', '@clickhouse_xz//:_liblzma',
+        '@clickhouse_grpc//:address_sorting', '@clickhouse_mongo_c_driver//:_libbson',
+        '//src/Parsers/Prometheus/grammar:clickhouse_antlr4_grammars',
+    ], [
+        '//bazel:arrow_flatbuffer_headers',
+        '//contrib/librdkafka-cmake:rdhttp_poco_transport',
+        '@clickhouse_abseil_cpp//:absl_function_ref', '@clickhouse_azure//:_azure_sdk',
+        '@clickhouse_flatbuffers//:_flatbuffers',
+        '@clickhouse_libdivide//:libdivide', '@clickhouse_libuv//:_uv',
+        '@clickhouse_openssl//:crypto', '@clickhouse_openssl//:ssl', '@clickhouse_sparsehash_c11//:sparsehash_c11',
+        '@clickhouse_zlib_ng//:_zlib', '@clickhouse_zstd//:_zstd',
+        '@lz4//:lz4', '@lz4//:lz4_frame',
+    ], ['//src/Parsers:parser_api', ':column_types', ':core_defines', '//src/Compression:codec_api',
+        '@clickhouse_libhdfs3//:_hdfs3', '//src/Common:string_utils']),
+    ('src/Functions', 'clickhouse_functions_obj__compile_0'): ([], [TZDATA], []),
+    ('src/Functions/array', 'headers'): ([
+        '//src:headers', '//base:common', '//src/Common:memory_tracking_api',
+        '//src/Common:assert_cast', '//src:with_context', '//src/Common', '//src:column_types',
+    ], [], []),
+    ('src/Functions/array', 'clickhouse_functions_array__compile_0'): ([], ['//src:dbms__compile_0'], []),
+    ('src/Storages/System', 'headers'): (['//bazel:clickhouse_config_headers', '//src:with_context'], [], []),
+    ('src/Storages/System', 'clickhouse_storages_system__compile_1'): (
+        [], ['//base:common', '//src:headers', '//src/Common', TZDATA, ':headers'], []),
+    ('programs/format', 'clickhouse-format-lib'): ([], [TZDATA], []),
+    ('src', 'unit_tests_dbms'): (
+        [*PRIVATE_VENDOR_DEPS, MINIZIP, S2, '@clickhouse_icu//:_icudata', '@clickhouse_libcpuid//:_cpuid',
+         *LLVM_RUNTIME_HEADERS, '@llvm-project//third-party/siphash'], [], [TZDATA]),
+}
+
+# The embedded C++ sources publish no headers.
+EMBEDDED_OBJECT_DEPS = {
+    'clickhouse_common_io_embedded': ['//src/Common', '@clickhouse_zstd//:_zstd'],
+    # The client and Keeper headers include the AI SDK, NuRaft and replxx.
+    'dbms_embedded': [
+        '//bazel:clickhouse_config_headers',
+        '@clickhouse_boost//:boost_headers_no_openssl',
+        '@clickhouse_nuraft//:_nuraft',
+        '//base/poco/Foundation:_poco_foundation',
+        '//base/poco/JSON:_poco_json',
+        '//base/poco/Net:_poco_net',
+        '//base/poco/Util:_poco_util',
+        '//base:common',
+        '//src/Common',
+        '//src/Compression:clickhouse_compression',
+        '//src/Common/Config:clickhouse_common_config',
+        ':clickhouse_common_io__compile_0',
+        '@clickhouse_ai_sdk_cpp//:sdk',
+        '@clickhouse_replxx//:_replxx',
+        '//src/Common:current_metrics',
+        '//src/Common:exception_api',
+        '//src/Common:stopwatch',
+        '//src/Common:parser_support_api',
+        ':headers',
+        '//bazel:web_ui_resources',
+    ],
+}
+
+
+def embedded_object_edits(build, rule, name, attrs):
+    """Set implementation_deps for the targets that compile ClickHouse's embedded resources."""
+    source = build.source
+    defs = constant_defs(source.module)
+    def values(node, cpu):
+        return ast.literal_eval(eval_node(node, defs, cpu))
+    if 'hdrs' in attrs or 'textual_hdrs' in attrs:
+        raise ValueError(f'{name}: now publishes headers; review its public dependencies')
+    deps = EMBEDDED_OBJECT_DEPS[name]
+    edits = []
+    if 'deps' in attrs or any(values(attrs.get('implementation_deps'), cpu) != deps for cpu in CPUS):
+        edits.append((*source.span(attrs['implementation_deps']), json.dumps(deps)))
+        for k in rule.keywords:
+            if k.arg == 'deps':
+                edits.append((source.starts[k.lineno - 1], source.starts[k.end_lineno], ''))
+    sources = [eval_node(attrs['srcs'], defs, cpu) for cpu in CPUS]
+    if ast.dump(sources[0]) != ast.dump(sources[1]):
+        raise ValueError(f'{name}: X86 and ARM source files differ')
+    # Prune inherited literal headers; keep private source globs and their exclusions unchanged.
+    parts = list_parts(sources[0])
+    if any(not isinstance(part, ast.List) and call_name(part) != 'glob' for part in parts):
+        raise ValueError(f'{name}: unexpected embedded source expression')
+    inputs = [label for part in parts if isinstance(part, ast.List) for label in ast.literal_eval(part)]
+    drop = inherited_source_headers(build, name, inputs, deps, (':headers', ':column_types'))
+    if drop:
+        for part in parts:
+            if isinstance(part, ast.List):
+                part.elts = [item for item in part.elts if item.value not in drop]
+        kept = [ast.unparse(part) for part in parts if not isinstance(part, ast.List) or part.elts]
+        edits.append((*source.span(attrs['srcs']), ' + '.join(kept) or '[]'))
+        for item in ast.walk(attrs['srcs']):
+            if isinstance(item, ast.Name) and item.id in defs and sum(
+                    isinstance(n, ast.Name) and isinstance(n.ctx, ast.Load) and n.id == item.id
+                    for n in ast.walk(source.module)) == 1:
+                declaration = defs[item.id]
+                edits.append((source.starts[declaration.lineno - 1], source.starts[declaration.end_lineno], ''))
+    return edits
+
+
+# HashedDictionary's sparsehash types and Core/Defines.h are private to the
+# three compilers. Only groups 0 and 1 compile CacheDictionary.h's SharedMutex.
+for group in range(3):
+    key = ('src/Dictionaries', f'clickhouse_dictionaries__compile_{group}')
+    private = DEPENDENCIES.setdefault(key, ([], [], []))[1]
+    private.extend([SPARSEHASH, *(['//src/Common:shared_mutex'] if group < 2 else []), '//src:core_defines'])
+
+
+def editable_dependency_lists(build, node, drop, canonical, replacements=None, *, insert_after=None):
+    """Keep list constants shared when every reader drops the same dependencies."""
+    uses = Counter(n.id for n in ast.walk(build.source.module) if isinstance(n, ast.Name) and isinstance(n.ctx, ast.Load))
+    subscripts = [n for n in ast.walk(build.source.module) if isinstance(n, ast.Subscript) and isinstance(n.value, ast.Name)]
+    edits = []
+
+    def all_readers_drop(name):
+        if not drop or replacements or insert_after:
+            return False
+        readers = 0
+        for _, rule in build.source.rules():
+            attrs = attributes(rule)
+            unused = DEPENDENCIES.get((build.package, attrs['name'].value), ([], [], []))[0]
+            if drop <= {canonical(label) for label in unused}:
+                readers += sum(ref.id == name for field in ('deps', 'implementation_deps') if field in attrs
+                               for ref in ast.walk(attrs[field]) if isinstance(ref, ast.Name))
+        return readers == uses[name]
+
+    def visit(n, writable):
+        if isinstance(n, ast.Name) and n.id in build.constants:
+            return visit(build.constants[n.id], writable and (uses[n.id] == 1 or all_readers_drop(n.id)))
+        if isinstance(n, ast.Subscript) and isinstance(n.value, ast.Name):
+            value = constant_dict_field(n, build.constants)
+            if value is None:
+                return False
+            refs = [s for s in subscripts if s.value.id == n.value.id]
+            single = (len(refs) == uses[n.value.id] and
+                      all(isinstance(s.slice, ast.Constant) for s in refs) and
+                      sum(s.slice.value == n.slice.value for s in refs) == 1)
+            return visit(value, writable and single)
+        if isinstance(n, ast.List) and all(isinstance(e, ast.Constant) and isinstance(e.value, str) for e in n.elts):
+            labels = [e.value for e in n.elts]
+            keep = [(replacements or {}).get(canonical(v), v) for v in labels if canonical(v) not in drop]
+            if insert_after and insert_after[0] in keep:
+                i = keep.index(insert_after[0]) + 1
+                keep[i:i] = insert_after[1]
+            if keep != labels:
+                if not writable:
+                    return False
+                edits.append((*build.source.span(n), json.dumps(keep)))
+            return True
+        if isinstance(n, ast.BinOp) and isinstance(n.op, ast.Add):
+            return visit(n.left, writable) and visit(n.right, writable)
+        if isinstance(n, ast.Call) and getattr(n.func, 'id', '') == 'select' and isinstance(n.args[0], ast.Dict):
+            return all(visit(branch, writable) for branch in n.args[0].values)
+        return False
+
+    return edits if visit(node, True) else None
+
+
+def declare_dbms_google_grpc_link(root):
+    """Keep the Google gRPC objects in DBMS link order without exporting their headers."""
+    path = root / 'src/BUILD.bazel'
+    build = Build(root, path, (), ())
+    rules = {attributes(rule)['name'].value: rule for _, rule in build.source.rules()}
+    if 'dbms_google_grpc_link' in rules:
+        return
+    stubs = [f'@clickhouse_google_cloud_cpp//:google_cloud_cpp_{name}_protos' for name in (
+        'api_annotations', 'api_client', 'api_field_behavior', 'api_http', 'api_launch_stage',
+        'api_resource', 'api_routing', 'iam_v1_iam_policy', 'iam_v1_options', 'iam_v1_policy',
+        'storage', 'type_date', 'type_expr',
+    )]
+    rule = rules['dbms__compile_0']
+    deps = attributes(rule)['deps']
+    for cpu in CPUS:
+        values = ast.literal_eval(eval_node(deps, constant_defs(build.source.module), cpu))
+        i = values.index(stubs[0])
+        if values[i:i + len(stubs)] != stubs:
+            raise ValueError(f'dbms__compile_0: unordered Google gRPC libraries for {cpu}')
+    edits = editable_dependency_lists(build, deps, set(stubs[1:]), lambda label: label,
+                                      {stubs[0]: ':dbms_google_grpc_link'})
+    if not edits:
+        raise ValueError('dbms__compile_0: cannot group Google gRPC dependencies')
+    start = build.source.span(rule)[0]
+    edits.append((start, start, 'cc_library(name = "dbms_google_grpc_link", implementation_deps = ' +
+                  json.dumps(stubs) + ', visibility = ["//visibility:private"])\n\n'))
+    path.write_text(build.source.rewrite(edits))
+
+
+def declare_s2_link(root):
+    """Only the S2 functions compile against S2; dbms still links the S2 objects."""
+    path = root / 'src/BUILD.bazel'
+    build = Build(root, path, (), ())
+    source = build.source
+    rules = {attributes(rule)['name'].value: rule for _, rule in source.rules()}
+    edits = []
+    if 's2_link' not in rules:
+        start = source.span(rules['dbms__compile_0'])[0]
+        edits.append((start, start, 'cc_library(name = "s2_link", implementation_deps = [' + json.dumps(S2) +
+                      '], visibility = ["//src/Functions:__pkg__", "//src/Functions/array:__pkg__"])\n\n'))
+    for target in ('dbms__compile_0', 'dbms__compile_4'):
+        deps = attributes(rules[target])['implementation_deps']
+        changed = editable_dependency_lists(build, deps, set(), lambda label: label, {S2: ':s2_link'})
+        if changed is None:
+            raise ValueError(f'{target}: cannot preserve the S2 dependency order')
+        edits.extend(changed)
+    if edits:
+        path.write_text(source.rewrite(edits))
+
+
+def usearch_implementation_dep(root):
+    """USearch supplies dbms's SimSIMD link input at its original position."""
+    path = root / 'src/BUILD.bazel'
+    build = Build(root, path, (), ())
+    rule = next(rule for _, rule in build.source.rules() if attributes(rule)['name'].value == 'dbms__compile_0')
+    deps = attributes(rule)['implementation_deps']
+    usearch = '@clickhouse_usearch//:usearch'
+    simsimd = '@clickhouse_simsimd//:_simsimd'
+    defs = constant_defs(build.source.module)
+    branches = [ast.literal_eval(eval_node(deps, defs, cpu)) for cpu in CPUS]
+    if all(row.count(usearch) == 1 and simsimd not in row for row in branches):
+        return
+    if not all(row.count(simsimd) == row.count(usearch) == 1 for row in branches):
+        raise ValueError('dbms__compile_0: expected one USearch and one SimSIMD dependency')
+    edits = editable_dependency_lists(build, deps, {usearch}, lambda label: label, {simsimd: usearch})
+    if not edits:
+        raise ValueError('dbms__compile_0: cannot replace its private SimSIMD dependency')
+    path.write_text(build.source.rewrite(edits))
+
+
+def private_poco_expat_headers(root):
+    """Keep XML/src's shared Expat headers in the C and C++ libraries that include them."""
+    path = root / 'base/poco/XML/BUILD.bazel'
+    if not path.is_file():
+        return
+    source = Build(root, path, (), ()).source
+    rules = {attributes(rule)['name'].value: rule for _, rule in source.rules()}
+    xml, expat = (rules[n] for n in ('_poco_xml', '_poco_xml_expat'))
+    attrs = attributes(expat)
+    shared = '_EXPAT_INTERNAL_HEADERS'
+    if any(isinstance(s, ast.Assign) and s.targets[0].id == shared for s in source.module.body):
+        return
+    hdrs = attrs['hdrs']
+    foundation = '//base/poco/Foundation:_poco_foundation'
+    if not (isinstance(hdrs, ast.BinOp) and isinstance(hdrs.op, ast.Add)
+            and call_name(hdrs.left) == 'glob' and ast.literal_eval(hdrs.left.args[0]) == ['include/Poco/XML/expat*.h']
+            and all(h.startswith('src/') and h.endswith('.h') for h in ast.literal_eval(hdrs.right))
+            and ast.literal_eval(attrs['deps']) == [foundation]):
+        raise ValueError('Unexpected Poco XML Expat header or dependency declarations')
+    first_var = next(s for s in source.module.body if isinstance(s, ast.Assign))
+    start = source.span(first_var)[0]
+    edits = [(start, start, f'{shared} = {source.text(hdrs.right)}\n\n'),
+             (*source.span(hdrs), source.text(hdrs.left))]
+    for rule in (xml, expat):
+        end = source.span(attributes(rule)['srcs'])[1]
+        edits.append((end, end, ' + ' + shared))
+    dep = next(kw for kw in expat.keywords if kw.arg == 'deps')
+    edits.append((*source.span(dep), f'implementation_deps = ["{foundation}"]'))
+    path.write_text(source.rewrite(edits))
+
+
+def private_function_vendor_deps(root):
+    """Preserve the static link order without exporting libcotp, libgsasl, and zxc headers."""
+    for package, name in (('src/Functions', 'clickhouse_functions_obj'),
+                          ('src/Functions/array', 'clickhouse_functions_array')):
+        path = root / package / 'BUILD.bazel'
+        if not path.exists():
+            continue
+        build = Build(root, path, (), ())
+        rule, = (rule for _, rule in build.source.rules() if attributes(rule)['name'].value == name)
+        attrs = attributes(rule)
+        if 'implementation_deps' in attrs:
+            if all(build.values(attrs['implementation_deps'], cpu)[0] == PRIVATE_VENDOR_DEPS[0] for cpu in CPUS):
+                continue
+            raise ValueError(f'{name}: unexpected implementation_deps')
+        public, private = {}, {}
+        for cpu in CPUS:
+            deps = build.values(attrs['deps'], cpu)
+            cut = deps.index(PRIVATE_VENDOR_DEPS[0])
+            public[cpu], private[cpu] = deps[:cut], deps[cut:]
+            if not set(PRIVATE_VENDOR_DEPS) <= set(private[cpu]):
+                raise ValueError(f'{name}: vendor dependency order changed')
+        def configured(values):
+            if len({tuple(row) for row in values.values()}) == 1:
+                return json.dumps(next(iter(values.values())))
+            return 'select(' + json.dumps({'@platforms//cpu:' + cpu: row for cpu, row in values.items()}) + ')'
+        start, end = build.source.span(attrs['deps'])
+        path.write_text(build.source.rewrite([
+            (start, end, configured(public) + ',\n    implementation_deps = ' + configured(private)),
+        ]))
+
+
+
+def apply(root):
+    """Set the declared visibility of each dependency without changing select conditions."""
+    private_poco_expat_headers(root)
+    # Older CMake imports declare cc_library wrappers at these labels instead of aliases.
+    aliases = {}
+    for pkg in ('contrib/libxml2-cmake', 'contrib/lz4-cmake'):
+        path = root / pkg / 'BUILD.bazel'
+        if path.is_file():
+            source = Build(root, path, (), ()).source
+            edits = []
+            for statement, rule in source.rules():
+                attrs = attributes(rule)
+                name = getattr(attrs.get('name'), 'value', None)
+                if pkg == 'contrib/libxml2-cmake' and name == 'libxml2_config_headers':
+                    # _libxml2 publishes xmlversion.h and owns its private config.h.
+                    kind = call_name(rule)
+                    if not ((kind == 'alias' and attrs['actual'].value == '@clickhouse_libxml2//:_libxml2') or
+                            (kind == 'cc_library' and set(attrs) == {'name', 'hdrs', 'includes'})):
+                        raise ValueError('Unexpected libxml2 configuration-header target')
+                    edits.append((*source.span(statement), ''))
+                elif call_name(rule) == 'alias' and isinstance(attrs['actual'], ast.Constant):
+                    aliases[canonical_dependency(name, pkg, '@clickhouse')] = attrs['actual'].value
+            if edits:
+                path.write_text(source.rewrite(edits).rstrip() + '\n')
+    for package in sorted({package for package, _ in DEPENDENCIES}):
+        repository = package if package.startswith('@') else '@clickhouse'
+        local_package = '' if package.startswith('@') else package
+        path = (root / 'bazel/dependencies' / (repository[1:] + '.BUILD.bazel')
+                if package.startswith('@') else root / package / 'BUILD.bazel')
+        build = Build(root, path, (), ())
+        source = build.source
+        edits = []
+        found = set()
+        embedded = set()
+        canonical = lambda label: canonical_dependency(label, local_package, repository)
+        for _, rule in source.rules():
+            attrs = {k.arg: k.value for k in rule.keywords}
+            name = getattr(attrs.get('name'), 'value', None)
+            if (package, name) == ('src/Storages/System', 'clickhouse_storages_system_information_schema'):
+                # attachInformationSchemaTables.h includes only Interpreters/Context_fwd.h.
+                private = [
+                    '//src/Common', '@clickhouse_icu//:_icuuc', '//src:clickhouse_common_io__compile_0',
+                    '//base/poco/Foundation:_poco_foundation',
+                    '//src/Common/ZooKeeper:clickhouse_common_zookeeper_base', '//src/Parsers:headers',
+                    '//src:headers', '//src/Parsers:parser_api', ':headers',
+                ]
+                for field, owners in (('deps', ['//src:with_context']), ('implementation_deps', private)):
+                    edits.append((*source.span(attrs[field]), json.dumps(owners)))
+                inputs = ast.literal_eval(attrs['srcs'])
+                drop = inherited_source_headers(build, name, inputs, private, (':headers',))
+                if drop:
+                    edits.append((*source.span(attrs['srcs']), json.dumps([v for v in inputs if v not in drop])))
+                continue
+            if package == 'src' and name in EMBEDDED_OBJECT_DEPS:
+                edits.extend(embedded_object_edits(build, rule, name, attrs))
+                embedded.add(name)
+                continue
+            if (package, name) in {('src/Functions', 'clickhouse_functions_obj'),
+                                   ('src/Functions/array', 'clickhouse_functions_array')}:
+                # Keep both linker inputs in their original positions without exporting their headers.
+                link = ':minizip_link' if package == 'src/Functions' else '//src/Functions:minizip_link'
+                replacements = {MINIZIP: link, S2: '//src:s2_link'}
+                if package == 'src/Functions' and not any(
+                        attributes(other)['name'].value == 'minizip_link' for _, other in source.rules()):
+                    start = source.span(rule)[0]
+                    edits.append((start, start,
+                                  'cc_library(name = "minizip_link", implementation_deps = [' +
+                                  json.dumps(MINIZIP) + '], visibility = ["//src/Functions/array:__pkg__"])\n\n'))
+                # capnp, icui18n and upb_textformat_lib already forward these libraries.
+                unused, private, public = DEPENDENCIES[package, name]
+                if private or public:
+                    raise ValueError(f'{name}: dependency replacements must preserve visibility')
+                unused = {canonical(v) for v in [*unused, UPB_WIRE, '@clickhouse_capnproto//:_kj', '@clickhouse_icu//:_icuuc']}
+                for field in ('deps', 'implementation_deps'):
+                    if field not in attrs:
+                        continue
+                    direct = editable_dependency_lists(build, attrs[field], unused, canonical, replacements)
+                    if direct is None:
+                        raise ValueError(f'{name}: cannot preserve the Minizip and S2 dependency order')
+                    edits.extend(direct)
+                found.add(name)
+                continue
+            spec = DEPENDENCIES.get((package, name))
+            if spec is None:
+                continue
+            found.add(name)
+            unused, private, public = spec
+            if package == 'src' and name in ('dbms__compile_0', 'clickhouse_common_io__compile_0'):
+                # The CMake import predates some header owners. Only move existing edges.
+                defs = constant_defs(source.module)
+                present = [{canonical(v) for field in ('deps', 'implementation_deps')
+                            for v in ast.literal_eval(eval_node(attrs.get(field), defs, cpu))} for cpu in CPUS]
+                for label in private + public:
+                    if (canonical(label) in present[0]) != (canonical(label) in present[1]):
+                        raise ValueError(f'{name}: measured dependency differs by CPU: {label}')
+                private = [v for v in private if v == TZDATA or canonical(v) in present[0]]
+                public = [v for v in public if canonical(v) in present[0]]
+            for field, discard, add in (
+                    ('deps', unused + private, public),
+                    ('implementation_deps', unused + public, private)):
+                original = attrs.get(field)
+                if original is None and not add:
+                    continue
+                if (package, name, field) == ('src', 'benchmark_runtime_filter_objects', 'deps'):
+                    # CMake links dbms to the optional executable. The seven benchmark
+                    # objects have no public headers and consume the private dependencies above.
+                    edits.append((*source.span(original), '[]'))
+                    continue
+                node = build.expand(original) if original is not None else ast.List(elts=[], ctx=ast.Load())
+                # factored compile attributes use dict(...)[field].
+                class Field(ast.NodeTransformer):
+                    def visit_Subscript(self, sub):
+                        sub = self.generic_visit(sub)
+                        field = constant_dict_field(sub, {})
+                        if field is not None:
+                            return field
+                        raise ValueError(f'{package}:{name}: unsupported dependency expression {ast.unparse(sub)}')
+                node = Field().visit(node)
+                values = [{canonical(v) for v in build.values(node, cpu)} for cpu in CPUS]
+                omit = {canonical(v) for v in discard}
+                required, supplied = PRIVATE_PROVIDERS.get((package, name), ((), ()))
+                inherited = field == 'implementation_deps' and required and all(
+                    canonical(dep) in row for dep in required for row in values)
+                if inherited:
+                    omit.update(canonical(v) for v in supplied)
+                insert_after = None
+                if (package, name, field) == ('src', 'clickhouse_common_io__compile_0', 'implementation_deps'):
+                    # Keep widechar_width, Minizip and clickhouse_common_config after FrequencyHolder.o in unit_tests_dbms.
+                    anchor = ':clickhouse_common_io_embedded'
+                    following = ['//base/widechar_width', MINIZIP, '//src/Common/Config:clickhouse_common_config']
+                    if not all({canonical(v) for v in [anchor, *following]} <= row for row in values):
+                        raise ValueError(f'{name}: expected embedded, Minizip and configuration dependencies')
+                    omit.update(canonical(v) for v in following)
+                    insert_after = (anchor, following)
+                missing = [v for v in add if not all(canonical(v) in existing for existing in values)]
+                if (package, name, field) == ('src', 'unit_tests_dbms', 'deps'):
+                    # These owners are already reachable through clickhouse_functions_obj.
+                    # Keep their LinkerInputs in the same order when declaring them directly.
+                    branches = {}
+                    for cpu in CPUS:
+                        before = build.values(node, cpu)
+                        drop = omit | {canonical(v) for v in missing + UNIT_TEST_FUNCTION_DEPS}
+                        if cpu == 'x86_64':
+                            drop.add(canonical('@clickhouse_fastops//:_fastops'))
+                        ordered = missing + [v for v in before if canonical(v) not in drop]
+                        lz4_frame = aliases.get(canonical('//contrib/lz4-cmake:_lz4'))
+                        if lz4_frame in ordered:
+                            # Preserve the first LZ4 dependency for the ordered direct module maps.
+                            ordered = list(dict.fromkeys(
+                                lz4_frame if dep == '//contrib/lz4-cmake:_lz4' else dep for dep in ordered))
+                        # gtest_interval_tree.cpp links IntervalTree.cpp's explicit instantiations.
+                        interval_tree = '//src/Common:interval_tree'
+                        ordered = [interval_tree if dep == ':clickhouse_common_io__compile_2' else dep
+                                   for dep in ordered]
+                        if (interval_tree not in ordered and
+                                '//src/Common:tests/gtest_interval_tree.cpp' in build.values(attrs.get('srcs'), cpu)):
+                            # 9cd6b1b placed IntervalTree between the Poco objects and ThreadFuzzer.
+                            following = ':clickhouse_common_io__compile_3'
+                            predecessors = (
+                                '//base/poco/NetSSL_OpenSSL:_poco_net_ssl__compile_1',
+                                '//base/poco/NetSSL_OpenSSL:secure_socket',
+                                '//base/poco/Foundation:thread_pool',
+                                '@clickhouse_heks//:heks',
+                            )
+                            i = (ordered.index(following) if following in ordered else
+                                 max((i + 1 for i, dep in enumerate(ordered) if dep in predecessors),
+                                     default=len(ordered)))
+                            ordered.insert(i, interval_tree)
+                        # Storage links its gRPC objects before its REST objects in unit_tests_dbms.
+                        storage = '@clickhouse_google_cloud_cpp//:google_cloud_cpp_storage'
+                        rest = '@clickhouse_google_cloud_cpp//:google_cloud_cpp_rest_internal'
+                        if storage in ordered and rest in ordered:
+                            ordered.remove(rest)
+                            ordered.insert(ordered.index(storage) + 1, rest)
+                        i = ordered.index('//src/Functions:clickhouse_functions_obj')
+                        ordered[i:i] = UNIT_TEST_FUNCTION_DEPS
+                        branches['@platforms//cpu:' + cpu] = ordered
+                    if any(branches['@platforms//cpu:' + cpu] != build.values(node, cpu) for cpu in CPUS):
+                        # Keep factored lists when only unused labels were removed.
+                        direct = editable_dependency_lists(build, original, omit, canonical)
+                        if direct is not None and all(branches['@platforms//cpu:' + cpu] ==
+                                [v for v in build.values(node, cpu) if canonical(v) not in omit] for cpu in CPUS):
+                            edits.extend(direct)
+                        else:
+                            edits.append((*source.span(original), 'select(' + json.dumps(branches) + ')'))
+                    continue
+                if (package, name, field) == ('src', 'headers', 'deps'):
+                    hive = '@clickhouse_hive_metastore//:_hivemetastore'
+                    if any(hive in row for row in values):
+                        # CertificateReloader.h and FileEncryptionCommon.h include OpenSSL.
+                        crypto = '@clickhouse_openssl//:crypto'
+                        direct = editable_dependency_lists(build, original, omit, canonical, {hive: crypto},
+                                                           insert_after=(crypto, ['@clickhouse_openssl//:ssl']))
+                        if direct is None:
+                            raise ValueError('src:headers: cannot replace the Hive Metastore dependency')
+                        edits.extend(direct)
+                        continue
+                if not missing and not any(omit & existing for existing in values):
+                    continue
+                if (package, name, field) == ('base/poco/Foundation', '_poco_foundation', 'implementation_deps'):
+                    # Keep libunwind immediately after PCRE in the ARM unit_tests_dbms link.
+                    pcre, = [v for v in original.elts if getattr(v, 'value', None) == ':_poco_foundation_pcre']
+                    end = source.span(pcre)[1]
+                    edits.append((end, end, ', ' + json.dumps(UNWIND)))
+                    continue
+                drop = omit | {canonical(v) for v in missing}
+                # :clickhouse_common_zookeeper_base selects the LLVM backend, and
+                # libhdfs3 selects ISA-L. Those dependencies retain their CPU guards.
+                # The CMake program link owns the x86-only harmful archive.
+                if ((field == 'deps' and (package, name) in {
+                            ('programs', 'clickhouse__compile_0'),
+                            ('src/Common/ZooKeeper', 'clickhouse_common_zookeeper'),
+                            ('src/Functions/GatherUtils', 'clickhouse_functions_gatherutils'),
+                        }) or inherited and all(isinstance(part, ast.List) or
+                            set(cpu_choices(part)) == {'@platforms//cpu:' + cpu for cpu in CPUS}
+                            for part in list_parts(node))):
+                    remaining = [[v for v in build.values(node, cpu) if canonical(v) not in drop] for cpu in CPUS]
+                    if remaining[0] == remaining[1]:
+                        edits.append((*source.span(original), json.dumps(missing + remaining[0])))
+                        continue
+                if original is not None:
+                    direct = editable_dependency_lists(build, original, drop, canonical, insert_after=insert_after)
+                    if direct is None and insert_after:
+                        raise ValueError(f'{name}: cannot reorder implementation_deps')
+                    if direct is not None:
+                        edits.extend(direct)
+                        if missing:
+                            start = source.span(original)[0]
+                            if source.text(original).startswith('[') and not any(a == start for a, _, _ in direct):
+                                edits.append((start, start + 1, json.dumps(missing)[:-1] + ', '))
+                            else:
+                                edits.append((start, start, json.dumps(missing) + ' + '))
+                        continue
+                for item in ast.walk(node):
+                    if isinstance(item, ast.List):
+                        item.elts = [v for v in item.elts if not (
+                            isinstance(v, ast.Constant) and isinstance(v.value, str) and canonical(v.value) in drop)]
+                result = (ast.unparse(node) if any(drop & existing for existing in values)
+                          else source.text(original) if original is not None else '[]')
+                if missing:
+                    result = json.dumps(missing) + ' + ' + result if original is not None else json.dumps(missing)
+                if original is not None:
+                    edits.append((*source.span(original), result))
+                else:
+                    end = source.span(rule)[1] - 1
+                    edits.append((end, end, f'\n    {field} = {result},\n'))
+        if embedded and embedded != EMBEDDED_OBJECT_DEPS.keys():
+            raise ValueError(f'{package}: incomplete native #embed object rules')
+        if found != {n for pkg, n in DEPENDENCIES if pkg == package}:
+            raise ValueError(f'{package}: missing measured dependency target')
+        if edits:
+            path.write_text(source.rewrite(dict.fromkeys(edits)))
+
+    usearch_implementation_dep(root)
+    declare_s2_link(root)
+    declare_dbms_google_grpc_link(root)
+    private_function_vendor_deps(root)

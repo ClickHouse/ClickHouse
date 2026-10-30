@@ -1,0 +1,189 @@
+load("@bazel_skylib//rules:expand_template.bzl", "expand_template")
+load("@clickhouse//bazel/rules:ch_cc_library.bzl", "CXX_RUNTIME_DEFINES", "ch_cc_library")
+
+package(default_visibility = ["//visibility:public"])
+
+exports_files([
+    "LICENSE.txt",
+])
+
+expand_template(
+    name = "configure_driver_config_hpp",
+    out = "config/contrib/cassandra-cmake/driver_config.hpp",
+    substitutions = {
+        "#cmakedefine HAVE_BUILTIN_BSWAP32": "#define HAVE_BUILTIN_BSWAP32",
+        "#cmakedefine HAVE_BUILTIN_BSWAP64": "#define HAVE_BUILTIN_BSWAP64",
+        "#cmakedefine HAVE_BOOST_ATOMIC": "/* #undef HAVE_BOOST_ATOMIC */",
+        "#cmakedefine HAVE_SIGTIMEDWAIT": "#define HAVE_SIGTIMEDWAIT",
+        "#cmakedefine HAVE_ARC4RANDOM": "/* #undef HAVE_ARC4RANDOM */",
+        "#cmakedefine HAVE_STD_ATOMIC": "#define HAVE_STD_ATOMIC",
+        "#cmakedefine HAVE_GETRANDOM": "/* #undef HAVE_GETRANDOM */",
+        "#cmakedefine HAVE_NOSIGPIPE": "/* #undef HAVE_NOSIGPIPE */",
+        "#cmakedefine HAVE_KERBEROS": "/* #undef HAVE_KERBEROS */",
+        "#cmakedefine HAVE_OPENSSL": "#define HAVE_OPENSSL",
+        "#cmakedefine HAVE_TIMERFD": "/* #undef HAVE_TIMERFD */",
+        "#cmakedefine HASH_IN_TR1": "/* #undef HASH_IN_TR1 */",
+        "#cmakedefine HAVE_ZLIB": "#define HAVE_ZLIB",
+    },
+    template = ":driver_config.hpp.in",
+)
+
+ch_cc_library(
+    name = "_cassandra",
+    srcs = [
+        ":config/contrib/cassandra-cmake/driver_config.hpp",
+    ] + glob(
+        ["src/*.cpp"],
+        exclude = [
+            "src/get_time-mac.cpp",
+            "src/get_time-win.cpp",
+        ],
+    ) + [
+        "src/ssl/ssl_openssl_impl.cpp",
+        "src/ssl/ring_buffer_bio.cpp",
+    ] + glob(
+        [
+            "src/*.hpp",
+            "src/atomic/atomic_std.hpp",
+            "src/ssl/*.hpp",
+            "src/third_party/mt19937_64/*.hpp",
+            "src/third_party/rapidjson/rapidjson/*.h",
+            "src/third_party/rapidjson/rapidjson/error/*.h",
+            "src/third_party/rapidjson/rapidjson/internal/*.h",
+        ],
+        exclude = [
+            "src/spsc_queue.hpp",
+            "src/ssl/ssl_no_impl.hpp",
+            "src/third_party/rapidjson/rapidjson/cursorstreamwrapper.h",
+            "src/third_party/rapidjson/rapidjson/error/en.h",
+            "src/third_party/rapidjson/rapidjson/filereadstream.h",
+            "src/third_party/rapidjson/rapidjson/filewritestream.h",
+            "src/third_party/rapidjson/rapidjson/fwd.h",
+            "src/third_party/rapidjson/rapidjson/internal/regex.h",
+            "src/third_party/rapidjson/rapidjson/istreamwrapper.h",
+            "src/third_party/rapidjson/rapidjson/memorybuffer.h",
+            "src/third_party/rapidjson/rapidjson/ostreamwrapper.h",
+            "src/third_party/rapidjson/rapidjson/pointer.h",
+            "src/third_party/rapidjson/rapidjson/prettywriter.h",
+            "src/third_party/rapidjson/rapidjson/schema.h",
+        ],
+    ),
+    hdrs = glob(["include/**/*.h"]),
+    copts = [
+        "-w",
+        "-std=c++17",
+    ],
+    implementation_deps = [
+        ":_curl_hostcheck",
+        ":_hdr_histogram",
+        ":_http-parser",
+        "@clickhouse_openssl//:crypto",
+        "@clickhouse_openssl//:ssl",
+        "@clickhouse_libuv//:_uv",
+        "@clickhouse_minizip_ng//:_minizip",
+        "@clickhouse_sparsehash_c11//:sparsehash_c11",
+    ],
+    includes = [
+        "include",
+    ],
+    local_defines = select({
+        "@platforms//cpu:x86_64": [
+            "CASS_BUILDING",
+        ],
+        "@platforms//cpu:aarch64": [
+            "ARM_ACLE",
+            "ARM_ASM_HWCAP",
+            "ARM_AUXV_HAS_CRC32",
+            "ARM_AUXV_HAS_NEON",
+            "ARM_FEATURES",
+            "ARM_NEON",
+            "ARM_NEON_HASLD4",
+            "CASS_BUILDING",
+            "HAVE_ARM_ACLE_H",
+        ],
+    }) + [
+        "HAVE_ATTRIBUTE_ALIGNED",
+        "HAVE_BUILTIN_CTZ",
+        "HAVE_BUILTIN_CTZLL",
+        "HAVE_POSIX_MEMALIGN",
+    ] + select({
+        "@platforms//cpu:x86_64": [],
+        "@platforms//cpu:aarch64": [
+            "HAVE_SYS_AUXV_H",
+        ],
+    }) + [
+        "HAVE_VISIBILITY_HIDDEN",
+        "HAVE_VISIBILITY_INTERNAL",
+        "MZ_COMPAT_VERSION=110",
+        "SPARSEHASH_HASH=std::hash",
+        "STD_EXCEPTION_HAS_STACK_TRACE=1",
+        "UNALIGNED_OK",
+        "WITH_GZFILEOP",
+        "X86_64",
+    ] + select({
+        "@platforms//cpu:x86_64": [
+            "X86_AVX2",
+            "X86_FEATURES",
+            "X86_PCLMULQDQ_CRC",
+            "X86_SSE2",
+            "X86_SSE42",
+            "X86_SSSE3",
+        ],
+        "@platforms//cpu:aarch64": [],
+    }) + [
+        "ZLIB_COMPAT",
+        "_LIBCPP_ENABLE_THREAD_SAFETY_ANNOTATIONS",
+        "_LIBCPP_REMOVE_TRANSITIVE_INCLUDES=1",
+        "_LIBUNWIND_IS_NATIVE_ONLY",
+        "sparsehash=google",
+    ],
+    local_includes = [
+        "config/contrib/cassandra-cmake",
+        "src/ssl",
+        "src/third_party/mt19937_64",
+        "src/third_party/rapidjson/rapidjson",
+        "src",
+    ],
+)
+
+ch_cc_library(
+    name = "_curl_hostcheck",
+    srcs = [
+        "src/third_party/curl/hostcheck.cpp",
+    ],
+    hdrs = glob(["src/third_party/curl/**/*.hpp"]),
+    copts =
+        [
+            "-w",
+            "-std=c++17",
+        ],
+    includes = ["src/third_party/curl"],
+    alwayslink = True,
+)
+
+ch_cc_library(
+    name = "_hdr_histogram",
+    srcs = [
+        "src/third_party/hdr_histogram/hdr_histogram.cpp",
+    ],
+    hdrs = glob(["src/third_party/hdr_histogram/**/*.hpp"]),
+    copts =
+        [
+            "-w",
+            "-std=c++17",
+        ],
+    includes = ["src/third_party/hdr_histogram"],
+    alwayslink = True,
+)
+
+ch_cc_library(
+    name = "_http-parser",
+    srcs = [
+        "src/third_party/http-parser/http_parser.c",
+    ],
+    hdrs = glob(["src/third_party/http-parser/**/*.h"]),
+    includes = ["src/third_party/http-parser"],
+    language = "C",
+    local_defines = CXX_RUNTIME_DEFINES,
+    alwayslink = True,
+)

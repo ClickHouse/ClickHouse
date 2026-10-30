@@ -1,0 +1,30 @@
+load("@clickhouse//bazel/rules:ch_cc_library.bzl", "ch_cc_library")
+
+package(default_visibility = ["//visibility:public"])
+
+_PRIVATE_ANTLR4_GRAMMARS_HEADERS = [
+    "generated/antlr4_grammars/PromQLParserBaseListener.h",
+    "generated/antlr4_grammars/PromQLParserListener.h",
+]
+
+ch_cc_library(
+    name = "clickhouse_antlr4_grammars",
+    srcs = glob(["generated/antlr4_grammars/*.cpp"]) + _PRIVATE_ANTLR4_GRAMMARS_HEADERS,
+    hdrs = glob(
+        [
+            "generated/antlr4_grammars/*.h",
+        ],
+        exclude = _PRIVATE_ANTLR4_GRAMMARS_HEADERS,
+    ),
+    clickhouse_code = True,
+    copts = [
+        "-w",
+        "-fno-xray-instrument",
+    ],
+    includes = ["generated"],
+    link_runtime = True,
+    deps = [
+        "@clickhouse_antlr4_cpp_runtime//:_ch_contrib_antlr4_cpp_runtime",
+        "//base/glibc-compatibility",
+    ],
+)

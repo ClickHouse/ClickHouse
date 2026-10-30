@@ -1,0 +1,133 @@
+# Use ClickHouse's LLVM fork for both the compiler and its libraries.
+llvm = use_extension("@llvm//extensions:llvm.bzl", "llvm")
+llvm.version(llvm_version = "22.1.1")
+llvm.configure(targets = ["AArch64", "X86"])
+llvm.from_git(
+    remote = "https://github.com/ClickHouse/llvm-project.git",
+    commit = "86b7fe802669a4513da4931d909c36f4728729b9",
+    sparse_checkout_patterns = [
+        "/*",
+        "!/flang-rt",
+        "!/flang",
+        "!/polly",
+        "!/orc-rt",
+        "!/libclc",
+        "!/offload",
+        "!/libc/docs",
+        "!/libc/utils/gn",
+        "!/llvm/utils/mlgo-utils/*",
+        "!/bolt/test/*",
+        "!/bolt/docs/*",
+        "!/clang-tools-extra/test/*",
+        "!/clang-tools-extra/docs/*",
+        "!/clang/test/*",
+        "!/clang/docs/*",
+        "!/compiler-rt/test/*",
+        "!/compiler-rt/docs/*",
+        "!/libcxx/test/*",
+        "!/libcxx/docs/*",
+        "!/libcxxabi/test/*",
+        "!/libcxxabi/docs/*",
+        "!/libunwind/test/*",
+        "!/libunwind/docs/*",
+        "!/lld/test/*",
+        "!/lld/docs/*",
+        "!/lldb/test/*",
+        "!/lldb/docs/*",
+        "!/llvm/test/*",
+        "!/llvm/docs/*",
+        "!/mlir/docs/*",
+        "!/utils/bazel/llvm-project-overlay/openmp/runtime/",
+    ],
+    files = {
+        "compiler-rt/lib/xray/clickhouse-reject-modes.cpp": "//contrib:compiler-rt-cmake/xray_reject_modes.cpp",
+        "libc/src/string/x86_cpu_dispatch.h": "//contrib/libllvmlibc-cmake:string/x86_cpu_dispatch.h",
+        "libc/src/string/x86_64_mem_functions.cpp": "//contrib/libllvmlibc-cmake:string/x86_64_mem_functions.cpp",
+        "libc/src/string/aarch64_mem_functions.cpp": "//contrib/libllvmlibc-cmake:string/aarch64_mem_functions.cpp",
+        "libunwind/src/clickhouse-unwind-override.c": "//contrib:libunwind-cmake/unwind-override.c",
+        "libc/src/string/clickhouse-mem-functions.cpp": "//contrib/libllvmlibc-cmake:string/mem_functions.cpp",
+        "libc/src/string/clickhouse-memmem.cpp": "//contrib/libllvmlibc-cmake:string/memmem.cpp",
+    },
+    patch_args = ["-p1"],
+    patches = [
+        "@llvm//3rd_party/llvm-project/x.x/patches:llvm-macho-arm64e-x1.patch",
+        "//bazel/patches:llvm-clickhouse-lld-coff-thinlto-lazy-index.patch",
+        "@llvm//3rd_party/llvm-project/22.x/patches:lld-coff-lto-weak-alias-prevailing.patch",
+        "@llvm//3rd_party/llvm-project/22.x/patches:llvm-link-multicall.patch",
+        "//bazel/patches:llvm-clickhouse-llvm-profdata-multicall.patch",
+        "@llvm//3rd_party/llvm-project/22.x/patches:clang-format-multicall.patch",
+        "//bazel/patches:llvm-clickhouse-clang-tidy-multicall.patch",
+        "@llvm//3rd_party/llvm-project/22.x/patches:clangd-multicall.patch",
+        "@llvm//3rd_party/llvm-project/22.x/patches:windows_link_and_genrule.patch",
+        "@llvm//3rd_party/llvm-project/22.x/patches:bundle_resources_no_python.patch",
+        "@llvm//3rd_party/llvm-project/22.x/patches:no_rules_python.patch",
+        "@llvm//3rd_party/llvm-project/22.x/patches:llvm-windows-stack-size.patch",
+        "@llvm//3rd_party/llvm-project/22.x/patches:clang-bazel-static-windows.patch",
+        "@llvm//3rd_party/llvm-project/22.x/patches:libcxx-lgamma_r.patch",
+        "@llvm//3rd_party/llvm-project/x.x/patches:libcxx-vcruntime-nothrow.patch",
+        "@llvm//3rd_party/llvm-project/22.x/patches:llvm-bazel-blake3-windows-gnu.patch",
+        "@llvm//3rd_party/llvm-project/22.x/patches:llvm-bazel-windows-arm64-config.patch",
+        "@llvm//3rd_party/llvm-project/x.x/patches:llvm-bazel-libxml2.patch",
+        "@llvm//3rd_party/llvm-project/before23.x/patches:llvm-extra.patch",
+        "@llvm//3rd_party/llvm-project/before23.x/patches:llvm-bzl-library.patch",
+        "@llvm//3rd_party/llvm-project/before23.x/patches:llvm-cov-multicall.patch",
+        "@llvm//3rd_party/llvm-project/before23.x/patches:llvm-readtapi-multicall.patch",
+        "@llvm//3rd_party/llvm-project/before23.x/patches:llvm-install-name-tool-output.patch",
+        "//bazel/patches:llvm-clickhouse-llvm-driver-tool-order.patch",
+        "//bazel/patches:llvm-clickhouse-llvm-dsymutil-corefoundation.patch",
+        "@llvm//3rd_party/llvm-project/before23.x/patches:pfm-rules-cc-load.patch",
+        "@llvm//3rd_party/llvm-project/before23.x/patches:clang-hardlink-filenames.patch",
+        "@llvm//3rd_party/llvm-project/before23.x/patches:thinlto-roundtrip-before-codegen.patch",
+        "@llvm//3rd_party/llvm-project/before23.x/patches:llvm-abi-breaking-checks.patch",
+        "@llvm//3rd_party/llvm-project/x.x/patches:llvm-musl-stack-size.patch",
+        "@llvm//3rd_party/llvm-project/x.x/patches:clang-prepend-arg-reexec.patch",
+        "@llvm//3rd_party/llvm-project/x.x/patches:no_frontend_builtin_headers.patch",
+        "@llvm//3rd_party/llvm-project/x.x/patches:llvm-driver-best-tool-match.patch",
+        "@llvm//3rd_party/llvm-project/x.x/patches:compiler-rt-symbolizer_skip_cxa_atexit.patch",
+        "@llvm//3rd_party/llvm-project/x.x/patches:lit_test_stub.patch",
+        "@llvm//3rd_party/llvm-project/x.x/patches:lld-macho-thinlto-obj-path.patch",
+        "@llvm//3rd_party/llvm-project/x.x/patches:llvm-bazel-msvc-trapping-math.patch",
+        "//bazel/patches:llvm-clickhouse-exception-abi.patch",
+        "//bazel/patches:llvm-clickhouse-embed-dependency-paths.patch",
+    ],
+)
+use_repo(llvm, "llvm-project")
+
+# Match ClickHouse's CMake SDK: glibc C++ string overloads and Linux API constants.
+glibc = use_extension("@llvm//runtimes/glibc/extension:glibc.bzl", "glibc")
+glibc.patch(
+    repository = "glibc_headers_aarch64-linux-gnu.2.28",
+    patches = [
+        "//bazel/patches:glibc-2.28-aarch64-hwcap2-madvise.patch",
+        "//bazel/patches:glibc-string-cxx-prototypes.patch",
+    ],
+)
+glibc.patch(
+    repository = "glibc_headers_x86_64-linux-gnu.2.27",
+    patches = ["//bazel/patches:glibc-string-cxx-prototypes.patch"],
+)
+# The glibc sources and GNU ABI notes used by the native ClickHouse startup objects.
+glibc.pie_startup(
+    arch = "x86_64",
+    cet = True,
+    minimum_kernel = "3.2.0",
+    version = "2.31",
+)
+glibc.pie_startup(
+    arch = "aarch64",
+    minimum_kernel = "3.7.0",
+    version = "2.28",
+)
+use_repo(glibc, "glibc")
+inject_repo(glibc, "binutils")
+
+kernel_headers = use_extension("@llvm//kernel/extension:kernel_headers.bzl", "kernel_headers")
+kernel_headers.patch(
+    repository = "linux_kernel_headers_arm64.4.19.325",
+    patches = ["//bazel/patches:linux-4.19.325-arm64-hwcap2-madvise.patch"],
+)
+kernel_headers.patch(
+    repository = "linux_kernel_headers_x86.4.15.18",
+    patches = ["//bazel/patches:linux-4.15.18-x86-seccomp-spec-allow.patch"],
+)
+use_repo(kernel_headers, "kernel_headers")

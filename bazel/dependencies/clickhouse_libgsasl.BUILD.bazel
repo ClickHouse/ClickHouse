@@ -1,0 +1,96 @@
+load("@clickhouse//bazel/rules:ch_cc_library.bzl", "ch_cc_library")
+
+package(default_visibility = ["//visibility:public"])
+
+exports_files([
+    "LICENSE",
+])
+
+ch_cc_library(
+    name = "_gsasl",
+    srcs = [
+        "gl/gc-gnulib.c",
+        "gl/printf-parse.c",
+        "gl/c-ctype.c",
+        "gl/float.c",
+        "gl/printf-args.c",
+        "gl/strverscmp.c",
+        "gl/hmac-sha1.c",
+        "gl/itold.c",
+        "gl/hmac-md5.c",
+        "gl/gc-pbkdf2-sha1.c",
+        "gl/md5.c",
+        "gl/base64.c",
+        "gl/memxor.c",
+        "gl/sha1.c",
+    ] + glob(["openid20/*.c"]) + glob([
+        "anonymous/*.c",
+        "saml20/*.c",
+        "scram/*.c",
+    ]) + [
+        "src/free.c",
+        "src/supportp.c",
+        "src/init.c",
+        "src/mechtools.c",
+        "src/error.c",
+        "src/property.c",
+        "src/done.c",
+        "src/callback.c",
+        "src/xstart.c",
+        "src/xfinish.c",
+        "src/version.c",
+        "src/xstep.c",
+        "src/mechname.c",
+        "src/xcode.c",
+        "src/crypto.c",
+        "src/doxygen.c",
+        "src/suggest.c",
+        "src/saslprep.c",
+        "src/listmech.c",
+        "src/register.c",
+        "src/base64.c",
+        "src/md5pwd.c",
+    ] + glob([
+        "external/*.c",
+        "securid/*.c",
+    ]) + glob(["plain/*.c"]) + glob(["cram-md5/*.c"]) + glob(
+        ["digest-md5/*.c"],
+        exclude = ["digest-md5/test-parser.c"],
+    ) + glob(["login/*.c"]) + glob(["gssapi/*.c"]) + glob(
+        ["**/*.h"],
+        exclude = [
+            "src/gsasl*.h",
+            "linux_x86_64/include/alloca.h",
+            "gl/float+.h",
+            "gl/size_max.h",
+            "gl/str-two-way.h",
+            "gl/vasnprintf.h",
+            "gl/verify.h",
+            "gs2/gs2helper.h",
+        ],
+    ),
+    hdrs = glob(["src/gsasl*.h"]),
+    implementation_deps = [
+        "@clickhouse_krb5//:_krb5",
+        "@clickhouse_openssl//:crypto",
+    ],
+    includes = [
+        "src",
+    ],
+    language = "C",
+    local_defines = [
+        "HAVE_CONFIG_H=1",
+        "HAVE_GSSAPI_H=1",
+        "STD_EXCEPTION_HAS_STACK_TRACE=1",
+        "USE_GSSAPI=1",
+        "_LIBCPP_ENABLE_THREAD_SAFETY_ANNOTATIONS",
+        "_LIBCPP_REMOVE_TRANSITIVE_INCLUDES=1",
+        "_LIBUNWIND_IS_NATIVE_ONLY",
+    ],
+    local_includes = [
+        ".",
+        "gl",
+        "digest-md5",
+        "configured/private",
+    ],
+)

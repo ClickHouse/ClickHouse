@@ -1,0 +1,23 @@
+load("@clickhouse//bazel/rules:ch_cc_library.bzl", "ch_cc_library")
+load("@clickhouse//programs:program_defines.bzl", "CLICKHOUSE_PROGRAM_COMPRESSION_DEFINES")
+
+package(default_visibility = ["//visibility:public"])
+
+ch_cc_library(
+    name = "clickhouse-keeper-data-dumper-lib",
+    srcs = ["KeeperDataDumper.cpp"],
+    clickhouse_code = True,
+    implementation_deps = [
+        "//base/poco/Foundation:_poco_foundation",
+        "//src/Common",
+        "@clickhouse_nuraft//:_nuraft",
+        "//src/Common/ZooKeeper:headers",
+        "//src/Dictionaries:clickhouse_dictionaries",
+        "//src/Common:exception_api",
+        "//src/Common:assert_cast",
+        "//src/Common:parser_support_api",
+        "//src:headers",
+    ],
+    link_runtime = True,
+    local_defines = CLICKHOUSE_PROGRAM_COMPRESSION_DEFINES,
+)

@@ -1,0 +1,78 @@
+diff --git a/bazel/private/cc_proto_support.bzl b/bazel/private/cc_proto_support.bzl
+--- a/bazel/private/cc_proto_support.bzl
++++ b/bazel/private/cc_proto_support.bzl
+@@ -61,13 +61,14 @@
+             outputs.append(library_to_link.interface_library)
+     return outputs
+ 
+-def cc_proto_compile_and_link(ctx, deps, sources, headers, disallow_dynamic_library = None, feature_configuration = None, alwayslink = False, **kwargs):
++def cc_proto_compile_and_link(ctx, deps, sources, headers, disallow_dynamic_library = None, feature_configuration = None, alwayslink = False, implementation_deps = [], **kwargs):
+     """Creates C++ compilation and linking actions for C++ proto sources.
+ 
+     Args:
+         ctx: rule context
+         deps: (list[CcInfo]) List of libraries to be added as dependencies to compilation and linking
+             actions.
++        implementation_deps: C++ libraries used only by the generated sources.
+         sources:(list[File]) List of C++ sources files.
+         headers: list(File] List of C++ headers files.
+         disallow_dynamic_library: (bool) Are dynamic libraries disallowed.
+@@ -91,6 +92,8 @@
+             feature_configuration = feature_configuration,
+         )
+ 
++    if implementation_deps:
++        kwargs["implementation_compilation_contexts"] = [dep[CcInfo].compilation_context for dep in implementation_deps]
+     (compilation_context, compilation_outputs) = cc_common.compile(
+         actions = ctx.actions,
+         feature_configuration = feature_configuration,
+@@ -109,6 +112,7 @@
+         **kwargs
+     )
+ 
++    deps = deps + implementation_deps
+     if sources:
+         linking_context, linking_outputs = cc_common.create_linking_context_from_compilation_outputs(
+             actions = ctx.actions,
+diff --git a/bazel/private/oss/cc_proto_library.bzl b/bazel/private/oss/cc_proto_library.bzl
+--- a/bazel/private/oss/cc_proto_library.bzl
++++ b/bazel/private/oss/cc_proto_library.bzl
+@@ -93,10 +93,12 @@
+     if proto_toolchain.runtime:
+         deps = [proto_toolchain.runtime]
+     deps.extend(getattr(ctx.rule.attr, "deps", []))
++    deps.extend(getattr(ctx.rule.attr, "cc_deps", []))
+ 
+     cc_info, libraries, temps = cc_proto_compile_and_link(
+         ctx = ctx,
+         deps = deps,
++        implementation_deps = getattr(ctx.rule.attr, "cc_implementation_deps", []),
+         sources = sources,
+         headers = headers,
+         textual_hdrs = textual_hdrs,
+diff --git a/bazel/private/proto_library_rule.bzl b/bazel/private/proto_library_rule.bzl
+--- a/bazel/private/proto_library_rule.bzl
++++ b/bazel/private/proto_library_rule.bzl
+@@ -10,6 +10,7 @@
+ 
+ load("@bazel_skylib//lib:paths.bzl", "paths")
+ load("@proto_bazel_features//:features.bzl", "bazel_features")
++load("@rules_cc//cc/common:cc_info.bzl", "CcInfo")
+ load("//bazel/common:proto_common.bzl", "proto_common")
+ load("//bazel/common:proto_info.bzl", "ProtoInfo")
+ load("//bazel/flags:flags.bzl", "get_flag_value")
+@@ -308,6 +309,14 @@
+         "_protocopt": attr.label(
+             default = "//bazel/flags:protocopt",
+         ),
++        "cc_deps": attr.label_list(
++            providers = [CcInfo],
++            doc = "C++ libraries used by the generated headers.",
++        ),
++        "cc_implementation_deps": attr.label_list(
++            providers = [CcInfo],
++            doc = "C++ libraries used only by the generated sources.",
++        ),
+         "srcs": attr.label_list(
+             allow_files = [".proto", ".protodevel"],
+             flags = ["DIRECT_COMPILE_TIME_INPUT"],

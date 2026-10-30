@@ -1,0 +1,583 @@
+load("@clickhouse//bazel/rules:ch_cc_library.bzl", "ch_cc_library")
+load("@clickhouse//src:common_io_flags.bzl", "CLICKHOUSE_COMMON_IO_CONSUMER_DEFINES", "CLICKHOUSE_COMMON_IO_LOCAL_DEFINES")
+load("@rules_cc//cc:cc_library.bzl", "cc_library")
+
+package(default_visibility = ["//visibility:public"])
+
+filegroup(
+    name = "dbms_sources",
+    srcs = glob([
+        "NamedCollections/*.cpp",
+        "SQLDefinedHandlers/*.cpp",
+    ]) + glob([
+        "OOMCanary/*.cpp",
+        "Scheduler/Workload/*.cpp",
+    ]),
+    visibility = ["//src:__pkg__"],
+)
+
+exports_files(
+    ["AsynchronousMetricDocumentation.inc"],
+    visibility = ["//src/Storages/System:__pkg__"],
+)
+
+exports_files([
+    "Base58.cpp",
+    "ExceptionExt.cpp",
+    "FrequencyHolder.cpp",
+    "Hex.cpp",
+    "ThreadFuzzer.cpp",
+])
+
+_ALLOCATOR_IMPLEMENTATION_DEPS = [
+    ":Common",
+    "//base:common",
+    "//bazel:clickhouse_config_headers",
+    "@clickhouse_jemalloc//:_jemalloc",
+]
+
+ch_cc_library(
+    name = "clickhouse_malloc",
+    srcs = ["malloc.cpp"],
+    clickhouse_code = True,
+    copts = ["-fno-builtin"],
+    implementation_deps = _ALLOCATOR_IMPLEMENTATION_DEPS,
+    link_runtime = True,
+    local_defines = CLICKHOUSE_COMMON_IO_CONSUMER_DEFINES,
+    alwayslink = True,
+)
+
+ch_cc_library(
+    name = "clickhouse_new_delete",
+    srcs = ["AllocationInterceptors.cpp"],
+    clickhouse_code = True,
+    implementation_deps = ["@clickhouse_llvm_project//:unwind"] + _ALLOCATOR_IMPLEMENTATION_DEPS + ["@clickhouse_llvm_project//:cxxabi"],
+    local_defines = CLICKHOUSE_COMMON_IO_CONSUMER_DEFINES,
+)
+
+ch_cc_library(
+    name = "cares_ptr_resolver",
+    srcs = ["CaresPTRResolver.cpp"],
+    hdrs = ["CaresPTRResolver.h"],
+    clickhouse_code = True,
+    copts = ["-Wno-reserved-identifier"],
+    implementation_deps = [
+        "//src/Common:exception_api",
+        "//src/Common:parser_support_api",
+    ],
+    local_defines = CLICKHOUSE_COMMON_IO_LOCAL_DEFINES,
+    strip_include_prefix = "/src",
+    deps = [
+        ":Common",
+        "@clickhouse_c_ares//:_c-ares",
+    ],
+)
+
+ch_cc_library(
+    name = "interval_tree",
+    srcs = ["IntervalTree.cpp"],
+    clickhouse_code = True,
+    copts = [
+        "-U_LIBCPP_HARDENING_MODE",
+        "-D_LIBCPP_HARDENING_MODE=_LIBCPP_HARDENING_MODE_NONE",
+    ],
+    implementation_deps = [
+        "//src:core_types",
+        "//base:common",
+        ":Common",
+    ],
+    local_defines = CLICKHOUSE_COMMON_IO_LOCAL_DEFINES,
+)
+
+exports_files(
+    [
+        "GeoBbox.h",
+        "HilbertUtils.h",
+        "IO.h",
+        "WKB.h",
+    ],
+    visibility = ["//src:__pkg__"],
+)
+
+exports_files(
+    glob(["**/tests/**/*.h"]),
+    visibility = ["//src:__pkg__"],
+)
+
+_PRIVATE_DBMS_HEADERS = [
+    "BSONCXXHelper.h",
+    "CounterInFile.h",
+    "Increment.h",
+    "LockGuardWithStopWatch.h",
+    "NamedCollections/NamedCollectionConfiguration.h",
+    "PrimeGenerator.h",
+    "SQLDefinedHandlers/SQLDefinedHandlerFromAST.h",
+    "Scheduler/Workload/WorkloadEntityConfigStorage.h",
+    "Scheduler/Workload/WorkloadEntityDiskStorage.h",
+    "Scheduler/Workload/WorkloadEntityKeeperStorage.h",
+    "Scheduler/Workload/createWorkloadEntityStorage.h",
+    "SystemAllocatedMemoryHolder.h",
+    "saturatedWaitDuration.h",
+    "ThrottlerArray.h",
+]
+
+exports_files(
+    _PRIVATE_DBMS_HEADERS,
+    visibility = ["//src:__pkg__"],
+)
+
+_PRIVATE_COMMON_IO_HEADERS = [
+    "FieldVisitorToJSONElement.h",
+    "QueryIdSwitcher.h",
+    "SelfContained.h",
+    "SilkThreadLocalStorageSanitizer.h",
+    "StudentTTable.h",
+    "StudentTTestOneSample.h",
+    "blockDumper.h",
+    "randomNumber.h",
+]
+
+exports_files(
+    _PRIVATE_COMMON_IO_HEADERS,
+    visibility = ["//src:__pkg__"],
+)
+
+_MEMORY_TRACKING_API_HEADERS = [
+    "AllocationInterceptors.h",
+    "AllocationTrace.h",
+    "AllocatorWithMemoryTracking.h",
+    "CurrentMemoryTracker.h",
+    "DequeWithMemoryTracking.h",
+    "DevectorWithMemoryTracking.h",
+    "ListWithMemoryTracking.h",
+    "MapWithMemoryTracking.h",
+    "PODArray_fwd.h",
+    "ProcessorMemoryStats.h",
+    "QueueWithMemoryTracking.h",
+    "SetWithMemoryTracking.h",
+    "StackWithMemoryTracking.h",
+    "StringWithMemoryTracking.h",
+    "UnorderedMapWithMemoryTracking.h",
+    "UnorderedSetWithMemoryTracking.h",
+    "VectorWithMemoryTracking.h",
+]
+
+ch_cc_library(
+    name = "memory_tracking_api",
+    hdrs = _MEMORY_TRACKING_API_HEADERS,
+    clickhouse_code = True,
+    strip_include_prefix = "/src",
+    textual_hdrs = ["Allocator_fwd.h"],
+    deps = [
+        "//src:core_defines",
+        "//base:common",
+        "//bazel:clickhouse_config_headers",
+        "@clickhouse_jemalloc//:_jemalloc",
+        "@clickhouse_boost//:boost_headers_no_openssl",
+    ],
+)
+
+ch_cc_library(
+    name = "stopwatch",
+    srcs = ["Stopwatch.cpp"],
+    hdrs = ["Stopwatch.h"],
+    clickhouse_code = True,
+    local_defines = CLICKHOUSE_COMMON_IO_LOCAL_DEFINES,
+    strip_include_prefix = "/src",
+    deps = ["//base:common"],
+)
+
+ch_cc_library(
+    name = "action_lock",
+    srcs = ["ActionLock.cpp"],
+    hdrs = [
+        "ActionLock.h",
+        "ActionBlocker.h",
+    ],
+    clickhouse_code = True,
+    local_defines = CLICKHOUSE_COMMON_IO_LOCAL_DEFINES,
+    strip_include_prefix = "/src",
+)
+
+ch_cc_library(
+    name = "current_metrics",
+    srcs = ["CurrentMetrics.cpp"],
+    hdrs = ["CurrentMetrics.h"],
+    clickhouse_code = True,
+    local_defines = CLICKHOUSE_COMMON_IO_LOCAL_DEFINES,
+    strip_include_prefix = "/src",
+    deps = ["//base:common"],
+)
+
+ch_cc_library(
+    name = "shared_mutex",
+    srcs = ["SharedMutex.cpp"],
+    hdrs = ["SharedMutex.h"],
+    clickhouse_code = True,
+    local_defines = CLICKHOUSE_COMMON_IO_LOCAL_DEFINES,
+    strip_include_prefix = "/src",
+    textual_hdrs = ["futex.h"],
+    deps = ["//base:common"],
+)
+
+ch_cc_library(
+    name = "exception_api",
+    hdrs = [
+        "Exception.h",
+        "FramePointers.h",
+        "LoggingFormatStringHelpers.h",
+        "TypePromotion.h",
+        "typeid_cast.h",
+    ],
+    clickhouse_code = True,
+    deps = [
+        "//src:core_types",
+        "//base:common",
+        "//base/poco/Foundation:_poco_foundation",
+        "@clickhouse_fmtlib//:_fmt",
+    ],
+)
+
+_PARSER_SUPPORT_HEADERS = [
+    "Allocator.h",
+    "AsynchronousMetricsKeyValuesMode.h",
+    "AtomicLogger.h",
+    "BitHelpers.h",
+    "CacheLine.h",
+    "CalendarTimeInterval.h",
+    "CollectionOfDerived.h",
+    "DateLUT.h",
+    "DateLUTImpl.h",
+    "CurrentThreadHelpers.h",
+    "Documentation.h",
+    "FiberLocal.h",
+    "Hex.h",
+    "IntervalKind.h",
+    "LocalDate.h",
+    "LocalDateTime.h",
+    "LocalTime.h",
+    "Logger.h",
+    "Logger_fwd.h",
+    "LoggingHelpers.h",
+    "MemoryTrackerBlockerInThread.h",
+    "PODArray.h",
+    "ProfileEventsLogger.h",
+    "Scheduler/CostUnit.h",
+    "Scheduler/ResourceAccessMode.h",
+    "Scheduler/SharingMode.h",
+    "SettingConstraintWritability.h",
+    "SettingsChanges.h",
+    "SharedLockGuard.h",
+    "ShellCommandSettings.h",
+    "SipHash.h",
+    "ThreadPool_fwd.h",
+    "VariableContext.h",
+    "VersionNumber.h",
+    "checkStackSize.h",
+    "logger_useful.h",
+    "memcpySmall.h",
+    "quoteString.h",
+    "transformEndianness.h",
+    "Concepts.h",
+    "JemallocCacheAllocator.h",
+    "NaNUtils.h",
+    "RWLock.h",
+    "SeccompFilter.h",
+    "formatIPv6.h",
+    "iota.h",
+]
+
+ch_cc_library(
+    name = "parser_support_api",
+    hdrs = _PARSER_SUPPORT_HEADERS,
+    clickhouse_code = True,
+    local_defines = CLICKHOUSE_COMMON_IO_LOCAL_DEFINES,
+    deps = [
+        "//bazel:clickhouse_config_headers",
+        ":string_utils",
+        "//base:common",
+        "//src/Common:exception_api",
+        "//src/Common:memory_tracking_api",
+        "//src/Common:shared_mutex",
+        "//src/Common:stopwatch",
+        "//src:core_defines",
+        "//src:core_types",
+        "//base/poco/Foundation:_poco_foundation",
+        "@clickhouse_boost//:boost_headers_no_openssl",
+        "//contrib/cityhash102:_cityhash",
+        "@clickhouse_fmtlib//:_fmt",
+    ],
+)
+
+_CACHE_POLICY_PUBLIC_HEADERS = [
+    "CacheBase.h",
+    "TTLCachePolicy.h",
+]
+
+_CACHE_POLICY_PRIVATE_HEADERS = [
+    "ICachePolicy.h",
+    "ICachePolicyUserQuota.h",
+    "LRUCachePolicy.h",
+    "SLRUCachePolicy.h",
+    "SIEVECachePolicy.h",
+]
+
+ch_cc_library(
+    name = "cache_policy",
+    srcs = _CACHE_POLICY_PRIVATE_HEADERS,
+    hdrs = _CACHE_POLICY_PUBLIC_HEADERS,
+    clickhouse_code = True,
+    local_defines = CLICKHOUSE_COMMON_IO_LOCAL_DEFINES,
+    deps = [
+        "//base:common",
+        ":exception_api",
+        ":current_metrics",
+    ],
+)
+
+ch_cc_library(
+    name = "assert_cast",
+    srcs = ["assert_cast.cpp"],
+    hdrs = ["assert_cast.h"],
+    clickhouse_code = True,
+    implementation_deps = [":exception_api"],
+    local_defines = CLICKHOUSE_COMMON_IO_LOCAL_DEFINES,
+    strip_include_prefix = "/src",
+    deps = ["//base:common"],
+)
+
+ch_cc_library(
+    name = "cow",
+    hdrs = ["COW.h"],
+    clickhouse_code = True,
+    strip_include_prefix = "/src",
+    deps = ["@clickhouse_boost//:boost_headers_no_openssl"],
+)
+
+ch_cc_library(
+    name = "target_specific",
+    srcs = ["TargetSpecific.cpp"],
+    hdrs = [
+        "CPUID.h",
+        "TargetSpecific.h",
+    ],
+    clickhouse_code = True,
+    local_defines = CLICKHOUSE_COMMON_IO_LOCAL_DEFINES,
+    strip_include_prefix = "/src",
+    deps = ["//base:common"],
+)
+
+ch_cc_library(
+    name = "string_utils",
+    srcs = ["StringUtils.cpp"],
+    hdrs = [
+        "HTTPFieldLess.h",
+        "StringHashForHeterogeneousLookup.h",
+        "StringUtils.h",
+    ],
+    clickhouse_code = True,
+    implementation_deps = [":target_specific"],
+    local_defines = CLICKHOUSE_COMMON_IO_LOCAL_DEFINES,
+    strip_include_prefix = "/src",
+    deps = ["//base:common"],
+)
+
+ch_cc_library(
+    name = "load_balancing_priority",
+    srcs = ["GetPriorityForLoadBalancing.cpp"],
+    hdrs = [
+        "GetPriorityForLoadBalancing.h",
+        "Priority.h",
+    ],
+    clickhouse_code = True,
+    implementation_deps = [":exception_api"],
+    local_defines = CLICKHOUSE_COMMON_IO_LOCAL_DEFINES,
+    strip_include_prefix = "/src",
+    deps = [
+        "//src:core_types",
+        "//base:common",
+    ],
+)
+
+_UNIT_TEST_HEADERS = [
+    "HashTable/BucketPartitionedTable.h",
+    "HashTable/PartitionedFixedHashTable.h",
+    "LRUResourceCache.h",
+]
+
+ch_cc_library(
+    name = "Common",
+    srcs = [
+        "Exception.cpp",
+        "ProfileEvents.cpp",
+    ],
+    hdrs = glob(
+        ["**/*.h"],
+        exclude = [
+            "CaresPTRResolver.h",
+            "GeoBbox.h",
+            "HilbertUtils.h",
+            "IO.h",
+            "WKB.h",
+            "LLVMCoverageMapping.h",
+            "MachO.h",
+            "Stopwatch.h",
+            "ActionLock.h",
+            "ActionBlocker.h",
+            "CurrentMetrics.h",
+            "SharedMutex.h",
+            "futex.h",
+            "Allocator_fwd.h",
+            "**/tests/**/*.h",
+            "Exception.h",
+            "FramePointers.h",
+            "LoggingFormatStringHelpers.h",
+            "TypePromotion.h",
+            "typeid_cast.h",
+            "assert_cast.h",
+            "COW.h",
+            "HTTPFieldLess.h",
+            "StringHashForHeterogeneousLookup.h",
+            "StringUtils.h",
+            "TargetSpecific.h",
+            "CPUID.h",
+        ] + _PRIVATE_DBMS_HEADERS + _PRIVATE_COMMON_IO_HEADERS + _MEMORY_TRACKING_API_HEADERS + _PARSER_SUPPORT_HEADERS + _CACHE_POLICY_PUBLIC_HEADERS + _CACHE_POLICY_PRIVATE_HEADERS + [
+            "Priority.h",
+            "GetPriorityForLoadBalancing.h",
+            "exp10_i32.h",
+            "intExp.h",
+            "IThrottler.h",
+            "CopyableAtomic.h",
+            "callOnce.h",
+        ] + _UNIT_TEST_HEADERS,
+    ),
+    clickhouse_code = True,
+    implementation_deps = [
+        "@clickhouse_silk//:_silk_fibers",
+        "@clickhouse_aws//:_aws",
+        "@clickhouse_zstd//:_zstd",
+    ],
+    local_defines = CLICKHOUSE_COMMON_IO_LOCAL_DEFINES,
+    deps = [
+        "//src:core_types",
+        ":memory_tracking_api",
+        ":stopwatch",
+        "//src/Parsers:headers",
+        "//src:headers",
+        "//base:common",
+        "//bazel:clickhouse_config_headers",
+        "//base/poco/Net:_poco_net",
+        "@clickhouse_libssh//:_ssh",
+        "//base/poco/Foundation:_poco_foundation",
+        "@clickhouse_fmtlib//:_fmt",
+        "@clickhouse_rapidjson//:rapidjson",
+        "//base/poco/Util:_poco_util",
+        "//base/poco/XML:_poco_xml",
+        "//base:pcg_random",
+        "//contrib/cityhash102:_cityhash",
+        "@clickhouse_jemalloc//:_jemalloc",
+        "@clickhouse_boost//:boost_headers_no_openssl",
+        "@clickhouse_libfiu//:_libfiu",
+        "@clickhouse_openssl//:crypto",
+        "@clickhouse_re2//:_re2",
+        "@clickhouse_simdjson//:_simdjson",
+        "@clickhouse_stringzilla//:_stringzilla",
+        ":exception_api",
+        ":parser_support_api",
+        ":cache_policy",
+        ":assert_cast",
+        ":string_utils",
+        ":target_specific",
+        "//src/Common:current_metrics",
+        "//src/Common:shared_mutex",
+        ":load_balancing_priority",
+        "//src:core_defines",
+        "//src:io_string_buffers",
+        "//src:with_context",
+        "//src/Parsers:parser_api",
+        "//src:column_types",
+        ":throttler_interface",
+    ],
+)
+
+ch_cc_library(
+    name = "int_exp",
+    srcs = ["intExp.cpp"],
+    hdrs = [
+        "exp10_i32.h",
+        "intExp.h",
+    ],
+    clickhouse_code = True,
+    local_defines = CLICKHOUSE_COMMON_IO_LOCAL_DEFINES,
+    strip_include_prefix = "/src",
+    deps = ["//base:common"],
+)
+
+ch_cc_library(
+    name = "throttler_interface",
+    hdrs = ["IThrottler.h"],
+    features = ["skip_virtual_includes"],
+    strip_include_prefix = "/src",
+    deps = [
+        "//base:common",
+        "//base/poco/Net:_poco_net",
+        "@clickhouse_boost//:boost_headers_no_openssl",
+    ],
+)
+
+ch_cc_library(
+    name = "once_and_atomic",
+    hdrs = [
+        "CopyableAtomic.h",
+        "callOnce.h",
+    ],
+    clickhouse_code = True,
+    features = ["skip_virtual_includes"],
+    strip_include_prefix = "/src",
+)
+
+filegroup(
+    name = "common_io_sources",
+    srcs = glob(
+        ["*.cpp"],
+        exclude = [
+            "ActionLock.cpp",
+            "AllocationInterceptors.cpp",
+            "CaresPTRResolver.cpp",
+            "CurrentMetrics.cpp",
+            "Exception.cpp",
+            "ExceptionExt.cpp",
+            "FrequencyHolder.cpp",
+            "GetPriorityForLoadBalancing.cpp",
+            "IntervalTree.cpp",
+            "ProfileEvents.cpp",
+            "SharedMutex.cpp",
+            "Stopwatch.cpp",
+            "StringUtils.cpp",
+            "TargetSpecific.cpp",
+            "ThreadFuzzer.cpp",
+            "assert_cast.cpp",
+            "intExp.cpp",
+            "malloc.cpp",
+        ],
+    ) + ["RegexpJIT/RegexpProgram.cpp"] + glob([
+        "Crypto/*.cpp",
+        "JSONParsers/*.cpp",
+        "Scheduler/*.cpp",
+    ]) + glob(["Scheduler/Nodes/SpaceShared/*.cpp"]),
+    visibility = ["//src:__pkg__"],
+)
+
+filegroup(
+    name = "scheduler_nodes_unit_test_sources",
+    testonly = True,
+    srcs = glob(["Scheduler/Nodes/tests/gtest*.cpp"]),
+    visibility = ["//src:__pkg__"],
+)
+
+filegroup(
+    name = "unit_test_sources",
+    testonly = True,
+    srcs = glob(["tests/gtest*.cpp"]) + _UNIT_TEST_HEADERS,
+    visibility = ["//src:__pkg__"],
+)

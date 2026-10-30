@@ -1,0 +1,733 @@
+"""Build ClickHouse's LLVM libraries from its CMake graph and pinned sources."""
+
+import gzip
+import json
+import os
+from pathlib import Path
+import re
+import shlex
+from initial_migration.reference_readers import read_file_api, ninja_edges
+
+PREFIX = 'contrib/llvm-project'
+RAW_REPOSITORY = 'clickhouse_llvm_project'
+TOOLCHAIN_ROOT = 'external/llvm++llvm+llvm-project'
+NATIVE_RUNTIMES = {
+    'cxx', 'cxxabi', 'unwind', 'clang_rt_builtins', 'clang_rt_xray', 'libllvmlibc',
+}
+RUNTIME_ROOT_SOURCES = {
+    'contrib/libunwind-cmake/unwind-override.c',
+    'contrib/compiler-rt-cmake/xray_reject_modes.cpp',
+    'contrib/libllvmlibc-cmake/string/mem_functions.cpp',
+    'contrib/libllvmlibc-cmake/string/memmem.cpp',
+}
+RUNTIME_ROOT_INPUTS = RUNTIME_ROOT_SOURCES | {
+    'contrib/libllvmlibc-cmake/string/x86_64_mem_functions.cpp',
+    'contrib/libllvmlibc-cmake/string/aarch64_mem_functions.cpp',
+    'contrib/libllvmlibc-cmake/string/x86_cpu_dispatch.h',
+}
+
+# The toolchain supplies these headers in its own search directories. Importing
+# another copy breaks libc++'s include_next chain before it reaches libc headers.
+TOOLCHAIN_INCLUDE_DIRECTORIES = {
+    PREFIX + '/libcxx/include',
+    PREFIX + '/libcxx/include/c++/v1',
+    PREFIX + '/libcxxabi/include',
+}
+
+def include_mappings(repository):
+    """Canonical header namespaces provided by the module's CcInfo targets."""
+    generated = 'bazel-out/k8-opt/bin/' + repository + '/'
+    mappings = {
+        generated + path: PREFIX + '/' + path
+        for path in ['llvm/include', 'libcxx/include', 'libcxxabi/include',
+                     'libunwind/include', 'compiler-rt/include', 'libc']
+    }
+    mappings.update({
+        generated + 'libc/_virtual_includes/libc_headers': PREFIX + '/libc',
+        generated + 'libcxx/libcxx_headers_include_search_directory': PREFIX + '/libcxx/include',
+        generated + 'libcxxabi/libcxxabi_headers_include_search_directory': PREFIX + '/libcxxabi/include',
+        generated + 'third-party/siphash/_virtual_includes/siphash': PREFIX + '/third-party/siphash/include',
+    })
+    for arch in ['x86_64', 'aarch64']:
+        build = 'build_bazel_reference_' + arch + '/' + PREFIX + '/'
+        mappings[build + 'libcxx/include/c++/v1'] = PREFIX + '/libcxx/include'
+        mappings[build + 'llvm/include'] = PREFIX + '/llvm/include'
+    return [{'from': source, 'to': destination} for source, destination in sorted(mappings.items())]
+
+
+def update_any2bazel_mappings(parity, targets):
+    """Record each embedded LLVM source from the same CMake compile groups."""
+    from initial_migration.repository_inputs import comparison_root
+
+    raw_root = comparison_root(PREFIX)
+    expected_root = 'external/+contrib+' + RAW_REPOSITORY
+    if raw_root != expected_root:
+        raise ValueError('Embedded LLVM repository has not been registered: ' + raw_root)
+
+    # map_source() in any2bazel drops the remainder after the matched prefix.
+    # Each from path must name a complete source file, never an LLVM directory.
+    sources = {}
+    arches = set()
+    for name, variants in targets.items():
+        for arch, value in variants.items():
+            arches.add(arch)
+            for group in value.get('compileGroups', []):
+                for index in group['sourceIndexes']:
+                    source = value['sources'][index]['path']
+                    if os.path.normpath(source) != source:
+                        raise ValueError(f'{arch} {name}: invalid embedded LLVM source {source}')
+                    generated = 'build_bazel_reference_' + arch + '/contrib/compiler-rt-cmake/outline_atomic_helpers.dir/'
+                    if source.startswith(PREFIX + '/') and (name in NATIVE_RUNTIMES or source.startswith(PREFIX + '/llvm/')):
+                        actual = raw_root + source.removeprefix(PREFIX)
+                    elif name in NATIVE_RUNTIMES and source in RUNTIME_ROOT_SOURCES:
+                        # Real ClickHouse repository files already retain their
+                        # source identity in Bazel. Do not remap them to LLVM.
+                        continue
+                    elif name == 'clang_rt_builtins' and source.startswith(generated):
+                        actual = ('bazel-out/k8-opt/bin/' + raw_root + '/gen/' + arch
+                                  + '/compiler-rt-outline/' + Path(source).name)
+                    else:
+                        raise ValueError(f'{arch} {name}: invalid embedded LLVM source {source}')
+                    previous = sources.setdefault(actual, source)
+                    if previous != source:
+                        raise ValueError(f'LLVM source identity collision: {actual}: {previous}, {source}')
+
+    includes = {raw_root: PREFIX}
+    for arch in sorted(arches):
+        generated = 'bazel-out/k8-opt/bin/' + raw_root + '/gen/' + arch
+        # Existing CMake mappings distinguish target-local generated headers
+        # from source headers, except the shared LLVM include namespace.
+        includes[generated] = '@build/' + arch + '/' + PREFIX
+        includes[generated + '/llvm/include'] = PREFIX + '/llvm/include'
+        # Match include_mappings() for CMake's copy of __config_site and
+        # __assertion_handler. declare_from_references() verifies both copies.
+        includes[generated + '/libcxx/include/c++/v1'] = PREFIX + '/libcxx/include'
+
+    for field, added in (('source_map', sources), ('include_map', includes)):
+        rows = parity['ignore'][field]
+        existing = {}
+        for row in rows:
+            previous = existing.setdefault(row['from'], row['to'])
+            if previous != row['to']:
+                raise ValueError(f'{field} collision for {row["from"]}: {previous}, {row["to"]}')
+        for source, destination in added.items():
+            previous = existing.get(source)
+            if previous is not None and previous != destination:
+                raise ValueError(f'{field} collision for {source}: {previous}, {destination}')
+        # Replace prior entries owned by this generator, preserving all
+        # toolchain mappings for libc++, compiler-rt and build-time TableGen.
+        if field == 'source_map':
+            owned = (raw_root + '/', 'bazel-out/k8-opt/bin/' + raw_root + '/gen/')
+        else:
+            owned = (raw_root, 'bazel-out/k8-opt/bin/' + raw_root + '/gen/')
+        rows[:] = [row for row in rows if not row['from'].startswith(owned)]
+        rows.extend({'from': source, 'to': destination}
+                    for source, destination in sorted(added.items()))
+
+def generated_target(path):
+    if path.startswith(PREFIX + '/') and not path.startswith(PREFIX + '/llvm/'):
+        return '@llvm-project//llvm'
+    if path.startswith('contrib/compiler-rt-cmake/outline_atomic_helpers.dir/'):
+        return '@llvm-project//compiler-rt:builtins'
+    return None
+
+
+def target(name):
+    return {
+        'llvm-tblgen': '@llvm-project//llvm:llvm-tblgen',
+        'llvm-min-tblgen': '@llvm-project//llvm:llvm-min-tblgen',
+        '_fuzzer': '@llvm-project//compiler-rt:fuzzer_main',
+        '_fuzzer_no_main': '@llvm-project//compiler-rt:fuzzer',
+    }.get(name)
+
+
+def include_dependencies(relative):
+    """None for non-LLVM includes; () if the toolchain already supplies them."""
+    if not relative.startswith(PREFIX + '/'):
+        return None
+    if relative.startswith((PREFIX + '/llvm/', PREFIX + '/third-party/siphash/')):
+        return None
+    project = relative.removeprefix(PREFIX + '/').split('/')[0]
+    return {
+        'libc': ('@llvm-project//libc:libc_headers',),
+        'libcxx': (),
+        'libcxxabi': (),
+        'libunwind': ('@llvm-project//libunwind:headers',),
+        'compiler-rt': ('@llvm-project//compiler-rt:headers',),
+    }[project]
+
+
+def native_target(name, value):
+    return (name.startswith('LLVM') or name in NATIVE_RUNTIMES) and value.get('type') == 'STATIC_LIBRARY'
+
+
+# CMake builds the TableGen executables separately. Bazel uses the LLVM module's
+# tools; none of these llvm/lib headers belong to a ClickHouse LLVM component.
+_UNBUILT_HEADERS = (
+    'CAS/*.h', 'DWARFLinker/**/*.h', 'DWARFCFIChecker/Registers.h',
+    'CodeGen/MIRParser/MILexer.h', 'ExecutionEngine/IntelJITProfiling/*.h',
+    'ExecutionEngine/Interpreter/Interpreter.h', 'ExecutionEngine/JITLink/*.h',
+    'ExecutionEngine/MCJIT/MCJIT.h', 'ExecutionEngine/Orc/TargetProcess/OrcRTBootstrap.h',
+    'FileCheck/FileCheckImpl.h', 'ObjCopy/**/*.h', 'Support/rpmalloc/*.h', 'TableGen/*.h',
+    'Target/AArch64/Disassembler/*.h', 'Target/X86/AsmParser/*.h',
+    'Target/X86/Disassembler/X86DisassemblerDecoder.h', 'Target/X86/MCA/X86CustomBehaviour.h',
+)
+
+# regex_impl.h declares the C functions in regcomp.c and the C++ calls in Regex.cpp.
+_COMPONENT_HEADERS = {
+    'LLVMAsmPrinter': {'srcs': ('CodeGen/AsmPrinter/*.h',)},
+    'LLVMSupport__compile_0': {'srcs': ('Support/DebugOptions.h', 'Support/regex_impl.h')},
+    'LLVMSupport__compile_1': {'srcs': (
+        'Support/regengine.inc', 'Support/regex2.h', 'Support/regex_impl.h', 'Support/regutils.h',
+    )},
+    'LLVMX86Desc': {
+        'srcs': ('Target/X86/MCTargetDesc/X86IntelInstPrinter.h',),
+        'hdrs': (
+            'Target/X86/MCTargetDesc/X86ATTInstPrinter.h',
+            'Target/X86/MCTargetDesc/X86InstPrinterCommon.h', 'Target/X86/MCTargetDesc/X86MCExpr.h',
+        ),
+    },
+}
+_PLATFORM_HEADERS = {
+    'LLVMSupport__compile_0': (('Support/Unix/*.h', 'Support/Unix/*.inc'), ('Support/Windows/*.inc',)),
+    'LLVMTargetParser': (('TargetParser/Unix/Host.inc',), ('TargetParser/Windows/Host.inc',)),
+}
+
+
+def component_header_exclusions():
+    patterns = set(_UNBUILT_HEADERS)
+    for attrs in _COMPONENT_HEADERS.values():
+        for files in attrs.values():
+            patterns.update(files)
+    for unix, windows in _PLATFORM_HEADERS.values():
+        patterns.update(unix + windows)
+    return tuple('llvm/lib/' + p for p in sorted(patterns))
+
+
+def component_headers(name, attrs):
+    """Declare llvm/lib implementation inputs on their native CMake compile groups."""
+    from initial_migration.build_file import Concat, Glob, Select, select
+
+    def inputs(patterns):
+        paths = ['llvm/lib/' + p for p in patterns]
+        return Glob(paths) if any('*' in p for p in paths) else paths
+
+    def combine(old, value):
+        if not old:
+            return value
+        if not value:
+            return old
+        if isinstance(old, list) and isinstance(value, list):
+            return old + value
+        if isinstance(old, Select) and isinstance(value, Select) and old.values.keys() == value.values.keys():
+            return select({k: combine(v, value.values[k]) for k, v in old.values.items()})
+        if isinstance(old, Concat):
+            return Concat([*old.values[:-1], combine(old.values[-1], value)])
+        return Concat([old, value])
+
+    for field, patterns in _COMPONENT_HEADERS.get(name, {}).items():
+        value = inputs(patterns)
+        if name == 'LLVMX86Desc':
+            value = Select({'@platforms//cpu:x86_64': value, '@platforms//cpu:aarch64': []})
+        attrs[field] = combine(attrs.get(field), value)
+    if name in _PLATFORM_HEADERS:
+        unix, windows = _PLATFORM_HEADERS[name]
+        attrs['srcs'] = combine(attrs.get('srcs'), Select({
+            '@platforms//os:windows': inputs(windows),
+            '//conditions:default': inputs(unix),
+        }))
+
+
+def read_tablegen(words, node, source_root, build_root, arch):
+    """Read an LLVM Ninja command; reject options the Bazel macro cannot represent."""
+    source = Path(source_root, PREFIX)
+    td = Path(words[-3]).relative_to(source).as_posix()
+    tool = Path(words[0]).name
+    includes = ['-I', str(source / 'llvm/include')]
+    if tool == 'llvm-tblgen':
+        backend = td.split('/')[3] if td.startswith('llvm/lib/Target/') else {
+            'x86_64': 'X86', 'aarch64': 'AArch64',
+        }[arch]
+        includes.extend(['-I', str(source / 'llvm/lib/Target' / backend)])
+    elif tool != 'llvm-min-tblgen':
+        raise ValueError(f'{arch} {node}: unsupported LLVM tool {tool}')
+    first_include = words.index('-I')
+    if words[first_include:] != [*includes, str(source / td), '-o', str(Path(build_root, node))]:
+        raise ValueError(f'{arch} {node}: unsupported TableGen arguments: {words}')
+    flags = shlex.join(words[1:first_include])
+    out = node.removeprefix(PREFIX + '/')
+    outs = [out]
+    if '-gen-register-info' in words[1:first_include]:
+        outs += [out.removesuffix('.inc') + suffix + '.inc'
+                 for suffix in ('Enums', 'MCDesc', 'Header', 'TargetDesc')]
+    return (td, tool, flags), outs
+
+
+def tablegen_rules(actions):
+    """Group outputs that use the same .td file, tool, output directory and CPUs."""
+    from initial_migration.build_file import starlark
+
+    groups = {}
+    for out, variants in actions.items():
+        if len(set(variants.values())) != 1:
+            raise ValueError('TableGen input, tool or flags differ between CPUs: ' + out)
+        td, tool, flags = next(iter(variants.values()))
+        directory, filename = out.rsplit('/', 1)
+        groups.setdefault((td, tool, directory, tuple(sorted(variants))), {})[filename] = flags
+    for (td, tool, directory, cpus), outputs in groups.items():
+        fields = {'td': td, 'outputs': outputs}
+        if directory != td.rsplit('/', 1)[0]:
+            fields['out_dir'] = directory
+        if tool != 'llvm-tblgen':
+            fields['tool'] = tool
+        if len(cpus) == 1:
+            fields['target_compatible_with'] = ['@platforms//cpu:' + cpus[0]]
+        yield 'llvm_tablegen(\n' + ''.join(
+            f'    {key} = {starlark(value, 4, step=4)},\n' for key, value in fields.items()) + ')\n'
+
+
+def declare_from_references(root, references):
+    """Declare embedded LLVM targets before BUILD files are serialized.
+
+    The CMake File API, expanded trace and Ninja graph are the inputs. Config
+    values come from set() records at each configure_file(), never from the
+    host on which this generator runs.
+    """
+    from initial_migration.build_file import BuildFile, Concat, Glob, select
+    from initial_migration.repository_inputs import REPOSITORIES, cmake_has_source_prefix_map, source_label
+
+    repository = REPOSITORIES[PREFIX]
+    if repository['name'] != RAW_REPOSITORY or repository.get('module'):
+        raise ValueError('Embedded LLVM must use the pinned raw repository')
+
+    targets = {}
+    models = {}
+    graphs = {}
+    for arch, reference in references.items():
+        reference = Path(reference)
+        saved = reference / 'cmake-file-api.tar.gz'
+        model, graph = read_file_api(
+            saved if saved.is_file() else reference / '.cmake/api/v1/reply',
+            include_target=lambda name: name.startswith('LLVM') or name in NATIVE_RUNTIMES)
+        models[arch] = model['paths']
+        graphs[arch] = graph
+        for name, value in graph.items():
+            if native_target(name, value):
+                targets.setdefault(name, {})[arch] = value
+        absent = NATIVE_RUNTIMES - {name for name, value in graph.items() if native_target(name, value)}
+        if absent:
+            raise ValueError(f'{arch}: missing CMake runtime libraries {sorted(absent)}')
+    owners = {name: PREFIX for name in targets}
+    build = BuildFile(PREFIX, owners)
+    header_patterns = [
+        subdir + '/**/*' + suffix
+        for subdir in ('llvm/include', 'llvm/lib', 'third-party/siphash/include')
+        for suffix in ('.h', '.hh', '.hpp', '.hxx', '.inc', '.def', '.ipp', '.inl')
+    ]
+    # LLVM puts zos_wrappers on the system include path only when building for OS390.
+    zos_wrappers = 'llvm/include/llvm/Support/SystemZ/zos_wrappers/*.h'
+    build.rule('filegroup', 'llvm_source_headers', {'srcs': Concat([
+        Glob(header_patterns, (*component_header_exclusions(), 'llvm/include/llvm/Testing/**', zos_wrappers)),
+        select({
+            '@platforms//os:linux': [],
+            '//conditions:default': Glob([zos_wrappers]),
+        }),
+    ])})
+    # Headers include libc++'s extensionless standard headers and libc sources
+    # textually included by ClickHouse's mem_functions.cpp.
+    build.rule('cargo_repository_sources', 'runtime_libcxx_headers', {'root': 'libcxx/include'})
+    build.rule('filegroup', 'runtime_source_inputs', {
+        'srcs': Glob([
+            'libcxx/include/**', 'libcxx/src/**',
+            'libcxxabi/include/**', 'libcxxabi/src/**',
+            'libunwind/include/**', 'libunwind/src/**',
+            'compiler-rt/include/**', 'compiler-rt/lib/**', 'libc/**',
+            'third-party/siphash/include/**',
+        ], exclude=('**/BUILD', '**/BUILD.bazel')),
+    })
+    for library in ('libcxx', 'libcxxabi'):
+        build.rule('filegroup', 'runtime_' + library + '_headers', {
+            'srcs': Glob([library + '/include/**'], exclude=('**/BUILD', '**/BUILD.bazel')),
+        })
+    for path in RUNTIME_ROOT_INPUTS:
+        if not (root / path).is_file():
+            raise ValueError('Missing ClickHouse runtime input: ' + path)
+    runtime_generated = {}
+    outline_generated = {}
+    outline_commands = {}
+    tablegen = {}
+    generated = {}
+    for arch, reference in references.items():
+        reference = Path(reference)
+        source_root = models[arch]['source']
+        build_root = models[arch]['build']
+        cmake_file = source_root + '/contrib/llvm-project-cmake/CMakeLists.txt'
+        values = {}
+        outputs = []
+        runtime_outputs = []
+        templates = set()
+        trace_path = reference / 'trace.jsonl'
+        if trace_path.is_file():
+            trace_file = trace_path.open('rt')
+        else:
+            trace_file = gzip.open(reference / 'trace.jsonl.gz', 'rt')
+        with trace_file as trace:
+            for line in trace:
+                if not line.startswith('{'):
+                    continue
+                record = json.loads(line)
+                if (record.get('file') == source_root + '/contrib/libcxx-cmake/CMakeLists.txt'
+                        and record.get('cmd', '').lower() == 'configure_file'):
+                    args = record['args']
+                    relative_source = Path(args[0]).relative_to(source_root).as_posix()
+                    relative_dest = Path(args[1]).relative_to(build_root + '/' + PREFIX).as_posix()
+                    expected_sources = {PREFIX + '/libcxx/include/__config_site',
+                                        PREFIX + '/libcxx/include/__assertion_handler'}
+                    if (len(args) != 3 or args[2].upper() != 'COPYONLY'
+                            or relative_source not in expected_sources
+                            or relative_dest != 'libcxx/include/c++/v1/' + Path(relative_source).name):
+                        raise ValueError(f'{arch}: unsupported CMake runtime configure_file: {args}')
+                    out = 'gen/' + arch + '/' + relative_dest
+                    build.rule('copy_file', 'runtime_header_' + arch + '_' + Path(relative_source).name, {
+                        'src': ':' + relative_source.removeprefix(PREFIX + '/'), 'out': out,
+                    })
+                    runtime_outputs.append(':' + out)
+                if record.get('file') != cmake_file:
+                    continue
+                args = record.get('args', [])
+                command = record.get('cmd', '').lower()
+                if command == 'set' and len(args) > 1:
+                    values[args[0]] = ';'.join(args[1:])
+                elif command == 'configure_file':
+                    source = Path(args[0]).relative_to(source_root).as_posix()
+                    destination = Path(args[1]).relative_to(build_root + '/' + PREFIX).as_posix()
+                    template = (root / source).read_text()
+                    substitutions = {}
+                    for key in re.findall(r'@([A-Za-z_][A-Za-z_0-9]*)@', template):
+                        if key not in values:
+                            raise ValueError(cmake_file + ': unresolved ' + key)
+                        substitutions['@' + key + '@'] = values[key]
+                    output = 'gen/' + arch + '/' + destination
+                    rule = 'configure_' + arch + '_' + Path(destination).name.replace('.', '_').replace('-', '_')
+                    build.rule('expand_template', rule, {
+                        'template': '@clickhouse//:' + source,
+                        'out': output,
+                        'substitutions': substitutions,
+                    })
+                    templates.add(source)
+                    outputs.append(':' + output)
+                elif command == 'file' and args and args[0].upper() == 'WRITE':
+                    prefix = build_root + '/' + PREFIX + '/llvm/'
+                    if not args[1].startswith(prefix):
+                        continue
+                    output = 'gen/' + arch + '/' + args[1].removeprefix(build_root + '/' + PREFIX + '/')
+                    rule = 'configure_' + arch + '_' + Path(output).name.replace('.', '_')
+                    # write_file joins content with a newline without appending
+                    # one; preserving the final empty item preserves CMake's.
+                    build.rule('write_file', rule, {'out': output, 'content': ''.join(args[2:]).split('\n')})
+                    outputs.append(':' + output)
+        if len(templates) != 3 or len(outputs) != 10:
+            raise ValueError(f'{arch}: expected 3 LLVM templates and 7 file(WRITE) outputs, found {len(outputs)}')
+        if len(runtime_outputs) != 2 or len(set(runtime_outputs)) != 2:
+            raise ValueError(f'{arch}: expected both CMake COPYONLY libc++ headers: {runtime_outputs}')
+        runtime_generated[arch] = runtime_outputs
+
+        ninja_path = reference / 'build.ninja'
+        if not ninja_path.is_file():
+            ninja_path = reference / 'build.ninja.gz'
+        for edge in ninja_edges(ninja_path):
+            if edge['rule'] != 'CUSTOM_COMMAND' or len(edge['outputs']) != 1 or 'command' not in edge:
+                continue
+            node = edge['outputs'][0]
+            if not node.startswith((PREFIX + '/llvm/',
+                                    'contrib/compiler-rt-cmake/outline_atomic_helpers.dir/outline_atomic_')):
+                continue
+            command = edge['command'].strip()
+            pieces = command.split(' && ')
+            words = shlex.split(pieces[-1])
+            tool_name = Path(words[0]).name
+            if node.startswith('contrib/compiler-rt-cmake/outline_atomic_helpers.dir/'):
+                source = source_root + '/' + PREFIX + '/compiler-rt/lib/builtins/aarch64/lse.S'
+                destination = build_root + '/' + node
+                if tool_name != 'cmake' or words[1:] != ['-E', 'create_symlink', source, destination]:
+                    raise ValueError(f'{arch} {node}: unexpected CMake outline assembly command {command}')
+                identity = 'build_bazel_reference_' + arch + '/' + node
+                if identity in outline_commands:
+                    raise ValueError(f'{arch}: duplicate CMake outline generator {node}')
+                outline_commands[identity] = source.removeprefix(source_root + '/')
+                continue
+            action, outs = read_tablegen(words, node, source_root, build_root, arch)
+            variants = tablegen.setdefault(outs[0], {})
+            if arch in variants:
+                raise ValueError(f'{arch}: duplicate LLVM TableGen output {node}')
+            variants[arch] = action
+            outputs.extend(':gen/' + arch + '/' + out for out in outs)
+        generated[arch] = outputs
+        if len(outputs) < 45:
+            raise ValueError(f'{arch}: incomplete LLVM TableGen graph ({len(outputs)} outputs)')
+
+    build.loads['@clickhouse//bazel/rules:llvm_tablegen.bzl'] = {'llvm_tablegen'}
+    build.rules.extend(tablegen_rules(tablegen))
+    build.rule('filegroup', 'llvm_generated_headers', {
+        'srcs': select({'@platforms//cpu:' + a: out for a, out in generated.items()}),
+    })
+    build.rule('filegroup', 'runtime_generated_headers', {
+        'srcs': select({'@platforms//cpu:' + a: out for a, out in runtime_generated.items()}),
+    })
+    build.rule('cc_library', 'llvm_headers', {
+        'hdrs': [':llvm_source_headers'],
+        'textual_hdrs': [':llvm_generated_headers'],
+        'includes': select({
+            '@platforms//cpu:' + a: ['llvm/include', 'gen/' + a + '/llvm/include', 'third-party/siphash/include']
+            for a in references
+        }),
+    })
+    for name, variants in targets.items():
+        compiled = {}
+        for arch, value in variants.items():
+            source_root = models[arch]['source']
+            build_root = models[arch]['build']
+            groups = []
+            for group in value.get('compileGroups', []):
+                sources = [value['sources'][i]['path'] for i in group['sourceIndexes']]
+                source_labels = []
+                for source in sources:
+                    outline_prefix = 'build_bazel_reference_' + arch + '/contrib/compiler-rt-cmake/outline_atomic_helpers.dir/'
+                    if (name == 'clang_rt_builtins' and arch == 'aarch64'
+                            and source.startswith(outline_prefix)):
+                        if outline_commands.get(source) != PREFIX + '/compiler-rt/lib/builtins/aarch64/lse.S':
+                            raise ValueError(f'{arch}: no recorded Ninja symlink command for {source}')
+                        if source not in outline_generated:
+                            original = ':' + 'compiler-rt/lib/builtins/aarch64/lse.S'
+                            output = 'gen/' + arch + '/compiler-rt-outline/' + Path(source).name
+                            build.rule('copy_file', 'runtime_outline_' + Path(source).name.replace('.', '_'), {
+                                'src': original, 'out': output,
+                            })
+                            # BuildFile.target resolves unqualified labels in
+                            # ClickHouse before assigning their repository.
+                            outline_generated[source] = '@' + RAW_REPOSITORY + '//:' + output
+                        source_labels.append(outline_generated[source])
+                    elif (source.startswith(PREFIX + '/llvm/') or
+                          (name in NATIVE_RUNTIMES and
+                           (source.startswith(PREFIX + '/') or source in RUNTIME_ROOT_SOURCES))):
+                        source_labels.append(source_label(source))
+                    else:
+                        raise ValueError(f'{arch} {name}: non-LLVM source {source}')
+                copts = []
+                for fragment in group.get('compileCommandFragments', []):
+                    for flag in shlex.split(fragment['fragment']):
+                        if flag.startswith(('--gcc-toolchain=', '--ld-path=', '-ffile-prefix-map=')):
+                            continue
+                        if source_root in flag:
+                            raise ValueError(f'{arch} {name}: undeclared compiler input {flag}')
+                        copts.append(flag)
+                deps = [] if name in NATIVE_RUNTIMES else ['@' + RAW_REPOSITORY + '//:llvm_headers']
+                native_cxx_includes = []
+                for inc in group.get('includes', []):
+                    path = os.path.normpath(inc['path'])
+                    is_generated = path.startswith(build_root + '/')
+                    relative = path.removeprefix(build_root + '/').removeprefix(source_root + '/')
+                    if (name not in NATIVE_RUNTIMES and group['language'] in {'C', 'ASM'}
+                            and relative in TOOLCHAIN_INCLUDE_DIRECTORIES):
+                        native_cxx_includes.append([
+                            '-isystem' if inc.get('isSystem') else '-I',
+                            'generated' if is_generated else 'source',
+                            relative.removeprefix(PREFIX + '/'),
+                        ])
+                        continue
+                    runtime_deps = None if name in NATIVE_RUNTIMES else include_dependencies(relative)
+                    if runtime_deps is not None:
+                        deps.extend(runtime_deps)
+                        continue
+                    if not relative.startswith(PREFIX + '/'):
+                        raise ValueError(f'{arch} {name}: unexpected include {path}')
+                    if is_generated:
+                        directory = '$(GENDIR)/' + PREFIX + '/gen/' + arch + '/' + relative.removeprefix(PREFIX + '/')
+                    else:
+                        # Keep CMake's spelling after validating its normalized
+                        # repository above. Clang retains ../ in __FILE__.
+                        directory = inc['path'].removeprefix(source_root + '/') if name in NATIVE_RUNTIMES else relative
+                    copts += ['-isystem' if inc.get('isSystem') else '-I', directory]
+                groups.append({
+                    'srcs': source_labels,
+                    'copts': copts,
+                    'cmake_source_prefix_map': cmake_has_source_prefix_map(
+                        group.get('compileCommandFragments', []), source_root),
+                    'cmake_reference_source_root': source_root,
+                    'hdrs': (['@' + RAW_REPOSITORY + '//:runtime_source_inputs',
+                              '@' + RAW_REPOSITORY + '//:runtime_generated_headers'] +
+                             [source_label(p) for p in sorted(RUNTIME_ROOT_INPUTS)]
+                             if name in NATIVE_RUNTIMES else []),
+                    'textual_hdrs': [], 'additional_compiler_inputs': [],
+                    'native_cxx_includes': native_cxx_includes,
+                    'local_defines': [d['define'] if name in NATIVE_RUNTIMES else shlex.quote(d['define'])
+                                      for d in group.get('defines', [])],
+                    'deps': list(dict.fromkeys(deps)),
+                    'language': group['language'],
+                    'cmake_runtime': name in NATIVE_RUNTIMES,
+                })
+            ids = {target['id']: n for n, target in graphs[arch].items()}
+            depends = [ids[d['id']] for d in value.get('dependencies', [])]
+            if name == 'libllvmlibc' and 'glibc-rseq' in depends:
+                if len(groups) != 1:
+                    raise ValueError(f'{arch} libllvmlibc must have one math object group')
+                # Native links require LLVM math before glibc-compatibility.
+                # glibc-compatibility owns the private dependency on rseq.
+                groups[0]['runtime_link_deps'] = ['@clickhouse//base/glibc-compatibility']
+            compiled[arch] = {
+                'groups': groups,
+                'deps': [':' + d for d in depends if d in targets],
+                'kind': 'STATIC_LIBRARY',
+                'linkopts': ['--unwindlib=none'] if name == 'unwind' else [],
+                'alwayslink': name in {'clang_rt_builtins', 'clang_rt_xray', 'libllvmlibc'},
+            }
+        build.target(name, compiled)
+        if name == 'clang_rt_builtins':
+            for arch, target in compiled.items():
+                groups = target['groups']
+                outline = len(outline_generated) if arch == 'aarch64' else 0
+                if len(groups) != 2 + outline or any(not g['srcs'] for g in groups):
+                    raise ValueError(f'{arch}: expected two builtins groups followed by the outline atomics')
+    if len(outline_generated) != 125 or outline_generated.keys() != outline_commands.keys():
+        raise ValueError(f'CMake AArch64 reference outline sources do not match recorded Ninja: '
+                         f'{len(outline_generated)} sources, {len(outline_commands)} generators')
+
+    print('Embedded LLVM:', len(targets), 'CMake libraries;',
+          ', '.join(a + ' ' + str(len(o)) + ' generated headers' for a, o in generated.items()))
+    return build, targets, templates | RUNTIME_ROOT_INPUTS
+
+
+def fold_component_libraries(root):
+    """Use llvm_cc_library where the CMake component has the same options and defines."""
+    import ast
+    from initial_migration.compact_build import Source, ast_key
+    from initial_migration.normalize_cpp_builds import remove_keyword
+
+    def constants(source):
+        return {s.targets[0].id: s.value for s in source.module.body
+                if isinstance(s, ast.Assign) and isinstance(s.targets[0], ast.Name)}
+
+    path = root / 'bazel/dependencies/clickhouse_llvm_project.BUILD.bazel'
+    source = Source(path.read_text())
+    bindings = constants(source)
+    settings = constants(Source((root / 'bazel/rules/llvm_cc_library.bzl').read_text()))
+    defaults = {k: ast_key(settings[v]) for k, v in
+                {'copts': '_LLVM_CXX_COPTS', 'local_defines': 'LLVM_DEFINES'}.items()}
+    edits = []
+    for _, call in source.rules():
+        attrs = {kw.arg: kw for kw in call.keywords}
+        if (call.func.id != 'ch_cc_library' or not attrs['name'].value.value.startswith('LLVM') or
+                not {'srcs', *defaults} <= attrs.keys() or
+                'language' in attrs and ast.literal_eval(attrs['language'].value) != 'CXX'):
+            continue
+        values = {k: bindings.get(getattr(attrs[k].value, 'id', None), attrs[k].value) for k in defaults}
+        if all(ast_key(values[k]) == expected for k, expected in defaults.items()):
+            edits.append((*source.span(call.func), 'llvm_cc_library'))
+            edits.extend(remove_keyword(source, attrs[k]) for k in defaults)
+    if not edits:
+        return
+
+    # LLVM's C sources also use LLVM_DEFINES, with their own compiler options.
+    source = Source(source.rewrite(edits))
+    edits = []
+    used = {n.id for n in ast.walk(source.module) if isinstance(n, ast.Name) and isinstance(n.ctx, ast.Load)}
+    defines = {name for name, value in bindings.items() if ast_key(value) == defaults['local_defines']}
+    for statement in source.module.body:
+        if isinstance(statement, ast.Assign) and isinstance(statement.targets[0], ast.Name):
+            name = statement.targets[0].id
+            if name in defines or (name not in used and ast_key(statement.value) == defaults['copts']):
+                edits.append((*source.span(statement), ''))
+    edits.extend((*source.span(n), 'LLVM_DEFINES') for n in ast.walk(source.module)
+                 if isinstance(n, ast.Name) and isinstance(n.ctx, ast.Load) and n.id in defines)
+    symbols = (['"LLVM_DEFINES"'] if used & defines else []) + ['"llvm_cc_library"']
+    load = 'load("@clickhouse//bazel/rules:llvm_cc_library.bzl", ' + ', '.join(symbols) + ')\n'
+    path.write_text(load + source.rewrite(edits))
+
+
+def fold_component_interface(root):
+    """Keep CMake's ch_contrib::llvm interface on the libraries that forward dbms."""
+    import ast
+    from initial_migration.build_file import starlark
+    from initial_migration.compact_build import Source
+    from initial_migration.first_party_packages import attributes
+
+    repo = '@clickhouse_llvm_project//:'
+    public = None
+    for package, name in (
+        ('AggregateFunctions', 'clickhouse_aggregate_functions'), ('Dictionaries', 'clickhouse_dictionaries'),
+        ('Functions/URL', 'clickhouse_functions_url'), ('Storages/System', 'clickhouse_storages_system'),
+    ):
+        path = root / 'src' / package / 'BUILD.bazel'
+        source = Source(path.read_text())
+        attrs, = (attributes(rule) for _, rule in source.rules() if attributes(rule)['name'].value == name)
+        if set(attrs) != {'name', 'deps'}:
+            raise ValueError(f'{name} must still forward only its public dependencies')
+        deps = attrs['deps']
+        strings = [n for n in ast.walk(deps) if isinstance(n, ast.Constant)]
+        if any(n.value == repo + 'llvm' for n in strings):
+            continue
+
+        # LLVMXRay is the last REQUIRED_LLVM_LIBRARIES entry on both Linux CPUs.
+        last, = (n for n in strings if n.value == repo + 'LLVMXRay')
+        start, end = source.span(deps)[0], source.span(last)[1]
+        local = source.bytes[start:end].decode().replace(repo, ':') + ']'
+        labels = [n.value for n in ast.walk(ast.parse(local)) if isinstance(n, ast.Constant)]
+        if any(not label.startswith((':LLVM', '@platforms//cpu:')) for label in labels) or public not in (None, local):
+            raise ValueError(f'{name}: expected the same leading LLVM components and CPU selections')
+        public = local
+        path.write_text(source.rewrite([(start, end, f'["{repo}llvm"')]))
+
+    path = root / 'bazel/dependencies/clickhouse_llvm_project.BUILD.bazel'
+    source = Source(path.read_text())
+    declared = any(attributes(rule)['name'].value == 'llvm' for _, rule in source.rules())
+    if declared != (public is None):
+        raise ValueError('Expected all four public LLVM lists or an existing LLVM interface')
+    if public is not None:
+        # These six REQUIRED_LLVM_LIBRARIES publish no headers or compile options.
+        private = [':LLVM' + name for name in ('CFGuard', 'HipStdPar', 'IRPrinter', 'IRReader', 'ObjCARCOpts', 'SandboxIR')]
+        path.write_text(path.read_text().rstrip() + '\n\ncc_library(\n    name = "llvm",\n'
+                        f'    deps = {public},\n    implementation_deps = {starlark(private, 4, step=4)},\n)\n')
+
+
+def fold_outline_atomics(path):
+    """Replace the repeated compiler-rt declarations only after checking every CMake variant."""
+    import ast
+    from initial_migration.compact_build import Source, render_list
+
+    source = Source(path.read_text())
+    rules = {next(k.value.value for k in call.keywords if k.arg == 'name'): (st, call)
+             for st, call in source.rules()}
+    first = rules['clang_rt_builtins__runtime_objects_2'][1]
+    fields = {k.arg: k.value for k in first.keywords}
+    headers = ast.unparse(fields['srcs'].right)
+    shared_defines = ast.literal_eval(fields['local_defines'])[3:]
+    common = {key: ast.unparse(fields[key]) for key in
+              ('arch', 'copts', 'local_includes', 'reference_source_root', 'system_includes')}
+    arm64 = repr(['@platforms//cpu:aarch64'])
+    edits = []
+
+    def replace(kind, name, attributes, replacement=''):
+        statement, call = rules[name]
+        expected = dict(name=repr(name), target_compatible_with=arm64, **attributes)
+        if call.func.id != kind or {k.arg: ast.unparse(k.value) for k in call.keywords} != expected:
+            raise ValueError(f'{name} no longer matches llvm_outline_atomics')
+        edits.append((*source.span(statement), replacement))
+
+    arguments = dict(common, headers=headers, local_defines=render_list(source, fields['local_defines'].elts[3:], 4))
+    macro = 'llvm_outline_atomics(\n    name = "clang_rt_builtins_outline_objects",\n' + ''.join(f'    {k} = {v},\n' for k, v in sorted(arguments.items())) + ')'
+    group = 2
+    for operation in ('cas', 'swp', 'ldadd', 'ldclr', 'ldeor', 'ldset'):
+        for size in ((1, 2, 4, 8, 16) if operation == 'cas' else (1, 2, 4, 8)):
+            for model in range(1, 6):
+                stem = f'outline_atomic_{operation}{size}_{model}'
+                assembly = f'gen/compiler-rt-outline/{stem}.S'
+                objects = f'clang_rt_builtins__runtime_objects_{group}'
+                defines = [f'L_{operation}', f'MODEL={model}', f'SIZE={size}', *shared_defines]
+                replace('copy_file', f'runtime_outline_{stem}_S',
+                        dict(src=repr(':compiler-rt/lib/builtins/aarch64/lse.S'), out=repr(assembly)))
+                replace('llvm_runtime_objects', objects,
+                        dict(language=repr('ASM'), srcs=f'{[":" + assembly]!r} + {headers}',
+                             local_defines=repr(defines), **common), macro if group == 2 else '')
+                group += 1
+    load = 'load("@clickhouse//bazel/rules:llvm_outline_atomics.bzl", "llvm_outline_atomics")\n'
+    path.write_text(load + source.rewrite(edits))

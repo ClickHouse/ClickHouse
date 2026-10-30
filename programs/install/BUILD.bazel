@@ -1,0 +1,39 @@
+load("@clickhouse//bazel/rules:ch_cc_library.bzl", "ch_cc_library")
+load("@clickhouse//programs:program_defines.bzl", "CLICKHOUSE_PROGRAM_DEFINES")
+
+package(default_visibility = ["//visibility:public"])
+
+exports_files(["Install.cpp"])
+
+ch_cc_library(
+    name = "clickhouse-install-lib",
+    srcs = ["//bazel:gen/embedded/programs/install/Install.cpp"],
+    additional_compiler_inputs = [
+        "//bazel:gen/embedded/programs/server/config.xml",
+        "//bazel:gen/embedded/programs/server/users.xml",
+        "//bazel:gen/embedded/programs/server/users.yaml.example",
+    ],
+    clickhouse_code = True,
+    implementation_deps = [
+        "//bazel:clickhouse_config_headers",
+        "//base/readpassphrase",
+        "//base/poco/Util:_poco_util",
+        "//src/Common",
+        "//src/Common:exception_api",
+        "//src/Common/Config:clickhouse_common_config",
+        "//base:common",
+        "@clickhouse_boost//:boost_headers_no_openssl",
+        "//src/Access/Common:clickhouse_common_access",
+        "//src:dbms",
+        "//src:clickhouse_common_io__compile_0",
+        "//src/Common:string_utils",
+        "//src:io_string_buffers",
+        "//src:headers",
+        "//src/Access/Common:headers",
+    ],
+    link_runtime = True,
+    local_defines = CLICKHOUSE_PROGRAM_DEFINES,
+    local_includes = [
+        ".",
+    ],
+)

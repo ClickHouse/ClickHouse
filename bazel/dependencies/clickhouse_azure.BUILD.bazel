@@ -1,0 +1,80 @@
+load("@clickhouse//bazel/rules:ch_cc_library.bzl", "CXX_RUNTIME_DEFINES", "ch_cc_library")
+load("@clickhouse//bazel/rules:source_header_directories.bzl", "source_header_directories")
+
+package(default_visibility = ["//visibility:public"])
+
+exports_files([
+    "LICENSE.txt",
+])
+
+ch_cc_library(
+    name = "_azure_sdk",
+    srcs = [
+        "sdk/core/azure-core/src/azure_assert.cpp",
+        "sdk/core/azure-core/src/base64.cpp",
+        "sdk/core/azure-core/src/context.cpp",
+        "sdk/core/azure-core/src/credentials/authorization_challenge_parser.cpp",
+        "sdk/core/azure-core/src/cryptography/md5.cpp",
+        "sdk/core/azure-core/src/cryptography/sha_hash.cpp",
+        "sdk/core/azure-core/src/datetime.cpp",
+        "sdk/core/azure-core/src/environment.cpp",
+        "sdk/core/azure-core/src/environment_log_level_listener.cpp",
+        "sdk/core/azure-core/src/etag.cpp",
+        "sdk/core/azure-core/src/exception.cpp",
+    ] + glob(["sdk/core/azure-core/src/http/*.cpp"]) + [
+        "sdk/core/azure-core/src/io/body_stream.cpp",
+        "sdk/core/azure-core/src/io/random_access_file_body_stream.cpp",
+        "sdk/core/azure-core/src/logger.cpp",
+        "sdk/core/azure-core/src/operation_status.cpp",
+        "sdk/core/azure-core/src/resource_identifier.cpp",
+        "sdk/core/azure-core/src/tracing/tracing.cpp",
+        "sdk/core/azure-core/src/uuid.cpp",
+    ] + glob([
+        "sdk/identity/azure-identity/src/*.cpp",
+        "sdk/storage/azure-storage-blobs/src/**/*.cpp",
+        "sdk/storage/azure-storage-common/src/*.cpp",
+        "sdk/storage/azure-storage-files-datalake/src/*.cpp",
+    ]) + glob(
+        [
+            "sdk/core/azure-core/src/**/*.hpp",
+            "sdk/identity/azure-identity/src/**/*.hpp",
+            "sdk/storage/azure-storage-blobs/src/**/*.hpp",
+            "sdk/storage/azure-storage-common/src/**/*.hpp",
+            "sdk/storage/azure-storage-files-datalake/src/**/*.hpp",
+        ],
+        exclude = [
+            "sdk/core/azure-core/src/http/curl/**",
+            "sdk/core/azure-core/src/http/winhttp/**",
+            "sdk/core/azure-core/src/private/package_version.hpp",
+            "sdk/storage/azure-storage-common/src/private/package_version.hpp",
+        ],
+    ),
+    hdrs = glob([
+        "sdk/core/azure-core/inc/**/*.hpp",
+        "sdk/identity/azure-identity/inc/**/*.hpp",
+        "sdk/storage/azure-storage-blobs/inc/**/*.hpp",
+        "sdk/storage/azure-storage-common/inc/**/*.hpp",
+        "sdk/storage/azure-storage-files-datalake/inc/**/*.hpp",
+    ]),
+    implementation_deps = [
+        "@clickhouse_libxml2//:_libxml2",
+        "@clickhouse_openssl//:crypto",
+    ],
+    includes = [
+        "sdk/core/azure-core/inc",
+        "sdk/identity/azure-identity/inc",
+        "sdk/storage/azure-storage-blobs/inc",
+        "sdk/storage/azure-storage-common/inc",
+        "sdk/storage/azure-storage-files-datalake/inc",
+    ],
+    local_defines = [
+        "BUILD_TRANSPORT_CUSTOM_ADAPTER",
+    ] + CXX_RUNTIME_DEFINES,
+    source_header_directories = source_header_directories([
+        "sdk/core/azure-core/inc/azure",
+        "sdk/identity/azure-identity/inc/azure",
+        "sdk/storage/azure-storage-blobs/inc/azure",
+        "sdk/storage/azure-storage-common/inc/azure",
+        "sdk/storage/azure-storage-files-datalake/inc/azure",
+    ]),
+)

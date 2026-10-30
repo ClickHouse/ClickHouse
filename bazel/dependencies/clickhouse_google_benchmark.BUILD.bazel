@@ -1,0 +1,27 @@
+load("@clickhouse//bazel/rules:ch_cc_library.bzl", "ch_cc_library")
+
+package(default_visibility = ["//visibility:public"])
+
+exports_files([
+    "LICENSE",
+])
+
+ch_cc_library(
+    name = "google_benchmark",
+    srcs = glob(
+        ["src/*.cc"],
+        exclude = ["src/benchmark_main.cc"],
+    ) + glob(["src/**/*.h"]),
+    hdrs = glob(["include/**/*.h"]),
+    includes = [
+        "include",
+    ],
+)
+
+ch_cc_library(
+    name = "google_benchmark_main",
+    srcs = [
+        "src/benchmark_main.cc",
+    ],
+    implementation_deps = [":google_benchmark"],
+)

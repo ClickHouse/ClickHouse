@@ -1,0 +1,38 @@
+load("@clickhouse//bazel/rules:ch_cc_library.bzl", "CXX_RUNTIME_DEFINES", "ch_cc_library")
+
+package(
+    default_visibility = ["//visibility:public"],
+    features = ["external_include_paths"],
+)
+
+exports_files([
+    "COPYING",
+])
+
+ch_cc_library(
+    name = "_libdeflate",
+    srcs = glob([
+        "lib/*.c",
+        "lib/arm/*.c",
+        "lib/x86/*.c",
+    ]) + [
+        "common_defs.h",
+        "lib/arm/cpu_features.h",
+        "lib/x86/cpu_features.h",
+    ] + glob(["lib/*.h"]) + select({
+        "@platforms//cpu:x86_64": glob(
+            ["lib/x86/*.h"],
+            exclude = ["lib/x86/cpu_features.h"],
+        ),
+        "@platforms//cpu:aarch64": glob(
+            ["lib/arm/*.h"],
+            exclude = ["lib/arm/cpu_features.h"],
+        ),
+    }),
+    hdrs = ["libdeflate.h"],
+    includes = [
+        ".",
+    ],
+    language = "C",
+    local_defines = CXX_RUNTIME_DEFINES,
+)
