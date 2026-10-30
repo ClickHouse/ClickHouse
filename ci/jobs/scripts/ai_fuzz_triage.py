@@ -130,10 +130,13 @@ _cyber_risk_flagged = False
 RETRY_IF_FASTER_THAN_SEC = 300
 # Exit codes of `timeout -k`: the agent got SIGTERM, then SIGKILL.
 TIMEOUT_EXIT_CODES = (124, 137)
-# Default budget for all agent runs of one triage. Callers running inside tighter
-# job timeouts (e.g. the 2h Upgrade check) pass a smaller `agent_timeout_sec`;
-# `AI_FUZZ_TRIAGE_TIMEOUT` overrides either for operational tuning.
+# Default budget for one whole triage: GitHub lookups, agent runs and the final checks.
+# Callers running inside tighter job timeouts (e.g. the 2h Upgrade check) pass a smaller
+# `agent_timeout_sec`; `AI_FUZZ_TRIAGE_TIMEOUT` overrides either for operational tuning.
 AGENT_TIMEOUT_SEC = 2400
+# Kept from the budget for verifying the issues the report links, so that an agent run
+# using all of the rest cannot leave a valid verdict unverified (and a PR job red).
+VERIFY_RESERVE_SEC = 180
 # The verdict needs the diff and the logs, not a reproducer: a short, cheap run.
 VERDICT_TIMEOUT_SEC = 600
 VERDICT_EFFORT = "medium"
@@ -975,11 +978,13 @@ def _robot_gh(*args, deadline=None, robot_name=None):
 _ROBOT_LOGINS = set()
 
 
-def _robot_logins():
+def _robot_logins(deadline=None):
     """The GitHub logins of `ROBOT_NAMES`, lowercased: the accounts this triage files issues as."""
     if not _ROBOT_LOGINS:
         for name in ROBOT_NAMES:
-            login = _robot_gh("api", "user", "--jq", ".login", robot_name=name).strip()
+            login = _robot_gh(
+                "api", "user", "--jq", ".login", robot_name=name, deadline=deadline
+            ).strip()
             if not login:
                 raise RuntimeError(f"no GitHub login for robot {name}")
             _ROBOT_LOGINS.add(login.lower())
@@ -996,10 +1001,12 @@ def _filed_by_robot(issue):
     return bool(login) and login in _robot_logins()
 
 
-def _github_reachable():
+def _github_reachable(deadline=None):
     """Probe used only to explain a fail-close red, never to decide job status."""
     try:
-        return bool(_robot_gh("api", "rate_limit", "--jq", ".rate.limit").strip())
+        return bool(
+            _robot_gh("api", "rate_limit", "--jq", ".rate.limit", deadline=deadline).strip()
+        )
     except Exception:  # noqa: BLE001 - a failed probe just means "cannot tell"
         return False
 
@@ -1169,13 +1176,15 @@ def independent_occurrences(issues, fingerprint, cutoff, branch, reopened=None):
     return sorted(urls)
 
 
-def _prior_occurrences(info, repo_name, pr_mode, fingerprint, digest):
-    """`Occurrences` from GitHub, or None when they cannot be read.
+def _prior_occurrences(info, repo_name, pr_mode, fingerprint, digest, deadline):
+    """`Occurrences` from GitHub, or None when they cannot be read by `deadline`.
 
     The cutoff is when the change came to exist: the PR's opening, or the
     tested commit for a post-merge run.
     """
     try:
+        # Cached for the `_filed_by_robot` checks below, which take no deadline.
+        _robot_logins(deadline)
         if pr_mode:
             path, field = f"repos/{repo_name}/pulls/{info.pr_number}", ".created_at"
         else:
@@ -1183,14 +1192,16 @@ def _prior_occurrences(info, repo_name, pr_mode, fingerprint, digest):
                 f"repos/{repo_name}/commits/{info.sha}",
                 ".commit.committer.date",
             )
-        cutoff = _parse_github_time(_robot_gh("api", path, "--jq", field).strip())
+        cutoff = _parse_github_time(
+            _robot_gh("api", path, "--jq", field, deadline=deadline).strip()
+        )
         # Index lag does not matter here: only issues older than the change count.
-        issues = _search_fingerprint(repo_name, fingerprint)
+        issues = _search_fingerprint(repo_name, fingerprint, deadline)
         branch = info.base_branch if pr_mode else info.git_branch
         reopened = {}
         for issue in issues:
             if _state(issue) == "OPEN" and _tracks_fingerprint(issue, fingerprint):
-                when = _reopened_at(issue["url"])
+                when = _reopened_at(issue["url"], deadline)
                 if when is not None:
                     reopened[issue["url"]] = when
         older = independent_occurrences(issues, fingerprint, cutoff, branch, reopened)
@@ -1323,7 +1334,7 @@ def _drop_checkout_credentials():
         )
 
 
-def _verify_issue_marker(issue_url, fingerprint, repo_name):
+def _verify_issue_marker(issue_url, fingerprint, repo_name, deadline=None):
     """Check the issue is open in `repo_name` with the dedup marker and `fuzz` label.
 
     Taking the agent's word for this is how duplicates get back in: an issue
@@ -1350,7 +1361,8 @@ def _verify_issue_marker(issue_url, fingerprint, repo_name):
             f"this failure is tracked"
         ]
     try:
-        issue = _issue_json(issue_url, "body,labels,state,author")
+        issue = _issue_json(issue_url, "body,labels,state,author", deadline)
+        _robot_logins(deadline)
         by_robot = isinstance(issue, dict) and _filed_by_robot(issue)
     except Exception as e:  # noqa: BLE001 - never lose a valid verdict over this
         return False, [f"AI triage: could not verify {issue_url} ({e})"]
@@ -1383,7 +1395,7 @@ def _verify_issue_marker(issue_url, fingerprint, repo_name):
     return True, problems
 
 
-def _write_pr_diff(info, repo_name):
+def _write_pr_diff(info, repo_name, deadline):
     """The PR diff at the tested head, not the live PR.
 
     A commit pushed while the job ran, e.g. one removing the faulty change, must
@@ -1397,7 +1409,9 @@ def _write_pr_diff(info, repo_name):
         )
     compare = f"repos/{repo_name}/compare/{info.base_branch}...{info.sha}"
     try:
-        diff = _robot_gh("api", compare, "-H", "Accept: application/vnd.github.diff")
+        diff = _robot_gh(
+            "api", compare, "-H", "Accept: application/vnd.github.diff", deadline=deadline
+        )
     except subprocess.CalledProcessError as e:
         raise RuntimeError(f"cannot fetch the PR diff: {(e.stderr or '').strip()}") from e
     PR_DIFF_FILE.write_text(diff, encoding="utf-8")
@@ -1794,6 +1808,7 @@ def _unrelated_red_reason(
     uncovered,
     regression,
     occurrences_checked,
+    deadline=None,
 ):
     """Why an `unrelated` verdict on a PR run keeps the job red, or "" when it may turn green.
 
@@ -1824,7 +1839,7 @@ def _unrelated_red_reason(
         )
     if not issue_url:
         # An outage only needs a re-run, while a missing URL from a reachable GitHub is a triage bug.
-        if _github_reachable():
+        if _github_reachable(deadline):
             return "no valid issue URL was provided", False
         return (
             "the issue could not be filed: GitHub was unreachable or `gh` was "
@@ -1860,6 +1875,7 @@ def _apply_verdict(
     repo_name="",
     regression=False,
     occurrences_checked=False,
+    deadline=None,
 ):
     kind = verdict["verdict"]
     reasoning = (verdict.get("reasoning") or "").strip()[:1200]
@@ -1880,7 +1896,9 @@ def _apply_verdict(
     # Check the issue itself rather than trusting the verdict; fall back to the
     # agent's own claim only when the check could not run. A missing key counts as
     # not applied: silence must not read as success.
-    verified, marker_problems = _verify_issue_marker(issue_url, fingerprint, repo_name)
+    verified, marker_problems = _verify_issue_marker(
+        issue_url, fingerprint, repo_name, deadline
+    )
     lines.extend(marker_problems)
     if verdict.get("issue_error"):
         lines.append(f"AI triage: filing the issue failed ({verdict['issue_error']})")
@@ -1904,6 +1922,7 @@ def _apply_verdict(
                 uncovered,
                 regression,
                 occurrences_checked,
+                deadline,
             )
         if kind == "unrelated" and not reason:
             # The only path that turns the job green, mirroring the established
@@ -1953,7 +1972,7 @@ def _apply_verdict(
                 "the failure is NOT tracked yet"
             )
         for other in verdict.get("other_issues") or []:
-            lines.append(_other_issue_line(other, repo_name))
+            lines.append(_other_issue_line(other, repo_name, deadline))
         generic = [name for name in uncovered if not _stable_signature(name)]
         if fingerprint and generic:
             names = ", ".join(f"`{name}`" for name in generic)
@@ -1982,7 +2001,7 @@ def _apply_verdict(
             result.set_files([path])
 
 
-def _other_issue_line(other, repo_name):
+def _other_issue_line(other, repo_name, deadline=None):
     """Report line for the issue of one of `FailureGroups.others`."""
     subject, issue_url = f"`{other['signature']}`: ", other.get("issue_url") or ""
     if not issue_url:
@@ -1992,7 +2011,7 @@ def _other_issue_line(other, repo_name):
             f"(filing its issue failed: {error})"
         )
     verified, problems = _verify_issue_marker(
-        issue_url, other["fingerprint"], repo_name
+        issue_url, other["fingerprint"], repo_name, deadline
     )
     return _tracking_line(
         subject, issue_url, _issue_note(other), verified, "; ".join(problems)
@@ -2116,6 +2135,11 @@ def triage_and_apply(
                 f"AI fuzz triage: PR by self-triaging agent '{info.user_name}', skipping"
             )
             return
+        # From before the first GitHub request, so the whole triage fits the budget.
+        budget = int(os.environ.get("AI_FUZZ_TRIAGE_TIMEOUT", agent_timeout_sec))
+        deadline = time.monotonic() + budget
+        # Everything but the final verification, which keeps a share of the budget.
+        work_deadline = deadline - min(VERIFY_RESERVE_SEC, budget // 4)
         TRIAGE_DIR.mkdir(parents=True, exist_ok=True)
         groups = group_failures(failures)
         fingerprint = groups.fingerprint
@@ -2127,7 +2151,12 @@ def triage_and_apply(
         repo_name = _triage_repo(info)
         occurrences = (
             _prior_occurrences(
-                info, repo_name, pr_mode, fingerprint, stack_digest(groups.tracked)
+                info,
+                repo_name,
+                pr_mode,
+                fingerprint,
+                stack_digest(groups.tracked),
+                work_deadline,
             )
             if fingerprint
             else Occurrences([], [])
@@ -2146,16 +2175,14 @@ def triage_and_apply(
             print(f"AI fuzz triage: known issue {verdict['issue_url']}, no agent run")
         else:
             if pr_mode:
-                _write_pr_diff(info, repo_name)
-            budget = int(os.environ.get("AI_FUZZ_TRIAGE_TIMEOUT", agent_timeout_sec))
-            deadline = time.monotonic() + budget
+                _write_pr_diff(info, repo_name, work_deadline)
             history_available = not pr_mode and _fetch_recent_history(
-                info.sha, deadline
+                info.sha, work_deadline
             )
             # After the fetch, which a private repository needs them for.
             _drop_checkout_credentials()
             _write_known_issues(occurrences)
-            verdict_timeout = min(VERDICT_TIMEOUT_SEC, int(_remaining_sec(deadline)))
+            verdict_timeout = min(VERDICT_TIMEOUT_SEC, int(_remaining_sec(work_deadline)))
             prompt = _build_prompt(
                 info,
                 job_kind,
@@ -2168,7 +2195,7 @@ def triage_and_apply(
             )
             verdict = _run_agent(
                 prompt,
-                deadline,
+                work_deadline,
                 verdict_timeout,
                 VERDICT_EFFORT,
                 VERDICT_FILE,
@@ -2176,7 +2203,7 @@ def triage_and_apply(
             )
             if not pr_mode and verdict["verdict"] == "related":
                 verdict["culprit_pr"] = _culprit_pr(
-                    repo_name, verdict["culprit_commit"], deadline
+                    repo_name, verdict["culprit_commit"], work_deadline
                 )
             found_in = _report_url(info) or info.pr_url or info.commit_url
             if fingerprint and (not pr_mode or verdict["verdict"] == "unrelated"):
@@ -2190,7 +2217,7 @@ def triage_and_apply(
                             job_kind,
                             found_in,
                             info.pr_url if pr_mode else "",
-                            deadline,
+                            work_deadline,
                         )
                     )
                 except Exception as e:  # noqa: BLE001 - the report says it is untracked
@@ -2199,7 +2226,7 @@ def triage_and_apply(
                     verdict["issue_error"] = f"{type(e).__name__}: {e}"
             if not pr_mode:
                 verdict["other_issues"] = _track_other_signatures(
-                    repo_name, groups.others, job_kind, found_in, deadline
+                    repo_name, groups.others, job_kind, found_in, work_deadline
                 )
             if _needs_repro(verdict):
                 verdict.update(
@@ -2211,12 +2238,12 @@ def triage_and_apply(
                         repro_hint,
                         pr_mode,
                         verdict,
-                        deadline,
+                        work_deadline,
                     )
                 )
                 if _should_post_repro(verdict):
                     try:
-                        _post_repro(verdict["issue_url"], verdict["repro"], deadline)
+                        _post_repro(verdict["issue_url"], verdict["repro"], work_deadline)
                     except Exception as e:  # noqa: BLE001 - the report still has it
                         print(f"WARNING: AI fuzz triage: cannot post reproducer: {e}")
         _apply_verdict(
@@ -2228,6 +2255,7 @@ def triage_and_apply(
             repo_name,
             regression=bool(occurrences and occurrences.regression),
             occurrences_checked=occurrences is not None,
+            deadline=deadline,
         )
     except Exception as e:  # noqa: BLE001 - triage must never break the job
         print(f"WARNING: AI fuzz triage unavailable: {e}")
