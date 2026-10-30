@@ -1014,7 +1014,7 @@ toStringEveryLineImpl([[maybe_unused]] bool fatal, const StackTraceRefTriple & s
         /// Only the offset of a frame inside the executable is shown, never its runtime address:
         /// see `forEachFrame`.
         if (frame.physical_addr && shouldShowAddress(frame.physical_addr))
-            callback(fmt::format("{}. ? @ {}", frame_index++, frame.physical_addr));
+            callback(fmt::format("{}. ? @ {:#x}", frame_index++, reinterpret_cast<uintptr_t>(frame.physical_addr)));
         else if (frame.virtual_addr)
             callback(fmt::format("{}. ?", frame_index++));
     };
