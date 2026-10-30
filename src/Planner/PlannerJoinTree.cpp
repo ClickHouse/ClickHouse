@@ -2871,6 +2871,14 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(TableExpressionNodePtr table_
                 {
                     auto sample_block = std::make_shared<const Block>(storage_snapshot->getSampleBlockForColumns(columns_names));
 
+                    /// Freeze the effective `FINAL` into the modifiers of the logical read. Without modifiers,
+                    /// `SelectQueryInfo::isFinal` may inherit the query-level `FINAL`
+                    /// (`analyzer_compatibility_apply_final_to_all_joined_tables`), while the read step stores
+                    /// an explicit value, so materializing the step would otherwise read without `FINAL`.
+                    auto logical_read_modifiers = table_expression_query_info.table_expression_modifiers.value_or(TableExpressionModifiers{});
+                    if (!table_expression_query_info.table_expression_modifiers && table_expression_query_info.isFinal())
+                        logical_read_modifiers.setHasFinal(true);
+
                     if (table_node)
                     {
                         String table_name;
@@ -2882,7 +2890,7 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(TableExpressionNodePtr table_
                         auto reading_from_table = std::make_unique<ReadFromTableStep>(
                             sample_block,
                             table_name,
-                            table_expression_query_info.table_expression_modifiers.value_or(TableExpressionModifiers{}));
+                            logical_read_modifiers);
                         /// Tell the query plan cache that the single output column was injected for
                         /// an empty projection and is not a required column of this read (see
                         /// `ReadFromTableStep::readsOnlyInjectedColumn`).
@@ -2943,7 +2951,7 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(TableExpressionNodePtr table_
                         auto reading_from_table_function = std::make_unique<ReadFromTableFunctionStep>(
                             sample_block,
                             std::move(table_function_serialized_ast),
-                            table_expression_query_info.table_expression_modifiers.value_or(TableExpressionModifiers{}));
+                            logical_read_modifiers);
 
                         query_plan.addStep(std::move(reading_from_table_function));
                     }
