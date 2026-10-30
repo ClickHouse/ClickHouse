@@ -3,8 +3,9 @@
 
 The column definitions of a result set report the table column each result column comes from
 (`schema`, `table`, `org_table`, `org_name`) and the display width of the type (`length`), as MySQL does.
-Result columns that are not plain references to a table column have an empty table and `org_name`
-equal to the name.
+A column of a subquery reports the table column the subquery selects, with the alias of the subquery as
+`table` if it has one. Result columns that are not plain references to a table column have an empty table
+and `org_name` equal to the name.
 
 `COM_STMT_PREPARE` describes the result columns of the statement, as MySQL does, so that clients
 know the shape of the result before executing it, and `COM_STMT_RESET` is answered with an OK packet.
@@ -249,6 +250,7 @@ def main():
         query_metadata(sock, f"SELECT id FROM {CLICKHOUSE_DATABASE}.t")
         query_metadata(sock, "SELECT id AS x, a.s, flag + 1 AS expr, 1 AS const FROM t AS a")
         query_metadata(sock, "SELECT id FROM (SELECT id FROM t)")
+        query_metadata(sock, "SELECT x FROM (SELECT id AS x FROM t AS a) AS d")
         query_metadata(sock, "SELECT id FROM t UNION ALL SELECT id FROM t")
 
         # The query tree optimizations can rewrite an expression into a column (`length(a)` into the subcolumn `a.size0`,
@@ -272,6 +274,27 @@ def main():
             execute(sock, statement_id, columns)
             # The statement can be reset and executed again.
             reset(sock, statement_id)
+            execute(sock, statement_id, columns)
+            close(sock, statement_id)
+
+        # The `SQL_SELECT_LIMIT` setting wraps the query into a subquery, which keeps the origins of the columns.
+        query(sock, "SET SQL_SELECT_LIMIT=2")
+        limited = "SELECT id, flag + 1 AS expr FROM t"
+        query_metadata(sock, limited)
+        statement_id, columns = prepare(sock, limited)
+        execute(sock, statement_id, columns)
+        close(sock, statement_id)
+        query(sock, "SET SQL_SELECT_LIMIT=DEFAULT")
+
+        # Read-only statements other than `SELECT` that return a result set are described at prepare time too.
+        for text in [
+            "SHOW TABLES LIKE 't'",
+            "DESCRIBE TABLE t",
+            "SHOW COLUMNS FROM t",
+            "SHOW CREATE TABLE t",
+            "EXISTS TABLE t",
+        ]:
+            statement_id, columns = prepare(sock, text)
             execute(sock, statement_id, columns)
             close(sock, statement_id)
 

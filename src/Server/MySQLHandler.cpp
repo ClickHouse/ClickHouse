@@ -35,12 +35,16 @@
 #include <Parsers/ASTSelectIntersectExceptQuery.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
+#include <Parsers/ASTShowColumnsQuery.h>
+#include <Parsers/ASTShowIndexesQuery.h>
+#include <Parsers/ASTShowTablesQuery.h>
 #include <Parsers/CommonParsers.h>
 #include <Parsers/ExpressionElementParsers.h>
 #include <Parsers/ExpressionListParsers.h>
 #include <Parsers/IParser.h>
 #include <Parsers/ParserQuery.h>
 #include <Parsers/parseQuery.h>
+#include <Parsers/TablePropertiesQueriesASTs.h>
 #include <Parsers/TokenIterator.h>
 #include <Server/TCPServer.h>
 #include <Storages/IStorage.h>
@@ -989,13 +993,18 @@ Block MySQLHandler::describePreparedStatement(const String & statement, ResultCo
     if (settings[Setting::dialect] != Dialect::clickhouse)
         return {};
 
-    /// Only queries returning a result set are described, and they must not be executed here.
+    /// Only read-only queries returning a result set are described, as mutations must not be executed here.
     const char * begin = query.data();
     const char * end = begin + query.size();
     ParserQuery parser(end, settings[Setting::allow_settings_after_format_in_insert], settings[Setting::implicit_select]);
     ASTPtr ast = parseQuery(parser, begin, end, "", settings[Setting::max_query_size], settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
 
-    if (!ast->as<ASTSelectWithUnionQuery>() && !ast->as<ASTSelectQuery>() && !ast->as<ASTSelectIntersectExceptQuery>())
+    const bool returns_result_set = ast->as<ASTSelectWithUnionQuery>() || ast->as<ASTSelectQuery>() || ast->as<ASTSelectIntersectExceptQuery>()
+        || ast->as<ASTShowTablesQuery>() || ast->as<ASTShowColumnsQuery>() || ast->as<ASTShowIndexesQuery>() || ast->as<ASTDescribeQuery>()
+        || ast->as<ASTShowCreateTableQuery>() || ast->as<ASTShowCreateViewQuery>() || ast->as<ASTShowCreateDatabaseQuery>()
+        || ast->as<ASTShowCreateDictionaryQuery>() || ast->as<ASTExistsTableQuery>() || ast->as<ASTExistsViewQuery>()
+        || ast->as<ASTExistsDatabaseQuery>() || ast->as<ASTExistsDictionaryQuery>();
+    if (!returns_result_set)
         return {};
 
     /// Build the query the same way its execution does (with the settings, the access checks, the limits and an entry
