@@ -93,6 +93,10 @@ public:
     using MatchVec = std::vector<Match>;
 
     OptimizedRegularExpression(const std::string & regexp_, int options = 0); /// NOLINT
+    /// A case-sensitive comparison against `literal` at the position `match_kind_` names, without re2. Unlike the
+    /// analysis of `^literal`, it keeps a literal of any length as the required substring, so a short one still
+    /// narrows the search. `match_kind_` must not be `General`.
+    OptimizedRegularExpression(std::string literal, RegexpMatchKind match_kind_);
     /// StringSearcher store pointers to required_substring, it must be updated on move.
     OptimizedRegularExpression(OptimizedRegularExpression && rhs) noexcept;
     OptimizedRegularExpression(const OptimizedRegularExpression & rhs) = delete;

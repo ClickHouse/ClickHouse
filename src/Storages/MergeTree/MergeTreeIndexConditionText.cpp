@@ -316,6 +316,7 @@ bool MergeTreeIndexConditionText::isSupportedFunction(const String & function_na
     return function_name == "hasToken"
         || function_name == "hasAnyTokens"
         || function_name == "hasAllTokens"
+        || function_name == "hasTokenStartingWith"
         || function_name == "hasPhrase"
         || function_name == "equals"
         || function_name == "mapContainsKey"
@@ -341,7 +342,8 @@ bool MergeTreeIndexConditionText::isSupportedFunction(const String & function_na
 bool MergeTreeIndexConditionText::tokenizerArgumentMatchesIndex(const String & function_name, const RPNBuilderTreeNode & node) const
 {
     /// The third argument of hasToken is a start position, not a tokenizer.
-    if (function_name != "hasAnyTokens" && function_name != "hasAllTokens" && function_name != "hasPhrase")
+    if (function_name != "hasAnyTokens" && function_name != "hasAllTokens" && function_name != "hasTokenStartingWith"
+        && function_name != "hasPhrase")
         return false;
 
     Field const_value;
@@ -378,7 +380,8 @@ TextIndexDirectReadMode MergeTreeIndexConditionText::getDirectReadMode(const Str
 
     if (function_name == "hasToken"
         || function_name == "hasAnyTokens"
-        || function_name == "hasAllTokens")
+        || function_name == "hasAllTokens"
+        || function_name == "hasTokenStartingWith")
     {
         return TextIndexDirectReadMode::Exact;
     }
@@ -1418,6 +1421,57 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
             out.text_search_queries.emplace_back(std::make_shared<TextSearchQuery>(function_name, TextSearchMode::All, direct_read_mode, search_tokens));
         }
 
+        return true;
+    }
+    if (function_name == "hasTokenStartingWith")
+    {
+        if (!value_data_type.isString())
+            return false;
+
+        /// The function is rewritten to the index tokenizer and preprocessor only when the index produces a query
+        /// for it (see `TextIndexDAGReplacer`), so a prefix the index cannot answer still gets one: without tokens
+        /// or patterns and never read directly, it keeps the rewrite and prunes nothing.
+        auto leave_to_scan = [&]
+        {
+            out.function = RPNElement::FUNCTION_UNKNOWN;
+            out.text_search_queries.emplace_back(std::make_shared<TextSearchQuery>(
+                function_name, TextSearchMode::Any, TextIndexDirectReadMode::None, VectorWithMemoryTracking<String>()));
+            return true;
+        };
+
+        /// A postprocessor maps whole tokens, so a stored token with the prefix says nothing about the token the
+        /// function sees. The scan is exact only on the plain index column (see `candidate_for_exact_mode`), and
+        /// the virtual column cannot carry the NULL of a `Nullable` value (see `affix_patterns_allowed`).
+        if (!settings[Setting::use_text_index_like_evaluation_by_dictionary_scan] || has_postprocessor
+            || !candidate_for_exact_mode || !affix_patterns_allowed)
+            return leave_to_scan();
+
+        String prefix = value_field.safeGet<String>();
+        if (has_preprocessor)
+        {
+            /// The preprocessor can make the value `Nullable` (e.g. `nullIf`), and the virtual column cannot carry
+            /// the NULL the predicate returns then, which NOT flips to true.
+            const auto & preprocessed_type = preprocessor->getOriginalActionsDAG().getOutputs().front()->result_type;
+            if (isNullableOrLowCardinalityNullable(preprocessed_type))
+                return leave_to_scan();
+
+            prefix = preprocessor->processConstant(prefix);
+        }
+
+        /// A short prefix matches too many dictionary tokens; the threshold is shared with `LIKE`. An empty prefix
+        /// matches every token.
+        const size_t min_prefix_length = std::max<size_t>(1, settings[Setting::text_index_like_min_pattern_length]);
+        if (prefix.size() < min_prefix_length)
+            return leave_to_scan();
+
+        /// A literal `^prefix` comparison: the analyzer seeks the sorted dictionary to the key range of the prefix,
+        /// see `getPatternTokenKeyRanges`. The regexp analysis would drop a required literal shorter than three bytes.
+        std::vector<OptimizedRegularExpression> patterns;
+        patterns.emplace_back(std::move(prefix), RegexpMatchKind::Prefix);
+
+        out.function = RPNElement::FUNCTION_LIKE;
+        out.text_search_queries.emplace_back(std::make_shared<TextSearchQuery>(
+            function_name, TextSearchMode::Any, direct_read_mode, VectorWithMemoryTracking<String>(), std::move(patterns)));
         return true;
     }
     if (function_name == "hasAny" || function_name == "hasAll")
