@@ -551,19 +551,18 @@ ASTPtr DatabaseFilesystem::getCreateDatabaseQueryImpl() const
 {
     const auto & settings = getContext()->getSettingsRef();
 
-    /// For an object-storage user-files disk the qualified `path` is relative (the disk
-    /// root is an object-key prefix), and the constructor always resolves a relative path
-    /// against the disk root. Serialize the disk-relative form so that replaying this
-    /// query (e.g. on RESTORE) prepends the root exactly once instead of doubling it.
-    /// The same applies to wrapper disks (`DiskEncrypted`, cached): their root names the
-    /// backing store, which may differ on the node that replays the query.
-    /// A qualified path on a plain local disk is host-absolute and is re-normalized by the
-    /// absolute branch of the constructor, so it is serialized as is.
+    /// Under `user_files_policy` the constructor always resolves a relative path against the
+    /// root of the (single) disk of the policy, so serialize the disk-relative form for every
+    /// disk. For an object-storage disk the qualified `path` is itself relative (the disk root
+    /// is an object-key prefix), and replaying it (e.g. on RESTORE) would double the root.
+    /// For wrapper disks (`DiskEncrypted`, cached) and plain local disks the root names a
+    /// backing store or a mount point that may differ on the server that replays the query,
+    /// which must select its own policy root instead of a host-specific path.
     String serialized_path = path;
     if (auto user_files_volume = getContext()->getUserFilesVolume())
     {
         auto [disk, disk_relative_path] = splitUserFilesAbsolutePath(path, user_files_volume->getDisks());
-        if (disk && !isPlainLocalDisk(*disk))
+        if (disk)
             serialized_path = disk_relative_path;
     }
 

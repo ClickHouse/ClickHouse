@@ -686,6 +686,10 @@ def test_local_filesystem_database():
     node_local.query("DROP DATABASE IF EXISTS test_fs_db")
     node_local.query("CREATE DATABASE test_fs_db ENGINE = Filesystem('fsdb')")
     assert node_local.query("SELECT * FROM test_fs_db.`t.csv`").strip() == "42"
+    # `SHOW CREATE DATABASE` uses the disk-relative path, so that replaying it on another
+    # server selects the root of that server's own policy instead of this mount point.
+    show_create = node_local.query("SHOW CREATE DATABASE test_fs_db").replace("\\'", "'")
+    assert "Filesystem('fsdb')" in show_create, show_create
     node_local.query("DROP DATABASE test_fs_db")
 
 
