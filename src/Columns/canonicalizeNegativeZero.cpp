@@ -77,18 +77,6 @@ ColumnPtr canonicalizeNestedNegativeZero(const IColumn & column)
     return canonicalizeNegativeZeroThroughLowCardinality(column);
 }
 
-/// Whether a floating point value can be found somewhere inside a value of this type.
-bool mayContainNegativeZero(const IDataType & type)
-{
-    /// `anyInTypeTree` checks `type` itself and every type nested in it.
-    return anyInTypeTree(type, [](const IDataType & nested)
-    {
-        WhichDataType which(nested);
-        /// `Dynamic` and `JSON` do not report their nested types, so they can contain anything.
-        return which.isFloat() || which.isDynamic() || which.isObject();
-    });
-}
-
 /// The same, for a `String` column of binary encoded values.
 ColumnPtr canonicalizeNegativeZeroInEncodedValues(const IColumn & column)
 {
@@ -155,6 +143,17 @@ ColumnPtr canonicalizeNegativeZeroInVariant(const ColumnVariant & column, std::o
         column.getLocalDiscriminatorsPtr(), column.getOffsetsPtr(), variants, column.getLocalToGlobalDiscriminatorsMapping());
 }
 
+}
+
+bool mayContainNegativeZero(const IDataType & type)
+{
+    /// `anyInTypeTree` checks `type` itself and every type nested in it.
+    return anyInTypeTree(type, [](const IDataType & nested)
+    {
+        WhichDataType which(nested);
+        /// `Dynamic` and `JSON` do not report their nested types, so they can contain anything.
+        return which.isFloat() || which.isDynamic() || which.isObject();
+    });
 }
 
 std::optional<String> canonicalizeNegativeZeroInEncodedValue(std::string_view encoded_value)

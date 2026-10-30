@@ -8,6 +8,8 @@
 namespace DB
 {
 
+class IDataType;
+
 /** Replaces negative zeros with positive zeros in a floating point column,
   * recursively for `Nullable`, `Array`, `Tuple`, `Map`, `Variant` and `Dynamic` columns.
   *
@@ -36,6 +38,10 @@ ColumnPtr canonicalizeNegativeZeroThroughLowCardinality(const IColumn & column);
 /// The same, in place, for a list of key columns.
 /// The canonicalized columns are appended to `holder`, which has to outlive the usage of `key_columns`.
 void canonicalizeNegativeZeroInKeyColumns(ColumnRawPtrs & key_columns, Columns & holder);
+
+/// Whether a floating point value can be found somewhere inside a value of this type.
+/// `Dynamic` and `JSON` can contain anything.
+bool mayContainNegativeZero(const IDataType & type);
 
 /** A value in the shared variant of a `Dynamic` column and in the shared data of a `JSON` column
   * is stored as the binary encoding of its type followed by the value in binary format

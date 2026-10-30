@@ -830,6 +830,10 @@ std::string_view ColumnDynamic::serializeValueIntoArena(size_t n, Arena & arena,
 
     WriteBufferFromOwnString buf;
     std::string_view type_and_value;
+    /// Whether the value can contain a negative zero. The type of a value from the shared variant is not known
+    /// without decoding it, while the type of a regular variant is, and it usually cannot contain floating point
+    /// values, so the value does not have to be decoded back to check it.
+    bool may_contain_negative_zero = true;
     /// If we have value from shared variant, it's already stored in the desired format.
     if (discr == getSharedVariantDiscriminator())
     {
@@ -842,11 +846,12 @@ std::string_view ColumnDynamic::serializeValueIntoArena(size_t n, Arena & arena,
         encodeDataType(variant_type, buf);
         variant_type->getDefaultSerialization()->serializeBinary(variant_col.getVariantByGlobalDiscriminator(discr), variant_col.offsetAt(n), buf, getFormatSettings());
         type_and_value = buf.str();
+        may_contain_negative_zero = mayContainNegativeZero(*variant_type);
     }
 
     /// The serialized value is used as a key in a hash table, see `IColumn::SerializationSettings::canonicalize_negative_zero`.
     std::optional<String> canonical_type_and_value;
-    if (settings && settings->canonicalize_negative_zero)
+    if (settings && settings->canonicalize_negative_zero && may_contain_negative_zero)
     {
         canonical_type_and_value = canonicalizeNegativeZeroInEncodedValue(type_and_value);
         if (canonical_type_and_value)
