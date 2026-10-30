@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# Tags: no-darwin
+# no-darwin: the test holds the `status` lock with util-linux `flock(1)`, which macOS does not have.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
