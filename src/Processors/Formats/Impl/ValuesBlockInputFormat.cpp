@@ -26,6 +26,7 @@
 #include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeVariant.h>
 #include <IO/ReadBufferFromString.h>
 
 namespace DB
@@ -694,7 +695,10 @@ bool ValuesBlockInputFormat::parseExpression(IColumn & column, size_t column_idx
     /// Insert value into the column.
     /// For Dynamic type we cannot just insert Field as we lose information about the data type.
     /// Instead try to create a column with single element and cast it to the destination type.
-    if (type.hasDynamicStructure())
+    /// The same applies to a Variant with an alternative of exactly the type of the value: inserting the Field
+    /// would put it into the first alternative that accepts it, for example Array(Date) for an Array(UInt64).
+    const auto * variant_type = typeid_cast<const DataTypeVariant *>(&type);
+    if (type.hasDynamicStructure() || (variant_type && variant_type->tryGetVariantDiscriminator(value_raw.second->getName())))
     {
         ColumnPtr const_column = value_raw.second->createColumnConst(1, expression_value);
         auto casted_column = castColumn(ColumnWithTypeAndName(const_column, value_raw.second, ""), type.getPtr(), nullptr);
