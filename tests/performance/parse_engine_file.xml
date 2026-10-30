@@ -33,4 +33,13 @@
 
 <drop_query>DROP TABLE IF EXISTS table_{format}</drop_query>
 
+<!-- Small blocks of deeply nested Tuples: the per-block column creation must stay cheap. -->
+<create_query>CREATE TABLE IF NOT EXISTS nested_tuple_rowbinary (c0 Tuple(a UInt8, b Tuple(a UInt8, b Tuple(a UInt8, b Tuple(a UInt8, b Tuple(a UInt8, b Tuple(a UInt8, b Tuple(a UInt8, b Tuple(a UInt8, b Tuple(a UInt8, b Tuple(a UInt8, b Tuple(a UInt8, b Tuple(a UInt8, b Tuple(a UInt8, b Tuple(a UInt8, b Tuple(a UInt8, b Tuple(a UInt8, b UInt8)))))))))))))))), c1 Tuple(a UInt8, b Tuple(a UInt8, b Tuple(a UInt8, b Tuple(a UInt8, b Tuple(a UInt8, b Tuple(a UInt8, b Tuple(a UInt8, b Tuple(a UInt8, b Tuple(a UInt8, b Tuple(a UInt8, b Tuple(a UInt8, b Tuple(a UInt8, b Tuple(a UInt8, b Tuple(a UInt8, b Tuple(a UInt8, b Tuple(a UInt8, b UInt8))))))))))))))))) ENGINE = File(RowBinary)</create_query>
+
+<fill_query>INSERT INTO nested_tuple_rowbinary SELECT * FROM generateRandom('c0 Tuple(a UInt8, b Tuple(a UInt8, b Tuple(a UInt8, b Tuple(a UInt8, b Tuple(a UInt8, b Tuple(a UInt8, b Tuple(a UInt8, b Tuple(a UInt8, b Tuple(a UInt8, b Tuple(a UInt8, b Tuple(a UInt8, b Tuple(a UInt8, b Tuple(a UInt8, b Tuple(a UInt8, b Tuple(a UInt8, b Tuple(a UInt8, b UInt8)))))))))))))))), c1 Tuple(a UInt8, b Tuple(a UInt8, b Tuple(a UInt8, b Tuple(a UInt8, b Tuple(a UInt8, b Tuple(a UInt8, b Tuple(a UInt8, b Tuple(a UInt8, b Tuple(a UInt8, b Tuple(a UInt8, b Tuple(a UInt8, b Tuple(a UInt8, b Tuple(a UInt8, b Tuple(a UInt8, b Tuple(a UInt8, b Tuple(a UInt8, b UInt8))))))))))))))))', 1, 10, 2) LIMIT 15000</fill_query>
+
+<query>SELECT * FROM nested_tuple_rowbinary FORMAT Null SETTINGS max_block_size = 1, input_format_parallel_parsing = 0, max_threads = 1</query>
+
+<drop_query>DROP TABLE IF EXISTS nested_tuple_rowbinary</drop_query>
+
 </test>
