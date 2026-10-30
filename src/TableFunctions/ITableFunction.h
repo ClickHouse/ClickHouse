@@ -76,9 +76,9 @@ public:
       * No value, the default, means the call cannot be the coordinated read: one that produces a storage of
       * its own (`s3`, `numbers`, `view`, `merge`) is not the same table on any two replicas, even when that
       * storage is a `MergeTree`. A value does not make the read eligible by itself - the storage it resolves
-      * to is checked as for a table. Such a read is planned the query-tree way, even under
-      * `parallel_replicas_plan_based`, because a shipped plan fragment can only name the storage the call
-      * resolved to on the initiator.
+      * to is checked as for a table. The identity is used only when the replicas are sent the query: a plan
+      * fragment names the storage the call resolved to on the initiator, and the read is coordinated under
+      * that storage's name.
       */
     virtual std::optional<String> getParallelReplicasReadID() const { return std::nullopt; }
 

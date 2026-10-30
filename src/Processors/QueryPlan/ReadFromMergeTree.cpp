@@ -4272,17 +4272,15 @@ void ReadFromMergeTree::updateSortDescription()
         enable_vertical_final);
 }
 
-bool ReadFromMergeTree::readsThroughTableFunction() const
-{
-    return query_info.table_expression && query_info.table_expression->as<TableFunctionNode>();
-}
-
 String ReadFromMergeTree::getParallelReplicasStreamId() const
 {
     /// A read through a table function may read a storage whose name is local to each server: the target of
     /// a `TimeSeries` table is named after a UUID the server assigned. Replicas that announced it under that
     /// name would get a coordinator each and read everything, so it goes by the identity of its source.
-    if (const auto * table_function_node = query_info.table_expression ? query_info.table_expression->as<TableFunctionNode>() : nullptr)
+    /// A read shipped in a plan fragment names the storage itself, which a replica without it cannot read.
+    const auto * table_function_node
+        = !query_info.parallel_replicas_coordinated_under_storage_name && query_info.table_expression ? query_info.table_expression->as<TableFunctionNode>() : nullptr;
+    if (table_function_node)
     {
         if (const auto & read_id = table_function_node->getParallelReplicasReadID())
             return *read_id;

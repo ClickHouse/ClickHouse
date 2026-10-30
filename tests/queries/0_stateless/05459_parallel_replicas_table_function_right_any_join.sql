@@ -3,9 +3,8 @@
 
 -- A `RightAny` join picks one left row for each right row out of the whole left side, so it cannot be
 -- distributed by splitting the left side. The plan-based mode admits it, because the plan optimizer
--- keeps such a join local, but a read through a `TimeSeries` table function is planned the query-tree
--- way even in that mode, so the join must be refused as it is there. Otherwise every replica returns
--- a row for each right row.
+-- keeps such a join local, also when the left side is a read through a `TimeSeries` table function.
+-- Otherwise every replica returns a row for each right row.
 
 SET allow_experimental_time_series_table = 1;
 SET enable_analyzer = 1;

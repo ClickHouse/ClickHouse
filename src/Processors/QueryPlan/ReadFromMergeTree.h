@@ -526,8 +526,6 @@ public:
     std::optional<VectorSearchParameters> getVectorSearchParameters() const { return vector_search_parameters; }
 
     bool isParallelReadingFromReplicas() const { return is_parallel_reading_from_replicas; }
-    /// Whether the read goes through a table function (`timeSeriesSamples`) rather than a table.
-    bool readsThroughTableFunction() const;
     void disableQueryConditionCache() { allow_query_condition_cache = false; }
 
     /// After projection optimization, ReadFromMergeTree may be replaced with a new reading step, and the ParallelReadingExtension must be forwarded to the new step.
@@ -552,7 +550,13 @@ public:
     /// Mark a (non-executed) read as a parallel-replicas read purely so that serialization records it.
     /// No callbacks are attached: the read is only serialized on the initiator and shipped to replicas,
     /// where deserialize rebuilds it in parallel-reading mode and resolves the callbacks from the context.
-    void enableParallelReadingFromReplicasForSerialization() { is_parallel_reading_from_replicas = true; }
+    /// A deserialized read knows only its storage, so the initiator's own copy is coordinated under the
+    /// storage name too, also when it reads through a table function.
+    void enableParallelReadingFromReplicasForSerialization()
+    {
+        is_parallel_reading_from_replicas = true;
+        query_info.parallel_replicas_coordinated_under_storage_name = true;
+    }
 
     bool supportsDataflowStatisticsCollection() const override { return !isQueryWithFinal(); }
 

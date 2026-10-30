@@ -66,9 +66,9 @@ WHERE current_database = currentDatabase() AND log_comment = '05175_used_replica
 ORDER BY event_time_microseconds DESC
 LIMIT 1;
 
--- The plan-based mode ships a plan fragment instead of the query, and a fragment can only name the
--- storage the call resolved to here, so a read through one of these table functions is sent as query
--- text even when that mode is on. It has to keep returning every row once.
+-- The plan-based mode ships a plan fragment instead of the query. The fragment names the inner table the
+-- call resolved to, and the read has to be coordinated under that name on the initiator as well, or it
+-- returns rows more than once.
 SELECT '-- plan-based mode';
 SELECT sum(length(samples)) FROM (SELECT * FROM timeSeriesSamples(ts))
     SETTINGS optimize_trivial_count_query = 0, parallel_replicas_plan_based = 1;
