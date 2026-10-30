@@ -46,6 +46,7 @@ namespace ErrorCodes
     extern const int UNKNOWN_TABLE;
     extern const int UNKNOWN_DATABASE;
     extern const int UNKNOWN_FUNCTION;
+    extern const int UNKNOWN_IDENTIFIER;
 }
 
 StorageInMemoryMetadata::StorageInMemoryMetadata(const StorageInMemoryMetadata & other)
@@ -1036,9 +1037,11 @@ void StorageInMemoryMetadata::addImplicitIndicesForColumn(const ColumnDescriptio
             }
             catch (const Exception & e)
             {
+                /// `UNKNOWN_IDENTIFIER`: an ALIAS that reads a subcolumn of another ALIAS, e.g. `b.v + 1` over
+                /// `b ALIAS tuple(a)`, is not expanded to physical columns, and the index cannot be analyzed.
                 if (e.code() != ErrorCodes::BAD_ARGUMENTS && e.code() != ErrorCodes::INCORRECT_QUERY
                     && e.code() != ErrorCodes::UNKNOWN_TABLE && e.code() != ErrorCodes::UNKNOWN_DATABASE
-                    && e.code() != ErrorCodes::UNKNOWN_FUNCTION)
+                    && e.code() != ErrorCodes::UNKNOWN_FUNCTION && e.code() != ErrorCodes::UNKNOWN_IDENTIFIER)
                     throw;
             }
         }
