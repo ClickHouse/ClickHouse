@@ -81,15 +81,26 @@ public:
     /// the decision: the outer sink registers them on behalf of a `Buffer` behind it while the pipeline is
     /// being built, but leaves their enforcement to the `BufferSink` of the nested INSERT, which writes
     /// into the destination only when the buffer is flushed (see `registerHiddenPreWriteChecks`).
-    void addCheck(Check check)
+    ///
+    /// `forwarded` is set when the check arrives through a gate that has been merged into this one: it is
+    /// a check of a sink of a query whose decision was pending, see `lent_from`.
+    void addCheck(Check check, bool forwarded = false)
     {
+        /// The sinks of the group write observe the decision that was lent to it, see `lent_from`.
+        if (lent_from && !forwarded)
+        {
+            lent_from->addCheck(std::move(check));
+            return;
+        }
+
         std::unique_lock lock(mutex);
 
         if (forward_to)
         {
             auto target = forward_to;
             lock.unlock();
-            target->addCheck(std::move(check));
+            /// A check made directly on a lent gate keeps observing the decision lent to it.
+            target->addCheck(std::move(check), forwarded || !lent_from);
             return;
         }
 
@@ -99,7 +110,7 @@ public:
             {
                 for (const auto & [enforced_by, outcome] : failed_deferred)
                 {
-                    if (!enforced_by.owner_before(check.enforced_by) && !check.enforced_by.owner_before(enforced_by))
+                    if (sameOwner(enforced_by, check.enforced_by))
                     {
                         check.deferred->exception = outcome->exception;
                         break;
@@ -160,7 +171,6 @@ public:
                     {
                         if (check.deferred)
                         {
-                            has_failed_deferred_checks = true;
                             check.deferred->exception = std::current_exception();
                             failed_deferred.emplace_back(check.enforced_by, check.deferred);
                         }
@@ -186,14 +196,35 @@ public:
 private:
     friend class InsertStartGates;
 
+    /// Whether a deferred check enforced by `storage` failed when the decision was made. Such a gate is not
+    /// lent to a group write of `storage`, see `InsertStartGates::get`. An empty `storage` matches any
+    /// failed deferred check. The caller holds the lock.
+    bool hasFailedDeferredCheckOf(const std::weak_ptr<const void> & storage) const
+    {
+        const bool any = sameOwner(storage, {});
+        for (const auto & [enforced_by, outcome] : failed_deferred)
+            if (any || sameOwner(enforced_by, storage))
+                return true;
+        return false;
+    }
+
+    static bool sameOwner(const std::weak_ptr<const void> & left, const std::weak_ptr<const void> & right)
+    {
+        return !left.owner_before(right) && !right.owner_before(left);
+    }
+
     std::mutex mutex;
     bool done = false;
     std::exception_ptr exception;
 
-    /// Whether a deferred check failed when the decision was made. Such a gate is not lent to a group write,
-    /// see `InsertStartGates::get`. A failed isolated check does not count: the write it rejected is the
-    /// ignored write of a view branch, which a group write never performs.
-    bool has_failed_deferred_checks = false;
+    /// Set only for a gate that a group write creates when it borrows the decision of a gate that has already
+    /// accepted a write (`lent_from`) while some participants hold gates whose decision is still pending.
+    /// The pending gates are merged into this one, so their checks still run - with the limits of their own
+    /// queries, before the group write writes anything - instead of being dropped in favour of a decision
+    /// made for another query. The checks of the sinks of the group write itself are not run again: they
+    /// observe the decision of `lent_from`, as they would if no pending gate had been merged.
+    /// Set before the gate is published and never changed, so it is read without the lock.
+    std::shared_ptr<InsertStartGate> lent_from;
 
     /// Registered while the gate is not `done`.
     std::vector<Check> checks;
@@ -233,8 +264,11 @@ public:
     /// that decision rather than re-enter the check and count the parts of that earlier write.
     /// A participant may itself be the registry of a group write - `Buffer` tables can be chained -
     /// in which case the queries behind it participate as well, see `collectRegistries`.
-    explicit InsertStartGates(std::vector<std::shared_ptr<InsertStartGates>> participants_)
+    ///
+    /// `flushed_by_` is the storage whose flush the group write is (the `Buffer`), see `get`.
+    InsertStartGates(std::vector<std::shared_ptr<InsertStartGates>> participants_, std::weak_ptr<const void> flushed_by_)
         : participants(std::move(participants_))
+        , flushed_by(std::move(flushed_by_))
     {
     }
 
@@ -305,32 +339,48 @@ public:
         /// keep observing it through their registry, while a write on behalf of its buffered rows is a
         /// new write that decides anew.
         ///
-        /// The same holds for a gate whose decision was an acceptance for some of its sinks only - a deferred
-        /// check (e.g. with the limits of a `Buffer` over the table) failed. The group write - e.g. an
-        /// `OPTIMIZE` or a background flush of that `Buffer` writing out the rows the query left in it - is
-        /// not necessarily one of the writes the decision accepted, so it decides anew with its own limits
-        /// instead of being mistaken for one of them. The failure of an isolated check - of a view branch
-        /// whose errors are ignored - does not prevent the lending: a group write never performs the write
-        /// of that branch, and the deferred checks it may perform (the flushes of a `Buffer` the query
-        /// writes through) were accepted, so it observes that acceptance instead of counting the parts the
-        /// earlier flushes of the same query have created.
+        /// The same holds for a gate whose decision rejected the write through the storage being flushed
+        /// (`flushed_by`) - a deferred check enforced by that `Buffer`, with the limits of its destination
+        /// write, failed. The group write - e.g. an `OPTIMIZE` or a background flush of that `Buffer` writing
+        /// out the rows the query left in it - is not one of the writes the decision accepted, so it decides
+        /// anew with its own limits instead of being mistaken for one of them. The failure of a check that
+        /// is enforced by another forwarding storage (e.g. an `Alias` over the same table) or of an isolated
+        /// check - of a view branch whose errors are ignored - does not prevent the lending: a flush of this
+        /// `Buffer` never performs those writes, and the write through this `Buffer` was accepted, so the
+        /// flush observes that acceptance instead of counting the parts the earlier flushes of the same
+        /// query have created.
+        ///
+        /// When the chosen gate has made its decision already while other participants hold gates whose
+        /// decision is still pending, those are not merged into the chosen gate - their checks would never
+        /// run, and a query with stricter limits would be accepted by the decision made for another query.
+        /// They are merged into a new gate instead, which runs their checks before the group write writes
+        /// anything and lets the sinks of the group write observe the borrowed decision, see
+        /// `InsertStartGate::lent_from`.
         ///
         /// The gates are locked at once, in the order of their addresses, which is global as well. A gate
         /// may be shared with registries that are not locked here, so another group write can merge one
         /// of them concurrently; in that case the gates are collected again.
+        ///
+        /// The gates the registry entries resolve to, following the gates that are already merged into other
+        /// ones to their targets: those are the gates that decide. The entries themselves are not rewritten
+        /// here: a sink of a query whose decision is pending has to keep reaching the merged gate, see
+        /// `InsertStartGate::lent_from`.
+        std::vector<InsertStartGatePtr> resolved;
+        resolved.reserve(registries.size());
+        for (auto * registry : registries)
+        {
+            auto it = registry->gates.find(table_id);
+            resolved.push_back(it == registry->gates.end() ? nullptr : it->second);
+        }
+
         InsertStartGatePtr gate;
         while (true)
         {
             std::vector<InsertStartGatePtr> candidates;
             std::unordered_set<const InsertStartGate *> seen_candidates;
-            for (auto * registry : registries)
-            {
-                auto it = registry->gates.find(table_id);
-                if (it == registry->gates.end() || !it->second)
-                    continue;
-                if (seen_candidates.insert(it->second.get()).second)
-                    candidates.push_back(it->second);
-            }
+            for (const auto & entry : resolved)
+                if (entry && seen_candidates.insert(entry.get()).second)
+                    candidates.push_back(entry);
 
             std::vector<InsertStartGate *> gate_lock_order;
             gate_lock_order.reserve(candidates.size());
@@ -343,44 +393,42 @@ public:
             for (auto * candidate : gate_lock_order)
                 gate_locks.emplace_back(candidate->mutex);
 
-            /// Follow the gates that are already merged into other ones to their targets: those are the
-            /// gates that decide. A target is locked in the next iteration.
+            /// A target is locked in the next iteration.
             bool retry = false;
-            for (auto * registry : registries)
+            for (auto & entry : resolved)
             {
-                auto it = registry->gates.find(table_id);
-                if (it != registry->gates.end() && it->second && it->second->forward_to)
+                if (entry && entry->forward_to)
                 {
-                    it->second = it->second->forward_to;
+                    entry = entry->forward_to;
                     retry = true;
                 }
             }
             if (retry)
                 continue;
 
+            InsertStartGatePtr chosen;
             for (const auto & candidate : candidates)
             {
-                if (candidate->done && !candidate->exception && !candidate->has_failed_deferred_checks)
+                if (candidate->done && !candidate->exception && !candidate->hasFailedDeferredCheckOf(flushed_by))
                 {
-                    gate = candidate;
+                    chosen = candidate;
                     break;
                 }
             }
 
-            if (!gate)
+            /// A pending lent gate is not chosen: the sinks of the group write would observe the decision lent
+            /// to another group write. It is merged like any other pending gate.
+            if (!chosen)
             {
                 for (const auto & candidate : candidates)
                 {
-                    if (!candidate->done)
+                    if (!candidate->done && !candidate->lent_from)
                     {
-                        gate = candidate;
+                        chosen = candidate;
                         break;
                     }
                 }
             }
-
-            if (!gate)
-                gate = std::make_shared<InsertStartGate>();
 
             /// Everything that can throw is done before the first gate is merged: once a gate forwards to
             /// the chosen one, its checks must have moved there, otherwise a sink still holding the merged
@@ -389,15 +437,29 @@ public:
             /// same as no entry.
             std::vector<InsertStartGate *> to_merge;
             to_merge.reserve(candidates.size());
-            size_t num_checks = gate->checks.size();
             for (const auto & candidate : candidates)
-            {
-                if (candidate != gate && !candidate->done)
-                {
+                if (candidate != chosen && !candidate->done)
                     to_merge.push_back(candidate.get());
-                    num_checks += candidate->checks.size();
-                }
+
+            if (!chosen)
+            {
+                gate = std::make_shared<InsertStartGate>();
             }
+            else if (chosen->done && !to_merge.empty())
+            {
+                /// The decision of `chosen` is borrowed, but the decision of some participants is still
+                /// pending: their checks run in a new gate before the group write writes anything.
+                gate = std::make_shared<InsertStartGate>();
+                gate->lent_from = chosen;
+            }
+            else
+            {
+                gate = chosen;
+            }
+
+            size_t num_checks = gate->checks.size();
+            for (auto * candidate : to_merge)
+                num_checks += candidate->checks.size();
 
             if (!gate->done)
                 gate->checks.reserve(num_checks);
@@ -422,13 +484,14 @@ public:
             /// A participant holding a gate that rejected a write (or a part of it) keeps it - see above - and does not
             /// adopt the new one: the rejection is the pre-write decision of that query, and the write on
             /// behalf of its rows must not be mistaken for a decision the query itself made. The same
-            /// holds for a different gate that has already accepted a write of that query. Every gate in
-            /// the registries is a locked candidate, so the gates forwarding to the chosen one are exactly
-            /// the ones merged above.
-            for (auto * existing : entries)
+            /// holds for a different gate that has already accepted a write of that query. A participant
+            /// whose gate has been merged into a lent gate keeps reaching it through the merged gate, so
+            /// that the checks of its later sinks take part in the decision.
+            for (size_t i = 0; i < entries.size(); ++i)
             {
-                if (!*existing || (*existing)->forward_to == gate)
-                    *existing = gate;
+                auto & existing = *entries[i];
+                if (!existing || (!gate->lent_from && resolved[i] && (resolved[i] == gate || resolved[i]->forward_to == gate)))
+                    existing = gate;
             }
 
             break;
@@ -495,6 +558,9 @@ private:
 
     /// Non-empty only for the registry of a group write (see the constructor above).
     const std::vector<std::shared_ptr<InsertStartGates>> participants;
+
+    /// For the registry of a group write: the storage whose flush it is.
+    const std::weak_ptr<const void> flushed_by;
 };
 
 using InsertStartGatesPtr = std::shared_ptr<InsertStartGates>;

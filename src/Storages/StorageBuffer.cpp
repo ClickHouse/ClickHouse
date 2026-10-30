@@ -1338,7 +1338,7 @@ bool StorageBuffer::flushBuffer(Buffer & buffer, bool check_thresholds, bool loc
     {
         InsertStartGatesPtr gates_for_write;
         if (!flushed_gates.empty())
-            gates_for_write = std::make_shared<InsertStartGates>(flushed_gates);
+            gates_for_write = std::make_shared<InsertStartGates>(flushed_gates, weak_from_this());
 
         writeBlockToDestination(block_to_write, getDestinationTable(), gates_for_write);
     }
