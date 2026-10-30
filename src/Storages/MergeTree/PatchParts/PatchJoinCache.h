@@ -48,7 +48,9 @@ using PatchHashMap = absl::node_hash_map<UInt64, PatchOffsetsMap, HashCRC32<UInt
   *  The cache allows reading data from patches in small ranges and lowers the amount of patch parts
   *  to apply by aggregating data from multiple read blocks into a single map in the entry.
   *
-  *  A cache entry is created for each patch part. To lower lock contention, each entry is split into buckets
+  *  A cache entry is created for each patch part and each structure of the blocks read from it, because that
+  *  structure is a property of the reading task and not of the patch part.
+  *  To lower lock contention, each entry is split into buckets
   *  by the patch part's ranges. Each bucket has contiguous ranges of the patch part, and is sorted by the range's beginning.
   */
 struct PatchJoinCache
@@ -84,22 +86,24 @@ struct PatchJoinCache
 
     /// Initializes the cache, creates a mapping from the ranges to buckets.
     /// Cache entries should be get for the same ranges later.
-    void init(const RangesInPatchParts & ranges_in_patches);
+    void init(const std::unordered_map<String, MarkRanges> & all_ranges);
 
     PatchStatsEntryPtr getStatsEntry(const DataPartPtr & patch_part, const MergeTreeReaderSettings & settings);
-    Entries getEntries(const String & patch_name, const MarkRanges & ranges, Reader reader);
+    Entries getEntries(const String & patch_name, const String & structure_key, const MarkRanges & ranges, Reader reader);
 
 private:
-    std::pair<Entries, std::vector<MarkRanges>> getEntriesAndRanges(const String & patch_name, const MarkRanges & ranges);
+    std::pair<Entries, std::vector<MarkRanges>> getEntriesAndRanges(const String & patch_name, const String & structure_key, const MarkRanges & ranges);
     PatchStatsEntryPtr getOrCreatePatchStats(const String & patch_name);
 
     size_t num_buckets;
     mutable std::mutex mutex;
 
-    absl::node_hash_map<String, Entries> cache TSA_GUARDED_BY(mutex);
+    /// Patch part name -> structure of its read blocks -> entries.
+    absl::node_hash_map<String, absl::node_hash_map<String, Entries>> cache TSA_GUARDED_BY(mutex);
     absl::node_hash_map<String, PatchStatsEntryPtr> stats_cache TSA_GUARDED_BY(mutex);
-    /// Ranges are filled on initialization and then are read-only and don't require a lock.
+    /// Ranges and bucket counts are filled on initialization and then are read-only and don't require a lock.
     absl::node_hash_map<String, absl::node_hash_map<MarkRange, size_t, MarkRangeHash>> ranges_to_buckets;
+    absl::node_hash_map<String, size_t> buckets_count;
 };
 
 using PatchJoinCachePtr = std::shared_ptr<PatchJoinCache>;
