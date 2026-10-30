@@ -226,8 +226,14 @@ struct AdaptiveAggregationSession
     public:
         /// Adds the records of partition `partition` of `partitions` and returns their bytes. Once the records kept in
         /// memory and these take `block_bytes`, they are written to `spill_stream`, the stream of the spilling
-        /// producer, as one block. Producers append concurrently.
-        UInt64 append(SpillStream & spill_stream, const PartitionedRecordBuffer & partitions, size_t partition, size_t block_bytes);
+        /// producer, as one block; `session_pending_bytes` follows the bytes kept in memory. Producers append
+        /// concurrently.
+        UInt64 append(
+            SpillStream & spill_stream,
+            const PartitionedRecordBuffer & partitions,
+            size_t partition,
+            size_t block_bytes,
+            std::atomic<size_t> & session_pending_bytes);
 
         /// Reads the records back in the order the producers wrote them, the blocks and then the records kept in
         /// memory, and calls `callback(block)` with each in a padded buffer like a chunk's, valid only during its
@@ -259,6 +265,9 @@ struct AdaptiveAggregationSession
     };
     /// One per partition of the layout.
     std::vector<SpilledPartition> spilled_partitions;
+    /// The bytes that the partitions keep in memory until they make a block (see `SpilledPartition::append`), which
+    /// a spill may write together with its own records.
+    std::atomic<size_t> pending_spill_bytes = 0;
 };
 
 /// One adaptive merge task, which merges a sequence of buckets one at a time (see
