@@ -31,6 +31,7 @@ namespace DB
 
 namespace Setting
 {
+    extern const SettingsBool apply_mutations_on_fly;
     extern const SettingsBool group_by_use_nulls;
     extern const SettingsBool optimize_push_subcolumns_into_subqueries;
 }
@@ -183,6 +184,26 @@ bool storageReadsDynamicSubcolumnWithoutConversion(const StorageSnapshotPtr & st
     return true;
 }
 
+/// Whether the column may be changed on the fly while it is read, by the pending mutations applied with
+/// `apply_mutations_on_fly`. The reader applies such a change to the whole column, but not to a subcolumn read
+/// directly: after a pending `ALTER TABLE t UPDATE tup = tuple(42, 'z')` reading `tup.a` still exposes the old
+/// value. The columns updated by patch parts are rejected as well, because the snapshot reports them together.
+/// Other storages that can read a `MergeTree` behind them (`Distributed`, `Merge`, `Buffer`, ...) are not accepted
+/// when mutations are applied on the fly.
+bool storageMayChangeColumnOnFly(const StorageSnapshotPtr & storage_snapshot, const NameAndTypePair & column_in_table, const ContextPtr & context)
+{
+    const auto & storage = storage_snapshot->storage;
+    /// NOLINT(storage-cast): a lazily loaded table is a proxy whose snapshot carries no mutations, so it must fail this cast.
+    if (!dynamic_cast<const MergeTreeData *>(&storage))
+        return context->getSettingsRef()[Setting::apply_mutations_on_fly];
+
+    const auto * snapshot_data = dynamic_cast<const MergeTreeData::SnapshotData *>(storage_snapshot->data.get());
+    if (!snapshot_data || !snapshot_data->mutations_snapshot)
+        return context->getSettingsRef()[Setting::apply_mutations_on_fly];
+
+    return snapshot_data->mutations_snapshot->getColumnsChangedOnFly().contains(column_in_table.getNameInStorage());
+}
+
 /// Whether the storage behind `proj_column` can serve its subcolumn `subcolumn_name` directly. This is the same
 /// gate `FunctionToSubcolumnsPass` applies before reading a subcolumn instead of the whole column: some storages
 /// (system tables, ...) report `supportsOptimizationToSubcolumns` = false, others (`file`, `url`, ...) can serve
@@ -212,6 +233,9 @@ bool storageCanReadSubcolumn(
 
     auto column_in_table = storage_snapshot->tryGetColumn(GetColumnsOptions(GetColumnsOptions::All).withSubcolumns(), column.name);
     if (!column_in_table || !column_in_table->type->equals(*column.type))
+        return false;
+
+    if (storageMayChangeColumnOnFly(storage_snapshot, *column_in_table, context))
         return false;
 
     if (storage.supportsOptimizationToSubcolumns())
