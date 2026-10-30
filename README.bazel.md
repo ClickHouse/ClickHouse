@@ -84,8 +84,8 @@ counts for local configured compile actions:
 - `src/Functions/area.cpp` (x86_64, normal): 15,752 to 13,452 inputs.
 - `src/Functions/area.cpp` (aarch64, normal): 15,693 to 13,393 inputs.
 
-These x86-64 builds used a local Bazel client, `--jobs=2000`, a warm repository
-cache and a fresh target `--action_env` value. BuildBuddy executed the final
+These x86-64 builds used a local Bazel client, `--jobs=2000` and a fresh
+target `--action_env` value. BuildBuddy executed the final
 `ClickHouseNativeLink` in each build. The table gives the SHA-256 of
 `//:clickhouse`. The [CMake comparison](#binary-comparison) uses separate builds.
 
@@ -97,7 +97,13 @@ cache and a fresh target `--action_env` value. BuildBuddy executed the final
 | [Bazel nightly fastbuild at `c57e487c`](https://app.buildbuddy.io/invocation/9524b4f0-06d7-464f-9b18-5a4311f939b7#timing) | `66bfdb7a22d08f7076721fa1cd68ee7c5167b4d8d6620965a0db72858280c522` | 2,175,634,528 |
 | [`-c opt --features=thin_lto`](https://app.buildbuddy.io/invocation/841c82aa-2b17-4df6-890f-8ac960d94733#timing) | `79d90fd7278aa71960be5ebf109b1ee14927d068884a94458f42863a58308353` | 828,248,440 |
 | [Bazel fork `10.0.0-pre.20261028.1` fastbuild](https://app.buildbuddy.io/invocation/3cc8a281-fdd2-48bb-91c2-0d1188ae8839#timing) | `66bfdb7a22d08f7076721fa1cd68ee7c5167b4d8d6620965a0db72858280c522` | 2,175,634,528 |
+| [Bazel fork `10.0.0-pre.20261028.1` fastbuild with a warm server](https://app.buildbuddy.io/invocation/0f44d1f6-778c-4ba5-9d9c-400663bffe66#timing) | `66bfdb7a22d08f7076721fa1cd68ee7c5167b4d8d6620965a0db72858280c522` | 2,175,634,528 |
 | [Bazel fork `10.0.0-pre.20261028.1` opt ThinLTO](https://app.buildbuddy.io/invocation/aee94ac7-3cb2-4fcf-ae69-9dac323a613a#timing) | `79d90fd7278aa71960be5ebf109b1ee14927d068884a94458f42863a58308353` | 828,248,440 |
+
+The first fork fastbuild spent 129.6 seconds populating `@clickstack_yarn_cache`
+and reached its first remote worker at 161.0 seconds. The warm fastbuild used
+`--max_idle_secs=10800` and reused the server from a `--nobuild --nofetch`
+warm-up. Its first worker started at 23.7 seconds and the build took 4m28s.
 
 On the 10-core macOS client with `--jobs=2000`, the throttled Bazel 9.3.0 build
 spent 457 seconds of its critical path waiting to prepare remote actions or
