@@ -38,6 +38,15 @@ proc submit {} {
 spawn bash -c "source $basedir/../shell_config.sh ; \$CLICKHOUSE_CLIENT_BINARY \$CLICKHOUSE_CLIENT_EXPECT_OPT --history_file=$history_file --vim"
 expect ":) "
 
+# `;` before any `f`, `F`, `t` or `T` fails and cancels the pending operator, so `w` only moves.
+# This must run before any find in the session.
+send -- "SELECT 1000+123"
+escape
+send -- "07ld;wx"
+submit
+expect "1000123"
+expect ":) "
+
 # Multibyte characters: Escape, a motion and a deletion around `é`.
 send -- "SELECT concat('ab', 'éa')"
 escape
@@ -555,6 +564,57 @@ send -- "k\$xi+1 -- "
 escape
 submit
 expect "1003"
+expect ":) "
+
+# `x` that empties the last line keeps the cursor on that line.
+send -- "SELECT 1000\r+1"
+escape
+send -- "02xi+ 23"
+escape
+submit
+expect "1023"
+expect ":) "
+
+# After `$`, `j` and `k` go to the end of a line of a different length.
+send -- "SELECT 100\r+ 23456789123"
+escape
+send -- "gg\$jxi+1 -- "
+escape
+submit
+expect "234567992"
+expect ":) "
+
+send -- "SELECT 1 + 50000\r+ 2"
+escape
+send -- "\$kxi7"
+escape
+submit
+expect "50073"
+expect ":) "
+
+# `ciw` and `ciW` on an empty line keep the line break and enter insert mode.
+send -- "SELECT 1000\r\r+ 123"
+escape
+send -- "ggjciw-- comment"
+escape
+submit
+expect "1123"
+expect ":) "
+
+send -- "SELECT 2000\r\r+ 123"
+escape
+send -- "ggjciW-- comment"
+escape
+submit
+expect "2123"
+expect ":) "
+
+send -- "SELECT 3000 + 1\r"
+escape
+send -- "ciw+ 4"
+escape
+submit
+expect "3005"
 expect ":) "
 
 send -- "\4"

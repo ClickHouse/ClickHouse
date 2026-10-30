@@ -208,6 +208,8 @@ private:
     char find_direction = 0;
     int32_t op = 0;
     int curswant = 0;
+    /* The sought-for column after `$`: the end of any line. Small enough that adding a position does not overflow. */
+    static constexpr int CURSWANT_LINE_END = 1 << 29;
     int inclusivity_flip = 0;
 
     bool vim = false;

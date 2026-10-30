@@ -704,8 +704,16 @@ void ReplxxLineReader::vimWordObject(int & pos, std::u32string & text, bool bigw
 
     int cls = pos < length ? charClass(text, pos, bigword) : -1;
     /* For `aw` an empty line is whitespace, as in Vim. */
-    if (cls == -1 && around && pos < length && (pos == 0 || text[pos - 1] == '\n'))
+    bool empty_line = (pos == 0 || text[pos - 1] == '\n') && (pos == length || text[pos] == '\n');
+    if (cls == -1 && around && pos < length && empty_line)
         cls = 0;
+    /* `ciw` on an empty line, including an empty last line, keeps the line break and enters insert mode, as in Vim. */
+    if (cls == -1 && empty_line && op == OPERATOR_C)
+    {
+        rx.set_editing_mode(MODE_INSERT);
+        resetVim();
+        return;
+    }
     if (cls == -1)
     {
         resetVim(&pos, &text);
@@ -939,7 +947,13 @@ void ReplxxLineReader::vimDollar(int & pos, std::u32string & text)
         resetVim();
     }
     else
+    {
+        bool motion = !op;
         resetVim(&pos, &text);
+        /* Like vim, a plain `$` makes the following `j` and `k` go to the end of the line, whatever its length. */
+        if (motion)
+            curswant = CURSWANT_LINE_END;
+    }
 }
 
 void ReplxxLineReader::setupVimKeybindings(bool allow_editor)
@@ -1529,6 +1543,9 @@ void ReplxxLineReader::setupVimKeybindings(bool allow_editor)
         {
             if (strchr("fFtT", last_find_direction) && last_find_char)
                 find(text, pos, last_find_direction, last_find_char, /* repeat= */ true);
+            else
+                /* Nothing to repeat: the command fails, and a pending operator is canceled. */
+                resetVim();
         },
         MODE_NORMAL);
 
@@ -1748,13 +1765,10 @@ void ReplxxLineReader::setupVimKeybindings(bool allow_editor)
             int count = 0;
             while (count < reps && pos + count < length && text[pos + count] != '\n')
                 count++;
+            /* The cursor at the end of the input is moved onto the last character of a nonempty last line,
+             * but stays on an empty last line. */
             if (count > 0)
-            {
                 text.erase(pos, count);
-                length = static_cast<int>(text.length());
-                if (pos >= length)
-                    pos = std::max(length - 1, 0);
-            }
             resetVim(&pos, &text);
         },
         MODE_NORMAL);
