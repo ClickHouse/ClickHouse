@@ -7,7 +7,6 @@
 -- We verify using EXPLAIN PLAN that unused columns are actually pruned from the Filling step header.
 
 SET explain_query_plan_default = 'legacy';
-SET enable_analyzer = 1;
 
 CREATE TABLE foo (
      open_time Int64,

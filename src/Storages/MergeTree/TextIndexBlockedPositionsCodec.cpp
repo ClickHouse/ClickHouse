@@ -105,43 +105,6 @@ void parseBlock(
             static_cast<size_t>(pos - payload) + consumed, payload_bytes);
 }
 
-/// Append each requested document's absolute positions to `positions`, and its end offset to `offsets`.
-void emitRanks(
-    const PaddedPODArray<UInt64> & doc_offsets,
-    const PaddedPODArray<UInt32> & values,
-    std::span<const UInt32> local_ranks,
-    PaddedPODArray<UInt32> & offsets,
-    PaddedPODArray<UInt32> & positions)
-{
-    const size_t num_positions = std::accumulate(local_ranks.begin(), local_ranks.end(), size_t{},
-        [&doc_offsets](size_t sum, UInt32 rank) { return sum + (doc_offsets[rank + 1] - doc_offsets[rank]); });
-
-    const size_t base = positions.size();
-    positions.resize(base + num_positions);
-    UInt32 * out = positions.data() + base;
-    offsets.reserve(offsets.size() + local_ranks.size());
-
-    for (UInt32 rank : local_ranks)
-    {
-        const UInt64 lane_end = doc_offsets[rank + 1];
-        /// Every document has at least one position, and its first one is absolute; the rest are deltas.
-        UInt32 position = values[doc_offsets[rank]];
-        *out++ = position;
-        for (UInt64 k = doc_offsets[rank] + 1; k < lane_end; ++k)
-        {
-            /// The writer emits strictly increasing positions, so a zero delta or a wrap means corruption.
-            const UInt32 delta = values[k];
-            if ((delta == 0) || (position > std::numeric_limits<UInt32>::max() - delta))
-                throw Exception(ErrorCodes::CORRUPTED_DATA,
-                    "Corrupt text index positions: positions do not increase within a document");
-            position += delta;
-            *out++ = position;
-        }
-
-        offsets.push_back(static_cast<UInt32>(out - positions.data()));
-    }
-}
-
 }
 
 
@@ -290,13 +253,53 @@ void TextIndexBlockedPositionsCodec::decodeBlock(
     PaddedPODArray<UInt32> & positions,
     DecodeScratch & scratch)
 {
+    readBlock(in, dir, block_idx, scratch);
+    emitRanks(scratch, local_ranks, offsets, positions);
+}
+
+void TextIndexBlockedPositionsCodec::readBlock(ReadBuffer & in, const Directory & dir, size_t block_idx, DecodeScratch & scratch)
+{
     const size_t payload_bytes = dir.block_offsets[block_idx + 1] - dir.block_offsets[block_idx];
     scratch.payload.resize(payload_bytes);
     in.readStrict(scratch.payload.data(), payload_bytes);
 
     parseBlock(reinterpret_cast<const uint8_t *>(scratch.payload.data()), payload_bytes,
                dir.docsInBlock(block_idx), scratch.doc_offsets, scratch.values);
-    emitRanks(scratch.doc_offsets, scratch.values, local_ranks, offsets, positions);
+}
+
+void TextIndexBlockedPositionsCodec::emitRanks(
+    const DecodeScratch & scratch,
+    std::span<const UInt32> local_ranks,
+    PaddedPODArray<UInt32> & offsets,
+    PaddedPODArray<UInt32> & positions)
+{
+    const size_t num_positions = std::accumulate(local_ranks.begin(), local_ranks.end(), size_t{},
+        [&scratch](size_t sum, UInt32 rank) { return sum + (scratch.doc_offsets[rank + 1] - scratch.doc_offsets[rank]); });
+
+    const size_t base = positions.size();
+    positions.resize(base + num_positions);
+    UInt32 * out = positions.data() + base;
+    offsets.reserve(offsets.size() + local_ranks.size());
+
+    for (UInt32 rank : local_ranks)
+    {
+        const UInt64 lane_end = scratch.doc_offsets[rank + 1];
+        /// Every document has at least one position, and its first one is absolute; the rest are deltas.
+        UInt32 position = scratch.values[scratch.doc_offsets[rank]];
+        *out++ = position;
+        for (UInt64 k = scratch.doc_offsets[rank] + 1; k < lane_end; ++k)
+        {
+            /// The writer emits strictly increasing positions, so a zero delta or a wrap means corruption.
+            const UInt32 delta = scratch.values[k];
+            if ((delta == 0) || (position > std::numeric_limits<UInt32>::max() - delta))
+                throw Exception(ErrorCodes::CORRUPTED_DATA,
+                    "Corrupt text index positions: positions do not increase within a document");
+            position += delta;
+            *out++ = position;
+        }
+
+        offsets.push_back(static_cast<UInt32>(out - positions.data()));
+    }
 }
 
 void TextIndexBlockedPositionsCodec::decodeAll(

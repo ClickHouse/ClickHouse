@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-shared-merge-tree, no-parallel, no-replicated-database, no-parallel-replicas
+# Tags: no-shared-merge-tree, no-replicated-database, no-parallel-replicas
 # no-shared-merge-tree - this test relies that there are different
 # parts on different replicas which is inapplicable for SharedMergeTree.
 # no-replicated-database: fails due to additional replicas or shards.
