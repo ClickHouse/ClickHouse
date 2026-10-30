@@ -58,6 +58,9 @@ A `SELECT` query can use the plan cache when all of the following hold:
   `SQL SECURITY DEFINER` and `SQL SECURITY NONE` views are not cached. A materialized view cannot be `INVOKER`, so it is eligible only
   when it has no `SQL SECURITY` clause (the default with `ignore_empty_sql_security_in_create_view_query = 1`). A read through an `Alias` table is not cached either,
   because the plan bakes in the combined row policies of the alias and its target while only the alias is fingerprinted as a dependency.
+- No referenced table has a masking policy enabled for the current user (masking policies exist only in ClickHouse Cloud). A masking policy
+  is applied when the table is read and is not part of the table metadata, so a value folded into the plan (e.g. by a scalar subquery)
+  could escape a policy created after the plan was cached. This is re-checked on every cache hit.
 - Scalar subqueries (e.g. `(SELECT max(x) FROM t)`) are evaluated once during analysis and baked into the plan as constants. By default
   such queries are not cached; set `query_plan_cache_allow_scalar_subqueries = 1` to cache them when the tables referenced by scalar
   subqueries are static or stale scalar values are acceptable. A scalar subquery reading a `MaterializedView`, `Buffer` or `Dictionary` table

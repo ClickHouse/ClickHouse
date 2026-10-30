@@ -4,6 +4,9 @@
 #include <Access/Common/RowPolicyDefs.h>
 #include <Access/ContextAccess.h>
 #include <Access/EnabledRowPolicies.h>
+#if CLICKHOUSE_CLOUD
+#include <Access/EnabledMaskingPolicies.h>
+#endif
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <Analyzer/ConstantNode.h>
 #include <Analyzer/FunctionNode.h>
@@ -473,6 +476,25 @@ bool constraintsContainFunctionsUnsafeForQueryPlanCache(const StorageInMemoryMet
 
 /// Fills a dependency record from a resolved storage. Returns false if the storage makes the
 /// plan uncacheable.
+/// Masking policies (only in the Cloud build) rewrite values when parts are read, and are taken from access
+/// control rather than from the table metadata, so neither the schema fingerprint nor the row-policy hash
+/// describes them. A plan with a folded scalar subquery bakes the value it read into the plan, and a hit
+/// does not read the table again, so a policy created or changed after warming would not apply to it.
+/// Refuse to cache a plan over a table with any enabled masking policy, and re-check on every hit, so that
+/// a policy that appears after the plan was stored also makes the hit miss.
+bool hasEnabledMaskingPolicies(const ContextPtr & context, const String & database, const String & table)
+{
+#if CLICKHOUSE_CLOUD
+    auto masking_policies = context->getAccess()->getEnabledMaskingPolicies();
+    return masking_policies && masking_policies->hasPolicies(database, table);
+#else
+    (void)context;
+    (void)database;
+    (void)table;
+    return false;
+#endif
+}
+
 bool fillDependency(QueryPlanCacheDependency & dep, const StoragePtr & storage, const ContextPtr & context)
 {
     const auto & storage_id = storage->getStorageID();
@@ -486,6 +508,12 @@ bool fillDependency(QueryPlanCacheDependency & dep, const StoragePtr & storage, 
         return false;
 
     dep.metadata_version = getMetadataVersionOrSchemaHash(metadata);
+
+    if (hasEnabledMaskingPolicies(context, dep.database, dep.table))
+    {
+        LOG_DEBUG(getLogger("QueryPlanCache"), "Not caching plan: {}.{} has enabled masking policies", dep.database, dep.table);
+        return false;
+    }
 
     /// A row-policy filter that contains a subquery reads other tables and bakes their results (a
     /// scalar boundary, or an `IN` set) into the plan as constants, without those tables ever
@@ -1257,6 +1285,10 @@ bool validateQueryPlanCacheEntry(
         /// Re-walk these expressions on every hit, as the user query AST is re-walked in
         /// `astContainsFunctionsUnsafeForQueryPlanCache` before each lookup.
         if (!areMetadataExpressionsStillCacheable(storage, *metadata, context))
+            return false;
+
+        /// A masking policy created after the plan was stored (see `hasEnabledMaskingPolicies`).
+        if (hasEnabledMaskingPolicies(context, dep.database, dep.table))
             return false;
 
         /// A policy that changed to contain a subquery, a non-deterministic function or a call to a UDF
