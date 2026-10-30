@@ -103,8 +103,15 @@ void MergeTreeDataPartTTLInfos::update(const MergeTreeDataPartTTLInfos & other_i
         }
     }
 
-    table_ttl.update(other_infos.table_ttl);
-    updatePartMinMaxTTL(table_ttl);
+    /// The rows-TTL bounds of a source with no rows are stale as well: they can still describe rows that a
+    /// merge or mutation removed from it (e.g. a lightweight delete of the whole part merged into an empty
+    /// part). Merging them would attach a deleted row's maximum to the live siblings' fingerprint, and a
+    /// later metadata-only `MATERIALIZE TTL` would shift that bound instead of recomputing it.
+    if (other_part_has_rows)
+    {
+        table_ttl.update(other_infos.table_ttl);
+        updatePartMinMaxTTL(table_ttl);
+    }
 }
 
 
