@@ -23,6 +23,8 @@ namespace
 /// A guard can be destroyed on another thread (a fiber resumed there, or executor destruction
 /// on cancellation), so the slot is protected by a mutex and kept alive by a `shared_ptr`
 /// for as long as any reservation taken through it exists, even after its thread exits.
+/// The slot exists only while the thread has live reservations: pooled threads outlive their
+/// queries, and an idle slot left behind in each of them would be a permanent per-thread cost.
 struct Slot
 {
     std::mutex mutex;
@@ -48,15 +50,13 @@ struct SpeculativeMemoryReservation::State
 
 SpeculativeMemoryReservation::SpeculativeMemoryReservation()
 {
-    if (!current_slot)
-        current_slot = std::make_shared<Slot>();
-
     /// Share the thread's reservation only within the same query. A pooled thread can start
     /// a guard for another query while a suspended guard of the previous one is still alive;
     /// that guard must take its own charge, credited to its own query, instead of inheriting
     /// the credit and tracker of the previous query. The comparison is safe from pointer reuse
     /// because every listed state keeps the thread group owning its tracker alive.
     MemoryTracker * query_tracker = CurrentMemoryTracker::getQueryTrackerForGlobal();
+    if (current_slot)
     {
         std::lock_guard lock(current_slot->mutex);
         for (State * existing : current_slot->states)
@@ -75,6 +75,12 @@ SpeculativeMemoryReservation::SpeculativeMemoryReservation()
     const Int64 requested = additional_memory_tracking_per_thread.load(std::memory_order_relaxed);
     if (requested <= 0)
         return;
+
+    if (!current_slot)
+    {
+        current_slot = std::make_shared<Slot>();
+        current_slot->states.reserve(1);
+    }
 
     /// Allocate the state before taking the charge, so nothing can throw between a successful
     /// charge and the guard taking ownership of it.
@@ -104,12 +110,19 @@ SpeculativeMemoryReservation::~SpeculativeMemoryReservation()
 
     CurrentThread::flushUntrackedMemory();
 
+    bool slot_is_empty = false;
     {
         std::lock_guard lock(state->slot->mutex);
         if (--state->references > 0)
             return;
         std::erase(state->slot->states, state);
+        slot_is_empty = state->slot->states.empty();
     }
+
+    /// Only the owning thread inserts into its slot, so on that thread an empty slot stays empty
+    /// and can be released. On another thread the slot is left to its owner.
+    if (slot_is_empty && state->slot == current_slot)
+        current_slot.reset();
 
     std::unique_ptr<State> last_state(state);
     CurrentMemoryTracker::freeGlobal(last_state->size, last_state->credited_query_tracker);
