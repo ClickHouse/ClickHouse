@@ -169,7 +169,11 @@ AdaptiveAggregationSessionPtr Aggregator::createAdaptiveSession(size_t producers
 }
 
 bool Aggregator::advanceAdaptiveProducer(
-    AggregatedDataVariants & result, AdaptiveAggregationProducer & adaptive, size_t rows, bool over_external_threshold) const
+    AggregatedDataVariants & result,
+    AdaptiveAggregationProducer & adaptive,
+    size_t rows,
+    bool over_external_threshold,
+    bool top_k_waits) const
 {
     /// Over the external-aggregation threshold a producer writes its staged records to disk, whatever its phase: one
     /// back on the baseline path keeps the records it staged while frozen, which flushing its own table cannot free.
@@ -188,7 +192,7 @@ bool Aggregator::advanceAdaptiveProducer(
     if (adaptive.isLearning())
     {
         std::get<AdaptiveAggregationProducer::LearningState>(adaptive.phase).rows += rows;
-        if (adaptiveFreezeBoundReached(result))
+        if (!top_k_waits && adaptiveFreezeBoundReached(result))
             freezeAdaptive(result, adaptive);
     }
     return true;
@@ -330,6 +334,9 @@ void Aggregator::finishAdaptiveProducer(AggregatedDataVariants & local_variants,
         if (local_variants.isConvertibleToTwoLevel())
             local_variants.convertToTwoLevel();
     }
+    else if (const auto * baseline = std::get_if<AdaptiveAggregationProducer::BaselineState>(&adaptive.phase);
+             baseline && baseline->two_level_deferred && local_variants.isConvertibleToTwoLevel())
+        local_variants.convertToTwoLevel();
 
     std::lock_guard lock(shared.producer_buffers_mutex);
     shared.estimated_merge_work += estimated_merge_work;

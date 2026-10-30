@@ -142,6 +142,7 @@ static constexpr auto DBMS_MERGE_TREE_PART_INFO_VERSION = 1;
 /// Version 21 adds the `min_bytes_before_external_group_by` plan setting.
 /// Version 21 also registers the `adaptive_aggregator_disable_thaw` plan setting, written only towards a peer at this
 /// version or above. A peer below it thaws as it always did, which changes no result.
+/// Version 22 adds version 2 of the `Aggregating` step, which carries the collation of each `GROUP BY` top-K key.
 ///
 /// Rules for this version:
 /// - Bump it at most once per release: the first change in a release that needs it bumps it, later changes
@@ -154,7 +155,7 @@ static constexpr auto DBMS_MERGE_TREE_PART_INFO_VERSION = 1;
 ///   (see `QueryPlanStepRegistry::StepVersions`).
 ///
 /// Last bumped for release 26.11.
-static constexpr auto DBMS_QUERY_PLAN_SERIALIZATION_VERSION = 21;
+static constexpr auto DBMS_QUERY_PLAN_SERIALIZATION_VERSION = 22;
 /// The parallel-replicas remote plan is serialized once (at DBMS_QUERY_PLAN_SERIALIZATION_VERSION) and
 /// that one blob is reused for every replica, so a replica below this version must be excluded up front
 /// rather than sent a blob it cannot parse. Tied to DBMS_QUERY_PLAN_SERIALIZATION_VERSION itself so a
@@ -237,6 +238,8 @@ static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_QUERY_CONDI
 /// which the initiator's merge, sort and limit handle correctly - the safe direction.
 static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_GROUP_BY_TOP_K = 20;
 static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_MIN_BYTES_BEFORE_EXTERNAL_GROUP_BY = 21;
+/// First global query-plan version that writes `Aggregating` version 2 (top-K key collations); older peers get no collated top-K.
+static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_GROUP_BY_TOP_K_COLLATION = 22;
 /// Version 1 added the initiator's settings changes to the task.
 /// Version 2 added per-stream streaming-exchange ports to exchange_stream_sources.
 /// Version 3 added the error code of a failed task to its status reply.

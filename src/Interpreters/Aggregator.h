@@ -1,5 +1,6 @@
 #pragma once
 
+#include <algorithm>
 #include <array>
 #include <atomic>
 #include <memory>
@@ -251,6 +252,7 @@ public:
             size_t k = 0;                           /// the query's LIMIT K (heap capacity)
             std::vector<int> directions;            /// per-column ORDER BY directions
             std::vector<int> nulls_directions;      /// per-column NULLS/NaNs directions
+            std::vector<std::shared_ptr<Collator>> collators;  /// per ranked column: the COLLATE of the ORDER BY, null without one; empty or key_columns entries
             size_t key_columns = 0;                 /// leading GROUP BY columns the heap ranks on
             UInt64 observation_rows = 65536;        /// rows before the pure-overhead freeze check; 0 disables it (see the group_by_top_k_optimization_* settings)
             bool shared_boundary = true;            /// let the per-thread sets skip against the tightest boundary published by any thread
@@ -260,6 +262,11 @@ public:
             /// by the published value (see `enable_group_by_top_k_dynamic_filtering`). Never serialized: it is a
             /// link between two steps of the same local plan.
             TopKThresholdTrackerPtr threshold_tracker;
+
+            bool hasCollators() const
+            {
+                return std::ranges::any_of(collators, [](const auto & collator) { return collator != nullptr; });
+            }
         };
         std::optional<TopKParams> top_k;
 
@@ -917,11 +924,15 @@ private:
 
     /// Advances an adaptive producer's phase between blocks, in place of the baseline's conversion: writes its staged
     /// records to disk when the query is `over_external_threshold`, thaws a frozen table whose staged stream repeats,
-    /// and freezes a learning table at its bounds. A learning table counts the block's `rows` toward the end of its
-    /// slicing (see `adaptiveLearningSlices`). Returns false once the producer is on the baseline path, whose checks
-    /// then apply.
+    /// and, unless a collated top-K heap still waits to start (`top_k_waits`), freezes a learning table at its bounds.
+    /// A learning table counts the block's `rows` toward the end of its slicing (see `adaptiveLearningSlices`). Returns
+    /// false once the producer is on the baseline path, whose checks then apply.
     bool advanceAdaptiveProducer(
-        AggregatedDataVariants & result, AdaptiveAggregationProducer & adaptive, size_t rows, bool over_external_threshold) const;
+        AggregatedDataVariants & result,
+        AdaptiveAggregationProducer & adaptive,
+        size_t rows,
+        bool over_external_threshold,
+        bool top_k_waits) const;
 
     /// Whether a learning table reached a bound of the freeze: its key count or its own tracked memory, so the caller
     /// reports the thread's unreported allocations to the table's tracker first (see `executeOnBlock`).
