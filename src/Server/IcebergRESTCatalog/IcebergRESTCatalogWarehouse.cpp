@@ -51,8 +51,9 @@ ObjectStoragePtr createObjectStorage([[maybe_unused]] ContextPtr context, [[mayb
 #if USE_AWS_S3
     const auto & credential = definition.credential;
     auto credentials_ast = makeASTFunction("extra_credentials");
-    for (const auto & [key, value] : std::initializer_list<std::pair<String, String>>{
-             {"role_arn", credential.role_arn}, {"external_id", credential.external_id}, {"role_session_name", credential.role_session_name}})
+    const std::initializer_list<std::pair<String, String>> credential_args
+        = {{"role_arn", credential.role_arn}, {"external_id", credential.external_id}, {"role_session_name", credential.role_session_name}};
+    for (const auto & [key, value] : credential_args)
     {
         if (!value.empty())
             credentials_ast->arguments->children.push_back(
