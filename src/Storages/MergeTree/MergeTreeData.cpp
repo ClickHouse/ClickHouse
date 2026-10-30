@@ -6475,19 +6475,36 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
                     std::ranges::copy(projection.metadata->getColumnsRequiredForSortingKey(), std::back_inserter(key_columns));
             }
 
+            /// The name is looked up in the old columns both as it is and under its name before the renames of this
+            /// `ALTER`: a column `a.size0` added and renamed to `a.sz` in the same `ALTER` is still read as `a.size0` from
+            /// the parts that miss it, so a new key over `a.sz` reads the sizes of `a` there.
             const auto & new_columns = new_metadata.getColumns();
             for (const auto & key_column : key_columns)
             {
-                auto old_column = old_columns.tryGetColumnOrSubcolumn(GetColumnsOptions::All, key_column);
                 auto new_column = new_columns.tryGetColumnOrSubcolumn(GetColumnsOptions::All, key_column);
-                if (old_column && new_column && old_column->isSubcolumn() && old_column->getNameInStorage() != new_column->getNameInStorage())
-                    throw Exception(
-                        ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN,
-                        "Cannot add column {}: a key, TTL or projection expression reads {} as a subcolumn of column {}, and the new "
-                        "column would change it, while the existing parts are indexed, sorted, aggregated and expired by the old value",
-                        backQuoteIfNeed(new_column->getNameInStorage()),
-                        backQuoteIfNeed(key_column),
-                        backQuoteIfNeed(old_column->getNameInStorage()));
+                if (!new_column)
+                    continue;
+
+                String old_name_in_storage = new_column->getNameInStorage();
+                for (const auto & command : commands | std::views::reverse)
+                {
+                    if (command.type == AlterCommand::RENAME_COLUMN && !command.ignore && command.rename_to == old_name_in_storage)
+                        old_name_in_storage = command.column_name;
+                }
+
+                for (const auto & old_name : {key_column, Nested::concatenateName(old_name_in_storage, new_column->getSubcolumnName())})
+                {
+                    auto old_column = old_columns.tryGetColumnOrSubcolumn(GetColumnsOptions::All, old_name);
+                    if (old_column && old_column->isSubcolumn() && old_column->getNameInStorage() != new_column->getNameInStorage())
+                        throw Exception(
+                            ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN,
+                            "Cannot add column {}: a key, TTL or projection expression reads {} as a subcolumn of column {}, and the "
+                            "new column would change it, while the existing parts are indexed, sorted, aggregated and expired by the "
+                            "old value",
+                            backQuoteIfNeed(new_column->getNameInStorage()),
+                            backQuoteIfNeed(key_column),
+                            backQuoteIfNeed(old_column->getNameInStorage()));
+                }
             }
         }
 
