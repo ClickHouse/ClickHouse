@@ -1972,6 +1972,60 @@ IdentifierResolveResult QueryAnalyzer::tryResolveIdentifier(const IdentifierLook
 
 /// Resolve query tree nodes functions implementation
 
+/// Generated internal name -> display name of a disambiguated subquery, union or materialized CTE.
+static std::unordered_map<String, String> buildSubqueryInternalToDisplayNameMap(const IQueryTreeNode & table_expression_node)
+{
+    std::unordered_map<String, String> internal_name_to_display_name;
+    auto collect = [&](const NamesAndTypes & internal_columns, const Names & display_names)
+    {
+        for (size_t i = 0; i < internal_columns.size() && i < display_names.size(); ++i)
+            if (internal_columns[i].name != display_names[i])
+                internal_name_to_display_name.emplace(internal_columns[i].name, display_names[i]);
+    };
+
+    if (const auto * subquery_node = table_expression_node.as<QueryNode>())
+    {
+        const auto & display_names = subquery_node->getProjectionColumnDisplayNames();
+        if (!display_names.empty())
+            collect(subquery_node->getProjectionColumns(), display_names);
+    }
+    else if (const auto * union_subquery_node = table_expression_node.as<UnionNode>())
+    {
+        const auto & display_names = union_subquery_node->getProjectionColumnDisplayNames();
+        if (!display_names.empty())
+            collect(union_subquery_node->computeProjectionColumns(), display_names);
+    }
+    else if (const auto * table_node = table_expression_node.as<TableNode>(); table_node && table_node->isMaterializedCTE())
+    {
+        /// A materialized CTE's storage columns carry the subquery's internal names; the display names
+        /// live on the subquery.
+        const auto & subquery = table_node->getMaterializedCTESubquery();
+        if (const auto * cte_query_node = subquery->as<QueryNode>())
+        {
+            const auto & display_names = cte_query_node->getProjectionColumnDisplayNames();
+            if (!display_names.empty())
+                collect(cte_query_node->getProjectionColumns(), display_names);
+        }
+        else if (const auto * cte_union_node = subquery->as<UnionNode>())
+        {
+            const auto & display_names = cte_union_node->getProjectionColumnDisplayNames();
+            if (!display_names.empty())
+                collect(cte_union_node->computeProjectionColumns(), display_names);
+        }
+    }
+
+    return internal_name_to_display_name;
+}
+
+static String getDisplayName(const std::unordered_map<String, String> & internal_to_display, const String & internal_name)
+{
+    if (internal_to_display.empty())
+        return internal_name;
+
+    auto it = internal_to_display.find(internal_name);
+    return it == internal_to_display.end() ? internal_name : it->second;
+}
+
 /** Qualify column nodes with projection names.
   *
   * Example: SELECT * FROM test_table AS t1, test_table AS t2;
@@ -1980,6 +2034,8 @@ void QueryAnalyzer::qualifyColumnNodesWithProjectionNames(const QueryTreeNodes &
     const TableExpressionNodePtr & table_expression_node,
     const IdentifierResolveScope & scope)
 {
+    const auto internal_to_display = buildSubqueryInternalToDisplayNameMap(*table_expression_node);
+
     /// Build additional column qualification parts array
     std::vector<std::string> additional_column_qualification_parts;
 
@@ -2053,7 +2109,7 @@ void QueryAnalyzer::qualifyColumnNodesWithProjectionNames(const QueryTreeNodes &
 
         for (const auto & column_node : column_nodes)
         {
-            const auto & column_name = column_node->as<ColumnNode &>().getColumnName();
+            const String column_name = getDisplayName(internal_to_display, column_node->as<ColumnNode &>().getColumnName());
             if (forced_qualifier.empty())
                 node_to_projection_name.emplace(column_node, column_name);
             else
@@ -2070,7 +2126,7 @@ void QueryAnalyzer::qualifyColumnNodesWithProjectionNames(const QueryTreeNodes &
 
     for (const auto & column_node : column_nodes)
     {
-        const auto & column_name = column_node->as<ColumnNode &>().getColumnName();
+        const String column_name = getDisplayName(internal_to_display, column_node->as<ColumnNode &>().getColumnName());
         column_qualified_identifier_parts = Identifier(column_name).getParts();
 
         /// Iterate over additional column qualifications and apply them if needed
@@ -2172,15 +2228,19 @@ QueryAnalyzer::QueryTreeNodesWithNames QueryAnalyzer::getMatchedColumnNodesWithN
         return false;
     };
 
+    std::unordered_map<String, String> internal_name_to_display_name = buildSubqueryInternalToDisplayNameMap(*table_expression_node);
+
     QueryTreeNodes matched_column_nodes;
 
     for (const auto & column : matched_columns)
     {
         const auto & column_name = column.name;
-        if (!matcher_node_typed.isMatchingColumn(column_name))
+        /// The matcher and its transformers see display names; the node keeps the internal name.
+        const String display_name = getDisplayName(internal_name_to_display_name, column_name);
+        if (!matcher_node_typed.isMatchingColumn(display_name))
             continue;
 
-        if (table_expression_data && !is_column_discarded_by_transformers(column_name))
+        if (table_expression_data && !is_column_discarded_by_transformers(display_name))
         {
             if (auto column_node = table_expression_data->tryGetColumnNode(column_name))
             {
@@ -2200,7 +2260,7 @@ QueryAnalyzer::QueryTreeNodesWithNames QueryAnalyzer::getMatchedColumnNodesWithN
 
     for (auto && matched_column_node : matched_column_nodes)
     {
-        auto column_name = matched_column_node->as<ColumnNode &>().getColumnName();
+        auto column_name = getDisplayName(internal_name_to_display_name, matched_column_node->as<ColumnNode &>().getColumnName());
         matched_column_nodes_with_names.emplace_back(std::move(matched_column_node), std::move(column_name));
     }
 
@@ -2250,9 +2310,13 @@ void QueryAnalyzer::updateMatchedColumnsFromJoinUsing(
         if (nearest_query_scope->using_joins_count == 0)
             return;
 
-        for (auto & [matched_column_node, _] : result_matched_column_nodes_with_names)
+        for (auto & [matched_column_node, matched_column_name] : result_matched_column_nodes_with_names)
         {
             auto & matched_column_node_typed = matched_column_node->as<ColumnNode &>();
+
+            /// A disambiguated duplicate's generated name cannot be referenced, so it is never a USING key.
+            if (matched_column_node_typed.getColumnName() != matched_column_name)
+                continue;
 
             Identifier explicit_identifier = matched_qualified_identifier;
             explicit_identifier.push_back(matched_column_node_typed.getColumnName());
@@ -4976,9 +5040,66 @@ void QueryAnalyzer::resolveWindowNodeList(QueryTreeNodePtr & window_node_list, I
         resolveWindow(node, scope);
 }
 
-NamesAndTypes QueryAnalyzer::resolveProjectionExpressionNodeList(QueryTreeNodePtr & projection_node_list, IdentifierResolveScope & scope)
+NamesAndTypes QueryAnalyzer::resolveProjectionExpressionNodeList(
+    QueryTreeNodePtr & projection_node_list, IdentifierResolveScope & scope, std::vector<bool> * projection_from_matcher,
+    std::vector<bool> * projection_has_explicit_alias)
 {
-    ProjectionNames projection_names = resolveExpressionNodeList(projection_node_list, scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/, true /*allow_niladic_functions*/, true /*is_top_level_projection*/);
+    /// Flags are taken before resolution: it erases matcher expansion boundaries and can replace an aliased
+    /// node (a constant-folded function) with an unaliased one.
+    if (projection_from_matcher)
+        projection_from_matcher->clear();
+    if (projection_has_explicit_alias)
+        projection_has_explicit_alias->clear();
+
+    ProjectionNames projection_names;
+    if (projection_from_matcher)
+    {
+        auto & node_list_typed = projection_node_list->as<ListNode &>();
+        QueryTreeNodes result_nodes;
+        result_nodes.reserve(node_list_typed.getNodes().size());
+
+        for (auto & node : node_list_typed.getNodes())
+        {
+            /// An `APPLY` output is an expression of a column, not a starred column an explicit alias may redefine.
+            const auto * matcher_node = node->as<MatcherNode>();
+            const bool node_is_matcher = matcher_node
+                && std::ranges::none_of(
+                    matcher_node->getColumnTransformers().getNodes(),
+                    [](const QueryTreeNodePtr & transformer) { return transformer->as<ApplyColumnTransformerNode>() != nullptr; });
+            const bool node_has_explicit_alias = !node->getAlias().empty();
+            auto node_to_resolve = node;
+            auto names = resolveExpressionNode(
+                node_to_resolve, scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/,
+                false /*ignore_alias*/, true /*allow_niladic_functions*/, true /*is_top_level_projection*/);
+
+            size_t produced = 1;
+            if (auto * expression_list = node_to_resolve->as<ListNode>())
+            {
+                produced = expression_list->getNodes().size();
+                for (auto & expression_list_node : expression_list->getNodes())
+                    result_nodes.push_back(expression_list_node);
+            }
+            else
+            {
+                result_nodes.push_back(std::move(node_to_resolve));
+            }
+
+            if (names.size() != produced)
+                throw Exception(ErrorCodes::LOGICAL_ERROR,
+                    "Expression nodes list expected {} projection names. Actual: {}", produced, names.size());
+
+            projection_from_matcher->insert(projection_from_matcher->end(), produced, node_is_matcher);
+            if (projection_has_explicit_alias)
+                projection_has_explicit_alias->insert(projection_has_explicit_alias->end(), produced, node_has_explicit_alias);
+            projection_names.insert(projection_names.end(), names.begin(), names.end());
+        }
+
+        node_list_typed.getNodes() = std::move(result_nodes);
+    }
+    else
+    {
+        projection_names = resolveExpressionNodeList(projection_node_list, scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/, true /*allow_niladic_functions*/, true /*is_top_level_projection*/);
+    }
 
     auto projection_nodes = projection_node_list->as<ListNode &>().getNodes();
     size_t projection_nodes_size = projection_nodes.size();
@@ -5394,6 +5515,9 @@ void QueryAnalyzer::initializeTableExpressionData(const TableExpressionNodePtr &
             && scope.context->getSettingsRef()[Setting::single_join_prefer_left_table])
             table_expression_data.should_qualify_columns = false;
     }
+
+    for (const auto & [internal_name, display_name] : buildSubqueryInternalToDisplayNameMap(*table_expression_node))
+        table_expression_data.hidden_column_names.insert(internal_name);
 
     auto [data_it, inserted] = scope.table_expression_node_to_data.emplace(table_expression_node, std::move(table_expression_data));
     if (!inserted)
@@ -6241,8 +6365,8 @@ static void appendColumnNamesInSchemaOrder(
             result_columns.push_back(column.name);
 }
 
-/// Get ordered column names from a table expression, preserving left-to-right order.
-/// Returns false if the table expression type is not supported.
+/// Get ordered column names from a table expression, preserving left-to-right order, without generated
+/// internal names. Returns false if the table expression type is not supported.
 static bool getOrderedColumnsFromTableExpression(
     const QueryTreeNodePtr & root_table_expression, Names & result_columns, GetColumnsOptions::Kind kind)
 {
@@ -6253,6 +6377,7 @@ static bool getOrderedColumnsFromTableExpression(
     {
         const auto * table_expression = nodes_to_process.back();
         nodes_to_process.pop_back();
+        const size_t leaf_columns_begin = result_columns.size();
 
         switch (table_expression->getNodeType())
         {
@@ -6308,6 +6433,10 @@ static bool getOrderedColumnsFromTableExpression(
                 return false;
             }
         }
+
+        if (auto generated = buildSubqueryInternalToDisplayNameMap(*table_expression); !generated.empty())
+            result_columns.erase(std::remove_if(result_columns.begin() + leaf_columns_begin, result_columns.end(),
+                [&](const String & name) { return generated.contains(name); }), result_columns.end());
     }
     return true;
 }
@@ -6355,7 +6484,7 @@ void QueryAnalyzer::resolveJoin(QueryTreeNodePtr & join_node, IdentifierResolveS
     {
         /// Synthesize a USING expression from the intersection of left and right column names.
         Names left_cols;
-        NameSet right_cols;
+        Names right_cols_ordered;
 
         /// A join key must be readable, so `EPHEMERAL` columns are not `NATURAL JOIN` keys.
         if (!getOrderedColumnsFromTableExpression(
@@ -6364,11 +6493,12 @@ void QueryAnalyzer::resolveJoin(QueryTreeNodePtr & join_node, IdentifierResolveS
                 "NATURAL JOIN: cannot determine columns of left table expression in {}",
                 join_node_typed.formatASTForErrorMessage());
 
-        if (!getColumnsFromTableExpression(
-                join_node_typed.getRightTableExpressionNode(), right_cols, GetColumnsOptions::AllPhysicalAndAliases))
+        if (!getOrderedColumnsFromTableExpression(
+                join_node_typed.getRightTableExpressionNode(), right_cols_ordered, GetColumnsOptions::AllPhysicalAndAliases))
             throw Exception(ErrorCodes::NOT_IMPLEMENTED,
                 "NATURAL JOIN: cannot determine columns of right table expression in {}",
                 join_node_typed.formatASTForErrorMessage());
+        NameSet right_cols(right_cols_ordered.begin(), right_cols_ordered.end());
 
         QueryTreeNodes using_nodes;
         NameSet seen;
@@ -7640,6 +7770,8 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
     /// Resolve query node sections.
 
     NamesAndTypes projection_columns;
+    std::vector<bool> projection_from_matcher;
+    std::vector<bool> projection_has_explicit_alias;
 
     /// `expandGroupByAll` clears the flag, and under `group_by_use_nulls` it runs before the grouping keys
     /// are resolved, so the ALL-ness has to be remembered here to still be known at either validation site.
@@ -7647,7 +7779,8 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
 
     if (!scope.group_by_use_nulls)
     {
-        projection_columns = resolveProjectionExpressionNodeList(query_node_typed.getProjectionNode(), scope);
+        projection_columns = resolveProjectionExpressionNodeList(
+            query_node_typed.getProjectionNode(), scope, &projection_from_matcher, &projection_has_explicit_alias);
         if (query_node_typed.getProjection().getNodes().empty())
             throw Exception(ErrorCodes::EMPTY_LIST_OF_COLUMNS_QUERIED,
                 "Empty list of columns in projection. In scope {}",
@@ -7834,7 +7967,8 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
 
     if (scope.group_by_use_nulls)
     {
-        projection_columns = resolveProjectionExpressionNodeList(query_node_typed.getProjectionNode(), scope);
+        projection_columns = resolveProjectionExpressionNodeList(
+            query_node_typed.getProjectionNode(), scope, &projection_from_matcher, &projection_has_explicit_alias);
         if (query_node_typed.getProjection().getNodes().empty())
             throw Exception(ErrorCodes::EMPTY_LIST_OF_COLUMNS_QUERIED,
                 "Empty list of columns in projection. In scope {}",
@@ -8066,7 +8200,110 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
         }
     }
 
+    /// Runs after the repeated-nested-alias renaming above; display names are set after resolveProjectionColumns, which clears them.
+    Names projection_column_display_names = disambiguateDuplicateProjectionColumnNames(
+        query_node_typed, projection_columns, projection_has_explicit_alias, projection_from_matcher);
+
     query_node_typed.resolveProjectionColumns(std::move(projection_columns));
+    if (!projection_column_display_names.empty())
+        query_node_typed.setProjectionColumnDisplayNames(std::move(projection_column_display_names));
+}
+
+/// Equal expressions hold equal values only if each column reads the same table expression: the same column of
+/// two identical table expressions on the two sides of an outer JOIN holds different values.
+static bool readSameColumnSources(const IQueryTreeNode & lhs, const IQueryTreeNode & rhs)
+{
+    std::vector<std::pair<const IQueryTreeNode *, const IQueryTreeNode *>> nodes{{&lhs, &rhs}};
+    while (!nodes.empty())
+    {
+        auto [lhs_node, rhs_node] = nodes.back();
+        nodes.pop_back();
+
+        if (const auto * lhs_column = lhs_node->as<ColumnNode>())
+        {
+            auto lhs_source = lhs_column->getColumnSourceOrNull();
+            if (lhs_source && lhs_source->getNodeType() != QueryTreeNodeType::LAMBDA_ARGS
+                && lhs_source != rhs_node->as<ColumnNode>()->getColumnSourceOrNull())
+                return false;
+        }
+
+        const auto & lhs_children = lhs_node->getChildren();
+        const auto & rhs_children = rhs_node->getChildren();
+        for (size_t i = 0; i < lhs_children.size(); ++i)
+            if (lhs_children[i])
+                nodes.emplace_back(lhs_children[i].get(), rhs_children[i].get());
+    }
+    return true;
+}
+
+Names QueryAnalyzer::disambiguateDuplicateProjectionColumnNames(
+    const QueryNode & query_node,
+    NamesAndTypes & projection_columns,
+    const std::vector<bool> & projection_has_explicit_alias,
+    const std::vector<bool> & projection_from_matcher)
+{
+    /// The planner identifies a subquery column as `source_alias + "." + column_name`, so same-named
+    /// columns of one subquery would collapse into one.
+    if (!query_node.isSubquery())
+        return {};
+
+    /// A pending column alias list (`AS s(a, b)`) gives every column a unique name.
+    if (query_node.hasProjectionAliasesToOverride())
+        return {};
+
+    const auto & projection_nodes = query_node.getProjection().getNodes();
+    if (projection_columns.size() != projection_nodes.size()
+        || projection_has_explicit_alias.size() != projection_columns.size()
+        || projection_from_matcher.size() != projection_columns.size())
+        return {};
+
+    NameSet used_names;
+    used_names.reserve(projection_columns.size());
+    for (const auto & column : projection_columns)
+        used_names.insert(column.name);
+
+    std::unordered_map<std::string, size_t> name_to_first_index;
+    Names display_names;
+    bool disambiguated = false;
+
+    for (size_t i = 0; i < projection_columns.size(); ++i)
+    {
+        auto [it, inserted] = name_to_first_index.emplace(projection_columns[i].name, i);
+        if (inserted)
+            continue;
+
+        if (projection_nodes[i]->isEqual(*projection_nodes[it->second])
+            && readSameColumnSources(*projection_nodes[i], *projection_nodes[it->second]))
+            continue;
+
+        /// A later `expr AS name` shadowing a same-named column from `*` (e.g. `SELECT *, 'x' AS c`) keeps
+        /// the name-based resolution.
+        if (projection_has_explicit_alias[i] && projection_from_matcher[it->second])
+            continue;
+
+        if (display_names.empty())
+        {
+            display_names.reserve(projection_columns.size());
+            for (const auto & column : projection_columns)
+                display_names.push_back(column.name);
+        }
+
+        std::string unique_name;
+        size_t suffix = 1;
+        do
+        {
+            unique_name = projection_columns[i].name + "_" + std::to_string(suffix);
+            ++suffix;
+        } while (!used_names.insert(unique_name).second);
+
+        name_to_first_index.emplace(unique_name, i);
+        projection_columns[i].name = unique_name;
+        disambiguated = true;
+    }
+
+    if (!disambiguated)
+        return {};
+    return display_names;
 }
 
 void QueryAnalyzer::resolveUnion(const QueryTreeNodePtr & union_node, IdentifierResolveScope & scope)
@@ -8292,6 +8529,67 @@ void QueryAnalyzer::resolveUnion(const QueryTreeNodePtr & union_node, Identifier
 
         union_node_typed.setRecursiveCTETable(std::move(*recursive_cte_table));
     }
+
+    disambiguateDuplicateUnionProjectionColumnNames(union_node_typed);
+}
+
+void QueryAnalyzer::disambiguateDuplicateUnionProjectionColumnNames(UnionNode & union_node)
+{
+    /// A union takes its column names from its (innermost) first branch, so the duplicates are renamed there.
+    if (!union_node.isSubquery())
+        return;
+
+    const auto & query_nodes = union_node.getQueries().getNodes();
+    if (query_nodes.empty())
+        return;
+
+    QueryTreeNodePtr branch = query_nodes.front();
+    while (auto * branch_union = branch->as<UnionNode>())
+    {
+        const auto & branch_queries = branch_union->getQueries().getNodes();
+        if (branch_queries.empty())
+            return;
+        branch = branch_queries.front();
+    }
+    auto * first_branch = branch->as<QueryNode>();
+    if (!first_branch)
+        return;
+
+    const auto & first_branch_columns = first_branch->getProjectionColumns();
+
+    Names original_names;
+    original_names.reserve(first_branch_columns.size());
+    for (const auto & column : first_branch_columns)
+        original_names.push_back(column.name);
+
+    NameSet used_names(original_names.begin(), original_names.end());
+
+    std::unordered_map<std::string, size_t> name_to_first_index;
+    bool disambiguated = false;
+
+    for (size_t i = 0; i < original_names.size(); ++i)
+    {
+        const auto & name = original_names[i];
+        if (name_to_first_index.emplace(name, i).second)
+            continue;
+
+        /// Equal first-branch expressions do not make duplicates interchangeable: other branches map values
+        /// by position, e.g. `(SELECT number, number) UNION ALL (SELECT 5, 6)`.
+        std::string unique_name;
+        size_t suffix = 1;
+        do
+        {
+            unique_name = name + "_" + std::to_string(suffix);
+            ++suffix;
+        } while (!used_names.insert(unique_name).second);
+
+        name_to_first_index.emplace(unique_name, i);
+        first_branch->renameProjectionColumn(i, unique_name);
+        disambiguated = true;
+    }
+
+    if (disambiguated)
+        union_node.setProjectionColumnDisplayNames(std::move(original_names));
 }
 
 }
