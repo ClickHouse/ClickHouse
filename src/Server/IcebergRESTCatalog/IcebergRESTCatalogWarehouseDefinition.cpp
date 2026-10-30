@@ -21,7 +21,7 @@ constexpr Int64 FORMAT_VERSION = 2;
 
 String getRequiredString(const Poco::JSON::Object & json, const String & key)
 {
-    IcebergRESTCatalogJSON::validateString(json, key);
+    IcebergRESTCatalog::validateString(json, key);
     return json.getValue<String>(key);
 }
 
@@ -79,13 +79,13 @@ String IcebergRESTCatalogWarehouseDefinition::toKeeperData() const
     json.set("format_version", FORMAT_VERSION);
     json.set("base_location", base_location);
     json.set("credential", credential.toJSON());
-    return toJSONString(json);
+    return IcebergRESTCatalog::toJSONString(json);
 }
 
 IcebergRESTCatalogWarehouseDefinition IcebergRESTCatalogWarehouseDefinition::fromKeeperData(const String & data, const String & path)
 {
     const auto what = fmt::format("Warehouse definition at {}", path);
-    const auto json = parseJSONObject(data, what);
+    const auto json = IcebergRESTCatalog::parseJSONObject(data, what);
 
     const auto format_version = json->optValue<Int64>("format_version", 0);
     if (format_version != FORMAT_VERSION)
