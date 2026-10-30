@@ -5280,6 +5280,11 @@ static void forEachIndexLayer(const ReadFromMergeTree::IndexStats & index_stats,
 
 void ReadFromMergeTree::recordIndexUsage(const AnalysisResult & result, const StorageID & storage_id, const ContextMutablePtr & query_context)
 {
+    forEachIndexLayer(result.index_stats, [](const IndexStat & stat, UInt64 granules_before)
+    {
+        if (stat.type == IndexType::MinMax || stat.type == IndexType::Partition)
+            ProfileEvents::increment(ProfileEvents::GranulesDroppedByPartitionKey, granules_before - std::min<UInt64>(granules_before, stat.num_granules_after));
+    });
     ProfileEvents::increment(ProfileEvents::GranulesDroppedByPrimaryKey, result.granules_dropped_by_primary_key);
     ProfileEvents::increment(ProfileEvents::GranulesDroppedBySkipIndexes, result.granules_dropped_by_skip_indexes);
 
@@ -5290,6 +5295,11 @@ void ReadFromMergeTree::recordIndexUsage(const AnalysisResult & result, const St
     for (const auto & index_name : result.used_skip_indexes)
         index_names.emplace_back(fmt::format("{}.{}", storage_id.getFullTableName(), backQuoteIfNeed(index_name)));
     query_context->addUsedDataSkippingIndices(index_names);
+}
+
+ContextMutablePtr ReadFromMergeTree::getAccessInfoContext() const
+{
+    return context->hasQueryContext() && !query_info.is_internal ? context->getQueryContext() : nullptr;
 }
 
 void ReadFromMergeTree::logPredicateStatistics(const AnalysisResult & result) const
@@ -5625,8 +5635,10 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, [[ma
         result.selected_marks,
         result.selected_ranges);
 
+    const auto access_info_context = getAccessInfoContext();
+
     // Adding partition info to QueryAccessInfo.
-    if (context->hasQueryContext() && !query_info.is_internal)
+    if (access_info_context)
     {
         Names partition_names;
         for (const auto & part : result.parts_with_ranges)
@@ -5634,15 +5646,10 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, [[ma
             partition_names.emplace_back(
                 fmt::format("{}.{}", data.getStorageID().getFullNameNotQuoted(), part.data_part->info.getPartitionId()));
         }
-        context->getQueryContext()->addQueryAccessInfo(partition_names);
+        access_info_context->addQueryAccessInfo(partition_names);
     }
 
-    forEachIndexLayer(result.index_stats, [](const IndexStat & stat, UInt64 granules_before)
-    {
-        if (stat.type == IndexType::MinMax || stat.type == IndexType::Partition)
-            ProfileEvents::increment(ProfileEvents::GranulesDroppedByPartitionKey, granules_before - std::min<UInt64>(granules_before, stat.num_granules_after));
-    });
-    recordIndexUsage(result, data.getStorageID(), context->hasQueryContext() && !query_info.is_internal ? context->getQueryContext() : nullptr);
+    recordIndexUsage(result, data.getStorageID(), access_info_context);
 
     ProfileEvents::increment(ProfileEvents::SelectedParts, result.selected_parts);
     ProfileEvents::increment(ProfileEvents::SelectedPartsTotal, result.total_parts);

@@ -424,7 +424,8 @@ bool optimizeTrivialCountFromTextIndex(QueryPlan::Node & node, QueryPlan::Nodes 
         std::move(*search_query),
         matched->reading->getReaderSettings(),
         *count_column,
-        matched->reading->getNumStreams());
+        matched->reading->getNumStreams(),
+        is_fully_materialized ? matched->reading : nullptr);
     source_node.step->setStepDescription(description, settings.max_step_description_length);
 
     if (is_fully_materialized)

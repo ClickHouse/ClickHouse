@@ -432,13 +432,16 @@ public:
 
     StorageMetadataPtr getStorageMetadata() const { return storage_snapshot->metadata; }
 
-    /// The query condition cache is keyed by (table UUID, part name, condition hash), so it must not
-    /// see filters whose value can change while that key stays the same: non-deterministic virtual
-    /// columns (query-wide part numbering, catalog names, disk placement).
-    /// Adds the marks that `result` excluded by the primary key and by skip indexes to ProfileEvents,
+    /// Adds the marks that `result` excluded by the partition key, the primary key and skip indexes to ProfileEvents,
     /// and its used skip indexes to the access info of `query_context` if it is set.
     static void recordIndexUsage(const AnalysisResult & result, const StorageID & storage_id, const ContextMutablePtr & query_context);
 
+    /// The query context that collects the access info of this read, nullptr for an internal read.
+    ContextMutablePtr getAccessInfoContext() const;
+
+    /// The query condition cache is keyed by (table UUID, part name, condition hash), so it must not
+    /// see filters whose value can change while that key stays the same: non-deterministic virtual
+    /// columns (query-wide part numbering, catalog names, disk placement).
     static bool filterDependsOnNonDeterministicVirtuals(const VirtualColumnsDescription & virtuals, const SelectQueryInfo & query_info_);
 
     /// Returns `false` if requested reading cannot be performed.
