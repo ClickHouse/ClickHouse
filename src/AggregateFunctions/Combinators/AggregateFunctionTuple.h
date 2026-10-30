@@ -113,6 +113,15 @@ public:
         const UInt8 * null_map,
         Arena * arena,
         ssize_t if_argument_pos = -1) const override;
+    void addBatchLookupTable8(
+        size_t row_begin,
+        size_t row_end,
+        AggregateDataPtr * map,
+        size_t place_offset,
+        std::function<void(AggregateDataPtr &)> init,
+        const UInt8 * key,
+        const IColumn ** columns,
+        Arena * arena) const override;
     void mergeImpl(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena * arena) const override;
 
     bool isParallelizeMergePrepareNeeded() const override;
@@ -228,7 +237,11 @@ private:
     /// Shared implementation of the batch add overrides. Hoists the per-element column pointers, so
     /// no per-row unwrapping work remains in the row loop.
     /// `get_place` returns the aggregation state for a row, or nullptr when the row has none.
-    template <bool has_null_map, bool all_places_are_non_null, typename GetPlace>
+    /// The elements without sparse columns are passed to the nested functions for the whole batch by
+    /// `add_nested_batch(nested_function, state_offset, nested_columns)`, which calls
+    /// the batch method of the nested function corresponding to the caller. This way the nested functions process
+    /// the batch at once (for example, -Distinct over a `Variant` argument passes the new rows to the conversion together).
+    template <bool has_null_map, bool all_places_are_non_null, typename GetPlace, typename AddNestedBatch>
     void addBatchImpl(
         size_t row_begin,
         size_t row_end,
@@ -236,7 +249,8 @@ private:
         const UInt8 * null_map,
         ssize_t if_argument_pos,
         Arena * arena,
-        GetPlace && get_place) const;
+        GetPlace && get_place,
+        AddNestedBatch && add_nested_batch) const;
 };
 
 }
