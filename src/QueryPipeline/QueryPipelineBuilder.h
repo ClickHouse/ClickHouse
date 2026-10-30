@@ -116,6 +116,10 @@ public:
     /// Forget about current extremes, keeping totals. Needed before a join, whose inputs' extremes
     /// say nothing about the join result; they are recalculated above the join if they are wanted.
     void dropExtremes();
+    /// Take the extremes out of the pipeline, so that the following transforms do not process them,
+    /// and put them back with `attachExtremes`, converted to the header the pipeline has then.
+    void detachExtremes();
+    void attachExtremes();
 
     void addMergingAggregatedMemoryEfficientTransform(
         AggregatingTransformParamsPtr params, size_t num_merging_processors, bool should_produce_results_in_order_of_bucket_number);
