@@ -29,7 +29,15 @@ EXECUTE AS u_05442 CREATE TABLE t2 (x String) ENGINE = MergeTree ORDER BY length
 EXECUTE AS u_05442 CREATE TABLE t8 (k String, d DateTime, x String) ENGINE = MergeTree ORDER BY (k, d) TTL d + INTERVAL 1 DAY GROUP BY k SET x = any(aiGenerate(x)); -- { serverError NOT_IMPLEMENTED }
 EXECUTE AS u_05442 ALTER TABLE t7 MODIFY TTL d + INTERVAL 1 DAY DELETE WHERE aiFilter(x, 'c'); -- { serverError NOT_IMPLEMENTED }
 EXECUTE AS u_05442 ALTER TABLE t7 ADD PROJECTION p (SELECT aiGenerate(x) ORDER BY x); -- { serverError NOT_IMPLEMENTED }
+EXECUTE AS u_05442 CREATE TABLE t3 (x String) ENGINE = MergeTree PARTITION BY length(aiEmbed(x, 'm')) ORDER BY x; -- { serverError NOT_IMPLEMENTED }
+EXECUTE AS u_05442 CREATE TABLE t4 (x String, INDEX i length(aiEmbed(x, 'm')) TYPE minmax) ENGINE = MergeTree ORDER BY x; -- { serverError NOT_IMPLEMENTED }
+EXECUTE AS u_05442 ALTER TABLE t7 ADD INDEX i length(aiEmbed(x, 'm')) TYPE minmax; -- { serverError NOT_IMPLEMENTED }
+EXECUTE AS u_05442 ALTER TABLE t7 ADD COLUMN y String, MODIFY ORDER BY (x, length(aiEmbed(y, 'm'))); -- { serverError NOT_IMPLEMENTED }
+-- A `DEFAULT` or `MATERIALIZED` column added by `ALTER` is computed in the background for the existing parts.
+EXECUTE AS u_05442 ALTER TABLE t7 ADD COLUMN c String DEFAULT aiGenerate(x); -- { serverError NOT_IMPLEMENTED }
+EXECUTE AS u_05442 ALTER TABLE t7 ADD COLUMN m String MATERIALIZED aiGenerate(x); -- { serverError NOT_IMPLEMENTED }
 SELECT count() FROM system.mutations WHERE database = currentDatabase() AND table = 't7';
+
 
 DROP TABLE t7;
 DROP USER u_05442;

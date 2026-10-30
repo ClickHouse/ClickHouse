@@ -103,6 +103,7 @@
 #include <Parsers/ASTAssignment.h>
 #include <Parsers/ASTConstraintDeclaration.h>
 #include <Parsers/ASTExpressionList.h>
+#include <Parsers/ASTWithAlias.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTHelpers.h>
@@ -5942,36 +5943,81 @@ Names expressionSourceColumns(const ASTPtr & ast, const ColumnsDescription & col
 
 }
 
-void MergeTreeData::checkStoredExpressions(const StorageInMemoryMetadata & metadata, const ContextPtr & local_context)
+void MergeTreeData::checkStoredExpressions(
+    const StorageInMemoryMetadata & metadata, const ContextPtr & local_context, const StorageInMemoryMetadata * old_metadata)
 {
     auto context = Context::createCopy(local_context);
     context->setAnalyzingBackgroundExpressions(true);
 
+    /// On `ALTER`, only the expressions it adds or changes: the others were checked when they were defined.
+    auto is_new = [&](const ASTPtr & ast, const ASTPtr & old_ast)
+    {
+        if (!ast)
+            return false;
+        if (!old_metadata || !old_ast)
+            return true;
+        return ast->getTreeHash(/*ignore_aliases=*/ false) != old_ast->getTreeHash(/*ignore_aliases=*/ false);
+    };
+    auto old_ast_of = [&](auto && get) -> ASTPtr { return old_metadata ? get(*old_metadata) : nullptr; };
+
     const auto & columns = metadata.columns;
     const auto & virtuals = metadata.virtuals;
 
-    for (const auto * key : {&metadata.partition_key, &metadata.sorting_key, &metadata.sampling_key, &metadata.unique_key})
+    for (auto key : {&StorageInMemoryMetadata::partition_key, &StorageInMemoryMetadata::sorting_key,
+                     &StorageInMemoryMetadata::sampling_key, &StorageInMemoryMetadata::unique_key})
     {
-        if (key->definition_ast)
-            KeyDescription::getKeyFromAST(key->definition_ast, columns, virtuals, context);
+        const auto & ast = (metadata.*key).definition_ast;
+        if (is_new(ast, old_ast_of([&](const StorageInMemoryMetadata & m) { return (m.*key).definition_ast; })))
+            KeyDescription::getKeyFromAST(ast, columns, virtuals, context);
     }
-    if (metadata.primary_key.definition_ast)
+    if (is_new(metadata.primary_key.definition_ast, old_ast_of([](const StorageInMemoryMetadata & m) { return m.primary_key.definition_ast; })))
         KeyDescription::getPrimaryKeyFromAST(metadata.primary_key.definition_ast, metadata.sorting_key, columns, virtuals, context);
 
     for (const auto & index : metadata.secondary_indices)
     {
-        if (!index.isImplicitlyCreated())
+        if (index.isImplicitlyCreated())
+            continue;
+        ASTPtr old_ast = old_metadata && old_metadata->secondary_indices.has(index.name)
+            ? old_metadata->secondary_indices.getByName(index.name).definition_ast : nullptr;
+        if (is_new(index.definition_ast, old_ast))
             IndexDescription::getIndexFromAST(index.definition_ast, columns, false, index.escape_filenames, context);
     }
 
     for (const auto & projection : metadata.projections)
-        ProjectionDescription::getProjectionFromAST(projection.definition_ast, columns, &metadata.partition_key, context);
+    {
+        ASTPtr old_ast = old_metadata && old_metadata->projections.has(projection.name)
+            ? old_metadata->projections.get(projection.name).definition_ast : nullptr;
+        if (is_new(projection.definition_ast, old_ast))
+            ProjectionDescription::getProjectionFromAST(projection.definition_ast, columns, &metadata.partition_key, context);
+    }
 
+    auto old_column_ttls = old_metadata ? old_metadata->columns.getColumnTTLs() : ColumnsDescription::ColumnTTLs{};
     for (const auto & [name, ttl_ast] : columns.getColumnTTLs())
-        TTLDescription::getTTLFromAST(ttl_ast, columns, context, metadata.primary_key, TTLValidationMode::SkipValidation);
-    if (metadata.table_ttl.definition_ast)
+    {
+        auto it = old_column_ttls.find(name);
+        if (is_new(ttl_ast, it == old_column_ttls.end() ? nullptr : it->second))
+            TTLDescription::getTTLFromAST(ttl_ast, columns, context, metadata.primary_key, TTLValidationMode::SkipValidation);
+    }
+    if (is_new(metadata.table_ttl.definition_ast, old_ast_of([](const StorageInMemoryMetadata & m) { return m.table_ttl.definition_ast; })))
         TTLTableDescription::getTTLForTableFromAST(
             metadata.table_ttl.definition_ast, columns, context, metadata.primary_key, TTLValidationMode::SkipValidation);
+
+    /// A `DEFAULT` or `MATERIALIZED` column added or changed by `ALTER` is computed for the existing parts, which do not
+    /// contain it, by merges and reads with the storage context. At `CREATE` it is computed by the inserts.
+    if (!old_metadata)
+        return;
+    auto default_expr_list = make_intrusive<ASTExpressionList>();
+    for (const auto & column : columns)
+    {
+        const auto & desc = column.default_desc;
+        if (!desc.expression || (desc.kind != ColumnDefaultKind::Default && desc.kind != ColumnDefaultKind::Materialized))
+            continue;
+        auto old_default = old_metadata->columns.getDefault(column.name);
+        if (is_new(desc.expression, old_default ? old_default->expression : nullptr))
+            default_expr_list->children.emplace_back(setAlias(desc.expression->clone(), "_default_check_" + column.name));
+    }
+    if (!default_expr_list->children.empty())
+        validateColumnsDefaultsAndGetSampleBlock(default_expr_list, columns.getAll(), context);
 }
 
 void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, ContextPtr local_context) const
@@ -6277,7 +6323,7 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
 
     /// A replica replaying an ALTER the initiator already committed must not fail on it.
     if (auto txn = local_context->getZooKeeperMetadataTransaction(); !txn || txn->isInitialQuery())
-        checkStoredExpressions(new_metadata, local_context);
+        checkStoredExpressions(new_metadata, local_context, &old_metadata);
 
     /// The sort direction of a retained sorting key column is immutable via ALTER, in either direction. Existing parts
     /// stay physically sorted in the directions the key had when they were written, and no regular data part records those
