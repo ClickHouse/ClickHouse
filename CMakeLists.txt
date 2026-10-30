@@ -513,6 +513,15 @@ endif ()
 # Disable floating-point expression contraction in order to get consistent floating point calculation results across platforms
 set (COMPILER_FLAGS "${COMPILER_FLAGS} -ffp-contract=off")
 
+# Treat only a trailing `[]` member as a flexible array, so that the bounds of every other array are known to
+# `-Warray-bounds` and `__builtin_object_size`. Not with Undefined Behavior Sanitizer: its `array-bounds` check would
+# then reject the over-allocated `[0]` members of `uniqUpTo` and `histogram` states. Not on macOS: its SDK enables
+# `_FORTIFY_SOURCE=2` for C, and the checked `strcpy` would then reject the over-allocated `char name[1]` of
+# jemalloc's `prof_log.c`.
+if (NOT OS_DARWIN AND NOT (SANITIZE STREQUAL "undefined" OR SANITIZE STREQUAL "address,undefined"))
+    set (COMPILER_FLAGS "${COMPILER_FLAGS} -fstrict-flex-arrays=3")
+endif ()
+
 # Clang turns a call to `sincos` into the `llvm.sincos` intrinsic, and for a musl target LLVM lowers that intrinsic
 # to separate `sin` and `cos` calls again (it assumes `sincos` only in glibc, Fuchsia and Android). Our musl links
 # llvm-libc's `sincos`, which shares one argument reduction between the two, so keep the call as it is written.
