@@ -2,6 +2,7 @@
 
 #include <Processors/QueryPlan/SourceStepWithFilter.h>
 #include <Core/QueryProcessingStage.h>
+#include <Formats/FormatSettings.h>
 #include <Client/IConnections.h>
 #include <Common/GetPriorityForLoadBalancing.h>
 #include <Storages/IStorage_fwd.h>
@@ -173,6 +174,9 @@ ASTPtr tryBuildAdditionalFilterAST(
     const std::unordered_map<std::string, QueryTreeNodePtr> & execution_name_to_projection_query_tree,
     Tables * external_tables,
     ContextMutablePtr & context,
+    /// The format the consumer of the predicate parses a `JSON` constant with. Passed as a value because
+    /// `context` is empty on the `conjunctsLeftOutOfRemoteQuery` path, where only external tables need it.
+    FormatSettings::DateTimeInputFormat date_time_input_format,
     /// The conjuncts the conversion leaves out of a positive `AND`, when asked.
     std::vector<const ActionsDAG::Node *> * dropped_conjuncts = nullptr);
 
