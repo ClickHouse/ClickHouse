@@ -162,7 +162,7 @@ struct ColumnToMultiLineStringsConverter
         size_t prev_offset = 0;
         VectorWithMemoryTracking<MultiLineString<Point>> answer(offsets.size());
         auto all_linestrings = ColumnToLineStringsConverter<Point>::convert(typeid_cast<const ColumnArray &>(*col).getDataPtr());
-        for (size_t iter = 0; iter < offsets.size() && iter < all_linestrings.size(); ++iter)
+        for (size_t iter = 0; iter < offsets.size(); ++iter)
         {
             for (size_t linestring_iter = prev_offset; linestring_iter < offsets[iter]; ++linestring_iter)
                 answer[iter].emplace_back(std::move(all_linestrings[linestring_iter]));
@@ -241,7 +241,7 @@ struct ColumnToMultiPolygonsConverter
 
         auto all_polygons = ColumnToPolygonsConverter<Point>::convert(typeid_cast<const ColumnArray &>(*col).getDataPtr());
 
-        for (size_t iter = 0; iter < offsets.size() && iter < all_polygons.size(); ++iter)
+        for (size_t iter = 0; iter < offsets.size(); ++iter)
         {
             for (size_t polygon_iter = prev_offset; polygon_iter < offsets[iter]; ++polygon_iter)
                 answer[iter].emplace_back(std::move(all_polygons[polygon_iter]));
