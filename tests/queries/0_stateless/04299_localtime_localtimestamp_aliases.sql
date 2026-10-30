@@ -2,7 +2,6 @@
 -- LOCALTIME is the SQL-standard / PostgreSQL time-of-day function (returns Time), equal to CAST(now() AS Time).
 
 -- Omitting parentheses for niladic functions is only supported by the analyzer.
-SET enable_analyzer = 1;
 
 -- LOCALTIMESTAMP has the same result type as now().
 SELECT toTypeName(LOCALTIMESTAMP) = toTypeName(now());

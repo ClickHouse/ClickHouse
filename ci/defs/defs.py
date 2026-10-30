@@ -1,3 +1,5 @@
+import re
+
 from praktika import Artifact, Docker, Secret
 from praktika.utils import MetaClasses, Utils
 
@@ -45,6 +47,40 @@ class CIFiles:
 
 
 BASE_BRANCH = "master"
+
+NIGHTLY_PERF_BATCH_JOBS = [f"{b}/4" for b in range(1, 5)]
+# {"<test>.xml": "N/4" | "<extra_job>" | "skip"}, see tests/performance/README.md. Balanced by the ARM wall times of 2026-10-22.
+NIGHTLY_PERF_PLACEMENT = {
+    "arrow_flight_loopback.xml": "1/4",
+    "encodings_hits.xml": "1/4",
+    "formats_hits_read.xml": "1/4",
+    "join_algorithms_sf10.xml": "1/4",
+    "json_bluesky.xml": "1/4",
+    "projections_hits.xml": "1/4",
+    "skip_index_minmax_set_hits.xml": "1/4",
+    "analyzer_large_queries.xml": "2/4",
+    "external_sort_hits.xml": "2/4",
+    "parquet_pushdown_long.xml": "2/4",
+    "tpch_sf100.xml": "2/4",
+    "tpcds_sf100.xml": "3/4",
+    "external_aggregation_hits.xml": "4/4",
+    "formats_hits_write.xml": "4/4",
+    "iceberg_compaction.xml": "4/4",
+    "iceberg_deletes_scale.xml": "4/4",
+    "iceberg_rest_catalog.xml": "4/4",
+    "iceberg_scale_manifests.xml": "4/4",
+    "iceberg_time_travel_evolution.xml": "4/4",
+    "iceberg_write_scale.xml": "4/4",
+    "insert_async_dedup.xml": "4/4",
+    "lakes_cross_format.xml": "4/4",
+    "merges_optimize_final.xml": "4/4",
+    "mutations_big_table.xml": "4/4",
+    "parquet_s3_read.xml": "4/4",
+    "partitions_many.xml": "4/4",
+    "query_shapes_hits.xml": "4/4",
+    "vector_index_laion.xml": "4/4",
+}
+assert all(j in NIGHTLY_PERF_BATCH_JOBS or re.fullmatch("[a-z0-9_]+", j) for j in NIGHTLY_PERF_PLACEMENT.values()), NIGHTLY_PERF_PLACEMENT
 
 azure_secret = Secret.Config(
     name="azure_connection_string",
@@ -717,7 +753,7 @@ class ArtifactConfigs:
         Artifact.Config(
             name=ArtifactNames.CH_AMD_ILLUMOS,
             type=Artifact.Type.S3,
-            path=f"{TEMP_DIR}/build/programs/clickhouse",
+            path=f"{TEMP_DIR}/build/programs/stripped/bin/clickhouse",
             compress_zst=True,
         )
     )

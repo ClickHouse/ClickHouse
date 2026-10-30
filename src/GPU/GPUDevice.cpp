@@ -70,7 +70,7 @@ cudaMemPool_t defaultMemoryPool()
 
 GPUDevice::GPUDevice(const GPUDeviceSettings & settings)
     : gpu_resources{
-          .compute = rmm::cuda_stream_view{cudaStreamLegacy},
+          .compute = cuda::stream_ref{cudaStreamLegacy},
           .upload = {},
           .decompression = {},
           .memory_pool = defaultMemoryPool(),
@@ -78,8 +78,8 @@ GPUDevice::GPUDevice(const GPUDeviceSettings & settings)
     , upload_stream(createStream())
     , decompression_stream(createStream())
 {
-    gpu_resources.upload = rmm::cuda_stream_view{upload_stream.get()};
-    gpu_resources.decompression = rmm::cuda_stream_view{decompression_stream.get()};
+    gpu_resources.upload = cuda::stream_ref{upload_stream.get()};
+    gpu_resources.decompression = cuda::stream_ref{decompression_stream.get()};
 
     uint64_t release_threshold = settings.memory_pool_release_threshold;
     checkCuda(
@@ -120,9 +120,9 @@ const GPUResources & GPUResources::get()
     return GPUDevice::instance().resources();
 }
 
-void synchronizeStream(rmm::cuda_stream_view stream)
+void synchronizeStream(cuda::stream_ref stream)
 {
-    checkCuda(cudaStreamSynchronize(stream.value()), "Cannot wait for a CUDA stream");
+    checkCuda(cudaStreamSynchronize(stream.get()), "Cannot wait for a CUDA stream");
 }
 
 }
