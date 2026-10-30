@@ -25,5 +25,8 @@ SELECT trimBoth(explain) FROM (EXPLAIN PIPELINE SELECT k FROM t_small_read ORDER
 -- A window sort by partition does not merge its streams.
 SELECT trimBoth(explain) FROM (EXPLAIN PIPELINE SELECT k, row_number() OVER (PARTITION BY k % 3 ORDER BY k) FROM t_small_read
     SETTINGS query_plan_enable_multithreading_after_window_functions = 1) WHERE explain ILIKE '%MergeTreeSelect%';
+-- Nor do the sorts of a parallel_full_sorting_merge join.
+SELECT trimBoth(explain) FROM (EXPLAIN PIPELINE SELECT count() FROM t_small_read AS a INNER JOIN t_small_read AS b ON a.k % 1000 = b.k % 1000
+    SETTINGS join_algorithm = 'parallel_full_sorting_merge', query_plan_join_shard_by_pk_ranges = 0) WHERE explain ILIKE '%MergeTreeSelect%';
 
 DROP TABLE t_small_read;

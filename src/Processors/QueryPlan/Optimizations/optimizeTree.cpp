@@ -676,8 +676,6 @@ void optimizeTreeSecondPass(
             if (optimization_settings.read_in_order && !cascades_active)
                 optimizeReadInOrder(frame_node, nodes, optimization_settings);
 
-            disableSpreadingSmallReadUnderFullSorting(frame_node);
-
             /// After `optimizeReadInOrder`: a window sorting converted to `FinishSorting` (see
             /// `query_plan_reuse_storage_ordering_for_window_functions`) merges to a single stream and
             /// must not request per-partition reading.
@@ -998,6 +996,9 @@ void optimizeTreeSecondPass(
     /// distributed plans are re-optimized with `make_distributed_plan = false` and still get sharded.
     if (!optimization_settings.make_distributed_plan)
         optimizeParallelFullSortingMergeJoin(root, optimization_settings.max_threads);
+
+    /// After every pass that converts a full sorting or gives it partitions.
+    traverseQueryPlan(stack, root, [&](auto & frame_node) { disableSpreadingSmallReadUnderFullSorting(frame_node); });
 
     considerEnablingParallelReplicas(optimization_settings, root, query_plan);
 
