@@ -206,6 +206,32 @@ SELECT sum(x) FROM db_04207_atf.atf_q AS a SETTINGS additional_table_filters = {
     serialize_query_plan = 1,
     parallel_replicas_plan_based = 0; -- { serverError SUPPORT_IS_DISABLED }
 
+-- For a table in the current database only the initiator matches the key, so the replicas would read
+-- without the filter: best-effort mode runs the query locally with it, and strict mode refuses it.
+SYSTEM ENABLE FAILPOINT parallel_replicas_wait_for_unused_replicas;
+SELECT count(), sum(x) FROM atf_p SETTINGS additional_table_filters = {'atf_p': 'x <= 2'},
+    enable_analyzer = 1,
+    enable_parallel_replicas = 1,
+    automatic_parallel_replicas_mode = 0,
+    max_parallel_replicas = 3,
+    cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost',
+    parallel_replicas_for_non_replicated_merge_tree = 1,
+    parallel_replicas_local_plan = 0,
+    serialize_query_plan = 1,
+    parallel_replicas_plan_based = 0;
+
+SYSTEM ENABLE FAILPOINT parallel_replicas_wait_for_unused_replicas;
+SELECT count(), sum(x) FROM atf_p SETTINGS additional_table_filters = {'atf_p': 'x <= 2'},
+    enable_analyzer = 1,
+    enable_parallel_replicas = 2,
+    automatic_parallel_replicas_mode = 0,
+    max_parallel_replicas = 3,
+    cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost',
+    parallel_replicas_for_non_replicated_merge_tree = 1,
+    parallel_replicas_local_plan = 0,
+    serialize_query_plan = 1,
+    parallel_replicas_plan_based = 0; -- { serverError SUPPORT_IS_DISABLED }
+
 DROP DATABASE db_04207_atf;
 
 -- A quoted alias or table name may contain a dot itself, so the shape of the key decides nothing:
