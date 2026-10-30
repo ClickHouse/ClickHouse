@@ -5,6 +5,8 @@ SET use_query_condition_cache = 0;
 SET use_statistics_for_part_pruning = 0;
 SET merge_tree_read_split_ranges_into_intersecting_and_non_intersecting_injection_probability = 0;
 SET distributed_index_analysis = 0;
+-- a throwing `max_rows_to_read` turns off skip indexes on data read, the test profile sets it
+SET max_rows_to_read = 0;
 
 DROP TABLE IF EXISTS t_skip_index_top_k_runtime;
 
@@ -28,6 +30,10 @@ SETTINGS use_skip_indexes_for_top_k = 1, use_top_k_dynamic_filtering = 1, use_sk
 SELECT k FROM t_skip_index_top_k_runtime WHERE b > 0 ORDER BY a LIMIT 1
 SETTINGS use_skip_indexes_for_top_k = 0, use_top_k_dynamic_filtering = 1, use_skip_indexes_on_data_read = 1, max_threads = 1, max_block_size = 8,
     log_comment = 'skip_index_top_k_runtime_2';
+-- skip indexes on data read are off, the dynamic top-K filter does not read idx_a
+SELECT k FROM t_skip_index_top_k_runtime WHERE b > 0 ORDER BY a LIMIT 1
+SETTINGS use_skip_indexes_for_top_k = 1, use_top_k_dynamic_filtering = 1, use_skip_indexes_on_data_read = 1, max_threads = 1, max_block_size = 8,
+    max_rows_to_read = 100000, read_overflow_mode = 'throw', log_comment = 'skip_index_top_k_runtime_3';
 
 SYSTEM FLUSH LOGS query_log;
 
