@@ -21,7 +21,7 @@ SELECT hex(extract('za\0bz', '(a\0b)'));
 -- match, so the result must be `second` (not `first`). `materialize` prevents constant folding so
 -- the optimizer pass actually runs on the function.
 SELECT extract(materialize('x\0first y\0second'), '^.*\0([a-z]+).*$')
-SETTINGS enable_analyzer = 1, optimize_rewrite_regexp_functions = 1;
+SETTINGS optimize_rewrite_regexp_functions = 1;
 
 -- A real NUL byte as a character-class range endpoint makes a descending range `[a-\0]`, which RE2
 -- rejects at compile time. The regexp-JIT class parser must not mistake the NUL for the end of the

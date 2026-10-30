@@ -481,6 +481,22 @@ std::optional<Aggregator::AggregatedChunk> Aggregator::mergeAndConvertOneBucketT
                 /// NOLINTNEXTLINE(bugprone-suspicious-stringview-data-usage): the size is passed alongside
                 return table.find(PackedStringRef::build(key.data(), size, PackedHash{}));
             }
+            else if constexpr (std::is_same_v<TableKey, std::string_view>)
+            {
+                /// `StringHashTable` reads a key of 1..8 bytes as one whole word, either starting at
+                /// the key or ending at its last byte (depending on the half of the page the key is
+                /// in). A view of a short key points into the cell of another table, which can be the
+                /// first cell of its buffer, so the word ending at the key's last byte would start
+                /// before the buffer. Place the key at the middle of a buffer to make both words readable.
+                const size_t size = key.size();
+                if (size && size <= 8)
+                {
+                    char padded[16] = {};
+                    memcpy(padded + 8, key.data(), size);
+                    return table.find(std::string_view(padded + 8, size));
+                }
+                return table.find(key);
+            }
             else
                 return table.find(key);
         };
