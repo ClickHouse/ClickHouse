@@ -9,6 +9,8 @@
 namespace DB
 {
 
+class Autocomplete;
+
 class ReplxxLineReader : public LineReader
 {
 public:
@@ -20,6 +22,9 @@ public:
     struct Options
     {
         Suggest & suggest;
+        /// Optional predictive next-token model layered on top of `suggest`. When set, its
+        /// history-seeded predictions are offered as higher-priority completions and inline hints.
+        Autocomplete * autocomplete = nullptr;
         String history_file_path;
         UInt32 history_max_entries;
         bool multiline = false;
@@ -96,6 +101,9 @@ private:
     /// Suggestion dictionary; used both for Tab completion and as-you-type hints, and updated
     /// with identifiers from committed queries to prioritize recently-used words.
     Suggest & suggest;
+
+    /// Optional predictive next-token model (see Options::autocomplete). Not owned.
+    Autocomplete * autocomplete = nullptr;
 
     const char * word_break_characters;
 
