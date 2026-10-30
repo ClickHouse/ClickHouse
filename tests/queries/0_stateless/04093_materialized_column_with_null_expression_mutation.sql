@@ -6,7 +6,6 @@
 -- to block INSERT. MutationsInterpreter must handle null expression defensively.
 
 SET allow_experimental_alias_table_engine = 1;
-SET enable_analyzer = 1;
 
 -- Case 1: UPDATE a MATERIALIZED column should be rejected with CANNOT_UPDATE_COLUMN
 CREATE TABLE t0 ENGINE = Alias(system, zookeeper);
