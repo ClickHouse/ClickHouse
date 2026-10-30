@@ -635,8 +635,8 @@ struct Reader
     /// TopN dynamic filtering: index in `primitive_columns` of the sort column, when eligible for
     /// row-group skipping by min/max statistics (see FormatFilterInfo::top_k_filter).
     std::optional<size_t> top_k_primitive_idx;
-    /// TopN dynamic filtering: the sort column is a `String` read without conversion and the filter rejects
-    /// the empty string, so the dictionary of a chunk can bound the row group (see `refineTopKRangeFromDictionary`).
+    /// TopN dynamic filtering: the sort column is a `String` of a local or in-memory file read without conversion, and
+    /// the filter rejects the empty string, so the dictionary of a chunk can bound the row group (see `refineTopKRangeFromDictionary`).
     bool top_k_dictionary_bound = false;
     /// TopN dynamic filtering: whether this file physically stores the sort column. If it doesn't,
     /// the reader only produces type defaults for it while the threshold comes from the values the

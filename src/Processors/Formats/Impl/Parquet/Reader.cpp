@@ -1299,7 +1299,9 @@ void Reader::prefilterAndInitRowGroups(const std::optional<std::unordered_set<UI
                 {
                     const PrimitiveColumnInfo & pc = primitive_columns[*top_k_primitive_idx];
                     if (isString(pc.decoded_type) && isString(removeNullable(removeLowCardinality(output_info.output_type)))
-                        && pc.max_array_def == 0 && pc.decoder.string_converter && pc.decoder.string_converter->isTrivial())
+                        && pc.max_array_def == 0 && pc.decoder.string_converter && pc.decoder.string_converter->isTrivial()
+                        /// Elsewhere the dictionary page is read with the data pages, held from the bound until the row group is read.
+                        && (prefetcher.isLocalFile() || prefetcher.isEntireFileInMemory()))
                     {
                         const String & column_name = format_filter_info->top_k_filter->column_name;
                         const auto & prewhere = format_filter_info->prewhere_info;
@@ -1760,8 +1762,7 @@ void Reader::initializePrefetches()
                 if (!column.served_from_cache || column.use_dictionary_filter)
                     column.dictionary_page_prefetch = prefetcher.registerRange(
                         start, dict_page_length, /*likely_to_be_used=*/ !column.use_dictionary_filter);
-                /// Only where reading the page again for the data needs no request to remote storage.
-                if (column.top_k_bound_from_dictionary && (prefetcher.isLocalFile() || prefetcher.isEntireFileInMemory()))
+                if (column.top_k_bound_from_dictionary)
                     column.top_k_dictionary_page_prefetch = prefetcher.registerRange(start, dict_page_length, /*likely_to_be_used=*/ false);
             }
 

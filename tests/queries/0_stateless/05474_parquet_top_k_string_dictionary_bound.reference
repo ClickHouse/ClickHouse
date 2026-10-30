@@ -14,6 +14,7 @@ long values: skipped >= 10: True
 OR: skipped == 0: True
 indexHint: skipped == 0: True
 no statistics: skipped == 0: True
+remote: skipped == 0: True
 -- query condition cache
 000003	11003
 000013	11013

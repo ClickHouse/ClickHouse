@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Tags: no-fasttest
-# - no-fasttest: writes and reads Parquet files
+# - no-fasttest: writes and reads Parquet files, and uses S3 (MinIO)
 
 # ORDER BY <String column> LIMIT over Parquet with a filter that rejects the empty string: the minimum statistic of
 # every row group is '', so the statistics cannot skip them, but the dictionary of a chunk whose data pages are all
@@ -12,6 +12,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 DIR=$(mktemp -d "${CLICKHOUSE_TMP}/05474_parquet_topk_dict_XXXXXX")
 DATA_DIR="${CLICKHOUSE_DATABASE}_05474"
+S3_T="http://localhost:11111/test/${CLICKHOUSE_TEST_UNIQUE_NAME}_t.parquet"
 trap 'rm -rf "${DIR}" "${USER_FILES_PATH:?}/${DATA_DIR}"' EXIT
 
 # Each clickhouse-local call runs a whole group of queries: starting the process is the slow part.
@@ -47,7 +48,10 @@ OFF="use_top_k_dynamic_filtering = 0, use_top_k_dynamic_filtering_for_variable_l
         multiIf(number % 10 = 3, leftPad(toString(k), 6, '0'), number % 10 = 7 AND number >= 1000, repeat(unhex('FF'), 5000), '') AS u,
         if(number % 10 = 3, repeat('z', 1000), '') AS w, number AS v
     FROM (SELECT (number % 1000) + 1000 * ((intDiv(number, 1000) * 7 + 3) % 20) AS k, number FROM numbers(20000))
-    SETTINGS output_format_parquet_row_group_size = 1000, engine_file_truncate_on_insert = 1;"
+    SETTINGS output_format_parquet_row_group_size = 1000, engine_file_truncate_on_insert = 1;
+
+    INSERT INTO FUNCTION s3('${S3_T}', 'test', 'testtest', 'RawBLOB') SELECT * FROM file('${DIR}/t.parquet', 'RawBLOB')
+    SETTINGS s3_truncate_on_insert = 1;"
 
 T="file('${DIR}/t.parquet')"
 L="file('${DIR}/long.parquet')"
@@ -123,6 +127,9 @@ check "0xFF maximum" "SELECT hex(r) FROM ${L} WHERE r != '' ORDER BY r LIMIT 5" 
 check "OR" "SELECT e, v FROM ${T} WHERE e != '' OR v = 10007 ORDER BY e, v LIMIT 5" "skipped == 0"
 check "indexHint" "SELECT e, v FROM ${T} WHERE indexHint(e != '') ORDER BY e, v DESC LIMIT 5" "skipped == 0"
 check "no statistics" "SELECT hex(u) FROM ${L} WHERE u != '' ORDER BY u LIMIT 5" "skipped == 0"
+# A remote read is not bounded by the dictionary.
+check "remote" "SELECT e FROM s3('${S3_T}', 'test', 'testtest', 'Parquet', 'e String, v UInt64, n Nullable(String)')
+    WHERE e != '' ORDER BY e LIMIT 5 SETTINGS input_format_allow_seeks = 1" "skipped == 0"
 "${LOCAL[@]}" --query "${script}" | python3 -c "
 import sys
 before = 0
