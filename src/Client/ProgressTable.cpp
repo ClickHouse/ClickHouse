@@ -198,7 +198,7 @@ bool ProgressTable::writeTable(
     /// The terminal may be gone, e.g. a closed session of the client embedded into the server:
     /// a failed write cancels the buffer and reports the error, and a write into it after that is a logical error.
     if (message.isCanceled())
-        return;
+        return false;
 
     std::lock_guard lock{mutex};
     message << HIDE_CURSOR;
