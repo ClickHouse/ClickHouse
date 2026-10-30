@@ -12,4 +12,7 @@ SELECT round(6.04232e56, 20), floor(1.74686e55, -20), round(2.4554477816543998e1
 SELECT ceil(6.385506180058851e-264, 278), floor(-6.03263106e-18, 26), ceil(-6.36297676e44, -36);
 SELECT x, n, round(x, n), floor(x, n), ceil(x, n) FROM values('x Float64, n Int16', (1e300, 10), (1.6e-20, 20), (1.23456789e25, -20), (1., 400), (-1., -400), (1e-300, -30));
 SELECT x, round(x, 10), round(x, 20), floor(x, -20), ceil(x, -400), y, round(y, 9), floor(y, 20) FROM values('x Float64, y Float32', (1e300, 1e30), (1.6e-20, 1.6e-20), (1.23456789e25, 1.23456789e25), (-1., -1.));
+-- Negative N with |N| <= 19: x / 10^N * 10^N overflows at the type max, x / 10^N underflows for a tiny x.
+SELECT floor(1.7976931348623157e308, -6), round(1.7976931348623157e308, -6), floor(toFloat32(3.4028235e38), -2), round(toFloat32(3.4028235e38), -2), ceil(5e-324, -1), floor(-5e-324, -1), ceil(1e-306, -19), ceil(toFloat32(1e-30), -19), floor(toFloat32(-1e-40), -6);
+SELECT x, floor(x, -6), ceil(x, -19), y, round(y, -2), floor(y, -6), ceil(y, -19) FROM values('x Float64, y Float32', (1.7976931348623157e308, 3.4028234663852886e38), (1e-306, 1e-30), (-5e-324, -1e-40));
 SELECT round(123.456, 2), floor(-1.5), roundBankers(2.5), ceil(123.45, -1);

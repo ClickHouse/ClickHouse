@@ -239,18 +239,21 @@ struct FloatRoundingComputation
             const T res = roundWithMode(scaled, rounding_mode) / scale;
             return isFinite(scaled) ? res : val;
         }
-        else
+        else if constexpr (scale_mode == ScaleMode::Negative)
         {
-            if constexpr (scale_mode == ScaleMode::Negative)
-                val = val / scale;
-
-            val = roundWithMode(val, rounding_mode);
-
-            if constexpr (scale_mode == ScaleMode::Negative)
-                val = val * scale;
-
-            return val;
+            const T quotient = val / scale;
+            T res = roundWithMode(quotient, rounding_mode);
+            /// `val / scale` underflows to zero for a tiny nonzero `val`.
+            if constexpr (rounding_mode == RoundingMode::Ceil)
+                res = (quotient == T(0) && val > T(0)) ? T(1) : res;
+            else if constexpr (rounding_mode == RoundingMode::Floor)
+                res = (quotient == T(0) && val < T(0)) ? T(-1) : res;
+            res = res * scale;
+            /// `res * scale` overflows only for `val` at the type max, which has no digits below `scale`.
+            return isFinite(res) ? res : val;
         }
+        else
+            return roundWithMode(val, rounding_mode);
     }
 };
 
@@ -307,10 +310,16 @@ struct FloatRoundingLargeScale
                 /// Every finite `x` is smaller than 10^digits in magnitude.
                 if (!std::isfinite(x) || x == 0)
                     return x;
-                if (rounding_mode == RoundingMode::Ceil && x > 0)
-                    return std::numeric_limits<Float64>::infinity();
-                if (rounding_mode == RoundingMode::Floor && x < 0)
-                    return -std::numeric_limits<Float64>::infinity();
+                if constexpr (rounding_mode == RoundingMode::Ceil)
+                {
+                    if (x > 0)
+                        return std::numeric_limits<Float64>::infinity();
+                }
+                else if constexpr (rounding_mode == RoundingMode::Floor)
+                {
+                    if (x < 0)
+                        return -std::numeric_limits<Float64>::infinity();
+                }
                 return std::copysign(0.0, x);
             }
 
@@ -320,10 +329,10 @@ struct FloatRoundingLargeScale
 
             Float64 res = roundWithMode(quotient, rounding_mode);
             /// `x / scale` underflows to zero for a tiny nonzero `x`.
-            if (rounding_mode == RoundingMode::Ceil && quotient == 0 && x > 0)
-                res = 1;
-            if (rounding_mode == RoundingMode::Floor && quotient == 0 && x < 0)
-                res = -1;
+            if constexpr (rounding_mode == RoundingMode::Ceil)
+                res = (quotient == 0 && x > 0) ? 1 : res;
+            else if constexpr (rounding_mode == RoundingMode::Floor)
+                res = (quotient == 0 && x < 0) ? -1 : res;
             return clampToDirection(res * scales.scale, x);
         }
     }
