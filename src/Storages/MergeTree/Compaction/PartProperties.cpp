@@ -96,9 +96,34 @@ std::set<std::string> getProjectionsMissingColumns(const MergeTreeDataPartPtr & 
 
         for (const auto & column : projection.metadata->getColumns().getAllPhysical())
         {
-            if (!it->second->tryGetColumn(column.name)
-                && (part->tryGetColumn(column.name)
+            if (!it->second->tryGetColumnForTable(column.name, parent_table_columns)
+                && (part->tryGetColumnForTable(column.name, parent_table_columns)
                     || !parent_table_columns.hasColumnOrSubcolumn(GetColumnsOptions::AllPhysical, column.name)))
+            {
+                projection_names.insert(projection.name);
+                break;
+            }
+        }
+    }
+
+    return projection_names;
+}
+
+/// Mirrors the `projection_source_changed` check of `MergeTask::ExecuteAndFinalizeHorizontalPart::prepareProjectionsToMergeAndRebuild`.
+std::set<std::string> getProjectionsWithChangedSource(const MergeTreeDataPartPtr & part, const StorageMetadataPtr & metadata_snapshot)
+{
+    std::set<std::string> projection_names;
+
+    const auto & parent_table_columns = metadata_snapshot->getColumns();
+    for (const auto & projection : metadata_snapshot->getProjections())
+    {
+        auto it = part->getProjectionParts().find(projection.name);
+        if (it == part->getProjectionParts().end() || it->second->is_broken)
+            continue;
+
+        for (const auto & name : projection.required_columns)
+        {
+            if (!part->tryGetColumnForTable(name, parent_table_columns) && part->tryGetColumn(name))
             {
                 projection_names.insert(projection.name);
                 break;
@@ -166,6 +191,7 @@ PartProperties buildPartProperties(
         .info = part->info,
         .projection_names = getCalculatedProjectionNames(part),
         .projections_missing_columns = getProjectionsMissingColumns(part, metadata_snapshot),
+        .projections_with_changed_source = getProjectionsWithChangedSource(part, metadata_snapshot),
         .unloaded_projection_names = getUnloadedProjectionNames(part, metadata_snapshot),
         .projection_sizes = getProjectionSizes(part),
         .absent_columns = getAbsentColumns(part, metadata_snapshot),
