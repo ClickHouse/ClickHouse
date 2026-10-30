@@ -943,6 +943,9 @@ std::map<std::pair<TypeIndex, String>, NodeToSubcolumnTransformer> node_transfor
         {TypeIndex::Variant, "variantElement"}, optimizeElementToSubcolumn<DataTypeVariant>,
     },
     {
+        {TypeIndex::Variant, "tupleElement"}, optimizeElementToSubcolumn<DataTypeVariant>,
+    },
+    {
         {TypeIndex::QBit, "tupleElement"}, optimizeElementToSubcolumn<DataTypeQBit>, /// QBit uses tupleElement for subcolumns
     },
     {
@@ -997,6 +1000,7 @@ std::set<std::pair<TypeIndex, String>> transformers_optimize_in_filter_with_full
     {TypeIndex::Tuple, "tupleElement"},
     {TypeIndex::Nullable, "tupleElement"},
     {TypeIndex::Variant, "variantElement"},
+    {TypeIndex::Variant, "tupleElement"},
     {TypeIndex::QBit, "tupleElement"},
 };
 

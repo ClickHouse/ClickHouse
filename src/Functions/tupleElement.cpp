@@ -151,12 +151,12 @@ public:
         }
         else if (const DataTypeVariant * variant = checkAndGetDataType<DataTypeVariant>(input_type))
         {
-            auto index = getVariantElementIndex(arguments[1].column, *variant, number_of_arguments);
-            if (!index)
+            auto discriminator = getVariantGlobalDiscriminator(arguments[1].column, *variant, number_of_arguments);
+            if (!discriminator)
                 return arguments[2].type;
 
             return wrapInArrays(
-                makeExtractedSubcolumnsNullableOrLowCardinalityNullableSafe(variant->getVariant(*index)),
+                makeExtractedSubcolumnsNullableOrLowCardinalityNullableSafe(variant->getVariant(*discriminator)),
                 count_arrays);
         }
         else if (const DataTypeObject * object = checkAndGetDataType<DataTypeObject>(input_type))
@@ -260,12 +260,12 @@ public:
         }
         else if (const DataTypeVariant * input_type_as_variant = checkAndGetDataType<DataTypeVariant>(input_type))
         {
-            auto index = getVariantElementIndex(arguments[1].column, *input_type_as_variant, arguments.size());
-            if (!index)
+            auto discriminator = getVariantGlobalDiscriminator(arguments[1].column, *input_type_as_variant, arguments.size());
+            if (!discriminator)
                 return arguments[2].column;
 
             res = input_type_as_variant->getSubcolumn(
-                input_type_as_variant->getVariant(*index)->getName(),
+                input_type_as_variant->getVariant(*discriminator)->getName(),
                 assert_cast<const ColumnVariant &>(*input_col).getPtr());
         }
         else if (const DataTypeObject * input_type_as_object = checkAndGetDataType<DataTypeObject>(input_type))
@@ -305,7 +305,7 @@ public:
     }
 
 private:
-    std::optional<size_t> getVariantElementIndex(const ColumnPtr & index_column, const DataTypeVariant & variant, size_t argument_size) const
+    std::optional<size_t> getVariantGlobalDiscriminator(const ColumnPtr & index_column, const DataTypeVariant & variant, size_t argument_size) const
     {
         const auto * name_col = checkAndGetColumnConst<ColumnString>(index_column.get());
         if (!name_col)
@@ -314,10 +314,11 @@ private:
                 "Second argument to {} with Variant argument must be a constant String", getName());
 
         const auto element_name = name_col->getValue<String>();
+        /// Use the same type-name normalization as variantElement, including aliases.
         if (auto element_type = DataTypeFactory::instance().tryGet(element_name))
         {
-            if (auto index = variant.tryGetVariantDiscriminator(element_type->getName()))
-                return index;
+            if (auto discriminator = variant.tryGetVariantDiscriminator(element_type->getName()))
+                return discriminator;
         }
 
         if (argument_size == 2)
@@ -461,15 +462,15 @@ REGISTER_FUNCTION(TupleElement)
     FunctionDocumentation::Description description = R"(
 Extracts an element from a tuple by index or name, or a named alternative from a Variant.
 
-For access by index, an 1-based numeric index is expected.
-For access by name, the element name can be provided as a string (for named tuples or a Variant alternative type).
-
-Negative indexes are supported. In this case, the corresponding element is selected, numbered from the end. For example, `tuple.-1` is the last element in the tuple.
+For tuple and QBit access by index, a 1-based numeric index is expected.
+For access by name, use a constant string (a named tuple field or a Variant alternative type such as 'String').
+Negative tuple indexes count from the end. For example, `tuple.-1` is the last element in the tuple.
 
 An optional third argument specifies a default value which is returned instead of throwing an exception when the accessed element does not exist.
-All arguments must be constants.
+The index or name must be constant; the input and default value can be expressions.
 
-This function has zero runtime cost and implements the operators `x.index` and `x.name`.
+This function implements the operators `x.index` and `x.name`. Tuple extraction normally reuses the underlying column;
+Variant alternative extraction may materialize null or default values.
 )";
     FunctionDocumentation::Syntax syntax = "tupleElement(tuple_or_variant, index|name[, default_value])";
     FunctionDocumentation::Arguments arguments = {
@@ -498,6 +499,11 @@ INSERT INTO example VALUES (('Alice', 30));
 SELECT tupleElement(values, 'name') FROM example;
          )",
          "Alice"
+    },
+    {
+        "Variant alternative",
+        "SELECT tupleElement(CAST(42, 'Variant(String, UInt64)'), 'UInt64')",
+        "42"
     },
     {
         "With default value",
