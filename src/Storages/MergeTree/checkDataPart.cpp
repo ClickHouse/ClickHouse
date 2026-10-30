@@ -15,6 +15,7 @@
 #include <IO/HashingReadBuffer.h>
 #include <IO/S3Common.h>
 #include <Common/CurrentMetrics.h>
+#include <Common/FailPoint.h>
 #include <Common/NetException.h>
 #include <Common/SipHash.h>
 #include <Common/ZooKeeper/IKeeper.h>
@@ -38,6 +39,11 @@ namespace MergeTreeSetting
 {
     extern const MergeTreeSettingsFloat ratio_of_defaults_for_sparse_serialization;
     extern const MergeTreeSettingsMergeTreeSerializationInfoVersion serialization_info_version;
+}
+
+namespace FailPoints
+{
+    extern const char check_data_part_pause_after_block_read[];
 }
 
 namespace ErrorCodes
@@ -176,6 +182,23 @@ bool isIOErrorException(std::exception_ptr exception_ptr)
     }
 }
 
+/// Like `ReadBuffer::ignoreAll`, but gives up as soon as `is_cancelled` returns true. The flag is polled
+/// between buffer fills, so a stop request is observed within one block instead of at the end of the file.
+/// A check that reads a column file of tens of gigabytes from object storage would otherwise block
+/// `ReplicatedMergeTreePartCheckThread::stop`, and with it the replica restart that called it, until the
+/// whole file has been read.
+static void ignoreAllUnlessCancelled(ReadBuffer & buf, const std::function<bool()> & is_cancelled)
+{
+    while (!is_cancelled() && !buf.eof())
+    {
+        buf.ignore(buf.available());
+        /// Used only by tests to hold a check in the middle of a file. The guard keeps the failpoint lookup,
+        /// which takes a process-wide lock, out of the loop on servers that have never enabled a failpoint.
+        if (FailPointInjection::hasAnyFailPointBeenRegistered())
+            FailPointInjection::pauseFailPoint(FailPoints::check_data_part_pause_after_block_read);
+    }
+}
+
 static IMergeTreeDataPart::Checksums checkDataPart(
     MergeTreeData::DataPartPtr data_part,
     const IDataPartStorage & data_part_storage,
@@ -213,14 +236,16 @@ static IMergeTreeDataPart::Checksums checkDataPart(
     IMergeTreeDataPart::Checksums checksums_data;
 
     /// This function calculates checksum for both compressed and decompressed contents of compressed file.
-    auto checksum_compressed_file = [&read_settings](const IDataPartStorage & data_part_storage_, const String & file_path)
+    /// The result is partial if the check was cancelled during the read; the callers check for that
+    /// before the checksums are compared to anything.
+    auto checksum_compressed_file = [&read_settings, &is_cancelled](const IDataPartStorage & data_part_storage_, const String & file_path)
     {
         auto file_buf = data_part_storage_.readFile(file_path, read_settings, std::nullopt);
         HashingReadBuffer compressed_hashing_buf(*file_buf);
         CompressedReadBuffer uncompressing_buf(compressed_hashing_buf, /* allow_different_codecs */ true);
         HashingReadBuffer uncompressed_hashing_buf(uncompressing_buf);
 
-        uncompressed_hashing_buf.ignoreAll();
+        ignoreAllUnlessCancelled(uncompressed_hashing_buf, is_cancelled);
         return IMergeTreeDataPart::Checksums::Checksum
         {
             compressed_hashing_buf.count(), compressed_hashing_buf.getHash(),
@@ -263,7 +288,7 @@ static IMergeTreeDataPart::Checksums checkDataPart(
     {
         auto file_buf = data_part_storage.readFile(file_name, read_settings, std::nullopt);
         HashingReadBuffer hashing_buf(*file_buf);
-        hashing_buf.ignoreAll();
+        ignoreAllUnlessCancelled(hashing_buf, is_cancelled);
         checksums_data.files[file_name] = IMergeTreeDataPart::Checksums::Checksum(hashing_buf.count(), hashing_buf.getHash());
     };
 
@@ -292,6 +317,9 @@ static IMergeTreeDataPart::Checksums checkDataPart(
                 const auto & substreams = cols_substreams.getColumnSubstreams(col_idx);
                 for (const auto & substream : substreams)
                 {
+                    if (is_cancelled())
+                        return {};
+
                     auto stream_name = IMergeTreeDataPart::getStreamNameOrHash(substream, ".bin", data_part_storage);
                     if (!stream_name)
                         throw Exception(ErrorCodes::NO_FILE_IN_DATA_PART,
@@ -320,6 +348,9 @@ static IMergeTreeDataPart::Checksums checkDataPart(
                     .withColumn(data_part->getColumnSample(column));
                 serialization->enumerateStreams(settings, [&](const ISerialization::SubstreamPath & substream_path)
                 {
+                    if (is_cancelled())
+                        return;
+
                     if (ISerialization::isEphemeralSubcolumn(substream_path, substream_path.size()))
                         return;
 
@@ -341,6 +372,10 @@ static IMergeTreeDataPart::Checksums checkDataPart(
         throw Exception(ErrorCodes::UNKNOWN_PART_TYPE, "Unknown type in part {}", data_part_storage.getFullPath());
     }
 
+    /// The checksums gathered so far are partial once the check has been cancelled.
+    if (is_cancelled())
+        return {};
+
     /// Checksums from the rest files listed in checksums.txt. May be absent. If present, they are subsequently compared with the actual data checksums.
     IMergeTreeDataPart::Checksums checksums_txt;
 
@@ -355,6 +390,9 @@ static IMergeTreeDataPart::Checksums checkDataPart(
     const auto & checksums_txt_files = checksums_txt.files;
     for (auto it = data_part_storage.iterate(); it->isValid(); it->next())
     {
+        if (is_cancelled())
+            return {};
+
         auto file_name = it->name();
 
         /// Skip temporary metadata files (e.g. checksums.txt.tmp) that an interrupted metadata
