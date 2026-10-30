@@ -20,15 +20,14 @@ query="SELECT (number < (number + 1)) AND ((number + 1) < 3) AS r FROM numbers(5
 
 sweep "$query ORDER BY r SETTINGS_PLACEHOLDER"
 sweep "$query SETTINGS_PLACEHOLDER"
-# The derivation is applied to both copies or to none.
-sweep "SELECT count() IN (0, 2) FROM (EXPLAIN QUERY TREE $query SETTINGS_PLACEHOLDER) WHERE explain ILIKE '%function_name: indexHint%'"
 
 # An `and` that is itself a GROUP BY key is kept as written, so nothing is derived into it.
 $CLICKHOUSE_CLIENT -q "SELECT count() FROM (EXPLAIN QUERY TREE $query SETTINGS optimize_and_compare_chain = 1, optimize_and_compare_chain_max_hash_work = 5000000) WHERE explain ILIKE '%function_name: indexHint%'"
 
-# An `and` below the key is still derived, in both copies or in none.
+# An `and` below the key is still derived.
 query="SELECT toUInt8((number < (number + 1)) AND ((number + 1) < 3)) AS r FROM numbers(5) GROUP BY r"
 
+# The derivation is applied to both copies or to none.
 sweep "SELECT count() IN (0, 2) FROM (EXPLAIN QUERY TREE $query SETTINGS_PLACEHOLDER) WHERE explain ILIKE '%function_name: indexHint%'"
 
 $CLICKHOUSE_CLIENT -q "SELECT count() FROM (EXPLAIN QUERY TREE $query SETTINGS optimize_and_compare_chain = 1, optimize_and_compare_chain_max_hash_work = 5000000) WHERE explain ILIKE '%function_name: indexHint%'"
