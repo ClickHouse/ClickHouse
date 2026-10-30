@@ -27,6 +27,8 @@ SELECT (x < y) AND (y < 5) AS e, count() FROM (SELECT number % 4 AS x, number % 
 SELECT (x = 1) AND (x = 2) AS e, count() FROM (SELECT number % 4 AS x FROM numbers(8)) GROUP BY ROLLUP((x = 1) AND (x = 2)) ORDER BY e SETTINGS group_by_use_nulls = 1;
 SELECT (((x < y) AND (y < 5)) = 1) AND (x < 3) AS e, count() FROM (SELECT number % 4 AS x, number % 6 AS y FROM numbers(12)) GROUP BY (((x < y) AND (y < 5)) = 1) AND (x < 3) ORDER BY ALL;
 SELECT countIf(e), count() FROM (SELECT x, y, (((x < y) AND (y < 5)) = 1) AND (x < 3) AS e FROM (SELECT number % 4 AS x, number % 6 AS y FROM numbers(12)) GROUP BY ROLLUP(x, y, (((x < y) AND (y < 5)) = 1) AND (x < 3)) ORDER BY ALL);
+SELECT ((((x > 0) AND (x > 1)) AND (y > 0)) OR ((x > 1) AND (y < 4))) AND (y < 5) AS e, count() FROM (SELECT number % 4 AS x, number % 5 AS y FROM numbers(12)) WHERE e GROUP BY e ORDER BY ALL SETTINGS enable_identifier_resolve_cache = 1, optimize_extract_common_expressions = 1;
+SELECT countIf(e), count() FROM (SELECT x, y, ((((x > 0) AND (x > 1)) AND (y > 0)) OR ((x > 1) AND (y < 4))) AND (y < 5) AS e FROM (SELECT number % 4 AS x, number % 5 AS y FROM numbers(12)) WHERE e GROUP BY ROLLUP(x, y, e) ORDER BY ALL) SETTINGS enable_identifier_resolve_cache = 1, optimize_extract_common_expressions = 1;
 
 SELECT 'still rewritten';
 SELECT count() FROM (EXPLAIN QUERY TREE SELECT (x = 1) OR (x = 2) OR (x = 3), count() FROM (SELECT number % 4 AS x, number % 3 AS y FROM numbers(12)) GROUP BY x, y = 0) WHERE explain ILIKE '%function_name: in,%';

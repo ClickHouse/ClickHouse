@@ -1472,10 +1472,10 @@ static std::optional<CommonExpressionExtractionResult> tryExtractCommonExpressio
     QueryTreeNodes new_or_arguments;
     bool has_completely_extracted_and_expression = false;
 
-    for (auto & or_argument : or_argument_nodes)
+    for (const auto & original_or_argument : or_argument_nodes)
     {
-        if (auto it = flattened_ands.find(or_argument); it != flattened_ands.end())
-            or_argument = it->second;
+        auto it = flattened_ands.find(original_or_argument);
+        const auto & or_argument = it != flattened_ands.end() ? it->second : original_or_argument;
 
         // Avoid changing the original tree, it might be used later
         const auto & and_node = or_argument->as<FunctionNode &>();
