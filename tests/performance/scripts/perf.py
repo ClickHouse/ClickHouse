@@ -1027,10 +1027,32 @@ setup_error_on_connection = [None] * len(all_connections)
 # Inline settings override file settings.
 file_settings = load_settings_file(root, xml_dir)
 inline_settings = root.findall("settings/*")
+for s in inline_settings:
+    if s.get("allow_missing_on_reference", "0") not in ("0", "1"):
+        raise Exception(f"allow_missing_on_reference must be 0 or 1 for setting {s.tag}")
+reference_optional_settings = {
+    s.tag for s in inline_settings if s.get("allow_missing_on_reference") == "1"
+}
+if reference_optional_settings and any(q["kind"] == "shell" for q in test_queries):
+    raise Exception("allow_missing_on_reference is only supported for SQL benchmarks")
 for conn_index, c in enumerate(all_connections):
+    # A new opt-in optimization can be compared with an older reference build
+    # without making unknown settings optional on the build being tested.
+    # A single-server run has no reference: all settings remain required there.
+    reference_settings = None
+    if conn_index == 0 and len(all_connections) > 1 and reference_optional_settings:
+        reference_settings = {row[0] for row in c.execute("SELECT name FROM system.settings")}
     for key, value in file_settings.items():
         c.settings[key] = str(value)
     for s in inline_settings:
+        if (
+            s.get("allow_missing_on_reference") == "1"
+            and reference_settings is not None
+            and s.tag not in reference_settings
+        ):
+            c.settings.pop(s.tag, None)
+            print(f"reference-setting-unavailable\t{s.tag}\t{tsv_escape(s.text or '')}")
+            continue
         c.settings[s.tag] = s.text
     # We have to perform a query to make sure the settings work. Otherwise an
     # unknown setting will lead to failing precondition check, and we will skip
@@ -1043,6 +1065,10 @@ for conn_index, c in enumerate(all_connections):
             raise
         setup_error_on_connection[conn_index] = "settings failed on the reference server, running the test on the new server only"
         print(f"{setup_error_on_connection[conn_index]}\n{traceback.format_exc()}", file=sys.stderr)
+    else:
+        for name in sorted(reference_optional_settings):
+            if name in c.settings:
+                print(f"setting\t{conn_index}\t{name}\t{tsv_escape(c.settings[name])}")
 
 reportStageEnd("settings")
 

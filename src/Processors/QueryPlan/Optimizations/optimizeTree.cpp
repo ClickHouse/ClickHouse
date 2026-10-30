@@ -607,6 +607,9 @@ void optimizeTreeSecondPass(
                         applied_projection_names.insert(*result.applied_projection);
                 }
 
+                if (optimization_settings.query_plan_optimize_primary_key_filter_elimination)
+                    optimizePrimaryKeyFilterElimination(*frame.node, nodes, optimization_settings);
+
                 if (optimization_settings.query_plan_optimize_count_from_text_index)
                     optimizeTrivialCountFromTextIndex(*frame.node, nodes, optimization_settings);
 

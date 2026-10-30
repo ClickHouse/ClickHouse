@@ -57,6 +57,20 @@ The drop queries also run when the test fails, and a test whose drop queries can
 
 If your test takes more than 10 minutes, please, add tag `long` to have an opportunity to run all tests and skip long ones.
 
+### Settings introduced by the tested build
+
+To compare a new opt-in optimization with a reference build that does not know its setting, mark that inline setting with `allow_missing_on_reference="1"`:
+
+```xml
+<settings>
+    <new_optimization allow_missing_on_reference="1">1</new_optimization>
+</settings>
+```
+
+The runner checks `system.settings` on the reference server (the first of two or more connections). It omits only annotated settings that are absent there and records each omission in the raw output. When the reference supports the setting, the value is applied on both sides. The setting remains required on every other server and in single-server runs; unknown unannotated settings still fail normally.
+
+Keep the setting out of the benchmark SQL: an unknown setting in a `SETTINGS` clause still prevents that query from running on the reference. The queries must have the same semantics with the optimization absent. This option is for SQL benchmarks; shell-script queries do not inherit the runner's settings. `--print-settings` prints the requested settings without probing a server, so its output requires a build that supports them.
+
 ### Setup queries that cannot run on the reference server
 
 A `create_query`/`fill_query` normally must succeed on both servers being compared. If your PR adds a feature the setup depends on (e.g. a new MergeTree setting), the query cannot work on the reference (master) server yet, and the test would fail the CI check. Opt out of the reference-side check with `do_not_check_in_pr="<number of your PR>"`:

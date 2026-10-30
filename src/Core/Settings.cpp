@@ -10853,6 +10853,11 @@ Allow to perform full text search filtering using only the inverted text index i
 )", 0, \
         {"26.2", true, true, "The text index is now GA"}, \
         {"25.9", true, true, "New setting."}) \
+    DECLARE(Bool, query_plan_optimize_primary_key_filter_elimination, false, R"(
+Avoid reading columns used only by a primary-key filter on ranges proven to satisfy the complete filter.
+Applies to eligible local, unordered `MergeTree` aggregation queries with simple comparisons on direct primary-key columns.
+)", EXPERIMENTAL, \
+        {"26.10", false, false, "New setting to eliminate filter-only column reads on ranges proven by the primary key."}) \
     DECLARE(Bool, query_plan_optimize_count_from_text_index, true, R"(
 Allow to answer `SELECT count() ... WHERE <text search predicate>` directly from the text index posting-list cardinalities, without materializing the matching rows.
 Only takes effect when `query_plan_direct_read_from_text_index` is enabled.

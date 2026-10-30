@@ -248,6 +248,7 @@ struct QueryPlanOptimizationSettings
     bool direct_read_from_text_index;
     bool enable_full_text_index;
     bool query_plan_optimize_count_from_text_index;
+    bool query_plan_optimize_primary_key_filter_elimination;
 
     bool use_skip_indexes_for_top_k;
     bool use_top_k_dynamic_filtering;

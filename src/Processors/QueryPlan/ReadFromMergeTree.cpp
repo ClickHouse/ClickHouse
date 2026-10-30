@@ -2975,6 +2975,17 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsFinal(
 
 ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(bool find_exact_ranges) const
 {
+    return selectRangesToReadImpl(find_exact_ranges, /*allow_exact_count_optimization=*/true, /*check_row_limits=*/true);
+}
+
+ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToReadForPredicateElimination() const
+{
+    return selectRangesToReadImpl(/*find_exact_ranges=*/true, /*allow_exact_count_optimization=*/false, /*check_row_limits=*/false);
+}
+
+ReadFromMergeTree::AnalysisResultPtr
+ReadFromMergeTree::selectRangesToReadImpl(bool find_exact_ranges, bool allow_exact_count_optimization, bool check_row_limits) const
+{
     analyzed_result_ptr = selectRangesToRead(
         getParts(),
         mutations_snapshot,
@@ -2995,7 +3006,8 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(bool 
         allow_query_condition_cache,
         allow_top_k_prewhere_query_condition_cache,
         supportsSkipIndexesOnDataRead(),
-        /*check_row_limits=*/true);
+        check_row_limits,
+        allow_exact_count_optimization);
 
     /// After the row-limit checks above; like them, the analysis totals count the rows before deletes.
     if (const auto * uk_read_snapshot = tryGetDeleteBitmapSnapshot(*storage_snapshot))
@@ -3728,7 +3740,8 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
     bool allow_query_condition_cache_,
     bool allow_top_k_prewhere_query_condition_cache_,
     bool supports_skip_indexes_on_data_read,
-    bool check_row_limits)
+    bool check_row_limits,
+    bool allow_exact_count_optimization)
 {
     ProfileEvents::increment(ProfileEvents::IndexAnalysisRounds);
 
@@ -3854,14 +3867,13 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
     parts_before_pk = res_parts.size();
 
 
-    /// Check if we have projections or exact-range analysis, as that can determine whether we fail
-    /// during reading parts or analyze projection / exact-count candidates to serve the query more
-    /// efficiently.  When find_exact_ranges is true the caller (optimizeUseAggregateProjection) can
-    /// compute exact counts from the primary key without reading data, so the max_rows_to_read limit
-    /// on the full table scan should not cause an immediate failure.
+    /// Projections and exact counts may serve the query without reading all selected rows, so allow
+    /// their candidate analysis to defer the `max_rows_to_read` check. Collecting exact ranges for
+    /// predicate elimination still requires reading payload rows and must not enable that policy.
+    bool can_use_exact_count = find_exact_ranges && allow_exact_count_optimization;
     bool projection_parts_exist = std::any_of(res_parts.begin(), res_parts.end(), [](const auto & part) { return part.data_part->isProjectionPart(); });
-    bool has_projections = metadata_snapshot->hasProjections() || projection_parts_exist || find_exact_ranges;
-    bool support_projection_optimization = settings[Setting::parallel_replicas_support_projection] && (has_projections || find_exact_ranges);
+    bool has_projections = metadata_snapshot->hasProjections() || projection_parts_exist || can_use_exact_count;
+    bool support_projection_optimization = settings[Setting::parallel_replicas_support_projection] && has_projections;
 
     auto reader_settings = MergeTreeReaderSettings::createForQuery(context_, *data_settings_, query_info_);
     if (!allow_query_condition_cache_)

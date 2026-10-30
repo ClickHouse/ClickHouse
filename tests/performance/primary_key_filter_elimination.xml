@@ -1,0 +1,76 @@
+<test run_all_queries="1">
+    <settings>
+        <enable_parallel_replicas>0</enable_parallel_replicas>
+        <serialize_query_plan>0</serialize_query_plan>
+        <optimize_read_in_order>0</optimize_read_in_order>
+        <optimize_aggregation_in_order>0</optimize_aggregation_in_order>
+        <compile_expressions>0</compile_expressions>
+        <use_query_condition_cache>0</use_query_condition_cache>
+        <max_threads>4</max_threads>
+        <!-- Enable the rewrite on the tested build while keeping the same SQL
+             executable on a reference build that predates the setting. -->
+        <query_plan_optimize_primary_key_filter_elimination allow_missing_on_reference="1">1</query_plan_optimize_primary_key_filter_elimination>
+    </settings>
+
+    <create_query>
+        CREATE TABLE primary_key_filter_elimination
+        (
+            tenant UInt32,
+            ts UInt64,
+            status UInt8,
+            amount UInt64
+        )
+        ENGINE = MergeTree ORDER BY (tenant, ts)
+        SETTINGS index_granularity = 8192, index_granularity_bytes = 0,
+            min_bytes_for_wide_part = 0, add_minmax_index_for_numeric_columns = 0
+    </create_query>
+
+    <!-- The low timestamp bits vary while timestamps stay ordered within each tenant.
+         This avoids evaluating the read saving only on nearly constant key columns. -->
+    <fill_query>
+        INSERT INTO primary_key_filter_elimination
+        SELECT intDiv(number, 4194304),
+               (number % 4194304) * 1024 + cityHash64(number) % 1024,
+               number % 8,
+               cityHash64(number, 1) % 10000
+        FROM numbers(8388608)
+        SETTINGS max_insert_threads = 1, min_insert_block_size_rows = 10000000, min_insert_block_size_bytes = 0
+    </fill_query>
+
+    <!-- Long exact interiors have uncertain marks at both time boundaries. -->
+    <query>
+        SELECT status, sum(amount) FROM primary_key_filter_elimination
+        WHERE tenant = 1 AND ts &gt;= 10000019 AND ts &lt; 4000000077
+        GROUP BY status
+        SETTINGS optimize_move_to_prewhere = 0
+    </query>
+    <query>
+        SELECT status, sum(amount) FROM primary_key_filter_elimination
+        WHERE tenant = 1 AND ts &gt;= 10000019 AND ts &lt; 4000000077
+        GROUP BY status
+        SETTINGS optimize_move_to_prewhere = 1
+    </query>
+
+    <!-- No-benefit controls: boundary-only selection, retained key columns, a residual
+         predicate, and the pre-existing exact-count path. These should remain cheap. -->
+    <query>
+        SELECT sum(amount) FROM primary_key_filter_elimination
+        WHERE tenant = 1 AND ts &gt;= 10000000 AND ts &lt; 10001024
+    </query>
+    <query>
+        SELECT tenant, status, sum(ts), sum(amount) FROM primary_key_filter_elimination
+        WHERE tenant = 1 AND ts &gt;= 10000019 AND ts &lt; 4000000077
+        GROUP BY tenant, status
+    </query>
+    <query>
+        SELECT status, sum(amount) FROM primary_key_filter_elimination
+        WHERE tenant = 1 AND ts &gt;= 10000019 AND ts &lt; 4000000077 AND amount &gt; 5000
+        GROUP BY status
+    </query>
+    <query>
+        SELECT count() FROM primary_key_filter_elimination
+        WHERE tenant = 1 AND ts &gt;= 10000019 AND ts &lt; 4000000077
+    </query>
+
+    <drop_query>DROP TABLE IF EXISTS primary_key_filter_elimination</drop_query>
+</test>

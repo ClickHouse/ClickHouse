@@ -241,7 +241,7 @@ bool QueryDAG::buildImpl(QueryPlan::Node & node, ActionsDAG::NodeRawConstPtrs & 
     return false;
 }
 
-bool QueryDAG::build(QueryPlan::Node & node)
+bool QueryDAG::build(QueryPlan::Node & node, bool remove_trivial_wrappers)
 {
     ActionsDAG::NodeRawConstPtrs filter_nodes;
     if (!buildImpl(node, filter_nodes))
@@ -288,7 +288,7 @@ bool QueryDAG::build(QueryPlan::Node & node)
     ///    try to match input names to the modified output names.
     /// 2. removeTrivialWrappers calls removeUnusedActions, which can invalidate raw
     ///    pointers (like filter_nodes) to nodes that are no longer reachable from outputs.
-    if (dag)
+    if (dag && remove_trivial_wrappers)
         dag->removeTrivialWrappers();
 
     return true;

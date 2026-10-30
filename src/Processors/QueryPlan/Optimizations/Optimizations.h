@@ -419,6 +419,10 @@ UseProjectionsResult optimizeUseNormalProjections(
     QueryPlan::Nodes & nodes,
     const QueryPlanOptimizationSettings & optimization_settings);
 
+/// Remove runtime filters and their unused inputs on ranges proven by the primary key.
+bool optimizePrimaryKeyFilterElimination(
+    QueryPlan::Node & node, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & optimization_settings);
+
 /// Returns `COUNT()` query directly from the text index posting metadata.
 bool optimizeTrivialCountFromTextIndex(QueryPlan::Node & node, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & optimization_settings);
 
