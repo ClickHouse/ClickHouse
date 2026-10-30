@@ -197,4 +197,9 @@ TopKThresholdTrackerPtr createTopKThresholdTracker(const SortColumnDescription &
     return std::make_shared<TopKThresholdTrackerGeneric>(sort_desc, data_type.getPtr());
 }
 
+bool isTopKThresholdRepresentable(const IDataType & data_type)
+{
+    return !anyInTypeTree(data_type, [](const IDataType & node) { return isDynamic(node) || isVariant(node) || isObject(node); });
+}
+
 }

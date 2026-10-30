@@ -87,4 +87,8 @@ private:
 using TopKThresholdTrackerPtr = std::shared_ptr<ITopKThresholdTracker>;
 TopKThresholdTrackerPtr createTopKThresholdTracker(const SortColumnDescription & sort_desc, const IDataType & data_type);
 
+/// False when `Dynamic`, `Variant` or `JSON` appears anywhere in the type: the threshold is a `Field`, which loses
+/// the runtime type of their values, and their columns compare that type first.
+bool isTopKThresholdRepresentable(const IDataType & data_type);
+
 }

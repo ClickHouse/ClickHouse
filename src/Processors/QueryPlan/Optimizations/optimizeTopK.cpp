@@ -85,12 +85,10 @@ static size_t tryTopKForFormatSource(
     if (!settings.use_top_k_dynamic_filtering)
         return 0;
 
-    /// Same eligibility as the MergeTree dynamic-filtering path below: Dynamic and Variant
-    /// columns cannot be reliably compared by `__topKFilter`, and for variable-length types the
-    /// per-row comparison cost can exceed its savings, so they are gated behind an explicit
-    /// opt-in.
+    /// Same eligibility as the MergeTree dynamic-filtering path below: no key whose threshold a `Field`
+    /// cannot represent, and variable-length keys only on explicit opt-in.
     const bool sort_column_is_variable_length = !sort_column.type->haveMaximumSizeOfValue();
-    if (isDynamic(sort_column.type) || isVariant(sort_column.type)
+    if (!isTopKThresholdRepresentable(*sort_column.type)
         || (sort_column_is_variable_length && !settings.use_top_k_dynamic_filtering_for_variable_length_types))
         return 0;
 
@@ -300,10 +298,8 @@ size_t tryOptimizeTopK(QueryPlan::Node * parent_node, QueryPlan::Nodes & /*nodes
         && skip_index_type_eligible
         && read_from_mergetree_step->isSkipIndexAvailableForTopK(sort_column_name);
 
-    /// Dynamic and Variant columns cannot be reliably filtered: their lessOrEquals
-    /// returns Nullable(UInt8) rather than UInt8, causing an "Unexpected return type"
-    /// logical error when the prewhere filter is executed. Comparison functions also
-    /// reject zero-sized tuples even though ORDER BY supports them. Skip the optimization
+    /// The threshold `Field` cannot represent every key type (`isTopKThresholdRepresentable`). Comparison
+    /// functions also reject zero-sized tuples even though ORDER BY supports them. Skip the optimization
     /// for these types.
     ///
     /// For variable-length types (e.g. String, Array, Map, Tuple containing variable-length
@@ -316,8 +312,7 @@ size_t tryOptimizeTopK(QueryPlan::Node * parent_node, QueryPlan::Nodes & /*nodes
         && isString(removeNullable(sort_column.type));
     const auto * sort_column_tuple_type = typeid_cast<const DataTypeTuple *>(sort_column.type.get());
     bool use_dynamic_filtering = settings.use_top_k_dynamic_filtering
-        && !isDynamic(sort_column.type)
-        && !isVariant(sort_column.type)
+        && isTopKThresholdRepresentable(*sort_column.type)
         && (!sort_column_tuple_type || !sort_column_tuple_type->getElements().empty())
         && (!sort_column_is_variable_length || settings.use_top_k_dynamic_filtering_for_variable_length_types || single_string_sort_column);
 
