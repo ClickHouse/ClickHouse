@@ -17,7 +17,7 @@ CREATE TABLE t_skip_index_top_k_runtime
 )
 ENGINE = MergeTree
 ORDER BY k
-SETTINGS index_granularity = 8, index_granularity_bytes = 0, add_minmax_index_for_numeric_columns = 0;
+SETTINGS index_granularity = 8, index_granularity_bytes = 0, min_bytes_for_wide_part = 0, add_minmax_index_for_numeric_columns = 0;
 
 INSERT INTO t_skip_index_top_k_runtime SELECT number, number, number % 2 FROM numbers(10000);
 
