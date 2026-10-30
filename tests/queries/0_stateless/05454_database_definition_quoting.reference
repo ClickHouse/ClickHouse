@@ -1,0 +1,6 @@
+CREATE DATABASE default_fs
+ENGINE = Filesystem('.../x\'y\\z')
+CREATE DATABASE default_s3
+ENGINE = S3('http://localhost:11111/test/x\'y\\z/', 'key\'1', '[HIDDEN]')
+default_fs	Filesystem('.../x\'y\\z')
+default_s3	S3('http://localhost:11111/test/x\'y\\z/', 'key\'1', '[HIDDEN]')
