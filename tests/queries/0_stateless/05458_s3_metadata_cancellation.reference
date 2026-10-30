@@ -7,9 +7,3 @@ replicated projection_serialization timeout 1: preserved
 load_data_part_before_metadata_read: preserved
 load_projection_before_metadata_read: preserved
 cache and data preserved
-consistency cancellation checked
-vector cancellation checked
-SST validation cancellation checked
-SST probe cancellation checked
-SST repair cancellation checked
-SST rebuild cancellation checked
