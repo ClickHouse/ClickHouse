@@ -61,7 +61,13 @@ SELECT count() > 0, countIf(position(query, '${FUNCTION}') > 0)
 FROM system.query_log
 WHERE event_date >= yesterday() AND event_time > now() - 600
     AND type = 'QueryFinish' AND is_initial_query = 0
-    AND log_comment = '05449_${CLICKHOUSE_DATABASE}';
+    AND log_comment = '05449_${CLICKHOUSE_DATABASE}'
+    AND initial_query_id IN (
+        SELECT query_id
+        FROM system.query_log
+        WHERE event_date >= yesterday() AND event_time > now() - 600
+            AND current_database = currentDatabase() AND is_initial_query = 1
+            AND log_comment = '05449_${CLICKHOUSE_DATABASE}');
 
 DROP TABLE t_05449_right;
 DROP FUNCTION ${FUNCTION};
