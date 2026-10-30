@@ -27,6 +27,30 @@ $CLICKHOUSE_LOCAL --query "
     ARRAY JOIN row_groups.columns AS columns
 "
 
+# Flat nullable histograms must count both bins across pages, including when the dictionary
+# is discarded immediately, after several pages, or not at all.
+for dictionary_size in 1 65536 1000000; do
+    $CLICKHOUSE_LOCAL --query "
+        SELECT
+            CAST(NULL AS Nullable(UInt64)) AS all_null,
+            if(number % 3 = 0, NULL, number) AS mixed,
+            CAST(number AS Nullable(UInt64)) AS no_null
+        FROM numbers(50000)
+        SETTINGS output_format_parquet_use_custom_encoder = 1,
+            output_format_parquet_data_page_size = 1024,
+            output_format_parquet_max_dictionary_size = $dictionary_size
+        FORMAT Parquet
+    " > "$FILE"
+
+    $CLICKHOUSE_LOCAL --query "
+        SELECT columns.name, columns.size_statistics.definition_level_histogram
+        FROM file('$FILE', ParquetMetadata)
+        ARRAY JOIN row_groups
+        ARRAY JOIN row_groups.columns AS columns
+        ORDER BY columns.name
+    "
+done
+
 # The level histograms are filled a page at a time, so a discarded pass leaves its pages counted
 # twice. That only shows on a column that has levels at all, and only when the dictionary outgrows
 # its limit after some pages have been written - hence the small data page size.
