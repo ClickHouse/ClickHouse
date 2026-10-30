@@ -1403,10 +1403,19 @@ ProjectionNames QueryAnalyzer::resolveUniquePredicate(
     auto new_unique_subquery = std::make_shared<QueryNode>(Context::createCopy(scope.context));
     new_unique_subquery->setIsSubquery(true);
 
-    auto uniq_exact_function = std::make_shared<FunctionNode>("uniqExact");
+    /// The functions of the rewrite are resolved in the scope of the query, so they are marked as built-in:
+    /// a lambda that happens to be named like one of them, e.g. `WITH (x -> 0) AS isNotNull`, must not replace it.
+    auto make_builtin_function = [](const String & name)
+    {
+        auto function = std::make_shared<FunctionNode>(name);
+        function->markAsBuiltin();
+        return function;
+    };
+
+    auto uniq_exact_function = make_builtin_function("uniqExact");
     uniq_exact_function->getArguments().getNodes().push_back(std::make_shared<MatcherNode>());
-    auto equals_function = std::make_shared<FunctionNode>("equals");
-    equals_function->getArguments().getNodes().push_back(std::make_shared<FunctionNode>("count"));
+    auto equals_function = make_builtin_function("equals");
+    equals_function->getArguments().getNodes().push_back(make_builtin_function("count"));
     equals_function->getArguments().getNodes().push_back(std::move(uniq_exact_function));
     new_unique_subquery->getProjection().getNodes().push_back(std::move(equals_function));
     new_unique_subquery->getJoinTreeNode() = unique_subquery_argument;
@@ -1414,8 +1423,8 @@ ProjectionNames QueryAnalyzer::resolveUniquePredicate(
     /// The matcher expands to every column of the subquery, so the filter does not refer to the columns by name.
     /// The constant makes `and` have at least two arguments.
     ColumnTransformersNodes is_not_null_transformers;
-    is_not_null_transformers.push_back(std::make_shared<ApplyColumnTransformerNode>(std::make_shared<FunctionNode>("isNotNull")));
-    auto where_function = std::make_shared<FunctionNode>("and");
+    is_not_null_transformers.push_back(std::make_shared<ApplyColumnTransformerNode>(make_builtin_function("isNotNull")));
+    auto where_function = make_builtin_function("and");
     where_function->getArguments().getNodes().push_back(std::make_shared<ConstantNode>(static_cast<UInt8>(1), std::make_shared<DataTypeUInt8>()));
     where_function->getArguments().getNodes().push_back(std::make_shared<MatcherNode>(std::move(is_not_null_transformers)));
     new_unique_subquery->getWhere() = std::move(where_function);
@@ -1429,7 +1438,7 @@ ProjectionNames QueryAnalyzer::resolveUniquePredicate(
         false /*ignore_alias*/,
         allow_niladic_functions);
 
-    auto if_null_function = std::make_shared<FunctionNode>("ifNull");
+    auto if_null_function = make_builtin_function("ifNull");
     if_null_function->getArguments().getNodes().push_back(std::move(new_unique_argument));
     if_null_function->getArguments().getNodes().push_back(std::make_shared<ConstantNode>(static_cast<UInt8>(1), std::make_shared<DataTypeUInt8>()));
     node = std::move(if_null_function);
@@ -1546,9 +1555,16 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
             "For bitwise OR, use the function bitOr. In scope {}",
             scope.scope_node->formatASTForErrorMessage());
 
+    /** `UNIQUE(subquery)` is parsed into the operator `__unique`. The check runs before the function name
+      * is looked up in the scope, so that a lambda bound under the name `__unique` cannot change the meaning
+      * of the predicate. An ordinary call to a function named `__unique` resolves as usual.
+      */
+    if (function_name == "__unique" && function_node_ptr->isOperator() && !function_node_ptr->isWindowFunction())
+        return resolveUniquePredicate(node, function_node_ptr, scope, allow_niladic_functions);
+
     //// If function node is not window function try to lookup function node name as lambda identifier.
     QueryTreeNodePtr lambda_expression_untyped;
-    if (!function_node_ptr->isWindowFunction())
+    if (!function_node_ptr->isWindowFunction() && !function_node_ptr->isBuiltin())
     {
         auto function_lookup_result = tryResolveIdentifier({Identifier{function_name}, IdentifierLookupContext::FUNCTION}, scope, { .allow_to_resolve_niladic_functions =  allow_niladic_functions });
         lambda_expression_untyped = function_lookup_result.resolved_identifier;
@@ -1657,7 +1673,6 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
     bool is_special_function_join_get = false;
     bool is_special_function_exists = false;
     bool is_special_function_if = false;
-    bool is_special_function_unique = false;
     bool is_special_function_multi_if = false;
 
     if (!lambda_expression_untyped)
@@ -1668,7 +1683,6 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
         is_special_function_join_get = functionIsJoinGet(function_name);
         is_special_function_exists = function_name == "exists";
         is_special_function_if = function_name == "if";
-        is_special_function_unique = function_name == "__unique";
         is_special_function_multi_if = function_name == "multiIf";
 
         /** Special handling for count and countState functions (including with combinators like countIf, countIfState, etc.).
@@ -2202,9 +2216,6 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
             }
         }
     }
-
-    if (is_special_function_unique)
-        return resolveUniquePredicate(node, function_node_ptr, scope, allow_niladic_functions);
 
     if (is_special_function_exists)
     {
@@ -3135,7 +3146,8 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
       */
     if (!function_node.isWindowFunction())
     {
-        user_defined_function = UserDefinedSQLFunctionFactory::instance().tryGet(function_name);
+        if (!function_node.isBuiltin())
+            user_defined_function = UserDefinedSQLFunctionFactory::instance().tryGet(function_name);
 
         if (!lambda_expression_untyped && user_defined_function)
             /// Try to substitute user defined SQL expression
