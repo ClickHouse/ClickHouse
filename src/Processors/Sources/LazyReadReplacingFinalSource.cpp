@@ -293,7 +293,8 @@ QueryPlan LazyReadReplacingFinalSource::buildPlanFromReadingStep(
             /*adaptive_aggregator_freeze_threshold_=*/settings[Setting::adaptive_aggregator_freeze_threshold],
             /*adaptive_aggregator_freeze_threshold_bytes_=*/settings[Setting::adaptive_aggregator_freeze_threshold_bytes],
             /*adaptive_aggregator_disable_thaw_=*/settings[Setting::adaptive_aggregator_disable_thaw],
-            /*use_aggregation_memory_tracker_=*/settings[Setting::use_aggregation_memory_tracker]);
+            /*use_aggregation_memory_tracker_=*/settings[Setting::use_aggregation_memory_tracker],
+            /*group_by_each_block_no_merge_=*/false);
 
         auto merge_threads = settings[Setting::max_threads];
         auto temporary_data_merge_threads = settings[Setting::aggregation_memory_efficient_merge_threads]

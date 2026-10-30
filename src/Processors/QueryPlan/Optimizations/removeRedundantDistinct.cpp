@@ -214,6 +214,10 @@ namespace
             {
                 if (aggregating_step->isGroupingSets())
                     return false;
+                /// `group_by_each_block_no_merge` flushes the groups of every block separately, so the same key
+                /// can appear in several output rows: the output is not distinct on the keys, keep DISTINCT.
+                if (aggregating_step->getParams().group_by_each_block_no_merge)
+                    return false;
                 return compareAggregationKeysWithDistinctColumns(
                     aggregating_step->getParams().keys, distinct_columns, std::move(actions_chain));
             }

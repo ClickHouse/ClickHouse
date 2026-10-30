@@ -1,0 +1,14 @@
+make_distributed_plan, falls back to local execution
+20000	199990000
+make_distributed_plan, fallback disabled
+make_distributed_plan, Cascades, falls back to local execution
+20000	199990000
+make_distributed_plan, Cascades, fallback disabled
+make_distributed_plan, without the memory-efficient merge
+20000	199990000
+plan-based parallel replicas
+20000	199990000
+plan-based parallel replicas, without the memory-efficient merge
+20000	199990000
+query-tree-based parallel replicas
+20000	199990000

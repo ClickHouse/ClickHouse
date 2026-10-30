@@ -139,6 +139,7 @@ namespace Setting
     extern const SettingsUInt64 group_by_two_level_threshold;
     extern const SettingsUInt64 group_by_two_level_threshold_bytes;
     extern const SettingsBool group_by_use_nulls;
+    extern const SettingsBool group_by_each_block_no_merge;
     extern const SettingsNonZeroUInt64 max_block_size;
     extern const SettingsUInt64 max_size_to_preallocate_for_aggregation;
     extern const SettingsUInt64 max_subquery_depth;
@@ -806,7 +807,8 @@ Aggregator::Params getAggregatorParams(const PlannerContextPtr & planner_context
         settings[Setting::adaptive_aggregator_freeze_threshold],
         settings[Setting::adaptive_aggregator_freeze_threshold_bytes],
         settings[Setting::adaptive_aggregator_disable_thaw],
-        settings[Setting::use_aggregation_memory_tracker]);
+        settings[Setting::use_aggregation_memory_tracker],
+        settings[Setting::group_by_each_block_no_merge]);
     aggregator_params.shared_kept_keys_for_overflow_any = trivial_group_by_limit.has_value();
 
     return aggregator_params;
@@ -883,6 +885,11 @@ void applyTopKPushdownToPartialAggregation(
 
     const auto & params = aggregating_step.getParams();
     if (aggregating_step.isGroupingSets() || params.overflow_row || params.max_rows_to_group_by > 0 || params.keys.empty())
+        return;
+
+    /// See the matching gate in `tryOptimizeGroupByTopK`: the per-block streaming flush is incompatible
+    /// with a top-K heap over the whole aggregation.
+    if (params.group_by_each_block_no_merge)
         return;
 
     if (aggregating_step.inOrder())
@@ -999,6 +1006,16 @@ void addAggregationStep(QueryPlan & query_plan,
         group_by_sort_description = getSortDescriptionFromNames(aggregation_analysis_result.aggregation_keys);
         sort_description_for_merging = group_by_sort_description;
     }
+
+    /// The per-block streaming flush pushes the chunks produced by `Aggregator::convertToChunks` directly,
+    /// bypassing the bucket-ordering protocol that `GroupingAggregatedTransform` relies on for the
+    /// memory-efficient distributed merge and for memory-bound merging. The old interpreter rejects the same
+    /// combination in `InterpreterSelectQuery::executeAggregation`.
+    if (aggregator_params.group_by_each_block_no_merge
+        && query_analysis_result.aggregation_should_produce_results_in_order_of_bucket_number)
+        throw Exception(
+            ErrorCodes::NOT_IMPLEMENTED,
+            "Setting `group_by_each_block_no_merge` is not supported with bucket-ordered aggregation results");
 
     const size_t effective_max_threads = getEffectiveMaxThreads(settings);
     auto merge_threads = effective_max_threads;
@@ -3198,8 +3215,12 @@ void Planner::buildPlanForQueryNode()
             if (query_node.getSettingsChanges().tryGet("group_by_overflow_mode"))
                 query_settings[Setting::group_by_overflow_mode].setChanged(true);
 
+            /// `group_by_each_block_no_merge` aggregates every block on its own, while the kept-keys
+            /// cutoff shares one set of kept keys between all the blocks and streams of the query: the
+            /// first block that reaches the cutoff would decide which keys every later block may emit.
             std::optional<UInt64> trivial_group_by_limit;
             if (!query_settings[Setting::make_distributed_plan]
+                && !query_settings[Setting::group_by_each_block_no_merge]
                 && query_processing_info.isFirstStage() && query_processing_info.isSecondStage()
                 && hasAggregateFunctionNodes(query_node.getProjectionNode()))
             {

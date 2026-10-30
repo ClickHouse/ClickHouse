@@ -193,6 +193,11 @@ size_t tryConvertAnyOuterJoinToInnerJoin(
     if (aggregating_step->isGroupingSets())
         return 0;
 
+    /// `group_by_each_block_no_merge` flushes the groups of every block separately, so the same key
+    /// can appear in several rows, and `ANY` would pick one of them while `ALL` would match all of them.
+    if (aggregating_step->getParams().group_by_each_block_no_merge)
+        return 0;
+
     /// If JOIN condition uses all aggregation keys, then there always only one row to match for each row from the other side.
     /// This means that we can safely convert ANY OUTER JOIN to INNER JOIN.
     for (const auto & aggregation_key : aggregating_step->getParams().keys)

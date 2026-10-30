@@ -142,6 +142,7 @@ static constexpr auto DBMS_MERGE_TREE_PART_INFO_VERSION = 1;
 /// Version 21 adds the `min_bytes_before_external_group_by` plan setting.
 /// Version 21 also registers the `adaptive_aggregator_disable_thaw` plan setting, written only towards a peer at this
 /// version or above. A peer below it thaws as it always did, which changes no result.
+/// Version 21 also adds the `group_by_each_block_no_merge` plan setting name on `AggregatingStep`.
 ///
 /// Rules for this version:
 /// - Bump it at most once per release: the first change in a release that needs it bumps it, later changes
@@ -231,6 +232,10 @@ static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_EXTERNAL_DI
 /// correctness cannot be shipped to a peer below this version: the peer would ignore the bit and
 /// rebuild the read with the cache enabled, so `ReadFromMergeTree::serialize` rejects it instead.
 static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_QUERY_CONDITION_CACHE_FLAG = 19;
+/// First query-plan serialization version that knows the `group_by_each_block_no_merge` plan setting
+/// name. `AggregatingStep::serializeSettings` writes the name only towards a peer at this version or
+/// later, and refuses to ship an enabled step towards an older peer (see the comment there).
+static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_GROUP_BY_EACH_BLOCK_NO_MERGE = 21;
 /// First global query-plan version that writes version 1 of `Aggregating`, which carries the
 /// `GROUP BY` top-K parameters. Towards an older peer the parameters are omitted rather than
 /// rejected: the peer aggregates without the heap and returns partial states for all its groups,

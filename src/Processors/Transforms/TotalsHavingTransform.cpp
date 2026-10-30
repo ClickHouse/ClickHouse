@@ -121,6 +121,17 @@ TotalsHavingTransform::TotalsHavingTransform(
         elem.type->insertDefaultInto(*new_column);
         current_totals.emplace_back(std::move(new_column));
     }
+
+    if (overflow_row)
+    {
+        overflow_aggregates.reserve(header.columns());
+        for (const auto & elem : header)
+        {
+            MutableColumnPtr new_column = elem.type->createColumn();
+            elem.type->insertDefaultInto(*new_column);
+            overflow_aggregates.emplace_back(std::move(new_column));
+        }
+    }
 }
 
 IProcessor::Status TotalsHavingTransform::prepare()
@@ -194,7 +205,9 @@ void TotalsHavingTransform::transform(Chunk & chunk)
 
         if (agg_info->is_overflows)
         {
-            overflow_aggregates = std::move(chunk);
+            mergeAggregateStates(overflow_aggregates, chunk.getColumns(), nullptr);
+            has_overflow_aggregates = true;
+            chunk.clear();
             return;
         }
     }
@@ -341,14 +354,19 @@ void TotalsHavingTransform::transform(Chunk & chunk)
 
 void TotalsHavingTransform::addToTotals(const Chunk & chunk, const IColumn::Filter * filter)
 {
-    auto num_columns = chunk.getNumColumns();
+    mergeAggregateStates(current_totals, chunk.getColumns(), filter);
+}
+
+void TotalsHavingTransform::mergeAggregateStates(MutableColumns & target, const Columns & columns, const IColumn::Filter * filter)
+{
+    auto num_columns = columns.size();
     for (size_t col = 0; col < num_columns; ++col)
     {
-        const auto & current = chunk.getColumns()[col];
+        const auto & current = columns[col];
 
         if (const auto * column = typeid_cast<const ColumnAggregateFunction *>(current.get()))
         {
-            auto & totals_column = typeid_cast<ColumnAggregateFunction &>(*current_totals[col]);
+            auto & totals_column = typeid_cast<ColumnAggregateFunction &>(*target[col]);
             chassert(totals_column.size() == 1);
 
             /// Accumulate all aggregate states from a column of a source chunk into
@@ -408,13 +426,20 @@ void TotalsHavingTransform::prepareTotals()
 
     /// If totals_mode == AFTER_HAVING_AUTO, you need to decide whether to add aggregates to TOTALS for strings,
     /// not passed max_rows_to_group_by.
-    if (overflow_aggregates)
+    if (has_overflow_aggregates)
     {
         if (totals_mode == TotalsMode::BEFORE_HAVING
             || totals_mode == TotalsMode::AFTER_HAVING_INCLUSIVE
             || (totals_mode == TotalsMode::AFTER_HAVING_AUTO
                 && static_cast<double>(passed_keys) / static_cast<double>(total_keys) >= auto_include_threshold))
-            addToTotals(overflow_aggregates, nullptr);
+        {
+            Columns overflow_columns;
+            overflow_columns.reserve(overflow_aggregates.size());
+            for (auto & column : overflow_aggregates)
+                overflow_columns.emplace_back(std::move(column));
+            overflow_aggregates.clear();
+            mergeAggregateStates(current_totals, overflow_columns, nullptr);
+        }
     }
 
     totals = Chunk(std::move(current_totals), 1);
