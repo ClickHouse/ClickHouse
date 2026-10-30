@@ -10,3 +10,17 @@ FROM (SELECT state FROM remote('127.0.0.2', currentDatabase(), uniq_legacy) ARRA
 SETTINGS prefer_localhost_replica = 0, enable_lazy_columns_replication = 1;
 
 DROP TABLE uniq_legacy;
+
+DROP TABLE IF EXISTS uniq_legacy_nested;
+CREATE TABLE uniq_legacy_nested (s Array(AggregateFunction(0, uniq, UInt64)), t Tuple(AggregateFunction(0, uniq, UInt64), UInt8)) ENGINE = MergeTree ORDER BY tuple();
+INSERT INTO uniq_legacy_nested SELECT [uniqState(number)], tuple(uniqState(number), 1) FROM numbers(1000);
+
+SELECT uniqMerge(arrayJoin(s)), count(), arrayMap(x -> finalizeAggregation(x), groupArray(arrayJoin(s)))
+FROM (SELECT s FROM remote('127.0.0.2', currentDatabase(), uniq_legacy_nested) ARRAY JOIN [1, 2, 3] AS x)
+SETTINGS prefer_localhost_replica = 0, enable_lazy_columns_replication = 1;
+
+SELECT uniqMerge(t.1), count(), arrayMap(x -> finalizeAggregation(x), groupArray(t.1))
+FROM (SELECT t FROM remote('127.0.0.2', currentDatabase(), uniq_legacy_nested) ARRAY JOIN [1, 2, 3] AS x)
+SETTINGS prefer_localhost_replica = 0, enable_lazy_columns_replication = 1;
+
+DROP TABLE uniq_legacy_nested;
