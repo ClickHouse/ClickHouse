@@ -469,6 +469,8 @@ protected:
     std::unique_ptr<WriteBuffer> std_out;
     std::unique_ptr<ShellCommand> pager_cmd;
 
+    /// Set when a buffer the query output ends in (`std_out_wrapper`, the `INTO OUTFILE` file) is canceled.
+    std::atomic<bool> output_buffer_canceled = false;
     /// Wrapper for hooking into the flush event.
     std::unique_ptr<WriteBuffer> std_out_wrapper;
 

@@ -75,3 +75,18 @@ performBadQuery "bad_query_misplaced_compression" "SELECT 1, 2, 3 INTO OUTFILE '
 performBadQuery "bad_query_misplaced_format" "SELECT 1, 2, 3 INTO OUTFILE 'test.gz' FORMAT TabSeparated AND STDOUT'" "SYNTAX_ERROR"
 
 perform "union_all" "SELECT 3, 4 UNION ALL SELECT 1, 2 INTO OUTFILE '${CLICKHOUSE_TMP}/test_into_outfile_and_stdout_union_all.out' AND STDOUT"
+
+# Prints the exit code of the client and what it reported after its output sink failed.
+function checkFailedSink()
+{
+    local err="${CLICKHOUSE_TMP}/test_into_outfile_and_stdout_$1.err"
+    echo "exit code: $2"
+    grep -Fq "CANNOT_WRITE_TO_FILE_DESCRIPTOR" "$err" && echo "write error reported"
+    grep -Fc "Logical error" "$err"
+    rm -f "$err"
+}
+
+echo "performing test: closed_stdout"
+${CLICKHOUSE_CLIENT} --query "SELECT number FROM numbers(1000000) INTO OUTFILE '${CLICKHOUSE_TMP}/test_into_outfile_and_stdout_closed_stdout.out' AND STDOUT FORMAT JSON SETTINGS output_format_parallel_formatting = 0" 2>"${CLICKHOUSE_TMP}/test_into_outfile_and_stdout_closed_stdout.err" | head -n 1 > /dev/null
+checkFailedSink closed_stdout "${PIPESTATUS[0]}"
+rm -f "${CLICKHOUSE_TMP}/test_into_outfile_and_stdout_closed_stdout.out"
