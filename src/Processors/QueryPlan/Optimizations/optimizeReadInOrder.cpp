@@ -2038,7 +2038,7 @@ void disableSpreadingSmallReadUnderFullSorting(QueryPlan::Node & node)
         || node.children.size() != 1)
         return;
 
-    /// The reads all of whose streams reach the sorting.
+    /// Nodes all of whose output streams reach the sorting.
     std::vector<QueryPlan::Node *> stack{node.children.front()};
     while (!stack.empty())
     {
