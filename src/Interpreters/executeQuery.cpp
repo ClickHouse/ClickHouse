@@ -3726,14 +3726,19 @@ static BlockIO executeQueryImpl(
 
                     if (can_use_query_plan_cache)
                     {
+                        /// The plan cache path constructs its interpreters directly, bypassing the query counters of
+                        /// `InterpreterFactory::get`. Count the query before it, because it analyzes the query and checks
+                        /// access and may throw, exactly like the interpreter constructed by `get`. The fallback to `get`
+                        /// then does not count the query again.
+                        InterpreterFactory::incrementQueryProfileEvents(*out_ast, context);
                         interpreter = tryInterpretWithQueryPlanCache(out_ast, context, select_options, query_plan_cache);
-                        /// The plan cache path constructs its interpreters directly, bypassing the query counters of `InterpreterFactory::get`.
-                        if (interpreter)
-                            InterpreterFactory::incrementQueryProfileEvents(*out_ast, context);
+                        if (!interpreter)
+                            interpreter = InterpreterFactory::instance().get(out_ast, context, select_options, /* increment_query_profile_events */ false);
                     }
-
-                    if (!interpreter)
+                    else
+                    {
                         interpreter = InterpreterFactory::instance().get(out_ast, context, select_options);
+                    }
                 }
 
                 const auto & query_settings = context->getSettingsRef();

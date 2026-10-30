@@ -135,9 +135,11 @@ void InterpreterFactory::incrementQueryProfileEvents(const IAST & query, const C
         ProfileEvents::increment(ProfileEvents::InsertQuery);
 }
 
-InterpreterFactory::InterpreterPtr InterpreterFactory::get(ASTPtr & query, ContextMutablePtr context, const SelectQueryOptions & options)
+InterpreterFactory::InterpreterPtr InterpreterFactory::get(
+    ASTPtr & query, ContextMutablePtr context, const SelectQueryOptions & options, bool increment_query_profile_events)
 {
-    incrementQueryProfileEvents(*query, context);
+    if (increment_query_profile_events)
+        incrementQueryProfileEvents(*query, context);
 
     Arguments arguments
     {

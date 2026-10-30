@@ -2,7 +2,7 @@
 -- A query plan cache hit skips the planner, which checks that every storage read inside a transaction
 -- supports transactions. A plan warmed outside of a transaction must not let a `Memory` table be read
 -- inside one. The plan cache path also constructs its interpreters directly, so it must keep the query
--- counters (`Query`, `SelectQuery`, ...) of `InterpreterFactory`. The plan cache is a single,
+-- counters (`Query`, `SelectQuery`, ...) of `InterpreterFactory`, also when the query fails on that path. The plan cache is a single,
 -- server-wide cache, so the test runs in isolation (see 04489 for the full rationale of the tags).
 
 SYSTEM DROP QUERY PLAN CACHE;
@@ -22,12 +22,21 @@ ROLLBACK;
 
 SELECT sum(id) FROM t SETTINGS log_comment = '05457_off', enable_query_plan_cache = 0;
 
+-- A query failing inside the plan cache path (here, during analysis) is counted like a failing query without the cache.
+SELECT sum(id) FROM t_05457_nonexistent SETTINGS log_comment = '05457_failed_on'; -- { serverError UNKNOWN_TABLE }
+SELECT sum(id) FROM t_05457_nonexistent SETTINGS log_comment = '05457_failed_off', enable_query_plan_cache = 0; -- { serverError UNKNOWN_TABLE }
+
 SYSTEM FLUSH LOGS query_log;
 
 SELECT log_comment, ProfileEvents['QueryPlanCacheHits'], ProfileEvents['Query'], ProfileEvents['SelectQuery'],
     ProfileEvents['InitialQuery'], ProfileEvents['InitialSelectQuery']
 FROM system.query_log
 WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND log_comment IN ('05457_warm', '05457_hit', '05457_off')
+ORDER BY event_time_microseconds;
+
+SELECT log_comment, ProfileEvents['Query'], ProfileEvents['SelectQuery'], ProfileEvents['InitialQuery'], ProfileEvents['InitialSelectQuery']
+FROM system.query_log
+WHERE current_database = currentDatabase() AND type = 'ExceptionBeforeStart' AND log_comment IN ('05457_failed_on', '05457_failed_off')
 ORDER BY event_time_microseconds;
 
 DROP TABLE t;
