@@ -1,0 +1,11 @@
+Empty stdin
+2	30	60
+2	30	60
+Non-empty stdin
+2	30
+2	30
+Compression, glob and the format from the file name
+30
+40
+4	100
+6	170
