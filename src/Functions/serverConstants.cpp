@@ -72,7 +72,7 @@ namespace
     public:
         static constexpr auto name = "tcpPort";
         static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionTCPPort>(context); }
-        explicit FunctionTCPPort(ContextPtr context) : FunctionServerConstantBase(context->getTCPPort(), context->isDistributed()) {}
+        explicit FunctionTCPPort(ContextPtr context) : FunctionServerConstantBase(context->getBoundTCPPort(), context->isDistributed()) {}
     };
 
 
