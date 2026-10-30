@@ -821,7 +821,6 @@ cache_storage_properties = {
         0.2, 0.2, 0, 5000, allow_unlimited=False
     ),
     "enable_bypass_cache_with_threshold": true_false_lambda,
-    "enable_filesystem_query_cache_limit": true_false_lambda,
     "expose_prometheus_eviction_metrics": true_false_lambda,
     "expose_prometheus_eviction_metrics_per_user": true_false_lambda,
     "idle_client_check_interval_sec": threshold_generator(
