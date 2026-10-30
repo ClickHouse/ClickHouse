@@ -584,7 +584,11 @@ namespace
             return have_unconvertible_element ? Field(Null()) : Field(res);
         }
 
-        /// The member was replaced with a default, so its column no longer holds it.
+        /// The member was replaced with a default, so its column no longer holds it. The default is that of
+        /// the destination type (see `tryToReplaceNullFieldsInComplexTypesWithDefaultValues`), so it must not be
+        /// interpreted as a value of the source type: a `DateTime64` default is not a `Date` day number.
+        if (column[0].isNull() && !value.isNull())
+            return value;
         return convertFieldToType(value, *to, from.get(), format_settings, /*strict=*/false, /*convert_inexact_floats=*/true);
     }
 
@@ -703,7 +707,13 @@ namespace
             return ColumnMap::create(std::move(res_keys), std::move(res_values), ColumnArray::ColumnOffsets::create(1, src_map.size()));
         }
 
-        /// The member was replaced with a default, so its column no longer holds it.
+        /// The member was replaced with a default of the destination type, see `convertExpressionValueToType`.
+        if (column[0].isNull() && !value.isNull())
+        {
+            auto res = to->createColumn();
+            res->insert(value);
+            return res;
+        }
         ColumnPtr const_column = from->createColumnConst(1, value);
         return castColumnWithQuerySettings(const_column, from, to, context);
     }
