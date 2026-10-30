@@ -13,6 +13,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+    extern const int LOGICAL_ERROR;
 }
 
 namespace
@@ -124,6 +125,19 @@ public:
         if (const AggregateFunctionPtr new_function = tryTransformStateFunction(nested_function, properties, arguments, params))
         {
             return new_function;
+        }
+
+        /// The function only skips NULL rows: no flag, and the state of the nested function, with its type.
+        if (nested_function->stateIsIndependentOfNullability())
+        {
+            if (!properties.returns_default_when_only_null)
+                throw Exception(ErrorCodes::LOGICAL_ERROR,
+                    "Aggregate function {} cannot have the state independent of nullability unless it returns a default value for NULL values only",
+                    nested_function->getName());
+
+            if (arguments.size() == 1)
+                return std::make_shared<AggregateFunctionNullUnary<false, false>>(nested_function, arguments, params);
+            return std::make_shared<AggregateFunctionNullVariadic<false, false>>(nested_function, arguments, params);
         }
 
         bool return_type_is_nullable = !properties.returns_default_when_only_null && nested_function->getResultType()->canBeInsideNullable();
