@@ -1226,7 +1226,7 @@ IcebergStorageSink::IcebergStorageSink(
         persistent_table_components.path_resolver.getTableLocation(),
         (catalog != nullptr && catalog->isTransactional()), metadata_compression_method, write_format);
 
-    filename_generator.setVersion(last_version + 1);
+    filename_generator.continueMetadataChain(metadata_path, last_version);
 
     if (metadata->has(Iceberg::f_properties))
     {
@@ -1549,7 +1549,7 @@ bool IcebergStorageSink::initializeMetadata()
             LOG_DEBUG(log, "Rereading metadata file {} with version {}", metadata_path, last_version);
 
             metadata_compression_method = compression_method;
-            filename_generator.setVersion(last_version + 1);
+            filename_generator.continueMetadataChain(metadata_path, last_version);
 
             metadata = deepCopy(getMetadataJSONObject(
                 metadata_path,

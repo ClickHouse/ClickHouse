@@ -1,6 +1,7 @@
 import io
 import re
 import time
+import uuid
 
 import pytest
 
@@ -1100,6 +1101,37 @@ def test_insert_refuses_undeclared_scheme(
     env.instance.query(f"INSERT INTO {env.table_name} VALUES (4);", settings=ICEBERG_SETTINGS)
     env._n_rows = 4
     assert env.newest_metadata_version() > newest
+    env.assert_data_intact()
+
+
+@pytest.mark.parametrize("storage_type", ["local"])
+def test_writes_continue_uuid_metadata_naming(started_cluster_iceberg_with_spark, storage_type):
+    """A table whose metadata files are named `<N>-<uuid>.metadata.json`, as pyiceberg and catalog-based Spark
+    write them, keeps that scheme after ClickHouse commits to it, so later writes and maintenance still find its
+    current metadata file."""
+    env = make_env(started_cluster_iceberg_with_spark, storage_type, "test_uuid_naming_continued")
+    env.populate(2)
+    newest = env.newest_metadata_version()
+    assert not env.exists("metadata", "version-hint.text"), "a hint would declare the scheme"
+    for version in range(1, newest + 1):
+        env.copy_metadata_file(f"v{version}.metadata.json", f"{version:05d}-{uuid.uuid4()}.metadata.json")
+        env.remove_metadata_file(f"v{version}.metadata.json")
+
+    for value in (3, 4):
+        env.instance.query(f"INSERT INTO {env.table_name} VALUES ({value});", settings=ICEBERG_SETTINGS)
+    env._n_rows = 4
+    env.instance.query(
+        f"ALTER TABLE {env.table_name} EXECUTE expire_snapshots(retention_period = '1ms', retain_last = 1);",
+        settings={**ICEBERG_SETTINGS, "allow_experimental_expire_snapshots": 1},
+    )
+    names = sorted(p.rsplit("/", 1)[-1] for p in env.list_files() if p.endswith(".metadata.json"))
+    assert all(re.fullmatch(r"\d{5}-[0-9a-f-]{36}\.metadata\.json", n) for n in names), names
+    assert len(env.metadata_files_with_version(newest + 3)) == 1, names
+
+    env.add_orphan("data", "orphan-uuid-naming.parquet")
+    time.sleep(2)
+    env.remove_orphans(older_than=env.now_ts())
+    assert not env.exists("data", "orphan-uuid-naming.parquet")
     env.assert_data_intact()
 
 

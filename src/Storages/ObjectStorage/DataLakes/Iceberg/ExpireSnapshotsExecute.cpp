@@ -667,7 +667,7 @@ ExpireSnapshotsResult expireSnapshots(
             persistent_table_components.table_uuid,
             persistent_table_components.metadata_compression_method);
 
-        filename_generator.setVersion(last_version + 1);
+        filename_generator.continueMetadataChain(metadata_path, last_version);
         filename_generator.setCompressionMethod(compression_method);
 
         auto metadata = deepCopy(getMetadataJSONObject(

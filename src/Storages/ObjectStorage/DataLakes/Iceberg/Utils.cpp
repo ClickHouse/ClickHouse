@@ -189,7 +189,7 @@ static bool isTemporaryMetadataFile(const String & file_name)
 /// True for `v<N>.metadata.json`, the only scheme whose file name is itself the compare-and-set:
 /// aiming at an N that exists collides, so existence means N is committed and a higher N carries a
 /// superset of the state. A uuid in the name removes both properties.
-static bool isVersionNumberedCommitScheme(const String & file_name)
+bool isVersionNumberedCommitScheme(const String & file_name)
 {
     if (!file_name.starts_with('v'))
         return false;
@@ -1600,9 +1600,9 @@ static MetadataFileWithInfo getLatestMetadataFileAndVersion(
                     "Iceberg table with path {} has metadata files named `v<N>.metadata.json` and metadata "
                     "files named `<N>-<uuid>.metadata.json`, and nothing declares which of the two schemes "
                     "this table commits through, so its current metadata file cannot be identified. "
-                    "Refusing, because this operation deletes or rewrites metadata. Declare the current "
-                    "`v<N>.metadata.json` with `iceberg_use_version_hint = 1` and a "
-                    "`metadata/version-hint.text` naming it, or remove the metadata files of the other scheme",
+                    "Refusing, because this operation deletes or rewrites metadata. If the current one is a "
+                    "`v<N>.metadata.json`, write its number N into `metadata/version-hint.text` and set "
+                    "`iceberg_use_version_hint = 1`; otherwise remove the metadata files of the other scheme",
                     table_path);
         }
 
