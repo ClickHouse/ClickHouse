@@ -18,6 +18,7 @@
 
 #include <base/find_symbols.h>
 
+#include <tuple>
 #include <type_traits>
 
 
@@ -175,24 +176,16 @@ public:
         else
         {
             /// Adjust res:
-            DateTimeComponentsWithFractionalPart a_comp;
-            DateTimeComponentsWithFractionalPart b_comp;
-            Int64 adjust_value = 0;
-            auto x_nanoseconds = TransformDateTime64<ToRelativeSubsecondNumImpl<nanosecond_multiplier>>(transform_x.getScaleMultiplier()).execute(x, timezone_x);
-            auto y_nanoseconds = TransformDateTime64<ToRelativeSubsecondNumImpl<nanosecond_multiplier>>(transform_y.getScaleMultiplier()).execute(y, timezone_y);
-
-            if (x_nanoseconds <= y_nanoseconds)
-            {
-                a_comp = TransformDateTime64<ToDateTimeComponentsImpl>(transform_x.getScaleMultiplier()).execute(x, timezone_x);
-                b_comp = TransformDateTime64<ToDateTimeComponentsImpl>(transform_y.getScaleMultiplier()).execute(y, timezone_y);
-                adjust_value = -1;
-            }
-            else
-            {
-                a_comp = TransformDateTime64<ToDateTimeComponentsImpl>(transform_y.getScaleMultiplier()).execute(y, timezone_y);
-                b_comp = TransformDateTime64<ToDateTimeComponentsImpl>(transform_x.getScaleMultiplier()).execute(x, timezone_x);
-                adjust_value = 1;
-            }
+            const auto x_comp = TransformDateTime64<ToDateTimeComponentsImpl>(transform_x.getScaleMultiplier()).execute(x, timezone_x);
+            const auto y_comp = TransformDateTime64<ToDateTimeComponentsImpl>(transform_y.getScaleMultiplier()).execute(y, timezone_y);
+            /// Order by whole seconds and the fractional part: a nanosecond rescale overflows past 2262.
+            const Int64 x_seconds = TransformDateTime64<ToRelativeSecondNumImpl<ResultPrecision::Extended>>(transform_x.getScaleMultiplier()).execute(x, timezone_x);
+            const Int64 y_seconds = TransformDateTime64<ToRelativeSecondNumImpl<ResultPrecision::Extended>>(transform_y.getScaleMultiplier()).execute(y, timezone_y);
+            const bool x_is_first = std::tie(x_seconds, x_comp.millisecond, x_comp.microsecond, x_comp.nanosecond)
+                <= std::tie(y_seconds, y_comp.millisecond, y_comp.microsecond, y_comp.nanosecond);
+            const auto & a_comp = x_is_first ? x_comp : y_comp;
+            const auto & b_comp = x_is_first ? y_comp : x_comp;
+            const Int64 adjust_value = x_is_first ? -1 : 1;
 
             if constexpr (std::is_same_v<TransformX, TransformDateTime64<ToRelativeYearNumImpl<ResultPrecision::Extended>>>)
             {
@@ -235,7 +228,7 @@ public:
             {
                 auto a_day_of_week = TransformDateTime64<ToDayOfWeekImpl>(transform_x.getScaleMultiplier()).execute(x, static_cast<UInt8>(0), timezone_x);
                 auto b_day_of_week = TransformDateTime64<ToDayOfWeekImpl>(transform_y.getScaleMultiplier()).execute(y, static_cast<UInt8>(0), timezone_y);
-                if (x_nanoseconds > y_nanoseconds)
+                if (!x_is_first)
                     std::swap(a_day_of_week, b_day_of_week);
                 if ((a_day_of_week > b_day_of_week)
                     || ((a_day_of_week == b_day_of_week) && ((a_comp.time.hour > b_comp.time.hour)

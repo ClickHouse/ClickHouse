@@ -3093,10 +3093,13 @@ struct ToRelativeSecondNumImpl
         else
             return static_cast<UInt32>(std::clamp<Int64>(time_zone.fromDayNum(ExtendedDayNum(d)), 0, std::numeric_limits<UInt32>::max()));
     }
-    static UInt32 execute(UInt16 d, const DateLUTImpl & time_zone)
+    static auto execute(UInt16 d, const DateLUTImpl & time_zone)
     {
-        /// Clamped: a Date past 2106-02-07 exceeds UInt32 seconds.
-        return static_cast<UInt32>(std::clamp<Int64>(time_zone.fromDayNum(DayNum(d)), 0, std::numeric_limits<UInt32>::max()));
+        if constexpr (precision_ == ResultPrecision::Extended)
+            return static_cast<Int64>(time_zone.fromDayNum(DayNum(d)));
+        else
+            /// Clamped: a Date past 2106-02-07 exceeds UInt32 seconds.
+            return static_cast<UInt32>(std::clamp<Int64>(time_zone.fromDayNum(DayNum(d)), 0, std::numeric_limits<UInt32>::max()));
     }
     static constexpr bool hasPreimage() { return false; }
 
