@@ -2449,12 +2449,13 @@ MergeTreeData::DataPartsVector StorageReplicatedMergeTree::checkPartChecksumsAnd
     }
 }
 
-MergeTreeData::MutableDataPartPtr StorageReplicatedMergeTree::attachPartHelperFoundValidPart(const LogEntry & entry, PartsTemporaryRename & rename_parts) const
+MergeTreeData::MutableDataPartPtr StorageReplicatedMergeTree::attachPartHelperFoundValidPart(
+    const LogEntry & entry, PartsTemporaryRename & rename_parts, bool exact_part_name) const
 {
     if (format_version != MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING)
         return {};
 
-    auto detached_parts = getDetachedParts();
+    auto detached_parts = getDetachedParts(exact_part_name ? std::optional<String>{entry.new_part_name} : std::nullopt);
 
     const MergeTreePartInfo actual_part_info = MergeTreePartInfo::fromPartName(entry.new_part_name, format_version);
     auto partition_id = actual_part_info.getPartitionId();
@@ -2524,6 +2525,14 @@ MergeTreeData::MutableDataPartPtr StorageReplicatedMergeTree::attachPartHelperFo
         try
         {
             loadPartAndFixMetadataImpl(part, getContext());
+            bool is_broken_projection = false;
+            checkDataPart(
+                part, /* require_checksums= */ true, is_broken_projection,
+                []
+                {
+                    return false;
+                },
+                /* throw_on_broken_projection= */ true);
         }
         catch (...)
         {
@@ -2656,18 +2665,36 @@ bool StorageReplicatedMergeTree::executeLogEntry(LogEntry & entry)
         ProfileEventsScope profile_events_scope;
 
         PartsTemporaryRename renamed_parts(*this, DETACHED_DIR_NAME);
-        if (MutableDataPartPtr part = attachPartHelperFoundValidPart(entry, renamed_parts))
+        /// Prefer the required name without scanning every detached directory during bootstrap.
+        auto part = attachPartHelperFoundValidPart(entry, renamed_parts, /* exact_part_name= */ true);
+        /// Existing `ATTACH_PART` entries can refer to a renamed candidate, including old
+        /// Keeper-restoration entries with an empty `source_replica`.
+        if (!part)
+            part = attachPartHelperFoundValidPart(entry, renamed_parts);
+
+        if (part)
         {
             LOG_TRACE(log, "Found valid local part for {}, preparing the transaction", part->name);
 
             Transaction transaction(*this, NO_TRANSACTION_RAW);
 
             part->version->setAndStoreCreationTID(Tx::NonTransactionalTID, nullptr);
-            /// The table size limits are not checked when executing a replication log entry:
-            /// the data has been already accepted by another replica.
-            renameTempPartAndReplace(part, transaction, /*rename_in_transaction=*/ true, /*check_table_size_limits=*/ false);
-            transaction.renameParts();
-            checkPartChecksumsAndCommit(transaction, part, /*hardlinked_files*/ {}, /*replace_zero_copy_lock*/ true);
+            try
+            {
+                /// The table size limits are not checked when executing a replication log entry:
+                /// the data has been already accepted by another replica.
+                renameTempPartAndReplace(part, transaction, /*rename_in_transaction=*/ true, /*check_table_size_limits=*/ false);
+                transaction.renameParts();
+                checkPartChecksumsAndCommit(transaction, part, /*hardlinked_files*/ {}, /*replace_zero_copy_lock*/ true);
+            }
+            catch (...)
+            {
+                /// Keep the backup candidate on a failed commit instead of scheduling it for deletion.
+                transaction.rollbackPartsToTemporaryState();
+                if (part->getDataPartStorage().getParentDirectory() != DETACHED_DIR_NAME)
+                    part->renameTo(fs::path(DETACHED_DIR_NAME) / renamed_parts.old_and_new_names.front().new_dir, false);
+                throw;
+            }
 
             chassert(renamed_parts.renamed && renamed_parts.old_and_new_names.size() == 1);
             renamed_parts.old_and_new_names.front().old_dir.clear();
@@ -3622,7 +3649,8 @@ void StorageReplicatedMergeTree::executeClonePartFromShard(const LogEntry & entr
 }
 
 
-void StorageReplicatedMergeTree::cloneReplica(const String & source_replica, Coordination::Stat source_is_lost_stat, zkutil::ZooKeeperPtr & zookeeper)
+void StorageReplicatedMergeTree::cloneReplica(
+    const String & source_replica, Coordination::Stat source_is_lost_stat, zkutil::ZooKeeperPtr & zookeeper, bool is_new_replica)
 {
     String source_path = fs::path(zookeeper_path) / "replicas" / source_replica;
 
@@ -3919,7 +3947,7 @@ void StorageReplicatedMergeTree::cloneReplica(const String & source_replica, Coo
 
         LogEntry log_entry;
 
-        if (are_restoring_replica)
+        if (are_restoring_replica || is_new_replica)
         {
             LOG_DEBUG(log, "Obtaining checksum for path {}", name);
 
@@ -3931,17 +3959,24 @@ void StorageReplicatedMergeTree::cloneReplica(const String & source_replica, Coo
 
             const fs::path part_path = fs::path(source_path) / "parts" / name;
 
-            const String part_znode = zookeeper->get(part_path);
+            String part_znode;
+            if (zookeeper->tryGet(part_path, part_znode))
+            {
+                if (!part_znode.empty())
+                    desired_checksums = ReplicatedMergeTreePartHeader::fromString(part_znode).getChecksums();
+                else
+                {
+                    String desired_checksums_str = zookeeper->get(part_path / "checksums");
+                    desired_checksums = MinimalisticDataPartChecksums::deserializeFrom(desired_checksums_str);
+                }
 
-            if (!part_znode.empty())
-                desired_checksums = ReplicatedMergeTreePartHeader::fromString(part_znode).getChecksums();
+                log_entry.part_checksum = getHexUIntUppercase(desired_checksums.hash_of_all_files);
+            }
             else
             {
-                String desired_checksums_str = zookeeper->get(part_path / "checksums");
-                desired_checksums = MinimalisticDataPartChecksums::deserializeFrom(desired_checksums_str);
+                /// A pending `GET_PART` may have been merged away; fetch a covering part instead.
+                log_entry.type = LogEntry::GET_PART;
             }
-
-            log_entry.part_checksum = getHexUIntUppercase(desired_checksums.hash_of_all_files);
         }
         else
         {
@@ -4194,7 +4229,7 @@ void StorageReplicatedMergeTree::cloneReplicaIfNeeded(zkutil::ZooKeeperPtr zooke
     queue.clear();
 
     /// Will do repair from the selected replica.
-    cloneReplica(source_replica, source_is_lost_stat, zookeeper);
+    cloneReplica(source_replica, source_is_lost_stat, zookeeper, is_new_replica);
     /// If repair fails to whatever reason, the exception is thrown, is_lost will remain "1" and the replica will be repaired later.
 
     /// If replica is repaired successfully, we remove is_lost flag.
