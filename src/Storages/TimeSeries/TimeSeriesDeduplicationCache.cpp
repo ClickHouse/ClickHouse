@@ -195,7 +195,7 @@ bool TimeSeriesDeduplicationCache::isExpired(const WrittenRow & written_row, Tim
 {
     /// The elapsed time is compared in seconds, so that any value of the setting fits without overflow.
     auto elapsed_seconds = std::chrono::duration_cast<std::chrono::seconds>(now - written_row.written_at).count();
-    return (elapsed_seconds >= 0) && (static_cast<UInt64>(elapsed_seconds) >= expiration_seconds);
+    return (elapsed_seconds >= 0) && (static_cast<UInt64>(elapsed_seconds) >= written_row.lifetime_seconds);
 }
 
 void TimeSeriesDeduplicationCache::markRowsAsWritten(PendingRows && pending_rows_)
@@ -204,12 +204,12 @@ void TimeSeriesDeduplicationCache::markRowsAsWritten(PendingRows && pending_rows
 
     /// A row already in the cache is replaced: either its values have changed, or a concurrent insert has just written the same
     /// row, and then the time of writing is correct anyway.
-    /// The time is moved earlier by a random offset per row, so the rows written together don't expire together.
+    /// The lifetime of each row is shortened by its own random offset, so the rows written together don't expire together.
     auto now = currentTime();
     for (const auto & [key_hash, row_hash] : pending_rows)
     {
-        auto offset = std::chrono::seconds(expirationOffsetSeconds(expiration_seconds, randomValue()));
-        WrittenRow written_row{.row_hash = row_hash, .written_at = now - offset};
+        UInt64 lifetime_seconds = expiration_seconds - expirationOffsetSeconds(expiration_seconds, randomValue());
+        WrittenRow written_row{.row_hash = row_hash, .written_at = now, .lifetime_seconds = lifetime_seconds};
         cache.set(key_hash, std::make_shared<WrittenRow>(written_row));
     }
 }

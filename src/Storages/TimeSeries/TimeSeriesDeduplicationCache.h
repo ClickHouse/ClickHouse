@@ -78,11 +78,12 @@ public:
     void markRowsAsWritten(PendingRows && pending_rows);
 
 private:
-    /// The latest row written for a key. `written_at` is earlier than the actual time by the expiration offset of the entry.
+    /// The latest row written for a key. `lifetime_seconds` is the expiration period shortened by the random offset of the entry.
     struct WrittenRow
     {
         RowHash row_hash{};
         TimePoint written_at{};
+        UInt64 lifetime_seconds{};
     };
 
     struct WrittenRowWeight
@@ -137,7 +138,7 @@ private:
         PendingRows & pending_rows,
         const PaddedPODArray<UInt8> & filter);
 
-    /// Whether `expiration_seconds` have passed since `written_row.written_at`: such an entry doesn't make a row a duplicate.
+    /// Whether the lifetime of `written_row` has passed since it was written: such an entry doesn't make a row a duplicate.
     bool isExpired(const WrittenRow & written_row, TimePoint now) const;
 
     TimePoint currentTime() const;
