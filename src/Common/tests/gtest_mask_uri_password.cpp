@@ -115,7 +115,7 @@ bool maskPresignedURLParametersWithRE2(std::string & url)
 {
     return RE2::GlobalReplace(
         &url,
-        R"(([?&](?:AWSAccessKeyId|Signature|Expires|GoogleAccessId|X-Amz-[A-Za-z0-9\-]*|X-Goog-[A-Za-z0-9\-]*)=)[^&#]*)",
+        R"(([?&](?:AWSAccessKeyId|Signature|Expires|GoogleAccessId|sig|(?i:X-Amz-|X-Goog-)[^=?&]*)=)[^&#]*)",
         "\\1[HIDDEN]");
 }
 
@@ -156,6 +156,25 @@ const std::vector<std::string> url_corpus = {
     "https://bucket/key?Expires=1&Expires=2&Expires=3",
     "https://bucket/key?Signature=a=b&next=1",
 
+    /// The prefixes are header names, so any case: a SigV2 presigned URL carries `x-amz-security-token`.
+    "https://s3.amazonaws.com/b/k?AWSAccessKeyId=AKIA&Signature=abc&x-amz-security-token=tok&Expires=1",
+    "https://h/f?X-AMZ-SECURITY-TOKEN=a",
+    "https://h/f?x-goog-signature=a",
+    "https://h/f?x-amz-=empty",
+    "https://h/f?x-amz-any_name=hidden",
+
+    /// An Azure shared access signature: `sig` is the signature, the other fields say what it grants.
+    "https://acct.blob.core.windows.net/c/b?sp=r&sig=abc",
+    "abfss://c@a.dfs.core.windows.net/d/?sp=r&sig=abc",
+    "https://h/f?X-Amz-Signature=a&sig=b",
+    "https://h/f?SIG=abc",
+    "https://h/f?Sig=abc",
+    "https://h/f?design=visible",
+    "https://h/f?signed=visible",
+    "https://h/f?sig",
+    "https://h/f?sig=",
+    "https://h/f?sig=a&sig=b",
+
     /// Both at once, and neither.
     "https://user:password@bucket/key?X-Amz-Signature=abc&format=CSV",
     "",
@@ -188,6 +207,7 @@ TEST(MaskS3URLCredentials, AgreeWithTheRegularExpressionsOnRandomStrings)
     const std::vector<std::string> tokens = {
         "https://", "s3://", "1://", "-x://", ":/", "user", "pass", ":", "@", "/", "?", "&", "=", "#",
         "Signature", "AWSAccessKeyId", "Expires", "GoogleAccessId", "X-Amz-", "X-Goog-", "Credential", "_", "a", "\n", "",
+        "sig", "SIG", "design", "x-amz-", "X-AMZ-", "x-Goog-",
     };
     std::mt19937_64 rng(20260731); /// NOLINT(bugprone-random-generator-seed,cert-msc32-c,cert-msc51-cpp) deterministic seed, so a failure is reproducible
     std::uniform_int_distribution<size_t> count_dist(0, 12);
@@ -213,10 +233,50 @@ TEST(MaskS3URLCredentials, AgreeWithTheRegularExpressionsOnRandomStrings)
     }
 }
 
+TEST(MaskS3URLCredentials, MasksPercentEncodedSecretParameterNames)
+{
+    /// Which of these spellings authenticates was measured against Azurite 3.35 with one valid
+    /// shared access signature: the lower-case ones do, encoded or not, and the upper-case ones
+    /// do not. The name itself is never rewritten, only its value, so the expectations keep it.
+    struct Arm
+    {
+        std::string url;
+        std::string expected;
+    };
+
+    const std::vector<Arm> arms = {
+        {"https://h/f?%73ig=x", "https://h/f?%73ig=[HIDDEN]"},
+        {"https://h/f?s%69g=x", "https://h/f?s%69g=[HIDDEN]"},
+        {"https://h/f?%73%69%67=x", "https://h/f?%73%69%67=[HIDDEN]"},
+
+        /// The decoding serves every name in the set, and the prefixes too.
+        {"https://h/f?%53ignature=x", "https://h/f?%53ignature=[HIDDEN]"},
+        {"https://h/f?%58-Amz-Signature=x", "https://h/f?%58-Amz-Signature=[HIDDEN]"},
+        {"https://h/f?%78-amz-security-token=x", "https://h/f?%78-amz-security-token=[HIDDEN]"},
+
+        /// Decodes to `SIG`, which does not authenticate, so it stays readable like `?SIG=` itself.
+        {"https://h/f?%53IG=x", "https://h/f?%53IG=x"},
+        /// The endpoint decodes once as well, so to it this name is `%73ig` rather than `sig`.
+        {"https://h/f?%2573ig=x", "https://h/f?%2573ig=x"},
+        /// A malformed and a truncated escape are copied through rather than throwing.
+        {"https://h/f?%7Xig=x", "https://h/f?%7Xig=x"},
+        {"https://h/f?%7=x", "https://h/f?%7=x"},
+        /// `+` decodes to a space, so this name is not `sig`.
+        {"https://h/f?s+ig=x", "https://h/f?s+ig=x"},
+    };
+
+    for (const auto & arm : arms)
+    {
+        std::string url = arm.url;
+        EXPECT_EQ(maskPresignedURLParameters(url), arm.url != arm.expected) << "return value differs for: " << arm.url;
+        EXPECT_EQ(url, arm.expected) << "result differs for: " << arm.url;
+    }
+}
+
 TEST(MaskS3URLCredentials, MasksUserinfoAndPresignedParameters)
 {
-    std::string url = "https://key:secret@bucket/path?X-Amz-Signature=abcdef&format=CSV";
+    std::string url = "https://key:secret@bucket/path?X-Amz-Signature=abcdef&sig=ghijkl&format=CSV";
     EXPECT_TRUE(maskURIUserinfo(url));
     EXPECT_TRUE(maskPresignedURLParameters(url));
-    EXPECT_EQ(url, "https://[HIDDEN]@bucket/path?X-Amz-Signature=[HIDDEN]&format=CSV");
+    EXPECT_EQ(url, "https://[HIDDEN]@bucket/path?X-Amz-Signature=[HIDDEN]&sig=[HIDDEN]&format=CSV");
 }

@@ -36,8 +36,16 @@ SYSTEM SYNC REPLICA t_merge_missing_znode_r2;
 "
 
 part_name=$(${CLICKHOUSE_CLIENT} -q "
-    SELECT name FROM system.parts
-    WHERE database = currentDatabase() AND table = 't_merge_missing_znode_r2' AND active")
+    SELECT any(name) FROM system.parts
+    WHERE database = currentDatabase() AND table = 't_merge_missing_znode_r2' AND active
+    HAVING count() = 1 AND sum(rows) = 100")
+
+# The nodes below are written by hand, so the state built above is checked first: a replica that
+# pulls a log entry naming no part, or a part intersecting its own, terminates the server.
+if [[ -z "$part_name" ]]; then
+    echo "the setup did not leave the merged part on r2"
+    exit 1
+fi
 
 # `MergeFromLogEntryTask` names its logger after the table's UUID, not after `<database>.<table>`.
 table_uuid=$(${CLICKHOUSE_CLIENT} -q "
