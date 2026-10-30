@@ -75,7 +75,7 @@ TYPES_EXPECTED_SCHEMA = [
     ["f_varchar", "Nullable(String)"],
     ["f_string", "Nullable(String)"],
     ["f_binary", "Nullable(String)"],
-    ["f_date", "Nullable(Date)"],
+    ["f_date", "Nullable(Date32)"],
     ["f_timestamp_ltz", "Nullable(DateTime64(6))"],
     ["f_timestamp", "Nullable(DateTime64(6, \\'UTC\\'))"],
     ["f_array", "Array(Nullable(Int32))"],

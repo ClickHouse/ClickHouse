@@ -1,0 +1,17 @@
+{
+  "version": 3,
+  "id": 1,
+  "schemaId": 0,
+  "baseManifestList": "manifest-list-4f6d80dc-5940-468b-b044-fac4d912a954-0",
+  "deltaManifestList": "manifest-list-4f6d80dc-5940-468b-b044-fac4d912a954-1",
+  "totalRecordCount": 7,
+  "deltaRecordCount": 7,
+  "commitUser": "6141cd50-5980-4890-9822-d714485f936d",
+  "commitIdentifier": 9223372036854775807,
+  "commitKind": "APPEND",
+  "timeMillis": 1793403398879,
+  "baseManifestListSize": 1234,
+  "deltaManifestListSize": 1337,
+  "uuid": "c5f3e8f5-5868-4287-83d4-733567cd16a0",
+  "writerVersion": "python-2.1.0-3a5ffe7870697e2c2605e63413fb5ac5800aae7e"
+}
