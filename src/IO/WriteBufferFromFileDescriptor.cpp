@@ -145,6 +145,14 @@ int WriteBufferFromFileDescriptor::openTransientNonblockingPipeDescriptor() cons
     /// ShellCommand closes its stdin) would wait for this buffer to be destroyed. It is opened per
     /// flush and closed before returning. If the re-open fails (e.g. ENXIO when the pipe has no
     /// reader), the caller falls back to `fd`, whose write then reports the error as usual.
+    ///
+    /// This is a Linux-only guarantee. Other platforms (macOS, FreeBSD) have no portable way to
+    /// obtain an independent open file description of an anonymous pipe (`/dev/fd/N` duplicates
+    /// the descriptor, sharing its flags), and setting O_NONBLOCK on the shared `fd` would change
+    /// the behavior of every other writer. There the PIPE_BUF-capped blocking write remains: it
+    /// stays responsive to cancellation when this buffer is the only writer of the pipe (the
+    /// usual case), but can still block until the reader drains when another writer takes the
+    /// room between poll() and write().
 #if defined(OS_LINUX)
     if (!cancellation_fd_is_pipe || nonblocking_write_fd >= 0)
         return -1;
