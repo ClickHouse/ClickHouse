@@ -2034,6 +2034,90 @@ static void preferMultipleStreamsForPushedDownLimitByBelowSorting(
     preferMultipleStreamsForPushedDownLimitBy(sorting, node, sort_description_for_merging, optimization_settings);
 }
 
+/// Whether evaluating the actions does more than pass columns through: renames, constants and
+/// inputs are free, anything else (a function, an `arrayJoin`) is work done for every row.
+static bool actionsComputeSomething(const ActionsDAG & dag)
+{
+    for (const auto & dag_node : dag.getNodes())
+    {
+        if (dag_node.type != ActionsDAG::ActionType::INPUT
+            && dag_node.type != ActionsDAG::ActionType::ALIAS
+            && dag_node.type != ActionsDAG::ActionType::COLUMN)
+            return true;
+    }
+    return false;
+}
+
+/// Whether the step does per-row work that runs once per input stream. `findReadingStep` descends
+/// only through steps that keep the number of streams, so each of them is instantiated per stream.
+static bool stepComputesPerStream(const IQueryPlanStep & step)
+{
+    if (const auto * expression = typeid_cast<const ExpressionStep *>(&step))
+        return actionsComputeSomething(expression->getExpression());
+    /// Building sets runs once for the query, not per stream.
+    if (typeid_cast<const CreatingSetsStep *>(&step) || typeid_cast<const DelayedCreatingSetsStep *>(&step))
+        return false;
+    /// `FilterStep`, `ArrayJoinStep`, a preliminary `DistinctStep`, a join kept in order, an exchange.
+    return true;
+}
+
+/// Per-part `PrefetchingConcat` concatenates the streams of a part right at the read, so every step
+/// between the read and the sorting runs on one stream per part instead of one per split. When one
+/// of those steps computes something - a filter that was not moved to `PREWHERE`, an expression,
+/// an `ARRAY JOIN` - that computation would lose its parallelism, so ask the reader to keep its
+/// streams. Pure renames between the read and the sorting (the projection of `SELECT *`) cost
+/// nothing and keep the narrower merge.
+static void preferMultipleStreamsForComputationAboveRead(
+    QueryPlan::Node & node, const QueryPlanOptimizationSettings & optimization_settings)
+{
+    FindReadingStepContext find_reading_ctx{
+        .allow_existing_order = true,
+        .read_in_order_through_join = optimization_settings.read_in_order_through_join != 0,
+        .distributed_plan_read_in_order = optimization_settings.distributed_plan_read_in_order,
+    };
+    QueryPlan::Node * reading_node = findReadingStep(node, find_reading_ctx);
+    if (!reading_node)
+        return;
+
+    /// `findReadingStep` always descends into the first child, so this walks the same path.
+    bool computes = false;
+    for (QueryPlan::Node * current = &node; current != reading_node && !current->children.empty(); current = current->children.front())
+    {
+        if (stepComputesPerStream(*current->step))
+        {
+            computes = true;
+            break;
+        }
+    }
+    if (!computes)
+        return;
+
+    if (auto * reading = typeid_cast<ReadFromMergeTree *>(reading_node->step.get()))
+    {
+        if (reading->getInputOrder())
+            reading->setPreferMultipleStreams();
+    }
+    else if (auto * merge = typeid_cast<ReadFromMerge *>(reading_node->step.get()))
+    {
+        if (merge->getInputOrder())
+            merge->setPreferMultipleStreams();
+    }
+}
+
+/// `findReadingStep` stops at a `UnionStep`, so fan out over its branches.
+static void preferMultipleStreamsForComputationAboveReadBelowSorting(
+    QueryPlan::Node & node, const QueryPlanOptimizationSettings & optimization_settings)
+{
+    if (typeid_cast<UnionStep *>(node.step.get()))
+    {
+        for (auto * child : node.children)
+            preferMultipleStreamsForComputationAboveRead(*child, optimization_settings);
+        return;
+    }
+
+    preferMultipleStreamsForComputationAboveRead(node, optimization_settings);
+}
+
 void optimizeReadInOrder(QueryPlan::Node & node, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & optimization_settings)
 {
     if (node.children.size() != 1)
@@ -2053,8 +2137,11 @@ void optimizeReadInOrder(QueryPlan::Node & node, QueryPlan::Nodes & nodes, const
         /// pushed-down `LIMIT BY` request has to be reachable through an already converted sorting too.
         /// Its `prefix_description` is exactly the read-in-order prefix it was converted with.
         if (sorting->getType() == SortingStep::Type::FinishSorting)
+        {
             preferMultipleStreamsForPushedDownLimitByBelowSorting(
                 *sorting, *node.children.front(), sorting->getPrefixDescription(), optimization_settings);
+            preferMultipleStreamsForComputationAboveReadBelowSorting(*node.children.front(), optimization_settings);
+        }
         return;
     }
 
@@ -2156,6 +2243,7 @@ void optimizeReadInOrder(QueryPlan::Node & node, QueryPlan::Nodes & nodes, const
         sorting->convertToFinishSorting(*max_sort_descr, use_buffering, apply_virtual_row);
 
         preferMultipleStreamsForPushedDownLimitByBelowSorting(*sorting, *union_node, *max_sort_descr, optimization_settings);
+        preferMultipleStreamsForComputationAboveReadBelowSorting(*union_node, optimization_settings);
     }
     else if (auto order_info = buildInputOrderInfo(*sorting, apply_virtual_row, virtual_row_reader, *node.children.front(), optimization_settings))
     {
@@ -2165,6 +2253,7 @@ void optimizeReadInOrder(QueryPlan::Node & node, QueryPlan::Nodes & nodes, const
 
         preferMultipleStreamsForPushedDownLimitByBelowSorting(
             *sorting, *node.children.front(), order_info->sort_description_for_merging, optimization_settings);
+        preferMultipleStreamsForComputationAboveReadBelowSorting(*node.children.front(), optimization_settings);
     }
 }
 

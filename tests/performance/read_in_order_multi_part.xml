@@ -35,6 +35,10 @@
     <!-- ORDER BY without WHERE: all granules, tests pure read + concat throughput. -->
     <query>SELECT * FROM read_in_order_multi_part ORDER BY key FORMAT Null</query>
 
+    <!-- A costly filter kept above the read (`optimize_move_to_prewhere = 0`): `PrefetchingConcat`
+         is disabled so that the filter still runs on every read stream instead of one per part. -->
+    <query>SELECT key FROM read_in_order_multi_part WHERE match(repeat(key, 8), '[13579]/vk/.*[13579]/v$') ORDER BY key FORMAT Null SETTINGS optimize_move_to_prewhere = 0</query>
+
     <!-- Aggregation in order on the same multi-part table: `PrefetchingConcat` is
          disabled here (downstream wants multiple streams), but per-part splitting
          still applies. -->

@@ -69,7 +69,9 @@ run_and_report buffering_off --read_in_order_use_buffering=0 --max_block_size=81
 # The same contract on a rebuilt step: the lazy-FINAL full replacement reconstructs the
 # `ReadFromMergeTree` step, and the budget there must still follow both settings.
 LAZY_FINAL_SETTINGS="--query_plan_optimize_lazy_final=1 --max_rows_for_lazy_final=10000000 --min_filtered_ratio_for_lazy_final=0"
-QUERY="SELECT key FROM t_read_ahead_budget_lazy_final FINAL WHERE value != '' ORDER BY key FORMAT Null"
+# The filter is in `PREWHERE`, inside the read: a `WHERE` would stay as a `FilterStep` above the
+# read, and a filter there keeps the streams separate instead of using `PrefetchingConcat`.
+QUERY="SELECT key FROM t_read_ahead_budget_lazy_final FINAL PREWHERE value != '' ORDER BY key FORMAT Null"
 
 # Non-vacuous anchor: the FINAL merge is gone, so the reading step was really rebuilt.
 echo "lazy_final_replacement_engaged $(${CLICKHOUSE_CLIENT} ${SETTINGS} ${LAZY_FINAL_SETTINGS} -q "
