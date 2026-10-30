@@ -24,6 +24,38 @@
 
 # 2026 Changelog
 
+<!-- CHANGELOG-RAW-BEGIN: auto-generated entries below are edited and removed by the nightly changelog CI job; do not edit them manually -->
+### ClickHouse release bee6deac10f424b411207039c0e8d653f4d71aa8 (bee6deac10f) FIXME as compared to 474f3e327db3b2d947433adac57e79bc2155a923 (474f3e327db)
+
+#### Performance Improvement
+* Speed up `CAST` from `Enum8` and `Enum16` to `LowCardinality(String)`, also inside `Map`, `Array` and `Tuple`. [#127241](https://github.com/ClickHouse/ClickHouse/pull/127241) ([Nikolay Degterinsky](https://github.com/evillique)).
+
+#### Improvement
+* Support the `AWS_ENDPOINT_URL_STS` environment variable for S3 web identity credentials, and use the `.amazonaws.eu` STS endpoint in `eusc-*` regions. [#126761](https://github.com/ClickHouse/ClickHouse/pull/126761) ([Asya Shneerson](https://github.com/asya-ch)).
+
+#### Bug Fix (user-visible misbehavior in an official stable release)
+* Fixed `geoToUTM`, `UTMToGeo`, and `geoToMGRS` for latitudes just below the equator: the band letter and the false northing now agree, the round trip returns the original coordinates, and `geoToMGRS` returns a square that `MGRSToGeo` accepts. [#127655](https://github.com/ClickHouse/ClickHouse/pull/127655) ([Vevan O Narain](https://github.com/Vevan05)).
+* Fixed an abort of `clickhouse-client`, `clickhouse-local` and `clickhouse-format --hilite` when highlighting a query whose string literal ends with an incomplete UTF-8 sequence, for example `SELECT length(x'E2')`. Such a query is now highlighted without reading past its end, and the closing bracket gets its own color. [#127906](https://github.com/ClickHouse/ClickHouse/pull/127906) ([Groene AI](https://github.com/groeneai)).
+* Fix `SELECT ... FINAL` from a `GraphiteMergeTree` table, which returned several partially rolled-up rows for one rollup bucket when the parts were read in parallel layers, split into non-intersecting ranges or merged per partition. Closes [#127522](https://github.com/ClickHouse/ClickHouse/issues/127522). [#128165](https://github.com/ClickHouse/ClickHouse/pull/128165) ([Yarik Briukhovetskyi](https://github.com/yariks5s)).
+
+#### Build/Testing/Packaging Improvement
+* Link the executables with `-z noexecstack` and `-z nodlopen`: the stack stays non-executable whichever linker is used, and other programs cannot load the `clickhouse` binary with `dlopen`. [#127981](https://github.com/ClickHouse/ClickHouse/pull/127981) ([Groene AI](https://github.com/groeneai)).
+* Build with `-fstrict-flex-arrays=3` (except on macOS and in UndefinedBehaviorSanitizer builds), so that only a trailing `[]` member is treated as a flexible array, and `-Warray-bounds` and `__builtin_object_size` know the bounds of every other array. [#128007](https://github.com/ClickHouse/ClickHouse/pull/128007) ([Groene AI](https://github.com/groeneai)).
+
+#### NOT FOR CHANGELOG / INSIGNIFICANT
+
+* Iceberg REST Catalog: Improve location validation. [#127285](https://github.com/ClickHouse/ClickHouse/pull/127285) ([Asya Shneerson](https://github.com/asya-ch)).
+* [needs human] Add 7 tests for coverage gaps in 6 components. [#127528](https://github.com/ClickHouse/ClickHouse/pull/127528) ([ClickGap AI Bot](https://github.com/clickgapai)).
+* Fix a SIGSEGV in UBSan builds when `match`, `extract`, `extractAll` or `replaceRegexpOne/All` call the JIT-compiled regexp matcher. Release builds are not affected. [#127750](https://github.com/ClickHouse/ClickHouse/pull/127750) ([Groene AI](https://github.com/groeneai)).
+* `05441_iceberg_more_manifests_than_read_ahead` no longer runs in the MSan stateless test jobs. [#127798](https://github.com/ClickHouse/ClickHouse/pull/127798) ([Groene AI](https://github.com/groeneai)).
+* Raise the memory limit of `05449_radix_uniq_exact_spill_bounded_sets`. [#127837](https://github.com/ClickHouse/ClickHouse/pull/127837) ([Raúl Marín](https://github.com/Algunenano)).
+* Add a test for auto-converted `url` into a `remote()` destination. [#127943](https://github.com/ClickHouse/ClickHouse/pull/127943) ([Igor Nikonov](https://github.com/devcrafter)).
+* Fix flaky `04249_min_allocation_size_to_throw_on_memory_limit`. [#127979](https://github.com/ClickHouse/ClickHouse/pull/127979) ([Alexey Milovidov](https://github.com/alexey-milovidov)).
+* `05397_clickhouse_local_locked_path_untouched` is skipped on macOS, where the util-linux `flock` command it uses is not available. [#128088](https://github.com/ClickHouse/ClickHouse/pull/128088) ([Groene AI](https://github.com/groeneai)).
+* Not required. [#128144](https://github.com/ClickHouse/ClickHouse/pull/128144) ([Groene AI](https://github.com/groeneai)).
+* Tag four `json_shared_typed_paths` tests with `no-msan`. [#128150](https://github.com/ClickHouse/ClickHouse/pull/128150) ([Nikita Fomichev](https://github.com/fm4v)).
+<!-- CHANGELOG-RAW-END -->
+
 ### <a id="2611"></a> ClickHouse release 26.11, FIXME (in progress)
 
 #### Backward Incompatible Change
