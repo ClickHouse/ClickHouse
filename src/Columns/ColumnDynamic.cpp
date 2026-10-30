@@ -345,6 +345,8 @@ void ColumnDynamic::get(size_t n, Field & res) const
 
 void ColumnDynamic::getValueNameImpl(WriteBufferFromOwnString & name_buf, size_t n, const Options & options) const
 {
+    checkStackSize();
+
     const auto & variant_col = getVariantColumn();
     const auto discr = variant_col.globalDiscriminatorAt(n);
     if (discr == ColumnVariant::NULL_DISCRIMINATOR)
@@ -381,6 +383,8 @@ void ColumnDynamic::insertFrom(const IColumn & src_, size_t n)
 void ColumnDynamic::doInsertFrom(const IColumn & src_, size_t n)
 #endif
 {
+    checkStackSize();
+
     const auto & dynamic_src = assert_cast<const ColumnDynamic &>(src_);
 
     /// Same variants: copy the Variant column directly. Skip this fast path when the source has values in
@@ -460,6 +464,8 @@ void ColumnDynamic::insertRangeFrom(const IColumn & src_, size_t start, size_t l
 void ColumnDynamic::doInsertRangeFrom(const IColumn & src_, size_t start, size_t length)
 #endif
 {
+    checkStackSize();
+
     if (start + length > src_.size())
         throw Exception(ErrorCodes::PARAMETER_OUT_OF_BOUND, "Parameter out of bound in ColumnDynamic::insertRangeFrom method. "
                                                             "[start({}) + length({}) > src.size()({})]", start, length, src_.size());
@@ -692,6 +698,8 @@ void ColumnDynamic::insertManyFrom(const IColumn & src_, size_t position, size_t
 void ColumnDynamic::doInsertManyFrom(const IColumn & src_, size_t position, size_t length)
 #endif
 {
+    checkStackSize();
+
     const auto & dynamic_src = assert_cast<const ColumnDynamic &>(src_);
     auto & variant_col = getVariantColumn();
 
@@ -895,6 +903,8 @@ void ColumnDynamic::deserializeAndInsertFromArena(ReadBuffer & in, const IColumn
 
 void ColumnDynamic::updateHashWithValue(size_t n, SipHash & hash) const
 {
+    checkStackSize();
+
     const auto & variant_col = getVariantColumn();
     auto discr = variant_col.globalDiscriminatorAt(n);
     if (discr == ColumnVariant::NULL_DISCRIMINATOR)
@@ -925,6 +935,7 @@ void ColumnDynamic::updateHashWithValue(size_t n, SipHash & hash) const
 
 void ColumnDynamic::updateHashWithValueRange(size_t begin, size_t end, SipHash & hash) const
 {
+    checkStackSize();
     variant_column_ptr->updateHashWithValueRange(begin, end, hash);
 }
 
@@ -1078,6 +1089,8 @@ void ColumnDynamic::hashSharedValues(const ColumnString & values, const UInt64 *
 
 void ColumnDynamic::computeHashInto(size_t row_begin, size_t row_end, UInt32 * hash_out, bool initial) const
 {
+    checkStackSize();
+
     /// A value must hash the same whether it sits in a typed variant or the shared variant. Typed rows
     /// are already correct via `ColumnVariant`; only shared rows need decoding to the typed leaf hash.
     const auto & variant_col = getVariantColumn();
@@ -1172,6 +1185,8 @@ int ColumnDynamic::compareAt(size_t n, size_t m, const IColumn & rhs, int nan_di
 int ColumnDynamic::doCompareAt(size_t n, size_t m, const IColumn & rhs, int nan_direction_hint) const
 #endif
 {
+    checkStackSize();
+
     const auto & left_variant = getVariantColumn();
     const auto & right_dynamic = assert_cast<const ColumnDynamic &>(rhs);
     const auto & right_variant = right_dynamic.getVariantColumn();
@@ -1298,6 +1313,7 @@ void ColumnDynamic::updatePermutation(IColumn::PermutationSortDirection directio
 
 ColumnPtr ColumnDynamic::compress(bool force_compression) const
 {
+    checkStackSize();
     ColumnPtr variant_compressed = variant_column_ptr->compress(force_compression);
     size_t byte_size = variant_compressed->byteSize();
     return ColumnCompressed::create(size(), byte_size,
@@ -1309,6 +1325,7 @@ ColumnPtr ColumnDynamic::compress(bool force_compression) const
 
 ColumnCheckpointPtr ColumnDynamic::getCheckpoint() const
 {
+    checkStackSize();
     UnorderedMapWithMemoryTracking<String, ColumnCheckpointPtr> variants_checkpoints;
     for (const auto & [name, discr] : variant_info.variant_name_to_discriminator)
         variants_checkpoints[name] = variant_column_ptr->getVariantByGlobalDiscriminator(discr).getCheckpoint();
@@ -1317,6 +1334,7 @@ ColumnCheckpointPtr ColumnDynamic::getCheckpoint() const
 
 void ColumnDynamic::updateCheckpoint(ColumnCheckpoint & checkpoint) const
 {
+    checkStackSize();
     auto & variants_checkpoints = assert_cast<DynamicColumnCheckpoint &>(checkpoint).variants_checkpoints;
 
     for (const auto & [name, discr] : variant_info.variant_name_to_discriminator)
@@ -1334,6 +1352,7 @@ void ColumnDynamic::updateCheckpoint(ColumnCheckpoint & checkpoint) const
 
 void ColumnDynamic::rollback(const ColumnCheckpoint & checkpoint)
 {
+    checkStackSize();
     const auto & variants_checkpoints = assert_cast<const DynamicColumnCheckpoint &>(checkpoint).variants_checkpoints;
 
     /// Manually rollback internals of Variant column
@@ -1406,6 +1425,7 @@ void ColumnDynamic::getAllTypeNamesInto(UnorderedSetWithMemoryTracking<String> &
 
 void ColumnDynamic::prepareForSquashing(const VectorWithMemoryTracking<ColumnPtr> & source_columns, size_t factor)
 {
+    checkStackSize();
     if (source_columns.empty())
         return;
 
@@ -1429,6 +1449,7 @@ void ColumnDynamic::prepareForSquashing(const VectorWithMemoryTracking<ColumnPtr
 
 void ColumnDynamic::prepareVariantsForSquashing(const VectorWithMemoryTracking<ColumnPtr> & source_columns, size_t factor)
 {
+    checkStackSize();
     /// Internal variants of source dynamic columns may differ.
     /// We want to preallocate memory for all variants we will have after squashing.
     /// It may happen that the total number of variants in source columns will
