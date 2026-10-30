@@ -531,6 +531,7 @@ public:
     /// Used when the aggregation above this read is not a plain `AggregatingStep` (e.g. it was rewritten to
     /// `AggregatingProjectionStep`), so it would not recognize plan-time hits.
     void disablePartialAggregateCache() { reader_settings.use_partial_aggregate_cache = false; }
+    void disableSpreadingSmallRead() { allow_spreading_small_read = false; }
 
     /// After projection optimization, ReadFromMergeTree may be replaced with a new reading step, and the ParallelReadingExtension must be forwarded to the new step.
     /// Meanwhile, the ParallelReadingExtension originally in ReadFromMergeTree might be clear.
@@ -948,6 +949,7 @@ private:
     bool enable_vertical_final = false;
     bool allow_query_condition_cache = true;
     bool allow_top_k_prewhere_query_condition_cache = true;
+    bool allow_spreading_small_read = true;
 
     LazyMaterializingRowsPtr lazy_materializing_rows;
     bool has_lazily_read_columns = false;
