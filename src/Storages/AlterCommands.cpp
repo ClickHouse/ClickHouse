@@ -764,6 +764,22 @@ static std::vector<ColumnDescription> columnsAddedByAlter(
 }
 
 
+/// Inserts the columns returned by `columnsAddedByAlter` where `ADD COLUMN ... FIRST | AFTER` places them.
+static void addColumnsAtPosition(ColumnsDescription & columns, const std::vector<ColumnDescription> & columns_to_add, const String & after_column, bool first)
+{
+    if (!after_column.empty() || first)
+    {
+        for (const auto & column : columns_to_add | std::views::reverse)
+            columns.add(column, after_column, first);
+    }
+    else
+    {
+        for (const auto & column : columns_to_add)
+            columns.add(column, after_column, first);
+    }
+}
+
+
 std::optional<AlterCommand> AlterCommand::extractSettingsResets()
 {
     if (type != MODIFY_SETTING || settings_resets.empty())
@@ -844,17 +860,7 @@ void AlterCommand::apply(
         if (columns_to_add.empty())
             return;
 
-        if (!after_column.empty() || first)
-        {
-            for (const auto & col : columns_to_add | std::views::reverse)
-                metadata.columns.add(col, after_column, first);
-        }
-        else
-        {
-            for (const auto & col : columns_to_add)
-                metadata.columns.add(col, after_column, first);
-        }
-
+        addColumnsAtPosition(metadata.columns, columns_to_add, after_column, first);
         metadata.addImplicitIndicesForColumn(column, context);
     }
     else if (type == DROP_COLUMN)
@@ -864,40 +870,30 @@ void AlterCommand::apply(
         /// Otherwise just clear data on disk
         if (!clear && !partition)
         {
-            if (should_skip_column_operation(column_name))
+            /// With shared offsets `n` names the group of `n.*` columns, the same as in `prepare` and `validate`.
+            bool column_exists = metadata.columns.has(column_name) || (share_nested_offsets && metadata.columns.hasNested(column_name));
+            if (if_exists && !column_exists)
                 return;
             metadata.columns.remove(column_name);
         }
     }
     else if (type == MODIFY_COLUMN)
     {
-        /// `prepare` resolves a subcolumn against the columns before the ALTER. A subcolumn of a column that a previous
-        /// command of the same ALTER adds or changes the type of is resolved here, against the columns so far.
-        String target_column = column_name;
-        String target_subcolumn = subcolumn_name;
-        if (target_subcolumn.empty() && !metadata.columns.has(column_name))
-        {
-            if (auto subcolumn = metadata.columns.tryGetSubcolumn(column_name))
-            {
-                target_column = subcolumn->getNameInStorage();
-                target_subcolumn = subcolumn->getSubcolumnName();
-            }
-        }
-
-        if (skip_absent_column_or_fail("modify", target_column))
+        /// For a subcolumn, `prepare` has set `column_name` to its column and `subcolumn_name` to its name in that column.
+        if (skip_absent_column_or_fail("modify", column_name))
             return;
-        metadata.columns.modify(target_column, after_column, first, [&](ColumnDescription & column)
+        metadata.columns.modify(column_name, after_column, first, [&](ColumnDescription & column)
         {
             /// The result is validated by `validateColumnCodecs` after all commands are applied.
-            if (!target_subcolumn.empty())
+            if (!subcolumn_name.empty())
             {
                 if (to_remove == RemoveProperty::CODEC)
-                    column.subcolumn_codecs.erase(target_subcolumn);
+                    column.subcolumn_codecs.erase(subcolumn_name);
                 else if (to_remove == RemoveProperty::NO_PROPERTY && codec)
-                    column.subcolumn_codecs.set(target_subcolumn, codec);
+                    column.subcolumn_codecs.set(subcolumn_name, codec);
                 else
                     throw Exception(ErrorCodes::LOGICAL_ERROR, "Only CODEC can be modified or removed for subcolumn {} of column {}",
-                        backQuote(target_subcolumn), backQuote(target_column));
+                        backQuote(subcolumn_name), backQuote(column_name));
                 return;
             }
 
@@ -1767,7 +1763,7 @@ bool AlterCommand::isDropOrRename() const
         || type == Type::RENAME_COLUMN;
 }
 
-std::optional<MutationCommand> AlterCommand::tryConvertToMutationCommand(StorageInMemoryMetadata & metadata, ContextPtr context, bool share_nested_offsets) const
+MutationCommands AlterCommand::tryConvertToMutationCommand(StorageInMemoryMetadata & metadata, ContextPtr context, bool share_nested_offsets) const
 {
     if (!getMutationStageDecision(metadata, context).requires_mutation)
     {
@@ -1779,6 +1775,11 @@ std::optional<MutationCommand> AlterCommand::tryConvertToMutationCommand(Storage
         return {};
     }
 
+    const auto & settings = context->getSettingsRef();
+    const UInt64 max_parser_depth = settings[Setting::max_parser_depth];
+    const UInt64 max_parser_backtracks = settings[Setting::max_parser_backtracks];
+
+    MutationCommands results;
     MutationCommand result;
 
     if (type == MODIFY_COLUMN)
@@ -1793,6 +1794,26 @@ std::optional<MutationCommand> AlterCommand::tryConvertToMutationCommand(Storage
         result.column_name = column_name;
         if (clear)
             result.clear = true;
+
+        /// The mutation matches the columns of a part by their exact names, and the table may have a column named like
+        /// a member of the group again when the mutation runs. So the group is dropped member by member.
+        if (!clear && share_nested_offsets && !metadata.columns.has(column_name) && metadata.columns.hasNested(column_name))
+        {
+            for (const auto & nested_column : metadata.columns.getNested(column_name))
+            {
+                auto member_ast = make_intrusive<ASTAlterCommand>();
+                member_ast->type = ASTAlterCommand::DROP_COLUMN;
+                member_ast->if_exists = if_exists;
+                member_ast->set(member_ast->column, make_intrusive<ASTIdentifier>(nested_column.name));
+                results.push_back(MutationCommand{
+                    .ast_text = member_ast->formatWithSecretsOneLine(),
+                    .max_parser_depth = max_parser_depth,
+                    .max_parser_backtracks = max_parser_backtracks,
+                    .type = MutationCommand::Type::DROP_COLUMN,
+                    .column_name = nested_column.name,
+                });
+            }
+        }
     }
     else if (type == DROP_INDEX)
     {
@@ -1823,12 +1844,17 @@ std::optional<MutationCommand> AlterCommand::tryConvertToMutationCommand(Storage
         result.rename_to = rename_to;
     }
 
-    result.ast_text = ast->formatWithSecretsOneLine();
-    const auto & settings = context->getSettingsRef();
-    result.max_parser_depth = settings[Setting::max_parser_depth];
-    result.max_parser_backtracks = settings[Setting::max_parser_backtracks];
+    if (results.empty())
+    {
+        chassert(result.type != MutationCommand::Type::EMPTY);
+        result.ast_text = ast->formatWithSecretsOneLine();
+        result.max_parser_depth = max_parser_depth;
+        result.max_parser_backtracks = max_parser_backtracks;
+        results.push_back(std::move(result));
+    }
+
     apply(metadata, context, share_nested_offsets);
-    return result;
+    return results;
 }
 
 bool AlterCommands::hasTextIndex(const StorageInMemoryMetadata & metadata)
@@ -2002,8 +2028,10 @@ void AlterCommands::apply(
 }
 
 
-void AlterCommands::prepare(const StorageInMemoryMetadata & metadata, bool share_nested_offsets)
+void AlterCommands::prepare(const StorageInMemoryMetadata & metadata, ContextPtr context, bool share_nested_offsets)
 {
+    /// The columns as the previous commands of this ALTER leave them, advanced the way `apply` changes them,
+    /// so that a command is prepared against the columns it is applied to.
     auto columns = metadata.columns;
     std::unordered_set<String> columns_with_full_type_modify;
 
@@ -2022,6 +2050,8 @@ void AlterCommands::prepare(const StorageInMemoryMetadata & metadata, bool share
         bool has_column = columns.has(command.column_name) || (share_nested_offsets && columns.hasNested(command.column_name));
         if (command.type == AlterCommand::MODIFY_COLUMN)
         {
+            /// If there is no column with this name, the name is resolved as a subcolumn: the command is retargeted
+            /// to the column which contains it, and `subcolumn_name` keeps the name of the subcolumn inside that column.
             if (!has_column)
             {
                 if (auto subcolumn = columns.tryGetSubcolumn(command.column_name))
@@ -2047,20 +2077,21 @@ void AlterCommands::prepare(const StorageInMemoryMetadata & metadata, bool share
                             "in a single ALTER query");
                     }
 
-                    /// `ADD ENUM VALUES` derives the resulting type by merging against the existing column, so
-                    /// the column must be present in the working snapshot. If it is not (e.g. the column is added
-                    /// by a preceding `ADD COLUMN` in the same statement, which does not advance the snapshot),
-                    /// fail explicitly instead of silently dropping the modification.
+                    /// `ADD ENUM VALUES` merges into the existing type, so the column must be in the working snapshot.
                     if (!has_column)
                         throw Exception(
                             ErrorCodes::NO_SUCH_COLUMN_IN_TABLE,
-                            "Cannot ADD ENUM VALUES to column {}: it does not exist in the table. Adding enum values to a "
-                            "column created in the same ALTER statement is not supported.",
+                            "Cannot ADD ENUM VALUES to column {}: it does not exist in the table",
                             backQuote(command.column_name));
 
                 }
                 else if (command.data_type)
+                {
                     columns_with_full_type_modify.emplace(command.column_name);
+                    /// A later command may refer to a subcolumn that only the new type has.
+                    if (columns.has(command.column_name))
+                        columns.modify(command.column_name, [&](ColumnDescription & column) { column.type = command.data_type; });
+                }
             }
 
             if (has_column)
@@ -2143,11 +2174,24 @@ void AlterCommands::prepare(const StorageInMemoryMetadata & metadata, bool share
                     }
                 }
             }
+
+            /// The snapshot follows the `FIRST` / `AFTER` placement of the column, like `apply` does.
+            if (!command.ignore && (command.first || !command.after_column.empty()) && columns.has(command.column_name))
+                columns.modifyColumnOrder(command.column_name, command.after_column, command.first);
         }
         else if (command.type == AlterCommand::ADD_COLUMN)
         {
             if (has_column && command.if_not_exists)
                 command.ignore = true;
+            else
+            {
+                ColumnDescription added_column(command.column_name, command.data_type);
+                addColumnsAtPosition(
+                    columns,
+                    columnsAddedByAlter(columns, added_column, context, command.if_not_exists, share_nested_offsets),
+                    command.after_column,
+                    command.first);
+            }
         }
         else if (command.type == AlterCommand::DROP_COLUMN
                 || command.type == AlterCommand::COMMENT_COLUMN
@@ -2155,6 +2199,10 @@ void AlterCommands::prepare(const StorageInMemoryMetadata & metadata, bool share
         {
             if (!has_column && command.if_exists)
                 command.ignore = true;
+            else if (command.type == AlterCommand::DROP_COLUMN && has_column && !command.clear && !command.partition)
+                columns.remove(command.column_name);
+            else if (command.type == AlterCommand::RENAME_COLUMN && columns.has(command.column_name))
+                columns.rename(command.column_name, command.rename_to);
         }
         else if (command.type == AlterCommand::MODIFY_ORDER_BY)
         {
@@ -2248,6 +2296,8 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
         defaults_evaluated_at_insert_time = mv->hasInnerTable();
     NameSet modified_columns;
     NameSet renamed_columns;
+    /// The columns dropped by the previous commands of this ALTER, the members for a Nested group.
+    NameSet dropped_columns;
     const CodecValidationSettings codec_validation_settings(context->getSettingsRef());
     for (size_t i = 0; i < size(); ++i)
     {
@@ -2316,12 +2366,14 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
                     codec_validation_settings);
             }
 
-            /// Advance the working snapshot with the exact columns apply() would materialize
-            /// (flatten_nested expansion), not a synthetic top-level `n`, so a later command in the
+            /// Advance the working snapshot with the exact columns apply() would materialize, at the same place
+            /// (flatten_nested expansion, FIRST / AFTER), not a synthetic top-level `n`, so a later command in the
             /// same ALTER that targets a real flattened child (e.g. RENAME COLUMN `n.b`) sees it.
-            for (auto & col : columnsAddedByAlter(all_columns, ColumnDescription(column_name, command.data_type),
-                                                  context, command.if_not_exists, share_nested))
-                all_columns.add(std::move(col));
+            addColumnsAtPosition(
+                all_columns,
+                columnsAddedByAlter(all_columns, ColumnDescription(column_name, command.data_type), context, command.if_not_exists, share_nested),
+                command.after_column,
+                command.first);
         }
         else if (command.type == AlterCommand::MODIFY_COLUMN)
         {
@@ -2411,6 +2463,9 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
                 all_columns.modify(column_name, [&](ColumnDescription & column) { column.type = command.data_type; });
             }
 
+            if (command.first || !command.after_column.empty())
+                all_columns.modifyColumnOrder(column_name, command.after_column, command.first);
+
             if (command.isRemovingProperty())
             {
                 if (!column_default && command.to_remove == AlterCommand::RemoveProperty::DEFAULT)
@@ -2485,6 +2540,11 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
                         }
                     }
                 }
+                if (!command.clear)
+                {
+                    for (const auto & dropped_column : all_columns.getNested(command.column_name))
+                        dropped_columns.insert(dropped_column.name);
+                }
                 all_columns.remove(command.column_name);
             }
             else if (!command.if_exists)
@@ -2551,6 +2611,14 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
                 }
                 continue;
             }
+
+            /// The column exists here only because it was added again after the drop. The mutation of the ALTER would
+            /// rename the data of the dropped column instead of removing it, because it finds the column in the parts
+            /// by its name.
+            if (dropped_columns.contains(command.column_name))
+                throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                    "Cannot rename column {} which is dropped and added again by the same ALTER query, use a separate ALTER query",
+                    backQuote(command.column_name));
 
             if (all_columns.has(command.rename_to))
                 throw Exception(ErrorCodes::DUPLICATE_COLUMN,
@@ -2726,9 +2794,10 @@ MutationCommands AlterCommands::getMutationCommands(StorageInMemoryMetadata meta
     MutationCommands result;
     for (const auto & alter_cmd : *this)
     {
-        if (auto mutation_cmd = alter_cmd.tryConvertToMutationCommand(metadata, context, share_nested_offsets); mutation_cmd)
+        if (auto mutation_cmds = alter_cmd.tryConvertToMutationCommand(metadata, context, share_nested_offsets); !mutation_cmds.empty())
         {
-            result.push_back(*mutation_cmd);
+            for (auto & mutation_cmd : mutation_cmds)
+                result.push_back(std::move(mutation_cmd));
         }
         else if (with_alters)
         {

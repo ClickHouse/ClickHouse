@@ -88,6 +88,8 @@ b
 CREATE TABLE default.enum_modify_then_add_different\n(\n    `x` Enum8(\'a\' = 1, \'b\' = 2),\n    `y` Enum8(\'aa\' = 10, \'cc\' = 20)\n)\nENGINE = Memory
 "a","aa"
 "b","cc"
+======= ADD COLUMN THEN ADD ENUM VALUES IN ONE STATEMENT ===============
+CREATE TABLE default.enum_add_then_modify\n(\n    `y` Int8,\n    `x` Enum8(\'a\' = 1, \'b\' = 2)\n)\nENGINE = Memory
 ======= ALTER AST VALIDATION ===============
 ======= ADD ENUM VALUES SYNTAX ERRORS ===============
 ======= MERGETREE ===============
