@@ -46,6 +46,7 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/ExternalDictionariesLoader.h>
 #include <Interpreters/formatWithPossiblyHidingSecrets.h>
+#include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Interpreters/misc.h>
 #include <Functions/IFunctionAdaptors.h>
 #include <Functions/FunctionFactory.h>
@@ -1525,7 +1526,11 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
             type_inference_scope.projection_mask_map
                 = std::make_shared<std::map<IQueryTreeNode::Hash, size_t>>(*scope.projection_mask_map);
 
-            QueryAnalyzer type_inference_analyzer(/*only_analyze_=*/ false);
+            QueryAnalyzer type_inference_analyzer(
+                /*only_analyze_=*/ false,
+                /*positional_arguments_already_resolved_=*/ false,
+                view_source_substituted,
+                view_source_in_subqueries);
             type_inference_analyzer.early_short_circuit_type_inference_in_process = true;
             type_inference_analyzer.subquery_counter = subquery_counter;
 
@@ -2578,6 +2583,12 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
             evaluateScalarSubqueryIfNeeded(in_first_argument, subquery_scope);
         }
 
+        /// Replace storage with values storage of insertion block.
+        /// The inner query of an ordinary view referenced by the view query reads the table itself.
+        if (StoragePtr storage = getViewSourceIfRead(scope.context, view_source_in_subqueries);
+            storage && !in_second_argument->as<TableFunctionNode>())
+            replaceStorageInQueryTree(in_second_argument, scope.context, storage);
+
         auto * table_node = in_second_argument->as<TableNode>();
         auto * table_function_node = in_second_argument->as<TableFunctionNode>();
 
@@ -2641,36 +2652,6 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
         }
         else
         {
-            /// Replace storage with values storage of insertion block.
-            /// The inner query of an ordinary view referenced by the view query reads the table itself.
-            if (StoragePtr storage = scope.context->getViewSource(); storage && !scope.context->isViewInnerQuery())
-            {
-                QueryTreeNodePtr table_expression = in_second_argument;
-
-                /// Process possibly nested sub-selects
-                while (table_expression)
-                {
-                    if (auto * query_node = table_expression->as<QueryNode>())
-                        table_expression = extractLeftTableExpression(query_node->getJoinTreeNodeTyped());
-                    else if (auto * union_node = table_expression->as<UnionNode>())
-                        table_expression = union_node->getQueries().getNodes().at(0);
-                    else
-                        break;
-                }
-
-                TableNode * table_expression_table_node = table_expression ? table_expression->as<TableNode>() : nullptr;
-
-                if (table_expression_table_node &&
-                    table_expression_table_node->getStorageID().getFullNameNotQuoted() == storage->getStorageID().getFullNameNotQuoted())
-                {
-                    auto replacement_table_expression_table_node = table_expression_table_node->clone();
-                    replacement_table_expression_table_node->as<TableNode &>().updateStorage(storage, scope.context);
-                    in_second_argument = in_second_argument->cloneAndReplace(
-                        static_pointer_cast<ITableExpressionNode>(table_expression),
-                        static_pointer_cast<ITableExpressionNode>(std::move(replacement_table_expression_table_node)));
-                }
-            }
-
             /// If the subquery's single column is an Array one dimension deeper than the left
             /// argument, flatten it with arrayJoin so its elements become the set elements.
             flattenArraySubqueryOnRightOfIn(in_second_argument, in_first_argument, scope.context);

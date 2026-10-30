@@ -1173,6 +1173,9 @@ std::vector<ReadFromMerge::ChildPlan> ReadFromMerge::createChildrenPlans(SelectQ
                 modified_context->setSetting("enable_parallel_replicas", Field(0));
             if (queryHasSubquerySets(query_info))
                 modified_context->setSetting("make_distributed_plan", Field(0));
+            /// The row policy of a child is analyzed without options and reads the view source of this context in its subqueries.
+            if (!query_info.planner_context || !query_info.planner_context->isViewSourceInSubqueries())
+                modified_context->clearViewSource();
 
             size_t current_need_streams = tables_count >= num_streams ? 1 : (num_streams / tables_count);
             size_t current_streams = std::min(current_need_streams, remaining_streams);
@@ -2038,6 +2041,8 @@ ReadFromMerge::ChildPlan ReadFromMerge::createPlanForTable(
         /// unmarshalls its blocks, so `BlocksMarshallingStep` must not be added to it.
         auto child_select_query_options = SelectQueryOptions(processed_stage).positionalArgumentsAlreadyResolved();
         child_select_query_options.is_local_plan_for_distributed_query = true;
+        child_select_query_options.view_source_in_subqueries
+            = modified_query_info.planner_context && modified_query_info.planner_context->isViewSourceInSubqueries();
 
         /// Converting query to AST because types might be different in the source table.
         /// Need to resolve types again.
