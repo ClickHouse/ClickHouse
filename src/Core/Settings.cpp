@@ -7970,7 +7970,7 @@ Possible values:
 - 0 - Disable
 - 1 - Enable
 )", 0, \
-        {"26.10", false, true, "New setting that lets each stream below a window drop rows whose `rank()`/`row_number()` already exceeds a bound the query filters on, before the window's sort sees them."}) \
+        {"26.11", false, true, "New setting that lets each stream below a window drop rows whose `rank()`/`row_number()` already exceeds a bound the query filters on, before the window's sort sees them."}) \
     DECLARE(Bool, query_plan_fuse_filter_into_array_join, true, R"(
 Toggles a query-plan-level optimization which fuses a filter on `ARRAY JOIN`ed element columns into the `ARRAY JOIN` step, filtering the arrays in element space before expansion so that filtered-out elements are never expanded or replicated.
 Only takes effect if setting [query_plan_enable_optimizations](#query_plan_enable_optimizations) is 1.
