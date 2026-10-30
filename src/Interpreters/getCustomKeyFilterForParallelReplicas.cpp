@@ -11,6 +11,7 @@
 #include <Parsers/parseQuery.h>
 
 #include <Interpreters/Context.h>
+#include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/InDepthNodeVisitor.h>
 #include <Interpreters/RequiredSourceColumnsVisitor.h>
 #include <Interpreters/misc.h>
@@ -85,12 +86,19 @@ void collectInLambdaArgumentIdentifiers(
 
 /// Whether an identifier on the right-hand side of `IN` in the custom key names a column of the table,
 /// possibly qualified with the table name (`t.arr`) or with the database and table names (`db.t.arr`).
-bool isColumnIdentifier(const ASTIdentifier & identifier, const ColumnsDescription & columns)
+bool isColumnIdentifier(const ASTIdentifier & identifier, const ColumnsDescription & columns, const ContextPtr & context)
 {
     if (columns.hasColumnOrSubcolumn(GetColumnsOptions::All, identifier.name()))
         return true;
 
     const auto & parts = identifier.name_parts;
+
+    /// The qualifiers are not checked against the name of the table, which is not known here. The
+    /// analyzer resolves `x.y` to a table when it is not a column of the query, and then `x.y` with
+    /// a matching column `y` may still be the table `x.y` (`a IN default.set_rhs`). Do not accept it
+    /// as a column when such a table exists.
+    if (parts.size() == 2 && DatabaseCatalog::instance().isTableExist(StorageID(parts[0], parts[1]), context))
+        return false;
     for (size_t num_qualifiers = 1; num_qualifiers <= 2 && num_qualifiers < parts.size(); ++num_qualifiers)
     {
         String unqualified_name = fmt::format("{}", fmt::join(parts.begin() + num_qualifiers, parts.end(), "."));
@@ -119,12 +127,17 @@ void removeQualifiersFromAliasColumnIdentifiers(ASTPtr & ast, const ColumnsDescr
             return;
 
         /// Try the longest column name first, so an `ALIAS` column whose name contains a dot is preferred
-        /// over an `ALIAS` column named by its prefix.
+        /// over an `ALIAS` column named by its prefix. The first name that matches any column wins: a
+        /// physical column or its subcolumn (`z.b` of `z Tuple(b ...)`) is resolved as such, and an
+        /// unrelated `ALIAS` column named like its suffix (`b`) must not replace it.
+        constexpr auto not_alias_kinds = static_cast<GetColumnsOptions::Kind>(GetColumnsOptions::All & ~GetColumnsOptions::Aliases);
         for (size_t num_qualifiers = 0; num_qualifiers <= 2 && num_qualifiers < parts.size(); ++num_qualifiers)
         {
             for (size_t name_end = parts.size(); name_end > num_qualifiers; --name_end)
             {
                 String alias_name = fmt::format("{}", fmt::join(parts.begin() + num_qualifiers, parts.begin() + name_end, "."));
+                if (columns.hasColumnOrSubcolumn(not_alias_kinds, alias_name))
+                    return;
                 if (columns.hasAlias(alias_name))
                 {
                     auto alias_identifier = make_intrusive<ASTIdentifier>(alias_name);
@@ -199,7 +212,7 @@ ASTPtr getCustomKeyFilterForParallelReplica(
         checkExpressionDoesntContainSubqueries(
             *expanded_custom_key_ast,
             [&](const ASTIdentifier & identifier)
-            { return lambda_argument_identifiers.contains(&identifier) || isColumnIdentifier(identifier, columns); });
+            { return lambda_argument_identifiers.contains(&identifier) || isColumnIdentifier(identifier, columns, context); });
         checkExpressionDoesntContainMatchers(*expanded_custom_key_ast);
     }
 
