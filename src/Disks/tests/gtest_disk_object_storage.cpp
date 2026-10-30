@@ -488,6 +488,37 @@ TEST_F(DiskObjectStorageTest, AppendFileTxReadFailDoesNotDeleteFile)
     waitBlobsCount(disk, 1);
 }
 
+TEST_F(DiskObjectStorageTest, EmptyAppendLeavesNoBlob)
+{
+    auto disk = getDiskObjectStorage();
+
+    std::string file_name = getTestName() + "_file";
+    std::string empty_file_name = getTestName() + "_empty_file";
+    std::string file_content = getTestName() + "_content";
+
+    {
+        auto wb = disk->writeFile(file_name);
+        DB::writeText(file_content, *wb);
+        wb->finalize();
+    }
+    waitBlobsCount(disk, 1);
+
+    for (const auto & name : {file_name, empty_file_name})
+    {
+        auto wb = disk->writeFile(name, DB::DBMS_DEFAULT_BUFFER_SIZE, DB::WriteMode::Append, DB::WriteSettings{});
+        wb->finalize();
+    }
+
+    EXPECT_EQ(readAll(*disk->readFile(file_name, {})), file_content);
+    EXPECT_TRUE(disk->existsFile(empty_file_name));
+    EXPECT_EQ(disk->getFileSize(empty_file_name), 0);
+    waitBlobsCount(disk, 1);
+
+    disk->removeFile(file_name);
+    disk->removeFile(empty_file_name);
+    waitBlobsCount(disk, 0);
+}
+
 TEST_F(DiskObjectStorageTest, MoveAndRewriteFile)
 {
     auto disk = getDiskObjectStorage();

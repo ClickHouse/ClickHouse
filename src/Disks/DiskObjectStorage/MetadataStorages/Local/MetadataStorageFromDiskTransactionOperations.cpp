@@ -505,18 +505,21 @@ void RewriteFileOperation::finalize()
     objects_to_remove.append_range(std::move(removed_objects));
 }
 
-AddBlobOperation::AddBlobOperation(std::string path_, StoredObject object_, const std::string & compatible_key_prefix_, IDisk & disk_)
+AddBlobOperation::AddBlobOperation(std::string path_, StoredObject object_, const std::string & compatible_key_prefix_, IDisk & disk_, StoredObjects & objects_to_remove_)
     : path(path_)
     , object(std::move(object_))
     , compatible_key_prefix(compatible_key_prefix_)
     , disk(disk_)
+    , objects_to_remove(objects_to_remove_)
 {
 }
 
 void AddBlobOperation::execute()
 {
     auto object_metadata = tryReadMetadataFile(compatible_key_prefix, path, disk).value_or(DiskObjectStorageMetadata(disk.getPath(), path));
-    object_metadata.objects.push_back(object);
+    /// An empty append has no data to record; the file is still written.
+    if (object.bytes_size > 0)
+        object_metadata.objects.push_back(object);
 
     write_operation = std::make_unique<WriteFileOperation>(path, object_metadata.serializeToString(), disk);
     write_operation->execute();
@@ -526,6 +529,13 @@ void AddBlobOperation::undo()
 {
     if (write_operation)
         write_operation->undo();
+}
+
+void AddBlobOperation::finalize()
+{
+    /// The writer may have created the empty object (local object storage), and nothing references it.
+    if (object.bytes_size == 0)
+        objects_to_remove.push_back(object);
 }
 
 SetReadonlyFileOperation::SetReadonlyFileOperation(std::string path_, const std::string & compatible_key_prefix_, IDisk & disk_)

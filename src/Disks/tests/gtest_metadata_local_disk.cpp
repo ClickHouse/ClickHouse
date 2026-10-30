@@ -234,6 +234,42 @@ TEST_F(MetadataLocalDiskTest, TestValidAddBlob)
     EXPECT_EQ(blobs_fff[5].bytes_size, 800);
 }
 
+TEST_F(MetadataLocalDiskTest, TestAddEmptyBlob)
+{
+    auto metadata = getMetadataStorage("/TestAddEmptyBlob");
+
+    /// An empty append to a missing file creates the file without recording the object.
+    {
+        auto transaction = metadata->createTransaction();
+        transaction->addBlobToMetadata("f.txt", DB::StoredObject(DB::ObjectStorageKey::createAsRelative("/TestAddEmptyBlob", "empty1").serialize(), "f.txt", 0));
+        transaction->commit(DB::NoCommitOptions{});
+    }
+
+    EXPECT_TRUE(metadata->existsFile("f.txt"));
+    EXPECT_TRUE(metadata->getStorageObjects("f.txt").empty());
+    EXPECT_EQ(metadata->getFileSize("f.txt"), 0);
+
+    {
+        auto transaction = metadata->createTransaction();
+        transaction->addBlobToMetadata("f.txt", DB::StoredObject(DB::ObjectStorageKey::createAsRelative("/TestAddEmptyBlob", "data").serialize(), "f.txt", 42));
+        transaction->commit(DB::NoCommitOptions{});
+    }
+
+    /// An empty append to an existing file leaves its objects unchanged.
+    {
+        auto transaction = metadata->createTransaction();
+        transaction->addBlobToMetadata("f.txt", DB::StoredObject(DB::ObjectStorageKey::createAsRelative("/TestAddEmptyBlob", "empty2").serialize(), "f.txt", 0));
+        transaction->commit(DB::NoCommitOptions{});
+    }
+
+    auto blobs = metadata->getStorageObjects("f.txt");
+    ASSERT_EQ(blobs.size(), 1);
+    EXPECT_EQ(blobs[0].remote_path, "/TestAddEmptyBlob/data");
+    EXPECT_EQ(blobs[0].bytes_size, 42);
+    EXPECT_EQ(metadata->getFileSize("f.txt"), 42);
+    verifyBlobsToRemove(metadata, {"/TestAddEmptyBlob/empty1", "/TestAddEmptyBlob/empty2"});
+}
+
 TEST_F(MetadataLocalDiskTest, TestValidCreateMetadataAddBlob)
 {
     auto metadata = getMetadataStorage("/TestValidCreateMetadataAddBlob");
