@@ -612,7 +612,14 @@ ChunkAndProgress MergeTreeSelectProcessor::buildVirtualRowFromIndex(
     Columns empty_columns;
     empty_columns.reserve(result_header.columns());
     for (size_t i = 0; i < result_header.columns(); ++i)
-        empty_columns.push_back(result_header.getByPosition(i).type->createColumn()->cloneEmpty());
+    {
+        /// Not every type can create a column, e.g. `Function` for a lambda, so reuse the header column when there is one.
+        const auto & type_and_name = result_header.getByPosition(i);
+        if (type_and_name.column)
+            empty_columns.push_back(type_and_name.column->cloneEmpty());
+        else
+            empty_columns.push_back(type_and_name.type->createColumn());
+    }
 
     Chunk chunk(std::move(empty_columns), 0);
     auto part_level = data_part_info->getPartInfo().level;
