@@ -24,6 +24,7 @@
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeWhereOptimizer.h>
 #include <Storages/Statistics/ConditionSelectivityEstimator.h>
+#include <Common/logger_useful.h>
 #include <Common/typeid_cast.h>
 #include <base/defines.h>
 
@@ -596,9 +597,13 @@ void MergeTreeWhereOptimizer::analyzeImpl(Conditions & res, const RPNBuilderTree
                 /// Rejects no rows, so it is useless in PREWHERE regardless of its cost: schedule it last.
                 cond.bytes_per_rejected_row = std::numeric_limits<double>::infinity();
             else if (total_size_of_queried_columns == 0)
+            {
                 /// Nothing measured (compact parts): the type estimate is too coarse to outrank
                 /// selectivity, e.g. `Nullable(Int64)` would beat `Int64` on the null byte.
+                auto approx_bytes = approximateBytesPerRow(cond.table_columns);
+                LOG_INFO(log, "approx_bytes: {}", approx_bytes);
                 cond.bytes_per_rejected_row = static_cast<double>(cond.estimated_row_count);
+            } 
             else
                 cond.bytes_per_rejected_row = approximateBytesPerRow(cond.table_columns) * static_cast<double>(total_rows) / rejected_rows;
 

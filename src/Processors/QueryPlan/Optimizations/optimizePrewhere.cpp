@@ -13,10 +13,13 @@
 #include <Processors/QueryPlan/Optimizations/optimizePrewhere.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Processors/QueryPlan/SourceStepWithFilter.h>
+#include <Storages/ColumnsDescription.h>
 #include <Storages/MergeTree/MergeTreeWhereOptimizer.h>
+#include <Storages/Statistics/ConditionSelectivityEstimator.h>
 #include <Storages/StorageDummy.h>
 #include <Storages/StorageMerge.h>
 #include <Storages/VirtualColumnUtils.h>
+#include <base/types.h>
 #include <Common/Exception.h>
 
 namespace DB
@@ -319,6 +322,32 @@ void optimizePrewhere(QueryPlan::Node & parent_node, const bool remove_unused_co
         selectivity_estimator = use_pruned_parts
             ? read_from_merge_tree_step->getConditionSelectivityEstimator(queried_columns, prewhere_parts)
             : read_from_merge_tree_step->getConditionSelectivityEstimatorForPrewhere(queried_columns, &filter_root_node);
+
+    /// When the column size is unknown (compact parts), provide a default based on column type size
+    /// and the total number of rows.
+    const auto& columns = storage_snapshot->metadata->getColumns();
+    UInt64 total_rows = 0;
+    if (selectivity_estimator)
+        total_rows = selectivity_estimator->getTotalRows();
+
+    for (const auto& name: queried_columns)
+    {
+        if (column_compressed_sizes.contains(name) && column_compressed_sizes[name] != 0)
+            continue; /// already have a real measurement (wide part)
+
+        auto name_and_type = columns.tryGetColumnOrSubcolumn(GetColumnsOptions::All, name);
+        if (!name_and_type)
+            continue;
+
+        /// Only fill what we can estimate cheaply and safely
+        if (name_and_type->getTypeInStorage()->haveMaximumSizeOfValue())  /// fixed-width, including Nullable of fixed-width
+        {
+            std::size_t bytes_per_row = name_and_type->getTypeInStorage()->getMaximumSizeOfValueInMemory();
+            column_compressed_sizes[name] = total_rows * bytes_per_row;
+        }
+        /// else: missing / zero, afterwards, the algorithm will fallback to type-based defaults 
+        /// (approximateBytesPerRowAndColumn) and the column will rank later in the WHERE clauses
+    }
 
     MergeTreeWhereOptimizer where_optimizer{
         std::move(column_compressed_sizes),
