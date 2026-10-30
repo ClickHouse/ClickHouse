@@ -634,7 +634,7 @@ ALWAYS_INLINE void encode(
     int64_t num_elements,
     Int32  element_bytes)
 {
-#if USE_MULTITARGET_CODE
+#if USE_X86_64_MULTITARGET_CODE
     if (isArchSupported(TargetArch::x86_64_v4))
     {
         encodeDispatch_x86_64_v4(src, dst, num_elements, element_bytes);
@@ -669,7 +669,7 @@ ALWAYS_INLINE void decode(
     int64_t num_elements,
     Int32  element_bytes)
 {
-#if USE_MULTITARGET_CODE
+#if USE_X86_64_MULTITARGET_CODE
     if (isArchSupported(TargetArch::x86_64_v4))
     {
         decodeDispatch_x86_64_v4(src, dst, num_elements, element_bytes);
