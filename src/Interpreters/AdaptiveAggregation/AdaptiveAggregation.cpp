@@ -455,20 +455,20 @@ void Aggregator::spillAdaptivePartitions(
     if (!shared.spill_scope)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot write to temporary file because temporary file is not initialized");
 
+    const size_t num_partitions = shared.layout.numPartitions();
+    const size_t block_bytes = shared.spill_scope->getSettings().buffer_size;
+
     /// Every write of this spill goes to its producer's stream, created on a disk of the temporary volume with room for
-    /// the spill, the records kept in memory that it may write with its own, and the minimum free space, or whose disk
-    /// is checked for that room, as the file of an ordinary spill is.
-    const size_t reserve_size = partitions.allocatedChunkBytes() + shared.pending_spill_bytes.load(std::memory_order_relaxed)
-        + params.min_free_disk_space;
+    /// the spill, the records the partitions keep in memory (less than a block each), which it may write with its own,
+    /// and the minimum free space, or whose disk is checked for that room, as the file of an ordinary spill is.
+    const size_t reserve_size = partitions.allocatedChunkBytes() + num_partitions * block_bytes + params.min_free_disk_space;
     TemporaryAppendSpaceCheck space_check;
 
     partitions.finishAppending();
 
     /// The buffers spilled together start at different partitions, so they do not queue on the same partition's lock
     /// partition after partition.
-    const size_t num_partitions = shared.layout.numPartitions();
     const size_t first_partition = (reinterpret_cast<uintptr_t>(&partitions) >> 6) % num_partitions;
-    const size_t block_bytes = shared.spill_scope->getSettings().buffer_size;
     auto & stream = shared.spill_streams[spill_stream];
     bool prepared = false;
     size_t spilled_records = 0;
@@ -499,8 +499,7 @@ void Aggregator::spillAdaptivePartitions(
             prepared = true;
         }
 
-        const UInt64 partition_bytes
-            = shared.spilled_partitions[partition].append(stream, partitions, partition, block_bytes, shared.pending_spill_bytes);
+        const UInt64 partition_bytes = shared.spilled_partitions[partition].append(stream, partitions, partition, block_bytes);
         spilled_bytes += partition_bytes;
         partitions.releasePartition(partition);
         spilled_records += records;
@@ -515,11 +514,7 @@ void Aggregator::spillAdaptivePartitions(
 }
 
 UInt64 AdaptiveAggregationSession::SpilledPartition::append(
-    SpillStream & spill_stream,
-    const PartitionedRecordBuffer & partitions,
-    size_t partition,
-    size_t block_bytes,
-    std::atomic<size_t> & session_pending_bytes)
+    SpillStream & spill_stream, const PartitionedRecordBuffer & partitions, size_t partition, size_t block_bytes)
 {
     UInt64 bytes = 0;
     partitions.forEachChunk(partition, [&](std::string_view chunk) { bytes += chunk.size(); });
@@ -536,13 +531,11 @@ UInt64 AdaptiveAggregationSession::SpilledPartition::append(
         const size_t end = buffer.startNewBlock();
         blocks.push_back({&spill_stream, begin, end});
         spill_stream.unreleased_blocks.fetch_add(1, std::memory_order_relaxed);
-        session_pending_bytes.fetch_sub(pending.size(), std::memory_order_relaxed);
         pending.clear();
     }
     else
     {
         partitions.forEachChunk(partition, [&](std::string_view chunk) { pending.insert(chunk.data(), chunk.data() + chunk.size()); });
-        session_pending_bytes.fetch_add(bytes, std::memory_order_relaxed);
     }
     record_count += partitions.recordsOf(partition);
     return bytes;
