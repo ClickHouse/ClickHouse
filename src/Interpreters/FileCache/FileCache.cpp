@@ -582,7 +582,7 @@ void FileCache::initialize()
         {
             if (load_metadata_asynchronously)
             {
-                load_metadata_main_thread = std::make_unique<ThreadFromGlobalPool>(ThreadFromGlobalPoolScheduleMode::FailIfNoWorker, [this, need_to_load_metadata]
+                load_metadata_main_thread = std::make_unique<ThreadFromGlobalPool>(ThreadFromGlobalPoolScheduleMode::ReturningFailIfNoWorker, [this, need_to_load_metadata]
                 {
                     try
                     {
@@ -2347,7 +2347,7 @@ void FileCache::loadMetadataImpl()
     {
         try
         {
-            listing_threads.emplace_back(ThreadFromGlobalPoolScheduleMode::FailIfNoWorker, [&]
+            listing_threads.emplace_back(ThreadFromGlobalPoolScheduleMode::ReturningFailIfNoWorker, [&]
             {
                 while (!stop_loading_metadata)
                 {
@@ -2419,7 +2419,7 @@ void FileCache::loadMetadataImpl()
     {
         try
         {
-            loading_threads.emplace_back(ThreadFromGlobalPoolScheduleMode::FailIfNoWorker, [&] { drain_queue(); });
+            loading_threads.emplace_back(ThreadFromGlobalPoolScheduleMode::ReturningFailIfNoWorker, [&] { drain_queue(); });
         }
         catch (...)
         {

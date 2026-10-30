@@ -1044,9 +1044,10 @@ private:
                 std::tie(thread_it, inserted) = loading_threads.try_emplace(loading_id);
                 chassert(inserted);
 
-                /// The move assignment is `noexcept`.
+                /// The move assignment is `noexcept`. The thread returns when the object is loaded, so it does
+                /// not take one of the slots reserved for the long-lived threads of the global pool.
                 thread_it->second = ThreadFromGlobalPool{
-                    ThreadFromGlobalPoolScheduleMode::FailIfNoWorker,
+                    ThreadFromGlobalPoolScheduleMode::ReturningFailIfNoWorker,
                     &LoadingDispatcher::doLoading,
                     this,
                     info.name,

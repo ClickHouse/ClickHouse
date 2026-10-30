@@ -199,6 +199,12 @@ public:
     /// Otherwise it waits in the queue for any number of such threads scheduled at the same time.
     void scheduleReturningThreadOrQueueOrThrow(Job job, Priority priority = {}, bool propagate_opentelemetry_tracing_context = true);
 
+    /// Like `scheduleThreadOrThrow`, the job is handed a worker right away or rejected, but it is for a
+    /// thread that is known to return after a finite time, such as the thread of a gRPC call or of a
+    /// dictionary load. It takes no slot, so a number of such threads running at the same time do not
+    /// make the slots look exhausted to `scheduleReturningThreadOrQueueOrThrow`.
+    void scheduleReturningThreadOrThrow(Job job, Priority priority = {}, bool propagate_opentelemetry_tracing_context = true);
+
     /// Wait for all currently active jobs to be done.
     /// You may call schedule and wait many times in arbitrary order.
     /// If any thread has thrown an exception, the first exception will be rethrown from this method,
@@ -437,6 +443,8 @@ enum class ThreadFromGlobalPoolScheduleMode : uint8_t
     QueueUnlessSlotsExhausted,
     /// Takes a slot for a long-lived job and a worker right away (`scheduleThreadOrThrow`).
     FailIfNoWorker,
+    /// Takes no slot, but a worker right away, for a thread that returns (`scheduleReturningThreadOrThrow`).
+    ReturningFailIfNoWorker,
 };
 
 /// Worker entry point implementing ThreadFromGlobalPoolImpl's constructor body.

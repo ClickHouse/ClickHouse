@@ -10,6 +10,11 @@
 #include <gtest/gtest.h>
 
 
+namespace DB::ErrorCodes
+{
+    extern const int CANNOT_SCHEDULE_TASK;
+}
+
 namespace CurrentMetrics
 {
     extern const Metric LocalThread;
@@ -171,6 +176,65 @@ TEST(ThreadPool, ReturningWorkerIsNotOvertakenByLongLivedWorker)
     release_long_lived = true;
     long_lived_pool.wait();
     EXPECT_TRUE(long_lived_started);
+}
+
+/// A worker of the global pool that holds no slot is not counted on to free up for a worker that it
+/// schedules itself, because its job may wait for that worker: a table loader waits for the workers
+/// that load its parts. When it is the only worker left besides the long-lived ones, such a nested
+/// worker must be rejected instead of being queued behind it forever.
+TEST(ThreadPool, NestedReturningWorkerOnLastFreeThreadIsRejected)
+{
+    GlobalThreadPool & global_pool = GlobalThreadPool::instance();
+
+    SCOPE_EXIT({
+        global_pool.setMaxThreads(10000);
+        global_pool.setMaxFreeThreads(1000);
+        global_pool.setQueueSize(10000);
+    });
+
+    global_pool.setMaxThreads(2);
+    global_pool.setMaxFreeThreads(0);
+    global_pool.setQueueSize(1000);
+    global_pool.wait();
+
+    /// Takes one of the two slots until released.
+    std::atomic<bool> long_lived_started = false;
+    std::atomic<bool> release_long_lived = false;
+    ThreadPool long_lived_pool(
+        CurrentMetrics::LocalThread, CurrentMetrics::LocalThreadActive, CurrentMetrics::LocalThreadScheduled,
+        /* max_threads = */ 1, /* max_free_threads = */ 1, /* queue_size = */ 0);
+    long_lived_pool.setJobsAreLongLived();
+    long_lived_pool.scheduleOrThrowOnError([&] { long_lived_started = true; while (!release_long_lived.load()) {} });
+    while (!long_lived_started)
+        ;
+
+    ThreadPool inner_pool(
+        CurrentMetrics::LocalThread, CurrentMetrics::LocalThreadActive, CurrentMetrics::LocalThreadScheduled,
+        /* max_threads = */ 1, /* max_free_threads = */ 0, /* queue_size = */ 0);
+    ThreadPool outer_pool(
+        CurrentMetrics::LocalThread, CurrentMetrics::LocalThreadActive, CurrentMetrics::LocalThreadScheduled,
+        /* max_threads = */ 1, /* max_free_threads = */ 0, /* queue_size = */ 0);
+
+    /// The worker of the outer pool takes the last thread of the global pool, so the worker of the inner
+    /// pool could only run after the outer job, which would wait for it.
+    std::atomic<int> error_code = 0;
+    outer_pool.scheduleOrThrowOnError([&]
+    {
+        try
+        {
+            inner_pool.scheduleOrThrowOnError([] {});
+        }
+        catch (const DB::Exception & e)
+        {
+            error_code = e.code();
+        }
+    });
+    outer_pool.wait();
+    EXPECT_EQ(error_code, DB::ErrorCodes::CANNOT_SCHEDULE_TASK);
+
+    release_long_lived = true;
+    long_lived_pool.wait();
+    inner_pool.wait();
 }
 
 TEST(ThreadPool, GlobalThreadCanWaitBehindOrdinaryJobs)

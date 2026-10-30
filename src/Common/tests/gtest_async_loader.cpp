@@ -1770,6 +1770,49 @@ TEST(AsyncLoader, MandatorySpawnWaitsBehindFiniteLocalPoolWorkersWithFreeThreads
     testMandatorySpawnWaitsBehindFiniteLocalPoolWorkers(/* local_pool_max_free_threads = */ 1);
 }
 
+// Finite threads that are started directly and need a worker right away, such as the thread of a gRPC
+// call or of a dictionary load, must not use up the slots that a mandatory spawn of a loader worker needs.
+TEST(AsyncLoader, MandatorySpawnWaitsBehindFiniteDirectThreads)
+{
+    GlobalThreadPoolLimits limits;
+    static constexpr size_t capacity = 2;
+    limits.pool.setMaxThreads(capacity);
+    limits.pool.setMaxFreeThreads(0);
+    limits.pool.setQueueSize(1000);
+
+    AsyncLoaderTest t(16);
+    t.loader.unpause(); // Idle: the pool has no worker, so the next enqueue requires a spawn
+
+    std::atomic<size_t> started{0};
+    std::atomic<bool> release{false};
+    std::vector<ThreadFromGlobalPool> threads;
+    for (size_t i = 0; i < capacity; i++)
+    {
+        threads.emplace_back(ThreadFromGlobalPoolScheduleMode::ReturningFailIfNoWorker, [&]
+        {
+            started++;
+            while (!release.load())
+                std::this_thread::yield();
+        });
+    }
+    while (started != capacity)
+        std::this_thread::yield();
+
+    std::atomic<size_t> jobs_done{0};
+    auto task = t.schedule({makeLoadJob({}, "job", [&] (AsyncLoader &, const LoadJobPtr &) { jobs_done++; })});
+    const size_t jobs_done_while_busy = jobs_done;
+
+    release = true;
+    waitLoad(task);
+    for (auto & thread : threads)
+        thread.join();
+    t.loader.wait();
+    limits.restore();
+
+    ASSERT_EQ(jobs_done_while_busy, 0);
+    ASSERT_EQ(jobs_done, 1);
+}
+
 // A worker blocked in `wait()` cannot take a job from its own pool's ready queue even when it waits
 // for a job of another pool, a case that priority inheritance does not convert into a same-pool wait.
 // Treating it as a drainer leaves that pool's queue with nobody to run it.

@@ -59,6 +59,12 @@ namespace ProfileEvents
 
 namespace
 {
+    /// Set while a worker of the global pool runs a job that holds no slot (see `remaining_thread_job_capacity`).
+    /// Such a worker is not long-lived, so `scheduleReturningThreadOrQueueOrThrow` counts on it to free up for
+    /// the queued jobs. That does not hold for a job it schedules itself, because the job that runs on this
+    /// worker may be waiting for it: for example, a table loader waits for the workers that load its parts.
+    thread_local bool current_global_worker_holds_no_slot = false;
+
     /// Diagnostic registry of `ThreadPoolImpl<ThreadFromGlobalPool*>` instances that
     /// currently own at least one worker thread. Used by `GlobalThreadPool::shutdown` to
     /// identify the subsystem responsible for a "Hung check failed, possible deadlock
@@ -473,7 +479,8 @@ ReturnType ThreadPoolImpl<Thread>::scheduleImpl(
     /// already treats its thread as running. Take a slot optimistically and give it back below if it
     /// turned out not to exist; on any early return the destructor releases it as well.
     ///
-    /// A job scheduled through `scheduleReturningThreadOrQueueOrThrow` does not take a slot, see below.
+    /// A job scheduled through `scheduleReturningThreadOrQueueOrThrow` or `scheduleReturningThreadOrThrow`
+    /// does not take a slot, see below.
     auto on_no_slot_left = [&]
     {
         if constexpr (std::is_same_v<Thread, GlobalThreadType>)
@@ -565,8 +572,26 @@ ReturnType ThreadPoolImpl<Thread>::scheduleImpl(
         /// worker, and a worker that finishes a job takes the next one from the queue instead of going
         /// idle. So when this check passes, the workers that are left after all the long-lived jobs
         /// ahead in the queue have started run only finite jobs, and one of them is going to take this job.
-        if (job_occupies_thread && !thread_job_takes_slot && remaining_thread_job_capacity.load(std::memory_order_relaxed) <= 0)
-            return on_no_slot_left();
+        ///
+        /// When the scheduling thread is itself a worker of this pool that holds no slot, that worker does
+        /// not count: its job may wait for the job scheduled now, and if it is the only worker left for the
+        /// queued jobs, nobody would ever run it. That is how the startup could still hang with a slightly
+        /// too small `max_thread_pool_size`: the loader of a table took the last worker not held by a
+        /// long-lived thread and waited for the workers that load the parts of the table, queued behind it.
+        if (job_occupies_thread && !thread_job_takes_slot)
+        {
+            const int64_t remaining_capacity = remaining_thread_job_capacity.load(std::memory_order_relaxed);
+            if (remaining_capacity <= 0)
+                return on_no_slot_left();
+
+            if constexpr (std::is_same_v<Thread, GlobalThreadType>)
+            {
+                if (thread_job_may_queue && remaining_capacity == 1 && current_global_worker_holds_no_slot)
+                    return on_error(fmt::format(
+                        "all {} threads of the global thread pool except the current one are already occupied by long-lived threads, "
+                        "consider increasing the `max_thread_pool_size` setting", max_threads));
+            }
+        }
 
         /// We must not allocate memory or perform operations that could throw exceptions after adding a job to the queue,
         /// because if an exception occurs, it may leave the job in the queue without notifying any threads.
@@ -915,6 +940,19 @@ void ThreadPoolImpl<Thread>::scheduleReturningThreadOrQueueOrThrow(Job job, Prio
         propagate_opentelemetry_tracing_context,
         /* job_occupies_thread= */ true,
         /* thread_job_may_queue= */ true,
+        /* thread_job_takes_slot= */ false);
+}
+
+template <typename Thread>
+void ThreadPoolImpl<Thread>::scheduleReturningThreadOrThrow(Job job, Priority priority, bool propagate_opentelemetry_tracing_context)
+{
+    scheduleImpl<void>(
+        std::move(job),
+        priority,
+        /* wait_microseconds= */ 0,
+        propagate_opentelemetry_tracing_context,
+        /* job_occupies_thread= */ true,
+        /* thread_job_may_queue= */ false,
         /* thread_job_takes_slot= */ false);
 }
 
@@ -1472,6 +1510,9 @@ void ThreadPoolImpl<Thread>::ThreadFromThreadPool::worker()
             }
             else
             {
+                /// A job that holds a slot is not counted as a worker that frees up anyway.
+                current_global_worker_holds_no_slot = !job_data->thread_job_slot.has_value();
+                SCOPE_EXIT(current_global_worker_holds_no_slot = false);
                 job_data->job();
             }
 
@@ -1659,6 +1700,10 @@ void startThreadFromGlobalPool(
     if (schedule_mode == ThreadFromGlobalPoolScheduleMode::FailIfNoWorker)
     {
         GlobalThreadPool::instance().scheduleThreadOrThrow(std::move(job), {}, propagate_opentelemetry_context);
+    }
+    else if (schedule_mode == ThreadFromGlobalPoolScheduleMode::ReturningFailIfNoWorker)
+    {
+        GlobalThreadPool::instance().scheduleReturningThreadOrThrow(std::move(job), {}, propagate_opentelemetry_context);
     }
     else if (schedule_mode == ThreadFromGlobalPoolScheduleMode::ReserveSlot)
     {

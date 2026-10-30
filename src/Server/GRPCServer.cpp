@@ -854,7 +854,9 @@ namespace
         };
         try
         {
-            call_thread = ThreadFromGlobalPool{ThreadFromGlobalPoolScheduleMode::FailIfNoWorker, runner_function};
+            /// The thread returns when the call is finished, so it does not take one of the slots reserved
+            /// for the long-lived threads of the global pool.
+            call_thread = ThreadFromGlobalPool{ThreadFromGlobalPoolScheduleMode::ReturningFailIfNoWorker, runner_function};
         }
         catch (...)
         {
