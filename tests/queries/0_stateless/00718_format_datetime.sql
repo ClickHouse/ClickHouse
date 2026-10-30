@@ -5,7 +5,6 @@ SELECT formatDateTime('not a datetime', 'IGNORED'); -- { serverError ILLEGAL_TYP
 SELECT formatDateTime(now(), now()); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 SELECT formatDateTime(now(), 'good format pattern', now()); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 SELECT formatDateTime(now(), 'unescaped %'); -- { serverError BAD_ARGUMENTS }
-SELECT formatDateTime(toDateTime('2018-01-02 22:33:44'), '%U'); -- { serverError NOT_IMPLEMENTED }
 SELECT formatDateTime(toDateTime('2018-01-02 22:33:44'), '%v'); -- { serverError NOT_IMPLEMENTED }
 SELECT formatDateTime(toDateTime('2018-01-02 22:33:44'), '%x'); -- { serverError NOT_IMPLEMENTED }
 SELECT formatDateTime(toDateTime('2018-01-02 22:33:44'), '%X'); -- { serverError NOT_IMPLEMENTED }
@@ -102,3 +101,38 @@ select formatDateTime(toDateTime('2022-01-08 02:11:29', 'UTC'), '%m') settings f
 select formatDateTime(toDateTime('2022-01-08 02:11:29', 'UTC'), '%k') settings formatdatetime_format_without_leading_zeros = 1;
 select formatDateTime(toDateTime('2022-01-08 02:11:29', 'UTC'), '%l') settings formatdatetime_format_without_leading_zeros = 1;
 select formatDateTime(toDateTime('2022-01-08 02:11:29', 'UTC'), '%h') settings formatdatetime_format_without_leading_zeros = 1;
+
+-- %U uses Sunday-first weeks, numbered 00 before the first Sunday.
+SELECT formatDateTime(toDate('2018-01-02'), '%Y-%U');
+SELECT formatDateTime(toDate('2024-01-01'), '%Y-%U');
+SELECT formatDateTime(toDate('2024-01-06'), '%Y-%U');
+SELECT formatDateTime(toDate('2024-01-07'), '%Y-%U');
+SELECT formatDateTime(toDate('2023-01-01'), '%Y-%U');
+SELECT formatDateTime(toDate('2023-12-31'), '%Y-%U');
+SELECT formatDateTime(toDate('2024-12-29'), '%Y-%U');
+SELECT formatDateTime(toDate32('1969-01-05'), '%Y-%U');
+SELECT formatDateTime(toDateTime('2024-01-07 00:00:00', 'UTC'), '%Y-%U', 'UTC');
+SELECT formatDateTime(toDateTime64('2024-01-07 00:00:00', 3, 'UTC'), '%Y-%U', 'UTC');
+SELECT formatDateTime(toDateTime('2024-01-07 00:30:00', 'UTC'), '%Y-%U', 'America/Los_Angeles');
+SELECT formatDateTime(toDate('2023-12-31'), '%Y-%U-%V');
+SELECT formatDateTime(toDate('2024-01-07'), '%U') = leftPad(toString(toWeek(toDate('2024-01-07'), 0)), 2, '0');
+SELECT countIf(formatDateTime(addDays(toDate('2023-12-20'), toInt32(number)), '%U') != leftPad(toString(toWeek(addDays(toDate('2023-12-20'), toInt32(number)), 0)), 2, '0')) FROM numbers(25);
+
+-- UInt64 timestamps also use the MySQL format parser via fromUnixTimestamp.
+SELECT fromUnixTimestamp(toUInt64(1704067200), '%Y-%U', 'UTC');
+SELECT fromUnixTimestamp(toUInt64(1704585600), '%Y-%U', 'UTC');
+
+-- UInt64 timestamps after the Date limit keep their full date for %U.
+SELECT fromUnixTimestamp(toUInt64(5662310400), '%Y-%U', 'UTC');
+SELECT fromUnixTimestamp(toUInt64(5680281600), '%Y-%U', 'UTC');
+SELECT fromUnixTimestamp(toUInt64(5680800000), '%Y-%U', 'UTC');
+SELECT fromUnixTimestamp(toUInt64(5680281600), '%Y-%U', 'UTC') = fromUnixTimestamp(toInt64(5680281600), '%Y-%U', 'UTC');
+
+-- DateTime and unsigned timestamps at epoch zero have a pre-epoch local date in Los Angeles.
+-- This must not clamp the week number to the week of 1970-01-01.
+SELECT formatDateTime(toDateTime(0, 'UTC'), '%F %U', 'America/Los_Angeles');
+SELECT formatDateTime(toDateTime64(0, 3, 'UTC'), '%F %U', 'America/Los_Angeles');
+SELECT fromUnixTimestamp(toUInt32(0), '%F %U', 'America/Los_Angeles');
+SELECT fromUnixTimestamp(toUInt64(0), '%F %U', 'America/Los_Angeles');
+SELECT formatDateTime(toDateTime(0, 'UTC'), '%U', 'America/Los_Angeles')
+    = formatDateTime(toDateTime64(0, 3, 'UTC'), '%U', 'America/Los_Angeles');

@@ -459,6 +459,11 @@ private:
             return writeNumber2(dest, ToISOWeekImpl::execute(source, timezone));
         }
 
+        size_t mysqlSundayWeek(char * dest, Time source, UInt64, UInt32, const DateLUTImpl & timezone)
+        {
+            return writeNumber2(dest, ToWeekImpl::execute(source, 0, timezone));
+        }
+
         size_t mysqlISO8601Year2(char * dest, Time source, UInt64, UInt32, const DateLUTImpl & timezone)
         {
             return writeNumber2(dest, ToISOYearImpl::execute(source, timezone) % 100);
@@ -1527,6 +1532,16 @@ public:
                         break;
                     }
 
+                    // Sunday-first week number (00-53), with week 00 before the first Sunday.
+                    case 'U':
+                    {
+                        Instruction<T> instruction;
+                        instruction.setMysqlFunc(&Instruction<T>::mysqlSundayWeek);
+                        instructions.push_back(std::move(instruction));
+                        out_template += "00";
+                        break;
+                    }
+
                     // ISO 8601 week number (01-53)
                     case 'V':
                     {
@@ -1752,8 +1767,6 @@ public:
                     }
 
                     // Unimplemented
-                    case 'U':
-                        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "format is not supported for WEEK (Sun-Sat)");
                     case 'v':
                         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "format is not supported for WEEK (Mon-Sun)");
                     case 'x':
@@ -2121,6 +2134,7 @@ The example column in the table below shows formatting result for `2018-01-02 22
 | %t | horizontal-tab character | |
 | %T | ISO 8601 time format (HH:MM:SS), equivalent to %H:%i:%S | 22:33:44 |
 | %u | ISO 8601 weekday as number with Monday as 1 (1-7) | 2 |
+| %U | Sunday-first week number (00-53), with week 00 before the first Sunday | 00 |
 | %V | ISO 8601 week number (01-53) | 01 |
 | %w | weekday as a integer number with Sunday as 0 (0-6) | 2 |
 | %W | full weekday name (Monday-Sunday) | Monday |
