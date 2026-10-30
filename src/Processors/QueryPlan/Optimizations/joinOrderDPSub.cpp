@@ -278,9 +278,9 @@ void DPSubJoinOrderOptimizer::initDPsubScratch()
         /// Where each condition is placed follows from the join step it comes from, see
         /// `collectJoinEdgesMask`: an outer, semi or anti join's condition goes where that join is
         /// applied, an inner join's conjunct as low as its relations and its outstanding relations allow.
-        if (query_graph.edge_conflict_ops.size() != edges.size())
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Join graph has {} conditions, but join steps are recorded for {} of them",
-                edges.size(), query_graph.edge_conflict_ops.size());
+        if (query_graph.edge_conflict_ops.size() != edges.size() || query_graph.edge_above_conflict_op.size() != edges.size())
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Join graph has {} conditions, but join steps are recorded for {} ({}) of them",
+                edges.size(), query_graph.edge_conflict_ops.size(), query_graph.edge_above_conflict_op.size());
 
         for (size_t i = 0; i < edges.size(); ++i)
         {
@@ -298,6 +298,10 @@ void DPSubJoinOrderOptimizer::initDPsubScratch()
             /// nested under the step nor to relations outside of it.
             const UInt32 sources = dpsub_data.edge_source_mask[i];
             dpsub_data.edge_outstanding_mask[i] = sources ? outstanding_relations(sources, op_index) : operators[op_index].relations;
+            /// A filter applied above its step waits for the step itself too when it reads the rows the
+            /// step pads, like it waits for the steps nested under it.
+            if (query_graph.edge_above_conflict_op[i] && (sources & operators[op_index].nullSupplying()))
+                dpsub_data.edge_outstanding_mask[i] |= operators[op_index].locatedBy();
         }
         LOG_TRACE(log, "DPsub: using {} conflict detector over {} captured join operators",
                   toString(query_graph.conflict_detector), dpsub_data.conflict_operators.size());
