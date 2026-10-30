@@ -8,11 +8,14 @@ SELECT (s = '1') OR (s = '2') AS e, count() FROM (SELECT toLowCardinality(toStri
 SELECT countIf(e), count() FROM (SELECT x, (x = 1) OR (x = 2) OR (x = 3) OR (x = 4) AS e FROM (SELECT number % 6 AS x FROM numbers(12)) GROUP BY ROLLUP(x, x = 1));
 SELECT count() FROM (SELECT number % 4 AS x FROM numbers(8)) GROUP BY if((x = 1) OR (x = 2) OR (x = 3), x, 0) = 1, if((x = 1) OR (x = 2) OR (x = 3), x, 0) = 2, if((x = 1) OR (x = 2) OR (x = 3), x, 0) = 3 HAVING (if((x = 1) OR (x = 2) OR (x = 3), x, 0) = 1) OR (if((x = 1) OR (x = 2) OR (x = 3), x, 0) = 2) OR (if((x = 1) OR (x = 2) OR (x = 3), x, 0) = 3) ORDER BY ALL;
 SELECT ((x = 1) = 1) OR ((x = 2) = 1) OR ((x = 3) = 1) AS e, count() FROM (SELECT number % 4 AS x FROM numbers(8)) GROUP BY (x = 1) = 1, (x = 2) = 1, (x = 3) = 1 ORDER BY ALL;
+SELECT (x = 1) OR (x = 2) OR (x = 3) AS e, count() FROM (SELECT number % 4 AS x FROM numbers(8)) GROUP BY e, if(e, x, 0) = 1 ORDER BY ALL SETTINGS enable_identifier_resolve_cache = 1;
+SELECT countIf(e), count() FROM (SELECT x, (x = 1) OR (x = 2) OR (x = 3) AS e FROM (SELECT number % 4 AS x FROM numbers(8)) GROUP BY ROLLUP(x, e, if(e, x, 0) = 1)) SETTINGS enable_identifier_resolve_cache = 1;
 
 SELECT 'or, group_by_use_nulls';
 SELECT (x = 1) OR (x = 2) OR (x = 3) AS e, count() FROM (SELECT number % 4 AS x FROM numbers(8)) GROUP BY ROLLUP(x = 1, x = 2, x = 3) ORDER BY ALL SETTINGS group_by_use_nulls = 1;
 SELECT countIf(e IS NULL), count() FROM (SELECT x, (x = 1) OR (x = 2) OR (x = 3) AS e FROM (SELECT number % 4 AS x FROM numbers(8)) GROUP BY ROLLUP(x, x = 1, x = 2, x = 3)) SETTINGS group_by_use_nulls = 1;
 SELECT countIf(e IS NULL), count() FROM (SELECT x, (x = 1) OR (x = 2) OR (x = 3) AS e FROM (SELECT number % 4 AS x FROM numbers(8)) GROUP BY ROLLUP(x = 1, x = 2, x = 3, x)) SETTINGS group_by_use_nulls = 1;
+SELECT countIf(e IS NULL), count() FROM (SELECT x, (x = 1) OR (x = 2) OR (x = 3) AS e FROM (SELECT number % 4 AS x FROM numbers(8)) GROUP BY ROLLUP(x, e, if(e, x, 0) = 1)) SETTINGS enable_identifier_resolve_cache = 1, group_by_use_nulls = 1;
 
 SELECT 'and';
 SELECT (x != 1) AND (x != 2) AND (x != 3) AS e, count() FROM (SELECT number % 4 AS x FROM numbers(8)) GROUP BY x != 1, x != 2, x != 3 ORDER BY ALL;
@@ -29,6 +32,7 @@ SELECT (((x < y) AND (y < 5)) = 1) AND (x < 3) AS e, count() FROM (SELECT number
 SELECT countIf(e), count() FROM (SELECT x, y, (((x < y) AND (y < 5)) = 1) AND (x < 3) AS e FROM (SELECT number % 4 AS x, number % 6 AS y FROM numbers(12)) GROUP BY ROLLUP(x, y, (((x < y) AND (y < 5)) = 1) AND (x < 3)) ORDER BY ALL);
 SELECT ((((x > 0) AND (x > 1)) AND (y > 0)) OR ((x > 1) AND (y < 4))) AND (y < 5) AS e, count() FROM (SELECT number % 4 AS x, number % 5 AS y FROM numbers(12)) WHERE e GROUP BY e ORDER BY ALL SETTINGS enable_identifier_resolve_cache = 1, optimize_extract_common_expressions = 1;
 SELECT countIf(e), count() FROM (SELECT x, y, ((((x > 0) AND (x > 1)) AND (y > 0)) OR ((x > 1) AND (y < 4))) AND (y < 5) AS e FROM (SELECT number % 4 AS x, number % 5 AS y FROM numbers(12)) WHERE e GROUP BY ROLLUP(x, y, e) ORDER BY ALL) SETTINGS enable_identifier_resolve_cache = 1, optimize_extract_common_expressions = 1;
+SELECT toUInt8((x < y) AND (y < 5)) AS e, count() FROM (SELECT number % 4 AS x, number % 6 AS y FROM numbers(12)) GROUP BY e, if(e, x, 0) = 1 ORDER BY ALL SETTINGS enable_identifier_resolve_cache = 1;
 
 SELECT 'still rewritten';
 SELECT count() FROM (EXPLAIN QUERY TREE SELECT (x = 1) OR (x = 2) OR (x = 3), count() FROM (SELECT number % 4 AS x, number % 3 AS y FROM numbers(12)) GROUP BY x, y = 0) WHERE explain ILIKE '%function_name: in,%';
