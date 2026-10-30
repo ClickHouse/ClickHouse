@@ -241,15 +241,8 @@ struct FloatRoundingComputation
         }
         else if constexpr (scale_mode == ScaleMode::Negative)
         {
-            const T quotient = val / scale;
-            T res = roundWithMode(quotient, rounding_mode);
-            /// `val / scale` underflows to zero for a tiny nonzero `val`.
-            if constexpr (rounding_mode == RoundingMode::Ceil)
-                res = (quotient == T(0) && val > T(0)) ? T(1) : res;
-            else if constexpr (rounding_mode == RoundingMode::Floor)
-                res = (quotient == T(0) && val < T(0)) ? T(-1) : res;
-            res = res * scale;
-            /// `res * scale` overflows only for `val` at the type max, which has no digits below `scale`.
+            const T res = roundWithMode(val / scale, rounding_mode) * scale;
+            /// Overflows only for `val` at the type max, which has no digits below `scale`.
             return isFinite(res) ? res : val;
         }
         else
