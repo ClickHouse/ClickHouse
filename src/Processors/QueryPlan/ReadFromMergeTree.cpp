@@ -5257,8 +5257,7 @@ bool ReadFromMergeTree::supportsSkipIndexesOnDataRead() const
 
 static const char * indexTypeToString(ReadFromMergeTree::IndexType type);
 
-/// Calls `callback(stat, granules_before)` for every per-query index layer in the order the analysis applied them.
-/// Skips the initial total and the per-part entries added by `per_part_index_stats`.
+/// per-part entries from `per_part_index_stats` and the initial total are not layers
 template <typename Callback>
 static void forEachIndexLayer(const ReadFromMergeTree::IndexStats & index_stats, Callback && callback)
 {
