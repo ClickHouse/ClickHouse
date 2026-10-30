@@ -211,12 +211,51 @@ String makeFillValue(T value)
     return String(reinterpret_cast<const char *>(&value), sizeof(T));
 }
 
+/// The candidates for the value that marks a NULL are numbered by keys, and two values have the same
+/// key exactly when a reader takes them as equal. The bytes of an integer are compared, so its key is
+/// its bit pattern. A floating-point sentinel is compared by value: `-0.0` equals `+0.0`, and a NaN
+/// matches no sentinel that is not a NaN. So the key of a float orders the values that are not NaN by
+/// their value, with both zeros at the same key, and they take a contiguous range of keys, out of
+/// which the NaNs fall, so the search never picks a NaN.
+template <typename T>
+struct FillValueKeys
+{
+    using Bits = std::conditional_t<sizeof(T) == 1, UInt8,
+        std::conditional_t<sizeof(T) == 2, UInt16, std::conditional_t<sizeof(T) == 4, UInt32, UInt64>>>;
+
+    static constexpr Bits sign_bit = Bits(1) << (sizeof(Bits) * 8 - 1);
+
+    static constexpr Bits toKey(T value)
+    {
+        Bits bits = std::bit_cast<Bits>(value);
+        if constexpr (std::is_floating_point_v<T>)
+            return (bits & sign_bit) ? static_cast<Bits>(Bits(0) - bits) : static_cast<Bits>(bits | sign_bit);
+        else
+            return bits;
+    }
+
+    static constexpr T fromKey(Bits key)
+    {
+        if constexpr (std::is_floating_point_v<T>)
+            return std::bit_cast<T>(key >= sign_bit ? static_cast<Bits>(key & ~sign_bit) : static_cast<Bits>(Bits(0) - key));
+        else
+            return std::bit_cast<T>(key);
+    }
+
+    static constexpr Bits min_key = std::is_floating_point_v<T> ? toKey(-std::numeric_limits<T>::infinity()) : 0;
+    static constexpr Bits max_key = std::is_floating_point_v<T> ? toKey(std::numeric_limits<T>::infinity()) : std::numeric_limits<Bits>::max();
+
+    /// The number of distinct keys. Zero means that it does not fit in the counter, and then it is
+    /// larger than the number of values that any column can hold, so it never runs out.
+    static constexpr UInt64 num_keys = UInt64(max_key) - UInt64(min_key) + 1;
+};
+
 /// The value that marks a NULL has to be a value that the data itself does not contain, or reading
 /// the file back would turn that value into a NULL. The default of the netCDF library is only the
-/// first choice, and the search goes over the bit patterns of the type, because the comparison of a
-/// reader is on the bytes of a value as they are stored in the file.
+/// first choice, and the search goes over the keys of `FillValueKeys`, going down from it and
+/// wrapping around, so that it uses the equality of a reader.
 ///
-/// A column of `size` values takes at most `size` distinct values, so one of any `size + 1`
+/// A column of `size` values takes at most `size` distinct keys, so one of any `size + 1`
 /// candidates is free, and a single pass over the data that marks the candidates it takes in a
 /// bitmap of that many bits is enough. The search is therefore linear in the size of the column,
 /// and its memory is an eighth of the number of its values, which is a fraction of the column
@@ -229,21 +268,15 @@ String makeFillValue(T value)
 template <typename T, typename Source>
 String chooseFillValue(const Source * data, size_t size, const UInt8 * null_map, T preferred, bool only_if_default_is_taken)
 {
-    using Bits = std::conditional_t<sizeof(T) == 1, UInt8,
-        std::conditional_t<sizeof(T) == 2, UInt16, std::conditional_t<sizeof(T) == 4, UInt32, UInt64>>>;
+    using Keys = FillValueKeys<T>;
+    using Bits = typename Keys::Bits;
 
-    /// Zero means that the domain of the type does not fit in the counter, and then it is larger
-    /// than the number of values that any column can hold, so it never runs out.
-    static constexpr UInt64 domain_size = UInt64(std::numeric_limits<Bits>::max()) + 1;
-
-    /// The candidates are the bit patterns that follow the preferred one, going down. There is no
-    /// point in looking further than the domain of the type.
     UInt64 num_candidates = UInt64(size) + 1;
-    if (domain_size != 0)
-        num_candidates = std::min(num_candidates, domain_size);
+    if (Keys::num_keys != 0)
+        num_candidates = std::min(num_candidates, Keys::num_keys);
 
     static constexpr UInt64 bits_in_word = 64;
-    const auto first_candidate = std::bit_cast<Bits>(preferred);
+    const UInt64 first_key = Keys::toKey(preferred);
     std::vector<UInt64> taken((num_candidates + bits_in_word - 1) / bits_in_word, 0);
 
     for (size_t i = 0; i < size; ++i)
@@ -259,7 +292,14 @@ String chooseFillValue(const Source * data, size_t size, const UInt8 * null_map,
         else
             value = data[i].value;
 
-        UInt64 offset = static_cast<Bits>(first_candidate - std::bit_cast<Bits>(value));
+        if constexpr (std::is_floating_point_v<T>)
+            if (std::isnan(value))
+                continue;
+
+        /// The distance going down from the first candidate, modulo the number of keys. The result
+        /// is less than the number of keys, so the arithmetic modulo 2^64 gives it exactly.
+        UInt64 key = Keys::toKey(value);
+        UInt64 offset = key <= first_key ? first_key - key : first_key - key + Keys::num_keys;
         if (offset < num_candidates)
             taken[offset / bits_in_word] |= UInt64(1) << (offset % bits_in_word);
     }
@@ -275,7 +315,10 @@ String chooseFillValue(const Source * data, size_t size, const UInt8 * null_map,
         if (offset == 0 && only_if_default_is_taken)
             return {};
         if (offset < num_candidates)
-            return makeFillValue<T>(std::bit_cast<T>(static_cast<Bits>(first_candidate - offset)));
+        {
+            UInt64 key = offset <= first_key - Keys::min_key ? first_key - offset : first_key - offset + Keys::num_keys;
+            return makeFillValue<T>(Keys::fromKey(static_cast<Bits>(key)));
+        }
     }
 
     /// The data takes every value of the type, which is only possible for the small types.
@@ -495,6 +538,18 @@ void writeStringColumn(WriteBuffer & out, const IColumn & column, const UInt8 * 
 }
 
 }
+
+template <typename T>
+String chooseNetCDFFillValue(const T * data, size_t size, const UInt8 * null_map, T preferred, bool only_if_default_is_taken)
+{
+    return chooseFillValue<T, T>(data, size, null_map, preferred, only_if_default_is_taken);
+}
+
+template String chooseNetCDFFillValue<Int8>(const Int8 *, size_t, const UInt8 *, Int8, bool);
+template String chooseNetCDFFillValue<UInt8>(const UInt8 *, size_t, const UInt8 *, UInt8, bool);
+template String chooseNetCDFFillValue<Int64>(const Int64 *, size_t, const UInt8 *, Int64, bool);
+template String chooseNetCDFFillValue<Float32>(const Float32 *, size_t, const UInt8 *, Float32, bool);
+template String chooseNetCDFFillValue<Float64>(const Float64 *, size_t, const UInt8 *, Float64, bool);
 
 NetCDFOutputFormat::NetCDFOutputFormat(WriteBuffer & out_, SharedHeader header_)
     : IOutputFormat(header_, out_)

@@ -8,9 +8,13 @@
 #include <IO/ReadBufferFromString.h>
 #include <IO/WriteBufferFromString.h>
 #include <Processors/Formats/Impl/NetCDFOutputFormat.h>
+#include <Common/transformEndianness.h>
 
 #include <bit>
+#include <cmath>
 #include <cstring>
+#include <limits>
+#include <vector>
 
 using namespace DB;
 
@@ -73,4 +77,64 @@ TEST(NetCDFOutputFormat, ResetBetweenFiles)
         buffer.restart();
         format.resetFormatter();
     }
+}
+
+namespace
+{
+
+template <typename T>
+T decodeFillValue(const String & fill_value)
+{
+    EXPECT_EQ(fill_value.size(), sizeof(T));
+    T value;
+    memcpy(&value, fill_value.data(), sizeof(T));
+    transformEndianness<std::endian::native, std::endian::big>(value);
+    return value;
+}
+
+}
+
+/// A reader compares a floating-point sentinel by value, so the fill value must not equal any value
+/// of the data by value: `-0.0` takes `+0.0`, and a NaN in the data takes nothing.
+TEST(NetCDFOutputFormat, FloatFillValueByValue)
+{
+    {
+        /// `+0.0` is preferred, and `-0.0` is in the data.
+        std::vector<Float32> data{-0.0f};
+        Float32 fill = decodeFillValue<Float32>(chooseNetCDFFillValue<Float32>(data.data(), data.size(), nullptr, 0.0f, false));
+        EXPECT_NE(fill, 0.0f);
+        EXPECT_FALSE(std::isnan(fill));
+    }
+    {
+        /// The candidates below the smallest positive denormal are `+0.0`, which equals the `-0.0`
+        /// of the data, and then the negative values, never a NaN.
+        Float32 denormal = std::numeric_limits<Float32>::denorm_min();
+        std::vector<Float32> data{denormal, -0.0f};
+        Float32 fill = decodeFillValue<Float32>(chooseNetCDFFillValue<Float32>(data.data(), data.size(), nullptr, denormal, false));
+        EXPECT_EQ(fill, -denormal);
+    }
+    {
+        /// Below the negative infinity, the search wraps around to the positive infinity.
+        Float64 inf = std::numeric_limits<Float64>::infinity();
+        std::vector<Float64> data{-inf, std::nan("")};
+        Float64 fill = decodeFillValue<Float64>(chooseNetCDFFillValue<Float64>(data.data(), data.size(), nullptr, -inf, false));
+        EXPECT_EQ(fill, inf);
+    }
+    {
+        /// A NaN in the data does not take the preferred value.
+        std::vector<Float64> data{std::nan(""), -std::nan("")};
+        EXPECT_EQ(chooseNetCDFFillValue<Float64>(data.data(), data.size(), nullptr, 1.0, true), "");
+    }
+}
+
+/// The integers are compared by their bytes, and the search wraps around the domain.
+TEST(NetCDFOutputFormat, IntegerFillValueWrapsAround)
+{
+    std::vector<UInt8> data{0, 255};
+    EXPECT_EQ(decodeFillValue<UInt8>(chooseNetCDFFillValue<UInt8>(data.data(), data.size(), nullptr, 0, false)), 254);
+
+    std::vector<Int64> wide{std::numeric_limits<Int64>::min()};
+    EXPECT_EQ(
+        decodeFillValue<Int64>(chooseNetCDFFillValue<Int64>(wide.data(), wide.size(), nullptr, std::numeric_limits<Int64>::min(), false)),
+        std::numeric_limits<Int64>::max());
 }

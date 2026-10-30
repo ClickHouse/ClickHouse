@@ -9,6 +9,12 @@
 namespace DB
 {
 
+/// The value, in the big-endian representation of the file, that marks the NULLs of a column with
+/// the values `data`: `preferred` if the data does not contain it, otherwise a nearby value that the
+/// data does not contain, by the equality that a reader uses. Exposed for the tests.
+template <typename T>
+String chooseNetCDFFillValue(const T * data, size_t size, const UInt8 * null_map, T preferred, bool only_if_default_is_taken);
+
 /// Writes the data as a NetCDF classic file. Every column becomes a one-dimensional variable over a
 /// single dimension named `row`, and a String column additionally gets a dimension that holds the
 /// length of the longest string in it.
