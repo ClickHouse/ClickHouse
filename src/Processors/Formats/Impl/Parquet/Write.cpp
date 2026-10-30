@@ -2249,8 +2249,13 @@ void writeColumnImpl(
                         h = XXH_INLINE_XXH64(converted[i].ptr, converted[i].len, seed);
                     else
                     {
-                        static_assert(sizeof(converted[i]) <= 12, "unexpected non-primitive type");
-                        h = XXH_INLINE_XXH64(reinterpret_cast<const void*>(&converted[i]), sizeof(converted[i]), seed);
+                        /// Parquet bloom filters hash the `PLAIN`-encoded (little-endian) bytes of the value,
+                        /// so hash a little-endian copy to produce the same digest on big-endian hosts.
+                        using T = std::decay_t<decltype(converted[i])>;
+                        static_assert(sizeof(T) <= 12, "unexpected non-primitive type");
+                        char le_bytes[sizeof(T)];
+                        unalignedStoreLittleEndian<T>(le_bytes, converted[i]);
+                        h = XXH_INLINE_XXH64(le_bytes, sizeof(T), seed);
                     }
                     const size_t block_idx = ((h >> 32) * num_blocks) >> 32;
                     chassert(block_idx < num_blocks);

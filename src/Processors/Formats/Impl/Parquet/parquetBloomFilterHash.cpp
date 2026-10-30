@@ -4,6 +4,7 @@
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
+#include <base/unaligned.h>
 
 #if USE_PARQUET
 
@@ -28,10 +29,14 @@ uint64_t hashBytes(const void * data, size_t size)
 #pragma clang diagnostic pop
 }
 
+/// Parquet bloom filters hash the `PLAIN`-encoded bytes of the value, which are little-endian
+/// for fixed-width numbers, so hash a little-endian copy to get the same digest on big-endian hosts.
 template <typename T>
 uint64_t hashValue(T value)
 {
-    return hashBytes(&value, sizeof(T));
+    char le_bytes[sizeof(T)];
+    unalignedStoreLittleEndian<T>(le_bytes, value);
+    return hashBytes(le_bytes, sizeof(T));
 }
 
 }
