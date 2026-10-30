@@ -340,9 +340,9 @@ deserializeWindowFunctions(ReadBuffer & in, const Block & input_header)
     return window_functions;
 }
 
-void WindowStep::serializeSettings(QueryPlanSerializationSettings & settings, UInt64 /*version*/) const
+void WindowStep::serializeSettings(QueryPlanSerializationSettings & settings, UInt64 version) const
 {
-    sort_settings.updatePlanSettings(settings);
+    sort_settings.updatePlanSettings(settings, version);
 }
 
 void WindowStep::serialize(Serialization & ctx) const

@@ -78,6 +78,7 @@ struct Optimization
         bool is_explain{};
 
         size_t max_block_size{};
+        size_t max_streams_per_hierarchical_merge{};
 
         /// Mirrors `QueryPlanOptimizationSettings::push_down_volume_reducing_functions`.
         /// `tryExecuteFunctionsAfterSorting` consults it to avoid pinging volume-reducing
