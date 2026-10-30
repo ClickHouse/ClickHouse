@@ -1,0 +1,8 @@
+-- a scalar subquery
+1
+-- an expression of a scalar subquery
+1
+-- an array scalar subquery
+1
+-- a scalar subquery over a table function
+1

@@ -1,4 +1,5 @@
 #include <Analyzer/ArrayJoinNode.h>
+#include <Analyzer/ConstantNode.h>
 #include <Analyzer/IQueryTreeNode.h>
 #include <Analyzer/InDepthQueryTreeVisitor.h>
 #include <Analyzer/JoinNode.h>
@@ -735,6 +736,34 @@ StorageID getStorageIDForParallelReplicas(const ITableExpressionNode & table_exp
 namespace
 {
 
+bool dependsOnSubquery(const QueryTreeNodePtr & node)
+{
+    if (node->getNodeType() == QueryTreeNodeType::QUERY || node->getNodeType() == QueryTreeNodeType::UNION)
+        return true;
+    if (const auto * constant_node = node->as<ConstantNode>(); constant_node && constant_node->hasSourceExpression())
+        return dependsOnSubquery(constant_node->getSourceExpression());
+    for (const auto & child : node->getChildren())
+        if (child && dependsOnSubquery(child))
+            return true;
+    return false;
+}
+
+/// Type-only analysis does not execute scalar subqueries, and a constant it makes of one, or folds from one, holds a
+/// placeholder value. Such a constant is replaced with the expression it was made of.
+class RestoreScalarSubqueriesVisitor : public InDepthQueryTreeVisitor<RestoreScalarSubqueriesVisitor>
+{
+public:
+    static void visitImpl(QueryTreeNodePtr & node)
+    {
+        while (const auto * constant_node = node->as<ConstantNode>())
+        {
+            if (!constant_node->hasSourceExpression() || !dependsOnSubquery(constant_node->getSourceExpression()))
+                return;
+            node = constant_node->getSourceExpression();
+        }
+    }
+};
+
 class CollectTableFunctionNodesVisitor : public InDepthQueryTreeVisitor<CollectTableFunctionNodesVisitor>
 {
 public:
@@ -784,8 +813,14 @@ private:
         else
             return;
 
-        auto view_query = argument->clone();
-        QueryAnalysisPass(/*only_analyze=*/true).run(view_query, context);
+        /// Without the optimization, a scalar subquery becomes a constant rather than `__getScalar`, which names a
+        /// scalar the replicas do not have.
+        auto analysis_context = Context::createCopy(context);
+        analysis_context->setSetting("enable_scalar_subquery_optimization", false);
+        auto view_query = buildQueryTree(argument->toAST(), analysis_context);
+        QueryAnalysisPass(/*only_analyze=*/true).run(view_query, analysis_context);
+        /// Before the qualification, which does not look into the source expressions of constants.
+        RestoreScalarSubqueriesVisitor().visit(view_query);
         qualifyTableFunctionArguments(view_query);
         argument = buildQueryTree(view_query->toAST(), context);
     }
