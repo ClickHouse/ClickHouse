@@ -660,6 +660,8 @@ protected:
     /// Set for CREATE queries a Replicated database replays from a definition it already stored.
     /// Such a definition describes existing state, so validation that may reject a new one must not run.
     bool is_recovery_from_stored_metadata = false;
+    /// Set while a mutation is validated: its expressions are executed later in the background, without a user.
+    bool is_validating_mutation = false;
     /// `EXPLAIN WHATIF` plans the query without the projections that it weighs, so its plans skip the forced projection check
     bool skip_forced_projection_check = false;
     /// True when this context belongs to the inner query of an expanded view.
@@ -2036,6 +2038,9 @@ public:
     bool skipsForcedProjectionCheck() const { return skip_forced_projection_check; }
     void setSkipForcedProjectionCheck() { skip_forced_projection_check = true; }
     void setRecoveryFromStoredMetadata(bool value) { is_recovery_from_stored_metadata = value; }
+
+    bool isValidatingMutation() const { return is_validating_mutation; }
+    void setValidatingMutation(bool value) { is_validating_mutation = value; }
 
     bool isViewInnerQuery() const { return is_view_inner_query; }
     void setIsViewInnerQuery(bool value) { is_view_inner_query = value; }

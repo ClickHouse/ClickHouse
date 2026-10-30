@@ -62,7 +62,7 @@ public:
         return std::make_shared<FunctionAiEmbed>(context);
     }
 
-    explicit FunctionAiEmbed(ContextPtr context_) : context(context_) {}
+    explicit FunctionAiEmbed(ContextPtr context_) : context(context_) { FunctionBaseAI::checkNotInMutation(context); }
 
     String getName() const override { return name; }
     bool isVariadic() const override { return true; }

@@ -87,7 +87,7 @@ public:
         return std::make_shared<FunctionAiSimilarity>(context);
     }
 
-    explicit FunctionAiSimilarity(ContextPtr context_) : context(context_) {}
+    explicit FunctionAiSimilarity(ContextPtr context_) : context(context_) { FunctionBaseAI::checkNotInMutation(context); }
 
     String getName() const override { return name; }
     bool isVariadic() const override { return true; }

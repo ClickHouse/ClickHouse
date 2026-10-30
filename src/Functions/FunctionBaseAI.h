@@ -52,7 +52,7 @@ using AIParamValues = std::map<String, Field, std::less<>>; // STYLE_CHECK_ALLOW
 class FunctionBaseAI : public IFunction
 {
 public:
-    explicit FunctionBaseAI(ContextPtr context_) : context(context_) {}
+    explicit FunctionBaseAI(ContextPtr context_) : context(context_) { checkNotInMutation(context); }
 
     bool isStateful() const override { return true; }
     bool isDeterministic() const override { return false; }
@@ -142,6 +142,9 @@ public:
     /// Throws if the context has no user. Background work (merges, mutations, `Buffer` flushes) evaluates
     /// expressions with such a context, which has full access, so the privilege checks do not apply to it.
     static void checkHasUser(const ContextPtr & context);
+
+    /// Throws if a mutation is being validated: mutations are executed in the background, where `checkHasUser` throws.
+    static void checkNotInMutation(const ContextPtr & context);
 
     /// Result of `embedTexts`. `embeddings` is aligned 1:1 with the `inputs` argument of `embedTexts`. An
     /// entry is empty when that input was not embedded (quota exceeded, or a failed request with

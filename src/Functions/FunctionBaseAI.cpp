@@ -58,6 +58,7 @@ namespace ErrorCodes
 {
     extern const int ACCESS_DENIED;
     extern const int BAD_ARGUMENTS;
+    extern const int NOT_IMPLEMENTED;
 }
 
 namespace
@@ -375,6 +376,14 @@ void FunctionBaseAI::checkHasUser(const ContextPtr & context)
     if (!context->getUserID())
         throw Exception(ErrorCodes::ACCESS_DENIED,
             "AI functions cannot be executed without a user, e.g. in background merges, mutations or `Buffer` flushes");
+}
+
+void FunctionBaseAI::checkNotInMutation(const ContextPtr & context)
+{
+    if (context->isValidatingMutation())
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+            "AI functions cannot be used in mutations, which are executed in the background. "
+            "Use a lightweight `UPDATE` or `INSERT ... SELECT` instead");
 }
 
 AIParamSpecs FunctionBaseAI::embeddingParams()
