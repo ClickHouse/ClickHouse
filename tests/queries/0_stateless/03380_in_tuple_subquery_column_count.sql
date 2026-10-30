@@ -2,8 +2,6 @@
 -- The validation lives in the analyzer, so force it on regardless of the CI variant.
 -- https://github.com/ClickHouse/ClickHouse/issues/74442
 
-SET enable_analyzer = 1;
-
 SELECT (1, 1) IN (SELECT 1); -- { serverError NUMBER_OF_COLUMNS_DOESNT_MATCH }
 SELECT 1 IN (SELECT 1, 2); -- { serverError NUMBER_OF_COLUMNS_DOESNT_MATCH }
 SELECT (1, 1, 1) IN (SELECT 1, 2); -- { serverError NUMBER_OF_COLUMNS_DOESNT_MATCH }

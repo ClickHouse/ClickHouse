@@ -27,7 +27,7 @@ SETTINGS optimize_or_like_chain = 0;
 -- Rewrite enabled, analyzer: must fall back to combined `match` (RE2) and return the same result.
 SELECT count() FROM t_or_like_match_re2
 WHERE match(s, '\\C') OR match(s, 'one') OR match(s, 'two') OR match(s, 'three') OR match(s, 'nomatch')
-SETTINGS optimize_or_like_chain = 1, optimize_or_like_chain_min_patterns = 1, allow_hyperscan = 1, enable_analyzer = 1;
+SETTINGS optimize_or_like_chain = 1, optimize_or_like_chain_min_patterns = 1, allow_hyperscan = 1;
 
 -- Rewrite enabled, old analyzer: same.
 
@@ -35,6 +35,6 @@ SETTINGS optimize_or_like_chain = 1, optimize_or_like_chain_min_patterns = 1, al
 -- the chain is kept as-is), to prove the default-on rewrite no longer turns this into an exception.
 SELECT count() FROM t_or_like_match_re2
 WHERE match(s, '\\C') OR match(s, 'one') OR match(s, 'two') OR match(s, 'three') OR match(s, 'nomatch')
-SETTINGS optimize_or_like_chain = 1, allow_hyperscan = 1, enable_analyzer = 1;
+SETTINGS optimize_or_like_chain = 1, allow_hyperscan = 1;
 
 DROP TABLE t_or_like_match_re2;
