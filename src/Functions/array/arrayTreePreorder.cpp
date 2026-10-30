@@ -363,9 +363,7 @@ so the result is deterministic. The time complexity is linear in the array size,
 
 The function does not throw on the content of the arrays, and makes a valid forest from any input:
 - A node is a root if its parent identifier is `NULL` or is not present in `ids`, for example an empty string or an orphan node.
-- If the parent links make a cycle, the link of the node of the cycle which comes first in the input is cut, and this node becomes a root.
-  Its `parent` keeps the position of its real parent, which is greater than its own position. A node which is its own parent gets `parent[k] = k`.
-  So, `parent[k] > k` shows that a cycle was cut at position `k`.
+- If the parent links make a cycle, the link of the node of the cycle which comes first in the input is cut, and this node becomes a root. Its `parent` keeps the position of its real parent, which is greater than its own position, so `parent[k] > k` shows that a cycle was cut at position `k`. A node which is its own parent gets `parent[k] = k`.
 - If `ids` has duplicate values, the children are attached to the first occurrence.
 )";
     FunctionDocumentation::Syntax syntax = "arrayTreePreorder(ids, parent_ids)";
