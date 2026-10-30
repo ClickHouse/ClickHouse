@@ -268,9 +268,27 @@ KeeperHandlingConsumer::getLockedTopicPartitions()
     auto lock_nodes = keeper->getChildren(keeper_path / "topic_partition_locks");
     std::unordered_set<String> replicas_with_lock;
 
+    Strings lock_paths;
+    lock_paths.reserve(lock_nodes.size());
     for (const auto & lock_name : lock_nodes)
+        lock_paths.push_back(keeper_path / "topic_partition_locks" / lock_name);
+
+    /// Locks are released and re-acquired as replicas rebalance. A lock listed by
+    /// getChildren() may already be gone by the time we read it; such a lock is held
+    /// by no one, so skip it instead of failing the whole polling round. Batched tryGet
+    /// also replaces N sequential synchronous gets with a single round-trip.
+    auto lock_responses = keeper->tryGet(lock_paths);
+
+    for (size_t i = 0; i < lock_nodes.size(); ++i)
     {
-        replicas_with_lock.insert(keeper->get(keeper_path / "topic_partition_locks" / lock_name));
+        const auto & lock_response = lock_responses[i];
+        if (lock_response.error == Coordination::Error::ZNONODE)
+            continue;
+        if (lock_response.error != Coordination::Error::ZOK)
+            throw Coordination::Exception(lock_response.error, "Can't get data for node {}", lock_paths[i]);
+        replicas_with_lock.insert(lock_response.data);
+
+        const auto & lock_name = lock_nodes[i];
         auto base = lock_name.substr(0, lock_name.size() - 5); // drop ".lock"
         auto sep = base.rfind('_');
         if (sep == String::npos)
