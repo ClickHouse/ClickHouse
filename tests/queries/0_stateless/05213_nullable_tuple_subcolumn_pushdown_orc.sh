@@ -30,7 +30,7 @@ run_and_report() {
 
     ${CLICKHOUSE_CLIENT} --query "
         SELECT ${projection} FROM ${source} WHERE ${predicate}
-        SETTINGS enable_nullable_tuple_type = 1, enable_analyzer = 1, max_threads = 1,
+        SETTINGS enable_nullable_tuple_type = 1, max_threads = 1,
                  optimize_functions_to_subcolumns = ${optimize}, input_format_orc_filter_push_down = 1
         FORMAT JSON" \
         | jq -c --arg name "${label}" '{label: $name, result: .data, rows_read: .statistics.rows_read}'

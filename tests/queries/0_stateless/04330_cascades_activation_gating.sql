@@ -4,7 +4,6 @@
 -- e.g. a partial aggregation created for `WITH TOTALS` reaches `TotalsHaving`
 -- unmerged and produces duplicate groups.
 
-SET enable_analyzer = 1;
 SET enable_parallel_replicas = 0;
 SET enable_join_runtime_filters = 0;
 SET param__internal_cascades_cluster_node_count = 4;
@@ -160,7 +159,7 @@ DROP TABLE t_gating_one;
 -- so recomputing it independently on every node can give each node different rows. A subplan
 -- that contains an ANY join must be computed once and broadcast, never replicated per node.
 -- The stat hints make the fact side decisively large, so the dimension side of the outer join
--- gets a replicated requirement.
+-- gets a replicated requirement. The hint for the group key `name` keeps the number of groups small.
 SELECT '-- 15. A subplan with an ANY join is broadcast, not recomputed per node';
 -- Materialized statistics would displace the stat hints with the real (small) table sizes
 -- and the plan would collapse to a single node, so keep the inserts from materializing them.
@@ -177,7 +176,7 @@ INSERT INTO t_gating_dim2 SELECT number % 100, toString(number) FROM numbers(200
 SET param__internal_join_table_stat_hints = '{
     "t_gating_fact": { "cardinality": 100000000, "distinct_keys": { "k": 1000 } },
     "t_gating_dim1": { "cardinality": 1000, "distinct_keys": { "k": 1000, "d": 1000 } },
-    "t_gating_dim2": { "cardinality": 200, "distinct_keys": { "d": 100 } }
+    "t_gating_dim2": { "cardinality": 200, "distinct_keys": { "d": 100, "name": 200 } }
 }';
 -- The outer probe runs without Cascades (`viewExplain` reads are rejected, see case 7); the
 -- explained query enables it. Counts: replicated-subplan steps (must be 0), broadcasts (1).
