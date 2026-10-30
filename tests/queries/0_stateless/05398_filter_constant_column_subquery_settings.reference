@@ -29,3 +29,9 @@ aggregate projection, inner enabled, outer disabled
 aggregate projection, filter output is constant
 05398_projection_inner_disabled	0
 05398_projection_inner_enabled	1
+prewhere after final, inner disabled, outer enabled
+0
+0
+prewhere after final, inner enabled, outer disabled
+1
+1

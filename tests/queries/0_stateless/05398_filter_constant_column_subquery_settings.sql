@@ -162,3 +162,29 @@ GROUP BY q.log_comment
 ORDER BY q.log_comment;
 
 DROP TABLE t_filter_const_subquery_settings_projection;
+
+-- An explicit `PREWHERE` deferred until after `FINAL` is applied by a filter added by the read itself.
+DROP TABLE IF EXISTS t_filter_const_subquery_settings_final;
+CREATE TABLE t_filter_const_subquery_settings_final (id UInt64, x String)
+ENGINE = ReplacingMergeTree ORDER BY id;
+INSERT INTO t_filter_const_subquery_settings_final VALUES (1, 'hello'), (2, 'world'), (3, 'hello');
+
+SELECT 'prewhere after final, inner disabled, outer enabled';
+SELECT dumpColumnStructure(x) LIKE '%Const%'
+FROM
+(
+    SELECT x FROM t_filter_const_subquery_settings_final FINAL PREWHERE x = 'hello'
+    SETTINGS optimize_constant_columns_after_filter = 0, apply_prewhere_after_final = 1
+)
+SETTINGS optimize_constant_columns_after_filter = 1;
+
+SELECT 'prewhere after final, inner enabled, outer disabled';
+SELECT dumpColumnStructure(x) LIKE '%Const%'
+FROM
+(
+    SELECT x FROM t_filter_const_subquery_settings_final FINAL PREWHERE x = 'hello'
+    SETTINGS optimize_constant_columns_after_filter = 1, apply_prewhere_after_final = 1
+)
+SETTINGS optimize_constant_columns_after_filter = 0;
+
+DROP TABLE t_filter_const_subquery_settings_final;
