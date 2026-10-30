@@ -96,7 +96,6 @@ size_t tryMergeExpressions(QueryPlan::Node * parent_node, QueryPlan::Nodes &, co
             parent_filter->getFilterColumnName(),
             parent_filter->removesFilterColumn());
         filter->setStepDescription(mergeStepDescriptions(parent_filter->getStepDescription(), child_expr->getStepDescription()), settings.max_step_description_length);
-        parent_filter->copyExtremesHandlingTo(*filter);
 
         parent_node->step = std::move(filter);
         parent_node->children.swap(child_node->children);
@@ -170,10 +169,6 @@ size_t tryReplaceAlwaysTrueFilter(QueryPlan::Node * node, QueryPlan::Nodes &, co
     const auto & filter_column_name = filter->getFilterColumnName();
     const auto & filter_node = dag.findInOutputs(filter_column_name);
     if (filter_node.type != ActionsDAG::ActionType::COLUMN || !ConstantFilterDescription(*filter_node.column).always_true)
-        return 0;
-
-    /// The expression step would expand the extremes by the `arrayJoin`, which the filter does not do.
-    if (filter->skipsExtremes() && dag.hasArrayJoin())
         return 0;
 
     dag.removeUnusedResult(filter_column_name);

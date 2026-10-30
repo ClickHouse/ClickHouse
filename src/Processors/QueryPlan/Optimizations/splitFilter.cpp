@@ -68,11 +68,6 @@ size_t trySplitFilter(QueryPlan::Node * node, QueryPlan::Nodes & nodes, const Op
     if (split.second.trivial())
         return 0;
 
-    /// An `arrayJoin` the predicate no longer reads (e.g. folded away by `OR 1`) would expand the extremes
-    /// in the expression step, so it stays in the filter that skips them.
-    if (filter_step->skipsExtremes() && split.second.hasArrayJoin())
-        return 0;
-
     /// The filter node may have been renamed by the split to avoid clashing with an input of the same name.
     std::string split_filter_name = split.split_nodes_mapping.at(filter_dag_node)->result_name;
 
@@ -88,13 +83,11 @@ size_t trySplitFilter(QueryPlan::Node * node, QueryPlan::Nodes & nodes, const Op
     node->children.swap(filter_node.children);
     node->children.push_back(&filter_node);
 
-    auto split_filter_step = std::make_unique<FilterStep>(
+    filter_node.step = std::make_unique<FilterStep>(
             filter_node.children.at(0)->step->getOutputHeader(),
             std::move(split.first),
             std::move(split_filter_name),
             remove_filter);
-    filter_step->copyExtremesHandlingTo(*split_filter_step);
-    filter_node.step = std::move(split_filter_step);
 
     auto expression_step = std::make_unique<ExpressionStep>(filter_node.step->getOutputHeader(), std::move(split.second));
 

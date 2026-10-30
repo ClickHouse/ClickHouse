@@ -101,10 +101,6 @@ static Optimization::ExtraSettings makeExtraSettings(const QueryPlanOptimization
         optimization_settings.legacy_array_join_function_nondeterministic_evaluation,
         optimization_settings.enable_lazy_columns_replication,
         optimization_settings.filter_push_down_below_limit_by,
-        optimization_settings.filter_push_down,
-        optimization_settings.lift_up_array_join,
-        optimization_settings.split_filter,
-        optimization_settings.merge_expressions,
     };
 }
 
