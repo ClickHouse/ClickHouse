@@ -24,38 +24,6 @@
 
 # 2026 Changelog
 
-<!-- CHANGELOG-RAW-BEGIN: auto-generated entries below are edited and removed by the nightly changelog CI job; do not edit them manually -->
-### ClickHouse release bee6deac10f424b411207039c0e8d653f4d71aa8 (bee6deac10f) FIXME as compared to 474f3e327db3b2d947433adac57e79bc2155a923 (474f3e327db)
-
-#### Performance Improvement
-* Speed up `CAST` from `Enum8` and `Enum16` to `LowCardinality(String)`, also inside `Map`, `Array` and `Tuple`. [#127241](https://github.com/ClickHouse/ClickHouse/pull/127241) ([Nikolay Degterinsky](https://github.com/evillique)).
-
-#### Improvement
-* Support the `AWS_ENDPOINT_URL_STS` environment variable for S3 web identity credentials, and use the `.amazonaws.eu` STS endpoint in `eusc-*` regions. [#126761](https://github.com/ClickHouse/ClickHouse/pull/126761) ([Asya Shneerson](https://github.com/asya-ch)).
-
-#### Bug Fix (user-visible misbehavior in an official stable release)
-* Fixed `geoToUTM`, `UTMToGeo`, and `geoToMGRS` for latitudes just below the equator: the band letter and the false northing now agree, the round trip returns the original coordinates, and `geoToMGRS` returns a square that `MGRSToGeo` accepts. [#127655](https://github.com/ClickHouse/ClickHouse/pull/127655) ([Vevan O Narain](https://github.com/Vevan05)).
-* Fixed an abort of `clickhouse-client`, `clickhouse-local` and `clickhouse-format --hilite` when highlighting a query whose string literal ends with an incomplete UTF-8 sequence, for example `SELECT length(x'E2')`. Such a query is now highlighted without reading past its end, and the closing bracket gets its own color. [#127906](https://github.com/ClickHouse/ClickHouse/pull/127906) ([Groene AI](https://github.com/groeneai)).
-* Fix `SELECT ... FINAL` from a `GraphiteMergeTree` table, which returned several partially rolled-up rows for one rollup bucket when the parts were read in parallel layers, split into non-intersecting ranges or merged per partition. Closes [#127522](https://github.com/ClickHouse/ClickHouse/issues/127522). [#128165](https://github.com/ClickHouse/ClickHouse/pull/128165) ([Yarik Briukhovetskyi](https://github.com/yariks5s)).
-
-#### Build/Testing/Packaging Improvement
-* Link the executables with `-z noexecstack` and `-z nodlopen`: the stack stays non-executable whichever linker is used, and other programs cannot load the `clickhouse` binary with `dlopen`. [#127981](https://github.com/ClickHouse/ClickHouse/pull/127981) ([Groene AI](https://github.com/groeneai)).
-* Build with `-fstrict-flex-arrays=3` (except on macOS and in UndefinedBehaviorSanitizer builds), so that only a trailing `[]` member is treated as a flexible array, and `-Warray-bounds` and `__builtin_object_size` know the bounds of every other array. [#128007](https://github.com/ClickHouse/ClickHouse/pull/128007) ([Groene AI](https://github.com/groeneai)).
-
-#### NOT FOR CHANGELOG / INSIGNIFICANT
-
-* Iceberg REST Catalog: Improve location validation. [#127285](https://github.com/ClickHouse/ClickHouse/pull/127285) ([Asya Shneerson](https://github.com/asya-ch)).
-* [needs human] Add 7 tests for coverage gaps in 6 components. [#127528](https://github.com/ClickHouse/ClickHouse/pull/127528) ([ClickGap AI Bot](https://github.com/clickgapai)).
-* Fix a SIGSEGV in UBSan builds when `match`, `extract`, `extractAll` or `replaceRegexpOne/All` call the JIT-compiled regexp matcher. Release builds are not affected. [#127750](https://github.com/ClickHouse/ClickHouse/pull/127750) ([Groene AI](https://github.com/groeneai)).
-* `05441_iceberg_more_manifests_than_read_ahead` no longer runs in the MSan stateless test jobs. [#127798](https://github.com/ClickHouse/ClickHouse/pull/127798) ([Groene AI](https://github.com/groeneai)).
-* Raise the memory limit of `05449_radix_uniq_exact_spill_bounded_sets`. [#127837](https://github.com/ClickHouse/ClickHouse/pull/127837) ([Raúl Marín](https://github.com/Algunenano)).
-* Add a test for auto-converted `url` into a `remote()` destination. [#127943](https://github.com/ClickHouse/ClickHouse/pull/127943) ([Igor Nikonov](https://github.com/devcrafter)).
-* Fix flaky `04249_min_allocation_size_to_throw_on_memory_limit`. [#127979](https://github.com/ClickHouse/ClickHouse/pull/127979) ([Alexey Milovidov](https://github.com/alexey-milovidov)).
-* `05397_clickhouse_local_locked_path_untouched` is skipped on macOS, where the util-linux `flock` command it uses is not available. [#128088](https://github.com/ClickHouse/ClickHouse/pull/128088) ([Groene AI](https://github.com/groeneai)).
-* Not required. [#128144](https://github.com/ClickHouse/ClickHouse/pull/128144) ([Groene AI](https://github.com/groeneai)).
-* Tag four `json_shared_typed_paths` tests with `no-msan`. [#128150](https://github.com/ClickHouse/ClickHouse/pull/128150) ([Nikita Fomichev](https://github.com/fm4v)).
-<!-- CHANGELOG-RAW-END -->
-
 ### <a id="2611"></a> ClickHouse release 26.11, FIXME (in progress)
 
 #### Backward Incompatible Change
@@ -127,6 +95,7 @@
 * Queries with `ARRAY JOIN` followed by `ORDER BY ... LIMIT` can run faster when the sort keys do not depend on expanded columns, by sorting and limiting the input rows before expanding the arrays. Controlled by `query_plan_top_k_through_array_join`, disabled by default. [#116550](https://github.com/ClickHouse/ClickHouse/pull/116550) ([yanglongwei](https://github.com/ylw510)).
 * The `TimeSeries` engine now uses a bucketed schema for its inner samples table. [#117344](https://github.com/ClickHouse/ClickHouse/pull/117344) ([Vitaly Baranov](https://github.com/vitlibar)).
 * Distributed query plans (`make_distributed_plan`) now size read tasks according to the number of selected rows and workers by default (`distributed_plan_default_reader_bucket_count = 0`), controlled by the new setting `distributed_plan_min_rows_per_reader`. They avoid unnecessary exchanges before partial aggregation or sorting and cap worker `max_threads` at the worker's CPU count. [#126945](https://github.com/ClickHouse/ClickHouse/pull/126945) ([Shankar Iyer](https://github.com/shankar-iyer)).
+* The experimental `Iceberg` REST catalog server now rejects namespace locations containing an embedded URI, such as `s3://warehouse/s3://other/x`, so writes cannot be redirected outside the warehouse bucket. [#127285](https://github.com/ClickHouse/ClickHouse/pull/127285) ([Asya Shneerson](https://github.com/asya-ch)).
 
 #### Performance Improvement
 * Speed up `GROUP BY` and `DISTINCT` with multiple fixed-width keys that include `Nullable` keys. Such queries take 12–26% less time on typical key sets and can be up to 2.5 times as fast with few distinct groups. Closes [#120100](https://github.com/ClickHouse/ClickHouse/issues/120100). [#126098](https://github.com/ClickHouse/ClickHouse/pull/126098) ([Groene AI](https://github.com/groeneai)).
@@ -229,6 +198,7 @@
 * The statistics of data parts are loaded in parallel (up to `max_threads` threads) for part pruning by statistics, the ordering of `PREWHERE` conditions and `min`/`max`/`count` from statistics. This speeds up the first queries over tables with many parts on a cold disk. [#126625](https://github.com/ClickHouse/ClickHouse/pull/126625) ([Alexey Milovidov](https://github.com/alexey-milovidov)).
 * Faster `ORDER BY` over the result of a `JOIN` with `enable_lazy_columns_replication`, while retaining the memory savings of lazy replication for wide values. The query from [#122436](https://github.com/ClickHouse/ClickHouse/issues/122436) became about 9 times faster. [#124702](https://github.com/ClickHouse/ClickHouse/pull/124702) ([Pavel Kruglov](https://github.com/Avogar)).
 * Improve performance of `min`, `max`, `argMin`, `argMax` and their `-If` variants on AArch64 CPUs with SVE, such as AWS Graviton3 and Graviton4. [#122860](https://github.com/ClickHouse/ClickHouse/pull/122860) ([Chiranmoy Bhattacharya](https://github.com/chiranmoyf)).
+* Speed up `CAST` from `Enum8` and `Enum16` to `LowCardinality(String)`, also inside `Map`, `Array` and `Tuple`. [#127241](https://github.com/ClickHouse/ClickHouse/pull/127241) ([Nikolay Degterinsky](https://github.com/evillique)).
 
 #### Improvement
 * Added the `access_control_improvements.forbid_sql_access_entities_targeting_users_config` setting to block SQL-created quotas, row policies and settings profiles from applying to users defined in `users.xml`. [#124940](https://github.com/ClickHouse/ClickHouse/pull/124940) ([Nikolay Degterinsky](https://github.com/evillique)).
@@ -301,6 +271,7 @@
 * In `Pretty` formats, the ellipsis of a value cut by `output_format_pretty_max_value_width` is no longer underlined when the cut falls inside highlighted trailing whitespace or a highlighted digit group. Closes [#104834](https://github.com/ClickHouse/ClickHouse/issues/104834). [#126146](https://github.com/ClickHouse/ClickHouse/pull/126146) ([Groene AI](https://github.com/groeneai)).
 * A full-definition `ATTACH TABLE` now refuses a column of type `Dynamic` or `JSON` for a table engine that does not support columns with dynamic structure (for example `Log`, `TinyLog`, `StripeLog`), the same way `CREATE TABLE` does. Previously such a table was attached and its first `INSERT` failed with a `LOGICAL_ERROR`. Existing tables still load at server startup and with a short `ATTACH TABLE`. [#127613](https://github.com/ClickHouse/ClickHouse/pull/127613) ([Groene AI](https://github.com/groeneai)).
 * `SYSTEM SYNC MERGES` now reports `TIMEOUT_EXCEEDED` instead of `QUERY_WAS_CANCELLED` when it exceeds `max_execution_time`. [#127759](https://github.com/ClickHouse/ClickHouse/pull/127759) ([Alexey Milovidov](https://github.com/alexey-milovidov)).
+* Support the `AWS_ENDPOINT_URL_STS` environment variable for S3 web identity credentials, and use the `.amazonaws.eu` STS endpoint in `eusc-*` regions. [#126761](https://github.com/ClickHouse/ClickHouse/pull/126761) ([Asya Shneerson](https://github.com/asya-ch)).
 
 #### Bug Fix (user-visible misbehavior in an official stable release)
 * Fixed stack exhaustion when hashing deeply nested `Dynamic` or `JSON` values with functions such as `sipHash64` or `cityHash64`. Such values now raise `TOO_DEEP_RECURSION` instead of terminating the server. Closes [#123940](https://github.com/ClickHouse/ClickHouse/issues/123940). [#126095](https://github.com/ClickHouse/ClickHouse/pull/126095) ([Groene AI](https://github.com/groeneai)).
@@ -524,6 +495,9 @@
 * Fixed `ssd_cache` and `complex_key_ssd_cache` dictionaries returning another key's value from `dictGet` after the cache had wrapped around its partitions, for a key whose value was cached twice (fetched again after it expired, or returned twice by the source). Closes [#127031](https://github.com/ClickHouse/ClickHouse/issues/127031). [#127369](https://github.com/ClickHouse/ClickHouse/pull/127369) ([Groene AI](https://github.com/groeneai)).
 * Fix a possible buffer overflow when reading from `Azure` Blob Storage. [#127593](https://github.com/ClickHouse/ClickHouse/pull/127593) ([Azat Khuzhin](https://github.com/azat)).
 * Fixed a possible server crash (use-after-free) when a web terminal session is closed while the client asks whether to output a binary format such as `RowBinary`. [#127912](https://github.com/ClickHouse/ClickHouse/pull/127912) ([Groene AI](https://github.com/groeneai)).
+* Fixed `geoToUTM`, `UTMToGeo`, and `geoToMGRS` for latitudes just below the equator: the band letter and the false northing now agree, the round trip returns the original coordinates, and `geoToMGRS` returns a square that `MGRSToGeo` accepts. [#127655](https://github.com/ClickHouse/ClickHouse/pull/127655) ([Vevan O Narain](https://github.com/Vevan05)).
+* Fixed an abort of `clickhouse-client`, `clickhouse-local` and `clickhouse-format --hilite` when highlighting a query whose string literal ends with an incomplete UTF-8 sequence, for example `SELECT length(x'E2')`. Such a query is now highlighted without reading past its end, and the closing bracket gets its own color. [#127906](https://github.com/ClickHouse/ClickHouse/pull/127906) ([Groene AI](https://github.com/groeneai)).
+* Fix `SELECT ... FINAL` from a `GraphiteMergeTree` table, which returned several partially rolled-up rows for one rollup bucket when the parts were read in parallel layers, split into non-intersecting ranges or merged per partition. Closes [#127522](https://github.com/ClickHouse/ClickHouse/issues/127522). [#128165](https://github.com/ClickHouse/ClickHouse/pull/128165) ([Yarik Briukhovetskyi](https://github.com/yariks5s)).
 
 #### Build/Testing/Packaging Improvement
 * Fix linker errors in builds with `USE_OPENSSL_FIPS=1`. [#125548](https://github.com/ClickHouse/ClickHouse/pull/125548) ([Craig Ringer](https://github.com/ringerc)).
@@ -543,6 +517,9 @@
 * The distroless `clickhouse-server` and `clickhouse-keeper` images now open their configuration, data and log directories to other uids, as the Ubuntu and Alpine images do, so they start under a custom user (`docker run --user`). Closes [#125743](https://github.com/ClickHouse/ClickHouse/issues/125743). [#126149](https://github.com/ClickHouse/ClickHouse/pull/126149) ([Groene AI](https://github.com/groeneai)).
 * Update `jemalloc` with upstream support for fiber-safe thread-local storage. [#127478](https://github.com/ClickHouse/ClickHouse/pull/127478) ([Azat Khuzhin](https://github.com/azat)).
 * Update `c-ares` from v1.34.8 to v1.34.9. [#127411](https://github.com/ClickHouse/ClickHouse/pull/127411) ([Actuele AI](https://github.com/actueleai)).
+* Fix a segmentation fault in UBSan builds when `match`, `extract`, `extractAll`, `replaceRegexpOne` or `replaceRegexpAll` calls the JIT-compiled regular-expression matcher. Release builds are not affected. [#127750](https://github.com/ClickHouse/ClickHouse/pull/127750) ([Groene AI](https://github.com/groeneai)).
+* Link the executables with `-z noexecstack` and `-z nodlopen`: the stack stays non-executable whichever linker is used, and other programs cannot load the `clickhouse` binary with `dlopen`. [#127981](https://github.com/ClickHouse/ClickHouse/pull/127981) ([Groene AI](https://github.com/groeneai)).
+* Build with `-fstrict-flex-arrays=3` to improve array bounds checking, except on macOS and in UBSan builds. [#128007](https://github.com/ClickHouse/ClickHouse/pull/128007) ([Groene AI](https://github.com/groeneai)).
 
 ### <a id="2610"></a> ClickHouse release 26.10, 2026-10-22
 
