@@ -188,6 +188,7 @@ public:
         bool supports_subset_of_columns,
         bool supports_tuple_elements,
         ContextPtr local_context,
+        const std::optional<FormatSettings> & format_settings,
         const PrepareReadingFromFormatHiveParams & hive_parameters);
 
     static String computeSchemaHash(const ColumnsDescription & columns);

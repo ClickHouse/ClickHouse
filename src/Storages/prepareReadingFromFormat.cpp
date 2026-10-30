@@ -33,6 +33,7 @@ namespace ErrorCodes
 namespace Setting
 {
     extern const SettingsBool enable_parsing_to_custom_serialization;
+    extern const SettingsBool input_format_defaults_for_omitted_fields;
 }
 
 /// Returns the physical columns not in `known_columns` which the `DEFAULT` expressions of `requested_columns` depend on
@@ -93,6 +94,7 @@ ReadFromFormatInfo prepareReadingFromFormat(
     const Strings & requested_columns,
     const StorageSnapshotPtr & storage_snapshot,
     const ContextPtr & context,
+    const std::optional<FormatSettings> & format_settings,
     bool supports_subset_of_columns,
     bool supports_tuple_elements,
     const PrepareReadingFromFormatHiveParams & hive_parameters)
@@ -131,6 +133,11 @@ ReadFromFormatInfo prepareReadingFromFormat(
     /// Set requested columns that should be read from data.
     info.requested_columns = storage_snapshot->getColumnsByNames(GetColumnsOptions(GetColumnsOptions::All).withSubcolumns(), columns_to_read);
     const auto & columns = storage_snapshot->metadata->getColumns();
+    /// Without it the `DEFAULT` expressions are not used for the omitted values, so don't read the columns they depend on:
+    /// these columns can be unnecessary to parse, or even fail to parse.
+    const bool defaults_for_omitted_fields = format_settings
+        ? format_settings->defaults_for_omitted_fields
+        : context->getSettingsRef()[Setting::input_format_defaults_for_omitted_fields];
 
     if (supports_subset_of_columns)
     {
@@ -141,7 +148,9 @@ ReadFromFormatInfo prepareReadingFromFormat(
             NameSet requested_names;
             for (const auto & column : info.requested_columns)
                 requested_names.insert(column.name);
-            const Names default_inputs = getColumnsRequiredForDefaults(info.requested_columns, requested_names, columns, hive_parameters);
+            Names default_inputs;
+            if (defaults_for_omitted_fields)
+                default_inputs = getColumnsRequiredForDefaults(info.requested_columns, requested_names, columns, hive_parameters);
             for (const auto & name : default_inputs)
                 info.requested_columns.push_back(columns.getPhysical(name));
 
@@ -170,8 +179,9 @@ ReadFromFormatInfo prepareReadingFromFormat(
             columns_to_read = std::move(new_columns_to_read);
 
             /// `ExtractColumnsTransform` drops them after `AddingDefaultsTransform`.
-            for (auto & name : getColumnsRequiredForDefaults(info.requested_columns, columns_to_read_set, columns, hive_parameters))
-                columns_to_read.push_back(std::move(name));
+            if (defaults_for_omitted_fields)
+                for (auto & name : getColumnsRequiredForDefaults(info.requested_columns, columns_to_read_set, columns, hive_parameters))
+                    columns_to_read.push_back(std::move(name));
         }
 
         /// If only virtual or hive partition columns were requested, just read the smallest column.

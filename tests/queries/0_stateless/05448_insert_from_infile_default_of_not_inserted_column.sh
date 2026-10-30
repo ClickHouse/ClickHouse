@@ -34,4 +34,13 @@ $CLICKHOUSE_CLIENT --input_format_null_as_default 1 -q "INSERT INTO t_lambda (b)
 $CLICKHOUSE_CLIENT -q "SELECT a, b FROM t_lambda"
 $CLICKHOUSE_CLIENT -q "DROP TABLE t_lambda"
 
-rm -f "${DATA_FILE}.json" "${DATA_FILE}.jsonl" "${DATA_FILE}_c.json" "${DATA_FILE}_lambda.jsonl"
+# The default of a not inserted column is substituted into a lambda, whose argument has the name of an inserted column:
+# the inserted column is not captured by the lambda argument. The same as the inline insert: 10, 20, 43.
+$CLICKHOUSE_CLIENT -q "CREATE TABLE t_capture (z UInt32, a UInt32 DEFAULT z * 2, b UInt32 DEFAULT arraySum(arrayMap(z -> a + z, [1, 2]))) ENGINE = Memory"
+printf '{"z":10,"b":null}\n' > "${DATA_FILE}_capture.jsonl"
+$CLICKHOUSE_CLIENT --input_format_null_as_default 1 -q "INSERT INTO t_capture (z, b) FROM INFILE '${DATA_FILE}_capture.jsonl' FORMAT JSONEachRow"
+$CLICKHOUSE_CLIENT --input_format_null_as_default 1 -q "INSERT INTO t_capture (z, b) FORMAT JSONEachRow {\"z\":10,\"b\":null}"
+$CLICKHOUSE_CLIENT -q "SELECT z, a, b FROM t_capture"
+$CLICKHOUSE_CLIENT -q "DROP TABLE t_capture"
+
+rm -f "${DATA_FILE}.json" "${DATA_FILE}.jsonl" "${DATA_FILE}_c.json" "${DATA_FILE}_lambda.jsonl" "${DATA_FILE}_capture.jsonl"

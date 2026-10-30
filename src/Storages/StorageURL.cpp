@@ -2072,6 +2072,7 @@ void IStorageURLBase::read(
         column_names,
         storage_snapshot,
         local_context,
+        format_settings,
         supportsSubsetOfColumns(local_context),
         /*supports_tuple_elements=*/ supports_prewhere,
         PrepareReadingFromFormatHiveParams {file_columns, hive_partition_columns_to_read_from_file_path.getNameToTypeMap()});
@@ -2250,6 +2251,7 @@ void StorageURLWithFailover::read(
         column_names,
         storage_snapshot,
         local_context,
+        format_settings,
         supportsSubsetOfColumns(local_context),
         /*supports_tuple_elements=*/ supports_prewhere,
         PrepareReadingFromFormatHiveParams {file_columns, hive_partition_columns_to_read_from_file_path.getNameToTypeMap()});

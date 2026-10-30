@@ -2544,14 +2544,30 @@ bool isStdinNotEmptyAndValid(ReadBuffer & std_in)
 }
 
 /// Replaces the not inserted columns in a default expression with their defaults, as the server does.
-/// `lambda_arguments` are the names bound by the enclosing lambdas, they are not columns.
+/// The arguments of lambdas are renamed to unique names (`lambda_arguments` maps the names bound by the enclosing lambdas),
+/// so that they don't shadow the columns of a substituted default and are not taken for columns themselves.
 void substituteNotInsertedColumns(
-    ASTPtr & ast, const NameSet & inserted_columns, const ColumnsDescription & columns, const NameSet & lambda_arguments = {})
+    ASTPtr & ast,
+    const NameSet & inserted_columns,
+    const ColumnsDescription & columns,
+    size_t & lambda_argument_counter,
+    const std::unordered_map<String, String> & lambda_arguments = {})
 {
     if (const auto * identifier = ast->as<ASTIdentifier>())
     {
+        if (auto it = identifier->name_parts.empty() ? lambda_arguments.end() : lambda_arguments.find(identifier->name_parts.front());
+            it != lambda_arguments.end())
+        {
+            auto name_parts = identifier->name_parts;
+            name_parts.front() = it->second;
+            auto renamed = make_intrusive<ASTIdentifier>(std::move(name_parts));
+            renamed->setAlias(identifier->tryGetAlias());
+            ast = std::move(renamed);
+            return;
+        }
+
         const String & name = identifier->name();
-        if (lambda_arguments.contains(name) || inserted_columns.contains(name) || !columns.has(name))
+        if (inserted_columns.contains(name) || !columns.has(name))
             return;
 
         const auto & column = columns.get(name);
@@ -2559,7 +2575,7 @@ void substituteNotInsertedColumns(
         if (column.default_desc.expression)
         {
             default_value = column.default_desc.expression->clone();
-            substituteNotInsertedColumns(default_value, inserted_columns, columns);
+            substituteNotInsertedColumns(default_value, inserted_columns, columns, lambda_argument_counter);
         }
         else
             default_value = make_intrusive<ASTLiteral>(column.type->getDefault());
@@ -2568,22 +2584,34 @@ void substituteNotInsertedColumns(
         return;
     }
 
-    /// Keep the declarations of the lambda arguments and their uses in the lambda body.
     if (auto * function = ast->as<ASTFunction>(); function && function->name == "lambda" && function->arguments
         && function->arguments->children.size() == 2)
     {
-        NameSet body_lambda_arguments = lambda_arguments;
-        if (const auto * arguments_tuple = function->arguments->children[0]->as<ASTFunction>(); arguments_tuple && arguments_tuple->arguments)
-            for (const auto & argument : arguments_tuple->arguments->children)
-                if (const auto * argument_identifier = argument->as<ASTIdentifier>())
-                    body_lambda_arguments.insert(argument_identifier->name());
+        auto body_lambda_arguments = lambda_arguments;
+        if (auto * arguments_tuple = function->arguments->children[0]->as<ASTFunction>(); arguments_tuple && arguments_tuple->arguments)
+        {
+            for (auto & argument : arguments_tuple->arguments->children)
+            {
+                auto * argument_identifier = argument->as<ASTIdentifier>();
+                if (!argument_identifier)
+                    continue;
 
-        substituteNotInsertedColumns(function->arguments->children[1], inserted_columns, columns, body_lambda_arguments);
+                String unique_name;
+                do
+                    unique_name = "__lambda_argument_" + std::to_string(lambda_argument_counter++);
+                while (columns.has(unique_name));
+
+                body_lambda_arguments[argument_identifier->name()] = unique_name;
+                argument_identifier->setShortName(unique_name);
+            }
+        }
+
+        substituteNotInsertedColumns(function->arguments->children[1], inserted_columns, columns, lambda_argument_counter, body_lambda_arguments);
         return;
     }
 
     for (auto & child : ast->children)
-        substituteNotInsertedColumns(child, inserted_columns, columns, lambda_arguments);
+        substituteNotInsertedColumns(child, inserted_columns, columns, lambda_argument_counter, lambda_arguments);
 }
 }
 
@@ -2775,7 +2803,8 @@ void ClientBase::sendData(Block & sample, const ColumnsDescription & columns_des
                 if (col.default_desc.expression)
                 {
                     col.default_desc.expression = col.default_desc.expression->clone();
-                    substituteNotInsertedColumns(col.default_desc.expression, inserted_columns, columns_description_for_query);
+                    size_t lambda_argument_counter = 0;
+                    substituteNotInsertedColumns(col.default_desc.expression, inserted_columns, columns_description_for_query, lambda_argument_counter);
                 }
                 reordered_description.add(std::move(col));
             }

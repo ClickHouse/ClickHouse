@@ -42,3 +42,10 @@ INSERT INTO FUNCTION file(currentDatabase() || '_05428_tuple.json', JSONColumns,
     SELECT * FROM values('a Tuple(x UInt32), b Nullable(UInt32)', (tuple(6), NULL), (tuple(7), 3)) SETTINGS engine_file_truncate_on_insert = 1;
 
 SELECT b FROM file(currentDatabase() || '_05428_tuple.json', JSONColumns, 'a Tuple(x UInt32), b UInt32 DEFAULT a.x * 2');
+
+-- Without input_format_defaults_for_omitted_fields the columns of DEFAULT expressions are not read (here "a" cannot be parsed).
+INSERT INTO FUNCTION file(currentDatabase() || '_05428_unparsable.json', JSONColumns, 'a String, b UInt32')
+    SELECT * FROM values('a String, b UInt32', ('oops', 3)) SETTINGS engine_file_truncate_on_insert = 1;
+
+SELECT b FROM file(currentDatabase() || '_05428_unparsable.json', JSONColumns, 'a UInt32, b UInt32 DEFAULT a * 2')
+    SETTINGS input_format_defaults_for_omitted_fields = 0;
