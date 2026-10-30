@@ -1,0 +1,9 @@
+▇█
+▇█
+▄█
+▇█
+▇█
+▁▂▃▄▅▆▇█
+AggregateFunction(1, uniqSparkbar(2, 0, 1), UInt64, UInt64)
+AggregateFunction(1, quantileDeterministicSparkbar(0.5, 2, 0, 1), UInt64, UInt64, UInt64)
+▂█	▂█
