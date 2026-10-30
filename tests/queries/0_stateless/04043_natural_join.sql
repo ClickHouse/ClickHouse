@@ -28,8 +28,6 @@ SELECT * FROM t1 NATURAL JOIN t3 ORDER BY id, extra;
 -- NATURAL JOIN with subqueries
 SELECT * FROM (SELECT id, name FROM t1) AS q1 NATURAL JOIN (SELECT id, value FROM t2) AS q2 ORDER BY id;
 
-SET allow_experimental_analyzer = 1;
-
 SELECT * FROM t1 NATURAL JOIN t2 USING (id); -- { clientError SYNTAX_ERROR } Error: NATURAL JOIN cannot specify USING
 SELECT * FROM t1 NATURAL JOIN t2 ON t1.id = t2.id; -- { clientError SYNTAX_ERROR } Error: NATURAL JOIN cannot specify ON
 SELECT * FROM t1 NATURAL CROSS JOIN t2; -- { clientError SYNTAX_ERROR } Error: NATURAL JOIN cannot be CROSS JOIN

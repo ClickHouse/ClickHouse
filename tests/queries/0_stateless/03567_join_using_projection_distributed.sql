@@ -23,5 +23,5 @@ INNER JOIN
     FROM t2
 ) AS a USING (key1)
 ORDER BY a.attr
-SETTINGS enable_analyzer = 1, analyzer_compatibility_join_using_top_level_identifier=1;
+SETTINGS analyzer_compatibility_join_using_top_level_identifier=1;
 
