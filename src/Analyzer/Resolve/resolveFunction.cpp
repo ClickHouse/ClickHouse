@@ -43,6 +43,7 @@
 #include <Functions/exists.h>
 #include <Columns/validateColumnType.h>
 #include <Interpreters/castColumn.h>
+#include <Interpreters/checkFunctionAccess.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ExternalDictionariesLoader.h>
 #include <Interpreters/formatWithPossiblyHidingSecrets.h>
@@ -1474,6 +1475,13 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
         auto function_lookup_result = tryResolveIdentifier({Identifier{function_name}, IdentifierLookupContext::FUNCTION}, scope, { .allow_to_resolve_niladic_functions =  allow_niladic_functions });
         lambda_expression_untyped = function_lookup_result.resolved_identifier;
     }
+
+    /// Once no lambda in scope shadows the name, the call is committed to the function with this name,
+    /// built-in or user defined. Check the grant here, before any of the rewrites below can replace the
+    /// call (`if` with a constant condition, `IN` with an array, the early short-circuit of `and`/`or`, ...)
+    /// or rename it.
+    if (!lambda_expression_untyped)
+        checkFunctionAccess(scope.context, function_name);
 
     /** Early short-circuit optimization for ordinary builtin AND/OR functions. Perform this
       * only after checking scoped lambdas and registered UDFs, so a builtin cannot bypass a
@@ -3054,8 +3062,10 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
         user_defined_function = UserDefinedSQLFunctionFactory::instance().tryGet(function_name);
 
         if (!lambda_expression_untyped && user_defined_function)
+        {
             /// Try to substitute user defined SQL expression
             lambda_expression_untyped = tryGetLambdaFromUserDefinedSQLFunctions(user_defined_function, scope.context);
+        }
 
         /** If function is resolved as lambda.
           * Clone lambda before resolve.

@@ -67,6 +67,7 @@
 #include <Formats/FormatFactory.h>
 #include <Columns/IColumn.h>
 #include <Interpreters/JoinUtils.h>
+#include <Interpreters/checkFunctionAccess.h>
 #include <Interpreters/convertColumnToType.h>
 #include <TableFunctions/TableFunctionFactory.h>
 #include <Storages/IStorage.h>
@@ -1515,6 +1516,9 @@ IdentifierResolveResult QueryAnalyzer::tryResolveIdentifierFromAliases(const Ide
             auto function_resolver = FunctionFactory::instance().tryGet(identifier.getFullName(), scope_to_resolve_alias_expression->context);
             if (function_resolver && function_resolver->allowsOmittingParentheses())
             {
+                /// The identifier is committed to the function here, so the grant applies as for `f()`.
+                checkFunctionAccess(scope_to_resolve_alias_expression->context, identifier.getFullName());
+
                 auto function_node = std::make_shared<FunctionNode>(identifier.getFullName());
                 function_node->resolveAsFunction(function_resolver->build({}));
                 lookup_result.resolved_identifier = std::move(function_node);
@@ -1952,6 +1956,10 @@ IdentifierResolveResult QueryAnalyzer::tryResolveIdentifier(const IdentifierLook
 
         if (function_resolver && function_resolver->allowsOmittingParentheses())
         {
+            /// Every other way to resolve the identifier has failed, so it is committed to the function:
+            /// `SELECT currentUser` must need the same grant as `SELECT currentUser()`.
+            checkFunctionAccess(scope.context, identifier_name);
+
             auto function_node = std::make_shared<FunctionNode>(identifier_name);
             function_node->resolveAsFunction(function_resolver->build({}));
             resolve_result.resolved_identifier = std::move(function_node);

@@ -111,6 +111,7 @@ namespace
         const Flags & getColumnFlags() const { return all_flags_for_target[COLUMN]; }
         const Flags & getDictionaryFlags() const { return all_flags_for_target[DICTIONARY]; }
         const Flags & getTableEngineFlags() const { return all_flags_for_target[TABLE_ENGINE]; }
+        const Flags & getFunctionFlags() const { return all_flags_for_target[FUNCTION]; }
         const Flags & getSourceFlags() const { return all_flags_for_target[SOURCE]; }
         const Flags & getUserNameFlags() const { return all_flags_for_target[USER_NAME]; }
         const Flags & getDefinerFlags() const { return all_flags_for_target[DEFINER]; }
@@ -137,6 +138,7 @@ namespace
             TABLE_ENGINE = 7,
             DEFINER = 8,
             SOURCE = 9,
+            FUNCTION = 10,
         };
 
         struct Node;
@@ -340,7 +342,7 @@ namespace
                 collectAllFlags(child.get());
 
             all_flags_grantable_on_table_level = all_flags_for_target[TABLE] | all_flags_for_target[DICTIONARY] | all_flags_for_target[COLUMN];
-            all_flags_grantable_on_global_with_parameter_level = all_flags_for_target[NAMED_COLLECTION] | all_flags_for_target[USER_NAME] | all_flags_for_target[TABLE_ENGINE] | all_flags_for_target[DEFINER] | all_flags_for_target[SOURCE];
+            all_flags_grantable_on_global_with_parameter_level = all_flags_for_target[NAMED_COLLECTION] | all_flags_for_target[USER_NAME] | all_flags_for_target[TABLE_ENGINE] | all_flags_for_target[DEFINER] | all_flags_for_target[SOURCE] | all_flags_for_target[FUNCTION];
             all_flags_grantable_on_database_level = all_flags_for_target[DATABASE] | all_flags_grantable_on_table_level;
         }
 
@@ -391,7 +393,7 @@ namespace
         std::unordered_map<std::string_view, Flags> keyword_to_flags_map;
         std::vector<Flags> access_type_to_flags_mapping;
         Flags all_flags;
-        Flags all_flags_for_target[static_cast<size_t>(SOURCE) + 1];
+        Flags all_flags_for_target[static_cast<size_t>(FUNCTION) + 1];
         Flags all_flags_grantable_on_database_level;
         Flags all_flags_grantable_on_table_level;
         Flags all_flags_grantable_on_global_with_parameter_level;
@@ -443,12 +445,16 @@ std::unordered_map<AccessFlags::ParameterType, AccessFlags> AccessFlags::splitIn
     if (table_engine_flags)
         result.emplace(ParameterType::TABLE_ENGINE, table_engine_flags);
 
+    auto function_flags = AccessFlags::allFunctionFlags() & *this;
+    if (function_flags)
+        result.emplace(ParameterType::FUNCTION, function_flags);
+
     auto source_flags = AccessFlags::allSourceFlags() & *this;
     if (source_flags)
         result.emplace(ParameterType::SOURCE, source_flags);
 
 
-    auto other_flags = (~named_collection_flags & ~user_flags & ~definer_flags & ~table_engine_flags & ~source_flags) & *this;
+    auto other_flags = (~named_collection_flags & ~user_flags & ~definer_flags & ~table_engine_flags & ~function_flags & ~source_flags) & *this;
     if (other_flags)
         result.emplace(ParameterType::NONE, other_flags);
 
@@ -473,6 +479,9 @@ AccessFlags::ParameterType AccessFlags::getParameterType() const
     /// All flags refer to TABLE ENGINE access type.
     if (AccessFlags::allTableEngineFlags().contains(*this))
         return AccessFlags::TABLE_ENGINE;
+
+    if (AccessFlags::allFunctionFlags().contains(*this))
+        return AccessFlags::FUNCTION;
 
     /// All flags refer to SOURCE access type.
     if (AccessFlags::allSourceFlags().contains(*this))
@@ -505,6 +514,7 @@ AccessFlags AccessFlags::allNamedCollectionFlags() { return Helper::instance().g
 AccessFlags AccessFlags::allUserNameFlags() { return Helper::instance().getUserNameFlags(); }
 AccessFlags AccessFlags::allDefinerFlags() { return Helper::instance().getDefinerFlags(); }
 AccessFlags AccessFlags::allTableEngineFlags() { return Helper::instance().getTableEngineFlags(); }
+AccessFlags AccessFlags::allFunctionFlags() { return Helper::instance().getFunctionFlags(); }
 AccessFlags AccessFlags::allSourceFlags() { return Helper::instance().getSourceFlags(); }
 AccessFlags AccessFlags::allFlagsGrantableOnGlobalLevel() { return Helper::instance().getAllFlagsGrantableOnGlobalLevel(); }
 AccessFlags AccessFlags::allFlagsGrantableOnGlobalWithParameterLevel() { return Helper::instance().getAllFlagsGrantableOnGlobalWithParameterLevel(); }

@@ -33,6 +33,7 @@ namespace zkutil
 
 namespace DB
 {
+class AccessRightsElements;
 class ContextAccess;
 class ContextAccessParams;
 struct User;
@@ -213,6 +214,23 @@ public:
 
     void setTableEnginesRequireGrant(bool enable) { table_engines_require_grant = enable; }
     bool doesTableEnginesRequireGrant() const { return table_engines_require_grant; }
+
+    /// Functions listed in `access_control_improvements.functions_requiring_grant` require
+    /// `GRANT FUNCTION ON <name>` to execute. The default empty list is backward compatible:
+    /// any user can call any function. `hasFunctionsRequiringGrant` is lock-free and false
+    /// when the list is empty, so the function-resolution path pays nothing in the default case.
+    static bool hasFunctionsRequiringGrant() noexcept;
+    /// Pass the name the function is registered under: the configured list is resolved with
+    /// `IFactoryWithAliases::resolveNameOrAlias`, and so must be the name of the call.
+    static bool functionRequiresGrant(std::string_view function_name);
+    /// Rewrites the names in `FUNCTION ON <name>` elements to the name the function is registered
+    /// under, so that `GRANT FUNCTION ON HEX` or `GRANT FUNCTION ON isASCII` matches the check for
+    /// `hex` or `isValidASCII`. Unknown names, e.g. of a user defined function created later, are kept.
+    static void canonicalizeFunctionNames(AccessRightsElements & elements);
+    /// Read once at server start; `SYSTEM RELOAD CONFIG` does not re-read it, as for every other
+    /// setting of the `access_control_improvements` section.
+    void setFunctionsRequiringGrant(const Strings & function_names);
+    void setFunctionsRequiringGrantFromConfig(const Poco::Util::AbstractConfiguration & config);
 
     /// Enable/disable the IMPERSONATE feature (EXECUTE AS target_user).
     void setImpersonateUserAllowed(bool allow) { allow_impersonate_user = allow; }
