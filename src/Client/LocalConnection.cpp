@@ -92,6 +92,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int SUPPORT_IS_DISABLED;
     extern const int SYNTAX_ERROR;
+    extern const int NO_DATA_TO_INSERT;
 }
 
 LocalConnection::LocalConnection(ContextPtr context_, ReadBuffer * in_, bool send_progress_, bool send_profile_events_, const String & server_display_name_)
@@ -559,6 +560,12 @@ void LocalConnection::sendQuery(
         }
 
         chassert(in, "ReadBuffer should be initialized");
+        if (in->isCanceled())
+        {
+            /// Deliver the exception instead of the sample block, otherwise the client sends the data itself.
+            next_packet_type.reset();
+            throw Exception(ErrorCodes::NO_DATA_TO_INSERT, "No data to insert");
+        }
 
         auto source = context->getInputFormat(
             current_format,
