@@ -1,9 +1,10 @@
 import logging
+import time
 from typing import Callable, List
 
 from ci.praktika.result import Result
-
-# Registry and network failure signatures only; an apt mirror failure moves to the next mirror, not a rebuild.
+# Registry and network failure signatures. For a build, only buildx's last top-level error is matched (`is_buildx_retryable`): an apt mirror failure moves to the next mirror, not a rebuild.
+# Registry and network failure signatures, matched against buildx's last top-level error only; an apt mirror failure moves to the next mirror, not a rebuild.
 BUILDX_RETRIES = 5
 BUILDX_RETRY_ERRORS = [
     # Docker registry (docker.io / registry-1.docker.io)
@@ -211,13 +212,20 @@ BUILDX_JOB_RESERVE = 3600
 BUILDX_TIMEOUT_FLOOR = 60
 
 
-def buildx_timeout(elapsed: float = 0.0, job_timeout: int = 0) -> int:
-    """Per-invocation bound, shrunk so the whole job stays inside its own cap."""
+def buildx_timeout(
+    elapsed: float = 0.0,
+    job_timeout: int = 0,
+    reserve: int = BUILDX_JOB_RESERVE,
+    attempts: int = max(BUILDX_RETRIES, 2),
+) -> int:
+    """Per-invocation bound, shrunk so the whole job stays inside its own cap.
+
+    `attempts` is how many invocations the remaining budget has to cover: by default
+    one invocation may retry, so it costs up to BUILDX_RETRIES * (bound + kill-after).
+    """
     if not job_timeout:
         return BUILDX_TIMEOUT
-    # One invocation may retry, so it costs up to BUILDX_RETRIES * (bound + kill-after).
-    attempts = max(BUILDX_RETRIES, 2)
-    budget = (job_timeout - BUILDX_JOB_RESERVE - elapsed) / attempts
+    budget = (job_timeout - reserve - elapsed) / attempts
     return max(BUILDX_TIMEOUT_FLOOR, min(BUILDX_TIMEOUT, int(budget)))
 
 
@@ -237,6 +245,23 @@ def is_buildx_timeout(info: str) -> bool:
     return BUILDX_TIMEOUT_MESSAGE in info or BUILDX_TIMEOUT_KILL_DIAG in info
 
 
+def is_buildx_retryable(info: str) -> bool:
+    """Did the build stop on a registry or network failure that a plain rebuild can cure?
+
+    Only buildx's own last top-level `ERROR: ` line is matched. That is where a failed
+    pull, token fetch or push is reported, while apt prints the same `503 Service
+    Unavailable` or `connection refused` inside the step output - either for a miss it
+    recovered from, or for a mirror failure, which `should_try_next_mirror` already
+    answers by switching mirrors instead of rebuilding against the same one.
+    """
+    top_level = [
+        line for line in info.splitlines() if line.startswith(BUILDX_ERROR_PREFIX)
+    ]
+    return bool(top_level) and any(
+        error in top_level[-1] for error in BUILDX_RETRY_ERRORS
+    )
+
+
 def should_try_next_mirror(info: str) -> bool:
     """Is the apt mirror a plausible cause: it refused the file, or trickled it until `with_timeout` killed the build?"""
     return (
@@ -251,34 +276,53 @@ def build_rotating_apt_mirrors(
 ) -> Result:
     """Run a `docker buildx build`, rebuilding against the next apt mirror when the mirror explains the failure.
 
-    `make_command` gets the mirror's `--build-arg`s and is called once per mirror, so a
-    caller can recompute a timeout that depends on the time already spent.
+    `make_command` gets the mirror's `--build-arg`s and is called once per invocation,
+    so a caller can recompute a timeout that depends on the time already spent.
+
+    The failure is classified before anything is retried: an apt mirror failure moves
+    to the next mirror at once, a registry or network failure is rebuilt against the
+    same mirror up to `BUILDX_RETRIES` times, and anything else stops.
     """
     mirrors = apt_mirror_variants(apt_mirror_region)
     for attempt, apt_mirror_args in enumerate(mirrors, start=1):
-        command = make_command(apt_mirror_args)
+        delay = 1
+        for retry in range(1, BUILDX_RETRIES + 1):
+            command = make_command(apt_mirror_args)
+            logging.info(
+                "Building %s, apt mirror %s/%s, try %s/%s: %s",
+                name,
+                attempt,
+                len(mirrors),
+                retry,
+                BUILDX_RETRIES,
+                command,
+            )
+            result = Result.from_commands_run(name=name, command=command)
+            if result.is_ok():
+                return result
+            if should_try_next_mirror(result.info):
+                break
+            if retry == BUILDX_RETRIES or not is_buildx_retryable(result.info):
+                if not terminal_build_failure(result.info):
+                    # Fail-closed and silent is what let a reworded buildx error keep
+                    # the mirror rotation from ever running: say so, so the next log
+                    # shows it.
+                    logging.info(
+                        "%s failed and no terminal build step could be identified in "
+                        "its output, so no apt mirror can be blamed for it; not trying "
+                        "another mirror",
+                        name,
+                    )
+                return result
+            delay = min(2 * delay, 60)
+            logging.info(
+                "%s failed on a registry or network error; rebuilding in %ss",
+                name,
+                delay,
+            )
+            time.sleep(delay)
         logging.info(
-            "Building %s, apt mirror %s/%s: %s", name, attempt, len(mirrors), command
-        )
-        result = Result.from_commands_run(
-            name=name,
-            command=command,
-            retries=BUILDX_RETRIES,
-            retry_errors=BUILDX_RETRY_ERRORS,
-        )
-        if result.is_ok() or not should_try_next_mirror(result.info):
-            if not result.is_ok() and not terminal_build_failure(result.info):
-                # Fail-closed and silent is what let a reworded buildx error keep
-                # this loop from ever running: say so, so the next log shows it.
-                logging.info(
-                    "%s failed and no terminal build step could be identified in its "
-                    "output, so no apt mirror can be blamed for it; not trying another "
-                    "mirror",
-                    name,
-                )
-            break
-        logging.info(
-            "%s exhausted its retries on a failure the apt mirror can explain; %s",
+            "%s failed on an error the apt mirror can explain; %s",
             name,
             (
                 "rebuilding against the next apt mirror"

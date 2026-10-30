@@ -149,7 +149,7 @@ def parse_args() -> argparse.Namespace:
         help="if set, point apt at the in-region AWS Ubuntu mirror for this region "
         "(e.g. us-east-1) instead of Canonical's archive.ubuntu.com / "
         "ports.ubuntu.com, which are frequently unreachable from the runners. "
-        "An image whose retries are exhausted on an apt download failure is then "
+        "An image that fails on an apt download failure is then immediately "
         "rebuilt against Canonical, for the days when the in-region mirror is the "
         "broken one. Empty means use the Dockerfile default (canonical mirror) "
         "with no second attempt.",
