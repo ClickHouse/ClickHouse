@@ -40,6 +40,8 @@ struct FormatSettings
     bool defaults_for_omitted_fields = true;
     bool is_writing_to_terminal = false;
     bool try_infer_variant = false;
+    bool detect_utf_bom = true;
+    bool utf_replace_invalid_sequences = true;
 
     bool seekable_read = true;
     UInt64 max_rows_to_read_for_schema_inference = 25000;

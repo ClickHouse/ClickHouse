@@ -1,0 +1,4 @@
+obj	Nullable(Tuple(f1 Nullable(Int64), f2 Nullable(String), f3 Nullable(Int64)))					
+1	2020-01-01	\N
+\N	Some string	2
+4
