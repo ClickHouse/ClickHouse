@@ -1,5 +1,4 @@
-# Disabled by default as nothing uses it yet.
-option(ENABLE_SUBSTRAIT "Enable Substrait" OFF)
+option(ENABLE_SUBSTRAIT "Enable Substrait" ${ENABLE_LIBRARIES})
 
 if(NOT ENABLE_SUBSTRAIT)
     message(STATUS "Not using Substrait")
