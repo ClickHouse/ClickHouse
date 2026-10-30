@@ -20,7 +20,6 @@ namespace CurrentMetrics
 
 namespace ProfileEvents
 {
-    extern const Event FilteringMarksWithPrimaryKeyMicroseconds;
     extern const Event FilteringMarksWithSecondaryKeysMicroseconds;
     extern const Event SelectedMarks;
     extern const Event SelectedRanges;
@@ -79,13 +78,6 @@ void MergeTreeSkipIndexReader::setTopKPrimaryKeyPruning(size_t primary_key_colum
     top_k_threshold_tracker = std::move(tracker);
 }
 
-void MergeTreeSkipIndexReader::setPrimaryKeyCondition(
-    ConditionTemplate<KeyCondition>::Ptr key_condition_, std::vector<std::optional<size_t>> primary_key_to_minmax_slot_)
-{
-    primary_key_condition = std::move(key_condition_);
-    primary_key_to_minmax_slot = std::move(primary_key_to_minmax_slot_);
-}
-
 bool MergeTreeSkipIndexReader::hasRuntimeFilters() const
 {
     /// The dynamic predicate can prune only through the primary key or dynamic skip indexes.
@@ -101,25 +93,6 @@ SkipIndexReadResultPtr MergeTreeSkipIndexReader::read(
     CurrentMetrics::Increment metric(CurrentMetrics::FilteringMarksWithSecondaryKeys);
 
     auto ranges = input.ranges;
-    if (primary_key_condition && metadata_snapshot->hasPrimaryKey() && !ranges.empty())
-    {
-        if (auto data_part = part_info->getDataPart())
-        {
-            ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::FilteringMarksWithPrimaryKeyMicroseconds);
-            ranges = MergeTreeDataSelectExecutor::markRangesFromPKRange(
-                data_part,
-                ranges,
-                input.part_starting_offset_in_query,
-                metadata_snapshot,
-                primary_key_condition->generateForPart(data_part),
-                /*part_offset_condition=*/nullptr,
-                /*total_offset_condition=*/nullptr,
-                /*exact_ranges=*/nullptr,
-                primary_key_to_minmax_slot.empty() ? nullptr : &primary_key_to_minmax_slot,
-                context->getSettingsRef(),
-                log);
-        }
-    }
     [[maybe_unused]] size_t total_granules = ranges.getNumberOfMarks();
 
     IndexGranulesMap index_granules;
@@ -274,7 +247,12 @@ SkipIndexReadResultPtr MergeTreeSkipIndexReader::read(
 
     res->index_granules = std::move(index_granules);
 
-    if (skip_indexes.skip_index_for_top_k_filtering && skip_indexes.threshold_tracker)
+    /// The minmax index for TopK filtering is subject to the same staleness check as the other skip
+    /// indexes: a pending mutation that rewrites, drops or renames its column leaves the part with an
+    /// index file that does not describe the values a read returns, so pruning marks by the running
+    /// threshold against it would drop rows the query has to see.
+    if (skip_indexes.skip_index_for_top_k_filtering && skip_indexes.threshold_tracker
+        && MergeTreeDataSelectExecutor::canUseIndex(skip_indexes.skip_index_for_top_k_filtering, metadata_snapshot, all_updated_columns))
     {
         res->min_max_index_for_top_k = MergeTreeDataSelectExecutor::getMinMaxIndexGranules(
             part_info,
@@ -290,8 +268,8 @@ SkipIndexReadResultPtr MergeTreeSkipIndexReader::read(
         res->threshold_tracker = skip_indexes.threshold_tracker;
     }
 
-    res->may_skip_granules_besides_top_k_primary_key = !skip_indexes.useful_indices.empty() || use_for_disjunctions || hasRuntimeFilters()
-        || res->min_max_index_for_top_k || primary_key_condition != nullptr;
+    res->may_skip_granules_besides_top_k_primary_key
+        = !skip_indexes.useful_indices.empty() || use_for_disjunctions || hasRuntimeFilters() || res->min_max_index_for_top_k;
 
     /// Projection parts have a primary key of their own, which the position was not computed for.
     if (top_k_primary_key_column_position && top_k_threshold_tracker && !part_info->isProjectionPart())

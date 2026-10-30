@@ -110,6 +110,7 @@ namespace Setting
     extern const SettingsBool parallel_replicas_local_plan;
     extern const SettingsBool parallel_replicas_prefer_local_replica;
     extern const SettingsBool parallel_replicas_allow_view_over_mergetree;
+    extern const SettingsBool parallel_replicas_for_object_storage_tables;
     extern const SettingsMilliseconds queue_max_wait_ms;
     extern const SettingsBool run_query_in_background;
     extern const SettingsBool skip_unavailable_shards;
@@ -297,6 +298,14 @@ void stripInitiatorOnlySettings(Settings & settings)
         settings[Setting::async_insert_select_as_async_insert].changed = false;
     }
 
+    /// `parallel_replicas_for_object_storage_tables` is consulted only by the initiator's analysis. Its default is `true`.
+    if (settings[Setting::parallel_replicas_for_object_storage_tables].changed
+        || !settings[Setting::parallel_replicas_for_object_storage_tables])
+    {
+        settings[Setting::parallel_replicas_for_object_storage_tables] = true;
+        settings[Setting::parallel_replicas_for_object_storage_tables].changed = false;
+    }
+
     /// `database` is an initiator-only setting as well: the query sent to a shard may leave the remote
     /// table unqualified (e.g. a `Distributed` table created with an empty database argument), and
     /// the shard must resolve it against its own default database.
@@ -317,6 +326,7 @@ constexpr std::string_view initiator_only_setting_names[] = {
     "http_allow_database_as_path", "http_allow_table_as_file", "http_allow_filters_as_path",
     "http_allow_filters_as_unrecognized_url_parameters", "implicit_table_at_top_level",
     "async_insert_select_as_async_insert",
+    "parallel_replicas_for_object_storage_tables",
     "database",
 };
 
@@ -333,6 +343,16 @@ void stripInitiatorOnlySettingsFromQuery(const ASTPtr & query)
     /// `removeSettingsFromQuery` clears the names from every query-level `SETTINGS` carrier, covering both
     /// the `name = value` (`changes`) and `name = DEFAULT` (`default_settings`) forms.
     removeSettingsFromQuery(query, initiator_only_setting_names);
+}
+
+void stripInitiatorOnlySettingsFromDDLQuery(const ASTPtr & query)
+{
+    /// A stored view body keeps the setting that decides how the view reads its table.
+    std::vector<std::string_view> names;
+    for (std::string_view name : initiator_only_setting_names)
+        if (name != "parallel_replicas_for_object_storage_tables")
+            names.push_back(name);
+    removeSettingsFromQuery(query, names);
 }
 
 static ContextMutablePtr updateSettingsAndClientInfoForCluster(const Cluster & cluster,
@@ -765,6 +785,7 @@ static ContextMutablePtr updateContextForParallelReplicas(const LoggerPtr & logg
 {
     const auto & settings = context->getSettingsRef();
     auto context_mutable = Context::createCopy(context);
+    context_mutable->increaseDistributedDepth();
 
     /// check hedged connections setting
     if (settings[Setting::use_hedged_requests].value)

@@ -100,7 +100,7 @@ void validateCreateQuery(const ASTCreateQuery & query, const VirtualColumnsDescr
     /// Do some basic sanity checks. We cannot do the same strict checks as on create, because context might not have the same settings if it is not called directly from an alter query.
     /// SECONDARY_CREATE should check most of the important things.
     const auto columns_desc
-        = InterpreterCreateQuery::getColumnsDescription(*columns.columns, context, LoadingStrictnessLevel::SECONDARY_CREATE, false);
+        = InterpreterCreateQuery::getColumnsDescription(columns, context, LoadingStrictnessLevel::SECONDARY_CREATE, /* is_restore_from_backup = */ false);
 
     if (columns_desc.getInsertable().empty())
         throw Exception(ErrorCodes::EMPTY_LIST_OF_COLUMNS_PASSED, "Cannot CREATE table without insertable columns");
@@ -206,11 +206,13 @@ void applyMetadataChangesToCreateQuery(const ASTPtr & query, const StorageInMemo
     if (!ast_create_query.is_dictionary && !ast_create_query.isParameterizedView())
     {
         ASTPtr new_columns = InterpreterCreateQuery::formatColumns(metadata.columns);
+        ASTPtr new_codec_declarations = InterpreterCreateQuery::formatCodecDeclarations(metadata.columns);
         ASTPtr new_indices = InterpreterCreateQuery::formatIndices(metadata.secondary_indices);
         ASTPtr new_constraints = InterpreterCreateQuery::formatConstraints(metadata.constraints);
         ASTPtr new_projections = InterpreterCreateQuery::formatProjections(metadata.projections);
 
         ast_create_query.columns_list->replace(ast_create_query.columns_list->columns, new_columns);
+        ast_create_query.columns_list->setOrReplace(ast_create_query.columns_list->codec_declarations, new_codec_declarations);
         ast_create_query.columns_list->setOrReplace(ast_create_query.columns_list->indices, new_indices);
         ast_create_query.columns_list->setOrReplace(ast_create_query.columns_list->constraints, new_constraints);
         ast_create_query.columns_list->setOrReplace(ast_create_query.columns_list->projections, new_projections);
@@ -269,7 +271,12 @@ void applyMetadataChangesToCreateQuery(const ASTPtr & query, const StorageInMemo
                 storage_ast.reset(storage_ast.ttl_table);
 
             if (metadata.settings_changes)
-                storage_ast.set(storage_ast.settings, metadata.settings_changes);
+            {
+                if (metadata.settings_changes->as<ASTSetQuery &>().changes.empty())
+                    storage_ast.reset(storage_ast.settings);
+                else
+                    storage_ast.set(storage_ast.settings, metadata.settings_changes);
+            }
         }
         else if (metadata.settings_changes)
         {

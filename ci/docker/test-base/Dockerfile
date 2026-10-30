@@ -1,4 +1,6 @@
 # docker build -t clickhouse/test-base .
+ARG CCTOOLS_TAG
+FROM clickhouse/cctools:${CCTOOLS_TAG} AS cctools
 FROM ubuntu:24.04
 
 # ARG for quick switch to a given ubuntu mirror. Defaults stay canonical so local
@@ -121,7 +123,7 @@ RUN apt-get update \
     && rm -rf /var/lib/apt/lists/* /var/cache/debconf /tmp/*
 
 # Note, libmpfr6 is also a requirement for gdb
-COPY --from=clickhouse/cctools:859fb360308eb8ac47ad /opt/gdb /opt/gdb
+COPY --from=cctools /opt/gdb /opt/gdb
 ENV PATH="/opt/gdb/bin:${PATH}"
 
 # lldb (installed with llvm above) is the native debugger used by
@@ -133,7 +135,7 @@ ENV PATH="/opt/gdb/bin:${PATH}"
 RUN ln -sf /usr/lib/llvm-${LLVM_VERSION}/bin/lldb /usr/bin/lldb \
     && chmod u+s /usr/lib/llvm-${LLVM_VERSION}/bin/lldb
 
-COPY --from=clickhouse/cctools:859fb360308eb8ac47ad \
+COPY --from=cctools \
   /opt/openssl-fips/openssl.cnf \
   /opt/openssl-fips/fipsmodule.cnf \
   /opt/openssl-fips/fips.so \

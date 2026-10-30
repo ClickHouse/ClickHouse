@@ -571,7 +571,6 @@ DROP TABLE t_gbylimit_comp;
 -- never produce a wrong top-N.  How the colliding name is resolved in ORDER BY
 -- is only well-defined under the analyzer; the old analyzer resolves the same
 -- construct inconsistently across query contexts.
-SET enable_analyzer = 1;
 SET max_threads = 1;
 SET optimize_trivial_group_by_limit_query = 0;
 

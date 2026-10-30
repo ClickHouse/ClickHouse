@@ -6,6 +6,8 @@
 #include <Core/FormatFactorySettings.h>
 #include <Core/Settings.h>
 #include <Core/UUID.h>
+#include <Formats/FormatFilterInfo.h>
+#include <Storages/ColumnsDescription.h>
 #include <IO/WriteHelpers.h>
 
 namespace ProfileEvents
@@ -241,6 +243,49 @@ QueryConditionCache::Key QueryConditionCache::makeKey(const UUID & table_id, con
     hash.update(part_name);
     hash.update(condition_hash);
     return hash.get128();
+}
+
+UUID QueryConditionCache::getTableIdForFileEntries(
+    const UUID & table_uuid,
+    std::string_view format,
+    std::string_view compression_method,
+    const ColumnsDescription & columns,
+    const ColumnMapper * column_mapper,
+    const FormatSettings * format_settings)
+{
+    if (table_uuid != UUIDHelpers::Nil)
+        return table_uuid;
+    /// Each string is preceded by its length, so the boundaries between them are unambiguous.
+    const String structure = columns.toString(/*include_comments=*/false);
+    SipHash hash;
+    hash.update(format.size());
+    hash.update(format);
+    hash.update(compression_method.size());
+    hash.update(compression_method);
+    hash.update(structure.size());
+    hash.update(structure);
+    if (column_mapper)
+    {
+        /// Sorted, because the order of an `unordered_map` is not stable.
+        const auto & encoding = column_mapper->getStorageColumnEncoding();
+        std::vector<std::pair<std::string_view, Int64>> sorted_encoding(encoding.begin(), encoding.end());
+        std::sort(sorted_encoding.begin(), sorted_encoding.end());
+        hash.update(sorted_encoding.size());
+        for (const auto & [name, field_id] : sorted_encoding)
+        {
+            hash.update(name.size());
+            hash.update(name);
+            hash.update(field_id);
+        }
+    }
+    hash.update(format_settings != nullptr);
+    if (format_settings)
+        hash.update(fileFormatPruningSettingsSalt(*format_settings));
+    UInt128 table_id = hash.get128();
+    /// A `Nil` id would disable the cache.
+    if (table_id == 0)
+        table_id = 1;
+    return UUID(table_id);
 }
 
 String QueryConditionCache::makeFilePartName(const String & path, std::string_view version_token)

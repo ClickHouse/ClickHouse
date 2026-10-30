@@ -1,4 +1,5 @@
 #include <Server/HTTPHandler.h>
+#include <Server/ConnectionRegistry.h>
 #include <Server/HTTPQueryConstructor.h>
 
 #include <Access/AccessControl.h>
@@ -466,6 +467,45 @@ void HTTPHandler::processQuery(
     std::erase_if(query_id, [](unsigned char c) { return isControlASCII(c) || c == 0x7F; });
 
     context->setCurrentQueryId(query_id);
+
+    /// Set the connection of this request to active in `system.connections` until the request ends.
+    /// The connection gets its registration on its first query. The registration stays until the socket closes.
+    /// Between the requests, the connection is idle. See `HTTPConnectionRegistration`.
+    /// Refresh an existing registration also if `collect_connection_metrics` is `false` now.
+    /// The registry keeps such registrations and shows them again when the setting changes to `true`.
+    /// Thus, they must have the client properties and the state of the last request, not of a request before the change.
+    /// The setting controls only new registrations.
+    HTTPConnectionRegistration * connection_registration = request.getConnectionRegistration();
+    if (connection_registration && (connection_registration->handle || ConnectionRegistry::instance().isEnabled()))
+    {
+        /// Each request sets the client properties again.
+        /// A reverse proxy can send the requests of different clients and users on one keep-alive connection.
+        /// Use `current_address` for the address and for the port. Do not use `request.clientAddress`.
+        /// `request.clientAddress` is always the direct TCP peer. Behind a proxy, it is the address of the proxy.
+        /// `authenticateUserByHTTP` sets `current_address`. If `auth_use_forwarded_address` is `true`, this address comes from `X-Forwarded-For`.
+        /// Thus, `system.connections`, `system.processes`, and `system.query_log` show the same address and port.
+        const auto & http_client_info = context->getClientInfo();
+        ConnectionPeer peer;
+        peer.user = http_client_info.current_user;
+        peer.user_id = context->getUserID();
+        peer.client_address = http_client_info.current_address->host();
+        peer.client_port = http_client_info.current_address->port();
+        peer.client_name = request.get("User-Agent", "");
+
+        if (!connection_registration->handle)
+        {
+            ConnectionInfo info;
+            info.protocol = "HTTP";
+            info.server_port = request.serverAddress().port();
+            info.connected_time = connection_registration->connected_time;
+            connection_registration->handle = ConnectionRegistry::instance().add(std::move(info), peer);
+        }
+        connection_registration->handle.setActive(context->getCurrentQueryId(), std::move(peer));
+    }
+    SCOPE_EXIT({
+        if (connection_registration)
+            connection_registration->handle.setIdle();
+    });
 
     context->checkSettingsConstraints(settings_changes, SettingSource::QUERY);
     context->applySettingsChanges(settings_changes);
