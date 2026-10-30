@@ -1,0 +1,39 @@
+1
+0
+-- a JOIN must not stop the cache from pruning the second run
+1
+1
+0	2	1
+1	1	1	2
+-- a JOIN read by parallel replicas must prune the second run too
+1
+1
+0	2	1
+1	1	1	2	1
+-- a TopK read under a JOIN must prune the second run too
+1
+1
+1
+0	3	1
+1	2	1	2
+-- control: the same JOIN without join reordering already pruned
+1
+1
+0	1
+1	1
+-- control: the same condition without a JOIN still prunes
+7
+7
+0	1
+1	1
+-- a GROUP BY TopK read analyzed for a projection it does not use must prune the second run too
+1
+32	1
+35	1
+73	1
+32	1
+35	1
+73	1
+qcc_gbtopk_proj	2	2	1	2	1
+qcc_gbtopk_noproj	2	0	1	1	1
+1
