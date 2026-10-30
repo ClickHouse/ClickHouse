@@ -1,0 +1,49 @@
+---
+description: 'Calculates the product of numeric values.'
+slug: /sql-reference/aggregate-functions/reference/product
+title: 'product'
+doc_type: 'reference'
+---
+
+## product {#product}
+
+Introduced in: v26.10.0
+
+Calculates the product of numeric values.
+
+The function aggregates rows directly and keeps a constant-size state. Input values of all supported
+types are converted to `Float64` before multiplication. Consequently, the result can depend on
+aggregation order for any input type, especially when data is processed in parallel. For wide integer
+and Decimal input, results can differ from
+`arrayProduct(groupArray(x))` because that expression can use a wider intermediate type. If the
+input is already an array, use
+[`arrayProduct`](/reference/functions/regular-functions/array-functions#arrayProduct) instead.
+
+**Syntax**
+
+```sql
+product(x)
+```
+
+**Arguments**
+
+- `x` — Input values. [`(U)Int*`](/reference/data-types/int-uint) or [`Float*`](/reference/data-types/float) or [`Decimal*`](/reference/data-types/decimal)
+
+**Returned value**
+
+Returns the product of the input values as a `Float64`. Returns `NULL` for empty input or if the product is `NaN`. [`Float64`](/reference/data-types/float) or [`NULL`](/reference/data-types/nullable)
+
+**Examples**
+
+**Basic usage**
+
+```sql title=Query
+SELECT product(x)
+FROM VALUES('x Float64', (1.5), (2), (4));
+```
+
+```response title=Response
+┌─product(x)─┐
+│         12 │
+└────────────┘
+```
