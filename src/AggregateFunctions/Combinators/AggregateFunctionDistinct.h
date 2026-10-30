@@ -17,8 +17,11 @@ struct Settings;
 template <typename T>
 struct AggregateFunctionDistinctSingleNumericData
 {
+    /// CRC32 for integer keys, like uniqExact.
+    using Hash = std::conditional_t<is_integer<T>, HashCRC32<T>, DefaultHash<T>>;
+
     /// When creating, the hash table must be small.
-    using Set = HashSetWithStackMemory<T, DefaultHash<T>, 4>;
+    using Set = HashSetWithStackMemory<T, Hash, 4>;
     using Self = AggregateFunctionDistinctSingleNumericData<T>;
 
     /// history will hold all values added so far
