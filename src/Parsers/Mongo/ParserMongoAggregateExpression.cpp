@@ -96,7 +96,6 @@ const std::unordered_map<std::string_view, std::string> direct_functions = {
     {"$floor", "floor"},
     {"$round", "roundBankers"},
     {"$trunc", "trunc"},
-    {"$sqrt", "sqrt"},
     {"$exp", "exp"},
     {"$ln", "log"},
     {"$log10", "log10"},
@@ -105,7 +104,6 @@ const std::unordered_map<std::string_view, std::string> direct_functions = {
     {"$setIntersection", "arrayIntersect"},
     {"$range", "range"},
     {"$concat", "concat"},
-    {"$divide", "divide"},
     {"$mod", "modulo"},
     {"$pow", "pow"},
     {"$ifNull", "coalesce"},
@@ -930,10 +928,51 @@ ASTPtr makeDateDiff(const rapidjson::Value & argument)
     return makeASTFunction("dateDiff", makeLiteral(Field(unit)), zoned("startDate"), zoned("endDate"), timezone->clone());
 }
 
+/** `value`, which throws when it is evaluated for a row in which `condition` holds. The condition
+  * is evaluated for every row, also for a constant, so that a table without rows is no error.
+  */
+ASTPtr withRowGuard(ASTPtr value, ASTPtr condition, const std::string & message)
+{
+    auto guard = makeASTFunction(
+        "throwIf",
+        makeASTFunction("ifNull", makeASTFunction("materialize", std::move(condition)), makeLiteral(Field(false))),
+        makeLiteral(Field(message)));
+    return makeASTFunction("tupleElement", makeASTFunction("tuple", std::move(value), std::move(guard)), makeLiteral(Field(UInt64(1))));
+}
+
 ASTPtr parseOperator(std::string_view name, const rapidjson::Value & argument)
 {
     if (auto it = direct_functions.find(name); it != direct_functions.end())
         return makeFunction(it->second, parseArguments(argument));
+
+    /// Mongo rejects a division by zero and the square root of a negative number, for which
+    /// `divide` and `sqrt` return an infinity and `NaN`. The checked operand is bound once (see
+    /// `withValue`).
+    if (name == "$divide")
+    {
+        auto arguments = parseArguments(argument);
+        requireArgumentCount(name, arguments, 2);
+        return withValue(arguments[1], [&](const ASTPtr & divisor)
+        {
+            return withRowGuard(
+                makeASTFunction("divide", arguments[0], divisor->clone()),
+                makeASTFunction("equals", divisor->clone(), makeLiteral(Field(UInt64(0)))),
+                "'$divide' cannot divide by zero");
+        });
+    }
+
+    if (name == "$sqrt")
+    {
+        auto arguments = parseArguments(argument);
+        requireArgumentCount(name, arguments, 1);
+        return withValue(arguments[0], [](const ASTPtr & value)
+        {
+            return withRowGuard(
+                makeASTFunction("sqrt", value->clone()),
+                makeASTFunction("less", value->clone(), makeLiteral(Field(UInt64(0)))),
+                "The argument of '$sqrt' must be greater than or equal to 0");
+        });
+    }
 
     if (name == "$toString")
     {
@@ -1190,21 +1229,35 @@ ASTPtr parseOperator(std::string_view name, const rapidjson::Value & argument)
         }
         auto default_it = argument.FindMember("default");
         if (default_it != argument.MemberEnd())
-            arguments.push_back(parseMongoAggregateExpression(default_it->value));
-        else
         {
-            /** Without a `default`, a document that no branch matches is an error in Mongo, not a
-              * `null`. The fallthrough branch throws when it is evaluated, which `multiIf` only
-              * does for the rows no condition matched; `materialize` keeps the analyzer from
-              * evaluating it as a constant up front. The value it would have is the one of the
-              * first branch, so that it does not change the type of the result.
-              */
-            arguments.push_back(withGuard(
-                arguments[1]->clone(),
-                makeASTFunction("materialize", makeLiteral(Field(true))),
-                "'$switch' could not find a matching branch for an input, and no default was specified"));
+            arguments.push_back(parseMongoAggregateExpression(default_it->value));
+            return makeFunction("multiIf", std::move(arguments));
         }
-        return makeFunction("multiIf", std::move(arguments));
+
+        /** Without a `default`, a document that no branch matches is an error in Mongo, not a
+          * `null`. Every branch yields its value as a single element array, and the fallthrough an
+          * empty one, which does not change the type of the result. The array is bound once (see
+          * `withValue`), its element is the result, and the result is an error when the array is
+          * empty. So no branch is copied, and the error depends only on whether a branch matched,
+          * not on whether `multiIf` evaluates its branches lazily. `materialize` keeps the analyzer
+          * from evaluating the check of constant branches up front, for a table that has no rows.
+          */
+        for (size_t i = 1; i < arguments.size(); i += 2)
+            arguments[i] = makeASTFunction("array", std::move(arguments[i]));
+        arguments.push_back(makeASTFunction("array"));
+        auto matched_array = makeASTFunction("materialize", makeFunction("multiIf", std::move(arguments)));
+        return withValue(std::move(matched_array), [](const ASTPtr & matched)
+        {
+            auto guard = makeASTFunction(
+                "throwIf",
+                makeASTFunction("empty", matched->clone()),
+                makeLiteral(Field(String("'$switch' could not find a matching branch for an input, and no default was specified"))));
+            return makeASTFunction(
+                "tupleElement",
+                makeASTFunction(
+                    "tuple", makeASTFunction("arrayElement", matched->clone(), makeLiteral(Field(UInt64(1)))), std::move(guard)),
+                makeLiteral(Field(UInt64(1))));
+        });
     }
 
     if (name == "$dateTrunc")
@@ -1621,6 +1674,22 @@ ASTPtr unwrapArrayFromTuples(ASTPtr aggregated)
     return makeASTFunction("arrayMap", makeLambda("x", std::move(element)), std::move(aggregated));
 }
 
+/** Whether `value` is a number to the numeric accumulators. A ClickHouse `Bool` is a `UInt8`, which
+  * `sum` and `avg` would add up, while `$sum`, `$avg` and the standard deviations of Mongo skip a
+  * boolean, as any other value that is not a number. The condition is a constant, and the
+  * accumulators are lowered to their `-If` forms with it. The value is an argument of an aggregate
+  * function, which cannot nest, so the copy does not compound.
+  */
+ASTPtr makeIsAccumulatedNumber(const ASTPtr & value)
+{
+    return makeASTFunction(
+        "not",
+        makeASTFunction(
+            "match",
+            makeASTFunction("toTypeName", value->clone()),
+            makeLiteral(Field(String(R"(^(Nullable\()?Bool\)?$)")))));
+}
+
 }
 
 ASTPtr parseMongoAccumulator(const rapidjson::Value & value, const MongoGroupOrder & order)
@@ -1633,10 +1702,8 @@ ASTPtr parseMongoAccumulator(const rapidjson::Value & value, const MongoGroupOrd
 
     /// The accumulators that ignore a `null`, as the aggregate functions they map onto do.
     static const std::unordered_map<std::string_view, std::string> accumulators = {
-        {"$avg", "avg"},
         {"$min", "min"},
         {"$max", "max"},
-        {"$stdDevPop", "stddevPop"},
     };
 
     /// The accumulators that keep a `null`, see `wrapIntoTuple`; the boolean says whether the
@@ -1685,8 +1752,9 @@ ASTPtr parseMongoAccumulator(const rapidjson::Value & value, const MongoGroupOrd
         if (const auto * literal = argument->as<ASTLiteral>(); literal && literal->value == Field(Int64(1)))
             return makeASTFunction("count");
         /// A sum of integers that wraps around is an error, see `withIntegerOverflowCheck`.
-        auto approximate = makeASTFunction("sum", makeASTFunction("toFloat64", argument->clone()));
-        return withIntegerOverflowCheck(makeASTFunction("sum", std::move(argument)), std::move(approximate));
+        auto is_number = makeIsAccumulatedNumber(argument);
+        auto approximate = makeASTFunction("sumIf", makeASTFunction("toFloat64", argument->clone()), is_number->clone());
+        return withIntegerOverflowCheck(makeASTFunction("sumIf", std::move(argument), std::move(is_number)), std::move(approximate));
     }
 
     /** `$first`, `$last` and `$push` read the documents of the group in the order of the stream,
@@ -1713,11 +1781,20 @@ ASTPtr parseMongoAccumulator(const rapidjson::Value & value, const MongoGroupOrd
     if (name == "$stdDevSamp")
     {
         auto sampled = parseMongoAggregateExpression(member.value);
+        auto is_number = makeIsAccumulatedNumber(sampled);
         return makeASTFunction(
             "if",
-            makeASTFunction("greater", makeASTFunction("count", sampled->clone()), makeLiteral(Field(UInt64(1)))),
-            makeASTFunction("stddevSamp", sampled),
+            makeASTFunction("greater", makeASTFunction("countIf", sampled->clone(), is_number->clone()), makeLiteral(Field(UInt64(1)))),
+            makeASTFunction("stddevSampIf", sampled, std::move(is_number)),
             makeNull());
+    }
+
+    /// `$avg` and `$stdDevPop` of a group without a number are `null`, see `makeIsAccumulatedNumber`.
+    if (name == "$avg" || name == "$stdDevPop")
+    {
+        auto input = parseMongoAggregateExpression(member.value);
+        auto is_number = makeIsAccumulatedNumber(input);
+        return makeASTFunction(name == "$avg" ? "avgOrNullIf" : "stddevPopOrNullIf", std::move(input), std::move(is_number));
     }
 
     if (auto it = accumulators.find(name); it != accumulators.end())

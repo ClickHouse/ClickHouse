@@ -553,9 +553,26 @@ ASTPtr makeRepresentableConstant(ASTPtr value, ASTPtr type, const String & messa
         std::move(type),
         make_intrusive<ASTLiteral>(Field(String("\\b(BFloat16|Float32)\\b"))),
         make_intrusive<ASTLiteral>(Field(String("Float64"))));
-    auto converted = makeASTFunction("accurateCast", value->clone(), std::move(type));
+    auto converted = makeASTFunction("accurateCast", value->clone(), type->clone());
+
+    /** `accurateCast` turns any number into a `Bool` - `2` becomes `true`, and in an array it even
+      * keeps the `2` - so the value is also converted to the type with an enumeration of `0` and
+      * `1` in place of `Bool`, which fails for any other number. For any other type that is the
+      * same conversion once more.
+      */
+    auto boolean_check = makeASTFunction(
+        "accurateCast",
+        value->clone(),
+        makeASTFunction(
+            "replaceRegexpAll",
+            type->clone(),
+            make_intrusive<ASTLiteral>(Field(String("\\bBool\\b"))),
+            make_intrusive<ASTLiteral>(Field(String("Enum8('false' = 0, 'true' = 1)")))));
     if (!hasFractionalConstant(value))
-        return converted;
+        return makeASTFunction(
+            "tupleElement",
+            makeASTFunction("tuple", std::move(converted), std::move(boolean_check)),
+            make_intrusive<ASTLiteral>(Field(UInt64(1))));
 
     /** `accurateCast` truncates the digits a decimal type does not keep - `1.5` becomes `1` in an
       * `Int32` and `1.25` becomes `1.2` in a `Decimal(38, 1)` - so a value with fractional digits is
@@ -573,7 +590,9 @@ ASTPtr makeRepresentableConstant(ASTPtr value, ASTPtr type, const String & messa
         makeASTFunction("if", std::move(exact), make_intrusive<ASTLiteral>(Field(String())), make_intrusive<ASTLiteral>(Field(message))),
         make_intrusive<ASTLiteral>(Field(String("Enum8('' = 0)"))));
     return makeASTFunction(
-        "tupleElement", makeASTFunction("tuple", std::move(converted), std::move(guard)), make_intrusive<ASTLiteral>(Field(UInt64(1))));
+        "tupleElement",
+        makeASTFunction("tuple", std::move(converted), std::move(guard), std::move(boolean_check)),
+        make_intrusive<ASTLiteral>(Field(UInt64(1))));
 }
 
 std::optional<std::string> MongoQueryKeyNameExtractor::extractString(const char * begin, const char * end)
