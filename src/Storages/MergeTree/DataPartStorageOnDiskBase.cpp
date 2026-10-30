@@ -28,6 +28,7 @@
 #include <Storages/MergeTree/ParallelSyncFiles.h>
 #include <Common/formatReadable.h>
 #include <Common/logger_useful.h>
+#include <Common/FailPoint.h>
 
 #include <fmt/ranges.h>
 
@@ -41,6 +42,11 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int FILE_DOESNT_EXIST;
     extern const int CORRUPTED_DATA;
+}
+
+namespace FailPoints
+{
+    extern const char part_sync_files_pause_after_collect[];
 }
 
 namespace
@@ -1146,6 +1152,19 @@ void DataPartStorageOnDiskBase::syncFiles() const
     /// lives in a single archive, and it is that archive which has to be synced.
     std::vector<std::string> paths;
     collectFilesRecursively(*disk, fs::path(root_path) / part_dir, paths);
+
+    /// Skip the transaction metadata. `VersionMetadataOnDisk::storeInfoToDataPartStorage` can rewrite it
+    /// concurrently with this walk (holding a reference to the part does not prevent it): it writes and
+    /// syncs `txn_version.txt.tmp` and then renames it to `txn_version.txt`, so a collected name may be
+    /// gone before it is opened for the sync. These files have their own sync protocol anyway.
+    std::erase_if(paths, [](const std::string & path)
+    {
+        const auto file_name = fs::path(path).filename();
+        return file_name == VersionMetadata::TXN_VERSION_METADATA_FILE_NAME
+            || file_name == VersionMetadata::TMP_TXN_VERSION_METADATA_FILE_NAME;
+    });
+
+    FailPointInjection::pauseFailPoint(FailPoints::part_sync_files_pause_after_collect);
 
     parallelSyncFiles(*disk, paths);
 }
