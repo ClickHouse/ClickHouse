@@ -158,7 +158,7 @@ protected:
         MergeTreeDataPartChecksums sst_checksums;
         writer.finish(sst_checksums, /*fsync=*/false);
 
-        return openSSTReaderFromStorage(storage, SSTIndexWriter::FILE_NAME, ReadSettings{});
+        return openSSTReaderFromStorage(storage, SSTIndexWriter::FILE_NAME);
     }
 
     /// Build an SST-backed probe target from `(key -> row)` entries (written via
@@ -309,7 +309,7 @@ TEST_F(UniqueKeyProbeTest, ProbeBatchMapsUnsortedRowsBack)
 TEST_F(UniqueKeyProbeTest, OpenMissingFileThrows)
 {
     auto missing_storage = std::make_shared<DataPartStorageOnDiskFull>(volume, "", "does_not_exist");
-    EXPECT_ANY_THROW(openSSTReaderFromStorage(missing_storage, "does_not_exist.sst", ReadSettings{}));
+    EXPECT_ANY_THROW(openSSTReaderFromStorage(missing_storage, "does_not_exist.sst"));
 }
 
 TEST_F(UniqueKeyProbeTest, FindRowIndexBatchHitsExactKeyOnly)
@@ -440,7 +440,7 @@ TEST_F(UniqueKeyProbeTest, CorruptValueSizeFailsClosed)
     ASSERT_TRUE(writeSSTRawValue(
         (base / part_dir / SSTIndexWriter::FILE_NAME).string(), encodeKey(1), String(5, '\0'))); /// 5-byte value
 
-    auto reader = openSSTReaderFromStorage(storage, SSTIndexWriter::FILE_NAME, ReadSettings{});
+    auto reader = openSSTReaderFromStorage(storage, SSTIndexWriter::FILE_NAME);
     SSTProbeTargetPart target(/*part=*/nullptr, std::make_shared<DeleteBitmap>(), std::move(reader));
 
     const String e = encodeKey(1);
@@ -522,7 +522,7 @@ TEST_F(UniqueKeyProbeTest, DecodedRowOutOfPartBoundsThrows)
     const String out_of_range_value{'\0', '\0', '\0', '\x05'}; /// BE 5
     ASSERT_TRUE(writeSSTRawValue(sst_path, encodeKey(42), out_of_range_value));
 
-    auto reader = openSSTReaderFromStorage(part_storage, SSTIndexWriter::FILE_NAME, ReadSettings{});
+    auto reader = openSSTReaderFromStorage(part_storage, SSTIndexWriter::FILE_NAME);
     SSTProbeTargetPart target(part.get(), std::make_shared<DeleteBitmap>(), std::move(reader));
 
     const String e = encodeKey(42);

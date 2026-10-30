@@ -1100,6 +1100,7 @@ std::optional<UniqueKeySSTReaderCacheKey> getSSTReaderCacheKey(const IMergeTreeD
     const auto it = part.checksums.files.find(SSTIndexWriter::FILE_NAME);
     if (it == part.checksums.files.end())
         return std::nullopt;
+    /// Same shape as `getPathForCacheKey` (private, so not reusable here).
     return UniqueKeySSTReaderCache::makeKey(
         part.getDataPartStorage().getDiskName() + ":" + part.getRelativePathOfActivePart(), it->second.file_hash);
 }
@@ -1122,7 +1123,7 @@ void IMergeTreeDataPart::clearCaches()
     removeFromVectorIndexCache(storage.getContext()->getVectorSimilarityIndexCache().get());
 
 #if USE_ROCKSDB
-    /// A cached SST reader pins the part's storage and read buffer.
+    /// A cached SST reader keeps the part's index + filter blocks resident.
     if (auto key = getSSTReaderCacheKey(*this))
     {
         if (auto sst_reader_cache = storage.getContext()->getUniqueKeySSTReaderCache())
@@ -2160,11 +2161,11 @@ std::string IMergeTreeDataPart::getDeleteBitmapCacheIdentity() const
 }
 
 #if USE_ROCKSDB
-SSTFileReaderPtr IMergeTreeDataPart::getOrOpenSSTReader(const ReadSettings & read_settings) const
+SSTFileReaderPtr IMergeTreeDataPart::getOrOpenSSTReader() const
 {
     const auto direct_open = [&]
     {
-        return openSSTReaderFromStorage(getDataPartStoragePtr(), SSTIndexWriter::FILE_NAME, read_settings);
+        return openSSTReaderFromStorage(getDataPartStoragePtr(), SSTIndexWriter::FILE_NAME);
     };
 
     auto cache = storage.getContext()->getUniqueKeySSTReaderCache();
@@ -2179,24 +2180,12 @@ SSTFileReaderPtr IMergeTreeDataPart::getOrOpenSSTReader(const ReadSettings & rea
     if (!key)
         return direct_open();
 
-    /// A cached reader is shared, so it is opened with server-level settings;
-    /// a caller whose settings it cannot honor opens directly instead.
-    const auto & global_context = Context::getGlobalContextInstance();
-    auto shared_read_settings = global_context->getReadSettings();
-    shared_read_settings.remote_throttler = global_context->getServerWideRemoteReadThrottler();
-    shared_read_settings.local_throttler = global_context->getServerWideLocalReadThrottler();
-    if (!canShareSSTReaderSettings(read_settings, shared_read_settings, getDataPartStorage().isStoredOnRemoteDisk()))
-        return direct_open();
-
-    /// The reader only does `readBigAt`, so keep its unused buffer small. An open
-    /// failure propagates out of `getOrSet` and is never cached.
-    auto [reader, loaded] = cache->getOrSet(*key, [&]() -> SSTFileReaderPtr
+    /// An open failure propagates out of `getOrSet` and is never cached.
+    auto [reader, loaded] = cache->getOrSet(*key, [&]
     {
-        shared_read_settings.local_fs_settings.buffer_size = SST_READER_BUFFER_SIZE;
-        shared_read_settings.remote_fs_settings.buffer_size = SST_READER_BUFFER_SIZE;
-        /// Otherwise `prefer_bigger_buffer_size` raises the remote buffer back to 1 MiB.
-        shared_read_settings.remote_fs_settings.large_buffer_size = SST_READER_BUFFER_SIZE;
-        return std::make_shared<SSTFileReader>(getDataPartStoragePtr(), SSTIndexWriter::FILE_NAME, shared_read_settings);
+        /// Owned by the cache, not this query: keep it off the query's memory tracker.
+        MemoryTrackerBlockerInThread not_charged_to_the_query;
+        return direct_open();
     });
     ProfileEvents::increment(loaded ? ProfileEvents::UniqueKeySSTReaderCacheMisses : ProfileEvents::UniqueKeySSTReaderCacheHits);
     return reader;

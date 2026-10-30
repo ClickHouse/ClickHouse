@@ -456,8 +456,9 @@ def wait_for(condition, description, retries=120, sleep_time=0.5):
     assert condition(), f"Timed out waiting for {description}"
 
 
-# A query- or user-level read throttler makes the probe bypass the SST reader cache.
-UNTHROTTLED_UK_SETTINGS = {**UK_SETTINGS, "max_remote_read_network_bandwidth": 0, "max_local_read_bandwidth": 0}
+# `async_insert` is on by default; it would run the probe in a background flush
+# with another query_id, hiding its cache events from the INSERT's query_log row.
+SYNC_UK_SETTINGS = {**UK_SETTINGS, "async_insert": 0}
 
 
 def test_unique_key_sst_reader_cache_follows_background_move(started_cluster):
@@ -492,7 +493,7 @@ def test_unique_key_sst_reader_cache_follows_background_move(started_cluster):
     try:
         node.query("SYSTEM START MOVES uk_move")
         node.query("SYSTEM WAIT FAILPOINT stop_moving_part_before_swap_with_active PAUSE", timeout=120)
-        node.query("INSERT INTO uk_move VALUES (10, 'x')", settings=UNTHROTTLED_UK_SETTINGS, query_id=pre_move_query_id)
+        node.query("INSERT INTO uk_move VALUES (10, 'x')", settings=SYNC_UK_SETTINGS, query_id=pre_move_query_id)
     finally:
         node.query("SYSTEM DISABLE FAILPOINT stop_moving_part_before_swap_with_active")
 
@@ -517,7 +518,7 @@ def test_unique_key_sst_reader_cache_follows_background_move(started_cluster):
     # Probe the moved parts: the reader must be opened on S3, never reused from
     # the old local location.
     query_id = f"uk_move_probe_{uuid.uuid4().hex}"
-    node.query("INSERT INTO uk_move VALUES (20, 'y')", settings=UNTHROTTLED_UK_SETTINGS, query_id=query_id)
+    node.query("INSERT INTO uk_move VALUES (20, 'y')", settings=SYNC_UK_SETTINGS, query_id=query_id)
     node.query("SYSTEM FLUSH LOGS query_log")
 
     def cache_events(qid):
