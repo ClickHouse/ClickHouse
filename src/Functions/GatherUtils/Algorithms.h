@@ -5,12 +5,12 @@
 #include <Common/FieldVisitorConvertToNumber.h>
 #include <Common/VectorWithMemoryTracking.h>
 #include <Functions/GatherUtils/Sources.h>
+#include <Functions/GatherUtils/CheckedSliceArgument.h>
 #include <Functions/GatherUtils/Sinks.h>
 #include <Core/AccurateComparison.h>
 #include <Functions/GatherUtils/GatherUtils.h>
 #include <Functions/GatherUtils/sliceEqualElements.h>
 #include <Functions/GatherUtils/sliceHasImplAnyAll.h>
-
 
 namespace DB::ErrorCodes
 {
@@ -318,19 +318,15 @@ void NO_INLINE sliceFromRightConstantOffsetBounded(Source && src, Sink && sink, 
     }
 }
 
-template <typename Source, typename Sink>
+template <SliceArgumentPolicy policy = SliceArgumentPolicy::PreserveLegacySemantics, typename Source, typename Sink>
 void NO_INLINE sliceDynamicOffsetUnbounded(Source && src, Sink && sink, const IColumn & offset_column)
 {
-    const bool is_null = offset_column.onlyNull();
-    const auto * nullable = typeid_cast<const ColumnNullable *>(&offset_column);
-    const ColumnUInt8::Container * null_map = nullable ? &nullable->getNullMapData() : nullptr;
-    const IColumn * nested_column = nullable ? &nullable->getNestedColumn() : &offset_column;
+    const DynamicSliceArgumentReader<policy> offset_reader(&offset_column, "offset");
 
     while (!src.isEnd())
     {
         auto row_num = src.rowNum();
-        bool has_offset = !is_null && !(null_map && (*null_map)[row_num]);
-        Int64 offset = has_offset ? nested_column->getInt(row_num) : 1;
+        const Int64 offset = offset_reader.getOr(row_num, 1);
 
         if (offset != 0)
         {
@@ -350,38 +346,18 @@ void NO_INLINE sliceDynamicOffsetUnbounded(Source && src, Sink && sink, const IC
 }
 
 
-template <bool inverse, typename Source, typename Sink>
+template <bool inverse, SliceArgumentPolicy policy = SliceArgumentPolicy::PreserveLegacySemantics, typename Source, typename Sink>
 static void sliceDynamicOffsetBoundedImpl(Source && src, Sink && sink, const IColumn * offset_column, const IColumn * length_column)
 {
-    const bool is_offset_null = !offset_column || offset_column->onlyNull();
-    const ColumnUInt8::Container * offset_null_map = nullptr;
-    const IColumn * offset_nested_column = nullptr;
-
-    if (!is_offset_null)
-    {
-        const auto * offset_nullable = typeid_cast<const ColumnNullable *>(offset_column);
-        offset_null_map = offset_nullable ? &offset_nullable->getNullMapData() : nullptr;
-        offset_nested_column = offset_nullable ? &offset_nullable->getNestedColumn() : offset_column;
-    }
-
-    const bool is_length_null = !length_column || length_column->onlyNull();
-    const ColumnUInt8::Container * length_null_map = nullptr;
-    const IColumn * length_nested_column = nullptr;
-
-    if (!is_length_null)
-    {
-        const auto * length_nullable = typeid_cast<const ColumnNullable *>(length_column);
-        length_null_map = length_nullable ? &length_nullable->getNullMapData() : nullptr;
-        length_nested_column = length_nullable ? &length_nullable->getNestedColumn() : length_column;
-    }
+    const DynamicSliceArgumentReader<policy> offset_reader(offset_column, "offset");
+    const DynamicSliceArgumentReader<policy> length_reader(length_column, "length");
 
     while (!src.isEnd())
     {
         size_t row_num = src.rowNum();
-        bool has_offset = !is_offset_null && !(offset_null_map && (*offset_null_map)[row_num]);
-        bool has_length = !is_length_null && !(length_null_map && (*length_null_map)[row_num]);
-        Int64 offset = has_offset ? offset_nested_column->getInt(row_num) : 1;
-        Int64 size = has_length ? length_nested_column->getInt(row_num) : static_cast<Int64>(src.getElementSize());
+        const Int64 offset = offset_reader.getOr(row_num, 1);
+        /// Count UTF-8 code points only when the length argument is absent.
+        Int64 size = length_reader.getOrElse(row_num, [&] { return static_cast<Int64>(src.getElementSize()); });
 
         if (size < 0)
         {
@@ -435,17 +411,17 @@ static void sliceDynamicOffsetBoundedImpl(Source && src, Sink && sink, const ICo
 }
 
 
-template <typename Source, typename Sink>
+template <SliceArgumentPolicy policy = SliceArgumentPolicy::PreserveLegacySemantics, typename Source, typename Sink>
 void NO_INLINE sliceDynamicOffsetBounded(Source && src, Sink && sink, const IColumn & offset_column, const IColumn & length_column)
 {
-    sliceDynamicOffsetBoundedImpl<false>(std::forward<Source>(src), std::forward<Sink>(sink), &offset_column, &length_column);
+    sliceDynamicOffsetBoundedImpl<false, policy>(std::forward<Source>(src), std::forward<Sink>(sink), &offset_column, &length_column);
 }
 
 /// Similar to above, but with no offset.
-template <typename Source, typename Sink>
+template <SliceArgumentPolicy policy = SliceArgumentPolicy::PreserveLegacySemantics, typename Source, typename Sink>
 void NO_INLINE sliceFromLeftDynamicLength(Source && src, Sink && sink, const IColumn & length_column)
 {
-    sliceDynamicOffsetBoundedImpl<false>(std::forward<Source>(src), std::forward<Sink>(sink), nullptr, &length_column);
+    sliceDynamicOffsetBoundedImpl<false, policy>(std::forward<Source>(src), std::forward<Sink>(sink), nullptr, &length_column);
 }
 
 template <typename Source, typename Sink>
