@@ -24,6 +24,7 @@ struct AnalysisTableExpressionData;
 class QueryExpressionsAliasVisitor ;
 
 class QueryNode;
+class FunctionNode;
 class JoinNode;
 class ColumnNode;
 
@@ -287,6 +288,8 @@ private:
     void restoreReplacedTableStoragesIfNeeded(const QueryTreeNodePtr & node);
 
     void initializeTableExpressionData(const TableExpressionNodePtr & table_expression_node, IdentifierResolveScope & scope);
+
+    void resolveFirstArgumentOfTableFunctionWrapper(FunctionNode & wrapper_function, const String & table_function_name, IdentifierResolveScope & scope);
 
     void resolveTableFunction(QueryTreeNodePtr & table_function_node, IdentifierResolveScope & scope, QueryExpressionsAliasVisitor & expressions_visitor, bool nested_table_function);
 
