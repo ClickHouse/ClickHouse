@@ -272,6 +272,12 @@ SortedBlocksWriter::PremergedFiles SortedBlocksWriter::premerge()
 SortedBlocksWriter::SortedFiles SortedBlocksWriter::finishMerge(std::function<void(const Block &)> callback)
 {
     PremergedFiles files = premerge();
+
+    /// A writer that never received a block has nothing to merge: the pipe is empty and could
+    /// not even initialize a pipeline.
+    if (files.pipe.empty())
+        return {};
+
     QueryPipelineBuilder pipeline;
     pipeline.init(std::move(files.pipe));
 

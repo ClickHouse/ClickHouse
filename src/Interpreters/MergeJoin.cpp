@@ -839,6 +839,11 @@ void MergeJoin::mergeFlushedRightBlocks()
         disk_writer.reset();
     }
 
+    /// An empty right side: nothing was spilled, the probe loops see zero right blocks. Skip the
+    /// cache sizing below, whose row-limit branch divides by the right row count.
+    if (flushed_right_blocks.empty())
+        return;
+
     if (table_join->collectAnalyzeStats())
         for (const auto & file : flushed_right_blocks)
             right_spilled_compressed_bytes += file.getHolder()->getStat().compressed_size;
