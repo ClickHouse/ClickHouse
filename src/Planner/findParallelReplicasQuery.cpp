@@ -2,6 +2,8 @@
 #include <Analyzer/IQueryTreeNode.h>
 #include <Analyzer/InDepthQueryTreeVisitor.h>
 #include <Analyzer/JoinNode.h>
+#include <Analyzer/Passes/QueryAnalysisPass.h>
+#include <Analyzer/QueryTreeBuilder.h>
 #include <Analyzer/QueryNode.h>
 #include <Analyzer/TableFunctionNode.h>
 #include <Analyzer/TableNode.h>
@@ -697,19 +699,55 @@ class CollectTableFunctionNodesVisitor : public InDepthQueryTreeVisitor<CollectT
 public:
     void visitImpl(QueryTreeNodePtr & node)
     {
-        if (auto * table_function_node = node->as<TableFunctionNode>())
-            table_function_nodes.push_back(table_function_node);
+        auto * table_function_node = node->as<TableFunctionNode>();
+        if (!table_function_node)
+            return;
+
+        table_function_nodes.push_back(table_function_node);
+        if (table_function_node->getTableFunctionName() == "view")
+            qualifyViewQuery(*table_function_node);
     }
 
-    /// The arguments of a table function are not entered: whose current database a table function nested
-    /// there resolves against depends on the outer one - `remote` evaluates its arguments on the servers it
-    /// names. Left as written, such a call resolves the way it does without parallel replicas.
+    /// The arguments of `remote` and `cluster` are not entered: they are evaluated on the servers these name,
+    /// against the current database there. Left as written, such a call resolves the way it does without
+    /// parallel replicas.
     static bool needChildVisit(const QueryTreeNodePtr & parent, const QueryTreeNodePtr &)
     {
-        return !parent->as<TableFunctionNode>();
+        const auto * table_function_node = parent->as<TableFunctionNode>();
+        if (!table_function_node)
+            return true;
+
+        const auto & name = table_function_node->getTableFunctionName();
+        return !(name == "remote" || name == "remoteSecure" || name == "cluster" || name == "clusterAllReplicas");
     }
 
     std::vector<TableFunctionNode *> table_function_nodes;
+
+private:
+    /// The analyzer leaves the query of `view` unresolved, and sent as written it names its tables and table
+    /// function arguments the way the user wrote them. It is replaced with the query a resolved copy prints,
+    /// which names them qualified. The argument stays unresolved, so that the initiator, which plans the
+    /// query it sends, plans it as it does without parallel replicas.
+    static void qualifyViewQuery(TableFunctionNode & table_function_node)
+    {
+        const auto & unresolved_indexes = table_function_node.getUnresolvedArgumentIndexes();
+        if (std::find(unresolved_indexes.begin(), unresolved_indexes.end(), 0) == unresolved_indexes.end())
+            return;
+
+        auto & argument = table_function_node.getArguments().getNodes().at(0);
+        ContextPtr context;
+        if (auto * query_node = argument->as<QueryNode>())
+            context = query_node->getContext();
+        else if (auto * union_node = argument->as<UnionNode>())
+            context = union_node->getContext();
+        else
+            return;
+
+        auto view_query = argument->clone();
+        QueryAnalysisPass(/*only_analyze=*/true).run(view_query, context);
+        qualifyTableFunctionArguments(view_query);
+        argument = buildQueryTree(view_query->toAST(), context);
+    }
 };
 
 }
