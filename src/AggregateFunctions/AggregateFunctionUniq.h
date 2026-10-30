@@ -344,12 +344,23 @@ struct Adder
     template <SetLevelHint hint = Data::is_able_to_parallelize_merge ? SetLevelHint::unknown : SetLevelHint::singleLevel>
     static void ALWAYS_INLINE add(Data & data, const IColumn ** columns, size_t num_args, size_t row_num, bool normalize_floats = true)
     {
+        if (Data::is_variadic && !normalize_floats)
+            add<hint, !Data::is_variadic>(data, columns, num_args, row_num);
+        else
+            add<hint, true>(data, columns, num_args, row_num);
+    }
+
+    /// `normalize_floats` is only used by the variadic version, see `UniqVariadicHash`.
+    template <SetLevelHint hint, bool normalize_floats>
+    static void ALWAYS_INLINE add(Data & data, const IColumn ** columns, size_t num_args, size_t row_num)
+    {
         if constexpr (Data::is_variadic)
         {
+            using Hash = UniqVariadicHash<Data::is_exact, Data::argument_is_tuple>;
             if constexpr (IsUniqExactSet<typename Data::Set>::value)
-                data.set.template insert<T, hint>(UniqVariadicHash<Data::is_exact, Data::argument_is_tuple>::apply(num_args, columns, row_num, normalize_floats));
+                data.set.template insert<T, hint>(Hash::template apply<normalize_floats>(num_args, columns, row_num));
             else
-                data.set.insert(T{UniqVariadicHash<Data::is_exact, Data::argument_is_tuple>::apply(num_args, columns, row_num, normalize_floats)});
+                data.set.insert(T{Hash::template apply<normalize_floats>(num_args, columns, row_num)});
         }
 #if USE_DATASKETCHES
         else if constexpr (std::is_same_v<Data, AggregateFunctionUniqThetaData>)
@@ -381,10 +392,21 @@ struct Adder
         if constexpr (Data::is_able_to_parallelize_merge)
             use_single_level_hash_table = data.set.isSingleLevel();
 
-        if (use_single_level_hash_table)
-            addManyImpl<SetLevelHint::singleLevel>(data, columns, num_args, row_begin, row_end, flags, null_map, normalize_floats);
+        /// `normalize_floats` is decided outside of the loops over the rows. It is only used by the variadic version.
+        if (Data::is_variadic && !normalize_floats)
+        {
+            if (use_single_level_hash_table)
+                addManyImpl<SetLevelHint::singleLevel, !Data::is_variadic>(data, columns, num_args, row_begin, row_end, flags, null_map);
+            else
+                addManyImpl<SetLevelHint::twoLevel, !Data::is_variadic>(data, columns, num_args, row_begin, row_end, flags, null_map);
+        }
         else
-            addManyImpl<SetLevelHint::twoLevel>(data, columns, num_args, row_begin, row_end, flags, null_map, normalize_floats);
+        {
+            if (use_single_level_hash_table)
+                addManyImpl<SetLevelHint::singleLevel, true>(data, columns, num_args, row_begin, row_end, flags, null_map);
+            else
+                addManyImpl<SetLevelHint::twoLevel, true>(data, columns, num_args, row_begin, row_end, flags, null_map);
+        }
 
         if constexpr (Data::is_able_to_parallelize_merge)
         {
@@ -518,7 +540,7 @@ private:
         }
     }
 
-    template <SetLevelHint hint>
+    template <SetLevelHint hint, bool normalize_floats>
     static void addManyImpl(
         Data & data,
         const IColumn ** columns,
@@ -526,31 +548,30 @@ private:
         size_t row_begin,
         size_t row_end,
         const char8_t * flags,
-        const UInt8 * null_map,
-        bool normalize_floats)
+        const UInt8 * null_map)
     {
         if (flags && null_map)
         {
             for (size_t row = row_begin; row < row_end; ++row)
                 if (!null_map[row] && flags[row])
-                    add<hint>(data, columns, num_args, row, normalize_floats);
+                    add<hint, normalize_floats>(data, columns, num_args, row);
         }
         else if (flags)
         {
             for (size_t row = row_begin; row < row_end; ++row)
                 if (flags[row])
-                    add<hint>(data, columns, num_args, row, normalize_floats);
+                    add<hint, normalize_floats>(data, columns, num_args, row);
         }
         else if (null_map)
         {
             for (size_t row = row_begin; row < row_end; ++row)
                 if (!null_map[row])
-                    add<hint>(data, columns, num_args, row, normalize_floats);
+                    add<hint, normalize_floats>(data, columns, num_args, row);
         }
         else if constexpr (!is_batchable)
         {
             for (size_t row = row_begin; row < row_end; ++row)
-                add<hint>(data, columns, num_args, row, normalize_floats);
+                add<hint, normalize_floats>(data, columns, num_args, row);
         }
         else
         {
