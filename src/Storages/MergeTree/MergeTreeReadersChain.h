@@ -127,6 +127,9 @@ private:
     /// See `collectColumnsConsumedByChainActions` and `executeActionsBeforePrewhere`.
     NameSet columns_consumed_by_chain_actions;
 
+    /// For every reader, the read names of the columns whose patches are discarded after its step.
+    std::vector<NameSet> columns_without_patches_after_step;
+
     bool is_initialized = false;
     LoggerPtr log = getMergeTreeReadersChainLogger();
 };
