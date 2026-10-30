@@ -374,10 +374,14 @@ parser.add_argument(
 )
 
 args = parser.parse_args()
-# The load generator runs in `--tmp-files-dir` to keep its cores, so its paths must not be relative to the
-# invocation directory. `absolute`, not `resolve`: the name of a symlink picks the tool the binary runs as.
+# Paths used from another directory must not be relative to the invocation one: the load generator and the
+# Unity commands run elsewhere, and `add_instance` resolves configs against this file's directory.
+# `absolute`, not `resolve`: the name of a symlink picks the tool the binary runs as.
 args.client_binary = args.client_binary.absolute()
 args.tmp_files_dir = args.tmp_files_dir.absolute()
+for path_arg in ("server_config", "user_config", "with_unity"):
+    if getattr(args, path_arg) is not None:
+        setattr(args, path_arg, getattr(args, path_arg).absolute())
 
 if len(args.replica_values) != len(args.shard_values):
     raise Exception(
