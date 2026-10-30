@@ -126,7 +126,10 @@ struct HashMethodSingleLowCardinalityColumn : public SingleColumnMethod
 
     /// With the inline count the mapped value is the counter itself, so no copy of it may be handed out:
     /// `emplaceKey` and `findKey` then return the table cell and never fill `mapped_cache` or `visit_cache`.
+    /// The inline count runs only through `StateNoCache`, so the cached state has it off at compile time.
     bool mapped_in_table_only = false;
+
+    ALWAYS_INLINE bool mappedInTableOnly() const { return !use_cache && mapped_in_table_only; }
 
     /// Scratch of `forEachPositionCount`: per dictionary position, the row count (zero between calls) and the
     /// first row relative to the range, plus the positions a call counted.
@@ -175,11 +178,13 @@ struct HashMethodSingleLowCardinalityColumn : public SingleColumnMethod
             }
         }
 
-        if constexpr (has_mapped)
+        if constexpr (has_mapped && !use_cache)
             mapped_in_table_only = lcd_cache && lcd_cache->simple_count;
+        else
+            chassert(!lcd_cache || !lcd_cache->simple_count);
 
         /// The dictionary cache shares hashes, never mapped values, so the inline count keeps it.
-        const bool use_dictionary_cache = use_cache || mapped_in_table_only;
+        const bool use_dictionary_cache = use_cache || mappedInTableOnly();
 
         const auto * dict = column->getDictionary().getNestedNotNullableColumn().get();
         is_nullable = column->getDictionary().nestedColumnIsNullable();
@@ -221,7 +226,7 @@ struct HashMethodSingleLowCardinalityColumn : public SingleColumnMethod
 
         if constexpr (has_mapped)
         {
-            if (!mapped_in_table_only)
+            if (!mappedInTableOnly())
                 mapped_cache.resize(key_columns[0]->size());
         }
 
@@ -284,7 +289,7 @@ struct HashMethodSingleLowCardinalityColumn : public SingleColumnMethod
 
             if constexpr (has_mapped)
             {
-                if (mapped_in_table_only)
+                if (mappedInTableOnly())
                     return EmplaceResult(data.getNullKeyData(), data.getNullKeyData(), !has_null_key);
                 setVisited(row, VisitValue::Found);
                 return EmplaceResult(data.getNullKeyData(), mapped_cache[0], !has_null_key);
@@ -321,7 +326,7 @@ struct HashMethodSingleLowCardinalityColumn : public SingleColumnMethod
             {
                 new (&mapped) Mapped();
             }
-            if (mapped_in_table_only)
+            if (mappedInTableOnly())
                 return EmplaceResult(mapped, mapped, inserted, std::move(key));
             setVisited(row, VisitValue::Found);
             mapped_cache[row] = mapped;
@@ -380,7 +385,7 @@ struct HashMethodSingleLowCardinalityColumn : public SingleColumnMethod
 
         if constexpr (has_mapped)
         {
-            if (mapped_in_table_only)
+            if (mappedInTableOnly())
                 return FindResult(found ? &it->getMapped() : nullptr, found, offset);
         }
 
