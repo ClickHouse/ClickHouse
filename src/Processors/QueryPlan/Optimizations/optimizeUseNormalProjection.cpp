@@ -868,6 +868,10 @@ UseProjectionsResult optimizeUseNormalProjections(
         }
         projection_reading = std::make_unique<ReadFromPreparedSource>(std::move(pipe));
         projection_replaced_with_prepared_source = true;
+
+        /// the projection selected no ranges, so no projection read reports its analysis
+        if (!should_skip_projection_reading_on_remote_replicas)
+            reading->reportIndexUsageWith(*projection_reading, best_candidate->merge_tree_projection_select_result_ptr);
     }
 
     if (has_parent_parts && optimization_settings.is_parallel_replicas_initiator_with_projection_support)
@@ -932,7 +936,7 @@ UseProjectionsResult optimizeUseNormalProjections(
     }
 
     /// Filter out parts in parent_ranges that overlap with those already read by the best candidate projection
-    filterPartsByProjection(*parent_reading_select_result, best_candidate->parent_parts, /*parts_read_from_projection=*/true);
+    filterPartsByChosenProjection(*parent_reading_select_result, *best_candidate);
 
     if (!query_info.is_internal && context->hasQueryContext())
     {

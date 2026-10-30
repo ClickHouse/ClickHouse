@@ -1650,7 +1650,7 @@ UseProjectionsResult optimizeUseAggregateProjections(
             reading->getParallelReadingExtension());
 
         /// Filter out parts in parent_ranges that overlap with those already read by the best candidate projection
-        filterPartsByProjection(*parent_reading_select_result, best_candidate->parent_parts, /*parts_read_from_projection=*/true);
+        filterPartsByChosenProjection(*parent_reading_select_result, *best_candidate);
         has_parent_parts = !parent_reading_select_result->parts_with_ranges.empty();
 
         /// Only the initiator should read the projection to avoid potential data duplication.
@@ -1664,6 +1664,10 @@ UseProjectionsResult optimizeUseAggregateProjections(
             /// projection selected no ranges, or reads only on the initiator). If no parent parts remain
             /// either, `reading` is detached below with nothing left to announce.
             short_circuited_with_prepared_source = true;
+
+            /// the projection selected no ranges, so no projection read reports its analysis
+            if (!should_skip_projection_reading_on_remote_replicas)
+                reading->reportIndexUsageWith(*projection_reading, best_candidate->merge_tree_projection_select_result_ptr);
         }
 
         if (has_parent_parts && optimization_settings.is_parallel_replicas_initiator_with_projection_support)
