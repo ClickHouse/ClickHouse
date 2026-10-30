@@ -30,17 +30,46 @@ namespace
 /// `c Tuple(a UInt8, s String) DEFAULT tuple(defaultValueOfTypeName('UInt8'), 'Hello')`.
 /// See https://github.com/ClickHouse/ClickHouse/issues/2797.
 
+/// Pin the aggregate-function state versions in a data type the same way they are going to be pinned
+/// in the type of the column (see `InterpreterCreateQuery::getColumnType` and `AlterCommand::parse`).
+void pinStateVersions(DataTypePtr & data_type, TupleElementDefaultStateVersion state_version)
+{
+    switch (state_version)
+    {
+        case TupleElementDefaultStateVersion::PinCurrent:
+            pinCurrentStateVersionToAggregateFunctions(data_type);
+            break;
+        case TupleElementDefaultStateVersion::PinOldest:
+            setVersionToAggregateFunctions(data_type, true);
+            break;
+        case TupleElementDefaultStateVersion::AsWritten:
+            break;
+    }
+}
+
 /// Build `defaultValueOfTypeName('<type>')` for the (already stripped) element type, used to fill
 /// positions of a tuple that do not have an explicit DEFAULT. The type name is parsed back, so it is
 /// formatted without `query_masking_rules` (unlike `formatForLogging`), which could alter it.
-ASTPtr makeDefaultValueOfType(const IAST & type)
+/// The built value is cast to the type of the column, which has the aggregate-function state versions
+/// pinned according to `state_version`. A `Variant` alternative is matched by its exact name, so if the
+/// pinning changes the type, the name of the pinned type is used, otherwise the type is kept as written.
+ASTPtr makeDefaultValueOfType(const IAST & type, TupleElementDefaultStateVersion state_version)
 {
-    return makeASTFunction("defaultValueOfTypeName", make_intrusive<ASTLiteral>(type.formatWithSecretsOneLine()));
+    String type_name = type.formatWithSecretsOneLine();
+    if (state_version != TupleElementDefaultStateVersion::AsWritten)
+    {
+        DataTypePtr data_type = DataTypeFactory::instance().get(type_name);
+        const String unpinned_name = data_type->getName();
+        pinStateVersions(data_type, state_version);
+        if (data_type->getName() != unpinned_name)
+            type_name = data_type->getName();
+    }
+    return makeASTFunction("defaultValueOfTypeName", make_intrusive<ASTLiteral>(type_name));
 }
 
 /// Build `tuple(e0, e1, ...)` where each element is either its explicit default expression or the
 /// default value of its type.
-ASTPtr makeTupleDefault(const ASTs & element_types, const ASTs & element_defaults)
+ASTPtr makeTupleDefault(const ASTs & element_types, const ASTs & element_defaults, TupleElementDefaultStateVersion state_version)
 {
     auto arguments = make_intrusive<ASTExpressionList>();
     arguments->children.reserve(element_defaults.size());
@@ -49,7 +78,7 @@ ASTPtr makeTupleDefault(const ASTs & element_types, const ASTs & element_default
         if (element_defaults[i])
             arguments->children.push_back(element_defaults[i]);
         else
-            arguments->children.push_back(makeDefaultValueOfType(*element_types[i]));
+            arguments->children.push_back(makeDefaultValueOfType(*element_types[i], state_version));
     }
 
     auto function = make_intrusive<ASTFunction>();
@@ -63,23 +92,13 @@ ASTPtr makeTupleDefault(const ASTs & element_types, const ASTs & element_default
 /// a value is convertible to a `Variant` only when its type is exactly one of the alternatives (they
 /// are matched by name), so the built tuple has to be brought to the type of the alternative it came
 /// from first. The name of the alternative is taken from the type as the column is going to have it:
-/// the column type gets the aggregate-function state versions pinned according to `state_version`
-/// (see `InterpreterCreateQuery::getColumnType` and `AlterCommand::parse`), so an unversioned
-/// `AggregateFunction` written in the alternative may be spelled with a version in the column type.
+/// the column type gets the aggregate-function state versions pinned according to `state_version`,
+/// so an unversioned `AggregateFunction` written in the alternative may be spelled with a version in
+/// the column type.
 ASTPtr makeCastToType(ASTPtr expression, const ASTPtr & type, TupleElementDefaultStateVersion state_version)
 {
     DataTypePtr data_type = DataTypeFactory::instance().get(type);
-    switch (state_version)
-    {
-        case TupleElementDefaultStateVersion::PinCurrent:
-            pinCurrentStateVersionToAggregateFunctions(data_type);
-            break;
-        case TupleElementDefaultStateVersion::PinOldest:
-            setVersionToAggregateFunctions(data_type, true);
-            break;
-        case TupleElementDefaultStateVersion::AsWritten:
-            break;
-    }
+    pinStateVersions(data_type, state_version);
     return makeASTFunction("CAST", std::move(expression), make_intrusive<ASTLiteral>(data_type->getName()));
 }
 
@@ -129,13 +148,22 @@ void collectReferencedIdentifiers(const IAST & ast, NameSet & names, NameSet & b
         collectReferencedIdentifiers(*child, names, bound);
 }
 
+[[noreturn]] void throwSelfReference(const String & column_name)
+{
+    throw Exception(ErrorCodes::BAD_ARGUMENTS,
+        "DEFAULT expression inside the data type of column '{}' references the column itself. "
+        "A default expression cannot depend on the column it defines.",
+        column_name);
+}
+
 /// A DEFAULT expression may reference other columns of the table, but not elements of the tuple it
 /// is written in, nor elements of an enclosing tuple: after the pull-up such a reference would be
 /// resolved against the table columns, so a name that collides with a visible element name is
 /// ambiguous and is rejected. Only the element names visible at the place of the default are
 /// considered - elements of unrelated (sibling or deeper) tuples cannot be referenced at all, so
 /// reusing their names elsewhere in the table is not ambiguous.
-void checkDefaultDoesNotReferenceElements(const IAST & expression, const NameSet & visible_element_names, const String & column_name)
+void checkDefaultDoesNotReferenceElements(
+    const IAST & expression, const NameSet & visible_element_names, const String & column_name, NameSet & subcolumn_references)
 {
     NameSet referenced;
     NameSet bound;
@@ -144,19 +172,22 @@ void checkDefaultDoesNotReferenceElements(const IAST & expression, const NameSet
     /// The default cannot reference the column it is written in, neither directly (`c`) nor through
     /// subcolumn syntax (`c.a`, or the quoted spelling `` `c.a` ``): after the pull-up it becomes a
     /// self-referential column-level default. `collectReferencedIdentifiers` inserts the root of a
-    /// compound identifier as well, but a quoted identifier is a single name part, so its name is
-    /// tested for the `<column>.` prefix too. This has to be rejected here: the cycle detection in
-    /// `ColumnsDescription` compares whole identifiers, so it does not recognize `c.a` as a reference
-    /// to the column `c`, and the failure would be deferred to the first insert that omits the column.
+    /// compound identifier as well, so `c.a` is rejected by its root. A quoted identifier is a single
+    /// name part, and a name with the `<column>.` prefix may as well be an independent column named
+    /// `c.a`, so it is a self-reference only if it names an actual subcolumn of the column. The type
+    /// of the column is known only after all its defaults are stripped, so such names are collected
+    /// into `subcolumn_references` and checked by `pullUpTupleElementDefaults`. This has to be
+    /// rejected here: the cycle detection in `ColumnsDescription` compares whole identifiers, so it
+    /// does not recognize `c.a` as a reference to the column `c`, and the failure would be deferred
+    /// to the first insert that omits the column.
     const String column_subcolumn_prefix = column_name + ".";
-    bool references_column = false;
     for (const auto & name : referenced)
-        references_column |= name == column_name || name.starts_with(column_subcolumn_prefix);
-    if (references_column)
-        throw Exception(ErrorCodes::BAD_ARGUMENTS,
-            "DEFAULT expression inside the data type of column '{}' references the column itself. "
-            "A default expression cannot depend on the column it defines.",
-            column_name);
+    {
+        if (name == column_name)
+            throwSelfReference(column_name);
+        if (name.starts_with(column_subcolumn_prefix))
+            subcolumn_references.insert(name.substr(column_subcolumn_prefix.size()));
+    }
 
     for (const auto & name : referenced)
         if (visible_element_names.contains(name))
@@ -255,7 +286,11 @@ bool typeContainsTupleElementDefaults(const IAST & type)
 /// the enclosing tuples); every explicit default is checked against the names visible where it is
 /// written, which is why the check happens here rather than in the caller.
 ASTPtr buildAndStripTupleDefaults(
-    IAST & type, const NameSet & outer_element_names, const String & column_name, TupleElementDefaultStateVersion state_version)
+    IAST & type,
+    const NameSet & outer_element_names,
+    const String & column_name,
+    TupleElementDefaultStateVersion state_version,
+    NameSet & subcolumn_references)
 {
     /// Named/unnamed tuple parsed via the fast path (ASTTupleDataType). It never carries DEFAULTs
     /// directly (those force the generic parser path), but its element types might contain them.
@@ -274,13 +309,14 @@ ASTPtr buildAndStripTupleDefaults(
         ASTs element_defaults(arguments->children.size());
         for (size_t i = 0; i < arguments->children.size(); ++i)
         {
-            element_defaults[i] = buildAndStripTupleDefaults(*arguments->children[i], element_names, column_name, state_version);
+            element_defaults[i] = buildAndStripTupleDefaults(
+                *arguments->children[i], element_names, column_name, state_version, subcolumn_references);
             has_default |= element_defaults[i] != nullptr;
         }
 
         if (!has_default)
             return nullptr;
-        return makeTupleDefault(arguments->children, element_defaults);
+        return makeTupleDefault(arguments->children, element_defaults, state_version);
     }
 
     auto * data_type = type.as<ASTDataType>();
@@ -312,7 +348,8 @@ ASTPtr buildAndStripTupleDefaults(
             if (auto * pair = child->as<ASTNameTypePair>())
             {
                 ASTPtr explicit_default = pair->default_expression;
-                ASTPtr nested_default = buildAndStripTupleDefaults(*pair->type, element_names, column_name, state_version);
+                ASTPtr nested_default = buildAndStripTupleDefaults(
+                    *pair->type, element_names, column_name, state_version, subcolumn_references);
 
                 if (explicit_default && nested_default)
                     throw Exception(ErrorCodes::BAD_ARGUMENTS,
@@ -321,7 +358,7 @@ ASTPtr buildAndStripTupleDefaults(
 
                 if (explicit_default)
                 {
-                    checkDefaultDoesNotReferenceElements(*explicit_default, element_names, column_name);
+                    checkDefaultDoesNotReferenceElements(*explicit_default, element_names, column_name, subcolumn_references);
                     if (isLiteralNull(explicit_default) && !typeIsAlreadyNullable(pair->type))
                         pair->type = makeNullableType(pair->type);
                     stripDefaultFromNameTypePair(*pair);
@@ -333,14 +370,14 @@ ASTPtr buildAndStripTupleDefaults(
             else
             {
                 element_types[i] = child;
-                element_defaults[i] = buildAndStripTupleDefaults(*child, element_names, column_name, state_version);
+                element_defaults[i] = buildAndStripTupleDefaults(*child, element_names, column_name, state_version, subcolumn_references);
             }
             has_default |= element_defaults[i] != nullptr;
         }
 
         if (!has_default)
             return nullptr;
-        return makeTupleDefault(element_types, element_defaults);
+        return makeTupleDefault(element_types, element_defaults, state_version);
     }
 
     /// Nested: collect element names and reject any DEFAULT (it is Array(Tuple(...)) and a scalar
@@ -375,7 +412,7 @@ ASTPtr buildAndStripTupleDefaults(
     {
         if (!arguments || arguments->children.size() != 1)
             return nullptr;
-        return buildAndStripTupleDefaults(*arguments->children[0], outer_element_names, column_name, state_version);
+        return buildAndStripTupleDefaults(*arguments->children[0], outer_element_names, column_name, state_version, subcolumn_references);
     }
 
     /// Variant is a transparent wrapper as well: a value of one of its alternatives is a valid value
@@ -391,7 +428,8 @@ ASTPtr buildAndStripTupleDefaults(
         ASTPtr result;
         for (const auto & child : arguments->children)
         {
-            ASTPtr alternative_default = buildAndStripTupleDefaults(*child, outer_element_names, column_name, state_version);
+            ASTPtr alternative_default = buildAndStripTupleDefaults(
+                *child, outer_element_names, column_name, state_version, subcolumn_references);
             if (!alternative_default)
                 continue;
 
@@ -418,7 +456,8 @@ ASTPtr buildAndStripTupleDefaults(
             return nullptr;
 
         /// children[0] is the aggregate function, children[1] is the storage type.
-        ASTPtr result = buildAndStripTupleDefaults(*arguments->children[1], outer_element_names, column_name, state_version);
+        ASTPtr result = buildAndStripTupleDefaults(
+            *arguments->children[1], outer_element_names, column_name, state_version, subcolumn_references);
 
         for (size_t i = 2; i < arguments->children.size(); ++i)
         {
@@ -457,9 +496,20 @@ void pullUpTupleElementDefaults(ASTColumnDeclaration & col_decl, TupleElementDef
 
     /// The ambiguity check for the individual defaults happens during the walk, where the set of
     /// element names visible at each default is known.
-    ASTPtr built_default = buildAndStripTupleDefaults(*type, {}, col_decl.name, state_version);
+    NameSet subcolumn_references;
+    ASTPtr built_default = buildAndStripTupleDefaults(*type, {}, col_decl.name, state_version, subcolumn_references);
     if (!built_default)
         return;
+
+    /// A name with the `<column>.` prefix is a self-reference only if it names a subcolumn of the column;
+    /// otherwise it refers to an independent column with a dotted name.
+    if (!subcolumn_references.empty())
+    {
+        const DataTypePtr column_type = DataTypeFactory::instance().get(type);
+        for (const auto & subcolumn : subcolumn_references)
+            if (column_type->hasSubcolumn(subcolumn))
+                throwSelfReference(col_decl.name);
+    }
 
     if (col_decl.default_specifier != ColumnDefaultSpecifier::Empty || col_decl.getDefaultExpression())
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
