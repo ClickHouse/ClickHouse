@@ -3652,10 +3652,23 @@ bool KeyCondition::tryPrepareSetColumnsForIndex(
         }
 
         /// The membership of a value in a set with a `FixedString` nested in a composite type compares the `FixedString`
-        /// zero-padded, but the conversion of the elements keeps the padding.
-        if (nestedFixedStringConversionChangesValues(
-                set_element_type, mapping.set_transform ? mapping.set_transform->input_type : key_column_type, /*value=*/ nullptr))
-            return false;
+        /// zero-padded, but the conversion of the elements keeps the padding. A top-level `Dynamic` element is checked by
+        /// its values: one holding only scalars, such as `has(CAST(['a', NULL], 'Array(Dynamic)'), k)`, has no nested
+        /// `FixedString`.
+        {
+            const DataTypePtr set_input_type = mapping.set_transform ? mapping.set_transform->input_type : key_column_type;
+            if (isDynamic(removeLowCardinalityAndNullable(set_element_type)))
+            {
+                for (size_t row = 0; row < set_column->size(); ++row)
+                {
+                    const Field value = (*set_column)[row];
+                    if (nestedFixedStringConversionChangesValues(set_element_type, set_input_type, &value))
+                        return false;
+                }
+            }
+            else if (nestedFixedStringConversionChangesValues(set_element_type, set_input_type, /*value=*/ nullptr))
+                return false;
+        }
 
         /// A float element over a `Decimal`, `DateTime64` or `Time64` input names a key point that misses matching values,
         /// as a float constant does, unless the cast is exact (see `floatValuesMissKeyValues`). `IN` compares the value
