@@ -5,6 +5,7 @@
 #include <Columns/ColumnAggregateFunction.h>
 #include <Columns/ColumnDynamic.h>
 #include <Columns/ColumnObject.h>
+#include <Columns/ColumnQBit.h>
 #include <Columns/IColumn.h>
 #include <DataTypes/DataTypeAggregateFunction.h>
 #include <DataTypes/IDataType.h>
@@ -109,6 +110,10 @@ std::vector<ColumnSampling> columnsSampling(const Block & block)
         /// a value kept in the shared data of an object (the paths over `max_dynamic_paths`) whole
         /// before writing it, so a `JSON` that uses its shared data - or holds a `Dynamic` that uses
         /// its shared variant, or such an object nested deeper - is not sampled either.
+        ///
+        /// The text of a `QBit` is the vector reconstructed whole from its bit planes into
+        /// temporary vectors of the full dimension before the first element of it is written, so it
+        /// is not sampled either, wherever it is nested.
         const bool is_json = column_with_type.type->getTypeId() == TypeIndex::Object;
         bool has_aggregate_function_state = false;
         bool renders_whole_values = false;
@@ -124,6 +129,10 @@ std::vector<ColumnSampling> columnsSampling(const Block & block)
                     renders_whole_values = true;
             }
             else if (const auto * dynamic = typeid_cast<const ColumnDynamic *>(&column); dynamic && !dynamic->getSharedVariant().empty())
+            {
+                renders_whole_values = true;
+            }
+            else if (typeid_cast<const ColumnQBit *>(&column))
             {
                 renders_whole_values = true;
             }

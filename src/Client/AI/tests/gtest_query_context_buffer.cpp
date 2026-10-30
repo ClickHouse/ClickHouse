@@ -411,6 +411,31 @@ TEST(QueryContextBuffer, JSONWithSharedDataIsNotSampled)
     EXPECT_EQ(text.find("xxx"), String::npos) << text;
 }
 
+TEST(QueryContextBuffer, QBitIsNotSampled)
+{
+    /// The text of a `QBit` is reconstructed whole into temporary vectors of the full dimension
+    /// before any of it is written, so it is not sampled, also when nested. The columns after it are.
+    for (const char * type_name : {"QBit(Float32, 1024)", "Array(QBit(Float32, 1024))", "Tuple(QBit(Float32, 1024), UInt8)"})
+    {
+        const auto type = DataTypeFactory::instance().get(type_name);
+        auto qbit = type->createColumn();
+        qbit->insertDefault();
+
+        auto string = ColumnString::create();
+        string->insert(Field(String("after")));
+
+        QueryContextBuffer buffer;
+        buffer.startQuery("SELECT q, 'after'", false);
+        buffer.addBlock(Block{
+            ColumnWithTypeAndName{std::move(qbit), type, "q"},
+            ColumnWithTypeAndName{std::move(string), std::make_shared<DataTypeString>(), "s"}});
+        buffer.finishQuery(0.1, false);
+
+        const String text = buffer.format(0, false);
+        EXPECT_NE(text.find("[value not sampled]\tafter"), String::npos) << type_name << ": " << text;
+    }
+}
+
 TEST(QueryContextBuffer, SampleOfALineAtTheLimitIsNotCut)
 {
     for (size_t size : {QueryContextBuffer::max_line_bytes, QueryContextBuffer::max_line_bytes + 1})
