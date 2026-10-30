@@ -4,7 +4,6 @@
 -- TotalsHavingTransform`: the decorrelation joins the aggregated stream and drops the chunk infos.
 -- The combination is rejected now.
 
-SET enable_analyzer = 1;
 SET max_rows_to_group_by = 5, group_by_overflow_mode = 'any';
 
 SELECT number, count() FROM numbers(10) GROUP BY number WITH TOTALS HAVING ((SELECT number) % 3) = 0 ORDER BY number
