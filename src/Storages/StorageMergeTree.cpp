@@ -17,6 +17,7 @@
 #include <Core/UUID.h>
 #include <Databases/DatabasesCommon.h>
 #include <Databases/IDatabase.h>
+#include <Disks/DiskObjectStorage/MetadataStorages/IMetadataStorage.h>
 #include <Disks/DiskType.h>
 #include <Disks/supportWritingWithAppend.h>
 #include <IO/SharedThreadPools.h>
@@ -473,8 +474,8 @@ void StorageMergeTree::startup()
                     /// Before accepting any writes, refresh the local view of parts and
                     /// advance the block-number counter past anything the previous leader
                     /// committed on shared storage. The constructor has already validated that
-                    /// every disk uses `PlainRewritable` or `Keeper` metadata, so a forced
-                    /// `disk->refresh(0)` makes the previous leader's committed parts visible
+                    /// every disk uses `PlainRewritable` metadata, so a forced full reload of
+                    /// the disk metadata makes the previous leader's committed parts visible
                     /// via `disk->iterateDirectory`. After `loadNewlyAppearedParts` returns,
                     /// the in-memory part set reflects every part the previous leader committed
                     /// and `getMaxBlockNumber` reflects the highest block number among them —
@@ -498,8 +499,13 @@ void StorageMergeTree::startup()
                     /// election task will retry on the next heartbeat.
                     try
                     {
+                        /// A full listing, not `disk->refresh(0)`: an incremental refresh reuses the cached
+                        /// file list of a directory whose `prefix.path` did not change, but adding a file to a
+                        /// directory in the implicit form does not rewrite it. The state loaded below reads
+                        /// such long-lived directories (e.g. `deduplication_logs`, where the previous leader
+                        /// may have published a new log after this node cached the listing).
                         for (const auto & disk : getStoragePolicy()->getDisks())
-                            disk->refresh(/* not_sooner_than_milliseconds= */ 0);
+                            disk->getMetadataStorage()->dropCache();
                         /// Strict load: broken/duplicate parts get the cleanup (detach/remove)
                         /// that the read-only pre-lease and follower loaders skipped, replayed
                         /// here under the held lease — bounded by `max_suspicious_broken_parts`,
@@ -3995,6 +4001,12 @@ size_t StorageMergeTree::clearOldMutations(bool truncate)
 
 size_t StorageMergeTree::clearOldPartsFromFilesystem(bool force, bool with_pause_fail_point)
 {
+    /// Under `leader_election` the parts are removed only in the leadership epoch sampled BEFORE they are selected:
+    /// see `clearPartsFromFilesystemImplMaybeInParallel`.
+    std::optional<UInt64> cleanup_epoch;
+    if (hasLeaderElection())
+        cleanup_epoch = currentLeadershipEpoch();
+
     DataPartsVector parts_to_remove = grabOldParts(force);
     if (parts_to_remove.empty())
         return 0;
@@ -4017,14 +4029,49 @@ size_t StorageMergeTree::clearOldPartsFromFilesystem(bool force, bool with_pause
     /// `leader_election_session_timeout`, and deleting the selected parts as a stale leader
     /// would destroy data the next leader still serves. Return the parts to the Outdated state
     /// so a later pass (as the leader) can retry.
-    if (!canRunDestructiveCleanup())
+    if (!canRunDestructiveCleanup() || (cleanup_epoch && currentLeadershipEpoch() != *cleanup_epoch))
     {
-        LOG_WARNING(log, "Not removing {} old parts: the leader lease is no longer fresh (leader_election)", parts_to_remove.size());
+        LOG_WARNING(log, "Not removing {} old parts: the leader lease is no longer fresh, or the leadership epoch changed "
+            "since they were selected (leader_election)", parts_to_remove.size());
         rollbackDeletingParts(parts_to_remove);
         return 0;
     }
 
-    clearPartsFromFilesystemAndRollbackIfError(parts_to_remove, "old");
+    if (cleanup_epoch)
+    {
+        /// A part may outlive the directory it was loaded from: a cleanup rejected by the epoch fence above returns
+        /// its parts to the `Outdated` state, possibly after the takeover scan of a later epoch, which reconciles
+        /// only the parts that are not being removed. If an intermediate leader removed the directory and then
+        /// reused its name for new data, removing the part would remove the new data. Its own directory is gone
+        /// already, so it is only forgotten in memory.
+        DataPartsVector parts_with_own_directory;
+        DataPartsVector parts_with_replaced_directory;
+        for (const auto & part : parts_to_remove)
+        {
+            std::optional<String> current_incarnation;
+            if (part->shared_storage_incarnation)
+                current_incarnation = getPartSharedStorageIncarnation(*part);
+
+            if (current_incarnation && *current_incarnation != *part->shared_storage_incarnation)
+                parts_with_replaced_directory.push_back(part);
+            else
+                parts_with_own_directory.push_back(part);
+        }
+
+        if (!parts_with_replaced_directory.empty())
+        {
+            Strings names;
+            for (const auto & part : parts_with_replaced_directory)
+                names.push_back(part->name);
+            LOG_WARNING(log, "Forgetting {} old parts without removing them from the shared storage: their directories were "
+                "replaced by other ones with the same names (leader_election). Parts: [{}]",
+                names.size(), fmt::join(names, ", "));
+            removePartsFinally(parts_with_replaced_directory);
+            parts_to_remove = std::move(parts_with_own_directory);
+        }
+    }
+
+    clearPartsFromFilesystemAndRollbackIfError(parts_to_remove, "old", cleanup_epoch);
 
     /// This is needed to close files to avoid they reside on disk after being deleted.
     /// NOTE: we can drop files from cache more selectively but this is good enough.

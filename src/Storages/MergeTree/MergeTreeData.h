@@ -996,8 +996,8 @@ public:
         const PartDirectoriesByDisk & part_directories_by_disk, bool strict_takeover);
 
     /// The identity of the directory of a part on shared storage under `leader_election`: the object
-    /// storage key of its `checksums.txt`. Empty when it cannot be determined (not a remote disk, or no
-    /// separate `checksums.txt`).
+    /// storage key of its `checksums.txt`, or of `data.packed` for a directory of a `Packed` part, whichever
+    /// the directory has now. Empty when it cannot be determined (not a remote disk, or neither file exists).
     std::optional<String> getPartSharedStorageIncarnation(const IMergeTreeDataPart & part) const;
 
     /// Returns a pointer to primary index cache if it is enabled.
@@ -1404,17 +1404,22 @@ public:
 
     /// Try to clear parts from filesystem.
     /// If we fail to remove some part and throw_on_error equal to `true` will throw an exception on the first failed part.
-    void clearPartsFromFilesystemImpl(const DataPartsVector & parts, bool throw_on_error, NameSet * parts_failed_to_delete);
+    /// `cleanup_epoch` is the leadership epoch (see `currentLeadershipEpoch`) sampled before the parts were selected
+    /// for removal under `leader_election`: a part is removed only while this node still holds the lease in that epoch.
+    void clearPartsFromFilesystemImpl(
+        const DataPartsVector & parts, bool throw_on_error, NameSet * parts_failed_to_delete, std::optional<UInt64> cleanup_epoch = {});
 
     /// Remove parts from disk calling part->remove(). Can do it in parallel in case of big set of parts and enabled settings.
     /// Throw exception in case of errors.
     /// Otherwise, in non-parallel case will break and return.
-    void clearPartsFromFilesystemImplMaybeInParallel(const DataPartsVector & parts_to_remove, NameSet * part_names_succeed);
+    void clearPartsFromFilesystemImplMaybeInParallel(
+        const DataPartsVector & parts_to_remove, NameSet * part_names_succeed, std::optional<UInt64> cleanup_epoch = {});
 
     /// Try to clear parts from filesystem.
     /// In case of error at some point for the rest of the parts its part's state is rollback Deleting - > Outdated.
     /// That allows to schedule them for deletion a bit later
-    size_t clearPartsFromFilesystemAndRollbackIfError(const DataPartsVector & parts_to_delete, const String & parts_type);
+    size_t clearPartsFromFilesystemAndRollbackIfError(
+        const DataPartsVector & parts_to_delete, const String & parts_type, std::optional<UInt64> cleanup_epoch = {});
 
     /// Whether destructive background cleanup (removing outdated parts from the filesystem, ...)
     /// is currently allowed. Always true here; `StorageMergeTree` overrides it under
@@ -2586,6 +2591,9 @@ protected:
     struct LoadPartResult
     {
         bool is_broken = false;
+        /// Set together with `part->is_duplicate` when the already indexed part with the same part info is stored in
+        /// the same directory, i.e. it is not another copy, and removing the duplicate would remove the indexed part.
+        bool is_duplicate_of_own_directory = false;
         std::optional<size_t> size_of_part;
         MutableDataPartPtr part;
     };

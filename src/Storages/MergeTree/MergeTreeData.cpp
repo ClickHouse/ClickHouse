@@ -3163,10 +3163,10 @@ static void preparePartForRemoval(const MergeTreeMutableDataPartPtr & part)
 
     /// Explicitly set remove_tid for parts w/o transaction (i.e. w/o txn_version.txt)
     /// to avoid keeping part forever (see VersionMetadata::canBeRemoved())
-    /// Under `leader_election`, persisting the removal TID writes to the covered part's version
-    /// metadata on shared object storage; only the lease-holding leader may do that. A follower
-    /// sets `remove_time` in memory above but leaves the on-disk removal TID to the leader.
-    if (!current_version_info.isRemoved() && part->storage.mayMutateSharedStorage())
+    /// Under `leader_election`, a follower also sets the removal TID in memory, so that the part can
+    /// be removed once this node takes over, but it is not persisted: `VersionMetadataOnDisk::storeInfoUnlocked`
+    /// does not write non-transactional version metadata unless `mayMutateSharedStorage`.
+    if (!current_version_info.isRemoved())
     {
         TransactionInfoContext transaction_context{part->storage.getStorageID(), part->name};
         part->version->setAndStoreNonTransactionalRemovalTID(LockKind::REMOVAL, transaction_context);
@@ -3365,6 +3365,21 @@ MergeTreeData::LoadPartResult MergeTreeData::loadDataPart(
     /// Remove duplicate parts with the same checksum.
     if (!inserted)
     {
+        /// The request to load a part keeps only its name and disk, so it can outlive the directory it described:
+        /// under `leader_election` a queued load of an outdated part may run after the follower refresh or the
+        /// takeover scan has loaded a replacement directory with the same name (the block numbers are reused after
+        /// the table becomes empty and restarts). The load then reads the directory of the indexed part itself.
+        /// It is not a second copy of the part, so it must be neither removed nor treated as a conflict.
+        if ((*it)->getDataPartStorage().getDiskName() == res.part->getDataPartStorage().getDiskName()
+            && (*it)->getDataPartStorage().getRelativePath() == res.part->getDataPartStorage().getRelativePath())
+        {
+            LOG_INFO(log, "Part {} is already loaded from the same directory {}, skipping",
+                res.part->name, res.part->getDataPartStorage().getFullPath());
+            res.part->is_duplicate = true;
+            res.is_duplicate_of_own_directory = true;
+            return res;
+        }
+
         if ((*it)->checksums.getTotalChecksumHex() == res.part->checksums.getTotalChecksumHex())
         {
             LOG_ERROR(log, "Duplicate part {}", res.part->getDataPartStorage().getFullPath());
@@ -3714,7 +3729,7 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks, std::optional<std::un
             {
                 /// Under `leader_election`, only the lease-holding leader may remove parts from
                 /// shared object storage; a follower loads its view read-only (mayMutateSharedStorage).
-                if (!is_static_storage && mayMutateSharedStorage())
+                if (!is_static_storage && mayMutateSharedStorage() && !res.is_duplicate_of_own_directory)
                 {
                     LOG_ERROR(log, "Removing duplicate part {}", res.part->getDataPartStorage().getFullPath());
                     res.part->remove();
@@ -4071,12 +4086,18 @@ std::optional<String> MergeTreeData::getPartSharedStorageIncarnation(const IMerg
         return std::nullopt;
 
     /// A `Packed` part keeps `checksums.txt` inside its archive, so the archive itself identifies the directory.
-    String identity_file = isPackedPartStorage(part_storage) ? DataPartStorageOnDiskPacked::DATA_FILE_NAME : "checksums.txt";
-    auto objects = disk->getStorageObjectsIfExist(fs::path(part_storage.getRelativePath()) / identity_file);
-    if (!objects || objects->empty())
-        return std::nullopt;
+    /// Both names are probed regardless of the storage format of `part`: the directory may have been replaced by
+    /// a part of the other format (e.g. a one-row `Packed` part by a two-row `Full` part with the same name),
+    /// and probing only the file of the cached format would find nothing and keep the stale part.
+    const fs::path directory = part_storage.getRelativePath();
+    for (const auto & identity_file : {String("checksums.txt"), DataPartStorageOnDiskPacked::DATA_FILE_NAME})
+    {
+        auto objects = disk->getStorageObjectsIfExist(directory / identity_file);
+        if (objects && !objects->empty())
+            return objects->front().remote_path;
+    }
 
-    return objects->front().remote_path;
+    return std::nullopt;
 }
 
 size_t MergeTreeData::retirePartsReplacedOnStorage(
@@ -4400,7 +4421,7 @@ size_t MergeTreeData::loadNewlyAppearedParts(bool strict_takeover)
             /// Same replay rationale as for broken parts above: a duplicate whose removal the
             /// read-only startup loaders skipped. A follower (non-strict refresh) leaves it in
             /// place; only the lease-holding leader may remove it from shared storage.
-            if (strict_takeover)
+            if (strict_takeover && !res.is_duplicate_of_own_directory)
             {
                 assert_lease_fresh_before_cleanup(res.part->name, "remove duplicate");
                 LOG_ERROR(log, "Removing duplicate part {} discovered during leadership takeover", res.part->getDataPartStorage().getFullPath());
@@ -4839,7 +4860,7 @@ try
             /// which only the lease-holding leader may do. A follower loads the parts read-only
             /// and leaves broken/duplicate parts in place (mayMutateSharedStorage). The normal
             /// `preparePartForRemoval` path is itself read-only on a follower — it sets the
-            /// in-memory remove time but skips persisting the removal TID (see the function).
+            /// removal TID in memory but does not persist it (see the function).
             if (res.is_broken)
             {
                 if (mayMutateSharedStorage())
@@ -4850,7 +4871,7 @@ try
             }
             else if (res.part->is_duplicate)
             {
-                if (mayMutateSharedStorage())
+                if (mayMutateSharedStorage() && !res.is_duplicate_of_own_directory)
                     res.part->remove();
             }
             else
@@ -5609,7 +5630,8 @@ catch (...)
 }
 
 
-void MergeTreeData::clearPartsFromFilesystemImpl(const DataPartsVector & parts, bool throw_on_error, NameSet * parts_failed_to_delete)
+void MergeTreeData::clearPartsFromFilesystemImpl(
+    const DataPartsVector & parts, bool throw_on_error, NameSet * parts_failed_to_delete, std::optional<UInt64> cleanup_epoch)
 {
     NameSet part_names_succeed;
 
@@ -5630,7 +5652,7 @@ void MergeTreeData::clearPartsFromFilesystemImpl(const DataPartsVector & parts, 
 
     try
     {
-        clearPartsFromFilesystemImplMaybeInParallel(parts, &part_names_succeed);
+        clearPartsFromFilesystemImplMaybeInParallel(parts, &part_names_succeed, cleanup_epoch);
         get_failed_parts();
     }
     catch (...)
@@ -5647,7 +5669,8 @@ void MergeTreeData::clearPartsFromFilesystemImpl(const DataPartsVector & parts, 
     }
 }
 
-void MergeTreeData::clearPartsFromFilesystemImplMaybeInParallel(const DataPartsVector & parts_to_remove, NameSet * part_names_succeed)
+void MergeTreeData::clearPartsFromFilesystemImplMaybeInParallel(
+    const DataPartsVector & parts_to_remove, NameSet * part_names_succeed, std::optional<UInt64> cleanup_epoch)
 {
     if (parts_to_remove.empty())
         return;
@@ -5664,7 +5687,7 @@ void MergeTreeData::clearPartsFromFilesystemImplMaybeInParallel(const DataPartsV
     /// simulated staleness fires only after the first part of the batch was actually removed.
     auto removed_in_this_call = std::make_shared<std::atomic<size_t>>(0);
     const bool is_leader_election = (*settings)[MergeTreeSetting::leader_election];
-    auto assert_cleanup_still_allowed = [this, removed_in_this_call, is_leader_election]()
+    auto assert_cleanup_still_allowed = [this, removed_in_this_call, is_leader_election, cleanup_epoch]()
     {
         /// The failpoint is global, but must only fire for the table under test.
         if (is_leader_election && removed_in_this_call->load(std::memory_order_relaxed) > 0)
@@ -5680,6 +5703,15 @@ void MergeTreeData::clearPartsFromFilesystemImplMaybeInParallel(const DataPartsV
             throw Exception(ErrorCodes::TABLE_IS_READ_ONLY,
                 "The leadership lease went stale in the middle of removing a batch of old parts; "
                 "the remaining parts are left to the current leader (leader_election)");
+
+        /// A fresh lease is not enough: after a lose-and-reacquire cycle the parts selected in the earlier epoch
+        /// may name directories that the intermediate leader removed and then reused for new data (the block numbers
+        /// are reconstructed from the remaining parts when a table restarts empty).
+        if (cleanup_epoch && currentLeadershipEpoch() != *cleanup_epoch)
+            throw Exception(ErrorCodes::TABLE_IS_READ_ONLY,
+                "The leadership epoch changed ({} -> {}) since the old parts were selected for removal; "
+                "the remaining parts are left to the next cleanup (leader_election)",
+                *cleanup_epoch, currentLeadershipEpoch());
     };
 
     auto remove_single_thread = [this, &parts_to_remove, part_names_succeed, &assert_cleanup_still_allowed, removed_in_this_call]()
@@ -5928,10 +5960,11 @@ void MergeTreeData::clearPartsFromFilesystemImplMaybeInParallel(const DataPartsV
                         "({} != {} + {}), it's a bug", parts_to_remove.size(), sum_of_ranges, excluded_parts.size());
 }
 
-size_t MergeTreeData::clearPartsFromFilesystemAndRollbackIfError(const DataPartsVector & parts_to_delete, const String & parts_type)
+size_t MergeTreeData::clearPartsFromFilesystemAndRollbackIfError(
+    const DataPartsVector & parts_to_delete, const String & parts_type, std::optional<UInt64> cleanup_epoch)
 {
     NameSet parts_failed_to_delete;
-    clearPartsFromFilesystemImpl(parts_to_delete, false, &parts_failed_to_delete);
+    clearPartsFromFilesystemImpl(parts_to_delete, false, &parts_failed_to_delete, cleanup_epoch);
 
     DataPartsVector finally_remove_parts;
     if (!parts_failed_to_delete.empty())
@@ -6053,6 +6086,10 @@ size_t MergeTreeData::clearEmptyParts()
     if (!outdated_data_parts_loading_finished.load(std::memory_order_relaxed))
         return 0;
 
+    /// Sampled before the parts are selected: after a lose-and-reacquire cycle a saved name may resolve to a
+    /// non-empty part with the same name, written by the intermediate leader after it reused the block numbers.
+    const UInt64 cleanup_epoch = currentLeadershipEpoch();
+
     std::vector<std::string> parts_names_to_drop;
 
     {
@@ -6086,13 +6123,14 @@ size_t MergeTreeData::clearEmptyParts()
     size_t dropped = 0;
     for (auto & name : parts_names_to_drop)
     {
-        bool lease_went_stale = !canRunDestructiveCleanup();
+        bool lease_went_stale = !canRunDestructiveCleanup() || currentLeadershipEpoch() != cleanup_epoch;
         if (is_leader_election && dropped > 0)
             fiu_do_on(FailPoints::merge_tree_leader_election_stale_lease_mid_clear_empty_parts, { lease_went_stale = true; });
         if (lease_went_stale)
         {
-            LOG_INFO(log, "Stopping the removal of empty parts after {} of {}: the leadership lease went stale; "
-                "the remaining parts are left to the current leader (leader_election)", dropped, parts_names_to_drop.size());
+            LOG_INFO(log, "Stopping the removal of empty parts after {} of {}: the leadership lease went stale, "
+                "or the leadership epoch changed since they were selected; the remaining parts are left to the current leader "
+                "(leader_election)", dropped, parts_names_to_drop.size());
             break;
         }
 
@@ -6116,7 +6154,7 @@ size_t MergeTreeData::clearEmptyParts()
             /// ordinary tables (an extra active part lingering after TRUNCATE or DETACH).
             auto parts_lock = lockParts();
             auto part = getPartIfExistsUnlocked(name, {DataPartState::Active}, parts_lock);
-            if (!part)
+            if (!part || part->rows_count != 0)
                 continue;
             if (hasCoveredRetiredParts(part, parts_lock))
             {
