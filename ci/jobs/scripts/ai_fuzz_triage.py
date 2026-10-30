@@ -41,9 +41,10 @@ was unavailable.
 
 Relatedness never rests on a record this triage could have written itself: only
 an open issue recording a post-merge run on the tested branch before the tested
-change counts as proof that the failure is older (`independent_occurrences`). A
-fingerprint found only in closed issues is a fixed bug that came back, which the
-PR may have reintroduced, so it keeps a PR run red (`fixed_occurrences`), and so
+change, and since its last reopening, counts as proof that the failure is older
+(`independent_occurrences`). A fingerprint found only in closed or reopened issues
+is a fixed bug that came back, which the PR may have reintroduced, so it keeps a
+PR run red (`fixed_occurrences`), and so
 does a lookup of those issues that did not complete. Every lookup reads the
 machine lines of issues the triage robots filed only (`_filed_by_robot`): anyone
 can open an issue, but only its author and maintainers can edit its body.
@@ -399,9 +400,10 @@ def _occurrences_note(fingerprint, occurrences, change, weight, regression_hint)
     if occurrences.fixed:
         urls = "".join(f"  - {url}\n" for url in occurrences.fixed)
         return (
-            f"- This failure's fingerprint is only in closed issues: a bug that was\n"
-            f"  fixed before is back, and this {change} may be what reintroduced it.\n"
-            f"  A closed issue is not evidence that the failure predates the {change}.\n"
+            f"- This failure's fingerprint is only in issues closed as fixed, perhaps\n"
+            f"  reopened since: a bug that was fixed before is back, and this {change}\n"
+            f"  may be what reintroduced it. Such an issue is not evidence that the\n"
+            f"  failure predates the {change}.\n"
             f"  {regression_hint}\n{urls}"
             f"  Any other issue carrying the fingerprint was written by this same\n"
             f"  triage, so do not look for one here.\n"
@@ -1033,19 +1035,37 @@ class Occurrences(NamedTuple):
         return bool(self.fixed) and not set(self.older) - set(self.mismatched)
 
 
-def fixed_occurrences(issues, fingerprint):
-    """URLs of the closed issues with this fingerprint: the bug was fixed once.
+def fixed_occurrences(issues, fingerprint, reopened=None):
+    """URLs of the closed or reopened issues with this fingerprint: the bug was fixed once.
 
     A closed issue says nothing about whether the failure predates the change;
-    the change may be what brought it back. One recording another stack digest
+    the change may be what brought it back, and an issue reopened for that is open
+    again (`reopened`: `{url: last reopening}`). One recording another stack digest
     counts too: like `_tracking_issues`, it may be the same bug reached another way.
     """
     return sorted(
         issue["url"]
         for issue in issues
-        if _state(issue) == "CLOSED"
+        if (_state(issue) == "CLOSED" or issue["url"] in (reopened or {}))
         and _tracks_fingerprint(issue, fingerprint)
     )
+
+
+def _reopened_at(issue_url, deadline=None):
+    """When the issue was last reopened, or None if never.
+
+    From GitHub's event log, which no edit of the body can forge: the observations
+    recorded before then are of the bug that was fixed, not of the one open now.
+    """
+    output = _robot_gh(
+        "api",
+        "--paginate",
+        f"repos{urllib.parse.urlsplit(issue_url).path}/events",
+        "--jq",
+        '.[] | select(.event == "reopened") | .created_at',
+        deadline=deadline,
+    )
+    return max((_parse_github_time(line) for line in output.split()), default=None)
 
 
 def _report_branch(report_url):
@@ -1063,12 +1083,12 @@ def _issue_branch(issue):
     return _report_branch(found[0]) if len(found) == 1 else ""
 
 
-def _branch_observations(issue, digest=None):
+def _branch_observations(issue, digest=None, since=None):
     """`{branch: earliest time}` of the post-merge runs that hit the issue's failure.
 
     The run that filed it counts unless it was a PR run, which records that run's verdict
     rather than an observation; the runs that reused it later add `OBSERVED_ON_FIELD` lines.
-    With `digest`, only the runs that hit that stack count.
+    With `digest`, only the runs that hit that stack count; with `since`, only the runs from then on.
     """
     body = issue.get("body") or ""
     runs = []
@@ -1082,6 +1102,8 @@ def _branch_observations(issue, digest=None):
     observed = {}
     for branch, when, seen in runs:
         if digest is not None and seen != digest:
+            continue
+        if since is not None and when < since:
             continue
         if branch not in observed or when < observed[branch]:
             observed[branch] = when
@@ -1109,7 +1131,7 @@ def _tracks_fingerprint(issue, fingerprint):
     return bool(fingerprint) and found == [fingerprint] and _filed_by_robot(issue)
 
 
-def independent_occurrences(issues, fingerprint, cutoff, branch):
+def independent_occurrences(issues, fingerprint, cutoff, branch, reopened=None):
     """URLs of the open issues that prove the failure predates the tested change.
 
     Only a record this triage cannot have written counts: a post-merge run's
@@ -1121,12 +1143,21 @@ def independent_occurrences(issues, fingerprint, cutoff, branch):
     It must have been observed on `branch`, the one the change goes to: a bug seen
     on master is new to a release branch that a backport brings it to.
 
+    For an issue in `reopened` (`{url: last reopening}`), it must have been observed
+    since: an observation from before it was closed is of the fixed bug, which the
+    change may be what brought back.
+
     It must also be a tracking issue `_verify_issue_marker` accepts, `fuzz` label
     included: linking one that is not would skip the agent that files a real one.
     """
+    reopened = reopened or {}
     urls = []
     for issue in issues:
-        observed = _branch_observations(issue) if branch else {}
+        observed = (
+            _branch_observations(issue, since=reopened.get(issue["url"]))
+            if branch
+            else {}
+        )
         if (
             _state(issue) == "OPEN"
             and _tracks_fingerprint(issue, fingerprint)
@@ -1156,14 +1187,21 @@ def _prior_occurrences(info, repo_name, pr_mode, fingerprint, digest):
         # Index lag does not matter here: only issues older than the change count.
         issues = _search_fingerprint(repo_name, fingerprint)
         branch = info.base_branch if pr_mode else info.git_branch
-        older = independent_occurrences(issues, fingerprint, cutoff, branch)
+        reopened = {}
+        for issue in issues:
+            if _state(issue) == "OPEN" and _tracks_fingerprint(issue, fingerprint):
+                when = _reopened_at(issue["url"])
+                if when is not None:
+                    reopened[issue["url"]] = when
+        older = independent_occurrences(issues, fingerprint, cutoff, branch, reopened)
         older_issues = [issue for issue in issues if issue["url"] in older]
         # This stack itself must have been seen on the branch before the change, not just the issue.
         exact = sorted(
             issue["url"]
             for issue in older_issues
             if digest
-            and _branch_observations(issue, digest).get(branch, cutoff) < cutoff
+            and _branch_observations(issue, digest, since=reopened.get(issue["url"])).get(branch, cutoff)
+            < cutoff
         )
         same_stack_later = sorted(
             issue["url"]
@@ -1180,7 +1218,7 @@ def _prior_occurrences(info, repo_name, pr_mode, fingerprint, digest):
         bodies = {issue["url"]: issue.get("body") or "" for issue in older_issues}
         return Occurrences(
             older,
-            fixed_occurrences(issues, fingerprint),
+            fixed_occurrences(issues, fingerprint, reopened),
             exact,
             mismatched,
             bodies,
@@ -1476,12 +1514,14 @@ def _record_observation(issue, found_in, digest, deadline):
 
     The body is read again rather than taken from the lookup, whose search results can lag
     behind an earlier edit. Runs under `_issue_lock`, so no other job edits it meanwhile.
+    One from before the issue was last reopened does not count, as `independent_occurrences` ignores it.
     """
     branch = _report_branch(found_in)
     if not branch:
         return
     current = _issue_json(issue["url"], "body,createdAt", deadline)
-    if branch in _branch_observations(current, digest or None):
+    since = _reopened_at(issue["url"], deadline)
+    if branch in _branch_observations(current, digest or None, since=since):
         return
     now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     line = f"{OBSERVED_ON_FIELD} {branch}: {now} {found_in} {digest}".rstrip()
