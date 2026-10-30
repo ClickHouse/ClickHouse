@@ -22,6 +22,7 @@
 #include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/NumberTraits.h>
+#include <DataTypes/TypeTree.h>
 #include <DataTypes/getLeastSupertype.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
@@ -796,75 +797,6 @@ private:
         return ColumnMap::create(std::move(nested_column));
     }
 
-    static ColumnPtr executeGenericWithType(
-        const ColumnUInt8 * cond_col, const ColumnsWithTypeAndName & arguments, size_t input_rows_count, const DataTypePtr & common_type)
-    {
-        /// Convert both columns to the given common type.
-        const ColumnWithTypeAndName & arg1 = arguments[1];
-        const ColumnWithTypeAndName & arg2 = arguments[2];
-
-        ColumnPtr col_then = castColumn(arg1, common_type);
-        ColumnPtr col_else = castColumn(arg2, common_type);
-
-        MutableColumnPtr result_column = common_type->createColumn();
-        result_column->reserve(input_rows_count);
-
-        bool then_is_const = isColumnConst(*col_then);
-        bool else_is_const = isColumnConst(*col_else);
-
-        const auto & cond_array = cond_col->getData();
-
-        if (then_is_const && else_is_const)
-        {
-            const IColumn & then_nested_column = assert_cast<const ColumnConst &>(*col_then).getDataColumn();
-            const IColumn & else_nested_column = assert_cast<const ColumnConst &>(*col_else).getDataColumn();
-
-            for (size_t i = 0; i < input_rows_count; ++i)
-            {
-                if (cond_array[i])
-                    result_column->insertFrom(then_nested_column, 0);
-                else
-                    result_column->insertFrom(else_nested_column, 0);
-            }
-        }
-        else if (then_is_const)
-        {
-            const IColumn & then_nested_column = assert_cast<const ColumnConst &>(*col_then).getDataColumn();
-
-            for (size_t i = 0; i < input_rows_count; ++i)
-            {
-                if (cond_array[i])
-                    result_column->insertFrom(then_nested_column, 0);
-                else
-                    result_column->insertFrom(*col_else, i);
-            }
-        }
-        else if (else_is_const)
-        {
-            const IColumn & else_nested_column = assert_cast<const ColumnConst &>(*col_else).getDataColumn();
-
-            for (size_t i = 0; i < input_rows_count; ++i)
-            {
-                if (cond_array[i])
-                    result_column->insertFrom(*col_then, i);
-                else
-                    result_column->insertFrom(else_nested_column, 0);
-            }
-        }
-        else
-        {
-            for (size_t i = 0; i < input_rows_count; ++i)
-            {
-                if (cond_array[i])
-                    result_column->insertFrom(*col_then, i);
-                else
-                    result_column->insertFrom(*col_else, i);
-            }
-        }
-
-        return result_column;
-    }
-
     static ColumnPtr executeGeneric(
         const ColumnUInt8 * cond_col,
         const ColumnsWithTypeAndName & arguments,
@@ -883,13 +815,42 @@ private:
         ColumnPtr col_then = castColumn(arg1, result_type);
         ColumnPtr col_else = castColumn(arg2, result_type);
 
-        MutableColumnPtr result_column = result_type->createColumn();
-        result_column->reserve(input_rows_count);
-
         bool then_is_const = isColumnConst(*col_then);
         bool else_is_const = isColumnConst(*col_else);
 
         const auto & cond_array = cond_col->getData();
+
+        if (then_is_const && else_is_const)
+        {
+            const IColumn & then_value = assert_cast<const ColumnConst &>(*col_then).getDataColumn();
+            const IColumn & else_value = assert_cast<const ColumnConst &>(*col_else).getDataColumn();
+
+            /// `index` has a per-block cost (a column per `Variant` alternative) and copies arrays element by element; a gathered
+            /// `Dynamic`/`JSON` keeps the unselected value's type; `AggregateFunction` `byteSize` omits states in shared arenas.
+            constexpr size_t min_gathered_rows = 256;
+            constexpr size_t max_gathered_value_bytes = 16;
+            auto keeps_row_loop = [](const IDataType & type)
+            {
+                return isVariant(type) || isDynamic(type) || isObject(type) || WhichDataType(type).isAggregateFunction();
+            };
+            if (input_rows_count >= min_gathered_rows && !anyInTypeTree(*result_type, keeps_row_loop)
+                && then_value.byteSize() <= max_gathered_value_bytes && else_value.byteSize() <= max_gathered_value_bytes)
+            {
+                auto values = result_type->createColumn();
+                values->insertFrom(else_value, 0);
+                values->insertFrom(then_value, 0);
+
+                auto indexes = ColumnUInt8::create(input_rows_count);
+                auto & indexes_data = indexes->getData();
+                for (size_t i = 0; i < input_rows_count; ++i)
+                    indexes_data[i] = cond_array[i] != 0;
+
+                return values->index(*indexes, 0);
+            }
+        }
+
+        MutableColumnPtr result_column = result_type->createColumn();
+        result_column->reserve(input_rows_count);
 
         if (then_is_const && else_is_const)
         {
@@ -1489,7 +1450,7 @@ public:
 
         /// When the result type is Int64 but we have UInt64 and Int32 arguments,
         /// the canUnsignedBeSigned flag on UInt64 type may have been lost during query plan transformations.
-        /// In this case, we use executeGenericWithType which casts both columns to the expected result type.
+        /// In this case, we use executeGeneric which casts both columns to the expected result type.
         /// See issue #70017.
         bool left_is_uint64 = WhichDataType(left_type).isUInt64();
         bool right_is_uint64 = WhichDataType(right_type).isUInt64();
@@ -1497,7 +1458,7 @@ public:
         if (result_type_is_int64 && (left_is_uint64 || right_is_uint64) && !uint64_to_int64)
         {
             /// Cast both columns to Int64 using the pre-computed result type
-            return executeGenericWithType(cond_col, arguments, input_rows_count, removeNullable(result_type));
+            return executeGeneric(cond_col, arguments, removeNullable(result_type), input_rows_count);
         }
 
         TypeIndex left_id = left_type->getTypeId();
