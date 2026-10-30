@@ -4190,6 +4190,10 @@ ProjectionNames QueryAnalyzer::resolveExpressionNode(
                 throw exception; /// NOLINT(hicpp-exception-baseclass,cert-err09-cpp,cert-err61-cpp,misc-throw-by-value-catch-by-reference)
             }
 
+            const bool column_shadows_alias = is_top_level_projection && node_alias.empty() && resolved_identifier_node
+                && resolve_identifier_expression_result.isResolvedFromJoinTree()
+                && scope.aliases.find(identifier_lookup, ScopeAliases::FindOption::FULL_NAME) != nullptr;
+
             node = std::move(resolved_identifier_node);
 
             if (node->getNodeType() == QueryTreeNodeType::LIST)
@@ -4207,6 +4211,9 @@ ProjectionNames QueryAnalyzer::resolveExpressionNode(
 
             if (result_projection_names.empty())
                 result_projection_names.push_back(unresolved_identifier.getFullName());
+
+            if (column_shadows_alias)
+                scope.projection_names_shadowing_aliases.insert(result_projection_names.front());
 
             break;
         }
@@ -8006,12 +8013,13 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
     /// and the column name of an expression is built using the aliases of its subexpressions,
     /// so different constant projection expressions can end up with the same column name.
     /// Columns with identical names must have identical structure in a Block, so such columns
-    /// are renamed by appending a numeric suffix. The renaming applies only to a query that has
+    /// are renamed by appending a numeric suffix. The renaming applies to a query that has
     /// repeated aliases of nested expressions, and only to collisions between unequal constants,
-    /// so no previously working query changes its column names, and a collision that was an error
-    /// before (e.g. WITH 3 AS "1" SELECT 1, "1") still throws AMBIGUOUS_COLUMN_NAME.
+    /// so a collision that was an error before (e.g. WITH 3 AS "1" SELECT 1, "1") still throws
+    /// AMBIGUOUS_COLUMN_NAME. It also applies to any unequal collision with a column resolved instead of
+    /// a same-named alias, e.g. `x` in `SELECT x + 1 AS x, x FROM t` with `prefer_column_name_to_alias = 1`.
     /// Other collisions (e.g. same-named columns of joined tables) keep the historical behavior.
-    if (has_unused_duplicated_aliases)
+    if (has_unused_duplicated_aliases || !scope.projection_names_shadowing_aliases.empty())
     {
         const auto & projection_nodes = query_node_typed.getProjection().getNodes();
         if (projection_nodes.size() == projection_columns.size())
@@ -8021,10 +8029,17 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
             for (const auto & projection_column : projection_columns)
                 projection_column_names.insert(projection_column.name);
 
+            /// Positions of renamed columns with their names before renaming.
+            std::vector<std::pair<size_t, std::string>> renamed_columns;
+
             for (size_t i = 0; i < projection_columns.size(); ++i)
             {
                 auto [it, inserted] = name_to_first_position.emplace(projection_columns[i].name, i);
                 if (inserted)
+                    continue;
+
+                const bool column_shadows_alias = scope.projection_names_shadowing_aliases.contains(projection_columns[i].name);
+                if (!has_unused_duplicated_aliases && !column_shadows_alias)
                     continue;
 
                 const auto & first_column = projection_columns[it->second];
@@ -8037,7 +8052,8 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
                     need_rename = !projection_columns[i].type->equals(*first_column.type)
                         || first_constant->getValue() != current_constant->getValue();
                 }
-                else if (projection_nodes[it->second]->getNodeType() != QueryTreeNodeType::COLUMN
+                else if (column_shadows_alias
+                    || projection_nodes[it->second]->getNodeType() != QueryTreeNodeType::COLUMN
                     || projection_nodes[i]->getNodeType() != QueryTreeNodeType::COLUMN)
                 {
                     /// Unequal non-constant expressions can also collide on the column name when the name
@@ -8045,9 +8061,9 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
                     /// They can become constants of different values during planning (e.g. when the source
                     /// columns are constant), and columns with identical names must have identical structure
                     /// in a Block. Collisions between two plain columns (e.g. same-named columns of joined
-                    /// tables) keep the historical behavior and are not renamed.
-                    need_rename = !projection_nodes[it->second]->isEqual(
-                        *projection_nodes[i], IQueryTreeNode::CompareOptions{.compare_aliases = false});
+                    /// tables) keep the historical behavior and are not renamed, unless a column shadows an alias.
+                    need_rename = !projection_nodes[it->second]->isEqual(*projection_nodes[i],
+                        IQueryTreeNode::CompareOptions{.compare_aliases = false, .compare_column_sources_by_identity = column_shadows_alias});
                 }
 
                 if (!need_rename)
@@ -8061,7 +8077,46 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
                     ++suffix;
                 } while (!projection_column_names.emplace(new_name).second);
 
+                renamed_columns.emplace_back(i, projection_columns[i].name);
                 projection_columns[i].name = std::move(new_name);
+            }
+
+            /// An INTERPOLATE item names the projection column it fills, so it must follow a renamed column.
+            /// Each renamed copy of the interpolated expression gets its own item.
+            if (query_node_typed.hasInterpolate() && !renamed_columns.empty())
+            {
+                auto retarget = [](const QueryTreeNodePtr & interpolate_node, const std::string & new_name)
+                {
+                    auto & interpolate = interpolate_node->as<InterpolateNode &>();
+                    auto column = std::make_shared<ColumnNode>(
+                        NameAndTypePair(new_name, interpolate.getExpression()->getResultType()),
+                        static_pointer_cast<ITableExpressionNode>(interpolate_node));
+                    replaceColumns(interpolate.getInterpolateExpression(), interpolate_node, {{interpolate.getExpressionName(), column}});
+                    interpolate.setExpressionName(new_name);
+                };
+
+                auto & interpolate_nodes = query_node_typed.getInterpolate()->as<ListNode &>().getNodes();
+                QueryTreeNodes copies;
+                for (auto & interpolate_node : interpolate_nodes)
+                {
+                    const auto & interpolate = interpolate_node->as<const InterpolateNode &>();
+                    std::vector<size_t> positions;
+                    for (const auto & [position, name] : renamed_columns)
+                    {
+                        if (name == interpolate.getExpressionName()
+                            && interpolate.getExpression()->isEqual(*projection_nodes[position],
+                                IQueryTreeNode::CompareOptions{.compare_aliases = false, .compare_column_sources_by_identity = true}))
+                            positions.push_back(position);
+                    }
+
+                    if (positions.empty())
+                        continue;
+
+                    for (size_t j = 1; j < positions.size(); ++j)
+                        retarget(copies.emplace_back(interpolate_node->clone()), projection_columns[positions[j]].name);
+                    retarget(interpolate_node, projection_columns[positions.front()].name);
+                }
+                interpolate_nodes.insert(interpolate_nodes.end(), copies.begin(), copies.end());
             }
         }
     }
