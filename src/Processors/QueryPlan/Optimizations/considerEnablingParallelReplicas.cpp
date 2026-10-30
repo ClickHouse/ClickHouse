@@ -1276,13 +1276,16 @@ static bool decideAtBoundary(
             /// Dividing `output_bytes` by `num_replicas` assumes the replicas partition the output
             /// between them, as they do for `Aggregating` or a plain `Sorting`. A boundary that keeps a
             /// bounded top-N per replica instead makes every replica ship the whole `output_bytes`:
-            /// `LIMIT n`, `LIMIT -n` (the last `n` rows) and a `Sorting` carrying a limit. Dividing
-            /// those underestimates the parallel-replicas plan by a factor of `num_replicas`.
+            /// `LIMIT n`, `LIMIT -n` (the last `n` rows), a `Sorting` carrying a limit and an
+            /// `Aggregating` with the `GROUP BY` top-K heap. Dividing those underestimates the
+            /// parallel-replicas plan by a factor of `num_replicas`.
             const auto * boundary_step = single_replica_plan_boundary->step.get();
             const auto * boundary_sorting_step = typeid_cast<const SortingStep *>(boundary_step);
+            const auto * boundary_aggregating_step = typeid_cast<const AggregatingStep *>(boundary_step);
             const bool output_is_replicated = typeid_cast<const LimitStep *>(boundary_step)
                 || typeid_cast<const NegativeLimitStep *>(boundary_step)
-                || (boundary_sorting_step && boundary_sorting_step->getLimit() != 0);
+                || (boundary_sorting_step && boundary_sorting_step->getLimit() != 0)
+                || (boundary_aggregating_step && boundary_aggregating_step->getParams().top_k.has_value());
             const size_t output_replicas_divisor = output_is_replicated ? 1 : num_replicas;
             const auto local_plan_cost_estimation = stats->input_bytes / std::min<size_t>(max_threads, effective_max_reading_threads);
             const auto replicas_plan_cost_estimation

@@ -131,6 +131,8 @@ public:
 
     void enableMemoryBoundMerging();
     void enforceAggregationInOrder(const SortDescription & sort_description);
+    /// See `distributed_group_by_top_k`.
+    void enableGroupByTopK(size_t top_k_limit);
 
     StorageID getStorageID() const { return storage_id; }
     ParallelReplicasReadingCoordinatorPtr getCoordinator() const { return coordinator; }

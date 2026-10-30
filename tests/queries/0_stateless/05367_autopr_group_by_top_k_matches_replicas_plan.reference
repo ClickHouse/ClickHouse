@@ -1,0 +1,8 @@
+top_k_limit	1
+top_k_order_by	1
+2	10
+3	10
+4	10
+Sorting (Sorting for GROUP BY top-K)
+Top-K: limit=3, columns=1, directions=[1]
+0
