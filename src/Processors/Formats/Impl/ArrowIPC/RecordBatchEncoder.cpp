@@ -137,6 +137,16 @@ void appendFixedWidth(RecordBatchEncoder & self, const IColumn & column, size_t 
     self.appendBuffer(data.data(), num_rows * sizeof(V));
 }
 
+template <typename Col, typename To>
+void appendWidened(RecordBatchEncoder & self, const IColumn & column, size_t num_rows)
+{
+    const auto & data = assert_cast<const Col &>(column).getData();
+    PODArray<To> widened(num_rows);
+    for (size_t i = 0; i < num_rows; ++i)
+        widened[i] = static_cast<To>(data[i]);
+    self.appendBuffer(widened.data(), num_rows * sizeof(To));
+}
+
 int arrowTimeUnitForScale(UInt32 scale)
 {
     if (scale == 0)
@@ -200,7 +210,12 @@ void RecordBatchEncoder::encodeValues(
         case TypeIndex::Float32: appendFixedWidth<ColumnFloat32>(*this, column, num_rows); return;
         case TypeIndex::Float64: appendFixedWidth<ColumnFloat64>(*this, column, num_rows); return;
         case TypeIndex::Date32: appendFixedWidth<ColumnInt32>(*this, column, num_rows); return;
-        case TypeIndex::DateTime: appendFixedWidth<ColumnUInt32>(*this, column, num_rows); return;
+        case TypeIndex::DateTime:
+            if (settings.arrow.output_datetime_as_timestamp)
+                appendWidened<ColumnUInt32, Int64>(*this, column, num_rows);
+            else
+                appendFixedWidth<ColumnUInt32>(*this, column, num_rows);
+            return;
         case TypeIndex::Date:
         {
             if (settings.arrow.output_date_as_uint16)
@@ -210,11 +225,7 @@ void RecordBatchEncoder::encodeValues(
                 return;
             }
             /// Date is UInt16 days; widen to Int32 to match Arrow date32.
-            const auto & data = assert_cast<const ColumnUInt16 &>(column).getData();
-            PODArray<Int32> widened(num_rows);
-            for (size_t i = 0; i < num_rows; ++i)
-                widened[i] = static_cast<Int32>(data[i]);
-            appendBuffer(widened.data(), num_rows * sizeof(Int32));
+            appendWidened<ColumnUInt16, Int32>(*this, column, num_rows);
             return;
         }
         case TypeIndex::DateTime64:

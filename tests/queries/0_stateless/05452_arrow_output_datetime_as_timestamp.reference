@@ -1,0 +1,17 @@
+dt	UInt32					
+dt	DateTime64(0, \'UTC\')					
+dt_after_2038	DateTime64(0, \'UTC\')					
+dt_default_tz	DateTime64(0, \'Europe/Amsterdam\')					
+dt64_default_tz	DateTime64(0, \'Europe/Amsterdam\')					
+dt_nullable	Nullable(DateTime64(0, \'UTC\'))					
+dt_array	Array(DateTime64(0, \'Asia/Tokyo\'))					
+dt_tuple	Tuple(\n    `1` DateTime64(0, \'UTC\'))					
+dt_map_key	Map(DateTime64(0, \'UTC\'), UInt64)					
+dt_lc	DateTime64(0, \'UTC\')					
+2026-01-02 03:04:05	2100-01-01 00:00:00	2026-01-02 03:04:05	2026-01-02 03:04:05	\N	['2026-01-02 03:04:05']	('2026-01-02 03:04:05')	{'2026-01-02 03:04:05':0}	2026-01-02 03:04:05
+2026-01-02 03:04:06	2100-01-01 00:00:00	2026-01-02 03:04:05	2026-01-02 03:04:05	2026-01-02 03:04:05	['2026-01-02 03:04:05']	('2026-01-02 03:04:05')	{'2026-01-02 03:04:05':1}	2026-01-02 03:04:05
+2026-01-02 03:04:05
+2026-01-02 03:04:06
+dt	DateTime64(0, \'UTC\')					
+dt_after_2038	DateTime64(0, \'UTC\')					
+2026-01-02 03:04:05	2100-01-01 00:00:00
