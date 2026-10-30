@@ -40,6 +40,13 @@ using StoragePtr = std::shared_ptr<IStorage>;
 class Context;
 using ContextPtr = std::shared_ptr<const Context>;
 
+class TableFunctionNode;
+
+/// Whether a read through this table function may be the coordinated read: it denotes the same source on
+/// every replica (`ITableFunction::getParallelReplicasReadID`) and nothing in the settings depends on how a
+/// replica resolves names. The storage it resolved to still has to be eligible on its own.
+bool tableFunctionCanDriveParallelReplicasRead(const TableFunctionNode & table_function_node, const ContextPtr & context);
+
 /// Check whether a resolved storage is eligible for parallel replicas (MergeTree, replication, no FINAL).
 bool isTableNodeEligibleForParallelReplicas(const TableNode & table_node, const StoragePtr & storage, const ContextPtr & context);
 

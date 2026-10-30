@@ -1764,7 +1764,7 @@ bool allowParallelReplicasForJoinTree(
 
         const auto * left_table_function = left_table_expr->as<TableFunctionNode>();
         if (left_table_function)
-            return left_table_function->getParallelReplicasReadID()
+            return tableFunctionCanDriveParallelReplicasRead(*left_table_function, context)
                 && parallelReplicasEnabledForStorage(left_table_function->getStorage(), context, query_settings);
 
         // check if left one is not subquery
@@ -2923,7 +2923,7 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(TableExpressionNodePtr table_
                     /// mode (see below), so the join around it must be one the query-tree way can distribute.
                     else if (
                         ClusterProxy::canUseParallelReplicasOnInitiator(query_context)
-                        && (!table_function_node || table_function_node->getParallelReplicasReadID())
+                        && (!table_function_node || tableFunctionCanDriveParallelReplicasRead(*table_function_node, query_context))
                         && allowParallelReplicasForJoinTree(
                             parent_join_tree, query_context, settings,
                             /*plan_based=*/ settings[Setting::parallel_replicas_plan_based] && !table_function_node))
