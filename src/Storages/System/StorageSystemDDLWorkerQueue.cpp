@@ -14,7 +14,7 @@
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Core/Settings.h>
 #include <Core/SettingsSecrets.h>
-#include <Common/SensitiveDataMasker.h>
+#include <Core/Defines.h>
 #include <Parsers/ASTQueryWithOnCluster.h>
 #include <Parsers/ParserQuery.h>
 #include <Parsers/parseQuery.h>
@@ -30,7 +30,6 @@ namespace Setting
     extern const SettingsBool allow_settings_after_format_in_insert;
     extern const SettingsUInt64 max_parser_backtracks;
     extern const SettingsUInt64 max_parser_depth;
-    extern const SettingsUInt64 max_query_size;
 }
 
 namespace ErrorCodes
@@ -98,8 +97,17 @@ static ASTPtr tryParseDDLQuery(const ContextPtr & context, const DDLTask & task)
 
     try
     {
+        /// The entry was accepted by the initiator and its text was produced by formatting an AST, so the
+        /// reader's parser limits must not apply: a reader could lower them to make the entry unparseable
+        /// and get the raw text, secrets included. Keep the reader's limits only where they are higher.
         query = parseQuery(
-            parser_query, begin, end, description, settings[Setting::max_query_size], settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
+            parser_query,
+            begin,
+            end,
+            description,
+            /* max_query_size */ 0,
+            std::max<UInt64>(settings[Setting::max_parser_depth], DBMS_DEFAULT_MAX_PARSER_DEPTH),
+            std::max<UInt64>(settings[Setting::max_parser_backtracks], DBMS_DEFAULT_MAX_PARSER_BACKTRACKS));
     }
     catch (const Exception & e)
     {
@@ -125,14 +133,16 @@ static String clusterNameFromDDLQuery(const ASTPtr & query)
 
 /// The entry in Keeper keeps the real values, because the hosts have to execute the query. Hide the
 /// secrets on the way out instead, the way `system.tables.create_table_query` does.
-static String queryForDisplay(const ContextPtr & context, const DDLTask & task, const ASTPtr & query)
+static String queryForDisplay(const ContextPtr & context, const DDLTask & task, const ASTPtr & query, bool show_secrets)
 {
     if (query)
         return format({.ctx = context, .query = *query});
 
-    /// Nothing parsed, so there is no AST to hide a secret in. `executeQuery` falls back to the
-    /// masking rules for a query it could not parse either.
-    return wipeSensitiveDataAndCutToLength(task.entry.query, 0, /* wipe_sensitive */ true);
+    /// Nothing parsed, so there is no AST to hide a secret in. The masking rules know nothing about the
+    /// credentials of arbitrary statements, so fail closed for a reader who may not see secrets.
+    if (show_secrets)
+        return task.entry.query;
+    return {};
 }
 
 static void fillCommonColumns(
@@ -318,7 +328,7 @@ void StorageSystemDDLWorkerQueue::fillData(MutableColumns & res_columns, Context
 
         size_t col = 0;
         fillCommonColumns(
-            res_columns, col, task, cluster_name, queryForDisplay(context, task, query), show_secrets, query_create_time_ms);
+            res_columns, col, task, cluster_name, queryForDisplay(context, task, query, show_secrets), show_secrets, query_create_time_ms);
 
         /// At first we process finished nodes, to avoid duplication if some host was active
         /// and suddenly become finished during status dirs listing.
