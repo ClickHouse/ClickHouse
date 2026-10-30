@@ -8,6 +8,8 @@
 #include <DataTypes/DataTypeQBit.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeObject.h>
+#include <DataTypes/DataTypeVariant.h>
+#include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/NullableUtils.h>
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnArray.h>
@@ -16,6 +18,7 @@
 #include <Columns/ColumnQBit.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnObject.h>
+#include <Columns/ColumnVariant.h>
 #include <Common/assert_cast.h>
 
 #include <memory>
@@ -35,7 +38,8 @@ namespace
 
 /** Extract element of tuple by constant index or name. The operation is essentially free.
   * Also the function looks through Arrays: you can get Array of tuple elements from Array of Tuples.
-  * The logic of qbitElement is integrated into this function because AST makes any dot syntax (vec.i) a tupleElement(vec, i) call.
+  * The logic of qbitElement and named Variant subcolumns is integrated into this function because AST makes
+  * dot syntax (vec.i or variant.Type) a tupleElement call.
   */
 class FunctionTupleElement final : public IFunction
 {
@@ -69,7 +73,7 @@ public:
     /// purely descriptive; it is only rendered, never applied.
     String getSignatureString() const override
     {
-        return "(Tuple | Nullable(Tuple) | Array | QBit | JSON | Nullable(JSON), const index_or_name, [Any default]) -> Any";
+        return "(Tuple | Nullable(Tuple) | Variant | Array | QBit | JSON | Nullable(JSON), const index_or_name, [Any default]) -> Any";
     }
 
     /// The declarative signature above is documentation-only: the exact result type is not
@@ -145,6 +149,16 @@ public:
 
             return arguments[2].type;
         }
+        else if (const DataTypeVariant * variant = checkAndGetDataType<DataTypeVariant>(input_type))
+        {
+            auto index = getVariantElementIndex(arguments[1].column, *variant, number_of_arguments);
+            if (!index)
+                return arguments[2].type;
+
+            return wrapInArrays(
+                makeExtractedSubcolumnsNullableOrLowCardinalityNullableSafe(variant->getVariant(*index)),
+                count_arrays);
+        }
         else if (const DataTypeObject * object = checkAndGetDataType<DataTypeObject>(input_type))
         {
             if (number_of_arguments != 2)
@@ -170,7 +184,7 @@ public:
 
         throw Exception(
             ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-            "First argument for function {} must be Tuple, Nullable(Tuple), QBit, JSON, Nullable(JSON) or array of these. Actual {}",
+            "First argument for function {} must be Tuple, Nullable(Tuple), Variant, QBit, JSON, Nullable(JSON) or array of these. Actual {}",
             getName(),
             arguments[0].type->getName());
     }
@@ -244,6 +258,16 @@ public:
 
             res = assert_cast<const ColumnTuple &>(input_col_as_qbit.getTupleColumn()).getColumnPtr(index.value());
         }
+        else if (const DataTypeVariant * input_type_as_variant = checkAndGetDataType<DataTypeVariant>(input_type))
+        {
+            auto index = getVariantElementIndex(arguments[1].column, *input_type_as_variant, arguments.size());
+            if (!index)
+                return arguments[2].column;
+
+            res = input_type_as_variant->getSubcolumn(
+                input_type_as_variant->getVariant(*index)->getName(),
+                assert_cast<const ColumnVariant &>(*input_col).getPtr());
+        }
         else if (const DataTypeObject * input_type_as_object = checkAndGetDataType<DataTypeObject>(input_type))
         {
             const auto * subcolumn_name_col = checkAndGetColumnConst<ColumnString>(arguments[1].column.get());
@@ -265,7 +289,7 @@ public:
         {
             throw Exception(
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                "First argument for function {} must be Tuple, Nullable(Tuple), QBit, JSON, Nullable(JSON) or array of these. Actual {}",
+                "First argument for function {} must be Tuple, Nullable(Tuple), Variant, QBit, JSON, Nullable(JSON) or array of these. Actual {}",
                 getName(),
                 input_arg.type->getName());
         }
@@ -281,6 +305,26 @@ public:
     }
 
 private:
+    std::optional<size_t> getVariantElementIndex(const ColumnPtr & index_column, const DataTypeVariant & variant, size_t argument_size) const
+    {
+        const auto * name_col = checkAndGetColumnConst<ColumnString>(index_column.get());
+        if (!name_col)
+            throw Exception(
+                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                "Second argument to {} with Variant argument must be a constant String", getName());
+
+        const auto element_name = name_col->getValue<String>();
+        if (auto element_type = DataTypeFactory::instance().tryGet(element_name))
+        {
+            if (auto index = variant.tryGetVariantDiscriminator(element_type->getName()))
+                return index;
+        }
+
+        if (argument_size == 2)
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "{} doesn't contain variant with type {}", variant.getName(), element_name);
+        return std::nullopt;
+    }
+
     std::optional<size_t> getTupleElementIndex(const ColumnPtr & index_column, const DataTypeTuple & tuple, size_t argument_size) const
     {
         if (checkAndGetColumnConst<ColumnUInt8>(index_column.get()) || checkAndGetColumnConst<ColumnUInt16>(index_column.get())
@@ -415,10 +459,10 @@ private:
 REGISTER_FUNCTION(TupleElement)
 {
     FunctionDocumentation::Description description = R"(
-Extracts an element from a tuple by index or name.
+Extracts an element from a tuple by index or name, or a named alternative from a Variant.
 
 For access by index, an 1-based numeric index is expected.
-For access by name, the element name can be provided as a string (works only for named tuples).
+For access by name, the element name can be provided as a string (for named tuples or a Variant alternative type).
 
 Negative indexes are supported. In this case, the corresponding element is selected, numbered from the end. For example, `tuple.-1` is the last element in the tuple.
 
@@ -427,9 +471,9 @@ All arguments must be constants.
 
 This function has zero runtime cost and implements the operators `x.index` and `x.name`.
 )";
-    FunctionDocumentation::Syntax syntax = "tupleElement(tuple, index|name[, default_value])";
+    FunctionDocumentation::Syntax syntax = "tupleElement(tuple_or_variant, index|name[, default_value])";
     FunctionDocumentation::Arguments arguments = {
-        {"tuple", "A tuple or array of tuples.", {"Tuple(T)", "Array(Tuple(T))"}},
+        {"tuple_or_variant", "A tuple, Variant, or array of tuples or Variants.", {"Tuple(T)", "Variant(T1, T2)", "Array(Tuple(T))", "Array(Variant(T1, T2))"}},
         {"index", "Column index, starting from 1.", {"const UInt8/16/32/64"}},
         {"name", "Name of the element.", {"const String"}},
         {"default_value", "Default value returned when index is out of bounds or element doesn't exist.", {"Any"}}
