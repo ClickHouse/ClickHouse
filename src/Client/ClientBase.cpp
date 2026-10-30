@@ -2534,6 +2534,10 @@ namespace
 {
 bool isStdinNotEmptyAndValid(ReadBuffer & std_in)
 {
+    /// A failed read cancels `std_in`, and nothing can be read from it after that.
+    if (std_in.isCanceled())
+        return false;
+
     try
     {
         return !std_in.eof();
