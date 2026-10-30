@@ -648,14 +648,20 @@ bool writeMetadataFile(
     return true;
 }
 
-bool tryWriteVersionHintFile(
+/// `initial_hint` is an existing hint the caller has already read; the first attempt uses it instead
+/// of reading the hint again. That is safe because the rewrite is a compare-and-swap on the tag that
+/// was read, so a hint changed in between makes the attempt fail, and the next one reads it again.
+/// An absent hint is never passed: a writer that does not create hints would trust it and skip a
+/// hint another writer has created in the meantime.
+static bool tryWriteVersionHintFileImpl(
     const IcebergPathResolver & resolver,
     const GeneratedMetadataFileWithInfo & metadata_file_info,
     const IcebergPathFromMetadata & version_hint_path,
     ObjectStoragePtr object_storage,
     ContextPtr context,
     bool create,
-    bool assert_version_exactly)
+    bool assert_version_exactly,
+    std::optional<VersionHintState> initial_hint)
 {
     auto storage_metadata_path = resolver.resolve(metadata_file_info.path);
     auto storage_version_hint_path = resolver.resolve(version_hint_path);
@@ -666,7 +672,9 @@ bool tryWriteVersionHintFile(
     for (size_t attempt = 0; attempt < MAX_TRANSACTION_RETRIES; ++attempt)
     {
         /// first, let's resolve an existing hint and the version it points to
-        const auto version_hint = readVersionHint(object_storage, storage_version_hint_path, context);
+        const auto version_hint = (attempt == 0 && initial_hint)
+            ? *initial_hint
+            : readVersionHint(object_storage, storage_version_hint_path, context);
         if (!version_hint.exists && !create)
             return true;
 
@@ -747,6 +755,19 @@ bool tryWriteVersionHintFile(
     return false;
 }
 
+bool tryWriteVersionHintFile(
+    const IcebergPathResolver & resolver,
+    const GeneratedMetadataFileWithInfo & metadata_file_info,
+    const IcebergPathFromMetadata & version_hint_path,
+    ObjectStoragePtr object_storage,
+    ContextPtr context,
+    bool create,
+    bool assert_version_exactly)
+{
+    return tryWriteVersionHintFileImpl(
+        resolver, metadata_file_info, version_hint_path, object_storage, context, create, assert_version_exactly, std::nullopt);
+}
+
 bool writeMetadataFileAndVersionHint(
     const IcebergPathResolver & resolver,
     const GeneratedMetadataFileWithInfo & metadata_file_info,
@@ -769,14 +790,18 @@ bool writeMetadataFileAndVersionHint(
     if (!writeMetadataFile(resolver, metadata_file_info, metadata_file_content, object_storage, context))
         return false;
 
-    (void)tryWriteVersionHintFile(
+    /// An existing hint read above is reused, so that a commit does not pay for reading it twice.
+    /// An absent one is read again: another writer may have created it while the metadata file
+    /// was being written.
+    (void)tryWriteVersionHintFileImpl(
         resolver,
         metadata_file_info,
         version_hint_path,
         object_storage,
         context,
         /* create */ try_write_version_hint,
-        /* assert_version_exactly */ false);
+        /* assert_version_exactly */ false,
+        version_hint.exists ? std::optional<VersionHintState>(version_hint) : std::nullopt);
     return true;
 }
 
