@@ -16,10 +16,25 @@ namespace DB
 namespace ErrorCodes
 {
 extern const int SYNTAX_ERROR;
+extern const int QUERY_IS_TOO_LARGE;
 }
 
 namespace Mongo
 {
+
+/** The Mongo parsers read the statement from the raw text rather than from the tokens, which are
+  * produced lazily and would only stop at `max_query_size` if somebody read them that far. So the
+  * limit is checked on the bytes of the statement before anything parses it.
+  */
+static void checkQuerySize(const char * begin, const char * end, size_t max_query_size)
+{
+    if (max_query_size && static_cast<size_t>(end - begin) > max_query_size)
+        throw Exception(
+            ErrorCodes::QUERY_IS_TOO_LARGE,
+            "The Mongo query is {} bytes long, which exceeds `max_query_size` ({})",
+            end - begin,
+            max_query_size);
+}
 
 ASTPtr tryParseMongoQuery(
     IParser & parser,
@@ -73,6 +88,7 @@ ASTPtr tryParseMongoQuery(
       * into this one.
       */
     const char * statement_end = findStatementEnd(_out_query_end, end);
+    checkQuerySize(_out_query_end, statement_end, max_query_size);
 
     auto [data_begin, data_end] = getSettingsSubstring(_out_query_end, statement_end);
     metadata = extractMetadataFromRequest(_out_query_end, statement_end);
@@ -167,6 +183,8 @@ ASTPtr parseMongoQuery(
             if (!isWhitespaceASCII(*pos))
                 throw Exception(ErrorCodes::SYNTAX_ERROR, "Only a single Mongo statement is expected, but there is text after it");
     }
+
+    checkQuerySize(begin, end, max_query_size);
 
     Expected expected;
     ASTPtr res;

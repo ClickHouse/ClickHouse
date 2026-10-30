@@ -33,6 +33,9 @@ run 'db.docs.updateMany({"id" : 1}, {"$min" : {"n" : {"$unknownWrapper" : 1}}});
 run 'db.docs.updateMany({"id" : 1}, {"$set" : {"name" : {}}});'
 run 'db.docs.updateMany({"id" : 1}, {"$set" : {"" : 1}});'
 run 'db.docs.updateMany({"id" : 1}, {"$set" : {"name" : {"" : 1}}});'
+# Assigning a whole subdocument replaces it in Mongo, dropping the fields it leaves out, and the
+# columns that hold them are not known to the translation.
+run 'db.docs.updateMany({"id" : 1}, {"$set" : {"profile" : {"name" : "beta"}}});'
 
 echo '-- the regular expression options an operator cannot combine'
 run 'db.docs.aggregate([{"$project" : {"x" : {"$regexMatch" : {"input" : "$name", "regex" : {"$regularExpression" : {"pattern" : "^a", "options" : "i"}}, "options" : "i"}}}}]);'

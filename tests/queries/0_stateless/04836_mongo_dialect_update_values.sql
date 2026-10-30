@@ -29,7 +29,7 @@ SELECT id, tags FROM docs ORDER BY id;
 
 SET allow_experimental_mongo_dialect = 1;
 SET dialect='mongo';
-db.docs.updateMany({"id" : 1}, {"$set" : {"profile" : {"name" : "y", "age" : 20}}});
+db.docs.updateMany({"id" : 1}, {"$set" : {"profile.name" : "y", "profile.age" : 20}});
 SET dialect='clickhouse';
 SELECT id, `profile.name`, `profile.age` FROM docs ORDER BY id;
 

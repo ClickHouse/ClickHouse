@@ -972,6 +972,9 @@ bool ParserMongoAggregateQuery::parseImpl(ASTPtr & node)
     /// which the collections this endpoint creates are made of.
     settings->changes.emplace_back("allow_suspicious_types_in_order_by", Field(UInt64(1)));
     settings->changes.emplace_back("allow_suspicious_types_in_group_by", Field(UInt64(1)));
+    /// A constant key of a `$group` - `{_id: 0}` or `{_id: 2}` - is a value to group by, never the
+    /// position of a column of the select list.
+    settings->changes.emplace_back("enable_positional_arguments", Field(UInt64(0)));
     select->as<ASTSelectQuery &>().setExpression(ASTSelectQuery::Expression::SETTINGS, std::move(settings));
 
     node = std::move(select);

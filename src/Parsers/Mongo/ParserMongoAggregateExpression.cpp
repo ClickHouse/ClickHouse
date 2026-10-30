@@ -29,6 +29,7 @@ namespace ErrorCodes
 extern const int BAD_ARGUMENTS;
 extern const int NOT_IMPLEMENTED;
 extern const int TOO_BIG_AST;
+extern const int TOO_DEEP_AST;
 }
 
 namespace Mongo
@@ -217,7 +218,8 @@ const std::unordered_map<std::string_view, std::string> direct_functions = {
     {"$abs", "abs"},
     {"$ceil", "ceil"},
     {"$floor", "floor"},
-    {"$round", "round"},
+    /// Mongo rounds a tie to even for every numeric type, while `round` does it only for floats.
+    {"$round", "roundBankers"},
     {"$trunc", "trunc"},
     {"$sqrt", "sqrt"},
     {"$exp", "exp"},
@@ -500,10 +502,17 @@ std::vector<bool> findOptionalCaptureGroups(std::string_view pattern)
     std::vector<bool> optional;
     std::vector<Group> groups;
     bool top_level_alternation = false;
+    /** The captures from `first` to the last one seen so far - the ones inside the group that has
+      * just closed - are optional. Marking them one by one would revisit the captures of nested
+      * groups once for every group around them, which is quadratic in a pattern such as
+      * `((((a)?)?)?)?`, so the ranges are collected and the captures they cover are marked in one
+      * pass at the end.
+      */
+    std::vector<std::pair<size_t, size_t>> optional_ranges;
     auto mark_from = [&](size_t first)
     {
-        for (size_t i = first; i < optional.size(); ++i)
-            optional[i] = true;
+        if (first < optional.size())
+            optional_ranges.emplace_back(first, optional.size());
     };
 
     for (size_t pos = 0; pos < pattern.size(); ++pos)
@@ -574,6 +583,19 @@ std::vector<bool> findOptionalCaptureGroups(std::string_view pattern)
     }
     if (top_level_alternation)
         mark_from(0);
+
+    std::vector<Int64> coverage(optional.size() + 1, 0);
+    for (const auto & [first, end] : optional_ranges)
+    {
+        ++coverage[first];
+        --coverage[end];
+    }
+    Int64 covering = 0;
+    for (size_t i = 0; i < optional.size(); ++i)
+    {
+        covering += coverage[i];
+        optional[i] = covering > 0;
+    }
     return optional;
 }
 
@@ -618,9 +640,16 @@ ASTPtr makeToDecimal(ASTPtr argument)
     }
 
     /// The `CAST` a `$numberDecimal` wrapper lowers into already carries the exact scale of its
-    /// value (see `tryParseMongoConstant`), so it is a decimal already.
-    if (const auto * function = argument->as<ASTFunction>(); function && function->name == "CAST")
-        return argument;
+    /// value (see `tryParseMongoConstant`), so it is a decimal already. Other constants lower into
+    /// a `CAST` as well - an embedded document of a `$literal` is a `CAST` to `JSON` - so the target
+    /// type is checked rather than assumed.
+    if (const auto * function = argument->as<ASTFunction>(); function && function->name == "CAST" && function->arguments
+        && function->arguments->children.size() == 2)
+    {
+        if (const auto * target = function->arguments->children[1]->as<ASTLiteral>();
+            target && target->value.getType() == Field::Types::String && target->value.safeGet<String>().starts_with("Decimal128("))
+            return argument;
+    }
 
     auto is_exact = makeASTFunction(
         "match", makeASTFunction("toTypeName", argument), makeLiteral(Field(String("^(U?Int(8|16|32|64|128|256)|Bool)$"))));
@@ -965,35 +994,91 @@ ASTPtr makeToDouble(ASTPtr argument)
         makeASTFunction("toFloat64", argument->clone()));
 }
 
+/** The number of terms of an operator that is folded into a chain of binary functions, such as
+  * `$add` and `$multiply`. The chain is as deep as the terms are many, and a flat list of terms is
+  * not nested JSON, so the nesting limit does not bound it: the translation, its copies and its
+  * size are computed by walking the chain recursively, before the depth of the query is checked.
+  * A chain this long is deeper than any `max_parser_depth` that is practical anyway.
+  */
+constexpr size_t MAX_FOLDED_OPERANDS = 10000;
+
+void checkFoldedOperandCount(std::string_view operator_name, size_t count)
+{
+    if (count > MAX_FOLDED_OPERANDS)
+        throw Exception(
+            ErrorCodes::TOO_DEEP_AST, "'{}' has {} arguments, more than the {} that are supported", operator_name, count, MAX_FOLDED_OPERANDS);
+}
+
+/** The type a date of the type named by `type_name` has after it is moved by milliseconds, which is
+  * the type of the result the branches of `$add` and `$subtract` are cast to: a date of any type
+  * becomes a `DateTime64(3)`, because a `Date` or a `DateTime` would drop the milliseconds, and any
+  * other type - a number, or `Dynamic` for a path of a document - stays what it is.
+  */
+ASTPtr makeTypeOfMovedDate(const ASTPtr & type_name)
+{
+    return makeASTFunction(
+        "multiIf",
+        makeASTFunction("match", type_name->clone(), makeLiteral(Field(String("^Nullable\\((LowCardinality\\()?Date")))),
+        makeLiteral(Field(String("Nullable(DateTime64(3, 'UTC'))"))),
+        makeASTFunction("match", type_name->clone(), makeLiteral(Field(String("^(LowCardinality\\()?Date")))),
+        makeLiteral(Field(String("DateTime64(3, 'UTC')"))),
+        type_name->clone());
+}
+
 /** The lowering of `$add`. Mongo adds a number to a date as milliseconds, while a ClickHouse date
   * plus a number adds seconds, so a sum that has a date among its terms - at most one, as in Mongo -
-  * moves that date by the sum of the other terms, in milliseconds. The type of a value is known in
-  * each row only, so both sums are computed, and the one of the date is cast to the type of the plain
-  * sum, which is the type of the date for a column of dates and `Dynamic` for a path of a document.
+  * moves that date by the other terms, in milliseconds. The type of a value is known in each row
+  * only, so both sums are computed, and the one of the date is cast to the type of the plain sum,
+  * which is `Dynamic` for a path of a document - or to `DateTime64(3)` when the plain sum is a date
+  * of a type of its own, whose precision may be coarser than the milliseconds it is moved by.
   * A numeric literal is not a date, which keeps a sum of a field and constants small.
+  *
+  * Mongo adds the terms from left to right: the terms before the date are summed as numbers and
+  * rounded to whole milliseconds when the date is reached, and every term after it is rounded as
+  * it is added to the date, so `[date, 1.6, 1.6]` moves it by 4 milliseconds and `[1.6, 1.6, date]`
+  * by 3. Which term is the date is known in each row only, so there is a sum for each term that
+  * can be one.
   */
 ASTPtr makeAdd(const std::vector<ASTPtr> & arguments)
 {
     if (arguments.empty())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "'$add' takes at least one argument");
+    checkFoldedOperandCount("$add", arguments.size());
 
     ASTPtr sum = arguments[0];
     for (size_t i = 1; i < arguments.size(); ++i)
         sum = makeASTFunction("plus", sum, arguments[i]);
 
+    /// Each term as a number of milliseconds, for when it is not the date.
+    std::vector<ASTPtr> numbers;
+    numbers.reserve(arguments.size());
+    for (const auto & argument : arguments)
+        numbers.push_back(isNumericLiteral(argument) ? argument->clone() : makeNumberAsFloat(argument));
+    auto rounded = [](ASTPtr value) { return makeASTFunction("toInt64", makeASTFunction("round", std::move(value))); };
+
+    /// Every term that can be the date has a sum of all the terms of its own, so the translation
+    /// grows with the product of the two counts: bound it before building it.
+    const size_t possible_dates = std::count_if(arguments.begin(), arguments.end(), [](const auto & argument) { return !isNumericLiteral(argument); });
+    checkExpressionSize(possible_dates * arguments.size());
+
     ASTPtr any_date;
     std::vector<ASTPtr> date_of_term;
-    ASTPtr offset;
-    for (const auto & argument : arguments)
+    for (size_t date_index = 0; date_index < arguments.size(); ++date_index)
     {
-        ASTPtr milliseconds = isNumericLiteral(argument) ? argument->clone() : makeNumberAsFloat(argument);
-        offset = offset ? makeASTFunction("plus", std::move(offset), std::move(milliseconds)) : std::move(milliseconds);
-
+        const auto & argument = arguments[date_index];
         if (isNumericLiteral(argument))
             continue;
+
+        ASTPtr before;
+        for (size_t i = 0; i < date_index; ++i)
+            before = before ? makeASTFunction("plus", std::move(before), numbers[i]->clone()) : numbers[i]->clone();
+        ASTPtr offset = before ? rounded(std::move(before)) : makeLiteral(Field(Int64(0)));
+        for (size_t i = date_index + 1; i < arguments.size(); ++i)
+            offset = makeASTFunction("plus", std::move(offset), rounded(numbers[i]->clone()));
+
         any_date = any_date ? makeASTFunction("or", std::move(any_date), makeIsDate(argument)) : makeIsDate(argument);
         date_of_term.push_back(makeIsDate(argument));
-        date_of_term.push_back(makeDateOrEpoch(argument));
+        date_of_term.push_back(makeASTFunction("addMilliseconds", makeDateOrEpoch(argument), std::move(offset)));
     }
 
     if (!any_date)
@@ -1001,17 +1086,20 @@ ASTPtr makeAdd(const std::vector<ASTPtr> & arguments)
 
     /// The date among the terms: the last branch is the value of the last term that can be one.
     date_of_term.erase(date_of_term.end() - 2);
-    ASTPtr date = date_of_term.size() == 1 ? std::move(date_of_term.front()) : makeFunction("multiIf", std::move(date_of_term));
-    auto moved = makeASTFunction(
-        "addMilliseconds", std::move(date), makeASTFunction("toInt64", makeASTFunction("round", std::move(offset))));
+    ASTPtr moved = date_of_term.size() == 1 ? std::move(date_of_term.front()) : makeFunction("multiIf", std::move(date_of_term));
+    auto type = makeTypeOfMovedDate(makeASTFunction("toTypeName", sum->clone()));
     return makeASTFunction(
-        "if", std::move(any_date), makeASTFunction("CAST", std::move(moved), makeASTFunction("toTypeName", sum->clone())), sum);
+        "if",
+        std::move(any_date),
+        makeASTFunction("CAST", std::move(moved), type->clone()),
+        makeASTFunction("CAST", std::move(sum), std::move(type)));
 }
 
 /** The lowering of `$subtract`: the difference of two dates is the number of milliseconds between
   * them, and a date minus a number is the date moved back by that many milliseconds; ClickHouse would
   * answer seconds for both. The branches are cast to one type, as in `$add`: the difference of two
-  * columns of dates is an integer of milliseconds rather than the decimal seconds `minus` answers.
+  * columns of dates is an integer of milliseconds rather than the decimal seconds `minus` answers,
+  * and a column of dates moved back is a `DateTime64(3)`, which keeps the milliseconds.
   */
 ASTPtr makeSubtract(const std::vector<ASTPtr> & arguments)
 {
@@ -1028,7 +1116,7 @@ ASTPtr makeSubtract(const std::vector<ASTPtr> & arguments)
         return makeASTFunction(
             "match", makeASTFunction("toTypeName", value->clone()), makeLiteral(Field(String("^(Nullable\\()?Date"))));
     };
-    ASTPtr type = makeASTFunction("toTypeName", difference->clone());
+    ASTPtr type = makeTypeOfMovedDate(makeASTFunction("toTypeName", difference->clone()));
     if (!isNumericLiteral(subtrahend))
         type = makeASTFunction(
             "if",
@@ -1139,6 +1227,7 @@ ASTPtr parseOperator(std::string_view name, const rapidjson::Value & argument)
         auto arguments = parseArguments(argument);
         if (arguments.empty())
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "'{}' takes at least one argument", name);
+        checkFoldedOperandCount(name, arguments.size());
         ASTPtr result = arguments[0];
         for (size_t i = 1; i < arguments.size(); ++i)
             result = makeASTFunction(it->second, result, arguments[i]);
@@ -1706,7 +1795,6 @@ ASTPtr parseMongoAccumulator(const rapidjson::Value & value, const MongoGroupOrd
         {"$min", "min"},
         {"$max", "max"},
         {"$stdDevPop", "stddevPop"},
-        {"$stdDevSamp", "stddevSamp"},
     };
 
     /// The value of the first or the last document of the group, even when it is `null`: `any` and
@@ -1785,17 +1873,16 @@ ASTPtr parseMongoAccumulator(const rapidjson::Value & value, const MongoGroupOrd
     if (!order.empty() && (name == "$first" || name == "$last" || name == "$push"))
     {
         auto input = parseMongoAggregateExpression(member.value);
+        auto ordered = makeOrderedGroupValues(std::move(input), order, name);
         if (name == "$push")
-            return makeOrderedGroupValues(std::move(input), order, name);
+            return ordered;
 
-        auto [key, direction] = makeGroupOrderKey(order, name);
-        const bool takes_the_smallest_key = (name == "$first") == (direction == 1);
-        /// The value is wrapped into a tuple, which is never `NULL`: `argMin` and `argMax` skip a
-        /// `NULL` value, while the first document of the group is the first one even when its
-        /// value is `null`.
-        auto selected = makeASTFunction(
-            takes_the_smallest_key ? "argMin" : "argMax", makeASTFunction("tuple", std::move(input)), std::move(key));
-        return makeASTFunction("tupleElement", std::move(selected), makeLiteral(Field(UInt64(1))));
+        /** The first or the last of the values in the order of the stream. `argMin` and `argMax`
+          * by the sort key cannot answer it: the rows a `$unwind` after the `$sort` expanded one
+          * document into share its key, and of equal keys they keep whichever row they saw first,
+          * while the order of the stream is the order of the elements of the array.
+          */
+        return makeASTFunction("arrayElement", std::move(ordered), makeLiteral(Field(Int64(name == "$first" ? 1 : -1))));
     }
 
     if (auto it = null_respecting_accumulators.find(name); it != null_respecting_accumulators.end())
@@ -1803,6 +1890,19 @@ ASTPtr parseMongoAccumulator(const rapidjson::Value & value, const MongoGroupOrd
 
     if (auto it = array_accumulators.find(name); it != array_accumulators.end())
         return makeNullPreservingArray(makeASTFunction(it->second, makeASTFunction("tuple", parseMongoAggregateExpression(member.value))));
+
+    if (name == "$stdDevSamp")
+    {
+        /// The sample deviation of a single value is undefined: Mongo answers `null`, while
+        /// `stddevSamp` answers `nan`, which is a number. `count` counts the values that are not
+        /// `NULL`, the ones `stddevSamp` reads.
+        auto input = parseMongoAggregateExpression(member.value);
+        return makeASTFunction(
+            "if",
+            makeASTFunction("lessOrEquals", makeASTFunction("count", input->clone()), makeLiteral(Field(UInt64(1)))),
+            make_intrusive<ASTLiteral>(Field()),
+            makeASTFunction("stddevSamp", std::move(input)));
+    }
 
     if (auto it = accumulators.find(name); it != accumulators.end())
         return makeASTFunction(it->second, parseMongoAggregateExpression(member.value));

@@ -9,6 +9,7 @@
 #include <Parsers/ASTQueryParameter.h>
 #include <Parsers/IAST_fwd.h>
 
+#include <Parsers/Mongo/ParserMongoAggregateExpression.h>
 #include <Parsers/Mongo/ParserMongoQuery.h>
 #include <Parsers/Mongo/Utils.h>
 
@@ -52,14 +53,13 @@ bool ParserMongoProjection::parseImpl(ASTPtr & node)
                 excluded.push_back(std::move(name));
             continue;
         }
-        ASTPtr child_node;
-        auto parser = createParser(copyValue(it->value, metadata->getAllocator()), metadata, name, true);
-        if (!parser->parseImpl(child_node))
-        {
-            return false;
-        }
-        child_node->setAlias(name);
-        result->children.push_back(child_node);
+        /** Anything else is an aggregation expression, as in `$project`: `"$name"` is the field
+          * `name`, any other string is that text itself, and a document is an operator such as
+          * `{"$add": ["$a", 1]}`.
+          */
+        auto expression = parseMongoAggregateExpression(it->value);
+        expression->setAlias(name);
+        result->children.push_back(std::move(expression));
     }
 
     if (!result->children.empty())

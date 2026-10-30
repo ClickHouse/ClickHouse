@@ -57,8 +57,8 @@ ASTPtr makeDefaultValue(const std::string & column)
   * the value of `{"$set": {"name": "$other"}}` is the string `$other` rather than a reference to
   * the column `other`, and `{"$inc": {"n": 1}}` adds the number one. So the value is a constant -
   * every scalar and the Extended JSON wrappers a driver sends for the types JSON cannot represent -
-  * or an array of them; a document at the top level of a `$set` is a subdocument and names columns
-  * (see `flattenAssignedDocument`).
+  * or an array of them; a document at the top level of a `$set` is a subdocument, which is refused
+  * (see `parseUpdateOperator`).
   *
   * An embedded document that is a value rather than a set of paths - an element of an array, or
   * the document `$push` and `$addToSet` append - becomes a `JSON` value, which is the shape the
@@ -83,12 +83,6 @@ ASTPtr parseUpdateValue(const rapidjson::Value & value, std::string_view operato
         "The value of '{}' must be a scalar, an array, or an Extended JSON wrapper of them",
         operator_name);
 }
-
-/** A subdocument assigned by `$set` becomes one assignment per leaf, with the dotted path as the
-  * column name - the same mapping of a nested document onto columns the insert paths make, so
-  * `{"$set": {"profile": {"name": "x"}}}` writes the column `profile.name`.
-  */
-void flattenAssignedDocument(const std::string & prefix, const rapidjson::Value & document, std::vector<ASTPtr> & assignments);
 
 /// The values `$push` and `$addToSet` append, which `$each` turns into several of them.
 std::vector<ASTPtr> parseAppendedValues(const rapidjson::Value & value, std::string_view operator_name)
@@ -125,12 +119,21 @@ void parseUpdateOperator(std::string_view name, const rapidjson::Value & argumen
 
         if (name == "$set")
         {
-            /// A document that is not an Extended JSON wrapper holds fields of its own, and every
-            /// one of them names a column.
+            /** A document that is not an Extended JSON wrapper is a subdocument, stored as one
+              * column per path. Mongo replaces the whole subdocument, so the fields it leaves out
+              * must disappear, but which columns hold them is not known when the statement is
+              * translated: assigning only the fields it has would keep the others, which is a
+              * different document than the one acknowledged. A dotted name such as
+              * `{"$set": {"profile.name": "x"}}` sets one field and keeps the others, as in Mongo.
+              */
             if (it->value.IsObject() && !tryParseMongoConstant(it->value))
-                flattenAssignedDocument(column, it->value, assignments);
-            else
-                assignments.push_back(makeAssignment(column, parseUpdateValue(it->value, name, /* documents_are_values = */ true)));
+                throw Exception(
+                    ErrorCodes::NOT_IMPLEMENTED,
+                    "Assigning a document to the field '{}' with '$set' is not supported: it replaces the whole subdocument, and the "
+                    "columns of the fields it leaves out are not known; set the fields one by one with dotted names such as '{}.<field>'",
+                    column,
+                    column);
+            assignments.push_back(makeAssignment(column, parseUpdateValue(it->value, name, /* documents_are_values = */ true)));
         }
         else if (name == "$unset")
             assignments.push_back(makeAssignment(column, makeDefaultValue(column)));
@@ -315,27 +318,6 @@ void parseUpdateOperator(std::string_view name, const rapidjson::Value & argumen
     }
 }
 
-void flattenAssignedDocument(const std::string & prefix, const rapidjson::Value & document, std::vector<ASTPtr> & assignments)
-{
-    if (document.MemberCount() == 0)
-        throw Exception(
-            ErrorCodes::NOT_IMPLEMENTED,
-            "Cannot assign the empty document to the field '{}': a document is stored as one column per field, so an empty one names "
-            "no column",
-            prefix);
-
-    for (auto it = document.MemberBegin(); it != document.MemberEnd(); ++it)
-    {
-        std::string name(stringView(it->name));
-        if (name.empty())
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "A field name of an assigned document must not be empty");
-        std::string path = prefix + "." + name;
-        if (it->value.IsObject() && !tryParseMongoConstant(it->value))
-            flattenAssignedDocument(path, it->value, assignments);
-        else
-            assignments.push_back(makeAssignment(path, parseUpdateValue(it->value, "$set", /* documents_are_values = */ true)));
-    }
-}
 
 }
 
