@@ -417,6 +417,7 @@ bool optimizeTrivialCountFromTextIndex(QueryPlan::Node & node, QueryPlan::Nodes 
     }
 
     String description = makeStepDescription(*search_query);
+    NameSet read_indexes{search_query->index.index->index.name};
 
     auto count_step = std::make_unique<ReadFromTextIndexCount>(
         std::move(indexed_parts),
@@ -425,8 +426,8 @@ bool optimizeTrivialCountFromTextIndex(QueryPlan::Node & node, QueryPlan::Nodes 
         *count_column,
         matched->reading->getNumStreams());
     /// with a partially materialized index the read stays in the plan and reports its analysis itself
-    if (is_fully_materialized)
-        matched->reading->reportIndexUsageWith(*count_step, matched->reading->getAnalyzedResult());
+    matched->reading->reportIndexUsageWith(
+        *count_step, is_fully_materialized ? matched->reading->getAnalyzedResult() : nullptr, 0, std::move(read_indexes));
 
     auto & source_node = nodes.emplace_back();
     source_node.step = std::move(count_step);

@@ -439,9 +439,13 @@ public:
     /// The query context that collects the access info of this read, nullptr for an internal read.
     ContextMutablePtr getAccessInfoContext() const;
 
-    /// `step` replaces this read entirely: it reports the index usage of `analysis` (if set) when its pipeline is built,
-    /// with `granules_dropped_by_partition_key` that `step` excluded itself.
-    void reportIndexUsageWith(IQueryPlanStep & step, AnalysisResultPtr analysis, UInt64 granules_dropped_by_partition_key = 0) const;
+    /// Adds `index_names` of this table to the access info of `query_context` if it is set.
+    static void addUsedSkipIndexes(const NameSet & index_names, const StorageID & storage_id, const ContextMutablePtr & query_context);
+
+    /// `step` replaces this read entirely or in part: when its pipeline is built, it reports the index usage of `analysis` (if set),
+    /// the marks that `step` excluded itself by the partition key and the skip indexes that `step` reads.
+    void reportIndexUsageWith(
+        IQueryPlanStep & step, AnalysisResultPtr analysis, UInt64 granules_dropped_by_partition_key = 0, NameSet read_indexes = {}) const;
 
     /// The query condition cache is keyed by (table UUID, part name, condition hash), so it must not
     /// see filters whose value can change while that key stays the same: non-deterministic virtual

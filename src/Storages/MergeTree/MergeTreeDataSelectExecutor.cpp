@@ -1387,11 +1387,6 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
                             log,
                             &index_applied);
                     }
-                    else
-                    {
-                        /// filtered when the part is read
-                        index_applied = !!index_and_condition.index->getDeserializedFormat(*part_info_for_reader, index_and_condition.index->getFileName());
-                    }
 
                     if (index_applied)
                         skip_index_applied[index_idx].store(true, std::memory_order_relaxed);
@@ -1414,13 +1409,6 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
 
                 ranges.marks_dropped_by_skip_indexes = marks_before_skip_indexes - std::min(marks_before_skip_indexes, ranges.getMarksCount());
                 sum_marks_dropped_by_skip_indexes.fetch_add(ranges.marks_dropped_by_skip_indexes, std::memory_order_relaxed);
-
-                /// the dynamic top-K filter reads this index when the part is read
-                if (use_skip_indexes_on_data_read_ && skip_indexes.skip_index_for_top_k_filtering && skip_indexes.threshold_tracker
-                    && !ranges.ranges.empty()
-                    && skip_indexes.skip_index_for_top_k_filtering->getDeserializedFormat(
-                        *part_info_for_reader, skip_indexes.skip_index_for_top_k_filtering->getFileName()))
-                    top_k_index_applied.store(true, std::memory_order_relaxed);
             }
 
             /// Optimize ORDER BY <col> LIMIT n - if <col> is scalar numeric / date / datetime and has a minmax index
