@@ -31,7 +31,7 @@ CREATE USER $user_name IDENTIFIED WITH plaintext_password BY 'password';
 # when no row reaches the function — otherwise an empty input could be used to bypass the grant.
 function check_access_both()
 {
-    $CLICKHOUSE_CLIENT --user "$user_name" --password "password" --multiquery --ignore-error -q "
+    $CLICKHOUSE_CLIENT --user "$user_name" --password "password" --ai_function_max_retries 1 --multiquery --ignore-error -q "
         SELECT aiGenerate('hi', map('credentials', '$collection_name')) FORMAT Null;
         SELECT 'SEP';
         SELECT aiEmbed('hi', 'test-model', map('credentials', '$collection_name')) FORMAT Null;
@@ -56,7 +56,7 @@ function check_access_both()
 # for the embedding functions) that must enforce the same NAMED_COLLECTION grant.
 function check_access_both_default()
 {
-    $CLICKHOUSE_CLIENT --user "$user_name" --password "password" --multiquery --ignore-error -q "
+    $CLICKHOUSE_CLIENT --user "$user_name" --password "password" --ai_function_max_retries 1 --multiquery --ignore-error -q "
         SET ai_function_text_default_credentials = '$collection_name';
         SET ai_function_embedding_default_credentials = '$collection_name';
         SELECT aiGenerate('hi') FORMAT Null;
