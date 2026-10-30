@@ -2899,10 +2899,15 @@ bool functionChecksOwnAccess(const String & name)
     return functions_checking_access.contains(FunctionFactory::instance().getCanonicalNameIfAny(name));
 }
 
-/// Whether `ast` calls a function from `functionChecksOwnAccess` anywhere inside it.
+/// Whether `ast` calls a function from `functionChecksOwnAccess` anywhere inside it, or a function that
+/// checks the access to an object it names (`joinGet`, the `dictGet` family, `predictXGBoost`,
+/// `assignCentroid`). `collectTablesInQuery` collects the objects of the latter only from the submitted
+/// query, so they are not preflighted when they come from a stored column expression.
 bool astCallsFunctionCheckingOwnAccess(const ASTPtr & ast)
 {
-    if (const auto * function = ast->as<ASTFunction>(); function && functionChecksOwnAccess(function->name))
+    if (const auto * function = ast->as<ASTFunction>(); function
+        && (functionChecksOwnAccess(function->name) || functionIsJoinGet(function->name) || functionIsDictGet(function->name)
+            || function->name == "predictXGBoost" || function->name == "assignCentroid"))
         return true;
 
     for (const auto & child : ast->children)
@@ -3496,10 +3501,12 @@ static void reattachTablesUsedInQuery(const ASTPtr & query, ContextMutablePtr co
     /// hook as well. An insert into a table with dependent views is pushed to them under their definers,
     /// which is checked only during the insert, so it skips the hook too. A lazily loaded table that is not
     /// loaded yet may be any of them, and telling it would require loading it, so it skips the hook too.
+    /// A read of a `Dictionary` table checks the access to its underlying dictionary only in its `read`
+    /// (`StorageDictionary::read`), so it skips the hook as well.
     ///
     /// A stored column expression (e.g. `f String ALIAS file('anything', '')`, or a `DEFAULT` evaluated by
     /// an insert) is expanded only during the analysis of the query, after the hook, so the privileges such
-    /// a function checks when it is built (see `functionChecksOwnAccess`) cannot be preflighted. Any
+    /// a function checks when it is built (see `astCallsFunctionCheckingOwnAccess`) cannot be preflighted. Any
     /// collected table with such an expression skips the hook for the whole query: otherwise the other
     /// tables of the query would be reattached before it fails.
     for (const auto & table : data.tables)
@@ -3525,7 +3532,7 @@ static void reattachTablesUsedInQuery(const ASTPtr & query, ContextMutablePtr co
         /// Resolve the loaded proxies: a proxy forwards `isView`, but `StorageTableFunctionProxy` reports
         /// `false` for the view it wraps.
         const auto resolved = castStorage<const IStorage>(storage, DeferredTable::Skip);
-        if (resolved && (resolved->isView() || resolved->readsFromOtherTables()))
+        if (resolved && (resolved->isView() || resolved->readsFromOtherTables() || resolved->isDictionary()))
             return;
         if (writes && !DatabaseCatalog::instance().getDependentViews(table.id).empty())
             return;
