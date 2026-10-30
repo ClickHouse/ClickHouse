@@ -121,6 +121,16 @@ bool MessageReader::readNextMessage(Message & out, Int64 expected_metadata_lengt
     if (out.header->header_type() != flatbuf::MessageHeader_NONE && out.header->header() == nullptr)
         throw Exception(ErrorCodes::INCORRECT_DATA, "Arrow IPC message header type is set but its value is missing");
 
+    const flatbuf::RecordBatch * batch = nullptr;
+    if (out.header->header_type() == flatbuf::MessageHeader_RecordBatch)
+        batch = out.header->header_as_RecordBatch();
+    else if (out.header->header_type() == flatbuf::MessageHeader_DictionaryBatch)
+        batch = out.header->header_as_DictionaryBatch()->data();
+    if (batch
+        && !(isFlatBuffersVectorAligned8(batch->nodes()) && isFlatBuffersVectorAligned8(batch->buffers())
+             && isFlatBuffersVectorAligned8(batch->variadicBufferCounts())))
+        throw Exception(ErrorCodes::INCORRECT_DATA, "Corrupted Arrow IPC message metadata: misaligned record batch vector");
+
     out.body_length = out.header->bodyLength();
     if (out.body_length < 0)
         throw Exception(ErrorCodes::INCORRECT_DATA, "Negative Arrow IPC message body length {}", out.body_length);

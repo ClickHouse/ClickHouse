@@ -1043,6 +1043,8 @@ ArrowFileFooter readArrowFileFooter(SeekableReadBuffer & in, size_t file_size_)
     if (!flatbuf::VerifyFooterBuffer(verifier))
         throw Exception(ErrorCodes::INCORRECT_DATA, "Corrupted Arrow file footer");
     const auto * footer = flatbuf::GetFooter(footer_storage.data());
+    if (!isFlatBuffersVectorAligned8(footer->dictionaries()) || !isFlatBuffersVectorAligned8(footer->recordBatches()))
+        throw Exception(ErrorCodes::INCORRECT_DATA, "Corrupted Arrow file footer: misaligned block list");
 
     /// The footer carries the metadata version too, and its block list is read under that edition's
     /// assumptions, so an edition this reader does not know is rejected here rather than at the first
