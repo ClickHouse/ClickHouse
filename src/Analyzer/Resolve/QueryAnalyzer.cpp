@@ -2992,11 +2992,12 @@ static const IQueryTreeNode * getMatchedColumnSource(const QueryTreeNodePtr & no
 
 /** Whether the unresolved lambda body `node` may use the lambda argument `argument_name`. Columns captured from the
   * table expressions (`x -> b + c`) do not count: they do not carry the name of the matched column. A nested lambda
-  * that shadows the argument or a matcher in the body is conservatively treated as a use.
+  * that shadows the argument or a matcher in the body is conservatively treated as a use. An explicitly aliased
+  * subexpression is named by its alias (`x -> (x AS z)` names the result `z`), so it does not carry the argument name.
   */
 static bool lambdaBodyMayUseArgument(const QueryTreeNodePtr & node, const std::string & argument_name)
 {
-    if (!node)
+    if (!node || node->hasAlias())
         return false;
 
     if (const auto * identifier_node = node->as<IdentifierNode>())
@@ -3441,8 +3442,10 @@ ProjectionNames QueryAnalyzer::resolveMatcher(QueryTreeNodePtr & matcher_node, I
 
                 replace_transformer_was_used = true;
                 apply_prefixed_projection_name = column_name;
-                /// The result is named after the replaced column.
-                natural_name_derived_from_column = true;
+                /// The result is displayed under the name of the replaced column, but the replacement node keeps its own
+                /// name, which a following transformer uses for its argument: `REPLACE (0 AS a) APPLY toString` produces
+                /// `toString(0)` for every column.
+                natural_name_derived_from_column = false;
                 matched_columns_before_transformers.back().projection_name_derived_from_column = true;
 
                 if (replace_transformer->isStrict())

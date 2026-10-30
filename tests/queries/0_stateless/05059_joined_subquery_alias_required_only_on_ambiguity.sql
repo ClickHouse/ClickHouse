@@ -107,6 +107,9 @@ SELECT * APPLY (x -> x + b) FROM (SELECT 1 AS a, 2 AS b), (SELECT 3 AS a, 4 AS c
 SELECT * APPLY (x -> 1 + x) APPLY (x -> x, 'f') FROM (SELECT 1 AS a), (SELECT 2 AS a); -- { serverError ALIAS_REQUIRED }
 SELECT * APPLY (x -> 0, 'f') APPLY toString FROM (SELECT 1 AS a), (SELECT 2 AS a) FORMAT TSVWithNames;
 SELECT * APPLY (x -> x, 'f') APPLY toString FROM (SELECT 1 AS a), (SELECT 2 AS a); -- { serverError ALIAS_REQUIRED }
+SELECT * REPLACE (0 AS a) APPLY toString FROM (SELECT 1 AS a), (SELECT 2 AS a) FORMAT TSVWithNames;
+SELECT * APPLY (x -> (x AS z)) FROM (SELECT 1 AS a), (SELECT 2 AS a) FORMAT TSVWithNames;
+SELECT * APPLY (x -> (x AS z) + x) FROM (SELECT 1 AS a), (SELECT 2 AS a); -- { serverError ALIAS_REQUIRED }
 
 SELECT '-- Equally named columns of a single table expression do not need a qualification';
 SELECT * FROM (SELECT x, x FROM (SELECT 1 AS x));
