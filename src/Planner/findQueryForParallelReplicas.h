@@ -42,10 +42,14 @@ using ContextPtr = std::shared_ptr<const Context>;
 
 class TableFunctionNode;
 
+/// Whether the query or any of its subqueries sets `additional_table_filters`.
+bool queryTreeSetsAdditionalTableFilters(const IQueryTreeNode * query_tree_node);
+
 /// Whether a read through this table function may be the coordinated read: it denotes the same source on
-/// every replica (`ITableFunction::getParallelReplicasReadID`) and nothing in the settings depends on how a
-/// replica resolves names. The storage it resolved to still has to be eligible on its own.
-bool tableFunctionCanDriveParallelReplicasRead(const TableFunctionNode & table_function_node, const ContextPtr & context);
+/// every replica (`ITableFunction::getParallelReplicasReadID`) and the query sent to the replicas sets no
+/// `additional_table_filters`, which a replica would resolve against its own current database. The
+/// storage it resolved to still has to be eligible on its own.
+bool tableFunctionCanDriveParallelReplicasRead(const TableFunctionNode & table_function_node, bool query_sets_additional_table_filters);
 
 /// Check whether a resolved storage is eligible for parallel replicas (MergeTree, replication, no FINAL).
 bool isTableNodeEligibleForParallelReplicas(const TableNode & table_node, const StoragePtr & storage, const ContextPtr & context);

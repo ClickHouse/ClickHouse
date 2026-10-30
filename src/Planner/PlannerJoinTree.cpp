@@ -1735,9 +1735,14 @@ bool parallelReplicasEnabledForStorage(const StoragePtr & current_storage, const
 /// path.  Callers should compute this once for the join tree and gate the
 /// per-leaf parallel-replicas activation accordingly.  `plan_based` says whether the plan-based
 /// implementation decides the distribution of this read, which is not always the case when
-/// `parallel_replicas_plan_based` is on.
+/// `parallel_replicas_plan_based` is on.  `query_sets_additional_table_filters` is
+/// `GlobalPlannerContext::query_sets_additional_table_filters`.
 bool allowParallelReplicasForJoinTree(
-    const QueryTreeNodePtr & join_tree_node, const ContextPtr & context, const Settings & query_settings, bool plan_based)
+    const QueryTreeNodePtr & join_tree_node,
+    const ContextPtr & context,
+    const Settings & query_settings,
+    bool plan_based,
+    bool query_sets_additional_table_filters)
 {
     if (!join_tree_node)
         return false;
@@ -1764,7 +1769,7 @@ bool allowParallelReplicasForJoinTree(
 
         const auto * left_table_function = left_table_expr->as<TableFunctionNode>();
         if (left_table_function)
-            return tableFunctionCanDriveParallelReplicasRead(*left_table_function, context)
+            return tableFunctionCanDriveParallelReplicasRead(*left_table_function, query_sets_additional_table_filters)
                 && parallelReplicasEnabledForStorage(left_table_function->getStorage(), context, query_settings);
 
         // check if left one is not subquery
@@ -2922,11 +2927,14 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(TableExpressionNodePtr table_
                     /// A read through a table function is planned the query-tree way even in the plan-based
                     /// mode (see below), so the join around it must be one the query-tree way can distribute.
                     else if (
+                        const bool query_sets_additional_table_filters
+                            = planner_context->getGlobalPlannerContext()->query_sets_additional_table_filters;
                         ClusterProxy::canUseParallelReplicasOnInitiator(query_context)
-                        && (!table_function_node || tableFunctionCanDriveParallelReplicasRead(*table_function_node, query_context))
+                        && (!table_function_node || tableFunctionCanDriveParallelReplicasRead(*table_function_node, query_sets_additional_table_filters))
                         && allowParallelReplicasForJoinTree(
                             parent_join_tree, query_context, settings,
-                            /*plan_based=*/ settings[Setting::parallel_replicas_plan_based] && !table_function_node))
+                            /*plan_based=*/ settings[Setting::parallel_replicas_plan_based] && !table_function_node,
+                            query_sets_additional_table_filters))
                     {
                         // (1) find read step
 

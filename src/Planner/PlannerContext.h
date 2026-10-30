@@ -41,11 +41,13 @@ public:
         const QueryNode * parallel_replicas_node_,
         const ITableExpressionNode * parallel_replicas_table_,
         const UnionNode * parallel_replicas_table_union_,
-        FiltersForTableExpressionMap filters_for_table_expressions_)
+        FiltersForTableExpressionMap filters_for_table_expressions_,
+        bool query_sets_additional_table_filters_ = false)
         : parallel_replicas_node(parallel_replicas_node_)
         , parallel_replicas_table(parallel_replicas_table_)
         , parallel_replicas_table_union(parallel_replicas_table_union_)
         , filters_for_table_expressions(std::move(filters_for_table_expressions_))
+        , query_sets_additional_table_filters(query_sets_additional_table_filters_)
     {
     }
 
@@ -87,6 +89,10 @@ public:
     const UnionNode * const parallel_replicas_table_union = nullptr;
 
     const FiltersForTableExpressionMap filters_for_table_expressions;
+
+    /// Whether the query or any of its subqueries sets `additional_table_filters`, see
+    /// `tableFunctionCanDriveParallelReplicasRead`.
+    const bool query_sets_additional_table_filters = false;
 
     /// Generate a unique integer id, used to disambiguate temporary table expressions
     size_t nextUniqueId() { return next_unique_id++; }
