@@ -139,7 +139,6 @@ protected:
         {
             auto execution_context = Context::createCopy(context);
             execution_context->setSetting("enable_parallel_blocks_marshalling", false);
-            execution_context->setPositionalArgumentsAlreadyResolved(false);
 
             auto expression = buildQueryTree(predicate, execution_context);
 

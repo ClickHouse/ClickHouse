@@ -61,7 +61,7 @@ SELECT 'remote(Distributed)';
 SELECT _shard_num, key FROM remote('127.0.0.1', currentDatabase(), dist_2) order by _shard_num, key settings serialize_query_plan=0;
 SELECT 'remote(DistributedQueryPlan)';
 -- distributed over distributed does not work, because _shard_num is not analyzed from QueryPlan.
-SELECT _shard_num, key FROM remote('127.0.0.1', currentDatabase(), dist_2) order by _shard_num, key settings serialize_query_plan=1, prefer_localhost_replica=0, enable_analyzer=1;
+SELECT _shard_num, key FROM remote('127.0.0.1', currentDatabase(), dist_2) order by _shard_num, key settings serialize_query_plan=1, prefer_localhost_replica=0;
 
 -- JOIN system.clusters
 SELECT 'JOIN system.clusters';
@@ -77,8 +77,7 @@ FROM dist_1 a
 JOIN system.clusters b
 ON _shard_num = b.shard_num
 WHERE b.cluster = 'test_cluster_two_shards_localhost'
-ORDER BY key
-SETTINGS enable_analyzer = 1;
+ORDER BY key;
 
 SELECT 'Rewrite with alias';
 SELECT a._shard_num, key FROM dist_1 a;
@@ -89,8 +88,7 @@ FROM dist_1 a
 JOIN system.clusters b
 ON a._shard_num = b.shard_num
 WHERE b.cluster = 'test_cluster_two_shards_localhost'
-ORDER BY key
-SETTINGS enable_analyzer = 1;
+ORDER BY key;
 
 SELECT 'dist_3';
 SELECT * FROM dist_3;

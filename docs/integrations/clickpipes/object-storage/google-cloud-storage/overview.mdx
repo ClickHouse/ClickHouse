@@ -117,7 +117,7 @@ When using [unordered mode](#continuous-ingestion-any-order), the service accoun
 
 Service Account authentication is required when using [unordered mode](#continuous-ingestion-any-order) with Pub/Sub notifications. Select **Service Account** as the authentication method and upload the service account key JSON file.
 
-#### GCP workload identity (Private Preview) {#gcp-workload-identity}
+#### GCP workload identity (Beta) {#gcp-workload-identity}
 
 Follow the [GCP workload identity guide](/integrations/clickpipes/security/gcp-workload-identity) to retrieve the managed service account from the ClickPipes service context. Grant it `roles/storage.objectViewer` on the source bucket, and create the pipe with `SERVICE_ACCOUNT_WORKLOAD_IDENTITY` authentication. For unordered ingestion, also grant it `roles/pubsub.subscriber` and `roles/pubsub.viewer` on the existing notification subscription and use its fully-qualified name: `projects/<project-id>/subscriptions/<subscription-id>`.
 
