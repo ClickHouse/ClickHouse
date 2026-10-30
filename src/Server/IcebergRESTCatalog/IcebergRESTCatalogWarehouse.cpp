@@ -121,6 +121,12 @@ bool IcebergRESTCatalogWarehouse::dropTable(const IcebergNamespaceName & ns, con
     return store->dropTable(ns, table);
 }
 
+IcebergRESTCatalogWarehouse::UpdateTableResult IcebergRESTCatalogWarehouse::updateTable(
+    const IcebergNamespaceName & ns, const String & table, const IcebergTablePointer & expected, const IcebergTablePointer & new_pointer) const
+{
+    return store->updateTable(ns, table, expected, new_pointer);
+}
+
 String stripTrailingSlashes(String location)
 {
     while (location.ends_with('/'))

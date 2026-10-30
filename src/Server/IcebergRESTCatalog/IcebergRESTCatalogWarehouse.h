@@ -46,6 +46,9 @@ public:
     bool tableExists(const IcebergNamespaceName & ns, const String & table) const;
     std::optional<Strings> listTables(const IcebergNamespaceName & ns) const;
     bool dropTable(const IcebergNamespaceName & ns, const String & table) const;
+    using UpdateTableResult = KeeperIcebergRESTCatalogStore::UpdateTableResult;
+    UpdateTableResult updateTable(
+        const IcebergNamespaceName & ns, const String & table, const IcebergTablePointer & expected, const IcebergTablePointer & new_pointer) const;
 
 private:
     void validateLocation(const S3Location & location) const;
