@@ -225,6 +225,18 @@ void TableFunctionNode::qualifyTableArgument()
     num_table_arguments = num_qualified_arguments;
 }
 
+void TableFunctionNode::replaceTableFunction(const TableFunctionNode & other)
+{
+    table_function_name = other.table_function_name;
+    table_function = other.table_function;
+    parallel_replicas_read_id = other.parallel_replicas_read_id;
+    table_argument_id = other.table_argument_id;
+    num_table_arguments = other.num_table_arguments;
+    unresolved_arguments_indexes = other.unresolved_arguments_indexes;
+    settings_changes = other.settings_changes;
+    getArgumentsNode() = other.getArgumentsNode()->clone();
+}
+
 ASTPtr TableFunctionNode::toASTImpl(const ConvertToASTOptions & options) const
 {
     auto table_function_ast = make_intrusive<ASTFunction>();

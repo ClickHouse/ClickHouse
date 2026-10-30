@@ -121,6 +121,10 @@ public:
     /// same table on a server whose current database is different. See `ITableFunction::getTableArgument`.
     void qualifyTableArgument();
 
+    /// Make the node call the table function of `other`, with its arguments, and keep its own storage, which the
+    /// call of `other` has to give as well. The node keeps its alias and the columns that read from it.
+    void replaceTableFunction(const TableFunctionNode & other);
+
     const VectorWithMemoryTracking<size_t> & getUnresolvedArgumentIndexes() const
     {
         return unresolved_arguments_indexes;
