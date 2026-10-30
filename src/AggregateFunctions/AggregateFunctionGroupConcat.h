@@ -33,7 +33,10 @@ struct GroupConcatData
     UInt64 getSize(size_t i) const;
     UInt64 getString(size_t i) const;
 
+    /// Offsets and `num_rows` are needed only to apply the limit, so they are recorded only if `has_limit`.
+    template <bool has_limit>
     void insertString(std::string_view str, Arena * arena);
+    template <bool has_limit>
     void insert(const IColumn * column, const SerializationPtr & serialization, size_t row_num, Arena * arena);
 };
 
@@ -45,7 +48,8 @@ class GroupConcatImpl final : public IAggregateFunctionDataHelper<GroupConcatDat
     SerializationPtr serialization;
     UInt64 limit;
     const String delimiter;
-    const DataTypePtr type;
+    const bool is_string;
+    const bool is_fixed_string;
     /// Whether the trailing zero bytes of a `FixedString` argument are removed, see `cast_fixed_string_to_string_strip_trailing_zeros`.
     const bool strip_trailing_zeros;
 
