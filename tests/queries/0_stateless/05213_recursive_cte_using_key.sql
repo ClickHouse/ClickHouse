@@ -1,0 +1,98 @@
+SET enable_analyzer = 1;
+
+-- `USING KEY` is experimental and rejected unless it is explicitly enabled.
+WITH RECURSIVE off USING KEY (x) AS (SELECT 1 AS x UNION ALL SELECT x + 1 FROM off WHERE x < 3) SELECT * FROM off; -- { serverError SUPPORT_IS_DISABLED }
+
+SET allow_experimental_keyed_recursive_cte = 1;
+
+-- 1. Keyed recursion terminates on CYCLIC graphs without an explicit cycle guard:
+-- re-derived identical rows do not change the accumulated state and are not propagated.
+DROP TABLE IF EXISTS cyc_edges;
+CREATE TABLE cyc_edges (u UInt64, v UInt64) ENGINE = Memory;
+INSERT INTO cyc_edges VALUES (1, 2), (2, 3), (3, 1), (3, 4);
+
+WITH RECURSIVE reach USING KEY (node) AS
+(
+    SELECT 1 :: UInt64 AS node
+    UNION ALL
+    SELECT e.v AS node FROM reach r INNER JOIN cyc_edges e ON e.u = r.node
+)
+SELECT node FROM reach ORDER BY node;
+
+-- 2. Shortest path (label-correcting Dijkstra): the accumulated keyed state is exposed
+-- as `<cte_name>_settled`, so the recursive member can refute non-improving candidates.
+DROP TABLE IF EXISTS w_edges;
+CREATE TABLE w_edges (u UInt64, v UInt64, w Float64) ENGINE = Memory;
+INSERT INTO w_edges VALUES (1, 2, 1), (2, 3, 1), (1, 3, 5), (3, 4, 1), (1, 4, 10);
+
+WITH RECURSIVE sp USING KEY (node) AS
+(
+    SELECT 1 :: UInt64 AS node, 0 :: Float64 AS cost
+    UNION ALL
+    SELECT e.v AS node, s.cost + e.w AS cost
+    FROM sp s
+    INNER JOIN w_edges e ON e.u = s.node
+    LEFT JOIN sp_settled st ON st.node = e.v
+    WHERE s.cost + e.w < if(st.node = 0, 1e308, st.cost)
+    ORDER BY cost DESC
+)
+SELECT node, cost FROM sp ORDER BY node;
+
+-- 3. Multiple key columns.
+WITH RECURSIVE pairs USING KEY (a, b) AS
+(
+    SELECT 0 :: UInt64 AS a, 0 :: UInt64 AS b, 0 :: UInt64 AS depth
+    UNION ALL
+    SELECT (a + 1) % 3 AS a, (b + 2) % 3 AS b, depth + 1 AS depth FROM pairs WHERE depth < 10
+)
+SELECT a, b FROM pairs ORDER BY a, b;
+
+-- 3b. A step may produce several rows for one key: the last produced one is the candidate for that key,
+-- and a candidate identical to the accumulated row is a no-op. Here every step re-derives the accumulated
+-- row after a transient (1, 1), so the recursion converges instead of running into the depth limit.
+WITH RECURSIVE t USING KEY (k) AS
+(
+    SELECT 1 AS k, 0 AS v
+    UNION ALL
+    SELECT k, arrayJoin([v + 1, v]) FROM t WHERE v = 0
+)
+SELECT * FROM t SETTINGS max_recursive_cte_evaluation_depth = 5;
+
+-- 3c. The working table of the next step holds only the final row per key, so a recursive member never
+-- sees a row that was superseded within the same step: (1, 'b') is superseded by (1, 'c') in the first
+-- step, so the second member does not derive (2, 'b') from it.
+WITH RECURSIVE t USING KEY (k) AS
+(
+    SELECT 1 AS k, 'a' AS s
+    UNION ALL
+    SELECT k, arrayJoin(['b', 'c']) FROM t WHERE s = 'a'
+    UNION ALL
+    SELECT 2, s FROM t WHERE k = 1 AND s = 'b'
+)
+SELECT * FROM t ORDER BY k;
+
+-- 3d. Within a step the last produced row for a key wins.
+WITH RECURSIVE t USING KEY (k) AS
+(
+    SELECT 1 AS k, 0 AS v
+    UNION ALL
+    SELECT k, arrayJoin([10, 20]) FROM t WHERE v = 0
+)
+SELECT * FROM t;
+
+-- 4. USING KEY requires the CTE to actually be recursive.
+WITH RECURSIVE notrec USING KEY (x) AS (SELECT 1 AS x UNION ALL SELECT 2 AS x) SELECT * FROM notrec; -- { serverError BAD_ARGUMENTS }
+
+-- 5. Key columns must exist in the projection.
+WITH RECURSIVE r USING KEY (nope) AS (SELECT 1 AS x UNION ALL SELECT x + 1 FROM r WHERE x < 3) SELECT * FROM r; -- { serverError BAD_ARGUMENTS }
+
+-- 6. USING KEY on a CTE that is not a UNION at all.
+WITH RECURSIVE plain USING KEY (x) AS (SELECT 1 AS x) SELECT * FROM plain; -- { serverError UNSUPPORTED_METHOD }
+
+-- 7. The key columns survive formatting and AST JSON round-trips: they are not children of
+-- `ASTWithElement`, so they have to be cloned, formatted, hashed and serialized explicitly.
+SELECT formatQuery('WITH RECURSIVE r USING KEY (a, b) AS (SELECT 1 AS a, 2 AS b UNION ALL SELECT a, b FROM r) SELECT * FROM r');
+SELECT formatQueryFromJSON(parseQueryToJSON('WITH RECURSIVE r USING KEY (a, b) AS (SELECT 1 AS a, 2 AS b UNION ALL SELECT a, b FROM r) SELECT * FROM r'));
+
+DROP TABLE cyc_edges;
+DROP TABLE w_edges;
