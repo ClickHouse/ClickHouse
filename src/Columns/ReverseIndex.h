@@ -552,6 +552,15 @@ UInt64 ReverseIndex<IndexType, ColumnType>::insert(std::string_view data)
         /// it is rebuilt from the column on the next use.
         index = nullptr;
         saved_hash = nullptr;
+
+        if constexpr (std::is_same_v<ColumnType, ColumnString>)
+        {
+            /// `ColumnString::insertData` appends to `chars` before it grows `offsets`. If the latter failed, the bytes
+            /// of the row that was never added are still there and would become a prefix of the next inserted value.
+            const auto & offsets = column->getOffsets();
+            column->getChars().resize_assume_reserved(offsets.empty() ? 0 : offsets.back());
+        }
+
         throw;
     }
 }
