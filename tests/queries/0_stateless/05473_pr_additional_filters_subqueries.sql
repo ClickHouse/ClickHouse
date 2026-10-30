@@ -53,11 +53,23 @@ SELECT count(), sum(y) FROM (SELECT y FROM t_inner AS a SETTINGS additional_tabl
 SETTINGS additional_table_filters = {'a': 'y <= 2'}, enable_parallel_replicas = 2,
     serialize_query_plan = 1, parallel_replicas_local_plan = 0, log_comment = '05473_cleared_map';
 
+-- The materialized side of a global join, including a join that shipping makes global, is read on the initiator under its
+-- own settings. A side that every replica reads is refused.
+SELECT count(), sum(x) FROM t_outer GLOBAL INNER JOIN (SELECT y FROM t_inner AS a SETTINGS enable_parallel_replicas = 0, additional_table_filters = {'a': 'y <= 2'}) AS i ON x = i.y
+SETTINGS enable_parallel_replicas = 2, serialize_query_plan = 1, parallel_replicas_local_plan = 0, log_comment = '05473_global_join';
+SELECT count(), sum(x) FROM t_outer INNER JOIN (SELECT y FROM t_inner AS a SETTINGS enable_parallel_replicas = 0, additional_table_filters = {'a': 'y <= 2'}) AS i ON x = i.y
+SETTINGS enable_parallel_replicas = 2, serialize_query_plan = 1, parallel_replicas_local_plan = 0, parallel_replicas_prefer_local_join = 0,
+    log_comment = '05473_join_made_global';
+SELECT count(), sum(x) FROM t_outer INNER JOIN (SELECT y FROM t_inner AS a SETTINGS enable_parallel_replicas = 0, additional_table_filters = {'a': 'y <= 2'}) AS i ON x = i.y
+SETTINGS enable_parallel_replicas = 2, serialize_query_plan = 1, parallel_replicas_local_plan = 0, parallel_replicas_prefer_local_join = 1; -- { serverError SUPPORT_IS_DISABLED }
+SELECT count(), sum(i.y) FROM t_outer GLOBAL RIGHT JOIN (SELECT y FROM t_inner AS a SETTINGS additional_table_filters = {'a': 'y <= 2'}) AS i ON x = i.y
+SETTINGS enable_parallel_replicas = 2, serialize_query_plan = 1, parallel_replicas_local_plan = 0; -- { serverError SUPPORT_IS_DISABLED }
+
 SYSTEM FLUSH LOGS query_log;
 SELECT log_comment, argMax(ProfileEvents['ParallelReplicasUsedCount'], event_time_microseconds) > 0
 FROM system.query_log
 WHERE event_date >= yesterday() AND type = 'QueryFinish' AND is_initial_query AND current_database = currentDatabase()
-    AND log_comment IN ('05473_global_in', '05473_cleared_map')
+    AND log_comment IN ('05473_global_in', '05473_cleared_map', '05473_global_join', '05473_join_made_global')
 GROUP BY log_comment
 ORDER BY log_comment
 SETTINGS enable_parallel_replicas = 0;

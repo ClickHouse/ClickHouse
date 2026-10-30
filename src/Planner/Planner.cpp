@@ -72,6 +72,7 @@
 #include <Storages/StorageMerge.h>
 #include <Storages/StorageProxy.h>
 #include <Storages/StorageView.h>
+#include <Storages/buildQueryTreeForShard.h>
 
 #include <AggregateFunctions/IAggregateFunction.h>
 
@@ -80,6 +81,7 @@
 #include <Analyzer/ConstantNode.h>
 #include <Analyzer/FunctionNode.h>
 #include <Analyzer/InterpolateNode.h>
+#include <Analyzer/JoinNode.h>
 #include <Analyzer/TableNode.h>
 #include <Analyzer/TableFunctionNode.h>
 #include <Analyzer/QueryNode.h>
@@ -228,16 +230,26 @@ bool isGeneratedTableAlias(std::string_view name)
 
 /// Calls `on_query` with the `additional_table_filters` of every query and subquery of `query_tree` the
 /// replicas plan, and `on_table` for each of its tables and table functions with the map of its own
-/// (sub)query. The second argument of `GLOBAL IN` is skipped: the initiator plans it.
+/// (sub)query. Skipped, as the initiator plans them: the second argument of `GLOBAL IN`, and the
+/// materialized side of a join that is global once the query is shipped.
 template <typename OnQuery, typename OnTable>
-void forEachAdditionalTableFilters(const QueryTreeNodePtr & query_tree, OnQuery && on_query, OnTable && on_table)
+void forEachAdditionalTableFilters(
+    const QueryTreeNodePtr & query_tree, const ContextPtr & context, OnQuery && on_query, OnTable && on_table)
 {
+    auto shipped_tree = query_tree->clone();
+    rewriteJoinToGlobalJoin(shipped_tree, context);
+
     std::vector<ContextPtr> contexts;
     std::unordered_set<const IQueryTreeNode *> global_in_arguments;
     traverseQueryTree(
-        query_tree,
+        shipped_tree,
         [&](const QueryTreeNodePtr & parent, const QueryTreeNodePtr & child)
         {
+            if (const auto * join_node = parent->as<JoinNode>(); join_node && join_node->getLocality() == JoinLocality::Global)
+                return child
+                    != (join_node->getKind() == JoinKind::Right ? join_node->getLeftTableExpressionNode()
+                                                                 : join_node->getRightTableExpressionNode());
+
             const auto & arguments = parent->getChildren();
             return !global_in_arguments.contains(parent.get()) || arguments.size() < 2 || arguments[1] != child;
         },
@@ -263,11 +275,11 @@ void forEachAdditionalTableFilters(const QueryTreeNodePtr & query_tree, OnQuery 
         });
 }
 
-bool hasAdditionalTableFilters(const QueryTreeNodePtr & query_tree)
+bool hasAdditionalTableFilters(const QueryTreeNodePtr & query_tree, const ContextPtr & context)
 {
     bool found = false;
     forEachAdditionalTableFilters(
-        query_tree, [&](const Map & filters) { found = found || !filters.empty(); }, [](const IQueryTreeNode &, const Map &) {});
+        query_tree, context, [&](const Map & filters) { found = found || !filters.empty(); }, [](const IQueryTreeNode &, const Map &) {});
     return found;
 }
 
@@ -290,12 +302,13 @@ bool isSessionRelativeKey(const IQueryTreeNode & table_expression, const String 
 /// True when some `additional_table_filters` key would select a different relation on a replica that
 /// replans the query: an alias, or a table name, bare or, for a table without a database, qualified by
 /// any database. A key equal to a storage's full name, or matching no table of the query, is stable.
-bool hasSessionRelativeAdditionalFilter(const QueryTreeNodePtr & query_tree)
+bool hasSessionRelativeAdditionalFilter(const QueryTreeNodePtr & query_tree, const ContextPtr & context)
 {
     auto key = [](const Field & entry) -> const String & { return entry.safeGet<Tuple>().at(0).safeGet<String>(); };
     bool found = false;
     forEachAdditionalTableFilters(
         query_tree,
+        context,
         [&](const Map & filters)
         { found = found || std::ranges::any_of(filters, [&](const Field & entry) { return isGeneratedTableAlias(key(entry)); }); },
         [&](const IQueryTreeNode & table_expression, const Map & filters)
@@ -3094,11 +3107,11 @@ void Planner::buildPlanForQueryNode()
     /// differently are refused, see `hasSessionRelativeAdditionalFilter`.
     if (query_context->canUseParallelReplicasOnInitiator()
         && (!settings[Setting::serialize_query_plan]
-                ? hasAdditionalTableFilters(query_tree)
+                ? hasAdditionalTableFilters(query_tree, query_context)
                 : !settings[Setting::parallel_replicas_plan_based]
                     && (!ClusterProxy::canUseLocalPlanForParallelReplicas(query_context)
                         || ClusterProxy::leafTimeoutRequiresRemoteOnlyLeafReading(settings))
-                    && hasSessionRelativeAdditionalFilter(query_tree)))
+                    && hasSessionRelativeAdditionalFilter(query_tree, query_context)))
     {
         if (settings[Setting::allow_experimental_parallel_reading_from_replicas] >= 2)
             throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
