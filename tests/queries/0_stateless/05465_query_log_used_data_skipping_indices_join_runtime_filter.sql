@@ -17,7 +17,7 @@ DROP TABLE IF EXISTS t_skip_index_runtime_dim;
 -- the index is on a column that is not in the primary key
 CREATE TABLE t_skip_index_runtime_fact (k UInt64, id UInt64, INDEX idx_id id TYPE minmax GRANULARITY 1)
 ENGINE = MergeTree ORDER BY k
-SETTINGS index_granularity = 16, index_granularity_bytes = 0, add_minmax_index_for_numeric_columns = 0;
+SETTINGS index_granularity = 16, index_granularity_bytes = 0, min_bytes_for_wide_part = 0, add_minmax_index_for_numeric_columns = 0;
 CREATE TABLE t_skip_index_runtime_dim (id UInt64, tag String) ENGINE = MergeTree ORDER BY id;
 
 INSERT INTO t_skip_index_runtime_fact SELECT number, number FROM numbers(100000);
