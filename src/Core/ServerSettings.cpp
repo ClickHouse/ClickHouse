@@ -3981,9 +3981,14 @@ ChangeableSettingsMap collectChangeableServerSettings(ContextPtr context)
 
 #if USE_AVRO
     if (context->getIcebergMetadataFilesCache())
+    {
         changeable_settings.insert(
             {"iceberg_metadata_files_cache_size",
              {std::to_string(context->getIcebergMetadataFilesCache()->maxSizeInBytes()), ChangeableWithoutRestart::Yes}});
+        changeable_settings.insert(
+            {"iceberg_metadata_files_cache_max_entries",
+             {std::to_string(context->getIcebergMetadataFilesCache()->maxCount()), ChangeableWithoutRestart::Yes}});
+    }
     if (context->getPaimonMetadataFilesCache())
     {
         changeable_settings.insert(
