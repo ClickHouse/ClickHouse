@@ -21,7 +21,7 @@ INSERT INTO mt SELECT number FROM numbers(5);
 
 -- Several parts, so the replicas would get a share each.
 CREATE TABLE ts ENGINE = TimeSeries
-    SAMPLES ENGINE = MergeTree ORDER BY (id, timestamp) SETTINGS max_bytes_to_merge_at_max_space_in_pool = 0;
+    SAMPLES INNER ENGINE = AggregatingMergeTree SETTINGS max_bytes_to_merge_at_max_space_in_pool = 1;
 INSERT INTO ts (metric_name, tags, samples) SELECT 'm', map('i', toString(number)), [(toDateTime64(number, 3), toFloat64(number % 5))] FROM numbers(0, 10);
 INSERT INTO ts (metric_name, tags, samples) SELECT 'm', map('i', toString(number)), [(toDateTime64(number, 3), toFloat64(number % 5))] FROM numbers(10, 10);
 INSERT INTO ts (metric_name, tags, samples) SELECT 'm', map('i', toString(number)), [(toDateTime64(number, 3), toFloat64(number % 5))] FROM numbers(20, 10);
@@ -31,16 +31,16 @@ INSERT INTO ts (metric_name, tags, samples) SELECT 'm', map('i', toString(number
 
 SELECT count() FROM system.parts WHERE database = currentDatabase() AND table LIKE '.inner_id.samples.%' AND active;
 
-SELECT count(), sum(r.value) FROM mt RIGHT JOIN timeSeriesSamples({CLICKHOUSE_DATABASE:Identifier}.ts) AS r ON mt.x = toUInt64(r.value)
+SELECT count(), sum(r.samples[1].2) FROM mt RIGHT JOIN timeSeriesSamples({CLICKHOUSE_DATABASE:Identifier}.ts) AS r ON mt.x = toUInt64(r.samples[1].2)
     SETTINGS enable_parallel_replicas = 0;
-SELECT count(), sum(r.value) FROM mt RIGHT JOIN timeSeriesSamples({CLICKHOUSE_DATABASE:Identifier}.ts) AS r ON mt.x = toUInt64(r.value)
+SELECT count(), sum(r.samples[1].2) FROM mt RIGHT JOIN timeSeriesSamples({CLICKHOUSE_DATABASE:Identifier}.ts) AS r ON mt.x = toUInt64(r.samples[1].2)
     SETTINGS parallel_replicas_local_plan = 0;
-SELECT count(), sum(r.value) FROM mt RIGHT JOIN timeSeriesSamples({CLICKHOUSE_DATABASE:Identifier}.ts) AS r ON mt.x = toUInt64(r.value)
+SELECT count(), sum(r.samples[1].2) FROM mt RIGHT JOIN timeSeriesSamples({CLICKHOUSE_DATABASE:Identifier}.ts) AS r ON mt.x = toUInt64(r.samples[1].2)
     SETTINGS parallel_replicas_local_plan = 1;
 
 SELECT countIf(explain LIKE '%ReadFromParallelReplicas%') FROM (
     EXPLAIN distributed = 1
-    SELECT count() FROM mt RIGHT JOIN timeSeriesSamples({CLICKHOUSE_DATABASE:Identifier}.ts) AS r ON mt.x = toUInt64(r.value)
+    SELECT count() FROM mt RIGHT JOIN timeSeriesSamples({CLICKHOUSE_DATABASE:Identifier}.ts) AS r ON mt.x = toUInt64(r.samples[1].2)
     SETTINGS parallel_replicas_local_plan = 0);
 
 DROP TABLE ts;
