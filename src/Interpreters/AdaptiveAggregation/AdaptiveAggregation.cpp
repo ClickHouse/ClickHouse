@@ -444,6 +444,9 @@ void AdaptiveAggregationSession::endHandedOverSpills()
 {
     std::lock_guard lock(producer_buffers_mutex);
     spillable_handed_over_bytes.store(0, std::memory_order_relaxed);
+    for (auto & stream : spill_streams)
+        if (stream.buffer && stream.unreleased_blocks.load(std::memory_order_relaxed) == 0)
+            stream.buffer.reset();
 }
 
 void Aggregator::spillAdaptivePartitions(
@@ -553,11 +556,11 @@ void AdaptiveAggregationSession::SpilledPartition::readBack(const std::function<
         callback(pending);
 }
 
-void AdaptiveAggregationSession::SpilledPartition::release()
+void AdaptiveAggregationSession::SpilledPartition::release(std::vector<SpillStream *> & emptied_streams)
 {
     for (const auto & block : blocks)
         if (block.stream->unreleased_blocks.fetch_sub(1, std::memory_order_acq_rel) == 1)
-            block.stream->buffer.reset();
+            emptied_streams.push_back(block.stream);
     std::vector<Block>().swap(blocks);
     PaddedPODArray<char>().swap(pending);
 }

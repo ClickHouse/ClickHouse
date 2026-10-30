@@ -13,6 +13,7 @@
 #include <Common/FailPoint.h>
 #include <Common/assert_cast.h>
 #include <Common/ProfileEvents.h>
+#include <Common/threadPoolCallbackRunner.h>
 #include <IO/ReadBufferFromMemory.h>
 #include <Interpreters/AdaptiveAggregation/AdaptiveAggregationImpl.h>
 #include <Interpreters/AdaptiveAggregation/GrowingCountTopK.h>
@@ -345,12 +346,44 @@ namespace
         }
 
         /// Frees the records of partition `sub` of the bucket: the producers' chunks and its blocks in the spill
-        /// streams, which a unit that the top-K pruning skips leaves unread.
+        /// streams, which a unit that the top-K pruning skips leaves unread. The streams this leaves with no block wait
+        /// for `removeEmptiedStreams`.
         void release(size_t sub)
         {
             for (const auto & producer : session.producer_buffers)
                 producer->releasePartition(first_partition + sub);
-            spilledOf(sub).release();
+            spilledOf(sub).release(emptied_streams);
+        }
+
+        /// Removes the spill streams that the releases left with no block. Every stream holds blocks of every bucket,
+        /// so they empty together at the release of the merge's last unit, and they are removed on `pool` in parallel
+        /// rather than one after another by this task.
+        void removeEmptiedStreams(ThreadPool & pool, size_t max_threads)
+        {
+            if (emptied_streams.empty())
+                return;
+
+            struct Removal
+            {
+                std::vector<DB::AdaptiveAggregationSession::SpillStream *> streams;
+                std::atomic<size_t> next = 0;
+            };
+            auto removal = std::make_shared<Removal>();
+            removal->streams.swap(emptied_streams);
+            auto remove = [removal]
+            {
+                for (size_t i = removal->next.fetch_add(1); i < removal->streams.size(); i = removal->next.fetch_add(1))
+                    removal->streams[i]->buffer.reset();
+            };
+
+            ThreadPoolCallbackRunnerLocal<void> runner(pool, ThreadName::AGGREGATOR_POOL);
+            /// The calling task takes part in the removal too, so one job less is enqueued.
+            const size_t threads = std::min(max_threads, removal->streams.size());
+            runner.reserve(threads);
+            for (size_t i = 1; i < threads && removal->next.load(std::memory_order_relaxed) < removal->streams.size(); ++i)
+                runner.enqueueAndKeepTrack(remove, Priority{});
+            remove();
+            runner.cancelScheduledAndWaitForStartedAndRethrowFirstError();
         }
 
     private:
@@ -361,6 +394,7 @@ namespace
 
         DB::AdaptiveAggregationSession & session;
         const size_t first_partition;
+        std::vector<DB::AdaptiveAggregationSession::SpillStream *> emptied_streams;
     };
 
     /// The same for a set table, whose cells hold only keys.
@@ -1047,6 +1081,7 @@ Aggregator::AggregatedChunks Aggregator::mergeAndConvertAdaptiveBucketImpl(
                         discardAdaptiveSourceState(*cell.mapped);
                 for (size_t sub = unit_first_sub; sub < unit_end_sub; ++sub)
                     staged.release(sub);
+                staged.removeEmptiedStreams(*thread_pool, params.max_threads);
                 pruned_records += unit_records;
                 ProfileEvents::increment(ProfileEvents::AdaptiveAggregationPrunedUnits);
                 continue;
@@ -1168,6 +1203,7 @@ Aggregator::AggregatedChunks Aggregator::mergeAndConvertAdaptiveBucketImpl(
         /// The conversion copied the keys out of the records, so the unit's records go now.
         for (size_t sub = unit_first_sub; sub < unit_end_sub; ++sub)
             staged.release(sub);
+        staged.removeEmptiedStreams(*thread_pool, params.max_threads);
 
         /// The next unit creates its states in a fresh arena, so the states of this one free with its arena: at once
         /// where the conversion copied their results out, or with the chunk where they are part of it, as the non-final

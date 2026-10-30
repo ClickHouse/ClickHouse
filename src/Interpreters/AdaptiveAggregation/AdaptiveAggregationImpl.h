@@ -189,7 +189,7 @@ struct AdaptiveAggregationSession
 
     /// Ends the spills of the records in `producer_buffers` at the finish barrier: waits for a spill in progress, and
     /// zeroes `spillable_handed_over_bytes`, which no hand-over raises again, so the later requests find nothing to
-    /// spill.
+    /// spill. Removes the spill streams that got no block, which no spill can reach any more.
     void endHandedOverSpills();
 
     /// Published under the same mutex and read after the finish barrier. Retained states contribute their
@@ -211,7 +211,8 @@ struct AdaptiveAggregationSession
     struct SpillStream
     {
         std::unique_ptr<TemporaryDataBuffer> buffer;
-        /// The blocks in the file that the merge has not released yet. The file goes when it reaches 0.
+        /// The blocks in the file that the merge has not released yet. The release that takes it to 0 hands the stream
+        /// over for removal.
         std::atomic<size_t> unreleased_blocks = 0;
     };
     /// One per producer.
@@ -238,8 +239,9 @@ struct AdaptiveAggregationSession
         /// The records appended, which the merge counts before it reads them back.
         size_t recordCount() const { return record_count; }
 
-        /// Removes the records, read back or not, and each stream with no block left.
-        void release();
+        /// Removes the records, read back or not, and adds to `emptied_streams` each stream that has no block left,
+        /// which the caller removes.
+        void release(std::vector<SpillStream *> & emptied_streams);
 
     private:
         /// Serializes the producers' appends.
