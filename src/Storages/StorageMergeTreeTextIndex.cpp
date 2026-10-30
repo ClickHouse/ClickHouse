@@ -14,6 +14,7 @@
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <IO/ReadBufferFromMemory.h>
 #include <Interpreters/ClientInfo.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ExpressionActions.h>
@@ -135,11 +136,24 @@ private:
     {
         static constexpr size_t block_docs = TextIndexBlockedPositionsCodec::BLOCK_DOCS;
 
+        const bool embedded = token_info.header & PostingsSerialization::Flags::EmbeddedPositions;
+        std::optional<ReadBufferFromMemory> embedded_in;
+        if (embedded)
+            embedded_in.emplace(token_info.embedded_positions.data(), token_info.position_bytes);
+        SeekableReadBuffer & in = embedded ? static_cast<SeekableReadBuffer &>(*embedded_in) : *positions_buf;
+
         if (first_rank == 0)
         {
-            validateTokenPositions(token_info, positions_file_size);
-            positions_buf->seek(static_cast<off_t>(token_info.position_offset), SEEK_SET);
-            positions_directory = TextIndexBlockedPositionsCodec::readDirectory(*positions_buf, token_info.position_offset, token_info.cardinality, token_info.position_bytes);
+            if (embedded)
+            {
+                positions_directory = TextIndexBlockedPositionsCodec::readDirectory(in, 0, token_info.cardinality, token_info.position_bytes);
+            }
+            else
+            {
+                validateTokenPositions(token_info, positions_file_size);
+                in.seek(static_cast<off_t>(token_info.position_offset), SEEK_SET);
+                positions_directory = TextIndexBlockedPositionsCodec::readDirectory(in, token_info.position_offset, token_info.cardinality, token_info.position_bytes);
+            }
         }
 
         const size_t end_rank = first_rank + num_ranks;
@@ -157,8 +171,8 @@ private:
             block_local_ranks.resize(block_end - rank);
             std::iota(block_local_ranks.begin(), block_local_ranks.end(), static_cast<UInt32>(rank % block_docs));
 
-            positions_buf->seek(static_cast<off_t>(positions_directory.block_offsets[block_idx]), SEEK_SET);
-            TextIndexBlockedPositionsCodec::decodeBlock(*positions_buf, positions_directory, block_idx, block_local_ranks, position_offsets, positions, positions_scratch);
+            in.seek(static_cast<off_t>(positions_directory.block_offsets[block_idx]), SEEK_SET);
+            TextIndexBlockedPositionsCodec::decodeBlock(in, positions_directory, block_idx, block_local_ranks, position_offsets, positions, positions_scratch);
             rank = block_end;
         }
     }
