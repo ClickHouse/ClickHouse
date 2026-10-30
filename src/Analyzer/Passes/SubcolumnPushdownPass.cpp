@@ -161,6 +161,7 @@ bool storageReadsDynamicSubcolumnWithoutConversion(const StorageSnapshotPtr & st
         return true;
 
     const auto & storage = storage_snapshot->storage;
+    /// NOLINT(storage-cast): a lazily loaded table is a proxy whose snapshot carries no parts, so it must fail this cast and be rejected.
     if (!dynamic_cast<const MergeTreeData *>(&storage))
     {
         const auto & name = storage.getName();
