@@ -3561,7 +3561,7 @@ private:
         {
             index_granularity_ptr = createMergeTreeIndexGranularity(
                 ctx->source_part->rows_count,
-                ctx->source_part->getBytesUncompressedOnDisk(),
+                [&] { return ctx->source_part->getTotalColumnsReadSize().data_uncompressed; },
                 *ctx->data->getSettings(),
                 ctx->new_data_part->index_granularity_info,
                 /*blocks_are_granules=*/ false);
