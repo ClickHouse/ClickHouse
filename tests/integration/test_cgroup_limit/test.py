@@ -42,7 +42,7 @@ def test_cgroup_cpu_limit():
     for num_cpus in (1, 2, 4, 2.8):
         def run_with_retry():
             result = run_with_cpu_limit(
-                "clickhouse local -q \"select value from system.settings where name='max_threads'\"",
+                "clickhouse local --tmp -q \"select value from system.settings where name='max_threads'\"",
                 num_cpus,
             )
             expect_output = (r"auto({})".format(math.ceil(num_cpus))).encode()
