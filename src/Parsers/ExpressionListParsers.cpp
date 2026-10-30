@@ -3219,31 +3219,71 @@ static bool isFirstIdentifier(ParserExpressionImpl::Layers & layers)
     return layers.size() == 1 && dynamic_cast<ExpressionLayer *>(layers.front().get()) != nullptr;
 }
 
+/// Whether the argument of `unique(...)` that starts with an opening bracket can be a whole subquery.
+/// A parenthesized subquery can only be followed by the closing bracket of the call, a set operation
+/// or a pipe operator, so for `unique((SELECT 1), 2)` or `unique((SELECT 1) + 1)` the argument is not even
+/// tried as a subquery. Otherwise the speculative parse of the subquery would fail only after parsing it
+/// completely, and the ordinary function call would parse it again, doubling the work at every nesting level.
+/// This is a linear scan over the tokens of the first bracketed group of the argument.
+static bool bracketedArgumentCanBeSubquery(TokenIterator pos)
+{
+    size_t depth = 0;
+    do
+    {
+        if (pos->type == TokenType::OpeningRoundBracket)
+            ++depth;
+        else if (pos->type == TokenType::ClosingRoundBracket)
+            --depth;
+        else if (pos->isEnd() || pos->isError())
+            return false;
+        ++pos;
+    } while (depth != 0);
+
+    if (pos->type == TokenType::ClosingRoundBracket || pos->type == TokenType::PipeOperator)
+        return true;
+
+    if (pos->type != TokenType::BareWord)
+        return false;
+
+    std::string_view word(pos->begin, pos->size());
+    return equalsCaseInsensitive(word, "union") || equalsCaseInsensitive(word, "except") || equalsCaseInsensitive(word, "intersect");
+}
+
 /// Parse the argument of `unique(...)` as the `UNIQUE` predicate: a single subquery that is the whole argument,
 /// e.g. `SELECT ...`, `WITH ...`, `FROM ... SELECT ...`, `(SELECT ...)`, `((SELECT ...)) UNION ALL ...`.
 /// Any other shape, such as `unique(1)`, `unique(from + 1)`, `unique((SELECT 1), 2)` or `unique((SELECT 1) + 1)`,
 /// is not the predicate, and `unique` stays a regular function name for it.
 /// The parsed subquery is handed over to `UniqueLayer`, so it is parsed only once and nested predicates stay linear.
-/// `pos` points right after the opening bracket of the function call.
-static std::unique_ptr<Layer> tryParseUniquePredicateArgument(IParser::Pos pos)
+/// `pos` points right after the opening bracket of the function call and is left there. The speculative parse
+/// runs on `pos` itself, so that its backtracking is counted against `max_parser_backtracks`.
+static std::unique_ptr<Layer> tryParseUniquePredicateArgument(IParser::Pos & pos)
 {
-    if (pos->type != TokenType::OpeningRoundBracket && pos->type != TokenType::BareWord)
+    if (pos->type == TokenType::OpeningRoundBracket)
+    {
+        if (!bracketedArgumentCanBeSubquery(pos))
+            return nullptr;
+    }
+    else if (pos->type != TokenType::BareWord)
         return nullptr;
 
+    const IParser::Pos begin = pos;
     ASTPtr subquery;
     Expected expected;
-    if (!ParserSelectWithUnionQuery().parse(pos, subquery, expected))
+    if (!ParserSelectWithUnionQuery().parse(pos, subquery, expected)
+        || !ParserToken(TokenType::ClosingRoundBracket).ignore(pos, expected))
+    {
+        pos = begin;
         return nullptr;
+    }
 
-    if (!ParserToken(TokenType::ClosingRoundBracket).ignore(pos, expected))
-        return nullptr;
-
-    return std::make_unique<UniqueLayer>(std::move(subquery), pos);
+    TokenIterator end_pos = pos;
+    pos = begin;
+    return std::make_unique<UniqueLayer>(std::move(subquery), end_pos);
 }
 
 /// `pos` points right after the opening bracket of the function call.
 static std::unique_ptr<Layer> getFunctionLayer(
-    ASTPtr identifier, IParser::Pos pos, bool is_table_function, bool is_first_identifier, bool allow_function_parameters_ = true)
+    ASTPtr identifier, IParser::Pos & pos, bool is_table_function, bool is_first_identifier, bool allow_function_parameters_ = true)
 {
     /// Special cases for expressions that look like functions but contain some syntax sugar:
 
