@@ -1410,6 +1410,12 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
                 }
 
                 sum_marks_dropped_by_skip_indexes.fetch_add(marks_before_skip_indexes - std::min(marks_before_skip_indexes, ranges.getMarksCount()), std::memory_order_relaxed);
+
+                /// the dynamic top-K filter reads this index when the part is read
+                if (skip_indexes.skip_index_for_top_k_filtering && skip_indexes.threshold_tracker && !ranges.ranges.empty()
+                    && skip_indexes.skip_index_for_top_k_filtering->getDeserializedFormat(
+                        *part_info_for_reader, skip_indexes.skip_index_for_top_k_filtering->getFileName()))
+                    top_k_index_applied.store(true, std::memory_order_relaxed);
             }
 
             /// Optimize ORDER BY <col> LIMIT n - if <col> is scalar numeric / date / datetime and has a minmax index
@@ -1566,6 +1572,8 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
     for (size_t idx = 0; idx < skip_index_applied.size(); ++idx)
         if (skip_index_applied[idx].load(std::memory_order_relaxed))
             result.used_skip_indexes.insert(skip_indexes.useful_indices[idx].index->index.name);
+    if (top_k_index_applied.load(std::memory_order_relaxed))
+        result.used_skip_indexes.insert(skip_indexes.skip_index_for_top_k_filtering->index.name);
 
     const auto num_indices = skip_indexes.useful_indices.size();
 
@@ -1632,8 +1640,6 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
             .num_granules_after = sum_marks_after_top_k});
 
         result.granules_dropped_by_skip_indexes += sum_marks_before_top_k - std::min(sum_marks_before_top_k, sum_marks_after_top_k);
-        if (top_k_index_applied.load(std::memory_order_relaxed))
-            result.used_skip_indexes.insert(skip_indexes.skip_index_for_top_k_filtering->index.name);
         LOG_DEBUG(
             log,
             "Skip index {} used for top N optimization, it took {}ms across {} threads.",
