@@ -42,6 +42,7 @@
 #include <Processors/QueryPlan/NegativeLimitStep.h>
 #include <Processors/QueryPlan/OffsetStep.h>
 #include <Processors/QueryPlan/NegativeOffsetStep.h>
+#include <Processors/QueryPlan/BypassExtremesSteps.h>
 #include <Processors/QueryPlan/ExtremesStep.h>
 #include <Processors/QueryPlan/TotalsHavingStep.h>
 #include <Processors/QueryPlan/RollupStep.h>
@@ -176,6 +177,7 @@ namespace Setting
     extern const SettingsBool enable_adaptive_aggregator;
     extern const SettingsUInt64 adaptive_aggregator_freeze_threshold;
     extern const SettingsUInt64 adaptive_aggregator_freeze_threshold_bytes;
+    extern const SettingsBool adaptive_aggregator_disable_thaw;
     extern const SettingsBool use_aggregation_memory_tracker;
     extern const SettingsUInt64 max_bytes_to_transfer;
     extern const SettingsUInt64 max_rows_to_transfer;
@@ -804,6 +806,7 @@ Aggregator::Params getAggregatorParams(const PlannerContextPtr & planner_context
         settings[Setting::enable_adaptive_aggregator],
         settings[Setting::adaptive_aggregator_freeze_threshold],
         settings[Setting::adaptive_aggregator_freeze_threshold_bytes],
+        settings[Setting::adaptive_aggregator_disable_thaw],
         settings[Setting::use_aggregation_memory_tracker]);
     aggregator_params.shared_kept_keys_for_overflow_any = trivial_group_by_limit.has_value();
 
@@ -2353,7 +2356,16 @@ void addAdditionalFilterStepIfNeeded(QueryPlan & query_plan,
         filter_info.do_remove_column);
     filter_step->setStepDescription("additional result filter");
     appendSetsFromActionsDAG(filter_step->getExpression(), useful_sets);
+
+    /// The extremes are computed before `LIMIT`, and the result filter, which comes after it, must not filter them either.
+    const bool bypass_extremes = settings[Setting::extremes];
+    if (bypass_extremes)
+        query_plan.addStep(std::make_unique<DetachExtremesStep>(query_plan.getCurrentHeader()));
+
     query_plan.addStep(std::move(filter_step));
+
+    if (bypass_extremes)
+        query_plan.addStep(std::make_unique<AttachExtremesStep>(query_plan.getCurrentHeader()));
 }
 
 /// Replace a header that holds nothing but row-count-only columns (or no column at all) with one
@@ -3566,7 +3578,9 @@ void Planner::buildPlanForQueryNode()
 
 SelectQueryInfo Planner::buildSelectQueryInfo() const
 {
-    return ::DB::buildSelectQueryInfo(query_tree, planner_context);
+    auto select_query_info = ::DB::buildSelectQueryInfo(query_tree, planner_context);
+    select_query_info.is_secondary_query_root = select_query_options.is_secondary_query_root;
+    return select_query_info;
 }
 
 void Planner::addStorageLimits(const StorageLimitsList & limits)

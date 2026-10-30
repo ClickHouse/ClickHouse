@@ -160,15 +160,11 @@ SELECT 'or_chain_rewritten_to_in', (SELECT arraySort(groupArray(v)) FROM pk_str
 -- which is a separate question that index and rewrite eligibility rules may legitimately change.
 -- Matched with the trailing comma, because a bare '%in%' also matches ordinary, result_type and other
 -- identifiers. This is a mechanism guard rather than a bug detector: the rewrite fires before the fix too.
--- enable_analyzer is pinned because EXPLAIN QUERY TREE throws NOT_IMPLEMENTED without the analyzer, which
--- would abort the whole file on the old analyzer job and under compatibility settings below 24.3. The pin
--- belongs on the outer SELECT: inside the subquery it is rejected as a setting changed in a subquery.
 SELECT 'or_chain_is_rewritten', countIf(explain LIKE '%function_name: in,%') = 1
     AND countIf(explain LIKE '%function_name: or,%') = 0
 FROM (EXPLAIN QUERY TREE run_passes = 1
     SELECT count() FROM pk_str
-    WHERE v = '7' OR v = 'zz' OR v = 'V0')
-SETTINGS enable_analyzer = 1;
+    WHERE v = '7' OR v = 'zz' OR v = 'V0');
 
 SELECT 'tuple_in', (SELECT groupArray(a) FROM pk_pair WHERE (a, b) IN ((CAST('7', 'Enum8(\'7\' = 3)'), 'x'))
     SETTINGS use_skip_indexes = 0, optimize_use_implicit_projections = 0)
@@ -292,22 +288,17 @@ SELECT 'partition_key_condition_uses_name', (SELECT
 -- consumer of the converted constant and it fails in the other direction: instead of dropping the matching
 -- row it counted the rows of the '3' partition, returning 3 for a true count of 1. This cell pins the
 -- setting ON rather than off, both to select that route and because the test runner otherwise disables the
--- optimization at random in about one run in twenty. Whether the route is then taken depends on the
--- analyzer, which cannot be pinned inside a subquery, so the cell asserts the count itself: it reads the
--- correct value on either analyzer after the fix and the wrong one on both before it.
+-- optimization at random in about one run in twenty. The cell asserts the count itself.
 SELECT 'partition_key_count', (SELECT count() FROM pk_partition WHERE v = CAST('7', 'Enum8(\'7\' = 3)')
     SETTINGS optimize_trivial_count_query = 1, optimize_use_implicit_projections = 0)
     = (SELECT count() FROM ref_str WHERE v = CAST('7', 'Enum8(\'7\' = 3)'));
 
--- The cell above only covers that route while the route is actually selected, and only the old analyzer
--- selects it: the planner declines trivial count whenever a WHERE is present. Rather than pin an analyzer,
--- which a subquery cannot do, assert that route selection still follows the analyzer in use. This reads 1
--- on either analyzer today and turns 0 if the old analyzer stops taking the partition predicate route,
--- which is the case that would quietly reduce the cell above to an ordinary scan.
+-- The cell above only covers that route while the route is actually selected, and the planner declines
+-- trivial count whenever a WHERE is present. Assert that the route is still not selected.
 SELECT 'partition_key_count_route_follows_analyzer', (SELECT countIf(explain LIKE '%Optimized trivial count%') > 0
     FROM (EXPLAIN SELECT count() FROM pk_partition WHERE v = CAST('7', 'Enum8(\'7\' = 3)')
           SETTINGS optimize_trivial_count_query = 1, optimize_use_implicit_projections = 0))
-    = (SELECT NOT getSetting('enable_analyzer'));
+    = 0;
 
 SELECT 'bloom_filter_fixed_string_prunes', (SELECT sum(toUInt64OrZero(extract(explain, 'Granules: (\\d+)/')))
     FROM (EXPLAIN indexes = 1 SELECT count() FROM bf_fixed4 WHERE v = CAST('7', 'Enum8(\'7\' = 3)')))
