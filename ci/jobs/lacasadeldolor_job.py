@@ -1,4 +1,5 @@
 import argparse
+import gzip
 import os
 import random
 import re
@@ -202,10 +203,53 @@ def _parse_logs(server_log: Path, stderr_log: Path, fuzzer_out: Path):
     return Result(name=name, info=description, status=Result.Status.FAIL, files=files)
 
 
+def _rotated_logs(log: Path) -> list[Path]:
+    """The rotations of `log` next to it (`<name>.N`, or `<name>.N.gz` when compressed),
+    oldest first: the newest one is `.0`."""
+    pattern = re.compile(re.escape(log.name) + r"\.(\d+)(\.gz)?")
+    numbered = []
+    for p in log.parent.glob(f"{log.name}.*"):
+        m = pattern.fullmatch(p.name)
+        if m and p.is_file():
+            numbered.append((int(m.group(1)), p))
+    return [p for _, p in sorted(numbered, reverse=True)]
+
+
+def _log_with_rotations(log: Path, combined: Path) -> Path:
+    """`log` with its rotations decompressed in front of it, written to `combined`, or `log`
+    itself when it has none. A process that aborted and was restarted can have its fatal
+    record only in a rotation."""
+    rotated = _rotated_logs(log)
+    if not rotated:
+        return log
+    with open(combined, "wb") as out:
+        for part in [*rotated, log]:
+            if not part.is_file():
+                continue
+            with (gzip.open if part.suffix == ".gz" else open)(part, "rb") as f:
+                shutil.copyfileobj(f, out)
+    return combined
+
+
+def _rotated_node_failure(workspace_path: Path, stderr_log: Path, fuzzer_out: Path):
+    """Name a failure that `dolor.py` found in a rotated server log. The analysis parses the
+    current log only, which belongs to the last server, not to one that crashed before a
+    restart. The main log comes first: the parser looks up the query there."""
+    for name in ("server.log", "server.err.log"):
+        log = workspace_path / name
+        combined = _log_with_rotations(log, workspace_path / f"{log.stem}.combined.log")
+        if combined != log and (failure := _parse_logs(combined, stderr_log, fuzzer_out)):
+            return failure
+    return None
+
+
 def _keeper_failure(workspace_path: Path, fuzzer_out: Path):
     """A failure report in a Keeper log, which nothing else reads."""
     for i in KEEPER_INDEXES:
         _, err_log, stderr_log = get_keeper_workspace_logs(workspace_path, i)
+        err_log = _log_with_rotations(
+            err_log, workspace_path / f"keeper{i}.err.combined.log"
+        )
         files = " ".join(str(p) for p in (err_log, stderr_log) if p.is_file())
         # A Fatal other than the watchdog's SIGKILL record, or a raw sanitizer report: one
         # cut short by the abort may be only its `CHECK failed` or `DEADLYSIGNAL` line.
@@ -582,7 +626,8 @@ python3 {repo_dir}/tests/casa_del_dolor/dolor.py --seed={session_seed} --generat
                 dst = workspace_path / f"{host_log.name}{rotated.name[len(cont_log.name):]}"
                 shutil.copy2(rotated, dst)
                 paths.append(dst)
-    # The same for the Keepers, which a run without ZooKeeper does not have at all.
+    # The same for the Keepers, which a run without ZooKeeper does not have at all. Their
+    # rotations are scanned too: a Keeper restarts after an abort, and its log rotates on.
     for i in KEEPER_INDEXES:
         for cont_log, host_log in zip(
             get_keeper_container_logs(i), get_keeper_workspace_logs(workspace_path, i)
@@ -590,6 +635,10 @@ python3 {repo_dir}/tests/casa_del_dolor/dolor.py --seed={session_seed} --generat
             if cont_log.is_file():
                 shutil.copy2(cont_log, host_log)
                 paths.append(host_log)
+            for rotated in _rotated_logs(cont_log):
+                dst = workspace_path / f"{host_log.name}{rotated.name[len(cont_log.name):]}"
+                shutil.copy2(rotated, dst)
+                paths.append(dst)
 
     # Safety net: detect Python-level crashes in the fuzzer log even if the
     # exit code was somehow swallowed (e.g. future command changes drop pipefail)
@@ -656,6 +705,11 @@ python3 {repo_dir}/tests/casa_del_dolor/dolor.py --seed={session_seed} --generat
         buzz_out,
         server_fuzzer=True,
     )
+    if server_died and not result.is_ok() and not result.results:
+        # The analysis failed the run without naming it from the current logs.
+        failure = _rotated_node_failure(workspace_path, stderr_log, buzz_out)
+        if failure is not None:
+            _complete_with_artifacts(failure, sw, workspace_path, paths)
     if result.is_ok():
         # Nothing above reads the Keeper logs, and `dolor.py` can exit 0 with one of them
         # holding a report.
