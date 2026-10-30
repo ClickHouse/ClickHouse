@@ -6,7 +6,6 @@
 -- to execute it, but the Set from the subquery is not built yet at that point.
 SET explain_query_plan_default = 'legacy';
 
-SET enable_analyzer = 1;
 SET optimize_move_to_prewhere = 1;
 SET optimize_functions_to_subcolumns = 1;
 SET optimize_use_projections = 1;
