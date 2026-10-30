@@ -113,6 +113,9 @@ TEST(DeltaLakeMetadata, GetSimpleTypeByNameChar)
 #include <Storages/ObjectStorage/Azure/Configuration.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/AzureBlobStorage/AzureBlobStorageCommon.h>
 #include <azure/identity/workload_identity_credential.hpp>
+#include <Parsers/ASTFunction.h>
+#include <Parsers/ExpressionListParsers.h>
+#include <Parsers/parseQuery.h>
 
 #include <cstdlib>
 #include <optional>
@@ -437,6 +440,40 @@ TEST(DeltaLakeAzureKernelHelper, WorkloadIdentityForwardsExplicitIds)
     const auto token_file = findBuilderOption(options, "azure_federated_token_file");
     ASSERT_TRUE(token_file.has_value());
     ASSERT_EQ(*token_file, "/var/run/secrets/azure/tokens/azure-identity-token");
+}
+
+/// Explicit IDs must survive the stored engine args (detach/attach, restart) and still
+/// win over conflicting environment IDs when the table is parsed again.
+TEST(DeltaLakeAzureKernelHelper, WorkloadIdentityExplicitIdsSurviveReattach)
+{
+    ScopedEnv env_tenant("AZURE_TENANT_ID", "88888888-8888-8888-8888-888888888888");
+    ScopedEnv env_client("AZURE_CLIENT_ID", "99999999-9999-9999-9999-999999999999");
+    ScopedEnv env_token_file("AZURE_FEDERATED_TOKEN_FILE", "/var/run/secrets/azure/tokens/azure-identity-token");
+
+    const std::string query = "DeltaLakeAzure('https://testaccount.blob.core.windows.net', 'testcontainer', 'table/', "
+                              "extra_credentials(client_id='22222222-2222-2222-2222-222222222222', tenant_id='11111111-1111-1111-1111-111111111111'))";
+    DB::ParserExpression parser;
+    DB::ASTPtr ast = DB::parseQuery(parser, query, 1000, 1000, 1000000);
+    DB::ASTs engine_args = ast->as<DB::ASTFunction>()->arguments->children;
+
+    DB::AzureStorageParsedArguments created;
+    created.fromAST(engine_args, getContext().context, /*with_structure=*/ false);
+
+    /// Parse the same args again, as on attach.
+    DB::AzureStorageParsedArguments attached;
+    attached.fromAST(engine_args, getContext().context, /*with_structure=*/ false);
+    attached.connection_params.forbid_implicit_credentials = false;
+    ASSERT_EQ(attached.connection_params.auth_method.index(), 3u);
+
+    const auto options = DeltaLake::getAzureBuilderOptions(attached.connection_params);
+
+    const auto tenant = findBuilderOption(options, "azure_tenant_id");
+    ASSERT_TRUE(tenant.has_value());
+    ASSERT_EQ(*tenant, "11111111-1111-1111-1111-111111111111");
+
+    const auto client = findBuilderOption(options, "azure_client_id");
+    ASSERT_TRUE(client.has_value());
+    ASSERT_EQ(*client, "22222222-2222-2222-2222-222222222222");
 }
 
 /// Missing tenant / client / token-file must fail here, not later inside object_store.
