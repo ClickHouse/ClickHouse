@@ -65,7 +65,7 @@ public:
         void markFailed();
         void markBypassed();
         void addMissingToken(std::string_view token);
-        /// `embedded_postings` are the token's postings clipped to the readable rows, null if they are not embedded.
+        /// `embedded_postings` are the clipped embedded postings, or nullptr if there are none.
         void addTokenInfo(std::string_view token, TokenPostingsInfoPtr token_info, RowsRange token_rows_range, const PostingList * embedded_postings);
         void addRowsRange(RowsRange token_rows_range);
         void addPostings(const PostingList & token_postings);

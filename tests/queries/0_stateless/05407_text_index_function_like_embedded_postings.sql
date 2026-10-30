@@ -23,9 +23,12 @@ ORDER BY id;
 -- 'alpha' is in one row, so its postings are embedded; 'beta' spans several posting blocks.
 INSERT INTO tab SELECT number, if(number = 0, 'alpha', 'beta alphabeta') FROM numbers(1000);
 
+SELECT 'Embedded postings matched by LIKE are counted once';
 SELECT count() FROM tab WHERE hasAnyTokens(msg, ['alpha', 'beta']) AND msg LIKE '%alpha%';
 SELECT count() FROM tab WHERE hasAnyTokens(msg, ['alpha', 'beta']) AND msg LIKE '%alpha%' SETTINGS query_plan_direct_read_from_text_index = 0;
 SELECT count() FROM tab WHERE hasAnyTokens(msg, ['alpha', 'beta']) AND msg LIKE '%alpha%' SETTINGS use_skip_indexes = 0;
+
+SELECT 'Negated query sees the postings of all tokens';
 SELECT count() FROM tab WHERE NOT hasAnyTokens(msg, ['alpha', 'beta']) AND msg LIKE '%alpha%';
 SELECT count() FROM tab WHERE NOT hasAnyTokens(msg, ['alpha', 'beta']) AND msg LIKE '%alpha%' SETTINGS query_plan_direct_read_from_text_index = 0;
 SELECT count() FROM tab WHERE NOT hasAnyTokens(msg, ['alpha', 'beta']) AND msg LIKE '%alpha%' SETTINGS use_skip_indexes = 0;

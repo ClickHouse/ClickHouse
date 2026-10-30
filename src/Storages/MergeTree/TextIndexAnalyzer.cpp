@@ -110,8 +110,7 @@ void TextIndexAnalyzer::QueryBuilder::addMissingToken(std::string_view token)
 void TextIndexAnalyzer::QueryBuilder::addTokenInfo(
     std::string_view token, TokenPostingsInfoPtr token_info, RowsRange token_rows_range, const PostingList * embedded_postings)
 {
-    /// A pattern scan delivers the info of a token again when another query already has it,
-    /// so the embedded postings are added only together with a token that is new for this query.
+    /// A pattern scan delivers known tokens again, so embedded postings are added only with a new token.
     if (is_failed || tokens.contains(token))
         return;
 
@@ -245,7 +244,7 @@ void TextIndexAnalyzer::addTokenInfo(std::string_view token, TokenPostingsInfoPt
         token_rows_range = *clipped_range;
     }
 
-    /// The embedded postings come with the token info, so they are clipped to the readable rows here and added in `QueryBuilder::addTokenInfo`.
+    /// Clip the embedded postings to the readable rows once.
     std::optional<PostingList> embedded_postings;
     if (!token_info->embedded_postings.empty())
     {
@@ -263,7 +262,7 @@ void TextIndexAnalyzer::addTokenInfo(std::string_view token, TokenPostingsInfoPt
         query_builder.addTokenInfo(token, token_info, token_rows_range, embedded_postings && !no_readable_postings ? &*embedded_postings : nullptr);
     });
 
-    /// No readable row has the token, as when the postings read from disk are clipped to nothing in `addPostings`.
+    /// Same as in `addPostings`: a token without readable postings is missing.
     if (no_readable_postings)
     {
         processTokenOperation(token, [&](QueryBuilder & query_builder)
