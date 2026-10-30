@@ -176,6 +176,8 @@ namespace Setting
     extern const SettingsBool parallel_replicas_for_queries_with_multiple_tables;
     extern const SettingsBool use_join_disjunctions_push_down;
     extern const SettingsBool query_plan_display_internal_aliases;
+    extern const SettingsBool query_plan_enable_optimizations;
+    extern const SettingsBool query_plan_filter_push_down;
     extern const SettingsBool enable_lazy_columns_replication;
     extern const SettingsBool parallel_replicas_allow_materialized_views;
     extern const SettingsBool parallel_replicas_allow_view_over_mergetree;
@@ -1900,9 +1902,13 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(TableExpressionNodePtr table_
 
         /// Wrap is planned as `SELECT cols FROM icebergCluster` with no JOIN. Copy left-only
         /// `WHERE` so wrap dummy analysis (and initiator listing) see the same predicate
-        /// as a single-table `icebergCluster` read.
+        /// as a single-table `icebergCluster` read. This is a form of filter push-down, so it
+        /// is disabled together with it; like it, a dropped other-side conjunct does not guard
+        /// the copied ones under short-circuit evaluation.
+        const bool filter_push_down_enabled = settings[Setting::query_plan_enable_optimizations]
+            && settings[Setting::query_plan_filter_push_down];
         QueryTreeNodePtr wrap_where;
-        if (can_prefilter_wrapped_table && parent_query->hasWhere())
+        if (filter_push_down_enabled && can_prefilter_wrapped_table && parent_query->hasWhere())
         {
             wrap_where = parent_query->getWhere()->clone();
             removeExpressionsThatDoNotDependOnTableIdentifiers(wrap_where, original_table_expression, query_context);
