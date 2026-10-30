@@ -1,0 +1,8 @@
+One partition per bucket
+matches the baseline	1
+staged records spilled	1
+at most one file per producer	1
+Two partitions per bucket
+matches the baseline	1
+staged records spilled	1
+at most one file per producer	1

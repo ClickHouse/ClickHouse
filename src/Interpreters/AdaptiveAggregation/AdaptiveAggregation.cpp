@@ -153,18 +153,21 @@ void Aggregator::accountStagedBatch(
 AdaptiveAggregationSessionPtr Aggregator::createAdaptiveSession(size_t producers) const
 {
     const auto layout = AdaptivePartitionLayout::forProducers(producers, params.max_bytes_before_external_group_by);
+    const size_t num_spill_streams = std::min(producers, ADAPTIVE_AGGREGATION_NUM_BUCKETS);
     TemporaryDataOnDiskScopePtr spill_scope;
     if (tmp_data)
     {
-        /// An eighth of the threshold over the three buffers of each of the streams, one per partition. The memory
-        /// scheduler can ask for a spill without a threshold, and then the streams take the floor.
-        const size_t buffers_share = params.max_bytes_before_external_group_by / (8 * 3 * layout.numPartitions());
+        /// An eighth of the threshold over the three buffers of each stream and the records each partition keeps in
+        /// memory. The memory scheduler can ask for a spill without a threshold, and then the buffers take the floor.
+        const size_t buffers_share
+            = params.max_bytes_before_external_group_by / (8 * (layout.numPartitions() + 3 * num_spill_streams));
         const size_t buffer_bytes = std::min(tmp_data->getSettings().buffer_size, std::max(buffers_share, adaptive_spill_min_buffer_bytes));
         spill_scope = tmp_data->childScope(tmp_data->getSettings().metrics, buffer_bytes);
     }
     return std::make_shared<AdaptiveAggregationSession>(
         layout,
         std::move(spill_scope),
+        num_spill_streams,
         params.adaptiveTopKPrunes() ? std::make_unique<AdaptiveTopKPruning>(params.bucket_top_k) : nullptr);
 }
 
@@ -446,20 +449,20 @@ void Aggregator::spillAdaptivePartitions(AdaptiveAggregationSession & shared, Pa
     if (!shared.spill_scope)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot write to temporary file because temporary file is not initialized");
 
-    /// Every write of this spill goes to a disk that had room for the rest of the spill and the minimum free space, as
-    /// the file of an ordinary spill does. A stream created by this spill goes to a disk of the temporary volume with
-    /// that room. The appends to existing streams check each disk once, at the first append to it, and that check
-    /// covers the later appends to the disk. The partitions written before already took their space on disk, so they
-    /// are not counted again.
-    size_t unwritten_bytes = partitions.allocatedChunkBytes();
+    /// Every write of this spill goes to a disk that had room for the spill and the minimum free space, as the file of
+    /// an ordinary spill does: before any record moves, the streams the spill reaches are created on a disk of the
+    /// temporary volume with that room, or the disks of the existing ones are checked for it, each disk once.
+    const size_t reserve_size = partitions.allocatedChunkBytes() + params.min_free_disk_space;
     TemporaryAppendSpaceCheck space_check;
 
     partitions.finishAppending();
+    shared.prepareSpillStreams(shared.spill_scope, partitions, reserve_size, space_check);
 
-    /// The buffers spilled together start at different partitions, so they do not queue on the same stream's lock
+    /// The buffers spilled together start at different partitions, so they do not queue on the same partition's lock
     /// partition after partition.
     const size_t num_partitions = shared.layout.numPartitions();
     const size_t first_partition = (reinterpret_cast<uintptr_t>(&partitions) >> 6) % num_partitions;
+    const size_t block_bytes = shared.spill_scope->getSettings().buffer_size;
     size_t spilled_records = 0;
     size_t spilled_bytes = 0;
     for (size_t i = 0; i < num_partitions; ++i)
@@ -470,8 +473,7 @@ void Aggregator::spillAdaptivePartitions(AdaptiveAggregationSession & shared, Pa
             continue;
 
         const UInt64 partition_bytes = shared.spilled_partitions[partition].append(
-            shared.spill_scope, partitions, partition, unwritten_bytes + params.min_free_disk_space, space_check);
-        unwritten_bytes -= std::min<size_t>(unwritten_bytes, partition_bytes);
+            shared.spillStreamOf(partition), partitions, partition, block_bytes);
         spilled_bytes += partition_bytes;
         partitions.releasePartition(partition);
         spilled_records += records;
@@ -485,53 +487,99 @@ void Aggregator::spillAdaptivePartitions(AdaptiveAggregationSession & shared, Pa
     LOG_TRACE(log, "Adaptive aggregation: spilled {} staged records ({} bytes)", spilled_records, spilled_bytes);
 }
 
-UInt64 AdaptiveAggregationSession::SpilledPartition::append(
+void AdaptiveAggregationSession::prepareSpillStreams(
     const TemporaryDataOnDiskScopePtr & scope,
     const PartitionedRecordBuffer & partitions,
-    size_t partition,
     size_t reserve_size,
     TemporaryAppendSpaceCheck & space_check)
+{
+    std::vector<bool> reached(spill_streams.size());
+    for (size_t partition = 0; partition < layout.numPartitions(); ++partition)
+        if (partitions.recordsOf(partition))
+            reached[spillStreamIndexOf(partition)] = true;
+
+    for (size_t i = 0; i < spill_streams.size(); ++i)
+    {
+        if (!reached[i])
+            continue;
+        auto & stream = spill_streams[i];
+        std::lock_guard lock(stream.mutex);
+        if (!stream.buffer)
+        {
+            stream.buffer = std::make_unique<TemporaryDataBuffer>(scope, reserve_size);
+            continue;
+        }
+        size_t append_reserve_size = reserve_size;
+        /// Stands for a disk that has no room left for the appends of the later spills.
+        fiu_do_on(FailPoints::adaptive_aggregation_spill_no_room_to_append,
+        {
+            append_reserve_size = std::numeric_limits<size_t>::max();
+        });
+        space_check.beforeAppend(*stream.buffer, append_reserve_size);
+    }
+}
+
+UInt64 AdaptiveAggregationSession::SpilledPartition::append(
+    SpillStream & spill_stream, const PartitionedRecordBuffer & partitions, size_t partition, size_t block_bytes)
 {
     UInt64 bytes = 0;
     partitions.forEachChunk(partition, [&](std::string_view chunk) { bytes += chunk.size(); });
 
     std::lock_guard lock(mutex);
-    if (!stream)
+    if (pending.size() + bytes >= block_bytes)
     {
-        stream = std::make_unique<TemporaryDataBuffer>(scope, reserve_size);
+        std::lock_guard stream_lock(spill_stream.mutex);
+        chassert(spill_stream.buffer);
+        auto & buffer = *spill_stream.buffer;
+        const size_t begin = buffer.startNewBlock();
+        writeBinaryLittleEndian(static_cast<UInt64>(pending.size() + bytes), buffer);
+        buffer.write(pending.data(), pending.size());
+        partitions.forEachChunk(partition, [&](std::string_view chunk) { buffer.write(chunk.data(), chunk.size()); });
+        const size_t end = buffer.startNewBlock();
+        if (blocks.empty())
+        {
+            stream = &spill_stream;
+            ++spill_stream.unreleased_partitions;
+        }
+        blocks.push_back({begin, end});
+        pending.clear();
     }
     else
     {
-        /// Stands for a disk that has no room left for the appends of the later spills.
-        fiu_do_on(FailPoints::adaptive_aggregation_spill_no_room_to_append,
-        {
-            reserve_size = std::numeric_limits<size_t>::max();
-        });
-        space_check.beforeAppend(*stream, reserve_size);
+        partitions.forEachChunk(partition, [&](std::string_view chunk) { pending.insert(chunk.data(), chunk.data() + chunk.size()); });
     }
-    writeBinaryLittleEndian(bytes, *stream);
-    partitions.forEachChunk(partition, [&](std::string_view chunk) { stream->write(chunk.data(), chunk.size()); });
     record_count += partitions.recordsOf(partition);
     return bytes;
 }
 
 void AdaptiveAggregationSession::SpilledPartition::readBack(const std::function<bool(const PaddedPODArray<char> &)> & callback)
 {
-    if (!stream)
-        return;
-
-    stream->finishWriting();
-    auto in = stream->read();
     PaddedPODArray<char> block;
-    while (!in->eof())
+    for (const auto & [begin, end] : blocks)
     {
+        auto in = stream->buffer->readRange(begin, end);
         UInt64 bytes = 0;
         readBinaryLittleEndian(bytes, *in);
         block.resize(bytes);
         in->readStrict(block.data(), bytes);
         if (!callback(block))
-            break;
+            return;
     }
+    if (!pending.empty())
+        callback(pending);
+}
+
+void AdaptiveAggregationSession::SpilledPartition::release()
+{
+    if (!blocks.empty())
+    {
+        std::lock_guard lock(stream->mutex);
+        if (--stream->unreleased_partitions == 0)
+            stream->buffer.reset();
+    }
+    std::vector<Block>().swap(blocks);
+    PaddedPODArray<char>().swap(pending);
+    stream = nullptr;
 }
 
 bool Aggregator::adaptiveStagingRepeats(const AdaptiveAggregationProducer & adaptive) const

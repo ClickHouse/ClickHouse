@@ -525,6 +525,16 @@ std::unique_ptr<ReadBuffer> TemporaryDataBuffer::readFromPosition(size_t positio
     return std::make_unique<TemporaryDataReadBuffer>(std::move(in));
 }
 
+std::unique_ptr<ReadBuffer> TemporaryDataBuffer::readRange(size_t begin, size_t end)
+{
+    chassert(begin < end);
+    auto in = readRaw(std::min<size_t>(end - begin, DBMS_DEFAULT_BUFFER_SIZE));
+    /// Without the bound, a remote file requests the rest of the file, which the destruction of the reader cancels.
+    in->setReadUntilPosition(end);
+    in->seek(begin, SEEK_SET);
+    return std::make_unique<TemporaryDataReadBuffer>(std::move(in));
+}
+
 CompressedWriteBuffer & TemporaryDataBuffer::getCompressedWriteBuffer()
 {
     return *out_compressed_buf;

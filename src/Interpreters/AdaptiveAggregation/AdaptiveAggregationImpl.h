@@ -71,11 +71,12 @@ constexpr size_t adaptive_drain_prefetch_min_table_bytes = 512 << 10;
 /// partition, and a written table learns its keys again from empty, so a producer that just wrote must not write a
 /// trickle of new bytes on every block that follows.
 constexpr size_t adaptive_spill_min_bytes = 16 << 20;
-/// The spill streams of a session, one per partition, are open together, and each holds about three buffers of the
-/// streams' buffer size: the compression input, the compressed block and the file's write buffer. Their buffer size
-/// therefore follows the external-aggregation threshold, so that the streams together take at most an eighth of it,
-/// but not below this floor, under which the writes and the compressed blocks get too small, and not above the buffer
-/// size configured for temporary files. Without a threshold they take the floor.
+/// The spill streams of a session are open together, and each holds about three buffers of the streams' buffer size:
+/// the compression input, the compressed block and the file's write buffer. Each partition keeps up to one buffer
+/// size of spilled records in memory until they make a block. The buffer size therefore follows the
+/// external-aggregation threshold, so that the streams and the partitions together take at most an eighth of it, but
+/// not below this floor, under which the writes and the blocks get too small, and not above the buffer size configured
+/// for temporary files. Without a threshold they take the floor.
 constexpr size_t adaptive_spill_min_buffer_bytes = 4 << 10;
 /// The merge takes a bucket's partitions in units of about this many records and source cells each, so a unit's
 /// table, grown to hold them, stays in the cache while the unit is drained and converted; a bucket smaller than a
@@ -145,10 +146,12 @@ struct AdaptiveAggregationSession
     AdaptiveAggregationSession(
         AdaptivePartitionLayout layout_,
         TemporaryDataOnDiskScopePtr spill_scope_,
+        size_t num_spill_streams,
         std::unique_ptr<AdaptiveTopKPruning> top_k_pruning_)
         : layout(layout_)
         , spill_scope(std::move(spill_scope_))
         , top_k_pruning(std::move(top_k_pruning_))
+        , spill_streams(num_spill_streams)
         , spilled_partitions(layout_.numPartitions())
     {
     }
@@ -199,44 +202,74 @@ struct AdaptiveAggregationSession
     size_t frozen_producers = 0;
     size_t repeat_dominated_producers = 0;
 
-    /// The staged records the producers spilled over the external-aggregation threshold (see
-    /// `Aggregator::spillAdaptivePartitions`): one raw stream per partition, shared by the producers and created by the
-    /// first spill into it, so that a merge unit reads back the records of its own partitions only. A stream is a
-    /// sequence of blocks, one per spill into the partition, {UInt64 bytes, the records}; the merge task of the
-    /// partition's bucket reads it back after the finish barrier, a block at a time.
+    /// A temporary file of the staged records that the producers spilled over the external-aggregation threshold (see
+    /// `Aggregator::spillAdaptivePartitions`), shared by the partitions of a contiguous range of buckets (see
+    /// `spillStreamOf`), so that a session holds at most one file per stream whatever the number of partitions. Created
+    /// by the first spill that reaches the range, removed once the merge released every partition with a block in it.
+    struct SpillStream
+    {
+        /// Serializes the writes of the partitions, and the creation and the removal of the file.
+        std::mutex mutex;
+        std::unique_ptr<TemporaryDataBuffer> buffer;
+        /// The partitions with a block in the file that the merge has not released yet.
+        size_t unreleased_partitions = 0;
+    };
+    /// As many as the producers, which spill concurrently, up to one per bucket.
+    std::vector<SpillStream> spill_streams;
+
+    size_t spillStreamIndexOf(size_t partition) const
+    {
+        return layout.bucketOf(partition) * spill_streams.size() / ADAPTIVE_AGGREGATION_NUM_BUCKETS;
+    }
+    SpillStream & spillStreamOf(size_t partition) { return spill_streams[spillStreamIndexOf(partition)]; }
+
+    /// Prepares the streams that a spill of `partitions` writes to, those of the partitions with records, before the
+    /// spill moves any record. On a temporary volume a stream not created yet is created in `scope` on a disk with
+    /// `reserve_size` bytes of room, and the disk of an existing stream must have them: `NOT_ENOUGH_SPACE` otherwise.
+    /// `space_check` checks each disk once.
+    void prepareSpillStreams(
+        const TemporaryDataOnDiskScopePtr & scope,
+        const PartitionedRecordBuffer & partitions,
+        size_t reserve_size,
+        TemporaryAppendSpaceCheck & space_check);
+
+    /// The staged records of a partition that the producers spilled, so that a merge unit reads back the records of
+    /// its own partitions only: blocks {UInt64 bytes, the records} at known positions of the spill stream of the
+    /// partition's bucket, and the records not written yet, which wait in memory until they make a block.
     class SpilledPartition
     {
     public:
-        /// Appends the records of partition `partition` of `partitions` to the stream as one block, creating the stream
-        /// in `scope` on the first append, and returns the block's bytes. On a temporary volume the stream is created
-        /// on a disk with `reserve_size` bytes of room, and the append throws `NOT_ENOUGH_SPACE` when no disk has them.
-        /// A later append throws it when the disk of the stream lacks them. The appends of one spill share
-        /// `space_check`, which checks each disk once. Producers append concurrently.
-        UInt64 append(
-            const TemporaryDataOnDiskScopePtr & scope,
-            const PartitionedRecordBuffer & partitions,
-            size_t partition,
-            size_t reserve_size,
-            TemporaryAppendSpaceCheck & space_check);
+        /// Adds the records of partition `partition` of `partitions` and returns their bytes. Once the records kept in
+        /// memory and these take `block_bytes`, they are written to `spill_stream`, which `prepareSpillStreams`
+        /// prepared, as one block. Producers append concurrently.
+        UInt64 append(SpillStream & spill_stream, const PartitionedRecordBuffer & partitions, size_t partition, size_t block_bytes);
 
-        /// Reads the stream back in the order the producers wrote it and calls `callback(block)` with the records of
-        /// each block in a padded buffer like a chunk's. Every block comes in the same buffer, which the next block
-        /// overwrites, so the records of a block are valid only during its call. The read stops when `callback`
-        /// returns false. The stream stays, so a merge unit that passes over its records twice reads it again; the
-        /// merge removes it once the unit no longer needs it. Called by the one task that merges the partition's
-        /// bucket, after the finish barrier, so no producer appends any more.
+        /// Reads the records back in the order the producers wrote them, the blocks and then the records kept in
+        /// memory, and calls `callback(block)` with each in a padded buffer like a chunk's, valid only during its
+        /// call. The read stops when `callback` returns false. The records stay, so a merge unit that passes over
+        /// its records twice reads them again; the merge removes them once the unit no longer needs them. Called by
+        /// the one task that merges the partition's bucket, after the finish barrier, so no producer appends any more.
         void readBack(const std::function<bool(const PaddedPODArray<char> &)> & callback);
 
-        /// The records appended to the stream, which the merge counts before it reads them back.
+        /// The records appended, which the merge counts before it reads them back.
         size_t recordCount() const { return record_count; }
 
-        /// Removes the stream, read back or not.
-        void release() { stream.reset(); }
+        /// Removes the records, read back or not, and the stream once no partition has a block in it any more.
+        void release();
 
     private:
-        /// Serializes the producers' appends and the creation of the stream.
+        /// Serializes the producers' appends.
         std::mutex mutex;
-        std::unique_ptr<TemporaryDataBuffer> stream;
+        PaddedPODArray<char> pending;
+        /// The positions of a block in the stream, which `TemporaryDataBuffer::startNewBlock` returned.
+        struct Block
+        {
+            size_t begin;
+            size_t end;
+        };
+        std::vector<Block> blocks;
+        /// The stream of the blocks, set by the first one.
+        SpillStream * stream = nullptr;
         size_t record_count = 0;
     };
     /// One per partition of the layout.
