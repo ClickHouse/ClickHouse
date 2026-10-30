@@ -27,7 +27,7 @@ namespace DB::Parquet
 {
 
 /// Unpacks `n` values of `W` bits each (least significant bit first), starting at bit `pos` of `data`.
-/// Like the per-value loop, reads 8 bytes at the first byte of each value.
+/// Reads 8 bytes at the first byte of each value.
 template <size_t W, typename T>
 static void unpackBitPacked(const char * __restrict data, size_t pos, size_t n, T * __restrict out)
 {
