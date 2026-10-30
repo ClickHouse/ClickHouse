@@ -84,7 +84,14 @@ do
     i=$(($i+1))
 done
 
-URL="https://builds.clickhouse.com/master/${DIR}/clickhouse"
+BRANCH="${CLICKHOUSE_BRANCH:-master}"
+if [ "${BRANCH}" = "latest" ]
+then
+    BRANCH=$(curl -fsSL https://clickhouse.com/data/version_date.tsv | cut -f1 | sed -n 's/^v\([0-9]*\)\.\([0-9]*\)\..*/\1.\2/p' | sort -u -t. -k1,1n -k2,2n | tail -n 1)
+    [ -n "${BRANCH}" ] || { echo "Cannot find the latest release branch in version_date.tsv."; exit 1; }
+fi
+
+URL="https://builds.clickhouse.com/${BRANCH}/${DIR}/clickhouse"
 echo
 echo "Will download ${URL} into ${clickhouse}"
 echo
