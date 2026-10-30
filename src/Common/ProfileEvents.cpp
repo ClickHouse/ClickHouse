@@ -977,6 +977,7 @@ The server successfully detected this situation and will download merged part fr
     M(AzureStageBlock, "Number of Azure blob storage API StageBlock calls", ValueType::Number) \
     M(AzureCommitBlockList, "Number of Azure blob storage API CommitBlockList calls", ValueType::Number) \
     M(AzureCopyObject, "Number of Azure blob storage API CopyObject calls", ValueType::Number) \
+    M(AzureUploadFromUri, "Number of Azure blob storage API Put Blob From URL calls, which copy an object that CopyObject refused because its source is in another storage account", ValueType::Number) \
     M(AzureDeleteObjects, "Number of Azure blob storage API DeleteObject(s) calls.", ValueType::Number) \
     M(AzureListObjects, "Number of Azure blob storage API ListObjects calls.", ValueType::Number) \
     M(AzureGetProperties, "Number of Azure blob storage API GetProperties calls.", ValueType::Number) \
@@ -988,6 +989,7 @@ The server successfully detected this situation and will download merged part fr
     M(DiskAzureStageBlock, "Number of Disk Azure blob storage API StageBlock calls", ValueType::Number) \
     M(DiskAzureCommitBlockList, "Number of Disk Azure blob storage API CommitBlockList calls", ValueType::Number) \
     M(DiskAzureCopyObject, "Number of Disk Azure blob storage API CopyObject calls", ValueType::Number) \
+    M(DiskAzureUploadFromUri, "Number of Disk Azure blob storage API Put Blob From URL calls, which copy an object that CopyObject refused because its source is in another storage account", ValueType::Number) \
     M(DiskAzureListObjects, "Number of Disk Azure blob storage API ListObjects calls.", ValueType::Number) \
     M(DiskAzureDeleteObjects, "Number of Azure blob storage API DeleteObject(s) calls.", ValueType::Number) \
     M(DiskAzureGetProperties, "Number of Disk Azure blob storage API GetProperties calls.", ValueType::Number) \
