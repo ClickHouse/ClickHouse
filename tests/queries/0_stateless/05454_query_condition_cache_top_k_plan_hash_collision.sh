@@ -57,3 +57,25 @@ ${CLICKHOUSE_CLIENT} --query "
     FROM numbers(100000)"
 run t_05454_mt "WHERE x = 0" "optimize_move_to_prewhere = 0, max_threads = 1, max_block_size = 1000"
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE t_05454_mt"
+
+echo "--- MergeTree GROUP BY"
+# The same for the salt of `GROUP BY ... ORDER BY ... LIMIT n`. Each column has two largest values, so the heap
+# of `LIMIT 2` is full after the granule that holds them.
+${CLICKHOUSE_CLIENT} --query "
+    CREATE TABLE t_05454_gb (c UInt8, cU Int8, x UInt8) ENGINE = MergeTree ORDER BY tuple() SETTINGS index_granularity = 1000"
+${CLICKHOUSE_CLIENT} --query "
+    INSERT INTO t_05454_gb SELECT
+        toUInt8(if(number >= 99000 AND number % 2 = 1, 200 - (number % 4 = 1), 1)) AS c,
+        toInt8(if(number < 1000 OR (number >= 99000 AND number % 2 = 0), 100 - (number % 4 = 0), 0)) AS cU,
+        toUInt8(number >= 99000 AND number % 2 = 0) AS x
+    FROM numbers(100000)"
+for column in cU c
+do
+    ${CLICKHOUSE_CLIENT} --query "
+        SELECT groupArray(${column}) FROM (SELECT ${column} FROM t_05454_gb WHERE x = 0 GROUP BY ${column} ORDER BY ${column} DESC LIMIT 2)
+        SETTINGS ${SETTINGS}, enable_group_by_top_k_optimization = 1, enable_group_by_top_k_dynamic_filtering = 1,
+            optimize_aggregation_in_order = 0, optimize_trivial_group_by_limit_query = 0, optimize_read_in_order = 0,
+            optimize_move_to_prewhere = 0, max_rows_to_group_by = 0, serialize_query_plan = 0, enable_parallel_replicas = 0,
+            max_threads = 1, max_block_size = 1000"
+done
+${CLICKHOUSE_CLIENT} --query "DROP TABLE t_05454_gb"
