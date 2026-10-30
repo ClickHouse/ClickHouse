@@ -716,7 +716,7 @@ void RowIndex::parse(std::string_view data)
     {
         if (field != 1)
             return false;
-        RowIndexEntry e;
+        auto & e = entry.emplace_back();
         parseMessage(readBytesField(r, type), [&](WireReader & rr, UInt32 f, WireType t)
         {
             switch (f)
@@ -726,7 +726,6 @@ void RowIndex::parse(std::string_view data)
                 default: return false;
             }
         });
-        entry.push_back(std::move(e));
         return true;
     });
 }

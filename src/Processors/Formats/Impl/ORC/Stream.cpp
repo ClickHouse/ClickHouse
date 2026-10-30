@@ -23,38 +23,64 @@ UInt64 PositionProvider::next()
 
 
 InputByteStream::InputByteStream(std::string_view data_, CompressionKind compression_, size_t block_size_, std::string name_)
-    : data(data_), compression(compression_), block_size(block_size_), name(std::move(name_))
+    : data(data_), length(data_.size()), compression(compression_), block_size(block_size_), name(std::move(name_))
 {
+}
+
+InputByteStream::InputByteStream(RangeLoader loader_, UInt64 length_, CompressionKind compression_, size_t block_size_, std::string name_)
+    : length(length_), loader(std::move(loader_)), compression(compression_), block_size(block_size_), name(std::move(name_))
+{
+}
+
+std::string_view InputByteStream::getRange(UInt64 offset, UInt64 size)
+{
+    if (!loader)
+        return data.substr(offset, size);
+
+    if (offset < window_offset || offset + size > window_offset + data.size())
+    {
+        UInt64 load_size = std::min<UInt64>(length - offset, std::max<UInt64>(size, LAZY_READ_SIZE));
+        auto range = loader(offset, load_size);
+        if (range.data.size() != load_size)
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Loaded {} bytes instead of {} from ORC stream {}", range.data.size(), load_size, name);
+        window_holder = std::move(range.holder);
+        data = range.data;
+        window_offset = offset;
+    }
+    return data.substr(offset - window_offset, size);
 }
 
 bool InputByteStream::nextChunk()
 {
-    while (next_chunk_offset < data.size())
+    while (next_chunk_offset < length)
     {
         if (compression == CompressionKind::NONE)
         {
-            pos = data.data() + next_chunk_offset;
-            end = data.data() + data.size();
-            next_chunk_offset = data.size();
+            UInt64 size = length - next_chunk_offset;
+            if (loader)
+                size = std::min<UInt64>(size, LAZY_READ_SIZE);
+            pos = getRange(next_chunk_offset, size).data();
+            end = pos + size;
+            next_chunk_offset += size;
             return true;
         }
 
-        if (data.size() - next_chunk_offset < COMPRESSION_HEADER_SIZE)
+        if (length - next_chunk_offset < COMPRESSION_HEADER_SIZE)
             throw Exception(ErrorCodes::INCORRECT_DATA, "Truncated compression chunk header in ORC stream {}", name);
 
-        const UInt8 * header = reinterpret_cast<const UInt8 *>(data.data() + next_chunk_offset);
+        const UInt8 * header = reinterpret_cast<const UInt8 *>(getRange(next_chunk_offset, COMPRESSION_HEADER_SIZE).data());
         UInt32 header_value = header[0] | (header[1] << 8) | (header[2] << 16);
         bool is_original = header_value & 1;
         size_t chunk_length = header_value >> 1;
         size_t chunk_offset = next_chunk_offset + COMPRESSION_HEADER_SIZE;
 
-        if (chunk_length > data.size() - chunk_offset)
+        if (chunk_length > length - chunk_offset)
             throw Exception(ErrorCodes::INCORRECT_DATA,
                 "Compression chunk of size {} at offset {} goes beyond the end of ORC stream {} of size {}",
-                chunk_length, next_chunk_offset, name, data.size());
+                chunk_length, next_chunk_offset, name, length);
 
         next_chunk_offset = chunk_offset + chunk_length;
-        const char * chunk = data.data() + chunk_offset;
+        const char * chunk = getRange(chunk_offset, chunk_length).data();
 
         if (is_original)
         {
@@ -109,18 +135,18 @@ void InputByteStream::seek(PositionProvider & positions)
     if (compression == CompressionKind::NONE)
     {
         UInt64 offset = positions.next();
-        if (offset > data.size())
-            throw Exception(ErrorCodes::INCORRECT_DATA, "Seek position {} is beyond the end of ORC stream {} of size {}", offset, name, data.size());
-        pos = data.data() + offset;
-        end = data.data() + data.size();
-        next_chunk_offset = data.size();
+        if (offset > length)
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Seek position {} is beyond the end of ORC stream {} of size {}", offset, name, length);
+        next_chunk_offset = offset;
+        pos = end = nullptr;
+        nextChunk();
         return;
     }
 
     UInt64 chunk_offset = positions.next();
     UInt64 uncompressed_offset = positions.next();
-    if (chunk_offset > data.size())
-        throw Exception(ErrorCodes::INCORRECT_DATA, "Seek position {} is beyond the end of ORC stream {} of size {}", chunk_offset, name, data.size());
+    if (chunk_offset > length)
+        throw Exception(ErrorCodes::INCORRECT_DATA, "Seek position {} is beyond the end of ORC stream {} of size {}", chunk_offset, name, length);
 
     next_chunk_offset = chunk_offset;
     pos = end = nullptr;

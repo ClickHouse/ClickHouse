@@ -329,8 +329,6 @@ public:
         UInt64 offset = stripe.offset;
         const UInt64 data_end = stripe.offset + stripe.index_length + stripe.data_length;
 
-        std::vector<std::pair<UInt64, UInt64>> ranges;
-        std::vector<std::pair<UInt64, UInt32>> keys;
         for (const auto & s : footer.streams)
         {
             if (s.kind && s.column < selected_columns.size() && selected_columns[s.column])
@@ -339,13 +337,8 @@ public:
                     throw Exception(ErrorCodes::INCORRECT_DATA,
                         "Malformed stream meta in stripe {} of ORC file: streamOffset={}, streamLength={}, stripeOffset={}, stripeIndexLength={}, stripeDataLength={}",
                         stripe_index, offset, s.length, stripe.offset, stripe.index_length, stripe.data_length);
-                auto key = std::make_pair(static_cast<UInt64>(s.column), *s.kind);
                 /// Use the first stream if there are several of the same kind, as the reference implementation.
-                if (std::find(keys.begin(), keys.end(), key) == keys.end())
-                {
-                    keys.push_back(key);
-                    ranges.emplace_back(offset, s.length);
-                }
+                stream_ranges.try_emplace({static_cast<UInt64>(s.column), *s.kind}, offset, s.length);
             }
             else if (s.kind && s.column >= selected_columns.size())
                 throw Exception(ErrorCodes::INCORRECT_DATA,
@@ -353,10 +346,33 @@ public:
                     stripe_index, s.column, selected_columns.size());
             offset += s.length;
         }
+    }
 
-        slices = reader.readRanges(ranges);
+    static bool isIndexStream(UInt32 kind)
+    {
+        return kind == static_cast<UInt32>(Proto::StreamKind::ROW_INDEX)
+            || kind == static_cast<UInt32>(Proto::StreamKind::BLOOM_FILTER)
+            || kind == static_cast<UInt32>(Proto::StreamKind::BLOOM_FILTER_UTF8);
+    }
+
+    /// Reads the streams into memory at once, only the index streams or all of them. The streams
+    /// that are not read are loaded on demand by `getStream`.
+    void loadStreams(bool only_index)
+    {
+        std::vector<std::pair<UInt64, UInt64>> ranges;
+        std::vector<std::pair<UInt64, UInt32>> keys;
+        for (const auto & [key, range] : stream_ranges)
+        {
+            if (streams.contains(key) || (only_index && !isIndexStream(key.second)))
+                continue;
+            keys.push_back(key);
+            ranges.push_back(range);
+        }
+
+        auto new_slices = reader.readRanges(ranges);
         for (size_t i = 0; i < keys.size(); ++i)
-            streams.emplace(keys[i], slices[i].data);
+            streams.emplace(keys[i], new_slices[i].data);
+        slices.insert(slices.end(), std::make_move_iterator(new_slices.begin()), std::make_move_iterator(new_slices.end()));
     }
 
     const Proto::ColumnEncoding & getEncoding(UInt64 column_id) const override
@@ -369,12 +385,21 @@ public:
 
     std::unique_ptr<InputByteStream> getStream(UInt64 column_id, Proto::StreamKind kind) const override
     {
-        auto it = streams.find({column_id, static_cast<UInt32>(kind)});
-        if (it == streams.end())
+        std::pair<UInt64, UInt32> key{column_id, static_cast<UInt32>(kind)};
+        auto name = fmt::format("column {} kind {} in stripe {}", column_id, static_cast<UInt32>(kind), stripe_index);
+        if (auto it = streams.find(key); it != streams.end())
+            return std::make_unique<InputByteStream>(it->second, reader.getCompression(), reader.getCompressionBlockSize(), std::move(name));
+
+        auto it = stream_ranges.find(key);
+        if (it == stream_ranges.end())
             return nullptr;
+        auto loader = [&file_reader = reader, stream_offset = it->second.first](UInt64 offset, UInt64 length)
+        {
+            auto loaded = file_reader.readRanges({{stream_offset + offset, length}});
+            return LoadedRange{std::move(loaded[0].holder), loaded[0].data};
+        };
         return std::make_unique<InputByteStream>(
-            it->second, reader.getCompression(), reader.getCompressionBlockSize(),
-            fmt::format("column {} kind {} in stripe {}", column_id, static_cast<UInt32>(kind), stripe_index));
+            std::move(loader), it->second.second, reader.getCompression(), reader.getCompressionBlockSize(), std::move(name));
     }
 
     std::optional<std::string_view> getStreamData(UInt64 column_id, Proto::StreamKind kind) const
@@ -399,6 +424,9 @@ private:
     const std::vector<bool> & selected_columns;
     const DateLUTImpl & writer_timezone;
     const DateLUTImpl & reader_timezone;
+    /// The offset in the file and the length of each selected stream.
+    std::map<std::pair<UInt64, UInt32>, std::pair<UInt64, UInt64>> stream_ranges;
+    /// The streams read into memory.
     std::vector<Reader::Slice> slices;
     std::map<std::pair<UInt64, UInt32>, std::string_view> streams;
 };
@@ -665,16 +693,26 @@ void RowReader::startNextStripe()
             const DateLUTImpl & writer_timezone = getWriterTimezone(stripe_footer);
             stripe_streams = std::make_unique<StripeStreamsImpl>(
                 reader, current_stripe, std::move(stripe_footer), selected_columns, writer_timezone, reader_timezone);
+            if (!search_argument)
+                stripe_streams->loadStreams(/* only_index */ false);
 
             if (search_argument)
             {
+                stripe_streams->loadStreams(/* only_index */ true);
                 loadStripeIndex();
                 pickRowGroups();
                 bool has_selected = next_skipped_rows.empty();
                 for (UInt64 group = current_row_in_stripe / footer.row_index_stride; !has_selected && group < next_skipped_rows.size(); ++group)
                     has_selected = next_skipped_rows[group] != 0;
                 if (has_selected)
+                {
+                    /// If some row groups are skipped, the data is loaded on demand, only around the
+                    /// selected row groups. Otherwise the whole stripe is read at once.
+                    bool has_skipped = std::find(next_skipped_rows.begin(), next_skipped_rows.end(), 0) != next_skipped_rows.end();
+                    if (!has_skipped)
+                        stripe_streams->loadStreams(/* only_index */ false);
                     break;
+                }
                 is_stripe_needed = false;
                 stripe_streams.reset();
             }
