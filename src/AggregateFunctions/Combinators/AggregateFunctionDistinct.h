@@ -271,6 +271,62 @@ private:
         nested_func->addBatchWithNonNullPlaces(0, new_rows_data.size(), new_places.data(), prefix_size, new_columns.second.data(), arena);
     }
 
+    /// Adds the rows in [row_begin, row_end) to a single place, skipping the rows where `null_map` (if not nullptr) is set.
+    /// The rows with the values seen for the first time are collected and passed to the nested function together,
+    /// because adding them one by one is slow for some nested functions (example: the conversion of `Variant` arguments).
+    /// While the new rows are contiguous, they are passed as a range without copying and without allocations:
+    /// it is the common case of window functions, which add a few rows at a time.
+    void addBatchSinglePlaceToNested(
+        size_t row_begin, size_t row_end, AggregateDataPtr __restrict place, const IColumn ** columns,
+        const UInt8 * null_map, Arena * arena, ssize_t if_argument_pos) const
+    {
+        auto & data = this->data(place);
+        const UInt8 * flags = if_argument_pos >= 0 ? assert_cast<const ColumnUInt8 &>(*columns[if_argument_pos]).getData().data() : nullptr;
+
+        size_t run_begin = 0;
+        size_t run_end = 0;
+        ColumnUInt64::MutablePtr new_rows;
+        for (size_t row = row_begin; row < row_end; ++row)
+        {
+            if ((flags && !flags[row]) || (null_map && null_map[row]))
+                continue;
+
+            if (!addToData(data, columns, row, arena))
+                continue;
+
+            if (!new_rows)
+            {
+                if (run_begin == run_end)
+                {
+                    run_begin = row;
+                    run_end = row + 1;
+                    continue;
+                }
+                if (row == run_end)
+                {
+                    ++run_end;
+                    continue;
+                }
+
+                new_rows = ColumnUInt64::create();
+                auto & new_rows_data = new_rows->getData();
+                for (size_t i = run_begin; i < run_end; ++i)
+                    new_rows_data.push_back(i);
+            }
+            new_rows->getData().push_back(row);
+        }
+
+        if (!new_rows)
+        {
+            if (run_begin != run_end)
+                addToNested(run_begin, run_end, place, columns, arena);
+            return;
+        }
+
+        auto new_columns = indexColumns(columns, *new_rows);
+        addToNested(0, new_rows->size(), place, new_columns.second.data(), arena);
+    }
+
 public:
     AggregateFunctionDistinct(AggregateFunctionPtr nested_func_, const DataTypes & arguments, const Array & params_)
     : IAggregateFunctionHelper<AggregateFunctionDistinct>(arguments, params_, nested_func_->getResultType())
@@ -295,34 +351,18 @@ public:
         Arena * arena,
         ssize_t if_argument_pos) const override
     {
-        auto & data = this->data(place);
+        addBatchSinglePlaceToNested(row_begin, row_end, place, columns, nullptr, arena, if_argument_pos);
+    }
 
-        /// The rows with the values seen for the first time are collected and passed to the nested function together,
-        /// because adding them one by one is slow for some nested functions (example: the conversion of `Variant` arguments).
-        const UInt8 * flags = if_argument_pos >= 0 ? assert_cast<const ColumnUInt8 &>(*columns[if_argument_pos]).getData().data() : nullptr;
-        auto new_rows = ColumnUInt64::create();
-        auto & new_rows_data = new_rows->getData();
-        for (size_t row = row_begin; row < row_end; ++row)
-        {
-            if (flags && !flags[row])
-                continue;
-
-            if (addToData(data, columns, row, arena))
-                new_rows_data.push_back(row);
-        }
-
-        if (new_rows_data.empty())
-            return;
-
-        /// All rows of the range are new, there is no need to copy them.
-        if (new_rows_data.size() == row_end - row_begin)
-        {
-            addToNested(row_begin, row_end, place, columns, arena);
-            return;
-        }
-
-        auto new_columns = indexColumns(columns, *new_rows);
-        addToNested(0, new_rows_data.size(), place, new_columns.second.data(), arena);
+    void addBatchSinglePlaceNotNull(
+        size_t row_begin, size_t row_end,
+        AggregateDataPtr __restrict place,
+        const IColumn ** __restrict columns,
+        const UInt8 * null_map,
+        Arena * arena,
+        ssize_t if_argument_pos) const override
+    {
+        addBatchSinglePlaceToNested(row_begin, row_end, place, columns, null_map, arena, if_argument_pos);
     }
 
     void addBatch(
