@@ -10,9 +10,9 @@ namespace DB
 {
 
 /// Source step created by the `optimizeTrivialCountFromTextIndex` pass.
-/// Reads the text index at execution time and emits one `count()` aggregate state per part,
-/// which the `AggregatingStep` above merges into the final count. Parts are processed
-/// in parallel by `num_streams` sources, and the reads are cancellable between parts.
+/// Reads the text index at execution time and emits one `count()` aggregate state per slice of rows of a part,
+/// which the `AggregatingStep` above merges into the final count. The slices are claimed one by one by `num_streams`
+/// sources, so a large part is counted in parallel, and the reads are cancellable between posting blocks and windows.
 class ReadFromTextIndexCount : public ISourceStep
 {
 public:
