@@ -27,8 +27,8 @@ struct IPartitionStrategy
 
     virtual ~IPartitionStrategy() = default;
 
-    /// Actions computing the partition key. A sink gets them once and applies them to all its chunks, so a
-    /// non-deterministic function is evaluated once per INSERT and a stateful one keeps its state across chunks.
+    /// Rebuilt on every call if non-deterministic. A sink calls it once and reuses the result for all its chunks,
+    /// so a stateful function keeps its state across the chunks of one INSERT.
     virtual PartitionExpressionActionsAndColumnName getPartitionKeyActions() const = 0;
 
     ColumnPtr computePartitionKey(const Chunk & chunk, const PartitionExpressionActionsAndColumnName & partition_key_actions) const;
