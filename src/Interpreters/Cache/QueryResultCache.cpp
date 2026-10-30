@@ -282,7 +282,7 @@ static bool hasNonDeterministicObfuscate(const ASTPtr & node, ContextPtr context
     ///    union-level clause there instead of filling `settings_ast`. After
     ///    `SelectIntersectExceptQueryVisitor` has normalized the arms, the same carrier is the last
     ///    operand of an `ASTSelectIntersectExceptQuery`.
-    if (const auto * query_with_output = node->as<ASTQueryWithOutput>())
+    if (const auto * query_with_output = dynamic_cast<const ASTQueryWithOutput *>(node.get()))
         context = applyObfuscateSeedChanges(query_with_output->settings_ast, context);
 
     if (const auto * select_with_union = node->as<ASTSelectWithUnionQuery>())

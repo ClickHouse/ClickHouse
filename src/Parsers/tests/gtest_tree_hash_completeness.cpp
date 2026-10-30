@@ -10,6 +10,8 @@
 #include <Parsers/ParserQuery.h>
 #include <Parsers/parseQuery.h>
 
+#include <typeinfo>
+
 using namespace DB;
 
 /// Members that live outside `children` must still be significant for `getTreeHash`, and a
@@ -250,6 +252,7 @@ TEST(TreeHashCompleteness, CloneHashesEqual)
     /// `children` in the same order, or the copy hashes differently than the original.
     const std::string queries[] = {
         "SHOW CREATE TABLE db.t INTO OUTFILE 'x'",
+        "SHOW CREATE DATABASE db INTO OUTFILE 'x' FORMAT JSONEachRow",
         "CHECK TABLE db.t PARTITION 1 FORMAT JSONEachRow",
         "CHECK DATABASE db FORMAT JSONEachRow",
         "OPTIMIZE TABLE db.t PARTITION 1 FINAL DEDUPLICATE BY a, b",
@@ -258,6 +261,7 @@ TEST(TreeHashCompleteness, CloneHashesEqual)
         "DROP TABLE t1, t2",
         "UNDROP TABLE db.t",
         "EXISTS TABLE db.t INTO OUTFILE 'x'",
+        "EXISTS DATABASE db FORMAT JSONEachRow SETTINGS max_threads = 1",
         "DESCRIBE TABLE db.t FORMAT JSONEachRow",
         "CREATE TABLE db.t (a UInt64) ENGINE = MergeTree ORDER BY a",
         "CREATE TABLE t (a UInt64) ENGINE = Memory COMMENT 'c' AS SELECT 1",
@@ -269,7 +273,12 @@ TEST(TreeHashCompleteness, CloneHashesEqual)
     for (const auto & query : queries)
     {
         ASTPtr ast = parse(query);
-        EXPECT_EQ(ast->clone()->getTreeHash(/*ignore_aliases=*/ false), ast->getTreeHash(/*ignore_aliases=*/ false)) << query;
+        const ASTPtr cloned = ast->clone();
+        EXPECT_EQ(cloned->getTreeHash(/*ignore_aliases=*/ false), ast->getTreeHash(/*ignore_aliases=*/ false)) << query;
+
+        const IAST & original_ref = *ast;
+        const IAST & cloned_ref = *cloned;
+        EXPECT_EQ(typeid(cloned_ref), typeid(original_ref)) << query;
     }
 }
 
