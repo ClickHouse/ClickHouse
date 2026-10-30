@@ -13,6 +13,9 @@ set parallel_replicas_for_non_replicated_merge_tree=1;
 set parallel_replicas_index_analysis_only_on_coordinator=1;
 set parallel_replicas_local_plan=1;
 set distributed_index_analysis_for_non_shared_merge_tree=1;
+-- The query counts below assume a single index analysis per query. A positive `parallel_replicas_min_number_of_rows_per_replica`
+-- makes the planner estimate the rows to read first, and that estimate issues one more `mergeTreeAnalyzeIndexes` query.
+set parallel_replicas_min_number_of_rows_per_replica=0;
 --- Ignore warnings when replica does not respond, and analysis is done on initiator
 set send_logs_level='error';
 

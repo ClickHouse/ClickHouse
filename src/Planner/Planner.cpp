@@ -333,19 +333,29 @@ FiltersForTableExpressionMap collectFiltersForAnalysis(const QueryTreeNodePtr & 
     ResultReplacementMap replacement_map;
 
     auto updated_query_tree = replaceTableExpressionsWithDummyTables(query_tree, table_nodes, query_context, &replacement_map);
-    /// disable parallel replicas to collect filters
+    /// Disable parallel replicas to collect filters.
+    /// Every nested query and union has its own context, so all of them are adjusted (the tree is a clone).
+    auto make_context_for_filter_collection = [](const ContextPtr & context)
     {
-        if (auto * query_node = updated_query_tree->as<QueryNode>())
+        auto new_context = Context::createCopy(context);
+        new_context->setSetting("enable_parallel_replicas", false);
+        return new_context;
+    };
+    {
+        std::vector<IQueryTreeNode *> nodes_to_adjust{updated_query_tree.get()};
+        while (!nodes_to_adjust.empty())
         {
-            auto new_context = Context::createCopy(query_node->getMutableContext());
-            new_context->setSetting("enable_parallel_replicas", false);
-            query_node->getMutableContext() = new_context;
-        }
-        else if (auto * union_node = updated_query_tree->as<UnionNode>())
-        {
-            auto new_context = Context::createCopy(union_node->getMutableContext());
-            new_context->setSetting("enable_parallel_replicas", false);
-            union_node->getMutableContext() = new_context;
+            auto * node = nodes_to_adjust.back();
+            nodes_to_adjust.pop_back();
+
+            if (auto * query_node = node->as<QueryNode>())
+                query_node->getMutableContext() = make_context_for_filter_collection(query_node->getMutableContext());
+            else if (auto * union_node = node->as<UnionNode>())
+                union_node->getMutableContext() = make_context_for_filter_collection(union_node->getMutableContext());
+
+            for (const auto & child : node->getChildren())
+                if (child)
+                    nodes_to_adjust.push_back(child.get());
         }
     }
 
@@ -403,6 +413,11 @@ FiltersForTableExpressionMap collectFiltersForAnalysis(const QueryTreeNodePtr & 
     optimization_settings.materialize_ctes = false; // no need to materialize CTEs to collect filters
     /// This plan collects pushed-down filters and is never executed
     optimization_settings.make_distributed_plan = false;
+    /// Keep joins logical: the plan is never executed, and the physical join algorithm does not affect which
+    /// filters are pushed down to the tables. Choosing it could fail here even for a valid query: the tables
+    /// are replaced with dummy ones, so e.g. `join_algorithm = 'direct'` with a `MergeTree` right table cannot
+    /// be built (`ReadFromDummy` is not `ReadFromMergeTree`) and throws `NOT_IMPLEMENTED`.
+    optimization_settings.keep_logical_steps = true;
     result_query_plan.optimize(optimization_settings);
 
     FiltersForTableExpressionMap res;
