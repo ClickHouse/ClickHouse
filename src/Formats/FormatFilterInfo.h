@@ -26,6 +26,8 @@ using TopKThresholdTrackerPtr = std::shared_ptr<ITopKThresholdTracker>;
 UInt64 fileFormatPruningSettingsSalt(const Settings & settings);
 /// The same, from the format settings of a reader, e.g. the ones a table fixed at `CREATE`.
 UInt64 fileFormatPruningSettingsSalt(const FormatSettings & format_settings);
+/// `queryConditionCacheHash` for the entries of files: the settings salt also covers `fileFormatPruningSettingsSalt`.
+UInt64 queryConditionCacheHashForFiles(UInt64 condition_dag_hash, const Settings & settings);
 
 /// TopN dynamic filtering (`ORDER BY x LIMIT n`, see `tryOptimizeTopK`): the format may drop rows
 /// that cannot enter the query's top-K, and skip whole row groups / pages whose statistics prove

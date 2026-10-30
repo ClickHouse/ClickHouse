@@ -47,16 +47,23 @@ static UInt64 topKPlanHash(
     size_t limit,
     const SortColumnDescription & sort_col_desc)
 {
+    /// Each string is preceded by its length, so the boundaries between them are unambiguous.
     SipHash hash;
+    hash.update(sort_column_name.size());
     hash.update(sort_column_name);
     const String type_name = sort_column_type->getName();
+    hash.update(type_name.size());
     hash.update(type_name);
     hash.update(num_sort_columns);
     hash.update(limit);
     hash.update(sort_col_desc.direction);
     hash.update(sort_col_desc.nulls_direction);
     if (sort_col_desc.collator)
-        hash.update(sort_col_desc.collator->getLocale());
+    {
+        const auto & locale = sort_col_desc.collator->getLocale();
+        hash.update(locale.size());
+        hash.update(locale);
+    }
     return hash.get64();
 }
 

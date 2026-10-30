@@ -273,8 +273,10 @@ static TopKThresholdTrackerPtr tryAttachDynamicFilter(
     /// expression (a column of a subquery), so the salt also includes every expression between the read and the aggregation.
     SipHash hash;
     hash.update(std::string_view("group_by_top_k"));
+    hash.update(info.column_name.size());
     hash.update(info.column_name);
     const String type_name = info.data_type->getName();
+    hash.update(type_name.size());
     hash.update(type_name);
     hash.update(info.num_sort_columns);
     hash.update(info.limit_n);
@@ -284,8 +286,11 @@ static TopKThresholdTrackerPtr tryAttachDynamicFilter(
     hash.update(aggregation_keys.size());
     for (const auto & aggregation_key : aggregation_keys)
     {
+        hash.update(aggregation_key.size());
         hash.update(aggregation_key);
-        hash.update(aggregation_input_header.getByName(aggregation_key).type->getName());
+        const String key_type_name = aggregation_input_header.getByName(aggregation_key).type->getName();
+        hash.update(key_type_name.size());
+        hash.update(key_type_name);
     }
 
     hash.update(path_expressions.size());
