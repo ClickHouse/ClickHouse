@@ -1,6 +1,5 @@
 #pragma once
 
-#include <mutex>
 #include <unordered_map>
 #include <unordered_set>
 #include <Core/Range.h>
@@ -11,6 +10,7 @@
 #include <IO/CompressionMethod.h>
 #include <IO/WriteBuffer.h>
 #include <Processors/Chunk.h>
+#include <Processors/ISink.h>
 #include <Storages/KeyDescription.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/PersistentTableComponents.h>
 #include <Poco/Dynamic/Var.h>
@@ -142,20 +142,31 @@ void generateManifestList(
     const std::vector<Int64> & entry_row_counts = {},
     const std::vector<Int64> & entry_file_counts = {});
 
-class IcebergStorageSink;
+using IcebergWritersPerPartitionKey = std::unordered_map<ChunkPartitioner::PartitionKey, MultipleFileWriter, ChunkPartitioner::PartitionKeyHasher>;
 
-/// The parallel sinks of one incremental refresh round into one table: the last one to finish commits for all of them.
-class IcebergStorageSinkGroup
+/// The data files written by one of the parallel sinks of an insert, sent to `IcebergCommit`.
+struct IcebergWrittenFiles
 {
-public:
-    void add();
-    /// Returns all finished sinks if `sink` is the last one to finish, otherwise nothing.
-    std::vector<const IcebergStorageSink *> finish(const IcebergStorageSink * sink);
+    IcebergWrittenFiles(IcebergWritersPerPartitionKey writers_, Int64 total_rows_, Int64 total_bytes_, Int64 schema_id_, Int64 partition_spec_id_);
+    /// Removes the data files unless they were committed.
+    ~IcebergWrittenFiles();
 
-private:
-    std::mutex mutex;
-    size_t unfinished = 0;
-    std::vector<const IcebergStorageSink *> finished;
+    IcebergWritersPerPartitionKey writers;
+    Int64 total_rows;
+    Int64 total_bytes;
+    Int64 schema_id;
+    Int64 partition_spec_id;
+    bool committed = false;
+};
+
+using IcebergWrittenFilesPtr = std::shared_ptr<IcebergWrittenFiles>;
+
+struct IcebergWrittenFilesInfo : public ChunkInfoCloneable<IcebergWrittenFilesInfo>
+{
+    explicit IcebergWrittenFilesInfo(IcebergWrittenFilesPtr files_) : files(std::move(files_)) {}
+    IcebergWrittenFilesInfo(const IcebergWrittenFilesInfo & other) = default;
+
+    IcebergWrittenFilesPtr files;
 };
 
 class IcebergStorageSink final : public SinkToStorage
@@ -180,11 +191,16 @@ public:
 
     void onFinish() override;
     void onException(std::exception_ptr exception) override;
+    void setHasDependentMaterializedViews(bool has_dependent_views) override;
+
+    /// Used by `IcebergCommit`: takes the files written by a parallel sink and commits all of them in one snapshot.
+    void addWrittenFiles(IcebergWrittenFilesPtr files);
+    void commit();
 
 private:
     LoggerPtr log = getLogger("IcebergStorageSink");
     SharedHeader sample_block;
-    std::unordered_map<ChunkPartitioner::PartitionKey, MultipleFileWriter, ChunkPartitioner::PartitionKeyHasher> writer_per_partition_key;
+    IcebergWritersPerPartitionKey writer_per_partition_key;
     std::unordered_map<ChunkPartitioner::PartitionKey, std::vector<Field>, ChunkPartitioner::PartitionKeyHasher> last_fields_of_last_chunks;
     std::unordered_map<String, size_t> column_name_to_column_index;
     ObjectStoragePtr object_storage;
@@ -196,6 +212,8 @@ private:
     KeyDescription sort_description;
     Int64 total_rows = 0;
     Int64 total_chunks_size = 0;
+
+    GenerateResult getRemaining() override;
 
     void finalizeBuffers();
     void releaseBuffers();
@@ -214,8 +232,11 @@ private:
     /// The snapshot referencing the written files is committed, so they must never be removed.
     bool committed = false;
 
-    std::shared_ptr<IcebergStorageSinkGroup> sink_group;
-    /// Writers of all the sinks committed by this one.
+    /// The sink is one of the parallel sinks of an incremental refresh: it sends its files to `IcebergCommit` instead of committing them.
+    bool send_files_to_commit = false;
+    bool files_sent = false;
+    /// Files of the parallel sinks, received by `IcebergCommit`.
+    std::vector<IcebergWrittenFilesPtr> received_files;
     std::vector<std::pair<const ChunkPartitioner::PartitionKey *, const MultipleFileWriter *>> writers_to_commit;
 
     /// Manifests are written once and reused on commit retries.
@@ -233,6 +254,22 @@ private:
     const DataLakeStorageSettingsPtr data_lake_settings;
     const String write_format;
 
+};
+
+/// Receives the files written by the parallel sinks of an incremental refresh and commits them in one snapshot with the cursor.
+class IcebergCommit final : public ISink
+{
+public:
+    IcebergCommit(SharedHeader header, std::shared_ptr<IcebergStorageSink> committer_);
+
+    String getName() const override { return "IcebergCommit"; }
+
+protected:
+    void consume(Chunk chunk) override;
+    void onFinish() override;
+
+private:
+    std::shared_ptr<IcebergStorageSink> committer;
 };
 
 }

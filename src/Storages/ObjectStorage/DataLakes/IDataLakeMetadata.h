@@ -175,6 +175,18 @@ public:
         throwNotImplemented("write");
     }
 
+    /// See `IStorage::createInsertCommitSink`.
+    virtual ProcessorPtr createInsertCommitSink(
+        SharedHeader /*sample_block*/,
+        const StorageID & /*table_id*/,
+        ObjectStoragePtr /*object_storage*/,
+        StorageObjectStorageConfigurationPtr /*configuration*/,
+        ContextPtr /*context*/,
+        std::shared_ptr<DataLake::ICatalog> /*catalog*/)
+    {
+        return nullptr;
+    }
+
     virtual bool optimize(
         const StorageMetadataPtr & /*metadata_snapshot*/,
         ContextPtr /*context*/,

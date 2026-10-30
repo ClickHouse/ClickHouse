@@ -2048,6 +2048,23 @@ void IcebergMetadata::addDeleteTransformers(
     }
 }
 
+ProcessorPtr IcebergMetadata::createInsertCommitSink(
+    SharedHeader sample_block,
+    const StorageID & table_id,
+    ObjectStoragePtr /*object_storage*/,
+    StorageObjectStorageConfigurationPtr configuration,
+    ContextPtr context,
+    std::shared_ptr<DataLake::ICatalog> catalog)
+{
+    /// Only the parallel sinks of an incremental refresh send their files to the commit sink, see `IcebergStorageSink`.
+    if (!context->getStreamingCursor() || !context->getSettingsRef()[Setting::allow_insert_into_iceberg])
+        return nullptr;
+    checkTableRootIsQueriedPath("INSERT");
+    auto committer = std::make_shared<IcebergStorageSink>(
+        object_storage, configuration, /*format_settings*/ std::nullopt, sample_block, context, catalog, persistent_components, table_id);
+    return std::make_shared<IcebergCommit>(sample_block, std::move(committer));
+}
+
 SinkToStoragePtr IcebergMetadata::write(
     SharedHeader sample_block,
     const StorageID & table_id,

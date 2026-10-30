@@ -443,6 +443,17 @@ public:
             catalog);
     }
 
+    ProcessorPtr createInsertCommitSink(
+        SharedHeader sample_block,
+        const StorageID & table_id,
+        ObjectStoragePtr object_storage,
+        ContextPtr context,
+        std::shared_ptr<DataLake::ICatalog> catalog) override
+    {
+        lazyInitializeIfNeeded(object_storage, context);
+        return getMetadata()->createInsertCommitSink(sample_block, table_id, object_storage, shared_from_this(), context, catalog);
+    }
+
     std::shared_ptr<DataLake::ICatalog> getCatalog([[maybe_unused]] ContextPtr context, [[maybe_unused]] const StorageID & table_id) const override
     {
 #if USE_AVRO && USE_PARQUET

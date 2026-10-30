@@ -37,7 +37,6 @@
 #include <memory>
 #include <mutex>
 #include <optional>
-#include <unordered_map>
 
 
 namespace Poco::Net
@@ -342,14 +341,11 @@ using SystemAllocatedMemoryHolderPtr = std::shared_ptr<SystemAllocatedMemoryHold
 class QueryMetadataCache;
 class CursorTreeNode;
 using CursorTreeNodePtr = std::shared_ptr<CursorTreeNode>;
-class IcebergStorageSinkGroup;
 
 struct StreamingCursor
 {
     std::mutex mutex;
     CursorTreeNodePtr tree;
-    /// Parallel Iceberg sinks of the round, per target table.
-    std::unordered_map<String, std::shared_ptr<IcebergStorageSinkGroup>> iceberg_sink_groups;
 };
 using QueryMetadataCachePtr = std::shared_ptr<QueryMetadataCache>;
 using QueryMetadataCacheWeakPtr = std::weak_ptr<QueryMetadataCache>;
