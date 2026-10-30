@@ -69,13 +69,13 @@ Configure only the `mongo_port_secure` to make sure that no password ever crosse
 
 Collections with the same name in different MongoDB databases are different ClickHouse tables, and the database is created on demand by the first insert into it.
 
-What a driver reads back has the shape and the types of what it inserted: an `a.b` column returns as the nested document it names, a `DateTime`/`DateTime64`/`Date` column as a BSON date, and an integer column as a BSON `int32`/`int64` of its width.
+What a driver reads back has the shape and the types of what it inserted: an `a.b` column returns as the nested document it names, a `DateTime`/`DateTime64`/`Date` column as a BSON date, an integer column as a BSON `int32`/`int64` of its width, and a float column as a BSON double. A field whose first value is a BSON `int64` - also a small one, or one among the elements of an array - makes an `Int64` column.
 
 ### Supported commands {#supported-commands}
 
 `insert`, `find`, `aggregate`, `distinct`, `count`, `update`, `delete`, `create`, `drop`, `dropDatabase`, `createIndexes`, `listDatabases`, `listCollections`, `isMaster`, `buildInfo`, `ping`, `connectionStatus`, `killCursors`, `endSessions` and `saslStart`.
 
-A `find` supports a filter, a projection, `limit`, `skip` and `sort`. A projection may compute `$add`, `$sub`, `$mul` and `$div`. A `count` supports a `query` filter and the `limit` and `skip` bounds. A `listCollections` and a `listDatabases` support a `filter` on the `name` - by equality, `$eq`, `$in` or a regular expression - and `nameOnly`; a filter on another field or with another operator is an error rather than an unfiltered listing.
+A `find` supports a filter, a projection, `limit`, `skip` and `sort`. A projection may compute a field with an aggregation expression, as in `$project`: a string is a literal, `"$a"` refers to the field `a`, and an operator such as `{"$add": ["$a", 1]}` computes a value. A `count` supports a `query` filter and the `limit` and `skip` bounds. A `listCollections` and a `listDatabases` support a `filter` on the `name` - by equality, `$eq`, `$in` or a regular expression - and `nameOnly`; a filter on another field or with another operator is an error rather than an unfiltered listing.
 
 #### Filters {#filters}
 
@@ -111,7 +111,7 @@ db.hits.aggregate([
 ])
 ```
 
-`$group` supports the accumulators `$sum`, `$avg`, `$min`, `$max`, `$first`, `$last`, `$firstN`, `$lastN`, `$push`, `$addToSet`, `$count`, `$stdDevPop` and `$stdDevSamp`. A `_id` of `null` aggregates the whole stream into one document, and a `_id` that is a document groups by each of its fields, which become the `_id.<field>` columns of the result.
+`$group` supports the accumulators `$sum`, `$avg`, `$min`, `$max`, `$first`, `$last`, `$firstN`, `$lastN`, `$push`, `$addToSet`, `$count`, `$stdDevPop` and `$stdDevSamp`. `$sum`, `$avg`, `$stdDevPop` and `$stdDevSamp` skip a `Bool` column, as MongoDB skips a boolean. A `_id` of `null` aggregates the whole stream into one document, and a `_id` that is a document groups by each of its fields, which become the `_id.<field>` columns of the result.
 
 `$first`, `$last`, `$push`, `$firstN` and `$lastN` read the documents of a group in the order of the stream, which is what a `$sort` right before a `$group` establishes - the way MongoDB asks for the earliest or the latest document of each key:
 
@@ -148,6 +148,8 @@ Inside a stage, an expression may use:
 | Type conversion | `$toString`, `$toInt`, `$toLong`, `$toDouble`, `$toDecimal`, `$toBool`, `$toDate`, `$literal` |
 
 `$map` and `$filter` bind their element to the variable named by `as`, which defaults to `$$this`. `$$NOW` is the current time; the other system variables are not supported.
+
+A `$divide` by zero and the `$sqrt` of a negative number are errors, as in MongoDB, rather than an infinity and `NaN`.
 
 The `format` of `$dateToString` and `$dateFromString` is a constant string in MongoDB's language, so `%M` is the minute. `$dateToString` supports `%b`, `%d`, `%G`, `%H`, `%j`, `%L`, `%m`, `%M`, `%S`, `%u`, `%U`, `%V`, `%w`, `%Y`, `%z` and `%%`, and defaults to `%Y-%m-%dT%H:%M:%S.%LZ`; `$dateFromString` supports `%b`, `%d`, `%H`, `%j`, `%m`, `%M`, `%S`, `%Y`, `%z` and `%%`. Another specifier is an error rather than being passed through. `$dateTrunc` supports a `binSize` of 1 only and no `timezone`, and the unit `week` needs a `startOfWeek` of Monday, because MongoDB starts a week on Sunday by default; anything else is an error rather than an ignored option. `$toInt` and `$toLong` of a value outside the range of a 32-bit or a 64-bit integer is an error, as in MongoDB. `$toLong` and `$toDouble` of a date are its milliseconds since the Unix epoch, and `$toBool` is MongoDB's truth value: every string, including `"false"` and `""`, is `true`. `$dateAdd`, `$dateSubtract` and `$dateDiff` compute in their `timezone`, UTC by default, and a week of `$dateDiff` starts on its `startOfWeek`, Sunday by default. `$dateToString` formats in UTC by default, and its default format has no trailing `Z` for another `timezone`. The `timezone` of a date operator has to be a constant string, because ClickHouse takes the time zone of a date function as a constant. `$toString` of a date is its ISO 8601 text in UTC, such as `1970-01-01T00:00:01.500Z`. `$not`, `$and`, `$or`, the conditions of `$cond`, `$switch` and `$filter`, and the expression of `$expr` take MongoDB's truth value of their arguments, so `null` is `false` and a string is `true`. A `$switch` without a `default` is an error for a document that no branch matches, as in MongoDB. `$sum`, `$add`, `$subtract` and `$multiply` of 64-bit integers whose result does not fit a 64-bit integer are an error, while MongoDB promotes such a result to a double. An arithmetic operator takes at most 1000 operands, because its operands become nested operations. `$stdDevSamp` of fewer than two values is `null`. `$round` rounds a tie to even, as MongoDB does: `{"$round": [45, -1]}` is `40` and `{"$round": [2.5]}` is `2`. `$add` and `$subtract` of a date are an error rather than counting the number in seconds: use `$dateAdd`, `$dateSubtract` and `$dateDiff`. An element past the end of an array, read by `$arrayElemAt`, `$first` or `$last`, is `null`. `$dateTrunc` and the date part operators, such as `$hour` and `$dayOfWeek`, read a date in UTC, as MongoDB does, whatever the time zone of its column; a date part operator also takes the document form `{"date": ..., "timezone": ...}`. A comparison is always a boolean and follows the BSON order of `null`: `{"$eq": ["$v", null]}` is `true` for a `null`, and `null` is less than any other value.
 
@@ -190,7 +192,7 @@ An empty document is a valid one: inserted into a collection that already has co
 - A BSON date is a `DateTime64(3, 'UTC')` column. A date inserted into an existing date column of another time zone keeps its instant rather than its wall clock time.
 - A BSON double is a `Float64` column, whatever its value. An insert is written all or nothing: the `input_format_allow_errors_num` and `input_format_allow_errors_ratio` of the user's profile do not let it skip a malformed document.
 - `$in` and `$nin` on an array field test its elements, as MongoDB does; what they cannot express is a candidate that is itself an array (the whole-array match), and a field of nested arrays is flattened through every level rather than one. Equality has the same element-wise meaning: `{"tags": "red"}` and `{"tags": {"$eq": "red"}}` match a `tags` array that holds `"red"`, with the same two caveats. `distinct` on an array field is element-wise the same way, with the same nested-array caveat.
-- A filter keeps booleans and numbers apart, as BSON type bracketing does, although ClickHouse stores a `Bool` as a number: `{"active": 1}`, `{"active": {"$gt": 0}}` and `{"active": {"$in": [1]}}` do not match `"active": true`, and `{"n": true}` does not match a number. This is decided by the type of the column - `Bool`, or an array or a `Nullable` of it - so it does not separate the booleans and the numbers mixed inside one `Dynamic` or `JSON` column. `$all`, `$pull` and `$pullAll` keep them apart the same way. The aggregation operators `$eq`, `$lt` and the rest, used in `$expr`, compare a boolean with a number by value.
+- A filter keeps booleans and numbers apart, as BSON type bracketing does, although ClickHouse stores a `Bool` as a number: `{"active": 1}`, `{"active": {"$gt": 0}}` and `{"active": {"$in": [1]}}` do not match `"active": true`, and `{"n": true}` does not match a number. This is decided by the type of the column - `Bool`, or an array or a `Nullable` of it - so it does not separate the booleans and the numbers mixed inside one `Dynamic` or `JSON` column. `$all`, `$pull` and `$pullAll` keep them apart the same way. The aggregation operators `$eq`, `$lt` and the rest, used in `$expr`, compare a boolean with a number by value. An `insertOne`, an `insertMany` or an `update` of a `Bool` column, or an array of them, accepts only the numbers `0` and `1`.
 - `$toDecimal` keeps the exact scale of a constant argument, the way `$numberDecimal` keeps the scale of its value; a constant that fits no `Decimal128` of any scale is an error. Of a non-constant value it is only supported for integers and booleans, whose conversion is exact at scale 0 - including their `Nullable` and `LowCardinality` forms, which hold the same values.
 - `$size` matches arrays only, so a string of the right length is not a match; on a column whose type has no length at all - a number, for instance - it is an error rather than an empty match.
 - `$currentDate` supports `true` and `{"$type": "date"}`; the BSON `timestamp` type does not exist here, so `{"$type": "timestamp"}` is rejected.
@@ -221,7 +223,7 @@ SET dialect = 'mongo';
 
 db.users.find({"age" : {"$gt" : 20}});
 db.users.find({}, {"name" : 1, "age" : 1});
-db.users.find({"$projection" : {"name" : "name", "total" : {"$add" : ["price", "tax"]}}});
+db.users.find({"$projection" : {"name" : "$name", "total" : {"$add" : ["$price", "$tax"]}}});
 db.users.find({}).limit(10).sort({"age" : 1});
 db.users.aggregate([{"$group" : {"_id" : "$city", "c" : {"$sum" : 1}}}, {"$sort" : {"c" : -1}}]);
 db.users.insertOne({"name" : "a", "age" : 20});

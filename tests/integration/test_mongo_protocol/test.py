@@ -184,7 +184,7 @@ def test_find_query(started_cluster):
         {"name": "Charlie Brown", "age": 24, "city": "Los Angeles"},
     ]
 
-    find_docs = [doc for doc in collection.find(projection={"abacaba": "name"})]
+    find_docs = [doc for doc in collection.find(projection={"abacaba": "$name"})]
     find_docs = sorted(find_docs, key=lambda x: x["abacaba"])
     assert find_docs == [
         {"abacaba": "Bob Johnson"},
@@ -844,6 +844,37 @@ def test_insert_int64(started_cluster):
 
     assert [doc for doc in collection.find({})] == [{"id": 1, "big": 2147483648}]
     assert [doc["id"] for doc in collection.find({"big": {"$gt": 2}})] == [1]
+
+
+def test_bson_numeric_types_are_kept(started_cluster):
+    """A small `int64` - also in an array - makes an `Int64` column, which accepts a larger `int64`
+    later in the batch and reads back as an `int64`. A double without a fraction reads back as a
+    double, not as an integer."""
+    client = make_client()
+    collection = client["db"]["bson_numeric_types"]
+
+    collection.drop()
+    collection.insert_many(
+        [
+            {"id": 1, "n": bson.Int64(1), "ns": [1, bson.Int64(2)], "x": 1.0, "xs": [2.0]},
+            {"id": 2, "n": bson.Int64(2147483648), "ns": [bson.Int64(2147483648)], "x": 1e18, "xs": [3.5]},
+        ]
+    )
+
+    documents = sorted(collection.find({}, {"_id": 0}), key=lambda doc: doc["id"])
+    assert documents == [
+        {"id": 1, "n": 1, "ns": [1, 2], "x": 1.0, "xs": [2.0]},
+        {"id": 2, "n": 2147483648, "ns": [2147483648], "x": 1e18, "xs": [3.5]},
+    ]
+    for document in documents:
+        assert type(document["id"]) is int
+        assert type(document["n"]) is bson.Int64
+        assert all(type(element) is bson.Int64 for element in document["ns"])
+        assert type(document["x"]) is float
+        assert all(type(element) is float for element in document["xs"])
+    assert all(type(value) is float for value in collection.distinct("x"))
+
+    collection.drop()
 
 
 def test_insert_datetime(started_cluster):

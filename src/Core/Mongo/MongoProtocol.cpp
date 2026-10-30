@@ -196,6 +196,11 @@ String QueryExecutor::execute(const String & query, const SettingsChanges & extr
     /// `"-nan"`, `"inf"` and `"-inf"` (see `appendTypedValue`).
     query_context->setSetting("output_format_json_quote_denormals", true);
     query_context->setSetting("output_format_json_named_tuples_as_objects", true);
+    /// A `null` field of a tuple is a field of the document, which must not be dropped from it.
+    query_context->setSetting("output_format_json_skip_null_value_in_named_tuples", false);
+    /// A float is written with all the digits that read back as the same value, not rounded to
+    /// the precision a profile asks for.
+    query_context->setSetting("output_format_float_precision", UInt64(0));
     query_context->setSetting("output_format_json_array_of_rows", false);
     /// A `Map` is parsed back as a JSON object, see `appendTypedValue`.
     query_context->setSetting("output_format_json_map_as_array_of_tuples", false);

@@ -225,9 +225,52 @@ void flattenDocument(
     }
 }
 
+/** Records the flattened names of the fields that hold a BSON `int64`, or an array with one. The
+  * document reaches the rest of the insert as legacy Extended JSON, in which an `int64` is a plain
+  * number, so `1` sent as an `int64` would look like an `int32` and the column would become an
+  * `Int32`, too narrow for the larger `int64` values to come.
+  */
+void collectInt64Fields(bson_iter_t & iter, const String & prefix, std::set<String> & int64_fields)
+{
+    while (bson_iter_next(&iter))
+    {
+        String name = bson_iter_key(&iter);
+        if (prefix.empty() && name == "_id")
+            continue;
+        String full_name = prefix.empty() ? name : prefix + "." + name;
+
+        bson_iter_t child;
+        if (BSON_ITER_HOLDS_INT64(&iter))
+            int64_fields.insert(full_name);
+        else if (BSON_ITER_HOLDS_DOCUMENT(&iter) && bson_iter_recurse(&iter, &child))
+            collectInt64Fields(child, full_name, int64_fields);
+        else if (BSON_ITER_HOLDS_ARRAY(&iter) && bson_iter_recurse(&iter, &child))
+        {
+            while (bson_iter_next(&child))
+            {
+                if (BSON_ITER_HOLDS_INT64(&child))
+                {
+                    int64_fields.insert(full_name);
+                    break;
+                }
+            }
+        }
+    }
+}
+
+std::set<String> collectInt64Fields(const Document & document)
+{
+    std::set<String> int64_fields;
+    bson_iter_t iter;
+    if (document.getBson() && bson_iter_init(&iter, document.getBson()))
+        collectInt64Fields(iter, "", int64_fields);
+    return int64_fields;
+}
+
 /// Infers the column definitions from an already flattened document. A field that came from an
 /// Extended JSON wrapper keeps the type of the wrapper rather than the type of its serialization.
-std::vector<InsertHandler::DocumentField> inferSchema(const rapidjson::Value & flattened, const std::map<String, String> & wrapper_types)
+std::vector<InsertHandler::DocumentField> inferSchema(
+    const rapidjson::Value & flattened, const std::map<String, String> & wrapper_types, const std::set<String> & int64_fields)
 {
     std::vector<InsertHandler::DocumentField> fields;
     for (auto it = flattened.MemberBegin(); it != flattened.MemberEnd(); ++it)
@@ -238,8 +281,11 @@ std::vector<InsertHandler::DocumentField> inferSchema(const rapidjson::Value & f
             continue;
         }
 
+        const bool holds_int64 = int64_fields.contains(it->name.GetString());
         if (auto simple_type = getSimpleTypeField(it->value))
         {
+            if (holds_int64 && *simple_type == "int")
+                simple_type = "Int64";
             fields.push_back(InsertHandler::DocumentField{.full_name = it->name.GetString(), .type = std::move(*simple_type)});
             continue;
         }
@@ -262,12 +308,20 @@ std::vector<InsertHandler::DocumentField> inferSchema(const rapidjson::Value & f
         String element_type = "Dynamic";
         if (!array.Empty())
         {
-            if (auto element_simple_type = getSimpleTypeField(array[0]))
+            /// An array that holds an `int64` holds 64-bit integers, also the small ones.
+            const auto element_simple_type_of = [&](const rapidjson::Value & element)
+            {
+                auto type = getSimpleTypeField(element);
+                if (holds_int64 && type == "int")
+                    type = "Int64";
+                return type;
+            };
+            if (auto element_simple_type = element_simple_type_of(array[0]))
             {
                 bool homogeneous = true;
                 for (rapidjson::SizeType i = 1; i < array.Size(); ++i)
                 {
-                    auto other_type = getSimpleTypeField(array[i]);
+                    auto other_type = element_simple_type_of(array[i]);
                     if (!other_type || *other_type != *element_simple_type)
                     {
                         homogeneous = false;
@@ -743,7 +797,7 @@ std::vector<Document> InsertHandler::handle(const std::vector<OpMessageSection> 
         if (!table_prepared)
         {
             createDatabase(collection, executor);
-            createTable(collection, executor, inferSchema(flattened, wrapper_types));
+            createTable(collection, executor, inferSchema(flattened, wrapper_types, collectInt64Fields(doc)));
             table_prepared = true;
         }
 

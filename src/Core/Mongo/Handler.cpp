@@ -368,6 +368,14 @@ void appendTypedValue(bson_t * document, const String & key, const rapidjson::Va
             return;
         }
     }
+    if (which.isFloat() && value.IsNumber())
+    {
+        /// A finite float arrives as the shortest JSON number that reads back as the same double,
+        /// which may have no fraction, e.g. `1` or `1000000000000000100`. It stays a BSON double:
+        /// it must neither turn into an integer nor be rounded to the digits of that text.
+        bson_append_double(document, key.data(), key_length, value.GetDouble());
+        return;
+    }
     if (which.isDecimal() && value.IsString())
     {
         /// `output_format_json_quote_decimals` is pinned to `true` (see `MongoProtocol.cpp`), so a
