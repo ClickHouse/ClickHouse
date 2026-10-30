@@ -19,8 +19,9 @@ void TTLDeleteAlgorithm::execute(Block & block)
     if (block.empty() || !isMinTTLExpired())
         return;
 
-    auto ttl_column = executeExpressionAndGetColumn(ttl_expressions.expression, block, description.result_column);
-    auto where_column = executeExpressionAndGetColumn(ttl_expressions.where_expression, block, description.where_result_column);
+    auto ttl_column = executeExpressionAndGetColumn(ttl_expressions.expression, block, description.result_column, description.expression_columns);
+    auto where_column = executeExpressionAndGetColumn(
+        ttl_expressions.where_expression, block, description.where_result_column, description.where_expression_columns);
 
     /// Decide once for the whole block, then filter the columns in one vectorized pass. A forced
     /// algorithm runs on every merge of a value-combining mode, where the common case is that

@@ -22,7 +22,7 @@ void TTLUpdateInfoAlgorithm::execute(Block & block)
     if (block.empty())
         return;
 
-    auto ttl_column = executeExpressionAndGetColumn(ttl_expressions.expression, block, description.result_column);
+    auto ttl_column = executeExpressionAndGetColumn(ttl_expressions.expression, block, description.result_column, description.expression_columns);
 
     const size_t rows = block.rows();
     PaddedPODArray<Int64> timestamps;
