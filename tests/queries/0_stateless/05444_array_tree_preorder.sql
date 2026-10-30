@@ -47,6 +47,22 @@ SELECT arrayTreePreorder(['a'], [1]); -- { serverError NO_COMMON_TYPE }
 SELECT arrayTreePreorder('a', ['a']); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 SELECT arrayTreePreorder(['a']); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
 
+-- Floating-point numbers, Dynamic, Variant and JSON are not supported as identifiers, also inside other types.
+SELECT arrayTreePreorder([0.0, 1.0], [2.0, -0.0]); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT arrayTreePreorder([1, 2], [0.0, 1.0]); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT arrayTreePreorder([toBFloat16(1)], [toBFloat16(0)]); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT arrayTreePreorder([(1, 0.5)], [(0, 0.5)]); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT arrayTreePreorder([[1.5]], [[0.5]]); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT arrayTreePreorder(CAST([1, NULL], 'Array(Nullable(Float32))'), CAST([NULL, 1], 'Array(Nullable(Float32))')); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT arrayTreePreorder([map('a', 1.5)], [map('a', 0.5)]); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT arrayTreePreorder(CAST([NULL, 'a'], 'Array(Dynamic)'), CAST(['a', NULL], 'Array(Dynamic)')); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT arrayTreePreorder(CAST([NULL, 'a'], 'Array(Variant(String, UInt64))'), CAST(['a', NULL], 'Array(Variant(String, UInt64))')); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT arrayTreePreorder(['a'], CAST([NULL], 'Array(Dynamic)')); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT arrayTreePreorder(CAST(['{"a": 1}'], 'Array(JSON)'), CAST(['{}'], 'Array(JSON)')); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+-- Decimal and LowCardinality(Nullable) are fine; a NULL of LowCardinality(Nullable) makes a root.
+SELECT arrayTreePreorder(CAST(['1.5', '2.5'], 'Array(Decimal(10, 2))'), CAST(['0', '1.5'], 'Array(Decimal(10, 2))'));
+SELECT arrayTreePreorder(CAST([NULL, 'a'], 'Array(LowCardinality(Nullable(String)))'), CAST(['a', NULL], 'Array(LowCardinality(Nullable(String)))'));
+
 -- Sum of cost and count of strict descendants for each agent span.
 DROP TABLE IF EXISTS nodes;
 CREATE TABLE nodes (trace_id String, id String, parent_id String, type String, cost Float64) ENGINE = Memory;

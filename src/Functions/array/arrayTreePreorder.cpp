@@ -5,6 +5,9 @@
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnsNumber.h>
 #include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeMap.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/getLeastSupertype.h>
@@ -57,6 +60,16 @@ public:
             if (!isArray(arguments[i]))
                 throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
                     "Argument {} of function {} must be an array, got {}", i + 1, getName(), arguments[i]->getName());
+
+        for (size_t i = 0; i < 2; ++i)
+        {
+            const auto & nested_type = assert_cast<const DataTypeArray &>(*arguments[i]).getNestedType();
+            if (hasUnsupportedIdentifierType(nested_type))
+                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                    "Argument {} of function {} has type {}, but identifiers cannot be or contain floating-point numbers, "
+                    "`Dynamic`, `Variant` or `JSON` values",
+                    i + 1, getName(), arguments[i]->getName());
+        }
 
         /// Check that the elements are comparable.
         getCommonNestedType(arguments);
@@ -182,6 +195,32 @@ private:
         PaddedPODArray<UInt32> position;        /// 0-based preorder position.
         PaddedPODArray<UInt32> stack;
     };
+
+    /// Identifiers are compared by hashing. Floating-point numbers are rejected because hashing distinguishes `0.0` and `-0.0`,
+    /// which are equal. `Dynamic`, `Variant` and `JSON` are rejected because their `NULL` would be hashed
+    /// as an ordinary identifier, while the `NULL` of `Nullable` makes a root.
+    static bool hasUnsupportedIdentifierType(const DataTypePtr & type)
+    {
+        WhichDataType which(type);
+        if (which.isFloat() || which.isDynamic() || which.isVariant() || which.isObject())
+            return true;
+
+        if (const auto * nullable = typeid_cast<const DataTypeNullable *>(type.get()))
+            return hasUnsupportedIdentifierType(nullable->getNestedType());
+        if (const auto * low_cardinality = typeid_cast<const DataTypeLowCardinality *>(type.get()))
+            return hasUnsupportedIdentifierType(low_cardinality->getDictionaryType());
+        if (const auto * array = typeid_cast<const DataTypeArray *>(type.get()))
+            return hasUnsupportedIdentifierType(array->getNestedType());
+        if (const auto * map = typeid_cast<const DataTypeMap *>(type.get()))
+            return hasUnsupportedIdentifierType(map->getNestedType());
+        if (const auto * tuple = typeid_cast<const DataTypeTuple *>(type.get()))
+        {
+            for (const auto & element : tuple->getElements())
+                if (hasUnsupportedIdentifierType(element))
+                    return true;
+        }
+        return false;
+    }
 
     DataTypePtr getCommonNestedType(const DataTypes & arguments) const
     {
@@ -366,6 +405,9 @@ The function does not throw on the content of the arrays, and makes a valid fore
 - If the parent links make a cycle, the link of the node of the cycle which comes first in the input is cut, and this node becomes a root. Its `parent` keeps the position of its real parent, which is greater than its own position, so `parent[k] > k` shows that a cycle was cut at position `k`. A node which is its own parent gets `parent[k] = k`.
 - If `ids` has duplicate values, the children are attached to the first occurrence.
 
+The identifiers are compared by hashing. They cannot be or contain floating-point numbers (because `0.0` and `-0.0` are equal, but have different hashes),
+or `Dynamic`, `Variant` and `JSON` values (because a `NULL` inside them would be compared as an ordinary value, while a `NULL` of a `Nullable` type makes a root).
+
 The structure of the input follows from the result (see the examples below):
 - Is there a cycle: `arrayExists((p, k) -> p > k, t.parent, arrayEnumerate(t.parent))`.
 - Positions where the cycles were cut: `arrayFilter((k, p) -> p > k, arrayEnumerate(t.parent), t.parent)`.
@@ -379,7 +421,7 @@ To get the input index of the node at position `k`, use `t.order[k]`.
 )";
     FunctionDocumentation::Syntax syntax = "arrayTreePreorder(ids, parent_ids)";
     FunctionDocumentation::Arguments arguments = {
-        {"ids", "Node identifiers.", {"Array(T)"}},
+        {"ids", "Node identifiers. Floating-point numbers, `Dynamic`, `Variant` and `JSON` are not supported.", {"Array(T)"}},
         {"parent_ids", "Parent identifiers, one per node. Must have the same size as `ids`.", {"Array(T)"}}
     };
     FunctionDocumentation::ReturnedValue returned_value = {

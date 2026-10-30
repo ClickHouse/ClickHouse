@@ -24,6 +24,8 @@ Tuple(\n    order Array(UInt32),\n    size Array(UInt32),\n    parent Array(UInt
 1	1	1	1
 1	1000	1	999	999
 1	1000	1000	999
+([1,2],[2,1],[0,1],[0,1])
+([2,1],[2,1],[0,1],[0,1])
 t1	A	6	5
 t1	B	3	2
 t2	C	5	1
