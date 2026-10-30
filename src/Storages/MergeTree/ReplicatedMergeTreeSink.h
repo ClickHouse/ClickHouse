@@ -96,6 +96,9 @@ protected:
     /// See `DeferredPartsSync`.
     bool defer_fsync = false;
     bool sync_existing_parts = false;
+    /// The parts that failed to sync are not detached: the deduplication record of a part is in Keeper, and the
+    /// part may already be fetched by other replicas. So a retry that relies on such a part fails only until the
+    /// server restarts. It is one of the reasons why `group_fsync_before_insert_finish = 'auto'` is disabled here.
     DeferredPartsSync parts_to_sync;
 
     struct CommitPartResult

@@ -4,38 +4,42 @@
 -- Tag no-object-storage: fsync is not applicable to object storage
 
 -- With `group_fsync_before_insert_finish`, a part is committed before its files are fsynced.
--- If the fsync fails, a retry of the `INSERT` that is deduplicated against this part must fail as well,
--- even after a mutation that hardlinks the files of this part, because the kernel may report success
--- for the fsync of the same file through a new file descriptor, although the data was not written.
--- Packed parts are rewritten by a mutation as a whole, so they are disabled.
+-- If the fsync fails, the data of the part may not be durable, so the part is detached, and it is removed
+-- from the deduplication log. A retry of the `INSERT` writes the data again, even after the table is reloaded
+-- (as on a restart of the server), instead of being deduplicated against the part that failed to sync.
 
 DROP TABLE IF EXISTS t_fsync_error;
 
 CREATE TABLE t_fsync_error (k UInt64, v UInt64) ENGINE = MergeTree ORDER BY k
-SETTINGS fsync_after_insert = 1, group_fsync_before_insert_finish = 1, non_replicated_deduplication_window = 100, min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, min_bytes_for_full_part_storage = 0, min_rows_for_full_part_storage = 0;
+SETTINGS fsync_after_insert = 1, group_fsync_before_insert_finish = 1, non_replicated_deduplication_window = 100, min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0;
 
 SYSTEM ENABLE FAILPOINT parallel_sync_paths_fail_fsync;
 INSERT INTO t_fsync_error SETTINGS insert_deduplicate = 1 VALUES (1, 1), (2, 2); -- { serverError CANNOT_FSYNC }
 SYSTEM DISABLE FAILPOINT parallel_sync_paths_fail_fsync;
 
--- The part is committed, but its data may not be durable.
+SELECT count(), sum(v) FROM t_fsync_error;
+SELECT reason FROM system.detached_parts WHERE database = currentDatabase() AND table = 't_fsync_error';
+
+DETACH TABLE t_fsync_error;
+ATTACH TABLE t_fsync_error;
+
+-- The retry is not deduplicated.
+INSERT INTO t_fsync_error SETTINGS insert_deduplicate = 1 VALUES (1, 1), (2, 2);
 SELECT count(), sum(v) FROM t_fsync_error;
 
--- The retry is deduplicated against the part that failed to sync.
-INSERT INTO t_fsync_error SETTINGS insert_deduplicate = 1 VALUES (1, 1), (2, 2); -- { serverError CANNOT_FSYNC }
-
--- The mutation rewrites the column `v`, but hardlinks the files of the column `k`.
-ALTER TABLE t_fsync_error UPDATE v = v + 1 WHERE 1 SETTINGS mutations_sync = 2;
+-- The next retry is deduplicated against the new part.
+INSERT INTO t_fsync_error SETTINGS insert_deduplicate = 1 VALUES (1, 1), (2, 2);
 SELECT count(), sum(v) FROM t_fsync_error;
 
-INSERT INTO t_fsync_error SETTINGS insert_deduplicate = 1 VALUES (1, 1), (2, 2); -- { serverError CANNOT_FSYNC }
-
--- An insert that syncs its own parts inline still relies on the existing part that it is deduplicated against.
+-- An insert that syncs its own parts inline also detaches the existing part that it is deduplicated against, if it fails to sync.
 ALTER TABLE t_fsync_error MODIFY SETTING group_fsync_before_insert_finish = 0;
+SYSTEM ENABLE FAILPOINT parallel_sync_paths_fail_fsync;
 INSERT INTO t_fsync_error SETTINGS insert_deduplicate = 1 VALUES (1, 1), (2, 2); -- { serverError CANNOT_FSYNC }
+SYSTEM DISABLE FAILPOINT parallel_sync_paths_fail_fsync;
+SELECT count(), sum(v) FROM t_fsync_error;
+SELECT reason, count() FROM system.detached_parts WHERE database = currentDatabase() AND table = 't_fsync_error' GROUP BY reason;
 
--- Other inserts are not affected.
-INSERT INTO t_fsync_error SETTINGS insert_deduplicate = 1 VALUES (3, 3);
+INSERT INTO t_fsync_error SETTINGS insert_deduplicate = 1 VALUES (1, 1), (2, 2);
 SELECT count(), sum(v) FROM t_fsync_error;
 
 DROP TABLE t_fsync_error;

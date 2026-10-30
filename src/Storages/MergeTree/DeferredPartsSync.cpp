@@ -54,8 +54,8 @@ DeferredPartsSync::~DeferredPartsSync()
     }
     catch (...)
     {
-        /// The insert is not acknowledged anyway, and the files that failed to sync are remembered,
-        /// so a retry of the insert that is deduplicated against these parts fails as well.
+        /// The insert is not acknowledged anyway, and the parts that failed to sync are passed to `on_failed_sync`,
+        /// so a retry of the insert is not deduplicated against them.
         tryLogCurrentException(getLogger("DeferredPartsSync"), "Cannot sync the parts committed by a failed insert");
     }
 }
@@ -100,19 +100,57 @@ void DeferredPartsSync::sync(bool only_old)
         return;
 
     std::vector<std::string> paths;
-    for (const auto & part : parts_to_sync)
+    /// The index of the part in `parts_to_sync` for every path.
+    std::vector<size_t> path_part_indices;
+    for (size_t part_index = 0; part_index < parts_to_sync.size(); ++part_index)
     {
-        for (const auto & entry : std::filesystem::recursive_directory_iterator(part->getDataPartStorage().getFullPath()))
+        for (const auto & entry : std::filesystem::recursive_directory_iterator(parts_to_sync[part_index]->getDataPartStorage().getFullPath()))
         {
             /// Temporary files, such as `txn_version.txt.tmp`, are renamed over the files of a committed part
             /// when its metadata is updated. The writer syncs them itself, and they may disappear at any moment.
             if (entry.is_regular_file() && !entry.path().filename().string().ends_with(".tmp"))
+            {
                 paths.push_back(entry.path());
+                path_part_indices.push_back(part_index);
+            }
         }
     }
 
     LOG_TRACE(getLogger("DeferredPartsSync"), "Syncing {} files of {} inserted parts", paths.size(), parts_to_sync.size());
-    parallelSyncPaths(paths);
+
+    std::vector<UInt8> failed;
+    try
+    {
+        parallelSyncPaths(paths, failed);
+    }
+    catch (...)
+    {
+        if (on_failed_sync)
+        {
+            std::vector<UInt8> part_failed(parts_to_sync.size(), 0);
+            for (size_t i = 0; i < failed.size(); ++i)
+                if (failed[i])
+                    part_failed[path_part_indices[i]] = 1;
+
+            for (size_t part_index = 0; part_index < parts_to_sync.size(); ++part_index)
+            {
+                if (!part_failed[part_index])
+                    continue;
+
+                /// The error of the fsync is more important, so it is rethrown below.
+                try
+                {
+                    on_failed_sync(parts_to_sync[part_index]);
+                }
+                catch (...)
+                {
+                    tryLogCurrentException(getLogger("DeferredPartsSync"),
+                        fmt::format("Cannot handle the part {} that failed to sync", parts_to_sync[part_index]->name));
+                }
+            }
+        }
+        throw;
+    }
 }
 
 }

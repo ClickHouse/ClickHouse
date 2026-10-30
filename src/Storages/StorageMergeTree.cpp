@@ -3481,6 +3481,28 @@ MergeTreeDataPartPtr StorageMergeTree::outdatePart(MergeTreeTransaction * txn, c
     return part;
 }
 
+void StorageMergeTree::detachPartAfterFailedFsync(const DataPartPtr & part)
+{
+    /// Merges and mutations select the parts under this mutex, so the part cannot be selected while it is detached.
+    std::lock_guard lock(currently_processing_in_background_mutex);
+
+    /// A merge or a mutation that is already running has read the data of the part, and the resulting part
+    /// replaces it. The in-memory record of the failed files still fails the inserts that rely on them.
+    if (part->getState() != DataPartState::Active || currently_merging_mutating_parts.contains(part))
+    {
+        LOG_WARNING(log, "The fsync of part {} failed, but it is not detached, because it is {}",
+            part->name, currently_merging_mutating_parts.contains(part) ? "being merged or mutated" : part->stateString());
+        return;
+    }
+
+    /// The deduplication record is removed first: if detaching fails afterwards, a retry of the insert duplicates the data,
+    /// but if it were the other way around, a retry would be acknowledged without the data.
+    if (deduplication_log)
+        deduplication_log->dropPart(part->info);
+
+    forcefullyMovePartToDetachedAndRemoveFromMemory(part, "fsync-failed");
+}
+
 void StorageMergeTree::dropPartNoWaitNoThrow(const String & part_name)
 {
     if (auto part = outdatePart(NO_TRANSACTION_RAW, part_name, /*force=*/ false, /*clear_without_timeout=*/ false))

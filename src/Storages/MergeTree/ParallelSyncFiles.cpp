@@ -229,8 +229,10 @@ void parallelSyncFiles(const std::vector<const MergeTreeWriterStream *> & stream
     parallelSyncImpl(streams, [](const MergeTreeWriterStream * stream) { stream->sync(); });
 }
 
-void parallelSyncPaths(const std::vector<std::string> & paths)
+void parallelSyncPaths(const std::vector<std::string> & paths, std::vector<UInt8> & failed)
 {
+    failed.assign(paths.size(), 0);
+
     FailedFiles::instance().releaseUnlinked();
 
     /// Group the files into batches, so that the number of tasks does not depend on the number of files.
@@ -241,7 +243,8 @@ void parallelSyncPaths(const std::vector<std::string> & paths)
 
     /// The tasks may not capture locals by reference, see `parallelSyncImpl`.
     const auto * paths_ptr = &paths;
-    parallelSyncImpl(batches, [paths_ptr](const std::pair<size_t, size_t> & batch)
+    auto * failed_ptr = &failed;
+    parallelSyncImpl(batches, [paths_ptr, failed_ptr](const std::pair<size_t, size_t> & batch)
     {
         /// Sync all files of the batch even if some of them fail, so that all failed files are remembered.
         std::exception_ptr first_exception;
@@ -253,6 +256,9 @@ void parallelSyncPaths(const std::vector<std::string> & paths)
             }
             catch (...)
             {
+                /// Every task writes only the elements of its own batch.
+                if (getCurrentExceptionCode() == ErrorCodes::CANNOT_FSYNC)
+                    (*failed_ptr)[i] = 1;
                 if (!first_exception)
                     first_exception = std::current_exception();
             }

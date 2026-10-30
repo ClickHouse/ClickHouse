@@ -81,6 +81,7 @@ MergeTreeSink::MergeTreeSink(
     , context(context_)
     , storage_snapshot(storage.getStorageSnapshotWithoutData(metadata_snapshot, context_))
     , deduplicate((*storage.getSettings())[MergeTreeSetting::non_replicated_deduplication_window] > 0 && storage.getDeduplicationLog() != nullptr)
+    , parts_to_sync([&storage_](const MergeTreeDataPartPtr & part) { storage_.detachPartAfterFailedFsync(part); })
 {
     LOG_TEST(storage.log, "Create MergeTreeSink, deduplicate={}", deduplicate);
 

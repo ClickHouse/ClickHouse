@@ -5,6 +5,7 @@
 
 #include <chrono>
 #include <deque>
+#include <functional>
 #include <unordered_set>
 
 
@@ -24,6 +25,8 @@ class MergeTreeData;
 ///
 /// If the fsync of a file fails, the file is remembered, and every later insert that relies on it
 /// (for example, a retry that is deduplicated against its part) fails as well, see `parallelSyncPaths`.
+/// This is remembered only until the server restarts, so the parts with the files that failed to sync
+/// are also passed to `on_failed_sync`, which can remove them from the table persistently.
 class DeferredPartsSync
 {
 public:
@@ -38,7 +41,9 @@ public:
     /// because such a part may be written by another insert with a different value of this setting.
     static bool shouldSyncExistingParts(const MergeTreeData & storage);
 
-    DeferredPartsSync() = default;
+    using OnFailedSync = std::function<void(const MergeTreeDataPartPtr &)>;
+
+    explicit DeferredPartsSync(OnFailedSync on_failed_sync_ = {}) : on_failed_sync(std::move(on_failed_sync_)) {}
     DeferredPartsSync(const DeferredPartsSync &) = delete;
     DeferredPartsSync & operator=(const DeferredPartsSync &) = delete;
 
@@ -62,6 +67,7 @@ private:
         std::chrono::steady_clock::time_point commit_time;
     };
 
+    OnFailedSync on_failed_sync;
     std::deque<PartToSync> parts;
     std::unordered_set<const IMergeTreeDataPart *> queued_parts;
 
