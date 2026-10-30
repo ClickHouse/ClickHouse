@@ -21,8 +21,11 @@ SETTINGS
     ratio_of_defaults_for_sparse_serialization = 0.9,
     max_uniq_number_for_low_cardinality = 1000,
     min_bytes_for_wide_part = 0,
-    -- A randomized tiny `merge_max_block_size` makes `OPTIMIZE` below take minutes in debug builds.
-    merge_max_block_size = 8192;
+    -- A randomized tiny `merge_max_block_size` makes `OPTIMIZE` below take minutes in debug builds,
+    -- and a randomized tiny `index_granularity` makes the inserts and the merge take minutes as well.
+    merge_max_block_size = 8192,
+    index_granularity = 8192,
+    index_granularity_bytes = '10Mi';
 
 SYSTEM STOP MERGES t_auto_lc;
 
@@ -79,7 +82,9 @@ ORDER BY id
 SETTINGS
     max_uniq_number_for_low_cardinality = 1000,
     ratio_of_defaults_for_sparse_serialization = 0.9,
-    min_bytes_for_wide_part = 0;
+    min_bytes_for_wide_part = 0,
+    index_granularity = 8192,
+    index_granularity_bytes = '10Mi';
 
 INSERT INTO t_auto_lc_v2 SELECT number, 'val_' || toString(number % 10), 'uniq_' || toString(number) FROM numbers(10000);
 
