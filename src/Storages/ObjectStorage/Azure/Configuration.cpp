@@ -27,6 +27,7 @@
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTLiteral.h>
 #include <Storages/ObjectStorage/Utils.h>
+#include <base/scope_guard.h>
 
 namespace DB
 {
@@ -399,6 +400,11 @@ void AzureStorageParsedArguments::initializeForOneLake(ASTs & args, ContextPtr c
 void AzureStorageParsedArguments::fromAST(ASTs & engine_args, ContextPtr context, bool with_structure)
 {
     auto extra_credentials = extractExtraCredentials(engine_args);
+    /// engine_args is the persisted engine definition; keep the credentials in it.
+    SCOPE_EXIT({
+        if (extra_credentials)
+            engine_args.push_back(extra_credentials);
+    });
 
     if (engine_args.empty() || engine_args.size() > AzureStorageParsedArguments::getMaxNumberOfArguments(with_structure))
     {
@@ -727,6 +733,9 @@ static void addStructureAndFormatToArgsIfNeededAzure(
     }
     else
     {
+        /// extra_credentials is not a constant expression; take it out while rewriting.
+        auto extra_credentials = extractExtraCredentials(args);
+
         if (args.size() < 3 || args.size() > AzureStorageParsedArguments::getMaxNumberOfArguments())
             throw Exception(
                 ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
@@ -870,6 +879,9 @@ static void addStructureAndFormatToArgsIfNeededAzure(
             if (with_structure && checkAndGetLiteralArgument<String>(args[7], "structure") == "auto")
                 args[7] = structure_literal;
         }
+
+        if (extra_credentials)
+            args.push_back(extra_credentials);
     }
 }
 
