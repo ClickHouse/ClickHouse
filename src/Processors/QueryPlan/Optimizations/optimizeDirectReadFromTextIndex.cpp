@@ -1,11 +1,15 @@
 #include <Access/ContextAccess.h>
+#include <Analyzer/ConstantNode.h>
+#include <Analyzer/Utils.h>
 #include <Columns/ColumnConst.h>
+#include <Columns/ColumnFunction.h>
 #include <Columns/ColumnSet.h>
 #include <Common/FieldVisitorToString.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/assert_cast.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/FieldToDataType.h>
 #include <Common/logger_useful.h>
 #include <Common/quoteString.h>
 #include <DataTypes/DataTypeArray.h>
@@ -340,28 +344,30 @@ ASTPtr convertSetColumnToAST(const IColumn & column)
     return elements;
 }
 
+/// Maps the names of a lambda's captured columns to the ASTs of the values supplied for them.
+using CapturedValues = std::unordered_map<std::string, ASTPtr>;
+
 /// Converts an ActionsDAG node to an AST node.
 /// It is not correct in the general case, but is
 /// sufficient for expressions that can be used with a text index.
 /// Returns `nullptr` if any part has no AST representation: a partial conversion would change the meaning.
-/// `captured` maps a lambda's captured-column names to the nodes that supply their values in the
-/// outer DAG, so references to them inside the lambda body are inlined (typically as literals)
-/// instead of being emitted as bare, unresolvable identifiers.
-ASTPtr convertNodeToAST(const ActionsDAG::Node & node, const std::unordered_map<std::string, const ActionsDAG::Node *> & captured = {});
+/// `captured` holds the values of the captured columns of the lambda whose body is being converted,
+/// so references to them inside the body are inlined instead of being emitted as bare, unresolvable identifiers.
+ASTPtr convertNodeToAST(const ActionsDAG::Node & node, const CapturedValues & captured = {});
 
-/// Reconstructs a captured lambda (e.g. the `x -> f(x)` inside arrayMap) as `lambda(tuple(args), body)`.
-/// `captured_values` are the columns supplied for the capture, aligned with capture.captured_names.
-ASTPtr convertCapturedLambdaToAST(const FunctionCapture & function_capture, const ActionsDAG::NodeRawConstPtrs & captured_values)
+ASTPtr convertConstantToAST(const ColumnPtr & column, const DataTypePtr & type);
+
+/// Reconstructs a lambda (e.g. the `x -> f(x)` inside arrayMap) as `lambda(tuple(args), body)`.
+/// `captured_values` are the values supplied for the capture, aligned with capture.captured_names.
+ASTPtr convertLambdaToAST(const LambdaCapture & capture, const ActionsDAG & capture_dag, ASTs captured_values)
 {
-    const auto & capture = function_capture.getCapture();
-    const auto & capture_dag = function_capture.getAcionsDAG();
     if (capture_dag.getOutputs().size() != 1 || captured_values.size() != capture.captured_names.size())
         return nullptr;
 
     /// Bind each captured column to the value passed into the capture so the body has no dangling refs.
-    std::unordered_map<std::string, const ActionsDAG::Node *> body_captured;
+    CapturedValues body_captured;
     for (size_t i = 0; i < capture.captured_names.size(); ++i)
-        body_captured.emplace(capture.captured_names[i], captured_values[i]);
+        body_captured.emplace(capture.captured_names[i], std::move(captured_values[i]));
 
     auto arguments = make_intrusive<ASTFunction>();
     arguments->name = "tuple";
@@ -384,13 +390,84 @@ ASTPtr convertCapturedLambdaToAST(const FunctionCapture & function_capture, cons
     return lambda;
 }
 
-ASTPtr convertNodeToAST(const ActionsDAG::Node & node, const std::unordered_map<std::string, const ActionsDAG::Node *> & captured)
+/// A lambda that captures only constants is folded into a constant `ColumnFunction`, whose `Field` is just
+/// the tuple of the captured values. Rebuild the lambda from its body and those values instead.
+ASTPtr convertFunctionColumnToAST(const IColumn & column)
+{
+    const auto * column_function = checkAndGetColumnConstData<ColumnFunction>(&column);
+    if (!column_function)
+        column_function = checkAndGetColumn<ColumnFunction>(&column);
+    if (!column_function)
+        return nullptr;
+
+    const auto * function_expression = dynamic_cast<const FunctionExpression *>(column_function->getFunction().get());
+    if (!function_expression)
+        return nullptr;
+
+    ASTs captured_values;
+    for (const auto & captured_column : column_function->getCapturedColumns())
+    {
+        auto captured_value = convertConstantToAST(captured_column.column, captured_column.type);
+        if (!captured_value)
+            return nullptr;
+
+        captured_values.push_back(std::move(captured_value));
+    }
+
+    return convertLambdaToAST(function_expression->getCapture(), function_expression->getAcionsDAG(), std::move(captured_values));
+}
+
+/// Whether a literal of `value` has the type `type`, so it needs no cast.
+/// Compares the names, because `equals` does not tell `Bool` from `UInt8`.
+bool literalHasType(const Field & value, const IDataType & type)
+{
+    try
+    {
+        return applyVisitor(FieldToDataType(), value)->getName() == type.getName();
+    }
+    catch (const Exception &)
+    {
+        /// `FieldToDataType` throws for values without a common type, such as an array of a number and a string.
+        return false;
+    }
+}
+
+ASTPtr convertConstantToAST(const ColumnPtr & column, const DataTypePtr & type)
+{
+    /// A `Set` column has no `Field`, so emitting it as a literal would give `x IN NULL`.
+    if (WhichDataType(type).isSet())
+        return convertSetColumnToAST(*column);
+
+    if (WhichDataType(type).isFunction())
+        return convertFunctionColumnToAST(*column);
+
+    /// A literal that already has the type stays bare: the analyzer does not fold a cast whose result takes 1 MiB or
+    /// more, and the needles of `hasAnyTokens` must stay a constant.
+    Field value = (*column)[0];
+    if (literalHasType(value, *type))
+        return make_intrusive<ASTLiteral>(std::move(value));
+
+    /// Otherwise a bare literal takes the type of its `Field`, so a `Date` would become a number. Convert the constant
+    /// the way the analyzer does, which casts the literal to the constant's type where needed.
+    const auto * column_const = typeid_cast<const ColumnConst *>(column.get());
+    auto value_column = column_const ? column_const->getDataColumnPtr() : column->cut(0, 1);
+    auto ast = ConstantNode(ColumnConst::create(std::move(value_column), 1), type).toAST();
+
+    /// The analyzer casts a literal only if the kind of its type differs, so a `Map(String, Date)` value would stay
+    /// a literal of `Map(String, UInt16)`.
+    if (const auto * literal = ast->as<ASTLiteral>(); literal && !literalHasType(literal->value, *type))
+        return makeCastToTypeNameAST(std::move(ast), type->getName());
+
+    return ast;
+}
+
+ASTPtr convertNodeToAST(const ActionsDAG::Node & node, const CapturedValues & captured)
 {
     switch (node.type)
     {
         case ActionsDAG::ActionType::INPUT:
             if (auto it = captured.find(node.result_name); it != captured.end())
-                return convertNodeToAST(*it->second);
+                return it->second->clone();
             return make_intrusive<ASTIdentifier>(node.result_name);
 
         case ActionsDAG::ActionType::COLUMN:
@@ -398,11 +475,7 @@ ASTPtr convertNodeToAST(const ActionsDAG::Node & node, const std::unordered_map<
             if (!node.column)
                 return nullptr;
 
-            /// A `Set` column has no `Field`, so emitting it as a literal would give `x IN NULL`.
-            if (WhichDataType(node.result_type).isSet())
-                return convertSetColumnToAST(*node.column);
-
-            return make_intrusive<ASTLiteral>((*node.column)[0]);
+            return convertConstantToAST(node.column, node.result_type);
         }
 
         case ActionsDAG::ActionType::ALIAS:
@@ -414,7 +487,20 @@ ASTPtr convertNodeToAST(const ActionsDAG::Node & node, const std::unordered_map<
                 return nullptr;
 
             if (const auto * function_capture = dynamic_cast<const FunctionCapture *>(node.function_base.get()))
-                return convertCapturedLambdaToAST(*function_capture, node.children);
+            {
+                /// The captured values are computed in the current scope, so they can refer to its own captured columns.
+                ASTs captured_values;
+                for (const auto * child : node.children)
+                {
+                    auto captured_value = convertNodeToAST(*child, captured);
+                    if (!captured_value)
+                        return nullptr;
+
+                    captured_values.push_back(std::move(captured_value));
+                }
+
+                return convertLambdaToAST(function_capture->getCapture(), function_capture->getAcionsDAG(), std::move(captured_values));
+            }
 
             auto function = make_intrusive<ASTFunction>();
             function->arguments = make_intrusive<ASTExpressionList>();
