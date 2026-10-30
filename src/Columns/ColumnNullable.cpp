@@ -242,7 +242,7 @@ void ColumnNullable::deserializeAndInsertFromArena(ReadBuffer & in, const IColum
     UInt8 val = 0;
     readBinaryLittleEndian<UInt8>(val, in);
 
-    getNullMapData().push_back(val);
+    getNullMapData().push_back(val != 0);
 
     if (val == 0)
         getNestedColumn().deserializeAndInsertFromArena(in, settings);

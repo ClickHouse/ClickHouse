@@ -8,14 +8,14 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 TABLE_PATH="${CLICKHOUSE_USER_FILES}/lakehouses/${CLICKHOUSE_DATABASE}_null_map_bytes"
 rm -rf "${TABLE_PATH}"
 
-# `if` forwards its raw condition column as the null map, so the map here holds 0, 2 and 4: byte 0
-# marks the 10 rows holding 'x' and the 2s and 4s are the 20 rows that are equally NULL.
+# Native input keeps the null-map bytes a sender wrote, so the map here holds 0, 2 and 4: byte 0 marks
+# the 10 rows holding 'x' and the 2s and 4s are the 20 rows that are equally NULL.
 ${CLICKHOUSE_CLIENT} --query "
     SET allow_experimental_insert_into_iceberg = 1;
     SET max_insert_threads = 1;
     CREATE TABLE t_null_map_bytes_iceberg (id Int64, e Nullable(String))
     ENGINE = IcebergLocal('${TABLE_PATH}', 'Parquet') ORDER BY (id);
-    INSERT INTO t_null_map_bytes_iceberg SELECT number, if(toUInt8((number % 3) * 2), NULL, 'x') FROM numbers(30);
+    INSERT INTO t_null_map_bytes_iceberg SELECT r + 3 * k, e FROM format(Native, concat('\x02\x03', '\x01r\x05UInt8', '\x00\x01\x02', '\x01e\x10Nullable(String)', '\x00\x02\x04', '\x01x\x01x\x01x')) ARRAY JOIN range(10) AS k;
 "
 
 echo '--- a null count is the number of NULL rows, never the sum of the null-map bytes ---'
