@@ -230,6 +230,10 @@ public:
         UInt64 granules_dropped_by_primary_key = 0;
         UInt64 granules_dropped_by_skip_indexes = 0;
         NameSet used_skip_indexes;
+        /// Parent parts that the analysis of a projection excluded entirely, with the marks that the projection analysis
+        /// excluded in them by the primary key and by skip indexes. Filled by the projection analysis for its own parts
+        /// and by `filterPartsByProjection` in the read whose parts it removes.
+        std::unordered_map<const IMergeTreeDataPart *, std::pair<UInt64, UInt64>> parts_excluded_by_projection;
         std::atomic<bool> exceeded_row_limits = false;
 
         AnalysisResult() = default;
@@ -257,6 +261,7 @@ public:
             , granules_dropped_by_primary_key(other.granules_dropped_by_primary_key)
             , granules_dropped_by_skip_indexes(other.granules_dropped_by_skip_indexes)
             , used_skip_indexes(other.used_skip_indexes)
+            , parts_excluded_by_projection(other.parts_excluded_by_projection)
             , exceeded_row_limits(other.exceeded_row_limits.load())
         {}
 
@@ -283,6 +288,7 @@ public:
             , granules_dropped_by_primary_key(other.granules_dropped_by_primary_key)
             , granules_dropped_by_skip_indexes(other.granules_dropped_by_skip_indexes)
             , used_skip_indexes(std::move(other.used_skip_indexes))
+            , parts_excluded_by_projection(std::move(other.parts_excluded_by_projection))
             , exceeded_row_limits(other.exceeded_row_limits.load())
         {}
 

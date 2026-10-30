@@ -1654,6 +1654,10 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
                 return false;
             }
 
+            if (part.data_part && part.ranges.empty() && part.data_part->isProjectionPart())
+                result.parts_excluded_by_projection[part.data_part->getParentPart()]
+                    = {part.marks_dropped_by_primary_key, part.marks_dropped_by_skip_indexes};
+
             return !part.data_part || part.ranges.empty();
         });
 

@@ -295,7 +295,9 @@ bool QueryDAG::build(QueryPlan::Node & node)
 }
 
 size_t filterPartsByProjection(
-    ReadFromMergeTree::AnalysisResult & reading_select_result, const std::unordered_set<const IMergeTreeDataPart *> & valid_parts)
+    ReadFromMergeTree::AnalysisResult & reading_select_result,
+    const std::unordered_set<const IMergeTreeDataPart *> & valid_parts,
+    const ReadFromMergeTree::AnalysisResult * projection_result)
 {
     size_t filtered_parts = 0;
     auto & parts_with_ranges = reading_select_result.parts_with_ranges;
@@ -317,6 +319,18 @@ size_t filterPartsByProjection(
             reading_select_result.selected_rows -= part.getRowsCount();
             reading_select_result.selected_ranges -= part.ranges.size();
             ++filtered_parts;
+
+            if (projection_result)
+            {
+                /// not listed if the projection analysis excluded the part before the primary key
+                auto excluded = projection_result->parts_excluded_by_projection.find(part.data_part.get());
+                auto drops = excluded != projection_result->parts_excluded_by_projection.end() ? excluded->second : std::pair<UInt64, UInt64>{};
+                auto & dropped_by_primary_key = reading_select_result.granules_dropped_by_primary_key;
+                auto & dropped_by_skip_indexes = reading_select_result.granules_dropped_by_skip_indexes;
+                dropped_by_primary_key = dropped_by_primary_key - std::min(dropped_by_primary_key, part.marks_dropped_by_primary_key) + drops.first;
+                dropped_by_skip_indexes = dropped_by_skip_indexes - std::min(dropped_by_skip_indexes, part.marks_dropped_by_skip_indexes) + drops.second;
+                reading_select_result.parts_excluded_by_projection[part.data_part.get()] = drops;
+            }
         }
     }
 
@@ -328,10 +342,17 @@ void filterPartsByChosenProjection(ReadFromMergeTree::AnalysisResult & parent_re
 {
     filterPartsByProjection(parent_reading_select_result, candidate.parent_parts);
 
+    /// A projection that excluded such a part, this one or a later one, replaced the parent drops in it with its own
+    const auto & excluded_parts = parent_reading_select_result.parts_excluded_by_projection;
     auto & dropped_by_primary_key = parent_reading_select_result.granules_dropped_by_primary_key;
     auto & dropped_by_skip_indexes = parent_reading_select_result.granules_dropped_by_skip_indexes;
-    dropped_by_primary_key -= std::min(dropped_by_primary_key, candidate.parent_granules_dropped_by_primary_key);
-    dropped_by_skip_indexes -= std::min(dropped_by_skip_indexes, candidate.parent_granules_dropped_by_skip_indexes);
+    for (const auto & [part, parent_drops] : candidate.parent_drops_in_analyzed_parts)
+    {
+        auto excluded = excluded_parts.find(part);
+        const auto & drops = excluded != excluded_parts.end() ? excluded->second : parent_drops;
+        dropped_by_primary_key -= std::min(dropped_by_primary_key, drops.first);
+        dropped_by_skip_indexes -= std::min(dropped_by_skip_indexes, drops.second);
+    }
 }
 
 /// The projection's column set is re-derived from its query at every table load, so it can drift
@@ -475,8 +496,9 @@ bool analyzeProjectionCandidate(
                 part_with_ranges.data_part,
                 part_with_ranges.part_index_in_query,
                 part_with_ranges.part_starting_offset_in_query));
-            candidate.parent_granules_dropped_by_primary_key += part_with_ranges.marks_dropped_by_primary_key;
-            candidate.parent_granules_dropped_by_skip_indexes += part_with_ranges.marks_dropped_by_skip_indexes;
+            candidate.parent_drops_in_analyzed_parts.emplace(
+                part_with_ranges.data_part.get(),
+                std::pair<UInt64, UInt64>{part_with_ranges.marks_dropped_by_primary_key, part_with_ranges.marks_dropped_by_skip_indexes});
         }
         else
         {
@@ -512,7 +534,7 @@ bool analyzeProjectionCandidate(
         valid_parts.emplace(part.data_part->getParentPart());
 
     /// Remove ranges whose data parts are fully filtered by projection.
-    size_t filtered_parts = filterPartsByProjection(parent_reading_select_result, valid_parts);
+    size_t filtered_parts = filterPartsByProjection(parent_reading_select_result, valid_parts, projection_result_ptr.get());
 
     /// Under `force_primary_key` a scan must be restricted by the primary key of whatever is read.
     /// Only check after filterPartsByProjection to still utilize parts pruning
@@ -643,7 +665,7 @@ void filterPartsAndCollectProjectionCandidates(
     }
 
     /// Remove ranges whose data parts are fully filtered by projection.
-    size_t filtered_parts = filterPartsByProjection(parent_reading_select_result, valid_parts);
+    size_t filtered_parts = filterPartsByProjection(parent_reading_select_result, valid_parts, projection_result_ptr.get());
 
     if (in_use)
     {

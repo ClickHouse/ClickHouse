@@ -78,18 +78,20 @@ struct ProjectionCandidate
     /// Parent parts that need to be read due to missing this projection
     std::unordered_set<const IMergeTreeDataPart *> parent_parts;
 
-    /// Marks that the parent analysis excluded in the parts that this projection analyzed
-    UInt64 parent_granules_dropped_by_primary_key = 0;
-    UInt64 parent_granules_dropped_by_skip_indexes = 0;
+    /// The parts that this projection analyzed, with the marks that the parent analysis excluded in them by the primary key and by skip indexes
+    std::unordered_map<const IMergeTreeDataPart *, std::pair<UInt64, UInt64>> parent_drops_in_analyzed_parts;
 };
 
 /// Removes parts not in valid_parts from reading_select_result and updates related counters.
+/// If set, `projection_result` is the projection analysis that excluded the removed parts: its drops in them replace the drops of `reading_select_result`.
 /// Returns the number of parts removed.
 size_t filterPartsByProjection(
-    ReadFromMergeTree::AnalysisResult & reading_select_result, const std::unordered_set<const IMergeTreeDataPart *> & valid_parts);
+    ReadFromMergeTree::AnalysisResult & reading_select_result,
+    const std::unordered_set<const IMergeTreeDataPart *> & valid_parts,
+    const ReadFromMergeTree::AnalysisResult * projection_result = nullptr);
 
 /// Removes the parts that the chosen `candidate` analyzed from `parent_reading_select_result`, and the marks that
-/// the parent analysis excluded in them: the projection reports its own analysis of these parts.
+/// the parent analysis or another projection excluded in them: the projection reports its own analysis of these parts.
 void filterPartsByChosenProjection(ReadFromMergeTree::AnalysisResult & parent_reading_select_result, const ProjectionCandidate & candidate);
 
 /// This function fills ProjectionCandidate structure for specified projection.
