@@ -34,9 +34,8 @@ InterpreterShowTablesQuery::InterpreterShowTablesQuery(const ASTPtr & query_ptr_
 {
 }
 
-/// The sources of the tables listed for a hierarchical database name (see `DatabaseCatalog`), as conditions on
-/// `system.tables` and expressions of the listed name. Empty for an ordinary database name, which is only itself.
-std::vector<InterpreterShowTablesQuery::HierarchicalDatabaseSource> InterpreterShowTablesQuery::getHierarchicalDatabaseSources(const String & database)
+std::vector<InterpreterShowTablesQuery::HierarchicalDatabaseSource> InterpreterShowTablesQuery::getHierarchicalDatabaseSources(
+    const String & database, const String & database_column, const String & name_column)
 {
     const auto & catalog = DatabaseCatalog::instance();
 
@@ -57,12 +56,12 @@ std::vector<InterpreterShowTablesQuery::HierarchicalDatabaseSource> InterpreterS
     auto quoted = [](const String & value) { WriteBufferFromOwnString buf; buf << DB::quote << value; return buf.str(); };
 
     /// The database itself.
-    sources.push_back({.condition = "database = " + quoted(database), .name_expression = "name", .databases = {database}});
+    sources.push_back({.condition = database_column + " = " + quoted(database), .name_expression = name_column, .databases = {database}});
 
     if (has_nested_databases)
         sources.push_back({
-            .condition = "startsWith(database, " + quoted(nested_database_prefix) + ")",
-            .name_expression = fmt::format("concat(substring(database, {}), '.', name)", nested_database_prefix.size() + 1),
+            .condition = "startsWith(" + database_column + ", " + quoted(nested_database_prefix) + ")",
+            .name_expression = fmt::format("concat(substring({}, {}), '.', {})", database_column, nested_database_prefix.size() + 1, name_column),
             .databases = std::move(nested_databases)});
 
     /// The tables `b.*` of the database `a`, for every prefix `a` that is a database.
@@ -74,8 +73,8 @@ std::vector<InterpreterShowTablesQuery::HierarchicalDatabaseSource> InterpreterS
 
         String table_prefix = fmt::format("{}.", fmt::join(parts.begin() + database_parts, parts.end(), "."));
         sources.push_back({
-            .condition = "(database = " + quoted(database_name) + " AND startsWith(name, " + quoted(table_prefix) + "))",
-            .name_expression = fmt::format("substring(name, {})", table_prefix.size() + 1),
+            .condition = "(" + database_column + " = " + quoted(database_name) + " AND startsWith(" + name_column + ", " + quoted(table_prefix) + "))",
+            .name_expression = fmt::format("substring({}, {})", name_column, table_prefix.size() + 1),
             .databases = {database_name}});
     }
 

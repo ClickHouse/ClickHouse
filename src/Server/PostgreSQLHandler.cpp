@@ -1415,6 +1415,11 @@ void pinCopyFormatSettings(const ContextMutablePtr & query_context)
 /// the current database only, and a relation of another database is reachable only through its schema. The
 /// call is therefore rewritten into a search-path check against the emulated catalog - the current
 /// database, plus the built-in `pg_catalog` rows, which are always on the search path in PostgreSQL too.
+/// The current database can be a hierarchical name (`USE catalog.sales`, see `DatabaseCatalog`), and then
+/// the relations reachable by an unqualified name are the same as listed by `SHOW TABLES`: the tables of the
+/// databases `catalog.sales.*`, and the tables `sales.*` of the database `catalog`. The check is written
+/// in terms of `currentDatabase` rather than the name at the time of the rewrite, because a prepared
+/// statement or a later statement of the same message can run after a `USE`.
 /// The global SQL function of the same name keeps returning 1: outside a PostgreSQL session there is no
 /// emulated catalog to consult.
 static String rewritePgTableIsVisible(const String & query)
@@ -1422,6 +1427,9 @@ static String rewritePgTableIsVisible(const String & query)
     static constexpr std::string_view function_name = "pg_table_is_visible";
     static constexpr std::string_view visible_oids
         = "SELECT oid FROM pg_class_oids WHERE database = currentDatabase()"
+          " OR startsWith(database, concat(currentDatabase(), '.'))"
+          " OR (startsWith(currentDatabase(), concat(database, '.'))"
+          " AND startsWith(name, concat(substring(currentDatabase(), length(database) + 2), '.')))"
           " UNION ALL SELECT oid FROM pg_class WHERE relnamespace = 11 AND oid < 16384";
 
     /// A fast path for the common case of a query that does not call the function at all.
