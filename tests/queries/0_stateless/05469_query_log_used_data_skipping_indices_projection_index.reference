@@ -1,0 +1,8 @@
+32
+32
+47
+32
+projection_index_1	32	[]	['t_projection_index.auto_minmax_index_a']	0	4
+projection_index_2	32	[]	['t_projection_index_filtering.auto_minmax_index_a']	0	4
+projection_index_3	16	['t_projection_index_chosen.p_b']	[]	6	0
+projection_index_4	64	[]	[]	0	0
