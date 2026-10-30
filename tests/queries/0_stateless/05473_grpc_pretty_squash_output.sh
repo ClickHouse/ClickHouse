@@ -28,7 +28,14 @@ with grpc.insecure_channel(f"localhost:{os.environ.get('CLICKHOUSE_PORT_GRPC', '
     query_info = clickhouse_grpc_pb2.QueryInfo(query=query.format(""), settings=settings)
     print(values(stub.ExecuteQuery(query_info, timeout=60).output))
     print(values(b"".join(result.output for result in stub.ExecuteQueryWithStreamOutput(query_info, timeout=60))))
-    query_info = clickhouse_grpc_pb2.QueryInfo(query=query.format(" AND throwIf(number = 2) = 0"), settings=settings)
-    print(stub.ExecuteQuery(query_info, timeout=60).exception.code)
+    # The exception arrives while the writer may still hold a squashed chunk.
+    query = "SELECT number FROM numbers(4) WHERE if(number < 2, sleepEachRow(0.05) = 0, throwIf(number = 2) = 0) FORMAT PrettyCompactNoEscapes"
+    codes = set()
+    for squash_ms in range(1, 6):
+        for _ in range(4):
+            query_info = clickhouse_grpc_pb2.QueryInfo(
+                query=query, settings={**settings, "output_format_pretty_squash_consecutive_ms": str(squash_ms)})
+            codes.add(stub.ExecuteQuery(query_info, timeout=60).exception.code)
+    print(*sorted(codes))
     print(stub.ExecuteQuery(clickhouse_grpc_pb2.QueryInfo(query="SELECT 1"), timeout=60).output.decode(), end="")
 EOF
