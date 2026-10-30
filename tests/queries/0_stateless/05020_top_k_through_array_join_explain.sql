@@ -1,6 +1,9 @@
 -- Tags: no-parallel-replicas
 -- no-parallel-replicas: the rewrite is skipped with parallel replicas
 
+-- Disable force_primary_key_reverse_order: Query plan output depends on sort direction
+SET force_primary_key_reverse_order = 0;
+
 DROP TABLE IF EXISTS t_aj_explain;
 
 CREATE TABLE t_aj_explain (pk UInt64, x UInt64, payload String, arr Array(UInt32), arr2 Array(UInt32))
