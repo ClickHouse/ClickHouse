@@ -62,7 +62,7 @@ void MutatePlainMergeTreeTask::prepare()
 
     write_part_log = [this, mutation_ids] (const ExecutionStatus & execution_status)
     {
-        auto profile_counters_snapshot = std::make_shared<ProfileEvents::Counters::Snapshot>(profile_counters.getPartiallyAtomicSnapshot());
+        auto profile_counters_snapshot = getProfileEventsForPartLog(merge_list_entry.get(), profile_counters);
         storage.writePartLog(
             PartLogElement::MUTATE_PART,
             execution_status,
@@ -97,8 +97,11 @@ void MutatePlainMergeTreeTask::finish()
 bool MutatePlainMergeTreeTask::executeStep()
 {
     auto component_guard = Coordination::setCurrentComponent("MutatePlainMergeTreeTask::executeStep");
-    /// Metrics will be saved in the local profile_counters.
-    ProfileEventsScope profile_events_scope(&profile_counters);
+    /// The thread group of the task collects the profile events of every thread that works on it. The steps
+    /// that run before it is created collect them into `profile_counters`, see `getProfileEventsForPartLog`.
+    std::optional<ProfileEventsScope> profile_events_scope;
+    if (!merge_list_entry)
+        profile_events_scope.emplace(&profile_counters);
 
     /// Make out memory tracker a parent of current thread memory tracker
     std::optional<ThreadGroupSwitcher> switcher;

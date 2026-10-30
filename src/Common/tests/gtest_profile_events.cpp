@@ -122,3 +122,20 @@ TEST(ProfileEvents, ParentAttachedConcurrentlyWithIncrement)
 
     EXPECT_EQ((*parent)[ProfileEvents::Query], 1);
 }
+
+/// `incrementNoTraceExceptGlobal` is for counts that have already reached `global_counters` through another
+/// chain, like the profile events of a merge, which its own thread group adds to the global counters, when
+/// they are also transferred to the query that ran the merge: every level but the global one receives them.
+TEST(ProfileEvents, IncrementExceptGlobalSkipsGlobalCounters)
+{
+    const ProfileEvents::Count global_before = ProfileEvents::global_counters[ProfileEvents::SelectQuery];
+
+    ProfileEvents::Counters user(VariableContext::User, &ProfileEvents::global_counters);
+    ProfileEvents::Counters query(VariableContext::Process, &user);
+
+    query.incrementNoTraceExceptGlobal(ProfileEvents::SelectQuery, 5);
+
+    EXPECT_EQ(query[ProfileEvents::SelectQuery], 5);
+    EXPECT_EQ(user[ProfileEvents::SelectQuery], 5);
+    EXPECT_EQ(ProfileEvents::global_counters[ProfileEvents::SelectQuery], global_before);
+}

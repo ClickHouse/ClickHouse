@@ -4,6 +4,7 @@
 #include <Core/Field.h>
 #include <Common/Stopwatch.h>
 #include <Common/CurrentMetrics.h>
+#include <Common/ProfileEvents.h>
 #include <Storages/MergeTree/MergeType.h>
 #include <Storages/MergeTree/MergeAlgorithm.h>
 #include <Storages/MergeTree/MergeTreePartInfo.h>
@@ -280,5 +281,13 @@ public:
         return merges_with_ttl_counter;
     }
 };
+
+/// The profile events of a merge or a mutation for `system.part_log`. They are collected by the thread group
+/// of `merge_entry`, which every thread that works on the task joins, including the threads of the pools it
+/// schedules work to, such as the prefetches of remote reads. The steps of the task that run before the entry
+/// is created collect them into `counters_outside_thread_group` instead, which is added. `merge_entry` is
+/// nullptr if the task has not created it, then all events are in `counters_outside_thread_group`.
+std::shared_ptr<ProfileEvents::Counters::Snapshot> getProfileEventsForPartLog(
+    const MergeListEntry * merge_entry, const ProfileEvents::Counters & counters_outside_thread_group);
 
 }

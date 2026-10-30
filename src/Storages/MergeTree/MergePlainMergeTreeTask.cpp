@@ -39,9 +39,11 @@ void MergePlainMergeTreeTask::onCompleted()
 bool MergePlainMergeTreeTask::executeStep()
 {
     auto component_guard = Coordination::setCurrentComponent("MergePlainMergeTreeTask::executeStep");
-    /// All metrics will be saved in the thread_group, including all scheduled tasks.
-    /// In profile_counters only metrics from this thread will be saved.
-    ProfileEventsScope profile_events_scope(&profile_counters);
+    /// The thread group of the task collects the profile events of every thread that works on it. The steps
+    /// that run before it is created collect them into `profile_counters`, see `getProfileEventsForPartLog`.
+    std::optional<ProfileEventsScope> profile_events_scope;
+    if (!merge_list_entry)
+        profile_events_scope.emplace(&profile_counters);
 
     /// Make out memory tracker a parent of current thread memory tracker
     std::optional<ThreadGroupSwitcher> switcher;
@@ -107,7 +109,7 @@ void MergePlainMergeTreeTask::prepare()
 
     write_part_log = [this] (const ExecutionStatus & execution_status)
     {
-        auto profile_counters_snapshot = std::make_shared<ProfileEvents::Counters::Snapshot>(profile_counters.getPartiallyAtomicSnapshot());
+        auto profile_counters_snapshot = getProfileEventsForPartLog(merge_list_entry.get(), profile_counters);
         auto projections_duration_ms = merge_task ? merge_task->grabProjectionsMergeTime() : std::map<String, UInt64>{};
         storage.writePartLog(
             PartLogElement::MERGE_PARTS,
@@ -129,9 +131,10 @@ void MergePlainMergeTreeTask::prepare()
             auto task_thread_group = (*merge_list_entry)->thread_group;
             auto task_counters_snapshot = task_thread_group->performance_counters.getPartiallyAtomicSnapshot();
 
+            /// The thread group of the task has already added these counts to the global counters.
             auto & query_counters = query_thread_group->performance_counters;
             for (ProfileEvents::Event i = ProfileEvents::Event(0); i < ProfileEvents::end(); ++i)
-                query_counters.incrementNoTrace(i, task_counters_snapshot[i]);
+                query_counters.incrementNoTraceExceptGlobal(i, task_counters_snapshot[i]);
         }
     };
 
