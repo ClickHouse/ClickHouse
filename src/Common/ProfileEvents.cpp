@@ -1459,6 +1459,28 @@ The server successfully detected this situation and will download merged part fr
     \
     M(DistrCacheTemporaryFilesCreated, "Distributed Cache connection event. Number of temporary files created in distributed cache", ValueType::Number) \
     M(DistrCacheTemporaryFilesBytesWritten, "Distributed Cache connection event. Number of bytes written to temporary files created in distributed cache", ValueType::Number) \
+    M(DistrCacheTemporaryFilesPublished, "Distributed Cache committed temporary-data event. Number of files published by a client", ValueType::Number) \
+    M(DistrCacheTemporaryFilesPublicationAmbiguous, "Distributed Cache committed temporary-data event. Number of ambiguous publication replies", ValueType::Number) \
+    M(DistrCacheTemporaryFilesConfirmed, "Distributed Cache committed temporary-data event. Number of publications confirmed on the original server", ValueType::Number) \
+    M(DistrCacheTemporaryFilesHandoffFailed, "Distributed Cache committed temporary-data event. Number of failed owner handoffs", ValueType::Number) \
+    M(DistrCacheTemporaryFilesConfirmationFailed, "Distributed Cache committed temporary-data event. Number of failed publication confirmations", ValueType::Number) \
+    M(DistrCacheTemporaryDataRenewBatches, "Distributed Cache committed temporary-data event. Number of renewal batches", ValueType::Number) \
+    M(DistrCacheTemporaryDataRenewBatchFailures, "Distributed Cache committed temporary-data event. Number of failed renewal batches", ValueType::Number) \
+    M(DistrCacheTemporaryDataReleaseBatches, "Distributed Cache committed temporary-data event. Number of release batches", ValueType::Number) \
+    M(DistrCacheTemporaryDataReleaseBatchFailures, "Distributed Cache committed temporary-data event. Number of failed release batches", ValueType::Number) \
+    M(DistrCacheTemporaryDataReleasesDropped, "Distributed Cache committed temporary-data event. Number of releases given up after a terminal failure or after the server-side TTL passed while retrying, left to TTL cleanup", ValueType::Number) \
+    M(DistrCacheReadFinalAckFailed, "Distributed Cache event. Number of reads whose connection was lost before the final acknowledgement; the fully received range was accepted", ValueType::Number) \
+    M(DistrCacheTemporaryDataRegistryCallbackFailures, "Distributed Cache committed temporary-data event. Number of contained temporary-data registry callback failures", ValueType::Number) \
+    M(DistrCacheTemporaryDataRegistryLockWaitMicroseconds, "Distributed Cache committed temporary-data event. Time spent waiting for the temporary-data registry mutex on contention", ValueType::Microseconds) \
+    M(DistrCacheTemporaryDataRegistryScheduleFailures, "Distributed Cache committed temporary-data event. Number of temporary-data registry task schedule failures", ValueType::Number) \
+    M(DistrCacheServerTemporaryFilesPublished, "Distributed Cache server event. Number of committed temporary files published", ValueType::Number) \
+    M(DistrCacheServerTemporaryFilesPublishRejected, "Distributed Cache server event. Number of rejected committed temporary publications", ValueType::Number) \
+    M(DistrCacheServerTemporaryFilesReleased, "Distributed Cache server event. Number of committed temporary files released", ValueType::Number) \
+    M(DistrCacheServerTemporaryFilesExpired, "Distributed Cache server event. Number of committed temporary files expired", ValueType::Number) \
+    M(DistrCacheServerTemporaryFilesExtended, "Distributed Cache server event. Number of committed temporary file TTL extensions", ValueType::Number) \
+    M(DistrCacheServerTemporaryDataControlMicroseconds, "Distributed Cache server event. Time spent processing committed temporary-data controls", ValueType::Microseconds) \
+    M(DistrCacheServerTemporaryReadRejected, "Distributed Cache server event. Number of rejected committed temporary reads", ValueType::Number) \
+    M(DistrCacheServerTemporaryCleanupScheduleFailures, "Distributed Cache server event. Number of committed temporary cleanup schedule failures", ValueType::Number) \
     \
     M(DistrCacheServerProcessRequestMicroseconds, "Distributed Cache server event. Time spent processing request on DistributedCache server side", ValueType::Microseconds) \
     M(DistrCacheServerStartRequestPackets, "Distributed Cache server event. Number of StartRequest packets in DistributedCacheServer", ValueType::Number) \
@@ -1481,6 +1503,7 @@ The server successfully detected this situation and will download merged part fr
     M(DistrCacheServerConnectionsRejectedOverLimit, "Distributed Cache server event. The number of new connections rejected with a SlowDown packet because the connecting client exceeded its share of connections", ValueType::Number) \
     M(DistrCacheServerConnectionRegistryLockWaitMicroseconds, "Distributed Cache server event. Time spent waiting for the global connection registry mutex on contention (identify, setClientWeight, eviction, and unregister when a reindex or bucket removal is due)", ValueType::Microseconds) \
     M(DistrCacheServerConnectionRegistryClientLockWaitMicroseconds, "Distributed Cache server event. Time spent waiting for a per-client connection bucket mutex on contention (register/unregister/identify/eviction)", ValueType::Microseconds) \
+    M(DistrCacheServerCommittedTemporaryFilesLockWaitMicroseconds, "Distributed Cache server event. Time spent waiting for the committed temporary-files mutex on contention.", ValueType::Microseconds) \
     \
     M(LogTest, "Number of log messages with level Test", ValueType::Number) \
     M(LogTrace, "Number of log messages with level Trace", ValueType::Number) \
