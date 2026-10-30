@@ -1,0 +1,69 @@
+<test>
+    <!-- Compare a `UNION ALL` aggregation with `distributed_plan_optimize_exchanges` on and off.
+         Performance CI runs both queries on the pull-request binary and on master.
+         The enabled query is the one this change should speed up: the scatter is pushed
+         under the union and the matching empty-key shuffle is removed.
+         `distributed_plan_execute_locally` keeps the plan on this single server.
+         That path uses in-memory queues, so `StreamingExchangeSendBytes` stays 0;
+         the measured difference is the removed gather-then-scatter copy, not network bytes.
+         The disabled query is the control. Settings stay on the query so the inserts are not planned as distributed. -->
+
+    <create_query>CREATE TABLE union_scatter_pushdown_l (k UInt64, v UInt64) ENGINE = MergeTree ORDER BY k</create_query>
+    <create_query>CREATE TABLE union_scatter_pushdown_r (k UInt64, v UInt64) ENGINE = MergeTree ORDER BY k</create_query>
+
+    <fill_query>INSERT INTO union_scatter_pushdown_l SELECT number, number FROM numbers(5000000)</fill_query>
+    <fill_query>INSERT INTO union_scatter_pushdown_r SELECT number * 2, number FROM numbers(5000000)</fill_query>
+
+    <query>
+        SELECT sum(c) FROM
+        (
+            SELECT k, count() AS c
+            FROM
+            (
+                SELECT k, v FROM union_scatter_pushdown_l
+                UNION ALL
+                SELECT k, v FROM union_scatter_pushdown_r
+            )
+            GROUP BY k
+        )
+        SETTINGS
+            make_distributed_plan = 1,
+            distributed_plan_execute_locally = 1,
+            distributed_plan_fallback_to_local_execution = 0,
+            distributed_plan_optimize_exchanges = 1,
+            enable_parallel_replicas = 0,
+            distributed_plan_max_rows_to_broadcast = 0,
+            distributed_plan_default_reader_bucket_count = 4,
+            distributed_plan_default_shuffle_join_bucket_count = 4,
+            max_rows_to_group_by = 0,
+            max_threads = 4
+    </query>
+
+    <query>
+        SELECT sum(c) FROM
+        (
+            SELECT k, count() AS c
+            FROM
+            (
+                SELECT k, v FROM union_scatter_pushdown_l
+                UNION ALL
+                SELECT k, v FROM union_scatter_pushdown_r
+            )
+            GROUP BY k
+        )
+        SETTINGS
+            make_distributed_plan = 1,
+            distributed_plan_execute_locally = 1,
+            distributed_plan_fallback_to_local_execution = 0,
+            distributed_plan_optimize_exchanges = 0,
+            enable_parallel_replicas = 0,
+            distributed_plan_max_rows_to_broadcast = 0,
+            distributed_plan_default_reader_bucket_count = 4,
+            distributed_plan_default_shuffle_join_bucket_count = 4,
+            max_rows_to_group_by = 0,
+            max_threads = 4
+    </query>
+
+    <drop_query>DROP TABLE IF EXISTS union_scatter_pushdown_l</drop_query>
+    <drop_query>DROP TABLE IF EXISTS union_scatter_pushdown_r</drop_query>
+</test>
