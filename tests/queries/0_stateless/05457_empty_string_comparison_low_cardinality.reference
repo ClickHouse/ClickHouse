@@ -23,3 +23,14 @@ primary key
 4
 Parts: 1 | Granules: 1
 Granules: 1/25
+computed primary key
+4	
+Parts: 1 | Granules: 2
+Granules: 2/25
+Parts: 1 | Granules: 2
+Granules: 2/25
+96
+4	
+Parts: 1 | Granules: 2
+Granules: 2/25
+96

@@ -9,6 +9,8 @@ SET use_skip_indexes_on_data_read = 0;
 DROP TABLE IF EXISTS t_lc_empty;
 DROP TABLE IF EXISTS t_lc_fixed_empty;
 DROP TABLE IF EXISTS t_lc_key_empty;
+DROP TABLE IF EXISTS t_computed_key_empty;
+DROP TABLE IF EXISTS t_lc_computed_key_empty;
 
 CREATE TABLE t_lc_empty
 (
@@ -51,6 +53,22 @@ INSERT INTO t_lc_key_empty SELECT if(number < 4, '', toString(number)) FROM numb
 SELECT count() FROM t_lc_key_empty WHERE s = '' SETTINGS force_primary_key = 1;
 SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT count() FROM t_lc_key_empty WHERE s = '') WHERE explain LIKE '%Granules:%';
 
+SELECT 'computed primary key';
+CREATE TABLE t_computed_key_empty (s String) ENGINE = MergeTree ORDER BY cityHash64(s) SETTINGS index_granularity = 4, index_granularity_bytes = '10Mi';
+INSERT INTO t_computed_key_empty SELECT if(number < 4, '', toString(number)) FROM numbers(100);
+SELECT count(), max(s) FROM t_computed_key_empty WHERE s = '' SETTINGS force_primary_key = 1;
+SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT s FROM t_computed_key_empty WHERE s = '') WHERE explain LIKE '%Granules:%';
+SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT s FROM t_computed_key_empty WHERE s = '' SETTINGS optimize_empty_string_comparisons = 0) WHERE explain LIKE '%Granules:%';
+SELECT count() FROM t_computed_key_empty WHERE s != '';
+
+CREATE TABLE t_lc_computed_key_empty (s LowCardinality(String)) ENGINE = MergeTree ORDER BY cityHash64(s) SETTINGS index_granularity = 4, index_granularity_bytes = '10Mi';
+INSERT INTO t_lc_computed_key_empty SELECT if(number < 4, '', toString(number)) FROM numbers(100);
+SELECT count(), max(s) FROM t_lc_computed_key_empty WHERE s = '' SETTINGS force_primary_key = 1;
+SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT s FROM t_lc_computed_key_empty WHERE s = '') WHERE explain LIKE '%Granules:%';
+SELECT count() FROM t_lc_computed_key_empty WHERE s != '';
+
 DROP TABLE t_lc_empty;
 DROP TABLE t_lc_fixed_empty;
 DROP TABLE t_lc_key_empty;
+DROP TABLE t_computed_key_empty;
+DROP TABLE t_lc_computed_key_empty;
