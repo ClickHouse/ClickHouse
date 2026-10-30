@@ -181,7 +181,7 @@ TEST_P(AggregatorAdaptiveMerge, SourceStateLifetimes)
             for (size_t i = 0; i < 3; ++i)
             {
                 auto source = std::make_shared<AggregatedDataVariants>();
-                AdaptiveAggregationProducer producer(session);
+                AdaptiveAggregationProducer producer(session, i);
                 ColumnRawPtrs key_columns(1);
                 Aggregator::AggregateColumns aggregate_columns(aggregates.size());
                 auto key = ColumnUInt64::create();
@@ -253,7 +253,7 @@ TEST(AggregatorAdaptiveStaging, ConstantSerializedKey)
     for (size_t i = 0; i < 2; ++i)
     {
         auto source = std::make_shared<AggregatedDataVariants>();
-        AdaptiveAggregationProducer producer(session);
+        AdaptiveAggregationProducer producer(session, i);
         ColumnRawPtrs key_columns(2);
         Aggregator::AggregateColumns aggregate_columns(aggregates.size());
         bool no_more_keys = false;

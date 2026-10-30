@@ -288,10 +288,10 @@ namespace
     }
 
     /// The staged records of the bucket that a merge task merges, partition by partition: the producers' chunks of a
-    /// partition and its spill stream (see `AdaptiveAggregationSession::SpilledPartition`). A merge unit takes the
-    /// partitions [first_sub, end_sub): `forEachInMemoryPartition` hands out their records in memory, valid until
-    /// `release`, and `forEachSpilledBlock` reads their spilled records back a block at a time, once per pass of the
-    /// caller, each block valid only during its call. `release` frees both.
+    /// partition and its blocks in the spill streams (see `AdaptiveAggregationSession::SpilledPartition`). A merge unit
+    /// takes the partitions [first_sub, end_sub): `forEachInMemoryPartition` hands out their records in memory, valid
+    /// until `release`, and `forEachSpilledBlock` reads their spilled records back a block at a time, once per pass of
+    /// the caller, each block valid only during its call. `release` frees both.
     class AdaptiveBucketRecords
     {
     public:
@@ -301,7 +301,8 @@ namespace
         {
         }
 
-        /// The record count of partition `sub` of the bucket, in the producers' chunks and in its spill stream.
+        /// The record count of partition `sub` of the bucket, in the producers' chunks and in its blocks in the spill
+        /// streams.
         size_t recordsOf(size_t sub) const
         {
             size_t records = spilledOf(sub).recordCount();
@@ -343,8 +344,8 @@ namespace
             }
         }
 
-        /// Frees the records of partition `sub` of the bucket: the producers' chunks and its spill stream, which a unit
-        /// that the top-K pruning skips leaves unread.
+        /// Frees the records of partition `sub` of the bucket: the producers' chunks and its blocks in the spill
+        /// streams, which a unit that the top-K pruning skips leaves unread.
         void release(size_t sub)
         {
             for (const auto & producer : session.producer_buffers)
