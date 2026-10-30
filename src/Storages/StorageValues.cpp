@@ -139,7 +139,8 @@ void StorageValues::read(
     size_t max_block_size,
     size_t num_streams)
 {
-    if (!has_prepared_pipe)
+    /// E.g. the buffers of a `Buffer` table are read by a `ReadFromStorageStep`, which sets the read limits of the query.
+    if (!has_prepared_pipe || !prepared_pipe_is_insert)
     {
         IStorage::read(query_plan, column_names, storage_snapshot, query_info, context, processed_stage, max_block_size, num_streams);
         return;

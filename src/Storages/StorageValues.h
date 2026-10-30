@@ -39,8 +39,9 @@ public:
         size_t max_block_size,
         size_t num_streams) override;
 
-    /// The prepared pipe is taken by the step only when it builds its pipeline: a step that an optimization of the query plan
-    /// removes leaves the pipe to `extractPreparedPipe`.
+    /// For the inserted data of `INSERT ... RETURNING`, the prepared pipe is taken by the step only when it builds its pipeline:
+    /// a step that an optimization of the query plan removes leaves the pipe to `extractPreparedPipe`. Otherwise it is read as
+    /// by any storage.
     void read(
         QueryPlan & query_plan,
         const Names & column_names,
@@ -69,6 +70,9 @@ public:
     /// While it is not allowed, reading the prepared pipe throws.
     void setPreparedPipeReadAllowed(bool value) { prepared_pipe_read_allowed = value; }
 
+    /// The prepared pipe is the insert of `INSERT ... RETURNING`, which runs even if the query does not read it.
+    void setPreparedPipeIsInsert() { prepared_pipe_is_insert = true; }
+
 private:
     void checkPreparedPipeCanBeRead();
 
@@ -79,6 +83,7 @@ private:
     bool prepared_pipe_was_read = false;
     bool prepared_pipe_was_taken = false;
     bool prepared_pipe_read_allowed = true;
+    bool prepared_pipe_is_insert = false;
 };
 
 }
