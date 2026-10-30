@@ -33,6 +33,7 @@ namespace DB
 {
 namespace Setting
 {
+    extern const SettingsMap additional_table_filters;
     extern const SettingsBool parallel_replicas_allow_in_with_subquery;
     extern const SettingsBool parallel_replicas_for_non_replicated_merge_tree;
     extern const SettingsBool parallel_replicas_for_queries_with_multiple_tables;
@@ -79,9 +80,20 @@ bool isTableNodeEligibleForParallelReplicas(const TableNode & table_node, const 
 /// can anchor a parallel-replicas read just like a `TableNode`: every replica resolves the call locally and
 /// reads its own copy. A table function that builds a storage of its own cannot - it is not the same table on
 /// every replica - so it is not enough for the resolved storage to look like a `MergeTree`.
-static bool canUseTableFunctionForParallelReplicas(const TableFunctionNode & table_function_node, const ContextPtr & context)
+bool tableFunctionCanDriveParallelReplicasRead(const TableFunctionNode & table_function_node, const ContextPtr & context)
 {
     if (!table_function_node.getParallelReplicasReadID())
+        return false;
+
+    /// A read through a table function is sent to the replicas as query text even with `serialize_query_plan`,
+    /// and a replica matches `additional_table_filters` against its own current database, which is not the
+    /// initiator's. The filters could match here and not there, so the combination is not distributed.
+    return context->getSettingsRef()[Setting::additional_table_filters].value.empty();
+}
+
+static bool canUseTableFunctionForParallelReplicas(const TableFunctionNode & table_function_node, const ContextPtr & context)
+{
+    if (!tableFunctionCanDriveParallelReplicasRead(table_function_node, context))
         return false;
 
     const bool has_final
@@ -159,7 +171,7 @@ static std::vector<const QueryNode *> getSupportingParallelReplicasQueries(const
                 /// that can anchor the read there must be able to reach this traversal too, otherwise the
                 /// initiator picks an anchor for a query this one has already refused to distribute.
                 const auto & table_function_node = query_tree_node->as<TableFunctionNode &>();
-                if (canUseTableFunctionForParallelReplicas(table_function_node, context))
+                if (canUseTableFunctionForParallelReplicas(table_function_node, current_context))
                     return res;
 
                 return {};
@@ -603,7 +615,7 @@ static const ITableExpressionNode * findTableForParallelReplicas(const IQueryTre
             case QueryTreeNodeType::TABLE_FUNCTION:
             {
                 const auto & table_function_node = query_tree_node->as<TableFunctionNode &>();
-                if (canUseTableFunctionForParallelReplicas(table_function_node, context))
+                if (canUseTableFunctionForParallelReplicas(table_function_node, current_context))
                     return &table_function_node;
 
                 query_tree_node = nullptr;

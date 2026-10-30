@@ -1,0 +1,18 @@
+direct	100	4950
+merge()	110	5995
+Merge	120	8040
+Merge over Merge	130	11085
+merge() over Alias	140	15130
+Buffer	150	20175
+v	Int64
+merge() after rename	160	26220
+w	Int64
+loop() after rename	26220
+lazy	TableProxy
+lazy merge()	110	5995
+lazy Merge	120	8040
+lazy Buffer	130	11085
+lazy merge() over Alias	140	15130
+v	Int64
+lazy merge() after rename	150	20175
+lazy merge() over Alias after rename	150	20175

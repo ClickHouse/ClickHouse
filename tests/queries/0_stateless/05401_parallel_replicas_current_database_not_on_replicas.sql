@@ -29,11 +29,11 @@ SELECT sum(x) FROM (SELECT x FROM {CLICKHOUSE_DATABASE:Identifier}.mt)
 
 SELECT '-- a table function';
 SELECT count() FROM timeSeriesTags({CLICKHOUSE_DATABASE:Identifier}.ts) SETTINGS optimize_trivial_count_query = 0;
-SELECT count() FROM (SELECT * FROM timeSeriesSamples({CLICKHOUSE_DATABASE:Identifier}.ts))
+SELECT sum(length(samples)) FROM (SELECT * FROM timeSeriesSamples({CLICKHOUSE_DATABASE:Identifier}.ts))
     SETTINGS optimize_trivial_count_query = 0, enable_parallel_replicas = 1, serialize_query_plan = 0,
              parallel_replicas_mode = 'custom_key_sampling', parallel_replicas_custom_key = 'cityHash64(id)';
 
 SELECT '-- table functions on the right side of a JOIN';
 SELECT count() FROM {CLICKHOUSE_DATABASE:Identifier}.mt AS l
-    INNER JOIN timeSeriesSelector({CLICKHOUSE_DATABASE:Identifier}.ts, 'm1', toDateTime64(0, 3), toDateTime64(10, 3)) AS r
+    INNER JOIN timeSeriesSelector({CLICKHOUSE_DATABASE:Identifier}.ts, 'm1', toDateTime64(0, 3), toDateTime64(10, 3), 'timestamp_and_value') AS r
     ON l.x = toUInt64(r.value);

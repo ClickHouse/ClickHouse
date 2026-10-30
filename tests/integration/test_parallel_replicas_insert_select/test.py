@@ -94,7 +94,6 @@ def test_insert_select(start_cluster, cluster_name, max_parallel_replicas, local
             "cluster_for_parallel_replicas": cluster_name,
             "parallel_replicas_local_plan": local_plan,
             "parallel_replicas_plan_based": plan_based,
-            "enable_analyzer": 1,
         },
         query_id=query_id
     )
@@ -155,7 +154,6 @@ def test_insert_select_no_table(start_cluster, cluster_name, max_parallel_replic
                 "max_parallel_replicas": max_parallel_replicas,
                 "cluster_for_parallel_replicas": cluster_name,
                 "parallel_replicas_local_plan": local_plan,
-                "enable_analyzer": 1,
             },
         )
     assert(e.value.returncode == 60) # UNKNOWN_TABLE
@@ -185,7 +183,6 @@ def test_insert_select_no_target_table(start_cluster, cluster_name, max_parallel
                 "max_parallel_replicas": max_parallel_replicas,
                 "cluster_for_parallel_replicas": cluster_name,
                 "parallel_replicas_local_plan": local_plan,
-                "enable_analyzer": 1,
             },
         )
     assert(e.value.returncode == 60) # UNKNOWN_TABLE
@@ -224,7 +221,6 @@ def test_insert_select_limit(start_cluster, max_parallel_replicas, parallel_repl
             "max_parallel_replicas": max_parallel_replicas,
             "cluster_for_parallel_replicas": cluster_name,
             "parallel_replicas_local_plan": parallel_replicas_local_plan,
-            "enable_analyzer": 1,
         },
         query_id=query_id
     )
@@ -269,7 +265,6 @@ def test_insert_select_with_constant(start_cluster, max_parallel_replicas, paral
             "max_parallel_replicas": max_parallel_replicas,
             "cluster_for_parallel_replicas": cluster_name,
             "parallel_replicas_local_plan": parallel_replicas_local_plan,
-            "enable_analyzer": 1,
         },
         query_id=query_id
     )
@@ -315,7 +310,6 @@ def test_insert_select_where(start_cluster, max_parallel_replicas, parallel_repl
             "max_parallel_replicas": max_parallel_replicas,
             "cluster_for_parallel_replicas": cluster_name,
             "parallel_replicas_local_plan": parallel_replicas_local_plan,
-            "enable_analyzer": 1,
         },
         query_id=query_id
     )
@@ -459,7 +453,8 @@ def test_replicated_database_populate_reads_local_source(start_cluster):
 # The replicas name the inner tables of a `TimeSeries` table after a UUID each of them assigned, because each
 # created its table on its own. A read through `timeSeriesSamples` must still be coordinated as one read:
 # replicas that announced it under their own inner table's name would each read everything. The insert goes
-# to a `Null` table, because an insert into a non-replicated `MergeTree` is not distributed.
+# to a `Null` table, because an insert into a non-replicated `MergeTree` is not distributed. Every sample is a
+# series of its own, so every row of the samples table holds one sample.
 @pytest.mark.parametrize("local_plan", [False, True])
 def test_insert_select_time_series_independent_uuids(start_cluster, local_plan):
     execute_on_cluster("DROP TABLE IF EXISTS ts_mv SYNC")
@@ -470,7 +465,7 @@ def test_insert_select_time_series_independent_uuids(start_cluster, local_plan):
         node.query("CREATE TABLE ts ENGINE = TimeSeries", settings={"allow_experimental_time_series_table": 1})
         node.query(
             "INSERT INTO ts (metric_name, tags, samples) "
-            "SELECT 'm', map('i', toString(number % 10)), [(toDateTime64(number, 3), toFloat64(number))] FROM numbers(10000)"
+            "SELECT 'm', map('i', toString(number)), [(toDateTime64(number, 3), toFloat64(number))] FROM numbers(10000)"
         )
         node.query("CREATE TABLE ts_dst (value Float64) ENGINE = Null")
         node.query("CREATE TABLE ts_res (value Float64) ENGINE = MergeTree ORDER BY value")
@@ -479,7 +474,7 @@ def test_insert_select_time_series_independent_uuids(start_cluster, local_plan):
 
     query_id = str(uuid.uuid4())
     node1.query(
-        "INSERT INTO ts_dst SELECT value FROM timeSeriesSamples(ts)",
+        "INSERT INTO ts_dst SELECT samples[1].2 FROM timeSeriesSamples(ts)",
         settings={
             "parallel_distributed_insert_select": 2,
             "enable_parallel_replicas": 2,
@@ -501,7 +496,7 @@ def test_insert_select_time_series_independent_uuids(start_cluster, local_plan):
     ) == ("2\n" if local_plan else "3\n")
 
     assert node1.query(
-        "SELECT count(), sum(value) FROM timeSeriesSamples(ts)",
+        "SELECT count(), sum(samples[1].2) FROM timeSeriesSamples(ts)",
         settings={
             "enable_parallel_replicas": 2,
             "max_parallel_replicas": 3,
@@ -516,7 +511,7 @@ def test_insert_select_time_series_independent_uuids(start_cluster, local_plan):
     # The plan-based mode coordinates the right side of a `RIGHT JOIN`. A plan fragment would name the inner
     # table this server resolved the call to, which the other replicas do not have.
     assert node1.query(
-        "SELECT count(), sum(r.value) FROM ts_res RIGHT JOIN timeSeriesSamples(ts) AS r ON ts_res.value = r.value",
+        "SELECT count(), sum(r.samples[1].2) FROM ts_res RIGHT JOIN timeSeriesSamples(ts) AS r ON ts_res.value = r.samples[1].2",
         settings={
             "enable_parallel_replicas": 2,
             "max_parallel_replicas": 3,
