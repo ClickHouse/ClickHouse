@@ -29,7 +29,8 @@ std::vector<Int64> fieldToInt64Array(const Field & value, std::string_view conte
 /// Iceberg stores lower_bounds and upper_bounds serialized with some custom deserialization as bytes array
 /// https://iceberg.apache.org/spec/#appendix-d-single-value-serialization
 /// `compensate_rounding` widens a decimal bound, because Iceberg writes it rounded to the integral
-/// part; pass false to read the value exactly as the manifest declares it.
+/// part; pass false to read the value exactly as the manifest declares it. A widened bound that
+/// leaves the type is returned as an infinity.
 std::optional<Field> deserializeFieldFromBinaryRepr(
     const String & str, const DataTypePtr & expected_type, bool lower_bound, bool compensate_rounding = true);
 

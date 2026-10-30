@@ -23,6 +23,10 @@ CREATE TABLE d38 (d Decimal(38, 38)) ENGINE = IcebergLocal('${ROOT}/d38/', 'Parq
 SETTINGS allow_experimental_iceberg_compaction = 0;
 INSERT INTO d38 SELECT arrayJoin([toDecimal128('0.1', 38), toDecimal128('0.8', 38) + toDecimal128('0.8', 38)]);
 INSERT INTO d38 SELECT toDecimal128('0.5', 38) + toDecimal128('0.5', 38);
+CREATE TABLE w38 (d Decimal(38, 38)) ENGINE = IcebergLocal('${ROOT}/w38/', 'Parquet')
+SETTINGS allow_experimental_iceberg_compaction = 0;
+INSERT INTO w38 SELECT toDecimal128('0.99', 38);
+INSERT INTO w38 SELECT toDecimal128('-0.99', 38);
 " < /dev/null
 
 echo '--- the data files hold values beyond the precision ---'
@@ -38,6 +42,13 @@ ${CLICKHOUSE_CLIENT} --use_iceberg_metadata_files_cache=0 --query "
     SELECT count() FROM d38 WHERE d = toDecimal128('0.8', 38) + toDecimal128('0.8', 38);
     SELECT count() FROM d38 WHERE d = toDecimal128('0.5', 38) + toDecimal128('0.5', 38);"
 
+echo '--- a bound widened past the type is no endpoint for a monotonic function ---'
+# The outer bound of each `w38` file widens past `Int128`, where `negate` and `round` overflow.
+${CLICKHOUSE_CLIENT} --use_iceberg_metadata_files_cache=0 --query "
+    SELECT count() FROM w38 WHERE negate(d) = toDecimal128('0.99', 38);
+    SELECT count() FROM w38 WHERE round(d) = round(toDecimal128('0.99', 38));
+    SELECT count() FROM w38 WHERE round(d) = round(toDecimal128('-0.99', 38));"
+
 echo '--- bounds inside the precision still prune ---'
 # Only the file holding `5.00` cannot hold `0`.
 ${CLICKHOUSE_CLIENT} --use_iceberg_metadata_files_cache=0 --query "
@@ -49,4 +60,5 @@ ${CLICKHOUSE_CLIENT} --use_iceberg_metadata_files_cache=0 --query "
 
 ${CLICKHOUSE_CLIENT} --query "
     DROP TABLE IF EXISTS d9 SYNC;
-    DROP TABLE IF EXISTS d38 SYNC;"
+    DROP TABLE IF EXISTS d38 SYNC;
+    DROP TABLE IF EXISTS w38 SYNC;"

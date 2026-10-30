@@ -6,6 +6,10 @@
 1
 1
 1
+--- a bound widened past the type is no endpoint for a monotonic function ---
+1
+1
+1
 --- bounds inside the precision still prune ---
 0
 1

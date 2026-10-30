@@ -160,7 +160,7 @@ std::optional<Field> deserializeDecimalBound(const String & str, UInt32 scale, b
         /// needs almost `2 * 10^38` while `Int128` holds `1.7 * 10^38`.
         NativeType widened_value;
         if (common::addOverflow(unscaled_value, scaler, widened_value))
-            widened_value = lower_bound ? std::numeric_limits<NativeType>::min() : std::numeric_limits<NativeType>::max();
+            return lower_bound ? Field(NEGATIVE_INFINITY) : Field(POSITIVE_INFINITY);
 
         unscaled_value = widened_value;
     }
