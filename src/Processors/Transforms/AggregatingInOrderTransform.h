@@ -98,7 +98,8 @@ private:
     /// boundary of the first `limit_prefix_columns` columns of `group_by_description`, which
     /// are the columns the query is ordered by. Otherwise a group tied on those columns with
     /// the emitted ones could be cut off here while another stream emits its partial state,
-    /// and the final sort could pick that partial group.
+    /// and the final sort could pick that partial group. Without the prefix, the stream may stop
+    /// at any group (see `Aggregator::Params::stop_all_streams_at_max_rows_to_group_by`).
     size_t limit_hint = 0;
     size_t limit_prefix_columns = 0;
     bool limit_reached = false;

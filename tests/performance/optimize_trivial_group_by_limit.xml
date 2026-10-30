@@ -11,6 +11,12 @@
     <query tag="optimized">SELECT number FROM numbers_mt(100000000) GROUP BY number LIMIT 5 FORMAT Null SETTINGS optimize_trivial_group_by_limit_query = 1</query>
     <query tag="baseline">SELECT number FROM numbers_mt(100000000) GROUP BY number LIMIT 5 FORMAT Null SETTINGS optimize_trivial_group_by_limit_query = 0</query>
 
+    <!-- Without aggregate functions the query also stops reading once any thread exceeds the cap,
+         so an expensive `WHERE` is not computed for the rest of the input. -->
+
+    <query tag="optimized_expensive_where">SELECT number FROM numbers_mt(100000000) WHERE cityHash64(toString(number)) % 7 = 1 GROUP BY number LIMIT 10 FORMAT Null SETTINGS optimize_trivial_group_by_limit_query = 1</query>
+    <query tag="baseline_expensive_where">SELECT number FROM numbers_mt(100000000) WHERE cityHash64(toString(number)) % 7 = 1 GROUP BY number LIMIT 10 FORMAT Null SETTINGS optimize_trivial_group_by_limit_query = 0</query>
+
     <!-- With aggregate functions in the projection, the optimization restricts all
          aggregation threads to a shared set of `n` kept keys, so the hash tables stay
          tiny and the values of the kept keys stay exact (the ClickBench Q17 shape). -->

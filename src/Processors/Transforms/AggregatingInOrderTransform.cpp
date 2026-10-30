@@ -84,6 +84,10 @@ AggregatingInOrderTransform::AggregatingInOrderTransform(
 
 bool AggregatingInOrderTransform::isLimitPrefixBoundary(const Columns & key_columns, size_t row) const
 {
+    /// Without a prefix, any group may be cut off.
+    if (limit_prefix_columns == 0)
+        return true;
+
     for (size_t i = 0; i < limit_prefix_columns; ++i)
     {
         const auto & elem = group_by_description[i];
@@ -286,6 +290,25 @@ void AggregatingInOrderTransform::consume(Chunk chunk)
         }
 
         key_begin = key_end;
+    }
+
+    /// Without a prefix to respect, the stream may also stop inside a run of equal sort keys.
+    if (limit_hint && limit_prefix_columns == 0 && (group_by_key ? variants.size() : cur_block_size) + res_rows >= limit_hint)
+    {
+        if (group_by_key)
+            group_by_chunk = params->aggregator.prepareChunkAndFillSingleLevel</* return_single_block */ true>(variants, /* final= */ false).chunk;
+        else
+            params->aggregator.addSingleKeyToAggregateColumns(variants, res_aggregate_columns);
+
+        limit_reached = true;
+        block_end_reached = true;
+        need_generate = true;
+        variants.invalidate();
+
+        if (rows_before_aggregation)
+            rows_before_aggregation->add(rows);
+        cur_block_bytes += current_memory_usage;
+        return;
     }
 
     if (rows_before_aggregation)
