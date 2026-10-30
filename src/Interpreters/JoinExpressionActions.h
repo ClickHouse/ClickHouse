@@ -191,6 +191,9 @@ public:
     JoinExpressionActions();
     JoinExpressionActions(const Block & left_header, const Block & right_header);
     JoinExpressionActions(const Block & left_header, const Block & right_header, ActionsDAG && actions_dag);
+    /// `input_sides[i]` is the side of `actions_dag.getInputs()[i]`.
+    JoinExpressionActions(
+        const Block & left_header, const Block & right_header, ActionsDAG && actions_dag, const std::vector<JoinTableSide> & input_sides);
 
     JoinExpressionActions clone(ActionsDAG::NodeMapping & node_map) const;
 
