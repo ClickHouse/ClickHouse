@@ -954,9 +954,12 @@ String getInsertDataSchemaMismatchDescription(
                     return format_settings.json.read_bools_as_strings;
                 if (inferred_is_numeric)
                     return format_settings.json.read_numbers_as_strings;
-                if (which_inferred.isArray())
+                /// An unnamed `Tuple` is inferred from an array token with elements of different types,
+                /// and a named one from an object token.
+                const auto * inferred_tuple = typeid_cast<const DataTypeTuple *>(inferred_unwrapped.get());
+                if (which_inferred.isArray() || (inferred_tuple && !inferred_tuple->hasExplicitNames()))
                     return format_settings.json.read_arrays_as_strings;
-                if (which_inferred.isTuple() || which_inferred.isMap() || which_inferred.isObject())
+                if (inferred_tuple || which_inferred.isMap() || which_inferred.isObject())
                     return format_settings.json.read_objects_as_strings;
                 return true;
             }
