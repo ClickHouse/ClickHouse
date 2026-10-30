@@ -1445,11 +1445,13 @@ void Writer::close()
 
     Proto::PostScript postscript;
 
+    /// The content length covers only the stripes, not the metadata section with the stripe statistics.
+    footer.content_length = current_offset - footer.header_length;
+
     std::string metadata_data = compressWhole(*context, metadata.serialize());
     write(metadata_data);
     postscript.metadata_length = metadata_data.size();
 
-    footer.content_length = current_offset - footer.header_length;
     footer.number_of_rows = total_rows;
     footer.statistics.clear();
     column_writer->getFileStatistics(footer.statistics);
