@@ -365,6 +365,17 @@ The function does not throw on the content of the arrays, and makes a valid fore
 - A node is a root if its parent identifier is `NULL` or is not present in `ids`, for example an empty string or an orphan node.
 - If the parent links make a cycle, the link of the node of the cycle which comes first in the input is cut, and this node becomes a root. Its `parent` keeps the position of its real parent, which is greater than its own position, so `parent[k] > k` shows that a cycle was cut at position `k`. A node which is its own parent gets `parent[k] = k`.
 - If `ids` has duplicate values, the children are attached to the first occurrence.
+
+The structure of the input follows from the result (see the examples below):
+- Is there a cycle: `arrayExists((p, k) -> p > k, t.parent, arrayEnumerate(t.parent))`.
+- Positions where the cycles were cut: `arrayFilter((k, p) -> p > k, arrayEnumerate(t.parent), t.parent)`.
+- Positions of the tree roots: `arrayFilter((k, d) -> d = 0, arrayEnumerate(t.depth), t.depth)`, and the number of trees is `countEqual(t.depth, 0)`.
+- Positions of the nodes whose parent identifier is not present: `arrayFilter((k, p) -> p = 0, arrayEnumerate(t.parent), t.parent)`.
+- Is the input one tree with a real root: `t.size[1] = length(ids) AND t.parent[1] <= 1`. It accepts both root conventions (a parent identifier which is not present gives `0`, a self-loop gives `1`), and rejects an array which is one big cycle.
+- Positions of the nodes of the cycle cut at position `r`: `arrayFilter(x -> x + t.size[x] > t.parent[r], range(r, t.parent[r] + 1))`. These are the nodes from `r` down to its real parent `t.parent[r]` whose subtree contains the real parent.
+- Duplicate identifiers: `arrayEnumerateUniq(ids) > 1`.
+
+To get the input index of the node at position `k`, use `t.order[k]`.
 )";
     FunctionDocumentation::Syntax syntax = "arrayTreePreorder(ids, parent_ids)";
     FunctionDocumentation::Arguments arguments = {
@@ -391,7 +402,55 @@ SELECT arrayMap(k -> (ids[t.order[k]], cum[k + t.size[k] - 1] - cum[k], t.size[k
 )", "[('A',6,5),('B',3,2)]"},
         {"Invalid input: a cycle C -> D -> E -> C, a node F below the cycle, an orphan G", R"(
 SELECT arrayTreePreorder(['A', 'B', 'C', 'D', 'E', 'F', 'G'], ['', 'A', 'D', 'E', 'C', 'C', 'Z']) AS t
-)", "([1,2,3,5,4,6,7],[2,1,4,2,1,1,1],[0,1,5,3,4,3,0],[0,1,0,1,2,1,0])"}
+)", "([1,2,3,5,4,6,7],[2,1,4,2,1,1,1],[0,1,5,3,4,3,0],[0,1,0,1,2,1,0])"},
+        {"Detect cycles and find where they were cut", R"(
+WITH
+    ['A', 'B', 'C', 'D', 'E', 'F', 'G'] AS ids,
+    arrayTreePreorder(ids, ['', 'A', 'D', 'E', 'C', 'C', 'Z']) AS t
+SELECT
+    arrayExists((p, k) -> p > k, t.parent, arrayEnumerate(t.parent)) AS has_cycle,
+    arrayFilter((k, p) -> p > k, arrayEnumerate(t.parent), t.parent) AS cut_positions,
+    arrayMap(k -> ids[t.order[k]], cut_positions) AS cut_ids
+)", R"(
+┌─has_cycle─┬─cut_positions─┬─cut_ids─┐
+│         1 │ [3]           │ ['C']   │
+└───────────┴───────────────┴─────────┘
+)"},
+        {"Roots, number of trees, nodes whose parent is not found, check for one tree", R"(
+WITH
+    ['A', 'B', 'C', 'D', 'E', 'F', 'G'] AS ids,
+    arrayTreePreorder(ids, ['', 'A', 'D', 'E', 'C', 'C', 'Z']) AS t
+SELECT
+    arrayMap(k -> ids[t.order[k]], arrayFilter((k, d) -> d = 0, arrayEnumerate(t.depth), t.depth)) AS roots,
+    countEqual(t.depth, 0) AS trees,
+    arrayMap(k -> ids[t.order[k]], arrayFilter((k, p) -> p = 0, arrayEnumerate(t.parent), t.parent)) AS parent_not_found,
+    t.size[1] = length(ids) AND t.parent[1] <= 1 AS is_one_tree
+)", R"(
+┌─roots─────────┬─trees─┬─parent_not_found─┬─is_one_tree─┐
+│ ['A','C','G'] │     3 │ ['A','G']        │           0 │
+└───────────────┴───────┴──────────────────┴─────────────┘
+)"},
+        {"Nodes of the cycle cut at position 3", R"(
+WITH
+    ['A', 'B', 'C', 'D', 'E', 'F', 'G'] AS ids,
+    arrayTreePreorder(ids, ['', 'A', 'D', 'E', 'C', 'C', 'Z']) AS t,
+    3 AS r
+SELECT arrayMap(k -> ids[t.order[k]], arrayFilter(x -> x + t.size[x] > t.parent[r], range(r, t.parent[r] + 1))) AS cycle
+)", R"(
+┌─cycle─────────┐
+│ ['C','E','D'] │
+└───────────────┘
+)"},
+        {"Duplicate identifiers: children are attached to the first occurrence", R"(
+WITH ['a', 'b', 'a', 'c'] AS ids
+SELECT
+    arrayFilter((id, n) -> n > 1, ids, arrayEnumerateUniq(ids)) AS duplicate_ids,
+    arrayTreePreorder(ids, ['', 'a', '', 'a']).order AS order
+)", R"(
+┌─duplicate_ids─┬─order─────┐
+│ ['a']         │ [1,2,4,3] │
+└───────────────┴───────────┘
+)"}
     };
     FunctionDocumentation::IntroducedIn introduced_in = {26, 11};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Array;
