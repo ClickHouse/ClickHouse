@@ -40,7 +40,7 @@ HTTPRequestHandlerFactoryPtr createIcebergRESTCatalogHandlerFactory(IServer & se
             ErrorCodes::SUPPORT_IS_DISABLED,
             "The Iceberg REST catalog server is experimental. Enable the server setting `allow_experimental_iceberg_rest_catalog` to use it");
 
-    auto warehouses = std::make_shared<const IcebergRESTCatalogWarehouseRegistry>(server.context());
+    auto warehouses = std::make_shared<IcebergRESTCatalogWarehouseRegistry>(server.context());
     return std::make_shared<IcebergRESTCatalogHandlerFactory>(server, std::move(warehouses));
 }
 

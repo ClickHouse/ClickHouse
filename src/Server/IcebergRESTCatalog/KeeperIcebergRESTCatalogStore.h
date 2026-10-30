@@ -24,7 +24,8 @@ struct IcebergTablePointer
 
 /// Storage backend of the native Iceberg REST catalog (RFC: issue #114697), backed by Keeper.
 /// Work in progress, not ready for production use.
-/// Layout under `root_path` (one root per warehouse). `<root>` and `<root>/namespaces` are created with the warehouse.
+/// Layout under `root_path` (one root per warehouse). `<root>` and `<root>/namespaces` are created by
+/// `IcebergRESTCatalogWarehouseRegistry::create`, which serves the management API.
 ///   <root>                                 data: warehouse definition, see `IcebergRESTCatalogWarehouseDefinition`
 ///   <root>/namespaces/<level>              data: JSON object of namespace properties
 ///   <root>/namespaces/<level>/namespaces   child namespaces, same shape recursively

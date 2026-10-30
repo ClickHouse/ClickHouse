@@ -40,6 +40,18 @@ Poco::JSON::Object::Ptr parseJSONObject(const String & data, const String & what
 namespace IcebergRESTCatalogJSON
 {
 
+Poco::JSON::Object::Ptr parseRequestBody(const String & body)
+{
+    try
+    {
+        return Poco::JSON::Parser().parse(body).extract<Poco::JSON::Object::Ptr>();
+    }
+    catch (const Poco::Exception & e)
+    {
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Request body is not a JSON object: {}", e.displayText());
+    }
+}
+
 Poco::JSON::Object::Ptr getOptionalObject(const Poco::JSON::Object & json, const String & key)
 {
     if (!json.has(key) || json.isNull(key))

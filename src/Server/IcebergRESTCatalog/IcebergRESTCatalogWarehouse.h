@@ -36,6 +36,9 @@ struct IcebergRESTCatalogWarehouse
     void validateLocation(const String & location) const;
     String objectKey(const String & location) const;
 
+    /// Lists one key under `base_location`. This proves that the role was assumed and can read the location.
+    void checkStorageAccess() const;
+
 private:
     void validateLocation(const S3Location & location) const;
 };

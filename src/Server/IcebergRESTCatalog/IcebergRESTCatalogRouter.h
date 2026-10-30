@@ -47,6 +47,12 @@ enum class IcebergRESTOperation
     RegisterView,
     ListFunctions,
     LoadFunction,
+    /// Warehouse management API (issue #127488). Not part of the Iceberg spec.
+    CreateWarehouse,
+    ListWarehouses,
+    GetWarehouse,
+    ReplaceWarehouseCredential,
+    DeleteWarehouse,
 };
 
 std::string toString(IcebergRESTOperation operation);
@@ -64,13 +70,16 @@ struct IcebergRESTRoute
 struct IcebergRESTRouteMatch
 {
     const IcebergRESTRoute * route = nullptr;
-    /// Captured placeholders: "prefix", "namespace", "table". Values are percent-decoded.
+    /// Captured placeholders: "prefix", "namespace", "table", "warehouse". Values are percent-decoded.
     std::unordered_map<std::string, std::string> path_params;
 };
 
+/// Routes of the Iceberg REST catalog v1 API. These are advertised in `GET /v1/config`.
 const std::vector<IcebergRESTRoute> & getIcebergRESTRoutes();
+/// Routes under `/management/v1`, served on the same port.
+const std::vector<IcebergRESTRoute> & getIcebergRESTManagementRoutes();
 
-/// Returns nullopt when no route matches.
+/// Matches the catalog routes and the management routes. Returns nullopt when no route matches.
 std::optional<IcebergRESTRouteMatch> matchIcebergRESTRoute(const std::string & method, const std::vector<std::string> & segments);
 
 }

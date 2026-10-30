@@ -19,6 +19,9 @@ Poco::JSON::Object::Ptr parseJSONObject(const String & data, const String & what
 namespace IcebergRESTCatalogJSON
 {
 
+/// Parses a request body. Throws `BAD_ARGUMENTS` if it is not a JSON object.
+Poco::JSON::Object::Ptr parseRequestBody(const String & body);
+
 /// Returns nullptr for an absent or null key. `getObject` alone would also return nullptr for a wrong type.
 Poco::JSON::Object::Ptr getOptionalObject(const Poco::JSON::Object & json, const String & key);
 

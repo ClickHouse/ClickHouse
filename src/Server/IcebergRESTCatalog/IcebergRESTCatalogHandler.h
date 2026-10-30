@@ -44,6 +44,13 @@ private:
     void handleTableExists(const IcebergRESTCatalogWarehouse & warehouse, const IcebergRESTRouteMatch & match, HTTPServerResponse & response) const;
     void handleDropTable(const IcebergRESTCatalogWarehouse & warehouse, const IcebergRESTRouteMatch & match, const Poco::URI & uri, HTTPServerResponse & response, const Context & context) const;
 
+    /// Warehouse management API (issue #127488).
+    void handleCreateWarehouse(HTTPServerRequest & request, HTTPServerResponse & response, const Context & context) const;
+    void handleListWarehouses(HTTPServerResponse & response) const;
+    void handleGetWarehouse(const IcebergRESTRouteMatch & match, HTTPServerResponse & response) const;
+    void handleReplaceWarehouseCredential(const IcebergRESTRouteMatch & match, HTTPServerRequest & request, HTTPServerResponse & response, const Context & context) const;
+    void handleDeleteWarehouse(const IcebergRESTRouteMatch & match, HTTPServerResponse & response, const Context & context) const;
+
     static void checkDDLAllowed(const Context & context, const String & action);
 
     static std::optional<IcebergNamespaceName> getNamespaceOrSendNotFound(
@@ -62,6 +69,7 @@ private:
         HTTPServerResponse & response, Poco::Net::HTTPResponse::HTTPStatus status, const String & type, const String & message);
     static void sendNoSuchNamespace(HTTPServerResponse & response, const IcebergNamespaceName & ns);
     static void sendNoSuchTable(HTTPServerResponse & response, const IcebergNamespaceName & ns, const String & table);
+    static void sendNoSuchWarehouse(HTTPServerResponse & response, const String & name);
 
     LoggerPtr log;
     IServer & server;

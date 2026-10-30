@@ -107,13 +107,19 @@ def warehouse_definition(base_location, credential=CREDENTIAL):
     return {"format_version": FORMAT_VERSION, "base_location": base_location, "credential": credential}
 
 
-# TODO: Replace with `POST /management/v1/warehouses` when the management API lands.
-def create_warehouse_in_keeper(name, base_location, keeper_parent=KEEPER_PARENT, credential=CREDENTIAL):
-    path = f"{keeper_parent}/{name}"
-    zk = get_keeper()
-    zk.create(path, json.dumps(warehouse_definition(base_location, credential)).encode(), makepath=True)
-    zk.create(f"{path}/namespaces")
-    return path
+WAREHOUSES_URL = "/management/v1/warehouses"
+
+
+def create_warehouse(name, base_location, credential=CREDENTIAL, expected_code=200, instance=None, auth=None):
+    body = {"name": name, "base_location": base_location, "credential": credential}
+    return catalog_request("POST", WAREHOUSES_URL, json=body, expected_code=expected_code, instance=instance, auth=auth)
+
+
+def delete_warehouse(name, expected_code=204, auth=None):
+    return catalog_request("DELETE", f"{WAREHOUSES_URL}/{name}", expected_code=expected_code, auth=auth)
+
+
+HIDDEN_CREDENTIAL = {**CREDENTIAL, "external_id": "[HIDDEN]", "role_session_name": "[HIDDEN]"}
 
 
 @pytest.fixture(scope="module")
@@ -124,11 +130,11 @@ def started_cluster():
         get_keeper().ensure_path("/aux_root")
         if not cluster.minio_client.bucket_exists(BUCKET):
             cluster.minio_client.make_bucket(BUCKET)
-        create_warehouse_in_keeper("my_warehouse", BASE_LOCATION)
-        # The aux Keeper is chrooted to /aux_root. A bucket root with a trailing slash as the base location.
-        create_warehouse_in_keeper("my_warehouse", f"s3://{BUCKET}/", keeper_parent=f"/aux_root{KEEPER_PARENT}")
         wait_catalog_ready()
         wait_catalog_ready(instance=node_aux)
+        create_warehouse("my_warehouse", BASE_LOCATION)
+        # A bucket root with a trailing slash as the base location.
+        create_warehouse("my_warehouse", f"s3://{BUCKET}/", instance=node_aux)
         yield cluster
     finally:
         cluster.shutdown()
@@ -149,10 +155,10 @@ def restart_node():
 
 
 def catalog_request(
-    method, path, json=None, params=None, expected_code=200, auth=None, headers=None
+    method, path, json=None, params=None, expected_code=200, auth=None, headers=None, instance=None
 ):
     response = requests.request(
-        method, catalog_url(path), json=json, params=params, auth=auth, headers=headers
+        method, catalog_url(path, instance), json=json, params=params, auth=auth, headers=headers
     )
     assert response.status_code == expected_code, (
         f"Expected {expected_code}, got {response.status_code}. "
@@ -937,27 +943,159 @@ def test_unsupported_format_is_refused(started_cluster):
 
 def test_warehouse_discovery(started_cluster):
     # The server has no fixed list of warehouses. It looks a warehouse up in Keeper on each request.
-    # So a warehouse node created or deleted in Keeper takes effect at once, with no restart.
+    # So a warehouse created or deleted through the management API takes effect at once, with no restart.
     warehouse = f"fresh_{uuid.uuid4().hex[:8]}"
     config_params = {"warehouse": warehouse}
     namespaces_url = f"/v1/{warehouse}/namespaces"
 
-    # Before the node exists the warehouse is unknown.
+    # Before the warehouse exists it is unknown.
     catalog_request("GET", "/v1/config", params=config_params, expected_code=404)
 
-    # After the node is created the warehouse is served, and tables land under its base location.
-    keeper_path = create_warehouse_in_keeper(warehouse, f"s3://{BUCKET}/{warehouse}")
+    # After the warehouse is created it is served, and tables land under its base location.
+    create_warehouse(warehouse, f"s3://{BUCKET}/{warehouse}")
     response = catalog_request("GET", "/v1/config", params=config_params)
     assert response.json()["overrides"]["prefix"] == warehouse
     catalog_request("POST", namespaces_url, json={"namespace": ["ns"]})
     result = catalog_request("POST", f"{namespaces_url}/ns/tables", json={"name": "t", "schema": DEFAULT_SCHEMA}).json()
     assert result["metadata"]["location"].startswith(f"s3://{BUCKET}/{warehouse}/ns/t-")
 
-    # After the node is deleted the warehouse is unknown again.
-    get_keeper().delete(keeper_path, recursive=True)
+    # After the warehouse is deleted it is unknown again. There is no drop-namespace endpoint yet.
+    get_keeper().delete(f"{KEEPER_PARENT}/{warehouse}/namespaces/ns", recursive=True)
+    delete_warehouse(warehouse)
     catalog_request("GET", "/v1/config", params=config_params, expected_code=404)
     response = catalog_request("GET", namespaces_url, expected_code=404)
     assert_error_shape(response, "NotFoundException")
+
+
+def test_warehouse_management_crud(started_cluster):
+    warehouse = f"crud_{uuid.uuid4().hex[:8]}"
+    base_location = f"s3://{BUCKET}/{warehouse}"
+    expected = {"name": warehouse, "base_location": base_location, "credential": HIDDEN_CREDENTIAL}
+
+    # The response and `GET` hide the secret fields and do not expose the storage format.
+    assert create_warehouse(warehouse, base_location).json() == expected
+    assert catalog_request("GET", f"{WAREHOUSES_URL}/{warehouse}").json() == expected
+    assert expected in catalog_request("GET", WAREHOUSES_URL).json()["warehouses"]
+
+    # Keeper holds the real secrets, so the catalog can assume the role.
+    stored = json.loads(get_keeper().get(f"{KEEPER_PARENT}/{warehouse}")[0])
+    assert stored == warehouse_definition(base_location)
+
+    response = create_warehouse(warehouse, base_location, expected_code=409)
+    assert_error_shape(response, "AlreadyExistsException")
+
+    delete_warehouse(warehouse)
+    response = catalog_request("GET", f"{WAREHOUSES_URL}/{warehouse}", expected_code=404)
+    assert_error_shape(response, "NoSuchWarehouseException")
+    assert expected not in catalog_request("GET", WAREHOUSES_URL).json()["warehouses"]
+    response = delete_warehouse(warehouse, expected_code=404)
+    assert_error_shape(response, "NoSuchWarehouseException")
+
+
+def test_warehouse_management_validation(started_cluster):
+    warehouse = f"invalid_{uuid.uuid4().hex[:8]}"
+    base_location = f"s3://{BUCKET}/{warehouse}"
+
+    def bad_request(body):
+        response = catalog_request("POST", WAREHOUSES_URL, json=body, expected_code=400)
+        assert_error_shape(response, "BadRequestException")
+        return response.json()["error"]["message"]
+
+    valid = {"name": warehouse, "base_location": base_location, "credential": CREDENTIAL}
+    for name in ["", "a/b", "a b", "a.b", "x" * 65]:
+        bad_request({**valid, "name": name})
+    bad_request({**valid, "base_location": f"http://{BUCKET}/{warehouse}"})
+    bad_request({k: v for k, v in valid.items() if k != "credential"})
+    bad_request({**valid, "credential": {**CREDENTIAL, "type": "static"}})
+    bad_request({**valid, "credential": {"type": "aws_role"}})
+
+    # The mock STS hands out credentials that MinIO rejects when the external id is wrong.
+    # The server checks the role against the location before it stores anything.
+    message = bad_request({**valid, "credential": {**CREDENTIAL, "external_id": "wrong"}})
+    assert warehouse in message
+    assert "403" in message or "Access Denied" in message, message
+
+    assert not get_keeper().exists(f"{KEEPER_PARENT}/{warehouse}")
+    catalog_request("GET", f"{WAREHOUSES_URL}/{warehouse}", expected_code=404)
+
+    # A bad name in the path is a 400 too, not a Keeper error.
+    response = catalog_request("GET", f"{WAREHOUSES_URL}/a.b", expected_code=400)
+    assert_error_shape(response, "BadRequestException")
+
+
+def test_warehouse_delete_refuses_with_namespaces(started_cluster):
+    warehouse = f"nonempty_{uuid.uuid4().hex[:8]}"
+    create_warehouse(warehouse, f"s3://{BUCKET}/{warehouse}")
+    catalog_request("POST", f"/v1/{warehouse}/namespaces", json={"namespace": ["ns"]})
+
+    response = delete_warehouse(warehouse, expected_code=409)
+    assert_error_shape(response, "WarehouseNotEmptyException")
+    # Nothing was removed. The warehouse still serves requests.
+    assert catalog_request("GET", f"/v1/{warehouse}/namespaces").json()["namespaces"] == [["ns"]]
+
+    # There is no drop-namespace endpoint yet.
+    get_keeper().delete(f"{KEEPER_PARENT}/{warehouse}/namespaces/ns", recursive=True)
+    delete_warehouse(warehouse)
+
+
+def test_warehouse_credential_rotation(started_cluster):
+    warehouse = f"rotate_{uuid.uuid4().hex[:8]}"
+    base_location = f"s3://{BUCKET}/{warehouse}"
+    credential_url = f"{WAREHOUSES_URL}/{warehouse}/credential"
+    create_warehouse(warehouse, base_location)
+    catalog_request("POST", f"/v1/{warehouse}/namespaces", json={"namespace": ["ns"]})
+
+    def create_table_in_warehouse(name):
+        return catalog_request("POST", f"/v1/{warehouse}/namespaces/ns/tables", json={"name": name, "schema": DEFAULT_SCHEMA})
+
+    create_table_in_warehouse("before")
+    stored_before = get_keeper().get(f"{KEEPER_PARENT}/{warehouse}")[0]
+
+    # A credential that cannot access the location is refused and the stored one is kept.
+    wrong = {**CREDENTIAL, "external_id": "wrong"}
+    response = catalog_request("PUT", credential_url, json={"credential": wrong}, expected_code=400)
+    assert_error_shape(response, "BadRequestException")
+    assert get_keeper().get(f"{KEEPER_PARENT}/{warehouse}")[0] == stored_before
+
+    # The mock STS accepts a request without an external id. The new credential is used by the next
+    # request, with no restart: the registry rebuilds the S3 client when the node changed.
+    rotated = {k: v for k, v in CREDENTIAL.items() if k != "external_id"}
+    catalog_request("PUT", credential_url, json={"credential": rotated}, expected_code=204)
+    assert json.loads(get_keeper().get(f"{KEEPER_PARENT}/{warehouse}")[0]) == warehouse_definition(base_location, rotated)
+    create_table_in_warehouse("after")
+
+    response = catalog_request("PUT", f"{WAREHOUSES_URL}/missing/credential", json={"credential": CREDENTIAL}, expected_code=404)
+    assert_error_shape(response, "NoSuchWarehouseException")
+
+    # Removing the namespace node removes its tables too.
+    get_keeper().delete(f"{KEEPER_PARENT}/{warehouse}/namespaces/ns", recursive=True)
+    delete_warehouse(warehouse)
+
+
+def test_warehouse_management_access(started_cluster):
+    warehouse = f"access_{uuid.uuid4().hex[:8]}"
+    base_location = f"s3://{BUCKET}/{warehouse}"
+
+    # Every endpoint needs a login.
+    response = create_warehouse(warehouse, base_location, auth=("default", "wrong"), expected_code=401)
+    assert_error_shape(response, "NotAuthorizedException")
+    response = catalog_request("GET", WAREHOUSES_URL, auth=("default", "wrong"), expected_code=401)
+    assert_error_shape(response, "NotAuthorizedException")
+
+    # Reading is allowed for everyone who can log in. Changes follow `readonly` and `allow_ddl`.
+    create_warehouse(warehouse, base_location)
+    for user in ["readonly_user", "no_ddl_user"]:
+        auth = (user, "")
+        catalog_request("GET", WAREHOUSES_URL, auth=auth)
+        catalog_request("GET", f"{WAREHOUSES_URL}/{warehouse}", auth=auth)
+        response = create_warehouse(f"{warehouse}_2", base_location, auth=auth, expected_code=403)
+        assert_error_shape(response, "ForbiddenException")
+        response = catalog_request("PUT", f"{WAREHOUSES_URL}/{warehouse}/credential", json={"credential": CREDENTIAL}, auth=auth, expected_code=403)
+        assert_error_shape(response, "ForbiddenException")
+        response = delete_warehouse(warehouse, auth=auth, expected_code=403)
+        assert_error_shape(response, "ForbiddenException")
+
+    delete_warehouse(warehouse)
 
 
 def test_bucket_root_base_location(started_cluster):

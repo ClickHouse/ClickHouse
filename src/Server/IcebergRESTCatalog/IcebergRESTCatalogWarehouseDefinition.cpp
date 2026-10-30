@@ -1,6 +1,7 @@
 #include <Server/IcebergRESTCatalog/IcebergRESTCatalogWarehouseDefinition.h>
 
 #include <Common/Exception.h>
+#include <Common/StringUtils.h>
 #include <Server/IcebergRESTCatalog/IcebergRESTCatalogJSON.h>
 #include <Server/IcebergRESTCatalog/IcebergRESTCatalogWarehouse.h>
 
@@ -18,6 +19,9 @@ namespace
 
 /// Bump on any layout change so data of another layout is refused, not misread.
 constexpr Int64 FORMAT_VERSION = 2;
+
+constexpr size_t MAX_WAREHOUSE_NAME_LENGTH = 64;
+constexpr auto HIDDEN = "[HIDDEN]";
 
 String getRequiredString(const Poco::JSON::Object & json, const String & key)
 {
@@ -47,15 +51,15 @@ IcebergRESTCatalogWarehouseCredential IcebergRESTCatalogWarehouseCredential::fro
     return credential;
 }
 
-Poco::JSON::Object::Ptr IcebergRESTCatalogWarehouseCredential::toJSON() const
+Poco::JSON::Object::Ptr IcebergRESTCatalogWarehouseCredential::toJSON(bool hide_secrets) const
 {
     Poco::JSON::Object::Ptr json = new Poco::JSON::Object;
     json->set("type", TYPE_AWS_ROLE);
     json->set("role_arn", role_arn);
     if (!external_id.empty())
-        json->set("external_id", external_id);
+        json->set("external_id", hide_secrets ? HIDDEN : external_id);
     if (!role_session_name.empty())
-        json->set("role_session_name", role_session_name);
+        json->set("role_session_name", hide_secrets ? HIDDEN : role_session_name);
     return json;
 }
 
@@ -73,12 +77,21 @@ IcebergRESTCatalogWarehouseDefinition IcebergRESTCatalogWarehouseDefinition::fro
     return definition;
 }
 
+Poco::JSON::Object::Ptr IcebergRESTCatalogWarehouseDefinition::toJSON(const String & name) const
+{
+    Poco::JSON::Object::Ptr json = new Poco::JSON::Object;
+    json->set("name", name);
+    json->set("base_location", base_location);
+    json->set("credential", credential.toJSON(/*hide_secrets*/ true));
+    return json;
+}
+
 String IcebergRESTCatalogWarehouseDefinition::toKeeperData() const
 {
     Poco::JSON::Object json;
     json.set("format_version", FORMAT_VERSION);
     json.set("base_location", base_location);
-    json.set("credential", credential.toJSON());
+    json.set("credential", credential.toJSON(/*hide_secrets*/ false));
     return toJSONString(json);
 }
 
@@ -92,6 +105,17 @@ IcebergRESTCatalogWarehouseDefinition IcebergRESTCatalogWarehouseDefinition::fro
         throw Exception(ErrorCodes::INCORRECT_DATA, "{} has an unsupported format version: expected {}, found {}", what, FORMAT_VERSION, format_version);
 
     return fromJSON(*json);
+}
+
+void validateIcebergRESTCatalogWarehouseName(const String & name)
+{
+    if (name.empty() || name.size() > MAX_WAREHOUSE_NAME_LENGTH)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Warehouse name must be 1 to {} bytes long", MAX_WAREHOUSE_NAME_LENGTH);
+    for (const char c : name)
+    {
+        if (!isAlphaNumericASCII(c) && c != '_' && c != '-')
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Warehouse name '{}' must contain only letters, digits, '_' and '-'", name);
+    }
 }
 
 }

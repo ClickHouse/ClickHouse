@@ -105,6 +105,12 @@ String IcebergRESTCatalogWarehouse::objectKey(const String & location) const
     return std::move(parsed.key);
 }
 
+void IcebergRESTCatalogWarehouse::checkStorageAccess() const
+{
+    RelativePathsWithMetadata children;
+    object_storage->listObjects(objectKey(base_location), children, /*max_keys*/ 1);
+}
+
 String stripTrailingSlashes(String location)
 {
     while (location.ends_with('/'))
