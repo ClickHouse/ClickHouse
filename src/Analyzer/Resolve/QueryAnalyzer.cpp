@@ -3015,6 +3015,40 @@ static bool lambdaBodyMayUseArgument(const QueryTreeNodePtr & node, const std::s
     return false;
 }
 
+/** Whether the resolved expression `node` still contains the matched column `matched_node`, looking into the source
+  * expressions of folded constants. A named lambda or a SQL UDF that ignores its argument (`WITH (y -> 0) AS f ... APPLY f`)
+  * is replaced by its resolved body, so its result and any later transformer are named without the matched column.
+  * A column is compared together with its source: an equally named column of another table expression is not the matched one.
+  */
+static bool resolvedExpressionContainsMatchedColumn(const QueryTreeNodePtr & node, const QueryTreeNodePtr & matched_node)
+{
+    if (!node)
+        return false;
+
+    if (const auto * column_node = node->as<ColumnNode>())
+    {
+        const auto * matched_column_node = matched_node->as<ColumnNode>();
+        if (matched_column_node && column_node->getColumnName() == matched_column_node->getColumnName()
+            && column_node->getColumnSourceOrNull() == matched_column_node->getColumnSourceOrNull())
+            return true;
+    }
+    else if (!matched_node->as<ColumnNode>() && node->isEqual(*matched_node))
+    {
+        return true;
+    }
+
+    if (const auto * constant_node = node->as<ConstantNode>())
+        return resolvedExpressionContainsMatchedColumn(constant_node->getSourceExpression(), matched_node);
+
+    for (const auto & child : node->getChildren())
+    {
+        if (resolvedExpressionContainsMatchedColumn(child, matched_node))
+            return true;
+    }
+
+    return false;
+}
+
 /** Nearest scope, up to the enclosing QUERY/UNION scope, whose `member` is not empty.
   * `registered_table_expression_nodes` and `nullable_group_by_keys` are populated only on the scope
   * that owns the join tree, never on a lambda's child scope.
@@ -3397,8 +3431,11 @@ ProjectionNames QueryAnalyzer::resolveMatcher(QueryTreeNodePtr & matcher_node, I
                 /// that name does. A prefix keeps the display name the transformer received, which is derived from the
                 /// column only if no earlier transformer has discarded it (`APPLY (x -> 0) APPLY (x -> x, 'f')` produces
                 /// `f0` for every column); otherwise the display name is the natural one.
-                natural_name_derived_from_column = argument_name_derived_from_column && transformer_name_uses_argument;
+                /// The resolved result must also still contain the matched column: a named lambda or a SQL UDF is replaced by
+                /// its body, which may ignore the argument (`WITH (y -> 0) AS f SELECT * APPLY f APPLY toString`).
                 auto & matched_column = matched_columns_before_transformers.back();
+                natural_name_derived_from_column = argument_name_derived_from_column && transformer_name_uses_argument
+                    && resolvedExpressionContainsMatchedColumn(node, matched_column.node);
                 if (apply_column_name_prefix.empty())
                     matched_column.projection_name_derived_from_column = natural_name_derived_from_column;
 

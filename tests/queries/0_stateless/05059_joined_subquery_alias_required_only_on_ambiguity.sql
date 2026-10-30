@@ -110,6 +110,13 @@ SELECT * APPLY (x -> x, 'f') APPLY toString FROM (SELECT 1 AS a), (SELECT 2 AS a
 SELECT * REPLACE (0 AS a) APPLY toString FROM (SELECT 1 AS a), (SELECT 2 AS a) FORMAT TSVWithNames;
 SELECT * APPLY (x -> (x AS z)) FROM (SELECT 1 AS a), (SELECT 2 AS a) FORMAT TSVWithNames;
 SELECT * APPLY (x -> (x AS z) + x) FROM (SELECT 1 AS a), (SELECT 2 AS a); -- { serverError ALIAS_REQUIRED }
+WITH (y -> 0) AS f SELECT * APPLY f APPLY toString FROM (SELECT 1 AS a), (SELECT 2 AS a) FORMAT TSVWithNames;
+WITH (y -> 0) AS f SELECT * APPLY (x -> f(x)) APPLY toString FROM (SELECT 1 AS a), (SELECT 2 AS a) FORMAT TSVWithNames;
+WITH (y -> y + 1) AS f SELECT * APPLY f APPLY toString FROM (SELECT 1 AS a), (SELECT 2 AS a); -- { serverError ALIAS_REQUIRED }
+DROP FUNCTION IF EXISTS f_05059_constant;
+CREATE FUNCTION f_05059_constant AS (y) -> 0;
+SELECT * APPLY f_05059_constant APPLY toString FROM (SELECT 1 AS a), (SELECT 2 AS a) FORMAT TSVWithNames;
+DROP FUNCTION f_05059_constant;
 
 SELECT '-- Equally named columns of a single table expression do not need a qualification';
 SELECT * FROM (SELECT x, x FROM (SELECT 1 AS x));
