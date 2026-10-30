@@ -262,6 +262,16 @@ ThreadGroup::~ThreadGroup()
 #endif
 }
 
+void ThreadGroup::addUncheckedFlushes(Int64 bytes)
+{
+    for (ThreadGroup * group = this; group; group = group->parent.get())
+    {
+        group->unchecked_flushes.fetch_add(bytes, std::memory_order_relaxed);
+        if (!group->parent || group->memory_tracker.getParent() != &group->parent->memory_tracker)
+            break;
+    }
+}
+
 ThreadGroupPtr ThreadGroup::create(ContextPtr context, Int32 os_threads_nice_value)
 {
     auto group = std::make_shared<ThreadGroup>(context, os_threads_nice_value);
@@ -447,6 +457,8 @@ void ThreadStatus::attachToGroupImpl(const ThreadGroupPtr & thread_group_)
         /// counters must be reparented after it, or those bytes are reported as this group's.
         memory_tracker.setParent(&thread_group->memory_tracker);
         performance_counters.setParent(&thread_group->performance_counters);
+        /// Bytes flushed before the attach were not charged to this group, so the thread takes over the ones of the group instead.
+        untracked_memory_flushed_unchecked = thread_group->takeUncheckedFlushes();
 
         query_context = thread_group->query_context;
         global_context = thread_group->global_context;
@@ -487,6 +499,7 @@ void ThreadStatus::detachFromGroup()
 
     /// flush untracked memory before resetting memory_tracker parent
     flushUntrackedMemory();
+    thread_group->addUncheckedFlushes(std::exchange(untracked_memory_flushed_unchecked, 0));
 
     if (boundToOSThread())
     {

@@ -156,6 +156,11 @@ public:
     /// Nested groups charge memory through the group above them; only a top-level one is attached to a user.
     bool isNested() const { return parent != nullptr; }
 
+    /// `ThreadStatus::untracked_memory_flushed_unchecked` of the threads that detached from this group or from a nested group
+    /// that charges its memory tracker, taken by the next thread that attaches to it.
+    void addUncheckedFlushes(Int64 bytes);
+    Int64 takeUncheckedFlushes() { return unchecked_flushes.exchange(0, std::memory_order_relaxed); }
+
     std::vector<UInt64> getInvolvedThreadIds() const;
     size_t getPeakThreadsUsage() const;
     UInt64 getGroupElapsedMs() const;
@@ -165,6 +170,8 @@ public:
 
 private:
     mutable std::mutex mutex;
+
+    std::atomic<Int64> unchecked_flushes{0};
 
     /// Set up at creation, no race when reading
     SharedData shared_data TSA_GUARDED_BY(mutex);
@@ -213,9 +220,9 @@ public:
     VariableContext untracked_memory_blocker_level = VariableContext::Max;
     /// Each thread could new/delete memory in range of (-untracked_memory_limit, untracked_memory_limit) without access to common counters.
     Int64 untracked_memory_limit = 4 * 1024 * 1024;
-    /// Bytes flushed by `flushUntrackedMemory` without a limit check (e.g. by `~MemoryTrackerSwitcher`, which cannot throw).
+    /// Bytes allocated by flushes without a limit check (e.g. by `~MemoryTrackerSwitcher`, which cannot throw); frees do not reduce it.
     /// Once it exceeds `untracked_memory_limit`, the next allocation checks the limits. Not reset by `MemoryTrackerSwitcher`,
-    /// so allocations split over many short scopes are still checked.
+    /// so allocations split over many short scopes are still checked. Kept by the thread group while the thread is detached.
     Int64 untracked_memory_flushed_unchecked = 0;
     /// Per-CPU untracked memory
     PerCPUMemoryThreadState per_cpu_untracked_memory;
