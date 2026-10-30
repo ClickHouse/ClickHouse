@@ -1,6 +1,9 @@
 #include <Processors/Formats/Impl/Parquet/Decoding.h>
 #include <Processors/Formats/Impl/Parquet/ALPEncoding.h>
 
+#include <array>
+#include <utility>
+
 #include <base/arithmeticOverflow.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsCommon.h>
@@ -23,6 +26,48 @@ namespace DB::ErrorCodes
 namespace DB::Parquet
 {
 
+/// Unpacks `n` values of `W` bits each (least significant bit first), starting at bit `pos` of `data`.
+/// Like the per-value loop, reads 8 bytes at the first byte of each value.
+template <size_t W, typename T>
+static void unpackBitPacked(const char * __restrict data, size_t pos, size_t n, T * __restrict out)
+{
+    static_assert(W >= 1 && W <= 32 && W <= 8 * sizeof(T));
+    constexpr UInt64 mask = (UInt64(1) << W) - 1;
+    auto load = [](const char * p) { UInt64 x = 0; memcpy(&x, p, 8); return x; };
+
+    size_t i = 0;
+    for (; i < n && (pos & 7); ++i, pos += W)
+        out[i] = static_cast<T>((load(data + (pos >> 3)) >> (pos & 7)) & mask);
+
+    const char * block = data + (pos >> 3);
+    for (; i + 8 <= n; i += 8, block += W)
+    {
+        [&]<size_t... J>(std::index_sequence<J...>)
+        {
+            ((out[i + J] = static_cast<T>((load(block + J * W / 8) >> (J * W % 8)) & mask)), ...);
+        }(std::make_index_sequence<8>{});
+    }
+
+    pos = size_t(block - data) * 8;
+    for (; i < n; ++i, pos += W)
+        out[i] = static_cast<T>((load(data + (pos >> 3)) >> (pos & 7)) & mask);
+}
+
+template <typename T>
+using UnpackBitPackedFn = void (*)(const char *, size_t, size_t, T *);
+
+/// `unpackBitPacked` for a run-time bit width in [1, 8 * sizeof(T)].
+template <typename T>
+static UnpackBitPackedFn<T> getUnpackBitPacked(size_t bit_width)
+{
+    static constexpr auto table = []<size_t... W>(std::index_sequence<W...>)
+    {
+        return std::array<UnpackBitPackedFn<T>, sizeof...(W)>{&unpackBitPacked<W + 1, T>...};
+    }(std::make_index_sequence<std::min<size_t>(32, 8 * sizeof(T))>{});
+    chassert(bit_width >= 1 && bit_width <= table.size());
+    return table[bit_width - 1];
+}
+
 /// Used for dictionary indices and repetition/definition levels.
 /// Throws if any decoded value is >= `limit`.
 template <typename T>
@@ -35,6 +80,7 @@ struct BitPackedRLEDecoder : public PageDecoder
     size_t bit_idx = 0; // if bit-packed run
     T val = 0; // if RLE run
     bool run_is_rle = false; // otherwise bit-packed
+    UnpackBitPackedFn<T> unpack = nullptr; /// Set if bit_width > 0.
 
     BitPackedRLEDecoder(std::span<const char> data_, size_t limit_, bool has_header_byte, bool has_length_bytes = false)
         : PageDecoder(data_), limit(limit_)
@@ -70,6 +116,8 @@ struct BitPackedRLEDecoder : public PageDecoder
         }
 
         chassert(bit_width <= 32);
+        if (bit_width > 0)
+            unpack = getUnpackBitPacked<T>(bit_width);
     }
 
     void skip(size_t num_values) override
@@ -119,7 +167,7 @@ struct BitPackedRLEDecoder : public PageDecoder
             return true;
         }
 
-        const T value_mask = T((1ul << bit_width) - 1);
+        const UnpackBitPackedFn<UInt32> unpack_indexes = getUnpackBitPacked<UInt32>(bit_width);
         while (num_values)
         {
             if (run_length == 0)
@@ -143,16 +191,11 @@ struct BitPackedRLEDecoder : public PageDecoder
                     constexpr size_t batch = 512;
                     UInt32 buf[batch];
                     size_t m = std::min(n, batch);
-                    size_t max_seen = 0;
+                    unpack_indexes(data, bit_idx, m, buf);
+                    bit_idx += m * bit_width;
+                    UInt32 max_seen = 0;
                     for (size_t i = 0; i < m; ++i)
-                    {
-                        size_t x = 0;
-                        memcpy(&x, data + (bit_idx >> 3), 8);
-                        x = (x >> (bit_idx & 7)) & value_mask;
-                        max_seen = std::max(max_seen, x);
-                        buf[i] = static_cast<UInt32>(x);
-                        bit_idx += bit_width;
-                    }
+                        max_seen = std::max(max_seen, buf[i]);
                     if (max_seen >= limit)
                         throw Exception(ErrorCodes::INCORRECT_DATA, "Dict index or rep/def level out of bounds (bp)");
                     dictionary.appendIndexes(buf, m, out);
@@ -229,8 +272,6 @@ struct BitPackedRLEDecoder : public PageDecoder
         [[maybe_unused]] size_t zeros_acc = 0;
 
         const T value_mask = T((1ul << bit_width) - 1);
-        /// TODO [parquet]: May make sense to have specialized version of this loop for bit_width=1,
-        ///                 which is very common as def levels for nullables.
 
         /// (Some stats from hits.parquet, in case it helps with optimization:
         ///  bit-packed runs: 64879089, total 2548822304 values (~39 values/run),
@@ -290,20 +331,17 @@ struct BitPackedRLEDecoder : public PageDecoder
                 }
                 else if constexpr (!skip)
                 {
+                    unpack(data, bit_idx, n, out);
+                    bit_idx += bit_width * n;
+                    T max_seen = 0;
                     for (size_t i = 0; i < n; ++i)
-                    {
-                        size_t x = 0;
-                        memcpy(&x, data + (bit_idx >> 3), 8);
-                        x = (x >> (bit_idx & 7)) & value_mask;
-
-                        if (x >= limit)
-                            throw Exception(ErrorCodes::INCORRECT_DATA, "Dict index or rep/def level out of bounds (bp)");
-                        *out = static_cast<T>(x);
-                        ++out;
-                        bit_idx += bit_width;
-                        if constexpr (count_zeros)
-                            zeros_acc += x == 0;
-                    }
+                        max_seen = std::max(max_seen, out[i]);
+                    if (max_seen >= limit)
+                        throw Exception(ErrorCodes::INCORRECT_DATA, "Dict index or rep/def level out of bounds (bp)");
+                    if constexpr (count_zeros)
+                        for (size_t i = 0; i < n; ++i)
+                            zeros_acc += out[i] == 0;
+                    out += n;
                 }
                 else
                 {
