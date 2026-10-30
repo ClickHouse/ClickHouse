@@ -626,6 +626,10 @@ bool isReadOnlyStatementForAIAgent(const IAST & ast)
     /// data or the schema of the user, but the texts of the queries running on the server (of other
     /// sessions too, with the secrets they hold) and the authentication and access metadata. The
     /// same goes for the `system` tables behind them, see `isAllowedServerOwnedTableForAIAgent`.
+    ///
+    /// `SHOW FUNCTIONS` is left out because it is rewritten into a `SELECT` from `system.functions`,
+    /// which shows the definitions of the user-defined functions and is denied to the read-only tool.
+    /// The names of the functions are available through `system.documentation`.
     return isAnyOf<
         ASTSelectWithUnionQuery,
         ASTExplainQuery,
@@ -635,7 +639,6 @@ bool isReadOnlyStatementForAIAgent(const IAST & ast)
         ASTShowColumnsQuery,
         ASTShowIndexesQuery,
         ASTShowEnginesQuery,
-        ASTShowFunctionsQuery,
         ASTShowSettingQuery,
         ASTExistsDatabaseQuery,
         ASTExistsTableQuery,
@@ -902,6 +905,48 @@ bool isAllowedDatabaseEngineForAIAgent(const String & engine)
     return allowed.contains(engine);
 }
 
+namespace
+{
+
+/// `SHOW TABLES` (and `SHOW DATABASES`, `SHOW DICTIONARIES`, ...), `SHOW COLUMNS` and `SHOW INDEXES`
+/// keep their `WHERE` and `LIMIT` expressions in members that are not children, so none of the
+/// traversals of the validation sees them, and the interpreters copy them into a `SELECT` from a
+/// `system` table. A `WHERE` can call any function and read any column of that table (also the ones
+/// denied to the read-only tool, like `create_table_query`), so it is refused. A `LIMIT` is kept when it
+/// is a literal, which is all it is used for.
+void checkNoExpressionsOutsideOfChildren(const IAST & ast)
+{
+    const IAST * where_expression = nullptr;
+    const IAST * limit_length = nullptr;
+    if (const auto * show_tables = ast.as<ASTShowTablesQuery>())
+    {
+        where_expression = show_tables->where_expression.get();
+        limit_length = show_tables->limit_length.get();
+    }
+    else if (const auto * show_columns = ast.as<ASTShowColumnsQuery>())
+    {
+        where_expression = show_columns->where_expression.get();
+        limit_length = show_columns->limit_length.get();
+    }
+    else if (const auto * show_indexes = ast.as<ASTShowIndexesQuery>())
+    {
+        where_expression = show_indexes->where_expression.get();
+    }
+
+    if (where_expression)
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "WHERE in a SHOW statement is not allowed for the read-only tool, because the server evaluates it over a "
+            "system table. Use LIKE, or a SELECT from the system table, or the run_query tool for this query");
+
+    if (limit_length && !limit_length->as<ASTLiteral>())
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "Only a literal LIMIT in a SHOW statement is allowed for the read-only tool. Use the run_query tool for this query");
+}
+
+}
+
 void validateStoredExpressionForAIAgent(const String & expression, std::string_view origin, bool allow_schema_access)
 {
     ParserExpression parser;
@@ -950,6 +995,7 @@ void validateReadOnlyQueryForAIAgent(const IAST & ast, bool allow_schema_access)
             "INTO OUTFILE is not allowed for the read-only tool because it writes to the user's files. "
             "Use the run_query tool for this query");
 
+    checkNoExpressionsOutsideOfChildren(ast);
     checkNoQueryParameters(ast);
     checkNoProtectedSettingChanges(ast);
     checkNoExternalAccess(ast);

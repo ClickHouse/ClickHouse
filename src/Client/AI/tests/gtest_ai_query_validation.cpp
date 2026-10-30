@@ -110,6 +110,29 @@ TEST(AIQueryValidation, AllowsReadOnlyStatements)
     EXPECT_TRUE(isAllowed("SHOW PRIVILEGES"));
 }
 
+TEST(AIQueryValidation, RejectsExpressionsOfShowStatements)
+{
+    /// The `WHERE` and `LIMIT` of these statements are not children of the AST, so the traversals of
+    /// the validation do not see them, and the interpreters evaluate them over a `system` table.
+    EXPECT_FALSE(isAllowed("SHOW TABLES FROM system WHERE generateSerialID('ai-counter') >= 0"));
+    EXPECT_FALSE(isAllowed("SHOW TABLES WHERE toUInt64(create_table_query)"));
+    EXPECT_FALSE(isAllowed("SHOW TABLES WHERE name IN (SELECT name FROM system.named_collections)"));
+    EXPECT_FALSE(isAllowed("SHOW DATABASES WHERE name = 'x'"));
+    EXPECT_FALSE(isAllowed("SHOW COLUMNS FROM t WHERE generateSerialID('ai-counter') >= 0"));
+    EXPECT_FALSE(isAllowed("SHOW INDEXES FROM t WHERE generateSerialID('ai-counter') >= 0"));
+    EXPECT_FALSE(isAllowed("SHOW TABLES LIMIT generateSerialID('ai-counter')"));
+    EXPECT_FALSE(isAllowed("SHOW COLUMNS FROM t LIMIT (SELECT count() FROM system.named_collections)"));
+
+    EXPECT_TRUE(isAllowed("SHOW TABLES LIKE 'x%' LIMIT 10"));
+    EXPECT_TRUE(isAllowed("SHOW COLUMNS FROM t LIKE 'x%' LIMIT 10"));
+    EXPECT_TRUE(isAllowed("SHOW INDEXES FROM t"));
+
+    /// `SHOW FUNCTIONS` reads `system.functions`, with the definitions of the user-defined functions.
+    EXPECT_FALSE(isAllowed("SHOW FUNCTIONS"));
+    EXPECT_FALSE(isAllowed("SHOW FUNCTIONS LIKE 'f'"));
+    EXPECT_TRUE(isReadOnlyStatement("SHOW FUNCTIONS"));
+}
+
 TEST(AIQueryValidation, RejectsDictionaryStatements)
 {
     /// The target of these statements is a dictionary by construction, never an ordinary table,
