@@ -24,7 +24,7 @@ namespace FailPoints
 /**
     * Useful links:
     * - https://hudi.apache.org/tech-specs/
-    * - https://hudi.apache.org/docs/file_layouts/
+    * - https://hudi.apache.org/docs/storage_layouts
     */
 
 /**

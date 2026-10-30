@@ -27,3 +27,5 @@
 -- fallback ran locally:	1
 -- strict mode throws
 -- strict mode also refuses a plan with no distributable source
+-- a plan whose only source is system.one now ships
+1

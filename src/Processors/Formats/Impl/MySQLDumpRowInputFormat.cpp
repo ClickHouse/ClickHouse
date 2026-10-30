@@ -223,12 +223,18 @@ static NamesAndTypesList getColumnsList(const ASTExpressionList * columns_defini
             /// Note: Enum would be transformed to Enum8 if number of elements is less then 128, otherwise it would be transformed to Enum16.
             if (type_name_upper.contains("ENUM"))
             {
+                ASTPtr arguments = data_type_node->getArguments();
+                if (!arguments)
+                    throw Exception(ErrorCodes::INCORRECT_DATA, "Type {} in MySQL dump requires a list of values", data_type_node->name);
+
                 UInt16 i = 0;
-                for (ASTPtr & child : data_type_node->getArguments()->children)
+                for (ASTPtr & child : arguments->children)
                 {
                     auto new_child = make_intrusive<ASTFunction>();
                     new_child->name = "equals";
                     auto * literal = child->as<ASTLiteral>();
+                    if (!literal || literal->value.getType() != Field::Types::String)
+                        throw Exception(ErrorCodes::INCORRECT_DATA, "Values of type {} in MySQL dump must be string literals", data_type_node->name);
 
                     new_child->arguments = make_intrusive<ASTExpressionList>();
                     new_child->arguments->children.push_back(make_intrusive<ASTLiteral>(literal->value.safeGet<String>()));
@@ -371,8 +377,12 @@ static bool tryToExtractStructureFromCreateQuery(ReadBuffer & in, NamesAndTypesL
     if (!create_query)
         return false;
 
+    /// `CREATE TABLE ... LIKE` has no column list, and a column list with only indexes or constraints has no columns.
+    if (!create_query->columns_list)
+        return false;
+
     const auto * create_defines = create_query->columns_list->as<MySQLParser::ASTCreateDefines>();
-    if (!create_defines)
+    if (!create_defines || !create_defines->columns)
         return false;
 
     structure = getColumnsList(create_defines->columns);
@@ -425,9 +435,10 @@ static void readFirstCreateAndInsertQueries(ReadBuffer & in, String & table_name
     if (type == MySQLQueryType::CREATE)
     {
         /// If we have CREATE query, we can extract columns names and types from it.
+        /// `tryToExtractStructureFromCreateQuery` reads the CREATE query up to and including its `;`,
+        /// so the next query must not be skipped: it can be the first INSERT query.
         if (tryToExtractStructureFromCreateQuery(in, structure_from_create))
             column_names = structure_from_create.getNames();
-        skipQuery(in);
         insert_query_present = skipToInsertQuery(table_name, in);
     }
 

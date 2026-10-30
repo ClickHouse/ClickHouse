@@ -6,8 +6,6 @@
 -- The fix: when result_types is empty after trying all alternatives,
 -- throw instead of falling back to Nullable(Nothing).
 
-SET enable_analyzer = 1;
-
 -- Variant(UInt32, Date): neither alternative is compatible with base58Encode(String).
 
 -- WHERE context: must throw, not silently return 0 rows.
