@@ -368,10 +368,15 @@ struct FormatSettings
         bool json_type_escape_dots_in_keys = false;
         /// Not a user-facing setting. Whether the JSON field tokenizer (`skipJSONField`, `readJSONField`)
         /// accepts the MongoDB shell `ISODate("...")` / `new ISODate("...")` wrapper, which only a target
-        /// type already known to be `DateTime64` can consume. Off by default, so skipping unknown fields,
-        /// schema inference, `Dynamic`, `JSON` and `JSONExtract` stay strict; `Variant` turns it on to
-        /// tokenize a value for its `DateTime64` arms.
+        /// type already known to be `DateTime64` can consume. Off by default, so schema inference, `Dynamic`,
+        /// `JSON` and `JSONExtract` stay strict; `Variant` turns it on to tokenize a value for its `DateTime64`
+        /// arms, and the JSON input formats turn it on to skip a field (see `JSONUtils::getJSONSettingsForSkippingField`).
         bool allow_mongodb_isodate_wrapper = false;
+        /// Not a user-facing setting. Set by `Variant` for a value that is valid JSON only with the `ISODate`
+        /// wrapper: a `String` reading a JSON object or array as a raw string (`read_objects_as_strings`,
+        /// `read_arrays_as_strings`) rejects it if it is not valid JSON without the wrapper, so the wrapper
+        /// either reaches a `DateTime64` or is rejected, while sibling values keep these conversions.
+        bool reject_mongodb_isodate_wrapper_in_strings = false;
         size_t max_row_size_for_json_each_row = 0;
     } json{};
 

@@ -137,9 +137,10 @@ Chunk JSONColumnsBlockInputFormatBase::read()
         size_t num_rows = 0;
         if (!reader->checkColumnEnd())
         {
+            const auto skip_field_json_settings = JSONUtils::getJSONSettingsForSkippingField(format_settings.json);
             do
             {
-                skipJSONField(*in, "skip_field", format_settings.json);
+                skipJSONField(*in, "skip_field", skip_field_json_settings);
                 ++num_rows;
             } while (!reader->checkColumnEndOrSkipFieldDelimiter());
         }

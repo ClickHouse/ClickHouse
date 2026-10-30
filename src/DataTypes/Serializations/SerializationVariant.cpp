@@ -1366,8 +1366,7 @@ bool SerializationVariant::tryDeserializeTextJSONField(IColumn & column, const S
         return tryDeserializeTextJSONImpl(column, field, settings);
 
     FormatSettings adjusted_settings = settings;
-    adjusted_settings.json.read_objects_as_strings = false;
-    adjusted_settings.json.read_arrays_as_strings = false;
+    adjusted_settings.json.reject_mongodb_isodate_wrapper_in_strings = true;
     return tryDeserializeTextJSONImpl(column, field, adjusted_settings);
 }
 
