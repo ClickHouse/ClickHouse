@@ -158,6 +158,7 @@ namespace DB
     M(S3_COPY_POOL, "S3ObjStor_copy") \
     M(S3_LIST_POOL, "ListObjectS3") \
     M(SESSION_CLEANUP, "SessionCleanup") \
+    M(SHELL_CMD_REAPER, "ShellCmdReaper") \
     M(SEND_TO_SHELL_CMD, "SendToShellCmd") \
     M(SIGNAL_LISTENER, "SignalListnr") \
     M(SNAPSHOT_ASYNC, "SnapshotAsync") \

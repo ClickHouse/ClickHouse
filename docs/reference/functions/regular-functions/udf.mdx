@@ -43,20 +43,172 @@ A function configuration contains the following settings:
 | `return_name`                 | Name of returned value. Specifying return name is necessary if return name is part of serialization for user defined function format like [Native](/reference/formats/Native) or [JSONEachRow](/reference/formats/JSON/JSONEachRow)                                                                                                                                                      | Optional  | `result`              |
 | `type`                        | An executable type. If `type` is set to `executable` then single command is started. If it is set to `executable_pool` then a pool of commands is created                                                                                                                                                                                                                                     | Yes       | -                     |
 | `max_command_execution_time`  | Maximum execution time in seconds for processing block of data. This setting is valid for `executable_pool` commands only                                                                                                                                                                                                                                                                     | Optional  | `10`                  |
-| `command_termination_timeout` | Time in seconds during which a command should finish after its pipe is closed. After that time `SIGTERM` is sent to the process executing the command                                                                                                                                                                                                                                         | Optional  | `10`                  |
+| `command_termination_timeout` | Time in seconds during which a command should finish after its pipe is closed. After that time `SIGTERM` is sent to the process executing the command; with `use_shared_memory`, `SIGKILL` is sent to its whole process group instead. See [Command termination and exit code](#executable-udf-termination)                                                                                                                                                   | Optional  | `10`                  |
 | `command_read_timeout`        | Timeout for reading data from command stdout in milliseconds                                                                                                                                                                                                                                                                                                                                  | Optional  | `10000`               |
 | `command_write_timeout`       | Timeout for writing data to command stdin in milliseconds                                                                                                                                                                                                                                                                                                                                     | Optional  | `10000`               |
+| `command_pipe_capacity`       | Capacity in bytes requested for the pipes between the server and the command (`stdin`, `stdout`, `stderr`) with `F_SETPIPE_SZ`, limited by `/proc/sys/fs/pipe-max-size`. `0` keeps the kernel's default. Linux-only: has no effect elsewhere                                                                                                                                                                                                                  | Optional  | `0`                   |
 | `pool_size`                   | The size of a command pool                                                                                                                                                                                                                                                                                                                                                                    | Optional  | `16`                  |
 | `send_chunk_header`           | Controls whether to send row count before sending a chunk of data to process                                                                                                                                                                                                                                                                                                                  | Optional  | `false`               |
 | `execute_direct`              | If `execute_direct` = `1`, then `command` will be searched inside user_scripts folder specified by [user_scripts_path](/reference/settings/server-settings/settings/user#user_scripts_path). Additional script arguments can be specified using whitespace separator. Example: `script_name arg1 arg2`. If `execute_direct` = `0`, `command` is passed as argument for `bin/sh -c` | Optional  | `1`                   |
 | `lifetime`                    | The reload interval of a function in seconds. If it is set to `0` then the function is not reloaded                                                                                                                                                                                                                                                                                           | Optional  | `0`                   |
 | `deterministic`               | If the function is deterministic (returns the same result for the same input)                                                                                                                                                                                                                                                                                                                 | Optional  | `false`               |
-| `stderr_reaction`             | How to handle the command's stderr output. Values: `none` (ignore), `log` (log all stderr immediately), `log_first` (log first 4 KiB after exit), `log_last` (log last 4 KiB after exit), `throw` (throw exception immediately on any stderr output). When using `log_first` or `log_last` with a non-zero exit code, the stderr content is included in the exception message              | Optional  | `log_last`            |
-| `check_exit_code`             | If true, ClickHouse will check the exit code of the command. A non-zero exit code causes an exception                                                                                                                                                                                                                                                                                         | Optional  | `true`                |
+| `stderr_reaction`             | How to handle the command's stderr output. Values: `none` (read and discard), `log` (log all stderr immediately), `log_first` (log first 4 KiB after exit), `log_last` (log last 4 KiB after exit), `throw` (throw exception immediately on any stderr output). When using `log_first` or `log_last` with a non-zero exit code, the stderr content is included in the exception message. See [Handling of stderr](#executable-udf-stderr)                     | Optional  | `log_last`            |
+| `check_exit_code`             | If true, ClickHouse will check the exit code of the command. A non-zero exit code causes an exception. See [Command termination and exit code](#executable-udf-termination)                                                                                                                                                                                                                                                                                   | Optional  | `true`                |
+| `use_shared_memory`           | Exchange the data through a shared-memory region instead of the `stdin`/`stdout` pipes, which then carry only small control messages. Linux-only. Incompatible with `send_chunk_header`. See [Shared memory mode](#shared-memory-mode)                                                                                                                                                                                                                        | Optional  | `false`               |
+| `shared_memory_size`          | Initial size in bytes of the shared-memory region of each command process. The whole size is reserved when the process starts. Must be greater than zero when `use_shared_memory` is enabled                                                                                                                                                                                                                                                                  | Required when `use_shared_memory` is enabled | `0`                   |
+| `shared_memory_max_size`      | Upper bound in bytes to which the region may grow when a chunk does not fit. `0` means `shared_memory_size`: the region never grows and an oversized chunk causes an exception. Must not be smaller than `shared_memory_size`. See [Region size](#shared-memory-region-size)                                                                                                                                                                                  | Optional  | `0`                   |
 
-The command must read arguments from `STDIN` and must output the result to `STDOUT`. The command must process arguments iteratively. That is after processing a chunk of arguments it must wait for the next chunk.
+When `use_shared_memory` is disabled, the command must read arguments from `STDIN` and output the result to `STDOUT`. The command must process arguments iteratively: after processing a chunk of arguments, it must wait for the next chunk. When `use_shared_memory` is enabled, the command implements the [control protocol](#shared-memory-protocol) instead.
 
-## Executable User Defined Functions {#executable-user-defined-functions}
+`shared_memory_size` and `shared_memory_max_size` must not appear in the configuration of a function without `use_shared_memory`, not even with the value `0`: the configuration is rejected if either key is present, because such a function would otherwise silently use the pipes. `use_shared_memory` itself may be written out as `0`.
+
+### Command termination and exit code {#executable-udf-termination}
+
+- When the server closes the command's pipe, the command has `command_termination_timeout` seconds to exit. After that, `SIGTERM` is sent to it, or, with `use_shared_memory`, `SIGKILL` is sent to its whole process group.
+- If the query stops reading early (for example, because of `LIMIT`), the server drains up to 64 KiB of extra output, or waits up to `command_termination_timeout`, whichever comes first, and then closes `stdout`, so that a command that keeps writing exits. The resulting `SIGPIPE` (or exit code `141`, as a shell reports it) is not reported as an error even with `check_exit_code` enabled; any other non-zero exit code or signal is.
+- With `check_exit_code` enabled, a command that has stopped writing is waited for until it exits, however long that takes, and a command that neither writes nor exits keeps the query waiting until the command is killed or the query is cancelled. Disable `check_exit_code` for a command that is not expected to exit on its own. With `use_shared_memory`, the wait for a command whose answer was abandoned is bounded by `command_termination_timeout`.
+- For `type` `executable`, the wait for the exit status after the output completed normally is not bounded.
+- For `type` `executable_pool`, a process is meant to outlive the query. Its exit code is checked when it is discarded, or when it has closed its `stdout` by the time its answer is read. Such a process is waited for up to `command_termination_timeout` (`0` gives no grace at all), and if it has not exited by then, the query fails. A pooled process that exits later is replaced before the next query uses it, but its exit code is not reported.
+
+### Handling of stderr {#executable-udf-stderr}
+
+`stderr` is read off the pipe while a query is reading from the command, under every `stderr_reaction`, so a chatty command does not block on a full pipe. With `none`, the output is discarded.
+
+With `check_exit_code` disabled and `stderr_reaction` other than `none`, the server still waits up to `command_termination_timeout` for what the command writes to `stderr` while exiting. Meanwhile it reads and discards up to 64 KiB of further `stdout`. If the command writes more, its `stdout` is closed so that it exits on its next write, and a diagnostic written after that is lost.
+
+For `type` `executable_pool`, `stderr` is read only while a query is reading from the process and once more when the query returns the process to the pool:
+
+- `stderr` that arrives before that final check belongs to the current query: under `throw` it fails the query, even if it was written after the answer.
+- `stderr` that arrives later is found by the next query that borrows the process. It is logged and not raised against that query. Under `throw` the process is discarded and replaced (with `use_shared_memory`, counted in `ExecutableUDFSharedMemoryDirtyChannelDiscards`). A process that has exited in the pool is replaced as well, but is not counted there. Output that the command writes while the next request is running is attributed to that query.
+- Under `none`, leftover `stderr` is discarded and never causes a process to be replaced.
+- Between borrows, nothing reads the pipe, under any `stderr_reaction`. A command that writes while idle can fill the pipe and block in `write` until the next borrow drains it, and that borrow pays for the wait.
+
+So a pooled command should write its diagnostics before its answer, and nothing after it.
+
+### Functions without arguments {#executable-udf-without-arguments}
+
+A function declared without `argument` elements sends the command no data: the command reads an empty input (with `use_shared_memory`, a request with `size` `0`) and is not told how many rows the block holds. The command must still answer with exactly one row per row of the block, so such a function is only usable where the block holds a single row, for example in a query without `FROM`. Called over more rows, as in `SELECT f() FROM numbers(3)`, it fails with `wrong result, expected 3 row(s), actual 1`. Pass a column as an argument to evaluate the function over a table.
+
+### Shared memory mode {#shared-memory-mode}
+
+With `use_shared_memory`, the bulk data is placed in a shared-memory region that both the server and the command `mmap`, and the `stdin`/`stdout` pipes carry only small control messages. The server serializes the input directly into the region and parses the output where the command left it, avoiding the copies and per-pipeful syscalls of the pipes. The mode is most useful with `executable_pool`, where the same process and region are reused across invocations.
+
+Requirements: Linux with `memfd_create` and file sealing, `/proc/self/fd`, and `/sys/kernel/mm` (not available in a chroot or a container without `/sys`). The loader checks them when the function is loaded; a function with `use_shared_memory` fails to load where they are missing.
+
+#### Region {#shared-memory-region}
+
+- Each command process gets one region, initially of `shared_memory_size` bytes. The region is an anonymous file created with `memfd_create`, with no name in any filesystem.
+- The process inherits the region's descriptor as descriptor `3`, and requests name it by the path `/proc/self/fd/3`.
+- For `type` `executable`, the region is released when the command finishes. For `type` `executable_pool`, it is kept across invocations and released when the process is discarded or the pool is destroyed; `SYSTEM RELOAD FUNCTION` drops the pool and all its regions.
+- The region exists as long as any descriptor to it is open: in the server, in the command, or in anything the command started. A server killed without shutdown (by `SIGKILL` or the OOM killer) leaves no files behind. The command sees EOF on `stdin` when the server dies and is expected to exit; a command that keeps running holds the region's pages until it closes the descriptor.
+
+#### Protocol {#shared-memory-protocol}
+
+Control values use the ClickHouse native binary encoding (varints and length-prefixed strings). For each chunk, the server serializes the input into the region in the configured `format` and writes a **request** to the command's `STDIN`:
+
+| Field        | Encoding                 | Description                                                     |
+|--------------|--------------------------|-----------------------------------------------------------------|
+| `version`    | varint                   | Protocol version, currently `1`                                 |
+| `request_id` | varint                   | Identifies this request; the command must echo it in its response |
+| `path`       | length-prefixed string   | Path under which the command can open the region: `/proc/self/fd/N`, where `N` is the descriptor the command inherited |
+| `offset`     | varint                   | Start offset of the serialized input (typically `0`)            |
+| `size`       | varint                   | Size of the serialized input in bytes                           |
+
+The command opens and `mmap`s the file at the given path (or `mmap`s the inherited descriptor directly), parses the input, computes the result, writes it into the region (typically after the input), and writes a **response** to its `STDOUT`:
+
+| Field           | Encoding               | Description                                                                       |
+|-----------------|------------------------|-----------------------------------------------------------------------------------|
+| `request_id`    | varint                 | The `request_id` of the request being answered, echoed unchanged                  |
+| `status`        | varint                 | `0` on success, `2` to ask for a larger region, any other value reports an error  |
+| `offset`        | varint                 | Present when `status` is `0`: start offset of the serialized output               |
+| `size`          | varint                 | Present when `status` is `0`: size of the serialized output in bytes              |
+| `required_size` | varint                 | Present when `status` is `2`: total size in bytes the region must have            |
+| `message`       | length-prefixed string | Present for any other `status`: an error message of at most 64 KiB, surfaced by the server |
+
+Rules for the command:
+
+- A command that does not recognize `version` must answer with an error `status`.
+- A response with a different `request_id` (or none) fails the query, and the process is not returned to the pool.
+- A request with `size` `0` (a [function without arguments](#executable-udf-without-arguments)) must be answered like any other.
+- Map the file for every request at its current size (`fstat` it, or map the request's `size` plus room for the output). Do not keep a mapping across requests: the region may have grown since.
+- If the result does not fit, answer with `status` `2` and the total size needed, which must be larger than the current size. The server enlarges the region, preserving its contents, and sends the request again with a new `request_id` and the same `offset` and `size`. If the region cannot grow that far (`shared_memory_max_size`, a memory limit), the query fails.
+- Compute every answer from the input the request names, as the region holds it now. Do not treat a request as the continuation of an earlier one: after an abandoned request, the next query's request may name an input with the same offset and size but different contents.
+- The response frame is the only thing the command may write to `STDOUT`. A stray byte after it would be read as the start of the next response. Write diagnostics to `STDERR`, before the response (see [Handling of stderr](#executable-udf-stderr)).
+- Do not resize the region. Shrinking fails with `EPERM`. Extending is possible but is charged at the next hand-over and can cost the process (see [The size cap](#shared-memory-size-cap)).
+- Exit when `STDIN` reaches EOF. For `type` `executable`, this happens after the last chunk.
+
+What the server does:
+
+- `command_read_timeout` bounds the time from sending a request to having read the whole response frame, not each read.
+- The returned `offset` and `size` are validated, so a command cannot make the server read past the mapping.
+- For `type` `executable_pool`, the server checks both pipes before returning a process to the pool, and again before sending the next request. A process that left unread output on its `stdout`, or on its `stderr` under `stderr_reaction` `throw`, is discarded and replaced (counted in `ExecutableUDFSharedMemoryDirtyChannelDiscards`); under the other reactions leftover `stderr` is handled as described in [Handling of stderr](#executable-udf-stderr). These checks are not a safety net: a byte written just before the next request still fails that query through `request_id`.
+- The region is not cleared between invocations by the same user with the same current roles, so a command can read what that user's earlier query left there. When the process is borrowed by a different user, or by the same user with a different set of current roles, the server zeroes the whole file first (counted in `ExecutableUDFSharedMemoryScrubbedBytes`). This is done by freeing and re-committing the pages, and is charged to the query.
+- Clearing the region does not isolate users from the command: the process already received every input written there and can keep it, and a pooled process serves the queries of every user that can call the function, whichever transport it uses. What clearing prevents is a command bug, such as answering with the `offset` of a previous response or reading past its own input, silently returning one user's data in another user's result.
+
+#### Region size {#shared-memory-region-size}
+
+If a chunk's serialized input does not fit, and `shared_memory_max_size` is larger than the current size, the region is grown in place by doubling until the chunk fits, up to `shared_memory_max_size`. A command that needs more room for its output asks for it with `status` `2` and the size it needs, and the region is grown to exactly that size. The descriptor does not change, so the command sees the larger region the next time it maps the file. When the region cannot grow any further, an exception is raised.
+
+The region is reserved in full: `shared_memory_size` is committed when a process starts, and every growth is committed when it happens.
+
+For `type` `executable_pool`, a region never shrinks. It keeps the size of the largest chunk it held for as long as its process lives, and that size stays charged while the process is idle. Therefore:
+
+- `shared_memory_max_size` is what every pooled process may end up holding permanently. Size it with `pool_size` in mind.
+- Set `shared_memory_size` to the size of a typical block and let growth handle the occasional larger one. An oversized initial region costs memory for every process and time for every process start.
+
+#### Memory accounting {#shared-memory-accounting}
+
+- While a query uses a region, the region's whole size is charged to the query and counts towards `max_memory_usage`.
+- While a pooled process is idle, its region is charged to the server-wide memory tracker, and handed back to the next query that borrows the process. The `CurrentMetrics` metric `ExecutableUDFSharedMemoryPooledBytes` shows this idle part.
+- Either way, the charge counts towards `max_server_memory_usage`. A region is charged to one tracker at a time, so it is counted once.
+- Region pages are shared memory, which the background memory worker's measurement (`memory_worker_correct_memory_tracker`) does not see. The charges are therefore also counted in the `CurrentMetrics` metric `MemoryTrackingUnmeasured`, which the memory worker adds to its measurement.
+- The charge is the region's footprint: the larger of the file's length and the pages it has committed, including pages committed past the end of the file (`fallocate` with `FALLOC_FL_KEEP_SIZE`). The footprint is re-read whenever the region changes hands (a query borrows or returns the process) and before every growth.
+
+#### The size cap {#shared-memory-size-cap}
+
+The server checks the footprint against `shared_memory_max_size` before and after every growth, and at every hand-over:
+
+- A growth that would take the footprint past the cap is refused before it commits anything, and the process is discarded.
+- A growth commits only the new part of the region, so pages the command freed inside the region stay free. After a growth, the footprint is read again. If it has passed the cap anyway, because the command committed pages while the region was growing, those pages are already charged to the query's memory tracker. The query fails with an exception, and the process is discarded together with its region.
+- A region whose footprint has passed the cap at a hand-over is not returned to the pool: the process is discarded together with its region.
+
+The cap is enforced at those points, not continuously: between hand-overs, a command can commit pages into the region without the server's memory tracker seeing them, just as it can allocate memory of its own. For a trusted command, the cap bounds what a pooled process may keep; against a command that means harm it is advisory, like any limit on a process running as the server's user.
+
+Footprints and the cap are compared in whole pages of the unit in which the kernel backs the region, and the cap is rounded up to that unit. If transparent huge pages are enabled for `shmem` regardless of file size (`/sys/kernel/mm/transparent_hugepage/shmem_enabled` is `always` or `force`, or, from Linux 6.11, a per-size `hugepages-<size>kB/shmem_enabled` is `always`), the unit is a huge page (2 MiB on x86-64), and every region holds at least one. The file's length is compared in bytes, so a command that extends the file past the cap loses its process even if the file still fits in the last page.
+
+Pages the file holds beyond the length the server committed itself are counted as lying past the end of the file. A command that extends the file and writes into the extension is therefore charged for those pages twice, and reaches the cap sooner.
+
+A process is discarded when the cap is exceeded, on a protocol failure, when the command dies, when its answer does not parse, or when the query stops before the response frame has arrived. A query that stops after the frame arrived but before it has read the whole answer out of the region leaves the process at a protocol boundary, so the process is kept with its region (the next query scrubs it). A shared-memory command runs in its own process group. To discard it, the server closes its `stdin` and gives it the rest of `command_termination_timeout` to exit, then sends `SIGKILL` to the whole group (even if the command already exited, so processes it left running in the group end with it) and reaps it. Only then does the server free every page of the region and drop its charge, so nothing in the group can write into the region afterwards.
+
+Out of reach is a descendant that left the group (`setsid`, `setpgid`) while holding the inherited descriptor. The region's pages are freed under it anyway; whatever it writes there allocates new pages that are not tracked, like any other memory allocated by a process running as the server's user. Since the command's group is not the server's, signals sent to the server's process group (Ctrl-C in a terminal running `clickhouse-local`, `kill(0, ...)`) do not reach the command; the server ends it on its own shutdown.
+
+#### Security model {#shared-memory-security}
+
+An executable UDF is trusted server-side code: it is configured by the administrator and runs as the ClickHouse user, with everything that implies, including the ability to signal the server. The checks described above (region bounds, region size, row counts, exit status) keep a *mistake* in a command from taking the server down or corrupting a result. They do not contain a hostile command and do not replace reviewing what you configure as a UDF.
+
+The region is sealed with `F_SEAL_SHRINK`, so no process can shorten it, and with `F_SEAL_SEAL`, so the command cannot add seals of its own. A shortened file would make the server take an uncatchable `SIGBUS` when accessing the removed pages; the seal lets the server read and write the region without copying it and without checking that it is still whole.
+
+The seals do not prevent a command from:
+
+- extending the file (see [The size cap](#shared-memory-size-cap));
+- freeing pages inside it (`fallocate` with `FALLOC_FL_PUNCH_HOLE`, `madvise` with `MADV_REMOVE`). A freed page reads as zeros and is allocated again on the next access. The server does not re-commit such pages, so the function's next call pays for allocating them;
+- writing into the region at any moment, including while the server uses it.
+
+One hazard remains: a page the command freed has lost the server's reservation, and if the kernel refuses to allocate it again because the machine is out of memory, the server takes a `SIGBUS`. This requires both a command freeing pages inside the region and memory exhaustion at the moment the server writes there.
+
+Otherwise, a misbehaving command can only slow down or corrupt the results of its own function, which a command running as the server's user could do in simpler ways anyway.
+
+#### Observability {#shared-memory-observability}
+
+`ProfileEvents`:
+
+- `ExecutableUDFSharedMemoryCalls`, `ExecutableUDFSharedMemoryInputBytes`, `ExecutableUDFSharedMemoryOutputBytes`, `ExecutableUDFSharedMemoryRegionGrowths`, `ExecutableUDFSharedMemoryAllocatedBytes`.
+- `ExecutableUDFSharedMemoryScrubbedBytes`: bytes zeroed because a pooled region passed to a different user or set of roles.
+- `ExecutableUDFSharedMemoryDirtyChannelDiscards`: pooled processes discarded for leaving unread output behind. A command that costs itself a process on every call shows up here and nowhere else.
+
+`CurrentMetrics`:
+
+- `ExecutableUDFSharedMemoryPooledBytes`: the current charge for regions held by idle pooled processes.
 
 ## Examples {#examples}
 
