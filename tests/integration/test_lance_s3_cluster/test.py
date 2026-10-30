@@ -154,6 +154,23 @@ def test_lance_s3_cluster_pure_count_uses_fragment_tasks(started_cluster):
     assert clustered == single
     assert clustered == "64\n"
 
+    # Synthetic dataset tasks must not be split into physical buckets.
+    bucketed = node.query(
+        """
+        SELECT count()
+        FROM lanceS3Cluster(
+            'cluster_simple',
+            nc_s3,
+            filename = 'lance/multi_frag.lance')
+        SETTINGS
+            cluster_table_function_split_granularity = 'bucket',
+            lance_enable_fragment_parallelism = 1,
+            lance_max_fragment_packs = 8,
+            max_threads = 4
+        """
+    )
+    assert bucketed == "64\n"
+
 
 def test_lance_s3_cluster_worker_does_not_fetch_latest_snapshot(started_cluster):
     node = started_cluster.instances["s0_0_0"]
