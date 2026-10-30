@@ -323,6 +323,11 @@ static void fillUnusedRowsWithValidValues(IColumn & column, const IDataType & ty
     if (!hasInvalidColumnDefault(type))
         return;
 
+    /// A constant column has the same value in all rows, including the unused ones. The value is a result
+    /// of the execution of the function on the used rows, so it is a valid value of the type.
+    if (isColumnConst(column))
+        return;
+
     if (const auto * enum8_type = typeid_cast<const DataTypeEnum8 *>(&type))
     {
         fillUnusedEnumRows(column, *enum8_type, mask);
