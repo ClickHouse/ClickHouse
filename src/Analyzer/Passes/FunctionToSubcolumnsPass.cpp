@@ -23,6 +23,7 @@
 #include <DataTypes/Serializations/SerializationVariant.h>
 
 #include <Storages/IStorage.h>
+#include <Storages/StorageView.h>
 
 #include <Functions/FunctionFactory.h>
 
@@ -30,6 +31,7 @@
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/convertFieldToType.h>
 
+#include <Analyzer/AggregationUtils.h>
 #include <Analyzer/ColumnNode.h>
 #include <Analyzer/ConstantNode.h>
 #include <Analyzer/FunctionNode.h>
@@ -72,6 +74,7 @@ struct SubcolumnSupportAnswers
 {
     bool all_transformers;
     std::optional<bool> tuple_element_only;
+    std::unordered_map<String, bool> view_columns;
 };
 
 using SubcolumnSupportCache = std::unordered_map<const IStorage *, SubcolumnSupportAnswers>;
@@ -80,7 +83,7 @@ SubcolumnSupportAnswers & getSubcolumnSupportAnswers(const IStorage & storage, S
 {
     auto it = cache.find(&storage);
     if (it == cache.end())
-        it = cache.emplace(&storage, SubcolumnSupportAnswers{storage.supportsOptimizationToSubcolumns(), std::nullopt}).first;
+        it = cache.emplace(&storage, SubcolumnSupportAnswers{storage.supportsOptimizationToSubcolumns(), std::nullopt, {}}).first;
     return it->second;
 }
 
@@ -1272,9 +1275,25 @@ ColumnNode * resolveTrivialAliasChain(ColumnNode * column_node)
 /// (see IStorage::supportsOptimizationToTupleElementSubcolumns). Applied by both passes through
 /// getTypedNodesForOptimization, so their decisions cannot diverge.
 bool storageAllowsTransformer(
-    const IStorage & storage, const IDataType & type, const String & function_name, SubcolumnSupportCache & cache)
+    const IStorage & storage,
+    const StorageSnapshotPtr & storage_snapshot,
+    const String & column_name,
+    const ContextPtr & context,
+    const IDataType & type,
+    const String & function_name,
+    SubcolumnSupportCache & cache)
 {
     auto & answers = getSubcolumnSupportAnswers(storage, cache);
+
+    if (const auto * view = typeid_cast<const StorageView *>(&storage))
+    {
+        auto it = answers.view_columns.find(column_name);
+        if (it == answers.view_columns.end())
+            it = answers.view_columns.emplace(
+                column_name, view->supportsOptimizationToSubcolumnsForColumn(storage_snapshot, column_name, context)).first;
+        return it->second;
+    }
+
     if (answers.all_transformers)
         return true;
     if (!answers.tuple_element_only)
@@ -1321,7 +1340,8 @@ getTypedNodesForOptimization(const QueryTreeNodePtr & node, const ContextPtr & c
     if (view_source && view_source->getStorageID().getFullNameNotQuoted() == storage->getStorageID().getFullNameNotQuoted())
         return {};
 
-    if (!storageAllowsTransformer(*storage, *column.type, function_node->getFunctionName(), subcolumn_support_cache)
+    if (!storageAllowsTransformer(
+            *storage, storage_snapshot, column.name, context, *column.type, function_node->getFunctionName(), subcolumn_support_cache)
         || storage_snapshot->metadata->isVirtualColumn(column.name))
         return {};
 
@@ -1384,7 +1404,8 @@ getTypedNodesForChainedOptimization(
     if (view_source && view_source->getStorageID().getFullNameNotQuoted() == storage->getStorageID().getFullNameNotQuoted())
         return {};
 
-    if (!storageAllowsTransformer(*storage, *column.type, function_node->getFunctionName(), subcolumn_support_cache)
+    if (!storageAllowsTransformer(
+            *storage, storage_snapshot, column.name, context, *column.type, function_node->getFunctionName(), subcolumn_support_cache)
         || storage_snapshot->metadata->isVirtualColumn(column.name))
         return {};
 
@@ -1846,6 +1867,267 @@ public:
     }
 };
 
+/// Same condition as `can_wrap_result_columns_with_nullable` of the first pass: a `Map` cannot
+/// become `Nullable`, but its key subcolumn can, so `join_use_nulls` or `group_by_use_nulls`
+/// would turn the default of a missing key into `NULL`.
+class CanWrapColumnsWithNullableVisitor : public InDepthQueryTreeVisitorWithContext<CanWrapColumnsWithNullableVisitor>
+{
+public:
+    using Base = InDepthQueryTreeVisitorWithContext<CanWrapColumnsWithNullableVisitor>;
+    using Base::Base;
+
+    void enterImpl(const QueryTreeNodePtr & node)
+    {
+        if (node->as<JoinNode>() || node->as<CrossJoinNode>())
+        {
+            result |= getSettings()[Setting::join_use_nulls];
+            return;
+        }
+
+        if (const auto * query_node = node->as<QueryNode>())
+        {
+            if (query_node->isGroupByWithCube() || query_node->isGroupByWithRollup() || query_node->isGroupByWithGroupingSets())
+                result |= getSettings()[Setting::group_by_use_nulls];
+        }
+    }
+
+    bool result = false;
+};
+
+/// Push a `Map` key subcolumn through a simple projection subquery. The full Map
+/// projection remains available, so this is safe when the outer query also uses it.
+class MapSubquerySubcolumnVisitor : public InDepthQueryTreeVisitorWithContext<MapSubquerySubcolumnVisitor>
+{
+public:
+    using Base = InDepthQueryTreeVisitorWithContext<MapSubquerySubcolumnVisitor>;
+    using Base::Base;
+
+    bool needChildVisit(const QueryTreeNodePtr & parent, const QueryTreeNodePtr & child)
+    {
+        if (const auto * query_node = parent->as<QueryNode>(); query_node && !scopes.empty())
+        {
+            bool is_where = query_node->hasWhere() && child.get() == query_node->getWhere().get();
+            bool is_prewhere = query_node->hasPrewhere() && child.get() == query_node->getPrewhere().get();
+            scopes.back().in_where_prewhere = is_where || is_prewhere;
+        }
+        return true;
+    }
+
+    void leaveImpl(const QueryTreeNodePtr & node)
+    {
+        if (!getSettings()[Setting::optimize_functions_to_subcolumns])
+            return;
+
+        if (node->as<QueryNode>())
+        {
+            scopes.pop_back();
+            correlated_columns.leave();
+        }
+        else if (node->as<UnionNode>())
+        {
+            correlated_columns.leave();
+        }
+        else if (const auto * function_node = node->as<FunctionNode>(); function_node && function_node->isAggregateFunction())
+        {
+            if (!scopes.empty())
+                --scopes.back().aggregate_function_depth;
+        }
+    }
+
+    void enterImpl(QueryTreeNodePtr & node)
+    {
+        if (!getSettings()[Setting::optimize_functions_to_subcolumns])
+            return;
+
+        if (const auto * query_node = node->as<QueryNode>())
+        {
+            scopes.push_back({.is_aggregating = isAggregating(*query_node)});
+            correlated_columns.enter(query_node->getCorrelatedColumns());
+            return;
+        }
+
+        if (const auto * union_node = node->as<UnionNode>())
+        {
+            correlated_columns.enter(union_node->getCorrelatedColumns());
+            return;
+        }
+
+        auto * function_node = node->as<FunctionNode>();
+        if (!function_node)
+            return;
+
+        if (function_node->isAggregateFunction())
+        {
+            if (!scopes.empty())
+                ++scopes.back().aggregate_function_depth;
+            return;
+        }
+
+        if (function_node->getFunctionName() != "arrayElement")
+            return;
+
+        /// After aggregation only the keys and the aggregate results are left, so a subcolumn
+        /// introduced into `HAVING`, `ORDER BY` or the projection of an aggregating query
+        /// would not be found in the block, e.g. `SELECT m['k'] FROM (SELECT m FROM t) GROUP BY m`.
+        if (!scopes.empty())
+        {
+            const auto & scope = scopes.back();
+            if (scope.is_aggregating && scope.aggregate_function_depth == 0 && !scope.in_where_prewhere)
+                return;
+        }
+
+        auto & arguments = function_node->getArguments().getNodes();
+        if (arguments.size() != 2)
+            return;
+
+        auto * outer_column = arguments.front()->as<ColumnNode>();
+        if (!outer_column || outer_column->hasExpression())
+            return;
+
+        auto query_source = outer_column->getColumnSource();
+
+        /// A correlated subquery lists the full Map among its correlated columns, and decorrelation
+        /// would look for the subcolumn in a join that carries only the full Map, as in the other visitors.
+        if (correlated_columns.contains(makeColumnInSource(query_source, outer_column->getColumnName())))
+            return;
+
+        auto * query_node = query_source->as<QueryNode>();
+        if (!query_node || !query_node->isSubquery() || query_node->isCTE() || query_node->isRecursiveWith()
+            || query_node->hasSettingsChanges() || query_node->hasWith() || query_node->isDistinct()
+            || query_node->isGroupByAll() || query_node->hasGroupBy()
+            || query_node->isGroupByWithCube() || query_node->isGroupByWithRollup() || query_node->isGroupByWithGroupingSets()
+            || query_node->hasPrewhere() || query_node->hasWhere() || query_node->hasHaving()
+            || query_node->hasWindow() || query_node->hasQualify() || query_node->hasOrderBy() || query_node->isOrderByAll()
+            || query_node->hasInterpolate() || query_node->hasLimitByLimit() || query_node->hasLimitByOffset()
+            || query_node->hasLimitBy() || query_node->isLimitByAll() || query_node->hasLimit()
+            || query_node->hasLimitAfter() || query_node->isLimitAfterAll() || query_node->hasLimitUntil()
+            || query_node->hasOffset() || !query_node->getProjectionAliasesToOverride().empty())
+            return;
+
+        auto table_source = query_node->getJoinTreeNodeTyped();
+        auto * table_node = table_source->as<TableNode>();
+        if (!table_node)
+            return;
+
+        const auto & projection_columns = query_node->getProjectionColumns();
+        const auto & projection_nodes = query_node->getProjection().getNodes();
+        if (projection_columns.size() != projection_nodes.size())
+            return;
+
+        size_t projection_index = projection_columns.size();
+        for (size_t i = 0; i < projection_columns.size(); ++i)
+        {
+            if (projection_columns[i].name == outer_column->getColumnName())
+            {
+                if (projection_index != projection_columns.size())
+                    return;
+                projection_index = i;
+            }
+        }
+        if (projection_index == projection_columns.size()
+            || !projection_columns[projection_index].type->equals(*outer_column->getColumnType()))
+            return;
+
+        const auto * projected_column = projection_nodes[projection_index]->as<ColumnNode>();
+        if (!projected_column || projected_column->hasExpression()
+            || projected_column->getColumnSource().get() != table_node
+            || projected_column->getColumnName() != outer_column->getColumnName()
+            || !projected_column->getColumnType()->equals(*outer_column->getColumnType())
+            || !typeid_cast<const DataTypeMap *>(projected_column->getColumnType().get()))
+            return;
+
+        auto storage = table_node->getStorage();
+        auto storage_snapshot = table_node->getStorageSnapshot();
+        const auto & map_column = projected_column->getColumn();
+        auto stored_column = storage_snapshot->tryGetColumn(GetColumnsOptions::Ordinary, map_column.name);
+        if (!stored_column || !stored_column->type->equals(*map_column.type)
+            || storage_snapshot->metadata->isVirtualColumn(map_column.name)
+            || columnSourceHasFinal(table_source)
+            || !storageAllowsTransformer(
+                *storage, storage_snapshot, map_column.name, getContext(), *map_column.type, "arrayElement", subcolumn_support_cache)
+            || isIndexColumn(map_column.name, *storage_snapshot->metadata))
+            return;
+
+        QueryTreeNodePtr rewritten_function = node->clone();
+        auto * rewritten_function_node = rewritten_function->as<FunctionNode>();
+        ColumnContext column_context{map_column, table_source, getContext(), subcolumn_support_cache};
+        optimizeFunctionArrayElementForMap(rewritten_function, *rewritten_function_node, column_context);
+
+        auto * subcolumn_node = rewritten_function->as<ColumnNode>();
+        if (!subcolumn_node)
+            return;
+
+        const auto & subcolumn = subcolumn_node->getColumn();
+        auto & mutable_projection_nodes = query_node->getProjection().getNodes();
+        auto updated_projection_columns = projection_columns;
+        bool projection_exists = false;
+        for (size_t i = 0; i < updated_projection_columns.size(); ++i)
+        {
+            if (updated_projection_columns[i].name != subcolumn.name)
+                continue;
+
+            const auto * existing_column = mutable_projection_nodes[i]->as<ColumnNode>();
+            if (!existing_column || existing_column->hasExpression()
+                || existing_column->getColumnSource().get() != table_node
+                || existing_column->getColumnName() != subcolumn.name
+                || !updated_projection_columns[i].type->equals(*subcolumn.type))
+                return;
+            projection_exists = true;
+            break;
+        }
+
+        if (!projection_exists)
+        {
+            mutable_projection_nodes.push_back(std::move(rewritten_function));
+            updated_projection_columns.push_back(subcolumn);
+            query_node->resolveProjectionColumns(std::move(updated_projection_columns));
+        }
+
+        node = std::make_shared<ColumnNode>(subcolumn, query_source);
+    }
+
+private:
+    struct Scope
+    {
+        bool is_aggregating = false;
+        bool in_where_prewhere = false;
+        size_t aggregate_function_depth = 0;
+    };
+
+    std::vector<Scope> scopes;
+    CorrelatedColumnsStack correlated_columns;
+    SubcolumnSupportCache subcolumn_support_cache;
+
+    static bool isAggregating(const QueryNode & query_node)
+    {
+        if (query_node.hasGroupBy() || query_node.isGroupByAll() || query_node.hasHaving())
+            return true;
+
+        if (hasAggregateFunctionNodes(query_node.getProjectionNode()))
+            return true;
+
+        return query_node.hasOrderBy() && hasAggregateFunctionNodes(query_node.getOrderByNode());
+    }
+
+    static bool isIndexColumn(const String & column_name, const StorageInMemoryMetadata & metadata)
+    {
+        auto contains_column = [&](const Names & names)
+        {
+            return std::find(names.begin(), names.end(), column_name) != names.end();
+        };
+
+        if (contains_column(metadata.getColumnsRequiredForPrimaryKey())
+            || contains_column(metadata.getColumnsRequiredForPartitionKey()))
+            return true;
+
+        for (const auto & index : metadata.getSecondaryIndices())
+            if (contains_column(index.expression->getRequiredColumns()))
+                return true;
+
+        return false;
+    }
+};
+
 class GetOuterJoinedTablesVisitor : public InDepthQueryTreeVisitorWithContext<GetOuterJoinedTablesVisitor>
 {
 public:
@@ -1908,6 +2190,14 @@ public:
 
 void FunctionToSubcolumnsPass::run(QueryTreeNodePtr & query_tree_node, ContextPtr context)
 {
+    CanWrapColumnsWithNullableVisitor nullable_visitor(context);
+    nullable_visitor.visit(query_tree_node);
+    if (!nullable_visitor.result)
+    {
+        MapSubquerySubcolumnVisitor subquery_visitor(context);
+        subquery_visitor.visit(query_tree_node);
+    }
+
     FunctionToSubcolumnsVisitorFirstPass first_visitor(context);
     first_visitor.visit(query_tree_node);
     auto identifiers_to_optimize = first_visitor.getIdentifiersToOptimize();

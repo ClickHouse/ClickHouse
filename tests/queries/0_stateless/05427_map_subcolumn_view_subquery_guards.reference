@@ -1,0 +1,12 @@
+physical column with the subcolumn name
+correct
+outer join with join_use_nulls
+	String
+outer aggregation
+v
+{'k':'v','b':'other'}
+1
+correlated subquery
+alias used in the view body
+v	other
+v
