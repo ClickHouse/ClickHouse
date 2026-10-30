@@ -10,8 +10,10 @@
 #include <Compression/CompressedReadBuffer.h>
 #include <Compression/CompressedWriteBuffer.h>
 #include <Compression/CompressionFactory.h>
+#include <Compression/CompressionInfo.h>
 #include <Compression/chooseNetworkCompressionCodec.h>
 #include <Core/Block.h>
+#include <Core/BlockInfo.h>
 #include <Core/ProtocolDefines.h>
 #include <Core/ServerSettings.h>
 #include <Core/Settings.h>
@@ -23,6 +25,7 @@
 #include <Formats/NativeWriter.h>
 #include <IO/LimitReadBuffer.h>
 #include <IO/Progress.h>
+#include <IO/ReadBufferFromMemory.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteBuffer.h>
 #include <IO/WriteBufferFromPocoSocket.h>
@@ -45,6 +48,7 @@
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <base/defines.h>
 #include <base/scope_guard.h>
+#include <base/unaligned.h>
 #include <Poco/Net/SocketAddress.h>
 #include <Poco/Util/LayeredConfiguration.h>
 #include <Common/OpenTelemetryTraceContext.h>
@@ -505,6 +509,7 @@ void TCPHandler::runImpl()
                 out->enableChunked();
             if (in_chunked)
                 in->enableChunked();
+            receive_chunked = in_chunked;
         }
 
         if (!is_interserver_mode)
@@ -1467,36 +1472,95 @@ std::function<bool()> TCPHandler::makeConnectionAliveCheck(std::shared_ptr<Query
     /// Used by `ProcessList::insert` while the query waits for admission, which happens before the external
     /// tables are read (by the external tables initializer). The client may have sent `Cancel` meanwhile, but
     /// it follows the external tables in the input (an ordinary query sends at least their terminating empty
-    /// block). Read the external tables ahead to reach it, but at most one non-empty block of them, so that a
-    /// queued query does not buffer an unbounded amount of client data before it is admitted. Past that block
-    /// only check that the client is still connected. Called without `ProcessList::mutex`.
+    /// block). The query is not admitted yet, so it must neither wait for the client (that would hold up the
+    /// admission deadline, the cancellation and the slot that may be handed to it meanwhile) nor materialize
+    /// client data (the memory limits of the query and its user are not applied yet). So consume the input
+    /// only when it has already been received and is exactly the terminating empty block or a `Cancel`. If
+    /// the client sends non-empty external tables, they are read after the admission, as usual, and a
+    /// `Cancel` is only noticed then. Called without `ProcessList::mutex`.
     return [this, &query_state, socket_alive = makeSocketAliveCheckCallback(socket())]() -> bool
     {
         std::lock_guard lock(*callback_mutex);
         QueryState & state = *query_state;
 
-        if (state.read_ahead_external_tables_block || !in->poll(0))
-            return socket_alive();
-
-        if (in->isCanceled() || in->eof())
+        if (!socket_alive())
             return false;
 
-        /// As in `readTemporaryTables`: `Cancel` must cancel the query rather than return a partial result.
-        auto off_setting_guard = TurnOffBoolSettingTemporary(state.allow_partial_result_on_first_cancel);
+        if (!in->available())
+        {
+            /// `in` can be refilled without waiting only when the bytes are already received by the socket
+            /// (for TLS: already decrypted, which the TLS-aware check above does for complete records). The
+            /// chunked protocol may wait for the rest of a chunk header, so it is not read ahead.
+            if (receive_chunked || socket().impl()->available() <= 0)
+                return true;
+            if (!in->next())
+                return false;
+        }
 
         if (!state.received_external_tables)
         {
+            if (!isExternalTablesTerminatorBuffered(state))
+                return true;
+
+            /// Reads only the buffered bytes of the packet and creates no table, because the block is empty.
             if (receivePacketsExpectData(state))
-                state.read_ahead_external_tables_block = true;
-            else
-                state.received_external_tables = true;
-            return true;
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "The terminating block of external tables is not empty");
+            state.received_external_tables = true;
+
+            if (!in->available())
+                return true;
         }
 
-        /// Throws on `Cancel`.
-        receivePacketsExpectCancel(state, /* force= */ true);
+        if (static_cast<UInt8>(*in->position()) == Protocol::Client::Cancel)
+        {
+            /// As in `readTemporaryTables`: `Cancel` must cancel the query rather than return a partial result.
+            auto off_setting_guard = TurnOffBoolSettingTemporary(state.allow_partial_result_on_first_cancel);
+            /// Throws.
+            receivePacketsExpectCancel(state, /* force= */ true);
+        }
         return true;
     };
+}
+
+
+bool TCPHandler::isExternalTablesTerminatorBuffered(const QueryState & state) const
+{
+    /// The block, as `NativeWriter` writes an empty block.
+    WriteBufferFromOwnString empty_block_buf;
+    if (client_tcp_protocol_version > 0)
+        BlockInfo{}.write(empty_block_buf, client_tcp_protocol_version);
+    writeVarUInt(0, empty_block_buf); /// Number of columns.
+    writeVarUInt(0, empty_block_buf); /// Number of rows.
+    const String & empty_block = empty_block_buf.str();
+
+    std::string_view buffered(in->position(), in->available());
+
+    /// The packet type and the empty name of the external table.
+    const char packet_prefix[] = {static_cast<char>(Protocol::Client::Data), 0};
+    if (!buffered.starts_with(std::string_view(packet_prefix, sizeof(packet_prefix))))
+        return false;
+    buffered.remove_prefix(sizeof(packet_prefix));
+
+    if (state.compression != Protocol::Compression::Enable)
+        return buffered.starts_with(empty_block);
+
+    /// A compressed frame: the checksum, then the header - the method byte, the compressed size (including the
+    /// header) and the decompressed size. Decompress the frame only if all of it is buffered and it is as small
+    /// as the empty block.
+    constexpr size_t checksum_size = 16;
+    if (buffered.size() < checksum_size + COMPRESSED_BLOCK_HEADER_SIZE)
+        return false;
+    const UInt32 size_compressed = unalignedLoadLittleEndian<UInt32>(buffered.data() + checksum_size + 1);
+    const UInt32 size_decompressed = unalignedLoadLittleEndian<UInt32>(buffered.data() + checksum_size + 5);
+    if (size_decompressed != empty_block.size() || size_compressed < COMPRESSED_BLOCK_HEADER_SIZE
+        || buffered.size() < checksum_size + size_compressed)
+        return false;
+
+    ReadBufferFromMemory frame(buffered.data(), checksum_size + size_compressed);
+    CompressedReadBuffer decompressed(frame, /* allow_different_codecs */ true, /* external_data */ query_kind != ClientInfo::QueryKind::SECONDARY_QUERY);
+    String data;
+    readStringUntilEOF(data, decompressed);
+    return data == empty_block;
 }
 
 
