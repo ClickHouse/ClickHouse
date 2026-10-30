@@ -52,7 +52,7 @@ Read replicas can play a critical role in disaster recovery. If your primary dat
 
 ## How read replicas work {#how-read-replicas-work}
 
-Read replicas in ClickHouse Managed Postgres use a WAL shipping architecture rather than streaming replication. This design choice prioritizes minimizing impact on your primary database.
+By default, read replicas in ClickHouse Managed Postgres use a WAL shipping architecture rather than streaming replication. This design choice prioritizes minimizing impact on your primary database.
 
 ### WAL shipping from object storage {#wal-shipping-from-object-storage}
 
@@ -70,6 +70,11 @@ We intentionally designed read replicas to consume WAL from object storage rathe
 
 ### Replication lag characteristics {#replication-lag-characteristics}
 
-The trade-off for this architecture is replication lag. WAL segments are archived from the primary at regular intervals (typically every 60 seconds or when a segment fills up, whichever comes first). This means read replicas may lag behind the primary by up to a few tens of seconds under normal conditions.
+By default, the primary ships changes to replicas whenever a 16 MB WAL segment fills or 60 seconds pass, whichever comes first. On a busy primary, writing several MB per second, replication lag is typically a few seconds. On a quiet primary, lag can approach 60 seconds, which can lead to unexpected results in testing and low-throughput environments.
 
-For most read scaling use cases—reporting, analytics, dashboards—this lag is acceptable. If your application requires near-real-time reads, consider whether the queries can be directed to the primary or whether eventual consistency within this window meets your requirements.
+Long-running queries on a replica can also add lag. When a query conflicts with changes from the primary, replay pauses for up to 30 seconds so the query can finish.
+
+For most read scaling use cases—reporting, analytics, dashboards—this lag is acceptable. If your use case needs shorter or more predictable lag, there are two options:
+
+- **Tuning WAL shipping.** In most use cases, lowering `archive_timeout` and `wal_retrieve_retry_interval` brings lag to 1–3 seconds. The cost is somewhat more network and storage activity, and larger backups. Contact support to change these settings.
+- **Streaming replication.** For sub-second requirements, streaming brings lag down to roughly 10–20 ms. This comes at the cost of increased network usage and CPU load on the primary, and may increase maintenance overhead. It also breaks the isolation between the primary and read replicas that WAL shipping provides: long-running queries on the replica can hold back `VACUUM` and cause bloat on the primary. If your application needs this, open a support request and we'll help confirm it's the right fit and set it up.
