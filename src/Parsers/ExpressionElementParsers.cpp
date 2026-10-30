@@ -2184,6 +2184,7 @@ bool ParserColumnsTransformers::parseImpl(Pos & pos, ASTPtr & node, Expected & e
     ParserKeyword apply(Keyword::APPLY);
     ParserKeyword except(Keyword::EXCEPT);
     ParserKeyword replace(Keyword::REPLACE);
+    ParserKeyword rename(Keyword::RENAME);
     ParserKeyword as(Keyword::AS);
     ParserKeyword strict(Keyword::STRICT);
 
@@ -2394,6 +2395,98 @@ bool ParserColumnsTransformers::parseImpl(Pos & pos, ASTPtr & node, Expected & e
         auto res = make_intrusive<ASTColumnsReplaceTransformer>();
         res->children = std::move(replacements);
         res->is_strict = is_strict;
+        node = std::move(res);
+        return true;
+    }
+    if (allowed_transformers.isSet(ColumnTransformer::RENAME) && rename.ignore(pos, expected))
+    {
+        /// RENAME is terminal because it only changes output names after all value transformations are done.
+        allowed_transformers = {};
+
+        ASTPtr first_expression;
+        const bool parenthesized = pos->type == TokenType::OpeningRoundBracket;
+        String lambda_arg;
+
+        if (parenthesized)
+        {
+            ++pos;
+
+            if (!ParserExpression().parse(pos, first_expression, expected))
+                return false;
+
+            if (auto * func = first_expression->as<ASTFunction>(); func && func->name == "lambda")
+            {
+                if (!isASTLambdaFunction(*func))
+                    throw Exception(ErrorCodes::SYNTAX_ERROR, "Lambda function definition expects two arguments, first argument must be a tuple of arguments");
+
+                const auto * lambda_args_tuple = func->arguments->children.at(0)->as<ASTFunction>();
+                if (!lambda_args_tuple || lambda_args_tuple->name != "tuple")
+                    throw Exception(ErrorCodes::SYNTAX_ERROR, "First argument of lambda must be a tuple");
+
+                const ASTs & lambda_arg_asts = lambda_args_tuple->arguments->children;
+                if (lambda_arg_asts.size() != 1)
+                    throw Exception(ErrorCodes::SYNTAX_ERROR, "RENAME column transformer can only accept lambda with one argument");
+
+                if (auto opt_arg_name = tryGetIdentifierName(lambda_arg_asts[0]); opt_arg_name)
+                    lambda_arg = *opt_arg_name;
+                else
+                    throw Exception(ErrorCodes::SYNTAX_ERROR, "lambda argument declarations must be identifiers");
+
+                if (pos->type != TokenType::ClosingRoundBracket)
+                    return false;
+                ++pos;
+
+                func->setIsLambdaFunction(true);
+
+                auto res = make_intrusive<ASTColumnsRenameTransformer>();
+                res->lambda = first_expression;
+                res->lambda_arg = lambda_arg;
+                node = std::move(res);
+                return true;
+            }
+
+            if (!first_expression->as<ASTIdentifier>())
+                return false;
+        }
+
+        Names source_names;
+        Names target_names;
+        ParserIdentifier source_ident_p(true);
+        ParserIdentifier target_ident_p;
+        auto parse_rename = [&]
+        {
+            ASTPtr source = std::move(first_expression);
+            if (!source && !source_ident_p.parse(pos, source, expected))
+                return false;
+            if (!as.ignore(pos, expected))
+                return false;
+            ASTPtr target;
+            if (!target_ident_p.parse(pos, target, expected))
+                return false;
+
+            source_names.push_back(getIdentifierName(source));
+            target_names.push_back(getIdentifierName(target));
+            return true;
+        };
+
+        if (parenthesized)
+        {
+            if (!ParserList::parseUtil(pos, expected, parse_rename, false))
+                return false;
+
+            if (pos->type != TokenType::ClosingRoundBracket)
+                return false;
+            ++pos;
+        }
+        else
+        {
+            if (!parse_rename())
+                return false;
+        }
+
+        auto res = make_intrusive<ASTColumnsRenameTransformer>();
+        res->source_names = std::move(source_names);
+        res->target_names = std::move(target_names);
         node = std::move(res);
         return true;
     }
@@ -3168,7 +3261,7 @@ SELECT * APPLY(sum) FROM columns_transformers;
 SELECT <expr> APPLY(<func>) FROM [db.]table_name
 )",
         .parent = "SELECT",
-        .related = {"SELECT", "EXCEPT modifier", "REPLACE modifier"},
+        .related = {"SELECT", "EXCEPT modifier", "REPLACE modifier", "RENAME modifier"},
     };
 
     documentation["EXCEPT modifier"] =
@@ -3201,7 +3294,7 @@ SELECT * EXCEPT i FROM columns_transformers;
 SELECT <expr> EXCEPT (col_name1 [, col_name2, col_name3, ...]) FROM [db.]table_name
 )",
         .parent = "SELECT",
-        .related = {"SELECT", "APPLY modifier", "REPLACE modifier", "EXCEPT"},
+        .related = {"SELECT", "APPLY modifier", "REPLACE modifier", "RENAME modifier", "EXCEPT"},
     };
 
     documentation["REPLACE modifier"] =
@@ -3237,7 +3330,121 @@ SELECT * REPLACE(i + 1 AS i) from columns_transformers;
 SELECT <expr> REPLACE(<expr> AS col_name) FROM [db.]table_name
 )",
         .parent = "SELECT",
-        .related = {"SELECT", "APPLY modifier", "EXCEPT modifier"},
+        .related = {"SELECT", "APPLY modifier", "EXCEPT modifier", "RENAME modifier"},
+    };
+
+    documentation["RENAME modifier"] =
+    {
+        .description = R"DOCS_MD(
+Allows you to change output column names returned by a `SELECT *` or `COLUMNS` expression.
+
+The `RENAME` modifier changes column names only. It does not change column values, column types, or column order.
+
+## Syntax {#rename-syntax}
+
+```sql
+SELECT <expr> RENAME <column_name> AS <new_column_name> FROM [db.]table_name
+SELECT <expr> RENAME (<column_name> AS <new_column_name> [, ...]) FROM [db.]table_name
+SELECT <expr> RENAME (<lambda>) FROM [db.]table_name
+```
+
+`RENAME` can be used after other column transformers. It is a terminal transformer: no other `APPLY`, `EXCEPT`, `REPLACE`, or `RENAME` modifier can follow it for the same `SELECT` expression.
+
+In the explicit form, each `<column_name>` must match a column name selected by the preceding `SELECT *` or `COLUMNS` expression. If a listed column is not selected, ClickHouse throws an exception.
+
+In the lambda form, ClickHouse passes each selected column name to the lambda as a `String` value. The lambda must evaluate to a constant `String` for each selected column name, and the result is used as the output column name.
+
+## Explicit column rename {#rename-explicit-column-rename}
+
+```sql
+CREATE TABLE columns_transformers
+(
+    i Int64,
+    j Int16,
+    k Int64
+)
+ENGINE = MergeTree
+ORDER BY i;
+
+INSERT INTO columns_transformers VALUES (100, 10, 324), (120, 8, 23);
+
+SELECT * RENAME i AS total_i
+FROM columns_transformers;
+```
+
+```response
+┌─total_i─┬──j─┬───k─┐
+│     100 │ 10 │ 324 │
+│     120 │  8 │  23 │
+└─────────┴────┴─────┘
+```
+
+## Multiple column rename {#rename-multiple-column-rename}
+
+```sql
+SELECT * RENAME (i AS total_i, k AS total_k)
+FROM columns_transformers;
+```
+
+```response
+┌─total_i─┬──j─┬─total_k─┐
+│     100 │ 10 │     324 │
+│     120 │  8 │      23 │
+└─────────┴────┴─────────┘
+```
+
+## Lambda rename {#rename-lambda-rename}
+
+```sql
+SELECT COLUMNS('[jk]') RENAME (col -> concat(col, '_value'))
+FROM columns_transformers;
+```
+
+```response
+┌─j_value─┬─k_value─┐
+│      10 │     324 │
+│       8 │      23 │
+└─────────┴─────────┘
+```
+
+## Using `RENAME` with other modifiers {#rename-using-rename-with-other-modifiers}
+
+`RENAME` is applied after the previous modifiers. For example, `REPLACE` changes the value and type, and `RENAME` changes the output name:
+
+```sql
+SELECT * REPLACE(i + 1 AS i) RENAME i AS next_i
+FROM columns_transformers;
+```
+
+```response
+┌─next_i─┬──j─┬───k─┐
+│    101 │ 10 │ 324 │
+│    121 │  8 │  23 │
+└────────┴────┴─────┘
+```
+
+When `RENAME` is used after `APPLY`, explicit `RENAME` still matches the original selected column names:
+
+```sql
+SELECT * APPLY(sum) RENAME (i AS i_sum, j AS j_sum, k AS k_sum)
+FROM columns_transformers;
+```
+
+```response
+┌─i_sum─┬─j_sum─┬─k_sum─┐
+│   220 │    18 │   347 │
+└───────┴───────┴───────┘
+```
+
+`RENAME` applies to query results. It is not supported in the target column list of `INSERT`, or in `EXPLAIN AST` with `optimize = 1`.
+)DOCS_MD",
+        .syntax = R"(
+SELECT <expr> RENAME <column_name> AS <new_column_name> FROM [db.]table_name
+SELECT <expr> RENAME (<column_name> AS <new_column_name> [, ...]) FROM [db.]table_name
+SELECT <expr> RENAME (<lambda>) FROM [db.]table_name
+)",
+        .parent = "SELECT",
+        .related = {"SELECT", "APPLY modifier", "EXCEPT modifier", "REPLACE modifier"},
     };
 
     return documentation;
