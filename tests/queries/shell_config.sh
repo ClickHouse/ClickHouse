@@ -45,9 +45,12 @@ export CLICKHOUSE_CLIENT_OPT="${CLICKHOUSE_CLIENT_OPT0:-} ${CLICKHOUSE_CLIENT_OP
 export CLICKHOUSE_CLIENT_EXPECT_OPT="${CLICKHOUSE_CLIENT_OPT} --disable_suggestion --no-warnings --enable-progress-table-toggle 0 --progress no --output-format-pretty-color 0 --highlight 0"
 export CLICKHOUSE_CLIENT=${CLICKHOUSE_CLIENT:="$CLICKHOUSE_CLIENT_BINARY ${CLICKHOUSE_CLIENT_OPT:-}"}
 # local
-[ -x "${CLICKHOUSE_BINARY}-local" ] && CLICKHOUSE_LOCAL=${CLICKHOUSE_LOCAL:="${CLICKHOUSE_BINARY}-local"}
-[ -x "${CLICKHOUSE_BINARY}" ] && CLICKHOUSE_LOCAL=${CLICKHOUSE_LOCAL:="${CLICKHOUSE_BINARY} local"}
-export CLICKHOUSE_LOCAL=${CLICKHOUSE_LOCAL:="${CLICKHOUSE_BINARY}-local"}
+# Note: --tmp gives every invocation its own temporary directory, because tests run in parallel
+# and must not share (and lock) the default designated data directory in the home directory.
+# An explicit --path passed by a test takes precedence over this --tmp.
+[ -x "${CLICKHOUSE_BINARY}-local" ] && CLICKHOUSE_LOCAL=${CLICKHOUSE_LOCAL:="${CLICKHOUSE_BINARY}-local --tmp"}
+[ -x "${CLICKHOUSE_BINARY}" ] && CLICKHOUSE_LOCAL=${CLICKHOUSE_LOCAL:="${CLICKHOUSE_BINARY} local --tmp"}
+export CLICKHOUSE_LOCAL=${CLICKHOUSE_LOCAL:="${CLICKHOUSE_BINARY}-local --tmp"}
 # server
 [ -x "${CLICKHOUSE_BINARY}-server" ] && CLICKHOUSE_SERVER_BINARY=${CLICKHOUSE_SERVER_BINARY:="${CLICKHOUSE_BINARY}-server"}
 [ -x "${CLICKHOUSE_BINARY}" ] && CLICKHOUSE_SERVER_BINARY=${CLICKHOUSE_SERVER_BINARY:="${CLICKHOUSE_BINARY} server"}
@@ -113,7 +116,8 @@ export CLICKHOUSE_PORT_KEEPER=${CLICKHOUSE_PORT_KEEPER:="9181"}
 export CLICKHOUSE_PORT_SSH=${CLICKHOUSE_PORT_SSH:=$(${CLICKHOUSE_EXTRACT_CONFIG} --try --key=tcp_ssh_port 2>/dev/null)} 2>/dev/null
 export CLICKHOUSE_PORT_SSH=${CLICKHOUSE_PORT_SSH:="9022"}
 
-export CLICKHOUSE_KEEPER_IDENTITY=${CLICKHOUSE_KEEPER_IDENTITY:=$(${CLICKHOUSE_EXTRACT_CONFIG} --try --key=zookeeper.identity 2>/dev/null)} 2>/dev/null
+# Without a colon: `clickhouse-test` exports an empty identity once resolved, so do not resolve it again.
+export CLICKHOUSE_KEEPER_IDENTITY=${CLICKHOUSE_KEEPER_IDENTITY=$(${CLICKHOUSE_EXTRACT_CONFIG} --try --key=zookeeper.identity 2>/dev/null)} 2>/dev/null
 export CLICKHOUSE_KEEPER_IDENTITY=${CLICKHOUSE_KEEPER_IDENTITY:=""}
 
 # keeper-client
@@ -185,6 +189,19 @@ function clickhouse_client_removed_host_parameter()
     # bash regex magic is arcane, but version dependant and weak; sed or awk are not really portable.
     $(echo "$CLICKHOUSE_CLIENT"  | python3 -c "import sys, re; print(re.sub(r'--host(\s+|=)[^\s]+', '', sys.stdin.read()))") "$@"
 }
+
+# `clickhouse-test` kills a test after `CLICKHOUSE_TEST_TIMEOUT` seconds, but a loop must also end on its own: when
+# the runner dies before that kill, an unbounded loop spins forever on the host. Use `while clickhouse_test_time_left`
+# instead of `while true`. Exported, so that loops in `bash -c` workers and in nested `shell_config.sh` share it.
+export CLICKHOUSE_TEST_DEADLINE=${CLICKHOUSE_TEST_DEADLINE:-$((EPOCHSECONDS + ${CLICKHOUSE_TEST_TIMEOUT:-600}))}
+function clickhouse_test_time_left()
+{
+    ((EPOCHSECONDS < CLICKHOUSE_TEST_DEADLINE)) && return 0
+    # A loop that reaches the deadline did not get what it was waiting for: fail the test instead of going on.
+    echo "The ${CLICKHOUSE_TEST_TIMEOUT:-600}s test deadline expired in a 'while clickhouse_test_time_left' loop" >&2
+    return 1
+}
+export -f clickhouse_test_time_left
 
 function wait_for_query_to_start()
 {

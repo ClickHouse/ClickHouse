@@ -66,7 +66,6 @@ constexpr size_t MAX_REQUEST_BODY_SIZE = 1_MiB;
 constexpr size_t MAX_TABLE_NAME_LENGTH = 256;
 /// Metadata files with many snapshots reach tens of megabytes.
 constexpr size_t MAX_METADATA_FILE_SIZE = 64_MiB;
-constexpr char NAMESPACE_LEVEL_SEPARATOR = '\x1F';
 
 /// The Iceberg table property that names the codec of metadata files. The Java reference defaults to `none`.
 constexpr auto METADATA_COMPRESSION_CODEC_PROPERTY = "write.metadata.compression-codec";
@@ -85,16 +84,11 @@ CompressionMethod getMetadataCompressionMethod(const std::map<String, String> & 
     throw Exception(ErrorCodes::BAD_ARGUMENTS, "'{}' must be 'none' or 'gzip', got '{}'", METADATA_COMPRESSION_CODEC_PROPERTY, it->second);
 }
 
-/// Tables of the namespace go under `location`. The server has credentials for one bucket only, so refuse others now.
+/// Tables of the namespace go under `location`. The handler maps `BAD_ARGUMENTS` to a 400 response.
 void validateNamespaceLocation(const IcebergRESTCatalogWarehouse & warehouse, const std::map<String, String> & properties)
 {
-    const auto it = properties.find("location");
-    if (it == properties.end())
-        return;
-    if (!hasS3Scheme(it->second))
-        throw Poco::Exception("the 'location' property must be an s3:// URI");
-    if (!warehouse.isInBucket(it->second))
-        throw Poco::Exception("the 'location' property must be inside the warehouse bucket");
+    if (const auto it = properties.find("location"); it != properties.end())
+        warehouse.validateLocation(it->second);
 }
 
 /// Codec suffix inside a metadata file name: `v1-<uuid>.gz.metadata.json`. The spec spells gzip as `gz`.
@@ -270,8 +264,15 @@ void IcebergRESTCatalogHandler::handleRequest(HTTPServerRequest & request, HTTPS
         std::vector<std::string> segments;
         try
         {
-            uri = Poco::URI(request.getURI());
+            /// Split before decoding, so that an encoded `/` (`%2F`) stays inside its segment.
+            uri = Poco::URI(request.getURI(), /* enable_url_encoding */ false);
             uri.getPathSegments(segments);
+            for (auto & segment : segments)
+            {
+                String decoded;
+                Poco::URI::decode(segment, decoded);
+                segment = std::move(decoded);
+            }
         }
         catch (const Poco::Exception &)
         {
@@ -550,8 +551,6 @@ void IcebergRESTCatalogHandler::handleCreateNamespace(const IcebergRESTCatalogWa
             for (const auto & [key, value] : *properties_object)
                 properties[key] = value.extract<String>();
         }
-
-        validateNamespaceLocation(warehouse, properties);
     }
     catch (const Poco::Exception & e)
     {
@@ -562,6 +561,8 @@ void IcebergRESTCatalogHandler::handleCreateNamespace(const IcebergRESTCatalogWa
             fmt::format("Malformed create namespace request: {}", e.displayText()));
         return;
     }
+
+    validateNamespaceLocation(warehouse, properties);
 
     if (!warehouse.createNamespace(name, properties))
     {
@@ -612,7 +613,6 @@ void IcebergRESTCatalogHandler::handleUpdateNamespaceProperties(
                 throw Poco::Exception("'updates' must be an object");
             for (const auto & [key, value] : *updates_object)
                 updates[key] = value.extract<String>();
-            validateNamespaceLocation(warehouse, updates);
         }
 
         if (json->has("removals"))
@@ -633,6 +633,8 @@ void IcebergRESTCatalogHandler::handleUpdateNamespaceProperties(
             fmt::format("Malformed update namespace properties request: {}", e.displayText()));
         return;
     }
+
+    validateNamespaceLocation(warehouse, updates);
 
     const auto conflict = std::ranges::find_if(removals, [&](const auto & key) { return updates.contains(key); });
     if (conflict != removals.end())

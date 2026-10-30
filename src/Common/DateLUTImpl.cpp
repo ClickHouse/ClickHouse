@@ -48,6 +48,13 @@ UInt8 getDayOfWeek(const cctz::civil_day & date)
     }
 }
 
+/// Number of days in the given calendar month.
+int daysInCivilMonth(Int64 year, int month)
+{
+    const cctz::civil_day first{static_cast<int>(year), month, 1};
+    return static_cast<int>(cctz::civil_day{cctz::civil_month{first} + 1} - first);
+}
+
 inline cctz::time_point<cctz::seconds> lookupTz(const cctz::time_zone & cctz_time_zone, const cctz::civil_day & date)
 {
     cctz::time_zone::civil_lookup lookup = cctz_time_zone.lookup(date);
@@ -152,7 +159,7 @@ bool DateLUTImpl::isSupportedTimeZoneName(std::string_view time_zone_name)
     return !::getTimeZone(time_zone_name).empty();
 }
 
-DateLUTImpl::DateLUTImpl(std::string_view time_zone_) // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init) - lut and lut_saturated are fully assigned below
+DateLUTImpl::DateLUTImpl(std::string_view time_zone_) // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init) - lut is fully assigned below
     : time_zone(time_zone_)
 {
     /// DateLUT should not be initialized in global constructors for the following reasons:
@@ -198,14 +205,18 @@ DateLUTImpl::DateLUTImpl(std::string_view time_zone_) // NOLINT(cppcoreguideline
     hour_of_day_offset_addend = 86400 - utc_time_of_day_at_local_midnight;
     minute_of_hour_offset_addend = 3600 - utc_time_of_day_at_local_midnight % 3600;
 
-    cctz::civil_day date = lut_start;
-    cctz::time_point<cctz::seconds> start_of_day_time_point_if_no_transitions = lookupTz(tz, date);
+    /// The calendar is walked with plain counters; `cctz` is consulted only at offset transitions.
+    int year = DATE_LUT_MIN_YEAR;
+    int month = 1;
+    int day_of_month = 1;
+    int days_in_month = daysInCivilMonth(year, month);
+    UInt8 day_of_week = getDayOfWeek(lut_start);
 
-    auto next_transition_date = date;
+    Int64 next_transition_index = 0;
 
     /// Fill the lookup table:
-    /// Adjustments only occur at the dates of transitions. We save next_transition_date and add 24h to the
-    /// previous value until we reach the it. Then we do the adjustment and get the new next_transition_date.
+    /// Adjustments only occur at the dates of transitions. We save next_transition_index and add 24h to the
+    /// previous value until we reach it. Then we do the adjustment and get the new next_transition_index.
     UInt32 i = 0;
     do
     {
@@ -214,14 +225,17 @@ DateLUTImpl::DateLUTImpl(std::string_view time_zone_) // NOLINT(cppcoreguideline
         values.time_at_offset_change_value = 0;
         values.amount_of_offset_change_value = 0;
 
-        if (date >= next_transition_date)
+        if (i >= next_transition_index)
         {
-            start_of_day_time_point_if_no_transitions = lookupTz(tz, date);
+            const cctz::civil_day date = lut_start + i;
+            const cctz::time_point<cctz::seconds> start_of_day_time_point = lookupTz(tz, date);
+            start_of_day = std::chrono::system_clock::to_time_t(start_of_day_time_point);
 
             /// If UTC offset was changed this day.
             /// Change in time zone without transition is possible, e.g. Moscow 1991 Sun, 31 Mar, 02:00 MSK to EEST
             cctz::time_zone::civil_transition transition{};
-            if (tz.next_transition(start_of_day_time_point_if_no_transitions - std::chrono::seconds(1), &transition)
+            const bool has_next_transition = tz.next_transition(start_of_day_time_point - std::chrono::seconds(1), &transition);
+            if (has_next_transition
                 && (cctz::civil_day(transition.from) == date || cctz::civil_day(transition.to) == date)
                 && transition.from != transition.to)
             {
@@ -240,29 +254,23 @@ DateLUTImpl::DateLUTImpl(std::string_view time_zone_) // NOLINT(cppcoreguideline
                     values.time_at_offset_change_value = -values.amount_of_offset_change_value;
             }
 
-            next_transition_date = std::min(cctz::civil_day(transition.to), cctz::civil_day(transition.from));
+            /// After the last transition (all the time for UTC) the offset never changes, so stop looking up every day.
+            next_transition_index = has_next_transition
+                ? std::min(cctz::civil_day(transition.to), cctz::civil_day(transition.from)) - lut_start
+                : std::numeric_limits<Int64>::max();
         }
 
-        start_of_day = std::chrono::system_clock::to_time_t(start_of_day_time_point_if_no_transitions);
-
-        values.year = static_cast<UInt16>(date.year());
-        values.month = static_cast<UInt8>(date.month());
-        values.day_of_month = static_cast<UInt8>(date.day());
-        values.day_of_week = getDayOfWeek(date);
+        values.year = static_cast<UInt16>(year);
+        values.month = static_cast<UInt8>(month);
+        values.day_of_month = static_cast<UInt8>(day_of_month);
+        values.day_of_week = day_of_week;
+        values.days_in_month = static_cast<UInt8>(days_in_month);
         values.date = start_of_day;
 
         chassert(values.year >= DATE_LUT_MIN_YEAR && values.year <= DATE_LUT_MAX_YEAR + 1);
         chassert(values.month >= 1 && values.month <= 12);
         chassert(values.day_of_month >= 1 && values.day_of_month <= 31);
         chassert(values.day_of_week >= 1 && values.day_of_week <= 7);
-
-        if (values.day_of_month == 1)
-        {
-            cctz::civil_month month(date);
-            values.days_in_month = static_cast<UInt8>(cctz::civil_day(month + 1) - cctz::civil_day(month));
-        }
-        else
-            values.days_in_month = i != 0 ? lut[i - 1].days_in_month : 31;
 
         if (offset_is_whole_number_of_hours_during_epoch && start_of_day > 0 && start_of_day % 3600)
             offset_is_whole_number_of_hours_during_epoch = false;
@@ -302,8 +310,22 @@ DateLUTImpl::DateLUTImpl(std::string_view time_zone_) // NOLINT(cppcoreguideline
             offset_is_fixed = false;
 
         /// Going to next day.
-        start_of_day_time_point_if_no_transitions += std::chrono::hours(24);
-        ++date;
+        start_of_day += 86400;
+        day_of_week = day_of_week == 7 ? 1 : day_of_week + 1;
+        if (day_of_month == days_in_month)
+        {
+            day_of_month = 1;
+            if (month == 12)
+            {
+                month = 1;
+                ++year;
+            }
+            else
+                ++month;
+            days_in_month = daysInCivilMonth(year, month);
+        }
+        else
+            ++day_of_month;
         ++i;
     }
     while (i < DATE_LUT_SIZE && lut[i - 1].year <= DATE_LUT_MAX_YEAR);
@@ -340,19 +362,7 @@ DateLUTImpl::DateLUTImpl(std::string_view time_zone_) // NOLINT(cppcoreguideline
         years_months_lut[year_months_lut_index] = first_day_of_last_month;
     }
 
-    /// Fill saturated LUT.
-    {
-        ssize_t day = DATE_LUT_SIZE - 1;
-        for (; day >= 0; --day)
-        {
-            if (lut[day].date >= 0)
-                lut_saturated[day] = lut[day];
-            else
-                break;
-        }
-        for (; day >= 0; --day)
-            lut_saturated[day] = lut_saturated[day + 1];
-    }
+    first_non_negative_date = std::partition_point(lut, lut + DATE_LUT_SIZE, [](const Values & values) { return values.date < 0; })->date;
 }
 
 DateLUTImpl::~DateLUTImpl() = default;
@@ -364,13 +374,6 @@ namespace
 Int64 dayIndexOfCivilDay(cctz::civil_day day)
 {
     return day - cctz::civil_day{DATE_LUT_MIN_YEAR, 1, 1};
-}
-
-/// Number of days in the given calendar month.
-int daysInCivilMonth(Int64 year, int month)
-{
-    const cctz::civil_day first{static_cast<int>(year), month, 1};
-    return static_cast<int>(cctz::civil_day{cctz::civil_month{first} + 1} - first);
 }
 
 }

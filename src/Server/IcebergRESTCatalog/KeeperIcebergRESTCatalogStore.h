@@ -15,6 +15,8 @@ namespace DB
 
 /// Support multi-level namespace names.
 using IcebergNamespaceName = std::vector<String>;
+/// Joins the levels of a namespace in a REST path. A level must not contain it.
+constexpr char NAMESPACE_LEVEL_SEPARATOR = '\x1F';
 
 /// What Keeper stores for a table: the current `metadata.json` on object storage.
 struct IcebergTablePointer

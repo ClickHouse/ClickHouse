@@ -14,9 +14,7 @@ Estructura de datos preparada opcional para su uso en operaciones [JOIN](/es/ref
   En ClickHouse Cloud, si su servicio se creó con una versión anterior a la 25.4, deberá establecer la compatibilidad en al menos 25.4 mediante `SET compatibility=25.4`.
 </Note>
 
-<div id="creating-a-table">
-  ## Crear una tabla
-</div>
+## Crear una tabla {#creating-a-table}
 
 ```sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
@@ -28,45 +26,31 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 
 Consulta la descripción detallada de la sentencia [CREATE TABLE](/es/reference/statements/create/table).
 
-<div id="engine-parameters">
-  ## Parámetros del motor
-</div>
+## Parámetros del motor {#engine-parameters}
 
-<div id="join_strictness">
-  ### `join_strictness`
-</div>
+### `join_strictness` {#join_strictness}
 
 `join_strictness` – [modo de JOIN](/es/reference/statements/select/join#supported-types-of-join).
 
-<div id="join_type">
-  ### `join_type`
-</div>
+### `join_type` {#join_type}
 
 `join_type` – [tipo de JOIN](/es/reference/statements/select/join#supported-types-of-join).
 
-<div id="key-columns">
-  ### Columnas clave
-</div>
+### Columnas clave {#key-columns}
 
 `k1[, k2, ...]` – columnas clave de la cláusula `USING` con las que se realiza la operación `JOIN`.
 
 Introduzca los parámetros `join_strictness` y `join_type` sin comillas; por ejemplo, `Join(ANY, LEFT, col1)`. Deben coincidir con la operación `JOIN` para la que se va a utilizar la tabla. Si los parámetros no coinciden, ClickHouse no lanza ninguna excepción y puede devolver datos incorrectos.
 
-<div id="specifics-and-recommendations">
-  ## Particularidades y recomendaciones
-</div>
+## Particularidades y recomendaciones {#specifics-and-recommendations}
 
-<div id="data-storage">
-  ### Almacenamiento de datos
-</div>
+### Almacenamiento de datos {#data-storage}
 
 Los datos de la tabla `Join` siempre se almacenan en la RAM. Al insertar filas en una tabla, ClickHouse escribe bloques de datos en el directorio del disco para poder restaurarlos cuando el servidor se reinicie.
 
 Si el servidor se reinicia de forma incorrecta, el bloque de datos en el disco podría perderse o dañarse. En este caso, puede ser necesario eliminar manualmente el archivo que contiene los datos dañados.
 
-<div id="selecting-and-inserting-data">
-  ### Selección e inserción de datos
-</div>
+### Selección e inserción de datos {#selecting-and-inserting-data}
 
 Puede usar consultas `INSERT` para agregar datos a tablas con motor `Join`. Si la tabla se creó con modo `ANY`, los datos correspondientes a claves duplicadas se ignoran. Con modo `ALL`, se agregan todas las filas.
 
@@ -75,55 +59,37 @@ Los principales casos de uso de las tablas con motor `Join` son los siguientes:
 * Coloque la tabla en el lado derecho de una cláusula `JOIN`.
 * Llame a la función [joinGet](/es/reference/functions/regular-functions/other-functions#joinGet), que permite extraer datos de la tabla del mismo modo que de un diccionario.
 
-<div id="deleting-data">
-  ### Eliminación de datos
-</div>
+### Eliminación de datos {#deleting-data}
 
 Las consultas `ALTER DELETE` para tablas con motor `Join` se implementan como [mutaciones](/es/reference/statements/alter/index#mutations). La mutación `DELETE` lee los datos filtrados y sobrescribe los datos en memoria y en disco.
 
-<div id="join-limitations-and-settings">
-  ### Limitaciones y ajustes
-</div>
+### Limitaciones y ajustes {#join-limitations-and-settings}
 
 Al crear una tabla, se aplican los siguientes ajustes:
 
-<div id="join_use_nulls">
-  #### `join_use_nulls`
-</div>
+#### `join_use_nulls` {#join_use_nulls}
 
 [join&#95;use&#95;nulls](/es/reference/settings/session-settings/join#join_use_nulls)
 
-<div id="max_rows_in_join">
-  #### `max_rows_in_join`
-</div>
+#### `max_rows_in_join` {#max_rows_in_join}
 
 [max&#95;rows&#95;in&#95;join](/es/reference/settings/session-settings/max-rows#max_rows_in_join)
 
-<div id="max_bytes_in_join">
-  #### `max_bytes_in_join`
-</div>
+#### `max_bytes_in_join` {#max_bytes_in_join}
 
 [max&#95;bytes&#95;in&#95;join](/es/reference/settings/session-settings/max-bytes#max_bytes_in_join)
 
-<div id="join_overflow_mode">
-  #### `join_overflow_mode`
-</div>
+#### `join_overflow_mode` {#join_overflow_mode}
 
 [join&#95;overflow&#95;mode](/es/reference/settings/session-settings/join#join_overflow_mode)
 
-<div id="join_any_take_last_row">
-  #### `join_any_take_last_row`
-</div>
+#### `join_any_take_last_row` {#join_any_take_last_row}
 
 [join&#95;any&#95;take&#95;last&#95;row](/es/reference/settings/session-settings/join#join_any_take_last_row)
 
-<div id="join_use_nulls">
-  #### `join_use_nulls`
-</div>
+#### `join_use_nulls` {#join_use_nulls-1}
 
-<div id="persistent">
-  #### Persistente
-</div>
+#### Persistente {#persistent}
 
 Deshabilita la persistencia en los motores de tabla Join y [Set](/es/reference/engines/table-engines/special/set).
 
@@ -138,11 +104,11 @@ Valor predeterminado: `1`.
 
 Las tablas del motor `Join` no pueden usarse en operaciones `GLOBAL JOIN`.
 
+Una [política de filas](/es/reference/statements/create/row-policy) en una tabla del motor `Join` filtra un `SELECT` simple sobre ella, pero `JOIN` y `joinGet` leen la tabla hash preparada tal cual y no pueden filtrar sus filas; por ello, mientras haya una política aplicada a la tabla, dichas consultas fallan con `ACCESS_DENIED`.
+
 El motor `Join` permite especificar la configuración [join&#95;use&#95;nulls](/es/reference/settings/session-settings/join#join_use_nulls) en la sentencia `CREATE TABLE`. La consulta [SELECT](/es/reference/statements/select/index) debe tener el mismo valor de `join_use_nulls`.
 
-<div id="example">
-  ## Ejemplos de uso
-</div>
+## Ejemplos de uso {#example}
 
 Creación de la tabla de la izquierda:
 
