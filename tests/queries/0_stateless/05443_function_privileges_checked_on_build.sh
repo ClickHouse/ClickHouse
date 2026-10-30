@@ -57,6 +57,19 @@ error ${CLICKHOUSE_CLIENT} --allow_introspection_functions 0 -q "SELECT addressT
 error ${CLICKHOUSE_CLIENT} --allow_introspection_functions 0 -q "SELECT addressToLineWithInlines(0)"
 error ${CLICKHOUSE_CLIENT} --allow_introspection_functions 0 -q "CREATE TABLE t_default (s String DEFAULT demangle('_Z3foov')) ENGINE = MergeTree ORDER BY ()"
 
+echo "--- introspection functions are disabled in one subquery, the analyzer reuses the function built for another one"
+for f in addressToSymbol addressToLine addressToLineWithInlines
+do
+    error ${CLICKHOUSE_CLIENT} -q "
+        SELECT * FROM (SELECT ${f}(toUInt64(0)) SETTINGS allow_introspection_functions = 1)
+        UNION ALL
+        SELECT * FROM (SELECT ${f}(toUInt64(0)) SETTINGS allow_introspection_functions = 0)"
+    error ${CLICKHOUSE_CLIENT} -q "
+        SELECT * FROM (SELECT ${f}(toUInt64(0)) SETTINGS allow_introspection_functions = 0)
+        UNION ALL
+        SELECT * FROM (SELECT ${f}(toUInt64(0)) SETTINGS allow_introspection_functions = 1)"
+done
+
 echo "--- the pending mutation uses demangle, the user reads only the other columns"
 ${CLICKHOUSE_CLIENT} --user "${user}" -q "SELECT id, y FROM t ORDER BY id SETTINGS apply_mutations_on_fly = 1"
 echo "--- the pending mutation is applied when the user reads the updated column"

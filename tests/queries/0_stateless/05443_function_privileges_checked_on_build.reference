@@ -14,6 +14,13 @@ Introspection functions are disabled, because setting 'allow_introspection_funct
 Introspection functions are disabled, because setting 'allow_introspection_functions' is set to 0 (FUNCTION_NOT_ALLOWED)
 Introspection functions are disabled, because setting 'allow_introspection_functions' is set to 0 (FUNCTION_NOT_ALLOWED)
 Introspection functions are disabled, because setting 'allow_introspection_functions' is set to 0 (FUNCTION_NOT_ALLOWED)
+--- introspection functions are disabled in one subquery, the analyzer reuses the function built for another one
+Introspection functions are disabled, because setting 'allow_introspection_functions' is set to 0 (FUNCTION_NOT_ALLOWED)
+Introspection functions are disabled, because setting 'allow_introspection_functions' is set to 0 (FUNCTION_NOT_ALLOWED)
+Introspection functions are disabled, because setting 'allow_introspection_functions' is set to 0 (FUNCTION_NOT_ALLOWED)
+Introspection functions are disabled, because setting 'allow_introspection_functions' is set to 0 (FUNCTION_NOT_ALLOWED)
+Introspection functions are disabled, because setting 'allow_introspection_functions' is set to 0 (FUNCTION_NOT_ALLOWED)
+Introspection functions are disabled, because setting 'allow_introspection_functions' is set to 0 (FUNCTION_NOT_ALLOWED)
 --- the pending mutation uses demangle, the user reads only the other columns
 1	b
 --- the pending mutation is applied when the user reads the updated column
