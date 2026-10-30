@@ -199,6 +199,12 @@ IcebergRESTCatalogWarehouse::UpdateTableResult IcebergRESTCatalogWarehouse::upda
     return store->updateTable(ns, table, expected, new_pointer);
 }
 
+void IcebergRESTCatalogWarehouse::checkStorageAccess() const
+{
+    RelativePathsWithMetadata children;
+    object_storage->listObjects(objectKey(base_location), children, /*max_keys*/ 1);
+}
+
 String stripTrailingSlashes(String location)
 {
     while (location.ends_with('/'))

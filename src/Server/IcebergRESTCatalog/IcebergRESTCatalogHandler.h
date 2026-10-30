@@ -59,6 +59,13 @@ private:
         CompressionMethod compression_method,
         HTTPServerResponse & response) const;
 
+    /// Warehouse management API (issue #127488).
+    void handleCreateWarehouse(const String & body, HTTPServerResponse & response, const Context & context) const;
+    void handleListWarehouses(HTTPServerResponse & response) const;
+    void handleGetWarehouse(const IcebergRESTRouteMatch & match, HTTPServerResponse & response) const;
+    void handleReplaceWarehouseCredential(const IcebergRESTRouteMatch & match, const String & body, HTTPServerResponse & response, const Context & context) const;
+    void handleDeleteWarehouse(const IcebergRESTRouteMatch & match, HTTPServerResponse & response, const Context & context) const;
+
     static void checkNotReadonly(const Context & context, const String & action);
     static void checkDDLAllowed(const Context & context, const String & action);
 
@@ -81,6 +88,7 @@ private:
         HTTPServerResponse & response, Poco::Net::HTTPResponse::HTTPStatus status, const String & type, const String & message);
     static void sendNoSuchNamespace(HTTPServerResponse & response, const IcebergNamespaceName & ns);
     static void sendNoSuchTable(HTTPServerResponse & response, const IcebergNamespaceName & ns, const String & table);
+    static void sendNoSuchWarehouse(HTTPServerResponse & response, const String & name);
 
     LoggerPtr log;
     IServer & server;

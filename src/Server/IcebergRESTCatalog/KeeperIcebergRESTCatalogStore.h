@@ -41,7 +41,8 @@ struct UpdateNamespacePropertiesResult
 
 /// Storage backend of the native Iceberg REST catalog (RFC: issue #114697), backed by Keeper.
 /// Work in progress, not ready for production use.
-/// Layout under `root_path`, which is `<warehouse node>/<warehouse uuid>`. `<root>/namespaces` and `<root>/tables_by_uuid` are created with the warehouse.
+/// Layout under `root_path`, which is `<warehouse node>/<warehouse uuid>`.
+/// `<root>/namespaces` and `<root>/tables_by_uuid` are created with the warehouse.
 /// A warehouse dropped and created again gets a new uuid. So a request that still holds the old warehouse cannot write into the new one.
 ///   <root>/namespaces/<level>              data: JSON object of namespace properties
 ///   <root>/namespaces/<level>/namespaces   child namespaces, same shape recursively

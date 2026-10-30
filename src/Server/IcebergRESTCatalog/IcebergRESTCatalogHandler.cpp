@@ -284,6 +284,11 @@ void IcebergRESTCatalogHandler::sendNoSuchTable(HTTPServerResponse & response, c
         fmt::format("Table does not exist: {}.{}", joinNamespace(ns), table));
 }
 
+void IcebergRESTCatalogHandler::sendNoSuchWarehouse(HTTPServerResponse & response, const String & name)
+{
+    sendError(response, Poco::Net::HTTPResponse::HTTP_NOT_FOUND, "NoSuchWarehouseException", fmt::format("Unknown warehouse: {}", name));
+}
+
 void IcebergRESTCatalogHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse & response, const ProfileEvents::Event &)
 {
     try
@@ -351,6 +356,28 @@ void IcebergRESTCatalogHandler::handleRequest(HTTPServerRequest & request, HTTPS
         {
             handleGetConfig(uri, response);
             return;
+        }
+
+        /// Management routes create, drop, and read warehouses in the registry.
+        switch (match->route->operation)
+        {
+            case IcebergRESTOperation::CreateWarehouse:
+                handleCreateWarehouse(body, response, *context);
+                return;
+            case IcebergRESTOperation::ListWarehouses:
+                handleListWarehouses(response);
+                return;
+            case IcebergRESTOperation::GetWarehouse:
+                handleGetWarehouse(*match, response);
+                return;
+            case IcebergRESTOperation::ReplaceWarehouseCredential:
+                handleReplaceWarehouseCredential(*match, body, response, *context);
+                return;
+            case IcebergRESTOperation::DeleteWarehouse:
+                handleDeleteWarehouse(*match, response, *context);
+                return;
+            default:
+                break;
         }
 
         const auto & prefix = match->path_params.at("prefix");
@@ -493,11 +520,7 @@ void IcebergRESTCatalogHandler::handleGetConfig(const Poco::URI & uri, HTTPServe
     const auto warehouse = warehouses->tryGet(*requested_warehouse);
     if (!warehouse)
     {
-        sendError(
-            response,
-            Poco::Net::HTTPResponse::HTTP_NOT_FOUND,
-            "NoSuchWarehouseException",
-            fmt::format("Unknown warehouse: {}", *requested_warehouse));
+        sendNoSuchWarehouse(response, *requested_warehouse);
         return;
     }
 
@@ -1210,6 +1233,106 @@ void IcebergRESTCatalogHandler::handleDropTable(
 
     LOG_INFO(log, "Dropped table {}.{}", joinNamespace(*ns), table);
     sendNoContent(response);
+}
+
+void IcebergRESTCatalogHandler::handleCreateWarehouse(const String & body, HTTPServerResponse & response, const Context & context) const
+{
+    checkDDLAllowed(context, "create warehouse");
+
+    const auto json = parseRequestBody(body);
+    const auto name = getString(*json, "name");
+    IcebergRESTCatalogWarehouseDefinition::validateName(name);
+    const auto definition = IcebergRESTCatalogWarehouseDefinition::fromJSON(*json);
+
+    if (!warehouses->create(name, definition))
+    {
+        sendError(
+            response,
+            Poco::Net::HTTPResponse::HTTP_CONFLICT,
+            "AlreadyExistsException",
+            fmt::format("Warehouse already exists: {}", name));
+        return;
+    }
+
+    sendJSON(response, *definition.toJSON(name), Poco::Net::HTTPResponse::HTTP_OK);
+}
+
+void IcebergRESTCatalogHandler::handleListWarehouses(HTTPServerResponse & response) const
+{
+    Poco::JSON::Array list;
+    for (const auto & [name, definition] : warehouses->list())
+        list.add(definition.toJSON(name));
+
+    Poco::JSON::Object result;
+    result.set("warehouses", list);
+    sendJSON(response, result, Poco::Net::HTTPResponse::HTTP_OK);
+}
+
+void IcebergRESTCatalogHandler::handleGetWarehouse(const IcebergRESTRouteMatch & match, HTTPServerResponse & response) const
+{
+    const auto & name = match.path_params.at("warehouse");
+
+    const auto definition = warehouses->tryGetDefinition(name);
+    if (!definition)
+    {
+        sendNoSuchWarehouse(response, name);
+        return;
+    }
+
+    sendJSON(response, *definition->toJSON(name), Poco::Net::HTTPResponse::HTTP_OK);
+}
+
+void IcebergRESTCatalogHandler::handleReplaceWarehouseCredential(
+    const IcebergRESTRouteMatch & match, const String & body, HTTPServerResponse & response, const Context & context) const
+{
+    checkDDLAllowed(context, "replace warehouse credential");
+
+    const auto & name = match.path_params.at("warehouse");
+
+    const auto credential = IcebergRESTCatalogWarehouseCredential::fromJSON(*getObject(*parseRequestBody(body), "credential"));
+
+    using Result = IcebergRESTCatalogWarehouseRegistry::ReplaceCredentialResult;
+    switch (warehouses->replaceCredential(name, credential))
+    {
+        case Result::Replaced:
+            sendNoContent(response);
+            return;
+        case Result::NotFound:
+            sendNoSuchWarehouse(response, name);
+            return;
+        case Result::Conflict:
+            sendError(
+                response,
+                Poco::Net::HTTPResponse::HTTP_CONFLICT,
+                "CommitFailedException",
+                fmt::format("Warehouse {} was changed concurrently, retry", name));
+            return;
+    }
+}
+
+void IcebergRESTCatalogHandler::handleDeleteWarehouse(const IcebergRESTRouteMatch & match, HTTPServerResponse & response, const Context & context) const
+{
+    checkDDLAllowed(context, "drop warehouse");
+
+    const auto & name = match.path_params.at("warehouse");
+
+    using Result = IcebergRESTCatalogWarehouseRegistry::DropResult;
+    switch (warehouses->drop(name))
+    {
+        case Result::Dropped:
+            sendNoContent(response);
+            return;
+        case Result::NotFound:
+            sendNoSuchWarehouse(response, name);
+            return;
+        case Result::NotEmpty:
+            sendError(
+                response,
+                Poco::Net::HTTPResponse::HTTP_CONFLICT,
+                "WarehouseNotEmptyException",
+                fmt::format("Warehouse {} is not empty. Drop its namespaces first", name));
+            return;
+    }
 }
 
 }
