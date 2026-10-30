@@ -236,16 +236,11 @@ static const IndexReadTask * getIndexReadTaskForReadStep(const IndexReadTasks & 
     if (index_for_step.empty())
         return nullptr;
 
-    /// The index may be not materialized in this part. There is no index file to read, so let
-    /// the main reader handle the step and evaluate the virtual column's default expression instead.
+    /// The index may be not materialized in this part or cannot be read in it (e.g. pending patches).
+    /// Then there is nothing for the index reader to do, so let the main reader handle the step
+    /// and evaluate the virtual column's default expression instead.
     const auto & index_task = index_read_tasks.at(index_for_step);
-    const auto & index = index_task.index.index;
-
-    if (!index->getDeserializedFormat(*part_info.getDataPart(), index->getFileName()))
-        return nullptr;
-
-    /// Or if the index cannot be read in this part (e.g. pending patches).
-    if (!canReadTextIndexInPart(part_info.isProjectionPart() ? nullptr : part_info.getAlterConversions()))
+    if (!canReadTextIndexInPart(*index_task.index.index, part_info))
         return nullptr;
 
     return &index_task;
