@@ -67,6 +67,9 @@ class Generator:
             stdout_file_path=sys.stdout,
             stderr_file_path=sys.stderr,
             env=set_environment_variables(logger, args, "generator"),
+            # The generator runs the tested binary as a client, and a relative `kernel.core_pattern`
+            # writes its core to the working directory, which the job collects `core.*` from.
+            cwd=args.tmp_files_dir,
         )
 
 

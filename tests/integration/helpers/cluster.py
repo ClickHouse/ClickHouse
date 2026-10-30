@@ -240,6 +240,11 @@ CLICKHOUSE_ERROR_LOG_FILE = "/var/log/clickhouse-server/clickhouse-server.err.lo
 
 CLICKHOUSE_GDB_LOG_FILE = "/var/log/clickhouse-server/gdb.log"
 
+# Dolor runs its servers and Keepers in the foreground, where `BaseDaemon` does not chdir to `core_path`,
+# so a relative `kernel.core_pattern` writes a core to the working directory. Keep that on the host mount.
+DOLOR_CORE_DIR = "/var/log/clickhouse-server/cores"
+DOLOR_KEEPER_CORE_DIR = "/var/log/clickhouse-keeper/cores"
+
 # A backtrace is also taken on restarts in the middle of a run, so it is bounded.
 GDB_BACKTRACE_TIMEOUT_SECONDS = 300
 
@@ -1587,6 +1592,7 @@ class ClickHouseCluster:
         env_variables["image"] = "clickhouse/integration-test:" + DOCKER_BASE_TAG
         env_variables["user"] = str(os.getuid())
         env_variables["keeper_fs"] = "bind"
+        env_variables["keeper_workdir"] = DOLOR_KEEPER_CORE_DIR if self.with_dolor else "/"
         for i in range(1, 4):
             keeper_instance_dir = self.keeper_instance_dir_prefix + f"{i}"
             logs_dir = os.path.join(keeper_instance_dir, "log")
@@ -1596,6 +1602,8 @@ class ClickHouseCluster:
             env_variables[f"keeper_config_dir{i}"] = configs_dir
             env_variables[f"keeper_db_dir{i}"] = coordination_dir
             self.zookeeper_dirs_to_create += [logs_dir, configs_dir, coordination_dir]
+            if self.with_dolor:
+                self.zookeeper_dirs_to_create.append(os.path.join(logs_dir, "cores"))
 
         self.with_zookeeper = True
         self.base_cmd.extend(["--file", keeper_docker_compose_path])
@@ -4591,6 +4599,7 @@ class ClickHouseCluster:
                         detach=True,
                         use_cli=False,
                         get_exec_id=True,
+                        workdir=DOLOR_CORE_DIR,
                     )
 
             start_timeout = 300.0  # seconds
@@ -6153,6 +6162,7 @@ class ClickHouseInstance:
                     use_cli=False,
                     get_exec_id=True,
                     environment=environment,
+                    **({"workdir": DOLOR_CORE_DIR} if self.cluster.with_dolor else {}),
                 )
                 # With `--daemon` the exec is a launcher that exits 0 once it has forked,
                 # so only a foreground start's exec says how the server went away.
@@ -7058,6 +7068,8 @@ class ClickHouseInstance:
         logging.debug(f"Setup logs dir {logs_dir}")
         os.mkdir(logs_dir)
         self.logs_dir = logs_dir
+        if self.cluster.with_dolor:
+            os.mkdir(p.join(logs_dir, "cores"))
 
         depends_on = []
 

@@ -173,17 +173,22 @@ def get_keeper_workspace_logs(workspace_path: Path, keeper_index: int):
 
 
 def _copy_node_cores_to_workspace(workspace_path: Path) -> list[Path]:
-    """Copy the core dumps under the Dolor instance directories to `workspace_path`, as
-    `ClickHouseService.collect_cores` only inspects `workspace_path/core.*` non-recursively."""
+    """Copy the cores of the Dolor servers and Keepers to `workspace_path`, the only place
+    `ClickHouseService.collect_cores` looks. They run in a `cores` directory of their host-mounted
+    log directory (`DOLOR_CORE_DIR` in `helpers.cluster`), which survives the container teardown."""
     instances_dir = Path(_dolor_instances_dir())
     if not instances_dir.exists():
         return []
     copied: list[Path] = []
-    for src in instances_dir.rglob("core.*"):
+    for src in sorted(
+        [
+            *instances_dir.glob("node*/logs/cores/core.*"),
+            *instances_dir.glob("keeper*/log/cores/core.*"),
+        ]
+    ):
         if not src.is_file():
             continue
-        relative = src.relative_to(instances_dir).as_posix().replace("/", "_")
-        dst = workspace_path / f"core.dolor.{relative}"
+        dst = workspace_path / f"core.dolor.{src.parents[2].name}.{src.name}"
         try:
             shutil.copy2(src, dst)
             copied.append(dst)
