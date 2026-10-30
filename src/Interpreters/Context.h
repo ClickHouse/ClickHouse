@@ -70,6 +70,7 @@ namespace DB
 class ASTSelectQuery;
 
 class SystemLogs;
+class DirectoryWatchReactor;
 
 class ColumnsDescription;
 struct ContextSharedPart;
@@ -1866,6 +1867,12 @@ public:
     BackgroundSchedulePoolPtr getDistributedSchedulePool() const;
     BackgroundSchedulePoolPtr getIcebergSchedulePool() const;
     BackgroundSchedulePoolPtr getStreamingSchedulePool() const;
+
+#if defined(OS_LINUX) || defined(OS_DARWIN)
+    /// The one thread that watches the directories of all `FileLog` tables, created on the first call. Returns a
+    /// `shared_ptr` that the watchers keep, so that the reactor outlives all of them even if `shutdown` runs first.
+    std::shared_ptr<DirectoryWatchReactor> getDirectoryWatchReactor() const;
+#endif
 
     /// Return the pool only if it has already been created, null otherwise, so that reading
     /// `system.background_schedule_pool` does not instantiate one.
