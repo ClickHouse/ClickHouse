@@ -14,9 +14,11 @@ CREATE TABLE t_small (k UInt64, v UInt64) ENGINE = MergeTree ORDER BY k;
 
 SYSTEM STOP MERGES t1; SYSTEM STOP MERGES t2; SYSTEM STOP MERGES t3; SYSTEM STOP MERGES t_small;
 
-INSERT INTO t1 SELECT number, number, if(number % 10 = 0, NULL, number), toString(number % 100) FROM numbers(100000);
-INSERT INTO t2 SELECT number * 2, number, if(number % 7 = 0, NULL, number * 2), toString(number % 50) FROM numbers(100000);
-INSERT INTO t3 SELECT number, number, number, toString(number % 100) FROM numbers(100000);
+-- A few wide-part granules are enough for the plan shape. The flaky check runs many copies of
+-- this test at once and kills a run after 180s, so the old 100000-row tables did not finish.
+INSERT INTO t1 SELECT number, number, if(number % 10 = 0, NULL, number), toString(number % 100) FROM numbers(4096);
+INSERT INTO t2 SELECT number * 2, number, if(number % 7 = 0, NULL, number * 2), toString(number % 50) FROM numbers(4096);
+INSERT INTO t3 SELECT number, number, number, toString(number % 100) FROM numbers(4096);
 INSERT INTO t_small SELECT number, number FROM numbers(10);
 
 SET make_distributed_plan = 1, enable_parallel_replicas = 0, distributed_plan_execute_locally = 1,
