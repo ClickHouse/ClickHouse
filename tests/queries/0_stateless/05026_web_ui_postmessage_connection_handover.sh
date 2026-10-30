@@ -288,6 +288,19 @@ history_restore=$(echo "$content" | sed -n '/^window.onpopstate = function(event
     && echo cleared || echo kept)
 echo "dashboard history_save=${history_save} history_password=${history_restore}"
 
+# The dashboard names offered in the `/dashboard` selector come from `system.dashboards` of the server
+# queried. A handover reloads them from the new server, replacing those of the previous one: otherwise
+# the selector keeps offering the dashboards of the previous server, and the name of a dashboard that
+# exists only on the new one is submitted as SQL. The selected dashboard is resolved to its query with
+# the previous list before that, so it is not submitted as SQL either if the new server lacks it.
+catalog_body=$(echo "$content" | sed -n '/^async function populateSearchOptions() {$/,/^}$/p')
+catalog=$(echo "$catalog_body" | sed -n '1,/doFetch(/p' | grep -qxF "    dashboard_queries = {};" \
+    && echo "$catalog_body" | sed -n '1,/doFetch(/p' | grep -qxF "    searchOptions.replaceChildren();" \
+    && echo "$content" | sed -n '/^function applyConnectionFromHost(data) {$/,/^}$/p' | grep -qxF "            await populateSearchOptions();" \
+    && echo "$content" | sed -n '/^function applyConnectionFromHost(data) {$/,/^}$/p' | grep -qxF "        const selected_query = toSearchQuery(search_field.value);" \
+    && echo refreshed || echo stale)
+echo "dashboard handover_catalog=${catalog}"
+
 # `/binary` keeps its position in the query string, together with the server and the user. After a
 # handover the entry has to name the handed-over connection, not the one the page was opened with,
 # or a reload or a shared link opens the map of the previous server at the position viewed on the new one.

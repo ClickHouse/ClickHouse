@@ -1909,7 +1909,13 @@ function toSearchQuery(value) {
         return value;
 }
 
+/// The dashboard names offered in the selector come from `system.dashboards` of the server queried,
+/// so the previous ones are dropped first: after a connection handover they describe another server,
+/// and a name that exists only on the new one would otherwise be submitted as SQL.
 async function populateSearchOptions() {
+    dashboard_queries = {};
+    const searchOptions = document.getElementById('search-options');
+    searchOptions.replaceChildren();
     let {reply, error} = await doFetch("SELECT dashboard FROM system.dashboards GROUP BY dashboard ORDER BY ALL");
     if (error) {
         throw new Error(error);
@@ -1919,12 +1925,10 @@ async function populateSearchOptions() {
         console.log("Unable to fetch dashboards list");
         return;
     }
-    dashboard_queries = {};
     for (let i = 0; i < data.dashboard.length; i++) {
         const dashboard = data.dashboard[i];
         dashboard_queries[dashboard] = dashboardSearchQuery(dashboard);
     }
-    const searchOptions = document.getElementById('search-options');
     for (const dashboard in dashboard_queries) {
         const opt = document.createElement('option');
         opt.value = dashboard;
@@ -2039,6 +2043,12 @@ function acceptsHandoverWithoutURL() {
 /// rebuilt from the new one. This also covers the case when no charts are displayed because the
 /// initial load could not authenticate.
 ///
+/// The list of dashboards offered in the selector is reloaded from the new server before that. The
+/// search field shows a dashboard by its name, which stands for the search query of that dashboard,
+/// so the field is first resolved to the query with the previous list and then shown again with the
+/// new one: the selected dashboard stays selected if the new server has it too, and otherwise its
+/// query runs as it is, rather than its name as SQL.
+///
 /// `url` is optional and defaults to the one already configured, as far as
 /// `acceptsHandoverWithoutURL` allows; the credentials are always replaced wholesale, so that none
 /// of them can outlive the connection they belong to.
@@ -2048,7 +2058,19 @@ function applyConnectionFromHost(data) {
     document.getElementById('user').value = data.user || '';
     document.getElementById('password').value = data.password || '';
     host_handed_server = document.getElementById('url').value;
-    pending_load = pending_load.then(() => reloadAll(queries.length == 0 || !customized));
+    pending_load = pending_load.then(async () => {
+        const search_field = document.getElementById('search-query');
+        const selected_query = toSearchQuery(search_field.value);
+        try {
+            await populateSearchOptions();
+        } catch (e) {
+            if (e.name != 'AbortError') {
+                showError(e.message);
+            }
+        }
+        search_field.value = fromSearchQuery(selected_query);
+        await reloadAll(queries.length == 0 || !customized);
+    });
 }
 
 {
