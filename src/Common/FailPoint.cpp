@@ -478,6 +478,9 @@ static struct InitFiu
     PAUSEABLE_ONCE(limit_by_transform_mid_loop_pause) \
     PAUSEABLE_ONCE(totals_having_transform_pause) \
     PAUSEABLE_ONCE(totals_having_transform_drop_cancelled_chunk) \
+    PAUSEABLE_ONCE(distinct_transform_pause) \
+    PAUSEABLE_ONCE(distinct_transform_null_pause) \
+    PAUSEABLE_ONCE(distinct_transform_lc_pause) \
     PAUSEABLE_ONCE(storage_url_pause_before_empty_file_probe) \
     PAUSEABLE_ONCE(storage_url_pause_between_metadata_probes) \
     PAUSEABLE_ONCE(storage_url_pause_before_read_buffer_creation) \

@@ -8,7 +8,9 @@
 #include <DataTypes/NullableUtils.h>
 #include <Common/BitHelpers.h>
 #include <Common/ColumnsHashing.h>
+#include <Common/FailPoint.h>
 #include <Common/assert_cast.h>
+#include <Common/logger_useful.h>
 #include <base/arithmeticOverflow.h>
 
 #include <algorithm>
@@ -22,6 +24,50 @@ namespace ErrorCodes
 {
     extern const int SET_SIZE_LIMIT_EXCEEDED;
     extern const int LOGICAL_ERROR;
+}
+
+namespace FailPoints
+{
+extern const char distinct_transform_pause[];
+extern const char distinct_transform_null_pause[];
+extern const char distinct_transform_lc_pause[];
+}
+
+namespace
+{
+
+/// The cancellation flag is polled once per this many processed rows, between blocks of rows.
+/// Keeping the poll out of the row loops leaves their per-row code exactly as it was before
+/// polling was added (no extra branch and no call per row) while bounding the latency of a loop
+/// to one block of rows.
+constexpr size_t CANCELLATION_POLL_ROWS = 0x1000;
+
+bool isCancelled(const std::atomic<bool> * cancellation_flag)
+{
+    return cancellation_flag && cancellation_flag->load(std::memory_order_acquire);
+}
+
+/// Fires `failpoint` (unless it is `nullptr`) and reports whether the query has been cancelled,
+/// logging `cancel_message` when it has. Deliberately out of line: the `FailPointInjection` call,
+/// the logging and the exception-handling padding around them must not end up inside a per-row
+/// loop. When the check was written directly into a per-row lambda, the compiler stopped inlining
+/// that lambda and turned its body into a real function call - with a stack frame and a stack
+/// canary - executed once per processed row.
+NO_INLINE bool pollCancellation(
+    const std::atomic<bool> * cancellation_flag, const char * failpoint, const char * cancel_message)
+{
+    if (failpoint)
+        FailPointInjection::pauseFailPoint(failpoint);
+
+    if (isCancelled(cancellation_flag))
+    {
+        LOG_TEST(getLogger("DistinctSetFilter"), "{}", cancel_message);
+        return true;
+    }
+
+    return false;
+}
+
 }
 
 ColumnNumbers calculateDistinctKeyColumnsPositions(const Block & header, const Names & columns)
@@ -93,7 +139,8 @@ DistinctLowCardinalityFilter::DistinctLowCardinalityFilter()
 
 DistinctLowCardinalityFilter::~DistinctLowCardinalityFilter() = default;
 
-std::optional<IColumn::Filter> DistinctLowCardinalityFilter::buildMaskIfApplicable(const IColumn & column, size_t num_rows)
+std::optional<IColumn::Filter> DistinctLowCardinalityFilter::buildMaskIfApplicable(
+    const IColumn & column, size_t num_rows, const std::atomic<bool> * cancellation_flag)
 {
     if (!lc_optimization_controller.isEnabled())
         return std::nullopt;
@@ -102,7 +149,7 @@ std::optional<IColumn::Filter> DistinctLowCardinalityFilter::buildMaskIfApplicab
     if (!lc)
         return std::nullopt;
 
-    auto [mask, new_indices_count] = buildMask(*lc, num_rows);
+    auto [mask, new_indices_count] = buildMask(*lc, num_rows, cancellation_flag);
     lc_optimization_controller.update(num_rows, new_indices_count);
 
     if (!lc_optimization_controller.isEnabled())
@@ -131,7 +178,8 @@ size_t DistinctLowCardinalityFilter::estimateGrowthMemory(const IColumn & column
     return dictionary.size();
 }
 
-std::pair<IColumn::Filter, size_t> DistinctLowCardinalityFilter::buildMask(const ColumnLowCardinality & column, size_t num_rows)
+std::pair<IColumn::Filter, size_t> DistinctLowCardinalityFilter::buildMask(
+    const ColumnLowCardinality & column, size_t num_rows, const std::atomic<bool> * cancellation_flag)
 {
     const auto & dictionary = column.getDictionary();
     const auto dict_size = dictionary.size();
@@ -159,6 +207,8 @@ std::pair<IColumn::Filter, size_t> DistinctLowCardinalityFilter::buildMask(const
 
     IColumn::Filter mask;
 
+    /// Scans the whole index column for new dictionary entries, setting `mask[row]` for the rows
+    /// that introduce one.
     auto handle_index = [&](size_t idx, size_t row)
     {
         chassert(idx < dict_size);
@@ -174,36 +224,39 @@ std::pair<IColumn::Filter, size_t> DistinctLowCardinalityFilter::buildMask(const
         }
     };
 
+    /// The scan is polled for cancellation once per block of rows. On cancellation it stops early:
+    /// the partially built mask keeps its unset tail, whose rows are then treated as not-new, and
+    /// the caller above drops the whole chunk once it observes the same cancellation.
+    auto process = [&](const auto & col)
+    {
+        for (size_t begin = 0; begin < num_rows; begin += CANCELLATION_POLL_ROWS)
+        {
+            if (pollCancellation(
+                    cancellation_flag,
+                    begin ? FailPoints::distinct_transform_lc_pause : nullptr,
+                    "Cancelled while building the LowCardinality mask"))
+                return;
+
+            const size_t end = std::min(begin + CANCELLATION_POLL_ROWS, num_rows);
+            for (size_t row = begin; row < end; ++row)
+                handle_index(static_cast<size_t>(col[row]), row);
+        }
+    };
+
     switch (index_type_size)
     {
         case sizeof(UInt8):
-        {
-            const auto & col = assert_cast<const ColumnUInt8 &>(indexes_column).getData();
-            for (size_t row = 0; row < num_rows; ++row)
-                handle_index(static_cast<size_t>(col[row]), row);
+            process(assert_cast<const ColumnUInt8 &>(indexes_column).getData());
             break;
-        }
         case sizeof(UInt16):
-        {
-            const auto & col = assert_cast<const ColumnUInt16 &>(indexes_column).getData();
-            for (size_t row = 0; row < num_rows; ++row)
-                handle_index(static_cast<size_t>(col[row]), row);
+            process(assert_cast<const ColumnUInt16 &>(indexes_column).getData());
             break;
-        }
         case sizeof(UInt32):
-        {
-            const auto & col = assert_cast<const ColumnUInt32 &>(indexes_column).getData();
-            for (size_t row = 0; row < num_rows; ++row)
-                handle_index(static_cast<size_t>(col[row]), row);
+            process(assert_cast<const ColumnUInt32 &>(indexes_column).getData());
             break;
-        }
         case sizeof(UInt64):
-        {
-            const auto & col = assert_cast<const ColumnUInt64 &>(indexes_column).getData();
-            for (size_t row = 0; row < num_rows; ++row)
-                handle_index(static_cast<size_t>(col[row]), row);
+            process(assert_cast<const ColumnUInt64 &>(indexes_column).getData());
             break;
-        }
         default:
             throw Exception(
                 ErrorCodes::LOGICAL_ERROR, "Unexpected size of index type for LowCardinality column in DistinctLowCardinalityFilter");
@@ -219,44 +272,70 @@ namespace
 /// rows are inserted into the set). `mask[i] == 0` marks rows excluded from the deduplication - known
 /// duplicates by the `LowCardinality` dictionary index, or `NULL`-key rows in the `skip_null_keys` mode -
 /// which are never inserted; `mask` may be `nullptr`.
+/// Returns the number of input rows processed: all of them, or the prefix before the observed cancellation.
+/// On cancellation the unprocessed tail of `filter` is left uninitialized: the only caller that passes a
+/// cancellation flag (`filterImpl`) discards the filter together with the rest of the chunk.
 template <typename Method>
-void buildDistinctFilter(
+size_t buildDistinctFilter(
     Method & method,
     const ColumnRawPtrs & key_columns,
     const Sizes & key_sizes,
     IColumn::Filter & filter,
     const size_t rows,
     SetVariants & variants,
-    const IColumn::Filter * mask)
+    const IColumn::Filter * mask,
+    const std::atomic<bool> * cancellation_flag)
 {
     typename Method::State state(key_columns, key_sizes, /*context=*/ nullptr);
 
     if (mask)
     {
-        for (size_t i = 0; i < rows; ++i)
+        for (size_t begin = 0; begin < rows; begin += CANCELLATION_POLL_ROWS)
         {
-            if (!(*mask)[i])
-            {
-                /// The row is excluded from the deduplication, skip insertion.
-                filter[i] = 0;
-                continue;
-            }
+            if (pollCancellation(
+                    cancellation_flag,
+                    begin ? FailPoints::distinct_transform_pause : nullptr,
+                    "Cancelled while hashing rows with a mask"))
+                return begin;
 
-            auto emplace_result = state.emplaceKey(method.data, i, variants.string_pool);
-            filter[i] = emplace_result.isInserted();
+            const size_t end = std::min(begin + CANCELLATION_POLL_ROWS, rows);
+            for (size_t i = begin; i < end; ++i)
+            {
+                if (!(*mask)[i])
+                {
+                    /// The row is excluded from the deduplication, skip insertion.
+                    filter[i] = 0;
+                    continue;
+                }
+
+                auto emplace_result = state.emplaceKey(method.data, i, variants.string_pool);
+                filter[i] = emplace_result.isInserted();
+            }
         }
     }
     else
     {
-        for (size_t i = 0; i < rows; ++i)
+        for (size_t begin = 0; begin < rows; begin += CANCELLATION_POLL_ROWS)
         {
-            auto emplace_result = state.emplaceKey(method.data, i, variants.string_pool);
+            if (pollCancellation(
+                    cancellation_flag,
+                    begin ? FailPoints::distinct_transform_pause : nullptr,
+                    "Cancelled while hashing rows without a mask"))
+                return begin;
 
-            /// Emit the record if there is no such key in the current set yet.
-            /// Skip it otherwise.
-            filter[i] = emplace_result.isInserted();
+            const size_t end = std::min(begin + CANCELLATION_POLL_ROWS, rows);
+            for (size_t i = begin; i < end; ++i)
+            {
+                auto emplace_result = state.emplaceKey(method.data, i, variants.string_pool);
+
+                /// Emit the record if there is no such key in the current set yet.
+                /// Skip it otherwise.
+                filter[i] = emplace_result.isInserted();
+            }
         }
     }
+
+    return rows;
 }
 
 /// Keep checked insertion out of line to leave the bulk-insertion loop's generated code compact.
@@ -293,21 +372,34 @@ NO_INLINE size_t buildDistinctFilterWithInsertionCheck(
 }
 
 /// Mark rows whose `LowCardinality` index is the dictionary's `NULL` entry with 0 in `keep`, allocating the
-/// filter lazily on the first such row.
-void markLowCardinalityNullRows(const ColumnLowCardinality & column, IColumn::Filter & keep, size_t num_rows)
+/// filter lazily on the first such row. The scan is polled for cancellation like the other row loops; when
+/// the query is cancelled mid-scan it returns with `keep` partially built, and the caller above abandons the
+/// chunk once it observes the same cancellation.
+void markLowCardinalityNullRows(
+    const ColumnLowCardinality & column, IColumn::Filter & keep, size_t num_rows, const std::atomic<bool> * cancellation_flag)
 {
     const size_t null_index = column.getDictionary().getNullValueIndex();
     const IColumn & indexes_column = *column.getIndexesPtr();
 
     auto process = [&](const auto & indexes)
     {
-        for (size_t row = 0; row < num_rows; ++row)
+        for (size_t begin = 0; begin < num_rows; begin += CANCELLATION_POLL_ROWS)
         {
-            if (static_cast<size_t>(indexes[row]) == null_index)
+            if (pollCancellation(
+                    cancellation_flag,
+                    begin ? FailPoints::distinct_transform_null_pause : nullptr,
+                    "Cancelled while marking LowCardinality NULL rows"))
+                return;
+
+            const size_t end = std::min(begin + CANCELLATION_POLL_ROWS, num_rows);
+            for (size_t row = begin; row < end; ++row)
             {
-                if (keep.empty())
-                    keep.assign(num_rows, static_cast<UInt8>(1));
-                keep[row] = 0;
+                if (static_cast<size_t>(indexes[row]) == null_index)
+                {
+                    if (keep.empty())
+                        keep.assign(num_rows, static_cast<UInt8>(1));
+                    keep[row] = 0;
+                }
             }
         }
     };
@@ -326,12 +418,14 @@ void markLowCardinalityNullRows(const ColumnLowCardinality & column, IColumn::Fi
 }
 
 DistinctSetFilter::DistinctSetFilter(
-    const Block & header, const Names & columns, const SizeLimits & set_size_limits_, bool skip_null_keys_)
+    const Block & header, const Names & columns, const SizeLimits & set_size_limits_, bool skip_null_keys_,
+    const std::atomic<bool> * cancellation_flag_)
     : key_columns_pos(calculateDistinctKeyColumnsPositions(header, columns))
     , non_constant_columns_pos(calculateDistinctKeyColumnsPositions(header, {}))
     , data(std::make_unique<SetVariants>())
     , set_size_limits(set_size_limits_)
     , skip_null_keys(skip_null_keys_)
+    , cancellation_flag(cancellation_flag_)
 {
     key_types.reserve(key_columns_pos.size());
     for (const auto pos : key_columns_pos)
@@ -525,8 +619,24 @@ DistinctSetFilter::FilterResult DistinctSetFilter::filterImpl(Chunk chunk, const
         if (keys.null_map && !memoryIsZero(keys.null_map->data(), 0, num_rows))
         {
             keep.resize(num_rows);
-            for (size_t i = 0; i < num_rows; ++i)
-                keep[i] = !(*keys.null_map)[i];
+            for (size_t begin = 0; begin < num_rows; begin += CANCELLATION_POLL_ROWS)
+            {
+                if (pollCancellation(
+                        cancellation_flag,
+                        begin ? FailPoints::distinct_transform_null_pause : nullptr,
+                        "Cancelled while scanning the NULL map"))
+                {
+                    /// `keep` is local to this call, so the partially scanned filter can be
+                    /// dropped right away together with the rest of the chunk.
+                    return {{}, begin};
+                }
+
+                /// `num_rows` is `UInt64` while the loop bound is `size_t`: on platforms where the two
+                /// are not the same type the deduction of `std::min` would fail, so convert explicitly.
+                const size_t end = std::min(begin + CANCELLATION_POLL_ROWS, static_cast<size_t>(num_rows));
+                for (size_t i = begin; i < end; ++i)
+                    keep[i] = !(*keys.null_map)[i];
+            }
         }
 
         /// `LowCardinality(Nullable)` keys are not unwrapped by `extractNestedColumnsAndNullMap`: their
@@ -534,14 +644,14 @@ DistinctSetFilter::FilterResult DistinctSetFilter::filterImpl(Chunk chunk, const
         for (const auto * column : column_ptrs)
             if (const auto * low_cardinality = typeid_cast<const ColumnLowCardinality *>(column);
                 low_cardinality && low_cardinality->nestedIsNullable())
-                markLowCardinalityNullRows(*low_cardinality, keep, num_rows);
+                markLowCardinalityNullRows(*low_cardinality, keep, num_rows, cancellation_flag);
     }
 
     std::optional<IColumn::Filter> lc_mask;
 
     if (!can_insert && key_columns_pos.size() == 1)
     {
-        lc_mask = lc_filter.buildMaskIfApplicable(*column_ptrs[0], num_rows);
+        lc_mask = lc_filter.buildMaskIfApplicable(*column_ptrs[0], num_rows, cancellation_flag);
 
         /// An empty mask means that this chunk contains no candidate rows.
         if (lc_mask && lc_mask->empty())
@@ -571,12 +681,24 @@ DistinctSetFilter::FilterResult DistinctSetFilter::filterImpl(Chunk chunk, const
 
     data->callOnMethod([&](auto & method)
     {
+        /// The insertion-check path serves `ExternalDistinctTransform`, which passes no cancellation
+        /// flag, so only the bulk path below is polled.
         if (can_insert)
             processed_rows = buildDistinctFilterWithInsertionCheck(
                 method, column_ptrs, key_sizes, filter_values, num_rows, *data, *can_insert);
         else
-            buildDistinctFilter(method, column_ptrs, key_sizes, filter_values, num_rows, *data, mask);
+            processed_rows = buildDistinctFilter(
+                method, column_ptrs, key_sizes, filter_values, num_rows, *data, mask, cancellation_flag);
     });
+
+    /// The bulk path abandons the rest of the chunk once it observes a cancellation. Its caller
+    /// (`DistinctTransform`) drops the returned chunk as soon as it sees the same flag, so filtering the
+    /// columns here would only allocate copies that are thrown away. The insertion-check path has no
+    /// cancellation flag: `ExternalDistinctTransform` must keep the accepted prefix to spill it.
+    /// Because the filter is discarded here too, `buildDistinctFilter` leaves its unprocessed tail
+    /// uninitialized instead of zeroing it.
+    if (isCancelled(cancellation_flag))
+        return {{}, processed_rows};
 
     const auto new_set_size = data->getTotalRowCount();
     const size_t num_selected = new_set_size - old_set_size;
