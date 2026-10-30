@@ -1,4 +1,5 @@
 -- Tags: long, no-object-storage, no-msan
+-- Random settings limits: use_columns_cache=(0, 0)
 -- Disable force_primary_key_reverse_order: reversed key changes aggregation-in-order behavior and EXPLAIN PIPELINE output
 SET force_primary_key_reverse_order = 0;
 SET explain_query_plan_default = 'legacy';
