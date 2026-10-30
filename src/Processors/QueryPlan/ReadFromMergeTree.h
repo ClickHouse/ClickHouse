@@ -591,6 +591,13 @@ public:
         const StorageMetadataPtr & metadata_snapshot,
         bool skip_partition_pruning_ = false);
 
+    /// The primary-key condition of `buildIndexes`.
+    static ConditionTemplate<KeyCondition>::Ptr buildPrimaryKeyCondition(
+        std::shared_ptr<ActionsDAGWithInversionPushDown> filter_dag,
+        const StorageMetadataPtr & metadata_snapshot,
+        const ContextPtr & query_context,
+        bool skip_constant_folding);
+
     void setTopKColumn(const TopKFilterInfo & top_k_filter_info_);
     bool isSkipIndexAvailableForTopK(const String & sort_column) const;
 
