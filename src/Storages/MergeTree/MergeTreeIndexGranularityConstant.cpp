@@ -134,7 +134,7 @@ namespace
 
 size_t saturatingAdd(size_t a, size_t b)
 {
-    size_t res;
+    size_t res = 0;
     if (__builtin_add_overflow(a, b, &res))
         return std::numeric_limits<size_t>::max();
     return res;
