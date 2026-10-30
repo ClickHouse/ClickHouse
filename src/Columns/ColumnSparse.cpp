@@ -456,7 +456,9 @@ void ColumnSparse::expand(const Filter & mask, bool inverted)
     if (mask.size() < _size)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Mask size should be no less than data size.");
 
-    auto res_offsets = offsets->cloneEmpty();
+    /// Every non-default value moves to the position of its row in the mask. The iterator reads the old offsets,
+    /// so the new ones go into a copy.
+    auto res_offsets = offsets->cloneResized(offsets->size());
     auto & res_offsets_data = assert_cast<ColumnUInt64 &>(*res_offsets).getData();
 
     auto it = begin();
@@ -474,6 +476,10 @@ void ColumnSparse::expand(const Filter & mask, bool inverted)
         }
     }
 
+    if (it.getCurrentRow() != _size)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Not enough bytes in mask");
+
+    offsets = std::move(res_offsets);
     _size = mask.size();
 }
 
@@ -555,7 +561,28 @@ ColumnPtr ColumnSparse::indexImpl(const PaddedPODArray<Type> & indexes, size_t l
     }
     else
     {
-        for (size_t i = 0; i < limit;)
+        /// Sorted indexes (e.g. a sparse filter's offsets) gallop forward instead of a binary search over all offsets per row.
+        const auto * offsets_begin = getOffsetsData().begin();
+        const auto * offsets_end = getOffsetsData().end();
+        size_t i = 0;
+        for (const auto * pos = offsets_begin; i < limit && (pos == offsets_begin || pos[-1] < indexes[i]);)
+        {
+            chassert(indexes[i] < _size);
+            size_t run_end = get_run_end(i);
+            size_t step = 1;
+            while (step <= static_cast<size_t>(offsets_end - pos) && pos[step - 1] < indexes[i])
+            {
+                pos += step;
+                step *= 2;
+            }
+            pos = std::lower_bound(pos, pos + std::min<size_t>(step - 1, offsets_end - pos), indexes[i]);
+            const bool found = pos != offsets_end && *pos == indexes[i];
+            pos += found;
+            insert_run(found ? pos - offsets_begin : 0, i, run_end - i);
+            i = run_end;
+        }
+
+        while (i < limit)
         {
             size_t run_end = get_run_end(i);
             insert_run(getValueIndex(indexes[i]), i, run_end - i);

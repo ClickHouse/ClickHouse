@@ -12,9 +12,7 @@ integration:
 
 عميل Rust الرسمي للاتصال بـ ClickHouse، وقد طوّره أساسًا [Paul Loyd](https://github.com/loyd). الشيفرة المصدرية للعميل متاحة في [مستودع GitHub](https://github.com/ClickHouse/clickhouse-rs).
 
-<div id="overview">
-  ## نظرة عامة
-</div>
+## نظرة عامة {#overview}
 
 * يستخدم `serde` لترميز الصفوف وفك ترميزها.
 * يدعم سمات `serde`: `skip_serializing` و`skip_deserializing` و`rename`.
@@ -25,9 +23,7 @@ integration:
 * يوفّر واجهات برمجة تطبيقات للاستعلام عن البيانات أو إدراجها، وتنفيذ أوامر DDL، والتجميع على جهة العميل.
 * يوفّر كائنات محاكاة مناسبة لاختبارات الوحدة.
 
-<div id="installation">
-  ## التثبيت
-</div>
+## التثبيت {#installation}
 
 لاستخدام `حزمة`، أضف ما يلي إلى ملف `Cargo.toml`:
 
@@ -41,16 +37,14 @@ clickhouse = { version = "0.12.2", features = ["test-util"] }
 
 راجع أيضًا: [صفحة crates.io](https://crates.io/crates/clickhouse).
 
-<div id="cargo-features">
-  ## ميزات Cargo
-</div>
+## ميزات Cargo {#cargo-features}
 
-* `lz4` (مفعّلة افتراضيًا) — تفعّل البديلين `Compression::Lz4` و`Compression::Lz4Hc(_)`. وإذا كانت مفعّلة، فسيُستخدم `Compression::Lz4` افتراضيًا في جميع الاستعلامات باستثناء `WATCH`.
+* `lz4` (مفعّلة افتراضيًا) — تفعّل البديلين `Compression::Lz4` و`Compression::Lz4Hc(_)`. وإذا كانت مفعّلة، فسيُستخدم `Compression::Lz4` افتراضيًا في جميع الاستعلامات باستثناء `WATCH`، الذي لا تقبله إلا إصدارات ClickHouse الأقدم من v26.9.
 * `native-tls` — تدعم عناوين URL ذات مخطط `HTTPS` عبر `hyper-tls`، والذي يرتبط بـ OpenSSL.
 * `rustls-tls` — تدعم عناوين URL ذات مخطط `HTTPS` عبر `hyper-rustls`، والذي لا يرتبط بـ OpenSSL.
 * `inserter` — تفعّل `client.inserter()`.
-* `test-util` — تضيف mocks. راجع [المثال](https://github.com/ClickHouse/clickhouse-rs/tree/main/examples/mock.rs). استخدمها فقط في `dev-dependencies`.
-* `watch` — تفعّل وظيفة `client.watch`. راجع القسم المقابل لمزيد من التفاصيل.
+* `test-util` — تضيف كائنات محاكاة. راجع [المثال](https://github.com/ClickHouse/clickhouse-rs/tree/main/examples/mock.rs). استخدمها فقط في `dev-dependencies`.
+* `watch` — تفعّل وظيفة `client.watch`. وهي تصدر استعلام `WATCH`، الذي أُزيل في ClickHouse v26.9 مع `WINDOW VIEW`، لذا فهي لا تعمل إلا مع الخوادم الأقدم.
 * `uuid` — تضيف `serde::uuid` للعمل مع حزمة ‏[uuid](https://docs.rs/uuid).
 * `time` — تضيف `serde::time` للعمل مع حزمة ‏[time](https://docs.rs/time).
 
@@ -59,34 +53,26 @@ clickhouse = { version = "0.12.2", features = ["test-util"] }
   إذا كانت كلتاهما مفعّلتين، فستكون الأسبقية لميزة `rustls-tls`.
 </Warning>
 
-<div id="clickhouse-versions-compatibility">
-  ## توافق إصدارات ClickHouse
-</div>
+## توافق إصدارات ClickHouse {#clickhouse-versions-compatibility}
 
 العميل متوافق مع إصدارات LTS أو الأحدث من ClickHouse، وكذلك مع ClickHouse Cloud.
 
 يتعامل خادم ClickHouse الأقدم من v22.6 مع RowBinary [بشكل غير صحيح في بعض الحالات النادرة](https://github.com/ClickHouse/ClickHouse/issues/37420).
 يمكنك استخدام v0.11+ وتمكين الميزة `wa-37420` لحل هذه المشكلة. ملاحظة: لا ينبغي استخدام هذه الميزة مع إصدارات ClickHouse الأحدث.
 
-<div id="examples">
-  ## أمثلة
-</div>
+## أمثلة {#examples}
 
 نهدف إلى تغطية سيناريوهات متنوعة لاستخدام مكتبة العميل من خلال [الأمثلة](https://github.com/ClickHouse/clickhouse-rs/blob/main/examples) الموجودة في مستودع العميل. تتوفر لمحة عامة عنها في [README الخاص بالأمثلة](https://github.com/ClickHouse/clickhouse-rs/blob/main/examples/README.md#overview).
 
 إذا كان هناك ما هو غير واضح أو ناقص في الأمثلة أو في الوثائق التالية، فلا تتردد في [التواصل معنا](/ar/integrations/language-clients/rust/index#contact-us).
 
-<div id="usage">
-  ## الاستخدام
-</div>
+## الاستخدام {#usage}
 
 <Note>
   تُعد حزمة [ch2rs](https://github.com/ClickHouse/ch2rs) مفيدة لتوليد نوع يمثّل صفًا من ClickHouse.
 </Note>
 
-<div id="creating-a-client-instance">
-  ### إنشاء مثيل للعميل
-</div>
+### إنشاء مثيل للعميل {#creating-a-client-instance}
 
 <Tip>
   أعِد استخدام العملاء الذين أنشأتهم أو استنسخهم لإعادة استخدام مجمّع اتصالات hyper الأساسي.
@@ -103,9 +89,7 @@ let client = Client::default()
     .with_database("test");
 ```
 
-<div id="https-or-clickhouse-cloud-connection">
-  ### اتصال عبر HTTPS أو ClickHouse Cloud
-</div>
+### اتصال عبر HTTPS أو ClickHouse Cloud {#https-or-clickhouse-cloud-connection}
 
 يعمل HTTPS مع ميزتَي Cargo `rustls-tls` أو `native-tls`.
 
@@ -130,9 +114,7 @@ let client = Client::default()
 
 * [مثال HTTPS مع ClickHouse Cloud](https://github.com/ClickHouse/clickhouse-rs/blob/main/examples/clickhouse_cloud.rs) في مستودع عميل. ينبغي أن ينطبق هذا أيضًا على اتصالات HTTPS المستضافة محليًا.
 
-<div id="selecting-rows">
-  ### تحديد الصفوف
-</div>
+### تحديد الصفوف {#selecting-rows}
 
 ```rust
 use serde::Deserialize;
@@ -167,9 +149,7 @@ while let Some(row) = cursor.next().await? { .. }
   استخدم `wait_end_of_query` بحذر عند تحديد الصفوف، إذ قد يؤدي ذلك إلى زيادة استهلاك الذاكرة على جانب الخادم، ومن المرجح أن يقلل من الأداء العام.
 </Warning>
 
-<div id="inserting-rows">
-  ### إدراج الصفوف
-</div>
+### إدراج الصفوف {#inserting-rows}
 
 ```rust
 use serde::Serialize;
@@ -191,9 +171,7 @@ insert.end().await?;
 * تُرسَل الصفوف تدريجيًا على شكل تدفّق لتوزيع حمل الشبكة.
 * يُدرِج ClickHouse الدُفعات بصورة ذرّية فقط إذا كانت جميع الصفوف تقع ضمن partition نفسها وكان عددها أقل من [`max_insert_block_size`](/ar/reference/settings/session-settings#max_insert_block_size).
 
-<div id="async-insert-server-side-batching">
-  ### الإدراج غير المتزامن (التجميع من جهة الخادم)
-</div>
+### الإدراج غير المتزامن (التجميع من جهة الخادم) {#async-insert-server-side-batching}
 
 يمكنك استخدام [عمليات الإدراج غير المتزامن في ClickHouse](/ar/concepts/features/operations/insert/asyncinserts) لتجنب تجميع البيانات الواردة من جهة العميل. ويمكنك القيام بذلك ببساطة عبر تمرير الخيار `async_insert` إلى الدالة `insert` (أو حتى إلى مثيل `Client` نفسه، بحيث يسري ذلك على جميع استدعاءات `insert`).
 
@@ -208,9 +186,7 @@ let client = Client::default()
 
 * [مثال على async insert](https://github.com/ClickHouse/clickhouse-rs/blob/main/examples/async_insert.rs) في مستودع مكتبة عميل.
 
-<div id="inserter-feature-client-side-batching">
-  ### ميزة Inserter (التجميع على جهة العميل)
-</div>
+### ميزة Inserter (التجميع على جهة العميل) {#inserter-feature-client-side-batching}
 
 يتطلب ذلك تفعيل ميزة `inserter` في Cargo.
 
@@ -250,9 +226,7 @@ inserter.end().await?;
   ```
 </Warning>
 
-<div id="executing-ddls">
-  ### تنفيذ DDLs
-</div>
+### تنفيذ DDLs {#executing-ddls}
 
 في النشر أحادي العقدة، يكفي تنفيذ DDLs كما يلي:
 
@@ -270,9 +244,7 @@ client
     .await?;
 ```
 
-<div id="clickhouse-settings">
-  ### إعدادات ClickHouse
-</div>
+### إعدادات ClickHouse {#clickhouse-settings}
 
 يمكنك تطبيق [إعدادات ClickHouse](/ar/reference/settings/session-settings) المختلفة باستخدام الطريقة `with_option`. على سبيل المثال:
 
@@ -288,9 +260,7 @@ let numbers = client
 
 إلى جانب `query`، يعمل الأمر بالطريقة نفسها مع الطريقتين `insert` و`inserter`؛ بالإضافة إلى ذلك، يمكن استدعاء الطريقة نفسها على مثيل `Client` لضبط إعدادات عامة لجميع الاستعلامات.
 
-<div id="query-id">
-  ### معرّف الاستعلام
-</div>
+### معرّف الاستعلام {#query-id}
 
 باستخدام `.with_option`، يمكنك تعيين الخيار `query_id` لتمييز الاستعلامات في سجل استعلامات ClickHouse.
 
@@ -310,9 +280,7 @@ let numbers = client
 
 انظر أيضًا: [مثال query&#95;id](https://github.com/ClickHouse/clickhouse-rs/blob/main/examples/query_id.rs) في مستودع العميل.
 
-<div id="session-id">
-  ### معرّف الجلسة
-</div>
+### معرّف الجلسة {#session-id}
 
 على غرار `query_id`، يمكنك تعيين `session_id` لتنفيذ التعليمات ضمن الجلسة نفسها. ويمكن تعيين `session_id` إما على مستوى العميل بشكل عام، أو لكل استدعاء `query` أو `insert` أو `inserter` على حدة.
 
@@ -328,9 +296,7 @@ let client = Client::default()
 
 راجع أيضًا: [مثال session&#95;id](https://github.com/ClickHouse/clickhouse-rs/blob/main/examples/session_id.rs) في مستودع العميل.
 
-<div id="custom-http-headers">
-  ### رؤوس HTTP مخصصة
-</div>
+### رؤوس HTTP مخصصة {#custom-http-headers}
 
 إذا كنت تستخدم المصادقة عبر proxy أو تحتاج إلى تمرير رؤوس مخصصة، فيمكنك القيام بذلك كما يلي:
 
@@ -342,9 +308,7 @@ let client = Client::default()
 
 راجع أيضًا: [مثال على رؤوس HTTP مخصصة](https://github.com/ClickHouse/clickhouse-rs/blob/main/examples/custom_http_headers.rs) في مستودع مكتبة عميل.
 
-<div id="custom-http-client">
-  ### عميل HTTP مخصّص
-</div>
+### عميل HTTP مخصّص {#custom-http-client}
 
 قد يكون هذا مفيدًا لتعديل إعدادات مجمّع اتصالات HTTP الأساسي.
 
@@ -372,9 +336,7 @@ let client = Client::with_http_client(hyper_client).with_url("http://localhost:8
 
 انظر أيضًا: [مثال على عميل HTTP مخصص](https://github.com/ClickHouse/clickhouse-rs/blob/main/examples/custom_http_client.rs) في مستودع مكتبة عميل.
 
-<div id="data-types">
-  ## أنواع البيانات
-</div>
+## أنواع البيانات {#data-types}
 
 <Info>
   راجع أيضًا الأمثلة الإضافية التالية:
@@ -552,21 +514,15 @@ struct MyRow {
 
 * لا تزال أنواع البيانات `Variant` و`Dynamic` و`JSON` (النوع الجديد) غير مدعومة بعد.
 
-<div id="mocking">
-  ## المحاكاة
-</div>
+## المحاكاة {#mocking}
 
-توفر الحزمة أدوات مساعدة لمحاكاة خادم CH واختبار استعلامات DDL و`SELECT` و`INSERT` و`WATCH`. ويمكن تمكين هذه الوظيفة باستخدام الميزة `test-util`. استخدمها **فقط** كاعتماد تطويري.
+توفر الحزمة أدوات مساعدة لمحاكاة خادم CH واختبار استعلامات DDL و`SELECT` و`INSERT` و`WATCH` (لا يقبل `WATCH` إلا ClickHouse الأقدم من v26.9). ويمكن تمكين هذه الوظيفة باستخدام الميزة `test-util`. استخدمها **فقط** كاعتماد تطويري.
 
 راجع [المثال](https://github.com/ClickHouse/clickhouse-rs/tree/main/examples/mock.rs).
 
-<div id="troubleshooting">
-  ## استكشاف الأخطاء وإصلاحها
-</div>
+## استكشاف الأخطاء وإصلاحها {#troubleshooting}
 
-<div id="cannot_read_all_data">
-  ### CANNOT_READ_ALL_DATA
-</div>
+### CANNOT_READ_ALL_DATA {#cannot_read_all_data}
 
 السبب الأكثر شيوعًا لخطأ `CANNOT_READ_ALL_DATA` هو أن تعريف الصف في جهة التطبيق لا يطابق التعريف في ClickHouse.
 
@@ -602,15 +558,11 @@ struct EventLog {
 }
 ```
 
-<div id="known-limitations">
-  ## القيود المعروفة
-</div>
+## القيود المعروفة {#known-limitations}
 
 * أنواع البيانات `Variant` و`Dynamic` و`JSON` (الجديدة) غير مدعومة حتى الآن.
 * ربط المعلّمات على جهة الخادم غير مدعوم حتى الآن؛ راجع [هذه التذكرة](https://github.com/ClickHouse/clickhouse-rs/issues/142) لمتابعة الحالة.
 
-<div id="contact-us">
-  ## تواصل معنا
-</div>
+## تواصل معنا {#contact-us}
 
 إذا كانت لديك أي أسئلة أو كنت بحاجة إلى مساعدة، فلا تتردد في التواصل معنا عبر [Slack الخاص بالمجتمع](https://clickhouse.com/slack) أو من خلال [تذاكر GitHub](https://github.com/ClickHouse/clickhouse-rs/issues).

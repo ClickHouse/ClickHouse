@@ -5,6 +5,7 @@
 #include <AggregateFunctions/Moments.h>
 #include <Columns/ColumnVector.h>
 #include <Columns/ColumnsNumber.h>
+#include <Common/NaNUtils.h>
 #include <Common/assert_cast.h>
 #include <DataTypes/DataTypeNothing.h>
 #include <DataTypes/DataTypeNullable.h>
@@ -306,6 +307,12 @@ struct RegrMoments
 /// input, so they are clamped.
 struct RegrResult
 {
+    /// A comparison with a NaN is false, so `std::max(0.0, value)` would answer with the bound and
+    /// turn a NaN into a zero. A zero sum of squares is read below as a constant column, which is
+    /// something else entirely: a NaN or an infinity in the data leaves the fit undefined, and every
+    /// result has to say so rather than report a perfect one.
+    static Float64 clampToZero(Float64 value) { return isNaN(value) ? value : std::max(0.0, value); }
+
     Float64 n;
     Float64 x0;
     Float64 y0;
@@ -326,8 +333,8 @@ struct RegrResult
         , mean_dy(data.sy / n)
         , avg_x(x0 + mean_dx)
         , avg_y(y0 + mean_dy)
-        , sxx(std::max(0.0, data.sxx - data.sx * data.sx / n))
-        , syy(std::max(0.0, data.syy - data.sy * data.sy / n))
+        , sxx(clampToZero(data.sxx - data.sx * data.sx / n))
+        , syy(clampToZero(data.syy - data.sy * data.sy / n))
         , sxy(data.sxy - data.sx * data.sy / n)
     {
     }
@@ -358,6 +365,11 @@ struct RegrResult
                 /// the data, and what is left is at the scale of the spread.
                 return sxx == 0 ? nan : (y0 - (sxy / sxx) * x0) + (mean_dy - (sxy / sxx) * mean_dx);
             case RegrKind::regr_r2:
+                /// Both shortcuts below read one sum of squares and conclude from it alone, which
+                /// only holds while the other one is a number: a NaN in either variable leaves the
+                /// fit undefined, and a constant y is not a line explaining data that holds a NaN.
+                if (isNaN(sxx) || isNaN(syy))
+                    return nan;
                 /// A vertical line explains none of the variance, a horizontal one explains all of it.
                 if (sxx == 0)
                     return nan;
@@ -446,12 +458,12 @@ public:
             /// Merging the two sets of flags into a temporary buffer vectorizes better
             /// than fusing both flags into the accumulation loop.
             const auto * if_flags = assert_cast<const ColumnUInt8 &>(*columns[if_argument_pos]).getData().data();
-            /// Default-init: the loop below fills [row_begin, row_end) and nothing reads the rest.
-            std::unique_ptr<UInt8[]> final_flags(new UInt8[row_end]);
+            const size_t span = row_end - row_begin;
+            auto final_flags = std::make_unique_for_overwrite<UInt8[]>(span);
             for (size_t i = row_begin; i < row_end; ++i)
-                final_flags[i] = (!null_map[i]) & !!if_flags[i];
+                final_flags[i - row_begin] = (!null_map[i]) & !!if_flags[i];
 
-            data.template addManyConditional<false>(x_ptr, y_ptr, final_flags.get(), row_begin, row_end);
+            data.template addManyConditional<false>(x_ptr + row_begin, y_ptr + row_begin, final_flags.get(), 0, span);
         }
         else
         {
@@ -829,6 +841,18 @@ correlation coefficient. Returns `nan` when `x` is constant, and `1` when `y` is
 │             1 │
 └───────────────┘)")},
         AggregateFunctionFactory::Case::Insensitive);
+
+    /// The SQL standard spelling is the name; these are the same functions under the naming the rest
+    /// of ClickHouse uses. The capital letters are the variables, as in S_xx and avg(x).
+    factory.registerAlias("regrCount", "regr_count", AggregateFunctionFactory::Case::Insensitive);
+    factory.registerAlias("regrAvgX", "regr_avgx", AggregateFunctionFactory::Case::Insensitive);
+    factory.registerAlias("regrAvgY", "regr_avgy", AggregateFunctionFactory::Case::Insensitive);
+    factory.registerAlias("regrSXX", "regr_sxx", AggregateFunctionFactory::Case::Insensitive);
+    factory.registerAlias("regrSYY", "regr_syy", AggregateFunctionFactory::Case::Insensitive);
+    factory.registerAlias("regrSXY", "regr_sxy", AggregateFunctionFactory::Case::Insensitive);
+    factory.registerAlias("regrSlope", "regr_slope", AggregateFunctionFactory::Case::Insensitive);
+    factory.registerAlias("regrIntercept", "regr_intercept", AggregateFunctionFactory::Case::Insensitive);
+    factory.registerAlias("regrR2", "regr_r2", AggregateFunctionFactory::Case::Insensitive);
 }
 
 }

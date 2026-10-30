@@ -922,6 +922,7 @@ def test_refresh_request_is_shared_and_durable(fn3_setup_tables):
     node.query("SYSTEM REFRESH VIEW test_rmv")
     znode = requested_znode(zk, path, 1)
     assert znode is not None and znode.ephemeralOwner == 0
+    assert zk.get(f"{path}/requested-1")[0] == b"1"
     node2.query("SYSTEM REFRESH VIEW test_rmv")
     wait_condition(
         lambda: node2.query("SELECT count() FROM tgt1").strip(),

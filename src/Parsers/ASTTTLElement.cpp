@@ -69,8 +69,8 @@ void ASTTTLElement::updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases
 void ASTTTLElement::writeJSON(WriteBuffer & out) const
 {
     JSONObjectWriter w(out, "TTLElement");
-    w.writeString("mode", std::string(magic_enum::enum_name(mode)));
-    w.writeString("destination_type", std::string(magic_enum::enum_name(destination_type)));
+    w.writeString("mode", magic_enum::enum_name(mode));
+    w.writeString("destination_type", magic_enum::enum_name(destination_type));
 
     if (!destination_name.empty())
         w.writeString("destination_name", destination_name);
@@ -120,7 +120,12 @@ void ASTTTLElement::readJSON(const Poco::JSON::Object & json)
 
     auto where_child = r.readExpressionChild("where_expr");
     if (where_child)
+    {
+        /// `ParserTTLElement` accepts `WHERE` only after `DELETE`, the only mode that applies it.
+        if (mode != TTLMode::DELETE)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "'where_expr' is only valid for TTL DELETE during AST JSON deserialization");
         setWhere(std::move(where_child));
+    }
 
     auto arr = r.getArray("group_by_key");
     if (arr)

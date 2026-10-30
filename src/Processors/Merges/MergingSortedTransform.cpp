@@ -1,6 +1,7 @@
 #include <IO/WriteBuffer.h>
 #include <Processors/Merges/MergingSortedTransform.h>
 #include <Processors/Port.h>
+#include <Processors/TopKThresholdTracker.h>
 #include <Processors/Transforms/ColumnGathererTransform.h>
 #include <Common/logger_useful.h>
 
@@ -49,6 +50,32 @@ MergingSortedTransform::MergingSortedTransform(
         apply_virtual_row_conversions,
         virtual_row_prefetch_window)
 {
+}
+
+void MergingSortedTransform::setTopKThresholdTracker(TopKThresholdTrackerPtr threshold_tracker_, const String & sort_column_name, UInt64 limit_)
+{
+    threshold_tracker = std::move(threshold_tracker_);
+    threshold_limit = limit_;
+    threshold_sort_column_position = getOutputPort().getHeader().getPositionByName(sort_column_name);
+}
+
+void MergingSortedTransform::onOutputChunk(const Chunk & chunk)
+{
+    if (!threshold_tracker || threshold_published)
+        return;
+
+    /// The merge returns the rows in their final order and stops at the limit.
+    const size_t rows = chunk.getNumRows();
+    if (rows_before_threshold + rows < threshold_limit)
+    {
+        rows_before_threshold += rows;
+        return;
+    }
+
+    Field value;
+    chunk.getColumns()[threshold_sort_column_position]->get(threshold_limit - rows_before_threshold - 1, value);
+    threshold_tracker->testAndSet(value);
+    threshold_published = true;
 }
 
 void MergingSortedTransform::onNewInput()

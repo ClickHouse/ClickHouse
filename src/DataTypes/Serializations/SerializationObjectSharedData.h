@@ -3,6 +3,8 @@
 #pragma clang diagnostic ignored "-Wdocumentation-html"
 
 #include <Common/Exception.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <DataTypes/Serializations/SimpleTextSerialization.h>
 #include <boost/algorithm/string/join.hpp>
 
@@ -139,7 +141,7 @@ private:
         std::map<size_t, String> position_to_requested_path;
         /// List of all paths stored in the chunk. It is filled only if whole
         /// shared data is deserialized when we need the list of all paths.
-        std::vector<String> all_paths;
+        VectorWithMemoryTracking<String> all_paths;
         /// Number of rows in this chunk.
         size_t num_rows = 0;
         /// How much rows should be read from this chunk. Can be less than num_rows if we read only a part of the chunk.
@@ -202,7 +204,7 @@ private:
         /// We can read only a part of the chunk, so we need to remember the state of the last read chunk.
         ChunkStructure last_chunk_structure;
 
-        ISerialization::DeserializeBinaryBulkStatePtr clone() const override
+        ISerialization::DeserializeBinaryBulkStatePtr cloneImpl(ISerialization::DeserializeBinaryBulkStateCloneContext &) const override
         {
             return std::make_shared<DeserializeBinaryBulkStateObjectSharedDataStructure>(*this);
         }
@@ -221,6 +223,9 @@ private:
         DeserializeBinaryBulkSettings & settings,
         DeserializeBinaryBulkStateObjectSharedDataStructure & structure_state,
         SubstreamsCache * cache);
+
+    /// The readers apply the chunk layout of the first bucket to all of them.
+    static void checkChunksMatchFirstBucket(const ChunkStructures & chunks, const ChunkStructures & first_bucket_chunks, size_t bucket);
 
     /// Deserialize prefix of the chunk in ObjectSharedDataStructure(Prefix) stream.
     static void deserializeChunkStructurePrefix(
@@ -247,9 +252,9 @@ private:
         /// Mark of the substreams marks in ObjectSharedDataSubstreamsMarks stream for this path.
         MarkInCompressedFile substreams_marks_mark{};
         /// List of substreams for this path.
-        std::vector<String> substreams;
+        VectorWithMemoryTracking<String> substreams;
         /// Map Substream -> its mark in ObjectSharedDataData stream.
-        std::unordered_map<std::string_view, MarkInCompressedFile> substream_to_mark;
+        UnorderedMapWithMemoryTracking<std::string_view, MarkInCompressedFile> substream_to_mark;
     };
 
     struct PathsInfos

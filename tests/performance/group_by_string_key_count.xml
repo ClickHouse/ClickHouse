@@ -1,0 +1,11 @@
+<test>
+    <!-- Counting the rows per value of a single long String column (about 490 bytes, 200 thousand
+         distinct values) in one thread, when the grouping state does not fit in the CPU cache. -->
+
+    <create_query>CREATE TABLE long_string_keys (s String) ENGINE = Memory</create_query>
+    <fill_query>INSERT INTO long_string_keys SELECT concat('https://www.example.com/catalog/', toString(cityHash64(number) % 200000), '/item.html?utm_source=newsletter&amp;utm_medium=email', '/', repeat('segment/', 50)) FROM numbers(1600000)</fill_query>
+
+    <query>SELECT s, count() FROM long_string_keys GROUP BY s SETTINGS max_threads = 1 FORMAT Null</query>
+
+    <drop_query>DROP TABLE IF EXISTS long_string_keys</drop_query>
+</test>

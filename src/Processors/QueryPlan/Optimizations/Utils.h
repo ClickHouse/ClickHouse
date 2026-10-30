@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Core/SortDescription.h>
 #include <Processors/QueryPlan/IQueryPlanStep.h>
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
 #include <Processors/QueryPlan/QueryPlan.h>
@@ -10,6 +11,7 @@ namespace DB
 {
 
 class ActionsDAG;
+class ReadFromMergeTree;
 
 struct IDescriptionHolder
 {
@@ -76,6 +78,11 @@ enum class FilterResult
 
 [[nodiscard]] bool dagContainsNonDeterministicFunction(const ActionsDAG & dag);
 
+/// True when the expression holds a function that is non-deterministic within the query (`rand`), stateful
+/// (`rowNumberInAllBlocks`, `aiEmbed`), or has observable side effects (`sleep`), so an observer can see how
+/// many times and on which rows it was evaluated.
+[[nodiscard]] bool isSensitiveToEvaluationCount(const ActionsDAG & dag);
+
 /// True if optimizeExchanges will lift a plain gather above this step, so a scatter/gather pair separated
 /// by it still collapses. Shared with findGatherOverRead, which has to predict that rewrite.
 [[nodiscard]] bool canHoistGatherThroughStep(const IQueryPlanStep & step);
@@ -91,9 +98,36 @@ enum class FilterResult
     const ActionsDAG & filter_dag,
     const String & filter_column_name);
 
+/// move `node` below the `ExpressionStep`s that only pass the sort keys through and rename the keys to the inputs,
+/// false if a step computes a key, has `arrayJoin` or depends on the number of evaluated rows
+[[nodiscard]] bool peelPassThroughExpressions(QueryPlan::Node *& node, SortDescription & description, size_t max_peel = 4);
+
+/// the `ReadFromMergeTree` at the end of a chain of single-child steps, or nullptr
+const ReadFromMergeTree * findMergeTreeRead(const QueryPlan::Node * node);
+
 struct NoOp
 {
 };
+
+/// Is this step a wrapper that can be skipped over? Only an `ExpressionStep` whose outputs are a
+/// permutation of its inputs - renamed or reordered, nothing computed, nothing forwarded twice.
+///
+/// The renames are the point, so this cannot be `isPassthroughActions` above: that one wants
+/// `getOutputs() == getInputs()`, and a rename makes the output an `ALIAS` node rather than the `INPUT`
+/// it stands for. Every analyzer query is bracketed by such steps - `Change column names to column
+/// identifiers` on the way in, `Project names` on the way out - so demanding identity here means never
+/// recognising a wrapper at all.
+///
+/// Its two users have to agree on it, which is why it is shared: `calculateHashTableCacheKeys` lets such
+/// a step adopt its child's key, and `considerEnablingParallelReplicas` looks through it when locating
+/// the boundary the replicas would ship from. A step invisible to one and visible to the other would be
+/// instrumented in one plan and matched in the other. It is narrower than "contributes nothing to the
+/// key": a full `SortingStep` contributes nothing yet must remain a boundary of its own.
+bool isPassthroughExpressionWithRenames(const IQueryPlanStep & step);
+
+/// Whether a MergeTree read allows a second, row-addressed read of the rows it selected, which lazy materialization
+/// needs. Shared by both lazy materialization paths, so that they agree on it.
+bool canUseLazyMaterializationForReadingStep(ReadFromMergeTree * reading);
 
 template <typename Func1, typename Func2 = NoOp>
 void traverseQueryPlan(Stack & stack, QueryPlan::Node & root, Func1 && on_enter, Func2 && on_leave = {})

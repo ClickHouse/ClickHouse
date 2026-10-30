@@ -12,21 +12,19 @@ import SettingsInfoBlock from "/snippets/pt-BR/components/SettingsInfoBlock/Sett
 
 Estas configurações são usadas para configurar o servidor ClickHouse e são geradas automaticamente a partir do código-fonte do ClickHouse.
 
-<div id="allow_experimental_executable_udf_drivers">
-  ## allow_experimental_executable_udf_drivers
-</div>
+## allow_experimental_cluster_discovery {#allow_experimental_cluster_discovery}
+
+<SettingsInfoBlock type="String" default_value="" changeable_without_restart="No" />O Cluster Discovery deixou de ser experimental e está sempre habilitado para clusters que têm a seção `discovery` em `remote_servers`. Esta configuração está obsoleta e não tem efeito. Ela é mantida como `String` para que qualquer valor aceito anteriormente, incluindo uma tag vazia, continue sendo aceito.
+
+## allow_experimental_executable_udf_drivers {#allow_experimental_executable_udf_drivers}
 
 <SettingsInfoBlock type="Bool" default_value="0" changeable_without_restart="Não" />Habilita suporte experimental a drivers para funções executáveis definidas pelo usuário, declaradas por meio de `user_defined_executable_function_drivers_config`. Um driver converte um trecho de código fornecido pelo usuário em `CREATE FUNCTION ... ENGINE = DriverName(...) AS '...'` em uma UDF executável.
 
-<div id="allow_experimental_webassembly_udf">
-  ## allow_experimental_webassembly_udf
-</div>
+## allow_experimental_webassembly_udf {#allow_experimental_webassembly_udf}
 
 <SettingsInfoBlock type="Bool" default_value="0" changeable_without_restart="No" />Habilita o suporte experimental a UDFs de WebAssembly
 
-<div id="allow_experimental_webterminal">
-  ## allow_experimental_webterminal
-</div>
+## allow_experimental_webterminal {#allow_experimental_webterminal}
 
 <SettingsInfoBlock type="Bool" default_value="1" changeable_without_restart="Não" />Nome anterior (experimental) de `enable_webterminal`. Ainda é aceito por compatibilidade retroativa quando `enable_webterminal` não está definido. Esta configuração está obsoleta.
 
