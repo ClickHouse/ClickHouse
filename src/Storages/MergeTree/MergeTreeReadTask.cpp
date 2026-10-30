@@ -494,7 +494,17 @@ UInt64 MergeTreeReadTask::estimateNumRows() const
     if (!rows_to_read)
         return rows_to_read;
 
-    auto total_row_in_current_granule = readers_chain.numRowsInCurrentGranule();
+    const auto & index_granularity = info->data_part_info->getIndexGranularity();
+
+    /// The first read of a range starts at `mark_ranges.front().begin`, but the readers chain is still at its previous
+    /// position (mark 0, or the end of the previous range). Size the read by the new range's first granule.
+    const bool starting_new_range = readers_chain.isCurrentRangeFinished() && !mark_ranges.empty();
+    chassert(!starting_new_range || mark_ranges.front().begin < mark_ranges.front().end);
+
+    const size_t current_mark = starting_new_range ? mark_ranges.front().begin : readers_chain.currentMark();
+    const size_t read_rows_in_current_granule = starting_new_range ? 0 : readers_chain.numReadRowsInCurrentGranule();
+    const size_t total_row_in_current_granule
+        = starting_new_range ? index_granularity.getMarkRows(current_mark) : readers_chain.numRowsInCurrentGranule();
     rows_to_read = std::max(total_row_in_current_granule, rows_to_read);
 
     if (block_size_params.preferred_max_column_in_block_size_bytes)
@@ -511,12 +521,12 @@ UInt64 MergeTreeReadTask::estimateNumRows() const
         rows_to_read = std::min(rows_to_read, rows_to_read_for_max_size_column_with_filtration);
     }
 
-    auto unread_rows_in_current_granule = readers_chain.numPendingRowsInCurrentGranule();
+    const size_t unread_rows_in_current_granule
+        = starting_new_range ? total_row_in_current_granule : readers_chain.numPendingRowsInCurrentGranule();
     if (unread_rows_in_current_granule >= rows_to_read)
         return rows_to_read;
 
-    const auto & index_granularity = info->data_part_info->getIndexGranularity();
-    return index_granularity.countRowsForRows(readers_chain.currentMark(), rows_to_read, readers_chain.numReadRowsInCurrentGranule());
+    return index_granularity.countRowsForRows(current_mark, rows_to_read, read_rows_in_current_granule);
 }
 
 MergeTreeReadTask::BlockAndProgress MergeTreeReadTask::read()
