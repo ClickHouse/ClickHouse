@@ -2,6 +2,8 @@
 
 -- fusion is skipped for serialized plans, pin it so the plan-shape checks hold in the distributed-plan suite
 SET serialize_query_plan = 0;
+-- CI randomizes the fusion off, and the plan-shape checks below assert it happens
+SET query_plan_fuse_filter_into_array_join = 1;
 
 DROP TABLE IF EXISTS t_aj_lift;
 CREATE TABLE t_aj_lift (id String, items Array(String), tags Array(String)) ENGINE = MergeTree ORDER BY id;

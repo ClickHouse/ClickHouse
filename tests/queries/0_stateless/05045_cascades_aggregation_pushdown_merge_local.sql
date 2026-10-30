@@ -10,6 +10,10 @@
 -- `Aggregating` - covering the optimizer consumers audited for `only_merge`, including the
 -- defensive bail-out in `optimizeUseAggregateProjections`.
 
+-- The pushdown this file pins is the feature under test, so it cannot be left to the
+-- randomizer: with it off there is no variant-A top step and every EXPLAIN below differs.
+SET cascades_aggregation_pushdown = 1;
+
 DROP TABLE IF EXISTS t_ml_facts;
 DROP TABLE IF EXISTS t_ml_dims;
 

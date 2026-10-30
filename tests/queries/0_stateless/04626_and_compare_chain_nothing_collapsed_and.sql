@@ -6,6 +6,10 @@
 -- even though another operand is a comparison over a directly-Nullable expression. That operand then
 -- reached the pruning path and hit `chassert(!raw_type->isNullable())`.
 
+-- The node-count assertions below pin what the chain optimization derives, and a small work
+-- budget makes it stop deriving. Unlimited, as in 04510, so the randomizer cannot shrink it.
+SET optimize_and_compare_chain_max_hash_work = 0;
+
 -- 1) No logical error. These queries are otherwise invalid (a `Nothing`-typed value cannot be
 --    materialized), so they must fail with a normal handled exception, never a logical error.
 --    optimize_and_compare_chain path (chassert reached via the seed loop of tryOptimizeAndCompareChain):

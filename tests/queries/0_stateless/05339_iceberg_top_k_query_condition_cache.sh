@@ -36,8 +36,9 @@ function insert()
 insert 1000000
 insert 100000
 
-SETTINGS="use_query_condition_cache = 1, use_top_k_dynamic_filtering = 1, query_plan_max_limit_for_top_k_optimization = 1000,
-    input_format_parquet_use_native_reader_v3 = 1"
+# `use_query_condition_cache_for_top_k` is the feature under test, which CI randomizes off
+SETTINGS="use_query_condition_cache = 1, use_query_condition_cache_for_top_k = 1, use_top_k_dynamic_filtering = 1,
+    query_plan_max_limit_for_top_k_optimization = 1000, input_format_parquet_use_native_reader_v3 = 1"
 
 function run()
 {

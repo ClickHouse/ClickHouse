@@ -1,3 +1,7 @@
+-- Pin (randomized in CI): a spilled `IN` set keeps no explicit elements, so the index analysis
+-- and key lookups by the set that this test checks do not happen.
+SET max_bytes_before_external_set = 0;
+
 SET use_statistics_for_part_pruning = 0;
 SET use_query_cache = 0, use_query_condition_cache = 0;
 SET materialize_statistics_on_insert = 1, max_threads = 1;

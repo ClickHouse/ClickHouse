@@ -7,6 +7,9 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
 
+# The test needs the metadata cache to serve a stale schema, so it must be on.
+CLICKHOUSE_CLIENT="${CLICKHOUSE_CLIENT} --use_iceberg_metadata_files_cache=1"
+
 # Report the INSERT outcome for every outcome, so a run that stops exercising the
 # rejection path fails visibly instead of printing nothing.
 insert_outcome() {

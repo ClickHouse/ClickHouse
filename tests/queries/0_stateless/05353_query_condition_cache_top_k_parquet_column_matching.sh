@@ -29,7 +29,8 @@ ${CLICKHOUSE_CLIENT} --query "DROP TABLE IF EXISTS t_05353"
 # (a `File` table fixes them at `CREATE`).
 ${CLICKHOUSE_CLIENT} --query "CREATE TABLE t_05353 AS file('${DATA_DIR}/a.parquet', Parquet, 'k UInt64')"
 
-SETTINGS="use_query_condition_cache = 1, use_top_k_dynamic_filtering = 1, query_plan_max_limit_for_top_k_optimization = 1000, input_format_parquet_allow_missing_columns = 1"
+# `use_query_condition_cache_for_top_k` is the feature under test, which CI randomizes off
+SETTINGS="use_query_condition_cache = 1, use_query_condition_cache_for_top_k = 1, use_top_k_dynamic_filtering = 1, query_plan_max_limit_for_top_k_optimization = 1000, input_format_parquet_allow_missing_columns = 1"
 
 function run()
 {

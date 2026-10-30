@@ -71,11 +71,12 @@ SELECT number,
         concat('p', toString(number % 7)), number))::JSON
 FROM numbers(500);
 
--- The read method is pinned because a synchronous one turns ReadBuffer::prefetch into a no-op.
+-- The read method is pinned because a synchronous one turns ReadBuffer::prefetch into a no-op. The
+-- experimental `ReaderExecutor` is turned off because it writes nothing to the prefetches log.
 SELECT sum(length(toString(data))) FROM t_json_nested_prefetch
 SETTINGS local_filesystem_read_prefetch = 1, remote_filesystem_read_prefetch = 1,
          local_filesystem_read_method = 'pread_threadpool',
-         remote_filesystem_read_method = 'threadpool',
+         remote_filesystem_read_method = 'threadpool', use_reader_executor = 0,
          enable_filesystem_read_prefetches_log = 1, log_comment = 'nested_prefix_prefetch';
 
 SYSTEM FLUSH LOGS query_log, filesystem_read_prefetches_log;

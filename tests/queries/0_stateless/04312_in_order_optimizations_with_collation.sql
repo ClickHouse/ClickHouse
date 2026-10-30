@@ -7,6 +7,10 @@
 
 -- { echo }
 
+-- The positive EXPLAIN PIPELINE assertions expect LimitBySortedStreamTransform on non-collated
+-- inputs, so the optimization must stay enabled against the runner's randomization.
+SET optimize_limit_by_in_order = 1;
+
 DROP TABLE IF EXISTS test;
 CREATE TABLE test (s String) ENGINE = MergeTree ORDER BY tuple() AS SELECT if(number % 2 = 0, 'a', 'A') FROM numbers(100000);
 
