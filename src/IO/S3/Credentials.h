@@ -246,6 +246,20 @@ public:
         const DB::S3::PocoHTTPClientConfiguration & configuration,
         const Aws::Auth::AWSCredentials & credentials,
         const CredentialsConfiguration & credentials_configuration);
+
+    /// Same as `Aws::Auth::AWSCredentialsProviderChain`, but counts the cases when no provider returns
+    /// credentials and when the chain switches to another provider (i.e. to another identity).
+    Aws::Auth::AWSCredentials GetAWSCredentials() override;
+    void SetNeedRefresh() override;
+
+private:
+    std::shared_ptr<Aws::Auth::AWSCredentialsProvider> cached_provider;
+    /// Unlike `cached_provider`, it is not reset by `SetNeedRefresh`.
+    std::shared_ptr<Aws::Auth::AWSCredentialsProvider> last_used_provider;
+    /// Set if web identity is configured.
+    std::shared_ptr<Aws::Auth::AWSCredentialsProvider> web_identity_provider;
+    Aws::Utils::Threading::ReaderWriterLock cached_provider_lock;
+    LoggerPtr logger;
 };
 
 class AssumeRoleRequest : public Aws::AmazonSerializableWebServiceRequest

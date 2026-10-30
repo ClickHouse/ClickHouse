@@ -83,6 +83,9 @@ struct PocoHTTPClientConfiguration : public Aws::Client::ClientConfiguration
     bool for_disk_s3;
     std::optional<std::string> opt_disk_name;
     HTTPRequestThrottler request_throttler;
+    /// The client fetches credentials (IMDS, STS, SSO): its requests are not throttled and are
+    /// accounted in `S3CredentialsHTTP*` instead of the S3 and DiskS3 metrics.
+    bool for_credentials = false;
 
     NormalizedHTTPHeaderEntries extra_headers;
     String http_client;
@@ -261,6 +264,7 @@ protected:
     const UInt64 http_max_field_value_size = 128 * 1024;
     bool enable_s3_requests_logging = false;
     bool for_disk_s3 = false;
+    bool for_credentials = false;
 
     HTTPRequestThrottler request_throttler;
 
@@ -297,6 +301,7 @@ private:
     mutable std::optional<BearerToken> bearer_token TSA_GUARDED_BY(mutex);
 
     BearerToken requestBearerToken() const TSA_REQUIRES(mutex);
+    BearerToken requestBearerTokenFromMetadataService() const;
     BearerToken requestBearerTokenFromADC() const;
 };
 
