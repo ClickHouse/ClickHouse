@@ -189,29 +189,33 @@ void populatePartAggregationCache(
             Block block;
             while (executor.pull(block))
             {
-                if (block.rows() == 0)
+                /// Track the row count separately from the block: once the last real column is
+                /// removed (e.g. the filter column of `SELECT count() FROM t WHERE f`), `Block::rows`
+                /// reports 0 for a block that still represents rows, and skipping it would cache an
+                /// empty state for a non-empty part. The optimizer guarantees that the read itself
+                /// returns at least one column, so the initial count is the real one.
+                size_t num_rows = block.rows();
+                if (num_rows == 0)
                     continue;
 
                 /// Apply intermediate steps (expressions and filters) to transform
                 /// the block from ReadFromMergeTree format to AggregatingStep input format.
                 for (const auto & action : intermediate_actions)
                 {
-                    action.actions->execute(block);
+                    action.actions->execute(block, num_rows);
 
                     if (!action.filter_column_name.empty())
                     {
                         const auto & filter_col = block.getByName(action.filter_column_name).column;
                         FilterDescription filter_desc(*filter_col);
 
-                        if (filter_desc.countBytesInFilter() == 0)
-                        {
-                            block = aggregator_header.cloneEmpty();
+                        num_rows = filter_desc.countBytesInFilter();
+                        if (num_rows == 0)
                             break;
-                        }
 
                         Block filtered_block;
                         for (const auto & col : block)
-                            filtered_block.insert({filter_desc.filter(*col.column, -1), col.type, col.name});
+                            filtered_block.insert({filter_desc.filter(*col.column, num_rows), col.type, col.name});
 
                         block = std::move(filtered_block);
 
@@ -223,7 +227,7 @@ void populatePartAggregationCache(
                     }
                 }
 
-                if (block.rows() == 0)
+                if (num_rows == 0)
                     continue;
 
                 /// `Aggregator` resolves the key and aggregate-argument column positions from
@@ -240,7 +244,7 @@ void populatePartAggregationCache(
                     aggregator_columns.push_back(block.getByName(header_column.name).column);
 
                 aggregator.executeOnBlock(
-                    std::move(aggregator_columns), 0, block.rows(),
+                    std::move(aggregator_columns), 0, num_rows,
                     data_variants, key_columns, aggregate_columns, no_more_keys,
                     /*adaptive=*/ nullptr);
             }
@@ -289,8 +293,9 @@ void populatePartAggregationCache(
             /// `convertToChunks(final = false)` attaches `data_variants.aggregates_pools` to the
             /// `ColumnAggregateFunction` columns as foreign arenas, and
             /// `ColumnAggregateFunction::allocatedBytes` counts only the pointer array, not those
-            /// arenas. The arenas hold the actual state data (almost all of the memory for states
-            /// such as `uniqExact` or `groupArray`), so charge them to the cache budget explicitly.
+            /// arenas. The arenas hold the variable-size state data, so charge them to the cache
+            /// budget explicitly. States owning memory outside the arenas are rejected by the
+            /// optimizer (`optimizeUsePartAggregationCache`), since the budget cannot see it.
             /// Only meaningful when there are chunks: an empty result block keeps no arenas alive.
             size_t state_arena_bytes = 0;
 

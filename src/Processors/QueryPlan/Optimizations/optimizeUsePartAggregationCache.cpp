@@ -1,6 +1,7 @@
 #include <Processors/QueryPlan/Optimizations/optimizeUsePartAggregationCache.h>
 
 #include <Processors/QueryPlan/Optimizations/projectionsCommon.h>
+#include <AggregateFunctions/IAggregateFunction.h>
 #include <Interpreters/Cache/PartAggregationCache.h>
 #include <Interpreters/Cache/PartAggregationCachePopulator.h>
 #include <Interpreters/Context.h>
@@ -76,6 +77,20 @@ static bool dependsOnUnhashedExternalData(const ActionsDAG & dag)
         if (ActionsDAG::hasUnsafeHiddenLambdaBody(node, reads_external_data))
             return true;
     }
+
+    return false;
+}
+
+/// True when `dag` contains a lambda, either as a `FunctionCapture` node or folded into a constant.
+/// `ActionsDAG::updateHash` hashes a lambda body only in build-independent mode, and the composed
+/// node name that does carry the body text says nothing about the settings captured by the
+/// functions inside it (e.g. how `CAST` parses with `cast_string_to_date_time_mode`). Two queries
+/// with the same text under different settings would then share a cache key.
+static bool hasLambda(const ActionsDAG & dag)
+{
+    for (const auto & node : dag.getNodes())
+        if (node.result_type && WhichDataType(node.result_type).isFunction())
+            return true;
 
     return false;
 }
@@ -254,6 +269,18 @@ void optimizeUsePartAggregationCache(
     if (params.max_rows_to_group_by != 0 || params.overflow_row)
         return;
 
+    /// Cached states are shared by every query that reads the entry, and the cache budget charges
+    /// only the state columns and the aggregation arenas (see `populatePartAggregationCache`).
+    /// A state with a non-trivial destructor owns memory outside the arenas (e.g. the hash set of
+    /// `uniqExact` or the heap buffers of `quantile`), which the budget cannot see, so such states
+    /// could exceed `part_aggregation_cache.max_size_in_bytes` by orders of magnitude. A function
+    /// able to parallelize its merge (`uniqExact`) may also convert its right-hand side state in
+    /// place in `parallelizeMergePrepare`, which would race on the shared cached state. Allow only
+    /// states that are fully bounded and immutable while merging (fail-closed).
+    for (const auto & aggregate : params.aggregates)
+        if (!aggregate.function->hasTrivialDestructor() || aggregate.function->isAbleToParallelizeMerge())
+            return;
+
     /// Note: `params.max_bytes_before_external_group_by` cannot be used as a gate here. It defaults
     /// to a non-zero threshold derived from `max_bytes_ratio_before_external_group_by` (a fraction
     /// of available memory) for essentially every query, so gating on it would disable the
@@ -290,14 +317,14 @@ void optimizeUsePartAggregationCache(
     for (const auto & action : intermediate_actions)
     {
         const auto & dag = action.actions->getActionsDAG();
-        if (dag.hasNonDeterministic() || dag.hasStatefulFunctions() || dependsOnUnhashedExternalData(dag))
+        if (dag.hasNonDeterministic() || dag.hasStatefulFunctions() || dependsOnUnhashedExternalData(dag) || hasLambda(dag))
             return;
     }
 
     const auto & source_filter_dag = reading->getFilterActionsDAG();
     if (source_filter_dag
         && (source_filter_dag->hasNonDeterministic() || source_filter_dag->hasStatefulFunctions()
-            || dependsOnUnhashedExternalData(*source_filter_dag)))
+            || dependsOnUnhashedExternalData(*source_filter_dag) || hasLambda(*source_filter_dag)))
         return;
 
     /// The populator reads each part's data directly from storage with the storage columns that the
