@@ -776,6 +776,10 @@ void IMergeTreeDataPart::setIndex(Columns index_columns)
     MemoryTrackerBlockerInThread not_charged_to_the_query;
     ScopedJemallocThreadArena mergetree_arena_scope(JemallocMergeTreeArena::getArenaIndex());
     optimizeIndexColumns(index_granularity->getMarksCount(), index_columns);
+    /// The index columns are shared with the readers and weighed by `PrimaryIndexCache`,
+    /// so create the null maps now instead of letting a reader create them lazily.
+    for (const auto & column : index_columns)
+        materializeNullMapsRecursively(*column);
     index = std::make_shared<Index>(std::move(index_columns));
 }
 
@@ -2059,6 +2063,9 @@ std::shared_ptr<IMergeTreeDataPart::Index> IMergeTreeDataPart::loadIndex() const
 
     for (const auto & column : loaded_index)
     {
+        /// The index columns are shared with the readers and weighed by `PrimaryIndexCache`,
+        /// so create the null maps now instead of letting a reader create them lazily.
+        materializeNullMapsRecursively(*column);
         column->shrinkToFit();
         column->protect();
         total_bytes += column->byteSize();
