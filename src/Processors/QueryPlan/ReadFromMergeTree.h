@@ -555,7 +555,7 @@ public:
     void enableParallelReadingFromReplicasForSerialization()
     {
         is_parallel_reading_from_replicas = true;
-        coordinated_under_storage_name = true;
+        query_info.parallel_replicas_coordinated_under_storage_name = true;
     }
 
     bool supportsDataflowStatisticsCollection() const override { return !isQueryWithFinal(); }
@@ -743,8 +743,6 @@ public:
 private:
     /// The name this read is coordinated under, which every replica must announce identically.
     String getParallelReplicasStreamId() const;
-    /// Set for a read shipped in a plan fragment, see `enableParallelReadingFromReplicasForSerialization`.
-    bool coordinated_under_storage_name = false;
 
     /// What removing the columns at `unneeded_output_positions` comes to, worked out without changing anything.
     struct ColumnPruning
