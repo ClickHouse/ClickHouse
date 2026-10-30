@@ -16,9 +16,13 @@ namespace DB
   * From type String to type LowCardinality(String) returns true.
   * From type LowCardinality(String) to type String returns true.
   * From type String to type UInt8 returns false.
+  * From type UInt8 to type Bool returns false, also inside Tuple, Array or Map.
   * From type Decimal(38, 0) to type Decimal(38, 30) returns false: 10^9 does not fit at scale 30.
   */
 bool canBeSafelyCast(const DataTypePtr & from_type, const DataTypePtr & to_type);
+
+/// Whether `type` or a type nested in it is `Bool`, which `equals` does not tell from `UInt8`.
+bool typeTreeContainsBool(const IDataType & type);
 
 /** Returns true if converting a column from `from` to `to` keeps the order of its values AND maps distinct
   * values to distinct ones. A stream sorted by the `from` column is still sorted after the conversion, and
