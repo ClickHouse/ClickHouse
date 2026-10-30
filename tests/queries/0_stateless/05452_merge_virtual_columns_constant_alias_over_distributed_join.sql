@@ -2,6 +2,7 @@
 -- substitute read, as a column the child does not have. With a `JOIN` or `ARRAY JOIN` over a
 -- `Distributed` child, the substitute must be part of the child query sent to the shards.
 
+DROP TABLE IF EXISTS m2;
 DROP TABLE IF EXISTS m_nested;
 DROP TABLE IF EXISTS m;
 DROP TABLE IF EXISTS dist;
@@ -77,6 +78,25 @@ SELECT _table, y FROM m ARRAY JOIN [1] AS one;
 SELECT _table, y, n FROM m JOIN (SELECT 1 AS n) AS t ON m.y = t.n;
 SELECT _table, y, p FROM m ARRAY JOIN [1] AS one;
 
+DROP TABLE m;
+DROP TABLE dist;
+DROP TABLE child;
+
+-- A subcolumn of a constant alias reads no column of the child either.
+CREATE TABLE child (p UInt8, a Tuple(k UInt8) ALIAS tuple(1), arr Array(UInt8) ALIAS [1, 2], n Nullable(UInt8) ALIAS NULL) ENGINE = MergeTree ORDER BY p;
+INSERT INTO child (p) VALUES (7), (8);
+CREATE TABLE dist AS child ENGINE = Distributed(test_shard_localhost, currentDatabase(), child);
+CREATE TABLE m (a Tuple(k UInt8), arr Array(UInt8), n Nullable(UInt8)) ENGINE = Merge(currentDatabase(), '^dist$');
+CREATE TABLE m2 (a Tuple(k UInt8)) ENGINE = Merge(currentDatabase(), '^m$');
+
+SELECT _table, a.k FROM m ARRAY JOIN [1] AS one;
+SELECT _database = currentDatabase(), a.k FROM m ARRAY JOIN [1] AS one;
+SELECT _table, a.k, x FROM m JOIN (SELECT 1 AS x) AS t ON m.a.k = t.x;
+SELECT _table, arr.size0 FROM m ARRAY JOIN [1] AS one;
+SELECT _table, n.null FROM m ARRAY JOIN [1] AS one;
+SELECT _table, a.k FROM m2 ARRAY JOIN [1] AS one;
+
+DROP TABLE m2;
 DROP TABLE m;
 DROP TABLE dist;
 DROP TABLE child;

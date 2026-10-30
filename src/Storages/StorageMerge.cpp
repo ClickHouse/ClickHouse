@@ -1399,8 +1399,14 @@ std::vector<ReadFromMerge::ChildPlan> ReadFromMerge::createChildrenPlans(SelectQ
                 if (!name_in_child)
                     continue;
 
-                const auto column_default = storage_metadata_snapshot->getColumns().getDefault(*name_in_child);
-                if (!column_default || column_default->kind != ColumnDefaultKind::Alias || !column_default->expression)
+                /// A subcolumn of an `ALIAS` column, such as `a.k` of `a Tuple(k UInt8) ALIAS tuple(1)`, has no
+                /// default of its own: it is computed from the expression of its parent as well.
+                const auto & child_storage_columns = storage_metadata_snapshot->getColumns();
+                const auto column_default = child_storage_columns.getDefault(*name_in_child);
+                const bool is_alias = column_default && column_default->kind == ColumnDefaultKind::Alias && column_default->expression;
+                const bool is_alias_subcolumn = !child_storage_columns.has(*name_in_child)
+                    && isSubcolumnOfAliasColumn(child_storage_columns, *name_in_child);
+                if (!is_alias && !is_alias_subcolumn)
                 {
                     reads_child_column = true;
                     break;
