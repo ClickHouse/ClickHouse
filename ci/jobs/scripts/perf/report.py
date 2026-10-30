@@ -579,6 +579,14 @@ if args.report == "main":
 
     add_unstable_queries()
 
+    # Written by performance_tests.py only, not by the standalone compare.sh flows.
+    if os.path.exists("thread-stack-alignment.tsv"):
+        addSimpleTable(
+            "Thread Stack Alignment",
+            ["Server", "Threads in futex wait", "Threads by sp mod 64, or error"],
+            tsvRows("thread-stack-alignment.tsv"),
+        )
+
     skipped_tests_rows = tsvRows("analyze/skipped-tests.tsv")
     addSimpleTable("Skipped Tests", ["Test", "Reason"], skipped_tests_rows)
 
