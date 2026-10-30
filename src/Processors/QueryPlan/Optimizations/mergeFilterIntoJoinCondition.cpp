@@ -280,55 +280,6 @@ ActionsDAG::NodeRawConstPtrs getConjunctsInWrittenOrder(const ActionsDAG::Node *
     return conjuncts;
 }
 
-/// A conjunct moved into the join is evaluated on the join inputs, before every conjunct left in the
-/// filter and without `and`'s short-circuit guard. A deterministic function can still throw
-/// (`toInt64('bad')`, a `Decimal` compared with a `Float64`, `toDateTime` of a string).
-bool subtreeCanThrow(const ActionsDAG::Node * root)
-{
-    std::vector<const ActionsDAG::Node *> stack{root};
-    std::unordered_set<const ActionsDAG::Node *> visited;
-
-    while (!stack.empty())
-    {
-        const auto * current = stack.back();
-        stack.pop_back();
-
-        if (!visited.insert(current).second)
-            continue;
-
-        if (current->type == ActionsDAG::ActionType::ARRAY_JOIN)
-            return true;
-
-        if (current->type == ActionsDAG::ActionType::FUNCTION && current->function_base && !current->column)
-        {
-            DataTypesWithConstInfo arguments;
-            arguments.reserve(current->children.size());
-            for (const auto * child : current->children)
-                arguments.push_back({child->result_type, child->column != nullptr});
-
-            if (current->function_base->canThrow(arguments))
-                return true;
-
-            if (const auto * body = getLambdaBody(*current->function_base))
-                for (const auto & inner : body->getNodes())
-                    stack.push_back(&inner);
-        }
-
-        for (const auto * child : current->children)
-            stack.push_back(child);
-    }
-
-    return false;
-}
-
-/// `rowNumberInAllBlocks`, `rand`, `sleepEachRow` and `arrayJoin` change their result when fewer rows
-/// reach them. Moving another conjunct of the same filter into the join removes those rows first.
-bool conjunctObservesRowCount(const ActionsDAG::Node * conjunct)
-{
-    auto dag = ActionsDAG::cloneSubDAG({conjunct}, true);
-    return QueryPlanOptimizations::isSensitiveToEvaluationCount(dag) || dag.hasArrayJoin();
-}
-
 std::pair<JoinConditionParts, bool> extractActionsForJoinCondition(
     ActionsDAG & filter_dag,
     const std::string & filter_name,
@@ -362,18 +313,9 @@ std::pair<JoinConditionParts, bool> extractActionsForJoinCondition(
     ActionsDAG::NodeRawConstPtrs rejected_conjuncts;
     rejected_conjuncts.reserve(conjuncts_list.size());
 
-    bool filter_observes_row_count = false;
-    if (allow_range_predicates)
-    {
-        for (const auto * conjunct : conjuncts_list)
-        {
-            if (conjunctObservesRowCount(conjunct))
-            {
-                filter_observes_row_count = true;
-                break;
-            }
-        }
-    }
+    const bool block_range_predicates = !allow_range_predicates
+        || filter_dag.hasArrayJoin()
+        || QueryPlanOptimizations::isSensitiveToEvaluationCount(filter_dag);
 
     auto is_cross_side = [&](const ActionsDAG::Node * lhs, const ActionsDAG::Node * rhs)
     {
@@ -436,16 +378,12 @@ std::pair<JoinConditionParts, bool> extractActionsForJoinCondition(
                 || conjunct->function_base->getName() == "greater"
                 || conjunct->function_base->getName() == "greaterOrEquals")
             && conjunct->children.size() == 2;
-        if (allow_range_predicates && !filter_observes_row_count && is_range && is_cross_side(conjunct->children[0], conjunct->children[1])
-            && !subtreeCanThrow(conjunct))
+        if (!block_range_predicates && is_range && is_cross_side(conjunct->children[0], conjunct->children[1])
+            && ActionsDAG::canBeMovedToTheFrontOfAndChain(conjunct))
         {
-            auto range_dag = ActionsDAG::cloneSubDAG({ conjunct }, true);
-            if (!QueryPlanOptimizations::isSensitiveToEvaluationCount(range_dag) && !range_dag.hasArrayJoin())
-            {
-                result.emplace_back(std::move(range_dag));
-                conjuncts_to_replace.insert(conjunct);
-                continue;
-            }
+            result.emplace_back(ActionsDAG::cloneSubDAG({ conjunct }, true));
+            conjuncts_to_replace.insert(conjunct);
+            continue;
         }
 
         rejected_conjuncts.push_back(conjunct);

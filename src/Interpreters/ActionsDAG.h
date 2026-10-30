@@ -345,6 +345,9 @@ public:
     bool hasCorrelatedColumns() const noexcept;
     bool hasArrayJoin() const noexcept;
     bool hasStatefulFunctions() const;
+
+    /// `FilterStep` uses this before an `and` atom is evaluated on more rows.
+    static bool canBeMovedToTheFrontOfAndChain(const Node * node);
     /// Returns true for stateful functions or functions non-deterministic within the query,
     /// including functions in lambda bodies.
     bool hasNonDeterministicOrStatefulFunctions() const;
