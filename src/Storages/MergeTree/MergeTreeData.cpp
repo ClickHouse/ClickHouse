@@ -13795,7 +13795,7 @@ MergeTreeData & MergeTreeData::checkStructureAndGetMergeTreeData(IStorage & sour
         != query_to_string(src_snapshot->getPrimaryKey().expression_list_ast))
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Tables have different primary key");
 
-    const auto check_definitions = [this](const auto & my_descriptions, const auto & src_descriptions)
+    const auto check_definitions = [this](const auto & my_descriptions, const auto & src_descriptions, const auto & to_string)
     {
         bool strict_match = (*getSettings())[MergeTreeSetting::enforce_index_structure_match_on_partition_manipulation];
         if ((my_descriptions.size() < src_descriptions.size()) ||
@@ -13804,19 +13804,34 @@ MergeTreeData & MergeTreeData::checkStructureAndGetMergeTreeData(IStorage & sour
 
         std::unordered_set<std::string> my_query_strings;
         for (const auto & description : my_descriptions)
-            my_query_strings.insert(description.definition_ast->formatIgnoringRedundantParentheses());
+            my_query_strings.insert(to_string(description));
 
         for (const auto & src_description : src_descriptions)
-            if (!my_query_strings.contains(src_description.definition_ast->formatIgnoringRedundantParentheses()))
+            if (!my_query_strings.contains(to_string(src_description)))
                 return false;
 
         return true;
     };
 
-    if (!check_definitions(my_snapshot->getSecondaryIndices(), src_snapshot->getSecondaryIndices()))
+    /// The definition of an index over an ALIAS column, including an implicit index, names the alias,
+    /// but its files are built from the alias expression. The same definition over different alias
+    /// expressions must not let index files of one table be used by the other, so the expanded
+    /// expression is compared as well.
+    const auto index_to_string = [](const IndexDescription & index)
+    {
+        return index.definition_ast->formatIgnoringRedundantParentheses() + "\n"
+            + (index.expression_list_ast ? index.expression_list_ast->formatIgnoringRedundantParentheses() : "");
+    };
+
+    const auto projection_to_string = [](const ProjectionDescription & projection)
+    {
+        return projection.definition_ast->formatIgnoringRedundantParentheses();
+    };
+
+    if (!check_definitions(my_snapshot->getSecondaryIndices(), src_snapshot->getSecondaryIndices(), index_to_string))
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Tables have different secondary indices");
 
-    if (!check_definitions(my_snapshot->getProjections(), src_snapshot->getProjections()))
+    if (!check_definitions(my_snapshot->getProjections(), src_snapshot->getProjections(), projection_to_string))
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Tables have different projections");
 
     return *src_data;
