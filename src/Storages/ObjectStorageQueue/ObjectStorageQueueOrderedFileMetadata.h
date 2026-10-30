@@ -6,6 +6,7 @@
 #include <Common/logger_useful.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <filesystem>
+#include <functional>
 
 #include <boost/noncopyable.hpp>
 
@@ -108,6 +109,9 @@ public:
 
     /// Remove the paths which keeper says are terminal (already processed, or failed),
     /// recording the state of each removed path in `terminal_states`.
+    /// A path covered by the processed pointer is recorded as `Processed` without a keeper
+    /// request, unless `needs_failed_node_check` returns true for it: then its `failed` node
+    /// is read as well, because a `failed` node has precedence over the processed pointer.
     static void filterOutProcessedAndFailed(
         std::vector<std::string> & paths,
         const std::filesystem::path & zk_path_,
@@ -116,6 +120,7 @@ public:
         ObjectStorageQueueBucketingMode bucketing_mode,
         ObjectStorageQueuePartitioningMode partitioning_mode,
         const ObjectStorageQueueFilenameParser * parser,
+        const std::function<bool(const std::string & path)> & needs_failed_node_check,
         std::unordered_map<std::string, FileTerminalState> & terminal_states,
         LoggerPtr log);
 

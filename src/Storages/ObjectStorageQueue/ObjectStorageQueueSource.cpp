@@ -680,6 +680,9 @@ void ObjectStorageQueueSource::FileIterator::filterProcessableFiles(ObjectInfos 
             metadata->getBucketingMode(),
             metadata->getPartitioningMode(),
             metadata->getFilenameParser(),
+            /// Only a cached record needs its state reconciled with a `failed` node:
+            /// the terminal states of the other files are not used below.
+            [&](const std::string & path) { return metadata->tryGetFileStatus(path) != nullptr; },
             terminal_states,
             log);
 

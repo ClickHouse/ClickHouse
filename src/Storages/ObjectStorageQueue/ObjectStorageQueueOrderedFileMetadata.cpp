@@ -1135,6 +1135,7 @@ void ObjectStorageQueueOrderedFileMetadata::filterOutProcessedAndFailed(
     ObjectStorageQueueBucketingMode bucketing_mode,
     ObjectStorageQueuePartitioningMode partitioning_mode,
     const ObjectStorageQueueFilenameParser * parser,
+    const std::function<bool(const std::string & path)> & needs_failed_node_check,
     std::unordered_map<std::string, FileTerminalState> & terminal_states,
     LoggerPtr log_)
 {
@@ -1206,11 +1207,17 @@ void ObjectStorageQueueOrderedFileMetadata::filterOutProcessedAndFailed(
         {
             LOG_TEST(log_, "Skipping file {}: Processed", path);
             terminal_states.emplace(path, FileTerminalState{.state = FileStatus::State::Processed});
+
+            /// A `failed` node has precedence over the bucket-level processed pointer:
+            /// a later file may advance that pointer while a failed node for an earlier
+            /// file remains in Keeper. But the file is skipped either way, so the failed
+            /// node is read only when its state matters for the caller (a cached record
+            /// to reconcile). Otherwise every listing pass would read a failed node for
+            /// each file of the retained processed history.
+            if (!needs_failed_node_check(path))
+                continue;
         }
 
-        /// A `failed` node has precedence over the bucket-level processed pointer.
-        /// A later file may advance that pointer while a failed node for an earlier
-        /// file remains in Keeper.
         failed_paths.push_back(zk_path_ / "failed" / getNodeName(path));
         check_paths_indexes.push_back(i);
         processed_by_pointer.push_back(is_processed_by_pointer);
