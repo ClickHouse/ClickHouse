@@ -3450,9 +3450,11 @@ CustomDiskRegistrationPtr MergeTreeSettings::resolveDiskSetting(SettingChange & 
     {
         /// The single-disk storage policy implicitly created for a custom disk can be named directly. Keep
         /// the disk registered for as long as the table uses the policy, as if it was named in `disk`.
+        /// The policy is required to exist already: if it was looked up separately from the registration,
+        /// a table defining the disk could create it in between, and this table would use it unregistered.
         String policy_name;
         if (change.value.tryGet<String>(policy_name) && policy_name.starts_with(StoragePolicySelector::TMP_STORAGE_POLICY_PREFIX))
-            return context->tryGetCustomDiskRegistration(policy_name.substr(strlen(StoragePolicySelector::TMP_STORAGE_POLICY_PREFIX)));
+            return context->getCustomDiskRegistrationOfStoragePolicy(policy_name);
         return nullptr;
     }
 
