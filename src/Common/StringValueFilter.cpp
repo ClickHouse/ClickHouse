@@ -168,8 +168,7 @@ void StringValueFilter::updateStatsImpl(size_t checked, size_t replaced, size_t 
     ProfileEvents::increment(ProfileEvents::StringValueFilterValuesReplaced, replaced);
     ProfileEvents::increment(ProfileEvents::StringValueFilterBytesSkipped, replaced_bytes);
 
-    /// `values_replaced` is updated before and read after `values_checked`, so `total_replaced`
-    /// includes the replaced values of every batch counted in `total_checked`.
+    /// Updated before and read after `values_checked`: `total_replaced` covers every batch counted in `total_checked`.
     values_replaced.fetch_add(replaced, std::memory_order_relaxed);
     size_t total_checked = values_checked.fetch_add(checked, std::memory_order_acq_rel) + checked;
     size_t total_replaced = values_replaced.load(std::memory_order_relaxed);
