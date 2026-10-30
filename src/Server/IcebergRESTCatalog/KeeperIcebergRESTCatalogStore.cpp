@@ -18,7 +18,6 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
     extern const int ICEBERG_CATALOG_CONCURRENT_UPDATE;
     extern const int INCORRECT_DATA;
-    extern const int KEEPER_EXCEPTION;
 }
 
 namespace
