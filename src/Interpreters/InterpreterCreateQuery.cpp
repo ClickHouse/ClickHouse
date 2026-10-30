@@ -183,6 +183,7 @@ namespace FailPoints
     extern const char atomic_populate_pause_before_subscription[];
     extern const char atomic_populate_pause_after_view_publication[];
     extern const char attach_database_fail_after_load[];
+    extern const char create_database_fail_rollback_metadata_removal[];
     extern const char atomic_populate_pause_before_source_guard[];
     extern const char atomic_populate_pause_before_population[];
     extern const char attach_from_path_pause_before_relocation[];
@@ -451,9 +452,11 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
     /// the entries of the database and of its tables in the detached list, which nothing here touches,
     /// and those entries keep refusing the drop while the metadata can be attached back (a database
     /// cannot be detached permanently, so every database with metadata is attached at the server start).
-    bool created = false;
+    /// The entries are kept once the database is created, and also when a failed create could not be rolled
+    /// back completely: an attached database or its published metadata still references the collection.
+    bool keep_dependencies = false;
     SCOPE_EXIT({
-        if (!created)
+        if (!keep_dependencies)
             NamedCollectionFactory::instance().removeDependencies(StorageID::createDatabaseOnly(database_name));
     });
 
@@ -530,18 +533,26 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
     }
     catch (...)
     {
+        /// If the rollback below throws, the database stays attached or its metadata stays on disk,
+        /// to be replayed by the next server start, so the dependency must survive.
+        keep_dependencies = true;
         if (renamed)
         {
             chassert(default_db_disk->existsFile(metadata_file_path));
+            fiu_do_on(FailPoints::create_database_fail_rollback_metadata_removal,
+            {
+                throw Exception(ErrorCodes::FAULT_INJECTED, "Injected fault: failed to remove the metadata of the database on rollback");
+            });
             default_db_disk->removeFileIfExists(metadata_file_path);
         }
         if (added)
             DatabaseCatalog::instance().detachDatabase(getContext(), database_name, false, false);
+        keep_dependencies = false;
 
         throw;
     }
 
-    created = true;
+    keep_dependencies = true;
     return {};
 }
 

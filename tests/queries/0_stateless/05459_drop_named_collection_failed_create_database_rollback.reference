@@ -1,0 +1,7 @@
+--- CREATE DATABASE fails after publication and its rollback fails to remove the metadata ---
+FAULT_INJECTED
+1
+--- the surviving database still holds the collection ---
+1
+--- the collection is released once the database is dropped ---
+0
