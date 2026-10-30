@@ -192,7 +192,7 @@ public:
 
     bool isConnected() const override { return true; }
 
-    bool checkConnected(const ConnectionTimeouts & /*timeouts*/) override { return true; }
+    bool checkConnected(const ConnectionTimeouts & timeouts) override;
 
     bool checkConnectedWithoutRoundTrip() override { return true; }
 
