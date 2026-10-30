@@ -2,6 +2,7 @@
 #include "config.h"
 
 #include <Common/Documentation.h>
+#include <DataTypes/DataTypeMapHelpers.h>
 #include <Storages/IndicesDescription.h>
 #include <Interpreters/ActionsDAG.h>
 #include <Storages/MergeTree/Compaction/PartProperties.h>
@@ -80,6 +81,12 @@ class ActionsDAG;
 class Block;
 struct MergeTreeWriterSettings;
 struct MergeTreeDataPartChecksums;
+
+/// Is a value written with @from decoded identically when read back as @to? Used for the skip index
+/// granules and the column statistics of a part that stores a column with a type different from the
+/// current metadata (e.g. after extending an `Enum`). Fail-closed: a conversion not known to keep the
+/// representation is treated as incompatible.
+bool isRepresentationPreservingConversion(const IDataType * from, const IDataType * to);
 
 namespace ErrorCodes
 {
@@ -391,7 +398,11 @@ struct IMergeTreeIndex
     Names getColumnsRequiredForIndexCalc() const;
     const NamesAndTypesList & getColumnsWithTypesRequiredForIndexCalc() const;
 
-    NameSet getColumnsShadowingMapSubcolumns() const;
+    /// Tells whether a name shaped like a Map key subcolumn `<map>.key_<k>` belongs to a column or a
+    /// subcolumn of the table instead. It looks the name up in the metadata snapshot on demand rather
+    /// than collecting such names: an index condition is built per query (and per partition), and
+    /// the table may have thousands of columns.
+    IsShadowingColumn getMapSubcolumnShadowingCheck() const;
 
     StorageMetadataPtr metadata_snapshot;
     const IndexDescription & index;
