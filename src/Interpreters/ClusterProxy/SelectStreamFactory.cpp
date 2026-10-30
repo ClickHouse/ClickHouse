@@ -4,6 +4,7 @@
 #include <Interpreters/Cluster.h>
 #include <Interpreters/ClusterProxy/SelectStreamFactory.h>
 #include <Interpreters/ClusterProxy/executeQuery.h>
+#include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Storages/StorageProxy.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
@@ -14,6 +15,7 @@
 #include <Processors/QueryPlan/DistributedCreateLocalPlan.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
 #include <Processors/QueryPlan/QueryPlan.h>
+#include <Storages/StorageDistributed.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Storages/removeGroupingFunctionSpecializations.h>
 #include <TableFunctions/TableFunctionFactory.h>
@@ -41,6 +43,7 @@ namespace Setting
     extern const SettingsBool serialize_query_plan;
     extern const SettingsBool skip_unavailable_shards;
     extern const SettingsUInt64 distributed_group_by_no_merge;
+    extern const SettingsUInt64 allow_experimental_parallel_reading_from_replicas;
 }
 
 namespace ErrorCodes
@@ -108,10 +111,32 @@ void SelectStreamFactory::createForShardImpl(
     AdditionalShardFilterGenerator shard_filter_generator,
     const UnavailableShardTrackerPtr & unavailable_shard_tracker) const
 {
-    auto emplace_local_stream = [&]()
+    ContextPtr context_without_parallel_replicas;
+
+    /// `local_storage` is the table the local plan will read, null when it is not resolved.
+    auto emplace_local_stream = [&](const StoragePtr & local_storage)
     {
+        /// A local plan does not go through `ReadFromRemote`, so nothing sets `cluster_for_parallel_replicas`
+        /// to this hop's cluster and the read would be scoped by another one. Keep parallel replicas only
+        /// for a nested `Distributed`, which sets up its own cluster. A `View` over a `Distributed` is left
+        /// out: it reads without parallel replicas, as it did before.
+        auto local_context = context;
+        if (context->canUseTaskBasedParallelReplicas()
+            && !castStorage<StorageDistributed>(local_storage, DeferredTable::Load))
+        {
+            if (!context_without_parallel_replicas)
+            {
+                auto mutable_context = Context::createCopy(context);
+                Settings settings_without_parallel_replicas = mutable_context->getSettingsCopy();
+                settings_without_parallel_replicas[Setting::allow_experimental_parallel_reading_from_replicas] = 0;
+                mutable_context->setSettings(settings_without_parallel_replicas);
+                context_without_parallel_replicas = std::move(mutable_context);
+            }
+            local_context = context_without_parallel_replicas;
+        }
+
         local_plans.emplace_back(createLocalPlan(
-            query_ast, *header, context, processed_stage, shard_info.shard_num, shard_count));
+            query_ast, *header, local_context, processed_stage, shard_info.shard_num, shard_count));
     };
 
     // If lazy is true, a lazy pipe will be created. It will try to use the local replica and, if not possible, will use DelayedSource for reading from remote replica.
@@ -206,7 +231,7 @@ void SelectStreamFactory::createForShardImpl(
                     unavailable_shard_tracker->onShardSkipped();
             }
             else
-                emplace_local_stream();  /// Let it fail the usual way.
+                emplace_local_stream(main_table_storage);  /// Let it fail the usual way.
 
             return;
         }
@@ -216,7 +241,7 @@ void SelectStreamFactory::createForShardImpl(
         if (!replicated_storage)
         {
             /// Table is not replicated, use local server.
-            emplace_local_stream();
+            emplace_local_stream(main_table_storage);
             return;
         }
 
@@ -224,7 +249,7 @@ void SelectStreamFactory::createForShardImpl(
 
         if (!max_allowed_delay)
         {
-            emplace_local_stream();
+            emplace_local_stream(main_table_storage);
             return;
         }
 
@@ -232,7 +257,7 @@ void SelectStreamFactory::createForShardImpl(
 
         if (local_delay < max_allowed_delay)
         {
-            emplace_local_stream();
+            emplace_local_stream(main_table_storage);
             return;
         }
 
@@ -259,7 +284,7 @@ void SelectStreamFactory::createForShardImpl(
         if (!shard_info.hasRemoteConnections())
         {
             /// There are no remote replicas but we are allowed to fall back to stale local replica.
-            emplace_local_stream();
+            emplace_local_stream(main_table_storage);
             return;
         }
 

@@ -47,11 +47,15 @@ public:
         std::shared_ptr<const Blocks> blocks;
         /// The exact number of rows in `blocks`.
         size_t rows = 0;
+        /// The identity of the blocks for the query condition cache, see `BlocksWithCounts`.
+        UInt64 generation = 0;
+        UInt64 first_block_number = 0;
     };
 
     StorageSnapshotPtr getStorageSnapshot(const StorageMetadataPtr & metadata_snapshot, ContextPtr query_context) const override;
 
-    const MemorySettings & getMemorySettingsRef() const { return *memory_settings; }
+    /// A snapshot: `ALTER ... MODIFY SETTING` installs a new version instead of changing this one, so hold it while reading.
+    MultiVersion<MemorySettings>::Version getMemorySettings() const { return memory_settings.get(); }
 
     void readImpl(
         QueryPlan & query_plan,
@@ -152,6 +156,9 @@ public:
       */
     void delayReadForGlobalSubqueries() { delay_read_for_global_subqueries = true; }
 
+    /// Marks a table created with `CREATE TEMPORARY TABLE`, which is subject to `max_temporary_table_memory_usage`.
+    void markAsTemporaryTable() { is_temporary_table = true; }
+
     /// Stored as a weak_ptr to break the reference cycle: MaterializedCTE owns the StorageMemory
     /// (via its `storage` and `table_holder` members), and this back-pointer lets us recover the
     /// CTE descriptor from the storage. If we kept a shared_ptr here, neither object would ever
@@ -163,7 +170,7 @@ private:
     static VirtualColumnsDescription createVirtuals();
 
     /// Restores the data of this table from backup.
-    void restoreDataImpl(const BackupPtr & backup, const String & data_path_in_backup);
+    void restoreDataImpl(const BackupPtr & backup, const String & data_path_in_backup, const ContextPtr & context);
 
     /// The blocks of the table together with the exact number of rows and bytes in them.
     /// The counters are a part of the same object, so they are published atomically with the
@@ -175,6 +182,17 @@ private:
         Blocks blocks;
         size_t rows = 0;
         size_t bytes = 0;
+
+        /// The identity of the blocks for the query condition cache: block `i` is block number
+        /// `first_block_number + i` of the generation, and the same number of the same generation is
+        /// always the same data. A state that is derived from the previous one by appending blocks or by
+        /// removing them from the front (inserts, `max_rows_to_keep`, ...) is a copy that keeps the
+        /// generation; any other state (e.g. after a mutation or `TRUNCATE`) is constructed anew and
+        /// gets a new generation.
+        UInt64 generation = nextGeneration();
+        UInt64 first_block_number = 0;
+
+        static UInt64 nextGeneration();
     };
 
     /// Table data belongs to the server: what this drops is not credited to the query, what it keeps is left to the server.
@@ -187,9 +205,10 @@ private:
     mutable std::mutex mutex;
 
     bool delay_read_for_global_subqueries = false;
+    bool is_temporary_table = false;
     MaterializedCTEWeakPtr materialized_cte;
 
-    std::unique_ptr<MemorySettings> memory_settings;
+    MultiVersion<MemorySettings> memory_settings;
 
     friend class ReadFromMemoryStorageStep;
 };

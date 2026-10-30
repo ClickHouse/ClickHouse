@@ -282,6 +282,8 @@ SELECT d::Nullable(Float64) FROM test;
 └──────────────────────────────┘
 ```
 
+A type that cannot be converted to the destination type causes an error only if the column contains values of this type.
+
 ### Converting a Variant column to Dynamic column {#converting-a-variant-column-to-dynamic-column}
 
 ```sql

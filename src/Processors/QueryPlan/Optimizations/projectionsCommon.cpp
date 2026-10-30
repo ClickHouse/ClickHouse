@@ -6,6 +6,7 @@
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Processors/QueryPlan/Optimizations/projectionsCommon.h>
+#include <Storages/MergeTree/HypotheticalProjection.h>
 
 #include <Core/Settings.h>
 #include <DataTypes/DataTypeLowCardinality.h>
@@ -26,6 +27,8 @@ namespace Setting
     extern const SettingsBool aggregate_functions_null_for_empty;
     extern const SettingsBool apply_mutations_on_fly;
     extern const SettingsBool apply_patch_parts;
+    extern const SettingsBool force_index_by_date;
+    extern const SettingsBool force_primary_key;
     extern const SettingsMaxThreads max_threads;
     extern const SettingsUInt64 select_sequential_consistency;
     extern const SettingsBool parallel_replicas_local_plan;
@@ -67,6 +70,9 @@ std::expected<void, std::string> canUseProjectionForReadingStep(ReadFromMergeTre
 
     if (reading->isQueryWithFinal())
         return std::unexpected("the query uses FINAL");
+
+    if (reading->hasLazilyReadColumns())
+        return std::unexpected("some columns of the read are read lazily by their part offsets");
 
     if (reading->isQueryWithSampling())
         return std::unexpected("the query uses SAMPLE");
@@ -364,9 +370,68 @@ static bool projectionPartHasRequiredColumns(
     return true;
 }
 
+/// Pending metadata mutations (`RENAME COLUMN` / `DROP COLUMN`) are applied at read time by the
+/// `AlterConversions` of the parent part only; a projection part is read without them. So until such a
+/// mutation rewrites the part, its projection part may still carry a column the metadata no longer has
+/// under that name: after `DROP COLUMN c, ADD COLUMN c` the projection would return the old values of
+/// `c` instead of the new column's default. Such a part is read from the parent part instead.
+/// Only the mutations touching a column the projection holds or the read needs (for `RENAME COLUMN`,
+/// both the old and the new name) matter: a pending drop of an unrelated column keeps the projection usable.
+static bool partHasPendingMetadataMutationsOnColumns(
+    const MergeTreeData::MutationsSnapshotPtr & mutations_snapshot,
+    const MergeTreeData::DataPartPtr & part,
+    const ProjectionDescription & projection,
+    const Names & required_column_names)
+{
+    if (!mutations_snapshot->hasMetadataMutations())
+        return false;
+
+    auto is_affected = [&](const String & name)
+    {
+        if (name.empty())
+            return false;
+        return std::find(projection.required_columns.begin(), projection.required_columns.end(), name) != projection.required_columns.end()
+            || projection.sample_block.has(name)
+            || std::find(required_column_names.begin(), required_column_names.end(), name) != required_column_names.end();
+    };
+
+    /// Only the mutations newer than the part apply to it: the snapshot may also hold finished ones.
+    for (const auto & command : mutations_snapshot->getOnFlyMutationCommandsForPart(part))
+    {
+        if (!AlterConversions::isSupportedMetadataMutation(command.type))
+            continue;
+
+        if (is_affected(command.column_name) || is_affected(command.rename_to))
+            return true;
+    }
+
+    return false;
+}
+
+/// Projection candidate analysis is an optional optimization: when the filter does not constrain
+/// a projection's primary key, the candidate is rejected, not the query. The `force_primary_key`
+/// and `force_index_by_date` guardrails apply to the main table read, which is analyzed with the
+/// original context, so disable them for the analysis of projection parts. Otherwise a query
+/// whose filter uses the main table's primary key fails with `INDEX_NOT_USED` as soon as the
+/// table has an unrelated projection. The guardrail is enforced on the chosen plan instead: a
+/// candidate whose key is unused is not eligible to serve the read (see the `pk_condition_useful`
+/// checks below).
+static ContextPtr getContextForProjectionAnalysis(const ContextPtr & context)
+{
+    const auto & settings = context->getSettingsRef();
+    if (!settings[Setting::force_primary_key] && !settings[Setting::force_index_by_date])
+        return context;
+
+    auto projection_context = Context::createCopy(context);
+    projection_context->setSetting("force_primary_key", false);
+    projection_context->setSetting("force_index_by_date", false);
+    return projection_context;
+}
+
 bool analyzeProjectionCandidate(
     ProjectionCandidate & candidate,
     const MergeTreeDataSelectExecutor & reader,
+    const MergeTreeData::MutationsSnapshotPtr & parent_mutations_snapshot,
     MergeTreeData::MutationsSnapshotPtr empty_mutations_snapshot,
     const Names & required_column_names,
     const StorageMetadataPtr & parent_metadata,
@@ -375,7 +440,8 @@ bool analyzeProjectionCandidate(
     const std::optional<TopKFilterInfo> & top_k_filter_info,
     bool allow_query_condition_cache,
     bool allow_top_k_prewhere_query_condition_cache,
-    const ContextPtr & context)
+    const ContextPtr & context,
+    const HypotheticalProjection * hypothetical_projection)
 {
     RangesInDataParts projection_parts;
     size_t parent_parts_sum_marks = 0;
@@ -383,12 +449,19 @@ bool analyzeProjectionCandidate(
     {
         const auto & created_projections = part_with_ranges.data_part->getProjectionParts();
         auto it = created_projections.find(candidate.projection->name);
-        if (it != created_projections.end() && !it->second->is_broken
+        MergeTreeDataPartPtr projection_part = it != created_projections.end() && !it->second->is_broken ? it->second : nullptr;
+        if (!projection_part && hypothetical_projection && candidate.projection == &hypothetical_projection->projection)
+            projection_part = hypothetical_projection->findPart(part_with_ranges.data_part->name);
+        /// A projection part returns every matching row of its part, so it cannot replace a read cut by exact counting.
+        if (projection_part
+            && !(parent_reading_select_result.exact_ranges_excluded && !part_with_ranges.exact_ranges.empty())
             && projectionPartHasRequiredColumns(
-                *it->second, *part_with_ranges.data_part, *candidate.projection, parent_metadata, required_column_names))
+                *projection_part, *part_with_ranges.data_part, *candidate.projection, parent_metadata, required_column_names)
+            && !partHasPendingMetadataMutationsOnColumns(
+                parent_mutations_snapshot, part_with_ranges.data_part, *candidate.projection, required_column_names))
         {
             projection_parts.push_back(RangesInDataPart(
-                it->second,
+                projection_part,
                 part_with_ranges.data_part,
                 part_with_ranges.part_index_in_query,
                 part_with_ranges.part_starting_offset_in_query));
@@ -410,7 +483,7 @@ bool analyzeProjectionCandidate(
         candidate.projection->metadata,
         projection_query_info,
         top_k_filter_info,
-        context,
+        getContextForProjectionAnalysis(context),
         context->getSettingsRef()[Setting::max_threads],
         /*max_block_numbers_to_read=*/nullptr,
         /// The candidate's marks are reused by the projection read, so it must not consult the cache
@@ -428,6 +501,11 @@ bool analyzeProjectionCandidate(
 
     /// Remove ranges whose data parts are fully filtered by projection.
     size_t filtered_parts = filterPartsByProjection(parent_reading_select_result, valid_parts);
+
+    /// Under `force_primary_key` a scan must be restricted by the primary key of whatever is read.
+    /// Only check after filterPartsByProjection to still utilize parts pruning
+    if (context->getSettingsRef()[Setting::force_primary_key] && !projection_result_ptr->pk_condition_useful)
+        return false;
 
     candidate.selected_parts = projection_result_ptr->selected_parts;
     candidate.selected_marks = projection_result_ptr->selected_marks;
@@ -476,7 +554,9 @@ void filterPartsAndCollectProjectionCandidates(
         auto it = created_projections.find(projection.name);
         if (it != created_projections.end() && !it->second->is_broken
             && projectionPartHasRequiredColumns(
-                *it->second, *part_with_ranges.data_part, projection, parent_metadata, filter_required_columns))
+                *it->second, *part_with_ranges.data_part, projection, parent_metadata, filter_required_columns)
+            && !partHasPendingMetadataMutationsOnColumns(
+                reading.getMutationsSnapshot(), part_with_ranges.data_part, projection, filter_required_columns))
         {
             RangesInDataPart projection_part(
                 it->second,
@@ -516,7 +596,7 @@ void filterPartsAndCollectProjectionCandidates(
         projection.metadata,
         projection_query_info,
         reading.getTopKFilterInfo(),
-        context,
+        getContextForProjectionAnalysis(context),
         context->getSettingsRef()[Setting::max_threads],
         /*max_block_numbers_to_read=*/nullptr,
         /// The result filters the parts of the actual read, so keep the read's own cache gate.
@@ -527,6 +607,13 @@ void filterPartsAndCollectProjectionCandidates(
     if (projection_result_ptr->selected_marks == projection_marks_to_read)
         return;
 
+    /// Under `force_primary_key`, read the projection index only when its own key did the filtering.
+    /// Marks can also be dropped without the key (through the query condition cache), which would
+    /// otherwise let a full-scan projection read in. Part-level pruning below stays: it only removes
+    /// parent parts whose ranges are proven empty and reads nothing from the projection.
+    bool projection_index_allowed
+        = !context->getSettingsRef()[Setting::force_primary_key] || projection_result_ptr->pk_condition_useful;
+
     size_t max_projection_rows_to_use_projection_index = context->getSettingsRef()[Setting::max_projection_rows_to_use_projection_index];
     size_t min_table_rows_to_use_projection_index = context->getSettingsRef()[Setting::min_table_rows_to_use_projection_index];
     auto & desc = reading.getProjectionIndexReadDescription();
@@ -534,7 +621,8 @@ void filterPartsAndCollectProjectionCandidates(
     for (auto & part : projection_result_ptr->parts_with_ranges)
     {
         valid_parts.emplace(part.data_part->getParentPart());
-        if (projection.sample_block.has("_parent_part_offset") && part.getRowsCount() <= max_projection_rows_to_use_projection_index
+        if (projection_index_allowed && projection.sample_block.has("_parent_part_offset")
+            && part.getRowsCount() <= max_projection_rows_to_use_projection_index
             && part.parent_ranges.total_rows >= min_table_rows_to_use_projection_index)
         {
             desc.read_ranges[part.part_index_in_query].push_back(std::move(part));

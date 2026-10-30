@@ -1,0 +1,2 @@
+     64 <expected result>
+queries	64	hits + misses	64	all rounds but the first were served from disk	1	the entry was written once	1	no errors or warnings logged	0

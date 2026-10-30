@@ -56,14 +56,62 @@ struct ArrayMinMaxIndexImpl
         const bool handled = castTypeToEither<
             ColumnInt8, ColumnInt16, ColumnInt32, ColumnInt64,
             ColumnUInt8, ColumnUInt16, ColumnUInt32, ColumnUInt64,
+            ColumnInt128, ColumnInt256, ColumnUInt128, ColumnUInt256,
             ColumnFloat32, ColumnFloat64,
-            ColumnDecimal<Decimal32>, ColumnDecimal<Decimal64>, ColumnDecimal<DateTime64>>(mapped.get(), [&](const auto & column)
+            ColumnDecimal<Decimal32>, ColumnDecimal<Decimal64>,
+            ColumnDecimal<Decimal128>, ColumnDecimal<Decimal256>,
+            ColumnDecimal<DateTime64>>(mapped.get(), [&](const auto & column)
         {
+            using ValueType = typename std::decay_t<decltype(column)>::ValueType;
             const auto * data = column.getData().data();
-            fill([&](size_t begin, size_t end)
+
+            if constexpr (has_find_extreme_index_implementation<ValueType>)
             {
-                return is_min ? *findExtremeMinIndex(data, begin, end) : *findExtremeMaxIndex(data, begin, end);
-            });
+                fill([&](size_t begin, size_t end)
+                {
+                    return is_min ? *findExtremeMinIndex(data, begin, end) : *findExtremeMaxIndex(data, begin, end);
+                });
+            }
+            else
+            {
+                /// findExtreme*Index deliberately excludes 128/256-bit integers and decimals because its two-pass scan only pays off when vectorized.
+                /// Scan these concrete columns once to avoid the virtual compareAt fallback.
+                fill([&](size_t begin, size_t end)
+                {
+                    size_t best = begin;
+                    for (size_t i = begin + 1; i < end; ++i)
+                    {
+                        if constexpr (is_decimal<ValueType>)
+                        {
+                            if constexpr (is_min)
+                            {
+                                if (data[i].value < data[best].value)
+                                    best = i;
+                            }
+                            else
+                            {
+                                if (data[i].value > data[best].value)
+                                    best = i;
+                            }
+                        }
+                        else
+                        {
+                            if constexpr (is_min)
+                            {
+                                if (data[i] < data[best])
+                                    best = i;
+                            }
+                            else
+                            {
+                                if (data[i] > data[best])
+                                    best = i;
+                            }
+                        }
+                    }
+                    return best;
+                });
+            }
+
             return true;
         });
 

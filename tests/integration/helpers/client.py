@@ -3,12 +3,16 @@ import os
 import signal
 import subprocess as sp
 import tempfile
-from threading import Timer
+from threading import Lock, Timer
 
 import numpy as np
 import pandas as pd
 
 DEFAULT_QUERY_TIMEOUT = 600
+
+# One stack trace dump per server per test.
+_dumped_stacktraces = set()
+_dumped_stacktraces_lock = Lock()
 
 # Asked to explain a failed request whose cause is not in the client's own stderr, because
 # something outside the server broke the connection. Takes the address the request was
@@ -67,17 +71,39 @@ class Client:
         def wrap(self, *args, **kwargs):
             try:
                 return func(self, *args, **kwargs)
-            except sp.TimeoutExpired:
-                # I failed to make pytest print stacktraces using print(...) or logging.debug(...), so...
-                self.get_query_request(
-                    "INSERT INTO TABLE FUNCTION file('stacktraces_on_timeout.txt', 'TSVRaw', 'tn String, tid UInt64, qid String, st String') "
-                    "SELECT thread_name, thread_id, query_id, arrayStringConcat(arrayMap(x -> demangle(addressToSymbol(x)), trace), '\n') AS res FROM system.stack_trace "
-                    "SETTINGS allow_introspection_functions=1",
-                    timeout=60,
-                ).get_answer_and_error()
+            except (sp.TimeoutExpired, QueryTimeoutExceedException):
+                self.dump_stacktraces(kwargs.get("host"))
                 raise
 
         return wrap
+
+    def dump_stacktraces(self, host=None):
+        host = self.host if host is None else host
+        current_test = os.environ.get("PYTEST_CURRENT_TEST", "")
+        key = (current_test.rsplit(" ", 1)[0], host, self.port)
+        with _dumped_stacktraces_lock:
+            if key in _dumped_stacktraces:
+                return
+            _dumped_stacktraces.add(key)
+        try:
+            # I failed to make pytest print stacktraces using print(...) or logging.debug(...), so...
+            _, stderr = self.get_query_request(
+                "INSERT INTO TABLE FUNCTION file('stacktraces_on_timeout.txt', 'TSVRaw', 'test String, tn String, tid UInt64, qid String, st String') "
+                "SELECT getSetting('log_comment'), thread_name, thread_id, query_id, arrayStringConcat(arrayMap(x -> demangle(addressToSymbol(x)), trace), '\n') AS res FROM system.stack_trace "
+                "SETTINGS allow_introspection_functions=1",
+                settings={"log_comment": current_test},
+                host=host,
+                timeout=60,
+            ).get_answer_and_error()
+        except Exception as e:
+            stderr = repr(e)
+        if stderr:
+            logging.warning("Cannot dump the stack traces of %s: %s", host, stderr)
+        else:
+            logging.info(
+                "Dumped the stack traces of %s into user_files/stacktraces_on_timeout.txt",
+                host,
+            )
 
     @stacktraces_on_timeout_decorator
     def query(
@@ -233,7 +259,7 @@ class QueryRuntimeException(Exception):
 
 class CommandRequest:
     def __init__(
-        self, command, stdin=None, timeout=None, ignore_error=False, parse=False, stdout_file_path=None, stderr_file_path=None, env = {}, describe_transport_error=None
+        self, command, stdin=None, timeout=None, ignore_error=False, parse=False, stdout_file_path=None, stderr_file_path=None, env=None, describe_transport_error=None
     ):
         # Write data to tmp file to avoid PIPEs and execution blocking
         self.stdin_file = tempfile.TemporaryFile(mode="w+")
@@ -246,10 +272,23 @@ class CommandRequest:
         self.describe_transport_error = describe_transport_error
         # print " ".join(command)
 
+        # The client gets a minimal environment on purpose: variables of the
+        # developer's shell such as `CLICKHOUSE_USER` must not change its
+        # behaviour. A copy, so that one request does not leak into the next.
+        env = dict(env or {})
         # we suppress stderror on client becase sometimes thread sanitizer
         # can print some debug information there
         env["ASAN_OPTIONS"] = "use_sigaltstack=0"
         env["TSAN_OPTIONS"] = "use_sigaltstack=0 verbosity=0"
+        # Under LLVM coverage the job sets `LLVM_PROFILE_FILE` to a merge pool
+        # (`it-%c%4m.profraw`), which is locked per process, so the many
+        # parallel clients cannot corrupt each other's profile. Without the
+        # variable the instrumented binary writes `default.profraw` in the
+        # working directory: every client truncates it at start and appends to
+        # it at exit, concurrent clients leave a corrupt file, and
+        # `llvm-profdata merge` then publishes nothing for the whole shard.
+        if "LLVM_PROFILE_FILE" in os.environ:
+            env["LLVM_PROFILE_FILE"] = os.environ["LLVM_PROFILE_FILE"]
         self.process = sp.Popen(
             command,
             stdin=self.stdin_file,
