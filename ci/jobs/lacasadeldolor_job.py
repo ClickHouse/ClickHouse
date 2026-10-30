@@ -13,7 +13,6 @@ from pathlib import Path
 
 from ci.jobs.ast_fuzzer_job import JOB_ARTIFACTS, WORKSPACE_PATH, analyze_job_logs
 from ci.jobs.buzzhouse_job import generate_buzz_config
-from ci.jobs.ci_utils import is_extended_run
 from ci.jobs.scripts.clickhouse_service import ClickHouseService
 from ci.jobs.scripts.integration_tests_configs import IMAGES_ENV
 from ci.jobs.scripts.log_parser import FuzzerLogParser
@@ -28,7 +27,11 @@ repo_dir = Utils.cwd()
 GRACEFUL_EXIT_CODES = (0, -15, 143)
 SIGKILL_EXIT_CODES = (137, -9)
 
-# Wall-clock ceiling on `dolor.py`, far above its internal --timeout (30 or 60 minutes) plus
+# Minutes of load: the `--timeout` of `dolor.py` and the `time_to_run` of BuzzHouse, which must
+# match, or `dolor.py` kills BuzzHouse before it is done.
+DOLOR_RUN_MINUTES = 15
+
+# Wall-clock ceiling on `dolor.py`, far above its internal --timeout plus
 # restarts/setup/shutdown overhead. A run that reaches it is hung, whatever the logs say.
 DOLOR_WATCHDOG_SEC = 4 * 3600
 
@@ -455,8 +458,8 @@ def main():
         *(p for p in node_logs if p not in JOB_ARTIFACTS),
     ]
 
-    # Generate BuzzHouse config
-    generate_buzz_config(workspace_path, str(buzz_out))
+    # Generate BuzzHouse config, with the budget `dolor.py` gets as its `--timeout`
+    generate_buzz_config(workspace_path, str(buzz_out), time_to_run=DOLOR_RUN_MINUTES)
 
     ctree = ET.parse(f"{repo_dir}/ci/jobs/scripts/server_fuzzer/config.xml")
     croot = ctree.getroot()
@@ -544,9 +547,6 @@ def main():
         restart_args = "--time-between-shutdowns=240,240"
         kill_server_prob = 50
         restart_clickhouse_prob = 75
-    # Same budget `generate_buzz_config` gave the BuzzHouse config's `time_to_run`, or on an
-    # extended run `dolor.py` kills BuzzHouse halfway through.
-    dolor_timeout_minutes = 60 if is_extended_run() else 30
     base_command = f"""
 python3 {repo_dir}/tests/casa_del_dolor/dolor.py --seed={session_seed} --generator=buzzhouse
 --tmp-files-dir={workspace_path}
@@ -556,7 +556,7 @@ python3 {repo_dir}/tests/casa_del_dolor/dolor.py --seed={session_seed} --generat
 --server-binaries={clickhouse_path}
 --client-config={buzzconfig}
 --log-path={dolor_log}
---timeout={dolor_timeout_minutes} --server-settings-prob=0
+--timeout={DOLOR_RUN_MINUTES} --server-settings-prob=0
 --kill-server-prob={kill_server_prob} --without-monitoring --without-transactions
 --replica-values=0 --shard-values=1
 --add-remote-server-settings-prob=0
