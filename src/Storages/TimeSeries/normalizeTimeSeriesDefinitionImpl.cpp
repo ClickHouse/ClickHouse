@@ -127,21 +127,21 @@ namespace
     /// declared types is reified with `DataTypeFactory`, because a type AST that still carries a `DEFAULT`
     /// is rejected by `DataTypeTuple::create`.
     /// See https://github.com/ClickHouse/ClickHouse/issues/2797.
-    void pullUpTupleElementDefaultsInColumnList(ASTColumns * columns_list)
+    void pullUpTupleElementDefaultsInColumnList(ASTColumns * columns_list, TupleElementDefaultStateVersion state_version)
     {
         if (!columns_list || !columns_list->columns)
             return;
 
         for (const auto & column : columns_list->columns->children)
-            pullUpTupleElementDefaults(column->as<ASTColumnDeclaration &>());
+            pullUpTupleElementDefaults(column->as<ASTColumnDeclaration &>(), state_version);
     }
 
-    void pullUpTupleElementDefaultsInTimeSeriesDefinition(ASTCreateQuery & create_query)
+    void pullUpTupleElementDefaultsInTimeSeriesDefinition(ASTCreateQuery & create_query, TupleElementDefaultStateVersion state_version)
     {
-        pullUpTupleElementDefaultsInColumnList(create_query.columns_list);
+        pullUpTupleElementDefaultsInColumnList(create_query.columns_list, state_version);
 
         for (auto kind : getTargetKinds())
-            pullUpTupleElementDefaultsInColumnList(create_query.getTargetInnerColumns(kind));
+            pullUpTupleElementDefaultsInColumnList(create_query.getTargetInnerColumns(kind), state_version);
     }
 
     /// Conflict-checking setter for `DataTypePtr`.
@@ -2600,7 +2600,12 @@ void normalizeTimeSeriesDefinitionImpl(ASTCreateQuery & create_query, const Norm
 
     /// Pull up `DEFAULT` expressions written inside `Tuple` data types of the outer and inner columns.
     /// It has to be done before the declared types are reified below.
-    pullUpTupleElementDefaultsInTimeSeriesDefinition(create_query);
+    /// A user-written definition gets the current aggregate-function state version pinned into the column types
+    /// (see `InterpreterCreateQuery::getColumnType`); a replayed one carries no `DEFAULT` inside types anyway.
+    pullUpTupleElementDefaultsInTimeSeriesDefinition(create_query,
+        params.mode == LoadingStrictnessLevel::CREATE && !params.is_restore_from_backup
+            ? TupleElementDefaultStateVersion::PinCurrent
+            : TupleElementDefaultStateVersion::PinOldest);
 
     /// The definition of the table from the clause `AS <other_table>` if any, and its resolved types.
     /// The clause is used only for a new table: the stored definition of an existing table has no such clause.

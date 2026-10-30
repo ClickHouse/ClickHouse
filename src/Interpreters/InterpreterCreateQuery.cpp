@@ -818,7 +818,8 @@ ColumnsDescription InterpreterCreateQuery::getColumnsDescription(
 
         /// Normalize DEFAULT expressions written inside Tuple data types by pulling them up to the
         /// column level, so the stored type carries no DEFAULTs (https://github.com/ClickHouse/ClickHouse/issues/2797).
-        pullUpTupleElementDefaults(col_decl);
+        pullUpTupleElementDefaults(col_decl,
+            pin_current_state_version ? TupleElementDefaultStateVersion::PinCurrent : TupleElementDefaultStateVersion::PinOldest);
 
         if (col_decl.getCollation() && !context_->getSettingsRef()[Setting::compatibility_ignore_collation_in_create_table])
         {
@@ -4084,13 +4085,14 @@ BlockIO InterpreterCreateQuery::execute()
             /// getColumnsDescription(). Normalize here so older workers receive a regular
             /// column-level DEFAULT rather than the new Tuple element syntax. Inner column lists of
             /// targets (e.g. `SAMPLES INNER COLUMNS (...)` of a TimeSeries table) are dispatched
-            /// the same way, so they are normalized too.
+            /// the same way, so they are normalized too. The workers replay the query as a normalized
+            /// one, so an unversioned aggregate-function state in it gets version 0 there.
             auto pull_up_tuple_element_defaults = [](const ASTColumns * columns_list)
             {
                 if (!columns_list || !columns_list->columns)
                     return;
                 for (const auto & column : columns_list->columns->children)
-                    pullUpTupleElementDefaults(column->as<ASTColumnDeclaration &>());
+                    pullUpTupleElementDefaults(column->as<ASTColumnDeclaration &>(), TupleElementDefaultStateVersion::PinOldest);
             };
 
             pull_up_tuple_element_defaults(create.columns_list);

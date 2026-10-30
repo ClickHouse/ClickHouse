@@ -259,7 +259,7 @@ std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_
         /// `DEFAULT tuple(1)`. The clone owned by `command.ast` is normalized in place so the extracted
         /// type, the extracted default, and the stored AST all agree.
         auto & ast_col_decl = command.ast->as<ASTAlterCommand &>().col_decl->as<ASTColumnDeclaration &>();
-        pullUpTupleElementDefaults(ast_col_decl);
+        pullUpTupleElementDefaults(ast_col_decl, TupleElementDefaultStateVersion::PinCurrent);
         checkColumnDeclarationIsSupportedByAlter(ast_col_decl, "ADD COLUMN");
 
         command.column_name = ast_col_decl.name;
@@ -333,7 +333,7 @@ std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_
         /// of being rejected when the data type is built below. The clone owned by `command.ast` is
         /// normalized in place so the extracted type, the extracted default, and the stored AST all agree.
         auto & ast_col_decl = command.ast->as<ASTAlterCommand &>().col_decl->as<ASTColumnDeclaration &>();
-        pullUpTupleElementDefaults(ast_col_decl);
+        pullUpTupleElementDefaults(ast_col_decl, TupleElementDefaultStateVersion::AsWritten);
         checkColumnDeclarationIsSupportedByAlter(ast_col_decl, "MODIFY COLUMN");
         command.column_name = ast_col_decl.name;
         command.to_remove = removePropertyFromString(command_ast->remove_property);

@@ -161,8 +161,12 @@ void pullUpTupleElementDefaultsInAlterQuery(ASTAlterQuery & alter)
     for (const auto & child : alter.command_list->children)
     {
         auto & command = child->as<ASTAlterCommand &>();
-        if (command.type == ASTAlterCommand::ADD_COLUMN || command.type == ASTAlterCommand::MODIFY_COLUMN)
-            pullUpTupleElementDefaults(command.col_decl->as<ASTColumnDeclaration &>());
+        /// `AlterCommand::parse` pins the current state version for `ADD COLUMN` (on the workers as
+        /// well), while `MODIFY COLUMN` keeps the version as written.
+        if (command.type == ASTAlterCommand::ADD_COLUMN)
+            pullUpTupleElementDefaults(command.col_decl->as<ASTColumnDeclaration &>(), TupleElementDefaultStateVersion::PinCurrent);
+        else if (command.type == ASTAlterCommand::MODIFY_COLUMN)
+            pullUpTupleElementDefaults(command.col_decl->as<ASTColumnDeclaration &>(), TupleElementDefaultStateVersion::AsWritten);
     }
 }
 
