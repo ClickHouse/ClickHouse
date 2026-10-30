@@ -4,6 +4,7 @@
 #include <Interpreters/ExpressionActions.h>
 
 #include <Analyzer/ColumnNode.h>
+#include <Analyzer/ConstantNode.h>
 #include <Analyzer/createUniqueAliasesIfNecessary.h>
 #include <Analyzer/FunctionNode.h>
 #include <Analyzer/InDepthQueryTreeVisitor.h>
@@ -36,6 +37,7 @@
 #include <Planner/CollectTableExpressionData.h>
 #include <Planner/Planner.h>
 #include <Planner/PlannerContext.h>
+#include <Planner/PlannerCorrelatedSubqueries.h>
 #include <Planner/Utils.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/FieldToDataType.h>
@@ -188,15 +190,7 @@ public:
         auto argument_columns = function_node->getArgumentColumns();
         const auto & arguments = function_node->getArguments().getNodes();
         for (size_t i = 0; i < arguments.size(); ++i)
-        {
-            const auto & argument = arguments[i];
-            if (const auto * column_node = argument->as<ColumnNode>())
-                argument_columns[i].name = column_node->getColumnName();
-            else if (argument->hasOriginalAST())
-                argument_columns[i].name = argument->getOriginalAST()->getColumnName();
-            else
-                argument_columns[i].name = argument->formatASTForErrorMessage();
-        }
+            argument_columns[i].name = getArgumentName(arguments[i]);
 
         /// A function may also derive its result type from the argument names (a named `tuple`), and
         /// they may still differ from the names the analyzer passed. Such a function keeps the original
@@ -214,6 +208,19 @@ public:
     }
 
 private:
+    /// A constant folded from an expression (`1 + 1`) has no original AST of its own, so it is
+    /// named after the expression it was folded from (`plus(1, 1)`).
+    static String getArgumentName(const QueryTreeNodePtr & argument)
+    {
+        if (const auto * column_node = argument->as<ColumnNode>())
+            return column_node->getColumnName();
+        if (argument->hasOriginalAST())
+            return argument->getOriginalAST()->getColumnName();
+        if (const auto * constant_node = argument->as<ConstantNode>(); constant_node && constant_node->hasSourceExpression())
+            return getArgumentName(constant_node->getSourceExpression());
+        return argument->formatASTForErrorMessage();
+    }
+
     ContextPtr context;
 };
 
@@ -259,6 +266,12 @@ static CoreAnalysisResult buildExpressionCoreDAG(
     }
 
     auto execution_context = Context::createCopy(context);
+
+    /// `rewrite_in_to_join` turns `x IN (SELECT ...)` into a correlated `EXISTS`, whose subquery
+    /// only the planner of a whole query can execute. Standalone actions are executed on a block
+    /// alone (e.g. by `CheckConstraintsTransform`), so keep the plain `IN` with its set, as
+    /// `ExpressionAnalyzer` did.
+    execution_context->setSetting("rewrite_in_to_join", false);
 
     /// The Analyzer keeps scalar subqueries in the query tree, while the legacy
     /// `TreeRewriter` executes them before compiling a standalone expression.
@@ -387,12 +400,15 @@ static CoreAnalysisResult buildExpressionCoreDAG(
     collectSets(expression_list, *planner_context);
 
     ColumnNodePtrWithHashSet empty_correlated_columns_set;
-    auto [actions, _] = buildActionsDAGFromExpressionNode(
+    auto [actions, correlated_subtrees] = buildActionsDAGFromExpressionNode(
         expression_list,
         {},
         planner_context,
         empty_correlated_columns_set,
         false /* use_column_identifier_as_action_node_name */);
+    /// The actions would expect the result of a correlated subquery as an input, which the block
+    /// they are executed on does not have.
+    correlated_subtrees.assertEmpty("in standalone expressions");
 
     /// Convert each subquery set's query tree into a query plan so the set becomes
     /// buildable (a `FutureSetFromSubquery` created by `collectSets` only carries a

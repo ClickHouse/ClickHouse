@@ -17,3 +17,17 @@ INSERT INTO constraint_format_row VALUES (2, 'b'); -- { error VIOLATED_CONSTRAIN
 SELECT * FROM constraint_format_row;
 
 DROP TABLE constraint_format_row;
+
+-- An argument folded to a constant is named after the expression it was folded from.
+CREATE TABLE constraint_format_row
+(
+    x UInt8,
+    CONSTRAINT c CHECK JSONHas(formatRowNoNewline('JSONEachRow', x, 1 + 1), 'plus(1, 1)')
+)
+ENGINE = Memory;
+
+INSERT INTO constraint_format_row VALUES (3);
+
+SELECT * FROM constraint_format_row;
+
+DROP TABLE constraint_format_row;
