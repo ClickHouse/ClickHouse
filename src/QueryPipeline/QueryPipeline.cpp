@@ -26,6 +26,7 @@
 #include <Processors/Sources/SourceFromChunks.h>
 #include <Processors/Transforms/AggregatingInOrderTransform.h>
 #include <Processors/Transforms/AggregatingTransform.h>
+#include <Processors/Transforms/ArrayJoinTransform.h>
 #include <Processors/Transforms/CountingTransform.h>
 #include <Processors/Transforms/CreatingSetsTransform.h>
 #include <Processors/Transforms/DroppingTransform.h>
@@ -258,6 +259,10 @@ static void initRowsBeforeLimit(IOutputFormat * output_format)
         }
         else if (limit_being_counted)
         {
+            /// a sort below `ARRAY JOIN` sees the rows before the expansion, so count at the limit (Case 7)
+            if (typeid_cast<ArrayJoinTransform *>(processor))
+                continue;
+
             /// Case 2.
             if (typeid_cast<PartialSortingTransform *>(processor))
             {
@@ -819,6 +824,17 @@ void QueryPipeline::readFromQueryResultCache(
 void QueryPipeline::addStorageHolder(StoragePtr storage)
 {
     resources.storage_holders.emplace_back(std::move(storage));
+}
+
+Pipe QueryPipeline::toPipeWithOutputProcessor(QueryPipeline pipeline, ProcessorPtr output_processor, QueryPlanResourceHolder & resources_)
+{
+    if (!pipeline.completed())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Pipeline must be completed to be converted to a pipe with an output processor");
+
+    resources_ = std::move(pipeline.resources);
+    auto processors = std::move(pipeline.processors);
+    processors->emplace_back(std::move(output_processor));
+    return Pipe(std::move(processors));
 }
 
 void QueryPipeline::addCompletedPipeline(QueryPipeline && other)

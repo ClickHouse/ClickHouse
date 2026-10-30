@@ -74,10 +74,10 @@ MergeTreeReadPool::MergeTreeReadPool(
     {
         for (size_t i = 0; i < parts_ranges.size(); ++i)
         {
-            /// Only the parts the reader caches, see `MergeTreeReaderWide`: for the others an aligned cut only
-            /// moves the boundaries of the tasks.
+            /// Only the parts the reader caches, see `IMergeTreeReader::initColumnsCache`: for the others an aligned
+            /// cut only moves the boundaries of the tasks.
             const auto & part = parts_ranges[i].data_part;
-            if (isWidePart(part) && canUseColumnsCacheForPart(part->storage.getStorageID().uuid, part->isProjectionPart()))
+            if (canUseColumnsCacheForPart(part->storage.getStorageID().uuid))
                 columns_cache_stripe_marks[i] = ColumnsCacheStripes::forPart(*part->index_granularity).stripe_marks;
         }
     }

@@ -106,6 +106,10 @@ struct TopKFilterInfo
 
     /// `tryOptimizeTopK` requested the `__topKFilter` PREWHERE condition and `installTopKDynamicFilter` has not run yet.
     bool dynamic_filter_pending = false;
+
+    /// Set once `__topKFilter` drops the rows equal to the threshold. Only for `ORDER BY` of a single `String` column:
+    /// for `GROUP BY key LIMIT n`, the later rows of the group on the boundary still count in its aggregates.
+    std::shared_ptr<std::atomic<bool>> rows_equal_to_threshold_dropped = nullptr;
 };
 
 namespace QueryPlanOptimizations
@@ -222,9 +226,6 @@ public:
         /// `force_primary_key` check uses). A projection whose own key is not used may not serve
         /// the read.
         bool pk_condition_useful = false;
-        /// Set when the read skipped its own index analysis (a parallel replicas follower): its ranges are whole parts,
-        /// not narrowed by this condition.
-        ConditionTemplate<KeyCondition>::Ptr key_condition_not_applied;
         std::atomic<bool> exceeded_row_limits = false;
 
         AnalysisResult() = default;
@@ -249,7 +250,6 @@ public:
             , exact_ranges_excluded(other.exact_ranges_excluded)
             , index_analysis_was_already_done_on_initiator(other.index_analysis_was_already_done_on_initiator)
             , pk_condition_useful(other.pk_condition_useful)
-            , key_condition_not_applied(other.key_condition_not_applied)
             , exceeded_row_limits(other.exceeded_row_limits.load())
         {}
 
@@ -273,7 +273,6 @@ public:
             , exact_ranges_excluded(other.exact_ranges_excluded)
             , index_analysis_was_already_done_on_initiator(other.index_analysis_was_already_done_on_initiator)
             , pk_condition_useful(other.pk_condition_useful)
-            , key_condition_not_applied(std::move(other.key_condition_not_applied))
             , exceeded_row_limits(other.exceeded_row_limits.load())
         {}
 
@@ -528,6 +527,7 @@ public:
 
     bool isParallelReadingFromReplicas() const { return is_parallel_reading_from_replicas; }
     void disableQueryConditionCache() { allow_query_condition_cache = false; }
+    void disableSpreadingSmallRead() { allow_spreading_small_read = false; }
 
     /// After projection optimization, ReadFromMergeTree may be replaced with a new reading step, and the ParallelReadingExtension must be forwarded to the new step.
     /// Meanwhile, the ParallelReadingExtension originally in ReadFromMergeTree might be clear.
@@ -941,6 +941,7 @@ private:
     bool enable_vertical_final = false;
     bool allow_query_condition_cache = true;
     bool allow_top_k_prewhere_query_condition_cache = true;
+    bool allow_spreading_small_read = true;
 
     LazyMaterializingRowsPtr lazy_materializing_rows;
     bool has_lazily_read_columns = false;
