@@ -32,8 +32,8 @@
 #include <cstring>
 #include <optional>
 
-#if USE_SIMSIMD
-#    include <simsimd/simsimd.h>
+#if USE_NUMKONG
+#    include <numkong/numkong.h>
 #endif
 
 namespace DB
@@ -47,6 +47,7 @@ namespace ErrorCodes
 {
 extern const int BAD_ARGUMENTS;
 extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+extern const int LOGICAL_ERROR;
 extern const int TOO_FEW_ARGUMENTS_FOR_FUNCTION;
 extern const int TOO_MANY_ARGUMENTS_FOR_FUNCTION;
 }
@@ -71,8 +72,8 @@ ALWAYS_INLINE size_t hammingDistance(const UInt8 * __restrict a, const UInt8 * _
 /// Base kernel pattern for distance functions.
 /// Each kernel must provide:
 ///   - static constexpr auto name: function name
-///   - static constexpr simsimd_metric_kind_t metric_kind (under USE_SIMSIMD): SimSIMD metric to resolve and call
-///   - static void distance<T>(...): scalar distance, used when no SimSIMD kernel is available
+///   - static constexpr nk_kernel_kind_t kernel_kind (under USE_NUMKONG): NumKong kernel to resolve and call
+///   - static void distance<T>(...): scalar distance, used when no NumKong kernel is available
 ///   - static void distanceScalar<InputType, AccumulatorType>(...): fallback scalar implementation
 ///   - static Float64 fromSignedSum(signed_sum, squared_norm, dims, scale): the distance between a sign vector with elements
 ///     +-scale and a full-precision reference y, given sum s_i * y_i and sum y_i^2, for the default one-bit path
@@ -84,9 +85,9 @@ ALWAYS_INLINE size_t hammingDistance(const UInt8 * __restrict a, const UInt8 * _
 struct L2DistanceTransposed
 {
     static constexpr auto name = "L2DistanceTransposed";
-#if USE_SIMSIMD
-    static constexpr simsimd_metric_kind_t metric_kind = simsimd_metric_l2_k;
-    /// Largest term the SimSIMD i8 kernel adds per element (max (a - b)^2 = 255^2). Used to bound the
+#if USE_NUMKONG
+    static constexpr nk_kernel_kind_t kernel_kind = nk_kernel_euclidean_k;
+    /// Largest term the NumKong i8 kernel adds per element (max (a - b)^2 = 255^2). Used to bound the
     /// dimension before that kernel's int32 accumulator overflows; beyond it we use the scalar path.
     static constexpr UInt64 max_int8_simd_term = 255 * 255;
 #endif
@@ -134,9 +135,9 @@ struct L2DistanceTransposed
 struct CosineDistanceTransposed
 {
     static constexpr auto name = "cosineDistanceTransposed";
-#if USE_SIMSIMD
-    static constexpr simsimd_metric_kind_t metric_kind = simsimd_metric_cos_k;
-    /// Largest term the SimSIMD i8 kernel adds per element (max a^2 = 128^2). Used to bound the
+#if USE_NUMKONG
+    static constexpr nk_kernel_kind_t kernel_kind = nk_kernel_angular_k;
+    /// Largest term the NumKong i8 kernel adds per element (max a^2 = 128^2). Used to bound the
     /// dimension before that kernel's int32 accumulator overflows; beyond it we use the scalar path.
     static constexpr UInt64 max_int8_simd_term = 128 * 128;
 #endif
@@ -205,9 +206,9 @@ struct CosineDistanceTransposed
 struct DotProductTransposed
 {
     static constexpr auto name = "dotProductTransposed";
-#if USE_SIMSIMD
-    static constexpr simsimd_metric_kind_t metric_kind = simsimd_metric_dot_k;
-    /// Largest term the SimSIMD i8 kernel adds per element (max |a * b| = 128 * 128, both equal to -128). Used to
+#if USE_NUMKONG
+    static constexpr nk_kernel_kind_t kernel_kind = nk_kernel_dot_k;
+    /// Largest term the NumKong i8 kernel adds per element (max |a * b| = 128 * 128, both equal to -128). Used to
     /// bound the dimension before that kernel's int32 accumulator overflows; beyond it we use the scalar path.
     static constexpr UInt64 max_int8_simd_term = 128 * 128;
 #endif
@@ -821,24 +822,66 @@ private:
         return executeImpl(converted_arguments, nullptr, input_rows_count);
     }
 
-#if USE_SIMSIMD
-    /// Resolve the SimSIMD kernel for this distance metric and calculation type, or nullptr if none exists.
-    template <typename CalcT>
-    static simsimd_metric_dense_punned_t resolveSimdKernel()
+#if USE_NUMKONG
+    /// A resolved NumKong kernel. NumKong writes the result in a type that depends on the kernel and the input type
+    /// (`nk_kernel_output_dtype`): `f64` for `f32` and `f64` inputs, `f32` for `bf16`, `i32` for the `i8` dot product.
+    struct SimdKernel
     {
-        const simsimd_datatype_t datatype = std::is_same_v<CalcT, Int8>
-            ? simsimd_datatype_i8_k
-            : (std::is_same_v<CalcT, BFloat16> ? simsimd_datatype_bf16_k
-                                               : (std::is_same_v<CalcT, Float32> ? simsimd_datatype_f32_k : simsimd_datatype_f64_k));
-        simsimd_kernel_punned_t simd_kernel = nullptr;
-        simsimd_capability_t used_capability = simsimd_cap_any_k;
-        simsimd_find_kernel_punned(Kernel::metric_kind, datatype, simsimd_capabilities(), simsimd_cap_any_k, &simd_kernel, &used_capability);
-        /// SimSIMD does not implement every (metric, datatype) pair for every ISA, so a `serial` capability means
-        /// it has no vector kernel for this host. Its serial `dot` is the same sum in the same accumulator width
-        /// as `distanceScalar` above, while its `l2` and `cos` are not.
-        if (Kernel::metric_kind == simsimd_metric_dot_k && is_floating_point<CalcT> && used_capability == simsimd_cap_serial_k)
-            return nullptr;
-        return std::bit_cast<simsimd_metric_dense_punned_t>(simd_kernel); /// NOLINT(bugprone-bitwise-pointer-cast)
+        nk_metric_dense_punned_t function = nullptr;
+        nk_dtype_t output_dtype = nk_dtype_unknown_k;
+
+        explicit operator bool() const { return function != nullptr; }
+
+        void operator()(const void * x, const void * y, size_t dims, Float64 * result) const
+        {
+            switch (output_dtype)
+            {
+                case nk_f64_k:
+                    function(x, y, dims, result);
+                    return;
+                case nk_f32_k:
+                {
+                    nk_f32_t value;
+                    function(x, y, dims, &value);
+                    *result = value;
+                    return;
+                }
+                case nk_i32_k:
+                {
+                    nk_i32_t value;
+                    function(x, y, dims, &value);
+                    *result = value;
+                    return;
+                }
+                default:
+                    UNREACHABLE();
+            }
+        }
+    };
+
+    /// Resolve the NumKong kernel for this distance metric and calculation type, or an empty one if none exists.
+    template <typename CalcT>
+    static SimdKernel resolveSimdKernel()
+    {
+        const nk_dtype_t dtype = std::is_same_v<CalcT, Int8>
+            ? nk_i8_k
+            : (std::is_same_v<CalcT, BFloat16> ? nk_bf16_k : (std::is_same_v<CalcT, Float32> ? nk_f32_k : nk_f64_k));
+        nk_kernel_punned_t kernel = nullptr;
+        nk_capability_t used_capability = nk_cap_any_k;
+        nk_find_kernel_punned(Kernel::kernel_kind, dtype, nk_capabilities(), &kernel, &used_capability);
+        if (!kernel)
+            return {};
+        /// NumKong does not implement every (kernel, dtype) pair for every ISA, so a `serial` capability means
+        /// it has no vector kernel for this host. For the floating-point `dot`, prefer `distanceScalar` above over
+        /// the serial kernel: the compiler vectorizes it, while the serial kernel accumulates one element at a time
+        /// in a wider or compensated sum.
+        if (Kernel::kernel_kind == nk_kernel_dot_k && is_floating_point<CalcT> && used_capability == nk_cap_serial_k)
+            return {};
+        const nk_dtype_t output_dtype = nk_kernel_output_dtype(Kernel::kernel_kind, dtype);
+        if (output_dtype != nk_f64_k && output_dtype != nk_f32_k && output_dtype != nk_i32_k)
+            throw Exception(
+                ErrorCodes::LOGICAL_ERROR, "Unexpected output type {} of the NumKong kernel for {}", static_cast<int>(output_dtype), Kernel::name);
+        return {std::bit_cast<nk_metric_dense_punned_t>(kernel), output_dtype}; /// NOLINT(bugprone-bitwise-pointer-cast)
     }
 #endif
 
@@ -1128,13 +1171,13 @@ private:
         /// below the `precision` kept planes.
         const Word centre_fill = precision < sizeof(Word) * 8 ? static_cast<Word>(Word(1) << (sizeof(Word) * 8 - 1 - precision)) : Word(0);
 
-#if USE_SIMSIMD
-        simsimd_metric_dense_punned_t simd_kernel = resolveSimdKernel<CalcT>();
-        /// SimSIMD's i8 kernels accumulate in int32, which overflows for large dimensions (the scalar
+#if USE_NUMKONG
+        SimdKernel simd_kernel = resolveSimdKernel<CalcT>();
+        /// NumKong's i8 kernels accumulate in int32, which overflows for large dimensions (the scalar
         /// fallback accumulates in Float64). Use the scalar path beyond the overflow-safe dimension.
         if constexpr (std::is_same_v<CalcT, Int8>)
             if (used_dims > static_cast<size_t>(std::numeric_limits<Int32>::max()) / Kernel::max_int8_simd_term)
-                simd_kernel = nullptr;
+                simd_kernel = {};
 #endif
 
 #if USE_X86_64_MULTITARGET_CODE
@@ -1284,7 +1327,7 @@ private:
                 auto * dst = block_row(r);
                 Float64 * res = &result_data[base_row + r];
 
-#if USE_SIMSIMD
+#if USE_NUMKONG
                 /// Branch is scary, but clang hoists it out of the loop.
                 if (simd_kernel)
                     simd_kernel(dst, ref_data, used_dims, res);
@@ -1360,8 +1403,8 @@ private:
         auto codes_row = [&](size_t r) -> uint8_t * { return codes.data() + r * padded_array_size; };
         auto block_row = [&](size_t r) -> Float32 * { return block.data() + r * padded_array_size; };
 
-#if USE_SIMSIMD
-        simsimd_metric_dense_punned_t simd_kernel = resolveSimdKernel<Float32>();
+#if USE_NUMKONG
+        SimdKernel simd_kernel = resolveSimdKernel<Float32>();
 #endif
 
 #if USE_X86_64_MULTITARGET_CODE
@@ -1418,7 +1461,7 @@ private:
                 Float32 * dst = block_row(r);
                 Float64 * res = &result_data[base_row + r];
 
-#if USE_SIMSIMD
+#if USE_NUMKONG
                 /// Branch is scary, but clang hoists it out of the loop.
                 if (simd_kernel)
                     simd_kernel(dst, ref_data, used_dims, res);
