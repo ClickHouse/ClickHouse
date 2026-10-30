@@ -291,6 +291,12 @@ size_t tryConvertJoinToIn(QueryPlan::Node * parent_node, QueryPlan::Nodes & node
     auto left_pre_join_actions = JoinExpressionActions::getSubDAG(key_pairs | std::views::transform([](const auto & key_pair) { return key_pair.first; }));
     auto right_pre_join_actions = JoinExpressionActions::getSubDAG(key_pairs | std::views::transform([](const auto & key_pair) { return key_pair.second; }));
 
+    /// The right keys move into the source of the new set. A set inside them, e.g. an `IN` subquery in
+    /// an `ON` key, is built for the outer plan, not for that source, so index analysis building the new
+    /// set synchronously would read it before it is ready. Keep the join.
+    if (dagContainsNonReadySet(right_pre_join_actions))
+        return 0;
+
     /// Decline the conversion if the rewritten plan could not resolve some
     /// input of `join_output_actions`: `mergeInplace` with
     /// `remove_dangling_inputs = true` would drop the unmatched INPUT (e.g.
