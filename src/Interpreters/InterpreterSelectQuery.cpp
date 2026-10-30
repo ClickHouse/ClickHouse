@@ -2055,7 +2055,7 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, std::optional<P
                         add_sorting(*joined_plan, join_clause.key_names_right, JoinTableSide::Right);
                     }
 
-                    QueryPlanStepPtr join_step = std::make_unique<JoinStep>(
+                    auto join_step = std::make_unique<JoinStep>(
                         query_plan.getCurrentHeader(),
                         joined_plan->getCurrentHeader(),
                         expressions.join,
@@ -2064,7 +2064,6 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, std::optional<P
                         /* min_block_size_bytes_ */ 0,
                         max_streams,
                         /* required_output_ = */ NameSet{},
-                        /* keep_left_read_in_order_ = */ false,
                         /* use_new_analyzer_ = */ false);
 
                     join_step->setStepDescription(fmt::format("JOIN {}", expressions.join->pipelineType()), options.max_step_description_length);

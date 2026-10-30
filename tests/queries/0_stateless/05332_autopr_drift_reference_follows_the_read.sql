@@ -30,6 +30,11 @@ SET max_threads = 16, max_threads_min_free_memory_per_thread = 0,
     merge_tree_min_bytes_per_task_for_remote_reading = 4096, max_block_size = 65505,
     serialize_query_plan = 0, max_rows_to_group_by = 0,
     max_bytes_before_external_group_by = 0, max_bytes_ratio_before_external_group_by = 0, query_plan_optimize_join_order_randomize = 0;
+-- Reading in order through the join (with `optimize_aggregation_in_order`) is one more plan-shape
+-- variable: the single-node plan then aggregates in order while the parallel-replicas plan cannot
+-- (the optimization bails out under parallel replicas), and the statistics collected by drift_1 no
+-- longer serve the drift_2 decision. The harness randomizes both settings; pin the join reading.
+SET query_plan_read_in_order_through_join = 0;
 
 -- Grouping a high-cardinality key into many aggregates makes the output several times the read, so a
 -- single node wins and the model declines. The margin is deliberately wide: the byte counts are sampled

@@ -1,0 +1,7 @@
+-- Float keys must not read in order through the spilling join
+['ReadType: Default','ReadType: Default']
+-- The spilled result keeps the hash-key equality (signed zeros, NaN payloads)
+4
+1
+-- Nested float keys are rejected too
+['ReadType: Default','ReadType: Default']

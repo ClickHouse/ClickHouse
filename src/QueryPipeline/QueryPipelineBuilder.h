@@ -163,7 +163,7 @@ public:
         size_t min_block_size_bytes,
         size_t max_streams,
         IQueryPlanStep * join_step,
-        bool keep_left_read_in_order,
+        bool keep_left_pipeline_layout,
         const std::optional<String> & seal_gate = std::nullopt,
         Processors * collected_processors = nullptr);
 

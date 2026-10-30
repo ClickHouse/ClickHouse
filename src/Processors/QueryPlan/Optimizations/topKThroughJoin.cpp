@@ -55,24 +55,30 @@ std::optional<JoinSemantics> getJoinSemanticsFromStep(IQueryPlanStep * step)
     return {};
 }
 
-/// Return `true` when the eventual physical join could have `hasDelayedBlocks()`,
-/// in which case `optimizeReadInOrder`'s second-pass traversal will not propagate
-/// read-in-order through the join (see `findReadingStep` in `optimizeReadInOrder.cpp`).
-/// Used to gate the deferral: if delayed blocks are possible the deferral would
-/// silently disable both `topKThroughJoin` and the second-pass through-join pass.
+/// Return `true` when the eventual physical join could have `hasDelayedBlocks()` that the
+/// second pass cannot eliminate, in which case `optimizeReadInOrder`'s second-pass traversal
+/// will not propagate read-in-order through the join (see `findReadingStep` in
+/// `optimizeReadInOrder.cpp`). Used to gate the deferral: if such delayed blocks are possible
+/// the deferral would silently disable both `topKThroughJoin` and the second-pass through-join
+/// pass.
 ///
-/// For a physical `JoinStep` we read `hasDelayedBlocks()` directly. For
-/// `JoinStepLogical` the algorithm is picked later from `JoinSettings::join_algorithms`,
+/// For a physical `JoinStep`, a join that `canPreserveLeftBlockOrder` loses its delayed blocks
+/// when the second pass pins it with `keepLeftPipelineInOrder` (`SpillingHashJoin` then spills
+/// through `MergeJoin` instead of `GraceHashJoin`), so only joins without that ability count.
+/// For `JoinStepLogical` the algorithm is picked later from `JoinSettings::join_algorithms`,
 /// so we conservatively assume delayed blocks are possible when the configured settings
 /// allow `JoinAlgorithm::GRACE_HASH` / `JoinAlgorithm::AUTO` (`JoinSwitcher`), or when
 /// automatic spilling is configured via `max_bytes_*_before_external_join` (which can
-/// wrap the chosen hash join in `SpillingHashJoin`).
+/// wrap the chosen hash join in `SpillingHashJoin`). Whether the eventual `SpillingHashJoin`
+/// can be pinned depends on physical-level details (one disjunct, no mixed `ON` condition,
+/// the in-memory join's own order guarantee), so the logical branch stays fail-closed:
+/// `topKThroughJoin` then injects its own `Sort + Limit` instead of deferring.
 bool joinMayHaveDelayedBlocks(const IQueryPlanStep & step)
 {
     if (const auto * physical = typeid_cast<const JoinStep *>(&step))
     {
         const auto & join_ptr = physical->getJoin();
-        return !join_ptr || join_ptr->hasDelayedBlocks();
+        return !join_ptr || (join_ptr->hasDelayedBlocks() && !join_ptr->canPreserveLeftBlockOrder());
     }
     if (const auto * logical = typeid_cast<const JoinStepLogical *>(&step))
     {
@@ -92,10 +98,10 @@ bool joinMayHaveDelayedBlocks(const IQueryPlanStep & step)
 /// traversal would fail because the eventual physical join breaks the read-in-order
 /// chain on the preserved side. Two distinct failure modes are covered:
 ///
-///  1. The join does not emit left rows in their original stream order
-///     (`preservesLeftBlockOrder() == false`). `findReadingStep` rejects such joins
-///     directly. `PartialMergeJoin` (`partial_merge` / `prefer_partial_merge`) is the
-///     case here: it re-sorts left blocks by the join key.
+///  1. The join can neither emit left rows in their original stream order
+///     (`preservesLeftBlockOrder`) nor be pinned to do so on request
+///     (`canPreserveLeftBlockOrder`; the second pass pins with `keepLeftPipelineInOrder`).
+///     `findReadingStep` rejects such joins directly.
 ///  2. The join's physicalization inserts a `Sort ... before JOIN` on the preserved input
 ///     (`FullSortingMergeJoin`, `full_sorting_merge`; see
 ///     `addSortingForMergeJoin` in `JoinStepLogical.cpp`). `findReadingStep` only
@@ -107,12 +113,15 @@ bool joinMayHaveDelayedBlocks(const IQueryPlanStep & step)
 /// pass, so we must NOT defer and instead let `topKThroughJoin` inject its own
 /// `Sort + Limit`.
 ///
-/// For a physical `JoinStep` we read `preservesLeftBlockOrder()` directly and also flag
+/// For a physical `JoinStep` we read `canPreserveLeftBlockOrder()` directly and also flag
 /// `FullSortingMergeJoin` explicitly (mode 2). For
 /// `JoinStepLogical` the algorithm is chosen later from `JoinSettings::join_algorithms`,
 /// so we conservatively flag any configured `PARTIAL_MERGE` / `PREFER_PARTIAL_MERGE` /
 /// `FULL_SORTING_MERGE` / `PARALLEL_FULL_SORTING_MERGE` (the parallel variant
 /// physicalizes to the same `FullSortingMergeJoin` with the same pre-JOIN sort).
+/// A physical `PartialMergeJoin` can be pinned to the order-preserving probe for
+/// INNER/LEFT ANY/ALL joins, but whether the pin applies depends on physical-level
+/// details, so the logical branch stays fail-closed.
 /// `GRACE_HASH` / `AUTO` are already covered by `joinMayHaveDelayedBlocks`.
 ///
 /// The `JoinStepLogical` check is by *list membership*, so listing a merge join as a
@@ -125,13 +134,12 @@ bool joinMayHaveDelayedBlocks(const IQueryPlanStep & step)
 /// `04651_parallel_full_sorting_merge_join_fallback_top_k`; the analogous strict-key
 /// fallback side effect is pinned by
 /// `04602_parallel_full_sorting_merge_join_fallback_strict_keys`.
-/// See issues #110662 and #109216.
 bool joinDefeatsReadInOrderThroughJoin(const IQueryPlanStep & step)
 {
     if (const auto * physical = typeid_cast<const JoinStep *>(&step))
     {
         const auto & join_ptr = physical->getJoin();
-        if (!join_ptr || !join_ptr->preservesLeftBlockOrder())
+        if (!join_ptr || !(join_ptr->preservesLeftBlockOrder() || join_ptr->canPreserveLeftBlockOrder()))
             return true;
         return typeid_cast<const FullSortingMergeJoin *>(join_ptr.get()) != nullptr;
     }
@@ -341,7 +349,6 @@ size_t tryTopKThroughJoin(QueryPlan::Node * parent_node, QueryPlan::Nodes & node
     /// `FullSortingMergeJoin` whose physicalization inserts a `Sort ... before JOIN` on the
     /// preserved input (`addSortingForMergeJoin`), which `findReadingStep` will not descend
     /// through. In either case deferring would silently disable both optimizations.
-    /// See issues #110662 and #109216.
     const bool second_pass_can_apply
         = settings.read_in_order
         && settings.read_in_order_through_join
