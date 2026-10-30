@@ -23,6 +23,8 @@
 #include <Poco/Logger.h>
 #include <Disks/DiskType.h>
 
+#include <algorithm>
+
 namespace DB
 {
 
@@ -48,6 +50,29 @@ namespace
 
 // LocalObjectStorage is only supported for Iceberg Datalake operations where Avro format is required. For regular file access, use FileStorage instead.
 #if USE_AWS_S3 || USE_AZURE_BLOB_STORAGE || USE_HDFS || USE_AVRO
+
+bool hasClusterVariant(std::string_view engine_name)
+{
+    static constexpr std::string_view engines[] = {
+        AzureClusterDefinition::non_clustered_storage_engine_name,
+        S3ClusterDefinition::non_clustered_storage_engine_name,
+        HDFSClusterDefinition::non_clustered_storage_engine_name,
+        IcebergClusterDefinition::non_clustered_storage_engine_name,
+        IcebergS3ClusterDefinition::non_clustered_storage_engine_name,
+        IcebergAzureClusterDefinition::non_clustered_storage_engine_name,
+        IcebergHDFSClusterDefinition::non_clustered_storage_engine_name,
+        IcebergLocalClusterDefinition::non_clustered_storage_engine_name,
+        DeltaLakeClusterDefinition::non_clustered_storage_engine_name,
+        DeltaLakeS3ClusterDefinition::non_clustered_storage_engine_name,
+        DeltaLakeAzureClusterDefinition::non_clustered_storage_engine_name,
+        HudiClusterDefinition::non_clustered_storage_engine_name,
+        PaimonClusterDefinition::non_clustered_storage_engine_name,
+        PaimonS3ClusterDefinition::non_clustered_storage_engine_name,
+        PaimonAzureClusterDefinition::non_clustered_storage_engine_name,
+        PaimonHDFSClusterDefinition::non_clustered_storage_engine_name,
+    };
+    return std::ranges::find(engines, engine_name) != std::end(engines);
+}
 
 std::shared_ptr<StorageObjectStorage>
 createStorageObjectStorage(const StorageFactory::Arguments & args, StorageObjectStorageConfigurationPtr configuration)
@@ -110,7 +135,7 @@ createStorageObjectStorage(const StorageFactory::Arguments & args, StorageObject
         && (args.table_id.table_name.ends_with("_s3") || args.table_id.table_name.ends_with("_s3queue")))
         configuration->force_anonymous_load_fallback = true;
 
-    return std::make_shared<StorageObjectStorage>(
+    auto storage = std::make_shared<StorageObjectStorage>(
         configuration,
         // We only want to perform write actions (e.g. create a container in Azure) when the table is being created,
         // and we want to avoid it when we load the table after a server restart.
@@ -128,6 +153,19 @@ createStorageObjectStorage(const StorageFactory::Arguments & args, StorageObject
         /* distributed_processing */ false,
         partition_by,
         order_by);
+
+    if (configuration->isDataLakeConfiguration() && args.storage_def->settings)
+    {
+        auto metadata_snapshot = storage->getInMemoryMetadataPtr(context, false);
+        auto metadata = *metadata_snapshot;
+        metadata.settings_changes = args.storage_def->settings->ptr();
+        storage->setInMemoryMetadata(metadata);
+    }
+
+    if (hasClusterVariant(args.engine_name))
+        storage->setHasClusterVariant();
+
+    return storage;
 }
 
 #endif
@@ -1562,6 +1600,22 @@ SETTINGS iceberg_metadata_staleness_ms=120000
 
 **Note**: Current expectation is that metadata cache size is sufficient to hold the latest metadata snapshot in full for all active tables, if asynchronous prefetching is enabled.
 
+## Modifying table settings {#modify-settings}
+
+The settings which are stored only in the table definition, and not in the Iceberg metadata, can be changed for an existing table with `ALTER TABLE ... MODIFY SETTING` and `ALTER TABLE ... RESET SETTING`:
+
+- the lookup of the metadata file: `iceberg_use_version_hint`, `iceberg_recent_metadata_file_by_last_updated_ms_field` and `iceberg_metadata_async_prefetch_period_ms`;
+- the background compaction and the cleanup after it: `allow_experimental_iceberg_compaction`, `allow_experimental_cleanup_old_data_files_compaction`, `iceberg_compaction_lock_lease_seconds`, `iceberg_compaction_delay_bias`, `iceberg_compaction_data_cleanup`, `iceberg_read_with_snapshot_lease`, `iceberg_snapshot_lease_seconds`, `iceberg_outdated_snapshot_lifetime_seconds`, `iceberg_compaction_commit_batch_size`, `iceberg_compaction_max_rows_in_data_file`, `iceberg_compaction_max_bytes_in_data_file`, `iceberg_max_number_datafiles_to_compact`, `iceberg_data_file_size_lower_threshold_compaction` and `iceberg_data_file_size_upper_threshold_compaction`.
+
+The new values take effect for subsequent queries and are stored in the table definition. The background jobs of the table are stopped while the settings are changed and started again with the new settings, so switching `allow_experimental_iceberg_compaction` off stops the background compaction of the table, and switching it on starts it. Other settings cannot be modified, and a settings change cannot be combined with other `ALTER` commands in one query. Tables of a `DataLakeCatalog` database do not support modifying settings.
+
+```sql
+ALTER TABLE example_table MODIFY SETTING iceberg_use_version_hint = 1;
+ALTER TABLE example_table RESET SETTING iceberg_use_version_hint;
+ALTER TABLE example_table MODIFY SETTING allow_experimental_iceberg_compaction = 0;
+ALTER TABLE example_table MODIFY SETTING iceberg_compaction_delay_bias = 600, iceberg_data_file_size_lower_threshold_compaction = 268435456;
+```
+
 ## See also {#see-also}
 
 - [iceberg table function](/reference/functions/table-functions/iceberg)
@@ -1956,7 +2010,7 @@ The Keeper cursor at `paimon_keeper_path` records how far the stream has consume
 
 Moving the warehouse *backwards* breaks that assumption. Restoring the warehouse from an older backup, rolling it back with another engine, or dropping and recreating the Paimon table at the same path all rewind the snapshot ids, and the writer then reuses ids the cursor has already consumed.
 
-**Rewinding the warehouse requires resetting the cursor in the same operation.** ClickHouse cannot reconstruct which snapshots a consumer already received once ids are reused, so a cursor left behind after a rewind produces undefined delivery: snapshots at reused ids may be skipped.
+**Rewinding the warehouse requires resetting the cursor in the same operation.** The cursor also records which snapshot it points at, so once the writer has reused the cursor's snapshot id, the read fails with `INVALID_STATE`: nothing is read and the cursor is left untouched. To recover, point the cursor at the snapshot the warehouse was rewound to, which reads every snapshot written since the rewind, or set it to its current value, which skips the snapshots at the reused ids. A cursor set by hand, or written by an older version, is trusted as written until a read advances it. Nothing can be checked once Paimon has expired the snapshot the cursor points at, nor for a rewind that keeps the cursor's snapshot and lands while a read is loading the snapshots after it.
 
 When the rewind leaves the cursor pointing past the warehouse's newest snapshot, the read fails with `INVALID_STATE` rather than reporting no new data, and the error names the recovery command. Nothing is read and the cursor is left untouched, so every subsequent poll fails identically until it is resolved:
 
