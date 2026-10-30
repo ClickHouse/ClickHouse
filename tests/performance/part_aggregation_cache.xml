@@ -1,9 +1,12 @@
 <test>
     <settings>
-        <allow_experimental_part_aggregation_cache>1</allow_experimental_part_aggregation_cache>
         <optimize_aggregation_in_order>0</optimize_aggregation_in_order>
         <enable_memory_bound_merging_of_aggregation_results>0</enable_memory_bound_merging_of_aggregation_results>
     </settings>
+
+    <!-- The reference server does not know the new settings: this query fails there, and the test then runs on the new server only.
+         The settings are passed per query, because unknown settings in the <settings> section fail the test on the reference server. -->
+    <create_query do_not_check_in_pr="101073">SELECT 1 SETTINGS allow_experimental_part_aggregation_cache = 1</create_query>
 
     <create_query>
         CREATE TABLE perf_part_agg_cache (k UInt32, v UInt64) ENGINE = MergeTree ORDER BY k
@@ -24,18 +27,19 @@
     <!-- Populate cache for 10 parts -->
     <fill_query>
         SELECT k, sum(v), avg(v), count() FROM perf_part_agg_cache GROUP BY k FORMAT Null
+        SETTINGS allow_experimental_part_aggregation_cache = 1
     </fill_query>
 
     <!-- 1. Baseline: no cache, 10 parts -->
     <query>
         SELECT k, sum(v), avg(v), count() FROM perf_part_agg_cache GROUP BY k FORMAT Null
-        SETTINGS enable_reads_from_part_aggregation_cache = 0, enable_writes_to_part_aggregation_cache = 0
+        SETTINGS allow_experimental_part_aggregation_cache = 1, enable_reads_from_part_aggregation_cache = 0, enable_writes_to_part_aggregation_cache = 0
     </query>
 
     <!-- 2. All cached: 10 parts from cache -->
     <query>
         SELECT k, sum(v), avg(v), count() FROM perf_part_agg_cache GROUP BY k FORMAT Null
-        SETTINGS enable_reads_from_part_aggregation_cache = 1, enable_writes_to_part_aggregation_cache = 0
+        SETTINGS allow_experimental_part_aggregation_cache = 1, enable_reads_from_part_aggregation_cache = 1, enable_writes_to_part_aggregation_cache = 0
     </query>
 
     <!-- Add 11th part for incremental test -->
@@ -44,13 +48,13 @@
     <!-- 3. Baseline after INSERT: no cache, 11 parts -->
     <query>
         SELECT k, sum(v), avg(v), count() FROM perf_part_agg_cache GROUP BY k FORMAT Null
-        SETTINGS enable_reads_from_part_aggregation_cache = 0, enable_writes_to_part_aggregation_cache = 0
+        SETTINGS allow_experimental_part_aggregation_cache = 1, enable_reads_from_part_aggregation_cache = 0, enable_writes_to_part_aggregation_cache = 0
     </query>
 
     <!-- 4. Incremental: 10 parts from cache + 1 fresh -->
     <query>
         SELECT k, sum(v), avg(v), count() FROM perf_part_agg_cache GROUP BY k FORMAT Null
-        SETTINGS enable_reads_from_part_aggregation_cache = 1, enable_writes_to_part_aggregation_cache = 1
+        SETTINGS allow_experimental_part_aggregation_cache = 1, enable_reads_from_part_aggregation_cache = 1, enable_writes_to_part_aggregation_cache = 1
     </query>
 
     <drop_query>DROP TABLE IF EXISTS perf_part_agg_cache</drop_query>
