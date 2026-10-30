@@ -20,7 +20,8 @@ DB="${CLICKHOUSE_DATABASE}"
 
 require_v3()
 {
-    grep -o 'requires format version 3' || echo 'NO_ERROR'
+    # Client also echoes the server error log, so the phrase can appear twice.
+    grep -m1 -o 'requires format version 3' || echo 'NO_ERROR'
 }
 
 echo -n "create_v2: "
@@ -57,7 +58,7 @@ SETTINGS iceberg_format_version = 3
 "
 
 echo "describe_v3:"
-${CLIENT} --query "DESCRIBE TABLE t_v3_${DB}" | awk -F'\t' '{print $1 "\t" $2}'
+${CLIENT} --format TSVRaw --query "DESCRIBE TABLE t_v3_${DB}" | awk -F'\t' '{print $1 "\t" $2}'
 
 ${CLIENT} --query "
 INSERT INTO t_v3_${DB} VALUES
@@ -79,7 +80,7 @@ ENGINE = IcebergLocal('${CLICKHOUSE_USER_FILES_UNIQUE}/tz/', 'Parquet')
 SETTINGS iceberg_format_version = 3
 "
 echo -n "describe_tz: "
-${CLIENT} --query "DESCRIBE TABLE t_tz_${DB}" | awk -F'\t' 'NR==1 {print $1 "\t" $2}'
+${CLIENT} --format TSVRaw --query "DESCRIBE TABLE t_tz_${DB}" | awk -F'\t' 'NR==1 {print $1 "\t" $2}'
 
 ${CLIENT} --query "
 CREATE TABLE t_part_${DB} (ts DateTime64(9), id Int32)
@@ -110,7 +111,7 @@ SETTINGS iceberg_format_version = 3
 "
 ${CLIENT} --query "ALTER TABLE t_alter_v3_${DB} ADD COLUMN ts_ns Nullable(DateTime64(9))"
 echo -n "alter_add_v3: "
-${CLIENT} --query "DESCRIBE TABLE t_alter_v3_${DB}" | awk -F'\t' '$1=="ts_ns" {print $1 "\t" $2}'
+${CLIENT} --format TSVRaw --query "DESCRIBE TABLE t_alter_v3_${DB}" | awk -F'\t' '$1=="ts_ns" {print $1 "\t" $2}'
 
 ${CLIENT} --query "
 DROP TABLE t_v3_${DB} SYNC;
