@@ -1,6 +1,7 @@
 #include <Functions/FunctionsConversion.h>
 #include <Common/UnorderedMapWithMemoryTracking.h>
 #include <Common/VectorWithMemoryTracking.h>
+#include <Common/iota.h>
 
 #if USE_EMBEDDED_COMPILER
 #    include <llvm/IR/IRBuilder.h>
@@ -533,6 +534,36 @@ case FormatSettings::DateTimeOverflowBehavior::OVERFLOW_MODE: \
 
                     return true;
                 }
+                /// IPv4/IPv6 are not DataTypeNumber, so without this arm the accurate casts fall through
+                /// below and never examine the value, unlike the plain CAST of the same pair.
+                else if constexpr (
+                    (std::is_same_v<RightDataType, DataTypeIPv4>
+                        && is_any_of<LeftDataType, DataTypeUInt8, DataTypeUInt16, DataTypeUInt32, DataTypeUInt64>)
+                    || (std::is_same_v<RightDataType, DataTypeIPv6> && std::is_same_v<LeftDataType, DataTypeUInt128>))
+                {
+                    if (cast_type == CastType::accurate)
+                    {
+                        result_column = ConvertImpl<LeftDataType, RightDataType, FunctionCastName>::execute(
+                            arguments,
+                            result_type,
+                            input_rows_count,
+                            BehaviourOnErrorFromString::ConvertDefaultBehaviorTag,
+                            settings,
+                            AccurateConvertStrategyAdditions());
+                    }
+                    else
+                    {
+                        result_column = ConvertImpl<LeftDataType, RightDataType, FunctionCastName>::execute(
+                            arguments,
+                            result_type,
+                            input_rows_count,
+                            BehaviourOnErrorFromString::ConvertDefaultBehaviorTag,
+                            settings,
+                            AccurateOrNullConvertStrategyAdditions());
+                    }
+
+                    return true;
+                }
             }
             else if constexpr (IsDataTypeStringOrFixedString<LeftDataType>)
             {
@@ -948,10 +979,62 @@ bool canHaveSameNumberOfDimensions(const IDataType & from, const IDataType & to)
     return from_dimensions.min <= to_dimensions.max && to_dimensions.min <= from_dimensions.max;
 }
 
+bool isGeometryToMultiGeometry(const IDataType & from, const IDataType & to)
+{
+    const auto * from_name = from.getCustomName();
+    const auto * to_name = to.getCustomName();
+    if (!from_name || !to_name)
+        return false;
+
+    const String from_geometry = from_name->getName();
+    const String to_geometry = to_name->getName();
+    return (from_geometry == "Point" && to_geometry == "MultiPoint")
+        || (from_geometry == "LineString" && to_geometry == "MultiLineString")
+        || (from_geometry == "Polygon" && to_geometry == "MultiPolygon");
+}
+
+bool isGeometryToMultiGeometryUnderArrays(const IDataType & from, const IDataType & to)
+{
+    if (isGeometryToMultiGeometry(from, to))
+        return true;
+
+    if (const auto * from_nullable = typeid_cast<const DataTypeNullable *>(&from))
+        return isGeometryToMultiGeometryUnderArrays(*from_nullable->getNestedType(), to);
+
+    /// Some alternative is promoted, and every other one already has the depth of `to`.
+    if (const auto * from_variant = typeid_cast<const DataTypeVariant *>(&from))
+    {
+        bool has_promoted_alternative = false;
+        for (const auto & alternative : from_variant->getVariants())
+        {
+            if (isGeometryToMultiGeometryUnderArrays(*alternative, to))
+                has_promoted_alternative = true;
+            else if (!canHaveSameNumberOfDimensions(*alternative, to))
+                return false;
+        }
+        return has_promoted_alternative;
+    }
+
+    const auto * from_array = typeid_cast<const DataTypeArray *>(&from);
+    const auto * to_array = typeid_cast<const DataTypeArray *>(&to);
+    return from_array && to_array && isGeometryToMultiGeometryUnderArrays(*from_array->getNestedType(), *to_array->getNestedType());
+}
+
 }
 
 FunctionCast::WrapperType FunctionCast::createArrayWrapper(const DataTypePtr & from_type_untyped, const DataTypeArray & to_type) const
 {
+    /// A single geometry becomes a collection of one element.
+    if (isGeometryToMultiGeometry(*from_type_untyped, to_type))
+    {
+        return [](ColumnsWithTypeAndName & arguments, const DataTypePtr &, const ColumnNullable *, size_t input_rows_count) -> ColumnPtr
+        {
+            auto offsets = ColumnArray::ColumnOffsets::create(input_rows_count);
+            iota(offsets->getData().data(), input_rows_count, ColumnArray::Offset(1));
+            return ColumnArray::create(arguments.front().column, std::move(offsets));
+        };
+    }
+
     /// Conversion from String through parsing.
     if (checkAndGetDataType<DataTypeString>(from_type_untyped.get()))
     {
@@ -1003,7 +1086,7 @@ FunctionCast::WrapperType FunctionCast::createArrayWrapper(const DataTypePtr & f
     /// In query SELECT CAST([] AS Array(Array(String))) from type is Array(Nothing)
     bool from_empty_array = isNothing(from_nested_type);
 
-    if (!canHaveSameNumberOfDimensions(*from_type, to_type) && !from_empty_array)
+    if (!canHaveSameNumberOfDimensions(*from_type, to_type) && !from_empty_array && !isGeometryToMultiGeometryUnderArrays(*from_type, to_type))
         throw Exception(ErrorCodes::TYPE_MISMATCH,
             "CAST AS Array can only be performed between same-dimensional array types");
 
@@ -1959,6 +2042,11 @@ FunctionCast::WrapperType FunctionCast::createMapWrapper(const DataTypePtr & fro
 
 FunctionCast::WrapperType FunctionCast::createObjectWrapper(const DataTypePtr & from_type, const DataTypeObject * to_object, bool requested_result_is_nullable) const
 {
+    /// Types that differ only in SHARED marks of typed paths have identical columns, no conversion is needed.
+    if (const auto * from_object = checkAndGetDataType<DataTypeObject>(from_type.get());
+        from_object && from_object->equalsIgnoringSharedTypedPaths(*to_object))
+        return createIdentityWrapper(from_type);
+
     if (checkAndGetDataType<DataTypeString>(from_type.get()))
     {
         return [this, requested_result_is_nullable](ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, const ColumnNullable * nullable_source, size_t input_rows_count)
@@ -2148,15 +2236,11 @@ FunctionCast::WrapperType FunctionCast::createVariantToColumnWrapper(const DataT
             /// Create wrapper only if we support conversion from variant to the resulting type.
             wrapper = createWrapperIfCanConvert(variant_type, to_type);
         }
-        else
-        {
-            wrapper = prepareUnpackDictionaries(variant_type, to_type);
-        }
         variant_wrappers.push_back(wrapper);
     }
 
     bool keep_nullable = settings.cast_keep_nullable;
-    return [variant_wrappers, variant_types, to_type, keep_nullable]
+    return [this, variant_wrappers, variant_types, to_type, keep_nullable]
            (ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, const ColumnNullable * col_nullable, size_t input_rows_count) -> ColumnPtr
     {
         const auto & column_variant = assert_cast<const ColumnVariant &>(*arguments.front().column.get());
@@ -2174,7 +2258,15 @@ FunctionCast::WrapperType FunctionCast::createVariantToColumnWrapper(const DataT
             ColumnPtr cast_variant;
             /// Check if we have wrapper for this variant.
             if (variant_wrapper)
+            {
                 cast_variant = variant_wrapper(variant, result_type, nullptr, variant_col->size());
+            }
+            else if (cast_type != CastType::accurateOrNull && !variant_col->empty())
+            {
+                /// The conversion is prepared only for a variant with values, so a variant that cannot be
+                /// converted fails the conversion only if the column contains values of it.
+                cast_variant = prepareUnpackDictionaries(variant_types[i], to_type)(variant, result_type, nullptr, variant_col->size());
+            }
             cast_variant_columns.push_back(std::move(cast_variant));
         }
 
@@ -2409,6 +2501,9 @@ FunctionCast::WrapperType FunctionCast::createDynamicToColumnWrapper(const DataT
         }
         else
         {
+            /// Types without values are not converted, so they cannot fail the conversion.
+            if (args[0].column->empty())
+                return nullptr;
             wrapper = prepareUnpackDictionaries(args[0].type, result_type);
         }
 
@@ -2906,6 +3001,55 @@ FunctionCast::WrapperType FunctionCast::createEnumToStringWrapper() const
     };
 }
 
+/// Maps enum values to indexes in a dictionary of all enum names built once,
+/// so that each block inserts into the result dictionary only the names it uses.
+template <typename EnumType>
+static FunctionCast::WrapperType createEnumToLowCardinalityStringWrapper(const DataTypePtr & from_type)
+{
+    auto enum_type = std::static_pointer_cast<const EnumType>(from_type);
+    const auto & values = enum_type->getValues();
+    const Int32 min_value = values.front().second;
+
+    constexpr auto missing = std::numeric_limits<UInt32>::max();
+    VectorWithMemoryTracking<UInt32> value_to_index(values.back().second - min_value + 1, missing);
+
+    /// The dictionary starts with the default value at index 0. Enum names are unique, so it is built without hashing.
+    auto names = ColumnString::create();
+    names->insertDefault();
+    for (const auto & [name, value] : values)
+    {
+        if (!name.empty())
+            names->insertData(name.data(), name.size());
+        value_to_index[value - min_value] = name.empty() ? 0 : static_cast<UInt32>(names->size() - 1);
+    }
+    ColumnPtr dictionary = DataTypeLowCardinality::createColumnUnique(DataTypeString(), std::move(names));
+
+    return [enum_type, min_value, value_to_index, dictionary]
+        (ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, const ColumnNullable * nullable_source, size_t) -> ColumnPtr
+    {
+        const auto & data = typeid_cast<const typename EnumType::ColumnType &>(*arguments.front().column).getData();
+        /// Set by a surrounding `Nullable(Tuple(...))`, whose NULL rows hold placeholder values.
+        const auto * null_map = nullable_source ? &nullable_source->getNullMapData() : nullptr;
+        auto indexes = ColumnUInt32::create(data.size());
+        auto & indexes_data = indexes->getData();
+        for (size_t i = 0; i < data.size(); ++i)
+        {
+            size_t pos = data[i] - min_value;
+            if (null_map && (*null_map)[i])
+                indexes_data[i] = 0;
+            else if (pos < value_to_index.size() && value_to_index[pos] != missing)
+                indexes_data[i] = value_to_index[pos];
+            else
+                enum_type->getNameForValue(data[i]); /// Throws for a value missing in the enum.
+        }
+
+        /// A private source dictionary makes `insertRangeFrom` copy only the used names instead of adopting all of them.
+        auto res = result_type->createColumn();
+        res->insertRangeFrom(*ColumnLowCardinality::create(dictionary, std::move(indexes), /*is_shared=*/ false), 0, data.size());
+        return res;
+    };
+}
+
 FunctionCast::WrapperType FunctionCast::prepareUnpackDictionaries(const DataTypePtr & from_type, const DataTypePtr & to_type) const
 {
     /// A `Nothing` column carries no values, so it converts trivially to any target, which is what
@@ -2945,6 +3089,14 @@ FunctionCast::WrapperType FunctionCast::prepareUnpackDictionaries(const DataType
         {
             return result_type->createColumnConstWithDefaultValue(input_rows_count)->convertToFullColumnIfConst();
         };
+    }
+
+    if (to_low_cardinality && isString(to_nested))
+    {
+        if (isEnum8(from_type))
+            return createEnumToLowCardinalityStringWrapper<DataTypeEnum8>(from_type);
+        if (isEnum16(from_type))
+            return createEnumToLowCardinalityStringWrapper<DataTypeEnum16>(from_type);
     }
 
     bool skip_not_null_check = false;

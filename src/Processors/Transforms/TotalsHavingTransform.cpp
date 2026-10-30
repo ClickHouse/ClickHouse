@@ -97,6 +97,7 @@ TotalsHavingTransform::TotalsHavingTransform(
     /// via a different code path in defaultImplementationForNulls at 0 rows.
     if (expression)
     {
+        set_spillables.add(expression->getActionsDAG());
         /// Use updateHeader (dry-run evaluation) instead of expression->execute(),
         /// because sets from subqueries may not be ready yet at this point.
         auto totals_header = expression->getActionsDAG().updateHeader(finalized_header);

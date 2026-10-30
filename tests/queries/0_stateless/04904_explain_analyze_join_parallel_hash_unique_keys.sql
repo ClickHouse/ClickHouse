@@ -4,7 +4,6 @@
 
 DROP TABLE IF EXISTS left_side;
 DROP TABLE IF EXISTS right_side;
-SET enable_analyzer = 1;
 -- EXPLAIN ANALYZE rejects distributed plans.
 SET enable_parallel_replicas = 0;
 SET query_plan_join_swap_table = 0;
