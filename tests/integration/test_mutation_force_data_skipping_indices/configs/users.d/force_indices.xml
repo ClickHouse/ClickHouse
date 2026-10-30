@@ -1,0 +1,7 @@
+<clickhouse>
+    <profiles>
+        <default>
+            <force_data_skipping_indices>idx</force_data_skipping_indices>
+        </default>
+    </profiles>
+</clickhouse>
