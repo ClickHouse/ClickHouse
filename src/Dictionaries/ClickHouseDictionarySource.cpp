@@ -109,7 +109,8 @@ std::string ClickHouseDictionarySource::getUpdateFieldAndDate()
     {
         time_t hr_time = std::chrono::system_clock::to_time_t(update_time) - configuration.update_lag;
         /// A Unix timestamp is read as the same instant in any time zone, unlike local wall-clock text.
-        std::string str_time = std::to_string(hr_time);
+        /// It is padded to 10 digits because a shorter number can be rejected or read as `YYYYMMDD`.
+        std::string str_time = fmt::format("{:010}", std::max<time_t>(hr_time, 0));
         update_time = std::chrono::system_clock::now();
         return query_builder->composeUpdateQuery(configuration.update_field, str_time);
     }
