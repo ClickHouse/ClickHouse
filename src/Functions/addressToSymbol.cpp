@@ -15,7 +15,7 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <Access/Common/AccessFlags.h>
-#include <Interpreters/Context.h>
+#include <Functions/FunctionAccessCheck.h>
 
 
 namespace DB
@@ -35,14 +35,17 @@ public:
     static constexpr auto name = "addressToSymbol";
     static FunctionPtr create(ContextPtr context)
     {
-        context->checkAccess(AccessType::addressToSymbol);
-        return std::make_shared<FunctionAddressToSymbol>();
+        return std::make_shared<FunctionAddressToSymbol>(context);
     }
+
+    explicit FunctionAddressToSymbol(const ContextPtr & context) : access_check(context) {}
 
     String getName() const override
     {
         return name;
     }
+
+    void checkAccessOnBuild() const override { access_check.check(AccessType::addressToSymbol); }
 
     size_t getNumberOfArguments() const override
     {
@@ -88,6 +91,9 @@ public:
 
         return result_column;
     }
+
+private:
+    FunctionAccessCheck access_check;
 };
 
 }

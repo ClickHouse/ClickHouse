@@ -7,7 +7,7 @@
 #include <Functions/FunctionFactory.h>
 #include <IO/WriteHelpers.h>
 #include <Access/Common/AccessFlags.h>
-#include <Interpreters/Context.h>
+#include <Functions/FunctionAccessCheck.h>
 
 
 namespace DB
@@ -27,14 +27,17 @@ public:
     static constexpr auto name = "demangle";
     static FunctionPtr create(ContextPtr context)
     {
-        context->checkAccess(AccessType::demangle);
-        return std::make_shared<FunctionDemangle>();
+        return std::make_shared<FunctionDemangle>(context);
     }
+
+    explicit FunctionDemangle(const ContextPtr & context) : access_check(context) {}
 
     String getName() const override
     {
         return name;
     }
+
+    void checkAccessOnBuild() const override { access_check.check(AccessType::demangle); }
 
     size_t getNumberOfArguments() const override
     {
@@ -82,6 +85,9 @@ public:
 
         return result_column;
     }
+
+private:
+    FunctionAccessCheck access_check;
 };
 
 }
