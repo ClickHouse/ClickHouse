@@ -27,6 +27,12 @@ class Field;
 StringValueFiltersPtr extractStringValueFilters(
     const ActionsDAG & filter_dag, const String & filter_column_name, const ActionsDAG * row_level_filter = nullptr);
 
+/// Whether the filter expression rejects every row in which the `String` column `column_name` is empty,
+/// i.e. one of its conjuncts is `s != ''`, `notEmpty(s)`, `s > ''` or a condition that `extractStringValueFilters` extracts.
+bool filterRejectsEmptyString(const ActionsDAG & filter_dag, const String & filter_column_name, const String & column_name);
+/// Same for a filter DAG whose only output is the filter.
+bool filterRejectsEmptyString(const ActionsDAG & filter_dag, const String & column_name);
+
 /// Whether a LIKE pattern contains fixed substrings that can be used as a string value filter.
 bool likePatternHasStringValueFilterConditions(const String & pattern);
 

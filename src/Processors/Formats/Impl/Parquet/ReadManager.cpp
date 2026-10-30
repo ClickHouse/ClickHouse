@@ -8,6 +8,7 @@
 #include <Formats/FormatFilterInfo.h>
 #include <Formats/FormatParserSharedResources.h>
 #include <Processors/Formats/IInputFormat.h>
+#include <Processors/TopKThresholdTracker.h>
 #include <Common/logger_useful.h>
 #include <base/scope_guard.h>
 
@@ -295,11 +296,27 @@ void ReadManager::finishRowGroupStage(size_t row_group_idx, ReadStage stage, Mem
     }
     else if (stage == ReadStage::Dictionary)
     {
-        /// Without a condition, the stage only decoded the dictionaries for `ColumnChunk::decode_dictionary_early`.
+        /// Without a condition, the stage only decoded the dictionaries for `ColumnChunk::decode_dictionary_early`
+        /// or `ColumnChunk::decode_dictionary_for_top_k`.
         if (reader.bloom_filter_condition && !reader.applyBloomAndDictionaryFilters(row_group, pruningMemoryReservation(diff)))
         {
             ProfileEvents::increment(ProfileEvents::ParquetDictionaryFilterPrunedRowGroups);
             stage = ReadStage::Deliver; // skip the row group
+        }
+        else
+        {
+            /// Checked against the threshold in the `OffsetIndex` stage.
+            reader.refineTopKRangeFromDictionary(row_group);
+            /// If the row group is read, the data read decodes the dictionary again.
+            for (auto & c : row_group.columns)
+            {
+                if (!c.decode_dictionary_for_top_k)
+                    continue;
+                c.dictionary.reset();
+                c.dictionary_reservation.release(c.dictionary_reserved_bytes);
+                c.dictionary_reserved_bytes = 0;
+                c.top_k_dictionary_page_prefetch.reset(&diff);
+            }
         }
         release_bloom_filters();
     }
@@ -336,10 +353,19 @@ void ReadManager::finishRowGroupStage(size_t row_group_idx, ReadStage stage, Mem
                 break;
             case ReadStage::Dictionary:
                 for (size_t i = 0; i < row_group.columns.size(); ++i)
-                    if (row_group.columns[i].use_dictionary_filter || row_group.columns[i].decode_dictionary_early)
+                {
+                    auto & column = row_group.columns[i];
+                    /// Before the TopN threshold is set, the bound could not skip the row group.
+                    column.decode_dictionary_for_top_k = column.top_k_bound_from_dictionary
+                        && reader.format_filter_info->top_k_filter->threshold_tracker->isSet()
+                        && !column.use_dictionary_filter && !column.decode_dictionary_early;
+                    if (!column.decode_dictionary_for_top_k)
+                        column.top_k_dictionary_page_prefetch.reset(&diff);
+                    if (column.use_dictionary_filter || column.decode_dictionary_early || column.decode_dictionary_for_top_k)
                         add_tasks.push_back(Task {
                             .stage = ReadStage::Dictionary,
                             .row_group_idx = row_group_idx, .column_idx = i});
+                }
                 break;
             case ReadStage::ColumnIndexAndOffsetIndex:
                 for (size_t i = 0; i < row_group.columns.size(); ++i)
@@ -1135,7 +1161,12 @@ void ReadManager::scheduleTask(Task task, bool is_first_in_group, MemoryUsageDif
                     prefetches.push_back(&b.prefetch);
                 break;
             case ReadStage::Dictionary:
-                prefetches.push_back(&column.dictionary_page_prefetch);
+                /// Alone: its read task holds no other range, so releasing the handle frees the page.
+                if (column.decode_dictionary_for_top_k && column.top_k_dictionary_page_prefetch)
+                    reader.prefetcher.startPrefetchWithinLimit(
+                        {&column.top_k_dictionary_page_prefetch}, &diff, std::numeric_limits<size_t>::max());
+                else
+                    prefetches.push_back(&column.dictionary_page_prefetch);
                 break;
             case ReadStage::ColumnIndexAndOffsetIndex:
             {
@@ -1293,10 +1324,11 @@ void ReadManager::runTask(Task task, bool last_in_batch, MemoryUsageDiff & diff)
                 /// `Reader::applyBloomFilters` evaluates the condition.
                 break;
             case ReadStage::Dictionary:
-                /// The dictionary is decoded here for the dictionary filter, or to estimate the size of the decoded
-                /// strings, see `ColumnChunk::decode_dictionary_early`. The same budget is used for both: if the
-                /// dictionary does not fit, the size of the strings stays unknown.
-                if (column.use_dictionary_filter || column.decode_dictionary_early)
+                /// The dictionary is decoded here for the dictionary filter, to estimate the size of the decoded
+                /// strings (see `ColumnChunk::decode_dictionary_early`), or to bound the row group for the TopN
+                /// threshold. The same budget is used for all: if the dictionary does not fit, the size of the
+                /// strings stays unknown.
+                if (column.use_dictionary_filter || column.decode_dictionary_early || column.decode_dictionary_for_top_k)
                 {
                     /// Reserve the decoded dictionary's footprint live against the shared pruning-stage
                     /// budget so it is visible to every row group pruning in parallel the moment it is
@@ -1310,7 +1342,8 @@ void ReadManager::runTask(Task task, bool last_in_batch, MemoryUsageDiff & diff)
                     /// is decoded later (throttled) on the data-read path if needed.
                     column.dictionary_reservation = pruningMemoryReservation(diff);
                     if (!reader.decodeDictionaryPage(
-                            column, column_info, column.dictionary_reservation, &column.dictionary_reserved_bytes))
+                            column, column_info, column.dictionary_reservation, &column.dictionary_reserved_bytes,
+                            /*for_top_k_bound=*/ column.decode_dictionary_for_top_k))
                         column.use_dictionary_filter = false;
                 }
                 break;
@@ -1402,6 +1435,7 @@ void ReadManager::clearColumnChunk(ColumnChunk & column, MemoryUsageDiff & diff)
     column.bloom_filter_header_prefetch.reset(&diff);
     column.bloom_filter_data_prefetch.reset(&diff);
     column.dictionary_page_prefetch.reset(&diff);
+    column.top_k_dictionary_page_prefetch.reset(&diff);
     column.column_index_prefetch.reset(&diff);
     column.offset_index_prefetch.reset(&diff);
     column.data_pages_prefetch.reset(&diff);
