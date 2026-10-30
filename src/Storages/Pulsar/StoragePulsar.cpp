@@ -907,10 +907,10 @@ void registerStoragePulsar(StorageFactory & factory)
         if (!(*pulsar_settings)[PulsarSetting::pulsar_service_url].changed)
             throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "You must specify `pulsar_service_url` setting");
 
-        /// Unfold the `{database}` and `{table}` macros on table creation and store the result in
-        /// the definition. Otherwise a renamed table would expand them to the new name on the next
-        /// load, silently switching to another topic or subscription (and replaying the backlog).
-        if (args.mode < LoadingStrictnessLevel::ATTACH)
+        /// Unfold the `{database}` and `{table}` macros for a fresh definition (`CREATE` or a full `ATTACH`)
+        /// and store the result in the definition. Otherwise a renamed table would expand them to the new
+        /// name on the next load, silently switching to another topic or subscription (and replaying the backlog).
+        if (is_fresh_definition)
         {
             const std::pair<const char *, const PulsarSettingsString *> broker_identity_settings[] = {
                 {"pulsar_service_url", &PulsarSetting::pulsar_service_url},
