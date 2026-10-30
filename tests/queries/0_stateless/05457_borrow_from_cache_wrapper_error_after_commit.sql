@@ -41,6 +41,9 @@ SETTINGS disk = disk(
     load_metadata_asynchronously = 0
 );
 
+-- The injected failure is logged as an error by design, it must not be sent to the client.
+SET send_logs_level = 'fatal';
+
 SYSTEM ENABLE FAILPOINT cache_metadata_storage_fail_after_commit;
 INSERT INTO wrapped VALUES (1, 'a'), (2, 'b');
 INSERT INTO wrapped VALUES (3, 'c');
