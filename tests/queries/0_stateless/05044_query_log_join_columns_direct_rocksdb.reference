@@ -1,0 +1,3 @@
+direct join with a rocksdb table
+05044_join_rocksdb_a_inner	1	['DIRECT']	['INNER']	['ALL']	[]
+05044_join_rocksdb_b_left	1	['DIRECT']	['LEFT']	['ALL']	[]

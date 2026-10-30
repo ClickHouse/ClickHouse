@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# Tags: no-parallel
+# Tag no-parallel: asserts an exact miss count on the process-wide mark cache, which it also clears.
 # Test that reading the whole JSON column with ADVANCED shared data serialization
 # does not open per-bucket data/marks/substreams files that are not needed for reading.
 # When reading the whole JSON column, only Structure (per bucket) and Copy streams are used;
@@ -70,13 +72,18 @@ MARK_CACHE_MISSES=$(${CLICKHOUSE_CLIENT} -q "
         AND current_database = currentDatabase()
 ")
 
-# MarkCacheMisses should be at most EXPECTED_MARKS.
-# It can be lower if some marks were already cached, but must not be higher —
-# that would mean unnecessary per-bucket data streams were loaded.
-if [ "${MARK_CACHE_MISSES}" -le "${EXPECTED_MARKS}" ]; then
-    echo "OK"
-else
+# MarkCacheMisses must not exceed EXPECTED_MARKS: a higher count means unnecessary per-bucket data
+# streams were loaded. It must also not fall below the three Copy streams, which are always read:
+# below that the query did not perform the read this test measures.
+MIN_MARKS=3
+if [ -z "${MARK_CACHE_MISSES}" ]; then
+    echo "FAIL: no QueryFinish row for the measured query"
+elif [ "${MARK_CACHE_MISSES}" -lt "${MIN_MARKS}" ]; then
+    echo "FAIL: MarkCacheMisses (${MARK_CACHE_MISSES}) < ${MIN_MARKS}, the read was not measured"
+elif [ "${MARK_CACHE_MISSES}" -gt "${EXPECTED_MARKS}" ]; then
     echo "FAIL: MarkCacheMisses (${MARK_CACHE_MISSES}) > expected (${EXPECTED_MARKS})"
+else
+    echo "OK"
 fi
 
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS ${TABLE_NAME}"

@@ -116,12 +116,20 @@ Identifiers are:
 
 Identifiers can be quoted or non-quoted, although the latter is preferred.
 
-Non-quoted identifiers must match the regex `^[a-zA-Z_][0-9a-zA-Z_]*$` and cannot be equal to [keywords](#keywords).
+Non-quoted identifiers are spelled with ASCII letters, digits, underscores (`_`) and dollar signs (`$`), following these rules:
+
+- An identifier that begins with a letter or `_` matches the regex `^[a-zA-Z_][0-9a-zA-Z_$]*$`, for example `xyz` or `a$b`.
+- An identifier can begin with `$` when the next character is a letter, a digit or `_`, for example `$doc` or `$1`. A `$` on its own is not an identifier.
+- An identifier can begin with a digit if it is not a [numeric literal](#numeric), for example `1x` or `2nd_col`, but not `1e5` or `0x1F`. Such an identifier cannot contain `$`.
+- If an identifier begins with `$tag$`, where `tag` consists of one or more letters, digits or underscores, and the same `$tag$` appears again later in the query, the text from the first `$tag$` to the second one is parsed as a [heredoc](#heredoc) instead. For example, `SELECT 1 AS $a$b, 2 AS $a$c` fails. Quote such identifiers: `` `$a$b` ``.
+
+A word spelled this way is not always read as an identifier: where the context also allows a [keyword](#keywords) or a literal, the word can be read as that instead. For example, `SELECT 1 AS from` works, but in `SELECT 1 from` the word `from` starts the `FROM` clause, and in an expression a column named `inf`, `nan`, `true` or `false` is read as a literal. Quote such identifiers, for example `"from"` or `` `inf` ``.
+
 See the table below for examples of valid and invalid identifiers:
 
-| Valid identifiers                              | Invalid identifiers                    |
-|------------------------------------------------|----------------------------------------|
-| `xyz`, `_internal`, `Id_with_underscores_123_` | `1x`, `tom@gmail.com`, `äußerst_schön` |
+| Valid identifiers                                                    | Invalid identifiers                           |
+|----------------------------------------------------------------------|-----------------------------------------------|
+| `xyz`, `_internal`, `Id_with_underscores_123_`, `a$b`, `$doc`, `1x`  | `1a$b`, `$`, `tom@gmail.com`, `äußerst_schön` |
 
 If you want to use identifiers the same as keywords or you want to use other symbols in identifiers, quote it using double quotes or backticks, for example, `"id"`, `` `id` ``.
 

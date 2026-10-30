@@ -23,6 +23,14 @@ struct ExtractTopLevelDomain
 
         if (!host.empty())
         {
+            if constexpr (conform_rfc)
+            {
+                const auto * host_begin = host.data(); /// NOLINT(bugprone-suspicious-stringview-data-usage)
+                const auto * host_end_ptr = host_begin + host.size();
+                if (host_begin > data && host_begin[-1] == '[' && host_end_ptr < data + size && *host_end_ptr == ']')
+                    return;
+            }
+
             if (host[host.size() - 1] == '.')
                 host.remove_suffix(1);
 
@@ -57,7 +65,7 @@ REGISTER_FUNCTION(TopLevelDomain)
     FunctionDocumentation::Description description_topLevelDomain = R"(
 Extracts the the top-level domain from a URL.
 
-:::note
+<Note>
 The URL can be specified with or without a protocol.
 For example:
 
@@ -66,7 +74,7 @@ svn+ssh://some.svn-hosting.com:80/repo/trunk
 some.svn-hosting.com:80/repo/trunk
 https://clickhouse.com/time/
 ```
-:::
+</Note>
     )";
     FunctionDocumentation::Syntax syntax_topLevelDomain = "topLevelDomain(url)";
     FunctionDocumentation::Arguments arguments_topLevelDomain = {

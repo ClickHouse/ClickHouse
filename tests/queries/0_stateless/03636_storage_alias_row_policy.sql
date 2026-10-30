@@ -34,56 +34,38 @@ CREATE TABLE test_merge (id UInt32, tenant_id UInt32, active UInt8)
 CREATE ROW POLICY target_policy ON test_table FOR SELECT USING tenant_id = 1 TO CURRENT_USER;
 
 -- A policy on the target table is also applied when reading through `Alias`.
-SELECT 'Target policy with the old analyzer';
-SELECT arraySort(groupArray(id)) FROM test_alias SETTINGS enable_analyzer = 0;
-
-SELECT 'Target policy with the analyzer';
-SELECT arraySort(groupArray(id)) FROM test_alias SETTINGS enable_analyzer = 1;
+SELECT 'Target policy';
+SELECT arraySort(groupArray(id)) FROM test_alias;
 
 -- A target policy is also applied when `Merge` reads through `Alias`.
-SELECT 'Target policy through Merge with the old analyzer';
-SELECT arraySort(groupArray(id)) FROM test_merge SETTINGS enable_analyzer = 0;
-
-SELECT 'Target policy through Merge with the analyzer';
-SELECT arraySort(groupArray(id)) FROM test_merge SETTINGS enable_analyzer = 1;
+SELECT 'Target policy through Merge';
+SELECT arraySort(groupArray(id)) FROM test_merge;
 
 CREATE ROW POLICY alias_policy ON test_alias FOR SELECT USING active = 1 TO CURRENT_USER;
 
 -- Policies on the `Alias` and its target are combined with a logical AND.
-SELECT 'Combined policies with the old analyzer';
-SELECT arraySort(groupArray(id)) FROM test_alias SETTINGS enable_analyzer = 0;
-
-SELECT 'Combined policies with the analyzer';
-SELECT arraySort(groupArray(id)) FROM test_alias SETTINGS enable_analyzer = 1;
+SELECT 'Combined policies';
+SELECT arraySort(groupArray(id)) FROM test_alias;
 
 -- A non-trivial combined policy disables the trivial count optimization.
-SELECT 'Combined policies and trivial count disabled with the old analyzer';
-SELECT count() FROM test_alias SETTINGS enable_analyzer = 0, optimize_trivial_count_query = 0;
+SELECT 'Combined policies and trivial count disabled';
+SELECT count() FROM test_alias SETTINGS optimize_trivial_count_query = 0;
 
-SELECT 'Combined policies and trivial count enabled with the old analyzer';
-SELECT count() FROM test_alias SETTINGS enable_analyzer = 0, optimize_trivial_count_query = 1;
-
-SELECT 'Combined policies and trivial count disabled with the analyzer';
-SELECT count() FROM test_alias SETTINGS enable_analyzer = 1, optimize_trivial_count_query = 0;
-
-SELECT 'Combined policies and trivial count enabled with the analyzer';
-SELECT count() FROM test_alias SETTINGS enable_analyzer = 1, optimize_trivial_count_query = 1;
+SELECT 'Combined policies and trivial count enabled';
+SELECT count() FROM test_alias SETTINGS optimize_trivial_count_query = 1;
 
 DROP ROW POLICY target_policy ON test_table;
 
-SELECT 'Alias policy with the old analyzer';
-SELECT arraySort(groupArray(id)) FROM test_alias SETTINGS enable_analyzer = 0;
-
-SELECT 'Alias policy with the analyzer';
-SELECT arraySort(groupArray(id)) FROM test_alias SETTINGS enable_analyzer = 1;
+SELECT 'Alias policy';
+SELECT arraySort(groupArray(id)) FROM test_alias;
 
 -- The text-index count optimization must not discard a policy defined only on the `Alias`.
 SELECT 'Alias policy and text-index count optimization disabled';
 SELECT count() FROM test_alias WHERE hasToken(text, 'alpha')
-    SETTINGS enable_analyzer = 1, query_plan_optimize_count_from_text_index = 0;
+    SETTINGS query_plan_optimize_count_from_text_index = 0;
 
 SELECT 'Alias policy and text-index count optimization enabled';
-SELECT count() FROM test_alias WHERE hasToken(text, 'alpha') SETTINGS enable_analyzer = 1;
+SELECT count() FROM test_alias WHERE hasToken(text, 'alpha');
 
 DROP ROW POLICY alias_policy ON test_alias;
 DROP TABLE test_merge;

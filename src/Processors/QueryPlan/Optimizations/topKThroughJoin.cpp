@@ -10,12 +10,16 @@
 #include <Processors/QueryPlan/JoinStepLogical.h>
 #include <Processors/QueryPlan/LimitStep.h>
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
+#include <Processors/QueryPlan/Optimizations/Utils.h>
 #include <Processors/QueryPlan/Optimizations/optimizeReadInOrder.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Processors/QueryPlan/SortingStep.h>
+#include <Interpreters/Context.h>
 #include <Storages/StorageInMemoryMetadata.h>
+#include <Storages/StorageMerge.h>
 #include <Common/typeid_cast.h>
+#include <base/scope_guard.h>
 
 #include <algorithm>
 
@@ -92,8 +96,8 @@ bool joinMayHaveDelayedBlocks(const IQueryPlanStep & step)
 ///     (`preservesLeftBlockOrder() == false`). `findReadingStep` rejects such joins
 ///     directly. `PartialMergeJoin` (`partial_merge` / `prefer_partial_merge`) is the
 ///     case here: it re-sorts left blocks by the join key.
-///  2. The join preserves left order but its physicalization inserts a `Sort ... before
-///     JOIN` on the preserved input (`FullSortingMergeJoin`, `full_sorting_merge`; see
+///  2. The join's physicalization inserts a `Sort ... before JOIN` on the preserved input
+///     (`FullSortingMergeJoin`, `full_sorting_merge`; see
 ///     `addSortingForMergeJoin` in `JoinStepLogical.cpp`). `findReadingStep` only
 ///     descends through `Expression`/`Filter`/`ArrayJoin`/preliminary `Distinct`/
 ///     `CreatingSets` steps, so it stops at that `SortingStep` and never installs
@@ -104,7 +108,7 @@ bool joinMayHaveDelayedBlocks(const IQueryPlanStep & step)
 /// `Sort + Limit`.
 ///
 /// For a physical `JoinStep` we read `preservesLeftBlockOrder()` directly and also flag
-/// `FullSortingMergeJoin` explicitly (it preserves order but adds the pre-JOIN sort). For
+/// `FullSortingMergeJoin` explicitly (mode 2). For
 /// `JoinStepLogical` the algorithm is chosen later from `JoinSettings::join_algorithms`,
 /// so we conservatively flag any configured `PARTIAL_MERGE` / `PREFER_PARTIAL_MERGE` /
 /// `FULL_SORTING_MERGE` / `PARALLEL_FULL_SORTING_MERGE` (the parallel variant
@@ -143,23 +147,6 @@ bool joinDefeatsReadInOrderThroughJoin(const IQueryPlanStep & step)
     }
     /// Unknown step kind - be conservative.
     return true;
-}
-
-/// Walk down a single-child chain looking for a `ReadFromMergeTree` step. We use this
-/// to defer to `optimizeReadInOrder`'s through-join pass when the preserved input can
-/// stream rows in sort-key order from MergeTree's primary key. Inserting our explicit
-/// `Sort + Limit n` would mask that opportunity and force a materializing sort.
-const ReadFromMergeTree * findMergeTreeRead(const QueryPlan::Node * node)
-{
-    while (node)
-    {
-        if (const auto * reading = typeid_cast<const ReadFromMergeTree *>(node->step.get()))
-            return reading;
-        if (node->children.size() != 1)
-            return nullptr;
-        node = node->children.front();
-    }
-    return nullptr;
 }
 
 }
@@ -233,53 +220,11 @@ size_t tryTopKThroughJoin(QueryPlan::Node * parent_node, QueryPlan::Nodes & node
     if (sort_node->children.size() != 1)
         return 0;
 
-    /// Peel a chain of ExpressionSteps between Sort and Join, translating the sort
-    /// description to the input level of each step. For each sort column we look up
-    /// the output node by name and walk through any `ALIAS` chain - if it ends at an
-    /// `INPUT` node, the column is a pure pass-through and we replace its name with
-    /// the input's name. Anything else (FUNCTION, COLUMN, ARRAY_JOIN, ...) means the
-    /// sort key was computed in this step rather than carried over, and pushing the
-    /// sort below the join would be unsound.
-    ///
-    /// The cap of 4 is generous: in current plans the only steps between Sort and
-    /// Join after `mergeExpressions` are `Before ORDER BY + Projection` and
-    /// `Post Join Actions`, occasionally with one more wrapper.
+    /// an `arrayJoin` above the join changes the row count of the preserved side, so its top-n is not the result's (#82279)
     SortDescription description = sort_step->getSortDescription();
     QueryPlan::Node * join_node = sort_node->children.front();
-    for (size_t peeled = 0; peeled < 4; ++peeled)
-    {
-        auto * expression_step = typeid_cast<ExpressionStep *>(join_node->step.get());
-        if (!expression_step)
-            break;
-        if (join_node->children.size() != 1)
-            return 0;
-
-        const ActionsDAG & dag = expression_step->getExpression();
-        /// `arrayJoin` between `Sort` and `Join` changes the number of output rows
-        /// per input row. The soundness sketch assumes "every preserved-side row
-        /// produces at least one output row" and that the top-n of the sort output
-        /// corresponds to the top-n of the preserved side - both invariants break
-        /// when an `arrayJoin` above the join expands rows, because the n rows we
-        /// keep on the preserved side may expand into fewer (or zero) final rows.
-        /// See `#82279`.
-        if (dag.hasArrayJoin())
-            return 0;
-        for (auto & sort_col : description)
-        {
-            const auto * out_node = dag.tryFindInOutputs(sort_col.column_name);
-            if (!out_node)
-                return 0;
-
-            while (out_node->type == ActionsDAG::ActionType::ALIAS)
-                out_node = out_node->children.front();
-
-            if (out_node->type != ActionsDAG::ActionType::INPUT)
-                return 0;
-
-            sort_col.column_name = out_node->result_name;
-        }
-        join_node = join_node->children.front();
-    }
+    if (!peelPassThroughExpressions(join_node, description))
+        return 0;
 
     auto join_semantics_opt = getJoinSemanticsFromStep(join_node->step.get());
     if (!join_semantics_opt)
@@ -407,39 +352,91 @@ size_t tryTopKThroughJoin(QueryPlan::Node * parent_node, QueryPlan::Nodes & node
         && !joinDefeatsReadInOrderThroughJoin(*join_node->step);
     if (second_pass_can_apply)
     {
-        if (const auto * reading = findMergeTreeRead(preserved_input_node))
+        /// Probe full read-in-order applicability (direction, nulls direction,
+        /// collator, key-expression mapping) rather than just matching column names.
+        /// A name-only match defers even when `optimizeReadInOrder` cannot actually
+        /// satisfy the `SortingStep` (e.g. `ORDER BY ... COLLATE`), which would
+        /// silently disable both optimizations.
+        ///
+        /// A matching input order is not enough: pass 2's `requestReadingInOrder` also
+        /// rejects a reverse direction when the read cannot be performed in that direction
+        /// (with `FINAL`, only some engines can). If we deferred in that case, the second pass
+        /// would reject the read and both optimizations would silently disable. The direction
+        /// is the one computed for the storage's sorting key: a descending sorting key read by an
+        /// ascending sort description is a reverse read, and by a descending one a direct read.
+        SortingStep probe_sort_step(
+            preserved_input_node->step->getOutputHeader(),
+            description,
+            n,
+            sort_step->getSettings());
+
+        /// Look for the read the same way pass 2 does: it descends only through some steps (expressions,
+        /// filters, preliminary `DISTINCT`, ...), so a read below any other step, e.g. a final `DISTINCT`
+        /// of a subquery, is not reached by it, and deferring there would silently disable both optimizations.
+        ///
+        /// Looking for the read and probing a `Merge` read create its child plans, while the filters are applied to
+        /// the read only in the second pass: children created now would read the tables that a filter on `_table`
+        /// excludes, because they are created only once. So drop the child plans this probe creates; they are created
+        /// again when they are needed. The probe asks a superset of the tables the second pass sees, so its verdict
+        /// stays conservative.
+        std::vector<ReadFromMerge *> merges_without_child_plans;
         {
-            /// Probe full read-in-order applicability (direction, nulls direction,
-            /// collator, key-expression mapping) rather than just matching column names.
-            /// A name-only match defers even when `optimizeReadInOrder` cannot actually
-            /// satisfy the `SortingStep` (e.g. `ORDER BY ... COLLATE`), which would
-            /// silently disable both optimizations.
-            SortingStep probe_sort_step(
-                preserved_input_node->step->getOutputHeader(),
-                description,
-                n,
-                sort_step->getSettings());
-            const bool read_in_order_useful = wouldReadInOrderBeUseful(
+            std::vector<QueryPlan::Node *> stack{preserved_input_node};
+            while (!stack.empty())
+            {
+                auto * current = stack.back();
+                stack.pop_back();
+                if (auto * merge = typeid_cast<ReadFromMerge *>(current->step.get()); merge && !merge->hasChildPlans())
+                    merges_without_child_plans.push_back(merge);
+                stack.insert(stack.end(), current->children.begin(), current->children.end());
+            }
+        }
+        SCOPE_EXIT(
+            for (auto * merge : merges_without_child_plans)
+                merge->resetChildPlans();
+        );
+
+        QueryPlan::Node * reading_node = findReadingStepForReadInOrder(*preserved_input_node, settings.read_in_order_through_join);
+        IQueryPlanStep * reading_step = reading_node ? reading_node->step.get() : nullptr;
+
+        if (const auto * reading = typeid_cast<const ReadFromMergeTree *>(reading_step))
+        {
+            const auto order_info = getInputOrderIfReadInOrderIsUseful(
                 probe_sort_step,
                 reading->getStorageMetadata()->getSortingKey(),
                 *preserved_input_node);
 
-            /// `wouldReadInOrderBeUseful` is unaware of `FINAL`-time gating: even when
-            /// the sort description matches the storage's sorting key, pass 2's
-            /// `ReadFromMergeTree::requestReadingInOrder` returns `false` for
-            /// `direction != 1 && query_info.isFinal()`. If we deferred here on the
-            /// strength of the column match, both optimizations would silently disable.
-            /// Guard conservatively: when reading `FINAL`, only defer if all sort columns
-            /// are ascending, since a single descending column is enough for the eventual
-            /// read direction to be -1 in the common case (storage key without reverse
-            /// flags). This may miss the rare reverse-storage-key case where pass 2 would
-            /// have succeeded, but never silently disables both passes.
-            const bool any_desc = std::ranges::any_of(
-                description, [](const SortColumnDescription & c) { return c.direction != 1; });
-            const bool final_blocks_pass2 = reading->isQueryWithFinal() && any_desc;
+            const bool reverse_read_blocks_pass2
+                = order_info && order_info->direction != 1 && !reading->canReadInReverseOrder();
 
-            if (read_in_order_useful && !final_blocks_pass2)
+            if (order_info && !reverse_read_blocks_pass2)
                 return 0;
+        }
+        else if (auto * merge = typeid_cast<ReadFromMerge *>(reading_step))
+        {
+            /// A `Merge` table is read through its own step and pass 2 asks every child table
+            /// (`ReadFromMerge::requestReadingInOrder`), so the probe asks them all the same way.
+            /// The plan-based parallel replicas may expand the `Merge` read into its tables later
+            /// (`applyParallelReplicas` runs right before pass 2), after which pass 2 does not see this
+            /// step any more, so keep the explicit `Sort + Limit` then. The read is never expanded when
+            /// `getExpandableReads` rejects it (a `FINAL` read, `parallel_replicas_allow_merge_tables = 0`,
+            /// a child which is not a plain `MergeTree` read, or a read `mergeTreeReadCanBeShipped` refuses,
+            /// such as a non-replicated table with `parallel_replicas_for_non_replicated_merge_tree = 0`),
+            /// and the classic parallel replicas read every child without them, so pass 2 still sees this
+            /// step in those cases. A read which passes these checks may still stay unexpanded because of
+            /// the rest of the plan; the explicit `Sort + Limit` is then kept, which is correct, only slower.
+            if (!settings.enable_parallel_replicas || !merge->mayBeExpandedForParallelReplicas(mergeTreeReadCanBeShipped))
+            {
+                const auto order_info = getInputOrderIfReadInOrderIsUseful(
+                    probe_sort_step,
+                    *merge,
+                    *preserved_input_node);
+
+                const bool read_blocks_pass2 = order_info && !merge->canReadInOrder(*order_info);
+
+                if (order_info && !read_blocks_pass2)
+                    return 0;
+            }
         }
     }
 

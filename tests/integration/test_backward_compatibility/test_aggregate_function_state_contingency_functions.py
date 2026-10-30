@@ -22,8 +22,8 @@ old_node_2 = cluster.add_instance(
     with_installed_binary=True,
 )
 
-new_node_1 = cluster.add_instance("new_node_1", with_zookeeper=False, use_old_analyzer=True)
-new_node_2 = cluster.add_instance("new_node_2", with_zookeeper=False, use_old_analyzer=True)
+new_node_1 = cluster.add_instance("new_node_1", with_zookeeper=False)
+new_node_2 = cluster.add_instance("new_node_2", with_zookeeper=False)
 
 
 @pytest.fixture(scope="module")

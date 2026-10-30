@@ -88,6 +88,41 @@ for i in {1..5}; do
     exec 13>&-
 done
 exec 13>&-"""
+    # The release builds keep the symbols for self-symbolization in the `.clickhouse.symbols`
+    # section instead of `.symtab` (`SYMBOL_SECTIONS=compact`). Without the debug symbols
+    # package it is the only source of symbol names, so check that the server resolves them.
+    # The image has no `readelf`, so the section names are read from the ELF header directly.
+    symbols_test = r"""#!/bin/bash
+set -e
+trap "bash -ex /packages/preserve_logs.sh" ERR
+[ ! -e /usr/lib/debug/usr/bin/clickhouse.debug ]
+binary=$(readlink -f /usr/bin/clickhouse)
+read_uint() {
+    dd if="$binary" bs=1 skip="$1" count="$2" status=none | od -An -v -t "u$2" | tr -d " "
+}
+# 64-bit little-endian ELF.
+[ "$(read_uint 4 1)" = 2 ]
+[ "$(read_uint 5 1)" = 1 ]
+section_headers=$(read_uint 40 8)
+section_header_size=$(read_uint 58 2)
+sections=$(read_uint 60 2)
+names_section=$(read_uint 62 2)
+names_offset=$(read_uint $((section_headers + names_section * section_header_size + 24)) 8)
+for ((i = 0; i < sections; ++i)); do
+    name=$(read_uint $((section_headers + i * section_header_size)) 4)
+    dd if="$binary" bs=1 skip=$((names_offset + name)) count=64 status=none | tr '\0' '\n' | head -n 1
+done > /root/sections.txt
+grep -qx '.clickhouse.symbols' /root/sections.txt
+! grep -qx '.symtab' /root/sections.txt
+# Both `system.symbols` and `addressToSymbol` have to resolve a known internal symbol.
+resolved=$(clickhouse-client -q "
+    SELECT count()
+    FROM system.symbols
+    WHERE symbol LIKE '%StorageSystemSymbols%'
+        AND demangle(symbol) LIKE 'DB::StorageSystemSymbols::StorageSystemSymbols(%'
+        AND demangle(addressToSymbol(address_begin)) LIKE 'DB::StorageSystemSymbols::StorageSystemSymbols(%'
+    SETTINGS allow_introspection_functions = 1")
+[ "$resolved" -gt 0 ]"""
     preserve_logs = r"""#!/bin/bash
 journalctl -u clickhouse-server > /packages/clickhouse-server.service.log || :
 journalctl -u clickhouse-keeper > /packages/clickhouse-keeper.service.log || :
@@ -103,6 +138,7 @@ exit 1
     (TEMP_PATH / "initd_test.sh").write_text(initd_test, encoding="utf-8")
     (TEMP_PATH / "keeper_test.sh").write_text(keeper_test, encoding="utf-8")
     (TEMP_PATH / "binary_test.sh").write_text(binary_test, encoding="utf-8")
+    (TEMP_PATH / "symbols_test.sh").write_text(symbols_test, encoding="utf-8")
     (TEMP_PATH / "preserve_logs.sh").write_text(preserve_logs, encoding="utf-8")
 
 
@@ -110,14 +146,16 @@ def test_install_deb(image: DockerImage) -> List[Result]:
     # `clickhouse-common-static-dbg` unpacks to 3.4 GiB and takes around 40 seconds to
     # install - longer than everything else in a test together. `Install server deb`
     # covers it, and the two tests below differ from it only in the way the server is
-    # started, so they install the same packages without the debug symbols.
+    # started, so they install the same packages without the debug symbols. The first of
+    # them also checks the symbolization without the debug symbols.
     tests = {
         "Install server deb": r"""#!/bin/bash -ex
 apt-get install /packages/clickhouse-{server,client,common}*deb -y
 bash -ex /packages/server_test.sh""",
         "Run server init.d (proxy to systemd)": r"""#!/bin/bash -ex
 apt-get install /packages/clickhouse-{server,client,common-static}_*deb -y
-bash -ex /packages/initd_via_systemd_test.sh""",
+bash -ex /packages/initd_via_systemd_test.sh
+bash -ex /packages/symbols_test.sh""",
         "Run server init.d": r"""#!/bin/bash -ex
 apt-get install /packages/clickhouse-{server,client,common-static}_*deb -y
 bash -ex /packages/initd_test.sh""",
@@ -157,12 +195,11 @@ def test_install_tgz(image: DockerImage, debug_symbols: bool) -> List[Result]:
     # FIXME: I couldn't find why Type=notify is broken in centos:8
     # systemd just ignores the watchdog completely
 
-    # `doinst.sh` copies the unpacked tree into the system instead of moving it, so a
-    # package occupies twice its size - 6.8 GiB for `clickhouse-common-static-dbg` -
-    # until the tree is removed. These are by far the most disk hungry tests of the
-    # job, and they used to fail with `No space left on device`. The debug symbols also
-    # take more than a minute to install, and the same tarballs are installed in both
-    # images, so unpack them only in the first one - see `main`.
+    # `doinst.sh` renames the unpacked tree into place, so a package occupies its unpacked
+    # size - around 3.7 GiB for `clickhouse-common-static-dbg` - until the tree is removed.
+    # These are by far the most disk hungry tests of the job. The debug symbols also take
+    # more than a minute to install, and the same tarballs are installed in both images, so
+    # unpack them only in the first one - see `main`.
     server_packages = (
         "clickhouse-{common,client,server}*tgz"
         if debug_symbols
@@ -383,9 +420,8 @@ def test_install(image: DockerImage, tests: Dict[str, str]) -> List[Result]:
 def free_packages(pattern: str) -> None:
     """Delete the packages that have already been tested.
 
-    All the package flavours are downloaded into the same directory, which is mounted
-    into every container, and together they take more than 6 GiB - as much as a single
-    container needs to install them. Nothing reads a package once its own tests are
+    The packages are downloaded into one directory, which is mounted into every container,
+    and a flavour takes gigabytes there. Nothing reads a package once its own tests are
     done, so drop it to leave room for the tests that follow.
     """
     Shell.check(f"rm -f {TEMP_PATH}/{pattern}", verbose=True)
@@ -430,14 +466,22 @@ def main():
 
     args = parse_args()
 
-    deb_image = DockerImage.get_docker_image(DEB_IMAGE).pull_image(
-        timeout_s=120, retries=2
+    # The same tarballs are installed in both images, so the tgz group needs both of them.
+    deb_image = (
+        DockerImage.get_docker_image(DEB_IMAGE).pull_image(timeout_s=120)
+        if args.deb or args.tgz
+        else None
     )
-    rpm_image = DockerImage.get_docker_image(RPM_IMAGE).pull_image(
-        timeout_s=120, retries=2
+    rpm_image = (
+        DockerImage.get_docker_image(RPM_IMAGE).pull_image(timeout_s=120)
+        if args.rpm or args.tgz
+        else None
     )
 
-    Shell.check(f"chmod +x {Utils.cwd()}/ci/tmp/clickhouse", verbose=True, strict=True)
+    if args.deb or args.rpm:
+        Shell.check(
+            f"chmod +x {Utils.cwd()}/ci/tmp/clickhouse", verbose=True, strict=True
+        )
 
     prepare_test_scripts()
 
@@ -462,9 +506,8 @@ def main():
 
     # The binary tests need nothing but `/packages/clickhouse`, and they need around 7 GiB
     # of disk for it, more than twice as much as any other test here. The runners hand the
-    # job as little as 4 GiB of free space, so run these tests once every package has been
-    # deleted, which is worth 7 GiB on its own. Keeping the binary packed until the very
-    # end leaves 3 GiB more for the tgz tests as well.
+    # job as little as 4 GiB of free space, so run these tests last, once the job's own
+    # packages have been deleted.
     print("Test the binary")
     if args.deb:
         test_results.extend(

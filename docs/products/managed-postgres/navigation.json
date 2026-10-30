@@ -29,9 +29,37 @@
             "products/managed-postgres/extensions/pg_clickhouse/tutorial"
           ]
         },
+        {
+          "group": "pg_chdb",
+          "pages": [
+            "products/managed-postgres/extensions/chdb/introduction",
+            "products/managed-postgres/extensions/chdb/chdb",
+            "products/managed-postgres/extensions/chdb/chdb_hook"
+          ]
+        },
         "products/managed-postgres/upgrades",
         "products/managed-postgres/openapi",
         "products/managed-postgres/terraform"
+      ]
+    },
+    {
+      "group": "Guides",
+      "pages": [
+        "products/managed-postgres/guides/bun",
+        "products/managed-postgres/guides/cloudflare-workers",
+        "products/managed-postgres/guides/django",
+        "products/managed-postgres/guides/dotnet",
+        "products/managed-postgres/guides/drizzle",
+        "products/managed-postgres/guides/fastapi",
+        "products/managed-postgres/guides/go",
+        "products/managed-postgres/guides/kysely",
+        "products/managed-postgres/guides/laravel",
+        "products/managed-postgres/guides/nodejs",
+        "products/managed-postgres/guides/phoenix",
+        "products/managed-postgres/guides/prisma",
+        "products/managed-postgres/guides/ruby-on-rails",
+        "products/managed-postgres/guides/rust",
+        "products/managed-postgres/guides/spring-boot"
       ]
     },
     {
@@ -43,7 +71,8 @@
     {
       "group": "ClickHouse Integration",
       "pages": [
-        "products/managed-postgres/clickhouse-integration"
+        "products/managed-postgres/sync-to-clickhouse/clickpipes",
+        "products/managed-postgres/sync-to-clickhouse/walshadow"
       ]
     },
     {

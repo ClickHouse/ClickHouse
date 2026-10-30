@@ -437,12 +437,13 @@ ColumnPtr ColumnMap::compress(bool force_compression) const
 {
     auto compressed = nested->compress(force_compression);
     const auto byte_size = compressed->byteSize();
+    Columns parts{compressed};
     /// The order of evaluation of function arguments is unspecified
     /// and could cause interacting with object in moved-from state
     return ColumnCompressed::create(size(), byte_size, [my_compressed = std::move(compressed), my_statistics=statistics]
     {
         return ColumnMap::create(my_compressed->decompress(), my_statistics);
-    });
+    }, std::move(parts));
 }
 
 void ColumnMap::Statistics::merge(const Statistics & other)
@@ -516,4 +517,10 @@ void ColumnMap::takeOrCalculateStatisticsFrom(const VectorWithMemoryTracking<Col
 }
 
 
+ColumnPlanes ColumnMap::getPlanes() const
+{
+    ColumnPlanes planes(ColumnPlanes::Shape::Map);
+    planes.children = {&getNestedColumn()};
+    return planes;
+}
 }

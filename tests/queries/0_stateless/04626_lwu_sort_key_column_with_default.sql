@@ -25,5 +25,7 @@ SELECT countIf(v = 'bar'), countIf(v = 'foo') FROM t_lwu_key_column_default SETT
 SELECT count() FROM t_lwu_key_column_default WHERE v = 'bar' SETTINGS max_block_size = 256;
 SELECT count() FROM t_lwu_key_column_default PREWHERE v = 'foo';
 SELECT sum(b = a + 100) FROM t_lwu_key_column_default;
+-- `b` is requested again on the read step after PREWHERE, where it is still a null placeholder.
+SELECT sum(b = a + 100), countIf(v = 'bar') FROM t_lwu_key_column_default PREWHERE a >= 50;
 
 DROP TABLE t_lwu_key_column_default SYNC;

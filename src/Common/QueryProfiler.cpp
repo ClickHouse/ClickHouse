@@ -537,7 +537,7 @@ QueryProfilerBase<ProfilerImpl>::QueryProfilerBase(
         throw;
     }
 #else
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "QueryProfiler requires SIGEV_THREAD_ID");
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "QueryProfiler is not supported in this build, see QUERY_PROFILER_SUPPORTED");
 #endif
 }
 

@@ -51,7 +51,7 @@
 #else
 #  define RAND_ARS_NEON 0
 #endif
-#if defined(__AVX2__) && USE_MULTITARGET_CODE
+#if defined(__AVX2__) && USE_X86_64_MULTITARGET_CODE
 #  define RAND_ARS_VAES 1
 #else
 #  define RAND_ARS_VAES 0
@@ -65,7 +65,7 @@ namespace
 /// NOTE Probably
 ///    http://www.pcg-random.org/
 /// or http://www.math.sci.hiroshima-u.ac.jp/~m-mat/MT/SFMT/
-/// or http://docs.yeppp.info/c/group__yep_random___w_e_l_l1024a.html
+/// or https://web.archive.org/web/20161206133310/http://docs.yeppp.info/c/group__yep_random___w_e_l_l1024a.html
 /// could go better.
 
 struct LinearCongruentialGenerator

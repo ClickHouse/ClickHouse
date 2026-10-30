@@ -1,0 +1,22 @@
+-- RANGE with an offset needs exactly one ORDER BY column
+[1,2,3]
+-- ORDER BY key types without RANGE offset support
+-- Offsets must be non-negative integer constants
+-- Negative offsets in every position
+-- Offsets that do not fit into 32 bits
+-- Constant expressions are accepted as offsets
+[1,2,3,3]
+[1,2,3,3]
+[2,2,2,1]
+[1,2,3,4]
+-- The frame start must not be after the frame end
+-- Equal bounds and the one-sided shorthand are accepted
+[0,1,1,1]
+[1,1,1,0]
+[1,1,1,1]
+[0,1,1,1]
+[1,1,1,0]
+[1,2,2,2]
+[1,1,1,1]
+[1,2,3,3]
+[1,2,3,4]

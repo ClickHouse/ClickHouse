@@ -14,11 +14,6 @@ INSERT INTO t_04628 VALUES (10, 1), (20, 2), (30, 3), (40, 5);
 
 SET prefer_localhost_replica = 0;
 
--- serialize_query_plan = 0 because WITH FILL is not supported in serialized sort descriptions
--- (serializeSortDescription throws NOT_IMPLEMENTED) and the CI `distributed plan` shard turns
--- serialize_query_plan on globally; this test exercises the shard read, not plan serialization.
-SET serialize_query_plan = 0;
-
 -- Two shards (the same table read twice), so every real row appears twice, while the WITH FILL
 -- suffix rows (g = 0 and g = 4) are generated once on the initiator and INTERPOLATE fills their id.
 SELECT g, id

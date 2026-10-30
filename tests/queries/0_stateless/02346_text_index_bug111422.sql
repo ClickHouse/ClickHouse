@@ -1,5 +1,3 @@
--- Tags: no-old-analyzer
-
 -- Reads a Map through two text indexes with lazy materialization enabled. See issue #111422.
 
 SET enable_full_text_index = 1;

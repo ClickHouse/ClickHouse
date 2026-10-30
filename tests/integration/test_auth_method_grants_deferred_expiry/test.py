@@ -20,9 +20,9 @@ node = cluster.add_instance("node", stay_alive=True)
 # The busy timeout defers the flush well past the expired token's `VALID UNTIL`, so the flush happens
 # under an already-expired credential. Kept comfortably larger than the token lifetime below.
 BUSY_TIMEOUT_MS = 12000
-# Lifetime of the expiring token, measured from user creation. The insert is pushed within a fraction of
-# a second of creation (so the push itself is always under a valid credential), but the deferred flush at
-# push + BUSY_TIMEOUT_MS lands well after this.
+# Lifetime of the expiring token. It is started by a separate `ALTER USER ... VALID FOR` immediately
+# before the push, and resolved on the server as that statement runs, so no setup statement falls inside
+# it: the push is always made under a valid credential, while the deferred execution lands well after.
 EXPIRING_LIFETIME_S = 5
 
 
@@ -55,14 +55,16 @@ def test_expired_token_does_not_flush_deferred_insert(start_cluster):
     node.query("CREATE TABLE default.t_deferred_expired (x UInt64) ENGINE = MergeTree ORDER BY x")
     node.query("CREATE TABLE default.t_deferred_valid (x UInt64) ENGINE = MergeTree ORDER BY x")
 
-    # A token whose authentication method expires shortly after creation, limited to its target table.
-    expiry = node.query(f"SELECT toString(now() + INTERVAL {EXPIRING_LIFETIME_S} SECOND)").strip()
-    node.query(f"CREATE USER u_deferred_expired IDENTIFIED WITH sha256_password BY 'pw' VALID UNTIL '{expiry}' GRANTS (INSERT ON default.t_deferred_expired)")
+    # A token limited to its target table, created without a deadline; its lifetime is started below.
+    node.query("CREATE USER u_deferred_expired IDENTIFIED WITH sha256_password BY 'pw' GRANTS (INSERT ON default.t_deferred_expired)")
     node.query("GRANT INSERT ON default.t_deferred_expired TO u_deferred_expired")
 
     # A control token that never expires (far-future `VALID UNTIL`), limited to its own target table.
     node.query("CREATE USER u_deferred_valid IDENTIFIED WITH sha256_password BY 'pw' VALID UNTIL '2999-01-01 00:00:00' GRANTS (INSERT ON default.t_deferred_valid)")
     node.query("GRANT INSERT ON default.t_deferred_valid TO u_deferred_valid")
+
+    # Start the expiring token's lifetime here, so that only the push below falls inside it.
+    node.query(f"ALTER USER u_deferred_expired VALID FOR INTERVAL {EXPIRING_LIFETIME_S} SECOND")
 
     # Both pushes happen while the credentials are valid, so neither is rejected at push time. The rows
     # sit in the async insert queue until the deferred flush at push + BUSY_TIMEOUT_MS.
@@ -107,6 +109,13 @@ def test_expired_token_does_not_run_deferred_query_runner_job(start_cluster):
         "ENGINE = QueryRunner SETTINGS mode = 'asynchronous', threads = 1 SQL SECURITY INVOKER"
     )
 
+    node.query(
+        "CREATE USER u_deferred_query_runner IDENTIFIED WITH sha256_password BY 'pw' "
+        "GRANTS (INSERT ON default.runner_deferred_expiry, INSERT ON default.t_deferred_query_runner)"
+    )
+    node.query("GRANT INSERT ON default.runner_deferred_expiry TO u_deferred_query_runner")
+    node.query("GRANT INSERT ON default.t_deferred_query_runner TO u_deferred_query_runner")
+
     # Occupy the runner's only worker while the limited credential expires. Its queued job must then
     # be rejected by `StorageQueryRunner::makeJobContext` before the query is executed.
     node.query(
@@ -115,14 +124,9 @@ def test_expired_token_does_not_run_deferred_query_runner_job(start_cluster):
         "{'log_comment': 'deferred_query_runner_blocker'})"
     )
 
-    expiry = node.query(f"SELECT toString(now() + INTERVAL {EXPIRING_LIFETIME_S} SECOND)").strip()
-    node.query(
-        "CREATE USER u_deferred_query_runner IDENTIFIED WITH sha256_password BY 'pw' "
-        f"VALID UNTIL '{expiry}' "
-        "GRANTS (INSERT ON default.runner_deferred_expiry, INSERT ON default.t_deferred_query_runner)"
-    )
-    node.query("GRANT INSERT ON default.runner_deferred_expiry TO u_deferred_query_runner")
-    node.query("GRANT INSERT ON default.t_deferred_query_runner TO u_deferred_query_runner")
+    # Start the lifetime here: only the push below falls inside it, and the blocker above still holds the
+    # runner's worker when it lapses.
+    node.query(f"ALTER USER u_deferred_query_runner VALID FOR INTERVAL {EXPIRING_LIFETIME_S} SECOND")
 
     node.query(
         "INSERT INTO default.runner_deferred_expiry VALUES "

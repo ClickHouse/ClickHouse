@@ -46,13 +46,13 @@ SELECT 'timeSeriesResetsToGrid:';
 SELECT timeSeriesResetsToGrid(90, 240, 15, 45)(timestamps, values) FROM ts_data;
 SELECT timeSeriesResetsToGrid(90, 240, 15, 45)(arrayZip(timestamps, values)) FROM ts_data;
 
-SELECT 'timeSeriesResampleToGridWithStaleness:';
-SELECT timeSeriesResampleToGridWithStaleness(90, 240, 15, 45)(timestamps, values) FROM ts_data;
-SELECT timeSeriesResampleToGridWithStaleness(90, 240, 15, 45)(arrayZip(timestamps, values)) FROM ts_data;
+SELECT 'timeSeriesLastToGrid:';
+SELECT timeSeriesLastToGrid(90, 240, 15, 45)(timestamps, values) FROM ts_data;
+SELECT timeSeriesLastToGrid(90, 240, 15, 45)(arrayZip(timestamps, values)) FROM ts_data;
 
 SELECT 'Grouping by id:';
-SELECT id, timeSeriesResampleToGridWithStaleness(90, 240, 15, 45)(timestamps, values) FROM ts_data GROUP BY id ORDER BY id;
-SELECT id, timeSeriesResampleToGridWithStaleness(90, 240, 15, 45)(arrayZip(timestamps, values)) FROM ts_data GROUP BY id ORDER BY id;
+SELECT id, timeSeriesLastToGrid(90, 240, 15, 45)(timestamps, values) FROM ts_data GROUP BY id ORDER BY id;
+SELECT id, timeSeriesLastToGrid(90, 240, 15, 45)(arrayZip(timestamps, values)) FROM ts_data GROUP BY id ORDER BY id;
 
 SELECT 'The -If combinator:';
 SELECT timeSeriesRateToGridIf(90, 240, 15, 45)(timestamps, values, id = 2) FROM ts_data;
@@ -69,11 +69,11 @@ INSERT INTO ts_data_64 SELECT id, arrayZip(arrayMap(timestamp -> toDateTime64(ti
 SELECT 'DateTime64 timestamps and Float32 values:';
 SELECT timeSeriesRateToGrid(90, 240, 15, 45)(arrayMap(sample -> sample.1, samples), arrayMap(sample -> sample.2, samples)) FROM ts_data_64;
 SELECT timeSeriesRateToGrid(90, 240, 15, 45)(samples) FROM ts_data_64;
-SELECT timeSeriesResampleToGridWithStaleness(90, 240, 15, 45)(arrayMap(sample -> sample.1, samples), arrayMap(sample -> sample.2, samples)) FROM ts_data_64;
-SELECT timeSeriesResampleToGridWithStaleness(90, 240, 15, 45)(samples) FROM ts_data_64;
+SELECT timeSeriesLastToGrid(90, 240, 15, 45)(arrayMap(sample -> sample.1, samples), arrayMap(sample -> sample.2, samples)) FROM ts_data_64;
+SELECT timeSeriesLastToGrid(90, 240, 15, 45)(samples) FROM ts_data_64;
 
 SELECT 'A single row of unsorted samples:';
-SELECT timeSeriesResampleToGridWithStaleness(90, 240, 15, 45)([(140, 4.), (110, 1.), (130, 3.), (120, 1.)]::Array(Tuple(DateTime, Float64)));
+SELECT timeSeriesLastToGrid(90, 240, 15, 45)([(140, 4.), (110, 1.), (130, 3.), (120, 1.)]::Array(Tuple(DateTime, Float64)));
 
 SELECT 'Errors:';
 SELECT timeSeriesRateToGrid(90, 240, 15, 45)(timestamps) FROM ts_data; -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }

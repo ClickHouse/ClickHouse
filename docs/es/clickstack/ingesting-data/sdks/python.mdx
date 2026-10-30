@@ -6,23 +6,17 @@ doc_type: 'guide'
 keywords: ['clickstack', 'sdk', 'logs', 'integración', 'monitorización de aplicaciones']
 ---
 
+import { ClickStackIntegrates } from '/snippets/es/components/ClickStackIntegrates/ClickStackIntegrates.jsx'
+
 ClickStack usa el estándar OpenTelemetry para recopilar datos de telemetría (logs y
 trazas). Las trazas se generan automáticamente con instrumentación automática, por lo que no
 se requiere instrumentación manual para empezar a aprovechar el tracing.
 
-Esta guía integra:
+<ClickStackIntegrates signals={['logs', 'metrics', 'traces']} />
 
-* **Logs**
-* **Métricas**
-* **Trazas**
+## Primeros pasos {#getting-started}
 
-<div id="getting-started">
-  ## Primeros pasos
-</div>
-
-<div id="install-clickstack-otel-instrumentation-package">
-  ### Instala el paquete de instrumentación de OpenTelemetry de ClickStack
-</div>
+### Instala el paquete de instrumentación de OpenTelemetry de ClickStack {#install-clickstack-otel-instrumentation-package}
 
 Usa el siguiente comando para instalar el [paquete de OpenTelemetry de ClickStack](https://pypi.org/project/hyperdx-opentelemetry/).
 
@@ -37,34 +31,30 @@ herramienta `opentelemetry-bootstrap`, incluida en el SDK de OpenTelemetry para 
 opentelemetry-bootstrap -a install
 ```
 
-<div id="configure-environment-variables">
-  ### Configura las variables de entorno
-</div>
+### Configura las variables de entorno {#configure-environment-variables}
 
 A continuación, tendrás que configurar las siguientes variables de entorno en tu shell para enviar telemetría a ClickStack a través del collector de OpenTelemetry:
 
 <Tabs>
   <Tab title="Managed ClickStack">
     ```shell
-    OTEL_SERVICE_NAME='<NAME_OF_YOUR_APP_OR_SERVICE>' \
-    OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318 
+    OTEL_SERVICE_NAME='<YOUR_SERVICE_NAME>' \
+    OTEL_EXPORTER_OTLP_ENDPOINT=<YOUR_OTEL_COLLECTOR_HTTP_ENDPOINT> 
     ```
   </Tab>
 
   <Tab title="ClickStack Open Source">
     ```shell
     export HYPERDX_API_KEY='<YOUR_INGESTION_API_KEY>' \
-    OTEL_SERVICE_NAME='<NAME_OF_YOUR_APP_OR_SERVICE>' \
-    OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318 
+    OTEL_SERVICE_NAME='<YOUR_SERVICE_NAME>' \
+    OTEL_EXPORTER_OTLP_ENDPOINT=<YOUR_OTEL_COLLECTOR_HTTP_ENDPOINT> 
     ```
   </Tab>
 </Tabs>
 
 *La variable de entorno `OTEL_SERVICE_NAME` se utiliza para identificar tu servicio en la aplicación HyperDX; puede ser cualquier nombre que quieras.*
 
-<div id="run-the-application-with-otel-python-agent">
-  ### Ejecuta la aplicación con el agente de Python de OpenTelemetry
-</div>
+### Ejecuta la aplicación con el agente de Python de OpenTelemetry {#run-the-application-with-otel-python-agent}
 
 Ahora puedes ejecutar la aplicación con el agente de Python de OpenTelemetry (`opentelemetry-instrument`).
 
@@ -72,9 +62,7 @@ Ahora puedes ejecutar la aplicación con el agente de Python de OpenTelemetry (`
 opentelemetry-instrument python app.py
 ```
 
-<div id="using-uvicorn-gunicorn-uwsgi">
-  #### Si usas `Gunicorn`, `uWSGI` o `uvicorn`
-</div>
+#### Si usas `Gunicorn`, `uWSGI` o `uvicorn` {#using-uvicorn-gunicorn-uwsgi}
 
 En este caso, el agente de Python de OpenTelemetry requerirá cambios adicionales para funcionar.
 
@@ -107,13 +95,9 @@ Para configurar OpenTelemetry en servidores de aplicaciones que usan el modo de 
   </Tab>
 </Tabs>
 
-<div id="advanced-configuration">
-  ## Configuración avanzada
-</div>
+## Configuración avanzada {#advanced-configuration}
 
-<div id="network-capture">
-  #### Captura de red
-</div>
+#### Captura de red {#network-capture}
 
 Al habilitar las funciones de captura de red, los desarrolladores pueden depurar
 eficazmente los encabezados de las solicitudes HTTP y las cargas útiles del cuerpo. Esto puede lograrse
@@ -123,13 +107,9 @@ simplemente estableciendo la bandera `HYPERDX_ENABLE_ADVANCED_NETWORK_CAPTURE` e
 export HYPERDX_ENABLE_ADVANCED_NETWORK_CAPTURE=1
 ```
 
-<div id="troubleshooting">
-  ## Solución de problemas
-</div>
+## Solución de problemas {#troubleshooting}
 
-<div id="logs-not-appearing-due-to-log-level">
-  ### Los logs no aparecen debido al nivel de logging
-</div>
+### Los logs no aparecen debido al nivel de logging {#logs-not-appearing-due-to-log-level}
 
 De forma predeterminada, el handler de logging de OpenTelemetry usa el nivel `logging.NOTSET`, que por defecto equivale al nivel WARNING. Puede especificar el nivel de logging al crear un logger:
 
@@ -140,9 +120,7 @@ logger = logging.getLogger(__name__)
 logger.setLevel(logging.DEBUG)
 ```
 
-<div id="exporting-to-the-console">
-  ### Exportar a la consola
-</div>
+### Exportar a la consola {#exporting-to-the-console}
 
 El SDK de Python de OpenTelemetry suele mostrar errores en la consola cuando
 se producen. Sin embargo, si no aparece ningún error, pero observas que tus datos

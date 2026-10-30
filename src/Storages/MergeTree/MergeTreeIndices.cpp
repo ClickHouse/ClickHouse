@@ -12,6 +12,8 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/NestedUtils.h>
 #include <Interpreters/ExpressionActions.h>
+#include <Storages/ColumnsDescription.h>
+#include <Storages/MergeTree/DataPartStorageOnDiskBase.h>
 #include <Storages/MergeTree/IDataPartStorage.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
 #include <Common/escapeForFileName.h>
@@ -44,13 +46,14 @@ bool indexFileExistsInChecksums(
     if (checksums.files.contains(hash + extension))
         return true;
 
-    /// Packed substreams: not listed in checksums.txt as individual entries, but the
-    /// storage overlay reports their existence via the skp_idx.packed index.
+    /// A standalone file always has a checksums entry, so the only files missing above are members
+    /// of `skp_idx.packed`, which are written under the unhashed name. Answer from the archive index
+    /// (loaded once per part and cached) and do not ask the disk about the file: this runs for every
+    /// part during query planning, often for optional substreams that do not exist.
     if (storage && checksums.files.contains(String(SKIP_INDICES_PACKED_FILENAME)))
     {
-        if (storage->existsFile(path_prefix + extension))
-            return true;
-        if (storage->existsFile(hash + extension))
+        const auto * disk_storage = dynamic_cast<const DataPartStorageOnDiskBase *>(storage);
+        if (disk_storage && disk_storage->isFileInPackedSkipIndicesArchive(path_prefix + extension))
             return true;
     }
 
@@ -87,8 +90,17 @@ const NamesAndTypesList & IMergeTreeIndex::getColumnsWithTypesRequiredForIndexCa
     return index.expression->getRequiredColumnsWithTypes();
 }
 
-namespace
+IsShadowingColumn IMergeTreeIndex::getMapSubcolumnShadowingCheck() const
 {
+    /// Subcolumn names are flat, so a Tuple element or a typed JSON path can claim `<map>.key_<k>`
+    /// just as a top-level column can, and a predicate on that name reads the claimant. A genuine Map
+    /// key subcolumn is generated per key on demand, so it is not a regular subcolumn and stays parseable.
+    return [metadata = metadata_snapshot](const String & column_name)
+    {
+        auto options = GetColumnsOptions(GetColumnsOptions::All).withRegularSubcolumns();
+        return metadata->getColumns().tryGetColumn(options, column_name).has_value();
+    };
+}
 
 /// Is a granule written with @from decoded identically when read back as @to?
 ///
@@ -172,6 +184,9 @@ bool isRepresentationPreservingConversion(const IDataType * from, const IDataTyp
         return false;
     }
 }
+
+namespace
+{
 
 /// Do two types that IDataType::equals() reports as equal still mean different things?
 ///
@@ -288,7 +303,7 @@ namespace
 
 /// The two part representations answer these questions with the same method names, so the checks
 /// below are written once. A concrete part must not be wrapped in a part-info here: the physical
-/// format is also asked from ~IMergeTreeDataPart, where the part can no longer be shared.
+/// format is asked about parts that cannot be shared.
 const MergeTreeDataPartChecksums & getChecksums(const IMergeTreeDataPart & part) { return part.checksums; }
 const MergeTreeDataPartChecksums & getChecksums(const IMergeTreeDataPartInfoForReader & part) { return part.getChecksums(); }
 const IDataPartStorage & getStorage(const IMergeTreeDataPart & part) { return part.getDataPartStorage(); }
@@ -442,9 +457,11 @@ MergeTreeIndexSubstreams IMergeTreeIndex::getAllSubstreamsInPart(
 {
     /// Not routed through `getDeserializedFormat`: that answers the read-time question and
     /// reports nothing once a required system column is invalidated, while a file left on disk
-    /// still has to be skipped/stripped here. (minmax overrides to add its legacy `.idx`.)
+    /// still has to be skipped/stripped here. Probes `getPotentialSubstreams`, not `getSubstreams`:
+    /// a part may hold a substream that the current definition does not write (the legacy minmax
+    /// `.idx`, the text index `.pos` after the index was redefined without `support_phrase_search`).
     MergeTreeIndexSubstreams substreams;
-    for (const auto & substream : getSubstreams())
+    for (const auto & substream : getPotentialSubstreams())
         if (indexFileExistsInChecksums(checksums, relative_path_prefix + substream.suffix, substream.extension, storage))
             substreams.push_back(substream);
 

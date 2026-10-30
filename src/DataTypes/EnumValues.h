@@ -14,7 +14,7 @@ namespace DB
 /// Compact enum storage with efficient lookups.
 /// - Strings stored in values vector (sorted by value for compatibility)
 /// - Name-to-value: binary search on sorted name index (O(log N))
-/// - Value-to-name: direct array lookup (O(1)) for small ranges, binary search for large ranges
+/// - Value-to-name: direct array lookup (O(1)) for small or dense ranges, binary search otherwise
 template <typename T>
 class EnumValues : public IHints<>
 {
@@ -39,7 +39,7 @@ private:
 
     /// Value-to-name lookup strategy.
     /// For Enum8: always direct (max 256 entries of `uint16_t` = 512 bytes).
-    /// For Enum16: direct if range <= `DIRECT_LOOKUP_THRESHOLD`, otherwise binary search.
+    /// For Enum16: direct if range <= `DIRECT_LOOKUP_THRESHOLD` or at most twice the number of values, otherwise binary search.
     bool use_direct_value_lookup = true;
 
     /// Direct lookup array: `value_to_index[value - min_value]` = index into `values`.
@@ -58,6 +58,11 @@ private:
     /// Exact-name lookup without numeric-string fallback.
     /// Returns true and writes the value into `result` if `field_name` matches an enum name.
     bool findValueByName(std::string_view field_name, T & result) const;
+
+    /// Value-to-name lookup, `nullptr` if not found. Returns a pointer rather than filling an out
+    /// parameter so that callers keep no address-taken local, which costs a canary under
+    /// `-fstack-protector-strong`.
+    const std::string * findNameForValue(T value) const;
 
 public:
     explicit EnumValues(const Values & values_, ValidationMode validation_mode = ValidationMode::Normal);
