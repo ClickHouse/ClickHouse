@@ -1,7 +1,6 @@
 #pragma once
 
 #include <Columns/IColumn.h>
-#include <Core/Names.h>
 #include <base/types.h>
 
 #include <optional>
@@ -9,6 +8,8 @@
 
 namespace DB
 {
+
+class ColumnsDescription;
 
 /// Optimized extraction of values for a given constant key from a Map column
 /// stored as Array(Tuple(K, V)).
@@ -23,16 +24,12 @@ void extractKeyValueFromMap(
     size_t start,
     size_t end);
 
-/// Whether the name has the `map.key_<serialized_key>` shape used for a single Map key subcolumn.
-bool looksLikeMapSubcolumnName(const String & column_name);
-
 /// Try to parse a Map subcolumn reference like `map.key_<serialized_key>`.
 /// Returns {map_column_name, serialized_key} if the column name has the expected format.
 ///
-/// Dots are legal in column names, so a real column `m.key_x` may exist beside a Map `m`. It shadows
-/// the subcolumn: a predicate reads that column, not the map, so pass such names in
-/// `shadowing_columns` and the shape is refused.
+/// Dots are legal in column names, so a column or a static subcolumn `m.key_x` may exist beside a Map `m`.
+/// It shadows the subcolumn: a predicate reads it, not the map, so the shape is refused.
 std::optional<std::pair<String, String>> tryParseMapSubcolumnName(
-    const String & column_name, const NameSet & shadowing_columns);
+    const String & column_name, const ColumnsDescription & columns);
 
 }
