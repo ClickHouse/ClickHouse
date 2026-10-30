@@ -187,7 +187,8 @@ static bool isCurrentManifestListAboveThreshold(
 
 static Plan getPlan(
     IcebergHistory snapshots_info,
-    const DataLakeStorageSettings & data_lake_settings,
+    Poco::JSON::Object::Ptr metadata_object,
+    Int32 metadata_version,
     const PersistentTableComponents & persistent_table_components,
     ObjectStoragePtr object_storage,
     const String & write_format,
@@ -199,21 +200,9 @@ static Plan getPlan(
     Plan plan;
     plan.generator = FileNamesGenerator(persistent_table_components.path_resolver.getTableLocation(), false, compression_method, write_format);
 
-    const auto [metadata_version, metadata_file_path, _] = getLatestOrExplicitMetadataFileAndVersion(
-        object_storage,
-        persistent_table_components.table_path,
-        data_lake_settings,
-        persistent_table_components.metadata_cache,
-        context,
-        log.get(),
-        persistent_table_components.table_uuid,
-        persistent_table_components.metadata_compression_method,
-        /* force_fetch_latest_metadata */ true,
-        /* ignore_metadata_pointer_overrides */ true);
     plan.generator.setVersion(metadata_version + 1);
 
-    Poco::JSON::Object::Ptr initial_metadata_object
-        = deepCopy(getMetadataJSONObject(metadata_file_path, object_storage, persistent_table_components.metadata_cache, context, log, compression_method, persistent_table_components.table_uuid));
+    Poco::JSON::Object::Ptr initial_metadata_object = deepCopy(metadata_object);
 
     /// Exactly version 2: v1 lacks the sequence-number machinery the rewrite relies on, and
     /// a v3 table must not be accepted either -- writeMetadataFiles rebuilds the metadata
@@ -1494,9 +1483,10 @@ void compactIcebergManifests(
 
 void compactIcebergTable(
     IcebergHistory snapshots_info,
+    Poco::JSON::Object::Ptr metadata_object,
+    Int32 metadata_version,
     const PersistentTableComponents & persistent_table_components,
     ObjectStoragePtr object_storage_,
-    const DataLakeStorageSettings & data_lake_settings,
     const std::optional<FormatSettings> & format_settings_,
     SharedHeader sample_block_,
     ContextPtr context_,
@@ -1506,7 +1496,8 @@ void compactIcebergTable(
 
     auto plan = getPlan(
         std::move(snapshots_info),
-        data_lake_settings,
+        metadata_object,
+        metadata_version,
         persistent_table_components,
         object_storage_,
         write_format,

@@ -613,6 +613,7 @@ bool IcebergMetadata::optimize(
             "OPTIMIZE is not supported with iceberg_use_version_hint on a standalone Iceberg table");
 #endif
 
+    /// The open-source build rewrites the table from this file, so it resolves it the way destructive callers do.
     const auto [metadata_version, metadata_file_path, compression_method] = getLatestOrExplicitMetadataFileAndVersion(
         object_storage,
         persistent_components.table_path,
@@ -621,7 +622,9 @@ bool IcebergMetadata::optimize(
         context,
         log.get(),
         persistent_components.table_uuid,
-        persistent_components.metadata_compression_method);
+        persistent_components.metadata_compression_method,
+        /* force_fetch_latest_metadata */ true,
+        /* ignore_metadata_pointer_overrides */ !CLICKHOUSE_CLOUD);
     auto metadata_object = getMetadataJSONObject(
         metadata_file_path, object_storage, persistent_components.metadata_cache, context, log, compression_method, persistent_components.table_uuid);
     const Int64 current_snapshot_id = !metadata_object->has(f_current_snapshot_id) || metadata_object->isNull(f_current_snapshot_id)
@@ -649,9 +652,10 @@ bool IcebergMetadata::optimize(
     auto snapshots_info = getHistoryImpl(metadata_object);
     compactIcebergTable(
         snapshots_info,
+        metadata_object,
+        metadata_version,
         persistent_components,
         object_storage,
-        getMetadataLookupSettings(),
         format_settings,
         sample_block,
         context,
