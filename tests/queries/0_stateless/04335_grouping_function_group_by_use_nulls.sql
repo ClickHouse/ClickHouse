@@ -3,7 +3,6 @@
 -- to Nullable and must match the keys in their original form.
 -- https://github.com/ClickHouse/ClickHouse/issues/77545
 
-SET enable_analyzer = 1;
 SET group_by_use_nulls = 1;
 
 SELECT g, x, count(), grouping(g), grouping(x)

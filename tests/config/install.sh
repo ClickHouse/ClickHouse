@@ -77,6 +77,17 @@ while [[ "$#" -gt 0 ]]; do
     shift
 done
 
+# The helper queries below only read `system.build_options`, so they must not touch the persistent
+# default data directory of `clickhouse-local` in the home: a table persisted there by an unrelated
+# invocation, or a concurrent instance holding the directory, would make the probe fail instead of
+# answering. The `--tmp` option asks for a throwaway directory, but the previous-release binary of
+# the upgrade check does not know it (and defaults to a temporary directory anyway), so ask the
+# binary at hand whether it supports the option.
+LOCAL_TMP_OPTION=""
+if clickhouse local --tmp --query "SELECT 1" > /dev/null 2>&1; then
+    LOCAL_TMP_OPTION="--tmp"
+fi
+
 function check_clickhouse_version()
 {
     local required_version=$1 && shift
@@ -106,11 +117,11 @@ function is_fast_build()
     # system.build_options; the coverage flags are applied per-directory, so they never
     # reach CXX_FLAGS and cannot be probed from there. An unanswerable probe declines,
     # because CXX_FLAGS cannot distinguish a coverage build.
-    if [[ "$(clickhouse local --query "SELECT upper(value) NOT IN ('ON', '1') FROM system.build_options WHERE name = 'WITH_COVERAGE'")" != "1" ]]; then
+    if [[ "$(clickhouse local $LOCAL_TMP_OPTION --query "SELECT upper(value) NOT IN ('ON', '1') FROM system.build_options WHERE name = 'WITH_COVERAGE'")" != "1" ]]; then
         return 1
     fi
     # sanitizers and debug builds are slow
-    [ "$(clickhouse local --query "SELECT value NOT LIKE '%-fsanitize=%' AND value LIKE '%-DNDEBUG%' FROM system.build_options WHERE name = 'CXX_FLAGS'")" == "1" ]
+    [ "$(clickhouse local $LOCAL_TMP_OPTION --query "SELECT value NOT LIKE '%-fsanitize=%' AND value LIKE '%-DNDEBUG%' FROM system.build_options WHERE name = 'CXX_FLAGS'")" == "1" ]
 }
 
 # Print 1 or 0 for a CXX_FLAGS pattern in the installed binary, or fail. An unanswered probe
@@ -119,7 +130,7 @@ function is_fast_build()
 function build_option_flag()
 {
     local description=$1 pattern=$2 value rc=0
-    value=$(clickhouse local --query \
+    value=$(clickhouse local $LOCAL_TMP_OPTION --query \
         "SELECT countIf(name = 'CXX_FLAGS' AND value LIKE '$pattern') > 0 FROM system.build_options") || rc=$?
     if [ "$rc" != "0" ] || { [ "$value" != "0" ] && [ "$value" != "1" ]; }; then
         echo "install.sh: cannot determine whether this is a $description (exit $rc, output '$value')" >&2
@@ -134,7 +145,7 @@ function build_option_flag()
 function build_option_enabled()
 {
     local description=$1 name=$2 value rc=0
-    value=$(clickhouse local --query \
+    value=$(clickhouse local $LOCAL_TMP_OPTION --query \
         "SELECT multiIf(count() = 0, 'missing', countIf(upper(value) IN ('ON', '1')) > 0, '1', '0') \
          FROM system.build_options WHERE name = '$name'") || rc=$?
     if [ "$rc" != "0" ] || { [ "$value" != "0" ] && [ "$value" != "1" ]; }; then
@@ -233,6 +244,7 @@ ln -sf $SRC_PATH/config.d/clusters.xml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/graphite.xml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/graphite_alternative.xml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/grpc_protocol.xml $DEST_SERVER_PATH/config.d/
+ln -sf $SRC_PATH/config.d/arrowflight.xml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/database_atomic.xml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/max_concurrent_queries.xml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/merge_tree_settings.xml $DEST_SERVER_PATH/config.d/
@@ -377,7 +389,7 @@ fi
 # SSH protocol support (not supported with fasttest or OpenSSL FIPS).
 function is_openssl_fips_build()
 {
-    [ "$(clickhouse local --query "SELECT value FROM system.build_options where name = 'USE_OPENSSL_FIPS' LIMIT 1")" -eq 1 ]
+    [ "$(clickhouse local $LOCAL_TMP_OPTION --query "SELECT value FROM system.build_options where name = 'USE_OPENSSL_FIPS' LIMIT 1")" -eq 1 ]
 }
 if [ "$FAST_TEST" != "1" ] && ! is_openssl_fips_build; then
     ln -sf $SRC_PATH/config.d/ssh.xml $DEST_SERVER_PATH/config.d/
@@ -696,6 +708,8 @@ if [[ "$USE_DATABASE_REPLICATED" == "1" ]]; then
     # Remove SSH config from replicas to avoid port conflicts on tcp_ssh_port.
     rm -f $ch_server_1_path/config.d/ssh.xml $ch_server_1_path/config.d/ssh_host_rsa_key
     rm -f $ch_server_2_path/config.d/ssh.xml $ch_server_2_path/config.d/ssh_host_rsa_key
+    # Same for the Arrow Flight port.
+    rm -f $ch_server_1_path/config.d/arrowflight.xml $ch_server_2_path/config.d/arrowflight.xml
 fi
 
 ln -sf $SRC_PATH/config.d/wasm_udf.xml $DEST_SERVER_PATH/config.d/

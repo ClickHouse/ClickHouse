@@ -98,6 +98,9 @@ void QueryAnalyzer::evaluateScalarSubqueryIfNeeded(QueryTreeNodePtr & node, Iden
     if (is_correlated_subquery)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot evaluate correlated scalar subquery");
 
+    /// The subquery is executed now, so decide here whether its replaced tables read with parallel replicas.
+    restoreReplacedTableStoragesIfNeeded(node);
+
     auto & context = scope.context;
 
     /// Scalar subqueries in table function or parameterized view arguments are executed even in
