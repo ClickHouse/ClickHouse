@@ -8782,11 +8782,11 @@ Control the minimum number of payload columns from the left side required for en
     DECLARE(UInt64, ai_function_request_timeout_sec, 60, R"(
 Timeout in seconds for individual HTTP requests made by AI functions (AI chat completions and embedding API calls). If a request does not complete within this time, it is considered failed and may be retried according to `ai_function_max_retries`.
 )", BETA) \
-    DECLARE(UInt64, ai_function_max_retries, 1, R"(
-Maximum number of retry attempts for transient errors per individual API request. Each retry uses exponential backoff starting from `ai_function_retry_initial_delay_ms`.
+    DECLARE(UInt64, ai_function_max_retries, 3, R"(
+Maximum number of retry attempts for transient errors per individual API request. Each retry uses exponential backoff starting from `ai_function_retry_initial_delay_ms`. At most 5.
 )", BETA) \
     DECLARE(UInt64, ai_function_retry_initial_delay_ms, 1000, R"(
-Initial delay in milliseconds before the first retry of a failed AI function API request. The delay doubles on each subsequent attempt (exponential backoff). For example, with default settings: 1000ms, 2000ms, 4000ms.
+Initial delay in milliseconds before the first retry of a failed AI function API request. The delay doubles on each subsequent attempt (exponential backoff). For example, with default settings: 1000ms, 2000ms, 4000ms. At most 10000.
 )", BETA) \
     DECLARE(Bool, ai_function_throw_on_error, true, R"(
 If true (default), an AI function call that fails permanently after exhausting all retries aborts the query with an exception. If false, the failed row receives the default value for the column type (empty string for String) and processing continues.
@@ -8809,6 +8809,18 @@ If true (default), exceeding an AI function quota limit (`ai_function_max_input_
 )", BETA) \
     DECLARE(NonZeroUInt64, ai_function_embedding_max_batch_size, 100, R"(
 Maximum number of texts to include in a single HTTP request made by the embedding functions (`aiEmbed`, `aiSimilarity`). Texts are grouped into batches of this size to reduce API call overhead. For example, 500 unique texts with a batch size of 100 result in 5 HTTP requests.
+)", BETA) \
+    DECLARE(NonZeroUInt64, ai_function_max_concurrent_requests_per_thread, 8, R"(
+Maximum number of provider requests one query thread has in flight at the same time. `1` issues requests one at a time.
+
+A query running on several threads (at most `max_threads`) can have up to this many requests in flight per thread. Use a [settings profile constraint](/concepts/features/configuration/settings/constraints-on-settings) (`<constraints><ai_function_max_concurrent_requests_per_thread><max>...</max></...>`) to put a ceiling on it that a query cannot raise. The ceiling is still per thread.
+
+A value above `1` loosens two guarantees:
+
+- A request's token usage is only known once its response arrives, so the token quotas (`ai_function_max_input_tokens_per_query`, `ai_function_max_output_tokens_per_query`) may overshoot by one request's worth per request in flight - that is, by up to this many requests' worth rather than by one.
+- A whole wave of requests is dispatched before any of their errors is seen, so a query that fails on its first row may still have issued, and been billed for, up to this many requests.
+
+`ai_function_max_api_calls_per_query` is unaffected and stays an exact cap, because a slot is reserved before each request is dispatched.
 )", BETA) \
     DECLARE(String, ai_function_text_default_credentials, "", R"(
 Name of the named collection used by the text AI functions (`aiGenerate`, `aiClassify`, `aiFilter`, `aiExtract`, `aiTranslate`, `aiRedact`) when the call does not pass `credentials` in its parameter map. Empty means no default: such calls must pass `credentials` explicitly. A chat-completions endpoint differs from an embeddings one, so this is separate from `ai_function_embedding_default_credentials`.
