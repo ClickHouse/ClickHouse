@@ -5,26 +5,20 @@
     </settings>
 
     <!--
-        Benchmarks the row-level cost of the whole-metric primary-key range that PromQL selectors
-        emit over a metric-clustered id layout (id = Tuple(sipHash64(metric_name), hash of tags)).
+        Benchmarks reading every sample of one metric through PromQL selectors over the default layout
+        of a TimeSeries table (the id is Tuple(sipHash64(metric_name), hash of tags), so the series of
+        a metric are adjacent in the samples table).
 
         promql_selector_pk_range.xml measures index analysis and is built for it (tiny granules and
         a 5m lookback, so a query touches few rows). This one is the opposite shape: one metric,
         default index granularity, and a window covering every sample, so nothing can be pruned and
-        the filter runs over every row read.
-
-        The range accepts every row the `id IN <set>` condition beside it accepts, so it is a
-        row-level no-op that still costs two Tuple(UInt64, UUID) comparisons per row. The
-        label-filtered selector emits no range and is the control: it must not regress.
+        every sample of the metric is read. The label-filtered selector reads one eighth of the
+        series and is the control: it must not regress.
     -->
 
-    <create_query>
-        CREATE TABLE promql_row_cost_ts ENGINE = TimeSeries
-        SAMPLES INNER ENGINE = MergeTree ORDER BY (id, timestamp)
-        TAGS INNER COLUMNS (id Tuple(UInt64, UUID))
-    </create_query>
+    <create_query>CREATE TABLE promql_row_cost_ts ENGINE = TimeSeries</create_query>
 
-    <!-- 12800 series of one metric, 4096 samples each at 15s: 52.4M rows in the samples table.
+    <!-- 12800 series of one metric, 4096 samples each at 15s: 52.4M samples.
          The samples share one 17-hour window, which keeps the default recent-samples target
          (partitioned by 5-hour interval) under max_partitions_per_insert_block. -->
     <fill_query>
@@ -36,12 +30,12 @@
         FROM numbers_mt(12800)
     </fill_query>
 
-    <!-- whole-metric selectors over the full window: every row is read and filtered -->
-    <query>SELECT sum(value) FROM timeSeriesSelector('promql_row_cost_ts', 'rowcost_metric', 1000000, 1061440) SETTINGS max_threads = 4 FORMAT Null</query>
+    <!-- whole-metric selectors over the full window: every sample of the metric is read -->
+    <query>SELECT sum(value) FROM timeSeriesSelector('promql_row_cost_ts', 'rowcost_metric', 1000000, 1061440, 'timestamp_and_value') SETTINGS max_threads = 4 FORMAT Null</query>
     <query>SELECT * FROM prometheusQueryRange('promql_row_cost_ts', 'sum(rowcost_metric)', 1000000, 1061440, 10000) SETTINGS max_threads = 4 FORMAT Null</query>
 
-    <!-- label-filtered selector: no range is emitted, the id set is the only filter (control) -->
-    <query>SELECT sum(value) FROM timeSeriesSelector('promql_row_cost_ts', 'rowcost_metric{{dc="0"}}', 1000000, 1061440) SETTINGS max_threads = 4 FORMAT Null</query>
+    <!-- label-filtered selector: one eighth of the series (control) -->
+    <query>SELECT sum(value) FROM timeSeriesSelector('promql_row_cost_ts', 'rowcost_metric{{dc="0"}}', 1000000, 1061440, 'timestamp_and_value') SETTINGS max_threads = 4 FORMAT Null</query>
 
     <drop_query>DROP TABLE IF EXISTS promql_row_cost_ts</drop_query>
 </test>
