@@ -58,3 +58,71 @@ select accurateCastOrDefault('test', 'IPv6');
 select accurateCastOrDefault('192.0.2.1', 'IPv6');
 select accurateCastOrDefault('2001:db8::1', 'IPv6');
 select accurateCastOrDefault('2001:db8::1x', 'IPv6');
+
+-- A failed accurate cast to Enum must report NULL so OrDefault can use its fallback,
+-- regardless of the legacy numeric-to-Enum conversion setting.
+SET check_conversion_from_numbers_to_enum = 0;
+SELECT toInt8(accurateCastOrDefault(-1, $$Enum8('None' = 1, 'Hello' = 2, 'World' = 3)$$)),
+       isNull(accurateCastOrNull(-1, $$Enum8('None' = 1, 'Hello' = 2, 'World' = 3)$$));
+SELECT accurateCastOrDefault(-1, $$Enum8('None' = 1, 'Hello' = 2, 'World' = 3)$$);
+SELECT toInt8(accurateCastOrDefault(-1, $$Enum8('None' = 1, 'Hello' = 2, 'World' = 3)$$, CAST('Hello', $$Enum8('None' = 1, 'Hello' = 2, 'World' = 3)$$)));
+SELECT toInt8(CAST(-1, $$Enum8('None' = 1, 'Hello' = 2, 'World' = 3)$$));
+
+SET check_conversion_from_numbers_to_enum = 1;
+SELECT toInt8(accurateCastOrDefault(-1, $$Enum8('None' = 1, 'Hello' = 2, 'World' = 3)$$)),
+       isNull(accurateCastOrNull(-1, $$Enum8('None' = 1, 'Hello' = 2, 'World' = 3)$$));
+SELECT toInt8(accurateCastOrDefault(-1, $$Enum8('None' = 1, 'Hello' = 2, 'World' = 3)$$, CAST('Hello', $$Enum8('None' = 1, 'Hello' = 2, 'World' = 3)$$)));
+
+SELECT toInt8(accurateCastOrDefault('unknown', $$Enum8('None' = 1, 'Hello' = 2, 'World' = 3)$$)),
+       isNull(accurateCastOrNull('unknown', $$Enum8('None' = 1, 'Hello' = 2, 'World' = 3)$$)),
+       toInt8(accurateCastOrDefault('Hello', $$Enum8('None' = 1, 'Hello' = 2, 'World' = 3)$$));
+SELECT toInt8(accurateCastOrDefault('unknown', $$Enum8('None' = 1, 'Hello' = 2, 'World' = 3)$$, CAST('Hello', $$Enum8('None' = 1, 'Hello' = 2, 'World' = 3)$$)));
+SELECT toInt16(accurateCastOrDefault(32768, $$Enum16('None' = 1, 'Hello' = 2)$$)),
+       isNull(accurateCastOrNull(32768, $$Enum16('None' = 1, 'Hello' = 2)$$));
+
+SELECT number,
+       toInt8(accurateCastOrDefault(number + 1, $$Enum8('None' = 1, 'Hello' = 2, 'World' = 3)$$)),
+       isNull(accurateCastOrNull(number + 1, $$Enum8('None' = 1, 'Hello' = 2, 'World' = 3)$$))
+FROM numbers(4) ORDER BY number;
+
+-- Values outside the target Enum, including in-range integers and fractional numbers.
+SELECT toInt8(accurateCastOrDefault(toInt8(0), $$Enum8('None' = 1, 'Hello' = 2, 'World' = 3)$$)),
+       isNull(accurateCastOrNull(toInt8(0), $$Enum8('None' = 1, 'Hello' = 2, 'World' = 3)$$));
+SELECT toInt8(accurateCastOrDefault(toFloat64(1.5), $$Enum8('None' = 1, 'Hello' = 2, 'World' = 3)$$)),
+       isNull(accurateCastOrNull(toFloat64(1.5), $$Enum8('None' = 1, 'Hello' = 2, 'World' = 3)$$));
+
+-- Accurate Enum casts must reject missing enum members and narrowing that wraps a value.
+SET check_conversion_from_numbers_to_enum = 0;
+WITH
+    CAST('large', $$Enum16('large' = 257)$$) AS narrowing,
+    CAST('other', $$Enum8('other' = 7)$$) AS same_width,
+    CAST('good', $$Enum16('good' = 1)$$) AS valid_source,
+    CAST('fallback', $$Enum8('good' = 1, 'fallback' = 2)$$) AS fallback
+SELECT
+    toInt8(accurateCastOrDefault(narrowing, $$Enum8('good' = 1, 'fallback' = 2)$$, fallback)),
+    isNull(accurateCastOrNull(narrowing, $$Enum8('good' = 1, 'fallback' = 2)$$)),
+    toInt8(accurateCastOrDefault(same_width, $$Enum8('good' = 1, 'fallback' = 2)$$, fallback)),
+    isNull(accurateCastOrNull(same_width, $$Enum8('good' = 1, 'fallback' = 2)$$)),
+    toInt8(accurateCastOrDefault(valid_source, $$Enum8('good' = 1, 'fallback' = 2)$$, fallback)),
+    isNull(accurateCastOrNull(valid_source, $$Enum8('good' = 1, 'fallback' = 2)$$));
+SELECT toInt8(accurateCast(toFloat64(1.5), $$Enum8('good' = 1, 'fallback' = 2)$$)); -- { serverError CANNOT_CONVERT_TYPE }
+SELECT toInt8(accurateCast(CAST('large', $$Enum16('large' = 257)$$), $$Enum8('good' = 1, 'fallback' = 2)$$)); -- { serverError CANNOT_CONVERT_TYPE }
+
+-- Ordinary CAST keeps its existing integer-conversion behavior.
+SELECT toInt8(CAST(CAST('large', $$Enum16('large' = 257)$$), $$Enum8('good' = 1, 'fallback' = 2)$$));
+
+SET check_conversion_from_numbers_to_enum = 1;
+WITH
+    CAST('large', $$Enum16('large' = 257)$$) AS narrowing,
+    CAST('other', $$Enum8('other' = 7)$$) AS same_width,
+    CAST('good', $$Enum16('good' = 1)$$) AS valid_source,
+    CAST('fallback', $$Enum8('good' = 1, 'fallback' = 2)$$) AS fallback
+SELECT
+    toInt8(accurateCastOrDefault(narrowing, $$Enum8('good' = 1, 'fallback' = 2)$$, fallback)),
+    isNull(accurateCastOrNull(narrowing, $$Enum8('good' = 1, 'fallback' = 2)$$)),
+    toInt8(accurateCastOrDefault(same_width, $$Enum8('good' = 1, 'fallback' = 2)$$, fallback)),
+    isNull(accurateCastOrNull(same_width, $$Enum8('good' = 1, 'fallback' = 2)$$)),
+    toInt8(accurateCastOrDefault(valid_source, $$Enum8('good' = 1, 'fallback' = 2)$$, fallback)),
+    isNull(accurateCastOrNull(valid_source, $$Enum8('good' = 1, 'fallback' = 2)$$));
+SELECT toInt8(accurateCast(toFloat64(1.5), $$Enum8('good' = 1, 'fallback' = 2)$$)); -- { serverError CANNOT_CONVERT_TYPE }
+SELECT toInt8(accurateCast(CAST('large', $$Enum16('large' = 257)$$), $$Enum8('good' = 1, 'fallback' = 2)$$)); -- { serverError CANNOT_CONVERT_TYPE }
