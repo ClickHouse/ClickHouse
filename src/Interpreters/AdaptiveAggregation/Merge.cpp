@@ -334,7 +334,7 @@ namespace
             bool keep_reading = true;
             for (size_t sub = first_sub; sub < end_sub && keep_reading; ++sub)
             {
-                spilledOf(sub).readBack([&](const DB::PaddedPODArray<char> & block)
+                spilledOf(sub).readBack(session.spill_streams, [&](const DB::PaddedPODArray<char> & block)
                 {
                     ranges.clear();
                     ranges.emplace_back(block.data(), block.size());
@@ -350,7 +350,7 @@ namespace
         {
             for (const auto & producer : session.producer_buffers)
                 producer->releasePartition(first_partition + sub);
-            spilledOf(sub).release(emptied_streams);
+            spilledOf(sub).release(session.spill_streams, emptied_streams);
         }
 
         /// Removes the spill streams that the releases left with no block, on `pool` in parallel.

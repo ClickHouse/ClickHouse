@@ -78,6 +78,9 @@ constexpr size_t adaptive_spill_min_bytes = 16 << 20;
 /// the compressed blocks get too small, and not above the buffer size configured for temporary files. Without a
 /// threshold they take the floor.
 constexpr size_t adaptive_spill_min_buffer_bytes = 4 << 10;
+/// A partition keeps at most this many descriptors of its spilled blocks per level in memory: a full level is written to
+/// the spill stream as one block of the next level, so the memory of the index does not grow with the records spilled.
+constexpr size_t adaptive_spill_index_level_blocks = 64;
 /// The merge takes a bucket's partitions in units of about this many records and source cells each, so a unit's
 /// table, grown to hold them, stays in the cache while the unit is drained and converted; a bucket smaller than a
 /// unit is merged as one, which spares a small bucket the fixed cost of every further unit.
@@ -211,42 +214,60 @@ struct AdaptiveAggregationSession
     struct SpillStream
     {
         std::unique_ptr<TemporaryDataBuffer> buffer;
-        std::atomic<size_t> unreleased_blocks = 0;
+        /// The partitions with blocks in the stream that are not released yet.
+        std::atomic<size_t> unreleased_partitions = 0;
     };
     /// One per producer.
     std::vector<SpillStream> spill_streams;
 
     /// The spilled staged records of a partition, so that a merge unit reads back its own only: blocks {UInt64 bytes,
-    /// the records} in the spill streams, and the records kept in memory until they make a block.
+    /// the records} in the spill streams, indexed in levels, and the records kept in memory until they make a block.
     class SpilledPartition
     {
+        struct Block
+        {
+            size_t stream;
+            size_t begin;
+            size_t end;
+        };
+
     public:
+        /// The most an append writes besides the records: their size, and a full level for each level it fills, at most
+        /// 10, since filling an 11th would take 64^11 blocks.
+        static_assert(adaptive_spill_index_level_blocks == 64);
+        static constexpr size_t max_append_overhead_bytes = sizeof(UInt64) + 10 * adaptive_spill_index_level_blocks * sizeof(Block);
+
         /// Adds the records of partition `partition` of `partitions`, returns their bytes, and writes the records kept
-        /// in memory to `spill_stream` as one block once they reach `block_bytes`. Producers append concurrently.
-        UInt64 append(SpillStream & spill_stream, const PartitionedRecordBuffer & partitions, size_t partition, size_t block_bytes);
+        /// in memory to `streams[spill_stream]` as one block once they reach `block_bytes`. Producers append concurrently.
+        UInt64 append(
+            std::vector<SpillStream> & streams, size_t spill_stream, const PartitionedRecordBuffer & partitions, size_t partition,
+            size_t block_bytes);
 
         /// Calls `callback(block)` with the blocks in the order the producers wrote them, then the records kept in
         /// memory, each in a padded buffer like a chunk's, valid only during its call, until `callback` returns false.
         /// The records stay for a second pass. Called by the one merge task of the bucket, after the finish barrier.
-        void readBack(const std::function<bool(const PaddedPODArray<char> &)> & callback);
+        void readBack(std::vector<SpillStream> & streams, const std::function<bool(const PaddedPODArray<char> &)> & callback) const;
 
         /// The records appended, which the merge counts before it reads them back.
         size_t recordCount() const { return record_count; }
 
         /// Removes the records, read back or not, and adds each stream left with no block to `emptied_streams`.
-        void release(std::vector<SpillStream *> & emptied_streams);
+        void release(std::vector<SpillStream> & streams, std::vector<SpillStream *> & emptied_streams);
 
     private:
+        void addBlock(std::vector<SpillStream> & streams, Block block);
+        bool readLevel(
+            std::vector<SpillStream> & streams, size_t level, const std::vector<Block> & level_blocks, PaddedPODArray<char> & block,
+            const std::function<bool(const PaddedPODArray<char> &)> & callback) const;
+
         /// Serializes the producers' appends.
         std::mutex mutex;
         PaddedPODArray<char> pending;
-        struct Block
-        {
-            SpillStream * stream;
-            size_t begin;
-            size_t end;
-        };
-        std::vector<Block> blocks;
+        /// `levels[0]` holds the blocks of records, and a block of `levels[i + 1]` the descriptors of a full `levels[i]`,
+        /// so a higher level holds older blocks.
+        std::vector<std::vector<Block>> levels;
+        /// The streams that count this partition in `SpillStream::unreleased_partitions`.
+        std::vector<size_t> streams_with_blocks;
         size_t record_count = 0;
     };
     /// One per partition of the layout.
