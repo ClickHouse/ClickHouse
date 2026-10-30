@@ -51,6 +51,9 @@ class ThreadStatus;
 /// consumed: not more (the batch never grows past the intent, even if the usual stop
 /// conditions would allow it), and not less (a batch that ends short of the intent is
 /// discarded and replayed later instead of being inserted with a different hash).
+/// A commit updates the committed offset and removes the intent in a single Keeper
+/// transaction, so a stale intent, whose batch was already committed, cannot be left
+/// behind.
 ///
 /// To not complicate things too much, the current implementation makes sure to fetch
 /// messages only from a single topic-partition on a single thread at a time by

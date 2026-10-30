@@ -586,7 +586,10 @@ void KeeperHandlingConsumer::saveIntentSize(const KafkaConsumer2::TopicPartition
     }
 
     const auto partition_prefix = getTopicPartitionPath(topic_partition);
-    writeTopicPartitionInfoToKeeper(partition_prefix / intent_file_name, toString(intent));
+    Coordination::Requests ops;
+    keeper->checkExistsAndGetCreateAncestorsOps(partition_prefix / intent_file_name, ops);
+    addSetOrCreateRequest(ops, partition_prefix / intent_file_name, toString(intent));
+    executeMultiInKeeper(std::move(ops));
 }
 
 void KeeperHandlingConsumer::saveCommittedOffset(const int64_t new_offset)
@@ -600,7 +603,19 @@ void KeeperHandlingConsumer::saveCommittedOffset(const int64_t new_offset)
 
     auto & topic_partition = assigned_topic_partitions[topic_partition_index_to_consume_from];
     const auto partition_prefix = getTopicPartitionPath(topic_partition);
-    writeTopicPartitionInfoToKeeper(partition_prefix / commit_file_name, toString(new_offset));
+
+    /// Commit the offset and remove the intent atomically. An interruption between the two would
+    /// leave an advanced offset together with the intent of the already committed batch, and the
+    /// next owner of the topic-partition would try to replay a batch that does not start at the
+    /// committed offset. With fewer new messages than the stale intent, every replay would come up
+    /// short and be discarded, blocking the partition until enough new messages arrive.
+    Coordination::Requests ops;
+    keeper->checkExistsAndGetCreateAncestorsOps(partition_prefix / commit_file_name, ops);
+    addSetOrCreateRequest(ops, partition_prefix / commit_file_name, toString(new_offset));
+    if (keeper->exists(partition_prefix / intent_file_name))
+        ops.emplace_back(zkutil::makeRemoveRequest(partition_prefix / intent_file_name, -1));
+    executeMultiInKeeper(std::move(ops));
+
     last_commit_timestamp = timeInSeconds(std::chrono::system_clock::now());
     ++num_commits;
     {
@@ -609,22 +624,21 @@ void KeeperHandlingConsumer::saveCommittedOffset(const int64_t new_offset)
         lock_info.committed_offset = new_offset;
         lock_info.intent_size.reset();
     }
-    // This is best effort, if it fails we will override it in the next round
-    keeper->tryRemove(partition_prefix / intent_file_name, -1);
     LOG_TEST(
         log, "Saved offset {} for topic-partition [{}:{}]", new_offset, topic_partition.topic, topic_partition.partition_id);
     kafka_consumer->commit(TopicPartitionOffset{{topic_partition}, new_offset});
 }
 
-void KeeperHandlingConsumer::writeTopicPartitionInfoToKeeper(const std::filesystem::path & keeper_path_to_data, const String & data)
+void KeeperHandlingConsumer::addSetOrCreateRequest(Coordination::Requests & ops, const std::filesystem::path & path, const String & data)
 {
-    Coordination::Requests ops;
-    keeper->checkExistsAndGetCreateAncestorsOps(keeper_path_to_data, ops);
-    if (keeper->exists(keeper_path_to_data))
-        ops.emplace_back(zkutil::makeSetRequest(keeper_path_to_data, data, -1));
+    if (keeper->exists(path))
+        ops.emplace_back(zkutil::makeSetRequest(path, data, -1));
     else
-        ops.emplace_back(zkutil::makeCreateRequest(keeper_path_to_data, data, zkutil::CreateMode::Persistent));
+        ops.emplace_back(zkutil::makeCreateRequest(path, data, zkutil::CreateMode::Persistent));
+}
 
+void KeeperHandlingConsumer::executeMultiInKeeper(Coordination::Requests ops)
+{
     Coordination::Responses responses;
     const auto code = keeper->tryMulti(ops, responses);
     if (code != Coordination::Error::ZOK)
