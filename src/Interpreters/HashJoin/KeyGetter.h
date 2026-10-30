@@ -400,12 +400,19 @@ struct HashMethodPackedStringJoinKey : public ColumnsHashing::columns_hashing_im
                                            use_offset>,
                                        public PreparedJoinKeys<HashMethodPackedStringJoinKey<Value, Mapped>>
 {
+    using Base = ColumnsHashing::columns_hashing_impl::
+        HashMethodBase<HashMethodPackedStringJoinKey<Value, Mapped>, Value, Mapped, false, use_offset>;
+
     /// Hashing a long string is not cheap, but `true` lets the join loops prefetch: after `prepareRows`, they build
     /// each key once.
     static constexpr bool has_cheap_key_calculation = true;
 
     const IColumn::Offset * offsets;
     const UInt8 * chars;
+
+    /// The number of `emplaceKey` calls, and how many of their keys are hashed.
+    size_t emplaced_keys = 0;
+    size_t hashed_keys = 0;
 
     HashMethodPackedStringJoinKey(const ColumnRawPtrs & key_columns, const Sizes &, const ColumnsHashing::HashMethodContextPtr &)
         : HashMethodPackedStringJoinKey(assert_cast<const ColumnString &>(*key_columns[0]))
@@ -428,6 +435,15 @@ struct HashMethodPackedStringJoinKey : public ColumnsHashing::columns_hashing_im
     void buildKeys(size_t begin, size_t end, UInt128 * keys, const UInt8 * skip) const
     {
         PackedStringJoinKey::buildRange(reinterpret_cast<const char *>(chars), offsets, begin, end, keys, skip);
+    }
+
+    template <typename Data>
+    ALWAYS_INLINE typename Base::EmplaceResult emplaceKey(Data & data, size_t row, Arena & pool)
+    {
+        auto result = Base::emplaceKey(data, row, pool);
+        ++emplaced_keys;
+        hashed_keys += (result.getKey().items[1] & PackedStringJoinKey::hashed_flag) != 0;
+        return result;
     }
 };
 
