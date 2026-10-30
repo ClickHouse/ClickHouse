@@ -116,6 +116,7 @@ SkipIndexReadResultPtr MergeTreeSkipIndexReader::read(
             continue;
         }
 
+        bool index_applied = false;
         auto [filtered_ranges, filtered_hints] = MergeTreeDataSelectExecutor::filterMarksUsingIndex(
             index_and_condition.index,
             index_and_condition.condition_template->generateForPart(*part_info),
@@ -129,8 +130,11 @@ SkipIndexReadResultPtr MergeTreeSkipIndexReader::read(
             vector_similarity_index_cache.get(),
             use_for_disjunctions,
             partial_eval_results,
-            log);
+            log,
+            &index_applied);
 
+        if (index_applied)
+            indexApplied(*index_and_condition.index);
         ranges = std::move(filtered_ranges);
 
         for (auto & [name, granule] : filtered_hints.index_granules)
@@ -202,6 +206,7 @@ SkipIndexReadResultPtr MergeTreeSkipIndexReader::read(
                 if (!condition || condition->alwaysUnknownOrTrue())
                     continue;
 
+                bool index_applied = false;
                 auto [filtered_ranges, filtered_hints] = MergeTreeDataSelectExecutor::filterMarksUsingIndex(
                     index_helper,
                     condition,
@@ -215,7 +220,10 @@ SkipIndexReadResultPtr MergeTreeSkipIndexReader::read(
                     vector_similarity_index_cache.get(),
                     /*use_skip_indexes_for_disjunctions=*/false,
                     no_disjunctions,
-                    log);
+                    log,
+                    &index_applied);
+                if (index_applied)
+                    indexApplied(*index_helper);
                 ranges = std::move(filtered_ranges);
             }
 
@@ -261,6 +269,8 @@ SkipIndexReadResultPtr MergeTreeSkipIndexReader::read(
             vector_similarity_index_cache.get());
 
         res->threshold_tracker = skip_indexes.threshold_tracker;
+        if (res->min_max_index_for_top_k && !ranges.empty())
+            indexApplied(*skip_indexes.skip_index_for_top_k_filtering);
     }
 
     res->may_skip_granules_besides_top_k_primary_key
@@ -283,6 +293,19 @@ SkipIndexReadResultPtr MergeTreeSkipIndexReader::read(
     }
 
     return res;
+}
+
+void MergeTreeSkipIndexReader::indexApplied(const IMergeTreeIndex & index)
+{
+    if (!on_index_applied)
+        return;
+
+    {
+        std::lock_guard lock(applied_indexes_mutex);
+        if (!applied_indexes.insert(index.index.name).second)
+            return;
+    }
+    on_index_applied(index.index.name);
 }
 
 bool SkipIndexReadResult::isGranuleBeyondTopKThreshold(size_t mark) const

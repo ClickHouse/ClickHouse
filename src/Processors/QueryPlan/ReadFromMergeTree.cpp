@@ -5323,7 +5323,7 @@ void ReadFromMergeTree::reportIndexUsageWith(
     IQueryPlanStep & step, AnalysisResultPtr analysis, UInt64 granules_dropped_by_partition_key, NameSet read_indexes) const
 {
     /// `assert_cast` checks the exact type, `step` is a subclass
-    dynamic_cast<ISourceStep &>(step).setOnInitializePipeline(
+    dynamic_cast<ISourceStep &>(step).addOnInitializePipeline(
         [replaced_analysis = std::move(analysis), storage_id = data.getStorageID(), access_info_context = getAccessInfoContext(),
          granules_dropped_by_partition_key, step_read_indexes = std::move(read_indexes)]
         {
@@ -5984,16 +5984,6 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, [[ma
             };
     }
 
-    /// Skip indexes that the read-time reader applies, listed if a part that is read has the index.
-    /// Index analysis does not list them: a projection can replace this read after it.
-    NameSet read_time_indexes;
-    auto add_read_time_index = [&](const MergeTreeIndexPtr & index)
-    {
-        if (std::ranges::any_of(result.parts_with_ranges, [&](const RangesInDataPart & part)
-            { return !part.ranges.empty() && index->getDeserializedFormat(*part.data_part, index->getFileName()); }))
-            read_time_indexes.insert(index->index.name);
-    };
-
     if (supportsSkipIndexesOnDataRead())
     {
         UsefulSkipIndexes applicable_skip_indexes = indexes->skip_indexes;
@@ -6022,12 +6012,6 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, [[ma
                 dynamic_skip_index_filter,
                 context,
                 getLogger("MergeTreeSkipIndexReader"));
-
-            for (const auto & index_and_condition : applicable_skip_indexes.useful_indices)
-                add_read_time_index(index_and_condition.index);
-            /// the dynamic top-K filter reads this index
-            if (applicable_skip_indexes.skip_index_for_top_k_filtering && applicable_skip_indexes.threshold_tracker)
-                add_read_time_index(applicable_skip_indexes.skip_index_for_top_k_filtering);
         }
     }
 
@@ -6073,10 +6057,11 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, [[ma
     if (skip_index_reader && top_k_primary_key_column_position)
         skip_index_reader->setTopKPrimaryKeyPruning(*top_k_primary_key_column_position, top_k_filter_info->threshold_tracker);
 
-    /// a reader is built above whenever the join runtime filter selected skip indexes
-    for (const auto & index : runtime_skip_indexes)
-        add_read_time_index(index);
-    addUsedSkipIndexes(read_time_indexes, data.getStorageID(), access_info_context);
+    /// Index analysis does not list the skip indexes that it leaves to the read: a projection can replace this read after it.
+    if (skip_index_reader)
+        skip_index_reader->setOnIndexApplied(
+            [storage_id = data.getStorageID(), access_info_context](const String & index_name)
+            { addUsedSkipIndexes({index_name}, storage_id, access_info_context); });
 
     /// Account SelectedRanges / SelectedMarks here, once all reader-creation paths above have
     /// run. When a read-time skip-index reader is installed (the use_skip_indexes_on_data_read
