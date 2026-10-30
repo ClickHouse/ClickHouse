@@ -1,5 +1,7 @@
 -- Tags: distributed, long, no-msan, no-tsan, no-asan, no-ubsan
 -- ^ slow
+-- 128-row spill blocks (prefer_external_sort_block_bytes = 1) exceed max_execution_time under the thread fuzzer.
+-- Random settings limits: prefer_external_sort_block_bytes=(16744704, None)
 
 SET max_memory_usage = 150000000;
 SET max_bytes_before_external_sort = 10000000;
