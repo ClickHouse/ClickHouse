@@ -25,7 +25,7 @@ using TimeSeriesSettingsPtr = std::shared_ptr<const TimeSeriesSettings>;
 
 /// Sink for inserting data into the TimeSeries table engine.
 /// Transforms outer columns (samples, metric_name, tags, metric_family, type, unit, help)
-/// into blocks for the target tables (Tags, TimeRanges, Samples, RecentSamples, MetricFamilies).
+/// into blocks for the target tables (Tags, TimeRanges, Samples, RecentSamples, Histograms, MetricFamilies).
 class TimeSeriesSink : public SinkToStorage, WithContext
 {
 public:
@@ -66,6 +66,7 @@ private:
     /// Makes the tags block from the time series marked in `filter` (`num_time_series` of them): the `id` column calculated
     /// by the id generator, the columns `metric_name` and the columns from the `tags_to_columns` setting, `tags`,
     /// and `min_time`, `max_time` if the tags table stores them (tables of earlier versions).
+    /// The time range covers the histograms too when `hist_offsets` and `hist_timestamps` are set.
     Block makeTagsBlock(
         const IColumn::Filter & filter,
         size_t num_time_series,
@@ -74,13 +75,16 @@ private:
         const IColumn & tags_keys,
         const IColumn & tags_values,
         const IColumn::Offsets & ts_offsets,
-        const IColumn & ts_timestamps) const;
+        const IColumn & ts_timestamps,
+        const IColumn::Offsets * hist_offsets,
+        const IColumn * hist_timestamps) const;
 
     StorageTimeSeries & time_series_storage;
     TimeSeriesSettingsPtr time_series_settings;
     LoggerPtr log;
 
     bool insert_tags_and_samples = false;
+    bool insert_histograms = false;
     bool insert_metric_families = false;
     bool async_insert = false;
 
@@ -112,6 +116,7 @@ private:
     std::unique_ptr<TargetPipeline> time_ranges_pipeline;
     std::unique_ptr<TargetPipeline> samples_pipeline;
     std::unique_ptr<TargetPipeline> recent_samples_pipeline;
+    std::unique_ptr<TargetPipeline> histograms_pipeline;
     std::unique_ptr<TargetPipeline> metric_families_pipeline;
 
     /// Skip the rows already written to the "tags" and "metric families" tables, null if the corresponding cache is disabled.
