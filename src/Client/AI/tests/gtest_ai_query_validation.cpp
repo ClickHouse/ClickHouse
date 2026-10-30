@@ -105,6 +105,11 @@ TEST(AIQueryValidation, AllowsReadOnlyStatements)
     EXPECT_TRUE(isAllowed("DESCRIBE TABLE system.tables"));
     EXPECT_TRUE(isAllowed("EXPLAIN SELECT 1"));
     EXPECT_TRUE(isAllowed("EXPLAIN PIPELINE SELECT number FROM numbers(10)"));
+    /// Interpreting an explained `INSERT` or `CREATE` resolves its destination, which is not checked.
+    EXPECT_FALSE(isAllowed("EXPLAIN PIPELINE INSERT INTO pg_db.t SELECT 1"));
+    EXPECT_FALSE(isAllowed("EXPLAIN INSERT INTO pg_db.t SELECT 1"));
+    EXPECT_FALSE(isAllowed("EXPLAIN SYNTAX CREATE TABLE t (x UInt8) ENGINE = Memory"));
+    EXPECT_TRUE(isAllowed("EXPLAIN AST INSERT INTO t SELECT 1"));
     EXPECT_TRUE(isAllowed("EXISTS TABLE system.tables"));
     EXPECT_FALSE(isAllowed("CHECK TABLE t"));
     EXPECT_TRUE(isAllowed("SHOW PRIVILEGES"));
@@ -247,12 +252,21 @@ TEST(AIQueryValidation, RejectsExternalServerOwnedTables)
     EXPECT_FALSE(isAllowedServerOwnedTableForAIAgent("system", "iceberg_files"));
     EXPECT_FALSE(isAllowedServerOwnedTableForAIAgent("system", "iceberg_metadata_log_entries"));
     EXPECT_FALSE(isAllowedServerOwnedTableForAIAgent("system", "remote_data_paths"));
+    EXPECT_FALSE(isAllowedServerOwnedTableForAIAgent("system", "kafka_consumers"));
+    EXPECT_FALSE(isAllowedServerOwnedTableForAIAgent("system", "s3_queue_settings"));
+    EXPECT_FALSE(isAllowedServerOwnedTableForAIAgent("system", "azure_queue_settings"));
 
     /// `system.tables` and `information_schema.views` expose the stored texts of the queries of
     /// the views (`create_table_query`, `as_select`, `view_definition`).
     EXPECT_FALSE(isAllowedServerOwnedTableForAIAgent("system", "tables"));
     EXPECT_FALSE(isAllowedServerOwnedTableForAIAgent("information_schema", "views"));
     EXPECT_FALSE(isAllowedServerOwnedTableForAIAgent("INFORMATION_SCHEMA", "VIEWS"));
+    /// The `*_privileges` views are `system.grants` under other names.
+    EXPECT_FALSE(isAllowedServerOwnedTableForAIAgent("information_schema", "user_privileges"));
+    EXPECT_FALSE(isAllowedServerOwnedTableForAIAgent("INFORMATION_SCHEMA", "USER_PRIVILEGES"));
+    EXPECT_FALSE(isAllowedServerOwnedTableForAIAgent("information_schema", "schema_privileges"));
+    EXPECT_FALSE(isAllowedServerOwnedTableForAIAgent("information_schema", "table_privileges"));
+    EXPECT_FALSE(isAllowedServerOwnedTableForAIAgent("INFORMATION_SCHEMA", "COLUMN_PRIVILEGES"));
     EXPECT_TRUE(isAllowedServerOwnedTableForAIAgent("information_schema", "columns"));
     EXPECT_TRUE(isAllowedServerOwnedTableForAIAgent("INFORMATION_SCHEMA", "TABLES"));
 

@@ -745,8 +745,25 @@ bool isAllowedServerOwnedTableForAIAgent(const String & database, const String &
 {
     /// `information_schema.views` is `system.tables.as_select` under another name: the stored
     /// texts of the queries of the views, which is why `system.tables` is not allowed below.
+    /// The `*_privileges` views are `system.grants` under other names: the users, the roles and
+    /// their grants, the access metadata that `system.grants` and `SHOW GRANTS` are refused for.
     if (database == "information_schema" || database == "INFORMATION_SCHEMA")
-        return table != "views" && table != "VIEWS";
+    {
+        static const std::unordered_set<std::string_view> disallowed_information_schema_tables
+        {
+            "views",
+            "VIEWS",
+            "user_privileges",
+            "USER_PRIVILEGES",
+            "schema_privileges",
+            "SCHEMA_PRIVILEGES",
+            "table_privileges",
+            "TABLE_PRIVILEGES",
+            "column_privileges",
+            "COLUMN_PRIVILEGES",
+        };
+        return !disallowed_information_schema_tables.contains(table);
+    }
 
     if (database != "system")
         return true;
@@ -804,6 +821,12 @@ bool isAllowedServerOwnedTableForAIAgent(const String & database, const String &
         /// Reads the metadata of every Iceberg table from object storage.
         "iceberg_metadata_log_entries",
         "remote_data_paths",
+        /// Iterate over the tables of every database, the remote ones (`PostgreSQL`, `MySQL`)
+        /// included, regardless of `show_remote_databases_in_system_tables`, and enumerating the
+        /// tables of a remote database contacts its server.
+        "kafka_consumers",
+        "s3_queue_settings",
+        "azure_queue_settings",
 
         "processes",
         "user_processes",
@@ -988,6 +1011,21 @@ void validateReadOnlyQueryForAIAgent(const IAST & ast, bool allow_schema_access)
             ErrorCodes::BAD_ARGUMENTS,
             "Only read-only statements (SELECT, EXPLAIN, SHOW, DESCRIBE, EXISTS) can be run "
             "without confirmation. Use the run_query tool for this query");
+
+    /// `EXPLAIN PIPELINE INSERT INTO db.t ...`, `EXPLAIN SYNTAX CREATE ...` and the like build the
+    /// interpreter of the explained statement, which resolves its destination: for a table of a
+    /// `PostgreSQL` or `MySQL` database that alone contacts the remote server, and the destination
+    /// of an `INSERT` is not collected by `collectNamedTablesForAIAgent` to have its engine checked.
+    /// Only `EXPLAIN AST` merely prints the parsed statement, without interpreting it.
+    if (const auto * explain = ast.as<ASTExplainQuery>())
+    {
+        const auto & explained = explain->getExplainedQuery();
+        if (explained && explain->getKind() != ASTExplainQuery::ParsedAST && !explained->as<ASTSelectWithUnionQuery>())
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Only EXPLAIN of a SELECT query (or EXPLAIN AST of any query) can be run without confirmation. "
+                "Use the run_query tool for this query");
+    }
 
     if (const auto * with_output = dynamic_cast<const ASTQueryWithOutput *>(&ast); with_output && with_output->out_file)
         throw Exception(

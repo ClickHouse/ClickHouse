@@ -55,6 +55,17 @@ CASES = [
     ("system_tables", "SELECT count() FROM system.tables", False),
     ("information_schema_views", "SELECT count() FROM information_schema.views", False),
     ("information_schema_tables", "SELECT count() FROM information_schema.tables", True),
+    # The `*_privileges` views are `system.grants` under other names: access metadata.
+    ("system_grants", "SELECT count() FROM system.grants", False),
+    ("information_schema_user_privileges", "SELECT count() FROM information_schema.user_privileges", False),
+    ("information_schema_table_privileges", "SELECT count() FROM INFORMATION_SCHEMA.TABLE_PRIVILEGES", False),
+    # These enumerate the tables of every database, a remote one included.
+    ("system_kafka_consumers", "SELECT count() FROM system.kafka_consumers", False),
+    ("system_s3_queue_settings", "SELECT count() FROM system.s3_queue_settings", False),
+    # Interpreting an explained `INSERT` resolves its destination, which would contact a remote database.
+    ("explain_insert_foreign_database", "EXPLAIN PIPELINE INSERT INTO fs_db.anything SELECT 1", False),
+    ("explain_insert_local", "EXPLAIN PIPELINE INSERT INTO default.plain SELECT 1", False),
+    ("explain_select_local", "EXPLAIN PIPELINE SELECT count() FROM default.plain", True),
     ("show_databases", "SHOW DATABASES", True),
 ]
 

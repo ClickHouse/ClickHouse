@@ -14,4 +14,12 @@ system_columns: OK
 system_tables: BLOCKED
 information_schema_views: BLOCKED
 information_schema_tables: OK
+system_grants: BLOCKED
+information_schema_user_privileges: BLOCKED
+information_schema_table_privileges: BLOCKED
+system_kafka_consumers: BLOCKED
+system_s3_queue_settings: BLOCKED
+explain_insert_foreign_database: BLOCKED
+explain_insert_local: BLOCKED
+explain_select_local: OK
 show_databases: OK
