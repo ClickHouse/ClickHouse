@@ -1,0 +1,5 @@
+Without skipping errors:
+CANNOT_PARSE_DATE
+Skipping the bad row:
+[1,2]	(3,'p')	{'k':4}	[(5,'q')]	6	2024-01-15
+[13]	(14,'u')	{'m':15}	[(16,'v')]	17	2025-06-16

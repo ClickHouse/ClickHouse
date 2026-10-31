@@ -97,6 +97,54 @@ namespace
     {
         return const_cast<IColumn &>(*col);
     }
+
+    /// Removes the last `n` rows of a column while a partially read row is rolled back.
+    /// The sub-columns of a composite column are also held by the serializers of its nested
+    /// fields, so `IColumn::popBack` of the composite column would reach them through the
+    /// non-const `WrappedPtr` dereference and fail its exclusive-ownership assertion.
+    /// Walk the composite columns through the borrowed sub-column pointers instead.
+    void popBackBorrowed(IColumn & column, size_t n)
+    {
+        if (n == 0)
+            return;
+
+        if (auto * column_array = typeid_cast<ColumnArray *>(&column))
+        {
+            const auto & const_array = std::as_const(*column_array);
+            const auto & offsets = const_array.getOffsets();
+            if (n > offsets.size())
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot pop {} rows from {}: there are only {} rows", n, column.getName(), offsets.size());
+            size_t nested_n = offsets.back() - (n == offsets.size() ? 0 : offsets[offsets.size() - n - 1]);
+            popBackBorrowed(borrowColumnRef(const_array.getDataPtr()), nested_n);
+            borrowColumnRef(const_array.getOffsetsPtr()).popBack(n);
+        }
+        else if (auto * column_tuple = typeid_cast<ColumnTuple *>(&column))
+        {
+            /// A tuple without elements keeps its own length and has no sub-columns to borrow.
+            /// Otherwise its size is the size of its elements.
+            if (column_tuple->tupleSize() == 0)
+            {
+                column_tuple->popBack(n);
+                return;
+            }
+            for (const auto & element : std::as_const(*column_tuple).getColumns())
+                popBackBorrowed(borrowColumnRef(element), n);
+        }
+        else if (auto * column_map = typeid_cast<ColumnMap *>(&column))
+        {
+            popBackBorrowed(borrowColumnRef(std::as_const(*column_map).getNestedColumnPtr()), n);
+        }
+        else if (auto * column_nullable = typeid_cast<ColumnNullable *>(&column))
+        {
+            const auto & const_nullable = std::as_const(*column_nullable);
+            popBackBorrowed(borrowColumnRef(const_nullable.getNestedColumnPtr()), n);
+            borrowColumnRef(const_nullable.getNullMapColumnPtr()).popBack(n);
+        }
+        else
+        {
+            column.popBack(n);
+        }
+    }
     /// The maximum nesting depth of messages we process. The schema is provided by the user,
     /// and a chain of distinct messages, each having a field of the type of the next one, is not limited
     /// by the protobuf library, while the functions below process it recursively.
@@ -2205,7 +2253,7 @@ namespace
                 }
                 catch (...)
                 {
-                    nested_column.popBack(1);
+                    popBackBorrowed(nested_column, 1);
                     throw;
                 }
             }
@@ -2229,7 +2277,7 @@ namespace
             }
             catch (...)
             {
-                nested_column.popBack(1);
+                popBackBorrowed(nested_column, 1);
                 throw;
             }
         }
@@ -2248,7 +2296,7 @@ namespace
             }
             catch (...)
             {
-                nested_column.popBack(1);
+                popBackBorrowed(nested_column, 1);
                 throw;
             }
         }
@@ -2362,7 +2410,7 @@ namespace
                 read_value_column_set = true;
             }
 
-            read_value_column->popBack(read_value_column->size());
+            popBackBorrowed(*read_value_column, read_value_column->size());
             nested_serializer->readRow(0);
 
             if (row_num < column_lc.size())
@@ -2473,7 +2521,7 @@ namespace
             catch (...)
             {
                 if (data_column->size() > old_data_size)
-                    const_cast<IColumn &>(*data_column).popBack(data_column->size() - old_data_size);
+                    popBackBorrowed(borrowColumnRef(data_column), data_column->size() - old_data_size);
                 if (offsets.size() > old_size)
                     column_array.getOffsetsColumn().popBack(offsets.size() - old_size);
                 throw;
@@ -2595,7 +2643,7 @@ namespace
                 {
                     auto & element_column = borrowColumnRef(column_tuple.getColumnPtr(i));
                     if (element_column.size() > old_size)
-                        element_column.popBack(element_column.size() - old_size);
+                        popBackBorrowed(element_column, element_column.size() - old_size);
                 }
                 throw;
             }
@@ -2816,7 +2864,7 @@ namespace
                     for (auto & column : mutable_columns)
                     {
                         if (column->size() > old_size)
-                            column->popBack(column->size() - old_size);
+                            popBackBorrowed(*column, column->size() - old_size);
                     }
                     resetState();
                     throw;
@@ -3218,7 +3266,7 @@ namespace
                 for (auto & data_column : data_columns)
                 {
                     if (data_column->size() > old_data_size)
-                        const_cast<IColumn &>(*data_column).popBack(data_column->size() - old_data_size);
+                        popBackBorrowed(borrowColumnRef(data_column), data_column->size() - old_data_size);
                 }
                 for (auto & offset_column : offset_columns)
                 {
