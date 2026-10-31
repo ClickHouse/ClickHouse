@@ -2241,6 +2241,7 @@ void readTSVField(String & s, ReadBuffer & buf);
 void readTSVFieldCRLF(String & s, ReadBuffer & buf);
 
 String escapeDotInJSONKey(const String & key);
+void escapeDotInJSONKey(String & out, std::string_view key);
 String unescapeDotInJSONKey(const String & key);
 
 /** Parse the escape sequence, which can be simple (one character after backslash) or more complex (multiple characters).
