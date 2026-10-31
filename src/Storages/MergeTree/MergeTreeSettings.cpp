@@ -2933,7 +2933,11 @@ When enabled, the table uses conditional writes on the object storage to elect a
 multiple server instances sharing the same data. Only the leader can perform writes and merges.
 Heavy mutations (`ALTER TABLE ... UPDATE`/`DELETE`) need hard links, which the required disks do not have,
 so they are rejected even on the leader.
-Follower instances act as read-only replicas. Requires every disk in the storage policy to be an `S3`
+Follower instances act as read-only replicas. The leader does not know which parts the queries on followers
+are reading: it removes the parts replaced by a merge or mutation from storage `old_parts_lifetime` after they become
+outdated, so a query on a follower that runs longer than that (or any query on a follower, with `old_parts_lifetime = 0`)
+can fail with a missing-object exception. Keep `old_parts_lifetime` above the longest expected query on followers.
+Requires every disk in the storage policy to be an `S3`
 object storage disk with `metadata_type = plain_rewritable` — the only metadata layout currently
 accepted — so that after a failover the new leader sees the parts written by the previous leader.
 The disks must also have hard links disabled (`enable_hard_links = false`, which is not the default),
