@@ -30,6 +30,7 @@ from pyiceberg.types import (
 
 from helpers.cluster import ClickHouseCluster
 from helpers.mock_servers import start_mock_servers
+from helpers.s3_tools import list_s3_objects
 
 import boto3
 import botocore.config
@@ -1127,6 +1128,54 @@ def test_drop_table(started_cluster):
 
     drop_clickhouse_glue_table(node, root_namespace, table_name)
     assert len(catalog.list_tables(root_namespace)) == 0
+
+
+def test_drop_table_delete_data(started_cluster):
+    # Glue keeps the files of a dropped table, so ClickHouse deletes the data, then the catalog entry, then the metadata.
+    node = started_cluster.instances["node1"]
+    catalog = load_catalog_impl(started_cluster)
+    create_clickhouse_glue_database(started_cluster, node, CATALOG_NAME)
+    namespace = f"test_drop_delete_data_{uuid.uuid4()}"
+    delete_data = {"iceberg_delete_data_on_drop": 1}
+
+    def create_table_with_data(table_name):
+        create_clickhouse_glue_table(started_cluster, node, namespace, table_name, "(x String)")
+        node.query(
+            f"INSERT INTO {CATALOG_NAME}.`{namespace}.{table_name}` VALUES ('a')",
+            settings={"allow_insert_into_iceberg": 1, "write_full_path_in_iceberg_metadata": 1},
+        )
+
+    def table_files(table_name):
+        return list_s3_objects(started_cluster.minio_client, "warehouse-glue", prefix=f"{table_name}/")
+
+    # A failed catalog entry removal keeps the table and its metadata files for a retry.
+    table_name = f"{namespace}_retry"
+    create_table_with_data(table_name)
+    node.query("SYSTEM ENABLE FAILPOINT iceberg_drop_catalog_remove_fail")
+    try:
+        error = node.query_and_get_error(f"DROP TABLE {CATALOG_NAME}.`{namespace}.{table_name}`", settings=delete_data)
+    finally:
+        node.query("SYSTEM DISABLE FAILPOINT iceberg_drop_catalog_remove_fail")
+    assert "FAULT_INJECTED" in error
+    assert len(catalog.list_tables(namespace)) == 1
+    files = table_files(table_name)
+    assert all(f.startswith("metadata/") for f in files)
+    assert any(f.endswith(".metadata.json") for f in files)
+    assert any(f.endswith(".avro") for f in files)
+    node.query(f"DROP TABLE {CATALOG_NAME}.`{namespace}.{table_name}`", settings=delete_data)
+    assert len(catalog.list_tables(namespace)) == 0
+    assert table_files(table_name) == []
+
+    # The catalog entry is already removed when the metadata files are deleted, so their failure does not fail the DROP.
+    table_name = f"{namespace}_metadata_failure"
+    create_table_with_data(table_name)
+    node.query("SYSTEM ENABLE FAILPOINT iceberg_drop_metadata_anchor_fail")
+    try:
+        node.query(f"DROP TABLE {CATALOG_NAME}.`{namespace}.{table_name}`", settings=delete_data)
+    finally:
+        node.query("SYSTEM DISABLE FAILPOINT iceberg_drop_metadata_anchor_fail")
+    assert len(catalog.list_tables(namespace)) == 0
+    assert node.contains_in_log(f"Best-effort Iceberg drop: ignoring failure to delete metadata file {table_name}/metadata/")
 
 
 def test_system_tables(started_cluster):

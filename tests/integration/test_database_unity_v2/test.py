@@ -436,6 +436,26 @@ def test_iceberg_table_is_listed_and_readable(started_cluster):
     assert_seeded_rows(node, iceberg_db, UNIFORM_TABLE)
 
 
+def test_iceberg_drop_with_data_deletion_keeps_files(started_cluster):
+    """Unity keeps the files of an external table, so a `DROP` that also deletes them must fail before deleting any."""
+    node = started_cluster.instances["node1"]
+    db_name = unique_name("v2_iceberg_drop")
+    create_database(node, db_name, url=PROXY_URL, catalog_credential=PAT_TOKEN)
+
+    def table_files():
+        return node.exec_in_container(["bash", "-c", "find -L /tmp/marksheet_uniform -type f | sort"])
+
+    files = table_files()
+    assert "/metadata/" in files and ".parquet" in files
+    error = node.query_and_get_error(
+        f"DROP TABLE {db_name}.`{UNIFORM_TABLE}`",
+        settings={"iceberg_delete_data_on_drop": 1},
+    )
+    assert "SUPPORT_IS_DISABLED" in error
+    assert table_files() == files
+    assert_seeded_rows(node, db_name, UNIFORM_TABLE)
+
+
 def test_mixed_formats_in_one_database(started_cluster):
     """One database serving both formats, which is the point of the engine."""
     node = started_cluster.instances["node1"]
