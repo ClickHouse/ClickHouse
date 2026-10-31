@@ -317,6 +317,7 @@ namespace Setting
     extern const SettingsUInt64 max_number_of_partitions_for_independent_distinct;
     extern const SettingsUInt64 max_number_of_partitions_for_independent_window;
     extern const SettingsInt64 max_partitions_to_read;
+    extern const SettingsUInt64 min_marks_per_part_to_load_statistics;
     extern const SettingsUInt64 max_rows_to_read;
     extern const SettingsUInt64 max_rows_to_read_leaf;
     extern const SettingsMaxThreads max_final_threads;
@@ -3851,12 +3852,16 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
         *indexes,
         metadata_snapshot,
         data,
-        query_info_,
-        mutations_snapshot,
         context_,
         max_block_numbers_to_read.get(),
         log,
         result.index_stats);
+
+    /// Loading statistics costs a few reads per part, which is more than a small read that pruning by
+    /// statistics could save, so parts are pruned by statistics only if the primary key leaves enough marks.
+    res_parts = MergeTreeDataSelectExecutor::filterPartsByStatistics(
+        res_parts, metadata_snapshot, query_info_, mutations_snapshot, indexes->key_condition,
+        settings[Setting::min_marks_per_part_to_load_statistics], context_, log, result.index_stats);
 
     result.sampling = MergeTreeDataSelectExecutor::getSampling(
         query_info_,
@@ -4427,7 +4432,7 @@ bool ReadFromMergeTree::everyPartHasVirtualRowBound(bool read_in_reverse) const
         return false;
 
     const size_t num_key_columns = virtual_row_conversion->getRequiredColumnsWithTypes().size();
-    for (const auto & part : getPartsForPrewhere())
+    for (const auto & part : getPartsForPrewhere(/*selectivity_estimator_columns=*/ nullptr).parts)
         if (!indexWithVirtualRowBound(*part.data_part, num_key_columns, read_in_reverse))
             return false;
     return true;
@@ -6881,18 +6886,81 @@ bool ReadFromMergeTree::isSkipIndexAvailableForTopK(const String & sort_column) 
 }
 
 
-RangesInDataParts ReadFromMergeTree::getPartsForPrewhere() const
+ReadFromMergeTree::PartsForPrewhere ReadFromMergeTree::getPartsForPrewhere(const Names * selectivity_estimator_columns) const
 {
-    if (analyzed_result_ptr || !indexes)
-        return getParts();
+    const auto & settings = getContext()->getSettingsRef();
+    const UInt64 min_marks_per_part_to_load_statistics = settings[Setting::min_marks_per_part_to_load_statistics];
+
+    /// Statistics that are already in memory cost nothing, so only the parts whose statistics would be loaded count.
+    auto min_marks_to_load_statistics = [&](const RangesInDataParts & parts) -> size_t
+    {
+        if (!selectivity_estimator_columns || !min_marks_per_part_to_load_statistics)
+            return 0;
+        const NameSet columns(selectivity_estimator_columns->begin(), selectivity_estimator_columns->end());
+        const auto statistics_cache = getContext()->getStatisticsCache();
+        return MergeTreeDataSelectExecutor::getMinMarksToLoadStatistics(
+            min_marks_per_part_to_load_statistics,
+            std::ranges::count_if(
+                parts, [&](const RangesInDataPart & part) { return !part.data_part->areStatisticsCached(columns, statistics_cache.get()); }));
+    };
+
+    if (analyzed_result_ptr)
+    {
+        const auto & parts = getParts();
+        return {parts, analyzed_result_ptr->selected_marks >= min_marks_to_load_statistics(parts)};
+    }
+
+    if (!indexes)
+        return {getParts(), true};
 
     /// Share all part filters with `selectRangesToRead`, including the snapshot boundary and statistics.
     /// Keep this snapshot temporary: `PREWHERE` optimization can still change filters,
     /// so execution must filter again with the final conditions.
     IndexStats unused_stats;
-    return MergeTreeDataSelectExecutor::filterParts(
-        getParts(), *indexes, getStorageMetadata(), data, query_info, mutations_snapshot, getContext(),
+    PartsForPrewhere res;
+    res.parts = MergeTreeDataSelectExecutor::filterParts(
+        getParts(), *indexes, getStorageMetadata(), data, getContext(),
         max_block_numbers_to_read.get(), log, unused_stats);
+
+    /// Pruning parts decides by itself whether the read is large enough to load statistics.
+    /// It prunes the parts whose statistics are in memory regardless, before the primary key is probed below.
+    RangesInDataParts parts_with_deferred_statistics;
+    res.parts = MergeTreeDataSelectExecutor::filterPartsByStatistics(
+        res.parts, getStorageMetadata(), query_info, mutations_snapshot, indexes->key_condition,
+        min_marks_per_part_to_load_statistics, getContext(), log, unused_stats, &parts_with_deferred_statistics);
+
+    if (!selectivity_estimator_columns || !settings[Setting::use_statistics] || !getStorageMetadata()->hasStatistics())
+    {
+        res.use_statistics = false;
+        return res;
+    }
+
+    /// The range analysis has not run yet. Bound the number of marks to read by the primary key, to not
+    /// load statistics for a read that is cheaper than loading them.
+    res.use_statistics = !MergeTreeDataSelectExecutor::hasFewerMarksToReadThan(
+        res.parts, getStorageMetadata(), indexes->key_condition, min_marks_to_load_statistics(res.parts), settings, log);
+
+    /// The statistics are loaded for ordering the conditions anyway, so prune the parts whose statistics
+    /// were not loaded above as well. The other parts were already checked and are not checked again.
+    if (res.use_statistics && !parts_with_deferred_statistics.empty())
+    {
+        const auto kept_parts = MergeTreeDataSelectExecutor::filterPartsByStatistics(
+            parts_with_deferred_statistics, getStorageMetadata(), query_info, mutations_snapshot, /*key_condition=*/nullptr,
+            /*min_marks_per_part_to_load_statistics=*/0, getContext(), log, unused_stats);
+
+        if (kept_parts.size() < parts_with_deferred_statistics.size())
+        {
+            std::unordered_set<const IMergeTreeDataPart *> pruned;
+            for (const auto & part : parts_with_deferred_statistics)
+                pruned.insert(part.data_part.get());
+            for (const auto & part : kept_parts)
+                pruned.erase(part.data_part.get());
+
+            std::erase_if(res.parts, [&](const RangesInDataPart & part) { return pruned.contains(part.data_part.get()); });
+        }
+    }
+
+    return res;
 }
 
 IStorage::ColumnSizeByName ReadFromMergeTree::getColumnSizesForPrewhere(
@@ -6948,12 +7016,28 @@ ConditionSelectivityEstimatorPtr ReadFromMergeTree::getConditionSelectivityEstim
     if (analyzed_result_ptr || indexes)
         return getConditionSelectivityEstimator(required_columns);
 
-    if (!getStorageMetadata()->hasStatistics() || !getContext()->getSettingsRef()[Setting::use_statistics])
+    const auto & settings = getContext()->getSettingsRef();
+    if (!getStorageMetadata()->hasStatistics() || !settings[Setting::use_statistics])
         return nullptr;
 
     /// Statistics-only plans have not built indexes yet. Analyze the scalar predicate
     /// without executing `IN` subqueries, which belong to the actual execution plan.
     auto parts = filterPartsForStatistics(getParts(), predicate, data, getStorageMetadata(), getContext(), skip_partition_pruning);
+
+    /// Without the primary key analysis, only the total number of marks bounds the read, see `min_marks_per_part_to_load_statistics`.
+    /// Statistics that are already in memory cost nothing, so only the parts whose statistics would be loaded count.
+    if (const UInt64 min_marks_per_part = settings[Setting::min_marks_per_part_to_load_statistics])
+    {
+        const NameSet columns(required_columns.begin(), required_columns.end());
+        const auto statistics_cache = getContext()->getStatisticsCache();
+        const size_t min_marks = MergeTreeDataSelectExecutor::getMinMarksToLoadStatistics(
+            min_marks_per_part,
+            std::ranges::count_if(
+                parts, [&](const RangesInDataPart & part) { return !part.data_part->areStatisticsCached(columns, statistics_cache.get()); }));
+        if (parts.getMarksCountAllParts() < min_marks)
+            return nullptr;
+    }
+
     return data.getConditionSelectivityEstimator(parts, required_columns, getContext());
 }
 

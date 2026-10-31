@@ -223,6 +223,61 @@ size_t MergeTreeDataSelectExecutor::getApproximateTotalRowsToRead(
 }
 
 
+size_t MergeTreeDataSelectExecutor::getMinMarksToLoadStatistics(size_t min_marks_per_part, size_t parts_to_load_statistics)
+{
+    if (parts_to_load_statistics && min_marks_per_part > std::numeric_limits<size_t>::max() / parts_to_load_statistics)
+        return std::numeric_limits<size_t>::max();
+    return min_marks_per_part * parts_to_load_statistics;
+}
+
+
+bool MergeTreeDataSelectExecutor::hasFewerMarksToReadThan(
+    const RangesInDataParts & parts,
+    const StorageMetadataPtr & metadata_snapshot,
+    const ConditionTemplate<KeyCondition>::Ptr & key_condition,
+    size_t limit,
+    const Settings & settings,
+    LoggerPtr log)
+{
+    if (limit == 0)
+        return false;
+
+    if (parts.getMarksCountAllParts() < limit)
+        return true;
+
+    if (!metadata_snapshot->hasPrimaryKey() || !key_condition || key_condition->generateUnsubstituted().alwaysUnknownOrTrue())
+        return false;
+
+    std::vector<std::optional<size_t>> pk_to_minmax_slot;
+    if (settings[Setting::use_partition_minmax_for_primary_key_pruning] && !parts.empty())
+        pk_to_minmax_slot = buildPrimaryKeyToMinMaxSlotMapping(metadata_snapshot, parts.front().data_part->storage.getSettings());
+    const auto * pk_to_minmax_slot_ptr = pk_to_minmax_slot.empty() ? nullptr : &pk_to_minmax_slot;
+
+    /// Bound the analysis of each part by a small number of steps of the generic exclusion search. The ranges
+    /// left unanalyzed are accepted as a whole, so the number of marks is an upper bound, and an inconclusive
+    /// probe chooses to use statistics, which is what the read did before this check existed.
+    static constexpr UInt64 max_steps_per_part = 256;
+    Settings probe_settings = settings;
+    const UInt64 user_max_steps = settings[Setting::merge_tree_generic_exclusion_search_max_steps];
+    probe_settings[Setting::merge_tree_generic_exclusion_search_max_steps]
+        = user_max_steps ? std::min(user_max_steps, max_steps_per_part) : max_steps_per_part;
+
+    /// Stop as soon as the limit is reached, so a large read costs the analysis of a few parts only.
+    size_t marks = 0;
+    for (const auto & part : parts)
+    {
+        marks += markRangesFromPKRange(
+            part, metadata_snapshot, key_condition->generateForPart(part.data_part), nullptr, nullptr,
+            /*exact_ranges=*/nullptr, pk_to_minmax_slot_ptr, probe_settings, log).getNumberOfMarks();
+
+        if (marks >= limit)
+            return false;
+    }
+
+    return true;
+}
+
+
 using RelativeSize = boost::rational<ASTSampleRatio::BigNum>;
 
 static std::string toString(const RelativeSize & x)
@@ -699,17 +754,14 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterParts(
     const ReadFromMergeTree::Indexes & indexes,
     const StorageMetadataPtr & metadata_snapshot,
     const MergeTreeData & data,
-    const SelectQueryInfo & query_info,
-    const MergeTreeData::MutationsSnapshotPtr & mutations_snapshot,
     const ContextPtr & context,
     const PartitionIdToMaxBlock * max_block_numbers_to_read,
     LoggerPtr log,
     ReadFromMergeTree::IndexStats & index_stats)
 {
-    auto res = filterPartsByPartition(
+    return filterPartsByPartition(
         parts, indexes.partition_pruner, indexes.minmax_idx_condition, indexes.part_values,
         metadata_snapshot, data, context, max_block_numbers_to_read, log, index_stats);
-    return filterPartsByStatistics(res, metadata_snapshot, query_info, mutations_snapshot, context, log, index_stats);
 }
 
 RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPartition(
@@ -862,9 +914,12 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByStatistics(
     const StorageMetadataPtr & metadata_snapshot,
     const SelectQueryInfo & query_info,
     const MergeTreeData::MutationsSnapshotPtr & mutations_snapshot,
+    const ConditionTemplate<KeyCondition>::Ptr & key_condition,
+    size_t min_marks_per_part_to_load_statistics,
     const ContextPtr & context,
     LoggerPtr log,
-    ReadFromMergeTree::IndexStats & index_stats)
+    ReadFromMergeTree::IndexStats & index_stats,
+    RangesInDataParts * deferred_parts)
 {
     const auto & settings = context->getSettingsRef();
 
@@ -909,8 +964,6 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByStatistics(
     if (statistics_pruner.isUseless())
         return parts;
 
-    RangesInDataParts res_parts;
-    size_t total_parts_before = parts.size();
     const NameSet required_columns = statistics_pruner.getRequiredColumns();
 
     /// The current types of the required columns, resolved once for all parts (`nullptr` if absent).
@@ -923,87 +976,122 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByStatistics(
         required_column_types.emplace_back(column_name, metadata_column ? metadata_column->type : nullptr);
     }
 
-    /// A part with a pending alter or metadata mutation is not pruned by statistics, so its statistics are not loaded.
-    std::vector<char> part_has_pending_mutations(parts.size());
-    for (size_t part_index = 0; part_index < parts.size(); ++part_index)
-        part_has_pending_mutations[part_index] = partHasPendingAlterOrMetadataMutations(parts[part_index].data_part, mutations_snapshot);
+    /// Whether the part can match the filter by its estimates.
+    auto part_can_match = [&](const RangesInDataPart & part, Estimates estimates)
+    {
+        /// The statistics describe the values as they are stored in the part. When the part stores a
+        /// column with a type different from the current metadata, a read converts the values to the
+        /// current type (`IMergeTreeReader::performRequiredConversions`), so the statistics do not
+        /// describe what the query sees, unless the conversion keeps the representation (e.g. an
+        /// extended `Enum`). This happens independently of the mutations snapshot: e.g. with
+        /// `apply_mutations_on_fly = 0` the pending `MODIFY COLUMN` is not in the snapshot, and after
+        /// `KILL MUTATION` it is gone, while the conversion on read still happens.
+        /// Only the required columns are checked: the estimates may hold every column of the part.
+        for (const auto & [column_name, metadata_type] : required_column_types)
+        {
+            auto it = estimates.find(column_name);
+            if (it == estimates.end())
+                continue;
+
+            auto part_column = part.data_part->tryGetColumn(column_name);
+            if (!part_column || !metadata_type || !isRepresentationPreservingConversion(part_column->type.get(), metadata_type.get()))
+                estimates.erase(it);
+        }
+
+        try
+        {
+            if (!statistics_pruner.checkPartCanMatch(estimates).can_be_true)
+            {
+                LOG_TRACE(log, "Part {} pruned by statistics", part.data_part->name);
+                return false;
+            }
+        }
+        catch (const Exception &)
+        {
+            tryLogCurrentException(log, fmt::format(
+                "Failed to apply statistics pruning for part {}, skipping statistics pruning for this part",
+                part.data_part->name), LogsLevel::debug);
+        }
+        return true;
+    };
+
+    /// Statistics that are already in memory cost nothing, so the parts with them are always pruned.
+    /// Only the parts whose statistics would be loaded count for the size of the read.
+    /// The parts with estimates in memory are pruned right away, and only the decision is kept: the estimates
+    /// of a part may contain every column with statistics, and holding them for all parts at once would take
+    /// memory proportional to the number of parts, unlike the bounded window of `loadStatisticsOfPartsInParallel`.
+    /// A part with a pending alter or metadata mutation is not pruned by statistics, so its statistics are not
+    /// loaded: it is decided right away as well, and it is always kept.
+    std::vector<char> decided_without_loading(parts.size());
+    std::vector<char> can_match_without_loading(parts.size());
+    RangesInDataParts parts_to_load_statistics;
+    for (size_t i = 0; i < parts.size(); ++i)
+    {
+        if (partHasPendingAlterOrMetadataMutations(parts[i].data_part, mutations_snapshot))
+        {
+            decided_without_loading[i] = true;
+            can_match_without_loading[i] = true;
+        }
+        else if (auto estimates = parts[i].data_part->tryGetEstimatesFromMemory(required_columns))
+        {
+            decided_without_loading[i] = true;
+            can_match_without_loading[i] = part_can_match(parts[i], std::move(*estimates));
+        }
+        else
+            parts_to_load_statistics.push_back(parts[i]);
+    }
+
+    const size_t min_marks_to_load_statistics = getMinMarksToLoadStatistics(
+        min_marks_per_part_to_load_statistics, parts_to_load_statistics.size());
+
+    const bool load_statistics = !hasFewerMarksToReadThan(
+        parts_to_load_statistics, metadata_snapshot, key_condition, min_marks_to_load_statistics, settings, log);
+
+    if (!load_statistics)
+        LOG_TRACE(log, "Not pruning {} parts without statistics in memory, because fewer than {} marks are left to read in them by the primary key",
+            parts_to_load_statistics.size(), min_marks_to_load_statistics);
+
+    if (!load_statistics && deferred_parts)
+        *deferred_parts = parts_to_load_statistics;
+
+    /// A part needs its statistics loaded only if it is not decided yet and the read is large enough to load them.
+    auto needs_loading = [&](size_t part_index) { return load_statistics && !decided_without_loading[part_index]; };
+
+    RangesInDataParts res_parts;
+    size_t total_parts_before = parts.size();
 
     std::vector<Estimates> parts_estimates(parts.size());
     MergeTreeData::loadStatisticsOfPartsInParallel(
         parts.size(),
         settings[Setting::max_threads],
+        [&](size_t part_index) { return !needs_loading(part_index); },
         [&](size_t part_index)
         {
-            if (part_has_pending_mutations[part_index])
-                return true;
-
-            auto estimates = parts[part_index].data_part->tryGetEstimatesFromMemory(required_columns);
-            if (!estimates)
-                return false;
-            parts_estimates[part_index] = std::move(*estimates);
-            return true;
-        },
-        [&](size_t part_index)
-        {
-            if (part_has_pending_mutations[part_index])
-                return;
-
-            parts_estimates[part_index] = parts[part_index].data_part->getEstimates(required_columns);
+            if (needs_loading(part_index))
+                parts_estimates[part_index] = parts[part_index].data_part->getEstimates(required_columns);
         },
         [&](size_t part_index)
         {
             const auto & part = parts[part_index];
-            if (part_has_pending_mutations[part_index])
+            bool can_match = true;
+            if (decided_without_loading[part_index])
             {
+                can_match = can_match_without_loading[part_index];
+            }
+            else if (load_statistics)
+            {
+                can_match = part_can_match(part, std::move(parts_estimates[part_index]));
+            }
+
+            if (can_match)
                 res_parts.push_back(part);
-                return;
-            }
-
-            Estimates estimates = std::move(parts_estimates[part_index]);
-
-            /// The statistics describe the values as they are stored in the part. When the part stores a
-            /// column with a type different from the current metadata, a read converts the values to the
-            /// current type (`IMergeTreeReader::performRequiredConversions`), so the statistics do not
-            /// describe what the query sees, unless the conversion keeps the representation (e.g. an
-            /// extended `Enum`). This happens independently of the mutations snapshot: e.g. with
-            /// `apply_mutations_on_fly = 0` the pending `MODIFY COLUMN` is not in the snapshot, and after
-            /// `KILL MUTATION` it is gone, while the conversion on read still happens.
-            /// Only the required columns are checked: the estimates may hold every column of the part.
-            for (const auto & [column_name, metadata_type] : required_column_types)
-            {
-                auto it = estimates.find(column_name);
-                if (it == estimates.end())
-                    continue;
-
-                auto part_column = part.data_part->tryGetColumn(column_name);
-                if (!part_column || !metadata_type || !isRepresentationPreservingConversion(part_column->type.get(), metadata_type.get()))
-                    estimates.erase(it);
-            }
-
-            try
-            {
-                if (!statistics_pruner.checkPartCanMatch(estimates).can_be_true)
-                {
-                    LOG_TRACE(log, "Part {} pruned by statistics", part.data_part->name);
-                    return;
-                }
-            }
-            catch (const Exception &)
-            {
-                tryLogCurrentException(log, fmt::format(
-                    "Failed to apply statistics pruning for part {}, skipping statistics pruning for this part",
-                    part.data_part->name), LogsLevel::debug);
-            }
-            res_parts.push_back(part);
         });
 
     if (res_parts.size() < total_parts_before)
     {
         size_t total_granules_after = 0;
         for (const auto & part : res_parts)
-        {
-            total_granules_after += part.data_part->index_granularity->getMarksCountWithoutFinal();
-        }
+            total_granules_after += part.getMarksCount();
 
         index_stats.emplace_back(ReadFromMergeTree::IndexStat{
             .type = ReadFromMergeTree::IndexType::Statistics,

@@ -1657,6 +1657,49 @@ std::optional<Estimates> IMergeTreeDataPart::getEstimatesImpl(const NameSet & re
     return estimates;
 }
 
+bool IMergeTreeDataPart::areStatisticsCached(const NameSet & required_columns, const StatisticsCache * cache) const
+{
+    /// A part whose caches are cleared does not use the cache any more, see `loadStatistics`.
+    if (!cache || cleared_data_in_caches || required_columns.empty())
+        return false;
+
+    /// The index of the packed archive must not be read here: if it is not loaded yet, the statistics
+    /// of the part have not been read and the files of the uncached columns are assumed to exist.
+    const bool is_packed = checksums.has(String(ColumnsStatistics::FILENAME));
+    const PackedFilesReader * packed_reader = nullptr;
+    if (is_packed)
+    {
+        std::lock_guard lock(statistics_reader_mutex);
+        packed_reader = statistics_reader.get();
+    }
+
+    const auto & all_columns = getColumnsDescription();
+    const String part_path = getPathForCacheKey();
+
+    auto is_cached = [&](const String & column_name)
+    {
+        if (!all_columns.tryGet(column_name) || cache->contains(StatisticsCache::hash(part_path, column_name)))
+            return true;
+
+        const String filename = getStatisticsFilename(column_name);
+        if (is_packed)
+            return packed_reader && !packed_reader->exists(filename);
+        return !checksums.has(filename);
+    };
+
+    for (const auto & column_name : required_columns)
+    {
+        if (!is_cached(column_name))
+            return false;
+        /// `loadStatistics` also loads the statistics of the parent column of a `.null` subcolumn.
+        if (column_name.ends_with(".null")
+            && !is_cached(column_name.substr(0, column_name.size() - std::string_view(".null").size())))
+            return false;
+    }
+
+    return true;
+}
+
 std::optional<ColumnsStatistics> IMergeTreeDataPart::tryLoadStatisticsFromCache(const NameSet & required_columns, StatisticsCache * cache) const
 {
     if (!cache || cleared_data_in_caches)
