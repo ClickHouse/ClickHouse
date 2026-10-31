@@ -2,6 +2,7 @@
 
 #include <Common/Exception.h>
 #include <Common/FailPoint.h>
+#include <Common/LockMemoryExceptionInThread.h>
 #include <Common/logger_useful.h>
 
 
@@ -407,8 +408,14 @@ void MetadataStorageFromCacheObjectStorageTransaction::submitRemovedBlobsAfterCo
     /// The metadata is already committed. If an exception escaped from here, the caller would take the
     /// commit as failed and roll back the blobs written by the transaction (`DiskObjectStorageTransaction::undo`),
     /// removing them from the wrapped object storage as well, while the committed metadata references them.
-    /// That would lose committed data. So a failure here (for example, of an allocation) is logged instead:
-    /// then the cache entries of the removed blobs are not dropped and stay until they are evicted.
+    /// That would lose committed data.
+    ///
+    /// Losing the bookkeeping is not harmless either: on a `plain` or `plain_rewritable` disk a later file can
+    /// reuse the path of a removed blob, and a stale cache entry for that path would return the old bytes. The
+    /// bookkeeping only allocates a few small nodes, so the memory limits of the query and the user must not
+    /// make it fail: they are lifted here. What remains is a genuine out-of-memory condition (or the injected
+    /// failure), which is logged as an error.
+    LockMemoryExceptionInThread lock_memory_tracker(VariableContext::Global);
     try
     {
         fiu_do_on(FailPoints::cache_metadata_storage_fail_after_commit,
@@ -421,7 +428,8 @@ void MetadataStorageFromCacheObjectStorageTransaction::submitRemovedBlobsAfterCo
     catch (...)
     {
         tryLogCurrentException(getLogger("MetadataStorageFromCacheObjectStorage"),
-            "Cannot queue the blobs removed by a committed transaction to drop their cache entries");
+            "Cannot queue the blobs removed by a committed transaction to drop their cache entries; "
+            "the cache entries of these blobs may be stale until they are evicted");
     }
 }
 
