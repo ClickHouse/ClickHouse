@@ -498,6 +498,7 @@ namespace ServerSetting
     extern const ServerSettingsBool mlock_executable;
     extern const ServerSettingsUInt64 mlock_executable_min_total_memory_amount_bytes;
     extern const ServerSettingsSeccompMode seccomp;
+    extern const ServerSettingsBool seccomp_allow_perf_events;
     extern const ServerSettingsUInt32 listen_backlog;
     extern const ServerSettingsBool listen_reuse_port;
     extern const ServerSettingsBool listen_try;
@@ -1890,7 +1891,9 @@ try
     /// exist, so everything that runs from here on - including the processes the server forks
     /// later, which inherit it - is covered.
     const SeccompMode seccomp_mode = server_settings[ServerSetting::seccomp];
-    if (const SeccompFilterStatus seccomp_status = installSeccompFilter(seccomp_mode); seccomp_status.allowed_syscalls != 0)
+    if (const SeccompFilterStatus seccomp_status
+        = installSeccompFilter(seccomp_mode, server_settings[ServerSetting::seccomp_allow_perf_events]);
+        seccomp_status.allowed_syscalls != 0)
         LOG_INFO(
             log,
             "Applied a seccomp policy to this process, allowing {} system calls. A system call outside the policy will "
@@ -2704,6 +2707,14 @@ try
                     "after a restart: the seccomp policy of a running process cannot be changed",
                     SettingFieldSeccompMode(*requested_seccomp_mode).toString(),
                     new_server_settings[ServerSetting::seccomp].toString());
+            if (const auto requested_allow_perf_events = getRequestedSeccompAllowPerfEvents(); requested_allow_perf_events
+                && *requested_allow_perf_events != new_server_settings[ServerSetting::seccomp_allow_perf_events].value)
+                LOG_WARNING(
+                    log,
+                    "The `seccomp_allow_perf_events` server setting was changed from `{}` to `{}` in the configuration, but it "
+                    "takes effect only after a restart: the seccomp policy of a running process cannot be changed",
+                    *requested_allow_perf_events,
+                    new_server_settings[ServerSetting::seccomp_allow_perf_events].value);
 
             size_t max_server_memory_usage = new_server_settings[ServerSetting::max_server_memory_usage];
             const double max_server_memory_usage_to_ram_ratio = new_server_settings[ServerSetting::max_server_memory_usage_to_ram_ratio];

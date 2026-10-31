@@ -3572,6 +3572,8 @@ See also:
 )", 0) \
     DECLARE(Bool, metrics_perf_events_enabled, false, R"(
 If enabled, some of the perf events will be measured throughout queries' execution.
+
+Nothing is measured when the `seccomp_allow_perf_events` server setting is `false` and the `seccomp` policy is enforced.
 )", 0) \
     DECLARE(String, metrics_perf_events_list, "", R"(
 Comma separated list of perf metrics that will be measured throughout queries' execution. Empty means all events. See PerfEventInfo in sources for the available events.

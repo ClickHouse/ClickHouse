@@ -1981,7 +1981,7 @@ Enabling this option is recommended but will lead to increased startup time for 
     DECLARE(SeccompMode, seccomp, SeccompMode::Log, R"(
 What the Linux kernel does when the server makes a system call that it is not supposed to make.
 
-At startup the server installs a [`seccomp`](https://man7.org/linux/man-pages/man2/seccomp.2.html) filter on itself, allowing only the system calls ClickHouse uses. An attacker who manages to run code inside the server process is then left without the kernel interfaces that turn code execution into something worse: loading kernel modules, rebooting, mounting filesystems, `chroot`, changing the process identity, creating namespaces, `ptrace` and reading another process's memory, eBPF, the kernel keyring, `userfaultfd` and `vmsplice`, file handles, `fanotify`, swap and quota control, setting the system clock or the host name, and System V and POSIX message queues. The two requests of `ioctl` that let a process take over the terminal it holds, `TIOCSTI` and `TIOCLINUX`, are refused as well. The `io_uring` system calls are allowed, because `local_filesystem_read_method = io_uring` uses them, and the filter does not see the operations submitted through a ring - so the operations `io_uring` implements, such as the extended-attribute ones, stay reachable that way even though their system calls are refused. In every mode but `disabled` the server also sets `PR_SET_NO_NEW_PRIVS`, so that neither it nor anything it starts can gain privileges by running a setuid program.
+At startup the server installs a [`seccomp`](https://man7.org/linux/man-pages/man2/seccomp.2.html) filter on itself, allowing only the system calls ClickHouse uses. An attacker who manages to run code inside the server process is then left without the kernel interfaces that turn code execution into something worse: loading kernel modules, rebooting, mounting filesystems, `chroot`, changing the process identity, creating namespaces, `ptrace` and reading another process's memory, eBPF, the kernel keyring, `userfaultfd` and `vmsplice`, file handles, `fanotify`, swap and quota control, setting the system clock or the host name, and System V and POSIX message queues. The two requests of `ioctl` that let a process take over the terminal it holds, `TIOCSTI` and `TIOCLINUX`, are refused as well. The `io_uring` system calls are allowed, because `local_filesystem_read_method = io_uring` uses them, and the filter does not see the operations submitted through a ring - so the operations `io_uring` implements, such as the extended-attribute ones, stay reachable that way even though their system calls are refused. `perf_event_open` is allowed for `metrics_perf_events_enabled`, unless `seccomp_allow_perf_events` is `false`. In every mode but `disabled` the server also sets `PR_SET_NO_NEW_PRIVS`, so that neither it nor anything it starts can gain privileges by running a setuid program.
 
 Creating a namespace is refused in every form it takes: `unshare` and `setns` are not allowed at all, a `clone` that asks for a namespace among its flags is refused, and `clone3` - whose arguments live in a structure that a filter cannot read, so that a namespace cannot be told from a thread - is refused as a whole, with `ENOSYS`. That is how a libc discovers that it has to use `clone` instead, so making threads and processes keeps working; `docker` and `systemd` refuse `clone3` the same way in their own policies.
 
@@ -2011,6 +2011,19 @@ The policy is only implemented for x86-64 and AArch64, since it is a list of arc
 
 ```xml
 <seccomp>log</seccomp>
+```
+)", 0) \
+    DECLARE(Bool, seccomp_allow_perf_events, true, R"(
+Whether the `seccomp` policy allows `perf_event_open`, the system call that `metrics_perf_events_enabled` uses and nothing else in ClickHouse does.
+
+When `false`, the `trap`, `kill` and `errno` modes refuse `perf_event_open` with `ENOSYS`, the answer of a kernel built without performance events, for the server and for every process it starts. A query with `metrics_perf_events_enabled` then runs without the `Perf*` profile events, and the server logs a warning once. `metrics_perf_events_enabled` is a query-level setting, which a filter installed once at startup cannot follow, so this server setting decides. The `log` mode only records the call, and `disabled` installs no filter.
+
+Takes effect only after a restart: `system.server_settings` reports the value the server started with.
+
+**Example**
+
+```xml
+<seccomp_allow_perf_events>false</seccomp_allow_perf_events>
 ```
 )", 0) \
     DECLARE(UInt32, listen_backlog, 4096, R"(
@@ -4006,6 +4019,9 @@ ChangeableSettingsMap collectChangeableServerSettings(ContextPtr context)
     if (const auto seccomp_mode = getInstalledSeccompMode())
         changeable_settings.insert(
             {"seccomp", {SettingFieldSeccompMode(*seccomp_mode).toString(), ChangeableWithoutRestart::No}});
+    if (const auto allow_perf_events = getRequestedSeccompAllowPerfEvents())
+        changeable_settings.insert(
+            {"seccomp_allow_perf_events", {SettingFieldBool(*allow_perf_events).toString(), ChangeableWithoutRestart::No}});
 
     /// `keeper_hosts` is not a regular config setting; it is derived from the `<zookeeper>` config and follows
     /// it on config reload, so the live value diverges from the empty default stored in `ServerSettings`.

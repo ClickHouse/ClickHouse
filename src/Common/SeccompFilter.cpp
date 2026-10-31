@@ -22,10 +22,13 @@ std::atomic<int> requested_mode{-1};
 /// The mode of the filter in force: the requested one, or `Disabled` if no filter was installed.
 /// -1 if `installSeccompFilter` has not returned.
 std::atomic<int> installed_mode{-1};
+/// The `allow_perf_events` `installSeccompFilter` was called with, or -1 if it has not been called.
+std::atomic<int> requested_allow_perf_events{-1};
 
-void rememberRequestedMode(SeccompMode mode)
+void rememberRequestedConfiguration(SeccompMode mode, bool allow_perf_events)
 {
     requested_mode.store(static_cast<int>(mode), std::memory_order_relaxed);
+    requested_allow_perf_events.store(allow_perf_events ? 1 : 0, std::memory_order_relaxed);
 }
 
 void rememberInstalledMode(SeccompMode mode)
@@ -51,6 +54,22 @@ std::optional<SeccompMode> getRequestedSeccompMode()
 std::optional<SeccompMode> getInstalledSeccompMode()
 {
     return loadMode(installed_mode);
+}
+
+std::optional<bool> getRequestedSeccompAllowPerfEvents()
+{
+    const int allow_perf_events = requested_allow_perf_events.load(std::memory_order_relaxed);
+    if (allow_perf_events < 0)
+        return std::nullopt;
+    return allow_perf_events != 0;
+}
+
+bool isPerfEventOpenRefusedBySeccomp()
+{
+    const auto mode = getInstalledSeccompMode();
+    const auto allow_perf_events = getRequestedSeccompAllowPerfEvents();
+    const bool enforcing = mode == SeccompMode::Errno || mode == SeccompMode::Trap || mode == SeccompMode::Kill;
+    return enforcing && allow_perf_events && !*allow_perf_events;
 }
 
 }
@@ -199,6 +218,7 @@ namespace DB
     M(io_setup) M(io_destroy) M(io_submit) M(io_cancel) M(io_getevents) \
     \
     /* Hardware performance counters, for `metrics_perf_events_enabled`. */ \
+    /* `ENOSYS` instead if `seccomp_allow_perf_events` is false. */ \
     M(perf_event_open)
 
 #if defined(__x86_64__)
@@ -511,7 +531,7 @@ void link(Program & program, const Blocks & blocks)
     }
 }
 
-Program buildProgram(std::span<const Range> ranges, UInt32 default_action, UInt32 enosys_action)
+Program buildProgram(std::span<const Range> ranges, std::span<const int> enosys_numbers, UInt32 default_action, UInt32 enosys_action)
 {
     if (ranges.empty())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "The seccomp policy allows no system calls at all");
@@ -546,9 +566,9 @@ Program buildProgram(std::span<const Range> ranges, UInt32 default_action, UInt3
 #endif
 
     /// Last, after the calls that are usually allowed: only refused calls get this far.
-    std::vector<int> enosys_numbers(std::begin(refused_with_enosys), std::end(refused_with_enosys));
-    std::sort(enosys_numbers.begin(), enosys_numbers.end());
-    for (const Range & range : toRanges(enosys_numbers))
+    std::vector<int> sorted_enosys_numbers(enosys_numbers.begin(), enosys_numbers.end());
+    std::sort(sorted_enosys_numbers.begin(), sorted_enosys_numbers.end());
+    for (const Range & range : toRanges(sorted_enosys_numbers))
     {
         if (range.first == range.last)
             program.push_back(jump(BPF_JMP | BPF_JEQ | BPF_K, static_cast<UInt32>(range.first), 0, 1));
@@ -668,9 +688,13 @@ UInt32 evaluate(const Program & program, const struct seccomp_data & data)
 }
 
 void verifyProgram(
-    const Program & program, const std::unordered_set<int> & allowed, UInt32 default_action, UInt32 enosys_action)
+    const Program & program,
+    const std::unordered_set<int> & allowed,
+    std::span<const int> enosys_numbers,
+    UInt32 default_action,
+    UInt32 enosys_action)
 {
-    const std::unordered_set<int> enosys(std::begin(refused_with_enosys), std::end(refused_with_enosys));
+    const std::unordered_set<int> enosys(enosys_numbers.begin(), enosys_numbers.end());
 
     auto check = [&](const struct seccomp_data & data, UInt32 expected)
     {
@@ -897,9 +921,9 @@ void setNoNewPrivs()
 
 }
 
-SeccompFilterStatus installSeccompFilter(SeccompMode mode)
+SeccompFilterStatus installSeccompFilter(SeccompMode mode, bool allow_perf_events)
 {
-    rememberRequestedMode(mode);
+    rememberRequestedConfiguration(mode, allow_perf_events);
 
     if (mode == SeccompMode::Disabled)
     {
@@ -935,6 +959,14 @@ SeccompFilterStatus installSeccompFilter(SeccompMode mode)
     std::sort(numbers.begin(), numbers.end());
     numbers.erase(std::unique(numbers.begin(), numbers.end()), numbers.end());
 
+    std::vector<int> enosys_numbers(std::begin(refused_with_enosys), std::end(refused_with_enosys));
+    /// `ENOSYS` is what a kernel without performance events answers, so a query setting can never take the server down.
+    if (!allow_perf_events)
+    {
+        std::erase(numbers, __NR_perf_event_open);
+        enosys_numbers.push_back(__NR_perf_event_open);
+    }
+
     const std::unordered_set<int> allowed(numbers.begin(), numbers.end());
 
     /// `ioctl` is decided by its request, `clone` by its flags and `mknodat` by its file type, in
@@ -950,8 +982,8 @@ SeccompFilterStatus installSeccompFilter(SeccompMode mode)
     /// Nothing is refused in the `log` mode, so there the calls refused with `ENOSYS` elsewhere
     /// get the same treatment as the rest of the policy.
     const UInt32 enosys_action = mode == SeccompMode::Log ? default_action : (SECCOMP_RET_ERRNO | UInt32{ENOSYS});
-    Program program = buildProgram(toRanges(numbers), default_action, enosys_action);
-    verifyProgram(program, allowed, default_action, enosys_action);
+    Program program = buildProgram(toRanges(numbers), enosys_numbers, default_action, enosys_action);
+    verifyProgram(program, allowed, enosys_numbers, default_action, enosys_action);
 
     if (program.size() > size_t{BPF_MAXINSNS})
         throw Exception(
@@ -1019,9 +1051,9 @@ SeccompFilterStatus installSeccompFilter(SeccompMode mode)
 namespace DB
 {
 
-SeccompFilterStatus installSeccompFilter(SeccompMode mode)
+SeccompFilterStatus installSeccompFilter(SeccompMode mode, bool allow_perf_events)
 {
-    rememberRequestedMode(mode);
+    rememberRequestedConfiguration(mode, allow_perf_events);
     /// Whatever the mode, no filter is installed here.
     rememberInstalledMode(SeccompMode::Disabled);
 
@@ -1049,9 +1081,9 @@ SeccompFilterStatus installSeccompFilter(SeccompMode mode)
 namespace DB
 {
 
-SeccompFilterStatus installSeccompFilter(SeccompMode mode)
+SeccompFilterStatus installSeccompFilter(SeccompMode mode, bool allow_perf_events)
 {
-    rememberRequestedMode(mode);
+    rememberRequestedConfiguration(mode, allow_perf_events);
     /// seccomp is a facility of the Linux kernel, so no filter is installed here, whatever the mode.
     rememberInstalledMode(SeccompMode::Disabled);
 

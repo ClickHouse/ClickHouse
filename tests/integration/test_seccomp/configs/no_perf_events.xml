@@ -1,0 +1,3 @@
+<clickhouse>
+    <seccomp_allow_perf_events>false</seccomp_allow_perf_events>
+</clickhouse>
