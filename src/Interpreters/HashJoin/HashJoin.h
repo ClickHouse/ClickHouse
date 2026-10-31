@@ -639,7 +639,7 @@ public:
         std::atomic<size_t> keys_to_join = 0;
         std::atomic<size_t> bucket_bytes = 0;
 
-        /// `allocated_size + nullmaps_allocated_size + bucket_bytes` in one atomic: summing the three while build streams
+        /// `allocated_size + nullmaps_allocated_size + bucket_bytes` in one atomic: summing the three while build threads
         /// update them can under-count `max_bytes_in_join`. Size-limit checks and `peak_build_bytes` read only this.
         std::atomic<size_t> total_bytes = 0;
 

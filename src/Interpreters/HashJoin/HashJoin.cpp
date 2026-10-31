@@ -895,7 +895,8 @@ void HashJoin::setTotals(const Block & block)
     if (block.empty())
         return;
 
-    /// In a parallel build every `FillingRightJoinSideTransform` without a totals port calls this with a zero-row block.
+    /// The `FillingRightJoinSideTransform`s of a parallel build have no totals port, and each calls this concurrently
+    /// with a zero-row block.
     std::lock_guard lock(totals_mutex);
     IJoin::setTotals(block);
 }
@@ -1367,7 +1368,7 @@ bool HashJoin::addBlockToJoin(const Block & source_block, size_t /* num_rows */,
 
 void HashJoin::shrinkStoredBlocksToFit(size_t & total_bytes_in_join, bool force_optimize, size_t stream)
 {
-    /// The CAS decides once for the whole join; each thread then rewrites only its own list.
+    /// The CAS decides once for the whole join; each build stream then rewrites only its own list.
     const auto max_total_bytes_in_join = table_join->sizeLimits().max_bytes;
 
     const Int64 current_memory_usage = JoinCommon::getCurrentQueryMemoryUsage();
@@ -2304,8 +2305,8 @@ BlocksList HashJoin::releaseBuildStreamBlocks(size_t stream)
 {
     auto & build_stream = data->build_streams[stream];
     StoredBlocksList right_columns = std::move(build_stream.columns);
-    /// `data` outlives the last build stream's list on purpose: other threads may still be draining theirs,
-    /// and the sample block is shared. So its byte counts drop with the blocks.
+    /// Other threads may still be draining the lists of other build streams, and the sample block is shared, so `data`
+    /// stays alive. Its byte counts drop with the released blocks.
     for (const auto & columns : right_columns)
         data->subBytes(data->allocated_size, columns.allocatedBytes());
     for (const auto & nullmap : build_stream.nullmaps)

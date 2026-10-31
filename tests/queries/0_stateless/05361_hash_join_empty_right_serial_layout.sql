@@ -1,5 +1,6 @@
 -- An empty `MergeTree` table is read by `ReadNothingStep`, which is estimated as 0 rows. So a hash join with it on the
--- right side is below `parallel_hash_join_threshold` and builds with the serial layout, whatever the join kind.
+-- right side is below `parallel_hash_join_threshold` and builds with the serial layout, if the join goes through join
+-- reordering, whatever its kind.
 -- A serial build has one `FillingRightJoinSide`, a parallel one has `max_threads` of them.
 
 SET max_threads = 4, max_threads_min_free_memory_per_thread = 0;

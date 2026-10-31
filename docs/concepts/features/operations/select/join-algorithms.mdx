@@ -151,7 +151,7 @@ The following rules also apply:
 - `ASOF` JOINs are supported only by `hash` and `full_sorting_merge`. `parallel_full_sorting_merge` executes an `ASOF` JOIN as a single `full_sorting_merge` JOIN.
 - `partial_merge` supports `RIGHT` and `FULL` JOINs only with `ALL` strictness.
 - The block nested loop fallback does not support `ASOF`, `PASTE`, or `ANY FULL` JOINs.
-- Only `hash` supports multiple JOIN keys combined with `OR` in the `ON` clause. The `auto` value executes such JOINs with `hash`.
+- Only `hash`, and its alias `parallel_hash`, support multiple JOIN keys combined with `OR` in the `ON` clause. The `auto` value executes such JOINs with `hash`.
 - Only `hash`, `parallel_hash`, and `grace_hash` support an equality key combined with a condition that compares columns of both tables.
 - The `direct` algorithm applies only to the right-hand sides listed in [`direct`](#direct). For `MergeTree` tables, it does not support `ANY` strictness.
 - `CROSS JOIN`, JOINs with a constant `ON` condition, and `PASTE JOIN` have dedicated implementations that do not depend on `join_algorithm`.

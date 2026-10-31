@@ -36,7 +36,7 @@ JOIN (SELECT number AS k, toString(number) AS a, toString(number + 1) AS b, toSt
 SETTINGS log_comment = 'cancelled', max_block_size = 10, max_rows_in_join = 9500; -- { serverError SET_SIZE_LIMIT_EXCEEDED }
 
 -- The row count of the `Memory` table is below the threshold, so one build stream inserts its 1250 blocks of four columns.
--- Debug and sanitizer builds walk all blocks of a single build stream after each insert, so few wide blocks keep the build fast.
+-- With one build stream, debug and sanitizer builds walk all stored blocks after each insert, so few wide blocks keep the build fast.
 CREATE TABLE right_memory (k UInt64, a String, b String, c String, d String) ENGINE = Memory;
 INSERT INTO right_memory
 SELECT number, toString(number), toString(number + 1), toString(number + 2), toString(number + 3) FROM numbers(12500)
