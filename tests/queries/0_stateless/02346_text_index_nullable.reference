@@ -14,10 +14,59 @@ Basic Nullable(String) expressions.
 0
 -- hasToken on absent token returns no rows
 0
+-- NOT hasToken: only row 3; the NULL rows are NULL, i.e. not a match
+3
+-- NOT hasAnyTokens: rows 3 and 5 do not contain "world"
+3
+5
+-- NOT like with the index as a hint: only row 3
+3
+3
+-- NOT startsWith: only row 3
+3
+3
+-- NOT endsWith: rows 3 and 5
+3
+5
+3
+5
+-- NOT hasPhrase: rows 3 and 5
+3
+5
+3
+5
+-- NOT match: only row 3
+3
+3
+-- NOT hasToken in PREWHERE: only row 3
+3
+3
+-- isNull(hasToken): rows 2 and 4
+2
+4
+-- the predicate evaluates to NULL for the NULL rows, not to 0
+1	1
+2	\N
+4	\N
+5	1
+-- the index is still read directly, and only the null map of the column with it
+1
+1
 -- has[Any|All]Token on NULL should not match anything
 0
 0
 0
+Nullable(String) with a partially materialized index.
+-- partially materialized: rows 1 and 5 have "hello"
+1
+5
+-- partially materialized: NOT hasToken is only row 3, the NULL rows are NULL
+3
+-- partially materialized: isNull(hasToken) is rows 2 and 4
+2
+4
+-- partially materialized, index as a hint: NOT like is only row 3
+3
 Nullable(String) consisting entirely of NULLs.
 -- all-NULL part: hasToken must return 0
 0
@@ -93,6 +142,9 @@ Nullable(String) with preprocessor = lower(str)
 0
 -- Preprocessor + Nullable: absent token returns no rows
 0
+-- Preprocessor + Nullable: NOT hasToken is only row 3, the NULL row is NULL
+3
+3
 -- has[Any|All]Token on NULL should not match anything
 0
 0
@@ -136,6 +188,9 @@ Map(String, Nullable(String))
 2
 -- hasAllTokens on map values: only row 1 has both "hello" and "world"
 1
+-- NOT hasToken on a map element: no NULL map value leaks in
+0
+0
 -- has[Any|All]Token on NULL should not match anything
 0
 0
@@ -164,7 +219,95 @@ LowCardinality(Nullable(String))
 1
 -- LowCardinality(Nullable): NULL rows must not match any token
 0
+-- LowCardinality(Nullable): NOT hasToken is only row 3, the NULL rows are NULL
+3
+-- LowCardinality(Nullable): isNull(hasToken) is rows 2 and 4
+2
+4
 -- has[Any|All]Token on NULL should not match anything
 0
 0
 0
+Nullable(String) with a null-removing preprocessor
+-- ifNull: a source NULL is 0, so NOT keeps it; both parts agree
+2
+3
+12
+13
+2
+3
+12
+13
+-- ifNull: unchanged after full materialization
+2
+3
+12
+13
+-- ifNull: direct read stays enabled and the null map is not restored
+1	0
+-- coalesce: same as ifNull
+2
+3
+2
+3
+-- assumeNotNull: same as ifNull
+2
+3
+2
+3
+-- CAST(ifNull(str, ...)) is still null-removing
+2
+3
+2
+3
+-- lower(CAST(ifNull(str, ...))) is still null-removing
+2
+3
+2
+3
+Nullable(String) with a null-producing preprocessor
+-- nullIf: row 2 (preprocessed to NULL) and row 4 (source NULL) are both filtered out
+3
+3
+-- nullIf: direct read is kept, with the NULLs taken from the rewritten haystack
+1	1
+-- nullIf: endsWith falls back to the row-level predicate
+1
+2
+1
+2
+-- CAST(nullIf(str, ...)) is still null-producing
+3
+3
+-- lower(toNullable(str)) neither produces nor removes NULLs
+3
+3
+-- lower(toNullable(str)): direct read is kept
+1
+String with a null-producing preprocessor and a Nullable needle
+-- row 2 is NULL for the rewritten predicate, so only row 3 is kept
+3
+3
+-- direct read is kept for it too
+1
+A null-producing preprocessor with a string-like tokenizer
+-- ngrams: the nullified row is still returned by the predicates it matches
+1
+1
+1
+1
+1
+1
+-- ngrams: and excluded by their negations, which kept it before
+2
+2
+2
+-- ngrams: the same, with the index taken out of the picture
+1
+2
+1
+2
+-- ngrams: no virtual column is read for them
+0
+-- ngrams: hasAnyTokens still uses the index
+1

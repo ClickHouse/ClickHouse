@@ -6,6 +6,7 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/TreeRewriter.h>
+#include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 
@@ -40,8 +41,14 @@ ActionsDAG buildActionsDAGFromAST(ASTPtr expression_ast, const NamesAndTypesList
     auto syntax_result = TreeRewriter(context).analyze(expression_ast, source_columns);
     auto actions_dag = ExpressionAnalyzer(expression_ast, syntax_result, context).getActionsDAG(false, true);
 
-    auto expression_name = expression_ast->getColumnName();
-    actions_dag.project({{expression_name, expression_name}});
+    const auto * expression_list = expression_ast->as<ASTExpressionList>();
+    NamesWithAliases projection;
+    for (const auto & expression : expression_list ? expression_list->children : ASTs{expression_ast})
+    {
+        auto expression_name = expression->getColumnName();
+        projection.emplace_back(expression_name, expression_name);
+    }
+    actions_dag.project(projection);
     actions_dag.removeUnusedActions();
 
     /// Every capture is named `__lambda` and `ActionsDAG::mergeNodes` matches by name, so name captures by content.

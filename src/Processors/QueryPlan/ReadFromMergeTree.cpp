@@ -6768,7 +6768,8 @@ bool ReadFromMergeTree::announceEmptyReadRangesToCoordinatorIfInitiator()
     return true;
 }
 
-void ReadFromMergeTree::createReadTasksForTextIndex(IndexReadTasks text_index_read_tasks, const Names & removed_columns)
+void ReadFromMergeTree::createReadTasksForTextIndex(
+    IndexReadTasks text_index_read_tasks, const Names & added_physical_columns, const Names & removed_columns)
 {
     index_read_tasks = std::move(text_index_read_tasks);
 
@@ -6779,6 +6780,13 @@ void ReadFromMergeTree::createReadTasksForTextIndex(IndexReadTasks text_index_re
     {
         auto it = std::ranges::find(all_column_names, column_name);
         all_column_names.erase(it);
+    }
+
+    /// (Sub)columns the replaced expression needs, e.g. `.null` read instead of the whole column.
+    for (const auto & column_name : added_physical_columns)
+    {
+        if (!std::ranges::contains(all_column_names, column_name))
+            all_column_names.push_back(column_name);
     }
 
     /// We have to recreate virtual columns and storage snapshot to add new virtual columns for reading from text index.
