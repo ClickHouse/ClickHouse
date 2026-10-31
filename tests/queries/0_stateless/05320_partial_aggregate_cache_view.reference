@@ -1,0 +1,10 @@
+--- Multiplier 1
+1	10
+2	20
+1	10
+2	20
+--- Only the joined table changes, multiplier 3
+1	30
+2	60
+--- No cache hits for the query over the view
+0

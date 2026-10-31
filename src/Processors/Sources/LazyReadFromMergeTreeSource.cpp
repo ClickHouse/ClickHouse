@@ -3,6 +3,7 @@
 #include <Storages/MergeTree/MergeTreeReadPoolInOrder.h>
 #include <Processors/Transforms/LazyMaterializingTransform.h>
 #include <Interpreters/Context.h>
+#include <Storages/MergeTree/MergeTreePartialAggregateInfo.h>
 #include <Core/Settings.h>
 #include <QueryPipeline/Pipe.h>
 #include <Storages/MergeTree/MergeTreeSelectAlgorithms.h>
@@ -289,7 +290,13 @@ Processors LazyReadFromMergeTreeSource::buildReaders()
             /*index_build_context*/ nullptr,
             lazy_materializing_rows);
 
-        auto source = std::make_shared<MergeTreeSource>(std::move(processor), log_name);
+        PartialAggregateInfoPtr partial_aggregate_plan_identity;
+        if (reader_settings.use_partial_aggregate_cache)
+        {
+            partial_aggregate_plan_identity = partialAggregateInfoFromMergeTreePart(*part_with_ranges.data_part, reader_settings);
+        }
+
+        auto source = std::make_shared<MergeTreeSource>(std::move(processor), log_name, std::move(partial_aggregate_plan_identity));
         source->keepReadingOnPartialResult();
         source->addTotalRowsApprox(total_rows);
 

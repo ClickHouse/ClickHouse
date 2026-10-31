@@ -37,6 +37,7 @@ namespace DB
 {
 
 class Arena;
+struct Settings;
 using ArenaPtr = std::shared_ptr<Arena>;
 using Arenas = std::vector<ArenaPtr>;
 
@@ -270,6 +271,9 @@ public:
         /// that is why it also matters for merge-only aggregators (`convertBlockToTwoLevel`).
         bool enable_packed_string_keys = true;
 
+        /// Partial aggregate cache semantic key; see `partialAggregateCacheSemanticKey`. Independent of `collect_hash_table_stats_during_aggregation`.
+        UInt64 query_semantic_hash_for_partial_cache = 0;
+
         /// Set for aggregation in order (`AggregatingInOrderTransform`). In that mode a fresh
         /// aggregation-method state is constructed for every contiguous run of equal order-key
         /// values (via `executeOnBlockSmall` / `mergeOnBlockSmall`), so a method whose state
@@ -381,7 +385,8 @@ public:
             UInt64 adaptive_aggregator_freeze_threshold_,
             UInt64 adaptive_aggregator_freeze_threshold_bytes_,
             bool adaptive_aggregator_disable_thaw_,
-            bool use_aggregation_memory_tracker_);
+            bool use_aggregation_memory_tracker_,
+            UInt64 query_semantic_hash_for_partial_cache_ = 0);
 
         /// Only parameters that matter during merge.
         Params(
@@ -425,6 +430,9 @@ public:
     ~Aggregator();
 
     const Params & getParams() const { return params; }
+
+    /// Byte size of one aggregate-state row (all aggregate functions); used for memory estimates.
+    size_t getTotalSizeOfAggregateStates() const { return total_size_of_aggregate_states; }
 
     /// Process one block. Return false if the processing should be aborted (with group_by_overflow_mode = 'break').
     /// `adaptive` is the per-thread adaptive-aggregation context, or nullptr when the feature is off.
@@ -1763,6 +1771,27 @@ private:
         AggregateDataPtr place,
         Arena * arena);
 };
+
+/// NOTE: For non-Analyzer it does not include the database name
+UInt64 calculateCacheKey(const DB::ASTPtr & select_query);
+
+/// Extends `calculateCacheKey` with `current_database` for partial aggregate cache correctness
+/// when `StorageID::uuid` is nil (e.g. Ordinary) and unqualified table names resolve per database.
+/// The changed `settings` are part of the key (e.g. `session_timezone` affects `toDateTime`), as is `apply_deleted_mask`,
+/// which affects which rows are visible for MergeTree reads; settings that can stop reading a part early
+/// (`read_overflow_mode = 'break'` etc.), parallel replicas and `SAMPLE` disable the key. `has_row_level_filter` disables
+/// caching because row policies are not represented in the AST hash. Non-empty `additional_table_filters`
+/// is applied outside that AST and also disables the semantic key. Predicate subqueries in `PREWHERE`/`WHERE`
+/// also disable the key because external source freshness is not tracked. `has_non_merge_tree_inputs` disables
+/// the key when a table in `FROM` is not a `MergeTree` table: e.g. a `View` is read through its own inner query,
+/// which can hide a `JOIN` or a subquery that the outer query AST does not show.
+UInt64 partialAggregateCacheSemanticKey(
+    const DB::ASTPtr & select_query,
+    const String & current_database,
+    const DB::Settings & settings,
+    bool has_row_level_filter,
+    bool has_additional_table_filters,
+    bool has_non_merge_tree_inputs);
 
 /** Get the aggregation variant by its type. */
 template <typename Method> Method & getDataVariant(AggregatedDataVariants & variants);

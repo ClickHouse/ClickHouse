@@ -427,6 +427,9 @@ bool optimizeTrivialCountFromTextIndex(QueryPlan::Node & node, QueryPlan::Nodes 
         matched->reading->getNumStreams());
     source_node.step->setStepDescription(description, settings.max_step_description_length);
 
+    /// See `optimizeUseAggregateProjection`: the rewritten aggregation does not consume partial aggregate cache plan-time hits.
+    matched->reading->disablePartialAggregateCache();
+
     if (is_fully_materialized)
     {
         aggregating->requestOnlyMergeForAggregateProjection(source_node.step->getOutputHeader());
