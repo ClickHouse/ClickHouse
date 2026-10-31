@@ -32,12 +32,6 @@ FROM (
     SELECT s, sum(x) FROM t_dist_05459 GROUP BY s HAVING toDayOfWeek(s) = 7
     SETTINGS prefer_localhost_replica = 0, query_plan_enable_optimizations = 0
 );
-SELECT countIf(explain ILIKE '%Filter (WHERE)%') AS shard_filters
-FROM (
-    EXPLAIN actions = 1, distributed = 1
-    SELECT s, sum(x) FROM t_dist_05459 GROUP BY s HAVING toWeek(s, 3, '') = 1
-    SETTINGS prefer_localhost_replica = 0, query_plan_enable_optimizations = 0
-);
 
 SELECT '--- explicit time zone';
 SELECT countIf(explain ILIKE '%Filter (WHERE)%') > 0 AS shard_filters

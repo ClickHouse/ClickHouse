@@ -117,10 +117,10 @@ bool dependsOnServerTimeZone(const FunctionNode & function_node)
         return true;
 
     /// `toWeek`, `toYearWeek` and `toDayOfWeek` parse a string argument as a point in time in the time zone
-    /// of the server when the optional third argument is omitted or empty, like in `toWeek(s, 3)`.
+    /// of the server when the optional third argument is omitted, like in `toWeek(s, 3)`. An empty one is rejected.
     if ((function_name == "toWeek" || function_name == "toYearWeek" || function_name == "toDayOfWeek")
         && first_argument_type && isStringOrFixedString(first_argument_type)
-        && isTimeZoneArgumentUnbound(arguments, 2))
+        && arguments.size() < 3)
         return true;
 
     /// A `Date` or `Date32` is converted to a point in time at its midnight in the time zone of the server,
@@ -255,7 +255,7 @@ bool hasRowSensitiveFunction(const QueryTreeNodePtr & node)
   * Such a conjunct also stays in `HAVING` if it has a value of type `DateTime` or `DateTime64` without an explicit time zone
   * (like `toHour(toDateTime(k))`), uses `toUnixTimestamp` or the `parseDateTime` family without the time zone argument
   * (or with an empty one) to parse a string, uses `toWeek`, `toYearWeek` or `toDayOfWeek` on a string without the time zone
-  * argument (or with an empty one), converts a number as a Unix timestamp
+  * argument, converts a number as a Unix timestamp
   * to a `Date` or `Date32` (like `toDate(k)`, also inside a container, like `CAST([k] AS Array(Date))`) or to a string (like `fromUnixTimestamp(k, '%F')`), or converts a `Date`
   * or `Date32` to a point in time (like `toRelativeSecondNum(d)`): the result depends
   * on the time zone of the server, which may differ between the shards and the initiator.
