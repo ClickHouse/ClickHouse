@@ -1,7 +1,7 @@
 -- Tags: no-fasttest
 -- Tag no-fasttest: depends on libarchive and S3
 
--- A 7z archive with one file `hello` and no file names: libarchive returns a NULL pathname for the entry.
+-- A 7z archive with one file `hello` and no file names: libarchive (since 3.8.10) names such an entry `data`, as 7-Zip does.
 INSERT INTO FUNCTION file(currentDatabase() || '_05401.7z', 'RawBLOB', 'x String', 'none') SELECT unhex('377abcaf271c00048375cced0500000000000000190000000000000023f9bd4168656c6c6f0104060001090500070b01000101000c050008000005010000') SETTINGS engine_file_truncate_on_insert = 1;
 SELECT 'file member', * FROM file(currentDatabase() || '_05401.7z :: a', 'RawBLOB');
 SELECT 'file glob', _file, * FROM file(currentDatabase() || '_05401.7z :: *', 'RawBLOB');
