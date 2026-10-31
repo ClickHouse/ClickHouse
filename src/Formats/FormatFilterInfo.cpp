@@ -278,7 +278,8 @@ void FormatFilterInfo::initKeyConditionOnce(const Block & keys)
                 ActionsDAGWithInversionPushDown inverted_dag(filter_actions_dag->getOutputs().front(), ctx, /* boolean_context */ true);
                 key_condition = std::make_shared<const KeyCondition>(
                     inverted_dag, ctx, names,
-                    std::make_shared<ExpressionActions>(ActionsDAG(columns)));
+                    std::make_shared<ExpressionActions>(ActionsDAG(columns)),
+                    /* single_point_ */ false, /* skip_analysis_ */ false, /* require_ready_sets_ */ true);
             }
             catch (...)
             {

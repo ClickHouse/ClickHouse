@@ -583,7 +583,8 @@ static HiveFilePtr createHiveFile(
 
 HiveFilesWithSkipSplits StorageHive::collectHiveFilesFromPartition(
     const Apache::Hadoop::Hive::Partition & partition,
-    const ActionsDAG * filter_actions_dag,
+    const KeyCondition * partition_key_condition,
+    const KeyCondition * hivefile_key_condition,
     const HiveTableMetadataPtr & hive_table_metadata,
     const HDFSFSPtr & fs,
     const ContextPtr & context_,
@@ -642,16 +643,14 @@ HiveFilesWithSkipSplits StorageHive::collectHiveFilesFromPartition(
         block.getByPosition(i).column->get(0, fields[i]);
 
     /// Without a filter there is nothing to prune by, so collect all files of the partition.
-    if (filter_actions_dag && prune_level >= PruneLevel::Partition)
+    if (partition_key_condition && prune_level >= PruneLevel::Partition)
     {
         Ranges ranges;
         ranges.reserve(partition_names.size());
         for (size_t i = 0; i < partition_names.size(); ++i)
             ranges.emplace_back(fields[i]);
 
-        ActionsDAGWithInversionPushDown inverted_dag(filter_actions_dag->getOutputs().front(), context_, /* boolean_context */ true);
-        const KeyCondition partition_key_condition(inverted_dag, context, partition_names, partition_minmax_idx_expr);
-        if (!partition_key_condition.checkInHyperrectangle(ranges, partition_types).can_be_true)
+        if (!partition_key_condition->checkInHyperrectangle(ranges, partition_types).can_be_true)
             return {};
     }
 
@@ -660,7 +659,7 @@ HiveFilesWithSkipSplits StorageHive::collectHiveFilesFromPartition(
     hive_files.reserve(file_infos.size());
     for (const auto & file_info : file_infos)
     {
-        auto hive_file = getHiveFileIfNeeded(file_info, fields, filter_actions_dag, hive_table_metadata, context_, prune_level);
+        auto hive_file = getHiveFileIfNeeded(file_info, fields, hivefile_key_condition, hive_table_metadata, context_, prune_level);
         if (hive_file.file)
         {
             LOG_TRACE(
@@ -712,7 +711,7 @@ static String getHiveFileCacheKey(
 HiveFileWithSkipSplits StorageHive::getHiveFileIfNeeded(
     const FileInfo & file_info,
     const FieldVector & fields,
-    const ActionsDAG * filter_actions_dag,
+    const KeyCondition * hivefile_key_condition,
     const HiveTableMetadataPtr & hive_table_metadata,
     const ContextPtr & context_,
     PruneLevel prune_level) const
@@ -751,15 +750,13 @@ HiveFileWithSkipSplits StorageHive::getHiveFileIfNeeded(
     /// different filters do not interfere with each other's pruning.
     std::unordered_set<int> skip_splits;
 
-    if (filter_actions_dag && prune_level >= PruneLevel::File)
+    if (hivefile_key_condition && prune_level >= PruneLevel::File)
     {
-        ActionsDAGWithInversionPushDown inverted_dag(filter_actions_dag->getOutputs().front(), context_, /* boolean_context */ true);
-        const KeyCondition hivefile_key_condition(inverted_dag, getContext(), hivefile_name_types.getNames(), hivefile_minmax_idx_expr);
         if (hive_file->useFileMinMaxIndex())
         {
             /// Load file level minmax index and apply
             hive_file->loadFileMinMaxIndex();
-            if (!hivefile_key_condition.checkInHyperrectangle(hive_file->getMinMaxIndex()->hyperrectangle, hivefile_name_types.getTypes())
+            if (!hivefile_key_condition->checkInHyperrectangle(hive_file->getMinMaxIndex()->hyperrectangle, hivefile_name_types.getTypes())
                      .can_be_true)
             {
                 LOG_TRACE(
@@ -780,7 +777,7 @@ HiveFileWithSkipSplits StorageHive::getHiveFileIfNeeded(
                 const auto & sub_minmax_idxes = hive_file->getSubMinMaxIndexes();
                 for (size_t i = 0; i < sub_minmax_idxes.size(); ++i)
                 {
-                    if (!hivefile_key_condition.checkInHyperrectangle(sub_minmax_idxes[i]->hyperrectangle, hivefile_name_types.getTypes())
+                    if (!hivefile_key_condition->checkInHyperrectangle(sub_minmax_idxes[i]->hyperrectangle, hivefile_name_types.getTypes())
                              .can_be_true)
                     {
                         LOG_TRACE(
@@ -998,6 +995,20 @@ HiveFilesWithSkipSplits StorageHive::collectHiveFiles(
     if (!partition_name_types.empty() && partitions.empty())
         return {};
 
+    /// Not built on the pool: constructing a `KeyCondition` may build the filter's shared IN sets.
+    std::optional<KeyCondition> partition_key_condition;
+    std::optional<KeyCondition> hivefile_key_condition;
+    if (filter_actions_dag && prune_level >= PruneLevel::Partition && partition_minmax_idx_expr)
+    {
+        ActionsDAGWithInversionPushDown inverted_dag(filter_actions_dag->getOutputs().front(), context_, /* boolean_context */ true);
+        partition_key_condition.emplace(inverted_dag, getContext(), partition_names, partition_minmax_idx_expr);
+    }
+    if (filter_actions_dag && prune_level >= PruneLevel::File)
+    {
+        ActionsDAGWithInversionPushDown inverted_dag(filter_actions_dag->getOutputs().front(), context_, /* boolean_context */ true);
+        hivefile_key_condition.emplace(inverted_dag, getContext(), hivefile_name_types.getNames(), hivefile_minmax_idx_expr);
+    }
+
     /// Hive files to collect
     HiveFilesWithSkipSplits hive_files;
     Int64 hit_parttions_num = 0;
@@ -1016,8 +1027,14 @@ HiveFilesWithSkipSplits StorageHive::collectHiveFiles(
             pool.scheduleOrThrowOnError(
                 [&]()
                 {
-                    auto hive_files_in_partition
-                        = collectHiveFilesFromPartition(partition, filter_actions_dag, hive_table_metadata, fs, context_, prune_level);
+                    auto hive_files_in_partition = collectHiveFilesFromPartition(
+                        partition,
+                        partition_key_condition ? &*partition_key_condition : nullptr,
+                        hivefile_key_condition ? &*hivefile_key_condition : nullptr,
+                        hive_table_metadata,
+                        fs,
+                        context_,
+                        prune_level);
                     if (!hive_files_in_partition.empty())
                     {
                         std::lock_guard lock(hive_files_mutex);
@@ -1048,7 +1065,8 @@ HiveFilesWithSkipSplits StorageHive::collectHiveFiles(
             pool.scheduleOrThrowOnError(
                 [&, file_info]()
                 {
-                    auto hive_file = getHiveFileIfNeeded(file_info, {}, filter_actions_dag, hive_table_metadata, context_, prune_level);
+                    auto hive_file = getHiveFileIfNeeded(
+                        file_info, {}, hivefile_key_condition ? &*hivefile_key_condition : nullptr, hive_table_metadata, context_, prune_level);
                     if (hive_file.file)
                     {
                         std::lock_guard lock(hive_files_mutex);

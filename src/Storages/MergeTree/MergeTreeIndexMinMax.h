@@ -56,7 +56,8 @@ public:
     MergeTreeIndexConditionMinMax(
         const IndexDescription & index,
         const ActionsDAGWithInversionPushDown & filter_dag,
-        ContextPtr context);
+        ContextPtr context,
+        bool require_ready_sets);
 
     bool alwaysUnknownOrTrue() const override;
 
@@ -84,7 +85,7 @@ public:
     MergeTreeIndexAggregatorPtr createIndexAggregator() const override;
 
     MergeTreeIndexConditionPtr createIndexCondition(
-        const ActionsDAG::Node * predicate, ContextPtr context) const override;
+        const ActionsDAG::Node * predicate, ContextPtr context, bool require_ready_sets) const override;
 
     MergeTreeIndexSubstreams getSubstreams() const override { return {{MergeTreeIndexSubstream::Type::Regular, "", ".idx2"}}; }
     /// Format changed `.idx` (v1) -> `.idx2` (v2); a part may hold either.
