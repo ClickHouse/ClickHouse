@@ -2268,6 +2268,19 @@ Possible values:
 - 1 — Enabled.
 )", 0, \
         {"25.12", false, true, "New setting"}) \
+    DECLARE(UInt64, use_skip_indexes_for_disjunctions_max_rpn_elements, 128, R"(
+Maximum number of elements in the internal representation (RPN) of a WHERE filter for which `use_skip_indexes_for_disjunctions` is applied.
+Roughly, every condition and every `AND`, `OR` and `NOT` counts as one element: for example, `A = 5 OR B = 5 OR C = 5` has 5 elements.
+The elements are counted after the filter is rewritten for index analysis: for example, `A = 1 OR A = 2 OR A = 3` becomes `A IN (1, 2, 3)`, which is one element (see `optimize_min_equality_disjunction_chain_length`), and `coalesce(A, B) = 5` is expanded into several conditions (see `allow_key_condition_coalesce_rewrite`).
+For filters with more elements, each skip index is evaluated on its own and cannot skip granules for conditions on different columns connected by `OR`.
+During index analysis, the partial results take one bit per element per granule of each data part, and combining them takes time proportional to the number of elements for every granule. Keep this in mind when setting 0 (no limit).
+
+Possible values:
+
+- 0 — No limit.
+- Positive integer — Maximum number of elements.
+)", 0, \
+        {"26.11", 32, 128, "New setting, previously the limit was hard-coded to 32"}) \
     DECLARE(Bool, use_skip_indexes_for_top_k, true, R"(
 Enable using data skipping indexes for TopK filtering.
 
@@ -2354,6 +2367,8 @@ Allow `use_top_k_dynamic_filtering` to apply when the sort column has a variable
 For such types, the per-row threshold comparison performed by the dynamic filter can outweigh its savings when the column's lexicographic minimum dominates (e.g. mostly empty strings) and few granules can be skipped. In that case the dynamic filter degrades query latency rather than improving it.
 
 When this setting is `0`, dynamic filtering is restricted to columns whose values have a fixed maximum size in memory (numbers, `Date`, `DateTime`, `FixedString`, `Enum`, `Nullable` of such types, `Tuple` of such types). When set to `1`, dynamic filtering applies to variable-length types as well.
+
+Reads of Parquet files still skip whole row groups by the statistics of a `String` sort column when this setting is `0`; the setting only controls the per-row filter.
 
 Possible values:
 
@@ -7285,7 +7300,7 @@ Possible values:
         {"25.4", false, true, "A new optimization"}, \
         {"25.3", false, false, "New setting."}) \
     DECLARE(Bool, use_query_condition_cache_for_top_k, true, R"(
-Enable the [query condition cache](/concepts/features/performance/caches/query-condition-cache) for queries that use the `ORDER BY <column> LIMIT n` (TopK) optimization (dynamic filtering or skip-index based). When disabled, such reads neither consult nor populate the cache.
+Enable the [query condition cache](/concepts/features/performance/caches/query-condition-cache) for queries that use the `ORDER BY <column> LIMIT n` (TopK) optimization (dynamic filtering or skip-index based). When disabled, such reads neither consult nor populate the cache. Reads of Parquet files that use the threshold only to skip row groups by their statistics (a `String` sort column with `use_top_k_dynamic_filtering_for_variable_length_types` disabled) use the cache like reads without TopK, whatever the value of this setting.
 
 Such queries can drop granules during execution depending on the running threshold, so their cache entries are partitioned by the TopK plan parameters and by the set of parts read (for a `File` table, by the set of files read and their versions; for a data lake table, by its snapshot). This setting has no effect unless `use_query_condition_cache` is also enabled.
 
