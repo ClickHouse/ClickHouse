@@ -1,0 +1,12 @@
+s < E
+a,z
+Query: SELECT `s` FROM `tbl`
+E > s
+a,z
+Query: SELECT `s` FROM `tbl`
+s = E
+m
+Query: SELECT `s` FROM `tbl` WHERE `s` = 'm'
+toString(E) > s
+a
+Query: SELECT `s` FROM `tbl` WHERE 'm' > `s`
