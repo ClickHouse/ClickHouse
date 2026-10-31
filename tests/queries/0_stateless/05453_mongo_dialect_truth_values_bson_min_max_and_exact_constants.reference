@@ -1,0 +1,32 @@
+-- truth values
+{"id":1,"not":true,"not_null":true,"and":true,"or":false,"and_none":true,"or_one":false,"cond":1,"switch":"none","filter":[1,2]}
+{"id":2,"not":false,"not_null":true,"and":true,"or":false,"and_none":true,"or_one":true,"cond":1,"switch":"v","filter":[1,2]}
+{"id":1}
+{"id":1}
+{"id":1}
+1	no v
+2	
+-- $toString of a date and $stdDevSamp
+{"d":"1970-01-01T00:00:01.500Z","date":"1970-01-01T00:00:01.500Z","v":null,"id":"1"}
+{"d":"1970-01-01T00:00:00.000Z","date":"1970-01-01T00:00:01.500Z","v":"7","id":"2"}
+{"_id":1,"s":null,"f":99}
+{"_id":2,"s":null,"f":99}
+{"_id":null,"s":null,"p":0.7071067811865476}
+-- $min and $max
+[(1,NULL),(2,3),(3,NULL),(4,4)]
+[(1,NULL),(2,3),(3,NULL),(4,4)]
+-- exact constants
+(UNKNOWN_ELEMENT_OF_ENUM)
+(UNKNOWN_ELEMENT_OF_ENUM)
+(UNKNOWN_ELEMENT_OF_ENUM)
+(UNKNOWN_ELEMENT_OF_ENUM)
+mutations created: 0
+3	1.2	1.5
+-- empty embedded document
+(BAD_ARGUMENTS)
+0
+-- bounded growth
+{"r":1}
+{"r":1}
+{"r":1}
+{"r":6}

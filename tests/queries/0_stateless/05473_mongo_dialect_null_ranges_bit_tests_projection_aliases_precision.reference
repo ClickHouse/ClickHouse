@@ -1,0 +1,31 @@
+-- LowCardinality(Bool) in numeric accumulators
+{"_id":null,"s":0,"a":null,"p":null,"q":null}
+-- range comparisons with null
+{"id":1}
+{"id":1}
+{"id":2}
+{"id":3}
+{"id":1}
+{"id":2}
+{"id":3}
+-- bit tests
+{"id":2}
+{"id":2}
+{"id":2}
+{"id":1}
+{"id":2}
+{"id":1}
+{"id":2}
+{"id":3}
+-- computed projection fields named as stored fields
+{"a":99,"original":7}
+{"a":99}
+{"id":2,"a":-3}
+{"id":3,"a":-5}
+{"id":1,"a":-7}
+-- full precision numbers
+1
+{"id":4}
+-- deletes
+1
+4
