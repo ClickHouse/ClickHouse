@@ -217,49 +217,18 @@ using HasSystemTablesVisitor = InDepthNodeVisitor<HasSystemTablesMatcher, true>;
 }
 
 /// Returns the context a (sub)query runs with after its query-level `SETTINGS` clause has been applied
-/// to `context`, as far as `obfuscate_seed` is concerned. Besides `obfuscate_seed` itself, the seed can
-/// be changed by `profile`, which applies all settings of a settings profile, so replay both - in the
-/// same way as `applyQueryLevelSettings` in `QueryTreeBuilder` does when it builds the context of the
-/// nested query: changes one at a time, each clamped to the settings constraints, then the resets.
-/// Returns `context` itself when the clause can not change the seed, to avoid copying the context.
-static ContextPtr applyObfuscateSeedChanges(const ASTPtr & settings_ast, const ContextPtr & context)
+/// to `context`, in the same way as `applyQueryLevelSettings` in `QueryTreeBuilder` does when it builds
+/// the context of the nested query. The whole clause is replayed, not only `obfuscate_seed`: other
+/// settings decide whether the seed assignment is allowed at all - e.g. `readonly = 1` before it makes
+/// the constraints drop it - and `profile` can change the seed too.
+static ContextPtr applyQueryLevelSettings(const ASTPtr & settings_ast, const ContextPtr & context)
 {
     const auto * set_query = settings_ast ? settings_ast->as<ASTSetQuery>() : nullptr;
-    if (!set_query)
-        return context;
-
-    auto affects_seed = [](const String & name) { return name == "obfuscate_seed" || name == "profile"; };
-
-    SettingsChanges changes;
-    for (const auto & change : set_query->changes)
-        if (affects_seed(change.name))
-            changes.push_back(change);
-
-    /// `SETTINGS name = DEFAULT` is stored separately.
-    std::vector<String> resets;
-    for (const auto & name : set_query->default_settings)
-        if (affects_seed(name))
-            resets.push_back(name);
-
-    if (changes.empty() && resets.empty())
+    if (!set_query || (set_query->changes.empty() && set_query->default_settings.empty()))
         return context;
 
     auto updated_context = Context::createCopy(context);
-    for (const auto & change : changes)
-    {
-        SettingsChanges single_change{change};
-        updated_context->clampToSettingsConstraints(single_change, SettingSource::QUERY);
-        updated_context->applySettingsChanges(single_change);
-    }
-
-    if (!resets.empty())
-    {
-        SettingsChanges clamped_resets;
-        updated_context->clampSettingsConstraintsForSettingsReset(resets, clamped_resets, SettingSource::QUERY);
-        updated_context->resetSettingsToDefaultValue(resets);
-        updated_context->applySettingsChanges(clamped_resets);
-    }
-
+    updated_context->applyNestedQuerySettingsClamped(set_query->changes, set_query->default_settings);
     return updated_context;
 }
 
@@ -280,17 +249,17 @@ static bool hasNonDeterministicObfuscate(const ASTPtr & node, ContextPtr context
     ///  - `ASTSelectQuery::settings()` - a plain `SELECT`;
     ///  - the *last* arm of a `UNION` - in every nested position the parser leaves a trailing
     ///    union-level clause there instead of filling `settings_ast`. After
-    ///    `SelectIntersectExceptQueryVisitor` has normalized the arms, the same carrier is the last
-    ///    operand of an `ASTSelectIntersectExceptQuery`.
+    ///    `SelectIntersectExceptQueryVisitor` has normalized the arms, the same carrier can be nested
+    ///    into `ASTSelectIntersectExceptQuery` nodes (see `ASTSelectIntersectExceptQuery::getTrailingSettings`),
+    ///    and it governs every node on the way to it.
     if (const auto * query_with_output = node->as<ASTQueryWithOutput>())
-        context = applyObfuscateSeedChanges(query_with_output->settings_ast, context);
+        context = applyQueryLevelSettings(query_with_output->settings_ast, context);
 
     if (const auto * select_with_union = node->as<ASTSelectWithUnionQuery>())
     {
         const auto & arms = select_with_union->list_of_selects->children;
         if (!arms.empty())
-            if (const auto * last_arm = arms.back()->as<ASTSelectQuery>())
-                context = applyObfuscateSeedChanges(last_arm->settings(), context);
+            context = applyQueryLevelSettings(ASTSelectIntersectExceptQuery::getTrailingSettings(arms.back()), context);
     }
 
     /// Check the intersect/except node before the plain-select check: it inherits `ASTSelectQuery`,
@@ -299,12 +268,11 @@ static bool hasNonDeterministicObfuscate(const ASTPtr & node, ContextPtr context
     {
         const auto & operands = intersect_except->children;
         if (!operands.empty())
-            if (const auto * last_operand = operands.back()->as<ASTSelectQuery>())
-                context = applyObfuscateSeedChanges(last_operand->settings(), context);
+            context = applyQueryLevelSettings(ASTSelectIntersectExceptQuery::getTrailingSettings(operands.back()), context);
     }
 
     if (const auto * select = node->as<ASTSelectQuery>())
-        context = applyObfuscateSeedChanges(select->settings(), context);
+        context = applyQueryLevelSettings(select->settings(), context);
 
     if (const auto * function = node->as<ASTFunction>())
         if (function->name == "obfuscate" && context->getSettingsRef()[Setting::obfuscate_seed].value.empty())

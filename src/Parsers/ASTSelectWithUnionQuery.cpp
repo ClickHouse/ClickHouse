@@ -171,6 +171,23 @@ void ASTSelectWithUnionQuery::formatQueryImpl(WriteBuffer & ostr, const FormatSe
         if ((settings_ast || frame.parent_has_trailing_settings) && !out_file && !format_ast && (*it)->as<ASTSelectQuery>())
             need_parens = true;
 
+        /// A bare SELECT with its own `SETTINGS` clause needs none of the parentheses above: the clause ends it,
+        /// so neither `EXCEPT` nor the `SETTINGS` of the whole query can be consumed by it. And it must not get
+        /// them: `ParserUnionQueryElement` keeps a parenthesized SELECT with a `SETTINGS` clause wrapped into
+        /// `ASTSelectWithUnionQuery`, so that the clause does not apply to the other operands.
+        if (const auto * select = (*it)->as<ASTSelectQuery>(); select && select->settings())
+            need_parens = false;
+
+        /// Likewise for an `INTERSECT` ending the query with the trailing `SETTINGS` clause of its last operand, as in
+        /// `A UNION ALL B INTERSECT ALL C SETTINGS ...`: `INTERSECT` binds tighter than `UNION` and `EXCEPT`, and
+        /// parentheses would make the clause apply to the `INTERSECT` alone. A parenthesized `INTERSECT` is wrapped
+        /// into `ASTSelectWithUnionQuery`, so it is not matched here.
+        if (const auto * intersect = (*it)->as<ASTSelectIntersectExceptQuery>(); intersect && next == list_of_selects->children.end()
+            && (intersect->final_operator == ASTSelectIntersectExceptQuery::Operator::INTERSECT_ALL
+                || intersect->final_operator == ASTSelectIntersectExceptQuery::Operator::INTERSECT_DISTINCT)
+            && ASTSelectIntersectExceptQuery::getTrailingSettings(*it))
+            need_parens = false;
+
         if (need_parens)
         {
             ostr << indent_str;

@@ -144,7 +144,9 @@ public:
     void check(const MergeTreeSettings & current_settings, const SettingsChanges & changes) const;
 
     /// Checks whether `change` violates these and clamps the `change` if so.
-    void clamp(const Settings & current_settings, SettingsChanges & changes, SettingSource source) const;
+    /// `keep_unchanged_settings` keeps a change that does not change the value, as is done anyway when
+    /// `changes` contain `compatibility`: it is for a caller clamping one change of a batch at a time.
+    void clamp(const Settings & current_settings, SettingsChanges & changes, SettingSource source, bool keep_unchanged_settings = false) const;
 
     /// `compatibility` gives a setting only a value that these constraints and `allow_feature_tier` accept,
     /// and leaves any other setting as it is. `restrictsCompatibility` tells whether any value can be refused.
@@ -222,8 +224,12 @@ private:
 
     /// Common logic for `check(Settings, SettingsChanges&)` and `clamp`. Both filter out unchanged settings
     /// (unless `compatibility` is present) and differ only in whether violations throw or get clamped to the nearest bound.
-    void
-    checkOrClamp(const Settings & current_settings, SettingsChanges & changes, ReactionOnViolation reaction, SettingSource source) const;
+    void checkOrClamp(
+        const Settings & current_settings,
+        SettingsChanges & changes,
+        ReactionOnViolation reaction,
+        SettingSource source,
+        bool keep_unchanged_settings = false) const;
 
     bool checkImpl(
         const Settings & current_settings,

@@ -14,6 +14,7 @@
 #include <Parsers/ASTWithElement.h>
 #include <Parsers/ASTSubquery.h>
 #include <Parsers/ASTSelectQuery.h>
+#include <Parsers/ASTSelectIntersectExceptQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTFunction.h>
@@ -338,6 +339,56 @@ ASTPtr UnionNode::toASTImpl(const ConvertToASTOptions & options) const
     select_with_union_query->is_normalized = true;
     select_with_union_query->children.push_back(getQueriesNode()->toAST(options));
     select_with_union_query->list_of_selects = select_with_union_query->children.back();
+
+    /// Every `QueryNode` is converted to a `ASTSelectWithUnionQuery` wrapping its `ASTSelectQuery`, which is
+    /// formatted in parentheses, and a parenthesized SELECT keeps its `SETTINGS` clause to itself
+    /// (see `ParserUnionQueryElement`). So if the clause of the last arm is the union's own trailing clause,
+    /// leave the arm bare, so that it is read back as the clause of the whole union.
+    if (hasSettingsChanges())
+    {
+        auto is_own_trailing_clause = [&](const ASTPtr & arm)
+        {
+            const auto * select = arm->as<ASTSelectQuery>();
+            const auto * select_settings = select && select->settings() ? select->settings()->as<ASTSetQuery>() : nullptr;
+            return select_settings
+                && select_settings->changes == settings_changes
+                && select_settings->default_settings == default_settings
+                && select_settings->query_parameters == query_parameters;
+        };
+
+        auto is_intersect = [](SelectUnionMode mode)
+        {
+            return mode == SelectUnionMode::INTERSECT_ALL || mode == SelectUnionMode::INTERSECT_DISTINCT;
+        };
+
+        auto & arms = select_with_union_query->list_of_selects->children;
+        auto * last_arm = arms.empty() ? nullptr : arms.back()->as<ASTSelectWithUnionQuery>();
+        if (last_arm && last_arm->list_of_selects && !last_arm->list_of_selects->children.empty())
+        {
+            auto & last_arm_selects = last_arm->list_of_selects->children;
+            if (last_arm_selects.size() == 1)
+            {
+                if (is_own_trailing_clause(last_arm_selects.front()))
+                {
+                    ASTPtr bare_select = last_arm_selects.front();
+                    arms.back() = std::move(bare_select);
+                }
+            }
+            else if (is_intersect(last_arm->union_mode) && !is_intersect(union_mode) && is_own_trailing_clause(last_arm_selects.back()))
+            {
+                /// The last arm is an `INTERSECT` that got the same clause, as in `A UNION ALL B INTERSECT ALL C SETTINGS ...`:
+                /// its own last arm is already bare. Parenthesized, it would again keep the clause to itself, so emit it
+                /// in the shape the parser gives it: `INTERSECT` binds tighter than `UNION` and `EXCEPT`, so no parentheses
+                /// are needed around it (see `ASTSelectWithUnionQuery::formatQueryImpl`).
+                auto intersect_query = make_intrusive<ASTSelectIntersectExceptQuery>();
+                intersect_query->final_operator = last_arm->union_mode == SelectUnionMode::INTERSECT_ALL
+                    ? ASTSelectIntersectExceptQuery::Operator::INTERSECT_ALL
+                    : ASTSelectIntersectExceptQuery::Operator::INTERSECT_DISTINCT;
+                intersect_query->children = std::move(last_arm_selects);
+                arms.back() = std::move(intersect_query);
+            }
+        }
+    }
 
     ASTPtr result_query = std::move(select_with_union_query);
     bool set_subquery_cte_name = options.set_subquery_cte_name;
