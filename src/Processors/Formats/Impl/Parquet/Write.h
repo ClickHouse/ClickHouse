@@ -215,7 +215,7 @@ SchemaElements convertSchema(const Block & sample, const WriteOptions & options,
 /// Mirrors prepareGeoColumn: with GeoParquet output enabled, a recognized top-level geo custom type
 /// (Point, MultiPoint, LineString, Polygon, MultiLineString, MultiPolygon, Geometry) collapses into a single WKB
 /// String field, so only the top-level field carries a field_id. Shared between the field_id builder
-/// (ParquetBlockOutputFormat) and the Iceberg field_id validator (convertSchema) so they agree on the
+/// (`ParquetBlockOutputFormat`) and the Iceberg field_id validator (convertSchema) so they agree on the
 /// shape of the emitted schema.
 bool isGeoColumnWrittenAsWKBScalar(const DataTypePtr & type);
 

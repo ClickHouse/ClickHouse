@@ -1027,7 +1027,7 @@ SchemaElements convertSchema(const Block & sample, const WriteOptions & options,
             /// (prepareGeoColumn runs inside prepareColumnForWrite below). The emitted schema then has
             /// only the top-level field, so validate just that — walking the original `Tuple`/`Array`
             /// shape would demand nested field ids the writer never emits, matching the rule
-            /// buildColumnFieldIds already applies when constructing the map.
+            /// `autoAssignFieldIds` in `ParquetBlockOutputFormat` applies when constructing the map.
             if (options.write_geometadata && isGeoColumnWrittenAsWKBScalar(c.type))
             {
                 if (!column_field_ids->contains(c.name))
