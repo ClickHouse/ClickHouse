@@ -43,6 +43,7 @@
 #include <Processors/QueryPlan/NegativeLimitStep.h>
 #include <Processors/QueryPlan/OffsetStep.h>
 #include <Processors/QueryPlan/NegativeOffsetStep.h>
+#include <Processors/QueryPlan/BypassExtremesSteps.h>
 #include <Processors/QueryPlan/ExtremesStep.h>
 #include <Processors/QueryPlan/TotalsHavingStep.h>
 #include <Processors/QueryPlan/RollupStep.h>
@@ -2358,7 +2359,16 @@ void addAdditionalFilterStepIfNeeded(QueryPlan & query_plan,
         filter_info.do_remove_column);
     filter_step->setStepDescription("additional result filter");
     appendSetsFromActionsDAG(filter_step->getExpression(), useful_sets);
+
+    /// The extremes are computed before `LIMIT`, and the result filter, which comes after it, must not filter them either.
+    const bool bypass_extremes = settings[Setting::extremes];
+    if (bypass_extremes)
+        query_plan.addStep(std::make_unique<DetachExtremesStep>(query_plan.getCurrentHeader()));
+
     query_plan.addStep(std::move(filter_step));
+
+    if (bypass_extremes)
+        query_plan.addStep(std::make_unique<AttachExtremesStep>(query_plan.getCurrentHeader()));
 }
 
 /// Replace a header that holds nothing but row-count-only columns (or no column at all) with one
