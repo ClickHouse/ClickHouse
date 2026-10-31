@@ -16,6 +16,10 @@ if (OS_WINDOWS)
     add_subdirectory (windows-selftest)
 endif ()
 
+if (SYMBOL_SECTIONS STREQUAL "compact")
+    add_subdirectory (compact-symbols)
+endif ()
+
 # Not used in packages
 if (ENABLE_UTILS)
     add_subdirectory (corrector_utf8)
