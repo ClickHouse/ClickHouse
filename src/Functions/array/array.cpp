@@ -14,6 +14,7 @@
 #include <Interpreters/castColumn.h>
 
 #include <Common/VectorWithMemoryTracking.h>
+#include <Common/memcpySmall.h>
 
 
 namespace DB
@@ -165,7 +166,8 @@ private:
             || executeNumber<Decimal256>(columns, out_data, input_rows_count)
             || executeNumber<DateTime64>(columns, out_data, input_rows_count) || executeString(columns, out_data, input_rows_count)
             || executeNullable(columns, out_data, input_rows_count) || executeTuple(columns, out_data, input_rows_count)
-            || executeFixedString(columns, out_data, input_rows_count) || executeGeneric(columns, out_data, input_rows_count);
+            || executeFixedString(columns, out_data, input_rows_count) || executeArray(columns, out_data, input_rows_count)
+            || executeGeneric(columns, out_data, input_rows_count);
     }
 
     template <typename T>
@@ -313,6 +315,73 @@ private:
                     elem_columns[j] = &concrete_column->getColumn(i);
                 }
                 execute(elem_columns, concrete_out_data->getColumn(i), input_rows_count);
+            }
+        }
+        return true;
+    }
+
+    bool executeArray(const ColumnRawPtrs & columns, IColumn & out_data, size_t input_rows_count) const
+    {
+        auto * out_array = typeid_cast<ColumnArray *>(&out_data);
+        if (!out_array)
+            return false;
+
+        const size_t num_columns = columns.size();
+        VectorWithMemoryTracking<const IColumn::Offsets *> offsets(num_columns, nullptr);
+        VectorWithMemoryTracking<const IColumn *> nested(num_columns, nullptr);
+        for (size_t i = 0; i < num_columns; ++i)
+        {
+            const auto & array = assert_cast<const ColumnArray &>(*columns[i]);
+            offsets[i] = &array.getOffsets();
+            nested[i] = &array.getData();
+        }
+
+        IColumn::Offsets & out_offsets = out_array->getOffsets();
+        out_offsets.resize_exact(num_columns * input_rows_count);
+        IColumn::Offset current_offset = 0;
+        for (size_t row_i = 0; row_i < input_rows_count; ++row_i)
+        {
+            for (size_t col_i = 0; col_i < num_columns; ++col_i)
+            {
+                current_offset += (*offsets[col_i])[row_i] - (*offsets[col_i])[row_i - 1];
+                out_offsets[row_i * num_columns + col_i] = current_offset;
+            }
+        }
+
+        IColumn & out_nested = out_array->getData();
+        if (out_nested.isFixedAndContiguous())
+        {
+            const size_t value_size = out_nested.sizeOfValueIfFixed();
+            VectorWithMemoryTracking<const char *> raw(num_columns, nullptr);
+            for (size_t i = 0; i < num_columns; ++i)
+                raw[i] = nested[i]->getRawData().data();
+
+            char * out_pos = out_nested.insertRawUninitialized(current_offset).data();
+            for (size_t row_i = 0; row_i < input_rows_count; ++row_i)
+            {
+                for (size_t col_i = 0; col_i < num_columns; ++col_i)
+                {
+                    const size_t begin = (*offsets[col_i])[row_i - 1];
+                    const size_t bytes = ((*offsets[col_i])[row_i] - begin) * value_size;
+                    const char * src = raw[col_i] + begin * value_size;
+                    if (bytes <= 64)
+                        memcpySmallAllowReadWriteOverflow15(out_pos, src, bytes);
+                    else
+                        memcpy(out_pos, src, bytes);
+                    out_pos += bytes;
+                }
+            }
+        }
+        else
+        {
+            out_nested.reserve(current_offset);
+            for (size_t row_i = 0; row_i < input_rows_count; ++row_i)
+            {
+                for (size_t col_i = 0; col_i < num_columns; ++col_i)
+                {
+                    const size_t begin = (*offsets[col_i])[row_i - 1];
+                    out_nested.insertRangeFrom(*nested[col_i], begin, (*offsets[col_i])[row_i] - begin);
+                }
             }
         }
         return true;
