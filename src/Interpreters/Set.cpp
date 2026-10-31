@@ -798,7 +798,12 @@ ColumnPtr Set::execute(const ColumnsWithTypeAndName & columns, bool negative) co
 
         if (use_cast_accurate_or_null)
         {
-            result = castColumnAccurateOrNull(column_to_cast, data_types[i], cast_cache.get());
+            /// An identical type cannot fail the cast, which would only add an all-zero null map and a slower probe loop.
+            /// Custom names are excluded: `equals` ignores them, but the cast to `Bool` normalizes `UInt8` values.
+            if (column_to_cast.type->equals(*data_types[i]) && !column_to_cast.type->getCustomName() && !data_types[i]->getCustomName())
+                result = column_to_cast.column;
+            else
+                result = castColumnAccurateOrNull(column_to_cast, data_types[i], cast_cache.get());
         }
         else
         {
