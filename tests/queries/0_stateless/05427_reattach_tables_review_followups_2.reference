@@ -1,0 +1,19 @@
+multi-file File table
+OK
+1
+2
+OK
+setting-dependent sorting key
+OK
+1
+busy lazy table
+OK
+control
+OK
+view with an inaccessible inner table
+OK
+query text in settings
+OK
+OK
+refreshable materialized view
+OK

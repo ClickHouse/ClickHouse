@@ -1,0 +1,12 @@
+stored function checking access in a join
+OK
+OK
+materialized view read
+OK
+OK
+insert into Buffer
+OK
+OK
+insert into a table with a materialized view
+OK
+1

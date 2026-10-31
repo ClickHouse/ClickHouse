@@ -1452,6 +1452,15 @@ void StorageMergeTree::setMutationCSN(const String & mutation_id, CSN csn)
     it->second.writeCSN(csn);
 }
 
+bool StorageMergeTree::hasMutationsOfUnfinishedTransactions() const
+{
+    std::lock_guard lock(currently_processing_in_background_mutex);
+    for (const auto & [_, entry] : current_mutations_by_version)
+        if (!entry.tid.isNonTransactional() && entry.csn == Tx::UnknownCSN)
+            return true;
+    return false;
+}
+
 void StorageMergeTree::mutate(const MutationCommands & commands, ContextPtr query_context)
 {
     assertNotReadonly();

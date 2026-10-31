@@ -1,0 +1,14 @@
+unused WITH definitions
+OK
+OK
+OK
+storages reading other tables
+OK
+OK
+OK
+setting-dependent constraint
+OK
+0
+joinGet in a refreshable materialized view
+OK
+OK
