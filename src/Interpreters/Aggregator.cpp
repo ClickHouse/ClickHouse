@@ -864,22 +864,22 @@ Aggregator::Aggregator(const Block & header_, const Params & params_)
             method_chosen_for_in_order = AggregatedDataVariants::Type::nullable_serialized_void;
     }
 
-    /// TODO(ab): HashMethodSingleLowCardinalityColumn uses a hardcoded internal cache,
-    /// which interferes with inline aggregation (e.g. for COUNT). This needs to be
-    /// refactored to respect the `use_cache` setting.
-    ///
-    /// For now, disable the simple COUNT optimization to avoid incorrect behavior.
-    switch (method_chosen)
+    /// The GROUP BY top-K heap ranks the rows one by one, so there a `LowCardinality` key keeps the count state
+    /// and the cached lookups of its dictionary positions.
+    if (params.top_k)
     {
-    #define M(NAME) \
-        case AggregatedDataVariants::Type::NAME: \
-            is_simple_count = false; \
-            break;
+        switch (method_chosen)
+        {
+        #define M(NAME) \
+            case AggregatedDataVariants::Type::NAME: \
+                is_simple_count = false; \
+                break;
 
-        APPLY_FOR_LOW_CARDINALITY_VARIANTS(M)
-    #undef M
-        default:
-            ;
+            APPLY_FOR_LOW_CARDINALITY_VARIANTS(M)
+        #undef M
+            default:
+                ;
+        }
     }
 
     /// See the comment on the member: the kept-keys cutoff must stay inert for the fixed hash
@@ -1725,6 +1725,56 @@ void NO_INLINE Aggregator::executeImplBatch(
 
     if (is_simple_count)
     {
+        if constexpr (Method::low_cardinality_optimization && !top_k)
+        {
+            if (!all_keys_are_const && state.canCountPositions(row_begin, row_end))
+            {
+                if (!no_more_keys)
+                {
+                    const auto add_count = [&](size_t first_row, UInt64 count) ALWAYS_INLINE
+                    {
+                        auto emplace_result = state.emplaceKey(method.data, first_row, *aggregates_pool);
+                        if (emplace_result.isInserted())
+                            getInlineCountState(emplace_result.getMapped()) = count;
+                        else
+                            getInlineCountState(emplace_result.getMapped()) += count;
+                    };
+
+                    if constexpr (prefetch && requires { method.data.prefetchByHash(size_t{}); })
+                    {
+                        PODArrayWithStackMemory<std::pair<UInt32, UInt32>, 4096> position_rows;
+                        state.forEachPositionCount(row_begin, row_end, [&](size_t first_row, UInt64 count)
+                        {
+                            position_rows.emplace_back(static_cast<UInt32>(first_row - row_begin), static_cast<UInt32>(count));
+                        });
+                        for (size_t i = 0; i < position_rows.size(); ++i)
+                        {
+                            if (i + prefetch_look_ahead < position_rows.size())
+                                method.data.prefetchByHash(
+                                    state.getHash(method.data, row_begin + position_rows[i + prefetch_look_ahead].first, *aggregates_pool));
+                            add_count(row_begin + position_rows[i].first, position_rows[i].second);
+                        }
+                    }
+                    else
+                    {
+                        state.forEachPositionCount(row_begin, row_end, add_count);
+                    }
+                }
+                else
+                {
+                    state.forEachPositionCount(row_begin, row_end, [&](size_t first_row, UInt64 count)
+                    {
+                        auto find_result = state.findKey(method.data, first_row, *aggregates_pool);
+                        if (find_result.isFound())
+                            getInlineCountState(find_result.getMapped()) += count;
+                        else if (overflow_row)
+                            getCountState(overflow_row) += count;
+                    });
+                }
+                return;
+            }
+        }
+
         if (all_keys_are_const)
         {
             if (!no_more_keys)
