@@ -92,6 +92,7 @@
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/inplaceBlockConversions.h>
 #include <Interpreters/QueryMetadataCache.h>
+#include <Interpreters/QueryStatisticsCache.h>
 #include <Interpreters/RenameColumnVisitor.h>
 #include <Functions/FunctionFactory.h>
 #include <Planner/CollectSets.h>
@@ -305,6 +306,7 @@ namespace Setting
     extern const SettingsUInt64 max_temporary_table_size_bytes_compressed;
     extern const SettingsUInt64 max_temporary_table_size_bytes_uncompressed;
     extern const SettingsBool use_statistics;
+    extern const SettingsUInt64 statistics_cache_max_entries;
     extern const SettingsBool use_partition_pruning;
     extern const SettingsBool optimize_mutations_with_partition_pruning;
     extern const SettingsBool use_constant_folding_in_index_analysis;
@@ -1193,6 +1195,29 @@ ConditionSelectivityEstimatorPtr MergeTreeData::getConditionSelectivityEstimator
     if (parts.empty())
         return {};
 
+    /// A query can ask for the same estimator many times, once per read of the table (a `UNION ALL` of
+    /// many branches reads it once per branch). The merged statistics are kept for the rest of the query,
+    /// so each distinct estimator is collected and merged once.
+    const size_t query_cache_max_entries = local_context->getSettingsRef()[Setting::statistics_cache_max_entries];
+    QueryStatisticsCachePtr query_cache;
+    QueryStatisticsCache::Key key;
+    if (query_cache_max_entries > 0)
+        query_cache = local_context->tryGetQueryStatisticsCache();
+
+    if (query_cache)
+    {
+        key.storage = this;
+        key.part_names.reserve(parts.size());
+        for (const auto & part : parts)
+            key.part_names.push_back(part.data_part->name);
+        /// Canonical set form: `loadStatistics` reads the names as a set, so two callers naming the
+        /// same columns in a different order ask for the same statistics.
+        key.required_columns = QueryStatisticsCache::Key::makeRequiredColumns(required_columns);
+
+        if (auto payload = query_cache->get(key))
+            return *payload ? std::make_shared<ConditionSelectivityEstimator>(*payload, local_context) : nullptr;
+    }
+
     /// The statistics are cached per part and column, and a query merges the statistics of its parts
     /// on the fly, which is cheap. So a query over the parts left after partition and primary-key
     /// pruning costs the same as a query over the whole table, and the statistics of a part are read
@@ -1229,7 +1254,13 @@ ConditionSelectivityEstimatorPtr MergeTreeData::getConditionSelectivityEstimator
             parts_statistics[part_index] = {};
         });
 
-    return estimator_builder.getEstimator();
+    auto payload = estimator_builder.getPayload();
+    if (query_cache)
+        query_cache->set(std::move(key), payload, query_cache_max_entries);
+
+    /// Each caller gets its own estimator: estimation reads settings through the context it is bound to,
+    /// so a shared one would answer with whichever context built it.
+    return payload ? std::make_shared<ConditionSelectivityEstimator>(payload, local_context) : nullptr;
 }
 
 void MergeTreeData::loadStatisticsOfPartsInParallel(
