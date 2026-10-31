@@ -131,16 +131,21 @@ bool DatabaseFilesystem::checkTableFilePath(const std::string & table_path, Cont
 {
     /// If run in Local mode, no need for path checking.
     bool check_path = context_->getApplicationType() != Context::ApplicationType::LOCAL;
-    const auto & user_files_path = context_->getUserFilesPath();
 
     const auto [path_to_archive, path_in_archive] = splitToArchiveParts(table_path, context_);
     const String path_to_probe = path_to_archive.empty() ? table_path : path_to_archive;
 
     /// Check access for file before checking its existence.
-    if (check_path && !fileOrSymlinkPathStartsWith(path_to_probe, user_files_path))
+    if (check_path)
     {
-        /// Access denied is thrown regardless of 'throw_on_error'
-        throw Exception(ErrorCodes::PATH_ACCESS_DENIED, "File is not inside {}", user_files_path);
+        /// The path of the database is built on the resolved `user_files_path`, and `file` checks the paths against
+        /// it as well, so a `user_files_path` reached through a symlink is resolved here too.
+        const String user_files_path = fs::weakly_canonical(context_->getUserFilesPath());
+        if (!fileOrSymlinkPathStartsWith(path_to_probe, user_files_path))
+        {
+            /// Access denied is thrown regardless of 'throw_on_error'
+            throw Exception(ErrorCodes::PATH_ACCESS_DENIED, "File is not inside {}", user_files_path);
+        }
     }
 
     if (!containsGlobs(path_to_probe))
