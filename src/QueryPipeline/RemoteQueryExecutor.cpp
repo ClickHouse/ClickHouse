@@ -9,6 +9,7 @@
 #include <Common/FailPoint.h>
 #include <Common/Logger.h>
 #include <Common/OpenTelemetryTraceContext.h>
+#include <Common/UnorderedSetWithMemoryTracking.h>
 #include <Common/logger_useful.h>
 #include <Core/Protocol.h>
 #include <Core/Settings.h>
@@ -415,6 +416,9 @@ static Block adaptBlockStructure(const Block & block, const Block & header)
     Block res;
     res.info = block.info;
 
+    /// `ColumnBLOB::addCast` modifies the column in place, and header entries with the same name share a column of `block`.
+    UnorderedSetWithMemoryTracking<const IColumn *> blobs_with_cast;
+
     for (const auto & elem : header)
     {
         ColumnPtr column;
@@ -451,7 +455,8 @@ static Block adaptBlockStructure(const Block & block, const Block & header)
             const auto & col = block.getByName(elem.name);
             if (auto * blob = typeid_cast<ColumnBLOB *>(col.column->assumeMutable().get()))
             {
-                blob->addCast(col.type, elem.type);
+                if (blobs_with_cast.insert(blob).second)
+                    blob->addCast(col.type, elem.type);
                 column = col.column;
             }
             else
