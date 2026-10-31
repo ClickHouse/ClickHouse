@@ -1,0 +1,84 @@
+<test>
+    <!--
+        TPC-DS Q72 shape: two fact tables are joined by a low-cardinality key, and the WHERE
+        clause has cross-side ranges (`qty_on_hand < qty`, `ship_date > sold_date + 5`) plus
+        an equality on two dimension copies (`week = week`). Selective predicates sit on the
+        dimensions (`year`, `status`, `potential`).
+
+        Each sales row matches about 325 inventory rows. While the ranges stay above that join,
+        it is one relation and the selective dimensions are applied only afterwards.
+        Merging the ranges into the JOIN condition lets join reorder filter sales through
+        those dimensions first, so the fact-fact join never sees the full cross product.
+
+        `sipHash64` of the 128-byte payloads is pushed to PREWHERE. It only has to keep the
+        reordered plan above 0.1s; a heavier per-row hash would be paid by both plans and
+        would hide the join-order speedup. One thread keeps the blocked plan under the 2s
+        per-run limit. Runtime filters and cached hash-table stats are off so the measured
+        difference is the reorder, and the plan does not flip between runs.
+    -->
+    <settings>
+        <max_threads>1</max_threads>
+        <enable_join_runtime_filters>0</enable_join_runtime_filters>
+        <use_hash_table_stats_for_join_reordering>0</use_hash_table_stats_for_join_reordering>
+        <query_plan_optimize_join_order_randomize>0</query_plan_optimize_join_order_randomize>
+        <query_plan_merge_filter_into_join_condition>1</query_plan_merge_filter_into_join_condition>
+    </settings>
+
+    <create_query>CREATE TABLE range_fij_sales (item_id UInt32, sold_date UInt16, ship_date UInt16, demo_id UInt32, hd_id UInt32, qty UInt16, payload FixedString(128)) ENGINE = MergeTree ORDER BY tuple()</create_query>
+    <create_query>CREATE TABLE range_fij_inventory (item_id UInt32, inv_date UInt16, wh_id UInt16, qty_on_hand UInt16, payload FixedString(128)) ENGINE = MergeTree ORDER BY tuple()</create_query>
+    <create_query>CREATE TABLE range_fij_date_dim (date_id UInt16, year UInt16, week UInt16) ENGINE = MergeTree ORDER BY date_id</create_query>
+    <create_query>CREATE TABLE range_fij_demo (demo_id UInt32, status UInt8) ENGINE = MergeTree ORDER BY demo_id</create_query>
+    <create_query>CREATE TABLE range_fij_household (hd_id UInt32, potential UInt8) ENGINE = MergeTree ORDER BY hd_id</create_query>
+    <create_query>CREATE TABLE range_fij_warehouse (wh_id UInt16, name String) ENGINE = MergeTree ORDER BY wh_id</create_query>
+
+    <fill_query>INSERT INTO range_fij_date_dim SELECT number, 1990 + intDiv(number, 365), number % 53 FROM numbers(3650)</fill_query>
+    <fill_query>INSERT INTO range_fij_demo SELECT number, number % 50 = 0 FROM numbers(20000)</fill_query>
+    <fill_query>INSERT INTO range_fij_household SELECT number, number % 50 = 0 FROM numbers(20000)</fill_query>
+    <fill_query>INSERT INTO range_fij_warehouse SELECT number, toString(number) FROM numbers(50)</fill_query>
+    <fill_query>INSERT INTO range_fij_sales SELECT number % 400, number % 3650, (number + 10) % 3650, number % 20000, intHash64(number) % 20000, (number % 100) + 1, toFixedString(toString(number), 128) FROM numbers(130000) SETTINGS min_insert_block_size_rows = 10000000, min_insert_block_size_bytes = 0</fill_query>
+    <fill_query>INSERT INTO range_fij_inventory SELECT number % 400, number % 3650, number % 50, number % 100, toFixedString(toString(number), 128) FROM numbers(130000) SETTINGS min_insert_block_size_rows = 10000000, min_insert_block_size_bytes = 0</fill_query>
+    <fill_query>SELECT throwIf(count() != 2, 'join_merge_range_filter_into_join: expected 1 active part per fact table') FROM system.parts WHERE database = currentDatabase() AND table IN ('range_fij_sales', 'range_fij_inventory') AND active</fill_query>
+
+    <!-- Cross-side ranges in WHERE. The blocked plan joins the fact tables first. -->
+    <query>
+        SELECT count()
+        FROM range_fij_sales AS s
+        INNER JOIN range_fij_inventory AS i ON s.item_id = i.item_id
+        INNER JOIN range_fij_date_dim AS d1 ON s.sold_date = d1.date_id
+        INNER JOIN range_fij_date_dim AS d2 ON i.inv_date = d2.date_id
+        INNER JOIN range_fij_date_dim AS d3 ON s.ship_date = d3.date_id
+        INNER JOIN range_fij_demo AS cd ON s.demo_id = cd.demo_id
+        INNER JOIN range_fij_household AS hd ON s.hd_id = hd.hd_id
+        INNER JOIN range_fij_warehouse AS w ON i.wh_id = w.wh_id
+        WHERE d1.week = d2.week
+            AND i.qty_on_hand &lt; s.qty
+            AND d3.date_id &gt; d1.date_id + 5
+            AND d1.year = 1999
+            AND cd.status = 1
+            AND hd.potential = 1
+            AND sipHash64(s.payload) % 64 != 63
+            AND sipHash64(i.payload) % 64 != 63
+    </query>
+
+    <!-- No cross-side predicate, so range merging does not apply. Time must stay the same. -->
+    <query>
+        SELECT count()
+        FROM range_fij_sales AS s
+        INNER JOIN range_fij_inventory AS i ON s.item_id = i.item_id
+        INNER JOIN range_fij_date_dim AS d1 ON s.sold_date = d1.date_id
+        INNER JOIN range_fij_demo AS cd ON s.demo_id = cd.demo_id
+        INNER JOIN range_fij_household AS hd ON s.hd_id = hd.hd_id
+        WHERE d1.year = 1999
+            AND cd.status = 1
+            AND hd.potential = 1
+            AND sipHash64(s.payload) % 64 != 63
+            AND sipHash64(i.payload) % 64 != 63
+    </query>
+
+    <drop_query>DROP TABLE IF EXISTS range_fij_sales</drop_query>
+    <drop_query>DROP TABLE IF EXISTS range_fij_inventory</drop_query>
+    <drop_query>DROP TABLE IF EXISTS range_fij_date_dim</drop_query>
+    <drop_query>DROP TABLE IF EXISTS range_fij_demo</drop_query>
+    <drop_query>DROP TABLE IF EXISTS range_fij_household</drop_query>
+    <drop_query>DROP TABLE IF EXISTS range_fij_warehouse</drop_query>
+</test>

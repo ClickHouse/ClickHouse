@@ -2603,6 +2603,40 @@ bool ActionsDAG::hasStatefulFunctions() const
     return false;
 }
 
+bool ActionsDAG::canBeMovedToTheFrontOfAndChain(const Node * node)
+{
+    std::stack<const Node *> nodes;
+    nodes.push(node);
+    while (!nodes.empty())
+    {
+        node = nodes.top();
+        nodes.pop();
+
+        if (node->type == ActionType::ARRAY_JOIN || node->type == ActionType::PLACEHOLDER)
+            return false;
+
+        if (node->type == ActionType::FUNCTION && !node->column)
+        {
+            DataTypesWithConstInfo arguments;
+            arguments.reserve(node->children.size());
+            for (const auto * child : node->children)
+                arguments.push_back({child->result_type, child->column != nullptr});
+
+            const auto & function = *node->function_base;
+            if (function.isStateful()
+                || function.hasObservableSideEffects()
+                || !function.isDeterministicInScopeOfQuery()
+                || function.isSuitableForShortCircuitArgumentsExecution(arguments)
+                || function.canThrow(arguments))
+                return false;
+        }
+
+        for (const auto * child : node->children)
+            nodes.push(child);
+    }
+    return true;
+}
+
 bool ActionsDAG::hasNonDeterministicOrStatefulFunctions() const
 {
     return std::ranges::any_of(nodes, isNonDeterministicOrStateful);

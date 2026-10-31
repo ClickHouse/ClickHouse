@@ -39,6 +39,7 @@
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/FullSortingMergeJoin.h>
 #include <Interpreters/HashJoin/HashJoin.h>
+#include <Interpreters/MergeJoin.h>
 #include <Processors/QueryPlan/BlockNestedLoopJoinStep.h>
 #include <Processors/QueryPlan/IEJoinStep.h>
 #include <Interpreters/IJoin.h>
@@ -1551,6 +1552,63 @@ static std::optional<IEJoinPlanDescription> tryExtractIEJoinDescription(
     return description;
 }
 
+static bool isCrossSideEquality(const JoinActionRef & condition)
+{
+    auto [op, lhs, rhs] = condition.asBinaryPredicate();
+    return (op == JoinConditionOperator::Equals || op == JoinConditionOperator::NullSafeEquals)
+        && ((lhs.fromLeft() && rhs.fromRight()) || (lhs.fromRight() && rhs.fromLeft()));
+}
+
+static bool canConvertKeyOperandsToCommonType(
+    JoinConditionOperator op, const DataTypePtr & left_type, const DataTypePtr & right_type, bool allow_dynamic_type_in_join_keys)
+{
+    if (!allow_dynamic_type_in_join_keys && (hasDynamicType(left_type) || hasDynamicType(right_type)))
+        return false;
+    if (left_type->equals(*right_type) || tryGetLeastSupertype(DataTypes{left_type, right_type}))
+        return true;
+    return op == JoinConditionOperator::Equals && JoinCommon::tryGetCommonSubtypeForJoinKeys(left_type, right_type) != nullptr;
+}
+
+static bool hasAlgorithmForMixedEqualityJoin(const JoinOperator & join_operator, const JoinSettings & join_settings)
+{
+    const bool has_single_side_condition = std::ranges::any_of(join_operator.expression, [](const JoinActionRef & condition)
+    {
+        return !isCrossSideEquality(condition) && (condition.fromLeft() || condition.fromNone() || condition.fromRight());
+    });
+    const bool has_mixed_join_expression = !canPushDownFromOn(join_operator);
+    const auto kind = join_operator.kind;
+    const auto strictness = join_operator.strictness;
+    const bool can_run_grace_hash = join_settings.canRunGraceHash() && strictness != JoinStrictness::Asof
+        && (isInner(kind) || isLeft(kind) || isRight(kind) || isFull(kind));
+
+    return std::ranges::any_of(join_settings.join_algorithms, [&](JoinAlgorithm algorithm)
+    {
+        switch (algorithm)
+        {
+            case JoinAlgorithm::HASH:
+            case JoinAlgorithm::PARALLEL_HASH:
+            case JoinAlgorithm::DEFAULT:
+                return true;
+            case JoinAlgorithm::GRACE_HASH:
+                return can_run_grace_hash;
+            case JoinAlgorithm::PREFER_PARTIAL_MERGE:
+            case JoinAlgorithm::AUTO:
+                return !has_mixed_join_expression;
+            case JoinAlgorithm::PARTIAL_MERGE:
+                return !has_mixed_join_expression && MergeJoin::isSupported(kind, strictness);
+            case JoinAlgorithm::FULL_SORTING_MERGE:
+            case JoinAlgorithm::PARALLEL_FULL_SORTING_MERGE:
+                return !has_mixed_join_expression && !has_single_side_condition
+                    && FullSortingMergeJoin::isMergeAlgorithmStrictnessAndKindSupported(kind, strictness);
+            case JoinAlgorithm::IE_JOIN:
+            case JoinAlgorithm::DIRECT:
+                return false;
+        }
+        return false;
+    });
+}
+
+/// Join keys match NaN and NULL values inside tuples, which residual `equals` rejects.
 bool isIEJoinPreferred(const JoinOperator & join_operator, const JoinSettings & join_settings)
 {
     const auto & join_algorithms = join_settings.join_algorithms;
@@ -1559,6 +1617,34 @@ bool isIEJoinPreferred(const JoinOperator & join_operator, const JoinSettings & 
 
     if (!IEJoinStep::isSupportedJoinType(join_operator.kind, join_operator.strictness))
         return false;
+
+    /// Join keys match NaN and NULL values inside tuples, which residual `equals` rejects:
+    /// let another algorithm that can execute the resulting join and all its equality keys
+    /// take over instead of demoting the keys to `equals`.
+    if (hasAlgorithmForMixedEqualityJoin(join_operator, join_settings))
+    {
+        bool has_key_matching_values_equals_rejects = false;
+        bool all_equality_keys_valid = true;
+        for (const auto & condition : join_operator.expression)
+        {
+            if (!isCrossSideEquality(condition))
+                continue;
+
+            auto [op, lhs, rhs] = condition.asBinaryPredicate();
+            if (!canConvertKeyOperandsToCommonType(op, lhs.getType(), rhs.getType(), join_settings.allow_dynamic_type_in_join_keys))
+            {
+                all_equality_keys_valid = false;
+                break;
+            }
+
+            if (JoinCommon::keyMatchesValuesEqualsRejects(lhs.getType())
+                || JoinCommon::keyMatchesValuesEqualsRejects(rhs.getType()))
+                has_key_matching_values_equals_rejects = true;
+        }
+
+        if (has_key_matching_values_equals_rejects && all_equality_keys_valid)
+            return false;
+    }
 
     size_t inequality_conditions = 0;
     for (const auto & condition : join_operator.expression)
@@ -2683,11 +2769,6 @@ static void inlineConstantInputs(ActionsDAG & dag, const NameToColumnMap & const
     }
 }
 
-static bool areOppositeJoinSides(const JoinActionRef & lhs, const JoinActionRef & rhs)
-{
-    return (lhs.fromLeft() && rhs.fromRight()) || (lhs.fromRight() && rhs.fromLeft());
-}
-
 static bool canBeEvaluatedOnSide(
     const JoinActionRef & condition, JoinTableSide side, const NameToColumnMap & constants)
 {
@@ -2700,9 +2781,7 @@ static bool canBeEvaluatedOnSide(
         return false;
 
     /// Skip evalutation of equiality conditions, since it's used for join key extraction
-    auto [op, lhs, rhs] = condition.asBinaryPredicate();
-    bool is_equality = op == JoinConditionOperator::Equals || op == JoinConditionOperator::NullSafeEquals;
-    if (is_equality && areOppositeJoinSides(lhs, rhs))
+    if (isCrossSideEquality(condition))
         return false;
 
     bool reads_own_column = false;
