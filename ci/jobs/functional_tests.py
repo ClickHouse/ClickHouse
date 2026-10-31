@@ -247,7 +247,6 @@ OPTIONS_TO_INSTALL_ARGUMENTS = {
     "DatabaseOrdinary": "--db-ordinary",
     "wide parts enabled": "--wide-parts",
     "ParallelReplicas": "--parallel-rep",
-    "query-based": "--parallel-rep-query-based",
     "plan-based": "--parallel-rep-plan-based",
     "distributed plan": "--distributed-plan",
     "azure": "--azure",
@@ -565,13 +564,6 @@ def main():
             is_shared_catalog = True
         if "ParallelReplicas" in to:
             is_parallel_replicas = True
-
-    # A `ParallelReplicas` job names its implementation, so it does not follow the default.
-    if is_parallel_replicas:
-        implementations = [to for to in test_options if to in ("query-based", "plan-based")]
-        assert (
-            len(implementations) == 1
-        ), f"A ParallelReplicas job needs exactly one of `query-based` or `plan-based`, got {implementations}"
 
     is_no_stateful = "--no-stateful" in runner_options
 

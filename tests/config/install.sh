@@ -42,7 +42,6 @@ REMOTE_DATABASE_DISK=0
 LLVM_COVERAGE=0
 BUILD_TYPE_CONFIGS_ONLY=0
 DEFAULT_COMPRESSION_CODEC=""
-USE_PARALLEL_REPLICAS_QUERY_BASED=0
 USE_PARALLEL_REPLICAS_PLAN_BASED=0
 
 while [[ "$#" -gt 0 ]]; do
@@ -50,7 +49,6 @@ while [[ "$#" -gt 0 ]]; do
         --fast-test) FAST_TEST=1 && EXPORT_S3_STORAGE_POLICIES=0 ;;
         --s3-storage) EXPORT_S3_STORAGE_POLICIES=1 && USE_S3_STORAGE_FOR_MERGE_TREE=1 && RANDOMIZE_OBJECT_KEY_TYPE=1 ;;
         --parallel-rep) USE_PARALLEL_REPLICAS=1 ;;
-        --parallel-rep-query-based) USE_PARALLEL_REPLICAS_QUERY_BASED=1 ;;
         --parallel-rep-plan-based) USE_PARALLEL_REPLICAS_PLAN_BASED=1 ;;
         --db-replicated) USE_DATABASE_REPLICATED=1 ;;
         --distributed-plan) USE_DISTRIBUTED_PLAN=1 ;;
@@ -659,13 +657,6 @@ if [[ "$USE_PARALLEL_REPLICAS" == "1" ]]; then
     ln -sf $SRC_PATH/config.d/enable_parallel_replicas.xml $DEST_SERVER_PATH/config.d/
 fi
 
-if [[ "$USE_PARALLEL_REPLICAS_QUERY_BASED" == "1" && "$USE_PARALLEL_REPLICAS_PLAN_BASED" == "1" ]]; then
-    echo "--parallel-rep-query-based and --parallel-rep-plan-based are mutually exclusive" >&2
-    exit 1
-fi
-if [[ "$USE_PARALLEL_REPLICAS_QUERY_BASED" == "1" ]]; then
-    ln -sf $SRC_PATH/users.d/enable_parallel_replicas_query_based.xml $DEST_SERVER_PATH/users.d/
-fi
 if [[ "$USE_PARALLEL_REPLICAS_PLAN_BASED" == "1" ]]; then
     ln -sf $SRC_PATH/users.d/enable_parallel_replicas_plan_based.xml $DEST_SERVER_PATH/users.d/
 fi

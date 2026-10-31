@@ -1072,7 +1072,7 @@ class JobConfigs:
         ],
         *[
             Job.ParamSet(
-                parameter=f"amd_llvm_coverage, ParallelReplicas, query-based, s3 storage, parallel, {batch}/{total_batches}",
+                parameter=f"amd_llvm_coverage, ParallelReplicas, s3 storage, parallel, {batch}/{total_batches}",
                 runs_on=RunnerLabels.AMD_MEDIUM,  # large machine - no boost, why?
                 requires=[ArtifactNames.CH_AMD_LLVM_COVERAGE_BUILD],
                 provides=[
@@ -1083,7 +1083,7 @@ class JobConfigs:
             for batch in range(1, total_batches + 1)
         ],
         Job.ParamSet(
-            parameter="amd_llvm_coverage, ParallelReplicas, query-based, s3 storage, sequential",
+            parameter="amd_llvm_coverage, ParallelReplicas, s3 storage, sequential",
             runs_on=RunnerLabels.AMD_SMALL,
             requires=[ArtifactNames.CH_AMD_LLVM_COVERAGE_BUILD],
             provides=[ArtifactNames.LLVM_COVERAGE_FILE + "_ft_s3_sequential"],
@@ -1638,12 +1638,12 @@ class JobConfigs:
             requires=[ArtifactNames.CH_ARM_BINARY],
         ),
         Job.ParamSet(
-            parameter="arm_binary, ParallelReplicas, query-based, s3 storage, parallel",
+            parameter="arm_binary, ParallelReplicas, s3 storage, parallel",
             runs_on=RunnerLabels.ARM_MEDIUM,
             requires=[ArtifactNames.CH_ARM_BINARY],
         ),
         Job.ParamSet(
-            parameter="arm_binary, ParallelReplicas, query-based, s3 storage, sequential",
+            parameter="arm_binary, ParallelReplicas, s3 storage, sequential",
             runs_on=RunnerLabels.ARM_SMALL,
             requires=[ArtifactNames.CH_ARM_BINARY],
         ),
