@@ -69,7 +69,12 @@ void InterpreterUndropQuery::resolveHierarchicalName(ASTUndropQuery & query) con
         && !DatabaseCatalog::isBoundHierarchicalName(as_written, getContext()))
     {
         auto dropped_tables = catalog.getTablesMarkedDropped();
-        for (const auto & candidate : DatabaseCatalog::getHierarchicalNameCandidates(as_written, current_database))
+        /// The candidates in the order `resolveHierarchicalName` tries them: the name as written first, so that
+        /// ``UNDROP TABLE `ns.t` `` inside `USE db` restores `db`.`ns.t` rather than `db.ns`.`t`.
+        std::vector<StorageID> candidates{StorageID(as_written.database_name.empty() ? current_database : as_written.database_name, as_written.table_name)};
+        for (auto & candidate : DatabaseCatalog::getHierarchicalNameCandidates(as_written, current_database))
+            candidates.push_back(std::move(candidate));
+        for (const auto & candidate : candidates)
         {
             bool has_dropped_table = std::any_of(dropped_tables.begin(), dropped_tables.end(), [&](const auto & dropped_table)
             {

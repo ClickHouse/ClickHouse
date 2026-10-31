@@ -2106,9 +2106,14 @@ void InterpreterCreateQuery::resolveHierarchicalNames(ASTCreateQuery & create, b
     bool is_short_attach = create.attach && (!create.storage || !create.storage->engine) && !create.columns_list;
     if (is_short_attach && !DatabaseCatalog::isBoundHierarchicalName(as_written, getContext()))
     {
-        auto candidates = DatabaseCatalog::getHierarchicalNameCandidates(as_written, current_database);
-        if (candidates.size() > 1)
+        auto hierarchical_candidates = DatabaseCatalog::getHierarchicalNameCandidates(as_written, current_database);
+        if (hierarchical_candidates.size() > 1)
         {
+            /// The name as written first, as `resolveHierarchicalName` tries it: ``ATTACH TABLE `ns.t` `` inside `USE db`
+            /// attaches `db`.`ns.t` rather than `db.ns`.`t`.
+            std::vector<StorageID> candidates{StorageID(as_written.database_name.empty() ? current_database : as_written.database_name, as_written.table_name)};
+            for (auto & candidate : hierarchical_candidates)
+                candidates.push_back(std::move(candidate));
             for (const auto & candidate : candidates)
             {
                 auto database = catalog.tryGetDatabase(candidate.database_name);
