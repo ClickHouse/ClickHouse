@@ -383,7 +383,8 @@ private:
         ContextPtr context,
         ChildPlan & child,
         bool is_smallest_column_requested,
-        const Names & column_names_read);
+        const Names & column_names_read,
+        const NameSet & columns_read_for_nested_sizes);
 
     StorageMerge::StorageListWithLocks getSelectedTables(
         ContextPtr query_context) const;
