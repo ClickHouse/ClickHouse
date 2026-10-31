@@ -57,6 +57,9 @@ namespace ErrorCodes
     extern const int ABORTED;
     extern const int CANNOT_WRITE_TO_OSTREAM;
     extern const int CACHE_CANNOT_WRITE_TO_CACHE_DISK;
+    extern const int QUERY_WAS_CANCELLED;
+    extern const int QUERY_WAS_CANCELLED_BY_CLIENT;
+    extern const int TIMEOUT_EXCEEDED;
 }
 
 
@@ -172,6 +175,29 @@ bool isIOErrorException(std::exception_ptr exception_ptr)
     catch (...)
     {
         /// Ok: any other exception is not an I/O error.
+        return false;
+    }
+}
+
+/// A query that was killed or hit `max_execution_time` can throw from inside a part read, e.g. from
+/// `FileSegment::wait`, from the S3 client or from the marks loader. Such an exception says nothing
+/// about the data on disk, so a reader must not report the part as broken because of it.
+/// This is deliberately not part of `isRetryableException`: inside `checkDataPart` a retryable
+/// exception yields empty checksums, and a cancelled `CHECK TABLE` would then pass an unchecked part.
+bool isQueryCancellation(std::exception_ptr exception_ptr)
+{
+    try
+    {
+        rethrow_exception(exception_ptr);
+    }
+    catch (const Exception & e)
+    {
+        return e.code() == ErrorCodes::QUERY_WAS_CANCELLED
+            || e.code() == ErrorCodes::QUERY_WAS_CANCELLED_BY_CLIENT
+            || e.code() == ErrorCodes::TIMEOUT_EXCEEDED;
+    }
+    catch (...)
+    {
         return false;
     }
 }
