@@ -209,7 +209,7 @@ bool isNamespaceNotFound(const DB::HTTPException & e)
     }
 }
 
-std::unordered_set<std::string> getAllowedBigLakeMetadataServiceHosts(
+std::unordered_set<std::string> getAllowedGoogleMetadataServiceHosts(
     const Poco::Util::AbstractConfiguration & config)
 {
     static constexpr auto SECTION = "iceberg_biglake_metadata_service_hosts";
@@ -249,7 +249,8 @@ RestCatalog::RestCatalog(
     const std::string & oauth_server_uri_,
     bool oauth_server_use_request_body_,
     bool flat_namespaces_,
-    DB::ContextPtr context_)
+    DB::ContextPtr context_,
+    std::shared_ptr<GoogleCatalogAuth> google_auth_)
     : ICatalog(warehouse_)
     , DB::WithContext(context_)
     , base_url(correctAPIURI(base_url_))
@@ -258,7 +259,9 @@ RestCatalog::RestCatalog(
     , oauth_server_uri(oauth_server_uri_)
     , oauth_server_use_request_body(oauth_server_use_request_body_)
     , flat_namespaces(flat_namespaces_)
+    , google_auth(std::move(google_auth_))
 {
+    update_token_if_expired = google_auth != nullptr;
     CatalogState initial_state;
     if (!catalog_credential_.empty())
     {
@@ -270,9 +273,8 @@ RestCatalog::RestCatalog(
         initial_state.auth_header = parseAuthHeader(auth_header_);
         validateAuthHeaders(initial_state.auth_header.value());
     }
-    /// `loadConfig` reaches the virtual `createReadBuffer`, but no catalog constructed through this
-    /// ctor (`OneLakeCatalog`, `BigLakeCatalog`) overrides it, so the base implementation is the intended
-    /// target. `S3TablesCatalog` overrides it and uses the separate ctor, calling `loadConfig` afterwards.
+    /// `loadConfig` reaches the virtual `createReadBuffer`; derived catalogs overriding it use the
+    /// separate constructor and load their configuration after initializing authentication.
     /// NOLINTNEXTLINE(clang-analyzer-optin.cplusplus.VirtualCall)
     initial_state.config = loadConfig(initial_state);
     state.set(std::make_unique<const CatalogState>(std::move(initial_state)));
@@ -382,6 +384,8 @@ DB::HTTPHeaderEntries RestCatalog::getAuthHeaders(const CatalogState & catalog_s
         headers.emplace_back("Authorization", "Bearer " + current->token);
         return headers;
     }
+    if (google_auth)
+        return google_auth->getAuthHeaders(update_token);
     return {};
 }
 
@@ -1005,63 +1009,68 @@ BigLakeCatalog::BigLakeCatalog(
     const std::string & google_adc_quota_project_id_,
     DB::ContextPtr context_,
     bool allow_server_credentials_in_user_queries_)
-    : RestCatalog(warehouse_, base_url_, "", "", false, /* flat_namespaces */false, context_)
+    : RestCatalog(
+        warehouse_, base_url_, "", "", "", "", false, false, context_,
+        (!google_project_id_.empty() || !google_adc_client_id_.empty())
+            ? std::make_shared<GoogleCatalogAuth>(
+                google_project_id_, google_service_account_, google_metadata_service_,
+                google_adc_client_id_, google_adc_client_secret_, google_adc_refresh_token_,
+                google_adc_quota_project_id_, context_, allow_server_credentials_in_user_queries_)
+            : nullptr)
+    , google_adc_client_id(google_adc_client_id_)
+    , google_adc_client_secret(google_adc_client_secret_)
+    , google_adc_refresh_token(google_adc_refresh_token_)
+{
+}
+
+GoogleCatalogAuth::GoogleCatalogAuth(
+    const std::string & google_project_id_,
+    const std::string & google_service_account_,
+    const std::string & google_metadata_service_,
+    const std::string & google_adc_client_id_,
+    const std::string & google_adc_client_secret_,
+    const std::string & google_adc_refresh_token_,
+    const std::string & google_adc_quota_project_id_,
+    DB::ContextPtr context_,
+    bool allow_server_credentials_in_user_queries_)
+    : DB::WithContext(context_)
     , google_project_id(google_project_id_)
-    , google_service_account(google_service_account_)
-    , google_metadata_service(google_metadata_service_)
+    , google_service_account(google_service_account_.empty() ? "default" : google_service_account_)
+    , google_metadata_service(google_metadata_service_.empty() ? "metadata.google.internal" : google_metadata_service_)
     , google_adc_client_id(google_adc_client_id_)
     , google_adc_client_secret(google_adc_client_secret_)
     , google_adc_refresh_token(google_adc_refresh_token_)
     , google_adc_quota_project_id(google_adc_quota_project_id_)
     , allow_server_credentials_in_user_queries(allow_server_credentials_in_user_queries_)
+    , log(getLogger("GoogleCatalogAuth"))
 {
-    update_token_if_expired = true;
-    // Get token before loading config so getAuthHeaders() can work
-    if (!google_project_id.empty() || !google_adc_client_id.empty())
+    const bool has_adc = !google_adc_client_id.empty() || !google_adc_client_secret.empty() || !google_adc_refresh_token.empty();
+    if (has_adc && (google_adc_client_id.empty() || google_adc_client_secret.empty() || google_adc_refresh_token.empty()))
+        throw DB::Exception(
+            DB::ErrorCodes::BAD_ARGUMENTS,
+            "Invalid ADC credentials: client_id, client_secret, and refresh_token are required");
+}
+
+DB::HTTPHeaderEntries GoogleCatalogAuth::getAuthHeaders(bool update_token) const
+{
+    auto current = access_token.get();
+    if (!current || update_token || current->isExpired())
     {
         access_token.set(std::make_unique<AccessToken>(retrieveGoogleCloudAccessToken()));
-    }
-    CatalogState initial_state;
-    initial_state.config = loadConfig(initial_state);
-    state.set(std::make_unique<const CatalogState>(std::move(initial_state)));
-}
-
-DB::HTTPHeaderEntries BigLakeCatalog::getAuthHeaders(const CatalogState & catalog_state, bool update_token) const
-{
-    /// Google Cloud OAuth2 for BigLake.
-    /// Uses GCP metadata service or Application Default Credentials to get access token.
-    /// Only use Google OAuth if explicitly configured (google_project_id or google_adc_client_id).
-    /// https://developers.google.com/identity/protocols/oauth2
-    if (!google_project_id.empty() || !google_adc_client_id.empty())
-    {
-        auto current = access_token.get();
-        if (!current || update_token || current->isExpired())
-        {
-            access_token.set(std::make_unique<AccessToken>(retrieveGoogleCloudAccessToken()));
-            current = access_token.get();
-        }
-
-        DB::HTTPHeaderEntries headers;
-        headers.emplace_back("Authorization", "Bearer " + current->token);
-
-        std::string project_id = google_project_id;
-        if (project_id.empty() && !google_adc_quota_project_id.empty())
-        {
-            project_id = google_adc_quota_project_id;
-        }
-
-        if (!project_id.empty())
-        {
-            headers.emplace_back("x-goog-user-project", project_id);
-        }
-
-        return headers;
+        current = access_token.get();
     }
 
-    return RestCatalog::getAuthHeaders(catalog_state, update_token);
+    DB::HTTPHeaderEntries headers;
+    headers.emplace_back("Authorization", "Bearer " + current->token);
+
+    const auto & project_id = google_project_id.empty() ? google_adc_quota_project_id : google_project_id;
+    if (!project_id.empty())
+        headers.emplace_back("x-goog-user-project", project_id);
+
+    return headers;
 }
 
-AccessToken BigLakeCatalog::retrieveGoogleCloudAccessTokenFromRefreshToken() const
+AccessToken GoogleCatalogAuth::retrieveGoogleCloudAccessTokenFromRefreshToken() const
 {
     if (google_adc_client_id.empty() || google_adc_client_secret.empty() || google_adc_refresh_token.empty())
         throw DB::Exception(
@@ -1078,7 +1087,7 @@ AccessToken BigLakeCatalog::retrieveGoogleCloudAccessTokenFromRefreshToken() con
     return token;
 }
 
-AccessToken BigLakeCatalog::retrieveGoogleCloudAccessToken() const
+AccessToken GoogleCatalogAuth::retrieveGoogleCloudAccessToken() const
 {
     const auto & context = getContext();
 
@@ -1095,7 +1104,7 @@ AccessToken BigLakeCatalog::retrieveGoogleCloudAccessToken() const
     if (context->shouldRestrictUserQueryS3Credentials(allow_server_credentials_in_user_queries))
         throw DB::Exception(
             DB::ErrorCodes::ACCESS_DENIED,
-            "BigLake catalog access from user queries is not allowed to mint a token from the server's GCP "
+            "Google catalog access from user queries is not allowed to mint a token from the server's GCP "
             "metadata service. Provide an explicit Google ADC triple (google_adc_client_id, "
             "google_adc_client_secret, google_adc_refresh_token)"
 #if CLICKHOUSE_CLOUD
@@ -1108,11 +1117,11 @@ AccessToken BigLakeCatalog::retrieveGoogleCloudAccessToken() const
     /// https://cloud.google.com/compute/docs/metadata/overview
     static constexpr auto DEFAULT_REQUEST_TOKEN_PATH = "/computeMetadata/v1/instance/service-accounts";
 
-    const auto allowed_metadata_hosts = getAllowedBigLakeMetadataServiceHosts(context->getConfigRef());
+    const auto allowed_metadata_hosts = getAllowedGoogleMetadataServiceHosts(context->getConfigRef());
     if (allowed_metadata_hosts.empty())
         throw DB::Exception(
             DB::ErrorCodes::BAD_ARGUMENTS,
-            "BigLake metadata service requests are disabled. To enable, configure "
+            "Google catalog metadata service requests are disabled. To enable, configure "
             "<iceberg_biglake_metadata_service_hosts> in server config with the allowed metadata "
             "hosts (typically `metadata.google.internal` and `169.254.169.254`).");
 

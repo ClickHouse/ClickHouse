@@ -24,6 +24,43 @@ namespace DataLake
 /// Parses "Name: value" into a header entry.
 DB::HTTPHeaderEntry parseAuthHeader(const std::string & auth_header);
 
+/// Google OAuth authentication shared by REST and BigLake catalogs.
+class GoogleCatalogAuth : public DB::WithContext
+{
+public:
+    GoogleCatalogAuth(
+        const std::string & google_project_id_,
+        const std::string & google_service_account_,
+        const std::string & google_metadata_service_,
+        const std::string & google_adc_client_id_,
+        const std::string & google_adc_client_secret_,
+        const std::string & google_adc_refresh_token_,
+        const std::string & google_adc_quota_project_id_,
+        DB::ContextPtr context_,
+        bool allow_server_credentials_in_user_queries_);
+
+    DB::HTTPHeaderEntries getAuthHeaders(bool update_token) const;
+
+private:
+    /// Parameters for Google Cloud OAuth2.
+    const std::string google_project_id;
+    const std::string google_service_account;
+    const std::string google_metadata_service;
+    const std::string google_adc_client_id;
+    const std::string google_adc_client_secret;
+    const std::string google_adc_refresh_token;
+    const std::string google_adc_quota_project_id;
+    /// Effective `s3_allow_server_credentials_in_user_queries` captured when the database was created; the
+    /// catalog is cached and holds the global context, whose settings never reflect the creating session.
+    const bool allow_server_credentials_in_user_queries;
+
+    mutable MultiVersion<AccessToken> access_token;
+    const LoggerPtr log;
+
+    AccessToken retrieveGoogleCloudAccessToken() const;
+    AccessToken retrieveGoogleCloudAccessTokenFromRefreshToken() const;
+};
+
 class RestCatalog : public ICatalog, public DB::WithContext
 {
 public:
@@ -36,7 +73,8 @@ public:
         const std::string & oauth_server_uri_,
         bool oauth_server_use_request_body_,
         bool flat_namespaces_,
-        DB::ContextPtr context_);
+        DB::ContextPtr context_,
+        std::shared_ptr<GoogleCatalogAuth> google_auth_ = {});
 
     ~RestCatalog() override = default;
 
@@ -171,6 +209,7 @@ protected:
     bool oauth_server_use_request_body;
     bool flat_namespaces = false;
     mutable MultiVersion<AccessToken> access_token;
+    const std::shared_ptr<GoogleCatalogAuth> google_auth;
 
     Poco::Net::HTTPBasicCredentials credentials{};
 
@@ -347,27 +386,14 @@ public:
         return DB::DatabaseDataLakeCatalogType::ICEBERG_BIGLAKE;
     }
 
-    DB::HTTPHeaderEntries getAuthHeaders(const CatalogState & catalog_state, bool update_token) const override;
-
     const std::string & getGoogleADCClientId() const { return google_adc_client_id; }
     const std::string & getGoogleADCClientSecret() const { return google_adc_client_secret; }
     const std::string & getGoogleADCRefreshToken() const { return google_adc_refresh_token; }
 
 private:
-    /// Parameters for Google Cloud OAuth2 (BigLake).
-    const std::string google_project_id;
-    const std::string google_service_account;
-    const std::string google_metadata_service;
     const std::string google_adc_client_id;
     const std::string google_adc_client_secret;
     const std::string google_adc_refresh_token;
-    const std::string google_adc_quota_project_id;
-    /// Effective `s3_allow_server_credentials_in_user_queries` captured when the database was created; the
-    /// catalog is cached and holds the global context, whose settings never reflect the creating session.
-    const bool allow_server_credentials_in_user_queries;
-
-    AccessToken retrieveGoogleCloudAccessToken() const;
-    AccessToken retrieveGoogleCloudAccessTokenFromRefreshToken() const;
 };
 
 /// Databricks Delta Sharing exposes an Iceberg REST catalog with a flat, single-level namespace model
