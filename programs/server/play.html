@@ -16976,7 +16976,8 @@ async function replayConnectionUser(server_address, user, implicit_user, passwor
 /// is for one connection. A probe that returns no name forgets the answer. A `required` probe (the
 /// verification of `replayConnectionUser`) is sent even after an export to the server, when the probes
 /// are otherwise skipped (`implicitUserProbeAdmission`), unless the answer to the same probe request
-/// is already known.
+/// is already known. A required verification joins an identical probe already in flight, optional or
+/// not, rather than sending a second one that the server could reject for the same query slot.
 const IMPLICIT_USER_PROBE_TIMEOUT_MS = 5000;
 async function learnImplicitUser(server_address, password, required = false) {
     const probe_address = serverAddressWithoutSession(server_address);
@@ -16989,22 +16990,29 @@ async function learnImplicitUser(server_address, password, required = false) {
         return known;
     }
     const pending = learnImplicitUser.pending ??= new Map();
-    /// A skipped probe returns no name at once, so a required probe must not share an optional one.
-    const key = JSON.stringify([probe_address, password, required]);
-    if (!pending.has(key)) {
-        const probe = admitImplicitUserProbe(server_address, () => {
-            const controller = new AbortController();
-            const timer = setTimeout(() => controller.abort(), IMPLICIT_USER_PROBE_TIMEOUT_MS);
-            return getServerStatus(probe_address, '', password, controller.signal).finally(() => clearTimeout(timer));
-        }, required).then(json => {
-            if (json === IMPLICIT_USER_PROBE_SKIPPED) return json;
-            if (json && json.u) answers.set(answer_key, json.u);
-            else answers.delete(answer_key);
-            return json;
-        }).finally(() => pending.delete(key));
-        pending.set(key, probe);
+    /// Required and optional callers share the probe in flight: two identical probes would compete for
+    /// the same query slot. A shared optional probe may be skipped after an export, and a required
+    /// caller then sends its own once the skipped one has settled (it is removed from `pending` before
+    /// its callers resume). A required probe is never skipped, so this ends.
+    const key = answer_key;
+    let json;
+    for (;;) {
+        if (!pending.has(key)) {
+            const probe = admitImplicitUserProbe(server_address, () => {
+                const controller = new AbortController();
+                const timer = setTimeout(() => controller.abort(), IMPLICIT_USER_PROBE_TIMEOUT_MS);
+                return getServerStatus(probe_address, '', password, controller.signal).finally(() => clearTimeout(timer));
+            }, required).then(json => {
+                if (json === IMPLICIT_USER_PROBE_SKIPPED) return json;
+                if (json && json.u) answers.set(answer_key, json.u);
+                else answers.delete(answer_key);
+                return json;
+            }).finally(() => pending.delete(key));
+            pending.set(key, probe);
+        }
+        json = await pending.get(key);
+        if (json !== IMPLICIT_USER_PROBE_SKIPPED || !required || answers.has(answer_key)) break;
     }
-    let json = await pending.get(key);
     if (json === IMPLICIT_USER_PROBE_SKIPPED) json = answers.has(answer_key) ? { u: answers.get(answer_key) } : null;
     if (!json || !json.u) return '';
     rememberImplicitUser(server_address, json.u);

@@ -731,6 +731,65 @@ scenario('proxy-authenticated-replay-after-export', async js => {
         'alice', 'the recorded account is named after an export when the implicit account changed');
 });
 
+/// A Download of a restored implicit result of a proxy-authenticated server while an identical optional
+/// probe (e.g. from `storeCredentials`) is in flight, with `max_concurrent_queries_for_user = 1`. The
+/// required verification of `replayConnectionUser` must join that probe instead of sending a second one,
+/// which the server would reject; a failed verification would name the account, and the server rejects a
+/// `user` parameter combined with the proxy headers. A shared optional probe that is skipped after an
+/// export does not stand for the verification: the required caller then sends its own.
+scenario('proxy-authenticated-replay-joins-optional-probe', async js => {
+    const settle = async () => { for (let i = 0; i < 5; ++i) await new Promise(resolve => setImmediate(resolve)); };
+    const ctx = boot(js);
+    ctx.proxy_user = 'alice';
+    ctx.password_elem.value = '';
+    const fetch = ctx.fetch;
+    let in_flight = 0;
+    let rejected = 0;
+    let release;
+    const held = new Promise(resolve => { release = resolve; });
+    ctx.fetch = async (url, options) => {
+        if (in_flight) {
+            ++rejected;
+            ctx.fetched.push({ url, options });
+            return { ok: false, status: 500, headers: { get: () => '202' }, json: async () => ({}), text: async () => 'TOO_MANY_SIMULTANEOUS_QUERIES' };
+        }
+        ++in_flight;
+        try {
+            const response = await fetch(url, options);
+            await held;
+            return response;
+        } finally {
+            --in_flight;
+        }
+    };
+    const probes = () => ctx.fetched.filter(f => String(f.options.body).includes('currentUser()')).length;
+    ctx.server = 'http://host:8123/?session_id=a';
+    const optional = vm.runInContext("learnImplicitUser(server, '')", ctx);
+    await settle();
+    assertEqual(probes(), 1, 'the optional probe is in flight');
+    ctx.entry = { server: 'http://host:8123/?session_id=b', user: '', implicitUser: 'alice' };
+    const replay = vm.runInContext('replayConnectionUser(entry.server, entry.user, entry.implicitUser, password_elem.value)', ctx);
+    await settle();
+    assertEqual(probes(), 1, 'the required verification joins the probe in flight');
+    release();
+    assertEqual(await optional, 'alice', 'the optional probe learns the account');
+    assertEqual(await replay, '', 'the download keeps the empty field');
+    assertEqual(rejected, 0, 'no probe is rejected for the single slot');
+
+    /// After an export, a shared optional probe is skipped; the required verification is still sent.
+    const after = boot(js);
+    after.proxy_user = 'alice';
+    after.password_elem.value = '';
+    after.server = 'http://host:8123/';
+    await vm.runInContext("submitDownload(server, server + '?default_format=CSV', 'SELECT 1')", after);
+    after.entry = { server: 'http://host:8123/?session_id=a', user: '', implicitUser: 'alice' };
+    const skipped = vm.runInContext("learnImplicitUser(entry.server, '')", after);
+    const verified = vm.runInContext('replayConnectionUser(entry.server, entry.user, entry.implicitUser, password_elem.value)', after);
+    assertEqual(await skipped, '', 'the optional probe is skipped after the export');
+    assertEqual(await verified, '', 'the required verification is sent after the skipped probe and keeps the empty field');
+    assertEqual(after.fetched.filter(f => String(f.options.body).includes('currentUser()')).length, 1, 'only the required probe is sent');
+});
+
 /// The login of an empty field is saved under the name of the account (`storeCredentials`), so the
 /// next visit refills that name. A later passwordless authentication of the empty field must be
 /// recorded for that name as well, or the stale autofilled password of the refilled login is kept,
