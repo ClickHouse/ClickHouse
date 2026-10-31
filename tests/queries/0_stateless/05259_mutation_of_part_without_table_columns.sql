@@ -1,4 +1,4 @@
--- Tags: zookeeper, no-fasttest, no-shared-merge-tree, no-replicated-database
+-- Tags: zookeeper, no-fasttest, no-shared-merge-tree, no-replicated-database, no-msan
 -- zookeeper: the replicated arm needs Keeper.
 -- no-fasttest: waiting for the failed replicated mutation takes about 30 seconds:
 --   https://github.com/ClickHouse/ClickHouse/issues/67936
