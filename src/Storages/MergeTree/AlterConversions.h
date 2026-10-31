@@ -8,6 +8,7 @@ namespace DB
 {
 
 struct StorageInMemoryMetadata;
+struct StorageID;
 class IMergeTreeDataPartInfoForReader;
 using StorageMetadataPtr = std::shared_ptr<const StorageInMemoryMetadata>;
 
@@ -98,6 +99,7 @@ private:
     MutationChainForRead buildMutationChainForRead(
         const NamesAndTypesList & read_columns,
         const StorageMetadataPtr & metadata_snapshot,
+        const StorageID & table_id,
         const ContextPtr & context) const;
 
     /// Returns a chain of actions that can be
@@ -114,7 +116,9 @@ private:
     MutationCommands filterMutationCommands(
         Names & read_columns,
         NameSet & read_columns_set,
-        const StorageMetadataPtr & metadata_snapshot) const;
+        const StorageMetadataPtr & metadata_snapshot,
+        const StorageID & table_id,
+        const ContextPtr & context) const;
 
     /// Rename map new_name -> old_name.
     std::vector<RenamePair> rename_map;
