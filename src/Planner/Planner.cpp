@@ -229,18 +229,22 @@ bool isGeneratedTableAlias(std::string_view name)
 }
 
 /// Calls `on_query` with the `additional_table_filters` of every query and subquery of `query_tree` the
-/// replicas plan, and `on_table` for each of its tables and table functions with the map of its own
-/// (sub)query. Skipped, as the initiator plans them: the second argument of `GLOBAL IN`, and the
-/// materialized side of a join that is global once the query is shipped.
+/// replicas plan, and `on_table` for each of its tables and table functions with the table the replicas
+/// read instead, if any, and the map of its own (sub)query. Skipped, as the initiator plans them: the
+/// second argument of `GLOBAL IN`, and the materialized side of a join that is global once shipped.
 template <typename OnQuery, typename OnTable>
 void forEachAdditionalTableFilters(
     const QueryTreeNodePtr & query_tree, const ContextPtr & context, OnQuery && on_query, OnTable && on_table)
 {
     auto shipped_tree = query_tree->clone();
-    rewriteJoinToGlobalJoin(shipped_tree, context);
+    const auto replaced_tables = rewriteAsShippedToParallelReplicas(shipped_tree, context);
 
     std::vector<ContextPtr> contexts;
     std::unordered_set<const IQueryTreeNode *> global_in_arguments;
+    /// A query the replicas read has a `Distributed` table only on a materialized join side or in an `IN`
+    /// argument, so a replacement elsewhere is that of a query no replica receives.
+    std::unordered_set<const IQueryTreeNode *> local_in_subqueries;
+    size_t local_in_depth = 0;
     traverseQueryTree(
         shipped_tree,
         [&](const QueryTreeNodePtr & parent, const QueryTreeNodePtr & child)
@@ -255,6 +259,7 @@ void forEachAdditionalTableFilters(
         },
         [&](const QueryTreeNodePtr & node)
         {
+            local_in_depth += local_in_subqueries.contains(node.get());
             if (const auto * query_node = node->as<QueryNode>())
             {
                 contexts.push_back(query_node->getContext());
@@ -262,16 +267,26 @@ void forEachAdditionalTableFilters(
             }
             else if (const auto * function_node = node->as<FunctionNode>())
             {
+                const auto & arguments = function_node->getArguments().getNodes();
                 if (isNameOfGlobalInFunction(function_node->getFunctionName()))
                     global_in_arguments.insert(function_node->getArgumentsNode().get());
+                else if (isNameOfLocalInFunction(function_node->getFunctionName()) && arguments.size() == 2)
+                    local_in_subqueries.insert(arguments[1].get());
             }
             else if ((node->as<TableNode>() || node->as<TableFunctionNode>()) && !contexts.empty())
-                on_table(*node, contexts.back()->getSettingsRef()[Setting::additional_table_filters].value);
+            {
+                const auto replaced = local_in_depth ? replaced_tables.find(node->asTableExpression()) : replaced_tables.end();
+                on_table(
+                    *node,
+                    replaced == replaced_tables.end() ? nullptr : replaced->second.get(),
+                    contexts.back()->getSettingsRef()[Setting::additional_table_filters].value);
+            }
         },
         [&](const QueryTreeNodePtr & node)
         {
             if (node->as<QueryNode>())
                 contexts.pop_back();
+            local_in_depth -= local_in_subqueries.contains(node.get());
         });
 }
 
@@ -279,7 +294,10 @@ bool hasAdditionalTableFilters(const QueryTreeNodePtr & query_tree, const Contex
 {
     bool found = false;
     forEachAdditionalTableFilters(
-        query_tree, context, [&](const Map & filters) { found = found || !filters.empty(); }, [](const IQueryTreeNode &, const Map &) {});
+        query_tree,
+        context,
+        [&](const Map & filters) { found = found || !filters.empty(); },
+        [](const IQueryTreeNode &, const IQueryTreeNode *, const Map &) {});
     return found;
 }
 
@@ -301,7 +319,7 @@ bool isSessionRelativeKey(const IQueryTreeNode & table_expression, const String 
 
 /// True when some `additional_table_filters` key would select a different relation on a replica that
 /// replans the query: an alias, or a table name, bare or, for a table without a database, qualified by
-/// any database. A key equal to a storage's full name, or matching no table of the query, is stable.
+/// any database, or any name of a table the replicas replace. Other keys are stable.
 bool hasSessionRelativeAdditionalFilter(const QueryTreeNodePtr & query_tree, const ContextPtr & context)
 {
     auto key = [](const Field & entry) -> const String & { return entry.safeGet<Tuple>().at(0).safeGet<String>(); };
@@ -311,10 +329,18 @@ bool hasSessionRelativeAdditionalFilter(const QueryTreeNodePtr & query_tree, con
         context,
         [&](const Map & filters)
         { found = found || std::ranges::any_of(filters, [&](const Field & entry) { return isGeneratedTableAlias(key(entry)); }); },
-        [&](const IQueryTreeNode & table_expression, const Map & filters)
+        [&](const IQueryTreeNode & table_expression, const IQueryTreeNode * replacement, const Map & filters)
         {
             found = found
-                || std::ranges::any_of(filters, [&](const Field & entry) { return isSessionRelativeKey(table_expression, key(entry)); });
+                || std::ranges::any_of(
+                    filters,
+                    [&](const Field & entry)
+                    {
+                        if (!replacement)
+                            return isSessionRelativeKey(table_expression, key(entry));
+                        return isSessionRelativeKey(*replacement, key(entry)) || isSessionRelativeKey(table_expression, key(entry))
+                            || key(entry) == table_expression.as<const TableNode &>().getStorageID().getFullNameNotQuoted();
+                    });
         });
     return found;
 }

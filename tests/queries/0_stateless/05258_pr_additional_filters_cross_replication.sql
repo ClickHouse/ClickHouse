@@ -31,6 +31,18 @@ SETTINGS additional_table_filters = {'shard_0.t_05258': 'x = 1'},
     parallel_replicas_for_non_replicated_merge_tree = 1,
     serialize_query_plan = 1, parallel_replicas_local_plan = 0, parallel_replicas_plan_based = 0; -- { serverError SUPPORT_IS_DISABLED }
 
+-- With `distributed_product_mode = 'local'` the replicas read the remote table of an `IN` subquery directly.
+DROP TABLE IF EXISTS t_05258_main;
+CREATE TABLE t_05258_main (x UInt64) ENGINE = MergeTree ORDER BY x;
+INSERT INTO t_05258_main VALUES (0), (1);
+SELECT count() FROM t_05258_main WHERE x IN (SELECT x FROM dist_05258)
+SETTINGS additional_table_filters = {'shard_0.t_05258': 'x = 1'}, distributed_product_mode = 'local',
+    enable_parallel_replicas = 1, automatic_parallel_replicas_mode = 0, max_parallel_replicas = 3,
+    cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost',
+    parallel_replicas_for_non_replicated_merge_tree = 1, parallel_replicas_allow_in_with_subquery = 1,
+    serialize_query_plan = 1, parallel_replicas_local_plan = 0, parallel_replicas_plan_based = 0;
+DROP TABLE t_05258_main;
+
 DROP TABLE dist_05258;
 DROP TABLE shard_0.t_05258;
 DROP TABLE shard_1.t_05258;
