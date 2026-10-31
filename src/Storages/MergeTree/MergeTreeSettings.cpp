@@ -1550,7 +1550,7 @@ Set to `0` to disable this trigger and select adaptive write buffers by column c
     DECLARE(NonZeroUInt64, adaptive_write_buffer_initial_size, 16 * 1024, R"(
 Sets the initial size, in bytes, of each adaptive write buffer used when writing MergeTree data. Buffers grow automatically as needed. Lower values reduce initial memory use, especially for tables with many columns, but may cause more frequent buffer flushes. This is a starting size, not a memory limit.
 
-Adaptive write buffers are only used in wide parts, as controlled by [`min_columns_to_activate_adaptive_write_buffer`](#min_columns_to_activate_adaptive_write_buffer) and [`use_adaptive_write_buffer_for_dynamic_subcolumns`](#use_adaptive_write_buffer_for_dynamic_subcolumns).
+Adaptive write buffers are used for the columns of wide parts, as controlled by [`min_columns_to_activate_adaptive_write_buffer`](#min_columns_to_activate_adaptive_write_buffer) and [`use_adaptive_write_buffer_for_dynamic_subcolumns`](#use_adaptive_write_buffer_for_dynamic_subcolumns), and always for the data skipping indices of every part.
 )", 0) \
     DECLARE(UInt64, min_free_disk_bytes_to_perform_insert, 0, R"(
 The minimum number of bytes that should be free in disk space in order to
@@ -2484,10 +2484,11 @@ Possible values:
 - `with_block_number_offset` — partition-key columns plus the persisted `_block_number` and `_block_offset` virtual columns. Enables part-level pruning by these columns.
 )", 0, \
         {"26.5", "partition_key_only", "partition_key_only", "New setting."}) \
-    DECLARE(Bool, add_minmax_index_for_numeric_columns, false, R"(
+    DECLARE(Bool, add_minmax_index_for_numeric_columns, true, R"(
 When enabled, min-max (skipping) indices are added for all numeric columns
 of the table.
 )", 0, \
+        {"26.11", false, true, "Automatic min-max skipping indices on numeric columns can speed up range-filter queries; the trade-off is some additional storage and ingestion overhead, which may be noticeable on very wide or high-ingest tables. Set to false to revert to the previous behavior."}, \
         {"25.1", false, false, "New setting"}) \
     DECLARE(Bool, add_minmax_index_for_string_columns, false, R"(
 When enabled, min-max (skipping) indices are added for all string columns of the table.

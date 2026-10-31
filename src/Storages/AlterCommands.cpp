@@ -131,6 +131,122 @@ void resetSettings(SettingsChanges & settings_from_storage, const std::set<Strin
     }
 }
 
+/// A settings-only ALTER can change the set of implicit skip indices: the `add_minmax_index_for_*`
+/// policy settings, and the `enable_block_number_column` / `enable_block_offset_column` gates of the
+/// two virtual-column indices. Both a change and a reset of such a setting are policy inputs:
+/// `MODIFY SETTING enable_block_number_column = DEFAULT` and `RESET SETTING enable_block_number_column`
+/// remove the stored override, and the metadata flags have to be recomputed from what is left, else the
+/// running table keeps the previous set of indices until `DETACH` / `ATTACH` or restart.
+///
+/// `default_settings` are the settings the table has when it states nothing itself: the server's
+/// `<merge_tree>` (and, for a replicated table, `<replicated_merge_tree>`) config section on top of
+/// the `compatibility` profile setting. The MergeTree `ALTER` paths pass their engine's defaults; when
+/// absent, the non-replicated server defaults of `context` are used.
+void recomputeImplicitIndexPolicy(
+    StorageInMemoryMetadata & metadata,
+    ContextPtr context,
+    const SettingsChanges & settings_changes,
+    const std::set<String> & settings_resets,
+    const MergeTreeSettings * default_settings)
+{
+    static constexpr std::array<std::string_view, 7> implicit_index_policy_settings = {
+        "add_minmax_index_for_numeric_columns",
+        "add_minmax_index_for_string_columns",
+        "add_minmax_index_for_temporal_columns",
+        "add_minmax_index_for_block_number_column",
+        "add_minmax_index_for_block_offset_column",
+        "enable_block_number_column",
+        "enable_block_offset_column",
+    };
+    static constexpr std::array<std::string_view, 3> column_implicit_index_policy_settings = {
+        "add_minmax_index_for_numeric_columns",
+        "add_minmax_index_for_string_columns",
+        "add_minmax_index_for_temporal_columns",
+    };
+
+    const auto touches = [&](const auto & policy_settings)
+    {
+        const auto is_policy_setting = [&](const String & name)
+        {
+            return std::ranges::any_of(policy_settings, [&](std::string_view policy) { return isSameSetting(name, String(policy)); });
+        };
+        return std::ranges::any_of(settings_changes, [&](const SettingChange & change) { return is_policy_setting(change.name); })
+            || std::ranges::any_of(settings_resets, is_policy_setting);
+    };
+
+    if (!touches(implicit_index_policy_settings))
+        return;
+
+    /// Start from what the table inherits, not from the compiled-in defaults: a table that stores no
+    /// override for a policy setting takes it from the server defaults, which is also what
+    /// `MergeTreeData::changeSettings` rebuilds the live settings from. Seeding from compiled-in
+    /// defaults lost e.g. `add_minmax_index_for_block_number_column = 1` inherited from `<merge_tree>`
+    /// on a table whose `enable_block_number_column = 0` override is being reset, so the running table
+    /// did not regain `auto_minmax_index__block_number` until DETACH / ATTACH or restart.
+    MergeTreeSettings effective_settings = default_settings ? *default_settings : context->getMergeTreeSettings();
+    if (metadata.settings_changes)
+    {
+        SettingsChanges builtin_changes;
+        for (const auto & change : metadata.settings_changes->as<ASTSetQuery &>().changes)
+        {
+            if (MergeTreeSettings::hasBuiltin(change.name))
+                builtin_changes.push_back(change);
+        }
+        /// Only the implicit-index settings below are read here, and this runs before the statement is
+        /// known to be allowed, so the `disk` setting is left unresolved rather than creating the disk.
+        effective_settings.applyChangesLeavingDiskUnresolved(builtin_changes);
+    }
+
+    /// Preserve the implicit-index policy stored in the table metadata. It can originate
+    /// from a compatibility setting or server configuration and therefore need not be
+    /// present in the table's `SETTINGS`. Starting from a fresh MergeTreeSettings here
+    /// must not turn such a table into an implicit-index table on an unrelated ALTER.
+    effective_settings.applyChange({"add_minmax_index_for_numeric_columns", metadata.add_minmax_index_for_numeric_columns}, context, /*is_loading_from_existing_metadata=*/true);
+    effective_settings.applyChange({"add_minmax_index_for_string_columns", metadata.add_minmax_index_for_string_columns}, context, /*is_loading_from_existing_metadata=*/true);
+    effective_settings.applyChange({"add_minmax_index_for_temporal_columns", metadata.add_minmax_index_for_temporal_columns}, context, /*is_loading_from_existing_metadata=*/true);
+
+    /// The two block-column flags in the metadata hold the EFFECTIVE value, i.e. the setting
+    /// gated by `enable_block_number_column` / `enable_block_offset_column`. A `false` there
+    /// may only mean that the gate was closed, so it must not override an inherited or stored
+    /// `1` of the read-only setting: otherwise `MODIFY SETTING enable_block_number_column = 1`
+    /// never turns the implicit index on in the running table (it appeared only after reload).
+    /// A `true` is preserved for the same reason as the column policies above.
+    if (metadata.add_minmax_index_for_block_number_column)
+        effective_settings.applyChange({"add_minmax_index_for_block_number_column", true}, context, /*is_loading_from_existing_metadata=*/true);
+    if (metadata.add_minmax_index_for_block_offset_column)
+        effective_settings.applyChange({"add_minmax_index_for_block_offset_column", true}, context, /*is_loading_from_existing_metadata=*/true);
+
+    const bool column_policy_changed
+        = metadata.add_minmax_index_for_numeric_columns != effective_settings[MergeTreeSetting::add_minmax_index_for_numeric_columns]
+        || metadata.add_minmax_index_for_string_columns != effective_settings[MergeTreeSetting::add_minmax_index_for_string_columns]
+        || metadata.add_minmax_index_for_temporal_columns != effective_settings[MergeTreeSetting::add_minmax_index_for_temporal_columns];
+
+    metadata.add_minmax_index_for_numeric_columns = effective_settings[MergeTreeSetting::add_minmax_index_for_numeric_columns];
+    metadata.add_minmax_index_for_string_columns = effective_settings[MergeTreeSetting::add_minmax_index_for_string_columns];
+    metadata.add_minmax_index_for_temporal_columns = effective_settings[MergeTreeSetting::add_minmax_index_for_temporal_columns];
+    metadata.add_minmax_index_for_block_number_column = effective_settings[MergeTreeSetting::add_minmax_index_for_block_number_column] && effective_settings[MergeTreeSetting::enable_block_number_column];
+    metadata.add_minmax_index_for_block_offset_column = effective_settings[MergeTreeSetting::add_minmax_index_for_block_offset_column] && effective_settings[MergeTreeSetting::enable_block_offset_column];
+
+    /// Physical-column indices are rebuilt only when a per-column-kind policy really changes value.
+    /// A preceding `MODIFY COLUMN` or `REMOVE ALIAS` may have deliberately removed an implicit index
+    /// because the files of the existing parts were built for the previous column definition (e.g. over
+    /// an alias expression); re-creating it would silently reuse those stale files. So neither a
+    /// settings-only ALTER that changes only virtual-column settings nor one that restates or resets a
+    /// policy setting to the value it already has (the settings are read-only, so this is the only
+    /// form `MergeTreeData::checkAlterEligibility` lets through for a table with stored settings) may
+    /// re-create such an index.
+    if (column_policy_changed && touches(column_implicit_index_policy_settings))
+    {
+        for (const auto & column : metadata.columns)
+        {
+            metadata.dropImplicitIndicesForColumn(column.name);
+            metadata.addImplicitIndicesForColumn(column, context);
+        }
+    }
+    metadata.dropImplicitIndicesForVirtualColumns();
+    metadata.addImplicitIndicesForVirtualColumns(context);
+}
+
 /// Splits a parsed `SETTINGS` clause into changes and resets.
 /// The parser keeps `name = DEFAULT` entries apart from `changes`, and such an entry means a reset.
 void parseSettingsChangesAndResets(const ASTSetQuery & set_query, SettingsChanges & settings_changes, std::set<String> & settings_resets)
@@ -147,42 +263,6 @@ void parseSettingsChangesAndResets(const ASTSetQuery & set_query, SettingsChange
         if (!insertion.second)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Duplicate setting name {}", backQuote(setting_name));
     }
-}
-
-/// Rebuilds the implicit minmax indices from the `SETTINGS` clause. A setting dropped from it falls
-/// back to `settings_defaults`, the engine's config defaults. Engines without implicit indices pass none.
-void refreshSettingsDerivedMetadata(
-    StorageInMemoryMetadata & metadata, const MergeTreeSettings * settings_defaults, ContextPtr context)
-{
-    if (!settings_defaults)
-        return;
-
-    MergeTreeSettings effective_settings = *settings_defaults;
-    SettingsChanges builtin_changes;
-    for (const auto & change : metadata.settings_changes->as<ASTSetQuery &>().changes)
-    {
-        if (MergeTreeSettings::hasBuiltin(change.name))
-            builtin_changes.push_back(change);
-    }
-    /// Only the implicit-index settings below are read here, and this runs before the statement is
-    /// known to be allowed, so the `disk` setting is left unresolved rather than creating the disk.
-    effective_settings.applyChangesLeavingDiskUnresolved(builtin_changes);
-
-    metadata.add_minmax_index_for_numeric_columns = effective_settings[MergeTreeSetting::add_minmax_index_for_numeric_columns];
-    metadata.add_minmax_index_for_string_columns = effective_settings[MergeTreeSetting::add_minmax_index_for_string_columns];
-    metadata.add_minmax_index_for_temporal_columns = effective_settings[MergeTreeSetting::add_minmax_index_for_temporal_columns];
-    metadata.add_minmax_index_for_block_number_column
-        = effective_settings[MergeTreeSetting::add_minmax_index_for_block_number_column] && effective_settings[MergeTreeSetting::enable_block_number_column];
-    metadata.add_minmax_index_for_block_offset_column
-        = effective_settings[MergeTreeSetting::add_minmax_index_for_block_offset_column] && effective_settings[MergeTreeSetting::enable_block_offset_column];
-
-    for (const auto & column : metadata.columns)
-    {
-        metadata.dropImplicitIndicesForColumn(column.name);
-        metadata.addImplicitIndicesForColumn(column, context);
-    }
-    metadata.dropImplicitIndicesForVirtualColumns();
-    metadata.addImplicitIndicesForVirtualColumns(context);
 }
 
 AlterCommand::RemoveProperty removePropertyFromString(const String & property)
@@ -789,7 +869,7 @@ void AlterCommand::apply(
     ContextPtr context,
     bool share_nested_offsets,
     const ColumnsDescription * columns_before_alter,
-    const MergeTreeSettings * settings_defaults) const
+    const MergeTreeSettings * default_merge_tree_settings) const
 {
     /// Helper function for column existence check with IF EXISTS
     auto should_skip_column_operation = [&](const String & name) -> bool {
@@ -886,6 +966,11 @@ void AlterCommand::apply(
 
         if (skip_absent_column_or_fail("modify", target_column))
             return;
+
+        /// Whether this command redefines what an `ALIAS` column reads (the column is an alias before
+        /// or after it). Nothing rewrites the existing parts then, so the implicit indices of other
+        /// expression aliases built over this column go stale too, see below.
+        bool alias_redefined = false;
         metadata.columns.modify(target_column, after_column, first, [&](ColumnDescription & column)
         {
             /// The result is validated by `validateColumnCodecs` after all commands are applied.
@@ -905,7 +990,30 @@ void AlterCommand::apply(
                 || to_remove == RemoveProperty::MATERIALIZED
                 || to_remove == RemoveProperty::ALIAS)
             {
+                /// Whether the column was an ALIAS over a real expression (not a simple column
+                /// reference): only such columns carry an implicit index built over the alias
+                /// expression. Must be checked before the default is cleared below.
+                bool was_expression_alias = column.default_desc.kind == ColumnDefaultKind::Alias
+                    && column.default_desc.expression && !column.default_desc.expression->as<ASTIdentifier>();
+
                 column.default_desc = ColumnDefault{};
+
+                /// Removing ALIAS changes the column kind to physical, so its implicit indices
+                /// change too. REMOVE ALIAS is a metadata-only operation: nothing rewrites the
+                /// existing parts, so index files built while the column was an expression alias
+                /// are stale (existing rows now read the physical default value), and re-creating
+                /// the same-named implicit index would silently reuse them and prune wrong. Drop
+                /// the index and do not re-create it. A simple identifier alias never had an
+                /// implicit index, so there are no stale files and the now-physical column may
+                /// gain one. Removing DEFAULT or MATERIALIZED keeps the stored column data and
+                /// the index eligibility unchanged, so no refresh is needed there.
+                if (to_remove == RemoveProperty::ALIAS)
+                {
+                    alias_redefined = true;
+                    metadata.dropImplicitIndicesForColumn(column_name);
+                    if (!was_expression_alias)
+                        metadata.addImplicitIndicesForColumn(column, context);
+                }
             }
             else if (to_remove == RemoveProperty::CODEC)
             {
@@ -935,15 +1043,18 @@ void AlterCommand::apply(
                 if (ttl)
                     column.ttl = ttl;
 
+                /// Captured before the type and the default are replaced below, see the implicit indices.
+                const DataTypePtr old_type = column.type;
+                const bool was_physical = column.default_desc.kind != ColumnDefaultKind::Alias
+                    && column.default_desc.kind != ColumnDefaultKind::Ephemeral;
+                const bool had_implicit_index = metadata.secondary_indices.has(IMPLICITLY_ADDED_MINMAX_INDEX_PREFIX + column_name);
+
                 if (data_type)
                 {
                     column.type = data_type;
                     /// Update statistics data type to match the new column type
                     if (!column.statistics.empty())
                         column.statistics.data_type = data_type;
-                    /// The type changed, so assume that implicit indices may change too
-                    metadata.dropImplicitIndicesForColumn(column_name);
-                    metadata.addImplicitIndicesForColumn(column, context);
                 }
 
                 /// The declared statistics replace the explicit statistics of the column, like the other
@@ -968,6 +1079,14 @@ void AlterCommand::apply(
                         column.settings.removeSetting(setting);
                 }
 
+                /// Whether the column was an ALIAS over a real expression (not a simple column
+                /// reference): the implicit index of such a column is built over the alias
+                /// expression rather than over the column's own values. Must be checked before
+                /// the default is replaced below.
+                bool was_alias = column.default_desc.kind == ColumnDefaultKind::Alias;
+                bool was_expression_alias = was_alias
+                    && column.default_desc.expression && !column.default_desc.expression->as<ASTIdentifier>();
+
                 /// Restating the type is not a default decision, so the column keeps the default it
                 /// currently has. Removals are handled by the `to_remove` branches above.
                 if (default_expression)
@@ -976,8 +1095,58 @@ void AlterCommand::apply(
                     column.default_desc.expression = default_expression;
                     column.default_desc.ephemeral_default = ephemeral_default;
                 }
+
+                /// The type or the default kind changed, so implicit indices may change too.
+                /// This must run after the default is replaced above: a column turning
+                /// EPHEMERAL or ALIAS must not keep (or re-create) an implicit index,
+                /// and a column turning physical may gain one.
+                if (data_type || default_expression)
+                {
+                    bool is_expression_alias = column.default_desc.kind == ColumnDefaultKind::Alias
+                        && column.default_desc.expression && !column.default_desc.expression->as<ASTIdentifier>();
+
+                    metadata.dropImplicitIndicesForColumn(column_name);
+                    if (was_alias || column.default_desc.kind == ColumnDefaultKind::Alias)
+                        alias_redefined = true;
+
+                    /// An implicit index over an alias expression indexes something else than the
+                    /// column's own values, so a transition into or out of an expression alias
+                    /// invalidates the index files of the existing parts. `MODIFY COLUMN` does not
+                    /// rewrite them - not even when it changes the type - and re-creating the
+                    /// same-named implicit index would silently reuse the stale files and prune
+                    /// wrong. Drop the index and do not re-create it, the same way
+                    /// `MODIFY COLUMN ... REMOVE ALIAS` above does.
+                    /// A physical column that keeps its type is not rewritten either, so its stored data and
+                    /// the files under the implicit index name stay as they are. If the index is absent, an
+                    /// earlier `ALTER` may have dropped it deliberately: for example, `MODIFY COLUMN b ... DEFAULT 0`
+                    /// of `b ALIAS a + 1` keeps the files built over `a + 1` in the parts, and `MATERIALIZE COLUMN b`
+                    /// carries them over unchanged, because it rewrites only the indices of the current metadata.
+                    /// Keep the absence then, until a rewrite of the column (e.g. a change of its type) builds
+                    /// fresh files. A type change that keeps the stored bytes (`UInt32` <-> `DateTime`) rewrites
+                    /// nothing either. Neither is a rewrite guaranteed (`EPHEMERAL` keeps the data in the parts, a
+                    /// mutation can be killed), so `MergeTreeData::setProperties` does not create the index anyway
+                    /// while an active part has files under its name.
+                    const bool is_physical = column.default_desc.kind != ColumnDefaultKind::Alias
+                        && column.default_desc.kind != ColumnDefaultKind::Ephemeral;
+                    const bool keeps_absence = !had_implicit_index && was_physical && is_physical
+                        && isTypeChangeKeepingStoredData(*old_type, *column.type);
+
+                    if (!was_expression_alias && !is_expression_alias && !keeps_absence)
+                        metadata.addImplicitIndicesForColumn(column, context);
+                }
             }
         });
+
+        /// The implicit index of an expression alias is built over its expanded expression, so for
+        /// `c ALIAS b + 1` redefining the alias `b` changes what the index of `c` would contain while
+        /// the existing parts keep the old index files. Drop the indices of all expression aliases
+        /// that reach the redefined column, directly or through other aliases, and do not re-create
+        /// them, the same way as the index of the redefined column itself.
+        if (alias_redefined)
+        {
+            for (const auto & dependent : metadata.getExpressionAliasesDependingOn({column_name}))
+                metadata.dropImplicitIndicesForColumn(dependent);
+        }
 
     }
     else if (type == MODIFY_ORDER_BY)
@@ -1227,7 +1396,7 @@ void AlterCommand::apply(
     else if (type == ADD_PROJECTION)
     {
         auto projection = ProjectionDescription::getProjectionFromAST(
-            projection_decl, metadata.columns, &metadata.partition_key, context, LoadingStrictnessLevel::CREATE);
+            projection_decl, metadata.columns, &metadata.partition_key, context, LoadingStrictnessLevel::CREATE, /*attach_short_syntax=*/ true, &metadata);
         metadata.projections.add(std::move(projection), after_projection_name, first, if_not_exists);
     }
     else if (type == MODIFY_PROJECTION)
@@ -1247,7 +1416,7 @@ void AlterCommand::apply(
 
         /// create a new projection with the modified settings
         auto new_projection = ProjectionDescription::getProjectionFromAST(
-            projection_decl, metadata.columns, &metadata.partition_key, context, LoadingStrictnessLevel::CREATE);
+            projection_decl, metadata.columns, &metadata.partition_key, context, LoadingStrictnessLevel::CREATE, /*attach_short_syntax=*/ true, &metadata);
 
         /// Existing parts store projection data built from the query body, so only the `WITH SETTINGS` clause may change
         auto definition_without_settings = [](const IAST & definition_ast)
@@ -1342,7 +1511,7 @@ void AlterCommand::apply(
                 std::remove_if(it + 1, settings_from_storage.end(), same_setting), settings_from_storage.end());
         }
 
-        refreshSettingsDerivedMetadata(metadata, settings_defaults, context);
+        recomputeImplicitIndexPolicy(metadata, context, settings_changes, settings_resets, default_merge_tree_settings);
     }
     else if (type == RESET_SETTING)
     {
@@ -1350,7 +1519,7 @@ void AlterCommand::apply(
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot reset settings, because table does not have settings changes");
 
         resetSettings(metadata.settings_changes->as<ASTSetQuery &>().changes, settings_resets);
-        refreshSettingsDerivedMetadata(metadata, settings_defaults, context);
+        recomputeImplicitIndexPolicy(metadata, context, /*settings_changes=*/{}, settings_resets, default_merge_tree_settings);
     }
     else if (type == RENAME_COLUMN)
     {
@@ -1664,6 +1833,11 @@ std::set<std::string_view> getLazyMetadataConversionSettings(
 
 }
 
+bool isTypeChangeKeepingStoredData(const IDataType & from, const IDataType & to)
+{
+    return isTrueMetadataOnlyConversion(&from, &to);
+}
+
 bool AlterCommand::isSettingsAlter() const
 {
     return type == MODIFY_SETTING || type == RESET_SETTING;
@@ -1767,7 +1941,8 @@ bool AlterCommand::isDropOrRename() const
         || type == Type::RENAME_COLUMN;
 }
 
-std::optional<MutationCommand> AlterCommand::tryConvertToMutationCommand(StorageInMemoryMetadata & metadata, ContextPtr context, bool share_nested_offsets) const
+std::optional<MutationCommand> AlterCommand::tryConvertToMutationCommand(
+    StorageInMemoryMetadata & metadata, ContextPtr context, bool share_nested_offsets, const MergeTreeSettings * default_merge_tree_settings) const
 {
     if (!getMutationStageDecision(metadata, context).requires_mutation)
     {
@@ -1775,7 +1950,7 @@ std::optional<MutationCommand> AlterCommand::tryConvertToMutationCommand(Storage
         /// to the metadata so that subsequent commands see the updated state. For example,
         /// ADD COLUMN followed by RENAME COLUMN needs the new column to be visible.
         if (!ignore)
-            apply(metadata, context, share_nested_offsets);
+            apply(metadata, context, share_nested_offsets, /*columns_before_alter=*/nullptr, default_merge_tree_settings);
         return {};
     }
 
@@ -1827,7 +2002,7 @@ std::optional<MutationCommand> AlterCommand::tryConvertToMutationCommand(Storage
     const auto & settings = context->getSettingsRef();
     result.max_parser_depth = settings[Setting::max_parser_depth];
     result.max_parser_backtracks = settings[Setting::max_parser_backtracks];
-    apply(metadata, context, share_nested_offsets);
+    apply(metadata, context, share_nested_offsets, /*columns_before_alter=*/nullptr, default_merge_tree_settings);
     return result;
 }
 
@@ -1852,10 +2027,7 @@ bool AlterCommands::hasVectorSimilarityIndex(const StorageInMemoryMetadata & met
 }
 
 void AlterCommands::apply(
-    StorageInMemoryMetadata & metadata,
-    ContextPtr context,
-    bool share_nested_offsets,
-    const MergeTreeSettings * settings_defaults) const
+    StorageInMemoryMetadata & metadata, ContextPtr context, bool share_nested_offsets, const MergeTreeSettings * default_merge_tree_settings) const
 {
     if (!prepared)
         throw DB::Exception(ErrorCodes::LOGICAL_ERROR, "Alter commands is not prepared. Cannot apply. It's a bug");
@@ -1865,7 +2037,7 @@ void AlterCommands::apply(
     for (const AlterCommand & command : *this)
     {
         if (!command.ignore)
-            command.apply(metadata_copy, context, share_nested_offsets, &metadata.columns, settings_defaults);
+            command.apply(metadata_copy, context, share_nested_offsets, &metadata.columns, default_merge_tree_settings);
     }
 
     const bool columns_changed = metadata_copy.columns != metadata.columns;
@@ -1926,7 +2098,8 @@ void AlterCommands::apply(
         try
         {
             /// Check if we can still build projection from new metadata.
-            auto new_projection = ProjectionDescription::getProjectionFromAST(projection.definition_ast, metadata_copy.columns, &metadata_copy.partition_key, context);
+            auto new_projection = ProjectionDescription::getProjectionFromAST(
+                projection.definition_ast, metadata_copy.columns, &metadata_copy.partition_key, context, LoadingStrictnessLevel::ATTACH, /*attach_short_syntax=*/ true, &metadata_copy);
             /// Check if new metadata has the same keys as the old one.
             if (!blocksHaveEqualStructure(projection.sample_block_for_keys, new_projection.sample_block_for_keys))
                 throw Exception(ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN, "Cannot ALTER column");
@@ -2706,7 +2879,13 @@ static MutationCommand createMaterializeTTLCommand()
     return command;
 }
 
-MutationCommands AlterCommands::getMutationCommands(StorageInMemoryMetadata metadata, bool materialize_ttl, ContextPtr context, bool with_alters, bool share_nested_offsets) const
+MutationCommands AlterCommands::getMutationCommands(
+    StorageInMemoryMetadata metadata,
+    bool materialize_ttl,
+    ContextPtr context,
+    bool with_alters,
+    bool share_nested_offsets,
+    const MergeTreeSettings * default_merge_tree_settings) const
 {
     /// Save a copy of the original metadata before applying commands.
     /// We need it for isTTLAlter check below, because apply() updates TTL in metadata,
@@ -2726,7 +2905,7 @@ MutationCommands AlterCommands::getMutationCommands(StorageInMemoryMetadata meta
     MutationCommands result;
     for (const auto & alter_cmd : *this)
     {
-        if (auto mutation_cmd = alter_cmd.tryConvertToMutationCommand(metadata, context, share_nested_offsets); mutation_cmd)
+        if (auto mutation_cmd = alter_cmd.tryConvertToMutationCommand(metadata, context, share_nested_offsets, default_merge_tree_settings); mutation_cmd)
         {
             result.push_back(*mutation_cmd);
         }

@@ -165,7 +165,9 @@ CREATE TABLE tab_partial
 )
 ENGINE = MergeTree
 ORDER BY id
-SETTINGS min_bytes_for_wide_part = 0;
+-- The implicit minmax index on `id` would be materialized in every part, so the
+-- `secondary_indices_marks_bytes = 0` check below could not find the part without the text index.
+SETTINGS min_bytes_for_wide_part = 0, add_minmax_index_for_numeric_columns = 0;
 
 SYSTEM STOP MERGES tab_partial;
 

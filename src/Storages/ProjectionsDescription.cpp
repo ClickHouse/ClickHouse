@@ -52,6 +52,8 @@
 #include <Storages/MergeTree/MergeTreeVirtualColumns.h>
 #include <Storages/StorageInMemoryMetadata.h>
 
+#include <algorithm>
+
 namespace DB
 {
 
@@ -440,7 +442,9 @@ ProjectionDescription ProjectionDescription::getProjectionFromAST(
     const KeyDescription * partition_key,
     const ContextPtr & query_context,
     LoadingStrictnessLevel mode,
-    bool attach_short_syntax)
+    bool attach_short_syntax,
+    const StorageInMemoryMetadata * parent_metadata,
+    const ContextPtr & constraints_context)
 {
     const auto * projection_definition = definition_ast->as<ASTProjectionDeclaration>();
 
@@ -471,8 +475,69 @@ ProjectionDescription ProjectionDescription::getProjectionFromAST(
     /// from result.settings_changes to drive implicit-minmax skip-index creation.
     auto merge_tree_settings = result.index ? result.index->getDefaultSettings() : std::make_shared<MergeTreeSettings>();
     if (projection_definition->with_settings)
+    {
         merge_tree_settings->applyChanges(projection_definition->with_settings->changes, query_context, isLoadingFromExistingMetadata(mode));
+
+        /// `name = DEFAULT` is kept in `ASTSetQuery::default_settings`, not in `changes`. Record it as an
+        /// explicit change to the projection's own default: the runtime settings of the projection
+        /// (`MergeTreeData::getSettings`) are the table settings with `settings_changes` applied on top,
+        /// so a reset missing from `settings_changes` would silently give the projection the table's value.
+        if (!projection_definition->with_settings->default_settings.empty())
+        {
+            const auto projection_defaults = result.index ? result.index->getDefaultSettings() : std::make_shared<MergeTreeSettings>();
+            SettingsChanges resets;
+            for (const auto & setting_name : projection_definition->with_settings->default_settings)
+                resets.emplace_back(setting_name, projection_defaults->get(setting_name));
+            merge_tree_settings->applyChanges(resets, query_context, isLoadingFromExistingMetadata(mode));
+        }
+    }
     result.settings_changes = merge_tree_settings->changes();
+
+    /// A projection is written with the implicit min-max indices of its own metadata, so a table that
+    /// opted out of them (`add_minmax_index_for_numeric_columns = 0`, possibly through `compatibility`
+    /// or the server configuration) would get them back through its projections if the projection
+    /// started from the settings' defaults. Inherit the table's policy for every setting the projection
+    /// does not set itself. The inherited values are not recorded in `settings_changes`: the projection
+    /// definition stays as written, and the policy is taken from the table again whenever the projection
+    /// metadata is rebuilt from it (on load, with `compatibility` or server configuration applied).
+    ///
+    /// Only the per-column-kind policies are inherited. `add_minmax_index_for_block_number_column` and
+    /// `add_minmax_index_for_block_offset_column` are off by default and index the `_block_number` and
+    /// `_block_offset` virtual columns of the table itself; a projection keeps its own policy for them
+    /// (in a `commit_order` projection these columns are the sorting key, so a min-max index over them
+    /// would only duplicate the primary key).
+    ///
+    /// `name = DEFAULT` in `WITH SETTINGS` is kept in `ASTSetQuery::default_settings`, not in `changes`:
+    /// it sets the projection's own default explicitly, so such a setting is not inherited either.
+    ///
+    /// `explicit_only` = false is used for the baseline of the settings constraints check below, which
+    /// has no explicit settings of its own and takes the whole inherited policy.
+    const auto inherit_parent_policy = [&](MergeTreeSettings & settings, bool explicit_only)
+    {
+        if (!parent_metadata)
+            return;
+
+        const auto inherit = [&](const auto & setting, std::string_view setting_name, bool parent_value)
+        {
+            if (explicit_only)
+            {
+                if (settings[setting].changed)
+                    return;
+                if (projection_definition->with_settings
+                    && std::ranges::find(projection_definition->with_settings->default_settings, setting_name)
+                        != projection_definition->with_settings->default_settings.end())
+                    return;
+            }
+            settings[setting] = parent_value;
+        };
+        inherit(MergeTreeSetting::add_minmax_index_for_numeric_columns, "add_minmax_index_for_numeric_columns",
+            parent_metadata->add_minmax_index_for_numeric_columns);
+        inherit(MergeTreeSetting::add_minmax_index_for_string_columns, "add_minmax_index_for_string_columns",
+            parent_metadata->add_minmax_index_for_string_columns);
+        inherit(MergeTreeSetting::add_minmax_index_for_temporal_columns, "add_minmax_index_for_temporal_columns",
+            parent_metadata->add_minmax_index_for_temporal_columns);
+    };
+    inherit_parent_policy(*merge_tree_settings, /*explicit_only=*/ true);
 
     /// Track whether the effective settings include index_granularity or index_granularity_bytes overrides
     /// (from either the projection index's getDefaultSettings() or the user's explicit SETTINGS clause),
@@ -539,9 +604,31 @@ ProjectionDescription ProjectionDescription::getProjectionFromAST(
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Setting {} is not allowed for projections", change.name);
         }
 
-        /// What `WITH SETTINGS` changes from the defaults this projection would otherwise have.
-        auto default_settings = result.index ? result.index->getDefaultSettings() : std::make_shared<MergeTreeSettings>();
-        query_context->checkMergeTreeSettingsConstraints(*default_settings, merge_tree_settings->changesFrom(*default_settings));
+        /// `name = DEFAULT` does not reach `settings_changes`, so it is checked separately.
+        if (projection_definition->with_settings)
+        {
+            for (const auto & name : projection_definition->with_settings->default_settings)
+            {
+                if (!ALLOWED_PROJECTION_SETTINGS.contains(name))
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Setting {} is not allowed for projections", name);
+            }
+        }
+
+        /// What `WITH SETTINGS` changes from the settings this projection would otherwise have. These
+        /// include the policies inherited from the table: an inherited value is not a change made by the
+        /// projection, so it must not be checked against a `CONST` constraint as if it were.
+        ///
+        /// Without `parent_metadata` the inherited policy is unknown, so the check is left to the call that
+        /// has it. This is the preliminary pass of `InterpreterCreateQuery::setProperties`: only `MergeTree`
+        /// tables support projections, and their storage registration builds the projections again with
+        /// the table metadata, and runs this check then with the context of the query.
+        if (parent_metadata)
+        {
+            auto default_settings = result.index ? result.index->getDefaultSettings() : std::make_shared<MergeTreeSettings>();
+            inherit_parent_policy(*default_settings, /*explicit_only=*/ false);
+            const auto & check_context = constraints_context ? constraints_context : query_context;
+            check_context->checkMergeTreeSettingsConstraints(*default_settings, merge_tree_settings->changesFrom(*default_settings));
+        }
 
         query_context->getGlobalContext()->initializeBackgroundExecutorsIfNeeded();
         merge_tree_settings->sanityCheck(
@@ -778,7 +865,17 @@ void ProjectionDescription::fillProjectionDescriptionByQuery(
     metadata.add_minmax_index_for_block_offset_column = projection_settings[MergeTreeSetting::add_minmax_index_for_block_offset_column];
     metadata.addImplicitIndicesForVirtualColumns(query_context);
     for (const auto & column : metadata.columns)
+    {
+        /// A projection stores the ALIAS parent columns it selects, but inherits the parent's default,
+        /// so the column keeps its ALIAS kind, and the alias expression is written in terms of the
+        /// parent's columns, which the projection may not carry. Analyzing an index over such a column
+        /// against the projection's own columns can then fail with `UNKNOWN_IDENTIFIER`, and whether
+        /// it does depends on the session's `optimize_respect_aliases`, which would make the projection
+        /// metadata nondeterministic. Skip these columns; the parent table still indexes them.
+        if (column.default_desc.kind == ColumnDefaultKind::Alias)
+            continue;
         metadata.addImplicitIndicesForColumn(column, query_context);
+    }
 
     result.metadata = std::make_shared<StorageInMemoryMetadata>(metadata);
 }
@@ -1145,7 +1242,8 @@ ProjectionsDescription ProjectionsDescription::parse(
     const String & str,
     const ColumnsDescription & columns,
     const KeyDescription * parent_partition_key,
-    const ContextPtr & query_context)
+    const ContextPtr & query_context,
+    const StorageInMemoryMetadata * parent_metadata)
 {
     ProjectionsDescription result;
     if (str.empty())
@@ -1156,7 +1254,8 @@ ProjectionsDescription ProjectionsDescription::parse(
 
     for (const auto & projection_ast : list->children)
     {
-        auto projection = ProjectionDescription::getProjectionFromAST(projection_ast, columns, parent_partition_key, query_context);
+        auto projection = ProjectionDescription::getProjectionFromAST(
+            projection_ast, columns, parent_partition_key, query_context, LoadingStrictnessLevel::ATTACH, /*attach_short_syntax=*/ true, parent_metadata);
         result.add(std::move(projection));
     }
 

@@ -3,7 +3,7 @@
 -- applied to intermediate metadata when it didn't require a mutation stage.
 -- https://github.com/ClickHouse/ClickHouse/issues/100328
 
-CREATE TABLE t_100328 (v1 UInt32, v2 String, v3 Date) ENGINE = MergeTree() ORDER BY v1;
+CREATE TABLE t_100328 (v1 UInt32, v2 String, v3 Date) ENGINE = MergeTree() ORDER BY v1 SETTINGS add_minmax_index_for_numeric_columns = 0;
 INSERT INTO t_100328 VALUES (1, 'hello', '2024-01-01');
 
 ALTER TABLE t_100328 ADD COLUMN v4 String DEFAULT 'new', RENAME COLUMN v4 TO v5;
@@ -15,7 +15,7 @@ SELECT v1, v2, v5, v7 FROM t_100328;
 DROP TABLE t_100328;
 
 -- Non-column ALTER chains: ensure intermediate metadata is updated for indexes and projections too.
-CREATE TABLE t_100328_idx (k UInt32, v String) ENGINE = MergeTree() ORDER BY k;
+CREATE TABLE t_100328_idx (k UInt32, v String) ENGINE = MergeTree() ORDER BY k SETTINGS add_minmax_index_for_numeric_columns = 0;
 
 ALTER TABLE t_100328_idx ADD INDEX idx1 v TYPE bloom_filter GRANULARITY 1, DROP INDEX idx1;
 SELECT name FROM system.data_skipping_indices WHERE table = 't_100328_idx' AND database = currentDatabase();
@@ -26,7 +26,7 @@ SELECT name FROM system.data_skipping_indices WHERE table = 't_100328_idx' AND d
 
 DROP TABLE t_100328_idx;
 
-CREATE TABLE t_100328_proj (k UInt32, v UInt32) ENGINE = MergeTree() ORDER BY k;
+CREATE TABLE t_100328_proj (k UInt32, v UInt32) ENGINE = MergeTree() ORDER BY k SETTINGS add_minmax_index_for_numeric_columns = 0;
 
 ALTER TABLE t_100328_proj ADD PROJECTION proj1 (SELECT k, sum(v) GROUP BY k), DROP PROJECTION proj1;
 SELECT name FROM system.projections WHERE table = 't_100328_proj' AND database = currentDatabase();

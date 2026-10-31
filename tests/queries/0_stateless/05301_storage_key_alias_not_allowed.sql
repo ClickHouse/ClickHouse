@@ -23,9 +23,12 @@ CREATE TABLE t_key_alias (c0 Int64, d Date) ENGINE = MergeTree ORDER BY c0 TTL d
 CREATE TABLE t_key_alias (c0 Int64, d Date) ENGINE = MergeTree ORDER BY c0 TTL d + INTERVAL 1 DAY WHERE c0 < ((SELECT 1) AS s); -- { serverError BAD_ARGUMENTS }
 CREATE TABLE t_key_alias (c0 Int64, c1 Int64, INDEX i (c1 AS a) TYPE minmax) ENGINE = MergeTree ORDER BY c0; -- { serverError BAD_ARGUMENTS }
 CREATE TABLE t_key_alias (c0 Int64, c1 Int64, INDEX i (c1 * 1000 AS c0) TYPE minmax) ENGINE = MergeTree ORDER BY c0; -- { serverError BAD_ARGUMENTS }
--- An index expression, also of an implicit index, and a text index transform have the ALIAS columns they use expanded.
+-- An index expression and a text index transform have the ALIAS columns they use expanded.
 CREATE TABLE t_key_alias (c0 Int64, c1 Int64, a Int64 ALIAS (c1 * 1000 AS c0), INDEX i a TYPE minmax) ENGINE = MergeTree ORDER BY c0; -- { serverError BAD_ARGUMENTS }
-CREATE TABLE t_key_alias (c0 Int64, c1 Int64, a Int64 ALIAS (c1 * 1000 AS c0)) ENGINE = MergeTree ORDER BY c0 SETTINGS add_minmax_index_for_numeric_columns = 1; -- { serverError BAD_ARGUMENTS }
+-- An implicit index is not the user's declaration: it is not generated over such an ALIAS column, rather than refusing the table.
+CREATE TABLE t_implicit_alias (c0 Int64, c1 Int64, a Int64 ALIAS (c1 * 1000 AS c0)) ENGINE = MergeTree ORDER BY c0 SETTINGS add_minmax_index_for_numeric_columns = 1;
+SELECT arraySort(groupArray(name)) FROM system.data_skipping_indices WHERE database = currentDatabase() AND table = 't_implicit_alias';
+DROP TABLE t_implicit_alias;
 CREATE TABLE t_key_alias (c0 Int64, s String, a String ALIAS lower(s AS x), INDEX i s TYPE text(tokenizer = splitByNonAlpha, preprocessor = a)) ENGINE = MergeTree ORDER BY c0; -- { serverError BAD_ARGUMENTS }
 CREATE TABLE t_key_alias (c0 UInt64) ENGINE = MergeTree ORDER BY c0 SAMPLE BY (c0 AS s); -- { serverError BAD_ARGUMENTS }
 CREATE TABLE t_key_alias (c0 Int64, d Date TTL (d AS x) + INTERVAL 1 DAY) ENGINE = MergeTree ORDER BY c0; -- { serverError BAD_ARGUMENTS }

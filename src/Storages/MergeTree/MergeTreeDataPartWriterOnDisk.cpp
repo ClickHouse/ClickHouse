@@ -178,6 +178,17 @@ void MergeTreeDataPartWriterOnDisk::initSkipIndices()
     const bool is_compact_part = index_granularity_info.mark_type.part_type == MergeTreeDataPartType::Compact;
     const StreamBaseManifestPtr manifest = is_compact_part ? nullptr : settings.stream_base_manifest;
 
+    /// Every stream preallocates a file (or spool) buffer and a compressor buffer of `max_compress_block_size`,
+    /// even though an index usually holds orders of magnitude less data than the columns it is built over (a
+    /// `minmax` index writes two values per granule). A table with many indexed columns, e.g. with the implicit
+    /// min-max indices, would reserve hundreds of megabytes for a single-row insert, and neither the column count
+    /// nor the memory ratio that activates adaptive buffers for wide parts applies to compact parts at all. So the
+    /// index streams always write through adaptive buffers: they start small and grow up to the same maximum only
+    /// for the indices that really write that much.
+    WriteSettings index_write_settings = settings.query_write_settings;
+    index_write_settings.use_adaptive_write_buffer = true;
+    index_write_settings.adaptive_write_buffer_initial_size = settings.adaptive_write_buffer_initial_size;
+
     for (const auto & skip_index : skip_indices)
     {
         auto index_name = skip_index->getFileName();
@@ -239,7 +250,7 @@ void MergeTreeDataPartWriterOnDisk::initSkipIndices()
                 settings.max_compress_block_size,
                 marks_compression_codec,
                 settings.marks_compress_block_size,
-                settings.query_write_settings,
+                index_write_settings,
                 packing);
 
             /// An encrypting part codec is applied to every block, so the index data is not written in plain text.

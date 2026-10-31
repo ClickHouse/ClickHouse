@@ -4,7 +4,7 @@ SELECT 'equality on both key columns, DESC Enum second';
 equality on both key columns, DESC Enum second
 DROP TABLE IF EXISTS t_enum_rev;
 CREATE TABLE t_enum_rev (g String, r Enum8('poor' = 1, 'ok' = 2, 'great' = 3))
-ENGINE = MergeTree ORDER BY (g, r DESC);
+ENGINE = MergeTree ORDER BY (g, r DESC) SETTINGS add_minmax_index_for_numeric_columns = 0;
 INSERT INTO t_enum_rev VALUES ('manual', 'ok'), ('manual', 'poor'), ('novel', 'great'), ('novel', 'great');
 SELECT count() FROM t_enum_rev WHERE g = 'novel' AND r = 'great' SETTINGS use_lightweight_primary_key_index_analysis = 1;
 2
@@ -25,7 +25,7 @@ SELECT 'bounds on the DESC column in each direction';
 bounds on the DESC column in each direction
 DROP TABLE IF EXISTS t_str_int;
 CREATE TABLE t_str_int (g String, r Int8)
-ENGINE = MergeTree ORDER BY (g, r DESC);
+ENGINE = MergeTree ORDER BY (g, r DESC) SETTINGS add_minmax_index_for_numeric_columns = 0;
 INSERT INTO t_str_int VALUES ('manual', 2), ('manual', 1), ('novel', 3), ('novel', 3);
 SELECT count() FROM t_str_int WHERE g = 'novel' AND r = 3 SETTINGS use_lightweight_primary_key_index_analysis = 1;
 2
@@ -88,7 +88,7 @@ SELECT 'DESC column first';
 DESC column first
 DROP TABLE IF EXISTS t_rev_first;
 CREATE TABLE t_rev_first (r Int8, g String)
-ENGINE = MergeTree ORDER BY (r DESC, g);
+ENGINE = MergeTree ORDER BY (r DESC, g) SETTINGS add_minmax_index_for_numeric_columns = 0;
 INSERT INTO t_rev_first VALUES (2, 'manual'), (1, 'manual'), (3, 'novel'), (3, 'zzz');
 SELECT count() FROM t_rev_first WHERE r = 3 AND g = 'novel' SETTINGS use_lightweight_primary_key_index_analysis = 1;
 1
@@ -130,7 +130,7 @@ SELECT 'two DESC columns';
 two DESC columns
 DROP TABLE IF EXISTS t_both_rev;
 CREATE TABLE t_both_rev (a UInt8, b UInt8)
-ENGINE = MergeTree ORDER BY (a DESC, b DESC) SETTINGS index_granularity = 2;
+ENGINE = MergeTree ORDER BY (a DESC, b DESC) SETTINGS index_granularity = 2, add_minmax_index_for_numeric_columns = 0;
 INSERT INTO t_both_rev SELECT 1 + intDiv(number, 3), 1 + number % 3 FROM numbers(9);
 SELECT count() FROM t_both_rev WHERE a = 2 AND b = 2 SETTINGS use_lightweight_primary_key_index_analysis = 1;
 1
@@ -166,7 +166,7 @@ NULLs sit physically first on a DESC column
 DROP TABLE IF EXISTS t_null;
 CREATE TABLE t_null (g String, r Nullable(Int8))
 ENGINE = MergeTree ORDER BY (g, r DESC)
-SETTINGS allow_nullable_key = 1, index_granularity = 2;
+SETTINGS allow_nullable_key = 1, index_granularity = 2, add_minmax_index_for_numeric_columns = 0;
 INSERT INTO t_null VALUES ('a', NULL), ('a', 5), ('a', 3), ('b', NULL), ('b', NULL), ('b', 7);
 SELECT count() FROM t_null WHERE g = 'b' AND r = 7 SETTINGS use_lightweight_primary_key_index_analysis = 1;
 1
@@ -222,7 +222,7 @@ SELECT 'binary search over many granules';
 binary search over many granules
 DROP TABLE IF EXISTS t_big;
 CREATE TABLE t_big (g UInt32, r UInt32)
-ENGINE = MergeTree ORDER BY (g, r DESC) SETTINGS index_granularity = 4;
+ENGINE = MergeTree ORDER BY (g, r DESC) SETTINGS index_granularity = 4, add_minmax_index_for_numeric_columns = 0;
 INSERT INTO t_big SELECT number % 10, 1000 - number FROM numbers(1000);
 SELECT count() FROM t_big WHERE g = 5 AND r = 995 SETTINGS use_lightweight_primary_key_index_analysis = 1;
 1
@@ -300,7 +300,7 @@ part without a final mark
 DROP TABLE IF EXISTS t_nofinal;
 CREATE TABLE t_nofinal (g UInt8, r UInt8)
 ENGINE = MergeTree ORDER BY (g, r DESC)
-SETTINGS index_granularity = 3, index_granularity_bytes = 0, min_rows_for_wide_part = 0, min_bytes_for_wide_part = 0;
+SETTINGS index_granularity = 3, index_granularity_bytes = 0, min_rows_for_wide_part = 0, min_bytes_for_wide_part = 0, add_minmax_index_for_numeric_columns = 0;
 INSERT INTO t_nofinal SELECT 1 + intDiv(number, 5), 5 - number % 5 FROM numbers(10);
 SELECT count() FROM t_nofinal WHERE g = 2 AND r = 1 SETTINGS use_lightweight_primary_key_index_analysis = 1;
 1
@@ -342,7 +342,7 @@ SELECT 'middle DESC column not referenced by the filter';
 middle DESC column not referenced by the filter
 DROP TABLE IF EXISTS t_skip;
 CREATE TABLE t_skip (a UInt16, b UInt16, c UInt16)
-ENGINE = MergeTree ORDER BY (a, b DESC, c) SETTINGS index_granularity = 4;
+ENGINE = MergeTree ORDER BY (a, b DESC, c) SETTINGS index_granularity = 4, add_minmax_index_for_numeric_columns = 0;
 INSERT INTO t_skip SELECT intDiv(number, 100), 9 - intDiv(number % 100, 10), number % 10 FROM numbers(1000);
 SELECT count() FROM t_skip WHERE a = 5 AND c = 7 SETTINGS use_lightweight_primary_key_index_analysis = 1;
 10
@@ -386,7 +386,7 @@ DROP TABLE IF EXISTS t_unloaded;
 CREATE TABLE t_unloaded (a UInt16, b UInt16, c UInt16)
 ENGINE = MergeTree ORDER BY (a, b DESC, c)
 SETTINGS index_granularity = 4,
-         primary_key_ratio_of_unique_prefix_values_to_skip_suffix_columns = 0.01;
+         primary_key_ratio_of_unique_prefix_values_to_skip_suffix_columns = 0.01, add_minmax_index_for_numeric_columns = 0;
 INSERT INTO t_unloaded SELECT intDiv(number, 100), 9 - intDiv(number % 100, 10), number % 10 FROM numbers(1000);
 SELECT count() FROM t_unloaded WHERE (a = 5 AND b = 3) OR a >= 100 SETTINGS use_lightweight_primary_key_index_analysis = 1;
 10
@@ -435,7 +435,7 @@ SELECT 'explicit PRIMARY KEY clause inherits ORDER BY directions';
 explicit PRIMARY KEY clause inherits ORDER BY directions
 DROP TABLE IF EXISTS t_explicit_pk;
 CREATE TABLE t_explicit_pk (g String, r Int8)
-ENGINE = MergeTree ORDER BY (g, r DESC) PRIMARY KEY (g, r);
+ENGINE = MergeTree ORDER BY (g, r DESC) PRIMARY KEY (g, r) SETTINGS add_minmax_index_for_numeric_columns = 0;
 INSERT INTO t_explicit_pk VALUES ('manual', 2), ('manual', 1), ('novel', 3), ('novel', 3);
 SELECT count() FROM t_explicit_pk WHERE g = 'novel' AND r = 3 SETTINGS use_lightweight_primary_key_index_analysis = 1;
 2
@@ -462,7 +462,7 @@ DROP TABLE t_explicit_pk;
 SELECT 'ascending control';
 ascending control
 DROP TABLE IF EXISTS t_asc;
-CREATE TABLE t_asc (g String, r Int8) ENGINE = MergeTree ORDER BY (g, r);
+CREATE TABLE t_asc (g String, r Int8) ENGINE = MergeTree ORDER BY (g, r) SETTINGS add_minmax_index_for_numeric_columns = 0;
 INSERT INTO t_asc VALUES ('manual', 2), ('manual', 1), ('novel', 3), ('novel', 3);
 SELECT count() FROM t_asc WHERE g = 'novel' AND r = 3;
 2
@@ -477,7 +477,7 @@ NaN runs in a float key column form mark boundaries
 SET allow_suspicious_primary_key = 1;
 DROP TABLE IF EXISTS t_nan;
 CREATE TABLE t_nan (g UInt32, r Float64)
-ENGINE = MergeTree ORDER BY (g, r DESC) SETTINGS index_granularity = 1;
+ENGINE = MergeTree ORDER BY (g, r DESC) SETTINGS index_granularity = 1, add_minmax_index_for_numeric_columns = 0;
 INSERT INTO t_nan VALUES (1, 0/0), (1, 0/0), (1, 5), (1, 3), (2, 0/0), (2, 7);
 SELECT count() FROM t_nan WHERE g = 1 AND r >= 4 SETTINGS use_lightweight_primary_key_index_analysis = 1;
 1
@@ -519,7 +519,7 @@ SELECT count() FROM t_nan WHERE g = 1 AND isNaN(r);
 DROP TABLE t_nan;
 DROP TABLE IF EXISTS t_nan_asc;
 CREATE TABLE t_nan_asc (g UInt32, r Float64)
-ENGINE = MergeTree ORDER BY (g, r) SETTINGS index_granularity = 1;
+ENGINE = MergeTree ORDER BY (g, r) SETTINGS index_granularity = 1, add_minmax_index_for_numeric_columns = 0;
 INSERT INTO t_nan_asc VALUES (1, 3), (1, 5), (1, 0/0), (1, 0/0), (2, 7), (2, 0/0);
 SELECT count() FROM t_nan_asc WHERE g = 1 AND r = 5 SETTINGS use_lightweight_primary_key_index_analysis = 1;
 1
@@ -560,7 +560,7 @@ realistic ranges across merged parts
 -- using the primary key, so its value must literally equal the indexed counts below it.
 DROP TABLE IF EXISTS t_ranges;
 CREATE TABLE t_ranges (org String, dt DateTime('UTC'), id UInt64)
-ENGINE = MergeTree ORDER BY (org, dt DESC, id) SETTINGS index_granularity = 128;
+ENGINE = MergeTree ORDER BY (org, dt DESC, id) SETTINGS index_granularity = 128, add_minmax_index_for_numeric_columns = 0;
 INSERT INTO t_ranges SELECT 'org_a', toDateTime('2026-06-01', 'UTC') + intDiv(number * 2592000, 2000), number FROM numbers(2000);
 INSERT INTO t_ranges SELECT 'org_m', toDateTime('2026-06-01', 'UTC') + intDiv(number * 2592000, 8000), number FROM numbers(8000);
 INSERT INTO t_ranges SELECT 'org_z', toDateTime('2026-06-10', 'UTC') + intDiv(number * 1814400, 2000), number FROM numbers(2000);

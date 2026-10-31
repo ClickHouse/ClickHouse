@@ -19,8 +19,10 @@ SET enable_parallel_replicas = 0;
 -- Bloom filter in skip index
 DROP TABLE IF EXISTS bf_fact;
 DROP TABLE IF EXISTS bf_dim;
+-- Implicit minmax indices would prune granules on the paths that must observe zero drops
+-- (the capped filter and the `ignore_data_skipping_indices` case), so opt the fact tables out.
 CREATE TABLE bf_fact (id UInt64, k UInt64, v UInt64, INDEX idx_k k TYPE bloom_filter GRANULARITY 1)
-ENGINE = MergeTree ORDER BY id SETTINGS index_granularity = 16;
+ENGINE = MergeTree ORDER BY id SETTINGS index_granularity = 16, add_minmax_index_for_numeric_columns = 0;
 CREATE TABLE bf_dim (k UInt64, tag String) ENGINE = MergeTree ORDER BY k;
 INSERT INTO bf_fact SELECT number, number, number FROM numbers(2000);
 INSERT INTO bf_dim SELECT number, if(number < 64, 'hot', 'cold') FROM numbers(2000);
@@ -28,7 +30,7 @@ INSERT INTO bf_dim SELECT number, if(number < 64, 'hot', 'cold') FROM numbers(20
 DROP TABLE IF EXISTS bf_fact_cap;
 DROP TABLE IF EXISTS bf_dim_cap;
 CREATE TABLE bf_fact_cap (id UInt64, k UInt64, v UInt64, INDEX idx_k k TYPE bloom_filter GRANULARITY 1)
-ENGINE = MergeTree ORDER BY id SETTINGS index_granularity = 16;
+ENGINE = MergeTree ORDER BY id SETTINGS index_granularity = 16, add_minmax_index_for_numeric_columns = 0;
 CREATE TABLE bf_dim_cap (k UInt64, tag String) ENGINE = MergeTree ORDER BY k;
 INSERT INTO bf_fact_cap SELECT number, number, number FROM numbers(2000);
 INSERT INTO bf_dim_cap SELECT number, if(number < 64, 'hot', 'cold') FROM numbers(2000);
@@ -36,7 +38,7 @@ INSERT INTO bf_dim_cap SELECT number, if(number < 64, 'hot', 'cold') FROM number
 DROP TABLE IF EXISTS jrf_fact;
 DROP TABLE IF EXISTS jrf_dim;
 CREATE TABLE jrf_fact (id UInt64, k Int32, v UInt64, INDEX idx_k k TYPE set(0) GRANULARITY 1)
-ENGINE = MergeTree ORDER BY id SETTINGS index_granularity = 8192;
+ENGINE = MergeTree ORDER BY id SETTINGS index_granularity = 8192, add_minmax_index_for_numeric_columns = 0;
 CREATE TABLE jrf_dim (k Int32, tag String) ENGINE = MergeTree ORDER BY k;
 INSERT INTO jrf_fact SELECT number, number, number FROM numbers(50100);
 -- two dense clusters with a large gap: an exact key set prunes the gap; a [min,max] range does not

@@ -25,10 +25,12 @@ SET max_threads_for_indexes = 1;
 DROP TABLE IF EXISTS t_stats_parallel_load;
 
 -- No merges: they would survive reattaching, unlike `SYSTEM STOP MERGES`.
+-- No implicit min-max indices: they would prune parts even with the statistics-based pruning disabled.
 CREATE TABLE t_stats_parallel_load (a UInt64, b UInt64, c UInt64)
 ENGINE = MergeTree ORDER BY tuple()
 SETTINGS auto_statistics_types = 'basic, uniq_v2', prewarm_statistics_cache = 0,
-    max_bytes_to_merge_at_max_space_in_pool = 1, max_bytes_to_merge_at_min_space_in_pool = 1;
+    max_bytes_to_merge_at_max_space_in_pool = 1, max_bytes_to_merge_at_min_space_in_pool = 1,
+    add_minmax_index_for_numeric_columns = 0;
 
 -- 50 parts of 100 rows each, the part `i` has the values of `a` from `100 * i` to `100 * i + 99`.
 INSERT INTO t_stats_parallel_load SELECT number, number % 7, number % 100 FROM numbers(5000)

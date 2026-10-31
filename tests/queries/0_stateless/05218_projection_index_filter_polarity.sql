@@ -13,7 +13,7 @@ SET use_query_condition_cache = 0;          -- a cached granule set would leak b
 DROP TABLE IF EXISTS t_projection_polarity;
 
 CREATE TABLE t_projection_polarity (id UInt64, a UInt64, x UInt64, b UInt64) ENGINE = MergeTree ORDER BY id
-SETTINGS index_granularity = 8192, index_granularity_bytes = 0, min_bytes_for_wide_part = 0;
+SETTINGS index_granularity = 8192, index_granularity_bytes = 0, min_bytes_for_wide_part = 0, add_minmax_index_for_numeric_columns = 0;
 
 -- `b` is outside the projection, which is what makes a conjunct over it non-computable there.
 ALTER TABLE t_projection_polarity ADD PROJECTION p (SELECT a, x, _part_offset ORDER BY a);

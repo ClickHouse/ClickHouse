@@ -11,6 +11,8 @@
 -- one, whether the part stores it or not, and rebuilds the indices over it; the rebuilt-index
 -- predictor in `splitAndModifyMutationCommands` must take the same decision, or it keeps the absent
 -- carrier `c` out of the part and leaves the freshly materialized `idx_new` inert.
+-- The tables opt out of the implicit min-max indices (`add_minmax_index_for_numeric_columns`):
+-- they would add index files to the counts of built skip indices that these cases check.
 
 SET mutations_sync = 0, alter_sync = 0;
 -- Statistics part pruning is an independent mechanism that can drop a whole part before any index
@@ -22,7 +24,7 @@ DROP TABLE IF EXISTS t_sibling_marker_materialized;
 CREATE TABLE t_sibling_marker_materialized (k UInt64, d DateTime, c String TTL d + INTERVAL 1 SECOND,
     e UInt64, m UInt64, INDEX idx_old (c, m) TYPE set(100) GRANULARITY 1)
 ENGINE = MergeTree ORDER BY k
-SETTINGS index_granularity = 4, min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0,
+SETTINGS add_minmax_index_for_numeric_columns = 0, index_granularity = 4, min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0,
     ratio_of_defaults_for_sparse_serialization = 1.0,
     skip_empty_columns_on_insert = 1, serialization_info_version = 'with_missing_columns';
 -- `m` is all type-default, so the part records it as a marker only.

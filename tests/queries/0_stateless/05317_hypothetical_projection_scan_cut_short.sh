@@ -2,6 +2,8 @@
 # Tags: no-parallel, no-fasttest
 # Tag no-parallel: uses the server-global failpoint whatif_projection_scan_cut_short
 # a projection scan that stops early, as a time limit in `break` mode stops it, must not give an estimate
+# the implicit minmax indices of add_minmax_index_for_numeric_columns would give the projection its own skip indexes,
+# and `EXPLAIN WHATIF` does not estimate such projections, so the scan would never start
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -10,7 +12,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 $CLICKHOUSE_CLIENT -q "
     DROP TABLE IF EXISTS t_whatif_break;
     CREATE TABLE t_whatif_break (a UInt64, b UInt64) ENGINE = MergeTree ORDER BY a
-        SETTINGS index_granularity = 100, index_granularity_bytes = 0, min_bytes_for_wide_part = 0;
+        SETTINGS index_granularity = 100, index_granularity_bytes = 0, min_bytes_for_wide_part = 0, add_minmax_index_for_numeric_columns = 0;
     INSERT INTO t_whatif_break SELECT number, cityHash64(number) % 1000 FROM numbers(20000);
 "
 

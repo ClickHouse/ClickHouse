@@ -1,0 +1,4 @@
+default - implicit minmax index columns	auto_minmax_index_id	id
+default - implicit minmax index columns	auto_minmax_index_x	x
+default - implicit minmax index columns	auto_minmax_index_y	y
+disabled - implicit minmax index count	0
