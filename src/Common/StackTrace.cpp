@@ -34,6 +34,10 @@
 #include <absl/debugging/stacktrace.h>
 #endif
 
+#if defined(__ELF__) && !defined(OS_FREEBSD)
+#include <link.h>
+#endif
+
 #if defined(OS_DARWIN)
 /// This header contains functions like `backtrace` and `backtrace_symbols`
 /// Which will be used for stack unwinding on Mac.
@@ -65,6 +69,24 @@ bool shouldShowAddress(const void * addr)
 
     return show_addresses.load(std::memory_order_relaxed);
 }
+
+/// A fault address above the first page is shown only as an offset inside a loaded object:
+/// the runtime address of the heap, a stack or JIT code must not be published.
+std::optional<StackTrace::ResolvedAddress> resolveFaultAddress(const void * addr)
+{
+    if (!shouldShowAddress(addr))
+        return {};
+
+    if (reinterpret_cast<uintptr_t>(addr) < 4096)
+        return StackTrace::ResolvedAddress{.address = addr, .object = {}, .kind = StackTrace::AddressKind::Unsupported};
+
+    /// Where the address cannot be resolved into an object (e.g. on macOS and FreeBSD),
+    /// `tryResolveAddress` returns the runtime address unchanged, so it must not be shown either.
+    auto resolved = StackTrace::tryResolveAddress(addr);
+    if (!resolved.address || resolved.kind == StackTrace::AddressKind::Unsupported)
+        return {};
+    return resolved;
+}
 }
 
 StackTrace::StackTrace()
@@ -90,7 +112,13 @@ std::string signalToErrorMessage(int sig, const siginfo_t & info, [[maybe_unused
     {
         using namespace std::string_literals;
 
-        std::string address = info.si_addr == nullptr ? "NULL pointer"s : (shouldShowAddress(info.si_addr) ? fmt::format("{}", info.si_addr) : ""s);
+        std::string address;
+        if (info.si_addr == nullptr)
+            address = "NULL pointer";
+        else if (const auto resolved = resolveFaultAddress(info.si_addr))
+            address = resolved->object.empty()
+                ? fmt::format("{:#x}", reinterpret_cast<uintptr_t>(resolved->address))
+                : fmt::format("{:#x} in {}", reinterpret_cast<uintptr_t>(resolved->address), resolved->object);
         std::string access = getFaultMemoryAccessType(sig, context);
         if (access.empty())
             access = "<not available>";
@@ -117,10 +145,12 @@ std::optional<UInt64> getFaultAddress(int sig, const siginfo_t & info)
     if (info.si_addr == nullptr)
         return 0;
 
-    if (shouldShowAddress(info.si_addr))
-        return reinterpret_cast<UInt64>(info.si_addr);
+    /// An offset inside another object cannot be told apart from one inside the executable.
+    const auto resolved = resolveFaultAddress(info.si_addr);
+    if (!resolved || resolved->kind == StackTrace::AddressKind::OtherObject)
+        return std::nullopt;
 
-    return std::nullopt;
+    return reinterpret_cast<UInt64>(resolved->address);
 }
 
 std::string getFaultMemoryAccessType(int sig, [[maybe_unused]] const ucontext_t & context)
@@ -368,14 +398,50 @@ resolveAddressImpl(const DB::SymbolIndex & symbol_index, const void * virtual_ad
 #endif
 
 #if defined(__ELF__) && !defined(OS_FREEBSD)
+/// Defined by the linker at the runtime address of the executable's ELF header.
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wreserved-identifier"
+extern "C" const ElfW(Ehdr) __ehdr_start; // NOLINT(bugprone-reserved-identifier,cert-dcl37-c,cert-dcl51-cpp)
+#pragma clang diagnostic pop
+
 namespace
 {
+/// The load bias and the address range of the main executable, read from its own program headers,
+/// so that they are known without the symbol index and without taking the loader lock.
+struct MainObjectBounds
+{
+    uintptr_t bias = 0;
+    uintptr_t begin = 0;
+    uintptr_t end = 0;
+};
+
+MainObjectBounds getMainObjectBounds()
+{
+    const auto header = reinterpret_cast<uintptr_t>(&__ehdr_start);
+    const auto * program_headers = reinterpret_cast<const ElfW(Phdr) *>(header + __ehdr_start.e_phoff);
+
+    MainObjectBounds bounds{.bias = header, .begin = UINTPTR_MAX, .end = 0};
+    for (size_t i = 0; i < __ehdr_start.e_phnum; ++i)
+    {
+        const auto & segment = program_headers[i];
+        if (segment.p_type != PT_LOAD)
+            continue;
+        if (segment.p_offset == 0)
+            bounds.bias = header - segment.p_vaddr;
+        bounds.begin = std::min<uintptr_t>(bounds.begin, segment.p_vaddr);
+        bounds.end = std::max<uintptr_t>(bounds.end, segment.p_vaddr + segment.p_memsz);
+    }
+    bounds.begin += bounds.bias;
+    bounds.end += bounds.bias;
+    return bounds;
+}
+
 StackTrace::ResolvedAddress resolveAddress(const DB::SymbolIndex & symbol_index, const void * virtual_addr)
 {
     const auto [address, object] = resolveAddressImpl(symbol_index, virtual_addr);
 
     if (!object)
-        return {virtual_addr, {}, StackTrace::AddressKind::UnknownMapping};
+        return {nullptr, {}, StackTrace::AddressKind::UnknownMapping};
     if (object == symbol_index.thisObject())
         return {reinterpret_cast<const void *>(address), {}, StackTrace::AddressKind::MainObject};
     return {reinterpret_cast<const void *>(address), object->name, StackTrace::AddressKind::OtherObject};
@@ -392,27 +458,36 @@ StackTrace::ResolvedAddress StackTrace::resolveAddress(const void * virtual_addr
 #endif
 }
 
-std::optional<StackTrace::ResolvedAddress> StackTrace::tryResolveAddress(const void * virtual_addr)
+StackTrace::ResolvedAddress StackTrace::tryResolveAddress(const void * virtual_addr)
 {
 #if defined(__ELF__) && !defined(OS_FREEBSD)
-    const DB::SymbolIndex * symbol_index = DB::SymbolIndex::instanceIfInitialized();
-    if (!symbol_index)
-        return std::nullopt;
-    return ::resolveAddress(*symbol_index, virtual_addr);
+    if (const DB::SymbolIndex * symbol_index = DB::SymbolIndex::instanceIfInitialized())
+        return ::resolveAddress(*symbol_index, virtual_addr);
+
+    const auto main_object = getMainObjectBounds();
+    const auto address = reinterpret_cast<uintptr_t>(virtual_addr);
+    if (main_object.begin <= address && address < main_object.end)
+        return {reinterpret_cast<const void *>(address - main_object.bias), {}, AddressKind::MainObject};
+    return {nullptr, {}, AddressKind::UnknownMapping};
 #else
-    return ResolvedAddress{virtual_addr, {}, AddressKind::Unsupported};
+    return {virtual_addr, {}, AddressKind::Unsupported};
 #endif
 }
 
 UInt64 StackTrace::resolveAddressForStorage(const void * virtual_addr)
 {
     const ResolvedAddress resolved = resolveAddress(virtual_addr);
-    /// Only the main executable's offsets are unambiguous on their own: a column of bare numbers has
-    /// nowhere to record which object an offset belongs to. A runtime address keeps that information,
-    /// because the object that contains it is the one it is mapped into.
-    if (resolved.kind != AddressKind::MainObject)
-        return reinterpret_cast<UInt64>(virtual_addr);
-    return reinterpret_cast<UInt64>(resolved.address);
+    switch (resolved.kind)
+    {
+        case AddressKind::MainObject:
+        case AddressKind::Unsupported:
+            return reinterpret_cast<UInt64>(resolved.address);
+        /// A bare offset cannot say which object it belongs to, and the runtime address must not be published.
+        case AddressKind::OtherObject:
+        case AddressKind::UnknownMapping:
+            return 0;
+    }
+    UNREACHABLE();
 }
 
 void StackTrace::forEachFrame(
@@ -479,7 +554,10 @@ void StackTrace::forEachFrame(
         }
 
         if (const auto * symbol = symbol_index.findSymbol(current_frame.physical_addr))
-            current_frame.symbol = demangle(symbol->name);
+        {
+            if (const char * symbol_name = symbol_index.getSymbolNameCString(*symbol); *symbol_name)
+                current_frame.symbol = demangle(symbol_name);
+        }
 
         for (const auto & frame : inline_frames)
         {
@@ -538,7 +616,10 @@ void StackTrace::forEachFrame(
         }
 
         if (const auto * symbol = symbol_index.findSymbol(current_frame.virtual_addr))
-            current_frame.symbol = demangle(symbol->name);
+        {
+            if (const char * symbol_name = symbol_index.getSymbolNameCString(*symbol); *symbol_name)
+                current_frame.symbol = demangle(symbol_name);
+        }
 
         for (const auto & frame : inline_frames)
         {
@@ -861,7 +942,8 @@ toStringEveryLineImpl([[maybe_unused]] bool fatal, const StackTraceRefTriple & s
         else
             out << "?";
 
-        if (shouldShowAddress(frame.physical_addr))
+        /// Without an object, `physical_addr` is the runtime address (e.g. JIT code).
+        if (frame.object && shouldShowAddress(frame.physical_addr))
         {
             out << " @ ";
             DB::writePointerHex(frame.physical_addr, out);
@@ -873,7 +955,7 @@ toStringEveryLineImpl([[maybe_unused]] bool fatal, const StackTraceRefTriple & s
     auto callback_wrapper = [&](const StackTrace::Frame & frame)
     {
         if (frame.virtual_addr && shouldShowAddress(frame.virtual_addr))
-            callback(fmt::format("{}. {}", frame_index++, frame.virtual_addr));
+            callback(fmt::format("{}. {:#x}", frame_index++, reinterpret_cast<uintptr_t>(frame.virtual_addr)));
     };
 #endif
 

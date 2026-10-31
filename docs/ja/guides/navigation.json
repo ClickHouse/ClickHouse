@@ -5,6 +5,7 @@
       "pages": [
         "ja/guides/clickhouse/index",
         "ja/guides/clickhouse/kusto-query-language",
+        "ja/guides/clickhouse/logsql",
         {
           "group": "データフォーマット",
           "pages": [

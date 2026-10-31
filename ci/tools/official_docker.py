@@ -19,7 +19,7 @@ from typing import Dict, Iterable, List, Optional, Set
 
 from env_helper import GITHUB_REPOSITORY, IS_CI
 from git_helper import GIT_PREFIX, Git, git_runner, is_shallow
-from version_helper import (
+from ci.jobs.scripts.clickhouse_version import (
     ClickHouseVersion,
     get_supported_versions,
     get_tagged_versions,

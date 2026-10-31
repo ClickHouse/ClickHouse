@@ -1,5 +1,7 @@
 #include <Storages/MergeTree/MergeTreeIndexReadResultPool.h>
 #include <Storages/MergeTree/MergeTreeDataSelectExecutor.h>
+#include <Storages/MergeTree/IMergeTreeDataPart.h>
+#include <Processors/TopKThresholdTracker.h>
 #include <Storages/MergeTree/MergeTreeIndexGranularity.h>
 #include <Storages/MergeTree/MergeTreeReadPoolProjectionIndex.h>
 #include <Storages/MergeTree/MergeTreeSelectProcessor.h>
@@ -23,6 +25,7 @@ namespace ProfileEvents
     extern const Event SelectedRanges;
     extern const Event RuntimeFilterGranulesConsidered;
     extern const Event RuntimeFilterGranulesDropped;
+    extern const Event TopKGranulesSkippedByPrimaryKey;
 }
 
 namespace DB
@@ -69,6 +72,12 @@ MergeTreeSkipIndexReader::MergeTreeSkipIndexReader(
 {
 }
 
+void MergeTreeSkipIndexReader::setTopKPrimaryKeyPruning(size_t primary_key_column_position, TopKThresholdTrackerPtr tracker)
+{
+    top_k_primary_key_column_position = primary_key_column_position;
+    top_k_threshold_tracker = std::move(tracker);
+}
+
 bool MergeTreeSkipIndexReader::hasRuntimeFilters() const
 {
     /// The dynamic predicate can prune only through the primary key or dynamic skip indexes.
@@ -88,9 +97,13 @@ SkipIndexReadResultPtr MergeTreeSkipIndexReader::read(
 
     IndexGranulesMap index_granules;
 
+    /// The same RPN template must be used for sizing the bitset, recording and merging the partial results.
+    const KeyCondition * rpn_template_for_part = use_for_disjunctions ? &key_condition_rpn_template->generateForPart(*part_info) : nullptr;
+
     MergeTreeDataSelectExecutor::PartialDisjunctionResult partial_eval_results;
-    if (use_for_disjunctions)
-        partial_eval_results.resize(part_info->getIndexGranularity().getMarksCountWithoutFinal() * MergeTreeDataSelectExecutor::MAX_BITS_FOR_PARTIAL_DISJUNCTION_RESULT, true);
+    if (rpn_template_for_part)
+        partial_eval_results.resize(part_info->getIndexGranularity().getMarksCountWithoutFinal() * rpn_template_for_part->getRPN().size(), true);
+
     for (const auto & index_and_condition : skip_indexes.useful_indices)
     {
         if (is_cancelled)
@@ -110,7 +123,7 @@ SkipIndexReadResultPtr MergeTreeSkipIndexReader::read(
         auto [filtered_ranges, filtered_hints] = MergeTreeDataSelectExecutor::filterMarksUsingIndex(
             index_and_condition.index,
             index_and_condition.condition_template->generateForPart(*part_info),
-            key_condition_rpn_template->generateForPart(*part_info),
+            rpn_template_for_part,
             part_info,
             ranges,
             input.read_hints,
@@ -132,10 +145,10 @@ SkipIndexReadResultPtr MergeTreeSkipIndexReader::read(
         total_granules = ranges.getNumberOfMarks();
     }
 
-    if (use_for_disjunctions)
+    if (rpn_template_for_part)
     {
         ranges = MergeTreeDataSelectExecutor::mergePartialResultsForDisjunctions(
-                            *part_info, ranges, key_condition_rpn_template->generateForPart(*part_info),
+                            *part_info, ranges, *rpn_template_for_part,
                             partial_eval_results, reader_settings, log);
 
         LOG_DEBUG(log, "Final set of granules after AND/OR processing : {} out of {} in part {}",
@@ -164,7 +177,6 @@ SkipIndexReadResultPtr MergeTreeSkipIndexReader::read(
             {
                 const auto & primary_key = metadata_snapshot->getPrimaryKey();
                 KeyCondition dynamic_key_condition(filter_dag, context, primary_key);
-                dynamic_key_condition.relaxRangeAtomsOverNaNHidingTupleColumns(primary_key.data_types);
 
                 ranges = MergeTreeDataSelectExecutor::markRangesFromPKRange(
                     data_part,
@@ -197,7 +209,7 @@ SkipIndexReadResultPtr MergeTreeSkipIndexReader::read(
                 auto [filtered_ranges, filtered_hints] = MergeTreeDataSelectExecutor::filterMarksUsingIndex(
                     index_helper,
                     condition,
-                    /*key_condition_rpn_template=*/{},
+                    /*key_condition_rpn_template=*/nullptr,
                     part_info,
                     ranges,
                     input.read_hints,
@@ -239,7 +251,12 @@ SkipIndexReadResultPtr MergeTreeSkipIndexReader::read(
 
     res->index_granules = std::move(index_granules);
 
-    if (skip_indexes.skip_index_for_top_k_filtering && skip_indexes.threshold_tracker)
+    /// The minmax index for TopK filtering is subject to the same staleness check as the other skip
+    /// indexes: a pending mutation that rewrites, drops or renames its column leaves the part with an
+    /// index file that does not describe the values a read returns, so pruning marks by the running
+    /// threshold against it would drop rows the query has to see.
+    if (skip_indexes.skip_index_for_top_k_filtering && skip_indexes.threshold_tracker
+        && MergeTreeDataSelectExecutor::canUseIndex(skip_indexes.skip_index_for_top_k_filtering, metadata_snapshot, all_updated_columns))
     {
         res->min_max_index_for_top_k = MergeTreeDataSelectExecutor::getMinMaxIndexGranules(
             part_info,
@@ -254,7 +271,64 @@ SkipIndexReadResultPtr MergeTreeSkipIndexReader::read(
 
         res->threshold_tracker = skip_indexes.threshold_tracker;
     }
+
+    res->may_skip_granules_besides_top_k_primary_key
+        = !skip_indexes.useful_indices.empty() || use_for_disjunctions || hasRuntimeFilters() || res->min_max_index_for_top_k;
+
+    /// Projection parts have a primary key of their own, which the position was not computed for.
+    if (top_k_primary_key_column_position && top_k_threshold_tracker && !part_info->isProjectionPart())
+    {
+        if (auto data_part = part_info->getDataPart())
+        {
+            /// The index may hold fewer columns than the primary key has (`primary_key_ratio_of_unique_prefix_values_to_skip_suffix_columns`).
+            auto primary_index = data_part->getIndex();
+            if (primary_index && *top_k_primary_key_column_position < primary_index->size())
+            {
+                res->primary_index_for_top_k = primary_index;
+                res->top_k_primary_key_column_position = *top_k_primary_key_column_position;
+                res->threshold_tracker = top_k_threshold_tracker;
+            }
+        }
+    }
+
     return res;
+}
+
+bool SkipIndexReadResult::isGranuleBeyondTopKThreshold(size_t mark) const
+{
+    const Columns & index = *primary_index_for_top_k;
+    const size_t position = top_k_primary_key_column_position;
+    const IColumn & key_column = *index[position];
+
+    /// The index has one row per granule start, plus one for the end of the last granule when the part has a final mark.
+    const size_t index_rows = key_column.size();
+    if (mark >= index_rows)
+        return false;
+
+    const int direction = threshold_tracker->getDirection();
+
+    /// Inside a granule the key column is sorted only while the key columns before it stay constant, which the
+    /// index rows at both ends of the granule show. The first key column is sorted throughout the part, so for it
+    /// the granule start alone bounds the granule from below; bounding it from above always needs the next index row.
+    const bool needs_next_row = position > 0 || direction < 0;
+    if (needs_next_row && mark + 1 >= index_rows)
+        return false;
+
+    for (size_t i = 0; i < position; ++i)
+        if (index[i]->compareAt(mark, mark + 1, *index[i], /*nan_direction_hint=*/ 1) != 0)
+            return false;
+
+    /// ASC: the granule start is the smallest value of the granule; every row is beyond the threshold when it is.
+    /// DESC: the next granule start is not smaller than any value of the granule; every row is beyond the threshold when it is.
+    Field granule_bound;
+    key_column.get(direction > 0 ? mark : mark + 1, granule_bound);
+
+    /// A different `Field` type means the part stores the key in another type than the query sees (a pending
+    /// type change): comparing would be meaningless, so read the granule.
+    if (granule_bound.isNull() || granule_bound.getType() != threshold_tracker->getValue().getType())
+        return false;
+
+    return !threshold_tracker->isValueInsideThreshold(granule_bound);
 }
 
 ProjectionIndexBitmap::ProjectionIndexBitmap(BitmapType bitmap_type)
@@ -591,6 +665,11 @@ bool MergeTreeIndexReadResult::canSkipAnyMark() const
     return skip_index_read_result || projection_index_read_result;
 }
 
+bool MergeTreeIndexReadResult::canSkipAnyMarkBesidesTopKPrimaryKey() const
+{
+    return (skip_index_read_result && skip_index_read_result->may_skip_granules_besides_top_k_primary_key) || projection_index_read_result;
+}
+
 bool MergeTreeIndexReadResult::canSkipMark(size_t mark, const MergeTreeIndexGranularity & index_granularity) const
 {
     if (skip_index_read_result)
@@ -607,6 +686,13 @@ bool MergeTreeIndexReadResult::canSkipMark(size_t mark, const MergeTreeIndexGran
             if (!skip_result.threshold_tracker->isValueInsideThreshold(
                     skip_result.min_max_index_for_top_k->granules[granule_num].min_or_max_value))
                 return true;
+        }
+
+        if (skip_result.threshold_tracker && skip_result.threshold_tracker->isSet() && skip_result.primary_index_for_top_k
+            && skip_result.isGranuleBeyondTopKThreshold(mark))
+        {
+            ProfileEvents::increment(ProfileEvents::TopKGranulesSkippedByPrimaryKey);
+            return true;
         }
     }
 
