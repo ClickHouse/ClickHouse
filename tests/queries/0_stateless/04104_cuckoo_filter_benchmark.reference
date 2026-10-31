@@ -1,0 +1,128 @@
+--- begin 04104_cuckoo_filter_benchmark ---
+--- single fpr=0.025 ---
+bloom_uncompressed	2
+cuckoo_uncompressed	15
+skip_index_bytes_both_nonzero
+1
+cuckoo_not_larger_than_bloom
+0
+--- single fpr=0.001 ---
+bloom_uncompressed	3
+cuckoo_uncompressed	19
+skip_index_bytes_both_nonzero
+1
+cuckoo_not_larger_than_bloom
+0
+--- single fpr=0.1 ---
+bloom_uncompressed	2
+cuckoo_uncompressed	15
+skip_index_bytes_both_nonzero
+1
+cuckoo_not_larger_than_bloom
+0
+--- pct1 fpr=0.025 ---
+bloom_uncompressed	101
+cuckoo_uncompressed	139
+skip_index_bytes_both_nonzero
+1
+cuckoo_not_larger_than_bloom
+0
+--- pct1 fpr=0.001 ---
+bloom_uncompressed	189
+cuckoo_uncompressed	267
+skip_index_bytes_both_nonzero
+1
+cuckoo_not_larger_than_bloom
+0
+--- pct1 fpr=0.1 ---
+bloom_uncompressed	64
+cuckoo_uncompressed	139
+skip_index_bytes_both_nonzero
+1
+cuckoo_not_larger_than_bloom
+0
+--- pct10 fpr=0.025 ---
+bloom_uncompressed	1002
+cuckoo_uncompressed	2061
+skip_index_bytes_both_nonzero
+1
+cuckoo_not_larger_than_bloom
+0
+--- pct10 fpr=0.001 ---
+bloom_uncompressed	1877
+cuckoo_uncompressed	4109
+skip_index_bytes_both_nonzero
+1
+cuckoo_not_larger_than_bloom
+0
+--- pct10 fpr=0.1 ---
+bloom_uncompressed	627
+cuckoo_uncompressed	2061
+skip_index_bytes_both_nonzero
+1
+cuckoo_not_larger_than_bloom
+0
+--- pct50 fpr=0.025 ---
+bloom_uncompressed	5002
+cuckoo_uncompressed	8205
+skip_index_bytes_both_nonzero
+1
+cuckoo_not_larger_than_bloom
+0
+--- pct50 fpr=0.001 ---
+bloom_uncompressed	9377
+cuckoo_uncompressed	16397
+skip_index_bytes_both_nonzero
+1
+cuckoo_not_larger_than_bloom
+0
+--- pct50 fpr=0.1 ---
+bloom_uncompressed	3127
+cuckoo_uncompressed	8205
+skip_index_bytes_both_nonzero
+1
+cuckoo_not_larger_than_bloom
+0
+--- pct90 fpr=0.025 ---
+bloom_uncompressed	9002
+cuckoo_uncompressed	16397
+skip_index_bytes_both_nonzero
+1
+cuckoo_not_larger_than_bloom
+0
+--- pct90 fpr=0.001 ---
+bloom_uncompressed	16877
+cuckoo_uncompressed	32781
+skip_index_bytes_both_nonzero
+1
+cuckoo_not_larger_than_bloom
+0
+--- pct90 fpr=0.1 ---
+bloom_uncompressed	5627
+cuckoo_uncompressed	16397
+skip_index_bytes_both_nonzero
+1
+cuckoo_not_larger_than_bloom
+0
+--- alldist fpr=0.025 ---
+bloom_uncompressed	10002
+cuckoo_uncompressed	16397
+skip_index_bytes_both_nonzero
+1
+cuckoo_not_larger_than_bloom
+0
+--- alldist fpr=0.001 ---
+bloom_uncompressed	18752
+cuckoo_uncompressed	32781
+skip_index_bytes_both_nonzero
+1
+cuckoo_not_larger_than_bloom
+0
+--- alldist fpr=0.1 ---
+bloom_uncompressed	6252
+cuckoo_uncompressed	16397
+skip_index_bytes_both_nonzero
+1
+cuckoo_not_larger_than_bloom
+0
+--- end 04104_cuckoo_filter_benchmark ---

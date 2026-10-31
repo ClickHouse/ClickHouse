@@ -621,6 +621,54 @@ MergeTreeIndexFactory::MergeTreeIndexFactory()
         .related = {"set", "tokenbf_v1"}});
     registerValidator("bloom_filter", bloomFilterIndexValidator);
 
+    registerCreator("cuckoo_filter", cuckooFilterIndexCreator, Documentation{
+        .description = "An experimental cuckoo filter over the values of the index expression, for speeding up equality and IN conditions. "
+            "Requires setting `allow_experimental_cuckoo_filter_index`. Supports the same column types as `bloom_filter` and its `equals`, `IN`, `has`, `hasAny`, and `hasAll` conditions, "
+            "but unlike `bloom_filter` it is not used through lossless type conversions of the key or for `arrayJoin` conditions.",
+        .syntax = "INDEX name expr TYPE cuckoo_filter([false_positive_rate]) GRANULARITY g",
+        .examples = {{
+            "cuckoo_filter",
+            R"(SET allow_experimental_cuckoo_filter_index = 1;
+
+CREATE TABLE tab
+(
+    id UInt64,
+    token String,
+    INDEX idx_token token TYPE cuckoo_filter(0.01) GRANULARITY 4
+)
+ENGINE = MergeTree
+ORDER BY id;
+
+SELECT count() FROM tab WHERE token = 'abc';)",
+            ""}},
+        .introduced_in = {26, 10},
+        .related = {"bloom_filter", "binary_fuse_filter"}});
+    registerValidator("cuckoo_filter", cuckooFilterIndexValidator);
+
+    registerCreator("binary_fuse_filter", binaryFuseFilterIndexCreator, Documentation{
+        .description = "An experimental binary fuse filter over the values of the index expression, for speeding up equality and IN conditions. "
+            "Requires setting `allow_experimental_binary_fuse_filter_index`. Supports the same column types as `bloom_filter` and its `equals`, `IN`, `has`, `hasAny`, and `hasAll` conditions, "
+            "but unlike `bloom_filter` it is not used through lossless type conversions of the key or for `arrayJoin` conditions.",
+        .syntax = "INDEX name expr TYPE binary_fuse_filter([false_positive_rate]) GRANULARITY g",
+        .examples = {{
+            "binary_fuse_filter",
+            R"(SET allow_experimental_binary_fuse_filter_index = 1;
+
+CREATE TABLE tab
+(
+    id UInt64,
+    token String,
+    INDEX idx_token token TYPE binary_fuse_filter(0.01) GRANULARITY 4
+)
+ENGINE = MergeTree
+ORDER BY id;
+
+SELECT count() FROM tab WHERE token = 'abc';)",
+            ""}},
+        .introduced_in = {26, 10},
+        .related = {"bloom_filter", "cuckoo_filter"}});
+    registerValidator("binary_fuse_filter", binaryFuseFilterIndexValidator);
+
 #if USE_USEARCH
     registerCreator("vector_similarity", vectorSimilarityIndexCreator, Documentation{
         .description = "An approximate nearest-neighbour index over a vector column (built using HNSW), for speeding up `ORDER BY <distance_function>(vector, reference) LIMIT n` queries.",
