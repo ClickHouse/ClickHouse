@@ -15,7 +15,6 @@ BUILD_TYPE_TO_STATIC_LOCATION = {
     BuildTypes.AMD_ILLUMOS: "illumos",
     BuildTypes.PPC64LE: "powerpc64le",
     BuildTypes.AMD_COMPAT: "amd64compat",
-    BuildTypes.AMD_MUSL: "amd64musl",
     BuildTypes.RISCV64: "riscv64",
     BuildTypes.S390X: "s390x",
     BuildTypes.LOONGARCH64: "loongarch64",

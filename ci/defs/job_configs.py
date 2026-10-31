@@ -673,11 +673,6 @@ class JobConfigs:
             runs_on=RunnerLabels.ARM_MEDIUM_CPU,
         ),
         Job.ParamSet(
-            parameter=BuildTypes.AMD_MUSL,
-            provides=[ArtifactNames.CH_AMD_MUSL],
-            runs_on=RunnerLabels.ARM_MEDIUM_CPU,
-        ),
-        Job.ParamSet(
             parameter=BuildTypes.RISCV64,
             provides=[ArtifactNames.CH_RISCV64],
             runs_on=RunnerLabels.ARM_MEDIUM_CPU,

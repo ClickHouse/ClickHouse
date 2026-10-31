@@ -65,8 +65,21 @@ set(SRCS
 # memmem is exported strong, so under sanitizers it would win the link over
 # compiler-rt's weak `memmem` interceptor and bypass its range checks. Skip it
 # there and let the interceptor wrap the system memmem, as before this PR.
+# compiler-rt intercepts `sincos` but not `sin` and `cos`, and in a static musl build the
+# interceptor calls `__real_sincos`. Define it here on top of llvm-libc's `sincos`, so that
+# `sincos(x)` keeps producing the same bits as the uninterceptable `sin(x)` and `cos(x)`:
+# with musl's `sincos` behind the interceptor `h3CellAreaRads2` printed a different last
+# digit in ASan builds. musl's own `sincos` is left out of the `__real_` renaming for this
+# (see contrib/compiler-rt-cmake/CMakeLists.txt). Standalone UBSan has no interceptors.
+if (SANITIZE AND USE_MUSL AND NOT SANITIZE STREQUAL "undefined")
+    list (APPEND SRCS "${CMAKE_CURRENT_SOURCE_DIR}/math/real_sincos.cpp")
+endif ()
+
 if (NOT SANITIZE)
     list (APPEND SRCS "${CMAKE_CURRENT_SOURCE_DIR}/string/memmem.cpp")
+    # x86_64-only strong memchr/strlen (the file is empty on other arches, where
+    # the Arm Optimized Routines already provide vectorized versions).
+    list (APPEND SRCS "${CMAKE_CURRENT_SOURCE_DIR}/string/str_functions.cpp")
 endif ()
 
 set(LIBC_NAMESPACE "__llvm_libc")

@@ -4,10 +4,12 @@ set(COMPACT_SYMBOLS_SOURCES
     compact-symbols.cpp
     ${ClickHouse_SOURCE_DIR}/src/Common/CompactSymbols.cpp)
 
+# Build the tool for the target only when it can run on the host (host == target). This must match
+# the native-build guard in the root CMakeLists.txt: a native musl build (host == target) does not
+# produce a native/ subtree, and its own statically linked compact-symbols runs on the host.
 if (NOT(
     CMAKE_HOST_SYSTEM_NAME STREQUAL CMAKE_SYSTEM_NAME
     AND CMAKE_HOST_SYSTEM_PROCESSOR STREQUAL CMAKE_SYSTEM_PROCESSOR
-    AND NOT USE_MUSL
 ))
     add_executable(compact-symbols EXCLUDE_FROM_ALL ${COMPACT_SYMBOLS_SOURCES})
 else()

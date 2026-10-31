@@ -1,9 +1,9 @@
 set(MUSL_SOURCE_DIR "${ClickHouse_SOURCE_DIR}/contrib/musl")
 
 # MUSL_ARCH is musl's name for the target architecture (the arch/<MUSL_ARCH>
-# directory in the musl sources), set by cmake/linux/toolchain-*-musl.cmake.
+# directory in the musl sources), set by the cmake/linux/toolchain-*.cmake files.
 if (NOT MUSL_ARCH)
-    message(FATAL_ERROR "Building musl from sources requires one of the cmake/linux/toolchain-*-musl.cmake toolchains")
+    message(FATAL_ERROR "Building musl from sources requires one of the cmake/linux toolchain files")
 endif()
 
 enable_language(ASM)
@@ -1688,8 +1688,9 @@ if (ENABLE_XRAY)
     # functions. Sleds are inert nops until patched, so early-init code is
     # unaffected. The dispatch handler's thread-local reentrancy guard makes
     # patching functions the handler itself calls safe. CRT objects stay
-    # uninstrumented. Note this only covers C sources - the hot asm routines
-    # (memcpy and friends) have no sleds.
+    # uninstrumented: rcrt1 runs before static-PIE self-relocation. Note this
+    # only covers C sources - the hot asm routines (memcpy and friends) have
+    # no sleds.
     #
     # Flags mirror cmake/xray_instrumentation.cmake, which activates XRay for
     # the rest of the tree only if LLVM is built along (ch_contrib::llvm
@@ -1771,8 +1772,37 @@ target_compile_options(musl-rcrt1 PRIVATE
     -fno-stack-protector
     -fno-sanitize=all
     -fno-builtin
+    # On x86_64, `_dlstart_c` takes the address of the hidden `__dls2` only inside inline asm
+    # (`GETFUNCSYM` in arch/x86_64/reloc.h). LTO does not see that reference, drops `__dls2`,
+    # and the link fails with "undefined hidden symbol: __dls2".
+    -fno-lto
+    -fno-whole-program-vtables
 )
 add_dependencies(musl-rcrt1 musl-headers)
+
+# crt1.o: the non-PIE static startup file. Only `clickhouse-examples` uses it, which is linked
+# with -no-pie (see src/Examples/CMakeLists.txt); everything else is a static PIE with rcrt1.o.
+add_library(musl-crt1 OBJECT "${MUSL_SOURCE_DIR}/crt/crt1.c")
+target_include_directories(musl-crt1 PRIVATE
+    # src/include first: provides features.h with the 'hidden' and 'weak' macros
+    "${MUSL_SOURCE_DIR}/src/include"
+    "${MUSL_SOURCE_DIR}/src/internal"
+    "${MUSL_SOURCE_DIR}/arch/${MUSL_ARCH}"
+    "${MUSL_GENERATED_DIR}"
+)
+target_compile_options(musl-crt1 PRIVATE
+    -std=c99
+    -DCRT
+    -ffreestanding
+    # Runs before the thread pointer and the canary exist (upstream musl NOSSP_OBJS covers all CRT objects).
+    -fno-stack-protector
+    -fno-sanitize=all
+    -fno-builtin
+    # The entry points are referenced only from inline asm, which LTO cannot see (see musl-rcrt1).
+    -fno-lto
+    -fno-whole-program-vtables
+)
+add_dependencies(musl-crt1 musl-headers)
 
 add_library(musl-crti OBJECT "${MUSL_SOURCE_DIR}/crt/${MUSL_ARCH}/crti.s")
 set_source_files_properties(
@@ -1788,17 +1818,23 @@ set_source_files_properties(
 )
 target_compile_options(musl-crtn PRIVATE -Qunused-arguments -Wa,--noexecstack)
 
+# static_pie_pad.o: one byte that cmake/linux/static_pie_pad.ld places 4 GiB above the image so that the
+# kernel loads a static PIE 4 GiB below the top of the address space (see the linker script). Linked
+# like the CRT objects, before everything else.
+add_library(musl-static_pie_pad OBJECT "${ClickHouse_SOURCE_DIR}/cmake/linux/static_pie_pad.c")
+target_compile_options(musl-static_pie_pad PRIVATE -std=c99 -fPIC -ffreestanding -fno-stack-protector -fno-sanitize=all -fno-lto -fno-whole-program-vtables)
+
 # The CRT object libraries must not participate in the global link interface: they
 # inherit a (weak) dependency back on `musl` through `global-group`, and together with
 # the `musl` -> `musl-crt` dependency below that would form a dependency cycle
 # involving non-static-library targets, which CMake rejects. They also don't link
 # anything — they only compile standalone startup objects.
-set_target_properties(musl-rcrt1 musl-crti musl-crtn PROPERTIES LINK_LIBRARIES "" INTERFACE_LINK_LIBRARIES "")
+set_target_properties(musl-crt1 musl-rcrt1 musl-crti musl-crtn musl-static_pie_pad PROPERTIES LINK_LIBRARIES "" INTERFACE_LINK_LIBRARIES "")
 
 # Copy the CRT objects to stable paths so that the link flags in
 # cmake/linux/default_libs.cmake can reference them. Every executable links the `musl`
 # library, and `musl` depends on `musl-crt`, so the copies exist before any link runs.
-foreach (crt rcrt1 crti crtn)
+foreach (crt crt1 rcrt1 crti crtn static_pie_pad)
     add_custom_command(
         OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/${crt}.o"
         COMMAND ${CMAKE_COMMAND} -E copy_if_different "$<TARGET_OBJECTS:musl-${crt}>" "${CMAKE_CURRENT_BINARY_DIR}/${crt}.o"
@@ -1809,8 +1845,10 @@ foreach (crt rcrt1 crti crtn)
 endforeach ()
 add_custom_target(musl-crt
     DEPENDS
+        "${CMAKE_CURRENT_BINARY_DIR}/crt1.o"
         "${CMAKE_CURRENT_BINARY_DIR}/rcrt1.o"
         "${CMAKE_CURRENT_BINARY_DIR}/crti.o"
         "${CMAKE_CURRENT_BINARY_DIR}/crtn.o"
+        "${CMAKE_CURRENT_BINARY_DIR}/static_pie_pad.o"
 )
 add_dependencies(musl musl-crt)
