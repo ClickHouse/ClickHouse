@@ -157,11 +157,12 @@ MergeTreeIndexTextPreprocessor::MergeTreeIndexTextPreprocessor(ASTPtr expression
         if (func && func->arguments && func->arguments->children.size() == 1)
         {
             const auto & name = getFunctionCanonicalNameIfAny(func->name);
+            const auto & arg = func->arguments->children.front();
+            const bool applied_to_index_column = arg->getColumnName() == index_description.column_names.front();
             if (name == "lower" || name == "upper")
-            {
-                const auto & arg = func->arguments->children.front();
-                is_ascii_lower_or_upper = arg->getColumnName() == index_description.column_names.front();
-            }
+                is_ascii_lower_or_upper = applied_to_index_column;
+            else if (name == "lowerUTF8" || name == "upperUTF8")
+                is_utf8_lower_or_upper = applied_to_index_column;
         }
     }
 }
