@@ -19,22 +19,25 @@ namespace ErrorCodes
 
 static constexpr UInt32 max_scale = 9;
 
-DataTypeDateTime64::DataTypeDateTime64(UInt32 scale_, std::string_view time_zone_name)
-    : DataTypeDecimalBase<DateTime64>(DecimalUtils::max_precision<DateTime64>, scale_),
-      TimezoneMixin(time_zone_name)
+/// Checked before the base class narrows the scale to UInt32.
+static UInt32 checkScale(UInt64 scale)
 {
     if (scale > max_scale)
         throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "Scale {} is too large for DateTime64. "
-            "Maximum is up to nanoseconds (9).", std::to_string(scale));
+            "Maximum is up to nanoseconds (9).", scale);
+    return static_cast<UInt32>(scale);
 }
 
-DataTypeDateTime64::DataTypeDateTime64(UInt32 scale_, const TimezoneMixin & time_zone_info)
-    : DataTypeDecimalBase<DateTime64>(DecimalUtils::max_precision<DateTime64>, scale_),
+DataTypeDateTime64::DataTypeDateTime64(UInt64 scale_, std::string_view time_zone_name)
+    : DataTypeDecimalBase<DateTime64>(DecimalUtils::max_precision<DateTime64>, checkScale(scale_)),
+      TimezoneMixin(time_zone_name)
+{
+}
+
+DataTypeDateTime64::DataTypeDateTime64(UInt64 scale_, const TimezoneMixin & time_zone_info)
+    : DataTypeDecimalBase<DateTime64>(DecimalUtils::max_precision<DateTime64>, checkScale(scale_)),
       TimezoneMixin(time_zone_info)
 {
-    if (scale > max_scale)
-        throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "Scale {} is too large for DateTime64. "
-            "Maximum is up to nanoseconds (9).", std::to_string(scale));
 }
 
 std::string DataTypeDateTime64::doGetName() const
