@@ -36,6 +36,10 @@ private:
     size_t offset_of_current_row = std::numeric_limits<size_t>::max();
     size_t offset_of_prev_row = std::numeric_limits<size_t>::max();
 
+    /// The last row's window may still be retained after a failed EOF probe.
+    ReadBuffer::Position buffer_begin_on_current_row = nullptr;
+    size_t buffer_size_on_current_row = 0;
+
     /// For alignment of diagnostic info.
     size_t max_length_of_column_name = 0;
     size_t max_length_of_data_type_name = 0;
