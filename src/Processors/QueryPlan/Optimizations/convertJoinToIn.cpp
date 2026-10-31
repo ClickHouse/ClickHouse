@@ -289,7 +289,7 @@ size_t tryConvertJoinToIn(QueryPlan::Node * parent_node, QueryPlan::Nodes & node
     auto in_conversion = buildInConversion(
         lhs_in_node->step->getOutputHeader(),
         name_pairs,
-        std::make_unique<QueryPlan>(QueryPlan::extractSubplan(rhs_in_node, nodes)),
+        std::make_unique<QueryPlan>(QueryPlan::extractSubplan(rhs_in_node, nodes, *settings.source_plan)),
         std::move(set_settings));
 
     {

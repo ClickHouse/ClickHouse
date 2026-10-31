@@ -70,6 +70,13 @@ struct SelectQueryOptions
     /// only on remote pipes, so a `ColumnBLOB` would reach the parent pipeline as is.
     bool is_local_plan_for_distributed_query = false;
 
+    /// This plan (or an enclosing plan it is part of) is built while `make_distributed_plan`
+    /// is in effect, i.e. the resulting top-level plan may be split into fragments by
+    /// `QueryPlan::convertToDistributed`. Unlike the setting, this flag is sticky: the Planner
+    /// raises it from the query context and it propagates through `subquery()`, so a subquery
+    /// cannot escape it by locally clearing the setting in its own SETTINGS clause.
+    bool building_distributed_plan = false;
+
     size_t max_step_description_length = 0;
 
     bool force_materialize_cte = false;
