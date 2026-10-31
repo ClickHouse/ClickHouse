@@ -60,10 +60,7 @@ void ASTProjectionDeclaration::readJSON(const Poco::JSON::Object & json)
     name = r.getString("name");
 
     /// `query` must be the parser-owned `ASTProjectionSelectQuery`.
-    auto query_child = r.readExpressionChild("query");
-    if (query_child && !query_child->as<ASTProjectionSelectQuery>())
-        throw Exception(ErrorCodes::BAD_ARGUMENTS,
-            "Unexpected node type for key 'query' during AST JSON deserialization");
+    auto query_child = r.readChildOfType<ASTProjectionSelectQuery>("query");
     if (query_child)
         set(query, query_child);
 

@@ -575,6 +575,26 @@ protected:
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 };
 
+class ParserProjectionSelectElement : public IParserBase
+{
+public:
+    ParserProjectionSelectElement()
+        : expression_parser(/*allow_alias_without_as_keyword=*/ true)
+    {
+    }
+
+protected:
+    const char * getName() const override
+    {
+        return "projection SELECT element";
+    }
+
+    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
+
+private:
+    ParserExpressionWithOptionalAlias expression_parser;
+};
+
 
 class ParserIndexDeclarationList : public IParserBase
 {

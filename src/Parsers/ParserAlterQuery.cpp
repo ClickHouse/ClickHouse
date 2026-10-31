@@ -2942,6 +2942,68 @@ SELECT time, message FROM events WHERE event_type = 'click';
 
 The implication check is conservative — it uses exact conjunct matching on the canonical expression form. It may miss some valid optimization opportunities (e.g., range implications), but it will never produce incorrect results.
 
+### Data skipping indexes in projections {#projection-skip-indexes}
+
+A projection can declare its own [data skipping indexes](/reference/engines/table-engines/mergetree-family/mergetree#table_engine-mergetree-data_skipping-indexes). They are written in the projection's `SELECT` list, next to the selected columns, with the same syntax as table-level indexes:
+
+```sql
+INDEX index_name expr TYPE type[(...)] [GRANULARITY value]
+```
+
+The index is built over the projection's own data, so it skips granules of the projection part rather than of the table. This helps when a query uses the projection but filters on columns that are not in the projection's `ORDER BY`. It is used both when the projection answers the query and when a projection that contains `_part_offset` is used as a [projection index](#projection-indexes) to filter the table's rows.
+
+In the example below the projection is sorted by `user_id`, and `idx_url` lets ClickHouse skip granules of the projection for filters on `lower(url)`:
+
+```sql
+CREATE TABLE events
+(
+    `event_time` DateTime,
+    `user_id` UInt64,
+    `url` String,
+    PROJECTION by_user
+    (
+        SELECT user_id, event_time, url,
+            INDEX idx_url lower(url) TYPE bloom_filter GRANULARITY 1
+        ORDER BY user_id
+    )
+)
+ENGINE = MergeTree
+ORDER BY event_time;
+```
+
+In an aggregate projection, an index can be defined on the `GROUP BY` keys. Here the projection is sorted by `(region, product_id)`, so the index helps queries that filter only on `product_id`:
+
+```sql
+CREATE TABLE sales
+(
+    `time` DateTime,
+    `region` String,
+    `product_id` UInt64,
+    `amount` UInt64,
+    PROJECTION sales_by_region_product
+    (
+        SELECT region, product_id, sum(amount),
+            INDEX idx_product product_id TYPE minmax GRANULARITY 1
+        GROUP BY region, product_id
+    )
+)
+ENGINE = MergeTree
+ORDER BY time;
+
+SELECT product_id, sum(amount) FROM sales WHERE product_id = 1000 GROUP BY product_id;
+```
+
+Use [`EXPLAIN indexes = 1`](/reference/statements/explain#explain-plan) to check that a query reads the projection and which granules its indexes skip.
+
+The index is built whenever a projection part is written: on `INSERT`, during merges, and by [`MATERIALIZE PROJECTION`](#materialize-projection). Statements such as `ALTER TABLE ... ADD INDEX` and `MATERIALIZE INDEX` apply only to table-level indexes. To change the indexes of an existing projection, drop the projection and add it again.
+
+The following rules apply:
+
+- The index expression can only use columns that the projection stores.
+- Index names must be unique within a projection.
+- In an aggregate projection, the index expression can only use `GROUP BY` keys, not aggregated columns, because those hold partial aggregation states. Subcolumns of a key (for example `customer.id` for a `Tuple` key `customer`) are not allowed either; use an expression over the whole key instead, such as `tupleElement(customer, 'id')`. If a key is an expression, refer to the stored column by its name in backticks, for example ``INDEX idx_hour `toStartOfHour(time)` TYPE minmax`` for `GROUP BY toStartOfHour(time)`.
+- Indexes of type `text` are not supported in projections.
+
 ## Manipulating projections {#manipulating-projections}
 
 The following operations with [projections](/reference/engines/table-engines/mergetree-family/mergetree#projections) are available:
@@ -2952,11 +3014,13 @@ Use the statement below to add a projection description to a tables metadata:
 
 ```sql
 -- Normal projection (supports WHERE)
-ALTER TABLE [db.]name [ON CLUSTER cluster] ADD PROJECTION [IF NOT EXISTS] name ( SELECT <COLUMN LIST EXPR> [WHERE <expr>] [ORDER BY] ) [WITH SETTINGS ( setting_name1 = setting_value1, setting_name2 = setting_value2, ...)]
+ALTER TABLE [db.]name [ON CLUSTER cluster] ADD PROJECTION [IF NOT EXISTS] name ( SELECT <COLUMN LIST EXPR> [, INDEX index_name expr TYPE type [GRANULARITY value], ...] [WHERE <expr>] [ORDER BY] ) [WITH SETTINGS ( setting_name1 = setting_value1, setting_name2 = setting_value2, ...)]
 
 -- Aggregate projection (supports WHERE)
-ALTER TABLE [db.]name [ON CLUSTER cluster] ADD PROJECTION [IF NOT EXISTS] name ( SELECT <COLUMN LIST EXPR> [WHERE <expr>] [GROUP BY] ) [WITH SETTINGS ( setting_name1 = setting_value1, setting_name2 = setting_value2, ...)]
+ALTER TABLE [db.]name [ON CLUSTER cluster] ADD PROJECTION [IF NOT EXISTS] name ( SELECT <COLUMN LIST EXPR> [, INDEX index_name expr TYPE type [GRANULARITY value], ...] [WHERE <expr>] [GROUP BY] ) [WITH SETTINGS ( setting_name1 = setting_value1, setting_name2 = setting_value2, ...)]
 ```
+
+The optional `INDEX` declarations define [data skipping indexes over the projection's data](#projection-skip-indexes).
 
 <Note>
 When a projection defines a `WHERE` clause, only rows matching the predicate are materialized. The optimizer can use such a projection when the query's `WHERE` logically implies the projection's `WHERE` and the projection is beneficial for the query plan. This applies to both normal and aggregate projections.
@@ -3123,7 +3187,7 @@ ENGINE = MergeTree ORDER BY id;
 - ["Materialized Views versus Projections"](/concepts/features/projections/materialized-views-versus-projections)
 )DOCS_MD",
         .syntax = R"(
-ALTER TABLE [db.]name [ON CLUSTER cluster] ADD PROJECTION [IF NOT EXISTS] name (SELECT <COLUMN LIST EXPR> [WHERE <expr>] [ORDER BY] | [GROUP BY]) [WITH SETTINGS (setting_name = setting_value, ...)]
+ALTER TABLE [db.]name [ON CLUSTER cluster] ADD PROJECTION [IF NOT EXISTS] name (SELECT <COLUMN LIST EXPR> [, INDEX index_name expr TYPE type [GRANULARITY value], ...] [WHERE <expr>] [ORDER BY] | [GROUP BY]) [WITH SETTINGS (setting_name = setting_value, ...)]
 ALTER TABLE [db.]name [ON CLUSTER cluster] DROP PROJECTION [IF EXISTS] name
 ALTER TABLE [db.]name [ON CLUSTER cluster] MATERIALIZE PROJECTION [IF EXISTS] name [IN PARTITION partition_name]
 ALTER TABLE [db.]name [ON CLUSTER cluster] CLEAR PROJECTION [IF EXISTS] name [IN PARTITION partition_name]

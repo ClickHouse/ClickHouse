@@ -1348,8 +1348,8 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
     INDEX index_name1 expr1 TYPE type1(...) [GRANULARITY value1],
     INDEX index_name2 expr2 TYPE type2(...) [GRANULARITY value2],
     ...
-    PROJECTION projection_name_1 (SELECT <COLUMN LIST EXPR> [GROUP BY] [ORDER BY]),
-    PROJECTION projection_name_2 (SELECT <COLUMN LIST EXPR> [GROUP BY] [ORDER BY])
+    PROJECTION projection_name_1 (SELECT <COLUMN LIST EXPR> [, INDEX index_name expr TYPE type [GRANULARITY value], ...] [GROUP BY] [ORDER BY]),
+    PROJECTION projection_name_2 (SELECT <COLUMN LIST EXPR> [, INDEX index_name expr TYPE type [GRANULARITY value], ...] [GROUP BY] [ORDER BY])
 ) ENGINE = MergeTree()
 ORDER BY expr
 [PARTITION BY expr]
@@ -1949,8 +1949,10 @@ A projection query is what defines a projection. It implicitly selects data from
 **Syntax**
 
 ```sql
-SELECT <column list expr> [GROUP BY] <group keys expr> [ORDER BY] <expr>
+SELECT <column list expr> [, INDEX index_name expr TYPE type [GRANULARITY value], ...] [GROUP BY] <group keys expr> [ORDER BY] <expr>
 ```
+
+The optional `INDEX` declarations define [data skipping indexes over the projection's data](/reference/statements/alter/projection#projection-skip-indexes).
 
 Projections can be modified or dropped with the [ALTER](/reference/statements/alter/projection) statement.
 
