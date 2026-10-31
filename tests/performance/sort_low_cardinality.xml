@@ -27,6 +27,8 @@
     <query>SELECT * FROM sort_lc ORDER BY lc_col FORMAT Null SETTINGS max_threads = {threads}</query>
     <query>SELECT * FROM sort_lc ORDER BY lc_col, uint_col FORMAT Null SETTINGS max_threads = {threads}</query>
     <query>SELECT * FROM sort_lc ORDER BY uint_col, lc_col FORMAT Null SETTINGS max_threads = {threads}</query>
+    <query>SELECT * FROM (SELECT * FROM sort_lc UNION ALL SELECT * FROM sort_lc) ORDER BY lc_col FORMAT Null SETTINGS max_threads = 0</query>
+    <query>SELECT *, x FROM sort_lc ARRAY JOIN [1, 2] AS x ORDER BY lc_col FORMAT Null SETTINGS max_threads = 0</query>
 
     <drop_query>DROP TABLE IF EXISTS sort_lc</drop_query>
 </test>
