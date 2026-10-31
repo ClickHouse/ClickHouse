@@ -25,6 +25,7 @@ namespace DB
 namespace Setting
 {
     extern const SettingsBool aggregate_functions_null_for_empty;
+    extern const SettingsBool apply_deleted_mask;
     extern const SettingsBool apply_mutations_on_fly;
     extern const SettingsBool apply_patch_parts;
     extern const SettingsBool force_index_by_date;
@@ -101,6 +102,10 @@ std::expected<void, std::string> canUseProjectionForReadingStep(ReadFromMergeTre
     /// because we need to apply them on original data.
     if (mutations_snapshot->hasDataMutations() || mutations_snapshot->hasPatchParts())
         return std::unexpected("the table has unmaterialized mutations or patch parts");
+
+    /// A projection part rebuilt by a lightweight delete does not store the deleted rows.
+    if (!query_settings[Setting::apply_deleted_mask] && mutations_snapshot->hasLightweightDeletedMask())
+        return std::unexpected("setting apply_deleted_mask is disabled and the table has lightweight-deleted rows");
 
     return {};
 }

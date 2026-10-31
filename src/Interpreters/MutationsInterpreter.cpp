@@ -1823,6 +1823,19 @@ void MutationsInterpreter::prepare(bool dry_run)
             materialized_projections.insert(projection.name);
     }
 
+    /// A mutation that does not rewrite the whole part keeps the lightweight-deleted rows in it,
+    /// so a rebuilt projection needs `_row_exists` to leave them out.
+    const auto & source_part = source.getMergeTreeDataPart();
+    const bool projections_see_deleted_mask = settings.return_all_columns
+        || std::ranges::any_of(stages, [](const Stage & stage)
+            { return stage.affects_all_columns || stage.column_to_updated.contains(RowExistsColumn::name); });
+    if (!materialized_projections.empty() && source_part && source_part->hasLightweightDelete() && !projections_see_deleted_mask)
+    {
+        auto & stage = stages.emplace_back(context);
+        stage.is_readonly = true;
+        stage.column_to_updated.emplace(RowExistsColumn::name, make_intrusive<ASTIdentifier>(RowExistsColumn::name));
+    }
+
     /// Every column emitted by a non-readonly stage is written into the new part at its current
     /// metadata type, so its statistics have to be recomputed rather than carried over from the
     /// source part. `updated_columns` and `changed_columns` do not cover all emitters: MATERIALIZE
