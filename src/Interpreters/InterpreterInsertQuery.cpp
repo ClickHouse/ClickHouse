@@ -1715,6 +1715,7 @@ void InterpreterInsertQuery::addReturning(ASTInsertQuery & query, const StorageP
     else
     {
         inserted_data_storage = std::make_shared<StorageValues>(table->getStorageID(), metadata_snapshot->getColumns(), std::move(inserted_data));
+        inserted_data_storage->setPreparedPipeIsInsert();
     }
 
     auto select_context = Context::createCopy(context);
