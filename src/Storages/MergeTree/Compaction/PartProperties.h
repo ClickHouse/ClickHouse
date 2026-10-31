@@ -102,6 +102,8 @@ struct PartProperties
         /// unfinished again (see `MergeTreeDataPartTTLInfos::update`), so they are not in `part_min_ttl` of the
         /// part but are in that of the merged part.
         const time_t group_by_min_ttl;
+        /// The table has an unconditional rows TTL, and it has expired for every row of the part.
+        const bool rows_ttl_expired;
     };
     const std::optional<GeneralTTLInfo> general_ttl_info = std::nullopt;
 
