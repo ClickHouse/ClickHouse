@@ -20,6 +20,25 @@ from .external_paths_utils import (
 )
 
 
+def _spell_local_table_paths_as_file_uris(host_path, data_file_uri):
+    """Spells `location` and the metadata paths as `file://` URIs inside `host_path`, data files as `data_file_uri` returns."""
+    metadata_dir = os.path.join(host_path, "metadata")
+    to_metadata_uri = lambda p: f"file://{host_path}/metadata/{os.path.basename(p)}"
+    for metadata_json in find_files(metadata_dir, ".metadata.json"):
+        with open(metadata_json) as f:
+            metadata = json.load(f)
+        metadata["location"] = f"file://{host_path}"
+        for snapshot in metadata.get("snapshots", []):
+            snapshot["manifest-list"] = to_metadata_uri(snapshot["manifest-list"])
+        with open(metadata_json, "w") as f:
+            json.dump(metadata, f)
+    for avro_file in find_files(metadata_dir, ".avro"):
+        if os.path.basename(avro_file).startswith("snap-"):
+            modify_avro_file(avro_file, ["manifest_path"], to_metadata_uri)
+        else:
+            modify_avro_file(avro_file, ["data_file", "file_path"], lambda p: data_file_uri(os.path.basename(p)))
+
+
 def test_cluster_function_rejects_external_local_file(started_cluster_iceberg_with_spark):
     TABLE_NAME = f"test_cluster_external_local_{get_uuid_str()}"
 
@@ -210,21 +229,7 @@ def test_copied_local_table_reads_files_from_its_own_directory(started_cluster_i
     spark.sql(f"INSERT INTO {TABLE_NAME} VALUES (1, 'alpha'), (2, 'beta'), (3, 'gamma')")
 
     # Spell every path as a `file://` URI inside the source `location`.
-    metadata_dir = os.path.join(host_path, "metadata")
-    to_metadata_uri = lambda p: f"file://{host_path}/metadata/{os.path.basename(p)}"
-    for metadata_json in find_files(metadata_dir, ".metadata.json"):
-        with open(metadata_json) as f:
-            metadata = json.load(f)
-        metadata["location"] = f"file://{host_path}"
-        for snapshot in metadata.get("snapshots", []):
-            snapshot["manifest-list"] = to_metadata_uri(snapshot["manifest-list"])
-        with open(metadata_json, "w") as f:
-            json.dump(metadata, f)
-    for avro_file in find_files(metadata_dir, ".avro"):
-        if os.path.basename(avro_file).startswith("snap-"):
-            modify_avro_file(avro_file, ["manifest_path"], to_metadata_uri)
-        else:
-            modify_avro_file(avro_file, ["data_file", "file_path"], lambda p: f"file://{host_path}/data/{os.path.basename(p)}")
+    _spell_local_table_paths_as_file_uris(host_path, lambda name: f"file://{host_path}/data/{name}")
 
     default_upload_directory(started_cluster_iceberg_with_spark, "local", f"/iceberg_data/default/{TABLE_NAME}/", f"/iceberg_data/default/{TABLE_NAME}/")
 
@@ -252,31 +257,69 @@ def test_copied_local_table_checks_dot_dot_paths_leaving_its_directory(started_c
     spark.sql(f"DELETE FROM {TABLE_NAME} WHERE id = 1")
 
     # Data paths stay inside the source `location` only after `..` is resolved against it.
-    metadata_dir = os.path.join(host_path, "metadata")
-    to_metadata_uri = lambda p: f"file://{host_path}/metadata/{os.path.basename(p)}"
-    for metadata_json in find_files(metadata_dir, ".metadata.json"):
-        with open(metadata_json) as f:
-            metadata = json.load(f)
-        metadata["location"] = f"file://{host_path}"
-        for snapshot in metadata.get("snapshots", []):
-            snapshot["manifest-list"] = to_metadata_uri(snapshot["manifest-list"])
-        with open(metadata_json, "w") as f:
-            json.dump(metadata, f)
-    for avro_file in find_files(metadata_dir, ".avro"):
-        if os.path.basename(avro_file).startswith("snap-"):
-            modify_avro_file(avro_file, ["manifest_path"], to_metadata_uri)
-        else:
-            modify_avro_file(
-                avro_file, ["data_file", "file_path"],
-                lambda p: f"file://{host_path}/../{TABLE_NAME}/data/{os.path.basename(p)}")
+    _spell_local_table_paths_as_file_uris(host_path, lambda name: f"file://{host_path}/../{TABLE_NAME}/data/{name}")
 
     default_upload_directory(started_cluster_iceberg_with_spark, "local", f"/iceberg_data/default/{TABLE_NAME}/", f"/iceberg_data/default/{TABLE_NAME}/")
     instance.exec_in_container(["bash", "-c",
         f"mkdir -p {sibling_dir} && cp -r {host_path} {copy_path} && mv {copy_path}/data/*.parquet {sibling_dir}/ "
         f"&& rm -f {host_path}/data/*.parquet"])
 
+    # Replicas do not share the coordinator's filesystem, so the sibling file is not distributed.
+    for node in ("node2", "node3"):
+        additional_upload_directory(
+            started_cluster_iceberg_with_spark, node, "local", f"{host_path}/metadata", f"{copy_path}/metadata")
+    error = instance.query_and_get_error(
+        f"SELECT * FROM icebergLocalCluster('cluster_simple', local, path = '{copy_path}', format=Parquet) ORDER BY id")
+    assert "cannot be read by a cluster function" in error, error
+
     instance.query(f"DROP TABLE IF EXISTS {TABLE_NAME}")
     instance.query(f"CREATE TABLE {TABLE_NAME} ENGINE=IcebergLocal(local, path = '{copy_path}', format=Parquet)")
+
+    instance.query(f"DROP USER IF EXISTS {user}")
+    instance.query(f"CREATE USER {user}")
+    instance.query(f"GRANT SELECT ON {TABLE_NAME} TO {user}")
+    error = instance.query_and_get_error(f"SELECT * FROM {TABLE_NAME} ORDER BY id", user=user)
+    assert "ACCESS_DENIED" in error, error
+
+    instance.query(f"GRANT READ ON FILE('{sibling_dir}/.*') TO {user}")
+    assert instance.query(f"SELECT * FROM {TABLE_NAME} ORDER BY id", user=user) == "2\tbeta\n"
+    instance.query(f"DROP USER {user}")
+
+    list_sibling = ["bash", "-c", f"ls {sibling_dir}"]
+    files_before = instance.exec_in_container(list_sibling)
+    error = instance.query_and_get_error(
+        f"ALTER TABLE {TABLE_NAME} EXECUTE expire_snapshots("
+        f"expire_before = '2099-12-31 23:59:59', retain_last = 1, retention_period = '1ms')",
+        settings={"allow_insert_into_iceberg": 1, "allow_experimental_expire_snapshots": 1})
+    assert "outside the table's base directory" in error, error
+    assert instance.exec_in_container(list_sibling) == files_before
+
+    instance.query(f"DROP TABLE {TABLE_NAME} SYNC")
+
+
+def test_local_table_checks_symlinks_leaving_its_directory(started_cluster_iceberg_with_spark):
+    instance = started_cluster_iceberg_with_spark.instances["node1"]
+    spark = started_cluster_iceberg_with_spark.spark_session
+
+    TABLE_NAME = f"test_local_symlink_{get_uuid_str()}"
+    host_path = f"/var/lib/clickhouse/user_files/iceberg_data/default/{TABLE_NAME}"
+    sibling_dir = f"/var/lib/clickhouse/user_files/iceberg_symlink_target_{get_uuid_str()}"
+    user = f"user_{TABLE_NAME}"
+
+    spark.sql(f"CREATE TABLE {TABLE_NAME} (id INT, value STRING) USING iceberg OPTIONS('format-version'='2')")
+    spark.sql(f"INSERT INTO {TABLE_NAME} VALUES (1, 'alpha')")
+    spark.sql(f"INSERT INTO {TABLE_NAME} VALUES (2, 'beta')")
+    spark.sql(f"DELETE FROM {TABLE_NAME} WHERE id = 1")
+
+    # Data files are spelled inside the table directory, but reached through a symlink to a sibling of it.
+    _spell_local_table_paths_as_file_uris(host_path, lambda name: f"file://{host_path}/link/{name}")
+
+    default_upload_directory(started_cluster_iceberg_with_spark, "local", f"/iceberg_data/default/{TABLE_NAME}/", f"/iceberg_data/default/{TABLE_NAME}/")
+    instance.exec_in_container(["bash", "-c",
+        f"mkdir -p {sibling_dir} && mv {host_path}/data/*.parquet {sibling_dir}/ && ln -s {sibling_dir} {host_path}/link"])
+
+    instance.query(f"DROP TABLE IF EXISTS {TABLE_NAME}")
+    instance.query(f"CREATE TABLE {TABLE_NAME} ENGINE=IcebergLocal(local, path = '{host_path}', format=Parquet)")
 
     instance.query(f"DROP USER IF EXISTS {user}")
     instance.query(f"CREATE USER {user}")

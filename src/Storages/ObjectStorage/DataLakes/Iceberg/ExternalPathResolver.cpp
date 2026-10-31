@@ -565,7 +565,7 @@ static std::optional<std::pair<DB::ObjectStoragePtr, std::string>> tryResolveObj
         }
 
         /// Re-rooted at the queried table directory, where the base storage validates the translated path.
-        /// A `..` segment may leave the queried directory after re-rooting, so access is checked on the re-rooted key.
+        /// A `..` segment or a symlink may leave the queried directory after re-rooting, so access is checked on the re-rooted key.
         if (base_scheme_normalized == "file" && table_location_decomposed.authority == target_decomposed.authority
             && keyIsInsidePrefix(table_location_decomposed.key, target_decomposed.key, /*is_filesystem_path*/ true))
         {
@@ -588,7 +588,10 @@ static std::optional<std::pair<DB::ObjectStoragePtr, std::string>> tryResolveObj
         if (path.size() > table_location.size() && path.starts_with(table_location)
             && (table_location.ends_with('/') || path[table_location.size()] == '/')
             && path.find_first_of("?#", table_location.size()) == std::string::npos)
+        {
+            check_base_storage_access();
             return std::nullopt;
+        }
 
         auto s3_uri = parseMetadataS3URI(path, target_decomposed);
 
@@ -619,7 +622,10 @@ static std::optional<std::pair<DB::ObjectStoragePtr, std::string>> tryResolveObj
 
             if (s3URIMatches(s3_uri, base_s3_uri.bucket, base_s3_uri.endpoint, target_scheme_normalized, provider_families_compatible)
                 && keyIsInsidePrefix(base_s3_uri.key, key_to_use, /*is_filesystem_path*/ false))
+            {
+                check_base_storage_access();
                 return std::nullopt;
+            }
         }
 
         if (base_storage->getType() == ObjectStorageType::S3)
@@ -862,7 +868,10 @@ static std::optional<std::pair<DB::ObjectStoragePtr, std::string>> tryResolveObj
                 /// A table copied without rewriting metadata still uses its old `location`; re-root paths inside it.
                 if (base_scheme_normalized == "hdfs" && inside_table_prefix
                     && table_location_decomposed.authority == target_decomposed.authority)
+                {
+                    check_base_storage_access();
                     return std::nullopt;
+                }
 
                 if (base_endpoint == target_endpoint && inside_table_prefix)
                     use_base_storage = true;
@@ -884,7 +893,10 @@ static std::optional<std::pair<DB::ObjectStoragePtr, std::string>> tryResolveObj
     if (base_scheme_normalized == target_scheme_normalized && table_location_decomposed.authority == target_decomposed.authority
         && keyIsInsidePrefix(
             table_location_decomposed.key, target_decomposed.key, /*is_filesystem_path*/ isPrefixScopedScheme(target_scheme_normalized)))
+    {
+        check_base_storage_access();
         return std::nullopt;
+    }
 
     const std::string type_for_factory = factoryTypeForScheme(target_scheme_normalized);
     if (type_for_factory.empty())
@@ -1174,8 +1186,15 @@ bool isObjectInTableDirectory(
 {
     if (storage != table_storage)
         return false;
-    /// The filesystem resolves `.` and `..` segments, so a local key is compared by the file it opens.
+    /// A local key is compared by the file it opens, which may be reached through symlinks; relative keys are below the key prefix.
     if (storage->getType() == ObjectStorageType::Local)
+    {
+        const std::filesystem::path key_prefix = storage->getCommonKeyPrefix();
+        auto canonical = [&](const std::string & path) { return std::filesystem::weakly_canonical(key_prefix / path).string(); };
+        return keyIsInsidePrefix(canonical(table_path), canonical(key), /*is_filesystem_path*/ true);
+    }
+    /// The filesystem resolves `.` and `..` segments.
+    if (storage->getType() == ObjectStorageType::HDFS)
         return keyIsInsidePrefix(table_path, key, /*is_filesystem_path*/ true);
     if (!key.starts_with(table_path))
         return false;

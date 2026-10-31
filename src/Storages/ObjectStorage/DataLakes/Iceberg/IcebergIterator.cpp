@@ -544,13 +544,14 @@ ObjectInfoPtr IcebergIterator::next(size_t)
         if (tasks_go_to_other_replicas)
         {
             /// Replicas need not share the coordinator's filesystem, so the first local file outside the table is reported.
-            auto check_external_local = [&](const ObjectStoragePtr & storage, const String & file_path)
+            /// A key in the base storage may still leave the queried directory, e.g. through `..` segments.
+            auto check_external_local = [&](const ObjectStoragePtr & storage, const String & key, const String & file_path)
             {
-                if (storage != object_storage && storage->getType() == ObjectStorageType::Local
-                    && !object_info->getExternalLocalPath())
+                if (storage->getType() == ObjectStorageType::Local && !object_info->getExternalLocalPath()
+                    && !isObjectInTableDirectory(storage, key, object_storage, persistent_components.path_resolver.getTableRoot()))
                     object_info->setExternalLocalPath(file_path);
             };
-            check_external_local(storage_to_use, raw_metadata_path);
+            check_external_local(storage_to_use, resolved_key, raw_metadata_path);
 
             /// Old workers open delete paths as keys in the base storage, so they receive the resolved keys.
             /// A delete file in another storage requires the new protocol.
@@ -559,7 +560,7 @@ ObjectInfoPtr IcebergIterator::next(size_t)
                 auto [del_storage, del_key] = resolveObjectStorageForPath(
                     persistent_components.table_location, file_path, object_storage, *external_storages, local_context,
                     persistent_components.path_resolver);
-                check_external_local(del_storage, file_path);
+                check_external_local(del_storage, del_key, file_path);
                 if (del_storage != object_storage)
                     object_info->info.requires_external_storage = true;
                 else
