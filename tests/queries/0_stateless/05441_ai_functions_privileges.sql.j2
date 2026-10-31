@@ -1,0 +1,70 @@
+-- Tags: no-parallel
+-- no-parallel: creates global users, a named collection and a function with fixed names
+
+-- All queries read zero rows, so no outbound request is made.
+
+{% set text_params = "map('credentials', 'nc_05441', 'model', 'm')" %}
+{% set embed_params = "map('credentials', 'nc_05441')" %}
+{% set fns = [
+    ('aiClassify', "x, ['a'], " ~ text_params),
+    ('aiEmbed', "x, 'm', " ~ embed_params),
+    ('aiExtract', "x, 'i', " ~ text_params),
+    ('aiFilter', "x, 'c', " ~ text_params),
+    ('aiGenerate', "x, " ~ text_params),
+    ('aiRedact', "x, ['a'], " ~ text_params),
+    ('aiSimilarity', "x, x, 'm', " ~ embed_params),
+    ('aiTranslate', "x, 'fr', " ~ text_params),
+] %}
+
+{% macro check(denied, invoker_denied) %}
+{% for f, args in fns %}
+EXECUTE AS u_05441 SELECT {{ f }}({{ args }}) FROM (SELECT '' AS x WHERE 0);{% if f in denied %} -- { serverError ACCESS_DENIED }{% endif %}
+
+{% endfor %}
+EXECUTE AS u_05441 SELECT * FROM v_definer;
+EXECUTE AS u_05441 SELECT * FROM v_invoker;{% if invoker_denied %} -- { serverError ACCESS_DENIED }{% endif %}
+
+EXECUTE AS u_05441 SELECT udf_05441(x) FROM (SELECT '' AS x WHERE 0);{% if invoker_denied %} -- { serverError ACCESS_DENIED }{% endif %}
+
+{% endmacro %}
+
+DROP USER IF EXISTS u_05441, definer_05441;
+DROP NAMED COLLECTION IF EXISTS nc_05441;
+DROP FUNCTION IF EXISTS udf_05441;
+
+CREATE NAMED COLLECTION nc_05441 AS
+    provider = 'openai',
+    endpoint = 'http://localhost:1/v1/chat/completions',
+    api_key = 'fake-key';
+
+CREATE USER u_05441, definer_05441 IDENTIFIED WITH no_password;
+GRANT NAMED COLLECTION ON nc_05441 TO u_05441, definer_05441;
+GRANT SELECT ON * TO u_05441;
+GRANT AI FUNCTIONS ON *.* TO definer_05441;
+
+CREATE VIEW v_definer DEFINER = definer_05441 SQL SECURITY DEFINER
+    AS SELECT aiGenerate(x, map('credentials', 'nc_05441', 'model', 'm')) FROM (SELECT '' AS x WHERE 0);
+CREATE VIEW v_invoker SQL SECURITY INVOKER
+    AS SELECT aiGenerate(x, map('credentials', 'nc_05441', 'model', 'm')) FROM (SELECT '' AS x WHERE 0);
+CREATE FUNCTION udf_05441 AS x -> aiGenerate(x, map('credentials', 'nc_05441', 'model', 'm'));
+
+SELECT '--- no grant';
+{{ check(fns | map(attribute=0) | list, true) }}
+
+SELECT '--- GRANT aiGenerate';
+GRANT aiGenerate ON *.* TO u_05441;
+{{ check(fns | map(attribute=0) | reject('equalto', 'aiGenerate') | list, false) }}
+
+SELECT '--- GRANT AI FUNCTIONS';
+GRANT AI FUNCTIONS ON *.* TO u_05441;
+{{ check([], false) }}
+
+SELECT '--- REVOKE aiClassify';
+REVOKE aiClassify ON *.* FROM u_05441;
+{{ check(['aiClassify'], false) }}
+
+DROP VIEW v_definer;
+DROP VIEW v_invoker;
+DROP FUNCTION udf_05441;
+DROP USER u_05441, definer_05441;
+DROP NAMED COLLECTION nc_05441;

@@ -452,7 +452,9 @@ BlockIO runCommandSegments(CommandSegments & segments, const StoragePtr & table,
                 /// fails to analyze.
                 MutationsInterpreter::validateNonDeterministicMutationsForStorage(table, *mutation_commands, context);
                 MutationsInterpreter::Settings mutation_settings(false);
-                MutationsInterpreter(table, metadata_snapshot, *mutation_commands, context, mutation_settings).validate();
+                auto validation_context = Context::createCopy(context);
+                validation_context->setAnalyzingBackgroundExpressions(true);
+                MutationsInterpreter(table, metadata_snapshot, *mutation_commands, validation_context, mutation_settings).validate();
                 context->onQueryExecutionStarted();
                 table->mutate(*mutation_commands, context);
             }

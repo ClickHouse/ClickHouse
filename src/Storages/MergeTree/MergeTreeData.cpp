@@ -103,6 +103,7 @@
 #include <Parsers/ASTAssignment.h>
 #include <Parsers/ASTConstraintDeclaration.h>
 #include <Parsers/ASTExpressionList.h>
+#include <Parsers/ASTWithAlias.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTHelpers.h>
@@ -5943,6 +5944,47 @@ Names expressionSourceColumns(const ASTPtr & ast, const ColumnsDescription & col
 
 }
 
+void MergeTreeData::checkStoredExpressions(const StorageInMemoryMetadata & metadata, const ContextPtr & local_context)
+{
+    auto context = Context::createCopy(local_context);
+    context->setAnalyzingBackgroundExpressions(true);
+
+    const auto & columns = metadata.columns;
+    const auto & virtuals = metadata.virtuals;
+
+    for (const auto * key : {&metadata.partition_key, &metadata.sorting_key, &metadata.sampling_key, &metadata.unique_key})
+    {
+        if (key->definition_ast)
+            KeyDescription::getKeyFromAST(key->definition_ast, columns, virtuals, context);
+    }
+    if (metadata.primary_key.definition_ast)
+        KeyDescription::getPrimaryKeyFromAST(metadata.primary_key.definition_ast, metadata.sorting_key, columns, virtuals, context);
+
+    for (const auto & index : metadata.secondary_indices)
+    {
+        if (!index.isImplicitlyCreated())
+            IndexDescription::getIndexFromAST(index.definition_ast, columns, false, index.escape_filenames, context);
+    }
+
+    for (const auto & projection : metadata.projections)
+        ProjectionDescription::getProjectionFromAST(projection.definition_ast, columns, &metadata.partition_key, context);
+
+    /// A column TTL resets the column to its `DEFAULT` or `MATERIALIZED` expression in merges.
+    ASTPtr ttl_default_expr_list = make_intrusive<ASTExpressionList>();
+    for (const auto & [name, ttl_ast] : columns.getColumnTTLs())
+    {
+        TTLDescription::getTTLFromAST(ttl_ast, columns, context, metadata.primary_key, TTLValidationMode::SkipValidation);
+        const auto & default_desc = columns.get(name).default_desc;
+        if (default_desc.expression && (default_desc.kind == ColumnDefaultKind::Default || default_desc.kind == ColumnDefaultKind::Materialized))
+            ttl_default_expr_list->children.emplace_back(setAlias(default_desc.expression->clone(), name + "_tmp_ttl_default"));
+    }
+    if (!ttl_default_expr_list->children.empty())
+        validateColumnsDefaultsAndGetSampleBlock(ttl_default_expr_list, columns.getAll(), context);
+    if (metadata.table_ttl.definition_ast)
+        TTLTableDescription::getTTLForTableFromAST(
+            metadata.table_ttl.definition_ast, columns, context, metadata.primary_key, TTLValidationMode::SkipValidation);
+}
+
 void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, ContextPtr local_context) const
 {
     /// Reject schema-changing ALTER while a streaming query holds a subscription on this storage.
@@ -6242,7 +6284,12 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
 
     removeImplicitStatistics(new_metadata.columns);
     auto settings_defaults = getDefaultSettings();
-    commands.apply(new_metadata, local_context, share_nested_offsets, settings_defaults.get());
+    /// Keys, TTL and projections, and the indices the commands add, are built with this context. They are executed in the
+    /// background, so AI functions reject it. A replica replaying an ALTER the initiator already committed must not fail on it.
+    auto apply_context = Context::createCopy(local_context);
+    if (auto txn = local_context->getZooKeeperMetadataTransaction(); !txn || txn->isInitialQuery())
+        apply_context->setAnalyzingBackgroundExpressions(true);
+    commands.apply(new_metadata, apply_context, share_nested_offsets, settings_defaults.get());
 
     /// The sort direction of a retained sorting key column is immutable via ALTER, in either direction. Existing parts
     /// stay physically sorted in the directions the key had when they were written, and no regular data part records those
