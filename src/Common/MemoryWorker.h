@@ -145,6 +145,12 @@ private:
 
     MemoryUsage getMemoryUsage(bool log_error);
 
+#if USE_JEMALLOC
+    /// The amount of live jemalloc allocations (`stats.allocated`) after refreshing the statistics epoch.
+    /// Used to re-baseline the global `MemoryTracker`; it must be fresh regardless of the memory usage source.
+    Int64 getJemallocAllocated();
+#endif
+
     void updateResidentMemoryThread();
 
     ThreadFromGlobalPool update_resident_memory_thread;

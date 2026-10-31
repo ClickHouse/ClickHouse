@@ -1464,7 +1464,7 @@ The global memory tracker is a counter: allocations add to it and deallocations 
 
 The correction does not hide the drift. `MemoryTrackingUncorrected` keeps the value the tracker would have had with no corrections applied (a snapshot of the plain counter, refreshed on every tick of the worker), so `MemoryTrackingUncorrected - MemoryTracking` is the drift accumulated so far.
 
-Setting this to `0` restores the behavior of previous versions: the tracker is corrected only on the first tick of the worker and whenever it goes negative.
+Setting this to `0` restores the behavior of previous versions: the tracker is corrected only on the first tick of the worker and whenever it goes negative. These one-shot corrections set the tracker to the amount of live allocations (jemalloc's `stats.allocated`, or the sanitizer allocator bytes in sanitizer builds), not to the external measurement. Builds without jemalloc and without a sanitizer (e.g. built with `ENABLE_JEMALLOC=0`, or for LoongArch) have no counter of live allocations, so there the tracker is not corrected on the first tick, and a negative tracker is reset to zero.
 )", 0) \
     DECLARE(Bool, memory_worker_use_cgroup, true, "Use current cgroup memory usage information to correct memory tracking.", 0) \
     DECLARE(Double, memory_worker_rss_speculative_reserve_ratio, getDefaultMemoryWorkerRssSpeculativeReserveRatio(), R"(
