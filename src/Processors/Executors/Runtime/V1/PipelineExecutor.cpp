@@ -310,10 +310,8 @@ void PipelineExecutor::finalizeExecution()
     SCOPE_EXIT({
         single_thread_cpu_slot.reset();
         tasks.freeCPU();
-        {
-            std::lock_guard lock(spawn_mutex);
-            cpu_slots.reset();
-        }
+        /// No thread spawns anymore: the pool is waited for, or there is no pool.
+        cpu_slots.reset();
     });
 
     for (size_t thread_num = 0; thread_num < tasks.getNumThreads(); ++thread_num)
@@ -489,50 +487,25 @@ void PipelineExecutor::executeStepImpl(size_t thread_num, WorkloadResources && r
 #endif
 
 
-            /// Upscaling: `pushTasks` tells us how many additional threads would usefully
-            /// parallelize the tasks it just enqueued. Publish our spawn_count into the shared
-            /// `pending_demand` counter; the thread that actually holds `spawn_mutex` drains it
-            /// so no demand is lost when multiple threads push concurrently.
-            if (pool && spawn_count > 0)
-                pending_demand.fetch_add(spawn_count, std::memory_order_relaxed);
-
-            // Drain pending_demand under `spawn_mutex`. A thread that fails `try_lock`
-            // must not exit while `pending_demand > 0` -- otherwise its add could race
-            // with the owner's final `exchange(0)` and be left stranded after the owner
-            // unlocks. The outer loop holds the thread until either it drains the demand
-            // itself or observes the counter return to zero (meaning the owner caught it).
-            while (pool && pending_demand.load(std::memory_order_acquire) > 0)
+            /// Upscaling: `pushTasks` requested `spawn_count` more threads for the tasks it just enqueued.
+            /// Requested threads wait in `tasks` until their CPU slots are granted, so a slot granted
+            /// later (e.g. released by another query) still gets a thread.
+            if (pool)
             {
-                if (!spawn_mutex.try_lock())
-                {
-                    std::this_thread::yield();
-                    continue;
-                }
                 try
                 {
-                    std::lock_guard lock(spawn_mutex, std::adopt_lock);
-                    while (true)
-                    {
-                        size_t accumulated = pending_demand.exchange(0, std::memory_order_acq_rel);
-                        if (accumulated == 0)
-                            break;
-                        size_t target = std::min<size_t>(max_pipeline_threads, desired_threads + accumulated);
-                        if (target > desired_threads)
-                        {
-                            desired_threads = target;
-                            cpu_slots->setMax(target);
-                        }
-                    }
-                    spawnThreads({});
+                    if (spawn_count > 0)
+                        growDesiredThreads(spawn_count);
+                    if (tasks.hasThreadsToSpawn())
+                        spawnThreads({});
                 }
                 catch (...)
                 {
-                    /// spawnThreads can throw an exception, for example CANNOT_SCHEDULE_TASK.
+                    /// spawnThreads can throw an exception, for example CANNOT_SCHEDULE_TASK or RESOURCE_ACCESS_DENIED.
                     /// We should cancel execution properly before rethrow.
                     cancel(IProcessor::CancelReason::Exception);
                     throw;
                 }
-                break;
             }
 
             /// Preemption and downscaling.
@@ -727,22 +700,44 @@ void PipelineExecutor::initializeExecution(size_t num_threads, bool concurrency_
     /// consumers, no +1 needed.
     if (lazy_allocation && initial_parallel > 1)
     {
-        std::lock_guard lock(spawn_mutex);
         const size_t target = std::min<size_t>(max_pipeline_threads, initial_parallel);
-        if (target > desired_threads)
-        {
-            desired_threads = target;
-            cpu_slots->setMax(target);
-        }
+        desired_threads.store(target, std::memory_order_relaxed);
+        cpu_slots->setMax(target);
     }
+
+    /// The eager path spawns a thread for every granted slot, as many as the pipeline width allows.
+    tasks.requestThreads(lazy_allocation ? std::max<size_t>(initial_parallel, 1) : num_threads);
 
     if (num_threads > 1)
         pool = std::make_unique<ThreadPool>(CurrentMetrics::QueryPipelineExecutorThreads, CurrentMetrics::QueryPipelineExecutorThreadsActive, CurrentMetrics::QueryPipelineExecutorThreadsScheduled, num_threads);
 }
 
+void PipelineExecutor::growDesiredThreads(size_t threads)
+{
+    size_t current = desired_threads.load(std::memory_order_relaxed);
+    size_t target;
+    do
+    {
+        target = std::min(max_pipeline_threads, current + threads);
+        if (target <= current)
+            return;
+    } while (!desired_threads.compare_exchange_weak(current, target, std::memory_order_relaxed));
+
+    /// Concurrent callers may reach `setMax` in any order. Repeat until no newer target appeared,
+    /// so the last `setMax` call is never below `desired_threads`.
+    while (true)
+    {
+        cpu_slots->setMax(target);
+        const size_t latest = desired_threads.load(std::memory_order_relaxed);
+        if (latest == target)
+            return;
+        target = latest;
+    }
+}
+
 void PipelineExecutor::spawnThreads(AcquiredSlotPtr slot)
 {
-    while (cpu_slots)
+    while (true)
     {
         if (!slot)
             slot = cpu_slots->tryAcquire();
@@ -788,11 +783,8 @@ void PipelineExecutor::executeImpl(size_t num_threads, bool concurrency_control)
     {
         if (num_threads > 1)
         {
-            {
-                std::lock_guard lock(spawn_mutex);
-                // Start at least one thread, could block to acquire the first CPU slot
-                spawnThreads(cpu_slots->acquire());
-            }
+            // Start at least one thread, could block to acquire the first CPU slot
+            spawnThreads(cpu_slots->acquire());
             tasks.processAsyncTasks();
             pool->wait();
         }
