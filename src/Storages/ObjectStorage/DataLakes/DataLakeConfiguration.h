@@ -164,7 +164,7 @@ public:
     {
         BaseStorageConfiguration::update(object_storage, local_context);
         assertLocalPathCorrect(object_storage, local_context);
-        if (auto metadata = tryGetMetadata(); metadata && metadata->supportsUpdate())
+        if (auto metadata = tryGetMetadata(); metadata && metadata->supportsUpdate() && !metadata->requiresRecreation(object_storage))
         {
             metadata->update(local_context);
             return;

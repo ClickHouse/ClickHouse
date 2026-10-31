@@ -19,6 +19,7 @@
 #include <IO/ReadHelpers.h>
 #include <Storages/ObjectStorage/DataLakes/Common/Common.h>
 #include <Storages/ObjectStorage/DataLakes/DataLakeConfiguration.h>
+#include <Storages/ObjectStorage/S3/Configuration.h>
 #include <Databases/DataLake/ICatalog.h>
 #include <Storages/ObjectStorage/StorageObjectStorageSource.h>
 #include <Storages/ObjectStorage/StorageObjectStorageConfiguration.h>
@@ -51,6 +52,7 @@
 #include <Poco/JSON/Array.h>
 #include <Poco/JSON/Object.h>
 #include <Poco/JSON/Parser.h>
+#include <Poco/String.h>
 #include <Poco/URI.h>
 
 namespace fs = std::filesystem;
@@ -71,12 +73,12 @@ namespace ErrorCodes
 namespace Setting
 {
     extern const SettingsBool allow_delta_kernel_rs;
+    extern const SettingsBool delta_lake_reload_schema_for_consistency;
     extern const SettingsBool allow_delta_lake_create_table;
     extern const SettingsInt64 delta_lake_snapshot_version;
     extern const SettingsInt64 delta_lake_snapshot_start_version;
     extern const SettingsInt64 delta_lake_snapshot_end_version;
 }
-
 
 namespace
 {
@@ -174,14 +176,17 @@ struct DeltaLakeMetadataImpl
         NamesAndTypesList schema;
         Strings data_files;
         DeltaLakePartitionColumns partition_columns;
+        bool has_column_mapping = false;
     };
 
     DeltaLakeMetadata processMetadataFiles() const
     {
         std::set<String> result_files;
+        std::set<String> files_with_deletion_vectors;
         NamesAndTypesList current_schema;
         DeltaLakePartitionColumns current_partition_columns;
-        const auto checkpoint_version = getCheckpointIfExists(result_files, current_schema, current_partition_columns);
+        const auto checkpoint_version = getCheckpointIfExists(
+            result_files, files_with_deletion_vectors, current_schema, current_partition_columns);
 
         if (checkpoint_version)
         {
@@ -194,7 +199,7 @@ struct DeltaLakeMetadataImpl
                 if (!object_storage->exists(StoredObject(file_path)))
                     break;
 
-                processMetadataFile(file_path, current_schema, current_partition_columns, result_files);
+                processMetadataFile(file_path, current_schema, current_partition_columns, result_files, files_with_deletion_vectors);
             }
 
             LOG_TRACE(
@@ -209,10 +214,17 @@ struct DeltaLakeMetadataImpl
             auto keys = listFiles(*object_storage, table_path, deltalake_metadata_directory, metadata_file_suffix);
             std::sort(keys.begin(), keys.end());
             for (const String & key : keys)
-                processMetadataFile(key, current_schema, current_partition_columns, result_files);
+                processMetadataFile(key, current_schema, current_partition_columns, result_files, files_with_deletion_vectors);
         }
 
-        return DeltaLakeMetadata{current_schema, Strings(result_files.begin(), result_files.end()), current_partition_columns};
+        if (!files_with_deletion_vectors.empty())
+            throw Exception(
+                ErrorCodes::NOT_IMPLEMENTED,
+                "Reading Delta Lake files with deletion vectors is not supported without Delta Kernel (file: {})",
+                *files_with_deletion_vectors.begin());
+
+        return DeltaLakeMetadata{
+            current_schema, Strings(result_files.begin(), result_files.end()), current_partition_columns, has_column_mapping};
     }
 
     /**
@@ -254,7 +266,8 @@ struct DeltaLakeMetadataImpl
         const String & metadata_file_path,
         NamesAndTypesList & file_schema,
         DeltaLakePartitionColumns & file_partition_columns,
-        std::set<String> & result) const
+        std::set<String> & result,
+        std::set<String> & files_with_deletion_vectors) const
     {
         auto read_settings = context->getReadSettings();
         RelativePathWithMetadata object_info(metadata_file_path);
@@ -262,6 +275,7 @@ struct DeltaLakeMetadataImpl
 
         char c = 0;
         String sum_json;
+        std::vector<Poco::JSON::Object::Ptr> actions;
         while (!buf->eof())
         {
             /// May be some invalid characters before json.
@@ -291,16 +305,31 @@ struct DeltaLakeMetadataImpl
             LOG_TEST(log, "Metadata: {}", oss.str());
 #endif
 
+            actions.push_back(object);
+        }
+
+        /// A commit may replace a file's deletion vector with `add` and `remove` actions for the same
+        /// path in any order. Removals refer to the previous version, so they are applied first.
+        for (const auto & object : actions)
+        {
             if (object->has("metaData"))
             {
                 const auto metadata_object = object->get("metaData").extract<Poco::JSON::Object::Ptr>();
                 if (!metadata_object)
                     throw Exception(ErrorCodes::LOGICAL_ERROR, "Failed to extract `metaData` field");
 
+                if (metadata_object->has("configuration"))
+                {
+                    const auto configuration_object = metadata_object->getObject("configuration");
+                    if (configuration_object && configuration_object->has(column_mapping_mode_key)
+                        && !configuration_object->isNull(column_mapping_mode_key))
+                        markColumnMappingMode(configuration_object->getValue<String>(column_mapping_mode_key));
+                }
+
                 const auto schema_object = metadata_object->getValue<String>("schemaString");
 
                 Poco::JSON::Parser p;
-                Poco::Dynamic::Var fields_json = parser.parse(schema_object);
+                Poco::Dynamic::Var fields_json = p.parse(schema_object);
                 const Poco::JSON::Object::Ptr & fields_object = fields_json.extract<Poco::JSON::Object::Ptr>();
                 if (!fields_object)
                     throw Exception(ErrorCodes::LOGICAL_ERROR, "Failed to extract `fields` field");
@@ -320,6 +349,22 @@ struct DeltaLakeMetadataImpl
                 }
             }
 
+            if (object->has("remove"))
+            {
+                auto remove_object = object->get("remove").extract<Poco::JSON::Object::Ptr>();
+                if (!remove_object)
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Failed to extract `remove` field");
+
+                String path;
+                Poco::URI::decode(remove_object->getValue<String>("path"), path);
+                const auto full_path = resolvePathInsideTable(table_path, path);
+                result.erase(full_path);
+                files_with_deletion_vectors.erase(full_path);
+            }
+        }
+
+        for (const auto & object : actions)
+        {
             if (object->has("add"))
             {
                 auto add_object = object->get("add").extract<Poco::JSON::Object::Ptr>();
@@ -330,6 +375,10 @@ struct DeltaLakeMetadataImpl
                 Poco::URI::decode(add_object->getValue<String>("path"), path);
                 auto full_path = resolvePathInsideTable(table_path, path);
                 result.insert(full_path);
+                if (add_object->has("deletionVector") && !add_object->isNull("deletionVector"))
+                    files_with_deletion_vectors.insert(full_path);
+                else
+                    files_with_deletion_vectors.erase(full_path);
 
                 auto filename = fs::path(path).filename().string();
                 auto it = file_partition_columns.find(full_path);
@@ -375,16 +424,6 @@ struct DeltaLakeMetadataImpl
                     }
                 }
             }
-            else if (object->has("remove"))
-            {
-                auto remove_object = object->get("remove").extract<Poco::JSON::Object::Ptr>();
-                if (!remove_object)
-                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Failed to extract `remove` field");
-
-                String path;
-                Poco::URI::decode(remove_object->getValue<String>("path"), path);
-                result.erase(resolvePathInsideTable(table_path, path));
-            }
         }
         insertDeltaRowToLogTable(context, sum_json, table_path, metadata_file_path);
     }
@@ -409,6 +448,9 @@ struct DeltaLakeMetadataImpl
 
             LOG_TEST(log, "Found column: {}, type: {}, nullable: {}, physical name: {}",
                         column_name, type, is_nullable, physical_name);
+
+            if (physical_name != column_name)
+                has_column_mapping = true;
 
             schema.push_back({physical_name, DB::DeltaLakeMetadata::getFieldType(field, "type", is_nullable)});
         }
@@ -519,6 +561,7 @@ struct DeltaLakeMetadataImpl
      */
     size_t getCheckpointIfExists(
         std::set<String> & result,
+        std::set<String> & files_with_deletion_vectors,
         NamesAndTypesList & file_schema,
         DeltaLakePartitionColumns & file_partition_columns) const
     {
@@ -601,6 +644,21 @@ struct DeltaLakeMetadataImpl
 
         /// A checkpoint written before this column existed simply carries no partition names.
         const auto * partition_columns_column = res_block.findByName("metaData.partitionColumns");
+        const auto * configuration_column = res_block.findByName("metaData.configuration");
+
+        const auto * deletion_vector_column = res_block.findByName("add.deletionVector");
+        std::optional<size_t> deletion_vector_storage_type_position;
+        if (deletion_vector_column)
+        {
+            const auto * deletion_vector_type = typeid_cast<const DataTypeTuple *>(removeNullable(deletion_vector_column->type).get());
+            if (deletion_vector_type)
+                deletion_vector_storage_type_position = deletion_vector_type->tryGetPositionByName("storageType");
+            if (!deletion_vector_storage_type_position)
+                throw Exception(
+                    ErrorCodes::INCORRECT_DATA,
+                    "Unexpected type of `add.deletionVector` in Delta Lake checkpoint: {}",
+                    deletion_vector_column->type->getName());
+        }
 
         for (size_t i = 0; i < path_column.size(); ++i)
         {
@@ -610,6 +668,21 @@ struct DeltaLakeMetadataImpl
                 Poco::JSON::Parser parser;
                 Poco::Dynamic::Var json = parser.parse(metadata);
                 const Poco::JSON::Object::Ptr & object = json.extract<Poco::JSON::Object::Ptr>();
+
+                if (configuration_column)
+                {
+                    Field configuration;
+                    configuration_column->column->get(i, configuration);
+                    if (!configuration.isNull())
+                    {
+                        for (const auto & entry : configuration.safeGet<Map>())
+                        {
+                            const auto & key_value = entry.safeGet<Tuple>();
+                            if (key_value.at(0).safeGet<String>() == column_mapping_mode_key && !key_value.at(1).isNull())
+                                markColumnMappingMode(key_value.at(1).safeGet<String>());
+                        }
+                    }
+                }
 
                 auto current_schema = parseMetadata(object);
                 if (partition_columns_column)
@@ -692,12 +765,33 @@ struct DeltaLakeMetadataImpl
             const auto [_, inserted] = result.insert(full_path);
             if (!inserted)
                 throw Exception(ErrorCodes::INCORRECT_DATA, "File already exists {}", path);
+
+            if (deletion_vector_column)
+            {
+                Field deletion_vector;
+                deletion_vector_column->column->get(i, deletion_vector);
+                if (!deletion_vector.isNull())
+                {
+                    const auto & storage_type = deletion_vector.safeGet<Tuple>().at(*deletion_vector_storage_type_position);
+                    if (!storage_type.isNull() && !storage_type.safeGet<String>().empty())
+                        files_with_deletion_vectors.insert(full_path);
+                }
+            }
         }
 
         return version;
     }
 
+    static constexpr auto column_mapping_mode_key = "delta.columnMapping.mode";
+
+    void markColumnMappingMode(const String & mode) const
+    {
+        if (mode != "none")
+            has_column_mapping = true;
+    }
+
     LoggerPtr log = getLogger("DeltaLakeMetadataParser");
+    mutable bool has_column_mapping = false;
 };
 
 DeltaLakeMetadata::DeltaLakeMetadata(ObjectStoragePtr object_storage_, StorageObjectStorageConfigurationWeakPtr configuration_, ContextPtr context_)
@@ -707,6 +801,7 @@ DeltaLakeMetadata::DeltaLakeMetadata(ObjectStoragePtr object_storage_, StorageOb
     data_files = result.data_files;
     schema = result.schema;
     partition_columns = result.partition_columns;
+    has_column_mapping = result.has_column_mapping;
     object_storage = object_storage_;
 
     LOG_TRACE(impl.log, "Found {} data files, {} partition files, schema: {}",
@@ -718,6 +813,36 @@ static bool isDeltaKernelEnabled(ContextPtr context, ObjectStorageType storage_t
     const bool supports_delta_kernel = storage_type == ObjectStorageType::S3 || storage_type == ObjectStorageType::Azure || storage_type == ObjectStorageType::Local;
     return supports_delta_kernel && context->getSettingsRef()[Setting::allow_delta_kernel_rs] ;
 }
+
+#if USE_DELTA_KERNEL_RS
+static bool usesBearerAuthentication(const ObjectStoragePtr & object_storage)
+{
+#if USE_AWS_S3
+    if (object_storage->getType() != ObjectStorageType::S3)
+        return false;
+
+    /// Read from the live client because `applyNewSettings` can rebuild it without changing
+    /// the `StorageS3Configuration` that was created with the table.
+    const auto client = object_storage->getS3StorageClient();
+    const auto & client_configuration = client->getClientConfiguration();
+    if (Poco::icompare(client_configuration.http_client, "gcp_oauth") == 0)
+        return true;
+
+    return std::ranges::any_of(client_configuration.extra_headers, [](const HTTPHeaderEntry & header)
+    {
+        return Poco::icompare(header.name, "Authorization") == 0;
+    });
+#else
+    static_cast<void>(object_storage);
+    return false;
+#endif
+}
+
+bool DeltaLakeMetadataDeltaKernel::requiresRecreation(const ObjectStoragePtr & object_storage_) const
+{
+    return usesBearerAuthentication(object_storage_);
+}
+#endif
 
 bool DeltaLakeMetadata::supportsTotalRows(ContextPtr context, ObjectStorageType storage_type)
 {
@@ -792,12 +917,22 @@ DataLakeMetadataPtr DeltaLakeMetadata::create(
     ContextPtr local_context)
 {
 #if USE_DELTA_KERNEL_RS
-    if (isDeltaKernelEnabled(local_context, configuration.lock()->getType()))
+    const auto locked_configuration = configuration.lock();
+    const bool delta_kernel_enabled = isDeltaKernelEnabled(local_context, locked_configuration->getType());
+    const bool uses_bearer_authentication = usesBearerAuthentication(object_storage);
+    if (delta_kernel_enabled && !uses_bearer_authentication)
     {
         return DeltaLakeMetadataDeltaKernel::create(object_storage, configuration);
     }
+    if (delta_kernel_enabled && uses_bearer_authentication)
+        LOG_DEBUG(getLogger("DeltaLakeMetadata"), "Using the native Delta Lake metadata reader because Delta Kernel does not support bearer authentication");
 #endif
     const auto & settings = local_context->getSettingsRef();
+    if (settings[Setting::delta_lake_reload_schema_for_consistency])
+        throw Exception(
+            ErrorCodes::UNSUPPORTED_METHOD,
+            "Schema reload (delta_lake_reload_schema_for_consistency) is not supported without Delta Kernel");
+
     if (settings[Setting::delta_lake_snapshot_version].value != -1)
         throw Exception(
             ErrorCodes::UNSUPPORTED_METHOD,
@@ -814,7 +949,15 @@ DataLakeMetadataPtr DeltaLakeMetadata::create(
             "without DeltaKernel. Use S3 or Local storage with "
             "allow_delta_kernel_rs = 1");
 
-    return std::make_unique<DeltaLakeMetadata>(object_storage, configuration, local_context);
+    auto metadata = std::make_unique<DeltaLakeMetadata>(object_storage, configuration, local_context);
+#if USE_DELTA_KERNEL_RS
+    if (delta_kernel_enabled && uses_bearer_authentication && metadata->hasColumnMapping())
+        throw Exception(
+            ErrorCodes::NOT_IMPLEMENTED,
+            "Reading Delta Lake tables with column mapping is not supported with bearer authentication, "
+            "because Delta Kernel cannot be used with it");
+#endif
+    return metadata;
 }
 
 DataTypePtr DeltaLakeMetadata::getFieldType(const Poco::JSON::Object::Ptr & field, const String & type_key, bool is_nullable)

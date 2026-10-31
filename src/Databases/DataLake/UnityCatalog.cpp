@@ -155,8 +155,16 @@ Poco::JSON::Object::Ptr UnityCatalog::requestCredentials(const String & table_id
     return json.extract<Poco::JSON::Object::Ptr>();
 }
 
-std::shared_ptr<IStorageCredentials> UnityCatalog::parseS3Credentials(const Poco::JSON::Object::Ptr & response) const
+std::shared_ptr<IStorageCredentials> UnityCatalog::parseS3CompatibleCredentials(const Poco::JSON::Object::Ptr & response) const
 {
+    /// `gs` locations use the S3-compatible storage implementation, but Unity Catalog
+    /// vends a GCP OAuth token instead of AWS temporary credentials for them.
+    if (hasValueAndItsNotNone("gcp_oauth_token", response))
+    {
+        const Poco::JSON::Object::Ptr & creds_object = response->getObject("gcp_oauth_token");
+        return std::make_shared<GCSCredentials>(creds_object->get("oauth_token").extract<String>());
+    }
+
     if (!hasValueAndItsNotNone("aws_temp_credentials", response))
         return nullptr;
 
@@ -190,7 +198,7 @@ void UnityCatalog::getCredentials(const String & table_id, TableMetadata & metad
     switch (storage_type)
     {
     case StorageType::S3:
-        creds = parseS3Credentials(response);
+        creds = parseS3CompatibleCredentials(response);
         break;
     case StorageType::Azure:
         creds = parseAzureCredentials(response);
@@ -617,7 +625,7 @@ ICatalog::CredentialsRefreshCallback UnityCatalog::getCredentialsCallbackForOper
     {
         LOG_DEBUG(log, "Update {} credentials in the catalog", operation);
 
-        return parseS3Credentials(requestCredentials(unity_table_id, operation));
+        return parseS3CompatibleCredentials(requestCredentials(unity_table_id, operation));
     };
 }
 
