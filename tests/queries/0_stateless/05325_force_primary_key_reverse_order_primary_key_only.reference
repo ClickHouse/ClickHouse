@@ -1,0 +1,12 @@
+t_pk_only_multi	tuple(a DESC, b DESC)	a, b
+t_pk_only_single	k DESC	k
+9
+8
+7
+3
+4
+5
+2	8
+2	5
+2	2
+1	7

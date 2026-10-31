@@ -1,3 +1,6 @@
+-- Disable force_primary_key_reverse_order: Tests data skipping index behavior sensitive to sort order
+SET force_primary_key_reverse_order = 0;
+
 drop table if exists xy;
 
 create table xy(x int, y int) engine MergeTree partition by intHash64(x) % 2 order by y settings index_granularity = 1;

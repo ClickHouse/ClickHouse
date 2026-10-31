@@ -1,0 +1,10 @@
+AggregatingMergeTree	(id, bucket)	1
+AggregatingMergeTree	(id, bucket) TTL toDateTime(bucket) + toIntervalSecond(346500)	1
+AggregatingMergeTree	id	1
+AggregatingMergeTree	id DESC	1
+AggregatingMergeTree	tuple(id DESC, bucket DESC)	1
+AggregatingMergeTree	tuple(id DESC, bucket DESC) TTL toDateTime(bucket) + toIntervalSecond(346500)	1
+ReplacingMergeTree	(metric_name, id)	1
+ReplacingMergeTree	metric_family	1
+ReplacingMergeTree	metric_family DESC	1
+ReplacingMergeTree	tuple(metric_name DESC, id DESC)	1

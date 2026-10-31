@@ -4,6 +4,9 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
 
+# Disable force_primary_key_reverse_order: creates MergeTree with ORDER BY, tests async insert log entries
+CLICKHOUSE_CLIENT="${CLICKHOUSE_CLIENT} --force_primary_key_reverse_order=0"
+
 url="${CLICKHOUSE_URL}&async_insert=1&wait_for_async_insert=1"
 
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS t_async_inserts_logs"

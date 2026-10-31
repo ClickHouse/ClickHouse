@@ -1,6 +1,9 @@
 -- Tags: no-replicated-database, no-parallel-replicas
 -- no-replicated-database, no-parallel-replicas: EXPLAIN output differs.
 
+-- Disable force_primary_key_reverse_order: EXPLAIN output shows the read type `InOrder`/`InReverseOrder`, which flips with a descending key
+SET force_primary_key_reverse_order = 0;
+
 -- https://github.com/ClickHouse/ClickHouse/issues/116801
 -- A query `WHERE grp = 'x' ORDER BY ts DESC LIMIT n` on a table with
 -- `ORDER BY (ts, grp)` and a projection `ORDER BY (grp, ts)`.

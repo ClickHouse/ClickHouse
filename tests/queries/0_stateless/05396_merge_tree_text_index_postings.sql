@@ -2,6 +2,8 @@
 -- of the tokens, a row per posting. They must match the tokens of the rows of the table for all kinds of posting lists:
 -- embedded, raw, compressed and split into several segments (whose bounds do not match the blocks of the positions).
 
+-- Disable force_primary_key_reverse_order: the row numbers in the posting lists follow the physical order of the rows, which depends on the sorting key direction
+SET force_primary_key_reverse_order = 0;
 DROP TABLE IF EXISTS tab_postings;
 DROP TABLE IF EXISTS tab_postings_plain;
 

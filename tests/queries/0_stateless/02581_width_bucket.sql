@@ -1,3 +1,6 @@
+-- Disable force_primary_key_reverse_order: the output row order follows the sorting key direction
+SET force_primary_key_reverse_order = 0;
+
 CREATE TABLE mytable
 (
     operand Float64,

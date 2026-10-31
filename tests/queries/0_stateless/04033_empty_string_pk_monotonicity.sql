@@ -8,6 +8,9 @@
 -- monotonicity for String arguments so granules can be skipped.
 SET explain_query_plan_default = 'legacy';
 
+-- Reverse key changes granule skip behavior for empty/notEmpty monotonicity checks
+SET force_primary_key_reverse_order = 0;
+
 DROP TABLE IF EXISTS t_empty_pk;
 
 CREATE TABLE t_empty_pk (s String)

@@ -9,6 +9,9 @@
 -- Verifies behavior via EXPLAIN indexes = 1 (Condition and Granules lines).
 SET explain_query_plan_default = 'legacy';
 
+-- Reversed key changes data layout, shifting granule boundaries and altering EXPLAIN granule counts.
+SET force_primary_key_reverse_order = 0;
+
 -- ============================================================
 -- Part 1: UInt64 — pruning works
 -- ============================================================

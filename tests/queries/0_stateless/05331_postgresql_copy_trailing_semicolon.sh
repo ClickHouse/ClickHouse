@@ -6,6 +6,9 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
+# Disable force_primary_key_reverse_order: the reference pins the order of rows returned without `ORDER BY`, which follows the sorting key direction
+CLICKHOUSE_CLIENT="${CLICKHOUSE_CLIENT} --force_primary_key_reverse_order=0"
+
 # `psql` sends a `COPY` with the `;` that terminates it, which must not be taken for an unknown
 # part of the command.
 

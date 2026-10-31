@@ -1,4 +1,7 @@
 -- Tags: zookeeper, no-shared-merge-tree
+-- Disable force_primary_key_reverse_order: tests ReplicatedMergeTree, output order depends on key direction
+SET force_primary_key_reverse_order = 0;
+
 -- no-shared-merge-tree: shared merge tree doesn't loose data parts
 
 SET max_rows_to_read = 0; -- system.text_log can be really big

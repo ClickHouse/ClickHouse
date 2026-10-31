@@ -1,3 +1,6 @@
+-- Disable force_primary_key_reverse_order: tests key condition analysis with specific sort order assumptions
+SET force_primary_key_reverse_order = 0;
+
 DROP TABLE IF EXISTS date_datetime_key_condition;
 
 CREATE TABLE date_datetime_key_condition (dt DateTime) ENGINE = MergeTree() ORDER BY dt;

@@ -1,3 +1,6 @@
+-- Disable force_primary_key_reverse_order: tests subcolumns on MergeTree, output row order depends on sorting key direction
+SET force_primary_key_reverse_order = 0;
+
 DROP TABLE IF EXISTS null_subcolumns;
 
 SELECT 'Nullable';

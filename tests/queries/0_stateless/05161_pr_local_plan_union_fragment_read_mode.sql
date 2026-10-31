@@ -1,6 +1,9 @@
 -- Tags: no-parallel, no-fasttest
 -- A fail point armed here fires for every query on the server, so this test must run alone.
 
+-- Disable force_primary_key_reverse_order: the test checks `Read type: InOrder`, which becomes `InReverseOrder` with a reversed sorting key
+SET force_primary_key_reverse_order = 0;
+
 -- A fragment can hold more than one coordinated read: `parallel_replicas_allow_view_over_mergetree`
 -- ships the outer query of a view, and a view that expands to `UNION ALL` puts every branch's read in
 -- the one fragment, each answering to the coordinator. A condition from outside the fragment reaches

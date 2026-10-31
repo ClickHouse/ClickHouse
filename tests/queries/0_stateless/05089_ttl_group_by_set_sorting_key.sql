@@ -1,3 +1,6 @@
+-- Disable force_primary_key_reverse_order: Test checks how `TTL GROUP BY ... SET` keeps the part sorted by an ascending key, with output ordered by `_part_offset`
+SET force_primary_key_reverse_order = 0;
+
 -- `TTL GROUP BY ... SET` assigns a new value to a column the sorting key is calculated from, so the aggregated rows
 -- may become out of order (https://github.com/ClickHouse/ClickHouse/issues/108514). Then the columns the sorting key
 -- is calculated from are replaced in such a row with the values of the previous row, and the part stays sorted.

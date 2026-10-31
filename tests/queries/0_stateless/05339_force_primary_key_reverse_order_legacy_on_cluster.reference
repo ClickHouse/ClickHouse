@@ -1,0 +1,4 @@
+t_reverse_current	tuple(a DESC, b DESC)
+t_reverse_legacy_1	tuple(a DESC, b DESC)
+t_reverse_legacy_2	a DESC
+t_reverse_legacy_udf	tuple(a DESC, b DESC)

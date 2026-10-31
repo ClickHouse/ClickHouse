@@ -1,3 +1,6 @@
+-- Disable force_primary_key_reverse_order: tests ALTER MODIFY to Nullable with mutations, output depends on key direction
+SET force_primary_key_reverse_order = 0;
+
 DROP TABLE IF EXISTS t_modify_to_nullable;
 
 CREATE TABLE t_modify_to_nullable (key UInt64, id UInt64, s String)

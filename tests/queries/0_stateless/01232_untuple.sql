@@ -1,3 +1,5 @@
+-- argMax with untuple depends on merge order which changes with reverse key
+SET force_primary_key_reverse_order = 0;
 SET enable_named_columns_in_function_tuple = 1;
 
 select untuple((* except (b),)) from (select 1 a, 2 b, 3 c);

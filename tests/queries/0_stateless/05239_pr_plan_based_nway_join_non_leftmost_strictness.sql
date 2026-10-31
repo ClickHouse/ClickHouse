@@ -8,6 +8,9 @@
 -- partition of the left side - a non-leftmost `FULL`, `ASOF`, `PASTE`, or `ANY INNER` on a constant -
 -- must stay local in plan-based as well, and the second half asserts that.
 
+-- Disable force_primary_key_reverse_order: the row picked by `ANY` joins follows the physical order of the rows, which depends on the sorting key direction
+SET force_primary_key_reverse_order = 0;
+
 DROP TABLE IF EXISTS t1 SYNC;
 DROP TABLE IF EXISTS t2 SYNC;
 DROP TABLE IF EXISTS t3 SYNC;

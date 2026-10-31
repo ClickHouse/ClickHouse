@@ -3,6 +3,8 @@
 -- reported, otherwise `SelectedRows` / `read_rows` / quotas / `max_rows_to_read` do not see them.
 
 SET merge_tree_read_split_ranges_into_intersecting_and_non_intersecting_injection_probability = 0.0;
+-- Disable force_primary_key_reverse_order: with the reversed sorting key, `ORDER BY a DESC` is read in order instead of in reverse order
+SET force_primary_key_reverse_order = 0;
 
 DROP TABLE IF EXISTS t_reverse_read_progress;
 
