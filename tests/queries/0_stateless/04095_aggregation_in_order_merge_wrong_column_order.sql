@@ -1,4 +1,4 @@
--- Tags: no-random-merge-tree-settings, no-msan
+-- Tags: no-random-merge-tree-settings
 
 -- Regression test for incorrect column comparison in FinishAggregatingInOrderAlgorithm.
 --
