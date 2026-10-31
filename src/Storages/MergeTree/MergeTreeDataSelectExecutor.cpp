@@ -9,6 +9,7 @@
 #include <boost/rational.hpp> /// For calculations related to sampling coefficients.
 
 #include <Storages/MergeTree/MergeTreeDataSelectExecutor.h>
+#include <Storages/MergeTree/AlterConversions.h>
 #include <Storages/MergeTree/MergeTreeVirtualColumns.h>
 #include <Storages/MergeTree/MergeTreeIndices.h>
 #include <Storages/MergeTree/MergeTreeIndexReader.h>
@@ -837,6 +838,35 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPartition(
     return res;
 }
 
+bool MergeTreeDataSelectExecutor::partHasPendingAlterOrMetadataMutations(
+    const MergeTreeData::DataPartPtr & part,
+    const MergeTreeData::MutationsSnapshotPtr & mutations_snapshot)
+{
+    if (!mutations_snapshot || (!mutations_snapshot->hasAlterMutations() && !mutations_snapshot->hasMetadataMutations()))
+        return false;
+
+    for (const auto & command : mutations_snapshot->getOnFlyMutationCommandsForPart(part))
+    {
+        if (AlterConversions::isSupportedAlterMutation(command.type) || AlterConversions::isSupportedMetadataMutation(command.type))
+            return true;
+    }
+
+    return false;
+}
+
+bool MergeTreeDataSelectExecutor::hasPendingAlterOrMetadataMutations(
+    const RangesInDataParts & parts,
+    const MergeTreeData::MutationsSnapshotPtr & mutations_snapshot)
+{
+    if (!mutations_snapshot || (!mutations_snapshot->hasAlterMutations() && !mutations_snapshot->hasMetadataMutations()))
+        return false;
+
+    return std::any_of(parts.begin(), parts.end(), [&](const auto & part)
+    {
+        return partHasPendingAlterOrMetadataMutations(part.data_part, mutations_snapshot);
+    });
+}
+
 std::expected<void, PreformattedMessage> MergeTreeDataSelectExecutor::canUseIndex(
     const MergeTreeIndexPtr & index,
     const StorageMetadataPtr & metadata_snapshot,
@@ -895,7 +925,18 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByStatistics(
     /// Disable statistics-based pruning when:
     /// 1. The setting is disabled
     /// 2. The query uses FINAL
-    /// 3. There are on-the-fly mutations or patch parts (statistics only reflects original data)
+    /// 3. There are on-the-fly mutations or patch parts (statistics only reflects original data).
+    ///    `hasAlterMutations` covers a pending `ALTER MODIFY COLUMN`, which is a `READ_COLUMN` alter
+    ///    mutation rather than a data mutation: a read already returns the converted values while the
+    ///    statistics still describe the values as they were written, so pruning a part against them
+    ///    drops rows the query has to see. `hasMetadataMutations` covers a pending `DROP COLUMN` or
+    ///    `RENAME COLUMN`: the statistics are loaded under the names the columns have in the part,
+    ///    so once a column with the same name is added again (or another column is renamed onto the
+    ///    dropped name), a read returns the new column while the stale statistics of the dropped one
+    ///    would prune the part. The neighbouring gate for the top-k minmax index
+    ///    (`partHasStaleTopKIndex`) fences the same mutation kinds. The alter and metadata mutations
+    ///    are checked per part below: the snapshot also holds finished ones, which must not disable
+    ///    the pruning of the parts they were already applied to.
     /// 4. A masking policy applies: it rewrites values at read time, so the statistics (like
     ///    the on-the-fly mutations above) no longer describe the values the query sees.
     /// 5. A row policy applies: the statistics describe all rows of a part, including the ones the
@@ -924,9 +965,38 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByStatistics(
 
     const NameSet required_columns = statistics_pruner.getRequiredColumns();
 
-    /// Whether the part can match the filter by its estimates.
-    auto part_can_match = [&](const RangesInDataPart & part, const Estimates & estimates)
+    /// The current types of the required columns, resolved once for all parts (`nullptr` if absent).
+    std::vector<std::pair<String, DataTypePtr>> required_column_types;
+    required_column_types.reserve(required_columns.size());
+    const auto & metadata_columns = metadata_snapshot->getColumns();
+    for (const auto & column_name : required_columns)
     {
+        auto metadata_column = metadata_columns.tryGetColumnOrSubcolumn(GetColumnsOptions::AllPhysical, column_name);
+        required_column_types.emplace_back(column_name, metadata_column ? metadata_column->type : nullptr);
+    }
+
+    /// Whether the part can match the filter by its estimates.
+    auto part_can_match = [&](const RangesInDataPart & part, Estimates estimates)
+    {
+        /// The statistics describe the values as they are stored in the part. When the part stores a
+        /// column with a type different from the current metadata, a read converts the values to the
+        /// current type (`IMergeTreeReader::performRequiredConversions`), so the statistics do not
+        /// describe what the query sees, unless the conversion keeps the representation (e.g. an
+        /// extended `Enum`). This happens independently of the mutations snapshot: e.g. with
+        /// `apply_mutations_on_fly = 0` the pending `MODIFY COLUMN` is not in the snapshot, and after
+        /// `KILL MUTATION` it is gone, while the conversion on read still happens.
+        /// Only the required columns are checked: the estimates may hold every column of the part.
+        for (const auto & [column_name, metadata_type] : required_column_types)
+        {
+            auto it = estimates.find(column_name);
+            if (it == estimates.end())
+                continue;
+
+            auto part_column = part.data_part->tryGetColumn(column_name);
+            if (!part_column || !metadata_type || !isRepresentationPreservingConversion(part_column->type.get(), metadata_type.get()))
+                estimates.erase(it);
+        }
+
         try
         {
             if (!statistics_pruner.checkPartCanMatch(estimates).can_be_true)
@@ -949,15 +1019,22 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByStatistics(
     /// The parts with estimates in memory are pruned right away, and only the decision is kept: the estimates
     /// of a part may contain every column with statistics, and holding them for all parts at once would take
     /// memory proportional to the number of parts, unlike the bounded window of `loadStatisticsOfPartsInParallel`.
-    std::vector<char> estimates_in_memory(parts.size());
-    std::vector<char> can_match_in_memory(parts.size());
+    /// A part with a pending alter or metadata mutation is not pruned by statistics, so its statistics are not
+    /// loaded: it is decided right away as well, and it is always kept.
+    std::vector<char> decided_without_loading(parts.size());
+    std::vector<char> can_match_without_loading(parts.size());
     RangesInDataParts parts_to_load_statistics;
     for (size_t i = 0; i < parts.size(); ++i)
     {
-        if (auto estimates = parts[i].data_part->tryGetEstimatesFromMemory(required_columns))
+        if (partHasPendingAlterOrMetadataMutations(parts[i].data_part, mutations_snapshot))
         {
-            estimates_in_memory[i] = true;
-            can_match_in_memory[i] = part_can_match(parts[i], *estimates);
+            decided_without_loading[i] = true;
+            can_match_without_loading[i] = true;
+        }
+        else if (auto estimates = parts[i].data_part->tryGetEstimatesFromMemory(required_columns))
+        {
+            decided_without_loading[i] = true;
+            can_match_without_loading[i] = part_can_match(parts[i], std::move(*estimates));
         }
         else
             parts_to_load_statistics.push_back(parts[i]);
@@ -976,8 +1053,8 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByStatistics(
     if (!load_statistics && deferred_parts)
         *deferred_parts = parts_to_load_statistics;
 
-    /// A part needs its statistics loaded only if they are not in memory and the read is large enough to load them.
-    auto needs_loading = [&](size_t part_index) { return load_statistics && !estimates_in_memory[part_index]; };
+    /// A part needs its statistics loaded only if it is not decided yet and the read is large enough to load them.
+    auto needs_loading = [&](size_t part_index) { return load_statistics && !decided_without_loading[part_index]; };
 
     RangesInDataParts res_parts;
     size_t total_parts_before = parts.size();
@@ -996,14 +1073,13 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByStatistics(
         {
             const auto & part = parts[part_index];
             bool can_match = true;
-            if (estimates_in_memory[part_index])
+            if (decided_without_loading[part_index])
             {
-                can_match = can_match_in_memory[part_index];
+                can_match = can_match_without_loading[part_index];
             }
             else if (load_statistics)
             {
-                const Estimates estimates = std::move(parts_estimates[part_index]);
-                can_match = part_can_match(part, estimates);
+                can_match = part_can_match(part, std::move(parts_estimates[part_index]));
             }
 
             if (can_match)
@@ -1035,7 +1111,10 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByStatistics(
 ///  - a lightweight update / patch part rewrites the indexed column, but the minmax still
 ///    advertises the pre-update values;
 ///  - an ALTER MODIFY COLUMN changes the indexed column's type, but the minmax still holds bytes
-///    serialized with the old type, which order differently under the new type.
+///    serialized with the old type, which order differently under the new type;
+///  - a DROP COLUMN or RENAME COLUMN followed by adding a column with the same name (and an index
+///    with the same name on it) makes a read return the new column, but the part still holds the
+///    index file built over the old column's values.
 /// The top-k granule optimization keeps only the globally extreme granules, so a part whose stale
 /// minmax advertises an extreme value can displace and prune a part that holds the live top rows,
 /// yielding wrong (often empty) results. Exclude such parts from candidate selection; they are then
@@ -1068,10 +1147,12 @@ static bool partHasStaleTopKIndex(
 #endif
 
     /// Pending on-the-fly mutations or patch parts not yet written into the part. hasAlterMutations()
-    /// covers ALTER MODIFY COLUMN, which is a READ_COLUMN alter mutation (not a data mutation or patch).
+    /// covers ALTER MODIFY COLUMN, which is a READ_COLUMN alter mutation (not a data mutation or patch);
+    /// hasMetadataMutations() covers DROP COLUMN and RENAME COLUMN.
     if (mutations_snapshot
         && (mutations_snapshot->hasDataMutations() || mutations_snapshot->hasAlterMutations()
-            || mutations_snapshot->hasPatchParts() || has_masking_policies))
+            || mutations_snapshot->hasMetadataMutations() || mutations_snapshot->hasPatchParts()
+            || has_masking_policies))
     {
         auto alter_conversions = MergeTreeData::getAlterConversionsForPart(part, mutations_snapshot, context
 #if CLICKHOUSE_CLOUD
@@ -1085,10 +1166,11 @@ static bool partHasStaleTopKIndex(
         if (alter_conversions->hasLightweightDelete() || alter_conversions->hasDeleteMutation())
             return true;
 
-        /// A pending update / patch / MODIFY COLUMN that touches the indexed column makes its minmax
-        /// stale. Reuse the same overlap check the regular skip-index path uses (canUseIndex), so the
-        /// top-k path is consistent with it. Changes to other columns leave the index valid.
-        if (!MergeTreeDataSelectExecutor::canUseIndex(top_k_index, metadata_snapshot, alter_conversions->getAllUpdatedColumns()))
+        /// A pending update / patch / MODIFY COLUMN that touches the indexed column, or a pending
+        /// DROP COLUMN / RENAME COLUMN of its name, makes its minmax stale. Reuse the same overlap check
+        /// the regular skip-index path uses (canUseIndex), so the top-k path is consistent with it.
+        /// Changes to other columns leave the index valid.
+        if (!MergeTreeDataSelectExecutor::canUseIndex(top_k_index, metadata_snapshot, alter_conversions->getColumnsInvalidatingIndexes()))
             return true;
     }
 
@@ -1395,7 +1477,7 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
                     , context->getAccess()->getEnabledMaskingPolicies()
 #endif
                 );
-                const auto & all_updated_columns = alter_conversions->getAllUpdatedColumns();
+                const auto all_updated_columns = alter_conversions->getColumnsInvalidatingIndexes();
                 auto part_info_for_reader = std::make_shared<LoadedMergeTreeDataPartInfoForReader>(ranges.data_part, alter_conversions);
 
                 auto can_use_index = [&](const MergeTreeIndexPtr & index) -> std::expected<void, PreformattedMessage>
@@ -1901,7 +1983,13 @@ void MergeTreeDataSelectExecutor::filterPartsByQueryConditionCache(
             || (!prewhere_info_for_cache && !select_query_info.filter_actions_dag)
             || (vector_search_parameters.has_value()) /// vector search has filter in the ORDER BY
             || select_query_info.isFinal()
-            || (mutations_snapshot->hasDataMutations() || mutations_snapshot->hasPatchParts()))
+            /// A pending `ALTER MODIFY COLUMN` (an alter mutation) or `DROP COLUMN` / `RENAME COLUMN`
+            /// (a metadata mutation) changes the values a read returns for a column name without
+            /// changing the part name, so an entry recorded before the change would drop marks that
+            /// match now. Only the mutations still applicable to the parts count: the snapshot also
+            /// holds finished ones. The write sides are gated symmetrically (see `ReadFromMergeTree`).
+            || (mutations_snapshot->hasDataMutations() || mutations_snapshot->hasPatchParts())
+            || hasPendingAlterOrMetadataMutations(parts_with_ranges, mutations_snapshot))
         return;
 
     /// The query condition cache for `ORDER BY ... LIMIT n` (TopK) reads is gated behind the
