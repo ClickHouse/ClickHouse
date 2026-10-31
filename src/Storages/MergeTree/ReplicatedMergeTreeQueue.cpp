@@ -2397,7 +2397,7 @@ MutationCommands ReplicatedMergeTreeQueue::MutationsSnapshot::getOnFlyMutationCo
     MutationCommands result;
 
     /// Patch parts can have only RENAME commands to apply on-fly.
-    bool seen_all_data_mutations = (!hasDataMutations() && !hasAlterMutations()) || part->info.isPatch();
+    bool seen_all_data_mutations = (!hasDataMutations() && !hasAlterMutations() && !hasIndexMutations()) || part->info.isPatch();
     bool seen_all_metadata_mutations = part_metadata_version >= params.metadata_version;
 
     if (seen_all_data_mutations && seen_all_metadata_mutations)

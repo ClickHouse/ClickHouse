@@ -788,6 +788,19 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPartition(
 std::expected<void, PreformattedMessage> MergeTreeDataSelectExecutor::canUseIndex(
     const MergeTreeIndexPtr & index,
     const StorageMetadataPtr & metadata_snapshot,
+    const AlterConversions & alter_conversions)
+{
+    /// The files of the index in the part may be built from another definition of the index.
+    if (alter_conversions.isIndexPendingRebuild(index->index.name))
+        return std::unexpected(PreformattedMessage::create(
+            "Index {} is rebuilt or cleared by a pending mutation", index->index.name));
+
+    return canUseIndex(index, metadata_snapshot, alter_conversions.getAllUpdatedColumns());
+}
+
+std::expected<void, PreformattedMessage> MergeTreeDataSelectExecutor::canUseIndex(
+    const MergeTreeIndexPtr & index,
+    const StorageMetadataPtr & metadata_snapshot,
     const NameSet & all_updated_columns)
 {
     if (all_updated_columns.empty())
@@ -969,9 +982,10 @@ static bool partHasStaleTopKIndex(
 
     /// Pending on-the-fly mutations or patch parts not yet written into the part. hasAlterMutations()
     /// covers ALTER MODIFY COLUMN, which is a READ_COLUMN alter mutation (not a data mutation or patch).
+    /// hasIndexMutations() covers a pending rebuild of the index itself.
     if (mutations_snapshot
         && (mutations_snapshot->hasDataMutations() || mutations_snapshot->hasAlterMutations()
-            || mutations_snapshot->hasPatchParts() || has_masking_policies))
+            || mutations_snapshot->hasIndexMutations() || mutations_snapshot->hasPatchParts() || has_masking_policies))
     {
         auto alter_conversions = MergeTreeData::getAlterConversionsForPart(part, mutations_snapshot, context
 #if CLICKHOUSE_CLOUD
@@ -988,7 +1002,7 @@ static bool partHasStaleTopKIndex(
         /// A pending update / patch / MODIFY COLUMN that touches the indexed column makes its minmax
         /// stale. Reuse the same overlap check the regular skip-index path uses (canUseIndex), so the
         /// top-k path is consistent with it. Changes to other columns leave the index valid.
-        if (!MergeTreeDataSelectExecutor::canUseIndex(top_k_index, metadata_snapshot, alter_conversions->getAllUpdatedColumns()))
+        if (!MergeTreeDataSelectExecutor::canUseIndex(top_k_index, metadata_snapshot, *alter_conversions))
             return true;
     }
 
@@ -1295,12 +1309,11 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
                     , context->getAccess()->getEnabledMaskingPolicies()
 #endif
                 );
-                const auto & all_updated_columns = alter_conversions->getAllUpdatedColumns();
                 auto part_info_for_reader = std::make_shared<LoadedMergeTreeDataPartInfoForReader>(ranges.data_part, alter_conversions);
 
                 auto can_use_index = [&](const MergeTreeIndexPtr & index) -> std::expected<void, PreformattedMessage>
                 {
-                    auto check_result = canUseIndex(index, metadata_snapshot, all_updated_columns);
+                    auto check_result = canUseIndex(index, metadata_snapshot, *alter_conversions);
                     if (!check_result)
                     {
                         return std::unexpected(PreformattedMessage::create(

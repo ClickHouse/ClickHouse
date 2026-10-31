@@ -181,6 +181,12 @@ bool AlterConversions::isSupportedMetadataMutation(MutationCommand::Type type)
         || type == MutationCommand::DROP_COLUMN;
 }
 
+bool AlterConversions::isSupportedIndexMutation(const MutationCommand & command)
+{
+    return command.type == MutationCommand::MATERIALIZE_INDEX
+        || (command.type == MutationCommand::DROP_INDEX && command.clear);
+}
+
 void AlterConversions::addUpdatedColumns(const MutationCommand & command, NameSet & updated_columns)
 {
     using enum MutationCommand::Type;
@@ -236,6 +242,10 @@ void AlterConversions::addMutationCommand(const MutationCommand & command, const
         }
 
         dropped_columns.emplace(std::move(dropped_column_name));
+    }
+    else if (isSupportedIndexMutation(command))
+    {
+        indices_pending_rebuild.insert(command.index_name);
     }
     else if (command.type == READ_COLUMN)
     {
@@ -713,6 +723,9 @@ void MutationCounters::assertNotNegative() const
 
     if (num_metadata < 0)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "On-fly metadata mutations counter is negative ({})", num_metadata);
+
+    if (num_index < 0)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "On-fly index mutations counter is negative ({})", num_index);
 }
 
 }

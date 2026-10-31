@@ -22,7 +22,7 @@ NameSet injectRequiredColumns(
 
 /// Whether the virtual columns of a text index can be read from the index in a part (direct read).
 /// Otherwise they are computed by their default expressions.
-bool canReadTextIndexInPart(const AlterConversionsPtr & alter_conversions);
+bool canReadTextIndexInPart(const AlterConversionsPtr & alter_conversions, const String & index_name);
 
 PrewhereExprStepPtr createLightweightDeleteStep(bool remove_filter_column);
 

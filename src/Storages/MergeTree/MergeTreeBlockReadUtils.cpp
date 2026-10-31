@@ -48,10 +48,12 @@ namespace FailPoints
 namespace
 {
 
+/// Whether the part has a text index for the virtual column which can be read.
 bool hasMaterializedTextIndex(
     const StorageSnapshotPtr & storage_snapshot,
     const IMergeTreeDataPartInfoForReader & data_part_info_for_reader,
-    const String & virtual_column_name)
+    const String & virtual_column_name,
+    const AlterConversionsPtr & alter_conversions)
 {
     if (storage_snapshot->metadata->virtuals.empty())
         return false;
@@ -66,7 +68,8 @@ bool hasMaterializedTextIndex(
     {
         if (index_desc.type == "text" && index_desc.name == text_index_name)
             if (const auto * loaded_part = dynamic_cast<const LoadedMergeTreeDataPartInfoForReader *>(&data_part_info_for_reader))
-                return loaded_part->getDataPart()->hasSecondaryIndex(index_desc.name, storage_snapshot->metadata);
+                return loaded_part->getDataPart()->hasSecondaryIndex(index_desc.name, storage_snapshot->metadata)
+                    && canReadTextIndexInPart(alter_conversions, index_desc.name);
     }
 
     return false;
@@ -145,8 +148,7 @@ bool injectRequiredColumnsRecursively(
             return true;
         }
         else if (isTextIndexVirtualColumn(column_name_in_part)
-            && hasMaterializedTextIndex(storage_snapshot, data_part_info_for_reader, column_name_in_part)
-            && canReadTextIndexInPart(alter_conversions))
+            && hasMaterializedTextIndex(storage_snapshot, data_part_info_for_reader, column_name_in_part, alter_conversions))
         {
             /// If there is a materialized text index in the part, use the virtual column directly.
             add_column(column_name);
@@ -267,10 +269,14 @@ void injectRequiredColumnsForNullableDefaultConversions(
 
 }
 
-bool canReadTextIndexInPart(const AlterConversionsPtr & alter_conversions)
+bool canReadTextIndexInPart(const AlterConversionsPtr & alter_conversions, const String & index_name)
 {
+    if (!alter_conversions)
+        return true;
+
     /// Patches are joined by the keys read in the first step, which the text index reader cannot read.
-    return !alter_conversions || !alter_conversions->hasPatches();
+    /// The files of an index rebuilt or cleared by a pending mutation may be built from another definition of it.
+    return !alter_conversions->hasPatches() && !alter_conversions->isIndexPendingRebuild(index_name);
 }
 
 /** If some of the requested columns are not in the part,

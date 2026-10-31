@@ -674,6 +674,8 @@ public:
         virtual bool hasDataMutations() const = 0;
         virtual bool hasAlterMutations() const = 0;
         virtual bool hasMetadataMutations() const = 0;
+        /// Has pending `MATERIALIZE INDEX` or `CLEAR INDEX`, see `AlterConversions::isSupportedIndexMutation`.
+        virtual bool hasIndexMutations() const = 0;
         virtual bool hasLightweightDeletedMask() const = 0;
     };
 
@@ -694,6 +696,7 @@ public:
         bool hasDataMutations() const final { return counters.num_data > 0; }
         bool hasAlterMutations() const final { return counters.num_alter > 0; }
         bool hasMetadataMutations() const final { return counters.num_metadata > 0; }
+        bool hasIndexMutations() const final { return counters.num_index > 0; }
         bool hasAnyMutations() const { return hasDataMutations() || hasAlterMutations() || hasMetadataMutations(); }
         bool hasLightweightDeletedMask() const final;
 

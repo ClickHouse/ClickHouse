@@ -885,6 +885,9 @@ bool MergeTreeData::IMutationsSnapshot::needIncludeMutationToSnapshot(const Para
         if (params.need_alter_mutations && AlterConversions::isSupportedAlterMutation(command.type))
             return true;
 
+        if (params.need_alter_mutations && AlterConversions::isSupportedIndexMutation(command))
+            return true;
+
         /// Metadata mutations must be included into the snapshot regardless of the parameters.
         if (AlterConversions::isSupportedMetadataMutation(command.type))
             return true;
@@ -952,7 +955,8 @@ void MergeTreeData::MutationsSnapshotBase::addSupportedCommands(const MutationCo
     {
         bool is_supported = AlterConversions::isSupportedMetadataMutation(command.type)
             || (params.need_data_mutations && AlterConversions::isSupportedDataMutation(command.type))
-            || (params.need_alter_mutations && AlterConversions::isSupportedAlterMutation(command.type));
+            || (params.need_alter_mutations && AlterConversions::isSupportedAlterMutation(command.type))
+            || (params.need_alter_mutations && AlterConversions::isSupportedIndexMutation(command));
 
         if (is_supported)
         {
@@ -16066,6 +16070,7 @@ static void updateMutationsCounters(MutationCounters & mutation_counters, const 
     bool has_data_mutation = false;
     bool has_alter_mutation = false;
     bool has_metadata_mutation = false;
+    bool has_index_mutation = false;
 
     for (const auto & command : commands)
     {
@@ -16085,6 +16090,12 @@ static void updateMutationsCounters(MutationCounters & mutation_counters, const 
         {
             mutation_counters.num_metadata += increment;
             has_metadata_mutation = true;
+        }
+
+        if (!has_index_mutation && AlterConversions::isSupportedIndexMutation(command))
+        {
+            mutation_counters.num_index += increment;
+            has_index_mutation = true;
         }
 
         mutation_counters.assertNotNegative();

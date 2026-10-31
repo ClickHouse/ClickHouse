@@ -344,6 +344,12 @@ public:
         const StorageMetadataPtr & metadata_snapshot,
         const NameSet & all_updated_columns);
 
+    /// Same for a part, also returns an error message if the index is rebuilt or cleared by a pending mutation.
+    static std::expected<void, PreformattedMessage> canUseIndex(
+        const MergeTreeIndexPtr & index,
+        const StorageMetadataPtr & metadata_snapshot,
+        const AlterConversions & alter_conversions);
+
 
 };
 

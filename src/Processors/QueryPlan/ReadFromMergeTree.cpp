@@ -5237,8 +5237,9 @@ bool ReadFromMergeTree::supportsSkipIndexesOnDataRead() const
     /// making the existing on-disk index data incompatible with the current column type.
     /// In the data-read phase the skip index is applied without the per-part `can_use_index` check
     /// that `filterPartsByPrimaryKeyAndSkipIndexes` performs, so disable the feature entirely when
-    /// any data/alter mutations or patches are pending.
-    if (mutations_snapshot->hasDataMutations() || mutations_snapshot->hasAlterMutations() || mutations_snapshot->hasPatchParts())
+    /// any data/alter mutations, rebuilds of indices or patches are pending.
+    if (mutations_snapshot->hasDataMutations() || mutations_snapshot->hasAlterMutations() || mutations_snapshot->hasIndexMutations()
+        || mutations_snapshot->hasPatchParts())
         return false;
 
     /// A masking policy rewrites columns at read time but is not part of the mutation snapshot, so the
@@ -5774,7 +5775,7 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, [[ma
     /// A masking policy rewrites columns at read time like a pending mutation, so the on-disk primary index
     /// does not describe the values the query sees and must not be used to prune granules during the read.
     const bool pending_mutations = mutations_snapshot->hasDataMutations() || mutations_snapshot->hasAlterMutations()
-        || mutations_snapshot->hasPatchParts() || data.hasEnabledMaskingPolicies(context);
+        || mutations_snapshot->hasIndexMutations() || mutations_snapshot->hasPatchParts() || data.hasEnabledMaskingPolicies(context);
     MergeTreeIndices runtime_skip_indexes;
     if (context->getSettingsRef()[Setting::use_skip_indexes_on_data_read]
         /// Not implemented for `FINAL` reads (which merge row versions across parts in their own
