@@ -185,9 +185,6 @@ void IndexDescription::initExpressionInfo(ASTPtr index_expression, const Columns
     ReplaceAliasToExprVisitor::Data data{columns, {}};
     ReplaceAliasToExprVisitor{data}.visit(expr_list);
 
-    /// An ALIAS column can bring in an `x IN table` that the check of the declared expression did not see.
-    checkExpressionDoesntContainSubqueries(*expr_list);
-
     expression_list_ast = expr_list->clone();
 
     TreeRewriterResultPtr syntax = TreeRewriter(context).analyze(
@@ -221,6 +218,17 @@ FieldVector getFieldsFromIndexArgumentsAST(const ASTPtr & arguments)
     for (const auto & child : arguments->children)
         result.emplace_back(getFieldFromIndexArgumentAST(child));
     return result;
+}
+
+void IndexDescription::checkExpandedExpressionDoesntContainSubqueries() const
+{
+    if (expression_list_ast)
+        checkExpressionDoesntContainSubqueries(*expression_list_ast);
+}
+
+bool IndexDescription::expandedExpressionContainsSubqueries() const
+{
+    return expression_list_ast && expressionContainsSubqueries(*expression_list_ast);
 }
 
 bool IndexDescription::isSimpleSingleColumnIndex() const
