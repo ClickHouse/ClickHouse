@@ -49,7 +49,7 @@ private:
     std::condition_variable cv;
     UInt64 version = 0;
 
-    const std::filesystem::path path;
+    const String path;
 
     BackgroundSchedulePoolTaskHolder task;
 

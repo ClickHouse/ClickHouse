@@ -3439,12 +3439,19 @@ absl_cc_library(
     "${DIR}/internal/cctz/src/time_zone_libc.cc"
     "${DIR}/internal/cctz/src/time_zone_libc.h"
     "${DIR}/internal/cctz/src/time_zone_lookup.cc"
+    # `time_zone_lookup.cc` asks the registry for the local zone on Windows, through this.
+    $<$<BOOL:${OS_WINDOWS}>:${DIR}/internal/cctz/src/time_zone_name_win.cc>
     "${DIR}/internal/cctz/src/time_zone_posix.cc"
     "${DIR}/internal/cctz/src/time_zone_posix.h"
     "${DIR}/internal/cctz/src/tzfile.h"
     "${DIR}/internal/cctz/src/zone_info_source.cc"
   COPTS
     ${ABSL_DEFAULT_COPTS}
+    # `FOpen` in `time_zone_info.cc` takes the POSIX branch everywhere except MSVC, and mingw has no
+    # `O_NONBLOCK`. Windows has no non-blocking `open` of a regular file to ask for, but it does need
+    # `_O_BINARY`: without it the descriptor is opened in text mode, which `fdopen(fd, "rb")` does not
+    # undo, and the TZif data would go through CRLF and Ctrl+Z translation.
+    $<$<BOOL:${OS_WINDOWS}>:-DO_NONBLOCK=_O_BINARY>
   DEPS
     Threads::Threads
     # TODO(#1495): Use $<LINK_LIBRARY:FRAMEWORK,CoreFoundation> once our

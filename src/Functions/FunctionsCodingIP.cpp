@@ -26,7 +26,13 @@
 #include <Common/formatIPv6.h>
 #include <Common/typeid_cast.h>
 
+#if defined(OS_WINDOWS)
+#include <Poco/UnWindows.h>
+#include <winsock2.h>
+#include <ws2tcpip.h> /// `inet_ntop`, `inet_pton`
+#else
 #include <arpa/inet.h>
+#endif
 #include <array>
 
 

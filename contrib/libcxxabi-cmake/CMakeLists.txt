@@ -44,6 +44,13 @@ endif()
 target_link_libraries(cxxabi PUBLIC unwind)
 
 # Enable capturing stack traces for all exceptions.
+if (OS_WINDOWS)
+    # Must match `contrib/libcxx-cmake`: without it `__cxa_guard_acquire` is compiled against
+    # libc++'s Win32 threading API and asks for `__libcpp_mutex_lock(void **)`, which the rest of
+    # the build - compiled against the pthread API that winpthreads provides - never defines.
+    target_compile_definitions(cxxabi PRIVATE -D_LIBCPP_HAS_THREAD_API_PTHREAD=1)
+endif ()
+
 target_compile_definitions(cxxabi PUBLIC -DSTD_EXCEPTION_HAS_STACK_TRACE=1)
 
 if (USE_MUSL)

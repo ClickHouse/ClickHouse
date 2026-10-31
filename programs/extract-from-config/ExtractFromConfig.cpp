@@ -1,3 +1,4 @@
+#include <base/pathToString.h>
 #include <filesystem>
 #include <iostream>
 #include <string>
@@ -126,9 +127,10 @@ static std::vector<std::string> extractFromConfig(const std::string & config_pat
             throw DB::Exception(DB::ErrorCodes::CANNOT_LOAD_CONFIG, "Can't load config for users");
 
         std::string users_config_path = configuration->getString("user_directories.users_xml.path");
-        const auto config_dir = fs::path{config_path}.remove_filename().string();
-        if (fs::path(users_config_path).is_relative() && fs::exists(fs::path(config_dir) / users_config_path))
-            users_config_path = fs::path(config_dir) / users_config_path;
+        const auto config_dir = pathFromString(config_path).remove_filename();
+        const auto users_config_file = pathFromString(users_config_path);
+        if (users_config_file.is_relative() && fs::exists(config_dir / users_config_file))
+            users_config_path = pathToGenericString(config_dir / users_config_file);
         configuration = get_configuration(users_config_path, process_zk_includes, !ignore_errors);
     }
 

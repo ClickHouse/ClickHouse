@@ -31,6 +31,9 @@
 
 #if defined(OS_LINUX)
 #include <sys/syscall.h>
+#elif defined(OS_WINDOWS)
+#include <Poco/UnWindows.h>
+#include <bcrypt.h>
 #else
 #include <sys/random.h>
 #endif
@@ -58,6 +61,9 @@ UInt64 hideAllocationAddress(UInt64 ptr)
         /// Old glibc (e.g. the ppc64le sysroot) has no `getentropy`, so call `getrandom` directly.
         if (::syscall(SYS_getrandom, words.data(), sizeof(words), 0) != static_cast<ssize_t>(sizeof(words)))
             throw ErrnoException(ErrorCodes::SYSTEM_ERROR, "Cannot getrandom");
+#elif defined(OS_WINDOWS)
+        if (const NTSTATUS status = ::BCryptGenRandom(nullptr, reinterpret_cast<PUCHAR>(words.data()), sizeof(words), BCRYPT_USE_SYSTEM_PREFERRED_RNG); status != 0)
+            throw Exception(ErrorCodes::SYSTEM_ERROR, "Cannot BCryptGenRandom, status: {}", static_cast<Int64>(status));
 #else
         if (::getentropy(words.data(), sizeof(words)) != 0)
             throw ErrnoException(ErrorCodes::SYSTEM_ERROR, "Cannot getentropy");
@@ -88,11 +94,11 @@ const TraceDataType::Values TraceLogElement::trace_values =
     {"MemoryLargeAllocation", static_cast<UInt8>(TraceType::MemoryLargeAllocation)},
 };
 
-static_assert(TraceSender::MEMORY_CONTEXT_UNKNOWN == -1);
+static_assert(TRACE_MEMORY_CONTEXT_UNKNOWN == -1);
 using ContextDataType = TraceLogElement::ContextDataType;
 const ContextDataType::Values TraceLogElement::context_values =
 {
-    {"Unknown", static_cast<Int8>(TraceSender::MEMORY_CONTEXT_UNKNOWN)},
+    {"Unknown", TRACE_MEMORY_CONTEXT_UNKNOWN},
     {"Global", static_cast<Int8>(VariableContext::Global)},
     {"User", static_cast<Int8>(VariableContext::User)},
     {"Process", static_cast<Int8>(VariableContext::Process)},
@@ -213,11 +219,11 @@ void TraceLogElement::appendToBlock(MutableColumns & columns) const
     if (memory_context.has_value())
         typeid_cast<ColumnInt8 &>(*columns[i++]).getData().push_back(static_cast<Int8>(memory_context.value()));
     else
-        typeid_cast<ColumnInt8 &>(*columns[i++]).getData().push_back(static_cast<Int8>(TraceSender::MEMORY_CONTEXT_UNKNOWN));
+        typeid_cast<ColumnInt8 &>(*columns[i++]).getData().push_back(TRACE_MEMORY_CONTEXT_UNKNOWN);
     if (memory_blocked_context.has_value())
         typeid_cast<ColumnInt8 &>(*columns[i++]).getData().push_back(static_cast<Int8>(memory_blocked_context.value()));
     else
-        typeid_cast<ColumnInt8 &>(*columns[i++]).getData().push_back(static_cast<Int8>(TraceSender::MEMORY_CONTEXT_UNKNOWN));
+        typeid_cast<ColumnInt8 &>(*columns[i++]).getData().push_back(TRACE_MEMORY_CONTEXT_UNKNOWN);
 
     if (event != ProfileEvents::end())
     {

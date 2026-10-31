@@ -1,3 +1,4 @@
+#include <base/pathToString.h>
 #include <Databases/DatabaseBackup.h>
 
 #include <filesystem>
@@ -185,7 +186,7 @@ DatabaseBackup::DatabaseBackup(const String & name_, const String & metadata_pat
     : DatabaseOrdinary(
         name_,
         metadata_path_,
-        DatabaseCatalog::getDataDirPath(name_) / "",
+        pathToGenericString(DatabaseCatalog::getDataDirPath(name_) / ""),
         "DatabaseBackup(" + name_ + ")",
         context_)
     , config(config_)
@@ -270,7 +271,7 @@ void DatabaseBackup::beforeLoadingMetadata(ContextMutablePtr local_context, Load
     {
         DiskBackup::PathPrefixReplacement path_prefix_replacement;
         path_prefix_replacement.from = data_path;
-        path_prefix_replacement.to = DatabaseCatalog::getDataDirPath(config.database_name) / "";
+        path_prefix_replacement.to = pathToGenericString(DatabaseCatalog::getDataDirPath(config.database_name) / "");
 
         DiskBackupConfiguration disk_backup_config;
 
@@ -345,19 +346,20 @@ void DatabaseBackup::loadTablesMetadata(ContextPtr local_context, ParsedTablesMe
 
     auto process_metadata_file = [&metadata, &current_database_name, local_context, this](const String & file_name)
     {
-        std::filesystem::path metadata_path("/metadata/" + config.database_name);
-        std::filesystem::path metadata_file_path = metadata_path / file_name;
+        /// A name inside the backup, which is `/`-separated on every platform, so it is assembled as a string:
+        /// `std::filesystem::path` would join it with `\` on Windows.
+        const String metadata_file_path = "/metadata/" + config.database_name + "/" + file_name;
 
         try
         {
-            auto buffer = backup->readFile(metadata_file_path.string());
+            auto buffer = backup->readFile(metadata_file_path);
 
             String query;
             readStringUntilEOF(query, *buffer);
 
             /// We do not pass logger here, because we do not want to log warnings about backup metadata files
             /// containing both UUID and table name, this is expected
-            auto ast = DatabaseOnDisk::parseQueryFromMetadata({}, local_context, metadata_file_path.string(), query);
+            auto ast = DatabaseOnDisk::parseQueryFromMetadata({}, local_context, metadata_file_path, query);
             if (!ast)
                 return;
 
@@ -397,7 +399,7 @@ void DatabaseBackup::loadTablesMetadata(ContextPtr local_context, ParsedTablesMe
 
             {
                 std::lock_guard lock{metadata.mutex};
-                metadata.parsed_tables[qualified_name] = ParsedTableMetadata{metadata_file_path.string(), ast};
+                metadata.parsed_tables[qualified_name] = ParsedTableMetadata{metadata_file_path, ast};
                 metadata.total_dictionaries += create_query->is_dictionary;
             }
 
@@ -408,7 +410,7 @@ void DatabaseBackup::loadTablesMetadata(ContextPtr local_context, ParsedTablesMe
         }
         catch (Exception & e)
         {
-            e.addMessage("Cannot parse definition from metadata file " + metadata_file_path.string());
+            e.addMessage("Cannot parse definition from metadata file " + metadata_file_path);
             throw;
         }
     };

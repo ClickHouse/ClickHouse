@@ -3,6 +3,8 @@
 #include <base/types.h>
 #include <Poco/Net/IPAddress.h>
 
+#include <vector>
+
 
 namespace Poco
 {
@@ -25,6 +27,14 @@ namespace DB
     bool isLocalAddress(const Poco::Net::SocketAddress & address, UInt16 clickhouse_port);
     bool isLocalAddress(const Poco::Net::SocketAddress & address);
     bool isLocalAddress(const Poco::Net::IPAddress & address);
+
+    /** The IP addresses of every local network interface.
+      *
+      * `getifaddrs` on POSIX; `GetAdaptersAddresses` on Windows, which has no `getifaddrs` -
+      * sockets there are not file descriptors and the interface list comes from the IP Helper
+      * API instead. IPv6 entries carry their scope id. Throws if the list cannot be obtained.
+      */
+    std::vector<Poco::Net::IPAddress> getLocalInterfaceAddresses();
 
     /// Returns host name difference with name prefix, used for load balancing
     size_t getHostNamePrefixDistance(const std::string & local_hostname, const std::string & host);

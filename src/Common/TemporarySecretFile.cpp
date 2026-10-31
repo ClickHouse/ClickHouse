@@ -1,5 +1,6 @@
 #include <Common/TemporarySecretFile.h>
 
+#include <base/pathToString.h>
 #include <Common/getRandomASCIIString.h>
 #include <Common/logger_useful.h>
 #include <IO/WriteBufferFromFile.h>
@@ -17,7 +18,7 @@ TemporarySecretFile::TemporarySecretFile(const std::string & contents)
     /// `TMPDIR` if it is set, `/tmp` otherwise. A file created there under a random name with
     /// `O_EXCL` and mode 0600 cannot be read or pre-created by other users.
     const std::filesystem::path directory = std::filesystem::temp_directory_path();
-    path = directory / ("clickhouse-tls-" + getRandomASCIIString(16));
+    path = pathToGenericString(directory / ("clickhouse-tls-" + getRandomASCIIString(16)));
 
     try
     {
@@ -29,7 +30,7 @@ TemporarySecretFile::TemporarySecretFile(const std::string & contents)
     catch (...)
     {
         std::error_code error_code;
-        std::filesystem::remove(path, error_code);
+        std::filesystem::remove(pathFromString(path), error_code);
         path.clear();
         throw;
     }
@@ -41,7 +42,7 @@ TemporarySecretFile::~TemporarySecretFile()
         return;
 
     std::error_code error_code;
-    std::filesystem::remove(path, error_code);
+    std::filesystem::remove(pathFromString(path), error_code);
     if (error_code)
         LOG_WARNING(getLogger("TemporarySecretFile"), "Cannot remove the temporary file {}: {}", path, error_code.message());
 }

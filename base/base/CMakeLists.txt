@@ -16,13 +16,12 @@ set (SRCS
     getFQDNOrHostName.cpp
     getL2CacheSize.cpp
     getMemoryAmount.cpp
+    getOSUserName.cpp
     getPageSize.cpp
     getThreadId.cpp
     int8_to_string.cpp
     itoa.cpp
     JSON.cpp
-    mremap.cpp
-    openpty.cpp
     phdr_cache.cpp
     preciseExp10.cpp
     shift10.cpp
@@ -35,6 +34,27 @@ set (SRCS
     GitHash.generated.cpp
     wide_integer_to_string.cpp
 )
+
+if (NOT OS_WINDOWS)
+    # `mremap.cpp` is the `mmap`/`memcpy`/`munmap` stand-in for Linux's `mremap`, and
+    # `openpty.cpp` opens a pseudo-terminal pair through `posix_openpt`. Windows has neither
+    # interface - the nearest equivalents, `MapViewOfFile` and ConPTY, are shaped differently
+    # enough to be separate implementations rather than ports - and neither has a Windows
+    # consumer: nothing includes `base/mremap.h` at all, and `openPty` is used only by the
+    # server-side embedded client.
+    list (APPEND SRCS
+        mremap.cpp
+        openpty.cpp
+    )
+endif ()
+
+if (OS_WINDOWS)
+    # The Windows CRT has no `lgamma_r`, and mingw-w64's `lgamma` keeps the sign in a
+    # process-global `signgam`, so take the reentrant implementation from musl. See `lgamma_r.h`.
+    list (APPEND SRCS ../glibc-compatibility/musl/lgamma.c)
+    # Third-party code, compiled as is: it has no prototype for `lgamma_r` and falls through `case`s.
+    set_source_files_properties (../glibc-compatibility/musl/lgamma.c PROPERTIES COMPILE_OPTIONS "-w")
+endif ()
 
 add_library (common ${SRCS})
 

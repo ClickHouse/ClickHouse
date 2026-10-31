@@ -1,3 +1,4 @@
+#include <base/pathToString.h>
 #include <Storages/Distributed/DistributedAsyncInsertBatch.h>
 #include <Storages/Distributed/DistributedAsyncInsertHelpers.h>
 #include <Storages/Distributed/DistributedAsyncInsertHeader.h>
@@ -160,7 +161,7 @@ void DistributedAsyncInsertBatch::send(const SettingsChanges & settings_changes,
     total_rows = 0;
     total_bytes = 0;
 
-    std::filesystem::resize_file(parent.current_batch_file_path, 0);
+    std::filesystem::resize_file(pathFromString(parent.current_batch_file_path), 0);
 }
 
 void DistributedAsyncInsertBatch::serialize()
@@ -169,14 +170,14 @@ void DistributedAsyncInsertBatch::serialize()
     String tmp_file{parent.current_batch_file_path + ".tmp"};
 
     auto dir_sync_guard = parent.getDirectorySyncGuard(parent.relative_path);
-    if (std::filesystem::exists(tmp_file))
+    if (std::filesystem::exists(pathFromString(tmp_file)))
         LOG_ERROR(parent.log, "Temporary file {} exists. Unclean shutdown?", backQuote(tmp_file));
 
     {
         WriteBufferFromFile out{tmp_file, O_WRONLY | O_TRUNC | O_CREAT};
         for (const auto & file : files)
         {
-            UInt64 file_index = parse<UInt64>(std::filesystem::path(file).stem());
+            UInt64 file_index = parse<UInt64>(pathToGenericString(pathFromString(file).stem()));
             out << file_index << '\n';
         }
 
@@ -185,7 +186,7 @@ void DistributedAsyncInsertBatch::serialize()
             out.sync();
     }
 
-    std::filesystem::rename(tmp_file, parent.current_batch_file_path);
+    std::filesystem::rename(pathFromString(tmp_file), pathFromString(parent.current_batch_file_path));
 }
 
 bool DistributedAsyncInsertBatch::recoverBatch()
@@ -197,7 +198,7 @@ bool DistributedAsyncInsertBatch::recoverBatch()
         {
             UInt64 idx = 0;
             in >> idx >> "\n";
-            files.push_back(std::filesystem::absolute(fmt::format("{}/{}.bin", parent.path, idx)).string());
+            files.push_back(pathToGenericString(std::filesystem::absolute(pathFromString(fmt::format("{}/{}.bin", parent.path, idx)))));
         }
     }
 
@@ -210,7 +211,7 @@ bool DistributedAsyncInsertBatch::recoverBatch()
     /// hold an unsent file in front of a quarantined one. Never finalize a file that
     /// still exists here. Resending it may duplicate rows, deleting it loses them.
     auto first_existing_file = files.begin();
-    while (first_existing_file != files.end() && !fs::exists(*first_existing_file))
+    while (first_existing_file != files.end() && !fs::exists(pathFromString(*first_existing_file)))
     {
         LOG_WARNING(parent.log, "File {} does not exist, likely due abnormal shutdown", *first_existing_file);
         ++first_existing_file;
@@ -220,7 +221,7 @@ bool DistributedAsyncInsertBatch::recoverBatch()
     /// A missing file inside the surviving suffix cannot be recovered safely.
     for (const auto & file : files)
     {
-        if (!fs::exists(file))
+        if (!fs::exists(pathFromString(file)))
         {
             LOG_WARNING(parent.log, "File {} does not exist, likely due abnormal shutdown", file);
             return false;

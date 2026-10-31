@@ -1,6 +1,9 @@
 #include <Backups/BackupIO_Default.h>
 
+#include <base/pathToString.h>
+
 #include <Disks/IDisk.h>
+#include <IO/PlatformFileIO.h>
 #include <IO/ReadBufferFromFileBase.h>
 #include <IO/WriteBufferFromFileBase.h>
 #include <IO/copyData.h>
@@ -16,8 +19,8 @@
 
 namespace fs = std::filesystem;
 
-/// OSX does not have O_DIRECTORY
-#ifndef O_DIRECTORY
+/// OSX does not have O_DIRECTORY. Windows opens directories with `platformOpenDirectory` instead.
+#if !defined(O_DIRECTORY) && !defined(OS_WINDOWS)
 #define O_DIRECTORY O_RDONLY
 #endif
 
@@ -47,21 +50,22 @@ std::unique_ptr<WriteBuffer> IBackupWriter::writeFileIfNotExists(const String & 
 
 void fsyncBackupFileContents(const fs::path & path)
 {
-    int fd = ::open(path.c_str(), O_RDONLY | O_CLOEXEC);
+#if defined(OS_WINDOWS)
+    /// `platformFDataSync` is `_commit`, i.e. `FlushFileBuffers`, which fails with access denied on
+    /// a handle without `GENERIC_WRITE`. POSIX lets a read-only descriptor flush the file it names.
+    int fd = platformOpenFile(pathToString(path), O_WRONLY | O_CLOEXEC);
+#else
+    int fd = platformOpenFile(pathToString(path), O_RDONLY | O_CLOEXEC);
+#endif
     if (-1 == fd)
-        ErrnoException::throwFromPath(ErrorCodes::CANNOT_OPEN_FILE, path, "Cannot open file {} for fsync", path.string());
+        ErrnoException::throwFromPath(ErrorCodes::CANNOT_OPEN_FILE, pathToString(path), "Cannot open file {} for fsync", pathToString(path));
 
     ProfileEvents::increment(ProfileEvents::FileSync);
     Stopwatch watch;
     try
     {
-#if defined(OS_DARWIN)
-        if (-1 == ::fsync(fd))
-            ErrnoException::throwFromPath(ErrorCodes::CANNOT_FSYNC, path, "Cannot fsync {}", path.string());
-#else
-        if (-1 == ::fdatasync(fd))
-            ErrnoException::throwFromPath(ErrorCodes::CANNOT_FSYNC, path, "Cannot fdatasync {}", path.string());
-#endif
+        if (-1 == platformFDataSync(fd))
+            ErrnoException::throwFromPath(ErrorCodes::CANNOT_FSYNC, pathToString(path), "Cannot fdatasync {}", pathToString(path));
     }
     catch (...)
     {
@@ -71,26 +75,25 @@ void fsyncBackupFileContents(const fs::path & path)
     ProfileEvents::increment(ProfileEvents::FileSyncElapsedMicroseconds, watch.elapsedMicroseconds());
 
     if (-1 == ::close(fd))
-        ErrnoException::throwFromPath(ErrorCodes::CANNOT_CLOSE_FILE, path, "Cannot close file {} after fsync", path.string());
+        ErrnoException::throwFromPath(ErrorCodes::CANNOT_CLOSE_FILE, pathToString(path), "Cannot close file {} after fsync", pathToString(path));
 }
 
 void fsyncBackupDirectory(const fs::path & path)
 {
+#if defined(OS_WINDOWS)
+    int fd = platformOpenDirectory(pathToString(path));
+#else
     int fd = ::open(path.c_str(), O_DIRECTORY | O_CLOEXEC);
+#endif
     if (-1 == fd)
-        ErrnoException::throwFromPath(ErrorCodes::CANNOT_OPEN_FILE, path, "Cannot open directory {} for fsync", path.string());
+        ErrnoException::throwFromPath(ErrorCodes::CANNOT_OPEN_FILE, pathToString(path), "Cannot open directory {} for fsync", pathToString(path));
 
     ProfileEvents::increment(ProfileEvents::DirectorySync);
     Stopwatch watch;
     try
     {
-#if defined(OS_DARWIN)
-        if (-1 == ::fsync(fd))
-            ErrnoException::throwFromPath(ErrorCodes::CANNOT_FSYNC, path, "Cannot fsync directory {}", path.string());
-#else
-        if (-1 == ::fdatasync(fd))
-            ErrnoException::throwFromPath(ErrorCodes::CANNOT_FSYNC, path, "Cannot fdatasync directory {}", path.string());
-#endif
+        if (-1 == platformFDataSync(fd))
+            ErrnoException::throwFromPath(ErrorCodes::CANNOT_FSYNC, pathToString(path), "Cannot fdatasync directory {}", pathToString(path));
     }
     catch (...)
     {
@@ -100,7 +103,7 @@ void fsyncBackupDirectory(const fs::path & path)
     ProfileEvents::increment(ProfileEvents::DirectorySyncElapsedMicroseconds, watch.elapsedMicroseconds());
 
     if (-1 == ::close(fd))
-        ErrnoException::throwFromPath(ErrorCodes::CANNOT_CLOSE_FILE, path, "Cannot close directory {} after fsync", path.string());
+        ErrnoException::throwFromPath(ErrorCodes::CANNOT_CLOSE_FILE, pathToString(path), "Cannot close directory {} after fsync", pathToString(path));
 }
 
 

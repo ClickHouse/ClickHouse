@@ -1,3 +1,4 @@
+#include <base/pathToString.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeIndexGranularityInfo.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
@@ -110,7 +111,7 @@ std::optional<MarkType> MergeTreeIndexGranularityInfo::getMarksTypeFromFilesyste
 {
     if (data_part_storage.exists())
         for (auto it = data_part_storage.iterate(); it->isValid(); it->next())
-            if (std::string ext = fs::path(it->name()).extension(); MarkType::isMarkFileExtension(ext))
+            if (std::string ext = pathToGenericString(fs::path(it->name()).extension()); MarkType::isMarkFileExtension(ext))
                 return MarkType(ext);
     return {};
 }

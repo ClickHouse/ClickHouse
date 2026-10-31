@@ -19,6 +19,8 @@
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Storages/checkAndGetLiteralArgument.h>
 #include <Poco/UUIDGenerator.h>
+#include <Common/ObjectStorageKey.h>
+#include <base/pathToString.h>
 
 #include "config.h"
 #if USE_AZURE_BLOB_STORAGE
@@ -159,18 +161,31 @@ std::string joinPathUnderPrefix(const std::string & prefix, const std::string & 
     if (prefix.empty())
         return path;
 
-    std::string_view key = path;
+    std::string key = path;
     if (key.starts_with("/"))
-        key.remove_prefix(1);
-    return fs::path(prefix) / key;
+        key.erase(0, 1);
+    /// The values are object storage keys, not filesystem paths: join them in string space, so
+    /// the separator stays a forward slash and the bytes stay UTF-8 on every host.
+    return appendObjectStorageKeySegment(prefix, key);
 }
 
-std::string relativizePathUnderPrefix(const std::string & prefix, const std::string & path)
+std::optional<std::string> relativizePathUnderPrefix(const std::string & prefix, const std::string & path)
 {
     if (prefix.empty())
         return path;
 
-    return fs::relative(path, prefix).string();
+    /// The inverse of `appendObjectStorageKeySegment`, in string space for the same reason as
+    /// `joinPathUnderPrefix`: `std::filesystem` would treat `\` in a key as a separator on Windows.
+    if (!path.starts_with(prefix))
+        return std::nullopt;
+
+    if (prefix.ends_with('/'))
+        return path.substr(prefix.size());
+
+    if (path.size() > prefix.size() && path[prefix.size()] == '/')
+        return path.substr(prefix.size() + 1);
+
+    return std::nullopt;
 }
 
 std::string formatObjectPath(
@@ -193,7 +208,11 @@ std::string formatObjectPath(
 
 Strings candidateKeysUnderPrefix(const std::string & prefix, const std::string & path)
 {
-    auto relative_path = relativizePathUnderPrefix(prefix, path);
+    auto maybe_relative_path = relativizePathUnderPrefix(prefix, path);
+    if (!maybe_relative_path)
+        return {};
+
+    auto relative_path = std::move(*maybe_relative_path);
     if (prefix.empty() || relative_path.empty() || relative_path.starts_with("/"))
         return {std::move(relative_path)};
 

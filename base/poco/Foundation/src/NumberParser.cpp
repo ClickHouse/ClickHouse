@@ -21,9 +21,13 @@
 #include <stdlib.h>
 
 
+// Not `__MINGW32__`: the MSVC-only `I64` length modifier is rejected by Clang, and
+// mingw-w64 does not need it. Its headers turn on `__USE_MINGW_ANSI_STDIO` for C++,
+// which routes the printf/scanf family to mingw-w64's own conforming implementations,
+// and those understand the standard `ll`.
 #if defined(POCO_LONG_IS_64_BIT)
 	#define I64_FMT "l"
-#elif defined(_MSC_VER) || defined(__MINGW32__)
+#elif defined(_MSC_VER)
 	#define I64_FMT "I64"
 #elif defined(__APPLE__) 
 	#define I64_FMT "q"

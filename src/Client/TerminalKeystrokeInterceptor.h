@@ -8,10 +8,13 @@
 #include <thread>
 #include <unordered_map>
 
-struct termios;
-
 namespace DB
 {
+
+/// The terminal settings this interceptor replaced, to be put back when it stops. What they are
+/// differs by platform - a `termios` on POSIX, a console mode word on Windows - and neither
+/// belongs in a header, so the type is opaque here and defined in the implementation.
+struct TerminalState;
 
 class TerminalKeystrokeInterceptor
 {
@@ -37,7 +40,7 @@ private:
 
     CallbackMap callbacks;
     std::unique_ptr<std::thread> intercept_thread;
-    std::unique_ptr<struct termios> orig_termios;
+    std::unique_ptr<TerminalState> orig_terminal_state;
 
     bool stop_requested = false;
     std::mutex stop_requested_mutex;

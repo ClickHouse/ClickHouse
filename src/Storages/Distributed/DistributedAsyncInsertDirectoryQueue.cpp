@@ -1,3 +1,4 @@
+#include <base/pathToString.h>
 #include <Storages/Distributed/DistributedAsyncInsertBatch.h>
 #include <Storages/Distributed/DistributedAsyncInsertHeader.h>
 #include <Storages/Distributed/DistributedAsyncInsertHelpers.h>
@@ -128,9 +129,9 @@ DistributedAsyncInsertDirectoryQueue::DistributedAsyncInsertDirectoryQueue(
     , pool(std::move(pool_))
     , disk(disk_)
     , relative_path(relative_path_)
-    , path(fs::path(disk->getPath()) / relative_path / "")
-    , broken_relative_path(fs::path(relative_path) / "broken")
-    , broken_path(fs::path(path) / "broken" / "")
+    , path(pathToGenericString(pathFromString(disk->getPath()) / pathFromString(relative_path) / ""))
+    , broken_relative_path(pathToGenericString(pathFromString(relative_path) / "broken"))
+    , broken_path(pathToGenericString(pathFromString(path) / "broken" / ""))
     , should_batch_inserts(storage.getDistributedSettingsRef()[DistributedSetting::background_insert_batch])
     , split_batch_on_failure(storage.getDistributedSettingsRef()[DistributedSetting::background_insert_split_batch_on_failure])
     , dir_fsync(storage.getDistributedSettingsRef()[DistributedSetting::fsync_directories])
@@ -148,7 +149,7 @@ DistributedAsyncInsertDirectoryQueue::DistributedAsyncInsertDirectoryQueue(
     , metric_broken_bytes(CurrentMetrics::BrokenDistributedBytesToInsert, 0)
     , metric_broken_files(CurrentMetrics::BrokenDistributedFilesToInsert, 0)
 {
-    fs::create_directory(broken_path);
+    fs::create_directory(pathFromString(broken_path));
 
     initializeFilesFromDisk();
 
@@ -186,7 +187,7 @@ void DistributedAsyncInsertDirectoryQueue::shutdownAndDropAllData()
     }
 
     auto dir_sync_guard = getDirectorySyncGuard(relative_path);
-    fs::remove_all(path);
+    fs::remove_all(pathFromString(path));
 }
 
 void DistributedAsyncInsertDirectoryQueue::shutdownWithoutFlush()
@@ -345,7 +346,7 @@ ConnectionPoolWithFailoverPtr DistributedAsyncInsertDirectoryQueue::createPool(c
 
 bool DistributedAsyncInsertDirectoryQueue::hasPendingFiles() const
 {
-    return fs::exists(current_batch_file_path) || !current_file.empty() || !pending_files.empty();
+    return fs::exists(pathFromString(current_batch_file_path)) || !current_file.empty() || !pending_files.empty();
 }
 
 void DistributedAsyncInsertDirectoryQueue::initializeFilesFromDisk()
@@ -360,20 +361,20 @@ void DistributedAsyncInsertDirectoryQueue::initializeFilesFromDisk()
     {
         size_t bytes_count = 0;
 
-        for (fs::directory_iterator it{path}; it != end; ++it)
+        for (fs::directory_iterator it{pathFromString(path)}; it != end; ++it)
         {
             const auto & file_path = it->path();
-            const auto & base_name = file_path.stem().string();
-            if (!it->is_directory() && startsWith(fs::path(file_path).extension(), ".bin") && parse<UInt64>(base_name))
+            const String base_name = pathToGenericString(file_path.stem());
+            if (!it->is_directory() && startsWith(pathToGenericString(file_path.extension()), ".bin") && parse<UInt64>(base_name))
             {
-                if (!pending_files.push(fs::absolute(file_path).string()))
-                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot schedule a file '{}'", file_path.string());
+                if (!pending_files.push(pathToGenericString(fs::absolute(file_path))))
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot schedule a file '{}'", pathToGenericString(file_path));
                 bytes_count += fs::file_size(file_path);
             }
             else if (base_name != "tmp" && base_name != "broken")
             {
                 /// It is OK to log current_batch.txt here too (useful for debugging).
-                LOG_WARNING(log, "Unexpected file {} in {}", file_path.string(), path);
+                LOG_WARNING(log, "Unexpected file {} in {}", pathToGenericString(file_path), path);
             }
         }
 
@@ -391,16 +392,16 @@ void DistributedAsyncInsertDirectoryQueue::initializeFilesFromDisk()
         size_t broken_bytes_count = 0;
         size_t broken_files = 0;
 
-        for (fs::directory_iterator it{broken_path}; it != end; ++it)
+        for (fs::directory_iterator it{pathFromString(broken_path)}; it != end; ++it)
         {
             const auto & file_path = it->path();
-            if (!it->is_directory() && startsWith(fs::path(file_path).extension(), ".bin") && parse<UInt64>(file_path.stem()))
+            if (!it->is_directory() && startsWith(pathToGenericString(file_path.extension()), ".bin") && parse<UInt64>(pathToGenericString(file_path.stem())))
             {
                 broken_bytes_count += fs::file_size(file_path);
                 broken_files++;
             }
             else
-                LOG_WARNING(log, "Unexpected file {} in {}", file_path.string(), broken_path);
+                LOG_WARNING(log, "Unexpected file {} in {}", pathToGenericString(file_path), broken_path);
         }
 
         LOG_TRACE(log, "Broken files set to {}", broken_files);
@@ -547,7 +548,7 @@ struct DistributedAsyncInsertDirectoryQueue::BatchHeader
 
 bool DistributedAsyncInsertDirectoryQueue::addFileAndSchedule(const std::string & file_path, size_t file_size, size_t ms)
 {
-    std::string absolute_file_path = fs::absolute(file_path).string();
+    std::string absolute_file_path = pathToGenericString(fs::absolute(pathFromString(file_path)));
 
     /// Count the file before it is pushed: the background task can send it and uncount it in `markAsSend`
     /// as soon as it is in the queue, which would take the counters below zero for a while.
@@ -589,7 +590,7 @@ DistributedAsyncInsertDirectoryQueue::Status DistributedAsyncInsertDirectoryQueu
 void DistributedAsyncInsertDirectoryQueue::processFilesWithBatching(bool force, const SettingsChanges & settings_changes)
 {
     /// Possibly, we failed to send a batch on the previous iteration. Try to send exactly the same batch.
-    if (fs::exists(current_batch_file_path))
+    if (fs::exists(pathFromString(current_batch_file_path)))
     {
         LOG_DEBUG(log, "Restoring the batch");
 
@@ -599,7 +600,7 @@ void DistributedAsyncInsertDirectoryQueue::processFilesWithBatching(bool force, 
 
         /// Remove the batch info unconditionally since it is either valid and sent or broken and should be re-created from scratch.
         auto dir_sync_guard = getDirectorySyncGuard(relative_path);
-        fs::remove(current_batch_file_path);
+        fs::remove(pathFromString(current_batch_file_path));
     }
 
     std::unordered_map<BatchHeader, DistributedAsyncInsertBatch, BatchHeader::Hash> header_to_batch;
@@ -610,7 +611,7 @@ void DistributedAsyncInsertDirectoryQueue::processFilesWithBatching(bool force, 
     {
         while ((force || !monitor_blocker.isCancelled()) && !pending_files.isFinished() && pending_files.tryPop(file_path))
         {
-            if (!fs::exists(file_path))
+            if (!fs::exists(pathFromString(file_path)))
             {
                 LOG_WARNING(log, "File {} does not exist, likely due to current_batch.txt processing", file_path);
                 continue;
@@ -705,14 +706,14 @@ void DistributedAsyncInsertDirectoryQueue::processFilesWithBatching(bool force, 
 
         /// current_batch.txt will not exist if there was no send
         /// (this is the case when all batches that was pending has been marked as pending)
-        if (fs::exists(current_batch_file_path))
-            fs::remove(current_batch_file_path);
+        if (fs::exists(pathFromString(current_batch_file_path)))
+            fs::remove(pathFromString(current_batch_file_path));
     }
 }
 
 void DistributedAsyncInsertDirectoryQueue::markAsBroken(const std::string & file_path)
 {
-    const String & broken_file_path = fs::path(broken_path) / fs::path(file_path).filename();
+    const String & broken_file_path = pathToGenericString(pathFromString(broken_path) / pathFromString(file_path).filename());
 
     auto dir_sync_guard = getDirectorySyncGuard(relative_path);
     auto broken_dir_sync_guard = getDirectorySyncGuard(broken_relative_path);
@@ -720,7 +721,7 @@ void DistributedAsyncInsertDirectoryQueue::markAsBroken(const std::string & file
     {
         std::lock_guard status_lock(status_mutex);
 
-        size_t file_size = fs::file_size(file_path);
+        size_t file_size = fs::file_size(pathFromString(file_path));
 
         --status.files_count;
         status.bytes_count -= file_size;
@@ -732,13 +733,13 @@ void DistributedAsyncInsertDirectoryQueue::markAsBroken(const std::string & file
         metric_broken_bytes.add(file_size);
     }
 
-    fs::rename(file_path, broken_file_path);
+    fs::rename(pathFromString(file_path), pathFromString(broken_file_path));
     LOG_ERROR(log, "Renamed `{}` to `{}`", file_path, broken_file_path);
 }
 
 void DistributedAsyncInsertDirectoryQueue::markAsSend(const std::string & file_path)
 {
-    size_t file_size = fs::file_size(file_path);
+    size_t file_size = fs::file_size(pathFromString(file_path));
 
     {
         std::lock_guard status_lock(status_mutex);
@@ -748,7 +749,7 @@ void DistributedAsyncInsertDirectoryQueue::markAsSend(const std::string & file_p
         status.bytes_count -= file_size;
     }
 
-    fs::remove(file_path);
+    fs::remove(pathFromString(file_path));
 }
 
 SyncGuardPtr DistributedAsyncInsertDirectoryQueue::getDirectorySyncGuard(const std::string & dir_path)
@@ -771,7 +772,7 @@ void DistributedAsyncInsertDirectoryQueue::updatePath(const std::string & new_re
     {
         std::lock_guard status_lock(status_mutex);
         relative_path = new_relative_path;
-        path = fs::path(disk->getPath()) / relative_path / "";
+        path = pathToGenericString(pathFromString(disk->getPath()) / pathFromString(relative_path) / "");
     }
     current_batch_file_path = path + "current_batch.txt";
 

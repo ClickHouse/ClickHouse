@@ -4,9 +4,17 @@
 #include <boost/iostreams/device/file_descriptor.hpp>
 #include <boost/iostreams/stream.hpp>
 #include <Poco/Pipe.h>
+#include <Common/Exception.h>
 
 namespace DB
 {
+
+#if defined(OS_WINDOWS)
+namespace ErrorCodes
+{
+    extern const int NOT_IMPLEMENTED;
+}
+#endif
 
 
 class PipeClientDescriptorSet : public IClientDescriptorSet
@@ -24,6 +32,21 @@ public:
         output_stream_err << std::unitbuf;
     }
 
+    /// `Poco::Pipe::Handle` is a file descriptor on POSIX but a `HANDLE` on Windows, and a
+    /// `HANDLE` is not a descriptor - it would have to be adopted into one with
+    /// `_open_osfhandle`, which transfers ownership away from the `Poco::Pipe` that is going to
+    /// close it. Since the embedded client this feeds is server-side, that is left undone.
+#if defined(OS_WINDOWS)
+    DescriptorSet getDescriptorsForClient() override
+    {
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "The embedded client is not implemented on Windows");
+    }
+
+    DescriptorSet getDescriptorsForServer() override
+    {
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "The embedded client is not implemented on Windows");
+    }
+#else
     DescriptorSet getDescriptorsForClient() override
     {
         return DescriptorSet{.in = pipe_in.readHandle(), .out = pipe_out.writeHandle(), .err = pipe_err.writeHandle()};
@@ -33,6 +56,7 @@ public:
     {
         return DescriptorSet{.in = pipe_in.writeHandle(), .out = pipe_out.readHandle(), .err = pipe_err.readHandle()};
     }
+#endif
 
     StreamSet getStreamsForClient() override { return StreamSet{.in = input_stream, .out = output_stream, .err = output_stream_err}; }
 

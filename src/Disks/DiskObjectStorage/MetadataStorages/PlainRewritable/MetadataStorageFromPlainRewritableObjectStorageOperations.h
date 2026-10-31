@@ -198,9 +198,9 @@ private:
     /// A file of a directory with the implicit file list, whose blob is not shared, is removed together with its blob:
     /// otherwise the blob would be discovered as a file again when the metadata is loaded. To be able to undo the removal,
     /// the blob is first copied to a temporary location.
-    std::filesystem::path remote_source_path;
+    std::string remote_source_path;
     std::string tmp_name;
-    std::filesystem::path remote_tmp_path;
+    std::string remote_tmp_path;
     /// Set right before their steps; see `source_copy_attempted` of the move operation.
     bool copy_attempted = false;
     bool remove_attempted = false;
@@ -242,8 +242,8 @@ private:
     const std::shared_ptr<PlainRewritableLayout> layout;
     const std::shared_ptr<PlainRewritableMetrics> metrics;
 
-    std::filesystem::path remote_path_from;
-    std::filesystem::path remote_path_to;
+    std::string remote_path_from;
+    std::string remote_path_to;
     /// Set right before the copy; see `source_copy_attempted` of the move operation.
     bool copy_attempted = false;
     std::optional<DirectoryRemoteInfo> previous_directory_info;
@@ -326,12 +326,12 @@ private:
     bool prefix_path_written_to{false};
     std::optional<StoredObject> replaced_blob;
 
-    std::filesystem::path remote_path_from;
-    std::filesystem::path remote_path_to;
+    std::string remote_path_from;
+    std::string remote_path_to;
     std::string tmp_name_from;
     std::string tmp_name_to;
-    std::filesystem::path tmp_remote_path_from;
-    std::filesystem::path tmp_remote_path_to;
+    std::string tmp_remote_path_from;
+    std::string tmp_remote_path_to;
     std::optional<FileRemoteInfo> file_from_remote_info;
     /// What the marker of the backup of an existing target says until the replacement is in place.
     std::optional<PlainRewritableLayout::PendingReplace> pending_replace;
