@@ -5,6 +5,8 @@
 #include <Common/Exception.h>
 #include <Common/PODArray.h>
 
+#include <array>
+
 namespace DB
 {
 
@@ -93,7 +95,6 @@ namespace
 
         /// `1` (bits header) + `4 * BLOCK_SIZE` (bit-pure max at `bits = 32`) + 16 (SIMD alignment slack).
         size_t maxBlockBytes() const override { return 1 + sizeof(uint32_t) * BLOCK_SIZE + 16; }
-
         IPostingListCodec::Type type() const override { return IPostingListCodec::Type::Bitpacking; }
     };
 
@@ -134,12 +135,97 @@ namespace
         }
 
         size_t maxBlockBytes() const override { return MAX_BLOCK_BYTES; }
-
         IPostingListCodec::Type type() const override { return IPostingListCodec::Type::PFor; }
 
     private:
         static constexpr size_t MAX_BLOCK_BYTES = PFor::maxCompressedBytes<uint32_t>(BLOCK_SIZE);
     };
+
+    /// Stores `(weight - 1)` with a per-block codec of the row ids: the weights are positive,
+    /// so small weights, such as term frequencies, become small values that the block codec encodes compactly.
+    template <typename BlockCodec>
+    class WeightsCodecFromBlockCodec final : public IPostingListWeightsCodec
+    {
+    public:
+        size_t encodeBlock(std::span<const uint32_t> weights, PODArray<char> & out) override
+        {
+            chassert(!weights.empty() && weights.size() <= BLOCK_SIZE);
+
+            uint32_t values[BLOCK_SIZE];
+            for (size_t i = 0; i < weights.size(); ++i)
+            {
+                chassert(weights[i] != 0);
+                values[i] = weights[i] - 1;
+            }
+
+            return block_codec.encodeBlock(std::span<const uint32_t>(values, weights.size()), out);
+        }
+
+        size_t encodeOnes(size_t count, PODArray<char> & out) override
+        {
+            /// Every `(weight - 1)` is 0. Bitpacking writes such a block as a zero bits byte alone.
+            static constexpr std::array<uint32_t, BLOCK_SIZE> zeros{};
+            chassert(count > 0 && count <= BLOCK_SIZE);
+            return block_codec.encodeBlock(std::span<const uint32_t>(zeros.data(), count), out);
+        }
+
+        size_t decodeBlock(std::span<const std::byte> & in, size_t count, std::span<uint32_t> out) override
+        {
+            const size_t consumed = block_codec.decodeBlock(in, count, out);
+
+            for (size_t i = 0; i < count; ++i)
+                out[i] += 1;
+
+            return consumed;
+        }
+
+        /// Steps over the block by the framing of the block codec, without decoding it (see the specializations).
+        size_t skipBlock(std::span<const std::byte> & in, size_t count) override;
+
+        size_t maxBlockBytes() const override { return block_codec.maxBlockBytes(); }
+
+    private:
+        static constexpr size_t BLOCK_SIZE = IPostingListBlockCodec::BLOCK_SIZE;
+
+        BlockCodec block_codec;
+    };
+
+    template <>
+    size_t WeightsCodecFromBlockCodec<BitpackingPostingListBlockCodec>::skipBlock(std::span<const std::byte> & in, size_t count)
+    {
+        if (in.empty())
+            throw Exception(ErrorCodes::CORRUPTED_DATA, "Corrupted data: expected at least {} bytes, but got {}", 1, in.size());
+
+        uint8_t bits = readByte(in);
+        if (bits > 32)
+            throw Exception(ErrorCodes::CORRUPTED_DATA, "Corrupted data: expected bits <= 32, but got {}", bits);
+
+        /// `bits == 0` means every value in the block is 0 and no payload was written.
+        size_t required_size = BitpackingBlockCodec::bitpackingCompressedBytes(count, bits);
+        if (in.size() < required_size)
+            throw Exception(ErrorCodes::CORRUPTED_DATA, "Corrupted data: expected data size {}, but got {}", required_size, in.size());
+
+        in = in.subspan(required_size);
+
+        /// Total bytes skipped in `in`: the bits byte plus the bit-packed payload.
+        return 1 + required_size;
+    }
+
+    template <>
+    size_t WeightsCodecFromBlockCodec<PForPostingListBlockCodec>::skipBlock(std::span<const std::byte> & in, size_t count)
+    {
+        chassert(count > 0 && count <= BLOCK_SIZE);
+        const auto * data = reinterpret_cast<const uint8_t *>(in.data());
+
+        /// The block size follows from its header, so the values are not decoded.
+        const size_t skipped = PFor::skipBlocks<uint32_t>(data, count, data + in.size());
+        if (skipped == 0)
+            throw Exception(ErrorCodes::CORRUPTED_DATA,
+                "Corrupted data: malformed PFor block of {} values in {} available bytes", count, in.size());
+
+        in = in.subspan(skipped);
+        return skipped;
+    }
 
 }
 
@@ -153,6 +239,21 @@ std::unique_ptr<IPostingListBlockCodec> createPostingListBlockCodec(IPostingList
             return std::make_unique<BitpackingPostingListBlockCodec>();
         case IPostingListCodec::Type::PFor:
             return std::make_unique<PForPostingListBlockCodec>();
+    }
+
+    throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown posting list codec type: {}", static_cast<int>(type));
+}
+
+std::unique_ptr<IPostingListWeightsCodec> createWeightsCodecFromBlockCodec(IPostingListCodec::Type type)
+{
+    switch (type)
+    {
+        case IPostingListCodec::Type::None:
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Posting list codec 'None' has no per-block codec");
+        case IPostingListCodec::Type::Bitpacking:
+            return std::make_unique<WeightsCodecFromBlockCodec<BitpackingPostingListBlockCodec>>();
+        case IPostingListCodec::Type::PFor:
+            return std::make_unique<WeightsCodecFromBlockCodec<PForPostingListBlockCodec>>();
     }
 
     throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown posting list codec type: {}", static_cast<int>(type));

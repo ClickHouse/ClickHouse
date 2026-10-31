@@ -17,6 +17,7 @@ namespace DB
 
 struct TokenPostingsInfo;
 class TextIndexPostingsCache;
+enum class TextIndexScoringKind : UInt8;
 class IColumn;
 class MergeTreeReaderStream;
 
@@ -92,7 +93,13 @@ class PostingListCursor
 public:
     /// Compressed posting list, decoded lazily from `.pst`. With a `postings_cache_`, decoded segments are
     /// memoized (keyed by `index_id_for_cache_` + byte offset) and shared; pass `nullptr` to skip caching.
-    PostingListCursor(MergeTreeReaderStream & stream_, const TokenPostingsInfo & info_, TextIndexPostingsCache * postings_cache_ = nullptr, const String & index_id_for_cache_ = {});
+    /// `scoring_` is the scoring kind of the index, which determines the codec of the weights in the posting list.
+    PostingListCursor(
+        MergeTreeReaderStream & stream_,
+        const TokenPostingsInfo & info_,
+        TextIndexScoringKind scoring_,
+        TextIndexPostingsCache * postings_cache_ = nullptr,
+        const String & index_id_for_cache_ = {});
 
     /// Fully-materialized posting list over a pre-flattened, shared, immutable sorted array (analyzer-folded
     /// or already-decoded postings). Cardinality, density and the row-id range derive from the array itself.
@@ -179,6 +186,8 @@ private:
 
     MergeTreeReaderStream * stream = nullptr;
     const TokenPostingsInfo * info = nullptr;
+    /// Scoring kind of the weights stored in the posting list, `None` if it stores no weights.
+    TextIndexScoringKind scoring{};
 
     /// Bounded cache used to memoize decoded segments across per-task cursors.
     TextIndexPostingsCache * postings_cache = nullptr;
@@ -203,6 +212,8 @@ private:
     /// Per-block payload codec for the current segment's codec type; lazily created and reused across all
     /// blocks of this cursor (a posting list is written with a single codec).
     std::unique_ptr<IPostingListBlockCodec> block_codec;
+    /// Codec of the weights. The cursor skips the weights, so it only bounds the payload size of the segment.
+    std::unique_ptr<IPostingListWeightsCodec> weights_codec;
 
     size_t decoded_count = 0;    /// Number of valid entries reachable via `decoded_values_ptr`.
     size_t index = 0;            /// Read position within `decoded_values_ptr`.

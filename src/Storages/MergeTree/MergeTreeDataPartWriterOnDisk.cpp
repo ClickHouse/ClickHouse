@@ -334,7 +334,7 @@ void MergeTreeDataPartWriterOnDisk::calculateAndSerializeSkipIndices(const Block
             if (skip_index_accumulated_marks[i] == index_helper->index.granularity)
             {
                 auto index_granule = skip_indices_aggregators[i]->getGranuleAndReset();
-                index_granule->serializeBinaryWithMultipleStreams(index_streams);
+                index_granule->serializeBinaryWithMultipleStreams(index_streams, getIndexSerializationState());
                 skip_index_accumulated_marks[i] = 0;
             }
 
@@ -450,7 +450,7 @@ void MergeTreeDataPartWriterOnDisk::fillSkipIndicesChecksums(MergeTreeData::Data
         {
             auto & index_streams = skip_indices_streams[i];
             auto index_granule = skip_indices_aggregators[i]->getGranuleAndReset();
-            index_granule->serializeBinaryWithMultipleStreams(index_streams);
+            index_granule->serializeBinaryWithMultipleStreams(index_streams, getIndexSerializationState());
         }
     }
 

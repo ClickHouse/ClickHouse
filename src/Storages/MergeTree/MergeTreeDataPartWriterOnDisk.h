@@ -195,6 +195,16 @@ private:
     virtual void fillIndexGranularity(size_t index_granularity_for_block, size_t rows_in_block) = 0;
     void calculateAndSerializePrimaryIndexRow(const Block & index_block, size_t row);
 
+    MergeTreeIndexSerializationState getIndexSerializationState()
+    {
+        return
+        {
+            .index_granularity = index_granularity.get(),
+            .can_use_adaptive_granularity = settings.can_use_adaptive_granularity,
+            .cached_marks = &cached_index_marks,
+        };
+    }
+
     struct ExecutionStatistics
     {
         explicit ExecutionStatistics(size_t skip_indices_cnt) : skip_indices_build_us(skip_indices_cnt, 0)
