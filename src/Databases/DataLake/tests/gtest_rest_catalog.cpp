@@ -6,11 +6,7 @@
 
 #include <Common/Exception.h>
 #include <Common/ProfileEvents.h>
-#include <Common/SettingsChanges.h>
 #include <Common/tests/gtest_global_context.h>
-#include <Core/UUID.h>
-#include <Databases/DataLake/DatabaseDataLake.h>
-#include <Databases/DataLake/DatabaseDataLakeSettings.h>
 #include <Databases/DataLake/HTTPBasedCatalogUtils.h>
 #include <Databases/DataLake/RestCatalog.h>
 #include <IO/HTTPCommon.h>
@@ -548,7 +544,8 @@ void expectThrowsCode(std::function<void()> fn, int expected_code)
     }
 }
 
-std::unique_ptr<RestCatalog> makeRestCatalog(const RestCatalogTestServer & server, const DB::ContextMutablePtr & context)
+std::unique_ptr<RestCatalog> makeRestCatalog(
+    const RestCatalogTestServer & server, const DB::ContextMutablePtr & context, const std::string & snapshot_loading_mode = {})
 {
     /// Collapse the retry backoff: the arms that exercise a retriable status would otherwise sleep
     /// through the default ladder, which is about 33 seconds. The attempt count is left alone so
@@ -565,37 +562,24 @@ std::unique_ptr<RestCatalog> makeRestCatalog(const RestCatalogTestServer & serve
         /* oauth_server_uri */"",
         /* oauth_server_use_request_body */false,
         /* flat_namespaces */false,
-        context);
+        context,
+        snapshot_loading_mode);
 }
 
-#if USE_PARQUET
-std::shared_ptr<DB::DatabaseDataLake> makeRestDataLakeDatabase(const RestCatalogTestServer & server, const DB::SettingsChanges & extra_settings)
-{
-    /// `DatabaseDataLake::initialize` builds the catalog with the global context, which `getContext` creates.
-    getContext();
-    DB::SettingsChanges changes{{"catalog_type", "rest"}, {"warehouse", "warehouse"}};
-    changes.insert(changes.end(), extra_settings.begin(), extra_settings.end());
-    DB::DatabaseDataLakeSettings settings;
-    settings.applyChanges(changes);
-    return std::make_shared<DB::DatabaseDataLake>(
-        "db", server.getUrl(), settings, /* database_engine_definition */ nullptr, /* table_engine_definition */ nullptr,
-        DB::UUIDHelpers::Nil, /* allow_server_credentials_in_user_queries */ false,
-        /* is_loading_from_existing_metadata */ false, /* lazy_init */ true);
-}
-
-/// Whether the one load-table request of a database with `settings` on a catalog of `shape` asked for `snapshots=refs`.
-bool loadTableRequestsReferencedSnapshots(CatalogShape shape, const DB::SettingsChanges & settings)
+/// Whether the one load-table request of a catalog with `snapshot_loading_mode` on a server of `shape` asked for `snapshots=refs`.
+bool loadTableRequestsReferencedSnapshots(CatalogShape shape, const std::string & snapshot_loading_mode)
 {
     RequestCounters counters;
     RestCatalogTestServer server(shape, /* token_expires_in_seconds */ DEFAULT_TOKEN_EXPIRES_IN_SECONDS, &counters);
-    auto catalog = makeRestDataLakeDatabase(server, settings)->getCatalog();
+    auto context = DB::Context::createCopy(getContext().context);
+    context->makeQueryContext();
+    auto catalog = makeRestCatalog(server, context, snapshot_loading_mode);
 
     auto metadata = TableMetadata().withLocation();
     EXPECT_TRUE(catalog->tryGetTableMetadata("namespace", "snapshots_table", metadata));
     EXPECT_EQ(counters.load_table_refs.load() + counters.load_table_without_snapshots_param.load(), 1u);
     return counters.load_table_refs.load() == 1;
 }
-#endif
 
 DB::Names sortedTableNames(const CatalogTables & tables)
 {
@@ -842,13 +826,13 @@ TEST(RestCatalog, TryGetTableMetadataAuthErrorPropagates)
     EXPECT_THROW(catalog.existsTable("namespace", "expired_token_table"), DB::HTTPException);
 }
 
-#if USE_PARQUET
 TEST(RestCatalog, LoadTableSendsNoSnapshotsParameterByDefault)
 {
     RequestCounters counters;
     RestCatalogTestServer server(CatalogShape::TopLevelTable, /* token_expires_in_seconds */ DEFAULT_TOKEN_EXPIRES_IN_SECONDS, &counters);
-    auto database = makeRestDataLakeDatabase(server, {});
-    auto catalog = database->getCatalog();
+    auto context = DB::Context::createCopy(getContext().context);
+    context->makeQueryContext();
+    auto catalog = makeRestCatalog(server, context);
 
     auto metadata = TableMetadata().withLocation();
     EXPECT_TRUE(catalog->tryGetTableMetadata("namespace", "snapshots_table", metadata));
@@ -861,8 +845,9 @@ TEST(RestCatalog, LoadTableRequestsReferencedSnapshotsWhenConfigured)
 {
     RequestCounters counters;
     RestCatalogTestServer server(CatalogShape::TopLevelTable, /* token_expires_in_seconds */ DEFAULT_TOKEN_EXPIRES_IN_SECONDS, &counters);
-    auto database = makeRestDataLakeDatabase(server, {{"snapshot_loading_mode", "refs"}});
-    auto catalog = database->getCatalog();
+    auto context = DB::Context::createCopy(getContext().context);
+    context->makeQueryContext();
+    auto catalog = makeRestCatalog(server, context, "refs");
 
     auto metadata = TableMetadata().withLocation().withDataLakeSpecificProperties();
     EXPECT_TRUE(catalog->tryGetTableMetadata("namespace", "snapshots_table", metadata));
@@ -883,11 +868,10 @@ TEST(RestCatalog, LoadTableRequestsReferencedSnapshotsWhenConfigured)
 TEST(RestCatalog, LoadTableFollowsSnapshotLoadingModeOfCatalogConfig)
 {
     /// The catalog's `overrides` win over the setting, which wins over the catalog's `defaults`.
-    EXPECT_TRUE(loadTableRequestsReferencedSnapshots(CatalogShape::SnapshotLoadingModeRefsDefault, {}));
-    EXPECT_FALSE(loadTableRequestsReferencedSnapshots(CatalogShape::SnapshotLoadingModeRefsDefault, {{"snapshot_loading_mode", "all"}}));
-    EXPECT_FALSE(loadTableRequestsReferencedSnapshots(CatalogShape::SnapshotLoadingModeAllOverride, {{"snapshot_loading_mode", "refs"}}));
+    EXPECT_TRUE(loadTableRequestsReferencedSnapshots(CatalogShape::SnapshotLoadingModeRefsDefault, ""));
+    EXPECT_FALSE(loadTableRequestsReferencedSnapshots(CatalogShape::SnapshotLoadingModeRefsDefault, "all"));
+    EXPECT_FALSE(loadTableRequestsReferencedSnapshots(CatalogShape::SnapshotLoadingModeAllOverride, "refs"));
 }
-#endif
 
 /// The tests below cover a namespace that another client drops after it was listed but before its
 /// own listing is read. Such a namespace has no tables, so a listing must skip it and return the
