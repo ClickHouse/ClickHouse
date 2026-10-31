@@ -16,7 +16,9 @@ admission queue (per-waiter CV with notify_one — no thundering herd). These te
 
 import os
 import re
+import signal
 import socket
+import subprocess
 import sys
 import threading
 import time
@@ -29,6 +31,7 @@ import requests
 
 import grpc
 
+from helpers.client import Client
 from helpers.cluster import ClickHouseCluster
 from helpers.test_tools import assert_eq_with_retry
 
@@ -2669,6 +2672,114 @@ def test_native_cancel_while_waiting_in_queue(started_cluster):
     assert node.query(
         f"SELECT exception_code FROM system.query_log WHERE query_id = '{waiter_id}' AND type = 'ExceptionBeforeStart'"
     ).strip() == "735"  # QUERY_WAS_CANCELLED_BY_CLIENT
+
+
+class FragmentingProxy:
+    """
+    Forwards one native connection to `node`. Each segment sent by the client is forwarded without
+    its last byte at first, and the last byte follows after `hold` seconds, so that the server sees
+    every packet (in particular, the terminator of the external tables) in two fragments.
+    """
+
+    def __init__(self, hold):
+        self.hold = hold
+        self.listener = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        self.listener.bind(("127.0.0.1", 0))
+        self.listener.listen(1)
+        self.port = self.listener.getsockname()[1]
+        threading.Thread(target=self._serve, daemon=True).start()
+
+    def _serve(self):
+        client, _ = self.listener.accept()
+        upstream = socket.create_connection((node.ip_address, 9000))
+        upstream.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
+
+        def forward_responses():
+            while data := upstream.recv(65536):
+                client.sendall(data)
+            client.close()
+
+        threading.Thread(target=forward_responses, daemon=True).start()
+        while data := client.recv(65536):
+            if len(data) > 1:
+                upstream.sendall(data[:-1])
+                time.sleep(self.hold)
+            upstream.sendall(data[-1:])
+        upstream.shutdown(socket.SHUT_WR)
+
+    def close(self):
+        self.listener.close()
+
+
+def test_native_cancel_after_fragmented_terminator_while_waiting_in_queue(started_cluster):
+    """
+    Like `test_native_cancel_while_waiting_in_queue`, but the external-tables terminator arrives in
+    two fragments with several liveness polls between them. The poll must keep the first fragment
+    and append the rest when it arrives, to notice the `Cancel` that follows.
+    """
+    prefix = uuid.uuid4().hex[:8]
+    waiter_id = f"native_fragmented_cancel_waiter_{prefix}"
+    pool = Pool(4)
+    blocker_ids = occupy_both_slots(pool, prefix)
+    # Three liveness polls (`admission_queue_alive_check_interval_ms` is 500) between the fragments.
+    proxy = FragmentingProxy(hold=1.5)
+    waiter = None
+    try:
+        command = Client("127.0.0.1", proxy.port, command=cluster.client_bin_path).command
+        waiter = subprocess.Popen(
+            command + ["--query_id", waiter_id, "--queue_max_wait_ms", "30000", "-q", "SELECT 1"],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+        wait_for_queue_length(node, 1)
+        # Let the last fragment of the terminator arrive and the liveness poll consume it.
+        time.sleep(2 * proxy.hold)
+        waiter.send_signal(signal.SIGINT)
+
+        assert_abandoned_waiter_was_cancelled(node, blocker_ids, waiter_id)
+    finally:
+        if waiter is not None:
+            waiter.kill()
+            waiter.wait()
+        proxy.close()
+        kill_blockers(blocker_ids)
+        pool.close()
+        pool.join()
+
+    assert_query_never_started(node, waiter_id)
+    assert node.query(
+        f"SELECT exception_code FROM system.query_log WHERE query_id = '{waiter_id}' AND type = 'ExceptionBeforeStart'"
+    ).strip() == "735"  # QUERY_WAS_CANCELLED_BY_CLIENT
+
+
+def test_shutdown_cancels_queued_queries(started_cluster):
+    """
+    The bulk cancellation at shutdown (`ProcessList::killAllQueries`) must cancel the queued queries
+    as well. Otherwise a queued query receives the slot released by a cancelled blocker and runs
+    during the shutdown.
+    """
+    prefix = uuid.uuid4().hex[:8]
+    waiter_id = f"shutdown_waiter_{prefix}"
+    pool = Pool(4)
+    occupy_both_slots(pool, prefix)
+
+    def run_waiter():
+        node.http_query(
+            "SELECT sleep(3) FORMAT Null",
+            params={"query_id": waiter_id, "queue_max_wait_ms": 60000, "function_sleep_max_microseconds_per_block": 0},
+            timeout=60,
+        )
+
+    pool.apply_async(run_waiter)
+    try:
+        wait_for_queue_length(node, 1)
+        node.stop_clickhouse()
+    finally:
+        node.start_clickhouse()
+        pool.close()
+        pool.join()
+
+    assert_query_never_started(node, waiter_id)
 
 
 def test_postgresql_cancel_request_while_waiting_in_queue(started_cluster):
