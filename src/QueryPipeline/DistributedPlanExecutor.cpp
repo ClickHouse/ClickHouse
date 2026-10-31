@@ -55,6 +55,7 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/InternalTextLogsQueue.h>
 #include <Interpreters/ProcessList.h>
+#include <Interpreters/QuerySchedulingGroup.h>
 #include <Interpreters/ProcessorsProfileLog.h>
 #include <Interpreters/executeQuery.h>
 #include <Common/Exception.h>
@@ -1167,6 +1168,8 @@ static void executeTask(const UUID & unique_query_id, const DistributedQueryTask
     /// initiator's) gives the task its own per-query state, such as the runtime filter lookup.
     auto task_context = Context::createCopy(context);
     task_context->makeQueryContext();
+    /// The task is a part of the initiator's query, so it is scheduled together with it.
+    task_context->setParentSchedulingGroup(context->getSchedulingGroup());
 
     {
         ClientInfo client_info = task_context->getClientInfo();
@@ -1483,6 +1486,9 @@ public:
         /// A null map belongs to an in-process plan, which createDistributedQueryExecutor routes to
         /// the local executor instead.
         chassert(task_to_host_map);
+        /// Tasks of the query that run on this server are scheduled together with the query.
+        auto scheduling_group = context->getSchedulingGroup();
+        DistributedQuerySchedulingGroups::instance().add(toString(scheduling_group->getId()), scheduling_group);
         QueryStatusPtr query_status = context->getProcessListElement();
         Strings worker_hosts;
         for (const auto & worker : task_to_host_map->getWorkerAddresses())
@@ -2051,6 +2057,10 @@ protected:
         task_description.serialized_query_plan = serializeQueryPlan(stage.query_plan_fragment, context);
         task_description.exchanges = distributed_query_plan.exchange_descriptions; /// TODO: add only exchanges for this stage
         task_description.settings_changes = getTaskSettingsChanges(context);
+        auto scheduling_group = context->getSchedulingGroup();
+        task_description.sched_id = toString(scheduling_group->getId());
+        task_description.sched_workload = scheduling_group->getWorkload();
+        task_description.sched_settings = scheduling_group->getSettings();
 
         /// Ask for worker logs only when the initiator has a queue to receive them (e.g. not over
         /// HTTP without a framing format); the worker attaches its log collector accordingly.
