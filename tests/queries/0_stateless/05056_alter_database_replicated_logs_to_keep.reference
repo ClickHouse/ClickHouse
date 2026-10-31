@@ -1,0 +1,9 @@
+keeper node after create	1234
+after create	replica1	1234
+after create	replica2	1234
+logs_to_keep alone	1234
+metadata files	replica1	1234
+metadata files	replica2	4321
+keeper node after rejected alters	1234
+metadata files after rejected alters	replica1	1234	0
+metadata files after rejected alters	replica2	4321	0
