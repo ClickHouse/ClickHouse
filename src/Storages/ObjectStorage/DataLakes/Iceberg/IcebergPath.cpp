@@ -1,8 +1,8 @@
-#include <filesystem>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergPath.h>
 
 #include <Databases/DataLake/ICatalog.h>
 #include <Storages/ObjectStorage/StorageObjectStorageConfiguration.h>
+#include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
 #include <Common/Exception.h>
 #include <Common/FullyQualifiedObjectPath.h>
 
@@ -121,6 +121,11 @@ bool IcebergPathResolver::isInForeignNamespace(const String & raw_path) const
     return path_namespace != blob_storage.namespace_name && path_namespace != table_location_namespace;
 }
 
+IcebergPathFromMetadata IcebergPathFromMetadata::makeStorageIdentity(const ObjectStoragePtr & storage, const String & key)
+{
+    return IcebergPathFromMetadata(storage->getDescription() + '\0' + storage->getObjectsNamespace() + '\0' + key);
+}
+
 // This function is used to get the file path inside the directory which corresponds to Iceberg table from the full blob path which is written in manifest and metadata files.
 // For example, if the full blob path is s3://bucket/table_name/data/00000-1-1234567890.avro, the function will return table_name/data/00000-1-1234567890.avro
 // Common path should end with "<table_name>" or "<table_name>/".
@@ -140,8 +145,11 @@ String IcebergPathResolver::resolve(const IcebergPathFromMetadata & metadata_pat
     if (raw_path.starts_with(table_location)
         && (raw_path.size() == table_location.size() || raw_path[table_location.size()] == '/'))
     {
-        auto result = std::filesystem::path{table_root} / trim_forward_slash(raw_path.substr(table_location.size()));
-        return result;
+        /// Not joined as `fs::path`, so that an absolute suffix such as `//abs/path` stays below `table_root`.
+        auto suffix = trim_forward_slash(std::string_view(raw_path).substr(table_location.size()));
+        if (table_root.empty())
+            return String(suffix);
+        return table_root + "/" + String(suffix);
     }
 
     if (isInForeignNamespace(raw_path))

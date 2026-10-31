@@ -229,6 +229,7 @@ AlterDropPartitionExecutor::AlterDropPartitionExecutor(
     ObjectStoragePtr object_storage_,
     const PersistentTableComponents & components_,
     const DataLakeStorageSettings & data_lake_settings_,
+    ExternalStorageCache & external_storages_,
     String write_format_,
     LoggerPtr log_,
     std::shared_ptr<DataLake::ICatalog> catalog_,
@@ -239,6 +240,7 @@ AlterDropPartitionExecutor::AlterDropPartitionExecutor(
     , object_storage(std::move(object_storage_))
     , components(components_)
     , data_lake_settings(data_lake_settings_)
+    , external_storages(external_storages_)
     , write_format(std::move(write_format_))
     , log(std::move(log_))
     , catalog(std::move(catalog_))
@@ -377,13 +379,14 @@ AlterDropPartitionExecutor::discoverTargetFilePaths(const SnapshotState & state,
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Manifest file entry is not parsed");
 
             if (partitionEquals(parsed->partition_key_value, target_partition))
-                targets.emplace(components.path_resolver.resolve(parsed->file_path_key));
+                targets.emplace(parsed->file_path_key.serialize());
         }
     };
 
     for (const auto & manifest_key : state.snapshot->manifest_list_entries)
     {
-        auto handle = getManifestFileEntriesHandle(object_storage, components, context, log, manifest_key, state.schema_id);
+        auto handle = getManifestFileEntriesHandle(
+            object_storage, components, context, log, manifest_key, state.schema_id, external_storages);
 
         collect(handle.getFilesWithoutDeleted(FileContentType::DATA));
         collect(handle.getFilesWithoutDeleted(FileContentType::POSITION_DELETE));
@@ -446,8 +449,8 @@ AlterDropPartitionExecutor::buildDropPlan(const SnapshotState & state, const Tar
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Manifest file entry is not parsed");
 
             const auto & parsed_entry = *entry->parsed_entry;
-            const String storage_path = components.path_resolver.resolve(parsed_entry.file_path_key);
-            if (!targets.contains(storage_path))
+            const String & file_path = parsed_entry.file_path_key.serialize();
+            if (!targets.contains(file_path))
             {
                 ++entries_to_keep;
                 continue;
@@ -456,7 +459,7 @@ AlterDropPartitionExecutor::buildDropPlan(const SnapshotState & state, const Tar
             assert_on_ambigious_partition_key(parsed_entry);
 
             ++entries_to_remove;
-            unprocessed_target_file_paths.erase(storage_path);
+            unprocessed_target_file_paths.erase(file_path);
             switch (parsed_entry.content_type)
             {
                 case FileContentType::DATA:
@@ -478,7 +481,8 @@ AlterDropPartitionExecutor::buildDropPlan(const SnapshotState & state, const Tar
 
     for (const auto & manifest_key : state.snapshot->manifest_list_entries)
     {
-        auto handle = getManifestFileEntriesHandle(object_storage, components, context, log, manifest_key, state.schema_id);
+        auto handle = getManifestFileEntriesHandle(
+            object_storage, components, context, log, manifest_key, state.schema_id, external_storages);
 
         size_t entries_to_keep = 0;
         size_t entries_to_remove = 0;
@@ -594,6 +598,7 @@ AlterDropPartitionExecutor::ManifestListWriteResult AlterDropPartitionExecutor::
         components.path_resolver,
         state.metadata_object,
         object_storage,
+        external_storages,
         context,
         /*manifest_entry_names=*/{},
         new_snapshot,

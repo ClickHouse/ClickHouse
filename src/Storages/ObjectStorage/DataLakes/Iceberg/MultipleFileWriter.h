@@ -13,6 +13,7 @@ namespace DB
 
 class IOutputFormat;
 using OutputFormatPtr = std::shared_ptr<IOutputFormat>;
+struct ExternalStorageCache;
 
 class MultipleFileWriter
 {
@@ -24,6 +25,7 @@ public:
         FileNamesGenerator & filename_generator_,
         const Iceberg::IcebergPathResolver & path_resolver_,
         ObjectStoragePtr object_storage_,
+        ExternalStorageCache & external_storages_,
         ContextPtr context_,
         const std::optional<FormatSettings> & format_settings_,
         const String & write_format_,
@@ -76,6 +78,7 @@ private:
     std::vector<DataFileStatisticsPtr> completed_file_stats;
     std::optional<size_t> current_file_num_rows = std::nullopt;
     std::vector<Iceberg::IcebergPathFromMetadata> data_file_names;
+    std::vector<std::pair<ObjectStoragePtr, String>> data_file_objects;
     std::vector<UInt64> data_file_row_counts;
     std::vector<UInt64> data_file_byte_counts;
     std::unique_ptr<WriteBufferFromFileBase> buffer;
@@ -83,6 +86,7 @@ private:
     FileNamesGenerator & filename_generator;
     const Iceberg::IcebergPathResolver & path_resolver;
     ObjectStoragePtr object_storage;
+    ExternalStorageCache & external_storages;
     ContextPtr context;
     std::optional<FormatSettings> format_settings;
     const String& write_format;

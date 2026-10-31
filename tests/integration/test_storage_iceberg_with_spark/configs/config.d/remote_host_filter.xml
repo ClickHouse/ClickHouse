@@ -1,0 +1,9 @@
+<clickhouse>
+    <!-- Bucket entries only: cross-bucket reads must be accepted through them. -->
+    <remote_url_allow_hosts>
+        <s3_bucket>minio1:9001/root</s3_bucket>
+        <s3_bucket>minio1:9001/root-storage1</s3_bucket>
+        <!-- MinIO by its IP address, an endpoint that does not reuse the table's credentials. -->
+        <host_regexp>\d+\.\d+\.\d+\.\d+:9001</host_regexp>
+    </remote_url_allow_hosts>
+</clickhouse>

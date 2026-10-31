@@ -11,7 +11,6 @@
 #include <Poco/JSON/Stringifier.h>
 #include <Common/Exception.h>
 
-
 #include <Core/NamesAndTypes.h>
 #include <Core/Settings.h>
 #include <Databases/DataLake/Common.h>
@@ -42,6 +41,8 @@
 #include <Storages/ObjectStorage/DataLakes/Iceberg/PositionDeleteTransform.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/Snapshot.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/Utils.h>
+#include <Storages/ObjectStorage/Utils.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/ExternalPathResolver.h>
 
 #include <Storages/ObjectStorage/DataLakes/Iceberg/StatelessMetadataFileGetter.h>
 
@@ -54,7 +55,6 @@
 #include <base/wide_integer_to_string.h>
 #include <Common/ElapsedTimeProfileEventIncrement.h>
 
-
 namespace ProfileEvents
 {
 extern const Event IcebergIteratorInitializationMicroseconds;
@@ -65,7 +65,6 @@ extern const Event IcebergMinMaxPrunedDeleteFiles;
 extern const Event IcebergPartitionPrunedFiles;
 extern const Event IcebergPartitionPrunedManifestFiles;
 };
-
 
 namespace DB
 {
@@ -79,7 +78,6 @@ namespace Setting
 extern const SettingsBool use_iceberg_partition_pruning;
 extern const SettingsBool use_iceberg_manifest_list_partition_pruning;
 };
-
 
 using namespace Iceberg;
 
@@ -180,7 +178,8 @@ IcebergIterator::IcebergIterator(
     IDataLakeMetadata::FileProgressCallback callback_,
     Iceberg::TableStateSnapshotPtr table_snapshot_,
     Iceberg::IcebergDataSnapshotPtr data_snapshot_,
-    PersistentTableComponents persistent_components_)
+    PersistentTableComponents persistent_components_,
+    std::shared_ptr<ExternalStorageCache> external_storages_)
     : logger(getLogger("IcebergIterator"))
     , object_storage(std::move(object_storage_))
     , local_context(local_context_)
@@ -189,6 +188,7 @@ IcebergIterator::IcebergIterator(
     , persistent_components(persistent_components_)
     , manifest_filter_dag(makeManifestFilterDag(filter_dag_, local_context_))
     , callback(std::move(callback_))
+    , external_storages(external_storages_)
 {
     chassert(local_context);
 
@@ -247,7 +247,7 @@ IcebergIterator::IcebergIterator(
     manifest_keys.insert(
         manifest_keys.end(), std::make_move_iterator(data_manifest_keys.begin()), std::make_move_iterator(data_manifest_keys.end()));
     manifests = std::make_unique<Iceberg::ManifestFilesPrefetcher>(
-        object_storage, persistent_components, local_context, logger, std::move(manifest_keys));
+        object_storage, persistent_components, local_context, logger, std::move(manifest_keys), external_storages);
 }
 
 void IcebergIterator::ensureDeletesReady()
@@ -457,12 +457,22 @@ ObjectInfoPtr IcebergIterator::next(size_t)
     ensureDeletesReady();
     if (auto manifest_file_entry = nextDataFileEntry())
     {
-        IcebergDataObjectInfoPtr object_info
-            = std::make_shared<IcebergDataObjectInfo>(
-                manifest_file_entry,
-                persistent_components.path_resolver.resolve(manifest_file_entry->parsed_entry->file_path_key),
-                table_state_snapshot->schema_id,
-                Iceberg::getIdentityPartitionColumnValues(*manifest_file_entry, *persistent_components.schema_processor));
+        const auto & raw_metadata_path = manifest_file_entry->parsed_entry->file_path_key.serialize();
+        auto [storage_to_use, resolved_key] = resolveObjectStorageForPath(
+            persistent_components.table_location, raw_metadata_path,
+            object_storage, *external_storages, local_context,
+            persistent_components.path_resolver);
+
+        IcebergDataObjectInfoPtr object_info = std::make_shared<IcebergDataObjectInfo>(
+            manifest_file_entry,
+            raw_metadata_path,
+            table_state_snapshot->schema_id,
+            Iceberg::getIdentityPartitionColumnValues(*manifest_file_entry, *persistent_components.schema_processor),
+            storage_to_use,
+            resolved_key);
+
+        object_info->info.requires_external_storage = (storage_to_use != object_storage);
+
         for (const auto & position_delete :
              defineDeletesSpan(manifest_file_entry, position_deletes_files, /* is_equality_delete */ false, logger))
         {
@@ -497,11 +507,11 @@ ObjectInfoPtr IcebergIterator::next(size_t)
                     data_file_path,
                     lower.has_value() ? lower->serialize() : "[no lower bound]",
                     upper.has_value() ? upper->serialize() : "[no upper bound]");
-                const auto resolved_delete_path = persistent_components.path_resolver.resolve(position_delete->parsed_entry->file_path_key);
+                const auto delete_path = position_delete->parsed_entry->file_path_key.serialize();
                 if (position_delete->parsed_entry->isDeletionVector())
-                    object_info->addDeletionVector(position_delete, resolved_delete_path);
+                    object_info->addDeletionVector(position_delete, delete_path);
                 else
-                    object_info->addPositionDeleteFile(position_delete, resolved_delete_path);
+                    object_info->addPositionDeleteFile(position_delete, delete_path);
             }
         }
 
@@ -518,7 +528,7 @@ ObjectInfoPtr IcebergIterator::next(size_t)
              defineDeletesSpan(manifest_file_entry, equality_deletes_files, /* is_equality_delete */ true, logger))
         {
             object_info->addEqualityDeleteObject(
-                equality_delete, persistent_components.path_resolver.resolve(equality_delete->parsed_entry->file_path_key));
+                equality_delete, equality_delete->parsed_entry->file_path_key.serialize());
         }
 
         if (!object_info->info.equality_deletes_objects.empty())
@@ -528,6 +538,40 @@ ObjectInfoPtr IcebergIterator::next(size_t)
                 "Finally got {} equality delete elements for data file {}",
                 object_info->info.equality_deletes_objects.size(),
                 object_info->info.data_object_file_path_key);
+        }
+
+        /// Only distributed tasks need compatibility checks, which resolve every delete-file path.
+        if (tasks_go_to_other_replicas)
+        {
+            /// Replicas need not share the coordinator's filesystem, so the first local file outside the table is reported.
+            /// A key in the base storage may still leave the queried directory, e.g. through `..` segments.
+            auto check_external_local = [&](const ObjectStoragePtr & storage, const String & key, const String & file_path)
+            {
+                if (storage->getType() == ObjectStorageType::Local && !object_info->getExternalLocalPath()
+                    && !isObjectInTableDirectory(storage, key, object_storage, persistent_components.path_resolver.getTableRoot()))
+                    object_info->setExternalLocalPath(file_path);
+            };
+            check_external_local(storage_to_use, resolved_key, raw_metadata_path);
+
+            /// Old workers open delete paths as keys in the base storage, so they receive the resolved keys.
+            /// A delete file in another storage requires the new protocol.
+            auto resolve_delete_path = [&](const String & file_path)
+            {
+                auto [del_storage, del_key] = resolveObjectStorageForPath(
+                    persistent_components.table_location, file_path, object_storage, *external_storages, local_context,
+                    persistent_components.path_resolver);
+                check_external_local(del_storage, del_key, file_path);
+                if (del_storage != object_storage)
+                    object_info->info.requires_external_storage = true;
+                else
+                    object_info->info.delete_file_keys_in_base_storage.emplace(file_path, std::move(del_key));
+            };
+            for (const auto & del : object_info->info.position_deletes_objects)
+                resolve_delete_path(del.file_path);
+            for (const auto & del : object_info->info.equality_deletes_objects)
+                resolve_delete_path(del.file_path);
+            if (object_info->info.deletion_vector.has_value())
+                resolve_delete_path(object_info->info.deletion_vector->file_path);
         }
 
         ProfileEvents::increment(ProfileEvents::IcebergMetadataReturnedObjectInfos);

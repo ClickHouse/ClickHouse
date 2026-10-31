@@ -789,6 +789,20 @@ Use multiple threads for azure multipart upload.
     DECLARE(Bool, s3_throw_on_zero_files_match, false, R"(
 Throw an error, when ListObjects request cannot match any files
 )", 0) \
+    DECLARE(Bool, object_storage_propagate_credentials_to_other_storages, false, R"(
+Reuse the base storage's `S3` credentials when accessing Iceberg table files located in a different endpoint.
+
+By default, files referenced by an Iceberg table outside its own storage (for example, data or delete files written to another bucket with `write.data.path`) are read with the base storage's `S3` credentials only when their provider (`s3`, `gs`, `oss`) is compatible with the base storage and they are referenced either by a bucket URI such as `s3://bucket/...` or by an `http(s)://` URL on the same endpoint as the base storage. Otherwise ClickHouse creates a separate client for the target endpoint, which does not receive the base storage's credentials.
+
+When enabled, the base storage's `S3` credentials (access key, secret key, session token, region) are reused for every `S3` file of the table, regardless of its endpoint. Enable it only if you trust every endpoint referenced by the table metadata, because the credentials are sent to them.
+
+Ignored on the server while `s3_allow_server_credentials_in_user_queries` is disabled.
+
+Possible values:
+- 0 — Disabled.
+- 1 — Enabled.
+)", 0, \
+        {"26.11", false, false, "New setting, allowing to reuse the base storage's `S3` credentials for a secondary object storage, even if the target endpoint differs from the base one. Disabled by default. Ignored while `s3_allow_server_credentials_in_user_queries` is disabled."}) \
     DECLARE(Bool, hdfs_throw_on_zero_files_match, false, R"(
 Throw an error if matched zero files according to glob expansion rules.
 

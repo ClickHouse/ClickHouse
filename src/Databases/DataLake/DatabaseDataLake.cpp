@@ -810,7 +810,8 @@ DatabaseDataLake::TableEngineArgs DatabaseDataLake::buildTableEngineArgs(
             static_credentials->addCredentialsToEngineArgs(result.args);
             result.static_credentials_applied = true;
         }
-        else if (!lightweight && table_metadata.requiresCredentials() && !catalogConfiguresStorageAccess(catalog))
+        else if (!lightweight && table_metadata.requiresCredentials() && !catalogConfiguresStorageAccess(catalog)
+            && table_metadata.getStorageType() != DatabaseDataLakeStorageType::Local)
         {
             throw Exception(
                ErrorCodes::BAD_ARGUMENTS,

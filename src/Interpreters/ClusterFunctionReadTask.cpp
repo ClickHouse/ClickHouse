@@ -20,6 +20,7 @@ namespace ErrorCodes
 {
     extern const int UNKNOWN_PROTOCOL;
     extern const int LOGICAL_ERROR;
+    extern const int PROTOCOL_VERSION_MISMATCH;
 }
 namespace Setting
 {
@@ -35,10 +36,8 @@ ClusterFunctionReadTaskResponse::ClusterFunctionReadTaskResponse(ObjectInfoPtr o
         data_lake_metadata = object->data_lake_metadata.value();
 
 #if USE_AVRO
-    if (std::dynamic_pointer_cast<IcebergDataObjectInfo>(object))
-    {
-        iceberg_info = dynamic_cast<IcebergDataObjectInfo &>(*object).info;
-    }
+    if (auto iceberg_object = std::dynamic_pointer_cast<IcebergDataObjectInfo>(object))
+        iceberg_info = iceberg_object->info;
 #endif
 
     const bool send_over_whole_archive = !context->getSettingsRef()[Setting::cluster_function_process_archive_on_multiple_nodes];
@@ -87,6 +86,18 @@ void ClusterFunctionReadTaskResponse::serialize(WriteBuffer & out, size_t worker
 {
     auto protocol_version
         = std::min(static_cast<UInt64>(worker_protocol_version), static_cast<UInt64>(DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION));
+
+    /// Older protocols carry only the key, which the worker would open in the table's base storage.
+    if (iceberg_info && iceberg_info->requires_external_storage
+        && protocol_version < DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION_WITH_ICEBERG_ABSOLUTE_PATH)
+        throw Exception(
+            ErrorCodes::PROTOCOL_VERSION_MISMATCH,
+            "Iceberg data file '{}' is outside of the table location, "
+            "worker needs to have protocol version >= {}, but has {}",
+            iceberg_info->data_object_file_path_key,
+            DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION_WITH_ICEBERG_ABSOLUTE_PATH,
+            protocol_version);
+
     writeVarUInt(protocol_version, out);
     writeStringBinary(path, out);
 

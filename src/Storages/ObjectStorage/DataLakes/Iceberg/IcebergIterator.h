@@ -27,6 +27,8 @@
 #include <Storages/ObjectStorage/DataLakes/Iceberg/ManifestFilesPruning.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/ManifestListPruning.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/PositionDeleteTransform.h>
+#include <Storages/ObjectStorage/Utils.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/ExternalPathResolver.h>
 
 namespace DB
 {
@@ -46,7 +48,8 @@ public:
         IDataLakeMetadata::FileProgressCallback callback_,
         Iceberg::TableStateSnapshotPtr table_snapshot_,
         Iceberg::IcebergDataSnapshotPtr data_snapshot_,
-        Iceberg::PersistentTableComponents persistent_components);
+        Iceberg::PersistentTableComponents persistent_components,
+        std::shared_ptr<ExternalStorageCache> external_storages_);
 
     ObjectInfoPtr next(size_t) override;
 
@@ -80,6 +83,7 @@ private:
     size_t delete_manifests_in_progress TSA_GUARDED_BY(deletes_mutex) = 0;
     bool deletes_ready TSA_GUARDED_BY(deletes_mutex) = false;
     std::exception_ptr deletes_exception TSA_GUARDED_BY(deletes_mutex);
+    std::shared_ptr<ExternalStorageCache> external_storages;
 
     std::mutex data_files_mutex;
     std::condition_variable data_manifest_released;
@@ -91,6 +95,5 @@ private:
     std::exception_ptr data_files_exception TSA_GUARDED_BY(data_files_mutex);
 };
 }
-
 
 #endif
