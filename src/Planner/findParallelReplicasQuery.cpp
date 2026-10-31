@@ -867,9 +867,11 @@ private:
             return;
 
         /// Without the optimization, a scalar subquery becomes a constant rather than `__getScalar`, which names a
-        /// scalar the replicas do not have.
+        /// scalar the replicas do not have. Without early short-circuit, a constant folded from `and` or `or` has a
+        /// resolved source expression, whose tables are qualified when it is restored.
         auto analysis_context = Context::createCopy(context);
         analysis_context->setSetting("enable_scalar_subquery_optimization", false);
+        analysis_context->setSetting("enable_function_early_short_circuit", false);
         auto view_query = buildQueryTree(argument->toAST(), analysis_context);
         QueryAnalysisPass(/*only_analyze=*/true).run(view_query, analysis_context);
         /// Before the qualification, which does not look into the source expressions of constants.

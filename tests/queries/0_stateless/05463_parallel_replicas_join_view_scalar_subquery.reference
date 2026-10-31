@@ -6,3 +6,7 @@
 1
 -- a scalar subquery over a table function
 1
+-- a constant folded by early short-circuit
+1
+-- a constant folded by early short-circuit, in viewIfPermitted
+1
