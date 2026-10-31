@@ -2903,8 +2903,9 @@ def main():
             test_files = pinned
     else:
         test_files = test_files[batch_num::total_batches]
-    if nightly:
-        # Every measured host runs the yardstick first.
+    if nightly and not TABLE_ENGINE:
+        # Every measured host runs the yardstick first. Not in the Iceberg configuration: it
+        # creates no table, so it would measure nothing of the configuration.
         test_files.insert(0, "calibration.xml")
     print(f"Job Batch: [{batch_num}/{total_batches}]")
     print(f"Test Files ({len(test_files)}): [{test_files}]")

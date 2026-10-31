@@ -747,6 +747,12 @@ if args.table_engine and root.get("iceberg", "1") in ("0", "false"):
     print(f"skipped\tTest opts out of --table-engine {args.table_engine}.")
     sys.exit(0)
 
+# The configuration measures the tables the test creates: a test without a
+# `create_query` would only repeat its MergeTree run.
+if args.table_engine and not root.findall("create_query"):
+    print(f"skipped\tTest has no create_query to run with --table-engine {args.table_engine}.")
+    sys.exit(0)
+
 # Shell-script queries do not yet carry the connection options that the SQL path
 # honours. SQL queries connect through `clickhouse_driver.Client` with `--user` /
 # `--password` / `--secure`, but the per-server shell environment built by
@@ -1206,6 +1212,9 @@ if not args.use_existing_tables:
         )
         create_queries = [(q, tolerate) for q, (_, tolerate) in zip(rewritten, create_queries)]
         print(f"table-engine\t{args.table_engine}\t{tables}")
+        if not tables:
+            print(f"skipped\tTest creates no MergeTree table to run with --table-engine {args.table_engine}.")
+            sys.exit(0)
 
     # Disallow temporary tables, because the clickhouse_driver reconnects on
     # errors, and temporary tables are destroyed. We want to be able to continue
