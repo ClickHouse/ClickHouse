@@ -674,6 +674,17 @@ struct FormatSettings
 
     struct
     {
+        String sheet;
+        String range;
+        /// Not set means automatic detection.
+        std::optional<bool> header;
+        bool skip_empty_rows = true;
+        String output_sheet_name = "Sheet1";
+        bool output_write_header = true;
+    } excel{};
+
+    struct
+    {
         bool output_string_as_string;
         bool skip_fields_with_unsupported_types_in_schema_inference;
     } bson{};
