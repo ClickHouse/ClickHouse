@@ -1,0 +1,38 @@
+the mutation is pending	1
+the values a read sees	[10,11,100]
+the first part	1
+the first part, without pruning	1
+the second part	1
+the second part, without pruning	1
+a range	2
+a value that is really absent	0
+after the mutation materialized	1
+the statistics prune again	0
+the drop is pending	1
+the values a read sees	[7]
+the re-added column	100
+the re-added column, without pruning	100
+the dropped values are gone	0
+after the mutation materialized	100
+the statistics prune again	0
+the drop is pending	2
+the top row	199	206
+the top row, without the index	199	206
+a filter on the re-added column	11
+a filter on the re-added column, without the index	11
+before the drop	0
+the re-added column	100
+the re-added column, without the cache	100
+a filter, with the refiner	11
+the top rows, with a threshold	[206,205,204]
+the top rows, without the index	[206,205,204]
+without on-the-fly mutations	1
+without on-the-fly mutations, without pruning	1
+after the mutation was killed	[10,11]
+after the mutation was killed, a filter	1
+after the mutation was killed, without pruning	1
+pruned by statistics before the drop	1
+the drop is done	1
+pruned by statistics after the drop	1
+0
+the query condition cache is used after the drop	1
