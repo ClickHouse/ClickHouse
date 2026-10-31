@@ -4,7 +4,8 @@ SET enable_extended_results_for_datetime_functions = 1;
 
 SELECT toStartOfQuarter(toDate32('1900-01-15')), toStartOfQuarter(toDate32('1900-03-15')), toStartOfQuarter(toDate32('2299-12-31'));
 SELECT toStartOfMonth(toDate32('1900-01-01')), toLastDayOfMonth(toDate32('1900-01-15')), toLastDayOfMonth(toDate32('2299-12-15'));
-SELECT toStartOfInterval(toDateTime64('1900-01-15 00:00:00', 0, 'UTC'), INTERVAL 1 MONTH), toStartOfInterval(toDateTime64('2299-12-31 00:00:00', 0, 'UTC'), INTERVAL 1 QUARTER);
+-- The result type depends on `to_start_of_interval_preserves_argument_type`, so convert it to `Date32`.
+SELECT toDate32(toStartOfInterval(toDateTime64('1900-01-15 00:00:00', 0, 'UTC'), INTERVAL 1 MONTH)), toDate32(toStartOfInterval(toDateTime64('2299-12-31 00:00:00', 0, 'UTC'), INTERVAL 1 QUARTER));
 
 SELECT count()
 FROM (SELECT toDate32('1900-01-01') + number AS d FROM numbers(146000))
