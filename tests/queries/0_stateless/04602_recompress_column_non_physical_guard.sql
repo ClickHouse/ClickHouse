@@ -7,6 +7,7 @@
 -- `MergeTreeData::checkMutationIsPossible` now rejects such targets up front (before per-part
 -- dispatch): NO_SUCH_COLUMN_IN_TABLE = 16 for an unknown name, BAD_ARGUMENTS = 36 for ALIAS/EPHEMERAL.
 
+SET allow_experimental_recompress_column = 1;
 DROP TABLE IF EXISTS recompress_non_physical;
 CREATE TABLE recompress_non_physical
 (

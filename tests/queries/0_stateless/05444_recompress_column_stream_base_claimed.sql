@@ -7,6 +7,7 @@
 -- write its files over the marks of the column. The mutation is rejected, as it is without the
 -- recompression, and the column stays readable.
 
+SET allow_experimental_recompress_column = 1;
 SET mutations_sync = 2;
 
 DROP TABLE IF EXISTS t_recompress_stream_base;

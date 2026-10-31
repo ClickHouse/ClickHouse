@@ -11,6 +11,7 @@
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
+CLICKHOUSE_CLIENT="$CLICKHOUSE_CLIENT --allow_experimental_recompress_column=1"
 
 # `ALTER TABLE ... RECOMPRESS COLUMN` of a column that reaches the mutation through a rename:
 # when the mutation materializing `RENAME COLUMN a TO b` and the `RECOMPRESS COLUMN b` mutation

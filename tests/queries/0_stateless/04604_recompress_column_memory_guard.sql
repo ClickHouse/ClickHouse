@@ -3,6 +3,7 @@
 -- checkMutationIsPossible) rather than silently dropped in mutate, which would make it succeed as a
 -- no-op and break the feature's contract.
 
+SET allow_experimental_recompress_column = 1;
 DROP TABLE IF EXISTS t_recompress_memory;
 
 CREATE TABLE t_recompress_memory (id UInt64, s String) ENGINE = Memory;

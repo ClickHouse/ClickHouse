@@ -6,6 +6,7 @@
 -- UNIQUE KEY table and would resurrect deleted rows. `MergeTreeData::checkMutationIsPossible` rejects it
 -- universally (before per-part dispatch) with SUPPORT_IS_DISABLED = 344.
 
+SET allow_experimental_recompress_column = 1;
 SET allow_experimental_unique_key = 1;
 SET async_insert = 0;
 

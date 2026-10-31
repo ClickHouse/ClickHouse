@@ -8,6 +8,7 @@
 -- renamed column would keep its old codec. The rename must therefore be rejected until the
 -- recompression is finished. Both commands in a single `ALTER` statement are fine.
 
+SET allow_experimental_recompress_column = 1;
 DROP TABLE IF EXISTS t_recompress_rename_after_queued;
 
 CREATE TABLE t_recompress_rename_after_queued (id UInt64, a String CODEC(NONE))

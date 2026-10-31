@@ -4,6 +4,7 @@
 -- reaches the guard unchanged. Such a column must go through the whole-part rewrite to honor a changed
 -- `default_compression_codec`.
 
+SET allow_experimental_recompress_column = 1;
 SET mutations_sync = 2;
 SET check_query_single_value_result = 1;
 

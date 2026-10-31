@@ -7,6 +7,7 @@
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
+CLICKHOUSE_CLIENT="$CLICKHOUSE_CLIENT --allow_experimental_recompress_column=1"
 
 # A lossy `RECOMPRESS COLUMN x` queued before a skip index on `x + y` is added and before a pending
 # `MODIFY COLUMN` changes the type of `y`. The part does not have the index, but the whole-part rewrite

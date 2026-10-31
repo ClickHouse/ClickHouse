@@ -5,6 +5,7 @@
 -- has no column codec. `ALTER TABLE ... RECOMPRESS COLUMN` must still reject the recompression when a
 -- stored dependent (a `MATERIALIZED` column, a skip index) reads the values the lossy codec would change.
 
+SET allow_experimental_recompress_column = 1;
 SET enable_subcolumn_codecs = 1;
 SET enable_sz3_codec = 1;
 SET mutations_sync = 2;

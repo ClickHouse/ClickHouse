@@ -10775,6 +10775,11 @@ Enables the `GDeflate` compression codec.
 Enables the `ZXC` compression codec.
 )", EXPERIMENTAL, \
         {"26.8", false, false, "New setting to enable the experimental `ZXC` compression codec individually, without the `allow_experimental_codecs`."}) \
+    DECLARE(Bool, allow_experimental_recompress_column, false, R"(
+Allows `ALTER TABLE ... RECOMPRESS COLUMN`, which rewrites the stored data of a column with its current codec.
+The setting is checked when the `ALTER` is submitted; mutations that were already accepted are executed regardless of it.
+)", EXPERIMENTAL, \
+        {"26.11", false, false, "New setting to enable the experimental `ALTER TABLE ... RECOMPRESS COLUMN`."}) \
     DECLARE(Bool, throw_on_unsupported_query_inside_transaction, true, R"(
 Throw exception if unsupported query is used inside transaction
 )", EXPERIMENTAL) \

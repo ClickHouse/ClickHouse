@@ -1,5 +1,6 @@
 -- Tests ALTER TABLE ... RECOMPRESS COLUMN: re-compressing a column's data with its current codec.
 
+SET allow_experimental_recompress_column = 1;
 SET mutations_sync = 2;
 SET check_query_single_value_result = 1;
 

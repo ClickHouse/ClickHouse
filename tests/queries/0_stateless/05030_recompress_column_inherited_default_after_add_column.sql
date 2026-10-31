@@ -1,3 +1,4 @@
+SET allow_experimental_recompress_column = 1;
 SET check_query_single_value_result = 1;
 
 -- A wide part that predates an unrelated `ADD COLUMN` stores fewer columns than the table metadata

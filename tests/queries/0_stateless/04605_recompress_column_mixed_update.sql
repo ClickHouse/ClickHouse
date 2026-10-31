@@ -8,6 +8,7 @@
 -- must stay consistent and every row must be intact.
 -- The shared MergeTree data lives remotely, so this raw on-disk behaviour is checked on local parts.
 
+SET allow_experimental_recompress_column = 1;
 DROP TABLE IF EXISTS t_recompress_mixed;
 
 CREATE TABLE t_recompress_mixed

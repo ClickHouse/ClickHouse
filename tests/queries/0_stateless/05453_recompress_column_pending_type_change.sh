@@ -6,6 +6,7 @@
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
+CLICKHOUSE_CLIENT="$CLICKHOUSE_CLIENT --allow_experimental_recompress_column=1"
 
 # A `MODIFY COLUMN` that changes a type and is queued after `ALTER TABLE ... RECOMPRESS COLUMN` is
 # already in the table metadata when the recompression runs, but not in the part. `RECOMPRESS COLUMN`

@@ -6,6 +6,7 @@
 -- unchanged, so rows and parts would keep being expired, moved, or recompressed according to the
 -- values as they were before the recompression.
 
+SET allow_experimental_recompress_column = 1;
 SET enable_sz3_codec = 1;
 SET mutations_sync = 2;
 

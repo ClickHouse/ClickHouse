@@ -4,6 +4,7 @@
 -- the current settings no longer matches the file on disk, so the stream would be treated as absent and
 -- the recompression would silently do nothing.
 
+SET allow_experimental_recompress_column = 1;
 SET mutations_sync = 2;
 SET check_query_single_value_result = 1;
 

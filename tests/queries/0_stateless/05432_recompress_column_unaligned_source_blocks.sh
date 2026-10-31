@@ -5,6 +5,7 @@ set -euo pipefail
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
+CLICKHOUSE_LOCAL="$CLICKHOUSE_LOCAL --allow_experimental_recompress_column=1"
 
 # Older writers did not round the compressed block size to whole values, so a value could be split
 # between two compressed blocks. `RECOMPRESS COLUMN` re-emits the blocks of a stream without

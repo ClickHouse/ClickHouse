@@ -7,6 +7,7 @@
 -- `m` describing the pre-recompression values. The dependency analysis expands `ALIAS` chains the
 -- same way it expands `EPHEMERAL` ones.
 
+SET allow_experimental_recompress_column = 1;
 SET enable_sz3_codec = 1;
 SET mutations_sync = 2;
 

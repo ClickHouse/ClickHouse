@@ -1,5 +1,6 @@
 -- A part created before the target column was added has no data stream to recompress. In particular,
 -- a compact part must not fall back to a whole-part rewrite and apply a queued codec change to `a`.
+SET allow_experimental_recompress_column = 1;
 SET mutations_sync = 2;
 
 DROP TABLE IF EXISTS t_recompress_missing_part_column;

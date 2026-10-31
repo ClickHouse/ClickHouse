@@ -5,6 +5,7 @@
 -- `.bin`/marks files would be written several times and the codec of the last writer would silently
 -- win. Whichever way, the data and the marks must stay consistent -- CHECK TABLE recomputes them.
 
+SET allow_experimental_recompress_column = 1;
 SET mutations_sync = 2;
 SET check_query_single_value_result = 1;
 

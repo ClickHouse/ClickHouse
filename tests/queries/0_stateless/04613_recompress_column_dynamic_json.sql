@@ -9,6 +9,7 @@
 -- rewrite, which re-serializes the column with its current codec. This test guards that the whole
 -- column (not just its structure stream) is actually recompressed.
 
+SET allow_experimental_recompress_column = 1;
 SET mutations_sync = 2;
 SET check_query_single_value_result = 1;
 SET allow_experimental_dynamic_type = 1;

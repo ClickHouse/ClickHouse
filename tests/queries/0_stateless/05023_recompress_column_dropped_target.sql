@@ -8,6 +8,7 @@
 -- a surviving column. Full part storage is pinned (`min_bytes_for_full_part_storage` may be
 -- randomized in tests): a packed part does not support in-place recompression and legitimately
 -- rewrites every column, which is not what this test is about.
+SET allow_experimental_recompress_column = 1;
 DROP TABLE IF EXISTS t_recompress_dropped_target;
 
 CREATE TABLE t_recompress_dropped_target

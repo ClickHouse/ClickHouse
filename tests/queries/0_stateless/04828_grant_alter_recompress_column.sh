@@ -3,6 +3,7 @@
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
+CLICKHOUSE_CLIENT="$CLICKHOUSE_CLIENT --allow_experimental_recompress_column=1"
 
 # `ALTER TABLE ... RECOMPRESS COLUMN` requires the dedicated `ALTER RECOMPRESS COLUMN` privilege
 # (a column-level privilege under the `ALTER COLUMN` group). A user without it -- even one holding

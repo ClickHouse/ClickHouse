@@ -10,6 +10,7 @@
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
+CLICKHOUSE_CLIENT="$CLICKHOUSE_CLIENT --allow_experimental_recompress_column=1"
 
 # `ALTER TABLE ... RECOMPRESS COLUMN` of `Nested` siblings that share a single offsets stream
 # (`share_nested_offsets = 1`) must choose the codec of the shared `n.size0` stream deterministically:

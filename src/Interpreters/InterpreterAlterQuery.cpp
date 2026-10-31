@@ -71,6 +71,7 @@ namespace Setting
     extern const SettingsAlterUpdateMode alter_update_mode;
     extern const SettingsBool enable_lightweight_update;
     extern const SettingsBool allow_statistics;
+    extern const SettingsBool allow_experimental_recompress_column;
     extern const SettingsTimezone session_timezone;
     extern const SettingsUInt64 max_parser_depth;
     extern const SettingsUInt64 max_parser_backtracks;
@@ -399,6 +400,22 @@ void checkStatisticsMutationsAreAllowed(const MutationCommands & commands, const
     }
 }
 
+/// `RECOMPRESS COLUMN` rewrites the compressed streams of existing parts, so it is experimental.
+/// Like `allow_statistics`, the setting is checked only at submission time, with the submitting
+/// session's settings: mutations that were already accepted are executed in the background regardless.
+void checkRecompressColumnIsAllowed(const MutationCommands & commands, const Settings & settings)
+{
+    if (settings[Setting::allow_experimental_recompress_column])
+        return;
+
+    for (const auto & command : commands)
+    {
+        if (command.type == MutationCommand::RECOMPRESS_COLUMN)
+            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+                "ALTER TABLE ... RECOMPRESS COLUMN is experimental. Set `allow_experimental_recompress_column` to 1 to enable it");
+    }
+}
+
 BlockIO runCommandSegments(CommandSegments & segments, const StoragePtr & table, const ContextPtr & context, bool no_ddl_lock)
 {
     BlockIO res;
@@ -446,6 +463,7 @@ BlockIO runCommandSegments(CommandSegments & segments, const StoragePtr & table,
                 /// `MutationsInterpreter` validates against, instead of the stand-in's columns-only metadata.
                 table->checkMutationIsPossible(*mutation_commands, settings);
                 checkStatisticsMutationsAreAllowed(*mutation_commands, settings);
+                checkRecompressColumnIsAllowed(*mutation_commands, settings);
                 auto metadata_snapshot = table->getInMemoryMetadataPtr(context, true);
                 /// Checked ahead of the full validation below, which repeats it, so that a
                 /// nondeterministic mutation is reported as such even when the predicate also

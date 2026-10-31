@@ -5,6 +5,7 @@
 -- resolves the codec against the part's *stored* default codec and cannot honor the change, so such
 -- columns must fall back to a whole-part rewrite (the same as a column with no explicit CODEC).
 
+SET allow_experimental_recompress_column = 1;
 SET mutations_sync = 2;
 SET check_query_single_value_result = 1;
 

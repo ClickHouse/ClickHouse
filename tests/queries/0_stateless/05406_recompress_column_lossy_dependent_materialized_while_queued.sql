@@ -10,6 +10,7 @@
 -- recompression. `RECOMPRESS COLUMN` is not combined with other mutations, so the materialization
 -- reads the recompressed values and the dependent stays consistent with the base part.
 
+SET allow_experimental_recompress_column = 1;
 SET enable_sz3_codec = 1;
 
 DROP TABLE IF EXISTS t_recompress_index;

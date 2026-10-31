@@ -6,6 +6,7 @@
 -- a lossy codec is applied only to the value-bearing substreams, while array sizes and null maps
 -- are always written with the generic codecs of the chain, so such dependents stay valid.
 
+SET allow_experimental_recompress_column = 1;
 SET enable_sz3_codec = 1;
 SET mutations_sync = 2;
 

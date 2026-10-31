@@ -7,6 +7,7 @@
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
+CLICKHOUSE_CLIENT="$CLICKHOUSE_CLIENT --allow_experimental_recompress_column=1"
 
 # The lossy-codec dependency guard of `ALTER TABLE ... RECOMPRESS COLUMN` runs when the ALTER is
 # accepted, but the recompression resolves the codec from the table metadata again when the
