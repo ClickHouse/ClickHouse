@@ -1,5 +1,6 @@
 #pragma once
 
+#include <functional>
 #include <span>
 
 #include <Client/LineReader.h>
@@ -36,6 +37,7 @@ public:
         /// `clickhouse-disks` reuse this reader and have commands of their own, so a leading `/`
         /// means something else there (the beginning of a path).
         bool enable_slash_commands = false;
+        bool vim = false;
         Patterns extenders;
         Patterns delimiters;
         std::span<char> word_break_characters;
@@ -55,6 +57,7 @@ public:
 
     /// Set text to be prepopulated in the next readLine call
     void setInitialText(const String & text) override;
+
 private:
     InputStatus readOneLine(const String & prompt) override;
     void addToHistory(const String & line) override;
@@ -72,6 +75,34 @@ private:
     /// After a line was displayed programmatically, pin its text so that any hint regeneration
     /// for it shows nothing (see `suppress_hints_for_text`).
     void suppressHintsForDisplayedLine();
+
+    /// Bind the vim-style normal/operator/motion keymap. Defined in VimMode.cpp.
+    void setupVimKeybindings(bool allow_editor);
+    /// Run `func` on the cursor position and text of the input, both in code points.
+    void withVimState(const std::function<void(int &, std::u32string &)> & func);
+    /// Clear any pending vim command and start the next input in insert mode.
+    void resetVimForNewInput();
+    void vimCharwise(int & pos, std::u32string & text, int oldpos);
+    void vimLinewise(int & pos, std::u32string & text, int oldpos);
+    /// `cc`, also used by `S`.
+    void vimChangeLines(int & pos, std::u32string & text);
+    /// The `$` motion, also used by `D` and `C`.
+    void vimDollar(int & pos, std::u32string & text);
+    void fixTrailingNewline(int * pos, std::u32string * text);
+    void resetVim(int * pos = nullptr, std::u32string * text = nullptr);
+    template <typename T>
+    replxx::Replxx::key_press_handler_t vimHandler(T && func);
+    template <typename T>
+    void bindKey(char32_t key, T && func, int mode);
+    /// Bind `func` to every key without its own binding in `mode`.
+    template <typename T>
+    void bindDefaultKey(T && func, int mode);
+    void recomputeCurswant(int pos, std::u32string & text);
+    int vimReps() const;
+    void vimWordMotion(int & pos, std::u32string & text, char motion);
+    void vimWordObject(int & pos, std::u32string & text, bool bigword);
+    void vimBracketObject(int & pos, std::u32string & text, char32_t open_char, char32_t close_char);
+    void find(std::u32string & text, int & pos, char direction, char32_t c, bool repeat);
 
     /// Whether the text cursor is at the very end of the input (where as-you-type hints render).
     bool isCursorAtEndOfInput();
@@ -144,6 +175,46 @@ private:
     replxx::Replxx::completions_t hint_completions;
     std::string hint_completions_context;
     int hint_completions_context_size = 0;
+
+    /// Vim keymap state. `vimbuffer` accumulates the count typed before an operator (e.g. the 3 in
+    /// `3w`), `vimbufferinner` the count typed after an operator (the 2 in `d2w`); the effective
+    /// repeat is their product. The editing mode itself is stored in replxx (see set_editing_mode)
+    /// and encodes the pending operator and motion prefix as a bitfield of the flags below.
+    enum
+    {
+        MODE_INSERT,
+        MODE_NORMAL,
+        MODE_FIND,
+        MODE_REPLACE,
+        MODE_G,
+        MODE_END,
+    };
+
+    enum
+    {
+        OPERATOR_C = 1,
+        OPERATOR_D,
+    };
+
+    enum
+    {
+        FLAG_INSIDE = 0x1,
+        FLAG_AROUND = 0x2,
+    };
+
+    uint64_t vimbuffer = 0;
+    uint64_t vimbufferinner = 0;
+    int32_t flag = 0;
+    char find_direction = 0;
+    int32_t op = 0;
+    int curswant = 0;
+    /* The sought-for column after `$`: the end of any line. Small enough that adding a position does not overflow. */
+    static constexpr int CURSWANT_LINE_END = 1 << 29;
+    int inclusivity_flip = 0;
+
+    bool vim = false;
+    char32_t last_find_char = 0;
+    char last_find_direction = 0;
 };
 
 }
