@@ -111,7 +111,7 @@ function configure
 EOL
 
 
-    (cd $repo_dir && python3 $repo_dir/ci/jobs/scripts/clickhouse_proc.py logs_export_config) || echo "Failed to create log export config"
+    (cd $repo_dir && python3 $repo_dir/ci/jobs/scripts/clickhouse_proc.py logs_export_config)
 }
 
 function collect_jemalloc_profiles
