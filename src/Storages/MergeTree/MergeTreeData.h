@@ -571,13 +571,16 @@ public:
     /// query_info - used to filter unneeded parts
     ///
     /// parts - part set to filter
+    ///
+    /// granules_dropped_by_partition_key - if set, gets the marks of the parts that the partition key and its min-max index excluded
     Block getMinMaxCountProjectionBlock(
         const StorageMetadataPtr & metadata_snapshot,
         const Names & required_columns,
         const ActionsDAG * filter_dag,
         const RangesInDataParts & parts,
         const PartitionIdToMaxBlock * max_block_numbers_to_read,
-        ContextPtr query_context) const;
+        ContextPtr query_context,
+        size_t * granules_dropped_by_partition_key = nullptr) const;
 
     ReservationPtr reserveSpace(UInt64 expected_size, VolumePtr & volume) const;
     static ReservationPtr tryReserveSpace(UInt64 expected_size, const IDataPartStorage & data_part_storage);

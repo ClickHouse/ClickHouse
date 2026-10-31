@@ -519,6 +519,7 @@ public:
             columns = rhs.columns;
             partitions = rhs.partitions;
             projections = rhs.projections;
+            data_skipping_indices = rhs.data_skipping_indices;
             views = rhs.views;
             row_policies = rhs.row_policies;
         }
@@ -540,6 +541,7 @@ public:
             std::swap(columns, rhs.columns);
             std::swap(partitions, rhs.partitions);
             std::swap(projections, rhs.projections);
+            std::swap(data_skipping_indices, rhs.data_skipping_indices);
             std::swap(views, rhs.views);
             std::swap(row_policies, rhs.row_policies);
         }
@@ -551,6 +553,7 @@ public:
         std::set<std::string> columns TSA_GUARDED_BY(mutex){};
         std::set<std::string> partitions TSA_GUARDED_BY(mutex){};
         std::set<std::string> projections TSA_GUARDED_BY(mutex){};
+        std::set<std::string> data_skipping_indices TSA_GUARDED_BY(mutex){};
         std::set<std::string> views TSA_GUARDED_BY(mutex){};
         std::set<std::string> row_policies TSA_GUARDED_BY(mutex){};
     };
@@ -1203,6 +1206,7 @@ public:
     void removeQueryAccessInfoTable(const String & full_quoted_table_name);
 
     void addQueryAccessInfo(const Names & partition_names);
+    void addUsedDataSkippingIndices(const Names & qualified_index_names);
     void addViewAccessInfo(const String & view_name);
     void addUsedRowPolicy(const String & policy_name);
 

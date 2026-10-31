@@ -579,6 +579,8 @@ struct MinMaxProjectionCandidate
 {
     AggregateProjectionCandidate candidate;
     Block block;
+    /// marks of the parts that the partition key excluded
+    size_t granules_dropped_by_partition_key = 0;
 };
 
 /// A min(column) / max(column) / count() aggregate that can be computed from per-part column
@@ -809,13 +811,15 @@ static AggregateProjectionCandidates getAggregateProjectionCandidates(
             AggregateProjectionCandidate candidate{.info = std::move(info), .dag = std::move(*proj_dag)};
             candidate.has_filter = (dag.filter_node != nullptr);
 
+            size_t granules_dropped_by_partition_key = 0;
             auto block = reading.getMergeTreeData().getMinMaxCountProjectionBlock(
                 metadata,
                 candidate.dag.getRequiredColumnsNames(),
                 (dag.filter_node ? &*dag.dag : nullptr),
                 reading.getParts(),
                 max_added_blocks.get(),
-                context);
+                context,
+                &granules_dropped_by_partition_key);
 
             // minmax_count_projection cannot be used when there is no data to process, because
             // it will produce incorrect result during constant aggregation.
@@ -826,6 +830,7 @@ static AggregateProjectionCandidates getAggregateProjectionCandidates(
                 minmax.candidate = std::move(candidate);
                 minmax.block = std::move(block);
                 minmax.candidate.projection = projection;
+                minmax.granules_dropped_by_partition_key = granules_dropped_by_partition_key;
                 candidates.minmax_projection.emplace(std::move(minmax));
             }
             else
@@ -1666,7 +1671,7 @@ UseProjectionsResult optimizeUseAggregateProjections(
             reading->getParallelReadingExtension());
 
         /// Filter out parts in parent_ranges that overlap with those already read by the best candidate projection
-        filterPartsByProjection(*parent_reading_select_result, best_candidate->parent_parts);
+        filterPartsByChosenProjection(*parent_reading_select_result, *best_candidate);
         has_parent_parts = !parent_reading_select_result->parts_with_ranges.empty();
 
         /// Only the initiator should read the projection to avoid potential data duplication.
@@ -1680,6 +1685,10 @@ UseProjectionsResult optimizeUseAggregateProjections(
             /// projection selected no ranges, or reads only on the initiator). If no parent parts remain
             /// either, `reading` is detached below with nothing left to announce.
             short_circuited_with_prepared_source = true;
+
+            /// the projection selected no ranges, so no projection read reports its analysis
+            if (!should_skip_projection_reading_on_remote_replicas)
+                reading->reportIndexUsageWith(*projection_reading, best_candidate->merge_tree_projection_select_result_ptr);
         }
 
         if (has_parent_parts && optimization_settings.is_parallel_replicas_initiator_with_projection_support)
@@ -1690,6 +1699,13 @@ UseProjectionsResult optimizeUseAggregateProjections(
     /// set here instead (issue #110518).
     if (short_circuited_with_prepared_source && !has_parent_parts && reading->isParallelReadingEnabled())
         reading->announceEmptyReadRangesToCoordinatorIfInitiator();
+
+    /// For the same reason the projection step reports the index usage of `reading`.
+    if (!has_parent_parts)
+        reading->reportIndexUsageWith(
+            *projection_reading,
+            parent_reading_select_result ? parent_reading_select_result : reading->getAnalyzedResult(),
+            candidates.minmax_projection ? candidates.minmax_projection->granules_dropped_by_partition_key : 0);
 
     if (!query_info.is_internal && context->hasQueryContext())
     {

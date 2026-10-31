@@ -3378,6 +3378,16 @@ void Context::addQueryAccessInfo(const Names & partition_names)
         query_access_info->partitions.emplace(partition_name);
 }
 
+void Context::addUsedDataSkippingIndices(const Names & qualified_index_names)
+{
+    if (isGlobalContext())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Global context cannot have query access info");
+
+    std::lock_guard<std::mutex> lock(query_access_info->mutex);
+    for (const auto & name : qualified_index_names)
+        query_access_info->data_skipping_indices.emplace(name);
+}
+
 void Context::addViewAccessInfo(const String & view_name)
 {
     if (isGlobalContext())

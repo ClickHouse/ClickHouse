@@ -1,0 +1,8 @@
+0
+0
+pruned_projection_1	['t_pruned_projection.p_a']	0	8	0
+pruned_projection_2	[]	0	0	0
+pruned_projection_3	['t_pruned_projection.p_a']	4	4	0
+pruned_projection_4	['t_pruned_aggregate_projection.p_count']	0	8	0
+pruned_projection_5	['t_pruned_aggregate_projection.p_count']	4	4	0
+pruned_projection_6	['t_pruned_projection_mixed.p_a']	0	4	0
