@@ -24,6 +24,7 @@
 #include <IO/WriteBuffer.h>
 #include <IO/copyData.h>
 #include <Interpreters/DatabaseCatalog.h>
+#include <Interpreters/RewriteRulesASTTraversal.h>
 #include <Interpreters/Session.h>
 #include <Interpreters/executeQuery.h>
 #include <Interpreters/Context.h>
@@ -872,10 +873,17 @@ void MySQLHandler::comQuery(ReadBuffer & payload, bool binary_protocol)
 {
     String query = String(payload.position(), payload.buffer().end());
 
+    /// The fast paths below answer the user's statement without passing it to `executeQuery`
+    /// (the federated-setup `SET` no-ops) or execute synthesized SQL with `query_rules` cleared
+    /// (the query and setting replacements), so they check themselves that every rule listed in
+    /// `query_rules` exists, as ordinary SQL does in `astTraversal`. Ordinary SQL is left to
+    /// `executeQuery`, which logs the failure to `system.query_log`.
+
     // This is a workaround in order to support adding ClickHouse to MySQL using federated server.
     // As ClickHouse doesn't support these statements, we just send OK packet in response.
     if (isFederatedServerSetupSetCommand(query))
     {
+        validateQueryRulesExist(session->sessionContext());
         packet_endpoint->sendPacket(OKPacket(0x00, client_capabilities, 0, 0, 0));
     }
     else
@@ -950,6 +958,16 @@ void MySQLHandler::comQuery(ReadBuffer & payload, bool binary_protocol)
 
         if (should_replace)
         {
+            /// `replacement_query` is ClickHouse SQL synthesized by this handler for a MySQL wire
+            /// command (`SHOW WARNINGS`, `SHOW TABLE STATUS LIKE`, `SHOW VARIABLES`, `KILL QUERY`,
+            /// a mapped `SET` variable, ...); the client never submitted that SQL, so the session's
+            /// `query_rules` must not rewrite or reject it. Direct user SQL (the `else` branch)
+            /// keeps the setting. The context is private to this query, so clearing the setting
+            /// does not affect anything else. The rules are checked before that, with the query id
+            /// and the query scope of this statement already set up.
+            validateQueryRulesExist(query_context);
+            query_context->setSetting("query_rules", String{});
+
             ReadBufferFromString replacement(replacement_query);
             executeQuery(replacement, *out, query_context, set_result_details, QueryFlags{}, format_settings);
         }

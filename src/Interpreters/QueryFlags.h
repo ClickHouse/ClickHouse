@@ -1,7 +1,25 @@
 #pragma once
 
+#include <base/types.h>
+#include <Parsers/IAST_fwd.h>
+
+#include <memory>
+#include <vector>
+
 namespace DB
 {
+
+/// The query as submitted, for a query that a rewrite rule rewrote before it was dispatched to the
+/// background (`run_query_in_background`). The background worker executes the rewritten text, but
+/// `system.query_log` must describe the query as submitted and list the applied rules, exactly as
+/// for a rewritten query run in the foreground.
+struct RewrittenQueryOrigin
+{
+    String query_for_logging;
+    UInt64 normalized_query_hash = 0;
+    ASTPtr ast_for_formatted_query;
+    std::vector<String> applied_rewrite_rules;
+};
 
 struct QueryFlags
 {
@@ -28,6 +46,12 @@ struct QueryFlags
     /// Otherwise the copy runs with the full access of the DDL worker. The other replicas run only the entries that
     /// succeeded on the initiator. So the query is checked as it would be on a local database.
     bool run_as_submitting_user = false;
+    /// If true, the result of the query is streamed to the client (the body of `COPY (query) TO STDOUT` in the
+    /// PostgreSQL wire protocol, the SQL of the Arrow Flight methods that read data or a schema), so a query
+    /// rewrite rule must not turn it into a statement without a result.
+    bool rewritten_query_must_return_rows = false;
+    /// Set for the `background` run of a query rewritten by a rule at dispatch, see `RewrittenQueryOrigin`.
+    std::shared_ptr<const RewrittenQueryOrigin> rewritten_query_origin = nullptr;
 };
 
 }

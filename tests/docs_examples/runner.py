@@ -120,13 +120,13 @@ UNSTABLE = "unstable"
 SKIPPED = "skipped"
 
 # A statement that creates, changes or removes state that lives outside the scratch database of
-# the entity: RBAC objects, databases, named collections, the grants that go with them, and writes
-# through a table function, which land in a file under `user_files` or in external storage rather
-# than in a table of the scratch database. Such an example cannot run concurrently with another
+# the entity: RBAC objects, databases, named collections, query rewrite rules, the grants that go
+# with them, and writes through a table function, which land in a file under `user_files` or in
+# external storage rather than in a table of the scratch database. Such an example cannot run concurrently with another
 # invocation of itself, and must not run against a server that is not dedicated to this check.
 GLOBAL_OBJECT_RE = re.compile(
     r"^\s*(?:CREATE|ATTACH|ALTER|DROP|RENAME)\s+(?:OR\s+REPLACE\s+)?"
-    r"(?:USER|ROLE|ROW\s+POLICY|QUOTA|SETTINGS\s+PROFILE|PROFILE|DATABASE|NAMED\s+COLLECTION)\b"
+    r"(?:USER|ROLE|ROW\s+POLICY|QUOTA|SETTINGS\s+PROFILE|PROFILE|DATABASE|NAMED\s+COLLECTION|RULE)\b"
     r"|^\s*(?:GRANT|REVOKE)\b"
     r"|^\s*INSERT\s+INTO\s+(?:TABLE\s+)?FUNCTION\b",
     re.IGNORECASE,

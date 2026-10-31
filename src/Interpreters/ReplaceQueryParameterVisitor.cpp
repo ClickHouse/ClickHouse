@@ -10,6 +10,7 @@
 #include <Interpreters/addTypeConversionToAST.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTCreateHandlerQuery.h>
+#include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTQueryParameter.h>
@@ -19,9 +20,14 @@
 #include <Parsers/ASTSetQuery.h>
 #include <Parsers/ASTViewTargets.h>
 #include <Parsers/FieldFromAST.h>
-#include <Parsers/Access/ASTCreateMaskingPolicyQuery.h>
-#include <Parsers/Access/ASTCreateRowPolicyQuery.h>
+#include <Parsers/forEachNonChildSemanticAST.h>
 #include <Parsers/TablePropertiesQueriesASTs.h>
+#include <Parsers/Access/ASTCreateRoleQuery.h>
+#include <Parsers/Access/ASTCreateUserQuery.h>
+#include <Parsers/Access/ASTDropAccessEntityQuery.h>
+#include <Parsers/Access/ASTGrantQuery.h>
+#include <Parsers/Access/ASTRolesOrUsersSet.h>
+#include <Parsers/Access/ASTUserNameWithHost.h>
 #include <Analyzer/Utils.h>
 #include <Common/SettingsChanges.h>
 #include <Common/checkStackSize.h>
@@ -36,6 +42,45 @@ namespace ErrorCodes
 {
     extern const int UNKNOWN_QUERY_PARAMETER;
     extern const int BAD_QUERY_PARAMETER;
+}
+
+namespace
+{
+
+/// The parsers of access-entity statements keep a name list in `children` only when it contains a name
+/// written as a query parameter (see e.g. `ParserCreateUserQuery`). After the substitution drop it from
+/// `children`, so the statement has the same shape and tree hash as the one written with the concrete
+/// names: the query rewrite rules match on the substituted query. The `usernameWasQueryParameter` flag
+/// is kept, because the formatting relies on it (e.g. to check `enforce_strict_identifier_format`).
+bool hasUnsubstitutedNames(const ASTUserNamesWithHost * names)
+{
+    if (!names)
+        return false;
+    for (const auto & name : *names)
+        if (name->as<const ASTUserNameWithHost &>().usernameIsQueryParameter())
+            return true;
+    return false;
+}
+
+void normalizeAccessEntityNames(IAST & ast)
+{
+    if (!ast.as<ASTCreateUserQuery>() && !ast.as<ASTCreateRoleQuery>() && !ast.as<ASTDropAccessEntityQuery>()
+        && !ast.as<ASTGrantQuery>() && !ast.as<ASTRolesOrUsersSet>())
+        return;
+
+    auto & children = ast.children;
+    children.erase(std::remove_if(children.begin(), children.end(), [](const ASTPtr & child)
+    {
+        if (const auto * names = child->as<ASTUserNamesWithHost>())
+            return !hasUnsubstitutedNames(names);
+        if (const auto * name = child->as<ASTUserNameWithHost>())
+            return !name->usernameIsQueryParameter();
+        if (const auto * roles_or_users = child->as<ASTRolesOrUsersSet>())
+            return !hasUnsubstitutedNames(roles_or_users->names.get()) && !hasUnsubstitutedNames(roles_or_users->except_names.get());
+        return false;
+    }), children.end());
+}
+
 }
 
 /// It is important to keep in mind that in the case of ASTIdentifier, we are changing the shared object itself,
@@ -86,11 +131,23 @@ void ReplaceQueryParameterVisitor::visit(ASTPtr & ast)
             scoped_parameters.insert_or_assign(name, value);
 
         ReplaceQueryParameterVisitor scoped_visitor(scoped_parameters);
+        /// The query-level `param_*` bindings scope over the non-`children` carriers too (e.g.
+        /// `SHOW TABLES LIMIT {n:UInt64} SETTINGS param_n = 42`), see the branch below.
+        forEachMutableNonChildSemanticAST(*ast, [&](ASTPtr & member) { scoped_visitor.visit(member); });
         scoped_visitor.visitChildren(ast);
         num_replaced_parameters += scoped_visitor.getNumberOfReplacedParameters();
     }
     else
     {
+        /// Some AST classes keep semantic subtrees outside `children` — e.g. `SHOW TABLES LIMIT
+        /// {n:UInt64}` keeps the limit in `ASTShowTablesQuery::limit_length`, and `CREATE USER
+        /// {u:Identifier}` keeps the names in `ASTCreateUserQuery::names`. Substitute there too:
+        /// a placeholder left in such a member would be invisible to the interpreters and to the
+        /// query rewrite rules, which match the substituted query (a literal `REJECT` rule must
+        /// not be bypassable by parameterizing the matched value). The walk shares the carrier
+        /// list with the rewrite-rule matcher — see `forEachNonChildSemanticAST`.
+        forEachMutableNonChildSemanticAST(*ast, [&](ASTPtr & member) { visit(member); });
+
         if (auto * describe_query = dynamic_cast<ASTDescribeQuery *>(ast.get()); describe_query && describe_query->table_expression)
             visitChildren(describe_query->table_expression);
         else if (dynamic_cast<ASTCreateHandlerQuery *>(ast.get()))
@@ -133,27 +190,11 @@ void ReplaceQueryParameterVisitor::visit(ASTPtr & ast)
             else
                 visitChildren(ast);
         }
-        else if (auto * create_row_policy_query = dynamic_cast<ASTCreateRowPolicyQuery *>(ast.get()))
-        {
-            /// The filters are not children, see ASTCreateRowPolicyQuery::filters.
-            for (auto & [_, filter] : create_row_policy_query->filters)
-            {
-                if (filter)
-                    visit(filter);
-            }
-            visitChildren(ast);
-        }
-        else if (auto * create_masking_policy_query = dynamic_cast<ASTCreateMaskingPolicyQuery *>(ast.get()))
-        {
-            if (create_masking_policy_query->update_assignments)
-                visit(create_masking_policy_query->update_assignments);
-            if (create_masking_policy_query->where_condition)
-                visit(create_masking_policy_query->where_condition);
-            visitChildren(ast);
-        }
         else
             visitChildren(ast);
     }
+
+    normalizeAccessEntityNames(*ast);
 }
 
 
@@ -200,7 +241,11 @@ ASTPtr makeASTForQueryParameter(const Field & literal, const String & type_name,
 {
     if (typeid_cast<const DataTypeString *>(data_type.get()))
         return make_intrusive<ASTLiteral>(literal);
-    return addTypeConversionToAST(make_intrusive<ASTLiteral>(literal), type_name);
+    auto cast = addTypeConversionToAST(make_intrusive<ASTLiteral>(literal), type_name);
+    /// Mark the wrapper as parameter substitution so consumers that need to see through it
+    /// (the rewrite-rule matcher) can distinguish it from a user-written `_CAST(...)` call.
+    cast->as<ASTFunction &>().setIsQueryParameterSubstitution(true);
+    return cast;
 }
 
 }

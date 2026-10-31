@@ -16,13 +16,16 @@
 #include <Parsers/ExpressionListParsers.h>
 #include <Parsers/ParserAlterNamedCollectionQuery.h>
 #include <Parsers/ParserAlterQuery.h>
+#include <Parsers/ParserAlterRewriteRuleQuery.h>
 #include <Parsers/ParserCheckQuery.h>
 #include <Parsers/ParserCreateFunctionQuery.h>
 #include <Parsers/ParserCreateHandlerQuery.h>
 #include <Parsers/ParserCreateQuery.h>
+#include <Parsers/ParserCreateRewriteRuleQuery.h>
 #include <Parsers/ParserDeleteQuery.h>
 #include <Parsers/ParserDescribeTableQuery.h>
 #include <Parsers/ParserDropQuery.h>
+#include <Parsers/ParserDropRewriteRuleQuery.h>
 #include <Parsers/ParserExplainQuery.h>
 #include <Parsers/ParserHypotheticalObjectQuery.h>
 #include <Parsers/ParserInsertQuery.h>
@@ -59,6 +62,7 @@ void registerParsers()
 
     registry.registerParser<ParserAlterNamedCollectionQuery>();
     registry.registerParser<ParserAlterQuery>();
+    registry.registerParser([]() -> std::unique_ptr<IParserBase> { return std::make_unique<ParserAlterRewriteRuleQuery>(/*end_*/ nullptr); });
     registry.registerParser<ParserCheckGrantQuery>();
     registry.registerParser<ParserCheckQuery>();
     registry.registerParser<ParserColumnsTransformers>();
@@ -67,6 +71,7 @@ void registerParsers()
     registry.registerParser<ParserCreateMaskingPolicy>();
     registry.registerParser<ParserCreateQuery>();
     registry.registerParser<ParserCreateQuotaQuery>();
+    registry.registerParser([]() -> std::unique_ptr<IParserBase> { return std::make_unique<ParserCreateRewriteRuleQuery>(/*end_*/ nullptr); });
     registry.registerParser<ParserCreateRoleQuery>();
     registry.registerParser<ParserCreateRowPolicyQuery>();
     registry.registerParser<ParserCreateSettingsProfileQuery>();
@@ -75,6 +80,7 @@ void registerParsers()
     registry.registerParser<ParserDeleteQuery>();
     registry.registerParser<ParserDescribeTableQuery>();
     registry.registerParser<ParserDropQuery>();
+    registry.registerParser<ParserDropRewriteRuleQuery>();
     registry.registerParser([]() -> std::unique_ptr<IParserBase> { return std::make_unique<ParserExecuteAsQuery>(dummy_subquery_parser); });
     registry.registerParser<ParserExplainQuery>();
     registry.registerParser<ParserExpression>();

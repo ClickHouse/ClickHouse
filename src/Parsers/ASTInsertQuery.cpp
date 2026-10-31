@@ -99,17 +99,11 @@ void ASTInsertQuery::readJSON(const Poco::JSON::Object & json)
     /// `tryGetIdentifierNameInto`, so reject other node types here.
     auto db_child = r.readIdentifierChild("database");
     if (db_child)
-    {
         database = db_child;
-        children.push_back(database);
-    }
 
     auto tbl_child = r.readIdentifierChild("table");
     if (tbl_child)
-    {
         table = tbl_child;
-        children.push_back(table);
-    }
 
     format = r.getString("format");
     async_insert_flush = r.getBool("async_insert_flush");
@@ -120,27 +114,18 @@ void ASTInsertQuery::readJSON(const Poco::JSON::Object & json)
     /// would format as a column list while exposing an empty child list to execution. Reject it.
     auto child = r.readChildOfType<ASTExpressionList>("columns");
     if (child)
-    {
         columns = child;
-        children.push_back(columns);
-    }
 
     /// `table_function` is parser-owned as an `ASTFunction` (`INSERT INTO FUNCTION ...`).
     /// `ClientBase::setInsertionTable` and `formatImpl` downcast it with `as<ASTFunction>()`,
     /// so a non-`ASTFunction` from malformed `clickhouse_json` must be rejected here.
     child = r.readScreenedChildOfType<ASTFunction>("table_function");
     if (child)
-    {
         table_function = child;
-        children.push_back(table_function);
-    }
 
     child = r.readExpressionChild("partition_by");
     if (child)
-    {
         partition_by = child;
-        children.push_back(partition_by);
-    }
 
     /// Query-local `SETTINGS` clauses are parsed as `ASTSetQuery`. `InterpreterSetQuery`,
     /// `InsertQuerySettingsPushDownVisitor`, and `DDLTask` downcast `settings_ast` with
@@ -148,27 +133,18 @@ void ASTInsertQuery::readJSON(const Poco::JSON::Object & json)
     /// rejected here instead of reaching those downcasts.
     child = r.readChildOfType<ASTSetQuery>("settings_ast");
     if (child)
-    {
         settings_ast = child;
-        children.push_back(settings_ast);
-    }
 
     /// `select` is parser-produced as an `ASTSelectWithUnionQuery` (`INSERT ... SELECT`). Insert
     /// execution downcasts it (`applyTrivialInsertSelectOptimization`, the distributed-insert paths),
     /// so reject any other node type from malformed `clickhouse_json` here.
     child = r.readScreenedChildOfType<ASTSelectWithUnionQuery>("select");
     if (child)
-    {
         select = child;
-        children.push_back(select);
-    }
 
     child = r.readScreenedChildOfType<ASTSelectWithUnionQuery>("returning");
     if (child)
-    {
         returning = child;
-        children.push_back(returning);
-    }
 
     /// `FROM INFILE`/`COMPRESSION` are both string `ASTLiteral`s in the SQL grammar, and
     /// `COMPRESSION` is only valid when `INFILE` is present. `formatImpl`, `ClientBase`,
@@ -181,7 +157,6 @@ void ASTInsertQuery::readJSON(const Poco::JSON::Object & json)
         if (child->as<ASTLiteral &>().value.getType() != Field::Types::String)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "'infile' must be a string literal during AST JSON deserialization");
         infile = child;
-        children.push_back(infile);
     }
 
     child = r.readChildOfType<ASTLiteral>("compression");
@@ -192,7 +167,6 @@ void ASTInsertQuery::readJSON(const Poco::JSON::Object & json)
         if (child->as<ASTLiteral &>().value.getType() != Field::Types::String)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "'compression' must be a string literal during AST JSON deserialization");
         compression = child;
-        children.push_back(compression);
     }
 
     /// `partition_by` is parser-produced only in the `INSERT INTO FUNCTION` branch
@@ -220,6 +194,15 @@ void ASTInsertQuery::readJSON(const Poco::JSON::Object & json)
     if (database && !table)
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
             "`InsertQuery` 'database' requires a 'table' during AST JSON deserialization");
+
+    /// Attach the children in the parser's order (`ParserInsertQuery`, mirrored by `clone`), not in
+    /// the order the members are read above: `getTreeHash` folds the children in order, so a
+    /// different order would make the tree hash of a `clickhouse_json` insert differ from that of
+    /// the same insert written in SQL, and a rewrite rule stored for it would not match.
+    children.clear();
+    for (const auto * member : {&infile, &compression, &table_function, &partition_by, &database, &table, &columns, &select, &returning, &settings_ast})
+        if (*member)
+            children.push_back(*member);
 }
 
 void ASTInsertQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const

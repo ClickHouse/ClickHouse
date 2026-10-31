@@ -1,4 +1,6 @@
 #include <Common/quoteString.h>
+#include <Parsers/updateTreeHashField.h>
+#include <Common/SipHash.h>
 #include <IO/Operators.h>
 #include <Parsers/ASTCreateResourceQuery.h>
 #include <Parsers/ASTExpressionList.h>
@@ -18,6 +20,28 @@ ASTPtr ASTCreateResourceQuery::clone() const
     res->operations = operations;
 
     return res;
+}
+
+void ASTCreateResourceQuery::updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const
+{
+    IAST::updateTreeHashImpl(hash_state, ignore_aliases);
+    /// Fold the semantic fields kept outside `children`. See the header comment for why the
+    /// rewrite-rule matcher needs this. Each field is produced by the formatter, so it survives
+    /// the format -> parse round-trip that the debug-build AST consistency check requires.
+    hash_state.update(or_replace);
+    hash_state.update(if_not_exists);
+    updateTreeHashField(hash_state, cluster);
+
+    hash_state.update(operations.size());
+    for (const auto & operation : operations)
+    {
+        hash_state.update(operation.mode);
+        /// `disk` is `std::optional<String>`: fold presence and content explicitly, a raw
+        /// `update(operation.disk)` would hash the object representation.
+        hash_state.update(operation.disk.has_value());
+        if (operation.disk)
+            updateTreeHashField(hash_state, *operation.disk);
+    }
 }
 
 void ASTCreateResourceQuery::formatImpl(WriteBuffer & ostr, const IAST::FormatSettings & format, IAST::FormatState &, IAST::FormatStateStacked) const
