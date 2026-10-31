@@ -199,12 +199,23 @@ ${CLICKHOUSE_CLIENT} --use_hive_partitioning 1 --database_replicated_allow_expli
 run hive_reloaded_1 "$HIVE_QUERY"
 run hive_reloaded_2 "$HIVE_QUERY"
 
+echo "--- versionId=null"
+# A URL with `versionId` reads that version instead of checking the listed `ETag`. With `versionId=null`
+# that does not pin the read: in a bucket with versioning suspended, an upload under the same key
+# overwrites the null version in place. So such a table does not use the cache.
+${CLICKHOUSE_CLIENT} --query "DROP TABLE IF EXISTS t_05340_null_version"
+${CLICKHOUSE_CLIENT} --query "
+    CREATE TABLE t_05340_null_version (k Int64, s String)
+    ENGINE = S3('http://localhost:11111/test/${S3_DIR}/*.parquet?versionId=null', 'test', 'testtest', 'Parquet')"
+run null_version_1 "SELECT k FROM t_05340_null_version ORDER BY k DESC LIMIT 3"
+run null_version_2 "SELECT k FROM t_05340_null_version ORDER BY k DESC LIMIT 3"
+
 echo "--- use_query_condition_cache_for_top_k = 0"
 run gate_1 "SELECT k FROM t_05340 ORDER BY k DESC LIMIT 6" ", use_query_condition_cache_for_top_k = 0"
 run gate_2 "SELECT k FROM t_05340 ORDER BY k DESC LIMIT 6" ", use_query_condition_cache_for_top_k = 0"
 
 echo "--- query condition cache lookups"
-events nowhere_1 nowhere_2 nowhere_limit nowhere_plain nowhere_asc where_1 where_2 rewritten_nowhere_1 rewritten_where_1 rewritten_nowhere_2 unpinned_1 unpinned_2 tags_1 tags_2 time_1 time_2 default_1 default_2 keys_1 keys_2 key_1 key_2 case_1 case_2 case_reloaded_1 case_reloaded_2 source_1 source_2 source_reloaded_1 source_reloaded_2 hive_1 hive_2 hive_reloaded_1 hive_reloaded_2 gate_1 gate_2
+events nowhere_1 nowhere_2 nowhere_limit nowhere_plain nowhere_asc where_1 where_2 rewritten_nowhere_1 rewritten_where_1 rewritten_nowhere_2 unpinned_1 unpinned_2 tags_1 tags_2 time_1 time_2 default_1 default_2 keys_1 keys_2 key_1 key_2 case_1 case_2 case_reloaded_1 case_reloaded_2 source_1 source_2 source_reloaded_1 source_reloaded_2 hive_1 hive_2 hive_reloaded_1 hive_reloaded_2 null_version_1 null_version_2 gate_1 gate_2
 
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE t_05340"
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE t_05340_default"
@@ -213,3 +224,4 @@ ${CLICKHOUSE_CLIENT} --query "DROP TABLE t_05340_key"
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE t_05340_case"
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE t_05340_source"
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE t_05340_hive"
+${CLICKHOUSE_CLIENT} --query "DROP TABLE t_05340_null_version"

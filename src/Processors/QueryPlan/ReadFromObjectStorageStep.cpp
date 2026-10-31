@@ -476,10 +476,16 @@ bool ReadFromObjectStorageStep::isReadPinnedToListedGeneration() const
     /// when the captured metadata actually carries a non-empty `ETag` (see `createReadBuffer`), and
     /// `GCS` accessed through the S3 API is documented to legitimately return objects without one -
     /// so a `GCS`-provider client is not considered pinned even with the setting on.
+    /// A URL with `versionId` replaces the check of the `ETag` with a read of that version, which
+    /// pins the read for any real version, but not for `versionId=null`: in a bucket with versioning
+    /// suspended, an upload under the same key overwrites the null version in place.
 #if USE_AWS_S3
     if (object_storage->getType() == ObjectStorageType::S3
         && getContext()->getSettingsRef()[Setting::s3_validate_etag_on_read])
     {
+        if (const auto * s3_object_storage = dynamic_cast<const S3ObjectStorage *>(object_storage.get());
+            s3_object_storage && s3_object_storage->getURI().version_id == "null")
+            return false;
         const auto s3_client = object_storage->tryGetS3StorageClient();
         return s3_client && s3_client->getProviderType() != S3::ProviderType::GCS;
     }
