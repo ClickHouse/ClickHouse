@@ -187,6 +187,8 @@ Link related pull requests and issues explicitly, using full GitHub URLs, one re
 
 Use the keyword `Closes` (not `Fixes` or `Resolves`) for consistency, even though GitHub also auto-closes on `Fixes` and `Resolves`. `Caused by` and `Related` are not GitHub keywords and trigger no automatic closing; they are conventions for humans and tooling. Issues never close pull requests, so the issue side uses only `Caused by` and `Related`.
 
+When creating an issue about a bug or regression, try to find where it was introduced. If you can identify the pull request that caused it (for example with `git blame`, the bisect skill, or CI history), add `Caused by: <full link to the pull request>` to the issue body. If you can only narrow it down to a release, add the `v<major>.<minor>-affected` label (for example `v26.8-affected`) for each affected release; check which versions are affected by testing released binaries or by checking which release branches contain the causing commit (`git merge-base --is-ancestor <sha> origin/<branch>`). Add both when both are known. If you could not determine the origin, say so in the issue instead of guessing.
+
 ARM machines in CI are not slow. They are similar to x86 in performance.
 
 Use `tmp` subdirectory in the current directory for temporary files (logs, downloads, scripts, etc.), do not use `/tmp`. Create the directory if needed.
