@@ -3,7 +3,14 @@
 #include <Interpreters/CancellationChecker.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseAndTableWithAlias.h>
+#include <Parsers/ASTAlterQuery.h>
+#include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
+#include <Parsers/ASTFunction.h>
+#include <Parsers/ASTSubquery.h>
+#include <Functions/UserDefined/UserDefinedSQLFunctionFactory.h>
+#include <Parsers/ASTSystemQuery.h>
+#include <Parsers/ASTTTLElement.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTKillQueryQuery.h>
 #include <Parsers/IAST.h>
@@ -111,6 +118,329 @@ static bool isUnlimitedQuery(const IAST * ast)
     }
 
     return false;
+}
+
+/// A subquery anywhere in a statement (e.g. a scalar subquery in an engine argument) may be executed
+/// while the statement is analyzed. So may the body of a SQL user-defined function, and some functions
+/// read data when evaluated: a dictionary function loads the dictionary, `file` reads a file, and
+/// `joinGet` reads a `Join` table.
+static bool hasSubquery(const IAST & ast)
+{
+    if (ast.as<ASTSubquery>() || ast.as<ASTSelectWithUnionQuery>() || ast.as<ASTSelectQuery>())
+        return true;
+    if (const auto * function = ast.as<ASTFunction>())
+    {
+        if (function->name.starts_with("dict") || function->name == "file" || function->name.starts_with("joinGet")
+            || UserDefinedSQLFunctionFactory::instance().has(function->name))
+            return true;
+    }
+    for (const auto & child : ast.children)
+        if (child && hasSubquery(*child))
+            return true;
+    /// Not stored in `children`.
+    if (const auto * ttl = ast.as<ASTTTLElement>())
+    {
+        for (const auto & expressions : {ttl->group_by_key, ttl->group_by_assignments})
+            for (const auto & expression : expressions)
+                if (expression && hasSubquery(*expression))
+                    return true;
+        if (ttl->recompression_codec && hasSubquery(*ttl->recompression_codec))
+            return true;
+    }
+    return false;
+}
+
+/// SYSTEM commands that change only server state or metadata, or wait for work that runs elsewhere
+/// (background merges, fetches, refreshes, log flushes). A new command has to be classified here.
+static bool isMetadataSystemQuery(const ASTSystemQuery & query)
+{
+    switch (query.type)
+    {
+        case ASTSystemQuery::Type::SHUTDOWN:
+        case ASTSystemQuery::Type::KILL:
+        case ASTSystemQuery::Type::SUSPEND:
+        case ASTSystemQuery::Type::CLEAR_DNS_CACHE:
+        case ASTSystemQuery::Type::CLEAR_CONNECTIONS_CACHE:
+        case ASTSystemQuery::Type::CLEAR_MARK_CACHE:
+        case ASTSystemQuery::Type::CLEAR_PRIMARY_INDEX_CACHE:
+        case ASTSystemQuery::Type::CLEAR_STATISTICS_CACHE:
+        case ASTSystemQuery::Type::CLEAR_UNCOMPRESSED_CACHE:
+        case ASTSystemQuery::Type::CLEAR_INDEX_MARK_CACHE:
+        case ASTSystemQuery::Type::CLEAR_INDEX_UNCOMPRESSED_CACHE:
+        case ASTSystemQuery::Type::CLEAR_VECTOR_SIMILARITY_INDEX_CACHE:
+        case ASTSystemQuery::Type::CLEAR_TEXT_INDEX_TOKENS_CACHE:
+        case ASTSystemQuery::Type::CLEAR_TEXT_INDEX_HEADER_CACHE:
+        case ASTSystemQuery::Type::CLEAR_TEXT_INDEX_POSTINGS_CACHE:
+        case ASTSystemQuery::Type::CLEAR_TEXT_INDEX_CACHES:
+        case ASTSystemQuery::Type::CLEAR_COLUMNS_CACHE:
+        case ASTSystemQuery::Type::CLEAR_MMAP_CACHE:
+        case ASTSystemQuery::Type::CLEAR_QUERY_CONDITION_CACHE:
+        case ASTSystemQuery::Type::CLEAR_ENCRYPTION_HEADERS_CACHE:
+        case ASTSystemQuery::Type::CLEAR_QUERY_CACHE:
+        case ASTSystemQuery::Type::CLEAR_COMPILED_EXPRESSION_CACHE:
+        case ASTSystemQuery::Type::CLEAR_ICEBERG_METADATA_CACHE:
+        case ASTSystemQuery::Type::CLEAR_PAIMON_METADATA_CACHE:
+        case ASTSystemQuery::Type::CLEAR_PARQUET_METADATA_CACHE:
+        case ASTSystemQuery::Type::CLEAR_POINT_IN_POLYGON_CACHE:
+        case ASTSystemQuery::Type::CLEAR_FILESYSTEM_CACHE:
+        case ASTSystemQuery::Type::CLEAR_DISTRIBUTED_CACHE:
+        case ASTSystemQuery::Type::CLEAR_DISK_METADATA_CACHE:
+        case ASTSystemQuery::Type::CLEAR_PAGE_CACHE:
+        case ASTSystemQuery::Type::CLEAR_SCHEMA_CACHE:
+        case ASTSystemQuery::Type::CLEAR_FORMAT_SCHEMA_CACHE:
+        case ASTSystemQuery::Type::CLEAR_AVRO_SCHEMA_CACHE:
+        case ASTSystemQuery::Type::CLEAR_S3_CLIENT_CACHE:
+        case ASTSystemQuery::Type::CLEAR_TIME_SERIES_CACHES:
+        case ASTSystemQuery::Type::STOP_LISTEN:
+        case ASTSystemQuery::Type::START_LISTEN:
+        case ASTSystemQuery::Type::RESTORE_DATABASE_REPLICA:
+        case ASTSystemQuery::Type::WAIT_LOADING_PARTS:
+        case ASTSystemQuery::Type::WAIT_QUERY_RUNNER:
+        case ASTSystemQuery::Type::DROP_REPLICA:
+        case ASTSystemQuery::Type::DROP_DATABASE_REPLICA:
+        case ASTSystemQuery::Type::DROP_CATALOG_REPLICA:
+        case ASTSystemQuery::Type::JEMALLOC_PURGE:
+        case ASTSystemQuery::Type::JEMALLOC_ENABLE_PROFILE:
+        case ASTSystemQuery::Type::JEMALLOC_DISABLE_PROFILE:
+        case ASTSystemQuery::Type::JEMALLOC_FLUSH_PROFILE:
+        case ASTSystemQuery::Type::SYNC_REPLICA:
+        case ASTSystemQuery::Type::SYNC_DATABASE_REPLICA:
+        case ASTSystemQuery::Type::SYNC_TRANSACTION_LOG:
+        case ASTSystemQuery::Type::SYNC_FILE_CACHE:
+        case ASTSystemQuery::Type::REPLICA_READY:
+        case ASTSystemQuery::Type::REPLICA_UNREADY:
+        case ASTSystemQuery::Type::UNLOAD_DICTIONARY:
+        case ASTSystemQuery::Type::UNLOAD_DICTIONARIES:
+        case ASTSystemQuery::Type::RELOAD_FUNCTION:
+        case ASTSystemQuery::Type::RELOAD_FUNCTIONS:
+        case ASTSystemQuery::Type::RELOAD_CONFIG:
+        case ASTSystemQuery::Type::RELOAD_USERS:
+        case ASTSystemQuery::Type::RELOAD_ASYNCHRONOUS_METRICS:
+        case ASTSystemQuery::Type::RELOAD_DELTA_KERNEL_TRACING:
+        case ASTSystemQuery::Type::STOP_MERGES:
+        case ASTSystemQuery::Type::START_MERGES:
+        case ASTSystemQuery::Type::STOP_TTL_MERGES:
+        case ASTSystemQuery::Type::START_TTL_MERGES:
+        case ASTSystemQuery::Type::STOP_FETCHES:
+        case ASTSystemQuery::Type::START_FETCHES:
+        case ASTSystemQuery::Type::STOP_MOVES:
+        case ASTSystemQuery::Type::START_MOVES:
+        case ASTSystemQuery::Type::STOP_REPLICATED_SENDS:
+        case ASTSystemQuery::Type::START_REPLICATED_SENDS:
+        case ASTSystemQuery::Type::STOP_REPLICATION_QUEUES:
+        case ASTSystemQuery::Type::START_REPLICATION_QUEUES:
+        case ASTSystemQuery::Type::STOP_REPLICATED_DDL_QUERIES:
+        case ASTSystemQuery::Type::START_REPLICATED_DDL_QUERIES:
+        case ASTSystemQuery::Type::FLUSH_LOGS:
+        case ASTSystemQuery::Type::FLUSH_ASYNC_INSERT_QUEUE:
+        case ASTSystemQuery::Type::FLUSH_OBJECT_STORAGE_QUEUE:
+        case ASTSystemQuery::Type::STOP_DISTRIBUTED_SENDS:
+        case ASTSystemQuery::Type::START_DISTRIBUTED_SENDS:
+        case ASTSystemQuery::Type::START_THREAD_FUZZER:
+        case ASTSystemQuery::Type::STOP_THREAD_FUZZER:
+        case ASTSystemQuery::Type::UNFREEZE:
+        case ASTSystemQuery::Type::ENABLE_FAILPOINT:
+        case ASTSystemQuery::Type::DISABLE_FAILPOINT:
+        case ASTSystemQuery::Type::DISABLE_ALL_FAILPOINTS:
+        case ASTSystemQuery::Type::FREE_MEMORY:
+        case ASTSystemQuery::Type::WAIT_FAILPOINT:
+        case ASTSystemQuery::Type::NOTIFY_FAILPOINT:
+        case ASTSystemQuery::Type::SYNC_FILESYSTEM_CACHE:
+        case ASTSystemQuery::Type::STOP_PULLING_REPLICATION_LOG:
+        case ASTSystemQuery::Type::START_PULLING_REPLICATION_LOG:
+        case ASTSystemQuery::Type::STOP_CLEANUP:
+        case ASTSystemQuery::Type::START_CLEANUP:
+        case ASTSystemQuery::Type::SCHEDULE_MERGE:
+        case ASTSystemQuery::Type::SYNC_MERGES:
+        case ASTSystemQuery::Type::RESET_COVERAGE:
+        case ASTSystemQuery::Type::SET_COVERAGE_TEST:
+        case ASTSystemQuery::Type::REFRESH_VIEW:
+        case ASTSystemQuery::Type::WAIT_VIEW:
+        case ASTSystemQuery::Type::START_VIEW:
+        case ASTSystemQuery::Type::START_VIEWS:
+        case ASTSystemQuery::Type::START_REPLICATED_VIEW:
+        case ASTSystemQuery::Type::STOP_VIEW:
+        case ASTSystemQuery::Type::STOP_VIEWS:
+        case ASTSystemQuery::Type::STOP_REPLICATED_VIEW:
+        case ASTSystemQuery::Type::PAUSE_VIEW:
+        case ASTSystemQuery::Type::PAUSE_VIEWS:
+        case ASTSystemQuery::Type::CANCEL_VIEW:
+        case ASTSystemQuery::Type::TEST_VIEW:
+        case ASTSystemQuery::Type::UNLOAD_PRIMARY_KEY:
+        case ASTSystemQuery::Type::STOP_VIRTUAL_PARTS_UPDATE:
+        case ASTSystemQuery::Type::START_VIRTUAL_PARTS_UPDATE:
+        case ASTSystemQuery::Type::STOP_REDUCE_BLOCKING_PARTS:
+        case ASTSystemQuery::Type::START_REDUCE_BLOCKING_PARTS:
+        case ASTSystemQuery::Type::UNLOCK_SNAPSHOT:
+        case ASTSystemQuery::Type::RECONNECT_ZOOKEEPER:
+        case ASTSystemQuery::Type::WAIT_BLOBS_CLEANUP:
+        case ASTSystemQuery::Type::INSTRUMENT_ADD:
+        case ASTSystemQuery::Type::RESET_DDL_WORKER:
+        case ASTSystemQuery::Type::RESET_FILELOG:
+        case ASTSystemQuery::Type::STOP_ALL_BACKGROUND:
+        case ASTSystemQuery::Type::START_ALL_BACKGROUND:
+        case ASTSystemQuery::Type::PAUSE_ALL_BACKGROUND:
+        case ASTSystemQuery::Type::CANCEL_ALL_BACKGROUND:
+        case ASTSystemQuery::Type::REFRESH_ALL_BACKGROUND:
+        case ASTSystemQuery::Type::STOP:
+        case ASTSystemQuery::Type::START:
+        case ASTSystemQuery::Type::PAUSE:
+        case ASTSystemQuery::Type::CANCEL:
+        case ASTSystemQuery::Type::REFRESH:
+            return true;
+        /// Read or send table data on the thread group of the query, or allocate memory.
+        case ASTSystemQuery::Type::ALLOCATE_MEMORY:
+        case ASTSystemQuery::Type::UNKNOWN:
+        case ASTSystemQuery::Type::PREWARM_MARK_CACHE:
+        case ASTSystemQuery::Type::PREWARM_PRIMARY_INDEX_CACHE:
+        case ASTSystemQuery::Type::RESTART_REPLICAS:
+        case ASTSystemQuery::Type::RESTART_REPLICA:
+        case ASTSystemQuery::Type::RESTORE_REPLICA:
+        case ASTSystemQuery::Type::RELOAD_DICTIONARY:
+        case ASTSystemQuery::Type::RELOAD_DICTIONARIES:
+        case ASTSystemQuery::Type::RELOAD_EMBEDDED_DICTIONARIES:
+        case ASTSystemQuery::Type::RESTART_DISK:
+        case ASTSystemQuery::Type::FLUSH_DISTRIBUTED:
+        case ASTSystemQuery::Type::LOAD_PRIMARY_KEY:
+        case ASTSystemQuery::Type::INSTRUMENT_REMOVE:
+        case ASTSystemQuery::Type::END:
+            return false;
+    }
+}
+
+/// ALTER commands that change only metadata or delete data. A mutation only enqueues its work, which
+/// runs under `mutation_workload`. A new command has to be classified here.
+static bool isMetadataAlterCommand(const ASTAlterCommand & command)
+{
+    switch (command.type)
+    {
+        case ASTAlterCommand::ADD_COLUMN:
+        case ASTAlterCommand::DROP_COLUMN:
+        case ASTAlterCommand::MODIFY_COLUMN:
+        case ASTAlterCommand::COMMENT_COLUMN:
+        case ASTAlterCommand::RENAME_COLUMN:
+        case ASTAlterCommand::MODIFY_ORDER_BY:
+        case ASTAlterCommand::MODIFY_PROJECTION:
+        case ASTAlterCommand::MODIFY_SAMPLE_BY:
+        case ASTAlterCommand::MODIFY_TTL:
+        case ASTAlterCommand::MODIFY_SETTING:
+        case ASTAlterCommand::RESET_SETTING:
+        case ASTAlterCommand::MODIFY_REFRESH:
+        case ASTAlterCommand::REMOVE_TTL:
+        case ASTAlterCommand::REMOVE_SAMPLE_BY:
+        case ASTAlterCommand::ADD_INDEX:
+        case ASTAlterCommand::DROP_INDEX:
+        case ASTAlterCommand::ADD_CONSTRAINT:
+        case ASTAlterCommand::DROP_CONSTRAINT:
+        case ASTAlterCommand::MODIFY_CONSTRAINT:
+        case ASTAlterCommand::ADD_PROJECTION:
+        case ASTAlterCommand::DROP_PROJECTION:
+        case ASTAlterCommand::ADD_STATISTICS:
+        case ASTAlterCommand::DROP_STATISTICS:
+        case ASTAlterCommand::MODIFY_STATISTICS:
+        case ASTAlterCommand::DROP_PARTITION:
+        case ASTAlterCommand::DROP_DETACHED_PARTITION:
+        case ASTAlterCommand::FORGET_PARTITION:
+        case ASTAlterCommand::UNFREEZE_PARTITION:
+        case ASTAlterCommand::UNFREEZE_ALL:
+        case ASTAlterCommand::MODIFY_DATABASE_SETTING:
+        case ASTAlterCommand::MODIFY_DATABASE_COMMENT:
+        case ASTAlterCommand::MODIFY_COMMENT:
+        case ASTAlterCommand::MODIFY_SQL_SECURITY:
+        case ASTAlterCommand::UNLOCK_SNAPSHOT:
+            return true;
+        /// Mutations: some engines (e.g. `Memory`, `Join`, `EmbeddedRocksDB`, `KeeperMap`) run them in the query.
+        case ASTAlterCommand::MATERIALIZE_COLUMN:
+        case ASTAlterCommand::REWRITE_PARTS:
+        case ASTAlterCommand::MATERIALIZE_TTL:
+        case ASTAlterCommand::MATERIALIZE_INDEX:
+        case ASTAlterCommand::MATERIALIZE_PROJECTION:
+        case ASTAlterCommand::MATERIALIZE_STATISTICS:
+        case ASTAlterCommand::DELETE:
+        case ASTAlterCommand::UPDATE:
+        case ASTAlterCommand::APPLY_DELETED_MASK:
+        case ASTAlterCommand::APPLY_PATCHES:
+        /// Load detached parts (also their primary indexes) into the table.
+        case ASTAlterCommand::ATTACH_PARTITION:
+        /// Copy parts (`REPLACE_PARTITION` is also `ATTACH PARTITION ... FROM`) or run synchronously. The new
+        /// `SELECT` of `MODIFY QUERY` is analyzed, which may read the sources it selects from, also through views.
+        case ASTAlterCommand::MODIFY_QUERY:
+        case ASTAlterCommand::MOVE_PARTITION:
+        case ASTAlterCommand::REPLACE_PARTITION:
+        case ASTAlterCommand::FETCH_PARTITION:
+        case ASTAlterCommand::FREEZE_PARTITION:
+        case ASTAlterCommand::FREEZE_ALL:
+        case ASTAlterCommand::NO_TYPE:
+        case ASTAlterCommand::EXECUTE_COMMAND:
+            return false;
+    }
+}
+
+bool isMetadataQuery(const IAST * ast)
+{
+    if (!ast || hasSubquery(*ast))
+        return false;
+
+    switch (ast->getQueryKind())
+    {
+        case IAST::QueryKind::Drop: /// Also DETACH and TRUNCATE
+        case IAST::QueryKind::Rename:
+        case IAST::QueryKind::Move: /// MOVE of access entities
+        case IAST::QueryKind::Grant:
+        case IAST::QueryKind::Revoke:
+            return true;
+        case IAST::QueryKind::System:
+        {
+            const auto * system = ast->as<ASTSystemQuery>();
+            return system && isMetadataSystemQuery(*system);
+        }
+        case IAST::QueryKind::Create: /// Also ATTACH
+        {
+            /// Other kinds of objects (workloads, resources, access entities, functions, named
+            /// collections, ...) have no data.
+            const auto * create = ast->as<ASTCreateQuery>();
+            if (!create)
+                return true;
+            /// A `SELECT` is analyzed to infer the structure (also for a view or `EMPTY AS SELECT`), which
+            /// may read the sources it selects from, also through other views.
+            bool has_select = create->select != nullptr;
+            bool reads_table_function = create->as_table_function != nullptr;
+            /// A table engine without the columns infers the structure from its data (e.g. `URL`, `File`, `S3`).
+            bool has_columns = create->columns_list && create->columns_list->columns && !create->columns_list->columns->children.empty();
+            bool is_table = create->table != nullptr; /// Not a database
+            bool infers_structure = is_table && !create->isView() && !create->is_dictionary && create->storage
+                && create->storage->engine && !has_columns && !create->select && create->as_table.empty();
+            /// A dictionary may be loaded from its source by `CREATE`, also by a table with the `Dictionary`
+            /// engine or one that takes its engine from another table (`AS other_table`), and a replicating
+            /// engine (e.g. `MaterializedPostgreSQL`) copies the initial snapshot of its source.
+            /// `ATTACH` loads the existing data of a table or a database (e.g. parts, or the saved rows of `Join` and `Set`).
+            bool populates = create->attach || create->is_dictionary || !create->as_table.empty()
+                || (create->storage && create->storage->engine
+                    && (create->storage->engine->name == "Dictionary" || create->storage->engine->name.starts_with("Materialized")));
+            return !has_select && !reads_table_function && !infers_structure && !populates && !create->is_populate && !create->is_clone_as
+                && !create->has_attach_from_path;
+        }
+        case IAST::QueryKind::Alter:
+        {
+            const auto * alter = ast->as<ASTAlterQuery>();
+            if (!alter)
+                return true; /// Another kind of object (e.g. a named collection), which has no data
+            if (!alter->command_list)
+                return false;
+            for (const auto & child : alter->command_list->children)
+            {
+                const auto * command = child->as<ASTAlterCommand>();
+                if (!command || !isMetadataAlterCommand(*command))
+                    return false;
+            }
+            return true;
+        }
+        /// Like `ATTACH`, loads the existing data of the table.
+        case IAST::QueryKind::Undrop:
+            return false;
+        default:
+            return false;
+    }
 }
 
 ProcessList::EntryPtr ProcessList::insert(

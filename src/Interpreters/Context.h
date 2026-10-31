@@ -684,6 +684,17 @@ protected:
     /// NOTE: all resource links became invalid after `classifier` destruction
     mutable ClassifierPtr classifier;
 
+    /// How a metadata query (see `isMetadataQuery`) is scheduled, fixed by `setMetadataQuery` from the
+    /// `use_metadata_workload` server setting (see getWorkloadClassifier). Copied to child contexts, so the
+    /// sub-queries it runs are scheduled the same way, even if the setting is reloaded meanwhile.
+    enum class MetadataQueryScheduling : uint8_t
+    {
+        NotMetadataQuery,
+        MetadataWorkload,
+        Exempt,
+    };
+    MetadataQueryScheduling metadata_query_scheduling = MetadataQueryScheduling::NotMetadataQuery;
+
     /// Prepared sets that can be shared between different queries. One use case is when is to share prepared sets between
     /// mutation tasks of one mutation executed against different parts of the same table.
     PreparedSetsCachePtr prepared_sets_cache;
@@ -1051,6 +1062,9 @@ public:
     /// Resource management related
     ResourceManagerPtr getResourceManager() const;
     ClassifierPtr getWorkloadClassifier() const;
+    /// Marks the query as a metadata query (see `metadata_query_scheduling`).
+    /// Must be called before the workload classifier is first acquired.
+    void setMetadataQuery();
     /// Release the query slot early so the client can reuse it for its next query.
     /// Only the query slot is released, not the memory reservation: pipeline threads still hold raw
     /// pointers to it, so it is released later by `BlockIO::onFinish` after the pipeline is finalized.
@@ -1069,6 +1083,8 @@ public:
     UInt64 getCPUSlotQuantum() const;
     UInt64 getCPUSlotPreemptionTimeout() const;
     void setCPUSlotPreemption(bool cpu_slot_preemption, UInt64 cpu_slot_quantum_ns, UInt64 cpu_slot_preemption_timeout_ms);
+    bool getUseMetadataWorkload() const;
+    void setUseMetadataWorkload(bool use_metadata_workload);
     bool getCPUSlotParking() const;
     void setCPUSlotParking(bool value);
     UInt64 getConcurrentThreadsSoftLimitNum() const;
@@ -2252,6 +2268,8 @@ public:
     ServerSettings getServerSettingsCopy() const;
 
 private:
+    MetadataQueryScheduling getMetadataQueryScheduling() const;
+
     /// `ignore_automatic_parallel_replicas` is for cluster engines (`s3`, `url`, a table of a data lake catalog, ...):
     /// `automatic_parallel_replicas_mode` only decides for `MergeTree` reads, so they use parallel replicas whenever
     /// they are enabled. It is also set for a follower, which reads the way the initiator decided.

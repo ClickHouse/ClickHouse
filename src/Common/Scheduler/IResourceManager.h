@@ -50,6 +50,8 @@ public:
     virtual ResourceLink get(const String & resource_name) = 0;
     /// Returns settings that should be used to limit workload on given resource.
     virtual WorkloadSettings getWorkloadSettings(const String & resource_name) const = 0;
+    /// Returns the name of the workload the classifier was acquired for.
+    virtual const String & getWorkloadName() const = 0;
 };
 
 using ClassifierPtr = std::shared_ptr<IClassifier>;
