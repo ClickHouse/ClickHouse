@@ -1821,7 +1821,8 @@ namespace
             return;
 
         /// Copy output to `result.output`, with optional compressing.
-        if (write_buffer)
+        /// A canceled buffer holds incomplete output which can be neither finalized nor sent.
+        if (write_buffer && !write_buffer->isCanceled())
         {
             size_t output_size = 0;
             if (send_final_message)
