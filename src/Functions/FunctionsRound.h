@@ -260,9 +260,9 @@ private:
     using Container = typename ColumnVector<T>::Container;
 
 public:
-    static NO_INLINE void apply(const Container & in, size_t scale, Container & out)
+    static NO_INLINE void apply(const Container & in, int digits, Container & out)
     {
-        const T scale_value = Op::prepare(scale);
+        const T scale_value = Op::prepare(intExp10(digits));
         const size_t size = in.size();
         const T * __restrict p_in = in.data();
         T * __restrict p_out = out.data();
@@ -271,9 +271,9 @@ public:
             p_out[i] = Op::compute(p_in[i], scale_value);
     }
 
-    static void applyOne(T in, size_t scale, T & out)
+    static void applyOne(T in, int digits, T & out)
     {
-        out = Op::compute(in, Op::prepare(scale));
+        out = Op::compute(in, Op::prepare(intExp10(digits)));
     }
 };
 
@@ -283,6 +283,20 @@ struct IntegerRoundingImpl
 private:
     using Op = IntegerRoundingComputation<T, rounding_mode, scale_mode, tie_breaking_mode>;
     using Container = typename ColumnVector<T>::Container;
+
+    /// 10^digits for digits <= digits10 of T. The `intExp10OfSize` tables end at 10^76, `UInt256` also holds 10^77.
+    static T exactIntExp10(int digits) requires is_big_int_v<T>
+    {
+        if (digits > 76)
+            return T(intExp10OfSize<T>(76)) * 10;
+        return intExp10OfSize<T>(digits);
+    }
+
+    static NO_INLINE void applyRuntimeScale(const Container & in, T scale, Container & out)
+    {
+        for (size_t i = 0; i < in.size(); ++i)
+            Op::compute(&in[i], scale, &out[i]);
+    }
 
 public:
     template <size_t scale>
@@ -317,39 +331,76 @@ public:
         }
     }
 
-    static NO_INLINE void apply(const Container & in, size_t scale, Container & out)
+    static NO_INLINE void apply(const Container & in, int digits, Container & out)
     {
-        /// Manual function cloning for compiler to generate integer division by constant.
-        switch (scale)
+        if constexpr (scale_mode != ScaleMode::Negative)
         {
-            case 1ULL: return applyImpl<1ULL>(in, out);
-            case 10ULL: return applyImpl<10ULL>(in, out);
-            case 100ULL: return applyImpl<100ULL>(in, out);
-            case 1000ULL: return applyImpl<1000ULL>(in, out);
-            case 10000ULL: return applyImpl<10000ULL>(in, out);
-            case 100000ULL: return applyImpl<100000ULL>(in, out);
-            case 1000000ULL: return applyImpl<1000000ULL>(in, out);
-            case 10000000ULL: return applyImpl<10000000ULL>(in, out);
-            case 100000000ULL: return applyImpl<100000000ULL>(in, out);
-            case 1000000000ULL: return applyImpl<1000000000ULL>(in, out);
-            case 10000000000ULL: return applyImpl<10000000000ULL>(in, out);
-            case 100000000000ULL: return applyImpl<100000000000ULL>(in, out);
-            case 1000000000000ULL: return applyImpl<1000000000000ULL>(in, out);
-            case 10000000000000ULL: return applyImpl<10000000000000ULL>(in, out);
-            case 100000000000000ULL: return applyImpl<100000000000000ULL>(in, out);
-            case 1000000000000000ULL: return applyImpl<1000000000000000ULL>(in, out);
-            case 10000000000000000ULL: return applyImpl<10000000000000000ULL>(in, out);
-            case 100000000000000000ULL: return applyImpl<100000000000000000ULL>(in, out);
-            case 1000000000000000000ULL: return applyImpl<1000000000000000000ULL>(in, out);
-            case 10000000000000000000ULL: return applyImpl<10000000000000000000ULL>(in, out);
-            default:
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unexpected 'scale' parameter passed to function");
+            /// `compute` returns the argument.
+            applyImpl<1>(in, out);
+        }
+        else
+        {
+            if (digits > std::numeric_limits<T>::digits10)
+            {
+                /// 10^digits does not fit T, so 0 is the only representable result.
+                std::fill(out.begin(), out.end(), T(0));
+                return;
+            }
+
+            if constexpr (is_big_int_v<T>)
+            {
+                if (digits > 19)
+                {
+                    applyRuntimeScale(in, exactIntExp10(digits), out);
+                    return;
+                }
+            }
+
+            /// Manual function cloning for compiler to generate integer division by constant.
+            switch (intExp10(digits))
+            {
+                case 1ULL: return applyImpl<1ULL>(in, out);
+                case 10ULL: return applyImpl<10ULL>(in, out);
+                case 100ULL: return applyImpl<100ULL>(in, out);
+                case 1000ULL: return applyImpl<1000ULL>(in, out);
+                case 10000ULL: return applyImpl<10000ULL>(in, out);
+                case 100000ULL: return applyImpl<100000ULL>(in, out);
+                case 1000000ULL: return applyImpl<1000000ULL>(in, out);
+                case 10000000ULL: return applyImpl<10000000ULL>(in, out);
+                case 100000000ULL: return applyImpl<100000000ULL>(in, out);
+                case 1000000000ULL: return applyImpl<1000000000ULL>(in, out);
+                case 10000000000ULL: return applyImpl<10000000000ULL>(in, out);
+                case 100000000000ULL: return applyImpl<100000000000ULL>(in, out);
+                case 1000000000000ULL: return applyImpl<1000000000000ULL>(in, out);
+                case 10000000000000ULL: return applyImpl<10000000000000ULL>(in, out);
+                case 100000000000000ULL: return applyImpl<100000000000000ULL>(in, out);
+                case 1000000000000000ULL: return applyImpl<1000000000000000ULL>(in, out);
+                case 10000000000000000ULL: return applyImpl<10000000000000000ULL>(in, out);
+                case 100000000000000000ULL: return applyImpl<100000000000000000ULL>(in, out);
+                case 1000000000000000000ULL: return applyImpl<1000000000000000000ULL>(in, out);
+                case 10000000000000000000ULL: return applyImpl<10000000000000000000ULL>(in, out);
+                default:
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unexpected 'scale' parameter passed to function");
+            }
         }
     }
 
-    static void applyOne(T in, size_t scale, T& out)
+    static void applyOne(T in, int digits, T & out)
     {
-        Op::compute(&in, scale, &out);
+        if constexpr (scale_mode == ScaleMode::Negative)
+        {
+            if (digits > std::numeric_limits<T>::digits10)
+            {
+                out = 0;
+                return;
+            }
+            if constexpr (is_big_int_v<T>)
+            {
+                Op::compute(&in, exactIntExp10(digits), &out);
+                return;
+            }
+        }
+        Op::compute(&in, intExp10(digits), &out);
     }
 };
 
@@ -447,20 +498,11 @@ struct Dispatcher
                 {
                     auto scale_arg = (scale_col == nullptr) ? 0 : getScaleArg(checkAndGetColumnConst<ColumnVector<ScaleType>>(scale_col));
                     if (scale_arg == 0)
-                    {
-                        size_t scale = 1;
-                        FunctionRoundingImpl<ScaleMode::Zero>::apply(value_col_typed->getData(), scale, vec_res);
-                    }
+                        FunctionRoundingImpl<ScaleMode::Zero>::apply(value_col_typed->getData(), 0, vec_res);
                     else if (scale_arg > 0)
-                    {
-                        size_t scale = intExp10(scale_arg);
-                        FunctionRoundingImpl<ScaleMode::Positive>::apply(value_col_typed->getData(), scale, vec_res);
-                    }
+                        FunctionRoundingImpl<ScaleMode::Positive>::apply(value_col_typed->getData(), scale_arg, vec_res);
                     else
-                    {
-                        size_t scale = intExp10(-scale_arg);
-                        FunctionRoundingImpl<ScaleMode::Negative>::apply(value_col_typed->getData(), scale, vec_res);
-                    }
+                        FunctionRoundingImpl<ScaleMode::Negative>::apply(value_col_typed->getData(), -scale_arg, vec_res);
                 }
                 /// Non-const scale argument:
                 else if (const auto * scale_col_typed = checkAndGetColumn<ColumnVector<ScaleType>>(scale_col))
@@ -476,20 +518,11 @@ struct Dispatcher
                         Scale raw_scale = static_cast<Scale>(scale64);
 
                         if (raw_scale == 0)
-                        {
-                            size_t scale = 1;
-                            FunctionRoundingImpl<ScaleMode::Zero>::applyOne(value_data[i], scale, vec_res[i]);
-                        }
+                            FunctionRoundingImpl<ScaleMode::Zero>::applyOne(value_data[i], 0, vec_res[i]);
                         else if (raw_scale > 0)
-                        {
-                            size_t scale = intExp10(raw_scale);
-                            FunctionRoundingImpl<ScaleMode::Positive>::applyOne(value_data[i], scale, vec_res[i]);
-                        }
+                            FunctionRoundingImpl<ScaleMode::Positive>::applyOne(value_data[i], raw_scale, vec_res[i]);
                         else
-                        {
-                            size_t scale = intExp10(-raw_scale);
-                            FunctionRoundingImpl<ScaleMode::Negative>::applyOne(value_data[i], scale, vec_res[i]);
-                        }
+                            FunctionRoundingImpl<ScaleMode::Negative>::applyOne(value_data[i], -raw_scale, vec_res[i]);
                     }
                 }
             }
