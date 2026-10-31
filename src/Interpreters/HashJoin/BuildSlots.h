@@ -57,8 +57,6 @@ public:
         return res;
     }
 
-    size_t numArenasWithMemory() const { return std::ranges::count_if(slots, arenaHoldsMemory); }
-
     /// Moves out the arenas that hold memory. They are freed when the caller drops the result.
     std::vector<std::unique_ptr<Arena>> releaseArenas()
     {

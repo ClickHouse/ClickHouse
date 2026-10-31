@@ -1756,7 +1756,7 @@ HashJoin::RightTableData::~RightTableData()
         /// Every stored block has the columns of `sample_block`, though a row store keeps several of them in one buffer.
         const size_t num_objects = num_blocks * sample_block.columns() + stored.nullmaps.size() + num_asof_keys;
         /// The planner gives one worker to a join with the serial layout or with one thread, so its table is freed serially.
-        const size_t num_threads = std::min(workers.size(), num_blocks + slots.numArenasWithMemory() + num_asof_buckets);
+        const size_t num_threads = std::min(workers.size(), num_blocks + num_asof_buckets);
         if (num_threads <= 1 || num_objects < PARALLEL_DESTROY_THRESHOLD_OBJECTS)
             return;
 
