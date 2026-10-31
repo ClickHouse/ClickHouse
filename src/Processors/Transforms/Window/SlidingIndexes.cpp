@@ -50,7 +50,7 @@ std::vector<int64_t> assignPeerGroupIndexes(
     if (!every_row_is_a_group && order_by_indices.empty())
         return peer_group_indexes;
 
-    const bool first_row_continues_last_group = !every_row_is_a_group && previous_order_key && haveSameKeys(*previous_order_key, 0, columns, 0, order_by_indices);
+    const bool first_row_continues_last_group = !every_row_is_a_group && previous_order_key && params.haveEqualOrderByValues(*previous_order_key, 0, columns, 0);
     int64_t group = partition_starts[0] ? 0 : (first_row_continues_last_group ? last_peer_group_index : last_peer_group_index + 1);
 
     size_t partition_begin = 0;
@@ -66,7 +66,7 @@ std::vector<int64_t> assignPeerGroupIndexes(
             size_t run_begin = partition_begin;
             while (run_begin < partition_end)
             {
-                const size_t run_end = getEqualRangeEndAssumeSorted(columns, order_by_indices, run_begin, partition_end, /*nan_direction_hint=*/1);
+                const size_t run_end = params.getOrderByEqualRangeEnd(columns, run_begin, partition_end);
                 std::fill(peer_group_indexes.begin() + run_begin, peer_group_indexes.begin() + run_end, group);
                 group += 1;
                 run_begin = run_end;
