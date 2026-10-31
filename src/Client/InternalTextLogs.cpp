@@ -6,9 +6,12 @@
 #include <Common/typeid_cast.h>
 #include <Common/HashTable/Hash.h>
 #include <DataTypes/IDataType.h>
+#include <DataTypes/Serializations/ISerialization.h>
+#include <Formats/FormatSettings.h>
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnString.h>
 #include <IO/WriteHelpers.h>
+#include <IO/WriteBufferValidUTF8.h>
 #include <base/terminalColors.h>
 
 
@@ -162,6 +165,32 @@ void InternalTextLogs::writeProfileEvents(const Block & block)
 
         writeChar('\n', wb);
     }
+}
+
+void InternalTextLogs::writeProfileTraces(const Block & block)
+{
+    FormatSettings settings;
+    settings.json.quote_64bit_integers = true;
+    std::vector<SerializationPtr> serializations;
+    for (const auto & column : block)
+        serializations.push_back(column.type->getDefaultSerialization());
+
+    WriteBufferValidUTF8 validating(wb);
+    for (size_t row = 0; row < block.rows(); ++row)
+    {
+        writeChar('{', validating);
+        for (size_t column = 0; column < block.columns(); ++column)
+        {
+            if (column)
+                writeChar(',', validating);
+            const auto & value = block.getByPosition(column);
+            writeJSONString(value.name, validating, settings);
+            writeChar(':', validating);
+            serializations[column]->serializeTextJSON(*value.column, row, validating, settings);
+        }
+        writeCString("}\n", validating);
+    }
+    validating.finalize();
 }
 
 void InternalTextLogs::flush()

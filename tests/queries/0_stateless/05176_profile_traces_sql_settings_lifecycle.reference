@@ -1,0 +1,7 @@
+url BACKUP captures background allocations
+sql_trace BACKUP captures background allocations
+sql_both BACKUP captures background allocations
+SQL RESTORE captures background allocations and restores rows
+SQL opt-out discards the URL trace subscription
+SQL opt-in preserves the original analysis exception
+plain HTTP remains unframed with trace delivery enabled

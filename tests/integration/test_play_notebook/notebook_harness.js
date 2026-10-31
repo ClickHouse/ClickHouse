@@ -188,6 +188,12 @@ function makeElement(tag) {
         /// script calls on them. The seeded run-backed snapshot carries no `data`, so
         /// `restoreFromHistory` bails out before any real rendering.
         clear() {},
+        startProfileTraces(requested) {
+            /// Ordinary snapshots initialize this lifecycle; profiler rendering needs the real element.
+            if (requested) throw new Error('Notebook result stub cannot render profile traces');
+            el._flame_requested = false;
+        },
+        abandonProfileTraces() {},
         update() { return true; },
         updateRaw() {},
         renderError() {},

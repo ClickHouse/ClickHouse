@@ -1,6 +1,7 @@
 #pragma once
 
 #include <atomic>
+#include <chrono>
 #include <condition_variable>
 #include <mutex>
 
@@ -53,7 +54,18 @@ public:
     /// Precondition: the TraceCollector object must be created.
     static void send(TraceType trace_type, const StackTrace & stack_trace, Extras extras) noexcept;
 
-    /// True when a TraceCollector is running, i.e. when `send()` can deliver rather than discard.
+    enum class ProfileTracesFlushResult
+    {
+        NotRunning,
+        MarkerSent,
+        TimedOut,
+    };
+
+    /// Send an ordering marker from a regular thread, waiting for pipe space until the deadline.
+    /// Not signal-safe. A timeout stops trace delivery without failing the query.
+    static ProfileTracesFlushResult flushProfileTraces(UInt64 subscription_id, std::chrono::steady_clock::time_point deadline);
+
+    /// True when a `TraceCollector` is running, i.e. when `send` can deliver rather than discard.
     /// `shutdown` is checked first, so inside an `in_flight` section the fd is not read while the destructor resets it.
     static bool isCollecting() { return !shutdown.load() && pipe.fds_rw[1] >= 0; }
 
