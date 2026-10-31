@@ -1,8 +1,12 @@
+-- Random settings limits: old_parts_lifetime=(480, None)
+
 -- The system tables that enumerate tables narrow that enumeration with the query's condition on
 -- `database` and on the table name, so a condition that names the tables does not walk every
 -- table of every database. Every check below compares a condition the storage pushes down against
 -- the same condition applied afterwards inside an aggregate, which it cannot push down: the two
 -- must agree, whatever the storage decided to skip.
+-- The tables of parts list the outdated ones too, so those must outlive the test: a cleanup
+-- between the two scans of one check would make them disagree.
 
 DROP TABLE IF EXISTS t_a;
 DROP TABLE IF EXISTS t_b;

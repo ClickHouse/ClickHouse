@@ -10,6 +10,7 @@
 
 #include <chrono>
 #include <cstddef>
+#include <functional>
 
 namespace DB
 {
@@ -114,6 +115,7 @@ struct QueryPlanOptimizationSettings
     bool convert_any_join_to_semi_or_anti_join;
     bool try_use_top_k_optimization;
     bool top_k_through_join;
+    bool top_k_through_array_join;
     bool min_max_from_files;
     bool remove_unused_columns;
     bool enable_group_by_top_k_optimization;
@@ -184,7 +186,11 @@ struct QueryPlanOptimizationSettings
     bool distributed_plan_fallback_to_local_execution
         = true; /// Fall back to local execution instead of throwing when the plan cannot be distributed
     UInt64 distributed_plan_default_shuffle_join_bucket_count = 8;
-    UInt64 distributed_plan_default_reader_bucket_count = 8; /// Default bucket count for read steps in distributed query plan
+    UInt64 distributed_plan_default_reader_bucket_count = 0; /// Bucket count for read steps in distributed query plan, 0 - automatic
+    UInt64 distributed_plan_min_rows_per_reader = 1000000; /// Minimum rows per read task for the automatic bucket count
+    /// Workers the plan runs on, caps the automatic bucket count; 0 - unknown. Resolved only when a read is
+    /// distributed, after the decision to fall back to local execution.
+    std::function<size_t()> get_distributed_plan_worker_count;
     bool distributed_plan_optimize_exchanges = true; /// Removes unnecessary exchanges in distributed query plan
     String distributed_plan_force_exchange_kind; /// Force exchange kind for all exchanges in distributed query plan
     UInt64 distributed_plan_max_rows_to_broadcast = 20000; /// Max number of rows to broadcast in distributed query plan
@@ -246,6 +252,7 @@ struct QueryPlanOptimizationSettings
     bool use_skip_indexes_for_top_k;
     bool use_top_k_dynamic_filtering;
     bool use_top_k_dynamic_filtering_for_variable_length_types;
+    bool use_top_k_dynamic_filtering_for_single_string_sort_column;
     bool use_skip_indexes_on_data_read;
     size_t max_limit_for_top_k_optimization = 0;
 

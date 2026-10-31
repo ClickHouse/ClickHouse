@@ -252,8 +252,11 @@ void ParquetBlockOutputFormat::collectColumnSizesOnDisk(const Block & header)
     }
 
     column_sizes_on_disk.clear();
+    row_group_offsets.clear();
     for (const auto & row_group : file_state.completed_row_groups)
     {
+        if (row_group.row_group.__isset.file_offset && row_group.row_group.file_offset > 0)
+            row_group_offsets.push_back(static_cast<UInt64>(row_group.row_group.file_offset));
         const auto & column_chunks = row_group.row_group.columns;
         if (column_chunks.size() != num_leaves)
             throw Exception(
@@ -288,6 +291,7 @@ void ParquetBlockOutputFormat::resetFormatterImpl()
     row_groups.clear();
     file_state = {};
     column_sizes_on_disk.clear();
+    row_group_offsets.clear();
     staging_chunks.clear();
     staging_rows = 0;
     staging_bytes = 0;

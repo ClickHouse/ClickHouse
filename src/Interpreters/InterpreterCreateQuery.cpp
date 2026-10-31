@@ -2691,7 +2691,8 @@ void checkTemporaryTablesLimit(const ContextPtr & context, const String & table_
             tables.size(), max_temporary_tables);
 }
 
-void checkForUnsupportedColumns(IStorage & storage, LoadingStrictnessLevel mode, ContextPtr context, bool is_temporary)
+void checkForUnsupportedColumns(
+    IStorage & storage, const ASTCreateQuery & create, LoadingStrictnessLevel mode, ContextPtr context, bool is_temporary)
 {
     auto metadata_snapshot = storage.getInMemoryMetadataPtr(context, false);
 
@@ -2701,7 +2702,8 @@ void checkForUnsupportedColumns(IStorage & storage, LoadingStrictnessLevel mode,
     if (mode <= LoadingStrictnessLevel::CREATE && !is_temporary && !storage.isView() && !storage.isDictionary())
         checkAllTypesAreAllowedInTable(metadata_snapshot->getColumns().getAll());
 
-    if (mode <= LoadingStrictnessLevel::CREATE && hasColumnsWithDynamicStructure(metadata_snapshot->getColumns()) && !storage.supportsColumnsWithDynamicStructure())
+    if (!isReplayedTableDefinition(mode, create, context) && hasColumnsWithDynamicStructure(metadata_snapshot->getColumns())
+        && !storage.supportsColumnsWithDynamicStructure())
     {
         throw Exception(ErrorCodes::ILLEGAL_COLUMN,
             "Cannot create table with column of type Dynamic or JSON, "
@@ -2736,11 +2738,11 @@ void validateVirtualColumns(IStorage & storage, ContextPtr context)
     }
 }
 
-void validateStorage(IStorage & storage, LoadingStrictnessLevel mode, ContextPtr context, bool is_temporary)
+void validateStorage(IStorage & storage, const ASTCreateQuery & create, LoadingStrictnessLevel mode, ContextPtr context, bool is_temporary)
 try
 {
     validateVirtualColumns(storage, context);
-    checkForUnsupportedColumns(storage, mode, context, is_temporary);
+    checkForUnsupportedColumns(storage, create, mode, context, is_temporary);
 }
 catch (...)
 {
@@ -2784,7 +2786,7 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
                 properties.constraints,
                 mode,
                 is_restore_from_backup);
-            validateStorage(*res, mode, getContext(), /*is_temporary=*/true);
+            validateStorage(*res, create, mode, getContext(), /*is_temporary=*/true);
             return res;
         };
         auto temporary_table = TemporaryTableHolder(getContext(), creator, query_ptr);
@@ -3020,7 +3022,7 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
             res->addInferredEngineArgsToCreateQuery(*engine_args, getContext());
     }
 
-    validateStorage(*res, mode, getContext(), create.isTemporary());
+    validateStorage(*res, create, mode, getContext(), create.isTemporary());
 
     if (only_replicated_engine_allowed && res->hasUnreplicatedTableDataOnDisk())
         throwUnreplicatedTableDataNotAllowed();
@@ -3547,7 +3549,7 @@ BlockIO InterpreterCreateQuery::doCreateOrReplaceTemporaryTable(ASTCreateQuery &
             properties.constraints,
             mode,
             is_restore_from_backup);
-        validateStorage(*res, mode, getContext(), /*is_temporary=*/true);
+        validateStorage(*res, create, mode, getContext(), /*is_temporary=*/true);
         return res;
     };
 
