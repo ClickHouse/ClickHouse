@@ -459,7 +459,6 @@ std::vector<std::pair<size_t, Field>> ParquetV3BlockInputFormat::getTopKBestValu
             continue;
         if (row_group.top_k_best_value)
             res.emplace_back(row_group.row_group_idx, (*row_group.top_k_best_value)[0]);
-        /// A row group skipped by the threshold delivered no row: the bound of its statistics stands for its best value.
         else if (row_group.skipped_by_top_k.load() && row_group.top_k_sort_column_range)
         {
             const Range & range = *row_group.top_k_sort_column_range;
