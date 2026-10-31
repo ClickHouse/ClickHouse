@@ -9,7 +9,7 @@ s LIKE 'ab%z'	2	2	9
 s LIKE '%ab'	1	1	12
 has(['abc', 'xyz'], s)	2	2	5	Condition: and((substring(s, 1, 2) in 2-element set), (s in 2-element set))
 'ab' < s	9	9	11
-empty(s)	1	1	5
+empty(s)	1	1	1
 notEmpty(s)	11	11	12
 s = 'a'	1	1	2	Condition: (cityHash64(s) in [2603192927274642682, 2603192927274642682])
 s != 'a'	3	3	4
