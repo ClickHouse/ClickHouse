@@ -5,6 +5,7 @@
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypesDecimal.h>
 #include <Core/callOnTypeIndex.h>
+#include <Core/DecimalFunctions.h>
 #include <Columns/ColumnVector.h>
 #include <Common/intExp10.h>
 #include <Interpreters/castColumn.h>
@@ -86,6 +87,7 @@ struct IntegerRoundingComputation
     }
 
     /// Integer overflow is Ok.
+    template <bool saturate = true>
     static ALWAYS_INLINE_NO_SANITIZE_UNDEFINED T computeImpl(T x, T scale)
     {
         switch (rounding_mode)
@@ -99,40 +101,52 @@ struct IntegerRoundingComputation
                 /// `imul scale` that the textbook formulation would otherwise require.
                 return x - x % scale;
             }
+            /// Floor and signed Ceil start from the truncated value, which is never farther from zero than `x`.
             case RoundingMode::Floor:
             {
-                if (x < 0)
-                    x -= scale - 1;
-                return x / scale * scale;
+                T remainder = x % scale;
+                x -= remainder;
+                if (remainder < 0)
+                    x -= scale;
+                return x;
             }
             case RoundingMode::Ceil:
             {
-                if (x >= 0)
-                    x += scale - 1;
-                return x / scale * scale;
+                if constexpr (is_signed_v<T>)
+                {
+                    T remainder = x % scale;
+                    x -= remainder;
+                    if (remainder > 0)
+                        x += scale;
+                    return x;
+                }
+                else
+                {
+                    /// Saturated, `x` rounds to the largest multiple of `scale`, the result whenever it is representable.
+                    if constexpr (saturate)
+                        x = std::min(x, static_cast<T>(std::numeric_limits<T>::max() - (scale - 1)));
+                    return (x + (scale - 1)) / scale * scale;
+                }
             }
             case RoundingMode::Round:
             {
-                if (x < 0)
-                    x -= scale;
-                switch (tie_breaking_mode)
+                /// Round the magnitude, which has a spare bit for signed `T`; rounding half away from zero and half to even is symmetric.
+                using U = make_unsigned_t<T>;
+                const bool negative = x < 0;
+                const U magnitude = negative ? static_cast<U>(U(0) - static_cast<U>(x)) : static_cast<U>(x);
+                const U half = static_cast<U>(scale) >> 1;
+                U clamped = magnitude;
+                if constexpr (!is_signed_v<T> && saturate)
+                    clamped = std::min(magnitude, static_cast<U>(std::numeric_limits<U>::max() - half));
+                const auto shifted = clamped + half;
+                const auto quotient = shifted / static_cast<U>(scale);
+                auto rounded = quotient * static_cast<U>(scale);
+                if constexpr (tie_breaking_mode == TieBreakingMode::Bankers)
                 {
-                    case TieBreakingMode::Auto:
-                        x = (x + scale / 2) / scale * scale;
-                        break;
-                    case TieBreakingMode::Bankers:
-                    {
-                        T quotient = (x + scale / 2) / scale;
-                        if (quotient * scale == x + scale / 2)
-                            // round half to even
-                            x = ((quotient + (x < 0)) & ~1) * scale;
-                        else
-                            // round the others as usual
-                            x = quotient * scale;
-                        break;
-                    }
+                    if (unlikely(rounded == shifted))
+                        rounded = (quotient & ~U(1)) * static_cast<U>(scale);
                 }
-                return x;
+                return negative ? static_cast<T>(U(0) - static_cast<U>(rounded)) : static_cast<T>(rounded);
             }
         }
 
@@ -170,7 +184,22 @@ struct IntegerRoundingComputation
     static ALWAYS_INLINE void compute(const T * __restrict in, T scale, T * __restrict out)
     requires(!std::integral<T>)
     {
-        *out = compute(*in, scale);
+        if constexpr (scale_mode == ScaleMode::Negative && is_big_int_v<T> && !is_signed_v<T>
+                      && (rounding_mode == RoundingMode::Ceil || rounding_mode == RoundingMode::Round))
+        {
+            /// Only `*in > ~scale` can overflow, so a smaller top limb needs no saturation.
+            if (unlikely(in->items[T::_impl::big(0)] >= ~scale.items[T::_impl::big(0)]))
+                computeSaturated(in, scale, out);
+            else
+                *out = computeImpl<false>(*in, scale);
+        }
+        else
+            *out = compute(*in, scale);
+    }
+
+    static NO_INLINE void computeSaturated(const T * in, T scale, T * out)
+    {
+        *out = computeImpl(*in, scale);
     }
 };
 
@@ -365,15 +394,26 @@ private:
 public:
     static NO_INLINE void apply(const Container & in, UInt32 in_scale, Container & out, Scale scale_arg)
     {
-        scale_arg = static_cast<Scale>(in_scale - scale_arg);
-        if (scale_arg > 0)
+        const Int32 digits = static_cast<Int32>(in_scale) - scale_arg;
+        if (digits <= 0)
         {
-            auto scale = intExp10OfSize<NativeType>(scale_arg);
+            memcpy(out.data(), in.data(), in.size() * sizeof(T));
+        }
+        else if (digits > static_cast<Int32>(DecimalUtils::max_precision<T>))
+        {
+            /// No non-zero multiple of `10^digits` is representable.
+            memset(out.data(), 0, in.size() * sizeof(T));
+        }
+        else
+        {
+            auto scale = intExp10OfSize<NativeType>(digits);
 
             const NativeType * __restrict p_in = reinterpret_cast<const NativeType *>(in.data());
             const NativeType * end_in = reinterpret_cast<const NativeType *>(in.data()) + in.size();
             NativeType * __restrict p_out = reinterpret_cast<NativeType *>(out.data());
 
+            /// The division by a runtime scale is done lane by lane anyway.
+            _Pragma("clang loop vectorize(disable)")
             while (p_in < end_in)
             {
                 Op::compute(p_in, scale, p_out);
@@ -381,23 +421,23 @@ public:
                 ++p_out;
             }
         }
-        else
-        {
-            memcpy(out.data(), in.data(), in.size() * sizeof(T));
-        }
     }
 
     static void applyOne(NativeType in, UInt32 in_scale, NativeType& out, Scale scale_arg)
     {
-        scale_arg = static_cast<Scale>(in_scale - scale_arg);
-        if (scale_arg > 0)
+        const Int32 digits = static_cast<Int32>(in_scale) - scale_arg;
+        if (digits <= 0)
         {
-            auto scale = intExp10OfSize<NativeType>(scale_arg);
-            Op::compute(&in, scale, &out);
+            memcpy(&out, &in, sizeof(T));
+        }
+        else if (digits > static_cast<Int32>(DecimalUtils::max_precision<T>))
+        {
+            out = 0;
         }
         else
         {
-            memcpy(&out, &in, sizeof(T));
+            auto scale = intExp10OfSize<NativeType>(digits);
+            Op::compute(&in, scale, &out);
         }
     }
 };
