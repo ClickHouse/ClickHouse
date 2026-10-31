@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest
+# Tags: no-fasttest, no-replicated-database
 # - no-fasttest: requires IcebergLocal (USE_AVRO build option)
+# - no-replicated-database: the replica of the other shard applies each `ALTER` again to the same table directory
 
 # Iceberg format version 1 requires the table metadata fields `schema` (the current schema) and
 # `partition-spec` (the fields of the default partition spec). Every metadata file of a v1 table must
