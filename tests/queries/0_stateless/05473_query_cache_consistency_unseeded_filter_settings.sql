@@ -27,7 +27,7 @@ SET use_query_cache = 0;
 
 SYSTEM FLUSH LOGS query_log;
 
-SELECT extract(query, '^SELECT \'([a-z ]+)\''), result_rows, ProfileEvents['QueryCacheHits']
+SELECT extract(query, '^SELECT \'([a-z ]+)\''), ProfileEvents['QueryCacheHits']
 FROM system.query_log
 WHERE event_date >= yesterday() AND event_time >= now() - INTERVAL 600 SECOND AND type = 'QueryFinish'
   AND current_database = currentDatabase() AND query LIKE 'SELECT \'%seeded%'

@@ -15522,7 +15522,7 @@ static bool mayReadThroughRemoteParallelReplicas(const ContextPtr & context)
     return false;
 }
 
-std::optional<UInt128> MergeTreeData::getModificationHash(const StorageSnapshotPtr & storage_snapshot, ContextPtr context) const
+std::optional<UInt128> MergeTreeData::getModificationHash(const StorageSnapshotPtr & storage_snapshot, ContextPtr query_context) const
 {
     /// Without a table UUID (e.g. a table in an `Ordinary` database) we cannot distinguish incarnations of
     /// a same-named table: a DROP + CREATE can keep identical parts and checksums while changing
@@ -15540,7 +15540,7 @@ std::optional<UInt128> MergeTreeData::getModificationHash(const StorageSnapshotP
     if (storage_snapshot->metadata->hasUniqueKey())
         return {};
 
-    if (mayReadThroughRemoteParallelReplicas(context))
+    if (mayReadThroughRemoteParallelReplicas(query_context))
         return {};
 
     SipHash hash;
