@@ -84,10 +84,12 @@ trap cleanup EXIT
 # reference set comes out empty and nothing is localized (this is how the Rust
 # cbrt shadowed the llvm-libc one in release builds, which set ENABLE_THINLTO).
 defined_globals() {
+    # Ignore synthetic/compiler helper symbols that may be reported as globals but must not be localized.
     { "$NM" "$1" 2>/dev/null; "$NM" -D "$1" 2>/dev/null; } \
         | grep -E '^([0-9a-f]+|-+) [TDBCWVi] ' \
         | awk '{print $3}' \
-        | sed 's/@.*//'
+        | sed 's/@.*//' \
+        | grep -v -E '^(DW\.ref\.|__clang_call_terminate$)'
 }
 
 # Defined globals from our own reference libraries: the set we are allowed to

@@ -48,6 +48,11 @@ struct UsefulSkipIndexes
     std::vector<MergeTreeIndexWithCondition> useful_indices;
     MergeTreeIndexPtr skip_index_for_top_k_filtering{nullptr};
     TopKThresholdTrackerPtr threshold_tracker{nullptr};
+
+    /// Per-part application order of the useful skip indexes, cheapest and coarsest first.
+    /// Parallel to `useful_indices` in that each entry describes one part; an entry holds the
+    /// index positions into `useful_indices` in the order they should be applied for that part.
+    std::vector<std::vector<size_t>> per_part_index_orders;
 };
 
 /// The order in which the useful skip indexes are applied to a single part: cheapest and coarsest first.
