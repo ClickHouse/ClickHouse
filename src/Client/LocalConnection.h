@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Client/Connection.h>
+#include <atomic>
 #include <Core/Field.h>
 #include <Core/SettingsEnums.h>
 #include <Interpreters/Context_fwd.h>
@@ -76,7 +77,8 @@ struct LocalQueryState
     std::optional<ProfileInfo> profile_info;
 
     /// Is request cancelled
-    bool is_cancelled = false;
+    /// Can be set from pipeline threads by the interactive cancel callback.
+    std::atomic_bool is_cancelled = false;
     bool is_finished = false;
 
     bool sent_totals = false;
