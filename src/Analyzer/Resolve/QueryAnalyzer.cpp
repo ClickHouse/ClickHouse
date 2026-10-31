@@ -5137,6 +5137,12 @@ void QueryAnalyzer::initializeQueryJoinTreeNode(QueryTreeNodePtr & join_tree_nod
 
                 if (!resolved_identifier)
                 {
+                    /// The database may know why the table is missing, for example a `URL` database knows
+                    /// that the file named by `FROM 'data.json'` does not exist. The file is not checked here:
+                    /// the database probes the filesystem only after its own access checks (for `URL`, the read
+                    /// source grant), so asking it does not disclose to a user without access whether a file exists.
+                    IdentifierResolver::throwIfDatabaseCanExplainMissingTable(from_table_identifier.getIdentifier(), scope.context);
+
                     /// Suggest a similar table name, possibly from another database (e.g.
                     /// `system.functions` for a bare `functions`), matching the old analyzer's hint.
                     auto [hint_database_name, hint_table_name]

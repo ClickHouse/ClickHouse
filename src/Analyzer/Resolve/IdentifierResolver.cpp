@@ -476,6 +476,24 @@ std::pair<String, String> IdentifierResolver::tryGetTableNameHint(const Identifi
     return hints.getHintForTable(table_name);
 }
 
+void IdentifierResolver::throwIfDatabaseCanExplainMissingTable(const Identifier & table_identifier, const ContextPtr & context)
+{
+    size_t parts_size = table_identifier.getPartsSize();
+    if (parts_size < 1 || parts_size > 2)
+        return;
+
+    String database_name = table_identifier.isCompound() ? table_identifier[0] : context->getCurrentDatabase();
+    const String & table_name = table_identifier.isCompound() ? table_identifier[1] : table_identifier[0];
+
+    auto database = DatabaseCatalog::instance().tryGetDatabase(database_name);
+    if (!database || !database->canExplainMissingTable(table_name, context))
+        return;
+
+    /// The database throws the exception that explains why the table is missing. If the table
+    /// appeared since it was looked up, there is nothing to explain, and the caller reports it as unknown.
+    database->getTable(table_name, context);
+}
+
 /// Resolve identifier from compound expression
 /// If identifier cannot be resolved throw exception or return nullptr if can_be_not_found is true
 QueryTreeNodePtr IdentifierResolver::tryResolveIdentifierFromCompoundExpression(const Identifier & expression_identifier,
