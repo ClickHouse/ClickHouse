@@ -559,6 +559,17 @@ you can reduce the amount of RAM required for a merge but slow down a merge.
 How many bytes in blocks should be formed for merge operations. By default
 has the same value as `index_granularity_bytes`.
 )", 0) \
+    DECLARE(UInt64, merge_max_low_cardinality_dictionary_size, 65536, R"(
+The dictionary size a merge may use for a `LowCardinality` column of a `Wide` part instead of
+`low_cardinality_max_dictionary_size`. It is used when the `uniq` statistics that the merge builds for the
+column (`materialize_statistics_on_merge`) estimate more distinct values in the merged part than
+`low_cardinality_max_dictionary_size` and at most two thirds of this size, and only while the values change
+from granule to granule. Then the part has one dictionary for the column instead of a new one every few
+granules, which makes reading and processing the column faster.
+
+`0`, or a value not above `low_cardinality_max_dictionary_size`, disables it.
+)", 0, \
+        {"26.11", 0, 65536, "New setting. Lets a merge write one dictionary for a `LowCardinality` column with a few times more distinct values than `low_cardinality_max_dictionary_size`, so that such columns are read and processed faster. The previous value disables it, preserving pre-26.11 behavior."}) \
     DECLARE(UInt64, max_bytes_to_merge_at_max_space_in_pool, 150ULL * 1024 * 1024 * 1024, R"(
 The maximum total parts size (in bytes) to be merged into one part, if there
 are enough resources available. Corresponds roughly to the maximum possible

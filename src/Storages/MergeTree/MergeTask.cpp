@@ -122,6 +122,8 @@ namespace FailPoints
 namespace Setting
 {
     extern const SettingsBool compile_sort_description;
+    extern const SettingsUInt64 low_cardinality_max_dictionary_size;
+    extern const SettingsBool low_cardinality_use_single_dictionary_for_part;
     extern const SettingsUInt64 max_insert_delayed_streams_for_parallel_write;
     extern const SettingsUInt64 min_count_to_compile_sort_description;
     extern const SettingsUInt64 min_insert_block_size_bytes;
@@ -141,6 +143,7 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsBool materialize_projections_on_merge;
     extern const MergeTreeSettingsUInt64 merge_max_block_size_bytes;
     extern const MergeTreeSettingsNonZeroUInt64 merge_max_block_size;
+    extern const MergeTreeSettingsUInt64 merge_max_low_cardinality_dictionary_size;
     extern const MergeTreeSettingsBool merge_use_batch_sorting_queue;
     extern const MergeTreeSettingsUInt64 min_merge_bytes_to_use_direct_io;
     extern const MergeTreeSettingsBool compute_exact_num_defaults_for_sparse_columns;
@@ -1063,6 +1066,31 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
         }
     }
 
+    const auto & global_settings = global_ctx->data->getContext()->getSettingsRef();
+    const size_t configured_dictionary_size = global_settings[Setting::low_cardinality_max_dictionary_size];
+    const size_t raised_dictionary_size = (*merge_tree_settings)[MergeTreeSetting::merge_max_low_cardinality_dictionary_size];
+    /// The merged statistics describe the merged part only if the merge keeps every row and every source part had them.
+    if (!global_ctx->merge_may_reduce_rows && configured_dictionary_size != 0 && raised_dictionary_size > configured_dictionary_size
+        && !global_settings[Setting::low_cardinality_use_single_dictionary_for_part])
+    {
+        const auto & statistics = global_ctx->gathered_data.statistics;
+        for (const auto & column : global_ctx->storage_columns)
+        {
+            if (!column.type->lowCardinality())
+                continue;
+
+            auto it = statistics.find(column.name);
+            if (it == statistics.end() || !it->second->hasCardinality()
+                || std::ranges::any_of(global_ctx->statistics_to_build_by_part,
+                    [&](const auto & part_statistics) { return part_statistics.second.contains(column.name); }))
+                continue;
+
+            const UInt64 estimate = it->second->estimateCardinality();
+            if (estimate > configured_dictionary_size && estimate + estimate / 2 <= raised_dictionary_size)
+                global_ctx->low_cardinality_raised_max_dictionary_size_by_column.emplace(column.name, raised_dictionary_size);
+        }
+    }
+
     MergeTreeSerializationInfoVersion output_serialization_version
         = (*merge_tree_settings)[MergeTreeSetting::serialization_info_version];
     if (std::ranges::any_of(global_ctx->future_part->parts, [](const auto & part)
@@ -1349,7 +1377,8 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
         global_ctx->context->getWriteSettings(),
         &global_ctx->written_offset_substreams,
         /*try_adaptive_codec=*/ !global_ctx->is_explicit_recompression,
-        global_ctx->stream_base_manifest);
+        global_ctx->stream_base_manifest,
+        global_ctx->low_cardinality_raised_max_dictionary_size_by_column);
 
     global_ctx->rows_written = 0;
     ctx->initial_reservation = global_ctx->space_reservation ? global_ctx->space_reservation->getSize() : 0;
@@ -2352,7 +2381,8 @@ void MergeTask::VerticalMergeStage::prepareVerticalMergeForOneColumn() const
         &global_ctx->written_offset_substreams,
         /*try_adaptive_codec=*/ !global_ctx->is_explicit_recompression,
         global_ctx->to->getSkipIndicesPackedWriter(),
-        global_ctx->stream_base_manifest);
+        global_ctx->stream_base_manifest,
+        global_ctx->low_cardinality_raised_max_dictionary_size_by_column);
 
     ctx->column_elems_written = 0;
 }

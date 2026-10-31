@@ -234,8 +234,43 @@ struct SerializeStateLowCardinality : public ISerialization::SerializeBinaryBulk
     KeysSerializationVersion key_version;
     MutableColumnUniquePtr shared_dictionary;
 
+    /// Phases of `low_cardinality_raised_max_dictionary_size`: Probing for the first granules, Raised while each granule
+    /// uses a large share of the dictionary, Configured (`low_cardinality_max_dictionary_size`) for the rest of the part.
+    enum class RaisedDictionarySize : uint8_t
+    {
+        None,
+        Probing,
+        Raised,
+        Configured,
+    };
+    RaisedDictionarySize raised_dictionary_size = RaisedDictionarySize::None;
+    size_t complete_granules = 0; /// Probing: granules ended so far.
+    bool dictionary_written = false; /// Probing: a dictionary reached the raised size.
+    size_t sparse_granules = 0; /// Raised: granules in a row that used little of the dictionary.
+    PaddedPODArray<UInt8> granule_used_keys; /// Raised: dictionary positions used by the current granule.
+    size_t granule_used_keys_count = 0;
+
     explicit SerializeStateLowCardinality(UInt64 key_version_) : key_version(key_version_) {}
 };
+
+namespace
+{
+    /// Granules after which a column whose dictionary stays below the configured size continues with that size.
+    constexpr size_t raised_dictionary_probe_granules = 8;
+    /// Sparse granules in a row after which the raised dictionary is written and the configured size is used.
+    constexpr size_t raised_dictionary_sparse_granules = 8;
+    /// A granule using less than this fraction (1/N) of a raised dictionary is sparse.
+    constexpr size_t raised_dictionary_sparse_use_ratio = 16;
+
+    void writeSharedDictionary(SerializeStateLowCardinality & state, const ISerialization & dict_inner_serialization, WriteBuffer & keys_stream)
+    {
+        const auto & nested_column = state.shared_dictionary->getNestedNotNullableColumn();
+        UInt64 num_keys = nested_column->size();
+        writeBinaryLittleEndian(num_keys, keys_stream);
+        dict_inner_serialization.serializeBinaryBulk(*nested_column, keys_stream, 0, num_keys);
+        state.shared_dictionary = nullptr;
+    }
+}
 
 struct DeserializeStateLowCardinality : public ISerialization::DeserializeBinaryBulkState
 {
@@ -297,8 +332,6 @@ void SerializationLowCardinality::serializeBinaryBulkStateSuffix(
 
     if (low_cardinality_state->shared_dictionary && settings.low_cardinality_max_dictionary_size)
     {
-        auto nested_column = low_cardinality_state->shared_dictionary->getNestedNotNullableColumn();
-
         settings.path.push_back(Substream::DictionaryKeys);
         auto * stream = settings.getter(settings.path);
         settings.path.pop_back();
@@ -306,10 +339,7 @@ void SerializationLowCardinality::serializeBinaryBulkStateSuffix(
         if (!stream)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Got empty stream in SerializationLowCardinality::serializeBinaryBulkStateSuffix");
 
-        UInt64 num_keys = nested_column->size();
-        writeBinaryLittleEndian(num_keys, *stream);
-        dict_inner_serialization->serializeBinaryBulk(*nested_column, *stream, 0, num_keys);
-        low_cardinality_state->shared_dictionary = nullptr;
+        writeSharedDictionary(*low_cardinality_state, *dict_inner_serialization, *stream);
     }
 }
 
@@ -532,6 +562,81 @@ namespace
             return mapIndexWithAdditionalKeys(*data_uint64, dict_size);
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Indexes column for mapIndexWithAdditionalKeys must be UInt, got {}", column.getName());
     }
+
+    template <typename T>
+    void markGranuleUsedKeys(SerializeStateLowCardinality & state, const PaddedPODArray<T> & positions, size_t dict_size)
+    {
+        for (T position : positions)
+        {
+            if (position < dict_size)
+            {
+                state.granule_used_keys_count += !state.granule_used_keys[position];
+                state.granule_used_keys[position] = 1;
+            }
+        }
+    }
+
+    /// Positions below `dict_size` are dictionary positions, the others are additional keys.
+    void markGranuleUsedKeys(SerializeStateLowCardinality & state, IColumn & positions, size_t dict_size)
+    {
+        if (state.granule_used_keys.size() < dict_size)
+            state.granule_used_keys.resize_fill(dict_size, 0);
+
+        if (auto * data_uint8 = getIndexesData<UInt8>(positions))
+            markGranuleUsedKeys(state, *data_uint8, dict_size);
+        else if (auto * data_uint16 = getIndexesData<UInt16>(positions))
+            markGranuleUsedKeys(state, *data_uint16, dict_size);
+        else if (auto * data_uint32 = getIndexesData<UInt32>(positions))
+            markGranuleUsedKeys(state, *data_uint32, dict_size);
+        else if (auto * data_uint64 = getIndexesData<UInt64>(positions))
+            markGranuleUsedKeys(state, *data_uint64, dict_size);
+        else
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Indexes column for markGranuleUsedKeys must be UInt, got {}", positions.getName());
+    }
+
+    void clearGranuleUsedKeys(SerializeStateLowCardinality & state)
+    {
+        memset(state.granule_used_keys.data(), 0, state.granule_used_keys.size());
+        state.granule_used_keys_count = 0;
+    }
+
+    void finishGranuleWithRaisedDictionarySize(
+        SerializeStateLowCardinality & state,
+        const ISerialization::SerializeBinaryBulkSettings & settings,
+        const ISerialization & dict_inner_serialization,
+        WriteBuffer & keys_stream)
+    {
+        using RaisedDictionarySize = SerializeStateLowCardinality::RaisedDictionarySize;
+        if (state.raised_dictionary_size != RaisedDictionarySize::Probing && state.raised_dictionary_size != RaisedDictionarySize::Raised)
+            return;
+
+        const size_t dictionary_size = state.shared_dictionary ? state.shared_dictionary->size() : 0;
+        if (state.raised_dictionary_size == RaisedDictionarySize::Probing)
+        {
+            if (state.dictionary_written || dictionary_size >= settings.low_cardinality_max_dictionary_size)
+                state.raised_dictionary_size = RaisedDictionarySize::Raised;
+            else if (++state.complete_granules == raised_dictionary_probe_granules)
+            {
+                chassert(dictionary_size < settings.low_cardinality_max_dictionary_size);
+                state.raised_dictionary_size = RaisedDictionarySize::Configured;
+            }
+        }
+        else if (state.raised_dictionary_size == RaisedDictionarySize::Raised)
+        {
+            const bool sparse = dictionary_size > settings.low_cardinality_max_dictionary_size
+                && state.granule_used_keys_count * raised_dictionary_sparse_use_ratio < dictionary_size;
+            state.sparse_granules = sparse ? state.sparse_granules + 1 : 0;
+            clearGranuleUsedKeys(state);
+
+            if (state.sparse_granules == raised_dictionary_sparse_granules)
+            {
+                writeSharedDictionary(state, dict_inner_serialization, keys_stream);
+                state.raised_dictionary_size = RaisedDictionarySize::Configured;
+                state.granule_used_keys.clear();
+                state.granule_used_keys.shrink_to_fit();
+            }
+        }
+    }
 }
 
 void SerializationLowCardinality::serializeBinaryBulkWithMultipleStreams(
@@ -562,12 +667,28 @@ void SerializationLowCardinality::serializeBinaryBulkWithMultipleStreams(
     auto & global_dictionary = low_cardinality_state->shared_dictionary;
     KeysSerializationVersion::checkVersion(low_cardinality_state->key_version.value);
 
+    using RaisedDictionarySize = SerializeStateLowCardinality::RaisedDictionarySize;
+    auto & raised_dictionary_size = low_cardinality_state->raised_dictionary_size;
+    if (raised_dictionary_size == RaisedDictionarySize::None && settings.low_cardinality_max_dictionary_size != 0
+        && settings.low_cardinality_raised_max_dictionary_size > settings.low_cardinality_max_dictionary_size
+        && !settings.low_cardinality_use_single_dictionary_for_part)
+        raised_dictionary_size = RaisedDictionarySize::Probing;
+
+    const size_t max_dictionary_size
+        = (raised_dictionary_size == RaisedDictionarySize::Probing || raised_dictionary_size == RaisedDictionarySize::Raised)
+        ? settings.low_cardinality_raised_max_dictionary_size
+        : settings.low_cardinality_max_dictionary_size;
+
     size_t max_limit = column.size() - offset;
     limit = limit ? std::min(limit, max_limit) : max_limit;
 
     /// Do not write anything for empty column. (May happen while writing empty arrays.)
     if (limit == 0)
+    {
+        if (settings.granule_is_complete)
+            finishGranuleWithRaisedDictionarySize(*low_cardinality_state, settings, *dict_inner_serialization, *keys_stream);
         return;
+    }
 
     bool need_update_dictionary = global_dictionary == nullptr;
     if (need_update_dictionary)
@@ -577,43 +698,44 @@ void SerializationLowCardinality::serializeBinaryBulkWithMultipleStreams(
     ColumnPtr positions = sub_column->getIndexesPtr();
     ColumnPtr keys = sub_column->getDictionary().getNestedColumn();
 
-    if (settings.low_cardinality_max_dictionary_size)
+    if (max_dictionary_size)
     {
         /// Insert used_keys into global dictionary and update sub_index.
-        auto indexes_with_overflow = global_dictionary->uniqueInsertRangeWithOverflow(*keys, 0, keys->size(),
-                                                                                      settings.low_cardinality_max_dictionary_size);
+        auto indexes_with_overflow = global_dictionary->uniqueInsertRangeWithOverflow(*keys, 0, keys->size(), max_dictionary_size);
 
-        if (global_dictionary->size() > settings.low_cardinality_max_dictionary_size)
+        if (global_dictionary->size() > max_dictionary_size)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Got dictionary with size {} but max dictionary size is {}",
-                            global_dictionary->size(), settings.low_cardinality_max_dictionary_size);
+                            global_dictionary->size(), max_dictionary_size);
+
+        if (raised_dictionary_size == RaisedDictionarySize::Raised)
+            markGranuleUsedKeys(*low_cardinality_state, *indexes_with_overflow.indexes, global_dictionary->size());
 
         positions = indexes_with_overflow.indexes->index(*positions, 0);
         keys = std::move(indexes_with_overflow.overflowed_keys);
 
-        if (global_dictionary->size() < settings.low_cardinality_max_dictionary_size && !keys->empty())
+        if (global_dictionary->size() < max_dictionary_size && !keys->empty())
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Has additional keys, but dict size is {} which is less "
-                            "then max dictionary size ({})", global_dictionary->size(),
-                            settings.low_cardinality_max_dictionary_size);
+                            "then max dictionary size ({})", global_dictionary->size(), max_dictionary_size);
     }
 
     if (const auto * nullable_keys = checkAndGetColumn<ColumnNullable>(&*keys))
         keys = nullable_keys->getNestedColumnPtr();
 
     bool need_additional_keys = !keys->empty();
-    bool need_dictionary = settings.low_cardinality_max_dictionary_size != 0;
+    bool need_dictionary = max_dictionary_size != 0;
     bool need_write_dictionary = !settings.low_cardinality_use_single_dictionary_for_part
-                                 && global_dictionary->size() >= settings.low_cardinality_max_dictionary_size;
+                                 && global_dictionary->size() >= max_dictionary_size;
 
     IndexesSerializationType index_version(*positions, need_additional_keys, need_dictionary, need_update_dictionary);
     index_version.serialize(*indexes_stream);
 
     if (need_write_dictionary)
     {
-        const auto & nested_column = global_dictionary->getNestedNotNullableColumn();
-        UInt64 num_keys = nested_column->size();
-        writeBinaryLittleEndian(num_keys, *keys_stream);
-        dict_inner_serialization->serializeBinaryBulk(*nested_column, *keys_stream, 0, num_keys);
-        low_cardinality_state->shared_dictionary = nullptr;
+        writeSharedDictionary(*low_cardinality_state, *dict_inner_serialization, *keys_stream);
+        if (raised_dictionary_size == RaisedDictionarySize::Probing)
+            low_cardinality_state->dictionary_written = true;
+        else if (raised_dictionary_size == RaisedDictionarySize::Raised)
+            clearGranuleUsedKeys(*low_cardinality_state);
     }
 
     if (need_additional_keys)
@@ -627,6 +749,9 @@ void SerializationLowCardinality::serializeBinaryBulkWithMultipleStreams(
     writeBinaryLittleEndian(num_rows, *indexes_stream);
     auto index_serialization = index_version.getDataType()->getDefaultSerialization();
     index_serialization->serializeBinaryBulk(*positions, *indexes_stream, 0, num_rows);
+
+    if (settings.granule_is_complete)
+        finishGranuleWithRaisedDictionarySize(*low_cardinality_state, settings, *dict_inner_serialization, *keys_stream);
 }
 
 void SerializationLowCardinality::deserializeBinaryBulkWithMultipleStreams(
