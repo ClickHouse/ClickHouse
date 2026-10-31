@@ -1,0 +1,18 @@
+create-commit fsync_part_directory = 1: DirectorySync>=1, mutation registered
+1
+1
+create-commit fsync_part_directory = 0: DirectorySync=0 (setting honored), mutation registered
+0
+1
+kill fsync_part_directory = 1: DirectorySync>=1, mutation removed
+1
+0
+kill fsync_part_directory = 0: DirectorySync=0 (setting honored), mutation removed
+0
+0
+rollback fsync_part_directory = 1: DirectorySync>=2 (rename + unlink), no mutation left
+1
+0
+rollback fsync_part_directory = 0: DirectorySync=0 (setting honored), no mutation left
+0
+0
