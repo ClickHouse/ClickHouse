@@ -42,12 +42,14 @@ REMOTE_DATABASE_DISK=0
 LLVM_COVERAGE=0
 BUILD_TYPE_CONFIGS_ONLY=0
 DEFAULT_COMPRESSION_CODEC=""
+USE_PARALLEL_REPLICAS_PLAN_BASED=0
 
 while [[ "$#" -gt 0 ]]; do
     case $1 in
         --fast-test) FAST_TEST=1 && EXPORT_S3_STORAGE_POLICIES=0 ;;
         --s3-storage) EXPORT_S3_STORAGE_POLICIES=1 && USE_S3_STORAGE_FOR_MERGE_TREE=1 && RANDOMIZE_OBJECT_KEY_TYPE=1 ;;
         --parallel-rep) USE_PARALLEL_REPLICAS=1 ;;
+        --parallel-rep-plan-based) USE_PARALLEL_REPLICAS_PLAN_BASED=1 ;;
         --db-replicated) USE_DATABASE_REPLICATED=1 ;;
         --distributed-plan) USE_DISTRIBUTED_PLAN=1 ;;
         --distributed-cache) USE_DISTRIBUTED_CACHE=1 ;;
@@ -653,6 +655,10 @@ ln -sf $SRC_PATH/config.d/storage_conf_local.xml $DEST_SERVER_PATH/config.d/
 if [[ "$USE_PARALLEL_REPLICAS" == "1" ]]; then
     ln -sf $SRC_PATH/users.d/enable_parallel_replicas.xml $DEST_SERVER_PATH/users.d/
     ln -sf $SRC_PATH/config.d/enable_parallel_replicas.xml $DEST_SERVER_PATH/config.d/
+fi
+
+if [[ "$USE_PARALLEL_REPLICAS_PLAN_BASED" == "1" ]]; then
+    ln -sf $SRC_PATH/users.d/enable_parallel_replicas_plan_based.xml $DEST_SERVER_PATH/users.d/
 fi
 
 if [[ "$USE_ASYNC_INSERT" == "1" ]]; then

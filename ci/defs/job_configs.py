@@ -1658,6 +1658,20 @@ class JobConfigs:
             requires=[ArtifactNames.CH_ARM_BINARY],
         ),
     )
+    # The `ParallelReplicas` configuration with `parallel_replicas_plan_based` enabled. Not a coverage
+    # replacement: no coverage job runs it, so it runs regardless of the coverage labels.
+    functional_tests_arm_binary_plan_based_parallel_replicas_jobs = common_ft_job_config.parametrize(
+        Job.ParamSet(
+            parameter="arm_binary, ParallelReplicas, plan-based, s3 storage, parallel",
+            runs_on=RunnerLabels.ARM_MEDIUM,
+            requires=[ArtifactNames.CH_ARM_BINARY],
+        ),
+        Job.ParamSet(
+            parameter="arm_binary, ParallelReplicas, plan-based, s3 storage, sequential",
+            runs_on=RunnerLabels.ARM_SMALL,
+            requires=[ArtifactNames.CH_ARM_BINARY],
+        ),
+    )
     # The same for the full integration run: all test modules, including the ones the coverage
     # run leaves to `excluded_from_llvm`.
     integration_test_arm_binary_coverage_replacement_pr_jobs = (

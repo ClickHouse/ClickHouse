@@ -1,0 +1,7 @@
+<clickhouse>
+    <profiles>
+        <default>
+            <parallel_replicas_plan_based>1</parallel_replicas_plan_based>
+        </default>
+    </profiles>
+</clickhouse>
