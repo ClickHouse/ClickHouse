@@ -692,16 +692,7 @@ JoinStepLogical::removeUnusedColumns(const std::vector<size_t> & unneeded_output
         for (const auto & column : to_consume[side])
             expression_actions.addInput(column.name, column.type, side);
 
-    /// Update source mapping since nodes may have been removed.
-    {
-        JoinExpressionActions::NodeToSourceMapping node_sources;
-        for (const auto & node : actions_dag.getNodes())
-        {
-            const auto action_ref = JoinActionRef(&node, expression_actions);
-            node_sources[&node] = action_ref.getSourceRelations();
-        }
-        expression_actions.resetNodeSources(std::move(node_sources));
-    }
+    resetNodeSourcesFromDAG();
 
     RemoveUnusedColumnsResult result;
     result.dropped_output_positions = dropped_positions;
@@ -713,6 +704,18 @@ JoinStepLogical::removeUnusedColumns(const std::vector<size_t> & unneeded_output
         updateInputHeaders({inputs[0].header, inputs[1].header});
 
     return result;
+}
+
+void JoinStepLogical::resetNodeSourcesFromDAG()
+{
+    /// Update source mapping since nodes may have been removed.
+    JoinExpressionActions::NodeToSourceMapping node_sources;
+    for (const auto & node : expression_actions.getActionsDAG()->getNodes())
+    {
+        const auto action_ref = JoinActionRef(&node, expression_actions);
+        node_sources[&node] = action_ref.getSourceRelations();
+    }
+    expression_actions.resetNodeSources(std::move(node_sources));
 }
 
 void JoinStepLogical::addPassThroughColumn(const ColumnWithTypeAndName & column, JoinTableSide side)
@@ -2801,7 +2804,8 @@ static void remapNodes(ActionsDAG::NodeRawConstPtrs & keys, const ActionsDAG::No
     }
 }
 
-static ActionsDAG cloneSubdagWithInputs(const SharedHeader & stream_header, ActionsDAG::NodeRawConstPtrs & keys)
+static ActionsDAG cloneSubdagWithInputs(
+    const SharedHeader & stream_header, ActionsDAG::NodeRawConstPtrs & keys, const std::vector<bool> & is_forwarded_column)
 {
     ActionsDAG dag(stream_header->getColumnsWithTypeAndName(), /* duplicate_const_columns */ false);
 
@@ -2814,8 +2818,14 @@ static ActionsDAG cloneSubdagWithInputs(const SharedHeader & stream_header, Acti
     dag.mergeInplace(std::move(second_dag), node_map, true);
     remapNodes(keys, node_map);
 
-    dag.getOutputs() = dag.getInputs();
-    dag.getOutputs().append_range(keys | std::views::filter([&](const auto * node) { return node->type != ActionsDAG::ActionType::INPUT; }));
+    /// The first inputs are the header columns in order, the merge only appends inputs after them.
+    const auto & inputs = dag.getInputs();
+    auto & outputs = dag.getOutputs();
+    outputs.clear();
+    for (size_t position = 0; position < inputs.size(); ++position)
+        if (position >= is_forwarded_column.size() || is_forwarded_column[position])
+            outputs.push_back(inputs[position]);
+    outputs.append_range(keys | std::views::filter([&](const auto * node) { return node->type != ActionsDAG::ActionType::INPUT; }));
 
     return dag;
 }
@@ -2824,9 +2834,12 @@ std::optional<std::pair<JoinStepLogical::ActionsDAGWithKeys, JoinStepLogical::Ac
 JoinStepLogical::preCalculateKeys(const SharedHeader & left_header, const SharedHeader & right_header)
 {
     auto & join_expression = join_operator.expression;
+    auto & actions_dag = *expression_actions.getActionsDAG();
+    const auto original_inputs = actions_dag.getInputs();
 
     ActionsDAG::NodeRawConstPtrs left_keys;
     ActionsDAG::NodeRawConstPtrs right_keys;
+    ActionsDAG::NodeRawConstPtrs replaced_keys;
 
     for (auto & expr : join_expression)
     {
@@ -2852,15 +2865,19 @@ JoinStepLogical::preCalculateKeys(const SharedHeader & left_header, const Shared
         }
 
         /// Replace keys expression with calculated inputs
-        /// We also could possibly remove some nodes from dag,
-        /// but they will simply remain unused when converting to a physical step
         if (left_node->type != ActionsDAG::ActionType::INPUT ||
             right_node->type != ActionsDAG::ActionType::INPUT)
         {
             if (left_node->type != ActionsDAG::ActionType::INPUT)
+            {
+                replaced_keys.push_back(left_node);
                 lhs = expression_actions.addInput(left_node->result_name, left_node->result_type, lhs.fromLeft() ? 0 : 1);
+            }
             if (right_node->type != ActionsDAG::ActionType::INPUT)
+            {
+                replaced_keys.push_back(right_node);
                 rhs = expression_actions.addInput(right_node->result_name, right_node->result_type, rhs.fromRight() ? 1 : 0);
+            }
             expr = JoinActionRef::transform({lhs, rhs}, JoinActionRef::AddFunction(predicate_op));
         }
     }
@@ -2868,10 +2885,67 @@ JoinStepLogical::preCalculateKeys(const SharedHeader & left_header, const Shared
     if (left_keys.empty() || right_keys.empty())
         return {};
 
-    auto left_dag = cloneSubdagWithInputs(left_header, left_keys);
-    updateInputHeader(std::make_shared<Block>(left_dag.getResultColumns()), 0);
+    /// The columns that only fed a pre-calculated key are not forwarded to the join.
+    ActionsDAG::NodeRawConstPtrs roots;
+    NodeSet unused_inputs;
+    if (!replaced_keys.empty())
+    {
+        roots = actions_dag.getOutputs();
+        roots.append_range(actions_after_join);
+        for (const auto & action : join_operator.expression)
+            roots.push_back(action.getNode());
+        for (const auto & action : join_operator.residual_filter)
+            roots.push_back(action.getNode());
+        for (const auto & node : actions_dag.getNodes())
+            if (node.type == ActionsDAG::ActionType::ARRAY_JOIN)
+                roots.push_back(&node);
 
-    auto right_dag = cloneSubdagWithInputs(right_header, right_keys);
+        const auto still_read = findReachableNodes(roots);
+        const auto read_by_replaced_keys = findReachableNodes(replaced_keys);
+        for (const auto * input : original_inputs)
+            if (read_by_replaced_keys.contains(input) && !still_read.contains(input))
+                unused_inputs.insert(input);
+    }
+
+    const auto get_forwarded_columns = [&](const Block & header, size_t side)
+    {
+        std::vector<bool> is_forwarded(header.columns(), true);
+        if (unused_inputs.empty())
+            return is_forwarded;
+
+        ActionsDAG::NodeRawConstPtrs side_inputs;
+        for (const auto * input : original_inputs)
+        {
+            const JoinActionRef ref(input, expression_actions);
+            if (side == 0 ? ref.fromLeft() : ref.fromRight())
+                side_inputs.push_back(input);
+        }
+
+        const auto header_columns = mapHeaderColumnsToInputs(side_inputs, header);
+        for (size_t position = 0; position < header_columns.size(); ++position)
+            if (!header_columns.passesThrough(position) && unused_inputs.contains(side_inputs[header_columns.read_by[position]]))
+                is_forwarded[position] = false;
+        return is_forwarded;
+    };
+
+    auto left_dag = cloneSubdagWithInputs(left_header, left_keys, get_forwarded_columns(*left_header, 0));
+    auto right_dag = cloneSubdagWithInputs(right_header, right_keys, get_forwarded_columns(*right_header, 1));
+
+    if (!unused_inputs.empty())
+    {
+        std::unordered_set<const ActionsDAG::Node *> kept_inputs;
+        for (const auto * input : actions_dag.getInputs())
+            if (!unused_inputs.contains(input))
+                kept_inputs.insert(input);
+
+        auto & dag_outputs = actions_dag.getOutputs();
+        dag_outputs.swap(roots);
+        SCOPE_EXIT({ dag_outputs.swap(roots); });
+        actions_dag.removeUnusedActions(kept_inputs, /* allow_constant_folding */ false);
+        resetNodeSourcesFromDAG();
+    }
+
+    updateInputHeader(std::make_shared<Block>(left_dag.getResultColumns()), 0);
     updateInputHeader(std::make_shared<Block>(right_dag.getResultColumns()), 1);
 
     return std::make_optional(std::pair{
