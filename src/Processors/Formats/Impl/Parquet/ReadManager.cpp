@@ -85,6 +85,7 @@ void ReadManager::init(FormatParserSharedResourcesPtr parser_shared_resources_, 
         for (auto rg : *buckets_to_read_)
             row_groups_to_read->insert(rg);
     }
+    reader.memory_fraction_per_reader = SharedResourcesExt::getMemoryFractionPerReader(*parser_shared_resources, 1.);
     reader.prefilterAndInitRowGroups(row_groups_to_read);
     reader.preparePrewhere();
 

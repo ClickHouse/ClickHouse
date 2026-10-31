@@ -163,6 +163,9 @@ struct Reader
         DataTypePtr decoded_type; // what decoder outputs, not Nullable
         DataTypePtr output_type; // maybe Nullable
         bool output_nullable = false;
+        /// The memory per value that the output column takes after it is converted to a fixed-size type, see
+        /// `OutputColumnInfo::needs_cast`. Charged to the first primitive column of the output column.
+        double cast_bytes_per_value = 0;
         /// This leaf is inside a Tuple group that is requested as Nullable(Tuple(...)) and is
         /// eligible for it (the OPTIONAL group has no optional/nullable ancestor and an all-REQUIRED,
         /// non-array subtree). Then this leaf's definition-level null map is exactly the group's null
@@ -244,6 +247,8 @@ struct Reader
         /// Column not in the file, fill it with default values.
         bool is_missing_column = false;
         bool needs_cast = false; // if output_type is different from input_type
+        /// If `is_missing_column`, the memory that a default value takes in the column, see `formOutputColumn`.
+        double missing_bytes_per_value = 0;
 
         /// If set, the assembled column (a ColumnTuple) is wrapped in ColumnNullable using the group
         /// null map reconstructed from the leaves' definition levels. Used to read a physically
@@ -350,9 +355,12 @@ struct Reader
         /// this row group, so its data is neither prefetched nor decoded.
         bool served_from_cache = false;
         /// The column is written to the columns cache, which makes the row group read in whole chunks
-        /// unless they would take too much memory, but the length of its strings is not in the metadata.
+        /// unless they would take too much memory, but the length of its strings is not in the metadata,
+        /// or only the total for the row group is, which bounds a chunk too loosely.
         /// So its dictionary is decoded in the `Dictionary` stage, before the row group is split into
-        /// row subgroups, to estimate the size of a chunk, see `intersectColumnIndexResultsAndInitSubgroups`.
+        /// row subgroups, to bound the size of a chunk, see `intersectColumnIndexResultsAndInitSubgroups`.
+        /// Only if the dictionary pages of the row group decoded early are small together: they are read before
+        /// `PREWHERE`, even if no row needs the column, see `initColumnsCache`.
         bool decode_dictionary_early = false;
 
         /// Prefetches.
@@ -649,6 +657,10 @@ struct Reader
     bool columns_cache_writes_possible = false;
     /// Captured once, before anything is read, see `ColumnsCache::getInvalidationGeneration`.
     UInt64 columns_cache_generation = 0;
+    /// The part of the query-wide memory budgets that this reader may take, when several files are read in
+    /// parallel, see `SharedResourcesExt::getMemoryFractionPerReader`. Set by `ReadManager` before
+    /// `prefilterAndInitRowGroups`.
+    double memory_fraction_per_reader = 1.;
 
     /// These methods are listed in the order in which they're used, matching ReadStage order.
 
@@ -764,12 +776,23 @@ struct Reader
 
     /// Guess how much memory ColumnSubchunk::{column, arrays_offsets} will use, per row.
     double estimateColumnMemoryBytesPerRow(const ColumnChunk & column, const RowGroup & row_group, const PrimitiveColumnInfo & column_info) const;
-    /// Whether `estimateColumnMemoryBytesPerRow` can only guess: the column is of dictionary-encoded strings, the
-    /// metadata has no length of the strings, and the dictionary is not decoded.
+    /// An upper bound of the memory that the decoded column takes in any chunk of the columns cache of the row group
+    /// (see `COLUMNS_CACHE_CHUNK_ROWS`). Dictionary-encoded strings whose length is not in the metadata are bounded by the
+    /// longest value of the dictionary, not by the average one: the rows may repeat a long value much more often than
+    /// the others. Meaningless if `decodedSizeIsUnknown`.
+    double estimateMaxColumnMemoryBytesOfChunk(const ColumnChunk & column, const RowGroup & row_group, const PrimitiveColumnInfo & column_info) const;
+    /// Whether `estimateMaxColumnMemoryBytesOfChunk` can only guess: the column is of strings whose length is not in the
+    /// metadata, and either they are dictionary-encoded and the dictionary is not decoded, or some of them are encoded
+    /// with `DELTA_BYTE_ARRAY`, which may take much less than the decoded strings. Also if the decoder converts the
+    /// strings into values that they do not bound, e.g. GeoParquet geometries into `LineString`.
     bool decodedSizeIsUnknown(const ColumnChunk & column, const PrimitiveColumnInfo & column_info) const;
     /// Bound for memory estimates charged to the read scheduler: the larger memory watermark plus one,
     /// capped far below overflow.
     size_t memoryEstimateLimit() const;
+    /// The size of a chunk of the columns cache that a row group may be read in, while the block size settings ask for
+    /// less: a quarter of the memory limit of the query, of which each file read in parallel takes its share. Zero if
+    /// the query has no memory limit.
+    double maxColumnsCacheChunkBytes(size_t memory_limit) const;
 
     void decodePrimitiveColumn(ColumnChunk & column, const PrimitiveColumnInfo & column_info, ColumnSubchunk & subchunk, RowGroup & row_group, RowSubgroup & row_subgroup);
 
