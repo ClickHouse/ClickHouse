@@ -38,6 +38,9 @@ struct SplitPartsWithRangesByPrimaryKeyResult
 {
     RangesInDataParts non_intersecting_parts_ranges;
     Pipes merging_pipes;
+    /// Borders between consecutive `merging_pipes` in the table's key order (see `SplitPartsByRanges::borders`);
+    /// empty when the intersecting ranges were not split into layers.
+    std::vector<std::vector<Field>> borders;
 };
 
 /** Splits parts ranges into:

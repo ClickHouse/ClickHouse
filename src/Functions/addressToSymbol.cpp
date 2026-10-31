@@ -55,14 +55,9 @@ public:
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    String getSignatureString() const override
     {
-        FunctionArgumentDescriptors mandatory_args{
-            {"address_of_binary_instruction", &isUInt64, nullptr, "UInt64"}
-        };
-
-        validateFunctionArguments(*this, arguments, mandatory_args);
-        return std::make_shared<DataTypeString>();
+        return "(UInt64) -> String";
     }
 
     bool useDefaultImplementationForConstants() const override
@@ -86,7 +81,12 @@ public:
         for (size_t i = 0; i < input_rows_count; ++i)
         {
             if (const auto * symbol = symbol_index.findSymbol(reinterpret_cast<const void *>(data[i])))
-                result_column->insertData(symbol->name, strlen(symbol->name));
+            {
+                if (std::string_view symbol_name = symbol_index.getSymbolName(*symbol); !symbol_name.empty())
+                    result_column->insertData(symbol_name.data(), symbol_name.size());
+                else
+                    result_column->insertDefault();
+            }
             else
                 result_column->insertDefault();
         }

@@ -81,20 +81,24 @@ std::optional<String> tryGetExternalDatabaseQuery(
         return out.str();
     }
 
-    if (const auto * function = argument->as<ASTFunction>(); function && function->name == "query")
-    {
-        if (!function->arguments || function->arguments->children.size() != 1)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Function 'query' for an external database expects exactly one argument");
+    return tryGetQueryFunctionArgument(argument, context);
+}
 
-        auto evaluated = evaluateConstantExpressionOrIdentifierAsLiteral(function->arguments->children[0], context);
-        const auto * literal = evaluated->as<ASTLiteral>();
-        if (!literal || literal->value.getType() != Field::Types::String)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Function 'query' for an external database expects a string literal argument");
+std::optional<String> tryGetQueryFunctionArgument(const ASTPtr & argument, const ContextPtr & context)
+{
+    const auto * function = argument->as<ASTFunction>();
+    if (!function || function->name != "query")
+        return {};
 
-        return literal->value.safeGet<String>();
-    }
+    if (!function->arguments || function->arguments->children.size() != 1)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Function 'query' expects exactly one argument");
 
-    return {};
+    auto evaluated = evaluateConstantExpressionOrIdentifierAsLiteral(function->arguments->children[0], context);
+    const auto * literal = evaluated->as<ASTLiteral>();
+    if (!literal || literal->value.getType() != Field::Types::String)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Function 'query' expects a string literal argument");
+
+    return literal->value.safeGet<String>();
 }
 
 static String quoteExternalIdentifier(const String & name, IdentifierQuotingStyle identifier_quoting_style)

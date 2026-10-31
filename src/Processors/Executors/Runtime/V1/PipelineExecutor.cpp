@@ -169,15 +169,14 @@ PipelineExecutor::PipelineExecutor(std::shared_ptr<Processors> processors, Query
     }
     catch (Exception & exception)
     {
-        /// If exception was thrown while pipeline initialization, it means that query pipeline was not build correctly.
-        /// It is logical error, and we need more information about pipeline.
-        /// Label the nodes with addresses so that they can be matched against the endpoints
-        /// named by the exception (e.g. from `ExecutingGraph::addEdge`) even when `getUniqID`
-        /// degrades to the `_0` suffix because `CurrentThread` is not initialized.
-        WriteBufferFromOwnString buf;
-        printPipeline(*processors, buf, /* with_profile = */ false, /* with_addresses = */ true);
-        buf.finalize();
-        exception.addMessage("Query pipeline:\n" + buf.str());
+        /// A logical error here means the pipeline was built incorrectly: append a dump of it.
+        if (exception.code() == ErrorCodes::LOGICAL_ERROR)
+        {
+            WriteBufferFromOwnString buf;
+            printPipeline(*processors, buf);
+            buf.finalize();
+            exception.addMessage("Query pipeline:\n" + buf.str());
+        }
 
         throw;
     }

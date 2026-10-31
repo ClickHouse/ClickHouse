@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest, long
+# Tags: no-fasttest, long, no-msan
 # no-fasttest: the AST fuzzer and distributed plan settings are EXPERIMENTAL-tier.
 # long: each sub-query of the oracle suite may take up to 10 s, so one heavy fuzzer mutation can exceed the flaky check's 180 s limit.
+# no-msan: 48 fuzzed queries, each checked by the oracle suite over 900000 rows, take minutes under MSan and can exceed the 600 s
+# timeout with `meta in keeper` and `s3 storage`. The mismatch it checks is a logical one, MSan does not help to find it.
 # Random settings limits: optimize_trivial_count_query=(1, None)
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
