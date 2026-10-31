@@ -1,0 +1,12 @@
+lazy WHERE local	6667	66696668
+lazy WHERE distributed buckets 2	6667	66696668
+lazy WHERE distributed buckets 4	6667	66696668
+lazy WHERE distributed buckets 8	6667	66696668
+lazy WHERE read distributes	1
+lazy PREWHERE distributed	6667	66696668
+lazy PREWHERE read distributes	1
+lazy no filter local	20000	200090000
+lazy no filter distributed	20000	200090000
+lazy off distributed	6667	66696668
+lazy local still rewrites	1
+lazy local result	6667	66696668
