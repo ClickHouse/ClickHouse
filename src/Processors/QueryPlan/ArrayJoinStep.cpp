@@ -73,6 +73,48 @@ std::optional<ActionsDAG> ArrayJoinStep::toActionsDAG() const
     return dag;
 }
 
+NameSet ArrayJoinStep::getReadColumns() const
+{
+    NameSet names(array_join.columns.begin(), array_join.columns.end());
+    if (element_filter)
+        for (const auto & name : element_filter->getRequiredColumnsNames())
+            names.insert(name);
+    return names;
+}
+
+bool ArrayJoinStep::canRemoveUnusedColumns() const
+{
+    /// The step finds the columns it reads by name.
+    const auto & header = *input_headers.front();
+    return std::ranges::all_of(getReadColumns(), [&](const String & name)
+    {
+        return std::ranges::count_if(header, [&](const auto & column) { return column.name == name; }) == 1;
+    });
+}
+
+IQueryPlanStep::UnneededInputPositions ArrayJoinStep::getUnneededColumns(const std::vector<size_t> & unneeded_output_positions) const
+{
+    auto unneeded = unneeded_output_positions;
+    for (const auto & name : getReadColumns())
+        std::erase(unneeded, input_headers.front()->getPositionByName(name));
+    return {std::move(unneeded)};
+}
+
+IQueryPlanStep::RemoveUnusedColumnsResult
+ArrayJoinStep::removeUnusedColumns(const std::vector<size_t> & /*unneeded_output_positions*/, const std::vector<PrunedInput> & inputs)
+{
+    const auto & pruned = inputs.at(0);
+
+    RemoveUnusedColumnsResult result;
+    result.dropped_output_positions = pruned.dropped_positions;
+    result.step_changed = !blocksHaveEqualStructure(*input_headers.front(), *pruned.header);
+
+    if (result.step_changed)
+        updateInputHeader(pruned.header, 0);
+
+    return result;
+}
+
 void ArrayJoinStep::setElementFilter(ActionsDAG filter_dag, String filter_column_name, bool remove_filter_column)
 {
     element_filter = std::move(filter_dag);

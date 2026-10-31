@@ -1,0 +1,80 @@
+-- ARRAY JOIN below a join
+998	0	heavy998	r0
+998	1	heavy998	r1
+998	2	heavy998	r2
+997	0	heavy997	r0
+997	1	heavy997	r1
+994	0	heavy994	r0
+998	0	heavy998	r0
+998	1	heavy998	r1
+998	2	heavy998	r2
+997	0	heavy997	r0
+997	1	heavy997	r1
+994	0	heavy994	r0
+Lazily read columns: heavy
+Lazily read columns: rheavy
+-- LEFT ARRAY JOIN, the whole array as well
+999	0	[]	heavy999	r0
+998	0	[0,1,2]	heavy998	r0
+998	1	[0,1,2]	heavy998	r1
+998	2	[0,1,2]	heavy998	r2
+997	0	[0,1]	heavy997	r0
+997	1	[0,1]	heavy997	r1
+999	0	[]	heavy999	r0
+998	0	[0,1,2]	heavy998	r0
+998	1	[0,1,2]	heavy998	r1
+998	2	[0,1,2]	heavy998	r2
+997	0	[0,1]	heavy997	r0
+997	1	[0,1]	heavy997	r1
+Lazily read columns: heavy
+Lazily read columns: rheavy
+-- two arrays
+998	0	0	heavy998	r0
+998	1	1	heavy998	r1
+998	2	2	heavy998	r2
+997	0	0	heavy997	r0
+997	1	1	heavy997	r1
+994	0	0	heavy994	r0
+998	0	0	heavy998	r0
+998	1	1	heavy998	r1
+998	2	2	heavy998	r2
+997	0	0	heavy997	r0
+997	1	1	heavy997	r1
+994	0	0	heavy994	r0
+-- ARRAY JOIN on the right side of a join
+0	998	0	heavy998
+1	998	1	heavy998
+2	998	2	heavy998
+0	997	0	heavy997
+1	997	1	heavy997
+0	994	0	heavy994
+0	998	0	heavy998
+1	998	1	heavy998
+2	998	2	heavy998
+0	997	0	heavy997
+1	997	1	heavy997
+0	994	0	heavy994
+Lazily read columns: heavy
+-- FINAL
+999	0	old999	r0
+999	1	old999	r1
+999	2	old999	r2
+998	0	new998	r0
+998	1	new998	r1
+997	0	old997	r0
+999	0	old999	r0
+999	1	old999	r1
+999	2	old999	r2
+998	0	new998	r0
+998	1	new998	r1
+997	0	old997	r0
+Lazily read columns: heavy
+Lazily read columns: rheavy
+-- unaligned ARRAY JOIN is not looked through
+998	0	0	heavy998	r0
+998	1	1	heavy998	r1
+998	2	2	heavy998	r2
+997	0	0	heavy997	r0
+997	1	1	heavy997	r1
+994	0	0	heavy994	r0
+0
