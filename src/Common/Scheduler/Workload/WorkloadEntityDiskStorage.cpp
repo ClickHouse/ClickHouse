@@ -133,7 +133,7 @@ void WorkloadEntityDiskStorage::loadEntitiesImpl()
 {
     LOG_INFO(log, "Loading workload entities from {}", dir_path);
 
-    std::vector<std::pair<String, ASTPtr>> entities_name_and_queries;
+    ASTs queries;
 
     if (!std::filesystem::exists(dir_path))
     {
@@ -160,7 +160,7 @@ void WorkloadEntityDiskStorage::loadEntitiesImpl()
 
                 ASTPtr ast = tryLoadEntity(WorkloadEntityType::Workload, name, dir_path + it.name(), /* check_file_exists= */ false);
                 if (ast)
-                    entities_name_and_queries.emplace_back(name, ast);
+                    queries.push_back(ast);
             }
 
             if (file_name.starts_with(resource_prefix) && file_name.ends_with(sql_suffix))
@@ -174,12 +174,12 @@ void WorkloadEntityDiskStorage::loadEntitiesImpl()
 
                 ASTPtr ast = tryLoadEntity(WorkloadEntityType::Resource, name, dir_path + it.name(), /* check_file_exists= */ false);
                 if (ast)
-                    entities_name_and_queries.emplace_back(name, ast);
+                    queries.push_back(ast);
             }
         }
     }
 
-    setLocalEntities(entities_name_and_queries);
+    setOwnEntities(queries);
 
     LOG_DEBUG(log, "Workload entities loaded");
 }
