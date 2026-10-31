@@ -199,6 +199,7 @@ DatabaseDataLake::DatabaseDataLake(
     UUID uuid,
     bool allow_server_credentials_in_user_queries_,
     bool is_loading_from_existing_metadata_,
+    LoadingStrictnessLevel table_definition_mode_,
     bool lazy_init)
     : IDatabase(database_name_)
     , url(url_)
@@ -208,6 +209,7 @@ DatabaseDataLake::DatabaseDataLake(
     , log(getLogger("DatabaseDataLake(" + database_name_ + ")"))
     , allow_server_credentials_in_user_queries(allow_server_credentials_in_user_queries_)
     , is_loading_from_existing_metadata(is_loading_from_existing_metadata_)
+    , table_definition_mode(table_definition_mode_)
     , db_uuid(uuid)
 {
     validateSettings();
@@ -411,6 +413,7 @@ void DatabaseDataLake::initialize() const
                 Context::getGlobalContextInstance(),
                 catalog_parameters,
                 table_engine_definition,
+                table_definition_mode,
                 allow_server_credentials_in_user_queries);
             break;
 #else
@@ -1204,7 +1207,16 @@ StoragePtr DatabaseDataLake::tryGetTableImpl(
 
     /// with_table_structure = false: because there will be
     /// no table structure in table definition AST.
-    StorageObjectStorageConfiguration::initialize(*configuration, args, context_copy, /* with_table_structure */false);
+    /// `table_definition_mode`: the engine arguments come verbatim from the `CREATE DATABASE` query, so they
+    /// are validated as a fresh definition only when the user supplied the database definition in this server
+    /// run; a database replayed from persisted metadata or a backup is a compatibility path.
+    StorageObjectStorageConfiguration::initialize(
+        *configuration,
+        args,
+        context_copy,
+        /* with_table_structure */ false,
+        /* table_id */ nullptr,
+        table_definition_mode);
 
 #if USE_AWS_S3
     /// Amazon S3 Tables rejects user-defined object metadata (`x-amz-meta-*`) in its data buckets with
@@ -2054,9 +2066,10 @@ void registerDatabaseDataLake(DatabaseFactory & factory)
 
         /// A database is replayed from its stored `ATTACH DATABASE` statement with plain `ATTACH` on startup
         /// (unlike tables, which use `FORCE_ATTACH`), so `isLoadingFromExistingMetadata` is too narrow. Treat the
-        /// loader's attach (server startup) as a metadata load so a now-restricted catalog is left unavailable
-        /// instead of aborting startup. The loader flag, not `internal`, is the discriminator: wrappers such as
-        /// `PARALLEL WITH` run user statements as internal ones, and a user `ATTACH DATABASE` stays fail-closed.
+        /// server's own replay of its stored definition as a metadata load so a now-restricted catalog is left
+        /// unavailable instead of aborting startup; a user `ATTACH DATABASE` stays fail-closed and is rejected.
+        /// The loader flag, not `internal`, is the discriminator: wrappers such as `PARALLEL WITH` and
+        /// `EXECUTE AS` run user statements as internal ones.
         const bool is_loading_from_existing_metadata = args.is_metadata_replay && args.mode >= LoadingStrictnessLevel::ATTACH;
 
         return std::make_shared<DatabaseDataLake>(
@@ -2068,6 +2081,13 @@ void registerDatabaseDataLake(DatabaseFactory & factory)
             args.uuid,
             allow_server_credentials_in_user_queries,
             is_loading_from_existing_metadata,
+            /// A user `CREATE DATABASE` and a full-definition `ATTACH DATABASE ... ENGINE = ...` supply a fresh
+            /// table engine definition; server startup, a short `ATTACH DATABASE db` and `RESTORE DATABASE` replay
+            /// an accepted one. `args.internal` is not used here: it is also set for user statements run by
+            /// `PARALLEL WITH` or `EXECUTE AS`.
+            /*table_definition_mode=*/(args.create_query.attach_short_syntax || args.is_metadata_replay || args.is_restore_from_backup)
+                ? LoadingStrictnessLevel::ATTACH
+                : LoadingStrictnessLevel::CREATE,
             /// `RESTORE DATABASE` shouldn't do network I/O: an unreachable or unauthorized catalog must not block it.
             /// Keyed on the restore flag, not `internal`: a user `CREATE` wrapped in `PARALLEL WITH` or
             /// `EXECUTE AS` runs as an internal query and must still build the catalog eagerly.
