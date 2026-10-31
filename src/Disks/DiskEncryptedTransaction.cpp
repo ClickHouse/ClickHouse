@@ -93,13 +93,46 @@ std::unique_ptr<WriteBufferFromFileBase> DiskEncryptedTransaction::writeFileImpl
     if (mode == WriteMode::Append && delegate_disk->existsFile(wrapped_path))
     {
         size_t size = delegate_disk->getFileSize(wrapped_path);
-        old_file_size = size > FileEncryption::Header::kSize ? (size - FileEncryption::Header::kSize) : 0;
-        if (old_file_size)
+
+        if (size > FileEncryption::Header::kSize)
         {
             /// Append mode: we continue to use the same header.
+            old_file_size = size - FileEncryption::Header::kSize;
             auto read_buffer = delegate_disk->readFile(wrapped_path, getReadSettings().adjustBufferSize(FileEncryption::Header::kSize));
             header = readHeader(*read_buffer);
             key = current_settings.findKeyByFingerprint(header.key_fingerprint, path);
+        }
+        else if (size == FileEncryption::Header::kSize)
+        {
+            /// The file holds nothing but the header, which is what a write interrupted before the payload reached
+            /// the disk leaves behind, or a file that was truncated to its header. There is no payload to keep, so
+            /// the file is started over: the delegate is opened in rewrite mode and gets a fresh header below.
+            ///
+            /// Neither of the two other options is acceptable. Appending a fresh header after the existing one
+            /// would make the reader decipher the second header and the payload with the initialization vector of
+            /// the first one: nothing detects that, and the file could never be read again (the garbage that the wrong
+            /// initialization vector produces is reported by the compression layer as an unknown codec). Continuing the
+            /// existing header would encrypt the new payload from offset 0 with the initialization vector that the old
+            /// payload, if there was one before the truncation, was encrypted with: for the counter mode ciphers this
+            /// is keystream reuse, and anyone who has both ciphertexts learns the XOR of both plaintexts.
+            ///
+            /// Only a valid header is started over: a 64-byte file which is not an encrypted file (wrong signature,
+            /// version or algorithm) is not ours to replace, so `readHeader` throws `DATA_ENCRYPTION_ERROR` for it.
+            auto read_buffer = delegate_disk->readFile(wrapped_path, getReadSettings().adjustBufferSize(FileEncryption::Header::kSize));
+            readHeader(*read_buffer);
+            mode = WriteMode::Rewrite;
+        }
+        else if (size > 0)
+        {
+            /// The file ends inside its own header, which is what a write interrupted while writing
+            /// the header leaves behind. There is no header to continue, and no payload to keep.
+            throw Exception(
+                ErrorCodes::DATA_ENCRYPTION_ERROR,
+                "Cannot append to encrypted file {}: it is {} bytes long, less than the {} bytes of an encryption header, "
+                "so it holds no readable data and no header to continue. Remove the file to start a new one",
+                path,
+                size,
+                FileEncryption::Header::kSize);
         }
     }
     if (!old_file_size)
