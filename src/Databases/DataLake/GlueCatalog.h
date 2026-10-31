@@ -4,6 +4,8 @@
 #if USE_AWS_S3 && USE_AVRO
 
 #include <aws/core/auth/AWSCredentials.h>
+#include <aws/glue/model/Column.h>
+#include <aws/glue/model/TableInput.h>
 #include <Databases/DataLake/ICatalog.h>
 #include <Interpreters/Context_fwd.h>
 #include <Poco/JSON/Object.h>
@@ -103,6 +105,12 @@ public:
         const String & column_name,
         const String & glue_column_type);
 
+    /// Converts top-level Iceberg fields to Glue columns with Hive types and `iceberg.field.*` parameters.
+    static Aws::Vector<Aws::Glue::Model::Column> glueColumnsFromIcebergSchema(const Poco::JSON::Object::Ptr & schema);
+
+    /// Selects the top-level v1 `schema` or the entry referenced by `current-schema-id`.
+    static Poco::JSON::Object::Ptr getCurrentSchema(const Poco::JSON::Object::Ptr & metadata_object);
+
     using FieldTypes = std::unordered_map<String, String>;
 
     static FieldTypes getCurrentSchemaFieldTypes(const Poco::JSON::Object::Ptr & metadata_object);
@@ -110,10 +118,23 @@ public:
     static String resolveTimestampType(const FieldTypes & field_types, const String & column_name, const String & glue_column_type);
 
 private:
-    struct FieldTypesWeightFunction
+    struct CachedSchema
     {
-        size_t operator()(const FieldTypes & field_types) const;
+        FieldTypes field_types;
+        DB::NamesAndTypesList columns;
     };
+
+    struct CachedSchemaWeightFunction
+    {
+        size_t operator()(const CachedSchema & schema) const;
+    };
+
+    /// Updates `metadata_location` and optional columns while preserving the rest of the Glue `TableInput`.
+    Aws::Glue::Model::TableInput buildUpdatedTableInput(
+        const String & namespace_name,
+        const String & table_name,
+        const String & new_metadata_path,
+        const std::optional<Aws::Vector<Aws::Glue::Model::Column>> & columns) const;
 
     std::unique_ptr<Aws::Glue::GlueClient> glue_client;
     const LoggerPtr log;
@@ -143,7 +164,10 @@ private:
 
     ObjectStorageWithPath createObjectStorageForEarlyTableAccess(const String & s3_location, const TableMetadata & table_metadata) const;
 
-    mutable DB::CacheBase<String, FieldTypes, std::hash<String>, FieldTypesWeightFunction> current_schema_field_types;
+    Poco::JSON::Object::Ptr loadMetadataObject(const String & metadata_uri, const TableMetadata & table_metadata) const;
+    std::shared_ptr<CachedSchema> getCachedSchema(const String & metadata_uri, const TableMetadata & table_metadata) const;
+
+    mutable DB::CacheBase<String, CachedSchema, std::hash<String>, CachedSchemaWeightFunction> current_schema;
 };
 
 }

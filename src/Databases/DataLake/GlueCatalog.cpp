@@ -59,6 +59,7 @@
 
 namespace DB::ErrorCodes
 {
+    extern const int AMBIGUOUS_COLUMN_NAME;
     extern const int BAD_ARGUMENTS;
     extern const int DATALAKE_DATABASE_ERROR;
     extern const int FAULT_INJECTED;
@@ -122,7 +123,7 @@ GlueCatalog::GlueCatalog(
     , region(settings_.region)
     , settings(settings_)
     , table_engine_definition(table_engine_definition_)
-    , current_schema_field_types(CurrentMetrics::GlueCatalogSchemaCacheBytes, CurrentMetrics::GlueCatalogSchemaCacheEntries, 16_MiB)
+    , current_schema(CurrentMetrics::GlueCatalogSchemaCacheBytes, CurrentMetrics::GlueCatalogSchemaCacheEntries, 16_MiB)
 {
     DB::S3::CredentialsConfiguration creds_config;
     creds_config.use_environment_credentials = true;
@@ -406,6 +407,37 @@ bool GlueCatalog::tryGetTableMetadata(
 
         if (result.requiresSchema())
         {
+            if (isReadableGlueTable(table_outcome))
+            {
+                /// Reject empty current Glue names even when Iceberg metadata supplies the types.
+                size_t position = 0;
+                for (const auto & column : table_outcome.GetStorageDescriptor().GetColumns())
+                {
+                    const auto & parameters = column.GetParameters();
+                    if (auto it = parameters.find("iceberg.field.current"); it != parameters.end() && it->second == "false")
+                        continue;
+
+                    if (column.GetName().empty())
+                        throw DB::Exception(
+                            DB::ErrorCodes::AMBIGUOUS_COLUMN_NAME,
+                            "Column name in data lake catalog table schema cannot be empty (field at position {})",
+                            position);
+                    ++position;
+                }
+
+                if (!result.hasDataLakeSpecificProperties())
+                    setup_specific_properties();
+
+                if (auto properties = result.getDataLakeSpecificProperties();
+                    properties && !properties->iceberg_metadata_file_location.empty())
+                {
+                    /// Use `metadata.json` because Glue types are lossy and nested names may be unescaped.
+                    const auto & metadata_uri = properties->iceberg_metadata_file_location;
+                    result.setSchema(getCachedSchema(metadata_uri, result)->columns);
+                    return true;
+                }
+            }
+
             DB::NamesAndTypesList schema;
             auto columns = table_outcome.GetStorageDescriptor().GetColumns();
             for (const auto & column : columns)
@@ -517,17 +549,7 @@ String GlueCatalog::getActualTimestampType(const String & column_name, const Tab
         throw DB::Exception(DB::ErrorCodes::BAD_ARGUMENTS, "Failed to read table metadata, reason why table is unreadable: {}", table_metadata.getReasonWhyTableIsUnreadable());
 
     const String & metadata_uri = table_specific_properties->iceberg_metadata_file_location;
-
-    auto [field_types, _] = current_schema_field_types.getOrSet(metadata_uri, [&]
-    {
-        auto [object_storage, bucket_name, metadata_path] = createObjectStorageForEarlyTableAccess(metadata_uri, table_metadata);
-        auto compression_method = DB::Iceberg::getCompressionMethodFromMetadataFile(metadata_uri);
-        auto metadata_object = DB::Iceberg::getMetadataJSONObject(
-            metadata_path, object_storage, nullptr, getContext(), log, compression_method, std::nullopt);
-        return std::make_shared<FieldTypes>(getCurrentSchemaFieldTypes(metadata_object));
-    });
-
-    return resolveTimestampType(*field_types, column_name, glue_column_type);
+    return resolveTimestampType(getCachedSchema(metadata_uri, table_metadata)->field_types, column_name, glue_column_type);
 }
 
 String GlueCatalog::resolveTimestampTypeFromMetadata(
@@ -541,14 +563,9 @@ String GlueCatalog::resolveTimestampTypeFromMetadata(
 GlueCatalog::FieldTypes GlueCatalog::getCurrentSchemaFieldTypes(const Poco::JSON::Object::Ptr & metadata_object)
 {
     FieldTypes result;
-    auto current_schema_id = metadata_object->getValue<Int64>("current-schema-id");
-    auto schemas = metadata_object->getArray(DB::Iceberg::f_schemas);
-    for (size_t i = 0; i < schemas->size(); ++i)
+    auto schema = getCurrentSchema(metadata_object);
+    if (schema && schema->has(DB::Iceberg::f_fields))
     {
-        auto schema = schemas->getObject(static_cast<UInt32>(i));
-        if (schema->getValue<Int64>("schema-id") != current_schema_id)
-            continue;
-
         auto fields = schema->getArray(DB::Iceberg::f_fields);
         for (size_t j = 0; j < fields->size(); ++j)
         {
@@ -569,11 +586,13 @@ String GlueCatalog::resolveTimestampType(const FieldTypes & field_types, const S
     return glue_column_type == "timestamp_nano" ? "timestamp_ns" : "timestamp";
 }
 
-size_t GlueCatalog::FieldTypesWeightFunction::operator()(const FieldTypes & field_types) const
+size_t GlueCatalog::CachedSchemaWeightFunction::operator()(const CachedSchema & schema) const
 {
     size_t result = 0;
-    for (const auto & [name, type] : field_types)
+    for (const auto & [name, type] : schema.field_types)
         result += sizeof(FieldTypes::value_type) + name.size() + type.size();
+    for (const auto & column : schema.columns)
+        result += sizeof(column) + column.name.size() + column.type->getName().size();
     return result;
 }
 
@@ -627,6 +646,33 @@ GlueCatalog::ObjectStorageWithPath GlueCatalog::createObjectStorageForEarlyTable
         table_path = table_path.substr(0, table_path.size() - 1);
 
     return {object_storage, bucket_name, table_path};
+}
+
+Poco::JSON::Object::Ptr GlueCatalog::loadMetadataObject(const String & metadata_uri, const TableMetadata & table_metadata) const
+{
+    auto [object_storage, bucket_name, metadata_path] = createObjectStorageForEarlyTableAccess(metadata_uri, table_metadata);
+    auto compression_method = DB::Iceberg::getCompressionMethodFromMetadataFile(metadata_uri);
+    return DB::Iceberg::getMetadataJSONObject(
+        metadata_path, object_storage, nullptr, getContext(), log, compression_method, std::nullopt);
+}
+
+std::shared_ptr<GlueCatalog::CachedSchema> GlueCatalog::getCachedSchema(const String & metadata_uri, const TableMetadata & table_metadata) const
+{
+    auto [cached, _] = current_schema.getOrSet(metadata_uri, [&]
+    {
+        auto metadata_object = loadMetadataObject(metadata_uri, table_metadata);
+        auto schema = getCurrentSchema(metadata_object);
+        if (!schema || !schema->has(DB::Iceberg::f_fields))
+            throw DB::Exception(DB::ErrorCodes::DATALAKE_DATABASE_ERROR, "No current Iceberg schema in {}", metadata_uri);
+
+        DB::Iceberg::IcebergSchemaProcessor processor(/*allow_geo_parser=*/true);
+        processor.addIcebergTableSchema(schema);
+        auto result = std::make_shared<CachedSchema>();
+        result->field_types = getCurrentSchemaFieldTypes(metadata_object);
+        result->columns = *processor.getClickHouseTableSchemaById(schema->getValue<Int32>(DB::Iceberg::f_schema_id));
+        return result;
+    });
+    return cached;
 }
 
 String GlueCatalog::resolveMetadataPathFromTableLocation(const String & table_location, const TableMetadata & table_metadata) const
@@ -700,7 +746,77 @@ std::optional<std::string> GlueCatalog::getDefaultTableLocation(
     return std::string(std::filesystem::path(location_uri) / table_name);
 }
 
-void GlueCatalog::createTable(const String & namespace_name, const String & table_name, const String & new_metadata_path, Poco::JSON::Object::Ptr /*metadata_content*/) const
+namespace
+{
+
+/// Remove `metadata/vN.metadata.json` from the S3 path to get the table location.
+String tableLocationFromMetadataPath(const String & metadata_path)
+{
+    return fs::path(metadata_path).parent_path().parent_path().string();
+}
+
+}
+
+Poco::JSON::Object::Ptr GlueCatalog::getCurrentSchema(const Poco::JSON::Object::Ptr & metadata_object)
+{
+    if (!metadata_object)
+        return nullptr;
+
+    /// For v1, the top-level `schema` is authoritative.
+    if (metadata_object->has(DB::Iceberg::f_schema)
+        && (!metadata_object->has(DB::Iceberg::f_format_version)
+            || metadata_object->getValue<Int32>(DB::Iceberg::f_format_version) == 1))
+        return metadata_object->getObject(DB::Iceberg::f_schema);
+
+    if (metadata_object->has(DB::Iceberg::f_schemas) && metadata_object->has(DB::Iceberg::f_current_schema_id))
+    {
+        const auto current_schema_id = metadata_object->getValue<Int64>(DB::Iceberg::f_current_schema_id);
+        auto schemas = metadata_object->getArray(DB::Iceberg::f_schemas);
+        for (size_t i = 0; i < schemas->size(); ++i)
+        {
+            auto schema = schemas->getObject(static_cast<UInt32>(i));
+            if (schema->getValue<Int64>(DB::Iceberg::f_schema_id) == current_schema_id)
+                return schema;
+        }
+    }
+
+    /// Format version 1 metadata may carry a single top-level `schema` instead.
+    if (metadata_object->has(DB::Iceberg::f_schema))
+        return metadata_object->getObject(DB::Iceberg::f_schema);
+
+    return nullptr;
+}
+
+Aws::Vector<Aws::Glue::Model::Column> GlueCatalog::glueColumnsFromIcebergSchema(const Poco::JSON::Object::Ptr & schema)
+{
+    Aws::Vector<Aws::Glue::Model::Column> columns;
+    if (!schema || !schema->has(DB::Iceberg::f_fields))
+        return columns;
+
+    auto fields = schema->getArray(DB::Iceberg::f_fields);
+    columns.reserve(fields->size());
+    for (size_t i = 0; i < fields->size(); ++i)
+    {
+        auto field = fields->getObject(static_cast<UInt32>(i));
+
+        Aws::Glue::Model::Column column;
+        column.SetName(field->getValue<String>(DB::Iceberg::f_name));
+        column.SetType(icebergTypeToGlueType(field->get(DB::Iceberg::f_type)));
+
+        const bool required = field->has(DB::Iceberg::f_required) && field->getValue<bool>(DB::Iceberg::f_required);
+
+        Aws::Map<Aws::String, Aws::String> column_parameters;
+        column_parameters["iceberg.field.id"] = std::to_string(field->getValue<Int64>(DB::Iceberg::f_id));
+        column_parameters["iceberg.field.optional"] = required ? "false" : "true";
+        column_parameters["iceberg.field.current"] = "true";
+        column.SetParameters(std::move(column_parameters));
+
+        columns.push_back(std::move(column));
+    }
+    return columns;
+}
+
+void GlueCatalog::createTable(const String & namespace_name, const String & table_name, const String & new_metadata_path, Poco::JSON::Object::Ptr metadata_content) const
 {
     Aws::Glue::Model::CreateTableRequest request;
     request.SetDatabaseName(namespace_name);
@@ -709,12 +825,9 @@ void GlueCatalog::createTable(const String & namespace_name, const String & tabl
     table_input.SetName(table_name);
 
     Aws::Glue::Model::StorageDescriptor sd;
-    fs::path original_path = new_metadata_path;
-
-    fs::path parent = original_path.parent_path();
-    fs::path grandparent = parent.parent_path();
-
-    sd.SetLocation(grandparent.c_str());
+    sd.SetLocation(tableLocationFromMetadataPath(new_metadata_path));
+    /// Athena cannot read a Glue table without columns in its storage descriptor.
+    sd.SetColumns(glueColumnsFromIcebergSchema(getCurrentSchema(metadata_content)));
 
     table_input.SetStorageDescriptor(sd);
     table_input.SetTableType("ICEBERG");
@@ -733,34 +846,79 @@ void GlueCatalog::createTable(const String & namespace_name, const String & tabl
         throw DB::Exception(DB::ErrorCodes::DATALAKE_DATABASE_ERROR, "Can not create metadata in glue catalog: {}", response.GetError().GetMessage());
 }
 
-bool GlueCatalog::updateMetadata(const String & namespace_name, const String & table_name, const String & new_metadata_path, Poco::JSON::Object::Ptr /*new_snapshot*/) const
+Aws::Glue::Model::TableInput GlueCatalog::buildUpdatedTableInput(
+    const String & namespace_name,
+    const String & table_name,
+    const String & new_metadata_path,
+    const std::optional<Aws::Vector<Aws::Glue::Model::Column>> & columns) const
 {
-    Aws::Glue::Model::UpdateTableRequest request;
-    request.SetDatabaseName(namespace_name);
-
     Aws::Glue::Model::TableInput table_input;
     table_input.SetName(table_name);
 
     Aws::Glue::Model::StorageDescriptor sd;
-    fs::path original_path = new_metadata_path;
-
-    fs::path parent = original_path.parent_path();
-    fs::path grandparent = parent.parent_path();
-
-    /// `new_metadata_path` looks like s3://<bucket>/some/your/path/metadata/v<i>-metadata.json
-    /// We should drop `metadata/v<i>-metadata.json` suffix to get location.
-    sd.SetLocation(grandparent.c_str());
-
-    table_input.SetStorageDescriptor(sd);
-    table_input.SetTableType("ICEBERG");
-
     Aws::Map<Aws::String, Aws::String> parameters;
+
+    Aws::Glue::Model::GetTableRequest get_request;
+    get_request.SetDatabaseName(namespace_name);
+    get_request.SetName(table_name);
+    auto get_outcome = glue_client->GetTable(get_request);
+    if (get_outcome.IsSuccess())
+    {
+        const auto & existing = get_outcome.GetResult().GetTable();
+
+        /// Preserve existing Glue attributes when advancing the metadata pointer.
+        sd = existing.GetStorageDescriptor();
+        parameters = existing.GetParameters();
+        if (!existing.GetDescription().empty())
+            table_input.SetDescription(existing.GetDescription());
+        if (!existing.GetOwner().empty())
+            table_input.SetOwner(existing.GetOwner());
+        if (existing.RetentionHasBeenSet())
+            table_input.SetRetention(existing.GetRetention());
+        if (existing.PartitionKeysHasBeenSet())
+            table_input.SetPartitionKeys(existing.GetPartitionKeys());
+        if (!existing.GetTableType().empty())
+            table_input.SetTableType(existing.GetTableType());
+
+        if (auto it = parameters.find("metadata_location"); it != parameters.end() && !it->second.empty())
+            parameters["previous_metadata_location"] = it->second;
+    }
+    else if (get_outcome.GetError().GetErrorType() != Aws::Glue::GlueErrors::ENTITY_NOT_FOUND)
+    {
+        throw DB::Exception(
+            DB::ErrorCodes::DATALAKE_DATABASE_ERROR,
+            "Exception calling GetTable for table {}.{}: {}",
+            namespace_name, table_name, get_outcome.GetError().GetMessage());
+    }
+
+    if (table_input.GetTableType().empty())
+        table_input.SetTableType("ICEBERG");
+
+    sd.SetLocation(tableLocationFromMetadataPath(new_metadata_path));
+    if (columns)
+        sd.SetColumns(*columns);
+    else if (get_outcome.IsSuccess() && sd.GetColumns().empty())
+    {
+        /// Restore missing Glue columns from the committed Iceberg schema.
+        auto schema = getCurrentSchema(loadMetadataObject(new_metadata_path, TableMetadata{}));
+        if (!schema || !schema->has(DB::Iceberg::f_fields))
+            throw DB::Exception(DB::ErrorCodes::DATALAKE_DATABASE_ERROR, "No current Iceberg schema in {}", new_metadata_path);
+        sd.SetColumns(glueColumnsFromIcebergSchema(schema));
+    }
+    table_input.SetStorageDescriptor(sd);
+
     parameters["metadata_location"] = new_metadata_path;
     parameters["table_type"] = "ICEBERG";
-
     table_input.SetParameters(parameters);
 
-    request.SetTableInput(table_input);
+    return table_input;
+}
+
+bool GlueCatalog::updateMetadata(const String & namespace_name, const String & table_name, const String & new_metadata_path, Poco::JSON::Object::Ptr /*new_snapshot*/) const
+{
+    Aws::Glue::Model::UpdateTableRequest request;
+    request.SetDatabaseName(namespace_name);
+    request.SetTableInput(buildUpdatedTableInput(namespace_name, table_name, new_metadata_path, std::nullopt));
 
     auto response = glue_client->UpdateTable(request);
 
@@ -774,10 +932,19 @@ bool GlueCatalog::updateSchema(
     const String & namespace_name,
     const String & table_name,
     const String & new_metadata_path,
-    Poco::JSON::Object::Ptr /*new_schema*/,
+    Poco::JSON::Object::Ptr new_schema,
     Int32 /*previous_schema_id*/) const
 {
-    return updateMetadata(namespace_name, table_name, new_metadata_path, nullptr);
+    Aws::Glue::Model::UpdateTableRequest request;
+    request.SetDatabaseName(namespace_name);
+    request.SetTableInput(buildUpdatedTableInput(namespace_name, table_name, new_metadata_path, glueColumnsFromIcebergSchema(new_schema)));
+
+    auto response = glue_client->UpdateTable(request);
+
+    if (!response.IsSuccess())
+        throw DB::Exception(DB::ErrorCodes::DATALAKE_DATABASE_ERROR, "Can not update schema in glue catalog {}", response.GetError().GetMessage());
+
+    return true;
 }
 
 void GlueCatalog::dropTable(const String & namespace_name, const String & table_name, bool /*delete_data*/) const
