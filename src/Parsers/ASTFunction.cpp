@@ -313,6 +313,8 @@ void ASTFunction::readJSON(const Poco::JSON::Object & json)
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
                 "A select query argument is only allowed in 'view(SELECT ...)', 'obfuscate(SELECT ...)' or "
                 "'viewIfPermitted(SELECT ... ELSE f(...))' during AST JSON deserialization");
+        if (is_view_if_permitted_shape)
+            arguments->children[1]->as<ASTFunction &>().setKind(Kind::TABLE_FUNCTION);
 
         /// For the table function form the parser emits only the canonical spelling (`ViewLayer` and
         /// `ObfuscateLayer` dispatch on the lowercased name but always produce `view`,

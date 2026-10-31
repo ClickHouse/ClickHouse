@@ -55,6 +55,9 @@ SecretArgumentsResult SecretArgumentsRegistry::find(ASTFunction::Kind kind, cons
             if (!spec && !differsOnlyInCaseFromFunctionWithSecrets(name))
                 return {};
             break;
+        case ASTFunction::Kind::TABLE_FUNCTION:
+            spec = TableFunctionFactory::instance().tryGetSecretArgumentsSpec(name);
+            break;
         case ASTFunction::Kind::TABLE_ENGINE:
             spec = StorageFactory::instance().tryGetSecretArgumentsSpec(name);
             break;
@@ -73,10 +76,11 @@ SecretArgumentsResult SecretArgumentsRegistry::find(ASTFunction::Kind kind, cons
     }
 
     FunctionSecretArgumentsFinder finder(function);
-    /// Not a registered engine (a typo, or a process that did not register that factory), or a function name in the wrong
-    /// case. The statement is logged before validation rejects it, so fail closed.
+    /// Not a registered engine or table function (a typo, one not compiled in, a parameterized view, whose `name = value`
+    /// parameters keep their names), or a function name in the wrong case. The statement is logged before validation
+    /// rejects it, so fail closed.
     if (!spec)
-        finder.maskEveryArgument();
+        finder.maskEveryArgument(/*keep_identifier_keys=*/ kind == ASTFunction::Kind::TABLE_FUNCTION);
     else
         finder.apply(*spec, generic_rules);
     return finder.result;
