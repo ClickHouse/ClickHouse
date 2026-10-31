@@ -73,6 +73,7 @@
 #include <Storages/StorageMerge.h>
 #include <Storages/StorageProxy.h>
 #include <Storages/StorageView.h>
+#include <Storages/buildQueryTreeForShard.h>
 
 #include <AggregateFunctions/IAggregateFunction.h>
 
@@ -81,11 +82,13 @@
 #include <Analyzer/ConstantNode.h>
 #include <Analyzer/FunctionNode.h>
 #include <Analyzer/InterpolateNode.h>
+#include <Analyzer/JoinNode.h>
 #include <Analyzer/TableNode.h>
 #include <Analyzer/TableFunctionNode.h>
 #include <Analyzer/QueryNode.h>
 #include <Analyzer/TrivialGroupByLimit.h>
 #include <Analyzer/UnionNode.h>
+#include <Analyzer/traverseQueryTree.h>
 #include <Analyzer/QueryTreeBuilder.h>
 #include <Analyzer/AggregationUtils.h>
 #include <Analyzer/WindowFunctionsUtils.h>
@@ -214,6 +217,135 @@ namespace ErrorCodes
 
 namespace
 {
+
+/// `__table<N>`, the alias analysis assigns to every table expression. The numbering is per query
+/// tree, and the rewrite that ships a query to replicas builds its own, so a name from this
+/// namespace does not denote the same relation on an initiator and on a follower.
+bool isGeneratedTableAlias(std::string_view name)
+{
+    static constexpr std::string_view prefix = "__table";
+    if (!name.starts_with(prefix) || name.size() == prefix.size())
+        return false;
+
+    return std::ranges::all_of(name.substr(prefix.size()), [](char c) { return c >= '0' && c <= '9'; });
+}
+
+/// Calls `on_query` with the `additional_table_filters` of every query and subquery of `query_tree` the
+/// replicas plan, and `on_table` for each of its tables and table functions with the table the replicas
+/// read instead, if any, and the map of its own (sub)query. Skipped, as the initiator plans them: the
+/// second argument of `GLOBAL IN`, and the materialized side of a join that is global once shipped.
+template <typename OnQuery, typename OnTable>
+void forEachAdditionalTableFilters(
+    const QueryTreeNodePtr & query_tree, const ContextPtr & context, OnQuery && on_query, OnTable && on_table)
+{
+    auto shipped_tree = query_tree->clone();
+    const auto replaced_tables = rewriteAsShippedToParallelReplicas(shipped_tree, context);
+
+    std::vector<ContextPtr> contexts;
+    std::unordered_set<const IQueryTreeNode *> global_in_arguments;
+    /// A query the replicas read has a `Distributed` table only on a materialized join side or in an `IN`
+    /// argument, so a replacement elsewhere is that of a query no replica receives.
+    std::unordered_set<const IQueryTreeNode *> local_in_subqueries;
+    size_t local_in_depth = 0;
+    traverseQueryTree(
+        shipped_tree,
+        [&](const QueryTreeNodePtr & parent, const QueryTreeNodePtr & child)
+        {
+            if (const auto * join_node = parent->as<JoinNode>(); join_node && join_node->getLocality() == JoinLocality::Global)
+                return child
+                    != (join_node->getKind() == JoinKind::Right ? join_node->getLeftTableExpressionNode()
+                                                                 : join_node->getRightTableExpressionNode());
+
+            const auto & arguments = parent->getChildren();
+            return !global_in_arguments.contains(parent.get()) || arguments.size() < 2 || arguments[1] != child;
+        },
+        [&](const QueryTreeNodePtr & node)
+        {
+            local_in_depth += local_in_subqueries.contains(node.get());
+            if (const auto * query_node = node->as<QueryNode>())
+            {
+                contexts.push_back(query_node->getContext());
+                on_query(contexts.back()->getSettingsRef()[Setting::additional_table_filters].value);
+            }
+            else if (const auto * function_node = node->as<FunctionNode>())
+            {
+                const auto & arguments = function_node->getArguments().getNodes();
+                if (isNameOfGlobalInFunction(function_node->getFunctionName()))
+                    global_in_arguments.insert(function_node->getArgumentsNode().get());
+                else if (isNameOfLocalInFunction(function_node->getFunctionName()) && arguments.size() == 2)
+                    local_in_subqueries.insert(arguments[1].get());
+            }
+            else if ((node->as<TableNode>() || node->as<TableFunctionNode>()) && !contexts.empty())
+            {
+                const auto replaced = local_in_depth ? replaced_tables.find(node->asTableExpression()) : replaced_tables.end();
+                on_table(
+                    *node,
+                    replaced == replaced_tables.end() ? nullptr : replaced->second.get(),
+                    contexts.back()->getSettingsRef()[Setting::additional_table_filters].value);
+            }
+        },
+        [&](const QueryTreeNodePtr & node)
+        {
+            if (node->as<QueryNode>())
+                contexts.pop_back();
+            local_in_depth -= local_in_subqueries.contains(node.get());
+        });
+}
+
+bool hasAdditionalTableFilters(const QueryTreeNodePtr & query_tree, const ContextPtr & context)
+{
+    bool found = false;
+    forEachAdditionalTableFilters(
+        query_tree,
+        context,
+        [&](const Map & filters) { found = found || !filters.empty(); },
+        [](const IQueryTreeNode &, const IQueryTreeNode *, const Map &) {});
+    return found;
+}
+
+bool isSessionRelativeKey(const IQueryTreeNode & table_expression, const String & key)
+{
+    const auto * table_node = table_expression.as<TableNode>();
+    const auto & storage = table_node ? table_node->getStorage() : table_expression.as<TableFunctionNode &>().getStorage();
+    if (storage)
+    {
+        const auto & storage_id = storage->getStorageID();
+        const auto & table_name = storage_id.table_name;
+        if (key == table_name || (!storage_id.hasDatabase() && key.ends_with("." + table_name)))
+            return true;
+        if (storage_id.hasDatabase() && key == storage_id.getFullNameNotQuoted())
+            return false;
+    }
+    return key == table_expression.getOriginalAlias();
+}
+
+/// True when some `additional_table_filters` key would select a different relation on a replica that
+/// replans the query: an alias, or a table name, bare or, for a table without a database, qualified by
+/// any database, or any name of a table the replicas replace. Other keys are stable.
+bool hasSessionRelativeAdditionalFilter(const QueryTreeNodePtr & query_tree, const ContextPtr & context)
+{
+    auto key = [](const Field & entry) -> const String & { return entry.safeGet<Tuple>().at(0).safeGet<String>(); };
+    bool found = false;
+    forEachAdditionalTableFilters(
+        query_tree,
+        context,
+        [&](const Map & filters)
+        { found = found || std::ranges::any_of(filters, [&](const Field & entry) { return isGeneratedTableAlias(key(entry)); }); },
+        [&](const IQueryTreeNode & table_expression, const IQueryTreeNode * replacement, const Map & filters)
+        {
+            found = found
+                || std::ranges::any_of(
+                    filters,
+                    [&](const Field & entry)
+                    {
+                        if (!replacement)
+                            return isSessionRelativeKey(table_expression, key(entry));
+                        return isSessionRelativeKey(*replacement, key(entry)) || isSessionRelativeKey(table_expression, key(entry))
+                            || key(entry) == table_expression.as<const TableNode &>().getStorageID().getFullNameNotQuoted();
+                    });
+        });
+    return found;
+}
 
 /** Check that table and table function table expressions from planner context support transactions.
   *
@@ -3007,16 +3139,26 @@ void Planner::buildPlanForQueryNode()
     /// but on followers the rewritten `SELECT` uses fully qualified names and the follower's current
     /// database is the initiator's user-default DB, so the filter match is unreliable. Rather than
     /// patch the match (which differs case by case), disable the combination on the analyzer path.
-    /// With `serialize_query_plan` the initiator lowers `additional_table_filters` into an explicit
-    /// `FilterStep` and ships the serialized plan, so the follower never re-resolves the setting —
-    /// the combination works there and the check is skipped.
+    /// The check is skipped when the filter travels inside a shipped plan: with
+    /// `serialize_query_plan` and either the plan-based path or a local plan, which a leaf timeout the
+    /// local replica cannot honor rules out. Otherwise only the entries a follower would match
+    /// differently are refused, see `hasSessionRelativeAdditionalFilter`.
     if (query_context->canUseParallelReplicasOnInitiator()
-        && !settings[Setting::serialize_query_plan]
-        && !settings[Setting::additional_table_filters].value.empty())
+        && (!settings[Setting::serialize_query_plan]
+                ? hasAdditionalTableFilters(query_tree, query_context)
+                : !settings[Setting::parallel_replicas_plan_based]
+                    && (!ClusterProxy::canUseLocalPlanForParallelReplicas(query_context)
+                        || ClusterProxy::leafTimeoutRequiresRemoteOnlyLeafReading(settings))
+                    && hasSessionRelativeAdditionalFilter(query_tree, query_context)))
     {
         if (settings[Setting::allow_experimental_parallel_reading_from_replicas] >= 2)
             throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
-                "additional_table_filters is not supported with parallel and without serialize_query_plan=1");
+                "additional_table_filters is not supported with parallel replicas unless the query plan "
+                "is shipped to the replicas, which requires serialize_query_plan=1 together with either "
+                "parallel_replicas_plan_based=1, or a local plan (parallel_replicas_local_plan=1 and "
+                "parallel_replicas_prefer_local_replica=1, not inside a Distributed subquery, and "
+                "max_execution_time_leaf either unset, longer than a non-zero max_execution_time, or equal "
+                "to it with timeout_overflow_mode_leaf equal to timeout_overflow_mode)");
 
         auto & mutable_context = planner_context->getMutableQueryContext();
         mutable_context->setSetting("allow_experimental_parallel_reading_from_replicas", Field(0));
