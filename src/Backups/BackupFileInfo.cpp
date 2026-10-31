@@ -8,6 +8,7 @@
 #include <Common/setThreadName.h>
 #include <Common/ThreadPool.h>
 #include <Common/threadPoolCallbackRunner.h>
+#include <Common/ThreadPoolTaskTracker.h>
 #include <Interpreters/ProcessList.h>
 
 
@@ -227,24 +228,31 @@ BackupFileInfos buildFileInfosForBackupEntries(const BackupEntries & backup_entr
     BackupFileInfos infos;
     infos.resize(backup_entries.size());
 
-    std::atomic_bool failed = false;
+    /// A task per entry, so that an entry whose checksum is calculated by reading the whole file never holds up the
+    /// others, and a bound on how many tasks exist at once, so that a backup of millions of entries does not keep a
+    /// task for each of them: `TaskTracker::add` admits a task only while fewer than this many are in flight, collects
+    /// the finished ones as it goes and rethrows the first failure, which stops the loop below. Twice the threads of
+    /// the pool, because that is what the `BACKUP` pool holds before it blocks - it is created with a queue of
+    /// `max_threads` jobs on top of its `max_threads` threads (see `BackupsWorker::ThreadPools`) - so the scan keeps a
+    /// thread that has just finished a task supplied, and waits here, where the finished tasks are collected, rather
+    /// than inside the pool, where they are not.
+    const size_t max_tasks_inflight = 2 * std::max<size_t>(1, thread_pool.getMaxThreads());
 
-    ThreadPoolCallbackRunnerLocal<void> runner(thread_pool, ThreadName::BACKUP_WORKER);
-    for (size_t i = 0; i != backup_entries.size(); ++i)
+    LogSeriesLimiterPtr limited_log = std::make_shared<LogSeriesLimiter>(log, 1, 5);
+
+    /// Passing references here is fine. All the objects are created **before** the tracker so they will be destroyed
+    /// after it in case of an exception
+    TaskTracker task_tracker(threadPoolCallbackRunnerUnsafe<void>(thread_pool, ThreadName::BACKUP_WORKER), max_tasks_inflight, limited_log);
+
+    try
     {
-        if (failed)
-            break;
-
-        /// Passing references here is fine. All the objects are created **before** runner so they will be destroyed after it in case
-        /// of an exception
-        runner.enqueueAndKeepTrack([&infos, &backup_entries, &read_settings, &base_backup, &process_list_element, i, log, &failed, current_component = Coordination::getCurrentComponent()]()
+        for (size_t i = 0; i != backup_entries.size(); ++i)
         {
-            if (failed)
-                return;
-
-            auto component_guard = Coordination::setCurrentComponent(current_component);
-            try
+            task_tracker.add([&infos, &backup_entries, &read_settings, &base_backup, &process_list_element, i, log,
+                              current_component = Coordination::getCurrentComponent()]
             {
+                auto component_guard = Coordination::setCurrentComponent(current_component);
+
                 const auto & name = backup_entries[i].first;
                 const auto & entry = backup_entries[i].second;
 
@@ -252,16 +260,20 @@ BackupFileInfos buildFileInfosForBackupEntries(const BackupEntries & backup_entr
                     process_list_element->checkTimeLimit();
 
                 infos[i] = buildFileInfoForBackupEntry(name, entry, base_backup, read_settings, log);
-            }
-            catch (...)
-            {
-                failed = true;
-                throw;
-            }
-        });
-    }
+            });
+        }
 
-    runner.waitForAllToFinishAndRethrowFirstError();
+        task_tracker.waitAll();
+    }
+    catch (...)
+    {
+        /// The tasks have to be waited for outside of `~TaskTracker`, which asserts that none are left in it before
+        /// it waits itself: a backup that fails or is cancelled leaves them there, and the assertion would abort a
+        /// debug or sanitizer build while it unwinds, instead of the failure reaching the error handling of the
+        /// backup. `copyS3File` and `copyAzureBlobStorageFile` drain it the same way.
+        task_tracker.safeWaitAll();
+        throw;
+    }
 
     return infos;
 }

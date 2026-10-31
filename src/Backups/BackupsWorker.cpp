@@ -918,7 +918,11 @@ void BackupsWorker::writeBackupEntries(
             }
         };
 
-        if (always_single_threaded)
+        /// An entry without a data file to write (the base backup has it, or it is empty) only updates the counters of the
+        /// backup, so it doesn't get a task: the runner keeps every task until the end, and for an incremental backup most
+        /// of the entries, millions for a large one, are such. A reference writes nothing either - its target carries it
+        /// in `data_file_copies` - and a plain backup does give it a data file name, so it is named here too.
+        if (always_single_threaded || file_info.data_file_name.empty() || entry->isReference())
         {
             job();
             continue;
