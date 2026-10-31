@@ -2513,15 +2513,8 @@ Chunk StorageFileSource::generate()
             if (current_file_cache_version.has_value() && current_file_version_settled && !isCancelled() && format_filter_info
                 && getContext()->getSettingsRef()[Setting::use_parquet_metadata_cache])
             {
-                try
-                {
-                    if (fileCacheVersionTokenStillHolds(current_path, *current_file_cache_version))
-                        input_format->cacheFilterColumnStatistics();
-                }
-                catch (...)
-                {
-                    tryLogCurrentException(getLogger("StorageFile"), "Failed to keep the statistics of a split file");
-                }
+                if (fileCacheVersionTokenStillHolds(current_path, *current_file_cache_version))
+                    input_format->cacheFilterColumnStatistics();
             }
         }
         else if (input_format && current_file_cache_version.has_value() && current_file_version_settled && !isCancelled() && format_filter_info
@@ -2596,16 +2589,9 @@ void StorageFileSource::finishReadingSplitFileBucket()
     std::optional<std::pair<std::vector<size_t>, size_t>> buckets_opt;
     if (can_write)
     {
-        try
-        {
-            /// Re-stat, to not write an entry derived from bytes the version token no longer describes.
-            if (fileCacheVersionTokenStillHolds(current_path, *current_file_cache_version))
-                buckets_opt = input_format->getMatchedBuckets();
-        }
-        catch (...)
-        {
-            tryLogCurrentException(getLogger("StorageFile"), "Failed to collect row groups for query condition cache");
-        }
+        /// Re-stat, to not write an entry derived from bytes the version token no longer describes.
+        if (fileCacheVersionTokenStillHolds(current_path, *current_file_cache_version))
+            buckets_opt = input_format->getMatchedBuckets();
         can_write = buckets_opt.has_value();
     }
 
@@ -2631,21 +2617,14 @@ void StorageFileSource::finishReadingSplitFileBucket()
         matched_row_groups = std::move(split_file->matched_row_groups);
     }
 
-    try
-    {
-        writeQueryConditionCacheEntry(
-            query_condition_cache_table_id,
-            QueryConditionCache::makeFilePartName(current_path, *current_file_cache_version),
-            *format_filter_info->condition_hash,
-            format_filter_info->filter_actions_dag->dumpNames(),
-            total_row_groups,
-            matched_row_groups,
-            getContext());
-    }
-    catch (...)
-    {
-        tryLogCurrentException(getLogger("StorageFile"), "Failed to write to query condition cache");
-    }
+    writeQueryConditionCacheEntry(
+        query_condition_cache_table_id,
+        QueryConditionCache::makeFilePartName(current_path, *current_file_cache_version),
+        *format_filter_info->condition_hash,
+        format_filter_info->filter_actions_dag->dumpNames(),
+        total_row_groups,
+        matched_row_groups,
+        getContext());
 }
 
 std::optional<UInt64> StorageFileSource::getTopKConditionHashForCurrentFile() const
