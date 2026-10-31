@@ -1754,63 +1754,12 @@ bool readsContainingColumn(const IQueryTreeNode * node, const IQueryTreeNode * s
     return false;
 }
 
-/// Whether a filter that the planner attaches to the read of the table expression `source` (a row
-/// policy or `additional_table_filters`, see `PlannerJoinTree`) reads a column that strictly contains
-/// the column `name`. Such filters are not a part of the query tree. An identifier of the filter can
-/// be qualified (`t.tup`), so every suffix of its name is compared.
-bool hiddenFilterReadsContainingColumn(const IQueryTreeNode * source, const String & name, const ContextPtr & context)
+/// Whether one of the filters, attached to the read of the storage of the snapshot, reads a column that
+/// strictly contains the column `name`. An identifier of a filter can be qualified (`t.tup`), so every suffix
+/// of its name is compared. The planner expands an `ALIAS` column of the table (or a subcolumn of it) into
+/// the expression of the alias, so the columns read by that expression are read by the filter as well.
+bool filtersReadContainingColumn(const ASTs & filters, const StorageSnapshotPtr & storage_snapshot, const String & name)
 {
-    StoragePtr storage;
-    StorageSnapshotPtr storage_snapshot;
-    if (const auto * table_node = source->as<TableNode>())
-    {
-        storage = table_node->getStorage();
-        storage_snapshot = table_node->getStorageSnapshot();
-    }
-    else if (const auto * table_function_node = source->as<TableFunctionNode>())
-    {
-        storage = table_function_node->getStorage();
-        storage_snapshot = table_function_node->getStorageSnapshot();
-    }
-    if (!storage || !storage_snapshot)
-        return false;
-
-    ASTs filters;
-    if (auto row_policy_filter = getEffectiveRowPolicyFilter(*storage, context))
-        filters.push_back(row_policy_filter->expression);
-
-    const auto & settings = context->getSettingsRef();
-    const auto & additional_filters = settings[Setting::additional_table_filters].value;
-    if (!additional_filters.empty() && !storage->isSyntheticDataSource())
-    {
-        /// The same matching as in `parseAdditionalFilterAstIfNeeded`.
-        const auto & storage_id = storage->getStorageID();
-        for (const auto & additional_filter : additional_filters)
-        {
-            const auto & tuple = additional_filter.safeGet<Tuple>();
-            const auto & table = tuple.at(0).safeGet<String>();
-            const auto & filter = tuple.at(1).safeGet<String>();
-
-            if (table == source->getOriginalAlias()
-                || (table == storage_id.getTableName() && context->getCurrentDatabase() == storage_id.getDatabaseName())
-                || table == storage_id.getFullNameNotQuoted())
-            {
-                ParserExpression parser;
-                filters.push_back(parseQuery(
-                    parser,
-                    filter.data(),
-                    filter.data() + filter.size(),
-                    "additional filter",
-                    settings[Setting::max_query_size],
-                    settings[Setting::max_parser_depth],
-                    settings[Setting::max_parser_backtracks]));
-                break;
-            }
-        }
-    }
-
-    /// The planner expands an `ALIAS` column of the table (or a subcolumn of it) into the expression of
-    /// the alias, so the columns read by that expression are read by the filter as well.
     const auto & columns = storage_snapshot->metadata->getColumns();
     std::unordered_set<String> expanded_aliases;
 
@@ -1851,6 +1800,72 @@ bool hiddenFilterReadsContainingColumn(const IQueryTreeNode * source, const Stri
     }
 
     return false;
+}
+
+/// Whether a filter that the planner attaches to the read of the table expression `source` (a row
+/// policy or `additional_table_filters`, see `PlannerJoinTree`) reads a column that strictly contains
+/// the column `name`. Such filters are not a part of the query tree. The row policies of the storages
+/// the read is forwarded to (the children of `Merge`, see `StorageMerge`, the target of a materialized
+/// view, ...) are attached later, when the wrapper builds the reads of these storages, so they are
+/// checked as well (see `anyStorageReadFrom`).
+bool hiddenFilterReadsContainingColumn(const IQueryTreeNode * source, const String & name, const ContextPtr & context)
+{
+    StoragePtr storage;
+    StorageSnapshotPtr storage_snapshot;
+    if (const auto * table_node = source->as<TableNode>())
+    {
+        storage = table_node->getStorage();
+        storage_snapshot = table_node->getStorageSnapshot();
+    }
+    else if (const auto * table_function_node = source->as<TableFunctionNode>())
+    {
+        storage = table_function_node->getStorage();
+        storage_snapshot = table_function_node->getStorageSnapshot();
+    }
+    if (!storage || !storage_snapshot)
+        return false;
+
+    ASTs filters;
+    const auto & settings = context->getSettingsRef();
+    const auto & additional_filters = settings[Setting::additional_table_filters].value;
+    if (!additional_filters.empty() && !storage->isSyntheticDataSource())
+    {
+        /// The same matching as in `parseAdditionalFilterAstIfNeeded`.
+        const auto & storage_id = storage->getStorageID();
+        for (const auto & additional_filter : additional_filters)
+        {
+            const auto & tuple = additional_filter.safeGet<Tuple>();
+            const auto & table = tuple.at(0).safeGet<String>();
+            const auto & filter = tuple.at(1).safeGet<String>();
+
+            if (table == source->getOriginalAlias()
+                || (table == storage_id.getTableName() && context->getCurrentDatabase() == storage_id.getDatabaseName())
+                || table == storage_id.getFullNameNotQuoted())
+            {
+                ParserExpression parser;
+                filters.push_back(parseQuery(
+                    parser,
+                    filter.data(),
+                    filter.data() + filter.size(),
+                    "additional filter",
+                    settings[Setting::max_query_size],
+                    settings[Setting::max_parser_depth],
+                    settings[Setting::max_parser_backtracks]));
+                break;
+            }
+        }
+    }
+
+    if (filtersReadContainingColumn(filters, storage_snapshot, name))
+        return true;
+
+    return anyStorageReadFrom(
+        storage_snapshot,
+        [&](const StorageSnapshotPtr & snapshot)
+        {
+            auto row_policy_filter = getEffectiveRowPolicyFilter(snapshot->storage, context);
+            return row_policy_filter && filtersReadContainingColumn({row_policy_filter->expression}, snapshot, name);
+        });
 }
 
 /// Whether the leaf query reads a column that contains the column `name` of `source` in a clause or
