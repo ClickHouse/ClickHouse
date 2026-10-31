@@ -421,8 +421,7 @@ ColumnPtr ColumnSparse::filter(const Filter & filt, ssize_t) const
     values_filter.push_back(static_cast<UInt8>(1));
     size_t values_result_size_hint = 1;
 
-    /// Walk the offsets array (small: only non-default rows) along the 64-row words of the filter, which costs
-    /// O(non_defaults + _size/64) and no call per run of default rows.
+    /// Walk the offsets array (small: only non-default rows) along the 64-row words of the filter: O(non_defaults + _size/64).
     const auto & src_offsets_data = getOffsetsData();
     const size_t num_offsets = src_offsets_data.size();
 
