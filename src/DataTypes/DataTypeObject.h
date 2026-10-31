@@ -64,7 +64,7 @@ public:
     bool canBeInsideSparseColumns() const override { return false; }
     bool isComparable() const override { return true; }
     bool isComparableForEquality() const override { return true; }
-    bool haveSubtypes() const override { return false; }
+    bool haveSubtypes() const override { return true; }
 
     bool equals(const IDataType & rhs) const override;
     /// Equal except for the set of SHARED typed paths. Such types have identical columns.

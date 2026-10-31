@@ -1,0 +1,10 @@
+-- changed typed path, dt_input != cast_mode
+{"dt":"2024-01-15 12:30:00"}	2024-01-15 12:30:00
+-- removed typed path, dt_input != cast_mode
+{"dt":"2024-01-15 12:30:00"}	2024-01-15 12:30:00
+-- DateTime64 changed typed path, dt_input != cast_mode
+{"dt":"2024-01-15 12:30:00.123"}	2024-01-15 12:30:00.123
+-- control: both basic
+{"dt":"2024-01-15 12:30:00"}	2024-01-15 12:30:00
+-- control: both best_effort
+{"dt":"2024-01-15 12:30:00"}	2024-01-15 12:30:00

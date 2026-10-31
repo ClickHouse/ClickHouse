@@ -1,0 +1,14 @@
+accepted: removed DateTime64(0)	1	{"a":"2024-01-15 12:30:00.000000000"} {\'a\':\'DateTime64(9)\'} {}
+accepted: removed DateTime64(0)	0	{"a":"2024-01-15 12:30:00"} {\'a\':\'DateTime\'} {}
+accepted: removed Decimal32 whole number	1	{"a":5} {\'a\':\'Float64\'} {}
+accepted: removed Decimal32 whole number	0	{"a":5} {\'a\':\'Int64\'} {}
+accepted: removed Float64 NaN	1	{"a":null} {\'a\':\'Float64\'} {}
+accepted: removed Float64 NaN	0	{} {} {}
+accepted: removed Float64 whole number	1	{"a":5} {\'a\':\'Float64\'} {}
+accepted: removed Float64 whole number	0	{"a":5} {\'a\':\'Int64\'} {}
+accepted: removed String holding a date	1	{"a":"2024-01-15"} {\'a\':\'String\'} {}
+accepted: removed String holding a date	0	{"a":"2024-01-15"} {\'a\':\'Date\'} {}
+accepted: removed UInt64	1	{"a":5} {\'a\':\'UInt64\'} {}; {"a":18446744073709551615} {\'a\':\'UInt64\'} {}
+accepted: removed UInt64	0	{"a":5} {\'a\':\'Int64\'} {}; {"a":18446744073709551615} {\'a\':\'UInt64\'} {}
+accepted: removed empty Array	1	{"a":[]} {\'a\':\'Array(Nullable(Int64))\'} {}
+accepted: removed empty Array	0	{"a":[]} {\'a\':\'Array(Nullable(String))\'} {}
