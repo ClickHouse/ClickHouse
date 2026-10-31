@@ -1,0 +1,14 @@
+control
+OK
+stored IN in a join
+OK
+system table with its own privilege in a join
+OK
+insert into a cluster-mode QueryRunner
+OK
+projection reading the table itself
+OK
+1
+lowered memory limit
+OK
+1	1

@@ -22,6 +22,7 @@
 #   `05453_reattach_tables_stored_function_access` - stored expressions calling functions that check access, legacy `MergeTree` definitions
 #   `05454_reattach_tables_review_followups_5` - stored expressions in joins, materialized view reads, inserts into `Buffer` and tables with views
 #   `05455_reattach_tables_review_followups_6` - stored `joinGet` and `dictGet` expressions in joins, `Dictionary` tables
+#   `05459_reattach_tables_review_followups_7` - self-reading projections, lowered memory limit, stored `IN`, system table privileges, `QueryRunner`
 
 MY_CLICKHOUSE_CLIENT=$(echo ${CLICKHOUSE_CLIENT} | sed 's/'"--send_logs_level=${CLICKHOUSE_CLIENT_SERVER_LOGS_LEVEL}"'/--send_logs_level=trace/g')
 

@@ -275,6 +275,7 @@ namespace Setting
     extern const SettingsFloat log_queries_probability;
     extern const SettingsBool log_query_settings;
     extern const SettingsUInt64 max_ast_depth;
+    extern const SettingsUInt64 max_memory_usage;
     extern const SettingsUInt64 max_ast_elements;
     extern const SettingsUInt64 max_expanded_ast_elements;
     extern const SettingsNonZeroUInt64 max_block_size;
@@ -2910,6 +2911,16 @@ bool astCallsFunctionCheckingOwnAccess(const ASTPtr & ast)
             || function->name == "predictXGBoost" || function->name == "assignCentroid"))
         return true;
 
+    /// A stored expression can name a table without calling a function: the right side of `IN`
+    /// (`v UInt8 ALIAS k IN db.s`) or a subquery. The access to such a table is checked only when the
+    /// expression is analyzed, after the hook, so treat it the same way.
+    if (ast->as<ASTSubquery>())
+        return true;
+    if (const auto * function = ast->as<ASTFunction>(); function && functionIsInOrGlobalInOperator(function->name)
+        && function->arguments && function->arguments->children.size() == 2
+        && dynamic_cast<const ASTIdentifier *>(function->arguments->children[1].get()))
+        return true;
+
     for (const auto & child : ast->children)
         if (astCallsFunctionCheckingOwnAccess(child))
             return true;
@@ -3398,6 +3409,19 @@ static void reattachTablesUsedInQuery(const ASTPtr & query, ContextMutablePtr co
     /// so name the whole hook here; the nested guards the internal statements set restore this one on exit.
     auto component_guard = Coordination::setCurrentComponent("reattachTablesUsedInQuery");
 
+    /// The internal `DETACH`/`ATTACH` pair runs with the server's default settings, but under the memory
+    /// tracker of the outer query, which `ProcessList::insert` has already set up with the outer query's
+    /// `max_memory_usage`. Restoring a table can need much more memory than the query itself (e.g. a
+    /// persistent `Set` rebuilds its whole hash table in `StorageSetOrJoinBase::restore`), so under a
+    /// lowered limit both the `ATTACH` back and the recovery `ATTACH` could fail and leave the table
+    /// detached. Skip the hook for a query limiting its memory below the default.
+    {
+        const UInt64 query_memory_limit = context->getSettingsRef()[Setting::max_memory_usage];
+        const UInt64 default_memory_limit = context->getGlobalContext()->getSettingsRef()[Setting::max_memory_usage];
+        if (query_memory_limit && (!default_memory_limit || query_memory_limit < default_memory_limit))
+            return;
+    }
+
     CollectTablesData data(context);
     /// The aliases of the outermost scope — the one a statement that is not a `SELECT` carries its
     /// expressions in (`ALTER TABLE t DELETE WHERE ...`, ...). For a `SELECT` this collects nothing, because
@@ -3479,6 +3503,24 @@ static void reattachTablesUsedInQuery(const ASTPtr & query, ContextMutablePtr co
         if (!access->isGranted(table.required_access, table.id.getDatabaseName(), table.id.getTableName()))
             return;
 
+    /// Many system tables check a privilege of their own besides `SELECT` only when they are read
+    /// (`SHOW_FILESYSTEM_CACHES` in `system.filesystem_cache_settings`, `SYSTEM_JEMALLOC` in
+    /// `system.jemalloc_sampled_allocations`, `SHOW_USERS` in `system.users`, ...), after the hook. Instead
+    /// of mirroring every table, require all such privileges for any system table except the few that only
+    /// generate data; lacking them only skips the randomization.
+    {
+        static const std::unordered_set<std::string_view> system_tables_without_own_access_checks
+            = {"one", "numbers", "numbers_mt", "zeros", "zeros_mt"};
+        const AccessFlags system_tables_own_access = AccessType::SHOW_USERS | AccessType::SHOW_ROLES | AccessType::SHOW_QUOTAS
+            | AccessType::SHOW_ROW_POLICIES | AccessType::SHOW_SETTINGS_PROFILES | AccessType::SHOW_MASKING_POLICIES
+            | AccessType::SHOW_FILESYSTEM_CACHES | AccessType::SYSTEM_JEMALLOC | AccessType::INTROSPECTION;
+        for (const auto & table : data.tables)
+            if (table.id.getDatabaseName() == DatabaseCatalog::SYSTEM_DATABASE
+                && !system_tables_without_own_access_checks.contains(table.id.getTableName())
+                && !access->isGranted(system_tables_own_access))
+                return;
+    }
+
     /// A granted `SELECT` does not guarantee the read is permitted: `joinGet`, a direct `JOIN` against a
     /// `Join` table, and `IN` over a `Set` table throw `ACCESS_DENIED` when the user has a nontrivial row
     /// policy on that table (see `StorageSet::checkNoRowPolicy`). Telling those shapes apart would require
@@ -3533,6 +3575,10 @@ static void reattachTablesUsedInQuery(const ASTPtr & query, ContextMutablePtr co
         /// `false` for the view it wraps.
         const auto resolved = castStorage<const IStorage>(storage, DeferredTable::Skip);
         if (resolved && (resolved->isView() || resolved->readsFromOtherTables() || resolved->isDictionary()))
+            return;
+        /// A `QueryRunner` table checks its own access in its sink (`READ`/`WRITE` on `REMOTE` in the cluster
+        /// mode), after the hook.
+        if (resolved && resolved->getName() == "QueryRunner")
             return;
         if (writes && !DatabaseCatalog::instance().getDependentViews(table.id).empty())
             return;
@@ -3895,11 +3941,17 @@ static void reattachTablesUsedInQuery(const ASTPtr & query, ContextMutablePtr co
                         for (const auto & index : create->columns_list->indices->children)
                             IndexDescription::getIndexFromAST(
                                 index->clone(), columns, /* is_implicitly_created */ false, /* escape_filenames */ true, validation_context);
+                    /// A projection can read the table itself through a scalar subquery the same way as a
+                    /// constraint below, so skip the table if a projection may name it.
                     if (create->columns_list->projections)
+                    {
+                        if (astMayNameTable(create->columns_list->projections, table_id.getDatabaseName(), table_id.getTableName()))
+                            continue;
                         for (const auto & projection : create->columns_list->projections->children)
                             ProjectionDescription::getProjectionFromAST(
                                 projection, columns, /* partition_key */ nullptr, validation_context, LoadingStrictnessLevel::ATTACH,
                                 /* attach_short_syntax */ true);
+                    }
 
                     /// The constraints are analyzed by `InterpreterCreateQuery::getConstraintsDescription` on
                     /// `ATTACH` as well, executing their scalar subqueries. A subquery reading the table itself
