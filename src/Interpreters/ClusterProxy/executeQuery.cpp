@@ -1,8 +1,6 @@
 #include <Core/ProtocolDefines.h>
 #include <memory>
 #include <optional>
-#include <Analyzer/QueryNode.h>
-#include <Analyzer/UnionNode.h>
 #include <Analyzer/createUniqueAliasesIfNecessary.h>
 #include <base/scope_guard.h>
 #include <Columns/ColumnConst.h>
@@ -1191,11 +1189,7 @@ void executeQueryWithParallelReplicas(
         /// The subquery carries its own SETTINGS (shipped to remote replicas via the AST). Pass its
         /// context down so the local plan is optimized with the same read-in-order settings as the
         /// replicas, and the initiator does not end up with a different coordination mode.
-        ContextPtr local_context = new_context;
-        if (const auto * query_node = query_tree->as<QueryNode>())
-            local_context = query_node->getContext();
-        else if (const auto * union_node = query_tree->as<UnionNode>())
-            local_context = union_node->getContext();
+        ContextPtr local_context = getShippedFragmentContext(query_tree, new_context);
 
         /// What of a condition pushed into the local copy of the fragment the replicas get as well is
         /// decided by the splice into the query they are sent, on the context it answers to. A plan

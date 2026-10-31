@@ -334,3 +334,15 @@ TEST(ReadFromMergeTreeQueryConditionCacheFlag, DeserializationOnEmptyTableIsEmpt
         EXPECT_NE(typeid_cast<ReadNothingStep *>(step.get()), nullptr) << "cache_disabled = " << cache_disabled;
     }
 }
+
+/// Step version 2 (the read-in-order soft-limit threshold) belongs to plan version 21: a peer at plan
+/// version 20 knows only step versions 0 and 1 and would reject the whole stream with `INCORRECT_DATA`.
+TEST(ReadFromMergeTreeQueryConditionCacheFlag, StepVersionBoundaries)
+{
+    EXPECT_EQ(stepVersionFor(DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_QUERY_CONDITION_CACHE_FLAG - 1), 0u);
+    EXPECT_EQ(stepVersionFor(20), 1u);
+    EXPECT_EQ(stepVersionFor(21), 2u);
+    EXPECT_EQ(stepVersionFor(DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_READ_IN_ORDER_SOFT_LIMIT - 1), 1u);
+    EXPECT_EQ(stepVersionFor(DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_READ_IN_ORDER_SOFT_LIMIT), 2u);
+    EXPECT_NO_THROW(stepRegistry().checkVersionReadable(step_name, stepVersionFor(20)));
+}
