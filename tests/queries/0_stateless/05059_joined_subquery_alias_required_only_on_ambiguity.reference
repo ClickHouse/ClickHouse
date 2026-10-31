@@ -74,7 +74,11 @@ toString(0)	toString(0)
 0	0
 toString(0)	toString(0)
 0	0
-toString(0)	toString(0)
+toString(z)	toString(z)
+2	3
+toString(z)	toString(z)
+2	3
+f(a)	f(r.a)
 0	0
 -- Equally named columns of a single table expression do not need a qualification
 1	1

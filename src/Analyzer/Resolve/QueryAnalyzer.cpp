@@ -3015,14 +3015,16 @@ static bool lambdaBodyMayUseArgument(const QueryTreeNodePtr & node, const std::s
     return false;
 }
 
-/** Whether the resolved expression `node` still contains the matched column `matched_node`, looking into the source
-  * expressions of folded constants. A named lambda or a SQL UDF that ignores its argument (`WITH (y -> 0) AS f ... APPLY f`)
-  * is replaced by its resolved body, so its result and any later transformer are named without the matched column.
+/** Whether the name the resolved expression `node` is formatted by may contain the name of the matched column `matched_node`.
+  * A named lambda or a SQL UDF is replaced by its resolved body, and a following transformer reads the name of that body
+  * rather than the name of the call: `WITH (y -> 0) AS f SELECT * APPLY f APPLY toString` produces `toString(0)`.
+  * The source expressions of folded constants are looked into. An explicitly aliased subexpression is named by its alias,
+  * so it does not carry the column name (`WITH (y -> (y + 1 AS z)) AS f ... APPLY f` names the resolved body `z`).
   * A column is compared together with its source: an equally named column of another table expression is not the matched one.
   */
-static bool resolvedExpressionContainsMatchedColumn(const QueryTreeNodePtr & node, const QueryTreeNodePtr & matched_node)
+static bool resolvedExpressionNameMayContainMatchedColumn(const QueryTreeNodePtr & node, const QueryTreeNodePtr & matched_node)
 {
-    if (!node)
+    if (!node || node->hasAlias())
         return false;
 
     if (const auto * column_node = node->as<ColumnNode>())
@@ -3032,17 +3034,17 @@ static bool resolvedExpressionContainsMatchedColumn(const QueryTreeNodePtr & nod
             && column_node->getColumnSourceOrNull() == matched_column_node->getColumnSourceOrNull())
             return true;
     }
-    else if (!matched_node->as<ColumnNode>() && node->isEqual(*matched_node))
+    else if (!matched_node->as<ColumnNode>() && node->isEqual(*matched_node, {.compare_aliases = false}))
     {
         return true;
     }
 
     if (const auto * constant_node = node->as<ConstantNode>())
-        return resolvedExpressionContainsMatchedColumn(constant_node->getSourceExpression(), matched_node);
+        return resolvedExpressionNameMayContainMatchedColumn(constant_node->getSourceExpression(), matched_node);
 
     for (const auto & child : node->getChildren())
     {
-        if (resolvedExpressionContainsMatchedColumn(child, matched_node))
+        if (resolvedExpressionNameMayContainMatchedColumn(child, matched_node))
             return true;
     }
 
@@ -3431,11 +3433,11 @@ ProjectionNames QueryAnalyzer::resolveMatcher(QueryTreeNodePtr & matcher_node, I
                 /// that name does. A prefix keeps the display name the transformer received, which is derived from the
                 /// column only if no earlier transformer has discarded it (`APPLY (x -> 0) APPLY (x -> x, 'f')` produces
                 /// `f0` for every column); otherwise the display name is the natural one.
-                /// The resolved result must also still contain the matched column: a named lambda or a SQL UDF is replaced by
-                /// its body, which may ignore the argument (`WITH (y -> 0) AS f SELECT * APPLY f APPLY toString`).
+                /// This is the name of the call (`f(a)` for `WITH (y -> 0) AS f SELECT * APPLY f`), which still depends on the
+                /// column even if the call is replaced by a body ignoring its argument. The name a following transformer reads
+                /// can differ from it; it is handled below.
                 auto & matched_column = matched_columns_before_transformers.back();
-                natural_name_derived_from_column = argument_name_derived_from_column && transformer_name_uses_argument
-                    && resolvedExpressionContainsMatchedColumn(node, matched_column.node);
+                natural_name_derived_from_column = argument_name_derived_from_column && transformer_name_uses_argument;
                 if (apply_column_name_prefix.empty())
                     matched_column.projection_name_derived_from_column = natural_name_derived_from_column;
 
@@ -3629,6 +3631,26 @@ ProjectionNames QueryAnalyzer::resolveMatcher(QueryTreeNodePtr & matcher_node, I
                     /// The prefix only affects this column's terminal display name above.
                     node_to_projection_name.emplace(node, natural_projection_name);
                     argument_name_derived_from_column = natural_name_derived_from_column;
+
+                    /// A following transformer reads the cached name of the node rather than `natural_projection_name` when
+                    /// the node already has one (see resolveExpressionNode). A named lambda or a SQL UDF is replaced by its
+                    /// resolved body, which is cached under its own name: `0` for `WITH (y -> 0) AS f ... APPLY f`, `z` for
+                    /// `WITH (y -> (y + 1 AS z)) AS f ... APPLY f`. Then the dependence is that of the name actually read.
+                    if (execute_apply_transformer && argument_name_derived_from_column)
+                    {
+                        String argument_name_for_next_transformer = natural_projection_name;
+                        if (auto resolved_it = resolved_expressions.find(node);
+                            resolved_it != resolved_expressions.end() && resolved_it->second.size() == 1)
+                            argument_name_for_next_transformer = resolved_it->second.front();
+                        else if (node->hasAlias())
+                            argument_name_for_next_transformer = node->getAlias();
+                        else if (auto name_it = node_to_projection_name.find(node); name_it != node_to_projection_name.end())
+                            argument_name_for_next_transformer = name_it->second;
+
+                        if (argument_name_for_next_transformer != natural_projection_name)
+                            argument_name_derived_from_column = resolvedExpressionNameMayContainMatchedColumn(
+                                node, matched_columns_before_transformers.back().node);
+                    }
                 }
                 node_projection_names.clear();
             }

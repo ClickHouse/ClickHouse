@@ -113,10 +113,12 @@ SELECT * APPLY (x -> (x AS z) + x) FROM (SELECT 1 AS a), (SELECT 2 AS a); -- { s
 WITH (y -> 0) AS f SELECT * APPLY f APPLY toString FROM (SELECT 1 AS a), (SELECT 2 AS a) FORMAT TSVWithNames;
 WITH (y -> 0) AS f SELECT * APPLY (x -> f(x)) APPLY toString FROM (SELECT 1 AS a), (SELECT 2 AS a) FORMAT TSVWithNames;
 WITH (y -> y + 1) AS f SELECT * APPLY f APPLY toString FROM (SELECT 1 AS a), (SELECT 2 AS a); -- { serverError ALIAS_REQUIRED }
-DROP FUNCTION IF EXISTS f_05059_constant;
-CREATE FUNCTION f_05059_constant AS (y) -> 0;
-SELECT * APPLY f_05059_constant APPLY toString FROM (SELECT 1 AS a), (SELECT 2 AS a) FORMAT TSVWithNames;
-DROP FUNCTION f_05059_constant;
+WITH (y -> (y + 1 AS z)) AS f SELECT * APPLY f APPLY toString FROM (SELECT 1 AS a), (SELECT 2 AS a) FORMAT TSVWithNames;
+WITH (y -> (y + 1 AS z)) AS f SELECT * APPLY (x -> f(x)) APPLY toString FROM (SELECT 1 AS a), (SELECT 2 AS a) FORMAT TSVWithNames;
+-- The name of a terminal named-lambda call still contains the column name, so qualification resolves the collision
+WITH (y -> 0) AS f SELECT * APPLY f FROM (SELECT 1 AS a), (SELECT 2 AS a); -- { serverError ALIAS_REQUIRED }
+WITH (y -> 0) AS f SELECT * APPLY (x -> f(x)) FROM (SELECT 1 AS a), (SELECT 2 AS a); -- { serverError ALIAS_REQUIRED }
+WITH (y -> 0) AS f SELECT * APPLY f FROM (SELECT 1 AS a) AS l, (SELECT 2 AS a) AS r FORMAT TSVWithNames;
 
 SELECT '-- Equally named columns of a single table expression do not need a qualification';
 SELECT * FROM (SELECT x, x FROM (SELECT 1 AS x));
