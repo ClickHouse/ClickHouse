@@ -184,7 +184,7 @@ def test_single_hudi_file(started_cluster):
     spark = started_cluster.spark_session
     minio_client = started_cluster.minio_client
     bucket = started_cluster.minio_bucket
-    TABLE_NAME = "test_single_hudi_file"
+    TABLE_NAME = f"test_single_hudi_file_{uuid.uuid4().hex[:8]}"
 
     inserted_data = "SELECT number as a, toString(number) as b FROM numbers(100)"
     parquet_data_path = create_initial_data_file(
@@ -209,7 +209,7 @@ def test_multiple_hudi_files(started_cluster):
     spark = started_cluster.spark_session
     minio_client = started_cluster.minio_client
     bucket = started_cluster.minio_bucket
-    TABLE_NAME = "test_multiple_hudi_files"
+    TABLE_NAME = f"test_multiple_hudi_files_{uuid.uuid4().hex[:8]}"
 
     write_hudi_from_df(
         spark, TABLE_NAME, generate_data(spark, 0, 100), f"/{TABLE_NAME}"
@@ -282,7 +282,7 @@ def test_types(started_cluster):
     spark = started_cluster.spark_session
     minio_client = started_cluster.minio_client
     bucket = started_cluster.minio_bucket
-    TABLE_NAME = "test_types"
+    TABLE_NAME = f"test_types_{uuid.uuid4().hex[:8]}"
 
     data = [
         (
