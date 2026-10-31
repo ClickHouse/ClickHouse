@@ -2,6 +2,7 @@
 
 #include <Core/BackgroundSchedulePoolTaskHolder.h>
 #include <Core/BackgroundSchedulePool.h>
+#include <Interpreters/InsertStartGates.h>
 #include <Storages/IStorage.h>
 #include <Common/ThreadPool_fwd.h>
 
@@ -91,6 +92,8 @@ public:
     bool readRequiresAnalyzedQuery() const override;
     bool readsFromOtherTables() const override { return static_cast<bool>(destination_id); }
     StoragePtr getDestinationTable() const;
+    /// The context the nested INSERT into the destination table runs with (a copy of it), see `writeBlockToDestination`.
+    ContextPtr getDestinationWriteContext() const { return getContext(); }
 
     bool supportsParallelInsert() const override { return true; }
 
@@ -169,6 +172,12 @@ private:
         ///    usually don't produce lots of small blocks.
         int32_t metadata_version = 0;
 
+        /// The registries of the INSERT queries whose rows are currently in `data`. A flush writes out
+        /// whatever the buffer holds - possibly the rows of several queries, not necessarily including
+        /// the query that triggered it - and its pre-write decision has to be shared with exactly the
+        /// queries whose rows it writes. See `StorageBuffer::flushBuffer`.
+        std::vector<InsertStartGatesPtr> contributing_gates;
+
         std::unique_lock<std::mutex> lockForReading() const;
         std::unique_lock<std::mutex> lockForWriting() const;
         std::unique_lock<std::mutex> tryLock() const;
@@ -207,7 +216,11 @@ private:
     bool checkThresholdsImpl(bool direct, size_t rows, size_t bytes, time_t time_passed) const;
 
     /// `table` argument is passed, as it is sometimes evaluated beforehand. It must match the `destination`.
-    void writeBlockToDestination(const Block & block, StoragePtr table);
+    /// `insert_start_gates` is the registry of the INSERT query for a direct write of `BufferSink`, or
+    /// the group registry of the queries whose buffered rows a flush writes out, so the nested INSERT
+    /// shares the `Too many parts` gates of the queries the written rows belong to; when there is no
+    /// query to share with, none is passed and the nested INSERT creates its own.
+    void writeBlockToDestination(const Block & block, StoragePtr table, const InsertStartGatesPtr & insert_start_gates = nullptr);
 
     void backgroundFlush();
     void reschedule(size_t min_delay);
