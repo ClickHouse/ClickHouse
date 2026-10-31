@@ -1,0 +1,5 @@
+MAX queries = 1000000: 1
+MAX read_rows = 1000000000: 0
+MAX read_bytes = 1000000000000: 0
+MAX execution_time = 1000: 1
+no quota: 1

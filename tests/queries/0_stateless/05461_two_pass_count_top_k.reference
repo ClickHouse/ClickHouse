@@ -1,0 +1,77 @@
+results with and without the optimization
+8	4	1066
+11	1	1061
+8	0	1059
+10	1	1055
+18	0	1052
+18	2	1051
+17	1	1042
+3	2	1041
+16	3	1040
+9	2	1038
+8	4	1066
+11	1	1061
+8	0	1059
+10	1	1055
+18	0	1052
+18	2	1051
+17	1	1042
+3	2	1041
+16	3	1040
+9	2	1038
+8	4	1066	531500
+11	1	1061	524440
+8	0	1059	519280
+10	1	1055	544820
+18	0	1052	518450
+18	2	1051	507970
+17	1	1042	503360
+0	-982	1	338
+1	-985	2	337
+1	-983	0	337
+4	-992	2	337
+1	-989	0	336
+2	-989	0	336
+8	4	1066
+11	1	1061
+8	0	1059
+10	1	1055
+18	0	1052
+rows_before_limit_at_least
+{
+	"meta":
+	[
+		{
+			"name": "k",
+			"type": "UInt64"
+		},
+		{
+			"name": "s",
+			"type": "String"
+		},
+		{
+			"name": "count()",
+			"type": "UInt64"
+		}
+	],
+
+	"data":
+	[
+		[8, "4", 1066],
+		[11, "1", 1061],
+		[8, "0", 1059]
+	],
+
+	"rows": 3,
+
+	"rows_before_limit_at_least": 3905
+}
+passes, fallbacks, all rows of every pass in read_rows
+two_pass_q1_off	0	0	0
+two_pass_q1_on	1	0	1
+two_pass_q3_on	1	0	0
+two_pass_q4_on	1	0	1
+two_pass_q7_on	1	0	1
+two_pass_rows_before_limit_on	1	0	1
+the processors of the passes belong to the step
+1	1

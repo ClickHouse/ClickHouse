@@ -121,6 +121,8 @@ struct QueryPlanOptimizationSettings
     bool enable_group_by_top_k_optimization;
     bool enable_group_by_top_k_dynamic_filtering;
     bool aggregation_having_prefilter;
+    bool two_pass_count_top_k;
+    UInt64 two_pass_count_top_k_min_rows = 0;
     UInt64 top_k_optimization_observation_rows = 65536;
     bool top_k_optimization_shared_boundary = true;
 

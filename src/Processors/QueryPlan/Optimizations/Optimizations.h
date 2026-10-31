@@ -248,6 +248,8 @@ size_t tryOptimizeGroupByTopK(QueryPlan::Node * parent_node, QueryPlan::Nodes & 
 
 /// Let an aggregation's output conversion skip the keys of the groups a HAVING count() bound above it rejects
 size_t tryPushHavingPrefilterIntoAggregation(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, const Optimization::ExtraSettings & settings);
+/// ORDER BY count() DESC LIMIT n over a multi-key GROUP BY in passes over the rows of frequent values of an integer key.
+void optimizeTwoPassCountTopK(QueryPlan::Node & root, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & optimization_settings);
 
 /// Push ORDER BY ... LIMIT n down through a Join when the sort key only references
 /// columns from the side preserved by the join (LEFT/RIGHT). Restricts how many rows

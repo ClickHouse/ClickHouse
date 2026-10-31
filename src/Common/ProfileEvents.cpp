@@ -1136,6 +1136,8 @@ The server successfully detected this situation and will download merged part fr
     M(AggregationHavingPrefilterGroupsSkipped, "Number of groups whose key columns were not materialized while a two-level bucket of an aggregation was converted, because a HAVING bound on that group's own count() already rejected it (the aggregationHavingPrefilter plan optimization).", ValueType::Number) \
     M(AggregationHashTablesInitializedAsTwoLevel, "How many hash tables were inited as two-level for aggregation.", ValueType::Number) \
     M(AggregationConvertedToTwoLevel, "How many times a single-level aggregation hash table was converted to two-level at runtime.", ValueType::Number) \
+    M(TwoPassCountTopKPasses, "Passes run by the setting query_plan_two_pass_count_top_k.", ValueType::Number) \
+    M(TwoPassCountTopKFallbacks, "Times the setting query_plan_two_pass_count_top_k ran the original plan after a pilot or a pass.", ValueType::Number) \
     M(AggregationOptimizedEqualRangesOfKeys, "For how many blocks optimization of equal ranges of keys was applied", ValueType::Number) \
     M(AggregationSharedKeptKeysRebuilds, "Number of aggregation streams that rebuilt their hash table to the shared set of kept keys after the trivial GROUP BY LIMIT cutoff was reached (see the `optimize_trivial_group_by_limit_query` setting).", ValueType::Number) \
     M(AggregationSharedKeptKeysSpillReseeds, "Number of times a hash table restricted to the shared set of kept keys of the trivial GROUP BY LIMIT cutoff was re-seeded with those keys after being flushed to a temporary file by external aggregation (see the `optimize_trivial_group_by_limit_query` setting).", ValueType::Number) \

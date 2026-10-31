@@ -150,6 +150,24 @@ bool isSensitiveToEvaluationCount(const ActionsDAG & dag)
     return false;
 }
 
+bool hasResultNameClash(const ActionsDAG & dag, const ActionsDAG::Node * node)
+{
+    for (const auto & other : dag.getNodes())
+        if (&other != node && other.result_name == node->result_name)
+            return true;
+    return false;
+}
+
+const ActionsDAG::Node * findForwardedInput(const ActionsDAG & dag, const String & name)
+{
+    const auto * node = dag.tryFindInOutputs(name);
+    if (!node)
+        return nullptr;
+    while (node->type == ActionsDAG::ActionType::ALIAS)
+        node = node->children.front();
+    return node->type == ActionsDAG::ActionType::INPUT ? node : nullptr;
+}
+
 FilterResult filterResultForNotMatchedRows(
     const ActionsDAG & filter_dag,
     const String & filter_column_name,

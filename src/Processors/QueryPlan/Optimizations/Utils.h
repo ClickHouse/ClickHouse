@@ -83,6 +83,13 @@ enum class FilterResult
 /// many times and on which rows it was evaluated.
 [[nodiscard]] bool isSensitiveToEvaluationCount(const ActionsDAG & dag);
 
+/// The reader and the PREWHERE read steps find columns by name, so another node under the same name
+/// would be taken for this one.
+[[nodiscard]] bool hasResultNameClash(const ActionsDAG & dag, const ActionsDAG::Node * node);
+
+/// The INPUT node the output `name` of `dag` forwards through aliases only, or nullptr when it is computed or absent.
+[[nodiscard]] const ActionsDAG::Node * findForwardedInput(const ActionsDAG & dag, const String & name);
+
 /// True if optimizeExchanges will lift a plain gather above this step, so a scatter/gather pair separated
 /// by it still collapses. Shared with findGatherOverRead, which has to predict that rewrite.
 [[nodiscard]] bool canHoistGatherThroughStep(const IQueryPlanStep & step);
