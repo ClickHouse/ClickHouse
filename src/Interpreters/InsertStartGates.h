@@ -149,6 +149,15 @@ public:
             auto target = forward_to;
             lock.unlock();
             target->run(/* forwarded= */ true);
+
+            /// A lent gate of a group write merged into another gate by a later group write before the decision
+            /// was made: the sinks of this group write reach the decision as forwarded participants, so they are
+            /// not rejected by `lent_flush_exception` of the gate that decides - which is set for the storage
+            /// that later group write flushes, if at all. Its checks still include the merged deferred checks of
+            /// the pending participants, so a failure of one that is enforced by the storage this group write
+            /// flushes rejects it, as it would have if the gate had not been merged.
+            if (!forwarded && lent_from && !lent_to_flush_of.expired())
+                target->rethrowFailedDeferredCheckOf(lent_to_flush_of);
             return;
         }
 
@@ -220,6 +229,25 @@ public:
 
 private:
     friend class InsertStartGates;
+
+    /// Follows `forward_to` to the gate that has made the decision, and rethrows the failure of a deferred check
+    /// enforced by `storage` that failed when it was made. Called after `run` has returned, so the decision has
+    /// been made. The locks of the gates are taken one at a time.
+    void rethrowFailedDeferredCheckOf(const std::weak_ptr<const void> & storage)
+    {
+        std::unique_lock lock(mutex);
+        if (forward_to)
+        {
+            auto target = forward_to;
+            lock.unlock();
+            target->rethrowFailedDeferredCheckOf(storage);
+            return;
+        }
+
+        for (const auto & [enforced_by, outcome] : failed_deferred)
+            if (sameOwner(enforced_by, storage) && outcome->exception)
+                std::rethrow_exception(outcome->exception);
+    }
 
     /// Whether a deferred check enforced by `storage` failed when the decision was made. Such a gate is not
     /// lent to a group write of `storage`, see `InsertStartGates::get`. An empty `storage` matches any
