@@ -600,6 +600,40 @@ DataTypePtr widenIntegerElements(const DataTypePtr & type, WideIntegerCarrier ca
     return which.isUInt256() ? nullptr : std::make_shared<DataTypeUInt256>();
 }
 
+/// Under `strict`, a `DateTime` / `DateTime64` member of an `Array`, `Tuple` or `Map` constant that has a time of
+/// day is not representable as a `Date` / `Date32`: comparing a `Date` with it converts the `Date` to midnight in
+/// the time zone of the `DateTime`, so it can never be equal. Truncating it to its day (as `CAST` does) would make
+/// `[toDate('2020-01-01')] IN ([toDateTime('2020-01-01 12:00:00')])` true, while the comparison with `=` is false.
+/// A scalar constant keeps the truncation: the set of `IN` built from a plain `DateTime` constant truncates it, and
+/// the same constant wrapped in `Dynamic` must agree with it.
+bool isDateTimeElementWithTimeOfDay(const Field & src, const IDataType & to_type, const IDataType * from_type_hint)
+{
+    const WhichDataType which_to(removeLowCardinalityAndNullable(to_type.getPtr()));
+    if (!which_to.isDate() && !which_to.isDate32())
+        return false;
+
+    const IDataType * hint = unwrapTypeHint(from_type_hint);
+    const auto is_midnight = [](const DateLUTImpl & time_zone, Int64 seconds)
+    {
+        return time_zone.fromDayNum(time_zone.toDayNum(seconds)) == seconds;
+    };
+
+    if (const auto * date_time_type = typeid_cast<const DataTypeDateTime *>(hint); date_time_type && src.getType() == Field::Types::UInt64)
+        return !is_midnight(date_time_type->getTimeZone(), static_cast<Int64>(src.safeGet<UInt64>()));
+
+    if (const auto * date_time64_type = typeid_cast<const DataTypeDateTime64 *>(hint); date_time64_type && src.getType() == Field::Types::Decimal64)
+    {
+        const auto & decimal = src.safeGet<Decimal64>();
+        const Int64 value = decimal.getValue().value;
+        const Int64 scale_multiplier = decimal.getScaleMultiplier().value;
+        if (value % scale_multiplier != 0)
+            return true;
+        return !is_midnight(date_time64_type->getTimeZone(), value / scale_multiplier);
+    }
+
+    return false;
+}
+
 Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const IDataType * from_type_hint, const FormatSettings & format_settings, bool strict, bool convert_inexact_floats)
 {
     /// A non-Null constant of `Nullable(T)` / `LowCardinality(T)` is a plain value of `T`, and the caller only unwraps
@@ -720,25 +754,15 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
         return static_cast<Int64>(ToDate32Impl::execute(seconds, DateLUT::instance("UTC")));
     };
 
-    /// Under `strict`, a `DateTime` / `DateTime64` with a time of day is not representable as a date: comparing
-    /// a `Date` with it converts the `Date` to midnight in the time zone of the `DateTime`, so it can never be
-    /// equal. Truncating it to its day (as `CAST` does) would make `[toDate('2020-01-01')] IN
-    /// ([toDateTime('2020-01-01 12:00:00')])` true, while the comparison with `=` is false.
-    const auto is_midnight = [](const DateLUTImpl & time_zone, Int64 seconds)
-    {
-        return time_zone.fromDayNum(time_zone.toDayNum(seconds)) == seconds;
-    };
-
     /// Conversion between Date and DateTime, Time and vice versa.
-    if ((which_type.isDate() || which_type.isDate32()) && which_from_type.isDateTime())
+    if (which_type.isDate() && which_from_type.isDateTime())
     {
-        const auto & time_zone = static_cast<const DataTypeDateTime &>(*from_type_hint).getTimeZone();
-        const Int64 seconds = static_cast<Int64>(src.safeGet<UInt64>());
-        if (strict && !is_midnight(time_zone, seconds))
-            return {};
-        if (which_type.isDate())
-            return static_cast<UInt16>(time_zone.toDayNum(seconds).toUnderType());
-        return static_cast<Int32>(time_zone.toDayNum(seconds).toUnderType());
+        return static_cast<UInt16>(static_cast<const DataTypeDateTime &>(*from_type_hint).getTimeZone().toDayNum(src.safeGet<UInt64>()).toUnderType());
+    }
+    if (which_type.isDate32() && which_from_type.isDateTime())
+    {
+        return static_cast<Int32>(
+            static_cast<const DataTypeDateTime &>(*from_type_hint).getTimeZone().toDayNum(src.safeGet<UInt64>()).toUnderType());
     }
     if (which_type.isDateTime() && which_from_type.isDate())
     {
@@ -834,21 +858,15 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
     /// As `DateTime` -> `Date` above, the day in the source time zone; a `DateTime64` also covers days a `Date` cannot hold.
     if (which_type.isDate() && which_from_type.isDateTime64())
     {
-        const auto & time_zone = static_cast<const DataTypeDateTime64 &>(*from_type_hint).getTimeZone();
-        const Int64 seconds = decimal64_to_seconds();
-        const Int64 day_num = time_zone.toDayNum(seconds).toUnderType();
-        if (strict && (day_num < 0 || day_num > DATE_LUT_MAX_DAY_NUM || !decimal64_has_whole_seconds() || !is_midnight(time_zone, seconds)))
+        const Int64 day_num = static_cast<const DataTypeDateTime64 &>(*from_type_hint).getTimeZone().toDayNum(decimal64_to_seconds()).toUnderType();
+        if (strict && (day_num < 0 || day_num > DATE_LUT_MAX_DAY_NUM))
             return {};
         return static_cast<UInt16>(day_num);
     }
     if (which_type.isDate32() && which_from_type.isDateTime64())
     {
-        const auto & time_zone = static_cast<const DataTypeDateTime64 &>(*from_type_hint).getTimeZone();
-        const Int64 seconds = decimal64_to_seconds();
-        const Int64 day_num = time_zone.toDayNum(seconds).toUnderType();
-        if (strict
-            && (day_num < DATE_LUT_MIN_EXTEND_DAY_NUM || day_num > DATE_LUT_MAX_EXTEND_DAY_NUM || !decimal64_has_whole_seconds()
-                || !is_midnight(time_zone, seconds)))
+        const Int64 day_num = static_cast<const DataTypeDateTime64 &>(*from_type_hint).getTimeZone().toDayNum(decimal64_to_seconds()).toUnderType();
+        if (strict && (day_num < DATE_LUT_MIN_EXTEND_DAY_NUM || day_num > DATE_LUT_MAX_EXTEND_DAY_NUM))
             return {};
         return static_cast<Int32>(day_num);
     }
@@ -1226,6 +1244,8 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
             Array res(src_arr_size);
             for (size_t i = 0; i < src_arr_size; ++i)
             {
+                if (strict && isDateTimeElementWithTimeOfDay(src_arr[i], element_type, element_hint))
+                    have_unconvertible_element = true;
                 res[i] = convertFieldToType(src_arr[i], element_type, element_hint, format_settings, strict, convert_inexact_floats);
                 /// Strict: a value that is not representable is not a NULL element.
                 if (res[i].isNull() && (!canContainNull(element_type) || (strict && !src_arr[i].isNull())))
@@ -1265,6 +1285,8 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
             {
                 const auto & element_type = *(type_tuple->getElements()[i]);
                 const IDataType * element_hint = tuple_hint ? tuple_hint->getElements()[i].get() : nullptr;
+                if (strict && isDateTimeElementWithTimeOfDay(src_tuple[i], element_type, element_hint))
+                    have_unconvertible_element = true;
                 res[i] = convertFieldToType(src_tuple[i], element_type, element_hint, format_settings, strict, convert_inexact_floats);
                 if (res[i].isNull() && (!canContainNull(element_type) || (strict && !src_tuple[i].isNull())))
                 {
@@ -1461,6 +1483,9 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
                 const auto & value = map_entry[1];
 
                 Tuple updated_entry(2);
+
+                if (strict && (isDateTimeElementWithTimeOfDay(key, key_type, key_hint) || isDateTimeElementWithTimeOfDay(value, value_type, value_hint)))
+                    have_unconvertible_element = true;
 
                 updated_entry[0] = convertFieldToType(key, key_type, key_hint, format_settings, strict, convert_inexact_floats);
 
