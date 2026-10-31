@@ -1,0 +1,94 @@
+<test>
+    <settings>
+        <max_threads>1</max_threads>
+        <max_insert_threads>1</max_insert_threads>
+    </settings>
+
+    <create_query>CREATE TABLE mv_plan_source (id UInt64, value Float64) ENGINE = Memory</create_query>
+    <create_query>CREATE TABLE mv_plan_lookup (id UInt64, a Float64, b Float64, c Float64, d Float64) ENGINE = Memory</create_query>
+    <create_query>CREATE TABLE mv_plan_target (id UInt64, score Float64) ENGINE = Null</create_query>
+    <fill_query>INSERT INTO mv_plan_lookup SELECT number, number * 0.1, number * 0.2, number * 0.3, number * 0.4 FROM numbers(1024)</fill_query>
+
+    <create_query><![CDATA[
+        CREATE MATERIALIZED VIEW mv_plan_view TO mv_plan_target AS
+        WITH
+            base AS
+            (
+                SELECT
+                    s.id AS id,
+                    s.value AS value,
+                    coalesce(l1.a, 0.) AS a1,
+                    coalesce(l2.b, 0.) AS b2,
+                    coalesce(l3.c, 0.) AS c3,
+                    coalesce(l4.d, 0.) AS d4
+                FROM mv_plan_source AS s
+                LEFT JOIN mv_plan_lookup AS l1 ON l1.id = s.id % 1024
+                LEFT JOIN mv_plan_lookup AS l2 ON l2.id = (s.id + 1) % 1024
+                LEFT JOIN mv_plan_lookup AS l3 ON l3.id = (s.id + 2) % 1024
+                LEFT JOIN mv_plan_lookup AS l4 ON l4.id = (s.id + 3) % 1024
+            ),
+            stage1 AS
+            (
+                SELECT
+                    id,
+                    value,
+                    a1,
+                    b2,
+                    c3,
+                    d4,
+                    value + a1 AS s1,
+                    value + b2 AS s2,
+                    value + c3 AS s3,
+                    value + d4 AS s4
+                FROM base
+            ),
+            stage2 AS
+            (
+                SELECT
+                    x.id AS id,
+                    x.value AS value,
+                    x.s1 AS s1,
+                    x.s2 AS s2,
+                    x.s3 AS s3,
+                    x.s4 AS s4,
+                    coalesce(l5.a, 0.) AS e1,
+                    coalesce(l6.b, 0.) AS e2,
+                    coalesce(l7.c, 0.) AS e3,
+                    coalesce(l8.d, 0.) AS e4
+                FROM stage1 AS x
+                LEFT JOIN mv_plan_lookup AS l5 ON l5.id = (x.id + 4) % 1024
+                LEFT JOIN mv_plan_lookup AS l6 ON l6.id = (x.id + 5) % 1024
+                LEFT JOIN mv_plan_lookup AS l7 ON l7.id = (x.id + 6) % 1024
+                LEFT JOIN mv_plan_lookup AS l8 ON l8.id = (x.id + 7) % 1024
+            ),
+            stage3 AS
+            (
+                SELECT
+                    id,
+                    (s1 + e1) * (s2 + e2) AS left_score,
+                    (s3 + e3) * (s4 + e4) AS right_score
+                FROM stage2
+            ),
+            stage4 AS
+            (
+                SELECT
+                    x.id AS id,
+                    x.left_score AS left_score,
+                    x.right_score AS right_score,
+                    coalesce(l9.a + l9.b + l9.c + l9.d, 0.) AS tail
+                FROM stage3 AS x
+                LEFT JOIN mv_plan_lookup AS l9 ON l9.id = (x.id + 8) % 1024
+            )
+        SELECT
+            id,
+            left_score + right_score + tail AS score
+        FROM stage4
+    ]]></create_query>
+
+    <query>INSERT INTO mv_plan_source SELECT 1, 1.</query>
+
+    <drop_query>DROP VIEW mv_plan_view</drop_query>
+    <drop_query>DROP TABLE mv_plan_target</drop_query>
+    <drop_query>DROP TABLE mv_plan_lookup</drop_query>
+    <drop_query>DROP TABLE mv_plan_source</drop_query>
+</test>
