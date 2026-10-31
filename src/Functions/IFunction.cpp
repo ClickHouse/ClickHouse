@@ -162,6 +162,20 @@ ColumnPtr replaceLowCardinalityColumnByNestedAndGetDictionaryIndexes(
     return indexes;
 }
 
+/// Returns a column of `size` rows, all holding `source`'s first value, or nullptr if `source` is not
+/// one of the integer types `ColumnUnique::uniqueInsertRangeFrom` returns as dictionary indexes.
+ColumnPtr fillWithFirstValue(const IColumn & source, size_t size)
+{
+    if (const auto * column = typeid_cast<const ColumnVector<UInt8> *>(&source))
+        return ColumnVector<UInt8>::create(size, column->getData()[0]);
+    if (const auto * column = typeid_cast<const ColumnVector<UInt16> *>(&source))
+        return ColumnVector<UInt16>::create(size, column->getData()[0]);
+    if (const auto * column = typeid_cast<const ColumnVector<UInt32> *>(&source))
+        return ColumnVector<UInt32>::create(size, column->getData()[0]);
+    if (const auto * column = typeid_cast<const ColumnVector<UInt64> *>(&source))
+        return ColumnVector<UInt64>::create(size, column->getData()[0]);
+    return nullptr;
+}
 
 }
 
@@ -628,7 +642,19 @@ ColumnPtr IExecutableFunction::executeWithoutSparseColumns(
             ColumnUniquePtr res_dictionary = std::move(res_mut_dictionary);
 
             if (indexes && !res_is_constant)
-                result = ColumnLowCardinality::create(res_dictionary, res_indexes->index(*indexes, 0), /*is_shared=*/false);
+            {
+                /// `res_indexes` maps each dictionary entry (there are few: at most the number of
+                /// distinct argument values) to its key in `res_dictionary`. When every entry maps to
+                /// the same key, the per-row gather below (`res_indexes->index(*indexes, 0)`, an O(N)
+                /// random-access lookup) would produce that same key for every row regardless of which
+                /// dictionary entry `indexes` points to: fill it directly instead, without touching
+                /// `indexes` or `res_dictionary` at all.
+                ColumnPtr filled_indexes = !res_indexes->empty() && res_indexes->hasEqualValues()
+                    ? fillWithFirstValue(*res_indexes, indexes->size())
+                    : nullptr;
+                result = ColumnLowCardinality::create(
+                    res_dictionary, filled_indexes ? filled_indexes : res_indexes->index(*indexes, 0), /*is_shared=*/false);
+            }
             else
                 result = ColumnLowCardinality::create(res_dictionary, res_indexes, /*is_shared=*/false);
 
