@@ -909,8 +909,14 @@ void prepareBuildQueryPlanForTableExpression(const QueryTreeNodePtr & table_expr
             const auto & column_identifier = global_planner_context->createColumnIdentifierOrGet(additional_column_to_read, table_expression);
             columns_names.push_back(additional_column_to_read.name);
             table_expression_data.addColumn(additional_column_to_read, column_identifier);
-            table_expression_data.setRowCountOnlyColumnIdentifier(column_identifier);
+            table_expression_data.addRowCountOnlyColumnIdentifier(column_identifier);
         }
+    }
+    else if (!table_expression_data.hasColumnReferencedOutsideIndexHint())
+    {
+        /// Read only for `indexHint`, which never evaluates its arguments.
+        for (const auto & column_name : columns_names)
+            table_expression_data.addRowCountOnlyColumnIdentifier(table_expression_data.getColumnIdentifierOrThrow(column_name));
     }
 
     /// Limitation on the number of columns to read
