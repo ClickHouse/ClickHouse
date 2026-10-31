@@ -5,6 +5,7 @@
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTSetQuery.h>
 #include <Storages/YTsaurus/YTsaurusSettings.h>
+#include <Storages/enumerateSettingsFromImpl.h>
 #include <Common/Exception.h>
 #include <Common/NamedCollections/NamedCollections.h>
 
@@ -62,8 +63,7 @@ void YTsaurusSettings::loadFromQuery(const ASTSetQuery & settings_def)
     /// `isChanged` would only tell whether the final value differs from the default.
     for (const auto & change : settings_def.changes)
     {
-        const std::string_view resolved_name = YTsaurusSettingsTraits::resolveName(change.name);
-        if (std::ranges::find(dictionary_only_setting_names, resolved_name) != dictionary_only_setting_names.end())
+        if (isDictionaryOnlySetting(YTsaurusSettingsTraits::resolveName(change.name)))
             throw Exception(
                 ErrorCodes::BAD_ARGUMENTS,
                 "Setting `{}` is only applicable to YTsaurus dictionary sources; "
@@ -130,6 +130,13 @@ bool YTsaurusSettings::hasBuiltin(std::string_view name)
 {
     return YTsaurusSettingsImpl::hasBuiltin(name);
 }
+
+bool YTsaurusSettings::isDictionaryOnlySetting(std::string_view name)
+{
+    return std::ranges::find(dictionary_only_setting_names, name) != dictionary_only_setting_names.end();
+}
+
+IMPLEMENT_SETTINGS_ENUMERATION(YTsaurusSettings)
 
 
 }

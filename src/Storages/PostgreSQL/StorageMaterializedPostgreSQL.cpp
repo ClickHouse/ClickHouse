@@ -675,6 +675,14 @@ ASTPtr StorageMaterializedPostgreSQL::getCreateNestedTableQuery(
 }
 
 
+/// The settings of `MaterializedPostgreSQLSettings` that only the database engine takes: a table rejects the first two
+/// (the schema list because the table always sets the tables list to its remote table) and overwrites the third.
+static bool isDatabaseEngineSetting(std::string_view name)
+{
+    return name == "materialized_postgresql_use_extended_date_and_time_types" || name == "materialized_postgresql_schema_list"
+        || name == "materialized_postgresql_tables_list";
+}
+
 void registerStorageMaterializedPostgreSQL(StorageFactory & factory);
 void registerStorageMaterializedPostgreSQL(StorageFactory & factory)
 {
@@ -799,6 +807,7 @@ void registerStorageMaterializedPostgreSQL(StorageFactory & factory)
             .supports_sort_order = true,
             .source_access_type = AccessTypeObjects::Source::POSTGRES,
             .has_builtin_setting_fn = MaterializedPostgreSQLSettings::hasBuiltin,
+            .enumerate_engine_settings_fn = enumerateCompiledDefaultsExcept<MaterializedPostgreSQLSettings, isDatabaseEngineSetting>,
         },
         Documentation{
             .description = R"DOCS_MD(
