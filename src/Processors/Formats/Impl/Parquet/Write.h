@@ -237,10 +237,12 @@ void finalizeColumnChunkAndWriteFooter(
 
 void finalizeRowGroup(FileWriteState & file, size_t num_rows, const WriteOptions & options, WriteBuffer & out);
 
+/// `key_value_metadata` is added to the key-value metadata of the file.
 void writeFileFooter(FileWriteState & file,
     SchemaElements schema,
     const WriteOptions & options,
     WriteBuffer & out,
-    const Block & header);
+    const Block & header,
+    const std::vector<std::pair<String, String>> & key_value_metadata = {});
 
 }

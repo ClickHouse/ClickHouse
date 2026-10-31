@@ -175,7 +175,9 @@ void MergeTreeDataPartWriterOnDisk::initSkipIndices()
 
     /// Compact columns all live in one `data.bin`, so `MergeTreeDataPartWriterCompact::addStreams`
     /// registers no column base and the index side has nothing to be checked against here.
-    const bool is_compact_part = index_granularity_info.mark_type.part_type == MergeTreeDataPartType::Compact;
+    /// The same holds for the columns of Parquet parts, which live in one `data.parquet`.
+    const bool is_compact_part = index_granularity_info.mark_type.part_type == MergeTreeDataPartType::Compact
+        || index_granularity_info.mark_type.part_type == MergeTreeDataPartType::Parquet;
     const StreamBaseManifestPtr manifest = is_compact_part ? nullptr : settings.stream_base_manifest;
 
     for (const auto & skip_index : skip_indices)

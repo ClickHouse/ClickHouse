@@ -145,6 +145,7 @@ static MergeTreeReaderSettings adjustReaderSettingsForColumnsCacheWrites(
             = std::shared_ptr<std::atomic<size_t>>(budget, &budget->bytes_written);
         settings.columns_cache_writes_disabled
             = std::shared_ptr<std::atomic<bool>>(budget, &budget->writes_disabled);
+        settings.columns_cache_write_budget = budget;
     }
     else
     {
@@ -341,7 +342,9 @@ static double estimateUncompressedColumnsSizePerMark(const IMergeTreeDataPart & 
 /// part - the base part and every patch part - so this has to be evaluated for each of them separately.
 static bool partCanWriteToColumnsCache(const IMergeTreeDataPart & part)
 {
-    return canUseColumnsCacheForPart(part.storage.getStorageID().uuid);
+    /// The reader of `Parquet` parts does not use the cache for projection parts.
+    return !(part.getType() == MergeTreeDataPartType::Parquet && part.isProjectionPart())
+        && canUseColumnsCacheForPart(part.storage.getStorageID().uuid);
 }
 
 /// Columns from different prewhere steps are read independently, so it makes sense to use the heaviest set of columns among them as an estimation.

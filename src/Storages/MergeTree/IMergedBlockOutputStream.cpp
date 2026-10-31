@@ -52,9 +52,9 @@ NameSet IMergedBlockOutputStream::removeEmptyColumnsFromPart(
     SerializationInfoByName & serialization_infos,
     MergeTreeData::DataPart::Checksums & checksums)
 {
-    /// For compact part we have to override whole file with data, it's not
+    /// For compact and parquet parts we have to override whole file with data, it's not
     /// worth it
-    if (empty_columns.empty() || isCompactPart(data_part))
+    if (empty_columns.empty() || isCompactPart(data_part) || isParquetPart(data_part))
         return {};
 
     /// A part must keep at least one physical column: `loadColumns` and `loadIndexGranularity`

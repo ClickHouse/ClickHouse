@@ -101,7 +101,7 @@ void MergeTreeReaderCompact::fillColumnPositions()
             auto subcolumn_name = column_to_read.getSubcolumnName();
             auto storage_column_from_part = part_columns.getColumn(GetColumnsOptions::All, name_in_storage);
 
-            /// The `Quantize` codec's custom serialization exposes companion `quantized`/`pq_codebook` subcolumns that
+            /// The `Quantized` codec's custom serialization exposes companion `quantized`/`pq_codebook` subcolumns that
             /// the part's plain columns list cannot represent - they round-trip to the bare type name and are lost, so
             /// the subcolumn would be treated as missing and recomputed/defaulted after a reload. Decide presence from
             /// the requested column's storage type in that case. Restricted to that specific serialization so it does

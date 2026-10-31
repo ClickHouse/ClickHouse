@@ -4708,7 +4708,9 @@ void Reader::initColumnsCache()
 
     columns_cache_writes_possible = cache_options.enable_writes && canWriteToColumnsCache();
     if (columns_cache_writes_possible)
-        columns_cache_generation = cache.getInvalidationGeneration(cache_options.table_uuid);
+        columns_cache_generation = cache_options.invalidation_generation
+            ? *cache_options.invalidation_generation
+            : cache.getInvalidationGeneration(cache_options.table_uuid);
 
     size_t hits = 0;
     size_t misses = 0;
@@ -4776,7 +4778,7 @@ void Reader::initColumnsCache()
     /// The estimate budget of the query, charged with the uncompressed size of the column chunks
     /// that are to be written, before anything is read. Once the query exceeds it, the writes are
     /// disabled for the rest of the query, here and in all other readers.
-    if (estimated_bytes_to_write)
+    if (estimated_bytes_to_write && cache_options.charge_estimated_bytes)
     {
         ColumnsCacheWriteBudget & budget = *cache_options.write_budget;
         const size_t max_estimated_bytes = cache_options.max_estimated_bytes_to_write != 0

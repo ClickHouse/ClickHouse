@@ -121,6 +121,18 @@ public:
 
         return res;
     }
+
+    /// All codecs that `choose` may return, for any size of a part.
+    std::vector<CompressionCodecPtr> getAllCodecs() const
+    {
+        const auto & factory = CompressionCodecFactory::instance();
+
+        std::vector<CompressionCodecPtr> res{factory.get("LZ4", {}), factory.getDefaultCodec()};
+        for (const auto & element : elements)
+            res.push_back(factory.get(element.family_name, element.level));
+
+        return res;
+    }
 };
 
 }

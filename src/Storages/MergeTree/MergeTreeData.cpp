@@ -233,8 +233,10 @@ namespace ProfileEvents
     extern const Event DelayedInsertsMilliseconds;
     extern const Event InsertedWideParts;
     extern const Event InsertedCompactParts;
+    extern const Event InsertedParquetParts;
     extern const Event MergedIntoWideParts;
     extern const Event MergedIntoCompactParts;
+    extern const Event MergedIntoParquetParts;
     extern const Event RejectedMutations;
     extern const Event DelayedMutations;
     extern const Event DelayedMutationsMilliseconds;
@@ -412,11 +414,22 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsMergeTreeObjectSharedDataSerializationVersion object_shared_data_serialization_version_for_zero_level_parts;
     extern const MergeTreeSettingsUInt32 min_level_for_wide_part;
     extern const MergeTreeSettingsBool propagate_types_serialization_versions_to_nested_types;
+    extern const MergeTreeSettingsUInt64 min_bytes_for_parquet_part;
+    extern const MergeTreeSettingsUInt32 min_level_for_parquet_part;
+    extern const MergeTreeSettingsUInt64 min_rows_for_parquet_part;
 
      /// Cloud only
      extern const MergeTreeSettingsBool cache_populated_by_fetch;
      extern const MergeTreeSettingsString cache_populated_by_fetch_filename_regexp;
      extern const MergeTreeSettingsBool shared_merge_tree_use_blobs_list_for_parts;
+}
+
+/// The `Parquet` part format is used only when at least one of its thresholds is set.
+static bool isParquetPartFormatEnabled(const MergeTreeSettings & settings)
+{
+    return settings[MergeTreeSetting::min_bytes_for_parquet_part] != 0
+        || settings[MergeTreeSetting::min_rows_for_parquet_part] != 0
+        || settings[MergeTreeSetting::min_level_for_parquet_part] != 0;
 }
 
 namespace ServerSetting
@@ -7456,6 +7469,59 @@ void MergeTreeData::checkMutationIsPossible(const MutationCommands & commands, c
     }
 }
 
+bool MergeTreeData::canUseParquetPartFormat(const StorageInMemoryMetadata & table_metadata, ProjectionDescriptionRawPtr projection) const
+{
+    /// The Parquet file stores the data without the codecs of the columns. An encryption codec must not be
+    /// dropped silently, so the parts of a table with encrypted columns are never created in Parquet format.
+    /// The same for the `Quantized` codec, which provides subcolumns with the quantized values.
+    /// The codecs of the columns without explicit codecs are resolved against all default codecs that
+    /// may apply to the part: the `default_compression_codec` setting or any codec of the `<compression>`
+    /// section of the server config (whichever size of the part and its share in the table it is chosen for,
+    /// or inherited from the parent part of a projection), and the codecs of `RECOMPRESS` TTL rules.
+    const auto settings = getSettings(projection ? &projection->settings_changes : nullptr);
+    const auto & columns = projection ? projection->metadata->getColumns() : table_metadata.getColumns();
+    auto & codec_factory = CompressionCodecFactory::instance();
+
+    std::vector<CompressionCodecPtr> default_codecs;
+    if (const auto & codec_setting = (*settings)[MergeTreeSetting::default_compression_codec].value; !codec_setting.empty())
+        default_codecs.push_back(codec_factory.get(codec_setting));
+    else
+        default_codecs = getContext()->getAllCompressionCodecsFromConfig();
+    for (const auto & ttl : table_metadata.getRecompressionTTLs())
+        default_codecs.push_back(codec_factory.get(ttl.recompression_codec, {}));
+
+    for (const auto & default_codec : default_codecs)
+        if (default_codec->isEncryption())
+            return false;
+
+    auto is_allowed_codec = [&](const ASTPtr & codec)
+    {
+        if (tryExtractQuantizedCodecParams(codec))
+            return false;
+
+        /// Only the generic and encryption codecs matter here, and the type-specific codecs apply to the values
+        /// of the column (not e.g. to the whole `Nullable` or `Tuple`), so they are not validated against the type.
+        for (const auto & default_codec : default_codecs)
+            if (codec_factory.get(codec, nullptr, default_codec, /*only_generic=*/ true)->isEncryption())
+                return false;
+
+        return true;
+    };
+
+    for (const auto & column : columns)
+    {
+        if (column.codec && !is_allowed_codec(column.codec))
+            return false;
+
+        /// The codecs of subcolumns are not applied in a Parquet file, but they must not hide an encryption codec either.
+        for (const auto & [_, subcolumn_codec] : column.subcolumn_codecs)
+            if (subcolumn_codec && !is_allowed_codec(subcolumn_codec))
+                return false;
+    }
+
+    return true;
+}
+
 MergeTreeDataPartFormat MergeTreeData::choosePartFormat(
     size_t bytes_uncompressed, size_t rows_count, UInt32 part_level, ProjectionDescriptionRawPtr projection) const
 {
@@ -7475,6 +7541,14 @@ MergeTreeDataPartFormat MergeTreeData::choosePartFormat(
     auto part_type = PartType::Wide;
     if (satisfies((*settings)[MergeTreeSetting::min_bytes_for_wide_part], (*settings)[MergeTreeSetting::min_rows_for_wide_part], (*settings)[MergeTreeSetting::min_level_for_wide_part]))
         part_type = PartType::Compact;
+
+    if (isParquetPartFormatEnabled(*settings)
+        && !satisfies((*settings)[MergeTreeSetting::min_bytes_for_parquet_part], (*settings)[MergeTreeSetting::min_rows_for_parquet_part], (*settings)[MergeTreeSetting::min_level_for_parquet_part]))
+    {
+        auto table_metadata = getInMemoryMetadataPtr(getContext(), false);
+        if (canUseParquetPartFormat(*table_metadata, projection))
+            part_type = PartType::Parquet;
+    }
 
     /// TODO(unique-key): support Packed storage; SSTIndexWriter needs Full parts.
     auto storage_type = PartStorageType::Full;
@@ -14684,6 +14758,18 @@ bool MergeTreeData::canUsePolymorphicParts(const MergeTreeSettings & settings, S
                 ". Parts with non-adaptive granularity can be stored only in Wide (default) format.",
                 settings[MergeTreeSetting::min_rows_for_wide_part].value, settings[MergeTreeSetting::min_bytes_for_wide_part].value);
         }
+        else if (isParquetPartFormatEnabled(settings))
+        {
+            out_reason = fmt::format(
+                "Table can't create parts with adaptive granularity, but settings"
+                " min_rows_for_parquet_part = {}"
+                ", min_bytes_for_parquet_part = {}"
+                ", min_level_for_parquet_part = {}"
+                ". Parts with non-adaptive granularity can be stored only in Wide (default) format.",
+                settings[MergeTreeSetting::min_rows_for_parquet_part].value,
+                settings[MergeTreeSetting::min_bytes_for_parquet_part].value,
+                settings[MergeTreeSetting::min_level_for_parquet_part].value);
+        }
 
         return false;
     }
@@ -15486,6 +15572,9 @@ void MergeTreeData::incrementInsertedPartsProfileEvent(MergeTreeDataPartType typ
         case MergeTreeDataPartType::Compact:
             ProfileEvents::increment(ProfileEvents::InsertedCompactParts);
             break;
+        case MergeTreeDataPartType::Parquet:
+            ProfileEvents::increment(ProfileEvents::InsertedParquetParts);
+            break;
         default:
             break;
     }
@@ -15500,6 +15589,9 @@ void MergeTreeData::incrementMergedPartsProfileEvent(MergeTreeDataPartType type)
             break;
         case MergeTreeDataPartType::Compact:
             ProfileEvents::increment(ProfileEvents::MergedIntoCompactParts);
+            break;
+        case MergeTreeDataPartType::Parquet:
+            ProfileEvents::increment(ProfileEvents::MergedIntoParquetParts);
             break;
         default:
             break;

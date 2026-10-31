@@ -66,6 +66,8 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsUInt64 index_granularity;
     extern const MergeTreeSettingsUInt64 index_granularity_bytes;
     extern const MergeTreeSettingsBool use_const_adaptive_granularity;
+    extern const MergeTreeSettingsUInt64 parquet_row_group_granularity_rows;
+    extern const MergeTreeSettingsUInt64 parquet_row_group_granularity_bytes;
     extern const MergeTreeSettingsNonZeroUInt64 merge_max_block_size;
     extern const MergeTreeSettingsUInt64 merge_max_block_size_bytes;
 }
@@ -374,8 +376,15 @@ std::vector<size_t> simulateWriterMarks(
     size_t block_rows_limit,
     size_t block_bytes_limit)
 {
-    const size_t granularity_bytes = mt_settings[MergeTreeSetting::index_granularity_bytes];
-    const size_t fixed_granularity_rows = mt_settings[MergeTreeSetting::index_granularity];
+    /// the granules of a parquet part are its row groups
+    const bool is_parquet = part_type == MergeTreeDataPartType::Parquet;
+    const size_t granularity_bytes = is_parquet
+        ? mt_settings[MergeTreeSetting::parquet_row_group_granularity_bytes] : mt_settings[MergeTreeSetting::index_granularity_bytes];
+    const size_t fixed_granularity_rows = is_parquet
+        ? mt_settings[MergeTreeSetting::parquet_row_group_granularity_rows] : mt_settings[MergeTreeSetting::index_granularity];
+    /// for a parquet part zero bytes means that only the rows limit the row groups
+    if (is_parquet && granularity_bytes == 0)
+        adaptive_marks = false;
 
     MergeTreeIndexGranularityAdaptive granularity;
     size_t written = 0;
@@ -398,7 +407,7 @@ std::vector<size_t> simulateWriterMarks(
             open_rows_missing = granularity.getTotalRows() - written;
         }
 
-        if (part_type == MergeTreeDataPartType::Compact)
+        if (part_type == MergeTreeDataPartType::Compact || part_type == MergeTreeDataPartType::Parquet)
             fillIndexGranularityForCompactPart(granularity, open_rows_missing, granule_rows, block_rows);
         else
             fillIndexGranularityForWidePart(granularity, open_rows_missing, granule_rows, block_rows);
@@ -442,6 +451,7 @@ std::pair<std::vector<MergeTreeDataPartPtr>, size_t> buildSyntheticProjectionPar
     const bool adaptive_marks = MergeTreeIndexGranularityInfo(merge_tree, mt_settings, part_type).mark_type.adaptive;
     /// only adaptive granularity lets block sizes change the layout
     const bool granularity_per_block = part_type == MergeTreeDataPartType::Compact
+        || part_type == MergeTreeDataPartType::Parquet
         || (adaptive_marks && !mt_settings[MergeTreeSetting::use_const_adaptive_granularity]);
 
     /// an insert writes one block, a merge writes blocks of `merge_max_block_size` cut at each source

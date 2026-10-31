@@ -1,0 +1,6 @@
+before	Parquet
+default codec	1
+1	b
+before	Parquet
+new column	1
+1	a	x

@@ -525,13 +525,18 @@ bool predictVerticalMerge(
         sum_rows += part.rows;
         sum_bytes += part.size_uncompressed;
         max_level = std::max(max_level, part.info.level);
-        part_type = std::min(part_type, part.part_type);
+        /// `Parquet` source parts don't restrict the result, as in `FutureMergedMutatedPart::assign`.
+        if (part.part_type != MergeTreeDataPartType::Parquet)
+            part_type = std::min(part_type, part.part_type);
     }
 
     /// The same choice as `FutureMergedMutatedPart::assign` makes for the result of the merge, including that
-    /// the result is never of a more compact type than a source part.
+    /// the result is never of a more compact type than a source part, unless it is chosen to be `Parquet`.
     const auto part_format = ctx.data->choosePartFormat(sum_bytes, sum_rows, max_level + 1, /*projection=*/nullptr);
-    part_type = std::min(part_type, part_format.part_type);
+    if (part_format.part_type == MergeTreeDataPartType::Parquet)
+        part_type = part_format.part_type;
+    else
+        part_type = std::min(part_type, part_format.part_type);
     if (part_type != MergeTreeDataPartType::Wide)
         return false;
 
@@ -701,11 +706,15 @@ size_t getAffordablePartsToMergeProjection(const ChooseContext & ctx, const Proj
         sum_rows += it->second.rows;
         sum_bytes += it->second.size_uncompressed;
         max_level = std::max(max_level, it->second.level);
-        part_type = std::min(part_type, it->second.part_type);
+        if (it->second.part_type != MergeTreeDataPartType::Parquet)
+            part_type = std::min(part_type, it->second.part_type);
     }
 
     const auto part_format = ctx.data->choosePartFormat(sum_bytes, sum_rows, max_level + 1, &projection);
-    part_type = std::min(part_type, part_format.part_type);
+    if (part_format.part_type == MergeTreeDataPartType::Parquet)
+        part_type = part_format.part_type;
+    else
+        part_type = std::min(part_type, part_format.part_type);
     if (part_type != MergeTreeDataPartType::Wide)
         return affordable_horizontal;
 

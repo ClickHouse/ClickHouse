@@ -26,6 +26,7 @@ using MMappedFileCachePtr = std::shared_ptr<MMappedFileCache>;
 struct SelectQueryInfo;
 
 class PackedFilesWriter;
+struct ColumnsCacheWriteBudget;
 
 enum class CompactPartsReadMethod : uint8_t
 {
@@ -101,6 +102,9 @@ struct MergeTreeReaderSettings
     /// columns) is known, so a pool built later in the query can latch it after
     /// this reader was created: readers must consult it dynamically at write time.
     std::shared_ptr<std::atomic<bool>> columns_cache_writes_disabled;
+    /// The object the two pointers above point into, for the readers that pass it on as a whole
+    /// (the reader of `Parquet` parts).
+    std::shared_ptr<ColumnsCacheWriteBudget> columns_cache_write_budget;
     /// Set for a TopK (`ORDER BY ... LIMIT n`) read whose granule drops may depend on the running
     /// `__topKFilter` threshold: the TopK plan salt (`TopKFilterInfo::condition_hash`) and the
     /// post-PREWHERE filter hash to fold into the query condition cache key when recording

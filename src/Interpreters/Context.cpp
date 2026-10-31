@@ -8455,7 +8455,7 @@ void Context::setDashboardsConfig(const Poco::Util::AbstractConfiguration & conf
     }
 }
 
-CompressionCodecPtr Context::chooseCompressionCodec(size_t part_size, double part_size_ratio) const
+const CompressionCodecSelector & Context::getCompressionCodecSelector() const
 {
     callOnce(shared->compression_codec_selector_initialized, [&]
     {
@@ -8468,7 +8468,17 @@ CompressionCodecPtr Context::chooseCompressionCodec(size_t part_size, double par
             shared->compression_codec_selector = std::make_unique<CompressionCodecSelector>();
     });
 
-    return shared->compression_codec_selector->choose(part_size, part_size_ratio);
+    return *shared->compression_codec_selector;
+}
+
+CompressionCodecPtr Context::chooseCompressionCodec(size_t part_size, double part_size_ratio) const
+{
+    return getCompressionCodecSelector().choose(part_size, part_size_ratio);
+}
+
+std::vector<CompressionCodecPtr> Context::getAllCompressionCodecsFromConfig() const
+{
+    return getCompressionCodecSelector().getAllCodecs();
 }
 
 

@@ -24,12 +24,17 @@ void FutureMergedMutatedPart::assign(
     {
         sum_rows += part->rows_count;
         sum_bytes_uncompressed += part->getTotalColumnsSize().data_uncompressed;
-        future_part_type = std::min(future_part_type, part->getType());
+        /// The order of `Wide` and `Compact` is not related to `Parquet`, so `Parquet` parts don't restrict the result.
+        if (part->getType() != MergeTreeDataPartType::Parquet)
+            future_part_type = std::min(future_part_type, part->getType());
         max_level = std::max(max_level, part->info.level);
     }
 
     auto chosen_format = parts_.front()->storage.choosePartFormat(sum_bytes_uncompressed, sum_rows, max_level + 1, projection);
-    future_part_type = std::min(future_part_type, chosen_format.part_type);
+    if (chosen_format.part_type == MergeTreeDataPartType::Parquet)
+        future_part_type = chosen_format.part_type;
+    else
+        future_part_type = std::min(future_part_type, chosen_format.part_type);
 
     /// The storage type needs no clamping to the sources: merges always rewrite the data, and a
     /// mutation whose result storage type differs from the source's is routed to a full rewrite

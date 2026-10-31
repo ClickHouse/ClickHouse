@@ -1,0 +1,16 @@
+Parquet	11
+without cache	4999950000	488890	100000
+populate	4999950000	488890	100000
+entries
+id	10	100000	10000	10000
+v	10	100000	10000	10000
+value	10	100000	10000	10000
+from cache	4999950000	488890	100000
+from cache with filter	714307143	14286
+from cache, part of a row group	250045	10
+pq05415_hit	1	0
+pq05415_hit_filter	1	0
+pq05415_no_cache	0	0
+pq05415_populate	0	1
+dropped with the table
+0

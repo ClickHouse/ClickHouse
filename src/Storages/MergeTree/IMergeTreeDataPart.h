@@ -140,6 +140,11 @@ public:
     using Checksum = MergeTreeDataPartChecksums::Checksum;
 
     using ColumnSizeByName = std::unordered_map<std::string, ColumnSize>;
+
+    /// The sizes of the columns calculated by the writer of the part. Used by the formats which calculate
+    /// the sizes of columns from the files of the part, which can't be read yet when the part is being written
+    /// (e.g. with packed storage).
+    virtual void setWrittenColumnSizes(ColumnSizeByName /*sizes*/) {}
     using ColumnSizeByNameConstPtr = std::shared_ptr<const ColumnSizeByName>;
     using NameToNumber = SharedPartColumns::NameToNumber;
 
@@ -584,6 +589,9 @@ public:
     UInt64 getBytesUncompressedOnDisk() const { return bytes_uncompressed_on_disk; }
     void setBytesOnDisk(UInt64 bytes_on_disk_) { bytes_on_disk = bytes_on_disk_; }
     void setBytesUncompressedOnDisk(UInt64 bytes_uncompressed_on_disk_) { bytes_uncompressed_on_disk = bytes_uncompressed_on_disk_; }
+
+    /// The uncompressed size of the files of the part, see `bytes_uncompressed_on_disk`. Requires loaded checksums.
+    virtual UInt64 calculateBytesUncompressedOnDisk() const { return checksums.getTotalSizeUncompressedOnDisk(); }
 
     /// Returns estimated size of existing rows if setting exclude_deleted_rows_for_part_size_in_merge is true
     /// Otherwise returns bytes_on_disk
@@ -1085,6 +1093,7 @@ using MergeTreeDataPartPtr = std::shared_ptr<const IMergeTreeDataPart>;
 using MergeTreeMutableDataPartPtr = std::shared_ptr<IMergeTreeDataPart>;
 
 bool isCompactPart(const MergeTreeDataPartPtr & data_part);
+bool isParquetPart(const MergeTreeDataPartPtr & data_part);
 bool isWidePart(const MergeTreeDataPartPtr & data_part);
 
 inline String getIndexExtension(bool is_compressed_primary_key) { return is_compressed_primary_key ? ".cidx" : ".idx"; }

@@ -632,6 +632,8 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
             auto data_part_storage = global_ctx->parent_part->getDataPartStorage().getProjectionNoInitialize(local_tmp_part_basename,  /* use parent transaction */ false);
             builder.emplace(*global_ctx->data, global_ctx->future_part->name, data_part_storage, getReadSettings(), PartDirIntent::CreateFresh);
             builder->withParentPart(global_ctx->parent_part);
+            /// The settings of the projection (e.g. the size of granules) apply to its parts.
+            builder->withProjection(global_ctx->projection);
         }
         else
         {
