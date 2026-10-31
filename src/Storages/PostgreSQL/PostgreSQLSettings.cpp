@@ -9,18 +9,11 @@
 #include <Common/Exception.h>
 #include <Common/NamedCollections/NamedCollections.h>
 
+#include <algorithm>
+
 
 namespace DB
 {
-namespace Setting
-{
-    extern const SettingsUInt64 postgresql_connection_pool_size;
-    extern const SettingsUInt64 postgresql_connection_pool_wait_timeout;
-    extern const SettingsUInt64 postgresql_connection_pool_retries;
-    extern const SettingsBool postgresql_connection_pool_auto_close_connection;
-    extern const SettingsUInt64 postgresql_connection_attempt_timeout;
-}
-
 namespace ErrorCodes
 {
     extern const int UNKNOWN_SETTING;
@@ -76,15 +69,38 @@ void PostgreSQLSettings::loadFromQuery(ASTStorage & storage_def)
     }
 }
 
-void PostgreSQLSettings::loadFromQueryContext(const Context & context)
+void PostgreSQLSettings::loadFromQueryContext(const Context & context, const ASTSetQuery * settings, ASTStorage * store_into)
 {
-    const Settings & settings = context.getSettingsRef();
+    const Settings & query_settings = context.getSettingsRef();
 
-    (*impl)[PostgreSQLSetting::postgresql_connection_pool_size] = settings[Setting::postgresql_connection_pool_size];
-    (*impl)[PostgreSQLSetting::postgresql_connection_pool_wait_timeout] = settings[Setting::postgresql_connection_pool_wait_timeout];
-    (*impl)[PostgreSQLSetting::postgresql_connection_pool_retries] = settings[Setting::postgresql_connection_pool_retries];
-    (*impl)[PostgreSQLSetting::postgresql_connection_pool_auto_close_connection] = settings[Setting::postgresql_connection_pool_auto_close_connection];
-    (*impl)[PostgreSQLSetting::postgresql_connection_attempt_timeout] = settings[Setting::postgresql_connection_attempt_timeout];
+    for (const auto & setting : impl->all())
+    {
+        const auto & name = setting.getName();
+        if (setting.isValueChanged() || (settings && std::ranges::contains(settings->default_settings, name)))
+            continue;
+
+        /// A setting of the engine only, with no query-level counterpart to take the value from.
+        if (!query_settings.has(name))
+            continue;
+
+        /// Not changed yet, so it holds the default of the engine.
+        const Field default_value = setting.getValue();
+        Field value = query_settings.get(name);
+        impl->set(name, value);
+
+        /// A value the session sets explicitly is stored even if it equals the default of the engine: without it, the table
+        /// would take the server's value when attached again.
+        if (!store_into || (value == default_value && !query_settings.isChanged(name)))
+            continue;
+
+        if (!store_into->settings)
+        {
+            auto settings_ast = make_intrusive<ASTSetQuery>();
+            settings_ast->is_standalone = false;
+            store_into->set(store_into->settings, settings_ast);
+        }
+        store_into->settings->changes.emplace_back(name, std::move(value));
+    }
 }
 
 void PostgreSQLSettings::loadFromNamedCollection(const NamedCollection & named_collection)

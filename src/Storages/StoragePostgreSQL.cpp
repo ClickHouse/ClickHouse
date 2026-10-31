@@ -898,17 +898,20 @@ void registerStoragePostgreSQL(StorageFactory & factory)
 {
     factory.registerStorage("PostgreSQL", [](const StorageFactory::Arguments & args)
     {
-        /// Seed the connection-pool parameters from the query-level `postgresql_*` settings (preserving
-        /// the historical behaviour); a named collection may override them, and an explicit SETTINGS
-        /// clause on the table takes the final precedence.
+        /// Precedence: the SETTINGS clause, the named collection, the session; a new table stores the values from the session.
         PostgreSQLSettings postgresql_settings;
-        postgresql_settings.loadFromQueryContext(*args.getLocalContext());
 
         auto configuration = StoragePostgreSQL::getConfiguration(
             args.engine_args, args.getLocalContext(), &postgresql_settings, &args.table_id, args.storage_def->settings);
 
-        if (args.storage_def)
-            postgresql_settings.loadFromQuery(*args.storage_def);
+        postgresql_settings.loadFromQuery(*args.storage_def);
+
+        /// Unlike `isFreshTableDefinition`, also on the other replicas of a `Replicated` database, which run the original query
+        /// with the initiator's settings. Not on `RESTORE`, which rejects a definition that differs from the backup.
+        bool is_new_definition = !isLoadingFromExistingMetadata(args.mode) && !args.query.attach_short_syntax
+            && !args.getLocalContext()->isRecoveryFromStoredMetadata() && !args.is_restore_from_backup;
+        postgresql_settings.loadFromQueryContext(
+            *args.getLocalContext(), args.storage_def->settings, is_new_definition ? args.storage_def : nullptr);
 
         if (!postgresql_settings[PostgreSQLSetting::postgresql_connection_pool_size])
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "postgresql_connection_pool_size cannot be zero.");
@@ -1040,7 +1043,7 @@ ENGINE = PostgreSQL('localhost:5432', 'database', 'table', 'user', 'password',
 
 ## Settings {#settings}
 
-The connection pool used by the `PostgreSQL` table engine (and the [`postgresql`](/reference/functions/table-functions/postgresql) table function) can be configured per table with a `SETTINGS` clause. When a setting is not specified, it defaults to the value of the corresponding query-level `postgresql_*` setting.
+The connection pool used by the `PostgreSQL` table engine (and the [`postgresql`](/reference/functions/table-functions/postgresql) table function) can be configured per table with a `SETTINGS` clause. When a setting is not specified, it defaults to the value of the corresponding query-level `postgresql_*` setting. A new table, except one restored from a backup, adds the values it takes this way that differ from the defaults of the engine, or that the session changes, e.g. with `SET` or a settings profile, to its `SETTINGS`, so that it keeps them after a server restart. A setting that a named collection sets is not taken from the query-level setting, so nothing is stored for it. A stored value is a part of the `SETTINGS` of the table, so it overrides the same key added to the named collection later, and if that key is `NOT OVERRIDABLE`, the table fails to load with `Override not allowed`. In the `SETTINGS` clause of a table, a setting reset with `name = DEFAULT` is not taken from the query-level setting.
 
 ### `postgresql_connection_pool_size` {#postgresql-connection-pool-size}
 
