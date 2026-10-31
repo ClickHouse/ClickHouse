@@ -563,7 +563,7 @@ public:
     struct PartsForPrewhere
     {
         RangesInDataParts parts;
-        /// Whether the read is large enough for statistics to pay off, see `min_marks_per_part_to_use_statistics`.
+        /// Whether the read is large enough for statistics to pay off, see `min_marks_per_part_to_load_statistics`.
         bool use_statistics = true;
     };
 

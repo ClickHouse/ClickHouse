@@ -222,7 +222,7 @@ size_t MergeTreeDataSelectExecutor::getApproximateTotalRowsToRead(
 }
 
 
-size_t MergeTreeDataSelectExecutor::getMinMarksToUseStatistics(size_t min_marks_per_part, size_t parts_to_load_statistics)
+size_t MergeTreeDataSelectExecutor::getMinMarksToLoadStatistics(size_t min_marks_per_part, size_t parts_to_load_statistics)
 {
     if (parts_to_load_statistics && min_marks_per_part > std::numeric_limits<size_t>::max() / parts_to_load_statistics)
         return std::numeric_limits<size_t>::max();
@@ -914,7 +914,7 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByStatistics(
     const SelectQueryInfo & query_info,
     const MergeTreeData::MutationsSnapshotPtr & mutations_snapshot,
     const ConditionTemplate<KeyCondition>::Ptr & key_condition,
-    size_t min_marks_per_part_to_use_statistics,
+    size_t min_marks_per_part_to_load_statistics,
     const ContextPtr & context,
     LoggerPtr log,
     ReadFromMergeTree::IndexStats & index_stats,
@@ -1040,15 +1040,15 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByStatistics(
             parts_to_load_statistics.push_back(parts[i]);
     }
 
-    const size_t min_marks_to_use_statistics = getMinMarksToUseStatistics(
-        min_marks_per_part_to_use_statistics, parts_to_load_statistics.size());
+    const size_t min_marks_to_load_statistics = getMinMarksToLoadStatistics(
+        min_marks_per_part_to_load_statistics, parts_to_load_statistics.size());
 
     const bool load_statistics = !hasFewerMarksToReadThan(
-        parts_to_load_statistics, metadata_snapshot, key_condition, min_marks_to_use_statistics, settings, log);
+        parts_to_load_statistics, metadata_snapshot, key_condition, min_marks_to_load_statistics, settings, log);
 
     if (!load_statistics)
         LOG_TRACE(log, "Not pruning {} parts without statistics in memory, because fewer than {} marks are left to read in them by the primary key",
-            parts_to_load_statistics.size(), min_marks_to_use_statistics);
+            parts_to_load_statistics.size(), min_marks_to_load_statistics);
 
     if (!load_statistics && deferred_parts)
         *deferred_parts = parts_to_load_statistics;
