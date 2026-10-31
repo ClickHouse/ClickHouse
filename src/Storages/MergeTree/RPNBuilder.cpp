@@ -148,7 +148,7 @@ void appendColumnNameWithoutAlias(const ActionsDAG::Node & node, WriteBuffer & o
             if (const auto * func_capture = typeid_cast<const ExecutableFunctionCapture *>(node.function.get()))
             {
                 const auto & capture = func_capture->getCapture();
-                auto capture_dag = func_capture->getActions()->getActionsDAG().clone();
+                auto capture_dag = func_capture->getAcionsDAG().clone();
                 if (!node.children.empty())
                 {
                     auto captured_columns_dag = ActionsDAG::cloneSubDAG(node.children, false);
