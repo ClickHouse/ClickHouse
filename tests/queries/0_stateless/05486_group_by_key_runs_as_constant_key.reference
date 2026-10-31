@@ -18,3 +18,6 @@ frozen adaptive tables, count only
 0
 GROUP BY LIMIT keeps exact keys
 3	0
+several runs per block, one place per run
+05486_key_runs_off	0
+05486_key_runs_on	1

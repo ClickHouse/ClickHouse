@@ -126,3 +126,17 @@ FROM (SELECT k, count() AS c, sum(v) AS s, groupBitmap(v) AS b FROM t_key_runs_k
 INNER JOIN (SELECT k, count() AS c, sum(v) AS s, groupBitmap(v) AS b FROM t_key_runs_kept GROUP BY k) AS f ON lim.k = f.k
 SETTINGS enable_group_by_top_k_optimization = 0, max_threads = 4, max_block_size = 65536, optimize_trivial_group_by_limit_query = 1, exact_rows_before_limit = 0;
 DROP TABLE t_key_runs_kept;
+
+-- Blocks of several keys are aggregated in batches of one place per run only with the setting on; with it off they
+-- take one place per row.
+SELECT 'several runs per block, one place per run';
+SELECT bitShiftLeft(toUInt64(intDiv(number, 3000) % 5), 32) AS k, count(), sum(number) FROM numbers(300000) GROUP BY k
+SETTINGS max_block_size = 20000, enable_adaptive_aggregator = 0, optimize_group_by_constant_keys = 1, log_comment = '05486_key_runs_on' FORMAT Null;
+SELECT bitShiftLeft(toUInt64(intDiv(number, 3000) % 5), 32) AS k, count(), sum(number) FROM numbers(300000) GROUP BY k
+SETTINGS max_block_size = 20000, enable_adaptive_aggregator = 0, optimize_group_by_constant_keys = 0, log_comment = '05486_key_runs_off' FORMAT Null;
+SYSTEM FLUSH LOGS query_log;
+SELECT log_comment, ProfileEvents['AggregationOptimizedEqualRangesOfKeys'] > 0
+FROM system.query_log
+WHERE event_date >= yesterday() AND event_time >= now() - 600 AND type = 'QueryFinish' AND current_database = currentDatabase()
+    AND log_comment IN ('05486_key_runs_on', '05486_key_runs_off')
+ORDER BY log_comment;
