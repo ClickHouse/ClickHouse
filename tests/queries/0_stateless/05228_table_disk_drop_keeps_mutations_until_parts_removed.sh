@@ -17,6 +17,8 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 endpoint="http://localhost:11111/test/${CLICKHOUSE_TEST_UNIQUE_NAME}/"
 # `metadata_snapshot_write_delay_ms = 0`: the writer rewrites the snapshot right after every commit, so the readonly disks see the latest state.
 disk_args="type = s3_plain_rewritable, endpoint = '${endpoint}', access_key_id = clickhouse, secret_access_key = clickhouse, enable_hard_links = 1, metadata_snapshot_write_delay_ms = 0"
+# A readonly disk keeps the listing it loaded, so a rerun in the same database must not reuse the disk of an earlier run.
+reader_disk="${CLICKHOUSE_TEST_UNIQUE_NAME}_reader_$(date +%s%N)"
 failpoint="merge_tree_drop_all_data_pause_before_removing_parts"
 
 function cleanup()
@@ -26,6 +28,7 @@ function cleanup()
 trap cleanup EXIT
 
 ${CLICKHOUSE_CLIENT} -m --query "
+SET ast_fuzzer_any_query = 0, ignore_drop_queries_probability = 0;
 DROP TABLE IF EXISTS writer SYNC;
 DROP TABLE IF EXISTS reader SYNC;
 
@@ -40,7 +43,7 @@ SELECT count(), countIf(is_done) FROM system.mutations WHERE database = currentD
 
 ${CLICKHOUSE_CLIENT} --query "SYSTEM ENABLE FAILPOINT ${failpoint}"
 
-${CLICKHOUSE_CLIENT} --query "DROP TABLE writer SYNC" &
+${CLICKHOUSE_CLIENT} --query "SET ignore_drop_queries_probability = 0; DROP TABLE writer SYNC" &
 drop_pid=$!
 
 # The drop is about to remove the parts.
@@ -48,8 +51,9 @@ ${CLICKHOUSE_CLIENT} --query "SYSTEM WAIT FAILPOINT ${failpoint} PAUSE"
 
 echo '-- a readonly table over the same directory still sees the parts, the mutation and the deduplication log'
 ${CLICKHOUSE_CLIENT} -m --query "
+SET ast_fuzzer_any_query = 0;
 CREATE TABLE reader (key Int32, value String) ENGINE = MergeTree ORDER BY key
-SETTINGS table_disk = 1, disk = disk(readonly = true, name = '${CLICKHOUSE_TEST_UNIQUE_NAME}_reader', ${disk_args});
+SETTINGS table_disk = 1, disk = disk(readonly = true, name = '${reader_disk}', ${disk_args});
 SELECT count(), countIf(endsWith(value, '!')) FROM reader;
 SELECT count() FROM system.mutations WHERE database = currentDatabase() AND table = 'reader';
 SELECT count() > 0 FROM s3('${endpoint}**', 'clickhouse', 'clickhouse', 'One') WHERE _path LIKE '%deduplication_log%';
@@ -58,7 +62,7 @@ SELECT count() > 0 FROM s3('${endpoint}**', 'clickhouse', 'clickhouse', 'One') W
 # The failpoint pauses every drop, so the readonly table is dropped only after it is disabled.
 ${CLICKHOUSE_CLIENT} --query "SYSTEM DISABLE FAILPOINT ${failpoint}"
 wait ${drop_pid}
-${CLICKHOUSE_CLIENT} --query "DROP TABLE reader SYNC"
+${CLICKHOUSE_CLIENT} --query "SET ignore_drop_queries_probability = 0; DROP TABLE reader SYNC"
 
 echo '-- the completed drop leaves no objects behind'
 ${CLICKHOUSE_CLIENT} --query "SELECT count() FROM s3('${endpoint}**', 'clickhouse', 'clickhouse', 'One')"
