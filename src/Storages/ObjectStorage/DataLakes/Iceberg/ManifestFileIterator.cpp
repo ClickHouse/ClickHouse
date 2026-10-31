@@ -182,7 +182,7 @@ std::unordered_map<Int32, DB::Range> getDataFileHyperrectangles(
         if (!left || !right)
         {
             /// A bound that does not decode is wider than the storage of its type, a decimal
-            /// bound beyond the precision of its type on the inner side of the range, or
+            /// bound beyond the precision of its type, or
             /// narrower than the column is now, which is what Iceberg leaves behind for a
             /// promoted column. The last is well formed, so this stays out of the warning
             /// log.
