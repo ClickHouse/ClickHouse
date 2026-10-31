@@ -1114,6 +1114,9 @@ bool StorageNATS::streamToViews(UInt64 cycle_epoch)
     }
 
     block_io.pipeline.complete(Pipe::unitePipes(std::move(pipes)));
+    /// Read all consumers in parallel, as Kafka and RabbitMQ do: with `parallel_view_processing = 0` the pipeline has one thread, and
+    /// sources that share the flush deadline would run one after another, the later ones finding it already spent.
+    block_io.pipeline.setNumThreads(std::max(block_io.pipeline.getNumThreads(), num_created_consumers));
 
     {
         CompletedPipelineExecutor executor(block_io.pipeline);
