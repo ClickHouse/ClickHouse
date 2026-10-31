@@ -104,3 +104,17 @@ ${CLICKHOUSE_CLIENT} --query "
             AND query_id IN ('${QUERY_ID}_1', '${QUERY_ID}_2'));
     DROP TABLE t_05333"
 rm -f "${USER_FILES_PATH}/${FILE}"
+
+echo "-- the threshold of a cloned object storage read is shared with the other copy, so the comparison stays non-strict"
+# Without the in-memory buffer, the subquery q is read and sorted twice, and both sorts publish to one threshold.
+${CLICKHOUSE_CLIENT} --query "
+    INSERT INTO FUNCTION s3(s3_conn, filename = '${CLICKHOUSE_DATABASE}_05333/t.parquet', format = Parquet) ${DATA}
+    SETTINGS s3_truncate_on_insert = 1, output_format_parquet_row_group_size = 1000, output_format_parallel_formatting = 0,
+        max_threads = 1, max_insert_threads = 1;
+    SELECT count(), sum(n) FROM (
+        SELECT k, (SELECT count() FROM numbers(3) WHERE number >= q.k) AS n
+        FROM (SELECT k FROM s3(s3_conn, filename = '${CLICKHOUSE_DATABASE}_05333/t.parquet', format = Parquet) ORDER BY k LIMIT 3) AS q)
+    SETTINGS correlated_subqueries_use_in_memory_buffer = 0, query_plan_optimize_lazy_materialization = 0, use_query_condition_cache = 0,
+        use_top_k_dynamic_filtering = 1, query_plan_max_limit_for_top_k_optimization = 10000, max_threads = 1, max_parsing_threads = 1,
+        max_block_size = 65409, input_format_parquet_use_native_reader_v3 = 1, input_format_parquet_filter_push_down = 1,
+        input_format_parquet_preserve_order = 0, enable_parallel_replicas = 0"

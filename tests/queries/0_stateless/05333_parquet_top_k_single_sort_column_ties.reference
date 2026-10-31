@@ -35,3 +35,5 @@ OK
 0
 0
 2	1	1	0
+-- the threshold of a cloned object storage read is shared with the other copy, so the comparison stays non-strict
+3	9

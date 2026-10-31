@@ -13,6 +13,7 @@
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergMetadata.h>
 #include <Storages/ObjectStorage/DataLakes/DataLakeConfiguration.h>
 #include <Processors/QueryPlan/QueryPlanStepRegistry.h>
+#include <Processors/TopKThresholdTracker.h>
 #include <Formats/FormatFactory.h>
 #include <Formats/FormatParserSharedResources.h>
 #include <IO/ReadBufferFromString.h>
@@ -84,6 +85,8 @@ ReadFromObjectStorageStep::ReadFromObjectStorageStep(
 
 QueryPlanStepPtr ReadFromObjectStorageStep::clone() const
 {
+    if (top_k_filter && top_k_filter->threshold_tracker)
+        top_k_filter->threshold_tracker->setSharedByPlanCopies();
     return std::make_unique<ReadFromObjectStorageStep>(*this);
 }
 
