@@ -2620,6 +2620,16 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
         /// Collect default expressions for MODIFY and ADD commands
         if (command.type == AlterCommand::MODIFY_COLUMN || command.type == AlterCommand::ADD_COLUMN)
         {
+            /// A column TTL resets the column to its existing default in merges.
+            if (command.ttl && !command.default_expression && all_columns.has(column_name))
+            {
+                const auto & default_desc = all_columns.get(column_name).default_desc;
+                if (default_desc.expression
+                    && (default_desc.kind == ColumnDefaultKind::Default || default_desc.kind == ColumnDefaultKind::Materialized))
+                    background_default_expr_list->children.emplace_back(
+                        setAlias(default_desc.expression->clone(), column_name + "_tmp_ttl_default"));
+            }
+
             if (command.default_expression)
             {
                 DataTypePtr data_type_ptr;

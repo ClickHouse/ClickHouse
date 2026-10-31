@@ -15,8 +15,9 @@ SELECT name, default_kind FROM system.columns WHERE database = currentDatabase()
 DROP TABLE t2;
 
 -- Column TTL added by `ALTER`.
-CREATE TABLE t3 (x String, d DateTime, y String) ENGINE = MergeTree ORDER BY x;
+CREATE TABLE t3 (x String, d DateTime, y String, w String DEFAULT aiGenerate(x)) ENGINE = MergeTree ORDER BY x;
 ALTER TABLE t3 MODIFY COLUMN y TTL d + toIntervalDay(length(aiGenerate(x))); -- { serverError NOT_IMPLEMENTED }
+ALTER TABLE t3 MODIFY COLUMN w TTL d; -- { serverError NOT_IMPLEMENTED }
 DROP TABLE t3;
 
 -- A lightweight `DELETE` executed as a mutation is rejected. Executed as a lightweight update, it runs in the query
