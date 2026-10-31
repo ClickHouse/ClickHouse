@@ -1,0 +1,7 @@
+rows refresh 1	30
+rows refresh 2	60
+rows refresh 3	90
+rows refresh 4	100
+rows refresh 5	100	100	4950
+bytes refresh 1	10
+bytes refresh 2	20	20
