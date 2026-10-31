@@ -137,7 +137,9 @@ private:
 #endif
 
 MergeTreeSource::MergeTreeSource(MergeTreeSelectProcessorPtr processor_, const std::string & log_name_)
-    : ISource(std::make_shared<const Block>(processor_->getHeader())), processor(std::move(processor_)), log_name(log_name_)
+    : ISource(std::make_shared<const Block>(processor_->getHeader()), /*enable_auto_progress=*/ false)
+    , processor(std::move(processor_))
+    , span_name(fmt::format("MergeTreeSource({})::tryGenerate", log_name_))
 {
 #if defined(OS_LINUX)
     if (processor->getSettings().use_asynchronous_read_from_pool)
@@ -147,9 +149,22 @@ MergeTreeSource::MergeTreeSource(MergeTreeSelectProcessorPtr processor_, const s
 
 MergeTreeSource::~MergeTreeSource() = default;
 
+std::span<ISpillable * const> MergeTreeSource::getSpillables()
+{
+    return processor->getSpillables();
+}
+
 std::string MergeTreeSource::getName() const
 {
     return processor->getName();
+}
+
+void MergeTreeSource::cancel(CancelReason reason) noexcept
+{
+    if (reason == CancelReason::PartialResult && keep_reading_on_partial_result)
+        return;
+
+    ISource::cancel(reason);
 }
 
 void MergeTreeSource::onCancel() noexcept
@@ -213,7 +228,7 @@ std::optional<Chunk> MergeTreeSource::tryGenerate()
             try
             {
                 Coordination::ComponentGuard component_guard = Coordination::setCurrentComponent("MergeTreeSource::tryGenerate");
-                OpenTelemetry::SpanHolder span{fmt::format("MergeTreeSource({})::tryGenerate", log_name)};
+                OpenTelemetry::SpanHolder span{span_name};
                 holder->setResult(processor->read());
             }
             catch (...)
@@ -229,7 +244,7 @@ std::optional<Chunk> MergeTreeSource::tryGenerate()
 #endif
 
     Coordination::ComponentGuard component_guard = Coordination::setCurrentComponent("MergeTreeSource::tryGenerate");
-    OpenTelemetry::SpanHolder span{fmt::format("MergeTreeSource({})::tryGenerate", log_name)};
+    OpenTelemetry::SpanHolder span{span_name};
     return processReadResult(processor->read());
 }
 

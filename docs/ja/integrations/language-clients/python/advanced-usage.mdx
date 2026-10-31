@@ -13,7 +13,7 @@ ClickHouse のデータとネイティブまたはサードパーティのデー
 
 ### Client `raw_query` メソッド {#client-rawquery-method}
 
-`Client.raw_query` メソッドを使用すると、クライアント接続を通じて ClickHouse の HTTP クエリインターフェイスを直接利用できます。戻り値は未処理の `bytes` オブジェクトです。このメソッドは、パラメータバインディング、エラーハンドリング、再試行、設定管理を最小限のインターフェイスで扱える便利なラッパーを提供します。
+`Client.raw_query` メソッドを使用すると、クライアント接続を通じて ClickHouse の HTTP クエリインターフェイスを直接利用できます。戻り値は未処理の `bytes` オブジェクトです。このメソッドは、パラメータバインディング、エラーハンドリング、対象となる読み取りの再試行、設定管理を最小限のインターフェイスで扱える便利なラッパーを提供します。詳しくは [HTTP retries](/ja/integrations/language-clients/python/driver-api#http-retries) を参照してください。
 
 | Parameter            | Type             | Default  | Description                                                                                                                  |
 | -------------------- | ---------------- | -------- | ---------------------------------------------------------------------------------------------------------------------------- |
@@ -33,19 +33,21 @@ ClickHouse のデータとネイティブまたはサードパーティのデー
 
 ### Client `raw_insert` メソッド {#client-rawinsert-method}
 
-`Client.raw_insert` メソッドを使うと、クライアント接続を介して `bytes` オブジェクトまたは `bytes` オブジェクトを生成するジェネレーターを直接 insert できます。insert payload の処理を行わないため、非常に高いパフォーマンスを発揮します。このメソッドには、settings と insert format を指定するオプションがあります。
+`Client.raw_insert` メソッドを使うと、クライアント接続を介して `bytes` オブジェクトまたは `bytes` オブジェクトを生成するジェネレーターを直接 挿入 できます。挿入 ペイロード の処理を行わないため、非常に高いパフォーマンスを発揮します。このメソッドには、settings と 挿入 フォーマット を指定するオプションがあります。
 
 | Parameter            | Type                                 | Default  | Description                                                                                          |
 | -------------------- | ------------------------------------ | -------- | ---------------------------------------------------------------------------------------------------- |
-| `table`              | str                                  | Required | 単純な table 名、または database 修飾付きの table 名。                                                              |
-| `column_names`       | Sequence[str]                        | `None`   | insert block のカラム名。`fmt` に名前が含まれていない場合は必須です。                                                         |
-| `insert_block`       | str, bytes, generator, or `BinaryIO` | Required | insert するデータ。String はクライアントの encoding を使用してエンコードされます。                                                |
+| `table`              | str                                  | Required | 単純な table 名、または データベース 修飾付きの table 名。                                                              |
+| `column_names`       | Sequence[str]                        | `None`   | 挿入 block のカラム名。`fmt` に名前が含まれていない場合は必須です。                                                         |
+| `insert_block`       | str, bytes, generator, or `BinaryIO` | Required | 挿入 するデータ。String はクライアントの エンコーディング を使用してエンコードされます。                                                |
 | `settings`           | dict                                 | `None`   | [Settings argument](/ja/integrations/language-clients/python/driver-api#settings-argument-1) を参照してください。 |
-| `fmt`                | str                                  | `None`   | `insert_block` payload の ClickHouse input format です。フォーマットを指定しない場合は `Native` が使用されます。                |
+| `fmt`                | str                                  | `None`   | `insert_block` ペイロード の ClickHouse input フォーマット です。フォーマットを指定しない場合は `Native` が使用されます。                |
 | `compression`        | str                                  | `None`   | `"gzip"`、`"lz4"`、`"zstd"` など、`insert_block` にすでに適用されている圧縮。                                           |
 | `transport_settings` | dict                                 | `None`   | このリクエストに追加される HTTP headers。                                                                          |
 
-`insert_block` が指定されたフォーマットで、指定された圧縮 method を使用していることを保証する責任は呼び出し元にあります。ClickHouse Connect は、ファイルのアップロードや PyArrow Tables に対してこれらの raw insert を使用し、パースは ClickHouse server に委ねます。
+`insert_block` が指定されたフォーマットで、指定された圧縮 method を使用していることを保証する責任は呼び出し元にあります。ClickHouse Connect は、ファイルのアップロードや PyArrow Tables に対してこれらの raw 挿入 を使用し、パースは ClickHouseサーバー に委ねます。
+
+String および bytes のペイロードは、リモート側で接続がクローズされた後でも再試行できます。ジェネレーターやオープン済みのファイルは再送できません。[挿入の再試行と重複排除](/ja/integrations/language-clients/python/advanced-inserting#insert-retries-and-deduplication)を参照してください。
 
 ## クエリ結果をファイルとして保存する {#saving-query-results-as-files}
 
@@ -85,11 +87,11 @@ if __name__ == "__main__":
 
 ## マルチスレッド、マルチプロセス、非同期/イベント駆動のユースケース {#multithreaded-multiprocess-and-asyncevent-driven-use-cases}
 
-ClickHouse Connect は、マルチスレッド、マルチプロセス、イベントループ駆動/非同期のアプリケーションでも問題なく動作します。すべてのクエリ処理と insert 処理は単一のスレッド内で行われるため、操作は通常スレッドセーフです。 (単一スレッドによる性能面の不利を補うため、将来的には一部の操作で低レベルの並列処理が導入される可能性がありますが、その場合でもスレッドセーフ性は維持されます。)
+ClickHouse Connect は、マルチスレッド、マルチプロセス、asyncio のアプリケーションをサポートしています。同期 HTTP クライアントは、同時実行される呼び出しが同じ ClickHouse session を使用しない限り、複数のスレッド間で共有できます。詳しくは後述の session に関する説明を参照してください。非同期クライアントは、パース処理や 挿入 の準備の一部をワーカースレッドで実行します。
 
-実行される各クエリまたは insert は、それぞれ専用の `QueryContext` または `InsertContext` オブジェクトに状態を保持するため、これらのヘルパーオブジェクトはスレッドセーフではなく、複数の処理ストリーム間で共有すべきではありません。コンテキストオブジェクトの詳細については、[QueryContexts](/ja/integrations/language-clients/python/advanced-querying#querycontexts) および [InsertContexts](/ja/integrations/language-clients/python/advanced-inserting#insertcontexts) の各セクションを参照してください。
+実行される各クエリまたは 挿入 は、それぞれ専用の `QueryContext` または `InsertContext` オブジェクトに状態を保持するため、これらのヘルパーオブジェクトはスレッドセーフではなく、複数の処理ストリーム間で共有すべきではありません。コンテキストオブジェクトの詳細については、[QueryContexts](/ja/integrations/language-clients/python/advanced-querying#querycontexts) および [InsertContexts](/ja/integrations/language-clients/python/advanced-inserting#insertcontexts) の各セクションを参照してください。
 
-さらに、同時に 2 つ以上のクエリや insert が「進行中」のアプリケーションでは、もう 2 つ注意すべき点があります。1 つ目はクエリ/insert に関連付けられる ClickHouse の「session」で、2 つ目は ClickHouse Connect Client のインスタンスで使用される HTTP 接続プールです。
+さらに、同時に 2 つ以上のクエリや 挿入 が「進行中」のアプリケーションでは、もう 2 つ注意すべき点があります。1 つ目はクエリ/挿入 に関連付けられる ClickHouse の「session」で、2 つ目は ClickHouse Connect Client のインスタンスで使用される HTTP 接続プールです。
 
 ## AsyncClient {#asyncclient}
 
@@ -118,7 +120,9 @@ async def main():
 asyncio.run(main())
 ```
 
-非同期クライアントは、同期クライアントと同じ query、insert、raw、Arrow、streaming のインターフェースに従います。ネットワーク I/O には aiohttp を使用します。CPU 負荷の高い Native フォーマットのパース処理は、イベントループをブロックしないように executor で実行される場合があります。
+非同期クライアントは、同期クライアントと同じ クエリ、挿入、raw、Arrow、streaming のインターフェースに従います。ネットワーク I/O には aiohttp を使用します。CPU 負荷の高い Native フォーマットのパース処理は、イベントループをブロックしないように executor で実行される場合があります。
+
+`insert_arrow` と `insert_df_arrow` は、DataFrame の変換と Arrow エンコーディングを、クライアントごとに用意された専用の worker で実行します。この worker は、ストリーミングクエリのリーダーとは別のものです。一時的なメモリ使用量を抑えるため、各クライアントが同時に実行する準備処理は 1 つのみです。使用が終わったら、`async with` または `await client.close()` でクライアントをクローズしてください。なお、Python のグローバルインタープリターロック (GIL) を保持する PyArrow の操作は、引き続き他のコルーチンの実行を止める可能性があります。
 
 非同期クライアントは、特定のイベントループ内で作成された aiohttp セッションを保持します。クライアントを別のイベントループに移す場合は、まず所有元のループ内でクライアントをクローズし、新しいループでリクエストを行う前に `await client._initialize()` を呼び出してください。所有元のループがすでにクローズされている場合は、現在のループ内で `await client.close()` を呼び出してから `await client._initialize()` を呼び出します。所有元のループがクローズされた後にクリーンアップを開始すると、aiohttp がクローズされていないトランスポートについて警告を出すことがあるため、可能な限り移行前にクローズしてください。
 

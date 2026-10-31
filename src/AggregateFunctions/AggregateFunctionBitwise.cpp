@@ -131,7 +131,7 @@ private:
 
     static void addMany(Data & data, const T * __restrict ptr, size_t row_begin, size_t row_end)
     {
-#if USE_MULTITARGET_CODE
+#if USE_X86_64_MULTITARGET_CODE
         if (isArchSupported(TargetArch::x86_64_v4))
         {
             addManyImpl_x86_64_v4(data, ptr, row_begin, row_end);
@@ -176,7 +176,7 @@ private:
     template <bool add_if_zero>
     static void addManyConditional(Data & data, const T * __restrict ptr, const UInt8 * __restrict condition_map, size_t row_begin, size_t row_end)
     {
-#if USE_MULTITARGET_CODE
+#if USE_X86_64_MULTITARGET_CODE
         if (isArchSupported(TargetArch::x86_64_v4))
         {
             addManyConditionalImpl_x86_64_v4<add_if_zero>(data, ptr, condition_map, row_begin, row_end);
@@ -482,6 +482,9 @@ SELECT groupBitXor(num) FROM t;
     factory.registerAlias("BIT_OR", "groupBitOr", AggregateFunctionFactory::Case::Insensitive);
     factory.registerAlias("BIT_AND", "groupBitAnd", AggregateFunctionFactory::Case::Insensitive);
     factory.registerAlias("BIT_XOR", "groupBitXor", AggregateFunctionFactory::Case::Insensitive);
+    factory.registerAlias("bitwise_or_agg", "groupBitOr", AggregateFunctionFactory::Case::Insensitive);
+    factory.registerAlias("bitwise_and_agg", "groupBitAnd", AggregateFunctionFactory::Case::Insensitive);
+    factory.registerAlias("bitwise_xor_agg", "groupBitXor", AggregateFunctionFactory::Case::Insensitive);
 }
 
 }

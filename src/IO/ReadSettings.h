@@ -33,6 +33,12 @@ struct RemoteFSReadSettings
     /// Enable async prefetching for remote reads.
     bool prefetch = false;
 
+    /// Hint that the consumer reads the object at arbitrary offsets rather than streaming it
+    /// sequentially from the start (for example, it reads a trailing index before the body). Read
+    /// paths may use this to skip speculative from-start read-ahead that such a consumer would not
+    /// consume.
+    bool random_access = false;
+
     /// TODO: `max_backoff_ms` / `max_retries` are dead — assigned from public
     /// Settings `remote_fs_read_max_backoff_ms` / `remote_fs_read_backoff_max_tries`
     /// but no internal read path actually consumes them. Either wire them into
@@ -126,8 +132,6 @@ struct FilesystemCacheSettings
     /// How long a read may wait for a file segment which is being downloaded by a concurrent query
     /// before bypassing the cache and reading directly from remote storage.
     size_t wait_for_concurrent_download_timeout_milliseconds = 1000;
-    size_t max_download_size_per_query = (128UL * 1024 * 1024 * 1024);
-    bool skip_download_if_exceeds_per_query_cache_write_limit = true;
     bool enable_log = false;
     bool verbose_logging = false;
 };

@@ -18,6 +18,13 @@ namespace
 {
     /// How much the last read of a handshake deadline may overdraw it, to catch late bytes.
     constexpr size_t MIN_HANDSHAKE_READ_WINDOW_MILLISECONDS = 100;
+
+    Poco::Timespan getSocketTimeoutFromKernel(const Poco::Net::Socket & socket, int option)
+    {
+        Poco::Timespan timeout;
+        socket.getOption(SOL_SOCKET, option, timeout);
+        return timeout;
+    }
 }
 
 namespace ProfileEvents
@@ -181,9 +188,9 @@ void ReadBufferFromPocoSocketBase::setHandshakeTimeout(size_t timeout_millisecon
     handshake_stopwatch.restart();
 
     if (!receive_timeout_before_handshake)
-        receive_timeout_before_handshake = socket.getReceiveTimeout();
+        receive_timeout_before_handshake = getSocketTimeoutFromKernel(socket, SO_RCVTIMEO);
     if (!send_timeout_before_handshake)
-        send_timeout_before_handshake = socket.getSendTimeout();
+        send_timeout_before_handshake = getSocketTimeoutFromKernel(socket, SO_SNDTIMEO);
 
     /// Now as well as per read, for the handshake reads that never reach nextImpl.
     clampReceiveTimeoutToHandshakeDeadline(handshake_timeout_milliseconds);

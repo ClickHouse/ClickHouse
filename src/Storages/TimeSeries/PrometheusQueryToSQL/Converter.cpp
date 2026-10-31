@@ -14,6 +14,7 @@
 #include <Storages/TimeSeries/PrometheusQueryToSQL/fromSelector.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/getResultColumns.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/getResultType.h>
+#include <Storages/TimeSeries/PrometheusQueryToSQL/pushDownLabelMatchers.h>
 
 
 namespace DB::PrometheusQueryToSQL
@@ -131,8 +132,9 @@ ColumnsDescription Converter::getResultColumns() const
 
 ASTPtr Converter::getSQL() const
 {
-    ConverterContext context{promql_tree, settings};
-    auto query_piece = visitNode(promql_tree->getRoot(), context);
+    auto promql_tree_to_convert = settings.push_down_label_matchers ? pushDownLabelMatchers(promql_tree) : promql_tree;
+    ConverterContext context{promql_tree_to_convert, settings};
+    auto query_piece = visitNode(promql_tree_to_convert->getRoot(), context);
     query_piece.type = result_type;
     return finalizeSQL(std::move(query_piece), context);
 }

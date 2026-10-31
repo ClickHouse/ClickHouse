@@ -1,0 +1,30 @@
+numeric ASC
+0
+1
+2
+3
+4
+numeric DESC
+20000
+19999
+19998
+19997
+19996
+string
+0
+1
+10
+100
+1000
+composite
+0	0
+1	1
+2	2
+3	3
+4	4
+nullable
+\N
+0
+1
+2
+4

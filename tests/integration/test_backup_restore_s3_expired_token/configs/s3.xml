@@ -1,0 +1,26 @@
+<clickhouse>
+    <s3>
+        <use_environment_credentials>1</use_environment_credentials>
+    </s3>
+    <storage_configuration>
+        <disks>
+            <s3_source>
+                <type>s3</type>
+                <endpoint>http://s3-proxy:8080/root/expired_token_source/</endpoint>
+                <skip_access_check>true</skip_access_check>
+                <use_environment_credentials>1</use_environment_credentials>
+                <role_arn>arn::role</role_arn>
+                <role_session_name>expired-token-test</role_session_name>
+            </s3_source>
+        </disks>
+        <policies>
+            <s3_source>
+                <volumes>
+                    <main>
+                        <disk>s3_source</disk>
+                    </main>
+                </volumes>
+            </s3_source>
+        </policies>
+    </storage_configuration>
+</clickhouse>

@@ -31,12 +31,7 @@ Poco::JSON::Object::Ptr makeMinimalV2Metadata()
     metadata->set(Iceberg::f_last_sequence_number, 0);
     metadata->set(Iceberg::f_current_snapshot_id, -1);
 
-    Poco::JSON::Object::Ptr main_branch = new Poco::JSON::Object;
-    main_branch->set(Iceberg::f_metadata_snapshot_id, -1);
-    main_branch->set(Iceberg::f_type, Iceberg::f_branch);
-    Poco::JSON::Object::Ptr refs = new Poco::JSON::Object;
-    refs->set(Iceberg::f_main, main_branch);
-    metadata->set(Iceberg::f_refs, refs);
+    metadata->set(Iceberg::f_refs, Poco::JSON::Object::Ptr(new Poco::JSON::Object));
 
     metadata->set(Iceberg::f_snapshots, Poco::JSON::Array::Ptr(new Poco::JSON::Array));
     metadata->set(Iceberg::f_snapshot_log, Poco::JSON::Array::Ptr(new Poco::JSON::Array));

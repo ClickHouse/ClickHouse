@@ -4,8 +4,6 @@
 -- inner "Sorting for ORDER BY" step inside the view subquery, so a fired pushdown
 -- shows 2 such steps and a skipped one shows only the outer step (1).
 
-SET allow_experimental_analyzer = 1;
-
 DROP VIEW IF EXISTS v_obexpr;
 DROP TABLE IF EXISTS t_obexpr;
 

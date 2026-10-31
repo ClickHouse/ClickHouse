@@ -1,5 +1,6 @@
 
 #include <Storages/MergeTree/MergeFromLogEntryTask.h>
+#include <Storages/MergeTree/StatisticsCache.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/MergeTree/Compaction/CompactionStatistics.h>
 #include <Storages/StorageReplicatedMergeTree.h>
@@ -357,9 +358,10 @@ ReplicatedMergeMutateTaskBase::PrepareResult MergeFromLogEntryTask::prepare()
         }
     }
 
-    /// Account TTL merge
+    /// Account TTL merge. The slot belongs to this task, so it is given back when the task dies,
+    /// whether or not the merge it was taken for ever ran.
     if (isTTLMergeType(future_merged_part->merge_type))
-        storage.getContext()->getMergeList().bookMergeWithTTL();
+        ttl_merge_slot = MergeList::TTLMergeSlot(storage.getContext()->getMergeList());
 
     auto table_id = storage.getStorageID();
 
@@ -510,6 +512,9 @@ bool MergeFromLogEntryTask::finalize(ReplicatedMergeMutateTaskBase::PartLogWrite
     /// a correct part name after rename for a key of cache entry.
     if (prewarm_caches.primary_index_cache)
         part->moveIndexToCache(*prewarm_caches.primary_index_cache);
+
+    if (prewarm_caches.statistics_cache)
+        part->loadStatisticsToCache(*prewarm_caches.statistics_cache);
 
     write_part_log({});
     StorageReplicatedMergeTree::incrementMergedPartsProfileEvent(part->getType());

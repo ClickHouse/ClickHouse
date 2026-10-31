@@ -1,3 +1,4 @@
+#include <Common/VectorWithMemoryTracking.h>
 #include <Columns/IColumn.h>
 #include <Core/Block.h>
 #include <Processors/Merges/Algorithms/MergedData.h>
@@ -37,8 +38,8 @@ bool hasNonAdditiveByteSizeAt(const IColumn & column)
 void MergedData::initialize(const Block & header, const IMergingAlgorithm::Inputs & inputs)
 {
     columns = header.cloneEmptyColumns();
-    std::vector<VectorWithMemoryTracking<ColumnPtr>> source_columns(columns.size());
-    std::vector<bool> is_replicated(columns.size());
+    VectorWithMemoryTracking<VectorWithMemoryTracking<ColumnPtr>> source_columns(columns.size());
+    VectorWithMemoryTracking<bool> is_replicated(columns.size());
     for (const auto & input : inputs)
     {
         if (!input.chunk)
@@ -228,6 +229,8 @@ Chunk MergedData::pull()
         empty_columns.emplace_back(column->cloneEmpty());
 
     empty_columns.swap(columns);
+    for (auto & column : empty_columns)
+        finishMergedReplicatedColumn(column);
     Chunk chunk(std::move(empty_columns), merged_rows);
 
     merged_rows = 0;

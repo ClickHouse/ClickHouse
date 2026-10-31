@@ -57,7 +57,6 @@ SETTINGS
     max_threads = 1,
     max_block_size = 1000000,
     optimize_move_to_prewhere = 0,
-    query_plan_optimize_prewhere = 0,
     optimize_read_in_order = 0;
 
 DROP TABLE t_04201;

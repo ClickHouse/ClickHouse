@@ -13,6 +13,8 @@ doc_type: 'reference'
 
 ClickHouse Connect executes Native-format inserts, the `insert` and `insert_df` methods, within an `InsertContext`. The `insert_arrow`, `insert_df_arrow`, and `raw_insert` methods send their payloads directly and don't use one. The `InsertContext` includes all the values sent as arguments to the client `insert` method. In addition, when an `InsertContext` is originally constructed, ClickHouse Connect retrieves the data types for the insert columns required for efficient Native format inserts. By reusing the `InsertContext` for multiple inserts, this "pre-query" is avoided and inserts are executed more quickly and efficiently.
 
+The internal `DESCRIBE TABLE` uses its own server-generated query ID, while the `INSERT` keeps the `query_id` from per-insert settings or client defaults.
+
 An `InsertContext` can be acquired using the client `create_insert_context` method. The method takes the same arguments as the `insert` function, except for `context` itself. Note that only the `data` property of `InsertContext`s should be modified for reuse. This is consistent with its intended purpose of providing a reusable object for repeated inserts of new data to the same table.
 
 ```python
@@ -30,6 +32,16 @@ assert qr.first_row[0] == 113
 ```
 
 `InsertContext`s include mutable state that is updated during the insert process, so they're not thread safe.
+
+### Insert retries and deduplication {#insert-retries-and-deduplication}
+
+Both HTTP clients can retry `insert` and `insert_df` once after certain remote connection closes. The client rebuilds Native insert data for the retry. A string or bytes payload passed to `raw_insert` is eligible for the same retry. A generator or open file is not replayed. These insert retries do not use `query_retries` and do not apply to HTTP 429, 503, or 504 responses.
+
+Insert retries have at-least-once semantics. If the first attempt commits but its response is lost, the retry can insert the same rows again. An exception can also occur after the first attempt commits. The client does not guarantee exactly-once insertion.
+
+Deduplication depends on the table engine, server version, and settings. For plain MergeTree tables, set the table setting `non_replicated_deduplication_window` to a nonzero value large enough to cover retries. Its default of `0` disables deduplication. Replicated and Shared MergeTree support insert deduplication, but you should verify the effective settings before relying on it. In particular, server-side asynchronous inserts do not deduplicate by default before ClickHouse 26.2 or with older compatibility settings. Deduplication only protects inserts within the configured deduplication window.
+
+SQL `INSERT` statements sent through query or command methods follow the separate [HTTP retry policy](/integrations/language-clients/python/driver-api#http-retries).
 
 ### Write formats {#write-formats}
 Write formats are implemented for a limited number of types. In most cases ClickHouse Connect automatically determines the correct write format for a column from its first non-null data value. For example, when the first value for a `DateTime` column is an integer, the client treats it as an epoch second.
