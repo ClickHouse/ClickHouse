@@ -40,6 +40,8 @@ public:
     bool memoryBoundMergingWillBeUsed() const;
 
     bool isGroupingSets() const { return !grouping_sets_params.empty(); }
+    bool isFinal() const { return final; }
+    bool shouldProduceResultsInBucketOrder() const { return should_produce_results_in_order_of_bucket_number; }
     const auto & getGroupingSetsParamsList() const { return grouping_sets_params; }
 
     void serializeSettings(QueryPlanSerializationSettings & settings, UInt64 version) const override;
@@ -48,8 +50,13 @@ public:
     static QueryPlanStepPtr deserialize(Deserialization & ctx);
 
     QueryPlanStepPtr clone() const override;
+    /// A copy that merges all input at once instead of bucket by bucket. The memory-efficient mode
+    /// needs each input stream in ascending bucket order, which an input split by a shuffle does not keep.
+    QueryPlanStepPtr cloneWithoutMemoryEfficientAggregation() const;
 
 private:
+    std::unique_ptr<MergingAggregatedStep> cloneImpl(bool memory_efficient_aggregation_) const;
+
     void updateOutputHeader() override;
 
     Aggregator::Params params;

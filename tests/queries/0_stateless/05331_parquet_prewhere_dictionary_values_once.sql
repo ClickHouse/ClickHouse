@@ -6,7 +6,7 @@
 SET engine_file_truncate_on_insert = 1;
 SET input_format_parquet_max_block_size = 1000, input_format_parquet_prefer_block_bytes = 0,
     input_format_parquet_filter_push_down = 0, input_format_parquet_bloom_filter_push_down = 0,
-    input_format_parquet_dictionary_filter_push_down = 0, use_query_condition_cache = 0,
+    input_format_parquet_dictionary_filter_push_down = 0, use_query_condition_cache = 0, use_columns_cache = 0,
     enable_multiple_prewhere_read_steps = 1, optimize_move_to_prewhere = 1, query_plan_optimize_prewhere = 1,
     log_queries = 1;
 
@@ -28,7 +28,7 @@ FROM numbers(30000);
 INSERT INTO FUNCTION file(currentDatabase() || '_05331_a.parquet') SELECT * FROM ref ORDER BY k
 SETTINGS max_block_size = 1000, min_insert_block_size_rows = 0, min_insert_block_size_bytes = 0, max_insert_threads = 1, max_threads = 1,
     output_format_parquet_row_group_size = 10000, output_format_parquet_data_page_size = 1024,
-    output_format_parquet_write_page_index = 0, output_format_parquet_batch_size = 100;
+    output_format_parquet_write_page_index = 0, output_format_parquet_batch_size = 100, max_bytes_before_external_sort = 0;
 
 SELECT arrayMap(x -> tupleElement(x, 'num_rows'), row_groups) FROM file(currentDatabase() || '_05331_a.parquet', ParquetMetadata);
 SELECT tupleElement(arrayJoin(columns) AS col, 'name'), has(tupleElement(col, 'encodings'), 'RLE_DICTIONARY')
@@ -105,7 +105,7 @@ SETTINGS apply_string_filters_during_scan = 1, log_comment = '05331:bl';
 INSERT INTO FUNCTION file(currentDatabase() || '_05331_c.parquet') SELECT * FROM ref ORDER BY k
 SETTINGS max_block_size = 1000, min_insert_block_size_rows = 0, min_insert_block_size_bytes = 0, max_insert_threads = 1, max_threads = 1,
     output_format_parquet_row_group_size = 10000, output_format_parquet_data_page_size = 1024,
-    output_format_parquet_write_page_index = 1, output_format_parquet_batch_size = 100;
+    output_format_parquet_write_page_index = 1, output_format_parquet_batch_size = 100, max_bytes_before_external_sort = 0;
 
 SELECT 'C', count(), sum(cityHash64(k, s, d)) = (SELECT sum(cityHash64(k, s, d)) FROM ref WHERE k BETWEEN 15000 AND 15100 AND s != '')
 FROM file(currentDatabase() || '_05331_c.parquet') PREWHERE k BETWEEN 15000 AND 15100 AND s != ''
