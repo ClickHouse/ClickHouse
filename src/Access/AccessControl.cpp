@@ -1,6 +1,7 @@
 #include <Access/AccessBackup.h>
 #include <Access/AccessChangesNotifier.h>
 #include <Access/AccessControl.h>
+#include <Access/AuthenticationData.h>
 #include <Access/ContextAccess.h>
 #include <Access/DiskAccessStorage.h>
 #include <Access/EnabledRolesInfo.h>
@@ -344,6 +345,8 @@ void AccessControl::setupFromMainConfig(const Poco::Util::AbstractConfiguration 
     setPasswordComplexityRulesFromConfig(config_);
 
     setBcryptWorkfactor(config_.getInt("bcrypt_workfactor", 12));
+
+    AuthenticationData::Util::setMaxConcurrentBcryptAuthentications(config_.getUInt64("max_concurrent_bcrypt_authentications", 0));
 
     /// Optional improvements in access control system.
     setEnabledUsersWithoutRowPoliciesCanReadRows(config_.getBool("access_control_improvements.users_without_row_policies_can_read_rows", true));
