@@ -193,10 +193,12 @@ UInt32 decompressDataForType(const char * source, UInt32 source_size, char * des
         return source_size - sizeof(T);
     }
 
+    /// Check the size once before the loop instead of on every element, so that the loop can be vectorized.
+    if (static_cast<size_t>(dest_end - dest) < static_cast<size_t>(source_end - source)) [[unlikely]]
+        throw Exception(ErrorCodes::CANNOT_DECOMPRESS, "Cannot decompress GCD-encoded data");
+
     while (source < source_end)
     {
-        if (dest + sizeof(T) > dest_end) [[unlikely]]
-            throw Exception(ErrorCodes::CANNOT_DECOMPRESS, "Cannot decompress GCD-encoded data");
         unalignedStore<T>(dest, unalignedLoad<T>(source) * gcd_multiplier);
 
         source += sizeof(T);

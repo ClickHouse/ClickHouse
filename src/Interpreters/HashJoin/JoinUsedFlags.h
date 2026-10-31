@@ -83,11 +83,12 @@ public:
 
             /// Mark all rows outside of selector as used.
             /// We should not emit them in RIGHT/FULL JOIN result,
-            /// since they belongs to another shard, which will handle flags for these rows
+            /// since they belongs to another shard, which will handle flags for these rows.
+            /// The flags were just created and are not visible to other threads yet, so the relaxed order is enough.
             for (auto & flag : flags)
-                flag.store(true);
+                flag.store(true, std::memory_order_relaxed);
             for (size_t index : selector)
-                flags[index].store(false);
+                flags[index].store(false, std::memory_order_relaxed);
         }
     }
 

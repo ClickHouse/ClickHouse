@@ -86,6 +86,9 @@ template <bool check_eof>
 inline void ALWAYS_INLINE readVarUInt(UInt64 & x, ReadBuffer & istr)
 {
     x = 0;
+    /// The compiler may merge the two exits into one data-dependent exit, leaving only a maximum trip count of 10,
+    /// which is above the default limit for unrolling by the maximum trip count. `unroll(full)` needs an exact trip count.
+#pragma clang loop unroll_count(10)
     for (size_t i = 0; i < 10; ++i)
     {
         if constexpr (check_eof)
@@ -104,6 +107,7 @@ inline void ALWAYS_INLINE readVarUInt(UInt64 & x, ReadBuffer & istr)
 template <bool check_eof>
 inline void ALWAYS_INLINE ignoreVarUInt(ReadBuffer & istr)
 {
+#pragma clang loop unroll_count(10)
     for (size_t i = 0; i < 10; ++i)
     {
         if constexpr (check_eof)
@@ -167,6 +171,7 @@ inline const char * ALWAYS_INLINE readVarUInt(UInt64 & x, const char * istr, siz
     const char * end = istr + size;
 
     x = 0;
+#pragma clang loop unroll_count(10)
     for (size_t i = 0; i < 10; ++i)
     {
         if (istr == end) [[unlikely]]
