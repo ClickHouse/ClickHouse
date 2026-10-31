@@ -880,6 +880,7 @@ public:
     /// present to be able to add, remove or update warnings from the table
     enum class WarningType
     {
+        AI_FUNCTION_IN_BACKGROUND_OPERATION,
         AST_FUZZER_IS_ENABLED,
         AVAILABLE_DISK_SPACE_TOO_LOW_FOR_DATA,
         AVAILABLE_DISK_SPACE_TOO_LOW_FOR_LOGS,

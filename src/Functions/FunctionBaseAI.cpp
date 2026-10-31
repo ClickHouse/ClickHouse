@@ -373,9 +373,20 @@ void FunctionBaseAI::insertProcessedResult(IColumn & column, const String & proc
 
 void FunctionBaseAI::checkHasUser(const ContextPtr & context)
 {
-    if (!context->getUserID())
-        throw Exception(ErrorCodes::ACCESS_DENIED,
-            "AI functions cannot be executed without a user, e.g. in background merges, mutations or `Buffer` flushes");
+    if (context->getUserID())
+        return;
+
+    /// A background operation is retried, and its failure is visible only in the logs and system tables.
+    context->addOrUpdateWarningMessage(
+        Context::WarningType::AI_FUNCTION_IN_BACKGROUND_OPERATION,
+        PreformattedMessage::create(
+            "A background operation (merge, mutation or `Buffer` flush) failed because it evaluates an AI function, "
+            "which is executed only in queries run by a user. {}Remove the AI function from the table's keys, TTL, "
+            "skip indexes, projections, `DEFAULT` and `MATERIALIZED` columns and constraints.",
+            context->getCurrentQueryId().empty() ? "" : fmt::format("Last failed task: {}. ", context->getCurrentQueryId())));
+
+    throw Exception(ErrorCodes::ACCESS_DENIED,
+        "AI functions cannot be executed without a user, e.g. in background merges, mutations or `Buffer` flushes");
 }
 
 void FunctionBaseAI::throwIfBackgroundExpression(const ContextPtr & context)

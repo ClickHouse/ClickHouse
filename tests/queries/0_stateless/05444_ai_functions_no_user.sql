@@ -13,6 +13,8 @@ CREATE NAMED COLLECTION nc_05444 AS
 CREATE TABLE t (x String, CONSTRAINT c CHECK aiFilter(x, 'c', map('credentials', 'nc_05444', 'model', 'm'))) ENGINE = MergeTree ORDER BY x;
 CREATE TABLE b (x String) ENGINE = Buffer(currentDatabase(), t, 1, 1, 1, 1, 1, 1, 1);
 INSERT INTO b VALUES ('a'); -- { serverError ACCESS_DENIED }
+-- The failure is reported in `system.warnings`.
+SELECT count() > 0 FROM system.warnings WHERE message LIKE 'A background operation%AI function%';
 
 -- The user is checked before the credentials: an inaccessible and an absent collection fail with the same error.
 DROP USER IF EXISTS u_05444;
