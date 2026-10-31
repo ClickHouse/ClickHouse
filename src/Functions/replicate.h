@@ -37,6 +37,7 @@ public:
     bool useDefaultImplementationForNulls() const override { return false; }
 
     bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }
+    bool useDefaultImplementationForFixedArray() const override { return false; }
 
     String getSignatureString() const override
     {

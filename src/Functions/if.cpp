@@ -1350,6 +1350,7 @@ public:
     size_t getNumberOfArguments() const override { return 3; }
 
     bool useDefaultImplementationForNulls() const override { return false; }
+    bool useDefaultImplementationForFixedArray() const override { return false; }
     bool useDefaultImplementationForNothing() const override { return false; }
     bool isShortCircuit(ShortCircuitSettings & settings, size_t /*number_of_arguments*/) const override
     {

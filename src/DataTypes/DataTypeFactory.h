@@ -94,6 +94,7 @@ void registerDataTypeString(DataTypeFactory & factory);
 void registerDataTypeFixedString(DataTypeFactory & factory);
 void registerDataTypeEnum(DataTypeFactory & factory);
 void registerDataTypeArray(DataTypeFactory & factory);
+void registerDataTypeFixedArray(DataTypeFactory & factory);
 void registerDataTypeTuple(DataTypeFactory & factory);
 void registerDataTypeQBit(DataTypeFactory & factory);
 void registerDataTypeMap(DataTypeFactory & factory);

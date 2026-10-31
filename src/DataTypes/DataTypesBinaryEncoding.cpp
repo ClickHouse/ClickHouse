@@ -4,6 +4,7 @@
 #include <DataTypes/DataTypeEnum.h>
 #include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeFixedArray.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeFunction.h>
@@ -163,6 +164,8 @@ BinaryTypeIndex getBinaryTypeIndex(const DataTypePtr & type)
             return BinaryTypeIndex::UUID;
         case TypeIndex::Array:
             return BinaryTypeIndex::Array;
+        case TypeIndex::FixedArray:
+            return BinaryTypeIndex::FixedArray;
         case TypeIndex::Tuple:
         {
             const auto & tuple_type = assert_cast<const DataTypeTuple &>(*type);
@@ -388,6 +391,13 @@ void encodeDataTypeImpl(const DataTypePtr & type, WriteBuffer & buf)
         {
             const auto & array_type = assert_cast<const DataTypeArray &>(*type);
             encodeDataTypeImpl<encode_for_hash_calculation>(array_type.getNestedType(), buf);
+            break;
+        }
+        case BinaryTypeIndex::FixedArray:
+        {
+            const auto & fixed_array_type = assert_cast<const DataTypeFixedArray &>(*type);
+            writeVarUInt(fixed_array_type.getArraySize(), buf);
+            encodeDataTypeImpl<encode_for_hash_calculation>(fixed_array_type.getNestedType(), buf);
             break;
         }
         case BinaryTypeIndex::NamedTuple:
@@ -659,6 +669,13 @@ static DataTypePtr decodeDataTypeImpl(ReadBuffer & buf, size_t & complexity, siz
             return decodeDecimal<Decimal256>(buf);
         case BinaryTypeIndex::Array:
             return std::make_shared<DataTypeArray>(decodeDataTypeImpl(buf, complexity, max_complexity));
+        case BinaryTypeIndex::FixedArray:
+        {
+            size_t size = 0;
+            readVarUInt(size, buf);
+            /// The constructor validates the size, including the limit for the total number of elements.
+            return std::make_shared<DataTypeFixedArray>(size, decodeDataTypeImpl(buf, complexity, max_complexity));
+        }
         case BinaryTypeIndex::NamedTuple:
         {
             size_t size = 0;

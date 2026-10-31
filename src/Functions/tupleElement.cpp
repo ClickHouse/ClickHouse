@@ -54,6 +54,7 @@ public:
     /// subcolumn path `t.a` (which preserves `LowCardinality(...)`). tupleElement only extracts a column, so
     /// it is naturally correct for any element type without the framework's LowCardinality unwrapping.
     bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }
+    bool useDefaultImplementationForFixedArray() const override { return false; }
     bool useDefaultImplementationForDynamic() const override { return true; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 

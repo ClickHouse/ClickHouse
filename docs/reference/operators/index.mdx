@@ -16,6 +16,13 @@ the same as `arrayMap(i -> a[i], N)`. The positions may be nullable. A `NULL` po
 can be wrapped in `Nullable`; for element types that cannot be inside `Nullable` (such as `Array`, `Map`), it produces
 the default value of the element type, the same as for a scalar `NULL` index.
 
+`a[N, M]` – Access to an element of a multidimensional array, the same as `a[N][M]`. Any number of subscripts can be listed.
+
+`a[][M]` – Access to an element of every element of an array, the same as `arrayMap(x -> x[M], a)`.
+An empty subscript applies all the subscripts after it to every element of the array: `a[][][M]` is `arrayMap(x -> arrayMap(y -> y[M], x), a)`,
+and `a[N][][M, K]` is `arrayMap(x -> x[M][K], a[N])`. For a [FixedArray](/reference/data-types/fixedarray) the result is a `FixedArray` as well,
+for example, `image[][][1]` takes the first color channel of every pixel of an image.
+
 `a.N` – Access to a tuple element. The `tupleElement(a, N)` function.
 
 ## Numeric Negation Operator {#numeric-negation-operator}

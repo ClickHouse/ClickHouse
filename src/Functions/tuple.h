@@ -42,6 +42,7 @@ public:
     bool useDefaultImplementationForNothing() const override { return false; }
     bool useDefaultImplementationForConstants() const override { return true; }
     bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }
+    bool useDefaultImplementationForFixedArray() const override { return false; }
 
     /// Documentation-only — collects N argument types into a `Tuple` (or an
     /// empty `Tuple()` for zero args). With `enable_named_columns_in_function_tuple`

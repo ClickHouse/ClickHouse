@@ -5,6 +5,7 @@
 #include <string>
 #include <string_view>
 #include <unordered_map>
+#include <span>
 #include <unordered_set>
 
 #include <base/scope_guard.h>
@@ -1502,9 +1503,19 @@ protected:
     }
 };
 
+/// Marks the list of subscripts of `arr[i, j]` or the empty subscript of `arr[]`, see `expandSubscripts`.
+static constexpr std::string_view subscripts_marker = "__subscripts";
+
+static bool isSubscriptsMarker(const IAST * node)
+{
+    const auto * function = node ? node->as<ASTFunction>() : nullptr;
+    return function && function->name == subscripts_marker;
+}
+
 /// Layer for arrayElement square brackets operator
 ///  This layer does not create a function, it is only needed to parse closing token
-///  and return only one element.
+///  and return the subscript. Several subscripts `arr[i, j]` and no subscripts `arr[]`
+///  are returned in a marker function, which is expanded after the whole expression is parsed.
 class ArrayElementLayer : public LayerWithSeparator<TokenType::Comma, TokenType::ClosingSquareBracket>
 {
 public:
@@ -1512,7 +1523,136 @@ public:
     {
         return LayerWithSeparator::parse(pos, expected, action);
     }
+
+protected:
+    bool getResultImpl(ASTPtr & node) override
+    {
+        if (elements.size() == 1)
+        {
+            node = std::move(elements[0]);
+            return true;
+        }
+
+        node = makeASTFunction(String(subscripts_marker), std::move(elements));
+        return true;
+    }
 };
+
+/** Expands the chains of subscripts with the marker of several or no subscripts:
+  *  arr[i, j] -> arr[i][j]
+  *  arr[][j] -> arrayMap(x -> x[j], arr)
+  *  arr[i][][][j, k] -> arrayMap(x -> arrayMap(y -> y[j][k], x), arr[i])
+  * An empty subscript means the same subscripts applied to every element of the array,
+  * and it does nothing if there are no subscripts after it.
+  */
+static void expandSubscripts(ASTPtr & node);
+
+static void collectIdentifierNames(const IAST * node, std::unordered_set<String> & names)
+{
+    if (const auto * identifier = node->as<ASTIdentifier>())
+    {
+        names.insert(identifier->name());
+        for (const auto & part : identifier->name_parts)
+            names.insert(part);
+    }
+    for (const auto & child : node->children)
+        collectIdentifierNames(child.get(), names);
+}
+
+/// `subscripts` are in the order of application, `nullptr` stands for the empty subscript.
+static ASTPtr applySubscripts(ASTPtr base, std::span<const ASTPtr> subscripts)
+{
+    for (size_t i = 0; i < subscripts.size(); ++i)
+    {
+        if (subscripts[i])
+        {
+            base = makeASTOperator("arrayElement", std::move(base), subscripts[i]);
+            continue;
+        }
+
+        auto rest = subscripts.subspan(i + 1);
+        if (std::all_of(rest.begin(), rest.end(), [](const ASTPtr & subscript) { return !subscript; }))
+            return base;
+
+        /// The parameter of the lambda must not shadow identifiers in the remaining subscripts.
+        std::unordered_set<String> used_names;
+        for (const auto & subscript : rest)
+            if (subscript)
+                collectIdentifierNames(subscript.get(), used_names);
+
+        String name = "x";
+        for (size_t suffix = 1; used_names.contains(name); ++suffix)
+            name = "x" + std::to_string(suffix);
+
+        auto body = applySubscripts(make_intrusive<ASTIdentifier>(name), rest);
+        return makeASTFunction("arrayMap", makeASTLambda({name}, std::move(body)), std::move(base));
+    }
+    return base;
+}
+
+static void expandSubscripts(ASTPtr & node)
+{
+    auto * function = node->as<ASTFunction>();
+    if (!function)
+        return;
+
+    if (function->name != "arrayElement" || !function->arguments || function->arguments->children.size() != 2)
+    {
+        for (auto & child : node->children)
+            expandSubscripts(child);
+        return;
+    }
+
+    /// Collect the whole chain base[s1][s2]...[sn], so that an empty subscript can apply the rest of it to every element.
+    ASTs chain;
+    bool has_marker = false;
+    ASTPtr base = node;
+    while (const auto * element = base->as<ASTFunction>())
+    {
+        if (element->name != "arrayElement" || !element->arguments || element->arguments->children.size() != 2)
+            break;
+
+        const auto & subscript = element->arguments->children[1];
+        if (isSubscriptsMarker(subscript.get()))
+        {
+            has_marker = true;
+            const auto & subscripts = subscript->as<ASTFunction &>().arguments->children;
+            if (subscripts.empty())
+                chain.push_back(nullptr);
+            else
+                chain.insert(chain.end(), subscripts.rbegin(), subscripts.rend());
+        }
+        else
+            chain.push_back(subscript);
+
+        base = element->arguments->children[0];
+    }
+
+    expandSubscripts(base);
+    for (auto & subscript : chain)
+        if (subscript)
+            expandSubscripts(subscript);
+
+    if (!has_marker)
+    {
+        /// Put the expanded subexpressions back into the unchanged chain.
+        ASTPtr * current = &node;
+        for (const auto & subscript : chain)
+        {
+            auto & arguments = (*current)->as<ASTFunction &>().arguments->children;
+            arguments[1] = subscript;
+            current = &arguments[0];
+        }
+        *current = base;
+        return;
+    }
+
+    std::reverse(chain.begin(), chain.end());
+    auto alias = node->tryGetAlias();
+    node = applySubscripts(base, chain);
+    if (!alias.empty())
+        node->setAlias(alias);
+}
 
 class CastLayer : public Layer
 {
@@ -3591,6 +3731,9 @@ bool ParserExpressionImpl::parse(std::unique_ptr<Layer> start, IParser::Pos & po
     Layers layers;
     layers.push_back(std::move(start));
 
+    /// Whether `arr[i, j]` or `arr[]` were parsed, see `expandSubscripts`.
+    bool has_subscripts_markers = false;
+
     while (true)
     {
         while (pos.isValid())
@@ -3609,6 +3752,8 @@ bool ParserExpressionImpl::parse(std::unique_ptr<Layer> start, IParser::Pos & po
                 if (!layers.back()->getResult(res))
                     break;
 
+                has_subscripts_markers |= isSubscriptsMarker(res.get());
+
                 layers.pop_back();
                 layers.back()->pushOperand(res);
                 continue;
@@ -3625,7 +3770,11 @@ bool ParserExpressionImpl::parse(std::unique_ptr<Layer> start, IParser::Pos & po
 
         /// When we exit the loop we should be on the 1st level
         if (layers.size() == 1 && layers.back()->getResult(node))
+        {
+            if (has_subscripts_markers)
+                expandSubscripts(node);
             return true;
+        }
 
         layers.pop_back();
 

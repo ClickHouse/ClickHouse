@@ -612,6 +612,15 @@ protected:
     /// If it isn't, will convert all ColumnLowCardinality arguments to full columns.
     virtual bool canBeExecutedOnLowCardinalityDictionary() const { return true; }
 
+    /** If useDefaultImplementationForFixedArray() is true, then `FixedArray` in the types of arguments (also nested
+      * in `Array`, `Tuple`, `Map` and `Nullable`) is replaced with `Array` of the same elements for getReturnType(),
+      * getLambdaArgumentTypes() and build(), and the columns are converted in the same way when the function is executed,
+      * see `FunctionBaseFixedArrayAdaptor`. So a function that is not specialized for `FixedArray` processes it as `Array`.
+      * Functions that work with values of any type (like `toTypeName`, `CAST`, `if`) or are specialized for `FixedArray`
+      * (like `arrayElement`, `arrayMap`) return false.
+      */
+    virtual bool useDefaultImplementationForFixedArray() const { return true; }
+
     /** If useDefaultImplementationForDynamic() is true, then special FunctionBaseDynamicAdaptor will be used
      *  if function arguments has Dynamic column. This adaptor will build and execute this function for all
      *  internal types inside Dynamic column separately and construct result based on results for these types.
@@ -726,6 +735,9 @@ public:
 
     /// If it isn't, will convert all ColumnLowCardinality arguments to full columns.
     virtual bool canBeExecutedOnLowCardinalityDictionary() const { return true; }
+
+    /// See the comment for the same method in `IFunctionOverloadResolver`.
+    virtual bool useDefaultImplementationForFixedArray() const { return true; }
 
     virtual bool useDefaultImplementationForDynamic() const { return useDefaultImplementationForNulls(); }
     virtual DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const { return nullptr; }

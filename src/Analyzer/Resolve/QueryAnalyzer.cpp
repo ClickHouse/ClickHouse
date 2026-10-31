@@ -8,6 +8,7 @@
 #include <Analyzer/IQueryTreeNode.h>
 #include <Analyzer/IdentifierNode.h>
 #include <Analyzer/inlineMaterializedCTEIfNeeded.h>
+#include <Interpreters/ArrayJoinAction.h>
 #include <Interpreters/MaterializedCTE.h>
 #include <Analyzer/InterpolateNode.h>
 #include <Analyzer/JoinNode.h>
@@ -6017,10 +6018,10 @@ void QueryAnalyzer::resolveArrayJoin(QueryTreeNodePtr & array_join_node, Identif
         auto process_array_join_expression = [&](const QueryTreeNodePtr & expression)
         {
             auto result_type = expression->getResultType();
-            bool is_array_type = isArray(result_type);
-            bool is_map_type = isMap(result_type);
+            /// Array, FixedArray or Map.
+            auto array_join_type = getArrayJoinDataType(result_type);
 
-            if (!is_array_type && !is_map_type)
+            if (!array_join_type)
                 throw Exception(ErrorCodes::TYPE_MISMATCH,
                     "ARRAY JOIN {} requires expression {} with Array or Map type. Actual: {}. In scope {}",
                     array_join_node_typed.formatASTForErrorMessage(),
@@ -6028,10 +6029,7 @@ void QueryAnalyzer::resolveArrayJoin(QueryTreeNodePtr & array_join_node, Identif
                     result_type->getName(),
                     scope.scope_node->formatASTForErrorMessage());
 
-            if (is_map_type)
-                result_type = assert_cast<const DataTypeMap &>(*result_type).getNestedType();
-
-            result_type = assert_cast<const DataTypeArray &>(*result_type).getNestedType();
+            result_type = array_join_type->getNestedType();
 
             String array_join_column_name;
 

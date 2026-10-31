@@ -1,8 +1,10 @@
 #include <Common/typeid_cast.h>
 #include <optional>
 #include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeFixedArray.h>
 #include <DataTypes/DataTypeMap.h>
 #include <Columns/ColumnArray.h>
+#include <Columns/ColumnFixedArray.h>
 #include <Columns/ColumnMap.h>
 #include <Columns/ColumnReplicated.h>
 #include <Columns/ColumnsCommon.h>
@@ -32,6 +34,9 @@ std::shared_ptr<const DataTypeArray> getArrayJoinDataType(DataTypePtr type)
 {
     if (const auto * array_type = typeid_cast<const DataTypeArray *>(type.get()))
         return std::shared_ptr<const DataTypeArray>{type, array_type};
+    /// The elements of FixedArray keep their type: the elements of a multidimensional FixedArray are FixedArray.
+    if (const auto * fixed_array_type = typeid_cast<const DataTypeFixedArray *>(type.get()))
+        return std::make_shared<DataTypeArray>(fixed_array_type->getNestedType());
     if (const auto * map_type = typeid_cast<const DataTypeMap *>(type.get()))
     {
         const auto & nested_type = map_type->getNestedType();
@@ -47,6 +52,8 @@ static ColumnPtr getArrayJoinColumn(const ColumnPtr & column)
         return column;
     if (const auto * map = typeid_cast<const ColumnMap *>(column.get()))
         return map->getNestedColumnPtr();
+    if (const auto * fixed_array = typeid_cast<const ColumnFixedArray *>(column.get()))
+        return fixed_array->convertToArray();
     /// Keep replicated arrays lazy, only unwrap maps.
     if (const auto * replicated = typeid_cast<const ColumnReplicated *>(column.get()))
     {
@@ -55,6 +62,8 @@ static ColumnPtr getArrayJoinColumn(const ColumnPtr & column)
             return column;
         if (const auto * map = typeid_cast<const ColumnMap *>(nested.get()))
             return ColumnReplicated::create(map->getNestedColumnPtr(), replicated->getIndexesColumn());
+        if (const auto * fixed_array = typeid_cast<const ColumnFixedArray *>(nested.get()))
+            return ColumnReplicated::create(fixed_array->convertToArray(), replicated->getIndexesColumn());
     }
     return nullptr;
 }

@@ -1,4 +1,5 @@
 #include <Analyzer/IQueryTreeNode.h>
+#include <Analyzer/Resolve/EinsumLambdaRewrite.h>
 #include <Analyzer/Resolve/QueryAnalyzer.h>
 #include <DataTypes/DataTypeString.h>
 #include <Analyzer/Resolve/FunctionCompositionRewrite.h>
@@ -1419,6 +1420,17 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
             node = std::move(array_function_node);
             return resolveFunction(node, scope, allow_niladic_functions);
         }
+    }
+
+    /// The lambda form of `einsum` with the indices as the arguments of the lambda is rewritten to the form with subscripts.
+    if (function_name == "einsum"
+        && !function_node_ptr->isWindowFunction()
+        && function_node_ptr->getParameters().getNodes().empty()
+        && !function_node_ptr->getArguments().getNodes().empty()
+        && function_node_ptr->getArguments().getNodes().front()->getNodeType() == QueryTreeNodeType::LAMBDA)
+    {
+        node = rewriteEinsumLambda(*function_node_ptr);
+        return resolveFunction(node, scope, allow_niladic_functions);
     }
 
     /// Resolve function parameters
