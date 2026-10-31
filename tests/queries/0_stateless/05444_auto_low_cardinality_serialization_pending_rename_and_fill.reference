@@ -1,0 +1,24 @@
+kind
+LowCardinality
+pending rename
+0
+6000
+kind
+LowCardinality
+fill
+0	x
+1	x
+2	x
+3	x
+4	x
+5	y
+fill with expression
+0	x
+1	x+
+2	x
+3	x+
+4	x++
+5	y
+uniqExact
+2	2
+2

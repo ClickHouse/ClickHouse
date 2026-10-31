@@ -35,14 +35,33 @@ namespace
     }
 }
 
-SerializationLowCardinality::SerializationLowCardinality(const DataTypePtr & dictionary_type_)
+SerializationLowCardinality::SerializationLowCardinality(const DataTypePtr & dictionary_type_, bool is_native_low_cardinality_)
      : dictionary_type(dictionary_type_)
      , nested_serialization(dictionary_type_->getDefaultSerialization())
      , dict_inner_serialization(removeNullable(dictionary_type_)->getDefaultSerialization())
+     , is_native_low_cardinality(is_native_low_cardinality_)
 {
 }
 
-UInt128 SerializationLowCardinality::getHash(const DataTypePtr & dictionary_type_)
+ISerialization::KindStack SerializationLowCardinality::getKindStack() const
+{
+    /// A genuine LowCardinality(T) column carries its cardinality in the data type, so its kind is DEFAULT.
+    /// A non-native LowCardinality serialization is an automatic on-disk encoding of a non-LowCardinality type.
+    if (is_native_low_cardinality)
+        return {Kind::DEFAULT};
+    return {Kind::DEFAULT, Kind::LOW_CARDINALITY};
+}
+
+MutableColumnPtr SerializationLowCardinality::wrapColumnForDeserialization(MutableColumnPtr column) const
+{
+    /// For the automatic (non-native) LowCardinality serialization the data type is not LowCardinality,
+    /// so the base column must be replaced with a dictionary-encoded one to deserialize into.
+    if (!is_native_low_cardinality)
+        return createEmptyLowCardinalityColumn(*dictionary_type, /*is_native=*/false);
+    return column;
+}
+
+UInt128 SerializationLowCardinality::getHash(const DataTypePtr & dictionary_type_, bool is_native_low_cardinality_)
 {
     /// Include the nested serializations' hashes so types whose default
     /// serialization depends on session settings get distinct cache entries.
@@ -51,6 +70,7 @@ UInt128 SerializationLowCardinality::getHash(const DataTypePtr & dictionary_type
 
     SipHash hash;
     hash.update("LowCardinality");
+    hash.update(is_native_low_cardinality_);
     auto dict_type_name = dictionary_type_->getName();
     hash.update(dict_type_name.size());
     hash.update(dict_type_name);
@@ -62,11 +82,11 @@ UInt128 SerializationLowCardinality::getHash(const DataTypePtr & dictionary_type
     return hash.get128();
 }
 
-SerializationPtr SerializationLowCardinality::create(const DataTypePtr & dictionary_type_)
+SerializationPtr SerializationLowCardinality::create(const DataTypePtr & dictionary_type_, bool is_native_low_cardinality_)
 {
     if (!removeNullable(dictionary_type_)->getDefaultSerialization()->supportsPooling())
-        return std::shared_ptr<ISerialization>(new SerializationLowCardinality(dictionary_type_));
-    return ISerialization::pooled(getHash(dictionary_type_), [&] { return new SerializationLowCardinality(dictionary_type_); });
+        return std::shared_ptr<ISerialization>(new SerializationLowCardinality(dictionary_type_, is_native_low_cardinality_));
+    return ISerialization::pooled(getHash(dictionary_type_, is_native_low_cardinality_), [&] { return new SerializationLowCardinality(dictionary_type_, is_native_low_cardinality_); });
 }
 
 void SerializationLowCardinality::enumerateStreams(
@@ -74,7 +94,9 @@ void SerializationLowCardinality::enumerateStreams(
     const StreamCallback & callback,
     const SubstreamData & data) const
 {
-    const auto * column_lc = data.column ? &getColumnLowCardinality(*data.column) : nullptr;
+    /// For non-native LowCardinality serialization the sample column may be a full (non-LowCardinality)
+    /// column - it has the data type of the dictionary, not LowCardinality. Use a non-throwing cast.
+    const auto * column_lc = data.column ? typeid_cast<const ColumnLowCardinality *>(data.column.get()) : nullptr;
 
     if (settings.use_specialized_prefixes_and_suffixes_substreams)
     {

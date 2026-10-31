@@ -4,6 +4,7 @@
 #include <Columns/ColumnsNumber.h>
 #include <Core/Block.h>
 #include <Core/Defines.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 #include <Processors/Transforms/BlockNestedLoopJoinTransform.h>
 #include <Common/ProfileEvents.h>
 #include <Common/assert_cast.h>
@@ -294,9 +295,10 @@ void BlockNestedLoopProbeTransform::startProbeChunk(Chunk chunk)
     ProfileEvents::increment(ProfileEvents::JoinProbeTableRowCount, walk.probe_num_rows);
     walk.probe_columns = chunk.detachColumns();
     /// The tile indexes into these columns and the output gathers from them; neither is possible
-    /// on a Const or Sparse representation.
+    /// on a Const or Sparse representation. A non-native LowCardinality column (automatic
+    /// LowCardinality serialization) does not match the full column of the output header.
     for (auto & column : walk.probe_columns)
-        column = recursiveRemoveSparse(column->convertToFullColumnIfConst());
+        column = recursiveRemoveNonNativeLowCardinality(recursiveRemoveSparse(column->convertToFullColumnIfConst()));
 
     /// A probe chunk with no rows has no pair to evaluate, and unmatched build rows - the only
     /// rows an empty probe side can still produce - are emitted by a stage of their own. It leaves
@@ -953,7 +955,9 @@ static ColumnPtr totalsColumnAt(const Block & source, size_t position, const Dat
     if (position >= source.columns())
         return type->createColumnConstWithDefaultValue(1)->convertToFullColumnIfConst();
 
-    auto column = source.getByPosition(position).column->convertToFullColumnIfConst();
+    /// A totals row can also carry a non-native LowCardinality column (automatic LowCardinality
+    /// serialization), which does not match the full column of the output header.
+    auto column = recursiveRemoveNonNativeLowCardinality(source.getByPosition(position).column->convertToFullColumnIfConst());
     if (column->size() != 1)
         column = column->cloneResized(1);
     return column;

@@ -1,0 +1,11 @@
+serialization kinds
+t_native_lc	f	LowCardinality
+t_native_lc	s	LowCardinality
+t_native_plain	f	Default
+t_native_plain	s	Default
+revision 0: identical to plain
+revision 54495: identical to plain
+revision 54496: identical to plain
+revision 0 round-trip
+10000	10	7	5149265924329663309
+10000	10	7	5149265924329663309

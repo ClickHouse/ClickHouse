@@ -116,6 +116,14 @@ public:
     void consume(Chunk & chunk) override
     {
         auto block = getHeader().cloneWithColumns(chunk.getColumns());
+
+        /// Reads serve rows straight from the stored blocks and resolve subcolumns of a `String` column there
+        /// (for example `s.size` after `optimize_functions_to_subcolumns`), which a non-native
+        /// `ColumnLowCardinality` (automatic `LowCardinality` serialization of a source table) does not have.
+        /// Never keep the encoded representation, whatever the source of the block.
+        for (auto & column : block)
+            column.column = recursiveRemoveNonNativeLowCardinality(column.column);
+
         storage_snapshot->metadata->check(block, true);
         const auto memory_settings = storage.getMemorySettings();
         if ((*memory_settings)[MemorySetting::compress])

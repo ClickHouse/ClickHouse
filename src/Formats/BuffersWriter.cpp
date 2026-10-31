@@ -9,6 +9,8 @@
 
 #include <Core/Block.h>
 
+#include <DataTypes/DataTypeLowCardinality.h>
+
 namespace DB
 {
 
@@ -40,9 +42,13 @@ void BuffersWriter::write(const Block & block)
 
         SerializationPtr serialization = column.type->getDefaultSerialization();
 
+        /// The default serialization of the declared type needs a full column, so a non-native
+        /// LowCardinality column (automatic LowCardinality serialization) is materialized as well.
+        ColumnPtr full_column = recursiveRemoveNonNativeLowCardinality(column.column->convertToFullIfWrapped());
+
         WriteBufferFromOwnString buffer;
 
-        NativeWriter::writeData(*serialization, column.column->convertToFullIfWrapped(), buffer, format_settings, 0, 0, format_settings.client_protocol_version);
+        NativeWriter::writeData(*serialization, full_column, buffer, format_settings, 0, 0, format_settings.client_protocol_version);
 
         /// Size of buffer in bytes (UInt64)
         UInt64 buffer_size = static_cast<UInt64>(buffer.count());
