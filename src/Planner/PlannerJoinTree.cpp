@@ -2922,13 +2922,34 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(TableExpressionNodePtr table_
                                 reading_node = reading_steps.front();
                         }
 
+                        /// This filter was planned by `collectFiltersForAnalysis` with its own `PreparedSets`, so a key-column
+                        /// `IN` set built by index analysis for the estimate is not the one the query builds later, and its
+                        /// subquery would run twice; `input()` is a one-shot client stream and cannot be read twice.
+                        const auto * estimate_reading_step
+                            = reading_node ? typeid_cast<const ReadFromMergeTree *>(reading_node->step.get()) : nullptr;
+                        const ActionsDAG * estimate_filter
+                            = estimate_reading_step ? estimate_reading_step->getQueryInfo().filter_actions_dag.get() : nullptr;
+                        /// Also collects the sets in `indexHint` arguments, which live in a DAG of their own.
+                        UsefulSets estimate_filter_sets;
+                        if (estimate_filter)
+                            appendSetsFromActionsDAG(*estimate_filter, estimate_filter_sets);
+                        const bool estimate_needs_unbuilt_set
+                            = std::ranges::any_of(estimate_filter_sets, [](const FutureSetPtr & set) { return !set || !set->get(); });
+
                         // (2) if it's ReadFromMergeTree - run index analysis and check number of rows to read
                         // Note: reading_steps can have several steps in case of reading from view with UNION
                         // In such case, we avoid using parallel_replicas_min_number_of_rows_per_replica for all tables, -
                         // parallel_replicas_min_number_of_rows_per_replica will be replaced by automatic_parallel_replicas_mode
-                        if (reading_node && reading_steps.size() == 1
+                        const bool apply_min_rows_per_replica = reading_node && reading_steps.size() == 1
                             && settings[Setting::parallel_replicas_min_number_of_rows_per_replica] > 0
-                            && !query_context->isAutomaticParallelReplicasProbe())
+                            && !query_context->isAutomaticParallelReplicasProbe();
+                        if (apply_min_rows_per_replica && estimate_needs_unbuilt_set)
+                        {
+                            LOG_DEBUG(
+                                getLogger("Planner"),
+                                "Skipping parallel_replicas_min_number_of_rows_per_replica, the filter has a set that is not built yet");
+                        }
+                        else if (apply_min_rows_per_replica)
                         {
                             const auto * reading_step = typeid_cast<ReadFromMergeTree *>(reading_steps.front()->step.get());
                             const bool allow_query_condition_cache
