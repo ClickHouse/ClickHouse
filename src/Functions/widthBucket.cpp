@@ -234,6 +234,8 @@ public:
     }
 
     bool useDefaultImplementationForConstants() const override { return true; }
+    /// A zero bucket count is not valid.
+    bool canBeExecutedOnDefaultArguments() const override { return false; }
 };
 
 REGISTER_FUNCTION(WidthBucket)
