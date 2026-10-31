@@ -1,0 +1,17 @@
+A constant true condition prefix in multiIf keeps String
+max	String
+max	String
+max	String
+max	String
+Identical constant branches in if keep String
+sum	String
+sum	String
+\N	Nullable(String)
+\N	Nullable(String)
+A non-constant condition prefix still gets LowCardinality
+c	LowCardinality(String)
+b	LowCardinality(String)
+a	LowCardinality(String)
+b	LowCardinality(String)
+y	LowCardinality(String)
+x	LowCardinality(String)
