@@ -1,0 +1,30 @@
+-- metrics named like functions
+[('__name__','rate'),('job','a')]	1970-01-01 00:01:50.000	2.5
+[('__name__','time'),('job','b')]	1970-01-01 00:01:50.000	4
+[('job','a')]	1970-01-01 00:01:50.000	2.5
+-- whitespace before the parenthesis
+[('job','a')]	1970-01-01 00:01:50.000	2.5
+1970-01-01 00:01:50.000	1
+[('job','a')]	1970-01-01 00:01:50.000	2.5
+[('job','a')]	1970-01-01 00:01:50.000	2.5
+-- unknown functions
+-- unknown functions fail before execution, known ones are described
+tags	Array(Tuple(String, String))					
+timestamp	DateTime64(3)					
+value	Float64					
+-- start and end
+[('__name__','start'),('job','c')]	1970-01-01 00:01:50.000	5
+[('__name__','end'),('job','d')]	1970-01-01 00:01:50.000	6
+[('__name__','rate'),('job','a')]	[('1970-01-01 00:01:40.000',1.5),('1970-01-01 00:01:50.000',1.5)]
+[('__name__','rate'),('job','a')]	[('1970-01-01 00:01:40.000',2.5),('1970-01-01 00:01:50.000',2.5)]
+[('__name__','rate'),('job','a')]	[('1970-01-01 00:01:40.000',1.5),('1970-01-01 00:01:50.000',1.5)]
+-- start, end, range and step return scalars
+timestamp	DateTime64(3)					
+value	Float64					
+timestamp	DateTime64(3)					
+value	Float64					
+timestamp	DateTime64(3)					
+value	Float64					
+timestamp	DateTime64(3)					
+value	Float64					
+-- limit_ratio is an aggregation operator

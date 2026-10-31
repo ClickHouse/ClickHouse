@@ -140,6 +140,23 @@ namespace
     public:
         using antlr4_grammars::PromQLLexer::PromQLLexer;
 
+        std::unique_ptr<antlr4::Token> nextToken() override
+        {
+            auto next_token = PromQLLexer::nextToken();
+            const size_t type = next_token->getType();
+            const String text = type == METRIC_NAME ? next_token->getText() : "";
+            /// Like in Prometheus, a name without ':' followed by '(' is a function name.
+            /// So are `start` and `end` in any letter case, except right after '@'.
+            const bool is_name = (type == METRIC_NAME && !text.contains(':'))
+                || ((type == START || type == END) && previous_token_type != AT);
+            if (is_name && isFollowedByLeftParen())
+                static_cast<antlr4::WritableToken *>(next_token.get())->setType(FUNCTION);
+            if (next_token->getChannel() == antlr4::Token::DEFAULT_CHANNEL)
+                previous_token_type = next_token->getType();
+
+            return next_token;
+        }
+
         void recover(const antlr4::LexerNoViableAltException &) override
         {
             /// Pretend the input ended here, so that the lexer emits EOF and stops.
@@ -147,6 +164,28 @@ namespace
             stream->seek(stream->size());
             hitEOF = true;
         }
+
+    private:
+        /// Returns whether the next character after whitespace and comments is '('.
+        bool isFollowedByLeftParen()
+        {
+            antlr4::CharStream * stream = getInputStream();
+            bool in_comment = false;
+            for (ssize_t i = 1;; ++i)
+            {
+                size_t c = stream->LA(i);
+                if (c == antlr4::IntStream::EOF)
+                    return false;
+                if (c == '#')
+                    in_comment = true;
+                else if (c == '\n' || c == '\r')
+                    in_comment = false;
+                else if (!in_comment && c != ' ' && c != '\t')
+                    return c == '(';
+            }
+        }
+
+        size_t previous_token_type = antlr4::Token::INVALID_TYPE;
     };
 
     [[noreturn]] void throwInconsistentSchema(std::string_view context_name, std::string_view token)
