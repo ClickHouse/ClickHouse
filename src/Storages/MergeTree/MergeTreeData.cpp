@@ -72,6 +72,7 @@
 #include <IO/WriteHelpers.h>
 #include <Interpreters/Aggregator.h>
 #include <Interpreters/Cache/QueryConditionCache.h>
+#include <Interpreters/Cluster.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/DDLTask.h>
@@ -278,6 +279,8 @@ namespace DB
 namespace Setting
 {
     extern const SettingsBool allow_drop_detached;
+    extern const SettingsUInt64 allow_experimental_parallel_reading_from_replicas;
+    extern const SettingsString cluster_for_parallel_replicas;
     extern const SettingsBool enable_full_text_index;
     extern const SettingsBool allow_non_metadata_alters;
     extern const SettingsBool allow_suspicious_indexes;
@@ -15492,7 +15495,34 @@ MergeTreeData::getStorageSnapshotWithoutData(const StorageMetadataPtr & metadata
     return createStorageSnapshot(metadata_snapshot, query_context, true);
 }
 
-std::optional<UInt128> MergeTreeData::getModificationHash(const StorageSnapshotPtr & storage_snapshot, ContextPtr /*context*/) const
+/// With parallel replicas, `PlannerJoinTree` can replace a direct read of the table with a read through the servers of
+/// `cluster_for_parallel_replicas`, which read their own parts (or only a remote replica reads, e.g. with
+/// `parallel_replicas_prefer_local_replica = 0`). The modification hash covers only the local parts, so it cannot tell
+/// whether such a read has changed unless every replica of the cluster is this server.
+static bool mayReadThroughRemoteParallelReplicas(const ContextPtr & context)
+{
+    const auto & settings = context->getSettingsRef();
+    if (!settings[Setting::allow_experimental_parallel_reading_from_replicas])
+        return false;
+
+    const String & cluster_name = settings[Setting::cluster_for_parallel_replicas].value;
+    if (cluster_name.empty())
+        return false;
+
+    /// A cluster that does not exist makes the read fail on its own, but the hash should not claim anything about it.
+    auto cluster = context->tryGetCluster(cluster_name);
+    if (!cluster)
+        return true;
+
+    for (const auto & shard_addresses : cluster->getShardsAddresses())
+        for (const auto & address : shard_addresses)
+            if (!address.is_local)
+                return true;
+
+    return false;
+}
+
+std::optional<UInt128> MergeTreeData::getModificationHash(const StorageSnapshotPtr & storage_snapshot, ContextPtr context) const
 {
     /// Without a table UUID (e.g. a table in an `Ordinary` database) we cannot distinguish incarnations of
     /// a same-named table: a DROP + CREATE can keep identical parts and checksums while changing
@@ -15508,6 +15538,9 @@ std::optional<UInt128> MergeTreeData::getModificationHash(const StorageSnapshotP
     /// `active_parts_set_version`. A result read before the commit would then keep the same hash after it,
     /// although the rows it shows have changed. Fail closed until the hash tracks committed visibility.
     if (storage_snapshot->metadata->hasUniqueKey())
+        return {};
+
+    if (mayReadThroughRemoteParallelReplicas(context))
         return {};
 
     SipHash hash;
