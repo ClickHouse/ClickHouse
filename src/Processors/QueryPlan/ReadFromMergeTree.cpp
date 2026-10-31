@@ -3340,6 +3340,24 @@ void ReadFromMergeTree::buildIndexes(
 
     UsefulSkipIndexes skip_indexes;
 
+    /// Unset when there is no filter or it has `indexHint`, whose arguments live in a DAG of their own.
+    std::optional<NameSet> filter_leaf_names;
+    if (filter_dag.dag)
+    {
+        filter_leaf_names.emplace();
+        for (const auto & node : filter_dag.dag->getNodes())
+        {
+            if (node.type == ActionsDAG::ActionType::FUNCTION && node.function_base->getName() == "indexHint")
+            {
+                filter_leaf_names.reset();
+                break;
+            }
+            if (node.type == ActionsDAG::ActionType::INPUT || node.type == ActionsDAG::ActionType::COLUMN
+                || node.type == ActionsDAG::ActionType::PLACEHOLDER)
+                filter_leaf_names->insert(node.result_name);
+        }
+    }
+
     for (const auto & index : all_indexes)
     {
         if (ignored_index_names.contains(index.name))
@@ -3373,11 +3391,14 @@ void ReadFromMergeTree::buildIndexes(
             };
         }
 
-        auto condition_template = std::make_shared<ConditionTemplate<MergeTreeIndexConditionPtr>>(filter_dag_ptr, std::move(factory), metadata_snapshot, query_context, skip_constant_folding);
+        if (!filter_leaf_names || index_helper->mayBeUsefulForFilter(*filter_leaf_names))
+        {
+            auto condition_template = std::make_shared<ConditionTemplate<MergeTreeIndexConditionPtr>>(filter_dag_ptr, std::move(factory), metadata_snapshot, query_context, skip_constant_folding);
 
-        const auto & unsubstituted = condition_template->generateUnsubstituted();
-        if (unsubstituted && !unsubstituted->alwaysUnknownOrTrue())
-            skip_indexes.useful_indices.emplace_back(index_helper, std::move(condition_template));
+            const auto & unsubstituted = condition_template->generateUnsubstituted();
+            if (unsubstituted && !unsubstituted->alwaysUnknownOrTrue())
+                skip_indexes.useful_indices.emplace_back(index_helper, std::move(condition_template));
+        }
 
         auto can_skip_index_be_used_for_top_k_filtering = [top_k_filter_info](const MergeTreeIndexPtr & skip_index)
         {
