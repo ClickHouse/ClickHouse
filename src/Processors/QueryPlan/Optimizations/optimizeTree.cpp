@@ -430,6 +430,13 @@ void optimizeTreeSecondPass(
                     trySplitFilter(&frame_node, nodes, extra_settings);
             });
 
+        /// A runtime filter is built on the right join keys, so they are now computed below the join, and the
+        /// columns they are computed from can be unused. The local plan of plan-based parallel replicas, which
+        /// is optimized again from the first pass, removes them, so remove them here too: otherwise the join
+        /// carries them into its hash table, and the two plans differ for automatic parallel replicas.
+        if (join_runtime_filters_were_added && optimization_settings.remove_unused_columns)
+            removeUnusedColumns(root, RemoveUnusedColumnsMode::Global);
+
         /// After the __applyFilter conjuncts settled, register them on the reading steps
         /// (both the read-time index analysis and seal-gated reading consume them).
         if (join_runtime_filters_were_added
