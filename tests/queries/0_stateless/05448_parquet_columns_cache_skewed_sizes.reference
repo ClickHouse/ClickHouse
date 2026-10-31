@@ -54,3 +54,8 @@ s	8	524288
 --- small dictionary pages of a column that PREWHERE does not need, in files read in parallel
 0	0
 0	0
+--- chunks served from the cache, in files read in parallel
+524288	13188961511153836032
+524288	1072728111390244864
+8	524288
+524288	13188961511153836032
