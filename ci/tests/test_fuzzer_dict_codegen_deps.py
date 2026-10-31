@@ -369,13 +369,12 @@ class TestNarrowingTheDependencySetIsDetected:
         assert _resolve_scanned(_read(_GENERATOR)) - _resolve_dependencies(mutated)
 
     def test_dropping_the_individually_listed_files_is_detected(self):
-        # The two files that are not trees reach the set through list(APPEND).
+        # The one file that is not a tree reaches the set through list(APPEND).
         mutated = self._mutate(
             lambda t: re.sub(r"list\(APPEND %s.*?\)\n" % _DEPS_VAR, "", t, flags=re.S)
         )
         missing = _resolve_scanned(_read(_GENERATOR)) - _resolve_dependencies(mutated)
         assert _relative(missing) == [
-            "src/Processors/Transforms/WindowTransform.cpp",
             "src/Storages/ObjectStorage/StorageObjectStorageDefinitions.h",
         ]
 
