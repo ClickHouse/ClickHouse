@@ -1375,7 +1375,10 @@ bool TCPHandler::receivePacketsExpectData(QueryState & state)
                 static_cast<UInt64>(receive_timeout.totalMicroseconds())));
     /// ... but wake up often enough to keep the client's live metrics fresh while it is slow to
     /// send the next data packet. Sessions the flush cannot serve keep the blocking poll.
-    if (!state.skipping_data
+    /// For `INSERT ... RETURNING` with client-fed input, the result is written to `out` concurrently
+    /// by another thread (without `callback_mutex`), so we must not write service packets here.
+    const bool can_flush_while_waiting = !state.skipping_data && !state.send_result_while_receiving_data_for_input;
+    if (can_flush_while_waiting
         && client_tcp_protocol_version >= DBMS_MIN_PROTOCOL_VERSION_WITH_PROFILE_EVENTS_IN_INSERT
         && query_kind == ClientInfo::QueryKind::INITIAL_QUERY
         && state.query_context->getSettingsRef()[Setting::send_profile_events])
@@ -1395,7 +1398,7 @@ bool TCPHandler::receivePacketsExpectData(QueryState & state)
                                 elapsed, receive_timeout.totalSeconds());
             }
 
-            if (!state.skipping_data && after_send_progress.elapsed() / 1000 >= interactive_delay)
+            if (can_flush_while_waiting && after_send_progress.elapsed() / 1000 >= interactive_delay)
             {
                 after_send_progress.restart();
                 sendLogs(state);
