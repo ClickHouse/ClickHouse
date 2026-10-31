@@ -1,0 +1,20 @@
+<clickhouse>
+    <profiles>
+        <default>
+            <allow_experimental_delta_lake_writes>1</allow_experimental_delta_lake_writes>
+            <allow_delta_lake_create_table>1</allow_delta_lake_create_table>
+            <allow_insert_into_iceberg>1</allow_insert_into_iceberg>
+            <allow_experimental_iceberg_compaction>1</allow_experimental_iceberg_compaction>
+            <allow_experimental_paimon_storage_engine>1</allow_experimental_paimon_storage_engine>
+            <allow_database_iceberg>1</allow_database_iceberg>
+        </default>
+    </profiles>
+    <users>
+        <default>
+            <password></password>
+            <profile>default</profile>
+            <named_collection_control>1</named_collection_control>
+            <show_named_collections_secrets>1</show_named_collections_secrets>
+        </default>
+    </users>
+</clickhouse>
