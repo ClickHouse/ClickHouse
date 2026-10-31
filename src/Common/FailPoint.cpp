@@ -269,6 +269,7 @@ static struct InitFiu
     PAUSEABLE(storage_merge_create_children_plans_pause) \
     PAUSEABLE_ONCE(storage_shared_merge_tree_mutate_pause_before_wait) \
     PAUSEABLE(database_replicated_startup_pause) \
+    PAUSEABLE(database_ordinary_load_table_pause) \
     ONCE(keeper_leader_sets_invalid_digest) \
     PAUSEABLE_ONCE(keeper_save_snapshot_pause_mid_transfer) \
     ONCE(parallel_replicas_wait_for_unused_replicas) \
@@ -403,6 +404,17 @@ static struct InitFiu
     REGULAR(datalake_paimon_list_page_size_one) \
     REGULAR(datalake_simulate_missing_table_state) \
     PAUSEABLE_ONCE(drop_database_before_exclusive_ddl_lock) \
+    ONCE(drop_database_fail_before_drop) \
+    ONCE(drop_database_fail_before_metadata_removal) \
+    ONCE(attach_database_fail_after_load) \
+    ONCE(create_database_fail_rollback_metadata_removal) \
+    PAUSEABLE_ONCE(create_table_pause_before_commit) \
+    PAUSEABLE_ONCE(create_database_pause_after_engine) \
+    ONCE(database_remove_detached_permanently_flag_fail) \
+    ONCE(database_atomic_drop_table_fail_before_replace) \
+    ONCE(database_atomic_rename_database_fail_after_publish) \
+    ONCE(database_rename_table_fail_before_create_in_destination) \
+    ONCE(database_rename_table_fail_before_removing_source_metadata) \
     PAUSEABLE_ONCE(rename_database_after_dependency_check) \
     PAUSEABLE_ONCE(create_or_replace_before_rename) \
     REGULAR(atomic_populate_fail_before_subscription) \

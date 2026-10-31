@@ -1,0 +1,7 @@
+--- a failed CREATE TABLE ... UUID leaves a stale dependency, the UUID is reused, the tables are exchanged ---
+--- the exchanged table keeps its own collection alive ---
+--- also when it is detached ---
+--- but not the collection of the failed create ---
+0
+--- after the table is dropped, its collection can be dropped ---
+0

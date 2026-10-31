@@ -35,11 +35,14 @@
 #include <Parsers/isDiskFunction.h>
 #include <Parsers/parseQuery.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
+#include <Storages/NamedCollectionsHelpers.h>
 #include <Storages/StorageProxy.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Storages/StorageTableProxy.h>
 #include <Storages/TableZnodeInfo.h>
 #include <Common/CurrentMetrics.h>
+#include <Common/FailPoint.h>
+#include <Common/NamedCollections/NamedCollectionsFactory.h>
 #include <Common/PoolId.h>
 #include <Common/escapeForFileName.h>
 #include <Common/logger_useful.h>
@@ -84,6 +87,11 @@ namespace ErrorCodes
     extern const int UNEXPECTED_NODE_IN_ZOOKEEPER;
     extern const int UNKNOWN_TABLE;
     extern const int QUERY_IS_TOO_LARGE;
+}
+
+namespace FailPoints
+{
+    extern const char database_ordinary_load_table_pause[];
 }
 
 namespace DatabaseMetadataDiskSetting
@@ -573,6 +581,31 @@ void DatabaseOrdinary::loadTableFromMetadata(
 
     LOG_TRACE(log, "Loading table {}", name.getFullName());
 
+    /// A table that fails to load is left out of the catalog, but its metadata stays and is loaded again
+    /// at the next server start, like the one of a detached table. With `async_load_databases` the server
+    /// keeps running after such a failure, and the failure may have happened before the storage registered
+    /// its named collection dependencies (e.g. while a collection it references does not exist, after a
+    /// drop with `check_named_collection_dependencies = 0`), so record them from the metadata: otherwise a
+    /// collection recreated later could be dropped while the metadata still references it.
+    try
+    {
+        loadTableFromMetadataImpl(local_context, file_path, name, query, mode);
+    }
+    catch (...)
+    {
+        for (const auto & collection_name : getNamedCollectionsReferencedByTableDefinition(query))
+            NamedCollectionFactory::instance().addDetachedDependency(collection_name, name.database, name.table);
+        throw;
+    }
+}
+
+void DatabaseOrdinary::loadTableFromMetadataImpl(
+    ContextMutablePtr local_context,
+    const String & file_path,
+    const QualifiedTableName & name,
+    const ASTCreateQuery & query,
+    LoadingStrictnessLevel mode)
+{
     constexpr size_t max_tries = 3;
     size_t tries = 0;
     time_t sleep_time = 1;
@@ -721,6 +754,23 @@ void DatabaseOrdinary::loadTableLazy(
         return table;
     };
 
+    /// A lazy proxy does not build the storage, so the engine arguments are never resolved and the named
+    /// collection the definition uses stays unregistered: `DROP NAMED COLLECTION` would then succeed and
+    /// break the table at its first access, and a `DETACH` of the table would have no dependency to move
+    /// to the list of the detached ones. Register it straight from the metadata instead. The dependency
+    /// is registered again when the proxy is materialized, which is harmless.
+    if (query.storage && query.storage->engine && query.storage->engine->arguments)
+    {
+        if (auto collection_name = tryGetUsedNamedCollectionName(query.storage->engine->name, query.storage->engine->arguments->children))
+            NamedCollectionFactory::instance().addDependency(*collection_name, table_id);
+
+        /// The table function target of a `Remote` table can reference collections of its own, see
+        /// `registerStorageRemote`.
+        const auto & engine_name = query.storage->engine->name;
+        if (engine_name == "Remote" || engine_name == "RemoteSecure")
+            addNestedTableFunctionNamedCollectionDependencies(query.storage->engine->arguments, table_id);
+    }
+
     auto proxy = std::make_shared<StorageTableProxy>(
         table_id, std::move(get_nested), std::move(columns));
 
@@ -736,16 +786,34 @@ LoadTaskPtr DatabaseOrdinary::loadTableFromMetadataAsync(
     const ASTPtr & ast,
     LoadingStrictnessLevel mode)
 {
+    /// Record the collections the metadata references as dependencies of a detached table until the load
+    /// succeeds (see `loadTableFromMetadata`). Doing it here, before scheduling, also covers a job that never
+    /// runs: `AsyncLoader` cancels the jobs that depend on a failed one without executing them, and the server
+    /// keeps running with such a table left out of the catalog, while its metadata stays. Only the entries
+    /// added here are removed after the load: the ones recorded before (e.g. by `DETACH DATABASE`) must stay
+    /// until the operation that recorded them is complete.
+    std::vector<String> added_detached_dependencies;
+    for (auto & collection_name : getNamedCollectionsReferencedByTableDefinition(ast->as<const ASTCreateQuery &>()))
+        if (NamedCollectionFactory::instance().addDetachedDependency(collection_name, name.database, name.table))
+            added_detached_dependencies.push_back(std::move(collection_name));
+
     TransactionManager::increaseAsyncTablesLoadingJobNumber();
     std::scoped_lock lock(mutex);
     auto job = makeLoadJob(
         std::move(load_after),
         TablesLoaderBackgroundLoadPoolId,
         fmt::format("load table {}", name.getFullName()),
-        [this, local_context, file_path, name, ast, mode](AsyncLoader &, const LoadJobPtr &)
+        [this, local_context, file_path, name, ast, mode, added_detached_dependencies](AsyncLoader &, const LoadJobPtr &)
         {
             SCOPE_EXIT(TransactionManager::decreaseAsyncTablesLoadingJobNumber(););
+            /// The tables of the `system` database are loaded synchronously at startup, pausing them would
+            /// keep the server from starting.
+            if (name.database != DatabaseCatalog::SYSTEM_DATABASE)
+                FailPointInjection::pauseFailPoint(FailPoints::database_ordinary_load_table_pause);
             loadTableFromMetadata(local_context, file_path, name, ast, mode);
+            /// The table is in the catalog now, and its storage has registered its own dependencies.
+            for (const auto & collection_name : added_detached_dependencies)
+                NamedCollectionFactory::instance().removeDetachedDependency(collection_name, name.database, name.table);
         });
 
     return load_table[name.table] = makeLoadTask(async_loader, {job});

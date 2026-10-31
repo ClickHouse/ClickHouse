@@ -11,6 +11,7 @@
 #include <Analyzer/IQueryTreeNode.h>
 
 #include <memory>
+#include <optional>
 #include <string>
 
 
@@ -104,7 +105,17 @@ public:
     /// blocked while the table exists, matching the behavior of table engines that resolve named
     /// collections (see `tryGetNamedCollectionWithOverrides`). Transient uses of the table function in a
     /// query do not register anything.
-    virtual String getUsedNamedCollectionName() const { return {}; }
+    virtual String getUsedNamedCollectionName() const
+    {
+        return used_named_collection_name;
+    }
+
+    /// The name of the named collection the not yet parsed arguments `args` reference, decided from the
+    /// AST alone (see `tryGetUsedNamedCollectionName`), so it does not depend on whether a collection
+    /// with that name exists right now. Used for a table function persisted as the target of a `Remote`
+    /// table, which is resolved only at read time. A cluster table function takes a cluster name as
+    /// the first argument and never references a collection.
+    virtual std::optional<String> getNamedCollectionReferencedByArguments(const ASTs & args) const;
 
     // INSERT INTO TABLE FUNCTION ... PARTITION BY
     // Set partition by expression so `ITableFunctionObjectStorage` can construct a proper representation
@@ -143,6 +154,16 @@ public:
     virtual ~ITableFunction() = default;
 
 protected:
+    void setUsedNamedCollectionName(String name)
+    {
+        used_named_collection_name = std::move(name);
+    }
+
+    String * getUsedNamedCollectionNameForUpdate()
+    {
+        return &used_named_collection_name;
+    }
+
     virtual std::optional<AccessTypeObjects::Source> getSourceAccessObject() const;
 
     /// Whether this is a `*Cluster` table function (e.g. `s3Cluster`, `urlCluster`). Overridden by
@@ -169,6 +190,9 @@ private:
 
 protected:
     String getFunctionURINormalized() const;
+
+private:
+    String used_named_collection_name;
 };
 
 /// Properties of table function that are independent of argument types and parameters.

@@ -86,7 +86,8 @@ public:
 
     static Configuration getConfiguration(
         ASTs engine_args, ContextPtr context_, MySQLSettings & storage_settings,
-        const StorageID * table_id = nullptr, const ASTSetQuery * settings = nullptr);
+        const StorageID * table_id = nullptr, const ASTSetQuery * settings = nullptr,
+        String * used_named_collection_name = nullptr);
 
     static Configuration processNamedCollectionResult(
         const NamedCollection & named_collection, MySQLSettings & storage_settings,

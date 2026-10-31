@@ -12,6 +12,7 @@
 #include <Interpreters/ExternalLoaderDictionaryStorageConfigRepository.h>
 #include <Common/Config/ConfigHelper.h>
 #include <Common/quoteString.h>
+#include <Common/NamedCollections/NamedCollectionsFactory.h>
 #include <Core/Settings.h>
 #include <Core/UUID.h>
 #include <QueryPipeline/Pipe.h>
@@ -266,6 +267,17 @@ LoadablesConfigurationPtr StorageDictionary::getConfiguration() const
 {
     std::lock_guard lock(dictionary_config_mutex);
     return configuration;
+}
+
+void StorageDictionary::addNamedCollectionDependencies() const
+{
+    const auto dictionary_configuration = getConfiguration();
+    if (!dictionary_configuration)
+        return;
+
+    const auto table_id = getStorageID();
+    for (const auto & collection_name : getNamedCollectionsReferencedByDictionaryConfig(*dictionary_configuration, "dictionary"))
+        NamedCollectionFactory::instance().addDependency(collection_name, table_id);
 }
 
 void StorageDictionary::renameInMemory(const StorageID & new_table_id)

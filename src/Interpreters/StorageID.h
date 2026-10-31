@@ -74,6 +74,17 @@ struct StorageID
     /// Avoid implicit construction of empty StorageID. However, it's needed for deferred initialization.
     static StorageID createEmpty() { return {}; }
 
+    /// An identifier of a database rather than of a table: the table name is empty on purpose.
+    /// The regular constructor cannot be used for it - it rejects an empty table name.
+    /// Only the plain `database_name`/`table_name` fields of such an identifier may be used:
+    /// the accessors (`getTableName`, `getNameForLogs`, `operator ==`, ...) assert that it is not empty.
+    static StorageID createDatabaseOnly(const String & database)
+    {
+        StorageID res;
+        res.database_name = database;
+        return res;
+    }
+
     QualifiedTableName getQualifiedName() const { return {database_name, getTableName()}; }
 
     static StorageID fromDictionaryConfig(const Poco::Util::AbstractConfiguration & config,

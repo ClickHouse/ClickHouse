@@ -1,0 +1,12 @@
+<clickhouse>
+  <remote_servers>
+    <lazy_dist_cluster>
+      <shard>
+        <replica>
+          <host>localhost</host>
+          <port>9000</port>
+        </replica>
+      </shard>
+    </lazy_dist_cluster>
+  </remote_servers>
+</clickhouse>
