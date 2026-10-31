@@ -1245,7 +1245,9 @@ int32_t ReplicatedMergeTreeQueue::updateMutations(zkutil::ZooKeeperPtr zookeeper
 
         auto entries = zookeeper->tryGet(entry_paths);
 
-        std::vector<ReplicatedMergeTreeMutationEntryPtr> new_mutations;
+        /// Not `ReplicatedMergeTreeMutationEntryPtr`: the partitions of the scoped commands are
+        /// resolved on the entries below, before they are published to the queue's state.
+        std::vector<std::shared_ptr<ReplicatedMergeTreeMutationEntry>> new_mutations;
         for (size_t i = 0; i < entries_to_load.size(); ++i)
         {
             const auto & maybe_response = entries[i];
@@ -1261,11 +1263,25 @@ int32_t ReplicatedMergeTreeQueue::updateMutations(zkutil::ZooKeeperPtr zookeeper
                 ReplicatedMergeTreeMutationEntry::parse(maybe_response.data, entries_to_load[i])));
         }
 
+        /** Resolve the partitions of the commands that name some, so that the per-part selection of the
+          * on-the-fly commands can keep such a command out of the partitions it does not name. Done here,
+          * once per entry, and not while a storage snapshot is built: a partition expression is arbitrary
+          * user SQL and must not be evaluated on the read path.
+          *
+          * The submitting replica already replaced every partition expression of an entry with the
+          * `ID '...'` it resolved to (`StorageReplicatedMergeTree::mutate`), so for such an entry this
+          * evaluates nothing - no user SQL runs under `update_mutations_mutex` - and every replica gets
+          * the same partitions. Only an entry created by an older version may still carry an expression;
+          * it is left unresolved and not evaluated here.
+          */
+        for (const auto & entry : new_mutations)
+            storage.resolvePartitionIdsOfScopedCommands(entry->commands, storage.getContext(), /* only_pinned = */ true);
+
         bool some_mutations_are_probably_done = false;
         {
             std::lock_guard state_lock(state_mutex);
 
-            for (const ReplicatedMergeTreeMutationEntryPtr & entry : new_mutations)
+            for (const std::shared_ptr<ReplicatedMergeTreeMutationEntry> & entry : new_mutations)
             {
                 auto & mutation = mutations_by_znode.emplace(entry->znode_name, MutationStatus(entry, format_version)).first->second;
                 incrementMutationsCounters(mutation_counters, entry->commands);
@@ -2439,6 +2455,13 @@ MutationCommands ReplicatedMergeTreeQueue::MutationsSnapshot::getOnFlyMutationCo
                 seen_all_data_mutations = true;
         }
     }
+
+    /** A command that names a partition applies to that partition alone, but the queue keys a mutation
+      * entry by the partitions of *all* of its commands: `ALTER TABLE ... CLEAR COLUMN c IN PARTITION
+      * '1', CLEAR COLUMN d` is a single entry, and the unscoped `CLEAR COLUMN d` puts it in every
+      * partition, which used to hand the scoped `CLEAR COLUMN c` to their parts as well.
+      */
+    filterCommandsOutsidePartition(result, partition_id);
 
     std::reverse(result.begin(), result.end());
     return result;
