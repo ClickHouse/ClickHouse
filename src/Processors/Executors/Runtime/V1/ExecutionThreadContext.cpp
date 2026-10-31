@@ -177,6 +177,10 @@ static void executeJob(IProcessor & processor, ReadProgressCallback * read_progr
     }
     catch (Exception & exception)
     {
+        /// Cancellation handlers recognize the original exception registered by the query.
+        if (CurrentThread::isQueryCancellationException(std::current_exception()))
+            throw;
+
         /// The same exception can be rethrown by several threads, so it must not be modified in
         /// place: copy it before adding anything. The copy slices the exception to `Exception`, so
         /// rethrow the original when there is nothing to add - the callers which recognize an

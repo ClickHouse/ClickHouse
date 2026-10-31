@@ -12,12 +12,18 @@
 #include <Common/quoteString.h>
 #include <Core/NamesAndTypes.h>
 #include <Common/CurrentThread.h>
+#include <Common/FailPoint.h>
 #include <Interpreters/Context.h>
 #include <Core/Settings.h>
 
 
 namespace DB
 {
+
+namespace FailPoints
+{
+    extern const char check_consistency_force_marks_read[];
+}
 
 namespace Setting
 {
@@ -569,7 +575,7 @@ void MergeTreeDataPartWide::doCheckConsistency(bool require_part_metadata) const
     /// Checksums regenerated from the files on disk by `loadChecksums` describe those files as they are,
     /// so they cannot vouch for a marks file torn by a crash: check the shape of the marks files directly
     /// in that case too, as when there are no checksums at all.
-    if (!hasTrustworthyChecksums())
+    if (!hasTrustworthyChecksums() || fiu_fail(FailPoints::check_consistency_force_marks_read))
     {
         /// The marks alone do not prove that the data is there: a stream whose `.bin` file is gone entirely
         /// still has intact marks. Checksums regenerated from the files on disk would not notice it either.

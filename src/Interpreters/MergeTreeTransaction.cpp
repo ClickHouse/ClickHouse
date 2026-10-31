@@ -18,6 +18,7 @@
 #endif
 #include <Common/Exception.h>
 #include <Common/FailPoint.h>
+#include <Common/QueryCancellationBlockerInThread.h>
 #include <Common/ThreadPool.h>
 #include <Common/ThreadStatus.h>
 #include <Common/TransactionID.h>
@@ -554,6 +555,7 @@ MergeTreeTransaction::RollbackResult MergeTreeTransaction::rollback() noexcept
 {
     auto blocker = CannotAllocateThreadFaultInjector::blockFaultInjections();
     LockMemoryExceptionInThread memory_tracker_lock(VariableContext::Global);
+    QueryCancellationBlockerInThread cancellation_blocker_in_thread;
     /// A cancelled query or merge must not interrupt this: an escaping exception terminates the server.
     ThreadStatus::QueryCancellationBlocker cancellation_blocker;
     /// Exclusive like `beforeCommit`: a background merge holds the gate across both its commit `multi`

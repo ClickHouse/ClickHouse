@@ -1,0 +1,6 @@
+consistency cancellation checked
+vector cancellation checked
+SST validation cancellation checked
+SST probe cancellation checked
+SST repair cancellation checked
+SST rebuild cancellation checked

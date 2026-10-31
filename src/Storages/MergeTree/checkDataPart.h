@@ -19,4 +19,8 @@ bool isRetryableException(std::exception_ptr exception_ptr);
 /// True for an I/O error (`EIO`) of a read, open or stat: the access failed, which does not mean that the data is wrong.
 bool isIOErrorException(std::exception_ptr exception_ptr);
 
+/// Decide from the caught exception, not from mutable query cancellation state: a real data error
+/// must still report the part as broken if cancellation races with exception unwinding.
+bool shouldReportBrokenPart(std::exception_ptr exception_ptr);
+
 }
