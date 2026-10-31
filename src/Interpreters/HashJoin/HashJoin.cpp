@@ -895,14 +895,9 @@ void HashJoin::setTotals(const Block & block)
     if (block.empty())
         return;
 
+    /// In a parallel build every `FillingRightJoinSideTransform` without a totals port calls this with a zero-row block.
     std::lock_guard lock(totals_mutex);
     IJoin::setTotals(block);
-}
-
-const Block & HashJoin::getTotals() const
-{
-    std::lock_guard lock(totals_mutex);
-    return IJoin::getTotals();
 }
 
 StepAnalysisReport HashJoin::getAnalysisReport() const

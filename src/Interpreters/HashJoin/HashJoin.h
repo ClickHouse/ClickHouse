@@ -266,7 +266,6 @@ public:
     bool supportParallelNonJoinedBlocksProcessing() const override;
 
     void setTotals(const Block & block) override;
-    const Block & getTotals() const override;
 
     JoinPipelineType pipelineType() const override
     {
@@ -769,7 +768,7 @@ private:
     std::optional<TypeIndex> asof_type;
     const ASOFJoinInequality asof_inequality;
 
-    mutable std::mutex totals_mutex;
+    std::mutex totals_mutex;
     /// Right table data. StorageJoin shares it between many Join objects.
     /// Flags that indicate that particular row already used in join.
     /// Flag is stored for every record in hash map.
