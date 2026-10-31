@@ -387,7 +387,7 @@ void SortingStep::finishSorting(
             if (stream_type != QueryPipelineBuilder::StreamType::Main)
                 return nullptr;
 
-            return std::make_shared<PartialSortingTransform>(header, result_sort_desc, limit_, threshold_tracker);
+            return std::make_shared<PartialSortingTransform>(header, result_sort_desc, limit_, threshold_tracker, input_sort_desc.size());
         });
 
     bool increase_sort_description_compile_attempts = true;

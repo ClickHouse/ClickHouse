@@ -1,0 +1,9 @@
+<test>
+    <create_query>CREATE TABLE read_in_order_prefix_limit (a UInt64, b UInt64) ENGINE = MergeTree ORDER BY a</create_query>
+    <fill_query>INSERT INTO read_in_order_prefix_limit SELECT intDiv(number, 4), cityHash64(number) FROM numbers_mt(20000000)</fill_query>
+    <fill_query>OPTIMIZE TABLE read_in_order_prefix_limit FINAL</fill_query>
+
+    <query>SELECT a FROM read_in_order_prefix_limit ORDER BY a, b LIMIT 10000 FORMAT Null</query>
+
+    <drop_query>DROP TABLE IF EXISTS read_in_order_prefix_limit</drop_query>
+</test>
