@@ -325,20 +325,18 @@ PaimonTableStatePtr PaimonMetadata::loadLatestState() const
 
     auto snapshot = table_client->getSnapshot(*snapshot_info_opt);
 
-    /// Ensure schema for this snapshot is cached in processor (use schema_id, not "latest")
-    if (!persistent_components.schema_processor->hasSchema(snapshot.schema_id))
-    {
-        auto schema_info = table_client->getTableSchemaInfoById(static_cast<Int32>(snapshot.schema_id));
-        auto schema_json = table_client->getTableSchemaJSON(schema_info);
-        persistent_components.schema_processor->addSchema(schema_json);
-    }
+    /// A schema change writes a new schema file but no snapshot, so the latest state is read with the latest schema, as in Paimon.
+    const auto latest_schema_info = table_client->getLatestTableSchemaInfo();
+    const Int64 schema_id = latest_schema_info.first;
+    if (!persistent_components.schema_processor->hasSchema(schema_id))
+        persistent_components.schema_processor->addSchema(table_client->getTableSchemaJSON(latest_schema_info));
 
     /// Register snapshot-schema relationship
     persistent_components.schema_processor->registerSnapshotSchema(snapshot.id, snapshot.schema_id);
 
     return std::make_shared<PaimonTableState>(
         snapshot.id,
-        snapshot.schema_id,
+        schema_id,
         snapshot.base_manifest_list,
         snapshot.delta_manifest_list,
         snapshot.commit_kind,
@@ -412,9 +410,11 @@ void PaimonMetadata::update(const ContextPtr & /*local_context*/)
 
     LOG_DEBUG(
         log,
-        "Paimon table state updated: snapshot_id {} -> {}",
+        "Paimon table state updated: snapshot_id {} -> {}, schema_id {} -> {}",
         old_state ? old_state->snapshot_id : -1,
-        new_state->snapshot_id);
+        new_state->snapshot_id,
+        old_state ? old_state->schema_id : -1,
+        new_state->schema_id);
 }
 
 NamesAndTypesList PaimonMetadata::getTableSchema(ContextPtr /*local_context*/) const
