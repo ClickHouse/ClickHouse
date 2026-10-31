@@ -11,6 +11,7 @@
 #include <Common/ThreadGroupSwitcher.h>
 #include <Common/ThreadPool.h>
 #include <Common/FailPoint.h>
+#include <Common/Scheduler/CurrentCPULease.h>
 #include <base/sleep.h>
 
 namespace DB
@@ -226,7 +227,10 @@ void PullingAsyncPipelineExecutor::cancel()
 
     /// Join thread here to wait for possible exception.
     if (data->thread.joinable())
+    {
+        CPULeaseParkGuard park;
         data->thread.join();
+    }
 
     /// Rethrow exception to not swallow it in destructor.
     data->rethrowExceptionIfHas();
