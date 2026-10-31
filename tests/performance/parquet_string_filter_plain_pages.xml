@@ -1,0 +1,17 @@
+<!-- Substring filters pushed into the scan of PLAIN-encoded Parquet String pages (`apply_string_filters_during_scan`). -->
+<test>
+    <fill_query><![CDATA[
+        INSERT INTO FUNCTION file('test_parquet_string_filter_plain_pages.parquet', Parquet)
+        SELECT concat('https://site', toString(number % 1000), '.example.com/', toString(cityHash64(number)),
+                      if(cityHash64(number, 1) % 1000 = 0, '/google', ''), if(cityHash64(number, 2) % 100 < 15, '/news', ''),
+                      '?id=', toString(cityHash64(number, 3))) AS url
+        FROM numbers(20000000)
+        SETTINGS engine_file_truncate_on_insert = 1, output_format_parquet_max_dictionary_size = 0,
+                 output_format_parquet_compression_method = 'snappy'
+    ]]></fill_query>
+
+    <query>SELECT count() FROM file('test_parquet_string_filter_plain_pages.parquet', Parquet) WHERE url LIKE '%google%' FORMAT Null</query>
+    <query>SELECT count() FROM file('test_parquet_string_filter_plain_pages.parquet', Parquet) WHERE url LIKE '%google%' AND url LIKE '%site1%' FORMAT Null</query>
+    <query>SELECT count() FROM file('test_parquet_string_filter_plain_pages.parquet', Parquet) WHERE url LIKE '%/news%' FORMAT Null</query>
+    <query>SELECT count() FROM file('test_parquet_string_filter_plain_pages.parquet', Parquet) WHERE url LIKE '%example%' FORMAT Null</query>
+</test>
