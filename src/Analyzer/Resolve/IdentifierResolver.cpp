@@ -642,6 +642,31 @@ QueryTreeNodePtr IdentifierResolver::tryResolveIdentifierFromTableColumns(const 
     return {};
 }
 
+namespace
+{
+
+std::optional<size_t> getCompoundIdentifierPrefixSize(const Identifier & identifier, const String & name)
+{
+    IdentifierView identifier_view(identifier);
+    while (identifier_view.getLength() > name.length())
+    {
+        identifier_view.popLast();
+    }
+
+    if (identifier_view.getLength() != name.length() || identifier_view.getFullName() != name)
+        return std::nullopt;
+    return identifier_view.getPartsSize();
+}
+
+/// Returns true if `identifier_view` names a column or a subcolumn of a column of the table expression.
+bool tableExpressionDataCanReadIdentifier(const AnalysisTableExpressionData & table_expression_data, IdentifierView identifier_view)
+{
+    return table_expression_data.hasFullIdentifierName(identifier_view)
+        || table_expression_data.tryGetSubcolumnInfo(identifier_view.getFullName());
+}
+
+}
+
 /// Returns true if `target` is `root` itself or is nested below `root` in a join tree.
 static bool joinSubtreeContains(const IQueryTreeNode * root, const IQueryTreeNode * target)
 {
@@ -718,7 +743,9 @@ static const JoinNode * findLateralJoinWithRightSideContaining(const IQueryTreeN
   *
   * Either way the name is only hidden when an enclosing scope carries it: a qualifier that means nothing
   * outside the subquery keeps resolving to the aliased table expression. Besides a table name, the enclosing
-  * scope can carry it as an `ARRAY JOIN` alias or as a column whose subcolumn the rest of the identifier names.
+  * scope can carry it as an `ARRAY JOIN` output or a column the identifier can be read from, and a qualifier
+  * that looks like `database.table` here can be `table.column` there. Only a reading that resolves the
+  * identifier counts: an `ARRAY JOIN` output or a column without the named subcolumn does not hide the name.
   *
   * The rule is about the qualifier, not about the shape of the lookup, so it applies to the qualifier of a
   * matcher (`t.*`, `t.COLUMNS(...)`, `db.t.*`) as well. That qualifier is resolved as an expression first
@@ -828,48 +855,59 @@ bool IdentifierResolver::tableNameIsHiddenByAlias(
             if (isTableExpressionHiddenBySemiAntiJoin(outer_table_expression_node.get(), *outer_scope))
                 continue;
 
-            if (identifier_column_qualifier_parts == 2)
-            {
-                /// `database.table` addresses a table expression only while it has no alias of its own.
-                if (outer_table_expression_node->hasAlias())
-                    continue;
-                if (!outer_table_expression_data.database_name.empty()
-                    && identifier.getParts().front() == outer_table_expression_data.database_name
-                    && identifier[1] == outer_table_expression_data.table_name)
-                    return true;
-                continue;
-            }
+            /// The whole identifier can name a column of the enclosing query, e.g. a `Tuple` column `t` with an
+            /// element `val` gives `t.val` a reading there. Only a column the identifier can be read from
+            /// counts, so an unrelated column with the same name as the table does not hide it.
+            if (identifier_lookup.isExpressionLookup() && tableExpressionDataCanReadIdentifier(outer_table_expression_data, identifier))
+                return true;
 
-            /// The name of an aliased table expression is hidden in the enclosing query as well, so only
-            /// the name a table expression is addressed by there can hide this one.
+            /// The name a table expression is addressed by in the enclosing query. The name of an aliased
+            /// table expression is hidden there as well, so only its alias counts then.
             const auto & outer_name = outer_table_expression_node->hasAlias()
                 ? outer_table_expression_node->getAlias()
                 : outer_table_expression_data.table_name;
 
-            if (!outer_name.empty() && identifier.getParts().front() == outer_name)
-                return true;
-
-            /// A materialized CTE is registered under an internal temporary table name, but the enclosing
-            /// query addresses it by the name of the CTE.
+            std::string_view outer_materialized_cte_name;
             if (!outer_table_expression_node->hasAlias())
-            {
                 if (const auto * outer_table_node = outer_table_expression_node->as<TableNode>();
-                    outer_table_node && outer_table_node->isMaterializedCTE()
-                    && identifier.getParts().front() == outer_table_node->getMaterializedCTE()->cte_name)
+                    outer_table_node && outer_table_node->isMaterializedCTE())
+                    outer_materialized_cte_name = outer_table_node->getMaterializedCTE()->cte_name;
+
+            const auto & path_start = identifier.getParts().front();
+            const bool path_start_addresses_outer_table_expression = (!outer_name.empty() && path_start == outer_name)
+                || (!outer_materialized_cte_name.empty() && path_start == outer_materialized_cte_name);
+
+            if (identifier_column_qualifier_parts == 1)
+            {
+                /// A table expression addressed by the qualifier in the enclosing query is a second reading of it.
+                /// A materialized CTE is registered under an internal temporary table name, but the enclosing
+                /// query addresses it by the name of the CTE.
+                if (path_start_addresses_outer_table_expression)
                     return true;
+                continue;
             }
 
-            /// The qualifier can also name a column of the enclosing query, e.g. a `Tuple` column `t` with an
-            /// element `val` gives `t.val` a reading there. Only a column the rest of the identifier can be
-            /// read from counts, so an unrelated column with the same name as the table does not hide it.
-            if (identifier_lookup.isExpressionLookup()
-                && (outer_table_expression_data.hasFullIdentifierName(identifier)
-                    || outer_table_expression_data.tryGetSubcolumnInfo(identifier.getFullName())))
+            /// `database.table` addresses a table expression only while it has no alias of its own.
+            if (!outer_table_expression_node->hasAlias() && !outer_table_expression_data.database_name.empty()
+                && path_start == outer_table_expression_data.database_name && identifier[1] == outer_table_expression_data.table_name)
                 return true;
+
+            /// What looks like `database.table` in this scope can be `table.column` in the enclosing one, e.g.
+            /// `FROM u AS default` with a `Tuple` column `t` gives `default.t.val` a reading there.
+            if (identifier_lookup.isExpressionLookup() && path_start_addresses_outer_table_expression)
+            {
+                IdentifierView rest(identifier);
+                rest.popFirst();
+                if (tableExpressionDataCanReadIdentifier(outer_table_expression_data, rest))
+                    return true;
+            }
         }
 
-        /// An `ARRAY JOIN` expression alias of the enclosing query is a name a qualifier can read as well.
-        if (identifier_lookup.isExpressionLookup() && identifier_column_qualifier_parts == 1)
+        /// An `ARRAY JOIN` expression of the enclosing query gives the identifier a reading as well, when its
+        /// name is a prefix of the identifier and the rest of the identifier is a subcolumn of it. The prefix
+        /// is matched the same way `tryResolveIdentifierFromArrayJoin` does, so a compound alias such as
+        /// `t.val` counts too.
+        if (identifier_lookup.isExpressionLookup())
         {
             for (const auto & outer_table_expression_node : outer_scope->registered_table_expression_nodes)
             {
@@ -882,8 +920,21 @@ bool IdentifierResolver::tableNameIsHiddenByAlias(
                     continue;
 
                 for (const auto & array_join_expression : array_join_node->getJoinExpressions())
-                    if (array_join_expression->getAlias() == identifier.getParts().front())
+                {
+                    const auto * array_join_column = array_join_expression->as<ColumnNode>();
+                    if (!array_join_column)
+                        continue;
+
+                    const auto & alias_or_name = array_join_column->hasAlias() ? array_join_column->getAlias() : array_join_column->getColumnName();
+                    auto prefix_size = getCompoundIdentifierPrefixSize(identifier, alias_or_name);
+                    if (!prefix_size)
+                        continue;
+
+                    IdentifierView rest(identifier);
+                    rest.popFirst(*prefix_size);
+                    if (rest.empty() || array_join_column->getResultType()->tryGetSubcolumnType(rest.getFullName()))
                         return true;
+                }
             }
         }
     }
@@ -2537,24 +2588,6 @@ QueryTreeNodePtr IdentifierResolver::tryResolveExpressionFromArrayJoinExpression
             break;
     }
     return array_join_resolved_expression;
-}
-
-namespace
-{
-
-std::optional<size_t> getCompoundIdentifierPrefixSize(const Identifier & identifier, const String & name)
-{
-    IdentifierView identifier_view(identifier);
-    while (identifier_view.getLength() > name.length())
-    {
-        identifier_view.popLast();
-    }
-
-    if (identifier_view.getLength() != name.length() || identifier_view.getFullName() != name)
-        return std::nullopt;
-    return identifier_view.getPartsSize();
-}
-
 }
 
 IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromArrayJoin(const IdentifierLookup & identifier_lookup,

@@ -37,6 +37,30 @@ SELECT 'a column without such a subcolumn does not hide the name';
 SELECT count() FROM w WHERE EXISTS (SELECT 1 FROM t AS c WHERE c.val > t.val)
 SETTINGS analyzer_alias_hides_table_name = 1;
 
+SELECT 'compound ARRAY JOIN alias';
+SELECT count() FROM numbers(1) ARRAY JOIN [10] AS `t.val`
+WHERE EXISTS (SELECT 1 FROM t AS c WHERE c.val > t.val)
+SETTINGS analyzer_alias_hides_table_name = 1;
+SELECT count() FROM numbers(1) ARRAY JOIN [10] AS `t.val`
+WHERE EXISTS (SELECT 1 FROM t AS c WHERE c.val > `t.val`);
+
+SELECT 'an ARRAY JOIN output without such a subcolumn does not hide the name';
+SELECT count() FROM numbers(1) ARRAY JOIN [1] AS t
+WHERE EXISTS (SELECT 1 FROM t AS c WHERE t.val > 15)
+SETTINGS analyzer_alias_hides_table_name = 1;
+SELECT count() FROM numbers(1) ARRAY JOIN [CAST(tuple(1), 'Tuple(other UInt64)')] AS t
+WHERE EXISTS (SELECT 1 FROM t AS c WHERE t.val > 15)
+SETTINGS analyzer_alias_hides_table_name = 1;
+
+SELECT 'database.table here is table.column in the enclosing query';
+SELECT count() FROM u AS {CLICKHOUSE_DATABASE:Identifier}
+WHERE EXISTS (SELECT 1 FROM {CLICKHOUSE_DATABASE:Identifier}.t AS c WHERE c.val > {CLICKHOUSE_DATABASE:Identifier}.t.val)
+SETTINGS analyzer_alias_hides_table_name = 1;
+SELECT count() FROM u AS o
+WHERE EXISTS (SELECT 1 FROM {CLICKHOUSE_DATABASE:Identifier}.t AS c WHERE c.val > o.t.val);
+SELECT count() FROM u AS {CLICKHOUSE_DATABASE:Identifier}
+WHERE EXISTS (SELECT 1 FROM {CLICKHOUSE_DATABASE:Identifier}.t AS c WHERE c.val > {CLICKHOUSE_DATABASE:Identifier}.t.val);
+
 DROP TABLE t;
 DROP TABLE u;
 DROP TABLE w;
