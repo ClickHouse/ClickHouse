@@ -2163,6 +2163,7 @@ The `Paimon` table engine auto-detects the storage backend from the `disk` setti
 |DECIMAL(P,S)     |Decimal(P,S)      |
 |ARRAY     |Array      |
 |MAP     |Map    |
+|ROW     |Tuple      |
 
 ## Partition supported {#partition-supported}
 

@@ -2355,6 +2355,7 @@ Table function `paimon` is an alias to `paimonS3` now.
 |DECIMAL(P,S)     |Decimal(P,S)      |
 |ARRAY     |Array      |
 |MAP     |Map    |
+|ROW     |Tuple      |
 
 ## Partition supported {#partition-supported}
 Data types supported in Paimon partition keys:
