@@ -234,14 +234,14 @@ SELECT 'array join in having', count() FROM (EXPLAIN actions = 1
     SETTINGS query_plan_lower_array_join_function = 0
 ) WHERE explain LIKE '%HAVING pre-filter%';
 
--- The same class reached through the merge instead of written into the HAVING: the pass reads the
--- merged expression, so a stateful outer condition is refused rather than withdrawn later.
-SELECT 'stateful outer condition, merged', count() FROM (EXPLAIN actions = 1
+-- A stateful outer condition is not merged into the HAVING filter (it would be evaluated on the groups the HAVING rejects),
+-- so the HAVING filter alone carries the annotation.
+SELECT 'stateful outer condition, not merged', count() FROM (EXPLAIN actions = 1
     SELECT a, cnt FROM (SELECT a, count() AS cnt FROM having_prefilter GROUP BY a HAVING cnt > 3)
     WHERE rowNumberInAllBlocks() = 0
 ) WHERE explain LIKE '%HAVING pre-filter%';
 
-SELECT 'stateful outer condition across a projection, merged', count() FROM (EXPLAIN actions = 1
+SELECT 'stateful outer condition across a projection, not merged', count() FROM (EXPLAIN actions = 1
     SELECT a, d FROM (SELECT a, count() + 0 AS d FROM having_prefilter GROUP BY a HAVING count() > 3)
     WHERE rowNumberInAllBlocks() = 0
 ) WHERE explain LIKE '%HAVING pre-filter%';

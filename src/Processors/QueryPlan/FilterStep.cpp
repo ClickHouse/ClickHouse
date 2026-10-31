@@ -24,6 +24,7 @@
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Common/CurrentThread.h>
 #include <Common/JSONBuilder.h>
+#include <Core/ProtocolDefines.h>
 #include <Core/Settings.h>
 #include <Interpreters/Context.h>
 
@@ -43,6 +44,7 @@ namespace ErrorCodes
 {
     extern const int INCORRECT_DATA;
     extern const int LOGICAL_ERROR;
+    extern const int SUPPORT_IS_DISABLED;
 }
 
 static ITransformingStep::Traits getTraits()
@@ -293,6 +295,14 @@ static bool isTrivialSubtree(const ActionsDAG::Node * node)
     return node->type != ActionsDAG::ActionType::FUNCTION && node->type != ActionsDAG::ActionType::ARRAY_JOIN;
 }
 
+bool hasTrivialAndChainAtom(const ActionsDAG::Node * filter)
+{
+    while (filter->type == ActionsDAG::ActionType::ALIAS)
+        filter = filter->children.at(0);
+
+    return std::ranges::any_of(ActionsDAG::extractConjunctionAtoms(filter), isTrivialSubtree);
+}
+
 struct ActionsAndName
 {
     ActionsDAG dag;
@@ -313,10 +323,7 @@ static ActionsAndName splitSingleAndFilter(ActionsDAG & dag, const ActionsDAG::N
     return ActionsAndName{std::move(split_result.first), std::move(name)};
 }
 
-/// Can the atom be evaluated before the atoms that precede it in the AND chain? It is evaluated on more rows then,
-/// so it must be cheap (no functions that are worth to execute lazily) and all its functions must be unable to throw,
-/// be stateless, have no observable side effects and be deterministic in the scope of the query. See setting `short_circuit_function_evaluation_reorder_arguments`.
-static bool canBeMovedToTheFrontOfAndChain(const ActionsDAG::Node * node)
+bool canBeMovedToTheFrontOfAndChain(const ActionsDAG::Node * node)
 {
     std::stack<const ActionsDAG::Node *> nodes;
     nodes.push(node);
@@ -350,6 +357,14 @@ static bool canBeMovedToTheFrontOfAndChain(const ActionsDAG::Node * node)
     return true;
 }
 
+bool canAndChainAtomsBeMovedToTheFront(const ActionsDAG::Node * filter)
+{
+    while (filter->type == ActionsDAG::ActionType::ALIAS)
+        filter = filter->children.at(0);
+
+    return std::ranges::all_of(ActionsDAG::extractConjunctionAtoms(filter), canBeMovedToTheFrontOfAndChain);
+}
+
 /// Is the atom heavy, that is, does it contain functions that are worth to execute lazily (like `JSONExtractString`)?
 /// Only heavy atoms are worth to evaluate on fewer rows, so a cheap atom is moved only in front of heavy ones.
 static bool isHeavyAndChainAtom(const ActionsDAG::Node * node)
@@ -378,10 +393,7 @@ static bool isHeavyAndChainAtom(const ActionsDAG::Node * node)
     return false;
 }
 
-/// Does the atom contain stateful functions, functions with observable side effects (like `sleep`),
-/// or functions that are not deterministic in the scope of the query (like `rand` or `rowNumberInBlock`)?
-/// Such an atom must not be evaluated on fewer rows than in the original order, so no atom can be moved in front of it.
-static bool hasOrderSensitiveFunctions(const ActionsDAG::Node * node)
+bool hasOrderSensitiveFunctions(const ActionsDAG::Node * node)
 {
     std::stack<const ActionsDAG::Node *> nodes;
     nodes.push(node);
@@ -679,6 +691,15 @@ void FilterStep::serialize(Serialization & ctx) const
     UInt8 flags = 0;
     if (remove_filter_column)
         flags |= 1;
+    if (row_level_filter_after_read)
+    {
+        if (ctx.step_version < 1)
+            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+                "A Filter step applying a row policy after the read requires query plan serialization version >= {} "
+                "(Filter step version 1), but the peer only supports version {}; all nodes must be upgraded",
+                DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_FILTER_ROW_LEVEL_MARK, ctx.version);
+        flags |= 2;
+    }
     writeIntBinary(flags, ctx.out);
 
     /// A cache key must not depend on the name this plan build composed for the filter column
@@ -708,7 +729,10 @@ QueryPlanStepPtr FilterStep::deserialize(Deserialization & ctx)
 
     ActionsDAG actions_dag = ActionsDAG::deserialize(ctx.in, ctx.registry, ctx.context, ctx.max_type_complexity);
 
-    return std::make_unique<FilterStep>(ctx.input_headers.front(), std::move(actions_dag), std::move(filter_column_name), remove_filter_column);
+    auto filter_step = std::make_unique<FilterStep>(ctx.input_headers.front(), std::move(actions_dag), std::move(filter_column_name), remove_filter_column);
+    if (flags & 2)
+        filter_step->markAsRowLevelFilterAfterRead();
+    return filter_step;
 }
 
 bool FilterStep::canRemoveUnusedColumns() const
@@ -764,7 +788,8 @@ QueryPlanStepPtr FilterStep::clone() const
 void registerFilterStep(QueryPlanStepRegistry & registry);
 void registerFilterStep(QueryPlanStepRegistry & registry)
 {
-    registry.registerStep("Filter", FilterStep::deserialize);
+    /// Version 1 carries the late row-level filter mark (bit 2 of the flags byte).
+    registry.registerStep("Filter", FilterStep::deserialize, {{0, 0}, {1, DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_FILTER_ROW_LEVEL_MARK}});
 }
 
 }

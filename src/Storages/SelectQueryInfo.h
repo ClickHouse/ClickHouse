@@ -64,6 +64,9 @@ struct PrewhereInfo
 
     PrewhereInfo clone() const;
 
+    /// The same filter as a filter step over the read, passing all the columns the read returns.
+    FilterDAGInfo toFilterDAGInfo() &&;
+
     void serialize(IQueryPlanStep::Serialization & ctx) const;
     static PrewhereInfo deserialize(IQueryPlanStep::Deserialization & ctx);
 };
@@ -207,6 +210,9 @@ struct SelectQueryInfo
     /// This actions are separate because prewhere condition should not be executed over filtered rows.
     FilterDAGInfoPtr row_level_filter;
     PrewhereInfoPtr prewhere_info;
+
+    /// A row-level security filter the read could not take is applied after it: the read may evaluate only what is safe on the rows it rejects.
+    bool row_level_filter_after_read = false;
 
     /// If query has aggregate functions
     bool has_aggregates = false;

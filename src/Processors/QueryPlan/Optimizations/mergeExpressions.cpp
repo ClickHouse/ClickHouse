@@ -2,6 +2,7 @@
 #include <Processors/QueryPlan/Optimizations/Utils.h>
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
+#include <Processors/QueryPlan/SourceStepWithFilter.h>
 #include <Interpreters/ActionsDAG.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/FilterDescription.h>
@@ -96,6 +97,8 @@ size_t tryMergeExpressions(QueryPlan::Node * parent_node, QueryPlan::Nodes &, co
             parent_filter->getFilterColumnName(),
             parent_filter->removesFilterColumn());
         filter->setStepDescription(mergeStepDescriptions(parent_filter->getStepDescription(), child_expr->getStepDescription()), settings.max_step_description_length);
+        if (parent_filter->isRowLevelFilterAfterRead())
+            filter->markAsRowLevelFilterAfterRead();
 
         parent_node->step = std::move(filter);
         parent_node->children.swap(child_node->children);
@@ -104,6 +107,32 @@ size_t tryMergeExpressions(QueryPlan::Node * parent_node, QueryPlan::Nodes &, co
 
     return 0;
 }
+
+static bool isOverReadWithRowLevelFilterAfterIt(const QueryPlan::Node & node)
+{
+    const auto * current = &node;
+    while (true)
+    {
+        const auto * filter = typeid_cast<const FilterStep *>(current->step.get());
+        if (filter && filter->isRowLevelFilterAfterRead())
+            return true;
+
+        if (current->children.size() != 1 || !(filter || typeid_cast<const ExpressionStep *>(current->step.get())))
+            break;
+
+        current = current->children.front();
+    }
+
+    const auto * source = dynamic_cast<const SourceStepWithFilter *>(current->step.get());
+    return source && source->getQueryInfo().row_level_filter_after_read;
+}
+
+static bool computesOnlyMovableResults(const ActionsDAG & dag, const ActionsDAG::Node & filter_node)
+{
+    return std::ranges::all_of(dag.getOutputs(),
+        [&](const ActionsDAG::Node * output) { return output == &filter_node || canBeMovedToTheFrontOfAndChain(output); });
+}
+
 size_t tryMergeFilters(QueryPlan::Node * parent_node, QueryPlan::Nodes &, const Optimization::ExtraSettings & settings)
 {
     if (parent_node->children.size() != 1)
@@ -125,7 +154,21 @@ size_t tryMergeFilters(QueryPlan::Node * parent_node, QueryPlan::Nodes &, const 
         if (child_actions.hasArrayJoin())
             return 0;
 
+        /// A filter with a stateful function is not split into its AND chain, so the upper filter would see the rows the lower one rejects.
+        if (child_actions.hasStatefulFunctions() || parent_actions.hasStatefulFunctions())
+            return 0;
+
         const auto & child_filter_node = child_actions.findInOutputs(child_filter->getFilterColumnName());
+
+        /// The merged filter is not always split back into its AND chain, so over a late row-level filter merge only what is safe on the rows it rejects.
+        if (isOverReadWithRowLevelFilterAfterIt(*child_node))
+        {
+            const auto & upper_filter_node = parent_actions.findInOutputs(parent_filter->getFilterColumnName());
+            if (!canAndChainAtomsBeMovedToTheFront(&upper_filter_node)
+                || !computesOnlyMovableResults(parent_actions, upper_filter_node)
+                || (hasTrivialAndChainAtom(&child_filter_node) && !canAndChainAtomsBeMovedToTheFront(&child_filter_node)))
+                return 0;
+        }
         if (child_filter->removesFilterColumn())
             removeFromOutputs(child_actions, child_filter_node);
 
@@ -149,6 +192,8 @@ size_t tryMergeFilters(QueryPlan::Node * parent_node, QueryPlan::Nodes &, const 
                                                    condition_name,
                                                    true);
         filter->setStepDescription(mergeStepDescriptions(parent_filter->getStepDescription(), child_filter->getStepDescription()), settings.max_step_description_length);
+        if (child_filter->isRowLevelFilterAfterRead() || parent_filter->isRowLevelFilterAfterRead())
+            filter->markAsRowLevelFilterAfterRead();
 
         parent_node->step = std::move(filter);
         parent_node->children.swap(child_node->children);
