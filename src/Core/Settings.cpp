@@ -7309,7 +7309,7 @@ Possible values:
     DECLARE(Bool, use_query_condition_cache_for_top_k, true, R"(
 Enable the [query condition cache](/concepts/features/performance/caches/query-condition-cache) for queries that use the `ORDER BY <column> LIMIT n` (TopK) optimization (dynamic filtering or skip-index based). When disabled, such reads neither consult nor populate the cache. Reads of Parquet files that use the threshold only to skip row groups by their statistics (a `String` sort column with `use_top_k_dynamic_filtering_for_variable_length_types` disabled) use the cache like reads without TopK, whatever the value of this setting.
 
-Such queries can drop granules during execution depending on the running threshold, so their cache entries are partitioned by the TopK plan parameters and by the set of parts read (for a `File` table, by the set of files read and their versions; for a data lake table, by its snapshot). This setting has no effect unless `use_query_condition_cache` is also enabled.
+Such queries can drop granules during execution depending on the running threshold, so their cache entries are partitioned by the TopK plan parameters and by the set of parts read (for a `File` table, by the set of files read and their versions; for a data lake table, by its snapshot; for object storage, by the set of objects read and their ETags). This setting has no effect unless `use_query_condition_cache` is also enabled.
 
 Possible values:
 

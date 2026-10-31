@@ -1,6 +1,7 @@
 #pragma once
 
 #include <future>
+#include <mutex>
 #include <optional>
 #include <Common/re2.h>
 #include <Common/threadPoolCallbackRunner.h>
@@ -21,19 +22,72 @@ class SchemaCache;
 
 struct LazyObjectStorageFileRegistry;
 using LazyObjectStorageFileRegistryPtr = std::shared_ptr<LazyObjectStorageFileRegistry>;
+class QueryStatus;
 
 /// The query condition cache key of a TopN (`ORDER BY ... LIMIT n`) read. Which row groups of a file
 /// the TopN filter lets through depends on the running threshold, which is established from the rows
 /// of *every* file the query reads, so the key covers the TopK plan, the predicate and the set of files
-/// (see `ReadFromObjectStorageStep::makeTopKQueryConditionCacheKey`). It is made only for a data lake,
-/// where the snapshot identifies the set of files and the data files are never modified in place.
+/// (see `ReadFromObjectStorageStep::makeTopKQueryConditionCacheKey`). For a data lake, the snapshot
+/// identifies the set of files, as the data files are never modified in place. For plain object
+/// storage, the key covers the ETags of all objects, which are known only once they are listed, see
+/// `ObjectIteratorListingAllForTopKQueryConditionCache`.
 struct ObjectStorageTopKQueryConditionCacheKey
 {
-    UInt64 condition_hash = 0;
+    /// Unset while the objects are not listed yet, and if they turn out not to be suitable for the key.
+    /// It is assigned before the iterator returns the first object, so a source reading it after having
+    /// received an object sees its final value.
+    std::optional<UInt64> condition_hash;
+    /// The hash of the TopK plan and the predicate, to which the hash of the set of files is added.
+    UInt64 condition_hash_without_files = 0;
     /// A printable description of the key for `system.query_condition_cache`.
     String condition;
+    /// The filter info to read a file that uses the key with: the one of the query, but with
+    /// `FormatTopKFilterInfo::track_row_group_best_values`.
+    FormatFilterInfoPtr format_filter_info_tracking_best_values;
 };
 using ObjectStorageTopKQueryConditionCacheKeyPtr = std::shared_ptr<const ObjectStorageTopKQueryConditionCacheKey>;
+
+/// Plain object storage: lists all objects of the query before returning the first one, to make the
+/// TopK query condition cache key from their ETags (see `ObjectStorageTopKQueryConditionCacheKey`).
+/// The objects are listed on the first call of `next`, which happens when the pipeline already runs:
+/// some iterators apply a `_path` / `_file` filter only then. A TopN read reads all objects anyway, so
+/// listing them first costs no extra requests.
+class ObjectIteratorListingAllForTopKQueryConditionCache : public IObjectIterator
+{
+public:
+    /// `query_status_` (if any) is checked between the objects listed ahead, as each of them may take a request.
+    ObjectIteratorListingAllForTopKQueryConditionCache(
+        ObjectIterator iterator_,
+        std::shared_ptr<ObjectStorageTopKQueryConditionCacheKey> key_,
+        std::shared_ptr<QueryStatus> query_status_);
+
+    ObjectInfoPtr next(size_t processor) override;
+    size_t estimatedKeysCount() override { return iterator->estimatedKeysCount(); }
+    std::optional<UInt64> getSnapshotVersion() const override { return iterator->getSnapshotVersion(); }
+
+    void setEmitProfileEvents(bool value) override
+    {
+        emit_profile_events = value;
+        iterator->setEmitProfileEvents(value);
+    }
+
+    /// With more objects, the key is not made, so as not to keep all of them in memory.
+    static constexpr size_t MAX_OBJECTS = 100000;
+
+private:
+    void listObjects(size_t processor);
+
+    const ObjectIterator iterator;
+    const std::shared_ptr<ObjectStorageTopKQueryConditionCacheKey> key;
+    const std::shared_ptr<QueryStatus> query_status;
+
+    std::once_flag listed;
+    std::exception_ptr listing_exception;
+    ObjectInfos objects;
+    /// Whether `objects` are all objects of the query. Otherwise the rest comes from `iterator`.
+    bool listed_all = false;
+    std::atomic<size_t> index = 0;
+};
 
 class StorageObjectStorageSource final : public ISource
 {
@@ -86,6 +140,11 @@ public:
         bool ignore_archive_globs = false,
         bool skip_object_metadata = false,
         bool with_tags = false);
+
+    /// For a data lake configuration, returns the metadata with `datalake_table_state` set: the given
+    /// one if it already has the state, otherwise a copy with the current snapshot of the table.
+    static StorageMetadataPtr ensureDataLakeTableState(
+        const StorageObjectStorageConfiguration & configuration, StorageMetadataPtr storage_metadata, const ContextPtr & local_context);
 
     static std::string getUniqueStoragePathIdentifier(
         const StorageObjectStorageConfiguration & configuration, const ObjectInfo & object_info, bool include_connection_info = true);

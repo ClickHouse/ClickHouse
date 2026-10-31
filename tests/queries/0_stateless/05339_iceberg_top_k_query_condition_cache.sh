@@ -20,6 +20,7 @@ ICEBERG_DIR="${CLICKHOUSE_USER_FILES}/lakehouses/${CLICKHOUSE_DATABASE}_05339"
 rm -rf "${ICEBERG_DIR}"
 
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE IF EXISTS t_05339"
+${CLICKHOUSE_CLIENT} --query "DROP TABLE IF EXISTS t_05339_renamed"
 # The Iceberg sink writes with the format settings of the table: those of the server plus its `SETTINGS` clause.
 ${CLICKHOUSE_CLIENT} --query "
     CREATE TABLE t_05339 (k Int64, s String) ENGINE = IcebergLocal('${ICEBERG_DIR}', 'Parquet')
@@ -96,8 +97,18 @@ echo "--- use_query_condition_cache_for_top_k = 0"
 run gate_1 "SELECT k FROM t_05339 ORDER BY k DESC LIMIT 5" ", use_query_condition_cache_for_top_k = 0"
 run gate_2 "SELECT k FROM t_05339 ORDER BY k DESC LIMIT 5" ", use_query_condition_cache_for_top_k = 0"
 
-echo "--- query condition cache lookups"
-events nowhere_1 nowhere_2 nowhere_limit nowhere_plain nowhere_asc where_1 where_2 where_path_1 where_path_2 deleted_nowhere_1 deleted_where_1 deleted_nowhere_2 gate_1 gate_2
+echo "--- a predicate on _table, then a rename"
+# The entries are keyed by the UUID of the table, which a rename keeps, while `_table` comes from its name.
+# After the rename, the predicate keeps only the values below 100000, which lie in row groups that the
+# entries of the first query would have recorded as holding no row of the result. So the key is not made.
+run table_1 "SELECT k FROM t_05339 WHERE _table = 't_05339' OR k < 100000 ORDER BY k DESC LIMIT 3"
+${CLICKHOUSE_CLIENT} --query "RENAME TABLE t_05339 TO t_05339_renamed"
+${CLICKHOUSE_CLIENT} --query "DETACH TABLE t_05339_renamed"
+${CLICKHOUSE_CLIENT} --query "ATTACH TABLE t_05339_renamed"
+run table_2 "SELECT k FROM t_05339_renamed WHERE _table = 't_05339' OR k < 100000 ORDER BY k DESC LIMIT 3"
 
-${CLICKHOUSE_CLIENT} --query "DROP TABLE t_05339"
+echo "--- query condition cache lookups"
+events nowhere_1 nowhere_2 nowhere_limit nowhere_plain nowhere_asc where_1 where_2 where_path_1 where_path_2 deleted_nowhere_1 deleted_where_1 deleted_nowhere_2 gate_1 gate_2 table_1 table_2
+
+${CLICKHOUSE_CLIENT} --query "DROP TABLE t_05339_renamed"
 rm -rf "${ICEBERG_DIR}"
