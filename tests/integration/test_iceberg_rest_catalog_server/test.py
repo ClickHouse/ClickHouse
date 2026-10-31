@@ -147,6 +147,30 @@ def create_namespace(name_levels, properties=None, expected_code=200):
     )
 
 
+def update_namespace_properties(
+    name_levels, updates=None, removals=None, expected_code=200, auth=None
+):
+    body = {}
+    if updates is not None:
+        body["updates"] = updates
+    if removals is not None:
+        body["removals"] = removals
+    namespace = "\x1f".join(name_levels)
+    return catalog_request(
+        "POST",
+        f"/v1/my_warehouse/namespaces/{namespace}/properties",
+        json=body,
+        expected_code=expected_code,
+        auth=auth,
+    )
+
+
+def load_namespace_properties(name_levels):
+    namespace = "\x1f".join(name_levels)
+    response = catalog_request("GET", f"/v1/my_warehouse/namespaces/{namespace}")
+    return response.json()["properties"]
+
+
 def list_namespaces(parent=None):
     params = {"parent": parent} if parent is not None else None
     response = catalog_request("GET", "/v1/my_warehouse/namespaces", params=params)
@@ -302,6 +326,7 @@ def test_config(started_cluster):
         "POST /v1/{prefix}/namespaces",
         "GET /v1/{prefix}/namespaces/{namespace}",
         "HEAD /v1/{prefix}/namespaces/{namespace}",
+        "POST /v1/{prefix}/namespaces/{namespace}/properties",
         "GET /v1/{prefix}/namespaces/{namespace}/tables",
         "POST /v1/{prefix}/namespaces/{namespace}/tables",
         "GET /v1/{prefix}/namespaces/{namespace}/tables/{table}",
@@ -416,6 +441,50 @@ def test_load_namespace(started_cluster):
     assert response.json() == {"namespace": [ns], "properties": {"owner": "asya"}}
 
     catalog_request("GET", "/v1/my_warehouse/namespaces/missing", expected_code=404)
+
+
+def test_update_namespace_properties(started_cluster):
+    ns = f"props_{uuid.uuid4().hex[:8]}"
+    create_namespace([ns], properties={"owner": "asya", "a": "1"})
+
+    response = update_namespace_properties(
+        [ns], updates={"owner": "bob", "b": "2"}, removals=["a", "zzz"]
+    )
+    assert response.json() == {
+        "updated": ["b", "owner"],
+        "removed": ["a"],
+        "missing": ["zzz"],
+    }
+    assert load_namespace_properties([ns]) == {"b": "2", "owner": "bob"}
+
+    response = update_namespace_properties(
+        [ns], updates={"owner": "x"}, removals=["owner"], expected_code=422
+    )
+    assert_error_shape(response, "UnprocessableEntityException")
+
+    response = update_namespace_properties(
+        ["missing"], updates={"owner": "x"}, expected_code=404
+    )
+    assert_error_shape(response, "NoSuchNamespaceException")
+
+    # The location must be inside the warehouse bucket, same as on create.
+    for location in ["http://x", "s3://other-bucket/x"]:
+        response = update_namespace_properties(
+            [ns], updates={"location": location}, expected_code=400
+        )
+        assert_error_shape(response, "BadRequestException")
+    assert load_namespace_properties([ns]) == {"b": "2", "owner": "bob"}
+
+    location = f"s3://{BUCKET}/props/"
+    update_namespace_properties([ns], updates={"location": location})
+    assert load_namespace_properties([ns])["location"] == location
+
+    for body in [{"updates": "x"}, {"removals": "x"}, []]:
+        response = requests.post(
+            catalog_url(f"/v1/my_warehouse/namespaces/{ns}/properties"), json=body
+        )
+        assert response.status_code == 400, response.text
+        assert_error_shape(response, "BadRequestException")
 
 
 def test_malformed_create_namespace(started_cluster):
@@ -544,35 +613,31 @@ def test_create_namespace_rejects_readonly(started_cluster):
     ns = f"forbidden_{uuid.uuid4().hex[:8]}"
     body = {"namespace": [ns]}
 
-    # Reading is allowed for everyone who can log in.
-    catalog_request("GET", "/v1/my_warehouse/namespaces", auth=("readonly_user", ""))
-
-    response = catalog_request(
-        "POST",
-        "/v1/my_warehouse/namespaces",
-        json=body,
-        auth=("readonly_user", ""),
-        expected_code=403,
-    )
-    assert_error_shape(response, "ForbiddenException")
-    assert "readonly" in response.json()["error"]["message"]
-    assert [ns] not in list_namespaces()
-
     # `allow_ddl = 0` permits writes but not structural changes, and a namespace is structure.
-    catalog_request("GET", "/v1/my_warehouse/namespaces", auth=("no_ddl_user", ""))
-    response = catalog_request(
-        "POST",
-        "/v1/my_warehouse/namespaces",
-        json=body,
-        auth=("no_ddl_user", ""),
-        expected_code=403,
-    )
-    assert_error_shape(response, "ForbiddenException")
-    assert "DDL" in response.json()["error"]["message"]
-    assert [ns] not in list_namespaces()
+    for user, word in [("readonly_user", "readonly"), ("no_ddl_user", "DDL")]:
+        # Reading is allowed for everyone who can log in.
+        catalog_request("GET", "/v1/my_warehouse/namespaces", auth=(user, ""))
+
+        response = catalog_request(
+            "POST",
+            "/v1/my_warehouse/namespaces",
+            json=body,
+            auth=(user, ""),
+            expected_code=403,
+        )
+        assert_error_shape(response, "ForbiddenException")
+        assert word in response.json()["error"]["message"]
+        assert [ns] not in list_namespaces()
 
     create_namespace([ns])
     assert [ns] in list_namespaces()
+
+    for user in ["readonly_user", "no_ddl_user"]:
+        response = update_namespace_properties(
+            [ns], updates={"owner": "bob"}, auth=(user, ""), expected_code=403
+        )
+        assert_error_shape(response, "ForbiddenException")
+    assert load_namespace_properties([ns]) == {}
 
 
 def test_table_ddl_rejects_readonly(started_cluster):
