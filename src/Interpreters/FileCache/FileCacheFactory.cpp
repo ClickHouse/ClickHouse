@@ -48,13 +48,17 @@ FileCacheFactory & FileCacheFactory::instance()
 
 FileCacheFactory::CacheByName FileCacheFactory::getAll()
 {
+    RemovedCaches removed(*this);
     std::lock_guard lock(mutex);
+    removeUnusedNamesOfReleasedDisks(removed);
     return caches_by_name;
 }
 
 FileCacheFactory::Caches FileCacheFactory::getUniqueInstances()
 {
+    RemovedCaches removed(*this);
     std::lock_guard lock(mutex);
+    removeUnusedNamesOfReleasedDisks(removed);
     Caches caches;
     for (const auto & [_, cache_data] : caches_by_name)
         caches.insert(cache_data);
@@ -63,7 +67,9 @@ FileCacheFactory::Caches FileCacheFactory::getUniqueInstances()
 
 FileCachePtr FileCacheFactory::get(const std::string & cache_name)
 {
+    RemovedCaches removed(*this);
     std::lock_guard lock(mutex);
+    removeUnusedNamesOfReleasedDisks(removed);
 
     auto it = caches_by_name.find(cache_name);
     if (it == caches_by_name.end())
@@ -74,9 +80,12 @@ FileCachePtr FileCacheFactory::get(const std::string & cache_name)
 FileCachePtr FileCacheFactory::getOrCreate(
     const std::string & cache_name,
     const FileCacheSettings & file_cache_settings,
-    const std::string & config_path)
+    const std::string & config_path,
+    bool is_custom_disk)
 {
-    std::lock_guard lock(mutex);
+    RemovedCaches removed(*this);
+    std::unique_lock lock(mutex);
+    waitForCacheDestroyed(lock, file_cache_settings[FileCacheSetting::path].value, removed);
 
     auto it = std::find_if(caches_by_name.begin(), caches_by_name.end(), [&](const auto & cache_by_name)
     {
@@ -96,6 +105,9 @@ FileCachePtr FileCacheFactory::getOrCreate(
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
                             "Cache with name {} exists, but it has a different path", cache_name);
         }
+
+        if (is_custom_disk)
+            names_of_custom_disks.insert(cache_name);
     }
     else if (it->second->getSettings() != file_cache_settings)
     {
@@ -106,8 +118,13 @@ FileCachePtr FileCacheFactory::getOrCreate(
     }
     else if (it->first != cache_name)
     {
-        caches_by_name.emplace(cache_name, it->second);
+        if (caches_by_name.emplace(cache_name, it->second).second && is_custom_disk)
+            names_of_custom_disks.insert(cache_name);
     }
+
+    /// The name of a released disk is used again, so it is not removed anymore.
+    if (is_custom_disk)
+        names_of_released_disks.erase(cache_name);
 
     return it->second->cache;
 }
@@ -117,7 +134,9 @@ FileCachePtr FileCacheFactory::create(
     const FileCacheSettings & file_cache_settings,
     const std::string & config_path)
 {
-    std::lock_guard lock(mutex);
+    RemovedCaches removed(*this);
+    std::unique_lock lock(mutex);
+    waitForCacheDestroyed(lock, file_cache_settings[FileCacheSetting::path].value, removed);
 
     auto it = caches_by_name.find(cache_name);
 
@@ -153,7 +172,9 @@ FileCachePtr FileCacheFactory::create(
 
 FileCacheFactory::FileCacheDataPtr FileCacheFactory::getByName(const std::string & cache_name)
 {
+    RemovedCaches removed(*this);
     std::lock_guard lock(mutex);
+    removeUnusedNamesOfReleasedDisks(removed);
 
     auto it = caches_by_name.find(cache_name);
     if (it == caches_by_name.end())
@@ -229,9 +250,110 @@ void FileCacheFactory::remove(FileCachePtr cache)
     for (auto it = caches_by_name.begin(); it != caches_by_name.end();)
     {
         if (it->second->cache == cache)
+        {
+            names_of_custom_disks.erase(it->first);
+            names_of_released_disks.erase(it->first);
             it = caches_by_name.erase(it);
+        }
         else
             ++it;
+    }
+}
+
+void FileCacheFactory::removeNameOfReleasedDisk(const std::string & cache_name)
+{
+    /// Destroying the cache stops its background operations, which is not done under `mutex`.
+    RemovedCaches removed(*this);
+
+    std::lock_guard lock(mutex);
+    if (!names_of_custom_disks.contains(cache_name))
+        return;
+
+    chassert(caches_by_name.contains(cache_name));
+    names_of_released_disks.insert(cache_name);
+    removeUnusedNamesOfReleasedDisks(removed);
+}
+
+void FileCacheFactory::RemovedCaches::destroy()
+{
+    caches.clear();
+    if (paths.empty())
+        return;
+
+    std::lock_guard lock(factory.mutex);
+    for (const auto & path : paths)
+        factory.paths_of_caches_being_destroyed.erase(factory.paths_of_caches_being_destroyed.find(path));
+    paths.clear();
+    factory.cache_destroyed_cv.notify_all();
+}
+
+void FileCacheFactory::waitForCacheDestroyed(std::unique_lock<std::mutex> & lock, const std::string & path, RemovedCaches & removed)
+{
+    while (true)
+    {
+        removeUnusedNamesOfReleasedDisks(removed);
+        if (!paths_of_caches_being_destroyed.contains(path))
+            return;
+
+        if (removed.caches.empty())
+        {
+            /// Another thread is destroying the cache.
+            cache_destroyed_cv.wait(lock);
+        }
+        else
+        {
+            lock.unlock();
+            removed.destroy();
+            lock.lock();
+        }
+    }
+}
+
+void FileCacheFactory::removeUnusedNamesOfReleasedDisks(RemovedCaches & removed)
+{
+    for (auto name_it = names_of_released_disks.begin(); name_it != names_of_released_disks.end();)
+    {
+        const auto & cache_name = *name_it;
+        auto it = caches_by_name.find(cache_name);
+        if (it == caches_by_name.end())
+        {
+            name_it = names_of_released_disks.erase(name_it);
+            continue;
+        }
+
+        const bool has_other_names = std::any_of(caches_by_name.begin(), caches_by_name.end(), [&](const auto & cache_by_name)
+        {
+            return cache_by_name.first != cache_name && cache_by_name.second == it->second;
+        });
+
+        if (!has_other_names)
+        {
+            /// A cache defined in the configuration stays.
+            if (!it->second->config_path.empty())
+            {
+                name_it = names_of_released_disks.erase(name_it);
+                continue;
+            }
+
+            /// Something still uses the cache, so its name is removed later, when it does not anymore. The snapshots returned
+            /// by `getAll` share the `FileCacheData`, not the `FileCachePtr`, so both are checked.
+            if (it->second.use_count() != 1 || it->second->cache.use_count() != 1)
+            {
+                ++name_it;
+                continue;
+            }
+        }
+
+        if (!has_other_names)
+        {
+            auto path = it->second->getSettings()[FileCacheSetting::path].value;
+            paths_of_caches_being_destroyed.insert(path);
+            removed.paths.push_back(std::move(path));
+        }
+        removed.caches.push_back(std::move(it->second));
+        caches_by_name.erase(it);
+        names_of_custom_disks.erase(cache_name);
+        name_it = names_of_released_disks.erase(name_it);
     }
 }
 
@@ -239,6 +361,8 @@ void FileCacheFactory::clear()
 {
     std::lock_guard lock(mutex);
     caches_by_name.clear();
+    names_of_custom_disks.clear();
+    names_of_released_disks.clear();
 }
 
 void FileCacheFactory::loadDefaultCaches(const Poco::Util::AbstractConfiguration & config, ContextPtr context)

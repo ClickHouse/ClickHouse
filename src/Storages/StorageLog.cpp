@@ -1461,9 +1461,11 @@ void registerStorageLog(StorageFactory & factory)
                 args.engine_name, args.engine_args.size());
 
         String disk_name = getDiskName(*args.storage_def, args.getContext());
-        DiskPtr disk = args.getContext()->getDisk(disk_name);
+        /// A custom disk referred to by name is kept registered for as long as the table uses it. The
+        /// registration is taken together with the disk, so the disk cannot appear or be released in between.
+        auto [disk, custom_disk_registration] = args.getContext()->getDiskWithCustomDiskRegistration(disk_name);
 
-        return std::make_shared<StorageLog>(
+        auto storage = std::make_shared<StorageLog>(
             args.engine_name,
             disk,
             args.relative_data_path,
@@ -1473,6 +1475,8 @@ void registerStorageLog(StorageFactory & factory)
             args.comment,
             args.mode,
             args.getContext());
+        storage->setCustomDiskRegistration(std::move(custom_disk_registration));
+        return storage;
     };
 
     factory.registerStorage("Log", create_fn, SecretArgumentsSpec{}, features, Documentation{

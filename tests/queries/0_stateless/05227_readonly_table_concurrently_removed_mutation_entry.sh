@@ -63,11 +63,13 @@ grep -q 'was removed by the table that owns the directory while this table was l
 grep -q 'FILE_DOESNT_EXIST' "${reader_log}" && echo 'FILE_DOESNT_EXIST is reported'
 grep -q 'S3_ERROR' "${reader_log}" && echo 'S3_ERROR is reported' || echo 'S3_ERROR is not reported'
 
+# The disk of the failed attempt, whose metadata still lists the entry, is released together with it. It may still
+# be referenced for a while after that, and then a definition with the same name would use it again, so the next
+# attempt uses a disk with another name, which loads the metadata anew.
 echo '-- the next attempt succeeds once the metadata of the disk, which still lists the entry, is reloaded'
 ${CLICKHOUSE_CLIENT} -m --query "
-SYSTEM DROP DISK METADATA CACHE ${CLICKHOUSE_TEST_UNIQUE_NAME}_reader;
 CREATE TABLE reader (key Int32, value String) ENGINE = MergeTree ORDER BY key
-SETTINGS table_disk = 1, disk = disk(readonly = true, name = '${CLICKHOUSE_TEST_UNIQUE_NAME}_reader', ${disk_args});
+SETTINGS table_disk = 1, disk = disk(readonly = true, name = '${CLICKHOUSE_TEST_UNIQUE_NAME}_reader_retry', ${disk_args});
 SELECT count() FROM reader;
 SELECT count() FROM system.mutations WHERE database = currentDatabase() AND table = 'reader';
 

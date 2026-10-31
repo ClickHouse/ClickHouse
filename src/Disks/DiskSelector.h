@@ -44,6 +44,10 @@ public:
 
     void addToDiskMap(const String & name, DiskPtr disk);
 
+    /// Only for disks defined inline with `disk(...)`: they are removed as soon as the last table
+    /// or database using them is gone. Disks from the configuration stay until the server stops.
+    void removeFromDiskMap(const String & name);
+
     void shutdown();
 
     inline static const String DEFAULT_DISK_NAME = "default";

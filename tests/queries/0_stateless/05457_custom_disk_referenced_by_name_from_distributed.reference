@@ -1,0 +1,4 @@
+disks after the defining table is dropped	1
+rows in the target table	7
+disks before the last table is dropped	1
+disks after the last table is dropped	0

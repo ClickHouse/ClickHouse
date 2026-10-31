@@ -3,6 +3,7 @@
 #include <Disks/DiskSelector.h>
 #include <Common/assert_cast.h>
 #include <Common/checkStackSize.h>
+#include <Common/logger_useful.h>
 #include <Common/SipHash.h>
 #include <Common/Config/ConfigProcessor.h>
 #include <Parsers/ASTExpressionList.h>
@@ -13,6 +14,7 @@
 #include <Interpreters/Context.h>
 #include <IO/WriteHelpers.h>
 #include <Parsers/IAST.h>
+#include <base/defines.h>
 #include <Common/NamedCollections/NamedCollectionConfiguration.h>
 #include <Common/ZooKeeper/ZooKeeperNodeCache.h>
 
@@ -27,13 +29,24 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
-static std::string getOrCreateCustomDisk(
+static std::pair<std::string, CustomDiskRegistrationPtr> getOrCreateCustomDisk(
     const ASTs & disk_args,
     const std::string & serialization,
     ContextPtr context,
     bool attach,
-    bool for_system_database)
+    bool for_system_database,
+    CustomDiskRegistrations nested_registrations)
 {
+    auto disk_settings_hash = sipHash128(serialization.data(), serialization.size());
+
+    /// The restrictions on user queries (credentials, `include`, `from_env`, `from_zk`, the disk name) are
+    /// applied to every definition that is not loaded from existing metadata, even if a disk with this
+    /// definition exists: they do not depend on whether the disk is created or reused.
+    /// Only the checks done when the disk itself is created are relaxed for a definition that was loaded from
+    /// existing metadata before and whose disk is created anew after being released: before the disks were
+    /// released, the existing disk would have been reused without creating it again.
+    const bool existing_definition = attach || context->isCustomDiskLoadedFromExistingMetadata(disk_settings_hash);
+
     const auto & server_config = context->getConfigRef();
     std::string include_from_path = server_config.getString("include_from", "");
 
@@ -87,8 +100,6 @@ static std::string getOrCreateCustomDisk(
             "Disk function `{}` must have other arguments apart from `name`, which describe disk configuration. Invalid disk description.",
             serialization);
 
-    auto disk_settings_hash = sipHash128(serialization.data(), serialization.size());
-
     std::string disk_name;
     if (config->has("name"))
     {
@@ -105,13 +116,21 @@ static std::string getOrCreateCustomDisk(
     if (!attach && (disk_name.empty() || disk_name == "." || disk_name == ".." || disk_name.contains('/')))
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Disk name cannot be empty, `.`, `..` or contain `/` ({})", disk_name);
 
-    auto disk = context->getOrCreateDisk(disk_name, [&](const DisksMap & disks_map) -> DiskPtr {
+    /// A wrapper disk (`cache`, `encrypted`) may refer to the disk it wraps by name, see `Context::getOrCreateCustomDisk`.
+    const auto wrapped_disk_name = config->getString("disk", "");
+
+    /// The registrations in `nested_registrations` that are not taken over are destroyed when this function
+    /// returns, without any lock held.
+    auto [disk, registration] = context->getOrCreateCustomDisk(disk_name, disk_settings_hash, [&](const DisksMap & disks_map) -> DiskPtr {
         auto result = DiskFactory::instance().create(
-            disk_name, *config, /* config_path */"", context, disks_map, /* attach */attach, /* custom_disk */true);
+            disk_name, *config, /* config_path */"", context, disks_map, /* attach */existing_definition, /* custom_disk */true);
         /// Mark that disk can be used without storage policy.
         result->markDiskAsCustom(disk_settings_hash);
         return result;
-    });
+    }, nested_registrations, wrapped_disk_name);
+
+    if (attach && registration)
+        context->rememberCustomDiskLoadedFromExistingMetadata(disk_settings_hash);
 
     if (!disk->isCustomDisk())
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
@@ -119,13 +138,25 @@ static std::string getOrCreateCustomDisk(
             " It is impossible to redefine it.",
             disk_name);
 
-    if (disk->getCustomDiskSettings() != disk_settings_hash && !attach)
-        throw Exception(
-                ErrorCodes::BAD_ARGUMENTS,
-                "The disk `{}` is already configured as a custom disk in another table. It can't be redefined with different settings.",
-                disk_name);
+    if (disk->getCustomDiskSettings() != disk_settings_hash)
+    {
+        if (!attach)
+            throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS,
+                    "The disk `{}` is already configured as a custom disk in another table. It can't be redefined with different settings.",
+                    disk_name);
 
-    return disk_name;
+        /// An existing definition is not rejected on attach, so that the server can start. But the disk with
+        /// this name was created from another definition, e.g. by a table created while this one was detached.
+        bool only_name = disk_settings_keys.size() == 1 && disk_settings_keys.front() == "name";
+        if (!only_name)
+            LOG_WARNING(getLogger("DiskFromAST"),
+                "The custom disk `{}` is attached with a definition that differs from the one the disk was created with, "
+                "the existing disk is used",
+                disk_name);
+    }
+
+    return {disk_name, std::move(registration)};
 }
 
 template <typename Matcher>
@@ -137,29 +168,36 @@ static void visitBottomUp(ASTPtr & ast, typename Matcher::Data & data)
     Matcher::visit(ast, data);
 }
 
-class DiskConfigurationFlattener
+/// Replaces every `disk(...)` function in `ast` with the name of the disk it describes, creating the
+/// disks that do not exist yet. Nested definitions are processed first, since the definition of a
+/// wrapper disk refers to the disks it wraps by name. Returns the registrations of the outermost
+/// disks found; each of them owns the registrations of the disks nested in its definition.
+static CustomDiskRegistrations flattenDiskFunctions(ASTPtr & ast, ContextPtr context, bool attach, bool for_system_database)
 {
-public:
-    struct Data
+    checkStackSize();
+    CustomDiskRegistrations nested_registrations;
+    for (auto & child : ast->children)
     {
-        ContextPtr context;
-        bool attach;
-        bool for_system_database;
-    };
-
-    static void visit(ASTPtr & ast, Data & data)
-    {
-        if (isDiskFunction(ast))
-        {
-            const auto * function = ast->as<ASTFunction>();
-            const auto * function_args_expr = assert_cast<const ASTExpressionList *>(function->arguments.get());
-            const auto & function_args = function_args_expr->children;
-            auto disk_setting_string = function->formatWithSecretsOneLine();
-            auto disk_name = getOrCreateCustomDisk(function_args, disk_setting_string, data.context, data.attach, data.for_system_database);
-            ast = make_intrusive<ASTLiteral>(disk_name);
-        }
+        auto child_registrations = flattenDiskFunctions(child, context, attach, for_system_database);
+        std::move(child_registrations.begin(), child_registrations.end(), std::back_inserter(nested_registrations));
     }
-};
+
+    if (!isDiskFunction(ast))
+        return nested_registrations;
+
+    const auto * function = ast->as<ASTFunction>();
+    const auto * function_args_expr = assert_cast<const ASTExpressionList *>(function->arguments.get());
+    const auto & function_args = function_args_expr->children;
+    auto disk_setting_string = function->formatWithSecretsOneLine();
+    auto [disk_name, registration] = getOrCreateCustomDisk(
+        function_args, disk_setting_string, context, attach, for_system_database, std::move(nested_registrations));
+    ast = make_intrusive<ASTLiteral>(disk_name);
+
+    CustomDiskRegistrations registrations;
+    if (registration)
+        registrations.push_back(std::move(registration));
+    return registrations;
+}
 
 /// Persist the credential opt-in into the stored disk definition. For each leaf dynamic S3 disk that resolves
 /// server-managed credentials and is currently allowed (the session opted in), add a `_server_credentials_allowed`
@@ -232,7 +270,7 @@ public:
 };
 
 
-std::string DiskFromAST::createCustomDisk(const ASTPtr & disk_function_ast, ContextPtr context, bool attach, bool for_system_database)
+CustomDiskFromAST DiskFromAST::createCustomDisk(const ASTPtr & disk_function_ast, ContextPtr context, bool attach, bool for_system_database)
 {
     if (!isDiskFunction(disk_function_ast))
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected a disk function");
@@ -250,11 +288,15 @@ std::string DiskFromAST::createCustomDisk(const ASTPtr & disk_function_ast, Cont
     }
 
     auto ast = disk_function_ast->clone();
+    auto registrations = flattenDiskFunctions(ast, context, attach, for_system_database);
 
-    DiskConfigurationFlattener::Data data{context, attach, for_system_database};
-    visitBottomUp<DiskConfigurationFlattener>(ast, data);
+    /// The outermost function is the only one left at the top level, so there is at most one
+    /// registration: none when the name belongs to a disk from the configuration, which the caller
+    /// reports as an error, or when the definition is being re-read for a disk that already exists.
+    chassert(registrations.size() <= 1);
+    CustomDiskRegistrationPtr registration = registrations.empty() ? nullptr : std::move(registrations.front());
 
-    return assert_cast<const ASTLiteral &>(*ast).value.safeGet<String>();
+    return {assert_cast<const ASTLiteral &>(*ast).value.safeGet<String>(), std::move(registration)};
 }
 
 void DiskFromAST::ensureDiskIsNotCustom(const std::string & disk_name, ContextPtr context)

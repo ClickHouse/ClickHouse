@@ -428,13 +428,24 @@ BlockIO runCommandSegments(CommandSegments & segments, const StoragePtr & table,
             alter_commands->validate(table, context);
 
             bool share_nested = true;
-            if (auto * merge_tree = castStorage<MergeTreeData>(table, DeferredTable::Load).get())
+            auto merge_tree = castStorage<MergeTreeData>(table, DeferredTable::Load);
+            if (merge_tree)
                 share_nested = (*merge_tree->getSettings())[MergeTreeSetting::share_nested_offsets];
 
             alter_commands->prepare(*metadata_snapshot, share_nested);
-            table->checkAlterIsPossible(*alter_commands, context);
-            context->onQueryExecutionStarted();
-            table->alter(*alter_commands, context, alter_lock, ddl_guard);
+            try
+            {
+                table->checkAlterIsPossible(*alter_commands, context);
+                context->onQueryExecutionStarted();
+                table->alter(*alter_commands, context, alter_lock, ddl_guard);
+            }
+            catch (...)
+            {
+                /// A new disk defined inline with `disk = disk(...)` must not stay registered if the `ALTER` failed.
+                if (merge_tree)
+                    merge_tree->discardPendingAlterDiskRegistration();
+                throw;
+            }
         }
         else if (auto * mutation_commands = std::get_if<MutationCommands>(&segment))
         {
