@@ -239,6 +239,35 @@ def test_predefined_query_handler():
         assert cluster.instance.query("SELECT * FROM test_table") == "100\tTEST\n"
         cluster.instance.query("DROP TABLE test_table")
 
+        # `_request_body` is bound from the request body only. A capture group binding it would leave the body
+        # unread, and the unread body would be appended to the handler's query, extending its SQL.
+        res_capture = cluster.instance.http_request(
+            "test_predefined_handler_request_body_capture/bob",
+            method="POST",
+            data="UNION ALL SELECT 1+1".encode("utf8"),
+        )
+        assert res_capture.status_code != 200
+        assert b"BAD_ARGUMENTS" in res_capture.content
+
+        # A `_request_body` left in a named session must not be used either: it would leave the body unread, and
+        # the unread body would be appended to the handler's query. The parameter is bound from the current body.
+        session_params = {"session_id": "test_predefined_handler_request_body_session"}
+        res_set = cluster.instance.http_request(
+            "test_predefined_handler_request_body_session_query",
+            method="POST",
+            params={**session_params, "query": "SET param__request_body = 'Stale'"},
+        )
+        assert res_set.status_code == 200, res_set.content
+        res_session = cluster.instance.http_request(
+            "test_predefined_handler_request_body",
+            method="POST",
+            params=session_params,
+            headers={"Content-Type": "text/plain"},
+            data=" UNION ALL SELECT 1+1".encode("utf8"),
+        )
+        assert res_session.status_code == 200, res_session.content
+        assert res_session.content == b"Welcome,  UNION ALL SELECT 1+1\n"
+
         cluster.instance.http_request(
             "test_predefined_handler_get?max_threads=1&param_setting_name=max_threads",
             method="GET",
