@@ -1,0 +1,15 @@
+-- committed INSERTs into an unpartitioned and a partitioned table
+versions: 1
+versions: 1
+-- rejected INSERT (writes off)
+SUPPORT_IS_DISABLED
+versions: 1
+-- INSERT failing after most rows reached the sink: nothing committed
+FUNCTION_THROW_IF_VALUE_IS_NON_ZERO
+versions: 1
+50000
+-- query_log: type, read rows, written rows, written bytes > 0, inserted rows event
+1_plain	QueryFinish	50000	50000	1	50000
+2_part	QueryFinish	50000	50000	1	50000
+3_rejected	ExceptionBeforeStart	0	0	0	0
+4_failed	ExceptionWhileProcessing	50000	40000	1	40000
