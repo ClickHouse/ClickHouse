@@ -314,7 +314,7 @@ Block InternalProfileTracesQueue::getBlock()
                         it->second.first = reinterpret_cast<UInt64>(resolved.address);
 #if (defined(__ELF__) || defined(OS_DARWIN)) && !defined(OS_FREEBSD)
                     if (const auto * symbol = SymbolIndex::instance().findSymbol(runtime_address))
-                        it->second.second = demangle(symbol->name);
+                        it->second.second = demangle(SymbolIndex::instance().getSymbolNameCString(*symbol));
 #endif
                 }
                 address = it->second.first;
