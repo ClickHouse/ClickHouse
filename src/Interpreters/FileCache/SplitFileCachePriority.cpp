@@ -231,13 +231,14 @@ bool SplitFileCachePriority::canFit( /// NOLINT
         size, elements, lock, reservee, origin_info, is_initial_load);
 }
 
-EvictionInfoPtr SplitFileCachePriority::collectEvictionInfo(
+EvictionInfoPtr SplitFileCachePriority::collectEvictionInfo( /// NOLINT
     size_t size,
     size_t elements,
     IFileCachePriority::Iterator * reservee,
     bool is_total_space_cleanup,
     const IFileCachePriority::OriginInfo & origin_info,
-    const CacheStateGuard::Lock & lock)
+    const CacheStateGuard::Lock & lock,
+    QueueEntryType reservee_queue_type)
 {
     if (is_total_space_cleanup)
     {
@@ -267,10 +268,11 @@ EvictionInfoPtr SplitFileCachePriority::collectEvictionInfo(
     }
 
     const auto type = getPriorityType(origin_info.segment_type);
-    return getPriority(type).collectEvictionInfo(size, elements, reservee, is_total_space_cleanup, origin_info, lock);
+    return getPriority(type).collectEvictionInfo(
+        size, elements, reservee, is_total_space_cleanup, origin_info, lock, reservee_queue_type);
 }
 
-bool SplitFileCachePriority::collectCandidatesForEviction(
+bool SplitFileCachePriority::collectCandidatesForEviction( /// NOLINT
     EvictionInfo & eviction_info,
     FileCacheReserveStat & stat,
     EvictionCandidates & res,
@@ -279,7 +281,8 @@ bool SplitFileCachePriority::collectCandidatesForEviction(
     size_t max_candidates_size,
     bool is_total_space_cleanup,
     const OriginInfo & origin_info,
-    CacheStateGuard & state_guard)
+    CacheStateGuard & state_guard,
+    QueueEntryType reservee_queue_type)
 {
     if (!eviction_info.requiresEviction())
         return true;
@@ -309,7 +312,7 @@ bool SplitFileCachePriority::collectCandidatesForEviction(
     return getPriority(type).collectCandidatesForEviction(
         eviction_info, stat, res, reservee,
         eviction_cursor, max_candidates_size,
-        is_total_space_cleanup, origin_info, state_guard);
+        is_total_space_cleanup, origin_info, state_guard, reservee_queue_type);
 }
 
 bool SplitFileCachePriority::tryIncreasePriority(
