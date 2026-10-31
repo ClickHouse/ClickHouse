@@ -312,6 +312,13 @@ void removeExpressionsThatAreUnsafeToDuplicate(
 /// Return true when the entire expression can be duplicated into another query tree.
 bool isSafeToDuplicateInQueryTree(const QueryTreeNodePtr & node);
 
+/** Return true when the expression contains a stateful ordinary function (`rowNumberInAllBlocks`,
+  * `runningDifference`, ...) outside of subqueries. Copying any conjunct of such a filter below a
+  * JOIN changes the rows that the stateful function, which stays above the JOIN, observes. This is
+  * the query tree counterpart of `ActionsDAG::hasStatefulFunctions` used by JOIN filter pushdown.
+  */
+bool hasStatefulFunctionInExpression(const QueryTreeNodePtr & node);
+
 /// With `date_time_as_numbers`, a `DateTime` leaf becomes its raw Unix timestamp instead of local date-time
 /// text; valid only where the literal's declared type is re-applied to it.
 Field getFieldFromColumnForASTLiteral(const ColumnPtr & column, size_t row, const DataTypePtr & data_type, bool date_time_as_numbers);

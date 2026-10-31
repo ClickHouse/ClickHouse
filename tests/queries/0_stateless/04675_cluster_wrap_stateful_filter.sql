@@ -2,7 +2,7 @@
 -- no-fasttest: `fileCluster` is not in the fast test build.
 -- `timeSeriesStoreTags` is stateful and still `isDeterministicInScopeOfQuery`.
 -- Copying it into the `IStorageCluster` wrap would store tags twice (the same
--- class of bug as wrapping `aiEmbed`). The `n < 2` conjunct must still be copied.
+-- class of bug as wrapping `aiEmbed`). A stateful filter is not copied into the wrap at all.
 
 SET enable_analyzer = 1;
 SET query_plan_filter_push_down = 1;

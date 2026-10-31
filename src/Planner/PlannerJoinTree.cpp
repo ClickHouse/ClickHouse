@@ -1908,7 +1908,11 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(TableExpressionNodePtr table_
         const bool filter_push_down_enabled = settings[Setting::query_plan_enable_optimizations]
             && settings[Setting::query_plan_filter_push_down];
         QueryTreeNodePtr wrap_where;
-        if (filter_push_down_enabled && can_prefilter_wrapped_table && parent_query->hasWhere())
+        /// Like `tryPushDownFilter`, refuse the whole filter when it has a stateful function:
+        /// copying even its stateless conjuncts would change the input stream of the stateful
+        /// function that stays above the JOIN.
+        if (filter_push_down_enabled && can_prefilter_wrapped_table && parent_query->hasWhere()
+            && !hasStatefulFunctionInExpression(parent_query->getWhere()))
         {
             wrap_where = parent_query->getWhere()->clone();
             removeExpressionsThatDoNotDependOnTableIdentifiers(wrap_where, original_table_expression, query_context);

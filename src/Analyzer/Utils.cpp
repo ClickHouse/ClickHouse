@@ -1663,6 +1663,40 @@ bool isSafeToDuplicateInQueryTree(const QueryTreeNodePtr & node)
         });
 }
 
+bool hasStatefulFunctionInExpression(const QueryTreeNodePtr & node)
+{
+    QueryTreeNodes stack = {node};
+    while (!stack.empty())
+    {
+        auto current = std::move(stack.back());
+        stack.pop_back();
+        if (!current)
+            continue;
+
+        /// A subquery reads its own stream, which filtering the outer table does not change.
+        const auto type = current->getNodeType();
+        if (type == QueryTreeNodeType::QUERY || type == QueryTreeNodeType::UNION)
+            continue;
+
+        if (const auto * function = current->as<FunctionNode>())
+        {
+            if (function->isOrdinaryFunction())
+            {
+                const auto & function_base = function->getFunction();
+                if (function_base && function_base->isStateful())
+                    return true;
+            }
+        }
+
+        for (const auto & child : current->getChildren())
+        {
+            if (child)
+                stack.push_back(child);
+        }
+    }
+    return false;
+}
+
 void removeExpressionsThatDoNotDependOnTableIdentifiers(
     QueryTreeNodePtr & expression,
     const QueryTreeNodePtr & table_expression,
