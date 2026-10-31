@@ -1,0 +1,23 @@
+NOT of a conjunction with an absent path
+5
+TLP partitions add up to the table
+5
+NOT of a single path predicate
+5
+NOT of a typed path predicate
+5
+predicate value in the result
+1	1
+2	\N
+3	\N
+4	\N
+5	0
+positive predicate
+1
+NOT of a non-NULL predicate on an absent path
+2
+3
+4
+text index is used
+1
+1
