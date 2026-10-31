@@ -2460,10 +2460,9 @@ void findKeyRunsImpl(const char * data, size_t begin, size_t end, KeyRuns & runs
     }
 }
 
-/// Up to `max_key_runs` runs of one value at the start of rows [begin, end) of a fixed-size key column, kept when there
-/// is one run or they hold `min_average_key_run_rows` rows on average; otherwise no runs. The rows after the last run
-/// are in no run. Rows with equal key bytes are one group for every method of a single fixed-size key, so each run can
-/// be aggregated like a constant key.
+/// Up to `max_key_runs` runs of one value at the start of rows [begin, end) of a fixed-size key column, kept if there is
+/// one run or they average `min_average_key_run_rows` rows; rows after the last run are in none. Equal key bytes are one
+/// group for every method of a single fixed-size key, so a run can be aggregated like a constant key.
 KeyRuns findKeyRuns(const IColumn & column, size_t begin, size_t end)
 {
     KeyRuns runs;
