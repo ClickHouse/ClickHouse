@@ -131,6 +131,7 @@ static struct InitFiu
     PAUSEABLE(file_segment_pause_before_write) \
     PAUSEABLE(remote_fs_gather_pause_in_read) \
     PAUSEABLE(plain_object_storage_pause_on_file_copy) \
+    PAUSEABLE_ONCE(local_object_storage_pause_before_staging_file_lock) \
     REGULAR(file_cache_simulate_evicting_segment) \
     REGULAR(cache_filesystem_failure) \
     REGULAR(cache_filesystem_failure_non_errno) \

@@ -35,6 +35,8 @@ TOMBSTONE_KEY_PREFIX = KEY_PREFIX + "__meta/__tombstone/"
 PENDING_TOMBSTONE_PREFIX = "pending\n"
 # `PlainRewritableLayout::PENDING_REPLACE_TOMBSTONE_PREFIX`
 PENDING_REPLACE_TOMBSTONE_PREFIX = "pending replace\n"
+# `PlainRewritableLayout::BLOB_REMOVAL_TOMBSTONE_PREFIX`
+BLOB_REMOVAL_TOMBSTONE_PREFIX = "blob removal\n"
 
 
 @pytest.fixture(scope="module", autouse=True)
@@ -529,6 +531,54 @@ def test_incomplete_backup_of_replacement_is_reclaimed():
 
     wait_for_keys_to_disappear([marker_key, backup_key])
     assert read_key(target_key) == old_content.decode()
+
+    node.query("DROP TABLE t SYNC")
+    node.stop_clickhouse()
+    remove_all_keys()
+    node.start_clickhouse()
+
+
+def test_unlinked_blob_of_explicit_directory_is_reclaimed():
+    """A metadata-only unlink or replacement drops a file from the explicit file list in `prefix.path` and deletes
+    its last blob only after the commit. Nothing under the prefix of such a directory is listed on load, so the
+    operation marks the blob first. A process killed in between leaves the marker, and the next start deletes the
+    blob if no directory links it anymore, and keeps it if one still does (the `prefix.path` was not rewritten).
+    """
+    node.query("DROP TABLE IF EXISTS t SYNC")
+    wait_for_empty_prefix()
+
+    node.query(
+        "CREATE TABLE t (x UInt64) ENGINE = MergeTree ORDER BY x SETTINGS storage_policy = 's3_plain_rewritable'"
+    )
+    node.query("INSERT INTO t VALUES (1)")
+    node.stop_clickhouse()
+
+    remote_name = "zyxwvutsrqponmla"
+    kept_content = b"a file that is still listed"
+    put_key(
+        f"{KEY_PREFIX}__meta/{remote_name}/prefix.path",
+        f"explicit/\nfiles: 1\nkept.bin\t{remote_name}/kept.bin\t{len(kept_content)}\n".encode(),
+    )
+    kept_key = f"{KEY_PREFIX}{remote_name}/kept.bin"
+    put_key(kept_key, kept_content)
+    unlinked_key = f"{KEY_PREFIX}{remote_name}/unlinked.bin"
+    put_key(unlinked_key, b"a file that is no longer listed")
+
+    markers = {}
+    for name, blob_key in [
+        ("unlinkedblobmark", f"{remote_name}/unlinked.bin"),
+        ("keptblobmarkerab", f"{remote_name}/kept.bin"),
+    ]:
+        marker_key = TOMBSTONE_KEY_PREFIX + REMOVED_NAME_PREFIX + name
+        put_key(marker_key, f"{BLOB_REMOVAL_TOMBSTONE_PREFIX}{blob_key}\n".encode())
+        markers[name] = marker_key
+
+    node.start_clickhouse()
+    assert int(node.query("SELECT count() FROM t")) == 1
+
+    wait_for_keys_to_disappear([unlinked_key, *markers.values()])
+    assert read_key(kept_key) == kept_content.decode()
+    assert node.contains_in_log("Removing 1 blobs that were unlinked but not removed")
 
     node.query("DROP TABLE t SYNC")
     node.stop_clickhouse()

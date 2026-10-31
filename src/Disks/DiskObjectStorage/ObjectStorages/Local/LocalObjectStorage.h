@@ -25,6 +25,9 @@ struct LocalObjectStorageSettings
     String disk_name;
     String key_prefix;
     bool read_only = false;
+    /// The disk is attached with `read_only` and wrapped with `ReadOnlyDiskWrapper`. The object storage itself stays
+    /// writable, but the startup must not modify anything under `key_prefix`, see `removeAbandonedStagingFiles`.
+    bool read_only_disk = false;
 };
 
 /// Treat local disk as an object storage (for interface compatibility).
@@ -111,6 +114,9 @@ private:
     void removeObjects(const StoredObjects &  objects) const;
 
     void throwIfReadonly() const;
+
+    /// Removes the staging files of writes whose process was killed before it published the object, see `writeObject`.
+    void removeAbandonedStagingFiles() const;
     String resolvePathRelativelyToKeyPrefix(const String & path) const;
 
     LocalObjectStorageSettings settings;
