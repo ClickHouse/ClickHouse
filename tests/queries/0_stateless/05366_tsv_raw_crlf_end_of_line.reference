@@ -1,0 +1,24 @@
+TSVWithNames (baseline)
+1	6162
+2	6364
+TSVRawWithNames
+1	6162
+2	6364
+TSVRaw, string in the last column
+1	6162
+2	6364
+TSVRaw, number in the last column
+ab	1
+cd	2
+TSVRaw, date in the last column
+ab	2017-08-01
+TSVRaw, nullable last column
+1	ab
+2	\N
+TSVRaw, a carriage return inside a field is kept
+610D62
+TSVRaw, no line ending at the end of the input
+1	6162
+2	6364
+TSVRawWithNamesAndTypes
+1	6162
