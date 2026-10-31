@@ -414,8 +414,7 @@ Strings ObjectStorageQueueMetadata::getLastProcessedPathsOfPartitions(const Stri
 void ObjectStorageQueueMetadata::addPartition(const std::string & partition)
 {
     const auto partitions_path = zookeeper_path / "partitions";
-    auto zk_retry = getKeeperRetriesControl(log);
-    zk_retry.retryLoop([&]
+    getKeeperRetriesControl(log).retryLoop([&]
     {
         auto zk_client = getZooKeeper();
         while (true)
@@ -451,30 +450,11 @@ void ObjectStorageQueueMetadata::addPartition(const std::string & partition)
 void ObjectStorageQueueMetadata::forgetPartition(const std::string & partition)
 {
     const auto partition_key = escapeForFileName(partition);
-    const Strings paths{
-        ObjectStorageQueueOrderedFileMetadata::getProcessedPathForPartition(zookeeper_path, buckets_num, partition_key),
-        zookeeper_path / "partitions" / partition_key};
-    auto zk_retry = getKeeperRetriesControl(log);
-    zk_retry.retryLoop([&]
+    getKeeperRetriesControl(log).retryLoop([&]
     {
         auto zk_client = getZooKeeper();
-        while (true)
-        {
-            Coordination::Requests requests;
-            for (const auto & path : paths)
-            {
-                if (zk_client->exists(path))
-                    requests.push_back(zkutil::makeRemoveRequest(path, -1));
-            }
-
-            Coordination::Responses responses;
-            const auto code = zk_client->tryMulti(requests, responses);
-            if (code != Coordination::Error::ZNONODE)
-            {
-                zkutil::KeeperMultiException::check(code, requests, responses);
-                return;
-            }
-        }
+        zk_client->tryRemove(zookeeper_path / "partitions" / partition_key);
+        zk_client->tryRemove(ObjectStorageQueueOrderedFileMetadata::getProcessedPathForPartition(zookeeper_path, buckets_num, partition_key));
     });
 }
 
@@ -624,12 +604,11 @@ void ObjectStorageQueueMetadata::alterSettings(const SettingsChanges & changes, 
                     "It is not allowed to modify `buckets` settings "
                     "when it is already set to a non-zero value");
             }
-            if (partitioning_mode == ObjectStorageQueuePartitioningMode::EXPLICIT && value > 1
-                && bucketing_mode != ObjectStorageQueueBucketingMode::PARTITION)
+            if (partitioning_mode == ObjectStorageQueuePartitioningMode::EXPLICIT)
             {
                 throw Exception(
-                    ErrorCodes::BAD_ARGUMENTS,
-                    "partitioning_mode='explicit' with more than one bucket requires bucketing_mode='partition'");
+                    ErrorCodes::SUPPORT_IS_DISABLED,
+                    "Changing `buckets` setting is not allowed with partitioning_mode='explicit'");
             }
             migrateToBucketsInKeeper(value);
             new_table_metadata.buckets = value;

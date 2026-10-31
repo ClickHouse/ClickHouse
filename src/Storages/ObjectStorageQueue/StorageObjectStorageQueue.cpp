@@ -296,9 +296,10 @@ namespace
     {
         const auto & partition = command.partition->as<ASTPartition &>();
         const auto * literal = partition.value ? partition.value->as<ASTLiteral>() : nullptr;
-        if (!literal || literal->value.getType() != Field::Types::String || literal->value.safeGet<String>().empty())
+        String prefix;
+        if (!literal || !literal->value.tryGet(prefix) || prefix.empty())
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Partition must be a non-empty string literal");
-        return literal->value.safeGet<String>();
+        return prefix;
     }
 }
 
@@ -1704,13 +1705,12 @@ void StorageObjectStorageQueue::checkAlterPartitionIsPossible(
     if (!metadata)
         throw Exception(ErrorCodes::TABLE_IS_DROPPED, "Table {} is dropped or detached", getStorageID());
 
-    if (metadata->getPartitioningMode() != ObjectStorageQueuePartitioningMode::EXPLICIT)
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Partition operations are allowed for {} only with partitioning_mode='explicit'", getName());
-
     for (const auto & command : commands)
     {
         if (command.type != PartitionCommand::ADD_PARTITION && command.type != PartitionCommand::FORGET_PARTITION)
             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Partition operation ALTER TABLE {} is not supported by {}", command.typeToString(), getName());
+        if (metadata->getPartitioningMode() != ObjectStorageQueuePartitioningMode::EXPLICIT)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Partition operations are allowed for {} only with partitioning_mode='explicit'", getName());
         getPartitionPrefix(command);
     }
 }

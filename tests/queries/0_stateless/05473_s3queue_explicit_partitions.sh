@@ -14,16 +14,11 @@ function write()
     $CLICKHOUSE_CLIENT -q "INSERT INTO FUNCTION s3(s3_conn, url = '${S3_URL}/$1.csv', format = CSV) SELECT '$1' SETTINGS s3_truncate_on_insert = 1"
 }
 
-function consume()
-{
-    $CLICKHOUSE_CLIENT "$@" -q "SELECT * FROM queue ORDER BY ALL SETTINGS stream_like_engine_allow_direct_select = 1"
-}
-
 write a_1
 write b_1
 write c_1
 
-$CLICKHOUSE_CLIENT -n -q "
+$CLICKHOUSE_CLIENT -q "
     CREATE TABLE queue (s String)
     ENGINE = S3Queue('${S3_URL}/*.csv', 'CSV')
     SETTINGS
@@ -39,21 +34,21 @@ $CLICKHOUSE_CLIENT -n -q "
     ALTER TABLE queue ADD PARTITION 'a_';
     ALTER TABLE queue FORGET PARTITION 'd_';
     ALTER TABLE queue ADD PARTITION 'a'; -- { serverError BAD_ARGUMENTS }
-    SELECT name FROM system.zookeeper WHERE path = '${KEEPER_PATH}/partitions' ORDER BY name;
+    SELECT 'registered', name FROM system.zookeeper WHERE path = '${KEEPER_PATH}/partitions' ORDER BY name;
 "
 
-consume
+$CLICKHOUSE_CLIENT -q "SELECT * FROM queue ORDER BY ALL SETTINGS stream_like_engine_allow_direct_select = 1"
 
 write a_2
-consume --query_id "${CLICKHOUSE_DATABASE}_05473_second"
+$CLICKHOUSE_CLIENT --query_id "${CLICKHOUSE_DATABASE}_05473_second" -q "SELECT * FROM queue ORDER BY ALL SETTINGS stream_like_engine_allow_direct_select = 1"
 
-$CLICKHOUSE_CLIENT -n -q "
+$CLICKHOUSE_CLIENT -q "
     SYSTEM FLUSH LOGS query_log;
     SELECT 'listed', ProfileEvents['ObjectStorageQueueListedFiles'] FROM system.query_log
     WHERE current_database = currentDatabase() AND query_id = '${CLICKHOUSE_DATABASE}_05473_second' AND type = 'QueryFinish';
     ALTER TABLE queue FORGET PARTITION 'a_';
-    SELECT name FROM system.zookeeper WHERE path = '${KEEPER_PATH}/partitions' ORDER BY name;
-    SELECT name FROM system.zookeeper WHERE path IN ('${KEEPER_PATH}/buckets/0/processed', '${KEEPER_PATH}/buckets/1/processed') ORDER BY name;
+    SELECT 'registered', name FROM system.zookeeper WHERE path = '${KEEPER_PATH}/partitions' ORDER BY name;
+    SELECT 'processed', name FROM system.zookeeper WHERE path IN ('${KEEPER_PATH}/buckets/0/processed', '${KEEPER_PATH}/buckets/1/processed') ORDER BY name;
     CREATE TABLE queue_plain (s String)
     ENGINE = S3Queue('${S3_URL}/*.csv', 'CSV')
     SETTINGS keeper_path = '/clickhouse/${CLICKHOUSE_DATABASE}/05473_queue_plain', mode = 'ordered';

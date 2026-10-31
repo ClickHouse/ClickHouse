@@ -134,8 +134,8 @@ public:
     /// allows to manage metadata of a concrete file.
     FileMetadataPtr getFileMetadata(
         const std::string & path,
-        ObjectStorageQueueOrderedFileMetadata::BucketInfoPtr bucket_info = {},
-        const std::string & partition_key = {});
+        ObjectStorageQueueOrderedFileMetadata::BucketInfoPtr bucket_info,
+        const std::string & partition_key);
 
     bool tryAcquireExclusiveProcessing(const std::string & path);
     void releaseExclusiveProcessing(const std::string & path);

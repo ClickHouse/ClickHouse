@@ -148,18 +148,15 @@ ObjectStorageQueueSource::FileIterator::FileIterator(
     {
         object_storage_iterator = std::make_shared<ObjectStorageIteratorFromList>(RelativePathsWithMetadata{});
         partition_key_by_prefix = metadata->getExplicitPartitions(prefix);
-        Strings partition_prefixes;
-        for (const auto & [partition_prefix, partition_key] : partition_key_by_prefix)
+        if (use_buckets_for_processing)
         {
-            if (use_buckets_for_processing)
-                partitions_per_bucket[ObjectStorageQueueOrderedFileMetadata::getBucketForPartition(partition_key, buckets_num)].push_back(partition_prefix);
-            else
-                partition_prefixes.push_back(partition_prefix);
+            for (const auto & [partition_prefix, partition_key] : partition_key_by_prefix)
+                partitions_per_bucket[ObjectStorageQueueOrderedFileMetadata::getBucketForPartition(partition_key, buckets_num)].emplace(partition_prefix, partition_key);
         }
-        if (!use_buckets_for_processing)
+        else
         {
             std::lock_guard lock(next_mutex);
-            listPartitions(partition_prefixes);
+            listPartitions(partition_key_by_prefix);
         }
     }
     else
@@ -331,7 +328,8 @@ ObjectStorageQueueSource::FileIterator::next()
                 {
                     file_metadatas[i] = metadata->getFileMetadata(
                         new_batch[i]->getPath(),
-                        /* bucket_info */ {}); /// No buckets for Unordered mode.
+                        /* bucket_info */ {}, /// No buckets for Unordered mode.
+                        /* partition_key */ {});
 
                     auto set_processing_result = file_metadatas[i]->prepareSetProcessingRequests(requests, processing_id);
                     if (set_processing_result.has_value())
@@ -796,15 +794,16 @@ void ObjectStorageQueueSource::FileIterator::releaseFinishedBuckets()
     }
 }
 
-void ObjectStorageQueueSource::FileIterator::listPartitions(const Strings & partition_prefixes)
+void ObjectStorageQueueSource::FileIterator::listPartitions(const std::map<std::string, std::string> & partitions)
 {
     Strings partition_keys;
-    for (const auto & partition_prefix : partition_prefixes)
-        partition_keys.push_back(partition_key_by_prefix.at(partition_prefix));
+    for (const auto & [_, partition_key] : partitions)
+        partition_keys.push_back(partition_key);
 
     const auto last_processed_paths = metadata->getLastProcessedPathsOfPartitions(partition_keys);
-    for (size_t i = 0; i < partition_prefixes.size(); ++i)
-        partitions_to_list.emplace_back(partition_prefixes[i], last_processed_paths[i]);
+    auto last_processed_path = last_processed_paths.begin();
+    for (const auto & [partition_prefix, _] : partitions)
+        partitions_to_list.emplace_back(partition_prefix, *last_processed_path++);
     is_finished = false;
 }
 
@@ -1005,14 +1004,12 @@ ObjectStorageQueueSource::FileIterator::getNextKeyFromAcquiredBucket(size_t proc
             return {};
         }
 
-        bool acquired_for_listing = false;
         while (!current_bucket_holder && !listing_bucket && !partitions_per_bucket.empty())
         {
             auto partitions = partitions_per_bucket.extract(partitions_per_bucket.begin());
             current_bucket_holder = tryAcquireBucket(partitions.key(), *keys_cache_per_bucket.at(partitions.key()), *acquired_buckets, processor);
             if (current_bucket_holder)
             {
-                acquired_for_listing = true;
                 listing_bucket = partitions.key();
                 std::lock_guard next_lock(next_mutex);
                 listPartitions(partitions.mapped());
@@ -1096,24 +1093,11 @@ ObjectStorageQueueSource::FileIterator::getNextKeyFromAcquiredBucket(size_t proc
         }
 
         LOG_TEST(log, "Reached the end of file iterator");
-        listing_bucket.reset();
-        if (acquired_for_listing)
+        if (listing_bucket || !partitions_per_bucket.empty())
         {
-            try
-            {
-                current_bucket_holder->release();
-            }
-            catch (...)
-            {
-                iterator_invalidated = true;
-                throw;
-            }
-            acquired_buckets->pop_back();
-            keys_cache_per_bucket.at(current_bucket_holder->getBucket())->processor.reset();
-            current_bucket_holder = nullptr;
-        }
-        if (!partitions_per_bucket.empty())
+            listing_bucket.reset();
             continue;
+        }
 
         iterator_finished = true;
 

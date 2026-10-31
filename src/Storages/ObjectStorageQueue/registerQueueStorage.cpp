@@ -603,9 +603,9 @@ ALTER TABLE queue FORGET PARTITION 'server-1_';
 
 A partition is a key prefix relative to the table path with the wildcards cut off: for the path `logs/*` the partition `'server-1_'` covers the objects whose keys start with `logs/server-1_`. Registered partitions are stored in Keeper under `keeper_path` and are shared by all replicas. They must not overlap, that is, no registered partition can be a prefix of another one. Both commands are idempotent.
 
-Each partition keeps its own last processed file. On every poll each partition is listed separately, and on S3 its listing starts after its last processed file, so the cost of listing does not grow with the number of processed files kept in the bucket, for example with `after_processing = 'keep'`. Objects outside registered partitions are ignored. `FORGET PARTITION` removes the partition together with its last processed file. It is meant for prefixes that no longer receive or hold objects.
+Each partition keeps its own last processed file. On every poll each partition is listed separately, and on S3 its listing starts after its last processed file, so the cost of listing does not grow with the number of processed files kept in the bucket, for example with `after_processing = 'keep'`. Objects outside registered partitions are ignored. `FORGET PARTITION` removes the partition and its progress. It is meant for prefixes that no longer receive or hold objects, because objects still under the prefix may be processed again if it is added back.
 
-`bucketing_mode = 'partition'` is required unless `buckets = 1`, because `processing_threads_num`, which is at least 16 by default, is used as the number of buckets if `buckets` is not set. Each replica lists only the partitions of the buckets it has acquired.
+`bucketing_mode = 'partition'` is required unless `buckets = 1`, because `processing_threads_num`, which is at least 16 by default, is used as the number of buckets if `buckets` is not set. Changing `buckets` with `ALTER TABLE ... MODIFY SETTING` is not allowed.
 
 ## SELECT from S3Queue table engine {#select}
 

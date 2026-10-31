@@ -1948,7 +1948,7 @@ Example:
 ALTER TABLE mt FORGET PARTITION '20201121';
 ```
 
-For `S3Queue` and `AzureQueue` tables with `partitioning_mode = 'explicit'`, removes a key prefix registered with [ADD PARTITION](#add-partition) together with its last processed file. Unknown prefixes are ignored.
+For `S3Queue` and `AzureQueue` tables with `partitioning_mode = 'explicit'`, removes a key prefix registered with [ADD PARTITION](#add-partition) and its progress. Unknown prefixes are ignored.
 
 ## ADD PARTITION {#add-partition}
 
