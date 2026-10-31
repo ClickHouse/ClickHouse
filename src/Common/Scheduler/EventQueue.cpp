@@ -1,5 +1,9 @@
 #include <Common/Scheduler/EventQueue.h>
 
+#include <Common/Exception.h>
+#include <Common/LockMemoryExceptionInThread.h>
+#include <Common/logger_useful.h>
+
 #include <algorithm>
 
 
@@ -129,6 +133,39 @@ void EventQueue::process()
 
             waitUntil(lock, postponed.front().key);
         }
+    }
+}
+
+void EventQueue::runSchedulerThread(ThreadName name, std::promise<void> & started, const std::function<void()> & loop) noexcept
+{
+    LockMemoryExceptionInThread lock_memory_exception(VariableContext::Global);
+    try
+    {
+        setThreadName(name);
+        SchedulerThread scheduler_thread(this);
+        started.set_value();
+        loop();
+    }
+    catch (...)
+    {
+        LOG_FATAL(getLogger("EventQueue"), "Exception in the scheduler thread, terminating: {}",
+            getCurrentExceptionMessage(/* with_stacktrace = */ true));
+        std::terminate();
+    }
+}
+
+void EventQueue::waitSchedulerThreadStarted(std::future<void> & started) noexcept
+{
+    LockMemoryExceptionInThread lock_memory_exception(VariableContext::Global);
+    try
+    {
+        started.get();
+    }
+    catch (...)
+    {
+        // The only possible exception is a broken promise, the real cause is in the thread pool
+        LOG_FATAL(getLogger("EventQueue"), "Scheduler thread failed to start, terminating");
+        std::terminate();
     }
 }
 

@@ -112,7 +112,7 @@ void WorkloadResourceManager::Resource::createNode(const NodeInfo & info)
         node_for_workload[info.name] = workload_node;
 
         updateCurrentVersion();
-    });
+    }, /* modifies_hierarchy = */ true);
 }
 
 void WorkloadResourceManager::Resource::deleteNode(const NodeInfo & info)
@@ -151,7 +151,7 @@ void WorkloadResourceManager::Resource::deleteNode(const NodeInfo & info)
         // destroyed when the lambda itself is destroyed — which happens in the
         // caller's thread after `executeInSchedulerThread` returns, not here.
         n.reset();
-    });
+    }, /* modifies_hierarchy = */ true);
 }
 
 void WorkloadResourceManager::Resource::updateNode(const NodeInfo & old_info, const NodeInfo & new_info)
@@ -197,7 +197,7 @@ void WorkloadResourceManager::Resource::updateNode(const NodeInfo & old_info, co
             node_for_workload[new_info.parent]->attachWorkloadChild(node);
         updateCurrentVersion();
         SCHED_DBG("WorkloadResourceManager -- [end] updateNode(resource={}, workload={})", resource_name, old_info.name);
-    });
+    }, /* modifies_hierarchy = */ true);
 }
 
 void WorkloadResourceManager::Resource::updateCurrentVersion()

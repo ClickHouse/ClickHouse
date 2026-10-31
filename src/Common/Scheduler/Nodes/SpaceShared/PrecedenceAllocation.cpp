@@ -26,10 +26,10 @@ std::string_view PrecedenceAllocation::getTypeName() const { return "precedence_
 void PrecedenceAllocation::attachChild(const std::shared_ptr<ISchedulerNode> & child_base)
 {
     SpaceSharedNodePtr child = std::static_pointer_cast<ISpaceSharedNode>(child_base);
-    if (auto [it, inserted] = children.emplace(child->basename, child); !inserted)
+    if (auto [it, inserted] = children.emplace(child.get(), child); !inserted)
         throw Exception(
             ErrorCodes::INVALID_SCHEDULER_NODE,
-            "Can't add another child with the same path: {}",
+            "Can't add the same scheduler node twice: {}",
             it->second->getPath());
     child->setParentNode(this);
     child->updateMinMaxAllocated(min_max_allocated);
@@ -41,7 +41,7 @@ void PrecedenceAllocation::attachChild(const std::shared_ptr<ISchedulerNode> & c
 
 void PrecedenceAllocation::removeChild(ISchedulerNode * child_base)
 {
-    if (auto iter = children.find(child_base->basename); iter != children.end())
+    if (auto iter = children.find(child_base); iter != children.end())
     {
         SpaceSharedNodePtr child = iter->second;
         propagateUpdate(*child, Update()
@@ -56,8 +56,11 @@ void PrecedenceAllocation::removeChild(ISchedulerNode * child_base)
 
 ISchedulerNode * PrecedenceAllocation::getChild(const String & child_name)
 {
-    if (auto iter = children.find(child_name); iter != children.end())
-        return iter->second.get();
+    for (const auto & [node, _] : children)
+    {
+        if (node->basename == child_name)
+            return node;
+    }
     return nullptr;
 }
 
@@ -220,7 +223,7 @@ ResourceAllocation * PrecedenceAllocation::selectAllocationToSpill(ResourceCost 
 void PrecedenceAllocation::updateMinMaxAllocated(ResourceCost new_value)
 {
     min_max_allocated = new_value;
-    for (auto & [name, child] : children)
+    for (auto & [_, child] : children)
         child->updateMinMaxAllocated(min_max_allocated);
 }
 
