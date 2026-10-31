@@ -147,5 +147,21 @@ namespace StreamingExchangeProtocol
     /// timeout: Poco reports it without the errno that would tell the send deadline from the kernel's
     /// connection timeout. `description` labels the call site in the exception message.
     void sendAll(Poco::Net::StreamSocket & socket, const char * buffer, size_t size, const String & description);
+
+    /// Apply configured socket buffer sizes; zero leaves TCP autotuning enabled.
+    void applySocketBufferSizes(Poco::Net::StreamSocket & socket);
+
+    /// `setsockopt` takes `int`. Throw before the value is published.
+    void validateSocketBufferSizes(UInt64 sndbuf, UInt64 rcvbuf);
+
+    /// Publish buffer sizes for new connections. The caller has already validated them.
+    void setSocketBufferSizes(UInt64 sndbuf, UInt64 rcvbuf);
+
+    struct SocketBufferSizes
+    {
+        UInt64 sndbuf = 0;
+        UInt64 rcvbuf = 0;
+    };
+    SocketBufferSizes getSocketBufferSizes();
 }
 }
