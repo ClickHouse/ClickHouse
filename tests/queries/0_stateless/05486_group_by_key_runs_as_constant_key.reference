@@ -27,3 +27,5 @@ GROUP BY LIMIT keeps exact keys
 several runs per block, one place per run
 05486_key_runs_off	0
 05486_key_runs_on	1
+05486_key_runs_over_eight_off	0
+05486_key_runs_over_eight_on	1
