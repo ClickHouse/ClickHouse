@@ -4,6 +4,8 @@ system.query_log: Query API requests (/api/v1/query and /api/v1/query_range) wit
 read_rows/read_bytes and remote-write requests (/write) with written_rows/written_bytes.
 """
 
+import http.client
+import socket
 import urllib.parse
 import uuid
 
@@ -286,3 +288,88 @@ def test_query_range_api_appears_in_query_log_with_read_rows():
     extract_data_from_http_api_response(response)
 
     assert_query_log_has_finish_for_query_id(query_id)
+
+
+def query_log_row_sql(query_id, type_name, exception_code=None):
+    exception_predicate = ""
+    if exception_code is not None:
+        exception_predicate = f" AND exception_code = {exception_code}"
+    return (
+        f"SELECT count() FROM system.query_log "
+        f"WHERE query_id = '{query_id}' AND type = '{type_name}'{exception_predicate}"
+    )
+
+
+def assert_query_log_row(query_id, type_name, exception_code=None, retry_count=60, sleep_time=1):
+    node.query("SYSTEM FLUSH LOGS query_log")
+    assert_eq_with_retry(
+        node,
+        query_log_row_sql(query_id, type_name, exception_code),
+        "1\n",
+        retry_count=retry_count,
+        sleep_time=sleep_time,
+    )
+
+
+CANCEL_CLOSE_SAMPLE_COUNT = 1_000_000
+CANCEL_CLOSE_START = 1700000000
+
+
+def insert_cancel_close_series():
+    node.query(
+        "INSERT INTO prometheus (metric_name, tags, samples) "
+        "SELECT 'cancel_close', map('job', 'test'), "
+        "arrayMap(i -> (toDateTime64("
+        f"{CANCEL_CLOSE_START} + i / 1000, 3), toFloat64(i)), range({CANCEL_CLOSE_SAMPLE_COUNT}))"
+    )
+
+
+def cancel_close_query_range_path(cancel):
+    escaped_query = urllib.parse.quote_plus("cancel_close", safe="")
+    end = CANCEL_CLOSE_START + CANCEL_CLOSE_SAMPLE_COUNT // 1000
+    return (
+        f"/api/v1/query_range"
+        f"?query={escaped_query}"
+        f"&start={CANCEL_CLOSE_START}&end={end}&step=1000"
+        f"&lookback_delta=1h"
+        f"&cancel_http_readonly_queries_on_client_close={cancel}"
+        f"&max_threads=1&max_block_size=1"
+        f"&max_execution_speed=100000&timeout_before_checking_execution_speed=0"
+    )
+
+
+def read_query_range(cancel, query_id):
+    """Read the range query for three seconds, then close the socket."""
+    conn = http.client.HTTPConnection(node.ip_address, 9093, timeout=3)
+    try:
+        conn.request(
+            "GET",
+            cancel_close_query_range_path(cancel),
+            headers={"X-ClickHouse-Query-Id": query_id},
+        )
+        conn.getresponse().read()
+    except (TimeoutError, socket.timeout, OSError, http.client.HTTPException):
+        pass
+    finally:
+        conn.close()
+
+
+def test_query_range_cancels_when_client_closes():
+    """
+    Both /api/v1/query_range requests disconnect after three seconds. Only the
+    request with cancel_http_readonly_queries_on_client_close=1 is cancelled.
+    That query records QUERY_WAS_CANCELLED (394). The request with the setting
+    off reaches QueryFinish.
+    """
+    insert_cancel_close_series()
+
+    # Both requests disconnect after three seconds. The throttled scan takes
+    # about ten seconds and sends no bytes until it finishes, so each socket
+    # closes while its query still runs. Only the enabled request is cancelled.
+    cancel_query_id = f"prometheus-cancel-on-close-{uuid.uuid4()}"
+    read_query_range(1, cancel_query_id)
+    assert_query_log_row(cancel_query_id, "ExceptionWhileProcessing", exception_code=394)
+
+    finish_query_id = f"prometheus-cancel-on-close-{uuid.uuid4()}"
+    read_query_range(0, finish_query_id)
+    assert_query_log_row(finish_query_id, "QueryFinish")
