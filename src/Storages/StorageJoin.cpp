@@ -253,6 +253,11 @@ RWLockImpl::LockHolder StorageJoin::tryLockForCurrentQueryTimedWithContext(const
 
 SinkToStoragePtr StorageJoin::write(const ASTPtr & query, const StorageMetadataPtr & metadata_snapshot, ContextPtr context, bool /*async_insert*/)
 {
+    /// Reject `INSERT INTO j SELECT ... FROM j` before waiting on `mutate_mutex`: the source of such
+    /// a query already holds the read lock, and a concurrent insert that holds `mutate_mutex` while
+    /// publishing its backup waits for the write lock, so waiting here would be a lock cycle.
+    checkInsertIsPossible(context);
+
     std::lock_guard mutate_lock(mutate_mutex);
     return StorageSetOrJoinBase::write(query, metadata_snapshot, context, /*async_insert=*/false);
 }
