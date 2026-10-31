@@ -64,6 +64,9 @@ public:
 
     virtual bool customizeQueryParam(NameToNameMap & query_parameters, const std::string & key, const std::string & value) = 0;
 
+    /// Whether the value of this decoded URL parameter becomes part of the query: the query text or a bound query parameter.
+    virtual bool isQueryTextParameter(const std::string & name) const = 0;
+
     /// Only the dynamic query handler interprets arbitrary request paths as query inputs. Configured
     /// and SQL-defined handlers own their matched path and must execute their stored query unchanged.
     virtual bool parsesHTTPPath() const { return false; }
@@ -96,6 +99,8 @@ protected:
     }
 
 private:
+    String getURIForLogging(const HTTPServerRequest & request) const;
+
     String introspection_handler_name;
 
     bool has_server_owned_query = false;
@@ -258,6 +263,8 @@ public:
 
     bool customizeQueryParam(NameToNameMap & query_parameters, const std::string &key, const std::string &value) override;
 
+    bool isQueryTextParameter(const std::string & name) const override;
+
     /// The catch-all query handler interprets the request path. A configured `dynamic_query_handler`
     /// rule owns the path it is matched by, so it interprets only the part below its `url_prefix`,
     /// and nothing at all when it has none.
@@ -287,6 +294,8 @@ public:
     std::string getQuery(HTTPServerRequest & request, HTMLForm & params, ContextMutablePtr context, ReadBuffer & body) override;
 
     bool customizeQueryParam(NameToNameMap & query_parameters, const std::string & key, const std::string & value) override;
+
+    bool isQueryTextParameter(const std::string & name) const override;
 };
 
 /// A handler defined from SQL via CREATE HANDLER. It executes a stored query, exactly like
