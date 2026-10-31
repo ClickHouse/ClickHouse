@@ -26,6 +26,8 @@ class QueryExpressionsAliasVisitor ;
 class QueryNode;
 class JoinNode;
 class ColumnNode;
+class FunctionNode;
+using FunctionNodePtr = std::shared_ptr<FunctionNode>;
 
 using ProjectionName = String;
 using ProjectionNames = std::vector<ProjectionName>;
@@ -254,6 +256,8 @@ private:
         IdentifierResolveScope & scope);
 
     ProjectionNames resolveFunction(QueryTreeNodePtr & function_node, IdentifierResolveScope & scope, bool allow_niladic_functions = true);
+
+    ProjectionNames resolveUniquePredicate(QueryTreeNodePtr & node, const FunctionNodePtr & function_node_ptr, IdentifierResolveScope & scope, bool allow_niladic_functions);
 
     ProjectionNames resolveExpressionNode(
         QueryTreeNodePtr & node,

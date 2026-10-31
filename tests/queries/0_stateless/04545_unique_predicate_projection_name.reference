@@ -1,0 +1,7 @@
+analyze and execute header names match
+header name: UNIQUE(_subquery_<N>)
+UNIQUE(_subquery_<N>)	UNIQUE(_subquery_<N>)
+1	0
+header name is independent of the boolean result
+1
+1

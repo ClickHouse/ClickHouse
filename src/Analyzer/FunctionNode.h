@@ -74,6 +74,13 @@ public:
     /// a legal identifier a user can define a function with.
     bool isOperator() const { return is_operator; }
 
+    /// Mark the function as created by the analyzer itself, e.g. by the rewrite of a syntax construct.
+    /// Its name always refers to the built-in function and is never looked up in the scope,
+    /// so a lambda or a user defined function with the same name cannot replace it.
+    void markAsBuiltin() { is_builtin = true; }
+
+    bool isBuiltin() const { return is_builtin; }
+
     /// Get parameters
     const ListNode & getParameters() const { return children[parameters_child_index]->as<const ListNode &>(); }
 
@@ -231,6 +238,8 @@ private:
     bool wrap_with_nullable = false;
     /// Function was parsed as operator. This option is only needed to make AST formatting more consistent.
     bool is_operator = false;
+    /// See `markAsBuiltin`.
+    bool is_builtin = false;
 
     static constexpr size_t parameters_child_index = 0;
     static constexpr size_t arguments_child_index = 1;
