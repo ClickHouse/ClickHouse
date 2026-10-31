@@ -925,7 +925,9 @@ void ReadManager::readAheadColumnData()
     size_t depth = parser_shared_resources->getIOThreadsPerReader();
     Stage & stage = stages[size_t(ReadStage::ColumnData)];
     auto limits = SharedResourcesExt::getLimitsPerReader(*parser_shared_resources, stage.memory_target_fraction);
-    if (depth <= limits.parsing_threads)
+    /// When decoding uses up the share, keep one more row group ahead if its read is small and admission would not merge it with others.
+    bool only_small_reads = depth <= limits.parsing_threads;
+    if (only_small_reads && parser_shared_resources->max_io_threads <= 1)
         return;
 
     size_t budget = limits.memory_high_watermark;
@@ -942,6 +944,8 @@ void ReadManager::readAheadColumnData()
     auto depth_is_full = [&]
     {
         size_t read_ahead_slots = column_data_read_ahead_count.load(std::memory_order_acquire);
+        if (only_small_reads)
+            return read_ahead_slots >= 1;
         return stage.batches_in_progress.load(std::memory_order_relaxed) + read_ahead_slots >= depth;
     };
 
@@ -963,8 +967,13 @@ void ReadManager::readAheadColumnData()
         size_t memory_usage = used_memory();
         if (memory_usage >= budget)
             return false;
+        if (only_small_reads && !reader.prefetcher.readsSeparately(run_prefetches))
+            return false;
 
-        auto charged = reader.prefetcher.startPrefetchWithinLimit(run_prefetches, &diff, budget - memory_usage, &created_tasks);
+        size_t limit = budget - memory_usage;
+        if (only_small_reads)
+            limit = std::min(limit, reader.options.min_bytes_for_seek);
+        auto charged = reader.prefetcher.startPrefetchWithinLimit(run_prefetches, &diff, limit, &created_tasks);
         if (!charged)
             return false;
         if (*charged == 0)
@@ -1033,7 +1042,7 @@ void ReadManager::readAheadColumnData()
         }
 
         auto ranges = reader.prefetcher.getAdjacentRanges(prefetches);
-        if (ranges && ranges->end - ranges->begin >= small_row_group_bytes)
+        if (ranges && (only_small_reads || ranges->end - ranges->begin >= small_row_group_bytes))
             ranges.reset();
         if (!run.empty() && !(ranges && run_ranges && reader.prefetcher.extendsAdjacentRanges(*run_ranges, *ranges) && ranges->end - run_begin <= run_limit)
             && !start_run())
