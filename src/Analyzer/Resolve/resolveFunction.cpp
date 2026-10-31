@@ -61,6 +61,10 @@
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTCreateWasmFunctionQuery.h>
 
+#include <base/scope_guard.h>
+
+#include <numeric>
+
 
 namespace DB
 {
@@ -1366,6 +1370,85 @@ QueryTreeNodePtr QueryAnalyzer::castNodeToType(
     return result;
 }
 
+void QueryAnalyzer::bindLambdaArgumentsInsideAggregateFunction(
+    IdentifierResolveScope & lambda_scope,
+    const Names & lambda_argument_names,
+    const UnresolvedLambdaCallArguments & unresolved_arguments,
+    IdentifierResolveScope & scope,
+    bool allow_table_expressions,
+    bool allow_niladic_functions)
+{
+    struct Argument
+    {
+        QueryTreeNodePtr unresolved;
+        QueryTreeNodePtr resolved;
+    };
+
+    auto resolve = [this, &scope, allow_table_expressions, allow_niladic_functions](Argument & argument) -> const QueryTreeNodes &
+    {
+        if (!argument.resolved)
+        {
+            QueryTreeNodePtr resolved = std::make_shared<ListNode>(QueryTreeNodes{argument.unresolved->clone()});
+
+            /// This resolution must not consume `_subquery_N` projection names or repeat the `REPLACE` rewrite of this query.
+            auto saved_subquery_counter = subquery_counter;
+            const auto * saved_query_with_replace_transformer_rewrite_done = query_with_replace_transformer_rewrite_done;
+            query_with_replace_transformer_rewrite_done = scope.getNearestQueryScope()->scope_node.get();
+            scope.expressions_in_resolve_process_stack.enterAggregateFunctionArguments();
+            SCOPE_EXIT({
+                scope.expressions_in_resolve_process_stack.leaveAggregateFunctionArguments();
+                query_with_replace_transformer_rewrite_done = saved_query_with_replace_transformer_rewrite_done;
+                subquery_counter = saved_subquery_counter;
+            });
+
+            resolveExpressionNodeList(resolved, scope, true /*allow_lambda_expression*/, allow_table_expressions, allow_niladic_functions);
+            argument.resolved = std::move(resolved);
+        }
+
+        return argument.resolved->as<ListNode &>().getNodes();
+    };
+
+    const auto & unresolved_nodes = unresolved_arguments.arguments->as<ListNode &>().getNodes();
+    const auto & expanded_node_counts = unresolved_arguments.expanded_node_counts;
+    size_t arguments_size = std::accumulate(expanded_node_counts.begin(), expanded_node_counts.end(), size_t{0});
+    if (unresolved_nodes.size() != expanded_node_counts.size() || arguments_size != lambda_argument_names.size())
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+            "Lambda function has {} arguments, but {} expanded from {} unresolved ones. In scope {}",
+            lambda_argument_names.size(),
+            arguments_size,
+            unresolved_nodes.size(),
+            scope.scope_node->formatASTForErrorMessage());
+
+    size_t position = 0;
+    for (size_t i = 0; i < unresolved_nodes.size(); ++i)
+    {
+        auto argument = std::make_shared<Argument>(Argument{unresolved_nodes[i], nullptr});
+        size_t expanded_node_count = expanded_node_counts[i];
+
+        for (size_t offset = 0; offset < expanded_node_count; ++offset, ++position)
+        {
+            auto resolve_argument = [resolve, argument, offset, expanded_node_count, &scope]() -> QueryTreeNodePtr
+            {
+                const auto & nodes = resolve(*argument);
+                if (nodes.size() != expanded_node_count)
+                    throw Exception(ErrorCodes::LOGICAL_ERROR,
+                        "Lambda function argument is expanded into {} nodes, but into {} as an argument of an aggregate function. In scope {}",
+                        expanded_node_count,
+                        nodes.size(),
+                        scope.scope_node->formatASTForErrorMessage());
+
+                return nodes[offset];
+            };
+
+            lambda_scope.expression_argument_name_to_node_inside_aggregate_function.emplace(
+                lambda_argument_names[position], std::move(resolve_argument));
+        }
+    }
+
+    /// A cached lookup of an argument would return the form chosen by its first use.
+    lambda_scope.disableIdentifierCachePermanently();
+}
+
 /** Resolve function node in scope.
   * During function node resolve, function node can be replaced with another expression (if it match lambda or sql user defined function),
   * with constant (if it allow constant folding), or with expression list. It is caller responsibility to handle such cases appropriately.
@@ -2440,6 +2523,27 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
         }
     }
 
+    /// `tryGet` also records the use in the query log, so it is called once.
+    ASTPtr user_defined_function = function_node_ptr->isWindowFunction()
+        ? nullptr
+        : UserDefinedSQLFunctionFactory::instance().tryGet(function_name);
+    const bool is_lambda_call = !function_node_ptr->isWindowFunction()
+        && (lambda_expression_untyped || typeid_cast<const ASTCreateSQLFunctionQuery *>(user_defined_function.get()));
+
+    if (is_lambda_call)
+        scope.expressions_in_resolve_process_stack.uncountTopIfAggregateOrGroupingFunction(function_node_ptr.get());
+
+    /// With `group_by_use_nulls` a GROUP BY key keeps its type inside aggregate functions and is Nullable outside,
+    /// and a lambda body can use an argument in both places, so a use inside an aggregate resolves the argument again.
+    auto * query_scope = scope.getNearestQueryScope();
+    const bool bind_arguments_inside_aggregate_function = is_lambda_call && query_scope && !query_scope->nullable_group_by_keys.empty()
+        && !scope.isInAggregateOrGroupingFunctionScope();
+
+    /// The same call node is resolved again when `ORDER BY ALL` shares it with the projection, and its arguments are resolved by then.
+    UnresolvedLambdaCallArguments unresolved_arguments;
+    if (bind_arguments_inside_aggregate_function && !unresolved_lambda_call_arguments.contains(function_node_ptr))
+        unresolved_arguments.arguments = function_node_ptr->getArgumentsNode()->clone();
+
     /// Resolve function arguments
     bool allow_table_expressions = is_special_function_in || is_special_function_exists;
     auto arguments_projection_names = resolveExpressionNodeList(
@@ -2447,7 +2551,13 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
         scope,
         true /*allow_lambda_expression*/,
         allow_table_expressions /*allow_table_expression*/,
-        allow_niladic_functions);
+        allow_niladic_functions,
+        false /*is_top_level_projection*/,
+        unresolved_arguments.arguments ? &unresolved_arguments.expanded_node_counts : nullptr);
+
+    const UnresolvedLambdaCallArguments * lambda_call_arguments = nullptr;
+    if (bind_arguments_inside_aggregate_function)
+        lambda_call_arguments = &unresolved_lambda_call_arguments.try_emplace(function_node_ptr, std::move(unresolved_arguments)).first->second;
 
     /// Mask arguments if needed
     if (!canDisplaySecrets(scope.context))
@@ -3036,7 +3146,6 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
     /// Calculate function projection name
     ProjectionNames result_projection_names = { calculateFunctionProjectionName(node, parameters_projection_names, arguments_projection_names) };
 
-    ASTPtr user_defined_function = nullptr;
     /** Try to resolve function as
       * 1. Lambda function in current scope. Example: WITH (x -> x + 1) AS lambda SELECT lambda(1);
       * 2. Lambda function from sql user defined functions.
@@ -3051,8 +3160,6 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
       */
     if (!function_node.isWindowFunction())
     {
-        user_defined_function = UserDefinedSQLFunctionFactory::instance().tryGet(function_name);
-
         if (!lambda_expression_untyped && user_defined_function)
             /// Try to substitute user defined SQL expression
             lambda_expression_untyped = tryGetLambdaFromUserDefinedSQLFunctions(user_defined_function, scope.context);
@@ -3085,6 +3192,12 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
             auto lambda_expression_clone = lambda_expression_untyped->clone();
 
             IdentifierResolveScope & lambda_scope = createIdentifierResolveScope(lambda_expression_clone, &scope /*parent_scope*/);
+
+            const auto & lambda_argument_names = lambda_expression_clone->as<LambdaNode &>().getArguments().getNames();
+            if (lambda_call_arguments && lambda_argument_names.size() == function_arguments_size)
+                bindLambdaArgumentsInsideAggregateFunction(
+                    lambda_scope, lambda_argument_names, *lambda_call_arguments, scope, allow_table_expressions, allow_niladic_functions);
+
             ProjectionNames lambda_projection_names = resolveLambda(lambda_expression_untyped, lambda_expression_clone, function_arguments, lambda_scope);
 
             auto & resolved_lambda = lambda_expression_clone->as<LambdaNode &>();
