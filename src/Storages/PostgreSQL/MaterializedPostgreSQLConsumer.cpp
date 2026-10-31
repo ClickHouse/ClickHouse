@@ -953,6 +953,8 @@ void MaterializedPostgreSQLConsumer::processReplicationMessage(const char * repl
             }
             pending_relation_messages.erase(table_name);
 
+            /// `deleted_tables` and `waiting_list` are keyed by the ClickHouse table name, which includes
+            /// the PostgreSQL schema in the multi-schema modes, as for the other message types.
             if (!isSyncAllowed(relation_id, table_name, /* is_relation_message */ true))
                 return;
 
