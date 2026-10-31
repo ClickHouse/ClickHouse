@@ -371,6 +371,7 @@ class SessionPool {
       // mid-request or parse leftover bytes as its own response.
       if (IsExpired(entry, now)) continue;
       if (!session.connected()) continue;
+      if (session.buffered() > 0) continue;
       if (is_stale && is_stale(session)) continue;
       return entry.Take();
     }
@@ -911,6 +912,11 @@ class PocoHttpPayload : public HttpPayload {
     if (failed_) return false;
     if (!finished_) FinishForReuse();
     if (!finished_) return false;
+    // Poco reads the socket in blocks, so the bytes of an unsolicited response
+    // the peer sent right after this one (e.g. a `408 Request Timeout` before
+    // closing) may already sit in the session buffer, where a socket probe cannot
+    // see them; the next request would parse them as its own response.
+    if (session_.session->buffered() > 0) return false;
     return response_ && response_->getKeepAlive();
   }
 
