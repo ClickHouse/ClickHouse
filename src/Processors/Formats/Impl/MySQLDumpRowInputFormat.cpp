@@ -214,8 +214,13 @@ static NamesAndTypesList getColumnsList(const ASTExpressionList * columns_defini
                     data_type_node->name = type_name_upper + " UNSIGNED";
             }
 
+            /// A dump writes `SET` values as strings of comma-separated members, e.g. 'a,b'. `SET` is also a ClickHouse
+            /// alias of `UInt64`, so name the type explicitly, as the `mysql` table engine reads it.
             if (type_name_upper == "SET")
+            {
+                data_type_node->name = "String";
                 data_type_node->resetArguments();
+            }
 
             /// Transforms MySQL ENUM's list of strings to ClickHouse string-integer pairs
             /// For example ENUM('a', 'b', 'c') -> ENUM('a'=1, 'b'=2, 'c'=3)
