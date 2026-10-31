@@ -132,8 +132,7 @@ namespace
         if (!columns_list || !columns_list->columns)
             return;
 
-        for (const auto & column : columns_list->columns->children)
-            pullUpTupleElementDefaults(column->as<ASTColumnDeclaration &>(), state_version);
+        pullUpTupleElementDefaultsInColumnList(*columns_list->columns, state_version);
     }
 
     void pullUpTupleElementDefaultsInTimeSeriesDefinition(ASTCreateQuery & create_query, TupleElementDefaultStateVersion state_version)

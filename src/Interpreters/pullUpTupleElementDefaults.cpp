@@ -174,12 +174,12 @@ void checkDefaultDoesNotReferenceElements(
     /// self-referential column-level default. `collectReferencedIdentifiers` inserts the root of a
     /// compound identifier as well, so `c.a` is rejected by its root. A quoted identifier is a single
     /// name part, and a name with the `<column>.` prefix may as well be an independent column named
-    /// `c.a`, so it is a self-reference only if it names an actual subcolumn of the column. The type
-    /// of the column is known only after all its defaults are stripped, so such names are collected
-    /// into `subcolumn_references` and checked by `pullUpTupleElementDefaults`. This has to be
-    /// rejected here: the cycle detection in `ColumnsDescription` compares whole identifiers, so it
-    /// does not recognize `c.a` as a reference to the column `c`, and the failure would be deferred
-    /// to the first insert that omits the column.
+    /// `c.a`, so it is a self-reference only if it names an actual subcolumn of the column and no table
+    /// column has exactly this name. The type of the column is known only after all its defaults are
+    /// stripped, so such names are collected into `subcolumn_references` and checked by
+    /// `pullUpTupleElementDefaults`. This has to be rejected here: the cycle detection in
+    /// `ColumnsDescription` compares whole identifiers, so it does not recognize `c.a` as a reference
+    /// to the column `c`, and the failure would be deferred to the first insert that omits the column.
     const String column_subcolumn_prefix = column_name + ".";
     for (const auto & name : referenced)
     {
@@ -488,7 +488,8 @@ ASTPtr buildAndStripTupleDefaults(
 
 }
 
-void pullUpTupleElementDefaults(ASTColumnDeclaration & col_decl, TupleElementDefaultStateVersion state_version)
+void pullUpTupleElementDefaults(
+    ASTColumnDeclaration & col_decl, TupleElementDefaultStateVersion state_version, const NameSet & table_column_names)
 {
     auto type = col_decl.getType();
     if (!type)
@@ -501,13 +502,15 @@ void pullUpTupleElementDefaults(ASTColumnDeclaration & col_decl, TupleElementDef
     if (!built_default)
         return;
 
-    /// A name with the `<column>.` prefix is a self-reference only if it names a subcolumn of the column;
-    /// otherwise it refers to an independent column with a dotted name.
+    /// A name with the `<column>.` prefix is a self-reference only if it names a subcolumn of the column
+    /// and no table column has exactly this name; otherwise it refers to an independent column with a
+    /// dotted name. An exact column name takes precedence over a subcolumn, as in
+    /// `ColumnsDescription::tryGetColumn`.
     if (!subcolumn_references.empty())
     {
         const DataTypePtr column_type = DataTypeFactory::instance().get(type);
         for (const auto & subcolumn : subcolumn_references)
-            if (column_type->hasSubcolumn(subcolumn))
+            if (column_type->hasSubcolumn(subcolumn) && !table_column_names.contains(col_decl.name + "." + subcolumn))
                 throwSelfReference(col_decl.name);
     }
 
@@ -518,6 +521,16 @@ void pullUpTupleElementDefaults(ASTColumnDeclaration & col_decl, TupleElementDef
 
     col_decl.setDefaultExpression(std::move(built_default));
     col_decl.default_specifier = ColumnDefaultSpecifier::Default;
+}
+
+void pullUpTupleElementDefaultsInColumnList(const IAST & columns, TupleElementDefaultStateVersion state_version)
+{
+    NameSet table_column_names;
+    for (const auto & column : columns.children)
+        table_column_names.insert(column->as<const ASTColumnDeclaration &>().name);
+
+    for (const auto & column : columns.children)
+        pullUpTupleElementDefaults(column->as<ASTColumnDeclaration &>(), state_version, table_column_names);
 }
 
 }

@@ -812,14 +812,14 @@ ColumnsDescription InterpreterCreateQuery::getColumnsDescription(
         && !already_normalized_on_initiator
         && !is_restore_from_backup;
 
+    /// Normalize DEFAULT expressions written inside Tuple data types by pulling them up to the
+    /// column level, so the stored type carries no DEFAULTs (https://github.com/ClickHouse/ClickHouse/issues/2797).
+    pullUpTupleElementDefaultsInColumnList(columns_ast,
+        pin_current_state_version ? TupleElementDefaultStateVersion::PinCurrent : TupleElementDefaultStateVersion::PinOldest);
+
     for (const auto & ast : columns_ast.children)
     {
         auto & col_decl = ast->as<ASTColumnDeclaration &>();
-
-        /// Normalize DEFAULT expressions written inside Tuple data types by pulling them up to the
-        /// column level, so the stored type carries no DEFAULTs (https://github.com/ClickHouse/ClickHouse/issues/2797).
-        pullUpTupleElementDefaults(col_decl,
-            pin_current_state_version ? TupleElementDefaultStateVersion::PinCurrent : TupleElementDefaultStateVersion::PinOldest);
 
         if (col_decl.getCollation() && !context_->getSettingsRef()[Setting::compatibility_ignore_collation_in_create_table])
         {
@@ -4091,8 +4091,7 @@ BlockIO InterpreterCreateQuery::execute()
             {
                 if (!columns_list || !columns_list->columns)
                     return;
-                for (const auto & column : columns_list->columns->children)
-                    pullUpTupleElementDefaults(column->as<ASTColumnDeclaration &>(), TupleElementDefaultStateVersion::PinOldest);
+                pullUpTupleElementDefaultsInColumnList(*columns_list->columns, TupleElementDefaultStateVersion::PinOldest);
             };
 
             pull_up_tuple_element_defaults(create.columns_list);
