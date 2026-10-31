@@ -1703,6 +1703,10 @@ If the ratio of unavailable shards to total shards exceeds this value, an except
 A value of 0 means no limit on the ratio. On a read, skipping *every* shard before any of them returned data still throws `ALL_CONNECTION_TRIES_FAILED`, because such a query has no partial result to return. This limit applies to reads only.
 )", 0, \
         {"26.3", 0, 0, "New setting to limit the ratio of shards that can be silently skipped when skip_unavailable_shards is enabled."}) \
+    DECLARE(Bool, hedged_connections_prefer_stable_pools, false, R"(
+Prefer using stable pools for creating connections.
+)", 0, \
+        {"26.10", false, false, "New setting."}) \
     \
     DECLARE(UInt64, parallel_distributed_insert_select, 2, R"(
 Enables parallel distributed `INSERT ... SELECT` query.
