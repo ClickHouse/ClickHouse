@@ -5,8 +5,8 @@
 -- =============================================================================
 -- Six AI function default flips: `ai_function_allow_insecure_endpoint` from 1 to 0 and
 -- `ai_function_max_api_calls_per_query` from 0 (unlimited) to 1000 in 26.8, then
--- `ai_function_max_retries` from 0 to 1 in 26.9, `ai_function_max_api_calls_per_query` back to 0
--- (unlimited) in 26.10, then in 26.11 `ai_function_max_retries` from 1 to 3 and the new
+-- `ai_function_max_retries` from 0 to 1 in 26.9, then in 26.10 `ai_function_max_api_calls_per_query`
+-- back to 0 (unlimited), `ai_function_max_retries` from 1 to 3 and the new
 -- `ai_function_max_concurrent_requests_per_thread` at 8 where requests used to go out one at a time (1).
 -- `compatibility = 26.6` predates all of them and `compatibility = 26.9` reverts only the last three,
 -- which pins the previous_value/new_value pairs in the history records of these settings.
