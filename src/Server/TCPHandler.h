@@ -329,8 +329,21 @@ private:
     void readTemporaryTables(QueryState & state) TSA_REQUIRES(callback_mutex);
     /// The connection liveness check for the admission wait of the query, which also notices its `Cancel`.
     std::function<bool()> makeConnectionAliveCheck(std::shared_ptr<QueryState> & query_state);
-    /// Whether the input buffered in `in` begins with the whole packet of the empty block terminating the external tables.
-    bool isExternalTablesTerminatorBuffered(const QueryState & state) const TSA_REQUIRES(callback_mutex);
+    /// Whether the input buffered in `in` begins with the packet of the empty block terminating the external tables.
+    enum class ExternalTablesTerminatorState : uint8_t
+    {
+        /// The buffered input begins with something else.
+        Absent,
+        /// The buffered input is the beginning of the packet (maybe empty).
+        Incomplete,
+        /// The buffered input begins with the whole packet.
+        Complete,
+    };
+    ExternalTablesTerminatorState getExternalTablesTerminatorState(const QueryState & state) const TSA_REQUIRES(callback_mutex);
+    /// The bound of the compressed data of the terminating packet (the empty block) read ahead before the query is admitted.
+    static constexpr size_t max_compressed_external_tables_terminator_size = 128;
+    /// The bound of the whole packet: the packet type, the empty table name, the checksum, the header and the data.
+    static constexpr size_t max_external_tables_terminator_packet_size = 2 + 16 + 9 + max_compressed_external_tables_terminator_size;
     void skipData(QueryState & state) TSA_REQUIRES(callback_mutex);
     bool skipDataPacket(QueryState & state) TSA_REQUIRES(callback_mutex);
 

@@ -86,6 +86,11 @@ public:
 
     bool hasBufferedData() const;
 
+    /// Keep the unread bytes and append at most `max_bytes` bytes received from the socket after them, reading
+    /// the socket once, as `next` does. Only when the chunked protocol is not enabled. Returns the number of
+    /// appended bytes (0 means the end of the stream, or no room in the buffer if `max_bytes` was not 0).
+    size_t appendFromSocket(size_t max_bytes);
+
     bool poll(size_t timeout_microseconds) override;
 
     Poco::Net::SocketAddress peerAddress() { return peer_address; }

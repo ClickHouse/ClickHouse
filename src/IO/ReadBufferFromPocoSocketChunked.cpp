@@ -2,6 +2,8 @@
 #include <Common/logger_useful.h>
 #include <IO/NetUtils.h>
 
+#include <cstring>
+
 
 namespace DB::ErrorCodes
 {
@@ -40,6 +42,33 @@ bool ReadBufferFromPocoSocketChunked::hasBufferedData() const
         return true;
 
     return chunked && (static_cast<size_t>(data_end - working_buffer.end()) > sizeof(next_chunk));
+}
+
+size_t ReadBufferFromPocoSocketChunked::appendFromSocket(size_t max_bytes)
+{
+    if (chunked)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot append to the buffer of a socket stream that uses the chunked protocol");
+
+    const size_t unread = available();
+    if (pos != internal_buffer.begin())
+    {
+        bytes += offset();
+        std::memmove(internal_buffer.begin(), pos, unread);
+        working_buffer = Buffer(internal_buffer.begin(), internal_buffer.begin() + unread);
+        pos = internal_buffer.begin();
+    }
+
+    max_bytes = std::min(max_bytes, internal_buffer.size() - unread);
+    if (max_bytes == 0)
+        return 0;
+
+    applyHandshakeDeadlineToSocket();
+    const ssize_t bytes_read = socketReceiveBytesImpl(internal_buffer.begin() + unread, max_bytes);
+    if (read_event != ProfileEvents::end())
+        ProfileEvents::increment(read_event, bytes_read);
+
+    working_buffer.resize(unread + bytes_read);
+    return bytes_read;
 }
 
 bool ReadBufferFromPocoSocketChunked::poll(size_t timeout_microseconds)

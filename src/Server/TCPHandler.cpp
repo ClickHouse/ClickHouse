@@ -1486,29 +1486,40 @@ std::function<bool()> TCPHandler::makeConnectionAliveCheck(std::shared_ptr<Query
         if (!socket_alive())
             return false;
 
-        if (!in->available())
-        {
-            /// `in` can be refilled without waiting only when the bytes are already received by the socket
-            /// (for TLS: already decrypted, which the TLS-aware check above does for complete records). The
-            /// chunked protocol may wait for the rest of a chunk header, so it is not read ahead.
-            if (receive_chunked || socket().impl()->available() <= 0)
-                return true;
-            if (!in->next())
-                return false;
-        }
+        /// `in` can be refilled without waiting only when the bytes are already received by the socket (for TLS:
+        /// already decrypted, which the TLS-aware check above does for complete records). The chunked protocol
+        /// may wait for the rest of a chunk header, so it is not read ahead.
+        auto can_read_without_waiting = [&] { return !receive_chunked && socket().impl()->available() > 0; };
 
         if (!state.received_external_tables)
         {
-            if (!isExternalTablesTerminatorBuffered(state))
+            /// The packet may arrive in fragments, so keep the buffered beginning of it and append the next received
+            /// bytes after it, but no more than the largest terminating packet, so that the buffering is bounded.
+            auto terminator = getExternalTablesTerminatorState(state);
+            while (terminator == ExternalTablesTerminatorState::Incomplete && can_read_without_waiting())
+            {
+                if (in->available() >= max_external_tables_terminator_packet_size)
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "The terminating block of external tables is incomplete in {} bytes", in->available());
+                if (!in->appendFromSocket(max_external_tables_terminator_packet_size - in->available()))
+                    return false;
+                terminator = getExternalTablesTerminatorState(state);
+            }
+
+            if (terminator != ExternalTablesTerminatorState::Complete)
                 return true;
 
             /// Reads only the buffered bytes of the packet and creates no table, because the block is empty.
             if (receivePacketsExpectData(state))
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "The terminating block of external tables is not empty");
             state.received_external_tables = true;
+        }
 
-            if (!in->available())
+        if (!in->available())
+        {
+            if (!can_read_without_waiting())
                 return true;
+            if (!in->next())
+                return false;
         }
 
         if (static_cast<UInt8>(*in->position()) == Protocol::Client::Cancel)
@@ -1523,7 +1534,7 @@ std::function<bool()> TCPHandler::makeConnectionAliveCheck(std::shared_ptr<Query
 }
 
 
-bool TCPHandler::isExternalTablesTerminatorBuffered(const QueryState & state) const
+TCPHandler::ExternalTablesTerminatorState TCPHandler::getExternalTablesTerminatorState(const QueryState & state) const
 {
     /// The block, as `NativeWriter` writes an empty block.
     WriteBufferFromOwnString empty_block_buf;
@@ -1532,35 +1543,56 @@ bool TCPHandler::isExternalTablesTerminatorBuffered(const QueryState & state) co
     writeVarUInt(0, empty_block_buf); /// Number of columns.
     writeVarUInt(0, empty_block_buf); /// Number of rows.
     const String & empty_block = empty_block_buf.str();
+    if (empty_block.size() > max_compressed_external_tables_terminator_size)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "The empty block takes {} bytes", empty_block.size());
 
     std::string_view buffered(in->position(), in->available());
 
+    /// Removes `expected` from the beginning of `buffered`, if it is there.
+    auto skip_expected = [&](std::string_view expected) -> std::optional<ExternalTablesTerminatorState>
+    {
+        const size_t size = std::min(buffered.size(), expected.size());
+        if (buffered.substr(0, size) != expected.substr(0, size))
+            return ExternalTablesTerminatorState::Absent;
+        if (size < expected.size())
+            return ExternalTablesTerminatorState::Incomplete;
+        buffered.remove_prefix(size);
+        return std::nullopt;
+    };
+
     /// The packet type and the empty name of the external table.
     const char packet_prefix[] = {static_cast<char>(Protocol::Client::Data), 0};
-    if (!buffered.starts_with(std::string_view(packet_prefix, sizeof(packet_prefix))))
-        return false;
-    buffered.remove_prefix(sizeof(packet_prefix));
+    if (auto result = skip_expected(std::string_view(packet_prefix, sizeof(packet_prefix))))
+        return *result;
 
     if (state.compression != Protocol::Compression::Enable)
-        return buffered.starts_with(empty_block);
+        return skip_expected(empty_block).value_or(ExternalTablesTerminatorState::Complete);
 
     /// A compressed frame: the checksum, then the header - the method byte, the compressed size (including the
-    /// header) and the decompressed size. Decompress the frame only if all of it is buffered and it is as small
-    /// as the empty block.
+    /// header) and the decompressed size.
     constexpr size_t checksum_size = 16;
     if (buffered.size() < checksum_size + COMPRESSED_BLOCK_HEADER_SIZE)
-        return false;
+        return ExternalTablesTerminatorState::Incomplete;
+    const auto method = static_cast<CompressionMethodByte>(buffered[checksum_size]);
     const UInt32 size_compressed = unalignedLoadLittleEndian<UInt32>(buffered.data() + checksum_size + 1);
     const UInt32 size_decompressed = unalignedLoadLittleEndian<UInt32>(buffered.data() + checksum_size + 5);
-    if (size_decompressed != empty_block.size() || size_compressed < COMPRESSED_BLOCK_HEADER_SIZE
-        || buffered.size() < checksum_size + size_compressed)
-        return false;
 
-    ReadBufferFromMemory frame(buffered.data(), checksum_size + size_compressed);
+    /// Decompress the frame only if it is as small as the empty block, and only with a codec that decompresses
+    /// directly into the result of the declared size. Others (e.g. `Multiple`) may allocate much more for the
+    /// intermediate results.
+    const bool is_simple_codec = method == CompressionMethodByte::NONE || method == CompressionMethodByte::LZ4
+        || method == CompressionMethodByte::ZSTD;
+    if (!is_simple_codec || size_decompressed != empty_block.size() || size_compressed < COMPRESSED_BLOCK_HEADER_SIZE
+        || size_compressed > COMPRESSED_BLOCK_HEADER_SIZE + max_compressed_external_tables_terminator_size)
+        return ExternalTablesTerminatorState::Absent;
+    if (buffered.size() < checksum_size + size_compressed)
+        return ExternalTablesTerminatorState::Incomplete;
+
+    ReadBufferFromMemory frame(buffered.substr(0, checksum_size + size_compressed));
     CompressedReadBuffer decompressed(frame, /* allow_different_codecs */ true, /* external_data */ query_kind != ClientInfo::QueryKind::SECONDARY_QUERY);
     String data;
     readStringUntilEOF(data, decompressed);
-    return data == empty_block;
+    return data == empty_block ? ExternalTablesTerminatorState::Complete : ExternalTablesTerminatorState::Absent;
 }
 
 
