@@ -11,6 +11,7 @@
 #include <config.h>
 
 #include <Poco/Net/HTTPServerSession.h>
+#include <Poco/Net/StreamSocket.h>
 
 #include <memory>
 #include <mutex>
@@ -104,7 +105,7 @@ private:
 
     mutable std::mutex get_stream_mutex;
     ReadBufferPtr stream TSA_GUARDED_BY(get_stream_mutex);
-    Poco::Net::SocketImpl * socket;
+    Poco::Net::StreamSocket socket;
     Poco::Net::SocketAddress client_address;
     Poco::Net::SocketAddress server_address;
 

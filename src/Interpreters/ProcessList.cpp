@@ -1,19 +1,24 @@
 #include <Interpreters/ProcessList.h>
 #include <Core/Settings.h>
+#include <Core/ServerSettings.h>
 #include <Interpreters/CancellationChecker.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseAndTableWithAlias.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTKillQueryQuery.h>
+#include <Parsers/ASTSystemQuery.h>
 #include <Parsers/IAST.h>
 #include <Parsers/queryNormalization.h>
 #include <Processors/Executors/Runtime/IExecutor.h>
 #include <base/scope_guard.h>
+#include <Common/CurrentMetrics.h>
 #include <Common/Exception.h>
 #include <Common/CurrentThread.h>
 #include <Common/ThreadStatus.h>
 #include <Common/OvercommitTracker.h>
+#include <Common/ProfileEvents.h>
+#include <Common/Stopwatch.h>
 #include <Common/Scheduler/Workload/IWorkloadEntityStorage.h>
 #include <Common/Scheduler/IResourceManager.h>
 #include <Common/Scheduler/MemoryReservation.h>
@@ -28,16 +33,19 @@ namespace CurrentMetrics
 {
     extern const Metric Query;
     extern const Metric QueryNonInternal;
+    extern const Metric QueryAdmissionQueueLength;
     extern const Metric WaitingQuery;
 }
 
 namespace ProfileEvents
 {
+    extern const Event QueryAdmissionQueueWaitMicroseconds;
     extern const Event UserThrottlerBytes;
     extern const Event UserThrottlerSleepMicroseconds;
     extern const Event AllUsersThrottlerBytes;
     extern const Event AllUsersThrottlerSleepMicroseconds;
 }
+
 
 namespace DB
 {
@@ -67,6 +75,11 @@ namespace Setting
     extern const SettingsUInt64 reserve_memory;
     extern const SettingsUInt64 min_bytes_to_spill;
     extern const SettingsMilliseconds workload_admission_timeout_ms;
+}
+
+namespace ServerSetting
+{
+    extern const ServerSettingsUInt64 admission_queue_alive_check_interval_ms;
 }
 
 namespace ErrorCodes
@@ -113,6 +126,21 @@ static bool isUnlimitedQuery(const IAST * ast)
     return false;
 }
 
+/// Should the query bypass the FIFO admission queue?
+///
+/// `SYSTEM RELOAD CONFIG` is the documented way to raise `max_concurrent_queries` at runtime, so it
+/// must not queue behind the very limit it is about to raise: under a saturated limit the operator
+/// would otherwise have no way to apply the relief. It is a cheap administrative command, in the same
+/// spirit as `KILL QUERY`, which `isUnlimitedQuery` already exempts.
+///
+/// This is scoped to the admission queue only (an opt-in feature), so the legacy
+/// `max_concurrent_queries` path keeps its existing behavior.
+static bool isAdmissionExemptQuery(const IAST * ast)
+{
+    const auto * system_query = ast ? ast->as<ASTSystemQuery>() : nullptr;
+    return system_query && system_query->type == ASTSystemQuery::Type::RELOAD_CONFIG;
+}
+
 ProcessList::EntryPtr ProcessList::insert(
     const String & query_,
     UInt64 normalized_query_hash,
@@ -129,6 +157,7 @@ ProcessList::EntryPtr ProcessList::insert(
     /// Read before `mutex` is taken: `Context::getUserID` locks the context, and `QueryStatus` is
     /// constructed with `mutex` held (see the constructor's own note about holding both locks).
     const std::optional<UUID> user_id = query_context->getUserID();
+    const bool is_ddl_or_on_cluster_internal = query_context->isDDLOrOnClusterInternal();
 
     if (client_info.current_query_id.empty())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Query id cannot be empty");
@@ -182,119 +211,571 @@ ProcessList::EntryPtr ProcessList::insert(
         }
     }
 
+    bool got_admission_slot = false;
+
     {
         LockAndOverCommitTrackerBlocker<std::unique_lock, Mutex> locker(mutex); /// To avoid deadlock in case of OOM
         auto & lock = locker.getUnderlyingLock();
         IAST::QueryKind query_kind = ast ? ast->getQueryKind() : IAST::QueryKind::Select;
 
         const auto queue_max_wait_ms = settings[Setting::queue_max_wait_ms].totalMilliseconds();
-        if (!is_unlimited_query && max_size && non_internal_processes >= max_size)
+
+        /// Effective admission wait budget: queue_max_wait_ms → max_execution_time → default receive timeout (300s).
+        /// This is the timeout used by the FIFO admission wait below, and also by the secondary-limit waits
+        /// (`max_concurrent_queries_for_all_users` / `max_concurrent_queries_for_user`) once an admission slot
+        /// has been transferred to us by a finishing query. A single `admission_deadline` is computed once the
+        /// admission stage starts, so the admission wait and the post-handoff secondary waits share one budget
+        /// and the total time a query can spend admitting is bounded by `effective_wait_ms` regardless of how
+        /// many of these waits it goes through.
+        UInt64 effective_wait_ms = queue_max_wait_ms
+            ? queue_max_wait_ms
+            : settings[Setting::max_execution_time].totalMilliseconds();
+
+        if (effective_wait_ms == 0)
+            effective_wait_ms = DBMS_DEFAULT_RECEIVE_TIMEOUT_SEC * 1000;
+
+        /// `queue_max_wait_ms` / `max_execution_time` are user-controllable and may be set to enormous values.
+        /// `steady_clock::now() + milliseconds(effective_wait_ms)` converts the duration to nanoseconds
+        /// (multiplying by 1'000'000), which overflows `int64_t` for huge waits and is undefined behavior.
+        /// Clamp with the shared `saturatedMilliseconds` helper, whose cap is "effectively infinite" for an
+        /// admission wait, so the deadline arithmetic here and the `wait_until` calls below cannot overflow.
+        const auto effective_wait = saturatedMilliseconds(effective_wait_ms);
+        effective_wait_ms = effective_wait.count();
+
+        /// --- FIFO admission control (see ProcessList.h for design overview) ---
+        /// An `admission_tracked` query holds an admission slot for its whole lifetime whenever the
+        /// feature is enabled, so `admission_running` stays an accurate count of running tracked
+        /// queries even while `max_concurrent_queries == 0` (unlimited). This is what makes a runtime
+        /// `0 -> N` reload of `max_concurrent_queries` behave correctly: the queries admitted while the
+        /// limit was unlimited are already counted, so once the limit becomes finite the next arrivals
+        /// observe the real running count instead of `0` and queue as expected, rather than slipping
+        /// past the limit on the fast path. The FIFO *wait* only happens for a finite limit
+        /// (`max_size > 0`); when unlimited, a slot is always taken immediately.
+        ///
+        /// `isAdmissionExemptQuery` (currently `SYSTEM RELOAD CONFIG`) is never tracked: it must stay
+        /// available to raise `max_concurrent_queries` while the limit is saturated.
+        const bool admission_tracked = !is_unlimited_query && admission_queue_enabled && !isAdmissionExemptQuery(ast);
+
+        /// Connection liveness callback and its polling interval, shared by the `replace_running_query` wait,
+        /// the FIFO admission wait and the post-handoff secondary-limit waits below. All of them can park a
+        /// query for a user-controlled amount of time, so all of them must give up once the client is gone —
+        /// the last two additionally hold (or are about to hold) an admission slot that has to be handed to
+        /// the next waiter. This is deliberately *not* conditional on `admission_tracked`: the replacement
+        /// wait exists with the admission queue disabled too, and a disconnected client must not sit out
+        /// `replace_running_query_max_wait_ms` and then run its query. It is empty when the protocol does not
+        /// provide a liveness check, in which case the waits skip the liveness loop.
+        const std::function<bool()> is_alive = query_context->getConnectionAliveCheck();
+        const UInt64 alive_check_interval_ms = std::clamp(static_cast<UInt64>(
+            query_context->getServerSettings()[ServerSetting::admission_queue_alive_check_interval_ms]),
+            UInt64(500), UInt64(10000));
+
+        /// Call `is_alive` without holding `mutex`: the native protocol's callback reads the packets the client
+        /// has sent meanwhile (to notice its `Cancel`, see `TCPHandler`), which may wait for the rest of a
+        /// packet. Every caller below rechecks the state guarded by `mutex` afterwards. `mutex` is taken back
+        /// even if the callback throws, because the cleanup guards of the waits need it.
+        auto client_alive = [&]
         {
-            if (queue_max_wait_ms)
-                LOG_WARNING(getLogger("ProcessList"), "Too many simultaneous queries, will wait {} ms.", queue_max_wait_ms);
-            if (!queue_max_wait_ms || !have_space.wait_for(lock, saturatedMilliseconds(queue_max_wait_ms),
-                    [&]{ return non_internal_processes < max_size; }))
-                throw Exception(ErrorCodes::TOO_MANY_SIMULTANEOUS_QUERIES,
-                                "Too many simultaneous queries. Maximum: {}",
-                                max_size);
-        }
+            lock.unlock();
+            SCOPE_EXIT(lock.lock());
+            return is_alive();
+        };
 
-        if (!is_unlimited_query)
+        /// Replacing a query must happen before taking an admission slot. The old query can take up to
+        /// `replace_running_query_max_wait_ms` to leave the process list; occupying a FIFO slot during
+        /// that wait would block unrelated queries despite no replacement query executing yet.
+        if (auto user_process_list = user_to_queries.find(client_info.current_user);
+            user_process_list != user_to_queries.end())
         {
-            QueryAmount amount = getQueryKindAmount(query_kind);
-            if (max_insert_queries_amount && query_kind == IAST::QueryKind::Insert && amount >= max_insert_queries_amount)
-                throw Exception(ErrorCodes::TOO_MANY_SIMULTANEOUS_QUERIES,
-                                "Too many simultaneous insert queries. Maximum: {}, current: {}",
-                                max_insert_queries_amount, amount);
-            if (max_select_queries_amount && query_kind == IAST::QueryKind::Select && amount >= max_select_queries_amount)
-                throw Exception(ErrorCodes::TOO_MANY_SIMULTANEOUS_QUERIES,
-                                "Too many simultaneous select queries. Maximum: {}, current: {}",
-                                max_select_queries_amount, amount);
-        }
-
-        {
-            /**
-             * `max_size` check above is controlled by `max_concurrent_queries` server setting and is a "hard" limit for how many
-             * queries the server can process concurrently. It is configured at startup. When the server is overloaded with queries and the
-             * hard limit is reached it is impossible to connect to the server to run queries for investigation.
-             *
-             * With `max_concurrent_queries_for_all_users` it is possible to configure an additional, runtime configurable, limit for query concurrency.
-             * Usually it should be configured just once for `default_profile` which is inherited by all users. DBAs can override
-             * this setting when connecting to ClickHouse, or it can be configured for a DBA profile to have a value greater than that of
-             * the default profile (or 0 for unlimited).
-             *
-             * One example is to set `max_size=X`, `max_concurrent_queries_for_all_users=X-10` for default profile,
-             * and `max_concurrent_queries_for_all_users=0` for DBAs or accounts that are vital for ClickHouse operations (like metrics
-             * exporters).
-             *
-             * Another creative example is to configure `max_concurrent_queries_for_all_users=50` for "analyst" profiles running adhoc queries
-             * and `max_concurrent_queries_for_all_users=100` for "customer facing" services. This way "analyst" queries will be rejected
-             * once is already processing 50+ concurrent queries (including analysts or any other users).
-             */
-
-            if (!is_unlimited_query && settings[Setting::max_concurrent_queries_for_all_users]
-                && non_internal_processes >= settings[Setting::max_concurrent_queries_for_all_users])
-                throw Exception(
-                    ErrorCodes::TOO_MANY_SIMULTANEOUS_QUERIES,
-                    "Too many simultaneous queries for all users. "
-                    "Current: {}, maximum: {}",
-                    non_internal_processes,
-                    settings[Setting::max_concurrent_queries_for_all_users].toString());
-        }
-
-        /** Why we use current user?
-          * Because initial one is passed by client and credentials for it is not verified,
-          *  and using initial_user for limits will be insecure.
-          *
-          * Why we use current_query_id?
-          * Because we want to allow distributed queries that will run multiple secondary queries on same server,
-          *  like SELECT count() FROM remote('127.0.0.{1,2}', system.numbers)
-          *  so they must have different query_ids.
-          */
-
-        {
-            auto user_process_list = user_to_queries.find(client_info.current_user);
-
-            if (user_process_list != user_to_queries.end())
+            /// References and pointers to elements of `unordered_map` stay valid after a rehash,
+            /// unlike iterators. `user_to_queries` entries are never erased, so this remains valid
+            /// while `query_finished.wait_*` temporarily releases `mutex`.
+            auto * user_process_list_ptr = &user_process_list->second;
+            auto running_query = user_process_list_ptr->queries.find(client_info.current_query_id);
+            if (running_query != user_process_list_ptr->queries.end())
             {
-                if (!is_unlimited_query && settings[Setting::max_concurrent_queries_for_user]
-                    && user_process_list->second.non_internal_queries >= settings[Setting::max_concurrent_queries_for_user])
-                    throw Exception(
-                        ErrorCodes::TOO_MANY_SIMULTANEOUS_QUERIES,
-                        "Too many simultaneous queries for user {}. "
-                        "Current: {}, maximum: {}",
-                        client_info.current_user,
-                        user_process_list->second.non_internal_queries,
-                        settings[Setting::max_concurrent_queries_for_user].toString());
+                if (!settings[Setting::replace_running_query])
+                    throw Exception(ErrorCodes::QUERY_WITH_SAME_ID_IS_ALREADY_RUNNING, "Query with id = {} is already running.", client_info.current_query_id);
 
-                auto running_query = user_process_list->second.queries.find(client_info.current_query_id);
-
-                if (running_query != user_process_list->second.queries.end())
+                const auto replace_running_query_max_wait_ms = settings[Setting::replace_running_query_max_wait_ms].totalMilliseconds();
+                const auto replace_deadline = std::chrono::steady_clock::now()
+                    + saturatedMilliseconds(replace_running_query_max_wait_ms);
+                auto old_query_finished = [&]
                 {
-                    if (!settings[Setting::replace_running_query])
-                        throw Exception(ErrorCodes::QUERY_WITH_SAME_ID_IS_ALREADY_RUNNING, "Query with id = {} is already running.", client_info.current_query_id);
-
-                    /// Ask queries to cancel. They will check this flag.
+                    running_query = user_process_list_ptr->queries.find(client_info.current_query_id);
+                    if (running_query == user_process_list_ptr->queries.end())
+                        return true;
                     running_query->second->is_killed.store(true, std::memory_order_relaxed);
+                    return false;
+                };
 
-                    const auto replace_running_query_max_wait_ms = settings[Setting::replace_running_query_max_wait_ms].totalMilliseconds();
-                    if (!replace_running_query_max_wait_ms || !have_space.wait_for(lock, saturatedMilliseconds(replace_running_query_max_wait_ms),
-                        [&]
+                /// Ask the old query to cancel before every wait, including the first one.
+                if (!old_query_finished())
+                {
+                    if (!replace_running_query_max_wait_ms)
+                        throw Exception(ErrorCodes::QUERY_WITH_SAME_ID_IS_ALREADY_RUNNING,
+                                        "Query with id = {} is already running and can't be stopped",
+                                        client_info.current_query_id);
+
+                    if (is_alive && alive_check_interval_ms > 0)
+                    {
+                        while (!old_query_finished())
                         {
-                            running_query = user_process_list->second.queries.find(client_info.current_query_id);
-                            if (running_query == user_process_list->second.queries.end())
-                                return true;
-                            running_query->second->is_killed.store(true, std::memory_order_relaxed);
-                            return false;
-                        }))
+                            auto now = std::chrono::steady_clock::now();
+                            if (now >= replace_deadline)
+                                break;
+
+                            auto chunk = std::min(
+                                std::chrono::milliseconds(alive_check_interval_ms),
+                                std::chrono::duration_cast<std::chrono::milliseconds>(replace_deadline - now));
+                            query_finished.wait_for(lock, chunk, old_query_finished);
+
+                            if (!old_query_finished() && !client_alive())
+                                throw Exception(ErrorCodes::QUERY_WAS_CANCELLED,
+                                                "Query replacement cancelled: client disconnected while waiting for the old query");
+                        }
+                    }
+                    else if (!query_finished.wait_until(lock, replace_deadline, old_query_finished))
                     {
                         throw Exception(ErrorCodes::QUERY_WITH_SAME_ID_IS_ALREADY_RUNNING,
                                         "Query with id = {} is already running and can't be stopped",
                                         client_info.current_query_id);
                     }
+
+                    if (is_alive && !client_alive())
+                        throw Exception(ErrorCodes::QUERY_WAS_CANCELLED,
+                                        "Query replacement cancelled: client disconnected while waiting for the old query");
+
+                    if (!old_query_finished())
+                        throw Exception(ErrorCodes::QUERY_WITH_SAME_ID_IS_ALREADY_RUNNING,
+                                        "Query with id = {} is already running and can't be stopped",
+                                        client_info.current_query_id);
                 }
             }
         }
+
+        /// The admission budget starts here, after the `replace_running_query` wait: that wait has its own
+        /// budget (`replace_running_query_max_wait_ms`) and must not eat into `queue_max_wait_ms`. Otherwise a
+        /// replacement whose victim took a while to shut down would reach the queue with most of its admission
+        /// budget already spent and be rejected with `TOO_MANY_SIMULTANEOUS_QUERIES` without ever having
+        /// queued for that long.
+        const auto admission_deadline = std::chrono::steady_clock::now() + effective_wait;
+
+        /// Read `max_size` only now, after the `replace_running_query` wait above, which releases `mutex`:
+        /// `max_concurrent_queries` may have been reloaded meanwhile. A stale finite limit would park this
+        /// query in a queue that `setMaxSize` has already drained for the switch to unlimited, where no
+        /// release would ever grant it a slot; a stale `0` would let it bypass a newly finite limit.
+        const bool needs_admission = admission_tracked && max_size;
+
+        /// From here until the registration below, the waits can park the query for a long time while it is
+        /// not reachable through `processes`. Publish it in `admission_waiters`, so that the out-of-band
+        /// cancellation paths can still cancel it (see `cancelAdmissionWaitersLocked`).
+        AdmissionWaiter waiter{
+            .query_id = client_info.current_query_id, .user = client_info.current_user, .user_id = user_id, .interface = client_info.interface,
+            .is_ddl_backup_or_restore = is_ddl_or_on_cluster_internal
+                && (query_kind == IAST::QueryKind::Backup || query_kind == IAST::QueryKind::Restore),
+            .granted = false, .cancelled = false, .cv = {}};
+        admission_waiters.push_back(&waiter);
+        SCOPE_EXIT(std::erase(admission_waiters, &waiter));
+
+        auto throw_if_cancelled = [&]
+        {
+            if (waiter.cancelled)
+                throw Exception(ErrorCodes::QUERY_WAS_CANCELLED, "Query was cancelled while waiting for admission");
+        };
+
+        if (needs_admission && admission_running >= max_size)
+        {
+            /// Enqueue the waiter (FIFO).
+            admission_queue.push_back(&waiter);
+
+            /// Guard: on exception, clean up our deque entry or release a
+            /// slot that was granted to us just before the throw.
+            SCOPE_EXIT({
+                if (!got_admission_slot)
+                {
+                    if (waiter.granted)
+                    {
+                        /// We were granted but are throwing — release the slot.
+                        releaseAdmissionSlotLocked(lock);
+                    }
+                    else
+                    {
+                        std::erase(admission_queue, &waiter);
+                    }
+                }
+            });
+
+            CurrentMetrics::Increment queue_length_increment(CurrentMetrics::QueryAdmissionQueueLength);
+            Stopwatch admission_watch;
+
+            /// The event is documented as the total time spent waiting in the FIFO admission queue, so it
+            /// must be recorded on every exit path, not only on the one where the slot was granted: a
+            /// waiter that times out or is cancelled is exactly the case that spends the most time queued,
+            /// and reporting zero for it would hide the overload it is evidence of.
+            SCOPE_EXIT({
+                ProfileEvents::increment(
+                    ProfileEvents::QueryAdmissionQueueWaitMicroseconds, admission_watch.elapsedMicroseconds());
+            });
+
+            /// Predicate: the releaser has granted us the slot, or the query was cancelled.
+            auto my_turn = [&] { return waiter.granted || waiter.cancelled; };
+
+            if (is_alive && alive_check_interval_ms > 0)
+            {
+                /// Periodic alive-check loop, bounded by the shared admission deadline.
+                while (!my_turn())
+                {
+                    auto now = std::chrono::steady_clock::now();
+                    if (now >= admission_deadline)
+                    {
+                        throw Exception(ErrorCodes::TOO_MANY_SIMULTANEOUS_QUERIES,
+                                        "Too many simultaneous queries. Maximum: {}. Waited {} ms.",
+                                        max_size, effective_wait_ms);
+                    }
+
+                    auto chunk = std::min(
+                        std::chrono::milliseconds(alive_check_interval_ms),
+                        std::chrono::duration_cast<std::chrono::milliseconds>(admission_deadline - now));
+
+                    waiter.cv.wait_for(lock, chunk, my_turn);
+
+                    if (!my_turn() && is_alive && !client_alive())
+                    {
+                        throw Exception(ErrorCodes::QUERY_WAS_CANCELLED,
+                                        "Query admission cancelled: client disconnected while waiting in queue");
+                    }
+                }
+            }
+            else
+            {
+                /// Simple wait, bounded by the shared admission deadline, no alive check.
+                if (!waiter.cv.wait_until(lock, admission_deadline, my_turn))
+                {
+                    throw Exception(ErrorCodes::TOO_MANY_SIMULTANEOUS_QUERIES,
+                                    "Too many simultaneous queries. Maximum: {}. Waited {} ms.",
+                                    max_size, effective_wait_ms);
+                }
+            }
+
+            throw_if_cancelled();
+
+            /// Final alive-check after the slot has been granted but before we commit to using it.
+            /// The periodic loop above only checks liveness while still waiting (`!my_turn()`). If the
+            /// releaser transferred the slot to us between two periodic checks, a client that disconnected
+            /// in the meantime would otherwise be admitted and execute its query. Re-check here so that a
+            /// disconnected waiter is cancelled before consuming the slot; the `SCOPE_EXIT` above releases
+            /// the already-granted slot when we throw.
+            if (is_alive && !client_alive())
+                throw Exception(ErrorCodes::QUERY_WAS_CANCELLED,
+                                "Query admission cancelled: client disconnected while waiting in queue");
+
+            /// Slot was transferred to us by the releaser (no counter change).
+            got_admission_slot = true;
+        }
+        else if (admission_tracked)
+        {
+            /// A slot is free under a finite limit, or the limit is unlimited (`max_size == 0`). Either
+            /// way take a slot immediately and keep the running count accurate; it is released through
+            /// the same paths (early release in `executeQuery` or `~ProcessListEntry`) as any admitted query.
+            ++admission_running;
+            got_admission_slot = true;
+        }
+
+        /// Guard: if any subsequent check throws (max_insert_queries_amount,
+        /// max_concurrent_queries_for_all_users, etc.), release the admission slot.
+        scope_guard admission_rollback([&]
+        {
+            if (got_admission_slot)
+            {
+                releaseAdmissionSlotLocked(lock);
+                got_admission_slot = false;
+                /// If `QueryStatus` was already constructed, also clear its flag so that a
+                /// destructing `ProcessListEntry` does not release the same slot a second time.
+                if (query)
+                    query->holds_admission_slot = false;
+            }
+        });
+
+        /// Secondary-limit checks vs the admission early-release window: a finishing query releases
+        /// its admission slot early (in `executeQuery`), before its `ProcessListEntry` destructor
+        /// decrements `non_internal_processes` / `query_kind_amounts` / the per-user counters. A query
+        /// admitted on that freed slot — transferred from the finishing query, or acquired on the fast
+        /// path right after the release — can therefore observe the finishing query as still counted.
+        /// Rejecting on such a transient overcount would fail a query holding a valid admission slot,
+        /// so when we hold one, wait on `query_finished` for the relevant early-released teardowns to
+        /// drain, bounded by the remaining admission budget (`admission_deadline`).
+        ///
+        /// But we must wait only while draining those teardowns can actually bring the counter under
+        /// the limit. A completing teardown decrements both the live counter and its pending-teardown
+        /// count under the same lock (see `~ProcessListEntry`), so `current - pending` — the genuinely
+        /// running, not-early-released queries of this scope — is invariant as teardowns drain. Hence
+        /// `current - pending < limit` (written `current < limit + pending` to avoid unsigned
+        /// underflow) is exactly the condition under which waiting can succeed. When it does not hold,
+        /// the limit is full of running queries that no teardown will clear, so we throw immediately
+        /// instead of parking — a long wait would hoard the global admission slot for the whole
+        /// teardown window (which can be long, e.g. a slow client still receiving results), forcing
+        /// queries of other kinds/users into the queue while an execution slot sits idle. On throw,
+        /// the rollback guard above hands the slot to the next waiter.
+        ///
+        /// The teardown count is scoped to the counter under test: per-query-kind for the kind limits,
+        /// per-user for the user limit, and the global `admission_pending_teardowns` only for the
+        /// all-users limit on `non_internal_processes`. An unrelated teardown (a different kind/user)
+        /// cannot decrement *this* counter, so it is excluded from `pending`. Without an admission slot
+        /// (admission queue disabled) the checks keep their legacy behavior.
+        ///
+        /// Set whenever one of the concurrency-limit waits below may have released `mutex`. Another query can
+        /// register while we wait for one limit, invalidating a limit checked earlier, so after any such wait
+        /// all limits are checked again (see the loop below).
+        bool limits_waited = false;
+
+        auto passes_secondary_limit = [&](auto && under_limit, auto && drain_can_clear)
+        {
+            if (!got_admission_slot)
+                return under_limit();
+
+            /// We hold an admission slot and may park here until the relevant early-release teardowns
+            /// drain. Mirror the FIFO admission loop's liveness handling: if the client disconnects while
+            /// we wait, stop holding `admission_running` for an abandoned request — throw so the
+            /// `admission_rollback` guard hands the slot to the next waiter, instead of keeping other
+            /// clients queued behind a dead one for up to the fallback timeout. Reaching the deadline is
+            /// not an error here: fall through and let `under_limit()` decide, so the caller throws the
+            /// precise `TOO_MANY_SIMULTANEOUS_QUERIES` message for the limit in question.
+            auto should_stop = [&] { return waiter.cancelled || under_limit() || !drain_can_clear(); };
+            bool waited = false;
+            if (is_alive && alive_check_interval_ms > 0)
+            {
+                while (!should_stop())
+                {
+                    auto now = std::chrono::steady_clock::now();
+                    if (now >= admission_deadline)
+                        break;
+
+                    auto chunk = std::min(
+                        std::chrono::milliseconds(alive_check_interval_ms),
+                        std::chrono::duration_cast<std::chrono::milliseconds>(admission_deadline - now));
+
+                    limits_waited = true;
+                    waited = true;
+                    query_finished.wait_for(lock, chunk, should_stop);
+
+                    if (!should_stop() && is_alive && !client_alive())
+                        throw Exception(ErrorCodes::QUERY_WAS_CANCELLED,
+                                        "Query admission cancelled: client disconnected while waiting at a secondary limit");
+                }
+            }
+            else if (!should_stop() && std::chrono::steady_clock::now() < admission_deadline)
+            {
+                limits_waited = true;
+                waited = true;
+                query_finished.wait_until(lock, admission_deadline, should_stop);
+            }
+
+            throw_if_cancelled();
+
+            /// Post-wakeup liveness recheck, mirroring the FIFO admission wait. The loop above exits as
+            /// soon as `should_stop()` holds, so a client that hung up during the very interval in which
+            /// the finishing query dropped the counter would otherwise slip through and run its query
+            /// while holding the transferred admission slot. Only a successful outcome needs the check:
+            /// if we are still over the limit, the caller throws `TOO_MANY_SIMULTANEOUS_QUERIES` anyway.
+            /// Only a wait can let the client go away unnoticed, and the check releases `mutex` (so the limits
+            /// are checked again, see `limits_waited`), so do it only after a wait.
+            const bool passes = under_limit();
+            if (passes && waited && is_alive && !client_alive())
+                throw Exception(ErrorCodes::QUERY_WAS_CANCELLED,
+                                "Query admission cancelled: client disconnected while waiting at a secondary limit");
+
+            return passes;
+        };
+
+        /// Number of early-released-but-not-yet-destroyed queries of `kind` (see the scoping note above).
+        auto query_kind_pending_teardowns_count = [&](IAST::QueryKind kind) -> ProcessList::QueryAmount
+        {
+            auto found = query_kind_pending_teardowns.find(kind);
+            return found != query_kind_pending_teardowns.end() ? found->second : 0;
+        };
+
+        /// Without an admission slot (admission queue disabled, or a query it does not track) the limits keep
+        /// their legacy `queue_max_wait_ms`-bounded wait. All of them share one deadline, so that rechecking
+        /// the limits after a wait does not restart the wait for each of them.
+        const auto legacy_limits_deadline = std::chrono::steady_clock::now() + saturatedMilliseconds(queue_max_wait_ms);
+        auto passes_legacy_limit = [&](auto && under_limit)
+        {
+            if (under_limit())
+                return true;
+            if (!queue_max_wait_ms || std::chrono::steady_clock::now() >= legacy_limits_deadline)
+                return false;
+            limits_waited = true;
+            query_finished.wait_until(lock, legacy_limits_deadline, [&] { return waiter.cancelled || under_limit(); });
+            throw_if_cancelled();
+            return under_limit();
+        };
+
+        /// Every wait below releases `mutex`, and another query may register meanwhile, so a limit that
+        /// passed before a later wait may be exceeded after it. Check all limits again until a full pass
+        /// completes without waiting: only then do they all hold together under `mutex` up to the
+        /// registration below. Every wait is bounded by a deadline fixed before the loop, and a pass after
+        /// the deadlines does not wait, so the loop terminates.
+        do
+        {
+            limits_waited = false;
+
+            if (!is_unlimited_query && max_size && !admission_queue_enabled)
+            {
+                /// Legacy path: broadcast condvar (admission queue disabled).
+                auto under_limit = [&] { return non_internal_processes < max_size; };
+                if (!under_limit())
+                {
+                    if (queue_max_wait_ms)
+                        LOG_WARNING(getLogger("ProcessList"), "Too many simultaneous queries, will wait {} ms.", queue_max_wait_ms);
+                    if (!passes_legacy_limit(under_limit))
+                        throw Exception(ErrorCodes::TOO_MANY_SIMULTANEOUS_QUERIES,
+                                        "Too many simultaneous queries. Maximum: {}",
+                                        max_size);
+                }
+            }
+
+            if (!is_unlimited_query)
+            {
+                /// See the comment at `passes_secondary_limit` above: wait out in-flight early-release
+                /// teardowns (a finishing query that already freed its admission slot still counts toward
+                /// `query_kind_amounts` until its `ProcessListEntry` destructor runs), then reject if the
+                /// limit is genuinely full.
+                if (max_insert_queries_amount && query_kind == IAST::QueryKind::Insert)
+                {
+                    /// `max_insert_queries_amount` may be reloaded while `passes_secondary_limit` waits; `0` means unlimited.
+                    auto under_limit = [&] { return !max_insert_queries_amount || getQueryKindAmount(query_kind) < max_insert_queries_amount; };
+                    auto drain_can_clear = [&]
+                    {
+                        return !max_insert_queries_amount
+                            || getQueryKindAmount(query_kind) < max_insert_queries_amount + query_kind_pending_teardowns_count(query_kind);
+                    };
+                    if (!passes_secondary_limit(under_limit, drain_can_clear))
+                        throw Exception(ErrorCodes::TOO_MANY_SIMULTANEOUS_QUERIES,
+                                        "Too many simultaneous insert queries. Maximum: {}, current: {}",
+                                        max_insert_queries_amount, getQueryKindAmount(query_kind));
+                }
+                if (max_select_queries_amount && query_kind == IAST::QueryKind::Select)
+                {
+                    /// `max_select_queries_amount` may be reloaded while `passes_secondary_limit` waits; `0` means unlimited.
+                    auto under_limit = [&] { return !max_select_queries_amount || getQueryKindAmount(query_kind) < max_select_queries_amount; };
+                    auto drain_can_clear = [&]
+                    {
+                        return !max_select_queries_amount
+                            || getQueryKindAmount(query_kind) < max_select_queries_amount + query_kind_pending_teardowns_count(query_kind);
+                    };
+                    if (!passes_secondary_limit(under_limit, drain_can_clear))
+                        throw Exception(ErrorCodes::TOO_MANY_SIMULTANEOUS_QUERIES,
+                                        "Too many simultaneous select queries. Maximum: {}, current: {}",
+                                        max_select_queries_amount, getQueryKindAmount(query_kind));
+                }
+            }
+
+            {
+                /**
+                 * `max_size` check above is controlled by `max_concurrent_queries` server setting and is a "hard" limit for how many
+                 * queries the server can process concurrently. It is configured at startup. When the server is overloaded with queries and the
+                 * hard limit is reached it is impossible to connect to the server to run queries for investigation.
+                 *
+                 * With `max_concurrent_queries_for_all_users` it is possible to configure an additional, runtime configurable, limit for query concurrency.
+                 * Usually it should be configured just once for `default_profile` which is inherited by all users. DBAs can override
+                 * this setting when connecting to ClickHouse, or it can be configured for a DBA profile to have a value greater than that of
+                 * the default profile (or 0 for unlimited).
+                 *
+                 * One example is to set `max_size=X`, `max_concurrent_queries_for_all_users=X-10` for default profile,
+                 * and `max_concurrent_queries_for_all_users=0` for DBAs or accounts that are vital for ClickHouse operations (like metrics
+                 * exporters).
+                 *
+                 * Another creative example is to configure `max_concurrent_queries_for_all_users=50` for "analyst" profiles running adhoc queries
+                 * and `max_concurrent_queries_for_all_users=100` for "customer facing" services. This way "analyst" queries will be rejected
+                 * once is already processing 50+ concurrent queries (including analysts or any other users).
+                 */
+
+                if (!is_unlimited_query && settings[Setting::max_concurrent_queries_for_all_users]
+                    && non_internal_processes >= settings[Setting::max_concurrent_queries_for_all_users])
+                {
+                    const size_t limit = settings[Setting::max_concurrent_queries_for_all_users];
+                    auto under_limit = [&] { return non_internal_processes < limit; };
+
+                    /// Unlike the per-user and per-kind limits, this one keeps its legacy contract even when we
+                    /// hold an admission slot: with an explicit `queue_max_wait_ms` the query waits for the
+                    /// running count to drop under the limit for the rest of the shared admission budget
+                    /// (`admission_deadline`), not only for the in-flight early-release teardowns. The
+                    /// slot-hoarding argument for fast-failing does not apply here: every query subject to
+                    /// this limit is blocked until `non_internal_processes < limit` anyway, so the slot we
+                    /// hold cannot be used by another such query. With `queue_max_wait_ms = 0` the legacy
+                    /// path rejects immediately, so we only wait out in-flight early-release teardowns (a
+                    /// finishing query that already freed its slot still counts toward
+                    /// `non_internal_processes` until its destructor runs), while draining them can clear the
+                    /// limit. This is the global limit, so any teardown is relevant — use
+                    /// `admission_pending_teardowns`. Without a slot (admission queue disabled), keep the
+                    /// legacy `queue_max_wait_ms`-bounded wait.
+                    auto drain_can_clear = [&]
+                    {
+                        return queue_max_wait_ms != 0 || non_internal_processes < limit + admission_pending_teardowns;
+                    };
+                    if (got_admission_slot
+                        ? !passes_secondary_limit(under_limit, drain_can_clear)
+                        : !passes_legacy_limit(under_limit))
+                        throw Exception(
+                            ErrorCodes::TOO_MANY_SIMULTANEOUS_QUERIES,
+                            "Too many simultaneous queries for all users. "
+                            "Current: {}, maximum: {}",
+                            non_internal_processes,
+                            settings[Setting::max_concurrent_queries_for_all_users].toString());
+                }
+            }
+
+            /** Why we use current user?
+              * Because initial one is passed by client and credentials for it is not verified,
+              *  and using initial_user for limits will be insecure.
+              *
+              * Why we use current_query_id?
+              * Because we want to allow distributed queries that will run multiple secondary queries on same server,
+              *  like SELECT count() FROM remote('127.0.0.{1,2}', system.numbers)
+              *  so they must have different query_ids.
+              */
+
+            {
+                auto user_process_list_it = user_to_queries.find(client_info.current_user);
+
+                if (user_process_list_it != user_to_queries.end())
+                {
+                    /// The waits below release `mutex`, and another user's first query may then rehash
+                    /// `user_to_queries`, invalidating the iterator. References to its elements stay valid
+                    /// (entries are never erased), so only the reference is used after this point.
+                    ProcessListForUser & user_process_list = user_process_list_it->second;
+                    if (!is_unlimited_query && settings[Setting::max_concurrent_queries_for_user]
+                        && user_process_list.non_internal_queries >= settings[Setting::max_concurrent_queries_for_user])
+                    {
+                        const size_t limit = settings[Setting::max_concurrent_queries_for_user];
+                        auto & user_queries = user_process_list.non_internal_queries;
+                        auto under_limit = [&] { return user_queries < limit; };
+
+                        /// Same as `max_concurrent_queries_for_all_users` above, but scoped to this user:
+                        /// only this user's early-release teardowns can decrement `non_internal_queries`,
+                        /// so wait on the per-user counter while draining it can clear the limit, then reject.
+                        auto & user_pending_teardowns = user_process_list.admission_pending_teardowns;
+                        auto drain_can_clear = [&] { return user_queries < limit + user_pending_teardowns; };
+                        if (got_admission_slot
+                            ? !passes_secondary_limit(under_limit, drain_can_clear)
+                            : !passes_legacy_limit(under_limit))
+                            throw Exception(
+                                ErrorCodes::TOO_MANY_SIMULTANEOUS_QUERIES,
+                                "Too many simultaneous queries for user {}. "
+                                "Current: {}, maximum: {}",
+                                client_info.current_user,
+                                user_queries,
+                                settings[Setting::max_concurrent_queries_for_user].toString());
+                    }
+
+                }
+            }
+        }
+        while (limits_waited);
+
+        /// Nothing between this check and the registration below releases `mutex`, so a cancellation that
+        /// arrived during any of the waits above (or after the last of them) is not lost.
+        throw_if_cancelled();
 
         /// Check other users running query with our query_id
         if (auto query_user = queries_to_user.find(client_info.current_query_id); query_user != queries_to_user.end() && query_user->second != client_info.current_user)
@@ -302,6 +783,28 @@ ProcessList::EntryPtr ProcessList::insert(
             throw Exception(ErrorCodes::QUERY_WITH_SAME_ID_IS_ALREADY_RUNNING,
                             "Query with id = {} is already running by user {}",
                             client_info.current_query_id, query_user->second);
+        }
+
+        /// Re-check that this user has no query with our `query_id` any more.
+        ///
+        /// The `replace_running_query` stage above runs *before* the admission queue and the
+        /// secondary-limit waits, and every one of those waits releases `mutex`. So two replacements of
+        /// the same victim can both observe the victim gone, both leave the replacement stage, and then
+        /// both reach the registration below: the second `user_process_list.queries.emplace(...)` would
+        /// silently do nothing (the key already belongs to the first one) while the second query is still
+        /// linked into `processes`, and its `~ProcessListEntry` would then fail to find itself and call
+        /// `std::terminate`. Nothing between this check and the registration below releases `mutex`, so
+        /// checking here closes that window.
+        ///
+        /// Waiting for the winner to finish instead of throwing is deliberately not done: by this point we
+        /// may already hold an admission slot, and parking on it for up to `replace_running_query_max_wait_ms`
+        /// would hoard that slot — the very thing the early placement of the replacement wait avoids.
+        if (auto user_queries = user_to_queries.find(client_info.current_user);
+            user_queries != user_to_queries.end() && user_queries->second.queries.contains(client_info.current_query_id))
+        {
+            throw Exception(ErrorCodes::QUERY_WITH_SAME_ID_IS_ALREADY_RUNNING,
+                            "Query with id = {} is already running.",
+                            client_info.current_query_id);
         }
 
         auto user_process_list_it = user_to_queries.find(client_info.current_user);
@@ -398,11 +901,24 @@ ProcessList::EntryPtr ProcessList::insert(
                 saturatedMilliseconds(settings[Setting::low_priority_query_wait_time_ms].totalMilliseconds())),
             std::move(query_slot),
             std::move(memory_reservation),
+            got_admission_slot,
             std::move(thread_group),
             query_kind,
             settings,
             watch_start_nanoseconds,
             is_internal);
+
+        /// Pre-create the per-query-kind map keys before the query is registered in `processes`, so the
+        /// counter updates below cannot allocate. `query_kind_amounts` and `query_kind_pending_teardowns`
+        /// are only ever grown together and never erase keys, so seeding both here keeps them in lockstep
+        /// and makes the post-registration `increaseQueryKindAmount` allocation-free. Throwing here is
+        /// safe: nothing has been registered yet, so there is nothing to roll back (the `admission_rollback`
+        /// guard still releases the admission slot).
+        if (!is_internal)
+        {
+            query_kind_amounts.try_emplace(query_kind, 0);
+            query_kind_pending_teardowns.try_emplace(query_kind, 0);
+        }
 
         auto process_it = processes.emplace(
             processes.end(),
@@ -415,19 +931,67 @@ ProcessList::EntryPtr ProcessList::insert(
             increaseQueryKindAmount(query_kind);
         }
 
-        bool registered_in_cancellation_checker = CancellationChecker::getInstance().appendTask(query, query_context->getSettingsRef()[Setting::max_execution_time].totalMicroseconds(), query_context->getSettingsRef()[Setting::timeout_overflow_mode]);
-
-        res = std::make_shared<Entry>(*this, process_it, registered_in_cancellation_checker);
+        /// Until the owning `ProcessListEntry` is constructed below, nothing rolls back this `processes`
+        /// entry or the counters just incremented for it. A throwing allocation in `appendTask` or in the
+        /// `Entry` construction would otherwise leave `system.processes` and the secondary concurrency
+        /// counters inflated for a query that has no `ProcessListEntry` to clean it up. Guard that window.
+        ///
+        /// The per-user registration below (the `user_process_list.queries` / `queries_to_user` maps and the
+        /// per-user counter) allocates and can throw `bad_alloc`. It is done *before* constructing the owning
+        /// `ProcessListEntry`, inside this same guard, so that registration is complete and self-consistent
+        /// by the time the `Entry` takes over cleanup. Otherwise a throw there would leave `~ProcessListEntry`
+        /// unable to find the query (it would `std::terminate`), or decrementing `non_internal_queries` that
+        /// was never incremented. The map erases here are idempotent (no-ops when the key was never inserted,
+        /// so a partial registration rolls back exactly), and `non_internal_queries` is only undone once it
+        /// was actually incremented. The guard is dismissed as soon as the `Entry` takes ownership.
+        ///
+        /// The same applies to the `CancellationChecker` registration below: once `appendTask` has
+        /// inserted the query into the checker's set, the checker keeps the `QueryStatus` (and with it
+        /// the acquired `QuerySlot` / `MemoryReservation`) alive until `max_execution_time` expires.
+        /// If the `Entry` construction then throws, no `~ProcessListEntry` will ever run to call
+        /// `appendDoneTasks`, so the guard has to do it.
+        bool non_internal_queries_incremented = false;
+        bool registered_in_cancellation_checker = false;
+        scope_guard registration_rollback([&]
+        {
+            if (registered_in_cancellation_checker)
+                CancellationChecker::getInstance().appendDoneTasks(query);
+            user_process_list.queries.erase(client_info.current_query_id);
+            queries_to_user.erase(client_info.current_query_id);
+            if (non_internal_queries_incremented)
+                --user_process_list.non_internal_queries;
+            if (!is_internal)
+            {
+                decreaseQueryKindAmount(query_kind);
+                --non_internal_processes;
+            }
+            processes.erase(process_it);
+        });
 
         (*process_it)->setUserProcessList(&user_process_list);
-        (*process_it)->setProcessListEntry(res);
 
-        user_process_list.queries.emplace(client_info.current_query_id, res->getQueryStatus());
+        user_process_list.queries.emplace(client_info.current_query_id, query);
         queries_to_user.emplace(client_info.current_query_id, client_info.current_user);
         if (!is_internal)
         {
             ++user_process_list.non_internal_queries;
+            non_internal_queries_incremented = true;
         }
+
+        registered_in_cancellation_checker = CancellationChecker::getInstance().appendTask(query, query_context->getSettingsRef()[Setting::max_execution_time].totalMicroseconds(), query_context->getSettingsRef()[Setting::timeout_overflow_mode]);
+
+        res = std::make_shared<Entry>(*this, process_it, registered_in_cancellation_checker);
+        registration_rollback.release();
+
+        (*process_it)->setProcessListEntry(res);
+
+        /// `ProcessListEntry` now owns the query's admission slot and will either release it
+        /// during normal teardown or account for an early release. Do not leave the rollback
+        /// guard armed across the throttler setup below: those allocations may throw after the
+        /// query is visible in the secondary-limit counters, and releasing the slot without
+        /// pending-teardown accounting would let the next admitted query observe a transient
+        /// overcount and be rejected.
+        admission_rollback.release();
 
         if (!total_network_throttler && settings[Setting::max_network_bandwidth_for_all_users])
         {
@@ -518,7 +1082,22 @@ ProcessListEntry::~ProcessListEntry()
         std::terminate();
     }
 
-    parent.have_space.notify_all();
+    /// Release admission slot (if still held) via the FIFO mechanism.
+    if (process_list_element_ptr->holds_admission_slot)
+    {
+        process_list_element_ptr->holds_admission_slot = false;
+        parent.releaseAdmissionSlotLocked(lock.getUnderlyingLock());
+    }
+
+    /// The early-released slot's teardown is complete: the counters decremented above no longer
+    /// include this query, so the secondary-limit waiters in `insert` may stop waiting for it. The
+    /// user entry in `user_to_queries` still exists here (it is not erased by this destructor), so the
+    /// per-user counter is decremented through it.
+    if (process_list_element_ptr->admission_slot_released_early)
+        parent.decreaseAdmissionPendingTeardowns(query_kind, user);
+
+    /// Broadcast to `replace_running_query` waiters (they use `query_finished`).
+    parent.query_finished.notify_all();
 
     /// The `user_to_queries` entry is intentionally kept (do not erase it here): `getUserInfo`
     /// reads entries lock-free via raw pointers and relies on them never being erased. Its trackers are reset
@@ -535,6 +1114,7 @@ QueryStatus::QueryStatus(
     QueryPriorities::Handle && priority_handle_,
     QuerySlotPtr && query_slot_,
     MemoryReservationPtr && memory_reservation_,
+    bool holds_admission_slot_,
     ThreadGroupPtr && thread_group_,
     IAST::QueryKind query_kind_,
     const Settings & query_settings_,
@@ -547,6 +1127,7 @@ QueryStatus::QueryStatus(
     , user_id(user_id_)
     , query_slot(std::move(query_slot_))
     , memory_reservation(std::move(memory_reservation_))
+    , holds_admission_slot(holds_admission_slot_)
     , thread_group(std::move(thread_group_))
     , watch(CLOCK_MONOTONIC, watch_start_nanoseconds, true)
     , priority_handle(std::move(priority_handle_))
@@ -839,7 +1420,17 @@ CancellationCode ProcessList::sendCancelToQueryImpl(
     {
         LockAndBlocker lock(mutex);
         elem = tryGetProcessListElement(current_query_id, current_user);
-        if (!elem || (expected_user_id && elem->user_id != *expected_user_id))
+        if (!elem)
+        {
+            /// The query may still be waiting for admission, before it is registered in `processes`.
+            const size_t cancelled = cancelAdmissionWaitersLocked([&](const AdmissionWaiter & waiter)
+            {
+                return waiter.query_id == current_query_id && waiter.user == current_user
+                    && (!expected_user_id || waiter.user_id == *expected_user_id);
+            });
+            return cancelled ? CancellationCode::CancelSent : CancellationCode::NotFound;
+        }
+        if (expected_user_id && elem->user_id != *expected_user_id)
             return CancellationCode::NotFound;
         elem->is_cancelling = true;
     }
@@ -921,7 +1512,14 @@ CancellationCode ProcessList::sendCancelToPostgreSQLQuery(Int32 process_id, UInt
         const String & current_query_id = cancellation_key->second;
         auto query_user = queries_to_user.find(current_query_id);
         if (query_user == queries_to_user.end())
-            return CancellationCode::NotFound;
+        {
+            /// The query may still be waiting for admission, before it is registered in `queries_to_user`.
+            const size_t cancelled = cancelAdmissionWaitersLocked([&](const AdmissionWaiter & waiter)
+            {
+                return waiter.query_id == current_query_id && waiter.interface == ClientInfo::Interface::POSTGRESQL;
+            });
+            return cancelled ? CancellationCode::CancelSent : CancellationCode::NotFound;
+        }
 
         /// Other interfaces can forge this query-id shape, so only cancel PostgreSQL queries.
         elem = tryGetProcessListElement(current_query_id, query_user->second);
@@ -968,6 +1566,13 @@ void ProcessList::killAllQueries(bool except_ddl_backups_and_restores)
             cancelled_processes.push_back(process);
             process->is_cancelling = true;
         }
+
+        /// Also cancel the queries that are being admitted, under the same lock: otherwise a queued query would
+        /// receive the slot released by a cancelled one, register after this snapshot and run (e.g. during shutdown).
+        cancelAdmissionWaitersLocked([&](const AdmissionWaiter & waiter)
+        {
+            return !(except_ddl_backups_and_restores && waiter.is_ddl_backup_or_restore);
+        });
     }
 
     for (auto & cancelled_process : cancelled_processes)
@@ -1156,6 +1761,15 @@ void ProcessList::increaseQueryKindAmount(const IAST::QueryKind & query_kind)
         query_kind_amounts[query_kind] = 1;
     else
         found->second += 1;
+
+    /// Keep `query_kind_pending_teardowns` in lockstep with `query_kind_amounts`: both maps are only ever
+    /// grown together and neither erases keys, so they share one key set. On the registration path in
+    /// `insert` both keys are pre-seeded before the query is counted, so this `try_emplace` does not
+    /// allocate there; it stays as the canonical lockstep grow-point and guarantees the key exists by the
+    /// time the query releases its admission slot. That lets `increaseAdmissionPendingTeardowns` be
+    /// allocation-free, which is required because it runs from cleanup/destructor paths (`BlockIO::~BlockIO`),
+    /// where a throw would call `std::terminate`.
+    query_kind_pending_teardowns.try_emplace(query_kind, 0);
 }
 
 void ProcessList::decreaseQueryKindAmount(const IAST::QueryKind & query_kind)
@@ -1175,6 +1789,145 @@ ProcessList::QueryAmount ProcessList::getQueryKindAmount(const IAST::QueryKind &
     if (found == query_kind_amounts.end())
         return 0;
     return found->second;
+}
+
+void ProcessList::increaseAdmissionPendingTeardowns(const IAST::QueryKind & query_kind, const String & user)
+{
+    /// Must be allocation-free / non-throwing: it runs from the early-release path
+    /// (`QueryStatus::releaseAdmissionSlot`), which is reachable from `BlockIO::~BlockIO`, where a throw
+    /// would call `std::terminate`. The per-kind key is pre-created in `increaseQueryKindAmount` when the
+    /// query is first counted (an admission slot is only ever held by a non-internal query, and such a
+    /// query is always counted there), so the lookup below always finds it and never inserts; everything
+    /// else here is a plain integer increment.
+    auto kind_found = query_kind_pending_teardowns.find(query_kind);
+    chassert(kind_found != query_kind_pending_teardowns.end());
+    ++kind_found->second;
+    ++admission_pending_teardowns;
+    if (auto found = user_to_queries.find(user); found != user_to_queries.end())
+        ++found->second.admission_pending_teardowns;
+}
+
+void ProcessList::decreaseAdmissionPendingTeardowns(const IAST::QueryKind & query_kind, const String & user)
+{
+    chassert(admission_pending_teardowns > 0);
+    --admission_pending_teardowns;
+
+    auto kind_found = query_kind_pending_teardowns.find(query_kind);
+    chassert(kind_found != query_kind_pending_teardowns.end() && kind_found->second > 0);
+    --kind_found->second;
+
+    if (auto found = user_to_queries.find(user); found != user_to_queries.end())
+    {
+        chassert(found->second.admission_pending_teardowns > 0);
+        --found->second.admission_pending_teardowns;
+    }
+}
+
+/// --- Admission control helpers ---
+
+size_t ProcessList::cancelAdmissionWaitersLocked(const std::function<bool(const AdmissionWaiter &)> & predicate)
+{
+    size_t cancelled = 0;
+    for (AdmissionWaiter * waiter : admission_waiters)
+    {
+        if (!predicate(*waiter))
+            continue;
+        waiter->cancelled = true;
+        waiter->cv.notify_one();
+        ++cancelled;
+    }
+
+    /// The waits at the concurrency limits in `insert` sleep on `query_finished`.
+    if (cancelled)
+        query_finished.notify_all();
+
+    return cancelled;
+}
+
+size_t ProcessList::cancelAdmissionOfMySQLConnection(UInt64 connection_id, const String & current_user, bool may_kill_other_users)
+{
+    const String query_id_prefix = fmt::format("mysql:{}:", connection_id);
+
+    LockAndBlocker lock(mutex);
+    return cancelAdmissionWaitersLocked([&](const AdmissionWaiter & waiter)
+    {
+        return waiter.interface == ClientInfo::Interface::MYSQL && waiter.query_id.starts_with(query_id_prefix)
+            && (may_kill_other_users || waiter.user == current_user);
+    });
+}
+
+void ProcessList::releaseAdmissionSlotLocked(Lock & /* acquired_lock */)
+{
+    chassert(admission_running > 0);
+
+    /// Respect runtime decreases of `max_concurrent_queries`: when we are over
+    /// the current limit, decrement instead of transferring so the new (smaller)
+    /// limit takes effect. The next release that brings `admission_running` back
+    /// to `max_size` will hand the slot to the front waiter.
+    if (admission_queue.empty() || admission_running > max_size)
+    {
+        --admission_running;
+        return;
+    }
+
+    /// Transfer the slot to the front waiter (FIFO).
+    AdmissionWaiter * front = admission_queue.front();
+    admission_queue.pop_front();
+    front->granted = true;
+    front->cv.notify_one();
+}
+
+void ProcessList::setMaxSize(size_t max_size_)
+{
+    Lock lock(mutex);
+
+    max_size = max_size_;
+
+    /// Drain queued waiters that the new limit now admits. Without this,
+    /// raising `max_concurrent_queries` (or setting it to 0/unlimited) would
+    /// leave existing waiters blocked until their `queue_max_wait_ms` timeout,
+    /// because finishing queries decrement `admission_running` instead of
+    /// transferring slots (see `releaseAdmissionSlotLocked`) and new queries
+    /// bypass admission entirely when `max_size == 0`.
+    while (!admission_queue.empty() && (max_size == 0 || admission_running < max_size))
+    {
+        AdmissionWaiter * front = admission_queue.front();
+        admission_queue.pop_front();
+        ++admission_running;
+        front->granted = true;
+        front->cv.notify_one();
+    }
+}
+
+void QueryStatus::releaseAdmissionSlot()
+{
+    if (!holds_admission_slot || admission_slot_pinned)
+        return;
+
+    /// We need ProcessList::mutex because all admission fields are guarded by it.
+    auto entry = getProcessListEntry();
+    if (!entry)
+        return;
+
+    ProcessList & process_list = entry->getProcessList();
+    {
+        LockAndOverCommitTrackerBlocker<std::unique_lock, ProcessList::Mutex> locker(process_list.getMutex());
+        auto & lock = locker.getUnderlyingLock();
+
+        if (!holds_admission_slot || admission_slot_pinned)
+            return; /// Double-check under lock.
+
+        /// This whole sequence is allocation-free and cannot throw: `increaseAdmissionPendingTeardowns`
+        /// only touches counters whose storage is pre-created at query registration (see its comment), and
+        /// `releaseAdmissionSlotLocked` only manipulates `admission_running` and the waiter deque. That
+        /// matters because `releaseAdmissionSlot` runs from cleanup/destructor paths (`BlockIO::~BlockIO`,
+        /// `BlockIO::reset`), where a throw would call `std::terminate`, or would abort `BlockIO::onFinish`
+        /// before the pipeline is finalized and the memory reservation is released.
+        process_list.increaseAdmissionPendingTeardowns(query_kind, client_info.current_user);
+        holds_admission_slot = false;
+        admission_slot_released_early = true;
+        process_list.releaseAdmissionSlotLocked(lock);
+    }
 }
 
 void ProcessList::increaseWaitingQueryAmount()

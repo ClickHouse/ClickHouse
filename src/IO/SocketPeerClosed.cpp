@@ -3,11 +3,14 @@
 #include <Poco/Net/StreamSocket.h>
 #include <Poco/Net/SocketImpl.h>
 
+#include <Common/ErrnoException.h>
+#include <Common/Exception.h>
+
+#include <poll.h>
 #include <sys/socket.h>
 #include <cerrno>
 
 #if USE_SSL
-#include <Common/Exception.h>
 #include <Poco/Net/SecureStreamSocketImpl.h>
 #include <openssl/ssl.h>
 #include <openssl/err.h>
@@ -19,6 +22,36 @@
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int CANNOT_POLL;
+}
+
+namespace
+{
+
+/// Whether the transport reports a hangup, regardless of unread bytes still queued in front of it:
+/// the peer has shut down its sending side (`POLLRDHUP`, Linux), or the connection is hung up or broken.
+bool hasTransportHangup(int fd)
+{
+#if defined(POLLRDHUP)
+    constexpr decltype(pollfd::events) hangup_events = POLLRDHUP | POLLHUP | POLLERR | POLLNVAL;
+#else
+    constexpr decltype(pollfd::events) hangup_events = POLLHUP | POLLERR | POLLNVAL;
+#endif
+    pollfd pfd{.fd = fd, .events = hangup_events, .revents = 0};
+    int res = 0;
+    do
+        res = ::poll(&pfd, 1, 0);
+    while (res < 0 && errno == EINTR);
+
+    if (res < 0)
+        throw ErrnoException(ErrorCodes::CANNOT_POLL, "Cannot poll socket {}", fd);
+    return (pfd.revents & hangup_events) != 0;
+}
+
+}
 
 SocketState getSocketState(int fd)
 {
@@ -162,6 +195,12 @@ SocketState getSocketState(const Poco::Net::StreamSocket & socket)
 #if USE_SSL
     if (auto * secure = dynamic_cast<Poco::Net::SecureStreamSocketImpl *>(socket.impl()))
     {
+        /// Another thread may use the same connection at the same time (e.g. the HTTP progress
+        /// callback runs on pipeline threads while the response is written), and an `SSL` object
+        /// must not be used concurrently. Hold the socket's own SSL lock for the whole probe,
+        /// including the blocking-mode changes, as `sendBytes` and `receiveBytes` do.
+        auto ssl_lock = secure->lockSSL();
+
         /// A connected secure socket has a live `SSL` object; the null case (handshake not yet
         /// performed) has no TLS state to inspect, so fall back to the raw file-descriptor check.
         if (auto * ssl = secure->ssl())
@@ -177,21 +216,34 @@ SocketState getSocketState(const Poco::Net::StreamSocket & socket)
     return getSocketState(socket.impl()->sockfd());
 }
 
+namespace
+{
+
+/// Unread bytes do not prove that the peer is still there: a client may send more data (e.g. the
+/// external tables of a native query that is still waiting for admission) and close the connection,
+/// and the bytes stay in front of the FIN until they are read.
+bool isClosedState(SocketState state, int fd)
+{
+    return state == SocketState::Closed || (state == SocketState::DataPending && hasTransportHangup(fd));
+}
+
+}
+
 bool isSocketPeerClosed(int fd)
 {
-    return getSocketState(fd) == SocketState::Closed;
+    return isClosedState(getSocketState(fd), fd);
 }
 
 bool isSocketPeerClosed(const Poco::Net::StreamSocket & socket)
 {
-    return getSocketState(socket) == SocketState::Closed;
+    return isClosedState(getSocketState(socket), socket.impl()->sockfd());
 }
 
 #if USE_SSL
 
 bool isSSLPeerClosed(ssl_st * ssl)
 {
-    return getSSLSocketState(ssl) == SocketState::Closed;
+    return isClosedState(getSSLSocketState(ssl), SSL_get_fd(ssl));
 }
 
 #endif

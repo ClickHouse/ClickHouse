@@ -2830,7 +2830,7 @@ TEST(SchedulerWorkloadResourceManager, MemoryReservationRetiresUnclaimedSpill)
     auto link = classifier->get("memory");
     auto status = std::make_shared<QueryStatus>(
         Context::getGlobalContextInstance(), "", 0, ClientInfo{}, std::nullopt, QueryPriorities::Handle{}, nullptr,
-        std::make_unique<MemoryReservation>(link, "finishing_query", 150, 1), nullptr, IAST::QueryKind::Select, Settings{}, 0, false);
+        std::make_unique<MemoryReservation>(link, "finishing_query", 150, 1), false, nullptr, IAST::QueryKind::Select, Settings{}, 0, false);
     auto * reservation = status->getMemoryReservation();
 
     auto state = std::make_shared<SpillableState>();
@@ -2962,7 +2962,7 @@ TEST(SchedulerWorkloadResourceManager, MemoryReservationSpillsIdleProcessors)
             thread_status.emplace();
         auto status = std::make_shared<QueryStatus>(
             Context::getGlobalContextInstance(), "", 0, ClientInfo{}, std::nullopt, QueryPriorities::Handle{}, nullptr,
-            std::make_unique<MemoryReservation>(classifier->get("memory"), "idle_spillers", 300, 100),
+            std::make_unique<MemoryReservation>(classifier->get("memory"), "idle_spillers", 300, 100), false,
             std::make_shared<ThreadGroup>(Context::getGlobalContextInstance(), 0),
             IAST::QueryKind::Select, Settings{}, 0, false);
         auto * reservation = status->getMemoryReservation();

@@ -123,6 +123,9 @@ struct QueryState
     /// Data was read.
     bool read_all_data = true;
 
+    /// The empty block terminating the external tables (and scalars) has been read.
+    bool received_external_tables = false;
+
     /// Request requires data from client for function input() or for INSERT ... RETURNING
     bool need_receive_data_for_input = false;
     /// The data for input() is received completely (or receiving failed). Set by the thread of the pipeline reading the data.
@@ -230,6 +233,8 @@ private:
     UInt32 client_parallel_replicas_protocol_version = 0;
     String proto_send_chunked_cl = "notchunked";
     String proto_recv_chunked_cl = "notchunked";
+    /// The input from the client uses the chunked protocol.
+    bool receive_chunked = false;
     String quota_key;
 
     /// Connection settings, which are extracted from a context.
@@ -322,6 +327,23 @@ private:
     void processClusterNameAndSalt();
 
     void readTemporaryTables(QueryState & state) TSA_REQUIRES(callback_mutex);
+    /// The connection liveness check for the admission wait of the query, which also notices its `Cancel`.
+    std::function<bool()> makeConnectionAliveCheck(std::shared_ptr<QueryState> & query_state);
+    /// Whether the input buffered in `in` begins with the packet of the empty block terminating the external tables.
+    enum class ExternalTablesTerminatorState : uint8_t
+    {
+        /// The buffered input begins with something else.
+        Absent,
+        /// The buffered input is the beginning of the packet (maybe empty).
+        Incomplete,
+        /// The buffered input begins with the whole packet.
+        Complete,
+    };
+    ExternalTablesTerminatorState getExternalTablesTerminatorState(const QueryState & state) const TSA_REQUIRES(callback_mutex);
+    /// The bound of the compressed data of the terminating packet (the empty block) read ahead before the query is admitted.
+    static constexpr size_t max_compressed_external_tables_terminator_size = 128;
+    /// The bound of the whole packet: the packet type, the empty table name, the checksum, the header and the data.
+    static constexpr size_t max_external_tables_terminator_packet_size = 2 + 16 + 9 + max_compressed_external_tables_terminator_size;
     void skipData(QueryState & state) TSA_REQUIRES(callback_mutex);
     bool skipDataPacket(QueryState & state) TSA_REQUIRES(callback_mutex);
 

@@ -432,6 +432,11 @@ struct BackupsWorker::BackupStarter
         backup_settings = BackupSettings::fromBackupQuery(*backup_query);
         backup_context->makeQueryContext();
 
+        /// `backup_context` may outlive the connection that submitted the query (`ASYNC`), so it must not keep the
+        /// transport-scoped liveness callback copied from `query_context`: it captures the request / socket of the
+        /// protocol handler by reference. See the same treatment in `executeQueryInBackground`.
+        backup_context->setConnectionAliveCheck({});
+
         /// `makeQueryContext` above resets `backup_context` to a fresh, empty `QueryPrivilegesInfo`. Sharing
         /// the originating one accounts privileges checked on copies of `backup_context` to the BACKUP query,
         /// so they reach the `used_privileges`/`missing_privileges` columns of `system.query_log`.
@@ -485,7 +490,12 @@ struct BackupsWorker::BackupStarter
         /// process_list_element_holder is used to make an element in ProcessList live while BACKUP is working asynchronously.
         auto process_list_element = backup_context->getProcessListElement();
         if (process_list_element)
+        {
             process_list_element_holder = process_list_element->getProcessListEntry();
+            /// The admission slot must stay occupied while the operation is working, not only until the
+            /// query returns (which for `ASYNC` is right after the operation is started).
+            process_list_element->pinAdmissionSlotUntilTeardown();
+        }
     }
 
     std::pair<bool, BackupStatus> addInfo()
@@ -958,6 +968,11 @@ struct BackupsWorker::RestoreStarter
         restore_settings = RestoreSettings::fromRestoreQuery(*restore_query);
         restore_context->makeQueryContext();
 
+        /// `restore_context` may outlive the connection that submitted the query (`ASYNC`), so it must not keep the
+        /// transport-scoped liveness callback copied from `query_context`: it captures the request / socket of the
+        /// protocol handler by reference. See the same treatment in `executeQueryInBackground`.
+        restore_context->setConnectionAliveCheck({});
+
         /// `makeQueryContext` above reset `restore_context` to a fresh, empty `QueryPrivilegesInfo`. Account the
         /// privileges checked while restoring (in `RestorerFromBackup::checkAccessForObjectsFoundInBackup` and
         /// when creating databases/tables from the backup, all of which run on copies of `restore_context`) to the
@@ -1007,7 +1022,12 @@ struct BackupsWorker::RestoreStarter
         /// process_list_element_holder is used to make an element in ProcessList live while BACKUP is working asynchronously.
         auto process_list_element = restore_context->getProcessListElement();
         if (process_list_element)
+        {
             process_list_element_holder = process_list_element->getProcessListEntry();
+            /// The admission slot must stay occupied while the operation is working, not only until the
+            /// query returns (which for `ASYNC` is right after the operation is started).
+            process_list_element->pinAdmissionSlotUntilTeardown();
+        }
     }
 
     std::pair<bool, BackupStatus> addInfo()
