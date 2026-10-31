@@ -568,6 +568,7 @@ public:
 
     bool isParallelReadingFromReplicas() const { return is_parallel_reading_from_replicas; }
     void disableQueryConditionCache() { allow_query_condition_cache = false; }
+    void disableSpreadingSmallRead() { allow_spreading_small_read = false; }
 
     /// After projection optimization, ReadFromMergeTree may be replaced with a new reading step, and the ParallelReadingExtension must be forwarded to the new step.
     /// Meanwhile, the ParallelReadingExtension originally in ReadFromMergeTree might be clear.
@@ -995,6 +996,7 @@ private:
     bool enable_vertical_final = false;
     bool allow_query_condition_cache = true;
     bool allow_top_k_prewhere_query_condition_cache = true;
+    bool allow_spreading_small_read = true;
 
     LazyMaterializingRowsPtr lazy_materializing_rows;
     bool has_lazily_read_columns = false;
