@@ -1,0 +1,8 @@
+summing	[1,2]	[2,4]
+ttl	0
+dotted scalar stored	1
+dotted scalar stable	1
+unshared offsets stored	1
+unshared offsets stable	1
+unshared offsets	1	[1]	1
+unshared offsets	2	[2,3]	1

@@ -1,0 +1,7 @@
+horizontal	1	['','']	['z','z']	2	1
+horizontal	2	['y']	['yz']	1	1
+vertical	1	['','']	['z','z']	2	1
+vertical	2	['y']	['yz']	1	1
+ttl group by	1	2000-01-01 01:00:00	30	0
+ttl group by nested	1	2000-01-01 01:00:00	[1,2]	[1,2]	1
+1

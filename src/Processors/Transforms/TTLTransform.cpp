@@ -175,11 +175,14 @@ TTLTransform::TTLTransform(
             getExpressions(where_ttl, subqueries_for_sets, context), where_ttl,
             old_ttl_infos.rows_where_ttl[where_ttl.result_column], current_time_, force_));
 
+    /// The algorithms run on the block after the expired columns are added to it (see `consume`), so
+    /// the aggregation is set up with the output header: it rebuilds the block from its own header and
+    /// would otherwise lose the expired columns.
     for (const auto & group_by_ttl : metadata_snapshot_->getGroupByTTLs())
         algorithms.emplace_back(std::make_unique<TTLAggregationAlgorithm>(
                 getExpressions(group_by_ttl, subqueries_for_sets, context), group_by_ttl,
                 old_ttl_infos.group_by_ttl[group_by_ttl.result_column], current_time_, force_,
-                getInputPort().getHeader(), storage_, metadata_snapshot_));
+                getOutputPort().getHeader(), storage_, metadata_snapshot_));
 
     const auto & storage_columns = metadata_snapshot_->getColumns();
     const auto & column_defaults = storage_columns.getDefaults();
@@ -204,6 +207,47 @@ TTLTransform::TTLTransform(
         expired_columns_data.emplace(
             expired_column.name, ExpiredColumnData{expired_column.type, std::move(default_expression), std::move(default_column_name)});
     }
+
+    /// An expired column is not stored and reads as its `DEFAULT`, so the `DEFAULT` of another
+    /// expired column may reference it. Such a reference can only be evaluated once the referenced
+    /// column has been put into the block, therefore the expired columns are processed in
+    /// dependency order. Column defaults cannot form a cycle, and the `visiting` guard makes the
+    /// walk terminate even if one ever appeared.
+    NameSet visiting;
+    auto add_in_dependency_order = [&](const String & name, auto & self) -> void
+    {
+        if (!visiting.emplace(name).second)
+            return;
+
+        const auto & data = expired_columns_data.at(name);
+        if (data.default_expression)
+        {
+            for (const auto & required_column : data.default_expression->getRequiredColumns())
+            {
+                /// A required name may be a subcolumn (`n.b.size0`) of an expired column; resolve it
+                /// to the longest prefix that is an expired column itself.
+                String prefix = required_column;
+                while (true)
+                {
+                    if (prefix != name && expired_columns_data.contains(prefix))
+                    {
+                        self(prefix, self);
+                        break;
+                    }
+
+                    auto last_dot = prefix.rfind('.');
+                    if (last_dot == String::npos)
+                        break;
+                    prefix.resize(last_dot);
+                }
+            }
+        }
+
+        expired_columns_in_dependency_order.push_back(name);
+    };
+
+    for (const auto & expired_column : expired_columns)
+        add_in_dependency_order(expired_column.name, add_in_dependency_order);
 
     const auto column_ttls = metadata_snapshot_->getColumnTTLs();
 
@@ -352,8 +396,9 @@ void TTLTransform::consume(Chunk chunk)
     auto block = getInputPort().getHeader().cloneWithColumns(chunk.detachColumns());
 
     /// Fill expired columns with default values which will later be handled in TTLColumnAlgorithm
-    for (const auto & [column, data] : expired_columns_data)
+    for (const auto & column : expired_columns_in_dependency_order)
     {
+        const auto & data = expired_columns_data.at(column);
         auto default_column
             = ITTLAlgorithm::executeExpressionAndGetColumn(data.default_expression, block, data.default_column_name);
         if (default_column)
