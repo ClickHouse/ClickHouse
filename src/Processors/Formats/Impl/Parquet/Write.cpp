@@ -106,10 +106,11 @@ struct StatisticsNumeric
         if (min > max) // empty
             return s;
         s.__isset.min_value = s.__isset.max_value = true;
+        /// Parquet stores the bounds `PLAIN`-encoded, i.e. little-endian for fixed-width numbers.
         s.min_value.resize(sizeof(T));
         s.max_value.resize(sizeof(T));
-        memcpy(s.min_value.data(), &min, sizeof(T));
-        memcpy(s.max_value.data(), &max, sizeof(T));
+        unalignedStoreLittleEndian<T>(s.min_value.data(), min);
+        unalignedStoreLittleEndian<T>(s.max_value.data(), max);
         s.__set_is_min_value_exact(true);
         s.__set_is_max_value_exact(true);
 
@@ -935,7 +936,9 @@ struct ConverterDecimal
         memcpy(data_buf.data(), reinterpret_cast<const char *>(column.getData().data() + offset), count * sizeof(T));
         for (size_t i = 0; i < count; ++i)
         {
-            std::reverse(data_buf.data() + i * sizeof(T), data_buf.data() + (i + 1) * sizeof(T));
+            /// On big-endian hosts the native representation is already big-endian.
+            if constexpr (std::endian::native == std::endian::little)
+                std::reverse(data_buf.data() + i * sizeof(T), data_buf.data() + (i + 1) * sizeof(T));
             ptr_buf[i].ptr = data_buf.data() + i * sizeof(T);
         }
         return ptr_buf.data();
