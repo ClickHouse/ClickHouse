@@ -2491,12 +2491,13 @@ std::string_view ColumnObject::SortedPathsIterator::getCurrentSharedDataValue() 
     return shared_data_values->getDataAt(shared_data_it);
 }
 
-ColumnObject::SortedPathsIterator::PathInfo ColumnObject::SortedPathsIterator::getCurrentPathInfo() const
+ColumnObject::SortedPathsIterator::PathInfo ColumnObject::SortedPathsIterator::getCurrentPathInfo(bool materialize_shared_data_value) const
 {
     PathInfo path_info;
     path_info.type = current_path_type;
     path_info.path = getCurrentPath();
-    std::tie(path_info.column, path_info.row) = getCurrentPathColumnAndRow();
+    if (current_path_type != PathType::SHARED_DATA || materialize_shared_data_value)
+        std::tie(path_info.column, path_info.row) = getCurrentPathColumnAndRow();
     return path_info;
 }
 

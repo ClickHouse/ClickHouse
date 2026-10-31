@@ -969,6 +969,23 @@ static void deserializeTextImpl(
 }
 
 template <typename NestedSerialize, typename SerializeNull>
+static void serializeBinaryEncodedValue(std::string_view value, WriteBuffer & ostr, NestedSerialize nested_serialize, SerializeNull serialize_null)
+{
+    ReadBufferFromMemory buf(value);
+    auto variant_type = decodeDataType(buf);
+    if (isNothing(variant_type))
+    {
+        serialize_null(ostr);
+        return;
+    }
+    auto tmp_variant_column = variant_type->createColumn();
+    /// Pass the decoded type so a cache miss doesn't parse the name through DataTypeFactory again.
+    auto variant_serialization = getDataTypesCache().getSerialization(variant_type->getName(), variant_type);
+    variant_serialization->deserializeBinary(*tmp_variant_column, buf, FormatSettings{});
+    nested_serialize(*variant_serialization, *tmp_variant_column, 0, ostr);
+}
+
+template <typename NestedSerialize, typename SerializeNull>
 static void serializeTextImpl(
     const IColumn & column,
     size_t row_num,
@@ -992,14 +1009,7 @@ static void serializeTextImpl(
     /// Check if this row has value in shared variant. In this case we should first deserialize it from binary format.
     if (global_discr == dynamic_column.getSharedVariantDiscriminator())
     {
-        auto value = dynamic_column.getSharedVariant().getDataAt(variant_column.offsetAt(row_num));
-        ReadBufferFromMemory buf(value);
-        auto variant_type = decodeDataType(buf);
-        auto tmp_variant_column = variant_type->createColumn();
-        /// Pass the decoded type so a cache miss doesn't parse the name through DataTypeFactory again.
-        auto variant_serialization = getDataTypesCache().getSerialization(variant_type->getName(), variant_type);
-        variant_serialization->deserializeBinary(*tmp_variant_column, buf, FormatSettings{});
-        nested_serialize(*variant_serialization, *tmp_variant_column, 0, ostr);
+        serializeBinaryEncodedValue(dynamic_column.getSharedVariant().getDataAt(variant_column.offsetAt(row_num)), ostr, nested_serialize, serialize_null);
         return;
     }
 
@@ -1177,6 +1187,18 @@ void SerializationDynamic::serializeTextJSONPretty(const IColumn & column, size_
     };
 
     serializeTextImpl(column, row_num, ostr, nested_serialize, serialize_null);
+}
+
+void SerializationDynamic::serializeBinaryEncodedValueTextJSON(std::string_view value, WriteBuffer & ostr, const FormatSettings & settings, bool pretty, size_t indent)
+{
+    checkStackSize();
+    auto serialize_null = [](WriteBuffer & buf) { SerializationNullable::serializeNullJSON(buf); };
+    if (pretty)
+        serializeBinaryEncodedValue(value, ostr, [&](const ISerialization & serialization, const IColumn & col, size_t row, WriteBuffer & buf)
+            { serialization.serializeTextJSONPretty(col, row, buf, settings, indent); }, serialize_null);
+    else
+        serializeBinaryEncodedValue(value, ostr, [&](const ISerialization & serialization, const IColumn & col, size_t row, WriteBuffer & buf)
+            { serialization.serializeTextJSON(col, row, buf, settings); }, serialize_null);
 }
 
 void SerializationDynamic::deserializeTextJSON(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
