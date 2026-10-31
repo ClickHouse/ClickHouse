@@ -12,8 +12,9 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 COMPRESSIBLE_PATH="${CLICKHOUSE_USER_FILES}/lakehouses/${CLICKHOUSE_DATABASE}_compressible"
 INCOMPRESSIBLE_PATH="${CLICKHOUSE_USER_FILES}/lakehouses/${CLICKHOUSE_DATABASE}_incompressible"
+PARALLEL_PATH="${CLICKHOUSE_USER_FILES}/lakehouses/${CLICKHOUSE_DATABASE}_incompressible_parallel"
 
-rm -rf "${COMPRESSIBLE_PATH}" "${INCOMPRESSIBLE_PATH}"
+rm -rf "${COMPRESSIBLE_PATH}" "${INCOMPRESSIBLE_PATH}" "${PARALLEL_PATH}"
 
 SETTINGS="
     SET allow_experimental_insert_into_iceberg = 1;
@@ -44,6 +45,19 @@ ${CLICKHOUSE_CLIENT} --query "
     INSERT INTO incompressible SELECT number, randomPrintableASCII(1024) FROM numbers(4096);
 "
 
+# The same with the row groups encoded in background threads, as by default. They are written to the file
+# later, so the size of the file lags behind: still several files, each about the limit, however fast the
+# encoding goes. More data, so that many row groups are in flight.
+${CLICKHOUSE_CLIENT} --query "
+    ${SETTINGS}
+    SET max_threads = 8;
+    CREATE TABLE incompressible_parallel (id Int64, s String)
+    ENGINE = IcebergLocal('${PARALLEL_PATH}', 'Parquet')
+    SETTINGS output_format_parquet_row_group_size = 100, output_format_parquet_parallel_encoding = 1,
+        output_format_parquet_compression_method = 'zstd';
+    INSERT INTO incompressible_parallel SELECT number, randomPrintableASCII(1024) FROM numbers(20000);
+"
+
 ${CLICKHOUSE_CLIENT} --query "
     SELECT
         table,
@@ -60,6 +74,7 @@ ${CLICKHOUSE_CLIENT} --query "
 ${CLICKHOUSE_CLIENT} --query "
     SELECT count(), sum(length(s)) FROM compressible;
     SELECT count(), sum(length(s)) FROM incompressible;
+    SELECT count(), sum(length(s)) FROM incompressible_parallel;
 "
 
-rm -rf "${COMPRESSIBLE_PATH}" "${INCOMPRESSIBLE_PATH}"
+rm -rf "${COMPRESSIBLE_PATH}" "${INCOMPRESSIBLE_PATH}" "${PARALLEL_PATH}"

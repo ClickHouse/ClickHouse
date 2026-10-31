@@ -87,7 +87,17 @@ void MultipleFileWriter::consume(const Chunk & chunk)
     /// the same measure as `file_size_in_bytes` in the manifest, which the compaction uses to select its input files.
     /// Comparing it against the uncompressed size makes the files smaller than the target by the compression ratio,
     /// and the output of the compaction is selected by the compaction again. The file can exceed the limit
-    /// by what the output format has not written yet: an incomplete Parquet row group and the row groups being encoded.
+    /// by what the output format has not written yet, an incomplete Parquet row group.
+    ///
+    /// The Parquet row groups that are being encoded in background threads are written to the file later. If they can
+    /// make the file reach the limit, wait for them, otherwise where the file is cut depends on how fast the encoding goes.
+    /// Their size is estimated by their memory, which is not an upper bound: a column can encode bigger, e.g. with
+    /// a dictionary of many distinct values, or as `LowCardinality` falling back to `PLAIN`. Then the file can still
+    /// exceed the limit, by at most the row groups in flight. Always waiting would be exact, but would leave one row
+    /// group in flight, encoded in parallel only across its columns.
+    if (output_format && buffer->count() + output_format->getPendingDataBytes() >= max_data_file_num_bytes)
+        output_format->writePendingData();
+
     if (!current_file_num_rows || *current_file_num_rows >= max_data_file_num_rows || buffer->count() >= max_data_file_num_bytes)
     {
         startNewFile();
