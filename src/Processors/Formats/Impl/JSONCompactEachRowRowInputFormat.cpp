@@ -46,7 +46,9 @@ void JSONCompactEachRowRowInputFormat::syncAfterError()
 }
 
 JSONCompactEachRowFormatReader::JSONCompactEachRowFormatReader(ReadBuffer & in_, bool yield_strings_, const FormatSettings & format_settings_)
-    : FormatWithNamesAndTypesReader(in_, format_settings_), yield_strings(yield_strings_)
+    : FormatWithNamesAndTypesReader(in_, format_settings_)
+    , yield_strings(yield_strings_)
+    , skip_field_json_settings(JSONUtils::getJSONSettingsForSkippingField(format_settings_.json))
 {
 }
 
@@ -77,7 +79,7 @@ void JSONCompactEachRowFormatReader::skipRowBetweenDelimiter()
 void JSONCompactEachRowFormatReader::skipField()
 {
     skipWhitespaceIfAny(*in);
-    skipJSONField(*in, "skipped_field", format_settings.json);
+    skipJSONField(*in, "skipped_field", skip_field_json_settings);
 }
 
 void JSONCompactEachRowFormatReader::skipHeaderRow()
