@@ -20,6 +20,7 @@
 #include <Interpreters/Context.h>
 #include <Processors/Formats/AggregateFunctionStatesFromValuesInputFormat.h>
 #include <Processors/Formats/Impl/Parquet/SchemaConverter.h>
+#include <Processors/TopKThresholdTracker.h>
 #include <Storages/MergeTree/ColumnsCache.h>
 #include <Storages/MergeTree/KeyCondition.h>
 
@@ -421,8 +422,10 @@ std::optional<std::pair<std::vector<size_t>, size_t>> ParquetV3BlockInputFormat:
 {
     if (!reader || min_max_from_statistics)
         return std::nullopt;
-    /// A row group skipped by a statistics-only threshold was never checked against the filter, so it may match.
-    const bool top_k_statistics_only = format_filter_info->top_k_filter && !format_filter_info->top_k_filter->filter_rows;
+    /// A row group skipped by the threshold may match: a statistics-only threshold never checked it against the
+    /// filter, and the strict threshold of a single sort column skips row groups that may hold rows equal to it.
+    const auto & top_k = format_filter_info->top_k_filter;
+    const bool top_k_skip_may_match = top_k && (!top_k->filter_rows || top_k->single_sort_column);
     std::vector<size_t> matched;
     for (const auto & row_group : reader->reader.row_groups)
     {
@@ -439,7 +442,7 @@ std::optional<std::pair<std::vector<size_t>, size_t>> ParquetV3BlockInputFormat:
             }
         }
 
-        if (produced_rows || (top_k_statistics_only && row_group.skipped_by_top_k.load()))
+        if (produced_rows || (top_k_skip_may_match && row_group.skipped_by_top_k.load()))
             matched.push_back(row_group.row_group_idx);
     }
     return std::make_pair(std::move(matched), reader->reader.file_metadata().row_groups.size());
@@ -451,8 +454,18 @@ std::vector<std::pair<size_t, Field>> ParquetV3BlockInputFormat::getTopKBestValu
     if (!reader)
         return res;
     for (const auto & row_group : reader->reader.row_groups)
-        if (row_group.need_to_process && row_group.top_k_best_value)
+    {
+        if (!row_group.need_to_process)
+            continue;
+        if (row_group.top_k_best_value)
             res.emplace_back(row_group.row_group_idx, (*row_group.top_k_best_value)[0]);
+        else if (row_group.skipped_by_top_k.load() && row_group.top_k_sort_column_range)
+        {
+            const Range & range = *row_group.top_k_sort_column_range;
+            const bool ascending = format_filter_info->top_k_filter->threshold_tracker->getDirection() == 1;
+            res.emplace_back(row_group.row_group_idx, ascending ? range.left : range.right);
+        }
+    }
     return res;
 }
 
