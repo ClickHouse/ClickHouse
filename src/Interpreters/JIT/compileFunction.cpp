@@ -46,6 +46,13 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
+ColumnData getMutableColumnData(IColumn * column, size_t skip_rows)
+{
+    if (auto * nullable = typeid_cast<ColumnNullable *>(column))
+        nullable->materializeNullMap();
+    return getColumnData(column, skip_rows);
+}
+
 ColumnData getColumnData(const IColumn * column, size_t skip_rows)
 {
     const bool is_const = isColumnConst(*column);
@@ -57,7 +64,7 @@ ColumnData getColumnData(const IColumn * column, size_t skip_rows)
 
     if (const auto * nullable = typeid_cast<const ColumnNullable *>(column))
     {
-        result.null_data = nullable->getNullMapColumn().getDataAt(skip_rows).data();
+        result.null_data = reinterpret_cast<const char *>(nullable->getNullMapRawDataOrZeros() + skip_rows);
         column = &nullable->getNestedColumn();
     }
     /// skip null key data for one nullable key optimization

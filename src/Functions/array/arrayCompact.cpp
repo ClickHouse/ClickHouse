@@ -1,4 +1,5 @@
 #include <Columns/ColumnDecimal.h>
+#include <Columns/ColumnNullable.h>
 #include <Columns/ColumnsNumber.h>
 
 #include <Common/HashTable/HashTable.h>
@@ -106,6 +107,24 @@ struct ArrayCompactImpl
         auto res_offsets_column = ColumnArray::ColumnOffsets::create(src_offsets_size);
         IColumn::Offsets & res_offsets = res_offsets_column->getData();
 
+        /// For `Nullable`, compare the NULLs here and the other values in the nested column,
+        /// so the null map is read once instead of on every comparison.
+        const auto * mapped_nullable = typeid_cast<const ColumnNullable *>(mapped.get());
+        const IColumn & mapped_values = mapped_nullable ? mapped_nullable->getNestedColumn() : *mapped;
+        const NullMap * mapped_null_map = mapped_nullable ? mapped_nullable->tryGetNullMapData() : nullptr;
+
+        auto is_different = [&](size_t lhs, size_t rhs)
+        {
+            if (mapped_null_map)
+            {
+                bool lhs_is_null = (*mapped_null_map)[lhs];
+                bool rhs_is_null = (*mapped_null_map)[rhs];
+                if (lhs_is_null || rhs_is_null)
+                    return lhs_is_null != rhs_is_null;
+            }
+            return mapped_values.compareAt(lhs, rhs, mapped_values, 1) != 0;
+        };
+
         size_t res_pos = 0;
         size_t src_pos = 0;
 
@@ -124,7 +143,7 @@ struct ArrayCompactImpl
                 ++res_pos;
                 for (; src_pos < src_offset; ++src_pos)
                 {
-                    if (mapped->compareAt(src_pos - 1, src_pos, *mapped, 1))
+                    if (is_different(src_pos - 1, src_pos))
                     {
                         res_values_column->insertFrom(src_values, src_pos);
                         ++res_pos;

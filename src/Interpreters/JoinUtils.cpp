@@ -50,7 +50,8 @@ namespace
 void insertFromNullableOrDefault(MutableColumnPtr & dst, const ColumnNullable * nullable_col)
 {
     const auto & nested = nullable_col->getNestedColumn();
-    const auto & nullmap = nullable_col->getNullMapColumn().getData();
+    /// Do not create the null map: the column may be shared (e.g. stored in a hash join).
+    const UInt8 * nullmap = nullable_col->getNullMapRawDataOrZeros();
     if (auto * lc = typeid_cast<ColumnLowCardinality *>(dst.get()); lc && !nested.lowCardinality())
     {
         for (size_t i = 0; i < nullable_col->size(); ++i)
@@ -496,7 +497,7 @@ void changeColumnRepresentation(const ColumnPtr & src_column, ColumnPtr & dst_co
             if (const auto * nullable = checkAndGetColumn<ColumnNullable>(&*src_column))
             {
                 dst_column = makeNullable(changeLowCardinality(nullable->getNestedColumnPtr(), dst_not_null));
-                assert_cast<ColumnNullable &>(*dst_column->assumeMutable()).applyNullMap(nullable->getNullMapColumn());
+                assert_cast<ColumnNullable &>(*dst_column->assumeMutable()).applyNullMap(*nullable);
             }
             else
                 dst_column = changeLowCardinality(src_column, dst_not_null);
@@ -756,6 +757,11 @@ JoinMask getColumnAsMask(const Block & block, const String & column_name)
             return JoinMask(false, block.rows());
 
         auto nested_column = castToBoolColumn(nullable_col->getNestedColumnPtr());
+
+        /// A column without a null map has no NULLs. Do not create the null map: the column may be stored in a hash join.
+        if (!nullable_col->hasNullMap())
+            return JoinMask(std::move(nested_column));
+
         /// Return nested column with NULL set to false
         const auto & nest_col = assert_cast<const ColumnUInt8 &>(*nested_column);
         const auto & null_map = nullable_col->getNullMapColumn();

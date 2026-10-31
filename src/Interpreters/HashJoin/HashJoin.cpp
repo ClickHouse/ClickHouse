@@ -128,8 +128,8 @@ static void correctNullabilityInplace(ColumnWithTypeAndName & column, bool nulla
     {
         /// We have to replace values masked by NULLs with defaults.
         if (column.column)
-            if (const auto * nullable_column = checkAndGetColumn<ColumnNullable>(&*column.column))
-                column.column = JoinCommon::filterWithBlanks(column.column, nullable_column->getNullMapColumn().getData(), true);
+            if (const auto * nullable_column = checkAndGetColumn<ColumnNullable>(&*column.column); nullable_column && nullable_column->hasNullMap())
+                column.column = JoinCommon::filterWithBlanks(column.column, nullable_column->getNullMapData(), true);
 
         JoinCommon::removeColumnNullability(column);
     }
@@ -998,9 +998,10 @@ bool HashJoin::addBlockToJoin(const Block & block, ScatteredBlock::Selector sele
                 if (asof_const_column->isNullAt(0))
                     return false;
             }
-            else
+            else if (const auto * asof_null_map = assert_cast<const ColumnNullable &>(*all_key_columns.at(asof_key_name)).tryGetNullMapData())
             {
-                const auto & asof_column_nullable = assert_cast<const ColumnNullable &>(*all_key_columns.at(asof_key_name)).getNullMapData();
+                /// A column without a null map has no NULLs. Do not create the null map: the block is stored and accounted.
+                const auto & asof_column_nullable = *asof_null_map;
 
                 auto new_selector = ScatteredBlock::Indexes::create();
                 auto & new_selector_data = new_selector->getData();
@@ -2243,6 +2244,7 @@ void HashJoin::tryRerangeRightTableDataImpl(Map & map [[maybe_unused]])
         for (auto & columns : data->columns)
         {
             columns.selector = ScatteredBlock::Selector(columns.columns.at(0)->size());
+            columns.materializeNullMaps();
             new_blocks_allocated_size += columns.allocatedBytes();
         }
         data->allocated_size = new_blocks_allocated_size;
@@ -2540,7 +2542,8 @@ ColumnPtr probeFixedHashMap(
     if (const auto * nullable = checkAndGetColumn<ColumnNullable>(col))
     {
         col = &nullable->getNestedColumn();
-        nm_col = &nullable->getNullMapColumn();
+        /// nullptr if the column has no null map, which means it has no NULLs.
+        nm_col = nullable->tryGetNullMapColumn();
     }
 
     const size_t n = col->size();

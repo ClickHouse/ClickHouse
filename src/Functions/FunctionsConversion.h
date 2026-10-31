@@ -1150,6 +1150,9 @@ struct FormatImpl<DataTypeDecimal<FieldType>>
 
 ColumnUInt8::MutablePtr copyNullMap(ColumnPtr col);
 
+/// Creates the `Nullable` result of a conversion. The null map is not kept if it has no NULLs.
+ColumnPtr createNullableResult(IColumn::MutablePtr col_to, ColumnUInt8::MutablePtr null_map);
+
 
 /// Generic conversion of any type to String or FixedString via serialization to text.
 template <typename StringColumnType>
@@ -1187,7 +1190,7 @@ struct ConvertImplGenericToString
         }
 
         if (result_type->isNullable() && null_map)
-            return ColumnNullable::create(std::move(col_to), std::move(null_map));
+            return createNullableResult(std::move(col_to), std::move(null_map));
         return col_to;
     }
 };
@@ -3109,7 +3112,7 @@ struct ConvertImpl
                 write_buffer.finalize();
 
                 if (null_map)
-                    return ColumnNullable::create(std::move(col_to), std::move(null_map));
+                    return createNullableResult(std::move(col_to), std::move(null_map));
                 return col_to;
             }
             else
@@ -3154,7 +3157,7 @@ struct ConvertImpl
 
                 data_to.resize(offset_to);
                 if (result_type->isNullable() && null_map)
-                    return ColumnNullable::create(std::move(col_to), std::move(null_map));
+                    return createNullableResult(std::move(col_to), std::move(null_map));
                 return col_to;
             }
             else
@@ -3209,7 +3212,7 @@ struct ConvertImpl
                 write_buffer.finalize();
 
                 if (null_map)
-                    return ColumnNullable::create(std::move(col_to), std::move(null_map));
+                    return createNullableResult(std::move(col_to), std::move(null_map));
                 return col_to;
             }
             else
@@ -3484,7 +3487,7 @@ struct ConvertImplGenericFromString
         const IDataType & data_type_to = *result_type;
         auto res = data_type_to.createColumn();
         auto serialization = data_type_to.getDefaultSerialization();
-        const auto * null_map = column_nullable ? &column_nullable->getNullMapData() : nullptr;
+        const auto * null_map = column_nullable ? column_nullable->tryGetNullMapData() : nullptr;
 
         executeImpl(column_from, *res, *serialization, input_rows_count, null_map, result_type.get(), settings);
         return res;
