@@ -14,7 +14,9 @@ CREATE TABLE tab
     text String,
     PROJECTION idx_text INDEX text TYPE text(tokenizer = array)
 )
-ENGINE = ReplacingMergeTree(version) ORDER BY id SETTINGS deduplicate_merge_projection_mode = 'rebuild';
+-- A randomized tiny `merge_max_block_size` makes the projection rebuild during the merge
+-- below too slow for debug builds under the flaky check, so it is pinned.
+ENGINE = ReplacingMergeTree(version) ORDER BY id SETTINGS deduplicate_merge_projection_mode = 'rebuild', merge_max_block_size = 8192;
 
 INSERT INTO tab SELECT number, 1, 'v' || toString(number) FROM numbers(100000);
 INSERT INTO tab SELECT number, 2, 'v' || toString(number) || '_updated' FROM numbers(0, 100000, 3);
