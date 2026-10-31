@@ -88,6 +88,10 @@ void QueryNode::removeUnusedProjectionColumns(const std::unordered_set<size_t> &
     size_t projection_columns_size = projection_columns.size();
     size_t write_index = 0;
 
+    /// The alias list of `(SELECT ...) AS t(a, b)` overrides the projection column names positionally
+    /// if the query node is resolved again (e.g. by `StorageMerge`), so it is pruned in sync.
+    bool prune_aliases = projection_aliases_to_override.size() == projection_columns_size;
+
     for (size_t i = 0; i < projection_columns_size; ++i)
     {
         if (!used_projection_columns_indexes.contains(i))
@@ -95,11 +99,15 @@ void QueryNode::removeUnusedProjectionColumns(const std::unordered_set<size_t> &
 
         projection_nodes[write_index] = projection_nodes[i];
         projection_columns[write_index] = projection_columns[i];
+        if (prune_aliases)
+            projection_aliases_to_override[write_index] = projection_aliases_to_override[i];
         ++write_index;
     }
 
     projection_nodes.erase(projection_nodes.begin() + write_index, projection_nodes.end());
     projection_columns.erase(projection_columns.begin() + write_index, projection_columns.end());
+    if (prune_aliases)
+        projection_aliases_to_override.erase(projection_aliases_to_override.begin() + write_index, projection_aliases_to_override.end());
 
     if (hasInterpolate())
     {

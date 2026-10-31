@@ -1,0 +1,17 @@
+ambiguous tuple element
+99
+99
+99
+99
+99
+(3)
+additional filter reads the whole column through an ALIAS column
+0
+0
+1
+additional filter reads another subcolumn through an ALIAS column
+1
+typed subcolumn over a part with a lazily removed type hint
+1560
+1560
+1560

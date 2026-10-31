@@ -11,3 +11,8 @@ tuple element prunes identically	1
 1	1
 2	2
 1
+-- a positional tuple hint through a subquery reads element values, not defaults
+0	0
+1	1
+2	2
+1

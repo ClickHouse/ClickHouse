@@ -1,0 +1,7 @@
+whole column used in an unreferenced arrayJoin export
+0
+1
+json chain over an intermediate array
+[10,20]	5	[[30]]	[{"e":10},{"e":20}]
+[10,20]	5	[[30]]	[{"e":10},{"e":20}]
+1

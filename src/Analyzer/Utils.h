@@ -324,6 +324,20 @@ bool verifyMaterializedCTESubqueryMatchesStorage(
     const QueryTreeNodePtr & scope_node,
     bool throw_on_mismatch);
 
+/** Follow a chain of trivial ALIAS columns (an ALIAS column whose body is itself a ColumnNode
+  * from the same table) down to the underlying storage column. Used to let subcolumn rewrites
+  * see through `c ALIAS some_storage_column` (possibly chained) and rewrite as if the query
+  * had referenced the storage column directly.
+  *
+  * Returns nullptr if any step is not a same-table ColumnNode. In particular this guards against
+  * ColumnNodes whose expression is not really a "rename":
+  *   - non-trivial ALIAS bodies (function calls, casts), where the value differs from the source column;
+  *   - ARRAY JOIN columns (source is ArrayJoinNode), where the column is an unrolled element;
+  *   - JOIN USING columns (source is JoinNode, expression is a ListNode), where the value comes from the join;
+  *   - subquery columns (source is QueryNode or UnionNode), which are not storage columns.
+  */
+ColumnNode * resolveTrivialAliasChain(ColumnNode * column_node);
+
 /// Returns true if the table is the data inserted into a table function by `INSERT INTO FUNCTION ... RETURNING`,
 /// which the RETURNING query reads instead of the table function. The access to the table function is checked when it is executed,
 /// and its name is not in the database catalog, so the `SELECT` grants are not checked for it.

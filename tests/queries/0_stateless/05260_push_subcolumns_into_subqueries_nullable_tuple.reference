@@ -1,0 +1,24 @@
+nullable element
+ReadFromMergeTree (default.t_push_subcolumns_nullable_tuple)
+Header: n.a Nullable(UInt32)
+1
+\N
+\N
+1
+\N
+\N
+nullable element through a CTE
+ReadFromMergeTree (default.t_push_subcolumns_nullable_tuple)
+Header: n.a Nullable(UInt32)
+1
+\N
+\N
+element that cannot contain NULL
+ReadFromMergeTree (default.t_push_subcolumns_nullable_tuple)
+Header: n Nullable(Tuple(a Nullable(UInt32), b Array(UInt32)))
+[1]
+[]
+[2,3]
+[1]
+[]
+[2,3]

@@ -1,0 +1,20 @@
+json object field
+0	{"e":10}
+0	{"e":10}
+1	10
+alias list with merge
+1
+enum key
+0	42	42
+fixed string key
+0	42
+0	42
+flat name
+3
+3
+json path type
+7
+7
+whole column used in the subquery
+0
+1

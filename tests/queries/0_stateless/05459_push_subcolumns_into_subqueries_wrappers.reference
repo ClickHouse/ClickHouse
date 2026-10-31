@@ -1,0 +1,12 @@
+primary key under Merge and a materialized view
+1000
+1000
+1000
+typed subcolumn under Merge and a materialized view over a part with a lazily removed type hint
+1560
+1560
+1560
+1560
+parallel replicas
+142	141	142
+142	141	142
