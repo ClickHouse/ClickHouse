@@ -36,8 +36,15 @@ extern "C" {
 #define RPP_FORCEUPPER 0x08 /* Force input to upper case. */
 #define RPP_SEVENBIT 0x10 /* Strip the high bit from input. */
 #define RPP_STDIN 0x20 /* Read from stdin, not /dev/tty */
+#define RPP_MASK_BULLET 0x40 /* With `readpassphrase_masked`, echo "●" instead of "*". ClickHouse extension. */
 
 char * readpassphrase(const char *, char *, size_t, int);
+
+/*
+ * ClickHouse extension: like `readpassphrase`, but echo every typed character as a mask in a terminal.
+ * The prompt must be a single line that takes `prompt_width` columns in the terminal.
+ */
+char * readpassphrase_masked(const char *prompt, size_t prompt_width, char *buf, size_t bufsiz, int flags);
 
 #if defined(__cplusplus)
 }

@@ -38,28 +38,29 @@ uint16_t getTerminalWidth(int in_fd, int err_fd)
     return getTerminalSize(in_fd, err_fd).first;
 }
 
-bool terminalSupportsUTF8()
+namespace
 {
-    /// The character encoding is determined by the locale environment variables,
-    /// in order of precedence: LC_ALL, LC_CTYPE, LANG.
-    const char * locale = nullptr;
+
+/// The locale is determined by the environment variables, in order of precedence: LC_ALL, LC_CTYPE, LANG.
+/// If none is set, the default "C"/"POSIX" locale is in effect, and the result is empty.
+std::string_view getLocale()
+{
     for (const char * name : {"LC_ALL", "LC_CTYPE", "LANG"})
     {
         const char * value = std::getenv(name); /// NOLINT(concurrency-mt-unsafe)
         if (value && *value)
-        {
-            locale = value;
-            break;
-        }
+            return value;
     }
+    return {};
+}
 
-    /// If no locale is set, the default "C"/"POSIX" locale is in effect, which is not UTF-8.
-    if (!locale)
-        return false;
+}
 
+bool terminalSupportsUTF8()
+{
     /// Look for the substring "UTF" (case-insensitively), as in "en_US.UTF-8" or "C.utf8".
     /// No standard locale or encoding name contains these letters except for UTF encodings.
-    std::string_view value(locale);
+    std::string_view value = getLocale();
     for (size_t i = 0; i + 3 <= value.size(); ++i)
     {
         if ((value[i] == 'U' || value[i] == 'u')
@@ -69,6 +70,16 @@ bool terminalSupportsUTF8()
     }
 
     return false;
+}
+
+bool terminalDisplaysBulletInOneColumn()
+{
+    if (!terminalSupportsUTF8())
+        return false;
+
+    /// "●" has East Asian Ambiguous width: terminals in Chinese, Japanese and Korean locales may display it two columns wide.
+    std::string_view value = getLocale();
+    return !value.starts_with("zh") && !value.starts_with("ja") && !value.starts_with("ko");
 }
 
 po::options_description createOptionsDescription(const std::string & caption, uint16_t terminal_width)

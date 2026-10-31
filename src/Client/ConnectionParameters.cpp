@@ -9,6 +9,8 @@
 #include <Common/Base64.h>
 #include <Common/Exception.h>
 #include <Common/SSHAgent.h>
+#include <Common/TerminalSize.h>
+#include <Common/UTF8Helpers.h>
 #include <Common/isLocalAddress.h>
 #include <Common/DNSResolver.h>
 #include <Client/ClientBaseHelpers.h>
@@ -50,6 +52,34 @@ bool enableSecureConnection(const Poco::Util::AbstractConfiguration & config, co
         return true;
 
     return false;
+}
+
+/// The text from the user, such as a user name or a file name, is shown in a prompt with all its bytes except printable
+/// ASCII escaped as `\xNN`. So the prompt stays on one line, the text does not affect the terminal, and the width of
+/// the prompt is known exactly: the width of non-ASCII text in a terminal cannot be known reliably (emoji, joined
+/// sequences, combining characters and ambiguous widths are shown differently by different terminals).
+std::string escapeForPrompt(std::string_view text)
+{
+    std::string result;
+    result.reserve(text.size());
+    for (char c : text)
+    {
+        const auto byte = static_cast<unsigned char>(c);
+        if (byte < 0x20 || byte >= 0x7f)
+            result += fmt::format("\\x{:02x}", byte);
+        else
+            result += c;
+    }
+    return result;
+}
+
+/// Echo every typed character as a mask, so the user can notice a stray character.
+/// The prompt must be on one line, see `escapeForPrompt`.
+char * readMaskedPassphrase(const std::string & prompt, char * buf, size_t size)
+{
+    const size_t prompt_width = UTF8::computeWidth(reinterpret_cast<const UInt8 *>(prompt.data()), prompt.size());
+    return readpassphrase_masked(
+        prompt.c_str(), prompt_width, buf, size, terminalDisplaysBulletInOneColumn() ? RPP_MASK_BULLET : 0);
 }
 
 #if USE_SSH
@@ -109,9 +139,9 @@ String readPublicKeyBlob(const String & private_key_filename)
 
 String askPassphrase(const String & key_name)
 {
-    String prompt = fmt::format("Enter the passphrase for the SSH key {}: ", key_name);
+    String prompt = fmt::format("Enter the passphrase for the SSH key {}: ", escapeForPrompt(key_name));
     char buf[1000] = {};
-    if (auto * result = readpassphrase(prompt.c_str(), buf, sizeof(buf), 0))
+    if (auto * result = readMaskedPassphrase(prompt, buf, sizeof(buf)))
         return result;
     return {};
 }
@@ -357,9 +387,9 @@ ConnectionParameters::ConnectionParameters(const Poco::Util::AbstractConfigurati
         }
         if (password_prompt)
         {
-            std::string prompt{"Password for user (" + user + "): "};
+            std::string prompt{"Password for user (" + escapeForPrompt(user) + "): "};
             char buf[1000] = {};
-            if (auto * result = readpassphrase(prompt.c_str(), buf, sizeof(buf), 0))
+            if (auto * result = readMaskedPassphrase(prompt, buf, sizeof(buf)))
                 password = result;
         }
 
@@ -370,7 +400,7 @@ ConnectionParameters::ConnectionParameters(const Poco::Util::AbstractConfigurati
         }
         else if (config.getBool("ask-password-2fa", false))
         {
-            std::string prompt{"TOTP for user (" + user + "): "};
+            std::string prompt{"TOTP for user (" + escapeForPrompt(user) + "): "};
             char buf[1000] = {};
             if (auto * result = readpassphrase(prompt.c_str(), buf, sizeof(buf), RPP_ECHO_ON))
                 password += "+" + std::string(result);
