@@ -223,7 +223,7 @@ namespace Setting
     extern const SettingsUInt64 filesystem_cache_boundary_alignment;
     extern const SettingsBool use_iceberg_partition_pruning;
     extern const SettingsBool cluster_function_process_archive_on_multiple_nodes;
-    extern const SettingsBool table_engine_read_through_distributed_cache;
+    extern const SettingsBoolAuto table_engine_read_through_distributed_cache;
     extern const SettingsUInt64 s3_path_filter_limit;
     extern const SettingsBool use_parquet_metadata_cache;
     extern const SettingsBool use_columns_cache;
@@ -2133,7 +2133,9 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBuffer(
 
     bool use_distributed_cache = false;
 #if ENABLE_DISTRIBUTED_CACHE
-    if (settings[Setting::table_engine_read_through_distributed_cache]
+    /// `auto` follows the decision for the other reads (the server setting `enable_read_through_distributed_cache`,
+    /// overridden by `force_read_through_distributed_cache`), resolved into `read_through_distributed_cache`.
+    if (settings[Setting::table_engine_read_through_distributed_cache].valueOr(effective_read_settings.read_through_distributed_cache)
         && DistributedCache::Registry::instance().isReady(
             effective_read_settings.distributed_cache_settings.read_only_from_current_az)
         && DistributedCache::getConnectionInfo(*object_storage))
@@ -2153,9 +2155,11 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBuffer(
                 || object_storage->getType() == ObjectStorageType::S3);
     }
 
-    bool use_page_cache = allow_page_cache && !use_distributed_cache && !use_filesystem_cache
-        && effective_read_settings.page_cache_settings.cache && effective_read_settings.use_page_cache_for_object_storage;
-
+    /// The page cache goes on top of the distributed cache as for `MergeTree` (with `use_page_cache_with_distributed_cache`),
+    /// but not on top of the filesystem cache, which is local as well.
+    bool use_page_cache = allow_page_cache && !use_filesystem_cache
+        && effective_read_settings.page_cache_settings.cache && effective_read_settings.use_page_cache_for_object_storage
+        && (!use_distributed_cache || effective_read_settings.use_page_cache_with_distributed_cache);
 
     /// We need object metadata for a few use cases:
     /// 1. object size suggests whether we need to use prefetch
@@ -2184,9 +2188,11 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBuffer(
     }
 
     /// A cache serves bytes without a request with this reader's credentials, so it needs an identity scoped to them.
+    /// The immutable content id from the table records is such an identity for every cache, so a data file of
+    /// Iceberg or Delta Lake is cached without a `HEAD` request.
     if (object_info.metadata->is_from_table_records
-        && (((use_filesystem_cache || use_page_cache) && !object_info.metadata->getContentCacheToken())
-            || (use_distributed_cache && !object_info.metadata->isEtagUsableAsCacheKey())))
+        && (use_filesystem_cache || use_page_cache || use_distributed_cache)
+        && !object_info.metadata->getContentCacheToken())
     {
         object_info.metadata = getObjectMetadataForRead(*object_storage, object_info, /*with_tags=*/ false);
     }
@@ -2197,7 +2203,7 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBuffer(
         use_page_cache = false;
     }
 
-    if (use_distributed_cache && !object_info.metadata->isEtagUsableAsCacheKey())
+    if (use_distributed_cache && !object_info.metadata->getContentCacheToken())
     {
         LOG_DEBUG(log, "Cannot use distributed cache, etag is missing or not a strong content identifier");
         use_distributed_cache = false;
@@ -2277,9 +2283,16 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBuffer(
     /// AZURE_OBJECT_CHANGED_DURING_READ instead of torn cross-generation data.
     if (validate_etag_on_read && object_info.metadata.has_value())
         stored_object.etag = object_info.metadata->etag;
-    /// The distributed cache keys on the etag whether or not this read validates it.
+    /// The distributed cache keys on the etag whether or not this read validates it. The cache server also checks
+    /// the etag of its own `GET` against it, so an immutable content id, which is not an etag, goes into a separate
+    /// field that is used only for the key.
     if (use_distributed_cache)
-        stored_object.etag_hash = getETagHash(object_info.metadata->etag);
+    {
+        if (object_info.metadata->isEtagUsableAsCacheKey())
+            stored_object.etag_hash = getETagHash(object_info.metadata->etag);
+        else
+            stored_object.immutable_content_id_hash = getImmutableContentIdHash(object_info.metadata->immutable_content_id);
+    }
     pipeline.setSource(object_storage, StoredObjects{stored_object}, modified_read_settings);
 
     /// Filesystem cache
