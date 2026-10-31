@@ -1,5 +1,7 @@
 #include <Analyzer/Passes/HasToInPass.h>
 
+#include <Columns/IColumn.h>
+
 #include <DataTypes/IDataType.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeLowCardinality.h>
@@ -10,6 +12,8 @@
 #include <Analyzer/Utils.h>
 
 #include <Core/Settings.h>
+
+#include <base/unit.h>
 
 namespace DB
 {
@@ -42,7 +46,10 @@ public:
 
         /// Verify that the first argument is a constant array
         const auto * first_arg_constant = has_function_arguments_nodes[0]->as<ConstantNode>();
-        if (!first_arg_constant)
+        const ColumnPtr first_arg_column = first_arg_constant
+            ? ColumnPtr(first_arg_constant->getColumn())
+            : tryGetScalarConstantColumn(has_function_arguments_nodes[0], getContext());
+        if (!first_arg_column)
             return;
 
         /// Verify that the first argument is actually an array type
@@ -58,7 +65,14 @@ public:
                 data_type.isMap() || data_type.isArray() || data_type.isTuple() || data_type.isObject() || data_type.isDynamic() || data_type.isNothing())
             return;
 
-        const auto & array_field = first_arg_constant->getValue();
+        /// A secondary server lowers the shipped `in` back to `has` when it does not fold the set source into a constant
+        /// (1 MiB or more), and may hold a LowCardinality set source in another dictionary layout, which hashes into
+        /// another set name. A constant array with an ordinary needle is still rewritten, to keep the set on a single server.
+        if ((!first_arg_constant || has_function_arguments_nodes[1]->getResultType()->lowCardinality())
+            && (data_type.isLowCardinality() || ConstantValue::wrapToColumnConst(first_arg_column)->byteSize() >= 1_MiB))
+            return;
+
+        const Field array_field = (*first_arg_column)[0];
         const auto & array_value = array_field.safeGet<Array>();
         if (array_value.empty())
             return;
@@ -70,11 +84,8 @@ public:
 
         const auto second_arg_type = has_function_arguments_nodes[1]->getResultType();
         WhichDataType expr_data_type(second_arg_type);
-        /// has() always returns UInt8, but in() preserves LowCardinality and Nullable from the needle
-        /// (returning e.g. LowCardinality(UInt8) for `lc_col IN (...)`). Rewriting would change the
-        /// node's return type, which breaks parent nodes that were already resolved against UInt8
-        /// (e.g. `NOT has(...)` ends up with `NOT in(...)` whose argument is LowCardinality(UInt8)).
-        if (isNullableOrLowCardinalityNullable(second_arg_type) || expr_data_type.isLowCardinality() ||
+        /// in() takes Nullable and LowCardinality from its needle into its result type; has() always returns UInt8.
+        if (isNullableOrLowCardinalityNullable(second_arg_type) ||
                 expr_data_type.isMap() || expr_data_type.isArray() || expr_data_type.isTuple() || expr_data_type.isObject() || expr_data_type.isDynamic() || expr_data_type.isVariant() || expr_data_type.isNothing())
             return;
 
@@ -108,9 +119,13 @@ public:
         /// Rewrite has(const_array, elem) -> in(elem, const_array), notHas(const_array, elem) -> notIn(elem, const_array)
         /// `transform_null_in` renames the `in` family during resolution, which every pass runs after.
         const auto in_function_name = getInFunctionNameForPassCreatedNode(
-            has_function_node->getFunctionName() == "has" ? "in" : "notIn", second_arg_type, getContext());
+            has_function_node->getFunctionName() == "has" ? "in" : "notIn", unwrapped_second_arg_type, getContext());
         if (!in_function_name)
             return;
+
+        if (expr_data_type.isLowCardinality())
+            has_function_arguments_nodes[1]
+                = foldConstantCast(buildCastFunction(has_function_arguments_nodes[1], unwrapped_second_arg_type, getContext()));
 
         std::swap(has_function_arguments_nodes[0], has_function_arguments_nodes[1]);
         resolveOrdinaryFunctionNodeByName(*has_function_node, *in_function_name, getContext());
