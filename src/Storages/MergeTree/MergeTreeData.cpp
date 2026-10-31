@@ -8889,11 +8889,9 @@ MergeTreeData::getColumnDefaultnessStats(const String & column_name, ContextPtr 
 #endif
             );
 
-            bool is_affected = std::ranges::any_of(alter_conversions->getDroppedColumns(), overlaps_requested_column);
-            for (const auto & [rename_to, rename_from] : alter_conversions->getRenameMap())
-                is_affected = is_affected || overlaps_requested_column(rename_to) || overlaps_requested_column(rename_from);
-
-            if (is_affected)
+            /// Every name touched by a pending `DROP COLUMN` or `RENAME COLUMN`, including the intermediate
+            /// names of chained renames, and the columns changed on the fly.
+            if (std::ranges::any_of(alter_conversions->getColumnsInvalidatingIndexes(), overlaps_requested_column))
             {
                 LOG_DEBUG(log, "No defaultness stats for column {}: part {} has a pending metadata mutation of this column", column_name, part->name);
                 return std::nullopt;
