@@ -176,6 +176,8 @@ namespace Setting
     extern const SettingsBool parallel_replicas_for_queries_with_multiple_tables;
     extern const SettingsBool use_join_disjunctions_push_down;
     extern const SettingsBool query_plan_display_internal_aliases;
+    extern const SettingsBool query_plan_enable_optimizations;
+    extern const SettingsBool query_plan_filter_push_down;
     extern const SettingsBool enable_lazy_columns_replication;
     extern const SettingsBool parallel_replicas_allow_materialized_views;
     extern const SettingsBool parallel_replicas_allow_view_over_mergetree;
@@ -1885,20 +1887,75 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(TableExpressionNodePtr table_
 
     if (wrap_read_columns_in_subquery)
     {
-        auto columns = table_expression_data.getColumns();
-        table_expression = buildSubqueryToReadColumnsFromTableExpression(columns, table_expression, query_context);
+        auto original_table_expression = table_expression;
+        const auto * parent_query = select_query_info.query_tree
+            ? select_query_info.query_tree->as<QueryNode>()
+            : nullptr;
+        const bool can_prefilter_wrapped_table = parent_query
+            && joinTreePreservesRowsForTable(parent_query->getJoinTreeNode(), original_table_expression);
+
+        const auto * orig_table = original_table_expression->as<TableNode>();
+        const auto * orig_table_function = original_table_expression->as<TableFunctionNode>();
+        const bool is_cluster_storage = (orig_table || orig_table_function)
+            && dynamic_cast<const IStorageCluster *>(
+                (orig_table ? orig_table->getStorage() : orig_table_function->getStorage()).get()) != nullptr;
+
+        /// Wrap is planned as `SELECT cols FROM icebergCluster` with no JOIN. Copy left-only
+        /// `WHERE` so wrap dummy analysis (and initiator listing) see the same predicate
+        /// as a single-table `icebergCluster` read. This is a form of filter push-down, so it
+        /// is disabled together with it; like it, a dropped other-side conjunct does not guard
+        /// the copied ones under short-circuit evaluation.
+        const bool filter_push_down_enabled = settings[Setting::query_plan_enable_optimizations]
+            && settings[Setting::query_plan_filter_push_down];
+        QueryTreeNodePtr wrap_where;
+        /// Like `tryPushDownFilter`, refuse the whole filter when it has a stateful function:
+        /// copying even its stateless conjuncts would change the input stream of the stateful
+        /// function that stays above the JOIN.
+        if (filter_push_down_enabled && can_prefilter_wrapped_table && parent_query->hasWhere()
+            && !hasStatefulFunctionInExpression(parent_query->getWhere()))
+        {
+            wrap_where = parent_query->getWhere()->clone();
+            removeExpressionsThatDoNotDependOnTableIdentifiers(wrap_where, original_table_expression, query_context);
+            removeExpressionsThatAreUnsafeToDuplicate(wrap_where, query_context);
+        }
 
         /** Once wrapped, this table is read by the nested planner, so keep its `PREWHERE` with that read.
           * Drop it from the outer query and from this table's initiator actions: otherwise
           * `appendSetsFromActionsDAG` still treats the original `IN` sets as useful, and they
           * stay not-ready after the nested planner built a separate copy.
+          * `IStorageCluster` does not support `PREWHERE`, so fold the clause into wrap `WHERE`
+          * (`clusterJoinWillWrapPrewhere` admitted it only when that is safe).
           */
+        QueryTreeNodePtr wrap_prewhere;
         if (query_prewhere && table_expression_data.getPrewhereFilterActions())
         {
-            table_expression->as<QueryNode &>().getPrewhere() = query_prewhere->clone();
+            wrap_prewhere = query_prewhere->clone();
             query_prewhere = {};
             table_expression_data.resetPrewhereFilterActions();
+
+            if (is_cluster_storage)
+            {
+                if (wrap_where)
+                    wrap_where = mergeConditionNodes({std::move(wrap_where), std::move(wrap_prewhere)}, query_context);
+                else
+                    wrap_where = std::move(wrap_prewhere);
+                wrap_prewhere = {};
+            }
         }
+
+        /// Keep copied `WHERE` columns in the wrap projection. `icebergCluster`
+        /// reports `WithMergeableState`, so wrap planning does not add a `FilterStep`.
+        if (wrap_where)
+            collectSourceColumns(wrap_where, planner_context, false /*keep_alias_columns*/);
+
+        auto columns = table_expression_data.getColumns();
+        table_expression = buildSubqueryToReadColumnsFromTableExpression(columns, original_table_expression, query_context);
+
+        auto & wrap_query = table_expression->as<QueryNode &>();
+        if (wrap_where)
+            wrap_query.getWhere() = std::move(wrap_where);
+        if (wrap_prewhere)
+            wrap_query.getPrewhere() = std::move(wrap_prewhere);
     }
 
     auto * table_node = table_expression->as<TableNode>();
@@ -3101,12 +3158,14 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(TableExpressionNodePtr table_
         else
         {
             std::shared_ptr<GlobalPlannerContext> subquery_planner_context;
+            auto subquery_options = select_query_options.subquery();
             if (wrap_read_columns_in_subquery)
-                subquery_planner_context = std::make_shared<GlobalPlannerContext>(nullptr, nullptr, nullptr, FiltersForTableExpressionMap{});
+            {
+                subquery_planner_context = std::make_shared<GlobalPlannerContext>(
+                    nullptr, nullptr, nullptr, collectFiltersForAnalysis(table_expression, subquery_options, nullptr));
+            }
             else
                 subquery_planner_context = planner_context->getGlobalPlannerContext();
-
-            auto subquery_options = select_query_options.subquery();
 
             /// When `parallel_replicas_for_queries_with_multiple_tables` is disabled, the outer query
             /// has already turned off parallel replicas in the planner context (see `buildJoinTreeQueryPlan`).

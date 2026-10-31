@@ -1,6 +1,8 @@
 #include <Storages/IStorageCluster.h>
 
 #include <Common/Exception.h>
+#include <Functions/FunctionsLogical.h>
+#include <Functions/IFunctionAdaptors.h>
 #include <Client/ConnectionPoolWithFailover.h>
 #include <Core/ProtocolDefines.h>
 #include <Core/Settings.h>
@@ -21,14 +23,16 @@
 #include <QueryPipeline/RemoteQueryExecutor.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Storages/IStorage.h>
+#include <Storages/ColumnsDescription.h>
 #include <Storages/removeGroupingFunctionSpecializations.h>
 #include <Storages/SelectQueryInfo.h>
+#include <Storages/StorageSnapshot.h>
 
 #include <Common/ProfileEvents.h>
 
-#include <algorithm>
+#include <cctype>
 #include <memory>
-#include <string>
+#include <unordered_map>
 
 
 namespace ProfileEvents
@@ -53,6 +57,104 @@ namespace ErrorCodes
     extern const int ALL_CONNECTION_TRIES_FAILED;
 }
 
+namespace
+{
+
+/// Analyzer / wrap headers use `__tableN.col`; Iceberg min/max and hive partition
+/// listing match DAG inputs against storage column names. Only used for inputs
+/// that are neither physical columns nor known identifiers of this table
+/// expression (wrap subquery planning restarts `N`).
+std::string_view stripTableQualifier(std::string_view name)
+{
+    static constexpr std::string_view prefix = "__table";
+    if (!name.starts_with(prefix))
+        return name;
+
+    size_t pos = prefix.size();
+    while (pos < name.size() && std::isdigit(static_cast<unsigned char>(name[pos])))
+        ++pos;
+
+    if (pos > prefix.size() && pos < name.size() && name[pos] == '.')
+        return name.substr(pos + 1);
+
+    return name;
+}
+
+/// Inputs that are already physical storage columns are kept as is: a physical
+/// column may itself be named `__table1.bid`, and stripping its prefix would
+/// make the listing read a different column. Other inputs are resolved through
+/// the planner's identifier-to-column mapping of this table expression.
+std::optional<ActionsDAG> remapListingFilterInputsToStorageColumns(
+    const ActionsDAG & filter,
+    const StorageSnapshotPtr & storage_snapshot,
+    const SelectQueryInfo & query_info)
+{
+    if (!storage_snapshot)
+        return {};
+
+    const auto options = GetColumnsOptions(GetColumnsOptions::All)
+        .withVirtuals(VirtualsKind::All, VirtualsMaterializationPlace::Reader)
+        .withSubcolumns();
+
+    const auto identifier_to_column = query_info.buildNodeNameToInputNodeColumn();
+
+    std::unordered_map<std::string, ColumnWithTypeAndName> replacements;
+    for (const auto * input : filter.getInputs())
+    {
+        if (input->type != ActionsDAG::ActionType::INPUT)
+            continue;
+
+        if (storage_snapshot->tryGetColumn(options, input->result_name))
+            continue;
+
+        String physical;
+        if (auto it = identifier_to_column.find(input->result_name); it != identifier_to_column.end())
+            physical = it->second.name;
+        else
+            physical = String{stripTableQualifier(input->result_name)};
+
+        if (!storage_snapshot->tryGetColumn(options, physical))
+            continue;
+
+        replacements.emplace(input->result_name, ColumnWithTypeAndName(nullptr, input->result_type, physical));
+    }
+
+    if (replacements.empty())
+        return {};
+
+    return ActionsDAG::buildFilterActionsDAG({filter.getOutputs().at(0)}, replacements);
+}
+
+/// Independent filter DAGs (wrap `WHERE`, then a later pushed FilterStep) cannot
+/// be `merge`d: that wires the second DAG through the first's boolean output.
+/// `mergeNodes` keeps both predicates, then `and` is the listing condition.
+ActionsDAG andListingFilterDAGs(ActionsDAG first, ActionsDAG second)
+{
+    if (first.getOutputs().empty())
+        return second;
+    if (second.getOutputs().empty())
+        return first;
+
+    const auto * first_filter = first.getOutputs().front();
+    ActionsDAG::NodeRawConstPtrs second_outputs;
+    first.mergeNodes(std::move(second), &second_outputs);
+    if (second_outputs.empty())
+        return first;
+
+    const auto * second_filter = second_outputs.front();
+    if (first_filter == second_filter)
+        return first;
+
+    FunctionOverloadResolverPtr func_and
+        = std::make_unique<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionAnd>());
+    const auto & and_node = first.addFunction(func_and, {first_filter, second_filter}, {});
+    first.getOutputs() = {&and_node};
+    first.removeUnusedActions();
+    return first;
+}
+
+}
+
 IStorageCluster::IStorageCluster(
     const String & cluster_name_,
     const StorageID & table_id_,
@@ -63,26 +165,50 @@ IStorageCluster::IStorageCluster(
 {
 }
 
-void ReadFromCluster::applyFilters(ActionDAGNodes added_filter_nodes)
-{
-    SourceStepWithFilter::applyFilters(std::move(added_filter_nodes));
-
-    const ActionsDAG::Node * predicate = nullptr;
-    const ActionsDAG * filter = filter_actions_dag ? filter_actions_dag.get() : query_info.filter_actions_dag.get();
-    if (filter)
-        predicate = filter->getOutputs().at(0);
-
-    createExtension(predicate);
-}
-
 void ReadFromCluster::createExtension(const ActionsDAG::Node * predicate)
 {
     if (extension)
         return;
 
+    /// Wrap `WHERE` is in `query_info.filter_actions_dag`. A later optimizer
+    /// `applyFilters` replaces `filter_actions_dag` and must not drop the wrap
+    /// predicate; AND both when they differ. Empty later `applyFilters` leaves
+    /// `filter_actions_dag` null, so wrap `WHERE` is used alone.
+    const ActionsDAG * optimizer_filter = filter_actions_dag.get();
+    const ActionsDAG * wrap_filter = query_info.filter_actions_dag.get();
+
+    std::optional<ActionsDAG> combined;
+    const ActionsDAG * filter = nullptr;
+    if (optimizer_filter && wrap_filter && optimizer_filter->getHash() != wrap_filter->getHash())
+    {
+        combined = andListingFilterDAGs(wrap_filter->clone(), optimizer_filter->clone());
+        filter = &*combined;
+    }
+    else if (optimizer_filter)
+        filter = optimizer_filter;
+    else
+        filter = wrap_filter;
+
+    listing_filter_dag.reset();
+    if (filter)
+    {
+        if (auto remapped = remapListingFilterInputsToStorageColumns(*filter, storage_snapshot, query_info))
+        {
+            listing_filter_dag = std::move(*remapped);
+            filter = &*listing_filter_dag;
+        }
+        else if (combined)
+        {
+            listing_filter_dag = std::move(*combined);
+            filter = &*listing_filter_dag;
+        }
+        if (!predicate)
+            predicate = filter->getOutputs().at(0);
+    }
+
     extension = storage->getTaskIteratorExtension(
         predicate,
-        filter_actions_dag ? filter_actions_dag.get() : query_info.filter_actions_dag.get(),
+        filter,
         context,
         cluster,
         getStorageSnapshot()->metadata);

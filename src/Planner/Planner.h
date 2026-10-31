@@ -7,6 +7,7 @@
 
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Storages/SelectQueryInfo.h>
+#include <Planner/PlannerContext.h>
 
 namespace DB
 {
@@ -95,5 +96,10 @@ private:
     QueryNodeToPlanStepMapping query_node_to_plan_step_mapping;
     bool allow_query_cache_for_subqueries_propagation = true;
 };
+
+FiltersForTableExpressionMap collectFiltersForAnalysis(
+    const QueryTreeNodePtr & query_tree_node,
+    const SelectQueryOptions & select_query_options,
+    const ActionsDAG * post_filter);
 
 }
