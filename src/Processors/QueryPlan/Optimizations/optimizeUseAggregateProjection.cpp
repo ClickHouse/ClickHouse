@@ -42,8 +42,10 @@
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Interpreters/Context.h>
 #include <Storages/MergeTree/MergeTreeDataSelectExecutor.h>
+#include <Storages/MergeTree/MergeTreeIndices.h>
 #include <Storages/ProjectionsDescription.h>
 
+#include <algorithm>
 #include <unordered_map>
 
 namespace DB
@@ -51,6 +53,7 @@ namespace DB
 namespace Setting
 {
     extern const SettingsBool force_optimize_projection;
+    extern const SettingsMaxThreads max_threads;
     extern const SettingsBool prefer_optimize_projection;
     extern const SettingsString preferred_optimize_projection_name;
     extern const SettingsBool use_statistics_for_min_max_aggregation;
@@ -241,6 +244,8 @@ static const ActionsDAG::Node * buildResidualFilterNode(
         filter_root = filter_root->children.front();
 
     auto query_atoms = ActionsDAG::extractConjunctionAtoms(filter_root);
+    /// `extractConjunctionAtoms` yields the atoms right to left, while the rebuilt `and` is evaluated left to right.
+    std::ranges::reverse(query_atoms);
 
     std::vector<ASTPtr> proj_conjuncts;
     extractConjunctsFromAST(projection_where, proj_conjuncts);
@@ -625,7 +630,7 @@ struct AggregateProjectionCandidates
 ///
 /// Statistics describe the physical rows of a part as they were written, so anything that changes
 /// the visible rows or values at read time disables the optimization: lightweight deletes, pending
-/// ALTER MODIFY/RENAME/DROP COLUMN mutations, the delete bitmap of a unique-key table, and masking
+/// ALTER MODIFY/RENAME/DROP COLUMN mutations (checked per part), the delete bitmap of a unique-key table, and masking
 /// policies.
 /// (Pending data mutations and patch parts are already rejected by canUseProjectionForReadingStep,
 /// and FINAL together with SAMPLE are rejected there as well.)
@@ -657,13 +662,11 @@ static std::vector<StatisticsMinMaxAggregate> getStatisticsMinMaxAggregates(
     if (reading.getMergeTreeData().hasEnabledMaskingPolicies(context))
         return {};
 
-    /// Pending metadata mutations (RENAME/DROP COLUMN) are applied at read time by AlterConversions,
-    /// so the column data (and statistics) physically stored in a part may not belong to the column
-    /// the query reads: `DROP COLUMN b, ADD COLUMN b` must read as the new default, and a name freed
-    /// by a drop can be taken over by a rename (see test 04872).
+    /// Pending alter and metadata mutations are checked per part in `makeBlockWithMinMaxFromStatistics`:
+    /// the counters of the snapshot also include finished mutations kept for `system.mutations`,
+    /// which must not disable the optimization for the parts they were already applied to.
     auto mutations_snapshot = reading.getMutationsSnapshot();
-    if (mutations_snapshot->hasLightweightDeletedMask() || mutations_snapshot->hasAlterMutations()
-        || mutations_snapshot->hasMetadataMutations())
+    if (mutations_snapshot->hasLightweightDeletedMask())
         return {};
 
     const auto & columns = metadata->getColumns();
@@ -979,6 +982,9 @@ static constexpr const char * STATISTICS_MIN_MAX_PROJECTION_NAME = "_statistics_
 static Block makeBlockWithMinMaxFromStatistics(
     const std::vector<StatisticsMinMaxAggregate> & stats_aggregates,
     ReadFromMergeTree::AnalysisResult & remaining_select_result,
+    const MergeTreeData::MutationsSnapshotPtr & mutations_snapshot,
+    const StorageMetadataPtr & metadata,
+    const ContextPtr & context,
     const LoggerPtr & logger)
 {
     std::vector<Field> folded_values(stats_aggregates.size());
@@ -993,12 +999,26 @@ static Block makeBlockWithMinMaxFromStatistics(
         if (stats_aggregate.kind != StatisticsMinMaxAggregate::Kind::Count)
             required_columns.insert(stats_aggregate.column_name);
 
-    auto part_covered_by_statistics = [&](const RangesInDataPart & part_with_ranges)
+    auto & parts_with_ranges = remaining_select_result.parts_with_ranges;
+
+    /// The estimates of the parts whose statistics may answer the query, loaded in parallel and released once
+    /// consumed; `std::nullopt` for a part that is read instead.
+    std::vector<std::optional<Estimates>> parts_estimates(parts_with_ranges.size());
+    auto part_may_use_statistics = [&](size_t part_index)
     {
+        const auto & part_with_ranges = parts_with_ranges[part_index];
         const auto & part = part_with_ranges.data_part;
 
         /// A lightweight delete mask hides rows that the statistics still account for.
         if (part->hasLightweightDelete())
+            return false;
+
+        /// Pending alter mutations (MODIFY COLUMN) and metadata mutations (RENAME/DROP COLUMN) are
+        /// applied at read time by AlterConversions, so the column data (and statistics) physically
+        /// stored in the part may not describe the column the query reads: `DROP COLUMN b, ADD COLUMN b`
+        /// must read as the new default, and a name freed by a drop can be taken over by a rename
+        /// (see test 04872).
+        if (MergeTreeDataSelectExecutor::partHasPendingAlterOrMetadataMutations(part, mutations_snapshot))
             return false;
 
         /// Part-level statistics can only answer a full-part read.
@@ -1007,22 +1027,39 @@ static Block makeBlockWithMinMaxFromStatistics(
 
         /// An empty part has no extremes, but `getExtremes` reports zeros for it. Read it instead;
         /// it contributes nothing to the result anyway.
-        if (part->rows_count == 0)
-            return false;
+        return part->rows_count != 0;
+    };
 
-        Estimates estimates;
+    /// Returns false only if `only_from_memory` and the estimates of the part need reads from disk.
+    auto load_part_estimates = [&](size_t part_index, bool only_from_memory)
+    {
+        if (!part_may_use_statistics(part_index))
+            return true;
+
+        const auto & part = parts_with_ranges[part_index].data_part;
         try
         {
             /// An empty set would mean all columns, but `count` needs no statistics.
-            if (!required_columns.empty())
-                estimates = part->getEstimates(required_columns);
+            if (required_columns.empty())
+                parts_estimates[part_index] = Estimates{};
+            else if (!only_from_memory)
+                parts_estimates[part_index] = part->getEstimates(required_columns);
+            else if (auto estimates = part->tryGetEstimatesFromMemory(required_columns))
+                parts_estimates[part_index] = std::move(*estimates);
+            else
+                return false;
         }
         catch (const Exception &)
         {
             tryLogCurrentException(logger, fmt::format(
                 "Failed to load statistics for part {}, reading it instead", part->name), LogsLevel::debug);
-            return false;
         }
+        return true;
+    };
+
+    auto part_covered_by_statistics = [&](const RangesInDataPart & part_with_ranges, const Estimates & estimates)
+    {
+        const auto & part = part_with_ranges.data_part;
 
         std::vector<const Field *> part_values(stats_aggregates.size(), nullptr);
         for (size_t i = 0; i < stats_aggregates.size(); ++i)
@@ -1033,6 +1070,17 @@ static Block makeBlockWithMinMaxFromStatistics(
 
             auto it = estimates.find(stats_aggregate.column_name);
             if (it == estimates.end())
+                return false;
+
+            /// The statistics describe the values as they are stored in the part. When the part stores
+            /// the column with a different type, a read converts the values to the current type, even
+            /// without a pending mutation in the snapshot (e.g. with `apply_mutations_on_fly = 0` or
+            /// after `KILL MUTATION`). A conversion that keeps the representation (e.g. an extended
+            /// `Enum`) leaves the values, and so the statistics, valid.
+            auto part_column = part->tryGetColumn(stats_aggregate.column_name);
+            const auto * metadata_column = metadata->getColumns().tryGet(stats_aggregate.column_name);
+            if (!part_column || !metadata_column
+                || !isRepresentationPreservingConversion(part_column->type.get(), metadata_column->type.get()))
                 return false;
 
             const auto & estimate = it->second;
@@ -1078,8 +1126,23 @@ static Block makeBlockWithMinMaxFromStatistics(
         return true;
     };
 
-    auto & parts_with_ranges = remaining_select_result.parts_with_ranges;
-    std::erase_if(parts_with_ranges, part_covered_by_statistics);
+    RangesInDataParts parts_to_read;
+    auto consume_part_estimates = [&](size_t part_index)
+    {
+        auto & part_with_ranges = parts_with_ranges[part_index];
+        const auto estimates = std::move(parts_estimates[part_index]);
+        if (!estimates || !part_covered_by_statistics(part_with_ranges, *estimates))
+            parts_to_read.push_back(std::move(part_with_ranges));
+    };
+
+    /// `count` alone reads nothing, so there is nothing to parallelize then.
+    MergeTreeData::loadStatisticsOfPartsInParallel(
+        parts_with_ranges.size(),
+        required_columns.empty() ? 1 : static_cast<size_t>(context->getSettingsRef()[Setting::max_threads]),
+        [&](size_t part_index) { return load_part_estimates(part_index, /* only_from_memory = */ true); },
+        [&](size_t part_index) { load_part_estimates(part_index, /* only_from_memory = */ false); },
+        consume_part_estimates);
+    parts_with_ranges = std::move(parts_to_read);
 
     if (covered_parts == 0)
         return {};
@@ -1251,7 +1314,8 @@ UseProjectionsResult optimizeUseAggregateProjections(
         /// remaining parts (without statistics), to be used for normal reading.
         inexact_ranges_select_result = std::make_shared<ReadFromMergeTree::AnalysisResult>(*parent_reading_select_result);
         statistics_min_max_block = makeBlockWithMinMaxFromStatistics(
-            candidates.statistics_min_max_aggregates, *inexact_ranges_select_result, logger);
+            candidates.statistics_min_max_aggregates, *inexact_ranges_select_result,
+            reading->getMutationsSnapshot(), metadata, context, logger);
 
         if (statistics_min_max_block.empty())
             return result;

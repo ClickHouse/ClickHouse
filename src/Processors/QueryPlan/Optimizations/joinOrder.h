@@ -92,6 +92,11 @@ struct QueryGraph
 
     std::vector<JoinActionRef> edges;
 
+    /// For each of `edges`, the index in `conflict_ops` of the join step whose ON clause it comes
+    /// from. An inner join's ON clause is split into conjuncts placed on their own, and a conjunct
+    /// placed on its own still has to obey the conflict rules of its join step.
+    std::vector<size_t> edge_conflict_ops;
+
     /// Operators of the original join tree, in tree (not enumeration) order. Populated during
     /// `buildQueryGraph` and consumed by the conflict detector (CD-A/CD-C) when it is enabled; empty
     /// otherwise. See `ConflictJoinOp`.
@@ -102,20 +107,52 @@ struct QueryGraph
     /// restrictions. Set from settings in `optimizeJoinOrder`; affects only the DPsub algorithm.
     JoinOrderConflictDetector conflict_detector = JoinOrderConflictDetector::NONE;
 
+    /// Whether a semi/anti join actually joined this set of tables. `conflict_ops` lists every join
+    /// of the original query whatever the settings, so it cannot answer this on its own.
+    bool semi_anti_flattened = false;
+
+    /// `query_plan_join_swap_table`: empty when the planner may pick the build side itself, set when
+    /// the query pinned it. Only when it is empty may a join's inputs be put round the cheaper way.
+    std::optional<bool> join_swap_table;
+
+    /// The strictness `chooseJoinOrder` stamps onto every join of this graph (unless a conflict
+    /// detector reordered a semi/anti join, which keeps its own). DP entries are built as `All`
+    /// whatever it is, so an `ANY`/`SEMI`/`ANTI` graph is only recognisable from here.
+    JoinStrictness join_strictness = JoinStrictness::All;
+
     /// Restriction for a null-supplying relation of an outer join.
     /// Maps (relation id) -> (set of relations referenced by the outer join's ON clause, join kind).
     /// The relation may be joined (as a singleton side) only against a set that contains all
     /// relations its ON clause depends on; the remaining relations may be joined outside.
     std::unordered_map<size_t, std::pair<BitSet, JoinKind>> join_kinds;
 
-    /// Predicates from the ON clause of an outer join, mapped to the id of the null-supplying
-    /// relation. Such a predicate must be applied in the ON clause of the join step that joins
-    /// this relation: it affects matching, not filtering (rows of the preserved side are kept
-    /// even when the predicate doesn't hold).
+    /// Predicates from the ON clause of an outer join, mapped to the null-supplying side of that
+    /// join (both sides for `FULL`). Such a predicate must be applied in the ON clause of the join
+    /// step that joins this side: it affects matching, not filtering (rows of the preserved side
+    /// are kept even when the predicate doesn't hold). The side is a single relation unless the
+    /// graph was built for the conflict detector (see `requires_conflict_detector`).
     /// All other predicates are filters: they may be applied at any step where all their source
     /// relations are available, but they must not be merged into an outer join's ON clause -
     /// they go to the post-join `residual_filter` instead.
-    std::unordered_map<JoinActionRef, size_t> outer_join_conditions;
+    std::unordered_map<JoinActionRef, BitSet> outer_join_conditions;
+
+    /// Relations on the null-supplying side of an outer join that `join_kinds` cannot hold, because
+    /// that side has more than one relation. They are kept out of column equivalences like the
+    /// relations in `join_kinds`.
+    BitSet null_supplying_subtree_relations;
+
+    /// Set when the graph holds a join that only DPsub with a conflict detector can reorder: a
+    /// semi/anti join, an outer join whose null-supplying side has more than one relation, or a
+    /// `FULL` join among more than two relations. `join_kinds` does not describe such a graph, so no
+    /// other algorithm may plan it, and DPsub must not turn it down.
+    bool requires_conflict_detector = false;
+
+    /// The two input subtrees of every cross product of the original tree (`CROSS JOIN`, a comma join,
+    /// or an inner join without any condition). A cross product joins on nothing, so it adds no edge,
+    /// and a graph that only cross products hold together would otherwise fall apart. Each one links
+    /// its two sides instead, as a join with selectivity 1: the reordered join it ends up as still has
+    /// no condition, so it stays `Cross`.
+    std::vector<std::pair<BitSet, BitSet>> cross_product_links;
 
     /// Column equivalence classes derived from equi-join edges (e.g., A.x = B.x AND B.x = C.x
     /// implies A.x, B.x, C.x are all equivalent). Used by the join order optimizer to detect
