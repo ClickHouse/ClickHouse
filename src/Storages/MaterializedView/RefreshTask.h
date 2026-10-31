@@ -28,6 +28,9 @@ class QueryStatus;
 class StorageMaterializedView;
 struct OwnedRefreshTask;
 
+class IDisk;
+using DiskPtr = std::shared_ptr<IDisk>;
+
 class CursorTreeNode;
 using CursorTreeNodePtr = std::shared_ptr<CursorTreeNode>;
 
@@ -156,8 +159,9 @@ public:
         bool start_paused,
         bool is_restore_from_backup);
 
-    /// Called at most once.
-    void startup();
+    /// Called at most once. A target that keeps its data only in memory is empty after a restart,
+    /// so the schedule that filled it is not persisted either.
+    void startup(bool target_keeps_data_only_in_memory);
     void finalizeRestoreFromBackup();
     /// Permanently disable task scheduling and remove this table from RefreshSet.
     /// Ok to call multiple times, including in parallel.
@@ -173,6 +177,8 @@ public:
 
     Info getInfo() const;
     String getCoordinationPath() const { return coordination.path; }
+    bool isCoordinated() const { return coordination.coordinated; }
+    bool isAppend() const { return refresh_mode != RefreshMode::Replace; }
 
     bool canCreateOrDropOtherTables() const;
 
@@ -336,6 +342,8 @@ private:
         bool stop_requested = false;
         /// Refreshes are stopped because we got an unexpected error. Can be resumed with SYSTEM START VIEW.
         std::optional<String> unexpected_error;
+        /// The schedule state reached only memory. No refresh until doScheduling saves it.
+        bool local_state_save_pending = false;
 
         /// This replica's RANDOMIZE FOR offset, and what it was drawn for.
         /// Redrawn when last_completed_timeslot changes.
@@ -355,6 +363,21 @@ private:
         std::atomic<Int64> fake_clock {INT64_MIN};
     };
 
+    struct LoadedLocalState
+    {
+        std::optional<CoordinationZnode> znode;
+        /// Unreadable, as opposed to absent: a schedule existed and was lost.
+        bool unusable = false;
+    };
+
+    /// File in which an uncoordinated view persists `coordination.root_znode`; an empty path
+    /// disables persistence. Named after the view UUID, which a rename can grant or change.
+    struct LocalStateLocation
+    {
+        DiskPtr disk;
+        String path;
+    };
+
     std::mutex logger_mutex;
     LoggerPtr current_logger = nullptr;
 
@@ -369,7 +392,6 @@ private:
     RefreshSettings refresh_settings;
     std::vector<StorageID> initial_dependencies;
     const RefreshMode refresh_mode;
-    bool isAppend() const { return refresh_mode != RefreshMode::Replace; }
     bool isIncremental() const { return refresh_mode == RefreshMode::AppendIncremental; }
     /// Start with refreshing paused. Used for the temporary view of CREATE OR REPLACE, which is
     /// resumed after the rename so it cannot refresh the target before the replacement is committed.
@@ -387,6 +409,8 @@ private:
     CoordinationState coordination;
     ExecutionState execution;
     SchedulingState scheduling;
+    LocalStateLocation local_state;
+    bool persist_local_state = false;
 
     RefreshState state = RefreshState::Scheduling;
     /// Notified when wait() needs to wake up: when `state` or `root_znode` changes, and on shutdown.
@@ -451,12 +475,16 @@ private:
     bool retriesExhausted(const CoordinationZnode & znode) const;
 
     void readZnodesIfNeeded(std::shared_ptr<zkutil::ZooKeeper> zookeeper, std::unique_lock<std::mutex> & lock);
+    LocalStateLocation resolveLocalStateLocation(const StorageID & id, const ContextPtr & context) const;
+    /// Callers must not hold `mutex`. Neither throws.
+    LoadedLocalState loadLocalCoordinationState(const LocalStateLocation & location);
+    bool saveLocalCoordinationState(const ContextPtr & context, const LocalStateLocation & location, const String & data);
     /// Update the root znode and create/remove-if-exists the 'running' znode,
     /// atomically, conditionally on the root znode version number.
     /// If `only_running_znode`, the root znode is not updated, but its version is still checked.
     /// If version number doesn't match, schedules a doScheduling() call
     /// with should_reread_znodes = true, and returns false.
-    /// If coordination is disabled, just update in-memory struct without writing to zookeeper.
+    /// If coordination is disabled, a non-running transition goes to the view's state file if it has one; a failed write returns false.
     /// If `request_znode` is given, that "requested-*" znode is removed in the same multi: the started refresh consumes it.
     bool updateCoordinationState(CoordinationZnode root, bool running, std::shared_ptr<zkutil::ZooKeeper> zookeeper, std::unique_lock<std::mutex> & lock, bool only_running_znode = false, const String & request_znode = {});
 
