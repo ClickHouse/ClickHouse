@@ -2960,6 +2960,7 @@ void Planner::buildPlanForQueryNode()
     select_query_info.has_window = hasWindowFunctionNodes(query_tree);
     select_query_info.has_aggregates = hasAggregateFunctionNodes(query_tree);
     select_query_info.need_aggregate = query_node.hasGroupBy() || select_query_info.has_aggregates;
+    select_query_info.query_tree_already_optimized = select_query_options.query_tree_already_optimized;
 
     if (!select_query_info.has_window && query_node.hasQualify())
     {

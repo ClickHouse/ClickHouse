@@ -214,6 +214,8 @@ struct SelectQueryInfo
     ClusterPtr getCluster() const { return !optimized_cluster ? cluster : optimized_cluster; }
 
     bool settings_limit_offset_done = false;
+    /// See `SelectQueryOptions::query_tree_already_optimized`, for a storage that plans `query` itself.
+    bool query_tree_already_optimized = false;
     bool is_internal = false;
     bool is_secondary_query_root = false;
     bool is_parameterized_view = false;
