@@ -48,7 +48,6 @@ public:
             exception = exception_;
     }
 
-    const DB::ActionsDAG & getFilterDAG() const { return filter; }
     DB::ContextPtr getContext() const { return context; }
     const DB::FormatSettings & getFormatSettings() const { return format_settings; }
 

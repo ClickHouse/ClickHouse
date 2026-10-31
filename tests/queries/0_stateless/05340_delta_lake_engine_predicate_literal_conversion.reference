@@ -1,0 +1,159 @@
+dates [UTC]: d < toDateTime('2026-01-01 12:00:00', 'UTC')
+['2025-12-31','2026-01-01']
+2
+dates [UTC]: d <= toDateTime('2026-01-01 12:00:00', 'UTC')
+['2025-12-31','2026-01-01']
+2
+dates [UTC]: d > toDateTime('2026-01-01 12:00:00', 'UTC')
+['2026-01-02']
+1
+dates [UTC]: d >= toDateTime('2026-01-01 12:00:00', 'UTC')
+['2026-01-02']
+1
+dates [UTC]: d = toDateTime('2026-01-01 12:00:00', 'UTC')
+[]
+3
+dates [UTC]: d != toDateTime('2026-01-01 00:00:01', 'UTC')
+['2025-12-31','2026-01-01','2026-01-02']
+3
+dates [UTC]: toDateTime('2026-01-01 12:00:00', 'UTC') > d
+['2025-12-31','2026-01-01']
+2
+dates [UTC]: toDateTime('2026-01-01 12:00:00', 'UTC') < d
+['2026-01-02']
+1
+dates [UTC]: toDateTime('2026-01-01 12:00:00', 'UTC') >= d
+['2025-12-31','2026-01-01']
+2
+dates [UTC]: toDateTime64('2026-01-01 00:00:00.5', 3, 'UTC') <= d
+['2026-01-02']
+1
+dates [UTC]: d < toDateTime64('2026-01-01 00:00:00.5', 3, 'UTC')
+['2025-12-31','2026-01-01']
+2
+dates [UTC]: d < toDateTime('2026-01-01 00:00:00', 'UTC')
+['2025-12-31']
+1
+dates [UTC]: d = toDateTime('2026-01-01 00:00:00', 'UTC')
+['2026-01-01']
+1
+dates [UTC]: d > toDateTime('2026-01-01 00:00:00', 'Asia/Tokyo')
+['2026-01-01','2026-01-02']
+2
+dates [UTC]: d > toDateTime64('2026-01-01 00:00:00', 0, 'Asia/Tokyo')
+['2026-01-02']
+1
+dates [UTC]: d < toDateTime('2026-01-01 12:00:00')
+['2025-12-31','2026-01-01']
+2
+dates [UTC]: d <= toDate('2026-01-01')
+['2025-12-31','2026-01-01']
+2
+dates [UTC]: d < '2026-01-01'
+['2025-12-31']
+1
+dates [UTC]: toDate32(d) < toDateTime('2026-01-01 12:00:00', 'UTC')
+['2025-12-31','2026-01-01']
+2
+dates [UTC]: toDate(d) > toDateTime('2026-01-01 00:00:00', 'Asia/Tokyo')
+['2026-01-02']
+3
+dates [Pacific/Kiritimati]: d < toDateTime('2026-01-01 12:00:00', 'UTC')
+['2025-12-31','2026-01-01','2026-01-02']
+3
+dates [Pacific/Kiritimati]: d < toDateTime64('2026-01-01 12:00:00', 0, 'UTC')
+['2025-12-31','2026-01-01']
+2
+epoch [UTC]: toDate(d) > toDateTime('2026-01-01 00:00:00', 'Asia/Tokyo')
+['2026-01-02','2120-01-01']
+3
+epoch [UTC]: toDate(d) < toDateTime('2026-01-01 12:00:00', 'UTC')
+['1970-01-01']
+3
+epoch [UTC]: toDate(d) <= toDateTime('2106-02-07 06:28:15', 'UTC')
+['1970-01-01','2026-01-02','2120-01-01']
+3
+skipped_day [UTC]: d = toDateTime64('2011-12-31 00:00:00', 0, 'Pacific/Apia')
+['2011-12-30','2011-12-31']
+2
+skipped_day [UTC]: d >= toDateTime64('2011-12-31 00:00:00', 0, 'Pacific/Apia')
+['2011-12-30','2011-12-31']
+2
+skipped_day [UTC]: NOT (d < toDateTime64('2011-12-31 00:00:00', 0, 'Pacific/Apia'))
+['2011-12-30','2011-12-31']
+2
+skipped_day [UTC]: d < toDateTime64('2011-12-31 00:00:00', 0, 'Pacific/Apia')
+[]
+2
+dt64_bound [UTC]: d <= toDateTime64('2262-04-11 23:47:16.854775807', 9, 'UTC')
+['2262-04-11','2262-04-12']
+2
+dt64_bound [UTC]: toDateTime64('2262-04-11 23:47:16.854775807', 9, 'UTC') >= d
+['2262-04-11','2262-04-12']
+2
+dt64_bound [UTC]: d < toDateTime64('2262-04-11 12:00:00', 9, 'UTC')
+['2262-04-11']
+1
+dates_nullable [UTC]: d < toDateTime('2026-01-01 12:00:00', 'UTC')
+['2026-01-01']
+1
+bytes [UTC]: x < 300
+['1','2','44','44','50','60']
+3
+bytes [UTC]: x != 300
+['1','2','44','44','50','60']
+3
+bytes [UTC]: x > -200
+['1','2','44','44','50','60']
+3
+bytes [UTC]: x < 1.5
+['1']
+3
+bytes [UTC]: x < 45
+['1','2','44','44']
+2
+bytes [UTC]: x = 44
+['44','44']
+1
+bools [UTC]: b != 5
+['false','false','true','true']
+2
+bools [UTC]: b != 256
+['false','false','true','true']
+2
+bools [UTC]: b < 2
+['false','false','true','true']
+2
+bools [UTC]: b > 0.5
+['true','true']
+2
+bools [UTC]: b = 1
+['true','true']
+1
+bools [UTC]: NOT (b = 1)
+['false','false']
+1
+bools [UTC]: b = true
+['true','true']
+1
+bools [UTC]: b != reinterpret(toUInt8(5), 'Bool')
+['false','false','true','true']
+2
+bools [UTC]: b < reinterpret(toUInt8(5), 'Bool')
+['false','false','true','true']
+2
+strings [UTC]: s = 'a'
+['a']
+1
+strings [UTC]: s < 'b'
+['a']
+1
+strings [UTC]: s = toFixedString('a', 3)
+['a']
+2
+cdf [UTC]: d < toDateTime('2026-01-01 12:00:00', 'UTC')
+['2025-12-31','2026-01-01']
+cdf [UTC]: d > toDateTime('2026-01-01 00:00:00', 'Asia/Tokyo')
+['2026-01-01','2026-01-02']
+cdf [Pacific/Kiritimati]: d < toDateTime('2026-01-01 12:00:00', 'UTC')
+['2025-12-31','2026-01-01','2026-01-02']
