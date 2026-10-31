@@ -126,4 +126,8 @@ bool haveSameAggregateStateVersions(const IDataType & lhs, const IDataType & rhs
 /// through an arena (e.g. in `groupArray`). The states are shared, not copied.
 ColumnPtr relabelAggregateStateVersions(const ColumnPtr & column, const DataTypePtr & type);
 
+/// True when `from` and `to` differ only in the state variant (Aggregation vs Window) of an aggregate
+/// function they contain. Neither the type name nor the binary type encoding carries the variant.
+bool differsOnlyByAggregateStateVariant(const DataTypePtr & from, const DataTypePtr & to);
+
 }

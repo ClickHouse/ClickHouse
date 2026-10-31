@@ -214,7 +214,8 @@ QueryPlanStepPtr FillingStep::deserialize(Deserialization & ctx)
     InterpolateDescriptionPtr interpolate_description;
     if (flags & 2)
     {
-        auto actions = ActionsDAG::deserialize(ctx.in, ctx.registry, ctx.context, ctx.max_type_complexity);
+        auto actions = ActionsDAG::deserialize(
+            ctx.in, ctx.registry, ctx.context, ctx.max_type_complexity, /*nesting_depth=*/ 0, ctx.input_headers);
 
         /// The plan may come from an untrusted client (`TCPHandler::receiveQueryPlan`), so the description
         /// is rebuilt from the DAG rather than taken from the wire. `FillingTransform` pairs the executed

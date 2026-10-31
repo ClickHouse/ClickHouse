@@ -208,7 +208,7 @@ QueryPlanStepPtr TotalsHavingStep::deserialize(Deserialization & ctx)
     bool remove_filter_column = bool(flags & 8);
 
     AggregateDescriptions aggregates;
-    deserializeAggregateDescriptions(aggregates, ctx.in, ctx.max_type_complexity);
+    deserializeAggregateDescriptions(aggregates, ctx.in, ctx.max_type_complexity, ctx.input_headers.front().get());
 
     std::optional<ActionsDAG> actions_dag;
     String filter_column_name;
@@ -216,7 +216,8 @@ QueryPlanStepPtr TotalsHavingStep::deserialize(Deserialization & ctx)
     {
         readStringBinary(filter_column_name, ctx.in);
 
-        actions_dag = ActionsDAG::deserialize(ctx.in, ctx.registry, ctx.context, ctx.max_type_complexity);
+        actions_dag = ActionsDAG::deserialize(
+            ctx.in, ctx.registry, ctx.context, ctx.max_type_complexity, /*nesting_depth=*/ 0, ctx.input_headers);
     }
 
     return std::make_unique<TotalsHavingStep>(
