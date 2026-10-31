@@ -40,11 +40,15 @@ SerializationInfoSettings::SerializationInfoSettings(
 
 void SerializationInfoSettings::tryDowngradeToBasic()
 {
-    if (version == MergeTreeSerializationInfoVersion::BASIC)
+    /// WITH_TYPES only carries type-specialized settings and can be omitted when
+    /// all of them are default. Later versions may carry independent metadata.
+    if (version != MergeTreeSerializationInfoVersion::WITH_TYPES)
         return;
 
     bool no_specialization = string_serialization_version == MergeTreeStringSerializationVersion::SINGLE_STREAM
-        && nullable_serialization_version == MergeTreeNullableSerializationVersion::BASIC && map_serialization_version == MergeTreeMapSerializationVersion::BASIC;
+        && nullable_serialization_version == MergeTreeNullableSerializationVersion::BASIC
+        && map_serialization_version == MergeTreeMapSerializationVersion::BASIC
+        && !propagate_types_serialization_versions_to_nested_types;
 
     if (no_specialization)
         version = MergeTreeSerializationInfoVersion::BASIC;
@@ -80,11 +84,16 @@ void SerializationInfoSettings::updateHash(SipHash & hash) const
     hash.update(propagate_types_serialization_versions_to_nested_types);
 }
 
-SerializationInfoSettings SerializationInfoSettings::enableAllSupportedSerializations()
+SerializationInfoSettings SerializationInfoSettings::enableAllSupportedSerializations(bool with_string_size_stream)
 {
     SerializationInfoSettings settings;
     settings.version = MergeTreeSerializationInfoVersion::WITH_TYPES;
     settings.nullable_serialization_version = MergeTreeNullableSerializationVersion::ALLOW_SPARSE;
+    if (with_string_size_stream)
+    {
+        settings.string_serialization_version = MergeTreeStringSerializationVersion::WITH_SIZE_STREAM;
+        settings.propagate_types_serialization_versions_to_nested_types = true;
+    }
     return settings;
 }
 

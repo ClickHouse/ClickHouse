@@ -3,6 +3,36 @@ from concurrent.futures import ThreadPoolExecutor
 
 from ci.praktika.utils import Shell
 
+# Iceberg datasets unpacked into user_files as <database> -> (directory, tables); every job that downloads a tarball must also create the database via iceberg_database_queries, or the tests querying it fail.
+ICEBERG_DATASETS = {
+    "tpch_ice10": (
+        "tpch_ice_sf10",
+        (
+            "nation",
+            "region",
+            "supplier",
+            "part",
+            "customer",
+            "partsupp",
+            "orders",
+            "lineitem",
+        ),
+    ),
+}
+
+
+def iceberg_database_queries(server_path):
+    """Queries that create the Iceberg datasets as databases (with the default engine, `Atomic`) on one running server ({server_path}/db). The paths are per server, because IcebergLocal stores an absolute path. Idempotent."""
+    user_files = f"{server_path}/db/user_files"
+    queries = []
+    for database, (directory, tables) in ICEBERG_DATASETS.items():
+        queries.append(f"CREATE DATABASE IF NOT EXISTS {database}")
+        for table in tables:
+            queries.append(
+                f"CREATE TABLE IF NOT EXISTS {database}.{table} ENGINE = IcebergLocal('{user_files}/{directory}/{table}/')"
+            )
+    return queries
+
 
 def download_and_extract_datasets(dataset_urls, target_dir, retries=5):
     """Download dataset tarballs in parallel and extract them into target_dir.

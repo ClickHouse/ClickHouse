@@ -23,15 +23,13 @@
     {
       "group": "Protocolo nativo",
       "pages": [
-        "pt-BR/resources/develop-contribute/native-protocol/basics",
-        "pt-BR/resources/develop-contribute/native-protocol/client",
-        "pt-BR/resources/develop-contribute/native-protocol/server",
-        "pt-BR/resources/develop-contribute/native-protocol/columns",
+        "pt-BR/resources/develop-contribute/native-protocol/protocol",
+        "pt-BR/resources/develop-contribute/native-protocol/format",
         "pt-BR/resources/develop-contribute/native-protocol/hash"
       ]
     },
     {
-      "group": "Contribuindo",
+      "group": "Como contribuir",
       "pages": [
         "pt-BR/resources/develop-contribute/contribute/tests",
         "pt-BR/resources/develop-contribute/contribute/continuous-integration",
@@ -46,20 +44,20 @@
     {
       "group": "Desenvolvimento de integrações",
       "pages": [
+        "pt-BR/resources/develop-contribute/integrations/index",
         "pt-BR/resources/develop-contribute/integrations/building-integrations",
         "pt-BR/resources/develop-contribute/integrations/testing-your-integration",
         "pt-BR/resources/develop-contribute/integrations/documenting-your-integration"
-      ],
-      "root": "pt-BR/resources/develop-contribute/integrations/index"
+      ]
     },
     {
-      "group": "Roadmap",
+      "group": "Roteiro",
       "pages": [
         "pt-BR/resources/develop-contribute/roadmap"
       ]
     }
   ],
   "icon": "/images/icons/icon-contribute.svg",
-  "item": "Desenvolvimento e contribuição",
+  "item": "Desenvolvimento e contribuições",
   "root": "pt-BR/resources/develop-contribute/index"
 }

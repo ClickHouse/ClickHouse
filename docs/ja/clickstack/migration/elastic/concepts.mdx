@@ -191,7 +191,7 @@ ClickHouse は、最新のハードウェアで効率を最大限に引き出せ
 クエリ実行は、さらに次の方法で並列化されます。
 
 1. **SIMD ベクトル化**: 列指向データに対する操作では [CPU SIMD 命令](https://en.wikipedia.org/wiki/Single_instruction,_multiple_data) (例: [AVX512](https://en.wikipedia.org/wiki/AVX-512)) を使用し、値をバッチ処理できます。
-2. **クラスター レベルの並列化**: 分散構成では、各ノードがローカルでクエリ処理を実行します。[部分集計状態](https://clickhouse.com/blog/aggregate-functions-combinators-in-clickhouse-for-arrays-maps-and-states#working-with-aggregation-states) はクエリを開始したノードにストリーミングされ、そこでマージされます。クエリの `GROUP BY` キーが分片キーと一致していれば、マージは[最小限に抑えるか、完全に回避することも可能です](/ja/reference/settings/session-settings#distributed_group_by_no_merge)。
+2. **クラスター レベルの並列化**: 分散構成では、各ノードがローカルでクエリ処理を実行します。[部分集計状態](https://clickhouse.com/blog/aggregate-functions-combinators-in-clickhouse-for-arrays-maps-and-states#working-with-aggregation-states) はクエリを開始したノードにストリーミングされ、そこでマージされます。クエリの `GROUP BY` キーが分片キーと一致していれば、マージは[最小限に抑えるか、完全に回避することも可能です](/ja/reference/settings/session-settings/distributed#distributed_group_by_no_merge)。
 
 <br />
 

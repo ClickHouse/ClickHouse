@@ -95,6 +95,9 @@ public:
     /// Test-only: forwards to Changelog::hasCommitReaderForTests.
     bool hasCommitReaderForTests() const;
 
+    /// Test-only: forwards to Changelog::setForceSerialStartupReadForTesting.
+    void setForceSerialStartupReadForTesting(bool value);
+
 private:
 #if defined(USE_NSYNC) && USE_NSYNC
     using ChangelogMutex = NsyncSharedMutex;

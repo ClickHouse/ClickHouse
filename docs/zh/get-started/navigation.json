@@ -1,12 +1,55 @@
 {
   "icon": "/images/icons/icon-get-started.svg",
-  "item": "开始使用",
+  "item": "入门",
   "pages": [
     {
-      "group": "开始使用",
+      "group": "入门",
       "icon": "/images/menu-icon-lightning.svg",
       "pages": [
-        "zh/get-started/quickstarts/home",
+        "zh/get-started/index",
+        {
+          "expandable": true,
+          "expanded": false,
+          "group": "快速入门",
+          "pages": [
+            "zh/get-started/quickstarts/home",
+            {
+              "expanded": false,
+              "group": "所有用例",
+              "pages": [
+                "zh/get-started/setup/cloud",
+                "zh/get-started/quickstarts/obtain-your-cloud-connection-details",
+                "zh/get-started/quickstarts/insert-data-using-clickhouse-client",
+                "zh/get-started/quickstarts/creating-tables",
+                "zh/get-started/quickstarts/writing-queries",
+                "zh/get-started/quickstarts/create-your-first-mergetree-table"
+              ]
+            },
+            {
+              "expanded": false,
+              "group": "实时分析",
+              "pages": [
+                "zh/get-started/quickstarts/create-your-first-materialized-view",
+                "zh/get-started/quickstarts/create-your-first-projection"
+              ]
+            },
+            {
+              "expanded": false,
+              "group": "数据仓库",
+              "pages": [
+                "zh/get-started/quickstarts/connect-your-iceberg-catalog",
+                "zh/get-started/quickstarts/mutations"
+              ]
+            },
+            {
+              "expanded": false,
+              "group": "可观测性",
+              "pages": [
+                "zh/get-started/quickstarts/working-with-the-map-type"
+              ]
+            }
+          ]
+        },
         {
           "expandable": true,
           "expanded": true,
@@ -21,27 +64,29 @@
           "expanded": true,
           "group": "用例",
           "pages": [
+            "zh/get-started/use-cases/overview",
+            "zh/get-started/use-cases/choosing-a-service",
             "zh/get-started/use-cases/real-time-analytics",
             "zh/get-started/use-cases/observability",
             "zh/get-started/use-cases/data-warehousing",
             "zh/get-started/use-cases/agentic-analytics"
-          ],
-          "root": "zh/get-started/use-cases/overview"
+          ]
         },
         "zh/get-started/about/deployment-modes"
-      ],
-      "root": "zh/get-started/index"
+      ]
     },
     {
       "expanded": true,
-      "group": "设置",
+      "group": "部署",
       "icon": "/images/menu-icon-gear.svg",
       "pages": [
+        "zh/get-started/setup/install",
         "zh/get-started/setup/cloud",
         {
           "expanded": true,
-          "group": "自管理",
+          "group": "自托管",
           "pages": [
+            "zh/get-started/setup/self-managed/overview",
             {
               "group": "本地开发",
               "pages": [
@@ -52,7 +97,7 @@
               ]
             },
             {
-              "group": "生产服务器",
+              "group": "生产环境服务器",
               "pages": [
                 "zh/get-started/setup/self-managed/debian-ubuntu",
                 "zh/get-started/setup/self-managed/redhat",
@@ -60,17 +105,16 @@
                 "zh/get-started/setup/self-managed/other-linux"
               ]
             }
-          ],
-          "root": "zh/get-started/setup/self-managed/overview"
+          ]
         }
-      ],
-      "root": "zh/get-started/setup/install"
+      ]
     },
     {
       "expanded": true,
       "group": "示例数据集",
       "icon": "/images/menu-icon-database.svg",
       "pages": [
+        "zh/get-started/sample-datasets/index",
         "zh/get-started/sample-datasets/playground",
         {
           "group": "基准测试",
@@ -85,7 +129,7 @@
           ]
         },
         {
-          "group": "向量搜索与嵌入向量",
+          "group": "向量搜索与向量嵌入",
           "pages": [
             "zh/get-started/sample-datasets/dbpedia",
             "zh/get-started/sample-datasets/hacker-news-vector-search",
@@ -94,7 +138,7 @@
           ]
         },
         {
-          "group": "Web 与社交分析",
+          "group": "网站与社交媒体分析",
           "pages": [
             "zh/get-started/sample-datasets/amazon-reviews",
             "zh/get-started/sample-datasets/anon-web-analytics-metrica",
@@ -132,14 +176,14 @@
             "zh/get-started/sample-datasets/uk-price-paid"
           ]
         }
-      ],
-      "root": "zh/get-started/sample-datasets/index"
+      ]
     },
     {
       "expanded": true,
       "group": "迁移",
       "icon": "/images/caret-double-right.svg",
       "pages": [
+        "zh/get-started/migrate/overview",
         {
           "group": "PostgreSQL",
           "pages": [
@@ -153,8 +197,7 @@
               ]
             },
             "zh/get-started/migrate/postgres/appendix"
-          ],
-          "root": "zh/get-started/migrate/postgres/index"
+          ]
         },
         {
           "group": "BigQuery",
@@ -162,8 +205,7 @@
             "zh/get-started/migrate/bigquery/overview",
             "zh/get-started/migrate/bigquery/migrating-to-clickhouse-cloud",
             "zh/get-started/migrate/bigquery/loading-data"
-          ],
-          "root": "zh/get-started/migrate/bigquery/index"
+          ]
         },
         {
           "group": "Snowflake",
@@ -188,9 +230,10 @@
           ]
         },
         {
-          "group": "从 OSS 到 Cloud",
+          "group": "从开源版迁移到云服务",
           "pages": [
-            "zh/get-started/migrate/oss-to-cloud/clickhouse-to-cloud"
+            "zh/get-started/migrate/oss-to-cloud/clickhouse-to-cloud",
+            "zh/get-started/migrate/oss-to-cloud/oss-to-cloud-backup-restore"
           ]
         },
         {
@@ -201,8 +244,7 @@
             "zh/get-started/migrate/other-methods/object-storage-to-clickhouse"
           ]
         }
-      ],
-      "root": "zh/get-started/migrate/overview"
+      ]
     }
   ]
 }

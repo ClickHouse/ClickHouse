@@ -15,7 +15,7 @@ clients de cartographie web tels que MapLibre et Mapbox GL affichent nativement.
 fonctions complémentaires :
 
 * `MVTEncodeGeom` — une fonction scalaire qui projette une géométrie dans l’espace pixel local d’une tuile slippy-map et
-  la tronque aux limites de la tuile.
+  la découpe aux limites de la tuile.
 * `MVTEncode` — une fonction d’agrégation qui rassemble les géométries projetées d’un groupe dans les octets binaires d’une
   tuile monocouche.
 
@@ -23,7 +23,7 @@ Deux fonctions auxiliaires, `MVTBoundingBox` et `MVTBoundingBoxMercator`, renvoi
 limitées à celle-ci dans la clause `WHERE` à l’aide d’un index.
 
 Les géométries de point, de ligne et de polygone sont prises en charge, y compris le type `Geometry` et les types Geo concrets (`Point`,
-`LineString`, `MultiLineString`, `Ring`, `Polygon`, `MultiPolygon`).
+`MultiPoint`, `LineString`, `MultiLineString`, `Ring`, `Polygon`, `MultiPolygon`).
 
 Les octets obtenus constituent une tuile complète qui peut être renvoyée directement via l’interface HTTP avec `FORMAT RawBLOB`.
 
@@ -41,7 +41,7 @@ et renvoie la géométrie en espace de la tuile.
 La projection est Web Mercator sur toute la plage de coordonnées `UInt32`. Les coordonnées renvoyées ont leur origine dans
 le coin supérieur gauche de la tuile, avec l’axe des y orienté vers le bas, conformément à la convention de coordonnées du format Mapbox Vector
 Tile, de sorte que le résultat peut être transmis directement à `MVTEncode`. Les coordonnées sont arrondies au pixel entier ; ainsi, un regroupement par
-`MVTEncodeGeom` fusionne en un seul cluster les géométries qui tombent sur la même grille.
+`MVTEncodeGeom` fusionne en un seul groupe les géométries qui tombent sur la même grille.
 
 Lorsque `clip` est activé (par défaut), la géométrie est découpée selon la tuile étendue de `buffer` pixels (la plage
 `[-buffer, extent + buffer]` sur chaque axe) ; une géométrie située entièrement à l’extérieur devient `NULL`. Il s’agit de l’équivalent de
@@ -51,7 +51,7 @@ Les coordonnées des polygones sont bornées à une fenêtre `2^30` avant valida
 `zoom` 18 et `extent` 4096 — ; ainsi, pour des tuiles réalistes, la géométrie est validée mais jamais découpée, et cette borne n’affecte
 que les géométries placées à des valeurs extrêmes de `zoom` ou de `extent`.
 
-Le type de géométrie de sortie dépend de l’entrée : un `Point` renvoie un `Point` ; un `LineString` ou `MultiLineString` renvoie un
+Le type de géométrie de sortie dépend de l’entrée : un `Point` renvoie un `Point` ; un `MultiPoint` renvoie un `MultiPoint` ; un `LineString` ou `MultiLineString` renvoie un
 `MultiLineString` ; un `Ring`, `Polygon` ou `MultiPolygon` renvoie un `MultiPolygon` (le découpage peut scinder une géométrie en
 plusieurs parties).
 
@@ -63,7 +63,7 @@ MVTEncodeGeom(geometry, zoom, tile_x, tile_y[, extent[, buffer[, clip]]])
 
 **Arguments**
 
-* `geometry` — Géométrie en degrés de longitude/latitude. La longitude est bornée à `[-180, 180]` et la latitude à la plage Web Mercator `[-85.05112878, 85.05112878]`. [`Point`](/fr/reference/data-types/geo) / [`LineString`](/fr/reference/data-types/geo) / [`MultiLineString`](/fr/reference/data-types/geo) / [`Ring`](/fr/reference/data-types/geo) / [`Polygon`](/fr/reference/data-types/geo) / [`MultiPolygon`](/fr/reference/data-types/geo) / [`Geometry`](/fr/reference/data-types/geo).
+* `geometry` — Géométrie en degrés de longitude/latitude. La longitude est bornée à `[-180, 180]` et la latitude à la plage Web Mercator `[-85.05112878, 85.05112878]`. [`Point`](/fr/reference/data-types/geo) / [`MultiPoint`](/fr/reference/data-types/geo) / [`LineString`](/fr/reference/data-types/geo) / [`MultiLineString`](/fr/reference/data-types/geo) / [`Ring`](/fr/reference/data-types/geo) / [`Polygon`](/fr/reference/data-types/geo) / [`MultiPolygon`](/fr/reference/data-types/geo) / [`Geometry`](/fr/reference/data-types/geo).
 * `zoom` — Niveau de zoom du slippy-map, dans la plage `[0, 32]`. [`UInt8`](/fr/reference/data-types/int-uint).
 * `tile_x` — Indice de colonne de tuile, dans la plage `[0, 2^zoom - 1]`. [`UInt32`](/fr/reference/data-types/int-uint).
 * `tile_y` — Indice de ligne de tuile, dans la plage `[0, 2^zoom - 1]`. [`UInt32`](/fr/reference/data-types/int-uint).

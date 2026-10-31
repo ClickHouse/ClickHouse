@@ -1,5 +1,6 @@
 #include <Common/typeid_cast.h>
 #include <Functions/FunctionHelpers.h>
+#include <Functions/IFunction.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/createSubcolumnsExtractionActions.h>
 #include <Interpreters/inplaceBlockConversions.h>
@@ -151,6 +152,27 @@ AddingDefaultsTransform::AddingDefaultsTransform(
 }
 
 
+void AddingDefaultsTransform::onCancel() noexcept
+{
+    ISimpleTransform::onCancel();
+
+    ExpressionActionsPtr actions;
+    {
+        std::lock_guard lock(current_actions_mutex);
+        actions = current_actions;
+    }
+
+    if (!actions)
+        return;
+
+    for (const auto & node : actions->getNodes())
+    {
+        if (node.type == ActionsDAG::ActionType::FUNCTION && node.function)
+            node.function->cancelExecution();
+    }
+}
+
+
 void AddingDefaultsTransform::transform(Chunk & chunk)
 {
     if (column_defaults.empty())
@@ -272,7 +294,42 @@ void AddingDefaultsTransform::transform(Chunk & chunk)
             auto actions = std::make_shared<ExpressionActions>(
                 ActionsDAG::merge(std::move(extracting_subcolumns_dag), std::move(*dag)),
                 ExpressionActionsSettings(context, CompileExpressions::yes), true);
-            actions->execute(evaluate_block);
+
+            /// Publish the actions before anything can observe the cancellation, so that a
+            /// concurrent `onCancel` can always forward `cancelExecution` into a function that is
+            /// about to run or already running. Publishing after the check below would leave a
+            /// window where `onCancel` sees no actions and the evaluation still starts one action.
+            {
+                std::lock_guard lock(current_actions_mutex);
+                current_actions = actions;
+            }
+
+            /// The task can be dispatched before the query is cancelled and start running after it:
+            /// skip the whole default evaluation instead of running one action of it. A cancellation
+            /// landing after this check reaches the running function through the published actions,
+            /// if it supports interruption.
+            if (isCancelled())
+            {
+                {
+                    std::lock_guard lock(current_actions_mutex);
+                    current_actions.reset();
+                }
+                chunk.setColumns(getOutputPort().getHeader().cloneEmptyColumns(), 0);
+                return;
+            }
+
+            actions->execute(evaluate_block, false, false, &getCancellationFlag());
+
+            {
+                std::lock_guard lock(current_actions_mutex);
+                current_actions.reset();
+            }
+
+            if (isCancelled())
+            {
+                chunk.setColumns(getOutputPort().getHeader().cloneEmptyColumns(), 0);
+                return;
+            }
         }
 
         /// Mix the computed defaults back into res

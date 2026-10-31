@@ -1,0 +1,155 @@
+-- lightweight_update: heavyweight DELETE after a patch-mode lightweight DELETE
+0
+4	4
+5	5
+7	7
+8	8
+10	10
+11	11
+13	13
+14	14
+16	16
+17	17
+19	19
+20	20
+22	22
+23	23
+0
+-- alter_update mode produces the same rows (oracle)
+0
+4	4
+5	5
+7	7
+8	8
+10	10
+11	11
+13	13
+14	14
+16	16
+17	17
+19	19
+20	20
+22	22
+23	23
+-- both modes agree
+1
+-- lightweight_update_force
+0
+4	4
+5	5
+7	7
+8	8
+10	10
+11	11
+13	13
+14	14
+16	16
+17	17
+19	19
+20	20
+22	22
+23	23
+-- APPLY DELETED MASK and REWRITE PARTS reach the same code path
+0
+2	2
+4	4
+5	5
+7	7
+8	8
+10	10
+11	11
+13	13
+14	14
+16	16
+17	17
+19	19
+20	20
+22	22
+23	23
+0
+0
+2	2
+4	4
+5	5
+7	7
+8	8
+10	10
+11	11
+13	13
+14	14
+16	16
+17	17
+19	19
+20	20
+22	22
+23	23
+-- a partial update keeps the mask, so masked rows stay hidden
+0
+1	101
+2	2
+4	4
+5	105
+7	107
+8	8
+10	10
+11	111
+13	113
+14	14
+16	16
+17	117
+19	119
+20	20
+22	22
+23	123
+1
+-- a heavyweight DELETE matching no rows keeps the pending patch
+0
+16	0
+-- compact parts
+0
+4	4
+5	5
+7	7
+8	8
+10	10
+11	11
+13	13
+14	14
+16	16
+17	17
+19	19
+20	20
+22	22
+23	23
+-- with a projection
+0
+4	4
+5	5
+7	7
+8	8
+10	10
+11	11
+13	13
+14	14
+16	16
+17	17
+19	19
+20	20
+22	22
+23	23
+-- ReplicatedMergeTree
+0
+4	4
+5	5
+7	7
+8	8
+10	10
+11	11
+13	13
+14	14
+16	16
+17	17
+19	19
+20	20
+22	22
+23	23

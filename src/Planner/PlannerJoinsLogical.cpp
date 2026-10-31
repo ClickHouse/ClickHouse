@@ -1,4 +1,5 @@
 #include <Planner/PlannerJoinsLogical.h>
+#include <Processors/QueryPlan/Optimizations/Cascades/CascadesParams.h>
 #include <Planner/PlannerJoins.h>
 
 #include <IO/WriteBuffer.h>
@@ -10,6 +11,7 @@
 #include <DataTypes/DataTypesNumber.h>
 
 #include <Storages/IStorage.h>
+#include <Storages/StorageProxy.h>
 #include <Storages/StorageJoin.h>
 #include <Storages/StorageDictionary.h>
 
@@ -75,6 +77,8 @@ namespace Setting
     extern const SettingsBool allow_general_join_planning;
     extern const SettingsBool query_plan_display_internal_aliases;
     extern const SettingsJoinAlgorithm join_algorithm;
+    extern const SettingsBool semi_join_include_columns_from_both_sides;
+    extern const SettingsBool anti_join_include_columns_from_both_sides;
 }
 
 static const ActionsDAG::Node * appendExpression(
@@ -203,6 +207,21 @@ buildJoinUsingCondition(const QueryTreeNodePtr & node, JoinOperatorBuildContext 
 
     std::unordered_map<String, const ActionsDAG::Node *> changed_types;
 
+    /** When a disabled `semi_join_include_columns_from_both_sides` / `anti_join_include_columns_from_both_sides` hides one side of the JOIN, only the
+      * preserved side is part of the result, so its key column must keep its own type there instead of
+      * being widened to the `USING` supertype - the supertype is derived from the hidden side as well.
+      * Only the output type is kept: the join condition below still reads the supertype cast.
+      */
+    const auto & join_query_settings = builder_context.planner_context->getQueryContext()->getSettingsRef();
+    const bool hides_non_preserved_side
+        = (join_operator.strictness == JoinStrictness::Semi && !join_query_settings[Setting::semi_join_include_columns_from_both_sides])
+        || (join_operator.strictness == JoinStrictness::Anti && !join_query_settings[Setting::anti_join_include_columns_from_both_sides]);
+    std::optional<JoinTableSide> preserved_side;
+    if (hides_non_preserved_side && isLeft(join_operator.kind))
+        preserved_side = JoinTableSide::Left;
+    else if (hides_non_preserved_side && isRight(join_operator.kind))
+        preserved_side = JoinTableSide::Right;
+
     JoinActionRef::AddFunction using_concat_function(FunctionFactory::instance().get("firstNonDefault", nullptr));
     for (size_t i = 0; i < num_nodes; ++i)
     {
@@ -225,10 +244,16 @@ buildJoinUsingCondition(const QueryTreeNodePtr & node, JoinOperatorBuildContext 
             return arg;
         };
 
-        for (const auto & inner_column : inner_columns)
+        for (size_t inner_column_index = 0; inner_column_index < inner_columns.size(); ++inner_column_index)
         {
+            const auto & inner_column = inner_columns[inner_column_index];
+            /// The last inner column is the one from the right table expression, the rest are from the left.
+            const auto inner_column_side
+                = (inner_column_index + 1 == inner_columns.size()) ? JoinTableSide::Right : JoinTableSide::Left;
+            const bool keep_original_type = preserved_side == inner_column_side;
+
             auto & arg = args.emplace_back(builder_context.addExpression(inner_column));
-            if (!arg.getType()->equals(*result_type))
+            if (!arg.getType()->equals(*result_type) && !keep_original_type)
             {
                 arg = JoinActionRef::transform({arg}, cast_to_super);
             }
@@ -560,7 +585,7 @@ std::unique_ptr<JoinStepLogical> buildJoinStepLogical(
         outer_scope_columns,
         changed_types,
         settings[Setting::join_use_nulls],
-        JoinSettings(settings),
+        JoinSettings(settings, query_context->getJoinAnalyzeMode()),
         SortingStep::Settings(settings));
 
     bool display_internal_aliases = settings[Setting::query_plan_display_internal_aliases];
@@ -570,8 +595,8 @@ std::unique_ptr<JoinStepLogical> buildJoinStepLogical(
 
     {
         const auto & query_params = query_context->getQueryParameters();
-        if (auto it = query_params.find("_internal_join_table_stat_hints"); it != query_params.end())
-            join_step->setDummyStats(it->second);
+        if (auto it = query_params.find(CascadesParams::STAT_HINTS); it != query_params.end())
+            join_step->setTableStatsHint(it->second);
     }
 
     if (shouldForbidReordering(build_context))
@@ -595,18 +620,19 @@ PreparedJoinStorage tryGetStorageInTableJoin(const QueryTreeNodePtr & table_expr
     const auto & table_expression_data = planner_context->getTableExpressionDataOrThrow(table_expression);
     result.column_mapping = table_expression_data.getColumnIdentifierToColumnName();
 
-    result.storage_join = std::dynamic_pointer_cast<StorageJoin>(storage);
+    result.storage_join = castStorage<StorageJoin>(storage, DeferredTable::Load);
     if (result.storage_join)
         return result;
 
     auto storage_dictionary = std::dynamic_pointer_cast<StorageDictionary>(storage);
     if (storage_dictionary && storage_dictionary->getDictionary()->getSpecialKeyType() != DictionarySpecialKeyType::Range)
     {
+        /// NOLINT(storage-cast): a dictionary, which the catalog never hands out behind a proxy.
         result.storage_key_value = std::dynamic_pointer_cast<const IKeyValueEntity>(storage_dictionary->getDictionary());
         return result;
     }
 
-    result.storage_key_value = std::dynamic_pointer_cast<IKeyValueEntity>(storage);
+    result.storage_key_value = castStorage<IKeyValueEntity>(storage, DeferredTable::Load);
     if (result.storage_key_value)
         return result;
 

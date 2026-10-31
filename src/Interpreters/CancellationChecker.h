@@ -1,6 +1,7 @@
 #pragma once
 
 #include <QueryPipeline/SizeLimits.h>
+#include <chrono>
 #include <set>
 #include <mutex>
 
@@ -61,7 +62,13 @@ public:
     void terminateThread();
 
     // Method to add a new task to the multiset. Returns true if the task was added.
-    [[nodiscard]] bool appendTask(const QueryStatusPtr & query, Int64 timeout, OverflowMode overflow_mode);
+    [[nodiscard]] bool appendTask(const QueryStatusPtr & query, Int64 timeout_us, OverflowMode overflow_mode);
+
+    /// The deadline (ms since the steady_clock epoch) for a task appended at `now` with `timeout_us`,
+    /// aligned up to the grid the worker batches deadlines on. Never earlier than `now + timeout_us`:
+    /// a task cancelled before its own timeout fails with a self-contradictory
+    /// `Timeout exceeded: elapsed 999.672 ms, maximum: 1000 ms`.
+    static UInt64 taskDeadlineMs(std::chrono::steady_clock::time_point now, Int64 timeout_us);
 
     // Used when some task is done
     void appendDoneTasks(const QueryStatusPtr & query);

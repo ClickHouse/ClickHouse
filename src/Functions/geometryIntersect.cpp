@@ -117,15 +117,12 @@ public:
                 using LeftConverter = typename LeftConverterType::Type;
                 using RightConverter = typename RightConverterType::Type;
 
-                auto first = LeftConverter::convert(arguments[0].column->convertToFullColumnIfConst());
-                auto second = RightConverter::convert(arguments[1].column->convertToFullColumnIfConst());
+                CorrectedGeometries<LeftConverter> first(arguments[0].column);
+                CorrectedGeometries<RightConverter> second(arguments[1].column);
 
                 for (size_t i = 0; i < input_rows_count; ++i)
                 {
-                    boost::geometry::correct(first[i]);
-                    boost::geometry::correct(second[i]);
-
-                    res_data.emplace_back(boost::geometry::intersects(first[i], second[i]));
+                    res_data.emplace_back(boost::geometry::intersects(first.get(i), second.get(i)));
                 }
             });
 
@@ -150,26 +147,26 @@ REGISTER_FUNCTION(geometryIntersect)
         .description = R"(
         Returns true if two geometries intersect (share any common point, line or area).
         Unlike [`polygonsIntersectCartesian`](#polygonsIntersectCartesian), it accepts any geometry data type
-        ([`Point`](/sql-reference/data-types/geo#point), [`MultiPoint`](/sql-reference/data-types/geo#multipoint), [`LineString`](/sql-reference/data-types/geo#linestring),
-        [`MultiLineString`](/sql-reference/data-types/geo#multilinestring), [`Ring`](/sql-reference/data-types/geo#ring),
-        [`Polygon`](/sql-reference/data-types/geo#polygon), [`MultiPolygon`](/sql-reference/data-types/geo#multipolygon)),
-        including the common [`Geometry`](/sql-reference/data-types/geo#geometry) type, and the two arguments may be of different types.
+        ([`Point`](/reference/data-types/geo#point), [`MultiPoint`](/reference/data-types/geo#multipoint), [`LineString`](/reference/data-types/geo#linestring),
+        [`MultiLineString`](/reference/data-types/geo#multilinestring), [`Ring`](/reference/data-types/geo#ring),
+        [`Polygon`](/reference/data-types/geo#polygon), [`MultiPolygon`](/reference/data-types/geo#multipolygon)),
+        including the common [`Geometry`](/reference/data-types/geo#geometry) type, and the two arguments may be of different types.
         Coordinates are interpreted in the Cartesian plane.
     )",
         .syntax = "geometryIntersectCartesian(geometry1, geometry2)",
         .arguments
-        = {{"geometry1", "A value of any geometry data type or [`Geometry`](/sql-reference/data-types/geo#geometry)."},
-           {"geometry2", "A value of any geometry data type or [`Geometry`](/sql-reference/data-types/geo#geometry)."}},
-        .returned_value = {"Returns true (1) if the two geometries intersect. [`Bool`](/sql-reference/data-types/boolean)."},
+        = {{"geometry1", "A value of any geometry data type or [`Geometry`](/reference/data-types/geo#geometry)."},
+           {"geometry2", "A value of any geometry data type or [`Geometry`](/reference/data-types/geo#geometry)."}},
+        .returned_value = {"Returns true (1) if the two geometries intersect. [`Bool`](/reference/data-types/boolean)."},
         .examples
         = {{"Usage example",
             R"(
                 SELECT geometryIntersectCartesian([(2., 2.), (2., 3.), (3., 3.), (3., 2.)]::Ring, [(1., 1.), (1., 4.), (4., 4.), (4., 1.)]::Ring)
         )",
             R"(
-                ┌─geometryIntersectCartesian(⋯)─┐
-                │                             1 │
-                └───────────────────────────────┘
+┌─geometryIntersectCartesian(CAST('[(2., 2.), (2., 3.), (3., 3.), (3., 2.)]', 'Ring'), CAST('[(1., 1.), (1., 4.), (4., 4.), (4., 1.)]', 'Ring'))─┐
+│                                                                                                                                              1 │
+└────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
         )"}},
         .introduced_in = {26, 7},
         .category = FunctionDocumentation::Category::Geo});
@@ -178,26 +175,26 @@ REGISTER_FUNCTION(geometryIntersect)
         .description = R"(
         Returns true if two geometries intersect (share any common point, line or area).
         Unlike [`polygonsIntersectSpherical`](#polygonsIntersectSpherical), it accepts any geometry data type
-        ([`Point`](/sql-reference/data-types/geo#point), [`MultiPoint`](/sql-reference/data-types/geo#multipoint), [`LineString`](/sql-reference/data-types/geo#linestring),
-        [`MultiLineString`](/sql-reference/data-types/geo#multilinestring), [`Ring`](/sql-reference/data-types/geo#ring),
-        [`Polygon`](/sql-reference/data-types/geo#polygon), [`MultiPolygon`](/sql-reference/data-types/geo#multipolygon)),
-        including the common [`Geometry`](/sql-reference/data-types/geo#geometry) type, and the two arguments may be of different types.
+        ([`Point`](/reference/data-types/geo#point), [`MultiPoint`](/reference/data-types/geo#multipoint), [`LineString`](/reference/data-types/geo#linestring),
+        [`MultiLineString`](/reference/data-types/geo#multilinestring), [`Ring`](/reference/data-types/geo#ring),
+        [`Polygon`](/reference/data-types/geo#polygon), [`MultiPolygon`](/reference/data-types/geo#multipolygon)),
+        including the common [`Geometry`](/reference/data-types/geo#geometry) type, and the two arguments may be of different types.
         Coordinates are interpreted as being on an ideal sphere.
     )",
         .syntax = "geometryIntersectSpherical(geometry1, geometry2)",
         .arguments
-        = {{"geometry1", "A value of any geometry data type or [`Geometry`](/sql-reference/data-types/geo#geometry)."},
-           {"geometry2", "A value of any geometry data type or [`Geometry`](/sql-reference/data-types/geo#geometry)."}},
-        .returned_value = {"Returns true (1) if the two geometries intersect. [`Bool`](/sql-reference/data-types/boolean)."},
+        = {{"geometry1", "A value of any geometry data type or [`Geometry`](/reference/data-types/geo#geometry)."},
+           {"geometry2", "A value of any geometry data type or [`Geometry`](/reference/data-types/geo#geometry)."}},
+        .returned_value = {"Returns true (1) if the two geometries intersect. [`Bool`](/reference/data-types/boolean)."},
         .examples
         = {{"Usage example",
             R"(
                 SELECT geometryIntersectSpherical([[[(4.3613577, 50.8651821), (4.349556, 50.8535879), (4.3602419, 50.8435626), (4.3830299, 50.8428851), (4.3904543, 50.8564867), (4.3613148, 50.8651279)]]], (4.36, 50.85))
         )",
             R"(
-                ┌─geometryIntersectSpherical(⋯)─┐
-                │                             1 │
-                └───────────────────────────────┘
+┌─geometryIntersectSpherical([[[(4.3613577, 50.8651821), (4.349556, 50.8535879), (4.3602419, 50.8435626), (4.3830299, 50.8428851), (4.3904543, 50.8564867), (4.3613148, 50.8651279)]]], (4.36, 50.85))─┐
+│                                                                                                                                                                                                    1 │
+└──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
         )"}},
         .introduced_in = {26, 7},
         .category = FunctionDocumentation::Category::Geo});

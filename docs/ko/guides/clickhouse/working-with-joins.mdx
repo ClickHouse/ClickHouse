@@ -107,7 +107,7 @@ LIMIT 10;
 <Image img="/images/starter_guides/joins/outer_join.webp" alt="외부 조인" />
 
 <Note>
-  ClickHouse는 기본값 대신 [NULL](/ko/reference/syntax#null)을 반환하도록 [구성](/ko/reference/settings/session-settings#join_use_nulls)할 수 있습니다(다만 [성능상의 이유](/ko/reference/data-types/nullable#storage-features)로 권장되지 않습니다).
+  ClickHouse는 기본값 대신 [NULL](/ko/reference/syntax#null)을 반환하도록 [구성](/ko/reference/settings/session-settings/join#join_use_nulls)할 수 있습니다(다만 [성능상의 이유](/ko/reference/data-types/nullable#storage-features)로 권장되지 않습니다).
 </Note>
 
 이 쿼리는 `genres` 테이블에 일치하는 항목이 없는 `movies` 테이블의 모든 행을 조회하여 장르가 없는 모든 영화를 찾습니다. 따라서 `movie_id` 컬럼에는 쿼리 시점에 기본값 0이 적용됩니다:
@@ -232,7 +232,7 @@ LIMIT 10;
 └─────────────────────────────────────────────┘
 ```
 
-구문적으로 최적화된 `CROSS JOIN` 쿼리 버전의 `INNER JOIN` 절에는 `ALL` 키워드가 포함됩니다. 이는 `INNER JOIN`으로 다시 작성되더라도 `CROSS JOIN`의 카테시안 곱 의미를 유지하기 위해 명시적으로 추가된 것입니다. `INNER JOIN`에서는 카테시안 곱을 [비활성화](/ko/reference/settings/session-settings#join_default_strictness)할 수 있습니다.
+구문적으로 최적화된 `CROSS JOIN` 쿼리 버전의 `INNER JOIN` 절에는 `ALL` 키워드가 포함됩니다. 이는 `INNER JOIN`으로 다시 작성되더라도 `CROSS JOIN`의 카테시안 곱 의미를 유지하기 위해 명시적으로 추가된 것입니다. `INNER JOIN`에서는 카테시안 곱을 [비활성화](/ko/reference/settings/session-settings/join#join_default_strictness)할 수 있습니다.
 
 ```sql
 ALL

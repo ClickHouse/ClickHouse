@@ -109,7 +109,7 @@ El procesamiento de consultas funciona de forma similar a las configuraciones si
 
 El resto funciona [igual](#select-forwarding) que en las configuraciones sin réplicas y no se muestra en el diagrama anterior. El servidor de ClickHouse que aloja la tabla distribuida a la que se dirigió inicialmente la consulta recopila todos los resultados locales, los fusiona en el resultado global final y se lo devuelve a quien envió la consulta.
 
-Tenga en cuenta que ClickHouse permite configurar la estrategia de reenvío de consultas para ②. De forma predeterminada, a diferencia de lo que se muestra en el diagrama anterior, la tabla distribuida [prefiere](/es/reference/settings/session-settings#prefer_localhost_replica) una réplica local si está disponible, pero también pueden usarse otras [estrategias](/es/reference/settings/session-settings#load_balancing).
+Tenga en cuenta que ClickHouse permite configurar la estrategia de reenvío de consultas para ②. De forma predeterminada, a diferencia de lo que se muestra en el diagrama anterior, la tabla distribuida [prefiere](/es/reference/settings/session-settings/prefer#prefer_localhost_replica) una réplica local si está disponible, pero también pueden usarse otras [estrategias](/es/reference/settings/session-settings/load-balancing#load_balancing).
 
 <div id="where-to-find-more-information">
   ## Dónde encontrar más información

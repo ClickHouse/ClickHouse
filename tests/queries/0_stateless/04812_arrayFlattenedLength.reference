@@ -1,0 +1,31 @@
+4
+3
+3
+0
+0
+3
+3
+3
+3
+4
+\N
+UInt64	UInt64	Nullable(Nothing)
+5
+3
+3	3
+0	0
+0	0
+0	0
+0	0
+4	4
+3
+3
+2	2
+1
+2	2
+4	Nullable(UInt64)
+\N	Nullable(UInt64)
+2	Nullable(UInt64)
+3	Nullable(UInt64)
+0	4280
+0	1495

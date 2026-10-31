@@ -1,12 +1,13 @@
 #include <Storages/System/StorageSystemHypotheticalIndexes.h>
 #include <Storages/System/SystemTableSourceRegistry.h>
 
+#include <Access/ContextAccess.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Databases/IDatabase.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
-#include <Interpreters/HypotheticalIndexStore.h>
+#include <Interpreters/HypotheticalObjectStore.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIndexDeclaration.h>
 
@@ -30,8 +31,11 @@ ColumnsDescription StorageSystemHypotheticalIndexes::getColumnsDescription()
 void StorageSystemHypotheticalIndexes::fillData(
     MutableColumns & res_columns, ContextPtr context, const ActionsDAG::Node *, std::vector<UInt8>) const
 {
-    const auto & store = context->getHypotheticalIndexStore();
+    const auto & store = context->getHypotheticalObjectStore();
     auto entries = store.getAll();
+
+    const auto access = context->getAccess();
+    const bool check_access = !access->isGranted(AccessType::SHOW_TABLES);
 
     for (const auto & entry : entries)
     {
@@ -46,6 +50,11 @@ void StorageSystemHypotheticalIndexes::fillData(
             database_name = db->getDatabaseName();
             table_name = storage->getStorageID().getTableName();
         }
+
+        /// a session entry outlives the grants it was made under, so hide it once the table it
+        /// points at is no longer visible, including after the table is renamed
+        if (check_access && !access->isGranted(AccessType::SHOW_TABLES, database_name, table_name))
+            continue;
 
         size_t col = 0;
         res_columns[col++]->insert(database_name);

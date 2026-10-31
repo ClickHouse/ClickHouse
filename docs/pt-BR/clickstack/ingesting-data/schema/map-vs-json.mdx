@@ -9,7 +9,7 @@ keywords: ['clickstack', 'json', 'map', 'atributos', 'esquema', 'observabilidade
 
 import { BetaBadge } from "/snippets/pt-BR/components/BetaBadge/BetaBadge.jsx";
 
-O [esquema padrão](/pt-BR/clickstack/ingesting-data/schemas) do ClickStack armazena atributos de recurso, escopo, log e span como colunas `Map(LowCardinality(String), String)`. O ClickHouse também oferece suporte ao [`tipo JSON`](/pt-BR/reference/formats/JSON/JSON), com tipagem forte, e o ClickStack oferece suporte beta para usá-lo no lugar de `Map`.
+O [esquema padrão](/pt-BR/clickstack/ingesting-data/schemas) do ClickStack armazena atributos de recurso, escopo, log e span como colunas `Map(LowCardinality(String), String)`. O ClickHouse também oferece suporte ao [`tipo JSON`](/pt-BR/reference/formats/JSON/JSON), fortemente tipado, e o ClickStack oferece suporte beta para usá-lo no lugar de `Map`.
 
 **Para cargas de trabalho típicas de observabilidade, recomendamos manter o [esquema padrão baseado em `Map`](/pt-BR/clickstack/ingesting-data/schemas).** O tipo JSON está disponível para usuários que desejam avaliá-lo em cargas de trabalho com um conjunto pequeno e estável de chaves de atributo, mas não é o esquema recomendado para uso geral.
 

@@ -619,7 +619,7 @@ def test_materialized_postgresql_table_engine_ssl(started_cluster):
                                         sslmode = 'verify-full', sslrootcert_pem = '{quote_pem(ca_pem)}')
         ORDER BY key
         """,
-        settings={"allow_experimental_materialized_postgresql_table": 1},
+        settings={"enable_materialized_postgresql_table": 1},
     )
 
     wait_for(
@@ -664,7 +664,7 @@ def test_materialized_postgresql_table_engine_client_certificate(started_cluster
                                         sslcert_pem = '{quote_pem(client_cert_pem)}', sslkey_pem = '{quote_pem(client_key_pem)}')
         ORDER BY key
         """,
-        settings={"allow_experimental_materialized_postgresql_table": 1},
+        settings={"enable_materialized_postgresql_table": 1},
     )
 
     wait_for(
@@ -762,7 +762,7 @@ def test_materialized_postgresql_table_engine_wrong_ca_is_rejected(started_clust
                                         sslmode = 'verify-full', sslrootcert_pem = '{quote_pem(wrong_ca_pem)}')
         ORDER BY key
         """,
-        settings={"allow_experimental_materialized_postgresql_table": 1},
+        settings={"enable_materialized_postgresql_table": 1},
     )
     assert "certificate verify failed" in error
     node.query("DROP TABLE IF EXISTS mpg_tbl_wrong_ca SYNC")
@@ -855,6 +855,17 @@ def test_path_overrides_are_rejected(started_cluster):
     # Empty contents would drop the configured credential the same way.
     error = node.query_and_get_error("SELECT count() FROM postgresql(pg_ssl_paths, sslrootcert_pem='')")
     assert "cannot be overridden with an empty" in error
+
+
+def test_empty_override_without_stored_credential_is_noop(started_cluster):
+    # The rejection covers exactly the overrides that would drop a credential the collection
+    # carries. On a collection with no TLS keys at all there is nothing to drop, so an empty
+    # override stays the no-op it is for the direct arguments (`pg_ssl` stores no `ssl*` keys).
+    for key in ["sslrootcert_pem", "sslcert_pem", "sslkey_pem"]:
+        assert (
+            node.query(f"SELECT count() FROM postgresql(pg_ssl, sslmode='require', {key}='')").strip()
+            == "10"
+        )
 
 
 def test_tls_credentials_are_masked(started_cluster):

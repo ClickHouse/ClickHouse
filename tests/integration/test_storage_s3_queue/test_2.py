@@ -12,7 +12,7 @@ from helpers.s3_queue_common import (
     generate_random_string,
 )
 
-AVAILABLE_MODES = ["unordered", "ordered"]
+AVAILABLE_MODES = ["unordered", "ordered", "exclusive"]
 
 
 @pytest.fixture(autouse=True)
@@ -111,7 +111,7 @@ def get_unprocessed_files(node, table_name):
     )
 
 
-@pytest.mark.parametrize("mode", ["unordered", "ordered"])
+@pytest.mark.parametrize("mode", ["unordered", "ordered", "exclusive"])
 def test_processing_threads(started_cluster, mode):
     node = started_cluster.instances["instance"]
     table_name = f"processing_threads_{mode}"
@@ -178,6 +178,8 @@ def test_processing_threads(started_cluster, mode):
         pytest.param("unordered", 8),
         pytest.param("ordered", 1),
         pytest.param("ordered", 8),
+        pytest.param("exclusive", 1),
+        pytest.param("exclusive", 8),
     ],
 )
 def test_shards(started_cluster, mode, processing_threads):
@@ -328,6 +330,8 @@ where zookeeper_path ilike '%{table_name}%' and status = 'Processed' and rows_pr
         pytest.param("unordered", 8),
         pytest.param("ordered", 1),
         pytest.param("ordered", 2),
+        pytest.param("exclusive", 1),
+        pytest.param("exclusive", 2),
     ],
 )
 def test_shards_distributed(started_cluster, mode, processing_threads):
@@ -345,18 +349,20 @@ def test_shards_distributed(started_cluster, mode, processing_threads):
 
     i = 0
     for instance in [node, node_2]:
+        files_path_node = f"{files_path}{i}" if mode == "exclusive" else files_path
         create_table(
             started_cluster,
             instance,
             table_name,
             mode,
-            files_path,
+            files_path_node,
             additional_settings={
                 "keeper_path": keeper_path,
                 "s3queue_processing_threads_num": processing_threads,
                 "s3queue_buckets": shards_num,
                 "polling_max_timeout_ms": 1000,
                 "polling_backoff_ms": 0,
+                "after_processing": "delete" if mode == "exclusive" else "keep",
             },
         )
         i += 1
@@ -365,35 +371,34 @@ def test_shards_distributed(started_cluster, mode, processing_threads):
         create_mv(instance, table_name, dst_table_name)
 
     time.sleep(2)
-    total_values = generate_random_files(
-        started_cluster, files_path, files_to_generate, row_num=row_num
-    )
+    if mode == "exclusive":
+        total_values = []
+        for i in range(2):
+            files_path_node = f"{files_path}{i}" if mode == "exclusive" else files_path
+            chunk = files_to_generate//2
+            total_values += generate_random_files(
+                started_cluster, files_path_node, chunk, row_num=row_num, start_ind=i*chunk,
+            )
+    else:
+        total_values = generate_random_files(started_cluster, files_path, files_to_generate, row_num=row_num)
 
     def get_count(node, table_name):
         return int(run_query(node, f"SELECT count() FROM {table_name}"))
 
     def print_debug_info():
-        processed_files = (
-            node.query(
-                f"""
+        processed_files = node.query(
+            f"""
 select splitByChar('/', file_name)[-1] as file from system.s3queue_metadata_cache where zookeeper_path ilike '%{table_name}%' and status = 'Processed' and rows_processed > 0 order by file
             """
-            )
-            .strip()
-            .split("\n")
-        )
+        ).splitlines()
         logging.debug(
             f"Processed files by node 1: {len(processed_files)}/{files_to_generate}"
         )
-        processed_files = (
-            node_2.query(
-                f"""
+        processed_files = node_2.query(
+            f"""
 select splitByChar('/', file_name)[-1] as file from system.s3queue_metadata_cache where zookeeper_path ilike '%{table_name}%' and status = 'Processed' and rows_processed > 0 order by file
             """
-            )
-            .strip()
-            .split("\n")
-        )
+        ).splitlines()
         logging.debug(
             f"Processed files by node 2: {len(processed_files)}/{files_to_generate}"
         )
@@ -403,33 +408,25 @@ select splitByChar('/', file_name)[-1] as file from system.s3queue_metadata_cach
 
         info = node.query(
             f"""
-            select concat('test_',  toString(number), '.csv') as file from numbers(300)
+            select concat('test_',  toString(number), '.csv') as file from numbers({files_to_generate})
             where file not in (select splitByChar('/', file_name)[-1] from clusterAllReplicas(cluster, system.s3queue_metadata_cache)
             where zookeeper_path ilike '%{table_name}%' and status = 'Processed' and rows_processed > 0)
             """
         )
         logging.debug(f"Unprocessed files: {info}")
 
-        files1 = (
-            node.query(
-                f"""
+        files1 = node.query(
+            f"""
             select splitByChar('/', file_name)[-1] from system.s3queue_metadata_cache
             where zookeeper_path ilike '%{table_name}%' and status = 'Processed' and rows_processed > 0
             """
-            )
-            .strip()
-            .split("\n")
-        )
-        files2 = (
-            node_2.query(
-                f"""
+        ).splitlines()
+        files2 = node_2.query(
+            f"""
             select splitByChar('/', file_name)[-1] from system.s3queue_metadata_cache
             where zookeeper_path ilike '%{table_name}%' and status = 'Processed' and rows_processed > 0
             """
-            )
-            .strip()
-            .split("\n")
-        )
+        ).splitlines()
 
         def intersection(list_a, list_b):
             return [e for e in list_a if e in list_b]
@@ -446,7 +443,11 @@ select splitByChar('/', file_name)[-1] as file from system.s3queue_metadata_cach
     count1 = get_count(node, dst_table_name)
     count2 = get_count(node_2, dst_table_name)
     if (count1 + count2) != total_rows:
-        expected_files = [f"{files_path}/test_{x}.csv" for x in range(files_to_generate)]
+        if mode == "exclusive":
+            expected_files = [f"{files_path}0/test_{x}.csv" for x in range(files_to_generate//2)]
+            expected_files += [f"{files_path}1/test_{x}.csv" for x in range(files_to_generate//2, files_to_generate)]
+        else:
+            expected_files = [f"{files_path}/test_{x}.csv" for x in range(files_to_generate)]
         node.query("SYSTEM FLUSH LOGS")
         node_2.query("SYSTEM FLUSH LOGS")
         processed_files = (
@@ -461,6 +462,8 @@ select splitByChar('/', file_name)[-1] as file from system.s3queue_metadata_cach
         missing_files = [file for file in expected_files if file not in processed_files]
         missing_files.sort()
 
+        assert len([file for file in processed_files if file not in expected_files]) == 0
+
         assert (
             False
         ), f"Expected {total_rows} in total, got {count1} and {count2} ({count1 + count2}, having {len(missing_files)} missing files: ({missing_files})"
@@ -472,7 +475,7 @@ select splitByChar('/', file_name)[-1] as file from system.s3queue_metadata_cach
         list(map(int, l.split())) for l in run_query(node_2, get_query).splitlines()
     ]
 
-    if len(res1) + len(res2) != total_rows or len(res1) <= 0 or len(res2) <= 0 or True:
+    if len(res1) + len(res2) != total_rows or len(res1) <= 0 or len(res2) <= 0:
         logging.debug(
             f"res1 size: {len(res1)}, res2 size: {len(res2)}, total_rows: {total_rows}"
         )
@@ -480,9 +483,12 @@ select splitByChar('/', file_name)[-1] as file from system.s3queue_metadata_cach
 
     assert len(res1) + len(res2) == total_rows
 
-    # Checking that all engines have made progress
-    assert len(res1) > 0
-    assert len(res2) > 0
+    if mode == "unordered":
+        # Unordered mode partitions files across replicas by hash ring, so each server processes
+        # some. Ordered mode does not: a bucket goes to whichever processor wins the race for its
+        # lock, and a thread takes over another unowned bucket once it finishes its own.
+        assert len(res1) > 0
+        assert len(res2) > 0
 
     assert {tuple(v) for v in res1 + res2} == set([tuple(i) for i in total_values])
 
@@ -494,8 +500,26 @@ select splitByChar('/', file_name)[-1] as file from system.s3queue_metadata_cach
 
     if mode == "ordered":
         zk = started_cluster.get_kazoo_client("zoo1")
-        processed_nodes = zk.get_children(f"{keeper_path}/buckets/")
-        assert len(processed_nodes) == shards_num
+        buckets = zk.get_children(f"{keeper_path}/buckets/")
+        assert len(buckets) == shards_num
+
+        # The commit that writes a bucket's `processed` pointer also drops the file's `processing`
+        # node, and it runs after the inserted rows are already visible, so an empty `processing`
+        # folder rather than a row count is what proves the pointers of finished files are written.
+        processing_left = (
+            "SELECT processing_nodes_count FROM system.s3_queue_metadata "
+            f"WHERE zookeeper_path ilike '%{keeper_path}%'"
+        )
+        for _ in range(60):
+            if run_query(node, processing_left).strip() == "0":
+                break
+            time.sleep(1)
+        assert run_query(node, processing_left).strip() == "0"
+
+        # A bucket node is created together with the table metadata, but its `processed` child
+        # appears only once a file from that bucket has been committed.
+        for bucket in buckets:
+            assert zk.exists(f"{keeper_path}/buckets/{bucket}/processed")
 
     node.restart_clickhouse()
     time.sleep(10)

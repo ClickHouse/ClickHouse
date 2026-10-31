@@ -48,13 +48,17 @@ void VersionedCollapsingAlgorithm::insertGap(size_t gap_size)
 
 void VersionedCollapsingAlgorithm::insertRow(size_t skip_rows, const RowRef & row)
 {
-    merged_data->insertRow(*row.all_columns, row.row_num, row.owned_chunk->getNumRows());
+    const bool filtered = isRowFiltered(row);
+
+    if (!filtered)
+        merged_data->insertRow(*row.all_columns, row.row_num, row.owned_chunk->getNumRows());
 
     insertGap(skip_rows);
 
     if (out_row_sources_buf)
     {
-        current_row_sources.front().setSkipFlag(false);
+        if (!filtered)
+            current_row_sources.front().setSkipFlag(false);
         writeRowSourcePart(*out_row_sources_buf, current_row_sources.front());
         current_row_sources.pop();
     }
@@ -65,7 +69,7 @@ IMergingAlgorithm::Status VersionedCollapsingAlgorithm::merge()
     /// Take rows in correct order and put them into `merged_columns` until the rows no more than `max_block_size`
     while (queue.isValid())
     {
-        SortCursor current = queue.current();
+        SortCursor current = *queue.current().first;
 
         if (current->isLast() && skipLastRowFor(current->order))
         {
@@ -130,7 +134,7 @@ IMergingAlgorithm::Status VersionedCollapsingAlgorithm::merge()
 
         if (!current->isLast())
         {
-            queue.next();
+            queue.next(1);
         }
         else
         {

@@ -24,6 +24,12 @@ import SettingsInfoBlock from "/snippets/ko/components/SettingsInfoBlock/Setting
 
 <SettingsInfoBlock type="UInt64" default_value="0" changeable_without_restart="아니요" />생성할 jemalloc 백그라운드 스레드의 최대 수입니다. 0으로 설정하면 jemalloc의 기본값이 사용됩니다
 
+<div id="jemalloc_merge_tree_arenas">
+  ## jemalloc_merge_tree_arenas
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="1" changeable_without_restart="No" />수명이 긴 MergeTree 파트별 및 테이블별 메타데이터에 사용할 전용 jemalloc arena의 수입니다. `0`은 전용 arena를 비활성화하며, 이 경우 메타데이터는 기본 CPU별 arena를 사용합니다. `1`은 단일 공유 arena를 사용합니다. `N > 1`은 `N`개의 arena로 구성된 풀을 생성하고 CPU별로 할당을 분배합니다. 코어 수가 많은 시스템에서는 단일 arena의 잠금으로 인해 메타데이터 할당이 직렬화되는 것을 방지합니다. 프로세스가 실행할 수 있는 CPU 수(친화성 마스크)로 제한되므로, 큰 값(또는 코어 수)을 지정하면 허용된 CPU당 하나의 arena가 생성됩니다. 시작 시 적용됩니다.
+
 <div id="jemalloc_profiler_sampling_rate">
   ## jemalloc_profiler_sampling_rate
 </div>

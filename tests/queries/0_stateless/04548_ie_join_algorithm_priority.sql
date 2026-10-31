@@ -1,5 +1,3 @@
--- Tags: no-old-analyzer
-
 -- The position of `ie_join` in the `join_algorithm` list sets its priority over the
 -- equality-based algorithms. Listed last, it takes only joins that hash cannot execute
 -- (no equality conditions in the ON section; a null-safe equality counts as an equality).
@@ -19,6 +17,12 @@ CREATE TABLE prio_l (k Int32, x Int32, y Int32) ENGINE = MergeTree ORDER BY k;
 CREATE TABLE prio_r (k Int32, x Int32, y Int32) ENGINE = MergeTree ORDER BY k;
 INSERT INTO prio_l SELECT number % 5, number, 100 - number FROM numbers(50);
 INSERT INTO prio_r SELECT number % 5, number + 3, 90 - number FROM numbers(50);
+
+-- `ie_join` is last in the default list, so a join with only inequality conditions reaches
+-- IEJoin with no setting at all.
+SET join_algorithm = DEFAULT;
+SELECT 'inequalities, default list', count() > 0 FROM (EXPLAIN SELECT count() FROM prio_l l JOIN prio_r r ON l.x < r.x AND l.y > r.y) WHERE explain LIKE '%IEJoin%';
+SELECT count(), sum(cityHash64(l.k, l.x, l.y, r.k, r.x, r.y)) FROM prio_l l JOIN prio_r r ON l.x < r.x AND l.y > r.y;
 
 -- A join with only inequality conditions goes to IEJoin from any position in the list
 SET join_algorithm = 'hash,ie_join';

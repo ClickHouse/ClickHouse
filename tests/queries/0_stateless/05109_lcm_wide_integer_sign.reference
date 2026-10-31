@@ -1,0 +1,15 @@
+one negative argument
+12	12
+12	12
+12	12
+12	12
+both negative, and both positive
+12	12
+12	12
+gcd, which was never affected
+2	2
+over a column, not a constant
+-6	-4	12
+-6	4	12
+6	-4	12
+6	4	12

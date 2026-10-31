@@ -64,7 +64,7 @@ void registerInputFormatRawBLOB(FormatFactory & factory)
         .description = R"DOCS_MD(
 ## Description {#description}
 
-The `RawBLOB` formats reads all input data to a single value. It is possible to parse only a table with a single field of type [`String`](/sql-reference/data-types/string.md) or similar.
+The `RawBLOB` formats reads all input data to a single value. It is possible to parse only a table with a single field of type [`String`](/reference/data-types/string) or similar.
 The result is output as a binary format without delimiters and escaping. If more than one value is output, the format is ambiguous, and it will be impossible to read the data back.
 
 ### Raw formats comparison {#raw-formats-comparison}

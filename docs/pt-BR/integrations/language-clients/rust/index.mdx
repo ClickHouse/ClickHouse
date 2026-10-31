@@ -12,9 +12,7 @@ integration:
 
 O cliente oficial Rust para conectar ao ClickHouse, desenvolvido originalmente por [Paul Loyd](https://github.com/loyd). O código-fonte do cliente está disponível no [repositório do GitHub](https://github.com/ClickHouse/clickhouse-rs).
 
-<div id="overview">
-  ## Visão geral
-</div>
+## Visão geral {#overview}
 
 * Usa `serde` para serializar/desserializar linhas.
 * Oferece suporte a atributos do `serde`: `skip_serializing`, `skip_deserializing`, `rename`.
@@ -25,9 +23,7 @@ O cliente oficial Rust para conectar ao ClickHouse, desenvolvido originalmente p
 * Fornece APIs para consultar ou inserir dados, executar DDLs e fazer batching no lado do cliente.
 * Fornece mocks úteis para testes unitários.
 
-<div id="installation">
-  ## Instalação
-</div>
+## Instalação {#installation}
 
 Para usar o crate, adicione o seguinte ao `Cargo.toml`:
 
@@ -41,16 +37,14 @@ clickhouse = { version = "0.12.2", features = ["test-util"] }
 
 Veja também: [página no crates.io](https://crates.io/crates/clickhouse).
 
-<div id="cargo-features">
-  ## Features do Cargo
-</div>
+## Features do Cargo {#cargo-features}
 
-* `lz4` (habilitado por padrão) — habilita as variantes `Compression::Lz4` e `Compression::Lz4Hc(_)`. Quando habilitado, `Compression::Lz4` é usado por padrão em todas as consultas, exceto em `WATCH`.
+* `lz4` (habilitado por padrão) — habilita as variantes `Compression::Lz4` e `Compression::Lz4Hc(_)`. Quando habilitado, `Compression::Lz4` é usado por padrão em todas as consultas, exceto em `WATCH`, que é aceita apenas por versões do ClickHouse anteriores à v26.9.
 * `native-tls` — oferece suporte a URLs com o esquema `HTTPS` via `hyper-tls`, que faz link com o OpenSSL.
 * `rustls-tls` — oferece suporte a URLs com o esquema `HTTPS` via `hyper-rustls`, que não faz link com o OpenSSL.
 * `inserter` — habilita `client.inserter()`.
 * `test-util` — adiciona mocks. Veja [o exemplo](https://github.com/ClickHouse/clickhouse-rs/tree/main/examples/mock.rs). Use-o apenas em `dev-dependencies`.
-* `watch` — habilita a funcionalidade `client.watch`. Consulte a seção correspondente para mais detalhes.
+* `watch` — habilita a funcionalidade `client.watch`. Ela emite uma consulta `WATCH`, que foi removida no ClickHouse v26.9 junto com `WINDOW VIEW`, portanto só funciona com servidores mais antigos.
 * `uuid` — adiciona `serde::uuid` para trabalhar com a crate [uuid](https://docs.rs/uuid).
 * `time` — adiciona `serde::time` para trabalhar com a crate [time](https://docs.rs/time).
 
@@ -59,34 +53,26 @@ Veja também: [página no crates.io](https://crates.io/crates/clickhouse).
   Se ambos estiverem habilitados, a feature `rustls-tls` terá precedência.
 </Warning>
 
-<div id="clickhouse-versions-compatibility">
-  ## Compatibilidade entre versões do ClickHouse
-</div>
+## Compatibilidade entre versões do ClickHouse {#clickhouse-versions-compatibility}
 
 O cliente é compatível com versões LTS ou mais recentes do ClickHouse, bem como com o ClickHouse Cloud.
 
 O servidor ClickHouse anterior à v22.6 processa o RowBinary [de forma incorreta em alguns casos raros](https://github.com/ClickHouse/ClickHouse/issues/37420).
 Você pode usar a v0.11+ e habilitar a feature `wa-37420` para resolver esse problema. Observação: essa feature não deve ser usada com versões mais recentes do ClickHouse.
 
-<div id="examples">
-  ## Exemplos
-</div>
+## Exemplos {#examples}
 
 Nosso objetivo é abranger vários cenários de uso do cliente com os [exemplos](https://github.com/ClickHouse/clickhouse-rs/blob/main/examples) no repositório do cliente. A visão geral está disponível no [README dos exemplos](https://github.com/ClickHouse/clickhouse-rs/blob/main/examples/README.md#overview).
 
 Se algo não estiver claro ou estiver faltando nos exemplos ou na documentação a seguir, fique à vontade para [entrar em contato conosco](/pt-BR/integrations/language-clients/rust/index#contact-us).
 
-<div id="usage">
-  ## Uso
-</div>
+## Uso {#usage}
 
 <Note>
   O `crate` [ch2rs](https://github.com/ClickHouse/ch2rs) é útil para gerar um tipo de linha com base no ClickHouse.
 </Note>
 
-<div id="creating-a-client-instance">
-  ### Criando uma instância de cliente
-</div>
+### Criando uma instância de cliente {#creating-a-client-instance}
 
 <Tip>
   Reutilize os clientes criados ou clone-os para aproveitar o pool de conexões subjacente do hyper.
@@ -103,9 +89,7 @@ let client = Client::default()
     .with_database("test");
 ```
 
-<div id="https-or-clickhouse-cloud-connection">
-  ### Conexão HTTPS ou ClickHouse Cloud
-</div>
+### Conexão HTTPS ou ClickHouse Cloud {#https-or-clickhouse-cloud-connection}
 
 O HTTPS funciona com as features `rustls-tls` ou `native-tls` do Cargo.
 
@@ -130,9 +114,7 @@ Veja também:
 
 * [Exemplo de HTTPS com ClickHouse Cloud](https://github.com/ClickHouse/clickhouse-rs/blob/main/examples/clickhouse_cloud.rs) no repositório do client. Isso também deve se aplicar a conexões HTTPS em ambientes on-premise.
 
-<div id="selecting-rows">
-  ### Selecionando linhas
-</div>
+### Selecionando linhas {#selecting-rows}
 
 ```rust
 use serde::Deserialize;
@@ -167,9 +149,7 @@ NB: como toda a resposta é transmitida em streaming, os cursores podem retornar
   Use `wait_end_of_query` com cautela ao selecionar linhas, pois isso pode aumentar o consumo de memória no servidor e provavelmente reduzir o desempenho geral.
 </Warning>
 
-<div id="inserting-rows">
-  ### Inserindo linhas
-</div>
+### Inserindo linhas {#inserting-rows}
 
 ```rust
 use serde::Serialize;
@@ -191,9 +171,7 @@ insert.end().await?;
 * As linhas são enviadas progressivamente em stream para distribuir a carga na rede.
 * O ClickHouse realiza inserts em lote de forma atômica somente se todas as linhas couberem na mesma partição e se o número delas for menor que [`max_insert_block_size`](/pt-BR/reference/settings/session-settings#max_insert_block_size).
 
-<div id="async-insert-server-side-batching">
-  ### Async insert (batching no servidor)
-</div>
+### Async insert (batching no servidor) {#async-insert-server-side-batching}
 
 Você pode usar [inserções assíncronas do ClickHouse](/pt-BR/concepts/features/operations/insert/asyncinserts) para evitar o batching no lado do cliente dos dados recebidos. Isso pode ser feito simplesmente fornecendo a opção `async_insert` ao método `insert` (ou até mesmo à própria instância `Client`, para que isso afete todas as chamadas de `insert`).
 
@@ -208,9 +186,7 @@ Veja também:
 
 * [Exemplo de async insert](https://github.com/ClickHouse/clickhouse-rs/blob/main/examples/async_insert.rs) no repositório do cliente.
 
-<div id="inserter-feature-client-side-batching">
-  ### Funcionalidade Inserter (batching no lado do cliente)
-</div>
+### Funcionalidade Inserter (batching no lado do cliente) {#inserter-feature-client-side-batching}
 
 Requer a feature `inserter` do Cargo.
 
@@ -250,9 +226,7 @@ inserter.end().await?;
   ```
 </Warning>
 
-<div id="executing-ddls">
-  ### Executando DDLs
-</div>
+### Executando DDLs {#executing-ddls}
 
 Com uma implantação com um único nó, basta executar DDLs desta forma:
 
@@ -270,9 +244,7 @@ client
     .await?;
 ```
 
-<div id="clickhouse-settings">
-  ### Configurações do ClickHouse
-</div>
+### Configurações do ClickHouse {#clickhouse-settings}
 
 Você pode aplicar diversas [configurações do ClickHouse](/pt-BR/reference/settings/session-settings) usando o método `with_option`. Por exemplo:
 
@@ -288,9 +260,7 @@ let numbers = client
 
 Além de `query`, isso funciona de forma semelhante com os métodos `insert` e `inserter`; além disso, o mesmo método pode ser chamado na instância `Client` para definir configurações globais para todas as consultas.
 
-<div id="query-id">
-  ### ID da consulta
-</div>
+### ID da consulta {#query-id}
 
 Com `.with_option`, você pode definir a opção `query_id` para identificar consultas no log de consultas do ClickHouse.
 
@@ -310,9 +280,7 @@ Além de `query`, isso também funciona de forma semelhante com os métodos `ins
 
 Veja também: [exemplo de query&#95;id](https://github.com/ClickHouse/clickhouse-rs/blob/main/examples/query_id.rs) no repositório do client.
 
-<div id="session-id">
-  ### ID da sessão
-</div>
+### ID da sessão {#session-id}
 
 Assim como em `query_id`, você pode definir o `session_id` para executar as instruções na mesma sessão. O `session_id` pode ser definido globalmente no nível do cliente ou por chamada de `query`, `insert` ou `inserter`.
 
@@ -328,9 +296,7 @@ let client = Client::default()
 
 Veja também: [exemplo de session&#95;id](https://github.com/ClickHouse/clickhouse-rs/blob/main/examples/session_id.rs) no repositório do client.
 
-<div id="custom-http-headers">
-  ### Cabeçalhos HTTP personalizados
-</div>
+### Cabeçalhos HTTP personalizados {#custom-http-headers}
 
 Se você estiver usando autenticação por proxy ou precisar enviar cabeçalhos personalizados, poderá fazer isso assim:
 
@@ -342,9 +308,7 @@ let client = Client::default()
 
 Veja também: [exemplo de cabeçalhos HTTP personalizados](https://github.com/ClickHouse/clickhouse-rs/blob/main/examples/custom_http_headers.rs) no repositório do cliente.
 
-<div id="custom-http-client">
-  ### Cliente HTTP personalizado
-</div>
+### Cliente HTTP personalizado {#custom-http-client}
 
 Isso pode ser útil para ajustar as configurações internas do pool de conexões HTTP.
 
@@ -372,9 +336,7 @@ let client = Client::with_http_client(hyper_client).with_url("http://localhost:8
 
 Veja também: [exemplo de cliente HTTP personalizado](https://github.com/ClickHouse/clickhouse-rs/blob/main/examples/custom_http_client.rs) no repositório do client.
 
-<div id="data-types">
-  ## Tipos de dados
-</div>
+## Tipos de dados {#data-types}
 
 <Info>
   Veja também os exemplos adicionais:
@@ -552,21 +514,15 @@ struct MyRow {
 
 * Os tipos de dados `Variant`, `Dynamic` e `JSON` (novo) ainda não são compatíveis.
 
-<div id="mocking">
-  ## Simulação
-</div>
+## Simulação {#mocking}
 
-O crate fornece utilitários para simular o servidor CH e testar consultas DDL, `SELECT`, `INSERT` e `WATCH`. Esse recurso pode ser habilitado com a feature `test-util`. Use-o **apenas** como `dev-dependency`.
+O crate fornece utilitários para simular o servidor CH e testar consultas DDL, `SELECT`, `INSERT` e `WATCH` (`WATCH` é aceito apenas por versões do ClickHouse anteriores à v26.9). Esse recurso pode ser habilitado com a feature `test-util`. Use-o **apenas** como `dev-dependency`.
 
 Veja [o exemplo](https://github.com/ClickHouse/clickhouse-rs/tree/main/examples/mock.rs).
 
-<div id="troubleshooting">
-  ## Solução de problemas
-</div>
+## Solução de problemas {#troubleshooting}
 
-<div id="cannot_read_all_data">
-  ### CANNOT_READ_ALL_DATA
-</div>
+### CANNOT_READ_ALL_DATA {#cannot_read_all_data}
 
 A causa mais comum do erro `CANNOT_READ_ALL_DATA` é que a definição da linha no lado da aplicação não corresponde à do ClickHouse.
 
@@ -602,15 +558,11 @@ struct EventLog {
 }
 ```
 
-<div id="known-limitations">
-  ## Limitações conhecidas
-</div>
+## Limitações conhecidas {#known-limitations}
 
 * Os tipos de dados `Variant`, `Dynamic` e `JSON` (novos) ainda não são suportados.
 * A vinculação de parâmetros no servidor ainda não é suportada; consulte [esta issue](https://github.com/ClickHouse/clickhouse-rs/issues/142) para acompanhar.
 
-<div id="contact-us">
-  ## Fale conosco
-</div>
+## Fale conosco {#contact-us}
 
 Se tiver alguma dúvida ou precisar de ajuda, fique à vontade para entrar em contato conosco pelo [Slack da comunidade](https://clickhouse.com/slack) ou pelas [issues do GitHub](https://github.com/ClickHouse/clickhouse-rs/issues).

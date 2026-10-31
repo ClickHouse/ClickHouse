@@ -1,11 +1,11 @@
 #include <Analyzer/Passes/FuseFunctionsPass.h>
 
+#include <Common/FieldVisitorConvertToNumber.h>
+
 #include <Core/Settings.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeTuple.h>
-
-#include <Functions/FunctionFactory.h>
 
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <AggregateFunctions/IAggregateFunction.h>
@@ -13,6 +13,7 @@
 #include <Analyzer/InDepthQueryTreeVisitor.h>
 #include <Analyzer/ConstantNode.h>
 #include <Analyzer/FunctionNode.h>
+#include <Analyzer/Utils.h>
 #include <Analyzer/HashUtils.h>
 #include <Analyzer/ColumnNode.h>
 #include <Analyzer/TableNode.h>
@@ -144,16 +145,6 @@ private:
     std::unordered_set<String> names_to_collect;
 };
 
-QueryTreeNodePtr createResolvedFunction(const ContextPtr & context, const String & name, QueryTreeNodes arguments)
-{
-    auto function_node = std::make_shared<FunctionNode>(name);
-
-    auto function = FunctionFactory::instance().get(name, context);
-    function_node->getArguments().getNodes() = std::move(arguments);
-    function_node->resolveAsFunction(function->build(function_node->getArgumentColumns()));
-    return function_node;
-}
-
 FunctionNodePtr createResolvedAggregateFunction(
     const String & name, const QueryTreeNodePtr & argument, const Array & parameters = {})
 {
@@ -173,11 +164,6 @@ FunctionNodePtr createResolvedAggregateFunction(
     function_node->resolveAsAggregateFunction(std::move(aggregate_function));
 
     return function_node;
-}
-
-QueryTreeNodePtr createTupleElementFunction(const ContextPtr & context, QueryTreeNodePtr argument, UInt64 index)
-{
-    return createResolvedFunction(context, "tupleElement", {argument, std::make_shared<ConstantNode>(index)});
 }
 
 QueryTreeNodePtr createArrayElementFunction(const ContextPtr & context, QueryTreeNodePtr argument, UInt64 index)
@@ -301,13 +287,10 @@ QuantileLevelMapping collectUniqueQuantileLevels(const std::vector<QueryTreeNode
         if (!constant_node)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Function '{}' should have constant parameter", function_name);
 
-        const auto & value = constant_node->getValue();
-        if (value.getType() != Field::Types::Float64)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                "Function '{}' should have parameter of type Float64, got '{}'",
-                function_name, value.getTypeName());
-
-        levels_per_node.push_back(value.safeGet<Float64>());
+        /// The level is converted exactly as the aggregate function itself converts it (see
+        /// `QuantileLevels`), so a level written as an integer literal, `quantile(1)(x)`, is
+        /// accepted here too. Resolution of the original function has already validated it.
+        levels_per_node.push_back(applyVisitor(FieldVisitorConvertToNumber<Float64>(), constant_node->getValue()));
     }
 
     /// Build the unique, sorted list of levels.

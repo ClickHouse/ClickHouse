@@ -20,10 +20,10 @@ doc_type: 'reference'
   однослойного тайла.
 
 Две вспомогательные функции, `MVTBoundingBox` и `MVTBoundingBoxMercator`, возвращают ограничивающий прямоугольник тайла, чтобы
-отфильтровать по нему строки в условии `WHERE` с использованием индекса.
+отфильтровать по нему строки в предложении `WHERE` с использованием индекса.
 
 Поддерживаются точечные, линейные и полигональные геометрии, включая тип `Geometry` и конкретные гео-типы (`Point`,
-`LineString`, `MultiLineString`, `Ring`, `Polygon`, `MultiPolygon`).
+`MultiPoint`, `LineString`, `MultiLineString`, `Ring`, `Polygon`, `MultiPolygon`).
 
 Результирующие байты представляют собой полноценный тайл, который можно напрямую вернуть через HTTP-интерфейс с `FORMAT RawBLOB`.
 
@@ -36,7 +36,7 @@ doc_type: 'reference'
 
 Проецирует геометрию, заданную в географических координатах (долгота/широта), в локальное пиксельное пространство тайла
 slippy-map, заданного `zoom`, `tile_x` и `tile_y`, привязывает к целочисленной пиксельной сетке, обрезает её по границам тайла
-и возвращает геометрию в координатах тайла.
+и возвращает геометрию в пространстве тайла.
 
 Используется проекция Web Mercator во всём диапазоне координат `UInt32`. Возвращаемые координаты имеют начало в
 левом верхнем углу тайла, а ось y направлена вниз, что соответствует соглашению о координатах формата Mapbox Vector
@@ -51,7 +51,7 @@ PostGIS `ST_AsMVTGeom`.
 `zoom` 18 и `extent` 4096 — поэтому для реалистичных тайлов геометрия проверяется, но никогда не обрезается, и это ограничение влияет
 только на геометрию, размещённую при экстремальных значениях `zoom` или `extent`.
 
-Тип выходной геометрии зависит от входного: `Point` возвращает `Point`; `LineString` или `MultiLineString` возвращает
+Тип выходной геометрии зависит от входного: `Point` возвращает `Point`; `MultiPoint` возвращает `MultiPoint`; `LineString` или `MultiLineString` возвращает
 `MultiLineString`; `Ring`, `Polygon` или `MultiPolygon` возвращает `MultiPolygon` (при обрезке геометрия может разделиться на
 несколько частей).
 
@@ -63,17 +63,17 @@ MVTEncodeGeom(geometry, zoom, tile_x, tile_y[, extent[, buffer[, clip]]])
 
 **Аргументы**
 
-* `geometry` — Geometry в градусах долготы и широты. Долгота ограничивается диапазоном `[-180, 180]`, а широта — диапазоном Web Mercator `[-85.05112878, 85.05112878]`. [`Point`](/ru/reference/data-types/geo) / [`LineString`](/ru/reference/data-types/geo) / [`MultiLineString`](/ru/reference/data-types/geo) / [`Ring`](/ru/reference/data-types/geo) / [`Polygon`](/ru/reference/data-types/geo) / [`MultiPolygon`](/ru/reference/data-types/geo) / [`Geometry`](/ru/reference/data-types/geo).
+* `geometry` — Geometry в градусах долготы и широты. Долгота ограничивается диапазоном `[-180, 180]`, а широта — диапазоном Web Mercator `[-85.05112878, 85.05112878]`. [`Point`](/ru/reference/data-types/geo) / [`MultiPoint`](/ru/reference/data-types/geo) / [`LineString`](/ru/reference/data-types/geo) / [`MultiLineString`](/ru/reference/data-types/geo) / [`Ring`](/ru/reference/data-types/geo) / [`Polygon`](/ru/reference/data-types/geo) / [`MultiPolygon`](/ru/reference/data-types/geo) / [`Geometry`](/ru/reference/data-types/geo).
 * `zoom` — Уровень масштабирования Slippy-map в диапазоне `[0, 32]`. [`UInt8`](/ru/reference/data-types/int-uint).
 * `tile_x` — Индекс столбца тайла в диапазоне `[0, 2^zoom - 1]`. [`UInt32`](/ru/reference/data-types/int-uint).
 * `tile_y` — Индекс строки тайла в диапазоне `[0, 2^zoom - 1]`. [`UInt32`](/ru/reference/data-types/int-uint).
 * `extent` — Необязательный размер тайла в пикселях на сторону, в диапазоне `[1, 2147483647]`. По умолчанию `4096` — стандартное значение Mapbox Vector Tile. [`UInt32`](/ru/reference/data-types/int-uint).
-* `buffer` — Необязательный буфер обрезки в пикселях, в диапазоне `[0, 2147483647]`. По умолчанию `1`. [`UInt32`](/ru/reference/data-types/int-uint).
+* `buffer` — Необязательный буфер отсечения в пикселях, в диапазоне `[0, 2147483647]`. По умолчанию `1`. [`UInt32`](/ru/reference/data-types/int-uint).
 * `clip` — Необязательный флаг; если значение ненулевое (по умолчанию), геометрия обрезается по границам тайла с учётом буфера. [`UInt8`](/ru/reference/data-types/int-uint).
 
 **Возвращаемое значение**
 
-Возвращает геометрию в координатах тайла или `NULL`, если она полностью обрезается. [`Geometry`](/ru/reference/data-types/geo).
+Возвращает геометрию в пространстве тайла или `NULL`, если она полностью обрезается. [`Geometry`](/ru/reference/data-types/geo).
 
 **Пример**
 

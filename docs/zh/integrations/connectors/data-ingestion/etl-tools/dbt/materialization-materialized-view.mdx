@@ -528,14 +528,14 @@ select a, b, c from {{ source('raw', 'table_2') }}
 [可刷新materialized views](/zh/concepts/features/materialized-views/refreshable-materialized-view) 是 ClickHouse 中一种特殊的 materialized view，它会定期重新执行查询并存储结果，类似于其他数据库中的 materialized view。这适用于需要定期快照或聚合，而不是实时插入触发器的场景。
 
 <Tip>
-  可刷新materialized views 可与 [隐式目标](#implicit-target) 和 [显式目标](#explicit-target) 这两种方式配合使用。`refreshable` 配置与 target 表的管理方式无关。
+  可刷新materialized views 可与 [隐式目标](#implicit-target) 和 [显式目标](#explicit-target) 这两种方式配合使用。`refreshable` 配置与目标表的管理方式无关。
 </Tip>
 
 要使用可刷新materialized view，请在 MV 模型中添加一个 `refreshable` 配置对象，并使用以下选项：
 
 | 选项                            | 说明                                                                         | 必填 | 默认值   |
 | ----------------------------- | -------------------------------------------------------------------------- | -- | ----- |
-| refresh&#95;interval          | interval 子句 (必填)                                                           | 是  |       |
+| interval                      | interval 子句 (必填)，例如 `EVERY 5 MINUTE`                                       | 是  |       |
 | randomize                     | 随机化子句，将出现在 `RANDOMIZE FOR` 之后                                              |    |       |
 | append                        | 如果设置为 `True`，每次刷新都会向表中插入行，而不会删除现有行。该插入不是原子的，与普通的 `INSERT SELECT` 一样。       |    | False |
 | depends&#95;on                | 可刷新 mv 的依赖项列表。请按 `{schema}.{view_name}` 格式提供依赖项                            |    |       |
@@ -591,6 +591,19 @@ SELECT
 FROM {{ source('raw', 'events') }}
 GROUP BY event_date, event_type
 ```
+
+<div id="refreshable-updating-parameters">
+  ### 更新刷新参数
+</div>
+
+自 dbt-clickhouse 1.10.2 起，在常规 `dbt run` 中，对现有可刷新materialized view 的刷新参数 (`interval`、`randomize` 和 `depends_on`) 所做的更改会通过 `ALTER TABLE ... MODIFY REFRESH` 直接应用。materialized view 不会被删除或重新创建，因此不会丢失数据，并且在应用更改期间不会出现“盲窗”。
+
+某些转换无法直接应用。dbt 不会静默忽略这些转换，而会使此次运行失败并报错，要求您使用 `dbt run --full-refresh`：
+
+* 将普通 materialized view 转换为可刷新materialized view (添加 `refreshable` config) ，或反向转换 (移除该 config) 。
+* 更改 `append` 设置，因为 ClickHouse 不允许通过 `MODIFY REFRESH` 添加或移除 `APPEND`。
+
+请注意，`--full-refresh` 会删除并重新创建 materialized view，带来[持续摄取期间的行为](#behavior-during-active-ingestion)中所述的影响。
 
 <div id="explicit-target-limitations">
   ### 局限性

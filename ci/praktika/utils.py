@@ -11,19 +11,20 @@ import subprocess
 import sys
 import shutil
 import tempfile
+import textwrap
 import time
 from abc import ABC, abstractmethod
 from collections import deque
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from contextlib import contextmanager
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from shlex import quote
 from threading import Event, Thread
 from types import SimpleNamespace
 from typing import Any, Dict, Iterator, List, Optional, Type, TypeVar, Union
 
-T = TypeVar("T", bound="Serializable")  # noqa: F821  # forward ref to MetaClasses.Serializable below
+T = TypeVar("T", bound="MetaClasses.Serializable")
 
 
 class MetaClasses:
@@ -280,10 +281,14 @@ class Shell:
         return not failed
 
     @classmethod
-    def _check_timeout(cls, timeout, process) -> None:
+    def _check_timeout(cls, timeout, process, finished) -> None:
         if not timeout:
             return
-        time.sleep(timeout)
+        # Waits on the caller being done with the process, not on the leader exiting: a background
+        # descendant holding stdout keeps the reader threads blocked past the leader's exit, and
+        # that group is exactly what the timeout has to reach.
+        if finished.wait(timeout):
+            return
         print(
             f"WARNING: Timeout exceeded [{timeout}], sending SIGTERM to process group [{process.pid}]"
         )
@@ -293,22 +298,21 @@ class Shell:
             print("Process already terminated.")
             return
 
-        time_wait = 0
-        wait_interval = 5
+        # Grace period keyed on the readers finishing (`finished`), not on the
+        # leader's own exit. The leader may already be dead while a backgrounded
+        # descendant keeps stdout/stderr open; polling process.poll() here would
+        # return immediately and skip the SIGKILL, leaving a SIGTERM-ignoring
+        # descendant to block the reader threads forever.
+        if finished.wait(100):
+            return
 
-        # Wait for process to terminate
-        while process.poll() is None and time_wait < 100:
-            print("Waiting for process to exit...")
-            time.sleep(wait_interval)
-            time_wait += wait_interval
-
-        # Force kill if still running
-        if process.poll() is None:
-            print("WARNING: Process still running after SIGTERM, sending SIGKILL")
-            try:
-                os.killpg(process.pid, signal.SIGKILL)
-            except ProcessLookupError:
-                print("Process already terminated.")
+        # Still not done after the grace period: escalate to SIGKILL on the whole
+        # group, even when the leader itself has already exited.
+        print("WARNING: Process still running after SIGTERM, sending SIGKILL")
+        try:
+            os.killpg(process.pid, signal.SIGKILL)
+        except ProcessLookupError:
+            print("Process already terminated.")
 
     @classmethod
     def run(
@@ -322,6 +326,7 @@ class Shell:
         timeout=None,
         retries=1,
         retry_errors: Union[List[str], str] = "",
+        on_retry=None,
         **kwargs,
     ):
         if retry_errors and retries < 2:
@@ -335,7 +340,8 @@ class Shell:
             return 0  # Return success for dry-run
 
         if verbose:
-            print(f"Run command: [{command}]")
+            wrapped = textwrap.fill(f"Run command: [{command}]", width=80)
+            print(wrapped)
 
         log_file = log_file or "/dev/null"
         proc = None
@@ -367,8 +373,11 @@ class Shell:
                     )
 
                     # Start the timeout thread if specified
+                    finished = Event()
                     if timeout:
-                        t = Thread(target=cls._check_timeout, args=(timeout, proc))
+                        t = Thread(
+                            target=cls._check_timeout, args=(timeout, proc, finished)
+                        )
                         t.daemon = True
                         t.start()
 
@@ -397,10 +406,22 @@ class Shell:
                     stdout_thread.start()
                     stderr_thread.start()
 
-                    stdout_thread.join()
-                    stderr_thread.join()
+                    try:
+                        stdout_thread.join()
+                        stderr_thread.join()
 
-                    proc.wait()  # Wait for the process to finish
+                        proc.wait()  # Wait for the process to finish
+                        # Close the pipe FDs Popen opened so the GC doesn't
+                        # log ResourceWarning for "unclosed file" later.
+                        proc.stdout.close()
+                        proc.stderr.close()
+                        if proc.stdin is not None:
+                            proc.stdin.close()
+                    finally:
+                        # Only here: the readers return when the last writer closes the pipe, so
+                        # setting this at the leader's exit would retire the watchdog while a
+                        # descendant it must still reach keeps this call blocked.
+                        finished.set()
 
                 if proc.returncode == 0:
                     return 0
@@ -420,18 +441,26 @@ class Shell:
                         print("No retryable errors found, stopping retries")
                     break
 
+                matched = next(
+                    (
+                        err
+                        for err in retry_errors
+                        if any(err in line for line in err_output)
+                    ),
+                    "",
+                )
                 if verbose:
-                    matched = next(
-                        (
-                            err
-                            for err in retry_errors
-                            if any(err in line for line in err_output)
-                        ),
-                        "",
-                    )
                     print(
                         f"Retryable error [{matched}] found, retry {retry+1}/{retries}"
                     )
+                if on_retry and retry < retries - 1:
+                    # Only where another attempt actually follows: the last iteration
+                    # matches too, but nothing is retried after it. Never lets a
+                    # reporting failure fail the command the retry is rescuing.
+                    try:
+                        on_retry(matched, retry + 1, retries - 1)
+                    except Exception as e:  # noqa: BLE001
+                        print(f"WARNING: on_retry callback failed, ex [{e}]")
             except Exception as e:
                 if verbose:
                     if retries == 1:
@@ -597,8 +626,19 @@ class Utils:
         return datetime.now().timestamp()
 
     @staticmethod
-    def timestamp_to_str(timestamp):
-        return datetime.utcfromtimestamp(timestamp).strftime("%Y-%m-%d %H:%M:%S")
+    def to_datetime(value, input_format="unix"):
+        if input_format == "unix":
+            return datetime.fromtimestamp(value, timezone.utc)
+        if input_format == "iso":
+            return datetime.fromisoformat(value.replace("Z", "+00:00"))
+        raise ValueError(f"Unsupported datetime input format [{input_format}]")
+
+    @staticmethod
+    def timestamp_to_str(timestamp, input_format="unix"):
+        dt = Utils.to_datetime(timestamp, input_format=input_format)
+        if dt.tzinfo is not None:
+            dt = dt.astimezone(timezone.utc).replace(tzinfo=None)
+        return dt.strftime("%Y-%m-%d %H:%M:%S")
 
     @staticmethod
     def get_failed_tests_number(description: str) -> Optional[int]:
@@ -619,8 +659,9 @@ class Utils:
         return False
 
     @staticmethod
-    def clear_dmesg():
-        Shell.check("sudo dmesg --clear", verbose=True)
+    def clear_dmesg() -> bool:
+        """True when the ring buffer was cleared, so a later read holds only this run's records."""
+        return Shell.check("sudo dmesg --clear", verbose=True)
 
     @staticmethod
     def to_base64(value):
@@ -633,9 +674,7 @@ class Utils:
     @staticmethod
     def from_base64(value):
         assert isinstance(value, str), f"TODO: not supported for {type(value)}"
-        base64_bytes = value.encode("utf-8")
-        string_bytes = base64.b64decode(base64_bytes)
-        return string_bytes.decode("utf-8")
+        return base64.b64decode(value.encode("utf-8")).decode("utf-8")
 
     @staticmethod
     def is_hex(s):
@@ -808,7 +847,8 @@ class Utils:
 
     @classmethod
     def encrypt(cls, path: str, key_path: str, aes_key_path: str) -> str:
-        # -base64: raw bytes can contain \0 which breaks openssl enc -pass file:
+        # -base64: raw bytes can contain \0 or a leading newline, which breaks
+        # openssl enc -pass file: (it reads only the first line as the password).
         if not Path(f"{aes_key_path}.rsa").exists():
             Shell.run(f"""
 openssl rand -base64 32 >{aes_key_path}
@@ -820,7 +860,13 @@ openssl pkeyutl -encrypt -pubin -inkey {key_path} -in {aes_key_path} -out {aes_k
         return f"{path}.enc"
 
     @classmethod
-    def compress_files_gz(cls, files, archive_name):
+    def compress_files_gz(cls, files, archive_name, timeout=None, strict=True):
+        """Archive `files` into `archive_name`, returning the path, or `None` if it did not.
+
+        `timeout` bounds the `tar`; `strict=False` turns a failed archive into that `None` instead
+        of raising. A caller whose job is already being torn down wants both: an archive it cannot
+        finish is worth abandoning, and abandoning it must not lose the caller's remaining work.
+        """
         files = [
             os.path.relpath(file) if os.path.isabs(file) else file for file in files
         ]
@@ -830,11 +876,13 @@ openssl pkeyutl -encrypt -pubin -inkey {key_path} -in {aes_key_path} -out {aes_k
         with tempfile.NamedTemporaryFile() as f:
             f.write("\n".join(files).encode())
             f.flush()
-            Shell.check(
+            if not Shell.check(
                 f"tar -cf - -T {f.name} | gzip > {archive_name}",
                 verbose=True,
-                strict=True,
-            )
+                strict=strict,
+                timeout=timeout,
+            ):
+                return None
         return archive_name
 
     @classmethod
@@ -939,9 +987,9 @@ openssl pkeyutl -encrypt -pubin -inkey {key_path} -in {aes_key_path} -out {aes_k
                 print("ERROR: zstd is not installed. Cannot decompress artifact.")
                 return False
 
-            # Perform decompression (--no-progress suppresses per-MB stderr noise)
+            # Perform decompression
             res = Shell.check(
-                f"zstd --decompress --force --no-progress -o {quote(path_to)} {quote(path)}",
+                f"zstd --decompress --force -o {quote(path_to)} {quote(path)}",
                 verbose=True,
                 strict=not no_strict,
             )
@@ -1044,31 +1092,18 @@ class TeePopen:
         self.terminated_by_sigkill = False
         self.log_rolling_buffer = deque(maxlen=100)
         self.preserve_stdio = preserve_stdio
-        # Set as soon as the child is reaped, so the watchdog wakes immediately
-        # and skips signalling when the process finished before the timeout.
         self.finished = Event()
 
     def _check_timeout(self) -> None:
         if self.timeout is None:
             return
-        # Wait for the timeout, but wake as soon as the child finishes. A blind
-        # sleep would fire the watchdog even for a job that already succeeded --
-        # flipping timeout_exceeded, running cleanup, and, in a long-lived
-        # process, issuing a late killpg against an already-reaped (possibly
-        # PID-recycled) process group that may now belong to an unrelated job.
         if self.finished.wait(self.timeout):
             return
-        # Backstop for the race between the wait timing out and the child
-        # exiting: if the process is already gone, enforce nothing.
         if self.process.poll() is not None:
             return
         print(f"WARNING: Timeout exceeded [{self.timeout}] for [{self.process.pid}]")
         self.timeout_exceeded = True
 
-        # Terminate the launched process group first: timeout enforcement must
-        # never depend on the external cleanup returning. Best-effort teardown
-        # (e.g. `docker rm -f <container>`) then runs in a bounded daemon thread,
-        # so a cleanup that wedges on a hung daemon cannot re-introduce the hang.
         self.send_signal(signal.SIGTERM)
         print(f"Send SIGTERM to [{self.process.pid}]")
 
@@ -1079,7 +1114,6 @@ class TeePopen:
                 kwargs={"verbose": True, "timeout": 120},
                 daemon=True,
             ).start()
-
         time_wait = 0
 
         while self.process.poll() is None and time_wait < 100:
@@ -1152,8 +1186,6 @@ class TeePopen:
                     self.log_rolling_buffer.append(line)
             return self.process.wait()
         finally:
-            # The child is reaped: wake the watchdog so it does not mark a
-            # timeout or signal a process group that no longer exists.
             self.finished.set()
 
     def poll(self):

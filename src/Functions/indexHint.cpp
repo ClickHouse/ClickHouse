@@ -1,10 +1,24 @@
 #include <Functions/indexHint.h>
 #include <Functions/FunctionFactory.h>
+#include <Functions/IFunctionAdaptors.h>
 #include <DataTypes/DataTypesNumber.h>
 
 
 namespace DB
 {
+
+FunctionOverloadResolverPtr FunctionIndexHint::createImplied()
+{
+    auto function = std::make_shared<FunctionIndexHint>();
+    function->setImplied(true);
+    return std::make_shared<FunctionToOverloadResolverAdaptor>(std::move(function));
+}
+
+FunctionIndexHint * FunctionIndexHint::tryGet(const FunctionBasePtr & function_base)
+{
+    const auto * adaptor = typeid_cast<const FunctionToFunctionBaseAdaptor *>(function_base.get());
+    return adaptor ? typeid_cast<FunctionIndexHint *>(adaptor->getFunction().get()) : nullptr;
+}
 
 REGISTER_FUNCTION(IndexHint)
 {
@@ -61,14 +75,25 @@ Note: It is not possible to optimize a query with the `indexHint` function. The 
     {
         "Usage example with date filtering",
         R"(
+-- `index_granularity` is lowered to 8 here only to keep the example small enough to follow.
+-- Do not change it in production: the default of 8192 is what makes the index sparse and cheap,
+-- and a small value makes the index large and slows queries down.
+CREATE TABLE ontime (FlightDate Date, Carrier String)
+ENGINE = MergeTree ORDER BY FlightDate
+SETTINGS index_granularity = 8;
+
+-- Ten flights on each of four days, so a granule of eight rows spans more than one day.
+INSERT INTO ontime SELECT toDate('2025-09-14') + intDiv(number, 10), 'AA' FROM numbers(40);
+
+-- The granules that hold the rows of 2025-09-15 also hold rows of the neighbouring days,
+-- and `indexHint` returns all of them.
 SELECT FlightDate AS k, count() FROM ontime WHERE indexHint(k = '2025-09-15') GROUP BY k ORDER BY k ASC;
         )",
         R"(
 ┌──────────k─┬─count()─┐
-│ 2025-09-14 │    7071 │
-│ 2025-09-15 │   16428 │
-│ 2025-09-16 │    1077 │
-│ 2025-09-30 │    8167 │
+│ 2025-09-14 │       2 │
+│ 2025-09-15 │      10 │
+│ 2025-09-16 │       4 │
 └────────────┴─────────┘
         )"
     }

@@ -1,0 +1,22 @@
+the rows a negated equality really returns
+s	s
+count of the same condition
+1
+1
+and of a negated set
+1
+1
+and of a negated pattern
+1
+1
+a key of mostly NULLs
+11
+11
+4
+12
+a nullable key without NULLs
+15
+15
+the exact count of a non-nullable key
+1
+16

@@ -1,5 +1,6 @@
 #pragma once
 
+#include <algorithm>
 #include <iterator>
 #include <random>
 #include <utility>
@@ -51,4 +52,17 @@ void partial_shuffle(Iter first, Iter last, size_t limit, Rng && rng)
         auto j = d(rng, param_t(i, n - 1));
         swap(first[i], first[j]);
     }
+}
+
+
+/* Randomly reorders the elements in [first, last). If limit is nonzero and
+ * smaller than the range, randomizes only [first, first + limit).
+ */
+template <typename Iter, typename Rng>
+void shuffle_with_limit(Iter first, Iter last, size_t limit, Rng && rng)
+{
+    if (limit != 0 && limit < static_cast<size_t>(last - first))
+        partial_shuffle(first, last, limit, std::forward<Rng>(rng));
+    else
+        std::shuffle(first, last, std::forward<Rng>(rng));
 }
