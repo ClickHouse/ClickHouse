@@ -5,7 +5,6 @@ set -euo pipefail
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
-CLICKHOUSE_LOCAL="$CLICKHOUSE_LOCAL --allow_experimental_recompress_column=1"
 
 # Older writers did not round the compressed block size to whole values, so a value could be split
 # between two compressed blocks. `RECOMPRESS COLUMN` re-emits the blocks of a stream without
@@ -16,7 +15,7 @@ CLICKHOUSE_LOCAL="$CLICKHOUSE_LOCAL --allow_experimental_recompress_column=1"
 workdir=$(mktemp -d "${CLICKHOUSE_TMP}/recompress_unaligned.XXXXXX")
 trap 'rm -rf "$workdir"' EXIT
 
-part_dir=$($CLICKHOUSE_LOCAL --path "$workdir" --multiquery --query "
+part_dir=$($CLICKHOUSE_LOCAL --allow_experimental_recompress_column=1 --path "$workdir" --multiquery --query "
 CREATE DATABASE d ENGINE = Atomic;
 CREATE TABLE d.t (u UInt32 CODEC(LZ4), v Float64 CODEC(LZ4))
 ENGINE = MergeTree ORDER BY u
@@ -56,7 +55,7 @@ x3N7f0IuzTJd/zeE2uAVvjue73/3zFyhocxcbjXaXMMA9nWR0XDbI0K/479W8z9KuYL+/XdAkjUiOycr
 NDQ0NDQ0NDQ0NDQ0NDQ0NDQ0bZF/Af93c64AUAAA
 PART
 
-$CLICKHOUSE_LOCAL --path "$workdir" --multiquery <<'SQL'
+$CLICKHOUSE_LOCAL --allow_experimental_recompress_column=1 --path "$workdir" --multiquery <<'SQL'
 ALTER TABLE d.t ATTACH PART 'all_1_1_0';
 SELECT 'before', count(), sum(u), sum(v) FROM d.t;
 ALTER TABLE d.t MODIFY COLUMN u UInt32 CODEC(Delta, LZ4), MODIFY COLUMN v Float64 CODEC(Gorilla, LZ4);
