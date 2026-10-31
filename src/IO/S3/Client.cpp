@@ -243,7 +243,16 @@ std::unique_ptr<Client> Client::clone() const
 
 std::unique_ptr<Client> Client::cloneWithConfigurationOverride(const PocoHTTPClientConfiguration & client_configuration_override) const
 {
-    return std::unique_ptr<Client>(new Client(*this, client_configuration_override));
+    /// `retryStrategy` is the object the SDK retries with, and `ClientFactory::create` builds it from
+    /// `retry_strategy`, so overriding only the latter would keep the retries of the client being cloned.
+    auto config = client_configuration_override;
+    auto retry_strategy = config.retry_strategy;
+    /// As in `ClientFactory::create`: per-thread retries give way to the global coordination.
+    if (config.s3_slow_all_threads_after_retryable_error)
+        retry_strategy.max_retries = 1;
+    config.retryStrategy = std::make_shared<Client::RetryStrategy>(retry_strategy);
+
+    return std::unique_ptr<Client>(new Client(*this, config));
 }
 
 namespace

@@ -8,6 +8,16 @@
                 <access_key_id>minio</access_key_id>
                 <secret_access_key>ClickHouse_Minio_P@ssw0rd</secret_access_key>
             </disk_s3>
+            <!-- Reached through the `broken_s3` mock, so a test can make its answers fail. It allows no
+                 retries of its own, so an upload into it gets through only when something else retries it. -->
+            <disk_s3_broken>
+                <type>s3</type>
+                <endpoint>http://resolver:8084/root/data/disks/disk_s3_broken/</endpoint>
+                <access_key_id>minio</access_key_id>
+                <secret_access_key>ClickHouse_Minio_P@ssw0rd</secret_access_key>
+                <skip_access_check>1</skip_access_check>
+                <s3_retry_attempts>0</s3_retry_attempts>
+            </disk_s3_broken>
             <disk_s3_other_bucket>
                 <type>s3</type>
                 <endpoint>http://minio1:9001/root2/data/disks/disk_s3/</endpoint>
@@ -51,6 +61,13 @@
                     </main>
                 </volumes>
             </policy_s3>
+            <policy_s3_broken>
+                <volumes>
+                    <main>
+                        <disk>disk_s3_broken</disk>
+                    </main>
+                </volumes>
+            </policy_s3_broken>
             <policy_s3_plain>
                 <volumes>
                     <main>
