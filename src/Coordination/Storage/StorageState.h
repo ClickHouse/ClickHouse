@@ -127,6 +127,16 @@ struct StorageState
     ///  NodeRefCache lookup, but it's unclear whether this is worth the trouble.)
     void listCommittedChildrenNames(const NodePathWithHash & path, ChildrenSet2 & out, DB::Arena & arena) const;
 
+    /// Direct children with name strictly greater than `start_after`, in lexicographic order.
+    /// Stops scanning sorted runs once `max_results` living names (plus one, to set `truncated`) are known.
+    /// `max_results == 0` means no limit. Memtable children of `path` are still read in full: they are unordered.
+    void listDirectChildrenPage(
+        const NodePathWithHash & path,
+        std::string_view start_after,
+        uint32_t max_results,
+        std::vector<std::string> & out,
+        bool & truncated) const;
+
     /// Very minimal stats. Caller must hold storage_mutex.
     void getNodeCountAndDataSize(uint64_t & out_node_count, uint64_t & out_data_size) const;
 

@@ -111,6 +111,16 @@ std::vector<std::string> KeeperLSMTNodesStorage::listCommittedChildrenNames(std:
     return res;
 }
 
+void KeeperLSMTNodesStorage::listCommittedDirectChildrenPaginated(
+    std::string_view path,
+    std::string_view start_after,
+    uint32_t max_results,
+    std::vector<std::string> & out,
+    bool & truncated) const
+{
+    state.listDirectChildrenPage(NodePath(path).withCalculatedHash(), start_after, max_results, out, truncated);
+}
+
 bool KeeperLSMTNodesStorage::addCommittedNodeIfNotExists(std::string_view path, const KeeperNodeStats & stats, std::string_view data, bool update_parent_num_children, uint64_t * out_digest)
 {
     NodePathWithHash node_path = NodePath(path).withCalculatedHash();
