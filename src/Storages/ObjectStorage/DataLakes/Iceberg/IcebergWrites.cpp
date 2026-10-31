@@ -1742,6 +1742,7 @@ bool IcebergStorageSink::initializeMetadata()
     {
         /// The metadata file may still be published: keep the files it references,
         /// also from the destructor, which removes them unless the commit is marked as done.
+        /// TODO: keep the files when the catalog reports an unknown commit outcome (`CommitStateUnknownException` or a 5xx), because the snapshot may already reference them.
         if (isUnknownCommitStatus())
             committed = true;
         else
