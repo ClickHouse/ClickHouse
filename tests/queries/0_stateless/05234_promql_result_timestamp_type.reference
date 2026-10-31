@@ -57,3 +57,12 @@ tags	Array(Tuple(String, String))
 samples	Array(Tuple(DateTime64(3, \'UTC\'), Float64))					
 tags	Array(Tuple(String, String))					
 samples	Array(Tuple(DateTime64(3), Float64))					
+-- Signed @ subqueries use a DateTime64 result grid across storage timestamp types
+[-360,-300,-240,-180,-120]
+[-360,-300,-240,-180,-120]
+[-360,-300,-240,-180,-120]
+[-360,-300,-240,-180,-120]
+[-360,-300,-240,-180,-120]
+[-360,-300,-240,-180,-120]
+-- Signed @ subquery grids floor-align steps on both sides of the Unix epoch
+[-180,-120,-60,0,60]

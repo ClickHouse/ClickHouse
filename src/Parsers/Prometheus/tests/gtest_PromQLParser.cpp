@@ -1628,6 +1628,16 @@ PrometheusQueryTree(INSTANT_VECTOR):
             __name__ EQ 'http_requests_total'
 )");
 
+    EXPECT_EQ(parse("http_requests_total @ -100"), R"(
+http_requests_total @ -100
+
+PrometheusQueryTree(INSTANT_VECTOR):
+    Offset:
+        at: -100
+        InstantSelector:
+            __name__ EQ 'http_requests_total'
+)");
+
     EXPECT_EQ(parse("http_requests_total @ start()"), R"(
 http_requests_total @ start()
 
@@ -1637,6 +1647,20 @@ PrometheusQueryTree(INSTANT_VECTOR):
         InstantSelector:
             __name__ EQ 'http_requests_total'
 )");
+
+    EXPECT_EQ(parse("http_requests_total @ +3.3e1"), R"(
+http_requests_total @ 33
+
+PrometheusQueryTree(INSTANT_VECTOR):
+    Offset:
+        at: 33
+        InstantSelector:
+            __name__ EQ 'http_requests_total'
+)");
+
+    /// Signed @ timestamps also apply to subqueries.
+    expectRoundTrip("vector(1)[5m:1m] @ -100", "vector(1)[5m:1m] @ -100");
+    expectRoundTrip("vector(time())[5m:1m] @ +3.3e1", "vector(time())[5m:1m] @ 33");
 
     EXPECT_EQ(parse("http_requests_total @ end() offset 5m"), R"(
 http_requests_total @ end() offset 5m

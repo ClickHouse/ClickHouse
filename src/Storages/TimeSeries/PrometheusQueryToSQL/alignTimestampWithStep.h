@@ -6,8 +6,7 @@
 namespace DB::PrometheusQueryToSQL
 {
 
-/// Decreases a timestamp to make it divisible by `step`.
-/// Returns the same timestamp if it's already divisible by `step`.
+/// Rounds down to the nearest multiple of `step`, including for negative timestamps.
 TimestampType alignTimestampWithStep(TimestampType timestamp, DurationType step);
 
 }
