@@ -36,6 +36,10 @@ public:
         /// EPHEMERAL columns exist only during INSERT, so a column reading one is never recomputed
         /// afterwards and keeps its stored value.
         bool reads_ephemeral = false;
+        /// The stored expression predates the alias-lambda capture rule (metadata loading tolerates it) and
+        /// cannot be evaluated safely. `expression` is null and `dependencies` are the conservative raw
+        /// inputs; asking to recalculate such a column throws, while operations it is unrelated to proceed.
+        bool legacy_alias_capture = false;
     };
 
     MaterializedColumnDependencies(const ColumnsDescription & columns_, const ContextPtr & context_);
@@ -49,6 +53,7 @@ public:
     /// own expression reads one of @changed_columns, or because it reads another column that has to
     /// be recalculated. Also empty for a column reading an EPHEMERAL one, which is never recalculated.
     /// Answers are memoised for one @changed_columns set; passing a different one starts over.
+    /// Throws if the column has to be recalculated, but its expression is a legacy alias-lambda capture.
     const Names & findColumnsToRecalculate(const String & column_name, const NameSet & changed_columns) const;
 
 private:
@@ -67,6 +72,9 @@ private:
     /// Physical columns plus EPHEMERAL ones, built on the first analysis.
     mutable std::optional<NamesAndTypesList> source_columns;
     mutable NameSet ephemeral_columns;
+
+    /// Built on the first analysis.
+    mutable std::optional<std::unordered_map<String, String>> legacy_capture_violations;
 
     mutable std::optional<NameSet> memo_changed_columns;
     mutable std::unordered_map<String, bool> will_be_recalculated;

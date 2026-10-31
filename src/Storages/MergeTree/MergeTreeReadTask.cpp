@@ -244,8 +244,8 @@ static const IndexReadTask * getIndexReadTaskForReadStep(const IndexReadTasks & 
     if (!index->getDeserializedFormat(*part_info.getDataPart(), index->getFileName()))
         return nullptr;
 
-    /// Or if the index cannot be read in this part (e.g. pending patches).
-    if (!canReadTextIndexInPart(part_info.isProjectionPart() ? nullptr : part_info.getAlterConversions()))
+    /// Or if the index cannot be read in this part (e.g. pending patches or a pending rebuild of the index).
+    if (!canReadTextIndexInPart(part_info.isProjectionPart() ? nullptr : part_info.getAlterConversions(), index->index.name))
         return nullptr;
 
     return &index_task;

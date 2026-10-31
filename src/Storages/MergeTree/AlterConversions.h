@@ -49,6 +49,9 @@ public:
     static bool isSupportedDataMutation(MutationCommand::Type type);
     static bool isSupportedAlterMutation(MutationCommand::Type type);
     static bool isSupportedMetadataMutation(MutationCommand::Type type);
+    /// `MATERIALIZE INDEX` and `CLEAR INDEX`: the files of the index in a part they have not reached yet may be
+    /// built from another definition of the index (see `AlterCommands::getMutationCommands`), so must not be used.
+    static bool isSupportedIndexMutation(const MutationCommand & command);
 
     /// Adds the columns changed on the fly by the command.
     static void addUpdatedColumns(const MutationCommand & command, NameSet & updated_columns);
@@ -63,6 +66,9 @@ public:
     /// pending drop or rename of an indexed name makes the index unusable until it is materialized.
     NameSet getColumnsInvalidatingIndexes() const;
     const NameSet & getColumnsUpdatedInPatches() const { return columns_updated_in_patches; }
+
+    /// The skip index is rebuilt or cleared by a pending mutation, so its files in the part must not be used.
+    bool isIndexPendingRebuild(const String & index_name) const { return indices_pending_rebuild.contains(index_name); }
 
     bool hasPatches() const { return !patch_parts.empty(); }
     bool hasMutations() const { return !mutation_commands.empty(); }
@@ -142,6 +148,9 @@ private:
     /// Used to check dependencies for ALTERs, lightweight deletes and MATERIALIZED columns
     NameSet all_updated_columns;
 
+    /// Names of skip indices which are rebuilt or cleared by pending mutation commands.
+    NameSet indices_pending_rebuild;
+
     /// Patches required to be applied for a part.
     PatchPartsForReader patch_parts;
 
@@ -156,6 +165,7 @@ struct MutationCounters
     Int64 num_data = 0;
     Int64 num_alter = 0;
     Int64 num_metadata = 0;
+    Int64 num_index = 0;
 
     void assertNotNegative() const;
 };

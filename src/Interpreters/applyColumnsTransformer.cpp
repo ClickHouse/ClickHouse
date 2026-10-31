@@ -1,15 +1,18 @@
 #include <Interpreters/applyColumnsTransformer.h>
 
+#include <Parsers/ASTColumnsMatcher.h>
 #include <Parsers/ASTColumnsTransformers.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTWithAlias.h>
 #include <Common/Exception.h>
 #include <Common/re2.h>
 
+#include <algorithm>
 #include <map>
 #include <set>
-#include <stack>
+#include <unordered_set>
 
 namespace DB
 {
@@ -36,6 +39,184 @@ std::shared_ptr<re2::RE2> getColumnsExceptMatcher(const ASTColumnsExceptTransfor
 
 namespace
 {
+
+bool lambdaArgumentShadowsName(const ASTFunction & lambda, const String & name)
+{
+    return std::ranges::contains(getASTLambdaArgumentNames(lambda), name);
+}
+
+/// For a compound identifier rooted at `name`, like `x.id` or `x.a.b` for `name` = `x`, returns the field access
+/// `tupleElement(...(tupleElement(replacement, 'a'), ...), 'b')` the identifier means when `x` is bound to `replacement`.
+ASTPtr tryReplaceIdentifierRoot(const IAST & ast, const ASTPtr & replacement, const String & name)
+{
+    const auto * identifier = ast.as<ASTIdentifier>();
+    if (!identifier || !identifier->compound() || identifier->name_parts.front() != name)
+        return nullptr;
+
+    ASTPtr result = replacement->clone();
+    for (size_t i = 1; i < identifier->name_parts.size(); ++i)
+        result = makeASTFunction("tupleElement", std::move(result), make_intrusive<ASTLiteral>(identifier->name_parts[i]));
+    return result;
+}
+
+/// The lambda of `APPLY (x -> ...)` is a member of the transformer outside of its `children`, so the walks
+/// below visit it explicitly: an outer lambda parameter or column may be referenced inside a nested `APPLY`.
+ASTPtr * tryGetApplyTransformerLambda(IAST & ast)
+{
+    if (auto * apply = ast.as<ASTColumnsApplyTransformer>(); apply && apply->lambda)
+        return &apply->lambda;
+    return nullptr;
+}
+
+/// A walk may rename the parameter of the lambda of `APPLY`; the transformer keeps the parameter name separately.
+void syncApplyTransformerLambdaArgument(IAST & ast)
+{
+    if (auto * apply = ast.as<ASTColumnsApplyTransformer>(); apply && apply->lambda)
+    {
+        auto names = getASTLambdaArgumentNames(apply->lambda->as<const ASTFunction &>());
+        if (names.size() == 1)
+            apply->lambda_arg = names.front();
+    }
+}
+
+void collectIdentifierRoots(const IAST & ast, std::unordered_set<String> & roots)
+{
+    if (const auto * identifier = ast.as<ASTIdentifier>())
+        roots.insert(identifier->name_parts.front());
+    for (const auto & child : ast.children)
+        collectIdentifierRoots(*child, roots);
+    if (const auto * apply = ast.as<ASTColumnsApplyTransformer>(); apply && apply->lambda)
+        collectIdentifierRoots(*apply->lambda, roots);
+}
+
+/// The column names of `EXCEPT` applied to an explicit list like `COLUMNS(a) EXCEPT a` name the elements of the list,
+/// which may be lambda parameters, so they are renamed together with the elements of the list.
+void renameListMatcherExceptOperands(IAST & transformers, const String & from, const String & to)
+{
+    for (const auto & transformer : transformers.children)
+    {
+        auto * except = transformer->as<ASTColumnsExceptTransformer>();
+        if (!except || except->getPattern())
+            continue;
+
+        for (auto & operand : except->children)
+        {
+            const auto * identifier = operand->as<ASTIdentifier>();
+            if (identifier && !identifier->compound() && identifier->name() == from)
+                operand = make_intrusive<ASTIdentifier>(to);
+        }
+    }
+}
+
+/// Renames the references to the lambda parameter `from` inside `ast`, including the roots of compound
+/// identifiers like `from.id`, but not inside nested lambdas that declare their own `from`. The column names
+/// of `EXCEPT` of a table matcher like `*` or `COLUMNS('regexp')` select table columns, not lambda parameters,
+/// so they are kept.
+void renameLambdaParameterReferences(ASTPtr & ast, const String & from, const String & to)
+{
+    if (!ast || ast->as<ASTColumnsExceptTransformer>())
+        return;
+
+    if (const auto * list_matcher = ast->as<ASTColumnsListMatcher>(); list_matcher && list_matcher->transformers)
+        renameListMatcherExceptOperands(*list_matcher->transformers, from, to);
+
+    if (const auto * identifier = ast->as<ASTIdentifier>())
+    {
+        if (identifier->name_parts.front() != from)
+            return;
+        auto name_parts = identifier->name_parts;
+        name_parts.front() = to;
+        auto renamed = make_intrusive<ASTIdentifier>(std::move(name_parts));
+        renamed->alias = identifier->alias;
+        ast = std::move(renamed);
+        return;
+    }
+
+    if (auto * function = ast->as<ASTFunction>(); function && function->name == "lambda")
+    {
+        if (function->arguments && function->arguments->children.size() == 2 && !lambdaArgumentShadowsName(*function, from))
+            renameLambdaParameterReferences(function->arguments->children[1], from, to);
+        return;
+    }
+
+    for (auto & child : ast->children)
+        renameLambdaParameterReferences(child, from, to);
+    if (auto * apply_lambda = tryGetApplyTransformerLambda(*ast))
+    {
+        renameLambdaParameterReferences(*apply_lambda, from, to);
+        syncApplyTransformerLambdaArgument(*ast);
+    }
+}
+
+/// Before an expression is substituted into the body of the nested `lambda`, renames the parameters of that
+/// lambda which have the same names as the identifiers of the substituted expression. Otherwise the parameters
+/// would capture them: substituting `a` for `x` in `a -> x` must give `a_1 -> a`, not `a -> a`.
+void renameLambdaParametersCapturing(ASTFunction & lambda, const std::unordered_set<String> & replacement_roots)
+{
+    auto & parameters = lambda.arguments->children[0]->as<ASTFunction &>().arguments->children;
+    for (auto & parameter : parameters)
+    {
+        const String parameter_name = parameter->as<ASTIdentifier &>().name();
+        if (!replacement_roots.contains(parameter_name))
+            continue;
+
+        std::unordered_set<String> used_names = replacement_roots;
+        collectIdentifierRoots(*lambda.arguments->children[1], used_names);
+        for (const auto & other_parameter : parameters)
+            used_names.insert(other_parameter->as<ASTIdentifier &>().name());
+
+        String new_name;
+        for (size_t i = 1; new_name.empty() || used_names.contains(new_name); ++i)
+            new_name = parameter_name + "_" + std::to_string(i);
+
+        renameLambdaParameterReferences(lambda.arguments->children[1], parameter_name, new_name);
+        parameter = make_intrusive<ASTIdentifier>(new_name);
+    }
+}
+
+void replaceLambdaArgument(ASTPtr & ast, const ASTPtr & replacement, const String & lambda_arg, bool is_masked = false)
+{
+    if (!ast || ast->as<ASTColumnsExceptTransformer>())
+        return;
+
+    if (!is_masked)
+    {
+        if (auto arg_name = tryGetIdentifierName(ast); arg_name && *arg_name == lambda_arg)
+        {
+            ast = replacement->clone();
+            return;
+        }
+        if (auto field_access = tryReplaceIdentifierRoot(*ast, replacement, lambda_arg))
+        {
+            ast = std::move(field_access);
+            return;
+        }
+    }
+
+    if (auto * function = ast->as<ASTFunction>(); function && function->name == "lambda")
+    {
+        if (!function->arguments || function->arguments->children.size() != 2)
+            return;
+
+        const bool is_masked_inside = is_masked || lambdaArgumentShadowsName(*function, lambda_arg);
+        if (!is_masked_inside)
+        {
+            std::unordered_set<String> replacement_roots;
+            collectIdentifierRoots(*replacement, replacement_roots);
+            renameLambdaParametersCapturing(*function, replacement_roots);
+        }
+        replaceLambdaArgument(function->arguments->children[1], replacement, lambda_arg, is_masked_inside);
+        return;
+    }
+
+    for (auto & child : ast->children)
+        replaceLambdaArgument(child, replacement, lambda_arg, is_masked);
+    if (auto * apply_lambda = tryGetApplyTransformerLambda(*ast))
+    {
+        replaceLambdaArgument(*apply_lambda, replacement, lambda_arg, is_masked);
+        syncApplyTransformerLambdaArgument(*ast);
+    }
+}
 
 /// Column transformers (APPLY with a name prefix, REPLACE) assign an alias to the
 /// resulting node. Only ASTWithAlias nodes (identifiers, functions, literals, subqueries)
@@ -70,22 +251,7 @@ void applyColumnsApplyTransformer(const ASTColumnsApplyTransformer & transformer
         if (transformer.lambda)
         {
             auto body = transformer.lambda->as<const ASTFunction &>().arguments->children.at(1)->clone();
-            std::stack<ASTPtr> stack;
-            stack.push(body);
-            while (!stack.empty())
-            {
-                auto ast = stack.top();
-                stack.pop();
-                for (auto & child : ast->children)
-                {
-                    if (auto arg_name = tryGetIdentifierName(child); arg_name && arg_name == transformer.lambda_arg)
-                    {
-                        child = column->clone();
-                        continue;
-                    }
-                    stack.push(child);
-                }
-            }
+            replaceLambdaArgument(body, column, transformer.lambda_arg);
             column = body;
         }
         else
@@ -158,17 +324,53 @@ void applyColumnsExceptTransformer(const ASTColumnsExceptTransformer & transform
 }
 
 
-void replaceChildren(ASTPtr & node, const ASTPtr & replacement, const String & name)
+/// Substitutes the pre-`REPLACE` expression of a column for the references to that column inside
+/// the replacement expression. Like `replaceLambdaArgument` above, the walk is lambda-scope-aware:
+/// an identifier bound by an enclosing lambda parameter of the same name is a different variable
+/// and must be left intact, and lambda parameter lists are never rewritten.
+void replaceColumnReferences(ASTPtr & ast, const ASTPtr & replacement, const String & name, bool is_masked = false)
 {
-    for (auto & child : node->children)
+    if (!ast || ast->as<ASTColumnsExceptTransformer>())
+        return;
+
+    if (!is_masked)
     {
-        if (const auto * id = child->as<ASTIdentifier>())
+        /// Only the exact identifier `name` is the column; a compound identifier rooted at it (`name.x`) is a field
+        /// access handled below, and one merely ending with it (`t.name`) is unrelated.
+        if (const auto * id = ast->as<ASTIdentifier>(); id && !id->compound() && id->name() == name)
         {
-            if (id->shortName() == name)
-                child = replacement->clone();
+            ast = replacement->clone();
+            return;
         }
-        else
-            replaceChildren(child, replacement, name);
+        if (auto field_access = tryReplaceIdentifierRoot(*ast, replacement, name))
+        {
+            ast = std::move(field_access);
+            return;
+        }
+    }
+
+    if (auto * function = ast->as<ASTFunction>(); function && function->name == "lambda")
+    {
+        if (!function->arguments || function->arguments->children.size() != 2)
+            return;
+
+        const bool is_masked_inside = is_masked || lambdaArgumentShadowsName(*function, name);
+        if (!is_masked_inside)
+        {
+            std::unordered_set<String> replacement_roots;
+            collectIdentifierRoots(*replacement, replacement_roots);
+            renameLambdaParametersCapturing(*function, replacement_roots);
+        }
+        replaceColumnReferences(function->arguments->children[1], replacement, name, is_masked_inside);
+        return;
+    }
+
+    for (auto & child : ast->children)
+        replaceColumnReferences(child, replacement, name, is_masked);
+    if (auto * apply_lambda = tryGetApplyTransformerLambda(*ast))
+    {
+        replaceColumnReferences(*apply_lambda, replacement, name, is_masked);
+        syncApplyTransformerLambdaArgument(*ast);
     }
 }
 
@@ -204,7 +406,7 @@ void applyColumnsReplaceTransformer(const ASTColumnsReplaceTransformer & transfo
             {
                 auto new_ast = replace_it->second->clone();
                 ast_with_alias->alias = ""; // remove the old alias as it's useless after replace transformation
-                replaceChildren(new_ast, column, replace_it->first);
+                replaceColumnReferences(new_ast, column, replace_it->first);
                 column = new_ast;
                 setTransformerAlias(column, replace_it->first);
                 replace_map.erase(replace_it);

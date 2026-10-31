@@ -1,0 +1,6 @@
+-- a stale index is not used while its rebuild is pending
+(MATERIALIZE INDEX idx)
+1
+1
+-- the EXCEPT of an explicit list of a lambda parameter is renamed together with the parameter
+[[[7]]]

@@ -1492,6 +1492,12 @@ BlockIO InterpreterInsertQuery::execute()
     auto & query = query_ptr->as<ASTInsertQuery &>();
 
     StoragePtr table = getTable(query);
+
+    /// Taken before the first metadata snapshot (`setInsertContextValues`), which the query caches with
+    /// `enable_shared_storage_snapshot_in_query`: an `ALTER` that has to repair the existing data waits for
+    /// the inserts holding this lock, so a part written from a snapshot taken without it could miss the repair.
+    auto insert_lock = table->lockForInsert(context->getInitialQueryId(), settings[Setting::lock_acquire_timeout]);
+
     setInsertContextValues(context, query, table);
     if (context->getServerSettings()[ServerSetting::disable_insertion_and_mutation]
         && query.table_id.database_name != DatabaseCatalog::SYSTEM_DATABASE
@@ -1664,14 +1670,17 @@ BlockIO InterpreterInsertQuery::execute()
     /// on this: under its brief exclusive lock on the source, any concurrent `INSERT` has either
     /// already committed (and is covered by the pinned snapshot) or has not yet discovered the
     /// dependent views (and will see the newly registered view).
-    /// Empty when the async insert queue transform took the lock over: it commits through a separate
-    /// flush that takes its own lock, and the route is refused when any dependent view exists.
+    /// `table_lock` is empty when the async insert queue transform took the lock over: it commits through a separate
+    /// flush that takes its own locks (including the insert lock), so the insert lock must not outlive the flush wait either.
+    if (!table_lock)
+        insert_lock.reset();
+    QueryPlanResourceHolder insert_resources;
+    if (insert_lock)
+        insert_resources.table_locks.emplace_back(std::move(insert_lock));
     if (table_lock)
-    {
-        QueryPlanResourceHolder insert_resources;
         insert_resources.table_locks.emplace_back(std::move(table_lock));
+    if (!insert_resources.table_locks.empty())
         res.pipeline.addResources(std::move(insert_resources));
-    }
 
     if (const auto * mv = dynamic_cast<const StorageMaterializedView *>(table.get()))
         res.pipeline.addStorageHolder(mv->getTargetTable());

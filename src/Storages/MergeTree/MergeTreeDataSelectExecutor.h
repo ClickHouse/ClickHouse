@@ -346,6 +346,12 @@ public:
         const StorageMetadataPtr & metadata_snapshot,
         const NameSet & all_updated_columns);
 
+    /// Same for a part, also returns an error message if the index is rebuilt or cleared by a pending mutation.
+    static std::expected<void, PreformattedMessage> canUseIndex(
+        const MergeTreeIndexPtr & index,
+        const StorageMetadataPtr & metadata_snapshot,
+        const AlterConversions & alter_conversions);
+
     /// Whether a pending alter mutation (e.g. `MODIFY COLUMN`) or metadata mutation (`DROP COLUMN`,
     /// `RENAME COLUMN`) applies to the part. The counters of the snapshot (`hasAlterMutations`,
     /// `hasMetadataMutations`) also include finished mutations kept for `system.mutations`, so only the

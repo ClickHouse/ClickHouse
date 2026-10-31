@@ -295,6 +295,10 @@ struct StorageInMemoryMetadata
     /// Columns of the partition, sorting and primary keys, with a subcolumn replaced by the column it is stored in.
     NameSet getStorageColumnsRequiredForKeys() const;
 
+    /// The given column names with a subcolumn (e.g. `m.x`) replaced by the column it is stored in (`m`).
+    /// Names that are not columns or subcolumns of the table are kept as they are.
+    NameSet getStorageColumnNames(const Names & names) const;
+
     /// Returns structure with unique key (UNIQUE KEY clause).
     const KeyDescription & getUniqueKey() const;
     /// Returns AST of unique key expression for storage or nullptr if there is none.

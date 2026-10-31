@@ -1,6 +1,7 @@
 #pragma once
 
 #include <map>
+#include <set>
 
 #include <Core/Names.h>
 #include <Interpreters/Aliases.h>
@@ -50,6 +51,10 @@ public:
         /// It's Ok to have "c + 1 AS c" in queries, but not in table definition
         const bool allow_self_aliases; /// for constructs like "SELECT column + 1 AS column"
         bool is_create_parameterized_view;
+
+        /// Parameters of the enclosing lambdas: a compound identifier rooted at one of them (`x.id` in `x -> x.id`)
+        /// is a field access of the parameter, not a reference to an alias.
+        std::multiset<String> lambda_parameters;
 
         Data(Aliases & aliases_, const NameSet & source_columns_set_, bool ignore_alias_, ExtractedSettings && settings_, bool allow_self_aliases_, bool is_create_parameterized_view_ = false)
             : aliases(aliases_)

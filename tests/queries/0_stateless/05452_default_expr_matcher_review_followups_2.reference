@@ -1,0 +1,13 @@
+-- a tuple-valued skip index expression stays one key after reparsing
+tuple(a, b)
+tuple(a, b)
+1
+1
+-- a nested lambda parameter does not capture the substituted column
+7	[7]	[7]
+-- the version and sign columns are not rematerialized automatically
+2	2
+1	1
+-- the automatic rematerialization recomputes a column omitted on insert
+0	1000	1000
+0	1000	1000

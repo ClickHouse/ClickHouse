@@ -1,0 +1,8 @@
+-- partition key reads a subcolumn of a rematerialized column
+0	0
+-- a re-added column is not converted together with another column
+2	0
+-- a field access of a lambda parameter is not a dotted ALIAS column
+[1,2]	11
+-- a matcher in the DEFAULT of `id` of an external tags table
+2	m1	{'__name__':'m1','job':'j1'}

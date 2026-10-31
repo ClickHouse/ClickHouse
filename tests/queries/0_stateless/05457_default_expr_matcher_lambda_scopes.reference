@@ -1,0 +1,9 @@
+-- a matched column must not be bound by an enclosing lambda parameter
+[10,20]
+-- renaming a capturing lambda parameter keeps the column names of EXCEPT
+['[7]']
+-- a nested APPLY sees the parameter of the outer APPLY
+[[14]]
+-- REPLACE substitutes the column, not a field access with the same name
+[100]
+-- a matcher is validated against the inferred and flattened Nested column
