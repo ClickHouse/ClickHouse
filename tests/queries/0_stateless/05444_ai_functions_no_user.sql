@@ -13,6 +13,12 @@ CREATE NAMED COLLECTION nc_05444 AS
 CREATE TABLE t (x String, CONSTRAINT c CHECK aiFilter(x, 'c', map('credentials', 'nc_05444', 'model', 'm'))) ENGINE = MergeTree ORDER BY x;
 CREATE TABLE b (x String) ENGINE = Buffer(currentDatabase(), t, 1, 1, 1, 1, 1, 1, 1);
 INSERT INTO b VALUES ('a'); -- { serverError ACCESS_DENIED }
+CREATE TABLE t_embed (x String, CONSTRAINT c CHECK length(aiEmbed(x, 'm', map('credentials', 'nc_05444'))) > 0) ENGINE = MergeTree ORDER BY x;
+CREATE TABLE b_embed (x String) ENGINE = Buffer(currentDatabase(), t_embed, 1, 1, 1, 1, 1, 1, 1);
+INSERT INTO b_embed VALUES ('a'); -- { serverError ACCESS_DENIED }
+CREATE TABLE t_similarity (x String, CONSTRAINT c CHECK aiSimilarity(x, x, 'm', map('credentials', 'nc_05444')) > 0) ENGINE = MergeTree ORDER BY x;
+CREATE TABLE b_similarity (x String) ENGINE = Buffer(currentDatabase(), t_similarity, 1, 1, 1, 1, 1, 1, 1);
+INSERT INTO b_similarity VALUES ('a'); -- { serverError ACCESS_DENIED }
 -- The failure is reported in `system.warnings`.
 SELECT count() > 0 FROM system.warnings WHERE message LIKE 'A background operation%AI function%';
 
@@ -76,6 +82,10 @@ SELECT x, y FROM t_lwu;
 
 DROP TABLE b;
 DROP TABLE t;
+DROP TABLE b_embed;
+DROP TABLE t_embed;
+DROP TABLE b_similarity;
+DROP TABLE t_similarity;
 DROP TABLE t_update;
 DROP TABLE t_default;
 DROP TABLE t_lwu;

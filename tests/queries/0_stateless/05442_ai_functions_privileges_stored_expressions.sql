@@ -23,6 +23,13 @@ EXECUTE AS u_05442 ALTER TABLE t7 ADD INDEX i length(aiEmbed(x, 'm')) TYPE minma
 EXECUTE AS u_05442 ALTER TABLE t7 ADD PROJECTION p (SELECT aiGenerate(x) ORDER BY x); -- { serverError ACCESS_DENIED }
 EXECUTE AS u_05442 ALTER TABLE t7 ADD COLUMN y String, MODIFY ORDER BY (x, length(aiEmbed(y, 'm'))); -- { serverError ACCESS_DENIED }
 
+-- Applies to all function privileges, e.g. `demangle`.
+SET allow_introspection_functions = 1;
+EXECUTE AS u_05442 CREATE TABLE t10 (x String) ENGINE = MergeTree ORDER BY demangle(x); -- { serverError ACCESS_DENIED }
+GRANT demangle ON *.* TO u_05442;
+EXECUTE AS u_05442 CREATE TABLE t10 (x String) ENGINE = MergeTree ORDER BY demangle(x);
+DROP TABLE t10;
+
 GRANT AI FUNCTIONS ON *.* TO u_05442;
 EXECUTE AS u_05442 CREATE TABLE t1 (x String, d DateTime) ENGINE = MergeTree ORDER BY x TTL d + INTERVAL 1 DAY DELETE WHERE aiFilter(x, 'c'); -- { serverError NOT_IMPLEMENTED }
 EXECUTE AS u_05442 CREATE TABLE t2 (x String) ENGINE = MergeTree ORDER BY length(aiEmbed(x, 'm')); -- { serverError NOT_IMPLEMENTED }
