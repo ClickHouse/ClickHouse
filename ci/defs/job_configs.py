@@ -1954,6 +1954,45 @@ class JobConfigs:
             for batch in range(1, total_batches + 1)
         ],
     )
+    # The Iceberg configuration: the MergeTree tables of the tests are created as
+    # Iceberg tables (`perf.py --table-engine`). In pull requests only when the
+    # Iceberg code changes, see `filter_job.py`.
+    performance_comparison_iceberg_jobs = Job.Config(
+        name=JobNames.PERFORMANCE,
+        runs_on=RunnerLabels.FUNC_TESTER_ARM,
+        command='python3 ./ci/jobs/performance_tests.py --test-options "{PARAMETER}"',
+        # Default seccomp blocks `io_uring` (`io_uring.xml`)
+        run_in_docker="clickhouse/performance-comparison+--security-opt seccomp=unconfined",
+        digest_config=Job.CacheDigestConfig(
+            include_paths=[
+                "./tests/performance/",
+                "./ci/jobs/scripts/perf/",
+                "./ci/jobs/performance_tests.py",
+                "./ci/jobs/scripts/seaweedfs_service.py",
+                "./ci/jobs/scripts/dataset_download.py",
+                "./ci/docker/performance-comparison",
+                "./ci/jobs/scripts/log_export.py",
+                "./ci/jobs/scripts/log_cluster.py",
+                "./ci/jobs/scripts/functional_tests/setup_log_cluster.sh",
+                "./tests/config/users.d/ci_logs_sender.yaml",
+                "./ci/jobs/scripts/functional_tests/setup_seaweedfs.sh",
+            ],
+        ),
+        timeout=2 * 3600,
+        result_name_for_cidb="Tests",
+        # Not a gate until the noise of this configuration is known.
+        allow_failure=True,
+    ).parametrize(
+        *[
+            Job.ParamSet(
+                parameter=f"arm_release, master_head, {table_engine}, {batch}/{total_batches}",
+                requires=[ArtifactNames.CH_ARM_RELEASE],
+            )
+            for table_engine in ("iceberg_local", "iceberg_s3")
+            for total_batches in (2,)
+            for batch in range(1, total_batches + 1)
+        ],
+    )
     performance_comparison_with_release_base_jobs = Job.Config(
         name=JobNames.PERFORMANCE,
         runs_on=["#from param"],
@@ -2038,6 +2077,22 @@ class JobConfigs:
         *[
             Job.ParamSet(parameter=f"arm_release, master_head, nightly, {job}")
             for job in NIGHTLY_PERF_BATCH_JOBS + sorted(set(NIGHTLY_PERF_PLACEMENT.values()) - {*NIGHTLY_PERF_BATCH_JOBS, "skip"})
+        ]
+    )
+    # The Iceberg configuration of `performance_comparison_iceberg_jobs`, every query of every test.
+    nightly_iceberg_performance_jobs = Job.Config(
+        name=JobNames.PERFORMANCE,
+        runs_on=RunnerLabels.ARM_MEDIUM_STORAGE,
+        command='python3 ./ci/jobs/nightly_extended_performance.py --test-options "{PARAMETER}"',
+        run_in_docker="clickhouse/performance-comparison+--security-opt seccomp=unconfined",
+        timeout=16 * 3600,
+        result_name_for_cidb="Tests",
+    ).parametrize(
+        *[
+            Job.ParamSet(parameter=f"arm_release, master_head, nightly, {table_engine}, {batch}/{total_batches}")
+            for table_engine in ("iceberg_local", "iceberg_s3")
+            for total_batches in (2,)
+            for batch in range(1, total_batches + 1)
         ]
     )
     docs_job_mintlify = Job.Config(

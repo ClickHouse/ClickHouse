@@ -681,6 +681,7 @@ do
     sed -n "s/^skipped\t/$test_name\t/p" < "$test_file" >> "analyze/skipped-tests.tsv"
     sed -n "s/^display-name\t/$test_name\t/p" < "$test_file" >> "analyze/query-display-names.tsv"
     sed -n "s/^partial\t/$test_name\t/p" < "$test_file" >> "analyze/partial-queries.tsv"
+    sed -n "s/^result-mismatch\t/$test_name\t/p" < "$test_file" >> "analyze/result-mismatches.tsv"
 done
 
 # for each query run, prepare array of metrics from query log
