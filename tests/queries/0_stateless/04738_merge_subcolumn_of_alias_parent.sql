@@ -1,7 +1,3 @@
--- Tags: no-old-analyzer
---       no-old-analyzer: the old analyzer never resolves a subcolumn of an ALIAS parent, so every
---       arm would raise UNKNOWN_IDENTIFIER.
-
 -- Each arm prints the value read through the Merge table next to the same value read straight from
 -- the child. They must agree, and the truth must differ from the type default, or a broken read
 -- returning the default would still pass.

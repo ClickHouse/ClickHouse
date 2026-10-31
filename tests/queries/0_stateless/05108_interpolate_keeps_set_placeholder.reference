@@ -1,0 +1,14 @@
+a FINAL read whose filter is an IN set moved into PREWHERE
+561
+561
+561
+a plain IN filter with WITH FILL INTERPOLATE
+0	7
+1	8
+2	8
+3	7
+INTERPOLATE of a column the filter reads
+0	x
+1	8
+2	8
+3	8x

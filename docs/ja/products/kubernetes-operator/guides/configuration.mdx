@@ -48,20 +48,76 @@ spec:
 
 `replicas: 3`、`shards: 2` のクラスターでは、ClickHouse ポッドが合計 6 つ作成されます。
 
-<div id="keeper-integration">
-  ### Keeper インテグレーション
-</div>
+### Keeper インテグレーション {#keeper-integration}
 
-すべてのClickHouseクラスターで、調整用のKeeperClusterを参照する必要があります。
+すべてのClickHouseクラスターには、協調のためのKeeperアンサンブルが必要です。`keeperClusterRef` と `externalKeeper` のいずれか一方のみを
+設定してください。両方を設定したクラスター、またはどちらも設定していないクラスターは拒否されます。
+
+このオペレーターが管理するKeeperClusterを `keeperClusterRef` で指定します。
 
 ```yaml
 spec:
   keeperClusterRef:
     name: my-keeper
-    # namespace: keeper-system  # 省略可能。デフォルトはClickHouseClusterのネームスペース
+    # namespace: keeper-system  # Optional, defaults to the ClickHouseCluster namespace
 ```
 
 `keeperClusterRef.namespace` が設定されている場合、オペレーターは両方のネームスペースを監視する必要があります。`WATCH_NAMESPACE` が設定されている場合は、その一覧に ClickHouse と Keeper のネームスペースを含めてください。
+
+### 外部で管理される Keeper {#external-keeper}
+
+オペレーターの管理対象外の Keeper アンサンブルを使用して ClickHouse を実行するには、`externalKeeper` を使用します。たとえば、別のオペレーターが所有するアンサンブル、別の Kubernetes クラスターで稼働しているアンサンブル、仮想マシンや
+ベアメタル上で稼働しているアンサンブル、または複数のシステムで共有されているアンサンブルが該当します。
+
+```yaml
+spec:
+  externalKeeper:
+    nodes:
+      - host: keeper-1.example.internal
+        port: 9181
+      - host: keeper-2.example.internal
+        port: 9181
+      - host: keeper-3.example.internal
+        port: 9181
+```
+
+`port` のデフォルトは `9181` です。`host` には DNS 名または IP アドレスを指定します。IPv6 アドレスは角括弧で
+囲んでください。TLS で接続するには `tls: Enabled` を設定し、`port` にはアンサンブルがセキュア接続を待ち受ける
+ポート番号を指定します。
+
+```yaml
+spec:
+  externalKeeper:
+    tls: Enabled
+    nodes:
+      - host: keeper-1.example.internal
+        port: 9281
+```
+
+ClickHouse は、Keeper の証明書をシステムのトラストストアに加え、設定した `caBundle` を用いて検証します。
+[ClickHouse と Keeper 間の TLS 通信](#clickhouse-keeper-communication-over-tls)を参照してください。
+
+複数の ClickHouse クラスターで 1 つの Keeper アンサンブルを共有する場合は、`settings.extraConfig` を使用して各クラスターに専用のルート znode を割り当て、
+レプリケーションのメタデータ、SQL で定義されたユーザー、名前付きコレクションが
+互いに衝突しないようにしてください。znode は ClickHouse の起動前に作成し、以降は変更しないでください：
+
+```yaml
+spec:
+  settings:
+    extraConfig:
+      zookeeper:
+        root: /clickhouse/production
+```
+
+`zookeeper.root` を `settings.extraReloadableConfig` に含めないでください。リロードによって稼働中のクラスターのルートが切り替わり、レプリケートテーブルが読み取り専用になってしまいます。ルート znode にアクセス制御リストが設定されている場合は、
+クラスターの `keeper-identity` に子 znode の作成を許可しておく必要があります。
+
+オペレーターはこれらのサーバーに変更を加えず、ClickHouse をリコンサイルする前にこれらのサーバーの準備完了を待つこともありません。
+アンサンブルの可用性の維持は、ユーザー側の責任となります。
+
+認証の仕組みは、オペレーターが管理する Keeper の場合と同じです。オペレーターはクラスターの Secret から
+`keeper-identity` キーを読み取り、ClickHouse に渡します。Secret の構成については
+[External Secret](#external-secret) を参照してください。
 
 <div id="keepercluster-configuration">
   ## KeeperCluster の設定
@@ -79,6 +135,30 @@ spec:
       requests:
         storage: 5Gi
 ```
+
+### 終了時のリーダーシップ移譲 {#keeper-leadership-handover}
+
+Keeper コンテナーにはデフォルトで `preStop` hook が設定されています。この hook は、停止前にレプリカへ Raft
+リーダーシップの移譲を要求し、移譲が完了するのを待ってから
+コンテナーを終了させます。この処理は、オペレーターが開始したロールアウトに限らず、コンテナーが
+正常停止するたびに実行されます。descheduler によるエビクション、ノードのドレイン、オートスケーラー
+の操作のいずれでも同じ hook がトリガーされます。これは、この hook がリコンサイルループのロジックではなく、
+キューブレットレベルの `preStop` ハンドラーだからです。
+
+この仕組みがないと、現在のリーダーを再起動した際、新しい選出が完了するまで ensemble にリーダーが
+存在しない状態になります。選出には負荷状況によって数秒かかることがあり、ClickHouse 側では
+Keeper の接続断やクエリレイテンシの増加として現れます。この hook は、リクエストを送信してすぐにコンテナーを停止させるのではなく、レプリカに
+リーダーシップの譲渡を要求したうえで (Keeper の 4 文字コマンド `ydld` を
+`http_control` ポート経由で送信) 、レプリカがリーダーでなくなるまでステータスをポーリングします。
+fire-and-forget 方式のリクエストでは、書き込み負荷が高い状況で `SIGTERM` との競合に負ける可能性があります。
+待機することで、リーダー不在の期間を一定の範囲内に抑えられます。
+
+この hook は設定不要で、非対応の環境でも問題なく動作します。ここで使用するリーダーシップコマンドにまだ対応していない
+26.3 より前の Keeper バージョンでは、リクエストは何も行わず、
+コンテナーは hook がない場合と同様に停止します。この hook はシェルスクリプトを実行するため、
+イメージに `bash` が必要です。distroless または scratch の Keeper イメージを使用する場合は、
+`containerTemplate.lifecycle` で hook を上書きまたは削除してください。詳細は
+[API リファレンス](/ja/products/kubernetes-operator/reference/api-reference#containertemplatespec) を参照してください。
 
 <div id="storage-configuration">
   ## ストレージ構成
@@ -119,92 +199,14 @@ spec:
   clusterDomain: cluster.local   # default; override only for a custom domain
 ```
 
-The オペレーターは、ヘッドレス Service を通じてすべてのポッドに
-`<pod>.<headless-service>.<namespace>.svc.<clusterDomain>` の形式でアクセスします。この接尾辞は、生成される構成の
-2 つの箇所で使われます。
+ClickHouse レプリカ用に、オペレーターはクライアントトラフィックを処理するヘッドレス Service `<cluster-name>-clickhouse-headless` を作成します。
+また、内部トラフィックおよびオペレーターからの管理リクエスト向けに、Ready でないポッドを公開するレプリカごとの Service `<cluster-name>-clickhouse-internal-<shard>-<index>` も作成します。
+これは、レプリカ自体が Ready になれない場合のレプリカ復旧に使用できます。
 
-* `ClickHouseCluster` では、この値が `remote_servers` 内のレプリカのホスト名に使用されます
-  (レプリカ間および `Distributed` クエリ用) 。
-* `KeeperCluster` では、この値を基に、ClickHouse が協調に使用する
-  Keeper ノードのホスト名が組み立てられます。
+Keeper ノードは、ヘッドレス Service を介してポッド名を使用します: `<pod>.<headless-service>.<namespace>.svc.<clusterDomain>`。
 
 <Note>
-  これを override するのは、クラスターの `キューブレット` が `cluster.local` 以外の `--cluster-domain`
-  で実行されている場合だけにしてください。値が実際のクラスター ドメインと一致しないと、
-  ClickHouse は Keeper とレプリカのホスト名を解決できず、協調と
-  `Distributed` クエリは DNS 名前解決エラーで失敗します。参照先の
-  `KeeperCluster` と `ClickHouseCluster` の両方に、**同じ**値を設定してください。
-</Note>
-
-<div id="multi-disk-jbod-storage">
-  ### 複数ディスク (JBOD) ストレージ
-</div>
-
-`additionalVolumeClaimTemplates` を使うと、使用に必須のプライマリ `dataVolumeClaimSpec` に加えて、各 ClickHouse レプリカに追加のディスクを接続できます。
-各エントリは PVC テンプレートで、`metadata.name` と PVC の `spec` で構成されます。
-これらのディスクは、プライマリ データディスクとまったく同様に、StatefulSet の `volumeClaimTemplates` としてリコンサイルされます。そのため、StatefulSet コントローラーはレプリカごとに 1 つの PVC を作成して保持し、その名前は `<name>-<statefulset>-0` になります。
-
-```yaml
-spec:
-  dataVolumeClaimSpec:
-    storageClassName: fast-ssd
-    resources:
-      requests:
-        storage: 100Gi
-  additionalVolumeClaimTemplates:
-    - metadata:
-        name: disk1
-      spec:
-        storageClassName: fast-ssd
-        resources:
-          requests:
-            storage: 100Gi
-    - metadata:
-        name: disk2
-      spec:
-        storageClassName: fast-ssd
-        resources:
-          requests:
-            storage: 100Gi
-```
-
-オペレーターは各追加ボリュームを `/var/lib/clickhouse/disks/<name>` にマウントし、生成された ClickHouse のストレージ構成に追加します。
-名前に含まれるハイフンは ClickHouse のディスク識別子ではアンダースコアに変換されますが、マウントパスでは元の名前のままです。
-
-プライマリデータディスクとすべての追加ディスクは、`default` ストレージポリシー内の 1 つのボリュームにまとめて配置されるため、ClickHouse は新しいデータパーツをそれらすべてにラウンドロビンで分散します。
-使用可能容量はすべてのディスクの合計となり、独自の `storage_policy` を設定していないすべてのテーブル (`system.*` テーブルを含む) は、この統合されたディスクセットを使用します。
-
-<Note>
-  PVC 名は `^[a-z]([-a-z0-9]*[a-z0-9])?$` に一致している必要があり、プライマリデータボリューム名と重複してはなりません。
-  プライマリデータディスクと同様に、追加ディスクのセットは作成時に固定されます。作成後にエントリを追加、削除、または名前変更することはできず、拒否されます。
-  追加の PVC は、プライマリデータディスクと同様に、クラスターを削除しても保持されます。
-  StorageClass が拡張をサポートしている場合、既存エントリのストレージサイズは拡張できます。
-</Note>
-
-<div id="cluster-domain">
-  ## クラスター ドメイン
-</div>
-
-`spec.clusterDomain` は、オペレーター が ClickHouse server の
-設定に書き込む完全修飾のポッドホスト名を生成する際に使用する、Kubernetes の DNS 接尾辞を設定します。既定値は `cluster.local` で、
-`ClickHouseCluster` と `KeeperCluster` の両方にあります。
-
-```yaml
-spec:
-  clusterDomain: cluster.local   # default; override only for a custom domain
-```
-
-The オペレーターは、ヘッドレス Service を通じてすべてのポッドに
-`<pod>.<headless-service>.<namespace>.svc.<clusterDomain>` の形式でアクセスします。この接尾辞は、生成される構成の
-2 つの箇所で使われます。
-
-* `ClickHouseCluster` では、この値が `remote_servers` 内のレプリカのホスト名に使用されます
-  (レプリカ間および `Distributed` クエリ用) 。
-* `KeeperCluster` では、この値を基に、ClickHouse が協調に使用する
-  Keeper ノードのホスト名が組み立てられます。
-
-<Note>
-  これを override するのは、クラスターの `キューブレット` が `cluster.local` 以外の `--cluster-domain`
+  これを上書きするのは、クラスターの `キューブレット` が `cluster.local` 以外の `--cluster-domain`
   で実行されている場合だけにしてください。値が実際のクラスター ドメインと一致しないと、
   ClickHouse は Keeper とレプリカのホスト名を解決できず、協調と
   `Distributed` クエリは DNS 名前解決エラーで失敗します。参照先の
@@ -215,9 +217,7 @@ The オペレーターは、ヘッドレス Service を通じてすべてのポ�
   ## ポッドの設定
 </div>
 
-<div id="automatic-topology-spread-and-affinity">
-  ### トポロジースプレッドとアフィニティの自動設定
-</div>
+### トポロジースプレッドとアフィニティの自動設定 {#automatic-topology-spread-and-affinity}
 
 ポッドをアベイラビリティゾーン間に分散します:
 
@@ -230,6 +230,20 @@ spec:
 
 <Note>
   Kubernetesクラスターに、分散制約を満たせるだけのノードが異なるゾーンに十分にあることを確認してください。
+</Note>
+
+ノードのオートスケーラー (Karpenter、Cluster Autoscaler) を使用している場合、分散制約だけでは、まだノードが存在しないゾーンをプロビジョニングすることはできません。スケジューラーは認識できるゾーンの範囲で妥協してしまいます。
+分散を強制するには、`topologyMinDomains` にアベイラビリティゾーンの数を設定します:
+
+```yaml
+spec:
+  podTemplate:
+    topologyZoneKey: topology.kubernetes.io/zone
+    topologyMinDomains: 3   # number of availability zones
+```
+
+<Note>
+  `topologyMinDomains` には `topologyZoneKey` が必要です。要求した数よりも利用可能なゾーンが少ない間、ポッドは `Pending` のままになるため、クラスターが提供できるゾーン数の範囲内に収めてください。
 </Note>
 
 <div id="manual-configuration">
@@ -425,6 +439,70 @@ spec:
   Operator は、指定されたすべてのマウントを含む projected volume を作成します。
 </Note>
 
+### ヘルスプローブ {#health-probes}
+
+オペレーターは、すべての ClickHouse および Keeper コンテナーに liveness プローブと readiness プローブを設定します。
+デフォルトでは startup プローブは設定されません。
+
+| リソース                | プローブ      | デフォルトのチェック                                                                                             |
+| ------------------- | --------- | ------------------------------------------------------------------------------------------------------ |
+| `ClickHouseCluster` | liveness  | interserver ポート `9009` への HTTP `GET /ping`                                                             |
+| `ClickHouseCluster` | readiness | 管理用 HTTP ポート `9002` への HTTP `GET /ping`                                                                |
+| `KeeperCluster`     | liveness  | クライアントポート `2181` への TCP 接続 (`settings.tls.enabled` と `settings.tls.required` の両方が `true` の場合は `2281`)  |
+| `KeeperCluster`     | readiness | `http_control` ポート `9123` への HTTP `GET /ready`                                                         |
+
+ClickHouse と Keeper では、デフォルトのタイミング設定は共通です。
+
+| プローブ      | `initialDelaySeconds` | `periodSeconds` | `timeoutSeconds` | `successThreshold` | `failureThreshold` |
+| --------- | --------------------- | --------------- | ---------------- | ------------------ | ------------------ |
+| liveness  | 60                    | 5               | 10               | 1                  | 10                 |
+| readiness | 5                     | 1               | 10               | 5                  | 10                 |
+
+ClickHouse は、テーブルのロード前に interserver リスナーを開き、ロード完了後にクライアントリスナーを開きます。そのため、テーブルのロードに時間がかかっても liveness プローブは失敗しません。一方、readiness プローブが成功していれば、そのレプリカはクエリを処理できる状態にあります。
+
+どちらのリソースでも、`spec.containerTemplate` を使用して任意のプローブをオーバーライドできます。たとえば、ClickHouse の liveness プローブは次のようにカスタマイズします。
+
+```yaml
+spec:
+  containerTemplate:
+    livenessProbe:
+      httpGet:
+        path: /ping
+        port: 9009
+      initialDelaySeconds: 120
+      periodSeconds: 10
+      timeoutSeconds: 10
+      failureThreshold: 10
+```
+
+<Warning>
+  プローブを設定すると、オペレーターのデフォルト設定は完全に置き換えられます。フィールド単位でマージされるわけではありません。
+  ハンドラー (`httpGet`、`tcpSocket`、`exec` のいずれか) と、必要なタイミング関連のフィールドをすべて指定してください。省略したフィールドには、上記のオペレーターの値ではなく Kubernetes のデフォルト値 (例：`timeoutSeconds: 1`、`failureThreshold: 3`) が適用されます。
+</Warning>
+
+#### startup プローブ {#startup-probe}
+
+コンテナーの起動に liveness プローブで許容される時間より長くかかる場合は、`startupProbe` を使用します。デフォルト設定では、liveness プローブで許容されるのは、約 60 秒の初期遅延に加えて、5 秒間隔で 10 回チェックが失敗するまでの時間です。
+Kubernetes はstartup プローブが成功するまで liveness プローブと readiness プローブの実行を保留するため、起動に時間がかかっても再起動ループに陥ることはありません。
+例えば、大きなスナップショットをリプレイする Keeper レプリカに、接続の受け付けを開始するまで最大 10 分の猶予を与えるには、次のように設定します。
+
+```yaml
+apiVersion: clickhouse.com/v1alpha1
+kind: KeeperCluster
+metadata:
+  name: sample
+spec:
+  replicas: 3
+  containerTemplate:
+    startupProbe:
+      tcpSocket:
+        port: 2181
+      periodSeconds: 10
+      failureThreshold: 60
+```
+
+startup プローブが成功すると、以降は通常の liveness プローブと readiness プローブが引き継ぎます。
+
 <div id="see-api-referenceproductskubernetes-operatorreferenceapi-referencecontainertemplatespec-for-all-supported-container-template-options">
   ### サポートされているすべての コンテナー テンプレートオプションについては、[API リファレンス](/ja/products/kubernetes-operator/reference/api-reference#containertemplatespec)を参照してください。
 </div>
@@ -462,11 +540,10 @@ Secret には、サーバーのキーペアが含まれている必要があり�
   この形式は、cert-manager によって生成された証明書と互換性があります。
 </Note>
 
-<div id="clickhouse-keeper-communication-over-tls">
-  ### TLS を介した ClickHouse-Keeper 通信
-</div>
+### TLS を介した ClickHouse-Keeper 通信 {#clickhouse-keeper-communication-over-tls}
 
-KeeperCluster で TLS が有効になっている場合、ClickHouseCluster は Keeper ノードへのセキュアな接続を自動的に使用します。
+`keeperClusterRef` で参照される KeeperCluster で TLS が有効になっている場合、ClickHouseCluster は Keeper ノードへのセキュアな接続を自動的に使用します。
+`externalKeeper` を使用する場合は、代わりに `tls: Enabled` を設定し、各ノードの `port` をアンサンブルのセキュアなクライアントポート (たとえば `9281`) に設定します。
 
 ClickHouseCluster は、システムのトラストストアに加えて、設定した `caBundle` を使用して Keeper ノードの証明書を検証します。
 
@@ -798,7 +875,7 @@ spec:
 
 | フラグ                               | デフォルト   | 効果                                                                                           |
 | --------------------------------- | ------- | -------------------------------------------------------------------------------------------- |
-| `--version-update-interval`       | `24h`   | オペレーターがアップストリームのバージョン一覧を再取得する頻度                                                              |
+| `--version-update-interval`       | `24h`   | オペレーターがアップストリームのバージョン一覧を再取得する頻度。バージョン更新チェックが有効な場合は、ゼロより大きい値である必要があります                        |
 | `--disable-version-update-checks` | `false` | アップグレードチェッカーを完全に無効にします。`VersionUpgraded` 条件は設定されず、`clickhouse.com` への外向きの HTTP トラフィックも発生しません |
 
 エアギャップ環境、または `clickhouse.com` への egress が許可されていない場合は、`--disable-version-update-checks=true` を設定してください。
@@ -910,9 +987,7 @@ spec:
   (`passwordType: password`) には、必ず Secret を使用してください。
 </Note>
 
-<div id="custom-users-in-configuration">
-  ### 設定でのカスタムユーザー
-</div>
+### 設定でのカスタムユーザー {#custom-users-in-configuration}
 
 設定ファイルで追加ユーザーを設定します。
 
@@ -985,11 +1060,9 @@ spec:
 
 scale-down でレプリカが削除される前に、オペレーターはまずそのレプリカへのクライアントトラフィックの振り分けを停止し、公開が停止するまで待機してから、残りのデータを存続するレプリカに複製し、その後で削除します。
 
-<div id="server-logging">
-  ### サーバーロギング
-</div>
+### サーバーロギング {#server-logging}
 
-`spec.settings.logger` で ClickHouse server のログを設定します。すべてのフィールドは省略可能で、安全なデフォルト値が設定されているため、何も変更していないクラスターでも、コンテナーのコンソールとディスク上のローテーションされるファイルの両方に `trace` レベルでログが出力されます。
+`spec.settings.logger` で ClickHouse server のログを設定します。すべてのフィールドは省略可能で、安全なデフォルト値が設定されているため、何も変更していないクラスターでも、コンテナーのコンソールとディスク上のローテーションされるファイルの両方に `information` レベルでログが出力されます。
 
 ```yaml
 spec:
@@ -997,35 +1070,71 @@ spec:
     logger:
       logToFile: true   # Default: true. Set false to log only to the console
       jsonLogs: false   # Default: false. Set true for structured JSON log lines
-      level: trace      # Default: trace
-      size: 1000M       # Default: 1000M. Rotate a log file once it reaches this size
-      count: 50         # Default: 50. Number of rotated files to keep
+      level: information # Default: information
+      size: 100M        # Default: 100M. Rotate a log file once it reaches this size
+      count: 10         # Default: 10. Number of rotated files to keep
 ```
 
-| フィールド       | 既定値     | 説明                                                                                                       |
-| ----------- | ------- | -------------------------------------------------------------------------------------------------------- |
-| `logToFile` | `true`  | `false` の場合、オペレーターはファイル出力先を削除し、サーバーはコンテナーのコンソールにのみログを出力します。                                              |
-| `jsonLogs`  | `false` | `true` の場合、オペレーターは `formatting.type: json` を追加するため、各行が JSONオブジェクトになります。                                  |
-| `level`     | `trace` | ログの詳細度です。`test`、`trace`、`debug`、`information`、`notice`、`warning`、`error`、`critical`、`fatal` のいずれかを指定します。 |
-| `size`      | `1000M` | ローテーションされる前の単一ログファイルの最大サイズです。                                                                            |
-| `count`     | `50`    | サーバーが保持するローテーション済みログファイルの数です。                                                                            |
+| フィールド       | 既定値           | 説明                                                                                                       |
+| ----------- | ------------- | -------------------------------------------------------------------------------------------------------- |
+| `logToFile` | `true`        | `false` の場合、オペレーターはファイル出力先を削除し、サーバーはコンテナーのコンソールにのみログを出力します。                                              |
+| `jsonLogs`  | `false`       | `true` の場合、オペレーターは `formatting.type: json` を追加するため、各行が JSONオブジェクトになります。                                  |
+| `level`     | `information` | ログの詳細度です。`test`、`trace`、`debug`、`information`、`notice`、`warning`、`error`、`critical`、`fatal` のいずれかを指定します。 |
+| `size`      | `100M`        | ローテーションされる前の単一ログファイルの最大サイズです。                                                                            |
+| `count`     | `10`          | サーバーが保持するローテーション済みログファイルの数です。                                                                            |
 
 オペレーターは、`kubectl logs` が使えるよう、常にコンソールへのログ出力を有効にしています。`logToFile` が `true` の場合は、それに加えてファイルへのログ出力も有効にします。既定値を使用するクラスターでは、次の `ロガー` ブロックが生成されます。
 
 ```yaml
 logger:
   console: true
-  level: trace
+  level: information
   log: /var/log/clickhouse-server/clickhouse-server.log
   errorlog: /var/log/clickhouse-server/clickhouse-server.err.log
-  size: 1000M
-  count: 50
+  size: 100M
+  count: 10
 ```
 
-同じ `spec.settings.logger` ブロックは `KeeperCluster` にも適用されます。この場合、operator はファイルを代わりに `/var/log/clickhouse-keeper/` 配下へ書き込みます。
+同じ `spec.settings.logger` ブロックは `KeeperCluster` にも適用されます。この場合、オペレーターはファイルを代わりに `/var/log/clickhouse-keeper/` 配下へ書き込み、Raft ロガー (`raft_logs_level`) を同じ `level` に設定します。
 
 <Note>
-  `logToFile` の設定にかかわらずコンソールへのログ出力は有効なままなので、ファイルロギングを無効にしても `kubectl logs` は引き続き利用できます。JSON を解析する構造化ログストアにログを送る場合は、`jsonLogs: true` を設定してください。
+  `logToFile` の設定にかかわららずコンソールへのログ出力は有効なままなので、ファイルロギングを無効にしても `kubectl logs` は引き続き利用できます。JSON を解析する構造化ログストアにログを送る場合は、`jsonLogs: true` を設定してください。
+</Note>
+
+### システムログテーブル {#system-log-tables}
+
+オペレーターは、システムテーブル `query_log`、`part_log`、`text_log`、`metric_log`、`asynchronous_metric_log` を有効にします。これらのテーブルはデータと同じボリュームに保存されるため、`spec.settings.systemLogsTTLDays` でテーブルの有効期限 (TTL) を設定します。このフィールドを指定せずにクラスターを作成すると、デフォルト値を設定する webhook が `30` を設定します。TTL を明示的に無効にするには、`0` を設定します。
+
+```yaml
+spec:
+  settings:
+    systemLogsTTLDays: 14
+```
+
+<Note>
+  デフォルト値が適用されるのは、新しく作成するクラスターのみです。`systemLogsTTLDays` の導入前に作成されたクラスターでは、このフィールドを設定するまでシステムログテーブルに有効期限 (TTL) は設定されません。
+</Note>
+
+有効期限 (TTL) は、次回のサーバー再起動時に有効になります。テーブルごとの有効期限 (TTL) の上書き、その他のシステムログ設定の調整、`@remove` 属性を使ったテーブルの無効化は、いずれも `extraConfig` で行えます。
+
+```yaml
+spec:
+  settings:
+    extraConfig:
+      text_log:
+        ttl: event_date + INTERVAL 90 DAY DELETE
+      metric_log:
+        collect_interval_milliseconds: 60000
+      part_log:
+        "@remove": "1"
+```
+
+<Note>
+  無効化したテーブルは削除されません。自分でテーブルを削除するまで、既存のデータはディスク上に残ります。
+</Note>
+
+<Note>
+  ClickHouse は有効期限 (TTL) が変更されたシステムテーブルを再作成し、古いデータを `system.text_log_0` などのリネーム後のテーブルに保持します。過去のデータが不要になったら、これらのテーブルを削除してください。
 </Note>
 
 <div id="custom-configuration">
@@ -1053,6 +1162,26 @@ spec:
 
 * [YAML 設定例](/ja/concepts/features/configuration/server-config/configuration-files#example-1)
 * [すべてのサーバー設定](/ja/reference/settings/server-settings/settings)
+
+### 再読み込み可能な追加設定 {#reloadable-extra-configuration}
+
+`extraConfig` を変更すると、ClickHouse のポッドが再起動します。オペレーターは、どの設定を再起動せずに適用できるか判断できないためです。ClickHouse が稼働中に再読み込みできる設定 (代表例は `named_collections`) には、代わりに `extraReloadableConfig` を使用してください。オペレーターは、ポッドを再起動せずに設定を再読み込みして変更を適用します：
+
+```yaml
+spec:
+  settings:
+    extraReloadableConfig:
+      named_collections:
+        customers:
+          url: "http://my-service.my-ns.svc:5400/Customers"
+          format: "JSONEachRow"
+```
+
+各トップレベルセクションは、`extraConfig` と `extraReloadableConfig` のいずれか一方にのみ記述してください。同じセクションを両方に記述すると、オペレーターが警告を出します。
+
+<Note>
+  `extraReloadableConfig` を使用する場合、そこに記述した設定は再読み込みしても問題ないものとみなされます。再起動が必要な設定をここに記述してもエラーにはならず、次回の再起動時に反映されます。
+</Note>
 
 <div id="embedded-extra-users-configuration">
   ### 埋め込み追加ユーザー設定
@@ -1161,4 +1290,29 @@ spec:
       configMap:
         key: password
         name: default-password
+```
+
+## 定期的な再同期 {#periodic-resync}
+
+オペレーターは、Kubernetesのイベントに反応するだけでなく、一定間隔ですべてのクラスターを再度リコンサイルします。これにより、watchでは検知できない状態 (ClickHouseのレプリカのヘルス、Keeperのクォーラムなど) についてもステータス条件を最新に保ち、スタックしたポッドのクリーンアップといった修復処理を再試行します。
+
+この間隔は、オペレーターの環境変数 `RESYNC_PERIOD` (デフォルトは `30s`) で制御します。これは `KeeperCluster` リソースに適用され、`0` を指定すると定期的な再同期が無効になります。`ClickHouseCluster` リソースは30秒ごとにClickHouseの `system.warnings` をポーリングしており、その時点でリコンサイルが再度トリガーされるため、現時点では `RESYNC_PERIOD` は影響しません。
+
+```yaml
+# in the operator Deployment spec
+env:
+- name: RESYNC_PERIOD
+  value: "1m"
+```
+
+オペレーターは複数のクラスターを同時にリコンサイルします。コントローラーあたりのリコンサイルの最大同時実行数は、`MAX_CONCURRENT_RECONCILES` (デフォルトは `4`) で設定します。
+
+## リコンサイルの一時停止 {#pausing-reconciliation}
+
+`ClickHouseCluster` または `KeeperCluster` に `clickhouse.com/pause-reconciliation: "true"` アノテーションを設定すると、オペレーターによるリコンサイルを停止できます。オペレーターは一時停止中のリソースについて、理由を `ReconciliationPaused` として `ReconcileSucceeded=False` を報告し、それ以外はリソースに手を加えません。オペレーターが手動で加えた変更を元に戻してしまう場合に役立ちます。一時停止中、オペレーターは `Ready` と `Healthy` を含むすべての状態条件を、理由を `ReconciliationPaused` として `Unknown` と報告します。この間、クラスターの状態は確認しません。再開するにはアノテーションを削除します。保留中の spec の変更は、次回のリコンサイル時に適用されます。
+
+```bash
+kubectl annotate clickhousecluster my-cluster clickhouse.com/pause-reconciliation=true
+# ... manual surgery ...
+kubectl annotate clickhousecluster my-cluster clickhouse.com/pause-reconciliation-
 ```

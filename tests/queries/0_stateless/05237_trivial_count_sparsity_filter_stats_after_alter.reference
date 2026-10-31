@@ -1,0 +1,11 @@
+before alter	100
+before alter served	1
+after alter	0
+after alter served	0
+after optimize	0
+after optimize not null	1000
+after optimize served	1
+empty part present	1
+empty part total	1000
+empty part	0
+empty part served	1

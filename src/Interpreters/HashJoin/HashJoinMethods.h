@@ -35,6 +35,12 @@ struct Inserter
         return store_row;
     }
 
+    /// A set map holds no reference to a right row, so there is nothing to do beyond adding the key.
+    static ALWAYS_INLINE void insertKeyOnly(HashMap & map, KeyGetter & key_getter, size_t i, Arena & pool)
+    {
+        key_getter.emplaceKey(map, i, pool);
+    }
+
     static ALWAYS_INLINE bool
     insertAll(const HashJoin &, HashMap & map, KeyGetter & key_getter, UInt32 stored_block_no, size_t i, Arena & pool)
     {
@@ -74,7 +80,7 @@ struct Inserter
     }
 };
 
-/// MapsTemplate is one of MapsOne, MapsAll and MapsAsof
+/// MapsTemplate is one of MapsOne, MapsAll, MapsAsof and MapsSet
 template <JoinKind KIND, JoinStrictness STRICTNESS, typename MapsTemplate>
 class HashJoinMethods
 {
@@ -110,23 +116,6 @@ public:
         bool is_join_get = false);
 
 private:
-    template <typename KeyGetter, bool is_asof_join>
-    static KeyGetter createKeyGetter(const ColumnRawPtrs & key_columns, const Sizes & key_sizes, HashJoin::RightTableData::KeyRange key_range = {});
-
-    template <typename KeyGetter, typename HashMap, typename Selector>
-    static void insertFromBlockImplTypeCase(
-        HashJoin & join,
-        HashMap & map,
-        const ColumnRawPtrs & key_columns,
-        const Sizes & key_sizes,
-        UInt32 stored_block_no,
-        const Selector & selector,
-        ConstNullMapPtr null_map,
-        const JoinCommon::JoinMask & join_mask,
-        Arena & pool,
-        bool & is_inserted,
-        bool & all_values_unique);
-
     template <typename AddedColumns>
     static size_t switchJoinRightColumns(
         const std::vector<const MapsTemplate *> & mapv,
@@ -229,6 +218,8 @@ extern template class HashJoinMethods<JoinKind::Left, JoinStrictness::Semi, Hash
 extern template class HashJoinMethods<JoinKind::Left, JoinStrictness::Anti, HashJoin::MapsOne>;
 extern template class HashJoinMethods<JoinKind::Left, JoinStrictness::Anti, HashJoin::MapsAll>;
 extern template class HashJoinMethods<JoinKind::Left, JoinStrictness::Asof, HashJoin::MapsAsof>;
+extern template class HashJoinMethods<JoinKind::Left, JoinStrictness::Semi, HashJoin::MapsSet>;
+extern template class HashJoinMethods<JoinKind::Left, JoinStrictness::Anti, HashJoin::MapsSet>;
 
 extern template class HashJoinMethods<JoinKind::Right, JoinStrictness::RightAny, HashJoin::MapsAll>;
 extern template class HashJoinMethods<JoinKind::Right, JoinStrictness::Any, HashJoin::MapsAll>;

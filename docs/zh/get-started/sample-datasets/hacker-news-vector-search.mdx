@@ -63,7 +63,7 @@ ClickHouse 将包含嵌入向量的完整数据集作为单个 `Parquet` 文件�
     要从 `Parquet` 文件中加载数据集，请运行以下 SQL 语句：
 
     ```sql
-    INSERT INTO hackernews SELECT * FROM s3('https://clickhouse-datasets.s3.amazonaws.com/hackernews-miniLM/hackernews_part_1_of_1.parquet');
+    INSERT INTO hackernews SELECT * FROM s3('https://clickhouse-datasets.s3.amazonaws.com/hackernews-miniLM/hackernews_part_1_of_1.parquet', NOSIGN);
     ```
 
     向表中插入 2874 万行数据需要几分钟时间。
@@ -101,9 +101,10 @@ ClickHouse 将包含嵌入向量的完整数据集作为单个 `Parquet` 文件�
   </Step>
 
   <Step title="为搜索查询生成嵌入向量" id="generating-embeddings-for-search-query">
-    [Sentence Transformers](https://www.sbert.net/) 提供本地化、易于使用的嵌入模型，用于捕捉句子和段落的语义。
+    [Sentence Transformers](https://www.sbert.net/) 提供易于在本地使用的嵌入模型，用于捕捉句子和段落的语义。
 
-    此 HackerNews 数据集包含由 [all-MiniLM-L6-v2](https://huggingface.co/sentence-transformers/all-MiniLM-L6-v2) 模型生成的向量嵌入。
+    此 HackerNews 数据集包含由
+    [all-MiniLM-L6-v2](https://huggingface.co/sentence-transformers/all-MiniLM-L6-v2) 模型生成的向量嵌入。
 
     下方提供了一个示例 Python 脚本，演示如何使用 `sentence_transformers` Python 包以编程方式生成嵌入向量。搜索嵌入向量随后作为参数传入 `SELECT` 查询中的 [`cosineDistance()`](/zh/reference/functions/regular-functions/distance-functions#cosineDistance) 函数。
 
@@ -208,7 +209,7 @@ ClickHouse 将包含嵌入向量的完整数据集作为单个 `Parquet` 文件�
     ---------
     ```
 
-    ## 摘要 Demo 应用
+    ## 摘要演示应用
 
     上述示例演示了如何使用 ClickHouse 进行语义搜索和文档检索。
 
@@ -222,10 +223,10 @@ ClickHouse 将包含嵌入向量的完整数据集作为单个 `Parquet` 文件�
     4. 使用 `LangChain` 和 OpenAI `gpt-3.5-turbo` Chat API 对第 3 步中检索到的内容进行**总结**。
        第 3 步中检索到的帖子/评论会作为 *上下文* 传递给 Chat API，是 Generative AI 的关键一环。
 
-    下面首先列出运行摘要应用程序的示例，随后是该应用程序的完整代码。运行此应用程序需要在环境变量 `OPENAI_API_KEY` 中设置 OpenAI API 密钥。OpenAI API 密钥可在 https://platform.openai.com 注册后获取。
+    下面首先列出运行摘要应用程序的示例，随后是该应用程序的代码。运行此应用程序需要在环境变量 `OPENAI_API_KEY` 中设置 OpenAI API 密钥。OpenAI API 密钥可在 https://platform.openai.com 注册后获取。
 
-    该应用程序展示了一个 Generative AI 用例，适用于多个企业领域，例如：
-    客户情感分析、技术支持自动化、用户对话挖掘、法律文件、医疗记录、
+    该应用展示了一个生成式人工智能 (Generative AI) 用例，适用于多个企业领域，例如：
+    客户情感分析、技术支持自动化、用户对话挖掘、法律文档、医疗记录、
     会议记录、财务报表等。
 
     ```shell

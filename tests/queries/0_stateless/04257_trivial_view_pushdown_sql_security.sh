@@ -55,7 +55,6 @@ echo "=== INVOKER: privilege check ==="
 ${CLICKHOUSE_CLIENT} \
     --user "${user}" \
     --query "
-        SET enable_analyzer = 1;
         SET enable_parallel_replicas = 0;
         SET prefer_localhost_replica = 0;
         SET serialize_query_plan = 0;
@@ -78,7 +77,6 @@ echo "=== INVOKER: access check pruned to outer-referenced columns ==="
 ${CLICKHOUSE_CLIENT} \
     --user "${user}" \
     --query "
-        SET enable_analyzer = 1;
         SET enable_parallel_replicas = 0;
         SET prefer_localhost_replica = 0;
         SET serialize_query_plan = 0;
@@ -87,10 +85,10 @@ ${CLICKHOUSE_CLIENT} \
     "
 
 # -------------------------------------------------------------------
-# Scenario 3: SQL SECURITY NONE — the pushdown executes the inner
-# query via getSQLSecurityOverriddenContext (no-user/global context),
-# not the calling user's context. A user with SELECT on the view but
-# not on the underlying Distributed table must succeed.
+# Scenario 3: SQL SECURITY NONE — the view runs with the global context
+# and is sealed, so it is read through `ReadFromSealedView` and never
+# pushed down. A user with SELECT on the view but not on the underlying
+# Distributed table must still succeed.
 # -------------------------------------------------------------------
 
 # Revoke the per-column grant added in Scenario 2; the user must have
@@ -108,17 +106,15 @@ echo "=== NONE: direct table access denied ==="
 ${CLICKHOUSE_CLIENT} \
     --user "${user}" \
     --query "
-        SET enable_analyzer = 1;
         SET enable_parallel_replicas = 0;
         SET prefer_localhost_replica = 0;
         SELECT id FROM ${db}.t04257_dist ORDER BY id;
     " 2>&1 | grep -o "Not enough privileges" | head -1
 
-echo "=== NONE: view access succeeds with pushdown ==="
+echo "=== NONE: view access succeeds ==="
 ${CLICKHOUSE_CLIENT} \
     --user "${user}" \
     --query "
-        SET enable_analyzer = 1;
         SET enable_parallel_replicas = 0;
         SET prefer_localhost_replica = 0;
         SET serialize_query_plan = 0;
@@ -126,15 +122,13 @@ ${CLICKHOUSE_CLIENT} \
         SELECT id FROM ${db}.v04257_none ORDER BY id;
     "
 
-echo "=== NONE: pushdown fires (no VIEW subquery step) ==="
+echo "=== NONE: the view is sealed instead of pushed down ==="
 ${CLICKHOUSE_CLIENT} \
     --query "
-        SET enable_analyzer = 1;
-        SET explain_query_plan_default = 'legacy';
         SET enable_parallel_replicas = 0;
         SET prefer_localhost_replica = 0;
         SET optimize_trivial_view_pushdown_to_distributed = 1;
-        SELECT countIf(explain LIKE '%VIEW subquery%') = 0 AS pushdown_fires
+        SELECT countIf(explain LIKE '%ReadFromSealedView%') AS sealed, countIf(explain LIKE '%ReadFromRemote%') AS remote_reads
         FROM (EXPLAIN SELECT id FROM ${db}.v04257_none);
     "
 

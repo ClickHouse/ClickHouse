@@ -1,0 +1,59 @@
+---
+title: 'Que deviennent les vues matérialisées actualisables lors du redémarrage du serveur ?'
+sidebarTitle: 'Vues matérialisées actualisables au redémarrage du serveur'
+slug: /resources/support-center/knowledge-base/materialized-views/what-happens-to-refreshable-materialized-views-when-the-server-restarts
+description: "Pourquoi les vues matérialisées actualisables peuvent toutes se rafraîchir en même temps au redémarrage d'un serveur, et comment les relancer une par une."
+doc_type: 'guide'
+date: 2026-09-22
+tags: ['Server Admin']
+keywords: ['refreshable materialized view', 'restart', 'refresh', 'stop_refreshable_materialized_views_on_startup']
+---
+
+<Warning>
+  Une vue matérialisée actualisable dont les rafraîchissements ne sont pas coordonnés via ClickHouse Keeper perd la trace de son dernier rafraîchissement : elle peut donc se rafraîchir à nouveau dès que le serveur est prêt. Sur un serveur comportant de nombreuses vues de ce type, ou des vues portant sur de grands jeux de données, de nombreux rafraîchissements complets peuvent ainsi être lancés simultanément, au moment précis où il est le moins à même de les absorber.
+</Warning>
+
+## Quelles vues conservent leur planification ? {#which-views-keep-their-schedule}
+
+Pour une vue d&#39;une base de données [`Replicated`](/fr/reference/engines/database-engines/replicated), les rafraîchissements sont coordonnés par ClickHouse Keeper. Dans ClickHouse Cloud, il en va de même pour une base de données [`Shared`](/fr/cloud/reference/shared-catalog). Dans l&#39;une ou l&#39;autre de ces bases de données Cloud, une vue de la famille `APPEND` peut se soustraire à cette coordination avec `SETTINGS all_replicas = 1` ; sur un serveur ClickHouse open source, seule une base de données `Replicated` bénéficie de cette coordination. Une vue sans coordination ne conserve l&#39;heure de son dernier rafraîchissement qu&#39;en mémoire : après un redémarrage, elle se retrouve donc en retard sur toute planification ordinaire. `RANDOMIZE FOR` ne permet pas d&#39;étaler ces rafraîchissements.
+
+## Les rafraîchissements supplémentaires peuvent également dupliquer des données {#the-extra-refreshes-can-also-duplicate-data}
+
+Une vue `APPEND` ajoute un nouveau résultat complet. Une vue `APPEND INCREMENTAL` non coordonnée perd son curseur en mémoire lors d&#39;un redémarrage, sauf si sa cible transactionnelle a validé ce curseur ; elle retraite alors des lignes qu&#39;elle avait déjà ajoutées.
+
+Échelonner le démarrage comme décrit ci-dessous limite le nombre de rafraîchissements exécutés simultanément, mais ne les empêche pas. Une vue `APPEND` évite l&#39;ajout supplémentaire si vous ne la démarrez qu&#39;au moment où son prochain rafraîchissement est de toute façon prévu. Une vue `APPEND INCREMENTAL` qui a perdu son curseur ne gagne rien à ce choix du moment : quelle que soit sa prochaine exécution, elle retraitera l&#39;intégralité de la table source et ajoutera ce résultat. Laissez-la donc arrêtée jusqu&#39;à ce que vous puissiez absorber ou supprimer les lignes dupliquées.
+
+## Maintenir toutes les vues arrêtées au démarrage du serveur {#keep-every-view-stopped-when-the-server-comes-up}
+
+Définissez [`stop_refreshable_materialized_views_on_startup`](/fr/reference/settings/session-settings/other#stop_refreshable_materialized_views_on_startup) dans le settings profile propre au serveur, c&#39;est-à-dire le profil désigné par `system_profile`, ou à défaut `default_profile`, puis `default`. Ce paramètre est expérimental :
+
+```xml title="/etc/clickhouse-server/users.d/refreshable_materialized_views.xml"
+<clickhouse>
+    <profiles>
+        <default>
+            <stop_refreshable_materialized_views_on_startup>1</stop_refreshable_materialized_views_on_startup>
+        </default>
+    </profiles>
+</clickhouse>
+```
+
+L&#39;exemple utilise le profil par défaut `default`. Remplacez-le par votre profil personnalisé `system_profile` si vous en utilisez un.
+
+[`SYSTEM STOP VIEWS`](/fr/reference/statements/system#stop-view-stop-views) ne constitue pas une alternative, car l&#39;état d&#39;arrêt qu&#39;elle définit n&#39;est pas conservé après un redémarrage.
+
+## Démarrer les vues une par une {#start-the-views-one-at-a-time}
+
+[`SYSTEM START VIEWS`](/fr/reference/statements/system#start-view-start-views) démarre toutes les vues simultanément, ce qui provoque le même pic de charge. Démarrez donc chaque vue individuellement, par son nom, et attendez la fin de son rafraîchissement avant de lancer la suivante. La table [`system.view_refreshes`](/fr/reference/system-tables/view_refreshes) les répertorie. Dans ClickHouse Cloud, cette table système est locale à chaque nœud ; il faut donc l&#39;interroger sur chacun d&#39;eux :
+
+```sql
+SYSTEM START VIEW my_database.my_view;
+SYSTEM WAIT VIEW my_database.my_view;
+```
+
+Démarrer une vue ne fait que reprendre sa planification et, contrairement à [`SYSTEM REFRESH VIEW`](/fr/reference/statements/system#refresh-view), ne déclenche aucun rafraîchissement supplémentaire. Une vue dont l&#39;heure de rafraîchissement est passée pendant qu&#39;elle était arrêtée est déjà en retard sur cette planification : elle se rafraîchit donc dès son démarrage, et [`SYSTEM WAIT VIEW`](/fr/reference/statements/system#wait-view) reste bloqué pendant l&#39;exécution de ce rafraîchissement.
+
+Une vue qui attend un prérequis [`REFRESH ... DEPENDS ON`](/fr/reference/statements/create/view#refresh-dependencies) ne se rafraîchit pas encore ; démarrez donc ces vues après celles dont elles dépendent. Une dépendance circulaire n&#39;admet pas un tel ordre, et un redémarrage rompt le cycle dès lors que ses vues ne sont pas coordonnées : démarrez chaque membre, puis exécutez le même `SYSTEM REFRESH VIEW` que celui utilisé pour lancer le cycle lors de sa création, et attendez la fin de ce rafraîchissement. Un graphe dont le lancement a nécessité plusieurs rafraîchissements de ce type requiert à nouveau le même ensemble de rafraîchissements. Déclencher un autre membre peut laisser le cycle inactif, car une vue ne reprend qu&#39;une fois que tous ses prérequis ont été rafraîchis. Une fois déclenché, le cycle se rafraîchit de lui-même : le démarrage vue par vue s&#39;arrête donc au déclenchement.
+
+## Ce que cela implique pour votre automatisation {#what-this-means-for-your-automation}
+
+Tant que ce paramètre est en place, un redémarrage imprévu laisse toutes les vues matérialisées actualisables à l&#39;arrêt, et une vue nouvellement créée ne commence pas non plus à se rafraîchir tant qu&#39;elle n&#39;a pas été démarrée. `RESTORE` fait exception pour les vues dont les rafraîchissements ne sont pas coordonnés : il démarre chacune des vues de ce type qu&#39;il inclut, et celles-ci peuvent alors se retrouver immédiatement en retard et rejouer leur source. Une vue coordonnée n&#39;est pas démarrée par la restauration ; elle reste donc arrêtée jusqu&#39;à ce que vous la démarriez. Confiez le démarrage des vues à l&#39;automatisation chargée de redémarrer vos serveurs et de créer vos vues.

@@ -184,11 +184,11 @@ SELECT 123::String;
 
 SELECT 1.1::Decimal(30, 20);
 
--- In this example, `1.1` is first parsed as usual, yielding a Float64 value, and then converted to Decimal, producing a wrong result:
+-- The `CAST` operator does the same whenever the target type reads the literal more precisely than a Float64 carries it, which is the case for Decimal and for the integers wider than 64 bits:
 
 SELECT CAST(1.1 AS Decimal(30, 20));
 
--- We can change this behavior in the future.
+-- For every other target type it keeps parsing the literal as usual and converting the resulting value, because there reading the text of the literal would not be more precise, just different: `1` is one second past the epoch for `DateTime`, but a calendar date as text.
 
 -- Another example:
 

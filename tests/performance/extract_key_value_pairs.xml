@@ -1,0 +1,45 @@
+<test>
+    <substitutions>
+        <substitution>
+            <name>func</name>
+            <values>
+                <value>extractKeyValuePairs</value>
+                <value>extractKeyValuePairsWithEscaping</value>
+            </values>
+        </substitution>
+    </substitutions>
+
+    <!-- Short keys and values, 7 pairs per row, about 100 bytes per row. -->
+    <create_query>CREATE TABLE kv_short (s String) ENGINE = Memory</create_query>
+    <fill_query>INSERT INTO kv_short SELECT concat('name:neymar', toString(number % 1000), ', age:31 team:psg,nationality:brazil, city:"Sao Paulo", id:', toString(number), ', extra:', repeat('x', 20)) FROM numbers(1000000)</fill_query>
+
+    <!-- Values of 200 bytes, the search for delimiters dominates. -->
+    <create_query>CREATE TABLE kv_long_values (s String) ENGINE = Memory</create_query>
+    <fill_query>INSERT INTO kv_long_values SELECT concat('k1:', repeat('a', 200), ' k2:', repeat('b', 200), ' k3:', toString(number)) FROM numbers(300000)</fill_query>
+
+
+    <!-- Log lines with noise around the pairs and a quoted value. -->
+    <create_query>CREATE TABLE kv_log_lines (s String) ENGINE = Memory</create_query>
+    <fill_query>INSERT INTO kv_log_lines SELECT concat('2024-01-01 12:00:00.123 [thread-', toString(number % 64), '] INFO Request processed user_id:', toString(number), ' method:GET path:/api/v1/items status:200 latency_ms:', toString(number % 500), ' ua:"Mozilla/5.0 (X11; Linux x86_64)" ok') FROM numbers(500000)</fill_query>
+
+    <!-- 25 tiny pairs per row, the per-pair overhead dominates. -->
+    <create_query>CREATE TABLE kv_many_tiny_pairs (s String) ENGINE = Memory</create_query>
+    <fill_query>INSERT INTO kv_many_tiny_pairs SELECT arrayStringConcat(arrayMap(i -> concat('k', toString(i), ':', toString((number + i) % 10)), range(25)), ' ') FROM numbers(500000)</fill_query>
+
+
+    <!-- Escape sequences in keys and values. -->
+    <create_query>CREATE TABLE kv_escaped (s String) ENGINE = Memory</create_query>
+    <fill_query>INSERT INTO kv_escaped SELECT concat('name:ney\\tmar', toString(number % 1000), ', path:C\\x3A\\\\Users\\\\', toString(number), ' text:"quoted \\"value\\" here", tab\\tkey:va\\nlue, id:', toString(number)) FROM numbers(1000000)</fill_query>
+
+    <query>SELECT count() FROM kv_short WHERE NOT ignore({func}(s)) SETTINGS max_threads = 1</query>
+    <query>SELECT count() FROM kv_long_values WHERE NOT ignore({func}(s)) SETTINGS max_threads = 1</query>
+    <query>SELECT count() FROM kv_log_lines WHERE NOT ignore({func}(s)) SETTINGS max_threads = 1</query>
+    <query>SELECT count() FROM kv_many_tiny_pairs WHERE NOT ignore({func}(s)) SETTINGS max_threads = 1</query>
+    <query>SELECT count() FROM kv_escaped WHERE NOT ignore({func}(s)) SETTINGS max_threads = 1</query>
+
+    <drop_query>DROP TABLE IF EXISTS kv_short</drop_query>
+    <drop_query>DROP TABLE IF EXISTS kv_long_values</drop_query>
+    <drop_query>DROP TABLE IF EXISTS kv_log_lines</drop_query>
+    <drop_query>DROP TABLE IF EXISTS kv_many_tiny_pairs</drop_query>
+    <drop_query>DROP TABLE IF EXISTS kv_escaped</drop_query>
+</test>

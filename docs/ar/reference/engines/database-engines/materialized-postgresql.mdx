@@ -171,7 +171,7 @@ WHERE oid = 'postgres_table'::regclass;
 ```
 
 <Note>
-  لا يدعم النسخ المتماثل لقيم [**TOAST**](https://www.postgresql.org/docs/9.5/storage-toast.html). وسيُستخدم النوع الافتراضي للبيانات.
+  تُنسخ قيم [**TOAST**](https://www.postgresql.org/docs/current/storage-toast.html) متماثلًا. عندما يرسل PostgreSQL مرجع TOAST لم يتغير أثناء عملية update، تُحفَظ القيمة الحالية. يتطلب عمود هوية النسخة المتماثلة لـ TOAST الذي لم يتغير أن يرسل PostgreSQL مجموعة المفتاح القديمة، وإلا فلا يمكن تحديد الصف.
 </Note>
 
 <div id="settings">

@@ -8,14 +8,15 @@ doc_type: 'landing-page'
 
 ClickHouse 通过 [`DataLakeCatalog`](/zh/reference/engines/database-engines/datalake) 数据库引擎与多种数据湖目录集成。以下指南介绍了如何将 ClickHouse 连接到各个受支持的目录，包括配置、身份验证和查询示例。
 
-| 目录                                                                           | 说明                                                       |
-| ---------------------------------------------------------------------------- | -------------------------------------------------------- |
-| [AWS Glue](/zh/guides/use-cases/data-warehousing/glue-catalog)                  | 查询在 AWS Glue Data Catalog 中注册且数据存储于 S3 的 Iceberg 表。      |
-| [Databricks Unity Catalog](/zh/guides/use-cases/data-warehousing/unity-catalog) | 连接到 Databricks Unity Catalog，访问 Delta Lake 和 Iceberg 表。  |
-| [Iceberg REST Catalog](/zh/guides/use-cases/data-warehousing/rest-catalog)      | 使用任何实现 Iceberg REST 规范的目录，例如 Tabular。                    |
-| [Lakekeeper](/zh/guides/use-cases/data-warehousing/lakekeeper-catalog)          | 连接到 Lakekeeper Catalog，访问 Iceberg 表。                     |
-| [Project Nessie](/zh/guides/use-cases/data-warehousing/nessie-catalog)          | 使用 Nessie Catalog 查询 Iceberg 表，并利用类似 Git 的数据版本控制能力。      |
-| [Microsoft OneLake](/zh/guides/use-cases/data-warehousing/onelake-catalog)      | 查询 Microsoft Fabric OneLake 中的 Iceberg 表。                |
-| [Polaris catalog](/zh/guides/use-cases/data-warehousing/polaris-catalog)        | 连接到 Polaris 目录，访问 Iceberg 表。                             |
-| [BigLake Metastore](/zh/guides/use-cases/data-warehousing/biglake-catalog)      | 查询在 BigLake Metastore 中注册的 Iceberg 表。                    |
-| [SeaweedFS](/zh/guides/use-cases/data-warehousing/seaweedfs-catalog)            | 通过内置 Iceberg REST 目录查询和写入 SeaweedFS S3 表存储桶中的 Iceberg 表。 |
+| 目录                                                                              | 说明                                                       |
+| ------------------------------------------------------------------------------- | -------------------------------------------------------- |
+| [AWS Glue](/zh/guides/use-cases/data-warehousing/glue-catalog)                     | 查询在 AWS Glue Data Catalog 中注册且数据存储于 S3 的 Iceberg 表。      |
+| [Databricks Unity Catalog](/zh/guides/use-cases/data-warehousing/unity-catalog)    | 连接到 Databricks Unity Catalog，访问 Delta Lake 和 Iceberg 表。  |
+| [Iceberg REST Catalog](/zh/guides/use-cases/data-warehousing/rest-catalog)         | 使用任何实现 Iceberg REST 规范的目录，例如 Tabular。                    |
+| [Lakekeeper](/zh/guides/use-cases/data-warehousing/lakekeeper-catalog)             | 连接到 Lakekeeper Catalog，访问 Iceberg 表。                     |
+| [Project Nessie](/zh/guides/use-cases/data-warehousing/nessie-catalog)             | 使用 Nessie Catalog 查询 Iceberg 表，并利用类似 Git 的数据版本控制能力。      |
+| [Microsoft OneLake](/zh/guides/use-cases/data-warehousing/onelake-catalog)         | 查询 Microsoft Fabric OneLake 中的 Iceberg 表。                |
+| [Polaris catalog](/zh/guides/use-cases/data-warehousing/polaris-catalog)           | 连接到 Polaris 目录，访问 Iceberg 表。                             |
+| [Snowflake Horizon catalog](/zh/guides/use-cases/data-warehousing/horizon-catalog) | 通过 Horizon Catalog 读取和写入由 Snowflake 管理的 Iceberg 表。       |
+| [BigLake Metastore](/zh/guides/use-cases/data-warehousing/biglake-catalog)         | 查询在 BigLake Metastore 中注册的 Iceberg 表。                    |
+| [SeaweedFS](/zh/guides/use-cases/data-warehousing/seaweedfs-catalog)               | 通过内置 Iceberg REST 目录查询和写入 SeaweedFS S3 表存储桶中的 Iceberg 表。 |

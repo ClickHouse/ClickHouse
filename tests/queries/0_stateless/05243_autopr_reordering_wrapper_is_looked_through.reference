@@ -1,0 +1,5 @@
+log_comment	statistics_collected
+05243_wrapper_over_join	1
+05243_wrapper_over_join_plan_based	1
+05243_wrapper_over_read	1
+05243_wrapper_over_read_plan_based	1

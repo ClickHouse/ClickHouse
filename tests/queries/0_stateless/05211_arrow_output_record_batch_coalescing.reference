@@ -1,0 +1,65 @@
+--- one batch per block by default ---
+batches: 64
+64	2016	1
+--- both targets set: a result below both leaves as one batch ---
+batches: 1
+64	2016	1
+--- row target alone: 64 rows in batches of 16 ---
+batches: 4
+64	2016	1
+--- byte target alone: 8 bytes per row, so batches of 8 rows ---
+batches: 8
+64	2016	1
+--- a combined batch may exceed the target: two 40-row blocks under a 41-row target ---
+batches: 1, rows per batch: [80]
+80	3160	1
+--- blocks that already reach the target are neither merged nor split ---
+batches: 4, rows per batch: [65409, 65409, 65409, 3773]
+200000	19999900000	1
+--- a block reaching the target flushes what is staged instead of absorbing it ---
+batches: 3, rows per batch: [3, 65409, 254]
+65666	6450733123	1
+--- a multi-column result keeps every value, in order, when combined ---
+batches: 1
+7	0	\N
+7	1	1
+7	2	2
+7	0	3
+7	1	\N
+7	2	5
+7	0	6
+7	1	7
+--- dictionary-encoded LowCardinality spread over several combined batches ---
+batches: 4, rows per batch: [4, 4, 4, 4]
+0	2
+1	2
+2	2
+3	2
+shared	8
+--- the same dictionary column combined into one batch ---
+batches: 1, rows per batch: [16]
+0	2
+1	2
+2	2
+3	2
+shared	8
+--- the byte target counts the bytes the block holds, which for LowCardinality is a deduplicated value ---
+batches: 1, rows per batch: [100]
+100	1	100000
+batches: 50
+--- the row criterion still applies when the byte criterion is set, and bounds that batch ---
+batches: 13, rows per batch: [8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 4]
+100	1	100000
+--- a block keeping the dictionary of the block it was filtered out of reaches the byte target alone ---
+batches: 4, rows per batch: [1, 1, 1, 1]
+4	4	1000
+batches: 1, rows per batch: [4]
+--- the row target alone combines those same blocks ---
+batches: 1, rows per batch: [4]
+4	4	1000
+--- the Arrow file format coalesces too, and its footer stays consistent ---
+batches: 1
+64	2016	1
+--- an Arrow file footer with one Block per combined batch ---
+batches: 4, rows per batch: [16, 16, 16, 16]
+64	2016	1

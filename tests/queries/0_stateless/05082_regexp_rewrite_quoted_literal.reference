@@ -1,0 +1,22 @@
+extract, quoted tail
+
+
+1
+1
+SELECT extract(identity(\'1x\'), \'(\\\\d)\\\\Q.*$\') AS `extract(identity(\'1x\'), \'(\\\\\\\\d)\\\\\\\\Q.*$\')`
+FROM system.one AS __table1
+extract, closed quote
+1
+1
+SELECT extract(identity(\'1xy\'), \'(\\\\d)\\\\Qx\\\\E\') AS `extract(identity(\'1xy\'), \'(\\\\\\\\d)\\\\\\\\Qx\\\\\\\\E.*$\')`
+FROM system.one AS __table1
+replaceRegexpAll, quoted dollar
+x!x!
+x!x!
+SELECT replaceRegexpAll(identity(\'x$x$\'), \'\\\\Q$\', \'!\') AS `replaceRegexpAll(identity(\'x$x$\'), \'\\\\\\\\Q$\', \'!\')`
+FROM system.one AS __table1
+replaceRegexpAll, real anchor
+x$!
+x$!
+SELECT replaceRegexpOne(identity(\'x$x\'), \'\\\\Qx\\\\E$\', \'!\') AS `replaceRegexpAll(identity(\'x$x\'), \'\\\\\\\\Qx\\\\\\\\E$\', \'!\')`
+FROM system.one AS __table1

@@ -1,0 +1,18 @@
+bucket	DateTime64(3)	CODEC(Delta(8), T64, ZSTD(3))	2
+max_time	SimpleAggregateFunction(max, DateTime64(3))	CODEC(Delta(8), T64, ZSTD(3))	2
+min_time	SimpleAggregateFunction(min, DateTime64(3))	CODEC(Delta(8), T64, ZSTD(3))	2
+samples	SimpleAggregateFunction(timeSeriesGroupArray, Array(Tuple(timestamp DateTime64(3), value Float64)))	CODEC(Delta(8), T64, ZSTD(3))	2
+130	0
+130	0
+SimpleAggregateFunction(timeSeriesGroupArray, Array(Tuple(timestamp DateTime64(6), value Float64)))	CODEC(Delta(8), T64, ZSTD(3))	2
+130	0
+130	0
+SimpleAggregateFunction(timeSeriesGroupArray, Array(Tuple(timestamp DateTime, value Float64)))	CODEC(Delta(4), T64, ZSTD(3))	2
+130	0
+130	0
+SimpleAggregateFunction(timeSeriesGroupArray, Array(Tuple(timestamp UInt32, value Float64)))	CODEC(Delta(4), T64, ZSTD(3))	2
+130	0
+130	0
+recent_samples	{'timestamp':'CODEC(Delta(8), LZ4)'}
+samples	{'timestamp':'CODEC(DoubleDelta, ZSTD(1))'}
+SimpleAggregateFunction(timeSeriesGroupArray, Array(Tuple(timestamp DateTime64(6), value Float64)))	{'timestamp':'CODEC(Delta(8), T64, ZSTD(3))','value':'CODEC(ALP, ZSTD(3))'}	2

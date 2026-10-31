@@ -10,9 +10,7 @@ sidebarTitle: 'Referência da API'
 
 Este documento fornece uma referência detalhada da API dos recursos personalizados do ClickHouse Operator.
 
-<div id="additionalport">
-  ## AdditionalPort
-</div>
+## AdditionalPort {#additionalport}
 
 AdditionalPort declara uma porta TCP adicional a ser exposta no pod do Kubernetes do ClickHouse e no Service headless público.
 
@@ -25,9 +23,7 @@ Aparece em:
 
 * [ClickHouseClusterSpec](#clickhouseclusterspec)
 
-<div id="cabundleselector">
-  ## CABundleSelector
-</div>
+## CABundleSelector {#cabundleselector}
 
 CABundleSelector seleciona uma chave que contém um bundle de CA de um Secret no Espaço de nomes do cluster.
 
@@ -40,15 +36,11 @@ Aparece em:
 
 * [ClusterTLSSpec](#clustertlsspec)
 
-<div id="clickhousecluster">
-  ## ClickHouseCluster
-</div>
+## ClickHouseCluster {#clickhousecluster}
 
 ClickHouseCluster é o schema da API `clickhouseclusters`.
 
-<div id="clickhousecluster-api-version-and-kind">
-  ### Versão da API e Kind
-</div>
+### Versão da API e Kind {#clickhousecluster-api-version-and-kind}
 
 ```yaml
 apiVersion: clickhouse.com/v1alpha1
@@ -64,15 +56,11 @@ Aparece em:
 
 * [ClickHouseClusterList](#clickhouseclusterlist)
 
-<div id="clickhouseclusterlist">
-  ## ClickHouseClusterList
-</div>
+## ClickHouseClusterList {#clickhouseclusterlist}
 
 ClickHouseClusterList contém uma lista de ClickHouseCluster.
 
-<div id="clickhousecluster-api-version-and-kind">
-  ### Versão da API e Kind
-</div>
+### Versão da API e Kind {#clickhouseclusterlist-api-version-and-kind}
 
 ```yaml
 apiVersion: clickhouse.com/v1alpha1
@@ -83,38 +71,36 @@ kind: ClickHouseClusterList
 | ------- | ------------------------------------------------ | --------- | ----------- | ------ |
 | `items` | array de [ClickHouseCluster](#clickhousecluster) |           | true        |        |
 
-<div id="clickhouseclusterspec">
-  ## ClickHouseClusterSpec
-</div>
+## ClickHouseClusterSpec {#clickhouseclusterspec}
 
 ClickHouseClusterSpec define o estado desejado do ClickHouseCluster.
 
-| Field                            | Type                                                                                                                                | Description                                                                                                                                                                                                                                                                                                         | Required | Default        |
-| -------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------- | -------------- |
-| `replicas`                       | integer                                                                                                                             | Número de réplicas no shard único.                                                                                                                                                                                                                                                                                  | false    | 3              |
-| `shards`                         | integer                                                                                                                             | Número de shards no cluster.                                                                                                                                                                                                                                                                                        | false    | 1              |
-| `keeperClusterRef`               | [KeeperClusterReference](#keeperclusterreference)                                                                                   | Referência ao KeeperCluster utilizado para coordenação do ClickHouse.<br />Quando Espaço de nomes é omitido, o Espaço de nomes do ClickHouseCluster é utilizado.                                                                                                                                                    | true     |                |
-| `podTemplate`                    | [PodTemplateSpec](#podtemplatespec)                                                                                                 | Parâmetros passados para a especificação do pod do Kubernetes do ClickHouse.                                                                                                                                                                                                                                        | false    |                |
-| `containerTemplate`              | [ContainerTemplateSpec](#containertemplatespec)                                                                                     | Parâmetros passados para a especificação do contêiner do ClickHouse.                                                                                                                                                                                                                                                | false    |                |
-| `dataVolumeClaimSpec`            | [PersistentVolumeClaimSpec](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.28/#persistentvolumeclaimspec-v1-core) | Especificação do armazenamento persistente para os dados do ClickHouse.                                                                                                                                                                                                                                             | false    |                |
+| Field                            | Type                                                                                                                                | Description                                                                                                                                                                                                                                                                                                           | Required | Default        |
+| -------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------- | -------------- |
+| `replicas`                       | integer                                                                                                                             | Número de réplicas no shard único.                                                                                                                                                                                                                                                                                    | false    | 3              |
+| `shards`                         | integer                                                                                                                             | Número de shards no cluster.                                                                                                                                                                                                                                                                                          | false    | 1              |
+| `keeperClusterRef`               | [KeeperClusterReference](#keeperclusterreference)                                                                                   | Referência ao KeeperCluster utilizado para coordenação do ClickHouse.<br />Quando Espaço de nomes é omitido, o Espaço de nomes do ClickHouseCluster é utilizado.<br />Mutuamente exclusivo com `externalKeeper`; exatamente um deles deve ser definido.                                                               | false    |                |
+| `externalKeeper`                 | [ExternalKeeperSpec](#externalkeeperspec)                                                                                           | Ensemble do Keeper não gerenciado por este operador, utilizado para coordenação do ClickHouse.<br />O operador não controla o ciclo de vida desses servidores; apenas aponta o ClickHouse para eles.<br />Mutuamente exclusivo com `keeperClusterRef`; exatamente um deles deve ser definido.                         | false    |                |
+| `podTemplate`                    | [PodTemplateSpec](#podtemplatespec)                                                                                                 | Parâmetros passados para a especificação do pod do Kubernetes do ClickHouse.                                                                                                                                                                                                                                          | false    |                |
+| `containerTemplate`              | [ContainerTemplateSpec](#containertemplatespec)                                                                                     | Parâmetros passados para a especificação do contêiner do ClickHouse.                                                                                                                                                                                                                                                  | false    |                |
+| `dataVolumeClaimSpec`            | [PersistentVolumeClaimSpec](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.28/#persistentvolumeclaimspec-v1-core) | Especificação do armazenamento persistente para os dados do ClickHouse.                                                                                                                                                                                                                                               | false    |                |
 | `additionalVolumeClaimTemplates` | [PersistentVolumeClaimTemplate](#persistentvolumeclaimtemplate) array                                                               | Templates de PVC adicionais por pod do Kubernetes para armazenamento JBOD / multi-disco.<br />Cada entrada é propagada no volumeClaimTemplate do StatefulSet, montada em `/var/lib/clickhouse/disks/<name>` e<br />adicionada à política de armazenamento JBOD gerada.<br />O conjunto de discos é fixado na criação. | false    |                |
-| `labels`                         | object (keys:string, values:string)                                                                                                 | Rótulos adicionais que são adicionadas aos recursos.                                                                                                                                                                                                                                                                | false    |                |
-| `annotations`                    | object (keys:string, values:string)                                                                                                 | Anotações adicionais que são adicionadas aos recursos.                                                                                                                                                                                                                                                              | false    |                |
-| `podDisruptionBudget`            | [PodDisruptionBudgetSpec](#poddisruptionbudgetspec)                                                                                 | PodDisruptionBudget configura o PDB criado para cada shard.<br />Quando não definido, o operador usa como padrão maxUnavailable=1 para shards<br />de réplica única e minAvailable=1 para shards com múltiplas réplicas.                                                                                            | false    |                |
-| `settings`                       | [ClickHouseSettings](#clickhousesettings)                                                                                           | Parâmetros de configuração para o servidor ClickHouse.                                                                                                                                                                                                                                                              | false    | &#123;  &#125; |
-| `clusterDomain`                  | string                                                                                                                              | ClusterDomain é o sufixo de domínio do cluster do Kubernetes utilizado para resolução de DNS.                                                                                                                                                                                                                       | false    | cluster.local  |
-| `upgradeChannel`                 | string                                                                                                                              | UpgradeChannel especifica o canal de lançamento para verificações de upgrade de versão principal.<br />Quando vazio, apenas atualizações secundárias serão propostas. Os valores permitidos são: stable, lts ou uma versão major.minor específica (ex.: 25.8).                                                          | false    |                |
-| `versionProbeTemplate`           | [VersionProbeTemplate](#versionprobetemplate)                                                                                       | Substituições do VersionProbeTemplate para o Job de detecção de versão.                                                                                                                                                                                                                                             | false    |                |
-| `externalSecret`                 | [ExternalSecret](#externalsecret)                                                                                                   | ExternalSecret é uma referência opcional a um Secret gerenciado externamente contendo segredos do cluster.<br />O secret deve residir no mesmo Espaço de nomes que o cluster.                                                                                                                                       | false    |                |
-| `additionalPorts`                | [AdditionalPort](#additionalport) array                                                                                             | AdditionalPorts declara portas TCP extras a serem expostas no pod do Kubernetes do ClickHouse e no Service headless público.<br />O operador apenas adiciona as portas aos recursos do Kubernetes, não configura o servidor ClickHouse para escutá-las.                                                             | false    |                |
+| `labels`                         | object (keys:string, values:string)                                                                                                 | Rótulos adicionais que são adicionadas aos recursos.                                                                                                                                                                                                                                                                  | false    |                |
+| `annotations`                    | object (keys:string, values:string)                                                                                                 | Anotações adicionais que são adicionadas aos recursos.                                                                                                                                                                                                                                                                | false    |                |
+| `podDisruptionBudget`            | [PodDisruptionBudgetSpec](#poddisruptionbudgetspec)                                                                                 | PodDisruptionBudget configura o PDB criado para cada shard.<br />Quando não definido, o operador usa como padrão maxUnavailable=1 para shards<br />de réplica única e minAvailable=1 para shards com múltiplas réplicas.                                                                                              | false    |                |
+| `networkPolicy`                  | [ClickHouseNetworkPolicySpec](#clickhousenetworkpolicyspec)                                                                         | NetworkPolicy configura a NetworkPolicy gerenciada para o cluster.                                                                                                                                                                                                                                                    | false    |                |
+| `settings`                       | [ClickHouseSettings](#clickhousesettings)                                                                                           | Parâmetros de configuração para o servidor ClickHouse.                                                                                                                                                                                                                                                                | false    | &#123;  &#125; |
+| `clusterDomain`                  | string                                                                                                                              | ClusterDomain é o sufixo de domínio do cluster do Kubernetes utilizado para resolução de DNS.                                                                                                                                                                                                                         | false    | cluster.local  |
+| `upgradeChannel`                 | string                                                                                                                              | UpgradeChannel especifica o canal de lançamento para verificações de upgrade de versão principal.<br />Quando vazio, apenas atualizações secundárias serão propostas. Os valores permitidos são: stable, lts ou uma versão major.minor específica (ex.: 25.8).                                                        | false    |                |
+| `versionProbeTemplate`           | [VersionProbeTemplate](#versionprobetemplate)                                                                                       | Substituições do VersionProbeTemplate para o Job de detecção de versão.                                                                                                                                                                                                                                               | false    |                |
+| `externalSecret`                 | [ExternalSecret](#externalsecret)                                                                                                   | ExternalSecret é uma referência opcional a um Secret gerenciado externamente contendo segredos do cluster.<br />O secret deve residir no mesmo Espaço de nomes que o cluster.                                                                                                                                         | false    |                |
+| `additionalPorts`                | [AdditionalPort](#additionalport) array                                                                                             | AdditionalPorts declara portas TCP extras a serem expostas no pod do Kubernetes do ClickHouse e no Service headless público.<br />O operador apenas adiciona as portas aos recursos do Kubernetes, não configura o servidor ClickHouse para escutá-las.                                                               | false    |                |
 
 Aparece em:
 
 * [ClickHouseCluster](#clickhousecluster)
 
-<div id="clickhouseclusterstatus">
-  ## ClickHouseClusterStatus
-</div>
+## ClickHouseClusterStatus {#clickhouseclusterstatus}
 
 ClickHouseClusterStatus define o estado observado de ClickHouseCluster.
 
@@ -134,29 +120,44 @@ Aparece em:
 
 * [ClickHouseCluster](#clickhousecluster)
 
-<div id="clickhousesettings">
-  ## ClickHouseSettings
-</div>
+## ClickHouseNetworkPolicySpec {#clickhousenetworkpolicyspec}
 
-ClickHouseSettings define as opções de configuração do servidor ClickHouse.
+ClickHouseNetworkPolicySpec configura a NetworkPolicy gerenciada para o cluster do ClickHouse.
+A política gerenciada abrange o tráfego interno do cluster:
 
-| Campo                 | Tipo                                                                                                          | Descrição                                                                                                                                                                                                                        | Obrigatório | Padrão |
-| --------------------- | ------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------- | ------ |
-| `defaultUserPassword` | [DefaultPasswordSelector](#defaultpasswordselector)                                                           | Especifica a origem e o tipo da senha do usuário `default` do ClickHouse.                                                                                                                                                        | false       |        |
-| `logger`              | [LoggerConfig](#loggerconfig)                                                                                 | Configuração de logging do servidor ClickHouse.                                                                                                                                                                                  | false       |        |
-| `tls`                 | [ClusterTLSSpec](#clustertlsspec)                                                                             | Configurações de TLS; permite configurar endpoints seguros e a verificação de certificados para o servidor ClickHouse.                                                                                                           | false       |        |
-| `encryption`          | [EncryptionSettings](#encryptionsettings)                                                                     | Criptografia, quando definida, habilita a criptografia em repouso dos dados da tabela por meio de uma política de armazenamento dedicada.<br />Ative por tabela com `SETTINGS storage_policy = '<policyName>'`.                  | false       |        |
-| `enableDatabaseSync`  | boolean                                                                                                       | Habilita a sincronização dos bancos de dados do ClickHouse com as réplicas recém-criadas e a limpeza de réplicas obsoletas<br />após a redução de escala.<br />Compatível apenas com bancos de dados Replicated e de integração. | false       | true   |
-| `extraConfig`         | [RawExtension](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.28/#rawextension-runtime-pkg) | Configuração adicional do ClickHouse que será mesclada à configuração padrão.                                                                                                                                                    | false       |        |
-| `extraUsersConfig`    | [RawExtension](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.28/#rawextension-runtime-pkg) | Configuração adicional de usuários do ClickHouse que será mesclada à configuração padrão.                                                                                                                                        | false       |        |
+* Conectividade entre réplicas
+* Acesso do operador ao cluster
+  Qualquer outra Entrada, incluindo conexões de clientes e coleta de métricas, exige NetworkPolicies definidas pelo usuário.
+
+| Campo    | Tipo                                        | Descrição                                                                                                                                                           | Obrigatório | Padrão   |
+| -------- | ------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------- | -------- |
+| `policy` | [NetworkPolicyPolicy](#networkpolicypolicy) | A política controla se o operador gerencia uma NetworkPolicy que restringe a Entrada aos pods do cluster.<br />O padrão é &quot;Disabled&quot; quando não definida. | false       | Disabled |
 
 Aparece em:
 
 * [ClickHouseClusterSpec](#clickhouseclusterspec)
 
-<div id="clustertlsspec">
-  ## ClusterTLSSpec
-</div>
+## ClickHouseSettings {#clickhousesettings}
+
+ClickHouseSettings define as opções de configuração do servidor ClickHouse.
+
+| Campo                   | Tipo                                                                                                          | Descrição                                                                                                                                                                                                                                                                                                                                                                                                                       | Obrigatório | Padrão |
+| ----------------------- | ------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------- | ------ |
+| `defaultUserPassword`   | [DefaultPasswordSelector](#defaultpasswordselector)                                                           | Especifica a origem e o tipo da senha do usuário `default` do ClickHouse.                                                                                                                                                                                                                                                                                                                                                       | false       |        |
+| `logger`                | [LoggerConfig](#loggerconfig)                                                                                 | Configuração de logging do servidor ClickHouse.                                                                                                                                                                                                                                                                                                                                                                                 | false       |        |
+| `systemLogsTTLDays`     | integer                                                                                                       | Período de retenção, em dias, das tabelas de logs do sistema (`query_log`, `part_log`, `text_log`, `metric_log`,<br />`asynchronous_metric_log`), aplicado como TTL de tabela na próxima reinicialização do servidor. O padrão é 30 dias<br />apenas para novos clusters; clusters criados antes da introdução desse campo mantêm as tabelas sem limite de retenção até que ele seja definido.<br />O valor 0 desabilita o TTL. | false       |        |
+| `tls`                   | [ClusterTLSSpec](#clustertlsspec)                                                                             | Configurações de TLS; permite configurar endpoints seguros e a verificação de certificados para o servidor ClickHouse.                                                                                                                                                                                                                                                                                                          | false       |        |
+| `encryption`            | [EncryptionSettings](#encryptionsettings)                                                                     | Criptografia, quando definida, habilita a criptografia em repouso dos dados da tabela por meio de uma política de armazenamento dedicada.<br />Ative por tabela com `SETTINGS storage_policy = '<policyName>'`.                                                                                                                                                                                                                 | false       |        |
+| `enableDatabaseSync`    | boolean                                                                                                       | Habilita a sincronização dos bancos de dados do ClickHouse com as réplicas recém-criadas e a limpeza de réplicas obsoletas<br />após a redução de escala.<br />Compatível apenas com bancos de dados Replicated e de integração.                                                                                                                                                                                                | false       | true   |
+| `extraConfig`           | [RawExtension](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.28/#rawextension-runtime-pkg) | Configuração adicional do ClickHouse que será mesclada à configuração padrão.                                                                                                                                                                                                                                                                                                                                                   | false       |        |
+| `extraReloadableConfig` | [RawExtension](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.28/#rawextension-runtime-pkg) | Configuração adicional do ClickHouse que será mesclada à configuração padrão e aplicada por meio de um<br />recarregamento da configuração, sem reiniciar os pods. Ao colocar uma seção aqui, você declara que ela pode ser recarregada com segurança:<br />uma opção que exige reinicialização só entra em vigor na próxima reinicialização, sem gerar erro.                                                                   | false       |        |
+| `extraUsersConfig`      | [RawExtension](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.28/#rawextension-runtime-pkg) | Configuração adicional de usuários do ClickHouse que será mesclada à configuração padrão.                                                                                                                                                                                                                                                                                                                                       | false       |        |
+
+Aparece em:
+
+* [ClickHouseClusterSpec](#clickhouseclusterspec)
+
+## ClusterTLSSpec {#clustertlsspec}
 
 ClusterTLSSpec define a configuração de TLS do cluster.
 
@@ -172,9 +173,7 @@ Aparece em:
 * [ClickHouseSettings](#clickhousesettings)
 * [KeeperSettings](#keepersettings)
 
-<div id="configmapkeyselector">
-  ## ConfigMapKeySelector
-</div>
+## ConfigMapKeySelector {#configmapkeyselector}
 
 ConfigMapKeySelector seleciona uma chave de um ConfigMap.
 
@@ -187,9 +186,7 @@ Aparece em:
 
 * [DefaultPasswordSelector](#defaultpasswordselector)
 
-<div id="containerimage">
-  ## ContainerImage
-</div>
+## ContainerImage {#containerimage}
 
 ContainerImage define uma imagem de contêiner com repositório, tag ou hash.
 
@@ -203,11 +200,9 @@ Aparece em:
 
 * [ContainerTemplateSpec](#containertemplatespec)
 
-<div id="containertemplatespec">
-  ## ContainerTemplateSpec
-</div>
+## ContainerTemplateSpec {#containertemplatespec}
 
-ContainerTemplateSpec descreve as sobrescritas de configuração dos contêineres do cluster.
+ContainerTemplateSpec descreve as substituições de configuração dos contêineres do cluster.
 
 | Campo             | Tipo                                                                                                                      | Descrição                                                                                                                                                                                                                                                                                                                                                                                  | Obrigatório | Padrão |
 | ----------------- | ------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ----------- | ------ |
@@ -217,17 +212,17 @@ ContainerTemplateSpec descreve as sobrescritas de configuração dos contêinere
 | `volumeMounts`    | [VolumeMount](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.28/#volumemount-v1-core) array             | VolumeMounts é a lista de montagens de volume do contêiner.<br />Concatenada com as montagens geradas pelo operador. Entradas que compartilham um `mountPath` com uma montagem do operador<br />são mescladas em um volume projetado.                                                                                                                                                      | false       |        |
 | `env`             | [EnvVar](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.28/#envvar-v1-core) array                       | Env é a lista de variáveis de ambiente a serem definidas no contêiner.<br />Mesclada com os padrões do operador por nome.                                                                                                                                                                                                                                                                  | false       |        |
 | `securityContext` | [SecurityContext](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.28/#securitycontext-v1-core)           | SecurityContext define as opções de segurança com que o contêiner deve ser executado.<br />Um SecurityContext não nulo substitui integralmente os padrões do operador; o usuário passa a ser responsável por toda a<br />estrutura. Quando nulo, os padrões do operador são preservados.<br />Mais informações: https://kubernetes.io/docs/tasks/configure-pod-container/security-context/ | false       |        |
-| `livenessProbe`   | [Probe](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.28/#probe-v1-core)                               | LivenessProbe sobrescreve a sonda de liveness padrão do operador.                                                                                                                                                                                                                                                                                                                          | false       |        |
-| `readinessProbe`  | [Probe](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.28/#probe-v1-core)                               | ReadinessProbe sobrescreve a sonda de prontidão padrão do operador.                                                                                                                                                                                                                                                                                                                        | false       |        |
+| `livenessProbe`   | [Probe](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.28/#probe-v1-core)                               | LivenessProbe substitui a sonda de liveness padrão do operador.                                                                                                                                                                                                                                                                                                                          | false       |        |
+| `readinessProbe`  | [Probe](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.28/#probe-v1-core)                               | ReadinessProbe substitui a sonda de prontidão padrão do operador.                                                                                                                                                                                                                                                                                                                        | false       |        |
+| `startupProbe`    | [Probe](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.28/#probe-v1-core)                               | StartupProbe adia a execução das sondas de liveness e prontidão até ser bem-sucedida, dando aos contêineres com inicialização lenta<br />tempo para iniciar. O operador não define uma sonda de inicialização por padrão.                                                                                                                                                                  | false       |        |
+| `lifecycle`       | [Lifecycle](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.28/#lifecycle-v1-core)                       | Lifecycle define as ações que o agente de nó do Kubernetes dispara nos eventos do ciclo de vida do contêiner (PostStart/PreStop).<br />Um Lifecycle não nulo substitui integralmente os padrões do operador; o usuário passa a ser responsável por toda a estrutura.                                                                                                                       | false       |        |
 
 Aparece em:
 
 * [ClickHouseClusterSpec](#clickhouseclusterspec)
 * [KeeperClusterSpec](#keeperclusterspec)
 
-<div id="defaultpasswordselector">
-  ## DefaultPasswordSelector
-</div>
+## DefaultPasswordSelector {#defaultpasswordselector}
 
 DefaultPasswordSelector seleciona a origem da senha do usuário padrão.
 
@@ -241,9 +236,7 @@ Aparece em:
 
 * [ClickHouseSettings](#clickhousesettings)
 
-<div id="encryptionsettings">
-  ## EncryptionSettings
-</div>
+## EncryptionSettings {#encryptionsettings}
 
 EncryptionSettings habilita a criptografia em repouso dos dados de tabelas. Quando presente, o operador gera uma
 política de armazenamento criptografada do ClickHouse que encapsula cada disco de dados; as tabelas a utilizam por meio de `SETTINGS storage_policy`.
@@ -257,9 +250,46 @@ Aparece em:
 
 * [ClickHouseSettings](#clickhousesettings)
 
-<div id="externalsecret">
-  ## ExternalSecret
-</div>
+## ExternalKeeperNode {#externalkeepernode}
+
+ExternalKeeperNode referencia um único servidor de um ensemble Keeper externo.
+
+| Field  | Type    | Description                                                                                 | Required | Default |
+| ------ | ------- | ------------------------------------------------------------------------------------------- | -------- | ------- |
+| `host` | string  | Nome de host ou endereço IP do servidor Keeper. Endereços IPv6 devem estar entre colchetes. | true     |         |
+| `port` | integer | Porta na qual o servidor Keeper aceita conexões de cliente.                                 | false    | 9181    |
+
+Aparece em:
+
+* [ExternalKeeperSpec](#externalkeeperspec)
+
+## ExternalKeeperSpec {#externalkeeperspec}
+
+ExternalKeeperSpec descreve um ensemble do Keeper gerenciado fora deste operador.
+
+| Campo   | Tipo                                                | Descrição                                                                                                                                                                                                                                                               | Obrigatório | Padrão   |
+| ------- | --------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------- | -------- |
+| `nodes` | array de [ExternalKeeperNode](#externalkeepernode)  | Servidores do ensemble do Keeper aos quais o ClickHouse se conecta para coordenação.                                                                                                                                                                                    | true        |          |
+| `tls`   | [ExternalKeeperTLSPolicy](#externalkeepertlspolicy) | TLS define se o ClickHouse se conecta ao ensemble via TLS.<br />As portas definidas em nodes devem corresponder à política escolhida.<br />Os certificados do servidor são validados com base no repositório de confiança do sistema e no `spec.settings.tls.caBundle`. | false       | Disabled |
+
+Aparece em:
+
+* [ClickHouseClusterSpec](#clickhouseclusterspec)
+
+## ExternalKeeperTLSPolicy {#externalkeepertlspolicy}
+
+ExternalKeeperTLSPolicy controla como o ClickHouse se conecta a um ensemble externo do Keeper.
+
+| Campo      | Descrição                                                                                               |
+| ---------- | ------------------------------------------------------------------------------------------------------- |
+| `Enabled`  | ExternalKeeperTLSEnabled faz com que o ClickHouse se conecte ao ensemble via TLS.<br />                 |
+| `Disabled` | ExternalKeeperTLSDisabled é a política padrão: as conexões são feitas em texto não criptografado.<br /> |
+
+Aparece em:
+
+* [ExternalKeeperSpec](#externalkeeperspec)
+
+## ExternalSecret {#externalsecret}
 
 ExternalSecret é uma referência a um Secret no mesmo Espaço de nomes.
 
@@ -272,9 +302,7 @@ Aparece em:
 
 * [ClickHouseClusterSpec](#clickhouseclusterspec)
 
-<div id="externalsecretpolicy">
-  ## ExternalSecretPolicy
-</div>
+## ExternalSecretPolicy {#externalsecretpolicy}
 
 ExternalSecretPolicy controla como o operador trata o conteúdo do Secret externo.
 
@@ -287,15 +315,11 @@ Aparece em:
 
 * [ExternalSecret](#externalsecret)
 
-<div id="keepercluster">
-  ## KeeperCluster
-</div>
+## KeeperCluster {#keepercluster}
 
 KeeperCluster é o schema da API `keeperclusters`.
 
-<div id="clickhousecluster-api-version-and-kind">
-  ### Versão da API e Kind
-</div>
+### Versão da API e Kind {#keepercluster-api-version-and-kind}
 
 ```yaml
 apiVersion: clickhouse.com/v1alpha1
@@ -311,15 +335,11 @@ Aparece em:
 
 * [KeeperClusterList](#keeperclusterlist)
 
-<div id="keeperclusterlist">
-  ## KeeperClusterList
-</div>
+## KeeperClusterList {#keeperclusterlist}
 
 KeeperClusterList contém uma lista de KeeperCluster.
 
-<div id="clickhousecluster-api-version-and-kind">
-  ### Versão da API e Kind
-</div>
+### Versão da API e Kind {#keeperclusterlist-api-version-and-kind}
 
 ```yaml
 apiVersion: clickhouse.com/v1alpha1
@@ -330,9 +350,7 @@ kind: KeeperClusterList
 | ------- | ------------------------------------- | --------- | ----------- | ------ |
 | `items` | [KeeperCluster](#keepercluster) array |           | true        |        |
 
-<div id="keeperclusterreference">
-  ## KeeperClusterReference
-</div>
+## KeeperClusterReference {#keeperclusterreference}
 
 KeeperClusterReference identifica o KeeperCluster utilizado por um ClickHouseCluster.
 
@@ -345,9 +363,7 @@ Aparece em:
 
 * [ClickHouseClusterSpec](#clickhouseclusterspec)
 
-<div id="keeperclusterspec">
-  ## KeeperClusterSpec
-</div>
+## KeeperClusterSpec {#keeperclusterspec}
 
 KeeperClusterSpec define o estado desejado do KeeperCluster.
 
@@ -360,6 +376,7 @@ KeeperClusterSpec define o estado desejado do KeeperCluster.
 | `labels`               | object (keys:string, values:string)                                                                                                 | Rótulos adicionais adicionados aos recursos.                                                                                                                                                                                                                           | false       |               |
 | `annotations`          | object (keys:string, values:string)                                                                                                 | Anotações adicionais adicionadas aos recursos.                                                                                                                                                                                                                         | false       |               |
 | `podDisruptionBudget`  | [PodDisruptionBudgetSpec](#poddisruptionbudgetspec)                                                                                 | PodDisruptionBudget configura o PDB criado para o cluster do Keeper.<br />Quando não definido, o operador usa por padrão maxUnavailable=replicas/2<br />(preservando o quórum em um cluster 2F+1); clusters com uma única réplica usam maxUnavailable=1.               | false       |               |
+| `networkPolicy`        | [KeeperNetworkPolicySpec](#keepernetworkpolicyspec)                                                                                 | NetworkPolicy configura a NetworkPolicy gerenciada para o cluster do Keeper.                                                                                                                                                                                           | false       |               |
 | `settings`             | [KeeperSettings](#keepersettings)                                                                                                   | Parâmetros de configuração do servidor ClickHouse Keeper.                                                                                                                                                                                                              | false       |               |
 | `clusterDomain`        | string                                                                                                                              | ClusterDomain é o sufixo de domínio do cluster do Kubernetes usado para a resolução de DNS.                                                                                                                                                                            | false       | cluster.local |
 | `upgradeChannel`       | string                                                                                                                              | UpgradeChannel especifica o canal de lançamento para verificações de upgrade de versão principal.<br />Quando vazio, apenas atualizações secundárias serão propostas. Os valores permitidos são: stable, lts ou uma versão major.minor específica (por exemplo, 25.8). | false       |               |
@@ -369,9 +386,7 @@ Aparece em:
 
 * [KeeperCluster](#keepercluster)
 
-<div id="keeperclusterstatus">
-  ## KeeperClusterStatus
-</div>
+## KeeperClusterStatus {#keeperclusterstatus}
 
 KeeperClusterStatus define o estado observado de KeeperCluster.
 
@@ -391,9 +406,25 @@ Aparece em:
 
 * [KeeperCluster](#keepercluster)
 
-<div id="keepersettings">
-  ## KeeperSettings
-</div>
+## KeeperNetworkPolicySpec {#keepernetworkpolicyspec}
+
+KeeperNetworkPolicySpec configura a NetworkPolicy gerenciada para o cluster Keeper.
+A política gerenciada abrange o tráfego interno do cluster:
+
+* Conectividade entre réplicas
+* Acesso do operador ao cluster
+* Acesso de clusters ClickHouse que fazem referência a este cluster Keeper
+  Qualquer outra Entrada, incluindo a coleta de métricas, requer NetworkPolicies definidas pelo usuário.
+
+| Campo    | Tipo                                        | Descrição                                                                                                                                                          | Obrigatório | Padrão   |
+| -------- | ------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ----------- | -------- |
+| `policy` | [NetworkPolicyPolicy](#networkpolicypolicy) | A política controla se o operador gerencia uma NetworkPolicy que restringe a Entrada nos pods do Keeper.<br />O padrão é &quot;Disabled&quot; quando não definido. | false       | Disabled |
+
+Aparece em:
+
+* [KeeperClusterSpec](#keeperclusterspec)
+
+## KeeperSettings {#keepersettings}
 
 KeeperSettings define as configurações do servidor ClickHouse Keeper.
 
@@ -407,28 +438,24 @@ Aparece em:
 
 * [KeeperClusterSpec](#keeperclusterspec)
 
-<div id="loggerconfig">
-  ## LoggerConfig
-</div>
+## LoggerConfig {#loggerconfig}
 
 LoggerConfig define a configuração de logging do servidor.
 
-| Campo       | Tipo    | Descrição                                          | Obrigatório | Padrão |
-| ----------- | ------- | -------------------------------------------------- | ----------- | ------ |
-| `logToFile` | boolean | Se for false, desativa todo o logging em arquivo.  | false       | true   |
-| `jsonLogs`  | boolean | Se for true, registra em formato JSON.             | false       | false  |
-| `level`     | string  | Nível de verbosidade do logger do servidor.        | false       | trace  |
-| `size`      | string  | Tamanho máximo do arquivo de log.                  | false       | 1000M  |
-| `count`     | integer | Número máximo de arquivos de log a serem mantidos. | false       | 50     |
+| Campo       | Tipo    | Descrição                                          | Obrigatório | Padrão      |
+| ----------- | ------- | -------------------------------------------------- | ----------- | ----------- |
+| `logToFile` | boolean | Se for false, desativa todo o logging em arquivo.  | false       | true        |
+| `jsonLogs`  | boolean | Se for true, registra em formato JSON.             | false       | false       |
+| `level`     | string  | Nível de verbosidade do logger do servidor.        | false       | information |
+| `size`      | string  | Tamanho máximo do arquivo de log.                  | false       | 100M        |
+| `count`     | integer | Número máximo de arquivos de log a serem mantidos. | false       | 10          |
 
 Aparece em:
 
 * [ClickHouseSettings](#clickhousesettings)
 * [KeeperSettings](#keepersettings)
 
-<div id="namedtemplatemeta">
-  ## NamedTemplateMeta
-</div>
+## NamedTemplateMeta {#namedtemplatemeta}
 
 NamedTemplateMeta define as configurações de metadados compatíveis para objetos de template que exigem um nome.
 
@@ -442,9 +469,21 @@ Aparece em:
 
 * [PersistentVolumeClaimTemplate](#persistentvolumeclaimtemplate)
 
-<div id="pdbpolicy">
-  ## PDBPolicy
-</div>
+## NetworkPolicyPolicy {#networkpolicypolicy}
+
+NetworkPolicyPolicy controla se o operador gerencia uma NetworkPolicy para o cluster.
+
+| Campo      | Descrição                                                                                                                                |
+| ---------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
+| `Enabled`  | NetworkPolicyEnabled faz com que o operador gerencie uma NetworkPolicy que restringe o tráfego de Entrada para os pods do cluster.<br /> |
+| `Disabled` | NetworkPolicyDisabled desabilita a NetworkPolicy gerenciada; o operador a exclui se ela estiver presente.<br />                          |
+
+Aparece em:
+
+* [ClickHouseNetworkPolicySpec](#clickhousenetworkpolicyspec)
+* [KeeperNetworkPolicySpec](#keepernetworkpolicyspec)
+
+## PDBPolicy {#pdbpolicy}
 
 PDBPolicy controla se os PodDisruptionBudgets serão criados.
 
@@ -458,9 +497,7 @@ Aparece em:
 
 * [PodDisruptionBudgetSpec](#poddisruptionbudgetspec)
 
-<div id="persistentvolumeclaimtemplate">
-  ## PersistentVolumeClaimTemplate
-</div>
+## PersistentVolumeClaimTemplate {#persistentvolumeclaimtemplate}
 
 PersistentVolumeClaimTemplate é um template nomeado para um PersistentVolumeClaim por réplica.
 
@@ -473,9 +510,7 @@ Aparece em:
 
 * [ClickHouseClusterSpec](#clickhouseclusterspec)
 
-<div id="poddisruptionbudgetspec">
-  ## PodDisruptionBudgetSpec
-</div>
+## PodDisruptionBudgetSpec {#poddisruptionbudgetspec}
 
 PodDisruptionBudgetSpec configura o PDB criado para o cluster.
 Exatamente um entre MinAvailable ou MaxUnavailable pode ser definido.
@@ -493,38 +528,35 @@ Aparece em:
 * [ClickHouseClusterSpec](#clickhouseclusterspec)
 * [KeeperClusterSpec](#keeperclusterspec)
 
-<div id="podtemplatespec">
-  ## PodTemplateSpec
-</div>
+## PodTemplateSpec {#podtemplatespec}
 
 PodTemplateSpec descreve as substituições da configuração de pod do Kubernetes para os pods do Kubernetes do cluster.
 
-| Campo                           | Tipo                                                                                                                                    | Descrição                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    | Obrigatório | Padrão |
-| ------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------- | ------ |
-| `terminationGracePeriodSeconds` | inteiro                                                                                                                                 | Duração opcional, em segundos, de que o pod do Kubernetes precisa para ser encerrado de forma graciosa. Pode ser reduzida na solicitação de exclusão.<br />O valor deve ser um inteiro não negativo. O valor zero indica interrupção imediata por meio<br />do sinal kill (sem oportunidade de desligamento).<br />Se esse valor for nil, o período de carência padrão será usado.<br />O período de carência é a duração, em segundos, entre o momento em que os processos em execução no pod do Kubernetes recebem<br />um sinal de encerramento e o momento em que os processos são interrompidos à força com um sinal kill.<br />Defina esse valor como maior que o tempo de limpeza esperado para o seu processo.<br />O padrão é 30 segundos.                                                                                                                                                                                                                                                                                          | false       |        |
-| `topologySpreadConstraints`     | [TopologySpreadConstraint](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.28/#topologyspreadconstraint-v1-core) array | TopologySpreadConstraints descreve como um grupo de pods deve se distribuir entre domínios de topologia<br />. O agendador distribuirá os pods de forma a respeitar as restrições.<br />Todos os topologySpreadConstraints são combinados com AND.<br />Mesclado com os padrões do operador por `topologyKey`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               | false       |        |
-| `imagePullSecrets`              | [LocalObjectReference](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.28/#localobjectreference-v1-core) array         | ImagePullSecrets é uma lista opcional de referências a Secrets no mesmo espaço de nomes, usada para baixar qualquer uma das imagens usadas por este PodSpec.<br />Se especificados, esses Secrets serão passados para os componentes individuais responsáveis por baixar as imagens, para que possam usá-los.<br />Mais informações: https://kubernetes.io/docs/concepts/containers/images#specifying-imagepullsecrets-on-a-pod<br />Mesclado com os padrões do operador por nome.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           | false       |        |
-| `nodeSelector`                  | objeto (chaves:string, valores:string)                                                                                                  | NodeSelector é um seletor que deve ser satisfeito para que o pod do Kubernetes possa ser executado em um nó.<br />Seletor que deve corresponder aos labels de um nó para que o pod do Kubernetes seja agendado nesse nó.<br />Mais informações: https://kubernetes.io/docs/concepts/configuration/assign-pod-node/                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           | false       |        |
-| `affinity`                      | [Afinidade](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.28/#affinity-v1-core)                                      | Se especificado, as restrições de agendamento do pod do Kubernetes.<br />Adicionado aos padrões do operador: as listas de termos de agendamento são concatenadas.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            | false       |        |
-| `tolerations`                   | [Toleration](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.28/#toleration-v1-core) array                             | Se especificadas, as tolerâncias do pod do Kubernetes.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       | false       |        |
-| `schedulerName`                 | string                                                                                                                                  | Se especificado, o pod do Kubernetes será agendado pelo agendador especificado.<br />Se não for especificado, o pod do Kubernetes será agendado pelo agendador padrão.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       | false       |        |
-| `serviceAccountName`            | string                                                                                                                                  | ServiceAccountName é o nome da ServiceAccount usada para executar este pod do Kubernetes.<br />Mais informações: https://kubernetes.io/docs/tasks/configure-pod-container/configure-service-account/                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         | false       |        |
-| `priorityClassName`             | string                                                                                                                                  | PriorityClassName é o nome da PriorityClass a ser usada para o pod do Kubernetes.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            | false       |        |
-| `runtimeClassName`              | string                                                                                                                                  | RuntimeClassName é o nome da RuntimeClass a ser usada para o pod do Kubernetes.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              | false       |        |
-| `volumes`                       | [Volume](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.28/#volume-v1-core) array                                     | Volumes define a lista de volumes que podem ser montados por contêineres pertencentes ao pod do Kubernetes.<br />Mais informações: https://kubernetes.io/docs/concepts/storage/volumes<br />Mesclados aos valores padrão do operador por nome; um volume do usuário substitui qualquer volume do operador com o mesmo nome.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  | false       |        |
-| `securityContext`               | [PodSecurityContext](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.28/#podsecuritycontext-v1-core)                   | SecurityContext contém atributos de segurança em nível de pod do Kubernetes e configurações comuns de contêiner.<br />Um SecurityContext não nulo substitui completamente os padrões do operador; o usuário é responsável por toda a<br />estrutura. Quando nulo, os padrões do operador são preservados.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    | false       |        |
-| `topologyZoneKey`               | string                                                                                                                                  | TopologyZoneKey é a chave dos rótulos dos nós.<br />Nós que têm um rótulo com essa chave e valores idênticos são considerados como pertencentes ao mesmo domínio de topologia,<br />por exemplo, a mesma zona de disponibilidade para &quot;topology.kubernetes.io/zone&quot; ou o mesmo nó para &quot;kubernetes.io/hostname&quot;.<br />Defina-a para equilibrar pods que armazenam os mesmos dados (réplicas de um shard no ClickHouse, todas as réplicas no Keeper)<br />entre os domínios: uma TopologySpreadConstraint obrigatória (maxSkew 1, DoNotSchedule) mais uma regra preferencial de PodAntiAffinity.<br />Pods de shards diferentes podem compartilhar um domínio, portanto vários pods por domínio são permitidos.<br />Com menos domínios do que réplicas, várias réplicas compartilham um domínio, ainda assim distribuídas de forma uniforme.<br />Os pods do ClickHouse também preferem domínios que hospedam os pods do Keeper que eles usam.<br />Recomenda-se defini-la como &quot;topology.kubernetes.io/zone&quot;. | false       |        |
-| `nodeHostnameKey`               | string                                                                                                                                  | NodeHostnameKey é a chave dos rótulos do nó.<br />Nós que têm um rótulo com essa chave e valores idênticos são considerados como estando no mesmo nó.<br />Defina-o para impor ocupação exclusiva do nó: uma regra obrigatória de PodAntiAffinity entre todos os pods do cluster,<br />com no máximo um pod por nó, independentemente do shard. Requer pelo menos tantos nós quanto pods;<br />com menos nós, os pods excedentes permanecem em estado Pending.<br />Para distribuir réplicas do mesmo shard entre os nós, ao mesmo tempo em que acomoda vários pods por nó,<br />defina TopologyZoneKey como &quot;kubernetes.io/hostname&quot;.<br />Recomenda-se defini-lo como &quot;kubernetes.io/hostname&quot;.                                                                                                                                                                                                                                                                                                                        | false       |        |
-| `initContainers`                | [Container](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.28/#container-v1-core) array                               | InitContainers é a lista de contêineres de inicialização executados antes de o contêiner principal do servidor ser iniciado.<br />Mesclado com os padrões do operador por nome.<br />com o mesmo nome.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       | false       |        |
+| Campo                           | Tipo                                                                                                                                    | Descrição                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          | Obrigatório | Padrão |
+| ------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ----------- | ------ |
+| `terminationGracePeriodSeconds` | inteiro                                                                                                                                 | Duração opcional, em segundos, de que o pod do Kubernetes precisa para ser encerrado de forma graciosa. Pode ser reduzida na solicitação de exclusão.<br />O valor deve ser um inteiro não negativo. O valor zero indica interrupção imediata por meio<br />do sinal kill (sem oportunidade de desligamento).<br />Se esse valor for nil, o período de carência padrão será usado.<br />O período de carência é a duração, em segundos, entre o momento em que os processos em execução no pod do Kubernetes recebem<br />um sinal de encerramento e o momento em que os processos são interrompidos à força com um sinal kill.<br />Defina esse valor como maior que o tempo de limpeza esperado para o seu processo.<br />O padrão é 30 segundos.                                                                                                                                                                                                                                                                                                                | false       |        |
+| `topologySpreadConstraints`     | [TopologySpreadConstraint](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.28/#topologyspreadconstraint-v1-core) array | TopologySpreadConstraints descreve como um grupo de pods deve se distribuir entre domínios de topologia<br />. O agendador distribuirá os pods de forma a respeitar as restrições.<br />Todos os topologySpreadConstraints são combinados com AND.<br />Mesclado com os padrões do operador por `topologyKey`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     | false       |        |
+| `imagePullSecrets`              | [LocalObjectReference](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.28/#localobjectreference-v1-core) array         | ImagePullSecrets é uma lista opcional de referências a Secrets no mesmo espaço de nomes, usada para baixar qualquer uma das imagens usadas por este PodSpec.<br />Se especificados, esses Secrets serão passados para os componentes individuais responsáveis por baixar as imagens, para que possam usá-los.<br />Mais informações: https://kubernetes.io/docs/concepts/containers/images#specifying-imagepullsecrets-on-a-pod<br />Mesclado com os padrões do operador por nome.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 | false       |        |
+| `nodeSelector`                  | object (keys:string, values:string)                                                                                                     | NodeSelector é um seletor que deve ser satisfeito para que o pod do Kubernetes possa ser executado em um nó.<br />Seletor que deve corresponder aos labels de um nó para que o pod do Kubernetes seja agendado nesse nó.<br />Mais informações: https://kubernetes.io/docs/concepts/configuration/assign-pod-node/                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 | false       |        |
+| `affinity`                      | [Afinidade](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.28/#affinity-v1-core)                                      | Se especificado, as restrições de agendamento do pod do Kubernetes.<br />Adicionado aos padrões do operador: as listas de termos de agendamento são concatenadas.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  | false       |        |
+| `tolerations`                   | [Toleration](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.28/#toleration-v1-core) array                             | Se especificadas, as tolerâncias do pod do Kubernetes.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             | false       |        |
+| `schedulerName`                 | string                                                                                                                                  | Se especificado, o pod do Kubernetes será agendado pelo agendador especificado.<br />Se não for especificado, o pod do Kubernetes será agendado pelo agendador padrão.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             | false       |        |
+| `serviceAccountName`            | string                                                                                                                                  | ServiceAccountName é o nome da ServiceAccount usada para executar este pod do Kubernetes.<br />Mais informações: https://kubernetes.io/docs/tasks/configure-pod-container/configure-service-account/                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               | false       |        |
+| `priorityClassName`             | string                                                                                                                                  | PriorityClassName é o nome da PriorityClass a ser usada para o pod do Kubernetes.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  | false       |        |
+| `runtimeClassName`              | string                                                                                                                                  | RuntimeClassName é o nome da RuntimeClass a ser usada para o pod do Kubernetes.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    | false       |        |
+| `volumes`                       | [Volume](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.28/#volume-v1-core) array                                     | Volumes define a lista de volumes que podem ser montados por contêineres pertencentes ao pod do Kubernetes.<br />Mais informações: https://kubernetes.io/docs/concepts/storage/volumes<br />Mesclados aos valores padrão do operador por nome; um volume do usuário substitui qualquer volume do operador com o mesmo nome.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        | false       |        |
+| `securityContext`               | [PodSecurityContext](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.28/#podsecuritycontext-v1-core)                   | SecurityContext contém atributos de segurança em nível de pod do Kubernetes e configurações comuns de contêiner.<br />Um SecurityContext não nulo substitui completamente os padrões do operador; o usuário é responsável por toda a<br />estrutura. Quando nulo, os padrões do operador são preservados.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          | false       |        |
+| `topologyZoneKey`               | string                                                                                                                                  | TopologyZoneKey é a chave dos rótulos dos nós.<br />Nós que têm um rótulo com essa chave e valores idênticos são considerados como pertencentes ao mesmo domínio de topologia,<br />por exemplo, a mesma zona de disponibilidade para &quot;topology.kubernetes.io/zone&quot; ou o mesmo nó para &quot;kubernetes.io/hostname&quot;.<br />Defina-a para equilibrar pods que armazenam os mesmos dados (réplicas de um shard no ClickHouse, todas as réplicas no Keeper)<br />entre os domínios: uma TopologySpreadConstraint obrigatória (maxSkew 1, DoNotSchedule) mais uma regra preferencial de PodAntiAffinity.<br />Pods de shards diferentes podem compartilhar um domínio, portanto vários pods por domínio são permitidos.<br />Com menos domínios do que réplicas, várias réplicas compartilham um domínio, ainda assim distribuídas de forma uniforme.<br />Com keeperClusterRef, os pods do ClickHouse também preferem domínios que hospedam os pods do Keeper que eles usam.<br />Recomenda-se defini-la como &quot;topology.kubernetes.io/zone&quot;. | false       |        |
+| `topologyMinDomains`            | inteiro                                                                                                                                 | TopologyMinDomains define o campo minDomains na TopologySpreadConstraint gerada por TopologyZoneKey.<br />O agendador do Kubernetes conta como domínios de topologia apenas as zonas que já possuem nós elegíveis.<br />Com escalonadores automáticos orientados por demanda (por exemplo, Karpenter, Cluster Autoscaler), isso significa que, se houver nós<br />em apenas duas AZs no momento do agendamento, uma restrição maxSkew:1/DoNotSchedule é satisfeita com<br />uma divisão 2/1 e o escalonador automático nunca provisiona um nó na terceira AZ.<br />Definir TopologyMinDomains como o número esperado de zonas (normalmente 3) instrui o agendador a<br />tratar essa quantidade de zonas como domínios, independentemente de existirem nós em todas elas, forçando o<br />escalonador automático a provisionar na zona ausente.<br />Requer que TopologyZoneKey esteja definido. Omita (nil) para preservar o comportamento padrão<br />do agendador de contar apenas as zonas com nós elegíveis existentes.                                       | false       |        |
+| `nodeHostnameKey`               | string                                                                                                                                  | NodeHostnameKey é a chave dos rótulos do nó.<br />Nós que têm um rótulo com essa chave e valores idênticos são considerados como estando no mesmo nó.<br />Defina-o para impor ocupação exclusiva do nó: uma regra obrigatória de PodAntiAffinity entre todos os pods do cluster,<br />com no máximo um pod por nó, independentemente do shard. Requer pelo menos tantos nós quanto pods;<br />com menos nós, os pods excedentes permanecem em estado Pending.<br />Para distribuir réplicas do mesmo shard entre os nós, ao mesmo tempo em que acomoda vários pods por nó,<br />defina TopologyZoneKey como &quot;kubernetes.io/hostname&quot;.<br />Recomenda-se defini-lo como &quot;kubernetes.io/hostname&quot;.                                                                                                                                                                                                                                                                                                                                              | false       |        |
+| `initContainers`                | [Container](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.28/#container-v1-core) array                               | InitContainers é a lista de contêineres de inicialização executados antes de o contêiner principal do servidor ser iniciado.<br />Mesclado com os padrões do operador por nome.<br />com o mesmo nome.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             | false       |        |
 
 Aparece em:
 
 * [ClickHouseClusterSpec](#clickhouseclusterspec)
 * [KeeperClusterSpec](#keeperclusterspec)
 
-<div id="secretkeyselector">
-  ## SecretKeySelector
-</div>
+## SecretKeySelector {#secretkeyselector}
 
 SecretKeySelector seleciona uma chave de um Secret.
 
@@ -537,9 +569,7 @@ Aparece em:
 
 * [DefaultPasswordSelector](#defaultpasswordselector)
 
-<div id="templatemeta">
-  ## TemplateMeta
-</div>
+## TemplateMeta {#templatemeta}
 
 TemplateMeta define as configurações de metadados compatíveis para objetos de template.
 
@@ -553,9 +583,7 @@ Aparece em:
 * [VersionProbePodTemplate](#versionprobepodtemplate)
 * [VersionProbeTemplate](#versionprobetemplate)
 
-<div id="versionprobecontainer">
-  ## VersionProbeContainer
-</div>
+## VersionProbeContainer {#versionprobecontainer}
 
 VersionProbeContainer define substituições no nível do contêiner para a sonda de versão.
 Os nomes dos campos e as tags JSON correspondem a corev1.Container para que as mesclagens SMP sejam feitas por nome.
@@ -570,9 +598,7 @@ Aparece em:
 
 * [VersionProbePodSpec](#versionprobepodspec)
 
-<div id="versionprobejobspec">
-  ## VersionProbeJobSpec
-</div>
+## VersionProbeJobSpec {#versionprobejobspec}
 
 VersionProbeJobSpec define substituições no nível do Job para a sonda de versão.
 
@@ -585,9 +611,7 @@ Aparece em:
 
 * [VersionProbeTemplate](#versionprobetemplate)
 
-<div id="versionprobepodspec">
-  ## VersionProbePodSpec
-</div>
+## VersionProbePodSpec {#versionprobepodspec}
 
 VersionProbePodSpec define substituições no nível de pod do Kubernetes para a sonda de versão.
 Os nomes dos campos e as tags JSON correspondem a corev1.PodSpec para compatibilidade com strategic merge patch.
@@ -603,9 +627,7 @@ Aparece em:
 
 * [VersionProbePodTemplate](#versionprobepodtemplate)
 
-<div id="versionprobepodtemplate">
-  ## VersionProbePodTemplate
-</div>
+## VersionProbePodTemplate {#versionprobepodtemplate}
 
 VersionProbePodTemplate descreve substituições para o pod do Kubernetes de sonda de versão.
 
@@ -618,9 +640,7 @@ Aparece em:
 
 * [VersionProbeJobSpec](#versionprobejobspec)
 
-<div id="versionprobetemplate">
-  ## VersionProbeTemplate
-</div>
+## VersionProbeTemplate {#versionprobetemplate}
 
 VersionProbeTemplate define substituições para o Job de detecção de versão.
 A estrutura corresponde a `batchv1.JobTemplateSpec`, expondo apenas os campos compatíveis.

@@ -1,14 +1,14 @@
 {
   "groups": [
     {
-      "group": "はじめに",
+      "group": "はじめる",
       "pages": [
         "ja/products/agentic-data-stack/overview",
         "ja/products/agentic-data-stack/docker-setup"
       ]
     },
     {
-      "group": "コンポーネント",
+      "group": "構成要素",
       "pages": [
         "ja/products/agentic-data-stack/components/librechat",
         "ja/products/agentic-data-stack/components/mcp-server",

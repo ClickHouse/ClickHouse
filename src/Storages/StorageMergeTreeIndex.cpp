@@ -1,3 +1,4 @@
+#include <Storages/StorageProxy.h>
 #include <Storages/StorageMergeTreeIndex.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnTuple.h>
@@ -17,7 +18,7 @@
 #include <Storages/MergeTree/MergeTreeMarksLoader.h>
 #include <Storages/VirtualColumnUtils.h>
 #include <Access/Common/AccessFlags.h>
-#include <Access/EnabledRowPolicies.h>
+#include <Storages/getEffectiveRowPolicyFilter.h>
 #include <Common/CurrentThread.h>
 #include <Common/HashTable/HashSet.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
@@ -114,7 +115,19 @@ protected:
                 /// according to setting 'primary_key_ratio_of_unique_prefix_values_to_skip_suffix_columns'.
                 if (index_position < index_ptr->size())
                 {
-                    result_columns[pos] = index_ptr->at(index_position);
+                    auto index_column = index_ptr->at(index_position);
+
+                    /// The index holds the key column in the representation the part was written with, while
+                    /// column_type is the current one. Wrapping or unwrapping LowCardinality on a key column
+                    /// is allowed and does not rewrite parts that already exist.
+                    DataTypePtr index_column_type = removeLowCardinality(column_type);
+                    if (index_column->lowCardinality())
+                        index_column_type = std::make_shared<DataTypeLowCardinality>(index_column_type);
+
+                    if (!index_column_type->equals(*column_type))
+                        index_column = recursiveLowCardinalityTypeConversion(index_column, index_column_type, column_type);
+
+                    result_columns[pos] = std::move(index_column);
                 }
                 else
                 {
@@ -294,7 +307,7 @@ StorageMergeTreeIndex::StorageMergeTreeIndex(
     , with_marks(with_marks_)
     , with_minmax(with_minmax_)
 {
-    const auto * merge_tree = dynamic_cast<const MergeTreeData *>(source_table.get());
+    const auto * merge_tree = castStorage<MergeTreeData>(source_table, DeferredTable::Load).get();
     if (!merge_tree)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Storage MergeTreeIndex expected MergeTree table, got: {}", source_table->getName());
 
@@ -416,10 +429,7 @@ void StorageMergeTreeIndex::readImpl(
     context->checkAccess(AccessType::SELECT, source_storage_id, columns_from_storage);
 
     /// We cannot apply a row policy to granules, but the index leaks keys of the rows it hides
-    auto row_policy_filter = context->getRowPolicyFilter(
-        source_storage_id.getDatabaseName(), source_storage_id.getTableName(), RowPolicyFilterType::SELECT_FILTER);
-
-    if (row_policy_filter && !row_policy_filter->isAlwaysTrue())
+    if (getEffectiveRowPolicyFilter(*source_table, context))
         throw Exception(ErrorCodes::ACCESS_DENIED,
             "Cannot read from `mergeTreeIndex` because a row policy is applied on table {}. "
             "Reading the index could violate the row policy",

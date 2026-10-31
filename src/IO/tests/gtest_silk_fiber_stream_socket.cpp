@@ -28,9 +28,11 @@
 #include <Poco/Net/StreamSocket.h>
 #include <Poco/Timespan.h>
 
+#include <openssl/bio.h>
 #include <openssl/err.h>
 #include <openssl/ssl.h>
 
+#include <cerrno>
 #include <cstdint>
 #include <latch>
 #include <string>
@@ -60,6 +62,79 @@ struct SecurePolicy
 
     Poco::Net::StreamSocketImpl * makeClient() const { return new Silk::SecureFiberStreamSocketImpl(client_ctx); }
 };
+
+struct RetryOnceWriteBIOState
+{
+    int write_calls = 0;
+};
+
+int retryOnceWrite(BIO * bio, const char * data, int length)
+{
+    auto * state = static_cast<RetryOnceWriteBIOState *>(BIO_get_data(bio));
+    ++state->write_calls;
+
+    BIO_clear_retry_flags(bio);
+    if (state->write_calls == 1)
+    {
+        errno = EAGAIN;
+        BIO_set_retry_write(bio);
+        return -1;
+    }
+
+    const int result = BIO_write(BIO_next(bio), data, length);
+    BIO_copy_next_retry(bio);
+    return result;
+}
+
+long retryOnceWriteCtrl(BIO * bio, int command, long argument, void * data) // NOLINT(google-runtime-int)
+{
+    return BIO_ctrl(BIO_next(bio), command, argument, data);
+}
+
+int retryOnceWriteCreate(BIO * bio)
+{
+    BIO_set_init(bio, 1);
+    BIO_set_data(bio, nullptr);
+    return 1;
+}
+
+int retryOnceWriteDestroy(BIO *)
+{
+    return 1;
+}
+
+const BIO_METHOD * retryOnceWriteBIOMethod()
+{
+    static const BIO_METHOD * method = []
+    {
+        BIO_METHOD * result = BIO_meth_new(BIO_get_new_index() | BIO_TYPE_FILTER, "retry-once-write");
+        BIO_meth_set_write(result, retryOnceWrite);
+        BIO_meth_set_ctrl(result, retryOnceWriteCtrl);
+        BIO_meth_set_create(result, retryOnceWriteCreate);
+        BIO_meth_set_destroy(result, retryOnceWriteDestroy);
+        return result;
+    }();
+    return method;
+}
+
+bool installRetryOnceWriteBIO(SSL * ssl, RetryOnceWriteBIOState & state)
+{
+    BIO * original_write_bio = SSL_get_wbio(ssl);
+    if (!original_write_bio || BIO_up_ref(original_write_bio) != 1)
+        return false;
+
+    BIO * retry_write_bio = BIO_new(retryOnceWriteBIOMethod());
+    if (!retry_write_bio)
+    {
+        BIO_free(original_write_bio);
+        return false;
+    }
+
+    BIO_set_data(retry_write_bio, &state);
+    BIO_push(retry_write_bio, original_write_bio);
+    SSL_set0_wbio(ssl, retry_write_bio);
+    return true;
+}
 
 }
 
@@ -262,8 +337,7 @@ TYPED_TEST(SilkFiberSocketTest, ThrottlerLimitEnforced)
 }
 
 
-/// Secure-only: the bug is TLS-specific (a blocking-only `silkBioRead`/`silkBioWrite` surfaces
-/// through `SSL_peek`, not through a raw, BIO-less socket read). Reuses the
+/// Secure-only tests for the TLS BIO and direct OpenSSL operations. Reuses the
 /// `SecurePolicy policy` member from the typed fixture rather than redeclaring it.
 using SilkFiberSecureSocketTest = SilkFiberSocketTest<SecurePolicy>;
 
@@ -289,15 +363,12 @@ TEST_F(SilkFiberSecureSocketTest, NonBlockingPeekDoesNotBlockOnIdleConnection)
             char pong[1] = {};
             EXPECT_EQ(socket.receiveBytes(pong, sizeof(pong)), 1);
 
-            /// A long receive timeout. Pre-fix, `silkBioRead` has no non-blocking mode and always
-            /// parks the caller in a fiber wait up to this timeout, so a slow probe below proves
-            /// the bug; a fast one proves the fix.
+            /// A long receive timeout. The probe must remain non-blocking regardless of it.
             socket.setReceiveTimeout(Poco::Timespan(5, 0));
 
             /// The actual production sequence (`DB::getSocketState(StreamSocket)`, the core of the
-            /// connection pool's staleness check in `HTTPConnectionPool.cpp`): it puts the silk
-            /// socket into don't-wait mode with `setDontWait` - `Socket::setBlocking(false)` is rejected
-            /// by silk sockets - and calls `SSL_peek`, which reaches OpenSSL's socket BIO, i.e. `silkBioRead`.
+            /// connection pool's staleness check in `HTTPConnectionPool.cpp`) calls `SSL_peek`,
+            /// which reaches the always non-blocking Silk TLS BIO.
             Stopwatch watch;
             state = DB::getSocketState(socket);
             elapsed_us = watch.elapsedMicroseconds();
@@ -321,17 +392,13 @@ TEST_F(SilkFiberSecureSocketTest, NonBlockingPeekDoesNotBlockOnIdleConnection)
     EXPECT_EQ(state, DB::SocketState::Idle);
     EXPECT_LT(elapsed_us, 500'000U)
         << "getSocketState() took " << elapsed_us
-        << "us: silkBioRead ignored non-blocking mode and blocked on the receive timeout instead "
-           "of returning EAGAIN immediately";
+        << "us: the Silk TLS BIO blocked on the receive timeout instead of returning EAGAIN immediately";
 }
 
 
-/// The same bug at the raw level, without any ClickHouse helper: a plain `SSL_peek` on a
-/// non-blocking TLS connection with no data pending must return `SSL_ERROR_WANT_READ`
-/// immediately. This is exactly how a non-blocking consumer uses the socket - and the only way,
-/// since silk sockets reject `Socket::setBlocking(false)`: the socket is put into don't-wait
-/// mode with `setDontWait` and only `silkBioRead` ever observes it. Pre-fix, the BIO has no
-/// non-blocking mode and parks the caller for the full receive timeout.
+/// At the raw level, without a ClickHouse helper, a plain `SSL_peek` on an idle TLS connection
+/// must return `SSL_ERROR_WANT_READ` immediately. Silk sockets reject `Socket::setBlocking(false)`,
+/// so the BIO itself has to be non-blocking.
 TEST_F(SilkFiberSecureSocketTest, NonBlockingSslPeekReturnsWantReadImmediately)
 {
     auto listener = policy.makeListener();
@@ -354,11 +421,10 @@ TEST_F(SilkFiberSecureSocketTest, NonBlockingSslPeekReturnsWantReadImmediately)
 
             socket.setReceiveTimeout(Poco::Timespan(5, 0));
 
-            /// Put the socket into don't-wait mode - what any non-blocking user must do here,
-            /// since `Socket::setBlocking(false)` throws on a silk socket.
+            /// The Silk TLS BIO is always non-blocking. OpenSSL operations return WANT_READ or
+            /// WANT_WRITE and `SecureSocketImpl` performs the fiber-aware wait outside OpenSSL.
             auto * secure = dynamic_cast<Silk::SecureFiberStreamSocketImpl *>(socket.impl());
             SSL * ssl = secure->ssl();
-            secure->setDontWait(true);
 
             char c = 0;
             ERR_clear_error();
@@ -367,7 +433,6 @@ TEST_F(SilkFiberSecureSocketTest, NonBlockingSslPeekReturnsWantReadImmediately)
             ssl_error = SSL_get_error(ssl, res);
             elapsed_us = watch.elapsedMicroseconds();
 
-            secure->setDontWait(false);
             socket.close();
             return 0;
         },
@@ -386,8 +451,116 @@ TEST_F(SilkFiberSecureSocketTest, NonBlockingSslPeekReturnsWantReadImmediately)
     EXPECT_EQ(ssl_error, SSL_ERROR_WANT_READ);
     EXPECT_LT(elapsed_us, 500'000U)
         << "SSL_peek() took " << elapsed_us
-        << "us on an idle non-blocking connection: silkBioRead ignored non-blocking mode and "
-           "blocked on the receive timeout instead of returning EAGAIN immediately";
+        << "us on an idle connection: the Silk TLS BIO blocked on the receive timeout instead "
+           "of returning EAGAIN immediately";
+}
+
+
+/// `SSL_read` itself must not suspend a fiber: otherwise the fiber can resume on another OS-thread,
+/// and the subsequent `SSL_get_error` would inspect a different thread's OpenSSL error queue.
+TEST_F(SilkFiberSecureSocketTest, SslReadReturnsWantReadWithoutSuspending)
+{
+    auto listener = policy.makeListener();
+    const uint16_t port = listener.address().port();
+
+    uint64_t elapsed_us = 0;
+    int ssl_error = 0;
+
+    silk::FiberFuture client_future;
+    const int run_result = Silk::spawn(
+        [port, impl = policy.makeClient(), &elapsed_us, &ssl_error]() -> int
+        {
+            Poco::Net::StreamSocket socket(impl);
+            socket.connect(Poco::Net::SocketAddress("127.0.0.1", port));
+
+            socket.sendBytes("x", 1);
+            char pong[1] = {};
+            EXPECT_EQ(socket.receiveBytes(pong, sizeof(pong)), 1);
+            socket.setReceiveTimeout(Poco::Timespan(2, 0));
+
+            auto * secure = dynamic_cast<Silk::SecureFiberStreamSocketImpl *>(socket.impl());
+            SSL * ssl = secure->ssl();
+            char c = 0;
+            ERR_clear_error();
+            Stopwatch watch;
+            const int res = SSL_read(ssl, &c, 1);
+            ssl_error = SSL_get_error(ssl, res);
+            elapsed_us = watch.elapsedMicroseconds();
+
+            socket.close();
+            return 0;
+        },
+        client_future);
+    ASSERT_EQ(run_result, 0);
+
+    auto peer = listener.acceptConnection();
+    char ping[1] = {};
+    ASSERT_EQ(peer.receiveBytes(ping, sizeof(ping)), 1);
+    peer.sendBytes("y", 1);
+
+    client_future.wait();
+    peer.close();
+
+    EXPECT_EQ(ssl_error, SSL_ERROR_WANT_READ);
+    EXPECT_LT(elapsed_us, 500'000U)
+        << "SSL_read took " << elapsed_us
+        << "us: the Silk TLS BIO suspended inside the OpenSSL operation";
+}
+
+
+TEST_F(SilkFiberSecureSocketTest, BlockingShutdownRetriesWantWrite)
+{
+    auto listener = policy.makeListener();
+    const uint16_t port = listener.address().port();
+
+    int shutdown_write_calls = 0;
+
+    silk::FiberFuture client_future;
+    const int run_result = Silk::spawn(
+        [port, impl = policy.makeClient(), &shutdown_write_calls]() -> int
+        {
+            RetryOnceWriteBIOState retry_state;
+            Poco::Net::StreamSocket socket(impl);
+            socket.connect(Poco::Net::SocketAddress("127.0.0.1", port));
+
+            /// Complete the TLS handshake before injecting the retry into the next TLS write.
+            socket.sendBytes("x", 1);
+            char pong[1] = {};
+            EXPECT_EQ(socket.receiveBytes(pong, sizeof(pong)), 1);
+
+            auto * secure = dynamic_cast<Silk::SecureFiberStreamSocketImpl *>(socket.impl());
+            SSL * ssl = secure->ssl();
+            if (!installRetryOnceWriteBIO(ssl, retry_state))
+            {
+                ADD_FAILURE() << "Could not install the retry-once write BIO";
+                return 1;
+            }
+
+            socket.shutdown();
+            shutdown_write_calls = retry_state.write_calls;
+            return 0;
+        },
+        client_future);
+    ASSERT_EQ(run_result, 0);
+
+    auto peer = listener.acceptConnection();
+    char ping[1] = {};
+    ASSERT_EQ(peer.receiveBytes(ping, sizeof(ping)), 1);
+    peer.sendBytes("y", 1);
+
+    auto * peer_impl = dynamic_cast<Poco::Net::SecureStreamSocketImpl *>(peer.impl());
+    SSL * peer_ssl = peer_impl->ssl();
+    char data = 0;
+    ERR_clear_error();
+    const int read_result = SSL_read(peer_ssl, &data, 1);
+    const int ssl_error = SSL_get_error(peer_ssl, read_result);
+
+    EXPECT_EQ(client_future.wait(), 0);
+    peer.close();
+
+    EXPECT_GE(shutdown_write_calls, 2);
+    EXPECT_EQ(read_result, 0);
+    EXPECT_EQ(ssl_error, SSL_ERROR_ZERO_RETURN);
 }
 
 

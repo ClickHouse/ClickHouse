@@ -64,7 +64,7 @@
     {
       "menu": [
         {
-          "item": "النظام المتكامل",
+          "item": "المنظومة",
           "pages": [
             "ar/integrations/home",
             "ar/integrations/data-catalogs"
@@ -80,7 +80,7 @@
           "$ref": "./integrations/connectors/navigation.json"
         }
       ],
-      "tab": "عمليات التكامل"
+      "tab": "التكاملات"
     },
     {
       "menu": [

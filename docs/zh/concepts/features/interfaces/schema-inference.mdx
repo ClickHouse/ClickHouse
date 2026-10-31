@@ -262,8 +262,8 @@ INSERT INTO hobbies4 SELECT id, empty(hobbies) ? NULL : hobbies[1] FROM file(hob
 * `schema_inference_cache_max_elements_for_{file/s3/hdfs/url/azure}` - 对应表函数可缓存的 schema 最大数量。默认值为 `4096`。这些设置应在 server 配置中设置。
 * `schema_inference_use_cache_for_{file,s3,hdfs,url,azure}` - 用于开启/关闭 schema 推断缓存。这些设置可以在查询中使用。
 
-文件的 schema 可能会因数据被修改或 format 设置发生变化而改变。
-因此，schema 推断缓存会根据文件来源、format 名称、所使用的 format 设置以及文件的最后修改时间来识别 schema。
+文件的 schema 可能会因数据被修改或格式设置发生变化而改变。
+因此，schema 推断缓存会根据文件来源、格式名称、所使用的格式设置以及文件的最后修改时间来识别 schema。
 
 注意：在 `url` 表函数中通过 url 访问的某些文件可能不包含最后修改时间信息；针对这种情况，有一个专门的设置
 `schema_inference_cache_require_modification_time_for_url`。禁用此设置后，对于这类文件，即使没有最后修改时间，也允许使用缓存中的 schema。
@@ -276,7 +276,7 @@ INSERT INTO hobbies4 SELECT id, empty(hobbies) ? NULL : hobbies[1] FROM file(hob
 让我们尝试从 s3 中的样本数据集 `github-2022.ndjson.gz` 推断其结构，并看看 schema 推断缓存是如何工作的：
 
 ```sql
-DESCRIBE TABLE s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/github/github-2022.ndjson.gz')
+DESCRIBE TABLE s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/github/github-2022.ndjson.gz', NOSIGN)
 ```
 
 ```response
@@ -318,7 +318,7 @@ DESCRIBE TABLE s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/git
 ```
 
 ```sql
-DESCRIBE TABLE s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/github/github-2022.ndjson.gz')
+DESCRIBE TABLE s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/github/github-2022.ndjson.gz', NOSIGN)
 ```
 
 ```response
@@ -357,7 +357,7 @@ DESCRIBE TABLE s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/git
 │            │↳    size Nullable(Int64))                    │
 └────────────┴──────────────────────────────────────────────┘
 
-5 行，耗时 0.059 秒。
+5 rows in set. Elapsed: 0.059 sec.
 ```
 
 如你所见，第二个查询几乎瞬间就成功了。
@@ -365,7 +365,7 @@ DESCRIBE TABLE s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/git
 下面我们尝试更改一些可能影响推断 schema 的设置：
 
 ```sql
-DESCRIBE TABLE s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/github/github-2022.ndjson.gz')
+DESCRIBE TABLE s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/github/github-2022.ndjson.gz', NOSIGN)
 SETTINGS input_format_json_try_infer_named_tuples_from_objects=0, input_format_json_read_objects_as_strings = 1
 
 ┌─name───────┬─type─────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐

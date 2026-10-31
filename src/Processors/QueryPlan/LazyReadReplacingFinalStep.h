@@ -31,7 +31,7 @@ public:
 
     String getName() const override { return "LazyReadReplacingFinal"; }
     void initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings & settings) override;
-    QueryPlanRawPtrs getChildPlans() override;
+    QueryPlanRawPtrs getChildPlans(bool /*for_explain*/) override;
 
     std::vector<size_t> getStepGroups() const override;
     String getStepGroupName(size_t group) const override;
