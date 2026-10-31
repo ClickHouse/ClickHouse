@@ -21,6 +21,7 @@ namespace ErrorCodes
     extern const int UNKNOWN_SETTING;
     extern const int NOT_IMPLEMENTED;
     extern const int BAD_ARGUMENTS;
+    extern const int INVALID_CONFIG_PARAMETER;
 }
 
 /** These settings represent fine tunes for internal details of Coordination storages
@@ -110,6 +111,7 @@ namespace ErrorCodes
     DECLARE(Bool, use_xid_64, false, "Enable 64-bit XID. It is disabled by default because of backward compatibility", 0) \
     DECLARE(Bool, check_node_acl_on_remove, false, "When trying to remove a node, check ACLs from both the node itself and the parent node. If disabled, default behaviour will be used where only ACL from the parent node is checked", 0) \
     DECLARE(UInt64, snapshot_transfer_chunk_size, 0, "Chunk size in bytes for snapshot transfer between Keeper nodes. Larger values reduce round-trips but increase per-message memory usage. 0 means disabled: the whole snapshot is sent as a single NuRaft object (compatibility behaviour with Keeper versions before 26.5). Must not exceed 1 GiB. With 0, snapshots of 2 GiB or larger cannot be transferred, because a single NuRaft message cannot exceed 2 GiB.", 0) \
+    DECLARE(Bool, snapshot_transfer_remote_disk_streaming, false, "Send remote-disk snapshots to followers without caching the whole file in memory. Needs nonzero `snapshot_transfer_chunk_size`.", 0) \
     DECLARE(UInt64, write_snapshot_version, 8, "Snapshot format version to write. Increase only after all nodes in the cluster are upgraded to a version that supports the new format", HOT_RELOAD) \
     DECLARE(Bool, nuraft_test_mode, false, "Nuraft test mode. not enabled for production use", 0) \
     DECLARE(Bool, use_new_dispatcher, true, "Use new request dispatcher implementation (KeeperRequestDispatcher)", 0) \
@@ -187,6 +189,12 @@ void CoordinationSettingsImpl::loadFromConfig(const String & config_elem, const 
             ErrorCodes::BAD_ARGUMENTS,
             "The Keeper setting `snapshot_transfer_chunk_size` must not exceed {} bytes, got {}",
             1_GiB, (*this)[CoordinationSetting::snapshot_transfer_chunk_size].value);
+
+    if ((*this)[CoordinationSetting::snapshot_transfer_remote_disk_streaming].value
+        && (*this)[CoordinationSetting::snapshot_transfer_chunk_size].value == 0)
+        throw Exception(
+            ErrorCodes::INVALID_CONFIG_PARAMETER,
+            "The Keeper setting `snapshot_transfer_remote_disk_streaming` requires a nonzero `snapshot_transfer_chunk_size`");
 
 #if defined(MEMORY_SANITIZER)
     if ((*this)[CoordinationSetting::commit_profiler_real_time_period_ns].changed

@@ -3,9 +3,10 @@
 #include <IO/ReadHelpers.h>
 #include <Server/HTTP/HTTPServerResponse.h>
 #include <Common/Exception.h>
+#include <Common/HiddenSecret.h>
+#include <Common/VectorWithMemoryTracking.h>
+#include <Common/maskSensitiveQueryParameters.h>
 #include <Common/maskURIPassword.h>
-
-#include <boost/algorithm/string/replace.hpp>
 
 #include "config.h"
 
@@ -143,6 +144,50 @@ void assertResponseIsOk(
     }
 }
 
+namespace
+{
+
+/// Replaces each run of characters covered by a secret with one `[HIDDEN]`. Matches are found in the original text only,
+/// so a marker is never searched again and the output grows at most linearly.
+std::string scrubSecrets(std::string_view text, const Strings & secrets)
+{
+    VectorWithMemoryTracking<bool> hidden(text.size());
+    for (const auto & secret : secrets)
+    {
+        if (secret.empty())
+            continue;
+        for (size_t pos = text.find(secret); pos != std::string_view::npos; pos = text.find(secret, pos + secret.size()))
+            std::fill_n(hidden.begin() + pos, secret.size(), true);
+    }
+
+    std::string result;
+    result.reserve(text.size());
+    for (size_t i = 0; i < text.size(); ++i)
+    {
+        if (!hidden[i])
+            result += text[i];
+        else if (i == 0 || !hidden[i - 1])
+            result += HIDDEN_SECRET;
+    }
+    return result;
+}
+
+Strings collectRequestCredentials(const std::string & uri, const Strings & request_secrets)
+{
+    Strings secrets = presignedURLCredentials(uri);
+    secrets.insert(secrets.end(), request_secrets.begin(), request_secrets.end());
+    std::ranges::sort(secrets);
+    secrets.erase(std::ranges::unique(secrets).begin(), secrets.end());
+    return secrets;
+}
+
+}
+
+std::string scrubRequestCredentials(std::string_view text, const std::string & uri, const Strings & request_secrets)
+{
+    return scrubSecrets(text, collectRequestCredentials(uri, request_secrets));
+}
+
 Exception HTTPException::makeExceptionMessage(
     int code,
     const std::string & uri,
@@ -156,22 +201,14 @@ Exception HTTPException::makeExceptionMessage(
 
     /// The reason phrase and the body are remote content that can reflect the request's own credentials back (e.g. an
     /// auth error naming the token). Scrub those exact credential strings, keeping the rest - a useful diagnostic that
-    /// does not carry a credential.
-    const auto scrub = [&](std::string text)
-    {
-        for (const auto & secret : response_secrets)
-        {
-            if (!secret.empty())
-                boost::replace_all(text, secret, "[HIDDEN]");
-        }
-        return text;
-    };
+    /// does not carry a credential. `uri` arrives unmasked, so that the credentials it carries are scrubbed here too.
+    const Strings secrets = collectRequestCredentials(uri, response_secrets);
 
     return Exception(code,
         "Received error from remote server {}. "
         "HTTP status code: {} '{}', "
         "body length: {} bytes, body: '{}'",
-        masked_uri, static_cast<int>(http_status), scrub(reason), body.length(), scrub(body));
+        masked_uri, static_cast<int>(http_status), scrubSecrets(reason, secrets), body.length(), scrubSecrets(body, secrets));
 }
 
 }
