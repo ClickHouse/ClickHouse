@@ -9,10 +9,12 @@
 #include <Parsers/ASTAlterQuery.h>
 #include <Parsers/ASTAsterisk.h>
 #include <Parsers/ASTColumnsMatcher.h>
+#include <Parsers/ASTColumnsTransformers.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTCreateSQLFunctionQuery.h>
 #include <Parsers/ASTCreateFunctionWithDriverQuery.h>
 #include <Parsers/ASTCreateWasmFunctionQuery.h>
+#include <Parsers/ASTDataType.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
@@ -43,13 +45,23 @@ void UserDefinedSQLFunctionVisitor::visit(ASTPtr & ast, ContextPtr context_)
 {
     chassert(ast);
 
+    std::unordered_set<String> lambda_names; /// STYLE_CHECK_ALLOW_STD_CONTAINERS: the type of `collectLambdaNames`
+    collectLambdaNames(*ast, lambda_names);
+    visitImpl(ast, context_, lambda_names, /*inside_apply=*/false);
+}
+
+void UserDefinedSQLFunctionVisitor::visitImpl(
+    ASTPtr & ast, ContextPtr context_, const std::unordered_set<String> & lambda_names, bool inside_apply) /// STYLE_CHECK_ALLOW_STD_CONTAINERS: the type of `collectLambdaNames`
+{
+    chassert(ast);
+
     for (auto & child : ast->children)
     {
         if (!child)
             return;
 
         auto * old_ptr = child.get();
-        visit(child, context_);
+        visitImpl(child, context_, lambda_names, inside_apply);
         auto * new_ptr = child.get();
 
         /// Some AST classes have naked pointers to children elements as members.
@@ -62,13 +74,43 @@ void UserDefinedSQLFunctionVisitor::visit(ASTPtr & ast, ContextPtr context_)
     if (auto * ttl_element = ast->template as<ASTTTLElement>())
     {
         for (auto & key : ttl_element->group_by_key)
-            visit(key, context_);
+            visitImpl(key, context_, lambda_names, inside_apply);
         for (auto & assignment : ttl_element->group_by_assignments)
-            visit(assignment, context_);
+            visitImpl(assignment, context_, lambda_names, inside_apply);
+    }
+
+    /// The function of an `APPLY` transformer is not among its children either.
+    if (auto * apply_transformer = ast->template as<ASTColumnsApplyTransformer>())
+    {
+        /// `APPLY f` with a SQL UDF `f` is rewritten to `APPLY(x -> f(x))`, so that the body of `f` can be expanded.
+        /// Not if a lambda named `f` is declared in the query: it takes precedence over the UDF in the analyzer.
+        const auto user_defined_function = apply_transformer->lambda || apply_transformer->parameters
+                || lambda_names.contains(apply_transformer->func_name)
+            ? nullptr : UserDefinedSQLFunctionFactory::instance().tryGet(apply_transformer->func_name);
+        if (user_defined_function && user_defined_function->as<ASTCreateSQLFunctionQuery>())
+        {
+            static constexpr auto lambda_argument = "x";
+            apply_transformer->lambda = makeASTFunction("lambda",
+                makeASTFunction("tuple", make_intrusive<ASTIdentifier>(lambda_argument)),
+                makeASTFunction(apply_transformer->func_name, make_intrusive<ASTIdentifier>(lambda_argument)));
+            apply_transformer->lambda_arg = lambda_argument;
+            apply_transformer->func_name.clear();
+        }
+
+        if (apply_transformer->lambda)
+            visitImpl(apply_transformer->lambda, context_, lambda_names, /*inside_apply=*/true);
+        /// The parameters of an aggregate function, as in `APPLY(quantile(f()))`.
+        if (apply_transformer->parameters)
+            visitImpl(apply_transformer->parameters, context_, lambda_names, /*inside_apply=*/true);
     }
 
     if (const auto * function = ast->template as<ASTFunction>())
     {
+        /// The expressions of `APPLY` used not to be expanded here, so the analyzer resolved a lambda of the same name
+        /// before the UDF. Keep that precedence for them. Elsewhere, the expansion is unchanged.
+        if (inside_apply && lambda_names.contains(function->name))
+            return;
+
         UnorderedSetWithMemoryTracking<std::string> udf_in_replace_process;
         auto replace_result = tryToReplaceFunction(*function, udf_in_replace_process, context_);
         if (replace_result)

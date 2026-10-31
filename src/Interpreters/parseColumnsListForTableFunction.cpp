@@ -62,7 +62,7 @@ void validateDataType(const DataTypePtr & type_to_check, const DataTypeValidatio
                 /// It is allowed having LowCardinality(UUID) because often times UUIDs are highly repetitive in tables,
                 /// and their relatively large size provides opportunity for better performance.
 
-                if (!isStringOrFixedString(unwrapped) && !isUUID(unwrapped))
+                if (!isStringOrFixedString(unwrapped) && !isUUID(unwrapped) && !isUUID2(unwrapped))
                     throw Exception(
                         ErrorCodes::SUSPICIOUS_TYPE_FOR_LOW_CARDINALITY,
                         "Creating columns of type {} is prohibited by default due to expected negative impact on performance. "
@@ -163,6 +163,13 @@ void validateDataType(const DataTypePtr & type_to_check, const DataTypeValidatio
         validate_callback(*type_to_check);
 }
 
+/** Note on `uuid_type_version`: a structure string is reparsed on every execution of the definition that holds it,
+  * so resolving a bare `UUID` here through the session setting would let an already persisted definition (a view,
+  * a `CREATE TABLE ... AS` a table function) change its column types whenever the setting - or its default -
+  * changes. The setting is instead materialized into the structure string once, on the initiator of the `CREATE`
+  * (see `applyUUIDTypeVersionInPlace`), which is why these two functions resolve a bare `UUID` as the historical
+  * `UUID` type unconditionally.
+  */
 ColumnsDescription parseColumnsListFromString(const std::string & structure, const ContextPtr & context)
 {
     ParserColumnDeclarationList parser(true, true);
@@ -181,7 +188,9 @@ ColumnsDescription parseColumnsListFromString(const std::string & structure, con
 
     auto columns_list = make_intrusive<ASTColumns>();
     columns_list->set(columns_list->columns, columns_list_raw);
-    auto columns = InterpreterCreateQuery::getColumnsDescription(*columns_list, context, LoadingStrictnessLevel::CREATE);
+    auto columns = InterpreterCreateQuery::getColumnsDescription(
+        *columns_list, context, LoadingStrictnessLevel::CREATE, /*is_restore_from_backup=*/false,
+        /*check_defaults_over_virtual_columns=*/true, /*materialize_uuid_type_version=*/false);
     auto validation_settings = DataTypeValidationSettings(context->getSettingsRef());
     for (const auto & [name, type] : columns.getAll())
         validateDataType(type, validation_settings);
@@ -220,7 +229,9 @@ bool tryParseColumnsListFromString(const std::string & structure, ColumnsDescrip
     {
         auto columns_list = make_intrusive<ASTColumns>();
         columns_list->set(columns_list->columns, columns_list_raw);
-        columns = InterpreterCreateQuery::getColumnsDescription(*columns_list, context, LoadingStrictnessLevel::CREATE);
+        columns = InterpreterCreateQuery::getColumnsDescription(
+            *columns_list, context, LoadingStrictnessLevel::CREATE, /*is_restore_from_backup=*/false,
+            /*check_defaults_over_virtual_columns=*/true, /*materialize_uuid_type_version=*/false);
         auto validation_settings = DataTypeValidationSettings(context->getSettingsRef());
         for (const auto & [name, type] : columns.getAll())
             validateDataType(type, validation_settings);

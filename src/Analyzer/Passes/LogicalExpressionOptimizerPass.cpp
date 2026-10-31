@@ -901,7 +901,13 @@ static AddComparisonFilterResult addComparisonFilter(
     const auto & raw_type = expression->getResultType();
     auto expr_type = removeLowCardinality(raw_type);
 
-    new_filter.converted_value = tryConvertToColumnType(new_filter.constant_node, expr_type);
+    /// A comparison of `UUID` with `UUID2` (also nested, e.g. `Tuple(UUID)` with `Tuple(UUID2)`) is evaluated in
+    /// `UUID2`, which orders the values differently from `UUID`, so the constant converted to the column's type would
+    /// be compared in the wrong order: keep such a filter as is.
+    const bool mixed_uuid_types = typesHaveDifferentUUIDLayouts(*new_filter.constant_node->getResultType(), *expr_type);
+
+    if (!mixed_uuid_types)
+        new_filter.converted_value = tryConvertToColumnType(new_filter.constant_node, expr_type);
 
     /// Step 2: for integer columns, try boundary folding / float-literal rewriting.
     if (enable_pruning)

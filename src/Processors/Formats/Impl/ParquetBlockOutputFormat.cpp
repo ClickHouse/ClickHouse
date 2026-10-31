@@ -82,10 +82,11 @@ ParquetBlockOutputFormat::ParquetBlockOutputFormat(WriteBuffer & out_, SharedHea
             *header_,
             options,
             column_encoding.empty() ? std::nullopt : std::optional(column_encoding),
-            iceberg_optionality);
+            iceberg_optionality,
+            &uuid2_leaf_columns);
     }
     else
-        schema = convertSchema(*header_, options, std::nullopt, iceberg_optionality);
+        schema = convertSchema(*header_, options, std::nullopt, iceberg_optionality, &uuid2_leaf_columns);
 }
 
 ParquetBlockOutputFormat::~ParquetBlockOutputFormat()
@@ -218,7 +219,7 @@ void ParquetBlockOutputFormat::finalizeImpl()
     }
     Block header = materializeBlock(getPort(PortKind::Main).getHeader());
     collectColumnSizesOnDisk(header);
-    writeFileFooter(file_state, schema, options, out, header);
+    writeFileFooter(file_state, schema, options, out, header, uuid2_leaf_columns);
     chassert(out.count() - base_offset == file_state.offset);
 }
 

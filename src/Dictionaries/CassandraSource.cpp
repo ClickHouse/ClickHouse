@@ -73,6 +73,7 @@ VectorWithMemoryTracking<ColumnType> compatibleTypes(ExternalResultDescription::
         case ValueType::vtDateTime:
             return {ColumnType::Timestamp};
         case ValueType::vtUUID:
+        case ValueType::vtUUID2:
             return {ColumnType::Uuid, ColumnType::Timeuuid};
         default:
             return {};
@@ -150,6 +151,17 @@ void CassandraSource::insertValue(IColumn & column, ValueType type, std::string_
             UUIDHelpers::getHighBytes(uuid) = unalignedLoadBigEndian<UInt64>(value.data());
             UUIDHelpers::getLowBytes(uuid) = unalignedLoadBigEndian<UInt64>(value.data() + 8);
             assert_cast<ColumnUUID &>(column).insertValue(uuid);
+            break;
+        }
+        case ValueType::vtUUID2:
+        {
+            if (value.size() != 16)
+                throw Exception(ErrorCodes::INCORRECT_DATA, "Unexpected size {} of a UUID value from Cassandra, expected 16", value.size());
+            /// `UUID2` stores the value in the canonical (big-endian) layout, which is the half-swapped `UUID` layout.
+            UUID uuid;
+            UUIDHelpers::getHighBytes(uuid) = unalignedLoadBigEndian<UInt64>(value.data());
+            UUIDHelpers::getLowBytes(uuid) = unalignedLoadBigEndian<UInt64>(value.data() + 8);
+            assert_cast<ColumnUUID &>(column).insertValue(UUIDHelpers::swapHalves(uuid));
             break;
         }
         default:

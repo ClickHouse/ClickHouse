@@ -1,0 +1,8 @@
+-- transform
+7	7	7	7
+-- shadowed fold
+x	String
+-- azure
+v_azure_cluster	1
+v_azure_credentials	1
+v_azure_settings	1

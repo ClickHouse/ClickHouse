@@ -5,6 +5,7 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/castColumn.h>
 #include <DataTypes/DataTypeNothing.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/getLeastSupertype.h>
@@ -78,6 +79,13 @@ public:
         /// So, we do not need to check left.isNull().
         bool can_contain_null = canContainNull(type);
         if (can_contain_null && right.isNull())
+            return {};
+
+        /// The result type is the supertype with the other arguments, and the supertype of `UUID` and `UUID2` is `UUID2`,
+        /// which orders the values differently from `UUID`: the conversion of the first argument is then not monotonic.
+        /// The result type is not known here, so do not claim monotonicity for a `UUID` or `UUID2` argument.
+        const auto decayed_type = removeNullable(removeLowCardinality(type.getPtr()));
+        if (isUUID(decayed_type) || isUUID2(decayed_type))
             return {};
 
         return { .is_monotonic = true, .is_positive = true, .is_always_monotonic = !can_contain_null };

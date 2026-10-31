@@ -1,0 +1,5 @@
+3	0
+CAST(a, \'UUID2\')	UUID2
+UUID2	Array(UUID2)	UUID
+UUID
+1

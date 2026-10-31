@@ -13,6 +13,7 @@
 #include <Functions/UserDefined/UserDefinedWebAssembly.h>
 #include <Core/UUID.h>
 #include <Core/ServerSettings.h>
+#include <Core/Settings.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/executeDDLQueryOnCluster.h>
 #include <Interpreters/removeOnClusterClauseIfNeeded.h>
@@ -20,6 +21,7 @@
 #include <Parsers/ASTCreateFunctionWithDriverQuery.h>
 #include <Parsers/ASTCreateSQLFunctionQuery.h>
 #include <Parsers/ASTCreateWasmFunctionQuery.h>
+#include <Parsers/ASTDataType.h>
 #include <Parsers/ASTLiteral.h>
 #include <Functions/UserDefined/UserDefinedSQLObjectType.h>
 #include <IO/WriteBufferFromFile.h>
@@ -47,6 +49,11 @@ namespace ErrorCodes
     extern const int CANNOT_CREATE_DIRECTORY;
     extern const int FUNCTION_ALREADY_EXISTS;
     extern const int SUPPORT_IS_DISABLED;
+}
+
+namespace Setting
+{
+    extern const SettingsUUIDTypeVersion uuid_type_version;
 }
 
 namespace ServerSetting
@@ -357,6 +364,12 @@ std::optional<BlockIO> tryExecute(const ASTPtr & query_ptr, ContextMutablePtr cu
     if (create_function_query->or_replace)
         access_rights_elements.emplace_back(AccessType::DROP_FUNCTION);
 
+    /// Materialize the `uuid_type_version` setting into the stored definition on the initiator: a bare `UUID` in the
+    /// body of a SQL function (`CAST(x, 'UUID')`) or in the signature of a WebAssembly function becomes `UUID2` when the
+    /// setting is 2. Otherwise the function would be re-resolved with whatever setting is in effect where and when it
+    /// is used. The query sent to other nodes by `ON CLUSTER` is already materialized, so they must not apply their own.
+    if (!current_context->isDDLOrOnClusterInternal())
+        applyUUIDTypeVersionInPlace(*create_function_query, current_context->getSettingsRef()[Setting::uuid_type_version]);
 
     if (!create_function_query->cluster.empty())
     {
@@ -410,6 +423,11 @@ static std::optional<BlockIO> tryExecuteWithDriver(const ASTPtr & query_ptr, Con
     access_rights_elements.emplace_back(AccessType::CREATE_FUNCTION);
     if (create_function_query->or_replace)
         access_rights_elements.emplace_back(AccessType::DROP_FUNCTION);
+
+    /// Materialize `uuid_type_version` into the argument and return types before the driver is invoked and the
+    /// definition is stored or sent to other nodes, the same way as for SQL and WebAssembly functions above.
+    if (!current_context->isDDLOrOnClusterInternal())
+        applyUUIDTypeVersionInPlace(*create_function_query, current_context->getSettingsRef()[Setting::uuid_type_version]);
 
     if (!create_function_query->cluster.empty())
     {

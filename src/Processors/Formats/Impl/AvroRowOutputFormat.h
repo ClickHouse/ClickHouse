@@ -16,10 +16,26 @@
 #include <Schema.hh>
 #include <ValidSchema.hh>
 
+#include <string>
+
 namespace DB
 {
 class Block;
 class WriteBuffer;
+
+/// The key of the Avro file metadata entry with the JSON array of the dotted paths of the `UUID2` values.
+inline constexpr auto AVRO_UUID2_PATHS_METADATA_KEY = "ClickHouse:uuid2_paths";
+
+/// The path of the alternative `index` of a `Variant` with `size` alternatives at `path`, as recorded under
+/// `AVRO_UUID2_PATHS_METADATA_KEY`. The writer appends the null branch after the alternatives, so `index` is also
+/// the index of the branch in the Avro union. A `Variant` with a single alternative is written as a union with null,
+/// which is read back as `Nullable` of the alternative, so it keeps the path.
+inline std::string getAvroVariantAlternativePath(const std::string & path, size_t size, size_t index)
+{
+    if (size == 1)
+        return path;
+    return path + ".variant" + std::to_string(index);
+}
 
 class AvroSerializerTraits;
 class ConfluentSchemaRegistry;
@@ -45,6 +61,11 @@ class AvroSerializer
 public:
     AvroSerializer(const ColumnsWithTypeAndName & columns, std::unique_ptr<AvroSerializerTraits>, const FormatSettings & settings_, ColumnMapperPtr column_mapper_ = nullptr);
     const avro::ValidSchema & getSchema() const { return valid_schema; }
+
+    /// Dotted paths (see `column_path` below) of the `UUID2` values. Avro has a single `uuid` logical type for both
+    /// ClickHouse UUID types, so the writer records them in the file metadata (`AVRO_UUID2_PATHS_METADATA_KEY`) to
+    /// let schema inference tell `UUID2` apart from `UUID`.
+    const Strings & getUUID2Paths() const { return uuid2_paths; }
     void serializeRow(const Columns & columns, size_t row_num, avro::Encoder & encoder);
 
     using SerializeFn = std::function<void(const IColumn & column, size_t row_num, avro::Encoder & encoder)>;
@@ -72,6 +93,7 @@ private:
     void setIcebergFieldIds(const avro::NodePtr & node, const String & path);
 
     std::vector<SerializeFn> serialize_fns;
+    Strings uuid2_paths;
     avro::ValidSchema valid_schema;
     std::unique_ptr<AvroSerializerTraits> traits;
     const FormatSettings & settings;

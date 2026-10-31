@@ -53,7 +53,14 @@ private:
 class AvroDeserializer
 {
 public:
-    AvroDeserializer(const Block & header, avro::ValidSchema schema, bool allow_missing_fields, bool null_as_default_, const FormatSettings & settings_);
+    /// `uuid2_paths_` are the dotted paths of the values written from `UUID2` (see `AVRO_UUID2_PATHS_METADATA_KEY`).
+    AvroDeserializer(
+        const Block & header,
+        avro::ValidSchema schema,
+        bool allow_missing_fields,
+        bool null_as_default_,
+        const FormatSettings & settings_,
+        std::unordered_set<String> uuid2_paths_ = {});
     AvroDeserializer(DataTypePtr data_type, const std::string & column_name, avro::ValidSchema schema, bool allow_missing_fields, bool null_as_default_, const FormatSettings & settings_);
 
     /// Not movable: stored closures capture `this` and references into `symbolic_skip_fn_map`.
@@ -69,7 +76,8 @@ public:
 
 private:
     using SkipFn = std::function<void(avro::Decoder & decoder)>;
-    DeserializeFn createDeserializeFn(const avro::NodePtr & root_node, const DataTypePtr & target_type);
+    /// `path` is the dotted path of the value in the schema, as in `AvroSchemaReader`.
+    DeserializeFn createDeserializeFn(const avro::NodePtr & root_node, const DataTypePtr & target_type, const String & path);
     SkipFn createSkipFn(const avro::NodePtr & root_node);
 
     struct Action
@@ -167,6 +175,8 @@ private:
     bool null_as_default = false;
 
     const FormatSettings & settings;
+
+    std::unordered_set<String> uuid2_paths;
 };
 
 class AvroRowInputFormat final : public IRowInputFormat
@@ -229,8 +239,22 @@ public:
     /// schema_inference_allow_nullable_tuple_type here, because otherwise it would return a type
     /// that CREATE TABLE rejects.
     static DataTypePtr avroNodeToDataType(avro::NodePtr node, bool allow_nullable_tuple_type = true);
+
+    /// `uuid2_paths` are the dotted paths of the values written from `UUID2` (see `AVRO_UUID2_PATHS_METADATA_KEY`);
+    /// a `uuid` logical type at such a path is inferred as `UUID2` instead of `UUID`. `path` is the path of `node`.
+    static DataTypePtr avroNodeToDataType(
+        const avro::NodePtr & node, bool allow_nullable_tuple_type, const std::unordered_set<String> & uuid2_paths, const String & path);
+
+    /// Reads the `UUID2` paths from the metadata of an Avro file (see `AVRO_UUID2_PATHS_METADATA_KEY`).
+    static std::unordered_set<String> readUUID2Paths(
+        const std::map<std::string, std::vector<uint8_t>> & metadata, const FormatSettings & format_settings);
 private:
-    static DataTypePtr avroNodeToDataTypeImpl(const avro::NodePtr & node, std::unordered_set<std::string> & seen_names, bool allow_nullable_tuple_type);
+    static DataTypePtr avroNodeToDataTypeImpl(
+        const avro::NodePtr & node,
+        std::unordered_set<std::string> & seen_names,
+        bool allow_nullable_tuple_type,
+        const std::unordered_set<String> & uuid2_paths,
+        const String & path);
 
     bool confluent;
     const FormatSettings format_settings;

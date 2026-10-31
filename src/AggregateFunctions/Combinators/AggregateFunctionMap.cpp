@@ -668,6 +668,8 @@ public:
         {
             const DataTypePtr & key_type = map_type->getKeyType();
 
+            /// `UUID2` reuses `ColumnVector<UUID>` storage, so `createWithNumericBasedType` maps it to the `UUID` state;
+            /// the map key type is taken from the argument, so the result stays `Map(UUID2, ...)`.
             if (auto * res = createWithNumericBasedType<AggregateFunctionMap, false>(*key_type, nested_function, arguments))
                 return AggregateFunctionPtr(res);
 
