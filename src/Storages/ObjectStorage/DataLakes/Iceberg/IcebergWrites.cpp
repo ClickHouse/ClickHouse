@@ -1276,6 +1276,9 @@ IcebergStorageSink::IcebergStorageSink(
 IcebergStorageSink::~IcebergStorageSink()
 {
     cancelBuffers();
+    /// Covers every way an insert can stop without committing, including cancellation, which skips `onException`.
+    if (!committed)
+        removeDataFilesAndManifests();
 }
 
 void IcebergStorageSink::consume(Chunk & chunk)
@@ -1418,6 +1421,7 @@ void IcebergStorageSink::finalizeBuffers()
         if (initializeMetadata())
         {
             successed_write = true;
+            committed = true;
             break;
         }
         ++i;
@@ -1736,6 +1740,7 @@ bool IcebergStorageSink::initializeMetadata()
     }
     catch (...)
     {
+        /// TODO: keep the files when the catalog reports an unknown commit outcome (`CommitStateUnknownException` or a 5xx), because the snapshot may already reference them.
         cleanup(false);
         throw;
     }

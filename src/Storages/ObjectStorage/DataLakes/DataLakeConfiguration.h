@@ -408,6 +408,10 @@ public:
     {
         return getMetadata()->getColumnMapperForCurrentSchema(storage_metadata_snapshot, context);
     }
+    ColumnMapperPtr getCurrentSchemaColumnMapperForFilters(StorageMetadataPtr storage_metadata_snapshot, ContextPtr context) const override
+    {
+        return getMetadata()->getCurrentSchemaColumnMapperForFilters(storage_metadata_snapshot, context);
+    }
 
     void checkCanBeDropped(ObjectStoragePtr object_storage, ContextPtr query_context, bool catalog_purges_files) override
     {
