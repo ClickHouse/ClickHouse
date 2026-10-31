@@ -167,6 +167,17 @@ TEST(ColumnSparse, Filter)
             DUMP_COLUMN(full_dst);
             throw Exception(error_code, "Columns are unequal");
         }
+
+        sparse_src->filter(filt);
+
+        if (!checkEquals(*sparse_src->convertToFullColumnIfSparse(), *full_dst))
+        {
+            DUMP_COLUMN(sparse_src);
+            DUMP_COLUMN(full_src);
+            DUMP_COLUMN(sparse_dst);
+            DUMP_COLUMN(full_dst);
+            throw Exception(error_code, "Columns are unequal");
+        }
     };
 
     try
