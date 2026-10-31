@@ -1,0 +1,6 @@
+--- both replicas have the version of the backup restored first ---
+t_r1	4
+t_r2	4
+--- a later ALTER goes through on both replicas ---
+t_r1	5
+t_r2	5

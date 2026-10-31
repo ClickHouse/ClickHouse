@@ -161,6 +161,13 @@ bool isInnerTable(const String & /* database_name */, const String & table_name)
     return table_name.starts_with(".inner.") || table_name.starts_with(".inner_id.") || table_name.starts_with(".tmp.inner.") || table_name.starts_with(".tmp.inner_id.");
 }
 
+String getMetadataVersionPathInBackup(const String & table_metadata_path_in_backup)
+{
+    constexpr std::string_view ext = ".sql";
+    chassert(table_metadata_path_in_backup.ends_with(ext));
+    return table_metadata_path_in_backup.substr(0, table_metadata_path_in_backup.size() - ext.size()) + String{METADATA_VERSION_FILE_SUFFIX};
+}
+
 namespace
 {
 
