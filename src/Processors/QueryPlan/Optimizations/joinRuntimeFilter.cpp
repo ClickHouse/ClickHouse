@@ -18,6 +18,7 @@
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/JoinStepLogical.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
+#include <Processors/QueryPlan/ReadFromObjectStorageStep.h>
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
 #include <Processors/QueryPlan/Optimizations/Utils.h>
 #include <Processors/QueryPlan/Optimizations/actionsDAGUtils.h>
@@ -679,7 +680,8 @@ void collectAppliedJoinRuntimeFilters(const Stack & stack)
     const auto & frame = stack.back();
 
     auto * read_step = typeid_cast<ReadFromMergeTree *>(frame.node->step.get());
-    if (!read_step)
+    auto * object_storage_read_step = typeid_cast<ReadFromObjectStorageStep *>(frame.node->step.get());
+    if (!read_step && !object_storage_read_step)
         return;
 
     /// Walk up from the reading step composing the filters through the expression steps,
@@ -698,7 +700,13 @@ void collectAppliedJoinRuntimeFilters(const Stack & stack)
                 filter_dag = ActionsDAG::merge((*it)->clone(), std::move(filter_dag));
 
             for (const auto & descr : findAppliedRuntimeFilters(filter_dag, filter_step->getFilterColumnName()))
-                read_step->addJoinRuntimeFilterIndexAnalysisOnDataRead(descr.filter_id, descr.key_column_name, descr.key_column_type);
+            {
+                if (read_step)
+                    read_step->addJoinRuntimeFilterIndexAnalysisOnDataRead(descr.filter_id, descr.key_column_name, descr.key_column_type);
+                else if (!descr.key_under_nested_casts)
+                    object_storage_read_step->addJoinRuntimeFilterIndexAnalysisOnDataRead(
+                        descr.filter_id, descr.key_column_name, descr.key_column_type);
+            }
         }
         else if (const auto * expression_step = typeid_cast<ExpressionStep *>(iter->node->step.get()))
         {

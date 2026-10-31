@@ -465,6 +465,8 @@ struct RuntimeFilterIndexAnalysisDescriptor
     String filter_id;
     String key_column_name;
     DataTypePtr key_column_type;
+    /// The filter argument is the key under two or more casts, while `buildRuntimeRangePredicate` re-applies only one.
+    bool key_under_nested_casts = false;
 };
 
 /// Whether a runtime filter over a key of this type tracks the [min, max] envelope, i.e.

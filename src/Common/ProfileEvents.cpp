@@ -543,6 +543,7 @@
     M(IcebergTrivialCountOptimizationApplied, "Trivial count optimization applied while reading from Iceberg", ValueType::Number) \
     M(IcebergVersionHintUsed, "Number of times version-hint.text has been used.", ValueType::Number) \
     M(IcebergMinMaxIndexPrunedFiles, "Number of skipped files by using MinMax index in Iceberg", ValueType::Number) \
+    M(IcebergRuntimeFilterPrunedFiles, "Number of Iceberg data files skipped because their manifest bounds cannot contain a key of a JOIN runtime filter", ValueType::Number) \
     M(JoinBuildTableRowCount, "Total number of rows in the build table for a JOIN operation.", ValueType::Number) \
     M(JoinProbeTableRowCount, "Total number of rows in the probe table for a JOIN operation.", ValueType::Number) \
     M(JoinResultRowCount, "Total number of rows in the result of a JOIN operation.", ValueType::Number) \
