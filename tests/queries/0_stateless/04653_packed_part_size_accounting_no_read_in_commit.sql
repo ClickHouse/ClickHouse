@@ -13,8 +13,8 @@
 -- memory-tracker exception, so `LockMemoryExceptionInThread` does not suppress it and it escapes.
 --
 -- The commit must therefore read nothing. The oracle is the `MutatePart` row of `system.part_log`:
--- `ProfileEventsScope` in `MutatePlainMergeTreeTask::executeStep` covers `transaction.commit`, and
--- `write_part_log` runs after it on the same thread. An object-storage disk is used not because the
+-- the thread group of the mutation in `MutatePlainMergeTreeTask::executeStep` covers `transaction.commit`,
+-- and `write_part_log` runs after it on the same thread. An object-storage disk is used not because the
 -- scheduling happens there, but because it makes the extra access deterministically measurable as
 -- read volume: on it the read runs synchronously (`AsynchronousBoundedReadBuffer::readSync` ->
 -- `ThreadPoolRemoteFSReader::execute`), so the test observes the access, not the scheduling.
@@ -118,11 +118,11 @@ FROM system.part_log
 WHERE database = currentDatabase() AND table LIKE 'packed_commit_%' AND event_type = 'MutatePart';
 
 -- The same statement in bytes moved through `ThreadPoolRemoteFSReader::execute`, which as noted above
--- runs synchronously on the mutation thread here, so the `MutatePart` counter scope collects it.
+-- runs synchronously on the mutation thread here, so the `MutatePart` row collects it.
 --
--- It is a second read-volume signal beside `FileOpen`, not the scheduling observable: on the
--- scheduled path the same increment happens on a pool worker under its own thread group, which the
--- part-log snapshot cannot collect. The claim that the read is handed to a pool, and so can raise
+-- It is a second read-volume signal beside `FileOpen`, not the scheduling observable: the
+-- `MutatePart` row collects the same increment also when a pool worker of the mutation makes the
+-- read. The claim that the read is handed to a pool, and so can raise
 -- `CANNOT_SCHEDULE_TASK`, is carried by the fix's rationale and by the boundary probe instead.
 SELECT 'fewer_pool_read',
     maxIf(ProfileEvents['ThreadpoolReaderReadBytes'], table = 'packed_commit_cold')
