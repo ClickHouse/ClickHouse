@@ -3,6 +3,7 @@
 #include <AggregateFunctions/Combinators/AggregateFunctionNull.h>
 
 #include <Common/VectorWithMemoryTracking.h>
+#include <DataTypes/DataTypeCustomSimpleAggregateFunction.h>
 #include <DataTypes/DataTypeTuple.h>
 
 #include <absl/container/inlined_vector.h>
@@ -633,6 +634,8 @@ AggregateFunctionPtr AggregateFunctionIf::getOwnNullAdapter(
         return_type_is_nullable = false;
 
     bool need_to_serialize_flag = return_type_is_nullable || properties.returns_default_when_only_null;
+    if (typeid_cast<const DataTypeCustomSimpleAggregateFunction *>(getResultType()->getCustomName()))
+        return_type_is_nullable = false;
 
     if (arguments.size() <= 2 && arguments.front()->isNullable())
     {

@@ -15,6 +15,7 @@
 #include <Core/QueryProcessingStage.h>
 #include <Core/Settings.h>
 
+#include <DataTypes/DataTypeCustomSimpleAggregateFunction.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>
@@ -1763,7 +1764,9 @@ void addStepForResultRenaming(
     const auto & result_column = subquery_result_columns[0];
     auto expected_result_type = correlated_subquery.query_tree->getResultType();
     /// Scalar correlated subquery must return nullable result. See method `QueryNode::getResultType()` for details.
-    if (!expected_result_type->equals(*makeNullableOrLowCardinalityNullableSafe(result_column.type)))
+    const auto & result_type = result_column.type;
+    if (!expected_result_type->equals(*makeNullableOrLowCardinalityNullableSafe(
+            isNullableOrLowCardinalityNullable(result_type) ? result_type : removeSimpleAggregateFunction(result_type))))
         throw Exception(
             ErrorCodes::LOGICAL_ERROR,
             "Expected {} as correlated subquery result, but got {}",
