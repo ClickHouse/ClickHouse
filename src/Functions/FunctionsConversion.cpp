@@ -1,4 +1,6 @@
 #include <Functions/FunctionsConversion.h>
+#include <Functions/FunctionDynamicAdaptor.h>
+#include <Functions/FunctionVariantAdaptor.h>
 #include <Common/UnorderedMapWithMemoryTracking.h>
 #include <Common/VectorWithMemoryTracking.h>
 #include <Common/iota.h>
@@ -3575,9 +3577,27 @@ std::optional<bool> getFixedStringToStringStripTrailingZeros(const IFunctionBase
 {
     if (auto cast_mode = getCastFixedStringToStringStripTrailingZeros(function))
         return cast_mode;
+    const IFunction * wrapped_function = nullptr;
     if (const auto * adaptor = typeid_cast<const FunctionToFunctionBaseAdaptor *>(&function))
-        if (const auto * function_with_mode = dynamic_cast<const IFunctionWithFixedStringToStringMode *>(adaptor->getFunction().get()))
-            return function_with_mode->getFixedStringToStringStripTrailingZeros();
+    {
+        wrapped_function = adaptor->getFunction().get();
+    }
+    else
+    {
+        /// A function with a `Dynamic` or `Variant` argument is wrapped into an adaptor that rebuilds it for each
+        /// alternative from its overload resolver, so the mode is the one captured by the function of the resolver.
+        const IFunctionOverloadResolver * resolver = nullptr;
+        if (const auto * dynamic_adaptor = typeid_cast<const FunctionBaseDynamicAdaptor *>(&function))
+            resolver = &dynamic_adaptor->getFunctionOverloadResolver();
+        else if (const auto * variant_adaptor = typeid_cast<const FunctionBaseVariantAdaptor *>(&function))
+            resolver = &variant_adaptor->getFunctionOverloadResolver();
+
+        if (const auto * resolver_adaptor = typeid_cast<const FunctionToOverloadResolverAdaptor *>(resolver))
+            wrapped_function = resolver_adaptor->getFunction();
+    }
+
+    if (const auto * function_with_mode = dynamic_cast<const IFunctionWithFixedStringToStringMode *>(wrapped_function))
+        return function_with_mode->getFixedStringToStringStripTrailingZeros();
     return {};
 }
 
