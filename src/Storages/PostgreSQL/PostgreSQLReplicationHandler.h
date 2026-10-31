@@ -248,6 +248,12 @@ private:
     /// the snapshot, and it propagates to the standbys through ClickHouse replication.
     void ensureNestedTablesExist();
 
+    /// For every nested table whose shut-down copy `ensureNestedTablesExist` drops, the generation (the creation
+    /// zxid of the root node, 0 if it was missing) of the shared replicated tree that copy belonged to. Kept until
+    /// the replacement is created, including across failed and retried attempts, and compared with the tree the
+    /// replacement joined. Only accessed from `ensureNestedTablesExist`.
+    std::unordered_map<String, int64_t> recreated_nested_tree_generations;
+
     /// Coordinated mode: mark the nested tables available on this replica once it holds the complete initial
     /// snapshot (the marker exists and the local replica has caught up). Returns whether all of them are.
     bool markCaughtUpNestedTablesAvailable();
@@ -412,6 +418,8 @@ private:
     /// Removes the `snapshot_completed` marker if no replica other than this one's exists in the shared tree of
     /// a nested table, so that the next active worker redoes the snapshot instead of resuming from the slot.
     void invalidateInitialSnapshotIfNoOtherNestedReplica(const NestedTableEngineSpec & engine_spec);
+    /// Removes the `snapshot_completed` marker unconditionally; `reason` is logged.
+    void invalidateInitialSnapshot(const String & reason);
     void markInitialSnapshotCompleted(const String & lsn);
 
     /// Throws when the Keeper session backing this worker's /leader node is no longer alive. Fences the

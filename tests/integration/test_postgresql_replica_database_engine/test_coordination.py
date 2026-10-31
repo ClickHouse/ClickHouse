@@ -20,7 +20,7 @@ cluster = ClickHouseCluster(__file__)
 
 instance = cluster.add_instance(
     "coord_instance1",
-    main_configs=["configs/log_conf.xml"],
+    main_configs=["configs/log_conf.xml", "configs/backups_disk.xml"],
     user_configs=["configs/users_coordination.xml"],
     with_postgres=True,
     with_zookeeper=True,
@@ -284,6 +284,36 @@ def test_replicated_nested_tables_converge_with_single_leader(started_cluster):
     # Exactly one active worker.
     wait_for_leader(instance)
     assert count_leader_nodes(instance) == 1
+
+
+def test_coordinated_backup_restores_as_independent_table(started_cluster):
+    # The nested tables of a coordinated database are replicated, with the literal Keeper path and replica name
+    # of the live setup in their definition. The backup must store the plain `ReplacingMergeTree` definition
+    # instead, so that restoring under another name neither collides with the live replica
+    # (`REPLICA_ALREADY_EXISTS`) nor joins the live shared tree.
+    pg_manager.create_postgres_table("test_table")
+    instance.query(
+        "INSERT INTO postgres_database.test_table SELECT number, number FROM numbers(50)"
+    )
+
+    create_coordinated_db("test_table")
+    check_tables_are_synchronized(instance, "test_table")
+
+    backup_name = "Disk('backups', 'coordinated_backup')"
+    instance.query(f"BACKUP DATABASE test_database TO {backup_name}")
+
+    instance.query("DROP DATABASE IF EXISTS restored_db SYNC")
+    instance.query("CREATE DATABASE restored_db")
+    instance.query(
+        f"RESTORE TABLE test_database.test_table AS restored_db.test_table FROM {backup_name} "
+        "SETTINGS allow_different_table_def = 1"
+    )
+    assert "ENGINE = ReplacingMergeTree" in instance.query(
+        "SHOW CREATE TABLE restored_db.test_table"
+    )
+    assert "1225" == instance.query("SELECT sum(key) FROM restored_db.test_table").strip()
+
+    instance.query("DROP DATABASE restored_db SYNC")
 
 
 def test_leader_failover_and_rejoin_without_data_loss(started_cluster):

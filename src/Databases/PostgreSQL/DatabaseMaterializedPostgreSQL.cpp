@@ -36,6 +36,7 @@
 #include <Parsers/ASTAlterQuery.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTFunction.h>
+#include <Parsers/ASTLiteral.h>
 #include <Parsers/parseQuery.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/InterpreterAlterQuery.h>
@@ -1922,7 +1923,35 @@ DatabaseMaterializedPostgreSQL::getTablesForBackup(const FilterByNameFunction & 
         }
     }
 
-    return DatabaseAtomic::getTablesForBackup(filter, local_context);
+    auto tables = DatabaseAtomic::getTablesForBackup(filter, local_context);
+
+    /// In coordinated mode the nested tables are `ReplicatedReplacingMergeTree` / `SharedReplacingMergeTree`
+    /// whose first two arguments are the literal Keeper path and replica name of the live setup. Backing up that
+    /// definition as is would make a restore under another name fail with `REPLICA_ALREADY_EXISTS` while that
+    /// replica exists, or silently join the live shared tree once it was dropped, instead of producing an
+    /// independent copy of the backed up data. So the backup stores the plain `ReplacingMergeTree` definition,
+    /// the same one a non-coordinated database has.
+    for (auto & [create_query_ptr, storage] : tables)
+    {
+        const auto * create = create_query_ptr ? create_query_ptr->as<ASTCreateQuery>() : nullptr;
+        if (!create || !create->storage || !create->storage->engine)
+            continue;
+
+        const auto & engine = *create->storage->engine;
+        if ((engine.name != "ReplicatedReplacingMergeTree" && engine.name != "SharedReplacingMergeTree")
+            || !engine.arguments || engine.arguments->children.size() < 2
+            || !engine.arguments->children[0]->as<ASTLiteral>() || !engine.arguments->children[1]->as<ASTLiteral>())
+            continue;
+
+        auto independent_create = create_query_ptr->clone();
+        auto & independent_engine = *independent_create->as<ASTCreateQuery &>().storage->engine;
+        independent_engine.name = "ReplacingMergeTree";
+        auto & arguments = independent_engine.arguments->children;
+        arguments.erase(arguments.begin(), arguments.begin() + 2);
+        create_query_ptr = std::move(independent_create);
+    }
+
+    return tables;
 }
 
 void registerDatabaseMaterializedPostgreSQL(DatabaseFactory & factory);
@@ -2469,7 +2498,7 @@ BACKUP DATABASE postgres_db TO Disk('backups', 'postgres_db.zip');
 
 Restoring a `MaterializedPostgreSQL` database or table **in place is not supported**. A restored `MaterializedPostgreSQL` object immediately starts replicating from the live PostgreSQL source, so restoring the backup snapshot on top of it would mix the snapshot with the current remote state. RESTORE therefore fails closed in this case. Restore the captured data into plain `ReplacingMergeTree` tables instead:
 
-- In a database backup, each table's stored definition is already the synthetic nested `ReplacingMergeTree` (not the `MaterializedPostgreSQL` engine), so each table can be restored straight into a new, not-yet-existing table:
+- In a database backup, each table's stored definition is already the synthetic nested `ReplacingMergeTree` (not the `MaterializedPostgreSQL` engine), so each table can be restored straight into a new, not-yet-existing table. This also holds for a database with Keeper coordination: its backup stores the plain `ReplacingMergeTree` definition rather than the replicated one, so the restored table is an independent copy that does not join the live shared replicated tree:
 
     ```sql
     RESTORE TABLE postgres_db.table1 AS restored_db.table1
