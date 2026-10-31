@@ -707,6 +707,10 @@ void ReplxxLineReader::vimWordObject(int & pos, std::u32string & text, bool bigw
     bool empty_line = (pos == 0 || text[pos - 1] == '\n') && (pos == length || text[pos] == '\n');
     if (cls == -1 && around && pos < length && empty_line)
         cls = 0;
+    /* With a count, an empty line is a chunk of its own, and the selection continues with
+     * the following chunks, as in Vim. */
+    if (cls == -1 && empty_line && !around && reps > 1 && pos < length)
+        cls = 3;
     /* `ciw` on an empty line, including an empty last line, keeps the line break and enters insert mode, as in Vim. */
     if (cls == -1 && empty_line && op == OPERATOR_C)
     {
@@ -1059,14 +1063,11 @@ void ReplxxLineReader::setupVimKeybindings(bool allow_editor)
             for (int rep = 0; rep < reps && pos > 0; rep++)
             {
                 pos--;
-                if (text[pos] == '\n')
-                {
-                    /* Like vim, with an operator a wrap ends the motion after the last character
-                     * of the previous line, so that only the line break is in the range. */
-                    if (op)
-                        break;
+                /* Like vim, with an operator a wrap lands after the last character of the previous
+                 * line, so the line break is one step of the motion. Without an operator the wrap
+                 * lands on the last character, so the line break is not a step. */
+                if (text[pos] == '\n' && !op)
                     rep--;
-                }
             }
             vimCharwise(pos, text, oldpos);
         },
@@ -1460,7 +1461,8 @@ void ReplxxLineReader::setupVimKeybindings(bool allow_editor)
                     return;
             }
 
-            std::vector<bool> ignored = ignoredBrackets(text, pos);
+            /* The quote context is that of the original cursor, not of the bracket found ahead. */
+            std::vector<bool> ignored = ignoredBrackets(text, oldpos);
             int paren_count = 1;
             int found = -1;
             for (int i = opening ? pos + 1 : pos - 1; opening ? i < length : i >= 0; i += opening ? 1 : -1)

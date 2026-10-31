@@ -617,5 +617,39 @@ submit
 expect "3005"
 expect ":) "
 
+# A counted operator on the Backspace motion continues across the line break.
+send -- "SELECT 1000\r+ 2345"
+escape
+send -- "0d4\x7f"
+send -- "i9"
+escape
+submit
+expect "2364"
+expect ":) "
+
+# A counted `iw` or `iW` on an empty line also takes the following chunks.
+send -- "SELECT 1000\r\r+ 23"
+escape
+send -- "ggj2ciw+ 1 --"
+escape
+submit
+expect "1001"
+expect ":) "
+
+send -- "SELECT 2000\r\r+1 + 23"
+escape
+send -- "ggjd2iW"
+submit
+expect "2023"
+expect ":) "
+
+# `%` that scans from outside quotes onto a quoted bracket ignores quoted brackets.
+send -- "SELECT 1000, '(' || 'a' || ')'"
+escape
+send -- "0f1%r9"
+submit
+expect "9000"
+expect ":) "
+
 send -- "\4"
 expect eof
