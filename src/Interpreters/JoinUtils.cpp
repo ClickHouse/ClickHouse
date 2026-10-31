@@ -133,6 +133,11 @@ bool canBeExecutedByEnabledAlgorithm(const JoinSettings & join_settings, JoinKin
             case JoinAlgorithm::IE_JOIN:
                 /// Only for an inequality `ON` condition, which no rewrite introduces.
                 break;
+            case JoinAlgorithm::SORTED_MERGE:
+            case JoinAlgorithm::PARALLEL_SORTED_MERGE:
+                /// Only when both inputs can be read in the order of the join keys, which depends on the
+                /// plan around the join; otherwise the join falls through to the next algorithm of the list.
+                break;
             case JoinAlgorithm::DEFAULT:
             case JoinAlgorithm::AUTO:
             case JoinAlgorithm::HASH:

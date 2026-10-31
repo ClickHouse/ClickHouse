@@ -450,7 +450,29 @@ bool JoinSettings::spillBehaviorDiffersFromLegacy(const JoinOperator & join_oper
 
 void JoinSettings::updatePlanSettings(QueryPlanSerializationSettings & settings, UInt64 version, const JoinOperator & join_operator) const
 {
-    settings[QueryPlanSerializationSetting::join_algorithm] = join_algorithms;
+    if (version >= DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_SORTED_MERGE_JOIN)
+    {
+        settings[QueryPlanSerializationSetting::join_algorithm] = join_algorithms;
+    }
+    else
+    {
+        /// An older peer does not know these values and would reject the whole plan. It has no such algorithms,
+        /// so they are unavailable there, and the join falls through to the next algorithm in the list - the same
+        /// as when the inputs cannot be read in the order of the join keys.
+        std::vector<JoinAlgorithm> known_algorithms;
+        for (auto algorithm : join_algorithms)
+            if (algorithm != JoinAlgorithm::SORTED_MERGE && algorithm != JoinAlgorithm::PARALLEL_SORTED_MERGE)
+                known_algorithms.push_back(algorithm);
+        if (known_algorithms.empty())
+            throw Exception(
+                ErrorCodes::NOT_IMPLEMENTED,
+                "Cannot serialize a join step with `join_algorithm` '{}' for serialization version {}; version {} or newer "
+                "is required. List a fallback algorithm after it",
+                SettingFieldJoinAlgorithm(join_algorithms).toString(),
+                version,
+                DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_SORTED_MERGE_JOIN);
+        settings[QueryPlanSerializationSetting::join_algorithm] = known_algorithms;
+    }
     /// `QueryPlanSerializationSettings` is a strict named schema, so the name goes on the wire only towards a peer
     /// that knows it. An older peer has no block nested loop join at all: it behaves as with the setting disabled.
     if (version >= DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_BLOCK_NESTED_LOOP_JOIN)
