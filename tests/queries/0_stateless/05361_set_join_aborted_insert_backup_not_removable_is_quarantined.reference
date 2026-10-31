@@ -1,0 +1,8 @@
+FAULT_INJECTED
+rows after the next insert:
+[1,4]
+rows after reattach:
+[1,4]
+FAULT_INJECTED
+rows after the next insert:
+[1,4,6]

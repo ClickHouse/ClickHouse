@@ -1,0 +1,4 @@
+set before detach	2
+set after attach	2
+join before detach	2
+join after attach	2

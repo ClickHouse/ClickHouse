@@ -1,0 +1,12 @@
+FAULT_INJECTED
+rows after the mutation that did not commit:
+1	one
+2	two
+3	three
+rows after reattach:
+1	one
+2	two
+3	three
+rows after another mutation and reattach:
+1	one
+3	three

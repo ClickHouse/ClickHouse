@@ -455,6 +455,16 @@ FileSegment::LocalCacheWriterPtr FileSegment::getLocalCacheWriter()
     return download_data ? download_data->cache_writer : nullptr;
 }
 
+void FileSegment::releaseLocalCacheWriter()
+{
+    auto lk = lock();
+    if (!download_data || !download_data->cache_writer)
+        return;
+
+    download_data->cache_writer->finalize();
+    download_data->cache_writer.reset();
+}
+
 void FileSegment::resetRemoteFileReader()
 {
     auto lk = lock();

@@ -2591,7 +2591,7 @@ void JoinStepLogical::buildPhysicalJoin(
             hash_table_key_hash,
             join_output_key_hash,
             optimization_settings.max_entries_for_hash_table_stats,
-            optimization_settings.initial_query_id,
+            optimization_settings.join_lock_query_id,
             optimization_settings.lock_acquire_timeout);
 
         if (join_step->right_relation.estimated_rows)

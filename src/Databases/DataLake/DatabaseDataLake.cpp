@@ -836,6 +836,7 @@ static DatabaseDataLakeStorageType toDataLakeStorageType(ObjectStorageType type)
             return DatabaseDataLakeStorageType::Local;
         case ObjectStorageType::None:
         case ObjectStorageType::Web:
+        case ObjectStorageType::BorrowFromCache:
         case ObjectStorageType::Max:
             return DatabaseDataLakeStorageType::Other;
     }

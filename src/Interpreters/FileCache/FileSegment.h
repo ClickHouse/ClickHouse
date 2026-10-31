@@ -268,6 +268,12 @@ public:
     RemoteFileReaderPtr getRemoteFileReader();
     LocalCacheWriterPtr getLocalCacheWriter();
 
+    /// Finalize and destroy the local cache writer, closing its file descriptor, while keeping the
+    /// downloaded data and the state of the segment. A later `write` opens the file again.
+    /// For a segment that stays `PARTIALLY_DOWNLOADED` while it is held (an `Ephemeral` one is
+    /// unbounded), `complete` does not run, so otherwise the descriptor stays open until then.
+    void releaseLocalCacheWriter();
+
     RemoteFileReaderPtr extractRemoteFileReader(const IOSchedulingSettings & io_scheduling = {});
 
     void resetRemoteFileReader();
