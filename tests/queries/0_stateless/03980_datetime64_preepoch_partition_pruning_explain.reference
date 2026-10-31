@@ -10,9 +10,7 @@ Expression ((Project names + Projection))
         Parts: 2/3
         Granules: 2/3
       Partition
-        Keys:
-          toDate(ts)
-        Condition: (toDate(ts) in [20505, +Inf))
+        Condition: true
         Parts: 2/2
         Granules: 2/2
       PrimaryKey
@@ -58,9 +56,7 @@ Expression ((Project names + Projection))
         Parts: 3/3
         Granules: 3/3
       Partition
-        Keys:
-          toDate(ts)
-        Condition: (toDate(ts) in [0, +Inf))
+        Condition: true
         Parts: 3/3
         Granules: 3/3
       PrimaryKey
@@ -127,9 +123,7 @@ Expression ((Project names + Projection))
         Parts: 2/3
         Granules: 2/3
       Partition
-        Keys:
-          toDate(d)
-        Condition: (toDate(d) in [20505, +Inf))
+        Condition: true
         Parts: 2/2
         Granules: 2/2
       PrimaryKey

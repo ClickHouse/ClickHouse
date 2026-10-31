@@ -1,7 +1,7 @@
 -- Tags: no-replicated-database, no-parallel-replicas, no-random-merge-tree-settings
 -- EXPLAIN output may differ
--- Verify that partition pruning is disabled when toDate() would overflow (pre-epoch / post-2149),
--- but still works for normal in-range values
+-- Verify that the partition key toDate(ts) is not used for range pruning, because toDate() wraps
+-- pre-epoch / post-2149 values; parts are still pruned by the Min-Max index on ts
 SET explain_query_plan_default = 'legacy';
 
 SET optimize_use_implicit_projections = 0, session_timezone = 'UTC', optimize_move_to_prewhere = 1;
