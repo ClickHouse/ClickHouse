@@ -11030,10 +11030,15 @@ static Field convertPartitionFieldToType(const Field & value, const DataTypePtr 
     {
         /// `DateTime` text parsing reads a broken-down `YYYY-MM-DD[ hh:mm:ss]` if the fifth character is not a digit,
         /// and a Unix timestamp otherwise, which is read as an integer and cannot roll over. A negative `DateTime64`
-        /// timestamp such as `'-123.5'` is always read as a timestamp.
+        /// timestamp such as `'-123.5'` is always read as a timestamp. So is a small `DateTime64` timestamp with a
+        /// fractional part such as `'1234.5'`, unless the value has the `YYYY.MM.DD` layout.
         auto is_digit_at = [&](size_t pos) { return pos < literal.size() && isNumericASCII(literal[pos]); };
         auto is_separator_at = [&](size_t pos) { return pos < literal.size() && !isNumericASCII(literal[pos]); };
-        const bool is_broken_down = literal.size() > 4 && literal[0] != '-' && !isNumericASCII(literal[4]);
+        const bool is_dotted_date_layout = is_digit_at(5) && is_digit_at(6) && literal.size() > 7 && literal[7] == '.'
+            && is_digit_at(8) && is_digit_at(9);
+        const bool is_fractional_timestamp = which.isDateTime64() && is_digit_at(0) && is_digit_at(1) && is_digit_at(2)
+            && is_digit_at(3) && literal.size() > 4 && literal[4] == '.' && !is_dotted_date_layout;
+        const bool is_broken_down = literal.size() > 4 && literal[0] != '-' && !isNumericASCII(literal[4]) && !is_fractional_timestamp;
         const bool has_time = is_broken_down && literal.size() > 10 && (literal[10] == ' ' || literal[10] == 'T');
         if (is_broken_down)
         {

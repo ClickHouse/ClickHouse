@@ -14,9 +14,10 @@ SELECT CAST('2024 April 4' AS DateTime64(3, 'UTC'));
 SELECT CAST('Apr 15, 2020 10:30:00.123' AS DateTime64(3, 'UTC'));
 
 -- Verify basic mode rejects these formats for DateTime
-SELECT toDateTime('2024 April 4', 'UTC') SETTINGS cast_string_to_date_time_mode = 'basic'; -- { serverError CANNOT_PARSE_DATETIME }
-SELECT CAST('2024 April 4' AS DateTime('UTC')) SETTINGS cast_string_to_date_time_mode = 'basic'; -- { serverError CANNOT_PARSE_DATETIME }
+-- (the error code depends on whether the whole value is visible in the read buffer at once)
+SELECT toDateTime('2024 April 4', 'UTC') SETTINGS cast_string_to_date_time_mode = 'basic'; -- { serverError CANNOT_PARSE_TEXT, CANNOT_PARSE_DATETIME }
+SELECT CAST('2024 April 4' AS DateTime('UTC')) SETTINGS cast_string_to_date_time_mode = 'basic'; -- { serverError CANNOT_PARSE_TEXT, CANNOT_PARSE_DATETIME }
 
 -- Verify basic mode rejects these formats for DateTime64
-SELECT toDateTime64('2024 April 4', 3, 'UTC') SETTINGS cast_string_to_date_time_mode = 'basic'; -- { serverError CANNOT_PARSE_DATETIME }
-SELECT CAST('2024 April 4' AS DateTime64(3, 'UTC')) SETTINGS cast_string_to_date_time_mode = 'basic'; -- { serverError CANNOT_PARSE_DATETIME }
+SELECT toDateTime64('2024 April 4', 3, 'UTC') SETTINGS cast_string_to_date_time_mode = 'basic'; -- { serverError CANNOT_PARSE_TEXT, CANNOT_PARSE_DATETIME }
+SELECT CAST('2024 April 4' AS DateTime64(3, 'UTC')) SETTINGS cast_string_to_date_time_mode = 'basic'; -- { serverError CANNOT_PARSE_TEXT, CANNOT_PARSE_DATETIME }

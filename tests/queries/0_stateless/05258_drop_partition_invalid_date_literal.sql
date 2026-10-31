@@ -92,6 +92,7 @@ SELECT 'datetime64, valid literals', groupArray(x) FROM (SELECT x FROM t_datetim
 DROP TABLE t_datetime64;
 
 -- A non-digit in a digit position used to be read as a digit: `'2024-02-2/'` named `2024-02-19`.
+-- A `DateTime`/`DateTime64` string of the bare date length is rejected by the text parser itself (`TYPE_MISMATCH`).
 DROP TABLE IF EXISTS t_digits_datetime;
 DROP TABLE IF EXISTS t_digits_datetime64;
 DROP TABLE IF EXISTS t_digits_date;
@@ -101,9 +102,9 @@ CREATE TABLE t_digits_date (d Date, x UInt8) ENGINE = MergeTree PARTITION BY d O
 INSERT INTO t_digits_datetime VALUES ('2024-02-19 00:00:00', 1), ('2024-02-19 00:00:09', 2);
 INSERT INTO t_digits_datetime64 VALUES ('2024-02-19 00:00:00', 1);
 INSERT INTO t_digits_date VALUES ('2024-02-19', 1), ('2024-02-02', 2);
-ALTER TABLE t_digits_datetime DROP PARTITION '2024-02-2/'; -- { serverError INVALID_PARTITION_VALUE }
+ALTER TABLE t_digits_datetime DROP PARTITION '2024-02-2/'; -- { serverError TYPE_MISMATCH }
 ALTER TABLE t_digits_datetime DROP PARTITION '2024-02-19 00:00:1/'; -- { serverError INVALID_PARTITION_VALUE }
-ALTER TABLE t_digits_datetime64 DROP PARTITION '2024-02-2/'; -- { serverError INVALID_PARTITION_VALUE }
+ALTER TABLE t_digits_datetime64 DROP PARTITION '2024-02-2/'; -- { serverError TYPE_MISMATCH }
 ALTER TABLE t_digits_date DROP PARTITION '2024-02-2/'; -- { serverError TYPE_MISMATCH }
 SELECT 'digits, nothing dropped', (SELECT groupArray(x) FROM (SELECT x FROM t_digits_datetime ORDER BY x)), (SELECT groupArray(x) FROM t_digits_datetime64), (SELECT groupArray(x) FROM (SELECT x FROM t_digits_date ORDER BY x));
 DROP TABLE t_digits_datetime;
@@ -119,7 +120,7 @@ CREATE TABLE t_shape_datetime64 (d DateTime64(3, 'UTC'), x UInt8) ENGINE = Merge
 INSERT INTO t_shape_datetime VALUES ('1994-03-01 00:00:00', 1), ('2024-02-19 00:00:00', 2);
 INSERT INTO t_shape_datetime64 VALUES ('1994-03-01 00:00:00', 1), ('2024-02-19 00:00:00.500', 2), ('1969-12-31 23:57:56.500', 3), ('1970-01-01 03:25:45.500', 4);
 ALTER TABLE t_shape_datetime DROP PARTITION '20/4-03-01 00:00:00'; -- { serverError INVALID_PARTITION_VALUE }
-ALTER TABLE t_shape_datetime DROP PARTITION '2024-02019'; -- { serverError INVALID_PARTITION_VALUE }
+ALTER TABLE t_shape_datetime DROP PARTITION '2024-02019'; -- { serverError TYPE_MISMATCH }
 ALTER TABLE t_shape_datetime DROP PARTITION '2024-02-19 00100:00'; -- { serverError INVALID_PARTITION_VALUE }
 ALTER TABLE t_shape_datetime64 DROP PARTITION '20/4-03-01 00:00:00'; -- { serverError INVALID_PARTITION_VALUE }
 SELECT 'shape, nothing dropped', (SELECT groupArray(x) FROM (SELECT x FROM t_shape_datetime ORDER BY x)), (SELECT groupArray(x) FROM (SELECT x FROM t_shape_datetime64 ORDER BY x));
