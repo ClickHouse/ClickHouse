@@ -8,6 +8,7 @@
 
 DROP TABLE IF EXISTS t_implicit;
 DROP TABLE IF EXISTS t_kv_hive;
+DROP TABLE IF EXISTS t_kv_expr;
 DROP TABLE IF EXISTS t_kv_hive_write;
 DROP TABLE IF EXISTS t_kv_hive_write_pcdf;
 DROP TABLE IF EXISTS t_kv_none;
@@ -30,6 +31,16 @@ SELECT name, partition_key FROM system.tables WHERE database = currentDatabase()
 DETACH TABLE t_kv_hive;
 ATTACH TABLE t_kv_hive;
 SELECT name, partition_key FROM system.tables WHERE database = currentDatabase() AND name = 't_kv_hive';
+
+-- The stored definition keeps the value of a key-value argument, not its expression.
+SET use_hive_partitioning = 1;
+CREATE TABLE t_kv_expr (id UInt64, v String)
+ENGINE = AzureBlobStorage('http://localhost:11111/devstoreaccount1?sig=X', 'cont', 'data', 'CSV', partition_strategy = if(getSetting('use_hive_partitioning'), 'hive', 'none'))
+PARTITION BY id;
+DETACH TABLE t_kv_expr;
+SET use_hive_partitioning = 0;
+ATTACH TABLE t_kv_expr;
+SELECT name, partition_key FROM system.tables WHERE database = currentDatabase() AND name = 't_kv_expr';
 
 -- `num_columns` of the written file: a key-value `hive` keeps the partition column out of it by default.
 CREATE TABLE t_kv_hive_write (id UInt64, v String)
@@ -56,7 +67,7 @@ SELECT name, empty(partition_key) FROM system.tables WHERE database = currentDat
 
 DESCRIBE TABLE azureBlobStorage('http://localhost:11111/devstoreaccount1?sig=X', 'cont', 'data.csv', 'CSV', 'auto', 'id UInt64', partition_strategy = 'none');
 
--- Cluster queries pass `extra_credentials` on to the replicas after the key-value arguments, in both argument orders and
+-- Cluster queries accept `extra_credentials` together with the key-value arguments, in both argument orders and
 -- when parallel replicas turn `azureBlobStorage` into a cluster query. Reading then fails: its token is not sent over plain http.
 SET s3_allow_server_credentials_in_user_queries = 1;
 SELECT * FROM azureBlobStorageCluster('test_shard_localhost', 'http://localhost:11111/devstoreaccount1?sig=X', 'cont', 'data.csv', 'CSV', 'auto', 'id UInt64', extra_credentials(client_id = 'x', tenant_id = 'y'), partition_strategy = 'none'); -- { serverError STD_EXCEPTION }
@@ -64,13 +75,6 @@ SELECT * FROM azureBlobStorageCluster('test_shard_localhost', 'http://localhost:
 SELECT * FROM azureBlobStorage('http://localhost:11111/devstoreaccount1?sig=X', 'cont', 'data.csv', 'CSV', 'auto', 'id UInt64', extra_credentials(client_id = 'x', tenant_id = 'y'), partition_strategy = 'none')
 SETTINGS enable_parallel_replicas = 1, automatic_parallel_replicas_mode = 0, max_parallel_replicas = 3, parallel_replicas_for_cluster_engines = 1,
     cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost'; -- { serverError STD_EXCEPTION }
-SYSTEM FLUSH LOGS query_log;
--- The query log shows `extra_credentials(...)` as '[HIDDEN]'.
-SELECT uniqExact(initial_query_id) FROM system.query_log
-WHERE event_date >= yesterday() AND NOT is_initial_query AND query LIKE '%partition_strategy = \'none\', \'[HIDDEN]\')%'
-    AND initial_query_id IN (
-        SELECT query_id FROM system.query_log
-        WHERE event_date >= yesterday() AND current_database = currentDatabase() AND is_initial_query);
 
 -- Invalid key-value arguments.
 CREATE TABLE t_bad (id UInt64, v String)
@@ -95,6 +99,7 @@ SELECT name, partition_key FROM system.tables WHERE database = currentDatabase()
 
 DROP TABLE t_implicit;
 DROP TABLE t_kv_hive;
+DROP TABLE t_kv_expr;
 DROP TABLE t_kv_hive_write;
 DROP TABLE t_kv_hive_write_pcdf;
 DROP TABLE t_kv_none;

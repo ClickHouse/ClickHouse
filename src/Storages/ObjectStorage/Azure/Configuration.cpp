@@ -419,8 +419,13 @@ void AzureStorageParsedArguments::fromAST(ASTs & engine_args, ContextPtr context
             engine_args.push_back(extra_credentials);
     });
 
-    /// The key-value arguments stay in `engine_args` unevaluated, so they are persisted as written.
     const size_t count = countPositionalArguments(engine_args);
+    /// Like the positional arguments, the key-value arguments are persisted with evaluated values.
+    for (size_t i = count; i < engine_args.size(); ++i)
+    {
+        const auto & key_value = engine_args[i]->as<ASTFunction &>().arguments->children;
+        engine_args[i] = makeASTOperator("equals", key_value[0], evaluateConstantExpressionOrIdentifierAsLiteral(key_value[1], context));
+    }
     const auto key_value_args = parseKeyValueArguments(ASTs(engine_args.begin() + count, engine_args.end()), context);
     for (const auto & [key, _] : key_value_args)
     {
