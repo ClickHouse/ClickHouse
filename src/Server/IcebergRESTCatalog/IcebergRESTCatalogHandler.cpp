@@ -1009,7 +1009,20 @@ void IcebergRESTCatalogHandler::handleStagedCreateCommit(
     }
 
     using CreateTableResult = KeeperIcebergRESTCatalogStore::CreateTableResult;
-    switch (writeAndRegisterTable(warehouse, ns, table, pointer, metadata, compression_method))
+    std::optional<CreateTableResult> result;
+    try
+    {
+        result = writeAndRegisterTable(warehouse, ns, table, pointer, metadata, compression_method);
+    }
+    catch (const zkutil::KeeperException & e)
+    {
+        /// The create may have been applied, so the file stays. The client reloads the table to find out.
+        LOG_WARNING(log, "Create of {}.{} at {} has an unknown outcome: {}", joinNamespace(ns), table, pointer.metadata_location, e.message());
+        sendError(response, Poco::Net::HTTPResponse::HTTP_INTERNAL_SERVER_ERROR, "CommitStateUnknownException", "Commit state is unknown");
+        return;
+    }
+
+    switch (*result)
     {
         case CreateTableResult::Created:
             LOG_INFO(log, "Created table {}.{} at {}", joinNamespace(ns), table, pointer.metadata_location);
