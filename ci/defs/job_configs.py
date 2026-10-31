@@ -1659,7 +1659,8 @@ class JobConfigs:
         ),
     )
     # The `ParallelReplicas` configuration with `parallel_replicas_plan_based` enabled. Not a coverage
-    # replacement: no coverage job runs it, so it runs regardless of the coverage labels.
+    # replacement: no coverage job runs it, so `ci-coverage` does not skip it (`ci-llvm-coverage`
+    # skips it like every other non-coverage job).
     functional_tests_arm_binary_plan_based_parallel_replicas_jobs = common_ft_job_config.parametrize(
         Job.ParamSet(
             parameter="arm_binary, ParallelReplicas, plan-based, s3 storage, parallel",
