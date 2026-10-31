@@ -211,11 +211,18 @@ AvroSerializer::SchemaWithSerializeFn AvroSerializer::createSchemaWithSerializeF
             auto schema = avro::LongSchema();
             const auto & provided_type = assert_cast<const DataTypeDateTime64 &>(*data_type);
 
-            if (provided_type.getScale() == 3)
+            const auto scale = provided_type.getScale();
+            /// Iceberg `timestamp_ns` and `timestamptz_ns` are Avro `long` values of nanosecond ticks.
+            /// contrib Avro has no `timestamp-nanos` logical type, so an Iceberg data file stores a
+            /// plain `long`. The table metadata still records `timestamp_ns`. Other scales stay a
+            /// decimal `bytes` value, which is what generic Avro output already writes.
+            const bool iceberg_timestamp_ns = scale == 9 && column_mapper;
+
+            if (scale == 3)
                 schema.root()->setLogicalType(avro::LogicalType(avro::LogicalType::TIMESTAMP_MILLIS));
-            else if (provided_type.getScale() == 6)
+            else if (scale == 6)
                 schema.root()->setLogicalType(avro::LogicalType(avro::LogicalType::TIMESTAMP_MICROS));
-            else
+            else if (!iceberg_timestamp_ns)
                 return createDecimalSchemaWithSerializeFn<DataTypeDateTime64>(data_type);
 
             return {schema, [](const IColumn & column, size_t row_num, avro::Encoder & encoder)
