@@ -4,9 +4,11 @@
 32
 5
 5
+74
 projection_index_1	32	[]	['t_projection_index.auto_minmax_index_a']	0	4
 projection_index_2	32	[]	['t_projection_index_filtering.auto_minmax_index_a']	0	4
 projection_index_3	16	['t_projection_index_chosen.p_b']	[]	6	0
 projection_index_4	64	[]	[]	0	0
 projection_index_5	8	[]	['t_projection_index_offset.auto_minmax_index_a']	0	7
 projection_index_6	8	['t_projection_index_offset_chosen.p_a']	[]	7	0
+projection_index_7	16	['t_projection_index_offset_mixed.p_a']	['t_projection_index_offset_mixed.auto_minmax_index_a']	7	7
