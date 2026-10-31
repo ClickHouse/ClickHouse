@@ -8327,9 +8327,13 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
       * aliases still compares the projection expression with the conflicting definition.
       */
     std::unordered_set<std::string> projection_alias_definitions;
-    /// The expressions with duplicated aliases that are equal to the definition of such an alias before the matchers
-    /// are expanded, as `count(t.*) OVER w AS cnt`. They are replaced together with the definition.
-    std::unordered_set<const IQueryTreeNode *> duplicates_of_projection_alias_definitions;
+    /** The indices in `scope.aliases.nodes_with_duplicated_aliases` of the expressions equal to an aliased node
+      * of the projection before the matchers are expanded, as `count(t.*) OVER w AS cnt`, by the corresponding
+      * node of the unexpanded copy of the projection, which is restored and expanded for the second time.
+      * Each expression is assigned to the first equal node. They are replaced with the copies of the expanded node,
+      * see `rebind_projection_aliases`, because the copies of the expressions keep their matchers unexpanded.
+      */
+    std::unordered_map<QueryTreeNodePtr, std::vector<size_t>> duplicated_aliases_by_unexpanded_projection_node;
 
     if (!scope.group_by_use_nulls)
     {
@@ -8358,33 +8362,39 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
 
         /// The scope aliases hold copies of the expressions made before anything is resolved, so they are compared
         /// with the projection expressions now. As `QueryExpressionsAliasVisitor`, do not go into lambdas and subqueries.
-        /// Each alias definition is processed once, and the duplicates are indexed by alias, so that
+        /// Each alias definition is processed once, and the duplicates are looked up by their hash, so that
         /// many identical aliased projection items do not take a quadratic time.
-        std::unordered_map<std::string_view, std::vector<const IQueryTreeNode *>> nodes_with_duplicated_aliases_by_alias;
-        for (const auto & duplicated_node : scope.aliases.nodes_with_duplicated_aliases)
-            nodes_with_duplicated_aliases_by_alias[duplicated_node->getAlias()].push_back(duplicated_node.get());
+        const auto & nodes_with_duplicated_aliases = scope.aliases.nodes_with_duplicated_aliases;
+        std::unordered_set<std::string_view> duplicated_aliases;
+        std::unordered_map<QueryTreeNodeConstRawPtrWithHash, std::vector<size_t>> duplicated_aliases_by_expression;
+        for (size_t i = 0; i < nodes_with_duplicated_aliases.size(); ++i)
+        {
+            duplicated_aliases.insert(nodes_with_duplicated_aliases[i]->getAlias());
+            duplicated_aliases_by_expression[nodes_with_duplicated_aliases[i].get()].push_back(i);
+        }
 
-        std::vector<const IQueryTreeNode *> aliased_nodes_to_process{query_node_typed.getProjectionNode().get()};
+        /// The nodes are visited in their order in the query, together with the corresponding nodes of the unexpanded copy.
+        std::vector<std::pair<const IQueryTreeNode *, QueryTreeNodePtr>> aliased_nodes_to_process{
+            {query_node_typed.getProjectionNode().get(), unexpanded_projection}};
         while (!aliased_nodes_to_process.empty())
         {
-            const auto * aliased_node = aliased_nodes_to_process.back();
+            auto [aliased_node, unexpanded_node] = std::move(aliased_nodes_to_process.back());
             aliased_nodes_to_process.pop_back();
 
             if (aliased_node->hasAlias() && !projection_alias_definitions.contains(aliased_node->getAlias()))
             {
                 auto it = scope.aliases.alias_name_to_expression_node.find(aliased_node->getAlias());
                 if (it != scope.aliases.alias_name_to_expression_node.end() && it->second->isEqual(*aliased_node))
-                {
                     projection_alias_definitions.insert(aliased_node->getAlias());
-                    auto duplicates_it = nodes_with_duplicated_aliases_by_alias.find(aliased_node->getAlias());
-                    if (duplicates_it != nodes_with_duplicated_aliases_by_alias.end())
-                    {
-                        for (const auto * duplicated_node : duplicates_it->second)
-                        {
-                            if (duplicated_node->isEqual(*it->second))
-                                duplicates_of_projection_alias_definitions.insert(duplicated_node);
-                        }
-                    }
+            }
+
+            if (aliased_node->hasAlias() && duplicated_aliases.contains(aliased_node->getAlias()))
+            {
+                auto duplicates_it = duplicated_aliases_by_expression.find(aliased_node);
+                if (duplicates_it != duplicated_aliases_by_expression.end())
+                {
+                    duplicated_aliases_by_unexpanded_projection_node[unexpanded_node] = std::move(duplicates_it->second);
+                    duplicated_aliases_by_expression.erase(duplicates_it);
                 }
             }
 
@@ -8392,9 +8402,12 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
             if (node_type == QueryTreeNodeType::LAMBDA || node_type == QueryTreeNodeType::QUERY || node_type == QueryTreeNodeType::UNION)
                 continue;
 
-            for (const auto & child : aliased_node->getChildren())
-                if (child)
-                    aliased_nodes_to_process.push_back(child.get());
+            const auto & children = aliased_node->getChildren();
+            const auto & unexpanded_children = unexpanded_node->getChildren();
+            chassert(children.size() == unexpanded_children.size());
+            for (size_t i = children.size(); i > 0; --i)
+                if (children[i - 1] && unexpanded_children[i - 1])
+                    aliased_nodes_to_process.emplace_back(children[i - 1].get(), unexpanded_children[i - 1]);
         }
 
         /** The expressions produced by the transformers in the first expansion are discarded, unless GROUP BY ALL
@@ -8589,6 +8602,11 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
             if (window_with_unexpanded_matchers)
                 window_rewrites_to_replay[query_node_ptr];
         }
+        else
+        {
+            /// The copy is not restored, and without matchers the expressions are compared after the expansion as well.
+            duplicated_aliases_by_unexpanded_projection_node.clear();
+        }
 
         queries_with_deferred_projection.insert(query_node_ptr);
 
@@ -8722,66 +8740,94 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
       * The snapshots are taken by the first expansion even if the projection has no matchers, when a matcher
       * of another named window rewrites the referenced one. The other aliases are kept as they are.
       * The copies of the expressions with duplicated aliases are compared with the alias definition after the
-      * projection is resolved, so the copies equal to a projection item take its snapshots too: identical
-      * definitions of the alias must stay identical.
+      * projection is resolved, so they take the snapshots of their projection items too: identical definitions
+      * of the alias must stay identical. The copies with matchers are replaced with the copies of the expanded
+      * projection items, see `duplicated_aliases_by_unexpanded_projection_node`, and the other copies equal to
+      * a projection item take its snapshots.
       */
     std::unordered_set<std::string> visited_alias_names;
-    /// The expressions with duplicated aliases are indexed by alias, so that they are not all scanned for every aliased node.
-    std::unordered_map<std::string, std::vector<QueryTreeNodePtr *>> nodes_with_duplicated_aliases_by_alias;
-    std::function<void(const QueryTreeNodePtr &)> rebind_projection_aliases = [&](const QueryTreeNodePtr & node)
+    std::vector<bool> replaced_duplicated_aliases;
+    /// The expressions with duplicated aliases that are not replaced, by their hash, with the last projection node equal to them.
+    std::unordered_map<QueryTreeNodeConstRawPtrWithHash, std::pair<std::vector<size_t>, QueryTreeNodePtr>> duplicated_aliases_by_expression;
+
+    auto for_each_aliased_projection_node = [&](const std::function<void(const QueryTreeNodePtr &)> & callback)
     {
-        if (node->hasAlias())
+        std::function<void(const QueryTreeNodePtr &)> visit = [&](const QueryTreeNodePtr & node)
         {
-            auto duplicates_it = nodes_with_duplicated_aliases_by_alias.find(node->getAlias());
-            static const std::vector<QueryTreeNodePtr *> no_duplicates;
-            const auto & duplicates = duplicates_it != nodes_with_duplicated_aliases_by_alias.end() ? duplicates_it->second : no_duplicates;
+            if (node->hasAlias())
+                callback(node);
 
-            if (projection_alias_definitions.contains(node->getAlias()) && visited_alias_names.insert(node->getAlias()).second)
+            /// As `QueryExpressionsAliasVisitor`, do not go into lambdas and subqueries.
+            auto node_type = node->getNodeType();
+            if (node_type == QueryTreeNodeType::LAMBDA || node_type == QueryTreeNodeType::QUERY || node_type == QueryTreeNodeType::UNION)
+                return;
+
+            for (const auto & child : node->getChildren())
+                if (child)
+                    visit(child);
+        };
+        visit(query_node_typed.getProjectionNode());
+    };
+
+    auto rebind_projection_aliases = [&](const QueryTreeNodePtr & node)
+    {
+        if (!projection_alias_definitions.contains(node->getAlias()))
+            return;
+
+        if (visited_alias_names.insert(node->getAlias()).second)
+        {
+            auto it = scope.aliases.alias_name_to_expression_node.find(node->getAlias());
+            if (it != scope.aliases.alias_name_to_expression_node.end())
             {
-                auto it = scope.aliases.alias_name_to_expression_node.find(node->getAlias());
-                if (it != scope.aliases.alias_name_to_expression_node.end())
-                {
-                    auto cloned_node = node->clone();
-                    if (copyNamedWindowSnapshots(node, cloned_node))
-                    {
-                        it->second = std::move(cloned_node);
-
-                        /// The matchers of the copies are not expanded, so they are compared before the expansion.
-                        for (auto * duplicated_node : duplicates)
-                        {
-                            if (duplicates_of_projection_alias_definitions.contains(duplicated_node->get()))
-                            {
-                                auto cloned_duplicated_node = node->clone();
-                                copyNamedWindowSnapshots(node, cloned_duplicated_node);
-                                *duplicated_node = std::move(cloned_duplicated_node);
-                            }
-                        }
-                    }
-                }
-            }
-
-            for (const auto * duplicated_node : duplicates)
-            {
-                if ((*duplicated_node)->isEqual(*node))
-                    copyNamedWindowSnapshots(node, *duplicated_node);
+                auto cloned_node = node->clone();
+                if (copyNamedWindowSnapshots(node, cloned_node))
+                    it->second = std::move(cloned_node);
             }
         }
 
-        /// As `QueryExpressionsAliasVisitor`, do not go into lambdas and subqueries.
-        auto node_type = node->getNodeType();
-        if (node_type == QueryTreeNodeType::LAMBDA || node_type == QueryTreeNodeType::QUERY || node_type == QueryTreeNodeType::UNION)
+        auto duplicates_it = duplicated_aliases_by_unexpanded_projection_node.find(node);
+        if (duplicates_it == duplicated_aliases_by_unexpanded_projection_node.end())
             return;
 
-        for (const auto & child : node->getChildren())
-            if (child)
-                rebind_projection_aliases(child);
+        auto & nodes_with_duplicated_aliases = scope.aliases.nodes_with_duplicated_aliases;
+        for (size_t index : duplicates_it->second)
+        {
+            auto cloned_node = node->clone();
+            if (copyNamedWindowSnapshots(node, cloned_node))
+            {
+                nodes_with_duplicated_aliases[index] = std::move(cloned_node);
+                replaced_duplicated_aliases[index] = true;
+            }
+        }
     };
 
     if (scope.group_by_use_nulls && !named_window_snapshots.empty())
     {
-        for (auto & duplicated_node : scope.aliases.nodes_with_duplicated_aliases)
-            nodes_with_duplicated_aliases_by_alias[duplicated_node->getAlias()].push_back(&duplicated_node);
-        rebind_projection_aliases(query_node_typed.getProjectionNode());
+        const auto & nodes_with_duplicated_aliases = scope.aliases.nodes_with_duplicated_aliases;
+        replaced_duplicated_aliases.assign(nodes_with_duplicated_aliases.size(), false);
+        for_each_aliased_projection_node(rebind_projection_aliases);
+
+        for (size_t i = 0; i < nodes_with_duplicated_aliases.size(); ++i)
+            if (!replaced_duplicated_aliases[i])
+                duplicated_aliases_by_expression[nodes_with_duplicated_aliases[i].get()].first.push_back(i);
+
+        if (!duplicated_aliases_by_expression.empty())
+        {
+            for_each_aliased_projection_node([&](const QueryTreeNodePtr & node)
+            {
+                auto it = duplicated_aliases_by_expression.find(node.get());
+                if (it != duplicated_aliases_by_expression.end())
+                    it->second.second = node;
+            });
+
+            for (const auto & [_, duplicates] : duplicated_aliases_by_expression)
+            {
+                const auto & [indices, projection_node] = duplicates;
+                if (projection_node)
+                    for (size_t index : indices)
+                        copyNamedWindowSnapshots(projection_node, nodes_with_duplicated_aliases[index]);
+            }
+        }
     }
 
     if (query_node_typed.hasHaving())
