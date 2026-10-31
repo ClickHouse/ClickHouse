@@ -40,6 +40,7 @@
 #include <Server/HTTP/HTMLForm.h>
 #include <Formats/FormatFactory.h>
 
+#include <Poco/String.h>
 #include <Poco/URI.h>
 #include <Poco/JSON/Array.h>
 #include <Poco/JSON/Parser.h>
@@ -249,7 +250,8 @@ RestCatalog::RestCatalog(
     const std::string & oauth_server_uri_,
     bool oauth_server_use_request_body_,
     bool flat_namespaces_,
-    DB::ContextPtr context_)
+    DB::ContextPtr context_,
+    const std::string & snapshot_loading_mode_)
     : ICatalog(warehouse_)
     , DB::WithContext(context_)
     , base_url(correctAPIURI(base_url_))
@@ -258,6 +260,7 @@ RestCatalog::RestCatalog(
     , oauth_server_uri(oauth_server_uri_)
     , oauth_server_use_request_body(oauth_server_use_request_body_)
     , flat_namespaces(flat_namespaces_)
+    , snapshot_loading_mode(snapshot_loading_mode_)
 {
     CatalogState initial_state;
     if (!catalog_credential_.empty())
@@ -285,7 +288,8 @@ RestCatalog::RestCatalog(
     const std::string & oauth_server_uri_,
     bool oauth_server_use_request_body_,
     bool flat_namespaces_,
-    DB::ContextPtr context_)
+    DB::ContextPtr context_,
+    const std::string & snapshot_loading_mode_)
     : ICatalog(warehouse_)
     , DB::WithContext(context_)
     , base_url(correctAPIURI(base_url_))
@@ -294,6 +298,7 @@ RestCatalog::RestCatalog(
     , oauth_server_uri(oauth_server_uri_)
     , oauth_server_use_request_body(oauth_server_use_request_body_)
     , flat_namespaces(flat_namespaces_)
+    , snapshot_loading_mode(snapshot_loading_mode_)
 {
 }
 
@@ -315,16 +320,17 @@ RestCatalog::Config RestCatalog::loadConfig(const CatalogState & catalog_state, 
     Config result;
 
     auto defaults_object = object->get("defaults").extract<Poco::JSON::Object::Ptr>();
-    parseCatalogConfigurationSettings(defaults_object, result);
+    parseCatalogConfigurationSettings(defaults_object, result, result.default_snapshot_loading_mode);
 
     auto overrides_object = object->get("overrides").extract<Poco::JSON::Object::Ptr>();
-    parseCatalogConfigurationSettings(overrides_object, result);
+    parseCatalogConfigurationSettings(overrides_object, result, result.override_snapshot_loading_mode);
 
     LOG_DEBUG(log, "Parsed catalog configuration settings: {}", result.toString());
     return result;
 }
 
-void RestCatalog::parseCatalogConfigurationSettings(const Poco::JSON::Object::Ptr & object, Config & result)
+void RestCatalog::parseCatalogConfigurationSettings(
+    const Poco::JSON::Object::Ptr & object, Config & result, std::string & snapshot_loading_mode)
 {
     if (!object)
         return;
@@ -334,6 +340,8 @@ void RestCatalog::parseCatalogConfigurationSettings(const Poco::JSON::Object::Pt
 
     if (object->has("default-base-location"))
         result.default_base_location = object->get("default-base-location").extract<String>();
+
+    snapshot_loading_mode = Poco::toLower(object->optValue<std::string>("snapshot-loading-mode", ""));
 }
 
 void RestCatalog::validateAuthHeaders(const DB::HTTPHeaderEntry & header) const
@@ -397,8 +405,11 @@ OneLakeCatalog::OneLakeCatalog(
     const std::string & oauth_server_uri_,
     bool oauth_server_use_request_body_,
     bool flat_namespaces_,
-    DB::ContextPtr context_)
-    : RestCatalog(warehouse_, base_url_, auth_scope_, oauth_server_uri_, oauth_server_use_request_body_, flat_namespaces_, context_)
+    DB::ContextPtr context_,
+    const std::string & snapshot_loading_mode_)
+    : RestCatalog(
+        warehouse_, base_url_, auth_scope_, oauth_server_uri_, oauth_server_use_request_body_, flat_namespaces_, context_,
+        snapshot_loading_mode_)
 {
     CatalogState initial_state;
     initial_state.tenant_id = onelake_tenant_id;
@@ -715,8 +726,11 @@ HorizonCatalog::HorizonCatalog(
     const std::string & oauth_server_uri_,
     bool oauth_server_use_request_body_,
     bool flat_namespaces_,
-    DB::ContextPtr context_)
-    : RestCatalog(warehouse_, base_url_, auth_scope_, oauth_server_uri_, oauth_server_use_request_body_, flat_namespaces_, context_)
+    DB::ContextPtr context_,
+    const std::string & snapshot_loading_mode_)
+    : RestCatalog(
+        warehouse_, base_url_, auth_scope_, oauth_server_uri_, oauth_server_use_request_body_, flat_namespaces_, context_,
+        snapshot_loading_mode_)
 {
     CatalogState initial_state;
     if (!catalog_credential_.empty())
@@ -1004,8 +1018,9 @@ BigLakeCatalog::BigLakeCatalog(
     const std::string & google_adc_refresh_token_,
     const std::string & google_adc_quota_project_id_,
     DB::ContextPtr context_,
-    bool allow_server_credentials_in_user_queries_)
-    : RestCatalog(warehouse_, base_url_, "", "", false, /* flat_namespaces */false, context_)
+    bool allow_server_credentials_in_user_queries_,
+    const std::string & snapshot_loading_mode_)
+    : RestCatalog(warehouse_, base_url_, "", "", false, /* flat_namespaces */false, context_, snapshot_loading_mode_)
     , google_project_id(google_project_id_)
     , google_service_account(google_service_account_)
     , google_metadata_service(google_metadata_service_)
@@ -1360,6 +1375,20 @@ Poco::URI::QueryParameters RestCatalog::createParentNamespaceParams(const std::s
         parent_param += part;
     }
     return {{"parent", parent_param}};
+}
+
+Poco::URI::QueryParameters RestCatalog::getLoadTableParams(const Config & config) const
+{
+    /// The REST spec merge order: server overrides, then the client configuration, then server defaults.
+    std::string mode = config.override_snapshot_loading_mode;
+    if (mode.empty())
+        mode = snapshot_loading_mode;
+    if (mode.empty())
+        mode = config.default_snapshot_loading_mode;
+
+    if (mode == "refs")
+        return {{"snapshots", "refs"}};
+    return {};
 }
 
 bool RestCatalog::hasFlatNamespaces() const
@@ -1737,7 +1766,7 @@ bool RestCatalog::getTableMetadataImpl(
 
     const auto state_snapshot = state.get();
     const std::string endpoint = std::filesystem::path(NAMESPACES_ENDPOINT) / encodeNamespaceForURI(namespace_name) / "tables" / table_name;
-    auto buf = createReadBuffer(*state_snapshot, state_snapshot->config.prefix / endpoint, /* params */ {}, headers, /* auth_headers */ std::nullopt);
+    auto buf = createReadBuffer(*state_snapshot, state_snapshot->config.prefix / endpoint, getLoadTableParams(state_snapshot->config), headers, /* auth_headers */ std::nullopt);
 
     if (buf->eof())
     {
@@ -2391,7 +2420,7 @@ ICatalog::CredentialsRefreshCallback RestCatalog::getCredentialsConfigurationCal
         const auto & table = storage_id.getTableName();
         auto [namespace_name, table_name] = DataLake::parseTableName(table);
         const std::string endpoint = std::filesystem::path(NAMESPACES_ENDPOINT) / encodeNamespaceForURI(namespace_name) / "tables" / table_name;
-        auto buf = createReadBuffer(*state_snapshot, state_snapshot->config.prefix / endpoint, /* params */ {}, headers, /* auth_headers */ std::nullopt);
+        auto buf = createReadBuffer(*state_snapshot, state_snapshot->config.prefix / endpoint, getLoadTableParams(state_snapshot->config), headers, /* auth_headers */ std::nullopt);
 
         if (buf->eof())
         {
