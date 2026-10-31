@@ -5,7 +5,6 @@
 
 -- The relaxation is implemented only in the analyzer; the old analyzer still rejects
 -- every repeated alias with `MULTIPLE_EXPRESSIONS_FOR_ALIAS`.
-SET enable_analyzer = 1;
 
 SELECT 'Aliases of tuple elements can repeat in different tuples';
 SELECT tuple(1 AS x, 2 AS y, 3 AS z) AS t1, tuple(4 AS x, 5 AS y, 6 AS z) AS t2, toTypeName(t1), toTypeName(t2) SETTINGS enable_named_columns_in_function_tuple = 1;

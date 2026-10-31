@@ -1532,28 +1532,40 @@ ColumnPtr ColumnArray::replicateNumber(const Offsets & replicate_offsets) const
     typename ColVecType::Container & res_data = typeid_cast<ColVecType &>(res_arr.getData()).getData();
     Offsets & res_offsets = res_arr.getOffsets();
 
-    res_data.reserve_exact(data->size() / col_size * replicate_offsets.back());
-    res_offsets.reserve_exact(replicate_offsets.back());
-
+    size_t res_data_size = 0;
     Offset prev_replicate_offset = 0;
     Offset prev_data_offset = 0;
-    Offset current_new_offset = 0;
+    for (size_t i = 0; i < col_size; ++i)
+    {
+        res_data_size += (replicate_offsets[i] - prev_replicate_offset) * (src_offsets[i] - prev_data_offset);
+        prev_replicate_offset = replicate_offsets[i];
+        prev_data_offset = src_offsets[i];
+    }
 
+    res_data.resize_exact(res_data_size);
+    res_offsets.resize_exact(replicate_offsets.back());
+
+    prev_replicate_offset = 0;
+    prev_data_offset = 0;
+    Offset current_new_offset = 0;
+    size_t res_row = 0;
     for (size_t i = 0; i < col_size; ++i)
     {
         size_t size_to_replicate = replicate_offsets[i] - prev_replicate_offset;
         size_t value_size = src_offsets[i] - prev_data_offset;
+        size_t value_bytes = value_size * sizeof(T);
+        const T * src = &src_data[prev_data_offset];
 
         for (size_t j = 0; j < size_to_replicate; ++j)
         {
+            /// memcpySmallAllowReadWriteOverflow15 is slower than memcpy for long values.
+            if (value_bytes <= 64)
+                memcpySmallAllowReadWriteOverflow15(&res_data[current_new_offset], src, value_bytes);
+            else
+                memcpy(&res_data[current_new_offset], src, value_bytes);
             current_new_offset += value_size;
-            res_offsets.push_back(current_new_offset);
-
-            if (value_size)
-            {
-                res_data.resize(res_data.size() + value_size);
-                memcpy(&res_data[res_data.size() - value_size], &src_data[prev_data_offset], value_size * sizeof(T));
-            }
+            res_offsets[res_row] = current_new_offset;
+            ++res_row;
         }
 
         prev_replicate_offset = replicate_offsets[i];
