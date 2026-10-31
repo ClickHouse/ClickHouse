@@ -6,6 +6,7 @@
 #include <set>
 #include <thread>
 #include <unordered_map>
+#include <utility>
 
 #include <Backups/BackupEntriesCollector.h>
 #include <Core/BackgroundSchedulePool.h>
@@ -1881,28 +1882,32 @@ void StorageMergeTree::loadDeduplicationLog()
     }
 }
 
-MergeTreeMutationEntry StorageMergeTree::loadMutationEntry(const DiskPtr & disk, const String & file_name) const
+std::optional<MergeTreeMutationEntry>
+StorageMergeTree::loadMutationEntry(const DiskPtr & disk, const String & file_name, bool skip_if_removed) const
 {
     try
     {
-        return MergeTreeMutationEntry(disk, relative_data_path, file_name);
+        return std::make_optional<MergeTreeMutationEntry>(disk, relative_data_path, file_name);
     }
-    catch (const Exception & e)
+    catch (const std::exception & e)
     {
         /// A readonly table over the directory of a live table (`table_disk` on a shared `plain_rewritable` endpoint)
         /// does not own the entries: the owner removes one at any moment (`KILL MUTATION`, `clearOldMutations`), also
-        /// between the listing and this read. The table cannot load without the entry - a part below its version
-        /// would miss the commands - so the load fails, but with the reason instead of a missing object: the error
+        /// between the listing and this read. Unless `skip_if_removed`, the table cannot load without the entry - a part
+        /// below its version would miss the commands - so the load fails, but with the reason instead of a missing object: the error
         /// is transient, and the caller can retry once the metadata of the disk, which still lists the entry, is reloaded.
         /// Convert the error only when the probe proves that the metadata still lists the entry, but its object is
         /// gone. If the probe itself fails, the original read failure is the more useful one.
+        /// Not only `Exception`: the Azure read path rethrows the SDK's own exception.
         if (!disk->isReadOnly())
             throw;
 
         bool object_exists = true;
         try
         {
-            object_exists = disk->checkUniqueId(disk->getUniqueId(fs::path(relative_data_path) / file_name));
+            /// An empty id means that the file has no object to probe, not that it was removed.
+            const auto object_id = disk->getUniqueId(fs::path(relative_data_path) / file_name);
+            object_exists = object_id.empty() || disk->checkUniqueId(object_id);
         }
         catch (...)
         {
@@ -1912,6 +1917,13 @@ MergeTreeMutationEntry StorageMergeTree::loadMutationEntry(const DiskPtr & disk,
         if (object_exists)
             throw;
 
+        if (skip_if_removed)
+        {
+            /// Not `e.what()`: log checks treat the object storage "key does not exist" text as a server error.
+            LOG_INFO(log, "Mutation entry {} was removed by the table that owns the directory, skipping it", file_name);
+            return std::nullopt;
+        }
+
         throw Exception(
             ErrorCodes::FILE_DOESNT_EXIST,
             "The mutation entry {} of the readonly table {} was removed by the table that owns the directory while this "
@@ -1920,7 +1932,7 @@ MergeTreeMutationEntry StorageMergeTree::loadMutationEntry(const DiskPtr & disk,
             file_name,
             getStorageID().getNameForLogs(),
             backQuoteIfNeed(disk->getName()),
-            e.message());
+            e.what());
     }
 }
 
@@ -1937,13 +1949,32 @@ void StorageMergeTree::loadMutations()
 
     for (const auto & disk : getDisks())
     {
+        /// A readonly disk carries a directory that another, live table owns and writes to (with
+        /// `table_disk = 1` the data directory is the disk root, so both tables share it). That table
+        /// adds and removes mutation entries at any moment, and only it may modify them.
+        const bool observes_foreign_directory = disk->isReadOnly();
+
         for (auto it = disk->iterateDirectory(relative_data_path); it->isValid(); it->next())
         {
             if (startsWith(it->name(), "mutation_"))
             {
                 FailPointInjection::pauseFailPoint(FailPoints::storage_merge_tree_load_mutations_pause_before_read);
 
-                MergeTreeMutationEntry entry = loadMutationEntry(disk, it->name());
+                /// The owner decides that a mutation is finished from *its* active parts, so a removed entry is
+                /// still owed as an on-the-fly alter conversion to any part loaded here below its version.
+                bool skip_if_removed = false;
+                if (observes_foreign_directory)
+                {
+                    const auto min_part_data_version = getMinPartDataVersion();
+                    skip_if_removed = !min_part_data_version
+                        || !std::cmp_greater(MergeTreeMutationEntry::tryParseFileName(it->name()), *min_part_data_version);
+                }
+
+                auto loaded = loadMutationEntry(disk, it->name(), skip_if_removed);
+                if (!loaded)
+                    continue;
+
+                MergeTreeMutationEntry & entry = *loaded;
                 UInt64 block_number = entry.block_number;
                 LOG_DEBUG(log, "Loading mutation: {} entry, commands size: {}", it->name(), entry.commands->size());
 
@@ -1952,16 +1983,20 @@ void StorageMergeTree::loadMutations()
                     if (auto csn = TransactionManager::getCSN(entry.tid))
                     {
                         /// Transaction is committed => mutation is finished, but let's load it anyway (so it will be shown in system.mutations)
-                        entry.writeCSN(csn);
+                        if (observes_foreign_directory)
+                            entry.csn = csn;
+                        else
+                            entry.writeCSN(csn);
                     }
                     else
                     {
                         /// Transaction is not committed. The TID may be outdated if the transaction log entry
                         /// was garbage-collected (e.g. after upgrade from a version that advanced tail_ptr).
-                        /// In either case the mutation was not committed and should be removed.
-                        LOG_DEBUG(log, "Mutation entry {} was created by transaction {}, but it was not committed. Removing mutation entry",
+                        /// In either case the mutation was not committed and must not be loaded.
+                        LOG_DEBUG(log, "Mutation entry {} was created by transaction {}, but it was not committed. Ignoring mutation entry",
                                   it->name(), entry.tid);
-                        disk->removeFile(it->path());
+                        if (!observes_foreign_directory)
+                            disk->removeFile(it->path());
                         continue;
                     }
                 }
@@ -1974,7 +2009,8 @@ void StorageMergeTree::loadMutations()
             }
             else if (startsWith(it->name(), "tmp_mutation_"))
             {
-                disk->removeFile(it->path());
+                if (!observes_foreign_directory)
+                    disk->removeFile(it->path());
             }
         }
     }
