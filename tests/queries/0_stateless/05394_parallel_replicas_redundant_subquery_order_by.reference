@@ -1,0 +1,16 @@
+sum over a sorted subquery: the replicas aggregate, nobody sorts
+0	1
+17063156905847605737
+17063156905847605737
+automatic parallel replicas match the plan and collect statistics for it
+1	1
+the sorting is not removed without query_plan_remove_redundant_sorting
+0
+LIMIT reads the sorted rows: the subquery is not redundant
+0
+15210377484385027034
+15210377484385027034
+groupArray depends on the order: the subquery is not redundant
+0
+11988796622053100490
+11988796622053100490
