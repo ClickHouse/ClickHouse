@@ -691,7 +691,7 @@ void findBackupDatabaseSecretArguments(FunctionSecretArgumentsFinder & finder)
                 else if (key_value->arguments->at(1)->tryGetString(&value, /* allow_identifier= */ true))
                 {
                     /// A `url` override can itself carry credentials (userinfo, presign parameters).
-                    has_secret |= maskURICredentials(value);
+                    has_secret |= maskURICredentials(value, /* hide_unreadable= */ key == "url");
                     replacement += quoteString(value);
                 }
                 else if (String literal_text; key_value->arguments->at(1)->tryGetLiteralText(&literal_text))
@@ -778,7 +778,7 @@ void findBackupDatabaseSecretArguments(FunctionSecretArgumentsFinder & finder)
         else if (arg->tryGetString(&arg_value, /* allow_identifier= */ true))
         {
             /// The url positional can itself carry credentials (userinfo, presign parameters).
-            has_secret |= maskURICredentials(arg_value);
+            has_secret |= maskURICredentials(arg_value, /* hide_unreadable= */ !is_named_collection && slot == 0);
             replacement += quoteString(arg_value);
         }
         else
