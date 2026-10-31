@@ -9,7 +9,7 @@
 # - T3: partition pruning per data file (bucket transform).
 # - T4: every file pruned.
 # - T5: a filter that prunes nothing is estimated.
-# - T6: position deletes are not subtracted.
+# - T6: position deletes keep the estimate imprecise (what is subtracted: 05325).
 # - T7: no double counting of pruned files between planning and the read.
 # - T8: planning builds no `IN` set.
 
@@ -99,7 +99,7 @@ labels "SELECT count() FROM mt AS m JOIN p ON m.x = p.v WHERE p.k >= 1000000" ${
 echo '--- T5: a filter that prunes nothing, WHERE t.x = 5'
 labels "SELECT count() FROM mt AS m JOIN unp AS t ON m.k = t.k WHERE t.x = 5" ${ON}
 
-# Deleted rows are not subtracted, so the estimate overreports (100 rows, 80 live).
+# The delete file is scoped to the only data file of d, so its 20 rows are subtracted.
 T6="SELECT count() FROM mt AS m JOIN d ON m.k = d.k"
 echo '--- T6: position deletes, 100 rows, 20 deleted'
 labels "${T6}" ${ON}
