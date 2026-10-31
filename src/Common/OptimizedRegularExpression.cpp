@@ -146,9 +146,15 @@ const char * skipUnsupportedEscape(const char * pos, const char * end)
 /// class, and returns the position right after its closing `:]`. `pos` points at the `[`.
 /// When this is not a named class, re2 reads the `[` as a literal member of the enclosing class,
 /// and the returned position is just the next character.
-const char * skipPosixNamedClass(const char * pos, const char * end)
+/// `last_close` is the start of the last `:]` in the regexp, or nullptr if there is none.
+const char * skipPosixNamedClass(const char * pos, const char * end, const char * last_close)
 {
     if (end - pos <= 2 || pos[1] != ':')
+        return pos + 1;
+
+    /// No `:]` left, so the scan below would fail. Checking this first keeps a pattern with many `[:`
+    /// and no `:]` linear: otherwise each `[:` rescans the rest of the regexp.
+    if (last_close == nullptr || last_close < pos + 2)
         return pos + 1;
 
     /// re2 looks for the closing `:]` in the whole rest of the regexp, not only up to the `]` that
@@ -240,7 +246,8 @@ const char * analyzeImpl(
     Literal & required_substring,
     bool & is_trivial,
     bool & has_capture,
-    Literals & global_alternatives)
+    Literals & global_alternatives,
+    const char * last_posix_close)
 {
     checkStackSize();
 
@@ -464,7 +471,8 @@ const char * analyzeImpl(
                     bool group_is_trival = true;
                     bool group_has_capture = false;
                     Literals group_alters;
-                    pos = analyzeImpl(regexp, pos + 1, group_required_substr, group_is_trival, group_has_capture, group_alters);
+                    pos = analyzeImpl(
+                        regexp, pos + 1, group_required_substr, group_is_trival, group_has_capture, group_alters, last_posix_close);
                     /// pos should be ')', if not, then it is not a valid regular expression
                     if (pos == end)
                         return pos;
@@ -495,7 +503,7 @@ const char * analyzeImpl(
                 /// `[:...:]` belongs to the enclosing class and has to be consumed as a whole.
                 if (in_square_braces)
                 {
-                    pos = skipPosixNamedClass(pos, end);
+                    pos = skipPosixNamedClass(pos, end, last_posix_close);
                     break;
                 }
 
@@ -634,7 +642,7 @@ finish:
         Literals next_alternatives;
         bool next_is_trivial = true;
         bool next_has_capture = false;
-        pos = analyzeImpl(regexp, pos, required_substring, next_is_trivial, next_has_capture, next_alternatives);
+        pos = analyzeImpl(regexp, pos, required_substring, next_is_trivial, next_has_capture, next_alternatives, last_posix_close);
 
         /// has_capture is true when all alternatives have captures
         has_capture &= next_has_capture;
@@ -669,7 +677,15 @@ try
     RegexpAnalysisResult r;
     Literals alternative_literals;
     Literal required_literal;
-    analyzeImpl(regexp_, regexp_.data(), required_literal, r.is_trivial, r.has_capture, alternative_literals); // NOLINT
+    const size_t last_posix_close = regexp_.rfind(":]");
+    analyzeImpl( // NOLINT
+        regexp_,
+        regexp_.data(),
+        required_literal,
+        r.is_trivial,
+        r.has_capture,
+        alternative_literals,
+        last_posix_close == std::string_view::npos ? nullptr : regexp_.data() + last_posix_close);
     r.required_substring = std::move(required_literal.literal);
     r.required_substring_is_prefix = required_literal.prefix;
     for (auto & lit : alternative_literals)
