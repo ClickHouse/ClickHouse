@@ -12,10 +12,21 @@ services:
             LDAP_USERS: janedoe,johndoe
             LDAP_PASSWORDS: qwerty,qwertz
             LDAP_PORT_NUMBER: ${LDAP_INTERNAL_PORT:-1389}
+            # TLS is additive: plain ldap:// stays on LDAP_PORT_NUMBER (StartTLS is available there
+            # too), ldaps:// is served on LDAP_LDAPS_PORT_NUMBER. The certificate is issued by the
+            # checked-in CA in ci/docker/integration/runner/misc/openldap/certs for the names
+            # `openldap`, `localhost` and 127.0.0.1. Note that libldap verifies `localhost` against
+            # the machine hostname, so in-container TLS checks must use 127.0.0.1.
+            LDAP_ENABLE_TLS: "yes"
+            LDAP_LDAPS_PORT_NUMBER: ${LDAP_INTERNAL_TLS_PORT:-1636}
+            LDAP_TLS_CERT_FILE: /certs/server.pem
+            LDAP_TLS_KEY_FILE: /certs/server-key.pem
+            LDAP_TLS_CA_FILE: /certs/ca.pem
         ports:
             - ${LDAP_EXTERNAL_PORT:-1389}:${LDAP_INTERNAL_PORT:-1389}
         volumes:
             - /misc/openldap/initialized.sh:/docker-entrypoint-initdb.d/initialized.sh
+            - /misc/openldap/certs:/certs:ro
         healthcheck:
             test: >
                 test -f /tmp/.openldap-initialized

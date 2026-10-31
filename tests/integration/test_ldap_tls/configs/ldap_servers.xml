@@ -1,0 +1,113 @@
+<clickhouse>
+    <!-- Every definition below points at the same fixture (the `openldap` container) and binds
+         as the same directory entry, `janedoe`; only the transport settings differ. The users in
+         users.xml select a variant by referencing one of these names, so a single ClickHouse
+         instance can exercise all of them. -->
+    <ldap_servers>
+        <!-- LDAPS with the server certificate verified against the fixture CA. -->
+        <ldaps>
+            <host>openldap</host>
+            <port>1636</port>
+            <bind_dn>cn=janedoe,ou=users,dc=example,dc=org</bind_dn>
+            <enable_tls>yes</enable_tls>
+            <tls_require_cert>demand</tls_require_cert>
+            <tls_ca_cert_file>/etc/clickhouse-server/config.d/ca.pem</tls_ca_cert_file>
+        </ldaps>
+
+        <!-- Same, but TLS 1.3 is the only acceptable protocol version. -->
+        <ldaps_tls13>
+            <host>openldap</host>
+            <port>1636</port>
+            <bind_dn>cn=janedoe,ou=users,dc=example,dc=org</bind_dn>
+            <enable_tls>yes</enable_tls>
+            <tls_minimum_protocol_version>tls1.3</tls_minimum_protocol_version>
+            <tls_require_cert>demand</tls_require_cert>
+            <tls_ca_cert_file>/etc/clickhouse-server/config.d/ca.pem</tls_ca_cert_file>
+        </ldaps_tls13>
+
+        <!-- Same, but pinned to TLS 1.2 exactly. -->
+        <ldaps_max_tls12>
+            <host>openldap</host>
+            <port>1636</port>
+            <bind_dn>cn=janedoe,ou=users,dc=example,dc=org</bind_dn>
+            <enable_tls>yes</enable_tls>
+            <tls_minimum_protocol_version>tls1.2</tls_minimum_protocol_version>
+            <tls_maximum_protocol_version>tls1.2</tls_maximum_protocol_version>
+            <tls_require_cert>demand</tls_require_cert>
+            <tls_ca_cert_file>/etc/clickhouse-server/config.d/ca.pem</tls_ca_cert_file>
+        </ldaps_max_tls12>
+
+        <!-- The maximum is capped below what the server accepts, so the handshake must fail. -->
+        <ldaps_max_tls11>
+            <host>openldap</host>
+            <port>1636</port>
+            <bind_dn>cn=janedoe,ou=users,dc=example,dc=org</bind_dn>
+            <enable_tls>yes</enable_tls>
+            <tls_minimum_protocol_version>tls1.0</tls_minimum_protocol_version>
+            <tls_maximum_protocol_version>tls1.1</tls_maximum_protocol_version>
+            <tls_require_cert>demand</tls_require_cert>
+            <tls_ca_cert_file>/etc/clickhouse-server/config.d/ca.pem</tls_ca_cert_file>
+        </ldaps_max_tls11>
+
+        <!-- Verification demanded, but the fixture CA is not trusted: must fail. -->
+        <ldaps_no_ca>
+            <host>openldap</host>
+            <port>1636</port>
+            <bind_dn>cn=janedoe,ou=users,dc=example,dc=org</bind_dn>
+            <enable_tls>yes</enable_tls>
+            <tls_require_cert>demand</tls_require_cert>
+        </ldaps_no_ca>
+
+        <!-- Verification disabled: works without the CA. -->
+        <ldaps_never>
+            <host>openldap</host>
+            <port>1636</port>
+            <bind_dn>cn=janedoe,ou=users,dc=example,dc=org</bind_dn>
+            <enable_tls>yes</enable_tls>
+            <tls_require_cert>never</tls_require_cert>
+        </ldaps_never>
+
+        <!-- StartTLS on the plain port, verified against the fixture CA. -->
+        <starttls>
+            <host>openldap</host>
+            <port>1389</port>
+            <bind_dn>cn=janedoe,ou=users,dc=example,dc=org</bind_dn>
+            <enable_tls>starttls</enable_tls>
+            <tls_require_cert>demand</tls_require_cert>
+            <tls_ca_cert_file>/etc/clickhouse-server/config.d/ca.pem</tls_ca_cert_file>
+        </starttls>
+
+        <!-- A non-routable address: the SYN is dropped silently and the connect attempt must be
+             cut short by `network_timeout` instead of hanging for the default 30 seconds. -->
+        <unreachable>
+            <host>10.255.255.1</host>
+            <port>389</port>
+            <bind_dn>cn=janedoe,ou=users,dc=example,dc=org</bind_dn>
+            <enable_tls>no</enable_tls>
+            <operation_timeout>1</operation_timeout>
+            <network_timeout>1</network_timeout>
+            <search_timeout>1</search_timeout>
+        </unreachable>
+
+        <!-- Rejected at parse time: the maximum is lower than the minimum. -->
+        <bad_tls_range>
+            <host>openldap</host>
+            <port>1636</port>
+            <bind_dn>cn=janedoe,ou=users,dc=example,dc=org</bind_dn>
+            <enable_tls>yes</enable_tls>
+            <tls_minimum_protocol_version>tls1.3</tls_minimum_protocol_version>
+            <tls_maximum_protocol_version>tls1.2</tls_maximum_protocol_version>
+            <tls_require_cert>demand</tls_require_cert>
+            <tls_ca_cert_file>/etc/clickhouse-server/config.d/ca.pem</tls_ca_cert_file>
+        </bad_tls_range>
+
+        <!-- Rejected at parse time: a zero timeout would fail every connection immediately. -->
+        <bad_timeout>
+            <host>openldap</host>
+            <port>1389</port>
+            <bind_dn>cn=janedoe,ou=users,dc=example,dc=org</bind_dn>
+            <enable_tls>no</enable_tls>
+            <network_timeout>0</network_timeout>
+        </bad_timeout>
+    </ldap_servers>
+</clickhouse>
