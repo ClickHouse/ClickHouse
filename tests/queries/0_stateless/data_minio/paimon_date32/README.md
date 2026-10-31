@@ -4,8 +4,9 @@ Four tables of one Paimon warehouse, written by the program below with `pypaimon
 (`pip install pypaimon==2.1.0`, no JVM needed) and copied from `<warehouse>/default.db/`.
 They are reachable as `paimonS3(s3_conn, filename='paimon_date32/<table>')`.
 
-* `t_parquet`: nullable `DATE`, `DATE NOT NULL` and `ARRAY<DATE>`, with the bounds of `Date` and `Date32`
-  and the days just outside the `Date` range.
+* `t_parquet`: nullable `DATE`, `DATE NOT NULL` and `ARRAY<DATE>`, with the `Date32` (and Paimon `DATE`) bounds
+  `0000-01-01` and `9999-12-31`, the `Date` bounds `1970-01-01` and `2149-06-06`, and the days just outside the
+  `Date` range.
 * `t_partitioned`: partitioned by a `DATE` column: `d=-1`, `d=19723` and `d=84006`.
 * `t_orc`, `t_avro`: the rows of `t_partitioned`, unpartitioned, in the ORC and Avro file formats, read with
   `format = 'ORC'` and `format = 'Avro'`.
@@ -36,9 +37,9 @@ def write(name, schema, rows, partition_keys=None, file_format="parquet"):
     c.close()
 
 
-# 1900-01-01 and 2299-12-31 are the Date32 bounds, 1970-01-01 and 2149-06-06 the Date bounds.
-dates = [date(1900, 1, 1), date(1969, 12, 31), date(1970, 1, 1), date(2149, 6, 6), date(2149, 6, 7), date(2299, 12, 31)]
-other = date(2024, 1, 1)
+# Date32 and Paimon DATE cover 0000-01-01 (-719528) .. 9999-12-31 (2932896); Date covers 1970-01-01 (0) .. 2149-06-06 (65535).
+dates = [-719528, -1, 0, 65535, 65536, 2932896]
+other = 19723  # 2024-01-01
 
 write(
     "t_parquet",
