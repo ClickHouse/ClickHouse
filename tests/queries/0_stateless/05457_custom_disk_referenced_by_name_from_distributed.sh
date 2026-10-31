@@ -11,6 +11,9 @@ CLIENT="${CLICKHOUSE_CLIENT} --database_atomic_wait_for_drop_and_detach_synchron
 # A disk defined inline with `disk(...)` by a `MergeTree` table stays registered while a `Distributed` table
 # uses its implicit storage policy `__<disk>`, also after the defining table is dropped. It is unregistered
 # once the last of these tables is dropped.
+# The disk is a plain `local` disk: `Distributed` writes its queue files into the directory of the disk directly,
+# and on an object storage disk that is the metadata directory, where `system.remote_data_paths` of a concurrent
+# test would read them as metadata.
 disk="${CLICKHOUSE_TEST_UNIQUE_NAME}_disk"
 
 $CLIENT -q "
@@ -20,7 +23,7 @@ DROP TABLE IF EXISTS test_distributed SYNC;
 DROP TABLE IF EXISTS test_distributed_2 SYNC;
 
 CREATE TABLE test_defining (a Int32) ENGINE = MergeTree() ORDER BY tuple()
-SETTINGS disk = disk(name = '$disk', type = 'local_blob_storage', path = '${CLICKHOUSE_DISKS_FILES}/$disk/');
+SETTINGS disk = disk(name = '$disk', type = 'local', path = '${CLICKHOUSE_DISKS_FILES}/$disk/');
 
 CREATE TABLE test_target (a Int32) ENGINE = MergeTree() ORDER BY tuple();
 CREATE TABLE test_distributed (a Int32) ENGINE = Distributed(test_shard_localhost, currentDatabase(), test_target, rand(), '__$disk');
