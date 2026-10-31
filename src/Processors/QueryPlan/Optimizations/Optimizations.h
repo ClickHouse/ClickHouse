@@ -238,7 +238,8 @@ bool tryAddJoinRuntimeFilter(QueryPlan::Node & node, QueryPlan::Nodes & nodes, c
 
 /// For an equi-join, copy filter conjuncts from one side onto the other via equi-key substitution
 /// so that index pruning (MergeTree primary key) on the other side picks them up
-size_t tryPropagatePredicateAcrossEquiJoin(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, const Optimization::ExtraSettings & settings);
+size_t tryPropagatePredicateAcrossEquiJoin(
+    QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, bool index_analysis_enabled, const Optimization::ExtraSettings & settings);
 
 /// Optimize ORDER BY ... LIMIT n query by using skip index or Prewhere threshold filtering
 size_t tryOptimizeTopK(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, const Optimization::ExtraSettings & settings);
