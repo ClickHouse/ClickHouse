@@ -17,6 +17,7 @@
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/NestedUtils.h>
 #include <DataTypes/Serializations/SerializationQuantizedVector.h>
+#include <Functions/UserDefined/UserDefinedSQLFunctionFactory.h>
 #include <Compression/CompressionCodecQuantized.h>
 #include <IO/ReadBuffer.h>
 #include <IO/ReadBufferFromString.h>
@@ -28,10 +29,12 @@
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/FunctionNameNormalizer.h>
+#include <Interpreters/RequiredSourceColumnsVisitor.h>
 #include <Interpreters/TreeRewriter.h>
 #include <Interpreters/addTypeConversionToAST.h>
 #include <Parsers/ASTCodecDeclaration.h>
 #include <Parsers/ASTColumnDeclaration.h>
+#include <Parsers/ASTCreateSQLFunctionQuery.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
@@ -1338,6 +1341,82 @@ void collectAliasDependenciesFromAST(
             collectAliasDependenciesFromAST(child, candidate_names, dependencies);
 }
 
+/// Parameters of the enclosing lambdas and SQL UDFs, innermost last, each with whether its argument is a lambda.
+using LambdaParameters = std::vector<std::pair<String, bool>>;
+
+/// Names an ALIAS expression can read from the table, subqueries and SQL UDF bodies included. As in the analyzer, an
+/// identifier whose name or first part is a parameter reads that parameter, and a call of a parameter whose argument
+/// is a lambda calls that lambda, which is read where it is passed.
+void collectNamesReadFromTable(const ASTPtr & node, LambdaParameters & lambda_parameters, NameSet & udfs_in_progress, NameSet & names)
+{
+    if (!node)
+        return;
+
+    const auto find_parameter = [&](const String & name) -> const LambdaParameters::value_type *
+    {
+        auto it = std::find_if(
+            lambda_parameters.rbegin(), lambda_parameters.rend(), [&](const auto & parameter) { return parameter.first == name; });
+        return it == lambda_parameters.rend() ? nullptr : &*it;
+    };
+
+    const auto is_lambda = [&](const ASTPtr & argument)
+    {
+        if (const auto * argument_function = argument->as<ASTFunction>())
+            return argument_function->name == "lambda";
+        const auto * argument_identifier = argument->as<ASTIdentifier>();
+        const auto * parameter = argument_identifier ? find_parameter(argument_identifier->name()) : nullptr;
+        return parameter && parameter->second;
+    };
+
+    const auto collect_lambda_body = [&](const ASTFunction & lambda, const std::vector<bool> & arguments_are_lambdas)
+    {
+        auto parameters = RequiredSourceColumnsMatcher::extractNamesFromLambda(lambda);
+        size_t outer_size = lambda_parameters.size();
+        for (size_t i = 0; i < parameters.size(); ++i)
+            lambda_parameters.emplace_back(parameters[i], i < arguments_are_lambdas.size() && arguments_are_lambdas[i]);
+        collectNamesReadFromTable(lambda.arguments->children[1], lambda_parameters, udfs_in_progress, names);
+        lambda_parameters.resize(outer_size);
+    };
+
+    if (const auto * identifier = node->as<ASTIdentifier>())
+    {
+        if (!find_parameter(identifier->name()) && !find_parameter(identifier->name_parts.front()))
+            names.insert(identifier->name());
+        return;
+    }
+
+    if (const auto * function = node->as<ASTFunction>())
+    {
+        if (function->name == "lambda")
+        {
+            collect_lambda_body(*function, {});
+            return;
+        }
+
+        const auto * parameter = find_parameter(function->name);
+        if (!(parameter && parameter->second) && !udfs_in_progress.contains(function->name))
+        {
+            ASTPtr udf = UserDefinedSQLFunctionFactory::instance().tryGet(function->name);
+            const auto * create_function_query = udf ? udf->as<ASTCreateSQLFunctionQuery>() : nullptr;
+            if (const auto * udf_lambda = create_function_query ? create_function_query->function_core->as<ASTFunction>() : nullptr)
+            {
+                std::vector<bool> arguments_are_lambdas;
+                if (function->arguments)
+                    for (const auto & argument : function->arguments->children)
+                        arguments_are_lambdas.push_back(is_lambda(argument));
+
+                udfs_in_progress.insert(function->name);
+                collect_lambda_body(*udf_lambda, arguments_are_lambdas);
+                udfs_in_progress.erase(function->name);
+            }
+        }
+    }
+
+    for (const auto & child : node->children)
+        if (child)
+            collectNamesReadFromTable(child, lambda_parameters, udfs_in_progress, names);
+}
+
 [[noreturn]] void throwDefaultCycleException(const Strings & cycle_path)
 {
     Strings formatted_cycle = cycle_path;
@@ -1353,6 +1432,53 @@ void collectAliasDependenciesFromAST(
     }
 
     throw Exception(ErrorCodes::CYCLIC_ALIASES, "Cyclic alias detected in column DEFAULT expressions: {}", message);
+}
+
+/// Throws `CYCLIC_ALIASES` with the path of the first cycle reachable from `roots`.
+void throwOnDependencyCycle(const Strings & roots, const std::function<NameSet(const String &)> & get_dependencies)
+{
+    enum class Color
+    {
+        White,
+        Gray,
+        Black,
+    };
+
+    std::unordered_map<String, Color> colors;
+    colors.reserve(roots.size());
+
+    Strings dfs_stack;
+    dfs_stack.reserve(roots.size());
+
+    std::function<void(const String &)> dfs = [&](const String & vertex)
+    {
+        auto & color = colors[vertex];
+        if (color == Color::Black)
+            return;
+        if (color == Color::Gray)
+        {
+            auto it = std::find(dfs_stack.begin(), dfs_stack.end(), vertex);
+            Strings cycle;
+            if (it != dfs_stack.end())
+                cycle.assign(it, dfs_stack.end());
+            else
+                cycle.emplace_back(vertex);
+            throwDefaultCycleException(cycle);
+        }
+
+        color = Color::Gray;
+        dfs_stack.push_back(vertex);
+
+        for (const auto & dependency : get_dependencies(vertex))
+            dfs(dependency);
+
+        dfs_stack.pop_back();
+        color = Color::Black;
+    };
+
+    for (const auto & root : roots)
+        if (colors[root] != Color::Black)
+            dfs(root);
 }
 
 /**
@@ -1392,58 +1518,18 @@ void detectRecursiveDefaultCycles(
         alias_to_expression.emplace(alias, child);
     }
 
-    enum class Color
+    Strings roots;
+    for (const auto & column_name : default_column_names)
+        if (alias_names.contains(column_name))
+            roots.push_back(column_name);
+
+    throwOnDependencyCycle(roots, [&](const String & vertex)
     {
-        White,
-        Gray,
-        Black,
-    };
-
-    std::unordered_map<String, Color> colors;
-    colors.reserve(alias_to_expression.size());
-
-    Strings dfs_stack;
-    dfs_stack.reserve(alias_to_expression.size());
-
-    std::function<void(const String &)> dfs = [&](const String & vertex)
-    {
-        auto & color = colors[vertex];
-        if (color == Color::Black)
-            return;
-        if (color == Color::Gray)
-        {
-            auto it = std::find(dfs_stack.begin(), dfs_stack.end(), vertex);
-            Strings cycle;
-            if (it != dfs_stack.end())
-                cycle.assign(it, dfs_stack.end());
-            else
-                cycle.emplace_back(vertex);
-            throwDefaultCycleException(cycle);
-        }
-
-        color = Color::Gray;
-        dfs_stack.push_back(vertex);
-
         NameSet dependencies;
         if (auto it = alias_to_expression.find(vertex); it != alias_to_expression.end())
-        {
             collectAliasDependenciesFromAST(it->second, alias_names, dependencies);
-            for (const auto & dependency : dependencies)
-                dfs(dependency);
-        }
-
-        dfs_stack.pop_back();
-        color = Color::Black;
-    };
-
-    for (const auto & column_name : default_column_names)
-    {
-        if (!alias_names.contains(column_name))
-            continue;
-
-        if (colors[column_name] != Color::Black)
-            dfs(column_name);
-    }
+        return dependencies;
+    });
 }
 
 /// Reject a DEFAULT/MATERIALIZED column whose resolved expression reads a virtual column of the dummy
@@ -1638,6 +1724,43 @@ Block validateColumnsDefaultsAndGetSampleBlock(ASTPtr default_expr_list, const N
     auto result = validateColumnsDefaultsAndGetSampleBlockImpl(default_expr_list, all_columns, context, /*get_sample_block=*/true, insert_time_default_columns);
     chassert(result.has_value());
     return std::move(*result);
+}
+
+void ColumnsDescription::checkAliasColumnsAreNotCyclic() const
+{
+    Strings alias_columns;
+    for (const auto & column : columns)
+        if (column.default_desc.kind == ColumnDefaultKind::Alias)
+            alias_columns.push_back(column.name);
+
+    if (alias_columns.empty())
+        return;
+
+    /// Binds a name the way the analyzer resolves an identifier in an ALIAS expression: a column of
+    /// that name, else the first `.`-prefix column whose type has the rest as a subcolumn.
+    auto bind_to_column = [this](const String & name) -> const ColumnDescription *
+    {
+        if (const auto * column = tryGet(name))
+            return column;
+        for (auto [column_name, subcolumn_name] : Nested::getAllColumnAndSubcolumnPairs(name))
+            if (const auto * column = tryGet(String(column_name)); column && column->type->tryGetSubcolumnType(subcolumn_name))
+                return column;
+        return nullptr;
+    };
+
+    throwOnDependencyCycle(alias_columns, [&](const String & alias_column)
+    {
+        LambdaParameters lambda_parameters;
+        NameSet udfs_in_progress;
+        NameSet names;
+        collectNamesReadFromTable(get(alias_column).default_desc.expression, lambda_parameters, udfs_in_progress, names);
+
+        NameSet dependencies;
+        for (const auto & name : names)
+            if (const auto * column = bind_to_column(name); column && column->default_desc.kind == ColumnDefaultKind::Alias)
+                dependencies.insert(column->name);
+        return dependencies;
+    });
 }
 
 bool prewhereSupportedColumnsContain(
