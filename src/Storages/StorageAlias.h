@@ -37,6 +37,12 @@ public:
         return {};
     }
 
+    bool mayReadViewSource(const ContextPtr & query_context) const override
+    {
+        auto target = tryGetTargetTable();
+        return target && target->mayReadViewSource(query_context);
+    }
+
     /// An `Alias` has no data of its own, so a bulk `TRUNCATE ALL TABLES` must skip it.
     /// Only the bulk paths consult this; an explicit `TRUNCATE TABLE <alias>` still truncates the target.
     bool supportsTruncate() const override { return false; }

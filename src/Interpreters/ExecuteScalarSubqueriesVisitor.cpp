@@ -154,8 +154,7 @@ static auto getQueryInterpreter(const ASTSubquery & subquery, ExecuteScalarSubqu
 
 static bool subqueryUsesViewSource(const InterpreterSelectQueryAnalyzer & interpreter, const ContextPtr & context)
 {
-    auto view_source = context->getViewSource();
-    return view_source && isStorageUsedInTree(view_source, interpreter.getQueryTree().get());
+    return subtreeMayReadViewSource(interpreter.getQueryTree().get(), context);
 }
 
 void ExecuteScalarSubqueriesMatcher::visit(const ASTSubquery & subquery, ASTPtr & ast, Data & data)
@@ -337,14 +336,19 @@ void ExecuteScalarSubqueriesMatcher::visit(const ASTSubquery & subquery, ASTPtr 
 
     const Settings & settings = data.getContext()->getSettingsRef();
 
-    // Always convert to literals when there is no query context.
-    if (data.only_analyze || !settings[Setting::enable_scalar_subquery_optimization] || worthConvertingScalarToLiteral(scalar, data.max_literal_size)
-        || !data.getContext()->hasQueryContext())
+    /// Always convert to literals when there is no query context, and for a local scalar: only global scalars are saved
+    /// in the query context, where `__getScalar` looks them up.
+    if (data.only_analyze || is_local || !settings[Setting::enable_scalar_subquery_optimization]
+        || worthConvertingScalarToLiteral(scalar, data.max_literal_size) || !data.getContext()->hasQueryContext())
     {
-        auto lit = make_intrusive<ASTLiteral>((*scalar.safeGetByPosition(0).column)[0]);
-        lit->alias = subquery_alias;
-        lit->setPreferAliasToColumnName(prefer_alias_to_column_name);
-        ast = addTypeConversionToAST(std::move(lit), scalar.safeGetByPosition(0).type->getName());
+        const auto & value = scalar.safeGetByPosition(0);
+        ASTPtr lit = typeNeedsExactLiteralSerialization(*value.type)
+            ? columnConstantToExactLiteralAST(value.column, 0, value.type, /*date_time_as_numbers=*/true)
+            : make_intrusive<ASTLiteral>((*value.column)[0]);
+        ast = makeCastToTypeNameAST(std::move(lit), value.type->getName());
+        auto & cast = ast->as<ASTFunction &>();
+        cast.alias = subquery_alias;
+        cast.setPreferAliasToColumnName(prefer_alias_to_column_name);
 
         /// If only analyze was requested the expression is not suitable for constant folding, disable it.
         if (data.only_analyze)

@@ -1,5 +1,6 @@
 #include <Planner/Utils.h>
 
+#include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSubquery.h>
@@ -19,6 +20,7 @@
 
 #include <Functions/FunctionFactory.h>
 #include <Functions/IFunctionAdaptors.h>
+#include <Functions/UserDefined/UserDefinedSQLFunctionFactory.h>
 #include <Functions/indexHint.h>
 
 #include <Access/Common/AccessFlags.h>
@@ -26,6 +28,9 @@
 
 #include <Storages/StorageAlias.h>
 #include <Storages/StorageDummy.h>
+#include <Storages/getEffectiveRowPolicyFilter.h>
+
+#include <TableFunctions/TableFunctionFactory.h>
 
 #include <Interpreters/Context.h>
 #include <Interpreters/ExpressionContainsColumnMatcher.h>
@@ -61,11 +66,14 @@
 #include <Processors/QueryPlan/AggregatingStep.h>
 #include <Processors/QueryPlan/LimitStep.h>
 
+#include <Common/UnorderedSetWithMemoryTracking.h>
+
 namespace DB
 {
 namespace Setting
 {
     extern const SettingsString additional_result_filter;
+    extern const SettingsMap additional_table_filters;
     extern const SettingsBool analyzer_compatibility_apply_final_to_all_joined_tables;
     extern const SettingsUInt64 max_bytes_to_read;
     extern const SettingsUInt64 max_bytes_to_read_leaf;
@@ -825,6 +833,101 @@ ASTPtr parseAdditionalResultFilter(const Settings & settings)
         settings[Setting::max_parser_depth],
         settings[Setting::max_parser_backtracks]);
     return additional_result_filter_ast;
+}
+
+namespace
+{
+
+bool astContainsSubqueryImpl(const ASTPtr & ast, UnorderedSetWithMemoryTracking<String> & visited_udfs)
+{
+    if (!ast)
+        return false;
+
+    if (ast->as<ASTSubquery>() || ast->as<ASTSelectWithUnionQuery>() || ast->as<ASTSelectQuery>())
+        return true;
+
+    if (const auto * function = ast->as<ASTFunction>())
+    {
+        /// The analyzer reads the table named by a bare `IN some_table` / `IN some_table_function(...)` the way it reads a subquery.
+        if (function->arguments && isNameOfInFunction(function->name) && function->arguments->children.size() >= 2)
+        {
+            const auto & right = function->arguments->children[1];
+            if (right->as<ASTIdentifier>())
+                return true;
+
+            if (const auto * right_function = right->as<ASTFunction>();
+                right_function && TableFunctionFactory::instance().isTableFunctionName(right_function->name))
+                return true;
+        }
+
+        auto udf_body = UserDefinedSQLFunctionFactory::instance().tryGet(function->name);
+        if (udf_body && visited_udfs.insert(function->name).second && astContainsSubqueryImpl(udf_body, visited_udfs))
+            return true;
+    }
+
+    for (const auto & child : ast->children)
+    {
+        if (astContainsSubqueryImpl(child, visited_udfs))
+            return true;
+    }
+    return false;
+}
+
+}
+
+bool astContainsSubquery(const ASTPtr & ast)
+{
+    UnorderedSetWithMemoryTracking<String> visited_udfs;
+    return astContainsSubqueryImpl(ast, visited_udfs);
+}
+
+ASTPtr parseAdditionalTableFilter(const IStorage & storage, const String & table_expression_alias, const ContextPtr & context)
+{
+    /// A synthetic data source is not a table of the catalog, and it may borrow the name of one,
+    /// so the filters keyed by that name must not be applied to it.
+    if (storage.isSyntheticDataSource())
+        return nullptr;
+
+    const auto & settings = context->getSettingsRef();
+
+    const auto & additional_filters = settings[Setting::additional_table_filters].value;
+    if (additional_filters.empty())
+        return nullptr;
+
+    const auto & storage_id = storage.getStorageID();
+
+    for (const auto & additional_filter : additional_filters)
+    {
+        const auto & tuple = additional_filter.safeGet<Tuple>();
+        const auto & table = tuple.at(0).safeGet<String>();
+        const auto & filter = tuple.at(1).safeGet<String>();
+
+        if (table == table_expression_alias
+            || (table == storage_id.getTableName() && context->getCurrentDatabase() == storage_id.getDatabaseName())
+            || table == storage_id.getFullNameNotQuoted())
+        {
+            ParserExpression parser;
+            return parseQuery(
+                parser,
+                filter.data(),
+                filter.data() + filter.size(),
+                "additional filter",
+                settings[Setting::max_query_size],
+                settings[Setting::max_parser_depth],
+                settings[Setting::max_parser_backtracks]);
+        }
+    }
+
+    return nullptr;
+}
+
+bool hiddenFilterMayReadTable(const IStorage & storage, const String & table_expression_alias, const ContextPtr & context)
+{
+    if (auto row_policy_filter = getEffectiveRowPolicyFilter(storage, context);
+        row_policy_filter && astContainsSubquery(row_policy_filter->expression))
+        return true;
+
+    return astContainsSubquery(parseAdditionalTableFilter(storage, table_expression_alias, context));
 }
 
 void appendSetsFromActionsDAG(const ActionsDAG & dag, UsefulSets & useful_sets)

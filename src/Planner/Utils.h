@@ -127,6 +127,15 @@ FilterDAGInfo buildFilterInfo(QueryTreeNodePtr filter_query_tree,
 
 ASTPtr parseAdditionalResultFilter(const Settings & settings);
 
+/// Returns true if the expression has a subquery, also in a called SQL UDF body, or an `IN` naming a table or a table function.
+bool astContainsSubquery(const ASTPtr & ast);
+
+/// Returns the parsed `additional_table_filters` entry for a read of `storage` as `table_expression_alias`, or nullptr.
+ASTPtr parseAdditionalTableFilter(const IStorage & storage, const String & table_expression_alias, const ContextPtr & context);
+
+/// Returns true if the row policy or the `additional_table_filters` entry of a read of `storage` may read a table.
+bool hiddenFilterMayReadTable(const IStorage & storage, const String & table_expression_alias, const ContextPtr & context);
+
 using UsefulSets = std::unordered_set<FutureSetPtr>;
 void appendSetsFromActionsDAG(const ActionsDAG & dag, UsefulSets & useful_sets);
 

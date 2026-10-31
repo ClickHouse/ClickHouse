@@ -90,6 +90,11 @@ public:
     bool isRemote() const override;
     bool readRequiresAnalyzedQuery() const override;
     bool readsFromOtherTables() const override { return static_cast<bool>(destination_id); }
+    bool mayReadViewSource(const ContextPtr & query_context) const override
+    {
+        auto destination = getDestinationTable();
+        return destination && destination->mayReadViewSource(query_context);
+    }
     StoragePtr getDestinationTable() const;
 
     bool supportsParallelInsert() const override { return true; }
