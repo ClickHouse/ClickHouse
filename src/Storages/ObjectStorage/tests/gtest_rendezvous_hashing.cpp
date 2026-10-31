@@ -352,6 +352,77 @@ TEST(RendezvousHashing, TakesFilesOfReplicaWithMostRemainingBytes)
     ASSERT_TRUE(checkHead(stolen_paths, {5, 7, 8}));
 }
 
+namespace
+{
+    /// Files of 'replica0'..'replica3' (see the table above): 0 - {6}, 1 - {0, 2, 4}, 2 - {1, 5, 7, 8}, 3 - {3, 9}.
+    /// After every replica has asked for one task and replica 0 has asked for two, the queued files are:
+    /// 1 - {2, 4}, 2 - {5, 7, 8}, 3 - {9}.
+    StorageObjectStorageStableTaskDistributor makeDistributorWithQueuedFiles(size_t bytes_of_replica1, size_t bytes_of_replica2, size_t bytes_of_replica3)
+    {
+        std::vector<RelativePathWithMetadata> paths;
+        for (size_t i = 0; i < 10; ++i)
+        {
+            ObjectMetadata metadata;
+            if (i == 2 || i == 4)
+                metadata.size_bytes = bytes_of_replica1 / 2;
+            else if (i == 5 || i == 7 || i == 8)
+                metadata.size_bytes = bytes_of_replica2 / 3;
+            else if (i == 9)
+                metadata.size_bytes = bytes_of_replica3;
+            else
+                metadata.size_bytes = 1;
+            paths.emplace_back(makePath(i), metadata);
+        }
+
+        auto iterator = std::make_shared<TestIterator>(paths);
+        std::vector<std::string> replicas = {"replica0", "replica1", "replica2", "replica3"};
+        return StorageObjectStorageStableTaskDistributor(iterator, std::move(replicas), false);
+    }
+
+    void takeFirstTasks(StorageObjectStorageStableTaskDistributor & distributor)
+    {
+        std::vector<std::string> paths;
+        EXPECT_TRUE(extractNForReplica(distributor, paths, 1, 1));
+        EXPECT_TRUE(extractNForReplica(distributor, paths, 2, 1));
+        EXPECT_TRUE(extractNForReplica(distributor, paths, 3, 1));
+        EXPECT_TRUE(extractNForReplica(distributor, paths, 0, 1));
+        EXPECT_TRUE(checkHead(paths, {0, 1, 3, 6}));
+    }
+}
+
+TEST(RendezvousHashing, DoesNotTakeFilesOfConnectedReplicasWithBalancedWork)
+{
+    auto distributor = makeDistributorWithQueuedFiles(600, 600, 600);
+    takeFirstTasks(distributor);
+
+    /// Replica 0 has no files left, and the other replicas have the same amount of work,
+    /// so replica 0 doesn't take their files, and they remain in the caches of their replicas.
+    ASSERT_EQ(distributor.getNextTask(0), nullptr);
+
+    /// The other replicas take their files in turns.
+    std::vector<std::string> paths;
+    ASSERT_TRUE(extractNForReplica(distributor, paths, 1, 1));
+    ASSERT_TRUE(extractNForReplica(distributor, paths, 2, 1));
+    ASSERT_TRUE(extractNForReplica(distributor, paths, 3, 1));
+    ASSERT_TRUE(extractNForReplica(distributor, paths, 1, 1));
+    ASSERT_TRUE(extractNForReplica(distributor, paths, 2, 2));
+    ASSERT_TRUE(checkHead(paths, {2, 4, 5, 7, 8, 9}));
+
+    for (size_t replica = 0; replica < 4; ++replica)
+        ASSERT_EQ(distributor.getNextTask(replica), nullptr);
+}
+
+TEST(RendezvousHashing, TakesFilesOfConnectedReplicaWithMuchMoreWork)
+{
+    auto distributor = makeDistributorWithQueuedFiles(600, 30000, 600);
+    takeFirstTasks(distributor);
+
+    /// Replica 2 has much more work left than the others, so replica 0 takes its files.
+    std::vector<std::string> stolen_paths;
+    ASSERT_TRUE(extractNForReplica(distributor, stolen_paths, 0, 3));
+    ASSERT_TRUE(checkHead(stolen_paths, {5, 7, 8}));
+}
+
 TEST(RendezvousHashing, DoesNotDeduplicateRepeatedArchiveEntryName)
 {
     auto make_object = [](const std::string & path, std::optional<size_t> archive_entry_index)
