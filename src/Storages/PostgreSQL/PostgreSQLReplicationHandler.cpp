@@ -945,6 +945,18 @@ bool PostgreSQLReplicationHandler::checkReplicationStateOnAttach(pqxx::nontransa
         if (!slot_exists)
             return false;
 
+        /// A full-definition `ATTACH TABLE` introduces a new object: like `CREATE TABLE`, it takes its initial snapshot
+        /// from the snapshot exported for the user-managed replication slot. The replication slot is kept.
+        if (user_managed_slot && is_fresh_definition && !user_provided_snapshot.empty())
+        {
+            LOG_INFO(
+                log,
+                "The new object will take its initial snapshot from the snapshot {} supplied for the user-managed "
+                "replication slot {}",
+                user_provided_snapshot, replication_slot);
+            return true;
+        }
+
         if (user_managed_slot)
             throw Exception(
                 ErrorCodes::POSTGRESQL_REPLICATION_INTERNAL_ERROR,
@@ -2253,8 +2265,19 @@ std::set<String> PostgreSQLReplicationHandler::fetchRequiredTables(const std::se
 
 std::set<std::pair<String, String>> PostgreSQLReplicationHandler::fetchPublishedTablePairs(pqxx::nontransaction & tx) const
 {
+    /// With `publish_via_partition_root = false`, `pg_publication_tables` lists the leaf partitions of a published
+    /// partitioned table instead of the table itself. Add the explicit membership from `pg_publication_rel`, so that
+    /// a partitioned table added to the publication by name is recognized as published.
+    const String quoted_name = quoteStringPostgreSQL(publication_name);
     pqxx::result result{tx.exec(fmt::format(
-        "SELECT schemaname, tablename FROM pg_publication_tables WHERE pubname = {}", quoteStringPostgreSQL(publication_name)))};
+        "SELECT schemaname, tablename FROM pg_publication_tables WHERE pubname = {} "
+        "UNION "
+        "SELECT n.nspname, c.relname FROM pg_publication_rel r "
+        "JOIN pg_publication p ON r.prpubid = p.oid "
+        "JOIN pg_class c ON c.oid = r.prrelid "
+        "JOIN pg_namespace n ON n.oid = c.relnamespace "
+        "WHERE p.pubname = {}",
+        quoted_name, quoted_name))};
     std::set<std::pair<String, String>> tables;
     for (const auto & row : result)
     {

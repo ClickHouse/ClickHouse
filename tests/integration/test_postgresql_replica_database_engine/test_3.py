@@ -14,6 +14,8 @@ from helpers.postgres_utility import (
     create_postgres_schema,
     create_postgres_table,
     create_postgres_table_with_schema,
+    create_replication_slot,
+    drop_replication_slot,
     get_postgres_conn,
     postgres_table_template_6,
 )
@@ -3712,6 +3714,41 @@ def test_fresh_full_definition_attach_table_bootstraps(started_cluster):
     instance.query(f"DROP TABLE {table} SYNC")
     wait_for_replication_slot(cursor, expected_count=0)
 
+    # A fresh definition with a user-managed replication slot takes its initial snapshot from the snapshot
+    # exported for that slot, and keeps the slot.
+    slot_name = "fresh_attach_user_slot"
+    replication_connection = get_postgres_conn(
+        ip=started_cluster.postgres_ip,
+        port=started_cluster.postgres_port,
+        database=True,
+        replication=True,
+        auto_commit=True,
+    )
+    snapshot = create_replication_slot(replication_connection, slot_name=slot_name)
+    instance.query(
+        f"""
+        SET allow_experimental_materialized_postgresql_table=1;
+        ATTACH TABLE default.{table} UUID '{table_uuid}' (key Int32, value Int32)
+        ENGINE=MaterializedPostgreSQL('{started_cluster.postgres_ip}:{started_cluster.postgres_port}', 'postgres_database', '{table}', 'postgres', '{pg_pass}')
+        ORDER BY key
+        SETTINGS materialized_postgresql_replication_slot = '{slot_name}',
+                 materialized_postgresql_snapshot = '{snapshot}',
+                 materialized_postgresql_backoff_min_ms = 100,
+                 materialized_postgresql_backoff_max_ms = 100
+        """
+    )
+
+    check_tables_are_synchronized(instance, table, materialized_database="default")
+    assert 60 == int(instance.query(f"SELECT count() FROM {table}"))
+
+    cursor.execute(f"INSERT INTO {table} SELECT i, i FROM generate_series(60, 69) AS i")
+    check_tables_are_synchronized(instance, table, materialized_database="default")
+    assert 70 == int(instance.query(f"SELECT count() FROM {table}"))
+
+    instance.query(f"DROP TABLE {table} SYNC")
+    drop_replication_slot(replication_connection, slot_name)
+    replication_connection.close()
+
 
 def test_attach_bootstraps_listed_table_whose_first_snapshot_failed(started_cluster):
     # A table of `materialized_postgresql_tables_list` whose first snapshot failed (it had no primary key)
@@ -4497,6 +4534,51 @@ def test_detach_table_interrupted_by_server_termination(started_cluster, use_sch
         instance, table_b, materialized_database=mat_db, schema_name=schema_name
     )
     assert 20 == int(instance.query(f"SELECT count() FROM {mat_db}.`{name_b}`"))
+
+    pg_manager.drop_materialized_db(mat_db)
+
+
+
+def test_whole_schema_with_partitioned_table_resumes_after_restart(started_cluster):
+    # With the default `publish_via_partition_root = false`, `pg_publication_tables` lists the leaf partitions
+    # instead of their partitioned parent, while the whole-schema discovery materializes the parent too. The parent
+    # is published explicitly, so the attach after a restart must not take it for a table removed from the publication.
+    mat_db = "partitioned_parent_database"
+    parent = "partitioned_parent"
+    partition = "partitioned_parent_p0"
+    ordinary = "partitioned_parent_ordinary"
+    cursor = pg_manager.get_db_cursor()
+    cursor.execute(
+        f"CREATE TABLE {parent} (key integer NOT NULL, value integer, PRIMARY KEY (key)) PARTITION BY RANGE (key)"
+    )
+    cursor.execute(
+        f"CREATE TABLE {partition} PARTITION OF {parent} FOR VALUES FROM (0) TO (1000)"
+    )
+    pg_manager.create_postgres_table(ordinary)
+    cursor.execute(f"INSERT INTO {parent} SELECT i, i FROM generate_series(0, 9) AS i")
+    cursor.execute(f"INSERT INTO {ordinary} SELECT i, i FROM generate_series(0, 9) AS i")
+
+    pg_manager.create_materialized_db(
+        ip=started_cluster.postgres_ip,
+        port=started_cluster.postgres_port,
+        materialized_database=mat_db,
+        settings=[
+            "materialized_postgresql_backoff_min_ms = 100",
+            "materialized_postgresql_backoff_max_ms = 100",
+        ],
+    )
+    check_tables_are_synchronized(instance, ordinary, materialized_database=mat_db)
+    check_tables_are_synchronized(instance, partition, materialized_database=mat_db)
+    assert 1 == int(instance.query(f"EXISTS TABLE {mat_db}.{parent}"))
+
+    instance.restart_clickhouse()
+
+    cursor.execute(f"INSERT INTO {ordinary} SELECT i, i FROM generate_series(10, 19) AS i")
+    cursor.execute(f"INSERT INTO {parent} SELECT i, i FROM generate_series(10, 19) AS i")
+    check_tables_are_synchronized(instance, ordinary, materialized_database=mat_db)
+    check_tables_are_synchronized(instance, partition, materialized_database=mat_db)
+    assert 20 == int(instance.query(f"SELECT count() FROM {mat_db}.{ordinary}"))
+    assert 20 == int(instance.query(f"SELECT count() FROM {mat_db}.{partition}"))
 
     pg_manager.drop_materialized_db(mat_db)
 
