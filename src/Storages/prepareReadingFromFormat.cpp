@@ -1,4 +1,5 @@
 #include <Storages/prepareReadingFromFormat.h>
+#include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Formats/FormatFactory.h>
 #include <Formats/FormatFilterInfo.h>
@@ -19,6 +20,7 @@
 #include <base/scope_guard.h>
 #include <Common/assert_cast.h>
 #include <Common/getNumberOfCPUCoresToUse.h>
+#include <Common/typeid_cast.h>
 
 #include <boost/algorithm/string/predicate.hpp>
 
@@ -191,17 +193,26 @@ Names filterTupleColumnsToRead(NamesAndTypesList & requested_columns)
 
                 ISerialization::StreamCallback callback_with_data = [&](const auto & subpath)
                 {
+                    DataTypePtr step_type = type;
                     for (size_t i = 0; i < subpath.size() && i < resolved_path.size(); ++i)
                     {
                         if (subpath[i].type != resolved_path[i].type || subpath[i].name_of_substream != resolved_path[i].name_of_substream)
                             break;
 
-                        /// Allow `a.x` where `a` is array of tuples.
+                        /// Allow `a.x` where `a` is array of tuples. A `Map` is serialized as `Array(Tuple(keys, values))`,
+                        /// but `keys` and `values` are not tuple elements, so the whole map is read.
                         if (subpath[i].type == ISerialization::Substream::ArrayElements)
+                        {
+                            const auto * array_type = typeid_cast<const DataTypeArray *>(step_type.get());
+                            if (!array_type)
+                                break;
+                            step_type = array_type->getNestedType();
                             continue;
+                        }
 
                         if (subpath[i].type != ISerialization::Substream::TupleElement)
                             break;
+                        step_type = subpath[i].data.type;
 
                         if (i + 1 > column_info.path.size())
                             column_info.path.assign(subpath.begin(), subpath.begin() + i + 1);
