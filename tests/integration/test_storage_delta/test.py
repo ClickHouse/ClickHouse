@@ -6538,6 +6538,11 @@ def test_delta_kernel_rebuild_on_credentials_rotation(started_cluster):
         f"Expected the credentials-rotation rebuild log line to fire for query {rotated_query_id}, "
         f"found {rebuild_hits} hits — the fingerprint check did not rebuild the kernel state."
     )
+    engine_builds = int(instance.query(
+        "SELECT ProfileEvents['DeltaLakeKernelEngineInitializations'] FROM system.query_log "
+        f"WHERE query_id = '{rotated_query_id}' AND type = 'QueryFinish'"
+    ).strip())
+    assert engine_builds == 1, engine_builds
 
 
 def test_delta_kernel_retry_on_stale_token_via_catalog_callback(started_cluster):
@@ -7059,3 +7064,54 @@ def test_writes_timestamp_ntz_annotation_partition_column(started_cluster):
     assert str(rows[0]["p"]["ts"]) == "2024-06-01 12:00:00", rows
 
     instance.query(f"DROP TABLE {table_name}")
+
+
+def test_delta_kernel_connections_do_not_grow_with_commits(started_cluster):
+    """The object storage connections delta-kernel keeps open for a table stay bounded
+    whatever the number of commits in its log."""
+    instance = started_cluster.instances["node1"]
+    table_name = randomize_table_name("test_delta_kernel_connections")
+    url = f"http://{started_cluster.minio_ip}:{started_cluster.minio_port}/{started_cluster.minio_bucket}/{table_name}/"
+    settings = {"allow_delta_lake_writes": 1, "allow_delta_lake_create_table": 1}
+    minio_port = f":{started_cluster.minio_port:04X}"
+
+    def kernel_connections():
+        # Close ClickHouse's own idle sessions, so the subtraction below only cancels its active ones.
+        instance.query("SYSTEM DROP CONNECTIONS CACHE")
+        established = 0
+        for line in instance.exec_in_container(["cat", "/proc/net/tcp", "/proc/net/tcp6"]).splitlines():
+            fields = line.split()
+            if len(fields) > 3 and fields[3] == "01" and fields[2].endswith(minio_port):
+                established += 1
+        own = instance.query(
+            "SELECT sum(value) FROM system.metrics WHERE metric IN ('StorageConnectionsTotal', 'DiskConnectionsTotal')"
+        )
+        return established - int(own)
+
+    baseline = max(0, kernel_connections())
+    instance.query(
+        f"CREATE TABLE {table_name} (id Int64) ENGINE = DeltaLake('{url}', 'minio', '{minio_secret_key}')",
+        settings=settings,
+    )
+    try:
+        for i in range(45):
+            instance.http_query(
+                f"INSERT INTO {table_name} VALUES ({i})",
+                params={**settings, "log_comment": table_name},
+                method="POST",
+            )
+            assert int(instance.http_query(f"SELECT count() FROM {table_name}", params={"log_comment": table_name})) == i + 1
+        for _ in range(10):
+            connections = kernel_connections() - baseline
+            if connections <= 32:
+                break
+            time.sleep(0.5)
+        assert connections <= 32, connections
+        instance.query("SYSTEM FLUSH LOGS")
+        engine_builds = int(instance.query(
+            "SELECT sum(ProfileEvents['DeltaLakeKernelEngineInitializations']) FROM system.query_log "
+            f"WHERE log_comment = '{table_name}' AND type = 'QueryFinish'"
+        ))
+        assert engine_builds <= 1, engine_builds
+    finally:
+        instance.query(f"DROP TABLE IF EXISTS {table_name}")

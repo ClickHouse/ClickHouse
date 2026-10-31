@@ -938,8 +938,7 @@ TableSnapshot::KernelSnapshotState::KernelSnapshotState(const IKernelHelper & he
             "ExpiredToken: forced by delta_kernel_force_stale_token_error failpoint");
     });
 
-    auto * engine_builder = helper_.createBuilder();
-    engine = KernelUtils::unwrapResult(ffi::builder_build(engine_builder), "builder_build");
+    engine = helper_.getEngine();
 
     using KernelSnapshotBuilder = KernelPointerWrapper<ffi::MutableFfiSnapshotBuilder, ffi::free_snapshot_builder>;
     KernelSnapshotBuilder snapshot_builder(KernelUtils::unwrapResult(

@@ -6,6 +6,7 @@
 #include <Storages/ObjectStorage/DataLakes/DeltaLake/KernelHelper.h>
 #include <Storages/ObjectStorage/DataLakes/DeltaLake/KernelUtils.h>
 #include <Common/FailPoint.h>
+#include <Common/ProfileEvents.h>
 #include <Common/SipHash.h>
 #include <Common/isValidUTF8.h>
 #include <Common/logger_useful.h>
@@ -37,6 +38,11 @@ namespace DB::S3AuthSetting
 namespace DB::FailPoints
 {
     extern const char delta_kernel_force_credentials_fingerprint_drift[];
+}
+
+namespace ProfileEvents
+{
+    extern const Event DeltaLakeKernelEngineInitializations;
 }
 
 namespace DeltaLake
@@ -76,11 +82,33 @@ public:
     ~BuilderGuard() { if (builder) ffi::free_engine_builder(builder); }
     BuilderGuard(const BuilderGuard &) = delete;
     BuilderGuard & operator=(const BuilderGuard &) = delete;
+    ffi::EngineBuilder * get() const { return builder; }
     ffi::EngineBuilder * release() { auto * b = builder; builder = nullptr; return b; }
 private:
     ffi::EngineBuilder * builder = nullptr;
 };
 
+/// The replay of a table checkpointed every 10 commits stays pooled; longer replays are not kept.
+constexpr size_t kernel_max_idle_connections_per_host = 32;
+
+}
+
+KernelEnginePtr IKernelHelper::getEngine() const
+{
+    const auto fingerprint = getCredentialsFingerprint();
+    KernelEnginePtr replaced;
+    std::lock_guard lock(engine_mutex);
+    if (engine && engine_credentials_fingerprint == fingerprint)
+        return engine;
+
+    BuilderGuard guard(createBuilder());
+    setBuilderOption(guard.get(), "pool_max_idle_per_host", std::to_string(kernel_max_idle_connections_per_host));
+    KernelEnginePtr built(KernelUtils::unwrapResult(ffi::builder_build(guard.release()), "builder_build"), ffi::free_engine);
+    ProfileEvents::increment(ProfileEvents::DeltaLakeKernelEngineInitializations);
+
+    replaced = std::exchange(engine, std::move(built));
+    engine_credentials_fingerprint = fingerprint;
+    return engine;
 }
 
 /// A helper class to manage S3-compatible storage types.
