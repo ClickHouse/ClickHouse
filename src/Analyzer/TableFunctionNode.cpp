@@ -232,9 +232,30 @@ void TableFunctionNode::replaceTableFunction(const TableFunctionNode & other)
     parallel_replicas_read_id = other.parallel_replicas_read_id;
     table_argument_id = other.table_argument_id;
     num_table_arguments = other.num_table_arguments;
-    unresolved_arguments_indexes = other.unresolved_arguments_indexes;
     settings_changes = other.settings_changes;
     getArgumentsNode() = other.getArgumentsNode()->clone();
+
+    /// The arguments of a call left unresolved, as the analyzer leaves a nested `view`, are all unresolved.
+    unresolved_arguments_indexes = other.unresolved_arguments_indexes;
+    if (!other.isResolved())
+    {
+        unresolved_arguments_indexes.clear();
+        for (size_t index = 0; index < getArguments().getNodes().size(); ++index)
+            unresolved_arguments_indexes.push_back(index);
+    }
+}
+
+void TableFunctionNode::replaceTableFunction(String name, size_t num_arguments)
+{
+    auto & arguments = getArguments().getNodes();
+    if (arguments.size() < num_arguments || num_table_arguments > num_arguments)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot call table function {} with {} of the {} arguments of {}",
+            name, num_arguments, arguments.size(), table_function_name);
+
+    table_function_name = std::move(name);
+    table_function = nullptr;
+    arguments.resize(num_arguments);
+    std::erase_if(unresolved_arguments_indexes, [&](size_t index) { return index >= num_arguments; });
 }
 
 ASTPtr TableFunctionNode::toASTImpl(const ConvertToASTOptions & options) const

@@ -46,7 +46,6 @@ namespace Setting
 
 namespace ErrorCodes
 {
-    extern const int ACCESS_DENIED;
     extern const int LOGICAL_ERROR;
     extern const int UNSUPPORTED_METHOD;
 }
@@ -775,24 +774,32 @@ public:
             return;
 
         table_function_nodes.push_back(table_function_node);
-        const auto & name = table_function_node->getTableFunctionName();
-        if (name == "view")
+
+        /// A replica would choose the branch of `viewIfPermitted` again, as another user maybe, and on a query it
+        /// resolves in another database. It is sent the branch this server reads instead, as `view` of the query
+        /// or as the `ELSE` table function, which can be one of these two again.
+        while (table_function_node->getTableFunctionName() == "viewIfPermitted")
         {
-            qualifyViewQuery(*table_function_node, /*if_permitted=*/false);
-        }
-        else if (name == "viewIfPermitted" && !qualifyViewQuery(*table_function_node, /*if_permitted=*/true))
-        {
-            /// A replica would decide again, on a query it resolves in another database. It is sent the `ELSE`
-            /// table function this server reads instead.
             const auto & arguments = table_function_node->getArguments().getNodes();
             const auto * else_node = arguments.size() == 2 ? arguments[1]->as<TableFunctionNode>() : nullptr;
             if (!else_node)
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Table function viewIfPermitted has no ELSE table function in {}",
                     table_function_node->formatASTForErrorMessage());
-            /// Held: it is an argument of the node it replaces.
-            auto else_node_holder = arguments[1];
-            table_function_node->replaceTableFunction(*else_node);
+
+            if (readsElse(*table_function_node, *else_node))
+            {
+                /// Held: it is an argument of the node it replaces.
+                auto else_node_holder = arguments[1];
+                table_function_node->replaceTableFunction(*else_node);
+            }
+            else
+            {
+                table_function_node->replaceTableFunction("view", 1);
+            }
         }
+
+        if (table_function_node->getTableFunctionName() == "view")
+            qualifyViewQuery(*table_function_node);
     }
 
     /// The arguments of `remote` and `cluster` are not entered: they are evaluated on the servers these name,
@@ -811,17 +818,44 @@ public:
     std::vector<TableFunctionNode *> table_function_nodes;
 
 private:
-    /// The analyzer leaves the query of `view` and `viewIfPermitted` unresolved, and sent as written it names its
-    /// tables and table function arguments the way the user wrote them. It is replaced with the query a resolved
-    /// copy prints, which names them qualified. The argument stays unresolved, so that the initiator, which plans
-    /// the query it sends, plans it as it does without parallel replicas.
-    /// For `viewIfPermitted`, returns false if the user may not run the query, as `TableFunctionViewIfPermitted`
-    /// decides, and the call reads its `ELSE` table function.
-    static bool qualifyViewQuery(TableFunctionNode & table_function_node, bool if_permitted)
+    /// Whether `viewIfPermitted` reads its `ELSE` table function, as `TableFunctionViewIfPermitted` decided when it
+    /// made the storage: otherwise the storage is a view of its query. The `ELSE` table function can give a view as
+    /// well, of another query.
+    static bool readsElse(const TableFunctionNode & table_function_node, const TableFunctionNode & else_node)
+    {
+        if (!typeid_cast<const StorageView *>(table_function_node.getStorage().get()))
+            return true;
+
+        const auto & query = table_function_node.getArguments().getNodes().at(0);
+        ContextPtr context;
+        if (const auto * query_node = query->as<QueryNode>())
+            context = query_node->getContext();
+        else if (const auto * union_node = query->as<UnionNode>())
+            context = union_node->getContext();
+        else
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Table function viewIfPermitted has no query in {}",
+                table_function_node.formatASTForErrorMessage());
+
+        const auto & view_query = table_function_node.getStorageSnapshot()->metadata->getSelectQuery().inner_query;
+        if (buildQueryTree(view_query, context)->isEqual(*query))
+            return false;
+
+        const auto & else_name = else_node.getTableFunctionName();
+        if (else_name != "view" && else_name != "viewIfPermitted")
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "The view made by viewIfPermitted is not of its query in {}",
+                table_function_node.formatASTForErrorMessage());
+        return true;
+    }
+
+    /// The analyzer leaves the query of `view` unresolved, and sent as written it names its tables and table
+    /// function arguments the way the user wrote them. It is replaced with the query a resolved copy prints,
+    /// which names them qualified. The argument stays unresolved, so that the initiator, which plans the
+    /// query it sends, plans it as it does without parallel replicas.
+    static void qualifyViewQuery(TableFunctionNode & table_function_node)
     {
         const auto & unresolved_indexes = table_function_node.getUnresolvedArgumentIndexes();
         if (std::find(unresolved_indexes.begin(), unresolved_indexes.end(), 0) == unresolved_indexes.end())
-            return true;
+            return;
 
         auto & argument = table_function_node.getArguments().getNodes().at(0);
         ContextPtr context;
@@ -830,28 +864,18 @@ private:
         else if (auto * union_node = argument->as<UnionNode>())
             context = union_node->getContext();
         else
-            return true;
+            return;
 
         /// Without the optimization, a scalar subquery becomes a constant rather than `__getScalar`, which names a
         /// scalar the replicas do not have.
         auto analysis_context = Context::createCopy(context);
         analysis_context->setSetting("enable_scalar_subquery_optimization", false);
         auto view_query = buildQueryTree(argument->toAST(), analysis_context);
-        try
-        {
-            QueryAnalysisPass(/*only_analyze=*/true).run(view_query, analysis_context);
-        }
-        catch (const Exception & e)
-        {
-            if (!if_permitted || e.code() != ErrorCodes::ACCESS_DENIED)
-                throw;
-            return false;
-        }
+        QueryAnalysisPass(/*only_analyze=*/true).run(view_query, analysis_context);
         /// Before the qualification, which does not look into the source expressions of constants.
         RestoreScalarSubqueriesVisitor().visit(view_query);
         qualifyTableFunctionArguments(view_query);
         argument = buildQueryTree(view_query->toAST(), context);
-        return true;
     }
 };
 

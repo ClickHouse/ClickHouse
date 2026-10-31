@@ -125,6 +125,10 @@ public:
     /// call of `other` has to give as well. The node keeps its alias and the columns that read from it.
     void replaceTableFunction(const TableFunctionNode & other);
 
+    /// Make the node call the table function `name` with its first `num_arguments` arguments, and keep its own
+    /// storage, which that call has to give as well.
+    void replaceTableFunction(String name, size_t num_arguments);
+
     const VectorWithMemoryTracking<size_t> & getUnresolvedArgumentIndexes() const
     {
         return unresolved_arguments_indexes;
