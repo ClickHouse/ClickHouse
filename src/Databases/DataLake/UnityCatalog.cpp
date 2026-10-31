@@ -212,7 +212,7 @@ bool UnityCatalog::tryGetTableMetadata(
     std::string json_str;
     try
     {
-        std::tie(json, json_str) = getJSONRequest(std::filesystem::path{TABLES_ENDPOINT} / full_table_name);
+        std::tie(json, json_str) = getJSONRequest(std::filesystem::path{TABLES_ENDPOINT} / encodeUnityFullName(full_table_name));
         const Poco::JSON::Object::Ptr & object = json.extract<Poco::JSON::Object::Ptr>();
         if (hasValueAndItsNotNone("name", object) && object->get("name").extract<String>() == table_name)
         {
@@ -327,6 +327,13 @@ bool UnityCatalog::tryGetTableMetadata(
     }
 }
 
+void UnityCatalog::checkDirectCommitIsAllowed(const std::string & schema_name, const std::string & table_name, const DB::UUID & table_uuid) const
+{
+    auto full_table_name = warehouse + "." + schema_name + "." + table_name;
+    auto json = getJSONRequest(std::filesystem::path{TABLES_ENDPOINT} / encodeUnityFullName(full_table_name)).first;
+    checkUnityDirectCommitIsAllowed(json.extract<Poco::JSON::Object::Ptr>(), full_table_name, table_uuid);
+}
+
 void UnityCatalog::createTable(
     const String & namespace_name,
     const String & table_name,
@@ -368,7 +375,7 @@ bool UnityCatalog::existsTable(const std::string & schema_name, const std::strin
     Poco::Dynamic::Var json;
     try
     {
-        std::tie(json, json_str) = getJSONRequest(std::filesystem::path{TABLES_ENDPOINT} / (warehouse + "." + schema_name + "." + table_name));
+        std::tie(json, json_str) = getJSONRequest(std::filesystem::path{TABLES_ENDPOINT} / encodeUnityFullName(warehouse + "." + schema_name + "." + table_name));
         const Poco::JSON::Object::Ptr & object = json.extract<Poco::JSON::Object::Ptr>();
         if (hasValueAndItsNotNone("name", object) && object->get("name").extract<String>() == table_name)
             return true;
@@ -403,7 +410,7 @@ std::optional<std::string> UnityCatalog::getDefaultTableLocation(
 {
     checkNamespaceExists(namespace_name);
 
-    auto [json, json_str] = getJSONRequest(std::filesystem::path{SCHEMAS_ENDPOINT} / (warehouse + "." + namespace_name));
+    auto [json, json_str] = getJSONRequest(std::filesystem::path{SCHEMAS_ENDPOINT} / encodeUnityFullName(warehouse + "." + namespace_name));
     const Poco::JSON::Object::Ptr & object = json.extract<Poco::JSON::Object::Ptr>();
 
     /// Only Unity on Databricks reports a location for a schema; the open-source server does not,
@@ -426,7 +433,7 @@ void UnityCatalog::checkNamespaceExists(const std::string & schema_name) const
 {
     try
     {
-        getJSONRequest(std::filesystem::path{SCHEMAS_ENDPOINT} / (warehouse + "." + schema_name));
+        getJSONRequest(std::filesystem::path{SCHEMAS_ENDPOINT} / encodeUnityFullName(warehouse + "." + schema_name));
     }
     catch (const DB::HTTPException & e)
     {
