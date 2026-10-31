@@ -1,0 +1,17 @@
+--- not accessed yet
+TableProxy
+--- backup of the whole table
+100
+--- backup and restore of a single partition
+50	0	0
+--- system tables see a materialized table
+100
+MergeTree
+2
+2
+--- DELETE and mutations are accepted
+98
+--- DELETE respects lightweight_mutation_projection_mode
+lightweight_mutation_projection_mode is set to THROW
+1
+100

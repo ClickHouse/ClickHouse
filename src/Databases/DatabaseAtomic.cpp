@@ -13,6 +13,7 @@
 #include <Interpreters/ExternalDictionariesLoader.h>
 #include <Interpreters/Context.h>
 #include <Storages/StorageMaterializedView.h>
+#include <Storages/StorageTableProxy.h>
 #include <Storages/StorageTimeSeries.h>
 #include <base/isSharedPtrUnique.h>
 #include <Common/PoolId.h>
@@ -184,7 +185,13 @@ StoragePtr DatabaseAtomic::detachTable(ContextPtr /* context */, const String & 
         std::lock_guard lock(mutex);
         detached_table = DatabaseOrdinary::detachTableUnlocked(name);
         table_name_to_path.erase(name);
-        detached_tables.emplace(detached_table->getStorageID().uuid, detached_table);
+        /// Track the storage behind a materialized lazy-load stand-in, which the database iterator hands
+        /// out directly, see `enqueueDroppedTableCleanup`. `mutex` is held, so do not wait for a load in flight.
+        /// None can be in flight anyway: every caller that leaves the table detached (`DETACH TABLE`,
+        /// `SYSTEM RESTART REPLICA`) calls `flushAndShutdown` first, and `StorageTableProxy::shutdown` waits
+        /// for a materialization in progress and forbids any later one, so what is tracked here is final.
+        detached_tables.emplace(detached_table->getStorageID().uuid,
+            unwrapMaterializedLazyTable(detached_table, /* wait_for_materialization= */ false));
         not_in_use = cleanupDetachedTables();
     }
 

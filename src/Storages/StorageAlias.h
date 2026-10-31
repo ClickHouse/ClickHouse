@@ -332,4 +332,13 @@ protected:
     String target_table;
 };
 
+/// Materializes the lazy-load stand-ins (see `StorageTableProxy`) along the whole chain of targets of `storage`:
+/// through successive `Alias` tables and materialized views, e.g. `Alias` -> materialized view -> inner table. These
+/// wrappers forward the refresh of external metadata (`updateExternalDynamicMetadataIfExists`) only to a target that
+/// is already materialized, so `DESCRIBE` does not load it. An operation that is going to use the target - resolving
+/// the columns of a `SELECT` through an `Alias`, validating and executing a mutation - calls this before the refresh,
+/// so that it sees the current state of an external table (e.g. Iceberg). Only loads: the operation itself still goes
+/// through every wrapper with its own access checks and execution behavior.
+void loadLazyTargetsOfAliasesAndViews(const StoragePtr & storage);
+
 }

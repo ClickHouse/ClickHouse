@@ -1,5 +1,6 @@
 #include <Storages/StorageAlias.h>
 #include <Storages/StorageFactory.h>
+#include <Storages/StorageMaterializedView.h>
 #include <Storages/StorageTableProxy.h>
 #include <Storages/checkAndGetLiteralArgument.h>
 #include <Interpreters/DatabaseCatalog.h>
@@ -499,7 +500,31 @@ CancellationCode StorageAlias::killPartMoveToShard(const UUID & task_uuid)
 
 void StorageAlias::updateExternalDynamicMetadataIfExists(ContextPtr local_context)
 {
-    resolveStorageProxyLoading(getTargetTable())->updateExternalDynamicMetadataIfExists(local_context);
+    /// A lazy-load target is not materialized here: the refresh is also asked for by `DESCRIBE`, which must not load
+    /// it, and the stand-in forwards the refresh only to a table that is already materialized. The operations that use
+    /// the target - the analyzer resolving a `SELECT` through the alias, `INSERT`, schema inference of `Merge`,
+    /// `ALTER ... UPDATE/DELETE` and `DELETE`, which validate a mutation against the state refreshed here while `mutate`
+    /// of the target executes it against the same state without refreshing it - materialize the whole chain of targets
+    /// first, see `loadLazyTargetsOfAliasesAndViews`.
+    getTargetTable()->updateExternalDynamicMetadataIfExists(local_context);
+}
+
+void loadLazyTargetsOfAliasesAndViews(const StoragePtr & storage)
+{
+    /// The bound only guards against a cycle, which the catalog does not prevent for a replaced `Alias` target.
+    constexpr size_t max_depth = 64;
+    StoragePtr current = resolveStorageProxyLoading(storage);
+    for (size_t depth = 0; current && depth < max_depth; ++depth)
+    {
+        StoragePtr target;
+        if (const auto * view = typeid_cast<const StorageMaterializedView *>(current.get()))
+            target = view->tryGetTargetTable();
+        else if (const auto * alias = typeid_cast<const StorageAlias *>(current.get()))
+            target = alias->tryGetTargetTable();
+        else
+            break;
+        current = target ? resolveStorageProxyLoading(target) : nullptr;
+    }
 }
 
 std::optional<QueryPipeline> StorageAlias::distributedWrite(const ASTInsertQuery & query, ContextPtr local_context)

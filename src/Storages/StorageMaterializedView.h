@@ -89,6 +89,8 @@ public:
 
     void mutate(const MutationCommands & commands, ContextPtr context) override;
 
+    void updateExternalDynamicMetadataIfExists(ContextPtr local_context) override;
+
     void renameInMemory(const StorageID & new_table_id) override;
 
     void startup() override;

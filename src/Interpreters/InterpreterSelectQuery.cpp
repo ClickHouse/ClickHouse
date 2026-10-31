@@ -663,6 +663,9 @@ InterpreterSelectQuery::InterpreterSelectQuery(
         table_lock = storage->lockForShare(context->getInitialQueryId(), context->getSettingsRef()[Setting::lock_acquire_timeout]);
         table_id = storage->getStorageID();
 
+        /// See `IdentifierResolver::tryResolveTableIdentifier`.
+        if (typeid_cast<const StorageAlias *>(storage.get()))
+            loadLazyTargetsOfAliasesAndViews(storage);
         storage->updateExternalDynamicMetadataIfExists(context);
         if (!metadata_snapshot)
         {

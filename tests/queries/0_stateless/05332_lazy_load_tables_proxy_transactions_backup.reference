@@ -1,0 +1,6 @@
+--- DELETE inside a transaction
+9
+--- INSERT inside a transaction
+10
+--- backup of a replicated table
+10
