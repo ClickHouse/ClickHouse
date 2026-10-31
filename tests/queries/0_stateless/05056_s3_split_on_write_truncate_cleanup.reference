@@ -1,0 +1,9 @@
+--- A large insert produces multiple numbered objects
+data.1.tsv
+data.2.tsv
+data.3.tsv
+data.tsv
+--- A smaller truncating insert deletes the leftovers of the previous one
+data.tsv
+--- The stale rows are not visible for a wildcard reader
+100	0	99

@@ -12,6 +12,7 @@ namespace Setting
 {
     extern const SettingsBool engine_file_skip_empty_files;
     extern const SettingsBool engine_file_truncate_on_insert;
+    extern const SettingsUInt64 engine_file_split_on_write_by_size_bytes;
     extern const SettingsSchemaInferenceMode schema_inference_mode;
     extern const SettingsBool schema_inference_use_cache_for_file;
 }
@@ -105,6 +106,7 @@ StorageObjectStorageQuerySettings StorageLocalConfiguration::getQuerySettings(co
     return StorageObjectStorageQuerySettings{
         .truncate_on_insert = settings[Setting::engine_file_truncate_on_insert],
         .create_new_file_on_insert = false,
+        .split_on_write_by_size_bytes = settings[Setting::engine_file_split_on_write_by_size_bytes],
         .schema_inference_use_cache = settings[Setting::schema_inference_use_cache_for_file],
         .schema_inference_mode = settings[Setting::schema_inference_mode],
         .skip_empty_files = settings[Setting::engine_file_skip_empty_files],

@@ -1,0 +1,14 @@
+--- Split into numbered files
+data.1.tsv
+data.2.tsv
+data.3.tsv
+data.tsv
+--- The first numbered name of the sequence is replaced by a non-empty directory, which cannot be removed
+--- A truncating insert fails instead of leaving the stale data in place
+CANNOT_UNLINK
+--- The base file was not touched, and the whole tail of the sequence is still there
+300	0	299
+data.1.tsv
+data.2.tsv
+data.3.tsv
+data.tsv
