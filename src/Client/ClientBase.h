@@ -722,6 +722,12 @@ protected:
     /// is not authoritative any more - see `sessionReadonlyIfKnown`.
     bool readonly_changed_after_profile = false;
 
+    /// Counts the sessions this client has established: incremented by `resetServerSessionCaches`
+    /// on every successful connection, which can be to another server than the previous one (the
+    /// client fails over between the configured hosts). Whatever was checked on one session - see
+    /// `ai_unconfirmed_query_session_generation` - is not valid for the next one.
+    UInt64 server_session_generation = 0;
+
     /// The effective values of the settings of this session as the server reports them, asked one
     /// by one and cached - see `serverEffectiveSettingValue`. A `nullopt` value means the server
     /// does not know that setting. A `SET` of a setting drops the answer about it, and a
@@ -776,6 +782,10 @@ protected:
     bool ai_running_query = false;
     /// Set while that query is one of the read-only tool, which the user did not confirm.
     bool ai_running_unconfirmed_query = false;
+    /// The `server_session_generation` the checks of the running read-only query were done on. The
+    /// query must be sent on that same session: a reconnect in between can land on another server,
+    /// where the same table names can mean something else, so the query fails instead.
+    std::optional<UInt64> ai_unconfirmed_query_session_generation;
     /// Set when a confirmed agent query successfully changes `dialect`, so cleanup does not undo
     /// a real session setting change while removing the temporary ClickHouse-dialect pin.
     bool ai_running_query_changed_dialect = false;

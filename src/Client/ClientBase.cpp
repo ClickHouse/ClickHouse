@@ -3316,6 +3316,16 @@ void ClientBase::processParsedSingleQuery(
         connection->setFormatSettings(getNativeWireFormatSettings(client_context));
         applySettingsFromServerIfNeeded(); // after connect() and applySettingsFromQuery()
 
+#if USE_CLIENT_AI
+        /// The read-only query of the AI agent was checked on a session, and a reconnect above may
+        /// have replaced it with a session on another server - see `runQueryForAI`.
+        if (ai_unconfirmed_query_session_generation && *ai_unconfirmed_query_session_generation != server_session_generation)
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "The connection to the server was re-established after the read-only tool had checked the query, "
+                "possibly to another server, so the checks do not apply to it. Call the tool again");
+#endif
+
         /// With `use_client_time_zone`, DateTime string literals must be interpreted in the client time
         /// zone. The client parses synchronous INSERT literals itself, but literals interpreted server-side
         /// (asynchronous INSERT, SELECT) rely on `session_timezone`. Seed it with the client time zone unless
@@ -4822,6 +4832,14 @@ String ClientBase::runQueryForAI(const String & query, bool readonly, bool allow
     /// already restricts the query to reading, which is what the sandbox is there to guarantee.
     const bool can_change_settings = aiSessionReadonly() != 1;
 
+    /// The checks of the read-only tool below - the validation against `system.tables`, the questions
+    /// about the capabilities and the settings of the server - are about the session they ran on. The
+    /// client can reconnect at any point, including during those checks, and a reconnect can fail
+    /// over to another configured host, where the same table can be a view or have an external
+    /// engine. So the generation of the session is taken before the checks, and the query is refused
+    /// if it is not the same one when the query is about to be sent.
+    const UInt64 checked_session_generation = server_session_generation;
+
     if (readonly)
     {
         /// A single read-only statement without a way to lift the sandbox settings.
@@ -5194,6 +5212,17 @@ String ClientBase::runQueryForAI(const String & query, bool readonly, bool allow
         ai_line_reader->addQueryToHistory(query);
 
     const UInt64 seqno_before = ai_query_context->latestSeqno();
+
+    if (readonly)
+    {
+        if (server_session_generation != checked_session_generation)
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "The connection to the server was re-established while the read-only tool was checking the query, "
+                "possibly to another server, so the checks do not apply to it. Call the tool again");
+        ai_unconfirmed_query_session_generation = checked_session_generation;
+    }
+    SCOPE_EXIT({ ai_unconfirmed_query_session_generation.reset(); });
 
     ai_running_query_changed_dialect = false;
     ai_running_query = true;
@@ -5854,6 +5883,7 @@ void ClientBase::recordUnparsedErrorForAIContext(std::string_view input, const E
 
 void ClientBase::resetServerSessionCaches()
 {
+    ++server_session_generation;
     server_effective_setting_values.clear();
 #if USE_CLIENT_AI
     ai_query_log_marker_writable.reset();
