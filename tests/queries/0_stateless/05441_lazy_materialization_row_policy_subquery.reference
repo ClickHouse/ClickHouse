@@ -1,0 +1,22 @@
+table
+1
+subquery
+1
+200	a	200
+202	a	202
+204	a	204
+200	a	200
+202	a	202
+204	a	204
+nested subquery
+1
+200	a	200
+202	a	202
+204	a	204
+subquery, sort by payload
+278	a	278
+28	a	28
+280	a	280
+278	a	278
+28	a	28
+280	a	280
