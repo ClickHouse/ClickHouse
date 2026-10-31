@@ -12,6 +12,7 @@
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
+#include <Disks/DiskObjectStorage/ObjectStorages/ObjectStorageIterator.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/StoredObject.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
@@ -116,6 +117,7 @@ OrphanScanResult findOrphanFiles(
     const std::unordered_set<String> & reachable,
     time_t older_than_threshold,
     ObjectStoragePtr object_storage,
+    const ContextPtr & context,
     LoggerPtr log)
 {
     OrphanScanResult scan;
@@ -130,6 +132,7 @@ OrphanScanResult findOrphanFiles(
         std::optional<ObjectMetadata> fetched_metadata;
         if (!file_ptr->metadata.has_value())
         {
+            throwIfQueryCancelled(context);
             fetched_metadata = object_storage->tryGetObjectMetadata(path, /* with_tags = */ false);
             if (!fetched_metadata)
             {
@@ -168,23 +171,38 @@ struct DeleteOrphanResult
 DeleteOrphanResult deleteOrphanFiles(
     const std::vector<String> & orphan_paths,
     ObjectStoragePtr object_storage,
+    const ContextPtr & context,
     LoggerPtr log)
 {
     DeleteOrphanResult result;
 
-    for (const auto & path : orphan_paths)
+    try
     {
-        try
+        for (const auto & path : orphan_paths)
         {
-            object_storage->removeObjectIfExists(StoredObject(path));
-            LOG_DEBUG(log, "Deleted orphan file {}", path);
-            result.deleted_paths.push_back(path);
+            throwIfQueryCancelled(context);
+            try
+            {
+                object_storage->removeObjectIfExists(StoredObject(path));
+                LOG_DEBUG(log, "Deleted orphan file {}", path);
+                result.deleted_paths.push_back(path);
+            }
+            catch (...)
+            {
+                /// The request also fails when the query is stopped.
+                throwIfQueryCancelled(context);
+                ++result.failed_count;
+                LOG_WARNING(log, "Failed to delete orphan file {}: {}", path, getCurrentExceptionMessage(false));
+            }
         }
-        catch (...)
-        {
-            ++result.failed_count;
-            LOG_WARNING(log, "Failed to delete orphan file {}: {}", path, getCurrentExceptionMessage(false));
-        }
+        throwIfQueryCancelled(context);
+    }
+    catch (Exception & e)
+    {
+        e.addMessage(
+            "remove_orphan_files stopped after deleting {} of {} orphan files ({} failed)",
+            result.deleted_paths.size(), orphan_paths.size(), result.failed_count);
+        throw;
     }
 
     return result;
@@ -267,14 +285,24 @@ RemoveOrphanFilesResult removeOrphanFiles(
         object_storage, persistent_table_components, data_lake_settings, context, log, catalog, table_name);
 
     String scan_path = resolveScanPath(persistent_table_components.table_path, params);
-    if (!object_storage->existsOrHasAnyChild(scan_path))
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Scan path '{}' does not exist", scan_path);
     RelativePathsWithMetadata actual_files;
-    object_storage->listObjects(scan_path, actual_files, /* max_keys = */ 0);
+    throwIfQueryCancelled(context);
+    auto files_iterator = object_storage->iterate(scan_path, /* max_keys = */ 0, /* with_tags = */ false, /* start_after = */ std::nullopt);
+    while (true)
+    {
+        auto batch = files_iterator->getCurrentBatchAndScheduleNext();
+        throwIfQueryCancelled(context);
+        if (!batch)
+            break;
+        actual_files.insert(actual_files.end(), std::make_move_iterator(batch->begin()), std::make_move_iterator(batch->end()));
+    }
+    /// Only a local directory can exist with no file under it.
+    if (actual_files.empty() && (object_storage->isRemote() || !object_storage->existsOrHasAnyChild(scan_path)))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Scan path '{}' does not exist", scan_path);
     LOG_INFO(log, "Found {} actual files under scan path '{}'", actual_files.size(), scan_path);
 
     chassert(params.older_than.has_value());
-    auto scan = findOrphanFiles(actual_files, reachable, *params.older_than, object_storage, log);
+    auto scan = findOrphanFiles(actual_files, reachable, *params.older_than, object_storage, context, log);
     LOG_INFO(log, "Found {} orphan files (dry_run={})", scan.orphan_paths.size(), params.dry_run);
 
     if (params.dry_run || scan.orphan_paths.empty())
@@ -288,7 +316,7 @@ RemoveOrphanFilesResult removeOrphanFiles(
             "aborting to avoid deleting files referenced by a concurrent commit",
             metadata_path, metadata_version, recheck_path, recheck_version);
 
-    auto delete_result = deleteOrphanFiles(scan.orphan_paths, object_storage, log);
+    auto delete_result = deleteOrphanFiles(scan.orphan_paths, object_storage, context, log);
     LOG_INFO(log, "Deleted {}/{} orphan files ({} failed)",
         delete_result.deleted_paths.size(), scan.orphan_paths.size(), delete_result.failed_count);
 

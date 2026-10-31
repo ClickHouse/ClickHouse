@@ -440,6 +440,13 @@ def test_remove_orphan_files_location(started_cluster_iceberg_with_spark, storag
     assert not env.exists("metadata", "v0.metadata.json"), \
         "Metadata orphan in scanned location should be deleted"
 
+    error = env.instance.query_and_get_error(
+        f"ALTER TABLE {env.table_name} EXECUTE remove_orphan_files("
+        f"older_than = '{now_ts}', location = 'no_such_dir/');",
+        settings=ICEBERG_SETTINGS,
+    )
+    assert "does not exist" in error, f"A missing location should be rejected, got: {error}"
+
     env.assert_data_intact()
 
 
