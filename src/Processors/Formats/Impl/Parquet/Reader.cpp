@@ -209,6 +209,10 @@ static bool tryDecompressLZ4Hadoop(const char * data, size_t compressed_size, si
 
 static void decompress(const char * data, size_t compressed_size, size_t uncompressed_size, parq::CompressionCodec::type codec, char * out)
 {
+    /// Some writers store no bytes for an empty values section (all-null DataPageV2); most codecs reject that.
+    if (uncompressed_size == 0)
+        return;
+
     ProfileEvents::increment(ProfileEvents::ParquetDecompressedBytes, uncompressed_size);
     CompressionMethod method = CompressionMethod::None;
     switch (codec)
@@ -3167,14 +3171,24 @@ void Reader::decodeOffsetIndex(ColumnChunk & column, const RowGroup & row_group)
 
     int64_t prev_offset = meta.data_page_offset;
     int64_t prev_row_index = -1;
+    bool has_page_without_rows = false;
     for (const auto & loc : locations)
     {
-        if (loc.offset < prev_offset || loc.first_row_index <= prev_row_index ||
+        if (loc.offset < prev_offset || loc.first_row_index < prev_row_index ||
             loc.compressed_page_size <= 0 || loc.compressed_page_size > end_offset - loc.offset ||
             loc.first_row_index >= num_rows)
             throw Exception(ErrorCodes::INCORRECT_DATA, "Invalid offset index: {}, prev offset: {}, prev row: {}, end offset: {}, num rows: {}", thriftToString(loc), prev_offset, prev_row_index, end_offset, num_rows);
+        has_page_without_rows |= loc.first_row_index == prev_row_index;
         prev_offset = loc.offset + loc.compressed_page_size;
         prev_row_index = loc.first_row_index;
+    }
+
+    /// Arrow C++ gives a page with no rows (repeated columns) the next page's first_row_index. Such a
+    /// page can't be checked against the index without reading it, so neither index is used here.
+    if (has_page_without_rows)
+    {
+        column.offset_index.page_locations.clear();
+        column.use_column_index = false;
     }
 }
 
@@ -3599,7 +3613,7 @@ void Reader::skipToRowOrNextPage(std::optional<size_t> row_idx, ColumnChunk & co
 
         auto data = prefetcher.getRangeData(page_info.prefetch);
         const char * ptr = data.data();
-        if (!initializeDataPage(ptr, ptr + data.size(), first_row_idx, page_info.end_row_idx, *row_idx, column, column_info))
+        if (!initializeDataPage(ptr, ptr + data.size(), first_row_idx, page_info.end_row_idx, row_idx, column, column_info))
             throw Exception(ErrorCodes::INCORRECT_DATA, "Page doesn't contain requested row");
         found_page = true;
     }
@@ -3621,7 +3635,7 @@ void Reader::skipToRowOrNextPage(std::optional<size_t> row_idx, ColumnChunk & co
         chassert(column.next_page_offset <= all_pages.size());
         const char * ptr = all_pages.data() + column.next_page_offset;
         const char * end = all_pages.data() + all_pages.size();
-        initializeDataPage(ptr, end, page.next_row_idx, /*end_row_idx=*/ std::nullopt, row_idx.value_or(page.next_row_idx), column, column_info);
+        initializeDataPage(ptr, end, page.next_row_idx, /*end_row_idx=*/ std::nullopt, row_idx, column, column_info);
         column.next_page_offset = ptr - all_pages.data();
         if (!row_idx.has_value())
             return;
@@ -3670,7 +3684,7 @@ std::tuple<parq::PageHeader, std::span<const char>> Reader::decodeAndCheckPageHe
     return {header, page_data};
 }
 
-bool Reader::initializeDataPage(const char * & data_ptr, const char * data_end, size_t next_row_idx, std::optional<size_t> end_row_idx, size_t target_row_idx, ColumnChunk & column, const PrimitiveColumnInfo & column_info)
+bool Reader::initializeDataPage(const char * & data_ptr, const char * data_end, size_t next_row_idx, std::optional<size_t> end_row_idx, std::optional<size_t> target_row_idx, ColumnChunk & column, const PrimitiveColumnInfo & column_info)
 {
     PageState & page = column.page;
     /// We reuse PageState instance across pages to reuse memory in buffers like decompressed_buf.
@@ -3690,6 +3704,7 @@ bool Reader::initializeDataPage(const char * & data_ptr, const char * data_end, 
     std::tie(header, page.data) = decodeAndCheckPageHeader(data_ptr, data_end);
 
     /// Check if all rows of the page are filtered out, if we have enough information.
+    /// Only when seeking to a row: when advancing to the next page, it's initialized even if it has no rows.
 
     /// These signed i32 row counts are consumed below to compute `page.end_row_idx` (and the
     /// row-skip shortcut returns before the later num_values check). A negative value would
@@ -3717,7 +3732,7 @@ bool Reader::initializeDataPage(const char * & data_ptr, const char * data_end, 
 
         page.end_row_idx = next_row_idx + *num_rows_in_page;
 
-        if (*page.end_row_idx <= target_row_idx)
+        if (target_row_idx.has_value() && *page.end_row_idx <= *target_row_idx)
         {
             page.next_row_idx = *page.end_row_idx;
             return false;
@@ -4186,7 +4201,11 @@ static void processRepDefLevelsForSingleArray(
 void Reader::readRowsInPage(size_t end_row_idx, ColumnSubchunk & subchunk, ColumnChunk & column, const PrimitiveColumnInfo & column_info, const RowSubgroup * row_subgroup)
 {
     PageState & page = column.page;
-    chassert(page.initialized && page.value_idx < page.num_values);
+    chassert(page.initialized);
+    /// Some writers emit data pages with no values (Arrow C++ in repeated columns).
+    if (page.num_values == 0)
+        return;
+    chassert(page.value_idx < page.num_values);
 
     /// Note: end_row_idx == page.next_row_idx doesn't necessarily mean we're done. E.g. suppose the
     /// row end_row_idx-1 contains an array that starts in page 0 and ends inside page 1.
