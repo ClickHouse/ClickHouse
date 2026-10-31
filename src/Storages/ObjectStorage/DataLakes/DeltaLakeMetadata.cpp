@@ -543,6 +543,8 @@ struct DeltaLakeMetadataImpl
         /// Force nullable, because this parquet file for some reason does not have nullable
         /// in parquet file metadata while the type are in fact nullable.
         format_settings.schema_inference_make_columns_nullable = true;
+        /// `add` and `metaData` are flattened below into `add.path` etc., which needs plain tuples.
+        format_settings.schema_inference_allow_nullable_tuple_type = false;
 
         /// The schema pass gets its own buffer: with `input_format_allow_seeks = 0` the reader
         /// cannot seek to the footer, so it streams the whole file and leaves the buffer at EOF,
