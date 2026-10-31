@@ -3,8 +3,11 @@
 -- type, and `canBeSafelyCast` (src/DataTypes/Utils.cpp) answers whether that is lossless. On `true`
 -- KeyCondition casts the set with a plain cast; on `false` it falls back to an accurate cast that
 -- rejects the pair when no such cast exists. Both answers are user visible: a wrong `true` loses
--- rows that `IN` must return, so the statements below assert the matched row, and the statements
--- over a type pair without an accurate cast assert the error code name instead.
+-- rows that `IN` must return, so the statements below assert the matched row, and the `EXPLAIN`
+-- statements at the end show what the primary key does with each answer. The index is not used
+-- at all when the lookup's cast of the key into the set's type is not known to keep values apart.
+-- Such a query answers or fails as a full scan does, so the statements over a type pair that the
+-- lookup cannot cast assert the error code name.
 
 SET enable_json_type = 1;
 
@@ -56,23 +59,26 @@ SELECT 'Float32 -> Int64', k FROM t_i64 WHERE k IN (SELECT CAST(arrayJoin([1, 7.
 SELECT 'Decimal128(2) -> Decimal32(2)', k FROM t_d32_2 WHERE k IN (SELECT CAST(arrayJoin([1, 100000000]), 'Decimal128(2)')) ORDER BY k;
 SELECT 'Decimal32(2) -> Decimal64(4)', k FROM t_d64_4 WHERE k IN (SELECT CAST(1, 'Decimal32(2)')) ORDER BY k;
 
--- UUID and IPv4 are safe into their own width and into String, and have no accurate cast to Int64.
+-- UUID and IPv4 are safe into their own width and into String. Over an Int64 key the index is not
+-- used: the lookup casts the key into UUID or IPv4, which is not known to keep values apart.
 SELECT 'UUID -> String', k FROM t_str WHERE k IN (SELECT CAST('61f0c404-5cb3-11e7-907b-a6006ad3dba0', 'UUID')) ORDER BY k;
 SELECT 'IPv4 -> String', k FROM t_str WHERE k IN (SELECT CAST('1.1.1.1', 'IPv4')) ORDER BY k;
-SELECT k FROM t_i64 WHERE k IN (SELECT CAST('61f0c404-5cb3-11e7-907b-a6006ad3dba0', 'UUID')); -- { serverError NOT_IMPLEMENTED }
-SELECT k FROM t_i64 WHERE k IN (SELECT CAST('1.1.1.1', 'IPv4')); -- { serverError NOT_IMPLEMENTED }
+SELECT 'UUID -> Int64', count() FROM t_i64 WHERE k IN (SELECT CAST('61f0c404-5cb3-11e7-907b-a6006ad3dba0', 'UUID'));
+SELECT 'IPv4 -> Int64', count() FROM t_i64 WHERE k IN (SELECT CAST('1.1.1.1', 'IPv4'));
 
 -- A Map is safe into a Map and into the Array(Tuple(key, value)) it is stored as, element by
--- element, so String keys reach an Int64 key column only through the accurate cast.
+-- element, so String keys reach an Int64 key column only through the accurate cast. The lookup
+-- cannot cast a Float64 key into a Map, so the last statement fails as a full scan does.
 SELECT 'Map -> Map(Int64, String)', k FROM t_map_i64 WHERE k IN (SELECT CAST(map('1', 'a'), 'Map(String, String)')) ORDER BY k;
 SELECT 'Map -> Array(Tuple(Int64, String))', k FROM t_arr_i64_str WHERE k IN (SELECT CAST(map('1', 'a'), 'Map(String, String)')) ORDER BY k;
 SELECT 'Map -> Array(Tuple(String, Int64))', k FROM t_arr_str_i64 WHERE k IN (SELECT CAST(map('a', '1'), 'Map(String, String)')) ORDER BY k;
 SELECT 'Map -> Array(Tuple(String, String))', k FROM t_arr_str_str WHERE k IN (SELECT CAST(map('a', '1'), 'Map(String, String)')) ORDER BY k;
-SELECT k FROM t_f64 WHERE k IN (SELECT CAST(map('a', '1'), 'Map(String, String)')); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT k FROM t_f64 WHERE k IN (SELECT CAST(map('a', '1'), 'Map(String, String)')); -- { serverError TYPE_MISMATCH }
 
--- JSON renders into String and has no accurate cast to Int64.
+-- JSON renders into String. The lookup cannot cast an Int64 key into JSON, so the last statement
+-- fails as a full scan does.
 SELECT 'JSON -> String', k FROM t_str WHERE k IN (SELECT CAST('{"a":1}', 'JSON')) ORDER BY k;
-SELECT k FROM t_i64 WHERE k IN (SELECT CAST('{"a":1}', 'JSON')); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT k FROM t_i64 WHERE k IN (SELECT CAST('{"a":1}', 'JSON')); -- { serverError TYPE_MISMATCH }
 
 -- What the primary key does with each answer, one row per granule. An `Array` key has no accurate
 -- fallback, so a `true` prunes and a `false` leaves `Condition: true`. Into `Int64` both float types
