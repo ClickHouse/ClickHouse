@@ -38,6 +38,7 @@ private:
 
     bool initialized = false;
     std::unique_ptr<MergeTreeReaderStream> stream;
+    std::vector<size_t> read_order;
 };
 
 }

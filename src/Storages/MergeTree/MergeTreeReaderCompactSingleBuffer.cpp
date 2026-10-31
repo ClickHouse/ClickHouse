@@ -6,6 +6,8 @@
 #include <Compression/CachedCompressedReadBuffer.h>
 
 #include <algorithm>
+#include <limits>
+#include <numeric>
 
 namespace DB
 {
@@ -45,7 +47,6 @@ catch (...)
 void MergeTreeReaderCompactSingleBuffer::readGranule(
     size_t mark, size_t rows_to_read, MutableColumns & res_columns, const std::vector<bool> * columns_mask)
 {
-    const size_t num_columns = columns_to_read.size();
     auto is_selected = [&](size_t pos) { return res_columns[pos] && (!columns_mask || (*columns_mask)[pos]); };
 
     deserialize_binary_bulk_state_map.clear();
@@ -62,7 +63,7 @@ void MergeTreeReaderCompactSingleBuffer::readGranule(
     /// and it might be not empty inside res_columns (and SubstreamsCache contains the whole columns).
     std::unordered_map<String, ColumnPtr> columns_cache_for_subcolumns;
 
-    for (size_t pos = 0; pos < num_columns; ++pos)
+    for (size_t pos : read_order)
     {
         if (!is_selected(pos))
             continue;
@@ -121,6 +122,17 @@ try
         data_part_info_for_read->getFileSizeOrZero(MergeTreeDataPartCompact::DATA_FILE_NAME_WITH_EXTENSION),
         marks_loader, profile_callback, clock_type);
     stream->updateReadRequestMap(read_request_map);
+
+    /// The columns share one stream: read them in storage order, since a seek back may cost a new request to a remote disk.
+    read_order.resize(columns_to_read.size());
+    std::iota(read_order.begin(), read_order.end(), 0);
+    auto position_in_stream = [&](size_t pos) -> size_t
+    {
+        if (!column_positions[pos] || (columns_to_read[pos].isSubcolumn() && has_substream_marks))
+            return std::numeric_limits<size_t>::max();
+        return has_substream_marks ? columns_substreams.getFirstSubstreamPosition(*column_positions[pos]) : *column_positions[pos];
+    };
+    std::ranges::stable_sort(read_order, {}, position_in_stream);
 
     initialized = true;
 }
