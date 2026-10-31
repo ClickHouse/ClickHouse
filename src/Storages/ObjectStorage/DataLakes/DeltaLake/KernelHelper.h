@@ -4,7 +4,10 @@
 #if USE_DELTA_KERNEL_RS
 #include <Core/Types.h>
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
+#include <base/defines.h>
 
+#include <memory>
+#include <mutex>
 #include <string>
 #include <utility>
 #include <vector>
@@ -12,6 +15,7 @@
 namespace ffi
 {
 struct EngineBuilder;
+struct SharedExternEngine;
 }
 
 #if USE_AZURE_BLOB_STORAGE
@@ -23,6 +27,8 @@ struct ConnectionParams;
 
 namespace DeltaLake
 {
+
+using KernelEnginePtr = std::shared_ptr<ffi::SharedExternEngine>;
 
 /**
  * A helper class to manage different storage types,
@@ -58,6 +64,15 @@ public:
     /// `ExpiredToken` recovery path — the kernel's Rust object_store can't refresh on its
     /// own, and vended creds are static in the C++ client until this callback fires.
     virtual bool refreshCredentials() { return false; }
+
+    /// One engine, so one object storage connection pool, shared by every snapshot, write transaction
+    /// and change feed read of the table; rebuilt when the credentials change.
+    KernelEnginePtr getEngine() const;
+
+private:
+    mutable std::mutex engine_mutex;
+    mutable KernelEnginePtr engine TSA_GUARDED_BY(engine_mutex);
+    mutable DB::UInt128 engine_credentials_fingerprint TSA_GUARDED_BY(engine_mutex) {};
 };
 
 using KernelHelperPtr = std::shared_ptr<IKernelHelper>;
