@@ -13,37 +13,29 @@ import { VersionHistory } from "/snippets/ru/components/VersionHistory/VersionHi
 
 Эти настройки доступны в [system.merge&#95;tree&#95;settings](/ru/reference/system-tables/merge_tree_settings) и автоматически генерируются на основе исходного кода ClickHouse.
 
-<div id="max_postpone_time_for_failed_mutations_ms">
-  ## max_postpone_time_for_failed_mutations_ms
-</div>
+## max_postpone_time_for_failed_mutations_ms {#max_postpone_time_for_failed_mutations_ms}
 
 <SettingsInfoBlock type="UInt64" default_value="300000" />
 
-Максимальное время отсрочки для неуспешных мутаций.
+Максимальная экспоненциальная задержка (в миллисекундах) перед повторной попыткой выполнить неуспешную мутацию над тем же куском данных. Задержка растёт с каждым новым сбоем, но не превышает этого значения. Установите `0`, чтобы повторять попытки без отсрочки.
 
-<div id="max_postpone_time_for_failed_replicated_fetches_ms">
-  ## max_postpone_time_for_failed_replicated_fetches_ms
-</div>
+## max_postpone_time_for_failed_replicated_fetches_ms {#max_postpone_time_for_failed_replicated_fetches_ms}
 
 <SettingsInfoBlock type="UInt64" default_value="60000" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.4"},{"label": "60000"},{"label": "Добавлена новая настройка, позволяющая откладывать задачи загрузки в очереди репликации."}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.4"},{"label": "60000"},{"label": "Добавлена новая настройка, позволяющая откладывать задачи fetch в очереди репликации."}]}]} />
 
-Максимальное время отсрочки для неудачных Replicated загрузок.
+Максимальная экспоненциальная задержка (в миллисекундах) перед повторной попыткой выполнения завершившейся ошибкой задачи `GET_PART` в очереди репликации `ReplicatedMergeTree`. Задержка растёт с каждым новым сбоем, но не превышает этого значения. Установите значение `0`, чтобы отключить отсрочку.
 
-<div id="max_postpone_time_for_failed_replicated_merges_ms">
-  ## max_postpone_time_for_failed_replicated_merges_ms
-</div>
+## max_postpone_time_for_failed_replicated_merges_ms {#max_postpone_time_for_failed_replicated_merges_ms}
 
 <SettingsInfoBlock type="UInt64" default_value="60000" />
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.4"},{"label": "60000"},{"label": "Добавлена новая настройка для отложенного выполнения задач слияния в очереди репликации."}]}]} />
 
-Максимальное время отсрочки для неудавшихся Replicated слияний.
+Максимальная экспоненциальная задержка (в миллисекундах) перед повторной попыткой выполнить завершившуюся ошибкой задачу `MERGE_PARTS` в очереди репликации `ReplicatedMergeTree`. Задержка растёт с каждым новым сбоем, но не превышает этого значения. Установите `0`, чтобы отключить отсрочку.
 
-<div id="max_postpone_time_for_failed_replicated_tasks_ms">
-  ## max_postpone_time_for_failed_replicated_tasks_ms
-</div>
+## max_postpone_time_for_failed_replicated_tasks_ms {#max_postpone_time_for_failed_replicated_tasks_ms}
 
 <SettingsInfoBlock type="UInt64" default_value="300000" />
 

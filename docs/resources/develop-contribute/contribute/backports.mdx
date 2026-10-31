@@ -37,7 +37,7 @@ The label `pr-must-backport` is the manual override used by maintainers to mark 
 
 ## Backport Tool {#backport-tool}
 
-The backport policy described above is implemented by the automated tool in `tests/ci/cherry_pick.py`. The tool runs as a GitHub Actions workflow on ClickHouse infrastructure and covers all the requirements: discovering active release branches, selecting PRs that qualify for backporting, performing the two-stage cherry-pick and backport procedure, managing conflicts, enforcing the delay policy, and keeping labels in sync.
+The backport policy described above is implemented by the automated tool in `ci/tools/cherry_pick.py`. The tool runs as a GitHub Actions workflow on ClickHouse infrastructure and covers all the requirements: discovering active release branches, selecting PRs that qualify for backporting, performing the two-stage cherry-pick and backport procedure, managing conflicts, enforcing the delay policy, and keeping labels in sync.
 
 The long-term goal is to extract this implementation into a standalone open-source Python tool that other projects can adopt. The target design is:
 
@@ -67,7 +67,7 @@ The named release does not have to be active itself. A label for an end-of-life 
 
 ### Overview {#overview}
 
-The backport automation runs hourly as the `CherryPick` GitHub Actions workflow (`.github/workflows/cherry_pick.yml`), implemented in `tests/ci/cherry_pick.py`. It operates through the GitHub API and local git operations on a self-hosted `style-checker-aarch64` runner.
+The backport automation runs hourly as the `CherryPick` GitHub Actions workflow (`.github/workflows/cherry_pick.yml`), implemented in `ci/tools/cherry_pick.py`. It operates through the GitHub API and local git operations on a self-hosted `style-checker-aarch64` runner.
 
 The process is two-stage for each (original PR, release branch) pair:
 

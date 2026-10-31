@@ -1,0 +1,58 @@
+---
+title: 'AWS IAM role authentication for ClickPipes'
+sidebarTitle: 'AWS IAM roles'
+slug: /integrations/clickpipes/security/aws-iam-role
+description: 'Use AWS IAM roles to grant ClickPipes access to data sources without storing AWS access keys.'
+doc_type: 'guide'
+keywords: ['clickpipes', 'aws', 'iam role', 'role-based access', 'authentication']
+---
+
+AWS IAM role authentication lets ClickPipes access supported AWS sources without storing AWS access keys. You create a role in your AWS account, allow your ClickHouse Cloud service to assume it, and grant the role permissions for the source.
+
+## Before you begin {#before-you-begin}
+
+- Your ClickHouse Cloud service must run on AWS to use IAM role authentication.
+- You need permission to create and configure IAM roles in the AWS account that owns the source.
+- For RDS or Aurora database authentication, you also need permission to enable IAM database authentication and configure a database user.
+
+## How it works {#how-it-works}
+
+1. Find the **Service role ID (IAM)** for your ClickHouse Cloud service under **Settings → Network security information**. This ARN identifies the role that ClickPipes uses to request access.
+2. Create a role in your AWS account and trust the ClickHouse service role to assume it.
+3. Grant that role the permissions required by your source, following its setup guide below.
+4. Configure the ClickPipe to use the ARN of the role you created. ClickPipes assumes that role when connecting to the source.
+
+## Configure the trust policy {#configure-trust-policy}
+
+When creating the role in your AWS account, use this trust policy. Replace `{ClickHouse_IAM_ARN}` with the **Service role ID (IAM)** ARN for your ClickHouse Cloud service:
+
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Principal": {
+        "AWS": "{ClickHouse_IAM_ARN}"
+      },
+      "Action": "sts:AssumeRole"
+    }
+  ]
+}
+```
+
+For **RDS and Aurora IAM database authentication**, allow both `sts:AssumeRole` and `sts:TagSession` in the `Action` field. Follow the [database-specific IAM authentication guide](/integrations/clickpipes/postgres/auth) for the complete setup, including the IAM-enabled database user.
+
+The role's **permissions policy** and any role naming requirements depend on the source. Use the source-specific guide below to configure them.
+
+## Choose your source {#choose-your-source}
+
+| Source or integration | Setup guide |
+|--------|-------------|
+| Amazon S3 | [S3 IAM role authentication](/integrations/clickpipes/object-storage/amazon-s3/overview#iam-role). For continuous ingestion with SQS notifications, follow the [unordered-mode IAM role steps](/integrations/clickpipes/object-storage/amazon-s3/unordered-mode#configure-iam-role). |
+| Amazon Kinesis | [Kinesis role-based access](/integrations/clickpipes/kinesis/auth#setup). |
+| Amazon MSK | [MSK IAM permissions and trust relationship](/integrations/clickpipes/kafka/best-practices#iam). |
+| Amazon RDS (PostgreSQL, MySQL, MariaDB) and Aurora (PostgreSQL, MySQL) | Choose the [database-specific IAM authentication guide](/integrations/clickpipes/postgres/auth). These sources also require an IAM-enabled database user and `rds-db:connect` permission. |
+| AWS Glue Schema Registry | [Reuse the MSK IAM role or configure a dedicated registry role](/integrations/clickpipes/kafka/schema-registries#glue-iam-setup). |
+
+IAM role authentication controls access to the source. Configure [network connectivity](/integrations/clickpipes/networking/index) separately if the source is private.

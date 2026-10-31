@@ -32,12 +32,16 @@
 #include <DataTypes/Serializations/SerializationMap.h>
 #include <DataTypes/Serializations/SerializationTuple.h>
 #include <Formats/FormatFactory.h>
+#include <Formats/FormatFilterInfo.h>
 #include <Functions/DateTimeTransforms.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
 #include <fmt/format.h>
 #include <Processors/Formats/Impl/AvroConfluentSchemaRegistry.h>
 #include <base/EnumReflection.h>
+#include <Poco/JSON/Array.h>
+#include <Poco/JSON/Object.h>
+#include <Poco/JSON/Parser.h>
 #include <Compiler.hh>
 #include <DataFile.hh>
 #include <Decoder.hh>
@@ -45,6 +49,8 @@
 #include <NodeImpl.hh>
 #include <Types.hh>
 #include <ValidSchema.hh>
+
+#include <unordered_set>
 
 namespace DB
 {
@@ -656,6 +662,8 @@ AvroDeserializer::DeserializeFn AvroDeserializer::createDeserializeFn(const avro
                 std::vector<DeserializeFn> nested_deserializers;
                 nested_deserializers.reserve(root_node->leaves());
 
+                std::unordered_set<ColumnVariant::Discriminator> used_discriminators;
+
                 bool union_has_null = false;
                 for (size_t i = 0; i != root_node->leaves(); ++i)
                 {
@@ -679,15 +687,18 @@ AvroDeserializer::DeserializeFn AvroDeserializer::createDeserializeFn(const avro
                             variant_type.getName(),
                             variant->getName());
 
+                    used_discriminators.insert(corresponding_discriminator.value());
                     union_index_to_global_discriminator.insert_or_assign(i, std::move(corresponding_discriminator.value()));
                 }
 
-                if (root_node->leaves() != nested_types.size() + (union_has_null ? 1 : 0))
+                /// Named branches (records, enums, fixed) with identical structure map to the same variant,
+                /// so compare distinct types, not branches.
+                if (used_discriminators.size() != nested_types.size())
                     throw Exception(
                         ErrorCodes::BAD_ARGUMENTS,
-                        "The number of (non-null) union types in Avro record ({}) does not match the number of types in destination Variant "
-                        "type ({}).",
-                        root_node->leaves() - (union_has_null ? 1 : 0),
+                        "The number of distinct (non-null) union types in Avro record ({}) does not match the number of types in "
+                        "destination Variant type ({}).",
+                        used_discriminators.size(),
                         nested_types.size());
 
                 return [union_has_null,
@@ -1041,6 +1052,7 @@ AvroDeserializer::SkipFn AvroDeserializer::createSkipFn(const avro::NodePtr & ro
             }
             return [&skip_fn = it->second](avro::Decoder & decoder)
             {
+                checkStackSize();
                 skip_fn(decoder);
             };
         }
@@ -1224,7 +1236,7 @@ AvroDeserializer::AvroDeserializer(DataTypePtr data_type, const std::string & co
 
 }
 
-AvroDeserializer::AvroDeserializer(const Block & header, avro::ValidSchema schema, bool allow_missing_fields, bool null_as_default_, const FormatSettings & settings_)
+AvroDeserializer::AvroDeserializer(const Block & header, avro::ValidSchema schema, bool allow_missing_fields, bool null_as_default_, const FormatSettings & settings_, const NameSet & absent_columns)
     : null_as_default(null_as_default_), settings(settings_)
 {
     const auto & schema_root = schema.root();
@@ -1240,7 +1252,7 @@ AvroDeserializer::AvroDeserializer(const Block & header, avro::ValidSchema schem
     {
         for (size_t i = 0; i < header.columns(); ++i)
         {
-            if (!column_found[i])
+            if (!column_found[i] && !absent_columns.contains(header.getByPosition(i).name))
             {
                 throw Exception(ErrorCodes::THERE_IS_NO_COLUMN, "Field {} not found in Avro schema", header.getByPosition(i).name);
             }
@@ -1266,12 +1278,88 @@ AvroRowInputFormat::AvroRowInputFormat(SharedHeader header_, ReadBuffer & in_, P
 {
 }
 
+namespace
+{
+
+void collectIcebergFieldIds(const Poco::Dynamic::Var & schema, std::unordered_set<Int64> & field_ids)
+{
+    checkStackSize();
+
+    if (schema.type() == typeid(Poco::JSON::Array::Ptr))
+    {
+        for (const auto & element : *schema.extract<Poco::JSON::Array::Ptr>())
+            collectIcebergFieldIds(element, field_ids);
+    }
+    else if (schema.type() == typeid(Poco::JSON::Object::Ptr))
+    {
+        for (const auto & [key, value] : *schema.extract<Poco::JSON::Object::Ptr>())
+        {
+            if (key == "field-id" || key == "element-id" || key == "key-id" || key == "value-id")
+            {
+                if (value.isInteger())
+                    field_ids.insert(value.convert<Int64>());
+            }
+            else
+                collectIcebergFieldIds(value, field_ids);
+        }
+    }
+}
+
+/// Iceberg reads a field whose id is not in a data file as NULL. Returns the columns of `header` whose
+/// field id is not in the file, if the file identifies all its top-level fields by id.
+NameSet getColumnsAbsentFromIcebergFile(
+    const Block & header, const ColumnMapper & column_mapper, const std::map<std::string, std::vector<uint8_t>> & metadata)
+{
+    auto it = metadata.find("avro.schema");
+    if (it == metadata.end())
+        return {};
+
+    String schema_json(it->second.begin(), it->second.end());
+    if (!schema_json.contains("\"field-id\""))
+        return {};
+
+    Poco::JSON::Parser parser;
+    auto root = parser.parse(schema_json);
+    if (root.type() != typeid(Poco::JSON::Object::Ptr))
+        return {};
+
+    auto fields = root.extract<Poco::JSON::Object::Ptr>()->getArray("fields");
+    if (!fields || fields->size() == 0)
+        return {};
+
+    for (size_t i = 0; i < fields->size(); ++i)
+    {
+        auto field = fields->getObject(static_cast<unsigned>(i));
+        if (!field || !field->has("field-id") || !field->get("field-id").isInteger())
+            return {};
+    }
+
+    std::unordered_set<Int64> file_field_ids;
+    collectIcebergFieldIds(root, file_field_ids);
+
+    NameSet result;
+    const auto & storage_encoding = column_mapper.getStorageColumnEncoding();
+    for (const auto & column : header)
+    {
+        auto field_id = storage_encoding.find(column.name);
+        if (field_id != storage_encoding.end() && !file_field_ids.contains(field_id->second))
+            result.insert(column.name);
+    }
+    return result;
+}
+
+}
+
 void AvroRowInputFormat::readPrefix()
 {
     file_reader_ptr = std::make_unique<avro::DataFileReaderBase>(
         std::make_unique<AvroInputStreamReadBufferAdapter>(*in), MAX_AVRO_SCHEMA_DEPTH);
+    NameSet absent_columns;
+    if (column_mapper)
+        absent_columns = getColumnsAbsentFromIcebergFile(output.getHeader(), *column_mapper, file_reader_ptr->metadata());
     deserializer_ptr = std::make_unique<AvroDeserializer>(
-        output.getHeader(), file_reader_ptr->dataSchema(), format_settings.avro.allow_missing_fields, format_settings.null_as_default, format_settings);
+        output.getHeader(), file_reader_ptr->dataSchema(), format_settings.avro.allow_missing_fields, format_settings.null_as_default, format_settings,
+        absent_columns);
     file_reader_ptr->init();
 }
 
@@ -1284,6 +1372,12 @@ bool AvroRowInputFormat::readRow(MutableColumns & columns, RowReadExtension & ex
         return true;
     }
     return false;
+}
+
+/// A count taken from the block headers is only sound while the library checks every declared count against the payload.
+bool AvroRowInputFormat::supportsCountRows() const
+{
+    return file_reader_ptr && file_reader_ptr->checksDeclaredObjectCount();
 }
 
 size_t AvroRowInputFormat::countRows(size_t max_block_size)
@@ -1377,9 +1471,8 @@ const AvroDeserializer & AvroConfluentRowInputFormat::getOrCreateDeserializer(Sc
             schema_id,
             format_settings.avro.schema_registry_timeouts,
             format_settings.avro.schema_registry_retry);
-        AvroDeserializer deserializer(
-            output.getHeader(), schema, format_settings.avro.allow_missing_fields, format_settings.null_as_default, format_settings);
-        it = deserializer_cache.emplace(schema_id, std::move(deserializer)).first;
+        it = deserializer_cache.try_emplace(
+            schema_id, output.getHeader(), schema, format_settings.avro.allow_missing_fields, format_settings.null_as_default, format_settings).first;
     }
     return it->second;
 }
@@ -1419,14 +1512,14 @@ NamesAndTypesList AvroSchemaReader::readSchema()
 
 DataTypePtr AvroSchemaReader::avroNodeToDataType(avro::NodePtr node, bool allow_nullable_tuple_type)
 {
-    checkStackSize();
-
     std::unordered_set<std::string> seen_names;
     return avroNodeToDataTypeImpl(node, seen_names, allow_nullable_tuple_type);
 }
 
 DataTypePtr AvroSchemaReader::avroNodeToDataTypeImpl(const avro::NodePtr & node, std::unordered_set<std::string> & seen_names, bool allow_nullable_tuple_type)
 {
+    checkStackSize();
+
     switch (node->type())
     {
         case avro::Type::AVRO_INT:

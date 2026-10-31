@@ -14,17 +14,13 @@ import { CloudNotSupportedBadge } from "/snippets/es/components/CloudNotSupporte
 
 Crea una tabla a partir de archivos de HDFS. Esta función de tabla es similar a las funciones de tabla [url](/es/reference/functions/table-functions/url) y [file](/es/reference/functions/table-functions/file).
 
-<div id="syntax">
-  ## Sintaxis
-</div>
+## Sintaxis {#syntax}
 
 ```sql
 hdfs(URI, format, structure)
 ```
 
-<div id="arguments">
-  ## Argumentos
-</div>
+## Argumentos {#arguments}
 
 | Argumento   | Descripción                                                                                                                                                                                                   |
 | ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -32,9 +28,7 @@ hdfs(URI, format, structure)
 | `format`    | El [formato](/es/reference/formats/index) del archivo.                                                                                                                                                           |
 | `structure` | Estructura de la tabla. Formato: `'column1_name column1_type, column2_name column2_type, ...'`.                                                                                                               |
 
-<div id="returned-value">
-  ## Valor devuelto
-</div>
+## Valor devuelto {#returned-value}
 
 Una tabla con la estructura especificada para leer o escribir datos en el archivo indicado.
 
@@ -55,16 +49,14 @@ LIMIT 2
 └─────────┴─────────┴─────────┘
 ```
 
-<div id="globs-in-path">
-  ## Globs en la ruta
-</div>
+## Globs en la ruta {#globs-in-path}
 
 Las rutas pueden usar globs. Los archivos deben coincidir con el patrón de la ruta completa, no solo con el sufijo o el prefijo.
 
 * `*` — Representa una cantidad arbitraria de caracteres, excepto `/`, incluida la cadena vacía.
 * `**` — Representa todos los archivos dentro de una carpeta de forma recursiva.
 * `?` — Representa un único carácter cualquiera.
-* `{some_string,another_string,yet_another_one}` — Sustituye cualquiera de las cadenas `'some_string', 'another_string', 'yet_another_one'`. Las cadenas pueden contener el símbolo `/`.
+* `{some_string,another_string,yet_another_one}` — Sustituye cualquiera de las cadenas `'some_string', 'another_string', 'yet_another_one'`. Las cadenas pueden contener el símbolo `/`. Cada cadena puede contener a su vez los comodines `*` y `?`, por lo que `{csv,csv.*}` coincide tanto con `.csv` como con `.csv.gz`.
 * `{N..M}` — Representa cualquier número `>= N` y `<= M`.
 
 Las construcciones con `{}` son similares a las funciones de tabla [remote](/es/reference/functions/table-functions/remote) y [file](/es/reference/functions/table-functions/file).
@@ -111,18 +103,14 @@ SELECT count(*)
 FROM hdfs('hdfs://hdfs1:9000/big_dir/file{0..9}{0..9}{0..9}', 'CSV', 'name String, value UInt32')
 ```
 
-<div id="virtual-columns">
-  ## Columnas virtuales
-</div>
+## Columnas virtuales {#virtual-columns}
 
 * `_path` — Ruta del archivo. Tipo: `LowCardinality(String)`.
 * `_file` — Nombre del archivo. Tipo: `LowCardinality(String)`.
 * `_size` — Tamaño del archivo en bytes. Tipo: `Nullable(UInt64)`. Si se desconoce el tamaño, el valor es `NULL`.
 * `_time` — Hora de la última modificación del archivo. Tipo: `Nullable(DateTime)`. Si se desconoce la hora, el valor es `NULL`.
 
-<div id="hive-style-partitioning">
-  ## configuración use_hive_partitioning
-</div>
+## configuración use_hive_partitioning {#hive-style-partitioning}
 
 Cuando `use_hive_partitioning` se establece en 1, ClickHouse detecta el particionado al estilo Hive en la ruta (`/name=value/`) y permite usar las columnas de partición como columnas virtuales en la consulta. Estas columnas virtuales tendrán los mismos nombres que en la ruta particionada.
 
@@ -134,17 +122,13 @@ Usar una columna virtual creada con particionado al estilo Hive
 SELECT * FROM HDFS('hdfs://hdfs1:9000/data/path/date=*/country=*/code=*/*.parquet') WHERE date > '2020-01-01' AND country = 'Netherlands' AND code = 42;
 ```
 
-<div id="storage-settings">
-  ## Configuración de almacenamiento
-</div>
+## Configuración de almacenamiento {#storage-settings}
 
 * [hdfs&#95;truncate&#95;on&#95;insert](/es/reference/settings/session-settings/hdfs#hdfs_truncate_on_insert) - permite truncar el archivo antes de insertar datos en él. Deshabilitado de forma predeterminada.
 * [hdfs&#95;create&#95;new&#95;file&#95;on&#95;insert](/es/reference/settings/session-settings/hdfs#hdfs_create_new_file_on_insert) - permite crear un archivo nuevo en cada inserción si el formato incluye un sufijo. Deshabilitado de forma predeterminada.
 * [hdfs&#95;skip&#95;empty&#95;files](/es/reference/settings/session-settings/hdfs#hdfs_skip_empty_files) - permite omitir archivos vacíos durante la lectura. Deshabilitado de forma predeterminada.
 
-<div id="related">
-  ## Relacionado
-</div>
+## Relacionado {#related}
 
 * [Columnas virtuales](/es/reference/engines/table-engines/index#table_engines-virtual_columns)
 

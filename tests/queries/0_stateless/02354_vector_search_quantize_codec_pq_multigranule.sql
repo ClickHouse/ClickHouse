@@ -4,7 +4,7 @@
 -- `index_granularity` (and `max_block_size`) forces many granule reads from the single-value codebook stream while
 -- keeping the row count - and the memory of the full-coverage rescore sort - small.
 
-SET allow_experimental_codecs = 1;
+SET enable_quantized_codec = 1;
 SET vector_search_use_quantized_codes = 1;
 SET query_plan_optimize_lazy_materialization = 1;
 SET query_plan_max_limit_for_lazy_materialization = 1000000;

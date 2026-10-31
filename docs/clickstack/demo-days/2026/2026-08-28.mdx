@@ -1,0 +1,166 @@
+---
+slug: /use-cases/observability/clickstack/demo-days/2026/2026-08-28
+title: 'Demo days - 2026-08-28'
+sidebarTitle: '2026-08-28'
+description: 'ClickStack demo days for 2026-08-28'
+doc_type: 'guide'
+keywords: ['ClickStack', 'Demo days']
+---
+
+## Dashboard variables in PromQL and Lucene {#dashboard-variables-in-promql-and-lucene}
+
+*Demo by [@pulpdrew](https://github.com/pulpdrew)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/q5pP20p4nY4" title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
+
+Dashboard variables now work in PromQL charts, with autocomplete for variable references and warnings for missing variables or unsupported usage, such as macros or references that need quotes. A generated PromQL preview sits alongside the existing generated SQL panel, showing the query with your current selections substituted in.
+
+Lucene variables now support exact matches. Previously, `ServiceName:$service` expanded to `ServiceName:("add" OR "cart")`. An unquoted Lucene field match is a substring match, so this becomes `ServiceName ILIKE '%add%' OR ServiceName ILIKE '%cart%'`. You could select two services and get four back.
+
+Quoting the variable, `ServiceName:"$service"`, now expands to `(ServiceName:"add" OR ServiceName:"cart")`, matching each selected value exactly. This follows the existing behaviour for quoted field matches without variables. Autocomplete also suggests the quoted form.
+
+Drilling through from a chart tooltip or table row to the search page now expands variables and macros before navigating. The search page doesn't understand variables, so passing through a raw `$service` previously gave incorrect results or a query error. Macros with no selection expand to `(1=1)`. It looks a little ugly in the search page's `WHERE` input, but keeps the query valid.
+
+Filter selections are now keyed by variable name rather than expression. Two filters that use the same expression, such as `ServiceName` from different sources, no longer share a selection.
+
+Pressing Escape while editing a filter now asks before discarding changes, as Brandon suggested. Previously, trying to dismiss a tooltip could lose the whole edit.
+
+Dashboard variables went out to production this week. The feature toggle is gone, and the [public docs](https://clickhouse.com/docs/clickstack/features/dashboards/overview#dashboard-variables) cover the reference forms and macros.
+
+**Related PRs:** [#2994](https://github.com/hyperdxio/hyperdx/pull/2994) substitute variables in PromQL charts, [#2995](https://github.com/hyperdxio/hyperdx/pull/2995) add completions for PromQL variables, [#2997](https://github.com/hyperdxio/hyperdx/pull/2997) show warnings for invalid PromQL variable usage, [#2998](https://github.com/hyperdxio/hyperdx/pull/2998) add generated PromQL preview, [#2987](https://github.com/hyperdxio/hyperdx/pull/2987) distribute exact-match Lucene variable references, [#3008](https://github.com/hyperdxio/hyperdx/pull/3008) expand variables prior to navigating to the search page via drill-down, [#2963](https://github.com/hyperdxio/hyperdx/pull/2963) accept variable-keyed dashboard filter values, [#2964](https://github.com/hyperdxio/hyperdx/pull/2964) persist and read variable-keyed filter state, [#3005](https://github.com/hyperdxio/hyperdx/pull/3005) confirm before discarding unsaved changes when closing the filter editor, [#3009](https://github.com/hyperdxio/hyperdx/pull/3009) remove the dashboard variables feature toggle
+
+## Span links, in both directions {#span-links-in-both-directions}
+
+*Demo by [@karl-power](https://github.com/karl-power)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/tdK9JU6unoE" title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
+
+Span links have been viewable for a while, but only from the consumer side. Each link appeared as an "Open trace" action, with no way to start from a producer span and find the spans linking to it. A user requested this in a GitHub issue.
+
+The Span Links section now shows each target span's name, service, duration and timestamp. This makes it easier to choose between several links without opening each one. "Open trace" remains the fallback when the target span can't be found.
+
+A new "Linked from" section lists the spans that link to the current span. You can now follow a consumer's link to its producer and see the consumer listed there.
+
+Following a link to the previous span in the breadcrumb trail takes you back to that entry, so moving between two linked spans doesn't keep adding duplicates. If there are other entries between them, navigation adds a new entry as usual.
+
+The reverse lookup finds rows whose span links contain the selected span ID, then checks that the trace ID matches. Trace ID lookups benefit from the bloom filter index on that column, but the reverse lookup requires a scan and may be slower on larger traces tables than in the demo. If that becomes a problem, we can add an index on the link span ID, as the code comments suggest.
+
+**Related PRs:** [#3011](https://github.com/hyperdxio/hyperdx/pull/3011) add reverse span links, show span link detail
+
+## LLM observability out of the box {#llm-observability-out-of-the-box}
+
+*Demo by [@wrn14897](https://github.com/wrn14897)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/m49DZ5cuI64" title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
+
+Plenty of teams already send LLM and coding-agent telemetry to ClickStack, but there was no specific support for it: no chat rendering, token or cost tracking, or model analytics.
+
+There's now an LLM dashboard alongside the existing ClickHouse, Kubernetes and services presets. It covers token usage, cost, model calls, tool calls, cache hits and response times, with a breakdown by user when a user attribute is present.
+
+It reads your existing traces and logs at query time, without requiring a fixed schema, dedicated tables or ingest-time processing. Telemetry using common conventions, OpenLLMetry or OpenInference is supported, including data from the OpenAI and Anthropic SDKs, Vercel AI SDK, LangChain, Claude Code and opencode. This also works on telemetry you've already collected.
+
+A latency view brings AI-related spans to the top, making it easier to find a slow model call without working through the rest of the trace.
+
+The sessions view groups spans by conversation. Open a session to see its spans, then select one for the details, including the prompt if it was recorded. This helps when debugging an agent run, and you can search logs using the same session filter.
+
+The scope is deliberately smaller than a dedicated LLM observability tool such as Langfuse, which also supports evaluations and much more. This covers common monitoring needs, including error rates, cost, tokens and latency, using telemetry already in ClickStack.
+
+**Related PRs:** [#2990](https://github.com/hyperdxio/hyperdx/pull/2990) LLM observability dashboard, span chat view, and sessions
+
+## Browsing metrics in the chart editor {#browsing-metrics-in-the-chart-editor}
+
+*Demo by [@MikeShi42](https://github.com/MikeShi42)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/TkFa6Zzq23o" title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
+
+Picking a metric meant searching a flat list of up to 3,000 names per kind. Autocomplete helps if you already know roughly what you're looking for, but browsing has come up in feedback several times.
+
+A "Browse metrics" control beside the metric select now opens an explorer, with the catalogue on the left and details for the selected metric on the right. Metric names are split on dots and underscores to form a tree. Segments with only one child are collapsed together to avoid unnecessary clicks. The `Metric`, `Type` and `Unit` columns stay aligned at every level. You can search the whole catalogue or switch to a flat list.
+
+Previously, the unit, description and tags were only available after selecting a metric, in a collapsed panel below the series row. The details pane lets you inspect these before choosing, so you can see what your deployment emits and which tags you can group by. Click "Use metric" to apply your choice to the series you're editing.
+
+It's tucked out of the way for now while it settles.
+
+**Related PRs:** [#3000](https://github.com/hyperdxio/hyperdx/pull/3000) add a metrics explorer to the chart editor, [#3025](https://github.com/hyperdxio/hyperdx/pull/3025) stream metric names from the primary index (open), [#3054](https://github.com/hyperdxio/hyperdx/pull/3054) UX enhancements to the metrics dropdown
+
+## Log volume for raw SQL queries in Grafana {#log-volume-for-raw-sql-queries-in-grafana}
+
+*Demo by [@SpencerTorres](https://github.com/SpencerTorres)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/uehh44q56yE" title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
+
+A small visual change that took more work than expected.
+
+In Grafana, logs queries built in the query builder get a volume histogram above the results because the plugin knows which columns to use. The same query in the SQL editor had no histogram, since the plugin couldn't tell which columns you'd selected. In Explore, you got Grafana's row-based histogram instead, capped by the query's `LIMIT` and not following the selected time range.
+
+The plugin now strips the trailing `ORDER BY` and `LIMIT`, wraps your SQL as a derived table, and aggregates over the full time range. Removing the `LIMIT` matters here: leaving it in would restrict the count to the rows returned by the original query.
+
+The histogram reflects your SQL filters and updates when you change the time range. This works for SQL you write yourself and queries opened through "Edit as SQL" in the query builder.
+
+There are likely still edge cases where the query rewrite won't work.
+
+**Related PRs:** [grafana/clickhouse-datasource#2141](https://github.com/grafana/clickhouse-datasource/pull/2141) show log volume for SQL editor queries (open)
+
+## Notification channels on the alerts pages {#notification-channels-on-the-alerts-pages}
+
+*Demo by [@jordan-simonovski](https://github.com/jordan-simonovski)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/Gr-QkVVWam8" title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
+
+An alert can notify up to ten webhooks, but the alerts list and detail header only showed the first, labelled "Webhook" rather than using its name. Both were still reading the legacy single-channel field.
+
+Multi-target dispatch worked, but the display made it look as though additional channels hadn't saved.
+
+The list and detail header now show every configured channel by name. Adding and removing channels is also easier, including webhooks and incident.io integrations. Notification time is recorded per target, so you can identify a slow integration.
+
+Configured channels are now notified directly. Previously, they were converted into webhook mentions and appended to the message body. This could drop notifications: if the body already contained enough ad hoc mentions to reach the per-event cap, the alert's configured channels were skipped.
+
+With the extra controls, the page was getting crowded. Row actions, including export and Terraform, are now grouped in a single menu.
+
+**Related PRs:** [#3001](https://github.com/hyperdxio/hyperdx/pull/3001) show every notification target on the alerts pages, [#2991](https://github.com/hyperdxio/hyperdx/pull/2991) show every notification channel on the summary line, [#2984](https://github.com/hyperdxio/hyperdx/pull/2984) notify configured channels directly, not via mention strings, [#2961](https://github.com/hyperdxio/hyperdx/pull/2961) don't let failed mentions consume notification slots, [#3003](https://github.com/hyperdxio/hyperdx/pull/3003) attribute alert notification time to each target, [#3002](https://github.com/hyperdxio/hyperdx/pull/3002) give every alerts-page row the same trailing controls, [#3016](https://github.com/hyperdxio/hyperdx/pull/3016) consolidate the alert detail header into the shared row menu
+
+## Rendering tens of thousands of alerts {#rendering-1000s-alerts}
+
+*Demo by [@pulpdrew](https://github.com/pulpdrew)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/P9BPD9yoElo" title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
+
+Alert evaluation has been tested at 16,000 concurrent alerts and holds up well. Opening the alerts page with that many alerts brought it down.
+
+The list is now virtualized and can render 16,000 alerts. Loading is still slow because all alerts are fetched and filtered client-side. Pagination is in progress to address that.
+
+The change also includes a script to seed and clean up large numbers of alerts in MongoDB, making it easier to test the page at this scale locally.
+
+**Related PRs:** [#3012](https://github.com/hyperdxio/hyperdx/pull/3012) virtualize the alerts page list
+
+## Hiding API keys behind a reveal {#hiding-api-keys-behind-a-reveal}
+
+*Demo by [@brandon-pereira](https://github.com/brandon-pereira)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/MNXABmTVEkE" title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
+
+Credentials were shown in plain text across the app. Team Settings displayed the full ingestion API key, and MCP install snippets included the personal access key in the command. Both were easy to expose during a screen share or in a screenshot.
+
+Keys are now masked by default, with a control to reveal them when needed. A shared component handles this for the ingestion key, personal access key and MCP install snippets, including community-contributed ones.
+
+Copying still gives you the real value, so you don't need to reveal a key to copy it. The same change is coming to ClickStack Cloud onboarding.
+
+**Related PRs:** [#2988](https://github.com/hyperdxio/hyperdx/pull/2988) mask secrets in API key and MCP install snippets with a shared RevealSnippet
+
+## Release notes in the product {#release-notes-in-the-product}
+
+*Demo by [@jordan-simonovski](https://github.com/jordan-simonovski)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/4vrzXy8JwZY" title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
+
+The Help menu's "What's new" panel used per-PR changesets, picking entries with a `feat:` prefix. That meant v2.36.0 listed dashboard variables three times but missed formulas and the alert work that were the main changes in the release.
+
+It now reads the root `CHANGELOG.md`, which is written and reviewed as part of the release PR. The release generator also supplies the headline for each release in the panel. Below that are breaking changes, new features, bug fixes and improvements, with links through to the changelog.
+
+The Help button now sparkles when there are unread release notes, using an animated SVG without JavaScript.
+
+The unread tracking needed fixing too. It used the app's build version, so deployments that included a git short SHA or CI build number triggered the sparkle on every deploy, even without a new release. It now uses the latest release version in the changelog.
+
+The release notes format is also changing, so expect more of that content to appear in the panel.
+
+**Related PRs:** [#2993](https://github.com/hyperdxio/hyperdx/pull/2993) build "What's new" from the generated release notes, [#3042](https://github.com/hyperdxio/hyperdx/pull/3042) key the What's new sparkle on the release, not the build, [#3007](https://github.com/hyperdxio/hyperdx/pull/3007) warn distinctly when a release-marker query fails

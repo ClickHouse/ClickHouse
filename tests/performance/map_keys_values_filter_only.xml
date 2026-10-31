@@ -1,0 +1,126 @@
+<test>
+    <!--
+         Each query selects the full Map but filters 1% of the rows in an explicit
+         PREWHERE. The matching rows are clustered in the first 1% of the sorted
+         data so late materialization can skip the wide stream for the remaining
+         marks. The mapKeys case has short keys and wide values; the mapValues case
+         reverses that shape.
+    -->
+    <settings>
+        <max_insert_threads>4</max_insert_threads>
+        <use_query_condition_cache>0</use_query_condition_cache>
+    </settings>
+
+    <create_query>
+        CREATE TABLE map_keys_filter_only_perf
+        (
+            id UInt64,
+            m Map(String, String)
+        )
+        ENGINE = MergeTree ORDER BY id
+        SETTINGS
+            map_serialization_version = 'basic',
+            map_serialization_version_for_zero_level_parts = 'basic',
+            index_granularity = 8192,
+            min_bytes_for_wide_part = 0,
+            min_rows_for_wide_part = 0
+    </create_query>
+
+    <create_query>
+        CREATE TABLE map_values_filter_only_perf
+        (
+            id UInt64,
+            m Map(String, String)
+        )
+        ENGINE = MergeTree ORDER BY id
+        SETTINGS
+            map_serialization_version = 'basic',
+            map_serialization_version_for_zero_level_parts = 'basic',
+            index_granularity = 8192,
+            min_bytes_for_wide_part = 0,
+            min_rows_for_wide_part = 0
+    </create_query>
+
+    <fill_query>
+        INSERT INTO map_keys_filter_only_perf
+        SELECT
+            number AS id,
+            mapFromArrays(
+                arrayMap(i -&gt; if(number &lt; 10000 AND i = 15, 'target_key', concat('k', toString(i))), range(16)),
+                arrayMap(i -&gt; concat(
+                    hex(cityHash64(number, i, 1)),
+                    hex(cityHash64(number, i, 2)),
+                    hex(cityHash64(number, i, 3)),
+                    hex(cityHash64(number, i, 4))), range(16))) AS m
+        FROM numbers_mt(1000000)
+    </fill_query>
+    <fill_query>OPTIMIZE TABLE map_keys_filter_only_perf FINAL SETTINGS mutations_sync=1</fill_query>
+
+    <fill_query>
+        INSERT INTO map_values_filter_only_perf
+        SELECT
+            number AS id,
+            mapFromArrays(
+                arrayMap(i -&gt; concat(
+                    hex(cityHash64(number, i, 1)),
+                    hex(cityHash64(number, i, 2)),
+                    hex(cityHash64(number, i, 3)),
+                    hex(cityHash64(number, i, 4))), range(16)),
+                arrayMap(i -&gt; if(number &lt; 10000 AND i = 15, 'target_value', concat('v', toString(i))), range(16))) AS m
+        FROM numbers_mt(1000000)
+    </fill_query>
+    <fill_query>OPTIMIZE TABLE map_values_filter_only_perf FINAL SETTINGS mutations_sync=1</fill_query>
+
+    <!-- Full Map projection, with mapKeys using only the key stream for PREWHERE. -->
+    <query>
+        SELECT m
+        FROM map_keys_filter_only_perf
+        PREWHERE has(mapKeys(m), 'target_key')
+        FORMAT Null
+        SETTINGS
+            max_threads = 1,
+            optimize_functions_to_subcolumns = 1,
+            optimize_rewrite_has_to_in = 0,
+            optimize_move_to_prewhere = 0
+    </query>
+
+    <query>
+        SELECT m
+        FROM map_keys_filter_only_perf
+        PREWHERE has(mapKeys(m), 'target_key')
+        FORMAT Null
+        SETTINGS
+            max_threads = 1,
+            optimize_functions_to_subcolumns = 0,
+            optimize_rewrite_has_to_in = 0,
+            optimize_move_to_prewhere = 0
+    </query>
+
+    <!-- Full Map projection, with mapValues using only the value stream for PREWHERE. -->
+    <query>
+        SELECT m
+        FROM map_values_filter_only_perf
+        PREWHERE has(mapValues(m), 'target_value')
+        FORMAT Null
+        SETTINGS
+            max_threads = 1,
+            optimize_functions_to_subcolumns = 1,
+            optimize_rewrite_has_to_in = 0,
+            optimize_move_to_prewhere = 0
+    </query>
+
+    <query>
+        SELECT m
+        FROM map_values_filter_only_perf
+        PREWHERE has(mapValues(m), 'target_value')
+        FORMAT Null
+        SETTINGS
+            max_threads = 1,
+            optimize_functions_to_subcolumns = 0,
+            optimize_rewrite_has_to_in = 0,
+            optimize_move_to_prewhere = 0
+    </query>
+
+    <drop_query>DROP TABLE IF EXISTS map_keys_filter_only_perf</drop_query>
+    <drop_query>DROP TABLE IF EXISTS map_values_filter_only_perf</drop_query>
+</test>

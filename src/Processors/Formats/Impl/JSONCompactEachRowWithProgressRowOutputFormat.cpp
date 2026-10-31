@@ -142,17 +142,30 @@ void registerOutputFormatJSONCompactEachRowWithProgress(FormatFactory & factory)
 
 ## Description {#description}
 
-This format combines the compact row-by-row output of JSONCompactEachRow with streaming progress
-information.
-It outputs data as separate JSON objects for metadata, individual rows, progress updates,
-totals, and exceptions. Values are represented in their native types.
+Combines the compact row-by-row output of [`JSONCompactEachRow`](/reference/formats/JSON/JSONCompactEachRow) with streaming progress information. ClickHouse streams each event as a separate JSON object; column values keep their native JSON types.
 
-Key features:
-- Outputs metadata first with column names and types
-- Each row is a separate JSON object with a "row" key containing an array of values
-- Includes progress updates during query execution (as `{"progress":...}` objects)
-- Supports totals and extremes
-- Values keep their native types (numbers as numbers, strings as strings)
+The related `JSONCompactStringsEachRowWithProgress` format uses the same top-level object kinds; field values are serialized as strings.
+
+Shares the same stream contract as [`JSONEachRowWithProgress`](/reference/formats/JSON/JSONEachRowWithProgress) (`writesProgressConcurrently` / `finalizeImpl`), except that `row` / `totals` / `min` / `max` payloads are **arrays** of values in column order rather than named objects.
+
+## Stream objects {#stream-objects}
+
+Each line of the response is one JSON object. Clients should dispatch on the top-level key:
+
+| Top-level key | When it appears | Shape |
+|---------------|-----------------|-------|
+| `meta` | Once, before the first `row` (a `progress` object may be emitted before it) | `{"meta":[{"name":...,"type":...}, ...]}` — column names and types |
+| `row` | Once per result row | `{"row":[...]}` — column values in header order |
+| `progress` | Periodically while the query runs | `{"progress":{...}}` — counters such as `read_rows`, `read_bytes`, `total_rows_to_read` |
+| `totals` | When totals are present | `{"totals":[...]}` — totals row values in header order |
+| `min` / `max` | When extremes are present | `{"min":[...]}` / `{"max":[...]}` — extreme row values in header order |
+| `rows_before_limit_at_least` | When the query contains `LIMIT` | `{"rows_before_limit_at_least":N}` — lower estimate of rows there would have been without `LIMIT` (not proof that rows were dropped) |
+| `rows_before_aggregation` | When the query performs aggregation and the `rows_before_aggregation` counter is enabled | `{"rows_before_aggregation":N}` |
+| `exception` | When the query fails, on the HTTP path with `http_write_exception_in_output_format=1` | `{"exception":"..."}` — error text as a **top-level string**, not nested under `row` |
+
+The `rows_before_limit_at_least` object is emitted when the query contains `LIMIT`, even if the limit did not drop any rows. It is a lower estimate of the number of rows there would have been without `LIMIT` (same meaning as in `JSON`); clients must not treat it as proof that rows were dropped.
+
+`meta` is emitted once before the first `row`, but a `progress` object can arrive before `meta`. The top-level `exception` object is emitted on the HTTP path only when `http_write_exception_in_output_format=1`; otherwise the error surfaces through the transport. When emitted it is a separate top-level object, not nested under `row`.
 
 ## Example usage {#example-usage}
 
@@ -185,14 +198,9 @@ FORMAT JSONCompactEachRowWithProgress
 
 ## Description {#description}
 
-Similar to [`JSONCompactEachRowWithProgress`](/reference/formats/JSON/JSONCompactEachRowWithProgress), but all values are converted to strings.
-This is useful when you need consistent string representation of all data types.
+Similar to [`JSONCompactEachRowWithProgress`](/interfaces/formats/JSONCompactEachRowWithProgress), but all values are converted to strings. Uses the same top-level object kinds (`meta`, `row`, `progress`, `totals`, `min`/`max`, `rows_before_limit_at_least`, `rows_before_aggregation`, and a top-level `exception`); `row` / `totals` / `min` / `max` payloads remain **arrays** in column order, with each element serialized as a string.
 
-Key features:
-- Same structure as `JSONCompactEachRowWithProgress`
-- All values are represented as strings (numbers, arrays, etc. are all quoted strings)
-- Includes progress updates, totals, and exception handling
-- Useful for clients that prefer or require string-based data
+See [`JSONCompactEachRowWithProgress`](/interfaces/formats/JSONCompactEachRowWithProgress) for the full stream-object contract (`progress` may arrive before `meta`; `rows_before_limit_at_least` is a lower estimate when the query contains `LIMIT`, not proof rows were dropped; `exception` is only written on the HTTP path with `http_write_exception_in_output_format=1`).
 
 ## Example usage {#example-usage}
 

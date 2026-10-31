@@ -1,7 +1,6 @@
 #pragma once
 
 #include <IO/ICacheProvider.h>
-#include <IO/IntervalSet.h>
 #include <IO/ReadSettings.h>
 #include <Interpreters/FileCache/FileCache.h>
 
@@ -10,7 +9,6 @@
 #include <Common/CacheBase.h>
 #include <IO/ReadBufferFromFileBase.h>
 
-#include <mutex>
 
 namespace DB
 {
@@ -65,14 +63,10 @@ public:
         ByteRange aligned_range_in_file);
 
     ByteRange range() const override { return aligned_range; }
-    IntervalSet committed() const override
-    {
-        std::lock_guard lock(committed_mutex);
-        return committed_ranges;
-    }
-    size_t write(ChainedBuffers data, const Claim & claim) override;
+    size_t committed() const override;
+    size_t write(ChainedBuffers data, const FillRole & role) override;
     ChainedBuffers read(ByteRange subrange) override;
-    Lead claimLeadRole(ByteRange range) override;
+    FillRole takeFillRole() override;
     ChainedBuffers waitAndRead(ByteRange subrange) override;
 
 private:
@@ -86,12 +80,9 @@ private:
     size_t object_file_offset;
     FilesystemCacheSettings cache_settings;
     FileSegmentsHolderSharedPtr segment_holder;
-    IntervalSet committed_ranges;
-    /// Guards `committed_ranges` only. The FileCache downloader gives per-segment write exclusion. A
-    /// background prefetch and the foreground read may append disjoint parts of the segment at the
-    /// same time, so both update this set.
-    mutable std::mutex committed_mutex;
     ByteRange aligned_range;
+    /// One state per writer: it owns a single append-only segment.
+    FileCacheReserveAhead reserve_ahead;
     LoggerPtr log = getLogger("DiskCacheWriter");
 };
 
@@ -105,20 +96,15 @@ private:
 class DiskCacheProvider : public ICacheProvider
 {
 public:
-    /// `query_id` enforces `filesystem_cache_max_download_size`. The provider keeps a
-    /// `QueryContextHolder` alive so `tryReserve` (inside `CacheWriter::write`) finds the per-query
-    /// budget. An empty `query_id` means no per-query limit.
     DiskCacheProvider(
         FileCachePtr cache_,
         const FilesystemCacheSettings & cache_settings_,
-        const String & query_id_ = {},
         ThrottlerPtr local_throttler_ = nullptr,
         std::optional<FileCacheKey> custom_cache_key_ = std::nullopt,
         std::optional<FileCacheOriginInfo> custom_origin_ = std::nullopt);
 
     String name() const override { return "DiskCache"; }
     CacheTier tier() const override { return CacheTier::FilesystemCache; }
-    bool populatesOnMiss() const override { return !cache_settings.read_if_exists_otherwise_bypass; }
 
     /// Resolve `range` into hits (readers) and misses (writers when the tier populates). See the
     /// definition for the get / getOrSet split.
@@ -132,8 +118,6 @@ private:
     ThrottlerPtr local_throttler;
     std::optional<FileCacheKey> custom_cache_key;
     std::optional<FileCacheOriginInfo> custom_origin;
-    /// Keeps the per-query budget context alive; see the constructor.
-    FileCache::QueryContextHolderPtr query_context_holder;
     /// Keep-alive anchors for recently-used cache-segment readers; see
     /// `ReaderAnchorCache`.
     ReaderAnchorCache reader_anchors;

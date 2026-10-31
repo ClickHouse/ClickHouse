@@ -26,16 +26,17 @@ Expression ((Project names + (Before ORDER BY + Projection) [lifted up part]))
                     LazyFinalKeyAnalysis
                       CreatingSet
                         Expression
-                          Expression
+                          Filter
                             ReadFromMergeTree (default.t_lazy_both)
-                    JoinLazyColumnsStep
-                      LazyReadReplacingFinal
-                        Expression
-                          Aggregating
-                            Expression
+                    Filter
+                      JoinLazyColumnsStep
+                        LazyReadReplacingFinal
+                          Expression
+                            Aggregating
                               Expression
-                                ReadFromMergeTree (default.t_lazy_both)
-                      LazilyReadFromMergeTree
+                                Expression
+                                  ReadFromMergeTree (default.t_lazy_both)
+                        LazilyReadFromMergeTree
                     ReadFromMergeTree (default.t_lazy_both)
                   ReadFromMergeTree (default.t_lazy_both)
         LazilyReadFromMergeTree

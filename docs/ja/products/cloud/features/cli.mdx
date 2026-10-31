@@ -7,11 +7,11 @@ keywords: ['clickhousectl', 'CLI', 'クラウド管理', 'ローカル開発']
 doc_type: 'reference'
 ---
 
-ClickHouse CLI (`clickhousectl`) は、ClickHouse Cloud リソースの管理や、ClickHouse を使ったローカル開発を一元的に行えるコマンドラインツールです。[ClickHouse Cloud Postgres](/ja/products/managed-postgres/overview) サービスの管理にも対応しています。
+ClickHouse CLI (`clickhousectl`) は、ClickHouse Cloud リソースの管理や、ClickHouse を使ったローカル開発を一元的に行えるコマンドラインツールです。[ClickHouse Cloud Postgres](/ja/products/managed-postgres/overview) サービスや [ClickPipes](/ja/integrations/clickpipes) の管理にも対応しています。
 
-<div id="installation">
-  ## インストール
-</div>
+このページは `clickhousectl` 0.4.2 のコマンド体系に関するリファレンスです。インストール済みのバージョンを確認するには `clickhousectl --version` を実行し、各コマンドのフラグの一覧を確認するには `clickhousectl <command> --help` を実行してください。
+
+## インストール {#installation}
 
 ```bash
 curl https://clickhouse.com/cli | sh
@@ -19,149 +19,386 @@ curl https://clickhouse.com/cli | sh
 
 便宜上、`chctl` のエイリアスも自動的に作成されます。
 
-<div id="cloud-management">
-  ## Cloud 管理
-</div>
+既存のインストールを最新バージョンに更新するには:
+
+```bash
+clickhousectl update           # self-update
+clickhousectl update --check   # check for updates without installing
+```
+
+## Cloud 管理 {#cloud-management}
 
 ClickHouse Cloud にログインし、コマンドラインから直接サービスを管理します。
 
-<div id="authentication">
-  ### 認証
-</div>
+### 認証 {#authentication}
 
 ```bash
-clickhousectl cloud auth
+# Log in with an API key (read/write access)
+clickhousectl cloud auth login --api-key <key> --api-secret <secret>
+
+# Log in with the OAuth device flow (interactive; read-only access)
+clickhousectl cloud auth login
+
+# Show which credential source is active
+clickhousectl cloud auth status
+
+# Log out and clear saved credentials
+clickhousectl cloud auth logout
+
+# Create a new ClickHouse Cloud account
+clickhousectl cloud auth signup
 ```
 
-API key とシークレットの入力が求められ、これらは `.clickhouse/credentials.json` に保存されます (プロジェクトローカル、Git では無視されます) 。
-
-環境変数を使用することもできます。
+API キーは `.clickhouse/credentials.json` (プロジェクトローカル、gitの管理対象外) に保存されます。環境変数を使用することもできます:
 
 ```bash
 export CLICKHOUSE_CLOUD_API_KEY=your-key
 export CLICKHOUSE_CLOUD_API_SECRET=your-secret
 ```
 
-<div id="services">
-  ### サービス
-</div>
+認証情報の優先順位 (高い順) : `--api-key`/`--api-secret` フラグ、`.clickhouse/credentials.json` 内のプロジェクト認証情報、環境変数 (シェル、次に `.env`) 、`cloud auth login` で取得した OAuth トークン。
+
+OAuth トークンは読み取り専用です。書き込み系のコマンド (create、delete、start、stop、update、scale) には API キーによる認証が必要です。
+
+### サービス {#services}
 
 ```bash
-# サービスの一覧表示
+# List services
 clickhousectl cloud service list
 
-# サービスの作成
+# Create a service
 clickhousectl cloud service create --name my-service \
   --provider aws \
   --region us-east-1
 
-# サービスの詳細取得
+# Get service details
 clickhousectl cloud service get <service-id>
 
-# サービスのスケール
+# Update service settings (name, IP allow list, tags, endpoints, ...)
+clickhousectl cloud service update <service-id> --add-ip-allow 0.0.0.0/0
+
+# Scale a service
 clickhousectl cloud service scale <service-id> \
   --min-replica-memory-gb 24 \
   --max-replica-memory-gb 48 \
   --num-replicas 3
 
-# サービスの起動/停止
+# Start/stop a service
 clickhousectl cloud service start <service-id>
 clickhousectl cloud service stop <service-id>
 
-# サービスの削除
+# Reset the default user password
+clickhousectl cloud service reset-password <service-id>
+
+# Delete a service
 clickhousectl cloud service delete <service-id>
 ```
 
-<div id="postgres-services">
-  ### Postgres サービス (ベータ)
-</div>
+### Running queries {#running-queries}
 
-[ClickHouse Cloud Postgres](/ja/products/managed-postgres/overview) サービスの作成と管理を行います。
+Query API を使用して HTTP 経由で Cloud サービスに対して SQL を実行します。ローカルの `clickhouse` binary やサービスの password は必要ありません。`--id` または `--name` のいずれか一方を必ず指定してください:
 
 ```bash
-# List Postgres services
-clickhousectl cloud postgres list
+# Query by service ID or by name
+clickhousectl cloud service query --id <service-id> -q 'SELECT 1'
+clickhousectl cloud service query --name my-service -q 'SELECT version()'
 
-# Create a Postgres service
-clickhousectl cloud postgres create \
-  --name my-pg \
-  --region us-east-1 \
-  --size m6gd.xlarge \
-  --pg-version 18
+# Run a query from a SQL file (use "-" for stdin), choosing an output format.
+# The file must hold a single statement
+clickhousectl cloud service query --id <service-id> \
+  --queries-file report.sql --format JSONEachRow
 
-# Get service details
-clickhousectl cloud postgres get <pg-id>
+# With neither --query nor --queries-file, SQL is read from stdin
+echo 'SELECT 1' | clickhousectl cloud service query --id <service-id>
 
-# Update a service
-clickhousectl cloud postgres update <pg-id> --size m6gd.2xlarge --add-tag env=prod
-
-# Reset the password
-clickhousectl cloud postgres reset-password <pg-id> --generate
-
-# Read replicas and point-in-time restore
-clickhousectl cloud postgres read-replica create <pg-id> --name replica-1
-clickhousectl cloud postgres restore <pg-id> --name restored --restore-target 2026-04-16T12:00:00Z
-
-# Delete a service
-clickhousectl cloud postgres delete <pg-id>
+# Replace a stored Query API key that the endpoint rejects
+clickhousectl cloud service repair-query-key <service-id>
 ```
 
-<div id="organizations">
-  ### Organizations
-</div>
+API キー認証を使用する場合、クエリは読み取りおよび書き込み権限で実行されます。サービスの query endpoint が既にそのキーを認可している場合は、認証済みのキーがそのまま使用されます。認可していない場合は、最初のクエリ実行時に query endpoint とサービスごとの読み取り/書き込みキーがプロビジョニングされ、そのキーが `.clickhouse/credentials.json` に保存されます。プロビジョニングせずにエラーとしたい場合は `--no-auto-enable` を指定してください。OAuth の場合、SQL はクラウドユーザーとして読み取り専用権限 (`SELECT` のみ) で実行され、プロビジョニングは行われません。
+
+知っておくべき事項:
+
+* `service query` は 1 リクエストにつき 1 つのステートメントを実行します。複数ステートメントの SQL は、`--query`、`--queries-file`、stdin のいずれの経路で渡された場合でも Query API に拒否され、`Error: SQL error 62: Syntax error (Multi-statements are not allowed)` となります。単一ステートメントの末尾に `;` が付いていても問題ありません。スクリプトで実行する場合は、`clickhousectl local use latest` を実行し、サービスに対して `clickhouse client` を使用してください。
+* `--query` と `--queries-file` は排他的です (終了コード 2) 。どちらも指定されていない場合にのみ stdin が読み取られます。`--query` は stdin を読み取らないため、これと併せてデータをリダイレクトまたはパイプすると、黙って無視される (no-op) のではなく明確なエラーになります: `Error: --query cannot be combined with SQL or data on stdin.` 代わりに `INSERT` とそのデータを単一ストリームとして送信してください — `printf 'INSERT INTO t FORMAT CSV\n' | cat - data.csv | clickhousectl cloud service query --id <service-id>` — もしくは `--queries-file -` で stdin からステートメント全体を読み取ってください。
+* デフォルトの出力フォーマットは、端末では `PrettyCompact`、パイプされた場合は `TabSeparated` です。`--json` を指定すると `JSONEachRow` が選択され、`--format` と併用できません (終了コード 2) 。
+* 保存済みの Query API キーが endpoint に HTTP 401/403 で拒否されても、自動的に置き換えられることはありません。CLI は、その理由を報告するためだけにキーの management レコードを読み取ります。この認証情報のみを置き換えるには `clickhousectl cloud service repair-query-key <service-id>` を実行してください。このコマンドは置き換え前のキーも削除します。稼働中のサービスでは、新しいキーによる probe クエリが成功した場合にのみ終了コード 0 で終了し、その結果は `--json` 出力の `verification` に報告されます。readiness の待機期間が終了しても Query API がキーを拒否し続ける場合、コマンドは終了コード 1 で終了しますが、修復自体は有効です。再実行せず、代わりに `cloud service query` を実行してください。
+* Query API は約 30 秒でタイムアウトします。ステートメントはサービス上で実行され続けますが、結果は失われます。それより長時間かかる処理では、`clickhousectl local use latest` を実行して標準の `clickhouse` binary を `PATH` に配置し、`clickhouse client --host <host> --secure --port 9440 --user default --password <password>` で接続してください。
+
+### サービスエンドポイントと設定 {#service-endpoints-and-configuration}
 
 ```bash
-clickhousectl cloud org list
-clickhousectl cloud org get <org-id>
+# Query endpoints (used by the Query API)
+clickhousectl cloud service query-endpoint get <service-id>
+clickhousectl cloud service query-endpoint create <service-id> --role sql_console_admin
+clickhousectl cloud service query-endpoint delete <service-id>
+
+# Private endpoints. --endpoint-id takes an AWS VPC endpoint ID, a GCP PSC
+# connection ID, or an Azure private endpoint Resource ID / resourceGuid
+clickhousectl cloud service private-endpoint get-config <service-id>
+clickhousectl cloud service private-endpoint create <service-id> --endpoint-id <endpoint-id>
+
+# Backup configuration
+clickhousectl cloud service backup-config get <service-id>
+clickhousectl cloud service backup-config update <service-id> --backup-period-hours 24
+clickhousectl cloud service backup-config update <service-id> \
+  --backup-start-time 02:00 --backup-period-hours 24
+clickhousectl cloud service backup-config update <service-id> --clear-backup-start-time
+
+# Prometheus metrics for a service (always raw Prometheus exposition text)
+clickhousectl cloud service prometheus <service-id>
 ```
 
-<div id="api-keys">
-  ### APIキー
-</div>
+`--backup-start-time` はちょうど正時 (`HH:00`) でなければならず、API 呼び出しの前に CLI によって検証されます。また、バックアップ間隔が `24` または `48` 時間である必要があります。同じコマンド内で `--backup-period-hours 24` または `--backup-period-hours 48` を指定するか、いずれかがすでに保存済みである必要があります。それ以外の間隔が保存されている場合、CLI は API を呼び出す前に処理を拒否し、`Error: the stored backup period is 12 hours, but --backup-start-time requires 24 or 48.` を返します。
 
-```bash
-clickhousectl cloud key list
-clickhousectl cloud key create --name ci-key --role-id <role-id>
-clickhousectl cloud key delete <key-id>
-```
+`--clear-backup-start-time` は保存された開始時刻を削除し、この制限を解除します。`--backup-period-hours` と組み合わせれば、開始時刻の消去と任意の間隔の設定を 1 回の呼び出しで行えます。このオプションは `--backup-start-time` と競合します。
 
-<div id="members-and-invitations">
-  ### メンバーと招待
-</div>
-
-```bash
-clickhousectl cloud member list
-clickhousectl cloud invitation create --email dev@example.com --role-id <role-id>
-```
-
-<div id="backups">
-  ### バックアップ
-</div>
+### バックアップ {#backups}
 
 ```bash
 clickhousectl cloud backup list <service-id>
 clickhousectl cloud backup get <service-id> <backup-id>
 ```
 
-<div id="json-output">
-  ### JSON 出力
-</div>
+バックアップをリストアするには、そのバックアップから新しいサービスを作成します: `clickhousectl cloud service create --name restored-service --backup-id <backup-id>`。
+
+### ClickPipes {#clickpipes}
+
+Cloud サービスへデータを取り込むための [ClickPipes](/ja/integrations/clickpipes) を管理します。ほとんどのコマンドは、第一引数としてサービス ID を受け取ります。
+
+```bash
+# List pipes and get details
+clickhousectl cloud clickpipe list <service-id>
+clickhousectl cloud clickpipe get <service-id> <clickpipe-id>
+
+# Create a pipe. Sources: object-storage, kafka, kinesis, pubsub,
+# postgres, mysql, mongodb, bigquery
+clickhousectl cloud clickpipe create object-storage <service-id> \
+  --name my-pipe \
+  --source-url 'https://bucket.s3.us-east-1.amazonaws.com/data/*.json' \
+  --format JSONEachRow \
+  --database default \
+  --table events
+
+# A Postgres pipe needs at least one --table-mapping or --table-mapping-json
+clickhousectl cloud clickpipe create postgres <service-id> \
+  --name my-cdc-pipe \
+  --host pg.example.com \
+  --pg-database appdb \
+  --username replicator \
+  --password <password> \
+  --table-mapping public.orders:orders \
+  --sync-interval-seconds 30 \
+  --ca-certificate ./source-ca.pem
+
+# Lifecycle
+clickhousectl cloud clickpipe start <service-id> <clickpipe-id>
+clickhousectl cloud clickpipe stop <service-id> <clickpipe-id>
+clickhousectl cloud clickpipe resync <service-id> <clickpipe-id>   # CDC pipes only
+clickhousectl cloud clickpipe delete <service-id> <clickpipe-id>
+
+# Scaling and settings. scale requires at least one of
+# --replicas, --cpu-millicores, or --memory-gb
+clickhousectl cloud clickpipe scale <service-id> <clickpipe-id> --replicas 2
+clickhousectl cloud clickpipe settings get <service-id> <clickpipe-id>
+clickhousectl cloud clickpipe settings update <service-id> <clickpipe-id>
+
+# Discover a source schema without creating a pipe (beta)
+clickhousectl cloud clickpipe schema-discover <service-id> kafka [options]
+clickhousectl cloud clickpipe schema-discover <service-id> kinesis [options]
+clickhousectl cloud clickpipe schema-discover <service-id> object-storage [options]
+clickhousectl cloud clickpipe schema-discover <service-id> pubsub [options]
+
+# Reverse private endpoints: AWS PrivateLink, Amazon MSK multi-VPC,
+# Google Private Service Connect
+clickhousectl cloud clickpipe reverse-private-endpoint list <service-id>
+clickhousectl cloud clickpipe reverse-private-endpoint get <service-id> <endpoint-id>
+clickhousectl cloud clickpipe reverse-private-endpoint create <service-id> \
+  --type VPC_ENDPOINT_SERVICE \
+  --description 'kafka source' \
+  --vpc-endpoint-service-name <vpc-endpoint-service-name>
+clickhousectl cloud clickpipe reverse-private-endpoint update <service-id> <endpoint-id> \
+  --custom-private-dns-mapping pg.internal.example.com
+clickhousectl cloud clickpipe reverse-private-endpoint delete <service-id> <endpoint-id>
+```
+
+知っておくべき事項:
+
+* `clickpipe create postgres` では、`--table-mapping <schema.table:target_table>` (繰り返し指定可能、1 フラグにつき 1 テーブル) または `--table-mapping-json <json>` のいずれかが必要です。両者を併用することもできます。JSON 形式は API のテーブルマッピングオブジェクトをそのまま受け取るもので、`excludedColumns`、`sortingKeys`、`partitionByExpr`、`partitionKey`、`tableEngine` を設定できる唯一の手段です。なお、`partitionKey` は並列度を高めるために初期スナップショットを分割するものであり、宛先テーブルの `PARTITION BY` (こちらは `partitionByExpr`) とは無関係です。`--iam-role` は `--auth IAM_ROLE` と併用する場合に必須で、基本認証と併用した場合は拒否されます。また `--replication-slot-name` は `--replication-mode cdc_only` の場合にのみ有効です。
+* Postgres の CDC (変更データキャプチャ) 設定はパイプの作成時に適用されます: `--sync-interval-seconds`、`--pull-batch-size`、`--initial-load-parallelism`、`--snapshot-rows-per-partition`、`--snapshot-parallel-tables`、`--allow-nullable-columns`、`--enable-failover-slots`、`--delete-on-merge`。後から変更できるのは同期間隔と Pull バッチサイズのみで、スナップショットおよび初期ロードの設定は変更できません。
+* `clickpipe create` のいずれのサブコマンドでも、`--role <role>` は繰り返し指定可能で、パイプの宛先ユーザーに付与する ClickHouse ロールを選択します。これは、そのユーザーが本来受け取るロールを置き換えるものです。`--role` を指定しない場合、ユーザーは `clickpipes_system` と `default_role` を保持し、`--role my_role` を指定した場合は `clickpipes_system` と `my_role` を保持します。このロールは宛先データベースにテーブルを作成できる必要があり、閲覧のみのロールでは作成が `Not enough privileges` で失敗します。API の予約名である `clickpipes` および `clickpipes_system` は拒否されます。
+* Postgres ソースでは TLS と証明書検証がデフォルトで有効です。公的に信頼された証明書チェーンのソースであれば CA ファイルは不要です。プライベートまたは自己署名のソース CA の場合は、その PEM バンドルを `--ca-certificate <path>` で渡してください。ClickHouse Cloud Postgres をソースとする場合は、`clickhousectl cloud postgres certs get` でそのバンドルを取得します。ホスト名の検証には `--host` が使用されますが、`--tls-host <hostname>` を指定すると上書きされます。
+* Kafka および Kinesis のパイプでは、`--auth` を省略すると認証情報のフラグから推測されます。認証情報のフラグを一切指定しない場合、認証は送信されません。
+* `clickpipe settings` が対象とするのは、ストリーミング (Kafka、Kinesis) およびオブジェクトストレージのパイプのインジェスト設定のみで、Kafka 以外のパイプでは Kafka 専用の設定は省略されます。データベース CDC (変更データキャプチャ) パイプ (Postgres、MySQL、MongoDB、BigQuery) にはインジェスト設定がありません。これらに対して `settings get` を実行すると終了コード 1 で終了し、`clickhousectl cloud clickpipe get <service-id> <clickpipe-id>` が案内されます。同期間隔と Pull バッチサイズはこのコマンドで確認できます。
+* パイプが利用できるのは `Ready` ステータスに達した Reverse Private Endpoint のみです。AWS PrivateLink endpoint は、ソースを所有するアカウントで接続リクエストが承認されるまで `PendingAcceptance` のままとなります。Kafka のパイプは `--reverse-private-endpoint-id` (繰り返し指定可能) で endpoint を ID により参照します。Postgres および MySQL の CDC (変更データキャプチャ) パイプでは、endpoint の `dnsNames` のいずれかを `--host` として渡します。
+* Google Cloud Pub/Sub のパイプはリミテッドプレビュー段階です。作成する前に、サポートに連絡して組織向けに機能を有効化してもらってください。`--service-account-file` には GCP サービスアカウントの JSON キーのパスを指定するか、`-` を指定して標準入力からキーを読み込みます。キーをインラインで指定することはできないため、プロセス一覧やシェル履歴に残ることはありません。
+
+### Postgres サービス (ベータ) {#postgres-services}
+
+[ClickHouse Cloud Postgres](/ja/products/managed-postgres/overview) サービスを作成・管理します。
+
+```bash
+# List Postgres services, optionally filtering client-side.
+# Filter keys: state, region, name, provider, isPrimary
+clickhousectl cloud postgres list
+clickhousectl cloud postgres list --filter state=running --filter isPrimary=true
+
+# Create a Postgres service
+clickhousectl cloud postgres create \
+  --name my-pg \
+  --region us-east-1 \
+  --size m7i.2xlarge \
+  --pg-version 18
+
+# Get service details
+clickhousectl cloud postgres get <pg-id>
+
+# Update a service
+clickhousectl cloud postgres update <pg-id> --size m7i.4xlarge --add-tag env=prod
+
+# Reset the password (exactly one of --password or --generate)
+clickhousectl cloud postgres reset-password <pg-id> --generate
+
+# Runtime configuration (postgresql.conf + PgBouncer) and CA certificates.
+# config patch takes exactly one of --set (repeatable) or --file
+clickhousectl cloud postgres config get <pg-id>
+clickhousectl cloud postgres config patch <pg-id> --set max_connections=500
+clickhousectl cloud postgres config replace <pg-id> --file config.json
+clickhousectl cloud postgres certs get <pg-id>
+
+# Read replicas, failover, and point-in-time restore
+clickhousectl cloud postgres read-replica create <pg-id> --name replica-1
+clickhousectl cloud postgres promote <replica-id> --wait
+clickhousectl cloud postgres switchover <pg-id> --wait
+clickhousectl cloud postgres restore <pg-id> --name restored --restore-target 2026-04-16T12:00:00Z
+
+# Restart a service
+clickhousectl cloud postgres restart <pg-id>
+
+# Delete a service
+clickhousectl cloud postgres delete <pg-id>
+```
+
+知っておくべき点:
+
+* `--provider` のデフォルトは `aws` です。`gcp` も指定でき、その場合は `c4-standard-4` などの GCP マシンサイズを使用します。`--size` は CLI ではなく Cloud API で検証されるため、サポートされていないサイズはサーバー側ではじめて拒否されます。
+* ロールの変更は結果整合性であり、API は `promote` と `switchover` を実際に適用する前に受理を返します。そのため、終了コードが 0 であることだけではロールが変更されたとは確認できません。どちらのコマンドも `--wait` を指定すると、対象が新しいロールを報告するまでポーリングし、`--wait-timeout <seconds>`(デフォルト 300)でポーリングの上限時間を指定できます。切り替え前のプライマリは、その後も数分間 `isPrimary=true` を報告し続けることがあるため、`clickhousectl cloud postgres list --filter isPrimary=true` でプライマリのサービスがちょうど 1 つであることを確認してください。
+* `postgres delete` は `running` を含むあらゆる状態から実行できるため、事前にサービスを停止する必要はありません。
+
+### 組織 {#organizations}
+
+```bash
+clickhousectl cloud org list
+clickhousectl cloud org get <org-id>
+clickhousectl cloud org update <org-id> --name new-name
+clickhousectl cloud org prometheus
+clickhousectl cloud org usage --from-date 2026-08-01 --to-date 2026-08-31
+```
+
+### API キー {#api-keys}
+
+```bash
+clickhousectl cloud key list
+clickhousectl cloud key get <key-id>
+clickhousectl cloud key create --name ci-key --role-id <role-id>
+clickhousectl cloud key update <key-id>
+clickhousectl cloud key delete <key-id>
+```
+
+### メンバーと招待 {#members-and-invitations}
+
+```bash
+clickhousectl cloud member list
+clickhousectl cloud member get <user-id>
+clickhousectl cloud member update <user-id> --role-id <role-id>
+clickhousectl cloud member remove <user-id>
+
+clickhousectl cloud invitation list
+clickhousectl cloud invitation create --email dev@example.com --role-id <role-id>
+clickhousectl cloud invitation get <invitation-id>
+clickhousectl cloud invitation delete <invitation-id>
+```
+
+### アクティビティログ {#activity-log}
+
+```bash
+clickhousectl cloud activity list --from-date 2026-08-01 --to-date 2026-08-31
+clickhousectl cloud activity get <activity-id>
+```
+
+### JSON 出力 {#json-output}
 
 任意の cloud コマンドで JSON 形式のレスポンスを取得するには、`--json` フラグを使用します。
 
 ```bash
-clickhousectl cloud --json service list
+clickhousectl cloud service list --json
 ```
 
-<div id="local-development">
-  ## ローカル開発
-</div>
+`org prometheus` および `service prometheus` コマンドは例外で、常に生の Prometheus exposition テキストを出力し、`--json` は黙って無視されます。
 
-CLI は、ローカルの ClickHouse インストールやサーバーの管理にも対応しています。ローカル開発を始めるには、[clickhousectl (CLI)](/ja/get-started/setup/self-managed/clickhousectl) ページを参照してください。
+## ローカル開発 {#local-development}
 
-<div id="requirements">
-  ## 要件
-</div>
+CLI は、ローカルの ClickHouse インストール、ローカルサーバー、Docker ベースのローカル Postgres インスタンスの管理も行えます。ローカル開発を始めるには、[clickhousectl (CLI)](/ja/get-started/setup/self-managed/clickhousectl) ページを参照してください。
+
+```bash
+# Manage installed ClickHouse versions. install also accepts stable, lts,
+# a partial version like 25.12, an exact version, or a Postgres image
+# selector like postgres@18
+clickhousectl local install latest
+clickhousectl local list
+clickhousectl local use <version>
+clickhousectl local which
+clickhousectl local remove <exact-version>
+
+# Scaffold a project (.clickhouse/ plus clickhouse/ and postgres/ directories)
+clickhousectl local init
+
+# Manage local server instances (data persists in .clickhouse/servers/)
+clickhousectl local server start [name]
+clickhousectl local server list          # --global lists servers across projects
+clickhousectl local server stop [name]
+clickhousectl local server stop-all
+clickhousectl local server remove [name]
+clickhousectl local server configs       # named overlays for `server start --config`
+clickhousectl local server dotenv
+
+# Connect to a running server with clickhouse-client
+clickhousectl local client -q 'SELECT 1;'
+clickhousectl local client --host db.example.com --port 9000 --version 25.12
+
+# Local Postgres instances (requires Docker)
+clickhousectl local postgres start --name <name>
+clickhousectl local postgres client
+clickhousectl local postgres stop [name]
+clickhousectl local postgres stop-all
+clickhousectl local postgres remove [name]
+clickhousectl local postgres dotenv
+```
+
+知っておくべき事項:
+
+* `local` コマンドはプロジェクト単位のスコープを持ちます。現在の作業ディレクトリ直下の `.clickhouse` ディレクトリを使用し、親ディレクトリをたどって検索することはありません。実行前にプロジェクトルートへ移動してください。
+* `clickhousectl local use` は `~/.local/bin/clickhouse` へのシンボリックリンクも作成し、`clickhouse client`、`clickhouse benchmark`、`clickhouse format` といった標準サブコマンドを直接利用できるようにします。シンボリックリンクの作成をスキップするには `--no-global` を指定します。
+* `local remove` にはインストール済みのバージョンを正確に指定します。いずれかのプロジェクトで稼働中のサーバーが使用しているバージョン、および現在のデフォルトになっているバージョンは削除できません。`--force` を指定すると、それらのサーバーを停止したうえで、デフォルト設定とグローバルシンボリックリンクを解除します。
+* 名前を指定しない場合、`local server stop` は `default` が存在すればそれを停止し、存在しなければ唯一認識されているサーバーを停止します。デフォルト以外のサーバーが複数ある場合は名前の指定を求めます。名前を指定しない `local server remove` は既存の `default` のみを選択対象とし、カスタムサーバーを推測して選ぶことはありません。
+* `local client` は、ホスト/ポートを直接指定するモードで `-v`/`--version` によりインストール済みのクライアントバージョンを選択でき、`-q` を繰り返し指定することで複数のクエリを渡せるほか、`--queries-file` には複数のパスを指定できます。`--query` と `--queries-file` の併用は使用方法の誤りとなります。
+* `local postgres start` は PostgreSQL が接続を受け付けるまでブロックします。待機時間の上限は `--wait-timeout` 秒です(デフォルト 60、最大 600)。`--port` を省略した場合、5432 が空いていればそれを使用し、空いていなければポートを自動選択します。明示的に指定したポートが既に使用中の場合は拒否されます。
+
+## その他のコマンド {#other-commands}
+
+```bash
+# Install the ClickHouse agent skills into supported coding agents
+clickhousectl skills --agent claude
+
+# Manage anonymous usage telemetry: command name, flag and argument names
+# (never their values). Opt out with DO_NOT_TRACK=1
+clickhousectl telemetry status
+clickhousectl telemetry disable
+clickhousectl telemetry enable
+```
+
+## 要件 {#requirements}
 
 * macOS (aarch64、x86&#95;64) または Linux (aarch64、x86&#95;64)
-* Cloud コマンドの実行には [ClickHouse Cloud API key](/ja/products/cloud/features/admin-features/api/openapi) が必要です
+* Cloud コマンドで書き込みアクセスを行うには [ClickHouse Cloud API キー](/ja/products/cloud/features/admin-features/api/openapi) が必要です。OAuth ログインは read-only です
+* `clickhousectl local postgres` には Docker が必要です

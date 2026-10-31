@@ -78,6 +78,7 @@ RowInputFormatWithNamesAndTypes<FormatReaderImpl>::RowInputFormatWithNamesAndTyp
     , allow_variable_number_of_columns(allow_variable_number_of_columns_)
 {
     column_indexes_by_names.initFromBlock(getPort().getHeader());
+    format_reader->setDataTypes(data_types);
 }
 
 template <typename FormatReaderImpl>
@@ -86,7 +87,8 @@ void RowInputFormatWithNamesAndTypes<FormatReaderImpl>::readPrefix()
     /// Search and remove BOM only in textual formats (CSV, TSV etc), not in binary ones (RowBinary*).
     /// Also, we assume that column name or type cannot contain BOM, so, if format has header,
     /// then BOM at beginning of stream cannot be confused with name or type of field, and it is safe to skip it.
-    if (!is_binary && (with_names || with_types || data_types.at(0)->textCanContainOnlyValidUTF8()))
+    /// The same applies if the header can be detected automatically, because the first row can be a header.
+    if (!is_binary && (with_names || with_types || try_detect_header || data_types.at(0)->textCanContainOnlyValidUTF8()))
     {
         skipBOMIfExists(*in);
     }
@@ -277,7 +279,8 @@ bool RowInputFormatWithNamesAndTypes<FormatReaderImpl>::readRow(MutableColumns &
                     data_types[*column_index],
                     serializations[*column_index],
                     is_last_file_column,
-                    column_mapping->names_of_columns[file_column]);
+                    column_mapping->names_of_columns[file_column],
+                    *column_index);
             else
                 format_reader->skipField(file_column);
         }
@@ -307,7 +310,8 @@ bool RowInputFormatWithNamesAndTypes<FormatReaderImpl>::readRow(MutableColumns &
                     data_types[*column_index],
                     serializations[*column_index],
                     is_last_file_column,
-                    column_mapping->names_of_columns[file_column]);
+                    column_mapping->names_of_columns[file_column],
+                    *column_index);
             else
                 format_reader->skipField(file_column);
         }
@@ -367,7 +371,7 @@ void RowInputFormatWithNamesAndTypes<FormatReaderImpl>::tryDeserializeField(cons
     {
         format_reader->checkNullValueForNonNullable(type);
         const bool is_last_file_column = file_column + 1 == column_mapping->column_indexes_for_input_fields.size();
-        format_reader->readField(column, type, serializations[*index], is_last_file_column, column_mapping->names_of_columns[file_column]);
+        format_reader->readField(column, type, serializations[*index], is_last_file_column, column_mapping->names_of_columns[file_column], *index);
     }
     else
     {
@@ -449,7 +453,8 @@ FormatWithNamesAndTypesSchemaReader::FormatWithNamesAndTypesSchemaReader(
 
 NamesAndTypesList FormatWithNamesAndTypesSchemaReader::readSchema()
 {
-    if (with_names || with_types)
+    /// The first row can be a header, so a BOM before it is skipped, see `RowInputFormatWithNamesAndTypes::readPrefix`.
+    if (with_names || with_types || try_detect_header)
         skipBOMIfExists(in);
 
     format_reader->skipPrefixBeforeHeader();

@@ -1,0 +1,40 @@
+globalIn
+Nullable(UInt8)	1
+globalNotIn
+Nullable(UInt8)	0
+globalNullIn
+Nullable(UInt8)	1
+globalNotNullIn
+Nullable(UInt8)	0
+empty set
+Nullable(UInt8)	0
+low cardinality left
+LowCardinality(Nullable(UInt8))	1
+control low cardinality result type
+LowCardinality(Nullable(UInt8))	1
+control local in
+Nullable(UInt8)	1
+control no group_by_use_nulls
+UInt8	1
+control subquery set
+Nullable(UInt8)	1
+super-aggregate row, IN
+1	2
+\N	2
+super-aggregate row, GLOBAL IN
+1	2
+\N	2
+non-constant left, IN
+0	1
+1	1
+\N	2
+non-constant left, GLOBAL IN
+0	1
+1	1
+\N	2
+GROUPING(), IN
+1	0	2
+\N	1	2
+GROUPING(), GLOBAL IN
+1	0	2
+\N	1	2

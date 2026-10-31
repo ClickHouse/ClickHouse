@@ -86,7 +86,7 @@ echo "=== Test 7: String aggregate function - array format ==="
 ${CLICKHOUSE_CLIENT} -q "
 SET aggregate_function_input_format = 'array';
 TRUNCATE TABLE 03645_test_agg_string;
-INSERT INTO 03645_test_agg_string VALUES (302, '[\"apple\",\"banana\",\"cherry\"]'), (303, '[\"dog\",\"cat\",\"dog\"]');
+INSERT INTO 03645_test_agg_string VALUES (302, ['apple', 'banana', 'cherry']), (303, ['dog', 'cat', 'dog']);
 SELECT user_id, uniqMerge(unique_strings) FROM 03645_test_agg_string GROUP BY user_id ORDER BY user_id;
 "
 
@@ -134,14 +134,10 @@ SELECT user_id, avgMerge(avg_session_length) FROM 03645_test_agg_single WHERE us
 echo "$out2"
 
 echo "=== Test 12: CSV format - value ==="
-${CLICKHOUSE_CLIENT} -q "
-SET aggregate_function_input_format = 'value';
-TRUNCATE TABLE 03645_test_agg_single;
-INSERT INTO 03645_test_agg_single FORMAT CSV
-700,456;
-
-SELECT user_id, avgMerge(avg_session_length) FROM 03645_test_agg_single WHERE user_id = 700 GROUP BY user_id;
-"
+${CLICKHOUSE_CLIENT} -q "TRUNCATE TABLE 03645_test_agg_single"
+${CLICKHOUSE_CLIENT} --aggregate_function_input_format=value -q "INSERT INTO 03645_test_agg_single FORMAT CSV
+700,456"
+${CLICKHOUSE_CLIENT} -q "SELECT user_id, avgMerge(avg_session_length) FROM 03645_test_agg_single WHERE user_id = 700 GROUP BY user_id;"
 
 echo "=== Test 13: CSV format - array ==="
 echo '701,"[100,200,300]"' | ${CLICKHOUSE_CLIENT} -q "
@@ -152,31 +148,23 @@ INSERT INTO 03645_test_agg_single FORMAT CSV
 ${CLICKHOUSE_CLIENT} -q "SELECT user_id, avgMerge(avg_session_length) FROM 03645_test_agg_single WHERE user_id = 701 GROUP BY user_id;"
 
 echo "=== Test 14: TabSeparated format - value ==="
-${CLICKHOUSE_CLIENT} -q "
-SET aggregate_function_input_format = 'value';
-TRUNCATE TABLE 03645_test_agg_single;
-INSERT INTO 03645_test_agg_single FORMAT TabSeparated
-702	789;"
-
-${CLICKHOUSE_CLIENT} -q "SELECT user_id, avgMerge(avg_session_length) FROM 03645_test_agg_single WHERE user_id = 702 GROUP BY user_id;
-"
+${CLICKHOUSE_CLIENT} -q "TRUNCATE TABLE 03645_test_agg_single"
+${CLICKHOUSE_CLIENT} --aggregate_function_input_format=value -q "INSERT INTO 03645_test_agg_single FORMAT TabSeparated
+702	789"
+${CLICKHOUSE_CLIENT} -q "SELECT user_id, avgMerge(avg_session_length) FROM 03645_test_agg_single WHERE user_id = 702 GROUP BY user_id;"
 
 echo "=== Test 15: TabSeparated format - array ==="
-${CLICKHOUSE_CLIENT} -q "
-SET aggregate_function_input_format = 'array';
-TRUNCATE TABLE 03645_test_agg_single;
-INSERT INTO 03645_test_agg_single FORMAT TabSeparated
-703	[400,500,600];"
-
-${CLICKHOUSE_CLIENT} -q "SELECT user_id, avgMerge(avg_session_length) FROM 03645_test_agg_single WHERE user_id = 703 GROUP BY user_id;
-"
+${CLICKHOUSE_CLIENT} -q "TRUNCATE TABLE 03645_test_agg_single"
+${CLICKHOUSE_CLIENT} --aggregate_function_input_format=array -q "INSERT INTO 03645_test_agg_single FORMAT TabSeparated
+703	[400,500,600]"
+${CLICKHOUSE_CLIENT} -q "SELECT user_id, avgMerge(avg_session_length) FROM 03645_test_agg_single WHERE user_id = 703 GROUP BY user_id;"
 
 echo "=== Test 16: JSONEachRow format - value ==="
 ${CLICKHOUSE_CLIENT} -q "
 SET aggregate_function_input_format = 'value';
 TRUNCATE TABLE 03645_test_agg_single;
 INSERT INTO 03645_test_agg_single FORMAT JSONEachRow
-{\"user_id\": 704, \"avg_session_length\": \"999\"};"
+{\"user_id\": 704, \"avg_session_length\": 999};"
 
 ${CLICKHOUSE_CLIENT} -q " SELECT user_id, avgMerge(avg_session_length) FROM 03645_test_agg_single WHERE user_id = 704 GROUP BY user_id;
 "
@@ -186,7 +174,7 @@ ${CLICKHOUSE_CLIENT} -q "
 SET aggregate_function_input_format = 'array';
 TRUNCATE TABLE 03645_test_agg_single;
 INSERT INTO 03645_test_agg_single FORMAT JSONEachRow
-{\"user_id\": 705, \"avg_session_length\": \"[700,800,900]\"};"
+{\"user_id\": 705, \"avg_session_length\": [700,800,900]};"
 
 ${CLICKHOUSE_CLIENT} -q "SELECT user_id, avgMerge(avg_session_length) FROM 03645_test_agg_single WHERE user_id = 705 GROUP BY user_id;
 "
@@ -196,8 +184,8 @@ ${CLICKHOUSE_CLIENT} -q "
 SET aggregate_function_input_format = 'value';
 TRUNCATE TABLE 03645_test_agg_single;
 INSERT INTO 03645_test_agg_single FORMAT JSONEachRow
-{\"user_id\": 706, \"avg_session_length\": \"111\"}
-{\"user_id\": 707, \"avg_session_length\": \"222\"};"
+{\"user_id\": 706, \"avg_session_length\": 111}
+{\"user_id\": 707, \"avg_session_length\": 222};"
 
 ${CLICKHOUSE_CLIENT} -q "SELECT user_id, avgMerge(avg_session_length) FROM 03645_test_agg_single GROUP BY user_id ORDER BY user_id;
 "

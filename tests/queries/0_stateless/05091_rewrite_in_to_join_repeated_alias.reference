@@ -1,0 +1,12 @@
+the same aliased IN twice in the projection
+0	0
+1	1
+and nested in a condition
+22
+in a WHERE next to itself
+1
+two different subqueries under different aliases
+0	0
+1	0
+0	1
+a repeated alias over different expressions

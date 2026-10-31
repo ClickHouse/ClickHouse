@@ -1,1076 +1,799 @@
 ---
 sidebarTitle: '指南'
 slug: /integrations/dbt/guides
-description: 'dbt 与 ClickHouse 使用指南'
-keywords: ['clickhouse', 'dbt', '指南']
+description: '在 ClickHouse 中使用 dbt 的指南'
+keywords: ['clickhouse', 'dbt', 'guides', 'jaffle shop']
 title: '指南'
 doc_type: 'guide'
 ---
-
-import { Image } from "/snippets/zh/components/Image.jsx";
 
 import { ClickHouseSupportedBadge } from "/snippets/zh/components/ClickHouseSupported/ClickHouseSupported.jsx";
 
 <ClickHouseSupportedBadge />
 
-本节提供了有关设置 dbt 和 ClickHouse 适配器的指南，并通过一个公开可用的 IMDB 数据集示例说明如何将 dbt 与 ClickHouse 配合使用。该示例涵盖以下步骤：
+本指南借助 [Jaffle Shop for ClickHouse](https://github.com/ClickHouse/jaffle-shop-clickhouse) 项目 (dbt Labs 经典示例项目的 ClickHouse 移植版) ，介绍 dbt 中 ClickHouse 特有的部分。指南以一个已能正常构建的项目为起点，展示如何：
 
-1. 创建 dbt 项目并设置 ClickHouse 适配器。
-2. 定义模型。
-3. 更新模型。
-4. 创建增量模型。
-5. 创建快照模型。
-6. 使用 materialized view。
+1. 理解项目中的 view 和表在 ClickHouse 中以何种形式呈现。
+2. 使用 seed 加载数据，并控制 ClickHouse 类型和表的 layout。
+3. 为 table 模型配置 ClickHouse engine、sorting key 和 partitioning。
+4. 将 table 转换为 incremental 模型，并选择合适的 incremental strategy。
+5. 创建 snapshot。
+6. 使用 ClickHouse materialized view。
 
-这些指南应结合其余[文档](/zh/integrations/connectors/data-ingestion/etl-tools/dbt/index)、[功能和配置](/zh/integrations/connectors/data-ingestion/etl-tools/dbt/features-and-configurations)以及[物化类型参考](/zh/integrations/connectors/data-ingestion/etl-tools/dbt/materializations)一并使用。
+本指南适合与其余[文档](/zh/integrations/connectors/data-ingestion/etl-tools/dbt/index)、[features and configurations](/zh/integrations/connectors/data-ingestion/etl-tools/dbt/features-and-configurations) 页面以及[物化类型参考](/zh/integrations/connectors/data-ingestion/etl-tools/dbt/materializations)配合阅读。
 
-<div id="setup">
-  ## 设置
-</div>
+## 开始之前 {#before-you-start}
 
-请按照 [dbt 和 ClickHouse 适配器 的设置](/zh/integrations/connectors/data-ingestion/etl-tools/dbt/index) 部分中的说明准备环境。
+请先按照 [ClickHouse/jaffle-shop-clickhouse](https://github.com/ClickHouse/jaffle-shop-clickhouse) 的 README 操作。其中说明了如何使用 dbt Core 1.x、dbt OSS、dbt v2 或 dbt 平台搭建该项目，如何将其指向本地 ClickHouse (docker) 或 ClickHouse Cloud，如何使用 `dbt seed` 加载示例数据，以及如何执行首次 `dbt build`。`dbt build` 成功完成后，再回到本页查看 ClickHouse 特有的示例和配置。
 
-**重要提示：以下内容已在 Python 3.9 下测试。**
+完成 README 中的步骤后，ClickHouse 中应当有两个数据库：
 
-<div id="prepare-clickhouse">
-  ### 准备 ClickHouse
-</div>
+* `raw`：由 `dbt seed` 从 CSV file 加载的六张源表 (`raw_customers`、`raw_orders`、`raw_items`、`raw_products`、`raw_stores`、`raw_supplies`) 。
+* `jaffle_shop` (即你的 profile 中的 `schema`) ：六个暂存视图 (`stg_*`) 和七张 mart 表 (`customers`、`orders`、`order_items`、`products`、`locations`、`supplies`、`metricflow_time_spine`) 。
 
-dbt 在对高度关系型数据进行建模时表现出色。为便于说明，我们提供了一个小型 IMDB 数据集，其关系型 schema 如下所示。该数据集来自[关系型数据集 repository](https://relational.fit.cvut.cz/dataset/IMDb)。相较于 dbt 中常见的 schema，这个数据集非常简单，但作为一个易于处理的样本很合适：
+如果你的 profile 使用了其他 `schema`，请将下面查询中的 `jaffle_shop` 替换为你的实际取值。
 
-<Image img="/images/integrations/data-ingestion/etl-tools/dbt/dbt_01.webp" size="lg" alt="IMDB 表 schema" />
+<Note>
+  **dbt Core 1.x、dbt OSS、dbt v2 与 dbt 平台。** 本指南中的所有命令和模型在它们上都完全一致。这些示例已在 dbt Core 1.12 (搭配 `dbt-clickhouse` 1.10) 和 dbt OSS 2.0 上针对 ClickHouse 26.8 进行过测试；dbt v2 运行的是同一个 adapter，而 dbt 平台运行的是 dbt v2。文中展示的控制台输出来自 dbt Core 1.x，对于少数引擎行为存在差异的地方，文中会特别说明。有关 v2 adapter 的最新状态，请参阅 [dbt OSS、dbt v2 与 dbt 平台页面](/zh/integrations/connectors/data-ingestion/etl-tools/dbt/dbt-core-v2-fusion-and-platform)；若要在 dbt 平台上快速上手，请参阅 dbt 文档中的 [Connect ClickHouse](https://docs.getdbt.com/docs/platform/connect-data-platform/connect-clickhouse)。
+</Note>
 
-如图所示，我们使用其中部分表。
+所有非 dbt 命令的 SQL 语句都应直接在 ClickHouse 上执行，例如通过 `clickhouse client`、ClickHouse Cloud SQL 控制台或你习惯使用的 SQL 客户端。
 
-创建以下表：
+## 项目的物化方式 {#views-and-tables}
+
+Jaffle Shop 在 `dbt_project.yml` 中配置其物化类型：staging 模型为视图，marts 为表。
+
+```yaml
+models:
+  jaffle_shop:
+    staging:
+      +materialized: view
+    marts:
+      +materialized: table
+```
+
+**view** 模型在每次运行时都会通过 `CREATE OR REPLACE VIEW` 语句重新构建。它不存储任何数据，因此构建没有任何开销，但每次查询它时，都会针对源表执行该模型的 SQL。ClickHouse 会将模型编译后的 SQL 保存在视图定义中：
 
 ```sql
-CREATE DATABASE imdb;
+SHOW CREATE VIEW jaffle_shop.stg_orders;
+```
 
-CREATE TABLE imdb.actors
+```response
+CREATE VIEW jaffle_shop.stg_orders
 (
-    id         UInt32,
-    first_name String,
-    last_name  String,
-    gender     FixedString(1)
-) ENGINE = MergeTree ORDER BY (id, first_name, last_name, gender);
+    `order_id` String,
+    `location_id` String,
+    `customer_id` String,
+    ...
+    `ordered_at` DateTime
+)
+AS WITH
+    source AS
+    (
+        SELECT *
+        FROM raw.raw_orders
+    ),
+    renamed AS
+    (
+        SELECT
+            id AS order_id,
+            store_id AS location_id,
+            ...
+            dateTrunc('day', ordered_at) AS ordered_at
+        FROM source
+    )
+SELECT *
+FROM renamed
+```
 
-CREATE TABLE imdb.directors
-(
-    id         UInt32,
-    first_name String,
-    last_name  String
-) ENGINE = MergeTree ORDER BY (id, first_name, last_name);
+**table** 模型在每次运行时都会从头重建：adapter 会创建一张新表，使用该模型的 SQL 执行 `INSERT INTO ... SELECT`，然后以原子方式将其与上一版本互换。其查询性能远优于 view，代价是占用存储空间，且每次都要重建整张表。来看看 dbt 为 `orders` 这个 mart 创建的表：
 
-CREATE TABLE imdb.genres
-(
-    movie_id UInt32,
-    genre    String
-) ENGINE = MergeTree ORDER BY (movie_id, genre);
+```sql
+SHOW CREATE TABLE jaffle_shop.orders;
+```
 
-CREATE TABLE imdb.movie_directors
+```response
+CREATE TABLE jaffle_shop.orders
 (
-    director_id UInt32,
-    movie_id    UInt64
-) ENGINE = MergeTree ORDER BY (director_id, movie_id);
+    `order_id` String,
+    `location_id` String,
+    `customer_id` String,
+    ...
+    `customer_order_number` UInt64
+)
+ENGINE = MergeTree
+ORDER BY tuple()
+SETTINGS replicated_deduplication_window = '0', index_granularity = 8192
+```
 
-CREATE TABLE imdb.movies
-(
-    id   UInt32,
-    name String,
-    year UInt32,
-    rank Float32 DEFAULT 0
-) ENGINE = MergeTree ORDER BY (id, name, year);
+这里有两点是 ClickHouse 特有的。该模型没有声明表引擎，因此adapter使用 `MergeTree`；它也没有声明sorting key，因此adapter使用 `ORDER BY tuple()`，也就是数据完全不排序。对于示例项目来说这没什么问题，但在真实的表中，你应当明确指定这两项，这也正是后续几节要做的事情。[物化类型页面](/zh/integrations/connectors/data-ingestion/etl-tools/dbt/materializations)列出了adapter支持的所有表配置。
 
-CREATE TABLE imdb.roles
-(
-    actor_id   UInt32,
-    movie_id   UInt32,
-    role       String,
-    created_at DateTime DEFAULT now()
-) ENGINE = MergeTree ORDER BY (actor_id, movie_id);
+## 使用 seeds 加载数据 {#seeds}
+
+Jaffle Shop 使用 dbt [seeds](https://docs.getdbt.com/docs/build/seeds) 从 `seeds/jaffle-data` 目录下的 CSV 文件加载原始数据。Seeds 的用途是小型静态参考数据 (代码表、映射关系) ，而非向数据仓库批量加载数据；本项目只是为了方便才使用它，让你无需额外的摄取工具即可上手——这也是为什么除非传入 `--vars '{"load_source_data": true}'`，否则 seeds 默认处于禁用状态。
+
+即便如此，seeds 仍是了解 dbt 如何创建 ClickHouse 表的好切入点。dbt 会为每个 CSV 列推断列类型，而不同引擎推断出的类型有所差异：
+
+| CSV 值                 | dbt v1     | v2 引擎           |
+| --------------------- | ---------- | --------------- |
+| `700`                 | `Int32`    | `Int64`         |
+| `0.06`                | `Float32`  | `Float64`       |
+| `2024-09-01T15:01:00` | `DateTime` | `DateTime64(6)` |
+| `Philadelphia`        | `String`   | `String`        |
+
+当类型很重要时，请用 `column_types` 显式固定类型。本项目已在 `dbt_project.yml` 中对 `raw_stores` seed 的 `opened_at` 列这样处理：
+
+```yaml
+seeds:
+  jaffle_shop:
+    +schema: raw
+    jaffle-data:
+      +enabled: "{{ var('load_source_data', false) }}"
+      raw_stores:
+        +column_types:
+          opened_at: DateTime64(3)
+```
+
+Seed 同样支持 ClickHouse 表配置项 `engine`、`order_by` 和 `partition_by`。例如，若要让 `raw_orders` seed 按下单时间排序并按月分区，可在 CSV 文件旁添加一个属性文件 `seeds/jaffle-data/_raw_orders.yml`：
+
+```yaml
+seeds:
+  - name: raw_orders
+    config:
+      order_by: (ordered_at, id)
+      partition_by: toYYYYMM(ordered_at)
 ```
 
 <Note>
-  表 `roles` 中的 `created_at` 列默认值为 `now()`。稍后我们会用它来识别模型的增量更新——请参见[增量模型](#creating-an-incremental-materialization)。
+  这些 ClickHouse seed 配置应写在 properties 文件中，而不要放在 `dbt_project.yml` 的 `seeds:` 下，通过 `+order_by` 或 `+engine` 键来指定。dbt Core 1.x 两种写法都接受，但 dbt v2 只识别 properties 文件中的配置，并会拒绝 `dbt_project.yml` 中的这些键，报错 `Unrecognized key ... Custom keys must go under +meta`。
 </Note>
 
-我们使用 `s3` 函数从公共端点读取源数据，并将数据插入表中。运行以下命令来填充这些表：
+重新加载该 seed，并检查它生成的表：
 
-```sql
-INSERT INTO imdb.actors
-SELECT *
-FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/imdb/imdb_ijs_actors.tsv.gz', NOSIGN,
-'TSVWithNames');
-
-INSERT INTO imdb.directors
-SELECT *
-FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/imdb/imdb_ijs_directors.tsv.gz', NOSIGN,
-'TSVWithNames');
-
-INSERT INTO imdb.genres
-SELECT *
-FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/imdb/imdb_ijs_movies_genres.tsv.gz', NOSIGN,
-'TSVWithNames');
-
-INSERT INTO imdb.movie_directors
-SELECT *
-FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/imdb/imdb_ijs_movies_directors.tsv.gz', NOSIGN,
-        'TSVWithNames');
-
-INSERT INTO imdb.movies
-SELECT *
-FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/imdb/imdb_ijs_movies.tsv.gz', NOSIGN,
-'TSVWithNames');
-
-INSERT INTO imdb.roles(actor_id, movie_id, role)
-SELECT actor_id, movie_id, role
-FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/imdb/imdb_ijs_roles.tsv.gz', NOSIGN,
-'TSVWithNames');
+```bash
+dbt seed --select raw_orders --full-refresh --vars '{"load_source_data": true}'
 ```
 
-这些步骤的执行时间可能会因带宽而异，但每一步通常只需几秒钟即可完成。执行以下查询，计算每位演员的汇总信息，按电影出演次数从高到低排序，并确认数据已成功加载：
-
 ```sql
-SELECT id,
-       any(actor_name)          AS name,
-       uniqExact(movie_id)    AS num_movies,
-       avg(rank)                AS avg_rank,
-       uniqExact(genre)         AS unique_genres,
-       uniqExact(director_name) AS uniq_directors,
-       max(created_at)          AS updated_at
-FROM (
-         SELECT imdb.actors.id  AS id,
-                concat(imdb.actors.first_name, ' ', imdb.actors.last_name)  AS actor_name,
-                imdb.movies.id AS movie_id,
-                imdb.movies.rank AS rank,
-                genre,
-                concat(imdb.directors.first_name, ' ', imdb.directors.last_name) AS director_name,
-                created_at
-         FROM imdb.actors
-                  JOIN imdb.roles ON imdb.roles.actor_id = imdb.actors.id
-                  LEFT OUTER JOIN imdb.movies ON imdb.movies.id = imdb.roles.movie_id
-                  LEFT OUTER JOIN imdb.genres ON imdb.genres.movie_id = imdb.movies.id
-                  LEFT OUTER JOIN imdb.movie_directors ON imdb.movie_directors.movie_id = imdb.movies.id
-                  LEFT OUTER JOIN imdb.directors ON imdb.directors.id = imdb.movie_directors.director_id
-         )
-GROUP BY id
-ORDER BY num_movies DESC
-LIMIT 5;
+SHOW CREATE TABLE raw.raw_orders;
 ```
-
-返回结果应如下所示：
 
 ```response
-+------+------------+----------+------------------+-------------+--------------+-------------------+
-|id    |name        |num_movies|avg_rank          |unique_genres|uniq_directors|updated_at         |
-+------+------------+----------+------------------+-------------+--------------+-------------------+
-|45332 |Mel Blanc   |832       |6.175853582979779 |18           |84            |2022-04-26 14:01:45|
-|621468|Bess Flowers|659       |5.57727638854796  |19           |293           |2022-04-26 14:01:46|
-|372839|Lee Phelps  |527       |5.032976449684617 |18           |261           |2022-04-26 14:01:46|
-|283127|Tom London  |525       |2.8721716524875673|17           |203           |2022-04-26 14:01:46|
-|356804|Bud Osborne |515       |2.0389507108727773|15           |149           |2022-04-26 14:01:46|
-+------+------------+----------+------------------+-------------+--------------+-------------------+
-```
-
-在后续指南中，我们会将此查询转换为一个模型——并在 ClickHouse 中将其物化为 dbt 视图和表。
-
-<div id="connecting-to-clickhouse">
-  ## 连接到 ClickHouse
-</div>
-
-1. 创建一个 dbt 项目。在本例中，我们以 `imdb` source 为项目命名。出现提示时，选择 `clickhouse` 作为数据库 source。
-
-   ```bash
-   clickhouse-user@clickhouse:~$ dbt init imdb
-
-   16:52:40  Running with dbt=1.1.0
-   Which database would you like to use?
-   [1] clickhouse
-
-   (Don't see the one you want? https://docs.getdbt.com/docs/available-adapters)
-
-   Enter a number: 1
-   16:53:21  No sample profile found for clickhouse.
-   16:53:21
-   Your new dbt project "imdb" was created!
-
-   For more information on how to configure the profiles.yml file,
-   please consult the dbt documentation here:
-
-   https://docs.getdbt.com/docs/configure-your-profile
-   ```
-
-2. 使用 `cd` 进入项目目录：
-
-   ```bash
-   cd imdb
-   ```
-
-3. 此时，你需要使用自己选择的文本编辑器。在下面的示例中，我们使用常见的 VS Code。打开 IMDB 目录后，你应该会看到一组 yml 和 sql 文件：
-
-   <Image img="/images/integrations/data-ingestion/etl-tools/dbt/dbt_02.webp" size="lg" alt="新的 dbt 项目" />
-
-4. 更新你的 `dbt_project.yml` 文件，指定第一个模型 `actor_summary`，并将 profile 设为 `clickhouse_imdb`。
-
-   <Image img="/images/integrations/data-ingestion/etl-tools/dbt/dbt_03.webp" size="lg" alt="dbt profile" />
-
-   <Image img="/images/integrations/data-ingestion/etl-tools/dbt/dbt_04.webp" size="lg" alt="dbt profile" />
-
-5. 接下来，我们需要向 dbt 提供 ClickHouse 实例的 connection details。将以下内容添加到 `~/.dbt/profiles.yml` 中。
-
-   ```yml
-   clickhouse_imdb:
-     target: dev
-     outputs:
-       dev:
-         type: clickhouse
-         schema: imdb_dbt
-         host: localhost
-         port: 8123
-         user: default
-         password: ''
-         secure: False
-   ```
-
-   请注意，你需要修改 user 和 password。有关其他可用设置的说明，请参见[这里](https://github.com/silentsokolov/dbt-clickhouse#example-profile)。
-
-6. 在 IMDB 目录中，执行 `dbt debug` 命令，确认 dbt 是否能够连接到 ClickHouse。
-
-   ```bash
-   clickhouse-user@clickhouse:~/imdb$ dbt debug
-   17:33:53  Running with dbt=1.1.0
-   dbt version: 1.1.0
-   python version: 3.10.1
-   python path: /home/dale/.pyenv/versions/3.10.1/bin/python3.10
-   os info: Linux-5.13.0-10039-tuxedo-x86_64-with-glibc2.31
-   Using profiles.yml file at /home/dale/.dbt/profiles.yml
-   Using dbt_project.yml file at /opt/dbt/imdb/dbt_project.yml
-
-   Configuration:
-   profiles.yml file [OK found and valid]
-   dbt_project.yml file [OK found and valid]
-
-   Required dependencies:
-   - git [OK found]
-
-   Connection:
-   host: localhost
-   port: 8123
-   user: default
-   schema: imdb_dbt
-   secure: False
-   verify: False
-   Connection test: [OK connection ok]
-
-   All checks passed!
-   ```
-
-   确认响应中包含 `Connection test: [OK connection ok]`，表示连接成功。
-
-<div id="creating-a-simple-view-materialization">
-  ## 创建简单的视图物化
-</div>
-
-使用视图物化时，模型会在每次运行时通过 ClickHouse 中的 `CREATE VIEW AS` 语句重建为视图。这样无需额外存储数据，但查询速度会比表物化类型慢。
-
-1. 在 `imdb` 文件夹下，删除目录 `models/example`：
-
-   ```bash
-   clickhouse-user@clickhouse:~/imdb$ rm -rf models/example
-   ```
-
-2. 在 `models` 文件夹中的 `actors` 目录下创建一个新文件。这里创建的每个文件都对应一个 actor 模型：
-
-   ```bash
-   clickhouse-user@clickhouse:~/imdb$ mkdir models/actors
-   ```
-
-3. 在 `models/actors` 文件夹中创建 `schema.yml` 和 `actor_summary.sql` 这两个文件。
-
-   ```bash
-   clickhouse-user@clickhouse:~/imdb$ touch models/actors/actor_summary.sql
-   clickhouse-user@clickhouse:~/imdb$ touch models/actors/schema.yml
-   ```
-
-   文件 `schema.yml` 定义了我们的表。之后，这些表就可以在 macro 中使用。编辑
-   `models/actors/schema.yml`，使其包含以下内容：
-
-   ```yml
-   version: 2
-
-   sources:
-   - name: imdb
-     tables:
-     - name: directors
-     - name: actors
-     - name: roles
-     - name: movies
-     - name: genres
-     - name: movie_directors
-   ```
-
-   `actors_summary.sql` 定义了实际的模型。请注意，在 `config` 函数中，我们还指定将该模型在 ClickHouse 中 materialize 为视图。我们的表是通过 `schema.yml` 文件中的 `source` 函数引用的，例如 `source('imdb', 'movies')` 指向 `imdb` database 中的 `movies` 表。将 `models/actors/actors_summary.sql` 编辑为以下内容：
-
-   ```sql
-   {{ config(materialized='view') }}
-
-   with actor_summary as (
-   SELECT id,
-       any(actor_name) as name,
-       uniqExact(movie_id)    as num_movies,
-       avg(rank)                as avg_rank,
-       uniqExact(genre)         as genres,
-       uniqExact(director_name) as directors,
-       max(created_at) as updated_at
-   FROM (
-           SELECT {{ source('imdb', 'actors') }}.id as id,
-                   concat({{ source('imdb', 'actors') }}.first_name, ' ', {{ source('imdb', 'actors') }}.last_name) as actor_name,
-                   {{ source('imdb', 'movies') }}.id as movie_id,
-                   {{ source('imdb', 'movies') }}.rank as rank,
-                   genre,
-                   concat({{ source('imdb', 'directors') }}.first_name, ' ', {{ source('imdb', 'directors') }}.last_name) as director_name,
-                   created_at
-           FROM {{ source('imdb', 'actors') }}
-                       JOIN {{ source('imdb', 'roles') }} ON {{ source('imdb', 'roles') }}.actor_id = {{ source('imdb', 'actors') }}.id
-                       LEFT OUTER JOIN {{ source('imdb', 'movies') }} ON {{ source('imdb', 'movies') }}.id = {{ source('imdb', 'roles') }}.movie_id
-                       LEFT OUTER JOIN {{ source('imdb', 'genres') }} ON {{ source('imdb', 'genres') }}.movie_id = {{ source('imdb', 'movies') }}.id
-                       LEFT OUTER JOIN {{ source('imdb', 'movie_directors') }} ON {{ source('imdb', 'movie_directors') }}.movie_id = {{ source('imdb', 'movies') }}.id
-                       LEFT OUTER JOIN {{ source('imdb', 'directors') }} ON {{ source('imdb', 'directors') }}.id = {{ source('imdb', 'movie_directors') }}.director_id
-           )
-   GROUP BY id
-   )
-
-   select *
-   from actor_summary
-   ```
-
-   请注意，我们在最终的 actor&#95;summary 中加入了 `updated_at` 列。后续会将其用于增量物化。
-
-4. 在 `imdb` 目录下执行命令 `dbt run`。
-
-   ```bash
-   clickhouse-user@clickhouse:~/imdb$ dbt run
-   15:05:35  Running with dbt=1.1.0
-   15:05:35  Found 1 model, 0 tests, 1 snapshot, 0 analyses, 181 macros, 0 operations, 0 seed files, 6 sources, 0 exposures, 0 metrics
-   15:05:35
-   15:05:36  Concurrency: 1 threads (target='dev')
-   15:05:36
-   15:05:36  1 of 1 START view model imdb_dbt.actor_summary.................................. [RUN]
-   15:05:37  1 of 1 OK created view model imdb_dbt.actor_summary............................. [OK in 1.00s]
-   15:05:37
-   15:05:37  Finished running 1 view model in 1.97s.
-   15:05:37
-   15:05:37  Completed successfully
-   15:05:37
-   15:05:37  Done. PASS=1 WARN=0 ERROR=0 SKIP=0 TOTAL=1
-   ```
-
-5. dbt 会按要求将该模型在 ClickHouse 中表示为一个视图。现在，我们可以直接查询该视图。该视图会创建在 `imdb_dbt` database 中——这是由 `clickhouse_imdb` profile 下 `~/.dbt/profiles.yml` 文件中的 schema parameter 决定的。
-
-   ```sql
-   SHOW DATABASES;
-   ```
-
-   ```response
-   +------------------+
-   |name              |
-   +------------------+
-   |INFORMATION_SCHEMA|
-   |default           |
-   |imdb              |
-   |imdb_dbt          |  <---由 dbt 创建！
-   |information_schema|
-   |system            |
-   +------------------+
-   ```
-
-   通过查询这个视图，我们可以用更简单的语法复现先前查询的结果：
-
-   ```sql
-   SELECT * FROM imdb_dbt.actor_summary ORDER BY num_movies DESC LIMIT 5;
-   ```
-
-   ```response
-   +------+------------+----------+------------------+------+---------+-------------------+
-   |id    |name        |num_movies|avg_rank          |genres|directors|updated_at         |
-   +------+------------+----------+------------------+------+---------+-------------------+
-   |45332 |Mel Blanc   |832       |6.175853582979779 |18    |84       |2022-04-26 15:26:55|
-   |621468|Bess Flowers|659       |5.57727638854796  |19    |293      |2022-04-26 15:26:57|
-   |372839|Lee Phelps  |527       |5.032976449684617 |18    |261      |2022-04-26 15:26:56|
-   |283127|Tom London  |525       |2.8721716524875673|17    |203      |2022-04-26 15:26:56|
-   |356804|Bud Osborne |515       |2.0389507108727773|15    |149      |2022-04-26 15:26:56|
-   +------+------------+----------+------------------+------+---------+-------------------+
-   ```
-
-<div id="creating-a-table-materialization">
-  ## 创建表物化
-</div>
-
-在前面的示例中，我们的模型被物化为视图。虽然这对某些查询来说可能已经足够快，但对于更复杂的 SELECT 查询或执行频繁的查询，将其物化为表通常更合适。对于会被 BI 工具查询的模型，这种物化方式尤其有用，能够确保用户获得更快的使用体验。它实际上会将查询结果存储为一张新表，并带来相应的存储开销——本质上就是执行一次 `INSERT TO SELECT`。请注意，这张表每次都会被重新构建，也就是说，它不是增量式的。因此，较大的结果集可能会导致较长的执行时间——请参阅 [dbt Limitations](/zh/integrations/connectors/data-ingestion/etl-tools/dbt/index#limitations)。
-
-1. 修改文件 `actors_summary.sql`，将 `materialized` 参数设置为 `table`。注意 `ORDER BY` 的定义方式，以及这里使用的是 `MergeTree` 表引擎：
-
-   ```sql
-   {{ config(order_by='(updated_at, id, name)', engine='MergeTree()', materialized='table') }}
-   ```
-
-2. 在 `imdb` 目录中执行命令 `dbt run`。此次执行可能会稍慢一些——在大多数机器上大约需要 10 秒。
-
-   ```bash
-   clickhouse-user@clickhouse:~/imdb$ dbt run
-   15:13:27  Running with dbt=1.1.0
-   15:13:27  Found 1 model, 0 tests, 1 snapshot, 0 analyses, 181 macros, 0 operations, 0 seed files, 6 sources, 0 exposures, 0 metrics
-   15:13:27
-   15:13:28  Concurrency: 1 threads (target='dev')
-   15:13:28
-   15:13:28  1 of 1 START table model imdb_dbt.actor_summary................................. [RUN]
-   15:13:37  1 of 1 OK created table model imdb_dbt.actor_summary............................ [OK in 9.22s]
-   15:13:37
-   15:13:37  Finished running 1 table model in 10.20s.
-   15:13:37
-   15:13:37  Completed successfully
-   15:13:37
-   15:13:37  Done. PASS=1 WARN=0 ERROR=0 SKIP=0 TOTAL=1
-   ```
-
-3. 确认表 `imdb_dbt.actor_summary` 已创建：
-
-   ```sql
-   SHOW CREATE TABLE imdb_dbt.actor_summary;
-   ```
-
-   你应该会看到包含相应数据类型的表：
-
-   ```response
-   +----------------------------------------
-   |statement
-   +----------------------------------------
-   |CREATE TABLE imdb_dbt.actor_summary
-   |(
-   |`id` UInt32,
-   |`first_name` String,
-   |`last_name` String,
-   |`num_movies` UInt64,
-   |`updated_at` DateTime
-   |)
-   |ENGINE = MergeTree
-   |ORDER BY (id, first_name, last_name)
-   +----------------------------------------
-   ```
-
-4. 确认该表返回的结果与之前的结果一致。注意，现在模型已物化为表，响应时间有了明显改善：
-
-   ```sql
-   SELECT * FROM imdb_dbt.actor_summary ORDER BY num_movies DESC LIMIT 5;
-   ```
-
-   ```response
-   +------+------------+----------+------------------+------+---------+-------------------+
-   |id    |name        |num_movies|avg_rank          |genres|directors|updated_at         |
-   +------+------------+----------+------------------+------+---------+-------------------+
-   |45332 |Mel Blanc   |832       |6.175853582979779 |18    |84       |2022-04-26 15:26:55|
-   |621468|Bess Flowers|659       |5.57727638854796  |19    |293      |2022-04-26 15:26:57|
-   |372839|Lee Phelps  |527       |5.032976449684617 |18    |261      |2022-04-26 15:26:56|
-   |283127|Tom London  |525       |2.8721716524875673|17    |203      |2022-04-26 15:26:56|
-   |356804|Bud Osborne |515       |2.0389507108727773|15    |149      |2022-04-26 15:26:56|
-   +------+------------+----------+------------------+------+---------+-------------------+
-   ```
-
-   你也可以继续对此模型执行其他查询。例如，出场次数超过 5 次的演员中，哪些演员参演的电影平均评分最高？
-
-   ```sql
-   SELECT * FROM imdb_dbt.actor_summary WHERE num_movies > 5 ORDER BY avg_rank  DESC LIMIT 10;
-   ```
-
-<div id="creating-an-incremental-materialization">
-  ## 创建增量物化
-</div>
-
-前面的示例创建了一张用于物化模型的表。每次执行 dbt 时，这张表都会被重新构建。对于较大的结果集或复杂的转换，这种做法可能既不现实，成本也极其高昂。为了解决这一问题并缩短构建时间，dbt 提供了增量物化。这使 dbt 能够将自上次执行以来的记录插入或更新到表中，因此非常适合事件型数据。在底层实现上，系统会先创建一张包含所有已更新记录的临时表，然后将所有未变更的记录以及已更新的记录一并插入到新的目标表中。因此，对于大型结果集，它与表模型一样存在类似的[限制](/zh/integrations/connectors/data-ingestion/etl-tools/dbt/index#limitations)。
-
-为了解决大型数据集上的这些限制，适配器支持 &#39;inserts&#95;only&#39; 模式。在该模式下，所有更新都会直接插入到目标表中，而不会创建临时表 (下文会进一步介绍) 。
-
-为了演示这个示例，我们将添加一位演员“Clicky McClickHouse”，他将出现在惊人的 910 部电影中——确保他出演的电影数量甚至超过了 [Mel Blanc](https://en.wikipedia.org/wiki/Mel_Blanc)。
-
-1. 首先，我们将模型改为 `incremental` 类型。此更改需要：
-
-   1. **unique&#95;key** - 为确保适配器能够唯一标识各行，我们必须提供一个 unique&#95;key——在本例中，查询中的 `id` 字段就足够了。这样可以确保物化后的表中不会出现重复行。有关唯一性约束的更多信息，请参见[这里](https://docs.getdbt.com/docs/building-a-dbt-project/building-models/configuring-incremental-models#defining-a-uniqueness-constraint-optional)。
-   2. **Incremental filter** - 我们还需要告诉 dbt，在增量运行时应如何识别哪些行发生了变化。这可以通过提供一个增量表达式来实现。对于事件数据，这通常会涉及一个 timestamp；因此这里使用的是 `updated&#95;at` timestamp 字段。该列在插入行时默认值为 now()，从而可以识别新增的角色。此外，我们还需要识别另一种情况，即新增了 actor。使用 `{{this}}` 变量表示现有的物化表后，就得到这个表达式：`where id > (select max(id) from {{ this }}) or updated_at > (select max(updated_at) from {{this}})`。我们将它嵌入 `{% if is_incremental() %}` 条件中，以确保它只在增量运行时使用，而不会在首次构建表时使用。有关为增量模型过滤行的更多信息，请参见 [dbt 文档中的这段讨论](https://docs.getdbt.com/docs/building-a-dbt-project/building-models/configuring-incremental-models#filtering-rows-on-an-incremental-run)。
-
-   按以下方式更新文件 `actor_summary.sql`：
-
-   ```sql
-   {{ config(order_by='(updated_at, id, name)', engine='MergeTree()', materialized='incremental', unique_key='id') }}
-   with actor_summary as (
-       SELECT id,
-           any(actor_name) as name,
-           uniqExact(movie_id)    as num_movies,
-           avg(rank)                as avg_rank,
-           uniqExact(genre)         as genres,
-           uniqExact(director_name) as directors,
-           max(created_at) as updated_at
-       FROM (
-           SELECT {{ source('imdb', 'actors') }}.id as id,
-               concat({{ source('imdb', 'actors') }}.first_name, ' ', {{ source('imdb', 'actors') }}.last_name) as actor_name,
-               {{ source('imdb', 'movies') }}.id as movie_id,
-               {{ source('imdb', 'movies') }}.rank as rank,
-               genre,
-               concat({{ source('imdb', 'directors') }}.first_name, ' ', {{ source('imdb', 'directors') }}.last_name) as director_name,
-               created_at
-       FROM {{ source('imdb', 'actors') }}
-           JOIN {{ source('imdb', 'roles') }} ON {{ source('imdb', 'roles') }}.actor_id = {{ source('imdb', 'actors') }}.id
-           LEFT OUTER JOIN {{ source('imdb', 'movies') }} ON {{ source('imdb', 'movies') }}.id = {{ source('imdb', 'roles') }}.movie_id
-           LEFT OUTER JOIN {{ source('imdb', 'genres') }} ON {{ source('imdb', 'genres') }}.movie_id = {{ source('imdb', 'movies') }}.id
-           LEFT OUTER JOIN {{ source('imdb', 'movie_directors') }} ON {{ source('imdb', 'movie_directors') }}.movie_id = {{ source('imdb', 'movies') }}.id
-           LEFT OUTER JOIN {{ source('imdb', 'directors') }} ON {{ source('imdb', 'directors') }}.id = {{ source('imdb', 'movie_directors') }}.director_id
-       )
-       GROUP BY id
-   )
-   select *
-   from actor_summary
-
-   {% if is_incremental() %}
-
-   -- 此过滤器仅在增量运行时生效
-   where id > (select max(id) from {{ this }}) or updated_at > (select max(updated_at) from {{this}})
-
-   {% endif %}
-   ```
-
-   请注意，我们的模型只会处理 `roles` 和 `actors` 表中的更新和新增数据。若要覆盖所有表，建议将此模型拆分为多个子模型——每个子模型都有各自的增量条件。随后，这些模型可以相互引用并关联起来。有关模型间交叉引用的更多信息，请参见[此处](https://docs.getdbt.com/reference/dbt-jinja-functions/ref)。
-
-2. 执行 `dbt run`，并确认生成表中的结果：
-
-   ```response
-   clickhouse-user@clickhouse:~/imdb$  dbt run
-   15:33:34  Running with dbt=1.1.0
-   15:33:34  Found 1 model, 0 tests, 1 snapshot, 0 analyses, 181 macros, 0 operations, 0 seed files, 6 sources, 0 exposures, 0 metrics
-   15:33:34
-   15:33:35  Concurrency: 1 threads (target='dev')
-   15:33:35
-   15:33:35  1 of 1 START incremental model imdb_dbt.actor_summary........................... [RUN]
-   15:33:41  1 of 1 OK created incremental model imdb_dbt.actor_summary...................... [OK in 6.33s]
-   15:33:41
-   15:33:41  Finished running 1 incremental model in 7.30s.
-   15:33:41
-   15:33:41  Completed successfully
-   15:33:41
-   15:33:41  Done. PASS=1 WARN=0 ERROR=0 SKIP=0 TOTAL=1
-   ```
-
-   ```sql
-   SELECT * FROM imdb_dbt.actor_summary ORDER BY num_movies DESC LIMIT 5;
-   ```
-
-   ```response
-   +------+------------+----------+------------------+------+---------+-------------------+
-   |id    |name        |num_movies|avg_rank          |genres|directors|updated_at         |
-   +------+------------+----------+------------------+------+---------+-------------------+
-   |45332 |Mel Blanc   |832       |6.175853582979779 |18    |84       |2022-04-26 15:26:55|
-   |621468|Bess Flowers|659       |5.57727638854796  |19    |293      |2022-04-26 15:26:57|
-   |372839|Lee Phelps  |527       |5.032976449684617 |18    |261      |2022-04-26 15:26:56|
-   |283127|Tom London  |525       |2.8721716524875673|17    |203      |2022-04-26 15:26:56|
-   |356804|Bud Osborne |515       |2.0389507108727773|15    |149      |2022-04-26 15:26:56|
-   +------+------------+----------+------------------+------+---------+-------------------+
-   ```
-
-3. 现在，我们将向模型添加数据，以演示增量更新。将我们的演员 &quot;Clicky McClickHouse&quot; 添加到 `actors` 表中：
-
-   ```sql
-   INSERT INTO imdb.actors VALUES (845466, 'Clicky', 'McClickHouse', 'M');
-   ```
-
-4. 让“Clicky”出演 910 部随机电影：
-
-   ```sql
-   INSERT INTO imdb.roles
-   SELECT now() as created_at, 845466 as actor_id, id as movie_id, 'Himself' as role
-   FROM imdb.movies
-   LIMIT 910 OFFSET 10000;
-   ```
-
-5. 通过查询底层源表并绕过所有 dbt 模型，确认他如今确实已是出场次数最多的演员：
-
-   ```sql
-   SELECT id,
-       any(actor_name)          as name,
-       uniqExact(movie_id)    as num_movies,
-       avg(rank)                as avg_rank,
-       uniqExact(genre)         as unique_genres,
-       uniqExact(director_name) as uniq_directors,
-       max(created_at)          as updated_at
-   FROM (
-           SELECT imdb.actors.id                                                   as id,
-                   concat(imdb.actors.first_name, ' ', imdb.actors.last_name)       as actor_name,
-                   imdb.movies.id as movie_id,
-                   imdb.movies.rank                                                 as rank,
-                   genre,
-                   concat(imdb.directors.first_name, ' ', imdb.directors.last_name) as director_name,
-                   created_at
-           FROM imdb.actors
-                   JOIN imdb.roles ON imdb.roles.actor_id = imdb.actors.id
-                   LEFT OUTER JOIN imdb.movies ON imdb.movies.id = imdb.roles.movie_id
-                   LEFT OUTER JOIN imdb.genres ON imdb.genres.movie_id = imdb.movies.id
-                   LEFT OUTER JOIN imdb.movie_directors ON imdb.movie_directors.movie_id = imdb.movies.id
-                   LEFT OUTER JOIN imdb.directors ON imdb.directors.id = imdb.movie_directors.director_id
-           )
-   GROUP BY id
-   ORDER BY num_movies DESC
-   LIMIT 2;
-   ```
-
-   ```response
-   +------+-------------------+----------+------------------+------+---------+-------------------+
-   |id    |name               |num_movies|avg_rank          |genres|directors|updated_at         |
-   +------+-------------------+----------+------------------+------+---------+-------------------+
-   |845466|Clicky McClickHouse|910       |1.4687938697032283|21    |662      |2022-04-26 16:20:36|
-   |45332 |Mel Blanc          |909       |5.7884792542982515|19    |148      |2022-04-26 16:17:42|
-   +------+-------------------+----------+------------------+------+---------+-------------------+
-   ```
-
-6. 运行一次 `dbt run`，并确认我们的模型已更新，且与上述结果一致：
-
-   ```response
-   clickhouse-user@clickhouse:~/imdb$  dbt run
-   16:12:16  Running with dbt=1.1.0
-   16:12:16  Found 1 model, 0 tests, 1 snapshot, 0 analyses, 181 macros, 0 operations, 0 seed files, 6 sources, 0 exposures, 0 metrics
-   16:12:16
-   16:12:17  Concurrency: 1 threads (target='dev')
-   16:12:17
-   16:12:17  1 of 1 START incremental model imdb_dbt.actor_summary........................... [RUN]
-   16:12:24  1 of 1 OK created incremental model imdb_dbt.actor_summary...................... [OK in 6.82s]
-   16:12:24
-   16:12:24  Finished running 1 incremental model in 7.79s.
-   16:12:24
-   16:12:24  Completed successfully
-   16:12:24
-   16:12:24  Done. PASS=1 WARN=0 ERROR=0 SKIP=0 TOTAL=1
-   ```
-
-   ```sql
-   SELECT * FROM imdb_dbt.actor_summary ORDER BY num_movies DESC LIMIT 2;
-   ```
-
-   ```response
-   +------+-------------------+----------+------------------+------+---------+-------------------+
-   |id    |name               |num_movies|avg_rank          |genres|directors|updated_at         |
-   +------+-------------------+----------+------------------+------+---------+-------------------+
-   |845466|Clicky McClickHouse|910       |1.4687938697032283|21    |662      |2022-04-26 16:20:36|
-   |45332 |Mel Blanc          |909       |5.7884792542982515|19    |148      |2022-04-26 16:17:42|
-   +------+-------------------+----------+------------------+------+---------+-------------------+
-   ```
-
-<div id="internals">
-  ### 内部原理
-</div>
-
-我们可以通过查询 ClickHouse 的查询日志，找出为实现上述增量更新而执行的语句。
-
-```sql
-SELECT event_time, query  FROM system.query_log WHERE type='QueryStart' AND query LIKE '%dbt%'
-AND event_time > subtractMinutes(now(), 15) ORDER BY event_time LIMIT 100;
-```
-
-将上述查询调整为实际执行的时间范围。结果如何验证留给用户自行检查，这里重点说明 适配器 执行增量更新时采用的一般策略：
-
-1. 适配器 会创建一个临时表 `actor_sumary__dbt_tmp`。发生变化的行会被流式写入该表。
-2. 接着会创建一个新表 `actor_summary_new,`。随后，旧表中的行会从旧表流式传输到新表，同时检查这些行的 ID 是否不存在于临时表中。这样可以有效处理更新和重复数据。
-3. 临时表中的结果会被流式传输到新的 `actor_summary` 表中：
-4. 最后，通过 `EXCHANGE TABLES` 语句以原子方式将新表与旧版本交换。随后再删除旧表和临时表。
-
-如下图所示：
-
-<Image img="/images/integrations/data-ingestion/etl-tools/dbt/dbt_05.webp" size="lg" alt="dbt 增量更新" />
-
-这种策略在非常大的模型上可能会遇到一些挑战。更多细节请参见 [限制](/zh/integrations/connectors/data-ingestion/etl-tools/dbt/index#limitations)。
-
-<div id="append-strategy-inserts-only-mode">
-  ### 追加策略 (仅插入模式)
-</div>
-
-为克服增量模型处理大型数据集时的局限性，适配器 使用 dbt 配置参数 `incremental_strategy`。可将其设置为 `append`。设置后，更新的行会直接插入目标表 (即 `imdb_dbt.actor_summary`) ，不会创建临时表。
-注意：仅追加模式要求数据是不可变的，或者可以接受重复数据。如果你需要支持已修改行的增量表模型，请不要使用此模式！
-
-为了演示此模式，我们将再添加一位新演员，并在 `incremental_strategy='append'` 的情况下重新执行 `dbt run`。
-
-1. 在 actor&#95;summary.sql 中配置仅追加模式：
-
-   ```sql
-   {{ config(order_by='(updated_at, id, name)', engine='MergeTree()', materialized='incremental', unique_key='id', incremental_strategy='append') }}
-   ```
-
-2. 再添加一位著名演员 —— Danny DeBito
-
-   ```sql
-   INSERT INTO imdb.actors VALUES (845467, 'Danny', 'DeBito', 'M');
-   ```
-
-3. 让 Danny 参演 920 部随机电影。
-
-   ```sql
-   INSERT INTO imdb.roles
-   SELECT now() as created_at, 845467 as actor_id, id as movie_id, 'Himself' as role
-   FROM imdb.movies
-   LIMIT 920 OFFSET 10000;
-   ```
-
-4. 执行一次 `dbt run`，并确认 Danny 已添加到 actor&#95;summary 表中
-
-   ```response
-   clickhouse-user@clickhouse:~/imdb$ dbt run
-   16:12:16  Running with dbt=1.1.0
-   16:12:16  Found 1 model, 0 tests, 1 snapshot, 0 analyses, 186 macros, 0 operations, 0 seed files, 6 sources, 0 exposures, 0 metrics
-   16:12:16
-   16:12:17  Concurrency: 1 threads (target='dev')
-   16:12:17
-   16:12:17  1 of 1 START incremental model imdb_dbt.actor_summary........................... [RUN]
-   16:12:24  1 of 1 OK created incremental model imdb_dbt.actor_summary...................... [OK in 0.17s]
-   16:12:24
-   16:12:24  Finished running 1 incremental model in 0.19s.
-   16:12:24
-   16:12:24  Completed successfully
-   16:12:24
-   16:12:24  Done. PASS=1 WARN=0 ERROR=0 SKIP=0 TOTAL=1
-   ```
-
-   ```sql
-   SELECT * FROM imdb_dbt.actor_summary ORDER BY num_movies DESC LIMIT 3;
-   ```
-
-   ```response
-   +------+-------------------+----------+------------------+------+---------+-------------------+
-   |id    |name               |num_movies|avg_rank          |genres|directors|updated_at         |
-   +------+-------------------+----------+------------------+------+---------+-------------------+
-   |845467|Danny DeBito       |920       |1.4768987303293204|21    |670      |2022-04-26 16:22:06|
-   |845466|Clicky McClickHouse|910       |1.4687938697032283|21    |662      |2022-04-26 16:20:36|
-   |45332 |Mel Blanc          |909       |5.7884792542982515|19    |148      |2022-04-26 16:17:42|
-   +------+-------------------+----------+------------------+------+---------+-------------------+
-   ```
-
-请注意，与插入“Clicky”时相比，这次增量运行快了很多。
-
-再次检查 query&#95;log 表，可以看出这两次增量运行之间的差异：
-
-```sql
-INSERT INTO imdb_dbt.actor_summary ("id", "name", "num_movies", "avg_rank", "genres", "directors", "updated_at")
-WITH actor_summary AS (
-   SELECT id,
-      any(actor_name) AS name,
-      uniqExact(movie_id)    AS num_movies,
-      avg(rank)                AS avg_rank,
-      uniqExact(genre)         AS genres,
-      uniqExact(director_name) AS directors,
-      max(created_at) AS updated_at
-   FROM (
-      SELECT imdb.actors.id AS id,
-         concat(imdb.actors.first_name, ' ', imdb.actors.last_name) AS actor_name,
-         imdb.movies.id AS movie_id,
-         imdb.movies.rank AS rank,
-         genre,
-         concat(imdb.directors.first_name, ' ', imdb.directors.last_name) AS director_name,
-         created_at
-      FROM imdb.actors
-         JOIN imdb.roles ON imdb.roles.actor_id = imdb.actors.id
-         LEFT OUTER JOIN imdb.movies ON imdb.movies.id = imdb.roles.movie_id
-         LEFT OUTER JOIN imdb.genres ON imdb.genres.movie_id = imdb.movies.id
-         LEFT OUTER JOIN imdb.movie_directors ON imdb.movie_directors.movie_id = imdb.movies.id
-         LEFT OUTER JOIN imdb.directors ON imdb.directors.id = imdb.movie_directors.director_id
-   )
-   GROUP BY id
+CREATE TABLE raw.raw_orders
+(
+    `id` String,
+    `customer` String,
+    `ordered_at` DateTime,
+    `store_id` String,
+    `subtotal` Int32,
+    `tax_paid` Int32,
+    `order_total` Int32
 )
-
-SELECT *
-FROM actor_summary
--- 此过滤器仅在增量运行时生效
-WHERE id > (SELECT max(id) FROM imdb_dbt.actor_summary) OR updated_at > (SELECT max(updated_at) FROM imdb_dbt.actor_summary)
+ENGINE = MergeTree
+PARTITION BY toYYYYMM(ordered_at)
+ORDER BY (ordered_at, id)
+SETTINGS index_granularity = 8192
 ```
 
-在此次运行中，只会将新增的行直接添加到 `imdb_dbt.actor_summary` 表中，不会创建表。
+`dbt seed --full-refresh` 会删除并重新创建该表，因此请先运行它，然后再构建任何直接依赖该表数据的对象 (例如本指南后文中的 materialized view) 。
 
-<div id="deleteinsert-mode-experimental">
-  ### 删除和插入模式 (Experimental)
-</div>
+## 为 ClickHouse 配置表 {#table-configuration}
 
-一直以来，ClickHouse 对更新和删除的支持都比较有限，主要通过异步的[变更](/zh/reference/statements/alter/index)实现。这类操作可能会产生极高的 IO 开销，因此通常应尽量避免。
-
-ClickHouse 22.8 引入了[轻量级删除](/zh/reference/statements/delete)，ClickHouse 25.7 引入了[轻量级更新](/zh/reference/statements/update)。随着这些功能的推出，单条更新查询带来的修改即使以异步方式物化，从用户视角看也会立即生效。
-
-可以通过 `incremental_strategy` 参数为模型配置此模式，即
+`orders` mart 是最自然的起点：它会被 `customers` mart 以及项目的 metrics 查询，而且它是一张带 timestamp 的事件型表。在 `models/marts/orders.sql` 顶部添加一个 `config` 块，用于指定 engine、sorting key 和分区方案：
 
 ```sql
-{{ config(order_by='(updated_at, id, name)', engine='MergeTree()', materialized='incremental', unique_key='id', incremental_strategy='delete+insert') }}
+{{
+    config(
+        materialized='table',
+        engine='MergeTree()',
+        order_by='(ordered_at, order_id)',
+        partition_by='toYYYYMM(ordered_at)'
+    )
+}}
+
+with
+
+orders as (
+
+    select * from {{ ref('stg_orders') }}
+
+),
+...
 ```
 
-该策略直接对目标模型的表进行操作，因此如果在操作过程中出现问题，增量模型中的数据很可能会处于无效状态——因为这里没有原子更新。
+模型的其余部分保持不变。`materialized='table'` 重复了 `dbt_project.yml` 中已为 marts 设定的内容,这样在之后将该模型切换为增量模式时,模型本身仍然是自描述的。仅重新构建该模型:
 
-总结来说，这种方法会：
+```bash
+dbt run --select orders
+```
 
-1. 适配器会创建一个临时表 `actor_sumary__dbt_tmp`。发生变更的行会被流式写入该表。
-2. 对当前的 `actor_summary` 表执行一条 `DELETE`。根据 `actor_sumary__dbt_tmp` 中的 id 删除对应的行。
-3. 使用 `INSERT INTO actor_summary SELECT * FROM actor_sumary__dbt_tmp` 将 `actor_sumary__dbt_tmp` 中的行插入 `actor_summary`。
+```response
+1 of 1 START sql table model `jaffle_shop`.`orders` ............................ [RUN]
+1 of 1 OK created sql table model `jaffle_shop`.`orders` ....................... [OK in 0.44s]
+```
 
-该过程如下所示：
-
-<Image img="/images/integrations/data-ingestion/etl-tools/dbt/dbt_06.webp" size="lg" alt="轻量级删除增量" />
-
-<div id="insert_overwrite-mode-experimental">
-  ### `insert_overwrite` 模式 (Experimental)
-</div>
-
-执行以下步骤：
-
-1. 创建一个与增量模型 relation 结构相同的暂存 (临时) 表：`CREATE TABLE {staging} AS {target}`。
-2. 仅将新记录 (由 SELECT 生成) 插入暂存表。
-3. 仅将新分区 (即暂存表中存在的分区) 替换到目标表中。
-
-<br />
-
-这种方法有以下优点：
-
-* 它比默认策略更快，因为无需复制整个表。
-* 它比其他策略更安全，因为在 INSERT 操作成功完成之前，不会修改原始表：如果中途失败，原始表不会被修改。
-* 它实现了数据工程中“分区不可变性”的最佳实践，从而简化增量和并行数据处理、回滚等操作。
-
-<Image img="/images/integrations/data-ingestion/etl-tools/dbt/dbt_07.webp" size="lg" alt="insert overwrite 增量" />
-
-<div id="creating-a-snapshot">
-  ## 创建快照
-</div>
-
-dbt 快照可用于记录可变模型随时间发生的变化。这样一来，就能对模型执行时间点查询，使分析人员能够&quot;回溯&quot;查看模型先前的状态。这是通过使用 [type-2 Slowly Changing Dimensions](https://en.wikipedia.org/wiki/Slowly_changing_dimension#Type_2:_add_new_row) 实现的，其中起始日期列和结束日期列用于记录某一行在何时有效。ClickHouse 适配器 支持此功能，下面将进行演示。
-
-本示例假定你已经完成了[创建增量表模型](#creating-an-incremental-materialization)。请确保你的 actor&#95;summary.sql 未设置 inserts&#95;only=True。你的 models/actor&#95;summary.sql 应如下所示：
+现在该表有了合适的sorting key，并按月分区：
 
 ```sql
-   {{ config(order_by='(updated_at, id, name)', engine='MergeTree()', materialized='incremental', unique_key='id') }}
-
-   with actor_summary as (
-       SELECT id,
-           any(actor_name) as name,
-           uniqExact(movie_id)    as num_movies,
-           avg(rank)                as avg_rank,
-           uniqExact(genre)         as genres,
-           uniqExact(director_name) as directors,
-           max(created_at) as updated_at
-       FROM (
-           SELECT {{ source('imdb', 'actors') }}.id as id,
-               concat({{ source('imdb', 'actors') }}.first_name, ' ', {{ source('imdb', 'actors') }}.last_name) as actor_name,
-               {{ source('imdb', 'movies') }}.id as movie_id,
-               {{ source('imdb', 'movies') }}.rank as rank,
-               genre,
-               concat({{ source('imdb', 'directors') }}.first_name, ' ', {{ source('imdb', 'directors') }}.last_name) as director_name,
-               created_at
-       FROM {{ source('imdb', 'actors') }}
-           JOIN {{ source('imdb', 'roles') }} ON {{ source('imdb', 'roles') }}.actor_id = {{ source('imdb', 'actors') }}.id
-           LEFT OUTER JOIN {{ source('imdb', 'movies') }} ON {{ source('imdb', 'movies') }}.id = {{ source('imdb', 'roles') }}.movie_id
-           LEFT OUTER JOIN {{ source('imdb', 'genres') }} ON {{ source('imdb', 'genres') }}.movie_id = {{ source('imdb', 'movies') }}.id
-           LEFT OUTER JOIN {{ source('imdb', 'movie_directors') }} ON {{ source('imdb', 'movie_directors') }}.movie_id = {{ source('imdb', 'movies') }}.id
-           LEFT OUTER JOIN {{ source('imdb', 'directors') }} ON {{ source('imdb', 'directors') }}.id = {{ source('imdb', 'movie_directors') }}.director_id
-       )
-       GROUP BY id
-   )
-   select *
-   from actor_summary
-
-   {% if is_incremental() %}
-
-   -- 此过滤器仅在增量运行时应用
-   where id > (select max(id) from {{ this }}) or updated_at > (select max(updated_at) from {{this}})
-
-   {% endif %}
+SHOW CREATE TABLE jaffle_shop.orders;
 ```
 
-1. 在 snapshots 目录中创建一个 `actor_summary` 文件。
+```response
+CREATE TABLE jaffle_shop.orders
+(
+    ...
+)
+ENGINE = MergeTree
+PARTITION BY toYYYYMM(ordered_at)
+ORDER BY (ordered_at, order_id)
+SETTINGS replicated_deduplication_window = '0', index_granularity = 8192
+```
 
-   ```bash
-    touch snapshots/actor_summary.sql
-   ```
+```sql
+SELECT partition, sum(rows) AS rows
+FROM system.parts
+WHERE database = 'jaffle_shop' AND table = 'orders' AND active
+GROUP BY partition
+ORDER BY partition;
+```
 
-2. 将 actor&#95;summary.sql 文件的内容更新为以下内容：
-   ```sql
-   {% snapshot actor_summary_snapshot %}
+```response
+┌─partition─┬─rows─┐
+│ 202409    │ 1497 │
+│ 202410    │ 1698 │
+│ 202411    │ 2262 │
+...
+│ 202508    │ 9389 │
+└───────────┴──────┘
+```
 
-   {{
-   config(
-   target_schema='snapshots',
-   unique_key='id',
-   strategy='timestamp',
-   updated_at='updated_at',
-   )
-   }}
+除了 `engine`、`order_by` 和 `partition_by` 之外，table 模型还支持 `primary_key`、`ttl`、`settings`、`query_settings`、`projections` 和 `indexes`，而列可以通过模型契约 (model contract) 指定 `codec` 和 `ttl`。这些配置均在[物化类型页面](/zh/integrations/connectors/data-ingestion/etl-tools/dbt/materializations)中有详细说明。
 
-   select * from {{ref('actor_summary')}}
+## 创建增量模型 {#incremental}
 
-   {% endsnapshot %}
-   ```
+对于 62,000 行数据来说，每次运行都从头重建 `orders` 并无不可，但若表每天新增数百万行，就行不通了。dbt 的[增量物化](https://docs.getdbt.com/docs/build/incremental-models)只处理自上次运行以来发生变化的行。将 `orders` 模型改为增量模型需要两处补充：
 
-关于上述内容，有几点说明：
+1. **`unique_key`**：用于标识一行的列，这里是 `order_id`。adapter 会用它替换被再次处理的行，而不是产生重复数据。
+2. **增量过滤器**：包裹在 `{% if is_incremental() %}` 中的 `where` 子句，只选取需要处理的行。它在增量运行时生效，而在表首次构建 (或使用 `--full-refresh` 重建) 时不生效。订单带有 timestamp，因此该过滤器会将 `ordered_at` 与表中已有的最新值进行比较，该值通过 `{{ this }}` 变量引用。
 
-* `select` 查询定义了你希望随时间推移进行快照的结果。`ref` 函数用于引用我们之前创建的 actor&#95;summary 模型。
-* 我们需要一个时间戳列来标识记录变更。这里可以使用 `updated&#95;at` 列 (参见[创建增量表模型](#creating-an-incremental-materialization)) 。`strategy` 参数表示我们使用时间戳来标记更新，而 `updated&#95;at` 参数则指定使用哪一列。如果你的模型中没有这个列，也可以改用 [check 策略](https://docs.getdbt.com/docs/building-a-dbt-project/snapshots#check-strategy)。这种方式效率会低很多，并且需要用户指定要比较的列列表。dbt 会比较这些列的当前值和历史值，并记录所有变化 (如果值相同，则不执行任何操作) 。
+更新 `models/marts/orders.sql`，使 `config` 块和模型末尾部分如下所示：
 
-3. 运行命令 `dbt snapshot`。
+```sql
+{{
+    config(
+        materialized='incremental',
+        unique_key='order_id',
+        engine='MergeTree()',
+        order_by='(ordered_at, order_id)',
+        partition_by='toYYYYMM(ordered_at)'
+    )
+}}
 
-   ```response
-   clickhouse-user@clickhouse:~/imdb$ dbt snapshot
-   13:26:23  Running with dbt=1.1.0
-   13:26:23  Found 1 model, 0 tests, 1 snapshot, 0 analyses, 181 macros, 0 operations, 0 seed files, 3 sources, 0 exposures, 0 metrics
-   13:26:23
-   13:26:25  Concurrency: 1 threads (target='dev')
-   13:26:25
-   13:26:25  1 of 1 START snapshot snapshots.actor_summary_snapshot...................... [RUN]
-   13:26:25  1 of 1 OK snapshotted snapshots.actor_summary_snapshot...................... [OK in 0.79s]
-   13:26:25
-   13:26:25  Finished running 1 snapshot in 2.11s.
-   13:26:25
-   13:26:25  Completed successfully
-   13:26:25
-   13:26:25  Done. PASS=1 WARN=0 ERROR=0 SKIP=0 TOTAL=1
-   ```
+with
 
-请注意，`snapshots` DB 中已创建名为 `actor_summary_snapshot` 的表 (由 `target_schema` parameter 决定) 。
+orders as (
 
-4. 对这些数据进行抽样后，你会看到 dbt 添加了 dbt&#95;valid&#95;from 和 dbt&#95;valid&#95;to 这两列。后者的值为 null。后续运行会更新这一点。
+    select * from {{ ref('stg_orders') }}
 
-   ```sql
-   SELECT id, name, num_movies, dbt_valid_from, dbt_valid_to FROM snapshots.actor_summary_snapshot ORDER BY num_movies DESC LIMIT 5;
-   ```
+),
 
-   ```response
-   +------+----------+------------+----------+-------------------+------------+
-   |id    |first_name|last_name   |num_movies|dbt_valid_from     |dbt_valid_to|
-   +------+----------+------------+----------+-------------------+------------+
-   |845467|Danny     |DeBito      |920       |2022-05-25 19:33:32|NULL        |
-   |845466|Clicky    |McClickHouse|910       |2022-05-25 19:32:34|NULL        |
-   |45332 |Mel       |Blanc       |909       |2022-05-25 19:31:47|NULL        |
-   |621468|Bess      |Flowers     |672       |2022-05-25 19:31:47|NULL        |
-   |283127|Tom       |London      |549       |2022-05-25 19:31:47|NULL        |
-   +------+----------+------------+----------+-------------------+------------+
-   ```
+...
 
-5. 让我们最喜欢的演员 Clicky McClickHouse 再出演 10 部电影。
+select * from customer_order_count
 
-   ```sql
-   INSERT INTO imdb.roles
-   SELECT now() as created_at, 845466 as actor_id, rand(number) % 412320 as movie_id, 'Himself' as role
-   FROM system.numbers
-   LIMIT 10;
-   ```
+{% if is_incremental() %}
 
-6. 在 `imdb` 目录中重新运行 dbt run 命令。这将更新增量模型。完成后，运行 dbt snapshot 以捕获这些变更。
+-- this filter will only be applied on an incremental run
+where ordered_at >= (select max(ordered_at) from {{ this }})
 
-   ```response
-   clickhouse-user@clickhouse:~/imdb$ dbt run
-   13:46:14  Running with dbt=1.1.0
-   13:46:14  Found 1 model, 0 tests, 1 snapshot, 0 analyses, 181 macros, 0 operations, 0 seed files, 3 sources, 0 exposures, 0 metrics
-   13:46:14
-   13:46:15  Concurrency: 1 threads (target='dev')
-   13:46:15
-   13:46:15  1 of 1 START incremental model imdb_dbt.actor_summary....................... [RUN]
-   13:46:18  1 of 1 OK created incremental model imdb_dbt.actor_summary.................. [OK in 2.76s]
-   13:46:18
-   13:46:18  Finished running 1 incremental model in 3.73s.
-   13:46:18
-   13:46:18  Completed successfully
-   13:46:18
-   13:46:18  Done. PASS=1 WARN=0 ERROR=0 SKIP=0 TOTAL=1
+{% endif %}
+```
 
-   clickhouse-user@clickhouse:~/imdb$ dbt snapshot
-   13:46:26  Running with dbt=1.1.0
-   13:46:26  Found 1 model, 0 tests, 1 snapshot, 0 analyses, 181 macros, 0 operations, 0 seed files, 3 sources, 0 exposures, 0 metrics
-   13:46:26
-   13:46:27  Concurrency: 1 threads (target='dev')
-   13:46:27
-   13:46:27  1 of 1 START snapshot snapshots.actor_summary_snapshot...................... [RUN]
-   13:46:31  1 of 1 OK snapshotted snapshots.actor_summary_snapshot...................... [OK in 4.05s]
-   13:46:31
-   13:46:31  Finished running 1 snapshot in 5.02s.
-   13:46:31
-   13:46:31  Completed successfully
-   13:46:31
-   13:46:31  Done. PASS=1 WARN=0 ERROR=0 SKIP=0 TOTAL=1
-   ```
+`stg_orders` 会将 `ordered_at` 截断到天，因此过滤器使用 `>=`：每次运行都会重新处理最新一整天的数据，并且借助 `unique_key`，已加载的行会被替换而不是重复写入。正因如此，对于同一天稍晚到达的订单也能安全处理。
 
-7. 如果我们现在查询这个快照，会发现 Clicky McClickHouse 有 2 行。我们之前的记录现在有了 dbt&#95;valid&#95;to 值。新记录在 dbt&#95;valid&#95;from 列中的值与其相同，而 dbt&#95;valid&#95;to 的值为 null。如果存在新行，这些行也会被追加到快照中。
+运行该模型。由于表已经存在，这第一次运行其实就是一次增量运行：只会重新处理最新的一天。
 
-   ```sql
-   SELECT id, name, num_movies, dbt_valid_from, dbt_valid_to FROM snapshots.actor_summary_snapshot ORDER BY num_movies DESC LIMIT 5;
-   ```
+```bash
+dbt run --select orders
+```
 
-   ```response
-   +------+----------+------------+----------+-------------------+-------------------+
-   |id    |first_name|last_name   |num_movies|dbt_valid_from     |dbt_valid_to       |
-   +------+----------+------------+----------+-------------------+-------------------+
-   |845467|Danny     |DeBito      |920       |2022-05-25 19:33:32|NULL               |
-   |845466|Clicky    |McClickHouse|920       |2022-05-25 19:34:37|NULL               |
-   |845466|Clicky    |McClickHouse|910       |2022-05-25 19:32:34|2022-05-25 19:34:37|
-   |45332 |Mel       |Blanc       |909       |2022-05-25 19:31:47|NULL               |
-   |621468|Bess      |Flowers     |672       |2022-05-25 19:31:47|NULL               |
-   +------+----------+------------+----------+-------------------+-------------------+
-   ```
+```response
+1 of 1 START sql incremental model `jaffle_shop`.`orders` ...................... [RUN]
+1 of 1 OK created sql incremental model `jaffle_shop`.`orders` ................. [OK in 0.94s]
+```
 
-有关 dbt 快照的更多信息，请参见[此处](https://docs.getdbt.com/docs/building-a-dbt-project/snapshots)。
+现在添加一些新数据。Jaffle Shop 的数据截止到 2025 年 8 月，因此我们引入一位新客户 Clicky McClickHouse，他昨天订购了一个 jaffle。向原始表中插入一位客户、一个订单及其订单项：
 
-<div id="using-seeds">
-  ## 使用 seed
-</div>
+```sql
+INSERT INTO raw.raw_customers VALUES ('clicky-0001', 'Clicky McClickHouse');
 
-dbt 支持从 CSV 文件加载数据。不过，这一功能并不适合加载数据库的大型导出数据，更适用于通常作为代码表和[字典](/zh/concepts/features/dictionaries/index)的小型文件，例如将国家代码映射为国家名称。下面通过一个简单示例，使用 seed 功能生成并上传一份类型代码列表。
+INSERT INTO raw.raw_orders VALUES
+    ('clicky-order-0001', 'clicky-0001', now() - INTERVAL 1 DAY,
+     '4b6c2304-2b9e-41e4-942a-cf11a1819378', 1100, 66, 1166);
 
-1. 我们先从现有数据集中生成一份类型代码列表。在 dbt 目录中，使用 `clickhouse-client` 创建文件 `seeds/genre_codes.csv`：
+INSERT INTO raw.raw_items VALUES ('clicky-item-0001', 'clicky-order-0001', 'JAF-001');
+```
 
-   ```bash
-   clickhouse-user@clickhouse:~/imdb$ clickhouse-client --password <password> --query
-   "SELECT genre, ucase(substring(genre, 1, 3)) as code FROM imdb.genres GROUP BY genre
-   LIMIT 100 FORMAT CSVWithNames" > seeds/genre_codes.csv
-   ```
+门店 id 为 Philadelphia，商品是一份价格为 11.00 的 `nutellaphone who dis?` jaffle，税率为 Philadelphia 的 6%，因此项目的数据测试仍然通过。运行整个项目，让暂存视图和 `order_items` 表先于 `orders` 看到这些新行：
 
-2. 执行 `dbt seed` 命令。这会在数据库 `imdb_dbt` 中创建一个新表 `genre_codes` (由 schema 配置定义) ，并将 csv 文件中的行加载到该表中。
+```bash
+dbt run
+```
 
-   ```bash
-   clickhouse-user@clickhouse:~/imdb$ dbt seed
-   17:03:23  Running with dbt=1.1.0
-   17:03:23  Found 1 model, 0 tests, 1 snapshot, 0 analyses, 181 macros, 0 operations, 1 seed file, 6 sources, 0 exposures, 0 metrics
-   17:03:23
-   17:03:24  Concurrency: 1 threads (target='dev')
-   17:03:24
-   17:03:24  1 of 1 START seed file imdb_dbt.genre_codes..................................... [RUN]
-   17:03:24  1 of 1 OK loaded seed file imdb_dbt.genre_codes................................. [INSERT 21 in 0.65s]
-   17:03:24
-   17:03:24  Finished running 1 seed in 1.62s.
-   17:03:24
-   17:03:24  Completed successfully
-   17:03:24
-   17:03:24  Done. PASS=1 WARN=0 ERROR=0 SKIP=0 TOTAL=1
-   ```
+```response
+...
+10 of 13 OK created sql table model `jaffle_shop`.`order_items` ................ [OK in 0.30s]
+...
+12 of 13 START sql incremental model `jaffle_shop`.`orders` .................... [RUN]
+12 of 13 OK created sql incremental model `jaffle_shop`.`orders` ............... [OK in 0.73s]
+13 of 13 START sql table model `jaffle_shop`.`customers` ....................... [RUN]
+13 of 13 OK created sql table model `jaffle_shop`.`customers` .................. [OK in 0.28s]
+```
 
-3. 确认这些数据已加载：
+新订单已进入增量表，而基于该表重建的 `customers` 数据集市也已包含这位新客户：
 
-   ```sql
-   SELECT * FROM imdb_dbt.genre_codes LIMIT 10;
-   ```
+```sql
+SELECT order_id, customer_id, ordered_at, order_total, customer_order_number
+FROM jaffle_shop.orders
+WHERE customer_id = 'clicky-0001';
+```
 
-   ```response
-   +-------+----+
-   |genre  |code|
-   +-------+----+
-   |Drama  |DRA |
-   |Romance|ROM |
-   |Short  |SHO |
-   |Mystery|MYS |
-   |Adult  |ADU |
-   |Family |FAM |
+```response
+┌─order_id──────────┬─customer_id─┬──────────ordered_at─┬─order_total─┬─customer_order_number─┐
+│ clicky-order-0001 │ clicky-0001 │ 2026-09-14 00:00:00 │       11.66 │                     1 │
+└───────────────────┴─────────────┴─────────────────────┴─────────────┴───────────────────────┘
+```
 
-   |Action |ACT |
-   |Sci-Fi |SCI |
-   |Horror |HOR |
-   |War    |WAR |
-   +-------+----+=
-   ```
+```sql
+SELECT customer_name, count_lifetime_orders, lifetime_spend, customer_type
+FROM jaffle_shop.customers
+WHERE customer_id = 'clicky-0001';
+```
 
-<div id="further-information">
-  ## 更多信息
-</div>
+```response
+┌─customer_name───────┬─count_lifetime_orders─┬─lifetime_spend─┬─customer_type─┐
+│ Clicky McClickHouse │                     1 │          11.66 │ new           │
+└─────────────────────┴───────────────────────┴────────────────┴───────────────┘
+```
 
-前面的指南仅对 dbt 的功能做了浅显介绍，建议读者进一步参阅出色的 [dbt 文档](https://docs.getdbt.com/docs/introduction)。
+### 内部实现 {#internals}
+
+ClickHouse 的 query log 中可以看到 adapter 为执行增量更新所运行的语句：
+
+```sql
+SELECT event_time, written_rows, tables
+FROM system.query_log
+WHERE query_kind = 'Insert' AND type = 'QueryFinish'
+  AND has(databases, 'jaffle_shop')
+  AND event_time > now() - INTERVAL 15 MINUTE
+ORDER BY event_time;
+```
+
+adapter 的默认 incremental strategy 工作方式如下。在本节的示意图中，从表指向语句的箭头表示该语句读取该表；从语句指向表的箭头表示它对该表执行写入、mutate、rename 或 drop 操作：
+
+1. 创建表 `orders__dbt_new_data`，并将模型 SQL (含增量过滤器) 的查询结果 insert 到该表中。在上面的运行中共写入 378 行：已加载的最近一天的 377 个订单，加上新增的那一个。
+2. 创建一个与 `orders` 结构相同的表 `orders__dbt_tmp`，并把 `orders` 中 `order_id` 未出现在 `orders__dbt_new_data` 里的所有行复制进去。
+3. 将 `orders__dbt_new_data` 的所有行 insert 到 `orders__dbt_tmp`。正是步骤 2 和 3 实现了替换最近一天的行，而非重复写入。
+4. drop 掉 `orders__dbt_new_data`。
+5. 通过原子的 `EXCHANGE TABLES` 语句将 `orders__dbt_tmp` 与 `orders` 进行 swap (中间先 rename 为 `orders__dbt_backup`) ，此时 `orders` 中保存的即为新版本。
+6. drop 掉旧版本。
+
+```mermaid
+flowchart TB
+    stg[("stg_orders")]
+    items[("order_items")]
+    orders[("orders<br/>(current version)")]
+    new_data[("orders__dbt_new_data")]
+    tmp[("orders__dbt_tmp")]
+    new_orders[("orders<br/>(new version, was orders__dbt_tmp)")]
+    old_orders[("orders__dbt_tmp<br/>(old version, was orders)")]
+    q1["1. INSERT INTO orders__dbt_new_data<br/>SELECT ... model SQL ...<br/>WHERE ordered_at >= (SELECT max(ordered_at) FROM orders)"]
+    q2["2. INSERT INTO orders__dbt_tmp<br/>SELECT * FROM orders<br/>WHERE order_id NOT IN (SELECT order_id FROM orders__dbt_new_data)"]
+    q3["3. INSERT INTO orders__dbt_tmp<br/>SELECT * FROM orders__dbt_new_data"]
+    q4["4. DROP TABLE orders__dbt_new_data"]
+    q5["5. EXCHANGE TABLES orders__dbt_tmp AND orders"]
+    q6["6. DROP TABLE orders__dbt_tmp"]
+    stg -->|reads| q1
+    items -->|reads| q1
+    q1 -->|inserts the changed rows| new_data
+    orders -->|reads| q2
+    new_data -->|reads the keys| q2
+    new_data -->|reads| q3
+    q2 -->|"inserts the rows<br/>that did not change"| tmp
+    q3 -->|"inserts the<br/>changed rows"| tmp
+    q3 ~~~ q4
+    q4 -->|drops| new_data
+    tmp ~~~ q5
+    q5 -->|"swaps the names"| new_orders
+    q5 -->|"swaps the names"| old_orders
+    q5 ~~~ q6
+    q6 -->|drops| old_orders
+    classDef temp fill:#dbeafe,stroke:#1d4ed8;
+    classDef target fill:#fef3c7,stroke:#b45309;
+    classDef source fill:#dcfce7,stroke:#15803d;
+    classDef query fill:#f3f4f6,stroke:#6b7280;
+    class new_data,tmp,old_orders temp;
+    class orders,new_orders target;
+    class stg,items source;
+    class q1,q2,q3,q4,q5,q6 query;
+```
+
+第 2 步会复制整张表，因此在非常大的模型上，这种策略的开销与重建整表相当；参见[局限性](/zh/integrations/connectors/data-ingestion/etl-tools/dbt/index#limitations)。下面介绍的策略则可避免这次复制。
+
+### 追加策略 {#append-strategy}
+
+`append` 策略会将模型选出的行直接插入到 target table 中。它不会创建 temporary table，也不会复制任何数据，因此是增量运行中开销最低的方式。代价是它同样不做任何去重：如果增量过滤器选中了表中已有的行，该行就会重复出现两次。因此请仅将它用于不可变的事件类数据，并确保 filter 只会选中真正的新行。
+
+在 `ordered_at` 已按天截断的情况下，这意味着要把 filter 改为 `>`。修改模型：
+
+```sql
+{{
+    config(
+        materialized='incremental',
+        incremental_strategy='append',
+        unique_key='order_id',
+        engine='MergeTree()',
+        order_by='(ordered_at, order_id)',
+        partition_by='toYYYYMM(ordered_at)'
+    )
+}}
+
+...
+
+{% if is_incremental() %}
+
+-- this filter will only be applied on an incremental run
+where ordered_at > (select max(ordered_at) from {{ this }})
+
+{% endif %}
+```
+
+再添加一位新客户 Danny DeBito，其订单于今天在 Brooklyn (税率 4%) 下单，包含一份 jaffle 和一杯 coffee：
+
+```sql
+INSERT INTO raw.raw_customers VALUES ('danny-0001', 'Danny DeBito');
+
+INSERT INTO raw.raw_orders VALUES
+    ('danny-order-0001', 'danny-0001', now(),
+     '40e6ddd6-b8f6-4e17-8bd6-5e53966809d2', 1900, 76, 1976);
+
+INSERT INTO raw.raw_items VALUES
+    ('danny-item-0001', 'danny-order-0001', 'JAF-003'),
+    ('danny-item-0002', 'danny-order-0001', 'BEV-004');
+```
+
+```bash
+dbt run
+```
+
+```response
+...
+12 of 13 START sql incremental model `jaffle_shop`.`orders` .................... [RUN]
+12 of 13 OK created sql incremental model `jaffle_shop`.`orders` ............... [OK in 0.11s]
+...
+```
+
+增量模型的运行时间仅为上次运行的一小部分。两位新客户在表中都恰好有一条订单记录：
+
+```sql
+SELECT order_id, customer_id, ordered_at, order_total, is_food_order, is_drink_order
+FROM jaffle_shop.orders
+WHERE customer_id IN ('clicky-0001', 'danny-0001')
+ORDER BY ordered_at;
+```
+
+```response
+┌─order_id──────────┬─customer_id─┬──────────ordered_at─┬─order_total─┬─is_food_order─┬─is_drink_order─┐
+│ clicky-order-0001 │ clicky-0001 │ 2026-09-14 00:00:00 │       11.66 │             1 │              0 │
+│ danny-order-0001  │ danny-0001  │ 2026-09-15 00:00:00 │       19.76 │             1 │              1 │
+└───────────────────┴─────────────┴─────────────────────┴─────────────┴───────────────┴────────────────┘
+```
+
+query log 印证了这一差异：这一次涉及 `orders` 的语句只有一条 `INSERT INTO jaffle_shop.orders ... SELECT ...`，其中包含该模型的 SQL 以及增量过滤器，并且只写入了一行。
+
+<Warning>
+  使用 `>` 搭配按天截断的 timestamp 时，如果某个订单与已加载的最新订单处于同一天但到达时间更晚，它将永远不会被采集到。在实际项目中，使用 `append` strategy 时，应基于全精度的 timestamp 或单调递增的摄取时间进行过滤。
+</Warning>
+
+### Delete and insert 策略 {#delete-insert-strategy}
+
+一直以来，ClickHouse 对更新和删除的支持都比较有限，只能通过异步 [变更](/zh/reference/statements/alter/index) 来实现。这类操作往往会带来极高的 IO 开销，通常应尽量避免。ClickHouse 22.8 引入了 [轻量级删除](/zh/reference/statements/delete)，ClickHouse 25.7 引入了 [轻量级更新](/zh/reference/statements/update)。有了这些特性，虽然数据是以异步方式 materialized 的，但从用户的角度看，单条删除或更新语句的效果会立即可见。
+
+`delete+insert` 策略基于轻量级删除实现，通过 `incremental_strategy` 参数进行配置：
+
+```sql
+{{
+    config(
+        materialized='incremental',
+        incremental_strategy='delete+insert',
+        unique_key='order_id',
+        engine='MergeTree()',
+        order_by='(ordered_at, order_id)',
+        partition_by='toYYYYMM(ordered_at)'
+    )
+}}
+```
+
+它直接作用于 target table，因此如果中途出现失败，incremental model 中的数据很可能处于 invalid 状态：因为没有 atomic swap。总结如下：
+
+1. 创建一个 temporary table (`orders__dbt_new_data_<run_id>`) ，并将 model 选出的行 insert 到其中。
+2. 针对 temporary table 中出现的每个 `order_id`，对 `orders` 执行 `DELETE`。
+3. 将 temporary table 中的行 insert 到 `orders`。
+4. drop 该 temporary table。
+
+```mermaid
+flowchart TB
+    stg[("stg_orders")]
+    items[("order_items")]
+    orders[("orders")]
+    new_data[("orders__dbt_new_data_#lt;run_id#gt;")]
+    q1["1. CREATE TABLE orders__dbt_new_data_#lt;run_id#gt; AS<br/>SELECT ... model SQL ...<br/>WHERE ordered_at >= (SELECT max(ordered_at) FROM orders)"]
+    q2["2. DELETE FROM orders<br/>WHERE order_id IN (SELECT order_id FROM orders__dbt_new_data_#lt;run_id#gt;)"]
+    q3["3. INSERT INTO orders<br/>SELECT * FROM orders__dbt_new_data_#lt;run_id#gt;"]
+    q4["4. DROP TABLE orders__dbt_new_data_#lt;run_id#gt;"]
+    stg -->|reads| q1
+    items -->|reads| q1
+    q1 -->|creates and fills with the changed rows| new_data
+    new_data -->|reads the keys| q2
+    q2 -->|deletes the matching rows| orders
+    new_data -->|reads| q3
+    q3 -->|inserts the changed rows| orders
+    q4 -->|drops| new_data
+    classDef temp fill:#dbeafe,stroke:#1d4ed8;
+    classDef target fill:#fef3c7,stroke:#b45309;
+    classDef source fill:#dcfce7,stroke:#15803d;
+    classDef query fill:#f3f4f6,stroke:#6b7280;
+    class new_data temp;
+    class orders target;
+    class stg,items source;
+    class q1,q2,q3,q4 query;
+```
+
+### Insert overwrite 策略 (experimental) {#insert-overwrite-strategy}
+
+`insert_overwrite` 策略会整分区替换，因此需要配置 `partition_by`，例如 `orders` 上按月分区的配置。其执行步骤如下：
+
+1. 创建一个与 `orders` 结构相同的暂存表 (`orders__dbt_new_data_<run_id>`) 。
+2. 仅将模型选出的行插入暂存表。
+3. 从 `system.parts` 中列出暂存表内存在的分区。
+4. 使用 `ALTER TABLE ... REPLACE PARTITION ... FROM`，用暂存表精确替换 `orders` 中的这些分区。
+5. 删除暂存表。
+
+这种方式具有以下优势：
+
+* 比默认策略更快，因为无需复制整张表。
+* 比其他策略更安全，因为在 INSERT 操作成功完成之前不会修改原始表：若中途失败，原始表保持不变。
+* 实现了“分区不可变性”这一数据工程最佳实践，从而简化增量与并行数据处理、回滚等操作。
+
+```mermaid
+flowchart TB
+    stg[("stg_orders")]
+    items[("order_items")]
+    orders[("orders<br/>PARTITION BY toYYYYMM(ordered_at)")]
+    staging[("orders__dbt_new_data_#lt;run_id#gt;")]
+    parts[("system.parts")]
+    q1["1. CREATE TABLE orders__dbt_new_data_#lt;run_id#gt; AS orders"]
+    q2["2. INSERT INTO orders__dbt_new_data_#lt;run_id#gt;<br/>SELECT ... model SQL ...<br/>WHERE ordered_at >= (SELECT max(ordered_at) FROM orders)"]
+    q3["3. SELECT DISTINCT partition_id FROM system.parts<br/>WHERE table = 'orders__dbt_new_data_#lt;run_id#gt;' AND active"]
+    q4["4. ALTER TABLE orders<br/>REPLACE PARTITION ID '202509' FROM orders__dbt_new_data_#lt;run_id#gt;,<br/>REPLACE PARTITION ID ... (one per partition found in step 3)"]
+    q5["5. DROP TABLE orders__dbt_new_data_#lt;run_id#gt;"]
+    q1 -->|creates empty, same structure as orders| staging
+    stg -->|reads| q2
+    items -->|reads| q2
+    q2 -->|inserts the changed rows| staging
+    parts -->|reads the partitions of the staging table| q3
+    q3 -->|partition ids| q4
+    staging -->|reads| q4
+    q4 -->|replaces those partitions| orders
+    q5 -->|drops| staging
+    classDef temp fill:#dbeafe,stroke:#1d4ed8;
+    classDef target fill:#fef3c7,stroke:#b45309;
+    classDef source fill:#dcfce7,stroke:#15803d;
+    classDef query fill:#f3f4f6,stroke:#6b7280;
+    class staging temp;
+    class orders target;
+    class stg,items,parts source;
+    class q1,q2,q3,q4,q5 query;
+```
+
+[物化类型页面](/zh/integrations/connectors/data-ingestion/etl-tools/dbt/materializations#materialization-incremental)介绍了增量物化的其余选项，包括 `microbatch` 策略和 `on_schema_change`。
+
+## 创建 snapshot {#snapshot}
+
+dbt [snapshots](https://docs.getdbt.com/docs/build/snapshots) 用于记录可变表中的行随时间发生的变化，使分析人员能够回溯查看过去任意时间点的数据状态。它们实现了[类型 2 缓慢变化维](https://en.wikipedia.org/wiki/Slowly_changing_dimension#Type_2:_add_new_row)：每个版本的行都会连同其有效的时间间隔一并存储。
+
+`customers` 数据集市就很合适：每当客户再次下单，`count_lifetime_orders`、`lifetime_spend` 和 `customer_type` 都会随之变化。在继续之前，请将 `orders` 模型改回[增量章节](#incremental)中的默认增量策略 (移除 `incremental_strategy='append'`，并将过滤条件改回 `>=`) ，这样当天稍后产生的订单才能被采集到。
+
+自 dbt 1.9 起，snapshots 通过 YAML 定义。创建 `snapshots/customers_snapshot.yml`：
+
+```yaml
+snapshots:
+  - name: customers_snapshot
+    relation: ref('customers')
+    config:
+      unique_key: customer_id
+      strategy: check
+      check_cols:
+        - count_lifetime_orders
+        - lifetime_spend
+        - customer_type
+```
+
+`check` 策略会在每次运行时比较 current snapshot 与 source 中所列出的列，只要其中任意一列发生变化，就记录一个新版本。如果你的模型中有一个可靠的 &quot;last updated&quot; 时间戳列，则 `timestamp` 策略开销更低：设置 `strategy: timestamp` 和 `updated_at: <column>`。Jaffle Shop 的 `last_ordered_at` 被截断到天，因此无法捕获同一天内的第二笔订单，这正是本示例使用 `check` 的原因。
+
+创建第一个 snapshot：
+
+```bash
+dbt snapshot
+```
+
+```response
+1 of 1 START snapshot `jaffle_shop`.`customers_snapshot` ....................... [RUN]
+1 of 1 OK snapshotted `jaffle_shop`.`customers_snapshot` ....................... [OK in 0.17s]
+```
+
+snapshot 表与这些模型创建在一起。该项目的 `generate_schema_name` macro 会把所有 relation 都放到非 production target 的 target schema 中，因此 snapshot 上的 `schema` 配置只在使用 `prod` target 时才生效。该表为每个客户保存一行，并包含 dbt 用于记账的列 `dbt_valid_from` 和 `dbt_valid_to`；对于某一行的当前版本，后者为 `NULL`：
+
+```sql
+SELECT customer_id, count_lifetime_orders, lifetime_spend, customer_type, dbt_valid_from, dbt_valid_to
+FROM jaffle_shop.customers_snapshot
+WHERE customer_id IN ('clicky-0001', 'danny-0001')
+ORDER BY customer_id, dbt_valid_from;
+```
+
+```response
+┌─customer_id─┬─count_lifetime_orders─┬─lifetime_spend─┬─customer_type─┬──────dbt_valid_from─┬─dbt_valid_to─┐
+│ clicky-0001 │                     1 │          11.66 │ new           │ 2026-09-15 01:15:32 │         ᴺᵁᴸᴸ │
+│ danny-0001  │                     1 │          19.76 │ new           │ 2026-09-15 01:15:32 │         ᴺᵁᴸᴸ │
+└─────────────┴───────────────────────┴────────────────┴───────────────┴─────────────────────┴──────────────┘
+```
+
+今天 Clicky 又来喝咖啡了：
+
+```sql
+INSERT INTO raw.raw_orders VALUES
+    ('clicky-order-0002', 'clicky-0001', now(),
+     '4b6c2304-2b9e-41e4-942a-cf11a1819378', 600, 36, 636);
+
+INSERT INTO raw.raw_items VALUES ('clicky-item-0002', 'clicky-order-0002', 'BEV-001');
+```
+
+运行模型，使 `orders` 和 `customers` 反映这笔新订单，然后创建第二个快照：
+
+```bash
+dbt run
+dbt snapshot
+```
+
+```response
+1 of 1 START snapshot `jaffle_shop`.`customers_snapshot` ....................... [RUN]
+1 of 1 OK snapshotted `jaffle_shop`.`customers_snapshot` ....................... [OK in 0.73s]
+```
+
+现在快照中 Clicky 有两行。第一个版本通过设置 `dbt_valid_to` 被关闭，而新版本 (此时已是拥有两笔订单的 `returning` 客户) 处于打开状态。Danny 没有变化，因此他的行保持原样：
+
+```sql
+SELECT customer_id, count_lifetime_orders, lifetime_spend, customer_type, dbt_valid_from, dbt_valid_to
+FROM jaffle_shop.customers_snapshot
+WHERE customer_id IN ('clicky-0001', 'danny-0001')
+ORDER BY customer_id, dbt_valid_from;
+```
+
+```response
+┌─customer_id─┬─count_lifetime_orders─┬─lifetime_spend─┬─customer_type─┬──────dbt_valid_from─┬────────dbt_valid_to─┐
+│ clicky-0001 │                     1 │          11.66 │ new           │ 2026-09-15 01:15:32 │ 2026-09-15 01:16:16 │
+│ clicky-0001 │                     2 │          18.02 │ returning     │ 2026-09-15 01:16:16 │                ᴺᵁᴸᴸ │
+│ danny-0001  │                     1 │          19.76 │ new           │ 2026-09-15 01:15:32 │                ᴺᵁᴸᴸ │
+└─────────────┴───────────────────────┴────────────────┴───────────────┴─────────────────────┴─────────────────────┘
+```
+
+在底层，adapter 会在表 `customers_snapshot__snapshot_upsert` 中构建新版本的 snapshot，然后通过 `EXCHANGE TABLES` 将其替换上线 (若 server 不支持 exchange tables，则改用 drop 加 rename 的方式) ，因此读取器看到的要么是旧版本的 snapshot，要么是新版本，不会出现中间状态。配置参考请参见[物化类型页面的 snapshot 部分](/zh/integrations/connectors/data-ingestion/etl-tools/dbt/materializations#snapshot)。
+
+## 使用 materialized view {#materialized-views}
+
+到目前为止，所有内容都需要执行 `dbt run` 才能将新数据加载到模型中。ClickHouse [materialized view](/zh/concepts/features/materialized-views/index) 的工作方式则不同：它们本质上是插入触发器。每当有行块插入源表，视图的 `SELECT` 就会对其进行转换并写入目标表，无需任何调度。adapter 通过 `materialized_view` 物化暴露这一能力。
+
+创建 `models/marts/daily_store_revenue.sql`，直接从原始订单表读取数据，统计每个门店每天的订单数和收入：
+
+```sql
+{{
+    config(
+        materialized='materialized_view',
+        engine='SummingMergeTree()',
+        order_by='(order_date, store_id)'
+    )
+}}
+
+select
+    toDate(ordered_at) as order_date,
+    store_id,
+    count() as orders,
+    sum(order_total) as revenue_cents
+from {{ source('ecom', 'raw_orders') }}
+group by order_date, store_id
+```
+
+`engine` 和 `order_by` 作用于目标表。`SummingMergeTree` 在合并 parts 时,会将 sorting key 相同的行的数值列相加,这正是按天、按门店聚合所需要的行为。
+
+```bash
+dbt run --select daily_store_revenue
+```
+
+```response
+1 of 1 START sql materialized_view model `jaffle_shop`.`daily_store_revenue` ... [RUN]
+1 of 1 OK created sql materialized_view model `jaffle_shop`.`daily_store_revenue`  [OK in 0.25s]
+```
+
+adapter 创建了两个对象：一个是以 model 命名的 target table，另一个是带 `_mv` 后缀的 materialized view 本身，后者通过 `TO` clause 指向该 target table。默认情况下 (`catchup=True`) ，target table 还会用已有的订单数据完成 backfill：
+
+```sql
+SELECT name, engine
+FROM system.tables
+WHERE database = 'jaffle_shop' AND name LIKE 'daily_store_revenue%';
+```
+
+```response
+┌─name───────────────────┬─engine───────────┐
+│ daily_store_revenue    │ SummingMergeTree │
+│ daily_store_revenue_mv │ MaterializedView │
+└────────────────────────┴──────────────────┘
+```
+
+```sql
+SHOW CREATE TABLE jaffle_shop.daily_store_revenue_mv;
+```
+
+```response
+CREATE MATERIALIZED VIEW jaffle_shop.daily_store_revenue_mv TO jaffle_shop.daily_store_revenue
+(
+    `order_date` Date,
+    `store_id` String,
+    `orders` UInt64,
+    `revenue_cents` Int64
+)
+AS SELECT
+    toDate(ordered_at) AS order_date,
+    store_id,
+    count() AS orders,
+    sum(order_total) AS revenue_cents
+FROM raw.raw_orders
+GROUP BY
+    order_date,
+    store_id
+```
+
+现在为 Danny 再插入一条原始订单，但之后不运行 dbt：
+
+```sql
+INSERT INTO raw.raw_orders VALUES
+    ('danny-order-0002', 'danny-0001', now(),
+     '40e6ddd6-b8f6-4e17-8bd6-5e53966809d2', 1400, 56, 1456);
+
+INSERT INTO raw.raw_items VALUES ('danny-item-0003', 'danny-order-0002', 'JAF-004');
+```
+
+目标表已经反映了这一变化：Brooklyn 今天现在有两笔订单：
+
+```sql
+SELECT order_date, store_id, sum(orders) AS orders, sum(revenue_cents) AS revenue_cents
+FROM jaffle_shop.daily_store_revenue
+WHERE order_date >= yesterday()
+GROUP BY order_date, store_id
+ORDER BY order_date, store_id;
+```
+
+```response
+┌─order_date─┬─store_id─────────────────────────────┬─orders─┬─revenue_cents─┐
+│ 2026-09-14 │ 4b6c2304-2b9e-41e4-942a-cf11a1819378 │      1 │          1166 │
+│ 2026-09-15 │ 40e6ddd6-b8f6-4e17-8bd6-5e53966809d2 │      2 │          3432 │
+│ 2026-09-15 │ 4b6c2304-2b9e-41e4-942a-cf11a1819378 │      1 │           636 │
+└────────────┴──────────────────────────────────────┴────────┴───────────────┘
+```
+
+该查询特意使用 `sum()` 和 `GROUP BY` 进行聚合：`SummingMergeTree` 只在后台合并 parts 时才会折叠相同键的行，在此之前，两笔 Brooklyn 订单在表中仍是两行。因此，使用求和类和聚合类引擎时，务必在读取时聚合 (或使用 `FINAL`) 。与此同时，在下一次 `dbt run` 之前，`orders` 增量模型中 Danny 仍然只有一笔订单。
+
+后续执行 `dbt run` 会保留target table及其数据，只更新 view definition；如果变更允许，会通过 `ALTER TABLE ... MODIFY QUERY` 完成，因此把该模型保留在项目中是安全的。`dbt run --full-refresh` 则会重建target table并重新 backfill (除非 `catchup` 为 `False`) 。其余内容可参见 [materialized views 页面](/zh/integrations/connectors/data-ingestion/etl-tools/dbt/materialization-materialized-view)：使用 `on_schema_change` 处理 schema 变更、通过 `catchup` 禁用 backfill、可刷新 materialized views、多个 view 写入同一target table，以及将target table定义为独立模型。
+
+## 更多信息 {#further-information}
+
+本指南仅涉及 dbt 的皮毛。凡是并非 ClickHouse 特有的内容，均应以 [dbt 文档](https://docs.getdbt.com/docs/introduction) 为准。关于该 adapter，可参阅 [features and configurations](/zh/integrations/connectors/data-ingestion/etl-tools/dbt/features-and-configurations) 页面了解 profile 设置与全局功能，参阅 [物化类型页面](/zh/integrations/connectors/data-ingestion/etl-tools/dbt/materializations) 了解上文用到的各项配置；如果你使用 dbt OSS、dbt v2 或 dbt 平台，则可参阅 [dbt OSS、dbt v2 与 dbt 平台页面](/zh/integrations/connectors/data-ingestion/etl-tools/dbt/dbt-core-v2-fusion-and-platform)。欢迎向 [Jaffle Shop for ClickHouse](https://github.com/ClickHouse/jaffle-shop-clickhouse) 贡献新的示例。

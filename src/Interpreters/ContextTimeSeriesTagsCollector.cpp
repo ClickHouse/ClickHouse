@@ -1042,9 +1042,8 @@ UInt64 ContextTimeSeriesTagsCollector::getSamplingKeyByGroup(Group group) const
 }
 
 
-VectorWithMemoryTracking<UInt64> ContextTimeSeriesTagsCollector::getSamplingKeyByGroup(const VectorWithMemoryTracking<Group> & groups_) const
+void ContextTimeSeriesTagsCollector::getSamplingKeyByGroup(const VectorWithMemoryTracking<Group> & groups_, PaddedPODArray<UInt64> & res) const
 {
-    VectorWithMemoryTracking<UInt64> res;
     res.resize(groups_.size());
     SharedLockGuard lock{mutex};
     for (size_t i = 0; i != groups_.size(); ++i)
@@ -1054,7 +1053,6 @@ VectorWithMemoryTracking<UInt64> ContextTimeSeriesTagsCollector::getSamplingKeyB
             throwGroupOutOfBound(group, sampling_keys.size());
         res[i] = sampling_keys[group];
     }
-    return res;
 }
 
 
@@ -1095,12 +1093,18 @@ VectorWithMemoryTracking<String> ContextTimeSeriesTagsCollector::extractTag(cons
     return res;
 }
 
-void ContextTimeSeriesTagsCollector::extractTag(const VectorWithMemoryTracking<Group> & groups_, const String & tag_to_extract, ColumnString & out_column) const
+void ContextTimeSeriesTagsCollector::extractTag(
+    const VectorWithMemoryTracking<Group> & groups_,
+    const String & tag_to_extract,
+    ColumnString & out_column,
+    PaddedPODArray<UInt8> & null_map) const
 {
     out_column.reserve(groups_.size());
+    null_map.resize(groups_.size());
     SharedLockGuard lock{mutex};
-    for (Group group : groups_)
+    for (size_t i = 0; i != groups_.size(); ++i)
     {
+        Group group = groups_[i];
         if (group >= groups.size())
             throwGroupOutOfBound(group, groups.size());
         const auto & tags = *groups[group];
@@ -1110,12 +1114,16 @@ void ContextTimeSeriesTagsCollector::extractTag(const VectorWithMemoryTracking<G
             if (tag_name == tag_to_extract)
             {
                 out_column.insertData(tag_value.data(), tag_value.size());
+                null_map[i] = tag_value.empty();
                 found = true;
                 break;
             }
         }
         if (!found)
+        {
             out_column.insertDefault();
+            null_map[i] = 1;
+        }
     }
 }
 
