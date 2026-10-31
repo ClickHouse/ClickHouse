@@ -7,6 +7,7 @@
 #include <Storages/PostgreSQL/StorageMaterializedPostgreSQL.h>
 #endif
 #include <Interpreters/Context.h>
+#include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/misc.h>
 #include <Parsers/ASTConstraintDeclaration.h>
 #include <Parsers/ASTCreateQuery.h>
@@ -238,7 +239,7 @@ void DDLLoadingDependencyVisitor::extractTableNameFromArgument(const ASTFunction
         if (name->value.getType() != Field::Types::String)
             return;
 
-        auto maybe_qualified_name = QualifiedTableName::tryParseFromString(name->value.safeGet<String>());
+        auto maybe_qualified_name = DatabaseCatalog::tryParseFormattedHierarchicalName(name->value.safeGet<String>());
         if (!maybe_qualified_name)
             return;
 
@@ -249,7 +250,7 @@ void DDLLoadingDependencyVisitor::extractTableNameFromArgument(const ASTFunction
         if (literal->value.getType() != Field::Types::String)
             return;
 
-        auto maybe_qualified_name = QualifiedTableName::tryParseFromString(literal->value.safeGet<String>());
+        auto maybe_qualified_name = DatabaseCatalog::tryParseFormattedHierarchicalName(literal->value.safeGet<String>());
         /// Just return if name if invalid
         if (!maybe_qualified_name)
             return;

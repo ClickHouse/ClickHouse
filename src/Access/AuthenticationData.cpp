@@ -6,6 +6,7 @@
 #include <Common/Exception.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/Access/getValidUntilFromAST.h>
+#include <Interpreters/Access/resolveHierarchicalNamesForAccess.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Parsers/ASTLiteral.h>
@@ -547,8 +548,13 @@ AuthenticationData AuthenticationData::fromAST(const ASTAuthenticationData & que
         /// when the query is interpreted, so that the restriction does not depend on the session which
         /// uses the credential later. There is no context when the user is loaded from a storage, but
         /// in that case the elements were already bound at the time of CREATE/ALTER.
+        /// A hierarchical name (`SELECT ON ns.t` inside `USE db`, or `SELECT ON a.b.c`) is bound to the object the same
+        /// name reads in a query, like in `GRANT`.
         if (context)
+        {
             grants.replaceEmptyDatabase(context->getCurrentDatabase());
+            resolveHierarchicalNamesForAccess(grants, context);
+        }
 
         /// Filtered source grants such as `READ ON S3('s3://bucket/.*')` are not supported here yet.
         /// The session limit is applied as `AccessRights::makeIntersection`, which treats a source filter

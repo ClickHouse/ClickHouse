@@ -507,6 +507,29 @@ BlockIO InterpreterAlterQuery::execute()
     throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown alter object type");
 }
 
+void InterpreterAlterQuery::bindHierarchicalNameOfOperand(String & database, String & table) const
+{
+    if (table.empty())
+        return;
+
+    StorageID as_written(database, table);
+    String current_database = getContext()->getCurrentDatabase();
+    if (database.empty())
+    {
+        if (current_database.empty())
+            return;
+        if (getContext()->tryResolveStorageID(as_written, Context::ResolveExternal))
+            return;
+    }
+
+    StorageID resolved = DatabaseCatalog::instance().resolveHierarchicalName(as_written, current_database, getContext());
+    if (resolved.database_name != (database.empty() ? current_database : database) || resolved.table_name != table)
+    {
+        database = resolved.database_name;
+        table = resolved.table_name;
+    }
+}
+
 BlockIO InterpreterAlterQuery::executeToTable(const ASTAlterQuery & alter)
 {
     ASTSelectWithUnionQuery * modify_query = nullptr;
@@ -538,10 +561,60 @@ BlockIO InterpreterAlterQuery::executeToTable(const ASTAlterQuery & alter)
 
     if (table_id)
     {
+        /// Both parts: a hierarchical name (`ALTER TABLE a.b.c`, `a.b` in `USE a`) may be split differently from
+        /// how it was written, see `DatabaseCatalog::resolveHierarchicalName`.
         query_ptr->as<ASTAlterQuery &>().setDatabase(table_id.database_name);
+        query_ptr->as<ASTAlterQuery &>().setTable(table_id.table_name);
         /// Resolve once here so every branch below validates against the real structure instead of
         /// the columns-only metadata a lazily loaded table reports.
         table = resolveStorageProxyLoading(DatabaseCatalog::instance().tryGetTable(table_id, getContext()));
+    }
+
+    /// The other tables of the commands (`REPLACE/ATTACH PARTITION ... FROM ns.src`, `MOVE PARTITION ... TO TABLE ns.dst`)
+    /// are bound the same way, before the access is checked and before the query is dispatched `ON CLUSTER`, so that
+    /// a grant on the (nonexistent) database `ns` does not authorize reading or writing the table `ns.src` of the
+    /// current database.
+    for (auto & child : alter.command_list->children)
+    {
+        auto & command = child->as<ASTAlterCommand &>();
+        if (command.type == ASTAlterCommand::REPLACE_PARTITION)
+            bindHierarchicalNameOfOperand(command.from_database, command.from_table);
+        else if (command.type == ASTAlterCommand::MOVE_PARTITION && command.move_destination_type == DataDestinationType::TABLE)
+            bindHierarchicalNameOfOperand(command.to_database, command.to_table);
+    }
+
+    /// The names in the query of `MODIFY QUERY` are bound here as well, before the query is dispatched `ON CLUSTER` or
+    /// enqueued to a `Replicated` database: the hosts replaying it take a qualified name exactly as shipped (see
+    /// `DatabaseCatalog::isBoundHierarchicalName`), so `db.ns.t` must already be the table `db`.`ns.t` it denotes here.
+    /// This is the same expansion and qualification as below, which is idempotent; the table is qualified with the
+    /// database of the altered table, as each host does.
+    /// The same holds for the table operands of the mutation expressions (`DELETE WHERE x IN db.ns.src`).
+    if (table_id)
+    {
+        ExpandedASTBudget binding_budget(settings[Setting::max_expanded_ast_elements], *query_ptr);
+        AddDefaultDatabaseVisitor binding_visitor(getContext(), table_id.getDatabaseName());
+        if (modify_query)
+        {
+            ApplyWithSubqueryVisitor::visit(*modify_query, binding_budget);
+            ASTPtr modify_query_ptr = modify_query->ptr();
+            binding_visitor.visit(modify_query_ptr);
+        }
+        for (const auto & child : alter.command_list->children)
+        {
+            const auto * command = child->as<ASTAlterCommand>();
+            if (!command || (command->type != ASTAlterCommand::UPDATE && command->type != ASTAlterCommand::DELETE))
+                continue;
+
+            for (IAST * expression : {command->predicate, command->update_assignments})
+            {
+                if (!expression)
+                    continue;
+                ASTPtr expression_ptr = expression->ptr();
+                ApplyWithSubqueryVisitor::visit(expression_ptr, getContext(), binding_budget);
+            }
+            ASTPtr command_ptr = child;
+            binding_visitor.visit(command_ptr);
+        }
     }
 
     if (!alter.cluster.empty() && !maybeRemoveOnCluster(query_ptr, getContext()))
@@ -554,8 +627,8 @@ BlockIO InterpreterAlterQuery::executeToTable(const ASTAlterQuery & alter)
         /// implicitly, e.g. `merge('tables_regexp')` in a mutation, so that they read the same tables
         /// as in the non-clustered case. It has to be done before `executeDDLQueryOnCluster`,
         /// which replaces `currentDatabase()` with the database of the session.
-        /// The table identifiers are not qualified here: they are qualified with the database
-        /// of the altered table when the query is interpreted on each host.
+        /// The table identifiers of the mutation expressions are already qualified above, with the database
+        /// of the altered table, as each host would qualify them.
         if (table_id)
         {
             AddDefaultDatabaseVisitor visitor(getContext(), table_id.getDatabaseName());

@@ -3,6 +3,7 @@
 #include <IO/Operators.h>
 #include <Analyzer/ColumnNode.h>
 #include <Analyzer/Identifier.h>
+#include <Interpreters/Context_fwd.h>
 #include <DataTypes/NestedUtils.h>
 
 namespace DB
@@ -38,6 +39,14 @@ struct AnalysisTableExpressionData
     std::string database_name;
     std::string table_name;
     bool should_qualify_columns = true;
+
+    /// The number of leading parts of `identifier` that the table name covers, 0 if the identifier does not start
+    /// with it. Table names are hierarchical (see `DatabaseCatalog`): the table `ns.t` covers two parts, and inside
+    /// `USE db.ns` the same table is also addressable as `t`, so the name relative to the current database is matched too.
+    size_t matchTableName(const Identifier & identifier, const ContextPtr & context) const;
+    /// The same for `database.table`. A quoted part of the identifier may cross the boundary between the two names;
+    /// `crosses_boundary`, when given, is set then (`"a.b".c` for the table `b.c` of the database `a`).
+    size_t matchDatabaseAndTableName(const Identifier & identifier, bool * crosses_boundary = nullptr) const;
     bool supports_subcolumns = false;
     NamesAndTypes column_names_and_types;
     /// Set of regular (non-subcolumn) column names. Lazily populated by

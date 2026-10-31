@@ -1,0 +1,37 @@
+--- an exact qualifier is preferred over a quoted one crossing the boundary between the database and the table
+2
+1
+2
+2
+--- the source of CLONE AS is the table the name denotes before the new table is created
+42
+42
+--- MODIFY QUERY ON CLUSTER binds the names of its query on the initiator
+* FROM db.`ns.t`
+7
+--- and so does MODIFY QUERY in a Replicated database
+* FROM db_repl.`ns.t`
+8
+--- parameterized views have hierarchical names too
+1
+2
+3
+4
+x	UInt8					
+--- the temporary tables of another session are not reachable by an explicit name
+(DATABASE_ACCESS_DENIED)
+(DATABASE_ACCESS_DENIED)
+--- the old analyzer keeps the split of a bound name of joinGet and dictGet
+original	original
+other	other
+original	original
+--- a stored bound name is a dependency of the view
+joinGet(\'db.`ns.j`\', \'v\', toUInt64(1)) AS a, dictGet(\'db.`ns.d`\', \'v\', toUInt64(1)) AS b
+(HAVE_DEPENDENT_OBJECTS)
+(HAVE_DEPENDENT_OBJECTS)
+--- and it is renamed by a restore into another database
+joinGet(\'db_copy.`ns.j`\', \'v\', toUInt64(1)) AS a, dictGet(\'db_copy.`ns.d`\', \'v\', toUInt64(1)) AS b
+restored
+--- a name expression that depends on the context of the call is not frozen in a view
+one
+two

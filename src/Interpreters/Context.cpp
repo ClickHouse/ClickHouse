@@ -3525,20 +3525,12 @@ static bool findIdentifier(const ASTFunction * function)
 StoragePtr Context::executeTableFunction(const ASTPtr & table_expression, const ASTSelectQuery * select_query_hint)
 {
     ASTFunction * function = assert_cast<ASTFunction *>(table_expression.get());
-    String database_name = getCurrentDatabase();
-    String table_name = function->name;
-
-    if (function->isCompoundName())
-    {
-        std::vector<std::string> parts;
-        splitInto<'.'>(parts, function->name);
-
-        if (parts.size() == 2)
-        {
-            database_name = std::move(parts[0]);
-            table_name = std::move(parts[1]);
-        }
-    }
+    /// The name of a parameterized view is hierarchical (see `DatabaseCatalog`), the same as the name of an ordinary view:
+    /// `db.ns.v` may be the view `ns.v` of the database `db`, and inside `USE db.ns` the same view is `v`.
+    StorageID view_id = DatabaseCatalog::parseHierarchicalName(function->name);
+    view_id = DatabaseCatalog::instance().resolveHierarchicalName(StorageID(view_id.database_name, view_id.table_name), shared_from_this());
+    String database_name = view_id.database_name;
+    String table_name = view_id.table_name;
 
     StoragePtr table = DatabaseCatalog::instance().tryGetTable({database_name, table_name}, getQueryContext());
     if (table)
@@ -9349,7 +9341,14 @@ StorageID Context::resolveStorageID(StorageID storage_id, StorageNamespace where
     if (exc)
         throw Exception(*exc);
     if (!resolved.hasUUID() && resolved.database_name != DatabaseCatalog::TEMPORARY_DATABASE)
-        resolved.uuid = DatabaseCatalog::instance().getDatabase(resolved.database_name)->tryGetTableUUID(resolved.table_name);
+    {
+        /// A hierarchical name (`a.b.c`, or a table inside `USE a.b`) is split into the database and the table
+        /// of the existing table it names; see `DatabaseCatalog::resolveHierarchicalName`.
+        resolved = DatabaseCatalog::instance().resolveHierarchicalName(resolved, shared_from_this());
+        /// No table with such name exists: throws UNKNOWN_DATABASE (with a hint) if the database does not exist either.
+        if (!resolved.hasUUID())
+            resolved.uuid = DatabaseCatalog::instance().getDatabase(resolved.database_name)->tryGetTableUUID(resolved.table_name);
+    }
     return resolved;
 }
 
@@ -9364,11 +9363,7 @@ StorageID Context::tryResolveStorageID(StorageID storage_id, StorageNamespace wh
         resolved = resolveStorageIDImpl(std::move(storage_id), where, nullptr);
     }
     if (resolved && !resolved.hasUUID() && resolved.database_name != DatabaseCatalog::TEMPORARY_DATABASE)
-    {
-        auto db = DatabaseCatalog::instance().tryGetDatabase(resolved.database_name);
-        if (db)
-            resolved.uuid = db->tryGetTableUUID(resolved.table_name);
-    }
+        resolved = DatabaseCatalog::instance().resolveHierarchicalName(resolved, shared_from_this());
     return resolved;
 }
 

@@ -13,6 +13,7 @@
 #include <Core/ServerSettings.h>
 #include <Interpreters/Access/InterpreterSetRoleQuery.h>
 #include <Interpreters/Access/getValidUntilFromAST.h>
+#include <Interpreters/Access/resolveHierarchicalNamesForAccess.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/executeDDLQueryOnCluster.h>
 #include <Interpreters/removeOnClusterClauseIfNeeded.h>
@@ -431,8 +432,12 @@ BlockIO InterpreterCreateUserQuery::execute()
         /// `AddDefaultDatabaseVisitor` does not rewrite `ASTAuthenticationData::grants` (they are stored outside
         /// the AST children), and the current database of a DDL worker is not the initiator's, so otherwise each
         /// node would rebind bare-table grants to a different database.
+        /// Hierarchical names are bound to the objects they denote here as well (see `resolveHierarchicalNamesForAccess`).
         for (auto & authentication_method_ast : cluster_query.authentication_methods)
+        {
             authentication_method_ast->grants.replaceEmptyDatabase(getContext()->getCurrentDatabase());
+            resolveHierarchicalNamesForAccess(authentication_method_ast->grants, getContext());
+        }
 
         auto rewrite_deadline = [](IAST & owner, ASTPtr & valid_until, bool & is_interval, time_t deadline)
         {

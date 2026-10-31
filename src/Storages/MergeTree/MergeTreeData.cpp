@@ -10338,7 +10338,16 @@ Pipe MergeTreeData::alterPartition(
                     checkPartitionCanBeDropped(command.partition, query_context);
 
                 auto resolved = query_context->resolveStorageID({command.from_database, command.from_table});
-                            auto from_storage = resolveStorageProxyLoading(DatabaseCatalog::instance().getTable(resolved, query_context));
+                /// `InterpreterAlterQuery` has bound the name of the source to the table it denotes and checked `SELECT` on
+                /// it. A hierarchical name (see `DatabaseCatalog`) resolves to another table when that one was renamed
+                /// in between (`a.b`.`c` gone, `a`.`b.c` found): then the access is checked for the table actually read.
+                /// The source can be left unqualified by the binder, and then it was checked in the current database,
+                /// while its resolution here also tries the names relative to the current database (`a`.`a.b.c`).
+                String checked_database = command.from_database.empty() ? query_context->getCurrentDatabase() : command.from_database;
+                if (resolved.database_name != DatabaseCatalog::TEMPORARY_DATABASE
+                    && (resolved.database_name != checked_database || resolved.table_name != command.from_table))
+                    query_context->checkAccess(AccessType::SELECT, resolved.database_name, resolved.table_name);
+                auto from_storage = resolveStorageProxyLoading(DatabaseCatalog::instance().getTable(resolved, query_context));
 
                 auto * from_storage_merge_tree = castStorage<MergeTreeData>(from_storage, DeferredTable::Load).get();
                 if (!from_storage_merge_tree)

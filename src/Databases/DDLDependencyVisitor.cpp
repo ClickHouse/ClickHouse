@@ -5,6 +5,7 @@
 #include <Interpreters/ApplyWithSubqueryVisitor.h>
 #include <Interpreters/Cluster.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/misc.h>
 #include <Interpreters/InDepthNodeVisitor.h>
 #include <Interpreters/evaluateConstantExpression.h>
@@ -488,7 +489,7 @@ namespace
                 if (!qualified_name_as_string)
                     return {};
 
-                auto maybe_qualified_name = QualifiedTableName::tryParseFromString(*qualified_name_as_string);
+                auto maybe_qualified_name = DatabaseCatalog::tryParseFormattedHierarchicalName(*qualified_name_as_string);
                 if (!maybe_qualified_name)
                     return {};
 

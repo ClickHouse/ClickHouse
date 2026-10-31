@@ -77,12 +77,17 @@ private:
     void resetFullName();
 };
 
+/// A table reference. Its name can have any number of parts: `t`, `db.t`, or a hierarchical name
+/// `a.b.c` which is not split into a database and a table until it is resolved against the catalog
+/// (the database may be `a.b` or `a`, and the table `c` or `b.c`; see `DatabaseCatalog::getTableImpl`).
+/// Until then, `getTableId` reports the longest database prefix (`a.b`) and the last part as the table.
 class ASTTableIdentifier : public ASTIdentifier
 {
 public:
     explicit ASTTableIdentifier(const String & table_name, ASTs && name_params = {});
     explicit ASTTableIdentifier(const StorageID & table_id, ASTs && name_params = {});
     ASTTableIdentifier(const String & database_name, const String & table_name, ASTs && name_params = {});
+    explicit ASTTableIdentifier(std::vector<String> && name_parts, ASTs && name_params = {});
 
     String getID(char delim) const override { return "TableIdentifier" + (delim + name()); }
     ASTPtr clone() const override;
@@ -105,6 +110,10 @@ public:
     void resetTable(const String & database_name, const String & table_name);  // TODO(ilezhankin): get rid of this
 
     void updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const override;
+
+private:
+    /// A part of the name as its own identifier: the literal part, or the query parameter standing for an empty part.
+    ASTPtr getPartAsIdentifier(size_t part_index) const;
 };
 
 }

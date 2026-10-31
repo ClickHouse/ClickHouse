@@ -1,0 +1,14 @@
+CREATE VIEW db.v
+(
+    `x` UInt8
+)
+AS SELECT x
+FROM db.`ns.t`
+CREATE VIEW db.v3
+(
+    `x` UInt8
+)
+AS SELECT x
+FROM db.`ns.t`
+1
+1

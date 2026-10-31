@@ -122,6 +122,7 @@ BlockIO InterpreterUpdateQuery::execute()
         /// from it: otherwise they are expanded to the configured default database of each host, so the
         /// rights that are checked and the table that is updated can name different databases.
         update_query.setDatabase(resolved_table_id.database_name);
+        update_query.setTable(resolved_table_id.table_name);
         table_for_access = DatabaseCatalog::instance().tryGetTable(resolved_table_id, getContext());
     }
     const auto row_exists_column_kind = InterpreterAlterQuery::getRowExistsColumnKind(table_for_access, getContext());
@@ -173,10 +174,12 @@ BlockIO InterpreterUpdateQuery::execute()
         throw Exception(ErrorCodes::QUERY_IS_PROHIBITED, "Update queries are prohibited");
 
     getContext()->checkAccess(required_access);
-    /// Same database as `resolved_table_id` above, resolved again because the `ON CLUSTER` branch returns
-    /// before this point, and because this one must throw where that one returns empty. Do not collapse.
-    auto table_id = getContext()->resolveStorageID(update_query, Context::ResolveOrdinary);
+    /// The table the access was checked for: a hierarchical name must not be resolved again after the check, because
+    /// another split of it (`a`.`b.c` instead of `a.b`.`c`) may name another table by now. Resolved here only when that
+    /// resolution returned empty, so that it throws the proper exception.
+    auto table_id = resolved_table_id ? resolved_table_id : getContext()->resolveStorageID(update_query, Context::ResolveOrdinary);
     update_query.setDatabase(table_id.database_name);
+    update_query.setTable(table_id.table_name);
 
     /// First check table storage for validations.
     StoragePtr table = DatabaseCatalog::instance().getTable(table_id, getContext());
