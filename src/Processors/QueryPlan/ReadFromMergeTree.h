@@ -231,15 +231,19 @@ public:
         UInt64 granules_dropped_by_skip_indexes = 0;
         NameSet used_skip_indexes;
         /// The marks that the analysis of a projection excluded in a part by the primary key and by skip indexes, and the skip indexes applied to it.
-        struct ProjectionExclusion
+        struct ProjectionPartAnalysis
         {
             UInt64 granules_dropped_by_primary_key = 0;
             UInt64 granules_dropped_by_skip_indexes = 0;
             NameSet used_skip_indexes;
         };
-        /// Parent parts that the analysis of a projection excluded entirely. Filled by the projection analysis for its own parts
-        /// and by `filterPartsByProjection` in the read whose parts it removes.
-        std::unordered_map<const IMergeTreeDataPart *, ProjectionExclusion> parts_excluded_by_projection;
+        /// The analysis of each projection part, by parent part. Filled only in the analysis of a projection.
+        std::unordered_map<const IMergeTreeDataPart *, ProjectionPartAnalysis> projection_parts_analysis;
+        /// Parent parts that the analysis of a projection excluded entirely. Filled by `filterPartsByProjection` in the read whose parts it removes.
+        std::unordered_map<const IMergeTreeDataPart *, ProjectionPartAnalysis> parts_excluded_by_projection;
+        /// Parent parts whose read uses the rows of projections as an index, with the analysis of each such projection by its name.
+        /// Not in the counters above.
+        std::unordered_map<const IMergeTreeDataPart *, std::unordered_map<String, ProjectionPartAnalysis>> parts_read_with_projection_index;
         std::atomic<bool> exceeded_row_limits = false;
 
         AnalysisResult() = default;
@@ -267,7 +271,9 @@ public:
             , granules_dropped_by_primary_key(other.granules_dropped_by_primary_key)
             , granules_dropped_by_skip_indexes(other.granules_dropped_by_skip_indexes)
             , used_skip_indexes(other.used_skip_indexes)
+            , projection_parts_analysis(other.projection_parts_analysis)
             , parts_excluded_by_projection(other.parts_excluded_by_projection)
+            , parts_read_with_projection_index(other.parts_read_with_projection_index)
             , exceeded_row_limits(other.exceeded_row_limits.load())
         {}
 
@@ -294,7 +300,9 @@ public:
             , granules_dropped_by_primary_key(other.granules_dropped_by_primary_key)
             , granules_dropped_by_skip_indexes(other.granules_dropped_by_skip_indexes)
             , used_skip_indexes(std::move(other.used_skip_indexes))
+            , projection_parts_analysis(std::move(other.projection_parts_analysis))
             , parts_excluded_by_projection(std::move(other.parts_excluded_by_projection))
+            , parts_read_with_projection_index(std::move(other.parts_read_with_projection_index))
             , exceeded_row_limits(other.exceeded_row_limits.load())
         {}
 

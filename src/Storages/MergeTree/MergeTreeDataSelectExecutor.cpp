@@ -1168,7 +1168,7 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
     std::atomic<size_t> sum_marks_dropped_by_skip_indexes = 0;
 
     std::vector<size_t> skip_index_used_in_part(parts_with_ranges.size(), 0);
-    /// filled for projection parts: a projection that excludes the part reports them in the parent read
+    /// filled for projection parts: a projection that excludes the part or filters its rows reports them in the parent read
     std::vector<NameSet> skip_indexes_applied_in_projection_part(parts_with_ranges.size());
     /// by index position in `useful_indices`, not in the per-part order
     std::vector<std::atomic<bool>> skip_index_applied(skip_indexes.useful_indices.size());
@@ -1662,8 +1662,8 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
                 return false;
             }
 
-            if (part.data_part && part.ranges.empty() && part.data_part->isProjectionPart())
-                result.parts_excluded_by_projection[part.data_part->getParentPart()]
+            if (part.data_part && part.data_part->isProjectionPart())
+                result.projection_parts_analysis[part.data_part->getParentPart()]
                     = {part.marks_dropped_by_primary_key, part.marks_dropped_by_skip_indexes, std::move(skip_indexes_applied_in_projection_part[index])};
 
             return !part.data_part || part.ranges.empty();

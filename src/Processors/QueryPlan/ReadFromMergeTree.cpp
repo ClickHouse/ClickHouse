@@ -5298,13 +5298,23 @@ void ReadFromMergeTree::recordIndexUsage(const AnalysisResult & result, const St
         if (stat.type == IndexType::MinMax || stat.type == IndexType::Partition)
             ProfileEvents::increment(ProfileEvents::GranulesDroppedByPartitionKey, granules_before - std::min<UInt64>(granules_before, stat.num_granules_after));
     });
-    ProfileEvents::increment(ProfileEvents::GranulesDroppedByPrimaryKey, result.granules_dropped_by_primary_key);
-    ProfileEvents::increment(ProfileEvents::GranulesDroppedBySkipIndexes, result.granules_dropped_by_skip_indexes);
-
-    /// the drops of projections that excluded whole parts are in the counters above
+    /// the drops of projections that excluded whole parts are in the counters of `result`
+    UInt64 granules_dropped_by_primary_key = result.granules_dropped_by_primary_key;
+    UInt64 granules_dropped_by_skip_indexes = result.granules_dropped_by_skip_indexes;
     NameSet used_skip_indexes = result.used_skip_indexes;
     for (const auto & [_, exclusion] : result.parts_excluded_by_projection)
         used_skip_indexes.insert(exclusion.used_skip_indexes.begin(), exclusion.used_skip_indexes.end());
+    for (const auto & [_, projection_indexes] : result.parts_read_with_projection_index)
+    {
+        for (const auto & [_, index_analysis] : projection_indexes)
+        {
+            granules_dropped_by_primary_key += index_analysis.granules_dropped_by_primary_key;
+            granules_dropped_by_skip_indexes += index_analysis.granules_dropped_by_skip_indexes;
+            used_skip_indexes.insert(index_analysis.used_skip_indexes.begin(), index_analysis.used_skip_indexes.end());
+        }
+    }
+    ProfileEvents::increment(ProfileEvents::GranulesDroppedByPrimaryKey, granules_dropped_by_primary_key);
+    ProfileEvents::increment(ProfileEvents::GranulesDroppedBySkipIndexes, granules_dropped_by_skip_indexes);
     addUsedSkipIndexes(used_skip_indexes, storage_id, query_context);
 }
 

@@ -319,13 +319,14 @@ size_t filterPartsByProjection(
             reading_select_result.selected_rows -= part.getRowsCount();
             reading_select_result.selected_ranges -= part.ranges.size();
             ++filtered_parts;
+            reading_select_result.parts_read_with_projection_index.erase(part.data_part.get());
 
             if (projection_result)
             {
                 /// not listed if the projection analysis excluded the part before the primary key
-                auto excluded = projection_result->parts_excluded_by_projection.find(part.data_part.get());
-                auto exclusion = excluded != projection_result->parts_excluded_by_projection.end()
-                    ? excluded->second : ReadFromMergeTree::AnalysisResult::ProjectionExclusion{};
+                auto excluded = projection_result->projection_parts_analysis.find(part.data_part.get());
+                auto exclusion = excluded != projection_result->projection_parts_analysis.end()
+                    ? excluded->second : ReadFromMergeTree::AnalysisResult::ProjectionPartAnalysis{};
                 auto & dropped_by_primary_key = reading_select_result.granules_dropped_by_primary_key;
                 auto & dropped_by_skip_indexes = reading_select_result.granules_dropped_by_skip_indexes;
                 dropped_by_primary_key = dropped_by_primary_key - std::min(dropped_by_primary_key, part.marks_dropped_by_primary_key)
@@ -668,6 +669,10 @@ void filterPartsAndCollectProjectionCandidates(
             && part.getRowsCount() <= max_projection_rows_to_use_projection_index
             && part.parent_ranges.total_rows >= min_table_rows_to_use_projection_index)
         {
+            /// keyed by the projection name: the optimization can analyze the projection again for the parts that remain
+            if (auto analysis = projection_result_ptr->projection_parts_analysis.find(part.data_part->getParentPart());
+                analysis != projection_result_ptr->projection_parts_analysis.end())
+                parent_reading_select_result.parts_read_with_projection_index[analysis->first][projection.name] = analysis->second;
             desc.read_ranges[part.part_index_in_query].push_back(std::move(part));
             in_use = true;
         }
