@@ -1,4 +1,4 @@
-sizes	e.size	['ZSTD(1)']
+sizes	e.size	['T64, ZSTD(1)']
 sizes	s.size	['T64']
 roundtrip	300000	8848486	1688890
 nested_merge_algorithm	Vertical

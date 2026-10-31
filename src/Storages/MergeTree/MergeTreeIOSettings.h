@@ -218,6 +218,7 @@ struct MergeTreeWriterSettings
     float max_memory_ratio_to_activate_adaptive_write_buffer{};
     bool compress_per_column_in_compact_parts{};
     bool apply_adaptive_codec = false;
+    MergeTreeStringSizeStreamCodec string_size_stream_codec = MergeTreeStringSizeStreamCodec::NONE;
 };
 
 }
