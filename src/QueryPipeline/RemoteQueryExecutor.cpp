@@ -990,6 +990,8 @@ RemoteQueryExecutor::ReadResult RemoteQueryExecutor::processPacket(Packet packet
             break;
 
         case Protocol::Server::ProfileEvents:
+            if (profile_events_callback)
+                profile_events_callback(packet.block);
             /// Pass profile events from remote server to client
             if (auto profile_queue = CurrentThread::getInternalProfileEventsQueue())
                 if (!profile_queue->emplace(std::move(packet.block)))
@@ -1218,6 +1220,8 @@ void RemoteQueryExecutor::finishUnlocked()
                 break;
 
             case Protocol::Server::ProfileEvents:
+                if (profile_events_callback)
+                    profile_events_callback(packet.block);
                 /// Pass profile events from remote server to client
                 if (auto profile_queue = CurrentThread::getInternalProfileEventsQueue())
                     if (!profile_queue->emplace(std::move(packet.block)))
@@ -1447,6 +1451,12 @@ void RemoteQueryExecutor::setProfileInfoCallback(ProfileInfoCallback callback)
 {
     LockAndBlocker guard(was_cancelled_mutex);
     profile_info_callback = std::move(callback);
+}
+
+void RemoteQueryExecutor::setProfileEventsCallback(ProfileEventsCallback callback)
+{
+    LockAndBlocker guard(was_cancelled_mutex);
+    profile_events_callback = std::move(callback);
 }
 
 bool RemoteQueryExecutor::shouldSkipUnavailableShard() const

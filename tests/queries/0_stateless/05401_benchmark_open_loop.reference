@@ -1,0 +1,25 @@
+--- iterations: all arrivals are executed
+Open-loop mode: max 256 queries in flight, seed 42.
+Queries executed: 50
+Arrivals: 50, target rate: 200.000/s
+--- a list of rates makes one report per rate
+Queries executed: 20
+Arrivals: 20, target rate: 100.000/s
+Queries executed: 20
+Arrivals: 20, target rate: 200.000/s
+--- at most --max-in-flight queries execute at the same time, the queued arrivals are executed too
+Queries executed: 20
+Arrivals: 20
+max 1 of 1
+--- an early fatal error stops the run
+Connection refused
+--- per-query statistics
+#	queries	errors	query
+0	5	0	SELECT 1
+1	5	0	SELECT 2
+--- errors
+cannot be used with --arrival-rate
+must be a positive number
+must be a positive number
+requires --iterations or --timelimit
+requires --arrival-rate

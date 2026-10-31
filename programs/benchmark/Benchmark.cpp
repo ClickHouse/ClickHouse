@@ -1,4 +1,5 @@
 #include <unistd.h>
+#include <cmath>
 #include <cstdlib>
 #include <csignal>
 #include <iostream>
@@ -26,6 +27,7 @@
 #include <Common/clearPasswordFromCommandLine.h>
 #include <Core/Settings.h>
 #include <IO/ReadBufferFromFileDescriptor.h>
+#include <IO/ReadBufferFromMemory.h>
 #include <IO/WriteBufferFromFile.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
@@ -43,10 +45,24 @@
 #include <IO/WriteBuffer.h>
 #include <Client/ClientApplicationBaseParser.h>
 #include <Parsers/parseQuery.h>
+#include <Columns/ColumnString.h>
+#include <Columns/ColumnsNumber.h>
+#include <Common/ProfileEvents.h>
+#include <base/scope_guard.h>
+#include <base/sleep.h>
 
 /** A tool for evaluating ClickHouse performance.
-  * The tool emulates a case with fixed amount of simultaneously executing queries.
+  * By default (closed loop) the tool emulates a case with fixed amount of simultaneously executing queries:
+  * every client sends the next query when the previous one returns.
+  * With --arrival-rate (open loop) queries arrive at random times with exponentially distributed
+  * interarrival times (a Poisson process), whatever the server does.
   */
+
+namespace ProfileEvents
+{
+    extern const Event UserTimeMicroseconds;
+    extern const Event SystemTimeMicroseconds;
+}
 
 namespace CurrentMetrics
 {
@@ -81,7 +97,30 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
     extern const int CANNOT_BLOCK_SIGNAL;
     extern const int EMPTY_DATA_PASSED;
+    extern const int LOGICAL_ERROR;
     extern const int UNRECOGNIZED_ARGUMENTS;
+}
+
+/// The CPU time of a query on the server from a `ProfileEvents` packet.
+/// The rows with thread id 0 are the increments for all threads of the query on one host.
+static UInt64 getCPUMicroseconds(const Block & block)
+{
+    const auto & thread_ids = typeid_cast<const ColumnUInt64 &>(*block.getByName("thread_id").column).getData();
+    const auto & names = typeid_cast<const ColumnString &>(*block.getByName("name").column);
+    const auto & values = typeid_cast<const ColumnInt64 &>(*block.getByName("value").column).getData();
+    const std::string_view user_time_name = ProfileEvents::getName(ProfileEvents::UserTimeMicroseconds);
+    const std::string_view system_time_name = ProfileEvents::getName(ProfileEvents::SystemTimeMicroseconds);
+
+    UInt64 result = 0;
+    for (size_t i = 0; i < block.rows(); ++i)
+    {
+        if (thread_ids[i] != 0 || values[i] < 0)
+            continue;
+        const auto name = names.getDataAt(i);
+        if (name == user_time_name || name == system_time_name)
+            result += values[i];
+    }
+    return result;
 }
 
 static QueriesFormat parseQueriesFormat(const std::string & value)
@@ -102,7 +141,8 @@ public:
         String && proto_send_chunked,
         String && proto_recv_chunked,
         bool print_stacktrace_,
-        Settings && settings_)
+        Settings && settings_,
+        std::vector<double> && arrival_rates_)
         : connection_arguments(ConnectionArguments{
             .hosts = options.contains("host") ? std::make_optional(options["host"].as<Strings>()) : std::nullopt,
             .ports = options.contains("port") ? std::make_optional(options["port"].as<Ports>()) : std::nullopt,
@@ -117,13 +157,18 @@ public:
         }),
         connection_name(options.contains("connection") ? std::make_optional(options["connection"].as<std::string>()) : std::nullopt),
         round_robin(options.contains("roundrobin")),
-        concurrency(options["concurrency"].as<unsigned>()),
+        arrival_rates(std::move(arrival_rates_)),
+        seed(options.contains("seed") ? options["seed"].as<UInt64>() : randomSeed()),
+        /// In open-loop mode there is one worker thread and one pooled connection per in-flight slot.
+        concurrency(arrival_rates.empty() ? options["concurrency"].as<unsigned>() : options["max-in-flight"].as<unsigned>()),
         max_concurrency(std::max(concurrency, options["max_concurrency"].as<unsigned>())),
         threads(concurrency),
         delay(options["delay"].as<double>()),
         precise(options.contains("precise")),
-        queue(max_concurrency),
+        /// In open-loop mode the queue holds the arrivals that wait for a free in-flight slot, so it is not bounded.
+        queue(arrival_rates.empty() ? max_concurrency : std::numeric_limits<size_t>::max()),
         randomize(options.contains("randomize")),
+        per_query(options.contains("per-query")),
         cumulative(options.contains("cumulative")),
         max_iterations(options["iterations"].as<size_t>()),
         max_time(options["timelimit"].as<double>()),
@@ -256,6 +301,9 @@ private:
     std::optional<String> connection_name;
 
     bool round_robin;
+    /// Empty in the closed-loop mode. Otherwise the arrival rates (queries per second) to run one after another.
+    std::vector<double> arrival_rates;
+    UInt64 seed;
     unsigned concurrency;
     unsigned max_concurrency;
     unsigned threads;
@@ -266,7 +314,14 @@ private:
     using Queries = std::vector<Query>;
     Queries queries;
 
-    using Queue = ConcurrentBoundedQueue<Query>;
+    struct Task
+    {
+        size_t query_index = 0;
+        /// Open-loop mode only: the connection chosen at arrival.
+        std::optional<size_t> connection_index;
+    };
+
+    using Queue = ConcurrentBoundedQueue<Task>;
     Queue queue;
 
     using ConnectionPoolUniq = std::unique_ptr<ConnectionPool>;
@@ -274,6 +329,7 @@ private:
     ConnectionPoolUniqs connections;
 
     bool randomize;
+    bool per_query;
     bool cumulative;
     size_t max_iterations;
     double max_time;
@@ -310,17 +366,25 @@ private:
         double queries = 0;
         size_t finished_queries = 0;
         size_t errors = 0;
+        double max_duration = 0;
         double read_rows = 0;
         double read_bytes = 0;
         double result_rows = 0;
         double result_bytes = 0;
+        /// CPU time of the queries on the server, from their `UserTimeMicroseconds` and `SystemTimeMicroseconds` profile events.
+        double cpu_seconds = 0;
 
         using Sampler = ReservoirSampler<double>;
-        Sampler sampler {1 << 16};
+        Sampler sampler;
 
-        void addWeighted(size_t read_rows_inc, size_t read_bytes_inc, size_t result_rows_inc, size_t result_bytes_inc, double weight)
+        explicit Stats(size_t sample_count = 1 << 16)
+            : sampler(sample_count)
+        {}
+
+        void addWeighted(size_t read_rows_inc, size_t read_bytes_inc, size_t result_rows_inc, size_t result_bytes_inc, double cpu_seconds_inc, double weight)
         {
             queries += weight;
+            cpu_seconds += weight * cpu_seconds_inc;
             read_rows += weight * static_cast<double>(read_rows_inc);
             read_bytes += weight * static_cast<double>(read_bytes_inc);
             result_rows += weight * static_cast<double>(result_rows_inc);
@@ -330,17 +394,35 @@ private:
         void sample(double duration)
         {
             ++finished_queries;
+            max_duration = std::max(max_duration, duration);
             sampler.insert(duration);
         }
 
-        void add(double duration, size_t read_rows_inc, size_t read_bytes_inc, size_t result_rows_inc, size_t result_bytes_inc)
+        void add(double duration, size_t read_rows_inc, size_t read_bytes_inc, size_t result_rows_inc, size_t result_bytes_inc, double cpu_seconds_inc)
         {
-            addWeighted(read_rows_inc, read_bytes_inc, result_rows_inc, result_bytes_inc, 1.0);
+            addWeighted(read_rows_inc, read_bytes_inc, result_rows_inc, result_bytes_inc, cpu_seconds_inc, 1.0);
             sample(duration);
         }
     };
 
     using MultiStats = std::vector<std::shared_ptr<Stats>>;
+
+    /// Open-loop mode: arrivals and in-flight queries over a report interval or over the whole run.
+    struct ArrivalStats
+    {
+        size_t arrivals = 0;
+        /// Arrivals that found all in-flight slots busy and waited in the client-side queue.
+        size_t queued = 0;
+        /// Arrivals that were still waiting in the client-side queue when the run stopped.
+        size_t not_sent = 0;
+        size_t max_in_flight = 0;
+        size_t max_queue_size = 0;
+        /// Integral of the number of in-flight queries over time, to compute the mean.
+        double in_flight_ns = 0;
+        UInt64 last_change_ns = 0;
+        /// The duration of the arrival process, if it stopped before the reported period ended.
+        std::optional<double> arrival_seconds;
+    };
 
     struct IntervalStats;
     friend struct IntervalStats;
@@ -353,6 +435,7 @@ private:
         UInt64 end_ns = std::numeric_limits<UInt64>::max();
         MultiStats stats;
         size_t threads = 0;
+        ArrivalStats arrival_stats;
 
         // NOTE: We keep reference to the next interval for --precise mode
         std::shared_ptr<IntervalStats> next;
@@ -381,14 +464,29 @@ private:
             if (reported || end_ns == std::numeric_limits<UInt64>::max())
                 return;
             reported = true;
-            benchmark.report(stats, static_cast<double>(end_ns - start_ns) / 1e9, threads);
+            benchmark.report(stats, static_cast<double>(end_ns - start_ns) / 1e9, threads, &arrival_stats);
         }
     };
 
     std::mutex interval_mutex;
     std::shared_ptr<IntervalStats> interval TSA_GUARDED_BY(interval_mutex);
     MultiStats total_stats; // requires mutex
+    MultiStats per_query_stats; // requires mutex
     StudentTTest t_test;
+
+    /// Open-loop mode state.
+    double arrival_rate = 0;
+    ArrivalStats total_arrival_stats TSA_GUARDED_BY(interval_mutex);
+    /// Queries that are executing now.
+    size_t in_flight TSA_GUARDED_BY(interval_mutex) = 0;
+    /// Queries that arrived and did not finish yet: the in-flight ones and the ones waiting in the queue.
+    size_t arrived_not_finished TSA_GUARDED_BY(interval_mutex) = 0;
+    /// All arrivals are pushed to the queue, the workers stop when it is empty.
+    std::atomic<bool> arrivals_finished{false};
+    /// Arrivals taken from the queue after the run stopped.
+    std::atomic<size_t> not_sent{0};
+    /// The end of the run by --timelimit, 0 if there is no time limit.
+    std::atomic<UInt64> deadline_ns{0};
 
     Stopwatch total_watch;
     Stopwatch delay_watch;
@@ -515,19 +613,31 @@ private:
             queries.emplace_back(query_to_execute);
         }
 
-
         std::lock_guard lock(mutex);
+        resetPerQueryStats();
         log << "Loaded " << queries.size() << " queries.\n" << flush;
+        if (!arrival_rates.empty())
+            log << "Open-loop mode: max " << concurrency << " queries in flight, seed " << seed << ".\n" << flush;
+    }
+
+    void resetPerQueryStats() TSA_REQUIRES(mutex)
+    {
+        per_query_stats.clear();
+        if (!per_query)
+            return;
+        per_query_stats.reserve(queries.size());
+        for (size_t i = 0; i < queries.size(); ++i)
+            per_query_stats.emplace_back(std::make_shared<Stats>(1 << 12));
     }
 
     /// Try push new query and check cancellation conditions
-    bool tryPushQueryInteractively(const String & query, InterruptListener & interrupt_listener)
+    bool tryPushQueryInteractively(const Task & task, InterruptListener & interrupt_listener)
     {
         bool inserted = false;
 
         while (!inserted)
         {
-            inserted = queue.tryPush(query, 100);
+            inserted = queue.tryPush(task, 100);
 
             if (shutdown)
             {
@@ -582,11 +692,15 @@ private:
 
         delay_watch.restart();
         UInt64 now_ns = delay_watch.getStart();
+        updateInFlightIntegral(now_ns);
 
         if (cumulative)
         {
             if (!first)
-                report(total_stats, total_watch.elapsedSeconds(), threads);
+            {
+                ArrivalStats arrival_stats_snapshot = total_arrival_stats;
+                report(total_stats, total_watch.elapsedSeconds(), threads, &arrival_stats_snapshot);
+            }
         }
         else
         {
@@ -603,15 +717,313 @@ private:
             next_interval->stats.reserve(round_robin ? 1 : connections.size());
             for (size_t i = 0; i < (round_robin ? 1 : connections.size()); ++i)
                 next_interval->stats.emplace_back(std::make_shared<Stats>());
+            next_interval->arrival_stats.last_change_ns = now_ns;
+            next_interval->arrival_stats.max_in_flight = in_flight;
+            next_interval->arrival_stats.max_queue_size = queueSize();
             if (interval)
                 interval->next = next_interval;
             interval = next_interval;
         }
     }
 
+    /// Accounts the time since the last change of the number of in-flight queries.
+    void updateInFlightIntegral(UInt64 now_ns) TSA_REQUIRES(interval_mutex)
+    {
+        auto update = [&](ArrivalStats & stats) TSA_REQUIRES(interval_mutex)
+        {
+            if (now_ns > stats.last_change_ns)
+            {
+                stats.in_flight_ns += static_cast<double>(in_flight) * static_cast<double>(now_ns - stats.last_change_ns);
+                stats.last_change_ns = now_ns;
+            }
+        };
+        update(total_arrival_stats);
+        if (interval)
+            update(interval->arrival_stats);
+    }
+
+    /// The number of arrivals waiting for a free in-flight slot.
+    size_t queueSize() const TSA_REQUIRES(interval_mutex)
+    {
+        return arrived_not_finished > concurrency ? arrived_not_finished - concurrency : 0;
+    }
+
+    void onArrival() TSA_REQUIRES(interval_mutex)
+    {
+        /// There is one worker per in-flight slot, so an arrival waits iff earlier arrivals occupy all slots.
+        const bool slot_free = arrived_not_finished < concurrency;
+        ++arrived_not_finished;
+        auto update = [&](ArrivalStats & stats) TSA_REQUIRES(interval_mutex)
+        {
+            ++stats.arrivals;
+            if (!slot_free)
+                ++stats.queued;
+            stats.max_queue_size = std::max(stats.max_queue_size, queueSize());
+        };
+        update(total_arrival_stats);
+        if (interval)
+            update(interval->arrival_stats);
+    }
+
+    void onQueryStart(UInt64 now_ns) TSA_REQUIRES(interval_mutex)
+    {
+        updateInFlightIntegral(now_ns);
+        ++in_flight;
+        total_arrival_stats.max_in_flight = std::max(total_arrival_stats.max_in_flight, in_flight);
+        if (interval)
+            interval->arrival_stats.max_in_flight = std::max(interval->arrival_stats.max_in_flight, in_flight);
+    }
+
+    void onQueryFinish(UInt64 now_ns) TSA_REQUIRES(interval_mutex)
+    {
+        updateInFlightIntegral(now_ns);
+        --in_flight;
+        --arrived_not_finished;
+    }
+
     void runBenchmark()
     {
-        pcg64 generator(randomSeed());
+        if (arrival_rates.empty())
+        {
+            runClosedLoop();
+            return;
+        }
+
+        InterruptListener interrupt_listener;
+        for (size_t i = 0; i < arrival_rates.size(); ++i)
+        {
+            if (i > 0)
+                resetStats();
+            if (!runOpenLoop(arrival_rates[i], i + 1 == arrival_rates.size(), interrupt_listener))
+                break;
+        }
+    }
+
+    /// Prepares the next run of a rate sweep.
+    void resetStats()
+    {
+        {
+            std::lock_guard lock(interval_mutex);
+            interval.reset();
+            total_arrival_stats = {};
+            in_flight = 0;
+            arrived_not_finished = 0;
+        }
+        {
+            std::lock_guard lock(mutex);
+            for (auto & stats : total_stats)
+                stats = std::make_shared<Stats>();
+            resetPerQueryStats();
+            t_test.clear();
+        }
+        queue.clear();
+        queries_executed = 0;
+        consecutive_errors = 0;
+        not_sent = 0;
+        arrivals_finished = false;
+        shutdown = false;
+    }
+
+    /// Runs the open-loop benchmark at one arrival rate.
+    /// Returns false if the whole benchmark should stop: on SIGINT.
+    bool runOpenLoop(double rate, bool last_run, InterruptListener & interrupt_listener)
+    {
+        arrival_rate = rate;
+        pcg64 generator(seed);
+        std::exponential_distribution<double> interarrival_distribution(rate);
+        std::uniform_int_distribution<size_t> query_distribution(0, queries.size() - 1);
+        std::uniform_int_distribution<size_t> connection_distribution(0, connections.size() - 1);
+
+        total_watch.restart();
+        const UInt64 start_ns = total_watch.getStart();
+        {
+            std::lock_guard lock(interval_mutex);
+            total_arrival_stats.last_change_ns = start_ns;
+        }
+        startNextInterval(true);
+        deadline_ns = max_time > 0 ? start_ns + static_cast<UInt64>(max_time * 1e9) : 0;
+
+        try
+        {
+            for (size_t i = 0; i < concurrency; ++i)
+                pool.scheduleOrThrowOnError([this]() mutable { openLoopThread(); });
+        }
+        catch (...)
+        {
+            shutdown = true;
+            pool.wait();
+            throw;
+        }
+
+        bool interrupted = false;
+        bool stopped = false;
+        double arrival_time = 0;
+        for (size_t i = 0; !max_iterations || i < max_iterations; ++i)
+        {
+            arrival_time += interarrival_distribution(generator);
+            if (max_time > 0 && arrival_time >= max_time)
+            {
+                /// Wait until the time limit to report the right arrival rate.
+                if (waitUntil(deadline_ns, interrupt_listener, interrupted))
+                    std::cout << "Stopping launch of queries."
+                              << " Requested time limit " << max_time << " seconds is exhausted.\n";
+                stopped = true;
+                break;
+            }
+
+            Task task;
+            task.query_index = randomize ? query_distribution(generator) : i % queries.size();
+            task.connection_index = connection_distribution(generator);
+            const UInt64 arrival_ns = start_ns + static_cast<UInt64>(arrival_time * 1e9);
+
+            if (!waitUntil(arrival_ns, interrupt_listener, interrupted))
+            {
+                stopped = true;
+                break;
+            }
+
+            /// The arrival process may fall behind the schedule, but no query starts after the time limit.
+            if (pastDeadline())
+            {
+                std::cout << "Stopping launch of queries."
+                          << " Requested time limit " << max_time << " seconds is exhausted.\n";
+                stopped = true;
+                break;
+            }
+
+            {
+                std::lock_guard lock(interval_mutex);
+                onArrival();
+            }
+            if (!queue.push(task))
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot push to the queue of arrivals");
+        }
+
+        /// The achieved arrival rate is computed over the actual duration of the arrival process,
+        /// also in the reports made while the queries in flight finish.
+        {
+            std::lock_guard lock(interval_mutex);
+            const UInt64 arrivals_end_ns = clock_gettime_ns();
+            total_arrival_stats.arrival_seconds = static_cast<double>(arrivals_end_ns - start_ns) / 1e9;
+            if (interval)
+                interval->arrival_stats.arrival_seconds = static_cast<double>(arrivals_end_ns - interval->start_ns) / 1e9;
+        }
+
+        /// The queries in flight finish. The arrivals in the queue are executed only if all
+        /// --iterations arrived, otherwise they are reported as not sent.
+        if (stopped)
+            shutdown = true;
+        arrivals_finished = true;
+
+        /// Now we don't block the Ctrl+C signal and second signal will terminate the program without waiting.
+        if (interrupted || last_run)
+            interrupt_listener.unblock();
+
+        /// Wait for the workers, while handling SIGINT if it is still blocked (in a sweep) and reporting intervals.
+        while (!pool.waitUntil(std::chrono::steady_clock::now() + std::chrono::milliseconds(100)))
+        {
+            if (interrupt_listener.check())
+            {
+                std::cout << "Stopping the run. SIGINT received.\n";
+                interrupted = true;
+                shutdown = true;
+                interrupt_listener.unblock();
+            }
+
+            if (delay > 0 && delay_watch.elapsedSeconds() > delay)
+                startNextInterval();
+        }
+
+        pool.wait();
+        total_watch.stop();
+
+        ArrivalStats arrival_stats_snapshot;
+        {
+            std::lock_guard lock(interval_mutex);
+            updateInFlightIntegral(total_watch.getEnd());
+            total_arrival_stats.not_sent = queue.size() + not_sent;
+            arrival_stats_snapshot = total_arrival_stats;
+        }
+        report(total_stats, total_watch.elapsedSeconds(), 0, &arrival_stats_snapshot);
+        reportPerQuery(total_watch.elapsedSeconds());
+        return !interrupted;
+    }
+
+    /// Sleeps until the scheduled arrival time, reporting intervals meanwhile.
+    /// Returns false if the run should stop: on SIGINT or when a worker failed.
+    bool waitUntil(UInt64 target_ns, InterruptListener & interrupt_listener, bool & interrupted)
+    {
+        while (true)
+        {
+            if (shutdown)
+                return false;
+
+            if (interrupt_listener.check())
+            {
+                std::cout << "Stopping launch of queries. SIGINT received.\n";
+                interrupted = true;
+                return false;
+            }
+
+            if (delay > 0 && delay_watch.elapsedSeconds() > delay)
+                startNextInterval();
+
+            UInt64 now_ns = clock_gettime_ns();
+            if (now_ns >= target_ns)
+                return true;
+
+            /// Wake up at least every 100 ms to check for SIGINT and to report intervals.
+            sleepForNanoseconds(std::min<UInt64>(target_ns - now_ns, 100'000'000));
+        }
+    }
+
+    bool pastDeadline() const
+    {
+        const UInt64 deadline = deadline_ns;
+        return deadline && clock_gettime_ns() >= deadline;
+    }
+
+    void openLoopThread()
+    {
+        blockSigint();
+
+        Task task;
+        while (true)
+        {
+            if (shutdown)
+                return;
+
+            /// Read before popping: if all arrivals were pushed and the queue is empty, no more tasks will come.
+            bool finished = arrivals_finished;
+            if (!queue.tryPop(task, 100))
+            {
+                if (finished)
+                    return;
+                continue;
+            }
+
+            if (shutdown || pastDeadline())
+            {
+                ++not_sent;
+                return;
+            }
+
+            {
+                std::lock_guard lock(interval_mutex);
+                onQueryStart(clock_gettime_ns());
+            }
+            SCOPE_EXIT({
+                std::lock_guard lock(interval_mutex);
+                onQueryFinish(clock_gettime_ns());
+            });
+
+            executeAndHandleErrors(task, *task.connection_index);
+        }
+    }
+
+    void runClosedLoop()
+    {
+        pcg64 generator(seed);
         std::uniform_int_distribution<size_t> distribution(0, queries.size() - 1);
 
         startNextInterval(true);
@@ -635,7 +1047,9 @@ private:
         {
             size_t query_index = randomize ? distribution(generator) : i % queries.size();
 
-            if (!tryPushQueryInteractively(queries[query_index], interrupt_listener))
+            Task task;
+            task.query_index = query_index;
+            if (!tryPushQueryInteractively(task, interrupt_listener))
             {
                 shutdown = true;
                 break;
@@ -649,18 +1063,13 @@ private:
         total_watch.stop();
 
         report(total_stats, total_watch.elapsedSeconds());
+        reportPerQuery(total_watch.elapsedSeconds());
     }
 
 
-    void thread()
+    /// In the worker threads we do not accept INT signal.
+    static void blockSigint()
     {
-        Query query;
-
-        /// Randomly choosing connection index
-        pcg64 generator(randomSeed());
-        std::uniform_int_distribution<size_t> distribution(0, connections.size() - 1);
-
-        /// In these threads we do not accept INT signal.
         sigset_t sig_set;
         if (sigemptyset(&sig_set)
             || sigaddset(&sig_set, SIGINT)
@@ -668,6 +1077,17 @@ private:
         {
             throw ErrnoException(ErrorCodes::CANNOT_BLOCK_SIGNAL, "Cannot block signal");
         }
+    }
+
+    void thread()
+    {
+        Task task;
+
+        /// Randomly choosing connection index
+        pcg64 generator(randomSeed());
+        std::uniform_int_distribution<size_t> distribution(0, connections.size() - 1);
+
+        blockSigint();
 
         while (true)
         {
@@ -675,47 +1095,54 @@ private:
 
             while (!extracted)
             {
-                extracted = queue.tryPop(query, 100);
+                extracted = queue.tryPop(task, 100);
 
                 if (shutdown || (max_iterations && queries_executed == max_iterations))
                     return;
             }
 
-            const auto connection_index = distribution(generator);
-            try
-            {
-                execute(query, connection_index);
-                consecutive_errors = 0;
-            }
-            catch (...)
-            {
-                size_t info_index = round_robin ? 0 : connection_index;
-                {
-                    std::lock_guard lock(mutex);
-                    if (!(continue_on_errors || max_consecutive_errors > ++consecutive_errors))
-                    {
-                        shutdown = true;
-                        throw;
-                    }
-
-                    log << getCurrentExceptionMessage(print_stacktrace,
-                        true /*check embedded stack trace*/) << "\n\n" << flush;
-
-                    ++total_stats[info_index]->errors;
-                }
-
-                std::lock_guard lock(interval_mutex); // Locking order: first intervals_mutex, then mutex
-                if (interval)
-                    ++interval->stats[info_index]->errors;
-            }
-            // Count failed queries toward executed, so that we'd reach
-            // max_iterations even if every run fails.
-            ++queries_executed;
+            executeAndHandleErrors(task, distribution(generator));
         }
     }
 
-    void execute(const Query & query, size_t connection_index)
+    void executeAndHandleErrors(const Task & task, size_t connection_index)
     {
+        try
+        {
+            execute(task, connection_index);
+            consecutive_errors = 0;
+        }
+        catch (...)
+        {
+            size_t info_index = round_robin ? 0 : connection_index;
+            {
+                std::lock_guard lock(mutex);
+                if (!(continue_on_errors || max_consecutive_errors > ++consecutive_errors))
+                {
+                    shutdown = true;
+                    throw;
+                }
+
+                log << getCurrentExceptionMessage(print_stacktrace,
+                    true /*check embedded stack trace*/) << "\n\n" << flush;
+
+                ++total_stats[info_index]->errors;
+                if (per_query)
+                    ++per_query_stats[task.query_index]->errors;
+            }
+
+            std::lock_guard lock(interval_mutex); // Locking order: first intervals_mutex, then mutex
+            if (interval)
+                ++interval->stats[info_index]->errors;
+        }
+        // Count failed queries toward executed, so that we'd reach
+        // max_iterations even if every run fails.
+        ++queries_executed;
+    }
+
+    void execute(const Task & task, size_t connection_index)
+    {
+        const Query & query = queries[task.query_index];
         Stopwatch watch;
 
         std::shared_ptr<IntervalStats> cur_interval;
@@ -746,6 +1173,9 @@ private:
         Progress progress;
         executor.setProgressCallback([&progress](const Progress & value) { progress.incrementPiecewiseAtomically(value); });
 
+        UInt64 cpu_microseconds = 0;
+        executor.setProfileEventsCallback([&cpu_microseconds](const Block & block) { cpu_microseconds += getCPUMicroseconds(block); });
+
         executor.sendQuery(ClientInfo::QueryKind::INITIAL_QUERY);
 
         ProfileInfo info;
@@ -758,6 +1188,7 @@ private:
         double duration = (display_client_side_time || progress.elapsed_ns == 0)
             ? watch.elapsedSeconds()
             : static_cast<double>(progress.elapsed_ns) / 1e9;
+        const double cpu_seconds = static_cast<double>(cpu_microseconds) / 1e6;
         size_t info_index = round_robin ? 0 : connection_index;
 
         if (precise && cur_interval)
@@ -787,7 +1218,7 @@ private:
                 const double overlap_ns = static_cast<double>(std::min(cur_interval->end_ns, watch.getEnd()) - std::max(cur_interval->start_ns, watch.getStart()));
                 const double weight = overlap_ns / static_cast<double>(duration_ns);
                 if (overlap_ns > 0 && duration_ns > 0)
-                    cur_interval->stats[info_index]->addWeighted(progress.read_rows, progress.read_bytes, info.rows, info.bytes, weight);
+                    cur_interval->stats[info_index]->addWeighted(progress.read_rows, progress.read_bytes, info.rows, info.bytes, cpu_seconds, weight);
             }
 
             // Latency goes to the last interval only (our sampler does not support weights)
@@ -796,15 +1227,17 @@ private:
         else if (!cumulative)
         {
             std::lock_guard lock(interval_mutex);
-            interval->stats[info_index]->add(duration, progress.read_rows, progress.read_bytes, info.rows, info.bytes);
+            interval->stats[info_index]->add(duration, progress.read_rows, progress.read_bytes, info.rows, info.bytes, cpu_seconds);
         }
 
         std::lock_guard lock(mutex);
-        total_stats[info_index]->add(duration, progress.read_rows, progress.read_bytes, info.rows, info.bytes);
+        total_stats[info_index]->add(duration, progress.read_rows, progress.read_bytes, info.rows, info.bytes, cpu_seconds);
+        if (per_query)
+            per_query_stats[task.query_index]->add(duration, progress.read_rows, progress.read_bytes, info.rows, info.bytes, cpu_seconds);
         t_test.add(info_index, duration);
     }
 
-    void report(const MultiStats & infos, double seconds, size_t used_threads = 0)
+    void report(const MultiStats & infos, double seconds, size_t used_threads = 0, const ArrivalStats * arrival_stats = nullptr)
     {
         std::lock_guard lock(mutex);
 
@@ -821,6 +1254,21 @@ private:
             log << "Concurrency: " << used_threads;
             log << " of " << max_concurrency;
             log << " parallel queries.\n" << flush;
+        }
+
+        if (!arrival_rates.empty() && arrival_stats)
+        {
+            const double arrival_seconds = arrival_stats->arrival_seconds.value_or(seconds);
+            log << "Arrivals: " << arrival_stats->arrivals
+                << ", target rate: " << fmt::format("{:.3f}", arrival_rate) << "/s"
+                << ", achieved rate: " << fmt::format("{:.3f}", arrival_seconds > 0 ? static_cast<double>(arrival_stats->arrivals) / arrival_seconds : 0.0) << "/s"
+                << ", queued: " << arrival_stats->queued
+                << " (max queue size " << arrival_stats->max_queue_size << ")";
+            if (arrival_stats->not_sent)
+                log << ", not sent: " << arrival_stats->not_sent;
+            log << ".\n"
+                << "In flight: mean " << fmt::format("{:.3f}", seconds > 0 ? arrival_stats->in_flight_ns / (seconds * 1e9) : 0.0)
+                << ", max " << arrival_stats->max_in_flight << " of " << concurrency << ".\n" << flush;
         }
 
         log << "\n";
@@ -855,8 +1303,12 @@ private:
                 << "RPS: " << fmt::format("{:.3f}", info->read_rows / seconds) << ", "
                 << "MiB/s: " << fmt::format("{:.3f}", info->read_bytes / seconds / 1048576) << ", "
                 << "result RPS: " << fmt::format("{:.3f}", info->result_rows / seconds) << ", "
-                << "result MiB/s: " << fmt::format("{:.3f}", info->result_bytes / seconds / 1048576) << "."
-                << "\n";
+                << "result MiB/s: " << fmt::format("{:.3f}", info->result_bytes / seconds / 1048576);
+            /// With open-loop arrivals QPS follows the arrival rate, so the CPU usage shows the cost of the load.
+            if (!arrival_rates.empty())
+                log << ", CPU: " << fmt::format("{:.3f}", info->cpu_seconds / seconds) << " cores"
+                    << ", CPU per query: " << fmt::format("{:.3f}", info->cpu_seconds / info->queries) << " sec";
+            log << ".\n";
         }
         log << "\n";
 
@@ -880,6 +1332,31 @@ private:
 
         log << "\n" << t_test.compareAndReport(confidence).second << "\n";
 
+        log.next();
+    }
+
+    void reportPerQuery(double seconds)
+    {
+        std::lock_guard lock(mutex);
+        if (!per_query)
+            return;
+
+        log << "Per-query statistics:\n";
+        log << "#\tqueries\terrors\tQPS\t50%\t90%\t99%\tmax\tCPU\tquery\n";
+        for (size_t i = 0; i < queries.size(); ++i)
+        {
+            auto & stats = *per_query_stats[i];
+            log << i << "\t" << stats.finished_queries << "\t" << stats.errors
+                << "\t" << fmt::format("{:.3f}", stats.queries / seconds);
+            for (double level : {0.5, 0.9, 0.99})
+                log << "\t" << (stats.finished_queries ? fmt::format("{:.3f}", stats.sampler.quantileNearest(level)) : "-");
+            log << "\t" << (stats.finished_queries ? fmt::format("{:.3f}", stats.max_duration) : "-");
+            log << "\t" << (stats.finished_queries ? fmt::format("{:.3f}", stats.cpu_seconds / stats.queries) : "-");
+            String query_text = queries[i].substr(0, 80);
+            std::replace_if(query_text.begin(), query_text.end(), [](char c) { return c == '\n' || c == '\t'; }, ' ');
+            log << "\t" << query_text << (queries[i].size() > 80 ? "..." : "") << "\n";
+        }
+        log << "\n";
         log.next();
     }
 
@@ -925,6 +1402,10 @@ int mainEntryClickHouseBenchmark(int argc, char ** argv)
             ("iterations,i",  value<size_t>()->default_value(0),                "amount of queries to be executed")
             ("timelimit,t",   value<double>()->default_value(0.),               "stop launch of queries after specified time limit")
             ("randomize,r",                                                     "randomize order of execution")
+            ("arrival-rate",  value<std::string>(),                             "open-loop mode: queries arrive at random times at this average rate (queries per second), with exponentially distributed interarrival times, whatever the server does; a comma-separated list of rates makes one run and report per rate")
+            ("max-in-flight", value<unsigned>()->default_value(256),            "open-loop mode: max number of queries executing at the same time; the arrivals that find all slots busy wait in a client-side queue")
+            ("seed",          value<UInt64>(),                                  "seed of the random generator for the arrival times, the order of queries with --randomize and the choice of host in the open-loop mode; random by default")
+            ("per-query",                                                       "print statistics for every query at the end")
             ("host,h",        value<Strings>()->multitoken(),                   "list of hosts")
             ("port",          value<Ports>()->multitoken(),                     "list of ports")
             ("connection",    value<std::string>(),                             "connection name (define under connections_credentials in client config)")
@@ -1002,6 +1483,33 @@ int mainEntryClickHouseBenchmark(int argc, char ** argv)
 
         print_stacktrace = options.contains("stacktrace");
 
+        std::vector<double> arrival_rates;
+        if (options.contains("arrival-rate"))
+        {
+            std::string arrival_rate_str = options["arrival-rate"].as<std::string>();
+            std::vector<std::string_view> rates;
+            splitInto<','>(rates, arrival_rate_str);
+            for (auto rate_str : rates)
+            {
+                double rate = 0;
+                ReadBufferFromMemory buf(rate_str);
+                if (!tryReadText(rate, buf) || !buf.eof() || !std::isfinite(rate) || rate <= 0)
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "--arrival-rate must be a positive number or a comma-separated list of them, got '{}'", arrival_rate_str);
+                arrival_rates.push_back(rate);
+            }
+
+            if (!options["concurrency"].defaulted() || options["max_concurrency"].as<unsigned>() != 0)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "--concurrency and --max_concurrency cannot be used with --arrival-rate, use --max-in-flight to limit the number of queries in flight");
+            if (options["max-in-flight"].as<unsigned>() == 0)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "--max-in-flight must be positive");
+            if (arrival_rates.size() > 1 && options["iterations"].as<size_t>() == 0 && options["timelimit"].as<double>() <= 0)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "A list of arrival rates requires --iterations or --timelimit to end the run for every rate");
+        }
+        else if (!options["max-in-flight"].defaulted())
+        {
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "--max-in-flight requires --arrival-rate");
+        }
+
         /// NOTE Maybe clickhouse-benchmark should also respect .xml configuration of clickhouse-client.
 
         String proto_send_chunked {"notchunked"};
@@ -1052,7 +1560,8 @@ int mainEntryClickHouseBenchmark(int argc, char ** argv)
             std::move(proto_send_chunked),
             std::move(proto_recv_chunked),
             print_stacktrace,
-            std::move(settings));
+            std::move(settings),
+            std::move(arrival_rates));
         return benchmark.run();
     }
     catch (const po::error & e)
