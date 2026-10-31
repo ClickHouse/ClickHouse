@@ -271,15 +271,6 @@ void BaseDaemon::initialize(Application & self)
     initCoverageFromEnvironment(config().getString("logger.log", ""));
 #endif
 
-#if USE_JEMALLOC
-    Jemalloc::setup(
-        config().getBool(Jemalloc::config_enable_global_profiler, Jemalloc::default_enable_global_profiler),
-        config().getBool(Jemalloc::config_enable_background_threads, Jemalloc::default_enable_background_threads),
-        config().getUInt64(Jemalloc::config_max_background_threads_num, Jemalloc::default_max_background_threads_num),
-        config().getBool(Jemalloc::config_collect_global_profile_samples_in_trace_log, Jemalloc::default_collect_global_profile_samples_in_trace_log),
-        config().getUInt64(Jemalloc::config_profiler_sampling_rate, Jemalloc::default_profiler_sampling_rate));
-#endif
-
     /// This must be done before creation of any files (including logs).
     mode_t umask_num = 0027;
     if (config().has("umask"))
@@ -290,6 +281,19 @@ void BaseDaemon::initialize(Application & self)
         stream >> std::oct >> umask_num;
     }
     umask(umask_num);
+
+    /// No thread but the background threads of jemalloc has been started up to this point, and `Jemalloc::setup`
+    /// below configures them.
+    beforeStartingThreads();
+
+#if USE_JEMALLOC
+    Jemalloc::setup(
+        config().getBool(Jemalloc::config_enable_global_profiler, Jemalloc::default_enable_global_profiler),
+        config().getBool(Jemalloc::config_enable_background_threads, Jemalloc::default_enable_background_threads),
+        config().getUInt64(Jemalloc::config_max_background_threads_num, Jemalloc::default_max_background_threads_num),
+        config().getBool(Jemalloc::config_collect_global_profile_samples_in_trace_log, Jemalloc::default_collect_global_profile_samples_in_trace_log),
+        config().getUInt64(Jemalloc::config_profiler_sampling_rate, Jemalloc::default_profiler_sampling_rate));
+#endif
 
     ConfigProcessor(config_path).savePreprocessedConfig(loaded_config, ""
 #if USE_SSL

@@ -259,6 +259,9 @@ if check_clickhouse_version 25.10; then
     ln -sf $SRC_PATH/config.d/keeper_max_request_size.xml $DEST_SERVER_PATH/config.d/
 fi
 ln -sf $SRC_PATH/config.d/logging_no_rotate.xml $DEST_SERVER_PATH/config.d/
+if check_clickhouse_version 26.11; then
+    ln -sf $SRC_PATH/config.d/filesystem_isolation.xml $DEST_SERVER_PATH/config.d/
+fi
 ln -sf $SRC_PATH/config.d/merge_tree.xml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/lost_forever_check.xml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/tcp_with_proxy.xml $DEST_SERVER_PATH/config.d/

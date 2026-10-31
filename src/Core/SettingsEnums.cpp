@@ -386,6 +386,13 @@ IMPLEMENT_SETTING_ENUM(
      {"kill", SeccompMode::Kill}})
 
 IMPLEMENT_SETTING_ENUM(
+    FilesystemIsolationMode,
+    ErrorCodes::BAD_ARGUMENTS,
+    {{"disabled", FilesystemIsolationMode::Disabled},
+     {"best_effort", FilesystemIsolationMode::BestEffort},
+     {"enforce", FilesystemIsolationMode::Enforce}})
+
+IMPLEMENT_SETTING_ENUM(
     IdentifierQuotingStyle,
     ErrorCodes::BAD_ARGUMENTS,
     {{"Backticks", IdentifierQuotingStyle::Backticks},

@@ -519,6 +519,26 @@ remap_executable: false
 # PR_SET_NO_NEW_PRIVS, logs a warning and runs without a seccomp policy.
 seccomp: trap
 
+# Isolate the server from the filesystem of the host at startup (Linux only): it moves into a new mount
+# namespace where only the paths it needs according to this configuration are visible - its data, logs,
+# configuration, certificates, a few system files - and nothing else, in particular no shell.
+# With "best_effort", if the kernel or a container runtime does not allow it, the server logs a warning and
+# runs without the isolation; with "enforce", it does not start then. "disabled" (the default without this
+# line) turns it off.
+# Executable user defined functions and dictionaries that run scripts need their interpreters and libraries:
+# list them in "filesystem_isolation_paths", or disable the isolation.
+# Without CAP_SYS_ADMIN the server has to create a user namespace as well, and loses its other capabilities,
+# such as CAP_NET_BIND_SERVICE (ports below 1024) and CAP_IPC_LOCK.
+filesystem_isolation: best_effort
+# filesystem_isolation_paths:
+#     read_only:
+#         - /bin
+#         - /usr/bin
+#         - /lib
+#         - /lib64
+#         - /usr/lib
+#     read_write: /mnt/exchange
+
 # Uncomment below in order to use JDBC table engine and function.
 # To install and run JDBC bridge in background:
 # * [Debian/Ubuntu]

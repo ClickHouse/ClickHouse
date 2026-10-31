@@ -3,6 +3,7 @@
 #include <Columns/IColumn.h>
 #include <Common/Jemalloc.h>
 #include <Common/AsynchronousMetricsKeyValuesMode.h>
+#include <Common/FilesystemIsolation.h>
 #include <Common/SeccompFilter.h>
 #include <Common/UnorderedMapWithMemoryTracking.h>
 #include <Common/UnorderedSetWithMemoryTracking.h>
@@ -2013,6 +2014,60 @@ The policy is only implemented for x86-64 and AArch64, since it is a list of arc
 <seccomp>log</seccomp>
 ```
 )", 0) \
+    DECLARE(FilesystemIsolationMode, filesystem_isolation, FilesystemIsolationMode::Disabled, R"(
+Whether the server isolates itself from the filesystem of the host at startup, keeping visible only the paths it needs, like a container does. An attacker who manages to run code inside the server process then finds no shell or other program to run, and cannot read or modify the files of the host outside the directories of the server.
+
+At startup, before it starts any thread, the server moves itself into a new [mount namespace](https://man7.org/linux/man-pages/man7/mount_namespaces.7.html) whose root is an empty read-only `tmpfs`, bind-mounts into it, at their usual locations, only the paths it needs, and removes the original root with `pivot_root`. What stays visible:
+
+- The paths from the configuration that the server writes: `path`, `tmp_path`, `user_files_path`, `format_schema_path`, `filesystem_caches_path`, the directories of the local disks and of the metadata of the other disks in `storage_configuration`, the directories of the log files, of the pid file and of `core_path`, the storage directories of the embedded Keeper, `access_control_path`, `user_directories.local_directory.path`, `user_defined_path`, `workload_path`, `named_collections_storage.path`, `backups.allowed_path`. They are mounted read-write, but with `noexec`, so that nothing written there can be executed.
+- The paths from the configuration that the server only reads, mounted read-only: the directory of the configuration file and the directories of the included files, `users_config`, `user_scripts_path` (programs in it can be executed), `top_level_domains_path`, `google_protos_path`, the directories of the TLS certificates and keys in `openSSL`, `grpc`, `ldap_servers`, the Kerberos keytab, and the `clickhouse-odbc-bridge` program next to the server's executable.
+- The executable of the server and the shared libraries it is linked with.
+- What a program on Linux needs: `/proc`, `/sys` (read-only), `/dev/null`, `/dev/zero`, `/dev/full`, `/dev/random`, `/dev/urandom`, the network configuration in `/etc` (`hosts`, `resolv.conf`, `nsswitch.conf`, `host.conf`, `gai.conf`, `services`, `protocols`), `/etc/passwd`, `/etc/group`, `/etc/localtime`, the time zone database and the CA certificates (`/etc/ssl`, `/etc/pki`, `/etc/ca-certificates`, `/usr/share/ca-certificates`, `/usr/local/share/ca-certificates`), `/usr/lib/debug` for the symbols in stack traces, the socket of the service manager from the `NOTIFY_SOCKET` environment variable, and `/dev/log` if `logger.use_syslog` is enabled.
+- A private empty `/tmp`.
+- The paths listed in the `filesystem_isolation_paths` section of the configuration, with `<read_only>` and `<read_write>` elements.
+
+Symbolic links on the way to a path are recreated inside, and their targets are made visible as well. A directory that is a file's location in the configuration, such as that of a certificate, is mounted whole, so that a renewed file replaced by a new one is visible. Writable directories that do not exist are created before the isolation, as the server would do anyway.
+
+Nothing else is visible, in particular no shell: [executable user defined functions](/sql-reference/functions/udf), executable dictionaries, the `executable` table function and the `Executable` table engine can run only programs that do not need anything outside the visible paths. To run a script, make its interpreter and the libraries it is linked with visible, for example:
+
+```xml
+<filesystem_isolation_paths>
+    <read_only>/bin</read_only>
+    <read_only>/usr/bin</read_only>
+    <read_only>/lib</read_only>
+    <read_only>/lib64</read_only>
+    <read_only>/usr/lib</read_only>
+</filesystem_isolation_paths>
+```
+
+or disable the isolation. The same applies to a file that a table engine, a table function or a dictionary refers to by an absolute path outside of the visible paths. The `clickhouse-odbc-bridge` runs inside the isolation too, so the ODBC drivers and their configuration (`/etc/odbc.ini`, `/etc/odbcinst.ini`) have to be made visible to use the `odbc` table function and dictionaries.
+
+If the process has `CAP_SYS_ADMIN`, it creates only a mount namespace and keeps the capabilities it uses, such as `CAP_NET_BIND_SERVICE`, `CAP_IPC_LOCK`, `CAP_SYS_NICE` and `CAP_NET_ADMIN`, dropping those that would let it undo the isolation (`CAP_SYS_ADMIN`, `CAP_SYS_CHROOT`, `CAP_SYS_PTRACE`, `CAP_DAC_READ_SEARCH`, `CAP_SETUID`, `CAP_SETGID`, `CAP_MKNOD`, `CAP_SYS_MODULE`, `CAP_SYS_RAWIO` and similar). Otherwise, it creates a user namespace as well, mapping only its own user and group to themselves, and loses all its capabilities, because they are not valid outside of the new user namespace: it can then no longer listen on a port below 1024, lock its executable in memory, raise the priority of threads, or collect the per-thread metrics of `taskstats`. A warning at startup names the lost capabilities. In both cases the server sets `PR_SET_NO_NEW_PRIVS`, and every mount is `nosuid`.
+
+Creating a user namespace without privileges is not always allowed: it is disabled by the `kernel.unprivileged_userns_clone` and `user.max_user_namespaces` sysctls on some systems, and Ubuntu since 24.04 allows it only to the programs with an AppArmor profile permitting it (see the `kernel.apparmor_restrict_unprivileged_userns` sysctl). Container runtimes such as Docker refuse it as well, unless the container has `CAP_SYS_ADMIN`. The server checks in a child process whether it can isolate itself before doing it, so a failure does not leave it in a namespace without its capabilities.
+
+The `/proc` of the host is visible inside, because a new one requires a new PID namespace. Through `/proc/<pid>/root` it gives the access to the filesystem of the host as seen by the other processes of the same user that run outside of the isolation, so run nothing else under the user of the server.
+
+The isolation is applied once, at startup, before the server starts any thread, and cannot be changed afterwards: a changed value or `filesystem_isolation_paths` in a reloaded configuration takes effect after a restart, and a path that comes from ZooKeeper through `from_zk` is not seen by it. It is applied before the [`seccomp`](#seccomp) filter, which refuses the system calls that would undo it.
+
+Possible values:
+
+- `disabled` - the server does not isolate the filesystem.
+- `best_effort` - the server isolates the filesystem if it is allowed to create the namespaces and to mount filesystems in them, and otherwise logs a warning with the reason and runs without the isolation.
+- `enforce` - the server isolates the filesystem, or does not start.
+
+A failure after the server has entered the new namespace, such as a path that cannot be mounted, stops the startup in both `best_effort` and `enforce` modes.
+
+`system.server_settings` reports the mode in force: `disabled` if the server runs without the isolation.
+
+The isolation is a facility of the Linux kernel. On other operating systems, `best_effort` logs a warning, and `enforce` does not let the server start.
+
+**Example**
+
+```xml
+<filesystem_isolation>best_effort</filesystem_isolation>
+```
+)", 0) \
     DECLARE(UInt32, listen_backlog, 4096, R"(
 Backlog (queue size of pending connections) of the listen socket. The default value of `<4096>` is the same as that of linux 5.4+).
 
@@ -2391,6 +2446,7 @@ void ServerSettings::checkUnknownSettings(const Poco::Util::AbstractConfiguratio
         "masking_policies",
         "users_config",
         "user_directories",
+        "filesystem_isolation_paths",
         "ldap_servers",
         "kerberos",
         "jwt",
@@ -4003,6 +4059,11 @@ ChangeableSettingsMap collectChangeableServerSettings(ContextPtr context)
 
     /// The seccomp filter is installed once at startup and cannot be changed afterwards, so a reloaded
     /// configuration that says otherwise does not describe the policy in force.
+    /// The filesystem is isolated once at startup and cannot be changed afterwards, so a reloaded configuration
+    /// does not describe the mode in force.
+    if (const auto filesystem_isolation_mode = getAppliedFilesystemIsolationMode())
+        changeable_settings.insert(
+            {"filesystem_isolation", {SettingFieldFilesystemIsolationMode(*filesystem_isolation_mode).toString(), ChangeableWithoutRestart::No}});
     if (const auto seccomp_mode = getInstalledSeccompMode())
         changeable_settings.insert(
             {"seccomp", {SettingFieldSeccompMode(*seccomp_mode).toString(), ChangeableWithoutRestart::No}});
