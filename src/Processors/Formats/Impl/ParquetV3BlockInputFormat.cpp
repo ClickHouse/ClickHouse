@@ -154,7 +154,8 @@ ParquetV3BlockInputFormat::ParquetV3BlockInputFormat(
     FormatFilterInfoPtr format_filter_info_,
     size_t min_bytes_for_seek,
     ParquetMetadataCachePtr metadata_cache_,
-    const std::optional<RelativePathWithMetadata> & object_with_metadata_)
+    const std::optional<RelativePathWithMetadata> & object_with_metadata_,
+    bool is_remote_fs_)
     : IInputFormat(header_, &buf)
     , format_settings(format_settings_)
     , read_options(convertReadOptions(format_settings))
@@ -165,6 +166,7 @@ ParquetV3BlockInputFormat::ParquetV3BlockInputFormat(
 {
     read_options.min_bytes_for_seek = min_bytes_for_seek;
     read_options.bytes_per_read_task = min_bytes_for_seek * 4;
+    read_options.is_remote_fs = is_remote_fs_;
 
     if (!format_filter_info)
         format_filter_info = std::make_shared<FormatFilterInfo>();
@@ -193,7 +195,9 @@ void ParquetV3BlockInputFormat::initializeIfNeeded()
                 else
                     parser_shared_resources->parsing_runner.initThreadPool(
                         getFormatParsingThreadPool().get(), parser_shared_resources->max_parsing_threads, ThreadName::PARQUET_DECODER, CurrentThread::getGroup());
-
+            });
+        parser_shared_resources->initOpaqueOnce([&]
+            {
                 auto ext = std::make_shared<Parquet::SharedResourcesExt>();
 
                 ext->total_memory_low_watermark = format_settings.parquet.memory_low_watermark;
@@ -391,7 +395,8 @@ Chunk ParquetV3BlockInputFormat::read()
 
 
         auto chunk = getChunkForCount(size_t(footer->metadata.num_rows));
-        chunk.getChunkInfos().add(std::make_shared<ChunkInfoRowNumbers>(0));
+        if (format_filter_info && format_filter_info->need_row_numbers)
+            chunk.getChunkInfos().add(std::make_shared<ChunkInfoRowNumbers>(0));
 
         reported_count = true;
         return chunk;
@@ -663,7 +668,8 @@ void registerInputFormatParquet(FormatFactory & factory)
                 std::move(format_filter_info),
                 min_bytes_for_seek,
                 metadata_cache,
-                object_with_metadata
+                object_with_metadata,
+                is_remote_fs
             );
             format->setColumnsCacheOptions(getColumnsCacheOptions(context, settings, object_with_metadata));
             return format;
@@ -688,7 +694,8 @@ void registerInputFormatParquet(FormatFactory & factory)
             std::move(format_filter_info),
             min_bytes_for_seek,
             nullptr,
-            std::nullopt
+            std::nullopt,
+            is_remote_fs
         );
     });
     factory.markFormatSupportsSubsetOfColumns("Parquet");

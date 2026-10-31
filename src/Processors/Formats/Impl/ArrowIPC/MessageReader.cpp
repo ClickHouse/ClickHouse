@@ -2,7 +2,9 @@
 
 #if USE_ARROW
 
+#include <IO/ConcatReadBufferFromFile.h>
 #include <IO/ReadBuffer.h>
+#include <IO/ReadBufferFromMemory.h>
 #include <IO/SeekableReadBuffer.h>
 #include <IO/NetUtils.h>
 
@@ -271,6 +273,17 @@ void MessageReader::skipBody(Int64 body_length)
     /// on whether the count-only optimisation skipped the body or actually read it.
     if (body_length > 0 && in.tryIgnore(body_length) != static_cast<size_t>(body_length))
         throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA, "Cannot read all data from the Arrow IPC message body");
+}
+
+std::unique_ptr<SeekableReadBuffer> InMemoryFile::getSeekableReadBuffer()
+{
+    auto res = std::make_unique<ConcatReadBufferFromFile>("");
+    for (auto it = chunk_list.begin(); it != chunk_list.end(); ++it)
+    {
+        size_t size = it == chunk_tail ? position() - it->begin() : it->size();
+        res->appendBuffer(std::make_unique<ReadBufferFromMemory>(it->begin(), size), size);
+    }
+    return res;
 }
 
 }

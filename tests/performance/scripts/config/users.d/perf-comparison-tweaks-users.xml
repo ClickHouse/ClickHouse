@@ -35,8 +35,22 @@
             <!-- Don't fail some prewarm queries too early -->
             <timeout_before_checking_execution_speed>60</timeout_before_checking_execution_speed>
 
-            <!-- Disable the query condition cache -->
+            <!--
+                Disable the query condition cache: a query served from it after the prewarm
+                run measures the cache, not the code. It is keyed by the table UUID, which
+                the tables of the tests have (their databases are `Atomic`), so this setting
+                is what keeps it off. A test that measures the cache itself enables it in
+                its own query, as `query_condition_cache_topk.xml` does: both servers then
+                use the cache, and a regression of its hit path shows up as a slowdown.
+            -->
             <use_query_condition_cache>0</use_query_condition_cache>
+
+            <!--
+                The tables of the tests live in `Atomic` databases, where `DROP TABLE` returns before
+                the data is removed, which then competes with the next measured queries for CPU and
+                disk. Wait for the removal in the query, as with the `Ordinary` databases before.
+            -->
+            <database_atomic_wait_for_drop_and_detach_synchronously>1</database_atomic_wait_for_drop_and_detach_synchronously>
 
             <!--
                 Pin network compression to `LZ4` for the performance comparison.
