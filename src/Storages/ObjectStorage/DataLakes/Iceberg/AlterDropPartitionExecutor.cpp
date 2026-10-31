@@ -681,7 +681,17 @@ bool AlterDropPartitionExecutor::tryCommit(SnapshotState & state, const DropPlan
 
     auto [metadata_info, new_snapshot] = writeManifestList(state, plan, filename_generator, files_for_cleanup);
 
-    committed = commitMetadataJSON(state, filename_generator, metadata_info, new_snapshot);
+    try
+    {
+        committed = commitMetadataJSON(state, filename_generator, metadata_info, new_snapshot);
+    }
+    catch (...)
+    {
+        /// The metadata file may still be published: keep the files it references.
+        if (isUnknownCommitStatus())
+            files_for_cleanup.clear();
+        throw;
+    }
     if (!committed)
         return false;
 

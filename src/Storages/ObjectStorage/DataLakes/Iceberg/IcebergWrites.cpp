@@ -105,12 +105,14 @@ namespace ErrorCodes
     extern const int DATALAKE_DATABASE_ERROR;
     extern const int NOT_IMPLEMENTED;
     extern const int ICEBERG_SPECIFICATION_VIOLATION;
+    extern const int UNKNOWN_STATUS_OF_INSERT;
 }
 
 namespace FailPoints
 {
     extern const char iceberg_writes_cleanup[];
     extern const char iceberg_writes_pause_before_commit[];
+    extern const char iceberg_writes_unknown_commit_status[];
 }
 
 static constexpr auto MAX_TRANSACTION_RETRIES = 100;
@@ -1713,6 +1715,11 @@ bool IcebergStorageSink::initializeMetadata()
                     return false;
                 }
                 LOG_DEBUG(log, "Metadata file {} written", metadata_info.path);
+
+                fiu_do_on(FailPoints::iceberg_writes_unknown_commit_status,
+                {
+                    throw Exception(ErrorCodes::UNKNOWN_STATUS_OF_INSERT, "Failpoint for an unknown commit status enabled");
+                });
             }
 
             if (catalog)
@@ -1733,8 +1740,13 @@ bool IcebergStorageSink::initializeMetadata()
     }
     catch (...)
     {
+        /// The metadata file may still be published: keep the files it references,
+        /// also from the destructor, which removes them unless the commit is marked as done.
         /// TODO: keep the files when the catalog reports an unknown commit outcome (`CommitStateUnknownException` or a 5xx), because the snapshot may already reference them.
-        cleanup(false);
+        if (isUnknownCommitStatus())
+            committed = true;
+        else
+            cleanup(false);
         throw;
     }
     return true;
