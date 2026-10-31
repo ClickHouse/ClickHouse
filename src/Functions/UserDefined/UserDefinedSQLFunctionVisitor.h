@@ -30,7 +30,7 @@ public:
 private:
     /// `lambda_names` are the names of the lambdas declared in the whole query (see `collectLambdaNames`).
     /// `inside_apply` tells whether `ast` is in the expression of an `APPLY` transformer.
-    static void visitImpl(ASTPtr & ast, ContextPtr context_, const std::unordered_set<String> & lambda_names, bool inside_apply);
+    static void visitImpl(ASTPtr & ast, ContextPtr context_, const std::unordered_set<String> & lambda_names, bool inside_apply); /// STYLE_CHECK_ALLOW_STD_CONTAINERS: the type of `collectLambdaNames`
     static ASTPtr tryToReplaceFunction(const ASTFunction & function, UnorderedSetWithMemoryTracking<std::string> & udf_in_replace_process, ContextPtr context_);
 
 };

@@ -45,13 +45,13 @@ void UserDefinedSQLFunctionVisitor::visit(ASTPtr & ast, ContextPtr context_)
 {
     chassert(ast);
 
-    std::unordered_set<String> lambda_names;
+    std::unordered_set<String> lambda_names; /// STYLE_CHECK_ALLOW_STD_CONTAINERS: the type of `collectLambdaNames`
     collectLambdaNames(*ast, lambda_names);
     visitImpl(ast, context_, lambda_names, /*inside_apply=*/false);
 }
 
 void UserDefinedSQLFunctionVisitor::visitImpl(
-    ASTPtr & ast, ContextPtr context_, const std::unordered_set<String> & lambda_names, bool inside_apply)
+    ASTPtr & ast, ContextPtr context_, const std::unordered_set<String> & lambda_names, bool inside_apply) /// STYLE_CHECK_ALLOW_STD_CONTAINERS: the type of `collectLambdaNames`
 {
     chassert(ast);
 
