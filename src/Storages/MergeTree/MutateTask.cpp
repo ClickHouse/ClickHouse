@@ -653,7 +653,7 @@ static NameSet collectIndicesRebuiltByMutation(
         if (command.type == MutationCommand::Type::READ_COLUMN)
         {
             DataTypePtr old_type;
-            if (auto part_column = part->tryGetColumn(command.column_name))
+            if (auto part_column = part->tryGetColumnForTable(command.column_name, metadata_snapshot->getColumns()))
                 old_type = part_column->type;
             else if (const auto * missing = serialization_infos.getMissingColumnInfo(markerName(command.column_name));
                      missing && !missing->type_name.empty())
@@ -866,7 +866,7 @@ static void splitAndModifyMutationCommands(
                 else
                 {
                     auto column_ordinary = table_columns.getOrdinary().tryGetByName(command.column_name);
-                    if (!column_ordinary || !part->tryGetColumn(command.column_name) || !part->hasColumnFiles(*column_ordinary))
+                    if (!column_ordinary || !part->tryGetColumnForTable(command.column_name, table_columns) || !part->hasColumnFiles(*column_ordinary))
                     {
                         for_interpreter.push_back(command);
                         mutated_columns.emplace(command.column_name);
@@ -1199,7 +1199,7 @@ static void splitAndModifyMutationCommands(
                 else
                 {
                     auto column_ordinary = table_columns.getOrdinary().tryGetByName(command.column_name);
-                    if (!column_ordinary || !part->tryGetColumn(command.column_name) || !part->hasColumnFiles(*column_ordinary))
+                    if (!column_ordinary || !part->tryGetColumnForTable(command.column_name, table_columns) || !part->hasColumnFiles(*column_ordinary))
                     {
                         for_interpreter.push_back(command);
                         mutated_columns.emplace(command.column_name);
@@ -4678,7 +4678,9 @@ static bool canSkipConversionToNullable(const MergeTreeDataPartPtr & part, const
     if (command.type != MutationCommand::READ_COLUMN)
         return false;
 
-    auto part_column = part->tryGetColumn(command.column_name);
+    /// A column that the table declares in its own right (e.g. `a.size0` next to an `Array` column `a`)
+    /// is matched only by the column stored under that name, never by a same-named subcolumn.
+    auto part_column = part->tryGetColumnForTable(command.column_name, metadata_snapshot->getColumns());
     if (!part_column)
         return false;
 
@@ -4707,12 +4709,12 @@ static bool canSkipConversionToNullable(const MergeTreeDataPartPtr & part, const
     return true;
 }
 
-static bool canSkipConversionToVariant(const MergeTreeDataPartPtr & part, const MutationCommand & command)
+static bool canSkipConversionToVariant(const MergeTreeDataPartPtr & part, const StorageMetadataPtr & metadata_snapshot, const MutationCommand & command)
 {
     if (command.type != MutationCommand::READ_COLUMN)
         return false;
 
-    auto part_column = part->tryGetColumn(command.column_name);
+    auto part_column = part->tryGetColumnForTable(command.column_name, metadata_snapshot->getColumns());
     if (!part_column)
         return false;
 
@@ -4755,7 +4757,7 @@ static bool canSkipMutationCommandForPart(const MergeTreeDataPartPtr & part, con
     if (canSkipConversionToNullable(part, metadata_snapshot, command))
         return true;
 
-    if (canSkipConversionToVariant(part, command))
+    if (canSkipConversionToVariant(part, metadata_snapshot, command))
         return true;
 
     return false;

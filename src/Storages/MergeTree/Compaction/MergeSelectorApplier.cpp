@@ -603,6 +603,8 @@ NameSet getColumnsOfProjectionsRebuiltByMerge(
         else if (mode != DeduplicateMergeProjectionMode::IGNORE
             && std::any_of(required_columns.begin(), required_columns.end(), is_expired))
             rebuild = true;
+        else if (std::any_of(range.begin(), range.end(), [&](const PartProperties & part) { return part.projections_with_changed_source.contains(projection.name); }))
+            rebuild = true;
         else if (mode != DeduplicateMergeProjectionMode::IGNORE
             && std::any_of(range.begin(), range.end(), [&](const PartProperties & part) { return part.projections_missing_columns.contains(projection.name); }))
             rebuild = true;

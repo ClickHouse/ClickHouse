@@ -538,11 +538,12 @@ UseProjectionsResult optimizeUseNormalProjections(
 
     auto logger = getLogger("optimizeUseNormalProjections");
 
+    const auto & table_columns = metadata->getColumns();
     auto has_all_required_columns = [&](const ProjectionDescription * projection)
     {
         for (const auto & col : required_columns)
         {
-            if (!projection->sample_block.findColumnOrSubcolumnByName(col) && !projection->metadata->virtuals.has(col))
+            if (!projection->providesColumn(col, table_columns))
                 return false;
         }
 

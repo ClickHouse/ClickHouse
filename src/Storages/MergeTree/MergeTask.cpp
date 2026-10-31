@@ -1621,6 +1621,7 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::prepareProjectionsToMergeAndRe
         const auto projection_columns = projection.metadata->getColumns().getAllPhysical();
         const auto & parent_table_columns = global_ctx->metadata_snapshot->getColumns();
         bool projection_part_misses_column = false;
+        bool projection_source_changed = false;
 
         MergeTreeData::DataPartsVector projection_parts;
         size_t parts_with_unloaded_projection = 0;
@@ -1631,11 +1632,24 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::prepareProjectionsToMergeAndRe
             {
                 for (const auto & column : projection_columns)
                 {
-                    if (!it->second->tryGetColumn(column.name)
-                        && (part->tryGetColumn(column.name)
+                    if (!it->second->tryGetColumnForTable(column.name, parent_table_columns)
+                        && (part->tryGetColumnForTable(column.name, parent_table_columns)
                             || !parent_table_columns.hasColumnOrSubcolumn(GetColumnsOptions::AllPhysical, column.name)))
                     {
                         projection_part_misses_column = true;
+                        break;
+                    }
+                }
+
+                /// A source column named like a subcolumn of another column that the parent part misses (`a.size0` added
+                /// next to an `Array` column `a`): the projection part may be computed from that subcolumn, while the
+                /// parent part now reads the column's default (see `projectionPartHasRequiredColumns`). Its stored states
+                /// have a different meaning, so it is rebuilt regardless of `deduplicate_merge_projection_mode`.
+                for (const auto & name : projection.required_columns)
+                {
+                    if (!part->tryGetColumnForTable(name, parent_table_columns) && part->tryGetColumn(name))
+                    {
+                        projection_source_changed = true;
                         break;
                     }
                 }
@@ -1646,7 +1660,15 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::prepareProjectionsToMergeAndRe
                 ++parts_with_unloaded_projection;
         }
 
-        if (projection_part_misses_column && mode != DeduplicateMergeProjectionMode::IGNORE)
+        if (projection_source_changed)
+        {
+            LOG_DEBUG(
+                ctx->log,
+                "Projection {} will be rebuilt because some of its source columns are read as subcolumns of other columns in its parts",
+                projection.name);
+            global_ctx->projections_to_rebuild.push_back(&projection);
+        }
+        else if (projection_part_misses_column && mode != DeduplicateMergeProjectionMode::IGNORE)
         {
             LOG_DEBUG(
                 ctx->log,

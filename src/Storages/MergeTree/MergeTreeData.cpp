@@ -124,6 +124,7 @@
 #include <Storages/AlterCommands.h>
 #include <Storages/Freeze.h>
 #include <Storages/MergeTree/ActiveDataPartSet.h>
+#include <Storages/MergeTree/IMergeTreeReader.h>
 #include <Storages/MergeTree/Compaction/CompactionStatistics.h>
 #include <Storages/MergeTree/Compaction/ConstructFuturePart.h>
 #include <Storages/MergeTree/Compaction/MergeSelectorApplier.h>
@@ -5997,6 +5998,60 @@ static void checkUniqueKeyMutationCommands(const MutationCommands & commands)
     }
 }
 
+/// The column of the table that holds `name`, if it is named like a subcolumn of another column (`a.size0` next to
+/// an `Array` column `a`, or `a.x` next to a `JSON` column `a`, for the name `a.x` or `a.x.y`).
+static std::optional<String> getColumnShadowingSubcolumn(const ColumnsDescription & columns, const String & name)
+{
+    auto column = columns.tryGetColumnOrSubcolumn(GetColumnsOptions::AllPhysical, name);
+    if (!column)
+        return {};
+    String name_in_storage = column->getNameInStorage();
+    for (const auto & [prefix, subcolumn] : Nested::getAllColumnAndSubcolumnPairs(name_in_storage))
+    {
+        if (prefix.size() >= name_in_storage.size() || !columns.hasPhysical(String(prefix)))
+            continue;
+        if (columns.getPhysical(String(prefix)).type->tryGetSubcolumnType(subcolumn))
+            return name_in_storage;
+    }
+    return {};
+}
+
+/// Whether `part` does not hold the column `shadowing_column` of the table, which holds `name`, and reads `name` as
+/// a subcolumn of another column instead (see `IMergeTreeReader::tryGetColumnInPart`). A part that records the column
+/// as missing (`skip_empty_columns_on_insert`) reads its default.
+static bool partReadsColumnAsSubcolumnOfAnother(
+    const IMergeTreeDataPart & part, const String & name, const String & shadowing_column, const ColumnsDescription & columns)
+{
+    return !part.tryGetColumnForTable(name, columns) && part.tryGetColumn(name)
+        && !part.getSerializationInfos().getMissingColumnInfo(shadowing_column);
+}
+
+void MergeTreeData::checkTTLInputsOfAdoptedPart(const IMergeTreeDataPart & part, const StorageInMemoryMetadata & metadata) const
+{
+    if (!metadata.hasAnyTTL())
+        return;
+
+    /// The reader keeps the old meaning of a name that a TTL expression reads for a part that misses the column of that
+    /// name, so that the TTL agrees with the TTL infos the part was written with. A part written without that TTL (in this
+    /// table before it was detached and the TTL was added, or in another table) would read a different value here than
+    /// the one it read there, and the TTL could expire its rows by values it never held. The same is refused by `ALTER`
+    /// for the active parts (see `checkAlterEligibility`).
+    const auto & columns = metadata.getColumns();
+    for (const auto & ttl_column : getColumnsRequiredForTTL(metadata))
+    {
+        auto shadowing_column = getColumnShadowingSubcolumn(columns, ttl_column);
+        if (shadowing_column && partReadsColumnAsSubcolumnOfAnother(part, ttl_column, *shadowing_column, columns))
+            throw Exception(
+                ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN,
+                "Cannot attach part {} to table {}: a TTL expression reads column {}, which the part does not hold, and the part "
+                "reads its name as a subcolumn of another column. Attach the part to a table without this TTL and rewrite it "
+                "first, for example with `OPTIMIZE TABLE ... FINAL`",
+                part.name,
+                getStorageID().getNameForLogs(),
+                backQuoteIfNeed(ttl_column));
+    }
+}
+
 void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, ContextPtr local_context) const
 {
     /// Check that needed transformations can be applied to the list of columns without considering type conversions.
@@ -6391,6 +6446,143 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
                         is_now_reversed ? "DESC" : "ASC");
 
                 ++old_i;
+            }
+        }
+
+        /// A column added under the name of a subcolumn that a partition or sorting key reads (`a.size0` of an `Array`
+        /// column `a`, or `a.x` whose subcolumn `a.x.y` is a path of a `JSON` column `a`) would change what the key
+        /// expression reads: the parts written before hold no such column, so they read its default, while their
+        /// primary index, partition minmax index, partition ID and physical order were all computed from the old
+        /// subcolumn. Pruning and in-order reads would then use values the key no longer evaluates to. The same holds
+        /// for a projection, whose parts are indexed and sorted by its key and whose aggregate states were computed from
+        /// its source columns, and for a TTL expression, whose results the parts keep in their TTL infos. A column added in
+        /// the same `ALTER` to the sorting key by `MODIFY ORDER BY` or to a TTL expression is refused as well: the reader
+        /// keeps the old meaning of a name that the sorting key or a TTL expression reads for the parts that miss it.
+        if (is_initial_alter && std::ranges::any_of(commands, [](const AlterCommand & c) { return c.type == AlterCommand::ADD_COLUMN && !c.ignore; }))
+        {
+            Names key_columns;
+            if (old_metadata.hasPartitionKey())
+                key_columns = old_metadata.getColumnsRequiredForPartitionKey();
+            if (old_metadata.hasSortingKey())
+                std::ranges::copy(old_metadata.getColumnsRequiredForSortingKey(), std::back_inserter(key_columns));
+            if (new_metadata.hasSortingKey())
+                std::ranges::copy(new_metadata.getColumnsRequiredForSortingKey(), std::back_inserter(key_columns));
+            std::ranges::copy(getColumnsRequiredForTTL(old_metadata), std::back_inserter(key_columns));
+            std::ranges::copy(getColumnsRequiredForTTL(new_metadata), std::back_inserter(key_columns));
+            for (const auto & projection : old_metadata.getProjections())
+            {
+                std::ranges::copy(projection.required_columns, std::back_inserter(key_columns));
+                if (projection.metadata)
+                    std::ranges::copy(projection.metadata->getColumnsRequiredForSortingKey(), std::back_inserter(key_columns));
+            }
+
+            /// The name is looked up in the old columns both as it is and under its name before the renames of this
+            /// `ALTER`: a column `a.size0` added and renamed to `a.sz` in the same `ALTER` is still read as `a.size0` from
+            /// the parts that miss it, so a new key over `a.sz` reads the sizes of `a` there.
+            const auto & new_columns = new_metadata.getColumns();
+            for (const auto & key_column : key_columns)
+            {
+                auto new_column = new_columns.tryGetColumnOrSubcolumn(GetColumnsOptions::All, key_column);
+                if (!new_column)
+                    continue;
+
+                String old_name_in_storage = new_column->getNameInStorage();
+                for (const auto & command : commands | std::views::reverse)
+                {
+                    if (command.type == AlterCommand::RENAME_COLUMN && !command.ignore && command.rename_to == old_name_in_storage)
+                        old_name_in_storage = command.column_name;
+                }
+
+                for (const auto & old_name : {key_column, Nested::concatenateName(old_name_in_storage, new_column->getSubcolumnName())})
+                {
+                    auto old_column = old_columns.tryGetColumnOrSubcolumn(GetColumnsOptions::All, old_name);
+                    if (old_column && old_column->isSubcolumn() && old_column->getNameInStorage() != new_column->getNameInStorage())
+                        throw Exception(
+                            ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN,
+                            "Cannot add column {}: a key, TTL or projection expression reads {} as a subcolumn of column {}, and the "
+                            "new column would change it, while the existing parts are indexed, sorted, aggregated and expired by the "
+                            "old value",
+                            backQuoteIfNeed(new_column->getNameInStorage()),
+                            backQuoteIfNeed(key_column),
+                            backQuoteIfNeed(old_column->getNameInStorage()));
+                }
+            }
+        }
+
+        /// For the same reason a TTL expression may not start reading a column named like a subcolumn of another column
+        /// (`a.d` next to a `JSON` column `a`), or a subcolumn of such a column (`a.x.y` of a column `a.x` next to a `JSON`
+        /// column `a`), while some part misses that column: the reader keeps the old meaning of a name that a TTL expression
+        /// reads for such a part, so adding the TTL would change what the part returns. A part that records the column as
+        /// missing (`skip_empty_columns_on_insert`) reads its default either way, as the reader does. The reader looks the
+        /// column up in the part under its name in the part, so the name is translated back through the renames of this
+        /// `ALTER` and through the renames not yet applied to the part: a column `a.size0` renamed to `a.sz` is still read
+        /// as `a.size0` from a part that misses it.
+        if (is_initial_alter && new_metadata.hasAnyTTL())
+        {
+            const auto & new_columns = new_metadata.getColumns();
+            auto old_ttl_columns = getColumnsRequiredForTTL(old_metadata);
+
+            std::optional<DataPartsVector> parts;
+            std::vector<AlterConversionsPtr> parts_alter_conversions;
+            for (const auto & ttl_column : getColumnsRequiredForTTL(new_metadata))
+            {
+                auto column = new_columns.tryGetColumnOrSubcolumn(GetColumnsOptions::AllPhysical, ttl_column);
+                if (!column)
+                    continue;
+
+                String name_in_storage = column->getNameInStorage();
+                for (const auto & command : commands | std::views::reverse)
+                {
+                    if (command.type == AlterCommand::RENAME_COLUMN && !command.ignore && command.rename_to == name_in_storage)
+                        name_in_storage = command.column_name;
+                }
+                const String subcolumn_name = column->getSubcolumnName();
+
+                if (std::ranges::find(old_ttl_columns, Nested::concatenateName(name_in_storage, subcolumn_name)) != old_ttl_columns.end())
+                    continue;
+
+                if (!parts)
+                {
+                    parts = getDataPartsVectorForInternalUsage();
+                    auto parts_info = getPartsSnapshotInfo(*parts);
+                    IMutationsSnapshot::Params params
+                    {
+                        .metadata_version = old_metadata.getMetadataVersion(),
+                        .min_part_metadata_version = parts_info.min_metadata_version,
+                        .min_part_data_versions = nullptr,
+                        .max_mutation_versions = nullptr,
+                        .need_data_mutations = false,
+                        .need_alter_mutations = true,
+                        .need_patch_parts = false,
+                        .has_lightweight_delete_parts = parts_info.has_lightweight_delete_parts,
+                    };
+                    auto mutations_snapshot = getMutationsSnapshot(params);
+                    for (const auto & part : *parts)
+                        parts_alter_conversions.push_back(getAlterConversionsForPart(part, mutations_snapshot, local_context
+#if CLICKHOUSE_CLOUD
+                            , nullptr
+#endif
+                            ));
+                }
+
+                for (size_t i = 0; i < parts->size(); ++i)
+                {
+                    const auto & part = (*parts)[i];
+                    const auto & alter_conversions = parts_alter_conversions[i];
+                    String name_in_part_storage = alter_conversions->isColumnRenamed(name_in_storage)
+                        ? alter_conversions->getColumnOldName(name_in_storage)
+                        : name_in_storage;
+
+                    if (!part->getColumnsDescription().hasPhysical(name_in_part_storage)
+                        && part->tryGetColumn(Nested::concatenateName(name_in_part_storage, subcolumn_name))
+                        && !part->getSerializationInfos().getMissingColumnInfo(name_in_part_storage))
+                        throw Exception(
+                            ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN,
+                            "Cannot use column {} in a TTL expression: part {} does not hold it and reads its name as a subcolumn "
+                            "of another column. Rewrite the part first, for example with `OPTIMIZE TABLE ... FINAL`",
+                            backQuoteIfNeed(ttl_column),
+                            part->name);
+                }
             }
         }
     }
@@ -9813,11 +10005,16 @@ IStorage::ColumnSizeByName MergeTreeData::getColumnSizes(const Names & columns, 
         parts.assign(committed_parts_range.begin(), committed_parts_range.end());
     }
 
+    /// A column of the table that shadows a subcolumn of another column (e.g. `a.size0` added next to
+    /// an `Array` column `a`) is not taken for that subcolumn in the parts that do not hold it.
+    auto metadata_snapshot = getInMemoryMetadataPtr(getContext(), false);
+    const auto & table_columns = metadata_snapshot->getColumns();
+
     for (const auto & part : parts)
     {
         for (const auto & col_name : subcolumn_names)
         {
-            auto column = part->tryGetColumn(col_name);
+            auto column = part->tryGetColumnForTable(col_name, table_columns);
             if (column && column->isSubcolumn())
                 result[col_name].add(part->getSubcolumnSize(col_name));
         }
@@ -10609,6 +10806,11 @@ private:
             parts.begin(),
             parts.end(),
             [](const MutableDataPartPtr & lhs, const MutableDataPartPtr & rhs) { return lhs->info.min_block < rhs->info.min_block; });
+
+        /// Validate all restored parts against the destination metadata before committing any of them.
+        auto metadata_snapshot = storage->getInMemoryMetadataPtr(query_context, false);
+        for (const auto & part : parts)
+            storage->checkTTLInputsOfAdoptedPart(*part, *metadata_snapshot);
 
         storage->attachRestoredParts(std::move(parts), query_context, zookeeper_retries_info);
         parts.clear();
@@ -12433,6 +12635,7 @@ MergeTreeData::MutableDataPartsVector MergeTreeData::tryLoadPartsToAttach(const 
     LOG_DEBUG(log, "Checking {} parts", renamed_parts.old_and_new_names.size());
     MutableDataPartsVector loaded_parts;
     loaded_parts.reserve(renamed_parts.old_and_new_names.size());
+    auto metadata_snapshot = getInMemoryMetadataPtr(local_context, false);
 
     for (const auto & [part_name, old_dir, new_dir, disk] : renamed_parts.old_and_new_names)
     {
@@ -12458,6 +12661,7 @@ MergeTreeData::MutableDataPartsVector MergeTreeData::tryLoadPartsToAttach(const 
             .build();
 
         loadPartAndFixMetadataImpl(part, local_context);
+        checkTTLInputsOfAdoptedPart(*part, *metadata_snapshot);
 
         chassert(!part->version->getInfo().isRemoved());
         loaded_parts.push_back(part);

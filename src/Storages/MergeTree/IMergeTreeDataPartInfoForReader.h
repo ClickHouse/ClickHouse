@@ -43,6 +43,16 @@ using IndexPtr = std::shared_ptr<const Index>;
  * otherwise it will need to copy all the information which might not
  * be even used (for example, an IndexGranularity class object is quite heavy).
  */
+/// Look up the column or subcolumn `column_name` of the table with columns `table_columns` among the columns
+/// `part_columns` of a part, keeping the identity that the table gives the name. A name that the table declares
+/// as a column in its own right is answered only by a column that the part stores under that name, and a subcolumn
+/// of a table column only by the same subcolumn of the same column of the part - never by a same-named subcolumn
+/// or dynamic path of another column. A column `a.size0` added by `ALTER TABLE ... ADD COLUMN` next to an `Array`
+/// column `a`, or a column `a.x` added next to a `JSON` column `a`, is missing from the parts written before, and
+/// it and its subcolumns are read from its default there rather than from the sizes of `a` or the path `x` of `a`.
+std::optional<NameAndTypePair> tryGetColumnOfPartForTable(
+    const ColumnsDescription & part_columns, const String & column_name, const ColumnsDescription & table_columns);
+
 class IMergeTreeDataPartInfoForReader : public WithContext
 {
 public:
@@ -84,6 +94,14 @@ public:
 
     /// Look up a (sub)column present in the part, if any.
     virtual std::optional<NameAndTypePair> tryGetColumn(const String & column_name) const = 0;
+
+    /// Like `tryGetColumn`, but a name that `table_columns` declares as a column in its own right is answered
+    /// only by a column that the part stores under that name, never by a same-named subcolumn of another column.
+    /// See `IMergeTreeDataPart::tryGetColumnForTable`.
+    std::optional<NameAndTypePair> tryGetColumnForTable(const String & column_name, const ColumnsDescription & table_columns) const
+    {
+        return tryGetColumnOfPartForTable(getColumnsDescription(), column_name, table_columns);
+    }
 
     virtual bool isSystemColumnInvalidated(const String & column_name) const = 0;
 
