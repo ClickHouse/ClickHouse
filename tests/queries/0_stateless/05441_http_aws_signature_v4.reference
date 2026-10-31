@@ -1,0 +1,78 @@
+GET: 200 1	Hello
+2	World
+GET with a query parameter: 200 Hello
+World
+HEAD: 200 16 0 True
+GET presigned: 200 1	Hello
+2	World
+GET presigned with a query: 200 42
+wrong secret: 403 Code: 516
+unknown user: 403 Code: 516
+password stored as a hash: 403 Code: 516
+restricting method storing a hash: 403 Code: 516
+expired method storing a hash: 403 Code: 516
+presigned with wrong secret: 403 Code: 516
+presigned and expired: 403 Code: 516
+request too old: 403 Code: 516
+unsigned X-ClickHouse header: 403 Code: 516
+signed X-ClickHouse header: 200 1,"Hello"
+2,"World"
+tampered query: 403 Code: 516
+presigned with a body: 403 Code: 516
+unsigned payload with a body: 403 Code: 516
+presigned GET with a close-delimited body: 200 42
+presigned POST with a close-delimited body: 411 Code: 381
+signed payload with a body: 200 1
+signed query in a comment: 200 1
+unsigned Content-Type: 403 Code: 516
+signed multipart body: 400 Code: 36
+multipart body with a wrong hash: 400 Code: 36
+query body with a wrong hash: 400 Code: 117
+path filter: 200 1	Hello
+encoded slash instead of a separator: 403 Code: 516
+signed query with a plus: 200 a+b
+plus instead of an encoded plus: 403 Code: 516
+signed query_id with an encoded hash: 200 1	Hello
+hash instead of an encoded hash: 403 Code: 516
+repeated query parameter: 403 Code: 516
+repeated query parameter in a different case: 403 Code: 516
+profile before a setting: 200 1	Hello
+2	World
+profile after a setting: 200 1	Hello
+2	World
+header with sequential spaces: 403 Code: 516
+signed custom header: 200 1	Hello
+2	World
+signed custom header split in two: 403 Code: 516
+signed custom header with sequential spaces: 403 Code: 516
+range from the beginning: 200 1	Hello
+2	World
+range: 400 Code: 36
+PUT: 200 
+PUT with unsigned payload: 200 
+PUT presigned: 200 
+PUT aws-chunked: 200 
+PUT with wrong payload hash: 400 Code: 117
+PUT of many blocks with wrong payload hash: 400 Code: 117
+PUT with signed streaming payload: 501 Code: 48
+PUT presigned Values: 200 
+PUT presigned Values with a subquery: 500 Code: 344
+PUT presigned Values with a function: 500 Code: 344
+PUT presigned with input_format=Values: 500 Code: 344
+PUT signed Values with a subquery: 200 
+PUT without the INSERT grant: 403 Code: 497
+PUT over the temporary data limit: 500 Code: 396
+PUT presigned Values with a SETTINGS clause: 400 Code: 27
+PUT without a table over the temporary data limit: 400 Code: 36
+PUT with a deferred 100 Continue: 200 
+POST with a deferred 100 Continue: 200 
+GET after PUT: 200 1	Hello
+2	World
+3	PUT
+4	unsigned
+5	presigned
+6	chunked
+9	literal
+13	private
+16	continue
+17	continue

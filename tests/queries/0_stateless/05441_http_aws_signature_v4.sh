@@ -1,0 +1,314 @@
+#!/usr/bin/env bash
+# Tags: no-fasttest
+# ^ the AWS Signature Version 4 authentication needs SSL
+
+# The file-like HTTP API (`/database/table.format`) authenticated with AWS Signature Version 4, as by S3 clients.
+
+CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+# shellcheck source=../shell_config.sh
+. "$CUR_DIR"/../shell_config.sh
+
+USER_NAME="u_sigv4_${CLICKHOUSE_DATABASE}"
+HASHED_USER_NAME="u_sigv4_hashed_${CLICKHOUSE_DATABASE}"
+MIXED_GRANTS_USER_NAME="u_sigv4_mixed_grants_${CLICKHOUSE_DATABASE}"
+MIXED_EXPIRED_USER_NAME="u_sigv4_mixed_expired_${CLICKHOUSE_DATABASE}"
+READER_USER_NAME="u_sigv4_reader_${CLICKHOUSE_DATABASE}"
+PROFILE_NAME="p_sigv4_${CLICKHOUSE_DATABASE}"
+
+${CLICKHOUSE_CLIENT} --query "
+    DROP USER IF EXISTS ${USER_NAME}, ${HASHED_USER_NAME}, ${MIXED_GRANTS_USER_NAME}, ${MIXED_EXPIRED_USER_NAME}, ${READER_USER_NAME};
+    DROP SETTINGS PROFILE IF EXISTS ${PROFILE_NAME};
+    CREATE USER ${USER_NAME} IDENTIFIED WITH plaintext_password BY 'secret';
+    CREATE USER ${HASHED_USER_NAME} IDENTIFIED WITH sha256_password BY 'secret';
+    -- The same password is accepted by a method storing its hash, which limits the grants or the lifetime of the login.
+    -- An AWS signature can be checked only against the plaintext password, so it must not bypass these limits.
+    CREATE USER ${MIXED_GRANTS_USER_NAME} IDENTIFIED WITH plaintext_password BY 'secret',
+        sha256_password BY 'secret' GRANTS (SELECT ON ${CLICKHOUSE_DATABASE}.nonexistent);
+    CREATE USER ${MIXED_EXPIRED_USER_NAME} IDENTIFIED WITH plaintext_password BY 'secret',
+        sha256_password BY 'secret' VALID UNTIL '2020-01-01 00:00:00 UTC';
+    CREATE USER ${READER_USER_NAME} IDENTIFIED WITH plaintext_password BY 'secret';
+    CREATE SETTINGS PROFILE ${PROFILE_NAME} SETTINGS limit = 1;
+    CREATE TABLE ${CLICKHOUSE_DATABASE}.t (x UInt32, s String) ENGINE = MergeTree ORDER BY x;
+    INSERT INTO ${CLICKHOUSE_DATABASE}.t VALUES (1, 'Hello'), (2, 'World');
+    GRANT SELECT, INSERT ON ${CLICKHOUSE_DATABASE}.t TO ${USER_NAME}, ${HASHED_USER_NAME}, ${MIXED_GRANTS_USER_NAME}, ${MIXED_EXPIRED_USER_NAME};
+    GRANT SELECT ON ${CLICKHOUSE_DATABASE}.t TO ${READER_USER_NAME};
+    CREATE TABLE ${CLICKHOUSE_DATABASE}.private (s String) ENGINE = MergeTree ORDER BY s;
+    INSERT INTO ${CLICKHOUSE_DATABASE}.private VALUES ('private');
+    GRANT SELECT ON ${CLICKHOUSE_DATABASE}.private TO ${USER_NAME};
+"
+
+python3 - "${CLICKHOUSE_HOST}" "${CLICKHOUSE_PORT_HTTP}" "${CLICKHOUSE_DATABASE}" "${USER_NAME}" "${HASHED_USER_NAME}" \
+    "${MIXED_GRANTS_USER_NAME}" "${MIXED_EXPIRED_USER_NAME}" "${PROFILE_NAME}" "${READER_USER_NAME}" <<'EOF'
+import datetime
+import hashlib
+import hmac
+import http.client
+import re
+import socket
+import sys
+import urllib.parse
+
+host, port, database, user, hashed_user = sys.argv[1], int(sys.argv[2]), sys.argv[3], sys.argv[4], sys.argv[5]
+mixed_grants_user, mixed_expired_user, profile, reader_user = sys.argv[6], sys.argv[7], sys.argv[8], sys.argv[9]
+host_header = f"{host}:{port}"
+EMPTY_SHA256 = hashlib.sha256(b"").hexdigest()
+
+
+def quote(s, safe=""):
+    return urllib.parse.quote(s, safe=safe + "-_.~")
+
+
+def hmac_sha256(key, msg):
+    return hmac.new(key, msg.encode(), hashlib.sha256).digest()
+
+
+def signature(secret, date, string_to_sign, region="us-east-1"):
+    key = hmac_sha256(("AWS4" + secret).encode(), date)
+    for part in (region, "s3", "aws4_request"):
+        key = hmac_sha256(key, part)
+    return hmac.new(key, string_to_sign.encode(), hashlib.sha256).hexdigest()
+
+
+def canonical_request(method, path, params, headers, signed_headers, payload_hash):
+    query = "&".join(f"{quote(k)}={quote(v)}" for k, v in sorted(params))
+    canonical_headers = "".join(f"{h}:{headers[h].strip()}\n" for h in signed_headers)
+    return "\n".join([method, quote(path, "/"), query, canonical_headers, ";".join(signed_headers), payload_hash])
+
+
+def string_to_sign(amz_date, creq):
+    scope = f"{amz_date[:8]}/us-east-1/s3/aws4_request"
+    return "\n".join(["AWS4-HMAC-SHA256", amz_date, scope, hashlib.sha256(creq.encode()).hexdigest()])
+
+
+def send(method, path, params=(), headers=None, body=b"", tamper_url=None):
+    conn = http.client.HTTPConnection(host, port)
+    url = quote(path, "/")
+    if params:
+        url += "?" + "&".join(f"{quote(k)}={quote(v)}" for k, v in params)
+    if tamper_url:
+        url = tamper_url(url)
+    all_headers = {"Host": host_header}
+    all_headers.update(headers or {})
+    if method in ("PUT", "POST") or body:
+        all_headers.setdefault("Content-Length", str(len(body)))
+    conn.putrequest(method, url, skip_host=True, skip_accept_encoding=True)
+    for k, v in all_headers.items():
+        conn.putheader(k, v)
+    conn.endheaders()
+    if body:
+        conn.send(body)
+    response = conn.getresponse()
+    data = response.read()
+    conn.close()
+    return response, data
+
+
+def send_close_delimited(method, path, params, body):
+    # A raw request without `Content-Length` and `Transfer-Encoding`: the body ends with the connection.
+    url = quote(path, "/") + "?" + "&".join(f"{quote(k)}={quote(v)}" for k, v in params)
+    with socket.create_connection((host, port)) as sock:
+        sock.sendall(f"{method} {url} HTTP/1.1\r\nHost: {host_header}\r\nConnection: close\r\n\r\n".encode() + body)
+        sock.shutdown(socket.SHUT_WR)
+        response = http.client.HTTPResponse(sock, method=method)
+        response.begin()
+        return response, response.read()
+
+
+def send_expect_continue(method, path, params=(), headers=None, body=b""):
+    # A client that sends the body only after `100 Continue`, without a fallback timeout.
+    url = quote(path, "/")
+    if params:
+        url += "?" + "&".join(f"{quote(k)}={quote(v)}" for k, v in params)
+    all_headers = {"Host": host_header, "Expect": "100-continue", "Content-Length": str(len(body)), "Connection": "close"}
+    all_headers.update(headers or {})
+    with socket.create_connection((host, port), timeout=30) as sock:
+        sock.sendall(f"{method} {url} HTTP/1.1\r\n".encode() + "".join(f"{k}: {v}\r\n" for k, v in all_headers.items()).encode() + b"\r\n")
+        interim = b""
+        while not interim.endswith(b"\r\n\r\n"):
+            byte = sock.recv(1)
+            if not byte:
+                break
+            interim += byte
+        if not interim.startswith(b"HTTP/1.1 100"):
+            return None, interim
+        sock.sendall(body)
+        response = http.client.HTTPResponse(sock, method=method)
+        response.begin()
+        return response, response.read()
+
+
+def signed_request(method, path, params=(), headers=None, body=b"", payload_hash=None, access_key=user, secret="secret",
+                   sign_headers=None, amz_date=None, tamper_headers=None, transport=send):
+    amz_date = amz_date or datetime.datetime.now(datetime.timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    payload_hash = payload_hash or hashlib.sha256(body).hexdigest()
+    headers = dict(headers or {})
+    all_headers = {"host": host_header, "x-amz-date": amz_date, "x-amz-content-sha256": payload_hash}
+    for k, v in headers.items():
+        if sign_headers is None or k.lower() in sign_headers:
+            all_headers[k.lower()] = v
+    signed_headers = sorted(all_headers)
+    creq = canonical_request(method, path, params, all_headers, signed_headers, payload_hash)
+    sts = string_to_sign(amz_date, creq)
+    sig = signature(secret, amz_date[:8], sts)
+    request_headers = {k: v for k, v in all_headers.items() if k != "host"}
+    request_headers.update({k: v for k, v in headers.items() if k.lower() not in all_headers})
+    # Changes made after signing, as by someone who has intercepted a signed request.
+    request_headers.update(tamper_headers or {})
+    request_headers["Authorization"] = (
+        f"AWS4-HMAC-SHA256 Credential={access_key}/{amz_date[:8]}/us-east-1/s3/aws4_request, "
+        f"SignedHeaders={';'.join(signed_headers)}, Signature={sig}")
+    return transport(method, path, params, request_headers, body)
+
+
+def presigned_params(method, path, params=(), expires=60, amz_date=None, secret="secret"):
+    amz_date = amz_date or datetime.datetime.now(datetime.timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    all_params = list(params) + [
+        ("X-Amz-Algorithm", "AWS4-HMAC-SHA256"),
+        ("X-Amz-Credential", f"{user}/{amz_date[:8]}/us-east-1/s3/aws4_request"),
+        ("X-Amz-Date", amz_date),
+        ("X-Amz-Expires", str(expires)),
+        ("X-Amz-SignedHeaders", "host"),
+    ]
+    creq = canonical_request(method, path, all_params, {"host": host_header}, ["host"], "UNSIGNED-PAYLOAD")
+    sig = signature(secret, amz_date[:8], string_to_sign(amz_date, creq))
+    return all_params + [("X-Amz-Signature", sig)]
+
+
+def show(name, result):
+    response, data = result
+    if response is None:
+        print(f"{name}: no 100 Continue, got {data[:12]!r}")
+        return
+    text = data.decode(errors="replace").strip()
+    if response.status != 200:
+        # Keep only the error code, the message contains variable parts.
+        code = re.search(r"Code: (\d+)", text)
+        text = code.group(0) if code else text[:20]
+    print(f"{name}: {response.status} {text}")
+
+
+table_path = f"/{database}/t.TSV"
+csv_path = f"/{database}/t.CSV"
+
+show("GET", signed_request("GET", table_path))
+show("GET with a query parameter", signed_request("GET", table_path, params=[("x-id", "GetObject"), ("select", "s")]))
+
+response, data = signed_request("HEAD", table_path)
+print("HEAD:", response.status, response.getheader("Content-Length"), len(data), response.getheader("Last-Modified") is not None)
+
+show("GET presigned", send("GET", table_path, presigned_params("GET", table_path)))
+show("GET presigned with a query", send("GET", "/", presigned_params("GET", "/", [("query", "SELECT 42")])))
+
+# Authentication failures.
+show("wrong secret", signed_request("GET", table_path, secret="wrong"))
+show("unknown user", signed_request("GET", table_path, access_key="nonexistent_sigv4_user"))
+show("password stored as a hash", signed_request("GET", table_path, access_key=hashed_user))
+show("restricting method storing a hash", signed_request("GET", table_path, access_key=mixed_grants_user))
+show("expired method storing a hash", signed_request("GET", table_path, access_key=mixed_expired_user))
+show("presigned with wrong secret", send("GET", table_path, presigned_params("GET", table_path, secret="wrong")))
+show("presigned and expired", send("GET", table_path, presigned_params("GET", table_path, expires=60, amz_date="20200101T000000Z")))
+show("request too old", signed_request("GET", table_path, amz_date="20200101T000000Z"))
+show("unsigned X-ClickHouse header", signed_request("GET", table_path, headers={"X-ClickHouse-Format": "JSON"}, sign_headers=set()))
+show("signed X-ClickHouse header", signed_request("GET", table_path, headers={"X-ClickHouse-Format": "CSV"}))
+show("tampered query", send("GET", "/", [(k, "SELECT 43" if k == "query" else v) for k, v in presigned_params("GET", "/", [("query", "SELECT 42")])]))
+show("presigned with a body", send("POST", "/", presigned_params("POST", "/"), body=b"SELECT 1"))
+show("unsigned payload with a body", signed_request("POST", "/", body=b"SELECT 1", payload_hash="UNSIGNED-PAYLOAD"))
+# A body delimited by the end of the connection is not covered by the signature either.
+# A `GET` request without `Content-Length` has no body, and a `POST` request requires it.
+show("presigned GET with a close-delimited body", send_close_delimited("GET", "/", presigned_params("GET", "/", [("query", "SELECT 42")]),
+     b" + 1"))
+show("presigned POST with a close-delimited body", send_close_delimited("POST", "/", presigned_params("POST", "/", [("query", "SELECT 42")]),
+     b" + 1"))
+show("signed payload with a body", signed_request("POST", "/", body=b"SELECT 1"))
+
+# Modifications of a signed request which would change its meaning without changing the signature.
+query_body = b"SELECT 1 /*\r\n--b\r\nContent-Disposition: form-data; name=\"query\"\r\n\r\nSELECT 2\r\n--b--\r\n*/"
+show("signed query in a comment", signed_request("POST", "/", body=query_body))
+show("unsigned Content-Type", signed_request("POST", "/", body=query_body, headers={"Content-Type": "multipart/form-data; boundary=b"},
+     sign_headers=set()))
+multipart_body = b"--b\r\nContent-Disposition: form-data; name=\"query\"\r\n\r\nSELECT 3\r\n--b--\r\nignored\r\nmore"
+show("signed multipart body", signed_request("POST", "/", body=multipart_body, headers={"Content-Type": "multipart/form-data; boundary=b"}))
+show("multipart body with a wrong hash", signed_request("POST", "/", body=multipart_body, payload_hash=hashlib.sha256(b"SELECT 1").hexdigest(),
+     headers={"Content-Type": "multipart/form-data; boundary=b"}))
+show("query body with a wrong hash", signed_request("POST", "/", body=b"INSERT INTO t VALUES (100, 'wrong hash')",
+     payload_hash=hashlib.sha256(b"SELECT 1").hexdigest(), params=[("database", database)]))
+
+filtered_path = f"/{database}/t.TSV/s=Hello/"
+show("path filter", send("GET", filtered_path, presigned_params("GET", filtered_path)))
+show("encoded slash instead of a separator", send("GET", filtered_path, presigned_params("GET", filtered_path),
+     tamper_url=lambda url: url.replace("Hello/?", "Hello%2F?")))
+show("signed query with a plus", send("GET", "/", presigned_params("GET", "/", [("query", "SELECT 'a+b'")])))
+show("plus instead of an encoded plus", send("GET", "/", presigned_params("GET", "/", [("query", "SELECT 'a+b'")]),
+     tamper_url=lambda url: url.replace("%2B", "+")))
+show("signed query_id with an encoded hash", send("GET", table_path, presigned_params("GET", table_path,
+     [("query_id", f"{database}_a#b"), ("filter", "x=1")])))
+show("hash instead of an encoded hash", send("GET", table_path, presigned_params("GET", table_path,
+     [("query_id", f"{database}_a#b"), ("filter", "x=1")]), tamper_url=lambda url: url.replace("%23", "#")))
+show("repeated query parameter", send("GET", "/", presigned_params("GET", "/", [("query", "SELECT 1"), ("query", "SELECT 2")])))
+show("repeated query parameter in a different case", send("GET", "/", presigned_params("GET", "/", [("query", "SELECT 1"), ("Query", "SELECT 2")])))
+# A profile is applied before the other settings, regardless of the order of the parameters, which is not signed.
+show("profile before a setting", send("GET", table_path, presigned_params("GET", table_path,
+     [("order", "x"), ("profile", profile), ("limit", "2")])))
+show("profile after a setting", send("GET", table_path, presigned_params("GET", table_path,
+     [("order", "x"), ("limit", "2"), ("profile", profile)])))
+show("header with sequential spaces", signed_request("GET", table_path, headers={"X-ClickHouse-Database": "a b"},
+     tamper_headers={"x-clickhouse-database": "a  b"}))
+# Other signed headers are visible to SQL by `getClientHTTPHeader`, so they must not be changed either.
+show("signed custom header", signed_request("GET", table_path, headers={"X-Tenant": "alice,bob"}))
+show("signed custom header split in two", signed_request("GET", table_path, headers={"X-Tenant": "alice,bob"},
+     tamper_headers={"x-tenant": "alice", "X-Tenant": "bob"}))
+show("signed custom header with sequential spaces", signed_request("GET", table_path, headers={"X-Tenant": "a b"},
+     tamper_headers={"x-tenant": "a  b"}))
+
+# Range requests are not supported, except for a range from the beginning, which is ignored.
+show("range from the beginning", signed_request("GET", table_path, headers={"Range": "bytes=0-15"}, params=[("order", "x")]))
+show("range", signed_request("GET", table_path, headers={"Range": "bytes=3-5"}))
+
+# Uploads.
+show("PUT", signed_request("PUT", csv_path, body=b"3,\"PUT\"\n"))
+show("PUT with unsigned payload", signed_request("PUT", csv_path, body=b"4,\"unsigned\"\n", payload_hash="UNSIGNED-PAYLOAD"))
+show("PUT presigned", send("PUT", csv_path, presigned_params("PUT", csv_path), body=b"5,\"presigned\"\n"))
+chunk = b"6,\"chunked\"\n"
+chunked_body = b"%x\r\n%s\r\n0\r\nx-amz-checksum-crc32:AAAAAA==\r\n\r\n" % (len(chunk), chunk)
+show("PUT aws-chunked", signed_request("PUT", csv_path, body=chunked_body, payload_hash="STREAMING-UNSIGNED-PAYLOAD-TRAILER",
+     headers={"Content-Encoding": "aws-chunked", "X-Amz-Decoded-Content-Length": str(len(chunk))}))
+show("PUT with wrong payload hash", signed_request("PUT", csv_path, body=b"7,\"wrong\"\n", payload_hash=EMPTY_SHA256))
+# A block per row: the table commits the rows read before the end of the body, where the hash is verified.
+show("PUT of many blocks with wrong payload hash", signed_request("PUT", csv_path,
+     body=b"".join(b"%d,\"wrong\"\n" % i for i in range(100, 110)), payload_hash=EMPTY_SHA256,
+     params=[("max_insert_block_size", "1"), ("min_insert_block_size_rows", "1"), ("min_insert_block_size_bytes", "0")]))
+show("PUT with signed streaming payload", signed_request("PUT", csv_path, body=b"8,\"x\"\n", payload_hash="STREAMING-AWS4-HMAC-SHA256-PAYLOAD"))
+# The body of a presigned upload is not covered by the signature, so it is accepted only as data:
+# the expressions of the `Values` format, which are evaluated with the privileges of the signer, are not.
+values_path = f"/{database}/t.Values"
+show("PUT presigned Values", send("PUT", values_path, presigned_params("PUT", values_path), body=b"(9, 'literal')"))
+show("PUT presigned Values with a subquery", send("PUT", values_path, presigned_params("PUT", values_path),
+     body=f"(10, (SELECT s FROM {database}.private LIMIT 1))".encode()))
+show("PUT presigned Values with a function", send("PUT", values_path, presigned_params("PUT", values_path), body=b"(11, lower('F'))"))
+show("PUT presigned with input_format=Values", send("PUT", csv_path, presigned_params("PUT", csv_path, [("input_format", "Values")]),
+     body=f"(12, (SELECT s FROM {database}.private LIMIT 1))".encode()))
+show("PUT signed Values with a subquery", signed_request("PUT", values_path, body=f"(13, (SELECT s FROM {database}.private LIMIT 1))".encode()))
+# A signed body is staged before the query starts: the access and the limits of temporary data are checked before that.
+show("PUT without the INSERT grant", signed_request("PUT", csv_path, body=b"14,\"no grant\"\n", access_key=reader_user))
+show("PUT over the temporary data limit", signed_request("PUT", csv_path, body=b"".join(b"%d,\"large\"\n" % i for i in range(1000, 2000)),
+     params=[("max_temporary_data_on_disk_size_for_query", "100")]))
+# A `SETTINGS` clause at the beginning of an unsigned body cannot turn the evaluation of expressions back on.
+show("PUT presigned Values with a SETTINGS clause", send("PUT", values_path,
+     presigned_params("PUT", values_path, [("allow_settings_after_format_in_insert", "1")]),
+     body=f"SETTINGS input_format_values_interpret_expressions = 1 (15, (SELECT s FROM {database}.private LIMIT 1))".encode()))
+# An upload without a table is rejected before its body is staged.
+show("PUT without a table over the temporary data limit", signed_request("PUT", "/query",
+     body=b"".join(b"%d,\"large\"\n" % i for i in range(1000, 2000)), params=[("max_temporary_data_on_disk_size_for_query", "100")]))
+# A deferred `100 Continue` is sent before a signed body is received.
+show("PUT with a deferred 100 Continue", signed_request("PUT", csv_path, body=b"16,\"continue\"\n",
+     headers={"X-ClickHouse-100-Continue": "defer"}, transport=send_expect_continue))
+show("POST with a deferred 100 Continue", signed_request("POST", "/", body=b"17,\"continue\"\n",
+     params=[("query", f"INSERT INTO {database}.t FORMAT CSV")], headers={"X-ClickHouse-100-Continue": "defer"},
+     transport=send_expect_continue))
+show("GET after PUT", signed_request("GET", table_path, params=[("order", "x")]))
+EOF
+
+${CLICKHOUSE_CLIENT} --query "
+    DROP USER ${USER_NAME}, ${HASHED_USER_NAME}, ${MIXED_GRANTS_USER_NAME}, ${MIXED_EXPIRED_USER_NAME}, ${READER_USER_NAME};
+    DROP SETTINGS PROFILE ${PROFILE_NAME};
+"
