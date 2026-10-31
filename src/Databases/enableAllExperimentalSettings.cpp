@@ -66,6 +66,7 @@ void enableAllExperimentalSettings(ContextMutablePtr context)
     context->setSetting("allow_experimental_ytsaurus_dictionary_source", 1);
     context->setSetting("allow_experimental_time_series_aggregate_functions", 1);
     context->setSetting("allow_experimental_lightweight_update", 1);
+    context->setSetting("allow_experimental_recompress_column", 1);
     context->setSetting("allow_insert_into_iceberg", 1);
     context->setSetting("allow_iceberg_remove_orphan_files", 1);
     context->setSetting("allow_experimental_expire_snapshots", 1);
