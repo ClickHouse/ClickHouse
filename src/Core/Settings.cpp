@@ -362,6 +362,21 @@ The writing side is parallelized only when it is safe to do so; otherwise it sta
 Higher values will lead to higher memory usage.
 )", 0, \
         {"26.8", 1, 0, "Changed the default from 1 (no parallel execution) to auto (0), which resolves to the number of CPU cores available to the server, reduced under memory pressure via `max_insert_threads_min_free_memory_per_thread`. This parallelizes `INSERT SELECT` by default. Set to 1 to restore the previous single-threaded behavior."}) \
+    DECLARE(UInt64, max_generic_compression_threads, 1, R"(
+The maximum number of threads used to compress generic stream-compressed output (currently `gzip`) when writing to output formats, files or storage, and when compressing HTTP query responses - both with `Content-Encoding: gzip` and with the response body codec selected by the `compression` setting.
+
+The output stays in the standard `gzip` format and can be read by any decompressor; only the writing side is parallelized. Independent blocks are compressed in parallel on the shared IO thread pool. The setting is named generically so that other stream-compression methods can adopt it in the future.
+
+Possible values:
+
+- 0 or 1 — single-threaded compression (default).
+- Positive integer greater than 1 — compress on up to this many threads.
+
+Higher values will lead to higher memory usage.
+
+For HTTP query responses, the compressing buffer is set up before the query is executed, like the other HTTP response-shaping settings (`enable_http_compression`, `http_zlib_compression_level`, `compression`). There the setting must be supplied via the HTTP URL parameter or a user profile; an in-query `SETTINGS` clause does not affect the compression of the HTTP response itself (it still applies to files and storage written by the query, e.g. `INSERT INTO FUNCTION file(...)` or `SELECT ... INTO OUTFILE`).
+)", 0, \
+        {"26.11", 1, 1, "New setting to control the number of threads used for parallel gzip compression of output streams."}) \
     DECLARE(UInt64, max_insert_delayed_streams_for_parallel_write, 0, R"(
 The maximum number of streams (columns) to delay final part flush. Default - auto (100 in case of underlying storage supports parallel write, for example S3 and disabled otherwise)
 
