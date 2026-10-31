@@ -72,7 +72,6 @@ def test_duplicate_alias_columns_group_by(
         "cluster_for_parallel_replicas": CLUSTER,
         "prefer_localhost_replica": 0,
         "serialize_query_plan": 0,
-        "enable_analyzer": 1,
         **extra_settings,
     }
 

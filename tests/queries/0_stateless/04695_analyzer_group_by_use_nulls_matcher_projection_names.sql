@@ -5,8 +5,6 @@
 -- (two columns named `k`) and an outer query can no longer reference them,
 -- while the old analyzer resolves such references fine.
 
-SET enable_analyzer = 1;
-
 -- ============================================================
 -- Default behavior: qualification added to disambiguate joined columns
 -- ============================================================
