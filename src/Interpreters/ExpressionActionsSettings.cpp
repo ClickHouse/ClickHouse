@@ -14,6 +14,7 @@ namespace Setting
     extern const SettingsUInt64 max_temporary_non_const_columns;
     extern const SettingsUInt64 min_count_to_compile_expression;
     extern const SettingsBool enable_lazy_columns_replication;
+    extern const SettingsBool enable_adaptive_short_circuit_lazy_execution;
 }
 
 ExpressionActionsSettings::ExpressionActionsSettings(const Settings & from, CompileExpressions compile_expressions_)
@@ -26,6 +27,7 @@ ExpressionActionsSettings::ExpressionActionsSettings(const Settings & from, Comp
     short_circuit_function_evaluation = from[Setting::short_circuit_function_evaluation];
     short_circuit_function_evaluation_reorder_arguments = from[Setting::short_circuit_function_evaluation_reorder_arguments];
     enable_lazy_columns_replication = from[Setting::enable_lazy_columns_replication];
+    enable_adaptive_short_circuit_lazy_execution = from[Setting::enable_adaptive_short_circuit_lazy_execution];
 }
 
 ExpressionActionsSettings::ExpressionActionsSettings(ContextPtr from, CompileExpressions compile_expressions_)

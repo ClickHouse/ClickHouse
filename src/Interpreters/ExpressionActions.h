@@ -6,8 +6,11 @@
 #include <Core/ColumnNumbers.h>
 #include <Interpreters/ActionsDAG.h>
 #include <Interpreters/ExpressionActionsSettings.h>
+#include <Functions/IFunction.h>
 
 #include <atomic>
+#include <functional>
+#include <mutex>
 #include <optional>
 #include <unordered_map>
 
@@ -42,6 +45,8 @@ public:
         /// True if there is another action which will use this column.
         /// Otherwise column will be removed.
         bool needed_later = false;
+        /// The position of the action which produced this argument in `ExpressionActions::actions`.
+        size_t actions_pos = 0;
     };
 
     using Arguments = std::vector<Argument>;
@@ -55,6 +60,14 @@ public:
         /// Determine if this action should be executed lazily. If it should and the node type is FUNCTION, then the function
         /// won't be executed and will be stored with it's arguments in ColumnFunction with isShortCircuitArgument() = true.
         bool is_lazy_executed;
+
+        /// True if neither the function of this action nor any of its descendants can throw an exception on
+        /// invalid input values. As a counterexample, `divide(1, 0)` throws, so lazy execution of such an
+        /// action must never be turned off - it protects the rows which are filtered out by short circuit.
+        bool is_no_except = false;
+
+        /// Positions in `ExpressionActions::actions` of the actions which use the result of this action.
+        std::vector<size_t> parents_actions_pos;
 
         /// Set for a lazy executed argument of `and`/`or` that can be executed before the arguments preceding it.
         /// Passed to the ColumnFunction, see `ShortCircuitArgumentStatistics`.
@@ -76,7 +89,7 @@ public:
     /// Result is a list because it is allowed for inputs to have same names.
     using NameToInputMap = std::unordered_map<std::string_view, std::list<size_t>>;
 
-private:
+protected:
     ActionsDAG actions_dag;
     Actions actions;
     size_t num_columns = 0;
@@ -94,6 +107,12 @@ public:
     explicit ExpressionActions(ActionsDAG actions_dag_, const ExpressionActionsSettings & settings_ = {}, bool project_inputs_ = false);
     ExpressionActions(ExpressionActions &&) = default;
     ExpressionActions & operator=(ExpressionActions &&) = default;
+    virtual ~ExpressionActions() = default;
+
+    /// Create either a plain or an adaptive instance, depending on the settings.
+    /// Note that an adaptive instance is stateful and not thread safe, so it must not be shared between
+    /// pipeline streams: create one per stream.
+    static ExpressionActionsPtr create(ActionsDAG actions_dag_, const ExpressionActionsSettings & settings_ = {}, bool project_inputs_ = false);
 
     const Actions & getActions() const { return actions; }
     const std::list<Node> & getNodes() const { return actions_dag.getNodes(); }
@@ -161,7 +180,7 @@ public:
 
     ExpressionActionsPtr clone() const;
 
-private:
+protected:
     ExpressionActions() = default;
     void checkLimits(const ColumnsWithTypeAndName & columns) const;
 
@@ -169,7 +188,198 @@ private:
         const std::unordered_set<const Node *> & lazy_executed_nodes,
         const std::unordered_set<const Node *> & reorderable_short_circuit_arguments,
         const std::unordered_map<const Node *, size_t> & short_circuit_eager_arguments);
+
+    /// This struct stores context needed to execute actions.
+    ///
+    /// Execution model is following:
+    ///   * execution is performed over list of columns (with fixed size = ExpressionActions::num_columns)
+    ///   * every argument has fixed position in columns list, every action has fixed position for result
+    ///   * if argument is not needed anymore (Argument::needed_later == false), it is removed from list
+    ///   * argument for INPUT is in inputs[inputs_pos[argument.pos]]
+    ///
+    /// Columns on positions `ExpressionActions::result_positions` are inserted back into block.
+    struct ExecutionContext
+    {
+        ColumnsWithTypeAndName & inputs;
+        ColumnsWithTypeAndName columns = {};
+        std::vector<ssize_t> inputs_pos = {};
+        size_t num_rows = 0;
+    };
+
+    void executeAction(size_t action_index, ExecutionContext & execution_context, bool dry_run, bool allow_duplicates_in_input) const;
+
+    /// Hooks which allow a derived class to change how the functions are executed.
+
+    /// Whether the action must be wrapped into a lazily executed ColumnFunction instead of being executed now.
+    virtual bool shouldExecuteLazily(size_t action_index) const { return actions[action_index].is_lazy_executed; }
+
+    /// Called when the action is wrapped into a lazily executed `ColumnFunction` of `num_rows` rows.
+    /// `num_rows` is the size of the block at the position of the action, which is the number of rows
+    /// the action would be executed on if it was executed eagerly.
+    virtual void onLazyExecution(size_t /*action_index*/, size_t /*num_rows*/, bool /*dry_run*/) const {}
+
+    /// Execute the function of the action on the prepared arguments.
+    virtual ColumnPtr executeFunction(
+        size_t action_index,
+        ColumnsWithTypeAndName & arguments,
+        const DataTypePtr & result_type,
+        size_t num_rows,
+        bool dry_run) const;
+
+    /// Called after all the actions were executed on a block. `input_num_rows` is the number of rows the
+    /// block had *before* the execution: row-multiplying actions such as `ARRAY JOIN` change the block size,
+    /// and the profiling below has to be attributed to the rows the actions actually ran on.
+    virtual void finalizeBlockExecution(size_t /*input_num_rows*/, bool /*dry_run*/) const {}
 };
+
+/// AdaptiveExpressionActions builds upon ExpressionActions to enable dynamic evaluation of whether a
+/// short-circuit function's argument should be lazily executed.
+///
+/// Lazy execution is not free: the rows which are not needed are filtered out and the result is expanded
+/// back to the original size. When the filtered out part is small, or the argument itself is cheap, this
+/// overhead is larger than the saved work. The execution of every function is profiled, and every
+/// `update_on_every_rows` rows the decision is revisited: an action stops being executed lazily when
+/// `estimated cost of the full execution < the cost of the lazy execution`, and it is enabled back when
+/// its per-row cost grows significantly.
+///
+/// AdaptiveExpressionActions is stateful and not thread safe: create one instance per pipeline stream.
+class AdaptiveExpressionActions : public ExpressionActions
+{
+public:
+    explicit AdaptiveExpressionActions(
+        ActionsDAG actions_dag_, const ExpressionActionsSettings & settings_ = {}, bool project_inputs_ = false);
+
+protected:
+    bool shouldExecuteLazily(size_t action_index) const override;
+
+    void onLazyExecution(size_t action_index, size_t num_rows, bool dry_run) const override;
+
+    ColumnPtr executeFunction(
+        size_t action_index,
+        ColumnsWithTypeAndName & arguments,
+        const DataTypePtr & result_type,
+        size_t num_rows,
+        bool dry_run) const override;
+
+    void finalizeBlockExecution(size_t input_num_rows, bool dry_run) const override;
+
+private:
+    struct ActionState
+    {
+        /// Indicates whether it is beneficial to execute this action lazily with short-circuit evaluation.
+        /// If the cost of filtering out unnecessary rows and expanding back to a full column is greater
+        /// than the cost of fully executing the column, then it is not worth executing lazily.
+        bool is_lazy_execution_efficient = false;
+        /// Whether the action is a short-circuit function (`and`, `or`, `if`, `multiIf`). Such an action is
+        /// never lazily executed itself, but it is a transparent wrapper for the cost of its arguments.
+        /// Unlike the field above, this one is computed once and never changes.
+        bool is_short_circuit_function = false;
+        /// The execution profile of the current round. `is_lazy_execution_efficient` is updated after each round.
+        FunctionExecutionProfile current_round_profile;
+        /// The number of rows of the blocks at the position of the action, which were wrapped into lazily
+        /// executed `ColumnFunction`s in the current round. The eager execution would run on all of them.
+        size_t current_round_block_rows = 0;
+        /// The number of consecutive rounds in which the lazy execution was measured to be not beneficial.
+        /// The measurements of a single round are few and can be distorted by noise such as a preemption
+        /// of the thread, so the lazy execution is turned off only if several rounds in a row agree.
+        size_t non_beneficial_rounds = 0;
+        /// The execution profile of all the rounds.
+        FunctionExecutionProfile total_profile;
+    };
+
+    /// The state is mutable because the execution methods are const: an instance is never shared between
+    /// threads (see the note above), so no synchronization is needed.
+    mutable std::vector<ActionState> action_states;
+    /// The number of input rows (before any row-multiplying action) processed in the current round.
+    mutable size_t current_round_input_rows = 0;
+
+    void accumulateProfile(size_t action_index, const FunctionExecutionProfile & profile) const;
+    void updateActionsParentsProfile() const;
+    void updateActionParentProfile(size_t action_index, size_t extra_elapsed) const;
+    void identifyNonBeneficialLazyActions() const;
+};
+
+/// A pool of `ExpressionActions` instances for the runtime paths which execute the same expression on many
+/// blocks from a set of threads that is not known in advance (a Parquet reader task, a hash join probe).
+///
+/// `AdaptiveExpressionActions` is stateful and not thread safe, but it revisits its decisions only between
+/// blocks, so an instance must survive many executions to have any effect at all. Creating a fresh instance
+/// for every block is therefore equivalent to disabling the feature. A pooled instance is leased for the
+/// duration of one execution and returned afterwards: the profile is preserved across blocks, and no
+/// instance is ever used by two threads at once.
+///
+/// When the actions are not adaptive, the pool is a no-op: every lease refers to the same stateless
+/// instance and no locking happens.
+class ExpressionActionsPool
+{
+public:
+    explicit ExpressionActionsPool(ExpressionActionsPtr prototype_);
+
+    /// An instance which is exclusively owned by the caller until the lease is destroyed.
+    class Lease
+    {
+    public:
+        Lease() = default;
+        Lease(const ExpressionActionsPool * pool_, ExpressionActionsPtr instance_)
+            : pool(pool_), instance(std::move(instance_))
+        {
+        }
+
+        Lease(const Lease &) = delete;
+        Lease & operator=(const Lease &) = delete;
+
+        Lease(Lease && other) noexcept : pool(other.pool), instance(std::move(other.instance))
+        {
+            other.pool = nullptr;
+        }
+
+        Lease & operator=(Lease && other) noexcept
+        {
+            if (this != &other)
+            {
+                reset();
+                pool = other.pool;
+                instance = std::move(other.instance);
+                other.pool = nullptr;
+            }
+            return *this;
+        }
+
+        ~Lease() { reset(); }
+
+        const ExpressionActionsPtr & getPtr() const { return instance; }
+        const ExpressionActions * get() const { return instance.get(); }
+        const ExpressionActions & operator*() const { return *instance; }
+        const ExpressionActions * operator->() const { return instance.get(); }
+        explicit operator bool() const { return instance != nullptr; }
+
+    private:
+        void reset();
+
+        const ExpressionActionsPool * pool = nullptr;
+        ExpressionActionsPtr instance;
+    };
+
+    /// Take an instance out of the pool, creating one if all of them are busy.
+    Lease acquire() const;
+
+    /// The instance the pool was built from. Safe to use for anything but execution: the sample block,
+    /// the required columns, the settings.
+    const ExpressionActionsPtr & getPrototype() const { return prototype; }
+
+private:
+    void release(ExpressionActionsPtr instance) const;
+
+    ExpressionActionsPtr prototype;
+    bool is_adaptive = false;
+
+    /// The bookkeeping is mutable: leasing an instance does not change the expression itself, and the
+    /// pool is reachable only through const references on the execution paths.
+    mutable std::mutex mutex;
+    mutable std::vector<ExpressionActionsPtr> free_instances;
+};
+
+using ExpressionActionsPoolPtr = std::shared_ptr<ExpressionActionsPool>;
 
 namespace ExpressionActionsChainSteps
 {

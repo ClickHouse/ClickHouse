@@ -103,6 +103,7 @@
     M(FiberStackFreeNanoseconds, "Amount of time spent deallocating fiber stacks.", ValueType::Nanoseconds) \
     M(FunctionExecute, "Number of SQL ordinary function calls (SQL functions are called on per-block basis, so this number represents the number of blocks).", ValueType::Number) \
     M(TableFunctionExecute, "Number of table function calls.", ValueType::Number) \
+    M(AdaptiveShortCircuitEagerExecutions, "Number of times an expression action which the static short-circuit schedule would have executed lazily was executed eagerly because `enable_adaptive_short_circuit_lazy_execution` measured the lazy execution to be more expensive (counted per block).", ValueType::Number) \
     M(DatabaseTablesEnumerated, "Number of tables a database handed out through its table iterator - to `SHOW TABLES`, the system tables that list tables and everything else that walks a database. A condition on the table name in a query over such a system table narrows the enumeration, and this counter shows by how much.", ValueType::Number) \
     M(DefaultImplementationForNullsRows, "Number of rows processed by default implementation for nulls in function execution", ValueType::Number) \
     M(DefaultImplementationForNullsRowsWithNulls, "Number of rows which contain null values processed by default implementation for nulls in function execution", ValueType::Number) \

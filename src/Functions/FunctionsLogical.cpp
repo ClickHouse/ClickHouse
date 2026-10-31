@@ -752,13 +752,30 @@ static bool orderArgumentsByStatistics(VectorWithMemoryTracking<size_t> & order,
 }
 
 template <typename Impl, typename Name>
+template <bool with_profile>
 ColumnPtr FunctionAnyArityLogical<Impl, Name>::executeShortCircuit(
-    ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, bool eager_arguments_reordered) const
+    ColumnsWithTypeAndName & arguments,
+    const DataTypePtr & result_type,
+    bool eager_arguments_reordered,
+    FunctionExecutionProfile * profile [[maybe_unused]]) const
 {
     if (Name::name != NameAnd::name && Name::name != NameOr::name)
         throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Function {} doesn't support short circuit execution", getName());
 
-    executeColumnIfNeeded(arguments[0]);
+    /// Creating a `Stopwatch` costs a `clock_gettime`, so it is only done when profiling is requested.
+    std::optional<Stopwatch> profile_watch;
+    if constexpr (with_profile)
+        profile_watch.emplace();
+
+    /// The positions of the profiles in `profile->argument_profiles` are the positions in `arguments`,
+    /// the caller maps them back to the positions of the original arguments.
+    if (with_profile && checkAndGetShortCircuitArgument(arguments[0].column))
+    {
+        profile->argument_profiles.emplace_back(std::make_pair(0, FunctionExecutionProfile()));
+        executeColumnIfNeeded(arguments[0], false, &(profile->argument_profiles.back().second));
+    }
+    else
+        executeColumnIfNeeded(arguments[0]);
 
     /// A set mask bit means that the row still needs evaluation: it has not encountered
     /// false for `and`, or true for `or`. `NULL` does not decide either operation, so it leaves
@@ -802,11 +819,21 @@ ColumnPtr FunctionAnyArityLogical<Impl, Name>::executeShortCircuit(
     std::optional<size_t> undecided_rows = mask.size();
     for (size_t i : order)
     {
+        FunctionExecutionProfile * arg_profile = nullptr;
+        if constexpr (with_profile)
+        {
+            if (checkAndGetShortCircuitArgument(arguments[i].column))
+            {
+                profile->argument_profiles.emplace_back(std::make_pair(i, FunctionExecutionProfile()));
+                arg_profile = &profile->argument_profiles.back().second;
+            }
+        }
+
         if (statistics[i])
         {
             size_t executed_rows = undecided_rows ? *undecided_rows : countBytesInFilter(mask);
             Stopwatch watch;
-            mask_info = maskedExecuteAndUpdateMask(arguments[i], mask, mask_info, inverted, nulls.get(), null_value);
+            mask_info = maskedExecuteAndUpdateMask(arguments[i], mask, mask_info, inverted, nulls.get(), null_value, arg_profile);
             UInt64 elapsed = watch.elapsedNanoseconds();
 
             if (!mask_info.has_ones)
@@ -820,7 +847,7 @@ ColumnPtr FunctionAnyArityLogical<Impl, Name>::executeShortCircuit(
         }
         else
         {
-            mask_info = maskedExecuteAndUpdateMask(arguments[i], mask, mask_info, inverted, nulls.get(), null_value);
+            mask_info = maskedExecuteAndUpdateMask(arguments[i], mask, mask_info, inverted, nulls.get(), null_value, arg_profile);
             undecided_rows.reset();
         }
 
@@ -838,6 +865,18 @@ ColumnPtr FunctionAnyArityLogical<Impl, Name>::executeShortCircuit(
     auto res = ColumnUInt8::create();
     res->getData() = std::move(mask);
 
+    if constexpr (with_profile)
+    {
+        profile->execution_elapsed = profile_watch->elapsed();
+        profile->executed_rows = res->size();
+        size_t side_elapsed = 0;
+        for (const auto & [i, arg_profile] : profile->argument_profiles)
+        {
+            side_elapsed += arg_profile.lazy_executed_additional_elapsed;
+        }
+        profile->lazy_executed_additional_elapsed = side_elapsed;
+    }
+
     if (!nulls)
         return res;
 
@@ -849,6 +888,13 @@ ColumnPtr FunctionAnyArityLogical<Impl, Name>::executeShortCircuit(
 template <typename Impl, typename Name>
 ColumnPtr FunctionAnyArityLogical<Impl, Name>::executeImpl(
     const ColumnsWithTypeAndName & args, const DataTypePtr & result_type, size_t input_rows_count) const
+{
+    return this->executeImplWithProfile(args, result_type, input_rows_count, nullptr);
+}
+
+template <typename Impl, typename Name>
+ColumnPtr FunctionAnyArityLogical<Impl, Name>::executeImplWithProfile(
+    const ColumnsWithTypeAndName & args, const DataTypePtr & result_type, size_t input_rows_count, FunctionExecutionProfile * profile) const
 {
     ColumnsWithTypeAndName arguments = args;
 
@@ -864,6 +910,13 @@ ColumnPtr FunctionAnyArityLogical<Impl, Name>::executeImpl(
         size_t last_not_short_circuit_arg_index = 0;
         VectorWithMemoryTracking<size_t> short_circuit_args_index;
         ColumnsWithTypeAndName new_args;
+        /// Creating a `Stopwatch` costs a `clock_gettime`, so it is only done when profiling is requested.
+        std::optional<Stopwatch> watch;
+        if (profile)
+            watch.emplace();
+
+        // When the function is invoked from ColumnFunction::reduce, the profile->argument_profiles might already contain data
+        size_t existing_arg_profiles_num = profile != nullptr ? profile->argument_profiles.size() : 0;
 
         for (size_t i = 0, n = args.size(); i < n; ++i)
         {
@@ -888,7 +941,14 @@ ColumnPtr FunctionAnyArityLogical<Impl, Name>::executeImpl(
                 ? executeForTernaryLogicImpl<Impl>(std::move(not_short_circuit_args), result_type, input_rows_count)
                 : basicExecuteImpl<Impl>(std::move(not_short_circuit_args), input_rows_count);
             if (short_circuit_args_index.empty())
+            {
+                if (profile)
+                {
+                    profile->executed_rows = input_rows_count;
+                    profile->execution_elapsed = watch->elapsed();
+                }
                 return partial_result;
+            }
             new_args.emplace_back(partial_result, result_type, "__partial_result");
             for (const auto & index : short_circuit_args_index)
                 new_args.emplace_back(std::move(arguments[index]));
@@ -902,18 +962,51 @@ ColumnPtr FunctionAnyArityLogical<Impl, Name>::executeImpl(
                 new_args.emplace_back(std::move(arguments[index]));
         }
         else
+        {
             new_args.swap(arguments);
+            short_circuit_args_index.clear();
+        }
 
-        return executeShortCircuit(new_args, result_type, eager_arguments_reordered);
+        if (profile)
+        {
+            auto coalesce_elapsed = watch->elapsed();
+            auto res = executeShortCircuit<true>(new_args, result_type, eager_arguments_reordered, profile);
+            profile->execution_elapsed += coalesce_elapsed;
+            /// Profiles are only available for short-circuit arguments, and their positions in `new_args` need to be
+            /// mapped back to the original argument positions. If `new_args` are not the original arguments, its first
+            /// element is an eager argument (or the partial result of all of them), followed by the short-circuit ones.
+            /// The execution stops early when all rows are filtered, so the short-circuit arguments which are not
+            /// executed have no profiles.
+            if (!short_circuit_args_index.empty())
+            {
+                for (size_t i = existing_arg_profiles_num; i < profile->argument_profiles.size(); ++i)
+                    profile->argument_profiles[i].first = short_circuit_args_index[profile->argument_profiles[i].first - 1];
+            }
+            return res;
+        }
+        return executeShortCircuit<false>(new_args, result_type, eager_arguments_reordered, profile);
     }
+
+    /// Creating a `Stopwatch` costs a `clock_gettime`, so it is only done when profiling is requested.
+    std::optional<Stopwatch> watch;
+    if (profile)
+        watch.emplace();
 
     ColumnRawPtrs args_in;
     for (const auto & arg_index : arguments)
         args_in.push_back(arg_index.column.get());
 
+    ColumnPtr result_col = nullptr;
     if (result_type->isNullable())
-        return executeForTernaryLogicImpl<Impl>(std::move(args_in), result_type, input_rows_count);
-    return basicExecuteImpl<Impl>(std::move(args_in), input_rows_count);
+        result_col = executeForTernaryLogicImpl<Impl>(std::move(args_in), result_type, input_rows_count);
+    else
+        result_col = basicExecuteImpl<Impl>(std::move(args_in), input_rows_count);
+    if (profile)
+    {
+        profile->executed_rows = input_rows_count;
+        profile->execution_elapsed = watch->elapsed();
+    }
+    return result_col;
 }
 
 template <typename Impl, typename Name>
