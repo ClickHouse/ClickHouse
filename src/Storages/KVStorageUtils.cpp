@@ -5,9 +5,11 @@
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnSet.h>
+#include <Columns/ColumnTuple.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeTuple.h>
+#include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/Utils.h>
 #include <Common/assert_cast.h>
 
@@ -22,6 +24,8 @@
 
 #include <Functions/CastOverloadResolver.h>
 #include <Functions/IFunction.h>
+
+#include <Storages/MergeTree/KeyCondition.h>
 
 namespace DB
 {
@@ -141,6 +145,11 @@ bool traverseDAGFilterSingleColumn(
         if (value->type != ActionsDAG::ActionType::COLUMN)
             return false;
 
+        /// `=` compares a float with a `Decimal`, `DateTime64` or `Time64` key as `Float64`, so the float can equal keys other than its cast.
+        /// A constant of the DAG is a `ColumnConst` of 0 rows.
+        if (floatValuesMissKeyValues(value->column->cloneResized(1), value->result_type, primary_key_type, std::make_shared<DataTypeFloat64>()))
+            return false;
+
         /// The type of the literal decides how it converts: a `DateTime` literal compared with a `Date`
         /// key is a number of seconds, not a day number, so without the source type its raw value is
         /// reinterpreted in the key's unit space and the lookup probes a key that does not exist.
@@ -200,6 +209,10 @@ bool traverseDAGFilterSingleColumn(
         const auto set_column_ptr = set->getSetElements()[0];
         const auto set_data_type_ptr = set->getElementsTypes()[0];
         const ColumnWithTypeAndName set_column = {set_column_ptr, set_data_type_ptr, ""};
+
+        /// `IN` compares the key with the set elements in their own type (see `Set::execute`).
+        if (floatValuesMissKeyValues(set_column_ptr, set_data_type_ptr, primary_key_type, removeLowCardinalityAndNullable(set_data_type_ptr)))
+            return false;
 
         // In case set values can be safely casted to PK data type, simply convert them,
         // and return as filter.
@@ -314,10 +327,31 @@ bool traverseDAGFilter(
             const auto value_type = removeNullable(recursiveRemoveLowCardinality(right->result_type));
             const auto * value_tuple_type = typeid_cast<const DataTypeTuple *>(value_type.get());
 
+            const IColumn * value_column = right->column.get();
+            if (const auto * column_const = typeid_cast<const ColumnConst *>(value_column))
+                value_column = &column_const->getDataColumn();
+            if (const auto * column_nullable = typeid_cast<const ColumnNullable *>(value_column))
+                value_column = &column_nullable->getNestedColumn();
+            const auto * value_tuple_column = typeid_cast<const ColumnTuple *>(value_column);
+            const DataTypePtr value_unwrapped_type = removeNullable(right->result_type);
+            const auto * value_full_tuple_type = typeid_cast<const DataTypeTuple *>(value_unwrapped_type.get());
+            const bool per_element = value_tuple_column && value_full_tuple_type && value_tuple_column->tupleSize() == tuple_value.size()
+                && value_full_tuple_type->getElements().size() == tuple_value.size();
+
             std::vector<Field> converted_values;
             converted_values.reserve(tuple_value.size());
             for (size_t i = 0; i < tuple_value.size(); ++i)
             {
+                /// `=` compares the elements one by one.
+                if (per_element ? floatValuesMissKeyValues(
+                                      value_tuple_column->getColumnPtr(i),
+                                      value_full_tuple_type->getElement(i),
+                                      primary_key_types[i],
+                                      std::make_shared<DataTypeFloat64>())
+                                : floatValuesMissKeyValues(
+                                      right->column->cloneResized(1), right->result_type, primary_key_types[i], std::make_shared<DataTypeFloat64>()))
+                    return false;
+
                 DataTypePtr element_type;
                 if (value_tuple_type && i < value_tuple_type->getElements().size())
                     element_type = removeNullable(recursiveRemoveLowCardinality(value_tuple_type->getElements()[i]));
@@ -394,6 +428,25 @@ bool traverseDAGFilter(
 
             if (set_elements.empty())
                 return false;
+
+            /// `IN` compares each key column with its set column in the type of that column.
+            for (size_t col = 0; col < primary_keys.size() && col < set_element_types.size(); ++col)
+            {
+                ColumnPtr elements = set_elements[col];
+                DataTypePtr elements_type = set_element_types[col];
+                /// The keys below are converted from a `Field`, which holds a `Float32` as `Float64`.
+                if (WhichDataType(removeLowCardinalityAndNullable(elements_type)).isFloat32())
+                {
+                    DataTypePtr float64_type = std::make_shared<DataTypeFloat64>();
+                    if (isNullableOrLowCardinalityNullable(elements_type))
+                        float64_type = makeNullable(float64_type);
+                    elements = castColumn({elements, elements_type, ""}, float64_type);
+                    elements_type = float64_type;
+                }
+                if (floatValuesMissKeyValues(
+                        elements, elements_type, primary_key_types[col], removeLowCardinalityAndNullable(set_element_types[col])))
+                    return false;
+            }
 
             size_t num_rows = set_elements[0]->size();
 
