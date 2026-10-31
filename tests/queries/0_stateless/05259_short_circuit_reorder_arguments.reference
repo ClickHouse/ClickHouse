@@ -26,5 +26,7 @@
 1
 1
 50
+50
+50
 AND column: notEmpty(__table1.s)
 AND column: equals(modulo(__table1.number, 2_UInt8), 0_UInt8)

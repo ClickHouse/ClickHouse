@@ -99,6 +99,18 @@ SETTINGS short_circuit_function_evaluation = 'force_enable', short_circuit_funct
 SELECT count() FROM (SELECT arrayJoin(['true', 'maybe', 'false']) AS s, number FROM numbers(1)) WHERE number >= 0 AND s != 'maybe' AND toBool(s)
 SETTINGS short_circuit_function_evaluation = 'force_enable', short_circuit_function_evaluation_reorder_arguments = 1;
 
+-- `notEmpty` (also what `s != ''` is rewritten to) cannot throw, so it is moved in front of a throwing heavy atom.
+DROP TABLE IF EXISTS t_05259_s;
+CREATE TABLE t_05259_s (x UInt64, s String) ENGINE = Log;
+INSERT INTO t_05259_s SELECT number % 10, if(number % 10 = 0, '', 'a') FROM numbers(100);
+SELECT count() FROM t_05259_s WHERE intDiv(10, x) > 1 AND notEmpty(s)
+SETTINGS short_circuit_function_evaluation = 'enable', short_circuit_function_evaluation_reorder_arguments = 1,
+    optimize_functions_to_subcolumns = 0, query_plan_merge_filters = 1;
+SELECT count() FROM t_05259_s WHERE intDiv(10, x) > 1 AND s != ''
+SETTINGS short_circuit_function_evaluation = 'enable', short_circuit_function_evaluation_reorder_arguments = 1,
+    optimize_functions_to_subcolumns = 0, query_plan_merge_filters = 1;
+DROP TABLE t_05259_s;
+
 -- A cheap argument is not moved in front of a lazy argument with functions that are not deterministic in the scope
 -- of the query (`blockSize`) between the heavy first argument and itself: this lazy argument would be executed
 -- on fewer rows than in the original order, and the block would be smaller.
@@ -111,7 +123,7 @@ SELECT count() FROM numbers(10) WHERE intDiv(10, number % 10) > 1 AND number % 1
 SETTINGS short_circuit_function_evaluation = 'disable', short_circuit_function_evaluation_reorder_arguments = 1; -- { serverError ILLEGAL_DIVISION }
 
 -- A cheap atom of an AND chain in `WHERE` is moved only in front of heavy atoms: two cheap atoms keep the written order,
--- because the first one may be the more selective one (`notEmpty` does not describe whether it can throw, `less` does).
+-- because the first one may be the more selective one.
 SELECT trim(explain) FROM (EXPLAIN actions = 1, pretty = 0, compact = 1 SELECT count() FROM (SELECT toString(number) AS s, number FROM numbers(10)) WHERE notEmpty(s) AND s < 'abc')
 WHERE explain LIKE '%AND column%'
 SETTINGS short_circuit_function_evaluation = 'enable', short_circuit_function_evaluation_reorder_arguments = 1;
