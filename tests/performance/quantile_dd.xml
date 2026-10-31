@@ -1,0 +1,28 @@
+<test>
+    <create_query>CREATE TABLE quantile_dd_states (k UInt32, s AggregateFunction(quantileDD(0.01), Float64)) ENGINE = MergeTree ORDER BY k</create_query>
+    <create_query>CREATE TABLE quantile_dd_dense_states (k UInt32, s AggregateFunction(quantileDD(0.001), Float64)) ENGINE = MergeTree ORDER BY k</create_query>
+
+    <fill_query>INSERT INTO quantile_dd_states SELECT number % 100000 AS k, quantileDDState(0.01)(toFloat64(number % 977 + 1)) FROM numbers_mt(20000000) GROUP BY k</fill_query>
+    <fill_query>OPTIMIZE TABLE quantile_dd_states FINAL</fill_query>
+    <!-- Most bins are not empty, so the states are written with the dense encoding -->
+    <fill_query>INSERT INTO quantile_dd_dense_states SELECT number % 10000 AS k, quantileDDState(0.001)(100 + intHash32(number) % 100000 / 100) FROM numbers_mt(50000000) GROUP BY k</fill_query>
+    <fill_query>OPTIMIZE TABLE quantile_dd_dense_states FINAL</fill_query>
+
+    <!-- Adding values to a few states -->
+    <query>SELECT quantileDD(0.01)(number) FROM numbers_mt(500000000) FORMAT Null</query>
+    <query>SELECT quantileDD(0.01)(toFloat64(number) * 1.5 + 1) FROM numbers_mt(500000000) FORMAT Null</query>
+    <!-- Many small states -->
+    <query>SELECT number % 100000 AS k, quantileDD(0.01)(number % 7 + 1) FROM numbers_mt(10000000) GROUP BY k FORMAT Null</query>
+    <query>SELECT number % 20000 AS k, quantileDD(0.01)(number % 977 + 1) FROM numbers_mt(10000000) GROUP BY k FORMAT Null</query>
+    <!-- A state with tens of thousands of bins -->
+    <query>SELECT quantileDD(0.000001)(1 + (number % 100000) / 1000000) FROM numbers_mt(200000000) FORMAT Null</query>
+    <!-- Many levels -->
+    <query>SELECT number % 1000 AS k, quantilesDD(0.001, 0.01, 0.05, 0.1, 0.15, 0.2, 0.25, 0.3, 0.35, 0.4, 0.45, 0.5, 0.55, 0.6, 0.65, 0.7, 0.75, 0.8, 0.85, 0.9, 0.95, 0.99)(number % 977 + 1) FROM numbers_mt(10000000) GROUP BY k FORMAT Null</query>
+    <!-- Reading and merging stored states -->
+    <query>SELECT quantileDDMerge(0.01)(s) FROM quantile_dd_states FORMAT Null</query>
+    <query>SELECT k % 1000 AS g, quantileDDMerge(0.01)(s) FROM quantile_dd_states GROUP BY g FORMAT Null</query>
+    <query>SELECT quantileDDMerge(0.001)(s) FROM quantile_dd_dense_states FORMAT Null</query>
+
+    <drop_query>DROP TABLE IF EXISTS quantile_dd_states</drop_query>
+    <drop_query>DROP TABLE IF EXISTS quantile_dd_dense_states</drop_query>
+</test>

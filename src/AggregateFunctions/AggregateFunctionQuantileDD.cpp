@@ -1,5 +1,4 @@
-#include <AggregateFunctions/AggregateFunctionQuantile.h>
-#include <AggregateFunctions/QuantileDD.h>
+#include <AggregateFunctions/AggregateFunctionQuantileDD.h>
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <AggregateFunctions/Helpers.h>
 #include <DataTypes/DataTypeDate.h>
@@ -19,10 +18,6 @@ namespace ErrorCodes
 
 namespace
 {
-
-template <typename Value, bool float_return> using FuncQuantileDD = AggregateFunctionQuantile<Value, QuantileDD<Value>, NameQuantileDD, void, std::conditional_t<float_return, Float64, void>, false, true>;
-template <typename Value, bool float_return> using FuncQuantilesDD = AggregateFunctionQuantile<Value, QuantileDD<Value>, NameQuantilesDD, void, std::conditional_t<float_return, Float64, void>, true, true>;
-
 
 template <template <typename, bool> class Function>
 AggregateFunctionPtr createAggregateFunctionQuantile(
@@ -54,8 +49,26 @@ void registerAggregateFunctionsQuantileDD(AggregateFunctionFactory & factory)
     AggregateFunctionProperties properties = { .returns_default_when_only_null = true };
 
     FunctionDocumentation::Description description = R"(
-Computes an approximate [quantile](https://en.wikipedia.org/wiki/Quantile) of a sample with relative-error guarantees.
+Computes an approximate [quantile](https://en.wikipedia.org/wiki/Quantile) of a sample with relative-error guarantees,
+as long as the values fit into the bins of the sketch (see below).
 It works by building a [DD](https://www.vldb.org/pvldb/vol12/p2195-masson.pdf).
+
+A sketch holds at most 65536 bins for positive values and as many for negative ones. They cover values within a factor
+of about 1.14 of each other at relative accuracy 0.000001, about 10⁵⁷ at 0.001, and about 10⁵⁶⁹ at 0.01. When the values
+are too far apart for them, every 2, 4 or more adjacent bins merge into one, and the relative accuracy goes down. So the
+function and the merges of its states, such as `quantileDDMerge` and the background merges of `AggregatingMergeTree`, do
+not fail however far apart the values are. The resulting accuracy does not depend on how the values are split between
+threads, parts or shards.
+
+The `scale` returned by [`toExpHistogram`](/reference/functions/regular-functions/other-functions#toExpHistogram) for a
+state shows the accuracy the state has: its relative error is at most `(b - 1) / (b + 1)`, where `b = 2^(2^-scale)`.
+Before any bins merge, the scale is 18 at relative accuracy 0.000001, 15 at 0.00001, 11 at 0.0001, 8 at 0.001 and 5 at
+0.01. The bins are a little narrower than the buckets of these scales. Each time pairs of adjacent bins merge, the scale
+goes down by 1.
+
+Bins merge since ClickHouse 26.11. Versions 26.3 to 26.10 throw the exception `DDSketch store key range too large` for
+such values instead, and versions 26.2 and earlier keep the requested accuracy with unlimited memory. The states of such
+values that they wrote, and the states of other DDSketch implementations, are read with merged bins too.
     )";
     FunctionDocumentation::Syntax syntax = R"(
 quantileDD(relative_accuracy, [level])(expr)
@@ -64,7 +77,7 @@ quantileDD(relative_accuracy, [level])(expr)
         {"expr", "Expression over the column values resulting in numeric data types, `Date` or `DateTime`.", {"(U)Int*", "Float*", "Date", "DateTime"}}
     };
     FunctionDocumentation::Parameters parameters = {
-        {"relative_accuracy", "Relative accuracy of the quantile. Possible values are in the range from 0 to 1. The size of the sketch depends on the range of the data and the relative accuracy. The larger the range and the smaller the relative accuracy, the larger the sketch. The rough memory size of the sketch is `log(max_value/min_value)/relative_accuracy`. The recommended value is 0.001 or higher.", {"Float*"}},
+        {"relative_accuracy", "Relative accuracy of the quantile. Possible values are from 0.000001 to 1, excluding 1. The sketch has about `ln(max_value / min_value) / (2 * relative_accuracy)` bins of 8 bytes, at most 65536 for positive values and 65536 for negative ones. The recommended value is 0.001 or higher.", {"Float*"}},
         {"level", "Optional. Level of quantile. Possible values are in the range from 0 to 1. Default value: 0.5.", {"Float*"}}
     };
     FunctionDocumentation::ReturnedValue returned_value = {"Approximate quantile of the specified level. For `Date` and `DateTime` inputs the output format matches the input format.", {"Float64", "Date", "DateTime"}};
@@ -82,6 +95,21 @@ SELECT quantileDD(0.01, 0.75)(a), quantileDD(0.01, 0.75)(b) FROM example_table;
 │        2.9742334234767016 │                      1.01 │
 └───────────────────────────┴───────────────────────────┘
         )"
+    },
+    {
+        "Checking the accuracy of a state",
+        R"(
+-- Values from 1 to 1000 do not fit into 65536 bins at relative accuracy 0.000001, so the bins merge from scale 18 to 12
+SELECT
+    toExpHistogram(quantileDDState(0.000001)(number + 1)).scale AS scale_1000,
+    toExpHistogram(quantileDDState(0.000001)(1)).scale AS scale_1
+FROM numbers(1000);
+        )",
+        R"(
+┌─scale_1000─┬─scale_1─┐
+│         12 │      18 │
+└────────────┴─────────┘
+        )"
     }
     };
     FunctionDocumentation::IntroducedIn introduced_in = {24, 1};
@@ -94,6 +122,7 @@ SELECT quantileDD(0.01, 0.75)(a), quantileDD(0.01, 0.75)(b) FROM example_table;
 Computes multiple approximate [quantiles](https://en.wikipedia.org/wiki/Quantile) of a sample with relative-error guarantees at different levels simultaneously.
 
 This function is equivalent to [`quantileDD`](/reference/functions/aggregate-functions/quantileddsketch) but allows computing multiple quantile levels in a single pass, which is more efficient than calling individual quantile functions.
+The relative-error guarantees have the same limits as for [`quantileDD`](/reference/functions/aggregate-functions/quantileddsketch): when the values do not fit into the bins of the sketch, adjacent bins merge and the accuracy goes down.
     )";
     FunctionDocumentation::Syntax syntax_quantiles = R"(
 quantilesDD(relative_accuracy, level1, level2, ...)(expr)
@@ -102,7 +131,7 @@ quantilesDD(relative_accuracy, level1, level2, ...)(expr)
         {"expr", "Expression over the column values resulting in numeric data types, `Date` or `DateTime`.", {"(U)Int*", "Float*", "Date", "DateTime"}}
     };
     FunctionDocumentation::Parameters parameters_quantiles = {
-        {"relative_accuracy", "Relative accuracy of the quantiles. Possible values are in the range from 0 to 1. The recommended value is 0.001 or higher.", {"Float*"}},
+        {"relative_accuracy", "Relative accuracy of the quantiles. Possible values are from 0.000001 to 1, excluding 1. It has the same effect on the size of the sketch as for `quantileDD`. The recommended value is 0.001 or higher.", {"Float*"}},
         {"level", "Levels of quantiles. One or more constant floating-point numbers from 0 to 1. We recommend using `level` values in the range of `[0.01, 0.99]`.", {"Float*"}}
     };
     FunctionDocumentation::ReturnedValue returned_value_quantiles = {"Array of approximate quantiles of the specified levels in the same order as the levels were specified. For `Date` and `DateTime` inputs the output format matches the input format.", {"Array(Float64)", "Array(Date)", "Array(DateTime)"}};
