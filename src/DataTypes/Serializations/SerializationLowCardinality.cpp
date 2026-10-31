@@ -35,8 +35,7 @@ namespace
         return typeid_cast<ColumnLowCardinality &>(column);
     }
 
-    /// The key count is read from the stream, so the keys are read in batches: a count that the stream does not back
-    /// must not size an allocation before the keys are read.
+    /// The key count comes from the stream and must not size an allocation, so the keys are read in batches.
     MutableColumnPtr deserializeDictionaryKeys(const IDataType & keys_type, const ISerialization & keys_serialization, ReadBuffer & istr)
     {
         UInt64 num_keys = 0;
