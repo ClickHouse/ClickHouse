@@ -80,6 +80,13 @@ SELECT indexOf(arr, n), indexOfAssumeSorted(arr, n), has([toIntervalNanosecond(-
 FROM (SELECT [toIntervalWeek(10000), toIntervalWeek(16000), toIntervalWeek(20000)] AS arr, toIntervalNanosecond(-8769944073709551616) AS n);
 SELECT has([INTERVAL 1 MONTH], INTERVAL 30 DAY); -- { serverError NO_COMMON_TYPE }
 
+SELECT 'has composite';
+SELECT has([(INTERVAL 1 MINUTE, 7)], (toIntervalSecond(60), 7)), has([(INTERVAL 1 MINUTE, 7)], (toIntervalSecond(1), 7));
+SELECT has([[INTERVAL 1 MINUTE]], [toIntervalSecond(60)]), has([[INTERVAL 1 MINUTE]], [toIntervalSecond(1)]);
+SELECT has([INTERVAL '1:30' HOUR TO MINUTE], (toIntervalMinute(60), toIntervalSecond(1800))), has([INTERVAL '1:30' HOUR TO MINUTE], (toIntervalMinute(1), toIntervalSecond(30)));
+SELECT indexOf([(INTERVAL 1 MINUTE, 1), (INTERVAL 2 MINUTE, 1)], (toIntervalSecond(120), 1)), indexOfAssumeSorted([(INTERVAL 1 MINUTE, 1), (INTERVAL 2 MINUTE, 1)], (toIntervalSecond(120), 1)), countEqual([(INTERVAL 1 MINUTE, 1), (INTERVAL 1 MINUTE, 1)], (toIntervalSecond(60), 1));
+SELECT has([(INTERVAL 1 MINUTE, 7)], (toIntervalSecond(number * 30), 7)) FROM numbers(3) ORDER BY number;
+
 DROP TABLE t_interval_ns;
 DROP TABLE t_interval_min;
 DROP TABLE t_interval_month;

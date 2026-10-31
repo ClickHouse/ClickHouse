@@ -16,6 +16,7 @@
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/TypeTree.h>
 #include <DataTypes/getLeastSupertype.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnMap.h>
@@ -831,9 +832,20 @@ private:
             return nullptr;
 
         const auto element_type = removeNullable(array_type->getNestedType());
+        const auto needle_type = removeNullable(arguments[1].type);
         const auto * element_interval = checkAndGetDataType<DataTypeInterval>(element_type.get());
-        const auto * needle_interval = checkAndGetDataType<DataTypeInterval>(removeNullable(arguments[1].type).get());
-        if (!element_interval || !needle_interval || element_interval->getKind() == needle_interval->getKind())
+        const auto * needle_interval = checkAndGetDataType<DataTypeInterval>(needle_type.get());
+        if (!element_interval || !needle_interval)
+        {
+            /// The `Field`s of a constant array lose the kind of an `Interval` nested in a composite value, so compare those in the common type.
+            const auto is_interval = [](const IDataType & type) { return isInterval(type); };
+            if (isColumnConst(*arguments[0].column) && !element_type->equals(*needle_type)
+                && (anyInTypeTree(*element_type, is_interval) || anyInTypeTree(*needle_type, is_interval)))
+                return executeInCommonType(arguments, result_type);
+            return nullptr;
+        }
+
+        if (element_interval->getKind() == needle_interval->getKind())
             return nullptr;
 
         const bool needle_is_const = isColumnConst(*arguments[1].column);
