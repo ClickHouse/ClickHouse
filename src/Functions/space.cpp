@@ -171,7 +171,7 @@ Concatenates a space (` `) as many times with itself as specified.
     FunctionDocumentation::Arguments arguments = {
         {"n", "The number of times to repeat the space.", {"(U)Int*"}}
     };
-    FunctionDocumentation::ReturnedValue returned_value = {"Returns astring containing a space repeated `n` times. If `n <= 0`, the function returns the empty string.", {"String"}};
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns a string containing a space repeated `n` times. If `n <= 0`, the function returns the empty string.", {"String"}};
     FunctionDocumentation::Examples examples = {
     {
         "Usage example",

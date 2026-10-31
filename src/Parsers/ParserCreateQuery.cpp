@@ -2040,7 +2040,7 @@ ClickHouse creates the `db_name` database on all the servers of a specified clus
 
 ### ENGINE {#engine}
 
-By default, ClickHouse uses its own [Atomic](/reference/engines/database-engines/atomic) database engine. There are also [MySQL](/reference/engines/database-engines/mysql), [PostgresSQL](/reference/engines/database-engines/postgresql), [MaterializedPostgreSQL](/reference/engines/database-engines/materialized-postgresql), [Replicated](/reference/engines/database-engines/replicated), [SQLite](/reference/engines/database-engines/sqlite).
+By default, ClickHouse uses its own [Atomic](/reference/engines/database-engines/atomic) database engine. There are also [MySQL](/reference/engines/database-engines/mysql), [PostgreSQL](/reference/engines/database-engines/postgresql), [MaterializedPostgreSQL](/reference/engines/database-engines/materialized-postgresql), [Replicated](/reference/engines/database-engines/replicated), [SQLite](/reference/engines/database-engines/sqlite).
 
 ### COMMENT {#comment}
 
