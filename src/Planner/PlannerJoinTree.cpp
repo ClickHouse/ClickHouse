@@ -2971,19 +2971,22 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(TableExpressionNodePtr table_
                         {
                             if (!settings[Setting::parallel_replicas_plan_based])
                             {
-                                till_stage = QueryProcessingStage::WithMergeableState;
-                                QueryPlan query_plan_parallel_replicas;
-                                QueryPlanStepPtr reading_step = std::move(reading_node->step);
-                                ClusterProxy::executeQueryWithParallelReplicas(
-                                    query_plan_parallel_replicas,
-                                    storage->getStorageID(),
-                                    till_stage,
-                                    table_expression_query_info.query_tree,
-                                    table_expression_query_info.planner_context,
-                                    query_context,
-                                    table_expression_query_info.storage_limits,
-                                    std::move(reading_step));
-                                query_plan = std::move(query_plan_parallel_replicas);
+                                if (canShipJoinsToParallelReplicas(table_expression_query_info.query_tree, query_context))
+                                {
+                                    till_stage = QueryProcessingStage::WithMergeableState;
+                                    QueryPlan query_plan_parallel_replicas;
+                                    QueryPlanStepPtr reading_step = std::move(reading_node->step);
+                                    ClusterProxy::executeQueryWithParallelReplicas(
+                                        query_plan_parallel_replicas,
+                                        storage->getStorageID(),
+                                        till_stage,
+                                        table_expression_query_info.query_tree,
+                                        table_expression_query_info.planner_context,
+                                        query_context,
+                                        table_expression_query_info.storage_limits,
+                                        std::move(reading_step));
+                                    query_plan = std::move(query_plan_parallel_replicas);
+                                }
                             }
                             else
                             {
