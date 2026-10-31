@@ -1,4 +1,5 @@
--- Tags: no-parallel-replicas: index analysis runs on the replicas, the initiator does not see it
+-- Tags: no-parallel-replicas
+-- no-parallel-replicas: index analysis runs on the replicas, the initiator does not see it
 
 SET enable_join_runtime_filters = 1;
 SET join_runtime_filter_min_probe_rows = 0;

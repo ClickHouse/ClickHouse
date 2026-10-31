@@ -1,4 +1,5 @@
--- Tags: no-parallel-replicas: index analysis runs on the replicas, the initiator does not see it
+-- Tags: no-parallel-replicas
+-- no-parallel-replicas: index analysis runs on the replicas, the initiator does not see it
 
 SET use_skip_indexes = 1;
 SET use_query_condition_cache = 0;
