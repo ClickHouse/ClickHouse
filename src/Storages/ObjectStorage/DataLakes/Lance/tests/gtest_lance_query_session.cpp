@@ -12,7 +12,9 @@
 #include <Storages/ObjectStorage/DataLakes/Lance/LanceWrapper.h>
 #include <Common/CurrentThread.h>
 #include <Common/Exception.h>
+#include <Common/MemoryTrackerBlockerInThread.h>
 #include <Common/ProfileEvents.h>
+#include <Common/ThreadStatus.h>
 #include <Common/tests/gtest_global_context.h>
 
 #include <arrow/array/builder_primitive.h>
@@ -458,6 +460,45 @@ TEST(LanceScanCoordinator, NoLimitConsumesCompleteBatch)
     batch.reset();
     EXPECT_FALSE(coordinator->nextBatch().has_value());
     EXPECT_FALSE(state->cancelled);
+}
+
+TEST(LanceScanCoordinator, ReleasingProducerBatchDoesNotCreditConsumerMemory)
+{
+    constexpr size_t rows = 1 << 20;
+    constexpr Int64 batch_bytes = rows * sizeof(Int64);
+
+    auto state = std::make_shared<FakeBatchProviderState>();
+    std::unique_ptr<Lance::BatchProvider> provider;
+    {
+        /// Like the Rust producer on a Tokio thread, allocate the batch outside of the consumer's memory tracking.
+        MemoryTrackerBlockerInThread blocker(VariableContext::User);
+        provider = std::make_unique<FakeBatchProvider>(state, 1, rows);
+    }
+    auto coordinator = Lance::ScanCoordinator::createWithProvider(std::move(provider), false);
+
+    std::thread consumer(
+        [&]
+        {
+            ThreadStatus thread_status;
+            auto & memory_tracker = CurrentThread::get().memory_tracker;
+
+            auto batch = coordinator->nextBatch();
+            ASSERT_TRUE(batch.has_value());
+            EXPECT_EQ(batch->rows(), rows);
+
+            /// The output converted from the batch stays alive after the batch is released.
+            std::vector<Int64> retained_output(rows, 1);
+            CurrentThread::flushUntrackedMemory();
+            const Int64 charged_before_release = memory_tracker.get();
+            EXPECT_GE(charged_before_release, batch_bytes);
+
+            batch.reset();
+            CurrentThread::flushUntrackedMemory();
+            EXPECT_GT(memory_tracker.get(), charged_before_release - batch_bytes / 2);
+            EXPECT_EQ(retained_output.back(), 1);
+        });
+    consumer.join();
+    EXPECT_EQ(state->released_batches, 1);
 }
 
 TEST(LanceScanCoordinator, EmptyProviderEndsCleanly)

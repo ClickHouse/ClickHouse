@@ -199,6 +199,8 @@ private:
     Scan(DatasetHandle dataset_, ch_lance_scan * scan_);
     friend class DatasetHandle;
 
+    static void freeScan(ch_lance_scan * scan_to_free) noexcept;
+
     DatasetHandle dataset;
     ch_lance_scan * scan = nullptr;
     std::shared_ptr<arrow::Schema> projected_schema;

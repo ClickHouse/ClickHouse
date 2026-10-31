@@ -13,6 +13,7 @@
 #include <Storages/VirtualColumnUtils.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/Exception.h>
+#include <Common/MemoryTrackerBlockerInThread.h>
 #include <Common/ProfileEvents.h>
 #include <Common/Stopwatch.h>
 
@@ -149,7 +150,12 @@ ScanCoordinator::Batch::~Batch()
 
 void ScanCoordinator::Batch::release() noexcept
 {
-    record_batch.reset();
+    {
+        /// The buffers were allocated by the Rust producer outside of any query, so freeing them
+        /// must not credit the query and cancel the charge of its live allocations.
+        MemoryTrackerBlockerInThread blocker(VariableContext::User);
+        record_batch.reset();
+    }
     if (coordinator)
     {
         coordinator->releaseBatch(batch_bytes);
@@ -202,6 +208,10 @@ ScanCoordinator::~ScanCoordinator()
 
 std::optional<ScanCoordinator::Batch> ScanCoordinator::nextBatch()
 {
+    /// Batches belong to the Rust producer, which runs outside of any query, so they are imported,
+    /// sliced, and dropped here without charging or crediting the query. See `Batch::release`.
+    MemoryTrackerBlockerInThread blocker(VariableContext::User);
+
     {
         std::lock_guard lock(state_mutex);
         if (current_state != State::Running)

@@ -9,6 +9,7 @@
 #include <Storages/ObjectStorage/DataLakes/Lance/LanceScanDescription.h>
 #include <Storages/ObjectStorage/DataLakes/Lance/LanceWrapper.h>
 #include <Common/Exception.h>
+#include <Common/MemoryTrackerBlockerInThread.h>
 #include <Common/ProfileEvents.h>
 #include <Common/SipHash.h>
 #include <Common/Stopwatch.h>
@@ -576,7 +577,7 @@ Scan & Scan::operator=(Scan && other) noexcept
     if (this != &other)
     {
         if (scan)
-            ch_lance_free_scan(scan);
+            freeScan(scan);
         dataset = std::move(other.dataset);
         scan = std::exchange(other.scan, nullptr);
         projected_schema = std::move(other.projected_schema);
@@ -587,7 +588,15 @@ Scan & Scan::operator=(Scan && other) noexcept
 Scan::~Scan()
 {
     if (scan)
-        ch_lance_free_scan(scan);
+        freeScan(scan);
+}
+
+void Scan::freeScan(ch_lance_scan * scan_to_free) noexcept
+{
+    /// The queued batches were allocated by the Rust producer outside of any query, so freeing them
+    /// must not credit the query and cancel the charge of its live allocations.
+    MemoryTrackerBlockerInThread blocker(VariableContext::User);
+    ch_lance_free_scan(scan_to_free);
 }
 
 void Scan::requestCancel() noexcept
