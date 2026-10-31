@@ -154,8 +154,29 @@ size_t tryPushDownLimit(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes,
     return 2;
 }
 
-void pushLimitByIntoSort(QueryPlan::Node & node)
+/// The number of `LIMIT BY` groups that a `LIMIT` right above can return rows from, or 0 if it does not bound them.
+static UInt64 getLimitByMaxGroups(const Stack & stack, const LimitByStep & limit_by)
 {
+    if (stack.size() < 2)
+        return 0;
+
+    const auto * limit = typeid_cast<const LimitStep *>(stack[stack.size() - 2].node->step.get());
+    if (!limit || limit->withTies())
+        return 0;
+
+    if (limit->alwaysReadTillEnd() || limit_by.alwaysReadTillEnd())
+        return 0;
+
+    /// A group with at most `offset` rows yields no output row, so no number of groups is enough.
+    if (limit_by.getGroupOffset() != 0)
+        return 0;
+
+    return limit->getLimitForSorting();
+}
+
+void pushLimitByIntoSort(const Stack & stack, bool use_outer_limit)
+{
+    QueryPlan::Node & node = *stack.back().node;
     if (node.children.size() != 1)
         return;
 
@@ -206,7 +227,8 @@ void pushLimitByIntoSort(QueryPlan::Node & node)
     if (length == 0 || length > std::numeric_limits<UInt64>::max() - offset)
         return;
 
-    sort->updateLimitByHint(limit_by->getColumns(), length + offset, limit_by->alwaysReadTillEnd());
+    const UInt64 max_groups = use_outer_limit ? getLimitByMaxGroups(stack, *limit_by) : 0;
+    sort->updateLimitByHint(limit_by->getColumns(), length + offset, max_groups, limit_by->alwaysReadTillEnd());
 }
 
 }

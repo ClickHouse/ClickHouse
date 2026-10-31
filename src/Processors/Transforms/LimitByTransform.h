@@ -119,7 +119,8 @@ public:
         UInt64 group_length_,
         UInt64 group_offset_,
         const SortDescription & sorted_columns_descr,
-        bool always_read_till_end_ = false);
+        bool always_read_till_end_ = false,
+        UInt64 max_groups_ = 0);
 
     String getName() const override { return "LimitBySortedStreamTransform"; }
 
@@ -137,6 +138,8 @@ private:
 
     void processRun(UInt64 run_start_row, UInt64 run_row_count);
 
+    void finishGroup();
+
     /// Positions of the non-constant grouping key columns in the chunk header, in physical sort order so
     /// that every column probed by `getEqualRangeEndAssumeSorted` is contiguous within the range.
     std::vector<size_t> grouping_key_positions;
@@ -146,10 +149,16 @@ private:
     const UInt64 group_limit_end;
     const bool always_read_till_end;
 
+    /// Stop reading once this many groups are complete. 0 disables the stop.
+    const UInt64 max_groups;
+
     MutableColumns previous_chunk_last_grouping_key_columns;
 
     /// Number of rows already seen for the current logical group.
     UInt64 current_group_rows_seen = 0;
+
+    /// Groups whose last row has already been seen, so no later row can join them.
+    UInt64 completed_groups = 0;
 
     /// Slices from the current chunk that will be emitted to output.
     PODArray<ChunkRowRange> output_slices;
