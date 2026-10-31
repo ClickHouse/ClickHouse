@@ -404,7 +404,9 @@ bool ReadFromObjectStorageStep::canUseLazyMaterialization() const
     ///     `s3_validate_etag_on_read` issues the GET with an `If-Match` on the captured ETag and
     ///     rejects a response whose ETag drifted from it (see `ReadBufferFromS3`), which is atomic
     ///     with respect to an overwrite; Azure with `azure_validate_etag_on_read` does the same
-    ///     (see `ReadBufferFromAzureBlobStorage`).
+    ///     (see `ReadBufferFromAzureBlobStorage`); the native GCS backend with
+    ///     `s3_validate_etag_on_read` sends every read request with `IfGenerationMatch` on the
+    ///     captured object generation (see `ReadBufferFromGCS`).
     /// The pin only takes effect when the captured metadata actually carries a non-empty `ETag`
     /// (see `createReadBuffer`), and `GCS` accessed through the S3 API is documented to legitimately
     /// return objects without one — so a `GCS`-provider client is not pinned even with the setting
@@ -422,6 +424,9 @@ bool ReadFromObjectStorageStep::canUseLazyMaterialization() const
 #endif
     if (object_storage->getType() == ObjectStorageType::Azure
         && getContext()->getSettingsRef()[Setting::azure_validate_etag_on_read])
+        reread_is_generation_pinned = true;
+    if (object_storage->getType() == ObjectStorageType::GCS
+        && getContext()->getSettingsRef()[Setting::s3_validate_etag_on_read])
         reread_is_generation_pinned = true;
     if (!configuration->dataFilesAreImmutable() && !reread_is_generation_pinned)
         return false;

@@ -62,6 +62,7 @@
 #include <Storages/Freeze.h>
 #include <Storages/MaterializedView/RefreshTask.h>
 #include <Storages/ObjectStorage/Azure/Configuration.h>
+#include <Storages/ObjectStorage/GCS/Configuration.h>
 #include <Storages/ObjectStorage/HDFS/Configuration.h>
 #include <Storages/ObjectStorage/S3/Configuration.h>
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
@@ -118,6 +119,10 @@
 
 #if USE_AWS_S3
 #include <IO/S3/Client.h>
+#endif
+
+#if USE_GOOGLE_CLOUD
+#include <poco_rest_options.h>
 #endif
 
 #if USE_FILELOG
@@ -509,6 +514,10 @@ BlockIO InterpreterSystemQuery::execute()
         {
             getContext()->checkAccess(AccessType::SYSTEM_DROP_CONNECTIONS_CACHE);
             HTTPConnectionPools::instance().dropCache();
+#if USE_GOOGLE_CLOUD
+            /// The native GCS transport keeps its idle sessions in a pool of its own.
+            ClickHouse::dropPocoRestIdleSessions();
+#endif
             break;
         }
         case Type::PREWARM_MARK_CACHE:
@@ -788,7 +797,7 @@ BlockIO InterpreterSystemQuery::execute()
             getContext()->checkAccess(AccessType::SYSTEM_DROP_SCHEMA_CACHE);
             std::unordered_set<String> caches_to_drop;
             if (query.schema_cache_storage.empty())
-                caches_to_drop = {"FILE", "S3", "HDFS", "URL", "AZURE"};
+                caches_to_drop = {"FILE", "S3", "HDFS", "URL", "AZURE", "GCS"};
             else
                 caches_to_drop = {query.schema_cache_storage};
 
@@ -807,6 +816,10 @@ BlockIO InterpreterSystemQuery::execute()
 #if USE_AZURE_BLOB_STORAGE
             if (caches_to_drop.contains("AZURE"))
                 StorageObjectStorage::getSchemaCache(getContext(), StorageAzureConfiguration::type_name).clear();
+#endif
+#if USE_AWS_S3 && USE_GOOGLE_CLOUD
+            if (caches_to_drop.contains("GCS"))
+                StorageObjectStorage::getSchemaCache(getContext(), StorageGCSConfiguration::type_name).clear();
 #endif
             break;
         }

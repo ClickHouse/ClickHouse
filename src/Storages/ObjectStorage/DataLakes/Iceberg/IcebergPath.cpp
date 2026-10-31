@@ -9,6 +9,7 @@
 namespace DB::ErrorCodes
 {
 extern const int BAD_ARGUMENTS;
+extern const int NOT_IMPLEMENTED;
 }
 
 namespace DB::Iceberg
@@ -28,6 +29,8 @@ String toIcebergURIScheme(const String & storage_type_name)
 {
     if (storage_type_name == "local")
         return "file";
+    if (storage_type_name == "gcs")
+        return "gs";
     return storage_type_name;
 }
 
@@ -46,6 +49,8 @@ BlobStorageDescription BlobStorageDescription::fromConfiguration(const DB::Stora
         .type_name = configuration.getTypeName(),
         .namespace_name = configuration.getNamespace(),
         .allow_foreign_namespaces = configuration.supportsFullyQualifiedPaths(),
+        /// The native GCS object storage reads every key from the bucket it was created for.
+        .reject_foreign_namespaces = configuration.getType() == DB::ObjectStorageType::GCS,
     };
 }
 
@@ -106,15 +111,17 @@ String IcebergPathResolver::parseNamespace(std::string_view path)
 
 bool IcebergPathResolver::isInForeignNamespace(const String & raw_path) const
 {
-    if (!blob_storage.allow_foreign_namespaces || blob_storage.namespace_name.empty())
+    if ((!blob_storage.allow_foreign_namespaces && !blob_storage.reject_foreign_namespaces) || blob_storage.namespace_name.empty())
         return false;
 
     auto qualified = trySplitFullyQualifiedObjectPath(raw_path);
     if (!qualified)
         return false;
 
+    /// The backend's type token is compared as the URI scheme it writes, so that the native `gcs`
+    /// backend is recognized as the storage of `gs://` (and `s3://`) paths.
     auto path_storage_type = DataLake::tryParseStorageTypeFromString(String(qualified->scheme));
-    if (!path_storage_type || path_storage_type != DataLake::tryParseStorageTypeFromString(blob_storage.type_name))
+    if (!path_storage_type || path_storage_type != DataLake::tryParseStorageTypeFromString(toIcebergURIScheme(blob_storage.type_name)))
         return false;
 
     const String path_namespace(qualified->object_namespace);
@@ -145,7 +152,14 @@ String IcebergPathResolver::resolve(const IcebergPathFromMetadata & metadata_pat
     }
 
     if (isInForeignNamespace(raw_path))
+    {
+        if (blob_storage.reject_foreign_namespaces)
+            throw ::DB::Exception(DB::ErrorCodes::NOT_IMPLEMENTED,
+                "Iceberg path '{}' is outside of the bucket '{}' of the table (location '{}'), "
+                "and the {} backend can only read objects from its own bucket",
+                raw_path, blob_storage.namespace_name, table_location, blob_storage.type_name);
         return raw_path;
+    }
 
     if (table_root.empty())
     {

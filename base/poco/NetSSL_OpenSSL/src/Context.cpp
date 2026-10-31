@@ -200,50 +200,52 @@ static bool poco_file_cert(const std::string & file)
 	return f.exists() && f.isFile();
 }
 
-static int poco_ssl_probe_and_set_default_ca_location(SSL_CTX *ctx, Context::CAPaths &caPaths)
-{
-	/* The probe paths are based on:
-		* https://www.happyassassin.net/posts/2015/01/12/a-note-about-ssltls-trusted-certificate-stores-and-platforms/
-		* Golang's crypto probing paths:
-		*   https://github.com/golang/go/blob/master/src/crypto/x509/root_linux.go (certFiles) and root_unix.go (certDirectories)
-		*/
-	static const char *paths[] = {
-		"/etc/pki/tls/certs/ca-bundle.crt",
-		"/etc/ssl/certs/ca-bundle.crt",
-		"/etc/pki/tls/certs/ca-bundle.trust.crt",
-		"/etc/pki/ca-trust/extracted/pem/tls-ca-bundle.pem",
+/* The probe paths are based on:
+	* https://www.happyassassin.net/posts/2015/01/12/a-note-about-ssltls-trusted-certificate-stores-and-platforms/
+	* Golang's crypto probing paths:
+	*   https://github.com/golang/go/blob/master/src/crypto/x509/root_linux.go (certFiles) and root_unix.go (certDirectories)
+	*/
+static const char * const poco_default_ca_probe_paths[] = {
+	"/etc/pki/tls/certs/ca-bundle.crt",
+	"/etc/ssl/certs/ca-bundle.crt",
+	"/etc/pki/tls/certs/ca-bundle.trust.crt",
+	"/etc/pki/ca-trust/extracted/pem/tls-ca-bundle.pem",
 
-		"/etc/ssl/ca-bundle.pem",
-		"/etc/pki/tls/cacert.pem",
-		"/etc/ssl/cert.pem",
-		"/etc/ssl/cacert.pem",
+	"/etc/ssl/ca-bundle.pem",
+	"/etc/pki/tls/cacert.pem",
+	"/etc/ssl/cert.pem",
+	"/etc/ssl/cacert.pem",
 
-		"/etc/certs/ca-certificates.crt",
-		"/etc/ssl/certs/ca-certificates.crt",
+	"/etc/certs/ca-certificates.crt",
+	"/etc/ssl/certs/ca-certificates.crt",
 
-		"/etc/ssl/certs",
+	"/etc/ssl/certs",
 
-		"/usr/local/etc/ssl/cert.pem",
-		"/usr/local/etc/ssl/cacert.pem",
+	"/usr/local/etc/ssl/cert.pem",
+	"/usr/local/etc/ssl/cacert.pem",
 
-		"/usr/local/etc/ssl/certs/cert.pem",
-		"/usr/local/etc/ssl/certs/cacert.pem",
+	"/usr/local/etc/ssl/certs/cert.pem",
+	"/usr/local/etc/ssl/certs/cacert.pem",
 
-		/* BSD */
-		"/usr/local/share/certs/ca-root-nss.crt",
-		"/etc/openssl/certs/ca-certificates.crt",
+	/* BSD */
+	"/usr/local/share/certs/ca-root-nss.crt",
+	"/etc/openssl/certs/ca-certificates.crt",
 #ifdef __APPLE__
-		"/private/etc/ssl/cert.pem",
-		"/private/etc/ssl/certs",
-		"/usr/local/etc/openssl@1.1/cert.pem",
-		"/usr/local/etc/openssl@1.0/cert.pem",
-		"/usr/local/etc/openssl/certs",
-		"/System/Library/OpenSSL",
+	"/private/etc/ssl/cert.pem",
+	"/private/etc/ssl/certs",
+	"/usr/local/etc/openssl@1.1/cert.pem",
+	"/usr/local/etc/openssl@1.0/cert.pem",
+	"/usr/local/etc/openssl/certs",
+	"/System/Library/OpenSSL",
 #endif
 #ifdef _AIX
-		"/var/ssl/certs/ca-bundle.crt",
+	"/var/ssl/certs/ca-bundle.crt",
 #endif
-	};
+};
+
+static int poco_ssl_probe_and_set_default_ca_location(SSL_CTX *ctx, Context::CAPaths &caPaths)
+{
+	const auto & paths = poco_default_ca_probe_paths;
 
 	const char * dir = nullptr;
 	for (const char * path : paths)
@@ -667,6 +669,12 @@ void Context::preferServerCiphers()
 const Context::CAPaths &Context::getCAPaths()
 {
 	return _caPaths;
+}
+
+
+std::vector<std::string> Context::defaultCAProbeLocations()
+{
+	return std::vector<std::string>(std::begin(poco_default_ca_probe_paths), std::end(poco_default_ca_probe_paths));
 }
 
 

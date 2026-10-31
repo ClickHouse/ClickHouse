@@ -9,7 +9,10 @@
 #include "google/cloud/credentials.h"
 #include "google/cloud/internal/curl_options.h"
 #include "google/cloud/internal/http_payload.h"
+#include "google/cloud/internal/oauth2_authorized_user_credentials.h"
+#include "google/cloud/internal/oauth2_credential_constants.h"
 #include "google/cloud/internal/oauth2_credentials.h"
+#include "google/cloud/internal/oauth2_decorate_credentials.h"
 #include "google/cloud/internal/rest_client.h"
 #include "google/cloud/internal/rest_context.h"
 #include "google/cloud/internal/rest_options.h"
@@ -20,23 +23,37 @@
 #include "google/cloud/options.h"
 #include "google/cloud/version.h"
 
+#include "poco_rest_options.h"
+
 #include <Poco/Net/Context.h>
 #include <Poco/Net/HTTPClientSession.h>
 #include <Poco/Net/HTTPRequest.h>
 #include <Poco/Net/HTTPResponse.h>
 #include <Poco/Net/HTTPSClientSession.h>
 #include <Poco/Net/NetException.h>
+#include <Poco/Net/SSLException.h>
+#include <Poco/RegularExpression.h>
 #include <Poco/Timespan.h>
 #include <Poco/URI.h>
+
+#include <openssl/ssl.h>
+#include <openssl/x509.h>
+#include <sys/stat.h>
 
 #include <algorithm>
 #include <cctype>
 #include <chrono>
 #include <cstdint>
+#include <cstdlib>
+#include <filesystem>
+#include <functional>
 #include <istream>
 #include <memory>
+#include <mutex>
 #include <numeric>
+#include <sstream>
 #include <string>
+#include <unordered_map>
 #include <utility>
 #include <vector>
 
@@ -60,6 +77,7 @@ GOOGLE_CLOUD_CPP_INLINE_NAMESPACE_BEGIN
 namespace {
 
 auto constexpr kDefaultTimeout = std::chrono::seconds(120);
+auto constexpr kDefaultConnectTimeout = std::chrono::seconds(30);
 auto constexpr kMaxRedirects = 10;
 
 // Strict RFC 3986 percent-encoding, matching curl_easy_escape: everything
@@ -134,64 +152,682 @@ std::chrono::seconds RequestTimeout(Options const& options) {
   return timeout;
 }
 
-std::unique_ptr<Poco::Net::HTTPClientSession> MakeSession(
-    Poco::URI const& uri, Options const& options) {
-  std::unique_ptr<Poco::Net::HTTPClientSession> session;
-  if (uri.getScheme() == "https") {
-    std::string ca_location;
-    if (options.has<CARootsFilePathOption>()) {
-      ca_location = options.get<CARootsFilePathOption>();
-    }
-    // When an explicit CA bundle is configured via CARootsFilePathOption, trust
-    // only that bundle and do not also load the system trust store. This matches
-    // the libcurl-based transport, where CAINFO replaces the default trust roots
-    // rather than extending them, preserving custom-CA/pinning semantics.
-    Poco::Net::Context::Ptr context(new Poco::Net::Context(
-        Poco::Net::Context::TLSV1_2_CLIENT_USE, /*privateKeyFile=*/"",
-        /*certificateFile=*/"", ca_location,
-        Poco::Net::Context::VERIFY_STRICT, /*verificationDepth=*/9,
-        /*loadDefaultCAs=*/ca_location.empty()));
-    session = std::make_unique<Poco::Net::HTTPSClientSession>(
-        uri.getHost(), uri.getPort(), context);
-  } else {
-    session = std::make_unique<Poco::Net::HTTPClientSession>(uri.getHost(),
-                                                             uri.getPort());
+// Appends the device, inode, size and modification time of `path` (following
+// symlinks), or a marker when it cannot be `stat`ed, so that it appearing later
+// changes the value too.
+void AppendFileFingerprint(std::string const& path, std::string& result) {
+  result += path;
+  struct stat st;
+  if (::stat(path.c_str(), &st) != 0) {
+    result += "|-|";
+    return;
   }
-  if (options.has<ProxyOption>()) {
+#if defined(__APPLE__)
+  auto const& mtime = st.st_mtimespec;
+#else
+  auto const& mtime = st.st_mtim;
+#endif
+  result += "|" + std::to_string(st.st_dev) + ":" + std::to_string(st.st_ino) +
+            ":" + std::to_string(st.st_size) + ":" +
+            std::to_string(mtime.tv_sec) + "." +
+            std::to_string(mtime.tv_nsec) + "|";
+}
+
+// Identifies the current contents of the trust store an SSL context loads: the
+// explicit CA bundle (file or directory) when one is configured, otherwise the
+// OpenSSL default locations (honouring `SSL_CERT_FILE` / `SSL_CERT_DIR`, where
+// the latter may be a `:`-separated list of directories) together with the
+// fallback locations `Poco::Net::Context` probes when those yield nothing. Each path contributes
+// its device, inode, size and modification time, so replacing a bundle in place,
+// or atomically through a rename, yields a different value. A directory
+// contributes every entry in it as well: OpenSSL loads the certificates of a
+// `c_rehash`-style directory by their hashed names, and rewriting one of them in
+// place (or the target of a hashed symlink) changes neither the directory's own
+// metadata nor the set of names in it.
+std::string ComputeTrustStoreFingerprint(std::string const& ca_location) {
+  std::vector<std::string> paths;
+  if (!ca_location.empty()) {
+    paths.push_back(ca_location);
+  } else {
+    char const* file = std::getenv(X509_get_default_cert_file_env());
+    paths.emplace_back(file != nullptr ? file : X509_get_default_cert_file());
+    // `SSL_CERT_DIR` may name several directories separated by `:`, and the
+    // context loads each of them on its own, so each one is fingerprinted.
+    char const* dir = std::getenv(X509_get_default_cert_dir_env());
+    std::string const dirs = dir != nullptr ? dir : X509_get_default_cert_dir();
+    std::string::size_type begin = 0;
+    while (true) {
+      auto const end = dirs.find(':', begin);
+      paths.push_back(dirs.substr(
+          begin, end == std::string::npos ? std::string::npos : end - begin));
+      if (end == std::string::npos) break;
+      begin = end + 1;
+    }
+    // When the default locations are missing or contain no certificates, the
+    // context probes well-known locations and loads the first usable one, so
+    // those are fingerprinted too. A probed store that appears, disappears or
+    // changes then refreshes the context, including when another one is selected.
+    for (auto const& probe : Poco::Net::Context::defaultCAProbeLocations()) {
+      paths.push_back(probe);
+    }
+  }
+  std::string result;
+  for (auto const& path : paths) {
+    AppendFileFingerprint(path, result);
+    std::error_code ec;
+    if (!std::filesystem::is_directory(path, ec)) continue;
+    std::vector<std::string> entries;
+    for (std::filesystem::directory_iterator it(path, ec), end; !ec && it != end;
+         it.increment(ec)) {
+      entries.push_back(it->path().string());
+    }
+    // The order of a directory listing is unspecified; sort it so that an
+    // unchanged directory always yields the same value.
+    std::sort(entries.begin(), entries.end());
+    for (auto const& entry : entries) AppendFileFingerprint(entry, result);
+  }
+  return result;
+}
+
+// `ComputeTrustStoreFingerprint` walks whole CA directories, which is too much
+// work for every request, so its value is reused for a second. A rotated CA is
+// picked up by the connections opened after that.
+std::string TrustStoreFingerprint(std::string const& ca_location) {
+  static constexpr auto kRefreshInterval = std::chrono::seconds(1);
+  struct CachedFingerprint {
+    std::string value;
+    std::chrono::steady_clock::time_point computed_at;
+  };
+  static std::mutex mu;
+  static auto* cache =
+      new std::unordered_map<std::string, CachedFingerprint>();
+  auto const now = std::chrono::steady_clock::now();
+  {
+    std::lock_guard<std::mutex> lock(mu);
+    auto it = cache->find(ca_location);
+    if (it != cache->end() && now - it->second.computed_at < kRefreshInterval) {
+      return it->second.value;
+    }
+  }
+  auto value = ComputeTrustStoreFingerprint(ca_location);
+  std::lock_guard<std::mutex> lock(mu);
+  (*cache)[ca_location] = CachedFingerprint{value, now};
+  return value;
+}
+
+// Building a Poco::Net::Context creates an OpenSSL SSL_CTX: it loads the trust
+// store (a `getdents64`/`stat`/`open` walk of the CA directory) and builds the
+// cipher list. That is per-*context* work, not per-connection, and the context is
+// immutable once configured and safe to share, so cache one per CA location
+// instead of rebuilding it for every request. The context keeps the roots it
+// loaded, so the cached one is used only while the trust store is unchanged
+// (`trust_store_fingerprint`): after a CA bundle is rotated in place, the next
+// new connection gets a context built from the new roots, and the stale one is
+// dropped once the sessions that still hold it are gone.
+Poco::Net::Context::Ptr SslContextFor(
+    std::string const& ca_location,
+    std::string const& trust_store_fingerprint) {
+  struct CachedContext {
+    std::string trust_store_fingerprint;
+    Poco::Net::Context::Ptr context;
+  };
+  static std::mutex mu;
+  static auto* contexts =
+      new std::unordered_map<std::string, CachedContext>();
+  std::lock_guard<std::mutex> lock(mu);
+  auto it = contexts->find(ca_location);
+  if (it != contexts->end() &&
+      it->second.trust_store_fingerprint == trust_store_fingerprint) {
+    return it->second.context;
+  }
+  // When an explicit CA bundle is configured via CARootsFilePathOption, trust
+  // only that bundle and do not also load the system trust store. This matches
+  // the libcurl-based transport, where CAINFO replaces the default trust roots
+  // rather than extending them, preserving custom-CA/pinning semantics.
+  Poco::Net::Context::Ptr context(new Poco::Net::Context(
+      Poco::Net::Context::TLSV1_2_CLIENT_USE, /*privateKeyFile=*/"",
+      /*certificateFile=*/"", ca_location,
+      Poco::Net::Context::VERIFY_STRICT, /*verificationDepth=*/9,
+      /*loadDefaultCAs=*/ca_location.empty()));
+  // `TLSV1_2_CLIENT_USE` only selects `TLS_client_method`, which accepts any
+  // protocol version the OpenSSL build allows; set the TLS 1.2 floor explicitly.
+  if (SSL_CTX_set_min_proto_version(context->sslContext(), TLS1_2_VERSION) !=
+      1) {
+    throw Poco::Net::SSLContextException(
+        "Cannot set the minimum TLS protocol version to TLS 1.2");
+  }
+  (*contexts)[ca_location] = CachedContext{trust_store_fingerprint, context};
+  return context;
+}
+
+auto constexpr kDefaultMaxSessionsPerEndpoint = std::size_t{64};
+
+using SessionRegistration =
+    ::ClickHouse::PocoRestSessionAccountingOption::Registration;
+
+// A session together with its registration in a ClickHouse connection group
+// (`PocoRestSessionAccountingOption`), if there is one. The registration is
+// always destroyed before the session -- also when a session is overwritten by
+// a move -- so the group stops counting the session before its socket is closed
+// and before its address can be taken by another session.
+struct AccountedSession {
+  std::unique_ptr<Poco::Net::HTTPClientSession> session;
+  std::unique_ptr<SessionRegistration> registration;
+
+  AccountedSession() = default;
+  AccountedSession(AccountedSession&&) noexcept = default;
+  AccountedSession& operator=(AccountedSession&& other) noexcept {
+    if (this != &other) {
+      registration.reset();
+      session = std::move(other.session);
+      registration = std::move(other.registration);
+    }
+    return *this;
+  }
+  ~AccountedSession() { registration.reset(); }
+};
+
+// Idle keep-alive sessions, so a request does not pay a DNS lookup, a TCP
+// handshake and a TLS handshake of its own. `Poco::Net::HTTPClientSession` is not
+// thread-safe, so the pool hands out exclusive ownership and takes it back only
+// once the response body has been fully consumed -- a session with unread bytes
+// still buffered would desynchronise the next request on that socket.
+//
+// The cap on retained idle sessions is a property of the *bucket*, not of the
+// pool: `Release` is told what it is by the request handing the session back, so
+// two clients configured with different `ConnectionPoolSizeOption` values size
+// their own endpoints and cannot overwrite each other's limit. Within one bucket
+// -- the same endpoint reached through the same proxy -- the connections really
+// are shared, so the most recent request's cap is the one that applies; that is
+// inherent to pooling by endpoint rather than by client, and there is no
+// cross-endpoint interference left.
+class SessionPool {
+ public:
+  static SessionPool& Instance() {
+    static auto* pool = new SessionPool();
+    return *pool;
+  }
+
+  AccountedSession Acquire(
+      std::string const& key,
+      ::ClickHouse::PocoRestSessionStaleCheckOption::Type const& is_stale) {
+    auto const now = std::chrono::steady_clock::now();
+    std::lock_guard<std::mutex> lock(mu_);
+    ExpireIdle(now);
+    auto it = idle_.find(key);
+    if (it == idle_.end()) return {};
+    auto& entries = it->second;
+    while (!entries.empty()) {
+      auto entry = std::move(entries.back());
+      entries.pop_back();
+      auto& session = entry.Session();
+      // A peer may close an idle keep-alive connection at any time, and
+      // `connected()` reports only what this side knows: it does not see a
+      // half-closed socket, a TLS `close_notify`, or an unsolicited response
+      // (a `408 Request Timeout`) the peer queued before closing. So drop
+      // anything that has sat idle long enough to be a likely candidate, and --
+      // when ClickHouse supplied the probe -- anything the probe reports as not
+      // idle, and let the caller connect afresh rather than discover the failure
+      // mid-request or parse leftover bytes as its own response.
+      if (IsExpired(entry, now)) continue;
+      if (!session.connected()) continue;
+      if (session.buffered() > 0) continue;
+      if (is_stale && is_stale(session)) continue;
+      return entry.Take();
+    }
+    idle_.erase(it);
+    return {};
+  }
+
+  // Closes every idle session (`SYSTEM DROP CONNECTIONS CACHE`), giving back the
+  // idle slots they hold in their connection groups. Sessions in use are not
+  // affected. The sessions are destroyed outside the lock: closing a TLS socket
+  // may block, and the registrations take the locks of their groups.
+  void Clear() {
+    std::unordered_map<std::string, std::vector<Entry>> dropped;
+    {
+      std::lock_guard<std::mutex> lock(mu_);
+      dropped.swap(idle_);
+    }
+  }
+
+  // Called from the destructor of a response, so it does not throw: when the
+  // session cannot be retained (e.g. an allocation of the pool fails), it is
+  // destroyed, which closes its connection.
+  void Release(std::string const& key, AccountedSession session,
+               std::size_t max_per_endpoint) noexcept {
+    try {
+      ReleaseImpl(key, session, max_per_endpoint);
+    } catch (...) {
+      // The session, if not retained yet, is destroyed (and unregistered from
+      // its connection group) when this function returns.
+    }
+  }
+
+ private:
+  void ReleaseImpl(std::string const& key, AccountedSession& session,
+                   std::size_t max_per_endpoint) {
+    if (!session.session || !session.session->connected()) return;
+    if (max_per_endpoint == 0) return;
+    auto const now = std::chrono::steady_clock::now();
+    std::lock_guard<std::mutex> lock(mu_);
+    ExpireIdle(now);
+    // A session that has already served as many requests as its keep-alive
+    // policy allows, or that the peer asked to close after this response, is not
+    // worth retaining: the next borrower would have to reconnect it anyway.
+    if (session.session->isKeepAliveExpired()) return;
+    auto& entries = idle_[key];
+    // A cap lowered since the bucket filled up applies right away: trim the
+    // oldest entries down to the new limit, so a reconfigured endpoint stops
+    // holding sockets it is no longer allowed to retain. Entries are appended in
+    // return order, so the front is the oldest.
+    if (entries.size() > max_per_endpoint) {
+      entries.erase(entries.begin(),
+                    entries.begin() + static_cast<std::ptrdiff_t>(
+                                          entries.size() - max_per_endpoint));
+    }
+    if (entries.size() >= max_per_endpoint) return;
+    // The group-wide limit on idle connections, on top of the per-endpoint one.
+    bool holds_idle_slot = false;
+    if (session.registration) {
+      if (!session.registration->tryReserveIdle()) return;
+      holds_idle_slot = true;
+    }
+    // Should `push_back` throw, the entry gives the slot back when destroyed.
+    Entry entry(std::move(session), holds_idle_slot, now);
+    entries.push_back(std::move(entry));
+  }
+
+  // An idle session. When it holds a slot of its group's limit on idle
+  // connections (`SessionRegistration::tryReserveIdle`), the entry gives the
+  // slot back exactly once: when the session is taken out (`Take`), or when the
+  // entry is destroyed or overwritten. A move transfers the slot.
+  class Entry {
+   public:
+    Entry(AccountedSession session, bool holds_idle_slot,
+          std::chrono::steady_clock::time_point returned_at)
+        : session_(std::move(session)),
+          holds_idle_slot_(holds_idle_slot),
+          returned_at_(returned_at) {}
+    Entry(Entry&& other) noexcept
+        : session_(std::move(other.session_)),
+          holds_idle_slot_(std::exchange(other.holds_idle_slot_, false)),
+          returned_at_(other.returned_at_) {}
+    Entry& operator=(Entry&& other) noexcept {
+      if (this != &other) {
+        ReleaseIdleSlot();
+        session_ = std::move(other.session_);
+        holds_idle_slot_ = std::exchange(other.holds_idle_slot_, false);
+        returned_at_ = other.returned_at_;
+      }
+      return *this;
+    }
+    ~Entry() { ReleaseIdleSlot(); }
+
+    Poco::Net::HTTPClientSession& Session() const { return *session_.session; }
+    std::chrono::steady_clock::time_point ReturnedAt() const {
+      return returned_at_;
+    }
+    AccountedSession Take() {
+      ReleaseIdleSlot();
+      return std::move(session_);
+    }
+
+   private:
+    void ReleaseIdleSlot() noexcept {
+      if (!holds_idle_slot_) return;
+      holds_idle_slot_ = false;
+      session_.registration->releaseIdle();
+    }
+
+    AccountedSession session_;
+    bool holds_idle_slot_ = false;
+    std::chrono::steady_clock::time_point returned_at_;
+  };
+
+  // Hard upper bound on how long a session may sit in the pool, whatever its own
+  // keep-alive policy says. It also bounds how long a socket of a bucket nobody
+  // borrows from again (an endpoint that stopped being used, or a proxy the
+  // resolver rotated away from) is kept around.
+  static constexpr auto kMaxIdleTime = std::chrono::seconds(20);
+  // How often the whole pool is swept. Sweeping on every borrow and return would
+  // make each of them cost the size of the pool; once a second is frequent enough
+  // for sockets whose lifetime is bounded by `kMaxIdleTime` anyway.
+  static constexpr auto kSweepInterval = std::chrono::seconds(1);
+
+  bool IsExpired(Entry const& entry,
+                 std::chrono::steady_clock::time_point now) const {
+    if (now - entry.ReturnedAt() >= kMaxIdleTime) return true;
+    // Poco keeps the keep-alive policy of the session -- the timeout and the
+    // request budget ClickHouse configured, both possibly lowered by the peer's
+    // own `Keep-Alive` header -- and decides against them.
+    return entry.Session().isKeepAliveExpired();
+  }
+
+  // Drops every session that outlived its keep-alive policy, in every bucket, and
+  // then the buckets left empty. Without this a session is only ever reconsidered
+  // when its own bucket is borrowed from: `Release` appends at the back and
+  // `Acquire` pops from the back, so a steady-state workload that keeps reusing
+  // one hot session would never look at the colder entries in front of it again,
+  // and a bucket abandoned after a proxy rotation would never be looked at at all.
+  // Both would then hold their sockets (and file descriptors) for the rest of the
+  // process lifetime. Called with the lock held.
+  void ExpireIdle(std::chrono::steady_clock::time_point now) {
+    if (now - last_sweep_ < kSweepInterval) return;
+    last_sweep_ = now;
+    for (auto it = idle_.begin(); it != idle_.end();) {
+      auto& entries = it->second;
+      entries.erase(std::remove_if(entries.begin(), entries.end(),
+                                   [&](Entry const& entry) {
+                                     return IsExpired(entry, now);
+                                   }),
+                    entries.end());
+      it = entries.empty() ? idle_.erase(it) : std::next(it);
+    }
+  }
+
+  std::mutex mu_;
+  std::unordered_map<std::string, std::vector<Entry>> idle_;
+  std::chrono::steady_clock::time_point last_sweep_ =
+      std::chrono::steady_clock::now();
+};
+
+// Identifies connections that are interchangeable: same transport endpoint and
+// same proxy. Anything that changes the socket's peer, or the way the request
+// travels to it, has to be part of the key. The proxy *mode* matters as much as
+// its address: a tunnelled (CONNECT) socket carries the request to the origin
+// server while a non-tunnelled one carries it to the proxy itself, and the
+// proxy protocol, credentials and bypass pattern decide how the connection is
+// established. Handing a session opened under one mode to a request configured
+// for another would silently apply the first mode (the proxy configuration of a
+// pooled session is not reapplied). ClickHouse's own `HTTPConnectionPool` keys
+// on the same discriminators.
+//
+// The proxy password is part of the credentials Poco keeps in the session and
+// replays for `Proxy-Authorization` and `CONNECT`, so it discriminates too:
+// without it, rotating only the secret would keep reusing a socket that was
+// authenticated with the previous one. It enters the key as a hash rather than
+// verbatim, so the pool does not hold a second plaintext copy of the secret for
+// the lifetime of the session.
+//
+// The keep-alive policy discriminates as well. Poco refuses to change it once a
+// session is connected (the peer's own `Keep-Alive` header may lower it from then
+// on), so it can only be applied when a session is opened. Keying on it makes a
+// pooled session carry the policy of the client that borrows it, rather than the
+// policy of whichever client happened to open it.
+//
+// The TLS trust configuration discriminates too: an HTTPS session verifies its
+// peer with the SSL context it was opened with (`SslContextFor`), so a socket
+// opened under one CA bundle must not be handed to a request that configured
+// another one. The key uses the same `ca_location` and trust store fingerprint
+// that `SslContextFor` keys on, so a session opened before a CA bundle rotation
+// is not reused afterwards. A session opened with a context ClickHouse supplied
+// (`PocoRestSslContextProviderOption`) is keyed on that context instead.
+//
+// So does the ClickHouse connection group a session is registered in
+// (`PocoRestSessionAccountingOption`): the registration stays with the session
+// while it is pooled, so a request accounted in another group, or not accounted
+// at all, borrowing it would escape the limits of its own group.
+std::string SessionKey(
+    Poco::URI const& uri,
+    Poco::Net::HTTPClientSession::ProxyConfig const& proxy,
+    ::ClickHouse::PocoRestKeepAliveOption::Type const& keep_alive,
+    std::string const& ca_location,
+    std::string const& trust_store_fingerprint,
+    std::string const& accounting_key) {
+  return uri.getScheme() + "://" + uri.getHost() + ":" +
+         std::to_string(uri.getPort()) + "|" + proxy.host + ":" +
+         std::to_string(proxy.port) + "|" + proxy.protocol + "|" +
+         (proxy.tunnel ? "tunnel" : "direct") + "|" +
+         proxy.originalRequestProtocol + "|" + proxy.username + "|" +
+         std::to_string(std::hash<std::string>{}(proxy.password)) + "|" +
+         proxy.nonProxyHosts + "|" +
+         std::to_string(keep_alive.timeout.count()) + ":" +
+         std::to_string(keep_alive.max_requests) + "|" + ca_location + "|" +
+         trust_store_fingerprint + "|" + accounting_key;
+}
+
+// Where a session goes back to, and under which limit. Both are decided by the
+// request that took the session out, and travel with it, so returning a session
+// never consults -- or mutates -- state shared with another endpoint.
+struct SessionPoolTicket {
+  std::string key;
+  std::size_t max_per_endpoint = kDefaultMaxSessionsPerEndpoint;
+  // The proxy this request travels through, so a failure can be reported back to
+  // the resolver that handed it out (`PocoRestProxyErrorReportOption`).
+  Poco::Net::HTTPClientSession::ProxyConfig proxy;
+};
+
+// Returns a connected-or-connectable session for `uri`, reusing a pooled one when
+// the endpoint and proxy match. `ticket` is set to the pool key and the retained
+// idle session limit of this request, so the caller can hand the session back
+// once the response body has been consumed.
+AccountedSession MakeSession(
+    Poco::URI const& uri, Options const& options, SessionPoolTicket* ticket) {
+  // The proxy has to be resolved before the pool is consulted: it decides which
+  // peer the socket is actually connected to, so it is part of the pool key. The
+  // provider is called exactly once per request, as before.
+  bool proxy_from_provider = false;
+  Poco::Net::HTTPClientSession::ProxyConfig provider_proxy;
+  if (options.has<::ClickHouse::PocoRestProxyConfigProviderOption>()) {
+    auto const& provider =
+        options.get<::ClickHouse::PocoRestProxyConfigProviderOption>();
+    if (provider) {
+      proxy_from_provider = true;
+      provider_proxy = provider();
+    }
+  }
+  // The proxy configuration the session ends up with, in the exact shape Poco
+  // applies it. It is both what a freshly created session is configured with
+  // below and what the pool key is derived from, so a pooled session is only
+  // ever reused by a request whose proxy behaves the same way.
+  Poco::Net::HTTPClientSession::ProxyConfig effective_proxy;
+  if (proxy_from_provider) {
+    effective_proxy = provider_proxy;
+  } else if (options.has<ProxyOption>()) {
     auto const& proxy = options.get<ProxyOption>();
     if (!proxy.hostname().empty()) {
-      // ProxyConfig defaults the scheme to "https"; default the port to match
-      // the configured scheme instead of always assuming the plain-HTTP port,
-      // matching the `scheme://host[:port]` proxy URL used by the libcurl-based
-      // transport.
-      Poco::UInt16 port = proxy.scheme() == "https"
-                              ? Poco::Net::HTTPSClientSession::HTTPS_PORT
-                              : Poco::Net::HTTPSession::HTTP_PORT;
+      effective_proxy.host = proxy.hostname();
+      // The upstream ProxyConfig defaults the scheme to "https". Carry it into
+      // the Poco proxy protocol (so an `https` proxy is reached over TLS) and
+      // default the port to match it, as the `scheme://host[:port]` proxy URL of
+      // the libcurl-based transport does. Requests are tunneled with CONNECT,
+      // like libcurl does for an HTTPS target.
+      effective_proxy.protocol = proxy.scheme() == "https" ? "https" : "http";
+      effective_proxy.tunnel = true;
+      effective_proxy.originalRequestProtocol =
+          uri.getScheme() == "https" ? "https" : "http";
+      effective_proxy.port = proxy.scheme() == "https"
+                                 ? Poco::Net::HTTPSClientSession::HTTPS_PORT
+                                 : Poco::Net::HTTPSession::HTTP_PORT;
       if (!proxy.port().empty()) {
-        port = static_cast<Poco::UInt16>(std::stoi(proxy.port()));
+        effective_proxy.port = static_cast<Poco::UInt16>(std::stoi(proxy.port()));
       }
-      session->setProxy(proxy.hostname(), port);
-      if (!proxy.username().empty()) {
-        session->setProxyCredentials(proxy.username(), proxy.password());
-      }
+      effective_proxy.username = proxy.username();
+      effective_proxy.password = proxy.password();
     }
   }
+  // A host matching the no-proxy pattern is connected to directly, exactly as
+  // `HTTPClientSession::bypassProxy` decides. The session is then not configured
+  // with the proxy at all, so neither the pool key nor a failure report refers
+  // to a proxy this request does not travel through.
+  if (!effective_proxy.host.empty() && !effective_proxy.nonProxyHosts.empty() &&
+      Poco::RegularExpression::match(uri.getHost(), effective_proxy.nonProxyHosts,
+                                     Poco::RegularExpression::RE_CASELESS |
+                                         Poco::RegularExpression::RE_ANCHORED)) {
+    effective_proxy = {};
+  }
+  if (effective_proxy.host.empty()) effective_proxy = {};
+
+  // An HTTPS request through a plain HTTP proxy without tunnelling goes to the
+  // proxy as a plain HTTP request in absolute form, and the proxy makes the
+  // HTTPS request itself, as `HTTPConnectionPool` does for the same configuration
+  // (`disable_tunneling_for_https_requests_over_http_proxy`). A TLS session would
+  // instead try to establish TLS with the proxy.
+  bool const secure =
+      uri.getScheme() == "https" &&
+      !(!effective_proxy.host.empty() && effective_proxy.protocol == "http" &&
+        !effective_proxy.tunnel);
+
+  ::ClickHouse::PocoRestKeepAliveOption::Type keep_alive;
+  if (options.has<::ClickHouse::PocoRestKeepAliveOption>()) {
+    keep_alive = options.get<::ClickHouse::PocoRestKeepAliveOption>();
+  }
+
+  // A TLS context supplied by ClickHouse (`PocoRestSslContextProviderOption`)
+  // replaces the one the transport would build from `CARootsFilePathOption`.
+  // Only HTTPS sessions verify a peer, so only they depend on it.
+  Poco::Net::Context::Ptr ssl_context;
+  if (secure && options.has<::ClickHouse::PocoRestSslContextProviderOption>()) {
+    auto const& provider =
+        options.get<::ClickHouse::PocoRestSslContextProviderOption>();
+    if (provider) ssl_context = provider();
+  }
+
+  std::string ca_location;
+  if (options.has<CARootsFilePathOption>()) {
+    ca_location = options.get<CARootsFilePathOption>();
+  }
+
+  // The trust store fingerprint discriminates the sessions of a context the
+  // transport builds itself. A supplied context is identified by its address
+  // instead: a pooled session holds a reference to its context, so the address
+  // cannot be reused by another context while such a session exists.
+  std::string trust_store_fingerprint;
+  if (ssl_context) {
+    std::ostringstream identity;
+    identity << "context@" << static_cast<void const*>(ssl_context.get());
+    trust_store_fingerprint = identity.str();
+  } else if (secure) {
+    trust_store_fingerprint = TrustStoreFingerprint(ca_location);
+  }
+  ::ClickHouse::PocoRestSessionAccountingOption::Type accounting;
+  if (options.has<::ClickHouse::PocoRestSessionAccountingOption>()) {
+    accounting = options.get<::ClickHouse::PocoRestSessionAccountingOption>();
+  }
+  std::string const accounting_key =
+      accounting.factory ? "accounted:" + accounting.group : "unaccounted";
+
+  auto const key = SessionKey(uri, effective_proxy, keep_alive, ca_location,
+                              trust_store_fingerprint, accounting_key);
+  if (ticket != nullptr) {
+    ticket->key = key;
+    ticket->proxy = effective_proxy;
+    if (options.has<ConnectionPoolSizeOption>()) {
+      ticket->max_per_endpoint = options.get<ConnectionPoolSizeOption>();
+    }
+  }
+
+  // A pooled session already points at this endpoint through this proxy, under
+  // this keep-alive policy and these trust roots -- all are in the key -- so
+  // only a fresh one needs constructing and configuring.
+  ::ClickHouse::PocoRestSessionStaleCheckOption::Type stale_check;
+  if (options.has<::ClickHouse::PocoRestSessionStaleCheckOption>()) {
+    stale_check = options.get<::ClickHouse::PocoRestSessionStaleCheckOption>();
+  }
+  auto accounted = SessionPool::Instance().Acquire(key, stale_check);
+  auto& session = accounted.session;
+  if (!session) {
+    if (secure) {
+      session = std::make_unique<Poco::Net::HTTPSClientSession>(
+          uri.getHost(), uri.getPort(),
+          ssl_context ? ssl_context
+                      : SslContextFor(ca_location, trust_store_fingerprint));
+    } else {
+      session = std::make_unique<Poco::Net::HTTPClientSession>(uri.getHost(),
+                                                               uri.getPort());
+    }
+    // Registered before it ever connects, so the connection limits of its
+    // ClickHouse connection group apply to it (`PocoRestSessionAccountingOption`).
+    // This throws when the group's hard limit is reached, and the request then
+    // fails without connecting.
+    if (accounting.factory) {
+      accounted.registration = accounting.factory(*session);
+    }
+    // A per-request proxy resolved by ClickHouse wins over the fixed upstream
+    // ProxyOption: it already carries everything Poco needs (including tunneling
+    // and the no-proxy host pattern), and it can change between two requests of
+    // the same client. Both were resolved above, before the pool lookup.
+    // The session is configured with exactly the ProxyConfig the pool key was
+    // derived from, so the proxy mode of the socket cannot drift from the key.
+    if (!effective_proxy.host.empty()) {
+      session->setProxyConfig(effective_proxy);
+    }
+    // The keep-alive policy an operator configured (`http_keep_alive_timeout` /
+    // `http_keep_alive_max_requests`). Poco enforces both itself -- it counts the
+    // requests a session served and reconnects when either bound is reached --
+    // and the pool consults the same verdict (`isKeepAliveExpired`) before
+    // retaining or handing out a session. Poco throws when either is set on a
+    // connected session, so they cannot be reapplied to a pooled one; the pool key
+    // makes that unnecessary.
+    if (keep_alive.timeout.count() > 0) {
+      session->setKeepAliveTimeout(Poco::Timespan(
+          static_cast<Poco::Timespan::TimeDiff>(keep_alive.timeout.count()), 0));
+    }
+    if (keep_alive.max_requests > 0) {
+      session->setKeepAliveMaxRequests(
+          static_cast<int>(keep_alive.max_requests));
+    }
+  }
+
+  // Applied to pooled sessions too: the timeouts come from the options of the
+  // client making *this* request, which need not be the one that opened the
+  // connection.
   auto timeout = Poco::Timespan(RequestTimeout(options).count(), 0);
-  session->setTimeout(/*connectionTimeout=*/Poco::Timespan(30, 0),
+  auto connection_timeout = Poco::Timespan(kDefaultConnectTimeout.count(), 0);
+  if (options.has<::ClickHouse::PocoRestConnectTimeoutOption>()) {
+    auto const v = options.get<::ClickHouse::PocoRestConnectTimeoutOption>();
+    if (v.count() > 0) {
+      connection_timeout = Poco::Timespan(
+          static_cast<Poco::Timespan::TimeDiff>(v.count()) * 1000);
+    }
+  }
+  session->setTimeout(connection_timeout,
                       /*sendTimeout=*/timeout, /*receiveTimeout=*/timeout);
-  return session;
+  // Without this Poco sends `Connection: Close` and the peer tears the socket
+  // down after one response, which would make the pool useless.
+  session->setKeepAlive(true);
+  return accounted;
 }
 
 // Streams the response body. Owns the session to keep the connection (and the
 // std::istream obtained from it) alive until the payload is consumed.
 class PocoHttpPayload : public HttpPayload {
  public:
-  PocoHttpPayload(std::unique_ptr<Poco::Net::HTTPClientSession> session,
+  PocoHttpPayload(AccountedSession session,
                   std::unique_ptr<Poco::Net::HTTPResponse> response,
-                  std::istream* body)
+                  std::istream* body, SessionPoolTicket ticket)
       : session_(std::move(session)),
         response_(std::move(response)),
-        body_(body) {}
+        body_(body),
+        ticket_(std::move(ticket)) {}
+
+  // The session goes back to the pool only when this response was read to the
+  // end and both sides agreed to keep the connection: a socket with unread body
+  // bytes still buffered would desynchronise whichever request picked it up next.
+  // Whether that holds is not always known by the time the body is dropped --
+  // see FinishForReuse.
+  //
+  // A destructor is implicitly `noexcept`, so the whole reuse decision runs
+  // inside one `try`: it reads response headers supplied by the peer (e.g. a
+  // malformed `Content-Length` on a `204 No Content`, whose body Poco never
+  // parses and the SDK never reads), and any of those accesses may throw. When
+  // anything throws, the session is not returned to the pool and is destroyed
+  // with the payload, which closes its connection.
+  ~PocoHttpPayload() override {
+    if (!session_.session) return;
+    try {
+      if (!CanReuseSession()) return;
+      // The IO scheduling hooks belong to the request that installed them
+      // (`PocoRestSessionHooksOption`), not to whoever borrows the session next.
+      session_.session->setSendDataHooks();
+      session_.session->setReceiveDataHooks();
+    } catch (...) {
+      return;
+    }
+    SessionPool::Instance().Release(ticket_.key, std::move(session_),
+                                    ticket_.max_per_endpoint);
+  }
 
   bool HasUnreadData() const override { return !finished_; }
 
@@ -200,29 +836,104 @@ class PocoHttpPayload : public HttpPayload {
     try {
       body_->read(buffer.data(), static_cast<std::streamsize>(buffer.size()));
       auto count = static_cast<std::size_t>(body_->gcount());
+      bytes_read_ += count;
       if (body_->eof() || count == 0) finished_ = true;
       if (body_->bad()) {
+        failed_ = true;
         return Status(StatusCode::kUnavailable, "error reading response body");
       }
       return count;
     } catch (Poco::Exception const& e) {
+      failed_ = true;
       return Status(StatusCode::kUnavailable,
                     "error reading response body: " + e.displayText());
     }
   }
 
  private:
-  std::unique_ptr<Poco::Net::HTTPClientSession> session_;
+  // Decide whether this session can still be pooled, for the two recoverable cases where the body
+  // was dropped without `Read` having marked the payload finished. Both need a known
+  // `Content-Length`: a chunked or unknown-length response cannot be reasoned about and is left
+  // alone, and knowing the length up front means the cost below is known rather than discovered by
+  // blocking on the network.
+  //
+  // The first case is a body consumed exactly to its end. `Read` only sets `finished_` once the
+  // stream reports `eof`, which takes one read past the last byte, and a bounded reader never
+  // issues it: `ReadBufferFromGCS::nextImpl` returns as soon as it holds the bytes up to
+  // `read_until_position`. Nothing is left unread on the socket, so the session is reusable as is.
+  // This is the ordinary shape of a `MergeTree` read, and it is what decides whether connections
+  // get reused at all -- treating it as unreusable closes a connection per ranged read.
+  //
+  // The second is a read the caller abandoned partway because it seeked elsewhere. Reading the
+  // tail out makes the session reusable, and while the tail is short that costs less than the DNS
+  // lookup, TCP connect and TLS handshake a replacement connection would pay. The budget keeps
+  // that trade honest: a long tail is not worth transferring, so the socket is closed instead.
+  //
+  // Anything unexpected leaves `finished_` false, which means "do not reuse" -- the conservative
+  // direction.
+  //
+  // Called only from the destructor, inside its `try`: it may throw (header parsing, reading the
+  // body), and an exception means "do not reuse".
+  void FinishForReuse() {
+    // Roughly the transfer time of a TLS handshake's round trip on an intra-region link. Above
+    // this, reconnecting is the cheaper of the two.
+    static constexpr std::uint64_t kMaxDrainBytes = 128 * 1024;
+
+    if (!response_) return;
+    auto const content_length = response_->getContentLength64();
+    // `UNKNOWN_CONTENT_LENGTH` (-1), or a negative value the peer sent.
+    if (content_length < 0) return;
+    auto const total = static_cast<std::uint64_t>(content_length);
+
+    if (bytes_read_ >= total) {
+      finished_ = true;
+      return;
+    }
+
+    auto remaining = total - bytes_read_;
+    if (remaining > kMaxDrainBytes) return;
+
+    char scratch[16 * 1024];
+    while (remaining > 0) {
+      auto const want = static_cast<std::streamsize>(
+          std::min<std::uint64_t>(remaining, sizeof(scratch)));
+      body_->read(scratch, want);
+      auto const count = static_cast<std::uint64_t>(body_->gcount());
+      if (count == 0 || body_->bad()) return;
+      remaining -= count;
+    }
+    finished_ = true;
+  }
+
+  // Whether the session may go back to the pool: the response was read to its end (possibly by
+  // `FinishForReuse`) without an error, and both sides agreed to keep the connection. May throw;
+  // the caller treats an exception as "do not reuse".
+  bool CanReuseSession() {
+    if (failed_) return false;
+    if (!finished_) FinishForReuse();
+    if (!finished_) return false;
+    // Poco reads the socket in blocks, so the bytes of an unsolicited response
+    // the peer sent right after this one (e.g. a `408 Request Timeout` before
+    // closing) may already sit in the session buffer, where a socket probe cannot
+    // see them; the next request would parse them as its own response.
+    if (session_.session->buffered() > 0) return false;
+    return response_ && response_->getKeepAlive();
+  }
+
+  AccountedSession session_;
   std::unique_ptr<Poco::Net::HTTPResponse> response_;
   std::istream* body_;
+  SessionPoolTicket ticket_;
+  std::uint64_t bytes_read_ = 0;
   bool finished_ = false;
+  bool failed_ = false;
 };
 
 class PocoRestResponse : public RestResponse {
  public:
-  PocoRestResponse(std::unique_ptr<Poco::Net::HTTPClientSession> session,
+  PocoRestResponse(AccountedSession session,
                    std::unique_ptr<Poco::Net::HTTPResponse> response,
-                   std::istream* body) {
+                   std::istream* body, SessionPoolTicket ticket) {
     status_code_ = static_cast<HttpStatusCode>(response->getStatus());
     for (auto const& header : *response) {
       auto name = header.first;
@@ -230,8 +941,8 @@ class PocoRestResponse : public RestResponse {
                      [](unsigned char c) { return std::tolower(c); });
       headers_.emplace(std::move(name), header.second);
     }
-    payload_ = std::make_unique<PocoHttpPayload>(std::move(session),
-                                                 std::move(response), body);
+    payload_ = std::make_unique<PocoHttpPayload>(
+        std::move(session), std::move(response), body, std::move(ticket));
   }
 
   HttpStatusCode StatusCode() const override { return status_code_; }
@@ -254,6 +965,55 @@ class PocoRestClient : public RestClient {
  public:
   PocoRestClient(std::string endpoint, Options options)
       : endpoint_(std::move(endpoint)), options_(std::move(options)) {
+    // A ClickHouse-supplied "authorized user" refresh-token triple wins over the unified credentials:
+    // it is set only when ClickHouse selected that authentication mode explicitly, and it is the only
+    // one of the two that renews itself. `Decorate` adds the SDK's token cache on top, so the refresh
+    // token is exchanged once per access-token lifetime rather than once per request.
+    if (options_.has<::ClickHouse::PocoRestAuthorizedUserOption>()) {
+      auto const& user = options_.get<::ClickHouse::PocoRestAuthorizedUserOption>();
+      oauth2_internal::AuthorizedUserCredentialsInfo info;
+      info.client_id = user.client_id;
+      info.client_secret = user.client_secret;
+      info.refresh_token = user.refresh_token;
+      info.token_uri = user.token_uri.empty()
+                           ? oauth2_internal::GoogleOAuthRefreshEndpoint()
+                           : user.token_uri;
+      // The credential's own token requests go through a REST client built from these options, so the
+      // option has to be cleared from them: otherwise that client would construct the very same
+      // credential and recurse without bound. The token endpoint needs no `Authorization` header
+      // anyway -- the refresh token travels in the request's form body, and the unified credentials
+      // left in place are the anonymous ones this mode pairs the option with.
+      //
+      // The per-request headers go too: they were configured for the storage endpoint, and the token
+      // endpoint is a different service that has no reason to receive them. The timeouts and CA
+      // bundle are deliberately kept -- the exchange travels the same network. So is the proxy, unless
+      // a separate one was resolved for the scheme of the token endpoint.
+      auto credential_options = options_;
+      credential_options.unset<::ClickHouse::PocoRestAuthorizedUserOption>();
+      credential_options.unset<CustomHeadersOption>();
+      credential_options.unset<::ClickHouse::PocoRestRequestThrottleOption>();
+      // The token endpoint was vetted on its own when the client was configured
+      // (Google's default one deliberately is not), so the URL check of the
+      // storage requests does not apply to it.
+      credential_options.unset<::ClickHouse::PocoRestUrlCheckOption>();
+      if (credential_options.has<::ClickHouse::PocoRestTokenProxyConfigProviderOption>()) {
+        credential_options.set<::ClickHouse::PocoRestProxyConfigProviderOption>(
+            credential_options.get<::ClickHouse::PocoRestTokenProxyConfigProviderOption>());
+        credential_options.unset<::ClickHouse::PocoRestTokenProxyConfigProviderOption>();
+      }
+      if (credential_options.has<::ClickHouse::PocoRestTokenProxyErrorReportOption>()) {
+        credential_options.set<::ClickHouse::PocoRestProxyErrorReportOption>(
+            credential_options.get<::ClickHouse::PocoRestTokenProxyErrorReportOption>());
+        credential_options.unset<::ClickHouse::PocoRestTokenProxyErrorReportOption>();
+      }
+      credentials_ = oauth2_internal::Decorate(
+          std::make_shared<oauth2_internal::AuthorizedUserCredentials>(
+              std::move(info), credential_options,
+              [](Options const& o) { return MakeDefaultRestClient("", o); }),
+          credential_options);
+      return;
+    }
+
     // Map the unified credentials to an OAuth 2.0 credential so an
     // `Authorization` header can be added to every request, matching the
     // libcurl-based transport. This is required for token-exchange and
@@ -348,12 +1108,43 @@ class PocoRestClient : public RestClient {
                                  options.get<CurlFollowLocationOption>();
 
     auto url = ComposeUrl(endpoint_, request, options);
+    // The proxy the last attempt was sent through. A failure of that attempt is
+    // reported back to whoever resolved it, so a cached dead proxy is dropped
+    // instead of being retried until its TTL expires -- the same thing the S3
+    // transport does with `PocoHTTPClientConfiguration::error_report`.
+    Poco::Net::HTTPClientSession::ProxyConfig used_proxy;
+    auto report_proxy_error = [&] {
+      if (used_proxy.host.empty()) return;
+      if (!options.has<::ClickHouse::PocoRestProxyErrorReportOption>()) return;
+      auto const& error_report =
+          options.get<::ClickHouse::PocoRestProxyErrorReportOption>();
+      if (error_report) error_report(used_proxy);
+    };
     try {
       for (int redirect = 0; redirect != kMaxRedirects; ++redirect) {
+        // Every URL is checked, not only the endpoint the client was built
+        // with: a redirect target or a session URL handed out by the server
+        // (the `Location` of a resumable upload) can point at any host.
+        if (options.has<::ClickHouse::PocoRestUrlCheckOption>()) {
+          auto const& url_check =
+              options.get<::ClickHouse::PocoRestUrlCheckOption>();
+          if (url_check) {
+            auto reason = url_check(url);
+            if (!reason.empty()) {
+              return Status(StatusCode::kPermissionDenied, std::move(reason));
+            }
+          }
+        }
         auto response = MakeSingleRequest(context, request, method, payload,
-                                          url, options, auth_header);
+                                          url, options, auth_header,
+                                          &used_proxy);
         auto const status_code =
             static_cast<std::int32_t>(response->StatusCode());
+        // A server-side error can equally well come from the proxy in front of
+        // the server, which is why the S3 transport reports those too.
+        if (status_code >= HttpStatusCode::kMinInternalErrors) {
+          report_proxy_error();
+        }
         if (!follow_location ||
             status_code < HttpStatusCode::kMinRedirects ||
             status_code >= HttpStatusCode::kMinRequestErrors ||
@@ -368,14 +1159,22 @@ class PocoRestClient : public RestClient {
         }
         // Resolve relative Location values against the current URL, as libcurl
         // does, so e.g. "Location: /new-path" keeps the current scheme and host.
-        url = Poco::URI(Poco::URI(url), location->second).toString();
+        // Both sides are parsed with URL encoding disabled so that the merge
+        // preserves every escape sequence verbatim (see `MakeSingleRequest`);
+        // `Poco::URI(base, relative)` would instead re-parse the relative
+        // reference with decoding enabled.
+        Poco::URI resolved(url, /*enable_url_encoding=*/false);
+        resolved.resolve(Poco::URI(location->second, /*enable_url_encoding=*/false));
+        url = resolved.toString();
       }
       return Status(StatusCode::kUnavailable,
                     "too many redirects requesting " + url);
     } catch (Poco::TimeoutException const& e) {
+      report_proxy_error();
       return Status(StatusCode::kDeadlineExceeded,
                     "request to " + url + " timed out: " + e.displayText());
     } catch (Poco::Exception const& e) {
+      report_proxy_error();
       return Status(StatusCode::kUnavailable,
                     "request to " + url + " failed: " + e.displayText());
     }
@@ -386,9 +1185,29 @@ class PocoRestClient : public RestClient {
       std::string const& method,
       std::vector<absl::Span<char const>> const& payload,
       std::string const& url, Options const& options,
-      std::pair<std::string, std::string> const& auth_header) const {
-    Poco::URI uri(url);
-    auto session = MakeSession(uri, options);
+      std::pair<std::string, std::string> const& auth_header,
+      Poco::Net::HTTPClientSession::ProxyConfig* used_proxy) const {
+    // The URL is already fully percent-encoded by the storage layer, so parse it
+    // with ClickHouse's `enable_url_encoding = false` extension: by default
+    // `Poco::URI` percent-*decodes* the path when it parses a URL and re-encodes
+    // it with a reserved set that does not contain '/', so the round trip turns a
+    // "%2F" back into a path separator. GCS object names routinely contain
+    // slashes and are addressed in the request path
+    // (".../o/mergetree%2Frsp%2Fabc"), while an upload carries the name in the
+    // query string instead: the round trip therefore silently reads, heads and
+    // deletes a *different*, non-existent resource while writes keep working.
+    Poco::URI uri(url, /*enable_url_encoding=*/false);
+    // Throttle before borrowing a session, so that a request waiting for the
+    // throttler does not keep a pooled keep-alive connection idle meanwhile.
+    if (options.has<::ClickHouse::PocoRestRequestThrottleOption>()) {
+      auto const& throttle =
+          options.get<::ClickHouse::PocoRestRequestThrottleOption>();
+      if (throttle) throttle(method);
+    }
+    SessionPoolTicket ticket;
+    auto accounted = MakeSession(uri, options, &ticket);
+    auto& session = accounted.session;
+    if (used_proxy != nullptr) *used_proxy = ticket.proxy;
 
     auto path = uri.getPathAndQuery();
     if (path.empty()) path = "/";
@@ -399,6 +1218,14 @@ class PocoRestClient : public RestClient {
       if (!authority.empty()) http_request.set("Host", authority);
     }
     http_request.set("User-Agent", UserAgent(options));
+    // Headers configured for every request of this client. They are added before
+    // the authorization header and before the per-request headers, so neither can
+    // be shadowed by a custom header.
+    if (options.has<CustomHeadersOption>()) {
+      for (auto const& header : options.get<CustomHeadersOption>()) {
+        if (!header.second.empty()) http_request.add(header.first, header.second);
+      }
+    }
     if (!auth_header.first.empty()) {
       http_request.set(auth_header.first, auth_header.second);
     }
@@ -450,7 +1277,22 @@ class PocoRestClient : public RestClient {
       }
     }
 
+    if (options.has<::ClickHouse::PocoRestRequestObserverOption>()) {
+      auto const& observer =
+          options.get<::ClickHouse::PocoRestRequestObserverOption>();
+      if (observer) observer(method, path);
+    }
+
+    if (options.has<::ClickHouse::PocoRestSessionHooksOption>()) {
+      auto const& hooks = options.get<::ClickHouse::PocoRestSessionHooksOption>();
+      if (hooks) hooks(*session, http_request);
+    }
+
     auto& body_stream = session->sendRequest(http_request);
+    // `sendRequest` has (re)connected the session if it had to, so the socket
+    // options of its connection group can be applied to the socket now, before
+    // the response is received.
+    if (accounted.registration) accounted.registration->onConnected(*session);
     if (encode_form) {
       body_stream.write(encoded_body.data(),
                         static_cast<std::streamsize>(encoded_body.size()));
@@ -475,7 +1317,8 @@ class PocoRestClient : public RestClient {
     }
 
     return std::make_unique<PocoRestResponse>(
-        std::move(session), std::move(http_response), &response_stream);
+        std::move(accounted), std::move(http_response), &response_stream,
+        std::move(ticket));
   }
 
   std::string endpoint_;
@@ -505,12 +1348,8 @@ std::unique_ptr<RestClient> MakeDefaultRestClient(std::string endpoint_address,
                                           std::move(options));
 }
 
-// Poco::Net::HTTPClientSession is not thread-safe and a streaming response
-// keeps its session alive until the payload is fully consumed, so connections
-// are not pooled here: each request creates a fresh session. ConnectionPoolSizeOption
-// is therefore intentionally ignored. This trades some connection-reuse
-// throughput for a simpler, correct transport; a Poco-backed pool can be added
-// later if GCS request rates make it worthwhile.
+// Both entry points share the same client: `MakeSession` already reuses idle
+// keep-alive sessions through `SessionPool`, sized by ConnectionPoolSizeOption.
 std::unique_ptr<RestClient> MakePooledRestClient(std::string endpoint_address,
                                                  Options options) {
   return MakeDefaultRestClient(std::move(endpoint_address),
@@ -521,3 +1360,11 @@ GOOGLE_CLOUD_CPP_INLINE_NAMESPACE_END
 }  // namespace rest_internal
 }  // namespace cloud
 }  // namespace google
+
+namespace ClickHouse {
+
+void dropPocoRestIdleSessions() {
+  google::cloud::rest_internal::SessionPool::Instance().Clear();
+}
+
+}  // namespace ClickHouse
