@@ -47,7 +47,7 @@ void StreamInQueryResultCacheTransform::finalizeWriteInQueryResultCache()
 {
     if (!isCancelled())
         query_result_cache_writer->finalizeWrite();
-    
+
     if (herd_token_holder)
         herd_token_holder->release();
 }

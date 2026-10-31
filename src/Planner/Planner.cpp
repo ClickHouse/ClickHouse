@@ -3028,8 +3028,8 @@ void Planner::buildPlanForQueryNode()
                     herd_wait_process_list_elem->throwIfKilled();
 
                 if (query_result_cache->isHerdExecutor(herd_key, query_context->getCurrentQueryId()))
-                    break;    
-                
+                    break;
+
                 if (tryAddReadFromQueryResultCacheStep(
                         query_plan, ast, query_context, settings, *settings_copy, query_result_cache, query_result_cache_on_disk))
                     return;
