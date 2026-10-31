@@ -78,6 +78,7 @@ namespace Setting
     extern const SettingsBool allow_key_condition_coalesce_rewrite;
     extern const SettingsBool analyze_index_with_multiple_key_columns_per_condition;
     extern const SettingsBool analyze_index_with_space_filling_curves;
+    extern const SettingsBool cast_fixed_string_to_string_strip_trailing_zeros;
     extern const SettingsDateTimeOverflowBehavior date_time_overflow_behavior;
     extern const SettingsTimezone session_timezone;
     extern const SettingsBool validate_enum_literals_in_operators;
@@ -4589,7 +4590,23 @@ bool KeyCondition::tryMatchKeyColumnThroughMonotonicChain(
             continue;
         }
 
-        auto func_builder = FunctionFactory::instance().tryGet(function.getFunctionName(), node.getContext());
+        /// Other functions, such as `toString`, capture the conversion mode from the scope where they were built, such as
+        /// a subquery with its own `SETTINGS`, which may differ from the context of the read. Rebuild them with that mode.
+        ContextPtr function_context = node.getContext();
+        if (dag_node && dag_node->function_base)
+        {
+            if (auto strip_trailing_zeros = getFixedStringToStringStripTrailingZeros(*dag_node->function_base);
+                strip_trailing_zeros
+                && (!function_context
+                    || function_context->getSettingsRef()[Setting::cast_fixed_string_to_string_strip_trailing_zeros] != *strip_trailing_zeros))
+            {
+                auto context_copy = Context::createCopy(function_context ? function_context : Context::getGlobalContextInstance());
+                context_copy->setSetting("cast_fixed_string_to_string_strip_trailing_zeros", Field(*strip_trailing_zeros));
+                function_context = std::move(context_copy);
+            }
+        }
+
+        auto func_builder = FunctionFactory::instance().tryGet(function.getFunctionName(), function_context);
         if (!func_builder)
             return false;
         ColumnsWithTypeAndName arguments;
