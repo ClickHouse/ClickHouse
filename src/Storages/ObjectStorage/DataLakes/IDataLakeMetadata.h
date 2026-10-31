@@ -127,6 +127,8 @@ public:
     /// or nullopt if absent/unsupported. The write path commits it atomically with the appended data.
     virtual std::optional<String> getRefreshCursor(ContextPtr) const { return std::nullopt; }
 
+    virtual std::optional<UUID> getTableUUID() const { return std::nullopt; }
+
     virtual void modifyFormatSettings(FormatSettings &, const Context &) const {}
 
     static bool supportsTotalRows(ContextPtr, ObjectStorageType) { return false; }

@@ -128,6 +128,8 @@ public:
 
     std::optional<String> getRefreshCursor(ContextPtr local_context) const override;
 
+    std::optional<UUID> getTableUUID() const override;
+
     IcebergHistory getHistory(ContextPtr local_context) const;
     IcebergMetadataLogEntries getMetadataLogEntries(ContextPtr local_context) const;
 
