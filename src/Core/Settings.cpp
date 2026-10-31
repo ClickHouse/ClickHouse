@@ -8525,7 +8525,7 @@ Possible values:
 )", 0) \
     \
     DECLARE(LocalFSReadMethod, storage_file_read_method, LocalFSReadMethod::pread, R"(
-Method of reading data from storage file, one of: `read`, `pread`, `mmap`. The mmap method does not apply to clickhouse-server (it's intended for clickhouse-local).
+Method of reading data from storage file, one of: `read`, `pread`, `mmap`, `io_uring`. The mmap method does not apply to clickhouse-server (it's intended for clickhouse-local). With an enforcing `seccomp` mode, such as the `trap` of the shipped configuration, `io_uring` also needs the `seccomp_allow_io_uring` server setting.
 )", 0) \
     DECLARE(String, local_filesystem_read_method, "pread_threadpool", R"(
 Method of reading data from local filesystem, one of: read, pread, mmap, io_uring, pread_threadpool.
@@ -8534,6 +8534,7 @@ The 'pread_threadpool' method hands a read off to a thread pool, unless the data
 
 The 'io_uring' method is experimental and does not work for Log, TinyLog, StripeLog, File, Set and Join, and other tables with append-able files in presence of concurrent reads and writes.
 If you read various articles about 'io_uring' on the Internet, don't be blinded by them. It is not a better method of reading files, unless the case of a large amount of small IO requests, which is not the case in ClickHouse. There are no reasons to enable 'io_uring'.
+With an enforcing `seccomp` mode, such as the `trap` of the shipped configuration, 'io_uring' also needs the `seccomp_allow_io_uring` server setting.
 )", 0) \
     DECLARE(String, remote_filesystem_read_method, "threadpool", R"(
 Method of reading data from remote filesystem, one of: read, threadpool.
