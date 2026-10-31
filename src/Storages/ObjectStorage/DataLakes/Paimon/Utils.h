@@ -9,6 +9,7 @@
 #include <Poco/JSON/Parser.h>
 #include <Common/Exception.h>
 
+class DateLUTImpl;
 
 namespace DB
 {
@@ -72,6 +73,17 @@ public:
 };
 DB::Row getPartitionFields(const String & partition, const PaimonTableSchema & table_schema);
 String getBucketPath(const String & partition, Int32 bucket, const PaimonTableSchema & table_schema, const String & partition_default_name);
+
+/// Java `Float.toString` / `Double.toString`.
+String formatJavaFloat(Float32 x);
+String formatJavaDouble(Float64 x);
+/// Paimon `StringUtils.isNullOrWhitespaceOnly`, with Java `Character.isWhitespace` over the code points.
+bool isNullOrWhitespaceOnly(std::string_view value);
+/// Paimon `DateTimeUtils` cast-to-string formatters, used for partition names when `partition.legacy-name` is false.
+String formatDateCastToString(Int32 epoch_day);
+String formatTimeCastToString(Int32 millis_of_day, UInt32 precision);
+String formatTimestampCastToString(const Paimon::Timestamp & timestamp, UInt32 precision, const DateLUTImpl & time_zone);
+
 String concatPath(std::initializer_list<String> paths);
 void checkPathIsRelativeToTable(const String & path, std::string_view kind);
 

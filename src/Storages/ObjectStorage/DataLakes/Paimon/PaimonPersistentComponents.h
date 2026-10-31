@@ -41,9 +41,6 @@ struct PaimonPersistentComponents
     /// or live on different storage backends never collide in cache.
     const String table_cache_key_prefix;
 
-    /// Optional: partition default value from table options
-    const String partition_default_name;
-
     /// Whether incremental read is enabled
     const bool incremental_read_enabled;
 
@@ -62,7 +59,6 @@ struct PaimonPersistentComponents
         String table_location_,
         String table_path_,
         String table_cache_key_prefix_,
-        String partition_default_name_ = "__DEFAULT_PARTITION__",
         bool incremental_read_enabled_ = false,
         Int64 metadata_refresh_interval_sec_ = 0,
         Int64 schema0_time_millis_ = 0)
@@ -72,7 +68,6 @@ struct PaimonPersistentComponents
         , table_location(std::move(table_location_))
         , table_path(std::move(table_path_))
         , table_cache_key_prefix(std::move(table_cache_key_prefix_))
-        , partition_default_name(std::move(partition_default_name_))
         , incremental_read_enabled(incremental_read_enabled_)
         , metadata_refresh_interval_sec(metadata_refresh_interval_sec_)
         , schema0_time_millis(schema0_time_millis_)
