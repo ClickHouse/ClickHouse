@@ -205,6 +205,14 @@ boost::intrusive_ptr<ASTLiteral> ConstantNode::getCachedAST(const F &ast_generat
     return make_intrusive<ASTLiteral>(*cached_ast);
 }
 
+bool ConstantNode::valueRequiresCastCall() const
+{
+    /// Elements without a common type (a mixed-type array, with `use_variant_as_common_type`) get a `Variant`
+    /// instead of an exception; otherwise the type is the same as without it.
+    auto field_type = applyVisitor(FieldToDataType<LeastSupertypeOnError::Variant>(), getValue());
+    return requiresCastCall(field_type, getResultType());
+}
+
 ASTPtr ConstantNode::toASTImpl(const ConvertToASTOptions & options) const
 {
     static const auto from_column = [](const ConstantNode &node){ return make_intrusive<ASTLiteral>(getFieldFromColumnForASTLiteral(node.constant_value.getColumn(), 0, node.constant_value.getType(), /*date_time_as_numbers=*/true)); };
@@ -247,22 +255,7 @@ ASTPtr ConstantNode::toASTImpl(const ConvertToASTOptions & options) const
     // Constant folding may lead to type transformation and literal on shard
     // may have a different type.
 
-    auto requires_cast = [this]()
-    {
-        try
-        {
-            auto field_type = applyVisitor(FieldToDataType(), getValue());
-            return requiresCastCall(field_type, getResultType());
-        }
-        catch (...)
-        {
-            /// FieldToDataType may throw for complex cases like mixed-type arrays.
-            /// If we can't determine the natural type, a cast is needed.
-            return true;
-        }
-    };
-
-    if (source_expression != nullptr || requires_cast())
+    if (source_expression != nullptr || valueRequiresCastCall())
     {
         /// For some types we cannot just get a field from a column, because it can loose type information during serialization/deserialization of the literal.
         /// For example, DateTime64 will return Field with Decimal64 and we won't be able to parse it to DateTine64 back in some cases.
