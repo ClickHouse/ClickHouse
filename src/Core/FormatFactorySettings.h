@@ -1998,6 +1998,12 @@ Read a Parquet group that has no `VARIANT` logical type, but has the layout of a
 Allow to write information about geo columns in parquet metadata and encode columns in WKB format.
 )", 0, \
         {"25.7", false, true, "A new setting to allow to write information about geo columns in parquet metadata and encode columns in WKB format."}) \
+    DECLARE(Bool, output_format_parquet_auto_assign_field_ids, false, R"(
+When enabled, every output column and every nested field (`Array` `element`, `Map` `key`/`value`, `Tuple` subfields) is assigned a unique Parquet `field_id` automatically: sequential, starting at 1, in schema DFS order, matching the convention used by Apache Iceberg writers. Iceberg identifies columns by `field_id` rather than by name.
+
+Disabled by default so that existing Parquet output is unchanged. Ignored when writing to a data lake table that provides its own column-id mapping (e.g. Iceberg): the table metadata is the source of truth for `field_id`s.
+)", 0, \
+        {"26.11", false, false, "New setting to auto-assign sequential Parquet `field_id`s to every output column, Iceberg-style."}) \
     DECLARE(Bool, output_format_parquet_geometry_logical_type, false, R"(
 Annotate geo columns written as WKB (see `output_format_parquet_geometadata`) with the Parquet `GEOMETRY` logical type, and write `GeospatialStatistics` (bounding box and geometry types) for them instead of min/max statistics. Readers that support the logical type recognize such columns as geometries even without the GeoParquet `geo` metadata. Has no effect if `output_format_parquet_geometadata` is disabled. A `Geometry` column is also described in the GeoParquet `geo` metadata, with an empty list of geometry types. If disabled, these columns are written as `BYTE_ARRAY` without a geospatial annotation and with min/max statistics, and a `Geometry` column is not described in the `geo` metadata. Disabled by default because readers that do not know this logical type (e.g. Arrow C++ and `pyarrow` before version 20) cannot open the whole file.
 )", 0, \

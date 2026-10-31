@@ -447,6 +447,9 @@ struct FormatSettings
         bool write_geometry_logical_type = false;
         bool write_file_logical_type = false;
         size_t max_dictionary_size = 1024 * 1024;
+        /// When true, every output column and nested field is assigned a unique, sequential
+        /// Parquet `field_id` starting from 1 (Iceberg-style).
+        bool auto_assign_field_ids = false;
     } parquet{};
 
     struct Pretty

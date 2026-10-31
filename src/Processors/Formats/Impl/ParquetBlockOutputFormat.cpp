@@ -6,9 +6,15 @@
 #include <Common/setThreadName.h>
 #include <Common/ThreadGroupSwitcher.h>
 #include <Columns/IColumn.h>
+#include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeMap.h>
+#include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeTuple.h>
 #include <Formats/FormatFactory.h>
 #include <IO/WriteBufferFromVector.h>
 #include <Processors/Port.h>
+
 
 
 namespace CurrentMetrics
@@ -27,6 +33,89 @@ namespace ErrorCodes
 }
 
 using namespace Parquet;
+
+namespace ErrorCodes
+{
+    extern const int BAD_ARGUMENTS;
+}
+
+namespace
+{
+
+/// Enumerate, in the same DFS order that `prepareColumnRecursive` visits them, the dotted
+/// `field_id`-bearing paths under a column named `name` of type `type`. `Nullable` and
+/// `LowCardinality` wrappers don't add a path segment; `Array` adds `.element`, `Map` adds
+/// `.key` / `.value`, and `Tuple` adds the subfield names.
+void enumerateFieldPaths(const String & name, const DataTypePtr & type, std::vector<String> & out)
+{
+    out.push_back(name);
+
+    DataTypePtr inner = type;
+    while (true)
+    {
+        if (const auto * nullable_type = typeid_cast<const DataTypeNullable *>(inner.get()))
+        {
+            inner = nullable_type->getNestedType();
+            continue;
+        }
+        if (const auto * lc_type = typeid_cast<const DataTypeLowCardinality *>(inner.get()))
+        {
+            inner = lc_type->getDictionaryType();
+            continue;
+        }
+        break;
+    }
+
+    if (const auto * array_type = typeid_cast<const DataTypeArray *>(inner.get()))
+    {
+        enumerateFieldPaths(name + ".element", array_type->getNestedType(), out);
+    }
+    else if (const auto * tuple_type = typeid_cast<const DataTypeTuple *>(inner.get()))
+    {
+        for (size_t i = 0; i < tuple_type->getElements().size(); ++i)
+            enumerateFieldPaths(name + "." + tuple_type->getNameByPosition(i + 1), tuple_type->getElement(i), out);
+    }
+    else if (const auto * map_type = typeid_cast<const DataTypeMap *>(inner.get()))
+    {
+        enumerateFieldPaths(name + ".key", map_type->getKeyType(), out);
+        enumerateFieldPaths(name + ".value", map_type->getValueType(), out);
+    }
+}
+
+/// Assigns sequential `field_id`s, starting at 1, to every Parquet schema path of the header
+/// (top-level columns and nested fields) in schema DFS order, as Iceberg writers do.
+std::unordered_map<String, Int64> autoAssignFieldIds(const Block & header, bool write_geometadata)
+{
+    std::vector<String> all_paths;
+    for (const auto & col : header)
+    {
+        /// A geo column collapses to a single WKB `String` field when GeoParquet output is on,
+        /// so the schema has only the top-level path.
+        if (write_geometadata && isGeoColumnWrittenAsWKBScalar(col.type))
+            all_paths.push_back(col.name);
+        else
+            enumerateFieldPaths(col.name, col.type, all_paths);
+    }
+
+    /// Paths are identified by dotted strings, so a top-level column literally named `a.b` and the
+    /// subfield `b` of `a Tuple(b ...)` flatten to the same key and cannot get distinct ids.
+    std::unordered_map<String, Int64> result;
+    result.reserve(all_paths.size());
+    Int64 next_id = 1;
+    for (const auto & path : all_paths)
+    {
+        if (!result.emplace(path, next_id).second)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "Cannot assign Parquet field ids (output_format_parquet_auto_assign_field_ids): "
+                "two output columns or nested fields flatten to the same dotted path '{}'. "
+                "Rename the conflicting column or nested subfield.",
+                path);
+        ++next_id;
+    }
+    return result;
+}
+
+}
 
 ParquetBlockOutputFormat::ParquetBlockOutputFormat(WriteBuffer & out_, SharedHeader header_, const FormatSettings & format_settings_, FormatFilterInfoPtr format_filter_info_)
     : IOutputFormat(header_, out_), format_settings{format_settings_}, format_filter_info(format_filter_info_)
@@ -69,6 +158,7 @@ ParquetBlockOutputFormat::ParquetBlockOutputFormat(WriteBuffer & out_, SharedHea
     options.max_dictionary_size = format_settings.parquet.max_dictionary_size;
     options.use_dictionary_encoding = options.max_dictionary_size > 0;
 
+    std::optional<std::unordered_map<String, Int64>> column_field_ids;
     if (format_filter_info_ && format_filter_info_->column_mapper)
     {
         /// The mapper outlives this format (and the encoder threads) via format_filter_info.
@@ -76,16 +166,19 @@ ParquetBlockOutputFormat::ParquetBlockOutputFormat(WriteBuffer & out_, SharedHea
         /// max definition level from the schema, while the writer takes the level bit width from the
         /// state the data path builds, so the two would desynchronize.
         iceberg_optionality.mapper = format_filter_info_->column_mapper.get();
-        /// `convertSchema` reads an empty encoding map as "every field id is missing", not "no field ids".
+        /// A data lake table's metadata is the source of truth for field ids, so it takes precedence
+        /// over `output_format_parquet_auto_assign_field_ids`. A mapper does not always carry field ids
+        /// (e.g. `DeltaLake` provides one only for its local-timestamp paths), and `convertSchema` reads
+        /// an empty encoding map as "every field id is missing", not "no field ids".
         const auto & column_encoding = format_filter_info_->column_mapper->getStorageColumnEncoding();
-        schema = convertSchema(
-            *header_,
-            options,
-            column_encoding.empty() ? std::nullopt : std::optional(column_encoding),
-            iceberg_optionality);
+        if (!column_encoding.empty())
+            column_field_ids = column_encoding;
     }
-    else
-        schema = convertSchema(*header_, options, std::nullopt, iceberg_optionality);
+
+    if (!column_field_ids && format_settings.parquet.auto_assign_field_ids)
+        column_field_ids = autoAssignFieldIds(*header_, format_settings.parquet.write_geometadata);
+
+    schema = convertSchema(*header_, options, column_field_ids, iceberg_optionality);
 }
 
 ParquetBlockOutputFormat::~ParquetBlockOutputFormat()

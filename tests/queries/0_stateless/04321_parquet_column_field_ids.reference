@@ -1,0 +1,37 @@
+== auto-assign ==
+1	hello	42
+== default (no settings) ==
+1	hello	42
+== nested auto-assign ==
+[1,2,3]	('hi',7)	{'k':1}
+== iceberg ==
+1	(2,'y')	b
+== field_ids: auto-assign ==
+a	1
+b	2
+c	3
+== field_ids: default (no settings) ==
+a	-
+b	-
+c	-
+== field_ids: nested auto-assign ==
+a	1
+a.element	2
+b	3
+b.s	4
+b.i	5
+c	6
+c.key	7
+c.value	8
+== field_ids: geo auto-assign (Point as WKB) ==
+point	1
+== field_ids: geo auto-assign (MultiPoint as WKB) ==
+mp	1
+== field_ids: iceberg ==
+a	1
+t	2
+t.x	4
+t.y	5
+b	3
+== error: dotted top-level name collides with nested path ==
+BAD_ARGUMENTS
