@@ -1,4 +1,4 @@
--- Tags: no-random-settings, no-random-merge-tree-settings
+-- Tags: no-random-settings, no-random-merge-tree-settings, no-msan
 -- no-random-settings, no-random-merge-tree-settings: EXPLAIN output may differ with random settings.
 -- Disable implicit `basic` statistics: this test asserts key-condition pruning, not statistics pruning.
 
