@@ -141,6 +141,16 @@ bool ReadFromObjectStorageStep::supportsTopKDynamicFilter(const ColumnWithTypeAn
     return !info.columns_description.hasDefault(sort_column.name);
 }
 
+bool ReadFromObjectStorageStep::supportsMinMaxFromStatistics() const
+{
+    /// In a data lake, deletes and schema evolution decide which rows of a data file the table holds and what its
+    /// columns are, so the file's statistics do not describe them.
+    return boost::iequals(configuration->format, "Parquet") && !need_only_count
+        && !configuration->isDataLakeConfiguration() && !configuration->isArchive()
+        && !filter_actions_dag && !query_info.prewhere_info && !query_info.row_level_filter
+        && info.formatReturnsColumnsUnchanged(*getOutputHeader());
+}
+
 void ReadFromObjectStorageStep::updatePrewhereInfo(const PrewhereInfoPtr & prewhere_info_value)
 {
     info = updateFormatPrewhereInfo(info, prewhere_info_value);
@@ -194,6 +204,7 @@ void ReadFromObjectStorageStep::initializePipeline(QueryPipelineBuilder & pipeli
     format_filter_info->need_row_numbers = lazy_row_index_registry != nullptr
         || VirtualColumnUtils::hasRowDependentVirtualColumns(info.requested_virtual_columns);
     format_filter_info->top_k_filter = top_k_filter;
+    format_filter_info->min_max_from_statistics = read_min_max_from_statistics && supportsMinMaxFromStatistics();
     auto top_k_query_condition_cache_key = makeTopKQueryConditionCacheKey();
     if (top_k_query_condition_cache_key)
     {

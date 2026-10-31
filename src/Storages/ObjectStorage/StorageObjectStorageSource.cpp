@@ -1215,7 +1215,8 @@ Chunk StorageObjectStorageSource::generate()
         if (reader.getInputFormat() && read_context->getSettingsRef()[Setting::use_cache_for_count_from_files]
             && !format_filter_info->hasFilter()
             && !hasAttachedDeletes(*reader.getObjectInfo())
-            && !reader.getObjectInfo()->rows_to_read)
+            && !reader.getObjectInfo()->rows_to_read
+            && !reader.getInputFormat()->isMinMaxFromStatisticsApplied())
             addNumRowsToCache(*reader.getObjectInfo(), total_rows_in_file);
 
         total_rows_in_file = 0;

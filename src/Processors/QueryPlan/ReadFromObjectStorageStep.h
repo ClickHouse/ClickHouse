@@ -60,6 +60,9 @@ public:
     /// threshold of the TopN filter, so the read must neither consult nor write the TopK cache entries.
     void disableTopKQueryConditionCache() { allow_top_k_query_condition_cache = false; }
 
+    bool supportsMinMaxFromStatistics() const override;
+    void setMinMaxFromStatistics() override { read_min_max_from_statistics = true; }
+
     void initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override;
     QueryPlanStepPtr clone() const override;
 #if CLICKHOUSE_CLOUD
@@ -117,6 +120,7 @@ private:
     const size_t max_num_streams;
     const bool distributed_processing;
     std::shared_ptr<const FormatTopKFilterInfo> top_k_filter;
+    bool read_min_max_from_statistics = false;
     bool allow_top_k_query_condition_cache = true;
 #if CLICKHOUSE_CLOUD
     /// This is set when this step is part of a distributed query plan and it will be executed in a distributed manner.

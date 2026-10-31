@@ -371,6 +371,22 @@ bool ReadFromFormatInfo::formatReadsHivePartitionColumns() const
     return false;
 }
 
+bool ReadFromFormatInfo::formatReturnsColumnsUnchanged(const Block & header) const
+{
+    if (formatReadsHivePartitionColumns())
+        return false;
+
+    /// Virtual columns are appended after the read, and a `DEFAULT` column is recomputed for the values the format
+    /// reports as missing.
+    for (const auto & column : header)
+    {
+        const auto * format_column = format_header.findByName(column.name);
+        if (!format_column || !format_column->type->equals(*column.type) || columns_description.hasDefault(column.name))
+            return false;
+    }
+    return true;
+}
+
 namespace
 {
 
