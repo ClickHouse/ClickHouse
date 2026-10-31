@@ -1403,6 +1403,41 @@ create table queries engine File(TSVWithNamesAndTypes, 'report/queries.tsv')
     order by test, query_index, metric_name
     ;
 
+-- Hardware counters of the profile runs, which perf.py does for the queries it
+-- sees changed. The measured runs keep `metrics_perf_events_enabled` off,
+-- because the counters add overhead and noise to the timings. Instructions
+-- that stay the same while cycles grow point at stalls or contention (memory,
+-- alignment, frequency) rather than at a change in the executed code.
+create view profile_run_counters as
+    select test, query_index, version,
+        sum(ProfileEvents['PerfInstructions']) / uniqExact(query_id) instructions,
+        sum(ProfileEvents['PerfCPUCycles']) / uniqExact(query_id) cycles
+    from file('analyze/query-profiles.tsv', TSV,
+        'test text, query_index int, query_id text, version UInt8, time float') query_profiles
+    join (
+        select 0 version, query_id, ProfileEvents
+            from file('left-query-log.tsv', TSVWithNamesAndTypes)
+            where type = 'QueryFinish' and query_id like '%.profile%'
+        union all
+        select 1 version, query_id, ProfileEvents
+            from file('right-query-log.tsv', TSVWithNamesAndTypes)
+            where type = 'QueryFinish' and query_id like '%.profile%'
+    ) profile_query_log using (version, query_id)
+    group by test, query_index, version
+    ;
+
+-- The ratios are NULL when the query was not profiled (the profiling time
+-- budget ran out) or the counters are unavailable on the runner.
+create view profile_counters as
+    select test, query_index,
+        nullIf(anyIf(instructions, version = 0), 0) left_instructions,
+        nullIf(anyIf(instructions, version = 1), 0) right_instructions,
+        nullIf(anyIf(cycles, version = 0), 0) left_cycles,
+        nullIf(anyIf(cycles, version = 1), 0) right_cycles
+    from profile_run_counters
+    group by test, query_index
+    ;
+
 create table changed_perf_report engine File(TSV, 'report/changed-perf.tsv')
     as with
         -- server_time is sometimes reported as zero (if it's less than 1 ms),
@@ -1417,8 +1452,14 @@ create table changed_perf_report engine File(TSV, 'report/changed-perf.tsv')
     select
         round(left, 3), round(right, 3), times_change_str,
         round(diff, 3), round(stat_threshold, 3),
+        ifNull(toString(round(right_instructions / left_instructions, 2)), ''),
+        ifNull(toString(round(right_cycles / left_cycles, 2)), ''),
+        ifNull(toString(round(left_instructions / left_cycles, 2)), ''),
+        ifNull(toString(round(right_instructions / right_cycles, 2)), ''),
         changed_fail, test, query_index, query_display_name
-    from queries where changed_show order by abs(diff) desc;
+    from queries
+    left join profile_counters using (test, query_index)
+    where changed_show order by abs(diff) desc;
 
 -- Flagged changes that did not reproduce on the confirmation rerun. They no
 -- longer fail the check (changed_fail was demoted above), but are reported
