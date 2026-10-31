@@ -4,6 +4,7 @@
 #if USE_AZURE_BLOB_STORAGE
 
 #include <Disks/IO/ReadBufferFromRemoteFSGather.h>
+#include <Disks/IO/ReadBufferFromAzureBlobStorage.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
 #include <Common/BlobStorageLogWriter.h>
 #include <Common/MultiVersion.h>
@@ -26,6 +27,7 @@ class AzureObjectStorage : public IObjectStorage
 public:
     using ClientPtr = std::unique_ptr<AzureBlobStorage::ContainerClient>;
     using SettingsPtr = std::unique_ptr<AzureBlobStorage::RequestSettings>;
+    using AzureCredentialsRefreshCallback = AzureBlobStorage::ConnectionParamsRefreshCallback;
 
     AzureObjectStorage(
         const String & name_,
@@ -34,7 +36,8 @@ public:
         const AzureBlobStorage::ConnectionParams & connection_params_,
         const String & object_namespace_,
         const String & description_,
-        const String & common_key_prefix_);
+        const String & common_key_prefix_,
+        AzureCredentialsRefreshCallback credentials_refresh_callback_ = {});
 
     void listObjects(const std::string & path, RelativePathsWithMetadata & children, size_t max_keys) const override;
 
@@ -131,6 +134,9 @@ public:
 
     bool supportParallelWrite() const override { return true; }
 
+    bool tryRefreshCredentialsViaCallback() override;
+    bool hasCredentialsRefreshCallback() const override { return static_cast<bool>(credentials_refresh_callback); }
+
     /// A block blob becomes visible only on the commit of its block list. The `ADLS Gen2` (OneLake) path creates
     /// the destination file first and then appends to it, which is not atomic.
     bool supportsAtomicWrite() const override;
@@ -156,17 +162,23 @@ private:
         BlobStorageLogWriterPtr blob_storage_log,
         StoredObjects * successful_objects = nullptr);
 
+    /// Advances `rest_objects` past each fully-deleted batch, so a caller can resume after refreshing credentials.
     void removeObjectsBatchIfExists(
-        const StoredObjects & objects,
+        StoredObjectsSpan & rest_objects,
         const std::shared_ptr<const AzureBlobStorage::ContainerClient> & client_ptr,
         BlobStorageLogWriterPtr blob_storage_log,
         StoredObjects * successful_objects = nullptr);
 
     std::unique_ptr<Azure::Storage::Files::DataLake::DataLakeFileClient> buildDataLakeFileClient(const String & blob_path) const;
 
+    bool tryRefreshClient(const Azure::Core::RequestFailedException & e) const;
+
+    std::optional<Azure::Storage::Files::DataLake::DataLakeFileClient>
+    tryRefreshDataLakeFileClient(const Azure::Core::RequestFailedException & e, const String & blob_path) const;
+
     const String name;
-    /// client used to access the files in the Blob Storage cloud
-    MultiVersion<AzureBlobStorage::ContainerClient> client;
+    /// Client used to access the files in the Blob Storage cloud.
+    mutable MultiVersion<AzureBlobStorage::ContainerClient> client;
     MultiVersion<AzureBlobStorage::RequestSettings> settings;
     const String object_namespace; /// container + prefix
 
@@ -195,6 +207,8 @@ private:
     };
     mutable std::mutex client_inputs_mutex;
     std::optional<ClientInputs> client_inputs TSA_GUARDED_BY(client_inputs_mutex);
+
+    const AzureCredentialsRefreshCallback credentials_refresh_callback;
 
     LoggerPtr log;
 };

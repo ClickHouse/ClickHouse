@@ -786,7 +786,8 @@ SinkToStoragePtr DeltaLakeMetadataDeltaKernel::write(
     auto write_kernel_helper = kernel_helper;
     if (catalog && object_storage_->hasCredentialsRefreshCallback())
     {
-        if (auto write_credentials_callback = catalog->getWriteCredentialsConfigurationCallback(table_id))
+        const auto storage_type = toDataLakeStorageType(configuration->getType());
+        if (auto write_credentials_callback = catalog->getWriteCredentialsConfigurationCallback(table_id, storage_type))
         {
             write_object_storage = configuration->createObjectStorage(context, /* is_readonly */ false, write_credentials_callback);
             if (!write_object_storage->tryRefreshCredentialsViaCallback())

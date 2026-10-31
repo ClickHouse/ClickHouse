@@ -786,7 +786,6 @@ std::shared_ptr<IStorageCredentials> UnityV2Catalog::parseAzureCredentials(const
     return std::make_shared<AzureCredentials>(creds_object->get("sas_token").extract<String>());
 }
 
-/// Only S3 refreshes credentials: `StorageAzureConfiguration::createObjectStorage` discards the callback.
 ICatalog::CredentialsRefreshCallback UnityV2Catalog::getCredentialsConfigurationCallback(
     const DB::StorageID & table_id, const TableMetadata & table_metadata)
 {
@@ -813,11 +812,12 @@ ICatalog::CredentialsRefreshCallback UnityV2Catalog::getCredentialsConfiguration
             "Cannot build a Unity credentials refresh callback for `{}`: the catalog returned no table_id",
             table_id.getNameForLogs());
 
-    return getDeltaCredentialsCallback(*table_uuid, "READ");
+    return getDeltaCredentialsCallback(*table_uuid, table_metadata.getStorageType(), "READ");
 }
 
 /// `StorageID::uuid` of a `DataLakeCatalog` table is the `table_id` returned by Unity.
-ICatalog::CredentialsRefreshCallback UnityV2Catalog::getWriteCredentialsConfigurationCallback(const DB::StorageID & table_id)
+ICatalog::CredentialsRefreshCallback UnityV2Catalog::getWriteCredentialsConfigurationCallback(
+    const DB::StorageID & table_id, StorageType storage_type)
 {
     if (table_id.uuid == DB::UUIDHelpers::Nil)
         throw DB::Exception(
@@ -825,17 +825,26 @@ ICatalog::CredentialsRefreshCallback UnityV2Catalog::getWriteCredentialsConfigur
             "Cannot build a Unity credentials refresh callback for `{}`: the table has no UUID",
             table_id.getNameForLogs());
 
-    return getDeltaCredentialsCallback(DB::toString(table_id.uuid), "READ_WRITE");
+    return getDeltaCredentialsCallback(DB::toString(table_id.uuid), storage_type, "READ_WRITE");
 }
 
-ICatalog::CredentialsRefreshCallback UnityV2Catalog::getDeltaCredentialsCallback(const std::string & unity_table_id, const std::string & operation)
+ICatalog::CredentialsRefreshCallback UnityV2Catalog::getDeltaCredentialsCallback(
+    const std::string & unity_table_id, StorageType storage_type, const std::string & operation)
 {
-    return [this, unity_table_id, operation]() -> std::shared_ptr<IStorageCredentials>
+    return [this, unity_table_id, storage_type, operation]() -> std::shared_ptr<IStorageCredentials>
     {
         LOG_DEBUG(log, "Update {} credentials in the catalog", operation);
 
-        return getDeltaCredentials(unity_table_id, StorageType::S3, operation);
+        return getDeltaCredentials(unity_table_id, storage_type, operation);
     };
+}
+
+void UnityV2Catalog::setVendedCredentialsCacheTTL(std::chrono::seconds ttl)
+{
+    std::lock_guard lock(token_mutex);
+    vended_credentials_cache_ttl = ttl;
+    if (iceberg_rest_catalog)
+        iceberg_rest_catalog->setVendedCredentialsCacheTTL(ttl);
 }
 
 std::shared_ptr<RestCatalog> UnityV2Catalog::getIcebergRestCatalog(bool force_refresh) const
@@ -880,6 +889,7 @@ std::shared_ptr<RestCatalog> UnityV2Catalog::getIcebergRestCatalog(bool force_re
         getContext());
 
     std::lock_guard lock(token_mutex);
+    catalog->setVendedCredentialsCacheTTL(vended_credentials_cache_ttl);
     /// A concurrent refresh may have replaced the token meanwhile; a catalog built on the old one must not be cached.
     if (auth_header || (access_token && access_token->token == token))
         iceberg_rest_catalog = catalog;
