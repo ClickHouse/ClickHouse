@@ -104,8 +104,10 @@ void CachedCompressedReadBuffer::seek(size_t offset_in_compressed_file, size_t o
             nextimpl_working_buffer_offset == offset_in_decompressed_block))
         return;
 
+    /// Guarded subtraction, so that a corrupt mark near `SIZE_MAX` cannot alias `file_pos` through a wrapped sum.
     if (owned_cell &&
-        offset_in_compressed_file == file_pos - owned_cell->compressed_size &&
+        offset_in_compressed_file <= file_pos &&
+        file_pos - offset_in_compressed_file == owned_cell->compressed_size &&
         offset_in_decompressed_block <= working_buffer.size())
     {
         pos = working_buffer.begin() + offset_in_decompressed_block;

@@ -150,8 +150,9 @@ UInt64 hornerMod(const T & num, UInt64 modulus)
 {
     static_assert(std::is_same_v<T, UInt128> || std::is_same_v<T, UInt256>);
     UInt64 remainder = 0;
-    for (size_t i = std::size(num.items); i-- > 0;)
+    for (size_t i = std::size(num.items); i > 0;)
     {
+        --i;
         __uint128_t accumulator = (static_cast<__uint128_t>(remainder) << 64) | num.items[i];
         remainder = static_cast<UInt64>(accumulator % modulus);
     }

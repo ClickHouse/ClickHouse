@@ -6,6 +6,7 @@
 #include <Columns/ColumnSparse.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
+#include <base/arithmeticOverflow.h>
 #include <Common/Arena.h>
 #include <Common/CurrentThread.h>
 #include <Common/MemoryTrackerSwitcher.h>
@@ -98,7 +99,7 @@ ALWAYS_INLINE inline UInt64 bucketHash(UInt128 x)
 ///   of the set.
 ALWAYS_INLINE inline UInt64 slotHash(UInt64 x)
 {
-    return x * 0x9E3779B97F4A7C15ULL;
+    return common::mulIgnoreOverflow(x, 0x9E3779B97F4A7C15ULL); /// Modulo 2^64 by design.
 }
 
 ALWAYS_INLINE inline UInt64 slotHash(UInt32 x)

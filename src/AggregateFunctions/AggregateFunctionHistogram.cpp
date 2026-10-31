@@ -26,6 +26,7 @@
 #include <queue>
 #include <cmath>
 #include <cstddef>
+#include <base/sanitizer_defs.h>
 
 
 namespace DB
@@ -117,6 +118,7 @@ private:
     /**
      * Repeatedly fuse most close values until max_bins bins left
      */
+    NO_SANITIZE_UNSIGNED_OVERFLOW
     void compress(UInt32 max_bins)
     {
         auto cmp = [](const WeightedValue & a, const WeightedValue & b){ return a.mean < b.mean; };

@@ -5,6 +5,8 @@
 
 #include <roaring/roaring.hh>
 
+#include <limits>
+
 namespace DB
 {
 
@@ -32,8 +34,19 @@ static const char * readContiguousBytes(ReadBuffer & in, size_t num_bytes, Padde
     return buffer.data();
 }
 
+/// Rounds the segment size up to a multiple of `BLOCK_SIZE`. A size too large to be rounded up within `size_t` means
+/// an unbounded segment anyway, so it is rounded down to the largest multiple instead of wrapping around to zero.
+static size_t roundUpSegmentSize(size_t segment_size)
+{
+    constexpr size_t block_size = IPostingListBlockCodec::BLOCK_SIZE;
+    constexpr size_t max_segment_size = std::numeric_limits<size_t>::max() / block_size * block_size;
+    if (segment_size > max_segment_size)
+        return max_segment_size;
+    return segment_size / block_size * block_size + (segment_size % block_size != 0 ? block_size : 0);
+}
+
 SegmentedPostingListCodec::SegmentedPostingListCodec(IPostingListCodec::Type block_codec_type_, size_t segment_size_)
-    : segment_size((segment_size_ + BLOCK_SIZE - 1) / BLOCK_SIZE * BLOCK_SIZE)
+    : segment_size(roundUpSegmentSize(segment_size_))
     , block_codec(createPostingListBlockCodec(block_codec_type_))
 {
     compressed_data.reserve(BLOCK_SIZE);
@@ -317,8 +330,12 @@ std::unique_ptr<IPostingListEncoder> PostingListCodecNone::createEncoder(size_t 
 /// Every container takes at most 2 bytes per value: arrays hold up to 4096 values of 2 bytes, bitsets take 8192 bytes
 /// for more values, and `runOptimize` turns them into runs only when the runs are smaller (see `finishSegment`).
 /// The header takes 8 bytes plus at most 9 bytes per container, and every container holds at least one value.
+/// `max_cardinality` also comes from disk, so the bound has to saturate: a wrapped product is a huge
+/// number again and would let any size prefix through the check this feeds.
 static UInt64 getMaxPortableBitmapBytes(UInt64 max_cardinality)
 {
+    if (max_cardinality > (std::numeric_limits<UInt64>::max() - 8) / 11)
+        return std::numeric_limits<UInt64>::max();
     return 8 + 11 * max_cardinality;
 }
 

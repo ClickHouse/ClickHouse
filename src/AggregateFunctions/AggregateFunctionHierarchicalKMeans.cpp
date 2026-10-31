@@ -1,3 +1,4 @@
+#include <base/sanitizer_defs.h>
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <Columns/ColumnArray.h>
@@ -589,7 +590,7 @@ using TaskList = VectorWithMemoryTracking<TrainTask>;
 /// splitmix64. Each node derives its seed from its parent's seed and its child index, so a node's RNG stream
 /// depends only on its position in the tree - never on the order nodes happen to be visited. That is what
 /// makes the parallel tree walk produce the same centroids as a serial one.
-UInt64 mixSeed(UInt64 seed, size_t child)
+UInt64 NO_SANITIZE_UNSIGNED_OVERFLOW mixSeed(UInt64 seed, size_t child)
 {
     UInt64 z = seed + 0x9E3779B97F4A7C15ULL * (static_cast<UInt64>(child) + 1);
     z = (z ^ (z >> 30)) * 0xBF58476D1CE4E5B9ULL;
@@ -1037,7 +1038,7 @@ public:
     {
         const auto & array = assert_cast<const ColumnArray &>(*columns[0]);
         const auto & offsets = array.getOffsets();
-        size_t start = row_num ? offsets[row_num - 1] : 0;
+        size_t start = row_num ? offsets[static_cast<ssize_t>(row_num) - 1] : 0;
         size_t length = offsets[row_num] - start;
 
         /// Read one coordinate as Float32, whatever width the column actually holds.

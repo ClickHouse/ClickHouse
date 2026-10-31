@@ -1,5 +1,7 @@
 #include <Common/Exception.h>
 #include <Storages/MergeTree/MergeTreeIndexGranularityConstant.h>
+#include <algorithm>
+#include <limits>
 
 namespace DB
 {
@@ -102,26 +104,24 @@ size_t MergeTreeIndexGranularityConstant::getRowsCountInRange(size_t begin, size
     if (end > getMarksCount())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Trying to get marks in range [{}; {}), while size is {}", begin, end, getMarksCount());
 
-    if (end == 0)
+    /// The final mark has no rows.
+    end = std::min(end, num_marks_without_final);
+    if (begin >= end)
         return 0;
 
-    size_t total_rows = 0;
-    if (end >= num_marks_without_final)
-    {
-        total_rows += last_mark_granularity;
-        end = num_marks_without_final - 1;
-    }
-
-    total_rows += constant_granularity * (end - begin);
-    return total_rows;
+    /// All marks before the last non-final one have constant granularity.
+    if (end == num_marks_without_final)
+        return constant_granularity * (end - 1 - begin) + last_mark_granularity;
+    return constant_granularity * (end - begin);
 }
 
 size_t MergeTreeIndexGranularityConstant::getMarkUpperBoundForRow(size_t row_index) const
 {
-    size_t num_rows_with_constant_granularity = (num_marks_without_final - 1) * constant_granularity;
-
     if (row_index >= getTotalRows())
         return getMarksCount();
+
+    /// Not empty here, so `num_marks_without_final - 1` does not wrap.
+    size_t num_rows_with_constant_granularity = (num_marks_without_final - 1) * constant_granularity;
 
     if (row_index >= num_rows_with_constant_granularity)
         return num_marks_without_final - 1;
@@ -129,18 +129,30 @@ size_t MergeTreeIndexGranularityConstant::getMarkUpperBoundForRow(size_t row_ind
     return row_index / constant_granularity;
 }
 
+namespace
+{
+
+size_t saturatingAdd(size_t a, size_t b)
+{
+    size_t res = 0;
+    if (__builtin_add_overflow(a, b, &res))
+        return std::numeric_limits<size_t>::max();
+    return res;
+}
+
+}
+
 size_t MergeTreeIndexGranularityConstant::countMarksForRows(size_t from_mark, size_t number_of_rows) const
 {
-    size_t rows_before_mark = getMarkStartingRow(from_mark);
-    size_t last_row_pos = rows_before_mark + number_of_rows;
+    /// Saturate: a caller asking for more rows than remain gets the marks up to the end of the part.
+    size_t last_row_pos = saturatingAdd(getMarkStartingRow(from_mark), number_of_rows);
 
     return getMarkUpperBoundForRow(last_row_pos) - from_mark;
 }
 
 size_t MergeTreeIndexGranularityConstant::countRowsForRows(size_t from_mark, size_t number_of_rows, size_t offset_in_rows) const
 {
-    size_t rows_before_mark = getMarkStartingRow(from_mark);
-    size_t last_row_pos = rows_before_mark + offset_in_rows + number_of_rows;
+    size_t last_row_pos = saturatingAdd(saturatingAdd(getMarkStartingRow(from_mark), offset_in_rows), number_of_rows);
 
     return getRowsCountInRange(from_mark, std::max(1UL, getMarkUpperBoundForRow(last_row_pos))) - offset_in_rows;
 }
@@ -151,9 +163,8 @@ void MergeTreeIndexGranularityConstant::fixFromRowsCount(size_t rows_count)
         return;
 
     /// Calculate the expected number of data marks for the given row count.
-    size_t expected_data_marks = (rows_count + constant_granularity - 1) / constant_granularity;
-    if (rows_count == 0)
-        expected_data_marks = 0;
+    /// Round up without `rows_count + constant_granularity - 1`, which wraps for a huge `index_granularity`.
+    size_t expected_data_marks = rows_count / constant_granularity + (rows_count % constant_granularity != 0);
 
     /// If we have more marks than expected data marks, the extra mark is a final mark.
     if (num_marks_without_final > expected_data_marks && !has_final_mark)

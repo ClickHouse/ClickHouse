@@ -296,6 +296,7 @@ bool checkIfRequestIncreaseMem(const Coordination::ZooKeeperRequestPtr & request
         /// But we don't know znode sizes at this point (is the Remove removing a small or big znode?),
         /// so can't do much better here. Maybe it would make sense to move this check to preprocessRequest,
         /// where we have access to the znode states.
+        /// The sizes are converted to `Int64` before the arithmetic, because `memory_delta` goes below zero.
         Int64 memory_delta = 0;
         for (const auto & sub_req : multi_req.requests)
         {
@@ -309,26 +310,26 @@ bool checkIfRequestIncreaseMem(const Coordination::ZooKeeperRequestPtr & request
                 case Coordination::OpNum::CreateIfNotExists: {
                     Coordination::ZooKeeperCreateRequest & create_req
                         = dynamic_cast<Coordination::ZooKeeperCreateRequest &>(*sub_zk_request);
-                    memory_delta += create_req.bytesSize();
+                    memory_delta += static_cast<Int64>(create_req.bytesSize());
                     break;
                 }
                 case Coordination::OpNum::Set: {
                     Coordination::ZooKeeperSetRequest & set_req = dynamic_cast<Coordination::ZooKeeperSetRequest &>(*sub_zk_request);
                     /// Only the data can grow the stored size; the path already exists.
-                    memory_delta += set_req.data.size();
+                    memory_delta += static_cast<Int64>(set_req.data.size());
                     break;
                 }
                 case Coordination::OpNum::Remove:
                 case Coordination::OpNum::TryRemove: {
                     Coordination::ZooKeeperRemoveRequest & remove_req
                         = dynamic_cast<Coordination::ZooKeeperRemoveRequest &>(*sub_zk_request);
-                    memory_delta -= remove_req.bytesSize();
+                    memory_delta -= static_cast<Int64>(remove_req.bytesSize());
                     break;
                 }
                 case Coordination::OpNum::RemoveRecursive: {
                     Coordination::ZooKeeperRemoveRecursiveRequest & remove_req
                         = dynamic_cast<Coordination::ZooKeeperRemoveRecursiveRequest &>(*sub_zk_request);
-                    memory_delta -= remove_req.bytesSize();
+                    memory_delta -= static_cast<Int64>(remove_req.bytesSize());
                     break;
                 }
                 default:

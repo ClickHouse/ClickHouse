@@ -810,9 +810,12 @@ Pipe ReadFromMergeTree::readFromPool(
     if (block_size.max_block_size_rows && !data.canUseAdaptiveGranularity())
     {
         size_t fixed_index_granularity = (*data_settings)[MergeTreeSetting::index_granularity];
+        /// Computed in `UInt128` so that a huge `min_marks_for_concurrent_read` does not wrap into a tiny task size.
+        const UInt128 block_rows = block_size.max_block_size_rows;
+        const UInt128 min_rows = static_cast<UInt128>(pool_settings.min_marks_for_concurrent_read) * fixed_index_granularity;
+        const UInt128 rounded_marks = (min_rows + block_rows - 1) / block_rows * block_rows / fixed_index_granularity;
         pool_settings.min_marks_for_concurrent_read
-            = (pool_settings.min_marks_for_concurrent_read * fixed_index_granularity + block_size.max_block_size_rows - 1)
-            / block_size.max_block_size_rows * block_size.max_block_size_rows / fixed_index_granularity;
+            = static_cast<size_t>(std::min<UInt128>(rounded_marks, std::numeric_limits<size_t>::max()));
     }
 
     bool all_parts_are_remote = true;
@@ -1976,10 +1979,12 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreams(
             The new info.min_marks_for_concurrent_read `info.min_marks_for_concurrent_read / increase_num_streams_ratio` should be larger than 8.
             https://github.com/ClickHouse/ClickHouse/pull/53867
             */
-            if ((info.sum_marks + info.min_marks_for_concurrent_read - 1) / info.min_marks_for_concurrent_read > parts_with_ranges.size())
+            /// The ceiling division is written without `sum_marks + min_marks_for_concurrent_read - 1`,
+            /// which overflows for huge `merge_tree_min_read_task_size`.
+            if (info.sum_marks / info.min_marks_for_concurrent_read + (info.sum_marks % info.min_marks_for_concurrent_read != 0) > parts_with_ranges.size())
             {
                 const size_t prev_num_streams = num_streams;
-                num_streams = (info.sum_marks + info.min_marks_for_concurrent_read - 1) / info.min_marks_for_concurrent_read;
+                num_streams = info.sum_marks / info.min_marks_for_concurrent_read + (info.sum_marks % info.min_marks_for_concurrent_read != 0);
                 const size_t increase_num_streams_ratio = std::min(prev_num_streams / num_streams, info.min_marks_for_concurrent_read / 8);
                 if (increase_num_streams_ratio > 1)
                 {
@@ -2131,7 +2136,7 @@ static ActionsDAG createProjection(const Block & header)
 static MarkRanges splitRangesToAvoidLargeReads(const MarkRanges & ranges, int direction, size_t rows_granularity, size_t max_block_size)
 {
     MarkRanges new_ranges;
-    const size_t max_marks_in_range = (max_block_size + rows_granularity - 1) / rows_granularity;
+    const size_t max_marks_in_range = max_block_size / rows_granularity + (max_block_size % rows_granularity != 0);
     size_t marks_in_range = 1;
 
     if (direction == 1)
@@ -2217,7 +2222,7 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsWithOrder(
         if (info.sum_marks / info.min_marks_for_concurrent_read < num_streams && parts_with_ranges.size() < num_streams)
         {
             num_streams = std::max(
-                (info.sum_marks + info.min_marks_for_concurrent_read - 1) / info.min_marks_for_concurrent_read, parts_with_ranges.size());
+                info.sum_marks / info.min_marks_for_concurrent_read + (info.sum_marks % info.min_marks_for_concurrent_read != 0), parts_with_ranges.size());
         }
     }
 
@@ -2311,7 +2316,7 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsWithOrder(
                 {
                     ranges_to_get_from_part = part.ranges;
 
-                    need_marks -= marks_in_part;
+                    need_marks -= std::min(need_marks, marks_in_part);
                     info.sum_marks_in_parts.pop_back();
                 }
                 else

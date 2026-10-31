@@ -3,6 +3,7 @@
 #include <Common/MemoryTracker.h>
 #include <Common/MemoryTrackerBlockerInThread.h>
 #include <Common/logger_useful.h>
+#include <base/arithmeticOverflow.h>
 #include <Common/Allocator.h>
 #include <Common/ElapsedTimeProfileEventIncrement.h>
 #include <Common/ProfileEvents.h>
@@ -45,6 +46,7 @@
 #include <Processors/Formats/Impl/Parquet/SchemaConverter.h>
 #include <Storages/SelectQueryInfo.h>
 #include <base/scope_guard.h>
+#include <base/sanitizer_defs.h>
 #include <Storages/MergeTree/ColumnsCache.h>
 #include <Storages/MergeTree/MergeTreeRangeReader.h>
 #include <Storages/MergeTree/MergeTreeSplitPrewhereIntoReadSteps.h>
@@ -350,6 +352,19 @@ std::shared_ptr<const FileFooter> Reader::readFileFooter(Prefetcher & prefetcher
         footer->metadata, footer->serialized.data(), footer->serialized.size(), footer->column_chunk_offsets);
     checkSchemaElementEnums(footer->metadata);
     return footer;
+}
+
+/// The length of the dictionary page of a column chunk with a declared `dictionary_page_offset`.
+static size_t getDictionaryPageLength(const parq::ColumnChunk & column_meta)
+{
+    /// We assume that the dictionary page is immediately followed by the first data page.
+    size_t dict_page_offset = size_t(column_meta.meta_data.dictionary_page_offset);
+    size_t data_page_offset = size_t(column_meta.meta_data.data_page_offset);
+    if (data_page_offset < dict_page_offset)
+        throw Exception(ErrorCodes::INCORRECT_DATA,
+            "Invalid Parquet metadata: the dictionary page offset {} of a column chunk is after its data page offset {}",
+            dict_page_offset, data_page_offset);
+    return data_page_offset - dict_page_offset;
 }
 
 void Reader::fixUpColumnChunk(parq::ColumnChunk & column, bool written_by_old_duckdb)
@@ -1641,9 +1656,8 @@ void Reader::initializePrefetches()
             size_t dict_page_length = 0;
             if (column.meta->meta_data.__isset.dictionary_page_offset)
             {
-                /// We assume that the dictionary page is immediately followed by the first data page.
                 size_t start = size_t(column.meta->meta_data.dictionary_page_offset);
-                dict_page_length = size_t(column.meta->meta_data.data_page_offset) - start;
+                dict_page_length = getDictionaryPageLength(*column.meta);
 
                 /// Dictionary filter. We only enable it if prepareBloomFilterCondition produced query
                 /// hashes for this column (use_bloom_filter), i.e. the condition has an equality/IN on
@@ -1753,6 +1767,10 @@ void Reader::initializePrefetches()
             if (column.served_from_cache)
                 continue;
 
+            if (size_t(column.meta->meta_data.total_compressed_size) < dict_page_length)
+                throw Exception(ErrorCodes::INCORRECT_DATA,
+                    "Invalid Parquet metadata: the dictionary page of a column chunk is longer than its total compressed size ({} > {})",
+                    dict_page_length, size_t(column.meta->meta_data.total_compressed_size));
             column.data_pages_bytes = size_t(column.meta->meta_data.total_compressed_size) - dict_page_length;
 
             /// Old versions of parquet-mr wrote incorrect total_compressed_size, see PARQUET-816.
@@ -1761,7 +1779,13 @@ void Reader::initializePrefetches()
             /// more pages to read, and we don't want to start reading a page inside these 100 bytes.
             size_t data_pages_extra_bytes = 0;
             if (file_metadata().created_by == "parquet-mr" && !column.meta->meta_data.__isset.dictionary_page_offset && !column.meta->__isset.offset_index_offset)
-                data_pages_extra_bytes = std::min(100ul, prefetcher.getFileSize() - size_t(column.meta->meta_data.data_page_offset) - column.data_pages_bytes);
+            {
+                /// No extra bytes if the column chunk of a corrupted file already reaches past the end of the file.
+                const size_t file_size = prefetcher.getFileSize();
+                const size_t data_page_offset = size_t(column.meta->meta_data.data_page_offset);
+                if (data_page_offset <= file_size && column.data_pages_bytes < file_size - data_page_offset)
+                    data_pages_extra_bytes = std::min(100ul, file_size - data_page_offset - column.data_pages_bytes);
+            }
 
             column.data_pages_prefetch = prefetcher.registerRange(
                 size_t(column.meta->meta_data.data_page_offset),
@@ -2316,6 +2340,7 @@ void Reader::decodeDictionaryPageImpl(const parq::PageHeader & header, std::span
     }
 }
 
+NO_SANITIZE_UNSIGNED_OVERFLOW
 bool Reader::BloomFilterLookup::findAnyHash(const std::vector<uint64_t> & hashes)
 {
     probed = true;
@@ -2346,7 +2371,7 @@ bool Reader::BloomFilterLookup::probe(const std::vector<uint64_t> & hashes)
         bool miss = false;
         for (size_t i = 0; i < 8; ++i)
         {
-            size_t bit_idx = (UInt32(h) * salt[i]) >> 27;
+            size_t bit_idx = common::mulIgnoreOverflow(UInt32(h), salt[i]) >> 27;
             UInt32 word = unalignedLoad<UInt32>(data.data() + i * 4);
             if (!(word & (1u << bit_idx)))
             {
@@ -2373,8 +2398,7 @@ bool Reader::columnChunkCanUseDictionaryFilter(const parq::ColumnChunk & column_
     /// missed optimization (a full row-group scan), never a wrong result.
     if (!column_meta.meta_data.__isset.dictionary_page_offset)
         return false;
-    /// We assume that the dictionary page is immediately followed by the first data page.
-    size_t dict_page_length = size_t(column_meta.meta_data.data_page_offset) - size_t(column_meta.meta_data.dictionary_page_offset);
+    size_t dict_page_length = getDictionaryPageLength(column_meta);
     /// The limit is the maximum dictionary page size for which pruning applies, so the boundary is
     /// inclusive: a dictionary page of exactly `dictionary_filter_limit_bytes` is still eligible.
     if (dict_page_length > options.dictionary_filter_limit_bytes)

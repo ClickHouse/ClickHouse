@@ -1,3 +1,4 @@
+#include <base/arithmeticOverflow.h>
 #include <algorithm>
 #include <filesystem>
 #include <memory>
@@ -99,6 +100,16 @@ inline CompressionCodecPtr getCodec(const TemporaryDataOnDiskSettings & settings
         reserve_size, fmt::join(disks_info, ", "));
 }
 
+}
+
+size_t getTemporaryFileReserveSize(size_t data_size, size_t min_free_disk_space)
+{
+    size_t reserve_size = 0;
+    if (common::addOverflow(data_size, min_free_disk_space, reserve_size))
+        throw Exception(ErrorCodes::NOT_ENOUGH_SPACE,
+            "Cannot reserve {} bytes for temporary data with {} bytes of free disk space to keep",
+            data_size, min_free_disk_space);
+    return reserve_size;
 }
 
 TemporaryFileHolder::TemporaryFileHolder(const TemporaryDataMetrics & metrics)
@@ -573,30 +584,50 @@ void TemporaryDataBuffer::updateAllocAndCheck()
 void TemporaryDataBuffer::freeAlloc()
 {
     if (parent)
-        parent->deltaAllocAndCheck(-stat.compressed_size, -stat.uncompressed_size);
+        parent->deltaAllocAndCheck(-static_cast<ssize_t>(stat.compressed_size), -static_cast<ssize_t>(stat.uncompressed_size));
     stat.compressed_size = 0;
     stat.uncompressed_size = 0;
 }
 
+/// The caller checks that a negative `delta` does not take `size` below zero.
+static size_t applySizeDelta(size_t size, ssize_t delta)
+{
+    if (delta < 0)
+        return size - common::negateIgnoreOverflow(static_cast<size_t>(delta));
+    return size + static_cast<size_t>(delta);
+}
+
+/// The same as `applySizeDelta`, but atomically: the buffers of several threads update one scope concurrently.
+static void addSizeDelta(std::atomic<size_t> & size, ssize_t delta)
+{
+    if (delta < 0)
+        size.fetch_sub(common::negateIgnoreOverflow(static_cast<size_t>(delta)));
+    else
+        size.fetch_add(static_cast<size_t>(delta));
+}
+
 void TemporaryDataOnDiskScope::deltaAllocAndCheck(ssize_t compressed_delta, ssize_t uncompressed_delta)
 {
-    if (parent)
-        parent->deltaAllocAndCheck(compressed_delta, uncompressed_delta);
+    /// The local checks go before the update of the parent: if they throw, the parent must stay unchanged,
+    /// because the caller does not account the delta and will not subtract it later.
 
     /// check that we don't go negative
-    if ((compressed_delta < 0 && stat.compressed_size < -static_cast<size_t>(compressed_delta)) ||
-        (uncompressed_delta < 0 && stat.uncompressed_size < -static_cast<size_t>(uncompressed_delta)))
+    if ((compressed_delta < 0 && stat.compressed_size < common::negateIgnoreOverflow(static_cast<size_t>(compressed_delta))) ||
+        (uncompressed_delta < 0 && stat.uncompressed_size < common::negateIgnoreOverflow(static_cast<size_t>(uncompressed_delta))))
     {
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Negative temporary data size");
     }
 
-    size_t new_consumption = stat.compressed_size + compressed_delta;
+    size_t new_consumption = applySizeDelta(stat.compressed_size, compressed_delta);
     if (compressed_delta > 0 && settings.max_size_on_disk && new_consumption > settings.max_size_on_disk)
         throw Exception(ErrorCodes::TOO_MANY_ROWS_OR_BYTES,
             "Limit for temporary files size exceeded (would consume {} / {} bytes)", new_consumption, settings.max_size_on_disk);
 
-    stat.compressed_size += compressed_delta;
-    stat.uncompressed_size += uncompressed_delta;
+    if (parent)
+        parent->deltaAllocAndCheck(compressed_delta, uncompressed_delta);
+
+    addSizeDelta(stat.compressed_size, compressed_delta);
+    addSizeDelta(stat.uncompressed_size, uncompressed_delta);
     if (compressed_delta > 0)
         spilled_bytes.fetch_add(compressed_delta, std::memory_order_relaxed);
 }

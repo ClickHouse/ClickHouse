@@ -1396,8 +1396,8 @@ size_t Aggregator::executeImplUntilAdaptiveFreeze(
         /// that can get it there, floored so a table hovering just below cannot degrade the
         /// block into row-sized dispatches (the floor is also the overshoot bound). The
         /// per-slice `after_slice` keeps the consecutive-keys cache statistics exact:
-        /// `executeImplBatch` resets the cache on entry, so the misses must be collected
-        /// slice by slice, not once at the end.
+        /// `executeImplBatch` and `executeImplBatchNoAggregates` reset the cache on entry, so
+        /// the misses must be collected slice by slice, not once at the end.
         const auto run_slices = [&](auto & state, auto && after_slice) -> size_t
         {
             size_t pos = row_begin;
@@ -1467,6 +1467,10 @@ void NO_INLINE Aggregator::executeImplBatchNoAggregates(
     bool all_keys_are_const) const
 {
     using KeyHolder = decltype(state.getKeyHolder(0, std::declval<Arena &>()));
+
+    /// The misses since the last reset are reported for this range only. `executeImplUntilAdaptiveFreeze`
+    /// runs one state over several ranges and must not count the misses of the earlier ones again.
+    state.resetCache();
 
     /// During processing of row #i we will prefetch HashTable cell for row #(i + prefetch_look_ahead).
     PrefetchingHelper prefetching;
@@ -2669,7 +2673,7 @@ bool Aggregator::executeOnBlock(Columns columns,
         && reached_spill_floor
         && spillAllowedUnderKeptKeysCutoff(no_more_keys, result))
     {
-        size_t size = current_memory_usage + params.min_free_disk_space;
+        size_t size = getTemporaryFileReserveSize(static_cast<size_t>(current_memory_usage), params.min_free_disk_space);
         writeToTemporaryFile(result, size);
         reseedKeptKeysAfterSpill(result);
     }
@@ -2786,7 +2790,7 @@ size_t Aggregator::spill(AggregatedDataVariants & data_variants, bool no_more_ke
     size_t before = data_variants.memoryUsage();
     if (!data_variants.isTwoLevel())
         data_variants.convertToTwoLevel();
-    writeToTemporaryFile(data_variants, before + params.min_free_disk_space);
+    writeToTemporaryFile(data_variants, getTemporaryFileReserveSize(before, params.min_free_disk_space));
     reseedKeptKeysAfterSpill(data_variants);
     size_t after = data_variants.memoryUsage();
     return before > after ? before - after : 0;
@@ -6145,7 +6149,7 @@ bool Aggregator::mergeOnBlock(Columns columns, size_t rows, bool is_overflows, A
         && reached_spill_floor
         && spillAllowedUnderKeptKeysCutoff(no_more_keys, result))
     {
-        size_t size = current_memory_usage + params.min_free_disk_space;
+        size_t size = getTemporaryFileReserveSize(static_cast<size_t>(current_memory_usage), params.min_free_disk_space);
         writeToTemporaryFile(result, size);
         reseedKeptKeysAfterSpill(result);
     }

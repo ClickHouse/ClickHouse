@@ -49,14 +49,14 @@ struct Impl
 
         for (size_t i = 0; i < size; ++i)
         {
-            size_t array1_size = array_predicted_offsets[i] - array_predicted_offsets[i - 1];
+            size_t array1_size = array_predicted_offsets[i] - array_predicted_offsets[static_cast<ssize_t>(i) - 1];
             if (array1_size != array_size)
                 throw Exception(ErrorCodes::ILLEGAL_COLUMN, "All arrays in function arrayNormalizedGini should have same size");
 
             // Why we need to create a new array here every loop, because array2 will be sorted in calculateNormalizedGini.
             PODArrayWithStackMemory<T2, 1024> array2(array_labels_const.begin(), array_labels_const.end());
 
-            auto [gini_predicted, gini_labels, gini_normalized] = calculateNormalizedGini(array_predicted_data, array_predicted_offsets[i - 1], array2, array_size);
+            auto [gini_predicted, gini_labels, gini_normalized] = calculateNormalizedGini(array_predicted_data, array_predicted_offsets[static_cast<ssize_t>(i) - 1], array2, array_size);
 
             col_gini_predicted[i] = gini_predicted;
             col_gini_labels[i] = gini_labels;
@@ -78,8 +78,8 @@ struct Impl
 
         for (size_t i = 0; i < size; ++i)
         {
-            size_t array_size = array_predicted_offsets[i] - array_predicted_offsets[i - 1];
-            size_t array2_size = array_labels_offsets[i] - array_labels_offsets[i - 1];
+            size_t array_size = array_predicted_offsets[i] - array_predicted_offsets[static_cast<ssize_t>(i) - 1];
+            size_t array2_size = array_labels_offsets[i] - array_labels_offsets[static_cast<ssize_t>(i) - 1];
 
             if (array_size > MAX_ARRAY_SIZE)
                 throw Exception(
@@ -88,9 +88,9 @@ struct Impl
             if (array2_size != array_size)
                 throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Prediction and label arrays in function arrayNormalizedGini should have same size for each row");
 
-            PODArrayWithStackMemory<T2, 1024> array2(array_labels_data.data() + array_labels_offsets[i - 1], array_labels_data.data() + array_labels_offsets[i]);
+            PODArrayWithStackMemory<T2, 1024> array2(array_labels_data.data() + array_labels_offsets[static_cast<ssize_t>(i) - 1], array_labels_data.data() + array_labels_offsets[i]);
 
-            auto [gini_predicted, gini_labels, gini_normalized] = calculateNormalizedGini(array_predicted_data, array_predicted_offsets[i - 1], array2, array_size);
+            auto [gini_predicted, gini_labels, gini_normalized] = calculateNormalizedGini(array_predicted_data, array_predicted_offsets[static_cast<ssize_t>(i) - 1], array2, array_size);
 
             col_gini_predicted[i] = gini_predicted;
             col_gini_labels[i] = gini_labels;
@@ -116,11 +116,11 @@ struct Impl
 
         for (size_t i = 0; i < size; ++i)
         {
-            size_t array1_size = array_labels_offsets[i] - array_labels_offsets[i - 1];
+            size_t array1_size = array_labels_offsets[i] - array_labels_offsets[static_cast<ssize_t>(i) - 1];
             if (array1_size != array_size)
                 throw Exception(ErrorCodes::ILLEGAL_COLUMN, "All arrays in function arrayNormalizedGini should have same size");
 
-            PODArrayWithStackMemory<T2, 1024> array2(array_labels_data.data() + array_labels_offsets[i - 1], array_labels_data.data() + array_labels_offsets[i]);
+            PODArrayWithStackMemory<T2, 1024> array2(array_labels_data.data() + array_labels_offsets[static_cast<ssize_t>(i) - 1], array_labels_data.data() + array_labels_offsets[i]);
 
             auto [gini_predicted, gini_labels, gini_normalized] = calculateNormalizedGini(array_predicted_const, 0, array2, array_size);
 

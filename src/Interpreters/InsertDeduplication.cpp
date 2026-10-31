@@ -971,7 +971,7 @@ size_t DeduplicationInfo::getTokenBegin(size_t pos) const
     chassert(pos < offsets.size());
     if (pos == 0)
         return 0;
-    return offsets[pos - 1];
+    return offsets[static_cast<ssize_t>(pos) - 1];
 }
 
 

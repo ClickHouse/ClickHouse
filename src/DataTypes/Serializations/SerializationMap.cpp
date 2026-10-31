@@ -204,7 +204,7 @@ void SerializationMap::serializeTextImpl(
     const auto & nested_tuple = column_map.getNestedData();
     const auto & offsets = nested_array.getOffsets();
 
-    size_t offset = offsets[row_num - 1];
+    size_t offset = offsets[static_cast<ssize_t>(row_num) - 1];
     size_t next_offset = offsets[row_num];
 
     writeChar('{', ostr);
@@ -331,7 +331,7 @@ void SerializationMap::serializeTextHive(const IColumn & column, size_t row_num,
     const auto & nested_tuple = column_map.getNestedData();
     const auto & offsets = nested_array.getOffsets();
 
-    size_t offset = offsets[row_num - 1];
+    size_t offset = offsets[static_cast<ssize_t>(row_num) - 1];
     size_t next_offset = offsets[row_num];
 
     const size_t level = settings.hive_text.nesting_level;
@@ -435,7 +435,7 @@ void SerializationMap::serializeTextJSONPretty(const IColumn & column, size_t ro
     const auto & nested_tuple = column_map.getNestedData();
     const auto & offsets = nested_array.getOffsets();
 
-    size_t offset = offsets[row_num - 1];
+    size_t offset = offsets[static_cast<ssize_t>(row_num) - 1];
     size_t next_offset = offsets[row_num];
 
     if (offset == next_offset)
@@ -525,7 +525,7 @@ void SerializationMap::serializeTextXML(const IColumn & column, size_t row_num, 
     const auto & column_map = assert_cast<const ColumnMap &>(column);
     const auto & offsets = column_map.getNestedColumn().getOffsets();
 
-    size_t offset = offsets[row_num - 1];
+    size_t offset = offsets[static_cast<ssize_t>(row_num) - 1];
     size_t next_offset = offsets[row_num];
 
     const auto & nested_data = column_map.getNestedData();

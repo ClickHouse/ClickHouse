@@ -8,6 +8,7 @@
 #include <unordered_set>
 #include <vector>
 
+#include <base/arithmeticOverflow.h>
 #include <Access/Common/AccessType.h>
 #include <Common/CacheBase.h>
 #include <Common/HashTable/Hash.h>
@@ -55,7 +56,8 @@ struct ColumnsCacheKeyHash
 {
     size_t operator()(const ColumnsCacheKey & key) const
     {
-        return intHash64(key.column_identity.items[UInt128::_impl::little(0)] ^ (key.stripe * 0x9E3779B97F4A7C15ULL));
+        /// The Fibonacci multiply wraps by design.
+        return intHash64(key.column_identity.items[UInt128::_impl::little(0)] ^ common::mulIgnoreOverflow(key.stripe, 0x9E3779B97F4A7C15ULL));
     }
 };
 

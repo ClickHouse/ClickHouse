@@ -125,9 +125,12 @@ void ProbabilityGenerator::ensureAtLeastOneEnabled(const std::vector<bool> & mas
 
 size_t ProbabilityGenerator::lastEnabledIndex() const
 {
-    for (size_t i = nvalues; i-- > 0;)
+    for (size_t i = nvalues; i > 0;)
+    {
+        --i;
         if (enabled_values[i])
             return i;
+    }
     /// Should be impossible due to invariant
     return 0;
 }

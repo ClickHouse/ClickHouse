@@ -53,6 +53,7 @@
 #include <Server/DistributedQuery/StreamingExchangeSink.h>
 #include <Server/DistributedQuery/StreamingExchangeSource.h>
 #include <Server/DistributedQuery/tests/FakeExchangePeer.h>
+#include <base/sanitizer_defs.h>
 
 namespace ProfileEvents
 {
@@ -97,7 +98,8 @@ Chunk makeChunk(size_t first_value, size_t rows)
 }
 
 /// Pseudo-random values that do not compress; `state` carries the generator from chunk to chunk.
-Chunk makeIncompressibleChunk(size_t rows, UInt64 & state)
+/// A linear congruential generator; it wraps by design.
+Chunk NO_SANITIZE_UNSIGNED_OVERFLOW makeIncompressibleChunk(size_t rows, UInt64 & state)
 {
     auto column = ColumnUInt64::create();
     for (size_t row = 0; row < rows; ++row)
@@ -251,7 +253,8 @@ size_t countRows(const std::vector<Chunk> & chunks)
     return rows;
 }
 
-UInt64 sumOfValues(const std::vector<Chunk> & chunks)
+/// The checksum is a plain modulo-2^64 sum.
+UInt64 NO_SANITIZE_UNSIGNED_OVERFLOW sumOfValues(const std::vector<Chunk> & chunks)
 {
     UInt64 sum = 0;
     for (const auto & chunk : chunks)
