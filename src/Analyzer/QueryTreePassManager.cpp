@@ -266,9 +266,9 @@ void QueryTreePassManager::dump(WriteBuffer & buffer, size_t up_to_pass_index)
     }
 }
 
-void addQueryTreePasses(QueryTreePassManager & manager, bool only_analyze)
+void addQueryTreePasses(QueryTreePassManager & manager, bool only_analyze, bool positional_arguments_already_resolved)
 {
-    manager.addPass(std::make_unique<QueryAnalysisPass>(only_analyze));
+    manager.addPass(std::make_unique<QueryAnalysisPass>(only_analyze, positional_arguments_already_resolved));
     manager.addPass(std::make_unique<GroupingFunctionsResolvePass>());
     manager.addPass(std::make_unique<AutoFinalOnQueryPass>());
     /// This pass should be run for the secondary queries
@@ -290,7 +290,6 @@ void addQueryTreePasses(QueryTreePassManager & manager, bool only_analyze)
     manager.addPass(std::make_unique<RewriteArrayFilterLengthToArrayCountPass>());
     manager.addPass(std::make_unique<RewriteHasToInPass>());
     manager.addPass(std::make_unique<NormalizeCountVariantsPass>());
-
     manager.addPass(std::make_unique<DistanceTransposedPartialReadsPass>());
 
     /// should before AggregateFunctionsArithmeticOperationsPass
