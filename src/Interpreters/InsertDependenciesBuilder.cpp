@@ -804,6 +804,17 @@ void registerHiddenPreWriteChecks(
     std::vector<SinkToStorage::HiddenPreWriteCheck> & result,
     bool follow_dependent_views = true);
 
+/// Records the current exception, thrown while the deferred pre-write checks of a hidden write were being
+/// prepared (e.g. the definer of a view behind the forwarding sink cannot be resolved), as the outcome of a
+/// deferred check: the pipeline is still built, and the sink enforcing it rethrows the failure only before it
+/// actually writes through the nested INSERT, which would fail the same way.
+void deferHiddenPreWriteCheckFailure(const HiddenCheckOrigin & origin, std::vector<SinkToStorage::HiddenPreWriteCheck> & result)
+{
+    auto outcome = std::make_shared<InsertStartGate::DeferredOutcome>();
+    outcome->exception = std::current_exception();
+    result.push_back({origin.forwarded_to, /* gate= */ nullptr, std::move(outcome), /* context= */ nullptr, origin.enforced_here});
+}
+
 /// Registers the deferred pre-write checks of the materialized views depending on `storage`, which the
 /// nested INSERT into `storage` (running with `context`) expands only during the execution. A view
 /// runs with its own `SQL SECURITY` context, as in `InsertDependenciesBuilder::createSelectInsertContext`.
@@ -825,35 +836,48 @@ void registerHiddenDependentViewsPreWriteChecks(
     const auto storage_id = storage->getStorageID();
     for (const auto & view_id : DatabaseCatalog::instance().getDependentViews(storage_id))
     {
-        auto view = DatabaseCatalog::instance().tryGetTable(view_id, context);
-        const auto * materialized_view = dynamic_cast<const StorageMaterializedView *>(view.get());
-        if (!materialized_view)
-            continue;
-
-        auto view_metadata = view->getInMemoryMetadataPtr(context, false);
-        /// A stale dependency is skipped by the nested INSERT as well, see `InsertDependenciesBuilder::observePath`.
-        if (view_metadata->getSelectQuery().select_table_id != storage_id)
-            continue;
-
-        auto view_context = view_metadata->getSQLSecurityOverriddenContext(context);
-        auto target = materialized_view->tryGetTargetTable();
-
-        if (!ignore_errors)
+        try
         {
-            registerHiddenPreWriteChecks(target, view_context, gates, origin, depth + 1, result);
-            continue;
+            auto view = DatabaseCatalog::instance().tryGetTable(view_id, context);
+            const auto * materialized_view = dynamic_cast<const StorageMaterializedView *>(view.get());
+            if (!materialized_view)
+                continue;
+
+            auto view_metadata = view->getInMemoryMetadataPtr(context, false);
+            /// A stale dependency is skipped by the nested INSERT as well, see `InsertDependenciesBuilder::observePath`.
+            if (view_metadata->getSelectQuery().select_table_id != storage_id)
+                continue;
+
+            auto view_context = view_metadata->getSQLSecurityOverriddenContext(context);
+            auto target = materialized_view->tryGetTargetTable();
+
+            if (!ignore_errors)
+            {
+                registerHiddenPreWriteChecks(target, view_context, gates, origin, depth + 1, result);
+                continue;
+            }
+
+            if (!target || !canInsertIntoAnyColumn(*target, view_context))
+                continue;
+
+            if (const auto * merge_tree = castStorage<MergeTreeData>(target, DeferredTable::Load).get())
+            {
+                auto outcome = std::make_shared<InsertStartGate::DeferredOutcome>();
+                auto gate = gates->get(target->getStorageID());
+                gate->addCheck({view_context, merge_tree->makeTooManyPartsCheck(view_context), /*deferred=*/ nullptr, view, outcome});
+                /// Not enforced by the forwarding sink: the sink of the view does it. It is kept only to hold the context alive.
+                result.push_back({origin.forwarded_to, std::move(gate), std::move(outcome), view_context, /* enforced_here= */ false});
+            }
         }
-
-        if (!target || !canInsertIntoAnyColumn(*target, view_context))
-            continue;
-
-        if (const auto * merge_tree = castStorage<MergeTreeData>(target, DeferredTable::Load).get())
+        catch (...) // Ok: the error is deferred to the write, or ignored like the nested INSERT ignores it.
         {
-            auto outcome = std::make_shared<InsertStartGate::DeferredOutcome>();
-            auto gate = gates->get(target->getStorageID());
-            gate->addCheck({view_context, merge_tree->makeTooManyPartsCheck(view_context), /*deferred=*/ nullptr, view, outcome});
-            /// Not enforced by the forwarding sink: the sink of the view does it. It is kept only to hold the context alive.
-            result.push_back({origin.forwarded_to, std::move(gate), std::move(outcome), view_context, /* enforced_here= */ false});
+            /// The nested INSERT skips a broken view under `materialized_views_ignore_errors`, see
+            /// `InsertDependenciesBuilder::collectAllDependencies`, so the view writes nothing.
+            if (ignore_errors)
+                continue;
+            /// Otherwise the nested INSERT fails the same way, but only when it actually runs - a `Buffer` may
+            /// only keep the rows in memory - so the failure is enforced only before the hidden write.
+            deferHiddenPreWriteCheckFailure(origin, result);
         }
     }
 }
@@ -862,7 +886,7 @@ void registerHiddenDependentViewsPreWriteChecks(
 /// `collectHiddenPreWriteChecks`. `context` is the context the nested INSERT runs with. The dependent
 /// views of `storage` are followed as well, unless `storage` is only the nested storage of a proxy whose
 /// dependent views have already been followed.
-void registerHiddenPreWriteChecks(
+void registerHiddenPreWriteChecksImpl(
     const StoragePtr & storage,
     const ContextPtr & context,
     const InsertStartGatesPtr & gates,
@@ -941,6 +965,26 @@ void registerHiddenPreWriteChecks(
         auto gate = gates->get(storage->getStorageID());
         gate->addCheck({context, merge_tree->makeTooManyPartsCheck(context), outcome, origin.enforced_by, /*isolated=*/ nullptr});
         result.push_back({origin.forwarded_to, std::move(gate), std::move(outcome), context, origin.enforced_here});
+    }
+}
+
+void registerHiddenPreWriteChecks(
+    const StoragePtr & storage,
+    const ContextPtr & context,
+    const InsertStartGatesPtr & gates,
+    const HiddenCheckOrigin & origin,
+    size_t depth,
+    std::vector<SinkToStorage::HiddenPreWriteCheck> & result,
+    bool follow_dependent_views)
+{
+    try
+    {
+        registerHiddenPreWriteChecksImpl(storage, context, gates, origin, depth, result, follow_dependent_views);
+    }
+    catch (...) // Ok: the error is deferred to the write, see `deferHiddenPreWriteCheckFailure`.
+    {
+        /// Recorded with the origin of this level: behind a `Buffer` it is enforced only when the buffer writes.
+        deferHiddenPreWriteCheckFailure(origin, result);
     }
 }
 
@@ -1415,11 +1459,14 @@ bool InsertDependenciesBuilder::storageMayWriteToReplicatedTable(const StoragePt
         return true;
 
     /// A `MaterializedView` and proxies pass the write through to their target within this pipeline:
-    /// follow the chain, failing closed when the target cannot be resolved.
+    /// follow the chain, failing closed when the target cannot be resolved. A view that is inserted into
+    /// directly (e.g. behind an `Alias`) writes through a nested `INSERT` that expands the dependent views
+    /// of its target as well, so inspect them too.
     if (const auto * materialized_view = dynamic_cast<const StorageMaterializedView *>(storage.get()))
     {
         auto target = materialized_view->tryGetTargetTable();
-        return !target || storageMayWriteToReplicatedTable(target, context, depth + 1);
+        return !target || storageMayWriteToReplicatedTable(target, context, depth + 1)
+            || dependentViewMayWriteToReplicatedTable(target, context, depth + 1);
     }
     if (const auto * proxy = dynamic_cast<const StorageProxy *>(storage.get()))
         return storageMayWriteToReplicatedTable(proxy->getNested(), context, depth + 1);

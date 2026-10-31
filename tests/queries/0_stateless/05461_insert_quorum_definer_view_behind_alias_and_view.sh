@@ -9,7 +9,7 @@
 # `SQL SECURITY DEFINER` view writing into a replicated table with the quorum settings of its definer.
 # The nested INSERT into the first view expands the dependent views of its target, so the fan-out of
 # the INSERT into the `Alias` is kept single-stream even though the INSERT itself leaves the quorum
-# settings at their defaults.
+# settings at their defaults, and when it enables the non-parallel quorum itself.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -47,6 +47,10 @@ $CLICKHOUSE_CLIENT -q "
 "
 
 $CLICKHOUSE_CLIENT $SETTINGS --parallel_view_processing=1 -q \
+    "EXPLAIN PIPELINE INSERT INTO t_05461_alias SELECT number FROM numbers(4)" | grep -c "AliasSink"
+
+# The same when the INSERT itself enables the non-parallel quorum as well.
+$CLICKHOUSE_CLIENT $SETTINGS --parallel_view_processing=1 --insert_quorum=2 --insert_quorum_parallel=0 -q \
     "EXPLAIN PIPELINE INSERT INTO t_05461_alias SELECT number FROM numbers(4)" | grep -c "AliasSink"
 
 $CLICKHOUSE_CLIENT -q "

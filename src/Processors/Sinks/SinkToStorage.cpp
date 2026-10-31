@@ -57,8 +57,10 @@ void SinkToStorage::runHiddenPreWriteChecks(const StorageID * forwarded_to) cons
             continue;
 
         /// The deferred check runs as a part of the decision of the gate, and the outcome is written under
-        /// the lock of the gate that makes it, which `run` acquires as well.
-        hidden.gate->run();
+        /// the lock of the gate that makes it, which `run` acquires as well. A check without a gate is a failure
+        /// to prepare it, recorded in advance, see `deferHiddenPreWriteCheckFailure`.
+        if (hidden.gate)
+            hidden.gate->run();
         if (hidden.outcome->exception)
             std::rethrow_exception(hidden.outcome->exception);
     }

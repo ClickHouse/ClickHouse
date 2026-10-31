@@ -44,6 +44,7 @@ public:
     struct HiddenPreWriteCheck
     {
         StorageID forwarded_to = StorageID::createEmpty();
+        /// Null if the check could not be prepared: `outcome` holds that failure then.
         InsertStartGatePtr gate;
         std::shared_ptr<InsertStartGate::DeferredOutcome> outcome;
         /// The context the check runs with. The gate refers to it only weakly (see `InsertStartGate::Check`),
