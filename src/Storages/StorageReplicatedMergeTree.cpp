@@ -256,6 +256,8 @@ namespace MergeTreeSetting
 namespace FailPoints
 {
     extern const char replicated_queue_fail_next_entry[];
+    extern const char alter_settings_throw_before_metadata_write[];
+    extern const char alter_settings_pause_before_metadata_write[];
     extern const char replicated_queue_unfail_entries[];
     extern const char finish_set_quorum_failed_parts[];
     extern const char zero_copy_lock_zk_fail_before_op[];
@@ -7151,26 +7153,41 @@ void StorageReplicatedMergeTree::alter(
         auto old_metadata = getInMemoryMetadataPtr(query_context, true);
         changeSettings(future_metadata.settings_changes, table_lock_holder);
 
-        if (statistics_changed)
-        {
-            /// Route the long-lived metadata snapshot clone into the dedicated MergeTree arena.
-            ScopedJemallocThreadArena mergetree_arena_scope(JemallocMergeTreeArena::getArenaIndex());
-            setInMemoryMetadata(future_metadata);
-        }
-
         try
         {
+            if (statistics_changed)
+            {
+                /// Route the long-lived metadata snapshot clone into the dedicated MergeTree arena.
+                ScopedJemallocThreadArena mergetree_arena_scope(JemallocMergeTreeArena::getArenaIndex());
+                setInMemoryMetadata(future_metadata);
+            }
+
+            FailPointInjection::pauseFailPoint(FailPoints::alter_settings_pause_before_metadata_write);
+            fiu_do_on(FailPoints::alter_settings_throw_before_metadata_write,
+            {
+                throw Exception(ErrorCodes::FAULT_INJECTED, "Injected failure before the metadata write of a settings ALTER");
+            });
+
             /// Safe because the early max_query_size check already passed.
             DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(query_context, table_id, future_metadata, /*validate_new_create_query=*/true);
         }
         catch (...)
         {
-            /// Revert in-memory so system.* doesn't diverge from SHOW CREATE TABLE.
-            changeSettings(old_metadata->settings_changes, table_lock_holder);
+            /// The durable metadata was not written, so the in-memory settings must not stay ahead of it.
+            /// This matters for settings that gate an on-disk or ClickHouse Keeper format, such as
+            /// `persist_mutation_author`: a query that returned an exception must not leave the replica
+            /// writing mutation entries in a format the other replicas cannot read.
+            changeSettings(old_metadata->settings_changes, table_lock_holder, /*run_sanity_checks=*/false);
+
             if (statistics_changed)
+            {
+                ScopedJemallocThreadArena mergetree_arena_scope(JemallocMergeTreeArena::getArenaIndex());
                 setInMemoryMetadata(*old_metadata);
+            }
+
             throw;
         }
+
         return;
     }
 
@@ -7214,25 +7231,56 @@ void StorageReplicatedMergeTree::alter(
         for (auto & index : future_metadata.secondary_indices)
             index.escape_filenames = committed_metadata->escape_index_filenames;
 
-        {
-            /// Route the long-lived metadata snapshot clone into the dedicated MergeTree arena.
-            ScopedJemallocThreadArena mergetree_arena_scope(JemallocMergeTreeArena::getArenaIndex());
-            setInMemoryMetadata(future_metadata);
-        }
-
         try
         {
+            {
+                /// Route the long-lived metadata snapshot clone into the dedicated MergeTree arena.
+                ScopedJemallocThreadArena mergetree_arena_scope(JemallocMergeTreeArena::getArenaIndex());
+                setInMemoryMetadata(future_metadata);
+            }
+
+            FailPointInjection::pauseFailPoint(FailPoints::alter_settings_pause_before_metadata_write);
+            fiu_do_on(FailPoints::alter_settings_throw_before_metadata_write,
+            {
+                throw Exception(ErrorCodes::FAULT_INJECTED, "Injected failure before the metadata write of a settings ALTER");
+            });
+
             /// Safe because the early max_query_size check already passed.
             DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(query_context, table_id, future_metadata, /*validate_new_create_query=*/true);
         }
         catch (...)
         {
-            /// Revert in-memory so system.* doesn't diverge from SHOW CREATE TABLE.
-            changeSettings(old_metadata->settings_changes, table_lock_holder);
-            setInMemoryMetadata(*old_metadata);
+            /// Same reasoning as in the pure settings branch above: the durable metadata was not
+            /// written, so the in-memory settings must not stay ahead of it. Otherwise a failed
+            /// `ALTER ... MODIFY SETTING persist_mutation_author = 1, MODIFY COMMENT ...` would leave
+            /// this replica writing `/mutations` entries the other replicas cannot read.
+            changeSettings(old_metadata->settings_changes, table_lock_holder, /*run_sanity_checks=*/false);
+
+            {
+                ScopedJemallocThreadArena mergetree_arena_scope(JemallocMergeTreeArena::getArenaIndex());
+                setInMemoryMetadata(*old_metadata);
+            }
+
             throw;
         }
+
         return;
+    }
+
+    /// From here on the ALTER is replicated through ZooKeeper. `persist_mutation_author` gates the
+    /// format of the shared `/mutations` entries, but setting changes are applied locally before the
+    /// ZooKeeper transaction and are not rolled back if it fails, so a failed mixed
+    /// `ALTER ... MODIFY SETTING persist_mutation_author = 1, MODIFY COLUMN ...` could still switch
+    /// this replica onto the new format. Require changing this setting in its own (purely local)
+    /// `ALTER ... MODIFY SETTING` query instead.
+    for (const auto & command : commands)
+    {
+        if ((command.type == AlterCommand::MODIFY_SETTING && command.settings_changes.tryGet("persist_mutation_author"))
+            || (command.type == AlterCommand::RESET_SETTING && command.settings_resets.contains("persist_mutation_author")))
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Changing the `persist_mutation_author` setting cannot be mixed with other ALTER commands for ReplicatedMergeTree "
+                "tables. Change it in a separate ALTER TABLE ... MODIFY SETTING query");
     }
 
     /// Only re-verify the sorting key on ALTERs that can actually change it (see StorageMergeTree::alter).
@@ -7338,6 +7386,18 @@ void StorageReplicatedMergeTree::alter(
         bool settings_are_changed = (ast_to_str(current_metadata->settings_changes) != ast_to_str(future_metadata.settings_changes));
         bool comment_is_changed = (current_metadata->comment != future_metadata.comment);
 
+        auto maybe_mutation_commands
+            = commands.getMutationCommands(*current_metadata, query_settings[Setting::materialize_ttl_after_modify], query_context, /*with_alters*/ false, (*old_settings)[MergeTreeSetting::share_nested_offsets]);
+
+        /// Validate the mutation author before the local setting/comment change below is committed:
+        /// `getMutationAuthor` can throw, and throwing after that commit would leave the local change
+        /// persisted without the replicated `ALTER` and its mutation.
+        /// An empty author keeps the mutation entry format byte-for-byte identical
+        /// to the one used by servers that do not know about the `author` field.
+        String mutation_author;
+        if (!maybe_mutation_commands.empty())
+            mutation_author = getMutationAuthor(query_context);
+
         if (settings_are_changed || comment_is_changed)
         {
             StorageInMemoryMetadata metadata_copy = *current_metadata;
@@ -7390,9 +7450,6 @@ void StorageReplicatedMergeTree::alter(
         alter_entry->alter_version = new_metadata_version;
         alter_entry->create_time = time(nullptr);
 
-        auto maybe_mutation_commands
-            = commands.getMutationCommands(*current_metadata, query_settings[Setting::materialize_ttl_after_modify], query_context, /*with_alters*/ false, (*old_settings)[MergeTreeSetting::share_nested_offsets]);
-
         bool have_mutation = !maybe_mutation_commands.empty();
         alter_entry->have_mutation = have_mutation;
 
@@ -7410,6 +7467,7 @@ void StorageReplicatedMergeTree::alter(
             mutation_entry.alter_version = new_metadata_version;
             mutation_entry.source_replica = replica_name;
             mutation_entry.commands = std::move(maybe_mutation_commands);
+            mutation_entry.author = std::move(mutation_author);
 
             int32_t mutations_version = 0;
             if (maybe_mutations_version_after_logs_pull.has_value())
@@ -8892,6 +8950,27 @@ void StorageReplicatedMergeTree::mutate(const MutationCommands & commands, Conte
     mutation_entry.source_replica = replica_name;
     mutation_entry.commands = commands;
 
+    /// Serialize the creation of the mutation entry with settings `ALTER`s, like `StorageMergeTree::mutate`
+    /// does. A local `ALTER TABLE ... MODIFY SETTING` applies the new settings in memory before it writes
+    /// the durable metadata and rolls them back when that write throws. `persist_mutation_author` gates
+    /// the format of the shared `/mutations` entries, so without this lock a mutation that starts inside
+    /// that window could read the transient value and publish an entry the durable setting does not
+    /// announce, e.g. a `format version: 2` entry after the enabling `ALTER` has already failed.
+    /// The lock is released before waiting for the mutation, so a synchronous mutation does not block ALTERs.
+    auto alter_lock = tryLockForAlter(query_context->getSettingsRef()[Setting::lock_acquire_timeout]);
+    if (alter_lock == std::nullopt)
+    {
+        throw Exception(
+            ErrorCodes::TIMEOUT_EXCEEDED,
+            "Cannot start mutation in {}ms because some metadata-changing ALTER (MODIFY|RENAME|ADD|DROP) is currently executing. "
+            "You can change this timeout with `lock_acquire_timeout` setting",
+            query_context->getSettingsRef()[Setting::lock_acquire_timeout].totalMilliseconds());
+    }
+
+    /// An empty author keeps the mutation entry format byte-for-byte identical
+    /// to the one used by servers that do not know about the `author` field.
+    mutation_entry.author = getMutationAuthor(query_context);
+
     const String mutations_path = fs::path(zookeeper_path) / "mutations";
     const auto zookeeper = getZooKeeper();
 
@@ -8950,6 +9029,8 @@ void StorageReplicatedMergeTree::mutate(const MutationCommands & commands, Conte
         }
         throw Coordination::Exception::fromMessage(rc, "Unable to create a mutation znode");
     }
+
+    alter_lock.reset();
 
     merge_selecting_task->schedule();
 

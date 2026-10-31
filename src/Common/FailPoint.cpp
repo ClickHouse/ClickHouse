@@ -364,6 +364,8 @@ static struct InitFiu
     ONCE(mt_alter_throw_after_mutation_registered) \
     ONCE(mt_throw_after_mutation_commit) \
     ONCE(mt_alter_throw_in_durable_rollback) \
+    ONCE(alter_settings_throw_before_metadata_write) \
+    PAUSEABLE_ONCE(alter_settings_pause_before_metadata_write) \
     REGULAR(rmt_merge_selecting_task_no_free_threads) \
     REGULAR(rmt_merge_selecting_task_max_part_size) \
     REGULAR(merge_tree_load_statistics_throw) \
@@ -438,6 +440,7 @@ static struct InitFiu
     PAUSEABLE_ONCE(smt_merge_commit_pause_after_state_swap) \
     PAUSEABLE_ONCE(smt_metadata_update_pause_before_apply) \
     PAUSEABLE(mt_pause_before_register_mutation) \
+    PAUSEABLE_ONCE(mt_mutate_pause_after_alter_lock) \
     ONCE(transaction_rollback_reset_removal_tid_fail) \
     REGULAR(mt_mutate_task_can_skip_conversion_to_nullable_force_null_column_desc) \
     PAUSEABLE(iceberg_compaction_merge_pause_in_step) \
