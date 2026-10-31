@@ -60,7 +60,7 @@ namespace ErrorCodes
 namespace
 {
 
-/// On-disk entry layout, version 7:
+/// On-disk entry layout, version 8:
 ///
 ///     Fixed header (FIXED_HEADER_SIZE bytes):
 ///         char[8]  magic "QRCache1"
@@ -88,6 +88,7 @@ namespace
 ///         Chunk    one per result chunk
 ///         UInt8    has_totals, [Chunk]
 ///         UInt8    has_extremes, [Chunk]
+///         varUInt  number of result column origins, [String database, String table, String org_table, String column]...
 ///
 ///     Each chunk is serialized per column, so that special column representations survive the round trip: Sparse columns through
 ///     the custom serialization of the Native format, Const columns through an explicit flag plus their single-row data column:
@@ -95,7 +96,7 @@ namespace
 ///         Per column of the header: UInt8 is_const, then a single-column Native block (the data column of a Const column with
 ///         one row, the column itself with `number of rows` rows otherwise)
 constexpr char ENTRY_MAGIC[8] = {'Q', 'R', 'C', 'a', 'c', 'h', 'e', '1'};
-constexpr UInt32 ENTRY_FORMAT_VERSION = 7;
+constexpr UInt32 ENTRY_FORMAT_VERSION = 8;
 constexpr size_t FIXED_HEADER_SIZE
     = sizeof(ENTRY_MAGIC) + sizeof(UInt32) + sizeof(UInt32) + sizeof(UInt64) + sizeof(UInt64) + sizeof(UInt64) + sizeof(UInt64) + sizeof(UInt128);
 constexpr size_t TOTAL_SIZE_OFFSET_IN_FIXED_HEADER = sizeof(ENTRY_MAGIC) + sizeof(UInt32) + sizeof(UInt32);
@@ -502,6 +503,14 @@ void QueryResultCacheOnDisk::write(const QueryResultCache::Key & key, const Quer
                 writeBinaryLittleEndian(static_cast<UInt8>(entry.extremes.has_value()), compressed_out);
                 if (entry.extremes)
                     writeChunk(*entry.extremes, *key.header, writer, compressed_out);
+                writeVarUInt(key.result_column_origins.size(), compressed_out);
+                for (const auto & column_origin : key.result_column_origins)
+                {
+                    writeStringBinary(column_origin.database, compressed_out);
+                    writeStringBinary(column_origin.table, compressed_out);
+                    writeStringBinary(column_origin.org_table, compressed_out);
+                    writeStringBinary(column_origin.column, compressed_out);
+                }
             }
 
             compressed_out.finalize();
@@ -773,6 +782,21 @@ std::optional<QueryResultCacheReader> QueryResultCacheOnDisk::tryCreateReader(co
         if (has_extremes)
             entry.extremes = readChunk(header->columns(), reader, compressed_in);
 
+        size_t num_result_column_origins = 0;
+        readVarUInt(num_result_column_origins, compressed_in);
+        /// There is either no origin or one per result column.
+        if (num_result_column_origins != 0 && num_result_column_origins != header->columns())
+            throw Exception(ErrorCodes::INCORRECT_DATA, "The number of result column origins {} does not match the number of result columns {}",
+                num_result_column_origins, header->columns());
+        ResultColumnOrigins result_column_origins(num_result_column_origins);
+        for (auto & column_origin : result_column_origins)
+        {
+            readStringBinary(column_origin.database, compressed_in);
+            readStringBinary(column_origin.table, compressed_in);
+            readStringBinary(column_origin.org_table, compressed_in);
+            readStringBinary(column_origin.column, compressed_in);
+        }
+
         /// Treat the read as an access in the eviction policy of the filesystem cache, so that hot entries stay cached.
         for (const auto & file_segment : *holder)
             file_segment->increasePriority();
@@ -784,6 +808,7 @@ std::optional<QueryResultCacheReader> QueryResultCacheOnDisk::tryCreateReader(co
             source,
             header,
             std::move(entry),
+            std::move(result_column_origins),
             std::chrono::system_clock::from_time_t(fixed_header->created_at),
             std::chrono::system_clock::from_time_t(fixed_header->expires_at),
             access.ignore_quota);

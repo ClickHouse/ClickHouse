@@ -2484,6 +2484,8 @@ Int96Converter::Int96Converter()
 
 void Int96Converter::convertColumn(std::span<const char> data, size_t num_values, IColumn & col) const
 {
+    const bool saturate = overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Saturate;
+
     std::span<char> to_span = col.insertRawUninitialized(num_values);
     Int64 * to = reinterpret_cast<Int64 *>(to_span.data());
     for (size_t i = 0; i < num_values; ++i)
@@ -2508,16 +2510,17 @@ void Int96Converter::convertColumn(std::span<const char> data, size_t num_values
         /// This interpretation is consistent with the arrow reader code (DecodeInt96Timestamp in
         /// arrow/cpp/src/parquet/types.h) and with a test file written by spark
         /// (tests/queries/0_stateless/02998_native_parquet_reader.sh).
-        bool overflow = false;
-        Int64 x = 0;
-        overflow |= common::subOverflow(julian_day, static_cast<Int64>(2440588l), x); // unix day number
-        overflow |= common::mulOverflow(x, day_nanos, x); // unix nanoseconds
-        overflow |= common::addOverflow(x, nanos, x);
 
-        if (overflow)
-            throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "INT96 timestamp out of range: julian day {}, time of day {} ns", julian_day, nanos);
-
-        to[i] = x;
+        /// julian_day comes from Int32, so neither the subtraction nor the product can overflow Int128.
+        const Int128 total = Int128(julian_day - 2440588l) * day_nanos + nanos;
+        if (total < std::numeric_limits<Int64>::min() || total > std::numeric_limits<Int64>::max())
+        {
+            if (!saturate)
+                throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "INT96 timestamp out of range: julian day {}, time of day {} ns", julian_day, nanos);
+            to[i] = julian_day < 2440588l ? std::numeric_limits<Int64>::min() : std::numeric_limits<Int64>::max();
+        }
+        else
+            to[i] = static_cast<Int64>(total);
     }
 }
 

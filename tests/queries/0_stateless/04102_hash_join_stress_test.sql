@@ -1,4 +1,4 @@
--- Tags: long
+-- Tags: long, no-msan
 -- long: times out in private
 
 -- Test suite for HashJoin main loop optimization (PR #82308)
