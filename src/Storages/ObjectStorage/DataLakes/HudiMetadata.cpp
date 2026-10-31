@@ -36,6 +36,7 @@ namespace FailPoints
 {
     extern const char hudi_pause_before_iterate[];
     extern const char hudi_pause_in_listing_data_files[];
+    extern const char hudi_pause_after_listing_timeline[];
 }
 
 namespace
@@ -345,25 +346,23 @@ Strings HudiMetadata::getDataFilesImpl(const ContextPtr & local_context) const
     std::optional<RelativePathWithMetadata> properties_file;
     std::optional<RelativePathWithMetadata> backup_file;
     std::vector<RelativePathWithMetadata> instants;
-    const auto keys = listFiles(
+    /// Listed before the data files, so the new files of every instant applied below are listed too.
+    listFiles(
         *object_storage,
         table_path,
-        "",
+        ".hoodie/",
         [&](const RelativePathWithMetadata & object)
         {
             const String & key = object.relative_path;
             if (!key.starts_with(table_path))
-                return key.ends_with(data_file_suffix);
+                return false;
             std::string_view path_in_table = std::string_view(key).substr(table_path.size());
-            if (!path_in_table.starts_with(".hoodie/"))
-                return key.ends_with(data_file_suffix);
             if (path_in_table == ".hoodie/hoodie.properties")
                 properties_file.emplace(object);
             else if (path_in_table == ".hoodie/hoodie.properties.backup")
                 backup_file.emplace(object);
-            else if (path_in_table.ends_with(".replacecommit"))
+            else if (path_in_table.starts_with(".hoodie/") && path_in_table.ends_with(".replacecommit"))
                 instants.push_back(object);
-            /// Nothing under `.hoodie/` is a data file of the table.
             return false;
         });
 
@@ -385,6 +384,21 @@ Strings HudiMetadata::getDataFilesImpl(const ContextPtr & local_context) const
             && isCompletedReplaceCommitName(instant.getFileName(), timeline->layout_2))
             collectReplacedFileGroups(instant, object_storage, local_context, log, replaced);
     }
+
+    FailPointInjection::pauseFailPoint(FailPoints::hudi_pause_after_listing_timeline);
+
+    const auto keys = listFiles(
+        *object_storage,
+        table_path,
+        "",
+        [&](const RelativePathWithMetadata & object)
+        {
+            const String & key = object.relative_path;
+            /// Nothing under `.hoodie/` is a data file of the table.
+            if (key.starts_with(table_path) && std::string_view(key).substr(table_path.size()).starts_with(".hoodie/"))
+                return false;
+            return key.ends_with(data_file_suffix);
+        });
 
     using Partition = std::string;
     using FileID = std::string;

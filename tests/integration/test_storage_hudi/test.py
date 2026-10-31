@@ -4,6 +4,7 @@ import os
 import re
 import shutil
 import tempfile
+import threading
 import uuid
 from datetime import datetime
 
@@ -434,6 +435,7 @@ def test_replaced_file_groups(started_cluster, table_version):
     bucket = started_cluster.minio_bucket
     name = f"test_replaced_file_groups_{table_version}_{uuid.uuid4().hex[:8]}"
     root_bucket = f"hudi-root-{uuid.uuid4().hex[:8]}"
+    table = f"{name}_engine"
     tmp_dir = tempfile.mkdtemp()
 
     try:
@@ -568,6 +570,44 @@ def test_replaced_file_groups(started_cluster, table_version):
         ]
         assert_rows(instance, source, "id, p, v", expected)
 
+        # F: an instant that completes after the timeline was listed is not applied by that query.
+        instance.query(f"CREATE TABLE {table} ENGINE = Hudi(s3, filename='{prefix}')")
+        timeline = ".hoodie" if table_version == 6 else ".hoodie/timeline"
+        instant = f"{prefix}{timeline}/99991231235959998.replacecommit"
+        late = '{"partitionToReplaceFileIds": {"y/a": [%s]}}' % ", ".join(
+            f'"{file_id}"' for file_id in sorted(partition_file_ids(path, "y/a"))
+        )
+        failpoint = "hudi_pause_after_listing_timeline"
+        result = []
+        errors = []
+
+        def select():
+            try:
+                result.append(
+                    instance.query(f"SELECT id, p, v FROM {table} ORDER BY id")
+                )
+            except BaseException as e:  # noqa: BLE001
+                errors.append(e)
+
+        instance.query(f"SYSTEM ENABLE FAILPOINT {failpoint}")
+        thread = threading.Thread(target=select)
+        thread.start()
+        try:
+            instance.query(f"SYSTEM WAIT FAILPOINT {failpoint} PAUSE", timeout=60)
+            put_object(minio_client, bucket, instant, late.encode())
+            instance.query(f"SYSTEM NOTIFY FAILPOINT {failpoint}")
+        finally:
+            instance.query(f"SYSTEM DISABLE FAILPOINT {failpoint}")
+            thread.join()
+        if errors:
+            raise errors[0]
+        assert result == ["".join("\t".join(map(str, row)) + "\n" for row in expected)]
+        assert_rows(
+            instance, table, "id, p, v", [(i, "x/a", i * 100) for i in range(5)]
+        )
+        minio_client.remove_object(bucket, instant)
+        assert_rows(instance, table, "id, p, v", expected)
+
         # insert_overwrite_table replaces the file groups of every partition.
         files = parquet_files(path)
         write_hudi_table(
@@ -666,6 +706,7 @@ def test_replaced_file_groups(started_cluster, table_version):
             )
             assert_rows(instance, source, "id, p, v", expected)
     finally:
+        instance.query(f"DROP TABLE IF EXISTS {table} SYNC")
         shutil.rmtree(tmp_dir, ignore_errors=True)
         remove_directory(minio_client, bucket, name)
         remove_directory(minio_client, bucket, f"{name}_partitioned")
