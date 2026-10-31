@@ -1782,7 +1782,7 @@ bool RestCatalog::getTableMetadataImpl(
         const bool allow_geo_parser
             = getContext()->getSettingsRef()[DB::Setting::allow_geo_types_in_iceberg].value;
         auto schema_processor = DB::Iceberg::IcebergSchemaProcessor(allow_geo_parser);
-        auto id = DB::IcebergMetadata::parseTableSchema(metadata_object, schema_processor, log);
+        auto id = DB::IcebergMetadata::parseTableSchema(metadata_object, schema_processor);
         auto schema = schema_processor.getClickHouseTableSchemaById(id);
         result.setSchema(*schema);
     }

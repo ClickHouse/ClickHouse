@@ -408,10 +408,7 @@ void IcebergMetadata::backgroundMetadataPrefetcherThread()
     }
 }
 
-Int32 IcebergMetadata::parseTableSchema(
-    const Poco::JSON::Object::Ptr & metadata_object,
-    IcebergSchemaProcessor & schema_processor,
-    LoggerPtr metadata_logger)
+Int32 IcebergMetadata::parseTableSchema(const Poco::JSON::Object::Ptr & metadata_object, IcebergSchemaProcessor & schema_processor)
 {
     const auto format_version = metadata_object->getValue<Int32>(f_format_version);
 
@@ -424,48 +421,16 @@ Int32 IcebergMetadata::parseTableSchema(
             "Iceberg format version {} is not supported, only versions 1, 2 and 3 are supported",
             format_version);
 
-    if (format_version >= 2)
+    /// `schema` is deprecated and may be stale (a writer that evolved the schema only via `schemas`), so `schemas` wins when present.
+    if (format_version >= 2 || metadata_object->has(f_schemas))
     {
         auto [schema, current_schema_id] = parseTableSchemaV2Method(metadata_object);
         schema_processor.addIcebergTableSchema(schema);
         return current_schema_id;
     }
-    else
-    {
-        try
-        {
-            auto [schema, current_schema_id] = parseTableSchemaV1Method(metadata_object);
-            schema_processor.addIcebergTableSchema(schema);
-            return current_schema_id;
-        }
-        catch (const Exception & first_error)
-        {
-            if (first_error.code() != ErrorCodes::BAD_ARGUMENTS)
-                throw;
-            try
-            {
-                auto [schema, current_schema_id] = parseTableSchemaV2Method(metadata_object);
-                schema_processor.addIcebergTableSchema(schema);
-                LOG_WARNING(
-                    metadata_logger,
-                    "Iceberg table schema was parsed using v2 specification, but it was impossible to parse it using v1 "
-                    "specification. Be "
-                    "aware that you Iceberg writing engine violates Iceberg specification. Error during parsing {}",
-                    first_error.displayText());
-                return current_schema_id;
-            }
-            catch (const Exception & second_error)
-            {
-                if (first_error.code() != ErrorCodes::BAD_ARGUMENTS)
-                    throw;
-                throw Exception(
-                    ErrorCodes::BAD_ARGUMENTS,
-                    "Cannot parse Iceberg table schema both with v1 and v2 methods. Old method error: {}. New method error: {}",
-                    first_error.displayText(),
-                    second_error.displayText());
-            }
-        }
-    }
+    auto [schema, current_schema_id] = parseTableSchemaV1Method(metadata_object);
+    schema_processor.addIcebergTableSchema(schema);
+    return current_schema_id;
 }
 
 static Poco::JSON::Object::Ptr traverseMetadataAndFindNecessarySnapshotObject(
@@ -730,7 +695,7 @@ IcebergMetadata::getStateImpl(const ContextPtr & local_context, Poco::JSON::Obje
     }
     else
     {
-        auto schema_id = parseTableSchema(metadata_object, *persistent_components.schema_processor, log);
+        auto schema_id = parseTableSchema(metadata_object, *persistent_components.schema_processor);
         if (!metadata_object->has(f_current_snapshot_id))
         {
             return {nullptr, schema_id};

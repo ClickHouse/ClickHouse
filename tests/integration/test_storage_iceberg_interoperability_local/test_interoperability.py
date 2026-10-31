@@ -1,7 +1,13 @@
 import glob
+import json
 import os
+import tempfile
 
+import pyarrow as pa
+from pyiceberg.catalog.sql import SqlCatalog
+from pyiceberg.schema import Schema
 from pyiceberg.table import StaticTable
+from pyiceberg.types import IntegerType, NestedField, StringType
 
 from helpers.iceberg_utils import get_uuid_str, iceberg_local_interop_dir
 
@@ -526,3 +532,68 @@ def test_ch_write_v1_pyiceberg_read(started_cluster_iceberg):
     table = StaticTable.from_metadata(latest_metadata_file(table_dir))
     rows = sorted(table.scan().to_arrow().to_pylist(), key=lambda row: row["id"])
     assert rows == [{"id": 1, "s": "a", "x": None}, {"id": 2, "s": "b", "x": 3}]
+
+
+def test_pyiceberg_v1_schema_evolution_ch_read(started_cluster_iceberg):
+    """
+    pyiceberg evolves the schema of a format version 1 table, ClickHouse reads and appends.
+
+    pyiceberg leaves the deprecated `schema` field at the original schema, so the current
+    schema must come from `schemas` and `current-schema-id`, as the spec says. ClickHouse
+    read the stale `schema` and saw neither the new column nor its data (issue #128301).
+    """
+    node1 = started_cluster_iceberg.instances["node1"]
+
+    TABLE_NAME = "test_pyiceberg_v1_evolution_" + get_uuid_str()
+    ch_settings = {"allow_insert_into_iceberg": 1}
+
+    with tempfile.TemporaryDirectory() as catalog_dir:
+        catalog = SqlCatalog(
+            "default",
+            uri=f"sqlite:///{catalog_dir}/catalog.db",
+            warehouse=f"file://{ICEBERG_DIR_NODE1}/pyiceberg_{TABLE_NAME}",
+        )
+        catalog.create_namespace("default")
+        table = catalog.create_table(
+            f"default.{TABLE_NAME}",
+            schema=Schema(NestedField(1, "id", IntegerType(), required=False)),
+            properties={"format-version": "1"},
+        )
+        table.append(pa.table({"id": pa.array([1], pa.int32())}))
+        with table.update_schema() as update:
+            update.add_column("extra", StringType())
+        table = catalog.load_table(f"default.{TABLE_NAME}")
+        table.append(
+            pa.table({"id": pa.array([2], pa.int32()), "extra": pa.array(["x"], pa.string())})
+        )
+        table = catalog.load_table(f"default.{TABLE_NAME}")
+
+    with open(table.metadata_location.removeprefix("file://")) as f:
+        metadata = json.load(f)
+    # The fixture really is stale: `schema` is still the schema before the evolution.
+    assert metadata["format-version"] == 1
+    assert metadata["current-schema-id"] == 1
+    assert metadata["schema"]["schema-id"] == 0
+
+    table_path = table.location().removeprefix("file://")
+    assert (
+        node1.query(f"SELECT * FROM icebergLocal(local, path = '{table_path}') ORDER BY id")
+        == "1\t\\N\n2\tx\n"
+    )
+
+    node1.query(
+        f"INSERT INTO TABLE FUNCTION icebergLocal(local, path = '{table_path}') VALUES (3, 'y')",
+        settings=ch_settings,
+    )
+
+    # pyiceberg names its metadata files `<N>-<uuid>.metadata.json`, so the only `v<N>` one is ClickHouse's.
+    latest = latest_metadata_file(table_path)
+    with open(latest) as f:
+        metadata = json.load(f)
+    current_schema = next(
+        schema for schema in metadata["schemas"] if schema["schema-id"] == metadata["current-schema-id"]
+    )
+    assert metadata["schema"] == current_schema
+
+    rows = sorted(StaticTable.from_metadata(latest).scan().to_arrow().to_pylist(), key=lambda row: row["id"])
+    assert rows == [{"id": 1, "extra": None}, {"id": 2, "extra": "x"}, {"id": 3, "extra": "y"}]
