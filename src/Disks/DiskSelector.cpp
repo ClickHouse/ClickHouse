@@ -168,6 +168,22 @@ bool haveSameStorageNamespace(const DiskPtr & lhs, const DiskPtr & rhs)
     return lhs_namespace == getStorageNamespace(rhs);
 }
 
+bool areDisksDuplicateStorage(const DiskPtr & lhs, const DiskPtr & rhs)
+{
+    /// Only two writable disks load a part twice and then remove one copy, which is what deletes the data.
+    /// Reading one storage through a second disk is a supported setup - a reader disk beside a writer disk,
+    /// or a cache layer over a read-only copy.
+    if (lhs->isReadOnly() || lhs->isWriteOnce() || rhs->isReadOnly() || rhs->isWriteOnce())
+        return false;
+
+    /// A `cache` or `encrypted` disk stands on the disk it wraps and reports that disk's namespace. The two
+    /// are one storage behind one metadata storage, not two ways into the same files.
+    if (isOneDiskALayerOverTheOther(lhs, rhs))
+        return false;
+
+    return haveSameStorageNamespace(lhs, rhs);
+}
+
 void DiskSelector::assertInitialized() const
 {
     if (!is_initialized)
@@ -209,36 +225,6 @@ void DiskSelector::recordDisk(const std::string & disk_name, DiskPtr disk)
                         disk_name, saved_disk_name);
             }
         }
-    }
-
-    /// Two disks that resolve to the same storage namespace read and write the same files. A storage policy built
-    /// from both of them makes `MergeTree` enumerate every part twice, which it reports as duplicate parts.
-    ///
-    /// Only two writable disks can do that: the duplicate is removed, which is what deletes the data. A read-only
-    /// or write-once disk over the same storage removes nothing, and reading one storage through a second disk is
-    /// a supported setup - a reader disk beside a writer disk, or a cache layer over a read-only copy. The
-    /// plain-rewritable check above makes the same exclusion.
-    for (const auto & [saved_disk_name, saved_disk] : disks)
-    {
-        if (saved_disk_name == disk_name)
-            continue;
-
-        if (disk->isReadOnly() || disk->isWriteOnce() || saved_disk->isReadOnly() || saved_disk->isWriteOnce())
-            continue;
-
-        /// A `cache` or `encrypted` disk sits on top of another disk and reports the namespace of the
-        /// disk it wraps. The two are one storage behind one metadata storage, not a duplicate
-        /// registration, so they are not a clash.
-        if (isOneDiskALayerOverTheOther(disk, saved_disk))
-            continue;
-
-        if (haveSameStorageNamespace(disk, saved_disk))
-            throw Exception(
-                ErrorCodes::BAD_ARGUMENTS,
-                "Disks {} and {} resolve to the same storage namespace ({})",
-                backQuote(saved_disk_name),
-                backQuote(disk_name),
-                quoteString(disk->getPath()));
     }
 
     const auto [_, inserted] = disks.emplace(disk_name, std::move(disk));

@@ -16,9 +16,17 @@ namespace DB
 class DiskSelector;
 using DiskSelectorPtr = std::shared_ptr<const DiskSelector>;
 
-/// Whether two disks read and write the same files, by endpoint, bucket and path. Disks that share a storage
-/// namespace cannot be registered together, because a storage policy over both loads every part twice.
+/// Whether two disks read and write the same files, by endpoint, bucket and path.
 bool haveSameStorageNamespace(const DiskPtr & lhs, const DiskPtr & rhs);
+
+/// Whether two disks are two writable ways into the same files, so that a storage policy holding both
+/// loads every part twice and removes one copy as a duplicate. `StoragePolicy` rejects such a pair.
+///
+/// Registering both is allowed: two disks over one storage are only a danger to the table that reads
+/// through both of them, and a disk is registered long before it is known which policy will hold it.
+/// Two single-disk policies over one storage are a supported setup, a `cache` disk beside another
+/// `cache` disk over the same disk for one.
+bool areDisksDuplicateStorage(const DiskPtr & lhs, const DiskPtr & rhs);
 
 /// Parse .xml configuration and store information about disks
 /// Mostly used for introspection.
