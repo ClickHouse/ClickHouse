@@ -1711,7 +1711,15 @@ private:
         /// Elements without a `FixedString` compared with another type are compared as in the comparison of arrays of
         /// the same type: by `IColumn::compareAt` of the values cast to their common type. It orders NaN after the other
         /// numbers and equal to another NaN, and handles the NULLs inside composite values, also in `Dynamic` and `Variant`.
-        if ((left.type->equals(*right.type) || (!containsFixedString(*left.type) && !containsFixedString(*right.type)))
+        /// So are the elements that can hold a value of any type (`Dynamic`, `Variant`, `JSON`): their equality keeps the
+        /// type of the value, so a `FixedString` is not equal to a `String` there, and their order must agree with it.
+        auto holds_any_type = [](const DataTypePtr & type)
+        {
+            auto nested = removeNullable(removeLowCardinality(type));
+            return isDynamic(nested) || isVariant(nested) || isObject(nested);
+        };
+        if ((left.type->equals(*right.type) || (!containsFixedString(*left.type) && !containsFixedString(*right.type))
+                || holds_any_type(left.type) || holds_any_type(right.type))
             && !is_always_null(left.type) && !is_always_null(right.type))
         {
             if (DataTypePtr common_type = tryGetLeastSupertype(DataTypes{left.type, right.type}))
