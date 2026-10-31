@@ -21,11 +21,15 @@
 #include <Common/ThreadGroupSwitcher.h>
 #include <Common/escapeForFileName.h>
 #include <Common/setThreadName.h>
+#include <Common/Stopwatch.h>
+#include <Common/CurrentMetrics.h>
+#include <Common/MemoryTracker.h>
 
 #include <IO/ReadBufferFromString.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/ProcessList.h>
 
 #include <Storages/ObjectStorage/DataLakes/DeltaLake/getSchemaFromSnapshot.h>
 #include <Storages/ObjectStorage/DataLakes/DeltaLake/PartitionPruner.h>
@@ -35,13 +39,22 @@
 #include <Storages/ObjectStorage/DataLakes/DeltaLake/EnginePredicate.h>
 #include <Storages/ObjectStorage/Utils.h>
 #include <delta_kernel_ffi.hpp>
+#include <base/scope_guard.h>
 #include <fmt/ranges.h>
 #include <roaring/roaring.hh>
+
+#include <algorithm>
+#include <atomic>
+#include <chrono>
+#include <future>
 
 namespace DB::ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
     extern const int DELTA_KERNEL_ERROR;
+    extern const int TIMEOUT_EXCEEDED;
+    extern const int CANNOT_SCHEDULE_TASK;
+    extern const int LOGICAL_ERROR;
 }
 
 namespace DB::Setting
@@ -50,6 +63,7 @@ namespace DB::Setting
     extern const SettingsInt64 delta_lake_snapshot_version;
     extern const SettingsBool delta_lake_throw_on_engine_predicate_error;
     extern const SettingsBool delta_lake_enable_engine_predicate;
+    extern const SettingsMilliseconds delta_lake_snapshot_load_timeout_ms;
 }
 
 namespace ProfileEvents
@@ -62,6 +76,14 @@ namespace ProfileEvents
 namespace DB::FailPoints
 {
     extern const char delta_kernel_force_stale_token_error[];
+    extern const char delta_kernel_snapshot_load_pause[];
+    extern const char delta_kernel_snapshot_load_worker_dropped[];
+}
+
+namespace CurrentMetrics
+{
+    extern const Metric DeltaLakeSnapshotLoadsStuck;
+    extern const Metric DeltaLakeSnapshotLoadWorkers;
 }
 
 namespace DeltaLake
@@ -109,7 +131,7 @@ public:
         LoggerPtr log_)
         : DB::WithContext(query_context_)
         , kernel_snapshot_state(kernel_snapshot_state_)
-        , captured_credentials_fingerprint(helper_->getCredentialsFingerprint())
+        , captured_credentials_fingerprint(kernel_snapshot_state_->credentials_fingerprint)
         , helper(helper_)
         , read_schema(read_schema_)
         , expression_schema(table_schema_)
@@ -263,10 +285,10 @@ public:
             "scan state (refreshed via callback: {}, fingerprint drifted: {}). Original error: {}",
             refreshed_via_callback, fingerprint_drifted, msg);
 
-        kernel_snapshot_state = std::make_shared<KernelSnapshotState>(
-            *helper,
-            std::optional<size_t>(kernel_snapshot_state->snapshot_version));
-        captured_credentials_fingerprint = post_fingerprint;
+        /// Through the interruptible load, so the rebuild stays killable on this thread too.
+        kernel_snapshot_state = loadKernelSnapshotState(
+            helper, std::optional<size_t>(kernel_snapshot_state->snapshot_version), log);
+        captured_credentials_fingerprint = kernel_snapshot_state->credentials_fingerprint;
         scan = KernelScan();
         scan_data_iterator = KernelScanDataIterator();
         return true;
@@ -692,8 +714,22 @@ TableSnapshot::TableSnapshot(
 
 size_t TableSnapshot::getVersion() const
 {
+    initOrUpdateSnapshot();
     std::lock_guard lock(mutex);
     return getVersionUnlocked();
+}
+
+bool TableSnapshot::isAbandonedWithoutWaiters() const
+{
+    std::lock_guard lock(mutex);
+    return !kernel_snapshot_state && inflight_load
+        && inflight_load->state.load() == InflightSnapshotLoad::State::Abandoned
+        && inflight_load->waiters.load() == 0;
+}
+
+bool TableSnapshot::isInitialized() const
+{
+    return has_kernel_snapshot_state.load();
 }
 
 size_t TableSnapshot::getVersionUnlocked() const
@@ -703,28 +739,32 @@ size_t TableSnapshot::getVersionUnlocked() const
 
 TableSnapshot::SnapshotStats TableSnapshot::getSnapshotStats() const
 {
-    if (snapshot_stats.has_value())
-        return snapshot_stats.value();
-
-    const auto pre_fingerprint = kernel_state_credentials_fingerprint;
-    try
+    for (size_t attempt = 0;; ++attempt)
     {
-        snapshot_stats = getSnapshotStatsImpl();
-    }
-    catch (const DB::Exception & e)
-    {
-        if (!tryRefreshAfterStaleTokenError(e, pre_fingerprint, "stats scan"))
-            throw;
-        /// Invalidate the cached engine so `initOrUpdateSnapshot` rebuilds with the
-        /// freshened credentials, then re-run the stats scan against the new engine.
-        kernel_snapshot_state.reset();
         initOrUpdateSnapshot();
-        snapshot_stats = getSnapshotStatsImpl();
+
+        std::lock_guard lock(mutex);
+        if (snapshot_stats.has_value())
+            return snapshot_stats.value();
+
+        const auto pre_fingerprint = kernel_state_credentials_fingerprint;
+        try
+        {
+            snapshot_stats = getSnapshotStatsImpl();
+        }
+        catch (const DB::Exception & e)
+        {
+            if (attempt > 0 || !tryRefreshAfterStaleTokenError(e, pre_fingerprint, "stats scan"))
+                throw;
+            /// Rebuild the engine in the next `initOrUpdateSnapshot` and retry.
+            kernel_state_needs_rebuild = true;
+            continue;
+        }
+        LOG_TEST(
+            log, "Updated statistics for snapshot version {}",
+            getVersionUnlocked());
+        return snapshot_stats.value();
     }
-    LOG_TEST(
-        log, "Updated statistics for snapshot version {}",
-        getVersionUnlocked());
-    return snapshot_stats.value();
 }
 
 TableSnapshot::SnapshotStats TableSnapshot::getSnapshotStatsImpl() const
@@ -849,13 +889,11 @@ TableSnapshot::SnapshotStats TableSnapshot::getSnapshotStatsImpl() const
 
 std::optional<size_t> TableSnapshot::getTotalRows() const
 {
-    std::lock_guard lock(mutex);
     return getSnapshotStats().total_rows;
 }
 
 std::optional<size_t> TableSnapshot::getTotalBytes() const
 {
-    std::lock_guard lock(mutex);
     return getSnapshotStats().total_bytes;
 }
 
@@ -888,17 +926,33 @@ bool TableSnapshot::tryRefreshAfterStaleTokenError(
     return true;
 }
 
+namespace
+{
+    /// A shared future rethrows one exception object to every waiter, and callers add to its message
+    /// as it propagates: each waiter gets a copy of its own.
+    template <typename T>
+    T getForThisWaiter(const std::shared_future<T> & future)
+    {
+        try
+        {
+            return future.get();
+        }
+        catch (...)
+        {
+            std::rethrow_exception(DB::copyMutableException(std::current_exception()));
+        }
+    }
+}
+
 void TableSnapshot::initOrUpdateSnapshot() const
 {
+    std::unique_lock lock(mutex);
+
     /// Rebuild when credentials rotate so the engine never outlives its embedded STS token.
     const auto current_credentials_fingerprint = helper->getCredentialsFingerprint();
-    if (kernel_snapshot_state && current_credentials_fingerprint == kernel_state_credentials_fingerprint)
+    if (kernel_snapshot_state && !kernel_state_needs_rebuild
+        && current_credentials_fingerprint == kernel_state_credentials_fingerprint)
         return;
-
-    /// Pin rebuilds to the already-resolved version so cached latest snapshots don't drift.
-    const std::optional<size_t> version_to_build = kernel_snapshot_state
-        ? std::optional<size_t>(kernel_snapshot_state->snapshot_version)
-        : snapshot_version_to_read;
 
     ProfileEvents::increment(ProfileEvents::DeltaLakeSnapshotInitializations);
 
@@ -906,30 +960,284 @@ void TableSnapshot::initOrUpdateSnapshot() const
         log, "{}",
         kernel_snapshot_state ? "Rebuilding kernel snapshot state (credentials rotated)" : "Initializing snapshot");
 
-    try
+    for (size_t attempt = 0;; ++attempt)
     {
-        kernel_snapshot_state = std::make_shared<KernelSnapshotState>(*helper, version_to_build);
-    }
-    catch (const DB::Exception & e)
-    {
-        if (!tryRefreshAfterStaleTokenError(e, current_credentials_fingerprint, "snapshot init"))
+        /// A sibling may have installed a state while this waiter handled a failed build.
+        if (attempt > 0 && kernel_snapshot_state && !kernel_state_needs_rebuild
+            && helper->getCredentialsFingerprint() == kernel_state_credentials_fingerprint)
+            break;
+
+        /// Pin rebuilds to the installed version, so an object never changes its version.
+        const std::optional<size_t> version_to_build = kernel_snapshot_state
+            ? std::optional<size_t>(kernel_snapshot_state->snapshot_version)
+            : snapshot_version_to_read;
+
+        /// Queries share one in-flight build. A load nobody waits for any more may be stuck for
+        /// good, so it is restarted, but only for a pinned version (the result is the same version);
+        /// a latest-version object is replaced by the metadata layer instead.
+        auto load = inflight_load;
+        const bool given_up = load && load->state.load() == InflightSnapshotLoad::State::Abandoned
+            && load->waiters.load() == 0;
+        if (!load || (version_to_build.has_value() && given_up))
+        {
+            load = startKernelSnapshotLoad(helper, version_to_build);
+            inflight_load = load;
+        }
+
+        /// Registered and unregistered under the mutex, consistently with the `given_up` check.
+        load->waiters.fetch_add(1, std::memory_order_relaxed);
+
+        /// Wait outside the mutex, so that every waiter stays killable.
+        lock.unlock();
+        try
+        {
+            waitForSnapshotLoad(*load, *helper);
+        }
+        catch (...)
+        {
+            lock.lock();
+            if (load->waiters.fetch_sub(1, std::memory_order_relaxed) == 1)
+                markAbandoned(*load, *helper, log);
             throw;
-        kernel_snapshot_state = std::make_shared<KernelSnapshotState>(*helper, version_to_build);
+        }
+        lock.lock();
+        load->waiters.fetch_sub(1, std::memory_order_relaxed);
+
+        /// A superseded load may install only while nothing is installed; afterwards only the
+        /// registered load may replace the state, so an object never changes its version.
+        const bool is_current_load = (inflight_load == load);
+        if (is_current_load)
+            inflight_load = nullptr;
+
+        std::shared_ptr<KernelSnapshotState> built;
+        try
+        {
+            built = getForThisWaiter(load->future);
+        }
+        catch (const DB::Exception & e)
+        {
+            /// Against the credentials the build used: the client may have rotated meanwhile.
+            if (attempt > 0 || !tryRefreshAfterStaleTokenError(e, load->credentials_fingerprint, "snapshot init"))
+                throw;
+            continue;
+        }
+        if (!is_current_load && kernel_snapshot_state)
+            break;  /// Already installed by the registered load (or a sibling waiter): keep it.
+        kernel_snapshot_state = built;
+        has_kernel_snapshot_state.store(true);
+        kernel_state_credentials_fingerprint = built->credentials_fingerprint;
+        kernel_state_needs_rebuild = false;
+        break;
     }
-    kernel_state_credentials_fingerprint = helper->getCredentialsFingerprint();
 
     LOG_TRACE(
         log, "Initialized snapshot. Snapshot version: {}",
         kernel_snapshot_state->snapshot_version);
 }
 
+namespace
+{
+    /// Cap on live snapshot-load workers, stuck ones included: a share of the global thread pool,
+    /// at most 128, always leaving two pool threads free (0 for a pool of 2 or fewer).
+    Int64 maxSnapshotLoadWorkers()
+    {
+        const auto pool_size = static_cast<Int64>(GlobalThreadPool::instance().getMaxThreads());
+        return std::clamp<Int64>(std::min<Int64>(std::max<Int64>(pool_size / 8, 1), pool_size - 2), 0, 128);
+    }
+    std::atomic<Int64> snapshot_load_worker_permits{0};
+}
+
+std::shared_ptr<TableSnapshot::InflightSnapshotLoad> TableSnapshot::startKernelSnapshotLoad(
+    KernelHelperPtr kernel_helper, std::optional<size_t> version_to_build)
+{
+    /// The kernel FFI has no cancellation hook, so a stuck call could not be killed (#117280).
+    /// It runs on a worker thread which never touches `this` and may outlive every waiter.
+
+    /// Owns the worker permit and answers the waiters. It lives in the scheduled job, so it is also
+    /// destroyed when the pool drops the job without running it (setting up the pool thread can
+    /// throw): the permit is returned and the waiters get an error either way.
+    struct Job : private boost::noncopyable
+    {
+        std::shared_ptr<InflightSnapshotLoad> load = std::make_shared<InflightSnapshotLoad>();
+        std::promise<std::shared_ptr<KernelSnapshotState>> result;
+        std::string table_location;
+        bool answered = false;
+        bool holds_permit = false;
+
+        ~Job()
+        {
+            if (!answered)
+            {
+                try
+                {
+                    result.set_exception(std::make_exception_ptr(DB::Exception(
+                        DB::ErrorCodes::CANNOT_SCHEDULE_TASK,
+                        "The worker thread loading the snapshot of the Delta Lake table at {} did not start",
+                        table_location)));
+                }
+                catch (...)
+                {
+                    /// The broken promise still answers the waiters.
+                    DB::tryLogCurrentException(__PRETTY_FUNCTION__);
+                }
+            }
+            if (!holds_permit)
+                return;
+            /// If every waiter already gave up, undoing the stuck-load accounting is ours to do.
+            if (load->state.exchange(InflightSnapshotLoad::State::Finished) == InflightSnapshotLoad::State::Abandoned)
+                CurrentMetrics::sub(CurrentMetrics::DeltaLakeSnapshotLoadsStuck);
+            CurrentMetrics::sub(CurrentMetrics::DeltaLakeSnapshotLoadWorkers);
+            snapshot_load_worker_permits.fetch_sub(1, std::memory_order_relaxed);
+        }
+    };
+    auto job = std::make_shared<Job>();
+    job->table_location = kernel_helper->getTableLocation();
+    auto load = job->load;
+    load->future = job->result.get_future().share();
+
+    /// Reserve a permit before launching, so the bound holds under concurrency.
+    const Int64 max_workers = maxSnapshotLoadWorkers();
+    if (max_workers == 0)
+        throw DB::Exception(
+            DB::ErrorCodes::CANNOT_SCHEDULE_TASK,
+            "Refusing to load the snapshot of the Delta Lake table at {}: the global thread pool is too small "
+            "(max_thread_pool_size = {}) to run a snapshot-load worker without starving other tasks",
+            kernel_helper->getTableLocation(), GlobalThreadPool::instance().getMaxThreads());
+    if (snapshot_load_worker_permits.fetch_add(1, std::memory_order_relaxed) >= max_workers)
+    {
+        snapshot_load_worker_permits.fetch_sub(1, std::memory_order_relaxed);
+        throw DB::Exception(
+            DB::ErrorCodes::CANNOT_SCHEDULE_TASK,
+            "Refusing to load the snapshot of the Delta Lake table at {}: {} snapshot-load workers are "
+            "already running or stuck inside delta-kernel ({} of them were given up by their queries, "
+            "see the DeltaLakeSnapshotLoadsStuck metric); not starting another one until a worker returns",
+            kernel_helper->getTableLocation(), max_workers,
+            CurrentMetrics::get(CurrentMetrics::DeltaLakeSnapshotLoadsStuck));
+    }
+    /// From here on the job returns the permit when it is destroyed, whether it ran or not.
+    job->holds_permit = true;
+    CurrentMetrics::add(CurrentMetrics::DeltaLakeSnapshotLoadWorkers);
+
+    /// The build is shared, so it gets its own thread group: the starting query's context keeps the
+    /// kernel's log lines attributed to it, but its memory limits do not apply to other waiters.
+    DB::ThreadGroupPtr thread_group;
+    DB::ContextPtr group_context = DB::CurrentThread::tryGetQueryContext();
+    if (!group_context)
+        group_context = DB::Context::getGlobalContextInstance();
+    if (group_context)
+    {
+        thread_group = std::make_shared<DB::ThreadGroup>(group_context, /* os_threads_nice_value */ 0);
+        thread_group->memory_tracker.setDescription("Delta Lake snapshot load");
+        thread_group->memory_tracker.setParent(&total_memory_tracker);
+    }
+    else
+        thread_group = DB::CurrentThread::getGroup();
+
+    ThreadFromGlobalPool thread(
+        [job, kernel_helper, version_to_build, thread_group]
+        {
+            /// Simulates the pool dropping the job before it runs (used by tests).
+            fiu_do_on(DB::FailPoints::delta_kernel_snapshot_load_worker_dropped, { return; });
+
+            DB::ThreadGroupSwitcher switcher(thread_group, DB::ThreadName::DATALAKE_TABLE_SNAPSHOT);
+            try
+            {
+                /// Simulates a kernel call which never returns (used by tests).
+                DB::FailPointInjection::pauseFailPoint(DB::FailPoints::delta_kernel_snapshot_load_pause);
+                job->result.set_value(std::make_shared<KernelSnapshotState>(
+                    *kernel_helper, version_to_build, job->load->credentials_fingerprint));
+            }
+            catch (...)
+            {
+                job->result.set_exception(std::current_exception());
+            }
+            job->answered = true;
+        });
+    /// Waiters wait on the future; the job keeps the worker's data alive.
+    thread.detach();
+    return load;
+}
+
+void TableSnapshot::waitForSnapshotLoad(InflightSnapshotLoad & load, const IKernelHelper & kernel_helper)
+{
+    DB::QueryStatusPtr process_list_element;
+    UInt64 timeout_ms = 0;
+    auto context = DB::CurrentThread::tryGetQueryContext();
+    if (!context)
+        context = DB::Context::getGlobalContextInstance();
+    if (context)
+    {
+        process_list_element = context->getProcessListElementSafe();
+        timeout_ms = context->getSettingsRef()[DB::Setting::delta_lake_snapshot_load_timeout_ms].totalMilliseconds();
+    }
+
+    Stopwatch watch;
+    while (load.future.wait_for(std::chrono::milliseconds(100)) != std::future_status::ready)
+    {
+        /// Throws if the query was killed or `max_execution_time` is exceeded. Under
+        /// `timeout_overflow_mode = 'break'` it returns false instead, but there is no partial
+        /// snapshot to return, so throw in that case too.
+        if (process_list_element && !process_list_element->checkTimeLimit())
+            throw DB::Exception(
+                DB::ErrorCodes::TIMEOUT_EXCEEDED,
+                "Timeout exceeded while loading the snapshot of the Delta Lake table at {}: "
+                "max_execution_time is exceeded",
+                kernel_helper.getTableLocation());
+
+        if (timeout_ms && watch.elapsedMilliseconds() >= timeout_ms)
+            throw DB::Exception(
+                DB::ErrorCodes::TIMEOUT_EXCEEDED,
+                "Timeout exceeded while loading the snapshot of the Delta Lake table at {}: "
+                "waited {} ms, delta_lake_snapshot_load_timeout_ms is {} ms",
+                kernel_helper.getTableLocation(), watch.elapsedMilliseconds(), timeout_ms);
+    }
+}
+
+void TableSnapshot::markAbandoned(InflightSnapshotLoad & load, const IKernelHelper & kernel_helper, const LoggerPtr & log)
+{
+    /// The worker keeps running and undoes the stuck-load count when the kernel call returns.
+    auto expected = InflightSnapshotLoad::State::Running;
+    if (load.state.compare_exchange_strong(expected, InflightSnapshotLoad::State::Abandoned))
+    {
+        CurrentMetrics::add(CurrentMetrics::DeltaLakeSnapshotLoadsStuck);
+        LOG_WARNING(
+            log,
+            "Giving up waiting for the delta-kernel snapshot load of the table at {}: no waiter is left; "
+            "the worker thread keeps running until the kernel call returns "
+            "(stuck loads: {}, snapshot-load workers are capped at {})",
+            kernel_helper.getTableLocation(),
+            CurrentMetrics::get(CurrentMetrics::DeltaLakeSnapshotLoadsStuck), maxSnapshotLoadWorkers());
+    }
+}
+
+std::shared_ptr<TableSnapshot::KernelSnapshotState> TableSnapshot::loadKernelSnapshotState(
+    KernelHelperPtr kernel_helper, std::optional<size_t> version_to_build, const LoggerPtr & log)
+{
+    auto load = startKernelSnapshotLoad(kernel_helper, version_to_build);
+    try
+    {
+        waitForSnapshotLoad(*load, *kernel_helper);
+    }
+    catch (...)
+    {
+        /// Not shared, so nobody else waits for it.
+        markAbandoned(*load, *kernel_helper, log);
+        throw;
+    }
+    return load->future.get();
+}
+
 std::shared_ptr<TableSnapshot::KernelSnapshotState> TableSnapshot::getKernelSnapshotState() const
 {
-    initOrUpdateSnapshot();
+    if (!kernel_snapshot_state)
+        throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Kernel snapshot state is not initialized");
     return kernel_snapshot_state;
 }
 
-TableSnapshot::KernelSnapshotState::KernelSnapshotState(const IKernelHelper & helper_, std::optional<size_t> snapshot_version_)
+TableSnapshot::KernelSnapshotState::KernelSnapshotState(
+    const IKernelHelper & helper_,
+    std::optional<size_t> snapshot_version_,
+    DB::UInt128 & used_credentials_fingerprint)
 {
     fiu_do_on(DB::FailPoints::delta_kernel_force_stale_token_error,
     {
@@ -938,7 +1246,9 @@ TableSnapshot::KernelSnapshotState::KernelSnapshotState(const IKernelHelper & he
             "ExpiredToken: forced by delta_kernel_force_stale_token_error failpoint");
     });
 
-    auto * engine_builder = helper_.createBuilder();
+    /// Published before the kernel calls below, which may throw.
+    auto * engine_builder = helper_.createBuilderWithFingerprint(credentials_fingerprint);
+    used_credentials_fingerprint = credentials_fingerprint;
     engine = KernelUtils::unwrapResult(ffi::builder_build(engine_builder), "builder_build");
 
     using KernelSnapshotBuilder = KernelPointerWrapper<ffi::MutableFfiSnapshotBuilder, ffi::free_snapshot_builder>;
@@ -971,6 +1281,7 @@ DB::ObjectIterator TableSnapshot::iterate(
     DB::ContextPtr context)
 {
     const auto & settings = context->getSettingsRef();
+    initOrUpdateSnapshot();
     std::lock_guard lock(mutex);
     initOrUpdateSchemaIfChanged();
     auto state = getKernelSnapshotState();
@@ -1048,6 +1359,7 @@ void TableSnapshot::initOrUpdateSchemaIfChanged() const
 
 const DB::NamesAndTypesList & TableSnapshot::getTableSchema() const
 {
+    initOrUpdateSnapshot();
     std::lock_guard lock(mutex);
     initOrUpdateSchemaIfChanged();
     return schema->table_schema;
@@ -1055,6 +1367,7 @@ const DB::NamesAndTypesList & TableSnapshot::getTableSchema() const
 
 const DB::NamesAndTypesList & TableSnapshot::getReadSchema() const
 {
+    initOrUpdateSnapshot();
     std::lock_guard lock(mutex);
     initOrUpdateSchemaIfChanged();
     return schema->read_schema;
@@ -1062,6 +1375,7 @@ const DB::NamesAndTypesList & TableSnapshot::getReadSchema() const
 
 Poco::JSON::Array::Ptr TableSnapshot::getRawDeltaSchemaFields() const
 {
+    initOrUpdateSnapshot();
     std::lock_guard lock(mutex);
     auto state = getKernelSnapshotState();
     return getDeltaSchemaFieldsFromSnapshot(state->snapshot.get());
@@ -1069,6 +1383,7 @@ Poco::JSON::Array::Ptr TableSnapshot::getRawDeltaSchemaFields() const
 
 const DB::Names & TableSnapshot::getPartitionColumns() const
 {
+    initOrUpdateSnapshot();
     std::lock_guard lock(mutex);
     initOrUpdateSchemaIfChanged();
     return schema->partition_columns;
@@ -1076,6 +1391,7 @@ const DB::Names & TableSnapshot::getPartitionColumns() const
 
 const DB::NameToNameMap & TableSnapshot::getPhysicalNamesMap() const
 {
+    initOrUpdateSnapshot();
     std::lock_guard lock(mutex);
     initOrUpdateSchemaIfChanged();
     return schema->physical_names_map;
@@ -1083,6 +1399,7 @@ const DB::NameToNameMap & TableSnapshot::getPhysicalNamesMap() const
 
 const std::unordered_set<String> & TableSnapshot::getTimestampNtzPaths() const
 {
+    initOrUpdateSnapshot();
     std::lock_guard lock(mutex);
     initOrUpdateSchemaIfChanged();
     return schema->timestamp_ntz_paths;

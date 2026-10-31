@@ -259,6 +259,10 @@ using ObjectStorageIteratorPtr = std::shared_ptr<IObjectStorageIterator>;
 /// Base class for all object storages which implement some subset of ordinary filesystem operations.
 ///
 /// Examples of object storages are S3, Azure Blob Storage, HDFS.
+#if USE_AWS_S3
+struct S3Settings;
+#endif
+
 class IObjectStorage
 {
 public:
@@ -487,6 +491,8 @@ public:
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "This function is only implemented for S3ObjectStorage");
     }
     virtual std::shared_ptr<const S3::Client> tryGetS3StorageClient() { return nullptr; }
+
+    virtual std::shared_ptr<const S3Settings> tryGetS3StorageSettings() const { return nullptr; }
 #endif
 
     /// Invokes the catalog-vended credentials refresh callback (e.g. for Glue / Unity / REST

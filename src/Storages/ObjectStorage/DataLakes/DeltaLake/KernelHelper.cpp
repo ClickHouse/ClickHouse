@@ -2,6 +2,7 @@
 
 #if USE_DELTA_KERNEL_RS
 #include <Storages/ObjectStorage/S3/Configuration.h>
+#include <IO/S3Settings.h>
 #include <Storages/ObjectStorage/Local/Configuration.h>
 #include <Storages/ObjectStorage/DataLakes/DeltaLake/KernelHelper.h>
 #include <Storages/ObjectStorage/DataLakes/DeltaLake/KernelUtils.h>
@@ -32,6 +33,8 @@ namespace DB::ErrorCodes
 namespace DB::S3AuthSetting
 {
     extern const S3AuthSettingsBool no_sign_request;
+    extern const S3AuthSettingsUInt64 connect_timeout_ms;
+    extern const S3AuthSettingsUInt64 request_timeout_ms;
 }
 
 namespace DB::FailPoints
@@ -108,6 +111,8 @@ public:
             url.addRegionToURI(region);
 
         no_sign = auth_settings[DB::S3AuthSetting::no_sign_request];
+        connect_timeout_ms = auth_settings[DB::S3AuthSetting::connect_timeout_ms];
+        request_timeout_ms = auth_settings[DB::S3AuthSetting::request_timeout_ms];
     }
 
     const std::string & getTableLocation() const override { return table_location; }
@@ -119,8 +124,13 @@ public:
         /// Re-fetch the live S3 client. `S3ObjectStorage::applyNewSettings` swaps the
         /// MultiVersion<S3::Client> when catalog / vended credentials rotate; a captured
         /// snapshot would keep returning the original session.
-        const auto & credentials = object_storage->getS3StorageClient()->getCredentials();
+        const auto client = object_storage->getS3StorageClient();
+        return fingerprintOf(client->getCredentials());
+    }
 
+    template <typename Credentials>
+    static DB::UInt128 fingerprintOf(const Credentials & credentials)
+    {
         SipHash hash;
         hash.update(credentials.GetAWSAccessKeyId());
         hash.update(credentials.GetAWSSecretKey());
@@ -143,6 +153,12 @@ public:
 
     ffi::EngineBuilder * createBuilder() const override
     {
+        DB::UInt128 credentials_fingerprint;
+        return createBuilderWithFingerprint(credentials_fingerprint);
+    }
+
+    ffi::EngineBuilder * createBuilderWithFingerprint(DB::UInt128 & credentials_fingerprint) const override
+    {
         ffi::EngineBuilder * builder = KernelUtils::unwrapResult(
             ffi::get_engine_builder(
                 KernelUtils::toDeltaString(table_location),
@@ -155,8 +171,10 @@ public:
             setBuilderOption(builder, name, value);
         };
 
-        /// Read credentials from the *current* client — see `getCredentialsFingerprint`.
-        const auto & credentials = object_storage->getS3StorageClient()->getCredentials();
+        /// One read of the live client, so the fingerprint matches the credentials the engine is built with.
+        const auto client = object_storage->getS3StorageClient();
+        const auto & credentials = client->getCredentials();
+        credentials_fingerprint = fingerprintOf(credentials);
         auto access_key_id = credentials.GetAWSAccessKeyId();
         auto secret_access_key = credentials.GetAWSSecretKey();
         auto token = credentials.GetSessionToken();
@@ -186,12 +204,40 @@ public:
             set_option("aws_endpoint", url.endpoint);
         }
 
+        /// The kernel's object_store client does not see the server's S3 settings, so pass the timeouts the
+        /// storage's own S3 client uses now (`applyNewSettings` keeps them current). `0` (no timeout) cannot be
+        /// expressed there and keeps object_store's defaults (30 s / 5 s).
+        UInt64 effective_connect_timeout_ms = connect_timeout_ms;
+        UInt64 effective_request_timeout_ms = request_timeout_ms;
+        if (const auto live_settings = object_storage->tryGetS3StorageSettings())
+        {
+            effective_connect_timeout_ms = live_settings->auth_settings[DB::S3AuthSetting::connect_timeout_ms];
+            effective_request_timeout_ms = live_settings->auth_settings[DB::S3AuthSetting::request_timeout_ms];
+        }
+
+        if (effective_connect_timeout_ms)
+            set_option("connect_timeout", fmt::format("{}ms", effective_connect_timeout_ms));
+        else
+            LOG_WARNING(
+                log,
+                "s3_connect_timeout_ms = 0 (no timeout) cannot be forwarded to the delta-kernel "
+                "object store client; its default connect timeout stays in effect");
+        if (effective_request_timeout_ms)
+            set_option("timeout", fmt::format("{}ms", effective_request_timeout_ms));
+        else
+            LOG_WARNING(
+                log,
+                "s3_request_timeout_ms = 0 (no timeout) cannot be forwarded to the delta-kernel "
+                "object store client; its default request timeout stays in effect");
+
         LOG_TRACE(
             log,
             "Using endpoint: {}, uri: {}, region: {}, bucket: {}, no sign: {}, "
-            "has access_key_id: {}, has secret_access_key: {}, has token: {}",
+            "has access_key_id: {}, has secret_access_key: {}, has token: {}, "
+            "connect timeout: {} ms, request timeout: {} ms",
             url.endpoint, url.uri_str, region, url.bucket, no_sign,
-            !access_key_id.empty(), !secret_access_key.empty(), !token.empty());
+            !access_key_id.empty(), !secret_access_key.empty(), !token.empty(),
+            effective_connect_timeout_ms, effective_request_timeout_ms);
 
         return guard.release();
     }
@@ -204,6 +250,8 @@ private:
 
     std::string region;
     bool no_sign;
+    UInt64 connect_timeout_ms;
+    UInt64 request_timeout_ms;
 
     static std::string getTableLocation(const DB::S3::URI & url)
     {

@@ -6540,6 +6540,57 @@ def test_delta_kernel_rebuild_on_credentials_rotation(started_cluster):
     )
 
 
+def test_delta_kernel_rebuild_on_credentials_rotation_read_path(started_cluster):
+    """Same rotation as above, but through the read path (`TableSnapshot::iterate()`) instead
+    of the trivial-count statistics path: the rebuild must happen before the scan iterator is
+    built, the iterator must scan with the rebuilt engine, and the rows must still come back.
+    """
+    instance = started_cluster.instances["node1"]
+    spark = started_cluster.spark_session
+    minio_client = started_cluster.minio_client
+    bucket = started_cluster.minio_bucket
+    TABLE_NAME = randomize_table_name("test_delta_kernel_rebuild_on_rotation_read")
+
+    write_delta_from_df(
+        spark, generate_data(spark, 0, 100), f"/{TABLE_NAME}", mode="overwrite"
+    )
+    upload_directory(minio_client, bucket, f"/{TABLE_NAME}", "")
+    create_delta_table(instance, "s3", TABLE_NAME, started_cluster)
+
+    # `sum(a)` cannot be answered from statistics, so it goes through the scan iterator.
+    read_query = f"SELECT sum(a) FROM {TABLE_NAME}"
+    expected_sum = sum(range(100))
+
+    baseline_query_id = f"{TABLE_NAME}_baseline"
+    assert int(instance.query(read_query, query_id=baseline_query_id)) == expected_sum
+
+    instance.query("SYSTEM FLUSH LOGS")
+    rebuild_hits_pre = int(instance.query(
+        "SELECT count() FROM system.text_log "
+        f"WHERE query_id = '{baseline_query_id}' "
+        "  AND message ILIKE '%Rebuilding kernel snapshot state%'"
+    ).strip())
+    assert rebuild_hits_pre == 0, "First read should NOT trigger the credentials-rotation rebuild"
+
+    rotated_query_id = f"{TABLE_NAME}_rotated"
+    instance.query("SYSTEM ENABLE FAILPOINT delta_kernel_force_credentials_fingerprint_drift")
+    try:
+        assert int(instance.query(read_query, query_id=rotated_query_id)) == expected_sum
+    finally:
+        instance.query("SYSTEM DISABLE FAILPOINT delta_kernel_force_credentials_fingerprint_drift")
+
+    instance.query("SYSTEM FLUSH LOGS")
+    rebuild_hits = int(instance.query(
+        "SELECT count() FROM system.text_log "
+        f"WHERE query_id = '{rotated_query_id}' "
+        "  AND message ILIKE '%Rebuilding kernel snapshot state (credentials rotated)%'"
+    ).strip())
+    assert rebuild_hits >= 1, (
+        f"Expected the credentials-rotation rebuild to fire on the read path for query {rotated_query_id}, "
+        f"found {rebuild_hits} hits"
+    )
+
+
 def test_delta_kernel_retry_on_stale_token_via_catalog_callback(started_cluster):
     """Simulate delta-kernel reporting an `ExpiredToken` during snapshot init. The
     `delta_kernel_force_stale_token_error` failpoint throws the kernel error exactly
@@ -6592,6 +6643,439 @@ def test_delta_kernel_retry_on_stale_token_via_catalog_callback(started_cluster)
         f"Expected the catalog-callback retry log line to fire for query {retry_query_id}, "
         f"found {retry_hits} hits — the stale-token retry path was not exercised."
     )
+
+
+SNAPSHOT_LOAD_PAUSE_FAILPOINT = "delta_kernel_snapshot_load_pause"
+
+
+def prepare_paused_snapshot_load(started_cluster, table_name):
+    """Writes a small Delta table to S3 and arms the failpoint that keeps the thread running the
+    delta-kernel snapshot load paused, simulating a kernel call which never returns.
+    Returns the engine arguments of the table."""
+    instance = started_cluster.instances["node1"]
+    spark = started_cluster.spark_session
+    delta_path = f"/{table_name}"
+    write_delta_from_df(spark, spark.range(10).selectExpr("id as a"), delta_path)
+    default_upload_directory(started_cluster, "s3", delta_path, "")
+    instance.query(f"SYSTEM ENABLE FAILPOINT {SNAPSHOT_LOAD_PAUSE_FAILPOINT}")
+    return f"s3, filename = '{table_name}/', url = 'http://minio1:9001/{started_cluster.minio_bucket}/'"
+
+
+def release_paused_snapshot_load(instance):
+    # Wake up the paused worker thread, so it finishes the kernel call and frees its handles.
+    instance.query(f"SYSTEM NOTIFY FAILPOINT {SNAPSHOT_LOAD_PAUSE_FAILPOINT}")
+    instance.query(f"SYSTEM DISABLE FAILPOINT {SNAPSHOT_LOAD_PAUSE_FAILPOINT}")
+
+
+def get_stuck_snapshot_loads(instance):
+    return int(
+        instance.query(
+            "SELECT value FROM system.metrics WHERE metric = 'DeltaLakeSnapshotLoadsStuck'"
+        )
+    )
+
+
+def get_snapshot_load_workers(instance):
+    return int(
+        instance.query(
+            "SELECT value FROM system.metrics WHERE metric = 'DeltaLakeSnapshotLoadWorkers'"
+        )
+    )
+
+
+def test_kill_query_during_snapshot_load(started_cluster):
+    """A snapshot load stuck inside delta-kernel must not make the query unkillable:
+    KILL QUERY has to abort the waiting query although the kernel call has not returned yet."""
+    from concurrent.futures import ThreadPoolExecutor
+
+    instance = started_cluster.instances["node1"]
+    TABLE_NAME = randomize_table_name("test_kill_query_during_snapshot_load")
+    engine_args = prepare_paused_snapshot_load(started_cluster, TABLE_NAME)
+    query_id = f"{TABLE_NAME}_kill"
+    executor = ThreadPoolExecutor(max_workers=2)
+    try:
+        wait_future = executor.submit(
+            lambda: instance.query(
+                f"SYSTEM WAIT FAILPOINT {SNAPSHOT_LOAD_PAUSE_FAILPOINT} PAUSE",
+                timeout=60,
+            )
+        )
+        query_future = executor.submit(
+            lambda: instance.query_and_get_error(
+                f"CREATE TABLE {TABLE_NAME} ENGINE = DeltaLake({engine_args})",
+                query_id=query_id,
+                timeout=120,
+            )
+        )
+        # The worker thread is paused inside the snapshot load and the query waits for it.
+        wait_future.result(timeout=60)
+        assert (
+            instance.query(
+                f"SELECT count() FROM system.processes WHERE query_id = '{query_id}'"
+            ).strip()
+            == "1"
+        )
+
+        instance.query(f"KILL QUERY WHERE query_id = '{query_id}' ASYNC")
+        error = query_future.result(timeout=60)
+        assert "QUERY_WAS_CANCELLED" in error, error
+        # The abandoned worker is visible in system.metrics until the kernel call returns.
+        assert get_stuck_snapshot_loads(instance) == 1
+    finally:
+        release_paused_snapshot_load(instance)
+        executor.shutdown(wait=False)
+
+    # Once the kernel call returns, the abandoned worker unregisters itself.
+    for _ in range(300):
+        if get_stuck_snapshot_loads(instance) == 0:
+            break
+        time.sleep(0.1)
+    assert get_stuck_snapshot_loads(instance) == 0
+
+    # The cancelled CREATE left nothing behind and the table is readable once the kernel answers.
+    assert instance.query(f"EXISTS TABLE {TABLE_NAME}").strip() == "0"
+    assert int(instance.query(f"SELECT count() FROM deltaLake({engine_args})")) == 10
+
+
+@pytest.mark.parametrize(
+    "settings, expected_error",
+    [
+        (
+            {"delta_lake_snapshot_load_timeout_ms": 1000},
+            "delta_lake_snapshot_load_timeout_ms",
+        ),
+        ({"max_execution_time": 1}, "TIMEOUT_EXCEEDED"),
+        (
+            {
+                "max_execution_time": 1,
+                "timeout_overflow_mode": "break",
+                "delta_lake_snapshot_load_timeout_ms": 0,
+            },
+            "max_execution_time is exceeded",
+        ),
+    ],
+)
+def test_snapshot_load_timeout(started_cluster, settings, expected_error):
+    """A snapshot load stuck inside delta-kernel is bounded by delta_lake_snapshot_load_timeout_ms
+    and by max_execution_time instead of blocking the query forever."""
+    instance = started_cluster.instances["node1"]
+    TABLE_NAME = randomize_table_name("test_snapshot_load_timeout")
+    engine_args = prepare_paused_snapshot_load(started_cluster, TABLE_NAME)
+    try:
+        error = instance.query_and_get_error(
+            f"SELECT count() FROM deltaLake({engine_args})",
+            settings=settings,
+            timeout=120,
+        )
+        assert "TIMEOUT_EXCEEDED" in error and expected_error in error, error
+    finally:
+        release_paused_snapshot_load(instance)
+
+    assert int(instance.query(f"SELECT count() FROM deltaLake({engine_args})")) == 10
+
+
+def test_kill_waiter_on_shared_snapshot_load(started_cluster):
+    """Queries waiting for the SAME in-flight snapshot load must be independently killable:
+    killing one waiter leaves the build running, and the other waiter succeeds once the
+    kernel call returns."""
+    from concurrent.futures import ThreadPoolExecutor
+
+    instance = started_cluster.instances["node1"]
+    spark = started_cluster.spark_session
+    TABLE_NAME = randomize_table_name("test_kill_waiter_on_shared_snapshot_load")
+    delta_path = f"/{TABLE_NAME}"
+
+    write_delta_from_df(spark, spark.range(10).selectExpr("id as a"), delta_path)
+    default_upload_directory(started_cluster, "s3", delta_path, "")
+    engine_args = f"s3, filename = '{TABLE_NAME}/', url = 'http://minio1:9001/{started_cluster.minio_bucket}/'"
+    instance.query(f"CREATE TABLE {TABLE_NAME} ENGINE = DeltaLake({engine_args})")
+
+    # Advance the table to version 1, then pause every following snapshot load.
+    write_delta_from_df(
+        spark, spark.range(10, 30).selectExpr("id as a"), delta_path, mode="append"
+    )
+    default_upload_directory(started_cluster, "s3", delta_path, "")
+    instance.query(f"SYSTEM ENABLE FAILPOINT {SNAPSHOT_LOAD_PAUSE_FAILPOINT}")
+
+    # Both queries need the version-1 snapshot, which is loaded once and shared.
+    select = f"SELECT count() FROM {TABLE_NAME} SETTINGS delta_lake_snapshot_version = 1"
+    surviving_id = f"{TABLE_NAME}_surviving"
+    killed_id = f"{TABLE_NAME}_killed"
+    executor = ThreadPoolExecutor(max_workers=3)
+    try:
+        wait_future = executor.submit(
+            lambda: instance.query(
+                f"SYSTEM WAIT FAILPOINT {SNAPSHOT_LOAD_PAUSE_FAILPOINT} PAUSE", timeout=60
+            )
+        )
+        surviving_future = executor.submit(
+            lambda: instance.query(select, query_id=surviving_id, timeout=120)
+        )
+        wait_future.result(timeout=60)
+        killed_future = executor.submit(
+            lambda: instance.query_and_get_error(select, query_id=killed_id, timeout=120)
+        )
+        for _ in range(300):
+            if (
+                instance.query(
+                    f"SELECT count() FROM system.processes WHERE query_id IN ('{surviving_id}', '{killed_id}')"
+                ).strip()
+                == "2"
+            ):
+                break
+            time.sleep(0.1)
+
+        # The killed query is a plain waiter (the load was started by the first query);
+        # it must be cancellable although the kernel call has not returned yet.
+        instance.query(f"KILL QUERY WHERE query_id = '{killed_id}' ASYNC")
+        error = killed_future.result(timeout=60)
+        assert "QUERY_WAS_CANCELLED" in error, error
+        # The build keeps running and the first waiter is still waiting for it.
+        assert (
+            instance.query(
+                f"SELECT count() FROM system.processes WHERE query_id = '{surviving_id}'"
+            ).strip()
+            == "1"
+        )
+    finally:
+        release_paused_snapshot_load(instance)
+        executor.shutdown(wait=False)
+
+    assert surviving_future.result(timeout=60).strip() == "30"
+    instance.query(f"DROP TABLE {TABLE_NAME}")
+
+
+def test_latest_snapshot_load_shared(started_cluster):
+    """Latest-version queries share one in-flight snapshot load, also when their query-level S3
+    settings differ: the build uses the storage's S3 settings at the time it starts. Killing the
+    query which started it leaves the build to the other waiter."""
+    from concurrent.futures import ThreadPoolExecutor
+
+    instance = started_cluster.instances["node1"]
+    spark = started_cluster.spark_session
+    TABLE_NAME = randomize_table_name("test_latest_snapshot_load_shared")
+    delta_path = f"/{TABLE_NAME}"
+
+    write_delta_from_df(spark, spark.range(10).selectExpr("id as a"), delta_path)
+    default_upload_directory(started_cluster, "s3", delta_path, "")
+    engine_args = f"s3, filename = '{TABLE_NAME}/', url = 'http://minio1:9001/{started_cluster.minio_bucket}/'"
+    instance.query(f"CREATE TABLE {TABLE_NAME} ENGINE = DeltaLake({engine_args})")
+
+    # The failpoint pauses one snapshot load: the one started by the first query below.
+    instance.query(f"SYSTEM ENABLE FAILPOINT {SNAPSHOT_LOAD_PAUSE_FAILPOINT}")
+
+    # Every query resolves the latest version anew.
+    select = f"SELECT count() FROM {TABLE_NAME}"
+    first_id = f"{TABLE_NAME}_first"
+    second_id = f"{TABLE_NAME}_second"
+    executor = ThreadPoolExecutor(max_workers=3)
+    try:
+        wait_future = executor.submit(
+            lambda: instance.query(
+                f"SYSTEM WAIT FAILPOINT {SNAPSHOT_LOAD_PAUSE_FAILPOINT} PAUSE", timeout=60
+            )
+        )
+        first_future = executor.submit(
+            lambda: instance.query_and_get_error(
+                select,
+                settings={"s3_request_timeout_ms": 20000},
+                query_id=first_id,
+                timeout=120,
+            )
+        )
+        # The build started by the first query is paused inside the kernel call.
+        wait_future.result(timeout=60)
+
+        # A query with other S3 settings joins that build instead of starting one of its own.
+        second_future = executor.submit(
+            lambda: instance.query(
+                select,
+                settings={"s3_request_timeout_ms": 25000},
+                query_id=second_id,
+                timeout=120,
+            )
+        )
+        second_is_waiting = False
+        for _ in range(300):
+            if second_future.done():
+                break
+            # Counted when the query starts waiting for a snapshot load.
+            if (
+                int(
+                    instance.query(
+                        f"SELECT sum(ProfileEvents['DeltaLakeSnapshotInitializations']) FROM system.processes WHERE query_id = '{second_id}'"
+                    )
+                )
+                >= 1
+            ):
+                second_is_waiting = True
+                break
+            time.sleep(0.1)
+        assert (
+            second_is_waiting and not second_future.done()
+        ), "The second query must wait for the paused build of the first one, not for a build of its own"
+
+        # Killing the first query leaves the shared build to the second one: nobody gave up on
+        # the build as a whole, so it is not counted as stuck.
+        instance.query(f"KILL QUERY WHERE query_id = '{first_id}' ASYNC")
+        error = first_future.result(timeout=60)
+        assert "QUERY_WAS_CANCELLED" in error, error
+        assert get_stuck_snapshot_loads(instance) == 0
+        assert (
+            instance.query(
+                f"SELECT count() FROM system.processes WHERE query_id = '{second_id}'"
+            ).strip()
+            == "1"
+        )
+    finally:
+        release_paused_snapshot_load(instance)
+        executor.shutdown(wait=False)
+
+    # The second query completes from the build which the first one started.
+    assert second_future.result(timeout=60).strip() == "10"
+    instance.query(f"DROP TABLE {TABLE_NAME}")
+
+
+def test_snapshot_load_failure_per_waiter(started_cluster):
+    """Queries which wait on one shared snapshot load that fails each get their own copy of its
+    exception: what one query adds to the message must not show up in the other's error."""
+    from concurrent.futures import ThreadPoolExecutor
+
+    instance = started_cluster.instances["node1"]
+    spark = started_cluster.spark_session
+    minio_client = started_cluster.minio_client
+    bucket = started_cluster.minio_bucket
+    TABLE_NAME = randomize_table_name("test_snapshot_load_failure_per_waiter")
+    delta_path = f"/{TABLE_NAME}"
+
+    write_delta_from_df(spark, spark.range(10).selectExpr("id as a"), delta_path)
+    default_upload_directory(started_cluster, "s3", delta_path, "")
+    engine_args = (
+        f"s3, filename = '{TABLE_NAME}/', url = 'http://minio1:9001/{bucket}/'"
+    )
+    instance.query(f"CREATE TABLE {TABLE_NAME} ENGINE = DeltaLake({engine_args})")
+    target = f"{TABLE_NAME}_target"
+    instance.query(
+        f"CREATE TABLE {target} (x UInt64) ENGINE = MergeTree ORDER BY tuple()"
+    )
+    instance.query(f"INSERT INTO {target} VALUES (0)")
+
+    # The failpoint pauses one snapshot load: the one started by the first query below.
+    instance.query(f"SYSTEM ENABLE FAILPOINT {SNAPSHOT_LOAD_PAUSE_FAILPOINT}")
+
+    # A mutation runs its scalar subquery on the initiator in a visitor which adds "While processing
+    # <subquery>" to the exception, so each query annotates the error it gets with its own marker.
+    def update(marker):
+        return f"ALTER TABLE {target} UPDATE x = (SELECT {marker} FROM {TABLE_NAME}) WHERE 1"
+
+    first_marker = "count() + 1111"
+    second_marker = "count() + 2222"
+    settings = {"mutations_execute_subqueries_on_initiator": 1}
+    first_id = f"{TABLE_NAME}_first"
+    second_id = f"{TABLE_NAME}_second"
+    executor = ThreadPoolExecutor(max_workers=3)
+    try:
+        wait_future = executor.submit(
+            lambda: instance.query(
+                f"SYSTEM WAIT FAILPOINT {SNAPSHOT_LOAD_PAUSE_FAILPOINT} PAUSE",
+                timeout=60,
+            )
+        )
+        first_future = executor.submit(
+            lambda: instance.query_and_get_error(
+                update(first_marker), settings=settings, query_id=first_id, timeout=120
+            )
+        )
+        # The build started by the first query is paused inside the kernel call.
+        wait_future.result(timeout=60)
+
+        second_future = executor.submit(
+            lambda: instance.query_and_get_error(
+                update(second_marker),
+                settings=settings,
+                query_id=second_id,
+                timeout=120,
+            )
+        )
+        second_is_waiting = False
+        for _ in range(300):
+            if second_future.done():
+                break
+            # Counted when the query starts waiting for a snapshot load.
+            if (
+                int(
+                    instance.query(
+                        f"SELECT sum(ProfileEvents['DeltaLakeSnapshotInitializations']) FROM system.processes WHERE query_id = '{second_id}'"
+                    )
+                )
+                >= 1
+            ):
+                second_is_waiting = True
+                break
+            time.sleep(0.1)
+        assert (
+            second_is_waiting and not second_future.done()
+        ), "The second query must wait for the paused build of the first one"
+
+        # The paused build fails once released: the table is gone when the kernel reads its log.
+        # The listed names are relative to the prefix.
+        objects = list_s3_objects(minio_client, bucket, prefix=f"{TABLE_NAME}/")
+        assert objects
+        errors = minio_client.remove_objects(
+            bucket, [DeleteObject(f"{TABLE_NAME}/{obj}") for obj in objects]
+        )
+        assert len(list(errors)) == 0
+    finally:
+        release_paused_snapshot_load(instance)
+        executor.shutdown(wait=False)
+
+    first_error = first_future.result(timeout=60)
+    second_error = second_future.result(timeout=60)
+    assert (
+        "While processing" in first_error and first_marker in first_error
+    ), first_error
+    assert second_marker not in first_error, first_error
+    assert (
+        "While processing" in second_error and second_marker in second_error
+    ), second_error
+    assert first_marker not in second_error, second_error
+    instance.query(f"DROP TABLE {TABLE_NAME}")
+    instance.query(f"DROP TABLE {target}")
+
+
+def test_snapshot_load_worker_that_never_runs(started_cluster):
+    """A snapshot-load job which the thread pool drops without running it (setting up the pool
+    thread can throw) must still answer its waiters and return its worker permit, so that later
+    loads are not refused."""
+    instance = started_cluster.instances["node1"]
+    spark = started_cluster.spark_session
+    TABLE_NAME = randomize_table_name("test_snapshot_load_worker_that_never_runs")
+    delta_path = f"/{TABLE_NAME}"
+    failpoint = "delta_kernel_snapshot_load_worker_dropped"
+
+    write_delta_from_df(spark, spark.range(10).selectExpr("id as a"), delta_path)
+    default_upload_directory(started_cluster, "s3", delta_path, "")
+    engine_args = f"s3, filename = '{TABLE_NAME}/', url = 'http://minio1:9001/{started_cluster.minio_bucket}/'"
+    instance.query(f"CREATE TABLE {TABLE_NAME} ENGINE = DeltaLake({engine_args})")
+
+    # The query resolves the latest version through a load of its own, whose job is dropped.
+    instance.query(f"SYSTEM ENABLE FAILPOINT {failpoint}")
+    try:
+        error = instance.query_and_get_error(f"SELECT count() FROM {TABLE_NAME}")
+    finally:
+        instance.query(f"SYSTEM DISABLE FAILPOINT {failpoint}")
+    assert "CANNOT_SCHEDULE_TASK" in error and "did not start" in error, error
+
+    # The dropped job returned its permit.
+    for _ in range(300):
+        if get_snapshot_load_workers(instance) == 0:
+            break
+        time.sleep(0.1)
+    assert get_snapshot_load_workers(instance) == 0
+    assert get_stuck_snapshot_loads(instance) == 0
+
+    assert instance.query(f"SELECT count() FROM {TABLE_NAME}").strip() == "10"
+    instance.query(f"DROP TABLE {TABLE_NAME}")
 
 
 def test_create_table_concurrent_race_attaches(started_cluster):
@@ -7059,3 +7543,43 @@ def test_writes_timestamp_ntz_annotation_partition_column(started_cluster):
     assert str(rows[0]["p"]["ts"]) == "2024-06-01 12:00:00", rows
 
     instance.query(f"DROP TABLE {table_name}")
+
+
+def test_table_replaced_at_same_location(started_cluster):
+    """A Delta table deleted and recreated at the same location starts again at version 0. The
+    replacement must be read, although its version is lower than the one the table has cached."""
+    instance = started_cluster.instances["node1"]
+    bucket = started_cluster.minio_bucket
+    minio_client = started_cluster.minio_client
+    TABLE_NAME = randomize_table_name("test_table_replaced_at_same_location")
+    table_uri = f"s3://{bucket}/{TABLE_NAME}"
+    storage_options = get_storage_options(started_cluster)
+    schema = pa.schema([("id", pa.int64(), False)])
+
+    def rows(count):
+        return pa.Table.from_arrays([pa.array(range(count), type=pa.int64())], schema=schema)
+
+    # Versions 0, 1 and 2.
+    for _ in range(3):
+        write_deltalake_with_retry(table_uri, rows(10), storage_options, mode="append")
+
+    url = f"http://{started_cluster.minio_ip}:{started_cluster.minio_port}/{bucket}/{TABLE_NAME}/"
+    instance.query(
+        f"CREATE TABLE {TABLE_NAME} (id Int64) ENGINE = DeltaLake('{url}', 'minio', '{minio_secret_key}')"
+    )
+    assert int(instance.query(f"SELECT count() FROM {TABLE_NAME}")) == 30
+
+    # Replace the table: a new one at the same location starts again at version 0.
+    # The listed names are relative to the prefix.
+    objects = list_s3_objects(minio_client, bucket, prefix=f"{TABLE_NAME}/")
+    assert objects
+    errors = minio_client.remove_objects(
+        bucket, [DeleteObject(f"{TABLE_NAME}/{obj}") for obj in objects]
+    )
+    assert len(list(errors)) == 0
+    write_deltalake_with_retry(table_uri, rows(5), storage_options, mode="overwrite")
+
+    # The metadata cache works by timestamps.
+    time.sleep(1)
+    assert int(instance.query(f"SELECT count() FROM {TABLE_NAME}")) == 5
+    instance.query(f"DROP TABLE {TABLE_NAME}")
