@@ -831,6 +831,55 @@ class FuzzerLogParser:
         lines = [line.strip().replace("\n", "") for line in lines]
         return "\n".join(lines) if lines else None
 
+    @staticmethod
+    def stack_trace_functions(stack_trace, max_depth, keep_templates=False):
+        """
+        The top `max_depth` functions of `stack_trace` in the `DB::` namespace, without arguments.
+
+        Template arguments are dropped too, unless `keep_templates`. Like for the stack trace ID,
+        `DB::Exception` functions and everything above them are skipped: the issue typically
+        occurs before the exception is thrown.
+        """
+        functions = []
+        for line in stack_trace.splitlines():
+            # Normalize multiple DB:: occurrences
+            line = line.replace(", DB::", "")
+            if " DB::" in line:
+                substring = line[line.find(" DB::") + 1 :]
+            elif line.startswith("DB::"):
+                substring = line
+            else:
+                continue
+            if keep_templates:
+                functions.append(FuzzerLogParser._function_with_templates(substring))
+            else:
+                functions.append(FuzzerLogParser._function_without_templates(substring))
+
+        for i, func in enumerate(functions):
+            if "DB::Exception" in func:
+                functions = functions[i + 1 :]
+                break
+        functions = [f for f in functions if "DB::Exception" not in f]
+        return functions[:max_depth]
+
+    @staticmethod
+    def _function_without_templates(frame):
+        """`frame` up to its first `(` or `<`."""
+        ends = [i for i in (frame.find("("), frame.find("<")) if i != -1]
+        return frame[: min(ends)] if ends else frame
+
+    @staticmethod
+    def _function_with_templates(frame):
+        """`frame` up to the `(` of its arguments, skipping parentheses inside template arguments."""
+        name, depth = [], 0
+        frame = frame.split(" @ ")[0].replace("(anonymous namespace)", "{anonymous}")
+        for ch in frame:
+            if ch == "(" and depth == 0:
+                break
+            depth += (ch == "<") - (ch == ">")
+            name.append(ch)
+        return " ".join("".join(name).split())
+
     def get_stack_trace_id(self, stack_trace):
         """
         Generate a stack trace ID (hash) to match and connect related stack traces.
@@ -849,49 +898,7 @@ class FuzzerLogParser:
         if not stack_trace:
             return None
 
-        lines = stack_trace.splitlines()
-        functions = []
-
-        for line in lines:
-            # Normalize multiple DB:: occurrences
-            line = line.replace(", DB::", "")
-
-            # Check if line contains DB:: namespace
-            if " DB::" in line:
-                start_idx = line.find(" DB::")
-                substring = line[start_idx + 1 :]  # Skip the leading space
-            elif line.startswith("DB::"):
-                substring = line
-            else:
-                continue
-
-            # Truncate at first '(' or '<' to keep only function name
-            paren_idx = substring.find("(")
-            angle_idx = substring.find("<")
-
-            if paren_idx != -1 and angle_idx != -1:
-                end_idx = min(paren_idx, angle_idx)
-            elif paren_idx != -1:
-                end_idx = paren_idx
-            elif angle_idx != -1:
-                end_idx = angle_idx
-            else:
-                end_idx = len(substring)
-
-            substring = substring[:end_idx]
-            functions.append(substring)
-
-        # Remove exception functions and everything above them
-        for i, func in enumerate(functions):
-            if "DB::Exception" in func:
-                functions = functions[i + 1 :]
-                break
-        # Remove all remaining DB::Exception functions
-        functions = [f for f in functions if "DB::Exception" not in f]
-
-        # Limit to top ST_MAX_DEPTH functions for broader matching
-        functions = functions[:ST_MAX_DEPTH]
-
+        functions = FuzzerLogParser.stack_trace_functions(stack_trace, ST_MAX_DEPTH)
         if not functions:
             return None
 
