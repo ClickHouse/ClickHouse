@@ -1,9 +1,40 @@
 #include <Databases/DataLake/UnityCatalogUtils.h>
+#include <Common/Exception.h>
+
+namespace DB::ErrorCodes
+{
+    extern const int SUPPORT_IS_DISABLED;
+}
+
+namespace DataLake
+{
+
+void checkUnityTableDrop(const Poco::JSON::Object::Ptr & unity_table, const String & namespace_name, const String & table_name, bool delete_data)
+{
+    String table_type;
+    if (unity_table->has("table_type") && !unity_table->isNull("table_type"))
+        table_type = unity_table->getValue<String>("table_type");
+
+    if (table_type != "MANAGED" && table_type != "EXTERNAL")
+        throw DB::Exception(
+            DB::ErrorCodes::SUPPORT_IS_DISABLED,
+            "Cannot drop table {}.{} with table_type '{}' in Unity catalog: only MANAGED and EXTERNAL tables can be dropped",
+            namespace_name, table_name, table_type);
+
+    const bool data_will_be_deleted = table_type == "MANAGED";
+    if (data_will_be_deleted != delete_data)
+        throw DB::Exception(
+            DB::ErrorCodes::SUPPORT_IS_DISABLED,
+            "Table {}.{} has table_type {} in Unity catalog, so Databricks {} its data on drop. "
+            "Set `iceberg_delete_data_on_drop` to {} to drop it",
+            namespace_name, table_name, table_type, data_will_be_deleted ? "deletes" : "keeps", data_will_be_deleted ? 1 : 0);
+}
+
+}
 
 #if USE_PARQUET
 
 #include <sstream>
-#include <Common/Exception.h>
 #include <DataTypes/DataTypesDecimal.h>
 #include <Storages/ObjectStorage/DataLakes/DeltaLakeMetadata.h>
 
