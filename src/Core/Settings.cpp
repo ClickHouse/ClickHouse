@@ -1600,6 +1600,17 @@ The table below shows the behavior of this setting for various date-time functio
 | `toStartOfMinute` | Returns `DateTime`<br/>*Note: Wrong results for values outside 1970-2149 range* | Returns `DateTime` for `Date`/`DateTime` input<br/>Returns `DateTime64` for `Date32`/`DateTime64` input |
 | `timeSlot` | Returns `DateTime`<br/>*Note: Wrong results for values outside 1970-2149 range* | Returns `DateTime` for `Date`/`DateTime` input<br/>Returns `DateTime64` for `Date32`/`DateTime64` input |
 )", 0) \
+    DECLARE(Bool, to_start_of_interval_preserves_argument_type, true, R"(
+Makes the function `toStartOfInterval` (and its aliases `time_bucket` and `date_bin`) return a value of the same type as its first argument:
+`Date` for `Date`, `Date32` for `Date32`, `DateTime` for `DateTime` and `DateTime64` with the same scale for `DateTime64`, regardless of the interval unit.
+The only exception is a subsecond unit finer than the scale of a `DateTime64` argument, for example `INTERVAL 1500 MILLISECOND` for a `DateTime64(0)`: the result has the scale of the unit, because the scale of the argument cannot represent the bucket boundaries.
+
+Possible values:
+
+- `1` — The result has the type of the first argument. The setting `enable_extended_results_for_datetime_functions` does not affect the function.
+- `0` — Legacy behavior: the result type depends on the interval unit. The units `WEEK` and longer produce a `Date`, `DAY` down to `SECOND` produce a `DateTime`, and the subsecond units produce a `DateTime64` with the scale of the unit (for `Date32` and `DateTime64` arguments, `Date32` and `DateTime64` instead of `Date` and `DateTime` with `enable_extended_results_for_datetime_functions = 1`). A value that does not fit the range of the narrower result type is wrapped: for example, `toStartOfInterval(toDate32('1900-01-01'), INTERVAL 1 DAY)` returns `2036-02-07 06:28:16`. This describes the overload without `origin`. The overload with `origin` keeps the type of the argument even in the legacy behavior, except that for a `DateTime64` argument and a subsecond unit the result has the scale of the unit.
+)", 0, \
+        {"26.11", false, true, "The function `toStartOfInterval` returns a value of the same type as its argument instead of a type determined by the interval unit, which wrapped values outside the range of the narrower type"}) \
     DECLARE(Bool, allow_nonconst_timezone_arguments, false, R"(
 Allow non-const timezone arguments in certain time-related functions like toTimeZone(), fromUnixTimestamp*(), snowflakeIDToDateTime*().
 This setting exists only for compatibility reasons. In ClickHouse, the time zone is a property of the data type, respectively of the column.
