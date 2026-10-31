@@ -343,6 +343,9 @@ public:
 
     SyncGuardPtr getDirectorySyncGuard(const String & path) const override;
 
+    void syncFile(const String & path) const override;
+    bool supportsSyncFile() const override { return delegate->supportsSyncFile(); }
+
     std::shared_ptr<DiskEncryptedTransaction> createEncryptedTransaction() const
     {
         auto delegate_transaction = delegate->createTransaction();

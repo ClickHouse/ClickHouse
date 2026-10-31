@@ -32,6 +32,7 @@ BlockAllocation::BlockAllocation(
         LOG_INFO(log, "Block with ID {} already exists as part {}; ignoring it",
             res.block_id, res.part_info.getPartNameForLogs());
         dedup_conflicts.push_back(res.block_id);
+        dedup_conflict_parts.push_back(res.part_info);
     }
     registered = dedup_conflicts.empty();
 }

@@ -25,8 +25,10 @@
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeDataPartChecksum.h>
 #include <Storages/MergeTree/MergeTreeIndicesSerialization.h>
+#include <Storages/MergeTree/ParallelSyncFiles.h>
 #include <Common/formatReadable.h>
 #include <Common/logger_useful.h>
+#include <Common/FailPoint.h>
 
 #include <fmt/ranges.h>
 
@@ -40,6 +42,11 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int FILE_DOESNT_EXIST;
     extern const int CORRUPTED_DATA;
+}
+
+namespace FailPoints
+{
+    extern const char part_sync_files_pause_after_collect[];
 }
 
 namespace
@@ -56,6 +63,18 @@ namespace
         }
         /// Children are synced first; this guard fsyncs `dir_path` itself on destruction.
         SyncGuardPtr guard = disk.getDirectorySyncGuard(dir_path);
+    }
+
+    /// Collect the paths of every regular file below `dir_path`, recursively.
+    void collectFilesRecursively(IDisk & disk, const std::string & dir_path, std::vector<std::string> & paths)
+    {
+        for (auto it = disk.iterateDirectory(dir_path); it->isValid(); it->next())
+        {
+            if (disk.existsDirectory(it->path()))
+                collectFilesRecursively(disk, it->path(), paths);
+            else
+                paths.push_back(it->path());
+        }
     }
 }
 
@@ -1119,6 +1138,40 @@ void DataPartStorageOnDiskBase::changeRootPath(const std::string & from_root, co
 SyncGuardPtr DataPartStorageOnDiskBase::getDirectorySyncGuard() const
 {
     return volume->getDisk()->getDirectorySyncGuard(fs::path(root_path) / part_dir);
+}
+
+void DataPartStorageOnDiskBase::syncFiles() const
+{
+    auto disk = volume->getDisk();
+
+    /// Parts on such disks are synced as they are written - do not even walk the directory.
+    if (!disk->supportsSyncFile())
+        return;
+
+    /// The real files on disk, not the part's logical file list: for a packed part the whole part
+    /// lives in a single archive, and it is that archive which has to be synced.
+    std::vector<std::string> paths;
+    collectFilesRecursively(*disk, fs::path(root_path) / part_dir, paths);
+
+    /// Skip the transaction metadata. `VersionMetadataOnDisk::storeInfoToDataPartStorage` can rewrite it
+    /// concurrently with this walk (holding a reference to the part does not prevent it): it writes and
+    /// syncs `txn_version.txt.tmp` and then renames it to `txn_version.txt`, so a collected name may be
+    /// gone before it is opened for the sync. These files have their own sync protocol anyway.
+    std::erase_if(paths, [](const std::string & path)
+    {
+        const auto file_name = fs::path(path).filename();
+        return file_name == VersionMetadata::TXN_VERSION_METADATA_FILE_NAME
+            || file_name == VersionMetadata::TMP_TXN_VERSION_METADATA_FILE_NAME;
+    });
+
+    FailPointInjection::pauseFailPoint(FailPoints::part_sync_files_pause_after_collect);
+
+    parallelSyncFiles(*disk, paths);
+}
+
+bool DataPartStorageOnDiskBase::supportsSyncFiles() const
+{
+    return volume->getDisk()->supportsSyncFile();
 }
 
 std::unique_ptr<WriteBufferFromFileBase> DataPartStorageOnDiskBase::writeTransactionFile(const String & txn_file_name, WriteMode mode) const
