@@ -20,7 +20,7 @@
 #include <sstream>
 #include <Core/NamesAndTypes.h>
 #include <Core/UUID.h>
-#include <Storages/ObjectStorage/DataLakes/DeltaLakeMetadata.h>
+#include <Storages/ObjectStorage/DataLakes/DeltaLake/DeltaSchemaJSON.h>
 #include <Interpreters/Context.h>
 #include <Common/HTTPHeaderFilter.h>
 #include <fmt/ranges.h>
@@ -680,14 +680,14 @@ bool UnityV2Catalog::tryGetDeltaTableMetadata(
                     if (type_json_str.starts_with("\"") && type_json_str.ends_with("\"") && !type_json_str.contains('{'))
                     {
                         String type_name = type_json_str.substr(1, type_json_str.size() - 2);
-                        auto data_type_from_str = DB::DeltaLakeMetadata::getSimpleTypeByName(type_name);
+                        auto data_type_from_str = DB::getDeltaLakeSimpleTypeByName(type_name);
                         data_type = is_nullable ? makeNullable(data_type_from_str) : data_type_from_str;
                     }
                     else
                     {
                         Poco::JSON::Parser parser;
                         auto parsed_json_type = parser.parse(type_json_str);
-                        data_type = DB::DeltaLakeMetadata::getFieldType(
+                        data_type = DB::getDeltaLakeFieldType(
                             parsed_json_type.extract<Poco::JSON::Object::Ptr>(), "type", is_nullable);
                     }
                 }

@@ -74,38 +74,24 @@ TEST_F(DeltaKernelTest, ExpressionVisitor)
 
 #endif
 
-#if USE_PARQUET
-
-#include <Storages/ObjectStorage/DataLakes/DeltaLakeMetadata.h>
-#include <DataTypes/DataTypeNullable.h>
-#include <DataTypes/DataTypeDateTime64.h>
-#include <Core/Field.h>
-
-/// Regression test for segfault
-TEST(DeltaLakeMetadata, GetFieldValueNullableDateTime64)
-{
-    auto nullable_datetime64_type = std::make_shared<DB::DataTypeNullable>(std::make_shared<DB::DataTypeDateTime64>(6, "UTC"));
-    ASSERT_NO_THROW(DB::DeltaLakeMetadata::getFieldValue("2024-01-15 10:30:45.123456", nullable_datetime64_type));
-}
+#include <Storages/ObjectStorage/DataLakes/DeltaLake/DeltaSchemaJSON.h>
 
 /// varchar(n) and char(n) are valid Delta Lake column types emitted by Spark/Databricks.
 /// They must map to String, ignoring the length constraint, since it is a SQL-layer annotation
 /// only — the underlying Parquet encoding is identical to a plain string column.
-TEST(DeltaLakeMetadata, GetSimpleTypeByNameVarchar)
+TEST(DeltaSchemaJSON, GetSimpleTypeByNameVarchar)
 {
-    auto type = DB::DeltaLakeMetadata::getSimpleTypeByName("varchar(256)");
+    auto type = DB::getDeltaLakeSimpleTypeByName("varchar(256)");
     ASSERT_NE(type, nullptr);
     ASSERT_EQ(type->getTypeId(), DB::TypeIndex::String);
 }
 
-TEST(DeltaLakeMetadata, GetSimpleTypeByNameChar)
+TEST(DeltaSchemaJSON, GetSimpleTypeByNameChar)
 {
-    auto type = DB::DeltaLakeMetadata::getSimpleTypeByName("char(1)");
+    auto type = DB::getDeltaLakeSimpleTypeByName("char(1)");
     ASSERT_NE(type, nullptr);
     ASSERT_EQ(type->getTypeId(), DB::TypeIndex::String);
 }
-
-#endif
 
 #if USE_DELTA_KERNEL_RS && USE_AZURE_BLOB_STORAGE
 

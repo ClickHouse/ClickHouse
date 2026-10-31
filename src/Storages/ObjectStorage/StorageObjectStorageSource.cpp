@@ -4,7 +4,6 @@
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnsNumber.h>
 #include <Common/CurrentThread.h>
-#include <Common/FullyQualifiedObjectPath.h>
 #include <AggregateFunctions/AggregateFunctionGroupBitmapData.h>
 #include <Core/Settings.h>
 #include <Common/logger_useful.h>
@@ -31,7 +30,6 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/ProcessList.h>
-#include <Interpreters/castColumn.h>
 #include <Interpreters/convertFieldToType.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Processors/Formats/Impl/ParquetMetadataCache.h>
@@ -85,7 +83,6 @@
 #include <Interpreters/Cache/QueryConditionCache.h>
 
 
-namespace fs = std::filesystem;
 namespace ProfileEvents
 {
     extern const Event EngineFileLikeReadFiles;
@@ -879,12 +876,6 @@ Chunk StorageObjectStorageSource::generate()
 
             const auto & object_info = reader.getObjectInfo();
             const auto & filename = object_info->getFileName();
-            std::string full_path = object_info->getPath();
-
-            const auto reading_path = configuration->getPathForRead().path;
-
-            if (!full_path.starts_with(reading_path) && !trySplitFullyQualifiedObjectPath(full_path))
-                full_path = fs::path(reading_path) / object_info->getPath();
 
             auto object_metadata = object_info->getObjectMetadata();
 
@@ -1033,68 +1024,6 @@ Chunk StorageObjectStorageSource::generate()
 
                 chunk.addColumn(std::move(row_index_column));
             }
-
-#if USE_PARQUET
-            if (chunk_size && chunk.hasColumns())
-            {
-                /// Old delta lake code which needs to be deprecated in favour of DeltaLakeMetadataDeltaKernel.
-                if (std::dynamic_pointer_cast<const DeltaLakeMetadata>(configuration->getExternalMetadata()))
-                {
-                    /// This is an awful temporary crutch,
-                    /// which will be removed once DeltaKernel is used by default for DeltaLake.
-                    /// (Because it does not make sense to support it in a nice way
-                    /// because the code will be removed ASAP anyway)
-                    if (configuration->isDataLakeConfiguration())
-                    {
-                        /// A terrible crutch, but it this code will be removed next month.
-                        DeltaLakePartitionColumns partition_columns;
-#if USE_AWS_S3
-                        if (auto * delta_conf_s3 = dynamic_cast<StorageS3DeltaLakeConfiguration *>(configuration.get()))
-                        {
-                            partition_columns = delta_conf_s3->getDeltaLakePartitionColumns();
-                        }
-#endif
-#if USE_AZURE_BLOB_STORAGE
-                        if (auto * delta_conf_azure = dynamic_cast<StorageAzureDeltaLakeConfiguration *>(configuration.get()))
-                        {
-                            partition_columns = delta_conf_azure->getDeltaLakePartitionColumns();
-                        }
-#endif
-                        if (auto * delta_conf_local = dynamic_cast<StorageLocalDeltaLakeConfiguration *>(configuration.get()))
-                        {
-                            partition_columns = delta_conf_local->getDeltaLakePartitionColumns();
-                        }
-                        if (!partition_columns.empty())
-                        {
-                            auto partition_values = partition_columns.find(full_path);
-                            if (partition_values != partition_columns.end())
-                            {
-                                for (const auto & [name_and_type, value] : partition_values->second)
-                                {
-                                    if (!read_from_format_info.source_header.has(name_and_type.name))
-                                        continue;
-
-                                    const auto column_pos = read_from_format_info.source_header.getPositionByName(name_and_type.name);
-                                    auto partition_column = name_and_type.type->createColumnConst(chunk.getNumRows(), value)->convertToFullColumnIfConst();
-                                    /// The `_delta_log` type differs from the declared one when the columns were
-                                    /// specified rather than inferred, and the block follows the declared schema.
-                                    const auto & declared_type = read_from_format_info.source_header.getByPosition(column_pos).type;
-                                    if (!name_and_type.type->equals(*declared_type))
-                                        partition_column = castColumn({partition_column, name_and_type.type, name_and_type.name}, declared_type);
-                                    /// This column is filled with default value now, remove it.
-                                    chunk.erase(column_pos);
-                                    /// Add correct values.
-                                    if (column_pos < chunk.getNumColumns())
-                                        chunk.addColumn(column_pos, std::move(partition_column));
-                                    else
-                                        chunk.addColumn(std::move(partition_column));
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-#endif
 
             /// Convert any Const columns to full columns before returning.
             /// This is necessary because when chunks with different Const values (e.g., partition columns

@@ -15,7 +15,7 @@
 #include <IO/Operators.h>
 #include <sstream>
 #include <Core/NamesAndTypes.h>
-#include <Storages/ObjectStorage/DataLakes/DeltaLakeMetadata.h>
+#include <Storages/ObjectStorage/DataLakes/DeltaLake/DeltaSchemaJSON.h>
 #include <Databases/DataLake/StorageCredentials.h>
 #include <Databases/DataLake/UnityCatalogUtils.h>
 #include <fmt/ranges.h>
@@ -275,14 +275,14 @@ bool UnityCatalog::tryGetTableMetadata(
                         {
                             type_json_str.pop_back();
                             String type_name = type_json_str.substr(1);
-                            auto data_type_from_str = DB::DeltaLakeMetadata::getSimpleTypeByName(type_name);
+                            auto data_type_from_str = DB::getDeltaLakeSimpleTypeByName(type_name);
                             data_type = is_nullable ? makeNullable(data_type_from_str) : data_type_from_str;
                         }
                         else
                         {
                             Poco::JSON::Parser parser;
                             auto parsed_json_type = parser.parse(type_json_str);
-                            data_type = DB::DeltaLakeMetadata::getFieldType(parsed_json_type.extract<Poco::JSON::Object::Ptr>(), "type", is_nullable);
+                            data_type = DB::getDeltaLakeFieldType(parsed_json_type.extract<Poco::JSON::Object::Ptr>(), "type", is_nullable);
                         }
                         schema.push_back({name, data_type});
                     }
