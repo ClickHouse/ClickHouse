@@ -1,0 +1,29 @@
+<clickhouse>
+    <logger>
+        <level>trace</level>
+    </logger>
+
+    <remote_servers>
+        <!-- The initiator's view of the cluster: 3 replicas. The workers' view (see
+             `remote_servers_workers.xml`) deliberately has one more, so a worker that sizes the
+             mark-segment-size heuristic from its own cluster definition instead of the count the
+             initiator propagated ends up with a different denominator than the coordinator. -->
+        <pr_plan_based_asym>
+            <shard>
+                <internal_replication>true</internal_replication>
+                <replica>
+                    <host>n1</host>
+                    <port>9000</port>
+                </replica>
+                <replica>
+                    <host>n2</host>
+                    <port>9000</port>
+                </replica>
+                <replica>
+                    <host>n3</host>
+                    <port>9000</port>
+                </replica>
+            </shard>
+        </pr_plan_based_asym>
+    </remote_servers>
+</clickhouse>

@@ -486,6 +486,14 @@ protected:
     std::optional<MergeTreeReadTaskCallback> merge_tree_read_task_callback;
     std::optional<MergeTreeAllRangesCallback> merge_tree_all_ranges_callback;
     UUID parallel_replicas_group_uuid{UUIDHelpers::Nil};
+    /// Coordinator replica count selected by the parallel-replicas dispatch that owns this context (the
+    /// initiator's own plan). Deliberately kept out of `ClientInfo`: that struct is deserialized from the
+    /// client's `Query` packet, so a value carried there can be injected by a custom client on an initial query.
+    std::optional<size_t> parallel_replicas_coordinator_count;
+    /// The scope of the cluster that coordinator was sized for (see `ClusterProxy::getActiveReplicasCountForParallelReplicas`).
+    /// The count is copied into every derived context, so it applies only while a read still targets that cluster
+    /// (a nested view or subquery may re-point `cluster_for_parallel_replicas`).
+    String parallel_replicas_coordinator_cluster_scope;
 
     BlockMarshallingCallback block_marshalling_callback;
 
@@ -2165,6 +2173,14 @@ public:
 
     UUID getParallelReplicasGroupUUID() const;
     void setParallelReplicasGroupUUID(UUID uuid);
+
+    /// The replica count the parallel-replicas reading coordinator of this query was sized with, for the
+    /// initiator's own plan. Followers receive the same count over the wire, in `ClientInfo`.
+    /// The count is scoped to `cluster_scope`, which identifies the cluster the coordinator was sized for:
+    /// the getter returns nothing for a read that targets another cluster.
+    void setParallelReplicasCoordinatorCount(size_t count, const String & cluster_scope);
+    void clearParallelReplicasCoordinatorCount();
+    std::optional<size_t> getParallelReplicasCoordinatorCount(const String & cluster_scope) const;
 
     /// Background executors related methods
     void initializeBackgroundExecutorsIfNeeded();
