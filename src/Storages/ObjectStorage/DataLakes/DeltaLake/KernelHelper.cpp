@@ -6,6 +6,7 @@
 #include <Storages/ObjectStorage/DataLakes/DeltaLake/KernelHelper.h>
 #include <Storages/ObjectStorage/DataLakes/DeltaLake/KernelUtils.h>
 #include <Common/FailPoint.h>
+#include <Common/ProfileEvents.h>
 #include <Common/SipHash.h>
 #include <Common/isValidUTF8.h>
 #include <Common/logger_useful.h>
@@ -37,6 +38,11 @@ namespace DB::S3AuthSetting
 namespace DB::FailPoints
 {
     extern const char delta_kernel_force_credentials_fingerprint_drift[];
+}
+
+namespace ProfileEvents
+{
+    extern const Event DeltaLakeKernelEngineInitializations;
 }
 
 namespace DeltaLake
@@ -98,6 +104,7 @@ KernelEnginePtr IKernelHelper::getEngine() const
     BuilderGuard guard(createBuilder());
     setBuilderOption(guard.get(), "pool_max_idle_per_host", std::to_string(kernel_max_idle_connections_per_host));
     KernelEnginePtr built(KernelUtils::unwrapResult(ffi::builder_build(guard.release()), "builder_build"), ffi::free_engine);
+    ProfileEvents::increment(ProfileEvents::DeltaLakeKernelEngineInitializations);
 
     replaced = std::exchange(engine, std::move(built));
     engine_credentials_fingerprint = fingerprint;

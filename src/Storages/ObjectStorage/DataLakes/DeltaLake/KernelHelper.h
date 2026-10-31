@@ -65,8 +65,8 @@ public:
     /// own, and vended creds are static in the C++ client until this callback fires.
     virtual bool refreshCredentials() { return false; }
 
-    /// One engine, so one object storage connection pool, shared by every snapshot, write transaction
-    /// and change feed read of the table; rebuilt when the credentials change.
+    /// One engine, so one object storage connection pool, per helper: shared by its snapshots, write transactions and
+    /// change feed reads; rebuilt when the credentials change.
     KernelEnginePtr getEngine() const;
 
 private:
