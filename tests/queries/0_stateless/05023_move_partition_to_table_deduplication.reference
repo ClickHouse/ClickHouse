@@ -1,0 +1,7 @@
+after inserts	2
+after move, src	1
+after move, dst	1
+after reinsert, src	2
+after reinsert, x	1
+after reinsert, x	2
+after duplicate, src	2

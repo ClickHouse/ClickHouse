@@ -31,7 +31,8 @@ public:
         size_t file_size_,
         MergeTreeMarksLoaderPtr marks_loader_,
         const ReadBufferFromFileBase::ProfileCallback & profile_callback_,
-        clockid_t clock_type_);
+        clockid_t clock_type_,
+        String cache_key_suffix_ = {});
 
     virtual ~MergeTreeReaderStream();
 
@@ -86,6 +87,8 @@ private:
     const std::string data_file_extension;
 
     UncompressedCache * const uncompressed_cache;
+    /// Appended to the key of the file in `uncompressed_cache`, see `IMergeTreeDataPart::getCacheKeySuffix`.
+    const String cache_key_suffix;
     ReadBuffer * data_buffer = nullptr;
     ReadBufferFromFileBase * plain_file_buffer = nullptr;
     CompressedReadBufferBase * compressed_data_buffer = nullptr;

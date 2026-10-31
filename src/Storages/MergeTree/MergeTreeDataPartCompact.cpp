@@ -247,7 +247,7 @@ void MergeTreeDataPartCompact::removeMarksFromCache(MarkCache * mark_cache) cons
         return;
 
     auto mark_path = index_granularity_info.getMarksFilePath(DATA_FILE_NAME);
-    auto key = MarkCache::hash(getDataPartStorage().getDiskName() + ":" + (fs::path(getRelativePathOfActivePart()) / mark_path).string());
+    auto key = MarkCache::hash(getDataPartStorage().getDiskName() + ":" + (fs::path(getRelativePathOfActivePart()) / mark_path).string() + getCacheKeySuffix());
     mark_cache->remove(key);
 }
 

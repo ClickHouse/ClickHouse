@@ -428,7 +428,7 @@ void MergeTreeDataPartWide::removeMarksFromCache(MarkCache * mark_cache) const
         forEachExistingStreamOfColumn(column.name, [&](const String & stream_name)
         {
             auto mark_path = index_granularity_info.getMarksFilePath(stream_name);
-            auto key = MarkCache::hash(getDataPartStorage().getDiskName() + ":" + (fs::path(getRelativePathOfActivePart()) / mark_path).string());
+            auto key = MarkCache::hash(getDataPartStorage().getDiskName() + ":" + (fs::path(getRelativePathOfActivePart()) / mark_path).string() + getCacheKeySuffix());
             mark_cache->remove(key);
         });
     }

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <functional>
+#include <mutex>
 
 #include <Storages/StorageProxy.h>
 #include <Common/Exception.h>
@@ -11,14 +12,24 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int SUPPORT_IS_DISABLED;
+}
+
 /// Lazily creates underlying storage for tables in databases with `lazy_load_tables` setting.
 /// Similar to `StorageTableFunctionProxy`, but for real on-disk tables.
 class StorageTableProxy final : public StorageProxy
 {
 public:
-    StorageTableProxy(const StorageID & table_id_, std::function<StoragePtr()> get_nested_, ColumnsDescription cached_columns)
+    StorageTableProxy(
+        const StorageID & table_id_,
+        std::function<StoragePtr()> get_nested_,
+        ColumnsDescription cached_columns,
+        std::function<bool()> may_use_leader_election_)
         : StorageProxy(table_id_)
         , get_nested(std::move(get_nested_))
+        , may_use_leader_election(std::move(may_use_leader_election_))
         , log(getLogger("StorageTableProxy (" + table_id_.getFullTableName() + ")"))
     {
         StorageInMemoryMetadata cached_metadata;
@@ -80,8 +91,13 @@ public:
 
         auto nested_storage = get_nested();
         nested_storage->startup();
-        nested_storage->renameInMemory(getStorageID());
-        nested = nested_storage;
+        {
+            /// A concurrent `renameInMemory` either runs before this block, and `getStorageID` returns the new
+            /// name, or after it, and finds the table in `loaded_nested`.
+            std::lock_guard rename_lock{rename_mutex};
+            nested_storage->renameInMemory(getStorageID());
+            setNested(std::move(nested_storage));
+        }
         get_nested = {};
         return nested;
     }
@@ -119,26 +135,66 @@ public:
             return;
         }
 
+        StoragePtr nested_storage;
+        /// Only *materializing* the nested storage is allowed to fail closed. A failure of the
+        /// nested `drop()` itself must propagate: otherwise a failed drop is reported as success,
+        /// and `dropSkipsDataDirectoryCleanup` then tells `DatabaseCatalog::dropTableFinally` to
+        /// skip per-disk cleanup and finalize the catalog drop, leaving half-dropped / leaked
+        /// shared-storage state.
         try
         {
             LOG_TRACE(log, "Loading table for drop without startup");
 
             if (!get_nested)
             {
-                LOG_WARNING(log, "Cannot load table for drop, data cleanup will be handled by the database engine");
+                LOG_WARNING(log, "Cannot load table for drop, data ownership is unknown");
+                drop_load_failed = true;
                 return;
             }
 
-            auto nested_storage = get_nested();
-            nested_storage->drop();
-            get_nested = {};
+            nested_storage = get_nested();
         }
         catch (...)
         {
+            /// Swallowing the failure is safe only for a table that may be a `MergeTree` with
+            /// `leader_election = 1`: its `drop()` never deletes anything but local metadata, so
+            /// skipping it loses nothing. Any other engine may have external cleanup to do in its
+            /// `drop()` — `StorageReplicatedMergeTree` removes its replica from Keeper — and
+            /// finalizing the catalog drop without it would leak that state (a lazy
+            /// `ReplicatedMergeTree` fails to materialize under a server-wide
+            /// `merge_tree.leader_election = 1` default, for example). `DROP TABLE` does not get
+            /// here with an unloaded proxy today, because `InterpreterDropQuery` materializes it
+            /// through `checkTableCanBeDropped` first and fails there; this keeps any other caller
+            /// of `drop()` from finalizing such a drop. Let the error propagate: the catalog
+            /// retries the drop later instead of finalizing it.
+            if (!may_use_leader_election())
+                throw;
+
             LOG_WARNING(log, "Failed to load table for drop: {}. "
-                             "Data cleanup will be handled by the database engine.",
+                             "Cleanup of disks with shared metadata will be skipped to avoid "
+                             "destructive fallback on shared object storage.",
                         getCurrentExceptionMessage(false));
+            /// We could not determine the underlying storage. Report the ownership as unknown
+            /// (see `dropDataOwnershipUnknown`) instead of skipping cleanup entirely: the
+            /// nested storage may be a `MergeTree` with `leader_election = 1` whose data lives
+            /// on shared object storage and is owned by another node — but it may equally be a
+            /// table on a node-local disk, and a blanket skip would leak its `store/<uuid>`
+            /// directory permanently on a transient load failure. The catalog cleans node-local
+            /// disks and skips only disks with shared metadata in this case.
+            drop_load_failed = true;
+            return;
         }
+
+        /// Outside the catch: a real drop failure here propagates rather than being converted into
+        /// a finalized catalog drop.
+        nested_storage->drop();
+        get_nested = {};
+        /// Keep the dropped storage around so `dropSkipsDataDirectoryCleanup`
+        /// can delegate to it: `DatabaseCatalog::dropTableFinally` queries it
+        /// right after `drop()` returns to decide whether to skip per-disk
+        /// cleanup. Without this, an unloaded `MergeTree` with
+        /// `leader_election = 1` would fall back to the unsafe default.
+        setNested(std::move(nested_storage));
     }
 
     void read(
@@ -169,20 +225,14 @@ public:
         return storage->write(query, nested_metadata, context, async_insert);
     }
 
+    /// Not under `nested_mutex`: `DatabaseAtomic::renameTable` calls this while holding the database mutex,
+    /// and `getNested` holds `nested_mutex` while loading the table, which may lock the database mutex.
     void renameInMemory(const StorageID & new_table_id) override
     {
-        std::lock_guard lock{nested_mutex};
+        std::lock_guard lock{rename_mutex};
         IStorage::renameInMemory(new_table_id); // NOLINT(bugprone-parent-virtual-call)
-        if (nested)
-            nested->renameInMemory(new_table_id);
-    }
-
-    /// A table that is still a stand-in has nothing to answer with, and is deliberately not loaded to ask.
-    void checkTableCanBeRenamedByDatabaseRename(const String & new_database_name) const override
-    {
-        std::lock_guard lock{nested_mutex};
-        if (nested)
-            nested->checkTableCanBeRenamedByDatabaseRename(new_database_name);
+        if (StoragePtr loaded = tryGetLoadedNested())
+            loaded->renameInMemory(new_table_id);
     }
 
     void checkTableCanBeDropped(ContextPtr query_context) const override
@@ -193,6 +243,75 @@ public:
     void checkTableSizeBelowDropLimit(ContextPtr query_context) const override
     {
         getNested()->checkTableSizeBelowDropLimit(query_context);
+    }
+
+    /// The default `Atomic` database renames a table via `checkTableCanBeRenamed` + `renameInMemory` and
+    /// never calls `rename`, so a no-op here would let a rename bypass the `leader_election` rejection in
+    /// `StorageMergeTree::checkTableCanBeRenamed` for a lazily loaded table. The table is not materialized
+    /// to ask, though: `DatabaseAtomic::renameTable` calls this while holding the database mutex, and
+    /// loading a table can run arbitrary initialization - for example, a scalar subquery in a `CONSTRAINT`
+    /// that resolves another table of the same database, which needs that mutex again. A stand-in answers
+    /// from its `CREATE` query instead: `StorageMergeTree` rejects every rename under `leader_election`, and
+    /// `may_use_leader_election` tells whether this table is such a one. The other overrides of the hook
+    /// are asked only once the table is loaded, as before. The loaded table is read with
+    /// `tryGetLoadedNested`, not under `nested_mutex`: `getNested` holds `nested_mutex` while loading
+    /// the table, and the load may lock the database mutex, so taking `nested_mutex` under the
+    /// database mutex here would invert the lock order.
+    void checkTableCanBeRenamed(const StorageID & new_name) const override
+    {
+        StoragePtr loaded = tryGetLoadedNested();
+        if (loaded)
+        {
+            loaded->checkTableCanBeRenamed(new_name);
+            return;
+        }
+
+        if (may_use_leader_election())
+            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+                "RENAME TABLE is not supported under `leader_election` because the data path "
+                "is shared between nodes and the lease path is fixed at startup. Followers "
+                "would continue to track the old path. Drop and recreate the table instead.");
+    }
+
+    /// Same as `checkTableCanBeRenamed`, for `RENAME DATABASE`, which calls this for every table while
+    /// holding the database mutex. Materializing the tables here would also make an otherwise-allowed
+    /// rename depend on each unrelated table starting successfully.
+    void checkTableCanBeRenamedByDatabaseRename(const String & new_database_name) const override
+    {
+        StoragePtr loaded = tryGetLoadedNested();
+        if (loaded)
+        {
+            loaded->checkTableCanBeRenamedByDatabaseRename(new_database_name);
+            return;
+        }
+
+        if (may_use_leader_election())
+            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+                "RENAME DATABASE is not supported for a `leader_election` table because the data "
+                "path is shared between nodes and the lease path is fixed at startup. Followers "
+                "would continue to track the old path. Drop and recreate the table instead.");
+    }
+
+    bool dropSkipsDataDirectoryCleanup() const override
+    {
+        std::lock_guard lock{nested_mutex};
+        if (nested)
+            return nested->dropSkipsDataDirectoryCleanup();
+        /// When the nested storage could not be materialized during `drop()`, the ownership of
+        /// the data is *unknown* (see `dropDataOwnershipUnknown` below), which is weaker than a
+        /// full cleanup skip: skipping everything here would permanently leak `store/<uuid>` of
+        /// an ordinary local table on a transient load failure.
+        return false;
+    }
+
+    bool dropDataOwnershipUnknown() const override
+    {
+        std::lock_guard lock{nested_mutex};
+        /// Set by `drop()` when it could not materialize the nested storage. The catalog then
+        /// cleans node-local disks but skips disks with shared metadata, so a destructive
+        /// `removeRecursive` never runs against a path that may be on shared object storage
+        /// owned by a `leader_election = 1` peer (see `drop()` for details).
+        return !nested && drop_load_failed;
     }
 
     std::optional<UInt64> totalRows(ContextPtr query_context) const override
@@ -228,9 +347,39 @@ public:
     }
 
 private:
-    mutable std::recursive_mutex nested_mutex; /// Guards both `get_nested` and `nested`.
+    /// Requires `nested_mutex`.
+    void setNested(StoragePtr nested_storage) const
+    {
+        nested = std::move(nested_storage);
+        std::lock_guard lock{loaded_nested_mutex};
+        loaded_nested = nested;
+    }
+
+    /// Returns the materialized storage without locking `nested_mutex`, so it can be called while
+    /// holding a database mutex, which a concurrent load under `nested_mutex` may be waiting for.
+    StoragePtr tryGetLoadedNested() const
+    {
+        std::lock_guard lock{loaded_nested_mutex};
+        return loaded_nested;
+    }
+
+    mutable std::recursive_mutex nested_mutex; /// Guards `get_nested`, `nested`, and `drop_load_failed`.
     mutable std::function<StoragePtr()> get_nested; /// Factory that creates the real storage. Cleared after first use.
     mutable StoragePtr nested; /// The materialized real storage, set on first access.
+    /// A copy of `nested` for `tryGetLoadedNested`. `loaded_nested_mutex` is a leaf: nothing else
+    /// is locked while it is held.
+    mutable std::mutex loaded_nested_mutex;
+    mutable StoragePtr loaded_nested;
+    /// Serializes `renameInMemory` with the rename of a freshly loaded table to the current name in `getNested`,
+    /// so the loaded table cannot miss a concurrent rename. Taken after `nested_mutex` or a database mutex.
+    mutable std::mutex rename_mutex;
+    bool drop_load_failed = false; /// `drop()` could not load the lazy table; force fail-closed cleanup decision.
+    /// Storage-free answer to "could this table be a `StorageMergeTree` with `leader_election`
+    /// on?", resolved from the `CREATE` query's engine and settings and the server-wide
+    /// `merge_tree` defaults. Lets `RENAME DATABASE` skip materializing tables that cannot
+    /// carry the `leader_election` guard, and limits the fail-closed branch of `drop()` to the
+    /// tables whose data may be owned by another node. Never `nullptr`.
+    std::function<bool()> may_use_leader_election;
     LoggerPtr log;
 };
 

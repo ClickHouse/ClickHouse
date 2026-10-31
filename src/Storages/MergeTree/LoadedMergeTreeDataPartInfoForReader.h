@@ -111,6 +111,8 @@ public:
 
     UUID getTableUUID() const override { return data_part->storage.getStorageID().uuid; }
 
+    String getCacheKeySuffix() const override { return data_part->getCacheKeySuffix(); }
+
     MergeTreeSettingsPtr getStorageSettings() const override { return data_part->storage.getSettings(); }
 
     std::shared_ptr<const IMergeTreeDataPart> getDataPart() const override { return data_part; }
