@@ -121,7 +121,7 @@ function is_fast_build()
         return 1
     fi
     # sanitizers and debug builds are slow
-    [ "$(clickhouse local $LOCAL_TMP_OPTION --query "SELECT value NOT LIKE '%-fsanitize=%' AND value LIKE '%-DNDEBUG%' FROM system.build_options WHERE name = 'CXX_FLAGS'")" == "1" ]
+    [ "$(clickhouse local $LOCAL_TMP_OPTION --query "SELECT value NOT LIKE '%-DSANITIZER%' AND value LIKE '%-DNDEBUG%' FROM system.build_options WHERE name = 'CXX_FLAGS'")" == "1" ]
 }
 
 # Print 1 or 0 for a CXX_FLAGS pattern in the installed binary, or fail. An unanswered probe

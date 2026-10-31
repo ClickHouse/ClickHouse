@@ -603,7 +603,7 @@ fi
 # rendering difference - a row where the old value is exactly the new value wrapped in single quotes -
 # so it is not reported as a setting change. A genuine change of an auto-valued setting's default is
 # still caught and must have a settings changes history entry.
-IS_SANITIZED=$(clickhouse-local $local_tmp_option --query "SELECT value LIKE '%-fsanitize=%' FROM system.build_options WHERE name = 'CXX_FLAGS'")
+IS_SANITIZED=$(clickhouse-local $local_tmp_option --query "SELECT value LIKE '%-DSANITIZER%' FROM system.build_options WHERE name = 'CXX_FLAGS'")
 if [ "${IS_SANITIZED}" -eq "0" ]
 then
   save_settings_clean 'new_settings.native'
