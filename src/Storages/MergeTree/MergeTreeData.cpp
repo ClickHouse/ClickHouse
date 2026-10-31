@@ -312,6 +312,7 @@ namespace Setting
 
 namespace MergeTreeSetting
 {
+    extern const MergeTreeSettingsBool allow_aggregating_columns_in_partition_or_order_key;
     extern const MergeTreeSettingsBool allow_dimensions_outside_sorting_key;
     extern const MergeTreeSettingsBool allow_nullable_key;
     extern const MergeTreeSettingsBool allow_remote_fs_zero_copy_replication;
@@ -2463,6 +2464,60 @@ static void checkDimensionsAreInSortingKey(const StorageInMemoryMetadata & metad
         boost::algorithm::join(offending_columns, ", "));
 }
 
+/// In AggregatingMergeTree, background merges aggregate the `SimpleAggregateFunction` columns that are not columns of the sorting
+/// key themselves, so a key computed from such a column no longer matches a merged row: the rows of the part are not sorted by the
+/// sorting key any more, and the row can stay in a partition that its new value does not belong to, so the primary key and
+/// partition pruning skip matching rows (and a merge of such a part is a logical error in debug builds). Returns such columns, each
+/// with the key it is used in.
+static Names getAggregatedColumnsInKeys(const StorageInMemoryMetadata & metadata)
+{
+    /// A column of the sorting key is not aggregated (`allow_suspicious_primary_key` allows a `SimpleAggregateFunction` one).
+    NameSet sorting_key_columns;
+    if (metadata.isSortingKeyDefined())
+        sorting_key_columns.insert(metadata.getSortingKey().column_names.begin(), metadata.getSortingKey().column_names.end());
+
+    Names result;
+    auto add_columns = [&](const KeyDescription & key, std::string_view key_name)
+    {
+        for (const auto & name : key.expression->getRequiredColumns())
+        {
+            if (sorting_key_columns.contains(name))
+                continue;
+            const auto * column = metadata.getColumns().tryGet(name);
+            if (column && typeid_cast<const DataTypeCustomSimpleAggregateFunction *>(column->type->getCustomName()))
+                result.push_back(fmt::format("{} ({} key)", backQuoteIfNeed(name), key_name));
+        }
+    };
+
+    if (metadata.isPartitionKeyDefined())
+        add_columns(metadata.getPartitionKey(), "partition");
+    if (metadata.isSortingKeyDefined())
+        add_columns(metadata.getSortingKey(), "sorting");
+    return result;
+}
+
+/// Rejects such columns, unless the `allow_aggregating_columns_in_partition_or_order_key` setting is enabled. For an ALTER, only the
+/// columns that it adds are rejected, so a table created with the setting still accepts the other ALTERs.
+static void checkAggregatedColumnsAreNotInKeys(const StorageInMemoryMetadata & metadata, const StorageInMemoryMetadata * old_metadata)
+{
+    Names columns = getAggregatedColumnsInKeys(metadata);
+    if (old_metadata)
+        std::erase_if(columns, [old_columns = getAggregatedColumnsInKeys(*old_metadata)](const String & column)
+        {
+            return std::ranges::find(old_columns, column) != old_columns.end();
+        });
+
+    if (columns.empty())
+        return;
+
+    throw Exception(
+        ErrorCodes::BAD_ARGUMENTS,
+        "SimpleAggregateFunction column(s) {} of the AggregatingMergeTree table are used in the key. Background merges aggregate "
+        "them, so the key would not match the merged rows. Use other columns in the key, or set "
+        "'allow_aggregating_columns_in_partition_or_order_key = 1' if this is intentional.",
+        boost::algorithm::join(columns, ", "));
+}
+
 void MergeTreeData::MergingParams::check(const MergeTreeSettings & settings, const StorageInMemoryMetadata & metadata, bool sanity_checks) const
 {
     const auto columns = metadata.getColumns().getAllPhysical();
@@ -2662,6 +2717,10 @@ void MergeTreeData::MergingParams::check(const MergeTreeSettings & settings, con
     if (mode == MergingParams::Aggregating && sanity_checks && !allow_tuple_element_aggregation
         && !settings[MergeTreeSetting::allow_dimensions_outside_sorting_key])
         checkDimensionsAreInSortingKey(metadata);
+
+    /// Only on table creation, so existing tables keep loading.
+    if (mode == MergingParams::Aggregating && sanity_checks && !settings[MergeTreeSetting::allow_aggregating_columns_in_partition_or_order_key])
+        checkAggregatedColumnsAreNotInKeys(metadata, nullptr);
 
     /// TODO Checks for Graphite mode.
 }
@@ -7173,6 +7232,10 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
     /// Not in `checkProperties`, which also runs when a replica applies an already committed ALTER.
     if (!is_secondary_replay)
         checkLossyCodecOnLowCardinality(new_metadata.columns);
+    /// Both a changed key and a changed type of a column can use an aggregated column in the key.
+    if (!is_secondary_replay && merging_params.mode == MergingParams::Aggregating
+        && !(*alter_effective_settings)[MergeTreeSetting::allow_aggregating_columns_in_partition_or_order_key])
+        checkAggregatedColumnsAreNotInKeys(new_metadata, &old_metadata);
     checkTTLExpressions(new_metadata, old_metadata);
     if (!is_secondary_replay)
         checkColumnTTLsForKeyColumns(new_metadata, old_metadata);
