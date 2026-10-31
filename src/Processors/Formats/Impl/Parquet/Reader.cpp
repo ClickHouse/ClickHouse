@@ -3863,7 +3863,7 @@ bool Reader::initializeDataPage(const char * & data_ptr, const char * data_end, 
     /// begins in the middle of a row (arrow-go splits rows across data pages V2 this way). The readers
     /// that rely on the offset index (`skipToRowOrNextPage` and `decodePrimitiveColumn`) assume that
     /// the page starts on a row boundary, so reject such a page instead of misreading it.
-    if (end_row_idx.has_value() && max_rep > 0 && page.num_values > 0 && page.rep.at(0) != 0)
+    if (end_row_idx.has_value() && max_rep > 0 && !page.rep.empty() && page.rep[0] != 0)
         throw Exception(
             ErrorCodes::INCORRECT_DATA,
             "Page of column {} at row {} begins in the middle of a row, but the offset index requires pages to begin on "
