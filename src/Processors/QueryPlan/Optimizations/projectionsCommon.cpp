@@ -329,9 +329,9 @@ size_t filterPartsByProjection(
                     ? excluded->second : ReadFromMergeTree::AnalysisResult::ProjectionPartAnalysis{};
                 auto & dropped_by_primary_key = reading_select_result.granules_dropped_by_primary_key;
                 auto & dropped_by_skip_indexes = reading_select_result.granules_dropped_by_skip_indexes;
-                dropped_by_primary_key = dropped_by_primary_key - std::min(dropped_by_primary_key, part.marks_dropped_by_primary_key)
+                dropped_by_primary_key = dropped_by_primary_key - std::min<UInt64>(dropped_by_primary_key, part.marks_dropped_by_primary_key)
                     + exclusion.granules_dropped_by_primary_key;
-                dropped_by_skip_indexes = dropped_by_skip_indexes - std::min(dropped_by_skip_indexes, part.marks_dropped_by_skip_indexes)
+                dropped_by_skip_indexes = dropped_by_skip_indexes - std::min<UInt64>(dropped_by_skip_indexes, part.marks_dropped_by_skip_indexes)
                     + exclusion.granules_dropped_by_skip_indexes;
                 reading_select_result.parts_excluded_by_projection[part.data_part.get()] = std::move(exclusion);
             }
