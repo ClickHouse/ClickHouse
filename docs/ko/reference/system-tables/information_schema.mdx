@@ -1,12 +1,12 @@
 ---
-description: '데이터베이스 객체의 메타데이터에 대해 거의 표준화된 DBMS 비종속적 VIEW를 제공하는 system 데이터베이스입니다.'
+description: '데이터베이스 객체의 메타데이터에 대해 거의 표준화된 DBMS 비종속적 뷰(view)를 제공하는 system 데이터베이스입니다.'
 keywords: ['system 데이터베이스', 'information_schema']
 slug: /operations/system-tables/information_schema
 title: 'INFORMATION_SCHEMA'
 doc_type: '참고'
 ---
 
-`INFORMATION_SCHEMA`(또는 `information_schema`)는 데이터베이스 객체의 메타데이터에 대해 (어느 정도) 표준화된 [DBMS 비종속적 VIEW](https://en.wikipedia.org/wiki/Information_schema)를 제공하는 system 데이터베이스입니다. `INFORMATION_SCHEMA`의 VIEW는 일반적으로 일반 시스템 테이블보다 기능이 다소 제한적이지만, 도구에서 DBMS 전반에 걸쳐 기본 정보를 얻는 데 사용할 수 있습니다. `INFORMATION_SCHEMA`의 VIEW 구조와 내용은 하위 호환성을 유지하는 방식으로 발전하도록 설계되어 있습니다. 즉, 새로운 기능만 추가되고 기존 기능은 변경되거나 제거되지 않습니다. 내부 구현 측면에서 `INFORMATION_SCHEMA`의 VIEW는 일반적으로 [system.columns](/ko/reference/system-tables/columns), [system.databases](/ko/reference/system-tables/databases), [system.tables](/ko/reference/system-tables/tables)와 같은 일반 시스템 테이블에 매핑됩니다.
+`INFORMATION_SCHEMA`(또는 `information_schema`)는 데이터베이스 객체의 메타데이터에 대해 (어느 정도) 표준화된 [DBMS 비종속적 뷰(view)](https://en.wikipedia.org/wiki/Information_schema)를 제공하는 system 데이터베이스입니다. `INFORMATION_SCHEMA`의 뷰(view)는 일반적으로 일반 시스템 테이블보다 기능이 다소 제한적이지만, 도구에서 DBMS 전반에 걸쳐 기본 정보를 얻는 데 사용할 수 있습니다. `INFORMATION_SCHEMA`의 뷰(view) 구조와 내용은 하위 호환성을 유지하는 방식으로 발전하도록 설계되어 있습니다. 즉, 새로운 기능만 추가되고 기존 기능은 변경되거나 제거되지 않습니다. 내부 구현 측면에서 `INFORMATION_SCHEMA`의 뷰(view)는 일반적으로 [system.columns](/ko/reference/system-tables/columns), [system.databases](/ko/reference/system-tables/databases), [system.tables](/ko/reference/system-tables/tables)와 같은 일반 시스템 테이블에 매핑됩니다.
 
 ```sql
 SHOW TABLES FROM INFORMATION_SCHEMA;
@@ -17,40 +17,57 @@ SHOW TABLES FROM information_schema;
 
 ```text
 ┌─name────────────────────┐
+│ CHARACTER_SETS          │
 │ COLLATIONS              │
 │ COLUMNS                 │
+│ COLUMN_PRIVILEGES       │
+│ ENGINES                 │
 │ KEY_COLUMN_USAGE        │
 │ REFERENTIAL_CONSTRAINTS │
 │ SCHEMATA                │
-| STATISTICS              |
+│ SCHEMA_PRIVILEGES       │
+│ STATISTICS              │
 │ TABLES                  │
+│ TABLE_PRIVILEGES        │
+│ USER_PRIVILEGES         │
 │ VIEWS                   │
+│ character_sets          │
+│ collations              │
+│ column_privileges       │
 │ columns                 │
+│ engines                 │
 │ key_column_usage        │
 │ referential_constraints │
+│ schema_privileges       │
 │ schemata                │
-| statistics              |
+│ statistics              │
+│ table_privileges        │
 │ tables                  │
+│ user_privileges         │
 │ views                   │
 └─────────────────────────┘
 ```
 
-`INFORMATION_SCHEMA`에는 다음 VIEW가 포함되어 있습니다:
+`INFORMATION_SCHEMA`에는 다음 뷰(view)가 포함되어 있습니다:
 
+* [CHARACTER&#95;SETS](#character_sets)
 * [COLUMNS](#columns)
+* [COLUMN&#95;PRIVILEGES](#column_privileges)
 * [COLLATIONS](#collations)
+* [ENGINES](#engines)
 * [KEY&#95;COLUMN&#95;USAGE](#key_column_usage)
 * [REFERENTIAL&#95;CONSTRAINTS](#referential_constraints)
 * [SCHEMATA](#schemata)
+* [SCHEMA&#95;PRIVILEGES](#schema_privileges)
 * [STATISTICS](#statistics)
 * [TABLES](#tables)
+* [TABLE&#95;PRIVILEGES](#table_privileges)
+* [USER&#95;PRIVILEGES](#user_privileges)
 * [VIEWS](#views)
 
-다른 데이터베이스와의 호환성을 위해 대소문자를 구분하지 않는 동등한 VIEW(예: `INFORMATION_SCHEMA.columns`)도 제공합니다. 이는 이러한 VIEW의 모든 컬럼에도 동일하게 적용되며, 소문자(예: `table_name`)와 대문자(`TABLE_NAME`) 형태를 모두 제공합니다.
+다른 데이터베이스와의 호환성을 위해 대소문자를 구분하지 않는 동등한 뷰(view)(예: `INFORMATION_SCHEMA.columns`)도 제공합니다. 이는 이러한 뷰(view)의 모든 컬럼에도 동일하게 적용되며, 소문자(예: `table_name`)와 대문자(`TABLE_NAME`) 형태를 모두 제공합니다.
 
-<div id="columns">
-  ## COLUMNS
-</div>
+## COLUMNS {#columns}
 
 [system.columns](/ko/reference/system-tables/columns) 시스템 테이블(system table)에서 읽은 컬럼과, ClickHouse에서 지원되지 않거나 의미가 없지만(항상 `NULL`) 표준상 반드시 포함되어야 하는 컬럼을 포함합니다.
 
@@ -142,9 +159,7 @@ domain_schema:            ᴺᵁᴸᴸ
 domain_name:              ᴺᵁᴸᴸ
 ```
 
-<div id="schemata">
-  ## SCHEMATA
-</div>
+## SCHEMATA {#schemata}
 
 [system.databases](/ko/reference/system-tables/databases) 시스템 테이블에서 읽어온 컬럼과, ClickHouse에서 지원되지 않거나 의미가 없지만(항상 `NULL`) 표준상 반드시 포함되어야 하는 컬럼을 포함합니다.
 
@@ -186,9 +201,7 @@ default_character_set_name:    ᴺᵁᴸᴸ
 sql_path:                      ᴺᵁᴸᴸ
 ```
 
-<div id="tables">
-  ## TABLES
-</div>
+## TABLES {#tables}
 
 [system.tables](/ko/reference/system-tables/tables) 시스템 테이블에서 읽어 온 컬럼을 포함합니다.
 
@@ -236,9 +249,7 @@ table_collation: utf8mb4_0900_ai_ci
 table_comment:   
 ```
 
-<div id="views">
-  ## VIEWS
-</div>
+## VIEWS {#views}
 
 테이블 엔진 [View](/ko/reference/engines/table-engines/special/view)을 사용하는 경우 [system.tables](/ko/reference/system-tables/tables) 시스템 테이블에서 읽어온 컬럼이 포함됩니다.
 
@@ -297,9 +308,7 @@ is_trigger_deletable:       NO
 is_trigger_insertable_into: NO
 ```
 
-<div id="key_column_usage">
-  ## KEY_COLUMN_USAGE
-</div>
+## KEY_COLUMN_USAGE {#key_column_usage}
 
 제약 조건이 적용된 [system.tables](/ko/reference/system-tables/tables) 시스템 테이블의 컬럼을 포함합니다.
 
@@ -356,9 +365,7 @@ referenced_table_name:         ᴺᵁᴸᴸ
 referenced_column_name:        ᴺᵁᴸᴸ
 ```
 
-<div id="referential_constraints">
-  ## REFERENTIAL_CONSTRAINTS
-</div>
+## REFERENTIAL_CONSTRAINTS {#referential_constraints}
 
 외래 키에 대한 정보를 포함합니다. 현재는 빈 결과(행 없음)만 반환하며, 이는 Tableau Online과 같은 타사 도구와의 호환성을 제공하는 데 필요한 최소한의 수준입니다.
 
@@ -376,15 +383,11 @@ referenced_column_name:        ᴺᵁᴸᴸ
 * `table_name` ([String](/ko/reference/data-types/string)) — 현재 사용되지 않습니다.
 * `referenced_table_name` ([String](/ko/reference/data-types/string)) — 현재 사용되지 않습니다.
 
-<div id="statistics">
-  ## STATISTICS
-</div>
+## STATISTICS {#statistics}
 
 테이블 인덱스에 대한 정보를 제공합니다. 현재는 빈 결과(행 없음)만 반환하며, Tableau Online과 같은 타사 도구와의 호환성을 유지하는 데 필요한 최소한의 수준만 제공합니다.
 
-<div id="collations">
-  ## COLLATIONS
-</div>
+## COLLATIONS {#collations}
 
 사용 가능한 콜레이션 정보를 제공합니다. [system.collations](/ko/reference/system-tables/collations)의 콜레이션과 MySQL 호환성을 위한 2개의 행을 포함합니다. `utf8mb4_0900_ai_ci`는 MySQL 프로토콜이 핸드셰이크, `SCHEMATA.DEFAULT_COLLATION_NAME`, `TABLES.TABLE_COLLATION`에서 알리는 콜레이션이며, `binary`는 MySQL 프로토콜이 결과 집합 메타데이터의 숫자형 및 기타 비문자열 컬럼에 지정하는 의사 콜레이션입니다. 따라서 알린 콜레이션을 따라 이 뷰를 조회하는 MySQL 지원 클라이언트도 해당 항목을 찾을 수 있습니다.
 
@@ -397,3 +400,76 @@ referenced_column_name:        ᴺᵁᴸᴸ
 * `is_compiled` ([Nullable](/ko/reference/data-types/nullable)([String](/ko/reference/data-types/string))) — 콜레이션이 서버에 컴파일되어 있는지 여부입니다(MySQL 호환성 행 2개 모두 `Yes`, 그 외에는 `NULL`). MySQL 호환성을 위해 제공됩니다.
 * `sortlen` ([Nullable](/ko/reference/data-types/nullable)([UInt64](/ko/reference/data-types/int-uint))) — 최소 정렬 길이입니다(`utf8mb4_0900_ai_ci`의 경우 `0`, `binary`의 경우 `1`, 그 외에는 `NULL`). MySQL 호환성을 위해 제공됩니다.
 * `pad_attribute` ([Nullable](/ko/reference/data-types/nullable)([String](/ko/reference/data-types/string))) — 패딩 속성으로, `NO PAD` 또는 `PAD SPACE`입니다(MySQL 호환성 행 2개 모두 `NO PAD`, 그 외에는 `NULL`). MySQL 호환성을 위해 제공됩니다.
+
+## CHARACTER_SETS {#character_sets}
+
+MySQL 도구와의 호환성을 위해 문자 집합(character set)의 정적 목록(`utf8`, `utf8mb4`, `ascii`, `binary`)을 제공합니다. ClickHouse 자체는 UTF-8로 동작합니다.
+
+컬럼:
+
+* `character_set_name` ([String](/ko/reference/data-types/string)) — 문자 집합 이름입니다.
+
+## ENGINES {#engines}
+
+[system.table&#95;engines](/ko/reference/system-tables/table_engines) 시스템 테이블에서 읽어온, 사용 가능한 테이블 엔진에 대한 정보를 제공합니다. MySQL 호환성을 위해 제공됩니다.
+
+컬럼:
+
+* `engine` ([String](/ko/reference/data-types/string)) — 테이블 엔진의 이름입니다.
+* `support` ([String](/ko/reference/data-types/string)) — [default&#95;table&#95;engine](/ko/operations/settings/settings#default_table_engine)으로 설정된 엔진이면 `DEFAULT`, 그 외에는 `YES`입니다.
+
+## USER_PRIVILEGES {#user_privileges}
+
+[system.grants](/ko/reference/system-tables/grants) 시스템 테이블에서 읽어 온 전역 권한 정보(데이터베이스가 지정되지 않은 행)를 제공합니다.
+
+`*_PRIVILEGES` 뷰(view)는 와일드카드를 사용하지 않는 긍정 권한 부여만 표시합니다. 부분 철회, 와일드카드 권한 부여(예: `GRANT SELECT ON db_prefix*.*`), 매개변수화된 권한 유형에서 이름이 지정된 특정 객체에 대한 권한 부여(예: `GRANT TABLE ENGINE ON TinyLog`)는 MySQL 호환 포맷으로 표현할 수 없어 생략됩니다. 따라서 부분 철회로 제한된 권한 수혜자도 제한이 없는 권한 부여로 표시됩니다. 매개변수화된 유형의 `ON *` 권한 부여는 일반 전역 권한으로 표시됩니다. 권한 정보의 기준이 되는 소스는 `system.grants`입니다. MySQL과 달리 이 뷰(view)는 모든 사용자와 역할의 권한 부여를 표시하며, 이를 조회하려면 `system.grants`에 대한 액세스 권한이 필요합니다. 권한이 없으면 쿼리가 `ACCESS_DENIED` 예외를 발생시키며 실패합니다. ClickHouse는 권한을 부여한 주체를 기록하지 않으므로 `GRANTOR` 컬럼은 제공되지 않습니다.
+
+컬럼:
+
+* `grantee` ([String](/ko/reference/data-types/string)) — 권한을 부여받은 사용자 또는 역할로, MySQL 포맷인 `'name'@'%'` 형태로 표시됩니다. 역할은 MySQL에 대응하는 개념이 없으므로 사용자와 동일한 방식으로 렌더링됩니다.
+* `table_catalog` ([String](/ko/reference/data-types/string)) — 항상 `def`입니다.
+* `privilege_type` ([String](/ko/reference/data-types/string)) — 권한 이름입니다(예: `SELECT` 또는 `ALTER UPDATE`). 전체 목록은 [system.privileges](/ko/reference/system-tables/privileges)를 참조하십시오.
+* `is_grantable` ([String](/ko/reference/data-types/string)) — 권한이 `WITH GRANT OPTION`으로 부여된 경우 `YES`, 그렇지 않으면 `NO`입니다.
+* `grantee_type` ([String](/ko/reference/data-types/string)) — `USER` 또는 `ROLE`입니다. 비표준 컬럼으로, ClickHouse에서는 사용자와 역할이 같은 이름을 가질 수 있으므로 이 컬럼으로 두 권한 수혜자를 구분합니다.
+
+## SCHEMA_PRIVILEGES {#schema_privileges}
+
+데이터베이스 수준 권한에 대한 정보를 제공하며, 이 정보는 [system.grants](/ko/reference/system-tables/grants) 시스템 테이블에서 읽어 옵니다(데이터베이스는 지정되어 있지만 테이블은 지정되지 않은 행). 모든 `*_PRIVILEGES` 뷰(view)에 공통으로 적용되는 제한 사항은 [USER&#95;PRIVILEGES](#user_privileges)를 참고하십시오.
+
+컬럼:
+
+* `grantee` ([String](/ko/reference/data-types/string)) — 권한을 부여받은 사용자 또는 역할이며, MySQL 형식 `'name'@'%'`으로 표시됩니다.
+* `table_catalog` ([String](/ko/reference/data-types/string)) — 항상 `def`입니다.
+* `table_schema` ([String](/ko/reference/data-types/string)) — 데이터베이스 이름입니다.
+* `privilege_type` ([String](/ko/reference/data-types/string)) — 권한 이름입니다.
+* `is_grantable` ([String](/ko/reference/data-types/string)) — 권한이 `WITH GRANT OPTION`으로 부여된 경우 `YES`, 그렇지 않으면 `NO`입니다.
+* `grantee_type` ([String](/ko/reference/data-types/string)) — `USER` 또는 `ROLE`입니다. 비표준 컬럼으로, ClickHouse에서는 사용자와 역할이 같은 이름을 가질 수 있으므로 이 컬럼을 통해 두 권한 수혜자를 구분합니다.
+
+## TABLE_PRIVILEGES {#table_privileges}
+
+테이블 수준 권한에 대한 정보를 제공하며, 이 정보는 [system.grants](/ko/reference/system-tables/grants) 시스템 테이블에서 테이블은 지정되어 있고 컬럼은 지정되지 않은 행을 읽어 가져옵니다. 모든 `*_PRIVILEGES` 뷰(view)에 공통으로 적용되는 제한 사항은 [USER&#95;PRIVILEGES](#user_privileges)를 참고하십시오.
+
+컬럼:
+
+* `grantee` ([String](/ko/reference/data-types/string)) — 권한을 부여받은 사용자 또는 역할이며, MySQL 포맷(`'name'@'%'`)으로 표시됩니다.
+* `table_catalog` ([String](/ko/reference/data-types/string)) — 항상 `def`입니다.
+* `table_schema` ([String](/ko/reference/data-types/string)) — 데이터베이스 이름입니다.
+* `table_name` ([String](/ko/reference/data-types/string)) — 테이블 이름입니다.
+* `privilege_type` ([String](/ko/reference/data-types/string)) — 권한 이름입니다.
+* `is_grantable` ([String](/ko/reference/data-types/string)) — 권한이 `WITH GRANT OPTION`으로 부여된 경우 `YES`, 그렇지 않으면 `NO`입니다.
+* `grantee_type` ([String](/ko/reference/data-types/string)) — `USER` 또는 `ROLE`입니다. 비표준 컬럼으로, ClickHouse에서는 사용자와 역할이 같은 이름을 가질 수 있으므로 이 컬럼을 통해 해당 권한 수혜자를 구분합니다.
+
+## COLUMN_PRIVILEGES {#column_privileges}
+
+[system.grants](/ko/reference/system-tables/grants) 시스템 테이블에서 읽어 온 열 수준(column-level) 권한 정보를 제공합니다(컬럼이 지정된 행만 포함하며, 컬럼당 1개의 행으로 표시됩니다). 모든 `*_PRIVILEGES` 뷰(view)에 공통으로 적용되는 제한 사항은 [USER&#95;PRIVILEGES](#user_privileges)를 참조하십시오.
+
+컬럼:
+
+* `grantee` ([String](/ko/reference/data-types/string)) — 권한을 부여받은 사용자 또는 역할로, MySQL 형식(`'name'@'%'`)으로 표시됩니다.
+* `table_catalog` ([String](/ko/reference/data-types/string)) — 항상 `def`입니다.
+* `table_schema` ([String](/ko/reference/data-types/string)) — 데이터베이스 이름입니다.
+* `table_name` ([String](/ko/reference/data-types/string)) — 테이블 이름입니다.
+* `column_name` ([String](/ko/reference/data-types/string)) — 컬럼 이름입니다.
+* `privilege_type` ([String](/ko/reference/data-types/string)) — 권한 이름입니다.
+* `is_grantable` ([String](/ko/reference/data-types/string)) — 권한이 `WITH GRANT OPTION`으로 부여된 경우 `YES`, 그렇지 않으면 `NO`입니다.
+* `grantee_type` ([String](/ko/reference/data-types/string)) — `USER` 또는 `ROLE`입니다. 비표준 컬럼으로, ClickHouse에서는 사용자와 역할이 같은 이름을 가질 수 있으므로 이 컬럼을 통해 권한 수혜자를 구분합니다.

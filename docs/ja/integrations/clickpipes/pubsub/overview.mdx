@@ -19,14 +19,12 @@ import { Image } from "/snippets/ja/components/Image.jsx";
 Pub/Sub ClickPipes は、ClickPipes UI を使用して手動でデプロイおよび管理できるほか、[OpenAPI](/ja/integrations/clickpipes/programmatic-access/openapi) や [Terraform](/ja/integrations/clickpipes/programmatic-access/terraform) を使用してプログラムでデプロイおよび管理することもできます。
 
 <div id="prerequisite">
-  ## 前提条件
+  ## 前提条件 {#prerequisite}
 </div>
 
-[ClickPipes の概要](/ja/integrations/clickpipes/home)を一通り確認し、取り込み元とする トピック を含む GCP プロジェクトにアクセスでき、適切な Pub/Sub 権限を持つサービスアカウントを作成している必要があります。ClickPipes に必要な権限の正確な一覧については、[Pub/Sub IAM 権限ガイド](/ja/integrations/clickpipes/pubsub/auth)を参照してください。
+[ClickPipes の概要](/ja/integrations/clickpipes/home)を一通り確認し、取り込み元とする トピック を含む GCP プロジェクトにアクセスでき、ClickPipes が使用するサービスアカウントに適切な Pub/Sub 権限を付与できる必要があります。認証オプションおよび必要な権限の正確な一覧については、[Pub/Sub IAM 権限ガイド](/ja/integrations/clickpipes/pubsub/auth)を参照してください。
 
-<div id="creating-your-first-clickpipe">
-  ## 最初の ClickPipe を作成する
-</div>
+## 最初の ClickPipe を作成する {#creating-your-first-clickpipe}
 
 1. ClickHouse Cloud サービスの SQL Console にアクセスします。
 
@@ -53,7 +51,7 @@ Pub/Sub ClickPipes は、ClickPipes UI を使用して手動でデプロイお�
 
 <Image img="/images/integrations/data-ingestion/clickpipes/cp_step3_pubsub.webp" alt="Pub/Sub topic、フォーマット、開始オフセットを設定" size="lg" border />
 
-6. 次のステップでは、新しい ClickHouse table にデータを取り込むか、既存のものを再利用するかを選択できます。画面の指示に従って、table 名、スキーマ、設定を変更してください。上部のサンプル table で、変更内容をリアルタイムにプレビューできます。
+6. 次のステップでは、新しい ClickHouse テーブル にデータを取り込むか、既存のものを再利用するかを選択できます。画面の指示に従って、テーブル 名、スキーマ、設定を変更してください。上部のサンプル テーブル で、変更内容をリアルタイムにプレビューできます。
 
 <Image img="/images/integrations/data-ingestion/clickpipes/cp_step4a.webp" alt="table、スキーマ、設定を指定" size="lg" border />
 
@@ -61,20 +59,20 @@ Pub/Sub ClickPipes は、ClickPipes UI を使用して手動でデプロイお�
 
 <Image img="/images/integrations/data-ingestion/clickpipes/cp_step4a3.webp" alt="詳細設定を指定" size="lg" border />
 
-7. あるいは、既存の ClickHouse table にデータを取り込むこともできます。その場合、UI ではソースのフィールドを、選択した宛先 table の ClickHouse フィールドにマッピングできます。
+7. あるいは、既存の ClickHouse テーブル にデータを取り込むこともできます。その場合、UI ではソースのフィールドを、選択した宛先 テーブル の ClickHouse フィールドにマッピングできます。
 
 <Image img="/images/integrations/data-ingestion/clickpipes/cp_step4b.webp" alt="既存の table を使用" size="lg" border />
 
 8. 最後に、内部 ClickPipes ユーザーの権限を設定できます。
 
-**Permissions:** ClickPipes は、宛先 table にデータを書き込むための専用ユーザーを作成します。カスタムロール、または事前定義されたロールのいずれかを使用して、この内部ユーザーに割り当てるロールを選択できます。
+**Permissions:** ClickPipes は、宛先 テーブル にデータを書き込むための専用ユーザーを作成します。カスタムロール、または事前定義されたロールのいずれかを使用して、この内部ユーザーに割り当てるロールを選択できます。
 
-* `Full access`: クラスターへのフルアクセス権です。宛先 table で materialized view や Dictionary を使用する場合に役立つことがあります。
-  * `Only destination table`: 宛先 table に対する `INSERT` 権限のみです。
+* `Full access`: クラスターへのフルアクセス権です。宛先 テーブル で materialized view や Dictionary を使用する場合に役立つことがあります。
+* `Only destination table`: 宛先 テーブル に対する `INSERT` 権限のみです。
 
 <Image img="/images/integrations/data-ingestion/clickpipes/cp_step5.webp" alt="権限" border />
 
-9. 「Complete Setup」をクリックすると、システムに ClickPipe が登録され、概要 table に一覧表示されるようになります。
+9. 「Complete Setup」をクリックすると、システムに ClickPipe が登録され、概要 テーブル に一覧表示されるようになります。
 
 <Image img="/images/integrations/data-ingestion/clickpipes/cp_success.webp" alt="成功通知" size="sm" border />
 
@@ -91,7 +89,7 @@ Pub/Sub ClickPipes は、ClickPipes UI を使用して手動でデプロイお�
 10. **おめでとうございます！** 最初の Pub/Sub ClickPipe の設定が正常に完了しました。今後は継続的に実行され、Pub/Sub トピック から ClickHouse Cloud サービス にデータがリアルタイムで取り込まれます。
 
 <div id="managed-subscriptions">
-  ## 管理対象サブスクリプション
+  ## 管理対象サブスクリプション {#managed-subscriptions}
 </div>
 
 Pub/Sub メッセージはトピックから直接ではなく、サブスクリプション経由で消費されます。ClickPipes は各パイプ専用のサブスクリプションを作成・管理するため、ユーザーが選択するのは常にトピックだけです。
@@ -105,7 +103,7 @@ Pub/Sub メッセージはトピックから直接ではなく、サブスクリ
 そのため、指定するサービスアカウントには、サブスクリプションからの消費に加えて、プロジェクト内でサブスクリプションを作成・削除する permission も必要です。完全な一覧については、[Pub/Sub IAM 権限ガイド](/ja/integrations/clickpipes/pubsub/auth)を参照してください。
 
 <div id="supported-data-formats">
-  ## 対応データフォーマット
+  ## 対応データフォーマット {#supported-data-formats}
 </div>
 
 対応フォーマットは次のとおりです。
@@ -117,7 +115,7 @@ Pub/Sub メッセージはトピックから直接ではなく、サブスクリ
 Avro と Protobuf では、スキーマはトピックに関連付けられた Pub/Sub スキーマレジストリから取得されます。パイプは常にトピックのスキーマの最新リビジョンを使用します。UI のスキーマセレクタは設計上、読み取り専用です。
 
 <div id="compression">
-  ## 圧縮
+  ## 圧縮 {#compression}
 </div>
 
 Pub/Sub 向け ClickPipes は、圧縮されたメッセージを自動的に検出して解凍します。Pub/Sub クライアントは生のバイト列をそのまま配信し、解凍は ClickPipes が追加設定なしで処理します。
@@ -136,11 +134,11 @@ Pub/Sub 向け ClickPipes は、圧縮されたメッセージを自動的に検
 </Note>
 
 <div id="supported-data-types">
-  ## サポートされているデータ型
+  ## サポートされているデータ型 {#supported-data-types}
 </div>
 
 <div id="standard-types-support">
-  ### 標準型のサポート
+  ### 標準型のサポート {#standard-types-support}
 </div>
 
 現在、ClickPipes では以下の ClickHouse データ型がサポートされています。
@@ -163,21 +161,21 @@ Pub/Sub 向け ClickPipes は、圧縮されたメッセージを自動的に検
 * SimpleAggregateFunction 型 (AggregatingMergeTree または SummingMergeTree の宛先用)
 
 <div id="variant-type-support">
-  ### Variant 型のサポート
+  ### Variant 型のサポート {#variant-type-support}
 </div>
 
 ソースデータストリーム内の任意の JSON フィールドに対して、Variant 型 (`Variant(String, Int64, DateTime)` など) を手動で指定できます。
 ClickPipes では使用する適切な Variant のサブタイプを判定する仕組み上、Variant の定義で使用できる整数型または datetime 型は 1 つだけです。たとえば、`Variant(Int64, UInt32)` はサポートされていません。
 
 <div id="json-type-support">
-  ### JSON 型のサポート
+  ### JSON 型のサポート {#json-type-support}
 </div>
 
 常に JSON オブジェクトである JSON フィールドは、JSON の宛先カラムに割り当てることができます。固定またはスキップするパスを含め、宛先
 カラムは目的の JSON 型に手動で変更する必要があります。
 
 <div id="pubsub-virtual-columns">
-  ## Pub/Sub 仮想カラム
+  ## Pub/Sub 仮想カラム {#pubsub-virtual-columns}
 </div>
 
 以下の仮想カラムは、Pub/Sub トピックでサポートされています。新しい宛先テーブルを作成する際は、`Add Column` ボタンを使用して仮想カラムを追加できます。
@@ -193,7 +191,7 @@ ClickPipes では使用する適切な Variant のサブタイプを判定する
 `_raw_message` フィールドは、Pub/Sub メッセージの完全な payload のみが必要な場合に使用できます (たとえば、ClickHouse の [`JsonExtract*`](/ja/reference/functions/regular-functions/json-functions#jsonextract-functions) 関数を使用して下流の materialized view を生成する場合など) 。このようなパイプでは、「仮想」ではないカラムをすべて削除することで、ClickPipes のパフォーマンスが向上する場合があります。
 
 <div id="limitations">
-  ## 制限事項
+  ## 制限事項 {#limitations}
 </div>
 
 * [DEFAULT](/ja/reference/statements/create/table#default) はサポートされていません。
@@ -202,11 +200,11 @@ ClickPipes では使用する適切な Variant のサブタイプを判定する
 * フィルタはメッセージ属性にのみ適用され、payload には適用されません。
 
 <div id="performance">
-  ## パフォーマンス
+  ## パフォーマンス {#performance}
 </div>
 
 <div id="batching">
-  ### バッチ処理
+  ### バッチ処理 {#batching}
 </div>
 
 ClickPipes は、データをバッチ単位で ClickHouse に挿入します。これは、データベース内に過剰な数のパーツが作成されるのを防ぎ、クラスターのパフォーマンス低下を避けるためです。
@@ -217,7 +215,7 @@ ClickPipes は、データをバッチ単位で ClickHouse に挿入します。
 * バッチの保持時間が上限に達した場合 (5 秒)
 
 <div id="latency">
-  ### レイテンシ
+  ### レイテンシ {#latency}
 </div>
 
 レイテンシ (Pub/Sub メッセージが公開されてから、そのメッセージを ClickHouse で利用可能になるまでの時間として定義) は、いくつかの要因 (パブリッシャーのレイテンシ、ネットワークのレイテンシ、メッセージのサイズ/フォーマット) に左右されます。上のセクションで説明した[バッチ処理](#batching)も、レイテンシに影響します。想定されるレイテンシを把握するため、実際のユースケースに即してテストすることを常に推奨しています。
@@ -225,7 +223,7 @@ ClickPipes は、データをバッチ単位で ClickHouse に挿入します。
 低レイテンシに関する具体的な要件がある場合は、[お問い合わせください](https://clickhouse.com/company/contact?loc=clickpipes)。
 
 <div id="ordering-keys">
-  ### 順序キー
+  ### 順序キー {#ordering-keys}
 </div>
 
 Pub/Sub は、同じ [順序キー](https://cloud.google.com/pubsub/docs/ordering) を持つメッセージが、単一のサブスクライバーへ公開順に配信されることを保証します。ClickPipes では、管理対象サブスクリプションでこの順序付けがデフォルトで有効です。メッセージに順序キーが設定されている場合、サブスクライバーはそれらを順番どおりに受信します。順序キーが設定されていない場合の動作は変わりません。
@@ -233,7 +231,7 @@ Pub/Sub は、同じ [順序キー](https://cloud.google.com/pubsub/docs/orderin
 プロデューサーがすべてのメッセージを少数の順序キー (または 1 つのキー) だけで公開している場合、Pub/Sub はそれらのメッセージを少数のサブスクライバーに集約するため、水平方向のスループットが制限されることがあります。順序付けが不要であれば順序キーを付けないか、カーディナリティの高い順序キーを使用することを推奨します。
 
 <div id="scaling">
-  ### スケーリング
+  ### スケーリング {#scaling}
 </div>
 
 Pub/Sub 向け ClickPipes は、水平方向・垂直方向の両方にスケールできるよう設計されています。各パイプは単一の管理対象 Pub/Sub サブスクリプションを使用し、これは設定できません。デフォルトでは、1 つのコンシューマーがそのサブスクリプションからメッセージを取得します。コンシューマー数は、ClickPipe の作成時、または **設定** -&gt; **高度な設定** -&gt; **スケーリング** からいつでも増やせます。ClickPipes は、サブスクリプションからのメッセージを実行中のコンシューマーへ自動的に分散するため、追加の協調処理は不要です。
@@ -243,15 +241,15 @@ ClickPipes は、アベイラビリティゾーンに分散したアーキテク
 実行中のコンシューマー数にかかわらず、耐障害性は設計上確保されています。コンシューマーまたはその基盤となるインフラストラクチャで障害が発生した場合、ClickPipes は自動的にそのコンシューマーを再起動し、メッセージ処理を継続します。
 
 <div id="delivery-semantics">
-  ### 配信セマンティクス
+  ### 配信セマンティクス {#delivery-semantics}
 </div>
 
 Pub/Sub 向け ClickPipes は **at-least-once** 配信を提供します。Pub/Sub メッセージが確認応答されるのは、対応する行が ClickHouse に挿入された後 (または不正なレコードの場合は error table に書き込まれた後) のみです。無限に再配信されるのを防ぐため、error table に振り分けられた不正なレコードも含め、処理されたメッセージはすべて確認応答されます。レプリカが挿入後、ack が Pub/Sub に届く前にクラッシュすると、メッセージは ack deadline 経過後に再配信され、再度挿入されるため、下流のコンシューマーは重複を許容する必要があります。exactly-once セマンティクスが必要な場合は、`_message_id` 仮想カラムを使って下流で重複排除を行ってください (各 Pub/Sub メッセージ ID はトピック内で一意です) 。
 
-<div id="authentication">
-  ## 認証
-</div>
+## 認証 {#authentication}
 
-Pub/Sub 向け ClickPipes は、サービスアカウントの JSON キーを使用して GCP に対して認証します。パイプの作成時にキーファイルをアップロードすると、ClickPipes はそれを保存時に暗号化し、メッセージの取り込みと管理対象サブスクリプションのライフサイクル管理のために実行時に使用します。
+ClickPipes UI では、サービスアカウントの JSON キーを使用します。パイプの作成時にキーファイルをアップロードすると、ClickPipes はそれを保存時に暗号化し、メッセージの取り込みと管理対象サブスクリプションのライフサイクル管理のために実行時に使用します。
 
-必要な IAM 権限の正確な一覧と、推奨されるカスタムロール定義については、[Pub/Sub IAM permissions guide](/ja/integrations/clickpipes/pubsub/auth) を参照してください。
+GCP Workload Identity もベータとして利用できます。セットアップ手順については、[GCP Workload Identity ガイド](/ja/integrations/clickpipes/security/gcp-workload-identity)を参照してください。
+
+必要な IAM アクセス許可の正確な一覧と、推奨されるカスタムロール定義については、[Pub/Sub IAM アクセス許可ガイド](/ja/integrations/clickpipes/pubsub/auth) を参照してください。

@@ -28,6 +28,7 @@ doc_type: 'reference'
 
 * **فرض الحصص**: حدود لكل استعلام على الرموز ([`ai_function_max_input_tokens_per_query`](/ar/reference/settings/session-settings/ai-function#ai_function_max_input_tokens_per_query), [`ai_function_max_output_tokens_per_query`](/ar/reference/settings/session-settings/ai-function#ai_function_max_output_tokens_per_query)) واستدعاءات واجهة برمجة التطبيقات ([`ai_function_max_api_calls_per_query`](/ar/reference/settings/session-settings/ai-function#ai_function_max_api_calls_per_query)).
 * **إعادة المحاولة مع زيادة تدريجية في التأخير**: تتم إعادة محاولة الإخفاقات العابرة ([`ai_function_max_retries`](/ar/reference/settings/session-settings/ai-function#ai_function_max_retries)) باستخدام تأخير أُسّي متزايد ([`ai_function_retry_initial_delay_ms`](/ar/reference/settings/session-settings/ai-function#ai_function_retry_initial_delay_ms)).
+* **الطلبات المتزامنة**: تُرسَل الطلبات من مجمّع خيوط مشترك على مستوى الخادم، عدة طلبات في آنٍ واحد (ويُتحكَّم في ذلك عبر الإعداد [`ai_function_max_concurrent_requests_per_thread`](/ar/reference/settings/session-settings/ai-function#ai_function_max_concurrent_requests_per_thread)).
 
 ## الإعداد {#configuration}
 
@@ -115,6 +116,24 @@ SELECT aiGenerate(body, map('temperature', '0.2', 'system_prompt', 'You are ters
 
 تَرِد جميع الإعدادات المتعلقة بالذكاء الاصطناعي في [الإعدادات](/ar/reference/settings/session-settings) تحت البادئة `ai_function_`.
 
+### تكوين الخادم {#server-configuration}
+
+يتحكم إعداد الخادم `ai_function_allow_sql_named_collections` (القيمة الافتراضية `true`) في المجموعات المسمّاة التي تقبلها دوال الذكاء الاصطناعي. فعند ضبطه على `false`، لا تقبل دوال الذكاء الاصطناعي سوى المجموعات المسمّاة المعرّفة في ملف إعدادات الخادم، ويؤدي استخدام مجموعة أُنشئت بالأمر `CREATE NAMED COLLECTION` إلى إطلاق استثناء. وينطبق ذلك على المَعلمة `credentials` وعلى إعدادات default-credentials على حدٍّ سواء. ويستلزم تغيير هذا الإعداد إعادة تشغيل الخادم.
+
+```xml
+<clickhouse>
+    <ai_function_allow_sql_named_collections>false</ai_function_allow_sql_named_collections>
+    <named_collections>
+        <ai_text_credentials>
+            <provider>openai</provider>
+            <endpoint>https://api.openai.com/v1/chat/completions</endpoint>
+            <model>gpt-4o-mini</model>
+            <api_key>sk-...</api_key>
+        </ai_text_credentials>
+    </named_collections>
+</clickhouse>
+```
+
 ### تقييد مضيفات نقطة النهاية {#restricting-endpoint-hosts}
 
 يمثل عنوان URL الخاص بـ `endpoint` في مجموعة مسماة للذكاء الاصطناعي وجهةً خارجية يتصل بها الخادم باستخدام هويته الخاصة، وقد يتضمن — إذا جرى تحديده — `api_key` الخاص بالمجموعة المسماة في رؤوس الطلب. افتراضيًا، يسمح ClickHouse بأي مضيف. لحصر الدوال في مجموعة محددة من الموفّرين، اضبط [`remote_url_allow_hosts`](/ar/reference/settings/server-settings/settings/remote#remote_url_allow_hosts) في إعدادات الخادم، على سبيل المثال:
@@ -138,6 +157,35 @@ SELECT aiGenerate(body, map('temperature', '0.2', 'system_prompt', 'You are ters
 افتراضيًا، ترفض دوال الذكاء الاصطناعي `endpoint` يؤدي إلى إرسال البيانات بصيغة مكشوفة إلى مضيف بعيد: إذ تؤدي أي نقطة نهاية غير HTTPS لا يكون مضيفها loopback إلى ظهور استثناء. تُستثنى مضيفات loopback (`localhost`، `127.0.0.0/8`، `::1`)، لذا يعمل خادم model محلي على `http://localhost` مباشرةً. للسماح بنقطة نهاية `http://` ذات نص مكشوف على مضيف بعيد، اضبط [`ai_function_allow_insecure_endpoint`](/ar/reference/settings/session-settings/ai-function#ai_function_allow_insecure_endpoint) على `1`. هذا check مستقل عن [`remote_url_allow_hosts`](/ar/reference/settings/server-settings/settings/remote#remote_url_allow_hosts): فهذا الإعداد هو allowlist للمضيفين ولا يفحص scheme الخاص بعنوان URL، لذا فإن `endpoint` من نوع `http://` والموجَّه إلى مضيف مسموح به يمر منه أيضًا.
 
 لاحظ أنه في كلتا الحالتين يتلقى الموفّر بيانات الإدخال بصيغة مكشوفة بعد إنهاء TLS؛ إذ لا يحمي TLS البيانات إلا على مسار الشبكة بين الخادم والموفّر.
+
+### معدل النقل {#throughput}
+
+تختلف دوال الذكاء الاصطناعي عن معظم دوال ClickHouse التقليدية في أن معدل النقل الخاص بها يتوقف بالكامل تقريبًا على نقطة النهاية البعيدة التي ترسل إليها الطلبات، لا على موارد CPU أو IO المحلية. ولذلك تستفيد هذه الدوال استفادة كبيرة من رفع مستوى التزامن إلى ما يتجاوز القيمة المعتادة لـ `max_threads` المستخدمة في سائر أجزاء ClickHouse. ولهذا تُرسَل الطلبات من مجمّع خيوط مخصص على مستوى الخادم بأكمله. ويحدّد حجم هذا المجمّع (`ai_function_max_thread_pool_size`، وهو إعداد خادم) الحد الأقصى لعدد طلبات مزود خدمات الذكاء الاصطناعي التي يمكن أن تكون قيد الإرسال في آنٍ واحد على مستوى الخادم بأكمله، عبر جميع الاستعلامات.
+
+يحدّ الإعداد [`ai_function_max_concurrent_requests_per_thread`](/ar/reference/settings/session-settings/ai-function#ai_function_max_concurrent_requests_per_thread) من حصة كل خيط تنفيذ تابع للاستعلام من ذلك المجمّع، وبذلك يمكن للاستعلام الذي يعمل على عدة خيوط تنفيذ (بحد أقصى `max_threads`) أن يرسل ما يصل إلى هذا العدد من الطلبات المتزامنة لكل خيط تنفيذ. ولمنع الاستعلامات من رفع هذه القيمة، ضع حدًا أعلى للإعداد باستخدام [قيد في ملف تعريف الإعدادات](/ar/concepts/features/configuration/settings/constraints-on-settings). ويظل هذا الحد الأعلى مطبقًا على كل خيط تنفيذ على حدة، ومن ثَمّ يمكن أن يصل عدد الطلبات قيد الإرسال للاستعلام الواحد إلى حاصل ضرب الحد الأعلى في عدد خيوط التنفيذ الخاصة به. مثال:
+
+```xml
+<profiles>
+    <default>
+        <constraints>
+            <ai_function_max_concurrent_requests_per_thread>
+                <max>16</max>
+            </ai_function_max_concurrent_requests_per_thread>
+        </constraints>
+    </default>
+</profiles>
+```
+
+القيمة الافتراضية هي `8`. وتؤدي أي قيمة أكبر من `1` إلى إضعاف ضمانتين:
+
+* لا يُعرف استهلاك الطلب من الرموز إلا عند وصول الاستجابة الخاصة به، لذا قد يتجاوز كلٌّ من [`ai_function_max_input_tokens_per_query`](/ar/reference/settings/session-settings/ai-function#ai_function_max_input_tokens_per_query) و[`ai_function_max_output_tokens_per_query`](/ar/reference/settings/session-settings/ai-function#ai_function_max_output_tokens_per_query) الحدَّ المضبوط بمقدار طلب واحد عن كل طلب قيد الإرسال، بدلاً من طلب واحد فقط في المجمل.
+* تُوجَّه دفعة من الطلبات قبل رصد أي error ناتج عنها، لذا فإن الاستعلام الذي يفشل عند الصف الأول قد يكون أصدر بالفعل عددًا من الطلبات يساوي ما يسمح به التزامن، وتُحتسب عليك تكلفتها.
+
+أما [`ai_function_max_api_calls_per_query`](/ar/reference/settings/session-settings/ai-function#ai_function_max_api_calls_per_query) فلا يتأثر بذلك ويظل حدًّا دقيقًا، لأن خانة تنفيذ تُحجز قبل توجيه كل طلب.
+
+<Note>
+  في حالة العرض المُجسَّد، يجب تحديد الإعدادات في عبارة `INSERT` التي تغذّي الجدول المصدر للعرض، لا في عبارة `CREATE MATERIALIZED VIEW`؛ إذ تُقرأ الحصص من الاستعلام ذي المستوى الأعلى، ويُتجاهل أي عبارة `SETTINGS` في تعريف العرض.
+</Note>
 
 ## الموفّرون المدعومون {#supported-providers}
 
@@ -179,7 +227,7 @@ ORDER BY event_time DESC;
 
 {/*AUTOGENERATED_START*/}
 
-## aiClassify
+## aiClassify {#aiClassify}
 
 أُضيف في: v26.4.0
 
@@ -231,7 +279,7 @@ INSERT INTO issues VALUES ('The application exits unexpectedly after login.');
 SELECT body, aiClassify(body, ['bug', 'question', 'feature'], map('credentials', 'ai_text_credentials')) AS kind FROM issues LIMIT 5
 ```
 
-## aiEmbed
+## aiEmbed {#aiEmbed}
 
 أُضيف في: v26.6.0
 
@@ -295,7 +343,7 @@ INSERT INTO articles VALUES ('ClickHouse is a fast analytical database.');
 SELECT aiEmbed(title, 'text-embedding-3-small', map('credentials', 'ai_embedding_credentials', 'dimensions', '256')) FROM articles LIMIT 10
 ```
 
-## aiExtract
+## aiExtract {#aiExtract}
 
 أُضيف في: v26.4.0
 
@@ -353,7 +401,7 @@ INSERT INTO reviews VALUES ('The screen is bright, but the battery lasts only tw
 SELECT aiExtract(review, '{"sentiment": "positive, negative or neutral", "topic": "main topic of the review"}') FROM reviews LIMIT 5
 ```
 
-## aiFilter
+## aiFilter {#aiFilter}
 
 أُضيف في: v26.8.0
 
@@ -414,7 +462,7 @@ INSERT INTO issues VALUES ('The application exits unexpectedly after login.');
 SELECT body, aiFilter(body, 'describes a bug', map('credentials', 'ai_text_credentials')) AS is_bug FROM issues LIMIT 5
 ```
 
-## aiGenerate
+## aiGenerate {#aiGenerate}
 
 أُضيف في: v26.4.0
 
@@ -477,7 +525,7 @@ INSERT INTO articles VALUES ('ClickHouse', 'ClickHouse is an open-source column-
 SELECT article_title, aiGenerate(concat('Summarize in one sentence: ', article_body)) AS summary FROM articles LIMIT 5
 ```
 
-## aiRedact
+## aiRedact {#aiRedact}
 
 أُضيف في: v26.8.0
 
@@ -549,7 +597,7 @@ INSERT INTO tickets VALUES ('Contact Jane Doe at jane@example.com.');
 SELECT aiRedact(body, [], map('replacement', '***')) FROM tickets LIMIT 5
 ```
 
-## aiSimilarity
+## aiSimilarity {#aiSimilarity}
 
 أُضيف في: v26.8.0
 
@@ -612,7 +660,7 @@ INSERT INTO docs VALUES (1, 'ClickHouse documentation'), (2, 'ClickHouse databas
 SELECT a.id, b.id FROM docs a, docs b WHERE a.id < b.id AND aiSimilarity(a.title, b.title, 'text-embedding-3-small') > 0.9
 ```
 
-## aiTranslate
+## aiTranslate {#aiTranslate}
 
 أُضيف في: v26.4.0
 

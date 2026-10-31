@@ -156,11 +156,11 @@ SETTINGS postgresql_connection_pool_size = 32, postgresql_connection_pool_auto_c
 
 ## تفاصيل التنفيذ {#implementation-details}
 
-تُنفَّذ استعلامات `SELECT` على جانب PostgreSQL بصيغة `COPY (SELECT ...) TO STDOUT` داخل معاملة PostgreSQL للقراءة فقط، مع تنفيذ `commit` بعد كل استعلام `SELECT`.
+تُنفَّذ استعلامات `SELECT` على جانب PostgreSQL بصيغة `COPY (SELECT ...) TO STDOUT` داخل معاملة PostgreSQL للقراءة فقط، مع تنفيذ `commit` بعد كل استعلام `SELECT`.
 
-تُنفَّذ عبارات `WHERE` البسيطة مثل `=`, `!=`, `>`, `>=`, `<`, `<=`, و`IN` على خادم PostgreSQL.
+تُنفَّذ عبارات `WHERE` البسيطة مثل `=`, `!=`, `>`, `>=`, `<`, `<=`, و`IN` على خادم PostgreSQL.
 
-تُنفَّذ جميع عمليات `JOIN`، وعمليات التجميع، والفرز، وشروط `IN [ array ]`، وقيد أخذ العينات الخاص بـ `LIMIT` في ClickHouse فقط بعد اكتمال الاستعلام إلى PostgreSQL.
+تُنفَّذ جميع عمليات `JOIN`، وعمليات التجميع، والفرز، وشروط `IN [ array ]` في ClickHouse بعد اكتمال الاستعلام إلى PostgreSQL. أما قيد أخذ العينات الخاص بـ `LIMIT` فلا يُدفَع إلى PostgreSQL إلا عندما يكون ذلك آمنًا ويكون الإعداد [external&#95;storage&#95;push&#95;down&#95;limit](/ar/reference/settings/session-settings/external-storage#external_storage_push_down_limit) مفعّلًا؛ وإلا فإنه يُنفَّذ في ClickHouse.
 
 ## تمرير استعلام بدلًا من اسم جدول {#passing-a-query}
 

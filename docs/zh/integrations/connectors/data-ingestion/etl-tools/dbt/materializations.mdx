@@ -24,7 +24,7 @@ import { ClickHouseSupportedBadge } from "/snippets/zh/components/ClickHouseSupp
 | partition&#95;by   | 分区是按指定条件对表中记录进行的逻辑分组。分区键可以是表列中的任意表达式。                                                                    |               |
 | primary&#95;key    | 与 `order_by` 类似，是一个 ClickHouse 主键表达式。如果未指定，ClickHouse 将使用 `order_by` 表达式作为主键。                            |               |
 | settings           | 用于此模型相关 DDL 语句 (如 `CREATE TABLE`) 的 `"TABLE"` settings map/字典                                            |               |
-| query&#95;settings | 用于与此模型配合执行 `INSERT` 或 `DELETE` 语句的 ClickHouse 用户级 settings map/字典                                        |               |
+| query&#95;settings | 用户级 settings map/字典，会以 `SETTINGS` 子句的形式添加到该模型的 `INSERT`/`DELETE` 语句中；对于视图和物化视图，还会添加到所存储的视图查询中            |               |
 | ttl                | 用于该表的 TTL 表达式。TTL 表达式是一个字符串，可用于指定表的 TTL。                                                                 |               |
 | sql&#95;security   | 执行该视图底层查询时使用的 ClickHouse 用户。[可接受的值](/zh/reference/statements/create/view#sql_security)：`definer`、`invoker`。 |               |
 | definer            | 如果 `sql_security` 设置为 `definer`，则必须在 `definer` 子句中指定一个现有用户或 `CURRENT_USER`。                              |               |
@@ -54,14 +54,13 @@ issue。
 
 ### 关于模型设置的说明 {#a-note-on-model-settings}
 
-ClickHouse 有多种类型/层级的“设置”。在上面的模型配置中，其中有两类是可配置的。`settings` 指的是在 `CREATE TABLE/VIEW` 这类 DDL 语句中使用的 `SETTINGS`
-子句，因此通常是特定于具体 ClickHouse 表引擎的设置。新增的
-`query_settings` 用于为模型物化所使用的 `INSERT` 和 `DELETE` 查询添加 `SETTINGS` 子句 (
-包括增量物化类型) 。
-ClickHouse 有数百种设置，而且“表”设置和“用户”
-设置的界限并不总是那么清晰 (不过后者通常
-可在 `system.settings` 表中找到) 。一般来说，建议使用默认值；如需使用这些属性，
-应先经过充分研究和测试。
+ClickHouse 有多种类型/层级的“设置”。在上面的模型配置中，其中有两类是
+可配置的。
+
+* `settings` 指的是在 `CREATE TABLE/VIEW` 这类 DDL 语句中使用的 `SETTINGS` 子句，因此通常是特定于具体 ClickHouse 表引擎的设置。
+* `query_settings` 用于为模型物化所使用的 `INSERT` 和 `DELETE` 查询添加 `SETTINGS` 子句 (包括增量物化类型) 。对于视图和物化视图，`SETTINGS` 子句也会添加到已存储的视图查询中，因此物化视图在每次向其源表插入数据或每次刷新时都会应用这些设置。
+
+ClickHouse 有数百种设置，而且“表”设置和“用户”设置的界限并不总是那么清晰 (不过后者通常可在 `system.settings` 表中找到) 。一般来说，建议使用默认值；如需使用这些属性，应先经过充分研究和测试。
 
 ### 列配置 {#column-configuration}
 

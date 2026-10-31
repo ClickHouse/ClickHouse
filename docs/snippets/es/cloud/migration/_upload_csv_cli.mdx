@@ -2,34 +2,37 @@
 title: Cargar CSV desde la CLI
 ---
 
-Esta página explica cómo cargar un archivo local (por ejemplo, un CSV) en una tabla de un ClickHouse Cloud service desde la línea de comandos con la [ClickHouse CLI](/es/products/cloud/features/cli) (`clickhousectl`). El flujo replica el asistente de carga de archivos de la consola: inspeccionar el esquema del archivo, crear la tabla de destino e insertar el archivo por HTTP con la Query API, sin necesidad del binario `clickhouse` ni de la contraseña del servicio.
+Esta página explica cómo cargar un archivo local (por ejemplo, un CSV) en una tabla de un servicio de ClickHouse Cloud desde la línea de comandos con la [CLI de ClickHouse](/es/concepts/features/interfaces/cli) (`clickhousectl`). El flujo replica el asistente de carga de archivos de la consola: inspeccionar el esquema del archivo, crear la tabla de destino e insertar el archivo por HTTP con la API de consultas, sin necesidad del binario `clickhouse` ni de la contraseña del servicio.
 
 ## Requisitos previos {#cli-prerequisites}
 
-Instale la ClickHouse CLI:
+Instale la CLI de ClickHouse:
 
 ```bash
-curl https://clickhouse.com/cli | sh
+curl -fsSL https://clickhouse.com/cli | sh
 ```
 
-También necesitas `jq`.
+El script instala `~/.local/bin/clickhousectl` y un alias `chctl`. Asegúrese de que `~/.local/bin` esté incluido en su `PATH`.
 
-Las operaciones de escritura requieren [autenticación mediante API key](/es/products/cloud/features/admin-features/api/openapi); el inicio de sesión con OAuth es de solo lectura:
+También necesita `jq`.
+
+Las operaciones de escritura requieren una [clave de API](/es/products/cloud/features/admin-features/api/openapi) cuyo rol pueda administrar los Endpoints de la API de consultas; el inicio de sesión desde el navegador (`clickhousectl cloud auth login`) es de solo lectura. `clickhousectl cloud service query --help` muestra los permisos necesarios. Inicie sesión con la clave; `--interactive` le solicita la clave y el secreto, lo que evita que el secreto quede en el historial de su shell:
 
 ```bash
-clickhousectl cloud auth login --api-key <YOUR_KEY> --api-secret <YOUR_SECRET>
+clickhousectl cloud auth login --interactive
 ```
 
-Verifique con `clickhousectl cloud auth status`; debería aparecer una entrada con el scope `read/write`.
+Como alternativa, pase `--api-key` y `--api-secret`, o defina las variables de entorno `CLICKHOUSE_CLOUD_API_KEY` y `CLICKHOUSE_CLOUD_API_SECRET`; si se trata de un agente de programación o de un script, conviene usar las variables de entorno. El inicio de sesión verifica la clave y muestra su identity; puede comprobar las credenciales activas en cualquier momento con `clickhousectl cloud auth whoami`. Si pertenece a más de una organización, añada `--org-id <org-id>` (o `--org-name <name>`) a cada comando `cloud service` de esta guía.
 
-## Elija un service {#pick-a-service}
+## Elija un servicio {#pick-a-service}
 
-Esta guía da por supuesto que ya tiene un service en ejecución. Si no es el caso, consulte la [guía de inicio rápido de Cloud](/es/get-started/setup/cloud) para crear uno desde la CLI. Busque el ID de su service por nombre:
+Esta guía da por supuesto que ya tiene un servicio. Si no es el caso, consulte la [guía de inicio rápido de Cloud](/es/get-started/setup/cloud) para crear uno desde la CLI. Busque el ID de su servicio por nombre:
 
 ```bash
-CH_ID=$(clickhousectl cloud service list --json \
-  | jq -r '.[] | select(.name=="my-service") | .id')
+CH_ID=$(clickhousectl cloud service get --name my-service --json | jq -r .id)
 ```
+
+Un servicio inactivo se reactiva al recibir la primera consulta. Uno detenido, no: inícielo con `clickhousectl cloud service start "$CH_ID"` y espere hasta que `clickhousectl cloud service get "$CH_ID" --json | jq -r .state` devuelva `running`.
 
 ## Preparar el archivo {#prepare-the-file}
 
@@ -49,14 +52,14 @@ user_id,url,visited_at,duration_ms
 Mientras que el asistente de la consola muestra el tipo inferido de cada campo del origen, el equivalente en la CLI es `DESCRIBE` sobre la table function [`format`](/es/reference/functions/table-functions/format) con una muestra del archivo insertada en línea:
 
 ```bash
-clickhousectl cloud service query --id "$CH_ID" --format PrettyCompact \
+clickhousectl cloud service query "$CH_ID" --format PrettyCompact \
   --query "DESCRIBE format(CSVWithNames, '$(head -n 3 data.csv)')"
 ```
 
-La primera llamada a `query` aprovisiona automáticamente un Query API endpoint y una API key con alcance específico al service:
+En la primera llamada a `query`, clickhousectl añade su clave de API al endpoint de la API de Consultas del servicio y, si es necesario, crea dicho endpoint; no se crea ninguna clave nueva. Pase `--no-auto-enable` para que, en su lugar, el comando falle. Cuando la CLI modifica el endpoint, imprime en stderr la primera línea que se muestra a continuación:
 
 ```text
-Provisioning Query API endpoint + key for service 'my-service'...
+Binding the authenticated API key to the Query API endpoint for service 'my-service'...
    ┌─name────────┬─type───────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
 1. │ user_id     │ Nullable(Int64)    │              │                    │         │                  │                │
 2. │ url         │ Nullable(String)   │              │                    │         │                  │                │
@@ -72,7 +75,7 @@ La muestra se inserta dentro de un literal de cadena SQL, por lo que no debe con
 Todo lo que ofrece el paso &quot;Configure table&quot; del asistente —ajustar los tipos inferidos, la nulabilidad, los valores por defecto, los campos excluidos, el motor de tabla y las expresiones de ordenación, particionamiento y clave primaria— se reduce aquí a un simple [`CREATE TABLE`](/es/reference/statements/create/table). Por ejemplo, para afinar los tipos inferidos y elegir una clave de ordenación:
 
 ```bash
-clickhousectl cloud service query --id "$CH_ID" \
+clickhousectl cloud service query "$CH_ID" \
   --query "CREATE TABLE default.website_visits (
     user_id UInt32,
     url String,
@@ -82,7 +85,7 @@ clickhousectl cloud service query --id "$CH_ID" \
   ORDER BY (user_id, visited_at)"
 ```
 
-El comando imprime `OK`. Si prefiere cargar los datos en una tabla existente, omita este paso.
+El comando imprime `OK` en stderr. Si prefiere cargar los datos en una tabla existente, omita este paso.
 
 ## Subir el archivo {#upload-the-file}
 
@@ -90,7 +93,7 @@ El comando imprime `OK`. Si prefiere cargar los datos en una tabla existente, om
 
 ```bash
 printf 'INSERT INTO default.website_visits FORMAT CSVWithNames\n' | cat - data.csv \
-  | clickhousectl cloud service query --id "$CH_ID"
+  | clickhousectl cloud service query "$CH_ID"
 ```
 
 El comando imprime `OK`.
@@ -110,7 +113,7 @@ El comando imprime `OK`.
 Verifica que las filas se hayan insertado:
 
 ```bash
-clickhousectl cloud service query --id "$CH_ID" --json \
+clickhousectl cloud service query "$CH_ID" --json \
   --query "SELECT count() FROM default.website_visits"
 ```
 
@@ -119,7 +122,7 @@ clickhousectl cloud service query --id "$CH_ID" --json \
 ```
 
 ```bash
-clickhousectl cloud service query --id "$CH_ID" --format PrettyCompact \
+clickhousectl cloud service query "$CH_ID" --format PrettyCompact \
   --query "SELECT * FROM default.website_visits ORDER BY visited_at"
 ```
 
@@ -133,13 +136,28 @@ clickhousectl cloud service query --id "$CH_ID" --format PrettyCompact \
    └─────────┴───────────────────────────────────┴─────────────────────┴─────────────┘
 ```
 
+## Carga de archivos grandes {#upload-large-files}
+
+La API de consultas deja de esperar tras unos 30 segundos. Es posible que un `INSERT` que haya agotado el tiempo de espera se haya ejecutado igualmente, así que compruebe el número de filas antes de reintentarlo. Para archivos grandes, realice la inserción a través del protocolo nativo con [`clickhouse client`](/es/concepts/features/interfaces/client), que lee los datos desde stdin. `clickhousectl local use latest` instala la última versión de ClickHouse y crea un enlace simbólico en `~/.local/bin/clickhouse`. Asigne a `CH_PASSWORD` la contraseña del usuario `default` (si la ha perdido, `clickhousectl cloud service reset-password "$CH_ID"` genera una nueva), busque el host `nativesecure` y realice la inserción:
+
+```bash
+clickhousectl local use latest
+CH_HOST=$(clickhousectl cloud service get "$CH_ID" --json \
+  | jq -r '.endpoints[] | select(.protocol == "nativesecure") | .host')
+clickhouse client --host "$CH_HOST" --secure --port 9440 \
+  --user default --password "$CH_PASSWORD" \
+  --query 'INSERT INTO default.website_visits FORMAT CSVWithNames' < data.csv
+```
+
+Las conexiones directas deben cumplir la lista de acceso IP del servicio.
+
 ## Otros formatos de archivo {#other-file-formats}
 
 El mismo patrón funciona con cualquier [formato de entrada](/es/reference/formats/index) que ClickHouse admita, incluidos todos los formatos que acepta el asistente de carga de la consola, como `CSV`, `JSONEachRow` y `TabSeparatedWithNames`. Para usar otro formato, cambie el nombre del formato de manera coherente tanto en el paso de inferencia de esquema `DESCRIBE format(...)` como en la sentencia `INSERT ... FORMAT`, y utilice un archivo de ejemplo que corresponda a ese formato (una muestra TSV para `TabSeparatedWithNames`, una muestra de líneas JSON para `JSONEachRow`, etc.). Por ejemplo, el paso de carga de un archivo TSV queda así:
 
 ```bash
 printf 'INSERT INTO default.website_visits FORMAT TabSeparatedWithNames\n' | cat - data.tsv \
-  | clickhousectl cloud service query --id "$CH_ID"
+  | clickhousectl cloud service query "$CH_ID"
 ```
 
 ## Limpieza {#cleanup}
@@ -147,6 +165,6 @@ printf 'INSERT INTO default.website_visits FORMAT TabSeparatedWithNames\n' | cat
 Si se trató de una ejecución de prueba, elimine la tabla para borrar los datos importados:
 
 ```bash
-clickhousectl cloud service query --id "$CH_ID" \
+clickhousectl cloud service query "$CH_ID" \
   --query "DROP TABLE default.website_visits"
 ```

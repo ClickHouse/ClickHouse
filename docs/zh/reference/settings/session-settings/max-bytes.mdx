@@ -54,6 +54,21 @@ Cloud 默认值：每个副本内存总量的一半。
 
 如果设置为非零值，且 `join_algorithm` 为 `hash`、`parallel_hash`、`default` 或 `auto`，当右侧数据超过该字节数时，哈希连接会自动转换为 grace hash 连接，以支持落盘。它与 `max_bytes_ratio_before_external_join` 一起，构成所有基于哈希的 `join_algorithm` 的基于阈值的落盘触发条件，其中包括 `grace_hash`，后者要求两者之一必须为非零值。一旦非零阈值使连接具备落盘能力，`enable_adaptive_memory_spill_scheduler` 就可以在内存压力下强制其在达到阈值之前落盘。设置为 `0` (默认值) 时，此绝对字节阈值将被禁用，但仍可能通过 `max_bytes_ratio_before_external_join` (其默认值为 `0.5`) 自动落盘。若两项设置均为 `0`，则该连接永不落盘，调度器也就无从触发。例外情况是 `legacy_join_size_limits_trigger_spilling`：启用该设置后，独立使用的 `grace_hash` 会忽略这两项设置，改为依据 `max_rows_in_join` / `max_bytes_in_join` 落盘。它会阻止通过连接优化实现的 read in order。无论 `join_algorithm` 设置为何值，该阈值同样会限制 [block nested loop 连接](/zh/reference/statements/select/join#join-with-an-arbitrary-on-condition) 所物化的右侧数据量。
 
+## max_bytes_before_external_set {#max_bytes_before_external_set}
+
+<SettingsInfoBlock type="UInt64" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "0"},{"label": "新增设置：当内存使用量超过给定阈值（以字节为单位）时，将带子查询的 `IN` 所用集合溢写到磁盘。若为 0，则仅 `max_bytes_ratio_before_external_set` 生效。"}]}]} />
+
+在构建集合或查询使用集合期间，将带子查询的 `IN` 所用集合溢写到磁盘的查询内存阈值 (以字节为单位) 。
+实际内存使用量可能超过此阈值。若集合占用的内存小于此阈值与 16 MiB 中的较小者，
+则该集合将保留在内存中。
+
+`0` 表示禁用此阈值。如果 `max_bytes_ratio_before_external_set` 也设定了阈值，
+则取二者中的较小值。将这两个设置均设为 `0` 即可禁用溢写。
+
+参见 [外部内存中的 IN](/zh/reference/statements/in#in-in-external-memory)。
+
 ## max_bytes_before_external_sort {#max_bytes_before_external_sort}
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
@@ -74,6 +89,43 @@ Cloud 默认值：每个副本内存的一半。
 <SettingsInfoBlock type="UInt64" default_value="1000000000" />
 
 对于带有 LIMIT 的 ORDER BY，当内存使用量超过指定阈值时，会在最终合并前额外执行几步块合并，以便只保留前 LIMIT 行。
+
+## max_bytes_for_external_set_bloom_filter {#max_bytes_for_external_set_bloom_filter}
+
+<SettingsInfoBlock type="UInt64" default_value="134217728" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "134217728"},{"label": "该设置已回移至 26.10。"}]}, {"id": "row-2","items": [{"label": "26.10"},{"label": "134217728"},{"label": "新增设置，用于限制磁盘上的 `IN` 集合所保留的布隆过滤器的内存。该过滤器可让不在集合中的值在查找时跳过磁盘读取。"}]}]} />
+
+每个写入磁盘的 `IN` 集合在内存中保留的布隆过滤器的内存预算 (以字节为单位) 。
+借助该过滤器，查找不在集合中的值时可以跳过磁盘读取。但它无法加速查找集合中已有的值。
+
+每个集合的过滤器大约按每个键 1 字节占用内存，但不超过预算。这里集合的键指其不同值；对于涉及多个列的 `IN`，则指其不同的元组：
+
+* 如果预算不低于每个键 1 字节，集合将获得完整的过滤器，查找不在集合中的值时约有 97% 可以跳过磁盘。例如，包含 100 万个键的集合大约占用 1 MiB。
+* 如果预算更小，集合将获得一个适配预算的更弱的过滤器，查找不在集合中的值时能跳过磁盘的比例也会降低。例如，若每个键仅有四分之一字节，此类查找约有 60% 可以跳过磁盘，而非 97%。
+* 如果预算低于每个键约 1/7 字节，集合将不使用过滤器，因为此时能跳过磁盘的查找过少，不足以抵消构建过滤器的开销。
+
+在默认的 128 MiB 预算下，键数不超过约 1.3 亿的集合可获得完整的过滤器，而键数超过约 9.5 亿的集合则不使用过滤器。如果大多数被查找的值都不在集合中，可为更大的集合提高预算。如果内存紧张，或大多数被查找的值都在集合中 (此时过滤器无济于事) ，则可降低预算。设置为 `0` 将禁用该过滤器。
+
+该过滤器会计入查询的内存使用量 (例如 `max_memory_usage`) ，但不计入 `max_bytes_in_set`。该预算针对每个集合，而非整个查询。
+
+参见 [外部内存中的 IN](/zh/reference/statements/in#in-in-external-memory)。
+
+## max_bytes_for_external_set_cache {#max_bytes_for_external_set_cache}
+
+<SettingsInfoBlock type="UInt64" default_value="134217728" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "134217728"},{"label": "该设置已回移至 26.10。"}]}, {"id": "row-2","items": [{"label": "26.10"},{"label": "134217728"},{"label": "新增设置，用于限制磁盘上的 `IN` 集合所保留的块缓存的内存，使其查找无需再次从磁盘读取相同的块。"}]}]} />
+
+每个已写入磁盘的 `IN` 集合在内存中保留的块缓存的内存预算 (以字节为单位) 。
+如果某次查找所需的块已被之前的查找读取过，则直接从缓存中获取，无需再次从磁盘读取。
+当查找反复用到相同的块时，缓存效果显著，例如查找少数高频值，或对可完全放入缓存的集合进行大量查找。
+而当查找均匀分布在远大于缓存的集合上时，缓存作用有限。设为 `0` 表示禁用缓存。
+
+该预算针对每个集合单独生效。缓存会计入查询的内存使用量 (例如
+`max_memory_usage`) ，但不计入 `max_bytes_in_set`。
+
+请参阅[外部内存中的 IN](/zh/reference/statements/in#in-in-external-memory)。
 
 ## max_bytes_for_lazy_final {#max_bytes_for_lazy_final}
 
@@ -153,6 +205,21 @@ lazy FINAL 优化中集合的最大字节数。超过该值时，将回退到普
 如果同时设置了 `max_bytes_before_external_join` 和 `max_bytes_ratio_before_external_join`，则使用较小的结果阈值。如果该比例为 `0`，则仅应用绝对值设置。
 
 只要已配置临时数据路径，此设置对每一种基于哈希的 `join_algorithm` 都生效，包括 `grace_hash`。
+
+## max_bytes_ratio_before_external_set {#max_bytes_ratio_before_external_set}
+
+<SettingsInfoBlock type="Double" default_value="0.5" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "0.5"},{"label": "将默认值改为 0.5 的变更已回移到 26.10。"}]}, {"id": "row-2","items": [{"label": "26.10"},{"label": "0.5"},{"label": "新增设置：当内存使用量超过可用内存的指定比率时，将带子查询的 `IN` 的集合溢写到磁盘。若为 0，则仅 `max_bytes_before_external_set` 生效。"}]}]} />
+
+在执行开始时，按可用服务器内存或用户内存的该比例计算阈值，用于决定何时将带子查询的 `IN` 的集合溢写到磁盘。
+例如，`0.5` 表示使用一半的可用内存。
+
+取值必须大于等于 `0` 且小于 `1`。`0` 表示禁用此阈值。如果未设置适用的
+服务器或用户内存限制，则该比率不起作用。
+
+`max_memory_usage` 不影响此计算。如需基于该限制配置溢写，
+请使用 `max_bytes_before_external_set`，并为额外的内存使用量预留空间。
 
 ## max_bytes_ratio_before_external_sort {#max_bytes_ratio_before_external_sort}
 

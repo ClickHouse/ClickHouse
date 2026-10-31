@@ -185,7 +185,7 @@ ALTER TABLE table DROP INDEX text_idx;
   Comparé à `ngrams(N)`, le tokenizer `sparseGrams` produit des N-grammes de longueur variable, ce qui permet une représentation plus souple du texte d&#39;origine.
   Par exemple, `tokenizer = sparseGrams(3, 5, 4)` génère en interne des 3-, 4- et 5-grammes à partir de la chaîne d&#39;entrée, mais seuls les 4- et 5-grammes sont renvoyés.
 * `array` ne réalise aucune tokenisation, c.-à-d. que chaque valeur de ligne constitue un token (voir la fonction [array](/fr/reference/functions/regular-functions/array-functions#array)). Pour assurer la compatibilité avec d’autres systèmes, `keyword` est disponible comme alias de `array`.
-* `keyValuePairs` combine les key-value pairs d’une colonne `Map` en un seul token. Cela permet d’effectuer des lookups combinés clé-valeur tels que `WHERE map['key'] = 'value'` ou `WHERE mapContainsKeyValue(map, 'key', 'value')` (voir [le tokenizer `keyValuePairs`](#tokenizer-key-value-pairs)).
+* `keyValuePairs` combine les key-value pairs d’une colonne `Map` en un seul token. Cela permet d’effectuer des lookups combinés clé-valeur tels que `WHERE map['key'] = 'value'`, `WHERE map['key'] IN ('value1', 'value2')` ou `WHERE mapContainsKeyValue(map, 'key', 'value')` (voir [le tokenizer `keyValuePairs`](#tokenizer-key-value-pairs)).
 
 Tous les tokenizers disponibles sont répertoriés dans [system.tokenizers](/fr/reference/system-tables/tokenizers).
 
@@ -316,7 +316,7 @@ L&#39;usage de fonctions non déterministes est interdit.
 </Note>
 
 Les fonctions [hasToken](/fr/reference/functions/regular-functions/string-search-functions#hasToken), [hasAllTokens](/fr/reference/functions/regular-functions/string-search-functions#hasAllTokens), [hasAnyTokens](/fr/reference/functions/regular-functions/string-search-functions#hasAnyTokens) et [hasPhrase](/fr/reference/functions/regular-functions/string-search-functions#hasPhrase) utilisent le préprocesseur pour transformer le terme de recherche avant de le tokeniser.
-Notez que, comme le préprocesseur est appliqué uniquement sur le chemin d’exécution de l’index de texte, les résultats de ces fonctions peuvent différer selon que les requêtes utilisent ou non l’index de texte (par exemple, `SETTINGS use_skip_indexes = 0`).
+Le préprocesseur fait partie de la définition de l’index ; il s’applique donc partout où ces fonctions sont évaluées : dans le filtre `WHERE`/`PREWHERE`, dans la liste `SELECT`, et que l’index soit lu ou non (par exemple, `SETTINGS use_skip_indexes = 0`).
 
 Par exemple,
 
@@ -332,7 +332,7 @@ ORDER BY tuple();
 SELECT count() FROM table WHERE hasToken(str, 'Foo');
 ```
 
-équivaut à :
+équivaut à :
 
 ```sql title="Query"
 CREATE TABLE table
@@ -348,7 +348,7 @@ SELECT count() FROM table WHERE hasToken(str, lower('Foo'));
 
 Dans ce cas, l’expression du préprocesseur transforme individuellement les éléments du tableau.
 
-Exemple :
+Exemple :
 
 ```sql title="Query"
 CREATE TABLE table
@@ -368,7 +368,7 @@ SELECT count() FROM tab WHERE hasAllTokens(arr, 'foo');
 Pour définir un préprocesseur dans un index de texte sur des colonnes de type [Map](/fr/reference/data-types/map) à la création, les utilisateurs doivent déterminer si l’index est
 créé sur les clés ou sur les valeurs du type Map.
 
-Exemple :
+Exemple :
 
 ```sql title="Query"
 CREATE TABLE table
@@ -387,27 +387,32 @@ SELECT count() FROM tab WHERE hasAllTokens(mapKeys(map), 'foo');
 Contrairement au préprocesseur, qui transforme l’intégralité de la chaîne d’entrée avant que le tokenizer ne la découpe en tokens, le postprocesseur agit directement sur les tokens, un par un.
 C’est l’endroit idéal pour les transformations qui s’appliquent intrinsèquement au niveau du token.
 
-Les cas d’usage typiques de l’argument `postprocessor` incluent :
+Les cas d’usage typiques de l’argument `postprocessor` incluent :
 
 1. **Filtrage des stop words (tokens extrêmement fréquents)**. Les tokens très courants tels que &quot;the&quot;, &quot;a&quot; et &quot;is&quot; ont peu de pertinence pour la recherche et alourdissent l’index.
    Vous pouvez utiliser le postprocesseur pour les éliminer en les convertissant en tokens vides — les tokens vides sont ignorés, c’est-à-dire qu’ils ne sont pas ajoutés à l’index.
-   Exemple : `if(str IN ('the', 'a', 'an', 'of', 'in', 'is', 'it'), '', str)`
+   Exemple : `if(str IN ('the', 'a', 'an', 'of', 'in', 'is', 'it'), '', str)`
 2. **Suppression des timestamps**. Les lignes de log commencent souvent par un timestamp structuré tel que `2024-01-15T10:23:45`, ou en contiennent un.
    L’indexation des tokens de timestamp gonfle l’index avec des chaînes qui n’ont aucune pertinence pour la recherche.
-   Il existe deux approches complémentaires pour ignorer les timestamps :
-   * **Approche avec postprocesseur** : utilisez le tokenizer `splitByString` (découpage par espaces) afin que le timestamp entier devienne un seul token, puis utilisez `parseDateTimeOrNull` pour le détecter et le supprimer.
-     Exemple : `if(isNull(parseDateTimeOrNull(str, '%Y-%m-%dT%H:%i:%S')), str, '')`
+   Il existe deux approches complémentaires pour ignorer les timestamps :
+   * **Approche avec postprocesseur** : utilisez le tokenizer `splitByString` (découpage par espaces) afin que le timestamp entier devienne un seul token, puis utilisez `parseDateTimeOrNull` pour le détecter et le supprimer.
+     Exemple : `if(isNull(parseDateTimeOrNull(str, '%Y-%m-%dT%H:%i:%S')), str, '')`
      Pour les timestamps avec décalages de fuseau horaire ou secondes fractionnaires, utilisez `parseDateTimeBestEffortOrNull(str)` sans chaîne de format explicite.
-   * **Approche avec préprocesseur** : retirez le timestamp de la ligne de log complète *avant* la tokenisation à l’aide d’une regular expression.
-     Exemple : `replaceRegexpAll(str, '^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2} ', '')`
+   * **Approche avec préprocesseur** : retirez le timestamp de la ligne de log complète *avant* la tokenisation à l’aide d’une regular expression.
+     Exemple : `replaceRegexpAll(str, '^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2} ', '')`
      Cela fonctionne avec n’importe quel tokenizer et est plus efficace, car les caractères du timestamp ne sont jamais tokenized.
-     Les deux approches peuvent être combinées : le préprocesseur retire le timestamp tandis que le postprocesseur normalise ou filtre les tokens restants (par exemple, passage en minuscules + suppression des mots de sévérité comme `ERROR` ou `INFO`).
+     Les deux approches peuvent être combinées : le préprocesseur retire le timestamp tandis que le postprocesseur normalise ou filtre les tokens restants (par exemple, passage en minuscules + suppression des mots de sévérité comme `ERROR` ou `INFO`).
 3. **Racinisation**. Ramener chaque token à sa racine améliore le rappel de recherche en faisant correspondre des variantes morphologiques qui partagent la même racine.
    Par exemple, avec la racinisation anglaise, &quot;running&quot;, &quot;runs&quot; et &quot;run&quot; sont tous ramenés à &quot;run&quot;, de sorte qu’une requête sur l’une de ces variantes correspond à toutes.
    ClickHouse fournit une fonction [stem](/fr/reference/functions/regular-functions/nlp-functions#stem) intégrée pour plusieurs langues.
-   Exemple : `stem(str, 'en')`
+   Exemple : `stem(str, 'en')`
 4. **Normalisation de la casse**. Conversion des tokens en minuscules ou en majuscules pour permettre une correspondance insensible à la casse, par exemple [lower](/fr/reference/functions/regular-functions/string-functions#lower), [lowerUTF8](/fr/reference/functions/regular-functions/string-functions#lowerUTF8).
    Pour la conversion en minuscules et en majuscules, nous recommandons un préprocesseur plutôt qu’un postprocesseur.
+5. **Exclusion des tokens trop longs**. Les champs de texte libre contiennent parfois des tokens volumineux mais sans intérêt pour la recherche, comme des hachages SHA-256 ou d’autres longs hachages hexadécimaux. Les indexer gaspille de l’espace, car ils ne servent jamais de termes de recherche.
+   Le postprocesseur est appliqué à chaque token, quel que soit le tokenizer : la tokenisation habituelle `splitByNonAlpha` peut donc être conservée pour le reste du texte, seuls les tokens dépassant un seuil de longueur étant convertis en tokens vides.
+   Exemple : `if(length(str) > 32, '', str)` (`length` compte les octets ; utilisez `lengthUTF8` pour compter les caractères)
+   Notez que ce filtrage porte sur les *tokens*, et non sur les valeurs entières. `splitByNonAlpha` découpe sur la ponctuation : une valeur qui n’est longue qu’en incluant sa ponctuation ne comporte donc aucun token long à supprimer. L’UUID `550e8400-e29b-41d4-a716-446655440000` donne ainsi les tokens `550e8400`, `e29b`, `41d4`, `a716`, `446655440000`, et un blob base64 est découpé à chaque `+`, `/` et `=` en fragments qui peuvent chacun rester sous le seuil.
+   Pour exclure de telles valeurs, retirez-les avec un préprocesseur avant la tokenisation ; le reste du texte est alors tokenisé normalement (voir l’exemple ci-dessous).
 
 L’expression du postprocesseur transforme des tokens de type [String](/fr/reference/data-types/string) en tokens du même type.
 De plus, l’expression du postprocesseur ne doit référencer que la colonne ou l’expression sur laquelle l’index de texte est défini.
@@ -415,14 +420,14 @@ Lorsque la colonne est de type `Array(String)`, le postprocesseur agit toujours 
 
 L’utilisation de fonctions non déterministes est interdite.
 
-Le postprocesseur est appliqué à chaque token généré lors de la création de l’index (pour le tokenizer `array`, chaque élément du tableau est un token). Au moment de l’exécution de la requête, le comportement dépend de la fonction :
+Le postprocesseur est appliqué à chaque token généré lors de la création de l’index (pour le tokenizer `array`, chaque élément du tableau est un token). Au moment de l’exécution de la requête, le comportement dépend de la fonction :
 
-* Pour `hasToken`, `hasAllTokens`, `hasAnyTokens` et `hasPhrase` (avec n’importe quel tokenizer pris en charge) : le postprocesseur est appliqué à la fois aux tokens du haystack et au needle de recherche, ce qui permet une correspondance entièrement normalisée (par exemple, une recherche insensible à la casse). Pour `hasPhrase`, les tokens post-traités sont positionnés de manière dense : un token supprimé par le postprocesseur ne laisse donc aucun écart de position et la phrase correspond toujours à travers celui-ci — par exemple, avec un postprocesseur de stop words qui supprime `the`, `hasPhrase(col, 'see cat')` correspond à un document `see the cat`. La seule exception est `hasPhrase` sur un index `splitByRegexp`, qui ne prend pas en charge de postprocesseur (la combinaison est rejetée avec une exception).
-* Pour toutes les autres fonctions (`=`, `IN`, `has`, `hasAny`, `hasAll`, `mapContains*`) : seul le needle de recherche est post-traité pour la recherche par indication d’index ; le prédicat au niveau des lignes compare toujours les valeurs de colonne d’origine.
+* Pour `hasToken`, `hasAllTokens`, `hasAnyTokens` et `hasPhrase` (avec n’importe quel segmenteur lexical pris en charge) : le postprocesseur est appliqué à la fois aux jetons des données recherchées et à la valeur recherchée, ce qui permet une correspondance entièrement normalisée (par exemple, une recherche case-insensitive). Pour `hasPhrase`, les jetons post-traités sont positionnés de manière dense : un jeton supprimé par le postprocesseur ne laisse donc aucune lacune de position, et l’expression correspond malgré l’absence de ce jeton — par exemple, avec un postprocesseur de mots vides qui supprime `the`, `hasPhrase(col, 'see cat')` correspond au document `see the cat`. La seule exception concerne `hasPhrase` sur un index `splitByRegexp`, qui ne prend pas en charge de postprocesseur (cette combinaison est rejetée et lève une exception).
+* Pour toutes les autres fonctions (`=`, `IN`, `has`, `hasAny`, `hasAll`, `mapContains*`) : seule la valeur recherchée est post-traitée pour le lookup de l’indice d’index ; le prédicat au niveau des lignes effectue toujours la comparaison avec les valeurs de colonne d’origine.
 
-Exemples :
+Exemples :
 
-* Supprimez les stop words à l’aide d’une expression de postprocesseur :
+* Supprimez les mots vides à l’aide d’une expression de postprocesseur :
 
 ```sql
 CREATE TABLE table
@@ -437,7 +442,7 @@ ENGINE = MergeTree
 ORDER BY tuple();
 ```
 
-* Supprimez les timestamps à l’aide d’une expression de postprocesseur :
+* Supprimez les timestamps à l’aide d’une expression de post-traitement :
 
 ```sql
 -- Log lines: '2024-01-15T10:23:45 ERROR connection failed'
@@ -459,7 +464,7 @@ SELECT count() FROM logs WHERE hasAllTokens(line, ['ERROR']);       -- fast inde
 SELECT count() FROM logs WHERE hasAllTokens(line, ['2024-01-15T10:23:45']);  -- returns 0: token was never indexed
 ```
 
-* Supprimez les horodatages à l’aide d’une expression de préprocesseur :
+* Supprimez les horodatages à l’aide d’une expression de préprocesseur :
 
 ```sql
 -- The preprocessor strips the ISO timestamp prefix before tokenization.
@@ -476,7 +481,7 @@ CREATE TABLE logs
 ENGINE = MergeTree ORDER BY id;
 ```
 
-* Supprimez les horodatages au moyen d’une expression combinant un préprocesseur et un postprocesseur :
+* Supprimez les horodatages au moyen d’une expression combinant un préprocesseur et un postprocesseur :
 
 ```sql
 -- Preprocessor strips the timestamp, then lowercases the remainder.
@@ -501,7 +506,7 @@ ENGINE = MergeTree ORDER BY id;
 SELECT count() FROM logs WHERE hasAllTokens(line, ['connection']);
 ```
 
-* Réduisez les tokens à leur racine à l’aide d’une expression de postprocesseur :
+* Réduisez les tokens à leur racine à l’aide d’une expression de postprocesseur :
 
 ```sql
 CREATE TABLE table
@@ -520,12 +525,51 @@ ORDER BY tuple();
 SELECT count() FROM table WHERE hasAllTokens(str, ['running']);
 ```
 
+* Exclure les jetons trop longs à l’aide d’une expression de post-traitement :
+
+```sql
+-- Long tokens such as SHA-256 or other hex hashes carry no search value but
+-- still consume index space. The postprocessor runs per token for any tokenizer,
+-- so splitByNonAlpha tokenization is preserved for the rest of the text:
+-- 'error:failed' is still indexed as the tokens 'error' and 'failed'.
+CREATE TABLE table
+(
+    str String,
+    INDEX idx(str) TYPE text(
+        tokenizer = 'splitByNonAlpha',
+        postprocessor = if(length(str) > 32, '', str)
+    )
+)
+ENGINE = MergeTree
+ORDER BY tuple();
+```
+
+* Exclure les valeurs qui ne forment de longs jetons qu’une fois la ponctuation prise en compte :
+
+```sql
+-- splitByNonAlpha splits a hyphenated UUID into five short tokens (and a base64
+-- blob at every '+', '/' and '='), so a length filter alone never sees the whole
+-- value. The preprocessor removes the whole UUID before tokenization; everything
+-- else is still tokenized by splitByNonAlpha.
+CREATE TABLE table
+(
+    str String,
+    INDEX idx(str) TYPE text(
+        tokenizer = 'splitByNonAlpha',
+        preprocessor = replaceRegexpAll(str, '[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}', ' '),
+        postprocessor = if(length(str) > 32, '', str)
+    )
+)
+ENGINE = MergeTree
+ORDER BY tuple();
+```
+
 **Prise en charge des fonctions**.
 
 Pour les prédicats qui consultent l’index de texte, le préprocesseur et le postprocesseur sont appliqués à la valeur recherchée avant la vérification au niveau du granule, afin que la recherche dans l’index utilise les mêmes tokens que ceux stockés lors de la création de l’index.
 Pour la plupart des fonctions (`=`, `IN`, `startsWith`, `endsWith`, `LIKE`, `mapContains*`), l’index de texte sert uniquement à ignorer les blocs de données non pertinents ; ClickHouse vérifie ensuite chaque ligne conservée à l’aide du prédicat d’origine sur les données de la colonne d’origine.
 Pour les fonctions de recherche de tokens (`hasToken`, `hasAllTokens`, `hasAnyTokens`), l’index de texte constitue le principal mécanisme d’évaluation : ClickHouse normalise le needle à l’aide du même préprocesseur, tokenizer et postprocesseur que ceux appliqués lors de la création de l’index, puis utilise cette forme normalisée aussi bien pour les parts de la table indexées que non indexées. En présence d’un postprocesseur, les tokens du haystack sont également normalisés au moment de la requête (pour n’importe quel tokenizer, et pas seulement `array`), de sorte que les deux côtés de la comparaison sont transformés de manière cohérente et que le résultat ne dépend ni d’une lecture directe de l’index (paramètre `query_plan_direct_read_from_text_index`), ni du fait qu’une part donnée dispose d’un index matérialisé — par exemple, pour activer une correspondance insensible à la casse pour `hasAllTokens(col, ['FOO'])` avec un postprocesseur `lower`.
-Sans `support_phrase_search`, `hasPhrase` utilise l’index uniquement comme indication et vérifie chaque ligne conservée à l’aide du prédicat d’origine ; un postprocesseur normalise en outre l’expression et les tokens du haystack de la même manière, afin que le résultat soit indépendant du chemin de lecture, et les tokens supprimés par le postprocesseur ne rompent pas l’adjacence de l’expression. Avec `support_phrase_search = 1`, `hasPhrase` utilise des lectures directes exactes (tout en appliquant le postprocesseur, le cas échéant). Cette prise en charge du postprocesseur ne s’étend pas au tokenizer `splitByRegexp` : `hasPhrase` sur un index `splitByRegexp` associé à un postprocesseur est rejeté (voir la note de bas de page ³ ci-dessous).
+Sans `support_phrase_search`, `hasPhrase` utilise l’index uniquement comme indication et vérifie chaque ligne conservée à l’aide du prédicat d’origine ; un postprocesseur normalise en outre l’expression et les tokens du haystack de la même manière, afin que le résultat soit indépendant du chemin de lecture, et les tokens supprimés par le postprocesseur ne rompent pas l’adjacence de l’expression. Avec `support_phrase_search = 1`, `hasPhrase` utilise des lectures directes exactes (tout en appliquant le postprocesseur, le cas échéant). Cette prise en charge du postprocesseur ne s’étend pas au tokenizer `splitByRegexp` : `hasPhrase` sur un index `splitByRegexp` associé à un postprocesseur est rejeté (voir la note de bas de page ³ ci-dessous).
 Les tokens de recherche que le postprocesseur transforme en chaîne vide sont ignorés, c’est-à-dire traités comme absents de l’expression de recherche.
 
 | Fonction                                                                                                | Prend en charge un préprocesseur                                    | Tokenizers compatibles⁵                                                           | Prend en charge un postprocesseur |
@@ -575,6 +619,7 @@ Le stockage des positions augmente la taille de l’index sur disque et le coût
 Le format sur disque n’est pas encore stable ; ce paramètre est donc expérimental et pourrait changer dans une prochaine version.
 La création d’un index avec `support_phrase_search = 1` nécessite donc que le paramètre MergeTree [`allow_experimental_text_index_phrase_search`](/fr/reference/settings/merge-tree-settings/allow-experimental#allow_experimental_text_index_phrase_search) soit activé.
 Définissez `support_phrase_search = 0` (la valeur par défaut) pour conserver un stockage reposant uniquement sur des posting lists ; les index de texte créés sans cet argument restent sans positions.
+Les positions stockées peuvent être consultées dans la colonne `positions` de la fonction de table [mergeTreeTextIndex](/fr/reference/functions/table-functions/mergeTreeTextIndex).
 
 <Warning>
   Cet argument est expérimental et ne doit être utilisé que pour des tests.
@@ -756,11 +801,15 @@ Le tokenizer `splitByNonAlpha`, en revanche, n’indexe que des tokens complets 
 Comme un motif peut commencer ou se terminer au milieu d’un mot, ClickHouse supprime les tokens de tête et de fin de chaque motif, de sorte que l’index ne puisse écarter des granules qu’en s’appuyant sur des tokens complets.
 Pour que la recherche par sous-chaîne et par expression régulière utilise l’index avec `splitByNonAlpha`, entourez chaque motif de caractères séparateurs (comme des espaces) afin qu’il forme un ou plusieurs tokens complets.
 
-Exemple d’index de texte avec le tokenizer `splitByNonAlpha` :
+Exemple d’index de texte avec le tokenizer `splitByNonAlpha` :
 
 ```sql
 SELECT count() FROM table WHERE multiSearchAny(comment, [' clickhouse ', ' support ']);
 ```
+
+Avec le tokenizer `splitByNonAlpha` ou `array` et le paramètre [use&#95;text&#95;index&#95;like&#95;evaluation&#95;by&#95;dictionary&#95;scan](/fr/reference/settings/session-settings/use-text#use_text_index_like_evaluation_by_dictionary_scan) activé, un appel à `multiSearchAny` ou `multiSearchAnyUTF8` avec un seul motif recherché, par exemple `multiSearchAny(comment, ['upport'])`, est évalué comme `comment LIKE '%upport%'` par le [parcours du dictionnaire](#like-ilike-queries-perf), si bien qu’un motif situé à l’intérieur d’un mot peut lui aussi tirer parti de l’index.
+Les variantes insensibles à la casse `multiSearchAnyCaseInsensitive` et `multiSearchAnyCaseInsensitiveUTF8` ne peuvent utiliser l’index que de cette manière, sous la forme `comment ILIKE '%needle%'`.
+Les appels comportant plusieurs motifs restent évalués comme décrit ci-dessus ; dans ce cas, les variantes insensibles à la casse et le tokenizer `array` n’utilisent pas l’index.
 
 #### `startsWith` et `endsWith` {#functions-example-startswith-endswith}
 
@@ -909,11 +958,13 @@ SELECT count() FROM table WHERE mapContainsValueLike(map, '% clickhouse %');
 L’[operator[]](/fr/reference/operators/index#access-operators) d’accès peut être utilisé avec l’index de texte pour filtrer les clés et les valeurs.
 L’index de texte est utilisé s’il emploie un tokenizer [`keyValuePairs`](#tokenizer-key-value-pairs) au-dessus de la colonne `Map`, ou s’il est construit sur une expression d’index `mapKeys(map)` ou `mapValues(map)`.
 Dans le premier cas (tokenizer `keyValuePairs`), la lecture directe peut être utilisée ; sinon, il s’agit d’une lecture directe avec hint.
+Un index `keyValuePairs` prend également en charge `IN` sur un élément de map, à raison d’une recherche via l’index par valeur de la liste.
 
 Exemple :
 
 ```sql
 SELECT count() FROM table WHERE map['engine'] = 'clickhouse';
+SELECT count() FROM table WHERE map['engine'] IN ('clickhouse', 'mergetree');
 ```
 
 Voir les exemples suivants pour savoir comment utiliser des colonnes de type `Array(T)` et `Map(K, V)` avec l’index de texte.
@@ -997,7 +1048,10 @@ ALTER TABLE logs MATERIALIZE INDEX attributes_kv_idx;
 -- Finds all error logs:
 SELECT * FROM logs WHERE attributes['level'] = 'error'; -- fast, answered from the index alone
 
--- The same, but considering every entry of a repeated key:
+-- Finds all logs of both severities:
+SELECT * FROM logs WHERE attributes['level'] IN ('error', 'warning'); -- one index lookup per value
+
+-- The same as the first query, but considering every entry of a repeated key:
 SELECT * FROM logs WHERE mapContainsKeyValue(attributes, 'level', 'error');
 ```
 
@@ -1014,11 +1068,14 @@ Les restrictions suivantes s&#39;appliquent :
   `FixedString` est rejeté car la colonne stocke les octets de complétion alors que la constante recherchée ne les contient pas, ce qui conduirait à ignorer silencieusement des lignes.
   `Nullable` est rejeté car l&#39;encodage ne permet pas de distinguer une valeur vide de `NULL`.
 * Les arguments `preprocessor`, `postprocessor` et `support_phrase_search` sont rejetés à la création de la table.
-* Seuls `=` sur un élément de map et `mapContainsKeyValue` sont pour l&#39;instant résolus à partir de l&#39;index.
-  Les autres recherches sur map, telles que `mapContainsKey`, `mapContainsValue`, leurs variantes `*Like` et `IN`, basculent vers un balayage exhaustif.
+* Seuls `=` et `IN` sur un élément de map et `mapContainsKeyValue` sont pour l&#39;instant résolus à partir de l&#39;index.
+  Les autres recherches sur map, telles que `mapContainsKey`, `mapContainsValue` et leurs variantes `*Like`, basculent vers un balayage exhaustif.
   Il en va de même pour une valeur recherchée de type `FixedString`, dont l&#39;index ne stocke pas les octets de complétion.
+* `map['key'] IN (...)` n&#39;utilise l&#39;index que si l&#39;élément de map est comparé seul : `(map['key'], id) IN (('error', 1))` bascule vers un balayage exhaustif, car une union de tokens ne permet pas de déterminer si une ligne correspond aussi aux autres composantes du tuple au sein du même élément du set.
+  Un set issu d&#39;une sous-requête sert à ignorer des granules, mais pas à la lecture directe.
+  Un set issu d&#39;une table `ENGINE = Set` n&#39;est pas utilisé du tout, car un `INSERT` concurrent dans cette table modifie le set pendant l&#39;exécution de la requête.
 * `map['key']` renvoie la valeur par défaut du type de la valeur lorsque la clé est absente, si bien que `map['key'] = ''` vaut également `true` pour les lignes qui ne contiennent pas la clé et n&#39;ont donc aucun token.
-  Un tel prédicat bascule vers un balayage exhaustif.
+  Un tel prédicat bascule vers un balayage exhaustif, tout comme une liste `IN` contenant la chaîne vide.
   `mapContainsKeyValue(map, 'key', '')` est en revanche résolu à partir de l&#39;index, car il ne vaut `true` que pour une ligne contenant une entrée dont la valeur est vide.
 * Si une ligne contient plusieurs fois la même clé, `map['key']` correspond à la valeur de sa première occurrence, et l&#39;index apparie cette occurrence.
   `mapContainsKeyValue` prend au contraire en compte chaque entrée, si bien que `mapContainsKeyValue(map('k', 'v1', 'k', 'v2'), 'k', 'v2')` vaut `true`, alors que `map('k', 'v1', 'k', 'v2')['k'] = 'v2'` vaut `false`.
@@ -1346,7 +1403,7 @@ La lecture directe est contrôlée par deux paramètres :
 
 L’optimisation de lecture directe prend en charge les fonctions `hasToken`, `hasAllTokens` et `hasAnyTokens`.
 Si l’index de texte est défini avec un tokenizer `array`, la lecture directe est également prise en charge pour les fonctions `equals`, `has`, `hasAny`, `hasAll`, `mapContainsKey` et `mapContainsValue`.
-Si l’index de texte est défini avec un tokenizer `keyValuePairs`, la lecture directe est prise en charge pour `equals` sur un élément de map (`map['key'] = 'value'`) et pour `mapContainsKeyValue`.
+Si l’index de texte est défini avec un tokenizer `keyValuePairs`, la lecture directe est prise en charge pour `equals` et `IN` sur un élément de map (`map['key'] = 'value'`, `map['key'] IN ('value1', 'value2')`) et pour `mapContainsKeyValue` ; pour `IN`, l’ensemble doit être une liste de valeurs constantes.
 Ces fonctions peuvent également être combinées avec les opérateurs `AND`, `OR` et `NOT`.
 Les clauses `WHERE` ou `PREWHERE` peuvent également contenir des filtres supplémentaires autres que les fonctions de recherche textuelle (sur des colonnes de texte ou d’autres colonnes) - dans ce cas, l’optimisation de lecture directe sera tout de même utilisée, mais sera moins efficace (elle s’applique uniquement aux fonctions de recherche textuelle prises en charge).
 
@@ -1456,22 +1513,22 @@ Cet ordre permet d’ignorer encore plus de granules de données que l’index d
 
 ### Requêtes LIKE/ILIKE {#like-ilike-queries-perf}
 
-Lorsqu&#39;un pattern de requête LIKE/ILIKE est `%<alpha-numeric-characters-without-spaces>%`, `<alpha-numeric-characters-without-spaces>%` ou `%<alpha-numeric-characters-without-spaces>` et que le tokenizer du index de texte est `splitByNonAlpha` ou `array`, ClickHouse s&#39;appuie sur l&#39;inverted index pour accélérer considérablement les requêtes LIKE/ILIKE. Pour ce faire, ClickHouse parcourt le dictionnaire de l&#39;inverted index au lieu d&#39;effectuer un parcours complet de la table afin de trouver le pattern correspondant.
+Lorsqu&#39;un motif de requête LIKE/ILIKE est `%<alpha-numeric-characters-without-spaces>%`, `<alpha-numeric-characters-without-spaces>%` ou `%<alpha-numeric-characters-without-spaces>` et que le tokenizer du index de texte est `splitByNonAlpha` ou `array`, ClickHouse s&#39;appuie sur l&#39;inverted index pour accélérer considérablement les requêtes LIKE/ILIKE. Pour ce faire, ClickHouse parcourt le dictionnaire de l&#39;inverted index au lieu d&#39;effectuer un parcours complet de la table afin de trouver le motif correspondant.
 
-L&#39;utilisation du résultat du dictionary parcours dépend de l&#39;endroit où le needle est ancré :
+L&#39;utilisation du résultat du dictionary parcours dépend de l&#39;endroit où la sous-chaîne recherchée est ancrée :
 
 * `%value%` correspond à une ligne si et seulement si elle correspond à l&#39;un des tokens de la ligne ; l&#39;index tranche donc à lui seul la requête : une [lecture directe (sans indice)](#direct-read) qui supprime le prédicat d&#39;origine.
-* `value%` et `%value` ancrent le needle sur la valeur entière, alors que le dictionary parcours ne peut l&#39;ancrer que sur un token ; le parcours renvoie donc un superset des lignes correspondantes et sert de [lecture directe en tant qu&#39;indice](#direct-read).
+* `value%` et `%value` ancrent la sous-chaîne recherchée sur la valeur entière, alors que le dictionary parcours ne peut l&#39;ancrer que sur un token ; le parcours renvoie donc un superset des lignes correspondantes et sert de [lecture directe en tant qu&#39;indice](#direct-read).
 
-Ce même dictionary parcours est utilisé pour `startsWith(col, 'value')` et `endsWith(col, 'value')` lorsque le needle ne contient aucun token complet à rechercher.
-C&#39;est le chemin qu&#39;empruntent en réalité la plupart des patterns `value%` et `%value`, car la passe de l&#39;analyzer [optimize&#95;rewrite&#95;like&#95;perfect&#95;affix](/fr/reference/settings/session-settings/optimize-rewrite#optimize_rewrite_like_perfect_affix) (activée par défaut) réécrit `col LIKE 'value%'` en `startsWith(col, 'value')` et `col LIKE '%value'` en `endsWith(col, 'value')`.
-Les needles qui s&#39;étendent sur plusieurs tokens continuent d&#39;utiliser les tokens complets du needle et n&#39;ont pas besoin d&#39;un dictionary parcours.
+Ce même dictionary parcours est utilisé pour `startsWith(col, 'value')` et `endsWith(col, 'value')` lorsque la sous-chaîne recherchée ne contient aucun token complet à rechercher.
+C&#39;est le chemin qu&#39;empruntent en réalité la plupart des motifs `value%` et `%value`, car la passe de l&#39;analyzer [optimize&#95;rewrite&#95;like&#95;perfect&#95;affix](/fr/reference/settings/session-settings/optimize-rewrite#optimize_rewrite_like_perfect_affix) (activée par défaut) réécrit `col LIKE 'value%'` en `startsWith(col, 'value')` et `col LIKE '%value'` en `endsWith(col, 'value')`.
+Les sous-chaînes recherchées qui s&#39;étendent sur plusieurs tokens continuent d&#39;utiliser les tokens complets de la sous-chaîne recherchée et n&#39;ont pas besoin d&#39;un dictionary parcours.
 
-Cas particulier : si le tokenizer de l&#39;index est `array`, alors *tout* pattern est éligible à l&#39;optimisation : ancres, ponctuation, wildcards `_`, plusieurs needles séparés par `%` et metacharacters échappés.
+Cas particulier : si le tokenizer de l&#39;index est `array`, alors *tout* motif est éligible à l&#39;optimisation : ancres, ponctuation, wildcards `_`, plusieurs sous-chaînes recherchées séparées par `%` et metacharacters échappés.
 
-Lorsque l&#39;optimisation est activée, les requêtes LIKE/ILIKE devraient être nettement plus rapides qu&#39;un parcours complet de la table. En revanche, lorsque le pattern correspond à la majorité des tokens du dictionnaire, les performances peuvent être moins bonnes qu&#39;avec un parcours complet de la table. Heureusement, un mécanisme de fallback permet d&#39;éviter cela.
+Lorsque l&#39;optimisation est activée, les requêtes LIKE/ILIKE devraient être nettement plus rapides qu&#39;un parcours complet de la table. En revanche, lorsque le motif correspond à la majorité des tokens du dictionnaire, les performances peuvent être moins bonnes qu&#39;avec un parcours complet de la table. Heureusement, un mécanisme de fallback permet d&#39;éviter cela.
 
-Le gain de performance d&#39;un pattern `value%` ou `%value` provient du skipping de granules ; il dépend donc de la répartition des lignes correspondantes. Les needles qui correspondent à des lignes dans chaque granule n&#39;en éliminent aucun, et la requête paie alors le coût du dictionary parcours en plus du parcours complet qu&#39;elle aurait effectué de toute façon. Désactivez [use&#95;text&#95;index&#95;like&#95;evaluation&#95;by&#95;dictionary&#95;scan](/fr/reference/settings/session-settings/use-text#use_text_index_like_evaluation_by_dictionary_scan) pour de tels workloads.
+Le gain de performance d&#39;un motif `value%` ou `%value` provient du skipping de granules ; il dépend donc de la répartition des lignes correspondantes. Les sous-chaînes recherchées qui correspondent à des lignes dans chaque granule n&#39;en éliminent aucun, et la requête paie alors le coût du dictionary parcours en plus du parcours complet qu&#39;elle aurait effectué de toute façon. Désactivez [use&#95;text&#95;index&#95;like&#95;evaluation&#95;by&#95;dictionary&#95;scan](/fr/reference/settings/session-settings/use-text#use_text_index_like_evaluation_by_dictionary_scan) pour de tels workloads.
 
 L&#39;optimisation est contrôlée par un paramètre :
 
@@ -1482,12 +1539,11 @@ Le mécanisme de fallback est contrôlé par deux paramètres :
 * [text&#95;index&#95;like&#95;min&#95;pattern&#95;length](/fr/reference/settings/session-settings/text-index#text_index_like_min_pattern_length)
 * [text&#95;index&#95;like&#95;max&#95;postings&#95;to&#95;read](/fr/reference/settings/session-settings/text-index#text_index_like_max_postings_to_read)
 
-Cette optimisation ne prend en charge que les fonctions `like`, `ilike`, `startsWith` et `endsWith`.
+Cette optimisation ne prend en charge que les fonctions `like`, `ilike`, `startsWith` et `endsWith`, ainsi que les fonctions `multiSearchAny`, `multiSearchAnyUTF8`, `multiSearchAnyCaseInsensitive` et `multiSearchAnyCaseInsensitiveUTF8` avec une seule sous-chaîne recherchée.
 Elle nécessite généralement un index sans preprocessor ni postprocessor (`ilike` accepte également `lower` ou `upper` comme fonction de preprocessor).
 
-Pour `ilike`, la recherche bascule vers un parcours complet de la table dans deux cas particuliers, aussi bien avec le tokenizer `splitByNonAlpha` qu&#39;avec le tokenizer `array` :
+Pour `ilike`, la recherche bascule vers un parcours complet de la table dans un cas particulier, aussi bien avec le tokenizer `splitByNonAlpha` qu&#39;avec le tokenizer `array` :
 
-* Le needle contient la lettre `k`. `ilike` traite `U+212A KELVIN SIGN` comme un `k`, mais le dictionary parcours compare des octets et manquerait une ligne écrite de cette façon. `U+212A` est le seul caractère que `ilike` replie sur une lettre ou un chiffre ASCII, c&#39;est donc le seul caractère de needle concerné.
 * L&#39;expression de preprocessor de l&#39;index contient `lowerUTF8` ou `upperUTF8`. Celles-ci réécrivent les caractères non ASCII en lettres ASCII (`ß` en `SS`, `ſ` en `S`), ce qui amènerait l&#39;index à signaler des lignes qui ne correspondent pas à `ilike`.
 
 ### Requêtes de comptage simples {#count-queries-perf}
@@ -1527,8 +1583,8 @@ L’optimisation est contrôlée par [query&#95;plan&#95;optimize&#95;count&#95;
 Il existe différents caches à l’échelle du serveur pour conserver en mémoire certaines parties de l’index de texte (voir la section [Détails d’implémentation](#implementation)) :
 À l’heure actuelle, il existe des caches pour les en-têtes désérialisés, les tokens et les listes de postings de l’index de texte afin de réduire les opérations d’E/S.
 Utilisez les paramètres [use&#95;text&#95;index&#95;header&#95;cache](/fr/reference/settings/session-settings/use-text#use_text_index_header_cache), [use&#95;text&#95;index&#95;tokens&#95;cache](/fr/reference/settings/session-settings/use-text#use_text_index_tokens_cache) et [use&#95;text&#95;index&#95;postings&#95;cache](/fr/reference/settings/session-settings/use-text#use_text_index_postings_cache) pour désactiver, pour les requêtes, la lecture et l’écriture dans les caches individuels.
-La mise en cache des tokens absents d’une partie de données est activée par défaut et peut être contrôlée indépendamment avec [`use_text_index_negative_tokens_cache`](/fr/reference/settings/session-settings/use-text).
-La mise en cache des parcours de dictionnaire par motif ayant dépassé le seuil de la liste de postings est activée par défaut et peut être contrôlée indépendamment avec `use_text_index_pattern_bypass_cache`.
+La mise en cache des tokens absents d’une part est activée par défaut et peut être contrôlée indépendamment avec [`use_text_index_negative_tokens_cache`](/fr/reference/settings/session-settings/use-text#use_text_index_negative_tokens_cache).
+La mise en cache des parcours de dictionnaire par motif ayant dépassé le seuil de la liste de postings est activée par défaut et peut être contrôlée indépendamment avec [`use_text_index_pattern_bypass_cache`](/fr/reference/settings/session-settings/use-text#use_text_index_pattern_bypass_cache).
 
 Pour vider les caches, utilisez l’instruction [SYSTEM CLEAR TEXT INDEX CACHES](/fr/reference/statements/system#drop-text-index-caches)
 
@@ -1609,7 +1665,7 @@ Les index de texte, en revanche, sont conçus spécifiquement pour la recherche 
 
 ## Détails d’implémentation {#implementation}
 
-Chaque index de texte se compose de deux structures de données (abstraites) :
+Chaque index de texte se compose de deux structures de données (abstraites) :
 
 * un dictionnaire qui associe chaque token à une liste de postings, et
 * un ensemble de listes de postings, chacune représentant un ensemble de numéros de ligne.
@@ -1617,7 +1673,7 @@ Chaque index de texte se compose de deux structures de données (abstraites) :
 L’index de texte est construit pour l’ensemble de la part.
 Contrairement aux autres skip indexes, l’index de texte peut être fusionné au lieu d’être reconstruit lors de la fusion des data parts (voir ci-dessous).
 
-Lors de la création de l’index, trois fichiers sont créés (par part) :
+Lors de la création de l’index, trois fichiers sont créés (par part) :
 
 **Fichier des blocs de dictionnaire (.dct)**
 
@@ -1643,7 +1699,7 @@ Il stocke les positions des tokens dans les lignes correspondantes.
 
 **Fusion des index de texte**
 
-Lorsque des data parts sont fusionnées, l’index de texte n’a pas besoin d’être reconstruit à partir de zéro ; il peut au contraire être fusionné efficacement dans une étape distincte du processus de fusion.
+Lorsque des data parts sont fusionnées, l’index de texte n’a pas besoin d’être reconstruit à partir de zéro ; il peut au contraire être fusionné efficacement dans une étape distincte du processus de fusion.
 Au cours de cette étape, les dictionnaires triés des index de texte de chaque part d’entrée sont lus et combinés en un nouveau dictionnaire unifié.
 Les numéros de ligne dans les listes de postings sont également recalculés afin de refléter leurs nouvelles positions dans la data part fusionnée, à l’aide d’une correspondance entre anciens et nouveaux numéros de ligne créée pendant la phase initiale de fusion.
 Cette méthode de fusion des index de texte est similaire à la manière dont les [projections](/fr/reference/statements/alter/projection#projection-indexes) avec la colonne `_part_offset` sont fusionnées.
@@ -1651,7 +1707,7 @@ Si l’index n’est pas matérialisé dans la part source, il est construit, é
 
 **Débogage**
 
-La table function [mergeTreeTextIndex](/fr/reference/functions/table-functions/mergeTreeTextIndex) peut être utilisée pour inspecter les index de texte.
+La table function [mergeTreeTextIndex](/fr/reference/functions/table-functions/mergeTreeTextIndex) peut être utilisée pour inspecter les index de texte : leurs dictionnaires, leurs listes de postings et leurs positions.
 
 ## Exemple : jeu de données Hacker News {#hacker-news-dataset}
 

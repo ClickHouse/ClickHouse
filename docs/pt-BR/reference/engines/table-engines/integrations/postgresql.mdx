@@ -160,7 +160,7 @@ As consultas `SELECT` no PostgreSQL são executadas como `COPY (SELECT ...) TO S
 
 Cláusulas `WHERE` simples, como `=`, `!=`, `>`, `>=`, `<`, `<=` e `IN`, são executadas no servidor PostgreSQL.
 
-Todas as junções, agregações, ordenações, condições `IN [ array ]` e a restrição de amostragem `LIMIT` são executadas no ClickHouse somente após a conclusão da consulta ao PostgreSQL.
+Todas as junções, agregações, ordenações e condições `IN [ array ]` são executadas no ClickHouse após a conclusão da consulta ao PostgreSQL. A restrição de amostragem `LIMIT` só é repassada ao PostgreSQL quando isso é seguro e a configuração [external&#95;storage&#95;push&#95;down&#95;limit](/pt-BR/reference/settings/session-settings/external-storage#external_storage_push_down_limit) está habilitada; caso contrário, ela é executada no ClickHouse.
 
 ## Passando uma consulta em vez de um nome de tabela {#passing-a-query}
 

@@ -12,7 +12,7 @@ doc_type: 'reference'
 
 導入バージョン: v22.2.0
 
-2 つの母集団から得たサンプルに対して、平均値の z 検定を適用します。
+2 つの母集団から得たサンプルに対して、平均のz検定を適用します。
 
 両方のサンプルの値は `sample_data` カラムに格納されます。
 `sample_index` が 0 の場合、その行の値は 1 つ目の母集団のサンプルに属します。
@@ -44,7 +44,7 @@ meanZTest(population_variance_x, population_variance_y, confidence_level)(sample
 
 **例**
 
-**平均の Z 検定の例**
+**平均のz検定の例**
 
 ```sql title=Query
 CREATE TABLE mean_ztest (sample_data Float64, sample_index UInt8) ENGINE = Memory;
@@ -56,7 +56,7 @@ SELECT meanZTest(0.7, 0.45, 0.95)(sample_data, sample_index) FROM mean_ztest;
 ```response title=Response
 ┌─meanZTest(0.7, 0.45, 0.95)(sample_data, sample_index)───────────────────────────────────────────┐
 ├────────z_statistic─┬───────────────p_value─┬─confidence_interval_low─┬─confidence_interval_high─┤
-│ 3.2841296025548123 │ 0.0010229786769086013 │      0.8198428246768334 │       3.2468238419898365 │
+│ 3.2841296025548123 │ 0.0010229786769086016 │      0.8198428246768337 │        3.246823841989836 │
 └────────────────────┴───────────────────────┴─────────────────────────┴──────────────────────────┘
 ```
 

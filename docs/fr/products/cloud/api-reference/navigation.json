@@ -131,7 +131,7 @@
         ]
       },
       {
-        "group": "Snapshot",
+        "group": "Instantané",
         "pages": [
           "products/cloud/api-reference/snapshot/snapshot-get-list",
           "products/cloud/api-reference/snapshot/snapshot-get",
@@ -140,7 +140,7 @@
         ]
       },
       {
-        "group": "Query API endpoints",
+        "group": "Endpoints de Query API",
         "pages": [
           "GET /v1/organizations/{organizationId}/services/{serviceId}/query-api-endpoints",
           "POST /v1/organizations/{organizationId}/services/{serviceId}/query-api-endpoints",
@@ -150,7 +150,7 @@
         ]
       },
       {
-        "group": "Saved queries",
+        "group": "Requêtes enregistrées",
         "pages": [
           "GET /v1/organizations/{organizationId}/services/{serviceId}/saved-queries",
           "POST /v1/organizations/{organizationId}/services/{serviceId}/saved-queries",

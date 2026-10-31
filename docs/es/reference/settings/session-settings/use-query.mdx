@@ -13,9 +13,7 @@ import { VersionHistory } from "/snippets/es/components/VersionHistory/VersionHi
 
 Estos ajustes están disponibles en [system.settings](/es/reference/system-tables/settings) y se generan automáticamente a partir del [código fuente](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
-<div id="use_query_cache">
-  ## use_query_cache
-</div>
+## use_query_cache {#use_query_cache}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -27,9 +25,7 @@ Valores posibles:
 * 0 - Deshabilitado
 * 1 - Habilitado
 
-<div id="use_query_condition_cache">
-  ## use_query_condition_cache
-</div>
+## use_query_condition_cache {#use_query_condition_cache}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -43,9 +39,26 @@ Valores posibles:
 * 0 - Deshabilitado
 * 1 - Habilitado
 
-<div id="use_query_condition_cache_for_top_k">
-  ## use_query_condition_cache_for_top_k
-</div>
+## use_query_condition_cache_for_time_conditions {#use_query_condition_cache_for_time_conditions}
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "1"},{"label": "Nueva configuración que permite que la caché de condiciones de consulta atienda condiciones que dependen de la hora actual (p. ej., `WHERE time >= now() - INTERVAL 10 DAY`) mediante la derivación de una condición determinista en la que la constante de tiempo se redondea sobre una cuadrícula; habilitada de forma predeterminada. previous_value=false, de modo que `compatibility` con una versión anterior mantiene esas condiciones sin almacenar en caché, como hasta ahora."}]}]} />
+
+Activa la [caché de condiciones de consulta](/es/concepts/features/performance/caches/query-condition-cache) para condiciones que dependen de la hora actual, p. ej., `WHERE time >= now() - INTERVAL 10 DAY`, al leer de tablas `MergeTree`. Las lecturas de archivos y del almacenamiento de objetos (`file`, `s3` y similares) solo usan la caché de condiciones de consulta para condiciones deterministas y no se ven afectadas por este parámetro de configuración.
+
+Estas condiciones son no deterministas (varían con el reloj), por lo que no pueden almacenarse en caché directamente. En su lugar, se deriva de ellas una condición determinista redondeando sobre una cuadrícula temporal la constante de la hora actual ya evaluada; p. ej., `WHERE time >= '2026-08-09 12:34:56'` se convierte en `WHERE time >= '2026-08-09 00:00:00'` (se redondea hacia abajo para las lecturas de la caché y hacia arriba para las escrituras, lo que garantiza que la caché siga siendo correcta). El paso de la cuadrícula es proporcional a la distancia entre la constante y la hora actual (consulte [`query_condition_cache_time_condition_grid_factor`](/es/reference/settings/session-settings/other#query_condition_cache_time_condition_grid_factor)) y está limitado a un valor de entre un segundo y un día.
+
+Si la constante ya está alineada con la cuadrícula (p. ej., `WHERE time >= today() - 10` o `WHERE time >= toStartOfDay(now())`), la caché es efectiva durante toda la celda de la cuadrícula, p. ej., hasta el final del día. De lo contrario, la caché solo se reutiliza para límites inferiores de tiempo, p. ej., `WHERE time >= now() - INTERVAL 10 DAY`: las entradas de caché escritas durante una celda de la cuadrícula se usan durante la siguiente. Un límite superior no alineado, como `WHERE time < now()`, ya sea por sí solo o como parte de una ventana deslizante como `WHERE time >= now() - INTERVAL 10 DAY AND time < now()`, no se reutiliza en consultas posteriores, porque su condición no está contenida en la de las consultas anteriores.
+
+Este parámetro de configuración no tiene efecto a menos que `use_query_condition_cache` también esté habilitado.
+
+Valores posibles:
+
+* 0 - Deshabilitado
+* 1 - Habilitado
+
+## use_query_condition_cache_for_top_k {#use_query_condition_cache_for_top_k}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -53,7 +66,7 @@ Valores posibles:
 
 Habilita la [caché de condiciones de consulta](/es/concepts/features/performance/caches/query-condition-cache) para las consultas que usan la optimización `ORDER BY <column> LIMIT n` (TopK), basada en filtrado dinámico o índices de omisión. Cuando está deshabilitada, estas lecturas no consultan ni rellenan la caché.
 
-Estas consultas pueden descartar gránulos durante la ejecución según el umbral en uso, por lo que sus entradas de caché se particionan por los parámetros del plan TopK y el conjunto de partes leídas. Esta opción no tiene efecto a menos que también esté habilitada `use_query_condition_cache`.
+Estas consultas pueden descartar gránulos durante la ejecución según el umbral en uso, por lo que sus entradas de caché se particionan por los parámetros del plan TopK y el conjunto de partes leídas (en el caso de una tabla `File`, por el conjunto de archivos leídos y sus versiones; en el caso de una tabla de lago de datos, por su instantánea). Esta opción no tiene efecto a menos que también esté habilitada `use_query_condition_cache`.
 
 Valores posibles:
 

@@ -195,7 +195,7 @@ Use o tipo String do BSON em vez de Binary para colunas do tipo String.
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.1"},{"label": "3"},{"label": "Permite alterar o nível de compressão na saída da consulta"}]}]} />
 
-Nível de compressão padrão quando a saída da consulta é comprimida. A configuração é aplicada quando a consulta `SELECT` usa `INTO OUTFILE` ou ao gravar em funções de tabela `file`, `url`, `hdfs`, `s3` ou `azureBlobStorage`.
+Nível de compressão padrão quando a saída da consulta é comprimida. A configuração é aplicada quando a consulta `SELECT` usa `INTO OUTFILE` ou ao gravar em funções de tabela `file`, `url`, `hdfs`, `s3` ou `azureBlobStorage`. Ela também se aplica à resposta comprimida de uma requisição HTTP com um método que não seja `gzip` ou `deflate`, casos em que é usada a configuração [http&#95;zlib&#95;compression&#95;level](/pt-BR/reference/settings/session-settings/http#http_zlib_compression_level).
 
 Valores possíveis: de `1` a `22`
 
@@ -731,8 +731,8 @@ Número aproximado de bits a serem usados para cada valor distinto nos filtros d
 Em que ponto do arquivo Parquet os filtros de Bloom devem ser colocados. Os filtros de Bloom serão gravados em grupos de aproximadamente esse tamanho. Em particular:
 
 * se for 0, os filtros de Bloom de cada grupo de linhas serão gravados imediatamente após o grupo de linhas,
-  * se for maior que o tamanho total de todos os filtros de Bloom, os filtros de Bloom de todos os grupos de linhas serão acumulados na memória e depois gravados juntos perto do fim do arquivo,
-  * caso contrário, os filtros de Bloom serão acumulados na memória e gravados sempre que seu tamanho total ultrapassar esse valor.
+* se for maior que o tamanho total de todos os filtros de Bloom, os filtros de Bloom de todos os grupos de linhas serão acumulados na memória e depois gravados juntos perto do fim do arquivo,
+* caso contrário, os filtros de Bloom serão acumulados na memória e gravados sempre que seu tamanho total ultrapassar esse valor.
 
 ## output_format_parquet_compression_method {#output_format_parquet_compression_method}
 
@@ -788,6 +788,14 @@ Use o tipo Parquet FIXED&#95;LEN&#95;BYTE&#95;ARRAY em vez de Binary para as col
 
 Permite gravar informações sobre colunas geoespaciais nos metadados do Parquet e codificar colunas no formato WKB.
 
+## output_format_parquet_geometry_logical_type {#output_format_parquet_geometry_logical_type}
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "0"},{"label": "Nova configuração"}]}]} />
+
+Anota as colunas geoespaciais gravadas como WKB (consulte `output_format_parquet_geometadata`) com o tipo lógico `GEOMETRY` do Parquet e grava `GeospatialStatistics` (caixa delimitadora e tipos geométricos) para elas, em vez de estatísticas de mínimo/máximo. Leitores compatíveis com esse tipo lógico reconhecem essas colunas como geometrias mesmo sem o metadado `geo` do GeoParquet. Não tem efeito se `output_format_parquet_geometadata` estiver desabilitado. Uma coluna `Geometry` também é descrita no metadado `geo` do GeoParquet, com uma lista vazia de tipos geométricos. Quando esta configuração está desabilitada, essas colunas são gravadas como `BYTE_ARRAY`, sem anotação geoespacial e com estatísticas de mínimo/máximo, e a coluna `Geometry` não é descrita no metadado `geo`. Fica desabilitada por padrão porque leitores que não reconhecem esse tipo lógico (por exemplo, Arrow C++ e `pyarrow` em versões anteriores à 20) não conseguem abrir o arquivo inteiro.
+
 ## output_format_parquet_max_dictionary_size {#output_format_parquet_max_dictionary_size}
 
 <SettingsInfoBlock type="UInt64" default_value="1048576" />
@@ -822,6 +830,14 @@ Tamanho alvo do grupo de linhas, em bytes, antes da compressão.
 
 Use o tipo String do Parquet em vez de Binary para colunas String.
 
+## output_format_parquet_use_alp_encoding {#output_format_parquet_use_alp_encoding}
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "0"},{"label": "Nova configuração."}]}]} />
+
+Codifica colunas `Float32` e `Float64` (Parquet `FLOAT` e `DOUBLE`) com a codificação `ALP` (Adaptive Lossless floating-Point). A `ALP` é sem perdas e comprime dados de ponto flutuante com características decimais (preços, medições, coordenadas) muito melhor do que a `PLAIN`. Essas colunas são gravadas sem dicionário, e qualquer página em que a `ALP` gere um resultado maior do que a `PLAIN` é gravada com `PLAIN`. Essa codificação foi adicionada ao formato Parquet recentemente, portanto nem todo leitor de Parquet oferece suporte a ela ainda: habilite-a somente se os arquivos forem lidos por leitores compatíveis.
+
 ## output_format_parquet_wide_integer_as_decimal {#output_format_parquet_wide_integer_as_decimal}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
@@ -845,6 +861,16 @@ Grava filtros de Bloom em arquivos Parquet.
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.11"},{"label": "1"},{"label": "Nova configuração."}]}]} />
 
 Grava checksums crc32 nos cabeçalhos de página do Parquet.
+
+## output_format_parquet_write_file_logical_type {#output_format_parquet_write_file_logical_type}
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "0"},{"label": "Nova configuração para gravar uma `Tuple` nomeada com campos do tipo lógico `FILE` do Parquet como um grupo anotado com `FILE`."}]}]} />
+
+Grava uma `Tuple` nomeada cujos nomes de elementos sejam todos campos do tipo lógico `FILE` do Parquet (`uri`, `offset`, `size`, `content_type`, `checksum`, `inline`; qualquer subconjunto não vazio, em qualquer ordem) como um grupo anotado com o tipo lógico `FILE`, que representa uma referência a um intervalo de bytes armazenado em linha ou em um arquivo externo. Os elementos `offset` e `size` devem ser inteiros (gravados como `INT64`), e os demais devem ser `String` ou `FixedString` (`inline` é gravado como `BYTE_ARRAY` sem anotação, e os outros, como `STRING`). Conforme exigido pela especificação, todos os campos são gravados como `OPTIONAL`. Os valores são gravados sem alterações, sem verificar se formam uma referência válida.
+
+Na leitura, um grupo anotado com `FILE` é sempre lido como uma `Tuple` desse tipo, com elementos `Nullable`.
 
 ## output_format_parquet_write_page_index {#output_format_parquet_write_page_index}
 

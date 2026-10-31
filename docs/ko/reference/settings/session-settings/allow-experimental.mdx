@@ -11,6 +11,7 @@ doc_type: 'reference'
 import SettingsInfoBlock from "/snippets/ko/components/SettingsInfoBlock/SettingsInfoBlock.jsx";
 import { VersionHistory } from "/snippets/ko/components/VersionHistory/VersionHistory.jsx";
 import { ExperimentalBadge } from "/snippets/ko/components/ExperimentalBadge/ExperimentalBadge.jsx";
+import { BetaBadge } from "/snippets/ko/components/BetaBadge/BetaBadge.jsx";
 
 이러한 설정은 [system.settings](/ko/reference/system-tables/settings)에서 확인할 수 있으며 [소스](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp)에서 자동 생성됩니다.
 
@@ -34,7 +35,11 @@ v26.9부터 사용되지 않음(obsolete): 분석기는 더 이상 비활성화�
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.5"},{"label": "0"},{"label": "새로운 설정"}]}]} />
 
-Iceberg compaction 중 오래된 data files를 정리하도록 허용합니다.
+Iceberg 컴팩션 중 오래된 data files를 정리하도록 허용합니다.
+
+정리 작업은 컴팩션이 끝난 후 `iceberg_compaction_data_cleanup`을 실행합니다. 이 작업은 `expire_snapshots`와 같은 방식으로, 컴팩션으로 인해 더 이상 사용되지 않게 된 스냅샷을 만료 처리합니다. 즉, 해당 스냅샷을
+테이블 메타데이터에서 제거하고 다른 스냅샷이 참조하지 않는 파일을 삭제합니다. 형식 버전 1 테이블이거나
+트랜잭션 방식의 카탈로그(Catalog)를 사용하는 테이블에서는 파일만 삭제되며, 스냅샷은 메타데이터에 그대로 남습니다.
 
 ## allow_experimental_database_hms_catalog {#allow_experimental_database_hms_catalog}
 
@@ -104,11 +109,11 @@ Iceberg 테이블에서 &#39;OPTIMIZE&#39;를 명시적으로 사용할 수 있�
 
 ## allow_experimental_kusto_dialect {#allow_experimental_kusto_dialect}
 
-<ExperimentalBadge />
+<BetaBadge />
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.1"},{"label": "0"},{"label": "새로운 설정"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "0"},{"label": "Kusto Query Language (KQL) 방언이 베타로 전환되었습니다."}]}, {"id": "row-2","items": [{"label": "25.1"},{"label": "0"},{"label": "새로운 설정"}]}]} />
 
 SQL의 대안인 Kusto Query Language (KQL) 방언을 활성화합니다.
 

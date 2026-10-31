@@ -101,6 +101,8 @@ Funciona com tabelas da família MergeTree.
 
 Se `force_primary_key=1`, o ClickHouse verifica se a consulta tem uma condição de chave primária que possa ser usada para restringir os intervalos de dados. Se não houver uma condição adequada, ele lançará uma exceção. No entanto, ele não verifica se a condição reduz a quantidade de dados a serem lidos. Para mais informações sobre intervalos de dados em tabelas MergeTree, consulte [MergeTree](/pt-BR/reference/engines/table-engines/mergetree-family/mergetree).
 
+A verificação se aplica à chave primária da própria tabela. Uma projeção só atende à consulta quando a consulta também restringe os intervalos de dados pela chave da própria projeção; caso contrário, a projeção é ignorada e a leitura é feita na tabela. Se uma projeção for forçada com [force&#95;optimize&#95;projection](/pt-BR/reference/settings/session-settings/force-optimize#force_optimize_projection) e sua chave não for usada, a consulta lançará uma exceção.
+
 ## force_read_through_distributed_cache {#force_read_through_distributed_cache}
 
 <CloudOnlyBadge />

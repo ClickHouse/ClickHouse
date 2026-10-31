@@ -25,7 +25,7 @@ avg(x)
 
 **반환 값**
 
-산술 평균을 반환합니다. `x`가 숫자형이면 결과는 `Float64`이고, `x`가 비어 있으면 `NaN`을 반환합니다. `x`가 날짜, 시간 또는 인터벌이면 결과는 `x`와 같은 타입으로 반환됩니다. 평균은 표현 가능한 가장 가까운 값으로 반올림되며, `x`가 비어 있으면 해당 타입의 0 값을 반환합니다. [`Float64`](/ko/reference/data-types/float) 또는 [`Date`](/ko/reference/data-types/date) 또는 [`Date32`](/ko/reference/data-types/date32) 또는 [`DateTime`](/ko/reference/data-types/datetime) 또는 [`DateTime64(P)`](/ko/reference/data-types/datetime64) 또는 [`Time`](/ko/reference/data-types/time) 또는 [`Time64(P)`](/ko/reference/data-types/time64) 또는 [`Interval`](/ko/reference/data-types/special-data-types/interval)
+산술 평균을 반환합니다. `x`가 숫자형이면 결과는 `Float64`이고, `x`가 비어 있으면 `NaN`을 반환합니다. `x`가 날짜, 시간 또는 인터벌이면 결과는 `x`와 같은 타입으로 반환됩니다. 평균은 표현 가능한 가장 가까운 값으로 반올림되며, `x`가 비어 있으면 해당 타입의 0 값을 반환합니다. `x`가 [`Nullable`](/ko/reference/data-types/nullable)이면 결과 타입은 `Nullable(T)`입니다. 여기서 `T`는 `x`가 `Nullable`이 아닐 때의 결과 타입이며, 숫자형 입력값이면 `Float64`입니다. 입력이 비어 있으면 `NULL`을 반환합니다. [`Float64`](/ko/reference/data-types/float) 또는 [`Date`](/ko/reference/data-types/date) 또는 [`Date32`](/ko/reference/data-types/date32) 또는 [`DateTime`](/ko/reference/data-types/datetime) 또는 [`DateTime64(P)`](/ko/reference/data-types/datetime64) 또는 [`Time`](/ko/reference/data-types/time) 또는 [`Time64(P)`](/ko/reference/data-types/time64) 또는 [`Interval`](/ko/reference/data-types/special-data-types/interval)
 
 **예시**
 

@@ -1,6 +1,6 @@
 {
-  "directory": "none",
   "group": "サーバー設定",
+  "directory": "none",
   "pages": [
     "ja/reference/settings/server-settings/settings",
     "ja/reference/settings/server-settings/settings/access-control",
@@ -38,6 +38,7 @@
     "ja/reference/settings/server-settings/settings/encryption-header",
     "ja/reference/settings/server-settings/settings/format",
     "ja/reference/settings/server-settings/settings/global-profiler",
+    "ja/reference/settings/server-settings/settings/gpu",
     "ja/reference/settings/server-settings/settings/graphite",
     "ja/reference/settings/server-settings/settings/http",
     "ja/reference/settings/server-settings/settings/http-connections",
@@ -112,6 +113,7 @@
     "ja/reference/settings/server-settings/settings/skip",
     "ja/reference/settings/server-settings/settings/snapshot-cleaner",
     "ja/reference/settings/server-settings/settings/startup",
+    "ja/reference/settings/server-settings/settings/statistics-cache",
     "ja/reference/settings/server-settings/settings/storage",
     "ja/reference/settings/server-settings/settings/storage-connections",
     "ja/reference/settings/server-settings/settings/tables-loader",

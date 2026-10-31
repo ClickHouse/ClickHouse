@@ -13,9 +13,7 @@ import { VersionHistory } from "/snippets/ar/components/VersionHistory/VersionHi
 
 هذه الإعدادات متاحة في [system.settings](/ar/reference/system-tables/settings)، وقد أُنشئت تلقائيًا من [الشفرة المصدرية](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
-<div id="skip_unavailable_shards">
-  ## skip_unavailable_shards
-</div>
+## skip_unavailable_shards {#skip_unavailable_shards}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -25,17 +23,15 @@ import { VersionHistory } from "/snippets/ar/components/VersionHistory/VersionHi
 
 القيم الممكنة:
 
-* 1 — التخطي مُمكَّن.
+* 1 — التخطي مُمكَّن.
 
-  إذا كانت إحدى الشظايا غير متاحة، يعيد ClickHouse نتيجةً استنادًا إلى بيانات جزئية ولا يُبلغ عن مشكلات توافر العُقد.
+  إذا كانت إحدى الشظايا غير متاحة، يعيد ClickHouse نتيجةً استنادًا إلى بيانات جزئية ولا يُبلغ عن مشكلات توافر العُقد. أما عند القراءة، فإذا جرى تخطي *جميع* الشظايا قبل إعادة أي بيانات، فلن تتبقى بيانات جزئية يمكن إعادتها، ولذلك يُطلق الاستعلام الاستثناء `ALL_CONNECTION_TRIES_FAILED` بدلًا من إعادة نتيجة فارغة. يقتصر هذا الفحص على عمليات القراءة؛ إذ يتعامل `INSERT` بطريقته الخاصة مع حالة عدم توافر عنقود الوجهة بالكامل.
 
-* 0 — التخطي مُعطَّل.
+* 0 — التخطي مُعطَّل.
 
   إذا كانت إحدى الشظايا غير متاحة، يطرح ClickHouse استثناء.
 
-<div id="skip_unavailable_shards_mode">
-  ## skip_unavailable_shards_mode
-</div>
+## skip_unavailable_shards_mode {#skip_unavailable_shards_mode}
 
 <SettingsInfoBlock type="SkipUnavailableShardsMode" default_value="unavailable_or_table_missing" />
 

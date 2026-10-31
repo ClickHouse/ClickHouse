@@ -125,6 +125,7 @@ Aún no es compatible con el control de acceso basado en SQL.
 
 Para autenticarse mediante TOTP, los usuarios deben proporcionar una contraseña principal junto con una contraseña de un solo uso generada por su aplicación TOTP mediante la opción de línea de comandos `--one-time-password` o concatenada a la contraseña principal con el carácter &#39;+&#39;.
 Por ejemplo, si la contraseña principal es `some_password` y el código TOTP generado es `345123`, el usuario puede especificar `--password some_password+345123` o `--password some_password --one-time-password 345123` al conectarse a ClickHouse. Si no se especifica ninguna contraseña, `clickhouse-client` la solicitará de forma interactiva.
+Si no se proporciona ningún código para una cuenta con TOTP, el servidor responde con el error `REQUIRED_SECOND_FACTOR`, tanto si la contraseña es correcta como si no, y `clickhouse-client` solicita el código; la contraseña solo se verifica junto con el código.
 
 Cada código se acepta como máximo una vez, tal como exige [RFC 6238](https://datatracker.ietf.org/doc/html/rfc6238#section-5.2), de modo que un usuario puede autenticarse correctamente como máximo una vez por `period`.
 Tenga esto en cuenta con los clients que se autentican en cada solicitud o conexión (por ejemplo, scripts que usan la interfaz HTTP): cada autenticación necesita un código nuevo.

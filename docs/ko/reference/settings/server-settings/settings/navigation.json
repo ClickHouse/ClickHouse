@@ -1,6 +1,6 @@
 {
-  "directory": "none",
   "group": "서버 설정",
+  "directory": "none",
   "pages": [
     "ko/reference/settings/server-settings/settings",
     "ko/reference/settings/server-settings/settings/access-control",
@@ -38,6 +38,7 @@
     "ko/reference/settings/server-settings/settings/encryption-header",
     "ko/reference/settings/server-settings/settings/format",
     "ko/reference/settings/server-settings/settings/global-profiler",
+    "ko/reference/settings/server-settings/settings/gpu",
     "ko/reference/settings/server-settings/settings/graphite",
     "ko/reference/settings/server-settings/settings/http",
     "ko/reference/settings/server-settings/settings/http-connections",
@@ -112,6 +113,7 @@
     "ko/reference/settings/server-settings/settings/skip",
     "ko/reference/settings/server-settings/settings/snapshot-cleaner",
     "ko/reference/settings/server-settings/settings/startup",
+    "ko/reference/settings/server-settings/settings/statistics-cache",
     "ko/reference/settings/server-settings/settings/storage",
     "ko/reference/settings/server-settings/settings/storage-connections",
     "ko/reference/settings/server-settings/settings/tables-loader",

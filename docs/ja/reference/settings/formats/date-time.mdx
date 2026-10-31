@@ -13,13 +13,13 @@ import { VersionHistory } from "/snippets/ja/components/VersionHistory/VersionHi
 
 これらの設定は、[ソースコード](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/FormatFactorySettings.h) から自動生成されています。
 
-## date_time_64_output_format_cut_trailing_zeros_align_to_groups_of_thousands
+## date_time_64_output_format_cut_trailing_zeros_align_to_groups_of_thousands {#date_time_64_output_format_cut_trailing_zeros_align_to_groups_of_thousands}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 `DateTime64`値の末尾のゼロを動的に削除し、すべての有効桁を保持できるよう、出力スケールを次の3の倍数 ([0, 3, 6, 9]) に切り上げます。小数部がすべてゼロの場合は省略されます。
 
-## date_time_input_format
+## date_time_input_format {#date_time_input_format}
 
 <SettingsInfoBlock type="DateTimeInputFormat" default_value="best_effort" />
 
@@ -46,7 +46,7 @@ import { VersionHistory } from "/snippets/ja/components/VersionHistory/VersionHi
 * [DateTime データ型。](/ja/reference/data-types/datetime)
 * [日付と時刻を扱う関数。](/ja/reference/functions/regular-functions/date-time-functions)
 
-## date_time_output_format
+## date_time_output_format {#date_time_output_format}
 
 <SettingsInfoBlock type="DateTimeOutputFormat" default_value="simple" />
 
@@ -71,17 +71,21 @@ import { VersionHistory } from "/snippets/ja/components/VersionHistory/VersionHi
 * [DateTime データ型](/ja/reference/data-types/datetime)
 * [日付と時刻を扱う関数](/ja/reference/functions/regular-functions/date-time-functions)
 
-## date_time_overflow_behavior
+## date_time_overflow_behavior {#date_time_overflow_behavior}
 
 <SettingsInfoBlock type="DateTimeOverflowBehavior" default_value="ignore" />
 
-[Date](/ja/reference/data-types/date)、[Date32](/ja/reference/data-types/date32)、[DateTime](/ja/reference/data-types/datetime)、[DateTime64](/ja/reference/data-types/datetime64)、または整数を Date、Date32、DateTime、DateTime64 に変換する際、値を変換後の型で表現できない場合の動作を定義します。また、input format による場合を含め、`Date` や `DateTime` をテキストからパースする際にも適用されます。
+[Date](/ja/reference/data-types/date)、[Date32](/ja/reference/data-types/date32)、[DateTime](/ja/reference/data-types/datetime)、[DateTime64](/ja/reference/data-types/datetime64)、[Time](/ja/reference/data-types/time)、[Time64](/ja/reference/data-types/time64)、または数値 (整数および浮動小数点数) を `Date`、`Date32`、`DateTime`、`DateTime64`、`Time`、`Time64` に変換する際、その値を結果の型で表現できない場合の動作を定義します。`Decimal` 値は `DateTime64` と `Time64` にのみ変換でき、これらの変換もこの設定に従います。`Decimal` を `Date`、`Date32`、`DateTime`、`Time` に変換しようとした場合は、この設定に関係なく拒否されます。この設定は、入力形式によるパースを含め、テキストから `Date` または `DateTime` をパースする場合にも適用されます。
 
 設定可能な値:
 
-* `ignore` — オーバーフローを暗黙的に無視します。結果は未定義です。
-* `throw` — オーバーフロー時に例外をスローします。
-* `saturate` — 結果を飽和させます。値が対象の型で表現可能な最小値より小さい場合、結果には表現可能な最小値が設定されます。値が対象の型で表現可能な最大値より大きい場合、結果には表現可能な最大値が設定されます。
+* `ignore` — オーバーフローを通知せずに無視します。日付・時刻型同士の変換では結果は未定義です (値がラップアラウンドする可能性があります) 。数値の場合は、結果の型の範囲の境界値に飽和されます。
+* `throw` — オーバーフローが発生した場合に例外をスローします。
+* `saturate` — 結果を飽和させます。値が変換先の型で表現可能な最小値より小さい場合は、表現可能な最小値が結果となります。値が変換先の型で表現可能な最大値より大きい場合は、表現可能な最大値が結果となります。
+
+厳密なキャスト (`accurateCast`、`accurateCastOrNull`、`accurateCastOrDefault`) はこの設定の影響を受けません。表現できない値は常に、それぞれ拒否される、`NULL` として返される、デフォルト値に置換される、という扱いになります。
+
+この設定は、`INSERT ... VALUES` の式テンプレートや `INSERT ... SELECT` で行われる変換を含め、`CAST` および変換関数による変換に適用されます。一方、`Values` 形式がテンプレートを使わずに評価する定数式 (`input_format_values_interpret_expressions` によって有効化されるフォールバック) と `values` テーブル関数は、`DateTime64` と `Time64` の場合にのみこの設定に従います。これらで `Date`、`Date32`、`DateTime`、`Time` カラムに範囲外の数値を入れた場合、この設定は適用されません。`values` テーブル関数はその値を拒否し、`Values` 形式も同様に拒否します。ただし、`input_format_null_as_default` が有効な場合、`Values` 形式はカラムのデフォルト値を挿入します。
 
 デフォルト値: `ignore`。
 

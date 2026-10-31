@@ -18,10 +18,10 @@ import WideTableWrapper from "/snippets/ja/components/WideTableWrapper/WideTable
   DBサーバーとそのプロトコルを通じて通信するための Java クライアントライブラリです。現在の実装は [HTTP インターフェイス](/ja/concepts/features/interfaces/http) のみをサポートしています。
   このライブラリはサーバーへリクエストを送信するための独自の API を提供します。また、さまざまなバイナリデータフォーマット (RowBinary* &amp; Native*) を扱うためのツールも提供しています。
 
-  ## セットアップ
+  ## セットアップ {#setup}
 
   * Maven Central (プロジェクトのWebページ) : https://mvnrepository.com/artifact/com.clickhouse/client-v2
-  * ナイトリービルド (リポジトリへのリンク) : https://central.sonatype.com/repository/maven-snapshots/
+  * ナイトリービルド (リポジトリへのリンク): https://central.sonatype.com/repository/maven-snapshots/
 
   <br />
 
@@ -53,7 +53,7 @@ import WideTableWrapper from "/snippets/ja/components/WideTableWrapper/WideTable
 
   <br />
 
-  ## 初期化
+  ## 初期化 {#initialization}
 
   Client オブジェクトは `com.clickhouse.client.api.Client.Builder#build()` によって初期化されます。各クライアントは独自のコンテキストを持ち、クライアント間でオブジェクトが共有されることはありません。
   Builder には、便利な設定メソッドが用意されています。
@@ -70,7 +70,7 @@ import WideTableWrapper from "/snippets/ja/components/WideTableWrapper/WideTable
 
   `Client` は `AutoCloseable` であり、不要になったらクローズしてください。
 
-  ### 認証
+  ### 認証 {#authentication}
 
   認証は初期化フェーズでクライアントごとに設定されます。サポートされる認証方式は 3 種類あります：パスワード、アクセストークン、SSL クライアント証明書。
 
@@ -84,12 +84,12 @@ import WideTableWrapper from "/snippets/ja/components/WideTableWrapper/WideTable
           .build();
   ```
 
-  アクセストークンによる認証を行うには、`setAccessToken(String)` を呼び出してアクセストークンを設定する必要があります。
+  アクセストークンまたは Bearerトークン (JWT など) による認証を行うには、`useBearerTokenAuth(String)` (未加工のアクセストークンの場合は `setAccessToken(String)`) を呼び出してトークンを設定する必要があります。
 
   ```java showLineNumbers
    Client client = new Client.Builder()
           .addEndpoint("https://clickhouse-cloud-instance:8443/")
-          .setAccessToken(userAccessToken)
+          .useBearerTokenAuth(userAccessToken)
           .build();
   ```
 
@@ -114,14 +114,43 @@ import WideTableWrapper from "/snippets/ja/components/WideTableWrapper/WideTable
       * 同じ値がデータベースに設定されていることを確認する: `select name, auth_type, auth_params from system.users where auth_type = 'ssl_certificate'` (このクエリを実行すると、`auth_params` に ` {"common_names":["some_user"]}` のような内容が出力されます)
   </Note>
 
-  ## 設定
+  ### 接続プーリング {#connection-pooling}
+
+  `Client` は、内部に HTTP接続プールを持つ Apache HttpClient 5 を使用します。各操作ではプールから接続を取得してリクエストを送信し、レスポンスをストリーミングで受信した後、接続をプールに返却します。
+
+  `Client.Builder` の主な接続プール設定:
+
+  | 設定                | ビルダーメソッド                                                       | デフォルト     | 説明                                          |
+  | ----------------- | -------------------------------------------------------------- | --------- | ------------------------------------------- |
+  | 最大接続数             | `setMaxConnections(int)`                                       | `10`      | サーバーのエンドポイントごとに開いておける HTTP 接続の最大数。          |
+  | 接続の有効期限 (TTL)     | `setConnectionTTL(long, ChronoUnit)`                           | `-1` (無効) | アクティブな接続が閉じられ、再作成されるまでの time-to-live。       |
+  | Keep-Alive タイムアウト | `setKeepAliveTimeout(long, ChronoUnit)`                        | サーバーの既定値  | アイドル状態のプールされた接続を HTTP Keep-Alive で維持する時間。   |
+  | 接続リクエストタイムアウト     | `setConnectionRequestTimeout(long, ChronoUnit)`                | `10000ms` | スレッドが pool から利用可能な接続を取得するまで、ブロックして待機する最大時間。 |
+  | 再利用戦略             | `setConnectionReuseStrategy(ConnectionReuseStrategy strategy)` | `FIFO`    | 接続プールの割り当て戦略 (`FIFO` または `LIFO`)。           |
+  | 接続プーリング           | `enableConnectionPool(boolean enable)`                         | `true`    | HTTP接続プーリングを有効化または無効化します。                   |
+
+  #### 接続プールの推奨設定 {#recommended-connection-pool-configuration}
+
+  ```java showLineNumbers
+  Client client = new Client.Builder()
+          .addEndpoint("https://clickhouse-cloud-instance:8443/")
+          .setUsername("default")
+          .setPassword("secret")
+          .setMaxConnections(50)
+          .setConnectionRequestTimeout(5, TimeUnit.SECONDS)
+          .setKeepAliveTimeout(60, TimeUnit.SECONDS)
+          .setConnectionReuseStrategy(ConnectionReuseStrategy.FIFO)
+          .build();
+  ```
+
+  ## 設定 {#configuration}
 
   すべての設定は、各値のスコープとコンテキストが明確になるように、インスタンスメソッド (別名: 設定メソッド) で定義されています。
   主要な設定パラメーターは、単一のスコープ (クライアントまたは操作) で定義され、互いに上書きしません。
 
   設定はクライアントの作成時に定義されます。`com.clickhouse.client.api.Client.Builder` を参照してください。
 
-  ## クライアント設定
+  ## クライアント設定 {#client-configuration}
 
   <Tabs>
     <Tab title="接続 & エンドポイント">
@@ -203,9 +232,9 @@ import WideTableWrapper from "/snippets/ja/components/WideTableWrapper/WideTable
       | メソッド                                        | 引数                                           | 説明                                                                                                                                                             | デフォルト   | キー                                       |
       | ------------------------------------------- | -------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------- | ---------------------------------------- |
       | `setHttpCookiesEnabled(boolean enabled)`    | `enabled` - 有効/無効を切り替えるフラグ                   | HTTP Cookie を記憶し、サーバーに再送するかどうかを設定します。                                                                                                                          | -       | -                                        |
-      | `httpHeader(String key, String value)`      | `key` - HTTPヘッダーのキー<br />`value` - 文字列の値     | 単一の HTTPヘッダーの値を設定します。以前の値は上書きされます。                                                                                                                             | `none`  | `none`                                   |
-      | `httpHeader(String key, Collection values)` | `key` - HTTPヘッダーのキー<br />`values` - 文字列値のリスト | 単一の HTTPヘッダーの値を設定します。以前の値は上書きされます。                                                                                                                             | `none`  | `none`                                   |
-      | `httpHeaders(Map headers)`                  | `headers` - HTTPヘッダーを含むマップ                   | 複数の HTTPヘッダーの値を一度に設定します。                                                                                                                                       | `none`  | `none`                                   |
+      | `httpHeader(String key, String value)`      | `key` - HTTPヘッダーのキー<br />`value` - 文字列の値     | 単一の HTTPヘッダーの値を設定します。以前の値は上書きされます。                                                                                                                             | `none`  | `http_header_*`                          |
+      | `httpHeader(String key, Collection values)` | `key` - HTTPヘッダーのキー<br />`values` - 文字列値のリスト | 単一の HTTPヘッダーの値を設定します。以前の値は上書きされます。                                                                                                                             | `none`  | `http_header_*`                          |
+      | `httpHeaders(Map headers)`                  | `headers` - HTTPヘッダーを含むマップ                   | 複数の HTTPヘッダーの値を一度に設定します。                                                                                                                                       | `none`  | `http_header_*`                          |
       | `useHttpFormDataForQuery(boolean enable)`   | `enable` - 有効/無効を切り替えるフラグ                    | クエリパラメータを URL ではなくリクエストボディ内の HTTPフォームデータとして送信するかどうかを設定します。これはサーバー側の圧縮でのみ機能します。クライアントレベルの圧縮が有効な場合は、各パラメータが multipart コンテンツとして送信されるため、パラメータ付きのクエリリクエストでは無効になります。 | `false` | `client.http.use_form_request_for_query` |
     </Tab>
 
@@ -225,7 +254,7 @@ import WideTableWrapper from "/snippets/ja/components/WideTableWrapper/WideTable
       | `setServerTimeZone(String timeZone)`           | `timeZone` - Java で有効なタイムゾーン ID      | サーバー側のタイムゾーンを設定します。デフォルトでは UTC タイムゾーンが使用されます。                               | `UTC`  | `server_time_zone`     |
     </Tab>
 
-    <Tab title="詳細">
+    <Tab title="詳細設定">
       | Method                                                                    | Arguments                                                         | Description                                                                                 | Default  | Key                          |
       | ------------------------------------------------------------------------- | ----------------------------------------------------------------- | ------------------------------------------------------------------------------------------- | -------- | ---------------------------- |
       | `setOption(String key, String value)`                                     | `key` - 設定オプションのキー<br />`value` - オプションの値                         | クライアントオプションの値をそのまま設定します。プロパティファイルから設定を読み込む場合に便利です。                                          | -        | -                            |
@@ -244,7 +273,7 @@ import WideTableWrapper from "/snippets/ja/components/WideTableWrapper/WideTable
 
   <br />
 
-  ### クライアントの識別
+  ### クライアントの識別 {#client-identification}
 
   クエリログには、リクエストの送信元アプリケーションを識別する2つのフィールドがあります: `client_name` と `http_user_agent` です。ネイティブTCPプロトコルはアプリケーションの識別に `client_name` を使用し、HTTPプロトコルは `http_user_agent` を使用します。クライアントビルダーには、両プロトコルに対して正しい値を設定するメソッド `setClientName` があります。
   フィールド `http_user_agent` は、`User-Agent` ヘッダーの一般的なフォーマットに従って設定されます: `application-name[/version] [(operating-system; architecture; ...)]`。
@@ -264,7 +293,7 @@ import WideTableWrapper from "/snippets/ja/components/WideTableWrapper/WideTable
 
   アプリケーションは、自身を識別するために独自の HTTP ヘッダー `User-Agent` を設定できます。ただし、`clickhouse-java-v2/0.9.6-SNAPSHOT` の部分がヘッダーの末尾に追加されます。
 
-  ### オペレーションの識別
+  ### オペレーションの識別 {#operation-identification}
 
   クエリログには、操作の識別やクエリログへの追加情報の付加に使用できる `query_id` と `log_comment` という2つのフィールドがあります。
 
@@ -282,7 +311,7 @@ import WideTableWrapper from "/snippets/ja/components/WideTableWrapper/WideTable
   querySettings.logComment("some-comment");
   ```
 
-  ### サーバー設定
+  ### サーバー設定 {#server-settings}
 
   サーバー側の設定は、クライアントレベルでは作成時に一度設定できます (`Builder` の `serverSetting` メソッドを参照) 。また、オペレーションレベルでも設定できます (オペレーション設定クラスの `serverSetting` を参照) 。
 
@@ -309,23 +338,104 @@ import WideTableWrapper from "/snippets/ja/components/WideTableWrapper/WideTable
 
   ⚠️ `setOption` メソッド (`Client.Builder` または操作設定クラス) でオプションを設定する場合、サーバー設定名には `clickhouse_setting_` というプレフィックスを付ける必要があります。この場合、`com.clickhouse.client.api.ClientConfigProperties#serverSetting()` を使用すると便利です。
 
-  ### カスタム HTTP ヘッダー
+  ### カスタム HTTP ヘッダー {#custom-http-headers}
 
-  カスタムHTTPヘッダーは、すべての操作 (クライアントレベル) または個別の操作 (オペレーションレベル) に設定できます。
+  カスタムHTTPヘッダーは、すべての操作 (クライアントレベル) または個別の操作 (オペレーションレベル) に設定できます。操作ごとの設定は、同名の client-level ヘッダーをオーバーライドします。
 
   ```java showLineNumbers
+  Map<String, String> userHeaders = new HashMap<>();
+  userHeaders.put("X-User-Header1", "value1");
+  userHeaders.put("X-User-Header2", "value2");
 
-  QuerySettings settings = new QuerySettings()
-      .httpHeader(HttpHeaders.REFERER, clientReferer)
-      .setQueryId(qId);
-
+  Client client = new Client.Builder()
+          .addEndpoint("https://clickhouse-cloud-instance:8443/")
+          .setUsername(user)
+          .setPassword(password)
+          .httpHeader("X-ClickHouse-Quota", "test")
+          .httpHeader("X-Forwarded-For", Arrays.asList("1.2.3.4", "5.6.7.8"))
+          .httpHeaders(userHeaders)
+          .build();
   ```
 
-  `setOption` メソッド (`Client.Builder` または操作設定クラス) でオプションを設定する場合、カスタムヘッダー名には `http_header_` をプレフィックスとして付ける必要があります。この場合、`com.clickhouse.client.api.ClientConfigProperties#httpHeader()` メソッドが便利です。
+  **重要**: `setOption` (`Client.Builder` または操作設定クラス) でオプションを設定する場合、ヘッダー名には `http_header_` をプレフィックスとして付けてください。`ClientConfigProperties.httpHeader(String)` を使用すると、このキーを生成できます。
+  ヘッダー名は単純な String キーであるため、大文字・小文字を統一する必要があります。統一されていない場合、値が重複し、動作は未定義になります。`ClientConfigProperties.httpHeader(String)` を使用すると、この問題を回避できます。
 
-  ## 共通の定義
+  ```java showLineNumbers
+  clientBuilder.setOption(ClientConfigProperties.httpHeader("X-ClickHouse-Quota"), "test");
+  // equivalent to:
+  clientBuilder.setOption("http_header_X-CLICKHOUSE-QUOTA", "test");
+  ```
 
-  ### ClickHouseFormat
+  ## ClickHouse Cloud の機能 {#clickhouse-cloud-features}
+
+  [ClickHouse Cloud](https://clickhouse.com/cloud) に接続する際に適用される機能です。
+
+  ### レプリカ対応ルーティング (CLOUD) {#replica-aware-routing}
+
+  ClickHouse Cloud では、関連するHTTPリクエストの送信先を同じレプリカに固定できます。`X-ClickHouse-Replica-Tag` ヘッダーを送信すると、Cloud プロキシは同じタグを持つすべてのリクエストを同じレプリカに転送します。一時テーブルなどの session スコープのオブジェクトを使用する場合や、レプリカ内のキャッシュの再利用、書き込み後の読み取り整合性が必要な場合に、この機能を使用してください。
+  詳細: https://clickhouse.com/docs/products/cloud/features/infrastructure/replica-aware-routing.
+
+  **設定する項目:** HTTP ヘッダー `X-ClickHouse-Replica-Tag` (`com.clickhouse.client.api.http.ClickHouseHttpProto.HEADER_REPLICA_TAG`)。同じレプリカで処理する必要があるすべてのリクエストには、同じタグの値を使用してください。
+
+  ```java showLineNumbers
+  String replicaTag = "my-app-session-1";
+
+  try (Client client = new Client.Builder()
+          .addEndpoint("https://your-service.clickhouse.cloud:8443")
+          .setUsername(user)
+          .setPassword(password)
+          .httpHeader(ClickHouseHttpProto.HEADER_REPLICA_TAG, replicaTag)
+          .build()) {
+      client.query("SELECT hostname()").get();
+  }
+  ```
+
+  操作ごとに設定するには、クライアントビルダーではなく、`QuerySettings`、`InsertSettings`、または `CommandSettings` にヘッダーを設定してください。
+
+  ### JWT認証 (CLOUD) {#jwt-authentication}
+
+  [JWT認証](/ja/concepts/features/security/external-authenticators/jwt)を使用すると、ClickHouse Cloud で JSON Web Token (JWT) によるユーザー認証を行えます。ClickHouse は、既存のデータベースユーザーを使用する代わりに、各トークンに含まれるクレームに基づいて**一時ユーザー**を動的に作成します。
+
+  #### 初期設定 {#initial-configuration}
+
+  クライアントで初期の JWT認証を設定するには、`Client` インスタンスの構築時に `useBearerTokenAuth(token)` を使用します (`Bearer_` プレフィックスは自動的に付加されます。
+  [HTTP インターフェースのドキュメント](/ja/concepts/features/security/external-authenticators/jwt#http-interface)を参照してください) 。
+
+  ```java showLineNumbers
+  import com.clickhouse.client.api.Client;
+
+  public Client createJwtClient(String jwtToken) {
+      return new Client.Builder()
+              .addEndpoint("https://your-service.clickhouse.cloud:8443")
+              .useBearerTokenAuth(jwtToken)
+              .build();
+  }
+  ```
+
+  <Note>
+    `useBearerTokenAuth(token)` は、`Authorization` HTTP ヘッダーに `Bearer ` プレフィックスを自動的に付加します。
+  </Note>
+
+  #### 実行時のトークンの更新 {#updating-token-at-runtime}
+
+  JWT は有効期間が短く、一時ユーザーはトークンの存続期間中しか存在しないため、操作が失敗しないよう、現在のトークンの有効期限が切れる**前に**新しい JWT トークンを設定してください。
+
+  クライアントを再作成せずに、既存の `Client` インスタンスのBearerトークンを実行時に更新できます：
+
+  ```java showLineNumbers
+  import com.clickhouse.client.api.Client;
+
+  public void refreshJwtToken(Client client, String newJwtToken) {
+      // Set the new JWT before the current token expires
+      client.updateBearerToken(newJwtToken);
+  }
+  ```
+
+  以降、この `Client` インスタンスでのすべてのリクエストには、更新された JWT トークンが使用されます。
+
+  ## 共通の定義 {#common-definitions}
+
+  ### ClickHouseFormat {#clickhouseformat}
 
   [対応フォーマット](/ja/reference/formats/index)のenumです。ClickHouseがサポートするすべてのフォーマットを含みます。
 
@@ -419,9 +529,9 @@ import WideTableWrapper from "/snippets/ja/components/WideTableWrapper/WideTable
   | [Markdown](/ja/reference/formats/Markdown)                                                                          |   -  |  raw |
   | [Form](/ja/reference/formats/Form)                                                                                  |  raw |   -  |
 
-  ## Insert API
+  ## Insert API {#insert-api}
 
-  ### insert(String tableName, InputStream data, ClickHouseFormat format)
+  ### insert(String tableName, InputStream data, ClickHouseFormat format) {#insertstring-tablename-inputstream-data-clickhouseformat-format}
 
   指定されたフォーマットのバイト列を `InputStream` として受け取ります。`data` は `format` でエンコードされていることが前提です。
 
@@ -462,7 +572,7 @@ import WideTableWrapper from "/snippets/ja/components/WideTableWrapper/WideTable
 
   ```
 
-  ### insert(String tableName, List&lt;?&gt; data, InsertSettings settings)
+  ### insert(String tableName, List&lt;?&gt; data, InsertSettings settings) {#insertstring-tablename-listlt-data-insertsettings-settings}
 
   データベースへ書き込みリクエストを送信します。オブジェクトのリストは効率的なフォーマットに変換され、サーバーに送信されます。リスト要素のクラスは、`register(Class, TableSchema)` メソッドを使用して事前に登録しておく必要があります。
 
@@ -498,7 +608,7 @@ import WideTableWrapper from "/snippets/ja/components/WideTableWrapper/WideTable
   }
   ```
 
-  ### InsertSettings
+  ### InsertSettings {#insertsettings}
 
   挿入操作の設定オプション。
 
@@ -511,10 +621,13 @@ import WideTableWrapper from "/snippets/ja/components/WideTableWrapper/WideTable
   | `setInputStreamCopyBufferSize(int size)`        | コピーバッファのサイズ。書き込み処理時に、ユーザー指定の入力ストリームから出力ストリームへデータをコピーするために使用されるバッファです。デフォルト: `8196`。 |
   | `serverSetting(String name, String value)`      | 操作に対する個別のサーバー設定を行います。                                                               |
   | `serverSetting(String name, Collection values)` | 操作に対して、個別のサーバー設定に複数の値を設定します。コレクションの各項目は `String` 値である必要があります。                       |
+  | `httpHeader(String key, String value)`          | 挿入用のカスタム HTTP ヘッダーを設定します。                                                           |
+  | `httpHeader(String key, Collection values)`     | 複数の値を持つカスタム HTTP ヘッダーを設定します。                                                        |
+  | `httpHeaders(Map headers)`                      | 複数のカスタム HTTP ヘッダーを設定します。                                                            |
   | `setDBRoles(Collection dbRoles)`                | 操作の実行前に設定する DB ロールを指定します。コレクションの項目は `String` 値である必要があります。                           |
   | `setOption(String option, Object value)`        | 構成オプションを生の形式で設定します。これはサーバー設定ではありません。                                                |
 
-  ### InsertResponse
+  ### InsertResponse {#insertresponse}
 
   insertオペレーションの結果を保持するレスポンスオブジェクトです。クライアントがサーバーからレスポンスを受け取った場合にのみ使用できます。
 
@@ -527,9 +640,26 @@ import WideTableWrapper from "/snippets/ja/components/WideTableWrapper/WideTable
   | `OperationMetrics getMetrics()` | 操作のメトリクスを含むオブジェクトを返します。                                |
   | `String getQueryId()`           | アプリケーション (操作設定またはサーバー経由) によってこの操作に割り当てられたクエリ ID を返します。 |
 
-  ## クエリ API
+  ## クエリ API {#query-api}
 
-  ### query(String sqlQuery)
+  **フォーマットの選択**
+
+  Client は、サーバーからのレスポンスストリームへの透過的なアクセスを提供します。ユーザーはリクエストで任意の ClickHouse フォーマットを選択し、`QueryResponse` オブジェクトの `InputStream` を通じてデータを読み取ることができます。
+  フォーマットは次の方法で指定できます：
+
+  * `QuerySettings#setFormat()` を使用すると、リクエストにフォーマットヘッダーが設定されます。
+  * クエリ自体の `FORMAT` 句で指定します。
+  * サーバー設定 `default_format` (/reference/settings/session-settings/default#default&#95;format)
+
+  ClickHouse および Client のバージョンによって、動作に違いがあります:
+
+  * Client &lt; `0.11.0` &amp; ClickHouse &lt; `26.8` - `FORMAT` 句がリクエストのフォーマットヘッダーよりも優先されます。
+  * Client &gt; `0.11.0` &amp; ClickHouse &gt; `26.8` - リクエストヘッダーが `FORMAT` 句よりも優先されます。
+    * `QuerySettings` でフォーマットが指定されていなくても、クライアントがヘッダーを設定するため、クエリ内でフォーマットをオーバーライドできません。
+  * クライアントの `0.11.0` 以降では、`format` のデフォルト値は操作レベルではなくクライアントレベルで設定されます。これにより、既存のコードは
+    変更せずに動作し、新しいコードではクライアントの `format` を `null` に設定することで `FORMAT` 句を使用できます。
+
+  ### query(String sqlQuery) {#querystring-sqlquery}
 
   `sqlQuery` をそのまま送信します。レスポンスのフォーマットはクエリの設定によって決まります。`QueryResponse` はレスポンスストリームへの参照を保持し、対応するフォーマットのリーダーによって読み取られる必要があります。
 
@@ -578,11 +708,11 @@ import WideTableWrapper from "/snippets/ja/components/WideTableWrapper/WideTable
   // put business logic outside of the reading block to release http connection asap.
   ```
 
-  ### query(String sqlQuery, Map&lt;String, Object&gt; queryParams, QuerySettings settings)
+  ### query(String sqlQuery, Map&lt;String, Object&gt; queryParams, QuerySettings settings) {#querystring-sqlquery-mapltstring-object-queryparams-querysettings-settings}
 
   `sqlQuery` をそのまま送信します。また、サーバーがSQL式をコンパイルできるように、クエリパラメータも送信します。
 
-  **署名**
+  **シグネチャ**
 
   ```java
   CompletableFuture<QueryResponse> query(String sqlQuery, Map<String, Object> queryParams, QuerySettings settings)
@@ -626,7 +756,7 @@ import WideTableWrapper from "/snippets/ja/components/WideTableWrapper/WideTable
 
   ```
 
-  ### queryAll(String sqlQuery)
+  ### queryAll(String sqlQuery) {#queryallstring-sqlquery}
 
   `RowBinaryWithNamesAndTypes` フォーマットでデータをクエリします。結果をコレクションとして返します。読み取りパフォーマンスはリーダーと同等ですが、データセット全体を保持するためにより多くのメモリが必要になります。
 
@@ -664,26 +794,29 @@ import WideTableWrapper from "/snippets/ja/components/WideTableWrapper/WideTable
   }
   ```
 
-  ### QuerySettings
+  ### QuerySettings {#querysettings}
 
   クエリ操作の設定オプション。
 
   **設定方法**
 
-  | メソッド                                              | 説明                                                                                                                                |
-  | ------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
-  | `setQueryId(String queryId)`                      | 操作に割り当てるクエリ ID を設定します。                                                                                                            |
-  | `setFormat(ClickHouseFormat format)`              | レスポンスのフォーマットを設定します。完全な一覧は `RowBinaryWithNamesAndTypes` を参照してください。                                                                 |
-  | `setMaxExecutionTime(Integer maxExecutionTime)`   | サーバー上での操作の実行時間を設定します。読み取りタイムアウトには影響しません。                                                                                          |
-  | `waitEndOfQuery(Boolean waitEndOfQuery)`          | レスポンスを送信する前にクエリが終了するまで待機するよう、サーバーに要求します。                                                                                          |
-  | `setUseServerTimeZone(Boolean useServerTimeZone)` | サーバーのタイムゾーン (クライアント設定を参照) を使用して、操作結果の日付/時刻型を解析します。既定値は `false` です。                                                                |
-  | `setUseTimeZone(String timeZone)`                 | サーバーに、時刻変換で `timeZone` を使用するよう要求します。[session&#95;timezone](/ja/reference/settings/session-settings/other#session_timezone)を参照してください。 |
-  | `serverSetting(String name, String value)`        | 操作に対する個別のサーバー設定を行います。                                                                                                             |
-  | `serverSetting(String name, Collection values)`   | 操作に対して、個別のサーバー設定に複数の値を設定します。コレクションの各項目は `String` 値である必要があります。                                                                     |
-  | `setDBRoles(Collection dbRoles)`                  | 操作の実行前に設定する DB ロールを指定します。コレクションの項目は `String` 値である必要があります。                                                                         |
-  | `setOption(String option, Object value)`          | 構成オプションを生の形式で設定します。これはサーバー設定ではありません。                                                                                              |
+  | メソッド                                              | 説明                                                                                                                          |
+  | ------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------- |
+  | `setQueryId(String queryId)`                      | 操作に割り当てるクエリ ID を設定します。                                                                                                      |
+  | `setFormat(ClickHouseFormat format)`              | レスポンスのフォーマットを設定します。完全な一覧は `RowBinaryWithNamesAndTypes` を参照してください。                                                           |
+  | `setMaxExecutionTime(Integer maxExecutionTime)`   | サーバー上での操作の実行時間を設定します。読み取りタイムアウトには影響しません。                                                                                    |
+  | `waitEndOfQuery(Boolean waitEndOfQuery)`          | レスポンスを送信する前にクエリが終了するまで待機するよう、サーバーに要求します。                                                                                    |
+  | `setUseServerTimeZone(Boolean useServerTimeZone)` | サーバーのタイムゾーン (クライアント設定を参照) を使用して、操作結果の日付/時刻型を解析します。既定値は `false` です。                                                          |
+  | `setUseTimeZone(String timeZone)`                 | サーバーに、時刻変換で `timeZone` を使用するよう要求します。[session&#95;timezone](/ja/reference/settings/session-settings#session_timezone)を参照してください。 |
+  | `serverSetting(String name, String value)`        | 操作に対する個別のサーバー設定を行います。                                                                                                       |
+  | `serverSetting(String name, Collection values)`   | 操作に対して、個別のサーバー設定に複数の値を設定します。コレクションの各項目は `String` 値である必要があります。                                                               |
+  | `httpHeader(String key, String value)`            | クエリにカスタム HTTP ヘッダーを設定します。                                                                                                   |
+  | `httpHeader(String key, Collection values)`       | 複数の値を持つカスタム HTTP ヘッダーを設定します。                                                                                                |
+  | `httpHeaders(Map headers)`                        | 複数のカスタム HTTP ヘッダーを設定します。                                                                                                    |
+  | `setDBRoles(Collection dbRoles)`                  | 操作の実行前に設定する DB ロールを指定します。コレクションの項目は `String` 値である必要があります。                                                                   |
+  | `setOption(String option, Object value)`          | 構成オプションを生の形式で設定します。これはサーバー設定ではありません。                                                                                        |
 
-  ### QueryResponse
+  ### QueryResponse {#queryresponse}
 
   クエリ実行の結果を保持するレスポンスオブジェクトです。クライアントがサーバーからレスポンスを受け取った場合にのみ使用できます。
 
@@ -699,14 +832,14 @@ import WideTableWrapper from "/snippets/ja/components/WideTableWrapper/WideTable
   | `String getQueryId()`           | アプリケーションによってその操作に割り当てられたクエリ ID を返します (操作設定または server により割り当て) 。 |
   | `TimeZone getTimeZone()`        | レスポンス内の Date/DateTime types を処理する際に使用するタイムゾーンを返します。             |
 
-  ### 例
+  ### 例 {#examples}
 
   * サンプルコードは[リポジトリ](https://github.com/ClickHouse/clickhouse-java/tree/main/examples/client-v2)で公開されています
   * Spring Service のリファレンス [実装](https://github.com/ClickHouse/clickhouse-java/tree/main/examples/demo-service)
 
-  ## 共通API
+  ## 共通API {#common-api}
 
-  ### getTableSchema(String table)
+  ### getTableSchema(String table) {#gettableschemastring-table}
 
   `table` のテーブルスキーマを取得します。
 
@@ -727,7 +860,7 @@ import WideTableWrapper from "/snippets/ja/components/WideTableWrapper/WideTable
 
   テーブルのカラム一覧を含む `TableSchema` オブジェクトを返します。
 
-  ### getTableSchemaFromQuery(String sql)
+  ### getTableSchemaFromQuery(String sql) {#gettableschemafromquerystring-sql}
 
   SQLステートメントからスキーマを取得します。
 
@@ -745,9 +878,9 @@ import WideTableWrapper from "/snippets/ja/components/WideTableWrapper/WideTable
 
   `sql` 式に対応するカラムを含む `TableSchema` オブジェクトを返します。
 
-  ### TableSchema
+  ### TableSchema {#tableschema}
 
-  ### register(Class&lt;?&gt; clazz, TableSchema schema)
+  ### register(Class&lt;?&gt; clazz, TableSchema schema) {#registerclasslt-clazz-tableschema-schema}
 
   `schema` を使用してデータの書き込み・読み込みを行う Java クラス向けに、シリアライゼーションおよびデシリアライゼーションのレイヤーをコンパイルします。このメソッドは、getter/setter のペアと対応するカラムに対して、シリアライザーとデシリアライザーを生成します。
   カラムの照合は、メソッド名からカラム名を抽出することで行われます。たとえば、`getFirstName` はカラム `first_name` または `firstname` に対応します。
@@ -770,7 +903,7 @@ import WideTableWrapper from "/snippets/ja/components/WideTableWrapper/WideTable
   client.register(ArticleViewEvent.class, client.getTableSchema(TABLE_NAME));
   ```
 
-  ## 使用例
+  ## 使用例 {#usage-examples}
 
   完全なサンプルコードは、リポジトリの &#39;example&#96; [フォルダ](https://github.com/ClickHouse/clickhouse-java/tree/main/examples) に保存されています：
 
@@ -778,7 +911,7 @@ import WideTableWrapper from "/snippets/ja/components/WideTableWrapper/WideTable
   * [demo-service](https://github.com/ClickHouse/clickhouse-java/tree/main/examples/demo-service) - Spring Boot アプリケーションでクライアントを使用する方法を示す例。
   * [demo-kotlin-service](https://github.com/ClickHouse/clickhouse-java/tree/main/examples/demo-kotlin-service) - Ktor (Kotlin) アプリケーションでクライアントを使用する方法を示す例。
 
-  ## データの読み取り
+  ## データの読み取り {#reading-data}
 
   データを読み取る一般的な方法は2つあります。
 
@@ -790,7 +923,7 @@ import WideTableWrapper from "/snippets/ja/components/WideTableWrapper/WideTable
 
   **注意:** ストリーミング方式では、データがネットワークストリームから直接読み取られるため、読み取りが遅いとサーバーの書き込みタイムアウトが発生する可能性があります。十分な読み取り速度を確保してください。
 
-  ### 配列の読み取り
+  ### 配列の読み取り {#reading-arrays}
 
   **`ClickHouseBinaryFormatReader` のメソッド**
 
@@ -842,7 +975,191 @@ import WideTableWrapper from "/snippets/ja/components/WideTableWrapper/WideTable
   }
   ```
 
-  ## 移行ガイド
+  ## オブザーバビリティと監視 {#v2-o11y}
+
+  ClickHouse Java クライアント (V2) は、OpenTelemetry のセマンティック規約と Micrometer メトリクスに基づいて設計された、組み込みのオブザーバビリティ機能を提供します。このクライアントでは、操作の所要時間、スループット、再試行、サーバーの実行統計、接続プールのステータス、および分散トレーシングのスパンを監視できます。
+
+  クライアント V2 の設定、コネクションプーリング、`@Async` の境界をまたぐトレースコンテキストの伝播、テレメトリーとの完全なインテグレーションを実装した、本番環境を想定した Spring Boot アプリケーションの完全な例については、このリポジトリの `examples/demo-spring-service` モジュールを参照してください。
+
+  ### Client Builder のオブザーバビリティ API {#v2-o11y-builder-api}
+
+  `Client.Builder` には、オブザーバビリティとメトリクス収集を設定するための主要なメソッドが3つ用意されています：
+
+  * `setMetricsRecorder(MetricsRecorder recorder)`: 運用メトリクス (所要時間、出現回数、再試行、エラー) をエクスポートするためのメトリクスレコーダーを登録します。明示的に設定しない場合のデフォルトは `DefaultMetricsRecorder.NOOP` です。
+  * `setSpanRecorder(SpanRecorder recorder)`: 分散トレーシング用のスパンレコーダー (操作スパンおよびトランスポートリクエストスパン) を登録します。明示的に設定しない場合のデフォルトは `DefaultSpanRecorder.NOOP` です。
+  * `registerClientMetrics(Object registry, String groupName)`: Apache HttpClient の接続プールのメトリクス (利用可能な接続数、リース中の接続数、保留中のリクエスト数、接続の作成時間など) を Micrometer の `MeterRegistry` にバインドします。
+
+  **依存関係の要件**
+
+  組み込みの `OpenTelemetrySpanRecorder` クラスと `MicrometerMetricsRecorder` クラスは、`client-v2` パッケージの一部として提供されています。ただし、これらを使用するには、ランタイムにおいてアプリケーションのクラスパス上に OpenTelemetry API (`io.opentelemetry:opentelemetry-api`) および Micrometer (`io.micrometer:micrometer-core`) ライブラリが存在している必要があります。メインのクライアントアーティファクトには、これらのサードパーティ製の依存関係は同梱されておらず、推移的に取り込まれることもありません。OpenTelemetry のトレーシングや Micrometer のメトリクスを使用するアプリケーションでは、プロジェクトのビルド設定 (`pom.xml` または `build.gradle`) でこれらの依存関係を明示的に宣言する必要があります。
+
+  **Builder の設定例**
+
+  ```java
+  import com.clickhouse.client.api.Client;
+  import com.clickhouse.client.api.observability.micrometer.MicrometerMetricsRecorder;
+  import com.clickhouse.client.api.observability.otel.OpenTelemetrySpanRecorder;
+
+  import io.micrometer.core.instrument.MeterRegistry;
+  import io.opentelemetry.api.OpenTelemetry;
+
+  public Client createObservedClient(MeterRegistry meterRegistry, OpenTelemetry openTelemetry) {
+      return new Client.Builder()
+          .addEndpoint("http://localhost:8123")
+          .setUsername("default")
+          .setPassword("secret")
+          .setMetricsRecorder(new MicrometerMetricsRecorder(meterRegistry))
+          .setSpanRecorder(new OpenTelemetrySpanRecorder(openTelemetry))
+          .registerClientMetrics(meterRegistry, "clickhouse-client-pool")
+          .build();
+  }
+  ```
+
+  **連携方法**
+
+  アプリケーションにオブザーバビリティを組み込むには、主に次の2つのパターンがあります。
+
+  1. **OpenTelemetry エージェント &amp; グローバル自動設定**：
+     * OpenTelemetry Java Agent またはグローバル SDK の自動設定を使用しているアプリケーションでは、`OpenTelemetrySpanRecorder` と `MicrometerMetricsRecorder` を、引数なしのデフォルトコンストラクターでインスタンス化してください。
+     * デフォルトコンストラクターは、`GlobalOpenTelemetry.get()` と Micrometer の `Metrics.globalRegistry` に自動的にバインドされます。
+  2. **明示的なクライアントレベルの連携**:
+     * 明示的に作成した `OpenTelemetry`、`Tracer`、または Micrometer の `MeterRegistry` インスタンスを、レコーダーのコンストラクターに直接渡します。
+     * 互いに分離された複数のクライアントや、それぞれ独立したテレメトリーシンクを持つ multi-tenant サービスを管理する場合に最適です。
+
+  ```java
+  import com.clickhouse.client.api.Client;
+  import com.clickhouse.client.api.observability.micrometer.MicrometerMetricsRecorder;
+  import com.clickhouse.client.api.observability.otel.OpenTelemetrySpanRecorder;
+
+  public Client.Builder configureGlobalTelemetry(Client.Builder builder) {
+      return builder
+          .setMetricsRecorder(new MicrometerMetricsRecorder()) // uses Metrics.globalRegistry
+          .setSpanRecorder(new OpenTelemetrySpanRecorder());    // uses GlobalOpenTelemetry
+  }
+  ```
+
+  ### 報告されるメトリクス {#v2-o11y-metrics}
+
+  #### オペレーションメトリクス {#operational-metrics}
+
+  `MetricsRecorder` 経由でエクスポートされたメトリクスは、データベースクライアントメトリクスに関する OpenTelemetry のセマンティック規約 (`MetricName` および `MetricAttribute`) に準拠します:
+
+  | メトリクス名                                               | 型 / 単位                | 説明                                                          |
+  | ---------------------------------------------------- | --------------------- | ----------------------------------------------------------- |
+  | `db.client.operation.duration`                       | タイマー (`s`)            | ClickHouse クライアントの操作 (クエリと挿入処理) の所要時間。操作の成功・失敗にかかわらず記録されます。 |
+  | `clickhouse.client.operation.serialization.duration` | タイマー (`s`)            | シリアライゼーション処理の所要時間 (例：挿入処理中の POJO のシリアライゼーション) 。             |
+  | `clickhouse.client.operation.count`                  | カウンター (`{operation}`) | 完了したクライアント操作の総数。結果別に集計されます。                                 |
+  | `clickhouse.client.operation.retries`                | カウンター (`{retry}`)     | クライアント操作全体での再試行回数。                                          |
+
+  #### メトリクスの属性 / タグ {#metric-attributes-tags}
+
+  `MicrometerMetricsRecorder` によって作成されるメーターには、低カーディナリティのタグ (`MetricAttribute`) が付与されます:
+
+  | 属性キー                      | 説明                           | 値の例                                         |
+  | ------------------------- | ---------------------------- | ------------------------------------------- |
+  | `db.system.name`          | データベースシステムの識別子。              | `clickhouse`                                |
+  | `db.namespace`            | 対象のデータベース名。                  | `default`, `analytics`                      |
+  | `db.operation.name`       | 操作の種類。                       | `query`, `insert`                           |
+  | `db.collection.name`      | ターゲットテーブル名 (挿入処理時に記録) 。      | `events`                                    |
+  | `db.response.status_code` | 失敗時にClickHouseサーバーが返すエラーコード。 | `60`                                        |
+  | `error.type`              | 失敗時は例外クラス名、成功時は `none`。      | `com.clickhouse.client.api.ServerException` |
+
+  #### コネクションプールのメトリクス {#connection-pool-metrics}
+
+  `registerClientMetrics(meterRegistry, "groupName")` を呼び出すと、HTTP接続プールの Gauge が Micrometer に登録されます:
+
+  * `httpcomponents.httpclient.pool.total.max`: 設定済みの永続接続の最大許容数。
+  * `httpcomponents.httpclient.pool.total.connections` (`state="available"` または `state="leased"` のタグ付き): プール内の有効な接続数。
+  * `httpcomponents.httpclient.pool.total.pending`: 空き接続を待機している接続リクエストの数。
+  * `httpcomponents.httpclient.pool.route.max.default`: 設定済みのルートごとのデフォルト最大接続数。
+  * `httpcomponents.httpclient.connect.time`: 接続確立時間の移動平均。
+
+  #### レスポンスメトリクス API {#response-metrics-api}
+
+  メトリクスレコーダーに加えて、レスポンスオブジェクト (`QueryResponse`、`InsertResponse`) からも `OperationMetrics` を介して詳細な実行統計に直接アクセスできます。
+
+  ```java
+  import com.clickhouse.client.api.Client;
+  import com.clickhouse.client.api.metrics.ClientMetrics;
+  import com.clickhouse.client.api.metrics.OperationMetrics;
+  import com.clickhouse.client.api.metrics.ServerMetrics;
+  import com.clickhouse.client.api.query.QueryResponse;
+
+  public void inspectResponseMetrics(Client client) throws Exception {
+      try (QueryResponse response = client.query("SELECT * FROM my_table").get()) {
+          OperationMetrics metrics = response.getMetrics();
+          long readRows = metrics.getMetric(ServerMetrics.NUM_ROWS_READ).getLong();
+          long readBytes = metrics.getMetric(ServerMetrics.NUM_BYTES_READ).getLong();
+          long durationMs = metrics.getMetric(ClientMetrics.OP_DURATION).getLong();
+      }
+  }
+  ```
+
+  ### 送信されるスパン {#v2-o11y-spans}
+
+  Client V2 のトレーシングでは、親子の階層構造を持つ 2 種類のスパンが生成されます。
+
+  1. **Operation Span**: 高レベルのクライアント操作 (`QUERY <database>` または `INSERT <database>.<table_name>`) を表します。現在のスレッドのトレースコンテキスト (`Context.current()`) 配下で開始されるため、データベース操作は呼び出し元の有効なトレーススパンに紐付けられます。
+  2. **Transport Request Span**: 個々の HTTP トランスポートリクエストの試行 (`POST`) を表します。対応する操作スパンの子として作成されます。再試行のたびに、操作スパンの配下に新しいトランスポートリクエストスパンが作成されます。
+
+  #### スパンの属性 {#v2-o11y-span-attributes}
+
+  スパンには標準の OpenTelemetry 属性 (`SpanAttribute`) が設定されます:
+
+  | スパン属性キー                             | スコープ / 型               | 記録タイミング             | 説明                                                                 |
+  | ----------------------------------- | ---------------------- | ------------------- | ------------------------------------------------------------------ |
+  | `db.system.name`                    | すべての操作                 | リクエスト開始前            | 常に `clickhouse` です。                                                |
+  | `db.namespace`                      | すべての操作                 | リクエスト開始前            | 対象のデータベース名。                                                        |
+  | `db.query.text`                     | クエリ                    | リクエスト開始前            | クエリまたはコマンドの SQL ステートメントのテキスト。                                      |
+  | `db.collection.name`                | 挿入                     | リクエスト開始前            | ターゲットテーブル名。                                                        |
+  | `db.operation.name`                 | 挿入                     | リクエスト開始前            | 操作の種別 (`INSERT`)。挿入操作では設定されますが、クエリではクライアント側で SQL をパースしないため設定されません。 |
+  | `db.operation.batch.size`           | 挿入                     | リクエスト開始前            | 挿入バッチ内の項目数。                                                        |
+  | `db.query.parameter.<name>`         | クエリ                    | リクエスト開始前            | ステートメントのパラメータ値。                                                    |
+  | `clickhouse.query_id`               | すべての操作                 | リクエスト開始前に記録し、完了時に更新 | クライアントまたはサーバーによって割り当てられた ClickHouse クエリ ID。                        |
+  | `db.response.returned_rows`         | クエリ                    | 正常完了時               | サーバーが返した行数。                                                        |
+  | `clickhouse.response.read_rows`     | クエリ                    | 正常完了時               | サーバーがストレージから読み取った行数。                                               |
+  | `clickhouse.response.read_bytes`    | クエリ                    | 正常完了時               | サーバーがストレージから読み取ったバイト数。                                             |
+  | `clickhouse.response.written_rows`  | 挿入                     | 正常完了時               | サーバーによってストレージに書き込み済みの行数。                                           |
+  | `clickhouse.response.written_bytes` | 挿入                     | 正常完了時               | サーバーによってストレージに書き込み済みのバイト数。                                         |
+  | `server.address`                    | トランスポートリクエスト           | 試行前                 | 接続先サーバーのホスト名またはIPアドレス。                                             |
+  | `server.port`                       | トランスポートリクエスト           | 試行前                 | 接続先サーバーのポート。                                                       |
+  | `http.request.method`               | トランスポートリクエスト           | 試行前                 | HTTP メソッド (常に `POST`) 。                                            |
+  | `http.response.status_code`         | トランスポートリクエスト           | 応答時 / 失敗時           | サーバーが返す HTTP ステータスコード (例：`200`、`500`) 。                            |
+  | `db.response.status_code`           | すべて &amp; トランスポートリクエスト | 失敗時                 | 失敗時のClickHouseサーバーのエラーコード。                                         |
+  | `error.type`                        | すべて &amp; トランスポートリクエスト | 失敗時                 | エラー発生時の例外クラス名。                                                     |
+
+  <Note>
+    **非同期境界をまたいだコンテキストの伝播:** クライアント V2 は `Context.current()` を継承するため、有効なトレーススパンを持つスレッド上で開始された操作は、自動的にそのトレースに組み込まれます。スレッドプール間でタスクを委譲する場合 (例: Spring の `@Async` やカスタムの `ExecutorService`) は、OpenTelemetry のコンテキストを明示的に伝播させてください。
+
+    ```java
+    import io.opentelemetry.context.Context;
+    import io.opentelemetry.context.Scope;
+    import com.clickhouse.client.api.Client;
+    import com.clickhouse.client.api.insert.InsertResponse;
+
+    public void processBatchAsync(Client client, String table, List<?> data, Context parentContext) throws Exception {
+        try (Scope ignored = parentContext.makeCurrent()) {
+            try (InsertResponse response = client.insert(table, data).get()) {
+                // Background Client V2 span joins parentContext trace
+            }
+        }
+    }
+    ```
+  </Note>
+
+  ### カスタムレコーダーの開発 {#v2-o11y-custom-recorders}
+
+  独自のオブザーバビリティバックエンドを使用するアプリケーションでは、`DefaultMetricsRecorder` (メトリクス用) または `DefaultSpanRecorder` (トレーシング用) を拡張することで、カスタムレコーダーを実装できます。
+
+  * **`DefaultMetricsRecorder`**: `MetricsRecorder` の基本実装です。`recordQuerySuccess` や `recordQueryFailure` など、必要なコールバックをオーバーライドして使用します。標準のメトリクス名 (`MetricName`)、単位、および属性の Map (`MetricAttribute`) を導出するには、`MetricsSupport.DEFAULT` を使用します。
+  * **`DefaultSpanRecorder`**: `SpanRecorder` の基本実装です。`startQuerySpan`、`startInsertSpan`、`startRequestSpan` などのスパン作成コールバックをオーバーライドして使用します。標準の OpenTelemetry スパン名および属性 (`SpanAttribute`) を算出するには、`SpanSupport.DEFAULT` を使用します。
+
+  本番環境向けのリファレンス実装としては、組み込みのクライアントクラスを参照してください:
+
+  * `com.clickhouse.client.api.observability.otel.OpenTelemetrySpanRecorder` (OpenTelemetry トレーシングとのインテグレーション)
+  * `com.clickhouse.client.api.observability.micrometer.MicrometerMetricsRecorder` (Micrometer メトリクスとのインテグレーション)
+
+  ## 移行ガイド {#migration_guide}
 
   旧クライアント (V1) では`com.clickhouse.client.ClickHouseClient#builder`を起点として使用していました。新クライアント (V2) では`com.clickhouse.client.api.Client.Builder`を用いた同様のパターンを採用しています。主な相違点は以下のとおりです：
 
@@ -850,7 +1167,7 @@ import WideTableWrapper from "/snippets/ja/components/WideTableWrapper/WideTable
   * 設定の定義元が少なくなりました。1 つはビルダーに渡され、もう 1 つは操作設定 (`QuerySettings`、`InsertSettings`) にあります。以前のバージョンではノードごとの設定があり、場合によっては
     環境変数を読み込んでいました。
 
-  ### 設定パラメーターの一致
+  ### 設定パラメーターの一致 {#migration_from_v1_config}
 
   V1にはconfigurationに関連するenumクラスが3つあります：
 
@@ -1049,13 +1366,13 @@ import WideTableWrapper from "/snippets/ja/components/WideTableWrapper/WideTable
     </Tab>
   </Tabs>
 
-  ### 主な相違点
+  ### 主な相違点 {#general-differences}
 
   * Client V2 は、移植性を高めるために独自クラスへの依存を減らしています。たとえば、V2 では、サーバーにデータを書き込む際に `java.io.InputStream` の任意の実装を利用できます。
   * Client V2 の `async` 設定は、デフォルトで `off` です。これは、余分なスレッドが作成されず、クライアントをアプリケーション側でより細かく制御できることを意味します。この設定は、ほとんどのユースケースで `off` のままにしておくべきです。`async` を有効にすると、リクエストごとに別スレッドが作成されます。これは、アプリケーション側で制御する
     executor を使用する場合にのみ意味があります (`com.clickhouse.client.api.Client.Builder#setSharedOperationExecutor` を参照)
 
-  ### データの書き込み
+  ### データの書き込み {#writing-data}
 
   * `java.io.InputStream` の任意の実装を使用できます。V1 の `com.clickhouse.data.ClickHouseInputStream` もサポートされていますが、推奨はされていません。
   * 入力ストリームの終端が検出されると、それに応じて処理されます。従来は、リクエストの出力ストリームを閉じる必要がありました。
@@ -1107,7 +1424,7 @@ import WideTableWrapper from "/snippets/ja/components/WideTableWrapper/WideTable
   * 新しい低レベルAPI `com.clickhouse.client.api.Client#insert(java.lang.String, java.util.List<java.lang.String>, com.clickhouse.client.api.DataStreamWriter, com.clickhouse.data.ClickHouseFormat, com.clickhouse.client.api.insert.InsertSettings)` が利用できます。`com.clickhouse.client.api.DataStreamWriter` は、カスタムのデータ書き込みロジックを実装できるように設計されています。たとえば、キューからデータを読み取る
     ケースです。
 
-  ### データの読み取り
+  ### データの読み取り {#reading-data-2}
 
   * デフォルトでは、データは`RowBinaryWithNamesAndTypes`フォーマットで読み込まれます。現時点で、データのバインディングが必要な場合に対応しているのはこのフォーマットのみです。
   * データは、`List<GenericRecord> com.clickhouse.client.api.Client#queryAll(java.lang.String)`メソッドを使用して、レコードのコレクションとして読み取ることができます。これにより、データはメモリに読み込まれ、connection は解放されます。追加の処理は必要ありません。`GenericRecord`を使うとデータにアクセスでき、いくつかの変換も行えます。
@@ -1132,7 +1449,7 @@ import WideTableWrapper from "/snippets/ja/components/WideTableWrapper/WideTable
     このライブラリはまもなく非推奨となります。新規プロジェクトでは、最新の [Java クライアント](/ja/integrations/language-clients/java/client) を使用してください
   </Warning>
 
-  ## Setup
+  ## Setup {#v1-setup}
 
   <Tabs>
     <Tab title="Maven">
@@ -1190,7 +1507,7 @@ import WideTableWrapper from "/snippets/ja/components/WideTableWrapper/WideTable
     </Tab>
   </Tabs>
 
-  ## 初期化
+  ## 初期化 {#v1-initialization}
 
   接続 URL の形式: `protocol://host[:port][/database][?param[=value][&param[=value]][#tag[,tag]]`、例:
 
@@ -1211,7 +1528,7 @@ import WideTableWrapper from "/snippets/ja/components/WideTableWrapper/WideTable
       + "?load_balancing_policy=random&health_check_interval=5000&failover=2");
   ```
 
-  ## クエリ API
+  ## クエリ API {#v1-query-api}
 
   ```java showLineNumbers
   try (ClickHouseClient client = ClickHouseClient.newInstance(ClickHouseProtocol.HTTP);
@@ -1225,7 +1542,7 @@ import WideTableWrapper from "/snippets/ja/components/WideTableWrapper/WideTable
   }
   ```
 
-  ## ストリーミングクエリAPI
+  ## ストリーミングクエリAPI {#v1-streaming-query-api}
 
   ```java showLineNumbers
   try (ClickHouseClient client = ClickHouseClient.newInstance(ClickHouseProtocol.HTTP);
@@ -1236,7 +1553,7 @@ import WideTableWrapper from "/snippets/ja/components/WideTableWrapper/WideTable
           .executeAndWait()) {
               for (ClickHouseRecord r : response.records()) {
               int num = r.getValue(0).asInteger();
-              // 型変換
+              // type conversion
               String str = r.getValue(0).asString();
               LocalDate date = r.getValue(0).asDate();
           }
@@ -1245,14 +1562,15 @@ import WideTableWrapper from "/snippets/ja/components/WideTableWrapper/WideTable
 
   [リポジトリ](https://github.com/ClickHouse/clickhouse-java/tree/main/examples/client)内の[完全なコード例](https://github.com/ClickHouse/clickhouse-java/blob/main/examples/client/src/main/java/com/clickhouse/examples/jdbc/Main.java#L73)を参照してください。
 
-  ## Insert API
+  ## Insert API {#v1-insert-api}
 
   ```java showLineNumbers
+
   try (ClickHouseClient client = ClickHouseClient.newInstance(ClickHouseProtocol.HTTP);
        ClickHouseResponse response = client.read(servers).write()
           .format(ClickHouseFormat.RowBinaryWithNamesAndTypes)
           .query("insert into my_table select c2, c3 from input('c1 UInt8, c2 String, c3 Int32')")
-          .data(myInputStream) // `myInputStream` は RowBinary フォーマットのデータソース
+          .data(myInputStream) // `myInputStream` is source of data in RowBinary format
           .executeAndWait()) {
               ClickHouseResponseSummary summary = response.getSummary();
               summary.getWrittenRows();
@@ -1267,9 +1585,9 @@ import WideTableWrapper from "/snippets/ja/components/WideTableWrapper/WideTable
 
   [コード](https://github.com/ClickHouse/clickhouse-kafka-connect/blob/main/src/main/java/com/clickhouse/kafka/connect/sink/db/ClickHouseWriter.java#L622)の例を参照してください。
 
-  ## 機能
+  ## 機能 {#v1-features}
 
-  ### 圧縮
+  ### 圧縮 {#v1-compression}
 
   クライアントはデフォルトで LZ4 圧縮を使用します。これには次の依存関係が必要です。
 
@@ -1316,7 +1634,7 @@ import WideTableWrapper from "/snippets/ja/components/WideTableWrapper/WideTable
 
   さまざまな圧縮オプションの詳細については、[圧縮ドキュメント](/ja/guides/clickhouse/data-modelling/compression/compression-modes)を参照してください。
 
-  ### 複数のクエリ
+  ### 複数のクエリ {#v1-multiple-queries}
 
   同一セッション内でワーカースレッドを使用して複数のクエリを順番に実行する:
 
@@ -1332,7 +1650,7 @@ import WideTableWrapper from "/snippets/ja/components/WideTableWrapper/WideTable
   List<ClickHouseResponseSummary> results = future.get();
   ```
 
-  ### 名前付きパラメータ
+  ### 名前付きパラメータ {#v1-named-parameters}
 
   パラメータリスト内の位置に依存せず、名前でパラメータを渡すことができます。この機能は `params` 関数を使用して利用できます。
 
@@ -1384,7 +1702,7 @@ import WideTableWrapper from "/snippets/ja/components/WideTableWrapper/WideTable
     `Integer`、`UUID`、`Array`、`Enum` などの他の型も、`params` 内で自動的に変換されます。
   </Info>
 
-  ## ノードディスカバリー
+  ## ノードディスカバリー {#v1-node-discovery}
 
   Java クライアントには、ClickHouse ノードを自動的に検出する機能があります。自動検出はデフォルトで無効です。手動で有効にするには、`auto_discovery` を `true` に設定します。
 
@@ -1408,7 +1726,7 @@ import WideTableWrapper from "/snippets/ja/components/WideTableWrapper/WideTable
   | node&#95;discovery&#95;interval | `0`     | ノード検出の間隔 (ミリ秒) 。0 以下の値は一回限りの検出を意味します。                           |
   | node&#95;discovery&#95;limit    | `100`   | 一度に検出可能なノードの最大数。値が0以下の場合は、制限なしを意味します。                           |
 
-  ### 負荷分散
+  ### 負荷分散 {#v1-load-balancing}
 
   Java クライアントは、ロードバランシングポリシーに従って、リクエストの送信先となる ClickHouse ノードを選択します。一般に、ロードバランシングポリシーは次の役割を担います。
 
@@ -1427,7 +1745,7 @@ import WideTableWrapper from "/snippets/ja/components/WideTableWrapper/WideTable
   | node&#95;check&#95;interval   | `0`                                      | ノードチェックの間隔をミリ秒単位で指定します。負の値は 0 として扱われます。前回のチェックから指定した時間が経過している場合に、そのノードの status がチェックされます。<br />`health_check_interval` と `node_check_interval` の違いは、`health_check_interval` オプションはノードのリスト (すべてまたは障害のあるノード) の status をチェックするバックグラウンドジョブをスケジュールするのに対し、`node_check_interval` は特定のノードについて前回のチェックからどれだけ時間が経過している必要があるかを指定する点です |
   | check&#95;all&#95;nodes       | `false`                                  | ヘルスチェックの対象をすべてのノードにするか、障害のあるノードのみにするか。                                                                                                                                                                                                                                                                                    |
 
-  ### フェイルオーバーと再試行
+  ### フェイルオーバーと再試行 {#v1-failover-and-retry}
 
   Java クライアントは、失敗したクエリに対するフェイルオーバーと再試行の動作を設定するための設定オプションを提供します。
 
@@ -1437,20 +1755,49 @@ import WideTableWrapper from "/snippets/ja/components/WideTableWrapper/WideTable
   | retry                              | `0`    | リクエストに対して再試行を実行できる最大回数です。ゼロまたは負の値は、再試行しないことを意味します。再試行では、ClickHouse server が `NETWORK_ERROR` エラーコードを返した場合にのみ、リクエストが同じノードに送信されます                                 |
   | repeat&#95;on&#95;session&#95;lock | `true` | セッションがロックされている場合に、タイムアウトするまで (`session_timeout` または `connect_timeout` に従って) 実行を繰り返すかどうか。ClickHouse server が `SESSION_IS_LOCKED` エラーコードを返した場合、失敗したリクエストが再実行されます |
 
-  ### カスタムHTTPヘッダーを追加する
+  ### カスタムHTTPヘッダーを追加する {#v1-adding-custom-http-headers}
 
-  Java クライアントは、リクエストにカスタム HTTP ヘッダーを追加する場合に HTTP/S トランスポートレイヤーをサポートしています。
-  `custom&#95;http&#95;headers` プロパティを使用してください。ヘッダーは `,` 区切りで指定し、ヘッダーのキーと値は `=` で区切ります。
+  HTTP トランスポートでは、`custom_http_headers` プロパティ (`ClickHouseHttpOption.CUSTOM_HEADERS`) を使用して追加のリクエストヘッダーを指定できます。各ヘッダーは `Name=Value` の形式で指定します。複数のヘッダーはカンマで区切ります。値の中のカンマは `\,` としてエスケープしてください。値の中の `=` は値の一部としてそのまま保持されます。
 
-  ## Java クライアント対応
+  **単一のヘッダー**
+
+  ```java
+  options.put("custom_http_headers", "X-ClickHouse-Quota=test");
+  // or
+  options.put(ClickHouseHttpOption.CUSTOM_HEADERS, "X-ClickHouse-Quota=test");
+  ```
+
+  **複数のヘッダー**
 
   ```java
   options.put("custom_http_headers", "X-ClickHouse-Quota=test, X-ClickHouse-Test=test");
   ```
 
-  ## JDBCドライバー
+  リクエストにヘッダーを設定することもできます:
 
   ```java
-  properties.setProperty("custom_http_headers", "X-ClickHouse-Quota=test, X-ClickHouse-Test=test");
+  client.read(server)
+          .option(ClickHouseHttpOption.CUSTOM_HEADERS, "X-ClickHouse-Quota=test, X-ClickHouse-Test=test")
+          .query("SELECT 1")
+          .executeAndWait();
+  ```
+
+  ## ClickHouse Cloud の機能 {#v1-clickhouse-cloud-features}
+
+  [ClickHouse Cloud](https://clickhouse.com/cloud) に接続する際に適用される機能です。
+
+  ### レプリカ対応ルーティング (CLOUD) {#v1-replica-aware-routing}
+
+  ClickHouse Cloud では、関連する HTTPリクエストを同じレプリカに固定できます。`X-ClickHouse-Replica-Tag` ヘッダーを送信すると、Cloud のプロキシが同じタグを持つすべてのリクエストを 1 つのレプリカに振り分けます。一時テーブルなどの session スコープのオブジェクトを扱う場合や、レプリカローカルなキャッシュの再利用、書き込み後の読み取り整合性が必要な場合に利用してください。
+  詳細はこちら: https://clickhouse.com/docs/products/cloud/features/infrastructure/replica-aware-routing.
+
+  **設定する内容:** HTTP ヘッダー `X-ClickHouse-Replica-Tag` (`com.clickhouse.client.http.config.ClickHouseHttpOption.HEADER_REPLICA_TAG`) を `custom_http_headers` で指定します。同一のレプリカで処理させたいすべてのリクエストには、同じタグの値を使用してください。
+
+  ```java
+  String replicaTag = "my-app-session-1";
+  options.put("custom_http_headers", "X-ClickHouse-Replica-Tag=" + replicaTag);
+  // or
+  options.put(ClickHouseHttpOption.CUSTOM_HEADERS,
+          ClickHouseHttpOption.HEADER_REPLICA_TAG + "=" + replicaTag);
   ```
 </View>

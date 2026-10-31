@@ -859,7 +859,7 @@ SELECT countDigits(toDecimal32(1, 9)), countDigits(toDecimal32(-1, 9)),
 currentDatabase()
 ```
 
-**별칭**: `current_database`, `DATABASE`, `SCHEMA`
+**별칭**: `current_schema`, `current_database`, `DATABASE`, `SCHEMA`
 
 **인수**
 
@@ -897,7 +897,7 @@ SELECT CURRENT_DATABASE
 
 ## currentHandler {#currentHandler}
 
-도입 버전: v26.6.0
+도입 버전: v26.8.0
 
 쿼리를 호출한 SQL로 정의된 HTTP 핸들러(`CREATE HANDLER`로 생성)의 이름을 반환합니다.
 쿼리가 이러한 핸들러를 통해 호출되지 않은 경우 빈 문자열을 반환합니다.
@@ -1008,7 +1008,7 @@ SELECT currentQueryID();
 
 ## currentRequestURL {#currentRequestURL}
 
-도입 버전: v26.6.0
+도입 버전: v26.8.0
 
 쿼리를 호출한 HTTP 요청 URL(경로 및 쿼리 문자열)을 반환합니다.
 쿼리가 HTTP를 통해 호출되지 않은 경우에는 빈 문자열을 반환합니다.
@@ -1179,6 +1179,43 @@ SELECT CURRENT_USER
 ┌─CURRENT_USER─┐
 │ default      │
 └──────────────┘
+```
+
+## current_setting {#current_setting}
+
+도입 버전: v26.8.0
+
+PostgreSQL 호환성 함수입니다. 런타임 구성 매개변수의 값을 반환합니다. 클라이언트 내부 검사에 사용되는 일부 읽기 전용 매개변수만 에뮬레이션합니다.
+
+<Note>
+  이 함수는 비결정적입니다. 동일한 인수로 호출해도 다른 결과를 반환할 수 있습니다.
+</Note>
+
+**구문**
+
+```sql
+current_setting(name [, missing_ok])
+```
+
+**인수**
+
+* `name` — 구성 매개변수 이름입니다. [`String`](/ko/reference/data-types/string)
+* `missing_ok` — 알 수 없는 매개변수인 경우 예외를 발생시키지 않고 `NULL`을 반환합니다. [`UInt8`](/ko/reference/data-types/int-uint)
+
+**반환 값**
+
+구성 매개변수의 값을 반환합니다. `missing_ok`가 true이면 알 수 없는 매개변수에 대해 `NULL`을 반환합니다. [`Nullable(String)`](/ko/reference/data-types/nullable)
+
+**예시**
+
+**예시**
+
+```sql title=Query
+SELECT current_setting('server_version_num')
+```
+
+```response title=Response
+120000
 ```
 
 ## defaultProfiles {#defaultProfiles}
@@ -2347,6 +2384,39 @@ SELECT formatReadableTimeDelta(INTERVAL 12345 SECOND) AS time_delta
 ┌─time_delta─────────────────────────┐
 │ 3 hours, 25 minutes and 45 seconds │
 └────────────────────────────────────┘
+```
+
+## format_type {#format_type}
+
+도입 버전: v26.8.0
+
+PostgreSQL 호환성 함수입니다. 주어진 OID에 해당하는 유형의 SQL 이름을 반환합니다. `numeric` 유형은 유형 수정자를 정밀도와 소수 자릿수(scale)로 디코딩하며(`numeric(p, s)`), 그 외의 유형에서는 수정자를 무시합니다. 유형 수정자가 `NULL`이면 `-1`과 마찬가지로 알려진 수정자가 없음을 의미하며, 유형 OID가 `NULL`이면 `NULL`을 반환합니다.
+
+**구문**
+
+```sql
+format_type(type_oid, typemod)
+```
+
+**인수**
+
+* `type_oid` — 유형 OID입니다. [`(U)Int*`](/ko/reference/data-types/int-uint)
+* `typemod` — 유형 수정자 또는 `NULL`입니다. [`(U)Int*`](/ko/reference/data-types/int-uint) 또는 [`NULL`](/ko/reference/syntax#null)
+
+**반환 값**
+
+유형의 SQL 이름입니다. [`String`](/ko/reference/data-types/string)
+
+**예시**
+
+**예시**
+
+```sql title=Query
+SELECT format_type(23, -1)
+```
+
+```response title=Response
+integer
 ```
 
 ## fuzzQuery {#fuzzQuery}
@@ -4189,7 +4259,7 @@ SELECT minSampleSizeConversion(0.25, 0.03, 0.80, 0.05) AS sample_size
 ```
 
 ```response title=Response
-(3396.077603219163,0.22,0.28)
+(3396.077603219162,0.22,0.28)
 ```
 
 ## neighbor {#neighbor}
@@ -4995,7 +5065,8 @@ SELECT pg_get_userbyid(10)
 
 PostgreSQL wire 프로토콜용 호환성 함수로, `pg_catalog.pg_table_is_visible`에 해당합니다.
 PostgreSQL 클라이언트(예: `psql`의 `\d` 명령)는 검색 경로에서 보이는 테이블을 필터링하는 데 이 함수를 사용합니다.
-ClickHouse가 에뮬레이션하는 `pg_class` 뷰는 모두 보이는 현재 데이터베이스의 테이블만 노출하므로, 이 함수는 항상 `1`을 반환합니다.
+PostgreSQL wire 프로토콜 세션 밖에서는 oid를 조회할 에뮬레이션된 카탈로그가 없으므로, 이 함수는 `1`을 반환합니다.
+이러한 세션 안에서는 에뮬레이션된 카탈로그가 모든 데이터베이스를 스키마(schema)로 노출하므로, PostgreSQL 핸들러가 이 호출을 에뮬레이션된 카탈로그를 대상으로 하는 검색 경로 검사로 재작성합니다.
 
 **구문**
 
@@ -6064,7 +6135,7 @@ ROLLBACK;
 
 ## transactionLatestSnapshot {#transactionLatestSnapshot}
 
-도입된 버전: v22.6.0
+도입 버전: v22.6.0
 
 <ExperimentalBadge />
 
@@ -6082,6 +6153,10 @@ ROLLBACK;
   ```
 
   자세한 내용은 [Transactional (ACID) support](/ko/concepts/features/operations/insert/transactions#transactions-commit-and-rollback) 페이지를 참조하십시오.
+</Note>
+
+<Note>
+  이 함수는 비결정적입니다. 동일한 인수로 호출해도 서로 다른 결과를 반환할 수 있습니다.
 </Note>
 
 **구문**
@@ -6134,6 +6209,10 @@ ROLLBACK;
   ```
 
   자세한 내용은 [Transactional (ACID) support](/ko/concepts/features/operations/insert/transactions#transactions-commit-and-rollback) 페이지를 참조하십시오.
+</Note>
+
+<Note>
+  이 함수는 비결정적입니다. 동일한 인수로 호출해도 서로 다른 결과를 반환할 수 있습니다.
 </Note>
 
 **구문**

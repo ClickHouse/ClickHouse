@@ -39,6 +39,16 @@ import { CloudOnlyBadge } from "/snippets/ar/components/CloudOnlyBadge/CloudOnly
 
 كتابة ترويسة CORS لـ HTTP.
 
+## analyze_index_with_multiple_key_columns_per_condition {#analyze_index_with_multiple_key_columns_per_condition}
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "1"},{"label": "إعداد جديد يتيح لشرط واحد تقييد عدة أعمدة مفتاح أثناء تحليل الفهرس."}]}]} />
+
+يتيح لشرط ذرّي واحد في تعبير `WHERE`/`PREWHERE` (كمقارنة واحدة، أو `IN`، أو `has`، وغيرها) تقييد عدة أعمدة مفتاح أثناء تحليل الفهرس.
+
+على سبيل المثال، إذا كان للجدول `ORDER BY (toDate(ts), ts)` وتضمّن الاستعلام `WHERE ts = '2026-01-10 00:00:00' AND user_id = 42`، فإن الشرط الأول منهما يقيّد عمودَي المفتاح كليهما، إذ يُحلَّل كما لو كُتب `toDate(ts) = '2026-01-10' AND ts = '2026-01-10 00:00:00'`. أما عند تعطيل هذا الإعداد، فلا يقيّد هذا المسند سوى `ts`. ومع ذلك، تظل مسندات العضوية في Tuple، مثل `(a, b) IN ((1, 2), (3, 4))`، قادرة على تقييد عدة أعمدة مفتاح.
+
 ## analyze_index_with_space_filling_curves {#analyze_index_with_space_filling_curves}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
@@ -137,6 +147,14 @@ import { CloudOnlyBadge } from "/snippets/ar/components/CloudOnlyBadge/CloudOnly
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "300"},{"label": "إعداد جديد يضع حدًا زمنيًا لطلب Arrow Flight الواحد. لم تكن هناك مهلة زمنية محددة من قبل، ولذلك كان خادم Flight الذي يقبل طلبًا دون أن يرد عليه أبدًا يُبقي الاستعلام معلّقًا إلى أجل غير مسمى؛ وتعيد القيمة 0 هذا السلوك."}]}]} />
 
 المهلة الزمنية بالثواني لطلب Arrow Flight الواحد. وتسري هذه المهلة على الطلب بأكمله: ففي عمليات القراءة، تشمل دفق النتائج كاملًا، لا مجرد فترة انتظار أول دفعة من السجلات. وتعني القيمة 0 عدم وجود مهلة زمنية، وفي هذه الحالة يظل الاستعلام معلّقًا إذا قبل خادم Flight طلبًا ولم يرد عليه أبدًا، وذلك إلى أن يُغلق الاتصال.
+
+## backup_s3_expired_token_retry_timeout_ms {#backup_s3_expired_token_retry_timeout_ms}
+
+<SettingsInfoBlock type="UInt64" default_value="120000" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "120000"},{"label": "إعادة محاولة طلبات النسخ الاحتياطي والاستعادة إلى S3 بعد انتهاء صلاحية الرمز المميز؛ وتعيد القيمة 0 السلوك السابق."}]}]} />
+
+الحد الأقصى للمدة، بالمللي ثانية، لإعادة محاولة طلب S3 تشير استجابته إلى `ExpiredToken` أثناء النسخ الاحتياطي أو الاستعادة. وتتوقف إعادة المحاولة كذلك عند بلوغ الحد المحدد في `backup_restore_s3_retry_attempts`. وتؤدي القيمة صفر إلى تعطيل إعادة المحاولة هذه. ونظرًا إلى أن استجابات `HEAD` في AWS S3 لا تُظهر سوى رمز حالة HTTP عام، فإن إعادة المحاولة هذه لا تشمل طلبات البيانات الوصفية من نوع `HEAD`.
 
 ## backup_slow_all_threads_after_retryable_s3_error {#backup_slow_all_threads_after_retryable_s3_error}
 
@@ -315,7 +333,8 @@ SETTINGS convert_query_to_cnf = true;
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
-يسمح بأن تكون أنواع البيانات في تعريفات الأعمدة التي لا تتضمن مُعدِّلات صريحة [NULL or NOT NULL](/ar/reference/statements/create/table#null-or-not-null-modifiers) من النوع [Nullable](/ar/reference/data-types/nullable).
+يسمح بأن تكون أنواع البيانات في تعريفات الأعمدة التي لا تتضمن مُعدِّلات صريحة [NULL or NOT NULL](/ar/reference/statements/create/table#null-or-not-null-modifiers) من النوع [Nullable](/ar/reference/data-types/nullable).
+ينطبق ذلك على `CREATE TABLE` و`ALTER TABLE ... ADD COLUMN` و`ALTER TABLE ... MODIFY COLUMN`.
 
 القيم الممكنة:
 
@@ -389,13 +408,13 @@ SETTINGS convert_query_to_cnf = true;
 القيم المدعومة:
 
 * `clickhouse` (افتراضي) — ClickHouse SQL القياسية.
-* `kusto` — Kusto Query Language. يتطلب الإعداد التجريبي `allow_experimental_kusto_dialect`.
+* `kusto` — Kusto Query Language. يتطلب الإعداد التجريبي (Beta) `allow_experimental_kusto_dialect`.
 * `prql` — PRQL. يتطلب الإعداد التجريبي `allow_experimental_prql_dialect`.
 * `polyglot` — يترجم SQL من لهجات أخرى، مثل MySQL وPostgreSQL، إلى ClickHouse SQL. يتطلب الإعداد التجريبي `allow_experimental_polyglot_dialect`.
 * `promql` — PromQL (لغة استعلام Prometheus)، ويُقيَّم على جدول TimeSeries ويُضبط من خلال الإعدادات `promql_database` و`promql_table` و`promql_evaluation_time`.
 * `clickhouse_json` — بدلًا من نص SQL، يُفسَّر الاستعلام على أنه JSON AST (ناتج `parseQueryToJSON`). يظل استعلام `SET` معروفًا بصيغته العادية، بحيث يمكن التبديل مجددًا إلى لهجة أخرى. يتطلب الإعداد التجريبي `enable_json_ast_dialect`.
 * `logsql` — LogsQL، لغة استعلام السجلات في VictoriaLogs، وتُترجَم إلى استعلامات `SELECT` على جدول السجلات المُهيَّأ عبر الإعدادين `logsql_database` و`logsql_table`. يتطلب الإعداد التجريبي `enable_logsql_dialect`.
-* `trino` — Trino SQL: يترجم صياغة Trino (`ARRAY[...]` و`TRY_CAST` و`UNNEST` وغيرها) ويطابق أسماء دوال Trino مع نظيراتها في ClickHouse. يتطلب الإعداد التجريبي `enable_trino_dialect`.
+* `trino` — Trino SQL: يترجم صياغة Trino (`ARRAY[...]` و`TRY_CAST` و`UNNEST` وغيرها) ويطابق أسماء دوال Trino مع نظيراتها في ClickHouse. يتطلب الإعداد التجريبي (Beta) `enable_trino_dialect`.
 
 ## discard_query_data {#discard_query_data}
 
@@ -811,14 +830,14 @@ curl "http://localhost:8123/?framing_output_format=JSONEachPacketString" -d "SEL
 
 ## get_zookeeper_lock_acquire_timeout_ms {#get_zookeeper_lock_acquire_timeout_ms}
 
-<SettingsInfoBlock type="Milliseconds" default_value="120000" />
+<SettingsInfoBlock type="مللي ثانية" default_value="120000" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "120000"},{"label": "New setting"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "120000"},{"label": "إعداد جديد"}]}]} />
 
-يحدد مدة الانتظار بالمللي ثانية التي يقضيها عميل Keeper لحجز mutex الخاص بـ `Context` المقابل قبل أن يفشل.
+يحدد مدة الانتظار بالمللي ثانية التي يقضيها الاستعلام في انتظار عميل Keeper: سواء لحجز mutex الخاص بـ `Context` للعميل، أو لمحاولة اتصال يُجريها خيط تنفيذ آخر لصالحه. وعند تجاوز هذه المدة، يفشل الاستعلام مع الخطأ `TIMEOUT_EXCEEDED`. كما يتوقف الاستعلام عن الانتظار عند إلغائه.
 
-تُؤخذ القيمة من `Context` الذي يُجري عملية الحجز. ولا يسري التجاوز على مستوى الاستعلام إلا عندما تستخدم العملية سياق الاستعلام، مثل عمليات القراءة من `system.zookeeper`، و`zookeeperSessionUptime`، و`SYSTEM RECONNECT ZOOKEEPER`، والوصول إلى Keeper المساعد ضمن سياق الاستعلام.
-أما العمليات التي تستخدم سياقًا عامًا أو سياق خلفية، بما في ذلك تنسيق `BACKUP` و`RESTORE` ونشاط قاعدة البيانات `Replicated`، فتعتمد على قيمة ذلك السياق، ويصلها انتهاء المهلة على هيئة error من Keeper (`ZOPERATIONTIMEOUT`) تتعامل معه كما تتعامل مع سائر أخطاء Keeper.
+تُؤخذ القيمة من سياق الاستعلام، ولذا فهي تسري على العمليات التي تستخدمه، مثل عمليات القراءة من `system.zookeeper`، و`zookeeperSessionUptime`، و`SYSTEM RECONNECT ZOOKEEPER`، والوصول إلى Keeper المساعد ضمن سياق الاستعلام.
+أما العمليات التي تستخدم سياقًا عامًا أو سياق خلفية، بما في ذلك تنسيق `BACKUP` و`RESTORE` ونشاط قاعدة البيانات `Replicated`، فتنتظر حتى تنتهي محاولة الاتصال، ثم تحصل إما على العميل الناتج عنها أو على error من Keeper.
 ولا يشمل هذا الإعداد `SYSTEM RELOAD CONFIG` و`SYSTEM RELOAD ASYNCHRONOUS METRICS`، لأنهما تستخدمان مسارات إعادة تحميل متسلسلة بشكل مستقل.
 
 القيم الممكنة:
@@ -921,15 +940,27 @@ curl "http://localhost:8123/?framing_output_format=JSONEachPacketString" -d "SEL
 
 يُعيّن الوضع الافتراضي في استعلام INTERSECT. القيم الممكنة: سلسلة فارغة، &#39;ALL&#39;، &#39;DISTINCT&#39;. إذا كانت القيمة فارغة، فسيؤدي الاستعلام بدون وضع إلى إثارة استثناء.
 
-## kill_throw_if_noop {#kill_throw_if_noop}
+## json_extract_named_tuples_as_objects {#json_extract_named_tuples_as_objects}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "0"},{"label": "New setting"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "0"},{"label": "إعداد جديد يجعل عائلة `JSONExtract` تملأ قيم Tuple المسمّاة من كائنات JSON فقط، بدلاً من الملء الموضعي المعتاد سابقاً من المصفوفات. تُملأ قيم Tuple غير المسمّاة دائماً بشكل موضعي، ولا يتأثر الاستخراج من عمود من نوع البيانات `JSON`."}]}]} />
+
+يملأ قيم Tuple المسمّاة من كائنات JSON فقط، ضمن عائلة دوال `JSONExtract`. عند تعطيل هذا الإعداد، تملأ مصفوفة JSON الـ Tuple المسمّى بشكل موضعي (وهو السلوك المعتاد سابقاً)، ومن ثَمّ يتوقف الحقل المسمّى الذي يستقر فيه كل عنصر مصفوفة على ترتيب التصريح عن الـ Tuple. أما قيم Tuple غير المسمّاة فتُملأ دائماً بشكل موضعي من المصفوفات بغض النظر عن هذا الإعداد.
+
+ينطبق هذا الإعداد على JSON المُمرَّر على هيئة string. ولا يتأثر به الاستخراج من عمود من نوع البيانات `JSON`، سواء أكانت المسارات محددة النوع أم غير محددة النوع: إذ يقرأ الاستخراج الأعمدة الفرعية للعمود بدلاً من إجراء التحليل النحوي لمستند JSON، ولذلك لا يبلغ أبداً الشيفرة التي يتحكم فيها هذا الإعداد. أما *أعمدة* Tuple المسمّاة في تنسيقات إدخال JSON فيتحكم فيها إعداد مستقل هو [input&#95;format&#95;json&#95;named&#95;tuples&#95;as&#95;objects](/ar/reference/settings/formats/input-format#input_format_json_named_tuples_as_objects)؛ في حين يقتصر هذا الإعداد على دوال الاستخراج فقط.
+
+معطّل افتراضياً.
+
+## kill_throw_if_noop {#kill_throw_if_noop}
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "1"},{"label": "تمكين `kill_throw_if_noop` افتراضيًا كي تُبلغ `KILL QUERY` و`KILL MUTATION` عن حالات عدم وجود أي تطابق."}]}, {"id": "row-2","items": [{"label": "26.10"},{"label": "0"},{"label": "إعداد جديد"}]}]} />
 
 يتحكم هذا الإعداد فيما إذا كانت العبارتان [`KILL QUERY`](/ar/reference/statements/kill#kill-query) و[`KILL MUTATION`](/ar/reference/statements/kill#kill-mutation) ترفعان استثناءً عندما لا تطابق عبارات `WHERE` الخاصة بهما أي صفوف.
 
-عند ضبطه على true، ترفع `KILL QUERY` استثناءً إذا لم توجد صفوف مؤهلة في `system.processes` بعد استبعاد عبارة `KILL` الحالية، وترفع `KILL MUTATION` استثناءً إذا لم يتطابق أي صف في `system.mutations`. أما افتراضيًا، فتنتهي العبارة دون رفع استثناء عند عدم وجود أي تطابق. ولا يرفع التنفيذ باستخدام `ON CLUSTER` استثناءً عند عدم وجود تطابقات، لأن نتائج المطابقة لا تُجمَّع عبر المضيفين.
+مفعّل افتراضيًا. ترفع `KILL QUERY` استثناءً إذا لم توجد صفوف مؤهلة في `system.processes` بعد استبعاد عبارة `KILL` الحالية، وترفع `KILL MUTATION` استثناءً إذا لم يتطابق أي صف في `system.mutations`. اضبطه على `false` لكي تنتهي العبارة دون رفع استثناء عند عدم وجود أي تطابق. أما عمليات التشغيل التجريبية باستخدام `TEST` فتُعيد معاينة فارغة دون رفع استثناء. ولا يرفع التنفيذ باستخدام `ON CLUSTER` استثناءً عند عدم وجود تطابقات، لأن نتائج المطابقة لا تُجمَّع عبر المضيفين.
 
 القيم الممكنة:
 
@@ -1010,7 +1041,7 @@ curl "http://localhost:8123/?framing_output_format=JSONEachPacketString" -d "SEL
 
 يحدّد عدد الثواني التي ينتظرها طلب القفل قبل أن يفشل.
 
-تُستخدم مهلة القفل للحماية من حالات التوقف المتبادل أثناء تنفيذ عمليات القراءة والكتابة على الجداول. وعند انتهاء المهلة وفشل طلب القفل، يرفع خادم ClickHouse الاستثناء &quot;Locking attempt timed out! Possible deadlock avoided. Client should retry.&quot; مع رمز الخطأ `DEADLOCK_AVOIDED`.
+تُستخدم مهلة القفل للحماية من حالات التوقف المتبادل أثناء تنفيذ عمليات القراءة والكتابة على الجداول. وعند انتهاء المهلة وفشل طلب القفل، يرفع خادم ClickHouse الاستثناء &quot;Locking attempt timed out. Possible deadlock avoided. Client should retry.&quot; مع رمز الخطأ `DEADLOCK_AVOIDED`.
 
 القيم الممكنة:
 
@@ -1074,6 +1105,14 @@ curl "http://localhost:8123/?framing_output_format=JSONEachPacketString" -d "SEL
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "21.3"},{"label": "1"},{"label": "تطبيع أسماء الدوال إلى صيغها القياسية، وكان ذلك مطلوبًا لتوجيه استعلامات projection"}]}]} />
 
 تطبيع أسماء الدوال إلى صيغها القياسية
+
+## obfuscate_seed {#obfuscate_seed}
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": ""},{"label": "إعداد جديد: سلسلة seed لدالة الجدول obfuscate."}]}]} />
+
+قيمة seed لدالة الجدول `obfuscate`. وهي سلسلة نصية اختيارية، تُشتق منها ومن اسم العمود قيمةُ seed الخاصة بكل عمود، ولذلك تُنتج قيمة seed نفسها التمويهَ ذاته دائمًا. أما السلسلة الفارغة فتعني توليد بذرة توليد عشوائي جديدة لكل استعلام.
+
+قيمة seed إعداد عادي وليست secret، إذ تُخزَّن قيمتها وتُعرض نصًا صريحًا شأنها شأن أي إعداد آخر، كما في `system.query_log` و`system.settings` مثلًا. لا تستخدم كلمة مرور أو أي secret آخر قيمةً لـ seed. وإذا كان يجب ألا تكون المخرجات المموّهة لاستعلامات مختلفة قابلةً للربط فيما بينها، فأبقِ القيمة الافتراضية الفارغة (بذرة توليد عشوائي جديدة لكل استعلام) بدلًا من تعيين قيمة seed ثابتة.
 
 ## offset {#offset}
 
@@ -1278,6 +1317,16 @@ priority الاستعلام. 1 هي الأعلى، وكلما زادت القي�
 
 افتراضيًا، يحتفظ المتجه المرجعي بدقته الكاملة عند الدقة 1، ولا يُختزَل إلى إشارات سوى المتجه المخزَّن (مسافة غير متناظرة). المسافة المتناظرة أسرع بعدة أضعاف، لكنها تتجاهل مقادير عناصر المتجه المرجعي، إذ يكون للبُعد الذي تكون فيه قيمة المرجع كبيرة الوزن نفسه الذي يكون للبُعد الذي تقترب فيه من الصفر.
 
+## query_condition_cache_time_condition_grid_factor {#query_condition_cache_time_condition_grid_factor}
+
+<SettingsInfoBlock type="Float" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "1"},{"label": "إعداد جديد: خطوة الشبكة المستخدمة عند اشتقاق شروط حتمية من الشروط التي تتضمن الوقت الحالي في ذاكرة التخزين المؤقت لشروط الاستعلام، معبَّرًا عنها كنسبة من المسافة بين الثابت الزمني والوقت الحالي."}]}]} />
+
+بالنسبة إلى الشروط التي تتضمن الوقت الحالي في [ذاكرة التخزين المؤقت لشروط الاستعلام](/ar/concepts/features/performance/caches/query-condition-cache) لجداول `MergeTree` (راجع [`use_query_condition_cache_for_time_conditions`](/ar/reference/settings/session-settings/use-query#use_query_condition_cache_for_time_conditions))، يحدد هذا الإعداد حجم الشبكة التي تُقرَّب إليها الثوابت الزمنية، معبَّرًا عنه كنسبة من المسافة بين الثابت والوقت الحالي. على سبيل المثال، عند استخدام المعامل الافتراضي 1.0، يُقرَّب الثابت في `WHERE time >= now() - INTERVAL 10 DAY` إلى شبكة بخطوة يوم واحد (بحد أقصى يوم واحد)، بينما يُقرَّب الثابت في `WHERE time >= now() - INTERVAL 1 HOUR` إلى شبكة بخطوة ساعة واحدة.
+
+تُبقي القيم الأصغر الشرط المشتق أقرب إلى الشرط الأصلي (مع تقليل over-read بالقرب من الحدود)، لكن ذلك يأتي على حساب تغيُّر مفتاح ذاكرة التخزين المؤقت بوتيرة أعلى. تُقيَّد خطوة الشبكة بحد أدنى قدره ثانية واحدة، لذا فإن المعامل الصغير يجعل الشرط المشتق يقترب من الشرط الأصلي بدلاً من تعطيله. أما القيم الأقل من 0 أو المساوية له فتعطّل عملية الاشتقاق كليًا.
+
 ## query_metric_log_interval {#query_metric_log_interval}
 
 <SettingsInfoBlock type="Int64" default_value="-1" />
@@ -1468,7 +1517,7 @@ FORMAT Null;
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "0"},{"label": "إعداد جديد لتشغيل استعلام في الخلفية، منفصلًا عن الاتصال الذي أرسله، مع تجاهل النتيجة."}]}]} />
 
-عند تفعيله، يجدول الخادم الاستعلام في الخلفية، ويُرجع فورًا نتيجة نجاح فارغة، ثم يشغّل الاستعلام حتى اكتماله بغض النظر عما يحدث للاتصال.
+عند تفعيله، يجدول الخادم الاستعلام في الخلفية، وينتظر حتى يجتاز الاستعلام عمليات الفحص (كالتحقق مثلًا من وجود الجداول ومن امتلاك المستخدم للأذونات المطلوبة) ويوشك على بدء عمله الرئيسي، ثم يُرجع نتيجة نجاح فارغة، ويشغّل الاستعلام حتى اكتماله بغض النظر عما يحدث للاتصال. أي خطأ يُثار قبل تلك المرحلة يُعاد إلى العميل، أما الخطأ الذي يقع بعدها فلا يُسجَّل إلا في `system.query_log`.
 
 لا يستمر الاستعلام الذي يعمل في الخلفية بعد إعادة تشغيل الخادم. وعند إيقاف التشغيل، تنطبق عليه إعدادات الخادم نفسها المطبقة على الاستعلامات التي تعمل في المقدمة: يحدد `shutdown_wait_unfinished_queries` ما إذا كان سيُلغى أو سيُنتظر حتى اكتماله (وتُهمل الإدخالات الموجودة في قائمة الانتظار في كلتا الحالتين، من دون إدخال في `system.query_log`)، بينما يحد `shutdown_wait_unfinished` المدة التي ينتظرها الخادم.
 
@@ -1737,6 +1786,22 @@ SELECT ((4 + 2) + 1, ((4 + 2) + 1) + 2)
 
 * `0` - لن تُضمَّن السلسلة المتبقية في العنصر الأخير من مصفوفة النتيجة.
 * `1` - ستُضمَّن السلسلة المتبقية في العنصر الأخير من مصفوفة النتيجة. هذا هو سلوك الدالة [`split()`](https://spark.apache.org/docs/latest/api/python/reference/pyspark.sql/api/pyspark.sql.functions.split.html) في Spark والطريقة [&#39;string.split()&#39;](https://docs.python.org/3/library/stdtypes.html#str.split) في بايثون.
+
+## sql_compatible_division_for_integers {#sql_compatible_division_for_integers}
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "0"},{"label": "استخدام الاسم المتوافق مع SQL لإعداد قسمة الأعداد الصحيحة."}]}, {"id": "row-2","items": [{"label": "26.10"},{"label": "0"},{"label": "إعداد جديد لتمكين القسمة الصحيحة الدقيقة في `\/` و`divide`."}]}]} />
+
+يجعل `/` و`divide` تُعيدان عددًا صحيحًا عندما يكون كلا المعاملين من أنواع الأعداد الصحيحة، بما في ذلك `Int128` و`UInt128` و`Int256` و`UInt256`.
+يُقتطع خارج القسمة باتجاه الصفر. ويكون عرض النتيجة مساويًا لعرض المعامل الأول، وتكون ذات إشارة إذا كان أيٌّ من المعاملين ذا إشارة.
+تؤدي القسمة على صفر، أو تجاوز خارج القسمة نطاقَ نوع النتيجة، إلى رفع استثناء. أما المعاملات من النوع `Nullable` فتنقل القيمة `NULL` إلى النتيجة.
+
+افتراضيًا، تُعيد قسمة عددين صحيحين قيمة من النوع `Float64`. ولا يؤثر هذا الإعداد في القسمة التي تتضمن معاملات من النوع `Decimal` أو معاملات ذات فاصلة عائمة،
+ولا في الدوال الصريحة `intDiv` و`divideDecimal` و`divideOrNull`.
+
+يُسجَّل هذا الاختيار في استعلامات SQL المُرسلة حديثًا قبل تخزين التعبيرات في البيانات الوصفية للجداول، أو في العروض، أو دوال SQL، أو عمليات التعديل.
+أما التعريفات الموجودة مسبقًا واستعلامات `ATTACH` فتحتفظ بدلالات القسمة الأصلية الخاصة بها، بصرف النظر عن هذا الإعداد.
 
 ## statistics_max_set_size_for_exact_selectivity_estimation {#statistics_max_set_size_for_exact_selectivity_estimation}
 

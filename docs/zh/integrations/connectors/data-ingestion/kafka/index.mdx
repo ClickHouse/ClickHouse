@@ -12,9 +12,7 @@ integration:
 
 [Apache Kafka](https://kafka.apache.org/) 是一个开源的分布式事件流平台，被数千家公司用于构建高性能数据管道、流式分析、数据集成以及关键业务应用。ClickHouse 提供了多种方案，可**从** Kafka 和其他兼容 Kafka API 的消息代理 (如 Redpanda、亚马逊 MSK) **读取数据**，也可向其**写入数据**。
 
-<div id="available-options">
-  ## 可选方案
-</div>
+## 可选方案 {#available-options}
 
 为你的使用场景选择合适的方案取决于多种因素，包括 ClickHouse 的部署类型、数据流向以及运维要求。
 
@@ -26,9 +24,7 @@ integration:
 
 如需更详细地比较这些方案，请参见[如何选择方案](#choosing-an-option)。
 
-<div id="clickpipes-for-kafka">
-  ### ClickPipes for Kafka
-</div>
+### ClickPipes for Kafka {#clickpipes-for-kafka}
 
 [ClickPipes](/zh/integrations/clickpipes/home) 是一个托管式集成平台，只需点击几个按钮，就能轻松从多种来源摄取数据。由于它是**全托管**的，并专为生产环境工作负载打造，ClickPipes 可显著降低基础设施和运维成本，无需依赖外部数据流处理和 ETL 工具。
 
@@ -36,9 +32,7 @@ integration:
   如果你是 ClickHouse Cloud 用户，这是推荐选项。ClickPipes 是**全托管**的，并专为在 Cloud 环境中提供**最佳性能**而打造。
 </Tip>
 
-<div id="clickpipes-for-kafka-main-features">
-  #### 主要功能
-</div>
+#### 主要功能 {#clickpipes-for-kafka-main-features}
 
 * 针对 ClickHouse Cloud 优化，提供极致性能
 * 支持横向和纵向扩展，适用于高吞吐量工作负载
@@ -48,15 +42,11 @@ integration:
 * 支持广泛的[数据源](/zh/integrations/clickpipes/kafka/reference)，包括 Confluent Cloud、亚马逊 MSK、Redpanda Cloud 和 Azure Event Hubs
 * 支持大多数常见的序列化格式 (JSON、Avro、Protobuf)
 
-<div id="clickpipes-for-kafka-getting-started">
-  #### 入门
-</div>
+#### 入门 {#clickpipes-for-kafka-getting-started}
 
 要开始使用 ClickPipes for Kafka，请参阅[参考文档](/zh/integrations/clickpipes/kafka/reference)，或前往 ClickHouse Cloud UI 的 `Data Sources` 选项卡。
 
-<div id="kafka-connect-sink">
-  ### Kafka Connect Sink
-</div>
+### Kafka Connect Sink {#kafka-connect-sink}
 
 Kafka Connect 是一个开源框架，可充当集中式数据枢纽，用于在 Kafka 与其他数据系统之间进行简单的数据集成。[ClickHouse Kafka Connect Sink](https://github.com/ClickHouse/clickhouse-kafka-connect) connector 提供了一种可扩展且高度可配置的方案，可从 Apache Kafka 和其他兼容 Kafka API 的消息代理中读取数据。
 
@@ -64,23 +54,17 @@ Kafka Connect 是一个开源框架，可充当集中式数据枢纽，用于在
   如果你更看重**高度可配置性**，或已经在使用 Kafka Connect，推荐选择此方案。
 </Tip>
 
-<div id="kafka-connect-sink-main-features">
-  #### 主要特性
-</div>
+#### 主要特性 {#kafka-connect-sink-main-features}
 
 * 可配置为支持精确一次语义
 * 支持大多数常见序列化格式 (JSON、Avro、Protobuf)
 * 持续针对 ClickHouse Cloud 进行测试验证
 
-<div id="kafka-connect-sink-getting-started">
-  #### 快速开始
-</div>
+#### 快速开始 {#kafka-connect-sink-getting-started}
 
 要开始使用 ClickHouse Kafka Connect Sink，请参阅[参考文档](/zh/integrations/connectors/data-ingestion/kafka/kafka-clickhouse-connect-sink)。
 
-<div id="kafka-table-engine">
-  ### Kafka 表引擎
-</div>
+### Kafka 表引擎 {#kafka-table-engine}
 
 [Kafka 表引擎](/zh/integrations/connectors/data-ingestion/kafka/kafka-table-engine) 可用于从 Apache Kafka 和其他兼容 Kafka API 的消息代理读取数据，也可向其写入数据。此选项随开源 ClickHouse 一同提供，适用于所有部署类型。
 
@@ -88,23 +72,17 @@ Kafka Connect 是一个开源框架，可充当集中式数据枢纽，用于在
   如果你是自托管 ClickHouse，且需要一个**入门门槛低**的方案，或者需要向 Kafka **写入**数据，那么推荐选择此选项。
 </Tip>
 
-<div id="kafka-connect-sink-main-features">
-  #### 主要特性
-</div>
+#### 主要特性 {#kafka-table-engine-main-features}
 
 * 可用于[读取](/zh/integrations/connectors/data-ingestion/kafka/kafka-table-engine#kafka-to-clickhouse)和[写入](/zh/integrations/connectors/data-ingestion/kafka/kafka-table-engine#clickhouse-to-kafka)数据
 * 随开源 ClickHouse 一同提供
 * 支持大多数常见的序列化格式 (JSON、Avro、Protobuf)
 
-<div id="kafka-connect-sink-getting-started">
-  #### 快速开始
-</div>
+#### 快速开始 {#kafka-table-engine-getting-started}
 
 要开始使用 Kafka 表引擎，请参阅[参考文档](/zh/integrations/connectors/data-ingestion/kafka/kafka-table-engine)。
 
-<div id="choosing-an-option">
-  ### 选择一种方案
-</div>
+### 选择一种方案 {#choosing-an-option}
 
 | Product                  | Strengths                                                                                                                                         | Weaknesses                                                                                              |
 | ------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------- |
@@ -112,11 +90,9 @@ Kafka Connect 是一个开源框架，可充当集中式数据枢纽，用于在
 | **Kafka Connect Sink**   | • 精确一次语义<br />• 可对数据转换、批处理和错误处理进行细粒度控制<br />• 可部署在私有网络中<br />• 可通过 Debezium 对 ClickPipes 尚未支持的数据库进行实时复制                                           | • 不支持将数据推送到 Kafka<br />• 部署和维护的运维复杂度较高<br />• 需要具备 Kafka 和 Kafka Connect 相关专业知识                         |
 | **Kafka 表引擎**   | • 支持[将数据推送到 Kafka](/zh/integrations/connectors/data-ingestion/kafka/kafka-table-engine#clickhouse-to-kafka)<br />• 运维上更易于部署                          | • 至少一次语义<br />• 消费者的横向扩缩容能力有限，无法独立于 ClickHouse server 进行扩缩容<br />• 错误处理和调试选项有限<br />• 需要具备 Kafka 相关专业知识 |
 
-<div id="other-options">
-  ### 其他选项
-</div>
+### 其他选项 {#other-options}
 
-* [**Confluent Cloud**](/zh/integrations/connectors/data-ingestion/kafka/confluent/index) - Confluent Platform 支持在 [Confluent Cloud 上上传并运行 ClickHouse Connector Sink](/zh/integrations/connectors/data-ingestion/kafka/confluent/custom-connector)，也可以使用 [适用于 Confluent Platform 的 HTTP Sink 连接器](/zh/integrations/connectors/data-ingestion/kafka/confluent/kafka-connect-http)，通过 HTTP 或 HTTPS 将 Apache Kafka 与 API 集成。
+* [**Confluent**](/zh/integrations/connectors/data-ingestion/kafka/confluent/index) - 在 Confluent Cloud 上，可以使用[全托管的 ClickHouse Connector Sink](/zh/integrations/connectors/data-ingestion/kafka/confluent/confluent-cloud)，也可以将其作为[自定义连接器](/zh/integrations/connectors/data-ingestion/kafka/confluent/custom-connector)自行上传。您还可以使用 [HTTP Sink 连接器](/zh/integrations/connectors/data-ingestion/kafka/confluent/kafka-connect-http) (既可自管理，也可在 Confluent Cloud 上全托管) ，通过 HTTP 或 HTTPS 将 Apache Kafka 与 API 集成。
 
 * [**Vector**](/zh/integrations/connectors/data-ingestion/kafka/kafka-vector) - Vector 是一个与厂商无关的数据管道。它能够从 Kafka 读取数据并将事件发送到 ClickHouse，因此是一个稳健的集成选项。
 

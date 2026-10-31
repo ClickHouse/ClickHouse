@@ -12,19 +12,18 @@ import SettingsInfoBlock from "/snippets/ar/components/SettingsInfoBlock/Setting
 
 تضبط هذه الإعدادات خادم ClickHouse، وهي مُولَّدة تلقائيًا من الشيفرة المصدرية لـ ClickHouse.
 
-<div id="skip_binary_checksum_checks">
-  ## skip_binary_checksum_checks
-</div>
+## skip_binary_checksum_checks {#skip_binary_checksum_checks}
 
 <SettingsInfoBlock type="Bool" default_value="0" changeable_without_restart="No" />يتخطّى فحوصات التحقّق من سلامة المجموع الاختباري للملف التنفيذي لـ ClickHouse
 
-<div id="skip_check_for_incorrect_settings">
-  ## skip_check_for_incorrect_settings
-</div>
+## skip_check_for_incorrect_settings {#skip_check_for_incorrect_settings}
 
 <SettingsInfoBlock type="Bool" default_value="0" changeable_without_restart="No" />
 
 إذا ضُبط هذا الخيار على true، فلن يتم التحقق من صحة إعدادات الخادم.
+
+كما يعطّل فحص تعريفات الأقراص في `storage_configuration`، إذ يُبلَّغ عن أي عنصر
+لا يقرؤه أي قرص من هذا النوع بالخطأ `UNKNOWN_ELEMENT_IN_CONFIG` بدلًا من تجاهله.
 
 **مثال**
 

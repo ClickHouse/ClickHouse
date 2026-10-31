@@ -457,17 +457,32 @@ doc_type: 'reference'
 </Accordion>
 
 <Accordion title="Tabularis">
-  [Tabularis](https://github.com/TabularisDB/tabularis) 是一款面向 Windows、macOS 和 Linux 的开源桌面 SQL workspace，采用 Apache 2.0 许可证。其 ClickHouse 支持由应用内安装的官方 插件 提供，该 插件 通过 Rust `clickhouse` 客户端与 HTTP 接口 (`8123`，启用 TLS 时为 `8443`) 通信。
+  [Tabularis](https://github.com/TabularisDB/tabularis) 是一款面向 Windows、macOS 和 Linux 的开源桌面 SQL 工作区，采用 Apache 2.0 许可证。其 ClickHouse 支持由应用内安装的官方 插件 提供，该 插件 通过 Rust `clickhouse` 客户端与 HTTP 接口 (`8123`，启用 TLS 时为 `8443`) 通信。
 
   功能特性：
 
-  * 浏览数据库、表和视图，支持 native ClickHouse 类型，包括 数据跳过索引 及其类型、列和 granularity。
+  * 浏览数据库、表和视图，支持 Native ClickHouse 类型，包括 数据跳过索引 及其类型、列和 granularity。
   * 基于 Monaco 的 SQL 编辑器，支持 自动补全、多语句执行和分页结果。
   * 可在数据网格中直接进行 Inline insert、update 和删除；可为 `CREATE TABLE`、`ALTER TABLE ... ADD/MODIFY/RENAME COLUMN` 和 `ADD INDEX` 生成 DDL。
-  * 内置 MCP Server，使 AI 智能体 能够在同一应用中读取 schema 并运行查询。
+  * 内置 MCP 服务器，使 AI 智能体 能够在同一应用中读取 schema 并运行查询。
   * 在同一 window 中同时管理 ClickHouse、PostgreSQL、MySQL、SQLite、DuckDB、Redis、MongoDB 以及其他引擎。
 
   [Tabularis ClickHouse 插件](https://github.com/TabularisDB/tabularis-clickhouse-plugin) · [官网](https://tabularis.dev)
+</Accordion>
+
+<Accordion title="DBine">
+  [DBine](https://github.com/addlayer-io/dbine) 是一款免费的开源 (Apache 2.0) 桌面数据库管理工具，适用于 Windows、macOS 和 Linux。它通过 HTTP 接口 (`8123`，启用 TLS 时为 `8443`) 连接 ClickHouse，并可在同一窗口中同时管理 130 多种数据库和云服务。
+
+  功能特性：
+
+  * 支持 ClickHouse 方言的 SQL 编辑器，提供表名和列名自动补全，并可通过 `KILL QUERY` 取消查询。
+  * 浏览数据库、表、视图和列，提供结果网格和图表，并支持导出为 CSV、JSON、XLSX 和 SQL。
+  * 表设计器支持 `ENGINE`、`ORDER BY`、`PARTITION BY`、TTL 和编解码器；单元格编辑会生成 `ALTER TABLE ... UPDATE` 变更，供您在运行前审阅。
+  * 基于 `EXPLAIN json = 1, indexes = 1` 的查询计划、基于 `system.processes` 的进程列表，以及基于 `system.query_log` 构建的性能分析器。
+  * schema 比较、数据比较，以及可跨多个数据库查询并借助 DuckDB 关联结果的笔记本。
+  * SSH 隧道、从密钥管理器读取密码、只读连接、MCP 服务器，以及可提供查询建议的 AI 助手——未经您批准，不会执行任何操作。
+
+  [官网](https://dbine.com) · [下载](https://github.com/addlayer-io/dbine/releases)
 </Accordion>
 
 ## 商业 {#commercial}

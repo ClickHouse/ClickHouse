@@ -859,7 +859,7 @@ Consulta también la [sentencia `SET`](/es/reference/statements/use).
 currentDatabase()
 ```
 
-**Alias**: `current_database`, `DATABASE`, `SCHEMA`
+**Alias**: `current_schema`, `current_database`, `DATABASE`, `SCHEMA`
 
 **Argumentos**
 
@@ -897,7 +897,7 @@ SELECT CURRENT_DATABASE
 
 ## currentHandler {#currentHandler}
 
-Introducida en: v26.6.0
+Introducida en: v26.8.0
 
 Devuelve el nombre del handler HTTP definido en SQL (creado con `CREATE HANDLER`) que invocó la consulta.
 Devuelve una cadena vacía si la consulta no se invocó mediante dicho handler.
@@ -1008,7 +1008,7 @@ SELECT currentQueryID();
 
 ## currentRequestURL {#currentRequestURL}
 
-Introducido en: v26.6.0
+Introducido en: v26.8.0
 
 Devuelve la URL de la solicitud HTTP (la ruta y la cadena de consulta) que invocó la consulta.
 Devuelve una cadena vacía si la consulta no se invocó mediante HTTP.
@@ -1179,6 +1179,43 @@ SELECT CURRENT_USER
 ┌─CURRENT_USER─┐
 │ default      │
 └──────────────┘
+```
+
+## current_setting {#current_setting}
+
+Introducido en: v26.8.0
+
+Función de compatibilidad con PostgreSQL. Devuelve el valor de un parámetro de configuración en tiempo de ejecución. Solo se emula un pequeño conjunto de parámetros de solo lectura que se utilizan para la introspección desde el cliente.
+
+<Note>
+  Esta función es no determinista: puede devolver resultados distintos con los mismos argumentos.
+</Note>
+
+**Sintaxis**
+
+```sql
+current_setting(name [, missing_ok])
+```
+
+**Argumentos**
+
+* `name` — El nombre del parámetro de configuración. [`String`](/es/reference/data-types/string)
+* `missing_ok` — Devuelve `NULL` en lugar de lanzar una excepción si el parámetro es desconocido. [`UInt8`](/es/reference/data-types/int-uint)
+
+**Valor devuelto**
+
+El valor del parámetro de configuración, o `NULL` si el parámetro es desconocido y `missing_ok` es true. [`Nullable(String)`](/es/reference/data-types/nullable)
+
+**Ejemplos**
+
+**Ejemplo**
+
+```sql title=Query
+SELECT current_setting('server_version_num')
+```
+
+```response title=Response
+120000
 ```
 
 ## defaultProfiles {#defaultProfiles}
@@ -2348,6 +2385,39 @@ SELECT formatReadableTimeDelta(INTERVAL 12345 SECOND) AS time_delta
 ┌─time_delta─────────────────────────┐
 │ 3 hours, 25 minutes and 45 seconds │
 └────────────────────────────────────┘
+```
+
+## format_type {#format_type}
+
+Introducido en: v26.8.0
+
+Función de compatibilidad con PostgreSQL. Devuelve el nombre SQL de un tipo a partir de su OID. Para `numeric`, el modificador de tipo se decodifica en la precisión y la escala (`numeric(p, s)`); para cualquier otro tipo, el modificador se ignora. Un modificador de tipo `NULL` indica, al igual que `-1`, que no se conoce ningún modificador, y un OID de tipo `NULL` devuelve `NULL`.
+
+**Sintaxis**
+
+```sql
+format_type(type_oid, typemod)
+```
+
+**Argumentos**
+
+* `type_oid` — El OID del tipo. [`(U)Int*`](/es/reference/data-types/int-uint)
+* `typemod` — El modificador de tipo o `NULL`. [`(U)Int*`](/es/reference/data-types/int-uint) o [`NULL`](/es/reference/syntax#null)
+
+**Valor devuelto**
+
+El nombre SQL del tipo. [`String`](/es/reference/data-types/string)
+
+**Ejemplos**
+
+**Ejemplo**
+
+```sql title=Query
+SELECT format_type(23, -1)
+```
+
+```response title=Response
+integer
 ```
 
 ## fuzzQuery {#fuzzQuery}
@@ -4179,7 +4249,7 @@ minSampleSizeConversion(baseline, mde, power, alpha)
 
 **Valor devuelto**
 
-Devuelve un Tuple con nombre con 3 elementos: `minimum_sample_size`, `detect_range_lower`, `detect_range_upper`. Estos son, respectivamente: el tamaño de muestra requerido, el límite inferior del intervalo de valores no detectables con el tamaño de muestra requerido devuelto, calculado como `baseline - mde`, y el límite superior del intervalo de valores no detectables con el tamaño de muestra requerido devuelto, calculado como `baseline + mde`. [`Tuple(Float64, Float64, Float64)`](/es/reference/data-types/tuple)
+Devuelve un Tuple con nombre con 3 elementos: `minimum_sample_size`, `detect_range_lower`, `detect_range_upper`. Estos son, respectivamente: el tamaño de muestra requerido, el límite inferior del rango de valores no detectables con el tamaño de muestra requerido devuelto, calculado como `baseline - mde`, y el límite superior del rango de valores no detectables con el tamaño de muestra requerido devuelto, calculado como `baseline + mde`. [`Tuple(Float64, Float64, Float64)`](/es/reference/data-types/tuple)
 
 **Ejemplos**
 
@@ -4190,7 +4260,7 @@ SELECT minSampleSizeConversion(0.25, 0.03, 0.80, 0.05) AS sample_size
 ```
 
 ```response title=Response
-(3396.077603219163,0.22,0.28)
+(3396.077603219162,0.22,0.28)
 ```
 
 ## neighbor {#neighbor}
@@ -5001,7 +5071,8 @@ Introducida en: v26.8.0
 
 Función de compatibilidad para el protocolo wire de PostgreSQL, análoga a `pg_catalog.pg_table_is_visible`.
 Los clientes de PostgreSQL (por ejemplo, el comando `\d` de `psql`) la utilizan para filtrar las tablas visibles en la ruta de búsqueda.
-Dado que la vista `pg_class` emulada por ClickHouse solo expone las tablas de la base de datos actual, que son todas visibles, la función siempre devuelve `1`.
+Fuera de una sesión del protocolo wire de PostgreSQL no hay ningún catálogo emulado con el que resolver el oid, por lo que la función devuelve `1`.
+Dentro de una sesión de este tipo, el handler de PostgreSQL reescribe la llamada como una comprobación de la ruta de búsqueda en el catálogo emulado, ya que este expone cada base de datos como un esquema.
 
 **Sintaxis**
 
@@ -6079,7 +6150,7 @@ Introducido en: v22.6.0
 Devuelve la instantánea más reciente (Commit Sequence Number) de una [transacción](/es/concepts/features/operations/insert/transactions#transactions-commit-and-rollback) disponible para lectura.
 
 <Note>
-  Esta función forma parte de un conjunto de características experimentales. Habilite la compatibilidad experimental con transacciones añadiendo esta configuración a su archivo de configuración:
+  Esta función forma parte de una característica. Habilite la compatibilidad experimental con transacciones añadiendo esta configuración a su archivo de configuración:
 
   ```xml
   <clickhouse>
@@ -6088,6 +6159,10 @@ Devuelve la instantánea más reciente (Commit Sequence Number) de una [transacc
   ```
 
   Para obtener más información, consulte la página [Compatibilidad transaccional (ACID)](/es/concepts/features/operations/insert/transactions#transactions-commit-and-rollback).
+</Note>
+
+<Note>
+  Esta función no es determinista: puede devolver resultados distintos con los mismos argumentos.
 </Note>
 
 **Sintaxis**
@@ -6131,7 +6206,7 @@ Introducido en: v22.6.0
 Devuelve la instantánea más antigua (Commit Sequence Number) visible para alguna [transacción](/es/concepts/features/operations/insert/transactions#transactions-commit-and-rollback) en ejecución.
 
 <Note>
-  Esta función forma parte de un conjunto de características experimentales. Habilite la compatibilidad experimental con transacciones añadiendo esta configuración a su configuración:
+  Esta función forma parte de una característica. Habilite la compatibilidad experimental con transacciones añadiendo esta configuración a su configuración:
 
   ```xml
   <clickhouse>
@@ -6140,6 +6215,10 @@ Devuelve la instantánea más antigua (Commit Sequence Number) visible para algu
   ```
 
   Para obtener más información, consulte la página [Compatibilidad transaccional (ACID)](/es/concepts/features/operations/insert/transactions#transactions-commit-and-rollback).
+</Note>
+
+<Note>
+  Esta función es no determinista: puede devolver resultados distintos con los mismos argumentos.
 </Note>
 
 **Sintaxis**

@@ -13,9 +13,7 @@ import { VersionHistory } from "/snippets/zh/components/VersionHistory/VersionHi
 
 这些设置可在 [system.settings](/zh/reference/system-tables/settings) 中查看，并由 [源代码](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp) 自动生成。
 
-<div id="s3_allow_multipart_copy">
-  ## s3_allow_multipart_copy
-</div>
+## s3_allow_multipart_copy {#s3_allow_multipart_copy}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -23,41 +21,45 @@ import { VersionHistory } from "/snippets/zh/components/VersionHistory/VersionHi
 
 允许在 S3 中使用多部分复制。
 
-<div id="s3_allow_parallel_part_upload">
-  ## s3_allow_parallel_part_upload
-</div>
+## s3_allow_parallel_part_upload {#s3_allow_parallel_part_upload}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
 使用多个线程执行 S3 分段上传。这可能会略微增加内存占用
 
-<div id="s3_allow_server_credentials_in_user_queries">
-  ## s3_allow_server_credentials_in_user_queries
-</div>
+## s3_allow_server_credentials_in_user_queries {#s3_allow_server_credentials_in_user_queries}
+
+**别名**: `allow_server_credentials_in_user_queries`
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.7"},{"label": "0"},{"label": "新增设置，用于阻止来自用户 SQL 的 S3 访问解析服务器自身的 ambient 凭证（environment\/IMDS\/IRSA\/instance-profile\/AWS-config-file\/GCP-OAuth-metadata）。仍允许显式基于 role_arn 的 STS assume-role。可通过 compatibility 设置恢复此前的行为（允许）。"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.7"},{"label": "0"},{"label": "新增设置，用于阻止来自用户 SQL 的 S3 访问解析服务器自身的 ambient 凭证（environment\/IMDS\/IRSA\/instance-profile\/AWS-config-file\/GCP-OAuth-metadata）。仍允许显式基于 role_arn 的 STS assume-role。可通过 compatibility 设置恢复此前的行为（允许）。"}]}, {"id": "row-2","items": [{"label": "26.11"},{"label": "0"},{"label": "同时阻止来自用户 SQL 的 Azure Blob Storage 访问使用服务器自身的身份（AKS workload identity 或机器的 managed identity）进行身份验证。新增别名 `allow_server_credentials_in_user_queries`。"}]}]} />
 
-允许源自用户 SQL 的 S3 访问使用服务器管理的凭证。
+允许源自用户 SQL 的 S3 和 Azure Blob Storage 访问使用服务端管理的凭证。
 
-禁用时 (默认值) ，`s3`/`s3Cluster` 表函数、`S3`/`S3Queue` 引擎、S3 命名集合、动态 `disk(type=s3, ...)` 定义、`BACKUP`/`RESTORE TO S3`、DataLake 表数据读取，以及 `DataLakeCatalog` 数据库 (Glue、BigLake) 都不能从环境、实例元数据 (IMDS) 、IRSA、ECS、实例 profile、SSO、AWS config/凭证 文件或 GCP OAuth 元数据服务中解析凭证。如果某个请求要求使用这些服务器管理的来源之一 (例如 `use_environment_credentials = 1` 或 `http_client = gcp_oauth`) ，却没有提供可用的显式凭证，则会以 `ACCESS_DENIED` 拒绝。如果请求不要求其中任何一种，则会以未签名 (匿名) 方式发送，与提供 `NOSIGN` 时相同。
+由于该设置同样适用于 Azure，因此也可通过别名 `allow_server_credentials_in_user_queries` 使用。
 
-即使禁用此设置，基于 `role_arn` 的 STS assume-role (`extra_credentials(role_arn = '...')`) 仍然允许：目标 role 必须显式信任服务器运行时所使用的身份，并且只有所 assume 的 role 的凭证会为查询的 S3 请求签名，因此服务器自身的凭证不会暴露给查询。这是为 ClickHouse Cloud 授予私有 bucket 访问权限的文档化方式。当查询提供完整的 key pair 时，role 会使用查询自身的 base keys 进行 assume；否则，STS AssumeRole 调用会由服务器的 ambient identity 签名。服务器 `<s3>`/endpoint config 或命名集合中的静态 keys 永远不会作为查询提供的 role 的 STS base，并且服务器 `<s3>` config 中配置的 `role_arn` 完全不会应用于用户查询。动态 `disk(type=s3, role_arn=...)` 定义仍受该限制约束。
+禁用时 (默认值) ，`s3`/`s3Cluster` 表函数、`S3`/`S3Queue` 引擎、S3 命名集合、动态 `disk(type=s3, ...)` 定义、`BACKUP`/`RESTORE TO S3`、DataLake 表数据读取，以及 `DataLakeCatalog` 数据库 (Glue、BigLake) 都不能从环境、实例元数据 (IMDS) 、IRSA、ECS、实例 profile、SSO、AWS config/凭证 文件或 GCP OAuth 元数据服务中解析凭证。如果某个请求要求使用这些服务端管理的来源之一 (例如 `use_environment_credentials = 1` 或 `http_client = gcp_oauth`) ，却没有提供可用的显式凭据，则会以 `ACCESS_DENIED` 拒绝。如果请求不要求其中任何一种，则会以未签名 (匿名) 方式发送，与提供 `NOSIGN` 时相同。
 
-是否将无凭证请求视为请求环境凭证，由 `use_environment_credentials` 决定。命名集合默认将其设为 `0`，因此仅指定 URL 的集合会以匿名方式读取。`s3`/`s3Cluster` 表函数和 `S3`/`S3Queue` 引擎除非服务器的 `<s3>` config 另有设置，否则使用内置默认值 (`1`) ；将 `<s3><use_environment_credentials>0</use_environment_credentials></s3>` 设为使它们的无凭证读取默认也以匿名方式进行 (否则此类请求会被拒绝，并且必须使用 `NOSIGN`) 。在 server configuration 中定义的 disk 不受影响，默认仍使用环境凭证；而用户创建的动态 `disk(type = s3, ...)` 定义则受该限制约束 (见上文) ，当它们依赖默认值/环境凭证时会被拒绝。
+即使禁用此设置，基于 `role_arn` 的 STS assume-role (`extra_credentials(role_arn = '...')`) 仍然允许：目标 role 必须显式信任服务端运行时所使用的身份，并且只有所 assume 的 role 的凭证会为查询的 S3 请求签名，因此服务端自身的凭证不会暴露给查询。这是为 ClickHouse Cloud 授予私有 bucket 访问权限的文档化方式。当查询提供完整的 key pair 时，role 会使用查询自身的 base keys 进行 assume；否则，STS AssumeRole 调用会由服务端的 ambient identity 签名。服务端 `<s3>`/endpoint config 或命名集合中的静态 keys 永远不会作为查询提供的 role 的 STS base，并且服务端 `<s3>` config 中配置的 `role_arn` 完全不会应用于用户查询。动态 `disk(type=s3, role_arn=...)` 定义仍受该限制约束。
 
-这可防止已身份验证的用户让服务器使用其自身的 (ambient) 凭证访问 S3。显式提供的凭证不受影响：在查询中传入的 keys、命名集合中的静态 keys (通过 SQL 创建或在 config 中定义) ，以及服务器 `<s3>` config 中的 keys，都会继续正常工作。
+是否将无凭证请求视为请求环境凭证，由 `use_environment_credentials` 决定。命名集合默认将其设为 `0`，因此仅指定 URL 的集合会以匿名方式读取。`s3`/`s3Cluster` 表函数和 `S3`/`S3Queue` 引擎除非服务端的 `<s3>` config 另有设置，否则使用内置默认值 (`1`) ；将 `<s3><use_environment_credentials>0</use_environment_credentials></s3>` 设为使它们的无凭证读取默认也以匿名方式进行 (否则此类请求会被拒绝，并且必须使用 `NOSIGN`) 。在服务器配置中定义的 disk 不受影响，默认仍使用环境凭证；而用户创建的动态 `disk(type = s3, ...)` 定义则受该限制约束 (见上文) ，当它们依赖默认值/环境凭证时会被拒绝。
 
-向用户查询授予 S3 访问权限的推荐方式，是使用带有显式凭证的命名集合 (公共存储桶则使用 `NOSIGN`) ：这样 keys 不会出现在查询文本中，并且每个集合的使用都通过 RBAC 控制 (`GRANT NAMED COLLECTION ON <name> TO <user>`) ，因此你可以向特定用户授予特定 bucket 的访问权限，而不是暴露服务器自身的身份。
+这可防止已身份验证的用户让服务端使用其自身的环境凭据访问 S3。显式提供的凭证不受影响：在查询中传入的 keys、命名集合中的静态 keys (通过 SQL 创建或在 config 中定义) ，以及服务端 `<s3>` config 中的 keys，都会继续正常工作。
 
-适用范围 (有意不包含的范围) ：此设置仅阻止上面列出的服务器 ambient 凭证 来源。它不会阻止来自服务器 `<s3>` config 或 config 中定义的命名集合的、由 operator provisioned 的静态 `access_key_id`/`secret_access_key`：这些被视为显式凭证，并会继续生效。不过请注意，诸如 `access_header` 或 server-side-encryption keys 之类的 config 请求材料，在这里本身并不被视为凭证：如果某个请求仅携带此类材料而没有显式 key pair (且默认 `use_environment_credentials = 1`) ，仍然会被拒绝，因为否则它会回退到服务器的 ambient 凭证。此类 endpoint 还必须提供显式 keys、`NOSIGN`、`use_environment_credentials = 0`，或使用下面的例外通道。
+向用户查询授予 S3 访问权限的推荐方式，是使用带有显式凭据的命名集合 (公共存储桶则使用 `NOSIGN`) ：这样 keys 不会出现在查询文本中，并且每个集合的使用都通过 RBAC 控制 (`GRANT NAMED COLLECTION ON <name> TO <user>`) ，因此你可以向特定用户授予特定 bucket 的访问权限，而不是暴露服务端自身的身份。
 
-受信任的管理客户端可能需要使用服务器管理的凭证执行合法操作 (例如，通过 SQL 在 `s3_plain_rewritable` 磁盘上附加系统表) 。请在该客户端的 session 或 settings profile 中启用此设置以允许此操作。
+范围 (有意不涵盖的情形) ：此设置仅阻止上面列出的服务端环境凭据来源。它不会阻止运维人员在服务端 `<s3>` config 或 config 中定义的命名集合里配置的静态 `access_key_id`/`secret_access_key`：这些被视为显式凭据，仍可正常使用。但请注意，`access_header` 或服务端加密密钥等 config 请求材料本身在此处并不被视为凭证：如果某个请求只携带此类材料而没有显式的密钥对 (且使用默认的 `use_environment_credentials = 1`) ，该请求仍会被拒绝，否则它会回退到服务端的环境凭据。此类端点还必须提供显式密钥、`NOSIGN`、`use_environment_credentials = 0`，或使用下文所述的例外机制。
+
+受信任的管理客户端可能需要使用服务端管理的凭证执行合法操作 (例如，通过 SQL 在 `s3_plain_rewritable` 磁盘上附加系统表) 。请在该客户端的 session 或 settings profile 中启用此设置以允许此操作。
 
 对于 `BACKUP`/`RESTORE ... ON CLUSTER`，发起方的此设置值会传播到其他 hosts，并在这些 hosts 上按原样使用。这些 hosts 会通过分布式 DDL queue 执行操作在各 host 上的后续部分，默认情况下不使用发起方的用户，因此原本会根据各自的默认 profile 评估该限制；但会保留发起方的值，因为它已在自身受限的 settings 下打开同一 backup destination。发起方的 `readonly` 约束仍然适用 (不受信任的发起方无法为自己的 on-cluster backup 启用此设置) ，因此这不会削弱该限制。
 
-对于持久化的 `S3` 和 `S3Queue` 表：如果只在 session 或 profile 中启用此项，重启后不会持续生效。当 server 根据已存储的定义重新加载这类表时 (在启动时或执行 `RESTORE` 时) ，它会重建 S3 client，并使用启动 Context 重新应用该限制。因此，那些依赖服务器管理的凭证、且仅在 session/profile `s3_allow_server_credentials_in_user_queries = 1` 下创建的表，虽然可以成功创建，但在重启后会变得无法访问 (表本身仍会保留；对其执行的查询会失败，直到其凭证再次解析到允许的来源) 。不过，server 本身仍然可以启动。要让这类表获得持久访问能力，请为其提供显式凭证；或者，也可以在整个 server 范围内启用该 setting，这样它们在重启后仍可被加载，但代价是对所有重新加载都放宽了这一限制。
+对于持久化的 `S3` 和 `S3Queue` 表：如果只在 session 或 profile 中启用此项，重启后不会持续生效。当服务端根据已存储的定义重新加载这类表时 (在启动时或执行 `RESTORE` 时) ，它会重建 S3 Client，并使用启动上下文重新应用该限制。因此，那些依赖服务端管理的凭证、且仅在 session/profile `s3_allow_server_credentials_in_user_queries = 1` 下创建的表，虽然可以成功创建，但在重启后会变得无法访问 (表本身仍会保留；对其执行的查询会失败，直到其凭证再次解析到允许的来源) 。不过，服务端本身仍然可以启动。要让这类表获得持久访问能力，请为其提供显式凭据；或者，也可以在整个服务端范围内启用该 setting，这样它们在重启后仍可被加载，但代价是对所有重新加载都放宽了这一限制。
+
+Azure Blob Storage 同样受此设置约束。禁用此设置时，`azureBlobStorage`/`azureBlobStorageCluster` 表函数、`AzureBlobStorage`/`AzureQueue` 引擎、Azure 命名集合、动态 `disk(type = azure_blob_storage, ...)` 定义、`BACKUP`/`RESTORE TO AzureBlobStorage`，以及通过 Azure 读取 DataLake 表数据的操作，均不能使用服务端自身运行所用的身份进行认证，即 AKS 工作负载身份 (来自 `AZURE_FEDERATED_TOKEN_FILE` 的投射服务账户令牌) 或所在机器的 Azure 托管身份。此类请求会被拒绝并返回 `ACCESS_DENIED`。显式提供的凭证不受影响：`account_name`/`account_key` 密钥对、连接字符串、SAS 令牌，以及命名集合或服务端 `<storage_configuration>` 中的静态凭证均可继续使用。Azure 会将存储持有者令牌绑定到签发时对应的账户，而不是令牌所发往的主机，因此如果向取自查询的 URL 发送请求，不仅会把可用的令牌交给控制该 URL 的任何人，还会读取用户无权访问的容器。
+
+对于 Azure，依赖 workload identity 或 managed identity 的命名集合同样会受到限制，包括在服务端配置中定义的命名集合；`extra_credentials(client_id = '...', tenant_id = '...')` 也同样受限，因为它会用服务端自身的联合令牌换取指定 Client 的凭证。在服务端配置中定义的磁盘仍会继续使用 workload identity 或 managed identity。动态 Azure 磁盘会像表一样受到限制，但 `system` 数据库中的表在启用服务端设置 `s3_allow_server_credentials_for_system_table_disks` 时除外；在启用此设置时创建的动态 Azure 磁盘会在其已存储的定义中记录这一点，因此重启后仍会继续使用服务端的身份。该记录仅由服务端写入，在 `CREATE` 或 `ATTACH` 查询中会被忽略。即使启用了此设置，`AzureQueue` 中 `after_processing = 'move'` 的目标端也必须携带自己的凭证 (连接字符串或 SAS 令牌) ，这与 `S3Queue` 的 move 目标端需要自己的密钥同理。依赖服务端身份的持久化 `AzureBlobStorage` 或 `AzureQueue` 表，或位于动态 Azure 磁盘上的表，会在启动时按照 `s3_load_table_anonymously_if_credentials_restricted` 使用不带凭证的 Client 加载；`RESTORE` 创建 Azure 表的方式与 `CREATE` 相同，因此这类表在 `RESTORE` 时会被直接拒绝。
 
 为了让不受信任的用户始终保持禁用状态，请在其 profile 中固定该项：显式将其值设为 `0`，并将其标记为 `readonly`：
 
@@ -79,6 +81,6 @@ import { VersionHistory } from "/snippets/zh/components/VersionHistory/VersionHi
 
 此设置在 `clickhouse-local` 中不生效，因为用户就是 operator。
 
-`DataLakeCatalog` 数据库 (Glue、BigLake) 也适用，但有一点不同。catalog 对象只创建一次，并由该数据库的所有用户共享，因此无法按查询读取其值；它会从执行 `CREATE DATABASE` (或用户执行 `ATTACH DATABASE`) 的 session 中捕获。在启用此设置时创建的数据库 (例如在受信任的 session 或 profile 中) 可能会让其 catalog 使用 server 的 ambient 凭证，而之后所有能够查询该数据库的用户都会共享这些凭证；如果在默认设置下创建，则无论由谁查询，该 catalog 都会对所有人受限。当 server 从自身的 metadata 中加载一个已创建的数据库 (启动时、`RESTORE`) 时，会使用启动 context 重新施加这一限制，这与持久化 `S3`/`S3Queue` 表相同：如果某个 catalog 解析到服务器管理的凭证，它就会保持不可用，并且该数据库会在重启后变得不可访问 (server 仍会启动；该数据库会按照 `s3_load_table_anonymously_if_credentials_restricted` 以 catalog 不可用的状态加载，并且查询会报告该限制) 。而提供了显式凭证的 catalog (Glue：`aws_access_key_id` 和 `aws_secret_access_key`；BigLake：完整的 Google ADC 三元组) 则始终可用，并且在重启后仍然有效。
+`DataLakeCatalog` 数据库 (Glue、BigLake) 也适用，但有一点不同。catalog 对象只创建一次，并由该数据库的所有用户共享，因此无法按查询读取其值；它会从执行 `CREATE DATABASE` (或用户执行 `ATTACH DATABASE`) 的 session 中捕获。在启用此设置时创建的数据库 (例如在受信任的 session 或 profile 中) 可能会让其 catalog 使用服务端的环境凭据，而之后所有能够查询该数据库的用户都会共享这些凭证；如果在默认设置下创建，则无论由谁查询，该 catalog 都会对所有人受限。当服务端从自身的 metadata 中加载一个已创建的数据库 (启动时、`RESTORE`) 时，会使用启动上下文重新施加这一限制，这与持久化 `S3`/`S3Queue` 表相同：如果某个 catalog 解析到服务端管理的凭证，它就会保持不可用，并且该数据库会在重启后变得不可访问 (服务端仍会启动；该数据库会按照 `s3_load_table_anonymously_if_credentials_restricted` 以 catalog 不可用的状态加载，并且查询会报告该限制) 。而提供了显式凭据的 catalog (Glue：`aws_access_key_id` 和 `aws_secret_access_key`；BigLake：完整的 Google ADC 三元组) 则始终可用，并且在重启后仍然有效。
 
 {/*AUTOGENERATED_END*/}

@@ -24,7 +24,7 @@ import { ClickHouseSupportedBadge } from "/snippets/ko/components/ClickHouseSupp
 | partition&#95;by   | 파티션은 지정된 기준에 따라 테이블의 레코드를 논리적으로 그룹화한 것입니다. 파티션 키는 테이블 컬럼의 어떤 표현식이든 될 수 있습니다.                                           |                |
 | primary&#95;key    | order&#95;by와 마찬가지로 ClickHouse 프라이머리 키 표현식입니다. 지정하지 않으면 ClickHouse는 order&#95;by 표현식을 프라이머리 키로 사용합니다.                  |                |
 | settings           | 이 모델에 대해 `'CREATE TABLE'`과 같은 DDL SQL 문에 사용할 `'TABLE'` 설정의 맵/딕셔너리입니다.                                                  |                |
-| query&#95;settings | 이 모델과 함께 사용할 `INSERT` 또는 `DELETE` SQL 문에 적용할 ClickHouse 사용자 수준 설정의 맵/딕셔너리입니다.                                          |                |
+| query&#95;settings | 모델의 `INSERT`/`DELETE` SQL 문에, 그리고 뷰와 materialized view의 경우 저장된 뷰 쿼리에 `SETTINGS` 절로 추가되는 사용자 수준 설정의 맵/딕셔너리입니다.          |                |
 | ttl                | 테이블과 함께 사용할 TTL 표현식입니다. TTL 표현식은 테이블의 TTL을 지정하는 데 사용할 수 있는 문자열입니다.                                                     |                |
 | sql&#95;security   | 뷰의 기반 쿼리를 실행할 때 사용할 ClickHouse 사용자입니다. [허용되는 값](/ko/reference/statements/create/view#sql_security): `definer`, `invoker`. |                |
 | definer            | `sql_security`를 `definer`로 설정한 경우, `definer` 절에 기존 사용자 또는 `CURRENT_USER`를 지정해야 합니다.                                    |                |
@@ -55,15 +55,12 @@ import { ClickHouseSupportedBadge } from "/snippets/ko/components/ClickHouseSupp
 ### 모델 설정에 대한 참고 사항 {#a-note-on-model-settings}
 
 ClickHouse에는 여러 유형/수준의 &quot;설정&quot;이 있습니다. 위의 모델 구성에서는 이 중 두 가지를
-구성할 수 있습니다. `settings`는 `CREATE TABLE/VIEW`
-유형의 DDL SQL 문에서 사용되는 `SETTINGS`
-절을 의미하며, 일반적으로 특정 ClickHouse 테이블 엔진에 특화된 설정입니다. 새로운
-`query_settings`는 모델 머티리얼라이즈에 사용되는 `INSERT` 및 `DELETE` 쿼리(증분 머티리얼라이즈
-포함)에 `SETTINGS` 절을 추가하는 데 사용됩니다.
-ClickHouse에는 수백 개의 설정이 있으며, 어떤 것이 &quot;table&quot; 설정이고 어떤 것이 &quot;user&quot;
-설정인지 항상 명확하지는 않습니다(다만 후자는 일반적으로
-`system.settings` 테이블에서 확인할 수 있습니다). 일반적으로는 기본값 사용을 권장하며, 이러한 속성을 사용할 때는
-충분히 검토하고 테스트해야 합니다.
+구성할 수 있습니다.
+
+* `settings`는 `CREATE TABLE/VIEW` 유형의 DDL SQL 문에서 사용되는 `SETTINGS` 절을 의미하며, 일반적으로 특정 ClickHouse 테이블 엔진에 특화된 설정입니다.
+* `query_settings`는 모델 머티리얼라이즈에 사용되는 `INSERT` 및 `DELETE` 쿼리(증분 머티리얼라이즈 포함)에 `SETTINGS` 절을 추가하는 데 사용됩니다. 뷰(view)와 materialized view에서는 `SETTINGS` 절이 저장된 뷰 쿼리에도 추가되므로, materialized view는 원본 테이블에 데이터가 삽입되거나 갱신이 수행될 때마다 이러한 설정을 적용합니다.
+
+ClickHouse에는 수백 개의 설정이 있으며, 어떤 것이 &quot;table&quot; 설정이고 어떤 것이 &quot;user&quot; 설정인지 항상 명확하지는 않습니다(다만 후자는 일반적으로 `system.settings` 테이블에서 확인할 수 있습니다). 일반적으로는 기본값 사용을 권장하며, 이러한 속성을 사용할 때는 충분히 검토하고 테스트해야 합니다.
 
 ### 컬럼 구성 {#column-configuration}
 

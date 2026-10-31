@@ -25,7 +25,7 @@ avg(x)
 
 **戻り値**
 
-算術平均を返します。`x` が数値型の場合、結果は `Float64` となり、`x` が空の場合は `NaN` を返します。`x` が日付型、時刻型、またはインターバル型の場合、結果は `x` と同じ型になります。平均値は表現可能な最も近い値に丸められ、`x` が空の場合はその型のゼロ値を返します。[`Float64`](/ja/reference/data-types/float)、[`Date`](/ja/reference/data-types/date)、[`Date32`](/ja/reference/data-types/date32)、[`DateTime`](/ja/reference/data-types/datetime)、[`DateTime64(P)`](/ja/reference/data-types/datetime64)、[`Time`](/ja/reference/data-types/time)、[`Time64(P)`](/ja/reference/data-types/time64)、または [`Interval`](/ja/reference/data-types/special-data-types/interval)
+算術平均を返します。`x` が数値型の場合、結果は `Float64` となり、`x` が空の場合は `NaN` を返します。`x` が日付型、時刻型、またはインターバル型の場合、結果は `x` と同じ型になります。平均値は表現可能な最も近い値に丸められ、`x` が空の場合はその型のゼロ値を返します。`x` が [`Nullable`](/ja/reference/data-types/nullable) の場合、結果の型は `Nullable(T)` になります。ここで `T` は、`Nullable` でない同等の `x` に対する結果の型です (数値入力の場合は `Float64`) 。入力が空の場合は `NULL` を返します。[`Float64`](/ja/reference/data-types/float)、[`Date`](/ja/reference/data-types/date)、[`Date32`](/ja/reference/data-types/date32)、[`DateTime`](/ja/reference/data-types/datetime)、[`DateTime64(P)`](/ja/reference/data-types/datetime64)、[`Time`](/ja/reference/data-types/time)、[`Time64(P)`](/ja/reference/data-types/time64)、または [`Interval`](/ja/reference/data-types/special-data-types/interval)
 
 **例**
 

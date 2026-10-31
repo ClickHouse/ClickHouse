@@ -12,9 +12,7 @@ import SettingsInfoBlock from "/snippets/es/components/SettingsInfoBlock/Setting
 
 Estos ajustes configuran el servidor de ClickHouse y se generan automáticamente a partir del código fuente de ClickHouse.
 
-<div id="backups">
-  ## copias de seguridad
-</div>
+## copias de seguridad {#backups}
 
 Configuración de las copias de seguridad que se utiliza al ejecutar las sentencias [`BACKUP` y `RESTORE`](/es/concepts/features/backup-restore/overview).
 
@@ -32,8 +30,8 @@ La siguiente configuración puede establecerse mediante subetiquetas:
     ('compare_collected_metadata', 'Bool', 'Si es `true`, compara los metadatos recopilados con los metadatos existentes para garantizar que no hayan cambiado durante la copia de seguridad.', 'true'),
     ('create_table_timeout', 'UInt64', 'Tiempo de espera en milisegundos para crear tablas durante la restauración.', '300000'),
     ('max_attempts_after_bad_version', 'UInt64', 'Número máximo de reintentos tras encontrar un error de versión no válida durante la copia de seguridad/restauración coordinada.', '3'),
-    ('max_sleep_before_next_attempt_to_collect_metadata', 'UInt64', 'Tiempo máximo de espera en milisegundos antes del siguiente intento de recopilar metadatos.', '100'),
-    ('min_sleep_before_next_attempt_to_collect_metadata', 'UInt64', 'Tiempo mínimo de espera en milisegundos antes del siguiente intento de recopilar metadatos.', '5000'),
+    ('max_sleep_before_next_attempt_to_collect_metadata', 'UInt64', 'Tiempo máximo de espera en milisegundos antes del siguiente intento de recopilar metadatos.', '5000'),
+    ('min_sleep_before_next_attempt_to_collect_metadata', 'UInt64', 'Tiempo mínimo de espera en milisegundos antes del siguiente intento de recopilar metadatos.', '100'),
     ('remove_backup_files_after_failure', 'Bool', 'Si el comando `BACKUP` falla, ClickHouse intentará eliminar los archivos ya copiados en la copia de seguridad antes del fallo; de lo contrario, dejará los archivos copiados tal como están.', 'true'),
     ('sync_period_ms', 'UInt64', 'Período de sincronización en milisegundos para la copia de seguridad/restauración coordinada.', '5000'),
     ('test_inject_sleep', 'Bool', 'Espera relacionada con las pruebas', 'false'),
@@ -54,8 +52,8 @@ La siguiente configuración puede establecerse mediante subetiquetas:
 | `compare_collected_metadata`                        | Bool   | Si es true, compara los metadatos recopilados con los metadatos existentes para garantizar que no cambien durante la copia de seguridad.                                                     | `true`                |
 | `create_table_timeout`                              | UInt64 | Tiempo de espera en milisegundos para crear tablas durante la restauración.                                                                                                                  | `300000`              |
 | `max_attempts_after_bad_version`                    | UInt64 | Número máximo de intentos de reintento tras encontrar un error de versión no válida durante la copia de seguridad/restauración coordinada.                                                   | `3`                   |
-| `max_sleep_before_next_attempt_to_collect_metadata` | UInt64 | Tiempo máximo de espera en milisegundos antes del siguiente intento de recopilar metadatos.                                                                                                  | `100`                 |
-| `min_sleep_before_next_attempt_to_collect_metadata` | UInt64 | Tiempo mínimo de espera en milisegundos antes del siguiente intento de recopilar metadatos.                                                                                                  | `5000`                |
+| `max_sleep_before_next_attempt_to_collect_metadata` | UInt64 | Tiempo máximo de espera en milisegundos antes del siguiente intento de recopilar metadatos.                                                                                                  | `5000`                |
+| `min_sleep_before_next_attempt_to_collect_metadata` | UInt64 | Tiempo mínimo de espera en milisegundos antes del siguiente intento de recopilar metadatos.                                                                                                  | `100`                 |
 | `remove_backup_files_after_failure`                 | Bool   | Si el comando `BACKUP` falla, ClickHouse intentará eliminar los archivos ya copiados en la copia de seguridad antes del fallo; de lo contrario, dejará los archivos copiados tal como están. | `true`                |
 | `sync_period_ms`                                    | UInt64 | Período de sincronización en milisegundos para la copia de seguridad/restauración coordinada.                                                                                                | `5000`                |
 | `test_inject_sleep`                                 | Bool   | Espera relacionada con las pruebas                                                                                                                                                           | `false`               |
@@ -70,9 +68,7 @@ Este ajuste está configurado de forma predeterminada de la siguiente manera:
 </backups>
 ```
 
-<div id="backups_io_thread_pool_queue_size">
-  ## backups_io_thread_pool_queue_size
-</div>
+## backups_io_thread_pool_queue_size {#backups_io_thread_pool_queue_size}
 
 <SettingsInfoBlock type="UInt64" default_value="0" changeable_without_restart="Yes" />
 

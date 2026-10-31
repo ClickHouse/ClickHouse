@@ -139,6 +139,25 @@ Para alterar os mapeamentos personalizados de DNS privado de um endpoint, use a 
 
 Se um endpoint mostrar `Rejected` ou `Failed`, leia a mensagem exibida em seu status: ela diferencia uma conexão rejeitada pelo produtor de uma que foi fechada ou que requer atenção. Ambos geralmente indicam que a lista de aceitação do anexo de serviço não inclui o projeto consumidor do ClickPipes. Para ver o status informado pelo GCP para o endpoint, descreva os `connectedEndpoints` do anexo de serviço.
 
+## Limpeza automática de endpoints inativos {#automatic-cleanup}
+
+Endpoints privados reversos que permanecem em um estado terminal são removidos automaticamente após um período de carência definido.
+Isso garante que endpoints não utilizados ou configurados incorretamente não persistam indefinidamente.
+
+Os períodos de carência a seguir se aplicam de acordo com o status do endpoint:
+
+| Status                 | Período de carência | Descrição                                                                                                                                                                            |
+| ---------------------- | ------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| **Failed**             | 7 dias              | O endpoint encontrou um erro durante o provisionamento.                                                                                                                              |
+| **Pending Acceptance** | 1 dia               | A conexão do endpoint não foi aceita pelo proprietário do serviço. Isso se aplica principalmente ao PSC producer-owned. Endpoints PSC nativos são aceitos automaticamente. |
+| **Rejected**           | 1 dia               | A conexão do endpoint foi rejeitada pelo proprietário do serviço.                                                                                                                    |
+
+Ao fim do período de carência, o endpoint e todos os recursos associados são excluídos automaticamente.
+
+Para evitar a remoção automática, resolva o problema subjacente antes que o período de carência expire.
+Por exemplo, adicione o projeto consumidor do ClickPipes à lista de aceitação do anexo de serviço, conforme descrito em [Aprovando conexões producer-owned](#producer-owned),
+ou recrie o endpoint caso ele tenha entrado em estado de falha.
+
 ## Limitações conhecidas {#limitations}
 
 * Um anexo de serviço do PSC só pode ser associado a um serviço do ClickHouse Cloud por vez; ele não pode ser reutilizado em vários serviços. Para mover um anexo de serviço para outro serviço, [entre em contato com o suporte do ClickHouse](https://clickhouse.com/support/program) para liberar a associação existente.

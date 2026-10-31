@@ -11,6 +11,7 @@ doc_type: 'reference'
 import SettingsInfoBlock from "/snippets/ja/components/SettingsInfoBlock/SettingsInfoBlock.jsx";
 import { VersionHistory } from "/snippets/ja/components/VersionHistory/VersionHistory.jsx";
 import { ExperimentalBadge } from "/snippets/ja/components/ExperimentalBadge/ExperimentalBadge.jsx";
+import { BetaBadge } from "/snippets/ja/components/BetaBadge/BetaBadge.jsx";
 
 これらの設定は [system.settings](/ja/reference/system-tables/settings) で確認でき、[ソース](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp) から自動生成されています。
 
@@ -20,7 +21,12 @@ import { ExperimentalBadge } from "/snippets/ja/components/ExperimentalBadge/Exp
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "1"},{"label": "最終集約の出力に LIMIT n 付きの ORDER BY を適用し、バケットごとの選択が正確であることを証明できる場合に、各二段階バケットの上位 n グループのみをマテリアライズするプラン最適化を切り替える新しい設定。"}]}]} />
 
-最終集約の出力に `LIMIT n` 付きの `ORDER BY` を適用し、プランによってバケットごとの選択が正確であることを証明できる場合に、集約の最終変換時に各二段階バケットの上位 n グループのみをその順序でマテリアライズするクエリプランレベルの最適化を切り替えます。結果は正確です。自身のバケットで上位 n に入らないグループには、グローバルでは少なくとも n 個のグループが先行するため、グローバルの top n に入ることはありません。
+最終集約の出力に `LIMIT n` 付きの `ORDER BY` を適用し、プランによってバケットごとの選択が正確であることを証明できる場合に、集約の最終マージまたは最終変換時に各二段階バケットの上位 n グループのみを保持するクエリプランレベルの最適化を切り替えます。結果は正確です。自身のバケットで上位 n に入らないグループには、グローバルでは少なくとも n 個のグループが先行するため、グローバルの top n に入ることはありません。
+
+`count` で並べ替える場合、この最適化は最終変換時に上位グループを選択できます。部分状態からマージ済みの値の範囲を見積もれる集約関数については、代わりにしきい値マージ (Fagin&#39;s Threshold Algorithm) を使用でき、上位 n に到達し得ないグループのマージをスキップします。対応するのは、`count`、結果が `UInt64` となる符号なし整数の `sum` (`UInt8` から `UInt64` の引数。`UInt128` などの幅の広い符号なし整数は対象外)、降順の `uniqExact`、および整数、日付、日時、Decimal、Enum の型に対する降順の `max` と昇順の `min` です (浮動小数点、`UUID`、`IPv4`、`IPv6`、`String`、`FixedString`、およびその他の型は対象外)。`If` および `Null` コンビネータを使用する場合、しきい値マージが維持されるのは `count`、符号なしの `sum`、`uniqExact` に限られ、かつ結果が NULL許容でない場合のみです (例: `countIf`、非 `Nullable` 引数の `sumIf`、`Nullable` 引数の `uniqExact`)。`Nullable` 引数の `sum` および `sumIf` (結果が `Nullable` になるもの)、`maxIf`、`minIf`、`Nullable` 引数の `max` または `min` では通常のマージが使用されます。アルゴリズムは、集約関数、クエリの形状、部分状態の分布に応じて自動的に選択されます。
+
+バケットの上位 n に入らないグループはマージも最終化も行われないため、これは単なるパフォーマンス向けのトグルではありません。上位 n に到達し得ないグループについては、クエリ内の他の集約関数もマージおよび最終化されなくなります。そのため、こうしたグループでの集約関数のマージまたは最終化中に例外を発生させていたクエリが、代わりに行を返すようになる場合があります。この設定を 0 にすると、従来の動作が維持されます。
+
 設定 [query&#95;plan&#95;enable&#95;optimizations](/ja/reference/settings/session-settings/query-plan#query_plan_enable_optimizations) が 1 の場合にのみ有効です。
 
 設定可能な値:
@@ -180,11 +186,17 @@ EXPLAIN PLAN で、元のクエリで指定された別名ではなく、内部�
 
 ## query_plan_join_shard_by_pk_ranges {#query_plan_join_shard_by_pk_ranges}
 
-<SettingsInfoBlock type="Bool" default_value="0" />
+<SettingsInfoBlock type="Bool" default_value="1" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.4"},{"label": "0"},{"label": "新しい設定"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "1"},{"label": "デフォルトで有効化されました。結合キーが両方の主キーのプレフィックスを含む 2 つの MergeTree テーブルに対する `full_sorting_merge` または `parallel_full_sorting_merge` の JOIN は、シングルスレッドのマージ結合ではなく、主キーの範囲ごとに独立したマージ結合として並列に実行されるようになりました。ハッシュ結合が影響を受けるのは、JOINランタイムフィルタとディスクへの退避のどちらも有効でない場合に限られます。"}]}, {"id": "row-2","items": [{"label": "25.4"},{"label": "0"},{"label": "新しい設定"}]}]} />
 
-両方のテーブルで、結合キーに PRIMARY KEY のプレフィックスが含まれている場合は、JOIN に対して分片化を適用します。hash、parallel&#95;hash、full&#95;sorting&#95;merge、parallel&#95;full&#95;sorting&#95;merge アルゴリズムでサポートされています。通常、クエリの高速化にはつながりませんが、メモリ消費量を抑えられる場合があります。
+結合キーが両方のテーブルの主キーのプレフィックスを含む場合、2 つの MergeTree テーブルの JOIN を主キーの範囲ごとに独立した結合として実行します。両テーブルはそのプレフィックスの値に基づいて同じ範囲に分割されるため (`FINAL` がパーツを交差しないレイヤーに分割するのと同じ方法です) 、等しいキーは必ず同じ範囲に入り、各範囲はそれぞれ専用のスレッドで結合されます。
+
+`full_sorting_merge` および `parallel_full_sorting_merge` の場合、両テーブル全体に対するシングルスレッドのマージ結合が、範囲ごとのストリーミングマージ結合に置き換えられ、これらが並列に実行されます。通常、数倍高速になり、メモリ使用量も数分の一に抑えられます。
+
+`hash` および `parallel_hash` の場合、範囲ごとに個別のハッシュテーブルが作成されます。ただし、これが適用されるのは JOINランタイムフィルタ (`enable_join_runtime_filters`) とディスクへの退避 (`max_bytes_ratio_before_external_join`、`max_bytes_before_external_join`) のどちらも有効でない場合に限られます。いずれもこの最適化から結合の内部を隠してしまうためです。この場合、通常クエリは高速化されませんが、メモリ消費量を削減できる可能性があります。範囲はスレッドに静的に割り当てられるため、主キーの範囲の一部でのみ選択性が高いフィルタを使用すると、一部のスレッドがアイドル状態になります。
+
+`FINAL`、`ASOF`、`ON` に複数の選言を含む結合、および並列レプリカを使用した読み取りには適用されません。
 
 ## query_plan_join_swap_table {#query_plan_join_swap_table}
 
@@ -197,6 +209,20 @@ EXPLAIN PLAN で、元のクエリで指定された別名ではなく、内部�
 * &#39;auto&#39;: どのテーブルをビルドテーブルとして使用するかをプランナーが決定します。
 * &#39;false&#39;: テーブルを入れ替えません (右テーブルがビルドテーブルになります) 。
 * &#39;true&#39;: 常にテーブルを入れ替えます (左テーブルがビルドテーブルになります) 。
+
+## query_plan_lazy_materialization_for_join {#query_plan_lazy_materialization_for_join}
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "1"},{"label": "結合を含む `LIMIT n` クエリで遅延マテリアライゼーションを使用するための新しい設定。"}]}]} />
+
+`ORDER BY` の有無にかかわらず、結合を含む `LIMIT n` クエリで遅延マテリアライゼーションを使用します。これにより、
+`MergeTree` テーブルのカラム (および
+`query_plan_optimize_lazy_materialization_for_object_storage` が有効な場合はオブジェクトストレージテーブルのカラム) は、結合によって生成されるすべての行ではなく、
+`LIMIT` を通過した `n` 行に対してのみ読み取られます。この判断は、`LIMIT` より下の部分木全体を 1 つにマージした
+`ActionsDAG` に基づいて行われます。そのため、フィルタで必要とされ、結果でも再び必要となる値は、
+間にあるすべての結合を経由して受け渡されるカラムになるのではなく、`LIMIT` より上で 2 回計算されます (その計算コストはわずかです) 。
+`query_plan_optimize_lazy_materialization` が有効な場合にのみ適用されます。
 
 ## query_plan_lift_up_array_join {#query_plan_lift_up_array_join}
 
@@ -359,31 +385,33 @@ JOIN で遅延索引最適化を有効にするために必要な、左側の pa
 
 ## query_plan_optimize_join_order_algorithm {#query_plan_optimize_join_order_algorithm}
 
-<ExperimentalBadge />
+<BetaBadge />
 
-<SettingsInfoBlock type="JoinOrderAlgorithm" default_value="greedy" />
+<SettingsInfoBlock type="JoinOrderAlgorithm" default_value="dpsub,greedy" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.12"},{"label": "greedy"},{"label": "新しい実験的な設定"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "dpsub,greedy"},{"label": "`dpsub` がデフォルトの JOIN 順序アルゴリズムになりました。relation が 12 個を超えるクエリでは `greedy` にフォールバックします。"}]}, {"id": "row-2","items": [{"label": "25.12"},{"label": "greedy"},{"label": "新しい実験的な設定"}]}]} />
 
 クエリプランの最適化時に試行する JOIN 順序アルゴリズムを指定します。利用可能なアルゴリズムは次のとおりです。
 
 * &#39;greedy&#39; - 基本的な貪欲アルゴリズムです。高速に動作しますが、最適な JOIN 順序にならない場合があります
-* &#39;dpsize&#39; - 現時点では INNER JOIN のみに対応する DPsize アルゴリズムを実装します。考えられるすべての JOIN 順序を検討して最適なものを見つけますが、テーブル数や JOIN 条件が多いクエリでは遅くなることがあります。
-* &#39;dpsub&#39; - INNER JOIN と INNER JOIN 以外の JOIN の両方に対応する DPsub アルゴリズムを実装します。考えられるすべての JOIN 順序を検討して最適なものを見つけますが、テーブル数や JOIN 条件が多いクエリでは遅くなることがあります。
+* &#39;dpsize&#39; - 現時点では INNER JOIN のみに対応する DPsize アルゴリズムを実装します。考えられるすべての JOIN 順序を検討して最適なものを見つけますが、テーブル数や JOIN 述語が多いクエリでは遅くなることがあります。
+* &#39;dpsub&#39; - INNER JOIN と INNER JOIN 以外の JOIN の両方に対応する DPsub アルゴリズムを実装します。考えられるすべての JOIN 順序を検討して最適なものを見つけます。relation が 12 個以下のクエリにのみ適用され、それを超える場合はリスト内の次のアルゴリズムに処理を譲ります。
 * &#39;dphyp&#39; - 現時点では INNER JOIN のみに対応する DPhyp (ハイパーグラフ分割による動的計画法) アルゴリズムを実装します。`dpsize` と同じ探索空間を調べますが、連結された部分グラフのペアだけを列挙するため、クロス積を考慮しない代わりに、スパースな JOIN グラフでは中間 JOIN の数を減らせます
-  複数のアルゴリズムは、たとえば `dphyp,greedy` のようにカンマ区切りのリストで指定できます。指定した順に試行され、あるアルゴリズムでクエリを処理できない場合 (たとえば OUTER JOIN や非連結なコンポーネントがある場合) は、フォールバックとして次のアルゴリズムが使用されます。
+  複数のアルゴリズムは、たとえば `dphyp,greedy` のようにカンマ区切りのリストで指定できます。指定した順に試行され、あるアルゴリズムでクエリを処理できない場合 (たとえば relation が多すぎる場合や非連結なコンポーネントがある場合) は、フォールバックとして次のアルゴリズムが使用されます。
 
 ## query_plan_optimize_join_order_conflict_detector {#query_plan_optimize_join_order_conflict_detector}
 
-<ExperimentalBadge />
+<BetaBadge />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": ""},{"label": "DPsub JOIN 順序アルゴリズムにおいて JOIN の並べ替えの妥当性を判定する conflict detector を選択する新しい設定。`a` は（正しいが不完全な）CD-A、`c` は（正しく完全な）CD-C、空の場合はいずれも使用しません。"}]}, {"id": "row-2","items": [{"label": "26.10"},{"label": ""},{"label": "DPsub JOIN 順序アルゴリズムにおいて JOIN の並べ替えの妥当性を判定する conflict detector を選択する新しい設定。`a` は（正しいが不完全な）CD-A、`c` は（正しく完全な）CD-C、空の場合はいずれも使用しません。"}]}]} />
+<SettingsInfoBlock type="JoinOrderConflictDetector" default_value="c" />
 
-`dpsub` JOIN 順序アルゴリズムにのみ影響します。DPsub がどの JOIN の並べ替えを有効とみなすかを判定するために使用する conflict detector を選択します。指定できる値は次のとおりです。
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": ""},{"label": "DPsub JOIN 順序アルゴリズムにおいて結合順序の変更の妥当性を判定する conflict detector を選択する新しい設定。`a` は（正しいが不完全な）CD-A、`c` は（正しく完全な）CD-C、空の場合はいずれも使用しません。"}]}, {"id": "row-2","items": [{"label": "26.11"},{"label": "c"},{"label": "DPsub JOIN 順序アルゴリズムにおいて結合順序の変更の妥当性を判定する conflict detector を選択する新しい設定。`a` は（正しいが不完全な）CD-A、`c` は（正しく完全な）CD-C、空の場合はいずれも使用しません。デフォルトは CD-C で、`query_plan_optimize_join_order_algorithm` のデフォルト値 `dpsub` と組み合わせることで、semi JOIN および anti JOIN も並べ替えの対象になります。"}]}]} />
 
-* `''` (デフォルト)  - conflict detector を使用せず、DPsub は relation ごとの `ON` 句による制限を使用します
+`dpsub` JOIN 順序アルゴリズムにのみ影響します。DPsub がどの結合順序の変更を有効とみなすかを判定するために使用する conflict detector を選択します。指定できる値は次のとおりです。
+
+* `''` - conflict detector を使用せず、DPsub は relation ごとの `ON` 句による制限を使用します
 * `'a'` - CD-A conflict detector。正しいが不完全です
-* `'c'` - CD-C conflict detector。正しく完全です
+* `'c'` (デフォルト) - CD-C conflict detector。正しく完全です
 
 ## query_plan_optimize_join_order_limit {#query_plan_optimize_join_order_limit}
 
@@ -513,11 +541,13 @@ wide `String` / `FixedString` の引数を置き換えるため、これらの�
 
 ## query_plan_read_in_order_through_join {#query_plan_read_in_order_through_join}
 
-<SettingsInfoBlock type="Bool" default_value="1" />
+<SettingsInfoBlock type="BoolForce" default_value="1" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.12"},{"label": "1"},{"label": "新しい設定"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "1"},{"label": "値 `force` を追加しました。パーツが仮想行を通知しない場合でも、結合をまたいで順序に従った読み取りを維持します。"}]}, {"id": "row-2","items": [{"label": "25.12"},{"label": "1"},{"label": "新しい設定"}]}]} />
 
-JOIN演算において左テーブルから順序どおりに読み取りを継続し、その後のステップで利用できるようにします。
+JOIN演算において左テーブルからの順序に従った読み取りを維持し、後続の処理ステップでその順序を活用できるようにします。
+
+`LEFT` 以外の結合では、左テーブルのすべてのパーツが仮想行を通知する場合にのみ、順序に従った読み取りが維持されます ([`read_in_order_use_virtual_row`](/ja/reference/settings/session-settings/read-in#read_in_order_use_virtual_row) を参照) 。仮想行がない場合、結合後のマージで、上限を満たすのに必要な量よりはるかに多くのデータを読み取る可能性があります。値 `force` を指定すると、この条件にかかわらず順序に従った読み取りを維持します。
 
 ## query_plan_remove_redundant_distinct {#query_plan_remove_redundant_distinct}
 
@@ -572,6 +602,14 @@ JOIN演算において左テーブルから順序どおりに読み取りを継�
 
 * 0 - 無効
 * 1 - 有効
+
+## query_plan_replace_always_true_filter {#query_plan_replace_always_true_filter}
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "1"},{"label": "新しい設定"}]}]} />
+
+フィルタ条件が常に true であり、かつクエリでフィルタカラムが使用されていない場合に、フィルタステップを 式 ステップに置換します。このようなフィルタステップは行を除外しませんが、結合順序の変更を妨げてしまいます。
 
 ## query_plan_reuse_storage_ordering_for_window_functions {#query_plan_reuse_storage_ordering_for_window_functions}
 

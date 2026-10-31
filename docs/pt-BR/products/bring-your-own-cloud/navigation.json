@@ -54,6 +54,7 @@
         {
           "group": "Modo de conector",
           "hidden": true,
+          "tag": "Preview",
           "pages": [
             "pt-BR/products/bring-your-own-cloud/connector/overview",
             "pt-BR/products/bring-your-own-cloud/connector/onboarding",
@@ -68,8 +69,7 @@
             "pt-BR/products/bring-your-own-cloud/connector/reference/configuration",
             "pt-BR/products/bring-your-own-cloud/connector/reference/faq",
             "pt-BR/products/bring-your-own-cloud/connector/reference/privilege-model"
-          ],
-          "tag": "Preview"
+          ]
         }
       ]
     }

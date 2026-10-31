@@ -23,7 +23,7 @@ import { BetaBadge } from "/snippets/ja/components/BetaBadge/BetaBadge.jsx";
 設定可能な値:
 
 * 0 — 最適化は無効です。
-  * 1 — 最適化は有効です。
+* 1 — 最適化は有効です。
 
 ## optimize_trivial_count_query {#optimize_trivial_count_query}
 
@@ -34,7 +34,7 @@ MergeTree のメタデータを使用して、単純なクエリ `SELECT count()
 設定可能な値:
 
 * 0 — 最適化は無効です。
-  * 1 — 最適化は有効です。
+* 1 — 最適化は有効です。
 
 関連項目:
 
@@ -65,7 +65,7 @@ MergeTree のメタデータを使用して、単純なクエリ `SELECT count()
 * 符号なし整数カラムに対する `col > 0`、`col >= 1`、`col < 1`、`col <= 0`。
 * `Int*`、`UInt*`、`Bool` カラムに対する単独の `col` / `NOT col` (真偽判定) 。
 
-等価比較のパターンは、`Float*`、`Enum*`、`Nullable`、`LowCardinality`、
+等価比較のパターンは、`Float*`、`Enum*`、`Date32`、`Nullable`、`LowCardinality`、
 および複合型 (`Tuple`、`Array`、`Map`、...) には適用されません。これらでは、count は
 通常のスキャン経路で処理されます。
 
@@ -84,7 +84,7 @@ merge 時に `allow_sparse` に設定されている場合にのみ作成され�
 設定可能な値:
 
 * 0 — 最適化は無効です。
-  * 1 — 最適化は有効です。
+* 1 — 最適化は有効です。
 
 関連項目:
 

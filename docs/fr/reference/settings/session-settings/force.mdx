@@ -101,6 +101,8 @@ Fonctionne avec les tables de la famille MergeTree.
 
 Si `force_primary_key=1`, ClickHouse vérifie si la requête comporte une condition sur la clé primaire qui peut être utilisée pour restreindre les plages de données. S’il n’existe pas de condition appropriée, une exception est levée. Cependant, ClickHouse ne vérifie pas si cette condition réduit la quantité de données à lire. Pour plus d’informations sur les plages de données dans les tables MergeTree, voir [MergeTree](/fr/reference/engines/table-engines/mergetree-family/mergetree).
 
+La vérification porte sur la clé primaire de la table elle-même. Une projection n’est utilisée pour la requête que si celle-ci restreint également les plages de données selon la clé propre à cette projection ; sinon, la projection est ignorée et c’est la table qui est lue. Si une projection imposée avec [force&#95;optimize&#95;projection](/fr/reference/settings/session-settings/force-optimize#force_optimize_projection) a une clé qui n’est pas utilisée, la requête lève une exception.
+
 ## force_read_through_distributed_cache {#force_read_through_distributed_cache}
 
 <CloudOnlyBadge />

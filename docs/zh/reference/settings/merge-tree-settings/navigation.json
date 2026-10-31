@@ -1,6 +1,7 @@
 {
-  "directory": "none",
   "group": "MergeTree 表设置",
+  "root": "zh/reference/settings/merge-tree-settings",
+  "directory": "none",
   "pages": [
     "zh/reference/settings/merge-tree-settings/add-minmax",
     "zh/reference/settings/merge-tree-settings/allow",
@@ -84,6 +85,5 @@
     "zh/reference/settings/merge-tree-settings/write-ahead",
     "zh/reference/settings/merge-tree-settings/zero-copy",
     "zh/reference/settings/merge-tree-settings/other"
-  ],
-  "root": "zh/reference/settings/merge-tree-settings"
+  ]
 }

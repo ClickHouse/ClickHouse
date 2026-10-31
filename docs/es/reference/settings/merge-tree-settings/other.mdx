@@ -456,6 +456,34 @@ baja cardinalidad, es decir, una tabla con solo unos pocos valores distintos de 
 No se espera que las claves primarias de alta cardinalidad, por ejemplo las que incluyen columnas de timestamp de tipo
 `DateTime64`, se beneficien de esta configuración.
 
+## optimize_row_order_if_no_order_by {#optimize_row_order_if_no_order_by}
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "0"},{"label": "Nueva configuración para activar automáticamente la optimización del orden de filas en tablas ordinarias de la familia MergeTree sin clave de ordenación."}]}]} />
+
+Controla si la optimización del orden de filas (véase `optimize_row_order`) se aplica
+automáticamente al insertar en tablas con una clave de ordenación vacía, es decir, tablas
+declaradas con `ORDER BY ()` o `ORDER BY tuple()`.
+
+Deshabilitado de forma predeterminada. Actívelo en tablas en las que mejorar la compresibilidad
+de las partes recién insertadas con LZ4 o ZSTD sea más importante que conservar el
+orden de inserción y el caudal de inserción.
+
+Al igual que con `optimize_row_order`, las inserciones conllevan un coste adicional de CPU para analizar y
+optimizar el orden de las filas de los nuevos datos. Desactive este parámetro de configuración si conservar el
+orden de inserción original de las filas o maximizar el caudal de inserción es más importante
+que la compresión.
+
+Si se establece explícitamente `optimize_row_order = 0`, este valor tiene precedencia: el orden de filas de esa tabla
+nunca se optimiza, independientemente de este parámetro de configuración.
+
+Al igual que con `optimize_row_order`, la optimización solo se aplica a las tablas ordinarias
+de la familia `MergeTree`, incluida `ReplicatedMergeTree`. En los motores
+especializados de la familia, p. ej., `ReplacingMergeTree`,
+`CollapsingMergeTree` o `AggregatingMergeTree`, el orden de filas nunca se optimiza
+y se conserva el orden de las filas insertadas.
+
 ## packed_skip_index_max_bytes {#packed_skip_index_max_bytes}
 
 <BetaBadge />

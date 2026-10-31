@@ -98,17 +98,25 @@
         "ar/clickstack/features/event-patterns",
         "ar/clickstack/features/event-deltas",
         "ar/clickstack/features/alerts",
+        "ar/clickstack/features/anomaly-detection",
         "ar/clickstack/service-maps",
         "ar/clickstack/features/session-replay",
         "ar/clickstack/mcp",
         "ar/clickstack/url-parameters",
         {
-          "group": "أيام العروض التوضيحية",
+          "group": "Demo days",
           "pages": [
             "ar/clickstack/demo-days/index",
             {
               "group": "2026",
               "pages": [
+                {
+                  "group": "أكتوبر",
+                  "pages": [
+                    "ar/clickstack/demo-days/2026/2026-10-08",
+                    "ar/clickstack/demo-days/2026/2026-10-01"
+                  ]
+                },
                 {
                   "group": "سبتمبر",
                   "pages": [
@@ -288,8 +296,8 @@
       "expanded": true,
       "group": "مرجع واجهة برمجة التطبيقات",
       "openapi": {
-        "directory": "ar/clickstack/api-reference",
-        "source": "https://raw.githubusercontent.com/hyperdxio/hyperdx/refs/heads/main/packages/api/openapi.json"
+        "source": "https://raw.githubusercontent.com/hyperdxio/hyperdx/refs/heads/main/packages/api/openapi.json",
+        "directory": "ar/clickstack/api-reference"
       },
       "root": "ar/clickstack/api-reference"
     }

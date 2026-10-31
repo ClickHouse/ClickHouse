@@ -99,6 +99,11 @@ SYSTEM RELOAD ASYNCHRONOUS METRICS [ON CLUSTER cluster_name]
 Очищает кэш первичного индекса, в котором в памяти хранятся первичные ключи таблиц [`MergeTree`](/ru/reference/engines/table-engines/mergetree-family/mergetree).
 Его размер задаётся настройкой уровня сервера [`primary_index_cache_size`](/ru/reference/settings/server-settings/settings/primary-index#primary_index_cache_size).
 
+## SYSTEM CLEAR|DROP STATISTICS CACHE {#drop-statistics-cache}
+
+Очищает кэш статистики, который хранит в памяти статистику столбцов частей данных таблиц [`MergeTree`](/ru/reference/engines/table-engines/mergetree-family/mergetree) — по одной записи на каждую комбинацию части данных и столбца.
+Его размер задаётся настройкой уровня сервера `statistics_cache_size`.
+
 ## SYSTEM CLEAR|DROP ICEBERG METADATA CACHE {#drop-iceberg-metadata-cache}
 
 Очищает кэш метаданных Iceberg.
@@ -183,7 +188,7 @@ SYSTEM DROP DISK METADATA CACHE <disk_name>
 
 ## SYSTEM CLEAR|DROP TIME SERIES CACHES {#drop-time-series-caches}
 
-Очищает кэши таблицы `TimeSeries`, которые позволяют при вставке пропускать строки, уже присутствующие в её целевых таблицах. Таких кэшей два: кэш дедупликации таблицы семейств метрик и кэш дедупликации таблицы tags (используется только при отключённой настройке `store_min_time_and_max_time`); см. настройки таблицы `metric_families_deduplication_cache_expiration_seconds` и `tags_deduplication_cache_expiration_seconds`. Кэши локальны для сервера и не учитывают изменения, внесённые непосредственно в целевые таблицы. Такое расхождение устраняется само собой по истечении срока действия записей; чтобы следующая вставка записала все свои строки без ожидания (например, после очистки таблицы семейств метрик), используйте этот оператор. `TRUNCATE TABLE` для таблицы `TimeSeries` очищает кэши только на том сервере, где выполняется запрос, поэтому, если целевые таблицы реплицируются, после этого выполните данный оператор с `ON CLUSTER`, чтобы очистить кэши на остальных репликах.
+Очищает кэши таблицы `TimeSeries`, которые позволяют при вставке пропускать строки, уже присутствующие в её целевых таблицах. Таких кэшей два: кэш дедупликации таблицы семейств метрик и кэш дедупликации таблицы tags; см. настройки таблицы `metric_families_deduplication_cache_expiration_seconds` и `tags_deduplication_cache_expiration_seconds`. Кэши локальны для сервера и не учитывают изменения, внесённые непосредственно в целевые таблицы. Такое расхождение устраняется само собой по истечении срока действия записей; чтобы следующая вставка записала все свои строки без ожидания (например, после очистки таблицы семейств метрик), используйте этот оператор. `TRUNCATE TABLE` для таблицы `TimeSeries` очищает кэши только на том сервере, где выполняется запрос, поэтому, если целевые таблицы реплицируются, после этого выполните данный оператор с `ON CLUSTER`, чтобы очистить кэши на остальных репликах.
 
 ```sql
 SYSTEM DROP TIME SERIES CACHES [ON CLUSTER cluster_name] [db.]table

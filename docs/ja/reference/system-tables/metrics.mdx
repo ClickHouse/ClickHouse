@@ -30,6 +30,14 @@ import SystemTableCloud from '/snippets/ja/_system_table_cloud.mdx';
 
 接続プールで接続を作成する際に、障害があるとして使用禁止になったアドレスの総数
 
+### AddressToLineCacheBytes {#addresstolinecachebytes}
+
+スタックトレースのシンボル化に使用される、解決済みのソースコード内の位置 (file:line:column) のキャッシュによるメモリ使用量の近似値 (バイト単位) 。
+
+### AddressToLineCacheEntries {#addresstolinecacheentries}
+
+system.trace&#95;log、system.errors、system.error&#95;log のスタックトレースのシンボル化に使用される、解決済みのソースコード内の位置 (file:line:column) のキャッシュに格納されているコードアドレスの数。
+
 ### AggregatorThreads {#aggregatorthreads}
 
 Aggregator スレッドプール内のスレッド数。
@@ -357,6 +365,10 @@ JIT コンパイル済みマシンコードの cache 内のエントリ総数
 ### ConcurrencyControlAcquiredNonCompeting {#concurrencycontrolacquirednoncompeting}
 
 競合中とは見なされない取得済み CPU スロットの総数 (`fair_round_robin` スケジューラ使用時の最初のスレッド)
+
+### ConcurrencyControlParked {#concurrencycontrolparked}
+
+ブロッキング I/O や実行するタスクがない場合など、CPU 以外の要因で待機するために CPU スロットをパーク (解放) しているスレッドの現在の数
 
 ### ConcurrencyControlPreempted {#concurrencycontrolpreempted}
 
@@ -710,6 +722,14 @@ distributed exchange server の handshake 用スレッドプールでタスク�
 
 distributed exchange server のハンドシェイク用スレッドプールで、キューに入っている、または実行中のジョブ数。
 
+### ExternalSetCacheBytes {#externalsetcachebytes}
+
+外部メモリ上にある `IN` 集合のキャッシュに保持されているブロックの合計サイズ (バイト単位)
+
+### ExternalSetCacheCells {#externalsetcachecells}
+
+外部メモリ上にある `IN` 集合のキャッシュに保持されているブロックの総数
+
 ### FiberStackBytes {#fiberstackbytes}
 
 現在割り当てられているファイバースタックの合計サイズ。
@@ -833,6 +853,14 @@ cache 内の領域確保を試みているスレッド数
 ### GlobalThreadScheduled {#globalthreadscheduled}
 
 グローバルスレッドプールでキューに入っている、または実行中のジョブ数。
+
+### GlueCatalogSchemaCacheBytes {#gluecatalogschemacachebytes}
+
+Glue カタログにおける現在の Iceberg スキーマのフィールド型を保持するキャッシュのサイズ (バイト単位)
+
+### GlueCatalogSchemaCacheEntries {#gluecatalogschemacacheentries}
+
+Glue カタログ内の現在の Iceberg スキーマのフィールド型を保持するキャッシュのエントリ数
 
 ### HashedDictionaryThreads {#hasheddictionarythreads}
 
@@ -1098,6 +1126,10 @@ Keeper の changelog の起動時並列 reads 用 スレッドプール にお�
 
 処理待ちのリクエスト数
 
+### KeeperRaftThreadsWaitingForLogsPreprocessing {#keeperraftthreadswaitingforlogspreprocessing}
+
+起動後、ローカルのログエントリの前処理が完了するのを待機している Raft イベントループのスレッド数です。Raft イベントループはリスナー、リーダー選出およびハートビートのタイマー、さらにすべての RPC の完了処理も実行するため、この値は通常 0 または 1 にとどまるはずです。
+
 ### KeeperReadThreads {#keeperreadthreads}
 
 Keeper サーバーの読み取りを処理するスレッドプール内のスレッド数。
@@ -1169,6 +1201,10 @@ DDLWorker が ZooKeeper にプッシュした DDL エントリの最大 ID。
 ### MemoryReservationDemand {#memoryreservationdemand}
 
 メモリ予約に対する保留中の増加リクエストの総バイト数
+
+### MemoryReservationReclaimable {#memoryreservationreclaimable}
+
+回収可能なメモリの合計量
 
 ### MemoryTracking {#memorytracking}
 
@@ -1362,6 +1398,10 @@ AzureObjectStorage のスレッドプールでタスクを実行しているス�
 
 AzureObjectStorage のスレッドプールでキューに入っている、または実行中のジョブ数。
 
+### ObjectStorageExclusiveLeases {#objectstorageexclusiveleases}
+
+このサーバーがオブジェクトストレージ上で現在保持している排他リース (Icebergテーブルのコンパクションなど) の数。
+
 ### ObjectStorageQueueMetadataCacheSizeBytes {#objectstoragequeuemetadatacachesizebytes}
 
 ObjectStorageQueue のメタデータキャッシュのサイズ (バイト単位) 。
@@ -1398,6 +1438,10 @@ S3ObjectStorage のスレッドプールでタスクを実行中のスレッド�
 
 S3ObjectStorage スレッドプール内でキューに入っている、または実行中のジョブ数。
 
+### ObjectStorageSharedLeases {#objectstoragesharedleases}
+
+このサーバーのクエリが現在オブジェクトストレージ内でリースしているキー (読み取り中の Iceberg スナップショットなど) の数。
+
 ### OpenFileForRead {#openfileforread}
 
 読み取り用に開いているファイル数
@@ -1429,6 +1473,10 @@ Outdated data partsを読み込むためのスレッドプールでアクティ�
 ### OutdatedPartsLoadingThreadsScheduled {#outdatedpartsloadingthreadsscheduled}
 
 Outdated data parts の読み込み用スレッドプールで、キューに入っている、または実行中のジョブ数。
+
+### PackedPartsBufferedBytes {#packedpartsbufferedbytes}
+
+書き込み中の packed データパーツでバッファリングされたデータに割り当てられているメモリ量 (バイト) 。一時ファイルに移動されたデータは含まれません。
 
 ### PageCacheBytes {#pagecachebytes}
 
@@ -1962,6 +2010,14 @@ StartupSystemTables のスレッドプール内でキューに入っている、
 
 ステートレス ワーカースレッドプールでキュー待ちまたは実行中のジョブ数。
 
+### StatisticsCacheBytes {#statisticscachebytes}
+
+統計キャッシュの合計サイズ (バイト単位) 。MergeTree テーブルのパーツのカラム統計を保持し、パーツとカラムの組み合わせごとに 1 つのエントリを持ちます。
+
+### StatisticsCacheCells {#statisticscachecells}
+
+統計キャッシュ内のエントリの総数 (データパーツとカラムの組み合わせごとに1エントリ)
+
 ### StorageBufferBytes {#storagebufferbytes}
 
 Buffer テーブルのバッファ内のバイト数
@@ -2126,6 +2182,14 @@ JOIN 用に作成された一時ファイル数
 
 垂直マージ用の一時ファイル数
 
+### TemporaryFilesForPackedParts {#temporaryfilesforpackedparts}
+
+書き込み中の packed データパーツについて、バッファリングされたデータを保持している一時ファイルの数
+
+### TemporaryFilesForSet {#temporaryfilesforset}
+
+外部メモリ上の `IN` 集合のために作成された一時ファイルの数
+
 ### TemporaryFilesForSort {#temporaryfilesforsort}
 
 外部ソートのために作成された一時ファイル数
@@ -2245,6 +2309,10 @@ UNIQUE KEY 索引キャッシュの総サイズ (バイト)
 ### VersionInteger {#versioninteger}
 
 1000進数の単一の整数で表したサーバーのバージョンです。たとえば、バージョン 11.22.33 は 11022033 に変換されます。
+
+### WaitingQuery {#waitingquery}
+
+非同期読み込みまたは起動の完了を待機しているクエリの数。上限は &#39;max&#95;waiting&#95;queries&#39; サーバー設定で指定します
 
 ### 書き込み {#write}
 

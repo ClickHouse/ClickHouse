@@ -15,21 +15,39 @@ import { ExperimentalBadge } from "/snippets/pt-BR/components/ExperimentalBadge/
 
 ## Fontes de dados compatíveis {#supported-data-sources}
 
-| Nome             | Logo                                                                                                    | Tipo      | Status  | Descrição                                                                                             |
-| ---------------- | ------------------------------------------------------------------------------------------------------- | --------- | ------- | ----------------------------------------------------------------------------------------------------- |
-| Apache Kafka     | <img src="/images/integrations/logos/kafka.svg" alt="Logo do Apache Kafka" width="32" />                | Streaming | Estável | Configure o ClickPipes e comece a ingerir dados de streaming do Apache Kafka no ClickHouse Cloud.     |
-| Confluent Cloud  | <img src="/images/integrations/logos/confluent.svg" alt="Logo do Confluent Cloud" width="32" />         | Streaming | Estável | Aproveite o poder combinado do Confluent e do ClickHouse Cloud com nossa integração direta.           |
-| Redpanda         | <img src="/images/integrations/logos/logo_redpanda.webp" alt="Logo do Redpanda" width="32" />           | Streaming | Estável | Configure o ClickPipes e comece a ingerir dados de streaming do Redpanda no ClickHouse Cloud.         |
-| AWS MSK          | <img src="/images/integrations/logos/msk.svg" alt="Logo do AWS MSK" width="32" />                       | Streaming | Estável | Configure o ClickPipes e comece a ingerir dados de streaming do AWS MSK no ClickHouse Cloud.          |
-| Azure Event Hubs | <img src="/images/integrations/logos/azure_event_hubs.svg" alt="Logo do Azure Event Hubs" width="32" /> | Streaming | Estável | Configure o ClickPipes e comece a ingerir dados de streaming do Azure Event Hubs no ClickHouse Cloud. |
-| WarpStream       | <img src="/images/integrations/logos/warpstream.svg" alt="Logo do WarpStream" width="32" />             | Streaming | Estável | Configure o ClickPipes e comece a ingerir dados de streaming do WarpStream no ClickHouse Cloud.       |
+| Nome                                    | Logo                                                                                                     | Tipo      | Status         | Descrição                                                                                             |
+| --------------------------------------- | -------------------------------------------------------------------------------------------------------- | --------- | -------------- | ----------------------------------------------------------------------------------------------------- |
+| Apache Kafka                            | <img src="/images/integrations/logos/kafka.svg" alt="Logo do Apache Kafka" width="32" />                 | Streaming | Estável        | Configure o ClickPipes e comece a ingerir dados de streaming do Apache Kafka no ClickHouse Cloud.     |
+| Confluent Cloud                         | <img src="/images/integrations/logos/confluent.svg" alt="Logo do Confluent Cloud" width="32" />          | Streaming | Estável        | Aproveite o poder combinado do Confluent e do ClickHouse Cloud com nossa integração direta.           |
+| Redpanda                                | <img src="/images/integrations/logos/logo_redpanda.webp" alt="Logo do Redpanda" width="32" />            | Streaming | Estável        | Configure o ClickPipes e comece a ingerir dados de streaming do Redpanda no ClickHouse Cloud.         |
+| AWS MSK                                 | <img src="/images/integrations/logos/msk.svg" alt="Logo do AWS MSK" width="32" />                        | Streaming | Estável        | Configure o ClickPipes e comece a ingerir dados de streaming do AWS MSK no ClickHouse Cloud.          |
+| Google Managed Service for Apache Kafka | <img src="/images/icons/cloud-providers/google-cloud-color.svg" alt="Logo do Google Cloud" width="32" /> | Streaming | Prévia privada | Conecte-se ao Google Managed Kafka usando a Workload Identity do GCP.                                 |
+| Azure Event Hubs                        | <img src="/images/integrations/logos/azure_event_hubs.svg" alt="Logo do Azure Event Hubs" width="32" />  | Streaming | Estável        | Configure o ClickPipes e comece a ingerir dados de streaming do Azure Event Hubs no ClickHouse Cloud. |
+| WarpStream                              | <img src="/images/integrations/logos/warpstream.svg" alt="Logo do WarpStream" width="32" />              | Streaming | Estável        | Configure o ClickPipes e comece a ingerir dados de streaming do WarpStream no ClickHouse Cloud.       |
+
+## Workload identity do GCP {#gcp-workload-identity}
+
+<Note>
+  O Google Managed Kafka e a autenticação por workload identity do GCP estão em prévia privada. Siga o [guia de workload identity do GCP](/pt-BR/integrations/clickpipes/security/gcp-workload-identity) para obter e autorizar a service account gerenciada pelo ClickPipes.
+</Note>
+
+Conceda à service account do ClickPipes a função `roles/managedkafka.client` no projeto que contém o cluster do Managed Kafka. No momento da conexão com o broker, essa função fornece a permissão `managedkafka.clusters.connect`, necessária para a autenticação SASL. Ela não substitui as ACLs do Kafka.
+
+Se o seu cluster tiver ACLs para os recursos selecionados, conceda as seguintes operações ao principal da service account (`User:<service-account-email>`):
+
+| Recurso do Kafka                     | Operações          |
+| ------------------------------------ | ------------------ |
+| Tópicos selecionados                 | `READ`, `DESCRIBE` |
+| Grupos de consumidores do ClickPipes | `READ`, `DESCRIBE` |
+
+Você pode restringir o escopo da ACL do grupo de consumidores ao prefixo `clickpipes-`. O workload identity exige TLS e só é compatível com o tipo de origem Google Managed Kafka (`gcmk`).
 
 ## Nível de isolamento {#isolation-level}
 
 O nível de isolamento do consumidor Kafka determina se um ClickPipe lê e insere apenas mensagens confirmadas em uma transação Kafka. Habilite a configuração `kafka_read_committed` para usar `read_committed` e ignorar mensagens de transações Kafka abortadas. Desabilite-a para usar `read_uncommitted` e ler todas as mensagens. Você pode configurar essa opção em **Configurações avançadas**.
 
 <div id="supported-data-formats">
-  ## Formatos de dados compatíveis
+  ## Formatos de dados compatíveis {#supported-data-formats}
 </div>
 
 Os formatos compatíveis são:
@@ -39,11 +57,11 @@ Os formatos compatíveis são:
 * [Protobuf](/pt-BR/reference/formats/Protobuf/Protobuf)
 
 <div id="supported-data-types">
-  ## Tipos de dados suportados
+  ## Tipos de dados suportados {#supported-data-types}
 </div>
 
 <div id="standard-types-support">
-  ### Tipos padrão
+  ### Tipos padrão {#standard-types-support}
 </div>
 
 Os seguintes tipos de dados padrão do ClickHouse são atualmente compatíveis com o ClickPipes:
@@ -75,7 +93,7 @@ O ClickPipes oferece suporte ao tipo Variant nas seguintes situações:
 * Campos JSON. Você pode especificar manualmente um tipo Variant (como `Variant(String, Int64, DateTime)`) para qualquer campo JSON no fluxo de dados de origem. Subtipos complexos (arrays/maps/tuples) não são compatíveis. Além disso, devido à forma como o ClickPipes determina qual subtipo Variant correto deve ser usado, apenas um tipo inteiro ou datetime pode ser usado na definição de Variant - por exemplo, `Variant(Int64, UInt32)` não é compatível.
 
 <div id="json-type-support">
-  ### Suporte ao tipo JSON
+  ### Suporte ao tipo JSON {#json-type-support}
 </div>
 
 O ClickPipes oferece suporte ao tipo JSON nas seguintes situações:
@@ -88,7 +106,7 @@ O ClickPipes oferece suporte ao tipo JSON nas seguintes situações:
 Observe que será necessário alterar manualmente a coluna de destino para o tipo JSON desejado, incluindo quaisquer caminhos fixos ou ignorados.
 
 <div id="avro">
-  ### Avro
+  ### Avro {#avro}
 </div>
 
 #### Tipos de dados Avro compatíveis {#supported-avro-data-types}
@@ -104,7 +122,7 @@ Os tipos Nullable no Avro são definidos usando um esquema Union de `(T, null)` 
 * Um named Tuple com todos os valores padrão/zero para um Record nulo do Avro
 
 <div id="protobuf">
-  ### Protobuf
+  ### Protobuf {#protobuf}
 </div>
 
 #### Tipos de dados Protobuf suportados {#supported-protobuf-data-types}
@@ -153,7 +171,7 @@ Os seguintes [tipos bem conhecidos](https://protobuf.dev/reference/protobuf/goog
 Durante a inferência de esquema, os campos `oneof` do Protobuf são mapeados por padrão para uma `Tuple` nomeada, em que no máximo um campo terá um valor diferente do padrão. Esses campos também podem ser mapeados automaticamente para uma coluna `Variant`, em que o valor ativo assume o tipo do campo constituinte que estiver definido. Como alternativa, cada campo constituinte pode ser mapeado manualmente para sua própria coluna no ClickHouse; como os campos `oneof` são mutuamente exclusivos, apenas uma coluna será preenchida por registro.
 
 <div id="protobuf-message-lists">
-  #### Listas de mensagens
+  #### Listas de mensagens {#protobuf-message-lists}
 </div>
 
 Se o esquema Protobuf de nível superior definido para o ClickPipe contiver um único campo repetido que seja, ele próprio, uma Message do protobuf, a inferência de esquema e o mapeamento de colunas serão baseados no campo Message &quot;contido&quot;. A mensagem do Kafka será processada como uma lista dessas mensagens, e uma única mensagem do Kafka será descompactada em várias linhas no ClickHouse.

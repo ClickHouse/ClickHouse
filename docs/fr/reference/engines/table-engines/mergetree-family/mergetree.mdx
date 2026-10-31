@@ -204,28 +204,30 @@ Vous pouvez utiliser des expressions de type `Nullable` dans les clauses `PRIMAR
 
 ### Sélection d’une clé primaire {#selecting-a-primary-key}
 
-Le nombre de colonnes dans la clé primaire n’est pas explicitement limité. Selon la structure des données, vous pouvez inclure plus ou moins de colonnes dans la clé primaire. Cela peut :
+Le nombre de colonnes dans la clé primaire n’est pas explicitement limité. Selon la structure des données, vous pouvez inclure plus ou moins de colonnes dans la clé primaire. Cela peut :
 
 * Améliorer les performances d’un index.
 
-  Si la clé primaire est `(a, b)`, l’ajout d’une autre colonne `c` améliorera les performances si les conditions suivantes sont réunies :
+  Si la clé primaire est `(a, b)`, l’ajout d’une autre colonne `c` améliorera les performances si les conditions suivantes sont réunies :
 
   * Il existe des requêtes avec une condition sur la colonne `c`.
   * De longues plages de données (plusieurs fois plus longues que `index_granularity`) avec des valeurs identiques pour `(a, b)` sont fréquentes. En d’autres termes, l’ajout d’une colonne supplémentaire permet de sauter des plages de données assez longues.
 
 * Améliorer la compression.
 
-  ClickHouse trie les données par clé primaire ; ainsi, plus la cohérence est élevée, meilleure est la compression.
+  ClickHouse trie les données par clé primaire ; ainsi, plus la cohérence est élevée, meilleure est la compression.
 
-* Fournir une logique supplémentaire lors de la fusion des parties de données dans les moteurs [CollapsingMergeTree](/fr/reference/engines/table-engines/mergetree-family/collapsingmergetree) et [SummingMergeTree](/fr/reference/engines/table-engines/mergetree-family/summingmergetree).
+* Fournir une logique supplémentaire lors de la fusion des parts de données dans les moteurs [CollapsingMergeTree](/fr/reference/engines/table-engines/mergetree-family/collapsingmergetree) et [SummingMergeTree](/fr/reference/engines/table-engines/mergetree-family/summingmergetree).
 
   Dans ce cas, il est judicieux de spécifier une *clé de tri* différente de la clé primaire.
 
 Une clé primaire longue aura un impact négatif sur les performances d’insertion et la consommation de mémoire, mais les colonnes supplémentaires dans la clé primaire n’affectent pas les performances de ClickHouse lors des requêtes `SELECT`.
 
-Vous pouvez créer une table sans clé primaire en utilisant la syntaxe `ORDER BY tuple()`. Dans ce cas, ClickHouse stocke les données dans l’ordre d’insertion. Si vous souhaitez conserver l’ordre des données lors de l’insertion via des requêtes `INSERT ... SELECT`, définissez [max&#95;insert&#95;threads = 1](/fr/reference/settings/session-settings/max-insert#max_insert_threads).
+Vous pouvez créer une table sans clé primaire en utilisant la syntaxe `ORDER BY tuple()`. Pour réordonner les lignes de chaque bloc inséré afin d’améliorer la compressibilité, activez le paramètre `optimize_row_order_if_no_order_by`. Celui-ci s’applique aux tables ordinaires de la famille `MergeTree`, y compris `ReplicatedMergeTree`. Les moteurs spécialisés de la famille, comme `ReplacingMergeTree` ou `AggregatingMergeTree`, ne bénéficient jamais de l’optimisation de l’ordre des lignes et conservent l’ordre d’insertion des lignes.
 
-Pour sélectionner les données dans leur ordre initial, utilisez des requêtes `SELECT` [mono-thread](/fr/reference/settings/session-settings/max-threads#max_threads).
+Pour activer le réordonnancement, définissez `optimize_row_order_if_no_order_by = 1` dans la clause `SETTINGS` de la table. Lors de l’insertion de données via des requêtes `INSERT ... SELECT`, définissez également [max&#95;insert&#95;threads = 1](/fr/reference/settings/session-settings/max-insert#max_insert_threads) afin de préserver l’ordre optimisé.
+
+Lorsque le réordonnancement est désactivé, utilisez des requêtes `SELECT` [mono-thread](/fr/reference/settings/session-settings/max-threads#max_threads) pour sélectionner les données dans l’ordre d’insertion. Lorsque le réordonnancement est activé, une requête `SELECT` mono-thread préserve l’ordre sur disque.
 
 ### Choisir une clé primaire différente de la clé de tri {#choosing-a-primary-key-that-differs-from-the-sorting-key}
 
@@ -572,41 +574,43 @@ Les conditions de la clause `WHERE` contiennent des appels à des fonctions qui 
 
 Les index de type `set` peuvent être utilisés par toutes les fonctions. Les autres types d&#39;index sont pris en charge comme suit :
 
-| Fonction (opérateur) / index                                                                                                        | clé primaire | minmax | ngrambf&#95;v1 | tokenbf&#95;v1 | bloom&#95;filter | sparse&#95;grams | text |
-| ----------------------------------------------------------------------------------------------------------------------------------- | ------------ | ------ | -------------- | -------------- | ---------------- | ---------------- | ---- |
-| [equals (=, ==)](/fr/reference/functions/regular-functions/comparison-functions#equals)                                                | ✔            | ✔      | ✔              | ✔              | ✔                | ✔                | ✔    |
-| [notEquals(!=, &lt;&gt;)](/fr/reference/functions/regular-functions/comparison-functions#notEquals)                                    | ✔            | ✔      | ✔              | ✔              | ✗                | ✔                | ✗    |
-| [like](/fr/reference/functions/regular-functions/string-search-functions#like)                                                         | ✔            | ✔      | ✔              | ✔              | ✗                | ✔                | ✔    |
-| [notLike](/fr/reference/functions/regular-functions/string-search-functions#notLike)                                                   | ✔            | ✔      | ✔              | ✔              | ✗                | ✔                | ✗    |
-| [match](/fr/reference/functions/regular-functions/string-search-functions#match)                                                       | ✗            | ✗      | ✔              | ✔              | ✗                | ✔                | ✔    |
-| [startsWith](/fr/reference/functions/regular-functions/string-functions#startsWith)                                                    | ✔            | ✔      | ✔              | ✔              | ✗                | ✔                | ✔    |
-| [endsWith](/fr/reference/functions/regular-functions/string-functions#endsWith)                                                        | ✗            | ✗      | ✔              | ✔              | ✗                | ✔                | ✔    |
-| [multiSearchAny](/fr/reference/functions/regular-functions/string-search-functions#multiSearchAny)                                     | ✗            | ✗      | ✔              | ✗              | ✗                | ✗                | ✔    |
-| [multiSearchAnyUTF8](/fr/reference/functions/regular-functions/string-search-functions#multiSearchAnyUTF8)                             | ✗            | ✗      | ✗              | ✗              | ✗                | ✗                | ✔    |
-| [multiMatchAny](/fr/reference/functions/regular-functions/string-search-functions#multiMatchAny)                                       | ✗            | ✗      | ✗              | ✗              | ✗                | ✗                | ✔    |
-| [in](/fr/reference/functions/regular-functions/in-functions)                                                                           | ✔            | ✔      | ✔              | ✔              | ✔                | ✔                | ✔    |
-| [notIn](/fr/reference/functions/regular-functions/in-functions)                                                                        | ✔            | ✔      | ✔              | ✔              | ✗                | ✔                | ✗    |
-| [less (`<`)](/fr/reference/functions/regular-functions/comparison-functions#less)                                                      | ✔            | ✔      | ✗              | ✗              | ✗                | ✗                | ✗    |
-| [greater (`>`)](/fr/reference/functions/regular-functions/comparison-functions#greater)                                                | ✔            | ✔      | ✗              | ✗              | ✗                | ✗                | ✗    |
-| [lessOrEquals (`<=`)](/fr/reference/functions/regular-functions/comparison-functions#lessOrEquals)                                     | ✔            | ✔      | ✗              | ✗              | ✗                | ✗                | ✗    |
-| [greaterOrEquals (`>=`)](/fr/reference/functions/regular-functions/comparison-functions#greaterOrEquals)                               | ✔            | ✔      | ✗              | ✗              | ✗                | ✗                | ✗    |
-| [empty](/fr/reference/functions/regular-functions/array-functions#empty)                                                               | ✔            | ✔      | ✗              | ✗              | ✗                | ✗                | ✗    |
-| [notEmpty](/fr/reference/functions/regular-functions/array-functions#notEmpty)                                                         | ✗            | ✔      | ✗              | ✗              | ✗                | ✔                | ✗    |
-| [has](/fr/reference/functions/regular-functions/array-functions#has)                                                                   | ✔            | ✔      | ✔              | ✔              | ✔                | ✔                | ✔    |
-| [hasAny](/fr/reference/functions/regular-functions/array-functions#hasAny)                                                             | ✗            | ✗      | ✔              | ✔              | ✔                | ✔                | ✗    |
-| [hasAll](/fr/reference/functions/regular-functions/array-functions#hasAll)                                                             | ✗            | ✗      | ✔              | ✔              | ✔                | ✔                | ✗    |
-| [hasToken](/fr/reference/functions/regular-functions/string-search-functions#hasToken)                                                 | ✗            | ✗      | ✗              | ✔              | ✗                | ✗                | ✔    |
-| [hasTokenOrNull](/fr/reference/functions/regular-functions/string-search-functions#hasTokenOrNull)                                     | ✗            | ✗      | ✗              | ✔              | ✗                | ✗                | ✔    |
-| [hasTokenCaseInsensitive (`*`)](/fr/reference/functions/regular-functions/string-search-functions#hasTokenCaseInsensitive)             | ✗            | ✗      | ✗              | ✔              | ✗                | ✗                | ✗    |
-| [hasTokenCaseInsensitiveOrNull (`*`)](/fr/reference/functions/regular-functions/string-search-functions#hasTokenCaseInsensitiveOrNull) | ✗            | ✗      | ✗              | ✔              | ✗                | ✗                | ✗    |
-| [hasAnyTokens](/fr/reference/functions/regular-functions/string-search-functions#hasAnyTokens)                                         | ✗            | ✗      | ✗              | ✗              | ✗                | ✗                | ✔    |
-| [hasAllTokens](/fr/reference/functions/regular-functions/string-search-functions#hasAllTokens)                                         | ✗            | ✗      | ✗              | ✗              | ✗                | ✗                | ✔    |
-| [pointInPolygon](/fr/reference/functions/regular-functions/geo/coordinates#pointinpolygon)                                             | ✔            | ✔      | ✗              | ✗              | ✗                | ✗                | ✗    |
-| [mapContains (mapContainsKey)](/fr/reference/functions/regular-functions/tuple-map-functions#mapContainsKey)                           | ✗            | ✗      | ✗              | ✗              | ✗                | ✗                | ✔    |
-| [mapContainsKeyLike](/fr/reference/functions/regular-functions/tuple-map-functions#mapContainsKeyLike)                                 | ✗            | ✗      | ✗              | ✗              | ✗                | ✗                | ✔    |
-| [mapContainsValue](/fr/reference/functions/regular-functions/tuple-map-functions#mapContainsValue)                                     | ✗            | ✗      | ✗              | ✗              | ✗                | ✗                | ✔    |
-| [mapContainsValueLike](/fr/reference/functions/regular-functions/tuple-map-functions#mapContainsValueLike)                             | ✗            | ✗      | ✗              | ✗              | ✗                | ✗                | ✔    |
-| [mapContainsKeyValue](/fr/reference/functions/regular-functions/tuple-map-functions#mapContainsKeyValue)                               | ✗            | ✗      | ✗              | ✗              | ✗                | ✗                | ✔    |
+| Fonction (opérateur) / index                                                                                                          | clé primaire | minmax | ngrambf&#95;v1 | tokenbf&#95;v1 | bloom&#95;filter | sparse&#95;grams | text |
+| ------------------------------------------------------------------------------------------------------------------------------------- | ------------ | ------ | -------------- | -------------- | ---------------- | ---------------- | ---- |
+| [equals (=, ==)](/fr/reference/functions/regular-functions/comparison-functions#equals)                                                  | ✔            | ✔      | ✔              | ✔              | ✔                | ✔                | ✔    |
+| [notEquals(!=, &lt;&gt;)](/fr/reference/functions/regular-functions/comparison-functions#notEquals)                                      | ✔            | ✔      | ✔              | ✔              | ✗                | ✔                | ✗    |
+| [like](/fr/reference/functions/regular-functions/string-search-functions#like)                                                           | ✔            | ✔      | ✔              | ✔              | ✗                | ✔                | ✔    |
+| [notLike](/fr/reference/functions/regular-functions/string-search-functions#notLike)                                                     | ✔            | ✔      | ✔              | ✔              | ✗                | ✔                | ✗    |
+| [match](/fr/reference/functions/regular-functions/string-search-functions#match)                                                         | ✗            | ✗      | ✔              | ✔              | ✗                | ✔                | ✔    |
+| [startsWith](/fr/reference/functions/regular-functions/string-functions#startsWith)                                                      | ✔            | ✔      | ✔              | ✔              | ✗                | ✔                | ✔    |
+| [endsWith](/fr/reference/functions/regular-functions/string-functions#endsWith)                                                          | ✗            | ✗      | ✔              | ✔              | ✗                | ✔                | ✔    |
+| [multiSearchAny](/fr/reference/functions/regular-functions/string-search-functions#multiSearchAny)                                       | ✗            | ✗      | ✔              | ✗              | ✗                | ✗                | ✔    |
+| [multiSearchAnyUTF8](/fr/reference/functions/regular-functions/string-search-functions#multiSearchAnyUTF8)                               | ✗            | ✗      | ✗              | ✗              | ✗                | ✗                | ✔    |
+| [multiSearchAnyCaseInsensitive](/fr/reference/functions/regular-functions/string-search-functions#multiSearchAnyCaseInsensitive)         | ✗            | ✗      | ✗              | ✗              | ✗                | ✗                | ✔    |
+| [multiSearchAnyCaseInsensitiveUTF8](/fr/reference/functions/regular-functions/string-search-functions#multiSearchAnyCaseInsensitiveUTF8) | ✗            | ✗      | ✗              | ✗              | ✗                | ✗                | ✔    |
+| [multiMatchAny](/fr/reference/functions/regular-functions/string-search-functions#multiMatchAny)                                         | ✗            | ✗      | ✗              | ✗              | ✗                | ✗                | ✔    |
+| [in](/fr/reference/functions/regular-functions/in-functions)                                                                             | ✔            | ✔      | ✔              | ✔              | ✔                | ✔                | ✔    |
+| [notIn](/fr/reference/functions/regular-functions/in-functions)                                                                          | ✔            | ✔      | ✔              | ✔              | ✗                | ✔                | ✗    |
+| [less (`<`)](/fr/reference/functions/regular-functions/comparison-functions#less)                                                        | ✔            | ✔      | ✗              | ✗              | ✗                | ✗                | ✗    |
+| [greater (`>`)](/fr/reference/functions/regular-functions/comparison-functions#greater)                                                  | ✔            | ✔      | ✗              | ✗              | ✗                | ✗                | ✗    |
+| [lessOrEquals (`<=`)](/fr/reference/functions/regular-functions/comparison-functions#lessOrEquals)                                       | ✔            | ✔      | ✗              | ✗              | ✗                | ✗                | ✗    |
+| [greaterOrEquals (`>=`)](/fr/reference/functions/regular-functions/comparison-functions#greaterOrEquals)                                 | ✔            | ✔      | ✗              | ✗              | ✗                | ✗                | ✗    |
+| [empty](/fr/reference/functions/regular-functions/array-functions#empty)                                                                 | ✔            | ✔      | ✗              | ✗              | ✗                | ✗                | ✗    |
+| [notEmpty](/fr/reference/functions/regular-functions/array-functions#notEmpty)                                                           | ✗            | ✔      | ✗              | ✗              | ✗                | ✔                | ✗    |
+| [has](/fr/reference/functions/regular-functions/array-functions#has)                                                                     | ✔            | ✔      | ✔              | ✔              | ✔                | ✔                | ✔    |
+| [hasAny](/fr/reference/functions/regular-functions/array-functions#hasAny)                                                               | ✗            | ✗      | ✔              | ✔              | ✔                | ✔                | ✗    |
+| [hasAll](/fr/reference/functions/regular-functions/array-functions#hasAll)                                                               | ✗            | ✗      | ✔              | ✔              | ✔                | ✔                | ✗    |
+| [hasToken](/fr/reference/functions/regular-functions/string-search-functions#hasToken)                                                   | ✗            | ✗      | ✗              | ✔              | ✗                | ✗                | ✔    |
+| [hasTokenOrNull](/fr/reference/functions/regular-functions/string-search-functions#hasTokenOrNull)                                       | ✗            | ✗      | ✗              | ✔              | ✗                | ✗                | ✔    |
+| [hasTokenCaseInsensitive (`*`)](/fr/reference/functions/regular-functions/string-search-functions#hasTokenCaseInsensitive)               | ✗            | ✗      | ✗              | ✔              | ✗                | ✗                | ✗    |
+| [hasTokenCaseInsensitiveOrNull (`*`)](/fr/reference/functions/regular-functions/string-search-functions#hasTokenCaseInsensitiveOrNull)   | ✗            | ✗      | ✗              | ✔              | ✗                | ✗                | ✗    |
+| [hasAnyTokens](/fr/reference/functions/regular-functions/string-search-functions#hasAnyTokens)                                           | ✗            | ✗      | ✗              | ✗              | ✗                | ✗                | ✔    |
+| [hasAllTokens](/fr/reference/functions/regular-functions/string-search-functions#hasAllTokens)                                           | ✗            | ✗      | ✗              | ✗              | ✗                | ✗                | ✔    |
+| [pointInPolygon](/fr/reference/functions/regular-functions/geo/coordinates#pointinpolygon)                                               | ✔            | ✔      | ✗              | ✗              | ✗                | ✗                | ✗    |
+| [mapContains (mapContainsKey)](/fr/reference/functions/regular-functions/tuple-map-functions#mapContainsKey)                             | ✗            | ✗      | ✗              | ✗              | ✗                | ✗                | ✔    |
+| [mapContainsKeyLike](/fr/reference/functions/regular-functions/tuple-map-functions#mapContainsKeyLike)                                   | ✗            | ✗      | ✗              | ✗              | ✗                | ✗                | ✔    |
+| [mapContainsValue](/fr/reference/functions/regular-functions/tuple-map-functions#mapContainsValue)                                       | ✗            | ✗      | ✗              | ✗              | ✗                | ✗                | ✔    |
+| [mapContainsValueLike](/fr/reference/functions/regular-functions/tuple-map-functions#mapContainsValueLike)                               | ✗            | ✗      | ✗              | ✗              | ✗                | ✗                | ✔    |
+| [mapContainsKeyValue](/fr/reference/functions/regular-functions/tuple-map-functions#mapContainsKeyValue)                                 | ✗            | ✗      | ✗              | ✗              | ✗                | ✗                | ✔    |
 
 Les fonctions avec un argument constant inférieur à la taille du ngram ne peuvent pas être utilisées par `ngrambf_v1` pour l’optimisation des requêtes.
 
@@ -995,7 +999,8 @@ Tags :
 * `disk` — un disque au sein d’un volume.
 * `max_data_part_size_bytes` — la taille maximale d’une part pouvant être stockée sur l’un des disques du volume. Si la taille estimée d’une part fusionnée dépasse `max_data_part_size_bytes`, cette part sera écrite sur le volume suivant. En pratique, cette fonctionnalité permet de conserver les parts nouvelles ou de petite taille sur un volume rapide (SSD) et de les déplacer vers un volume lent (HDD) lorsqu’elles deviennent volumineuses. N’utilisez pas ce paramètre si votre politique ne comporte qu’un seul volume.
 * `move_factor` — lorsque l’espace disponible devient inférieur à ce facteur, les données commencent automatiquement à être déplacées vers le volume suivant, s’il existe (par défaut, 0.1). ClickHouse trie les parts existantes par taille, de la plus grande à la plus petite (ordre décroissant), et sélectionne les parts dont la taille totale est suffisante pour satisfaire la condition `move_factor`. Si la taille totale de toutes les parts est insuffisante, toutes les parts seront déplacées.
-* `perform_ttl_move_on_insert` — Désactive le TTL move lors de l’INSERT d’une part de données. Par défaut (si cette option est activée), si vous insérez une part de données déjà expirée selon la règle de TTL move, elle est immédiatement placée sur un volume/disque déclaré dans la règle de déplacement. Cela peut considérablement ralentir l’insert si le volume/disque de destination est lent (par ex. S3). Si cette option est désactivée, la part de données déjà expirée est écrite sur le volume par défaut, puis déplacée juste après vers le volume TTL.
+* `backup_metadata_only` — les données des tables utilisant cette politique sont fournies par le stockage lui-même, par exemple un jeu de données partagé en lecture seule (par défaut, `false`). Tous les volumes de la politique doivent être en lecture seule. `BACKUP` ne stocke que les définitions de ces tables, et `RESTORE` les recrée sans restaurer les données, en conservant leurs UUID issus de la sauvegarde afin qu’elles retrouvent leurs données sur le stockage. Les opérations `BACKUP` et `RESTORE` portant sur des partitions spécifiques d’une telle table échouent. Seule la famille `MergeTree` simple est prise en charge : une table `MergeTree` répliquée ou partagée, ainsi qu’une vue matérialisée ou une table `TimeSeries` dont la table interne repose sur une telle politique, sont sauvegardées et restaurées normalement, avec un avertissement.
+* `perform_ttl_move_on_insert` — Désactive le TTL move lors de l’insertion d’une part de données. Par défaut (si cette option est activée), si vous insérez une part de données déjà expirée selon la règle de TTL move, elle est immédiatement placée sur un volume/disque déclaré dans la règle de déplacement. Cela peut considérablement ralentir l’insertion si le volume/disque de destination est lent (par ex. S3). Si cette option est désactivée, la part de données déjà expirée est écrite sur le volume par défaut, puis déplacée juste après vers le volume TTL.
 * `load_balancing` - Politique d’équilibrage des disques, `round_robin` ou `least_used`.
 * `least_used_ttl_ms` - Configure le timeout (en millisecondes) de mise à jour de l’espace disponible sur tous les disques (`0` - mise à jour systématique, `-1` - ne jamais mettre à jour, la valeur par défaut est `60000`). Notez que, si le disque ne peut être utilisé que par ClickHouse et n’est pas sujet à un redimensionnement/réduction à chaud du système de fichiers, vous pouvez utiliser `-1` ; dans tous les autres cas, cela n’est pas recommandé, car cela finira par entraîner une répartition incorrecte de l’espace.
 * `prefer_not_to_merge` — Vous ne devriez pas utiliser ce paramètre. Il désactive la fusion des parts de données sur ce volume (ce qui est nuisible et entraîne une dégradation des performances). Lorsque ce paramètre est activé (ne le faites pas), la fusion des données sur ce volume n’est pas autorisée (ce qui est mauvais). Cela permet (mais vous n’en avez pas besoin) de contrôler (si vous voulez contrôler quelque chose, vous faites une erreur) la manière dont ClickHouse fonctionne avec des disques lents (mais ClickHouse sait mieux faire, donc n’utilisez pas ce paramètre).
@@ -1048,15 +1053,15 @@ Exemples de configuration :
 </storage_configuration>
 ```
 
-Dans l’exemple donné, la politique `hdd_in_order` implémente l’approche [round-robin](https://en.wikipedia.org/wiki/Round-robin_scheduling). Ainsi, cette politique ne définit qu’un seul volume (`single`) ; les parts de données sont stockées sur tous ses disques selon un ordre circulaire. Une telle politique peut être très utile si plusieurs disques similaires sont montés sur le système, mais que RAID n’est pas configuré. Gardez à l’esprit que chaque disque pris individuellement n’est pas fiable et que vous pouvez compenser cela avec un facteur de réplication de 3 ou plus.
+Dans l’exemple donné, la politique `hdd_in_order` implémente l’approche [round-robin](https://en.wikipedia.org/wiki/Round-robin_scheduling). Ainsi, cette politique ne définit qu’un seul volume (`single`) ; les parts de données sont stockées sur tous ses disques selon un ordre circulaire. Une telle politique peut être très utile si plusieurs disques similaires sont montés sur le système, mais que RAID n’est pas configuré. Gardez à l’esprit que chaque disque pris individuellement n’est pas fiable et que vous pouvez compenser cela avec un facteur de réplication de 3 ou plus.
 
 S’il existe différents types de disques sur le système, la politique `moving_from_ssd_to_hdd` peut être utilisée à la place. Le volume `hot` se compose d’un disque SSD (`fast_ssd`), et la taille maximale d’une part pouvant être stockée sur ce volume est de 1GB. Toutes les parts dont la taille est supérieure à 1GB seront stockées directement sur le volume `cold`, qui contient un disque HDD `disk1`.
-De plus, une fois que le disque `fast_ssd` est rempli à plus de 80 %, les données seront transférées vers `disk1` par un processus d’arrière-plan.
+De plus, une fois que le disque `fast_ssd` est rempli à plus de 80 %, les données seront transférées vers `disk1` par un processus d’arrière-plan.
 
 L’ordre d’énumération des volumes au sein d’une politique de stockage est important si au moins l’un des volumes listés n’a pas de paramètre `volume_priority` explicite.
 Une fois qu’un volume est trop rempli, les données sont déplacées vers le suivant. L’ordre d’énumération des disques est également important, car les données y sont stockées à tour de rôle.
 
-Lors de la création d’une table, il est possible de lui appliquer l’une des politiques de stockage configurées :
+Lors de la création d’une table, il est possible de lui appliquer l’une des politiques de stockage configurées :
 
 ```sql
 CREATE TABLE table_with_non_default_policy (
@@ -1071,7 +1076,7 @@ SETTINGS storage_policy = 'moving_from_ssd_to_hdd'
 ```
 
 La politique de stockage `default` signifie qu’un seul volume est utilisé, lequel se compose d’un seul disque indiqué dans `<path>`.
-Vous pouvez modifier la politique de stockage après la création de la table avec la requête [ALTER TABLE ... MODIFY SETTING] ; la nouvelle politique doit inclure tous les anciens disques et volumes en conservant les mêmes noms.
+Vous pouvez modifier la politique de stockage après la création de la table avec la requête [ALTER TABLE ... MODIFY SETTING] ; la nouvelle politique doit inclure tous les anciens disques et volumes en conservant les mêmes noms.
 
 Le nombre de threads qui effectuent les déplacements en arrière-plan des parts de données peut être modifié via le paramètre [background&#95;move&#95;pool&#95;size](/fr/reference/settings/server-settings/settings/background#background_move_pool_size).
 

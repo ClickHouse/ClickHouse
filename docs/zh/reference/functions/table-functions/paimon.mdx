@@ -45,6 +45,12 @@ paimonLocal(path_to_table, [,format] [,compression_method])
 快照中所有数据文件的内容，其中仍包含已被后续 upsert 操作覆盖的旧行版本。因此，读取 schema
 中声明了 `primary-key` 的表会引发异常。
 
+目前不会应用删除向量，因此**无法读取包含删除向量的快照**：否则查询结果中仍会
+包含已被后续 `DELETE` 和 `UPDATE` 语句删除的行。因此，如果快照的索引清单中列出了
+删除向量，读取该快照会引发异常，即使已关闭 `deletion-vectors.enabled` 也是如此。
+在 Paimon 中执行一次完整合并整理 (`compact_strategy => 'full'`) 会应用这些删除向量，此后创建的快照
+即可重新读取。
+
 ## 定义命名集合 {#defining-a-named-collection}
 
 下面是一个用于存储 URL 和凭据的命名集合配置示例：

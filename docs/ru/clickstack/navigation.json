@@ -98,17 +98,25 @@
         "ru/clickstack/features/event-patterns",
         "ru/clickstack/features/event-deltas",
         "ru/clickstack/features/alerts",
+        "ru/clickstack/features/anomaly-detection",
         "ru/clickstack/service-maps",
         "ru/clickstack/features/session-replay",
         "ru/clickstack/mcp",
         "ru/clickstack/url-parameters",
         {
-          "group": "Дни демонстраций",
+          "group": "Демонстрационные дни",
           "pages": [
             "ru/clickstack/demo-days/index",
             {
               "group": "2026",
               "pages": [
+                {
+                  "group": "Октябрь",
+                  "pages": [
+                    "ru/clickstack/demo-days/2026/2026-10-08",
+                    "ru/clickstack/demo-days/2026/2026-10-01"
+                  ]
+                },
                 {
                   "group": "Сентябрь",
                   "pages": [
@@ -288,8 +296,8 @@
       "expanded": true,
       "group": "Справочник по API",
       "openapi": {
-        "directory": "ru/clickstack/api-reference",
-        "source": "https://raw.githubusercontent.com/hyperdxio/hyperdx/refs/heads/main/packages/api/openapi.json"
+        "source": "https://raw.githubusercontent.com/hyperdxio/hyperdx/refs/heads/main/packages/api/openapi.json",
+        "directory": "ru/clickstack/api-reference"
       },
       "root": "ru/clickstack/api-reference"
     }

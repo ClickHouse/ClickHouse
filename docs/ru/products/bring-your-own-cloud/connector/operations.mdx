@@ -16,24 +16,35 @@ import { PrivatePreviewBadge } from '/snippets/ru/components/PrivatePreviewBadge
 
 ### Kubernetes {#upgrades-kubernetes}
 
-<Note>
-  Для операций Kubernetes после первоначального развертывания используется CLI `helm`, установленный на рабочей станции. Только `init` содержит встроенный клиент Helm, поэтому перед первым обновлением установите `helm`.
-</Note>
+Для `connector upgrade` требуется CLI версии v0.50.0 или новее. CLI содержит встроенный клиент Helm, поэтому бинарный файл `helm` не нужен:
 
-Обновите релиз из публичного репозитория chart с оверлеем values, подготовленным `init`:
+```bash
+clicklink clctl context add <name> --kube-context <kubectl context> --use
+clicklink clctl connector upgrade --version <X.Y.Z>
+```
+
+`context add` выполняется один раз для каждого кластера и сохраняет контекст kubeconfig, в котором работает коннектор; флаг `--use` делает его текущим контекстом, а командой `context use <name>` можно переключиться позже. Перед внесением любых изменений `connector upgrade` запрашивает подтверждение; флаги этой команды описаны в [справочнике CLI](/ru/products/bring-your-own-cloud/connector/reference/cli#connector-upgrade).
+
+Версии чарта совпадают с метками релизов без начального `v`: метке `v0.50.0` соответствует чарт `0.50.0`. Исполнитель работает в единственной реплике со стратегией `Recreate`, поэтому при обновлении он ненадолго отключается. О том, что происходит с командами в этот период, см. раздел [когда коннектор находится в офлайне](/ru/products/bring-your-own-cloud/connector/managed-services#when-the-connector-is-offline).
+
+Чтобы вместо этого выполнить обновление с помощью CLI `helm`, используйте Overlay значений, подготовленный командой `init`:
 
 ```bash
 CONNECTOR_NAMESPACE='clicklink'   # the connector namespace you chose at init
 helm upgrade --install clicklink-connector clicklink-connector \
   --repo https://releases.clicklink.clickhouse.com/charts \
-  --version <version> \
+  --version <X.Y.Z> \
   -n "${CONNECTOR_NAMESPACE}" \
   -f clicklink-values.yaml
 ```
 
-Версии chart — это теги релизов без начального `v` (chart `X.Y.Z` соответствует тегу `vX.Y.Z`). Опубликованный chart уже указывает на публичный образ контейнера, поэтому при обычной установке и обновлении не нужно задавать значения image. Чтобы просмотреть значения chart по умолчанию, выполните `helm show values clicklink-connector --repo https://releases.clicklink.clickhouse.com/charts`. Исполнитель работает в одной реплике со стратегией `Recreate`, поэтому при обновлении он ненадолго отключается. О том, что происходит с командами в этот период, см. [когда connector offline](/ru/products/bring-your-own-cloud/connector/managed-services#when-the-connector-is-offline).
+Опубликованный чарт уже указывает на публичный образ контейнера, поэтому при обычной установке и обновлении задавать значения образа не нужно. Чтобы просмотреть значения чарта по умолчанию, выполните `helm show values clicklink-connector --repo https://releases.clicklink.clickhouse.com/charts`.
 
-При установке по прямой ссылке на chart (`oci://`, URL или локальный архив либо каталог) отсутствует repository, по которому можно определить обновление. Вместо этого выполните `helm upgrade clicklink-connector <same-chart-reference>` повторно, указав новую версию. Повторный запуск `init` с более новой версией CLI также приведёт систему к нужному состоянию, но требует точки входа: `--handoff`, если вы сохранили bundle, или новый токен регистрации с `--force` после описанной в документации очистки. Приведённая выше команда `helm upgrade` — стандартный способ (см. [повторные запуски и восстановление](#re-runs-and-recovery)).
+<Note>
+  Команда `init` в релизах до v0.50.0 записывала `image.tag` в `clicklink-values.yaml`, фиксируя версию того релиза, который создал этот файл. Перед следующим запуском `helm upgrade` с этим файлом один раз удалите этот ключ командой `yq -i 'del(.image.tag)' clicklink-values.yaml`; иначе чарт обновится, а поды продолжат работать на старом образе. Команда `connector upgrade` не читает Overlay и сама очищает устаревший тег в релизе.
+</Note>
+
+Команда `connector upgrade` не обновляет релиз, образ которого берётся из [частного mirror](/ru/products/bring-your-own-cloud/connector/configuration#private-mirrors); в этом случае используйте приведённую выше команду `helm upgrade` — она сохраняет mirror из вашего Overlay. Если установка выполнялась по прямой ссылке на чарт (`oci://`, URL, локальный архив или каталог), репозитория для поиска новой версии нет: повторно выполните `helm upgrade clicklink-connector <same-chart-reference>`, указав новую версию. Повторный запуск `init` в более новой версии CLI также приводит систему к нужному состоянию, но требует точки входа: `--handoff`, если вы сохранили bundle, либо новый токен регистрации с `--force` (см. [повторные запуски и восстановление](#re-runs-and-recovery)).
 
 ### Linux VM {#upgrades-linux-vm}
 

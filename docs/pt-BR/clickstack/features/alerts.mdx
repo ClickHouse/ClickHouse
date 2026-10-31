@@ -4,7 +4,7 @@ title: 'Alertas com ClickStack'
 sidebarTitle: 'Alertas'
 description: 'Alertas com ClickStack'
 doc_type: 'guide'
-keywords: ['ClickStack', 'observabilidade', 'alertas', 'alertas-de-busca', 'notificações', 'limiares', 'slack', 'email', 'pagerduty', 'monitoramento-de-erros', 'monitoramento-de-desempenho', 'eventos-do-usuário']
+keywords: ['ClickStack', 'observabilidade', 'alertas', 'alertas-de-busca', 'detecção-de-anomalias', 'notificações', 'limiares', 'slack', 'email', 'pagerduty', 'monitoramento-de-erros', 'monitoramento-de-desempenho', 'eventos-do-usuário']
 ---
 
 import { Image } from "/snippets/pt-BR/components/Image.jsx";
@@ -16,14 +16,17 @@ Os alertas podem ser criados diretamente na interface do HyperDX e se integram a
 Os alertas funcionam perfeitamente em todos os seus dados do ClickStack, ajudando você a acompanhar a saúde do sistema, identificar regressões de desempenho e monitorar eventos de negócios importantes.
 
 <div id="types-of-alerts">
-  ## Tipos de alertas
+  ## Tipos de alertas {#types-of-alerts}
 </div>
 
 O ClickStack oferece duas maneiras complementares de criar alertas: **Alertas de busca** e **alertas de gráfico no dashboard**. Depois que o alerta é criado, ele fica vinculado à busca ou ao gráfico.
 
-<div id="search-alerts">
-  ### 1. Alertas de busca
-</div>
+Cada alerta usa um de dois modos de detecção, selecionado em **Alert type** no editor de alertas:
+
+* **Limiar estático**: dispara quando o valor ultrapassa um número definido por você. Este é o modo padrão e o descrito nesta página.
+* **Detecção de anomalias** (somente no Managed ClickStack): dispara quando o valor sai do intervalo esperado, aprendido com base no histórico recente. Consulte [Alertas de detecção de anomalias](/pt-BR/clickstack/features/anomaly-detection).
+
+### 1. Alertas de busca {#search-alerts}
 
 Os alertas de busca permitem acionar notificações com base nos resultados de uma busca salva. Eles ajudam você a detectar quando eventos ou padrões específicos ocorrem com mais (ou menos) frequência do que o esperado.
 
@@ -58,9 +61,7 @@ Observe que vários alertas podem ser adicionados a uma busca. Se o processo aci
 
 <Image img="/images/use-cases/observability/multiple_search_alerts.webp" alt="Vários alertas" size="md" />
 
-<div id="dashboard-alerts">
-  ### 2. Alertas de gráficos no dashboard
-</div>
+### 2. Alertas de gráficos no dashboard {#dashboard-alerts}
 
 Os alertas no dashboard também podem ser aplicados a gráficos.
 
@@ -98,9 +99,7 @@ Os alertas podem ser criados durante o processo de criação do gráfico, ao adi
   </Step>
 </Steps>
 
-<div id="add-webhook">
-  ## Adicionando um webhook
-</div>
+## Adicionando um webhook {#add-webhook}
 
 Durante a criação de um alerta, você pode usar um webhook existente ou criar um novo. Depois de criado, o webhook ficará disponível para reutilização em outros alertas.
 
@@ -119,7 +118,7 @@ Isso abre a caixa de diálogo de criação de webhook, na qual você pode criar 
 Observe que há diferentes tipos de serviço disponíveis entre o ClickStack Open Source e o ClickStack Cloud. Consulte [Integrações por tipo de serviço](#integrations).
 
 <div id="integrations">
-  ### Integrações por tipo de serviço
+  ### Integrações por tipo de serviço {#integrations}
 </div>
 
 Os alertas do ClickStack se integram nativamente aos seguintes tipos de serviço:
@@ -154,9 +153,7 @@ Dependendo do tipo de serviço, você precisará fornecer informações diferent
 * cabeçalhos do webhook (opcional)
 * corpo do webhook (opcional). No momento, o corpo oferece suporte às variáveis de modelo `{{title}}`, `{{body}}` e `{{link}}`.
 
-<div id="managing-alerts">
-  ## Gerenciando alertas
-</div>
+## Gerenciando alertas {#managing-alerts}
 
 Os alertas podem ser gerenciados centralmente pelo painel de alertas no lado esquerdo do HyperDX.
 
@@ -177,9 +174,7 @@ No exemplo acima, o primeiro alerta foi disparado em todas as avaliações, indi
 
 Clicar em um alerta leva você ao gráfico ou à Busca ao qual ele está associado.
 
-<div id="deleting-alerts">
-  ### Excluindo um alerta
-</div>
+### Excluindo um alerta {#deleting-alerts}
 
 Para remover um alerta, abra a caixa de diálogo de edição da busca ou do gráfico associado e selecione **Remove Alert**.
 No exemplo abaixo, o botão `Remove Alert` removerá o alerta do gráfico.
@@ -187,13 +182,13 @@ No exemplo abaixo, o botão `Remove Alert` removerá o alerta do gráfico.
 <Image img="/images/use-cases/observability/remove_chart_alert.webp" alt="Remover alerta do gráfico" size="lg" />
 
 <div id="sql-based-alerts">
-  ## Alertas de gráfico baseados em SQL
+  ## Alertas de gráfico baseados em SQL {#sql-based-alerts}
 </div>
 
 Os alertas de gráfico baseados em SQL permitem escrever ClickHouse SQL para definir condições de alerta. Isso dá a você controle total sobre filtragem, agregação e cálculos — qualquer coisa que possa ser expressa em SQL pode se tornar um alerta.
 
 <div id="supported-chart-types">
-  ### Tipos de gráfico compatíveis
+  ### Tipos de gráfico compatíveis {#supported-chart-types}
 </div>
 
 Alertas baseados em SQL são compatíveis com três tipos de exibição de gráfico:
@@ -206,9 +201,7 @@ Alertas baseados em SQL são compatíveis com três tipos de exibição de gráf
 
 Outros tipos de gráfico baseados em SQL (Tabela, Pizza, Mapa de calor etc.) não oferecem suporte a alertas.
 
-<div id="create-sql-based-alert">
-  ### Criando um alerta SQL
-</div>
+### Criando um alerta SQL {#create-sql-based-alert}
 
 Para criar um alerta em um gráfico baseado em SQL:
 
@@ -244,7 +237,7 @@ Para criar um alerta em um gráfico baseado em SQL:
 </Steps>
 
 <div id="sql-result-interpretation">
-  ### Como os resultados da consulta são interpretados
+  ### Como os resultados da consulta são interpretados {#sql-result-interpretation}
 </div>
 
 O sistema de alertas inspeciona as colunas retornadas pela sua consulta SQL para determinar o que deve ser comparado ao limiar.
@@ -254,13 +247,13 @@ O sistema de alertas inspeciona as colunas retornadas pela sua consulta SQL para
 * **Colunas de agrupamento**: quaisquer colunas que não sejam numéricas nem de timestamp (por exemplo, `ServiceName`, `Environment`) são tratadas como dimensões de agrupamento. Quando há grupos, cada combinação única de valores de grupo é monitorada e gera alertas separadamente. O ClickStack enviará um alerta para cada grupo cujo valor ultrapassar o limiar configurado. Os grupos estão disponíveis apenas para gráficos de séries temporais.
 
 <div id="query-params">
-  ### Parâmetros de consulta e macros
+  ### Parâmetros de consulta e macros {#query-params}
 </div>
 
 As consultas SQL de alerta oferecem suporte a parâmetros de template e macros que são substituídos automaticamente durante a avaliação. Esses são os mesmos parâmetros e macros disponíveis ao [criar um gráfico com base em SQL](/pt-BR/clickstack/features/dashboards/sql-visualizations).
 
 <div id="required-alert-parameters">
-  #### Parâmetros obrigatórios e recomendados
+  #### Parâmetros obrigatórios e recomendados {#required-alert-parameters}
 </div>
 
 Consultas usadas em alertas de gráficos de linha ou de barras empilhadas **devem** incluir um parâmetro ou macro de intervalo (`{intervalSeconds:Int64}`, `{intervalMilliseconds:Int64}`, `$__timeInterval(col)` ou `$__timeInterval_ms(col)`). Durante a execução do alerta, ele será substituído pelo período configurado do alerta.
@@ -274,11 +267,11 @@ Consultas usadas para alertas **devem** incluir um filtro de intervalo de tempo 
 </Warning>
 
 <div id="example-queries">
-  ### Exemplos de consultas para alertas
+  ### Exemplos de consultas para alertas {#example-queries}
 </div>
 
 <div id="example-error-rate">
-  #### Taxa de erro por serviço (série temporal)
+  #### Taxa de erro por serviço (série temporal) {#example-error-rate}
 </div>
 
 Gere um alerta quando qualquer serviço tiver uma taxa de erro acima de 5%, com pelo menos 10 requisições no período do alerta, para evitar alertas ruidosos em serviços com baixo tráfego.
@@ -308,11 +301,13 @@ WHERE request_count > 10
 
 Nesta consulta, `ServiceName` é uma coluna não numérica e que não é de timestamp, então cada serviço é tratado como um grupo de alerta separado. O alerta é disparado de forma independente para cada serviço.
 
-<div id="example-anomaly-detection">
-  #### Detecção de anomalias com média defasada (séries temporais)
-</div>
+#### Detecção de anomalias com média defasada (séries temporais) {#example-anomaly-detection}
 
-Alerta para contagens excessivas de erros que ultrapassam uma média móvel em mais de dois desvios padrão. Isso detecta picos em relação ao comportamento de referência recente, em vez de um limite fixo.
+Alerta para contagens excessivas de erros que ultrapassam uma média móvel em mais de dois desvios padrão. Isso detecta picos em relação ao comportamento de referência recente, em vez de um limiar fixo.
+
+<Tip>
+  No Managed ClickStack, os [alertas de detecção de anomalias](/pt-BR/clickstack/features/anomaly-detection) fazem isso sem SQL personalizado, além de oferecerem uma prévia, um backtest e valores de referência por grupo. Use a abordagem com SQL abaixo quando precisar de controle total sobre o cálculo do valor de referência ou se estiver usando o ClickStack Open Source.
+</Tip>
 
 ```sql
 WITH buckets AS (
@@ -321,7 +316,7 @@ WITH buckets AS (
     count() AS bucket_count
   FROM $__sourceTable
   WHERE TimestampTime >= fromUnixTimestamp64Milli({startDateMilliseconds:Int64})
-        - toIntervalSecond($__interval_s * 30) -- Buscar 30 intervalos anteriores
+        - toIntervalSecond($__interval_s * 30) -- Fetch 30 intervals back
     AND TimestampTime < fromUnixTimestamp64Milli({endDateMilliseconds:Int64})
     AND SeverityText = 'error'
   GROUP BY ts
@@ -355,12 +350,12 @@ WHERE ts >= fromUnixTimestamp64Milli({startDateMilliseconds:Int64})
 ```
 
 **Tipo de exibição**: Linha
-**Limiar**: `> 0` (dispara quando são detectados erros em excesso acima da linha de base móvel)
+**Limiar**: `> 0` (dispara quando são detectados erros em excesso acima do valor de referência móvel)
 
 Observe que a consulta recupera 30 intervalos *antes* do início do intervalo de datas para alimentar os cálculos da janela móvel e, em seguida, filtra a saída final para manter apenas a janela de avaliação.
 
 <div id="common-alert-scenarios">
-  ## Cenários comuns de alertas
+  ## Cenários comuns de alertas {#common-alert-scenarios}
 </div>
 
 Aqui estão alguns cenários comuns de alertas para os quais você pode usar o HyperDX:
@@ -375,3 +370,8 @@ demais.
 
 **Eventos de usuário:** Você também pode configurar alertas para que equipes que lidam com clientes sejam
 notificadas quando novos usuários se cadastrarem ou quando uma ação crítica do usuário for realizada.
+
+**Mudanças atípicas:** Quando não houver um limiar óbvio, como contagens de erros
+que variam por serviço ou tráfego que oscila ao longo do dia, use um
+[alerta de detecção de anomalias](/pt-BR/clickstack/features/anomaly-detection) agrupado por
+`ServiceName`.

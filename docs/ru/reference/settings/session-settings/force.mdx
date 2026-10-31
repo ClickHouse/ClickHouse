@@ -101,6 +101,8 @@ SELECT * FROM data_01515 WHERE d1 = 0 AND assumeNotNull(d1_null) = 0 SETTINGS fo
 
 Если `force_primary_key=1`, ClickHouse проверяет, есть ли в запросе условие по первичному ключу, которое можно использовать для ограничения диапазонов данных. Если подходящего условия нет, генерируется исключение. Однако при этом не проверяется, уменьшает ли это условие объём данных для чтения. Дополнительные сведения о диапазонах данных в таблицах семейства MergeTree см. в разделе [MergeTree](/ru/reference/engines/table-engines/mergetree-family/mergetree).
 
+Проверка относится к первичному ключу самой таблицы. Проекция используется для выполнения запроса, только если запрос также ограничивает диапазоны данных по собственному ключу этой проекции; в противном случае проекция пропускается и данные читаются из самой таблицы. Если использование проекции принудительно включено с помощью [force&#95;optimize&#95;projection](/ru/reference/settings/session-settings/force-optimize#force_optimize_projection), но её ключ в запросе не используется, генерируется исключение.
+
 ## force_read_through_distributed_cache {#force_read_through_distributed_cache}
 
 <CloudOnlyBadge />

@@ -13,25 +13,19 @@ import { VersionHistory } from "/snippets/ja/components/VersionHistory/VersionHi
 
 これらの設定は [ソースコード](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/FormatFactorySettings.h) から自動生成されています。
 
-<div id="format_regexp">
-  ## format_regexp
-</div>
+## format_regexp {#format_regexp}
 
 正規表現 (Regexp フォーマット用)
 
-<div id="format_regexp_escaping_rule">
-  ## format_regexp_escaping_rule
-</div>
+## format_regexp_escaping_rule {#format_regexp_escaping_rule}
 
 <SettingsInfoBlock type="EscapingRule" default_value="Raw" />
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "20.10"},{"label": "Raw"},{"label": "ユーザーの期待により近い動作にするため、Regexp フォーマットのデフォルトのエスケープ規則として Raw を使用します"}]}]} />
 
-フィールドのエスケープ規則 (Regexp フォーマット用)
+`format_regexp` によって生成される各キャプチャグループを、対象の列の型へどのようにパースするかを指定します。エスケープされていないテキストには `Raw` (デフォルト)、TSV 形式のエスケープ処理には `Escaped`、Values 形式の引用符付きフィールドには `Quoted`、CSV フィールドには `CSV`、JSON 値には `JSON` を使用します。この設定は正規表現が行に一致した後に適用され、正規表現自体には影響しません。
 
-<div id="format_regexp_skip_unmatched">
-  ## format_regexp_skip_unmatched
-</div>
+## format_regexp_skip_unmatched {#format_regexp_skip_unmatched}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 

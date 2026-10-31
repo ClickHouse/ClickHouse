@@ -56,38 +56,39 @@ BYOC 部署使用 **Network Load Balancers (NLBs)** 来管理流量并将其路�
 
 ## Kubernetes API 私有连接 {#k8s-api-private-connection}
 
-默认情况下，你的 BYOC 集群的 Kubernetes API server 端点可通过公共互联网访问。在 AWS 上，会通过 IP 过滤器限制访问，仅允许来自 ClickHouse NAT Gateway IP 的流量；在 GCP 和 Azure 上，则改为由云 IAM 进行管控 (参见 [Kubernetes API server 暴露](/zh/products/bring-your-own-cloud/reference/network-security#kubernetes-api-server-exposure)) 。为了进一步提升安全性，你可以将 Kubernetes API server 限制为仅能通过私有网络连接访问。
+默认情况下，你的 BYOC 集群的 Kubernetes API server 端点可通过公共互联网访问。在 AWS 上，会通过 IP 过滤器限制访问，仅允许来自 ClickHouse NAT Gateway IP 的流量；在 GCP 和 Azure 上，则改为由云 IAM 进行管控 (参见 [Kubernetes API server 暴露](/zh/products/bring-your-own-cloud/reference/network-security#kubernetes-api-server-exposure)) 。为了进一步提升安全性，你可以将 Kubernetes API server 限制为仅允许私网访问。在 AWS 和 Azure 上，限制后它只能通过私有网络连接访问。在 GCP 上，公网 IP 端点会被禁用，但管理服务会改用经 IAM 授权的基于 DNS 的端点，该端点位于你的 VPC 网络之外。
 
 可用的私有连接选项因云提供商而异：
 
-### Tailscale (默认) {#k8s-api-private-connection-tailscale}
+### AWS VPC Lattice {#k8s-api-private-connection-vpc-lattice}
 
-启用私网 API 端点后，ClickHouse 管理服务会通过与故障排查访问相同的 Tailscale 零信任网络连接到 Kubernetes API server。有关此连接如何工作的详细信息，请参阅 [Tailscale 私有网络](/zh/products/bring-your-own-cloud/reference/network-security#tailscale-private-network)。
+对于 AWS 部署，可以通过 [AWS VPC Lattice](https://aws.amazon.com/vpc/lattice/) 以私网方式访问 Kubernetes API 服务器，且无需任何第三方组件：
+
+* ClickHouse Cloud 会自动预配一个 VPC Lattice Resource Gateway 和一个 Resource Configuration，目标指向您 BYOC VPC 内的 EKS API 服务器端点，并通过 AWS Resource Access Manager (RAM) 将该 Resource Configuration 共享给 ClickHouse Cloud 管理账户。
+* ClickHouse 管理服务与您的 Kubernetes API 服务器之间的流量始终完全保留在 AWS 私有网络中。
+* RAM 共享由您的账户创建，并且仅限于单个 BYOC 集群；删除后会立即撤销该私网访问路径。
+* 由于访问不依赖在您的 Kubernetes 集群内运行的 agent，即使集群内组件不可用，ClickHouse 支持团队仍可保留访问权限以进行故障排查。
+
+### Tailscale {#k8s-api-private-connection-tailscale}
+
+<Warning>
+  使用 Tailscale 作为 EKS API 服务器的私有连接已弃用。在 AWS 上，请改用 [AWS VPC Lattice](#k8s-api-private-connection-vpc-lattice)。如果你的 AWS 部署目前通过 Tailscale 私有访问 Kubernetes API，请联系 ClickHouse 支持团队迁移到 VPC Lattice。
+</Warning>
+
+启用私网 API 端点后，ClickHouse 管理服务会通过与故障排查访问相同的 Tailscale 零信任网络连接到 Kubernetes API 服务器。在 GCP 上，Tailscale 负责承载部署工具、监控和故障排查相关的流量，而管理服务则使用基于 DNS 的端点——请参阅 [GCP 私有 control-plane 端点](#k8s-api-private-connection-gcp)。有关此连接如何工作的详细信息，请参阅 [Tailscale 私有网络](/zh/products/bring-your-own-cloud/reference/network-security#tailscale-private-network)。
 
 <Note>
   如果你完全依赖 Tailscale 提供私有连接，一旦 Tailscale agent 不可用，ClickHouse 支持团队可能会失去对你的环境的访问权限。这可能会导致故障排查或支持响应时间延长。
 </Note>
 
-### AWS VPC Lattice {#k8s-api-private-connection-vpc-lattice}
+### GCP 私有 control-plane 端点 {#k8s-api-private-connection-gcp}
 
-<Info>
-  VPC Lattice 连接功能目前处于私有预览阶段。请联系 ClickHouse 支持团队为您的部署启用此功能。
-</Info>
+在 GCP 上，ClickHouse 管理服务默认通过 GKE 控制平面的公网 IP 端点访问控制平面。您可以禁用此端点，使控制平面无法再通过公网 IP 地址访问：
 
-对于 AWS 部署，也可以通过 [AWS VPC Lattice](https://aws.amazon.com/vpc/lattice/) 以私网方式访问 Kubernetes API server，且无需任何第三方组件：
-
-* ClickHouse Cloud 会自动预配一个 VPC Lattice Resource Gateway 和一个 Resource Configuration，目标指向您 BYOC VPC 内的 EKS API server 端点，并通过 AWS Resource Access Manager (RAM) 将该 Resource Configuration 共享给 ClickHouse Cloud 管理账户。
-* ClickHouse 管理服务与您的 Kubernetes API server 之间的流量始终完全保留在 AWS 私有网络中。
-* RAM 共享由您的账户创建，并且仅限于单个 BYOC 集群；删除后会立即撤销该私网访问路径。
-* 由于访问不依赖在您的 Kubernetes 集群内运行的 agent，即使集群内组件不可用，ClickHouse 支持团队仍可保留访问权限以进行故障排查。
-
-### GCP 私网控制平面端点 {#k8s-api-private-connection-gcp}
-
-对于 GCP 部署，可以禁用 GKE 集群基于 IP 的控制平面端点，使其无法再通过公共互联网访问。此后，ClickHouse 管理服务将通过基于 DNS 的端点 (`*.gke.goog`) 访问控制平面。该访问的授权依据是 ClickHouse 在您项目中所模拟的服务账号上的 `container.clusters.connect` IAM 权限，而非源 IP 允许列表。
-
-* 访问完全由您项目中的云 IAM 管控，因此只需撤销该权限，即可切断此访问路径。
-* 请求终止于 Google 前端，而非您的 VPC 网络内部，因此在审查时应将其视为一条进入控制平面的访问路径，而非网络层面的私有链路。
-* ClickHouse 工程师的故障排查访问仍通过 Tailscale 进行。
+* 控制平面仍会保留其内部 IP 端点 (仅可从您的 VPC 网络内部访问) ，以及始终启用的基于 DNS 的端点 (`*.gke.goog`) 。
+* ClickHouse 管理服务通过基于 DNS 的端点访问控制平面。此访问的授权依据并非源 IP 允许列表，而是您项目中 ClickHouse 所模拟的服务账号上的 `container.clusters.connect` IAM 权限，因此撤销该权限即可撤销此访问路径。由于请求终止于 Google 前端，而非您的 VPC 网络内部，因此在审查时应将其视为进入控制平面的访问路径，而非网络层面的私有链路。
+* 部署工具、监控以及 ClickHouse 工程师的故障排查访问均通过 Tailscale 访问内部 IP 端点。Tailscale agent 会在初始设置期间部署到集群中，因此只有在设置完成后才能启用此模式。
+* 如果 VPC Service Controls 边界限制了 `container.googleapis.com`，那么基于 DNS 的端点也会受到限制。请添加一条入口规则，放行 ClickHouse 的管理身份；ClickHouse 团队可为您的部署提供这些身份信息。
 
 ### Azure Private Link {#k8s-api-private-connection-azure}
 

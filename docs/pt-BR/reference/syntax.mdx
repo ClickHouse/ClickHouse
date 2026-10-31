@@ -9,9 +9,7 @@ doc_type: 'reference'
 Nesta seção, vamos examinar a sintaxe SQL do ClickHouse.
 O ClickHouse usa uma sintaxe baseada em SQL, mas oferece diversas extensões e otimizações.
 
-<div id="query-parsing">
-  ## Análise sintática de consultas
-</div>
+## Análise sintática de consultas {#query-parsing}
 
 Há dois tipos de parsers no ClickHouse:
 
@@ -54,16 +52,12 @@ O restante desta seção aborda o parser completo.
   Para mais informações sobre parsers de formato, consulte a seção [Formatos](/pt-BR/reference/formats/index).
 </Note>
 
-<div id="spaces">
-  ## Espaços
-</div>
+## Espaços {#spaces}
 
 * Pode haver qualquer quantidade de caracteres de espaço entre construções sintáticas (inclusive no início e no fim de uma consulta).
 * Os caracteres de espaço incluem espaço, tabulação, quebra de linha, CR e avanço de página.
 
-<div id="comments">
-  ## Comentários
-</div>
+## Comentários {#comments}
 
 O ClickHouse oferece suporte a comentários no estilo SQL e no estilo C:
 
@@ -87,9 +81,7 @@ SELECT
     # TODO: adicionar variantes de hora/minuto
 ```
 
-<div id="keywords">
-  ## Palavras-chave
-</div>
+## Palavras-chave {#keywords}
 
 As palavras-chave no ClickHouse podem ser *sensíveis a maiúsculas e minúsculas* ou *não sensíveis a maiúsculas e minúsculas*, dependendo do contexto.
 
@@ -114,25 +106,31 @@ Por exemplo, a consulta a seguir é válida se a tabela `table_name` tiver uma c
 SELECT "FROM" FROM table_name
 ```
 
-<div id="identifiers">
-  ## Identificadores
-</div>
+## Identificadores {#identifiers}
 
 Os identificadores são:
 
-* Nomes de cluster, database, tabela, partição e coluna.
+* Nomes de cluster, banco de dados, tabela, partição e coluna.
 * [Funções](#functions).
 * [Tipos de dados](/pt-BR/reference/data-types/index).
 * [Aliases de expressão](#expression-aliases).
 
 Os identificadores podem ser colocados entre aspas ou não, embora a segunda opção seja preferível.
 
-Identificadores sem aspas devem corresponder à regex `^[a-zA-Z_][0-9a-zA-Z_]*$` e não podem ser iguais a [palavras-chave](#keywords).
+Identificadores sem aspas são escritos com letras ASCII, dígitos, sublinhados (`_`) e cifrões (`$`), seguindo estas regras:
+
+* Um identificador que começa com uma letra ou `_` corresponde à regex `^[a-zA-Z_][0-9a-zA-Z_$]*$`, por exemplo, `xyz` ou `a$b`.
+* Um identificador pode começar com `$` quando o caractere seguinte for uma letra, um dígito ou `_`, por exemplo, `$doc` ou `$1`. Um `$` sozinho não é um identificador.
+* Um identificador pode começar com um dígito se não for um [literal numérico](#numeric), por exemplo, `1x` ou `2nd_col`, mas não `1e5` ou `0x1F`. Esse tipo de identificador não pode conter `$`.
+* Se um identificador começar com `$tag$`, em que `tag` consiste em uma ou mais letras, dígitos ou sublinhados, e o mesmo `$tag$` aparecer novamente mais adiante na consulta, o texto entre o primeiro `$tag$` e o segundo será interpretado como um [heredoc](#heredoc). Por exemplo, `SELECT 1 AS $a$b, 2 AS $a$c` falha. Coloque esses identificadores entre aspas: `` `$a$b` ``.
+
+Uma palavra escrita dessa forma nem sempre é interpretada como identificador: quando o contexto também admite uma [palavra-chave](#keywords) ou um literal, a palavra pode ser interpretada como tal. Por exemplo, `SELECT 1 AS from` funciona, mas em `SELECT 1 from` a palavra `from` inicia a cláusula `FROM`, e, em uma expressão, uma coluna chamada `inf`, `nan`, `true` ou `false` é interpretada como literal. Coloque esses identificadores entre aspas, por exemplo, `"from"` ou `` `inf` ``.
+
 Veja a tabela abaixo com exemplos de identificadores válidos e inválidos:
 
-| Identificadores válidos                        | Identificadores inválidos              |
-| ---------------------------------------------- | -------------------------------------- |
-| `xyz`, `_internal`, `Id_with_underscores_123_` | `1x`, `tom@gmail.com`, `äußerst_schön` |
+| Identificadores válidos                                             | Identificadores inválidos                     |
+| ------------------------------------------------------------------- | --------------------------------------------- |
+| `xyz`, `_internal`, `Id_with_underscores_123_`, `a$b`, `$doc`, `1x` | `1a$b`, `$`, `tom@gmail.com`, `äußerst_schön` |
 
 Se você quiser usar identificadores iguais a palavras-chave ou usar outros símbolos em identificadores, coloque-os entre aspas duplas ou backticks, por exemplo, `"id"`, `` `id` ``.
 
@@ -146,12 +144,10 @@ Se você quiser usar identificadores iguais a palavras-chave ou usar outros sím
   Nomes de coluna que contêm pontos, colunas que compartilham um mesmo prefixo com ponto e colunas do tipo `Array` podem ser interpretados como parte de uma estrutura `Nested` achatada quando `flatten_nested = 1` (o padrão). Isso pode causar validação inesperada do comprimento de arrays durante inserts e restrições de renomeação.
 
   Evite usar pontos em nomes de coluna sempre que possível.
-  Use underscores (`_`) ou outro separador em vez de pontos em nomes de coluna, a menos que você precise intencionalmente da semântica de `Nested`.
+  Use sublinhados (`_`) ou outro separador em vez de pontos em nomes de coluna, a menos que você precise intencionalmente da semântica de `Nested`.
 </Tip>
 
-<div id="literals">
-  ## Literais
-</div>
+## Literais {#literals}
 
 No ClickHouse, um literal é um valor representado diretamente em uma consulta.
 Em outras palavras, é um valor fixo que não se altera durante a execução da consulta.
@@ -166,9 +162,7 @@ Os literais podem ser:
 
 A seguir, examinamos cada um deles em mais detalhes nas seções abaixo.
 
-<div id="string">
-  ### String
-</div>
+### String {#string}
 
 Literais de string devem estar entre aspas simples. Aspas duplas não são aceitas.
 
@@ -206,9 +200,7 @@ O escape funciona de uma destas formas:
   Em literais de string, você precisa escapar pelo menos `'` e `\` usando os códigos de escape `\'` (ou `''`) e `\\`.
 </Note>
 
-<div id="numeric">
-  ### Numérico
-</div>
+### Numérico {#numeric}
 
 Os literais numéricos são analisados da seguinte forma:
 
@@ -263,9 +255,7 @@ Há suporte aos seguintes literais numéricos:
   Literais octais não são suportados para evitar erros acidentais de interpretação.
 </Note>
 
-<div id="compound">
-  ### Compostos
-</div>
+### Compostos {#compound}
 
 Arrays são construídos com `[]`: `[1, 2, 3]`. Tuplas são construídas com `()`: `(1, 'Hello, world!', 2)`.
 Tecnicamente, eles não são literais, mas expressões com o operador de criação de array e o operador de criação de tupla, respectivamente.
@@ -276,9 +266,7 @@ Um array deve consistir em pelo menos um item, e uma tupla deve ter pelo menos d
   Os resultados da consulta podem incluir tuplas, mas tuplas não podem ser salvas em um banco de dados (exceto em tabelas que usam o motor [Memory](/pt-BR/reference/engines/table-engines/special/memory)).
 </Note>
 
-<div id="null">
-  ### NULL
-</div>
+### NULL {#null}
 
 `NULL` é usado para indicar que um valor está ausente.
 Para armazenar `NULL` em um campo de uma tabela, ele deve ser do tipo [Nullable](/pt-BR/reference/data-types/nullable).
@@ -291,9 +279,7 @@ Para armazenar `NULL` em um campo de uma tabela, ele deve ser do tipo [Nullable]
   * Em consultas, você pode verificar `NULL` usando os operadores [`IS NULL`](/pt-BR/reference/functions/regular-functions/functions-for-nulls#isNull) e [`IS NOT NULL`](/pt-BR/reference/functions/regular-functions/functions-for-nulls#isNotNull), além das funções relacionadas `isNull` e `isNotNull`.
 </Note>
 
-<div id="heredoc">
-  ### Heredoc
-</div>
+### Heredoc {#heredoc}
 
 Um [heredoc](https://en.wikipedia.org/wiki/Here_document) é uma forma de definir uma string (geralmente em várias linhas), mantendo a formatação original.
 Um heredoc é definido como um literal de string personalizado, colocado entre dois símbolos `$`.
@@ -316,9 +302,7 @@ SELECT $heredoc$SHOW CREATE VIEW my_view$heredoc$;
   * Você pode usar um heredoc para incorporar trechos de código SQL, HTML, XML etc.
 </Tip>
 
-<div id="defining-and-using-query-parameters">
-  ## Definição e uso de parâmetros de consulta
-</div>
+## Definição e uso de parâmetros de consulta {#defining-and-using-query-parameters}
 
 Os parâmetros de consulta permitem escrever consultas genéricas que contêm placeholders abstratos em vez de identificadores concretos.
 Quando uma consulta com parâmetros é executada,
@@ -387,9 +371,7 @@ Um parâmetro de consulta pode ser referenciado em uma consulta usando `{<name>:
   Eles foram projetados principalmente para funcionar em Instruções `SELECT`, no lugar de identificadores ou literais.
 </Note>
 
-<div id="functions">
-  ## Funções
-</div>
+## Funções {#functions}
 
 Chamadas de função são escritas como um identificador seguido de uma lista de argumentos (possivelmente vazia) entre `()`.
 Ao contrário do SQL padrão, os parênteses são obrigatórios, mesmo para uma lista de argumentos vazia.
@@ -417,9 +399,7 @@ e os argumentos da primeira lista são chamados de &quot;parâmetros&quot;.
   A sintaxe das funções de agregação sem parâmetros é a mesma das funções regulares.
 </Note>
 
-<div id="operators">
-  ## Operadores
-</div>
+## Operadores {#operators}
 
 Os operadores são convertidos nas funções correspondentes durante a análise sintática da consulta, levando em conta sua prioridade e associatividade.
 
@@ -435,9 +415,7 @@ Por exemplo, a expressão
 plus(plus(1, multiply(2, 3)), 4)`
 ```
 
-<div id="data-types-and-database-table-engines">
-  ## Tipos de dados e motores de tabela do banco de dados
-</div>
+## Tipos de dados e motores de tabela do banco de dados {#data-types-and-database-table-engines}
 
 Os tipos de dados e os motores de tabela na consulta `CREATE` são escritos da mesma forma que identificadores ou funções.
 Em outras palavras, eles podem ou não conter uma lista de argumentos entre parênteses.
@@ -448,9 +426,7 @@ Para mais informações, consulte as seções:
 * [Motores de tabela](/pt-BR/reference/engines/table-engines/index)
 * [CREATE](/pt-BR/reference/statements/create/index).
 
-<div id="expressions">
-  ## Expressões
-</div>
+## Expressões {#expressions}
 
 Uma expressão pode ser qualquer um dos itens a seguir:
 
@@ -470,9 +446,7 @@ Funções e operadores, por sua vez, podem ter expressões como argumentos.
 Uma expressão constante é uma expressão cujo resultado é conhecido durante a análise da consulta, isto é, antes da execução.
 Por exemplo, expressões com literais são expressões constantes.
 
-<div id="expression-aliases">
-  ## Aliases de expressão
-</div>
+## Aliases de expressão {#expression-aliases}
 
 Um alias é um nome atribuído pelo usuário a uma [expressão](#expressions) em uma consulta.
 
@@ -488,9 +462,7 @@ As partes da sintaxe acima são explicadas abaixo.
 | `expr`           | Qualquer expressão suportada pelo ClickHouse.                                                                                                                       | `SELECT column_name * 2 AS double FROM some_table`                      |                                                                                                                                                                      |
 | `alias`          | Nome de `expr`. Os aliases devem seguir a sintaxe de [identificadores](#identifiers).                                                                               | `SELECT "table t".column_name FROM table_name AS "table t"`.            |                                                                                                                                                                      |
 
-<div id="notes-on-usage">
-  ### Notas de uso
-</div>
+### Notas de uso {#notes-on-usage}
 
 * Aliases são globais em uma consulta ou subconsulta, e você pode definir um alias em qualquer parte da consulta para qualquer expressão. Por exemplo:
 
@@ -539,9 +511,7 @@ Essa substituição causou a exceção.
   Você pode alterar esse comportamento padrão definindo [prefer&#95;column&#95;name&#95;to&#95;alias](/pt-BR/reference/settings/session-settings/prefer#prefer_column_name_to_alias) como `1`.
 </Note>
 
-<div id="asterisk">
-  ## Asterisco
-</div>
+## Asterisco {#asterisk}
 
 Em uma consulta `SELECT`, um asterisco pode substituir a expressão.
 Para mais informações, consulte a seção [SELECT](/pt-BR/reference/statements/select/index#asterisk).

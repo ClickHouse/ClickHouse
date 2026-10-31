@@ -3,28 +3,25 @@ slug: /integrations/prometheus
 sidebarTitle: 'نقطة نهاية Prometheus'
 title: 'تكامل Prometheus'
 description: 'تصدير مقاييس ClickHouse إلى Prometheus'
-keywords: ['prometheus', 'grafana', 'المراقبة', 'المقاييس', 'المُصدِّر']
+keywords: ['prometheus', 'grafana', 'المراقبة', 'المقاييس', 'المُصدِّر']
 doc_type: 'reference'
 ---
 
-import { BetaBadge } from "/snippets/ar/components/BetaBadge/BetaBadge.jsx";
 import { Image } from "/snippets/ar/components/Image.jsx";
 
 تدعم هذه الميزة التكامل مع [Prometheus](https://prometheus.io/) لمراقبة خدمات ClickHouse Cloud. ويُتاح الوصول إلى مقاييس Prometheus عبر نقطة نهاية [واجهة برمجة تطبيقات ClickHouse Cloud](/ar/products/cloud/features/admin-features/api/api-overview)، ما يتيح لك الاتصال بأمان وتصدير المقاييس إلى مجمّع مقاييس Prometheus لديك. كما يمكن دمج هذه المقاييس مع لوحات المعلومات مثل Grafana وDatadog لعرضها بصريًا.
 
-تُضمَّن مقاييس [ClickPipes](/ar/integrations/clickpipes) المرتبطة بخدمة إلى جانب مقاييس ClickHouse الخاصة بتلك الخدمة.
+تُضمَّن مقاييس [ClickPipes](/ar/integrations/clickpipes) المرتبطة بخدمة إلى جانب مقاييس ClickHouse الخاصة بتلك الخدمة.
 
 للبدء، [أنشئ مفتاح واجهة برمجة تطبيقات](/ar/products/cloud/features/admin-features/api/openapi).
 
 إذا كنت تبحث عن نقطة النهاية المقابلة لخدمات [ClickHouse Managed Postgres](/ar/products/managed-postgres/overview)، فراجع [نقطة نهاية Prometheus لـ ClickHouse Managed Postgres](/ar/products/managed-postgres/monitoring/prometheus).
 
 <div id="prometheus-endpoint-api-to-retrieve-clickhouse-cloud-metrics">
-  ## واجهة برمجة التطبيقات لنقطة نهاية Prometheus لاسترداد مقاييس ClickHouse Cloud
+  ## واجهة برمجة التطبيقات لنقطة نهاية Prometheus لاسترداد مقاييس ClickHouse Cloud {#prometheus-endpoint-api-to-retrieve-clickhouse-cloud-metrics}
 </div>
 
-<div id="api-reference">
-  ### مرجع واجهة برمجة تطبيقات
-</div>
+### مرجع واجهة برمجة تطبيقات {#api-reference}
 
 | الطريقة | المسار                                                                                                                          | الوصف                                                                                                                                           |
 | ------- | ------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -47,7 +44,7 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 تتوفر مخططات الطلب والاستجابة الكاملة لهذه الـنقاط النهاية في [مرجع Cloud واجهة برمجة تطبيقات](/ar/products/cloud/api-reference/prometheus).
 
 <div id="authentication">
-  ### المصادقة
+  ### المصادقة {#authentication}
 </div>
 
 استخدم مفتاح ClickHouse Cloud API الخاص بك لإجراء المصادقة الأساسية:
@@ -69,7 +66,7 @@ curl --silent --user $KEY_ID:$KEY_SECRET https://api.clickhouse.cloud/v1/organiz
 ```
 
 <div id="sample-response">
-  ### استجابة نموذجية
+  ### استجابة نموذجية {#sample-response}
 </div>
 
 ```response
@@ -133,7 +130,7 @@ ClickPipes_FetchedEvents_Total{clickhouse_org="11dfa1ec-767d-43cb-bfad-618ce2aaf
 ```
 
 <div id="metric-labels">
-  ### تسميات المقاييس
+  ### تسميات المقاييس {#metric-labels}
 </div>
 
 تحتوي جميع المقاييس على التسميات التالية:
@@ -153,7 +150,7 @@ ClickPipes_FetchedEvents_Total{clickhouse_org="11dfa1ec-767d-43cb-bfad-618ce2aaf
 | clickpipe&#95;source | نوع مصدر ClickPipe |
 
 <div id="information-metrics">
-  ### مقاييس المعلومات
+  ### مقاييس المعلومات {#information-metrics}
 </div>
 
 يوفّر ClickHouse Cloud مقياسًا خاصًا باسم `ClickHouse_ServiceInfo`، وهو من نوع `gauge` وتكون قيمته دائمًا `1`. يحتوي هذا المقياس على جميع **تسميات المقاييس** بالإضافة إلى التسميات التالية:
@@ -174,9 +171,7 @@ ClickPipes_FetchedEvents_Total{clickhouse_org="11dfa1ec-767d-43cb-bfad-618ce2aaf
 | ------------------- | --------------------- |
 | clickpipe&#95;state | الحالة الحالية للمسار |
 
-<div id="configuring-prometheus">
-  ### تهيئة Prometheus
-</div>
+### تهيئة Prometheus {#configuring-prometheus}
 
 يجمع خادم Prometheus المقاييس من الأهداف المُهيأة وفق الفواصل الزمنية المحددة. فيما يلي مثال على إعداد خادم Prometheus لاستخدام نقطة نهاية Prometheus في ClickHouse Cloud:
 
@@ -194,22 +189,18 @@ scrape_configs:
     scheme: https
     params:
       filtered_metrics: ["true"]
-    metrics_path: "/v1/organizations/<ORG_ID>/prometheus"
+    metrics_path: "/v1/organizations/<ORG_ID>/services/<SERVICE_ID>/prometheus"
     basic_auth:
       username: <KEY_ID>
       password: <KEY_SECRET>
     honor_labels: true
 ```
 
-لاحظ أن معلَمة الإعداد `honor_labels` يجب تعيينها إلى `true` لكي يُملأ وسم المثيل بشكل صحيح. بالإضافة إلى ذلك، ضُبطت `filtered_metrics` على `true` في المثال أعلاه، ولكن ينبغي تهيئتها وفقًا لتفضيل المستخدم.
+لاحظ أن معلمة التكوين `honor_labels` يجب تعيينها إلى `true` لكي يُملأ وسم المثيل بشكل صحيح. بالإضافة إلى ذلك، ضُبطت `filtered_metrics` على `true` في المثال أعلاه، ولكن ينبغي تهيئتها وفقًا لتفضيل المستخدم. لسحب المقاييس من جميع الخدمات في مؤسسة ما، استخدم [الاكتشاف التلقائي للخدمات](#automatic-service-discovery).
 
-<div id="automatic-service-discovery">
-  ### الاكتشاف التلقائي للخدمات
-</div>
+### الاكتشاف التلقائي للخدمات {#automatic-service-discovery}
 
-<BetaBadge />
-
-تعرض نقطة نهاية الاكتشاف هدف جمع واحدًا لكل خدمة في مؤسستك، بتنسيق Prometheus [لاكتشاف الخدمات عبر HTTP](https://prometheus.io/docs/prometheus/latest/http_sd/) (`http_sd`). يُحدِّث Prometheus قائمة الأهداف عند كل عملية poll للاكتشاف ويجري جمعًا لكل هدف مُكتشَف، لذلك تُكتشف الخدمات المنشأة حديثًا تلقائيًا وتُزال الخدمات المحذوفة من قائمة الأهداف. ولا تُدرج إلا الخدمات التي يملك مفتاح واجهة برمجة تطبيقات صلاحية عرضها؛ وتُستبعد الخدمات التي يجري حذفها أو التي حُذفت بالفعل.
+تعرض نقطة نهاية الاكتشاف هدف جمع المقاييس واحدًا لكل خدمة في مؤسستك، بتنسيق Prometheus [لاكتشاف الخدمات عبر HTTP](https://prometheus.io/docs/prometheus/latest/http_sd/) (`http_sd`). يُحدِّث Prometheus قائمة الأهداف عند كل عملية poll للاكتشاف ويجري جمعًا لكل هدف مُكتشَف، لذلك تُكتشف الخدمات المنشأة حديثًا تلقائيًا وتُزال الخدمات المحذوفة من قائمة الأهداف. ولا تُدرج إلا الخدمات التي يملك مفتاح واجهة برمجة تطبيقات صلاحية عرضها؛ وتُستبعد الخدمات التي يجري حذفها أو التي حُذفت بالفعل.
 
 لاستخدامها، وجّه job [`http_sd_configs`](https://prometheus.io/docs/prometheus/latest/configuration/configuration/#http_sd_config) إلى نقطة نهاية الاكتشاف:
 
@@ -231,7 +222,7 @@ scrape_configs:
     honor_labels: true
 ```
 
-اضبط `basic_auth` في كلا الموضعين: إذ تتولى الكتلة ضمن `http_sd_configs` مصادقة عمليات استقصاء الاكتشاف، بينما تتولى الكتلة في مهمة الجمع مصادقة جمع المقاييس لكل خدمة. وكما في التكوين الثابت، اضبط `honor_labels: true` لضمان تعبئة تسمية المثيل بشكل صحيح.
+اضبط `basic_auth` في كلا الموضعين: إذ تتولى الكتلة ضمن `http_sd_configs` مصادقة عمليات استقصاء الاكتشاف، بينما تتولى الكتلة في مهمة الجمع مصادقة جمع المقاييس لكل خدمة. وكما في التكوين الثابت، اضبط `honor_labels: true` لضمان تعبئة وسم المثيل بشكل صحيح.
 
 استجابة نموذجية للاكتشاف:
 
@@ -245,16 +236,31 @@ scrape_configs:
       "__param_filtered_metrics": "true",
       "clickhouse_org_id": "<ORG_ID>",
       "clickhouse_service_id": "<SERVICE_ID>",
-      "clickhouse_discovery_service_name": "my service"
+      "clickhouse_discovery_service_name": "my service",
+      "__meta_clickhouse_region": "us-east-1",
+      "__meta_clickhouse_provider": "aws",
+      "__meta_clickhouse_tag_env": "production",
+      "__meta_clickhouse_tagpresent_env": "true"
     }
   }
 ]
 ```
 
+يحمل كل هدف أيضًا منطقة الخدمة ومزود الخدمات السحابية الخاص بها ووسومها في صورة تسميات `__meta_clickhouse_region` و`__meta_clickhouse_provider` و`__meta_clickhouse_tag_<key>`. وتكون قيمة `__meta_clickhouse_tagpresent_<key>` هي `true` لكل وسم، بما في ذلك الوسوم التي لا تحمل قيمة. ويُستبدل بـ `_` كلُّ محرف في مفاتيح الوسوم عدا الحروف والأرقام والشرطات السفلية. يحذف Prometheus تسميات `__meta_` بعد إعادة التسمية، لذا استخدم `relabel_configs` لتصفية الأهداف أو للإبقاء على هذه التسميات:
+
+```yaml
+    relabel_configs:
+      - source_labels: [__meta_clickhouse_tag_env]
+        regex: production
+        action: keep
+      - source_labels: [__meta_clickhouse_region]
+        target_label: region
+```
+
 تجمع الأهداف المكتشفة المقاييس باستخدام `filtered_metrics=true`. ولاكتشاف الأهداف التي تجمع المجموعة الكاملة من المقاييس، أضف `?filtered_metrics=false` إلى URL الاكتشاف. تتوفر المواصفة الكاملة لنقطة النهاية في [مرجع Cloud واجهة برمجة تطبيقات](/ar/products/cloud/api-reference/prometheus/organization-prometheus-discovery-get).
 
 <div id="integrating-with-grafana">
-  ## التكامل مع Grafana
+  ## التكامل مع Grafana {#integrating-with-grafana}
 </div>
 
 لدى المستخدمين طريقتان أساسيتان للتكامل مع Grafana:
@@ -264,9 +270,7 @@ scrape_configs:
 
 نوفّر أدناه إرشادات لاستخدام هذين الخيارين، مع التركيز على التفاصيل الخاصة بـ نقطة نهاية Prometheus في ClickHouse Cloud.
 
-<div id="grafana-cloud-with-metrics-endpoint">
-  ### Grafana Cloud مع نقطة نهاية المقاييس
-</div>
+### Grafana Cloud مع نقطة نهاية المقاييس {#grafana-cloud-with-metrics-endpoint}
 
 * سجّل الدخول إلى حسابك في Grafana Cloud
 * أضف اتصالًا جديدًا باختيار **نقطة نهاية المقاييس**
@@ -285,9 +289,7 @@ scrape_configs:
 
 <Image img="/images/integrations/prometheus-grafana-chart.webp" size="md" alt="مخطط في مستكشف مقاييس Grafana" border />
 
-<div id="grafana-cloud-with-alloy">
-  ### Grafana Cloud مع Alloy
-</div>
+### Grafana Cloud مع Alloy {#grafana-cloud-with-alloy}
 
 إذا كنت تستخدم Grafana Cloud، فيمكن تثبيت Alloy بالانتقال إلى قائمة Alloy في Grafana واتباع الإرشادات المعروضة على الشاشة:
 
@@ -295,7 +297,7 @@ scrape_configs:
 
 <br />
 
-من المفترض أن يُعِدّ ذلك Alloy باستخدام مكوّن `prometheus.remote_write` لإرسال البيانات إلى نقطة نهاية في Grafana Cloud باستخدام رمز مصادقة. بعد ذلك، لن يحتاج المستخدمون إلا إلى تعديل ملف إعداد Alloy (الموجود في `/etc/alloy/config.alloy` على Linux) لتضمين مكوّن scrape لـ نقطة نهاية Prometheus في ClickHouse Cloud.
+من المفترض أن يُعِدّ ذلك Alloy باستخدام مكوّن `prometheus.remote_write` لإرسال البيانات إلى نقطة نهاية في Grafana Cloud باستخدام رمز مصادقة. بعد ذلك، لن يحتاج المستخدمون إلا إلى تعديل ملف إعداد Alloy (الموجود في `/etc/alloy/config.alloy` على Linux) لتضمين جامع البيانات لـ نقطة نهاية Prometheus في ClickHouse Cloud.
 
 يوضح ما يلي مثالاً لإعداد Alloy يتضمن مكوّن `prometheus.scrape` لجمع المقاييس من نقطة نهاية ClickHouse Cloud، بالإضافة إلى مكوّن `prometheus.remote_write` الذي يُضبط تلقائيًا. لاحظ أن مكوّن الإعداد `basic_auth` يحتوي على معرّف مفتاح Cloud واجهة برمجة تطبيقات والقيمة السرية الخاصة به باعتبارهما اسم المستخدم وكلمة المرور، على الترتيب.
 
@@ -306,7 +308,7 @@ prometheus.scrape "clickhouse_cloud" {
   }]
 
   scheme       = "https"
-  metrics_path = "/v1/organizations/<clickhouse_org_id>/prometheus"
+  metrics_path = "/v1/organizations/<clickhouse_org_id>/services/<clickhouse_service_id>/prometheus"
 
   params = {
   "filtered_metrics" = ["true"],
@@ -336,11 +338,9 @@ prometheus.scrape "clickhouse_cloud" {
 }
 ```
 
-لاحظ أنه يجب ضبط معلمة التهيئة `honor_labels` على `true` لكي يُملأ وسم المثيل بشكل صحيح.
+لاحظ أنه يجب ضبط معلمة التكوين `honor_labels` على `true` لكي يُملأ وسم المثيل بشكل صحيح.
 
-<div id="grafana-self-managed-with-alloy">
-  ### Grafana المُدارة ذاتيًا مع Alloy
-</div>
+### Grafana المُدارة ذاتيًا مع Alloy {#grafana-self-managed-with-alloy}
 
 يمكن لمستخدمي Grafana المُدارة ذاتيًا العثور على تعليمات تثبيت وكيل Alloy [هنا](https://grafana.com/docs/alloy/latest/get-started/install/). نفترض أن المستخدمين قد أعدّوا Alloy لإرسال مقاييس Prometheus إلى الوجهة المطلوبة. يتولى المكوّن `prometheus.scrape` أدناه جعل Alloy يجمع المقاييس من نقطة نهاية ClickHouse Cloud. ونفترض أن `prometheus.remote_write` يستقبل المقاييس التي جُمعت. عدّل `forward_to key` ليشير إلى الوجهة المستهدفة إذا لم يكن موجودًا.
 
@@ -353,7 +353,7 @@ prometheus.scrape "clickhouse_cloud" {
   }]
 
   scheme       = "https"
-  metrics_path = "/v1/organizations/<organizationId>/prometheus"
+  metrics_path = "/v1/organizations/<organizationId>/services/<serviceId>/prometheus"
 
   params = {
   "filtered_metrics" = ["true"],
@@ -376,11 +376,9 @@ prometheus.scrape "clickhouse_cloud" {
 
 <br />
 
-تجدر الإشارة إلى أن معلمة الضبط `honor_labels` يجب ضبطها على `true` لكي تتم تعبئة وسم المثيل بشكل صحيح.
+تجدر الإشارة إلى أن معلمة التكوين `honor_labels` يجب ضبطها على `true` لكي تتم تعبئة وسم المثيل بشكل صحيح.
 
-<div id="integrating-with-datadog">
-  ## التكامل مع Datadog
-</div>
+## التكامل مع Datadog {#integrating-with-datadog}
 
 يمكنك استخدام [Agent](https://docs.datadoghq.com/agent/?tab=Linux) و[تكامل OpenMetrics](https://docs.datadoghq.com/integrations/openmetrics/) في Datadog لجمع المقاييس من نقطة نهاية ClickHouse Cloud. فيما يلي مثال إعداد بسيط لهذا الـAgent وهذا التكامل. لكن يُرجى ملاحظة أنك قد ترغب في الاكتفاء باختيار المقاييس الأكثر أهمية بالنسبة إليك. أما المثال الشامل أدناه فسيصدّر عدة آلاف من تركيبات المقاييس والمثيلات، والتي سيتعامل معها Datadog على أنها مقاييس مخصصة.
 
@@ -388,7 +386,7 @@ prometheus.scrape "clickhouse_cloud" {
 init_config:
 
 instances:
-   - openmetrics_endpoint: 'https://api.clickhouse.cloud/v1/organizations/97a33bdb-4db3-4067-b14f-ce40f621aae1/prometheus?filtered_metrics=true'
+   - openmetrics_endpoint: 'https://api.clickhouse.cloud/v1/organizations/97a33bdb-4db3-4067-b14f-ce40f621aae1/services/12f4a114-9746-4a75-9ce5-161ec3a73c4c/prometheus?filtered_metrics=true'
      namespace: 'clickhouse'
      metrics:
          - '^ClickHouse.*'
@@ -400,9 +398,7 @@ instances:
 
 <Image img="/images/integrations/prometheus-datadog.webp" size="md" alt="تكامل Prometheus وDatadog" />
 
-<div id="related">
-  ## الصفحات ذات الصلة
-</div>
+## الصفحات ذات الصلة {#related}
 
 * [نظرة عامة على المراقبة](/ar/products/cloud/features/monitoring/overview) — قارِن جميع أساليب المراقبة في ClickHouse Cloud
 * [المراقبة في Cloud Console](/ar/products/cloud/features/monitoring/cloud-console) — لوحات معلومات مدمجة لا تتطلب أي أدوات خارجية

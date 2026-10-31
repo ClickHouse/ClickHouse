@@ -1,16 +1,16 @@
 {
   "icon": "/images/icons/icon-get-started.svg",
-  "item": "Get started",
+  "item": "بدء الاستخدام",
   "pages": [
     {
-      "group": "Get started",
+      "group": "بدء الاستخدام",
       "icon": "/images/menu-icon-lightning.svg",
       "pages": [
         "ar/get-started/index",
         {
           "expandable": true,
           "expanded": false,
-          "group": "الأدلة السريعة",
+          "group": "أدلة البدء السريع",
           "pages": [
             "ar/get-started/quickstarts/home",
             {
@@ -43,7 +43,7 @@
             },
             {
               "expanded": false,
-              "group": "أوبزرفابيليتي",
+              "group": "إمكانية المراقبة",
               "pages": [
                 "ar/get-started/quickstarts/working-with-the-map-type"
               ]
@@ -53,7 +53,7 @@
         {
           "expandable": true,
           "expanded": true,
-          "group": "Introduction",
+          "group": "مقدمة",
           "pages": [
             "ar/get-started/about/intro",
             "ar/get-started/about/why-clickhouse-is-so-fast",
@@ -62,9 +62,10 @@
         },
         {
           "expanded": true,
-          "group": "Use cases",
+          "group": "حالات الاستخدام",
           "pages": [
             "ar/get-started/use-cases/overview",
+            "ar/get-started/use-cases/choosing-a-service",
             "ar/get-started/use-cases/real-time-analytics",
             "ar/get-started/use-cases/observability",
             "ar/get-started/use-cases/data-warehousing",
@@ -76,18 +77,18 @@
     },
     {
       "expanded": true,
-      "group": "Setup",
+      "group": "الإعداد",
       "icon": "/images/menu-icon-gear.svg",
       "pages": [
         "ar/get-started/setup/install",
         "ar/get-started/setup/cloud",
         {
           "expanded": true,
-          "group": "Self-managed",
+          "group": "الإدارة الذاتية",
           "pages": [
             "ar/get-started/setup/self-managed/overview",
             {
-              "group": "Local development",
+              "group": "التطوير المحلي",
               "pages": [
                 "ar/get-started/setup/self-managed/quick-install",
                 "ar/get-started/setup/self-managed/clickhousectl",
@@ -96,7 +97,7 @@
               ]
             },
             {
-              "group": "Production server",
+              "group": "خادم الإنتاج",
               "pages": [
                 "ar/get-started/setup/self-managed/debian-ubuntu",
                 "ar/get-started/setup/self-managed/redhat",
@@ -110,13 +111,13 @@
     },
     {
       "expanded": true,
-      "group": "Sample datasets",
+      "group": "مجموعات بيانات نموذجية",
       "icon": "/images/menu-icon-database.svg",
       "pages": [
         "ar/get-started/sample-datasets/index",
         "ar/get-started/sample-datasets/playground",
         {
-          "group": "Benchmarks",
+          "group": "اختبارات الأداء",
           "pages": [
             "ar/get-started/sample-datasets/amplab-benchmark",
             "ar/get-started/sample-datasets/brown-benchmark",
@@ -128,7 +129,7 @@
           ]
         },
         {
-          "group": "Vector search & embeddings",
+          "group": "البحث المتجهي والتمثيلات المتجهية",
           "pages": [
             "ar/get-started/sample-datasets/dbpedia",
             "ar/get-started/sample-datasets/hacker-news-vector-search",
@@ -137,7 +138,7 @@
           ]
         },
         {
-          "group": "Web & social analytics",
+          "group": "تحليلات الويب ووسائل التواصل الاجتماعي",
           "pages": [
             "ar/get-started/sample-datasets/amazon-reviews",
             "ar/get-started/sample-datasets/anon-web-analytics-metrica",
@@ -149,7 +150,7 @@
           ]
         },
         {
-          "group": "Geo & location",
+          "group": "البيانات الجغرافية والمواقع",
           "pages": [
             "ar/get-started/sample-datasets/cell-towers",
             "ar/get-started/sample-datasets/foursquare-os-places",
@@ -157,7 +158,7 @@
           ]
         },
         {
-          "group": "Time series & sensors",
+          "group": "السلاسل الزمنية والمستشعرات",
           "pages": [
             "ar/get-started/sample-datasets/environmental-sensors",
             "ar/get-started/sample-datasets/noaa",
@@ -166,7 +167,7 @@
           ]
         },
         {
-          "group": "Public records & open data",
+          "group": "السجلات العامة والبيانات المفتوحة",
           "pages": [
             "ar/get-started/sample-datasets/covid19",
             "ar/get-started/sample-datasets/menus",
@@ -179,7 +180,7 @@
     },
     {
       "expanded": true,
-      "group": "Migrate",
+      "group": "الترحيل",
       "icon": "/images/caret-double-right.svg",
       "pages": [
         "ar/get-started/migrate/overview",
@@ -188,7 +189,7 @@
           "pages": [
             "ar/get-started/migrate/postgres/overview",
             {
-              "group": "Migration guide",
+              "group": "دليل الترحيل",
               "pages": [
                 "ar/get-started/migrate/postgres/migration-guide/migration-guide-part1",
                 "ar/get-started/migrate/postgres/migration-guide/migration-guide-part2",
@@ -229,14 +230,14 @@
           ]
         },
         {
-          "group": "OSS to Cloud",
+          "group": "من النسخة مفتوحة المصدر إلى السحابة",
           "pages": [
             "ar/get-started/migrate/oss-to-cloud/clickhouse-to-cloud",
             "ar/get-started/migrate/oss-to-cloud/oss-to-cloud-backup-restore"
           ]
         },
         {
-          "group": "Other methods",
+          "group": "طرق أخرى",
           "pages": [
             "ar/get-started/migrate/other-methods/clickhouse-local-etl",
             "ar/get-started/migrate/other-methods/etl-tool-to-clickhouse",

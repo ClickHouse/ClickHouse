@@ -28,7 +28,7 @@ ClickHouse는 필요에 따라 여러 방식으로 배포할 수 있는 유연�
 </Frame>
 
 <div id="clickhouse-server">
-  ## ClickHouse 서버
+  ## ClickHouse 서버 {#clickhouse-server}
 </div>
 
 ClickHouse 서버는 전통적인 클라이언트/서버 아키텍처를 기반으로 하며, 프로덕션 배포에 적합합니다. 이 배포 모드는 ClickHouse의 강점으로 잘 알려진 고처리량과 낮은 지연 시간의 쿼리를 비롯해, OLAP 데이터베이스의 전체 기능을 제공합니다.
@@ -41,9 +41,7 @@ ClickHouse 서버는 전통적인 클라이언트/서버 아키텍처를 기반�
 
 이 배포 모드는 신뢰성, 성능, 그리고 모든 기능에 대한 접근이 중요한 프로덕션 환경에서 선호되는 선택지입니다.
 
-<div id="clickhouse-cloud">
-  ## ClickHouse Cloud
-</div>
+## ClickHouse Cloud {#clickhouse-cloud}
 
 [ClickHouse Cloud](/ko/products/cloud/getting-started/intro)는 자체 배포를 운영할 때 따르는 운영 부담을 없애 주는 완전 관리형 ClickHouse 버전입니다. ClickHouse 서버의 모든 핵심 기능을 유지하면서도, 개발과 운영을 간소화하도록 설계된 추가 기능을 제공해 전반적인 사용 경험을 향상합니다.
 
@@ -57,29 +55,25 @@ ClickHouse Cloud의 SQL 콘솔에는 강력한 [대시보드](/ko/products/cloud
 
 이 서비스는 관리형이므로 업데이트, 백업, 스케일링, 보안 패치를 걱정할 필요가 없습니다. 이러한 작업은 모두 자동으로 처리됩니다. 따라서 데이터베이스 관리보다 데이터와 애플리케이션에 집중하려는 조직에 이상적인 선택입니다.
 
-<div id="clickhouse-cli">
-  ## ClickHouse CLI
-</div>
+## ClickHouse CLI {#clickhouse-cli}
 
-ClickHouse CLI(`clickhousectl`)는 로컬 ClickHouse 개발과 ClickHouse Cloud 관리를 위한 명령줄 도구입니다. ClickHouse 버전 설치, 로컬 서버 인스턴스 실행 및 관리, 쿼리 실행과 관련된 작업을 간소화합니다.
+[ClickHouse CLI](/ko/concepts/features/interfaces/cli)(`clickhousectl`, 별칭 `chctl`)는 로컬 ClickHouse 및 Postgres 개발과 ClickHouse Cloud 관리를 위한 명령줄 도구입니다. ClickHouse 버전 설치, 로컬 서버 실행 및 관리, 쿼리 실행 기능을 제공합니다.
 
-로컬 개발에서는 `clickhousectl`를 사용해 ClickHouse 버전을 설치하고 서버를 실행할 수 있습니다. 원하는 ClickHouse 버전을 설치하고, 이름이 지정된 서버를 띄우고, 내장 클라이언트를 통해 연결할 수 있습니다. 각 서버에는 자체 데이터 디렉터리가 할당되므로, 서로 격리된 여러 환경을 나란히 실행할 수 있습니다.
+로컬 개발 환경에서 `clickhousectl`은 원하는 ClickHouse 버전을 설치하고 이름을 지정한 서버를 실행합니다. `clickhousectl local client`로 연결하면 해당 버전의 `clickhouse-client`가 실행됩니다. 각 서버는 프로젝트의 `.clickhouse/` 디렉터리에 데이터를 저장하므로, 서로 격리된 여러 환경을 동시에 실행할 수 있습니다. Docker가 실행 중이라면 `clickhousectl local postgres`를 사용해 같은 방식으로 로컬 Postgres 서버를 시작할 수 있습니다.
 
-또한 `clickhousectl`는 서비스 생성 및 스케일링, API Key 관리, 조직 관리 등 ClickHouse Cloud 리소스를 전반적으로 관리할 수 있는 기능을 제공하므로, 로컬과 Cloud 워크플로를 모두 아우르는 통합 도구로 사용할 수 있습니다.
+`clickhousectl`은 서비스, 스케일링, 백업, Managed Postgres, ClickPipes, Managed ClickStack, API 키, 조직 등 ClickHouse Cloud 리소스도 관리합니다. 브라우저 로그인(`clickhousectl cloud auth login`)은 읽기 전용이므로, 리소스를 생성하거나 변경하려면 API Key가 필요합니다.
 
 ```bash
-# Install the CLI
-curl https://clickhouse.com/cli | sh
+# Install the CLI to ~/.local/bin/clickhousectl, with a chctl alias
+curl -fsSL https://clickhouse.com/cli | sh
 
-# Install the latest ClickHouse, set it as your default, and symlink the clickhouse binary onto your PATH
+# Install the latest ClickHouse, set it as your default, and symlink it to ~/.local/bin/clickhouse
 clickhousectl local use latest
 clickhousectl local server start
 clickhousectl local client
 ```
 
-<div id="clickhouse-local">
-  ## clickhouse-local
-</div>
+## clickhouse-local {#clickhouse-local}
 
 [clickhouse-local](/ko/concepts/features/tools-and-utilities/clickhouse-local)은 독립 실행형 실행 파일에서 ClickHouse의 전체 기능을 제공하는 강력한 명령줄 도구입니다. 본질적으로는 ClickHouse 서버와 동일한 데이터베이스(database)이지만, 서버 인스턴스를 실행하지 않고도 명령줄에서 직접 ClickHouse의 모든 기능을 활용할 수 있도록 패키징되어 있습니다.
 
@@ -91,9 +85,7 @@ clickhouse-local에는 ClickHouse의 모든 기능이 포함되어 있으므로,
 
 원격 테이블 함수와 로컬 파일 시스템에 대한 접근을 함께 활용할 수 있으므로, clickhouse-local은 ClickHouse 서버와 로컬 머신의 파일 간 데이터를 join해야 하는 시나리오에서 특히 유용합니다. 이는 서버에 업로드하고 싶지 않은 민감한 로컬 데이터나 임시 데이터를 다룰 때 특히 유용합니다.
 
-<div id="chdb">
-  ## chDB
-</div>
+## chDB {#chdb}
 
 [chDB](/ko/chdb/index)는 ClickHouse를 프로세스 내 데이터베이스 엔진으로 내장한 형태이며, Python이 주요 구현체이지만 Go, Rust, NodeJS, Bun에서도 사용할 수 있습니다. 이 배포 옵션은 ClickHouse의 강력한 OLAP 기능을 애플리케이션 프로세스에 직접 제공하므로 별도의 데이터베이스 설치가 필요 없습니다.
 

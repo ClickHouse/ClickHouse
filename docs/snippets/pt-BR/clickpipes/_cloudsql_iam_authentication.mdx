@@ -1,0 +1,94 @@
+---
+title: Autenticação IAM do Cloud SQL
+---
+
+export const CloudSQLIAMAuthentication = ({ engine }) => {
+  const engines = {
+    postgres: {
+      docsPath: 'postgres',
+      flag: 'cloudsql.iam_authentication',
+      port: '5432',
+      createUserName: '<name>@<project>.iam',
+      userNameHint: <>Para Postgres, o nome de usuário é o e-mail da service account <strong>sem</strong> o sufixo <code>.gserviceaccount.com</code>:</>,
+      grantsStep: <>Conecte-se com o usuário administrador e conclua as etapas em <a href="/pt-BR/integrations/clickpipes/postgres/source/google-cloudsql#creating-clickpipes-user-and-granting-permissions">Criando o usuário do ClickPipes e concedendo permissões</a>, pulando a etapa 1, pois o usuário já existe. Use <code>{'"<name>@<project>.iam"'}</code> no lugar de <code>clickpipes_user</code> e mantenha as aspas duplas: o nome contém caracteres especiais.</>,
+      firewallAnchor: '/integrations/clickpipes/postgres/source/google-cloudsql#add-clickpipes-ips-to-firewall',
+    },
+    mysql: {
+      docsPath: 'mysql',
+      flag: 'cloudsql_iam_authentication',
+      port: '3306',
+      createUserName: 'SERVICE_ACCOUNT_EMAIL',
+      userNameHint: <>Para MySQL, informe o e-mail completo da service account. O Cloud SQL cria o usuário MySQL a partir da parte do e-mail <strong>antes</strong> do <code>@</code>, e esse nome mais curto (<code>{'<name>'}</code>) é o que você usa nas concessões abaixo:</>,
+      grantsStep: <>Conecte-se como usuário root e conclua as etapas em <a href="/pt-BR/integrations/clickpipes/mysql/source/gcp#configure-database-user-gcp">Configurar um usuário do banco de dados</a>, pulando a etapa 1, pois o usuário já existe. Use <code>{"'<name>'@'%'"}</code> no lugar de <code>'clickpipes_user'@'host'</code> e <code>'clickpipes_user'@'%'</code>.</>,
+      firewallAnchor: '/integrations/clickpipes/mysql/source/gcp#configure-network-access-gcp-mysql',
+      tlsSuffix: <> Você pode pular a <a href="/pt-BR/integrations/clickpipes/mysql/source/gcp#download-root-ca-certificate-gcp-mysql">etapa do certificado</a>.</>,
+    },
+  };
+  const cfg = engines[String(engine).toLowerCase()];
+
+  if (!cfg)
+    throw new Error(`Unsupported Cloud SQL IAM authentication engine: ${engine}`);
+
+  const addBindingSql = (role) => `gcloud projects add-iam-policy-binding YOUR_PROJECT_ID \\
+  --member="serviceAccount:SERVICE_ACCOUNT_EMAIL" \\
+  --role="${role}"`;
+
+  const createUserSql = `gcloud sql users create "${cfg.createUserName}" \\
+  --instance=YOUR_INSTANCE \\
+  --type=cloud_iam_service_account`;
+
+  return (
+    <>
+      <p>
+        Em vez de uma senha, o ClickPipes pode se autenticar com a service account do Google que pertence ao seu serviço do ClickHouse Cloud (consulte <a href="/pt-BR/integrations/clickpipes/security/gcp-workload-identity">Identidade de carga de trabalho do GCP para ClickPipes</a>), usando a <a href={`https://docs.cloud.google.com/sql/docs/${cfg.docsPath}/iam-authentication#auto-iam-auth`}>autenticação automática de banco de dados via IAM</a>. Assim, o ClickPipes se conecta à sua instância do Cloud SQL sem armazenar nenhuma credencial do banco de dados.
+      </p>
+
+      <Note>
+        A autenticação de banco de dados via IAM está em <strong>Beta</strong>.
+      </Note>
+
+      <h3 id="get-the-clickhouse-service-account">Obter a service account do ClickHouse</h3>
+
+      <p>
+        Siga <a href="/pt-BR/integrations/clickpipes/security/gcp-workload-identity#retrieve-service-account">Recuperar a service account do ClickPipes</a> para obter a service account do seu serviço do ClickHouse a partir do contexto de serviço do ClickPipes. O e-mail é retornado como <code>principal</code> e tem o formato <code>{'<name>@<project>.iam.gserviceaccount.com'}</code>. As etapas abaixo se referem a ele como <code>SERVICE_ACCOUNT_EMAIL</code>.
+      </p>
+
+      <h3 id="configure-cloud-sql-for-iam">Configurar o Cloud SQL</h3>
+
+      <ol>
+        <li>
+          <a href="https://console.cloud.google.com/apis/library/sqladmin.googleapis.com">Habilite a Cloud SQL Admin API</a> no projeto que hospeda sua instância. O ClickPipes a utiliza para localizar a instância e obter um certificado de cliente de curta validade.
+        </li>
+        <li>
+          Ative a flag <code>{cfg.flag}</code> na sua instância. Alterar essa flag reinicia a instância.
+        </li>
+        <li>
+          <a href="/pt-BR/integrations/clickpipes/security/gcp-workload-identity#grant-source-access">Conceder acesso à fonte de dados</a>: atribua à service account as funções IAM <code>roles/cloudsql.client</code> e <code>roles/cloudsql.instanceUser</code> no projeto que hospeda sua instância. Crie as concessões antes de criar o ClickPipe.
+
+          <CodeBlock language="bash">{`${addBindingSql('roles/cloudsql.client')}
+
+${addBindingSql('roles/cloudsql.instanceUser')}`}</CodeBlock>
+        </li>
+        <li>
+          Crie um usuário do banco de dados para a service account. {cfg.userNameHint}
+
+          <CodeBlock language="bash">{createUserSql}</CodeBlock>
+        </li>
+        <li>{cfg.grantsStep}</li>
+      </ol>
+
+      <h3 id="create-the-clickpipe-with-iam">Criar o ClickPipe</h3>
+
+      <p>
+        Ao criar o ClickPipe, selecione a autenticação por service account do Google Cloud (IAM). Não é necessário informar nome de usuário nem senha.
+      </p>
+
+      <ul>
+        <li>Defina <strong>Host</strong> como o nome de conexão da instância, no formato <code>PROJECT:REGION:INSTANCE</code>. Endereços IP não são aceitos.</li>
+        <li>O ClickPipes se conecta à porta do proxy do lado do servidor da instância, <strong>3307</strong>, e não à porta {cfg.port}. Certifique-se de que essa porta esteja acessível. Para um IP público, <a href={cfg.firewallAnchor}>adicione os IPs do ClickPipes às suas redes autorizadas</a>.</li>
+        <li>O ClickPipes usa o Private Service Connect quando seu serviço tem um <a href="/pt-BR/integrations/clickpipes/networking/gcp-psc">endpoint privado reverso</a> que resolve o nome DNS PSC da instância. Caso contrário, ele se conecta ao IP público da instância ou, se ela não tiver um, ao seu IP privado.</li>
+        <li>Configurações de TLS, como a CA raiz, não se aplicam. A conexão é criptografada, e a identidade do servidor é verificada automaticamente.{cfg.tlsSuffix}</li>
+      </ul>
+    </>
+  );
+};

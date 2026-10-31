@@ -2,27 +2,29 @@
 title: Cloud 快速入门命令行客户端
 ---
 
-本页介绍如何通过 [ClickHouse 命令行客户端](/zh/products/cloud/features/cli) (`clickhousectl`) 在命令行中预配 ClickHouse Cloud 服务、连接到服务并加载数据。命令以非交互方式运行；使用 `--json` 时，`clickhousectl` 将输出 JSON。
+本页介绍如何通过 [ClickHouse 命令行客户端](/zh/concepts/features/interfaces/cli) (`clickhousectl`) 在命令行中预配 ClickHouse Cloud 服务、连接到服务并加载数据。除可选的 `--interactive` 登录外，命令均以非交互方式运行。使用 `--json` 时，`clickhousectl` 将输出 JSON；由编程智能体运行时，也会自动输出 JSON。
 
 ## 前置条件 {#prerequisites}
 
 安装 ClickHouse 命令行客户端：
 
 ```bash
-curl https://clickhouse.com/cli | sh
+curl -fsSL https://clickhouse.com/cli | sh
 ```
 
-您还需要安装 `jq`。
+该脚本会安装 `~/.local/bin/clickhousectl` 以及别名 `chctl`。请确保 `~/.local/bin` 已加入 `PATH`。
 
-您需要拥有 ClickHouse Cloud 账户。如果尚未注册，运行 `clickhousectl cloud auth signup` 会在浏览器中打开注册页面。
+此外还需要安装 `jq`。
 
-写操作 (创建、删除) 需要使用 [API 密钥进行身份验证](/zh/products/cloud/features/admin-features/api/openapi)；OAuth 登录仅支持只读操作：
+您需要一个 ClickHouse Cloud 账户。如果还没有账户，可运行 `clickhousectl cloud auth signup`，在浏览器中打开注册页面。
+
+通过浏览器登录 (`clickhousectl cloud auth login`) 仅具有只读权限。创建和删除服务，以及通过查询 API 运行 SQL，都需要使用 [API key](/zh/products/cloud/features/admin-features/api/openapi)，且该 key 所属角色须具备创建服务和管理查询 API 端点的权限；各命令的 `--help` 会列出其所需权限。请使用该 key 登录；使用 `--interactive` 时，系统会提示您输入 key 和 secret，这样 secret 就不会留在命令行环境的历史记录中：
 
 ```bash
-clickhousectl cloud auth login --api-key <YOUR_KEY> --api-secret <YOUR_SECRET>
+clickhousectl cloud auth login --interactive
 ```
 
-或者，设置 `CLICKHOUSE_CLOUD_API_KEY` 和 `CLICKHOUSE_CLOUD_API_SECRET` 环境变量。使用 `clickhousectl cloud auth status` 进行验证；预期会显示一条 scope 为 `read/write` 的条目。
+或者，也可以传入 `--api-key` 和 `--api-secret`，或设置 `CLICKHOUSE_CLOUD_API_KEY` 和 `CLICKHOUSE_CLOUD_API_SECRET` 环境变量。编程智能体或脚本应使用环境变量方式。登录时会验证该密钥并输出其对应的身份；可随时运行 `clickhousectl cloud auth whoami` 查看当前生效的凭证。如果您属于多个组织，请在本指南中的每条 `cloud` 命令中添加 `--org-id <org-id>` (或 `--org-name <name>`) 。
 
 ## 创建 ClickHouse 服务 {#create-service}
 
@@ -87,31 +89,33 @@ while [ "$(clickhousectl cloud service get "$CH_ID" --json | jq -r .state)" != "
 done
 ```
 
-## 使用 Query API 执行 SQL {#run-sql}
+## 使用查询 API 运行 SQL {#run-sql}
 
-`clickhousectl cloud service query` 通过 HTTP 执行 SQL，无需本地 `clickhouse` 二进制文件或服务密码。首次调用时会自动创建 Query API 端点和服务范围的 API 密钥：
+`clickhousectl cloud service query` 通过 HTTP 执行 SQL，既不需要本地 `clickhouse` 二进制文件，也不需要服务密码。首次调用时，clickhousectl 会将您的 API key 添加到该服务的查询 API 端点 (必要时会先创建该端点) ，但不会创建新的 key。如果希望在这种情况下直接报错，请传入 `--no-auto-enable`：
 
 ```bash
-clickhousectl cloud service query --id "$CH_ID" --json --query "SHOW databases"
+clickhousectl cloud service query "$CH_ID" --json --query "SHOW databases"
 ```
 
+下方输出的第一行会写入 stderr，且仅在命令行客户端更改端点时才会出现：
+
 ```text
-Provisioning Query API endpoint + key for service 'quickstart-ch'...
+Binding the authenticated API key to the Query API endpoint for service 'quickstart-ch'...
 {"name":"INFORMATION_SCHEMA"}
 {"name":"default"}
 {"name":"information_schema"}
 {"name":"system"}
 ```
 
-在终端中输出默认采用 `PrettyCompact`，管道输出时则默认采用 `TabSeparated`。上文使用的 `--json` 表示选择 `JSONEachRow`；如需其他格式，请改用 `--format` (`--json` 与 `--format` 不能同时使用) 。
+输出格式在终端中默认为 `PrettyCompact`，通过管道传输时默认为 `TabSeparated`，由编程智能体运行该命令时默认为 `JSONEachRow`。上文使用的 `--json` 会指定 `JSONEachRow` 格式；如需使用其他格式，请改用 `--format` (`--json` 与 `--format` 不能同时使用) 。需要解析输出的脚本应始终显式传入二者之一。
 
 ## 创建数据库和表 {#create-database-and-table}
 
 ```bash
-clickhousectl cloud service query --id "$CH_ID" \
+clickhousectl cloud service query "$CH_ID" \
   --query "CREATE DATABASE IF NOT EXISTS helloworld"
 
-clickhousectl cloud service query --id "$CH_ID" \
+clickhousectl cloud service query "$CH_ID" \
   --query "CREATE TABLE helloworld.my_first_table (
     user_id UInt32,
     message String,
@@ -121,21 +125,22 @@ clickhousectl cloud service query --id "$CH_ID" \
   PRIMARY KEY (user_id, timestamp)"
 ```
 
-两条命令都会输出 `OK`。插入几行数据：
+每条命令都会向 stderr 输出 `OK`。插入几行数据：
 
 ```bash
-clickhousectl cloud service query --id "$CH_ID" \
-  --query "INSERT INTO helloworld.my_first_table (user_id, message, timestamp, metric) VALUES
-    (101, 'Hello, ClickHouse!', now(), -1.0),
-    (102, 'Insert a lot of rows per batch', yesterday(), 1.41421),
-    (102, 'Sort your data based on your commonly-used queries', today(), 2.718),
-    (101, 'Granules are the smallest chunks of data read', now() + 5, 3.14159)"
+clickhousectl cloud service query "$CH_ID" <<'SQL'
+INSERT INTO helloworld.my_first_table (user_id, message, timestamp, metric) VALUES
+  (101, 'Hello, ClickHouse!', now(), -1.0),
+  (102, 'Insert a lot of rows per batch', yesterday(), 1.41421),
+  (102, 'Sort your data based on your commonly-used queries', today(), 2.718),
+  (101, 'Granules are the smallest chunks of data read', now() + 5, 3.14159)
+SQL
 ```
 
 验证是否成功：
 
 ```bash
-clickhousectl cloud service query --id "$CH_ID" --json \
+clickhousectl cloud service query "$CH_ID" --json \
   --query "SELECT * FROM helloworld.my_first_table ORDER BY timestamp"
 ```
 
@@ -162,13 +167,15 @@ clickhousectl cloud service query --id "$CH_ID" --json \
 
 ```bash
 printf 'INSERT INTO helloworld.my_first_table FORMAT CSV\n' | cat - data.csv \
-  | clickhousectl cloud service query --id "$CH_ID"
+  | clickhousectl cloud service query "$CH_ID"
 ```
+
+查询 API 大约 30 秒后会停止等待，而超时的 `INSERT` 实际上可能已经执行，因此重试前请先检查行数。对于大文件，请改用 [`clickhouse client`](#native-client)。
 
 验证新行是否已写入：
 
 ```bash
-clickhousectl cloud service query --id "$CH_ID" --json \
+clickhousectl cloud service query "$CH_ID" --json \
   --query "SELECT count() FROM helloworld.my_first_table"
 ```
 
@@ -184,7 +191,7 @@ clickhousectl cloud service query --id "$CH_ID" --json \
 clickhousectl local use latest
 ```
 
-这会安装最新的 `clickhouse` 二进制文件，并创建指向 `~/.local/bin/clickhouse` 的符号链接，使 `clickhouse` 命令可通过 `PATH` 在全局使用。
+这会安装最新版本的 ClickHouse，并创建指向 `~/.local/bin/clickhouse` 的符号链接。只要 `~/.local/bin` 已在您的 `PATH` 中，即可直接运行 `clickhouse` 命令 (若不在 `PATH` 中，该命令会输出相应提示) 。
 
 然后，使用创建响应中的主机名和密码进行连接。使用 `--query` 时，客户端会打印结果后退出；不使用时，则会进入交互式提示符 (`:)`)，可通过 `exit` 退出：
 
@@ -195,16 +202,16 @@ clickhouse client --host "$CH_HOST" --secure --port 9440 \
 ```
 
 ```text
+103	Use FORMAT to specify the format	2022-02-21 10:43:30	678.9
+102	This is data in a file	2022-02-22 10:43:28	123.45
+101	It is comma-separated	2022-02-23 00:00:00	456.78
 102	Insert a lot of rows per batch	2026-08-26 00:00:00	1.41421
 102	Sort your data based on your commonly-used queries	2026-08-27 00:00:00	2.718
 101	Hello, ClickHouse!	2026-08-27 10:41:28	-1
 101	Granules are the smallest chunks of data read	2026-08-27 10:41:33	3.14159
-103	Use FORMAT to specify the format	2022-02-21 10:43:30	678.9
-102	This is data in a file	2022-02-22 10:43:28	123.45
-101	It is comma-separated	2022-02-23 00:00:00	456.78
 ```
 
-同样的命令格式可用于上传文件：
+同样的命令格式可用于上传文件。该方式不受查询 API 超时限制，因此适合上传大文件：
 
 ```bash
 clickhouse client --host "$CH_HOST" --secure --port 9440 \
@@ -212,9 +219,11 @@ clickhouse client --host "$CH_HOST" --secure --port 9440 \
   --query='INSERT INTO helloworld.my_first_table FORMAT CSV' < data.csv
 ```
 
+ClickHouse Cloud 会对相同的插入块进行去重，因此再次加载同一个 `data.csv` 不会新增任何行。
+
 ## 清理 {#cleanup}
 
-删除服务会永久删除其所有数据。`--force` 会先停止正在运行的服务：
+删除服务会永久删除其所有数据。`--force` 会先停止正在运行的服务，并等待其完全停止，这可能需要几分钟：
 
 ```bash
 clickhousectl cloud service delete "$CH_ID" --force

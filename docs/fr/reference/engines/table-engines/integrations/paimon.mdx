@@ -78,6 +78,27 @@ La fusion à la lecture (merge-on-read) n&#39;est pas implémentée ; **les tabl
 fichiers de données du snapshot, qui contient encore les versions de lignes remplacées par des upserts ultérieurs. C&#39;est pourquoi la lecture d&#39;une table dont le schéma
 déclare `primary-key` lève une exception.
 
+## Tables avec vecteurs de suppression {#deletion-vectors}
+
+Les vecteurs de suppression ne sont pas appliqués : **les snapshots comportant des vecteurs de suppression ne peuvent donc pas être lus**, car l&#39;ensemble de résultats contiendrait encore
+les lignes supprimées par des statements `DELETE` et `UPDATE` ultérieurs. La lecture d&#39;un snapshot dont le manifest d&#39;index répertorie
+des vecteurs de suppression lève donc une exception, même après la désactivation de `deletion-vectors.enabled`.
+
+Un compactage complet dans Paimon (`compact_strategy => 'full'`) applique les vecteurs de suppression, et les snapshots créés après
+ce compactage peuvent de nouveau être lus.
+
+Une lecture incrémentielle s&#39;arrête au premier snapshot non consommé comportant des vecteurs de suppression et y reste bloquée, même après un
+compactage complet, car tous les snapshots jusqu&#39;à ce compactage répertorient les mêmes vecteurs de suppression. Le curseur n&#39;avance pas.
+La lecture reprend dès que Paimon fait expirer ces snapshots, ou dès qu&#39;ils sont abandonnés en déplaçant le curseur vers le snapshot du
+compactage complet, ce qui supprime tous les snapshots non encore consommés jusqu&#39;à celui-ci (voir
+[Lorsqu&#39;un snapshot ne peut pas être lu](#when-a-snapshot-cannot-be-read)) :
+
+```bash
+clickhouse-keeper-client -q "set '<paimon_keeper_path>/committed_snapshot' '<snapshot id of the full compaction>'"
+```
+
+Dans les deux cas, les lignes supprimées par ces vecteurs de suppression restent présentes dans les données déjà fournies par la lecture incrémentielle.
+
 ## Paramètres {#settings}
 
 Ce moteur utilise les mêmes paramètres que les moteurs de stockage objet correspondants et ajoute des paramètres spécifiques à Paimon :
@@ -143,6 +164,57 @@ SELECT count()
 FROM paimon_inc
 SETTINGS max_consume_snapshots = 2;
 ```
+
+### Retour en arrière de l&#39;entrepôt {#rewinding-the-warehouse}
+
+Le curseur Keeper situé à `paimon_keeper_path` enregistre jusqu&#39;où le flux a été consommé, et les lectures incrémentielles supposent que l&#39;entrepôt ne fait qu&#39;avancer : les identifiants de snapshot Paimon croissent de manière monotone et ne sont jamais réutilisés. L&#39;expiration d&#39;anciens snapshots ne pose aucun problème : elle supprime un préfixe et laisse intacts les identifiants supérieurs.
+
+Faire reculer l&#39;entrepôt remet en cause cette hypothèse. Restaurer l&#39;entrepôt à partir d&#39;une sauvegarde plus ancienne, le ramener à un état antérieur avec un autre moteur, ou supprimer puis recréer la table Paimon au même path : dans tous ces cas, les identifiants de snapshot reviennent en arrière, et le rédacteur réutilise alors des identifiants que le curseur a déjà consommés.
+
+**Tout retour en arrière de l&#39;entrepôt impose de réinitialiser le curseur au cours de la même opération.** Une fois les identifiants réutilisés, ClickHouse ne peut plus déterminer quels snapshots un consommateur a déjà reçus ; un curseur non réinitialisé après un retour en arrière entraîne donc une livraison au comportement indéfini : les snapshots portant des identifiants réutilisés risquent d&#39;être ignorés.
+
+Si, après le retour en arrière, le curseur pointe au-delà du snapshot le plus récent de l&#39;entrepôt, la lecture échoue avec `INVALID_STATE` au lieu de signaler l&#39;absence de nouvelles données, et le message d&#39;erreur indique la commande de récupération à exécuter. Rien n&#39;est lu et le curseur reste inchangé ; chaque interrogation suivante échoue donc de la même manière tant que le problème n&#39;est pas résolu :
+
+```
+clickhouse-keeper-client -q "set '<paimon_keeper_path>/committed_snapshot' '<latest snapshot id>'"
+```
+
+Ne supprimez pas le nœud `committed_snapshot` pour effectuer une récupération. L&#39;absence de curseur signifie « jamais consommé » : la lecture suivante relira alors intégralement la table au lieu de reprendre là où elle s&#39;était arrêtée.
+
+Avant de réinitialiser le curseur, mettez en pause tous les consommateurs qui partagent `paimon_keeper_path`, y compris les vues matérialisées actualisables, et attendez que les lectures en transit soient terminées.
+
+La validation d&#39;une lecture dépend du curseur qu&#39;elle a observé. Si le curseur change après cette observation mais avant la validation, la lecture échoue avec `INVALID_STATE`, ne livre rien et conserve la valeur que vous avez définie. Une lecture déjà validée peut encore livrer son batch après la réinitialisation du curseur ; rembobiner le curseur peut alors entraîner une nouvelle livraison de ce batch.
+
+Ne supprimez pas et ne remplacez pas `processing_lock` manuellement. Il s&#39;agit d&#39;un nœud éphémère détenu par la session ClickHouse Keeper qui exécute la lecture incrémentielle ; son cycle de vie ne constitue pas une interface de récupération destinée à l&#39;opérateur.
+
+### Lorsqu’un snapshot ne peut pas être lu {#when-a-snapshot-cannot-be-read}
+
+Les snapshots expirés par Paimon sont ignorés automatiquement : l’expiration supprime un préfixe des identifiants de snapshot, de sorte que tout ce qui précède le plus ancien snapshot de l’entrepôt est réputé disparu et que le curseur le dépasse.
+
+Tout autre échec de lecture d’un snapshot — une erreur transitoire du stockage d’objet, un fichier d’instantané corrompu — fait échouer la requête et laisse le curseur à sa position. C’est délibérément qu’aucun paramètre ne permet de tolérer cette situation. Ignorer un snapshot non lu revient à supprimer définitivement les données qui y ont été validées, et une option permanente « tolérer les erreurs » transformerait la moindre micro-coupure réseau en perte de données silencieuse. Comme le curseur reste inchangé, une erreur transitoire ne nécessite aucune intervention : la prochaine interrogation relit la même plage et réussit.
+
+Si un snapshot est réellement illisible et que le flux doit avancer, abandonnez-le explicitement. Le message d’erreur indique la commande à utiliser, mais mesurez-en le coût : la lecture en échec n’ayant rien renvoyé, déplacer le curseur jusqu’au snapshot illisible abandonne **tous** les snapshots non encore consommés jusqu’à celui-ci inclus — et pas seulement le snapshot illisible.
+
+Avec un curseur à 1 et les snapshots 2, 3 et 4 en attente, dont le 3 est illisible :
+
+```bash
+# Abandons snapshots 2 and 3; the next read resumes at 4.
+clickhouse-keeper-client -q "set '/clickhouse/tables/<uuid>/committed_snapshot' '3'"
+```
+
+Pour conserver les snapshots lisibles, effectuez d&#39;abord un vidage jusqu&#39;au snapshot illisible. Chaque interrogation consomme un snapshot et fait avancer le curseur, jusqu&#39;à atteindre celui qui ne peut pas être lu :
+
+```sql
+-- Delivers snapshot 2 and advances the cursor to 2; the next poll fails on 3 again.
+SELECT * FROM paimon_inc SETTINGS max_consume_snapshots = 1;
+```
+
+```bash
+# Now only snapshot 3 is abandoned.
+clickhouse-keeper-client -q "set '/clickhouse/tables/<uuid>/committed_snapshot' '3'"
+```
+
+Dans les deux cas, la décision est consignée comme une action explicite de l&#39;opérateur, et non déduite d&#39;un paramètre.
 
 ## De Paimon vers MergeTree via une vue matérialisée actualisable {#paimon-to-mergetree-via-refresh-mv}
 

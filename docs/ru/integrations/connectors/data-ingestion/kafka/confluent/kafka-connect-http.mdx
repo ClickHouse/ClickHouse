@@ -18,9 +18,7 @@ import { Image } from "/snippets/ru/components/Image.jsx";
   Коннектор HTTP Sink распространяется по лицензии [Confluent Enterprise License](https://docs.confluent.io/kafka-connect-http/current/overview.html#license).
 </Note>
 
-<div id="quick-start-steps">
-  ### Шаги быстрого старта
-</div>
+### Шаги быстрого старта {#quick-start-steps}
 
 <Steps>
   <Step title="Соберите сведения о подключении" id="1-gather-your-connection-details">
@@ -106,11 +104,11 @@ import { Image } from "/snippets/ru/components/Image.jsx";
 </Steps>
 
 <div id="troubleshooting">
-  ### Устранение неполадок
+  ### Устранение неполадок {#troubleshooting}
 </div>
 
 <div id="http-sink-doesnt-batch-messages">
-  #### HTTP Sink не выполняет батчинг сообщений
+  #### HTTP Sink не выполняет батчинг сообщений {#http-sink-doesnt-batch-messages}
 </div>
 
 Из [документации по Sink](https://docs.confluent.io/kafka-connectors/http/current/overview.html#http-sink-connector-for-cp):
@@ -121,11 +119,11 @@ import { Image } from "/snippets/ru/components/Image.jsx";
 2. При добавлении параметров в URL HTTP API для каждой записи может формироваться уникальный URL. По этой причине батчинг отключается при использовании дополнительных параметров URL.
 
 <div id="400-bad-request">
-  #### 400 Некорректный запрос
+  #### 400 Некорректный запрос {#400-bad-request}
 </div>
 
 <div id="cannot_parse_quoted_string">
-  ##### CANNOT_PARSE_QUOTED_STRING
+  ##### CANNOT_PARSE_QUOTED_STRING {#cannot_parse_quoted_string}
 </div>
 
 Если при вставке объекта JSON в столбец `String` в HTTP Sink возникает следующая ошибка:
@@ -137,7 +135,7 @@ Code: 26. DB::ParsingException: Cannot parse JSON string: expected opening quote
 Установите параметр `input_format_json_read_objects_as_strings=1` в URL в виде закодированной строки `SETTINGS%20input_format_json_read_objects_as_strings%3D1`
 
 <div id="load-the-github-dataset-optional">
-  ### Загрузите набор данных GitHub (необязательно)
+  ### Загрузите набор данных GitHub (необязательно) {#load-the-github-dataset-optional}
 </div>
 
 Обратите внимание: в этом примере сохраняются поля типа Array из набора данных GitHub. Мы предполагаем, что в примерах у вас есть пустой топик github, и для вставки сообщений в Kafka используем [kcat](https://github.com/edenhill/kcat).

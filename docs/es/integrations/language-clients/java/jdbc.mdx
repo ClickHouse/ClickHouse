@@ -18,11 +18,11 @@ import WideTableWrapper from "/snippets/es/components/WideTableWrapper/WideTable
     Recomendamos usar directamente el cliente de Java más reciente si el rendimiento o el acceso directo son críticos.
   </Note>
 
-  ## Requisitos del entorno
+  ## Requisitos del entorno {#environment-requirements}
 
   * [OpenJDK](https://openjdk.java.net) versión &gt;= 8
 
-  ### Setup
+  ### Setup {#setup}
 
   <Tabs>
     <Tab title="Maven">
@@ -59,7 +59,7 @@ import WideTableWrapper from "/snippets/es/components/WideTableWrapper/WideTable
     * use el calificador `all` para obtener el JAR con todas las dependencias empaquetadas incluidas.
   * o desde el repositorio oficial [aquí](https://github.com/ClickHouse/clickhouse-java/releases)
 
-  ## Configuración
+  ## Configuración {#configuration}
 
   **Clase del driver**: `com.clickhouse.jdbc.ClickHouseDriver`
 
@@ -87,9 +87,10 @@ import WideTableWrapper from "/snippets/es/components/WideTableWrapper/WideTable
   * el driver no infiere el protocolo a partir del puerto, debe especificarlo explícitamente
   * El parámetro `ssl` no se requiere cuando se especifica el protocolo.
 
-  ### Propiedades de conexión
+  ### Propiedades de conexión {#connection-properties}
 
-  Los principales parámetros de configuración se definen en el [cliente de Java](/es/integrations/language-clients/java/client#client-configuration). Deben pasarse tal cual al driver. El driver tiene algunas propiedades propias que no forman parte de la configuración del cliente; estas se enumeran a continuación.
+  Los principales parámetros de configuración se definen en el [cliente de Java](/es/integrations/language-clients/java/client#client-configuration). Deben pasarse
+  tal cual al driver. El driver tiene algunas propiedades propias que no forman parte de la configuración del cliente; estas se enumeran a continuación.
 
   **Propiedades del driver**:
 
@@ -149,7 +150,7 @@ import WideTableWrapper from "/snippets/es/components/WideTableWrapper/WideTable
   Sin embargo, algunos usuarios necesitan pasar configuraciones de formato (por ejemplo, para leer JSON como String) y recomendamos usar el perfil `readonly=2`.
   Lea más sobre los perfiles de solo lectura [aquí](/es/concepts/features/configuration/settings/constraints-on-settings#read-only).
 
-  ### Identificación del cliente
+  ### Identificación del cliente {#client-identification}
 
   Existen dos formas de identificar la aplicación que originó una solicitud: establecer `com.clickhouse.client.api.ClientConfigProperties#CLIENT_NAME` mediante
   las propiedades de conexión o utilizar el método `java.sql.Connection#setClientInfo(String name, String value)`.
@@ -172,7 +173,7 @@ import WideTableWrapper from "/snippets/es/components/WideTableWrapper/WideTable
 
   **Nota:** Recomendamos usar el formato `app_name/version` para la propiedad `client_name`, ya que facilita la identificación de la aplicación en el registro de consultas.
 
-  ### Identificación de operaciones
+  ### Identificación de operaciones {#operation-identification}
 
   El controlador JDBC genera un `query_id` para cada operación (actualmente se incluye en las excepciones del servidor).
 
@@ -185,11 +186,102 @@ import WideTableWrapper from "/snippets/es/components/WideTableWrapper/WideTable
 
   **Nota:** este enfoque funciona para usos de sentencias en un solo hilo porque `localSettings` se comparte entre hilos.
 
-  ## Tipos de datos compatibles
+  ### Cabeceras HTTP personalizadas {#custom-http-headers}
+
+  Las cabeceras HTTP personalizadas se pasan como propiedades del cliente. Cada encabezado lleva el prefijo `http_header_`. `ClientConfigProperties.httpHeader(String)` (o `DriverProperties.httpHeader(String)`) genera esa clave. La propiedad `custom_http_headers` de V1 no se utiliza en JDBC V2.
+
+  ```java showLineNumbers
+  Properties properties = new Properties();
+  properties.setProperty(ClientConfigProperties.httpHeader("X-ClickHouse-Quota"), "test");
+  properties.setProperty(ClientConfigProperties.httpHeader("X-ClickHouse-Test"), "value1,value2");
+  Connection conn = Driver.connect("jdbc:ch:https://localhost:8443/", properties);
+
+  // URL equivalent:
+  // jdbc:ch:https://localhost:8443?http_header_X-CLICKHOUSE-QUOTA=test&http_header_X-CLICKHOUSE-TEST=value1,value2
+  ```
+
+  ## Funcionalidades de ClickHouse Cloud {#clickhouse-cloud-features}
+
+  Funcionalidades que se aplican al conectarse a [ClickHouse Cloud](https://clickhouse.com/cloud).
+
+  ### Enrutamiento consciente de las réplicas (CLOUD) {#replica-aware-routing}
+
+  ClickHouse Cloud puede asignar solicitudes HTTP relacionadas a una misma réplica. Envíe el encabezado `X-ClickHouse-Replica-Tag` para que un proxy de Cloud dirija a una única réplica todas las solicitudes que compartan la etiqueta. Utilícelo para objetos con alcance de sesión, como tablas temporales, para la reutilización de la caché local de la réplica o para garantizar la consistencia de lectura después de la escritura.
+  Más información: https://clickhouse.com/docs/products/cloud/features/infrastructure/replica-aware-routing.
+
+  **Qué configurar:** cabecera HTTP `X-ClickHouse-Replica-Tag` (`com.clickhouse.client.api.http.ClickHouseHttpProto.HEADER_REPLICA_TAG`). Use el mismo valor de la etiqueta para todas las solicitudes que deban permanecer en una misma réplica.
+
+  ```java showLineNumbers
+  String replicaTag = "my-app-session-1";
+
+  Properties properties = new Properties();
+  properties.setProperty("user", user);
+  properties.setProperty("password", password);
+  properties.setProperty(
+          ClientConfigProperties.httpHeader(ClickHouseHttpProto.HEADER_REPLICA_TAG),
+          replicaTag);
+
+  Connection conn = Driver.connect("jdbc:ch:https://your-service.clickhouse.cloud:8443", properties);
+
+  // URL equivalent:
+  // jdbc:ch:https://your-service.clickhouse.cloud:8443?http_header_X-CLICKHOUSE-REPLICA-TAG=my-app-session-1
+  ```
+
+  ### Autenticación con JWT (CLOUD) {#jwt-authentication}
+
+  La [autenticación con JWT](/es/concepts/features/security/external-authenticators/jwt) permite autenticarse con JSON Web Tokens (JWT) en ClickHouse Cloud. ClickHouse crea dinámicamente **usuarios efímeros** derivados de las declaraciones del token.
+
+  #### Configuración inicial {#initial-configuration}
+
+  Para configurar la autenticación inicial con JWT en JDBC, pase la propiedad `bearer_token` en las propiedades de conexión o directamente en la URL JDBC:
+
+  ```java showLineNumbers
+  import java.sql.Connection;
+  import java.sql.DriverManager;
+  import java.sql.SQLException;
+  import java.util.Properties;
+
+  public Connection createJwtConnection(String jwtToken) throws SQLException {
+      Properties properties = new Properties();
+      properties.setProperty("bearer_token", jwtToken);
+
+      return DriverManager.getConnection("jdbc:ch:https://your-service.clickhouse.cloud:8443", properties);
+  }
+  ```
+
+  URL equivalente:
+
+  ```plaintext
+  jdbc:ch:https://your-service.clickhouse.cloud:8443?bearer_token=<your_jwt_token>
+  ```
+
+  #### Actualización del token en tiempo de ejecución {#updating-token-at-runtime}
+
+  Como los JWT tienen un período de validez limitado, los nuevos tokens JWT deben establecerse **antes** de que caduque el token actual para evitar que falle alguna operación.
+
+  Para actualizar el token JWT de una conexión JDBC activa en tiempo de ejecución, desenvuelva la conexión para acceder a la instancia subyacente de `com.clickhouse.client.api.Client` e invoque `updateBearerToken`:
+
+  ```java showLineNumbers
+  import com.clickhouse.jdbc.ConnectionImpl;
+  import java.sql.Connection;
+  import java.sql.SQLException;
+
+  public void refreshJwtToken(Connection connection, String newJwtToken) throws SQLException {
+      // Unwrap the connection to get the underlying Client instance
+      ConnectionImpl connImpl = connection.unwrap(ConnectionImpl.class);
+
+      // Set the new JWT before the current token expires
+      connImpl.getClient().updateBearerToken(newJwtToken);
+  }
+  ```
+
+  Las sentencias posteriores que se ejecuten en esta conexión JDBC usarán el token JWT actualizado.
+
+  ## Tipos de datos compatibles {#supported-data-types}
 
   El JDBC driver admite los mismos formatos de datos que el [java client](/es/integrations/language-clients/java/index#supported-data-types) subyacente.
 
-  ### Correspondencia de tipos JDBC
+  ### Correspondencia de tipos JDBC {#jdbc-type-mapping}
 
   La siguiente correspondencia se aplica a:
 
@@ -597,7 +689,7 @@ import WideTableWrapper from "/snippets/es/components/WideTableWrapper/WideTable
   }});
   ```
 
-  Existe una opción más conveniente para leer JSON como String pasando la configuración del servidor `output_format_binary_write_json_as_string=1` a las propiedades de conexión.
+  Existe una opción más conveniente para leer JSON como String pasando la configuración del servidor `jdbc_read_json_as_string=true` a las propiedades de conexión.
   Esto hace que el driver devuelva los valores JSON como String y permite procesarlos con cualquier biblioteca JSON.
 
   ```java
@@ -624,12 +716,12 @@ import WideTableWrapper from "/snippets/es/components/WideTableWrapper/WideTable
   properties.put(ClientConfigProperties.serverSetting("output_format_json_quote_decimals"), "0");
   ```
 
-  ### Manejo de fechas, horas y zonas horarias
+  ### Manejo de fechas, horas y zonas horarias {#handling-dates-times-and-timezones}
 
   Lea la [Guía de Date/Time](/es/integrations/language-clients/java/date-time-guide), que explica los errores más comunes
   y la lógica del driver al gestionar valores de Date/Time y timestamps.
 
-  ## Creación de conexión
+  ## Creación de conexión {#creating-connection}
 
   ```java
   String url = "jdbc:ch://my-server:8123/system";
@@ -640,7 +732,7 @@ import WideTableWrapper from "/snippets/es/components/WideTableWrapper/WideTable
   ... // do something with the connection
   ```
 
-  ## Suministro de credenciales y configuración
+  ## Suministro de credenciales y configuración {#supplying-credentials-and-settings}
 
   ```java showLineNumbers
   String url = "jdbc:ch://localhost:8123?jdbc_ignore_unsupported_values=true&socket_timeout=10";
@@ -662,7 +754,7 @@ import WideTableWrapper from "/snippets/es/components/WideTableWrapper/WideTable
   }
   ```
 
-  ## Instrucción simple
+  ## Instrucción simple {#simple-statement}
 
   ```java showLineNumbers
 
@@ -675,7 +767,7 @@ import WideTableWrapper from "/snippets/es/components/WideTableWrapper/WideTable
   }
   ```
 
-  ## Insert
+  ## Insert {#insert}
 
   ```java showLineNumbers
   try (PreparedStatement ps = conn.prepareStatement("INSERT INTO mytable VALUES (?, ?)")) {
@@ -687,7 +779,62 @@ import WideTableWrapper from "/snippets/es/components/WideTableWrapper/WideTable
   }
   ```
 
-  ## `HikariCP`
+  ## Observabilidad y monitorización {#jdbc-v2-o11y}
+
+  El controlador JDBC de ClickHouse (V2) admite métricas y trazado distribuido gracias al motor subyacente de Cliente V2 y a la instrumentación estándar de aplicaciones JDBC. Para consultar las definiciones detalladas de las métricas, los atributos de span y las convenciones semánticas de OpenTelemetry, consulte la [documentación de observabilidad de Cliente V2](/es/integrations/language-clients/java/client#v2-o11y).
+
+  ### Trazado distribuido y spans {#distributed-tracing-spans}
+
+  Al ejecutar sentencias JDBC (`executeQuery`, `executeUpdate`, `executeBatch`), el trazado distribuido se organiza en una jerarquía de spans padre-hijo:
+
+  1. **Span externo de JDBC / aplicación**: lo crea automáticamente el Agente Java de OpenTelemetry o la instrumentación de APM al interceptar llamadas a métodos de `java.sql` (p. ej., `PreparedStatement.executeBatch()`).
+  2. **Span de operación de Cliente V2**: lo crea el motor subyacente de Cliente V2 dentro del contexto de traza activo actual (`Context.current()`). Incluye metadata ClickHouse-specific, como `clickhouse.query_id`, el texto de la sentencia (`db.query.text`) y estadísticas de ejecución del servidor (`clickhouse.response.read_rows`, `clickhouse.response.written_rows`).
+  3. **Span de solicitud de transporte**: se crea por cada intento de solicitud HTTP POST al servidor de ClickHouse y registra los detalles del endpoint (`server.address`, `server.port`), los códigos de estado HTTP (`http.response.status_code`) y los reintentos.
+
+  ```text
+  Application HTTP Request Span
+    └── JDBC Statement Span (e.g., PreparedStatement.executeQuery)
+        └── Client V2 Operation Span (query default)
+            └── Transport Request Span (POST http://localhost:8123)
+  ```
+
+  Como Client V2 hereda `Context.current()`, los spans de base de datos de JDBC se incorporan automáticamente a la traza del entorno, procedente del contexto HTTP o de mensajería circundante, sin necesidad de propagar el contexto manualmente.
+
+  ### Autoinstrumentación de JDBC {#jdbc-auto-instrumentation}
+
+  Los frameworks de tiempo de ejecución de aplicaciones Java y los agentes de APM rastrean automáticamente las operaciones JDBC estándar (`Connection`, `PreparedStatement`, `ResultSet`, `executeBatch`):
+
+  * **Agente Java de OpenTelemetry**: intercepta automáticamente las invocaciones de métodos JDBC estándar y crea spans de traza para las ejecuciones en la base de datos (`SELECT`, `INSERT`, `TRUNCATE`) con `db.system=clickhouse`, el texto de la sentencia y los tiempos de ejecución.
+  * **Spring Boot &amp; Micrometer**: los repositorios de Spring Data JPA y `JdbcTemplate` instrumentan automáticamente las llamadas a la base de datos cuando están activas Micrometer Observation o las métricas de Spring Actuator en Spring Boot.
+
+  ### Configuración de los registradores de métricas del driver {#configuring-driver-metrics-recorders}
+
+  Puede activar las métricas operativas de Cliente V2 (duraciones, recuentos, reintentos) para las conexiones JDBC mediante la propiedad de conexión `jdbc_metrics_recorder`. El controlador instancia la clase especificada a través de su constructor público sin argumentos para cada conexión.
+
+  ```java
+  // Configure via JDBC URL parameter
+  String url = "jdbc:clickhouse://localhost:8123/default?jdbc_metrics_recorder=com.clickhouse.client.api.observability.micrometer.MicrometerMetricsRecorder";
+
+  // Or set via java.util.Properties
+  Properties properties = new Properties();
+  properties.setProperty("jdbc_metrics_recorder", "com.clickhouse.client.api.observability.micrometer.MicrometerMetricsRecorder");
+
+  try (Connection conn = DriverManager.getConnection(url, properties)) {
+      // JDBC operations report operation metrics to Micrometer's globalRegistry
+  }
+  ```
+
+  *Nota: `MicrometerMetricsRecorder` se incluye con el controlador, pero requiere que `io.micrometer:micrometer-core` esté disponible en el classpath de tiempo de ejecución de la aplicación.*
+
+  ### Referencia de la Demo de Spring Boot {#spring-boot-demo-reference}
+
+  Para ver un ejemplo completo que muestra la configuración del controlador JDBC y la telemetría en un servicio de Spring Boot, consulte el módulo `examples/demo-spring-service` de este repositorio:
+
+  * **Configuración del origen de datos JDBC** (`src/main/resources/application.yml`): Configura `spring.datasource` con `com.clickhouse.jdbc.ClickHouseDriver` y las propiedades del controlador (`jdbc_ignore_unsupported_values: true`).
+  * **Integración con Spring Data JPA** (`com.clickhouse.examples.repository.SignalRepository`): Muestra la persistencia de entidades basada en repositorios sobre ClickHouse JDBC.
+  * **Utilidades de `JdbcTemplate`** (`com.clickhouse.examples.schema.ClickHouseSchemaInitializer`): Muestra cómo ejecutar DDL y exportar puntos de métricas con `JdbcTemplate` de Spring.
+
+  ## `HikariCP` {#hikaricp}
 
   ```java showLineNumbers
   // connection pooling won't help much in terms of performance,
@@ -710,17 +857,17 @@ import WideTableWrapper from "/snippets/es/components/WideTableWrapper/WideTable
   }
   ```
 
-  ## Más información
+  ## Más información {#more-information}
 
   Para más información, consulte nuestro [repositorio de GitHub](https://github.com/ClickHouse/clickhouse-java) y la [documentación del cliente de Java](/es/integrations/language-clients/java/client).
 
-  ## Solución de problemas
+  ## Resolución de problemas {#troubleshooting}
 
-  ### Registro
+  ### Registro {#logging}
 
   El driver utiliza [slf4j](https://www.slf4j.org/) para el logging y usará la primera implementación disponible en el `classpath`.
 
-  ### Resolución de timeout de JDBC en inserts de gran volumen
+  ### Resolución de timeout de JDBC en inserts de gran volumen {#resolving-jdbc-timeout-on-large-inserts}
 
   Al realizar inserciones grandes en ClickHouse con tiempos de ejecución prolongados, es posible que encuentre errores de timeout de JDBC como los siguientes:
 
@@ -730,7 +877,7 @@ import WideTableWrapper from "/snippets/es/components/WideTableWrapper/WideTable
 
   Estos errores pueden interrumpir el proceso de inserción de datos y afectar la estabilidad del sistema. Para resolver este problema, es posible que necesite ajustar algunas configuraciones de timeout en el sistema operativo del cliente.
 
-  #### Mac OS
+  #### Mac OS {#mac-os}
 
   En Mac OS, se pueden ajustar los siguientes parámetros para resolver el problema:
 
@@ -740,7 +887,7 @@ import WideTableWrapper from "/snippets/es/components/WideTableWrapper/WideTable
   * `net.inet.tcp.keepcnt`: 8
   * `net.inet.tcp.always_keepalive`: 1
 
-  #### Linux
+  #### Linux {#linux}
 
   En Linux, la configuración equivalente por sí sola puede no resolver el problema. Se requieren pasos adicionales debido a las diferencias en la forma en que Linux gestiona la configuración de keep-alive de los sockets. Siga estos pasos:
 
@@ -767,9 +914,9 @@ import WideTableWrapper from "/snippets/es/components/WideTableWrapper/WideTable
   properties.setProperty("socket_keepalive", "true");
   ```
 
-  ## Guía de migración
+  ## Guía de migración {#migration-guide}
 
-  ### Cambios principales
+  ### Cambios principales {#key-changes}
 
   | Funcionalidad                                | V1 (Anterior)          | V2 (Nueva)                                               |
   | -------------------------------------------- | ---------------------- | -------------------------------------------------------- |
@@ -783,8 +930,9 @@ import WideTableWrapper from "/snippets/es/components/WideTableWrapper/WideTable
     * El streaming de datos no es compatible con JDBC V2 porque no forma parte de la especificación de JDBC ni de Java.
   * JDBC V2 requiere una configuración explícita. No hay valores predeterminados para failover.
     * El protocolo debe especificarse en la URL. No se detecta implícitamente a partir de los números de puerto.
+  * Las cabeceras HTTP personalizadas usan una propiedad por encabezado (`http_header_*`). No se admite la propiedad `custom_http_headers` de V1, con valores separados por comas.
 
-  ### Cambios de configuración
+  ### Cambios de configuración {#configuration-changes}
 
   Solo hay dos enums:
 
@@ -814,7 +962,7 @@ import WideTableWrapper from "/snippets/es/components/WideTableWrapper/WideTable
   }
   ```
 
-  ### Cambios en los tipos de datos
+  ### Cambios en los tipos de datos {#data-types-changes}
 
   **Tipos numéricos**
 
@@ -857,7 +1005,7 @@ import WideTableWrapper from "/snippets/es/components/WideTableWrapper/WideTable
 
   | Tipo de ClickHouse | Compatible con V1 | Tipo JDBC (V2) | Clase Java (V2)    | Tipo JDBC (V1)                  | Clase Java (V1)          |
   | ------------------ | ----------------- | -------------- | ------------------ | ------------------------------- | ------------------------ |
-  | Fecha              | ❌                 | DATE           | java.sql.Date      | DATE                            | java.time.LocalDate      |
+  | Date               | ❌                 | DATE           | java.sql.Date      | DATE                            | java.time.LocalDate      |
   | Date32             | ❌                 | DATE           | java.sql.Date      | DATE                            | java.time.LocalDate      |
   | DateTime           | ❌                 | TIMESTAMP      | java.sql.Timestamp | TIMESTAMP&#95;WITH&#95;TIMEZONE | java.time.OffsetDateTime |
   | DateTime64         | ❌                 | TIMESTAMP      | java.sql.Timestamp | TIMESTAMP&#95;WITH&#95;TIMEZONE | java.time.OffsetDateTime |
@@ -928,7 +1076,7 @@ import WideTableWrapper from "/snippets/es/components/WideTableWrapper/WideTable
   * Los valores IPv4 e IPv6 pueden leerse como `byte[]` mediante el método `getBytes(columnIndex)`. Sin embargo, se recomienda usar las clases específicas para estos tipos.
   * V2 no admite la lectura de direcciones IP como valores numéricos porque la conversión está mejor implementada en las clases InetAddress.
 
-  ### Cambios en los metadatos de la base de datos
+  ### Cambios en los metadatos de la base de datos {#database-metadata-changes}
 
   * V2 usa únicamente el término `Schema` para referirse a las bases de datos. El término `Catalog` queda reservado para usos futuros.
   * V2 devuelve `false` para `DatabaseMetaData.supportsTransactions()` y `DatabaseMetaData.supportsSavepoints()`. Esto cambiará en el futuro.
@@ -945,11 +1093,11 @@ import WideTableWrapper from "/snippets/es/components/WideTableWrapper/WideTable
 
   La API de `clickhouse-jdbc` es síncrona y, en general, presenta mayor sobrecarga (por ejemplo, análisis de SQL y correspondencia/conversión de tipos, etc.). Considere usar [clickhouse-client](/es/integrations/connectors/sql-clients/sql-console) cuando el rendimiento sea crítico o si prefiere una forma más directa de acceder a ClickHouse.
 
-  ## Requisitos del entorno
+  ## Requisitos del entorno {#v07-environment-requirements}
 
   * [OpenJDK](https://openjdk.java.net) versión &gt;= 8
 
-  ### Setup
+  ### Setup {#v07-setup}
 
   <Tabs>
     <Tab title="Maven">
@@ -1011,7 +1159,7 @@ import WideTableWrapper from "/snippets/es/components/WideTableWrapper/WideTable
     </Tab>
   </Tabs>
 
-  ## Configuración
+  ## Configuración {#v07-configuration}
 
   **Clase del driver**: `com.clickhouse.jdbc.ClickHouseDriver`
 
@@ -1036,7 +1184,43 @@ import WideTableWrapper from "/snippets/es/components/WideTableWrapper/WideTable
 
   Nota: consulte la [configuración específica de JDBC](https://github.com/ClickHouse/clickhouse-java/blob/main/clickhouse-jdbc/src/main/java/com/clickhouse/jdbc/JdbcConfig.java) para obtener más información.
 
-  ## Tipos de datos compatibles
+  ### Cabeceras HTTP personalizadas {#v07-custom-http-headers}
+
+  Los encabezados de solicitud adicionales se configuran con `custom_http_headers`. Cada encabezado tiene el formato `Name=Value`. Separe varios encabezados con una coma. Para incluir una coma dentro de un valor, escápela como `\,`. Un `=` dentro de un valor se conserva como parte del valor.
+
+  ```java
+  properties.setProperty("custom_http_headers", "X-ClickHouse-Quota=test");
+  properties.setProperty("custom_http_headers", "X-ClickHouse-Quota=test, X-ClickHouse-Test=test");
+
+  // URL Equivalent
+  // jdbc:ch:http://localhost:8123?custom_http_headers=X-ClickHouse-Quota%3Dtest,X-ClickHouse-Test%3Dtest
+  ```
+
+  ## Funcionalidades de ClickHouse Cloud {#v1-clickhouse-cloud-features}
+
+  Funcionalidades que se aplican al conectarse a [ClickHouse Cloud](https://clickhouse.com/cloud).
+
+  ### Enrutamiento consciente de las réplicas (CLOUD) {#v1-replica-aware-routing}
+
+  ClickHouse Cloud puede asignar solicitudes HTTP relacionadas a una misma réplica. Envíe el encabezado `X-ClickHouse-Replica-Tag` para que un proxy de Cloud dirija a una única réplica todas las solicitudes que compartan la misma etiqueta. Utilícelo para objetos con alcance de sesión, como tablas temporales, para reutilizar la caché local de la réplica o para garantizar la consistencia de lectura después de la escritura.
+  Más información: https://clickhouse.com/docs/products/cloud/features/infrastructure/replica-aware-routing.
+
+  **Qué configurar:** la cabecera HTTP `X-ClickHouse-Replica-Tag` (`com.clickhouse.client.http.config.ClickHouseHttpOption.HEADER_REPLICA_TAG`) mediante `custom_http_headers`. Use el mismo valor de etiqueta en todas las solicitudes que deban permanecer en la misma réplica.
+
+  ```java
+  String replicaTag = "my-app-session-1";
+
+  Properties properties = new Properties();
+  properties.setProperty("custom_http_headers", "X-ClickHouse-Replica-Tag=" + replicaTag);
+
+  ClickHouseDataSource dataSource = new ClickHouseDataSource(
+          "jdbc:clickhouse:https://your-service.clickhouse.cloud:8443", properties);
+  try (Connection conn = dataSource.getConnection("default", "password")) {
+      // requests on this connection are pinned to the replica selected for replicaTag
+  }
+  ```
+
+  ## Tipos de datos compatibles {#v07-supported-data-types}
 
   El driver JDBC admite los mismos formatos de datos que la biblioteca cliente.
 
@@ -1047,7 +1231,7 @@ import WideTableWrapper from "/snippets/es/components/WideTableWrapper/WideTable
     * UInt64 - se asigna a `long` (en client-v1)
   </Note>
 
-  ## Creación de conexión
+  ## Creación de conexión {#v07-creating-connection}
 
   ```java
   String url = "jdbc:ch://my-server/system"; // use http protocol and port 8123 by default
@@ -1060,7 +1244,7 @@ import WideTableWrapper from "/snippets/es/components/WideTableWrapper/WideTable
   }
   ```
 
-  ## Instrucción simple
+  ## Instrucción simple {#v07-simple-statement}
 
   ```java showLineNumbers
 
@@ -1073,7 +1257,7 @@ import WideTableWrapper from "/snippets/es/components/WideTableWrapper/WideTable
   }
   ```
 
-  ## Insert
+  ## Insert {#v07-insert}
 
   <Note>
     * Usa `PreparedStatement` en lugar de `Statement`
@@ -1091,7 +1275,7 @@ import WideTableWrapper from "/snippets/es/components/WideTableWrapper/WideTable
   }
   ```
 
-  ### Con la table function input
+  ### Con la table function input {#with-input-table-function}
 
   Una opción con excelentes características de rendimiento:
 
@@ -1110,7 +1294,7 @@ import WideTableWrapper from "/snippets/es/components/WideTableWrapper/WideTable
 
   * [la documentación de la función input](/es/reference/functions/table-functions/input) siempre que sea posible
 
-  ### Insert con placeholders
+  ### Insert con placeholders {#insert-with-placeholders}
 
   Esta opción se recomienda únicamente para inserciones pequeñas, ya que requeriría una expresión SQL larga (que se procesará en el lado del cliente y consumirá CPU y memoria):
 
@@ -1125,7 +1309,7 @@ import WideTableWrapper from "/snippets/es/components/WideTableWrapper/WideTable
   }
   ```
 
-  ## Gestión de DateTime y zonas horarias
+  ## Gestión de DateTime y zonas horarias {#handling-datetime-and-time-zones}
 
   Se recomienda usar `java.time.LocalDateTime` o `java.time.OffsetDateTime` en lugar de `java.sql.Timestamp`, y `java.time.LocalDate` en lugar de `java.sql.Date`.
 
@@ -1140,7 +1324,7 @@ import WideTableWrapper from "/snippets/es/components/WideTableWrapper/WideTable
   }
   ```
 
-  ## Manejo de `AggregateFunction`
+  ## Manejo de `AggregateFunction` {#handling-aggregatefunction}
 
   <Note>
     La lectura binaria directa del estado de `AggregateFunction` solo es compatible con `groupBitmap`. Para otras funciones de agregación (`min`, `max`, `avg`, etc.), usa los combinadores `-Merge` en tu consulta (p. ej., `SELECT minMerge(min_state) FROM ...`) para resolver el estado de agregación en el servidor y devolver un valor simple.
@@ -1188,7 +1372,7 @@ import WideTableWrapper from "/snippets/es/components/WideTableWrapper/WideTable
 
   <br />
 
-  ## Configuración de la biblioteca HTTP
+  ## Configuración de la biblioteca HTTP {#v07-configuring-http-library}
 
   El conector JDBC de ClickHouse admite tres bibliotecas HTTP: [`HttpClient`](https://docs.oracle.com/en/java/javase/11/docs/api/java.net.http/java/net/http/HttpClient.html), [`HttpURLConnection`](https://docs.oracle.com/en/java/javase/11/docs/api/java.base/java/net/HttpURLConnection.html) y [Apache `HttpClient`](https://hc.apache.org/httpcomponents-client-5.2.x/).
 
@@ -1212,11 +1396,11 @@ import WideTableWrapper from "/snippets/es/components/WideTableWrapper/WideTable
 
   <br />
 
-  ## Conectarse a ClickHouse mediante SSL
+  ## Conectarse a ClickHouse mediante SSL {#connect-to-clickhouse-with-ssl}
 
   Para establecer una conexión JDBC segura a ClickHouse mediante SSL, debe configurar las propiedades JDBC para incluir los parámetros SSL. Esto generalmente implica especificar propiedades SSL como `sslmode` y `sslrootcert` en la URL de JDBC o en el objeto Properties.
 
-  ## Propiedades SSL
+  ## Propiedades SSL {#ssl-properties}
 
   | Nombre               | Valor predeterminado | Valores opcionales | Descripción                                                                                            |
   | -------------------- | -------------------- | ------------------ | ------------------------------------------------------------------------------------------------------ |
@@ -1249,7 +1433,7 @@ import WideTableWrapper from "/snippets/es/components/WideTableWrapper/WideTable
     }
   ```
 
-  ## Resolución de timeout de JDBC en inserts de gran volumen
+  ## Resolución de timeout de JDBC en inserts de gran volumen {#v07-resolving-jdbc-timeout-on-large-inserts}
 
   Al realizar inserciones grandes en ClickHouse con tiempos de ejecución prolongados, es posible que encuentre errores de timeout de JDBC como los siguientes:
 
@@ -1259,7 +1443,7 @@ import WideTableWrapper from "/snippets/es/components/WideTableWrapper/WideTable
 
   Estos errores pueden interrumpir el proceso de inserción de datos y afectar la estabilidad del sistema. Para resolver este problema, es necesario ajustar algunas configuraciones de timeout en el sistema operativo del cliente.
 
-  ### Mac OS
+  ### Mac OS {#v07-mac-os}
 
   En Mac OS, se pueden ajustar los siguientes parámetros para resolver el problema:
 
@@ -1269,7 +1453,7 @@ import WideTableWrapper from "/snippets/es/components/WideTableWrapper/WideTable
   * `net.inet.tcp.keepcnt`: 8
   * `net.inet.tcp.always_keepalive`: 1
 
-  ### Linux
+  ### Linux {#v07-linux}
 
   En Linux, la configuración equivalente por sí sola puede no resolver el problema. Se requieren pasos adicionales debido a las diferencias en la forma en que Linux gestiona la configuración de keep-alive de los sockets. Siga estos pasos:
 

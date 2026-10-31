@@ -638,7 +638,7 @@ Permet d&#39;utiliser les fonctions [d&#39;introspection](/fr/concepts/features/
 ### SOURCES {#sources}
 
 Permet d’utiliser des sources de données externes. S’applique aux [moteurs de base de données](/fr/reference/engines/database-engines/index), [moteurs de table](/fr/reference/engines/table-engines/index) et [fonctions de table](/fr/reference/functions/table-functions/index) adossés à une source.
-Également requis pour les emplacements de sauvegarde : `BACKUP`/`RESTORE` et `ENGINE = Backup` autorisent leur emplacement en fonction de ces privilèges.
+Également requis pour les emplacements de sauvegarde : `BACKUP`/`RESTORE` et `ENGINE = Backup` autorisent leur emplacement en fonction de ces privilèges accordés.
 
 * `READ`. Niveau : `GLOBAL_WITH_PARAMETER`
 * `WRITE`. Niveau : `GLOBAL_WITH_PARAMETER`
@@ -648,6 +648,7 @@ Paramètres possibles :
 * `AZURE`
 * `BIGQUERY`
 * `DISK`
+* `ELASTICSEARCH`
 * `FILE`
 * `HDFS`
 * `HIVE`
@@ -666,7 +667,7 @@ Paramètres possibles :
 * `URL`
 
 <Note>
-  La distinction entre les privilèges READ et WRITE pour les sources est disponible à partir de la version 25.7, et uniquement avec le paramètre du serveur
+  La distinction entre les privilèges accordés READ et WRITE pour les sources est disponible à partir de la version 25.7, et uniquement avec le paramètre du serveur
   `access_control_improvements.enable_read_write_grants`
 
   Sinon, vous devez utiliser la syntaxe `GRANT AZURE ON *.* TO user`, qui équivaut au nouveau `GRANT READ, WRITE ON AZURE TO user`

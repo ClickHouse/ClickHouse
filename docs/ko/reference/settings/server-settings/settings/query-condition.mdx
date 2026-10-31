@@ -12,15 +12,11 @@ import SettingsInfoBlock from "/snippets/ko/components/SettingsInfoBlock/Setting
 
 이 설정은 ClickHouse 서버를 구성하기 위한 것이며 ClickHouse 소스에서 자동으로 생성됩니다.
 
-<div id="query_condition_cache_policy">
-  ## query_condition_cache_policy
-</div>
+## query_condition_cache_policy {#query_condition_cache_policy}
 
-<SettingsInfoBlock type="String" default_value="SLRU" changeable_without_restart="No" />쿼리 조건 캐시 정책의 이름입니다.
+<SettingsInfoBlock type="String" default_value="SLRU" changeable_without_restart="No" />쿼리 조건 캐시 eviction 정책의 이름입니다. 가능한 값: `LRU`, `SLRU`, `SIEVE`.
 
-<div id="query_condition_cache_size">
-  ## query_condition_cache_size
-</div>
+## query_condition_cache_size {#query_condition_cache_size}
 
 <SettingsInfoBlock type="UInt64" default_value="104857600" changeable_without_restart="Yes" />
 
@@ -30,9 +26,7 @@ import SettingsInfoBlock from "/snippets/ko/components/SettingsInfoBlock/Setting
   이 설정은 런타임 중에 수정할 수 있으며 즉시 적용됩니다.
 </Note>
 
-<div id="query_condition_cache_size_ratio">
-  ## query_condition_cache_size_ratio
-</div>
+## query_condition_cache_size_ratio {#query_condition_cache_size_ratio}
 
 <SettingsInfoBlock type="Double" default_value="0.5" changeable_without_restart="No" />쿼리 조건 캐시에서 보호 큐(SLRU 정책 사용 시)가 캐시 전체 크기에서 차지하는 비율입니다.
 

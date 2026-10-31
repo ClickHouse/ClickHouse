@@ -172,8 +172,9 @@ const ServerSettingsExplorer = ({ href: baseRoute }) => {
     },
     {
       label: "cpu_slot_*",
-      count: 3,
+      count: 4,
       settings: [
+        { name: "cpu_slot_parking", path: "/cpu-slot#cpu_slot_parking", default: "1" },
         { name: "cpu_slot_preemption", path: "/cpu-slot#cpu_slot_preemption", default: "1" },
         { name: "cpu_slot_preemption_timeout_ms", path: "/cpu-slot#cpu_slot_preemption_timeout_ms", default: "1000" },
         { name: "cpu_slot_quantum_ns", path: "/cpu-slot#cpu_slot_quantum_ns", default: "10000000" }
@@ -281,10 +282,13 @@ const ServerSettingsExplorer = ({ href: baseRoute }) => {
     },
     {
       label: "distributed_cache_*",
-      count: 3,
+      count: 6,
       settings: [
         { name: "distributed_cache_apply_throttling_settings_from_client", path: "/distributed-cache#distributed_cache_apply_throttling_settings_from_client", default: "1" },
         { name: "distributed_cache_keep_up_free_connections_ratio", path: "/distributed-cache#distributed_cache_keep_up_free_connections_ratio", default: "0.1" },
+        { name: "distributed_cache_warmer_max_bytes_in_queue", path: "/distributed-cache#distributed_cache_warmer_max_bytes_in_queue", default: "107374182400" },
+        { name: "distributed_cache_warmer_max_file_segment_size", path: "/distributed-cache#distributed_cache_warmer_max_file_segment_size", default: "33554432" },
+        { name: "distributed_cache_warmer_max_segments_in_queue", path: "/distributed-cache#distributed_cache_warmer_max_segments_in_queue", default: "100000" },
         { name: "distributed_cache_write_pool_size", path: "/distributed-cache#distributed_cache_write_pool_size", default: "100" }
       ],
       children: []
@@ -327,9 +331,10 @@ const ServerSettingsExplorer = ({ href: baseRoute }) => {
     },
     {
       label: "enable_*",
-      count: 5,
+      count: 6,
       settings: [
         { name: "enable_azure_sdk_logging", path: "/enable#enable_azure_sdk_logging", default: "0" },
+        { name: "enable_gpu", path: "/enable#enable_gpu", default: "0" },
         { name: "enable_read_through_distributed_cache", path: "/enable#enable_read_through_distributed_cache", default: "0" },
         { name: "enable_silk_runtime", path: "/enable#enable_silk_runtime", default: "0" },
         { name: "enable_webterminal", path: "/enable#enable_webterminal", default: "1" },
@@ -362,6 +367,15 @@ const ServerSettingsExplorer = ({ href: baseRoute }) => {
       settings: [
         { name: "global_profiler_cpu_time_period_ns", path: "/global-profiler#global_profiler_cpu_time_period_ns", default: "10000000000" },
         { name: "global_profiler_real_time_period_ns", path: "/global-profiler#global_profiler_real_time_period_ns", default: "10000000000" }
+      ],
+      children: []
+    },
+    {
+      label: "gpu_*",
+      count: 2,
+      settings: [
+        { name: "gpu_memory_pool_release_threshold", path: "/gpu#gpu_memory_pool_release_threshold", default: "18446744073709551615" },
+        { name: "gpu_pinned_memory_pool_release_threshold", path: "/gpu#gpu_pinned_memory_pool_release_threshold", default: "1073741824" }
       ],
       children: []
     },
@@ -1111,6 +1125,17 @@ const ServerSettingsExplorer = ({ href: baseRoute }) => {
       children: []
     },
     {
+      label: "statistics_cache_*",
+      count: 4,
+      settings: [
+        { name: "statistics_cache_policy", path: "/statistics-cache#statistics_cache_policy", default: "SLRU" },
+        { name: "statistics_cache_prewarm_ratio", path: "/statistics-cache#statistics_cache_prewarm_ratio", default: "0.95" },
+        { name: "statistics_cache_size", path: "/statistics-cache#statistics_cache_size", default: "1073741824" },
+        { name: "statistics_cache_size_ratio", path: "/statistics-cache#statistics_cache_size_ratio", default: "0.5" }
+      ],
+      children: []
+    },
+    {
       label: "storage_*",
       count: 3,
       settings: [
@@ -1337,9 +1362,10 @@ const ServerSettingsExplorer = ({ href: baseRoute }) => {
     },
     {
       label: "Outros",
-      count: 125,
+      count: 128,
       settings: [
         { name: "abort_on_logical_error", path: "/other#abort_on_logical_error", default: "0" },
+        { name: "ai_function_allow_sql_named_collections", path: "/other#ai_function_allow_sql_named_collections", default: "1" },
         { name: "allowed_disks_for_table_engines", path: "/other#allowed_disks_for_table_engines", default: '""' },
         { name: "auth_use_forwarded_address", path: "/other#auth_use_forwarded_address", default: "false" },
         { name: "bcrypt_workfactor", path: "/other#bcrypt_workfactor", default: "12" },
@@ -1348,6 +1374,7 @@ const ServerSettingsExplorer = ({ href: baseRoute }) => {
         { name: "cache_size_to_ram_max_ratio", path: "/other#cache_size_to_ram_max_ratio", default: "0.5" },
         { name: "cannot_allocate_thread_fault_injection_probability", path: "/other#cannot_allocate_thread_fault_injection_probability", default: "0" },
         { name: "cgroups_memory_usage_observer_wait_time", path: "/other#cgroups_memory_usage_observer_wait_time", default: "15" },
+        { name: "collect_connection_metrics", path: "/other#collect_connection_metrics", default: "0" },
         { name: "compression", path: "/other#compression" },
         { name: "config-file", path: "/other#config-file", default: "config.xml" },
         { name: "config_reload_interval_ms", path: "/other#config_reload_interval_ms", default: "2000" },
@@ -1458,6 +1485,7 @@ const ServerSettingsExplorer = ({ href: baseRoute }) => {
         { name: "ssh_server", path: "/other#ssh_server" },
         { name: "table_engines_require_grant", path: "/other#table_engines_require_grant", default: "false" },
         { name: "tcp_ssh_port", path: "/other#tcp_ssh_port" },
+        { name: "tcp_with_proxy_allow_interserver_mode", path: "/other#tcp_with_proxy_allow_interserver_mode", default: "1" },
         { name: "text_log", path: "/other#text_log" },
         { name: "thread_pool_queue_size", path: "/other#thread_pool_queue_size", default: "10000" },
         { name: "throw_on_unknown_workload", path: "/other#throw_on_unknown_workload", default: "0" },

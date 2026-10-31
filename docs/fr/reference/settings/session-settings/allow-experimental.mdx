@@ -11,6 +11,7 @@ doc_type: 'reference'
 import SettingsInfoBlock from "/snippets/fr/components/SettingsInfoBlock/SettingsInfoBlock.jsx";
 import { VersionHistory } from "/snippets/fr/components/VersionHistory/VersionHistory.jsx";
 import { ExperimentalBadge } from "/snippets/fr/components/ExperimentalBadge/ExperimentalBadge.jsx";
+import { BetaBadge } from "/snippets/fr/components/BetaBadge/BetaBadge.jsx";
 
 Ces paramètres sont disponibles dans [system.settings](/fr/reference/system-tables/settings) et sont générés automatiquement à partir du [code source](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
@@ -34,7 +35,11 @@ L&#39;analyseur est l&#39;infrastructure d&#39;analyse et de planification des r
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.5"},{"label": "0"},{"label": "Nouveau paramètre"}]}]} />
 
-Permet de supprimer les anciens fichiers de données lors de la compaction d’Iceberg.
+Permet de supprimer les anciens fichiers de données lors du compactage d’Iceberg.
+
+Le nettoyage exécute `iceberg_compaction_data_cleanup` à l’issue d’un compactage. Il fait expirer les snapshots rendus obsolètes par le compactage, de la même
+manière que `expire_snapshots` : il les retire des métadonnées de la table et supprime les fichiers qui ne sont référencés par aucun autre snapshot. Pour une table
+dont la version du format est 1, ou gérée par un catalogue transactionnel, seuls les fichiers sont supprimés ; les snapshots restent dans les métadonnées.
 
 ## allow_experimental_database_hms_catalog {#allow_experimental_database_hms_catalog}
 
@@ -104,11 +109,11 @@ Permet d&#39;utiliser explicitement &#39;OPTIMIZE&#39; pour les tables Iceberg.
 
 ## allow_experimental_kusto_dialect {#allow_experimental_kusto_dialect}
 
-<ExperimentalBadge />
+<BetaBadge />
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.1"},{"label": "0"},{"label": "Nouveau paramètre"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "0"},{"label": "Le dialecte Kusto Query Language (KQL) est passé en bêta."}]}, {"id": "row-2","items": [{"label": "25.1"},{"label": "0"},{"label": "Nouveau paramètre"}]}]} />
 
 Activez le dialecte Kusto Query Language (KQL), une alternative à SQL.
 

@@ -14,6 +14,14 @@ import { ExperimentalBadge } from "/snippets/ko/components/ExperimentalBadge/Exp
 
 이러한 설정은 [system.settings](/ko/reference/system-tables/settings)에서 확인할 수 있으며, [소스 코드](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp)에서 자동 생성됩니다.
 
+## use_aggregation_memory_tracker {#use_aggregation_memory_tracker}
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "1"},{"label": "`GROUP BY`의 2단계 변환 시 `group_by_two_level_threshold_bytes`를 전용 메모리 트래커로 측정한 집계 상태(aggregation state)의 메모리와만 비교합니다(https:\/\/github.com\/ClickHouse\/ClickHouse\/pull\/107490). 26.7 이전에는 전체 쿼리의 메모리 사용량(memory usage) 증가분을 기준으로 삼았습니다."}]}, {"id": "row-2","items": [{"label": "26.10"},{"label": "1"},{"label": "`GROUP BY`의 2단계 변환에서 집계 메모리를 측정하는 방식을 선택하는 새로운 설정입니다. 이 설정이 제어하는 변경 사항은 26.7에 반영되었으며, 이로 인한 메모리 회귀 오류는 26.9에서 수정되었습니다."}]}]} />
+
+`group_by_two_level_threshold_bytes`와 비교할 집계 상태의 크기를 집계 전용 메모리 트래커로 측정합니다. 비활성화하면 집계가 생성된 이후 전체 쿼리의 메모리 사용량 증가분으로 크기를 측정하므로, 상태가 작은 집계도 2단계로 변환될 수 있습니다.
+
 ## use_async_executor_for_materialized_views {#use_async_executor_for_materialized_views}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
@@ -53,6 +61,8 @@ materialized view 쿼리를 async 방식으로, 필요에 따라 멀티스레드
 
 하나의 엔트리에는 한 스트라이프 내의 연속된 그래뉼 범위가 저장됩니다. 그래뉼은 첫 번째 행부터 마지막 행까지 모두 읽힌 후에만 캐시에 저장되고, 읽기는 그래뉼 단위로 캐시에서 처리되며, 서로 다른 읽기가 기록한 범위는 하나로 머지됩니다. 따라서 파트를 서로 다른 마크 범위로 나누어 읽더라도 엔트리를 공유할 수 있습니다.
 
+캐시는 로컬 파일 시스템(`file` 테이블 함수 및 `File` 테이블 엔진)이나 객체 스토리지(`s3`, `azureBlobStorage` 및 해당 테이블 엔진)에서 읽는 `Parquet` 파일과 데이터 레이크 테이블에도 적용됩니다. 이 경우 하나의 엔트리에는 한 row group의 컬럼 전체가 저장되며, 파일 경로, 파일 버전(객체의 ETag 또는 로컬 파일의 수정 시간, inode, 크기), 파일의 컬럼, 그리고 해당 컬럼을 읽을 때 사용하는 유형이 키로 사용됩니다. row group의 컬럼은 필터가 적용되기 전에 해당 row group의 모든 행을 읽은 경우에만 캐시에 기록됩니다. `PREWHERE`를 사용하면 필터에 사용되는 컬럼은 이 조건을 충족하지만, 나머지 컬럼은 필터를 통과한 행만 읽습니다. 로컬 파일은 버전만으로 내용을 식별할 수 있도록, 몇 초 동안 수정되지 않은 경우에만 캐시됩니다.
+
 ## use_concurrency_control {#use_concurrency_control}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
@@ -60,6 +70,18 @@ materialized view 쿼리를 async 방식으로, 필요에 따라 멀티스레드
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.12"},{"label": "1"},{"label": "기본적으로 동시성 제어를 활성화합니다"}]}]} />
 
 서버의 동시성 제어를 따릅니다(`concurrent_threads_soft_limit_num` 및 `concurrent_threads_soft_limit_ratio_to_cores` 전역 서버 설정 참조). 비활성화하면 서버에 과부하가 걸린 경우에도 더 많은 스레드를 사용할 수 있습니다(일반적인 사용에는 권장되지 않으며, 주로 테스트에 필요합니다).
+
+## use_concurrency_control_for_max_threads {#use_concurrency_control_for_max_threads}
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "1"},{"label": "동시성 제어(concurrency control)에서 공정하게 배분된 CPU 슬롯 수를 기준으로 쿼리의 병렬 처리 수준을 결정하는 새로운 설정"}]}]} />
+
+쿼리의 병렬 처리 수준(쿼리 계획 수립 시 사용되는 스트림 및 스레드 수)을 CPU 코어 수 대신 서버 동시성 제어(concurrency control)에서 공정하게 배분된 CPU 슬롯 수를 기준으로 결정합니다. 공정 배분량은 슬롯 한도(`concurrent_threads_soft_limit_num` 및 `concurrent_threads_soft_limit_ratio_to_cores` 전역 서버 설정 참조)를 현재 실행 중인 파이프라인과 새 쿼리에 균등하게 나눈 값입니다.
+
+이 방식에서는 여러 쿼리가 동시에 실행될 때 각 쿼리가 더 적은 수의 스트림으로 계획됩니다. 따라서 메모리 사용량이 줄고, 스레드별 부분 결과(예: 집계 상태(aggregation states))를 머지하는 데 드는 CPU도 줄어들어 전체 처리량이 증가합니다. 서버가 유휴 상태일 때 계획된 쿼리는 기존과 마찬가지로 모든 CPU 코어를 사용합니다.
+
+이 설정은 `max_threads`가 `auto`(명시적으로 설정되지 않음)이고 `use_concurrency_control`이 활성화된 경우에만 적용됩니다.
 
 ## use_constant_folding_in_index_analysis {#use_constant_folding_in_index_analysis}
 

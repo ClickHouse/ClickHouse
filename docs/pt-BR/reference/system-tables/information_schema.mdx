@@ -7,7 +7,7 @@ title: 'INFORMATION_SCHEMA'
 doc_type: 'reference'
 ---
 
-`INFORMATION_SCHEMA` (ou `information_schema`) é um banco de dados de sistema que fornece uma [visão independente de SGBD](https://en.wikipedia.org/wiki/Information_schema) (em certa medida) padronizada dos metadados de objetos de banco de dados. As VIEWs em `INFORMATION_SCHEMA` geralmente são inferiores às tabelas de sistema normais, mas ferramentas podem usá-las para obter informações básicas de forma compatível entre diferentes SGBDs. Espera-se que a estrutura e o conteúdo das VIEWs em `INFORMATION_SCHEMA` evoluam de maneira retrocompatível, ou seja, apenas novas funcionalidades sejam adicionadas, sem que as funcionalidades existentes sejam alteradas ou removidas. Em termos de implementação interna, as VIEWs em `INFORMATION_SCHEMA` normalmente mapeiam para tabelas de sistema normais, como [system.columns](/pt-BR/reference/system-tables/columns), [system.databases](/pt-BR/reference/system-tables/databases) e [system.tables](/pt-BR/reference/system-tables/tables).
+`INFORMATION_SCHEMA` (ou `information_schema`) é um banco de dados de sistema que fornece uma [visão independente de SGBD](https://en.wikipedia.org/wiki/Information_schema) (em certa medida) padronizada dos metadados de objetos de banco de dados. As visões em `INFORMATION_SCHEMA` geralmente são inferiores às tabelas de sistema normais, mas ferramentas podem usá-las para obter informações básicas de forma compatível entre diferentes SGBDs. Espera-se que a estrutura e o conteúdo das visões em `INFORMATION_SCHEMA` evoluam de maneira retrocompatível, ou seja, apenas novas funcionalidades sejam adicionadas, sem que as funcionalidades existentes sejam alteradas ou removidas. Em termos de implementação interna, as visões em `INFORMATION_SCHEMA` normalmente mapeiam para tabelas de sistema normais, como [system.columns](/pt-BR/reference/system-tables/columns), [system.databases](/pt-BR/reference/system-tables/databases) e [system.tables](/pt-BR/reference/system-tables/tables).
 
 ```sql
 SHOW TABLES FROM INFORMATION_SCHEMA;
@@ -18,40 +18,57 @@ SHOW TABLES FROM information_schema;
 
 ```text
 ┌─name────────────────────┐
+│ CHARACTER_SETS          │
 │ COLLATIONS              │
 │ COLUMNS                 │
+│ COLUMN_PRIVILEGES       │
+│ ENGINES                 │
 │ KEY_COLUMN_USAGE        │
 │ REFERENTIAL_CONSTRAINTS │
 │ SCHEMATA                │
-| STATISTICS              |
+│ SCHEMA_PRIVILEGES       │
+│ STATISTICS              │
 │ TABLES                  │
+│ TABLE_PRIVILEGES        │
+│ USER_PRIVILEGES         │
 │ VIEWS                   │
+│ character_sets          │
+│ collations              │
+│ column_privileges       │
 │ columns                 │
+│ engines                 │
 │ key_column_usage        │
 │ referential_constraints │
+│ schema_privileges       │
 │ schemata                │
-| statistics              |
+│ statistics              │
+│ table_privileges        │
 │ tables                  │
+│ user_privileges         │
 │ views                   │
 └─────────────────────────┘
 ```
 
-`INFORMATION_SCHEMA` contém as seguintes VIEWs:
+`INFORMATION_SCHEMA` contém as seguintes visões:
 
+* [CHARACTER&#95;SETS](#character_sets)
 * [COLUMNS](#columns)
+* [COLUMN&#95;PRIVILEGES](#column_privileges)
 * [COLLATIONS](#collations)
+* [ENGINES](#engines)
 * [KEY&#95;COLUMN&#95;USAGE](#key_column_usage)
 * [REFERENTIAL&#95;CONSTRAINTS](#referential_constraints)
 * [SCHEMATA](#schemata)
+* [SCHEMA&#95;PRIVILEGES](#schema_privileges)
 * [STATISTICS](#statistics)
 * [TABLES](#tables)
+* [TABLE&#95;PRIVILEGES](#table_privileges)
+* [USER&#95;PRIVILEGES](#user_privileges)
 * [VIEWS](#views)
 
-VIEWs equivalentes sem distinção entre maiúsculas e minúsculas, por exemplo `INFORMATION_SCHEMA.columns`, são fornecidas por motivos de compatibilidade com outros bancos de dados. O mesmo se aplica a todas as colunas dessas VIEWs: são fornecidas variantes tanto em minúsculas (por exemplo, `table_name`) quanto em maiúsculas (`TABLE_NAME`).
+Visões equivalentes sem distinção entre maiúsculas e minúsculas, por exemplo `INFORMATION_SCHEMA.columns`, são fornecidas por motivos de compatibilidade com outros bancos de dados. O mesmo se aplica a todas as colunas dessas visões: são fornecidas variantes tanto em minúsculas (por exemplo, `table_name`) quanto em maiúsculas (`TABLE_NAME`).
 
-<div id="columns">
-  ## COLUMNS
-</div>
+## COLUMNS {#columns}
 
 Contém colunas lidas da tabela de sistema [system.columns](/pt-BR/reference/system-tables/columns), além de colunas que não são compatíveis com o ClickHouse ou não fazem sentido (sempre `NULL`), mas são exigidas pelo padrão.
 
@@ -143,9 +160,7 @@ domain_schema:            ᴺᵁᴸᴸ
 domain_name:              ᴺᵁᴸᴸ
 ```
 
-<div id="schemata">
-  ## SCHEMATA
-</div>
+## SCHEMATA {#schemata}
 
 Contém colunas lidas da tabela de sistema [system.databases](/pt-BR/reference/system-tables/databases) e colunas que não são suportadas no ClickHouse ou não fazem sentido (sempre `NULL`), mas são exigidas pelo padrão.
 
@@ -187,9 +202,7 @@ default_character_set_name:    ᴺᵁᴸᴸ
 sql_path:                      ᴺᵁᴸᴸ
 ```
 
-<div id="tables">
-  ## TABLES
-</div>
+## TABLES {#tables}
 
 Contém as colunas lidas da tabela de sistema [system.tables](/pt-BR/reference/system-tables/tables).
 
@@ -237,9 +250,7 @@ table_collation: utf8mb4_0900_ai_ci
 table_comment:   
 ```
 
-<div id="views">
-  ## VIEWS
-</div>
+## VIEWS {#views}
 
 Contém colunas lidas da tabela de sistema [system.tables](/pt-BR/reference/system-tables/tables), quando o motor de tabela [View](/pt-BR/reference/engines/table-engines/special/view) é usado.
 
@@ -298,9 +309,7 @@ is_trigger_deletable:       NO
 is_trigger_insertable_into: NO
 ```
 
-<div id="key_column_usage">
-  ## KEY_COLUMN_USAGE
-</div>
+## KEY_COLUMN_USAGE {#key_column_usage}
 
 Contém colunas da tabela de sistema [system.tables](/pt-BR/reference/system-tables/tables) às quais se aplicam restrições.
 
@@ -357,9 +366,7 @@ referenced_table_name:         ᴺᵁᴸᴸ
 referenced_column_name:        ᴺᵁᴸᴸ
 ```
 
-<div id="referential_constraints">
-  ## REFERENTIAL_CONSTRAINTS
-</div>
+## REFERENTIAL_CONSTRAINTS {#referential_constraints}
 
 Contém informações sobre chaves estrangeiras. No momento, retorna um resultado vazio (nenhuma linha), o que basta para fornecer compatibilidade com ferramentas de terceiros, como o Tableau Online.
 
@@ -377,15 +384,11 @@ Colunas:
 * `table_name` ([String](/pt-BR/reference/data-types/string)) — No momento, não é utilizado.
 * `referenced_table_name` ([String](/pt-BR/reference/data-types/string)) — No momento, não é utilizado.
 
-<div id="statistics">
-  ## STATISTICS
-</div>
+## STATISTICS {#statistics}
 
 Fornece informações sobre os índices da tabela. Atualmente, retorna um resultado vazio (nenhuma linha), o suficiente apenas para garantir compatibilidade com ferramentas de terceiros, como o Tableau Online.
 
-<div id="collations">
-  ## COLLATIONS
-</div>
+## COLLATIONS {#collations}
 
 Fornece informações sobre as collations disponíveis. Contém as collations de [system.collations](/pt-BR/reference/system-tables/collations), além de duas linhas para compatibilidade com MySQL: `utf8mb4_0900_ai_ci` — a collation anunciada pelo protocolo MySQL durante o handshake, em `SCHEMATA.DEFAULT_COLLATION_NAME` e em `TABLES.TABLE_COLLATION` — e `binary` — a pseudocollation atribuída pelo protocolo MySQL a colunas numéricas e outras colunas que não são do tipo String nos metadados do conjunto de resultados — para que clientes compatíveis com MySQL que consultem as collations anunciadas nesta VIEW possam encontrá-las.
 
@@ -398,3 +401,76 @@ Colunas:
 * `is_compiled` ([Nullable](/pt-BR/reference/data-types/nullable)([String](/pt-BR/reference/data-types/string))) — Indica se a collation está compilada no servidor (`Yes` para ambas as linhas de compatibilidade com MySQL e `NULL` nos demais casos). Fornecido para compatibilidade com MySQL.
 * `sortlen` ([Nullable](/pt-BR/reference/data-types/nullable)([UInt64](/pt-BR/reference/data-types/int-uint))) — O comprimento mínimo de ordenação (`0` para `utf8mb4_0900_ai_ci`, `1` para `binary` e `NULL` nos demais casos). Fornecido para compatibilidade com MySQL.
 * `pad_attribute` ([Nullable](/pt-BR/reference/data-types/nullable)([String](/pt-BR/reference/data-types/string))) — O atributo de preenchimento, `NO PAD` ou `PAD SPACE` (`NO PAD` para ambas as linhas de compatibilidade com MySQL e `NULL` nos demais casos). Fornecido para compatibilidade com MySQL.
+
+## CHARACTER_SETS {#character_sets}
+
+Fornece uma lista estática de conjuntos de caracteres (`utf8`, `utf8mb4`, `ascii`, `binary`) para compatibilidade com ferramentas do MySQL. O ClickHouse, por si só, trabalha com UTF-8.
+
+Colunas:
+
+* `character_set_name` ([String](/pt-BR/reference/data-types/string)) — O nome do conjunto de caracteres.
+
+## ENGINES {#engines}
+
+Fornece informações sobre os motores de tabela disponíveis, obtidas da tabela de sistema [system.table&#95;engines](/pt-BR/reference/system-tables/table_engines). Disponibilizada para compatibilidade com o MySQL.
+
+Colunas:
+
+* `engine` ([String](/pt-BR/reference/data-types/string)) — O nome do motor de tabela.
+* `support` ([String](/pt-BR/reference/data-types/string)) — `DEFAULT` para o motor definido como [default&#95;table&#95;engine](/operations/settings/settings#default_table_engine); caso contrário, `YES`.
+
+## USER_PRIVILEGES {#user_privileges}
+
+Fornece informações sobre privilégios globais, obtidas da tabela de sistema [system.grants](/pt-BR/reference/system-tables/grants) (linhas sem banco de dados).
+
+As visões `*_PRIVILEGES` mostram apenas concessões positivas e sem curingas: revogações parciais, concessões com curingas (por exemplo, `GRANT SELECT ON db_prefix*.*`) e concessões sobre objetos específicos nomeados de tipos de privilégio parametrizados (por exemplo, `GRANT TABLE ENGINE ON TinyLog`) não podem ser representadas no formato compatível com o MySQL e são omitidas. Por isso, um beneficiário restringido por uma revogação parcial aparece com a concessão sem restrição. Concessões `ON *` de tipos parametrizados aparecem como privilégios globais simples. A fonte de referência é `system.grants`. Ao contrário do MySQL, as visões mostram as concessões de todos os usuários e funções, e lê-las exige acesso a `system.grants`; sem esse acesso, a consulta falha com uma exceção `ACCESS_DENIED`. Não há coluna `GRANTOR` porque o ClickHouse não registra quem emitiu uma concessão.
+
+Colunas:
+
+* `grantee` ([String](/pt-BR/reference/data-types/string)) — O usuário ou a função a quem o privilégio é concedido, no formato do MySQL: `'name'@'%'`. Funções não têm equivalente no MySQL e são representadas da mesma forma que usuários.
+* `table_catalog` ([String](/pt-BR/reference/data-types/string)) — Sempre `def`.
+* `privilege_type` ([String](/pt-BR/reference/data-types/string)) — O nome do privilégio, por exemplo, `SELECT` ou `ALTER UPDATE`. Consulte [system.privileges](/pt-BR/reference/system-tables/privileges) para ver a lista completa.
+* `is_grantable` ([String](/pt-BR/reference/data-types/string)) — `YES` se o privilégio for concedido `WITH GRANT OPTION`; caso contrário, `NO`.
+* `grantee_type` ([String](/pt-BR/reference/data-types/string)) — `USER` ou `ROLE`. Coluna não padrão: no ClickHouse, um usuário e uma função podem ter o mesmo nome, e esta coluna permite distinguir esses beneficiários.
+
+## SCHEMA_PRIVILEGES {#schema_privileges}
+
+Fornece informações sobre privilégios em nível de banco de dados, obtidas da tabela de sistema [system.grants](/pt-BR/reference/system-tables/grants) (linhas com banco de dados, mas sem tabela). Consulte [USER&#95;PRIVILEGES](#user_privileges) para ver as limitações comuns a todas as visões `*_PRIVILEGES`.
+
+Colunas:
+
+* `grantee` ([String](/pt-BR/reference/data-types/string)) — O usuário ou a função a quem o privilégio foi concedido, no formato do MySQL: `'name'@'%'`.
+* `table_catalog` ([String](/pt-BR/reference/data-types/string)) — Sempre `def`.
+* `table_schema` ([String](/pt-BR/reference/data-types/string)) — O nome do banco de dados.
+* `privilege_type` ([String](/pt-BR/reference/data-types/string)) — O nome do privilégio.
+* `is_grantable` ([String](/pt-BR/reference/data-types/string)) — `YES` se o privilégio tiver sido concedido `WITH GRANT OPTION`; caso contrário, `NO`.
+* `grantee_type` ([String](/pt-BR/reference/data-types/string)) — `USER` ou `ROLE`. Coluna não padrão: no ClickHouse, um usuário e uma função podem ter o mesmo nome, e esta coluna permite distinguir esses beneficiários.
+
+## TABLE_PRIVILEGES {#table_privileges}
+
+Fornece informações sobre privilégios no nível de tabela, obtidas da tabela de sistema [system.grants](/pt-BR/reference/system-tables/grants) (linhas com uma tabela, mas sem coluna). Consulte [USER&#95;PRIVILEGES](#user_privileges) para conhecer as limitações comuns a todas as visões `*_PRIVILEGES`.
+
+Colunas:
+
+* `grantee` ([String](/pt-BR/reference/data-types/string)) — O usuário ou a função a quem o privilégio é concedido, no formato do MySQL: `'name'@'%'`.
+* `table_catalog` ([String](/pt-BR/reference/data-types/string)) — Sempre `def`.
+* `table_schema` ([String](/pt-BR/reference/data-types/string)) — O nome do banco de dados.
+* `table_name` ([String](/pt-BR/reference/data-types/string)) — O nome da tabela.
+* `privilege_type` ([String](/pt-BR/reference/data-types/string)) — O nome do privilégio.
+* `is_grantable` ([String](/pt-BR/reference/data-types/string)) — `YES` se o privilégio for concedido `WITH GRANT OPTION`; caso contrário, `NO`.
+* `grantee_type` ([String](/pt-BR/reference/data-types/string)) — `USER` ou `ROLE`. Coluna fora do padrão: no ClickHouse, um usuário e uma função podem ter o mesmo nome, e esta coluna permite diferenciá-los.
+
+## COLUMN_PRIVILEGES {#column_privileges}
+
+Fornece informações sobre privilégios column-level, obtidas da tabela de sistema [system.grants](/pt-BR/reference/system-tables/grants) (linhas com uma coluna; uma linha por coluna). Consulte [USER&#95;PRIVILEGES](#user_privileges) para conhecer as limitações comuns a todas as visões `*_PRIVILEGES`.
+
+Colunas:
+
+* `grantee` ([String](/pt-BR/reference/data-types/string)) — O usuário ou a função a quem o privilégio é concedido, no formato do MySQL: `'name'@'%'`.
+* `table_catalog` ([String](/pt-BR/reference/data-types/string)) — Sempre `def`.
+* `table_schema` ([String](/pt-BR/reference/data-types/string)) — O nome do banco de dados.
+* `table_name` ([String](/pt-BR/reference/data-types/string)) — O nome da tabela.
+* `column_name` ([String](/pt-BR/reference/data-types/string)) — O nome da coluna.
+* `privilege_type` ([String](/pt-BR/reference/data-types/string)) — O nome do privilégio.
+* `is_grantable` ([String](/pt-BR/reference/data-types/string)) — `YES` se o privilégio for concedido `WITH GRANT OPTION`; caso contrário, `NO`.
+* `grantee_type` ([String](/pt-BR/reference/data-types/string)) — `USER` ou `ROLE`. Coluna não padrão: no ClickHouse, um usuário e uma função podem ter o mesmo nome, e esta coluna permite diferenciar esses beneficiários.

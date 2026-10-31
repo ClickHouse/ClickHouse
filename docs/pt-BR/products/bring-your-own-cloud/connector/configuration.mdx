@@ -14,14 +14,14 @@ Esta página aborda as alterações de configuração que você provavelmente fa
 
 ## Superfícies de configuração {#configuration-surfaces}
 
-O conector tem uma superfície de configuração para cada destino de instalação.
+O connector tem uma superfície de configuração para cada destino de instalação.
 
 <Tabs>
   <Tab title="Kubernetes" id="surfaces-kubernetes">
     `clicklink clctl init` cria, no diretório de trabalho, uma sobreposição de valores chamada `clicklink-values.yaml` e implanta o chart `clicklink-connector` com ela. A sobreposição é o registro persistente da sua implantação: ao executar `init` novamente, ela é mantida, a menos que você informe `--force`, de modo que suas edições sejam preservadas em novas execuções e durante a recuperação.
 
     <Note>
-      Os comandos de operação nesta página e em [operações](/pt-BR/products/bring-your-own-cloud/connector/operations) usam a CLI `helm`. Somente o `init` inclui um cliente Helm integrado.
+      Os blocos `helm upgrade` nesta página exigem a CLI `helm` na sua estação de trabalho; somente `init` e `connector upgrade` já incluem uma integrada.
     </Note>
 
     Edite a sobreposição e aplique-a:

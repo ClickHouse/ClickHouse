@@ -109,10 +109,11 @@ CREATE TABLE iceberg_table ENGINE=IcebergS3(iceberg_conf, filename = 'test_table
 
 تنطبق تعيينات أنواع البيانات المذكورة أعلاه على عمليات القراءة. وتنطبق القيود التالية عند إنشاء ClickHouse لمخططات Iceberg أو تطويرها وكتابة البيانات:
 
-* لا يستطيع ClickHouse إنشاء مخطط Iceberg يحتوي على `Bool` أو `Decimal` أو `FixedString` أو `Int8` أو `UInt8` أو `Int16` أو `UInt16`، ولا إضافة عمود أو تعديل نوعه إلى أحد هذه الأنواع. تفشل العملية باستثناء نوع غير مدعوم. لا يمنع ذلك إدراج قيم `Bool` أو `Decimal` في أعمدة Iceberg الموجودة.
-* عند إنشاء ClickHouse لمخطط Iceberg أو تطويره، فإنه يعيّن كل عمود من نوع `DateTime` و`DateTime64` إلى نوع `timestamp` في Iceberg، الذي يتميز بدقة ميكروثانية ولا يتضمن منطقة زمنية. لا يستطيع ClickHouse إنشاء أنواع مخططات `timestamptz` أو `timestamp_ns` أو `timestamptz_ns`، لذا لا تُمثَّل الدقة الأعلى ودلالات المنطقة الزمنية في مخطط Iceberg.
+* لا يستطيع ClickHouse إنشاء مخطط Iceberg يحتوي على `Bool` أو `FixedString` أو `Int8` أو `UInt8` أو `Int16` أو `UInt16` أو `Time` أو `Time64`، ولا إضافة عمود أو تعديل نوعه إلى أحد هذه الأنواع. تفشل العملية باستثناء نوع غير مدعوم. لا يمنع ذلك إدراج قيم `Bool` في أعمدة Iceberg الموجودة.
+* لا يستطيع ClickHouse كذلك إنشاء مخطط Iceberg يحتوي على `UInt64`، إذ إن أوسع نوع أعداد صحيحة في Iceberg هو النوع `long` ذو الإشارة بحجم 64 بت، وهو لا يستطيع تمثيل جميع قيم `UInt64`. استخدم `Int64` أو `Decimal(20, 0)` بدلًا منه. ويفشل إنشاء جدول يحتوي على عمود من نوع `UInt64`، بما في ذلك الأعمدة المتداخلة مثل `Array(UInt64)`، ويُطلَق استثناء حتى لو كان جدول Iceberg موجودًا بالفعل في المسار. وللسبب نفسه، يُوسَّع العمود من نوع `UInt32` إلى النوع `long` في Iceberg، ولذلك يُقرأ لاحقًا بنوع `Int64`.
+* عند إنشاء ClickHouse لمخطط Iceberg أو تطويره، فإنه يعيّن كل عمود من نوع `DateTime` و`DateTime64` إلى نوع `timestamp` في Iceberg، الذي يتميز بدقة ميكروثانية ولا يتضمن منطقة زمنية. لا يستطيع ClickHouse إنشاء أنواع مخططات `timestamptz` أو `timestamp_ns` أو `timestamptz_ns`، لذا لا تُمثَّل الدقة الأعلى ودلالات المنطقة الزمنية في مخطط Iceberg.
 * لا يستطيع ClickHouse الكتابة إلى جدول Iceberg يستخدم عمودًا من نوع `decimal` أو `fixed` أو `timestamp_ns` أو `timestamptz_ns` كحقل تقسيم مباشر. تفشل العملية باستثناء نوع غير مدعوم.
-* بالنسبة إلى ملفات البيانات التي تحتوي على أنواع لا يستطيع ClickHouse إجراء تسلسل لحدودها، بما في ذلك `Bool` و`Decimal`، يحذف ClickHouse جميع الحدود الدنيا والعليا للأعمدة من إدخال بيان Iceberg. تظل أحجام الأعمدة وأعداد قيم null مضمنة، وتبقى البيانات صحيحة، لكن لا تستطيع القارئات استخدام تقليم min-max على مستوى البيان لهذه الملفات.
+* بالنسبة إلى ملفات البيانات التي تحتوي على أنواع لا يستطيع ClickHouse إجراء تسلسل لحدودها، بما في ذلك `Bool` و`Decimal`، يحذف ClickHouse جميع الحدود الدنيا والعليا للأعمدة من إدخال بيان Iceberg. تظل أحجام الأعمدة وأعداد قيم null مضمنة، وتبقى البيانات صحيحة، لكن لا تستطيع القارئات استخدام استبعاد min-max على مستوى البيان لهذه الملفات.
 
 ## تطور المخطط {#schema-evolution}
 
@@ -132,11 +133,11 @@ CREATE TABLE iceberg_table ENGINE=IcebergS3(iceberg_conf, filename = 'test_table
 
 ## `DROP PARTITION` {#drop-partition}
 
-يُزيل الأمر `ALTER TABLE ... DROP PARTITION <value>` جميع ملفات البيانات التابعة لتقسيم واحد، ويُنشئ لقطة جديدة لم تعد تشير إليها. وهو مدعوم حاليًا لجداول Iceberg المحلية والمخزّنة في تخزين الكائنات، لكنه غير مدعوم للجداول المعتمدة على كتالوج (catalog).
+يُزيل الأمر `ALTER TABLE ... DROP PARTITION <value>` جميع ملفات البيانات التابعة لتقسيم واحد، ويُنشئ لقطة جديدة لم تعد تشير إليها. وهو مدعوم لجداول Iceberg المحلية والمخزّنة في تخزين الكائنات، وللجداول الموجودة في قاعدة بيانات `DataLakeCatalog` من نوع الكتالوج (catalog) `rest` أو `onelake` أو `biglake` أو `delta_sharing` أو `horizon` أو `s3tables` أو `unity` (مع `use_unity_catalog_v2 = 1`).
 
 يجب تفعيل الإعداد `allow_insert_into_iceberg` لاستخدام هذه العملية.
 
-لا تُدعم هذه العملية إلا لجداول Iceberg ذات `format-version` 2 التي تمتلك مواصفة تقسيم واحدة لم يطرأ عليها أي تعديل. ويجب ألا يحتوي أي ملف manifest يتضمن التقسيم المحدد على ملفات من تقسيمات أخرى، فإذا كان ملف manifest مشتركًا بين التقسيم المحدد وتقسيم آخر، فشلت العملية دون إجراء أي تغيير على الجدول. كما ترفض العملية ملفات manifest المتأثرة إذا احتوت على ملفات حذف قائمة على المساواة (equality-delete).
+لا تُدعم هذه العملية إلا لجداول Iceberg ذات `format-version` 2 التي تمتلك مواصفة تقسيم واحدة لم يطرأ عليها أي تعديل. ويجب ألا يحتوي أي ملف بيان يتضمن التقسيم المحدد على ملفات من تقسيمات أخرى، فإذا كان ملف البيان مشتركًا بين التقسيم المحدد وتقسيم آخر، فشلت العملية دون إجراء أي تغيير على الجدول. كما ترفض العملية ملفات البيان المتأثرة إذا احتوت على ملفات حذف قائمة على المساواة (equality-delete).
 
 تخضع قيمة التقسيم للقواعد نفسها المتبعة في `MergeTree`؛ فإذا كان التقسيم مكوّنًا من عمود واحد، فمرّر قيمة حرفية مفردة، أما إذا كان مكوّنًا من عدة أعمدة، فمرّر صفًّا مرتبًا (tuple) من القيم:
 
@@ -347,7 +348,7 @@ ts = now();
 1. **تحديد المسار مباشرةً**:
 
 * إذا قمت بتعيين `iceberg_metadata_file_path`، فسيستخدم النظام هذا المسار كما هو بدمجه مع مسار دليل جدول Iceberg.
-* عند توفير هذا الإعداد، يتم تجاهل جميع إعدادات الاستدلال الأخرى.
+* عند توفير هذا الإعداد، يتم تجاهل جميع إعدادات مستوى الدقة الأخرى.
 
 2. **مطابقة UUID الجدول**:
 
@@ -357,7 +358,8 @@ ts = now();
 
 3. **البحث الافتراضي**:
 
-* إذا لم يتم توفير أيٍّ من الإعدادين أعلاه، فستصبح جميع ملفات `.metadata.json` داخل دليل `metadata` ملفات مرشحة
+* إذا لم يتم توفير أيٍّ من الإعدادين أعلاه، فستصبح جميع ملفات `.metadata.json` داخل دليل `metadata` ملفات مرشحة
+* على S3 وAzure، عند تفعيل الإعداد على مستوى الاستعلام `iceberg_list_only_v_prefixed_metadata_files` وتعطيل `iceberg_use_version_hint`، إذا كانت أسماء بعض هذه الملفات تبدأ بالحرف `v` (على غرار تسمية كتالوجات ClickHouse وHadoop لها)، فلن تكون مرشحةً إلا هذه الملفات، ولن يُستعرض سواها (إذ يتم الاستعراض باستخدام بادئة المفتاح `metadata/v`، وبالتالي لا تُستعرض ملفات البيان المخزَّنة في الدليل نفسه). لا تفعّل هذا الإعداد إلا للجداول التي تتبع جميع ملفات البيانات الوصفية فيها نمط التسمية هذا: ففي الدليل الذي يضم كلا نمطي التسمية، لا تكون ملفات `<N>-<uuid>.metadata.json` مرشحةً أبدًا
 
 ### اختيار أحدث ملف {#most-recent-file}
 
@@ -415,6 +417,22 @@ SETTINGS iceberg_metadata_staleness_ms=120000
 **ملاحظة**: يعمل الجلب المسبق غير المتزامن للبيانات الوصفية ضمن `ICEBERG_SCEDULE_POOL`، وهي مجموعة مؤشرات ترابط على مستوى الخادم لعمليات الخلفية على جداول `Iceberg` النشطة. ويُتحكَّم في حجم مجموعة مؤشرات الترابط هذه بواسطة معلمة إعداد الخادم `iceberg_background_schedule_pool_size` (القيمة الافتراضية هي 10).
 
 **ملاحظة**: التوقع الحالي هو أن يكون حجم ذاكرة التخزين المؤقت للبيانات الوصفية كافيًا للاحتفاظ بالكامل بأحدث لقطة للبيانات الوصفية لجميع الجداول النشطة، إذا كان الجلب المسبق غير المتزامن مُمكّنًا.
+
+## تعديل إعدادات الجدول {#modify-settings}
+
+يمكن تغيير الإعدادات المخزَّنة في تعريف الجدول فقط، لا في البيانات الوصفية لـ Iceberg، لجدول موجود باستخدام `ALTER TABLE ... MODIFY SETTING` و`ALTER TABLE ... RESET SETTING`، وهي:
+
+* إعدادات البحث عن ملف البيانات الوصفية: `iceberg_use_version_hint` و`iceberg_recent_metadata_file_by_last_updated_ms_field` و`iceberg_metadata_async_prefetch_period_ms`؛
+* إعدادات الدمج في الخلفية والتنظيف الذي يليه: `allow_experimental_iceberg_compaction` و`allow_experimental_cleanup_old_data_files_compaction` و`iceberg_compaction_lock_lease_seconds` و`iceberg_compaction_delay_bias` و`iceberg_compaction_data_cleanup` و`iceberg_read_with_snapshot_lease` و`iceberg_snapshot_lease_seconds` و`iceberg_outdated_snapshot_lifetime_seconds` و`iceberg_compaction_commit_batch_size` و`iceberg_compaction_max_rows_in_data_file` و`iceberg_compaction_max_bytes_in_data_file` و`iceberg_max_number_datafiles_to_compact` و`iceberg_data_file_size_lower_threshold_compaction` و`iceberg_data_file_size_upper_threshold_compaction`.
+
+تسري القيم الجديدة على الاستعلامات اللاحقة، وتُخزَّن في تعريف الجدول. وتُوقَف المهام الخلفية للجدول أثناء تغيير الإعدادات، ثم يُعاد تشغيلها بالإعدادات الجديدة؛ لذا فإن تعطيل `allow_experimental_iceberg_compaction` يوقف الدمج في الخلفية لهذا الجدول، بينما يؤدي تفعيله إلى بدئه. لا يمكن تعديل الإعدادات الأخرى، ولا يمكن الجمع بين تغيير الإعدادات وأوامر `ALTER` أخرى في استعلام واحد. كما أن جداول قاعدة بيانات `DataLakeCatalog` لا تدعم تعديل الإعدادات.
+
+```sql
+ALTER TABLE example_table MODIFY SETTING iceberg_use_version_hint = 1;
+ALTER TABLE example_table RESET SETTING iceberg_use_version_hint;
+ALTER TABLE example_table MODIFY SETTING allow_experimental_iceberg_compaction = 0;
+ALTER TABLE example_table MODIFY SETTING iceberg_compaction_delay_bias = 600, iceberg_data_file_size_lower_threshold_compaction = 268435456;
+```
 
 ## انظر أيضًا {#see-also}
 

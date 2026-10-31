@@ -32,15 +32,15 @@ Si está actualizando desde la versión 0.15.x o anterior, consulte la [guía de
 
 | Componente  | Versiones compatibles                                                                                                                                                                                                      |
 | ----------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Python      | De 3.10 a 3.14. Las compilaciones free-threaded, como 3.14t, tienen soporte experimental.                                                                                                                                  |
-| ClickHouse  | Versiones de ClickHouse con soporte activo. CI realiza pruebas con las [series de releases LTS y stable que se indican aquí](https://github.com/ClickHouse/clickhouse-connect/blob/main/.github/clickhouse-versions.json). |
+| Python      | De 3.10 a 3.15. Las compilaciones free-threaded, como 3.14t y 3.15t, tienen soporte experimental.                                                                                                                          |
+| ClickHouse  | Versiones de ClickHouse con soporte activo. CI realiza pruebas con las [series de versiones LTS y stable que se indican aquí](https://github.com/ClickHouse/clickhouse-connect/blob/main/.github/clickhouse-versions.json). |
 | SQLAlchemy  | 1.4.40 o posterior, inferior a 3.0, para el dialecto síncrono. 2.0.44 o posterior, inferior a 3.0, para el dialecto async.                                                                                                 |
 | Pandas      | 2.x y 3.x                                                                                                                                                                                                                  |
 | Polars      | 1.0 o posterior                                                                                                                                                                                                            |
 | aiohttp     | 3.9 o posterior                                                                                                                                                                                                            |
 | Plataformas | Linux, macOS y Windows en las arquitecturas para las que se publican wheels de cada versión de Python                                                                                                                      |
 
-El package incluye wheels compilados cuando están disponibles y recurre a una implementación en pure Python cuando no se pueden compilar las extensiones de Cython. PyArrow es compatible con Python de 3.10 a 3.14. Python 3.14 requiere PyArrow 22 o posterior.
+El paquete incluye wheels compilados cuando están disponibles y recurre a una implementación en pure Python cuando no se pueden compilar las extensiones de Cython. PyArrow es compatible con Python de 3.10 a 3.15. Python 3.14 requiere PyArrow 22 o posterior, y Python 3.15 requiere PyArrow 26 o posterior. `lz4` todavía no publica wheels para CPython 3.15 ni para compilaciones free-threaded, por lo que, al instalar en Python 3.15 o en compilaciones free-threaded de Python, `lz4` se compila a partir del código fuente y se requiere un compilador de C.
 
 ## Instalación {#installation}
 

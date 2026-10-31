@@ -52,6 +52,25 @@ false (デフォルト) の場合、AI 関数は、プロンプトと API キー
 
 AI 関数が 1 クエリあたりに送信できる HTTP リクエストの最大数です。0 (デフォルト) の場合、制限は無効になります。各サーバーおよびクエリフラグメントごとに個別に適用されます。1 つの実行コンテキスト内では、その中のすべての AI 関数、block、thread で共有される厳密な上限ですが、分散クエリ (分片または並列レプリカフラグメント間) では、分片/フラグメントごとにこの数までのリクエストを送信できます。最上位クエリで設定する必要があり、サブクエリの オーバーライド は無視されます。
 
+## ai_function_max_concurrent_requests_per_thread {#ai_function_max_concurrent_requests_per_thread}
+
+<BetaBadge />
+
+<SettingsInfoBlock type="NonZeroUInt64" default_value="8" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "8"},{"label": "新しい設定"}]}]} />
+
+1つのクエリスレッドが同時に処理中にできるプロバイダーへのリクエストの最大数です。`1` を指定すると、リクエストは1件ずつ順番に発行されます。
+
+複数のスレッド (最大 `max_threads`) で実行されるクエリでは、スレッドごとに最大でこの数のリクエストを同時に処理中にできます。[設定プロファイルの制約](/ja/concepts/features/configuration/settings/constraints-on-settings) (`<constraints><ai_function_max_concurrent_requests_per_thread><max>...</max></...>`) を使用すると、クエリ側から引き上げられない上限を設定できます。ただし、この上限もスレッド単位で適用されます。
+
+`1` より大きい値を指定すると、次の2つの保証が緩和されます。
+
+* リクエストのトークン使用量は応答を受け取って初めて判明するため、トークンクォータ (`ai_function_max_input_tokens_per_query`、`ai_function_max_output_tokens_per_query`) は、処理中のリクエスト1件につき1リクエスト分を超過する可能性があります。つまり、超過量は1リクエスト分にとどまらず、最大でこの設定値の件数分になります。
+* 一連のリクエストはまとめて送出され、その後にエラーが確認されるため、最初の行で失敗するクエリであっても、最大でこの数のリクエストがすでに発行され、課金されている可能性があります。
+
+`ai_function_max_api_calls_per_query` はこの影響を受けず、厳密な上限として機能し続けます。各リクエストを送出する前にスロットが予約されるためです。
+
 ## ai_function_max_input_tokens_per_query {#ai_function_max_input_tokens_per_query}
 
 <BetaBadge />
@@ -80,9 +99,9 @@ AI 関数が 1 クエリあたりに送信できる HTTP リクエストの最�
 
 <BetaBadge />
 
-<SettingsInfoBlock type="UInt64" default_value="1" />
+<SettingsInfoBlock type="UInt64" default_value="3" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "1"},{"label": "一時的なAPIエラーはデフォルトで1回再試行されるため、プロバイダからの単一の429または5xxによってクエリが失敗することはありません。"}]}, {"id": "row-2","items": [{"label": "26.4"},{"label": "0"},{"label": "新しい設定"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "1"},{"label": "一時的なAPIエラーはデフォルトで1回再試行されるため、プロバイダーからの単一の429または5xxによってクエリが失敗することはありません。"}]}, {"id": "row-2","items": [{"label": "26.4"},{"label": "0"},{"label": "新しい設定"}]}, {"id": "row-3","items": [{"label": "26.10"},{"label": "3"},{"label": "同時実行リクエスト時に、レート制限により過負荷状態にあるプロバイダーへの負荷を軽減するため、一時的なAPIエラーはデフォルトで最大3回再試行されます。"}]}]} />
 
 個々のAPIリクエストに対して、一時的なエラー発生時に行う再試行の最大回数です。各再試行では、`ai_function_retry_initial_delay_ms` を初期値とする指数バックオフを使用します。
 

@@ -448,8 +448,8 @@ doc_type: 'reference'
 
   主な機能:
 
-  * オートコンプリートとマルチタブでのクエリ実行に対応したモダンな SQL エディタ。
-  * テーブル、ビュー、カラムを参照できるスキーマブラウザ。
+  * 自動補完とマルチタブでのクエリ実行に対応したモダンな SQL エディタ。
+  * テーブル、ビュー、カラムを参照できるスキーマブラウザー。
   * よく使うクエリの保存と整理。
   * クロスプラットフォームのデスクトップアプリ (Windows、macOS、Linux) に加え、セルフホスト/Web 版も提供。
 
@@ -462,12 +462,27 @@ doc_type: 'reference'
   主な機能:
 
   * ネイティブな ClickHouse の型に対応したデータベース、テーブル、ビューの参照。データスキッピングインデックスについては、その型、カラム、granularity も表示。
-  * Monaco をベースにした SQL エディタ。オートコンプリート、複数ステートメントの実行、ページネーション付きの結果表示に対応。
+  * Monaco をベースにした SQL エディタ。自動補完、複数ステートメントの実行、ページネーション付きの結果表示に対応。
   * データグリッドからのインラインでの insert、update、delete。`CREATE TABLE`、`ALTER TABLE ... ADD/MODIFY/RENAME COLUMN`、`ADD INDEX` の DDL 生成。
   * MCPサーバーを内蔵しているため、AI エージェントが同じアプリからスキーマを読み取り、クエリを実行可能。
   * PostgreSQL、MySQL、SQLite、DuckDB、Redis、MongoDB などのエンジンと並べて、ClickHouse を 1 つのウィンドウで操作。
 
   [Tabularis ClickHouse プラグイン](https://github.com/TabularisDB/tabularis-clickhouse-plugin) · [Web サイト](https://tabularis.dev)
+</Accordion>
+
+<Accordion title="DBine">
+  [DBine](https://github.com/addlayer-io/dbine) は、Windows、macOS、Linux 向けの無料のオープンソース (Apache 2.0) デスクトップデータベースマネージャーです。HTTP インターフェイス (`8123`、TLS 利用時は `8443`) 経由で ClickHouse に接続し、130 以上のデータベースやクラウドサービスと同じウィンドウで扱えます。
+
+  主な機能:
+
+  * ClickHouse の SQL 方言に対応した SQL エディタ。テーブル名・カラム名の自動補完や、`KILL QUERY` によるクエリのキャンセルに対応。
+  * データベース、テーブル、ビュー、カラムの参照。結果グリッドやチャートの表示、CSV、JSON、XLSX、SQL 形式でのエクスポートに対応。
+  * `ENGINE`、`ORDER BY`、`PARTITION BY`、TTL、コーデックを設定できるテーブルデザイナー。セルの編集内容は `ALTER TABLE ... UPDATE` ミューテーションとして生成され、実行前に確認できます。
+  * `EXPLAIN json = 1, indexes = 1` によるクエリプラン、`system.processes` に基づくプロセス一覧、`system.query_log` を利用したプロファイラー。
+  * スキーマ比較、データ比較、および複数のデータベースにクエリを実行して結果を DuckDB で結合できるノートブック。
+  * SSH トンネル、シークレットマネージャーからのパスワード取得、読み取り専用接続、MCPサーバー、さらにクエリを提案し、ユーザーが承認するまで何も実行しない AI アシスタント。
+
+  [Web サイト](https://dbine.com) · [ダウンロード](https://github.com/addlayer-io/dbine/releases)
 </Accordion>
 
 ## 商用 {#commercial}

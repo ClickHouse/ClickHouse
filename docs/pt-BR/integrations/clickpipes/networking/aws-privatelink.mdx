@@ -12,7 +12,6 @@ integration:
 ---
 
 import { Image } from "/snippets/pt-BR/components/Image.jsx";
-import { PrivatePreviewBadge } from "/snippets/pt-BR/components/PrivatePreviewBadge/PrivatePreviewBadge.jsx";
 
 Você pode usar o [AWS PrivateLink](https://aws.amazon.com/privatelink/) para estabelecer uma conexão segura entre o ClickPipes e uma fonte de dados hospedada na AWS. O ClickPipes cria um **endpoint privado reverso (RPE)** em sua VPC e o direciona a um serviço de endpoint privado publicado para sua fonte de dados, garantindo que o tráfego nunca seja exposto à internet pública.
 
@@ -213,12 +212,6 @@ para uma configuração de um broker por serviço de endpoint que usa nomes DNS 
 
 ## DNS privado personalizado {#custom-private-dns}
 
-<PrivatePreviewBadge />
-
-<Info>
-  O DNS privado personalizado está em **prévia privada**. Entre em contato com o [suporte do ClickHouse](https://clickhouse.com/support/program) para habilitá-lo para seu serviço.
-</Info>
-
 O AWS PrivateLink fornece [DNS privado gerenciado](https://docs.aws.amazon.com/vpc/latest/privatelink/manage-dns-names.html)
 para serviços de endpoint da VPC com um domínio verificado. Alguns serviços exigem que cada consumidor gerencie a resolução de DNS na própria VPC. Por exemplo, o Confluent Cloud exige que os consumidores resolvam os hostnames dos brokers para o endpoint do PrivateLink.
 
@@ -232,11 +225,6 @@ serviço PrivateLink já fornece nomes DNS privados, você não precisa de nomes
 Nomes DNS privados personalizados são compatíveis com os tipos de endpoint [serviço de endpoint da VPC](#vpc-endpoint-service)
 e [recurso da VPC](#vpc-resource). O MSK multi-VPC fornece DNS privado gerenciado
 pronto para uso e não oferece suporte a nomes personalizados.
-
-<Note>
-  No momento, o console do ClickHouse Cloud oferece suporte a um nome DNS privado personalizado por endpoint privado reverso.
-  Se você precisar gerenciar vários nomes DNS privados personalizados no mesmo endpoint, use OpenAPI ou Terraform.
-</Note>
 
 As seguintes regras se aplicam a nomes DNS privados personalizados:
 
@@ -252,8 +240,8 @@ As seguintes regras se aplicam a nomes DNS privados personalizados:
 Para configurar nomes DNS privados personalizados:
 
 * No console do ClickHouse Cloud, preencha o campo `Custom private DNS name` ao
-  [criar um endpoint privado reverso](#creating-clickpipe). O campo é exibido quando o
-  recurso é habilitado para seu serviço.
+  [criar um endpoint privado reverso](#creating-clickpipe). Use `Add DNS name` para associar
+  vários nomes ao mesmo endpoint.
 * Com [OpenAPI](https://clickhouse.com/docs/cloud/manage/api/swagger), defina
   `customPrivateDnsMappings` ao criar um endpoint privado reverso ou atualize um endpoint existente
   com uma solicitação `PATCH`. As atualizações substituem toda a lista de mapeamentos; uma lista vazia
@@ -286,7 +274,7 @@ Para configurar nomes DNS privados personalizados:
   Se for necessário acesso entre regiões ao RDS, será preciso criar um serviço de endpoint da VPC, e
   [este guia oferece](/pt-BR/resources/support-center/knowledge-base/cloud-services/aws-privatelink-setup-for-clickpipes) um bom ponto de partida para configurá-lo.
 
-  Para acesso na mesma Region, a abordagem recomendada é criar um recurso da VPC.
+  Para acesso na mesma região, a abordagem recomendada é criar um recurso da VPC.
 </Info>
 
 <Image img="/images/integrations/data-ingestion/clickpipes/cp_rpe_step1.webp" alt="Selecionar endpoint privado reverso" size="lg" border />
@@ -296,9 +284,9 @@ Para configurar nomes DNS privados personalizados:
 <Image img="/images/integrations/data-ingestion/clickpipes/cp_rpe_step2.webp" alt="Selecionar endpoint privado reverso" size="lg" border />
 
 * Para o recurso da VPC, forneça o ARN de compartilhamento da configuração e o ID da configuração.
-  * Para MSK multi-VPC, forneça o ARN do cluster e o método de autenticação usado com um endpoint criado.
-  * Para o serviço de endpoint da VPC, forneça o nome do serviço.
-  * Opcionalmente, forneça um nome de [DNS privado personalizado](#custom-private-dns).
+* Para MSK multi-VPC, forneça o ARN do cluster e o método de autenticação usado com um endpoint criado.
+* Para o serviço de endpoint da VPC, forneça o nome do serviço.
+* Opcionalmente, forneça um nome de [DNS privado personalizado](#custom-private-dns).
 
 7. Clique em `Create` e aguarde até que o endpoint privado reverso esteja pronto.
 

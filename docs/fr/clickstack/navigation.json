@@ -98,17 +98,25 @@
         "fr/clickstack/features/event-patterns",
         "fr/clickstack/features/event-deltas",
         "fr/clickstack/features/alerts",
+        "fr/clickstack/features/anomaly-detection",
         "fr/clickstack/service-maps",
         "fr/clickstack/features/session-replay",
         "fr/clickstack/mcp",
         "fr/clickstack/url-parameters",
         {
-          "group": "Journées de démonstration",
+          "group": "Demo days",
           "pages": [
             "fr/clickstack/demo-days/index",
             {
               "group": "2026",
               "pages": [
+                {
+                  "group": "Octobre",
+                  "pages": [
+                    "fr/clickstack/demo-days/2026/2026-10-08",
+                    "fr/clickstack/demo-days/2026/2026-10-01"
+                  ]
+                },
                 {
                   "group": "Septembre",
                   "pages": [
@@ -288,8 +296,8 @@
       "expanded": true,
       "group": "Référence de l’API",
       "openapi": {
-        "directory": "fr/clickstack/api-reference",
-        "source": "https://raw.githubusercontent.com/hyperdxio/hyperdx/refs/heads/main/packages/api/openapi.json"
+        "source": "https://raw.githubusercontent.com/hyperdxio/hyperdx/refs/heads/main/packages/api/openapi.json",
+        "directory": "fr/clickstack/api-reference"
       },
       "root": "fr/clickstack/api-reference"
     }

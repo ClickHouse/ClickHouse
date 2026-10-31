@@ -20,14 +20,18 @@ title: システムログパラメータ
 | `buffer_size_rows_flush_threshold` | 行数のしきい値。このしきい値に達すると、ログをディスクにフラッシュする処理がバックグラウンドで開始されます。                                                                              | `max_size_rows / 2` |                                                                                        |
 | `flush_on_crash`                   | クラッシュ時にログをディスクへダンプするかどうかを設定します。                                                                                                     | `false`             |                                                                                        |
 
-さらに、次のサーバーレベル設定は、すべてのシステムログテーブルのデフォルトのフラッシュポリシーを制御します。
+`database`、`table`、`engine` を除くすべての設定は、`system_tables` セクションで全システムログテーブルに対して一括で設定することもできます。個々のテーブルのセクション内で指定した設定のほうが優先されます。また、テーブルごとに `engine` を指定すると、グローバルな `partition_by`、`ttl`、`order_by`、`storage_policy`、`settings` を含め、エンジン定義全体が置き換えられます。
 
 ```xml
-<default_system_log_flush_policy>
-    <skip_alias_columns>true</skip_alias_columns>
-</default_system_log_flush_policy>
+<system_tables>
+    <ttl>event_date + INTERVAL 30 DAY DELETE</ttl>
+</system_tables>
 ```
+
+`system_tables` セクションでは、さらに次の設定も指定できます。この設定はすべてのシステムログテーブルに適用され、テーブルごとに個別に設定することはできません。
 
 | 設定                   | 説明                                                                                  | デフォルト   |
 | -------------------- | ----------------------------------------------------------------------------------- | ------- |
 | `skip_alias_columns` | `true` の場合、system log テーブルのスキーマから ALIAS カラムが除外されます。S3 をバックエンドとする system log では必須です。 | `false` |
+
+この設定の従来の指定場所である `default_system_log_flush_policy.skip_alias_columns` は非推奨となっており、`system_tables.skip_alias_columns` が設定されていない場合にのみ使用されます。

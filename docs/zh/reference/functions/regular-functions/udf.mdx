@@ -613,6 +613,17 @@ DROP FUNCTION [IF EXISTS] name [ON CLUSTER cluster]
 
 这些示例驱动程序可作为起点；在将它们暴露给不受信任的用户之前，请先根据您的环境审查并加固其沙箱隔离机制。
 
+### 第三方驱动程序 {#third-party-drivers}
+
+驱动程序也可以由 ClickHouse 以外的来源提供。这些驱动程序由其作者维护，而非 ClickHouse；在向不受信任的用户开放之前，请像审查示例驱动程序那样对其进行审查：
+
+* [`HyperlightPython`](https://github.com/hyperlight-dev/hyperlight-unikraft/tree/main/integrations/clickhouse) - 在拥有独立内核的 [Hyperlight](https://github.com/hyperlight-dev/hyperlight) 微型 VM 中运行 Python 函数体。Hyperlight 是 [Cloud Native Computing Foundation](https://www.cncf.io/projects/hyperlight/) (CNCF) 旗下的沙箱项目。每个行块都从 guest 的快照开始执行，因此代码无法访问网络，也无法访问服务器上的文件，且不同查询之间不会保留任何状态。需要在提供 `/dev/kvm` 的 Linux 环境中运行。
+
+  ```sql
+  CREATE FUNCTION py_words ARGUMENTS (s String) RETURNS UInt64
+  ENGINE = HyperlightPython AS 'return len(s.split())';
+  ```
+
 ## 相关文章 {#related-content}
 
 * [ClickHouse Cloud 中的用户自定义函数](https://clickhouse.com/blog/user-defined-functions-clickhouse-udfs)

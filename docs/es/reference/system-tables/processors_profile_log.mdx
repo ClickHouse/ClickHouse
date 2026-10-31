@@ -27,9 +27,9 @@ Es seguro truncar o eliminar esta tabla en cualquier momento.
 * `event_date` ([Date](/es/reference/data-types/date)) — La fecha en la que ocurrió el evento.
 * `event_time` ([DateTime](/es/reference/data-types/datetime)) — La fecha y hora en la que ocurrió el evento.
 * `event_time_microseconds` ([DateTime64(6)](/es/reference/data-types/datetime64)) — La fecha y hora, con precisión de microsegundos, en la que ocurrió el evento.
-* `id` ([UInt64](/es/reference/data-types/int-uint)) — ID del procesador.
+* `id` ([UInt64](/es/reference/data-types/int-uint)) — ID del procesador, único dentro de la consulta. Es el número que aparece en `processor_uniq_id`.
 * `parent_ids` ([Array(UInt64)](/es/reference/data-types/array)) — IDs de los procesadores padre.
-* `plan_step` ([UInt64](/es/reference/data-types/int-uint)) — ID del paso del plan de consulta que creó este procesador. El valor es cero si el procesador no se añadió a partir de ningún paso.
+* `plan_step` ([UInt64](/es/reference/data-types/int-uint)) — ID del paso del plan de consulta que creó este procesador, único dentro de la consulta. Es el número que aparece en `step_uniq_id` más uno. El valor es cero si el procesador no se añadió a partir de ningún paso.
 * `plan_step_name` ([String](/es/reference/data-types/string)) — Nombre del paso del plan de consulta que creó este procesador. El valor está vacío si el procesador no se añadió a partir de ningún paso.
 * `plan_step_description` ([String](/es/reference/data-types/string)) — Descripción del paso del plan de consulta que creó este procesador. El valor está vacío si el procesador no se añadió a partir de ningún paso.
 * `plan_group` ([UInt64](/es/reference/data-types/int-uint)) — Grupo del procesador si fue creado por un paso del plan de consulta. Un grupo es una partición lógica de los procesadores añadidos desde el mismo paso del plan de consulta. El grupo se usa solo para mejorar la presentación del resultado de EXPLAIN PIPELINE.

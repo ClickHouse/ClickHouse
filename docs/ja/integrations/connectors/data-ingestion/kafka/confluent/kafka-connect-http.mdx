@@ -18,9 +18,7 @@ HTTP Sink コネクタはデータ型に依存しないため、Kafka のスキ�
   HTTP コネクタは [Confluent Enterprise License](https://docs.confluent.io/kafka-connect-http/current/overview.html#license) の下で配布されています。
 </Note>
 
-<div id="quick-start-steps">
-  ### クイックスタートの手順
-</div>
+### クイックスタートの手順 {#quick-start-steps}
 
 <Steps>
   <Step title="接続の詳細を収集する" id="1-gather-your-connection-details">
@@ -106,11 +104,11 @@ HTTP Sink コネクタはデータ型に依存しないため、Kafka のスキ�
 </Steps>
 
 <div id="troubleshooting">
-  ### トラブルシューティング
+  ### トラブルシューティング {#troubleshooting}
 </div>
 
 <div id="http-sink-doesnt-batch-messages">
-  #### HTTP Sink がメッセージをバッチ化しない
+  #### HTTP Sink がメッセージをバッチ化しない {#http-sink-doesnt-batch-messages}
 </div>
 
 [Sink のドキュメント](https://docs.confluent.io/kafka-connectors/http/current/overview.html#http-sink-connector-for-cp)より:
@@ -121,11 +119,11 @@ HTTP Sink コネクタはデータ型に依存しないため、Kafka のスキ�
 2. HTTP API の URL にパラメータを追加すると、レコードごとに一意の URL になることがあります。そのため、追加の URL パラメータを使用するとバッチ化は無効になります。
 
 <div id="400-bad-request">
-  #### 400 Bad Request
+  #### 400 Bad Request {#400-bad-request}
 </div>
 
 <div id="cannot_parse_quoted_string">
-  ##### CANNOT_PARSE_QUOTED_STRING
+  ##### CANNOT_PARSE_QUOTED_STRING {#cannot_parse_quoted_string}
 </div>
 
 JSONオブジェクトを `String` カラムに挿入する際に、HTTP Sink が次のメッセージを出して失敗する場合:
@@ -137,7 +135,7 @@ Code: 26. DB::ParsingException: Cannot parse JSON string: expected opening quote
 URL 内で、設定 `input_format_json_read_objects_as_strings=1` を URL エンコードされた文字列 `SETTINGS%20input_format_json_read_objects_as_strings%3D1` として指定します
 
 <div id="load-the-github-dataset-optional">
-  ### GitHub データセットを読み込む (任意)
+  ### GitHub データセットを読み込む (任意) {#load-the-github-dataset-optional}
 </div>
 
 この例では、GitHub データセットの Array フィールドを保持したまま扱います。サンプルでは、空の github トピックがあることを前提とし、Kafka へのメッセージの挿入に [kcat](https://github.com/edenhill/kcat) を使用します。

@@ -12,15 +12,11 @@ import SettingsInfoBlock from "/snippets/zh/components/SettingsInfoBlock/Setting
 
 这些设置用于配置 ClickHouse 服务器，并由 ClickHouse 源代码自动生成。
 
-<div id="query_condition_cache_policy">
-  ## query_condition_cache_policy
-</div>
+## query_condition_cache_policy {#query_condition_cache_policy}
 
-<SettingsInfoBlock type="String" default_value="SLRU" changeable_without_restart="No" />查询条件缓存策略名称。
+<SettingsInfoBlock type="String" default_value="SLRU" changeable_without_restart="No" />查询条件缓存淘汰策略名称。可选值：`LRU`、`SLRU`、`SIEVE`。
 
-<div id="query_condition_cache_size">
-  ## query_condition_cache_size
-</div>
+## query_condition_cache_size {#query_condition_cache_size}
 
 <SettingsInfoBlock type="UInt64" default_value="104857600" changeable_without_restart="Yes" />
 
@@ -30,9 +26,7 @@ import SettingsInfoBlock from "/snippets/zh/components/SettingsInfoBlock/Setting
   此设置可在运行时修改，并立即生效。
 </Note>
 
-<div id="query_condition_cache_size_ratio">
-  ## query_condition_cache_size_ratio
-</div>
+## query_condition_cache_size_ratio {#query_condition_cache_size_ratio}
 
 <SettingsInfoBlock type="Double" default_value="0.5" changeable_without_restart="No" />查询条件缓存中受保护队列 (在 SLRU 策略下) 的大小占缓存总大小的比例。
 

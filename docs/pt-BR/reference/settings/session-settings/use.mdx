@@ -14,6 +14,14 @@ import { ExperimentalBadge } from "/snippets/pt-BR/components/ExperimentalBadge/
 
 Essas configurações estão disponíveis em [system.settings](/pt-BR/reference/system-tables/settings) e são autogeradas a partir do [código-fonte](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
+## use_aggregation_memory_tracker {#use_aggregation_memory_tracker}
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "1"},{"label": "A conversão two-level do `GROUP BY` compara `group_by_two_level_threshold_bytes` apenas com a memória do estado de agregação, medida por um rastreador de memória dedicado (https:\/\/github.com\/ClickHouse\/ClickHouse\/pull\/107490). Antes da 26.7, era usado o crescimento do uso de memória da consulta inteira."}]}, {"id": "row-2","items": [{"label": "26.10"},{"label": "1"},{"label": "Nova configuração para escolher como a conversão two-level do `GROUP BY` mede a memória da agregação. A alteração controlada por ela foi lançada na 26.7, e a regressão de memória associada foi corrigida na 26.9."}]}]} />
+
+Mede o tamanho do estado de agregação, que é comparado com `group_by_two_level_threshold_bytes`, usando o rastreador de memória dedicado à agregação. Quando desabilitada, o tamanho é medido como o crescimento do uso de memória da consulta inteira desde a criação da agregação; assim, uma agregação com um estado pequeno pode acabar sendo convertida para two-level.
+
 ## use_async_executor_for_materialized_views {#use_async_executor_for_materialized_views}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
@@ -53,6 +61,8 @@ Atualmente, o cache se aplica apenas a partes no formato wide: os dados em parte
 
 Uma entrada contém um intervalo contíguo de grânulos de um único segmento: um grânulo só entra no cache depois de ter sido lido da primeira à última linha; as leituras são atendidas pelo cache grânulo por grânulo; e os intervalos gravados por leituras diferentes são mesclados. Assim, leituras que dividem uma parte em diferentes intervalos de marcas compartilham as entradas.
 
+O cache também se aplica a arquivos `Parquet` lidos do sistema de arquivos local (a função de tabela `file` e o motor de tabela `File`), de sistemas de armazenamento de objetos (`s3`, `azureBlobStorage` e seus motores de tabela) e por tabelas de data lake. Nesse caso, uma entrada contém uma coluna inteira de um grupo de linhas, indexada pelo caminho do arquivo, por sua versão (o ETag de um objeto ou o horário de modificação, o inode e o tamanho de um arquivo local), pela coluna do arquivo e pelo tipo com o qual ela é lida. Uma coluna de um grupo de linhas só é gravada no cache quando todas as linhas do grupo são lidas, antes que qualquer filtro seja aplicado a elas: com `PREWHERE`, isso ocorre para as colunas do filtro, enquanto as demais colunas são lidas apenas para as linhas que passam pelo filtro. Um arquivo local só é armazenado em cache depois de ficar alguns segundos sem ser modificado, para que sua versão identifique seu conteúdo.
+
 ## use_concurrency_control {#use_concurrency_control}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
@@ -60,6 +70,18 @@ Uma entrada contém um intervalo contíguo de grânulos de um único segmento: u
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.12"},{"label": "1"},{"label": "Ativa o controle de concorrência por padrão"}]}]} />
 
 Respeita o controle de concorrência do servidor (consulte as configurações globais do servidor `concurrent_threads_soft_limit_num` e `concurrent_threads_soft_limit_ratio_to_cores`). Se estiver desabilitado, permite usar um número maior de threads mesmo que o servidor esteja sobrecarregado (não recomendado para uso normal e necessário principalmente para testes).
+
+## use_concurrency_control_for_max_threads {#use_concurrency_control_for_max_threads}
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "1"},{"label": "Nova configuração para definir o paralelismo de uma consulta com base na parcela justa de slots de CPU do controle de concorrência"}]}]} />
+
+Define o paralelismo de uma consulta (o número de fluxos e threads com que ela é planejada) com base na parcela justa de slots de CPU do controle de concorrência do servidor, em vez do número de núcleos de CPU. A parcela justa é o limite de slots (consulte as configurações globais do servidor `concurrent_threads_soft_limit_num` e `concurrent_threads_soft_limit_ratio_to_cores`) dividido igualmente entre os pipelines em execução no momento e a nova consulta.
+
+Assim, quando muitas consultas são executadas de forma concorrente, cada uma é planejada com menos fluxos: ela usa menos memória e gasta menos CPU na mesclagem dos resultados parciais de suas threads (por exemplo, estados de agregação), o que aumenta a vazão total. Uma consulta planejada enquanto o servidor está idle continua usando todos os núcleos de CPU, como antes.
+
+Só se aplica quando `max_threads` é `auto` (não definido explicitamente) e `use_concurrency_control` está habilitado.
 
 ## use_constant_folding_in_index_analysis {#use_constant_folding_in_index_analysis}
 

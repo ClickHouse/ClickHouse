@@ -1,6 +1,6 @@
 {
-  "directory": "none",
   "group": "服务器设置",
+  "directory": "none",
   "pages": [
     "zh/reference/settings/server-settings/settings",
     "zh/reference/settings/server-settings/settings/access-control",
@@ -38,6 +38,7 @@
     "zh/reference/settings/server-settings/settings/encryption-header",
     "zh/reference/settings/server-settings/settings/format",
     "zh/reference/settings/server-settings/settings/global-profiler",
+    "zh/reference/settings/server-settings/settings/gpu",
     "zh/reference/settings/server-settings/settings/graphite",
     "zh/reference/settings/server-settings/settings/http",
     "zh/reference/settings/server-settings/settings/http-connections",
@@ -112,6 +113,7 @@
     "zh/reference/settings/server-settings/settings/skip",
     "zh/reference/settings/server-settings/settings/snapshot-cleaner",
     "zh/reference/settings/server-settings/settings/startup",
+    "zh/reference/settings/server-settings/settings/statistics-cache",
     "zh/reference/settings/server-settings/settings/storage",
     "zh/reference/settings/server-settings/settings/storage-connections",
     "zh/reference/settings/server-settings/settings/tables-loader",

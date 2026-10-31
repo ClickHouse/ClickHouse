@@ -613,6 +613,17 @@ DROP FUNCTION [IF EXISTS] name [ON CLUSTER cluster]
 
 صُمِّمت برامج التشغيل التجريبية هذه كنقطة بداية؛ لذا راجع آليات العزل وعزّزها بما يناسب بيئتك قبل إتاحتها لمستخدمين غير موثوقين.
 
+### المشغّلات التابعة لجهات خارجية {#third-party-drivers}
+
+يمكن أيضًا الحصول على مشغّلات من مصادر خارج ClickHouse. ويتولى مؤلفوها صيانتها، لا ClickHouse؛ لذا راجعها كما تراجع المشغّلات النموذجية قبل إتاحتها لمستخدمين غير موثوقين:
+
+* [`HyperlightPython`](https://github.com/hyperlight-dev/hyperlight-unikraft/tree/main/integrations/clickhouse) - يشغّل متن دالة بايثون داخل جهاز افتراضي مصغّر من [Hyperlight](https://github.com/hyperlight-dev/hyperlight) بنواة مستقلة خاصة به. وHyperlight مشروع بيئة معزولة تابع لمؤسسة [Cloud Native Computing Foundation](https://www.cncf.io/projects/hyperlight/). تبدأ معالجة كل كتلة من الصفوف انطلاقًا من لقطة للضيف، ومن ثَمّ لا تملك الشيفرة أي وصول إلى الشبكة أو إلى ملفات الخادم، ولا تُحفظ أي حالة بين الاستعلامات. يتطلب نظام Linux مع توفر `/dev/kvm`.
+
+  ```sql
+  CREATE FUNCTION py_words ARGUMENTS (s String) RETURNS UInt64
+  ENGINE = HyperlightPython AS 'return len(s.split())';
+  ```
+
 ## محتوى ذو صلة {#related-content}
 
 * [الدوال المعرَّفة من قبل المستخدم في ClickHouse Cloud](https://clickhouse.com/blog/user-defined-functions-clickhouse-udfs)

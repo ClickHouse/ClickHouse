@@ -1,0 +1,110 @@
+---
+slug: /use-cases/observability/clickstack/demo-days/2026/2026-10-08
+title: 'Demo days - 2026-10-08'
+sidebarTitle: '2026-10-08'
+description: 'ClickStack dias de demonstração de 2026-10-08'
+doc_type: 'guide'
+keywords: ['ClickStack', 'Demo days']
+---
+
+## Modo de séries em mapas de calor, mapas de calor PromQL e granularidade explícita {#heatmap-series-mode-promql-heatmaps-and-explicit-granularity}
+
+*Demonstração por [@pulpdrew](https://github.com/pulpdrew)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/iBMSK9QPXuA" title="Reprodutor de vídeo do YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+Até agora, os mapas de calor mostravam apenas distribuições numéricas: o eixo y era um valor agrupado em buckets, como a duração do span, e a cor indicava a contagem de eventos em cada bucket. Agora adicionamos um modo de séries, no qual o eixo y mostra o valor do group-by e a cor representa a agregação escolhida para cada intervalo de tempo. Ele funciona de forma muito parecida com um gráfico de linhas com várias séries, mas o valor é representado pela cor em vez da altura. O construtor e a consulta gerada seguem a mesma abordagem dos gráficos de série temporal.
+
+Na demonstração, agrupamos por nome de serviço ao longo do último dia. O mapa de calor de contagem de erros facilita a identificação do incidente simulado no ambiente de demonstração, com duas células claramente destacadas. Ao lado, o mesmo gráfico com uma agregação que não envolve erros aparece praticamente uniforme. Se o group-by retornar mais de 50 séries, exibimos um aviso e plotamos as 50 principais, usando a mesma lógica de limite client-side dos gráficos de série temporal. O modo de séries também funciona pela API externa de dashboards e pelo MCP.
+
+Para fontes de dados PromQL, há três modos de mapa de calor. O modo de séries funciona como descrito acima, usando uma consulta de intervalo com suporte a macros, variáveis e modelos de legenda. Na demonstração, usamos esse modo para mostrar a latência p95 por endpoint.
+
+O modo histograma usa métricas que o Prometheus já agrupou em buckets. Os limites dos buckets vêm dos rótulos `le`, e os valores cumulativos são convertidos em valores por bucket individual. Use `sum by (le) (...)` para combinar séries com os mesmos limites de bucket.
+
+O modo distribuição é voltado para dados que não são histogramas, mas dos quais você ainda quer obter uma distribuição numérica. Em cada timestamp, as amostras retornadas são agrupadas em buckets no lado do cliente, com buckets lineares ou em escala logarítmica, conforme selecionado nas configurações do gráfico. A cor mostra o número de amostras em cada bucket. Na demonstração, mostramos 14 núcleos de CPU por utilização ao longo do tempo, usando `sum by (system_cpu_logical_number) (system_cpu_utilization{system_cpu_state!="idle"})`. Os PRs de histograma e distribuição ainda estão abertos.
+
+Também corrigimos a seleção de granularidade. Antes, os mapas de calor ignoravam uma seleção explícita e sempre usavam auto, que tem como alvo 245 intervalos de tempo. Agora eles respeitam a sua seleção, permitindo que você iguale a granularidade à dos demais gráficos de um dashboard. O modo auto também respeita a granularidade mínima de uma fonte de dados de métricas.
+
+Os campos de expressão de contagem e de valor foram movidos das configurações de exibição para o editor de gráficos, tanto nos dashboards quanto no Chart Explorer. Os mapas de calor agora também oferecem suporte à formatação de números.
+
+Por fim, o destaque ao passar o mouse agora fica centralizado na célula, em vez de deslocado para baixo e para a direita. Ele seleciona a célula mais próxima cujos limites estejam dentro da margem do cursor, sem exigir que o centro esteja dentro dela. O estado de hover também é atualizado quando os dados são recarregados com o cursor ainda sobre o gráfico.
+
+**PRs relacionados:** [#3273](https://github.com/hyperdxio/hyperdx/pull/3273) Melhora o alinhamento e a confiabilidade do estado de hover do mapa de calor, [#3277](https://github.com/hyperdxio/hyperdx/pull/3277) Move as entradas do mapa de calor para o formulário do editor, [#3291](https://github.com/hyperdxio/hyperdx/pull/3291) Suporte ao modo de séries em mapas de calor do construtor, [#3298](https://github.com/hyperdxio/hyperdx/pull/3298) Suporte a mapas de calor no modo de séries na API e no MCP, [#3305](https://github.com/hyperdxio/hyperdx/pull/3305) Respeita a granularidade explícita em mapas de calor, [#3313](https://github.com/hyperdxio/hyperdx/pull/3313) Suporte a mapas de calor PromQL (modo de séries), [#3326](https://github.com/hyperdxio/hyperdx/pull/3326) Adiciona mapas de calor de distribuição calculados a partir de valores PromQL (aberto), [#3332](https://github.com/hyperdxio/hyperdx/pull/3332) Suporte a mapas de calor em histogramas do Prometheus (aberto)
+
+## Variáveis do painel de seleção única {#single-select-dashboard-variables}
+
+*Demonstração por [@pulpdrew](https://github.com/pulpdrew)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/iBMSK9QPXuA?start=208" title="Reprodutor de vídeo do YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+Antes, todas as variáveis do painel eram de seleção múltipla. Agora você pode configurar uma variável como de seleção única, de modo que escolher outro valor substitui o atual. Se a URL contiver vários valores para uma variável de seleção única, usamos o primeiro.
+
+Isso é especialmente útil para PromQL. Variáveis de seleção múltipla são expandidas em uma alternância de expressão regular, que funciona com `=~`, mas não com `=`; por isso, não havia uma boa forma de usar uma variável com o comparador de igualdade.
+
+Também adicionamos o formato de variável `promql`, que substitui `regex` como padrão para referências de variáveis em expressões PromQL quando nenhum formato é especificado. Ele funciona da mesma forma, exceto pelo fato de que os valores de seleção única não passam por escape de expressão regular. Ou seja, você pode usar `field="$var"` com uma variável de seleção única. Valores de seleção múltipla continuam passando por escape de expressão regular e devem usar `field=~"$var"`.
+
+**PRs relacionados:** [#3295](https://github.com/hyperdxio/hyperdx/pull/3295) Suporte a filtros de painel de seleção única, [#3297](https://github.com/hyperdxio/hyperdx/pull/3297) Adição do formato de variável promql para escape flexível
+
+## Gráficos de linhas empilhadas {#stacked-line-charts}
+
+*Demonstração por [@pulpdrew](https://github.com/pulpdrew)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/iBMSK9QPXuA?start=271" title="Reprodutor de vídeo do YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+Adicionamos `stacked_line` ao lado de `stacked_bar` como tipo de gráfico de série temporal. Você pode alternar um gráfico de linhas para linhas empilhadas no Chart Explorer ou em um dashboard. Com isso, as séries são empilhadas umas sobre as outras e a área sob cada uma é preenchida, permitindo visualizar tanto o total quanto a contribuição de cada série.
+
+Na CLI, esses gráficos são renderizados como gráficos de barras empilhadas. As duas visualizações mostram praticamente a mesma informação, e o empilhamento e o preenchimento ficam mais legíveis como barras em um terminal.
+
+**PRs relacionados:** [#3290](https://github.com/hyperdxio/hyperdx/pull/3290) Suporte a gráficos de linhas empilhadas
+
+## Atribuindo consultas do ClickHouse à superfície que as emitiu {#attributing-clickhouse-queries-to-the-surface-that-issued-them}
+
+*Demonstração por [@tommyzli](https://github.com/tommyzli)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/iBMSK9QPXuA?start=526" title="Reprodutor de vídeo do YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+Toda consulta SQL que o ClickStack envia ao ClickHouse agora inclui um `log_comment` em JSON e um `query_id` no formato `hdx-<surface>-<uuid>`. Com isso, é possível rastrear uma linha em `system.query_log` até o painel do dashboard, a pesquisa salva, o alerta ou a ferramenta MCP que a emitiu. Uma alteração posterior estende essa mesma rotulagem às consultas PromQL, que antes eram enviadas sem rótulo.
+
+Na demonstração, ao consultar o log de consultas a partir da Busca, todas as consultas apareceram rotuladas como provenientes da Busca, incluindo as consultas `EXPLAIN` e o gráfico de barras do histograma. Ao abrir o dashboard integrado do ClickHouse, as consultas do dashboard apareceram com um rótulo `clickhouse`, que identifica o dashboard pré-configurado. Já em um dashboard criado pelo usuário, cada consulta incluía o ID do dashboard e o ID do painel do gráfico que a emitiu.
+
+Se o ClickStack compartilha seu cluster ClickHouse com outras cargas de trabalho, isso facilita identificar as consultas dele, ver de qual parte da aplicação elas vieram e acompanhar o custo das consultas por superfície. Internamente, podemos usar isso para relacionar os logs de consultas às configurações de dashboards ao analisar o uso. Também é um passo rumo a otimizações automáticas de consultas, já que agora conseguimos associar uma consulta lenta ao painel que a gerou.
+
+**PRs relacionados:** [#3155](https://github.com/hyperdxio/hyperdx/pull/3155) Atribuir consultas do ClickHouse à superfície que as emitiu, [#3300](https://github.com/hyperdxio/hyperdx/pull/3300) Atribuição de consultas PromQL
+
+## Campos de nome em linha para nomear objetos {#inline-name-inputs-for-naming-objects}
+
+*Demonstração por [@elizabetdev](https://github.com/elizabetdev)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/iBMSK9QPXuA?start=296" title="Reprodutor de vídeo do YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+Antes, a nomeação funcionava de forma diferente dependendo de onde você estava no aplicativo. Dashboards e pesquisas salvas tinham um título editável por clique, com um ícone de lápis ao passar o mouse ou um clique duplo para editar, seguido de um botão **Save Name**. Outros locais usavam um campo de texto com borda. Como não havia um padrão documentado, novas telas acabavam criando o seu próprio. Agora temos um componente compartilhado, o `InlineNameInput`, como a forma padrão de nomear objetos.
+
+Ele tem a aparência de um título até você passar o mouse sobre ele, quando surge uma borda discreta. Ao clicar, é possível editar no próprio local. Pressionar `Enter` ou clicar fora salva a alteração, enquanto `Escape` ou deixar o nome vazio a desfaz. Não há ícone de lápis nem botão de salvar separado. Após salvar, o valor salvo é exibido. Se a renomeação falhar ou for sobrescrita por um salvamento concorrente do dashboard, o nome exibido também é revertido, em vez de deixar um nome não salvo na tela.
+
+Nomes longos são truncados, e o componente está disponível nos tamanhos `xs`, `sm` e `md`. Os títulos de página usam `md` com 18px, em vez dos cerca de 22px anteriores. Eles continuam sendo renderizados dentro de um cabeçalho para que leitores de tela possam encontrá-los.
+
+As páginas de dashboard e de pesquisa salva agora usam esse componente, e o antigo componente `EditablePageName` foi removido. Há também uma variante, `InlineNameInputControlled`, que salva junto com o formulário que a contém, pensada para rascunhos no editor de blocos em página inteira, embora ainda não seja usada no aplicativo. Por enquanto, o editor de gráficos mantém seu campo **Chart Name** atual, pois o layout precisa de ajustes antes que a versão em linha caiba nele.
+
+O padrão está documentado em `agent_docs/naming_objects.md`, na habilidade de agente `naming-objects` e em Guidelines e Components no Storybook. A ideia é facilitar para que um agente de programação que trabalhe no repositório encontre e reutilize o componente ao adicionar um novo local para nomear algo.
+
+**PRs relacionados:** [#3278](https://github.com/hyperdxio/hyperdx/pull/3278) Add InlineNameInput as the one way to name objects
+
+## Aninhando pesquisas salvas em Busca {#nesting-saved-searches-under-search}
+
+*Demonstração por [@elizabetdev](https://github.com/elizabetdev)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/iBMSK9QPXuA?start=389" title="Reprodutor de vídeo do YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+**Este é um trabalho exploratório, sem compromisso de lançamento.**
+
+Atualmente, as pesquisas salvas têm sua própria página de lista e seu próprio item na barra lateral, separados de Busca. Você salva uma busca em um lugar e depois precisa ir a outro para encontrá-la e gerenciá-la. Um cliente que quisesse duplicar uma busca a partir da lista precisava primeiro abri-la e duplicá-la por lá. Uma lista separada faz sentido para dashboards, mas parece menos natural para pesquisas salvas.
+
+Este rascunho traz as pesquisas salvas para dentro de Busca. O item de nível superior **Pesquisas salvas** da barra lateral deixa de existir, e as buscas favoritas passam a aparecer em Busca, como já acontece com os dashboards. Um botão **Pesquisas salvas** na barra de ferramentas abre um painel deslizante à direita, com busca, abas **All** e **Favorites**, filtragem por rótulos e ações de renomear, duplicar e excluir em cada linha. Ele abre à direita para não cobrir a navegação do aplicativo. Links existentes para `/search/list` também abrem o painel deslizante.
+
+Ao selecionar uma pesquisa salva, o botão exibe o nome dela. Uma medalha ao lado indica **Unsaved**, **Saved** ou **Edited**, sendo que **Edited** aparece assim que você executa uma consulta alterada. A comparação usa a configuração da busca presente na URL e trata valores vazios e ausentes como equivalentes; assim, simplesmente carregar uma pesquisa salva não faz com que ela seja marcada como editada.
+
+O cabeçalho próprio da pesquisa salva foi removido, incluindo a trilha de navegação, o título e a linha de criação/atualização. Favoritar, rótulos, Terraform e o menu de ações passam para a barra de ferramentas, enquanto os detalhes de criação/atualização viram uma dica de ferramenta no botão. Com isso, o layout fica consistente entre pesquisas salvas e não salvas. A opção de clicar duas vezes no título para renomear desaparece junto com o cabeçalho, mas ainda é possível renomear pelo menu da linha no painel deslizante ou pelo modal **Update**. Ainda não está definido se as atualizações realmente precisam de um modal. O ideal seria que atualizar fosse uma única ação, sem oferecer também a opção de renomear.
+
+Isto ainda é um rascunho, e adoraríamos receber feedback sobre o comportamento. Quatro testes de ponta a ponta na suíte do painel deslizante ainda estão falhando e precisam ser corrigidos antes que ele deixe de ser rascunho.
+
+**PRs relacionados:** [#3213](https://github.com/hyperdxio/hyperdx/pull/3213) Aninha pesquisas salvas em Busca em um painel deslizante (aberto). (rascunho). Trata-se de uma exploração, e não de uma funcionalidade lançada.

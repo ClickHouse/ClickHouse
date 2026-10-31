@@ -242,6 +242,39 @@ python -m ci.praktika run "Build (amd_debug)"
 
 Si el método anterior no le funciona, use las opciones de cmake del registro de compilación y siga el [proceso general de compilación](/es/resources/develop-contribute/build/build).
 
+## Comprobaciones de clang-tidy {#clang-tidy-checks}
+
+Dos Jobs ejecutan `clang-tidy` con las comprobaciones configuradas en el archivo `.clang-tidy` de la raíz del repositorio.
+
+`Build (arm_tidy, i/N)` analiza todas las unidades de traducción del árbol, repartidas en fragmentos.
+Es exhaustivo, pero tarda horas, por lo que no forma parte de la cola de fusión; por eso mismo, un pull request que estaba en verde por sí solo puede romper `clang-tidy` en `master` una vez fusionado sobre cambios que llegaron después de su última ejecución.
+
+`Clang-tidy (changed files)` es su equivalente en la cola de fusión.
+Configura el mismo build, pero analiza solo las unidades de traducción afectadas por el pull request: los archivos `.cpp` modificados y, en el caso de un encabezado modificado, el archivo `.cpp` del mismo nombre o, si el encabezado no tiene ninguno, algunas de las unidades de traducción que lo incluyen, directamente o a través de otros encabezados.
+Un fragmento de C++ modificado que incluyen las unidades de traducción, como un archivo `.inc` o `.txx`, también se comprueba a través de algunos de los archivos que lo incluyen; `clang-tidy` no informa de hallazgos ubicados en dicho archivo, por lo que para él solo se informan sus errores de compilación y sus propios hallazgos.
+Al igual que el Job completo, solo analiza los destinos que tienen habilitado `clang-tidy`: por ejemplo, un archivo fuente de Poco modificado no se analiza, mientras que un encabezado de Poco modificado se comprueba a través de las unidades de traducción analizadas que lo incluyen.
+Solo informa de los diagnósticos ubicados en los archivos modificados, de modo que un diagnóstico que ya existía en `master` no puede hacer fallar un pull request no relacionado; un error del compilador se informa dondequiera que se produzca, porque la unidad de traducción no llegó a analizarse.
+Ese alcance más reducido es el compromiso: un cambio en un encabezado muy incluido aquí solo se comprueba por muestreo, y es el Job completo el que cubre el resto del árbol.
+Un cambio en una entrada de un generador de código, como un archivo `.proto`, un esquema `.fbs` de FlatBuffers, una plantilla de `configure_file` como `config.h.in` o los recursos integrados de la interfaz de usuario web, se comprueba a través de algunos de los archivos que incluyen el encabezado generado, como si esos archivos hubieran cambiado.
+Una plantilla de `configure_file` de una unidad de traducción, como `config_version.cpp.in`, se comprueba analizando la unidad de traducción generada a partir de ella.
+En `contrib`, solo se cubren las entradas de generadores y los submódulos que la comprobación enumera explícitamente: por ejemplo, los protocol buffers de Prometheus, a través de algunos archivos que incluyen los encabezados generados, y los submódulos de Arrow y LLVM y su configuración de CMake, a través de cada archivo analizado que incluye directamente alguno de sus encabezados `<arrow/...>`, `<parquet/...>` o `<llvm/...>`. Cualquier otro cambio en `contrib` queda a cargo del Job completo.
+Un cambio en la configuración de `clang-tidy`, en la propia comprobación o en la definición del Job no afecta a ninguna unidad de traducción, así que en su lugar se analiza un pequeño conjunto fijo de unidades de traducción y se informa de todos los diagnósticos encontrados en ellas.
+Un cambio en un archivo `.clang-tidy` local de un directorio, como `src/Functions/.clang-tidy`, se comprueba de la misma manera en una unidad de traducción situada dentro de ese directorio.
+Un cambio en la propia comprobación ejecuta además una autoprueba de cómo selecciona las unidades de traducción y atribuye los diagnósticos, y analiza un encabezado modificado representativo y una entrada de generador representativa como si el pull request los hubiera modificado.
+
+Ambos Jobs pueden ejecutarse localmente:
+
+```bash
+python -m ci.praktika run "Clang-tidy (changed files)" --workflow MergeQueueCI --pr <PR number>
+```
+
+La comprobación limitada solo está registrada en el flujo de trabajo `MergeQueueCI` y determina qué debe analizar a partir de los archivos modificados en el pull request indicado con `--pr`, por lo que debe ejecutarse desde la rama de ese pull request.
+También es posible comprobar un único archivo directamente con un directorio de build configurado:
+
+```bash
+clang-tidy -p ci/tmp/build src/Common/StringUtils.cpp
+```
+
 ## Pruebas funcionales sin estado {#functional-stateless-tests}
 
 Ejecuta [pruebas funcionales sin estado](/es/resources/develop-contribute/contribute/tests#functional-tests) para binarios de ClickHouse compilados con varias configuraciones: release, debug, con sanitizadores, etc.
@@ -262,6 +295,7 @@ Ejecuta las [pruebas de integración](/es/resources/develop-contribute/contribut
 En la rama master, con cada commit se ejecutan las pruebas sin estado, de integración y unitarias sobre una build con instrumentación de cobertura de LLVM, y se publica el informe de cobertura.
 En los pull requests, estos Jobs solo se ejecutan si tienen la etiqueta `ci-coverage` (o si modifican el código que recopila la cobertura y genera sus informes); añádala para obtener el informe de cobertura del pull request y la cobertura de las líneas modificadas.
 Sin la etiqueta, los pull requests ejecutan en su lugar las mismas configuraciones de pruebas sin estado y de integración sobre la build `arm_binary`; las pruebas unitarias ya se ejecutan con sanitizadores.
+Un pull request que solo añada pruebas sin estado y necesite el informe de cobertura puede usar en su lugar la etiqueta `ci-llvm-coverage`: con ella se ejecutan los Jobs de cobertura, los Jobs de las pruebas excluidas de la cobertura, las comprobaciones de inestabilidad de las pruebas sin estado modificadas, la comprobación de estilo y la revisión de código con IA, y se omiten todos los demás Jobs. Un pull request de este tipo puede fusionarse con la etiqueta; uno que modifique cualquier otra cosa, no.
 
 ## Comprobación de validación de correcciones de errores {#bugfix-validate-check}
 

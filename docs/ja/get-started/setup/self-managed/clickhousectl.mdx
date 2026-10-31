@@ -16,79 +16,192 @@ doc_type: 'guide'
   内で実行してください。
 </Info>
 
-ClickHouse CLI (`clickhousectl`) を使用すると、ローカルの ClickHouse バージョンの
-インストールと管理、サーバーの起動、クエリの実行を行えます。
+ClickHouse CLI (`clickhousectl`、別名 `chctl`) を使用すると、ローカルの ClickHouse バージョンの
+インストールと管理、ローカルの ClickHouse サーバーおよび Postgres サーバーの実行、クエリの実行、
+ClickHouse Cloud の管理を行えます。このページでは、CLI のインストールから、
+ローカルの ClickHouseサーバーの起動、サーバーへの接続までの手順を説明します。
+
+[クイックインストール](/ja/get-started/setup/self-managed/quick-install)
+スクリプトを使用した場合、`clickhousectl` はすでにインストールされているため、
+[ClickHouse をインストールする](#cli-install-clickhouse) に進んでください。
 
 <Steps>
   <Step title="ClickHouse CLI をインストールする" id="install-the-cli">
+    インストールスクリプトは、x86&#95;64 および ARM64 アーキテクチャの macOS と Linux に対応しています：
+
     ```bash
-    curl https://clickhouse.com/cli | sh
+    curl -fsSL https://clickhouse.com/cli | sh
     ```
 
-    利便性のため、`chctl` エイリアスも自動的に作成されます。
+    このスクリプトは `clickhousectl` を `~/.local/bin` にインストールし、同じ場所に `chctl`
+    という別名を作成します。`~/.local/bin` が `PATH` に含まれていない旨がスクリプトから表示された場合は、`PATH` に追加してください。
+    また、今後のセッションでも有効になるよう、同じ行をシェルのプロファイル (`~/.bashrc`、`~/.zshrc`) にも追加してください：
+
+    ```bash
+    export PATH="$HOME/.local/bin:$PATH"
+    ```
+
+    <Accordion title="その他のインストール方法">
+      | ツール                         | コマンド                            |
+      | --------------------------- | ------------------------------- |
+      | npm                         | `npm install -g clickhousectl`  |
+      | uv                          | `uv tool install clickhousectl` |
+      | pipx                        | `pipx install clickhousectl`    |
+      | pip                         | `pip install clickhousectl`     |
+      | cargo-binstall              | `cargo binstall clickhousectl`  |
+      | Cargo (ソースコードから、Rust 1.94+) | `cargo install clickhousectl`   |
+
+      `chctl` という別名が作成されるのは、インストールスクリプトまたは npm を使用した場合のみです。
+    </Accordion>
+
+    CLI の新しいリリースを確認してインストールするには、次のコマンドを実行します。
+
+    ```bash
+    clickhousectl update --check
+    clickhousectl update
+    ```
   </Step>
 
-  <Step title="ClickHouse をインストールする" id="cli-install-clickhouse">
-    最新バージョンの ClickHouse をインストールし、デフォルトに設定します。
+  <Step title="ClickHouse をインストール" id="cli-install-clickhouse">
+    ClickHouse の最新バージョンをインストールし、デフォルトとして設定します。
 
     ```bash
     clickhousectl local use latest
     ```
 
-    `local use` は、そのバージョンがまだインストールされていない場合はインストールし、
-    デフォルトに設定したうえで、`~/.local/bin` (`PATH` 上) に `clickhouse` の
-    シンボリックリンクを作成します。これにより、`clickhouse` バイナリを直接
-    実行できます。このドキュメント内で後続の手順に `clickhouse` コマンドが出てきても、
-    そのまま実行できます。
+    `local use` は、指定したバージョンがまだインストールされていなければインストールし、それをデフォルトとして設定したうえで、`~/.local/bin` に `clickhouse` のシンボリックリンクを作成します。これにより、`clickhouse` バイナリを直接実行できるようになります。`~/.local/bin` が `PATH` に含まれていれば、本ドキュメントの以降の手順で実行する
+    `clickhouse` コマンドはそのまま動作します。
 
-    特定のバージョンを選択することもできます。
+    最新の長期サポート (LTS) リリースや、特定の
+    バージョンを選択することもできます。
 
     ```bash
-    clickhousectl local use 26.5            # Latest 26.5.x.x
-    clickhousectl local use 26.5.2.39       # Exact version
+    clickhousectl local use lts             # Latest LTS release
+    clickhousectl local use 26.8            # Latest 26.8.x.x release
+    clickhousectl local use 26.8.1.1760     # Exact version
+    ```
+
+    ダウンロード可能なマイナーバージョンと、インストール済みのバージョンを確認するには、次のコマンドを実行します。
+
+    ```bash
+    clickhousectl local list --remote
+    clickhousectl local list
     ```
 
     <Info>
       **use と install の違い**
 
-      `clickhousectl local use <version>` は、バージョンをインストールし、さらにそれを
-      デフォルトに設定して、`PATH` 上の `clickhouse` シンボリックリンクを更新します。
-      デフォルトを変更せず、シンボリックリンクも更新せずにバージョンだけをダウンロード
-      したい場合は、代わりに `clickhousectl local install <version>` を使用してください。
+      `clickhousectl local use <version>` はバージョンをインストール*したうえで*デフォルトに設定し、
+      `clickhouse` シンボリックリンクも更新します。一方、`clickhousectl local install <version>`
+      はバージョンをダウンロードするだけです。デフォルトがまだ設定されていない場合に限りそのバージョンがデフォルトになりますが、
+      シンボリックリンクは更新されません。シンボリックリンクを作成・
+      更新せずにデフォルトを設定するには、`clickhousectl local use <version> --no-global` を使用します。
     </Info>
   </Step>
 
-  <Step title="clickhouse-server を起動する" id="cli-start-clickhouse-server">
+  <Step title="clickhouse-serverを起動する" id="cli-start-clickhouse-server">
+    `clickhousectl` は、ローカルサーバーを実行したディレクトリ単位で管理します。プロジェクト用の
+    ディレクトリを作成し、そこでサーバーを起動します:
+
     ```bash
+    mkdir my-project && cd my-project
     clickhousectl local server start
     ```
 
-    サーバーはバックグラウンドで実行されます。実行中であることを確認するには、次を実行します。
+    ```response
+    Server 'default' started in background (PID: 14705)
+      HTTP port: 8123
+      TCP port:  9000
+      Version:   26.9.1.1312
+    ```
+
+    サーバーはバックグラウンドで実行され、名前は `default` になります。データは
+    `./.clickhouse/` に保存されるため、以降の `clickhousectl local` コマンドは同じ
+    ディレクトリで実行してください。`clickhousectl` は親ディレクトリを検索しません。サーバーは
+    HTTP ポート `8123` と TCP ポート `9000` で待ち受けます。これらのポートが使用中の場合は、空いているポートが使われます。
+    ポートを指定するには、`--http-port` と `--tcp-port` を指定します。複数の
+    サーバーを実行する場合は、`clickhousectl local server start dev` のように、それぞれに名前を付けてください。
+
+    サーバーが実行中であることを確認するには、次のコマンドを実行します。
 
     ```bash
     clickhousectl local server list
     ```
+
+    ```response
+    | Name    | Status  | PID   | Version     | HTTP Port | TCP Port |
+    |---------|---------|-------|-------------|-----------|----------|
+    | default | running | 14705 | 26.9.1.1312 | 8123      | 9000     |
+
+    1 server, 1 running
+    ```
   </Step>
 
   <Step title="clickhouse-client を起動する" id="cli-start-clickhouse-client">
+    同じディレクトリで `clickhouse-client` を使用してサーバーに接続します:
+
     ```bash
     clickhousectl local client
     ```
 
-    次のような表示が出ます。
+    `local client` は `default` という名前のサーバーに接続し、サーバーと同じ
+    ClickHouse バージョンを使用します。別のサーバーに接続するには、`clickhousectl local client dev` のようにサーバー名を指定します。次のような出力が表示されます。
 
     ```response
-    ClickHouse client version 24.5.1.117 (official build).
+    ClickHouse client version 26.9.1.1312 (official build).
     Connecting to localhost:9000 as user default.
-    Connected to ClickHouse server version 24.5.1.
+    Connected to ClickHouse server version 26.9.1.
 
     local-host :)
     ```
 
-    これで、ClickHouse に SQL コマンドを送信する準備が整いました。
+    これで ClickHouse に SQL コマンドを送信する準備が整いました。クライアントを終了するには `exit` と入力します。
+
+    対話型セッションを開かずに単一のクエリを実行するには、`-q` を指定します。
+
+    ```bash
+    clickhousectl local client -q "SELECT version()"
+    ```
 
     <Tip>
-      [クイックスタート](/ja/get-started/setup/install) では、テーブルの作成とデータの挿入手順を順を追って説明しています。
+      テーブルの作成とデータの挿入の手順については、[ClickHouse でのテーブル作成](/ja/get-started/quickstarts/creating-tables)を参照してください。
     </Tip>
   </Step>
+
+  <Step title="サーバーを停止する" id="cli-stop-clickhouse-server">
+    サーバーは停止するまでバックグラウンドで動作し続けます。停止するには、同じディレクトリで
+    次のコマンドを実行します:
+
+    ```bash
+    clickhousectl local server stop
+    ```
+
+    停止してもサーバーのデータは保持されるため、次回 `clickhousectl local server start` を実行した際にそのまま利用できます。
+
+    <Warning>
+      `clickhousectl local server remove` を実行すると、停止したサーバーのデータは完全に削除されます。
+    </Warning>
+  </Step>
 </Steps>
+
+## 次のステップ {#next-steps}
+
+* **Postgres をローカルで実行する。** Docker を起動した状態で、ローカルの Postgres サーバーを起動し、
+  `psql` で接続します。
+
+  ```bash
+  clickhousectl local postgres start
+  clickhousectl local postgres client
+  ```
+
+* **ClickHouse Cloud に接続する。** アカウントを作成するか、既存のアカウントにログインします。
+  ブラウザログインは読み取り専用です。Cloud リソースを作成・変更するには
+  APIキーが必要です。`clickhousectl cloud auth login --interactive` を実行すると、APIキーの入力を求められます。
+
+  ```bash
+  clickhousectl cloud auth signup
+  clickhousectl cloud auth login
+  ```
+
+* **CLI のその他の機能を確認する。** [clickhousectl リファレンス](/ja/concepts/features/interfaces/cli)を参照するか、
+  `clickhousectl --help` を実行してください。

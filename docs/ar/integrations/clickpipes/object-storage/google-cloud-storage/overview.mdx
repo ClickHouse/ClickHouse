@@ -13,7 +13,7 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 يمكن نشر GCS ClickPipes وإدارتها يدويًا باستخدام ClickPipes UI، وكذلك برمجيًا باستخدام [OpenAPI](/ar/integrations/clickpipes/programmatic-access/openapi) و[Terraform](/ar/integrations/clickpipes/programmatic-access/terraform).
 
 <div id="supported-formats">
-  ## التنسيقات المدعومة
+  ## التنسيقات المدعومة {#supported-formats}
 </div>
 
 * [JSON](/ar/reference/formats/JSON/JSON)
@@ -23,31 +23,29 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 * [Avro](/ar/reference/formats/Avro/Avro)
 
 <div id="features">
-  ## الميزات
+  ## الميزات {#features}
 </div>
 
 <div id="one-time-ingestion">
-  ### الإدخال لمرة واحدة
+  ### الإدخال لمرة واحدة {#one-time-ingestion}
 </div>
 
 بشكل افتراضي، سيحمّل GCS ClickPipe جميع الملفات المطابقة لنمط معيّن من الحاوية المحددة إلى جدول الوجهة في ClickHouse ضمن عملية دفعة واحدة. وبعد اكتمال مهمة الإدخال، يتوقف ClickPipe تلقائيًا. يوفّر وضع الإدخال لمرة واحدة هذا ضمانات المعالجة مرة واحدة فقط، بما يضمن معالجة كل ملف بشكل موثوق من دون تكرار.
 
 <div id="continuous-ingestion">
-  ### الإدخال المستمر
+  ### الإدخال المستمر {#continuous-ingestion}
 </div>
 
 عند تمكين الإدخال المستمر، تقوم ClickPipes بإدخال البيانات باستمرار من المسار المحدد. ولتحديد ترتيب الإدخال، يعتمد ClickPipe الخاص بـ GCS، افتراضيًا، على [الترتيب المعجمي](#continuous-ingestion-lexicographical-order) الضمني للملفات. كما يمكن أيضًا تهيئته لإدخال الملفات [بأي ترتيب](#continuous-ingestion-any-order) باستخدام اشتراك [Google Cloud Pub/Sub](https://cloud.google.com/pubsub) [مُعدّ لتوفير إشعارات للحاوية](https://docs.cloud.google.com/storage/docs/reporting-changes#command-line).
 
-<div id="continuous-ingestion-lexicographical-order">
-  #### الترتيب المعجمي
-</div>
+#### الترتيب المعجمي {#continuous-ingestion-lexicographical-order}
 
 يفترض GCS ClickPipe أن الملفات تُضاف إلى الحاوية بترتيب معجمي، ويعتمد على هذا الترتيب الضمني لإدخال الملفات بشكل تسلسلي. وهذا يعني أن أي ملف جديد **يجب** أن يكون أكبر معجميًا من آخر ملف تم إدخاله. على سبيل المثال، ستُدخَل الملفات المسماة `file1`، `file2`، و `file3` بشكل تسلسلي، ولكن إذا أُضيف `file 0` جديد إلى الحاوية، فسيتم **تجاهله** لأن اسم الملف ليس أكبر معجميًا من آخر ملف تم إدخاله.
 
 في هذا الوضع، يُجري GCS ClickPipe تحميلًا أوليًا لكل **الملفات** في المسار المحدد، ثم يفحص الملفات الجديدة على فاصل زمني قابل للتهيئة (افتراضيًا، كل 30 ثانية). لبدء الإدخال المستمر بعد ملف محدد، هيّئ **البدء بعد**. ستتخطى ClickPipes الملفات التي تكون أقل من القيمة المُهيأة أو مساوية لها معجميًا، وتتابع إدخال الملفات الأحدث من تلك النقطة.
 
 <div id="continuous-ingestion-any-order">
-  #### أي ترتيب
+  #### أي ترتيب {#continuous-ingestion-any-order}
 </div>
 
 <Tip>
@@ -57,19 +55,19 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 يمكن تهيئة GCS ClickPipe لإدخال الملفات التي لا تملك ترتيبًا ضمنيًا، وذلك عبر إعداد اشتراك [Google Cloud Pub/Sub](https://docs.cloud.google.com/storage/docs/pubsub-notifications) يتلقى إشعارات من الحاوية. يتيح ذلك لـ ClickPipes الاستماع إلى أحداث إنشاء الكائنات وإدخال أي ملفات جديدة بغض النظر عن اصطلاح تسمية الملفات.
 
 <Note>
-  الوضع غير المرتب **غير** مدعوم للحاويات العامة. ويتطلب مصادقة **حساب الخدمة** واشتراك [Google Cloud Pub/Sub](https://cloud.google.com/pubsub) متصلًا بالحاوية.
+  الوضع غير المرتب **غير** مدعوم للحاويات العامة. ويتطلب مصادقة حساب الخدمة، باستخدام إما مفتاح تم تحميله أو GCP Workload Identity، واشتراك [Google Cloud Pub/Sub](https://cloud.google.com/pubsub) متصلًا بالحاوية.
 </Note>
 
 في هذا الوضع، يجري GCS ClickPipe تحميلًا أوليًا لـ **جميع الملفات** في المسار المحدد، ثم يستمع إلى إشعارات `OBJECT_FINALIZE` عبر اشتراك Pub/Sub التي تطابق المسار المحدد. سيتم **تجاهل** أي رسالة لملف تمت رؤيته سابقًا، أو لملف لا يطابق المسار، أو لحدث من نوع مختلف. لإدخال الملفات التي يتم تسليمها عبر الاشتراك فقط، فعّل **تخطي التحميل الأولي**. عند تفعيله، يتخطى ClickPipes الفحص الأولي للملفات الموجودة في المسار المحدد ويعالج فقط الملفات التي يتم تسليمها عبر اشتراك Pub/Sub.
 
 <div id="file-pattern-matching">
-  ### مطابقة أنماط الملفات
+  ### مطابقة أنماط الملفات {#file-pattern-matching}
 </div>
 
 تلتزم Object Storage ClickPipes بمعيار POSIX لمطابقة أنماط الملفات. جميع الأنماط **تراعي حالة الأحرف** وتطابق **المسار الكامل** بعد اسم الحاوية. لتحسين الأداء، استخدم النمط الأكثر تحديدًا قدر الإمكان (على سبيل المثال، `data-2024-*.csv` بدلًا من `*.csv`).
 
 <div id="supported-patterns">
-  #### الأنماط المدعومة
+  #### الأنماط المدعومة {#supported-patterns}
 </div>
 
 | النمط              | الوصف                                                                             | مثال                | يطابق                                                             |
@@ -86,7 +84,7 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 * `https://bucket.s3.amazonaws.com/data-2024-*.csv.gz`
 
 <div id="unsupported-patterns">
-  #### الأنماط غير المدعومة
+  #### الأنماط غير المدعومة {#unsupported-patterns}
 </div>
 
 | النمط       | الوصف                          | مثال                   | البدائل                              |
@@ -101,29 +99,29 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 * `https://bucket.s3.amazonaws.com/{logs,metrics}/data.parquet`
 
 <div id="exactly-once-semantics">
-  ### ضمانات المعالجة لمرة واحدة فقط
+  ### ضمانات المعالجة لمرة واحدة فقط {#exactly-once-semantics}
 </div>
 
 قد تحدث أنواع مختلفة من الإخفاقات عند إدخال مجموعة بيانات كبيرة، مما قد يؤدي إلى عمليات إدراج جزئية أو بيانات مكررة. يتميّز Object Storage ClickPipes بالقدرة على تحمّل إخفاقات الإدراج ويوفّر ضمانات المعالجة لمرة واحدة فقط. ويتحقق ذلك باستخدام جداول &quot;مرحلية&quot; مؤقتة. تُدرج البيانات أولًا في الجداول المرحلية. وإذا حدث خطأ ما أثناء هذا الإدراج، يمكن مسح الجدول المرحلي وإعادة محاولة الإدراج من حالة نظيفة. ولا تُنقل الأقسام من الجدول المرحلي إلى الجدول الهدف إلا بعد اكتمال الإدراج ونجاحه. لقراءة المزيد عن هذه الاستراتيجية، اطّلع على [هذه التدوينة](https://clickhouse.com/blog/supercharge-your-clickhouse-data-loads-part3).
 
 <div id="virtual-columns">
-  ### الأعمدة الافتراضية
+  ### الأعمدة الافتراضية {#virtual-columns}
 </div>
 
 لتتبّع الملفات التي تم إدخالها، أدرِج العمود الافتراضي `_file` ضمن قائمة ربط الأعمدة. يحتوي العمود الافتراضي `_file` على اسم ملف الكائن المصدر، ويمكن استخدامه للاستعلام عن الملفات التي تمت معالجتها.
 
 <div id="access-control">
-  ## التحكم بالوصول
+  ## التحكم بالوصول {#access-control}
 </div>
 
 <div id="permissions">
-  ### الأذونات
+  ### الأذونات {#permissions}
 </div>
 
 يدعم ClickPipe لـ GCS الحاويات العامة والخاصة. أما حاويات [Requester Pays](https://docs.cloud.google.com/storage/docs/requester-pays) فغير مدعومة.
 
 <div id="gcs-bucket">
-  #### حاوية GCS
+  #### حاوية GCS {#gcs-bucket}
 </div>
 
 يجب أن يسمح حساب الخدمة الذي تستخدمه ClickPipes بالإجراءات التالية على مستوى الحاوية:
@@ -133,7 +131,7 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 يتضمن هذا الدور أذونات IAM التالية: [`storage.objects.list`](https://docs.cloud.google.com/storage/docs/json_api/v1/objects/list) و[&#96;storage.objects.get](https://docs.cloud.google.com/storage/docs/json_api/v1/objects/get#required-permissions)، ما يتيح لـ ClickPipes سرد الكائنات وجلبها من الحاوية المحددة.
 
 <div id="pubsub-subscription">
-  #### اشتراك Pub/Sub
+  #### اشتراك Pub/Sub {#pubsub-subscription}
 </div>
 
 عند استخدام [الوضع غير المرتّب](#continuous-ingestion-any-order)، يجب أن يمتلك حساب الخدمة الأدوار التالية على اشتراك Pub/Sub:
@@ -142,18 +140,20 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 * [`roles/pubsub.viewer`](https://cloud.google.com/pubsub/docs/access-control#roles) — للاطلاع على البيانات الوصفية للاشتراك.
 
 <div id="authentication">
-  ### المصادقة
+  ### المصادقة {#authentication}
 </div>
 
 <div id="service-account">
-  #### حساب الخدمة
+  #### حساب الخدمة {#service-account}
 </div>
 
 يلزم استخدام مصادقة **حساب الخدمة** عند استخدام [الوضع غير المرتَّب](#continuous-ingestion-any-order) مع إشعارات Pub/Sub. حدِّد **حساب الخدمة** باعتبارها طريقة المصادقة، ثم حمِّل ملف JSON الخاص بمفتاح حساب الخدمة.
 
-<div id="hmac-credentials">
-  #### بيانات اعتماد HMAC
-</div>
+#### Workload Identity في GCP (تجريبي) {#gcp-workload-identity}
+
+اتبع [دليل Workload Identity في GCP](/ar/integrations/clickpipes/security/gcp-workload-identity) للحصول على حساب الخدمة المُدار من سياق خدمة ClickPipes. امنح هذا الحساب الدور `roles/storage.objectViewer` على حاوية المصدر، ثم أنشئ مسار استيعاب البيانات باستخدام المصادقة من نوع `SERVICE_ACCOUNT_WORKLOAD_IDENTITY`. أما في حالة الإدخال غير المرتب، فامنحه أيضًا الدورين `roles/pubsub.subscriber` و`roles/pubsub.viewer` على اشتراك الإشعارات القائم، واستخدم اسمه المؤهَّل بالكامل: `projects/<project-id>/subscriptions/<subscription-id>`.
+
+#### بيانات اعتماد HMAC {#hmac-credentials}
 
 لاستخدام [HMAC keys](https://docs.cloud.google.com/storage/docs/authentication/hmackeys) للمصادقة، اختر `Credentials` ضمن **طريقة المصادقة** عند إعداد ClickPipe connection. ثم أدخِل مفتاح الوصول (على سبيل المثال، `GOOGTS7C7FUP3AIRVJTE2BCDKINBTES3HC2GY5CBFJDCQ2SYHV6A6XXVTJFSA`) والمفتاح السري (على سبيل المثال، `bGoa+V7g/yqDXvKRqq+JTFn4uQZbPiQJo4pf9RzJ`) في حقلي `Access key` و`Secret key`، على التوالي.
 
@@ -162,7 +162,7 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 اتبع [هذا الدليل](/ar/integrations/connectors/data-sources/gcs#create-a-service-account-hmac-key-and-secret) لإنشاء حساب خدمة باستخدام مفتاح HMAC.
 
 <div id="network-access">
-  ### الوصول إلى الشبكة
+  ### الوصول إلى الشبكة {#network-access}
 </div>
 
 تستخدم GCS ClickPipe مسارين منفصلين للشبكة، أحدهما لاكتشاف البيانات الوصفية والآخر لاستيعاب البيانات: خدمة ClickPipes وخدمة ClickHouse Cloud، على التوالي. إذا كنت تريد تهيئة طبقة إضافية من أمان الشبكة (على سبيل المثال، لأسباب تتعلق بالامتثال)، **فيجب تهيئة الوصول إلى الشبكة لكلا المسارين**.
@@ -174,9 +174,7 @@ import { Image } from "/snippets/ar/components/Image.jsx";
   curl -s https://api.clickhouse.cloud/static-ips.json | jq -r '.gcp[] | select(.region == "<your-region>") | .egress_ips[]'
   ```
 
-<div id="advanced-settings">
-  ## الإعدادات المتقدمة
-</div>
+## الإعدادات المتقدمة {#advanced-settings}
 
 يوفّر ClickPipes إعدادات افتراضية مناسبة تلبي متطلبات معظم حالات الاستخدام. وإذا كانت حالة استخدامك تتطلب مزيدًا من الضبط الدقيق، فيمكنك تعديل الإعدادات التالية:
 
@@ -198,7 +196,7 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 <Image img="/images/integrations/data-ingestion/clickpipes/cp_advanced_settings.webp" alt="الإعدادات المتقدمة لـ ClickPipes" size="lg" border />
 
 <div id="scaling">
-  ### التحجيم
+  ### التحجيم {#scaling}
 </div>
 
 يُجرى تحجيم Object Storage ClickPipes استنادًا إلى الحد الأدنى لحجم خدمة ClickHouse الذي تحدده [إعدادات التحجيم التلقائي العمودي المُعدّة](/ar/products/cloud/features/autoscaling/vertical#configuring-vertical-auto-scaling). ويُحدَّد حجم ClickPipe عند إنشائه. ولن تؤثر التغييرات اللاحقة على إعدادات خدمة ClickHouse في حجم ClickPipe.
@@ -206,23 +204,23 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 لزيادة معدل النقل في مهام الإدخال الكبيرة، نوصي بتحجيم خدمة ClickHouse قبل إنشاء ClickPipe.
 
 <div id="known-limitations">
-  ## القيود المعروفة
+  ## القيود المعروفة {#known-limitations}
 </div>
 
 <div id="file-size">
-  ### حجم الملف
+  ### حجم الملف {#file-size}
 </div>
 
 لن يحاول ClickPipes سوى إدخال الكائنات التي يبلغ حجمها **10GB أو أقل**. إذا كان حجم الملف أكبر من 10GB، فسيُضاف خطأ إلى جدول الأخطاء المخصص في ClickPipes.
 
 <div id="compatibility">
-  ### التوافق
+  ### التوافق {#compatibility}
 </div>
 
 يعتمد GCS ClickPipe على واجهة [XML API](https://docs.cloud.google.com/storage/docs/interoperability) في Cloud Storage لتحقيق التوافق البيني، ما يتطلب استخدام بادئة الحاوية `https://storage.googleapis.com/` (بدلًا من `gs://`) واستخدام [HMAC keys](https://docs.cloud.google.com/storage/docs/authentication/hmackeys) للمصادقة.
 
 <div id="view-support">
-  ### دعم العروض
+  ### دعم العروض {#view-support}
 </div>
 
 العروض المادية على الجدول الهدف مدعومة أيضًا. سينشئ ClickPipes جداول مرحلية ليس للجدول الهدف فقط، بل أيضًا لأي عرض مادي تابع له.

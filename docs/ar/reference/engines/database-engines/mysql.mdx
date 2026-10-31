@@ -23,9 +23,7 @@ import { CloudNotSupportedBadge } from "/snippets/ar/components/CloudNotSupporte
 * `CREATE TABLE`
 * `ALTER`
 
-<div id="creating-a-database">
-  ## إنشاء قاعدة بيانات
-</div>
+## إنشاء قاعدة بيانات {#creating-a-database}
 
 ```sql
 CREATE DATABASE [IF NOT EXISTS] db_name [ON CLUSTER cluster]
@@ -42,9 +40,7 @@ ENGINE = MySQL('host:port', ['database' | database], 'user', 'password')
 
 **الإعدادات**
 
-<div id="enable-compression">
-  ### `enable_compression`
-</div>
+### `enable_compression` {#enable-compression}
 
 يُفعّل ضغط zlib لاتصال بروتوكول MySQL. عند ضبطه على `1`، يطلب ClickHouse ضغطًا على مستوى البروتوكول من خادم MySQL.
 
@@ -58,9 +54,13 @@ ENGINE = MySQL('localhost:3306', 'test', 'my_user', 'user_password')
 SETTINGS enable_compression = 1;
 ```
 
-<div id="tls-ssl">
-  ## TLS/SSL
-</div>
+### `connection_auto_close` {#connection-auto-close}
+
+يتيح إغلاق الاتصال تلقائيًا بعد تنفيذ الاستعلام، أي تعطيل إعادة استخدام الاتصالات. عند ضبطه على `0`، يحتفظ كل جدول في قاعدة البيانات باتصالاته في مجمّع الاتصالات الخاص به لاستخدامها في الاستعلام التالي.
+
+القيمة الافتراضية: `1`.
+
+## TLS/SSL {#tls-ssl}
 
 تُمرَّر بيانات اعتماد الاتصال المشفّر بخادم MySQL كمفاتيح [مجموعة مُسمّاة](/ar/concepts/features/configuration/server-config/named-collections) (أو كوسيطات مفتاح-قيمة):
 
@@ -76,9 +76,7 @@ SETTINGS enable_compression = 1;
 
 <a id="data_types-support" />
 
-<div id="data-types-support">
-  ## دعم أنواع البيانات
-</div>
+## دعم أنواع البيانات {#data-types-support}
 
 | MySQL                            | ClickHouse                                                   |
 | -------------------------------- | ------------------------------------------------------------ |
@@ -107,9 +105,7 @@ SETTINGS enable_compression = 1;
 
 النوع [Nullable](/ar/reference/data-types/nullable) مدعوم. يُعيَّن العمود المكاني إلى `String` (`Nullable(String)` إذا كان قابلاً للقيم الفارغة) بدلًا من نوع هندسي في ثلاث حالات: إذا كان معرّفًا بالنوع `GEOMETRYCOLLECTION`؛ أو إذا كانت العلامة `geometry` معطّلة ولم يكن النوع `POINT`؛ أو إذا كان العمود قابلاً للقيم الفارغة ولم يكن النوع `POINT`، لأن `Point` هو النوع الهندسي الوحيد الذي يمكن تداخله داخل `Nullable`. في الحالات الثلاث جميعها، تحتفظ السلسلة بالقيمة كما يعيدها MySQL تمامًا: بادئة SRID من 4 بايتات تتبعها حمولة WKB، لذا أزل هذه البايتات الأربع الأولى قبل تمريرها إلى مفكك ترميز WKB.
 
-<div id="global-variables-support">
-  ## دعم المتغيرات العامة
-</div>
+## دعم المتغيرات العامة {#global-variables-support}
 
 لتحقيق توافق أفضل، يمكنك الإشارة إلى المتغيرات العامة بأسلوب MySQL، بالشكل `@@identifier`.
 
@@ -128,9 +124,7 @@ SETTINGS enable_compression = 1;
 SELECT @@version;
 ```
 
-<div id="examples-of-use">
-  ## أمثلة الاستخدام
-</div>
+## أمثلة الاستخدام {#examples-of-use}
 
 جدول في MySQL:
 

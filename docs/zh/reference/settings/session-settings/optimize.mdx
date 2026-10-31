@@ -389,6 +389,14 @@ FROM default.fuse_tbl AS __table1
 
 当 ORDER BY 前缀已覆盖所有 GROUP BY 键时，移除 ORDER BY 末尾的多余元素。
 
+## optimize_uniq_exact_radix_partitioning {#optimize_uniq_exact_radix_partitioning}
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "1"},{"label": "新增设置，用于在不带 `GROUP BY` 的情况下计算单个 `uniqExact` 或 `count(DISTINCT)` 时，按值的哈希进行分区，而不是合并各线程的哈希集合。"}]}]} />
+
+对于不带 `GROUP BY` 的查询，在计算单个 `uniqExact` (以及默认使用它的 `count(DISTINCT)`) 时，按值的哈希对值进行分区，而不是合并各线程的哈希集合。每个线程将各自的值路由到对应分区，随后并行对各分区去重，每个分区所用的哈希集合都足够小，可以完整驻留在 CPU 缓存中，最终结果即为各分区大小之和。当结果在同一服务器上完成最终计算时，该设置适用于以下类型的单个参数：不超过 64 位的数值类型、`Date`、`Date32`、`DateTime`、`Enum`、`IPv4`、`IPv6`、`UUID`、128 位整数、`String`、`FixedString`，以及上述类型对应的 `Nullable` 类型。与普通聚合相同，每个线程会持续向自己的小集合插入数据，直到该集合超出 CPU 缓存容量为止，因此只有在 high-cardinality 输入下才会启用路由；如果某个线程发现其大部分值都是重复的，则会退回到使用自己的集合。
+
 ## optimize_uniq_to_count {#optimize_uniq_to_count}
 
 <SettingsInfoBlock type="Bool" default_value="1" />

@@ -18,10 +18,19 @@ doc_type: 'guide'
     curl https://clickhouse.com/ | sh
     ```
 
-    على Linux وmacOS، يثبّت هذا أيضًا [`clickhousectl`](/ar/get-started/setup/self-managed/clickhousectl)،
-    وهي واجهة سطر الأوامر لـ ClickHouse، في `~/.local/bin` (مع اسم مستعار `chctl`). يساعدك `clickhousectl`
-    على تثبيت وإدارة عدة إصدارات محلية من ClickHouse، وتشغيل الخوادم في
-    الخلفية، وإدارة ClickHouse Cloud. راجع [صفحة تثبيت clickhousectl](/ar/get-started/setup/self-managed/clickhousectl)
+    على Linux وmacOS (x86&#95;64 وARM64)، يثبّت هذا أيضًا [`clickhousectl`](/ar/get-started/setup/self-managed/clickhousectl)،
+    وهي واجهة سطر الأوامر لـ ClickHouse، في `~/.local/bin` (مع اسم مستعار `chctl`). إذا أشار البرنامج النصي
+    إلى أن `~/.local/bin` غير موجود في `PATH` لديك، فأضفه:
+
+    ```bash
+    export PATH="$HOME/.local/bin:$PATH"
+    ```
+
+    يساعدك `clickhousectl` على تثبيت وإدارة عدة إصدارات محلية من ClickHouse،
+    وتشغيل خوادم ClickHouse وPostgres في الخلفية، وإدارة ClickHouse Cloud.
+
+    ولجعل `clickhousectl` يتولى تثبيت إصدارات ClickHouse وإدارتها نيابةً عنك بدلًا من ذلك،
+    شغّل `clickhousectl local use latest`. راجع [صفحة تثبيت clickhousectl](/ar/get-started/setup/self-managed/clickhousectl)
     للاطلاع على سير العمل المستند إلى واجهة سطر الأوامر.
 
     ولتثبيت الملف التنفيذي `clickhouse` فقط من دون `clickhousectl`، اضبط
@@ -38,7 +47,7 @@ doc_type: 'guide'
 
   <Step title="ابدأ clickhouse-local" id="start-clickhouse-local">
     يتيح لك `clickhouse-local` معالجة الملفات المحلية والبعيدة باستخدام
-    بناء SQL القوي في ClickHouse ومن دون الحاجة إلى أي إعدادات. تُخزَّن بيانات الجداول
+    بناء SQL القوي في ClickHouse ومن دون الحاجة إلى أي إعدادات. تُخزَّن بيانات الجداول
     في موقع مؤقت، ما يعني أنه بعد إعادة تشغيل `clickhouse-local`
     لن تعود الجداول التي أُنشئت سابقًا متاحة.
 
@@ -77,7 +86,7 @@ doc_type: 'guide'
     local-host :)
     ```
 
-    تُخزَّن بيانات الجداول في الدليل الحالي وستظل متاحة بعد إعادة تشغيل
+    تُخزَّن بيانات الجداول في الدليل الحالي وستظل متاحة بعد إعادة تشغيل
     خادم ClickHouse. وإذا لزم الأمر، يمكنك تمرير
     `-C config.xml` كوسيط إضافي في سطر الأوامر إلى `./clickhouse server`
     وتوفير المزيد من الإعدادات في ملف إعدادات.
@@ -88,7 +97,7 @@ doc_type: 'guide'
     أنت الآن جاهز لبدء إرسال أوامر SQL إلى ClickHouse!
 
     <Tip>
-      يرشدك [البدء السريع](/ar/get-started/setup/install) خلال خطوات إنشاء الجداول وإدراج البيانات.
+      يرشدك دليل [إنشاء الجداول في ClickHouse](/ar/get-started/quickstarts/creating-tables) خلال خطوات إنشاء الجداول وإدراج البيانات.
     </Tip>
   </Step>
 </Steps>

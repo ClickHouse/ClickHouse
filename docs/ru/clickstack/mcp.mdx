@@ -18,7 +18,7 @@ ClickStack включает встроенный сервер [Model Context Pro
 </Frame>
 
 <div id="availability">
-  ## Доступность
+  ## Доступность {#availability}
 </div>
 
 MCP-сервер доступен в следующих типах развертывания ClickStack:
@@ -37,20 +37,20 @@ MCP-сервер доступен в следующих типах развер�
 </Info>
 
 <div id="managed-clickstack">
-  ## ClickStack в ClickHouse Cloud
+  ## ClickStack в ClickHouse Cloud {#managed-clickstack}
 </div>
 
 ClickStack в ClickHouse Cloud подключается через конечную точку Cloud MCP по адресу `https://mcp.clickhouse.cloud/clickstack` и использует аутентификацию OAuth 2.0. Аутентификация с помощью API-ключа для этой конечной точки не поддерживается.
 
 <div id="managed-prerequisites">
-  ### Предварительные требования
+  ### Предварительные требования {#managed-prerequisites}
 </div>
 
 * Запущенный сервис ClickHouse Cloud с [включенным ClickStack](/ru/clickstack/deployment/managed)
 * [Включенный MCP](/ru/products/cloud/features/ai-ml/mcp/remote-mcp#enable-remote-mcp-server) на сервисе — откройте консоль Cloud, нажмите **Connect**, выберите **Connect with MCP** и включите его
 
 <div id="managed-endpoint">
-  ### Конечная точка
+  ### Конечная точка {#managed-endpoint}
 </div>
 
 ```text
@@ -60,7 +60,7 @@ https://mcp.clickhouse.cloud/clickstack
 Для аутентификации используется OAuth 2.0. Когда ваш MCP-клиент подключается впервые, откроется окно браузера, в котором нужно войти с учетными данными ClickHouse Cloud. Ключ API не требуется.
 
 <div id="managed-connecting-a-client">
-  ### Подключение MCP-клиента
+  ### Подключение MCP-клиента {#managed-connecting-a-client}
 </div>
 
 При первом подключении каждый клиент автоматически выполняет OAuth-поток.
@@ -137,20 +137,18 @@ https://mcp.clickhouse.cloud/clickstack
 </Tabs>
 
 <div id="managed-service-override">
-  ### Указание конкретного сервиса
+  ### Указание конкретного сервиса {#managed-service-override}
 </div>
 
 Без заголовка `x-service-id` запросы по умолчанию направляются в первый сервис ClickStack, созданный в вашем аккаунте. Чтобы обратиться к другому сервису, передайте `x-service-id: <YOUR_SERVICE_ID>` в качестве заголовка в конфигурации вашего MCP-клиента.
 
 <div id="oss-byoc">
-  ## Open Source и BYOC
+  ## Open Source и BYOC {#oss-byoc}
 </div>
 
 Развертывания Open Source и BYOC используют встроенную конечную точку MCP экземпляра ClickStack с аутентификацией по Bearer-токену.
 
-<div id="oss-prerequisites">
-  ### Предварительные требования
-</div>
+### Предварительные требования {#oss-prerequisites}
 
 * запущенный экземпляр ClickStack (варианты развертывания см. в разделе [Развертывание](/ru/clickstack/deployment/overview))
 * **Personal API Access Key** — его можно найти в HyperDX: **Team Settings → API Keys → Personal API Access Key**
@@ -162,7 +160,7 @@ https://mcp.clickhouse.cloud/clickstack
 </Note>
 
 <div id="managed-endpoint">
-  ### Конечная точка
+  ### Конечная точка {#oss-endpoint}
 </div>
 
 MCP-сервер доступен по пути `/api/mcp` в URL фронтенда ClickStack. Например, для локального развертывания с настройками по умолчанию URL: `http://localhost:8080/api/mcp`. Замените `localhost:8080` на хост и порт вашего экземпляра, если вы изменили стандартные значения.
@@ -174,7 +172,7 @@ MCP-сервер доступен по пути `/api/mcp` в URL фронтен
 MCP-сервер использует транспорт **Streamable HTTP** с аутентификацией по **Bearer token**.
 
 <div id="managed-connecting-a-client">
-  ### Подключение MCP-клиента
+  ### Подключение MCP-клиента {#oss-connecting-a-client}
 </div>
 
 Замените `<YOUR_CLICKSTACK_URL>` на URL вашего экземпляра (например, `http://localhost:8080`), а `<YOUR_API_KEY>` — на ваш Personal API Access Key.
@@ -263,15 +261,15 @@ MCP-сервер использует транспорт **Streamable HTTP** с 
 </Tabs>
 
 <div id="capabilities">
-  ## Что можно делать с MCP?
+  ## Что можно делать с MCP? {#capabilities}
 </div>
 
-После подключения ваш ИИ-помощник получает доступ к набору инструментов, охватывающих основные области ClickStack. В их числе:
+После подключения ваш ИИ-ассистент получает доступ к набору инструментов, охватывающих основные области ClickStack. В их числе:
 
 * **Запросы к данным** — Ищите и агрегируйте журналы, трассировки и метрики с помощью конструктора запросов ClickStack, поискового синтаксиса или raw SQL.
 * **Источники данных** — Просматривайте доступные источники данных, подключения к базам данных, схемы столбцов и ключи атрибутов.
 * **Панели мониторинга** — Создавайте, обновляйте, удаляйте и просматривайте панели мониторинга вместе с их плитками.
-* **Оповещения** — Создавайте, обновляйте и просматривайте оповещения вместе с историей их выполнения.
+* **Оповещения** — Создавайте, обновляйте и просматривайте оповещения вместе с историей их выполнения. Если включено [обнаружение аномалий](/ru/clickstack/features/anomaly-detection), ассистенты также могут перед сохранением проверить настройки оповещений об аномалиях на недавних исторических данных.
 * **Сохранённые поиски** — Создавайте, обновляйте и просматривайте повторно используемые определения сохранённых поисков.
 * **Вебхуки** — Просматривайте доступные пункты назначения вебхуков для уведомлений об оповещениях.
 * **Команды** — Просматривайте команды, в которые входит текущий пользователь, и определяйте активную команду.
@@ -279,7 +277,7 @@ MCP-сервер использует транспорт **Streamable HTTP** с 
 Со временем набор инструментов может расширяться. Ваш MCP-клиент автоматически обнаружит доступные инструменты при подключении.
 
 <div id="multi-team">
-  ## Использование в нескольких командах (OSS/BYOC)
+  ## Использование в нескольких командах (OSS/BYOC) {#multi-team}
 </div>
 
 Это относится только к развертываниям с открытым исходным кодом и BYOC. Для ClickStack в ClickHouse Cloud см. [указание конкретного сервиса](#managed-service-override).
@@ -289,11 +287,11 @@ MCP-сервер использует транспорт **Streamable HTTP** с 
 Используйте в своём MCP-клиенте инструмент вывода списка команд, чтобы узнать, к каким командам у вас есть доступ и какая из них активна.
 
 <div id="troubleshooting">
-  ## Устранение неполадок
+  ## Устранение неполадок {#troubleshooting}
 </div>
 
 <div id="troubleshooting-managed">
-  ### ClickStack в ClickHouse Cloud
+  ### ClickStack в ClickHouse Cloud {#troubleshooting-managed}
 </div>
 
 <Accordion title="Не удается завершить OAuth-поток">
@@ -312,7 +310,7 @@ MCP-сервер использует транспорт **Streamable HTTP** с 
 </Accordion>
 
 <div id="troubleshooting-oss">
-  ### Open Source и BYOC
+  ### Open Source и BYOC {#troubleshooting-oss}
 </div>
 
 <Accordion title="Я получаю ошибку аутентификации 403">

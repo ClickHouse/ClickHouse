@@ -55,7 +55,7 @@ La compression est contrôlée par l’argument `compress` de `get_client` et `g
 
 Les méthodes client brutes n’utilisent pas le paramètre `compress` défini au niveau du client. `raw_query` et `raw_stream` renvoient des données non compressées, et `raw_insert` utilise son propre argument `compression` pour indiquer la compression déjà appliquée au payload.
 
-La prise en charge de lz4 et zstd est installée avec ClickHouse Connect. Avec Python 3.14, zstd utilise le module de bibliothèque standard `compression.zstd`. Les versions de Python 3.10 à 3.13 utilisent `backports.zstd`. Un interpréteur CPython 3.14+ personnalisé compilé sans prise en charge de zstd s’importe tout de même ; zstd est alors retiré des méthodes disponibles et une erreur n’est levée que si zstd est explicitement demandé. Brotli est optionnel et doit être installé séparément avant d’utiliser `compress="br"`.
+La prise en charge de lz4 et zstd est installée avec ClickHouse Connect. Avec Python 3.14 et versions ultérieures, zstd utilise le module de bibliothèque standard `compression.zstd`. Les versions de Python 3.10 à 3.13 utilisent `backports.zstd`. Un interpréteur CPython 3.14+ personnalisé compilé sans prise en charge de zstd s’importe tout de même ; zstd est alors retiré des méthodes disponibles et une erreur n’est levée que si zstd est explicitement demandé. Brotli est optionnel et doit être installé séparément avant d’utiliser `compress="br"`.
 
 gzip est généralement plus lent que lz4 ou zstd pour les charges de travail ClickHouse.
 

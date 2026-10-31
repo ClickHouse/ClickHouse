@@ -18,7 +18,7 @@ ClickStack에는 AI 어시스턴트가 관측성 데이터와 상호작용할 �
 </Frame>
 
 <div id="availability">
-  ## 지원 현황
+  ## 지원 현황 {#availability}
 </div>
 
 MCP 서버는 다음 ClickStack 배포 유형에서 사용할 수 있습니다:
@@ -37,20 +37,20 @@ MCP 서버는 다음 ClickStack 배포 유형에서 사용할 수 있습니다:
 </Info>
 
 <div id="managed-clickstack">
-  ## ClickStack on ClickHouse Cloud
+  ## ClickStack on ClickHouse Cloud {#managed-clickstack}
 </div>
 
 ClickHouse Cloud의 ClickStack은 Cloud MCP endpoint `https://mcp.clickhouse.cloud/clickstack`를 통해 연결되며, OAuth 2.0으로 인증됩니다. 이 endpoint에서는 API Key 인증이 지원되지 않습니다.
 
 <div id="managed-prerequisites">
-  ### 사전 요구 사항
+  ### 사전 요구 사항 {#managed-prerequisites}
 </div>
 
 * [ClickStack이 활성화된](/ko/clickstack/deployment/managed) 실행 중인 ClickHouse Cloud 서비스
 * 서비스에서 [MCP가 활성화되어 있어야 합니다](/ko/products/cloud/features/ai-ml/mcp/remote-mcp#enable-remote-mcp-server) — Cloud Console을 열고 **Connect**를 클릭한 다음 **Connect with MCP**를 선택한 후 토글을 켜십시오
 
 <div id="managed-endpoint">
-  ### 엔드포인트
+  ### 엔드포인트 {#managed-endpoint}
 </div>
 
 ```text
@@ -60,7 +60,7 @@ https://mcp.clickhouse.cloud/clickstack
 인증에는 OAuth 2.0을 사용합니다. MCP client가 처음 연결되면 브라우저 창이 열리며 ClickHouse Cloud 자격 증명으로 로그인할 수 있습니다. API Key는 필요하지 않습니다.
 
 <div id="managed-connecting-a-client">
-  ### MCP 클라이언트 연결
+  ### MCP 클라이언트 연결 {#managed-connecting-a-client}
 </div>
 
 각 클라이언트는 처음 연결할 때 OAuth 흐름을 자동으로 처리합니다.
@@ -137,20 +137,18 @@ https://mcp.clickhouse.cloud/clickstack
 </Tabs>
 
 <div id="managed-service-override">
-  ### 특정 서비스 지정
+  ### 특정 서비스 지정 {#managed-service-override}
 </div>
 
 `x-service-id` 헤더가 없으면 요청은 기본적으로 계정에서 프로비저닝해 사용 중인 첫 번째 ClickStack 서비스로 전송됩니다. 다른 서비스를 지정하려면 MCP 클라이언트 구성의 헤더에 `x-service-id: <YOUR_SERVICE_ID>`를 추가하십시오.
 
 <div id="oss-byoc">
-  ## Open Source 및 BYOC
+  ## Open Source 및 BYOC {#oss-byoc}
 </div>
 
 Open Source 및 BYOC 배포는 ClickStack 인스턴스에 내장된 MCP 엔드포인트를 Bearer token 인증으로 사용합니다.
 
-<div id="oss-prerequisites">
-  ### 사전 요구 사항
-</div>
+### 사전 요구 사항 {#oss-prerequisites}
 
 * 실행 중인 ClickStack 인스턴스([배포](/ko/clickstack/deployment/overview)에서 설정 옵션 참조)
 * **Personal API Access Key** — HyperDX의 **Team Settings → API Keys → Personal API Access Key**에서 확인할 수 있습니다
@@ -162,7 +160,7 @@ Open Source 및 BYOC 배포는 ClickStack 인스턴스에 내장된 MCP 엔드�
 </Note>
 
 <div id="managed-endpoint">
-  ### 엔드포인트
+  ### 엔드포인트 {#oss-endpoint}
 </div>
 
 MCP 서버는 ClickStack 프론트엔드 URL의 `/api/mcp` 경로에서 이용할 수 있습니다. 예를 들어, 기본 로컬 배포에서는 URL이 `http://localhost:8080/api/mcp`입니다. 기본 설정을 변경한 경우 `localhost:8080`을 인스턴스에 맞는 호스트와 포트로 바꾸십시오.
@@ -174,7 +172,7 @@ MCP 서버는 ClickStack 프론트엔드 URL의 `/api/mcp` 경로에서 이용�
 MCP 서버는 **Bearer token** 인증을 사용하는 **Streamable HTTP** 전송 방식을 사용합니다.
 
 <div id="managed-connecting-a-client">
-  ### MCP 클라이언트 연결
+  ### MCP 클라이언트 연결 {#oss-connecting-a-client}
 </div>
 
 `<YOUR_CLICKSTACK_URL>`은 인스턴스 URL(예: `http://localhost:8080`)로, `<YOUR_API_KEY>`는 Personal API Access Key로 바꾸십시오.
@@ -263,7 +261,7 @@ MCP 서버는 **Bearer token** 인증을 사용하는 **Streamable HTTP** 전송
 </Tabs>
 
 <div id="capabilities">
-  ## MCP로 무엇을 할 수 있나요?
+  ## MCP로 무엇을 할 수 있나요? {#capabilities}
 </div>
 
 연결이 완료되면 AI 어시스턴트는 ClickStack의 핵심 영역 전반에 걸친 다양한 도구에 접근할 수 있습니다. 여기에는 다음이 포함됩니다.
@@ -271,7 +269,7 @@ MCP 서버는 **Bearer token** 인증을 사용하는 **Streamable HTTP** 전송
 * **데이터 쿼리** — ClickStack의 쿼리 빌더, 검색 구문 또는 raw SQL을 사용해 로그, 트레이스, 메트릭을 검색하고 집계합니다.
 * **데이터 소스** — 사용 가능한 데이터 소스, 데이터베이스 연결, 컬럼 스키마, 속성 키를 나열합니다.
 * **대시보드** — 타일과 함께 대시보드를 생성, 업데이트, 삭제하고 내용을 확인합니다.
-* **알림** — 평가 이력과 함께 알림을 생성, 업데이트하고 내용을 확인합니다.
+* **알림** — 평가 이력과 함께 알림을 생성, 업데이트하고 내용을 확인합니다. [이상 탐지](/ko/clickstack/features/anomaly-detection)가 활성화되어 있으면 어시스턴트가 이상 탐지 알림 설정을 저장하기 전에 최근 이력을 대상으로 백테스트할 수도 있습니다.
 * **저장된 검색** — 재사용 가능한 저장된 검색 정의를 생성, 업데이트하고 내용을 확인합니다.
 * **웹훅** — 알림 알림을 위한 사용 가능한 웹훅 대상을 나열합니다.
 * **팀** — 현재 사용자가 속한 팀을 나열하고 활성 팀을 식별합니다.
@@ -279,7 +277,7 @@ MCP 서버는 **Bearer token** 인증을 사용하는 **Streamable HTTP** 전송
 제공되는 도구의 구체적인 구성은 시간이 지나면서 확장될 수 있습니다. MCP 클라이언트는 연결 시 사용 가능한 도구를 자동으로 탐색합니다.
 
 <div id="multi-team">
-  ## 여러 팀 사용 (OSS/BYOC)
+  ## 여러 팀 사용 (OSS/BYOC) {#multi-team}
 </div>
 
 이는 Open Source 및 BYOC 배포에만 적용됩니다. ClickStack on ClickHouse Cloud는 [특정 service 지정](#managed-service-override)을 참조하십시오.
@@ -289,11 +287,11 @@ MCP 서버는 **Bearer token** 인증을 사용하는 **Streamable HTTP** 전송
 MCP 클라이언트의 팀 목록 도구를 사용하면 액세스할 수 있는 팀과 현재 활성 상태인 팀을 확인할 수 있습니다.
 
 <div id="troubleshooting">
-  ## 문제 해결
+  ## 문제 해결 {#troubleshooting}
 </div>
 
 <div id="troubleshooting-managed">
-  ### ClickStack on ClickHouse Cloud
+  ### ClickStack on ClickHouse Cloud {#troubleshooting-managed}
 </div>
 
 <Accordion title="OAuth 흐름이 완료되지 않는 경우">
@@ -312,7 +310,7 @@ MCP 클라이언트의 팀 목록 도구를 사용하면 액세스할 수 있는
 </Accordion>
 
 <div id="troubleshooting-oss">
-  ### Open Source 및 BYOC
+  ### Open Source 및 BYOC {#troubleshooting-oss}
 </div>
 
 <Accordion title="403 인증 오류가 발생합니다">

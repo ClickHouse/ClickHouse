@@ -10,64 +10,166 @@ doc_type: 'guide'
 
 import { Image } from "/snippets/ko/components/Image.jsx";
 
-ClickHouse는 매우 다양한 조인 유형과 알고리즘을 지원하며, 최근 릴리스에서 조인 성능도 크게 개선되었습니다. 그러나 조인은 본질적으로 단일 비정규화 테이블에서 쿼리하는 것보다 비용이 더 많이 듭니다. 비정규화는 계산 작업을 쿼리 시점에서 삽입 또는 전처리 시점으로 옮기므로, 런타임 지연 시간을 크게 줄이는 경우가 많습니다. 실시간 또는 지연 시간에 민감한 분석 쿼리에는 **비정규화를 강력히 권장합니다**.
+이 페이지에서는 가능하면 조인을 피하고, 조인이 불가피한 경우에는 그 비용을 줄이는 방법에 대한 권장 지침을 제공합니다. 구문과 의미 체계는 [`JOIN` 절 참고](/ko/reference/statements/select/join)를 참조하십시오. 실행 알고리즘과 알고리즘 선택 방법은 [테이블 조인](/ko/concepts/features/operations/select/joining-tables)을 참조하십시오.
+
+## 조인 사용 지양 {#prefer-avoiding-joins}
+
+ClickHouse는 매우 다양한 조인 유형과 알고리즘을 지원합니다. 그러나 조인은 본질적으로 단일 비정규화 테이블에서 쿼리하는 것보다 비용이 더 많이 듭니다. 비정규화는 계산 작업을 쿼리 시점에서 삽입 또는 전처리 시점으로 옮기므로, 런타임 지연 시간을 크게 줄이는 경우가 많습니다. 실시간 또는 지연 시간에 민감한 분석 쿼리에는 **비정규화를 강력히 권장합니다**.
 
 일반적으로 다음과 같은 경우 비정규화를 고려하십시오:
 
 * 테이블이 자주 변경되지 않거나 Batch 단위 갱신을 허용할 수 있는 경우
-* 관계가 다대다가 아니거나 카디널리티가 지나치게 높지 않은 경우
+* 관계가 다대다가 아니며 카디널리티가 지나치게 높지 않은 경우
 * 쿼리할 컬럼의 부분 집합만 제한적으로 필요한 경우, 즉 일부 컬럼은 비정규화에서 제외할 수 있는 경우
 * 실시간 보강이나 평탄화를 [Flink](/ko/integrations/connectors/data-ingestion/apache-flink)와 같은 업스트림 시스템에서 처리할 수 있도록, 처리를 ClickHouse 외부로 옮길 역량이 있는 경우
 
-모든 데이터를 비정규화할 필요는 없습니다 — 자주 쿼리되는 속성에 집중하십시오. 또한 전체 서브테이블을 중복 저장하는 대신 집계를 점진적으로 계산할 수 있도록 [materialized views](/ko/concepts/best-practices/use-materialized-views)도 고려하십시오. 스키마 업데이트가 드물고 지연 시간이 중요하다면, 비정규화는 성능 측면에서 가장 좋은 절충안을 제공합니다.
+모든 데이터를 비정규화할 필요는 없습니다 - 자주 쿼리되는 속성에 집중하십시오. 또한 전체 서브테이블을 중복 저장하는 대신 집계를 점진적으로 계산할 수 있도록 [materialized views](/ko/concepts/best-practices/use-materialized-views)도 고려하십시오. 스키마 업데이트가 드물고 지연 시간이 중요하다면, 비정규화는 성능 측면에서 가장 좋은 절충안을 제공합니다.
 
-ClickHouse에서 데이터를 비정규화하는 전체 가이드는 [here](/ko/guides/clickhouse/data-modelling/denormalization)를 참조하십시오.
+ClickHouse에서 데이터를 비정규화하는 전체 가이드는 [비정규화](/ko/guides/clickhouse/data-modelling/denormalization)를 참조하십시오.
 
-<div id="when-joins-are-required">
-  ## 조인이 필요한 경우
-</div>
+## 조인이 필요한 경우 {#when-joins-are-required}
 
-조인이 필요하다면 **최소 24.12 버전, 가능하면 최신 버전**을 사용하십시오. 새 release가 나올 때마다 조인 성능이 계속 개선되고 있기 때문입니다. ClickHouse 24.12부터는 최적의 성능을 위해 쿼리 플래너가 더 작은 테이블을 조인의 오른쪽에 자동으로 배치합니다. 이전에는 이 작업을 수동으로 수행해야 했습니다. 앞으로는 더 적극적인 filter pushdown과 여러 조인의 자동 재정렬을 포함해 추가 개선 사항도 제공될 예정입니다.
+<Tip>
+  **ClickHouse 26.8 이상을 사용하십시오.**
 
-조인 성능을 개선하려면 다음 모범 사례를 따르십시오.
+  다중 테이블 조인 순서 재배치(조인 reordering)와 옵티마이저의 가용 통계 활용 기능은 25.12부터 기본적으로 활성화되어 있습니다. [컬럼 통계(Column Statistics)](/ko/reference/settings/session-settings/allow-statistics#allow_statistics)는 26.3에서 일반 제공되었으며 기본적으로 활성화되었습니다. 26.8부터는 조건을 충족하는 테이블이 기본적으로 [삽입 시 컬럼 통계를 구체화](/ko/reference/settings/session-settings/materialize-statistics-on-insert#materialize_statistics_on_insert)하므로, 비용 기반 조인 최적화의 추정 정확도가 향상됩니다.
+</Tip>
 
-* **카테시안 곱을 피하십시오**: 왼쪽의 값 하나가 오른쪽의 여러 값과 일치하면 조인은 여러 행을 반환하는데, 이를 카테시안 곱이라고 합니다. 사용 사례에서 오른쪽의 모든 일치 항목이 아니라 아무 단일 일치 항목 하나만 필요하다면 `ANY` JOIN(예: `LEFT ANY JOIN`)을 사용할 수 있습니다. 일반 조인보다 더 빠르고 메모리도 덜 사용합니다.
-* **조인되는 테이블의 크기를 줄이십시오**: 조인의 런타임과 메모리 활용은 왼쪽 및 오른쪽 테이블의 크기에 비례해 증가합니다. 조인이 처리하는 데이터 양을 줄이려면 쿼리의 `WHERE` 또는 `JOIN ON` 절에 filter 조건을 추가하십시오. ClickHouse는 filter 조건을 쿼리 계획에서 가능한 한 아래로 pushdown하며, 일반적으로 조인 전에 적용합니다. filter가 자동으로 pushdown되지 않는 경우(이유와 관계없이)에는 조인의 한쪽을 서브쿼리로 재작성해 pushdown을 강제하십시오.
-* **적절한 경우 딕셔너리를 통한 Direct 조인을 사용하십시오**: ClickHouse의 표준 조인은 두 단계로 실행됩니다. 먼저 build 단계에서 오른쪽을 순회하며 해시 테이블을 만들고, 이어서 probe 단계에서 왼쪽을 순회하며 해시 테이블 lookup을 통해 일치하는 조인 대상을 찾습니다. 오른쪽이 [딕셔너리](/ko/concepts/features/dictionaries/index)이거나 키-값 특성을 가진 다른 테이블 엔진(예: [EmbeddedRocksDB](/ko/reference/engines/table-engines/integrations/embedded-rocksdb) 또는 [Join table engine](/ko/reference/engines/table-engines/special/join))인 경우, ClickHouse는 &quot;direct&quot; 조인 알고리즘을 사용할 수 있습니다. 이 방식은 사실상 해시 테이블을 build할 필요를 없애 쿼리 처리 속도를 높입니다. 이는 `INNER` 및 `LEFT OUTER` JOIN에 적용되며 real-time 분석 워크로드에 적합합니다.
-* **조인에 테이블 정렬을 활용하십시오**: ClickHouse의 각 테이블은 테이블의 primary key 컬럼을 기준으로 정렬됩니다. `full_sorting_merge` 및 `partial_merge` 같은 sort-merge 조인 알고리즘을 사용하면 이 정렬을 활용할 수 있습니다. 해시 테이블 기반의 표준 조인 알고리즘(아래의 `parallel_hash`, `hash`, `grace_hash` 참조)과 달리, sort-merge 조인 알고리즘은 먼저 두 테이블을 정렬한 다음 머지합니다. 쿼리에서 두 테이블을 각각의 primary key 컬럼으로 조인하는 경우, sort-merge에는 정렬 단계를 생략하는 최적화가 있어 처리 시간과 오버헤드를 줄일 수 있습니다.
-* **디스크로 스필되는 조인을 피하십시오**: 조인의 중간 상태(예: 해시 테이블)가 너무 커져 더 이상 main memory에 들어가지 않을 수 있습니다. 이런 경우 ClickHouse는 기본적으로 out-of-memory 오류를 반환합니다. 일부 조인 알고리즘(아래 참조), 예를 들어 [`grace_hash`](https://clickhouse.com/blog/clickhouse-fully-supports-joins-hash-joins-part2), [`partial_merge`](https://clickhouse.com/blog/clickhouse-fully-supports-joins-full-sort-partial-merge-part3), [`full_sorting_merge`](https://clickhouse.com/blog/clickhouse-fully-supports-joins-full-sort-partial-merge-part3)는 중간 상태를 디스크에 스필한 뒤 쿼리 실행을 계속할 수 있습니다. 다만 디스크 접근은 조인 처리를 크게 느리게 만들 수 있으므로 이러한 조인 알고리즘은 신중하게 사용해야 합니다. 대신 중간 상태의 크기를 줄일 수 있도록 다른 방식으로 조인 쿼리를 최적화하는 것이 좋습니다.
-* **외부 조인에서 불일치 표시자로 기본값을 사용하십시오**: left/right/full outer join은 왼쪽/오른쪽/양쪽 테이블의 모든 값을 포함합니다. 특정 값에 대해 다른 테이블에서 일치하는 조인 대상이 없으면 ClickHouse는 해당 조인 대상을 특수 표시자로 대체합니다. SQL 표준에서는 데이터베이스가 이러한 표시자로 NULL을 사용하도록 규정합니다. ClickHouse에서는 이를 위해 결과 컬럼을 널 허용(Nullable)로 감싸야 하며, 이로 인해 추가 메모리 사용량과 성능 오버헤드가 발생합니다. 대안으로 `join_use_nulls = 0` 설정을 사용하고 결과 컬럼 데이터 타입의 기본값을 표시자로 사용할 수 있습니다.
+조인 성능을 높이려면 다음 권장 사항을 따르십시오.
 
-<Info>
-  **딕셔너리는 신중하게 사용하십시오**
+* **일치 항목이 하나만 필요하면 `ANY` 조인을 사용하십시오.** 일반 조인은 일치하는 모든 행을 반환하므로, 키가 중복되면 카테시안 곱이 생성될 수 있습니다. 일치 항목 하나로 충분하다면 `LEFT ANY JOIN` 또는 `ANY INNER JOIN`을 사용하여 결과 크기와 메모리 사용량을 줄이십시오.
+* **조인 전에 양쪽 입력을 모두 줄이십시오.** `WHERE` 및 `JOIN ON` 절에 선택도가 높은 조건을 적용하십시오. ClickHouse는 가능한 경우 필터(filter)를 푸시다운하지만, 명시적인 서브쿼리를 사용하면 각 입력이 조인 전에 확실히 필터링되도록 할 수 있습니다.
+* **`INNER JOIN` 대신 `IN`을 고려하십시오.** 다른 테이블에 키가 존재하는지만 확인하면 되는 쿼리라면, `IN` 서브쿼리로 이 요구 사항을 직접 표현할 수 있으며 `INNER JOIN` 결과를 생성하는 것보다 메모리를 적게 사용할 수 있습니다.
+* **재사용할 조회에는 `Join` 테이블 엔진을 우선 사용하십시오.** [`Join` 테이블 엔진](/ko/reference/engines/table-engines/special/join)은 선언된 조인 유형, 엄격성, 키에 맞춰 미리 계산된 인메모리 구조를 저장합니다. ClickHouse Cloud에서는 `MergeTree` 백킹 테이블을 사용하는 `SharedJoin`으로 구현되며, `Join(ANY, LEFT, key)`를 사용하면 키 단위로 업데이트 가능한 조회가 가능합니다. 자세한 내용은 [Join 테이블 엔진을 사용한 빠르고 업데이트 가능한 조회](https://clickhouse.com/blog/join-table-engine)를 참고하십시오.
+* **가능하면 테이블 정렬 키를 기준으로 조인하십시오.** 두 테이블이 모두 조인 키 기준으로 물리적으로 정렬되어 있으면 `full_sorting_merge`가 정렬 단계를 건너뛰고 메모리 사용량을 줄일 수 있습니다. 실행 계획(Execution Plan)을 확인하고, 실제 환경을 대표하는 데이터로 이 알고리즘과 기본 알고리즘을 비교 벤치마크하십시오.
+* **디스크 유출(spill)되는 조인을 피하십시오.** 중간 조인 상태를 디스크 유출(spill)하면 쿼리를 메모리 제한 내에서 실행할 수 있지만, 디스크 I/O 때문에 일반적으로 지연 시간이 늘어납니다. 해시 조인(Hash join)은 설정된 디스크 유출 임계값(spill threshold)에 도달하면 grace hash로 전환할 수 있으며, 병합 조인(merge join)은 외부 정렬을 사용할 수 있습니다. 디스크 유출(spill)에 의존하기 전에 입력 행과 컬럼을 줄이거나 데이터 모델을 변경하십시오. 자세한 내용은 [최적의 조인 알고리즘 선택](#choosing-the-optimal-join-algorithm)을 참고하십시오.
+* **필요에 따라 기본값을 불일치 표시로 활용하십시오.** 기본 설정인 [`join_use_nulls = 0`](/ko/reference/settings/session-settings/join#join_use_nulls)은 외부 조인에서 일치하지 않는 컬럼을 해당 데이터 타입의 기본값으로 채우며 `Nullable` 래퍼를 사용하지 않습니다. 쿼리에서 일치하지 않는 행과 기본값을 포함한 일치 행을 구분해야 하는 경우에만 `join_use_nulls`를 활성화하십시오.
 
-  ClickHouse에서 JOIN에 딕셔너리를 사용할 때는, 딕셔너리가 설계상 중복 키를 허용하지 않는다는 점을 이해하는 것이 중요합니다. 데이터를 로드할 때 중복 키는 자동으로 중복 제거되며, 해당 키에 대해서는 마지막으로 로드된 값만 유지됩니다. 이런 동작 특성 때문에 딕셔너리는 최신 값이나 기준이 되는 값만 필요한 일대일 또는 다대일 관계에 적합합니다. 그러나 일대다 또는 다대다 관계(예: 하나의 Actor가 여러 역할을 가질 수 있는 상황에서 역할을 Actor에 조인하는 경우)에 딕셔너리를 사용하면, 일치하는 행 가운데 하나만 남고 나머지는 모두 버려지므로 데이터가 소리 없이 유실됩니다. 따라서 여러 일치 항목에 대해 관계형 데이터의 완전한 대응 관계를 유지해야 하는 시나리오에는 딕셔너리가 적합하지 않습니다. 딕셔너리가 유용한 경우와 그렇지 않은 경우에 대한 자세한 내용은 [딕셔너리 모범 사례](/ko/concepts/features/dictionaries/best-practices)를 참조하십시오.
-</Info>
+## 최적의 JOIN 알고리즘 선택하기 {#choosing-the-optimal-join-algorithm}
 
-<div id="choosing-the-right-join-algorithm">
-  ## 올바른 조인 알고리즘 선택하기
-</div>
+ClickHouse는 속도와 메모리 사이에서 서로 다른 절충점을 갖는 여러 JOIN 알고리즘을 지원합니다.
+[`join_algorithm`](/ko/reference/settings/session-settings/join#join_algorithm)의 기본값은 `direct,parallel_hash,hash,ie_join`이며, ClickHouse는 JOIN 유형, 엄격성(strictness), 조건, 테이블 엔진에 맞춰 적용 가능한 첫 번째 알고리즘을 선택합니다. 이 값은 양쪽 입력을 모두 줄인 뒤, 대표성 있는 데이터로 측정한 결과 다른 메모리 전략이나 실행 전략이 필요하다고 확인된 경우에만 변경을 고려하십시오. 알고리즘 실행 세부 사항과 지원되는 JOIN 유형은 [JOIN 알고리즘 선택하기](/ko/concepts/features/operations/select/joining-tables#choosing-a-join-algorithm)를 참조하십시오.
 
-ClickHouse는 속도와 메모리 사용량 사이의 절충이 서로 다른 여러 조인 알고리즘을 지원합니다:
+성능이 핵심 최적화 지표이고 조인을 최대한 빠르게 실행하려면, 다음 의사 결정 트리를 참고하여 적합한 조인 알고리즘을 선택할 수 있습니다.
 
-* **Parallel Hash 조인 (default):** 메모리에 적재할 수 있는 소규모~중간 규모의 오른쪽 테이블에서 빠르게 동작합니다.
-* **Direct 조인:** 딕셔너리(또는 키-값 특성을 가진 다른 테이블 엔진)를 `INNER` 또는 `LEFT ANY JOIN`과 함께 사용할 때 이상적입니다 — 해시 테이블을 만들 필요가 없어 키 기반 조회에 가장 빠른 방법입니다.
-* **Full Sorting Merge 조인:** 두 테이블이 모두 조인 키를 기준으로 정렬되어 있을 때 효율적입니다.
-* **Partial Merge 조인:** 메모리 사용량을 최소화하지만 더 느립니다—메모리가 제한된 환경에서 대규모 테이블을 조인할 때 가장 적합합니다.
-* **Grace Hash 조인:** 유연하고 메모리 사용량을 조정할 수 있어, 성능 특성을 조절해야 하는 대규모 데이터셋에 적합합니다.
+<br />
 
-<Image img="/images/bestpractices/joins-speed-memory.png" size="md" alt="조인 — 속도 대 메모리" />
+<Image img="/images/guides/joins-4.webp" size="lg" alt="조인 성능 최적화 의사 결정 트리" />
 
-<Note>
-  각 알고리즘이 지원하는 조인 유형은 서로 다릅니다. 각 알고리즘에서 지원하는 조인 유형의 전체 목록은 [여기](/ko/concepts/features/operations/select/joining-tables#choosing-a-join-algorithm)에서 확인할 수 있습니다.
-</Note>
+<br />
 
-`join_algorithm = 'auto'`로 설정하면 ClickHouse가 최적의 알고리즘을 선택하도록 할 수 있으며, 워크로드에 따라 명시적으로 제어할 수도 있습니다. 기본값은 `direct,parallel_hash,hash`이므로, 오른쪽이 딕셔너리 또는 키-값 엔진인 경우 ClickHouse는 direct 조인을 사용하고, 그렇지 않으면 parallel hash, 그다음 hash로 대체합니다. 성능이나 메모리 오버헤드를 최적화하기 위해 조인 알고리즘을 선택해야 한다면, [이 가이드](/ko/concepts/features/operations/select/joining-tables#choosing-a-join-algorithm)를 권장합니다.
+* **(1)** 오른쪽 테이블의 데이터를 딕셔너리와 같은 저지연 인메모리 키-값 데이터 구조에 미리 로드할 수 있고, 조인 키가 기반 키-값 저장소의 키 속성과 일치하며, `LEFT ANY JOIN` 의미 체계로 충분하다면 **direct join**을 적용할 수 있습니다. 대개 이 방법이 가장 빠릅니다.
 
-최적의 성능을 위해:
+* **(2)** 테이블의 [물리적 행 순서](/ko/guides/clickhouse/data-modelling/sparse-primary-indexes#data-is-stored-on-disk-ordered-by-primary-key-columns)가 조인 키 정렬 순서와 일치한다면 상황에 따라 다릅니다. 이 경우 **전체 정렬 병합 조인(Full Sorting Merge Join)**은 정렬 단계를 [건너뛰므로](https://clickhouse.com/blog/clickhouse-fully-supports-joins-full-sort-partial-merge-part3#utilizing-physical-row-order) 메모리 사용량(memory usage)이 크게 줄어들고, 데이터 크기와 조인 키 값 분포에 따라서는 일부 해시 조인(Hash join) 알고리즘보다 실행 속도도 더 빠를 수 있습니다.
 
-* 고성능 워크로드에서는 조인 사용을 최소화하십시오.
-* 쿼리당 조인을 3~4개 이상 사용하지 마십시오.
-* 실제 데이터로 서로 다른 알고리즘을 벤치마크하십시오 — 성능은 조인 키 분포와 데이터 크기에 따라 달라집니다.
+* **(3)** **병렬 해시 조인(parallel hash join)**의 [추가 메모리 오버헤드](https://clickhouse.com/blog/clickhouse-fully-supports-joins-hash-joins-part2#summary)를 감안하더라도 오른쪽 테이블이 메모리에 들어간다면, 이 알고리즘이나 해시 조인(Hash join)이 더 빠를 수 있습니다. 이는 데이터 크기, 데이터 타입, 조인 키 컬럼의 값 분포에 따라 달라집니다.
 
-조인 최적화 전략, 조인 알고리즘, 그리고 이를 조정하는 방법에 대한 자세한 내용은 [ClickHouse 문서](/ko/concepts/features/operations/select/joining-tables)와 이 [블로그 시리즈](https://clickhouse.com/blog/clickhouse-fully-supports-joins-part1)를 참고하십시오.
+* **(4)** 오른쪽 테이블이 메모리에 들어가지 않으면, 해시 조인(Hash join)과 병렬 해시 조인(parallel hash join)은 [`max_bytes_before_external_join`](/ko/reference/settings/session-settings/max-bytes#max_bytes_before_external_join) 또는 [`max_bytes_ratio_before_external_join`](/ko/reference/settings/session-settings/max-bytes#max_bytes_ratio_before_external_join)에 도달했을 때 grace hash로 전환하여 데이터를 디스크 유출(spill)할 수 있습니다. 전체 정렬 병합 조인(Full Sorting Merge Join)과 부분 병합 조인도 외부 저장소를 사용할 수 있습니다. 어떤 방식이 가장 빠른지는 데이터 양, 데이터 타입, 조인 키 컬럼의 값 분포에 따라 달라집니다.
+
+부분 병합 조인은 대용량 테이블을 조인할 때 메모리 사용량(memory usage)을 최소화하도록 최적화되어 있지만, 그 대가로 조인 속도가 상당히 느립니다. 왼쪽 테이블의 물리적 행 순서가 조인 키 정렬 순서와 일치하지 않으면 특히 더 느려집니다.
+
+그레이스 해시 조인(grace hash join)은 메모리에 제약받지 않는 세 가지 조인 알고리즘 중 가장 유연하며, 설정을 통해 세밀하게 제어할 수 있습니다. [`grace_hash_join_initial_buckets`](/ko/reference/settings/session-settings/grace-hash#grace_hash_join_initial_buckets) 설정은 초기 버킷 수를 제어하며, 이를 통해 메모리 사용과 조인 속도 사이에서 균형을 조절할 수 있습니다.
+
+디스크 기반 알고리즘 세 가지 중 어느 것이 가장 빠른지는 데이터 양, 데이터 타입, 조인 키 컬럼의 값 분포에 따라 달라집니다. 가장 빠른 알고리즘을 판단하려면 실제와 비슷한 규모의 데이터로 벤치마크를 실행해 보는 것이 가장 좋습니다.
+
+## 메모리 최적화 {#optimizing-for-memory}
+
+가장 빠른 실행 시간보다 가장 낮은 메모리 사용량(memory usage)을 목표로 조인을 최적화하려면 다음 결정 트리를 참고하십시오.
+
+<br />
+
+<Image img="/images/guides/joins-5.webp" size="lg" alt="조인 메모리 최적화 결정 트리" />
+
+<br />
+
+* **(1)** 테이블의 물리적 행 순서가 조인 키의 정렬 순서(sort order)와 일치하면 **전체 정렬 병합 조인(Full Sorting Merge Join)**&#xC758; 메모리 사용량이 최소 수준으로 낮아집니다. 또한 정렬 단계가 [비활성화](https://clickhouse.com/blog/clickhouse-fully-supports-joins-full-sort-partial-merge-part3#utilizing-physical-row-order)되므로 조인 속도도 우수합니다.
+* **(2)** **그레이스 해시 조인(grace hash join)**&#xC740; [`grace_hash_join_initial_buckets`](/ko/reference/settings/session-settings/grace-hash#grace_hash_join_initial_buckets) 값을 늘리면 조인 속도는 떨어지지만 메모리 사용량을 매우 낮게 조정할 수 있습니다. **부분 병합 조인**은 설계상 주기억장치를 적게 사용합니다. 외부 정렬이 활성화된 **전체 정렬 병합 조인(Full Sorting Merge Join)**은 행 순서가 키 정렬 순서와 일치하지 않을 때 일반적으로 부분 병합 조인보다 메모리를 더 많이 사용하지만, 조인 실행 시간은 훨씬 짧습니다. 해시 조인(Hash join)과 병렬 해시 조인(parallel hash join)도 구성된 디스크 유출 임계값(spill threshold)에 도달하면 그레이스 해시로 전환하여 메모리 압력을 줄일 수 있습니다.
+
+## 조인 최적화 예시 {#join-optimization-examples}
+
+다음 예시에서는 [Stack Overflow 데이터 세트](/ko/getting-started/example-datasets/stackoverflow)를 사용하여 권장 사항을 단계적으로 적용합니다.
+아래 측정값은 ClickHouse 26.8.1이 실행 중인 ClickHouse Cloud 서비스에서 `max_threads = 4`로 설정하고 5회 실행한 결과의 중앙값입니다. 각 쿼리는 한 번씩 워밍업했고, 쿼리 실행 순서를 번갈아 바꾸었으며, `use_query_cache`와 `use_query_condition_cache`는 비활성화했습니다.
+
+### `ANY INNER JOIN`을 `IN`으로 대체하기 {#replace-any-inner-join-with-in}
+
+이 테스트에서 `IN` 쿼리는 2.7배 더 빨랐으며 최대 메모리 사용량은 83% 더 적었습니다.
+이 쿼리는 본문에서 ClickHouse를 언급하지 않지만 ClickHouse를 언급하는 댓글이 하나 이상 달린 게시물의 수를 셉니다.
+
+```sql
+SELECT count()
+FROM stackoverflow.posts AS p
+ANY INNER JOIN stackoverflow.comments AS c ON p.Id = c.PostId
+WHERE
+    p.Title != ''
+    AND p.Title NOT ILIKE '%clickhouse%'
+    AND p.Body NOT ILIKE '%clickhouse%'
+    AND c.Text ILIKE '%clickhouse%'
+```
+
+이 쿼리는 결과로 `86`을 반환합니다. 경과 시간의 중앙값은 27.101초, 최대 메모리 사용량은 970.01 MiB였습니다. 또한 1억 5,020만 개의 행(rows)과 51.77 GiB의 데이터를 읽었습니다.
+
+이 쿼리는 일치하는 댓글이 존재하는지만 확인하면 됩니다. `IN` 서브쿼리를 사용하면 조인 결과를 생성하지 않아도 됩니다:
+
+```sql
+SELECT count()
+FROM stackoverflow.posts
+WHERE
+    Title != ''
+    AND Title NOT ILIKE '%clickhouse%'
+    AND Body NOT ILIKE '%clickhouse%'
+    AND Id IN
+    (
+        SELECT PostId
+        FROM stackoverflow.comments
+        WHERE Text ILIKE '%clickhouse%'
+    )
+```
+
+`IN` 쿼리도 `86`을 반환합니다. 경과 시간의 중앙값은 10.206초, 최대 메모리 사용량은 162.81 MiB였습니다. 이 쿼리는 1억 7,420만 개의 행과 19.02 GiB의 데이터를 읽었습니다.
+
+### 조인을 대체하기 전에 양쪽 모두 필터링하기 {#filter-both-sides-before-replacing-the-join}
+
+이 테스트에서는 재작성(Rewrite)을 통해 경과 시간의 중앙값이 18%, 최대 메모리 사용량이 14% 감소했습니다.
+이 쿼리는 2020년 이후 작성된 Java 관련 게시물의 추천(up-vote) 수를 집계합니다. 날짜 조건은 조인 전에 양쪽 입력 모두에 적용됩니다.
+
+```sql
+SELECT countIf(v.VoteTypeId = 2) AS upvotes
+FROM stackoverflow.posts AS p
+INNER JOIN stackoverflow.votes AS v ON p.Id = v.PostId
+WHERE
+    p.CreationDate >= '2020-01-01'
+    AND v.CreationDate >= '2020-01-01'
+    AND has(arrayFilter(t -> t != '', splitByChar('|', p.Tags)), 'java')
+```
+
+이 쿼리는 결과(result)로 `261915`를 반환합니다. 중앙값 경과 시간은 0.850초였고, 최대 메모리 사용량은 59.96 MiB였습니다. 또한 8,094만 개의 행(rows)과 1.13 GiB의 데이터를 읽었습니다.
+
+각 투표에 대해서는 일치하는 게시물이 존재하는지만 확인하면 되므로, 양쪽 입력의 필터는 그대로 유지하면서 조인을 `IN`으로 대체할 수 있습니다.
+
+```sql
+SELECT count() AS upvotes
+FROM stackoverflow.votes
+WHERE
+    VoteTypeId = 2
+    AND CreationDate >= '2020-01-01'
+    AND PostId IN
+    (
+        SELECT Id
+        FROM stackoverflow.posts
+        WHERE
+            CreationDate >= '2020-01-01'
+            AND has(arrayFilter(t -> t != '', splitByChar('|', Tags)), 'java')
+    )
+```
+
+`IN` 쿼리도 `261915`를 반환합니다. 경과 시간의 중앙값은 0.696초, 최대 메모리 사용량은 51.70 MiB였습니다. 읽은 데이터는 4,620만 개의 행, 817.49 MiB입니다.
+
+## 추가 자료 {#further-reading}
+
+* [테이블 조인](/ko/concepts/features/operations/select/joining-tables)
+* [`JOIN` 절 참고](/ko/reference/statements/select/join)
+* [딕셔너리 모범 사례](/ko/concepts/features/dictionaries/best-practices)
+* [SQL 조인 완전 지원, 1부](https://clickhouse.com/blog/clickhouse-fully-supports-joins)
+* [SQL 조인 완전 지원, 2부](https://clickhouse.com/blog/clickhouse-fully-supports-joins-hash-joins-part2)
+* [SQL 조인 완전 지원, 3부](https://clickhouse.com/blog/clickhouse-fully-supports-joins-full-sort-partial-merge-part3)
+* [SQL 조인 완전 지원, 4부](https://clickhouse.com/blog/clickhouse-fully-supports-joins-direct-join-part4)

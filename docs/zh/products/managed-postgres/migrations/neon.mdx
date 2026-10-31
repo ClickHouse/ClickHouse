@@ -2,7 +2,6 @@
 sidebarTitle: 'Neon'
 title: '从 Neon 迁移到 ClickHouse Managed Postgres'
 description: '了解如何将 PostgreSQL 数据从 Neon 迁移到 ClickHouse Managed Postgres'
-slug: /products/managed-postgres/migrations/neon
 keywords: ['postgres', 'postgresql', 'neon', 'migration','managed postgres']
 doc_type: 'guide'
 ---
@@ -64,7 +63,16 @@ ClickHouse Managed Postgres 内置 ClickPipes，提供从 Neon 迁移的全托�
 Neon 提供即时的 copy-on-write 分支能力。ClickHouse Managed Postgres 使用 local NVMe storage，以提供快速、可预测且可靠的 Postgres 性能。
 代价是分支并非即时创建，而是通过 [Point-in-Time Recovery (PITR)](/zh/products/managed-postgres/backup-and-restore) 以独立部署的形式创建，通常在几分钟内即可使用。
 
-对于日常开发，我们建议维护一个较小的 ClickHouse Managed Postgres 开发数据库，其中包含具有代表性且已脱敏的 production 数据 (例如几 GB) ，并按需从中创建 PITR 分支。分支的创建与清理可以通过我们的官方命令行客户端 [clickhousectl](/zh/concepts/features/interfaces/cli)、[OpenAPI](/zh/products/managed-postgres/openapi) 或 [Terraform](/zh/products/managed-postgres/terraform) 实现自动化
+对于日常开发，我们建议维护一个较小的 ClickHouse Managed Postgres 开发数据库，其中包含具有代表性且已脱敏的 生产环境 数据 (例如几 GB) ，并按需从中创建 PITR 分支。分支的创建与清理可以通过我们的官方命令行客户端 [clickhousectl](/zh/concepts/features/interfaces/cli)、[OpenAPI](/zh/products/managed-postgres/openapi) 或 [Terraform](/zh/products/managed-postgres/terraform) 实现自动化。使用 clickhousectl 和 API key 时，创建分支就是将数据库按时间点恢复到一个新服务中：
+
+```bash
+clickhousectl cloud postgres restore <postgres-id> \
+  --name dev-branch-42 --restore-target 2026-10-20T12:00:00Z
+clickhousectl cloud postgres reset-password <branch-id> --generate
+clickhousectl cloud postgres delete <branch-id>
+```
+
+`restore` 会返回新服务的 ID，但不会返回密码，因此请在分支状态变为 `running` 后使用 `reset-password` 设置密码。除非传入 `--ip-allow` 规则或 `--block-public-access`，否则分支会沿用源服务当前的 IPv4 访问规则。`delete` 会永久删除该分支及其数据。
 
 一些客户借助这种方式管理着数百个开发环境。我们也在持续改进分支与 sandbox 体验。请参阅[分支文档](/zh/products/managed-postgres/branching)。
 
@@ -96,7 +104,7 @@ ClickHouse Managed Postgres 默认支持 500 个直连 Postgres 连接。如果�
 * 在应用侧使用连接池。
 * 使用内置的 PgBouncer 实例，它最多支持 5,000 个客户端连接。
 * 如需更多直连连接，可调高 `max_connections`。
-  * 可在 **Settings → Edit parameters** 中修改 `max_connections`。部分更改需要重启。请参阅[配置文档](/zh/products/managed-postgres/settings#changing-configuration)。
+  * 可在 **Settings → Edit parameters** 中修改 `max_connections`，也可以运行 `clickhousectl cloud postgres config patch <postgres-id> --set max_connections=1000` 进行修改。部分更改需要重启，可运行 `clickhousectl cloud postgres restart <postgres-id>` 触发重启。请参阅[配置文档](/zh/products/managed-postgres/settings#changing-configuration)。
 
 ### 迁移期间的 schema 变更 {#schema-changes}
 

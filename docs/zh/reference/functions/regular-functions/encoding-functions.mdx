@@ -403,6 +403,84 @@ SELECT char(0xD0, 0xBF, 0xD1, 0x80, 0xD0, 0xB8, 0xD0, 0xB2, 0xD0, 0xB5, 0xD1, 0x
 └────────┘
 ```
 
+## decodeQuotedPrintable {#decodeQuotedPrintable}
+
+引入版本：v26.10.0
+
+根据 [RFC 2045](https://www.rfc-editor.org/rfc/rfc2045#section-6.7) 解码采用 [Quoted-Printable](https://en.wikipedia.org/wiki/Quoted-printable) 编码的字符串。
+
+`=XX` (十六进制数字位，大小写均可) 会被替换为其所表示的字节。
+`=` 后跟 `\r` 或 `\n` 表示软换行：它会连同该行的剩余内容一并移除，直到下一个 `\n` (含该 `\n`) 为止。
+其他格式错误的转义序列 (例如 `=ZZ`，或位于字符串末尾的 `=4`) 将原样保留，但字符串最末尾单独出现的 `=` 会被删除。
+该行为与 Python 的 `quopri.decodestring` 一致。
+
+**语法**
+
+```sql
+decodeQuotedPrintable(s)
+```
+
+**参数**
+
+* `s` — 采用 Quoted-Printable 编码的字符串。[`String`](/zh/reference/data-types/string)
+
+**返回值**
+
+返回解码后的字符串。[`String`](/zh/reference/data-types/string)
+
+**示例**
+
+**使用示例**
+
+```sql title=Query
+SELECT decodeQuotedPrintable('Caf=C3=A9 =3D 3 =E2=82=AC') AS decoded
+```
+
+```response title=Response
+┌─decoded────┐
+│ Café = 3 € │
+└────────────┘
+```
+
+## encodeQuotedPrintable {#encodeQuotedPrintable}
+
+引入版本：v26.10.0
+
+按照 [RFC 2045](https://www.rfc-editor.org/rfc/rfc2045#section-6.7) 的规定，使用电子邮件中所采用的 [Quoted-Printable](https://en.wikipedia.org/wiki/Quoted-printable) 编码对字符串进行编码。
+
+除 `=` 以外的可打印 ASCII 字符保持原样，其他字节则写为 `=XX` 形式 (使用大写十六进制数字位) 。
+`\r\n` 换行符保持不变，单独出现的 `\r` 或 `\n` 会被编码。若空格或制表符位于行尾，则会被编码。
+通过软换行符 (`=\r\n`) 将每行长度限制在 76 个字符以内。
+对于任意 `s`，`decodeQuotedPrintable(encodeQuotedPrintable(s))` 均返回原始字符串 `s`。
+
+**语法**
+
+```sql
+encodeQuotedPrintable(s)
+```
+
+**参数**
+
+* `s` — 要编码的字符串。[`String`](/zh/reference/data-types/string)
+
+**返回值**
+
+返回经 Quoted-Printable 编码的字符串。[`String`](/zh/reference/data-types/string)
+
+**示例**
+
+**使用示例**
+
+```sql title=Query
+SELECT encodeQuotedPrintable('Café = 3 €') AS encoded
+```
+
+```response title=Response
+┌─encoded───────────────────┐
+│ Caf=C3=A9 =3D 3 =E2=82=AC │
+└───────────────────────────┘
+```
+
 ## hex {#hex}
 
 引入版本：v1.1.0
@@ -424,6 +502,8 @@ SELECT char(0xD0, 0xBF, 0xD1, 0x80, 0xD0, 0xB8, 0xD0, 0xB2, 0xD0, 0xB5, 0xD1, 0x
 ```sql
 hex(arg)
 ```
+
+**别名**: `to_hex`
 
 **参数**
 
@@ -1066,9 +1146,11 @@ SELECT reinterpretAsUInt64(reverse(unbin('1110'))) AS num
 unhex(arg)
 ```
 
+**别名**：`from_hex`
+
 **参数**
 
-* `arg` — 包含任意个十六进制字符的字符串。[`String`](/zh/reference/data-types/string) 或 [`FixedString`](/zh/reference/data-types/fixedstring)
+* `arg` — 包含任意个十六进制数字的字符串。[`String`](/zh/reference/data-types/string) 或 [`FixedString`](/zh/reference/data-types/fixedstring)
 
 **返回值**
 

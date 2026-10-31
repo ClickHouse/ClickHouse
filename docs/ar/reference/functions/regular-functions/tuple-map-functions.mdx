@@ -150,7 +150,7 @@ SELECT extractKeyValuePairs('age:a\\x0A\\n\\0') AS kv;
 extractKeyValuePairs(data, [key_value_delimiter], [pair_delimiter], [quoting_character], [unexpected_quoting_character_strategy])
 ```
 
-**الأسماء البديلة**: `mapFromString`, `str_to_map`
+**الأسماء المستعارة**: `str_to_map`, `mapFromString`
 
 **الوسيطات**
 
@@ -835,7 +835,7 @@ SELECT mapFromArrays([1, 2, 3], map('a', 1, 'b', 2, 'c', 3))
 تعيد مفاتيح قيمة Map معيّنة.
 يمكن تحسين هذه الدالة عبر تمكين الإعداد [`optimize_functions_to_subcolumns`](/ar/reference/settings/session-settings/optimize#optimize_functions_to_subcolumns).
 عند تمكين هذا الإعداد، لا تقرأ الدالة سوى العمود الفرعي `keys` بدلًا من قيمة Map بالكامل.
-يُحوَّل الاستعلام `SELECT mapKeys(m) FROM table` إلى `SELECT m.keys FROM table`.
+يُحوَّل الاستعلام `SELECT mapKeys(m) FROM table` إلى `SELECT m.keys FROM table`.
 
 **الصيغة**
 
@@ -843,7 +843,9 @@ SELECT mapFromArrays([1, 2, 3], map('a', 1, 'b', 2, 'c', 3))
 mapKeys(map)
 ```
 
-**الوسائط**
+**الأسماء المستعارة**: `map_keys`
+
+**الوسيطات**
 
 * `map` — كائن الـ Map المراد استخراج المفاتيح منه. [`Map(K, V)`](/ar/reference/data-types/map)
 
@@ -935,12 +937,12 @@ SELECT mapPartialSort((k, v) -> v, 2, map('k1', 3, 'k2', 1, 'k3', 2))
 
 ## mapPopulateSeries {#mapPopulateSeries}
 
-أُضيف في: v20.10.0
+أُضيف v20.10.0
 
 تملأ أزواج المفتاح-القيمة المفقودة في map ذات مفاتيح صحيحة.
 ولدعم توسيع المفاتيح إلى ما بعد أكبر قيمة، يمكن تحديد مفتاح أقصى.
 وبصورة أدق، تُرجع الدالة map تكون فيها المفاتيح سلسلة تمتد من أصغر مفتاح إلى أكبر مفتاح (أو الوسيطة max إذا جرى تحديدها) بخطوة مقدارها 1، مع القيم المقابلة.
-إذا لم تُحدَّد قيمة لمفتاح ما، تُستخدَم قيمة افتراضية له.
+إذا لم تُحدَّد قيمة لمفتاح ما، تُستخدَم قيمة افتراضية له.
 في حال تكرار المفاتيح، لا تُربَط بالمفتاح إلا القيمة الأولى فقط (حسب ترتيب الظهور).
 
 **الصيغة**
@@ -958,7 +960,7 @@ mapPopulateSeries(map[, max]) | mapPopulateSeries(keys, values[, max])
 
 **القيمة المعادة**
 
-يعيد Map أو Tuple من مصفوفتين، حيث تحتوي الأولى على المفاتيح بترتيب مرتب، وتحتوي الثانية على القيم المقابلة لهذه المفاتيح. [`Map(K, V)`](/ar/reference/data-types/map) أو [`Tuple(Array(UInt*), Array(Any))`](/ar/reference/data-types/tuple)
+يعيد Map أو Tuple من مصفوفتين، حيث تحتوي الأولى على المفاتيح بترتيب مرتب، وتحتوي الثانية على القيم المقابلة لهذه المفاتيح. [`Map(K, V)`](/ar/reference/data-types/map) أو [`Tuple(Array(UInt*), Array)`](/ar/reference/data-types/tuple)
 
 **أمثلة**
 
@@ -972,7 +974,7 @@ SELECT mapPopulateSeries(map(1, 10, 5, 20), 6)
 {1:10,2:0,3:0,4:0,5:20,6:0}
 ```
 
-**مع المصفوفات المُحوَّلة**
+**مع المصفوفات المُحوَّلة**
 
 ```sql title=Query
 SELECT mapPopulateSeries([1, 2, 4], [11, 22, 44], 5)
@@ -1162,20 +1164,22 @@ SELECT mapUpdate(map('key1', 0, 'key3', 0), map('key1', 10, 'key2', 10))
 
 ## mapValues {#mapValues}
 
-قُدِّمت في: v21.2.0
+أُضيفت في: v21.2.0
 
 تعيد هذه الدالة قيم Map معيّن.
 يمكن تحسين هذه الدالة عبر تفعيل الإعداد [`optimize_functions_to_subcolumns`](/ar/reference/settings/session-settings/optimize#optimize_functions_to_subcolumns).
 عند تفعيل هذا الإعداد، لا تقرأ الدالة سوى العمود الفرعي `values` بدلًا من قراءة الـ Map بالكامل.
-يُحوَّل الاستعلام `SELECT mapValues(m) FROM table` إلى `SELECT m.values FROM table`.
+يُحوَّل الاستعلام `SELECT mapValues(m) FROM table` إلى `SELECT m.values FROM table`.
 
-**بناء الجملة**
+**الصيغة**
 
 ```sql
 mapValues(map)
 ```
 
-**الوسائط**
+**الأسماء المستعارة**: `map_values`
+
+**الوسيطات**
 
 * `map` — كائن Map لاستخراج القيم منه. [`Map(K, V)`](/ar/reference/data-types/map)
 

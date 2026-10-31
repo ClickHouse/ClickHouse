@@ -1,5 +1,5 @@
 ---
-description: '关于 ALTER DATABASE ... MODIFY COMMENT 语句的文档， 该语句可用于添加、修改或删除数据库注释。'
+description: '关于 ALTER DATABASE ... MODIFY COMMENT 语句的文档，该语句可用于添加、修改或删除数据库注释。'
 slug: /sql-reference/statements/alter/database-comment
 sidebarTitle: 'ALTER DATABASE ... MODIFY COMMENT'
 title: 'ALTER DATABASE ... MODIFY COMMENT'
@@ -13,17 +13,13 @@ doc_type: 'reference'
 注释的变更会同时反映在 [`system.databases`](/zh/reference/system-tables/databases)
 和 `SHOW CREATE DATABASE` 查询中。
 
-<div id="syntax">
-  ## 语法
-</div>
+## 语法 {#syntax}
 
 ```sql
 ALTER DATABASE [db].name [ON CLUSTER cluster] MODIFY COMMENT 'Comment'
 ```
 
-<div id="examples">
-  ## 示例
-</div>
+## 示例 {#examples}
 
 创建带注释的 `DATABASE`：
 
@@ -73,9 +69,7 @@ WHERE  name = 'database_with_comment';
 └─────────┘
 ```
 
-<div id="related-content">
-  ## 相关内容
-</div>
+## 相关内容 {#related-content}
 
 * [`COMMENT`](/zh/reference/statements/create/table#comment-clause) 子句
 * [`ALTER TABLE ... MODIFY COMMENT`](/zh/reference/statements/alter/comment)

@@ -14,6 +14,14 @@ import { ExperimentalBadge } from "/snippets/zh/components/ExperimentalBadge/Exp
 
 这些设置可在 [system.settings](/zh/reference/system-tables/settings) 中查看，并由 [源代码](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp) 自动生成。
 
+## use_aggregation_memory_tracker {#use_aggregation_memory_tracker}
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "1"},{"label": "`GROUP BY` 的两级转换仅将聚合状态占用的内存与 `group_by_two_level_threshold_bytes` 进行比较，该内存由专用的内存跟踪器测量（https:\/\/github.com\/ClickHouse\/ClickHouse\/pull\/107490）。在 26.7 之前，比较的是整个查询内存使用量的增长量。"}]}, {"id": "row-2","items": [{"label": "26.10"},{"label": "1"},{"label": "新增设置，用于选择 `GROUP BY` 两级转换测量聚合内存的方式。该设置所控制的变更已在 26.7 中发布，其导致的内存回归问题已在 26.9 中修复。"}]}]} />
+
+使用聚合专用的内存跟踪器测量聚合状态的大小，并将其与 `group_by_two_level_threshold_bytes` 进行比较。禁用时，大小按聚合创建以来整个查询内存使用量的增长量计算，因此即使聚合状态很小，也可能被转换为两级。
+
 ## use_async_executor_for_materialized_views {#use_async_executor_for_materialized_views}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
@@ -53,6 +61,8 @@ import { ExperimentalBadge } from "/snippets/zh/components/ExperimentalBadge/Exp
 
 每个缓存条目保存某个条带内的一段连续粒度：只有当某个粒度从第一行到最后一行都被完整读取后，它才会进入缓存；从缓存读取时按粒度逐个提供数据；不同读取操作写入的范围会被合并，因此即使各次读取将同一个分片划分为不同的标记范围，也能共享这些缓存条目。
 
+该缓存同样适用于从本地文件系统 (`file` 表函数和 `File` 表引擎) 、对象存储 (`s3`、`azureBlobStorage` 及其对应的表引擎) 读取的 `Parquet` 文件，以及由数据湖表读取的 `Parquet` 文件。此时，每个缓存条目保存一个行组中的一整列，并以文件路径、文件版本 (对象的 ETag，或本地文件的修改时间、inode 和大小) 、文件中的列以及读取时所用的类型为键。只有当某个行组的所有行都已读取、且尚未对其应用任何过滤器时，该行组中的列才会写入缓存：使用 `PREWHERE` 时，过滤条件涉及的列满足这一条件，而其他列只会针对通过过滤的行进行读取。本地文件只有在数秒内未被修改后才会被缓存，以确保其版本能够唯一标识其内容。
+
 ## use_concurrency_control {#use_concurrency_control}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
@@ -60,6 +70,18 @@ import { ExperimentalBadge } from "/snippets/zh/components/ExperimentalBadge/Exp
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.12"},{"label": "1"},{"label": "默认启用并发控制"}]}]} />
 
 遵守服务器的并发控制 (参见全局服务器设置 `concurrent_threads_soft_limit_num` 和 `concurrent_threads_soft_limit_ratio_to_cores`) 。如果禁用，即使服务器已过载，也允许使用更多线程 (不建议在正常使用场景下这样做，通常仅测试时才需要) 。
+
+## use_concurrency_control_for_max_threads {#use_concurrency_control_for_max_threads}
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "1"},{"label": "新增设置，用于根据并发控制中 CPU 插槽的公平份额来确定查询的并行度"}]}]} />
+
+根据服务器并发控制中 CPU 插槽的公平份额 (而非 CPU 核心数) 来确定查询的并行度 (即规划查询时所用的流和线程数量) 。公平份额是指将槽位上限 (参见全局服务器设置 `concurrent_threads_soft_limit_num` 和 `concurrent_threads_soft_limit_ratio_to_cores`) 在当前运行的流水线与新查询之间平均分配后得到的值。
+
+这样一来，当大量查询并发运行时，每个查询在规划时都会使用更少的流，从而占用更少的内存，合并各线程部分结果 (例如聚合状态) 时消耗的 CPU 也更少，进而提高总吞吐量。而在服务器空闲时规划的查询，仍会像以前一样使用全部 CPU 核心。
+
+仅当 `max_threads` 为 `auto` (未显式设置) 且已启用 `use_concurrency_control` 时，此设置才会生效。
 
 ## use_constant_folding_in_index_analysis {#use_constant_folding_in_index_analysis}
 

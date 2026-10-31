@@ -12,14 +12,14 @@ doc_type: 'reference'
 
 引入版本：v21.1.0
 
-对来自两个总体的样本应用 Student&#39;s t 检验。
+对来自两个总体的样本应用 Student t 检验。
 
 两个样本的值都位于 `sample_data` 列中。如果 `sample_index` 等于 0，则该行中的值属于第一个总体的样本；否则，属于第二个总体的样本。
 原假设为两个总体的均值相等。假设数据服从方差相等的正态分布。
 
 **另请参阅**
 
-* [Student&#39;s t 检验](https://en.wikipedia.org/wiki/Student%27s_t-test)
+* [Student t 检验](https://en.wikipedia.org/wiki/Student%27s_t-test)
 * [welchTTest 函数](/zh/reference/functions/aggregate-functions/welchTTest)
 
 **语法**
@@ -55,7 +55,7 @@ SELECT studentTTest(sample_data, sample_index) FROM student_ttest;
 ```response title=Response
 ┌─studentTTest(sample_data, sample_index)───┐
 ├──────────t_statistic─┬────────────p_value─┤
-│ -0.21739130434783777 │ 0.8385421208415734 │
+│ -0.21739130434783777 │ 0.8385421208415735 │
 └──────────────────────┴────────────────────┘
 ```
 
@@ -63,5 +63,5 @@ SELECT studentTTest(sample_data, sample_index) FROM student_ttest;
 
 **另请参阅**
 
-* [Student&#39;s t 检验](https://en.wikipedia.org/wiki/Student%27s_t-test)
+* [Student t 检验](https://en.wikipedia.org/wiki/Student%27s_t-test)
 * [welchTTest 函数](/zh/reference/functions/aggregate-functions/welchTTest)

@@ -18,10 +18,19 @@ doc_type: 'guide'
     curl https://clickhouse.com/ | sh
     ```
 
-    В Linux и macOS при этом также устанавливается [`clickhousectl`](/ru/get-started/setup/self-managed/clickhousectl),
-    ClickHouse CLI, в `~/.local/bin` (с псевдонимом `chctl`). `clickhousectl`
-    помогает устанавливать и управлять несколькими локальными версиями ClickHouse, запускать серверы
-    в фоновом режиме и управлять ClickHouse Cloud. Инструкции по работе через CLI см. на [странице установки clickhousectl](/ru/get-started/setup/self-managed/clickhousectl).
+    В Linux и macOS (x86&#95;64 и ARM64) при этом также устанавливается [`clickhousectl`](/ru/get-started/setup/self-managed/clickhousectl),
+    ClickHouse CLI, в `~/.local/bin` (с псевдонимом `chctl`). Если скрипт
+    сообщает, что `~/.local/bin` отсутствует в вашем `PATH`, добавьте его:
+
+    ```bash
+    export PATH="$HOME/.local/bin:$PATH"
+    ```
+
+    `clickhousectl` помогает устанавливать и управлять несколькими локальными версиями ClickHouse,
+    запускать серверы ClickHouse и Postgres в фоновом режиме и управлять ClickHouse Cloud.
+
+    Если вы хотите, чтобы `clickhousectl` сам устанавливал версии ClickHouse и управлял ими,
+    выполните `clickhousectl local use latest`. Инструкции по работе через CLI см. на [странице установки clickhousectl](/ru/get-started/setup/self-managed/clickhousectl).
 
     Чтобы установить только бинарный файл `clickhouse` без `clickhousectl`, задайте
     `CLICKHOUSE_ONLY=1`:
@@ -87,7 +96,7 @@ doc_type: 'guide'
     Теперь вы готовы отправлять SQL-команды в ClickHouse!
 
     <Tip>
-      Раздел [Быстрый старт](/ru/get-started/setup/install) пошагово покажет, как создавать таблицы и выполнять вставку данных.
+      Руководство [Создание таблиц в ClickHouse](/ru/get-started/quickstarts/creating-tables) пошагово покажет, как создавать таблицы и вставлять в них данные.
     </Tip>
   </Step>
 </Steps>

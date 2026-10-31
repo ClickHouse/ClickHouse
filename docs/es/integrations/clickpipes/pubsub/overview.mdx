@@ -19,14 +19,12 @@ import { Image } from "/snippets/es/components/Image.jsx";
 Los ClickPipes de Pub/Sub se pueden desplegar y administrar manualmente desde la UI de ClickPipes, así como mediante programación con [OpenAPI](/es/integrations/clickpipes/programmatic-access/openapi) y [Terraform](/es/integrations/clickpipes/programmatic-access/terraform).
 
 <div id="prerequisite">
-  ## Requisito previo
+  ## Requisito previo {#prerequisite}
 </div>
 
-Ya se ha familiarizado con la [introducción a ClickPipes](/es/integrations/clickpipes/home), tiene acceso a un proyecto de GCP que contiene el tema desde el que desea ingestar y ha creado una cuenta de servicio con los permisos adecuados de Pub/Sub. Siga la [guía de permisos de IAM para Pub/Sub](/es/integrations/clickpipes/pubsub/auth) para conocer el conjunto exacto de permisos que requiere ClickPipes.
+Ya se ha familiarizado con la [introducción a ClickPipes](/es/integrations/clickpipes/home), tiene acceso a un proyecto de GCP que contiene el tema desde el que desea ingestar y puede otorgar los permisos adecuados de Pub/Sub a la cuenta de servicio que utiliza ClickPipes. Siga la [guía de permisos de IAM para Pub/Sub](/es/integrations/clickpipes/pubsub/auth) para conocer las opciones de autenticación y el conjunto exacto de permisos necesarios.
 
-<div id="creating-your-first-clickpipe">
-  ## Crear tu primer ClickPipe
-</div>
+## Crear tu primer ClickPipe {#creating-your-first-clickpipe}
 
 1. Accede a la SQL Console de tu servicio de ClickHouse Cloud.
 
@@ -49,7 +47,7 @@ Ya se ha familiarizado con la [introducción a ClickPipes](/es/integrations/clic
    * **Formato de datos.** ClickPipes consulta el registro de esquemas de Pub/Sub cuando seleccionas un tema. Si el tema tiene asociado un esquema Avro o Protobuf nativo, el formato de datos y el esquema se detectan automáticamente, y los selectores quedan fijados al esquema más reciente del tema. Los temas sin un esquema nativo usan JSONEachRow de forma predeterminada.
    * **Offset inicial.** Elige desde dónde comenzar a consumir. Las opciones disponibles son **Latest** (solo mensajes nuevos), **Earliest** (los mensajes retenidos más antiguos) y **Seek to Timestamp** (con un selector de fecha y hora en UTC).
    * **Expresión de filtro (opcional).** Un [filtro de suscripción](https://cloud.google.com/pubsub/docs/subscription-message-filter) de Pub/Sub sobre atributos del mensaje; por ejemplo, `attributes.type = "telemetry"`. Los filtros se aplican solo a los atributos del mensaje, no al payload, y no pueden cambiarse después de crear el pipe (para cambiar el filtro, es necesario volver a crear el pipe).
-   * La UI mostrará un mensaje de muestra del tema seleccionado, con un interruptor **Flatten object** que te permite obtener una vista previa de cómo se aplanaría el JSON anidado en el destino.
+   * La interfaz de usuario mostrará un mensaje de muestra del tema seleccionado, con un interruptor **Flatten object** que te permite obtener una vista previa de cómo se aplanaría el JSON anidado en el destino.
 
 <Image img="/images/integrations/data-ingestion/clickpipes/cp_step3_pubsub.webp" alt="Configurar el tema de Pub/Sub, el formato y el offset inicial" size="lg" border />
 
@@ -61,7 +59,7 @@ También puedes personalizar la configuración avanzada usando los controles pro
 
 <Image img="/images/integrations/data-ingestion/clickpipes/cp_step4a3.webp" alt="Configurar controles avanzados" size="lg" border />
 
-7. Como alternativa, puedes decidir ingestar tus datos en una tabla de ClickHouse existente. En ese caso, la UI te permitirá mapear campos desde el origen a los campos de ClickHouse de la tabla de destino seleccionada.
+7. Como alternativa, puedes decidir ingestar tus datos en una tabla de ClickHouse existente. En ese caso, la interfaz de usuario te permitirá mapear campos desde el origen a los campos de ClickHouse de la tabla de destino seleccionada.
 
 <Image img="/images/integrations/data-ingestion/clickpipes/cp_step4b.webp" alt="Usar una tabla existente" size="lg" border />
 
@@ -70,7 +68,7 @@ También puedes personalizar la configuración avanzada usando los controles pro
 **Permisos:** ClickPipes creará un usuario dedicado para escribir datos en una tabla de destino. Puedes seleccionar un rol para este usuario interno usando un rol personalizado o uno de los roles predefinidos:
 
 * `Full access`: con acceso completo al clúster. Puede ser útil si usas una vista materializada o un Diccionario con la tabla de destino.
-  * `Only destination table`: con permisos `INSERT` solo sobre la tabla de destino.
+* `Only destination table`: con permisos `INSERT` solo sobre la tabla de destino.
 
 <Image img="/images/integrations/data-ingestion/clickpipes/cp_step5.webp" alt="Permisos" border />
 
@@ -80,7 +78,7 @@ También puedes personalizar la configuración avanzada usando los controles pro
 
 <Image img="/images/integrations/data-ingestion/clickpipes/cp_remove.webp" alt="Aviso de eliminación" size="lg" border />
 
-La tabla de resumen ofrece controles para mostrar datos de ejemplo de la tabla de origen o de la tabla de destino en ClickHouse
+La tabla de resumen ofrece controles para mostrar datos de muestra de la tabla de origen o de la tabla de destino en ClickHouse
 
 <Image img="/images/integrations/data-ingestion/clickpipes/cp_destination.webp" alt="Ver destino" size="lg" border />
 
@@ -91,7 +89,7 @@ Además, ofrece controles para eliminar el ClickPipe y mostrar un resumen de la 
 10. **¡Enhorabuena!** Has configurado correctamente tu primer ClickPipe de Pub/Sub. Se ejecutará de forma continua, ingestando datos en tiempo real desde tu tema de Pub/Sub a tu servicio de ClickHouse Cloud.
 
 <div id="managed-subscriptions">
-  ## Suscripciones administradas
+  ## Suscripciones administradas {#managed-subscriptions}
 </div>
 
 Los mensajes de Pub/Sub se consumen a través de suscripciones, no directamente desde los temas. ClickPipes crea y administra una suscripción dedicada para cada pipe; usted solo tiene que seleccionar un tema.
@@ -105,7 +103,7 @@ Los mensajes de Pub/Sub se consumen a través de suscripciones, no directamente 
 Por lo tanto, la cuenta de servicio que proporcione debe tener permiso para crear y eliminar suscripciones en el proyecto, además de consumir mensajes desde ellas. Consulte la [guía de permisos de IAM de Pub/Sub](/es/integrations/clickpipes/pubsub/auth) para ver la lista completa.
 
 <div id="supported-data-formats">
-  ## Formatos de datos compatibles
+  ## Formatos de datos compatibles {#supported-data-formats}
 </div>
 
 Los formatos compatibles son:
@@ -117,7 +115,7 @@ Los formatos compatibles son:
 Para Avro y Protobuf, el esquema se obtiene del registro de esquemas de Pub/Sub del tema. El pipe siempre usa la revisión más reciente del esquema del tema; el selector de esquemas en la UI es de solo lectura por diseño.
 
 <div id="compression">
-  ## Compresión
+  ## Compresión {#compression}
 </div>
 
 ClickPipes para Pub/Sub detecta y descomprime automáticamente los mensajes comprimidos. El cliente de Pub/Sub entrega bytes sin procesar; ClickPipes se encarga de la descompresión sin necesidad de ninguna configuración.
@@ -136,11 +134,11 @@ La compresión se detecta automáticamente mediante los bytes mágicos de cada m
 </Note>
 
 <div id="supported-data-types">
-  ## Tipos de datos admitidos
+  ## Tipos de datos admitidos {#supported-data-types}
 </div>
 
 <div id="standard-types-support">
-  ### Compatibilidad con tipos estándar
+  ### Compatibilidad con tipos estándar {#standard-types-support}
 </div>
 
 Actualmente, ClickPipes admite los siguientes tipos de datos de ClickHouse:
@@ -163,7 +161,7 @@ Actualmente, ClickPipes admite los siguientes tipos de datos de ClickHouse:
 * Tipos SimpleAggregateFunction (para destinos AggregatingMergeTree o SummingMergeTree)
 
 <div id="variant-type-support">
-  ### Compatibilidad con el tipo Variant
+  ### Compatibilidad con el tipo Variant {#variant-type-support}
 </div>
 
 Puede especificar manualmente un tipo Variant (como `Variant(String, Int64, DateTime)`) para cualquier campo JSON
@@ -171,14 +169,14 @@ en el flujo de datos de origen. Debido a la forma en que ClickPipes determina qu
 en la definición de Variant; por ejemplo, `Variant(Int64, UInt32)` no es compatible.
 
 <div id="json-type-support">
-  ### Compatibilidad con el tipo JSON
+  ### Compatibilidad con el tipo JSON {#json-type-support}
 </div>
 
 Los campos JSON que siempre sean un objeto JSON pueden asignarse a una columna de destino de tipo JSON. Tendrá que cambiar manualmente la
 columna de destino al tipo JSON deseado, incluidas las rutas fijas o excluidas.
 
 <div id="pubsub-virtual-columns">
-  ## Columnas virtuales de Pub/Sub
+  ## Columnas virtuales de Pub/Sub {#pubsub-virtual-columns}
 </div>
 
 Las siguientes columnas virtuales son compatibles con los temas de Pub/Sub. Al crear una nueva tabla de destino, se pueden añadir columnas virtuales mediante el botón `Add Column`.
@@ -194,7 +192,7 @@ Las siguientes columnas virtuales son compatibles con los temas de Pub/Sub. Al c
 El campo `_raw_message` puede usarse cuando solo se requiere el payload completo del mensaje de Pub/Sub (por ejemplo, al usar funciones de ClickHouse [`JsonExtract*`](/es/reference/functions/regular-functions/json-functions#jsonextract-functions) para poblar una vista materializada posterior). En esos pipes, eliminar todas las columnas &quot;no virtuales&quot; puede mejorar el rendimiento de ClickPipes.
 
 <div id="limitations">
-  ## Limitaciones
+  ## Limitaciones {#limitations}
 </div>
 
 * [DEFAULT](/es/reference/statements/create/table#default) no se admite.
@@ -203,11 +201,11 @@ El campo `_raw_message` puede usarse cuando solo se requiere el payload completo
 * Los filtros se aplican solo a los atributos del mensaje, no al payload del mensaje.
 
 <div id="performance">
-  ## Rendimiento
+  ## Rendimiento {#performance}
 </div>
 
 <div id="batching">
-  ### Procesamiento por lotes
+  ### Procesamiento por lotes {#batching}
 </div>
 
 ClickPipes inserta datos en ClickHouse en lotes. Esto evita crear demasiadas partes en la base de datos, lo que puede provocar problemas de rendimiento en el clúster.
@@ -218,7 +216,7 @@ Los lotes se insertan cuando se cumple uno de los siguientes criterios:
 * El lote ha permanecido abierto durante el tiempo máximo permitido (5 segundos)
 
 <div id="latency">
-  ### Latencia
+  ### Latencia {#latency}
 </div>
 
 La latencia (definida como el tiempo que transcurre entre la publicación de un mensaje de Pub/Sub y el momento en que está disponible en ClickHouse) dependerá de varios factores (latencia del publicador, latencia de la red, tamaño/formato del mensaje). El [procesamiento por lotes](#batching) descrito en la sección anterior también afectará a la latencia. Siempre recomendamos probar su caso de uso específico para entender qué latencia puede esperar.
@@ -226,7 +224,7 @@ La latencia (definida como el tiempo que transcurre entre la publicación de un 
 Si tiene requisitos específicos de baja latencia, [contáctenos](https://clickhouse.com/company/contact?loc=clickpipes).
 
 <div id="ordering-keys">
-  ### Claves de ordenación
+  ### Claves de ordenación {#ordering-keys}
 </div>
 
 Pub/Sub garantiza que los mensajes que comparten la misma [clave de ordenación](https://cloud.google.com/pubsub/docs/ordering) se entregan en el orden de publicación a un único suscriptor. ClickPipes habilita la ordenación en sus suscripciones gestionadas de forma predeterminada: cuando los mensajes incluyen claves de ordenación, los suscriptores los reciben en orden; cuando no las incluyen, el comportamiento no cambia.
@@ -234,7 +232,7 @@ Pub/Sub garantiza que los mensajes que comparten la misma [clave de ordenación]
 Si su productor publica todos los mensajes con un número reducido de claves de ordenación (o con una sola clave), Pub/Sub dirigirá esos mensajes a un número reducido de suscriptores, lo que puede limitar el rendimiento horizontal. Recomendamos omitir las claves de ordenación cuando no sea necesario mantener el orden, o bien usar una clave de ordenación de alta cardinalidad.
 
 <div id="scaling">
-  ### Escalado
+  ### Escalado {#scaling}
 </div>
 
 ClickPipes para Pub/Sub está diseñado para escalar tanto horizontal como verticalmente. Cada pipe utiliza una única suscripción gestionada de Pub/Sub; esto no se puede configurar. De forma predeterminada, un consumidor lee de esa suscripción; puedes aumentar el número de consumidores durante la creación del ClickPipe o en cualquier otro momento en **Configuración** -&gt; **Configuración avanzada** -&gt; **Escalado**. ClickPipes distribuye automáticamente los mensajes de la suscripción entre los consumidores en ejecución; no se requiere coordinación adicional.
@@ -244,15 +242,15 @@ ClickPipes ofrece alta disponibilidad con una arquitectura distribuida entre zon
 Independientemente del número de consumidores en ejecución, la tolerancia a fallos está garantizada por diseño. Si un consumidor o la infraestructura subyacente fallan, ClickPipes reiniciará automáticamente el consumidor y seguirá procesando mensajes.
 
 <div id="delivery-semantics">
-  ### Semántica de entrega
+  ### Semántica de entrega {#delivery-semantics}
 </div>
 
 ClickPipes para Pub/Sub ofrece entrega **al menos una vez**. Un mensaje de Pub/Sub solo se confirma después de que la fila correspondiente se haya insertado en ClickHouse (o se haya escrito en la tabla de errores en el caso de registros malformados); todos los mensajes se confirman una vez procesados, incluidos los registros incorrectos enviados a la tabla de errores, para evitar una reentrega infinita. Si una réplica falla después de la inserción pero antes de que la confirmación llegue a Pub/Sub, el mensaje se volverá a entregar una vez vencido el ack deadline y se insertará de nuevo, por lo que los consumidores posteriores deben tolerar duplicados. Si necesita exactly-once semantics, deduplique aguas abajo usando la columna virtual `_message_id` (cada ID de mensaje de Pub/Sub es único dentro de un tema).
 
-<div id="authentication">
-  ## Autenticación
-</div>
+## Autenticación {#authentication}
 
-ClickPipes para Pub/Sub se autentica en GCP mediante una clave JSON de una cuenta de servicio. Al crear el pipe, subes el archivo de clave; ClickPipes lo cifra en reposo y lo usa en el entorno de ejecución para consumir mensajes y gestionar el ciclo de vida de la suscripción gestionada.
+La Interfaz de usuario de ClickPipes usa una clave JSON de una cuenta de servicio. Al crear el pipe, subes el archivo de clave; ClickPipes lo cifra en reposo y lo usa en el entorno de ejecución para consumir mensajes y gestionar el ciclo de vida de la suscripción gestionada.
+
+GCP workload identity también está disponible en Beta. Consulta la [guía de GCP workload identity](/es/integrations/clickpipes/security/gcp-workload-identity) para ver las instrucciones de configuración.
 
 Para ver la lista exacta de permisos de IAM necesarios y una definición recomendada de un rol personalizado, consulta la [guía de permisos de IAM de Pub/Sub](/es/integrations/clickpipes/pubsub/auth).

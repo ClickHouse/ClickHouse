@@ -20,14 +20,18 @@ title: 시스템 로그 매개변수
 | `buffer_size_rows_flush_threshold` | 행 수에 대한 임계값입니다. 이 임계값에 도달하면 로그를 디스크로 플러시하는 작업이 백그라운드에서 시작됩니다.                                                                       | `max_size_rows / 2` |                                                                                     |
 | `flush_on_crash`                   | 충돌 발생 시 로그를 디스크에 덤프할지 여부를 설정합니다.                                                                                                    | `false`             |                                                                                     |
 
-또한 다음 서버 수준 설정은 모든 시스템 로그 테이블의 기본 플러시 정책을 제어합니다:
+`database`, `table`, `engine`을 제외한 모든 설정은 `system_tables` 섹션에서 모든 시스템 로그 테이블에 대해 한 번에 설정할 수도 있습니다. 개별 테이블 섹션에 지정한 설정이 우선 적용되며, 테이블별로 지정한 `engine`은 전역 `partition_by`, `ttl`, `order_by`, `storage_policy`, `settings`를 포함한 엔진 정의 전체를 대체합니다:
 
 ```xml
-<default_system_log_flush_policy>
-    <skip_alias_columns>true</skip_alias_columns>
-</default_system_log_flush_policy>
+<system_tables>
+    <ttl>event_date + INTERVAL 30 DAY DELETE</ttl>
+</system_tables>
 ```
+
+`system_tables` 섹션에서는 다음 설정도 추가로 사용할 수 있습니다. 이 설정은 모든 시스템 로그 테이블에 적용되며 테이블별로 지정할 수 없습니다:
 
 | 설정                   | 설명                                                                            | 기본값     |
 | -------------------- | ----------------------------------------------------------------------------- | ------- |
 | `skip_alias_columns` | `true`로 설정하면 시스템 로그 table 스키마에서 ALIAS 컬럼을 제외합니다. S3를 백엔드로 사용하는 시스템 로그에 필요합니다. | `false` |
+
+이 설정의 이전 위치인 `default_system_log_flush_policy.skip_alias_columns`는 사용 중단 권고 상태이며, `system_tables.skip_alias_columns`가 설정되지 않은 경우에만 사용됩니다.
