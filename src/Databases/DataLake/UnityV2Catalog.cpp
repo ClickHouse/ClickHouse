@@ -138,7 +138,8 @@ UnityV2Catalog::UnityV2Catalog(
     const std::string & auth_scope_,
     const std::string & auth_header_,
     const std::string & oauth_server_uri_,
-    DB::ContextPtr context_)
+    DB::ContextPtr context_,
+    bool load_only_referenced_snapshots_)
     : ICatalog(catalog_)
     , DB::WithContext(context_)
     , base_url_str(base_url_)
@@ -146,6 +147,7 @@ UnityV2Catalog::UnityV2Catalog(
     , log(getLogger("UnityV2Catalog(" + catalog_ + ")"))
     , auth_scope(auth_scope_)
     , oauth_server_uri(oauth_server_uri_)
+    , load_only_referenced_snapshots(load_only_referenced_snapshots_)
 {
     maybeSetAuthHeader(catalog_credential_, auth_header_);
     if (auth_header)
@@ -877,7 +879,8 @@ std::shared_ptr<RestCatalog> UnityV2Catalog::getIcebergRestCatalog(bool force_re
         /* oauth_server_use_request_body= */ false,
         /// Unity namespaces are single-level schemas. Only matters for namespace listing, which this catalog never does.
         /* flat_namespaces= */ true,
-        getContext());
+        getContext(),
+        load_only_referenced_snapshots);
 
     std::lock_guard lock(token_mutex);
     /// A concurrent refresh may have replaced the token meanwhile; a catalog built on the old one must not be cached.

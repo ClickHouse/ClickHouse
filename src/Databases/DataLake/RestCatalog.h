@@ -36,7 +36,8 @@ public:
         const std::string & oauth_server_uri_,
         bool oauth_server_use_request_body_,
         bool flat_namespaces_,
-        DB::ContextPtr context_);
+        DB::ContextPtr context_,
+        bool load_only_referenced_snapshots_ = false);
 
     ~RestCatalog() override = default;
 
@@ -153,7 +154,8 @@ protected:
         const std::string & oauth_server_uri_,
         bool oauth_server_use_request_body_,
         bool flat_namespaces_,
-        DB::ContextPtr context_);
+        DB::ContextPtr context_,
+        bool load_only_referenced_snapshots_ = false);
 
     void createNamespaceIfNotExists(const String & namespace_name) const override;
 
@@ -170,6 +172,7 @@ protected:
     std::string oauth_server_uri;
     bool oauth_server_use_request_body;
     bool flat_namespaces = false;
+    const bool load_only_referenced_snapshots = false;
     mutable MultiVersion<AccessToken> access_token;
 
     Poco::Net::HTTPBasicCredentials credentials{};
@@ -186,6 +189,9 @@ protected:
         const std::optional<DB::HTTPHeaderEntries> & auth_headers) const;
 
     Poco::URI::QueryParameters createParentNamespaceParams(const std::string & base_namespace) const;
+
+    /// ClickHouse reads snapshots from the metadata file, so the load-table response needs only the referenced ones.
+    Poco::URI::QueryParameters getLoadTableParams() const;
 
     using StopCondition = std::function<bool(const std::string & namespace_name)>;
     using ExecuteFunc = std::function<void(const std::string & namespace_name)>;
@@ -289,7 +295,8 @@ public:
         const std::string & oauth_server_uri_,
         bool oauth_server_use_request_body_,
         bool flat_namespaces_,
-        DB::ContextPtr context_);
+        DB::ContextPtr context_,
+        bool load_only_referenced_snapshots_ = false);
 
     DB::DatabaseDataLakeCatalogType getCatalogType() const override
     {
@@ -340,7 +347,8 @@ public:
         const std::string & google_adc_refresh_token_,
         const std::string & google_adc_quota_project_id_,
         DB::ContextPtr context_,
-        bool allow_server_credentials_in_user_queries_);
+        bool allow_server_credentials_in_user_queries_,
+        bool load_only_referenced_snapshots_ = false);
 
     DB::DatabaseDataLakeCatalogType getCatalogType() const override
     {
@@ -408,7 +416,8 @@ public:
         const std::string & oauth_server_uri_,
         bool oauth_server_use_request_body_,
         bool flat_namespaces_,
-        DB::ContextPtr context_);
+        DB::ContextPtr context_,
+        bool load_only_referenced_snapshots_ = false);
 
     DB::DatabaseDataLakeCatalogType getCatalogType() const override
     {

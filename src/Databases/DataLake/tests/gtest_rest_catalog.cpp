@@ -6,7 +6,11 @@
 
 #include <Common/Exception.h>
 #include <Common/ProfileEvents.h>
+#include <Common/SettingsChanges.h>
 #include <Common/tests/gtest_global_context.h>
+#include <Core/UUID.h>
+#include <Databases/DataLake/DatabaseDataLake.h>
+#include <Databases/DataLake/DatabaseDataLakeSettings.h>
 #include <Databases/DataLake/HTTPBasedCatalogUtils.h>
 #include <Databases/DataLake/RestCatalog.h>
 #include <IO/HTTPCommon.h>
@@ -124,6 +128,9 @@ struct RequestCounters
     std::atomic<size_t> doomed_child_listing{0};
     std::atomic<size_t> doomed_table_listing{0};
     std::atomic<size_t> root_listing{0};
+    /// Load-table requests for `namespace.snapshots_table`, by their `snapshots` query parameter.
+    std::atomic<size_t> load_table_refs{0};
+    std::atomic<size_t> load_table_without_snapshots_param{0};
 };
 
 void writeJSON(Poco::Net::HTTPServerResponse & response, const std::string & body, Poco::Net::HTTPResponse::HTTPStatus status = Poco::Net::HTTPResponse::HTTP_OK)
@@ -387,6 +394,24 @@ public:
             return;
         }
 
+        if (path == "/v1/namespaces/namespace/tables/snapshots_table")
+        {
+            if (counters)
+            {
+                const auto snapshots_param
+                    = std::find_if(params.begin(), params.end(), [](const auto & param) { return param.first == "snapshots"; });
+                if (snapshots_param == params.end())
+                    ++counters->load_table_without_snapshots_param;
+                else if (snapshots_param->second == "refs")
+                    ++counters->load_table_refs;
+            }
+            writeJSON(
+                response,
+                R"({"metadata-location":"s3://bucket/snapshots_table/metadata/v1.metadata.json",)"
+                R"("metadata":{"table-uuid":"22222222-3333-4444-5555-666666666666","location":"s3://bucket/snapshots_table"}})");
+            return;
+        }
+
         if (path == "/v1/namespaces/namespace/tables/missing_table")
         {
             writeError(response, Poco::Net::HTTPResponse::HTTP_NOT_FOUND, R"({"error":{"message":"Table does not exist","type":"NoSuchTableException","code":404}})");
@@ -533,6 +558,22 @@ std::unique_ptr<RestCatalog> makeRestCatalog(const RestCatalogTestServer & serve
         /* flat_namespaces */false,
         context);
 }
+
+#if USE_PARQUET
+std::shared_ptr<DB::DatabaseDataLake> makeRestDataLakeDatabase(const RestCatalogTestServer & server, const DB::SettingsChanges & extra_settings)
+{
+    /// `DatabaseDataLake::initialize` builds the catalog with the global context, which `getContext` creates.
+    getContext();
+    DB::SettingsChanges changes{{"catalog_type", "rest"}, {"warehouse", "warehouse"}};
+    changes.insert(changes.end(), extra_settings.begin(), extra_settings.end());
+    DB::DatabaseDataLakeSettings settings;
+    settings.applyChanges(changes);
+    return std::make_shared<DB::DatabaseDataLake>(
+        "db", server.getUrl(), settings, /* database_engine_definition */ nullptr, /* table_engine_definition */ nullptr,
+        DB::UUIDHelpers::Nil, /* allow_server_credentials_in_user_queries */ false,
+        /* is_loading_from_existing_metadata */ false, /* lazy_init */ true);
+}
+#endif
 
 DB::Names sortedTableNames(const CatalogTables & tables)
 {
@@ -778,6 +819,45 @@ TEST(RestCatalog, TryGetTableMetadataAuthErrorPropagates)
 
     EXPECT_THROW(catalog.existsTable("namespace", "expired_token_table"), DB::HTTPException);
 }
+
+#if USE_PARQUET
+TEST(RestCatalog, LoadTableSendsNoSnapshotsParameterByDefault)
+{
+    RequestCounters counters;
+    RestCatalogTestServer server(CatalogShape::TopLevelTable, /* token_expires_in_seconds */ DEFAULT_TOKEN_EXPIRES_IN_SECONDS, &counters);
+    auto database = makeRestDataLakeDatabase(server, {});
+    auto catalog = database->getCatalog();
+
+    auto metadata = TableMetadata().withLocation();
+    EXPECT_TRUE(catalog->tryGetTableMetadata("namespace", "snapshots_table", metadata));
+    EXPECT_EQ(metadata.getLocation(), "s3://bucket/snapshots_table");
+    EXPECT_EQ(counters.load_table_without_snapshots_param.load(), 1u);
+    EXPECT_EQ(counters.load_table_refs.load(), 0u);
+}
+
+TEST(RestCatalog, LoadTableRequestsReferencedSnapshotsWhenConfigured)
+{
+    RequestCounters counters;
+    RestCatalogTestServer server(CatalogShape::TopLevelTable, /* token_expires_in_seconds */ DEFAULT_TOKEN_EXPIRES_IN_SECONDS, &counters);
+    auto database = makeRestDataLakeDatabase(server, {{"snapshot_loading_mode", "refs"}});
+    auto catalog = database->getCatalog();
+
+    auto metadata = TableMetadata().withLocation().withDataLakeSpecificProperties();
+    EXPECT_TRUE(catalog->tryGetTableMetadata("namespace", "snapshots_table", metadata));
+    EXPECT_EQ(metadata.getLocation(), "s3://bucket/snapshots_table");
+    const auto properties = metadata.getDataLakeSpecificProperties();
+    ASSERT_TRUE(properties.has_value());
+    EXPECT_EQ(properties->iceberg_metadata_file_location, "s3://bucket/snapshots_table/metadata/v1.metadata.json");
+    EXPECT_EQ(counters.load_table_refs.load(), 1u);
+
+    /// The vended-credentials refresh loads the table too. The response has no `config`, so it yields no credentials.
+    auto refresh_credentials = catalog->getCredentialsConfigurationCallback(DB::StorageID("db", "namespace.snapshots_table"), metadata);
+    ASSERT_TRUE(refresh_credentials.has_value());
+    EXPECT_EQ((*refresh_credentials)(), nullptr);
+    EXPECT_EQ(counters.load_table_refs.load(), 2u);
+    EXPECT_EQ(counters.load_table_without_snapshots_param.load(), 0u);
+}
+#endif
 
 /// The tests below cover a namespace that another client drops after it was listed but before its
 /// own listing is read. Such a namespace has no tables, so a listing must skip it and return the
