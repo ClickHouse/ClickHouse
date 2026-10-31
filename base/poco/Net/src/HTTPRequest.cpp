@@ -37,6 +37,7 @@ const std::string HTTPRequest::HTTP_DELETE         = "DELETE";
 const std::string HTTPRequest::HTTP_TRACE          = "TRACE";
 const std::string HTTPRequest::HTTP_CONNECT        = "CONNECT";
 const std::string HTTPRequest::HTTP_PATCH          = "PATCH";
+const std::string HTTPRequest::HTTP_QUERY          = "QUERY";
 const std::string HTTPRequest::HOST                = "Host";
 const std::string HTTPRequest::COOKIE              = "Cookie";
 const std::string HTTPRequest::AUTHORIZATION       = "Authorization";

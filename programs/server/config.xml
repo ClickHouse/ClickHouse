@@ -157,7 +157,7 @@
         </header>
         <header>
             <name>Access-Control-Allow-Methods</name>
-            <value>POST, GET, OPTIONS</value>
+            <value>POST, GET, QUERY, OPTIONS</value>
         </header>
         <header>
             <name>Access-Control-Max-Age</name>

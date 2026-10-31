@@ -1,0 +1,47 @@
+--- query in the body
+1
+1
+--- beginning of the query in the URL, the rest in the body
+2
+--- chunked body
+2
+--- /query path
+3
+3
+--- table path
+6
+--- readonly = 2, settings can be changed
+2	3
+--- modifying queries are rejected
+READONLY
+READONLY
+4
+0
+--- external data in a multipart body
+6
+--- no Content-Length and not chunked
+411
+--- missing or unsupported media type
+400
+415
+415
+--- unknown path
+404
+--- CORS preflight
+Access-Control-Allow-Headers: origin, x-requested-with, x-clickhouse-format, x-clickhouse-user, x-clickhouse-key, Authorization, Content-Type
+Access-Control-Allow-Methods: POST, GET, QUERY, OPTIONS
+Access-Control-Allow-Headers: origin, x-requested-with, x-clickhouse-format, x-clickhouse-user, x-clickhouse-key, Authorization
+Access-Control-Allow-Methods: POST, GET, QUERY, OPTIONS
+--- SQL-defined handler with form parameters in the body
+14
+16
+['QUERY']
+--- SQL-defined handler reading the raw request body
+hello
+world
+hello again
+--- a method without a body still cannot read the body, and QUERY still cannot modify data
+BAD_ARGUMENTS
+BAD_ARGUMENTS
+--- the method is reported in query_log
+QUERY

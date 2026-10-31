@@ -22,10 +22,10 @@ void drainRequestIfNeeded(HTTPServerRequest & request, HTTPServerResponse & resp
     LOG_DEBUG(getLogger("sendExceptionToHTTPClient"), "Draining connection ({}, Transfer-Encoding: {}, Content-Length: {}, Keep-Alive: {})",
               request.getVersion(), request.getTransferEncoding(), request.getContentLength(), request.getKeepAlive());
 
-    /// If HTTP method is POST and Keep-Alive is turned on, we should try to read the whole request body
+    /// If HTTP method is POST (or QUERY) and Keep-Alive is turned on, we should try to read the whole request body
     /// to avoid reading part of the current request body in the next request.
     /// Or we have to close connection after this request.
-    if (request.getMethod() == Poco::Net::HTTPRequest::HTTP_POST
+    if ((request.getMethod() == Poco::Net::HTTPRequest::HTTP_POST || request.getMethod() == Poco::Net::HTTPRequest::HTTP_QUERY)
         && (request.getChunkedTransferEncoding() || request.hasContentLength())
         && response.getKeepAlive())
     {

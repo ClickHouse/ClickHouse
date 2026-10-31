@@ -77,6 +77,15 @@ If an error occurs, you receive the 500 response code and an error description t
 Requests using GET are 'readonly'. This means that for queries that modify data, you can only use the POST method. 
 You can send the query itself either in the POST body or in the URL parameter. Let's look at some examples.
 
+The HTTP `QUERY` method is also supported. It sends the query in the request body like `POST`, but, like `GET`, it is 'readonly':
+
+```bash
+$ echo 'SELECT 1' | curl -X QUERY -H 'Content-Type: application/sql' 'http://localhost:8123/' --data-binary @-
+1
+```
+
+A `QUERY` request must declare the media type of its body: the query text is sent as `application/sql` or `text/plain`, and external data as `multipart/form-data`. A request without `Content-Type` is rejected with the 400 response code, and a request with another media type (including `application/x-www-form-urlencoded`, which curl sends by default with `--data`) with the 415 response code. A CORS preflight request for the `QUERY` method additionally allows the `Content-Type` header in the configured `Access-Control-Allow-Headers` of [`http_options_response`](/reference/settings/server-settings/settings/http#http_options_response), so that a browser can send `application/sql`. Handlers defined with `predefined_query_handler` or `CREATE HANDLER` accept `QUERY` only if it is listed in their methods, and accept any media type.
+
 In the example below curl is used to send the query `SELECT 1`. Note the use of URL encoding for the space: `%20`.
 
 ```bash title="command"
