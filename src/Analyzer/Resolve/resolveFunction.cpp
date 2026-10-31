@@ -6,6 +6,8 @@
 
 #include <Analyzer/ColumnNode.h>
 #include <Analyzer/ConstantNode.h>
+#include <Analyzer/SortNode.h>
+#include <Analyzer/ListNode.h>
 #include <Analyzer/IdentifierNode.h>
 #include <Analyzer/JoinNode.h>
 #include <Analyzer/LambdaNode.h>
@@ -60,6 +62,9 @@
 #include <Parsers/ASTCreateSQLFunctionQuery.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTCreateWasmFunctionQuery.h>
+
+#include <IO/WriteBufferFromString.h>
+#include <IO/Operators.h>
 
 
 namespace DB
@@ -2965,6 +2970,132 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
         validateInColumnsCountMatch(in_first_argument, in_second_argument);
     }
 
+    /// Aggregate function combinator: ORDER BY [LIMIT N].
+    /// Transform f(x ORDER BY y DESC LIMIT 10) into the parametric form
+    /// fOrderBy('0 DESC LIMIT 10')(x, y), which the AggregateFunctionFactory understands
+    /// via the OrderBy combinator. The transformation must happen here, BEFORE
+    /// argument_types and argument_columns are computed, so that the rest of the
+    /// resolve flow sees the already-extended arguments and updated function name.
+    std::optional<ProjectionName> order_by_combinator_projection_name;
+    if (function_node.hasOrderByCombinator())
+    {
+        if (!AggregateFunctionFactory::instance().isAggregateFunctionName(function_name))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "ORDER BY inside the arguments is supported only for aggregate functions, but {} is not an aggregate function. In scope {}",
+                backQuote(function_name),
+                scope.scope_node->formatASTForErrorMessage());
+
+        const auto & order_by_list_node = function_node.getOrderByColumnsNode();
+        auto & order_by_nodes = order_by_list_node->as<ListNode &>().getNodes();
+
+        /// 1. Resolve the expressions inside SortNode children against the table columns.
+        ///    Each SortNode wraps an expression; its inner expression may still be an
+        ///    unresolved IdentifierNode that we must resolve now, before we use it as
+        ///    a regular function argument.
+        ProjectionNames sort_expressions_projection_names;
+        for (auto & sort_node : order_by_nodes)
+        {
+            auto & sort_typed = sort_node->as<SortNode &>();
+            if (sort_typed.withFill())
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "WITH FILL is not supported in ORDER BY inside the arguments of aggregate function {}. In scope {}",
+                    backQuote(function_name),
+                    scope.scope_node->formatASTForErrorMessage());
+
+            auto & sort_expression = sort_typed.getExpression();
+            auto sort_expression_projection_names = resolveExpressionNode(sort_expression, scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
+            if (sort_expression_projection_names.size() != 1)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "Expected a single expression in ORDER BY inside the arguments of aggregate function {}, got {}. In scope {}",
+                    backQuote(function_name),
+                    sort_expression->formatASTForErrorMessage(),
+                    scope.scope_node->formatASTForErrorMessage());
+            sort_expressions_projection_names.push_back(std::move(sort_expression_projection_names[0]));
+        }
+
+        /// 2. Build a sort description string of the form "0 DESC, 1 ASC NULLS FIRST COLLATE 'tr' LIMIT 10".
+        ///    The integer is the position (0-based) within the appended sort columns;
+        ///    AggregateFunctionOrderBy::insertResultInto names columns std::to_string(i)
+        ///    matching the same scheme. The same modifiers are used to build the projection name.
+        WriteBufferFromOwnString sort_desc_buf;
+        WriteBufferFromOwnString order_by_projection_buf;
+        for (size_t idx = 0; idx < order_by_nodes.size(); ++idx)
+        {
+            if (idx != 0)
+            {
+                sort_desc_buf << ", ";
+                order_by_projection_buf << ", ";
+            }
+
+            auto & sort_typed = order_by_nodes[idx]->as<SortNode &>();
+            WriteBufferFromOwnString modifiers_buf;
+            modifiers_buf << (sort_typed.getSortDirection() == SortDirection::ASCENDING ? " ASC" : " DESC");
+            if (sort_typed.getNullsSortDirection().has_value())
+            {
+                bool nulls_first = (*sort_typed.getNullsSortDirection() != sort_typed.getSortDirection());
+                modifiers_buf << " NULLS " << (nulls_first ? "FIRST" : "LAST");
+            }
+            if (const auto & collator = sort_typed.getCollator())
+                modifiers_buf << " COLLATE " << quoteString(collator->getLocale());
+
+            sort_desc_buf << idx << modifiers_buf.str();
+            order_by_projection_buf << sort_expressions_projection_names[idx] << modifiers_buf.str();
+        }
+
+        if (function_node.getOrderByLimit().has_value())
+        {
+            sort_desc_buf << " LIMIT " << *function_node.getOrderByLimit();
+            order_by_projection_buf << " LIMIT " << *function_node.getOrderByLimit();
+        }
+
+        const String sort_desc_str = sort_desc_buf.str();
+
+        /// 3. Build the projection name in the same syntax as the query: f(params)(x ORDER BY y DESC LIMIT 10).
+        ///    The rewritten parametric form is not used for it, because it is an implementation detail.
+        {
+            WriteBufferFromOwnString projection_buf;
+            projection_buf << function_name;
+            if (!parameters_projection_names.empty())
+            {
+                projection_buf << '(';
+                for (size_t i = 0; i < parameters_projection_names.size(); ++i)
+                    projection_buf << (i == 0 ? "" : ", ") << parameters_projection_names[i];
+                projection_buf << ')';
+            }
+            projection_buf << '(';
+            for (size_t i = 0; i < arguments_projection_names.size(); ++i)
+                projection_buf << (i == 0 ? "" : ", ") << arguments_projection_names[i];
+            projection_buf << " ORDER BY " << order_by_projection_buf.str() << ')';
+            order_by_combinator_projection_name = projection_buf.str();
+        }
+
+        /// 4. Prepend the sort description to function parameters.
+        ///    The combinator factory expects:
+        ///      params[0] = sort description string (including the optional LIMIT)
+        ///      params[1..] = original parameters (passed through to the nested function)
+        auto & params_nodes = function_node.getParameters().getNodes();
+        params_nodes.insert(params_nodes.begin(), std::make_shared<ConstantNode>(sort_desc_str));
+        parameters.insert(parameters.begin(), Field(sort_desc_str));
+
+        /// 5. Append sort-key expressions to the function arguments.
+        ///    AggregateFunctionOrderBy reads the trailing N arguments as sort keys
+        ///    (where N comes from the combinator's getNumberOfNestedArguments).
+        auto & args_nodes = function_node.getArguments().getNodes();
+        for (auto & sort_node : order_by_nodes)
+        {
+            auto & sort_typed = sort_node->as<SortNode &>();
+            args_nodes.push_back(sort_typed.getExpression());
+        }
+        arguments_projection_names.insert(
+            arguments_projection_names.end(), sort_expressions_projection_names.begin(), sort_expressions_projection_names.end());
+
+        /// 6. Rename: f -> fOrderBy. From now on the factory dispatches to the OrderBy combinator.
+        function_name = function_name + "OrderBy";
+
+        /// 7. Clear the combinator markers so subsequent passes don't try to re-process them.
+        function_node.clearOrderByCombinator();
+    }
+
     /// Initialize function argument columns
 
     ColumnsWithTypeAndName argument_columns;
@@ -3034,7 +3165,9 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
     }
 
     /// Calculate function projection name
-    ProjectionNames result_projection_names = { calculateFunctionProjectionName(node, parameters_projection_names, arguments_projection_names) };
+    ProjectionNames result_projection_names = { order_by_combinator_projection_name
+        ? *order_by_combinator_projection_name
+        : calculateFunctionProjectionName(node, parameters_projection_names, arguments_projection_names) };
 
     ASTPtr user_defined_function = nullptr;
     /** Try to resolve function as

@@ -104,7 +104,16 @@ AggregateFunctionPtr AggregateFunctionFactory::get(
     /// Aggregate functions such as any_value_respect_nulls are considered window functions in that sense
     auto properties = tryGetProperties(name, action);
     bool is_window_function = properties.has_value() && properties->is_window_function;
-    if (!is_window_function && std::any_of(types_without_low_cardinality.begin(), types_without_low_cardinality.end(),
+
+    /// The OrderBy combinator handles Nullable arguments itself: it does not apply the `Null` wrapper
+    /// on top, because that would drop the rows where only a sort key is NULL (they must be ordered
+    /// according to NULLS FIRST/LAST instead). The nested function is created by a recursive call
+    /// with the nested-function arguments only, and that call applies the `Null` wrapper to it.
+    bool is_order_by_combinator = false;
+    if (auto outer_combinator = AggregateFunctionCombinatorFactory::instance().tryFindSuffix(name))
+        is_order_by_combinator = outer_combinator->getName() == "OrderBy";
+
+    if (!is_window_function && !is_order_by_combinator && std::any_of(types_without_low_cardinality.begin(), types_without_low_cardinality.end(),
         [](const auto & type) { return type->isNullable(); }))
     {
         AggregateFunctionCombinatorPtr combinator = AggregateFunctionCombinatorFactory::instance().tryFindSuffix("Null");
@@ -354,7 +363,9 @@ AggregateFunctionPtr AggregateFunctionFactory::getImpl(
         }
         else
         {
-            DataTypes nested_types = combinator->transformArguments(argument_types);
+            size_t nested_args_count = combinator->getNumberOfNestedArguments(argument_types, parameters);
+            DataTypes types_for_nested(argument_types.begin(), argument_types.begin() + nested_args_count);
+            DataTypes nested_types = combinator->transformArguments(types_for_nested);
 
             AggregateFunctionPtr nested_function = get(nested_name, action, nested_types, nested_parameters, out_properties, state_variant);
             combined_function = combinator->transformAggregateFunction(nested_function, out_properties, argument_types, parameters);
