@@ -1,0 +1,7 @@
+<clickhouse>
+    <url_scheme_mappers>
+        <s3>
+            <to>http://minio1:9001/{bucket}</to>
+        </s3>
+    </url_scheme_mappers>
+</clickhouse>

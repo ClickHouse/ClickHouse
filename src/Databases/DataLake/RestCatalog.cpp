@@ -37,6 +37,7 @@
 #include <filesystem>
 
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergMetadata.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/Utils.h>
 #include <Server/HTTP/HTMLForm.h>
 #include <Formats/FormatFactory.h>
 
@@ -118,6 +119,38 @@ DB::HTTPHeaderEntry parseAuthHeader(const std::string & auth_header)
     return DB::HTTPHeaderEntry(auth_header.substr(0, pos), auth_header.substr(pos + 1));
 }
 
+String encodeNamespaceForURI(const String & namespace_name)
+{
+    String encoded;
+    for (const auto & ch : namespace_name)
+    {
+        if (ch == '.')
+            encoded += "%1F";
+        else
+            Poco::URI::encode(String(1, ch), "#&+/:;=?@", encoded);
+    }
+    return encoded;
+}
+
+/// The catalog identifies a table by its decoded name; only request paths carry the canonical encoded spelling.
+static String decodeTableName(const String & table_name)
+{
+    String decoded;
+    Poco::URI::decode(table_name, decoded);
+    return decoded;
+}
+
+void checkTableNameIsCanonical(const String & table_name)
+{
+    String encoded;
+    Poco::URI::encode(decodeTableName(table_name), "/?#", encoded);
+    if (encoded != table_name)
+        throw DB::Exception(
+            DB::ErrorCodes::BAD_ARGUMENTS,
+            "Table name `{}` is not percent-encoded as the catalog lists it, expected `{}`",
+            table_name, encoded);
+}
+
 namespace
 {
 
@@ -174,18 +207,20 @@ std::string correctAPIURI(const std::string & uri)
     return std::filesystem::path(uri) / "v1";
 }
 
-/// Percent-encodes every byte of a level outside the RFC 3986 unreserved set and joins the levels with `%1F`.
-String encodeNamespaceForURI(const String & namespace_name)
+/// Per Iceberg REST spec, `namespace` is a JSON array of segments. Split `ns.a.b` on dots.
+Poco::JSON::Array::Ptr namespaceToJSONArray(const String & namespace_name)
 {
-    String encoded;
-    for (const auto & ch : namespace_name)
+    Poco::JSON::Array::Ptr segments = new Poco::JSON::Array;
+    size_t start = 0;
+    while (start <= namespace_name.size())
     {
-        if (ch == '.')
-            encoded += "%1F";
-        else
-            Poco::URI::encode(String(1, ch), "#&+/:;=?@", encoded);
+        size_t dot = namespace_name.find('.', start);
+        if (dot == String::npos)
+            dot = namespace_name.size();
+        segments->add(namespace_name.substr(start, dot - start));
+        start = dot + 1;
     }
-    return encoded;
+    return segments;
 }
 
 /// A 404 status alone does not separate a namespace that is gone from an endpoint the catalog does
@@ -223,7 +258,6 @@ std::unordered_set<std::string> getAllowedBigLakeMetadataServiceHosts(
         allowed.insert(config.getString(std::string(SECTION) + "." + key));
     return allowed;
 }
-
 
 }
 
@@ -1197,6 +1231,11 @@ std::optional<StorageType> RestCatalog::getStorageType() const
     return parseStorageTypeFromLocation(state_snapshot->config.default_base_location);
 }
 
+String RestCatalog::getDefaultBaseLocation() const
+{
+    return state.get()->config.default_base_location;
+}
+
 DB::ReadWriteBufferFromHTTPPtr RestCatalog::createReadBuffer(
     const CatalogState & catalog_state,
     const std::string & endpoint,
@@ -1735,6 +1774,8 @@ bool RestCatalog::getTableMetadataImpl(
         headers.emplace_back("X-Iceberg-Access-Delegation", "vended-credentials");
     }
 
+    checkTableNameIsCanonical(table_name);
+
     const auto state_snapshot = state.get();
     const std::string endpoint = std::filesystem::path(NAMESPACES_ENDPOINT) / encodeNamespaceForURI(namespace_name) / "tables" / table_name;
     auto buf = createReadBuffer(*state_snapshot, state_snapshot->config.prefix / endpoint, /* params */ {}, headers, /* auth_headers */ std::nullopt);
@@ -1785,6 +1826,12 @@ bool RestCatalog::getTableMetadataImpl(
         auto id = DB::IcebergMetadata::parseTableSchema(metadata_object, schema_processor, log);
         auto schema = schema_processor.getClickHouseTableSchemaById(id);
         result.setSchema(*schema);
+    }
+
+    if (result.requiresPartitionAndSortingKeys())
+    {
+        auto [partition_by, order_by, unsupported_properties] = DB::Iceberg::getPartitionAndSortingKeyASTsFromMetadata(metadata_object);
+        result.setPartitionAndSortingKeys(std::move(partition_by), std::move(order_by), std::move(unsupported_properties));
     }
 
     if (result.isDefaultReadableTable() && result.requiresCredentials() && object->has("config"))
@@ -1955,15 +2002,25 @@ std::optional<std::string> RestCatalog::getDefaultTableLocation(
     return std::string(std::filesystem::path(*namespace_location) / table_name);
 }
 
-void RestCatalog::createTable(const String & namespace_name, const String & table_name, const String & new_metadata_path, Poco::JSON::Object::Ptr metadata_content) const
+bool RestCatalog::createTable(
+    const String & namespace_name,
+    const String & table_name,
+    const String & new_metadata_path,
+    Poco::JSON::Object::Ptr metadata_content,
+    DB::CompressionMethod /*metadata_compression_method*/,
+    bool if_not_exists) const
 {
+    checkTableNameIsCanonical(table_name);
+
+    const String location = metadata_content->getValue<String>("location");
+
     const auto state_snapshot = state.get();
     const std::string endpoint = (base_url / state_snapshot->config.prefix / NAMESPACES_ENDPOINT / encodeNamespaceForURI(namespace_name) / "tables").generic_string();
 
     Poco::JSON::Object::Ptr request_body = new Poco::JSON::Object;
-    request_body->set("name", table_name);
+    request_body->set("name", decodeTableName(table_name));
     if (!managesTableLocation())
-        request_body->set("location", metadata_content->getValue<String>("location"));
+        request_body->set("location", location);
     {
         Poco::JSON::Object::Ptr initial_schema = metadata_content->getArray("schemas")->getObject(0);
         Poco::JSON::Array::Ptr identifier_fields = new Poco::JSON::Array;
@@ -1972,8 +2029,21 @@ void RestCatalog::createTable(const String & namespace_name, const String & tabl
     }
     request_body->set("partition-spec", metadata_content->getArray("partition-specs")->get(0));
 
-    /// The local metadata serializes ORDER BY into sort-orders[0].
-    request_body->set("write-order", metadata_content->getArray("sort-orders")->get(0));
+    if (metadata_content->has("sort-orders"))
+    {
+        if (auto sort_orders = metadata_content->getArray("sort-orders"); sort_orders->size() > 0)
+        {
+            auto sort_order = sort_orders->getObject(0);
+            auto fields = sort_order->getArray("fields");
+            if (fields && fields->size() > 0)
+            {
+                if (sort_order->getValue<int>("order-id") == 0)
+                    sort_order->set("order-id", 1);
+                request_body->set("write-order", sort_order);
+            }
+        }
+    }
+
     request_body->set("stage-create", false);
     Poco::JSON::Object::Ptr properties = new Poco::JSON::Object;
 
@@ -1996,8 +2066,10 @@ void RestCatalog::createTable(const String & namespace_name, const String & tabl
     }
     catch (const DB::HTTPException & ex)
     {
+        /// A retried registration of the metadata file written by this client is not a conflict.
         if (ex.getHTTPStatus() == Poco::Net::HTTPResponse::HTTPStatus::HTTP_CONFLICT
-            && getCatalogType() == DB::DatabaseDataLakeCatalogType::ICEBERG_ONELAKE)
+            && getCatalogType() == DB::DatabaseDataLakeCatalogType::ICEBERG_ONELAKE
+            && !new_metadata_path.empty())
         {
             TableMetadata existing_table;
             existing_table.withDataLakeSpecificProperties();
@@ -2020,10 +2092,14 @@ void RestCatalog::createTable(const String & namespace_name, const String & tabl
             LOG_DEBUG(
                 log, "Table {}.{} is already registered in the catalog with the metadata file {}: {}",
                 namespace_name, table_name, registered_metadata_path, ex.displayText());
-            return;
+            return true;
         }
+        if (if_not_exists && ex.getHTTPStatus() == Poco::Net::HTTPResponse::HTTPStatus::HTTP_CONFLICT)
+            return false;
         throw DB::Exception(DB::ErrorCodes::DATALAKE_DATABASE_ERROR, "Failed to create table {}", ex.displayText());
     }
+
+    return true;
 }
 
 
@@ -2035,10 +2111,8 @@ bool RestCatalog::updateMetadata(const String & namespace_name, const String & t
     Poco::JSON::Object::Ptr request_body = new Poco::JSON::Object;
     {
         Poco::JSON::Object::Ptr identifier = new Poco::JSON::Object;
-        identifier->set("name", table_name);
-        Poco::JSON::Array::Ptr namespaces = new Poco::JSON::Array;
-        namespaces->add(namespace_name);
-        identifier->set("namespace", namespaces);
+        identifier->set("name", decodeTableName(table_name));
+        identifier->set("namespace", namespaceToJSONArray(namespace_name));
 
         request_body->set("identifier", identifier);
     }
@@ -2122,7 +2196,7 @@ Poco::JSON::Object::Ptr RestCatalog::removeSnapshots(
     Poco::JSON::Object::Ptr request_body = new Poco::JSON::Object;
     {
         Poco::JSON::Object::Ptr identifier = new Poco::JSON::Object;
-        identifier->set("name", table_name);
+        identifier->set("name", decodeTableName(table_name));
         Poco::JSON::Array::Ptr namespaces = new Poco::JSON::Array;
         namespaces->add(namespace_name);
         identifier->set("namespace", namespaces);
@@ -2241,10 +2315,8 @@ bool RestCatalog::updateSchema(
     Poco::JSON::Object::Ptr request_body = new Poco::JSON::Object;
     {
         Poco::JSON::Object::Ptr identifier = new Poco::JSON::Object;
-        identifier->set("name", table_name);
-        Poco::JSON::Array::Ptr namespaces = new Poco::JSON::Array;
-        namespaces->add(namespace_name);
-        identifier->set("namespace", namespaces);
+        identifier->set("name", decodeTableName(table_name));
+        identifier->set("namespace", namespaceToJSONArray(namespace_name));
 
         request_body->set("identifier", identifier);
     }
@@ -2291,21 +2363,25 @@ bool RestCatalog::updateSchema(
     return true;
 }
 
-void RestCatalog::dropTable(const String & namespace_name, const String & table_name, bool delete_data) const
+void RestCatalog::dropTable(const String & namespace_name, const String & table_name, bool purge, bool if_exists) const
 {
+    checkTableNameIsCanonical(table_name);
+
     const auto state_snapshot = state.get();
-    const std::string endpoint
-        = (base_url / state_snapshot->config.prefix / NAMESPACES_ENDPOINT / encodeNamespaceForURI(namespace_name) / "tables" / table_name).generic_string()
-        + "?purgeRequested=" + (delete_data ? "true" : "false");
+    const std::string base_endpoint =
+        (base_url / state_snapshot->config.prefix / NAMESPACES_ENDPOINT / encodeNamespaceForURI(namespace_name) / "tables" / table_name).generic_string();
+    const std::string endpoint = fmt::format("{}?purgeRequested={}", base_endpoint, purge ? "true" : "false");
 
     Poco::JSON::Object::Ptr request_body = nullptr;
     try
     {
         sendRequest(*state_snapshot, endpoint, request_body, Poco::Net::HTTPRequest::HTTP_DELETE, true);
-        LOG_INFO(log, "Dropped table {}.{} from the catalog (purgeRequested={})", namespace_name, table_name, delete_data);
+        LOG_INFO(log, "Dropped table {}.{} from the catalog (purgeRequested={})", namespace_name, table_name, purge);
     }
     catch (const DB::HTTPException & ex)
     {
+        if (if_exists && ex.getHTTPStatus() == Poco::Net::HTTPResponse::HTTPStatus::HTTP_NOT_FOUND)
+            return;
         throw DB::Exception(DB::ErrorCodes::DATALAKE_DATABASE_ERROR, "Failed to drop table {}", ex.displayText());
     }
 }

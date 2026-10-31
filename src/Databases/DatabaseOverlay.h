@@ -29,7 +29,7 @@ public:
 
     void createTable(ContextPtr context, const String & table_name, const StoragePtr & table, const ASTPtr & query) override;
 
-    void dropTable(ContextPtr context, const String & table_name, bool sync) override;
+    void dropTable(ContextPtr context, const String & table_name, bool sync, bool if_exists) override;
 
     void attachTable(ContextPtr context, const String & table_name, const StoragePtr & table, const String & relative_table_path) override;
 

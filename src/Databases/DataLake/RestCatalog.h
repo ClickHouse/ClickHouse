@@ -24,6 +24,13 @@ namespace DataLake
 /// Parses "Name: value" into a header entry.
 DB::HTTPHeaderEntry parseAuthHeader(const std::string & auth_header);
 
+/// Percent-encodes every byte of a level outside the RFC 3986 unreserved set and joins the levels with `%1F`.
+String encodeNamespaceForURI(const String & namespace_name);
+
+/// Request paths carry the table name verbatim, so it must be spelled as `getTables` lists it:
+/// percent-encoded, with `/`, `?` and `#` escaped. Any other spelling throws.
+void checkTableNameIsCanonical(const String & table_name);
+
 class RestCatalog : public ICatalog, public DB::WithContext
 {
 public:
@@ -60,6 +67,8 @@ public:
 
     std::optional<StorageType> getStorageType() const override;
 
+    String getDefaultBaseLocation() const override;
+
     DB::DatabaseDataLakeCatalogType getCatalogType() const override
     {
         return DB::DatabaseDataLakeCatalogType::ICEBERG_REST;
@@ -74,7 +83,13 @@ public:
 
     bool assignsLocationToNewNamespaces() const override { return true; }
 
-    void createTable(const String & namespace_name, const String & table_name, const String & new_metadata_path, Poco::JSON::Object::Ptr metadata_content) const override;
+    bool createTable(
+        const String & namespace_name,
+        const String & table_name,
+        const String & new_metadata_path,
+        Poco::JSON::Object::Ptr metadata_content,
+        DB::CompressionMethod metadata_compression_method,
+        bool if_not_exists) const override;
 
     bool updateMetadata(const String & namespace_name, const String & table_name, const String & new_metadata_path, Poco::JSON::Object::Ptr new_snapshot) const override;
 
@@ -97,7 +112,7 @@ public:
     /// The Iceberg REST spec makes the server write the metadata file on create.
     bool writesInitialMetadata() const override { return true; }
 
-    void dropTable(const String & namespace_name, const String & table_name, bool delete_data) const override;
+    void dropTable(const String & namespace_name, const String & table_name, bool purge, bool if_exists) const override;
 
     ICatalog::CredentialsRefreshCallback getCredentialsConfigurationCallback(
         const DB::StorageID & storage_id, const TableMetadata & table_metadata) override;
@@ -296,6 +311,9 @@ public:
         return DB::DatabaseDataLakeCatalogType::ICEBERG_ONELAKE;
     }
 
+    /// OneLake keeps data in Azure Data Lake Storage, whatever the catalog reports.
+    std::optional<StorageType> getStorageType() const override { return StorageType::Azure; }
+
     std::optional<std::string> getDefaultTableLocation(
         const std::string & namespace_name,
         const std::string & table_name) const override;
@@ -346,6 +364,9 @@ public:
     {
         return DB::DatabaseDataLakeCatalogType::ICEBERG_BIGLAKE;
     }
+
+    /// BigLake keeps data in Google Cloud Storage, which is accessed through the S3 API.
+    std::optional<StorageType> getStorageType() const override { return StorageType::S3; }
 
     DB::HTTPHeaderEntries getAuthHeaders(const CatalogState & catalog_state, bool update_token) const override;
 

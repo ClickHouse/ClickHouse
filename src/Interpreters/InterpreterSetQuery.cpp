@@ -5,7 +5,6 @@
 #include <Databases/IDatabase.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
-#include <Interpreters/InterpreterCreateQuery.h>
 #include <Interpreters/InterpreterFactory.h>
 #include <Interpreters/InterpreterSetQuery.h>
 #include <Interpreters/ReplaceQueryParameterVisitor.h>
@@ -188,13 +187,21 @@ std::optional<String> getTableStorageName(const ASTCreateQuery & create, Context
     if (auto inherited_engine = getInheritedEngineName(create, context))
         return inherited_engine;
 
-    if (auto engine_name = InterpreterCreateQuery::getDatabaseDefaultTableEngineName(create, context); !engine_name.empty())
-        return engine_name;
-
     auto default_engine = context->getSettingsRef()[Setting::default_table_engine];
     if (default_engine == DefaultTableEngine::None)
         return {};
     return default_engine.toString();
+}
+
+/// A `DataLakeCatalog` table without an explicit or inherited engine gets no default one, see
+/// `InterpreterCreateQuery::setEngine`, so its SETTINGS clause holds no engine settings.
+bool isEngineLessDatalakeCatalogTable(const ASTCreateQuery & create, ContextMutablePtr context)
+{
+    if (create.isView() || create.isTemporary() || create.storage->engine)
+        return false;
+    if (!DatabaseCatalog::instance().isDatalakeCatalog(context->resolveDatabase(create.getDatabase())))
+        return false;
+    return !getInheritedEngineName(create, context);
 }
 
 /// `CREATE DATABASE` / `ATTACH DATABASE`: the query names a database and no table.
@@ -242,6 +249,9 @@ std::optional<EngineSettingsSupport> getEngineSettingsSupport(const ASTCreateQue
             return {};
         return EngineSettingsSupport{features->supports_settings, features->has_builtin_setting_fn};
     }
+
+    if (isEngineLessDatalakeCatalogTable(create, context))
+        return EngineSettingsSupport{false, nullptr};
 
     auto storage_name = getTableStorageName(create, context);
     if (!storage_name)

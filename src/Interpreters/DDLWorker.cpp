@@ -14,6 +14,7 @@
 #include <Interpreters/DDLWorker.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/ZooKeeperLog.h>
+#include <Interpreters/executeDDLQueryOnCluster.h>
 #include <Interpreters/executeQuery.h>
 #include <Parsers/ASTAlterQuery.h>
 #include <Parsers/ASTCreateIndexQuery.h>
@@ -575,6 +576,9 @@ bool DDLWorker::tryExecuteQuery(DDLTaskBase & task, const ZooKeeperPtr & zookeep
     try
     {
         auto query_context = task.makeQueryContext(context, zookeeper);
+
+        /// Uses the query context, so `Alias` targets are resolved with the access rights the query runs with.
+        checkQueryDatabasesSupportOnClusterDDL(task.query, {context->getCurrentDatabase()}, query_context);
 
         chassert(!query_context->getCurrentTransaction());
         if (query_context->getSettingsRef()[Setting::implicit_transaction])
