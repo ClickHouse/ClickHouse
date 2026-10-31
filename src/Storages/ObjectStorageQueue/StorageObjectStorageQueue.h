@@ -207,7 +207,8 @@ private:
         ContextPtr local_context,
         bool commit_once_processed,
         bool is_direct_select,
-        size_t max_processed_files_override = 0);
+        size_t max_processed_files_override = 0,
+        std::atomic_bool * iterator_consumed = nullptr);
 
     /// Get number of dependent materialized views.
     size_t getDependencies() const;
@@ -216,7 +217,7 @@ private:
     /// and pushing result to dependent tables.
     void threadFunc(size_t streaming_tasks_index);
     /// A subset of logic executed by threadFunc.
-    bool streamToViews(size_t streaming_tasks_index, UInt64 cycle_epoch);
+    bool streamToViews(size_t streaming_tasks_index, UInt64 cycle_epoch, std::atomic_bool & iterator_consumed);
     /// Apply after_processing action to successfully processed files.
     void postProcess(
         const StoredObjects & successful_objects,

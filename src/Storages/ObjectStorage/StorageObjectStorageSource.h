@@ -203,7 +203,8 @@ protected:
         FormatParserSharedResourcesPtr parser_shared_resources,
         FormatFilterInfoPtr format_filter_info,
         bool need_only_count,
-        ObjectStorageTopKQueryConditionCacheKeyPtr top_k_query_condition_cache_key = nullptr);
+        ObjectStorageTopKQueryConditionCacheKeyPtr top_k_query_condition_cache_key = nullptr,
+        std::atomic_bool * iterator_consumed = nullptr);
 
     ReaderHolder createReader();
 

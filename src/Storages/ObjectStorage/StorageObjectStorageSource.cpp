@@ -1293,7 +1293,8 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
     FormatParserSharedResourcesPtr parser_shared_resources,
     FormatFilterInfoPtr format_filter_info,
     bool need_only_count,
-    ObjectStorageTopKQueryConditionCacheKeyPtr top_k_query_condition_cache_key)
+    ObjectStorageTopKQueryConditionCacheKeyPtr top_k_query_condition_cache_key,
+    std::atomic_bool * iterator_consumed)
 {
     ObjectInfoPtr object_info;
     bool use_top_k_query_condition_cache_key = false;
@@ -1349,6 +1350,9 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
     while (true)
     {
         object_info = file_iterator->next(processor);
+
+        if (iterator_consumed)
+            iterator_consumed->store(true, std::memory_order_relaxed);
 
         if (!object_info || object_info->getPath().empty())
             return {};
