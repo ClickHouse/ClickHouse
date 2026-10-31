@@ -874,6 +874,7 @@ static void splitAndModifyMutationCommands(
     MutationCommands & for_interpreter,
     MutationCommands & for_file_renames,
     bool suitable_for_ttl_optimization,
+    bool materialize_ttl_recalculate_only,
     MergeTreeDataPartStorageType future_storage_type,
     size_t & num_for_file_renames_from_commands,
     LoggerPtr log,
@@ -1374,7 +1375,7 @@ static void splitAndModifyMutationCommands(
                 alter_conversions,
                 for_interpreter,
                 suitable_for_ttl_optimization,
-                (*part->storage.getSettings())[MergeTreeSetting::materialize_ttl_recalculate_only],
+                materialize_ttl_recalculate_only,
                 context);
 
             for (const auto & index : metadata_snapshot->getSecondaryIndices())
@@ -5352,6 +5353,7 @@ bool MutateTask::prepare()
             ctx->for_interpreter,
             ctx->for_file_renames,
             suitable_for_ttl_optimization,
+            materialize_ttl_recalculate_only,
             ctx->future_part->part_format.storage_type,
             ctx->num_for_file_renames_from_commands,
             ctx->log,
@@ -5371,6 +5373,7 @@ bool MutateTask::prepare()
             ctx->for_interpreter,
             unused_file_renames,
             suitable_for_ttl_optimization,
+            materialize_ttl_recalculate_only,
             ctx->future_part->part_format.storage_type,
             unused_num_file_renames_from_commands,
             ctx->log,
