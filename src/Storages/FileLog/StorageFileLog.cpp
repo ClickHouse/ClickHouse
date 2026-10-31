@@ -1104,7 +1104,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 Engine arguments:
 
 - `path_to_logs` – Path to log files to subscribe. It can be path to a directory with log files or to a single log file. A relative path is resolved against the `user_files_path` directory, like in the [file](/reference/functions/table-functions/file) table function; a relative path that is already inside `user_files_path` from the working directory of the server (for example, `user_files/my_app/app.log` when the server runs in its data directory, as in the official Docker image) keeps that meaning. The file name in the path can have [globs](/reference/functions/table-functions/file#globs-in-path) (`*`, `?`, `{abc,def}`, `{N..M}`) to read only the matching files of the directory, see [Selecting files with globs](#selecting-files-with-globs). Note that ClickHouse allows only paths inside `user_files` directory.
-- `format_name` - Record format. Note that FileLog process each line in a file as a separate record and not all data formats are suitable for it.
+- `format_name` - Record format. Note that FileLog process each line in a file as a separate record and not all data formats are suitable for it. A line is read once it ends with a newline, so a last line that is still being written is read on a later poll, after it is completed.
 
 Optional parameters:
 
