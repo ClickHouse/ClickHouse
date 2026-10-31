@@ -6,6 +6,9 @@ cluster = ClickHouseCluster(__file__)
 
 node = cluster.add_instance(
     "node",
+    main_configs=[
+        "configs/config.d/system_log_flush.xml",
+    ],
     user_configs=[
         "configs/users.d/users.xml",
     ],
@@ -94,3 +97,57 @@ def test_user_overcommit():
     assert finished, f"all tasks are killed ({last_error})"
 
     node.query("DROP USER IF EXISTS A")
+
+
+# The test's own queries must not wait for the overcommit tracker, only the system log flushes may.
+NO_OVERCOMMIT = {"memory_usage_overcommit_max_wait_microseconds": 0}
+
+
+def set_max_server_memory_usage(value):
+    node.replace_config(
+        "/etc/clickhouse-server/config.d/max_server_memory_usage.xml",
+        f"<clickhouse><max_server_memory_usage>{value}</max_server_memory_usage></clickhouse>",
+    )
+    node.query_with_retry("SYSTEM RELOAD CONFIG", settings=NO_OVERCOMMIT)
+
+
+def overcommit_wait_time():
+    return int(
+        node.query(
+            "SELECT sum(value) FROM system.events WHERE event = 'MemoryOvercommitWaitTimeMicroseconds'"
+        )
+    )
+
+
+def test_system_log_flush_waits_for_memory_overcommit():
+    if node.is_built_with_sanitizer() or node.is_built_with_llvm_coverage():
+        pytest.skip("memory limits are too small for sanitizer and coverage builds")
+
+    node.query("SYSTEM FLUSH LOGS query_log", settings=NO_OVERCOMMIT)
+    # About 100 MB of `query_log` rows to flush, much more than the headroom below.
+    # One command line argument is limited to 128 KiB.
+    node.query("SELECT 1;" * 500, settings={"log_comment": "x" * 100_000})
+
+    # The server limit applies to both the tracked and the resident memory. Release the memory retained by jemalloc
+    # and refresh `jemalloc.resident`, so that the test's own queries stay below the limit.
+    node.query("SYSTEM JEMALLOC PURGE", settings=NO_OVERCOMMIT)
+    node.query("SYSTEM RELOAD ASYNCHRONOUS METRICS", settings=NO_OVERCOMMIT)
+    memory_usage = int(
+        node.query(
+            "SELECT greatest("
+            "(SELECT value FROM system.metrics WHERE metric = 'MemoryTracking'), "
+            "(SELECT toInt64(value) FROM system.asynchronous_metrics WHERE metric = 'jemalloc.resident'))"
+        )
+    )
+
+    wait_time_before = overcommit_wait_time()
+    set_max_server_memory_usage(memory_usage + 32 * 1024 * 1024)
+    try:
+        # The flush reaches the limit and waits for the overcommit tracker to stop a query. The candidate is this
+        # `SYSTEM FLUSH LOGS` query, which does not allocate memory while it waits for the flush.
+        node.query("SYSTEM FLUSH LOGS query_log", settings=NO_OVERCOMMIT, ignore_error=True)
+    finally:
+        set_max_server_memory_usage(0)
+
+    # Without overcommit, the flush fails right away and nothing waits.
+    assert overcommit_wait_time() > wait_time_before
