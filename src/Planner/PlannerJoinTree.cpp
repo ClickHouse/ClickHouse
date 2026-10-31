@@ -200,6 +200,42 @@ namespace ErrorCodes
 namespace
 {
 
+/// Returns `query_tree` with every repeated projection name (`SELECT *, x + 1 AS x`) replaced by a unique one.
+/// `table_expression` stays the same node in the returned tree.
+QueryTreeNodePtr makeProjectionNamesUnique(const QueryTreeNodePtr & query_tree, const TableExpressionNodePtr & table_expression)
+{
+    const auto * query_node = query_tree->as<QueryNode>();
+    if (!query_node)
+        return query_tree;
+
+    auto projection_columns = query_node->getProjectionColumns();
+    NameSet names;
+    for (const auto & column : projection_columns)
+        names.insert(column.name);
+    if (names.size() == projection_columns.size())
+        return query_tree;
+
+    NameSet used_names;
+    for (auto & column : projection_columns)
+    {
+        if (used_names.insert(column.name).second)
+            continue;
+
+        String unique_name;
+        size_t suffix = 1;
+        do
+            unique_name = fmt::format("{}_{}", column.name, suffix++);
+        while (names.contains(unique_name) || used_names.contains(unique_name));
+
+        column.name = unique_name;
+        used_names.insert(unique_name);
+    }
+
+    auto result = query_tree->cloneAndReplace(table_expression, table_expression);
+    result->as<QueryNode &>().resolveProjectionColumns(std::move(projection_columns));
+    return result;
+}
+
 /// Recursively find the first TableNode whose storage matches `target`.
 QueryTreeNodePtr findTableNodeByStorage(const QueryTreeNodePtr & node, const StoragePtr & target)
 {
@@ -2752,6 +2788,12 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(TableExpressionNodePtr table_
                             "tables instead; note that such a policy is not applied to reads shipped with "
                             "`serialize_query_plan = 1`",
                             storage->getStorageID().getNameForLogs());
+
+                    /// The storage returns the projection under these names and its readers match columns by name.
+                    /// The rename to the expected header below restores the repeated names.
+                    if (till_stage == QueryProcessingStage::Complete && !select_query_options.ignore_rename_columns)
+                        table_expression_query_info.query_tree = makeProjectionNamesUnique(
+                            table_expression_query_info.query_tree, table_expression_query_info.table_expression);
                 }
 
                 if (select_query_options.build_logical_plan)
