@@ -170,25 +170,26 @@ static void forwardToOriginalHandler(const struct sigaction & original, int sig,
 #pragma clang diagnostic pop
 }
 
-/// Monotonic-clock seconds at the start of the current `LLVMFuzzerTestOneInput`
-/// call. libfuzzer arms `setitimer(ITIMER_REAL)` with an interval of
-/// `UnitTimeoutSec / 2 + 1` seconds (11 s for our 20 s timeout), so SIGALRM
-/// fires periodically — not only at the actual timeout. The wrapper uses this
-/// to skip the expensive runner-stack dump when no timeout is imminent.
-std::atomic<int64_t> iteration_start_sec{0};
+/// `CLOCK_REALTIME` nanoseconds at the start of the running `LLVMFuzzerTestOneInput`,
+/// 0 while none is running. libfuzzer times a unit with `system_clock`, the same clock.
+std::atomic<int64_t> iteration_start_ns{0};
 
-/// libfuzzer's `-timeout=N` value, parsed in `LLVMFuzzerInitialize`. Defaults
-/// to libfuzzer's own default of 1200 s. The wrapper dumps the runner stack
-/// only once `elapsed_sec >= unit_timeout_sec`, i.e. when the next forwarded
-/// SIGALRM is libfuzzer's actual timeout firing rather than a periodic tick.
+/// The thread that calls `LLVMFuzzerTestOneInput`. libfuzzer handles SIGALRM only there.
+std::atomic<pthread_t> fuzzing_thread{};
+
+/// libfuzzer's `-timeout=N` value, parsed in `LLVMFuzzerInitialize`; 1200 s is libfuzzer's default.
 std::atomic<int64_t> unit_timeout_sec{1200};
 
-/// Per-iteration one-shot latch so that multiple sequential SIGALRM handler
-/// invocations within the same iteration don't repeat the slow runner-stack
-/// dump. Reset at the start of every `LLVMFuzzerTestOneInput` call so that
-/// the wrapper still fires on a real timeout in a later iteration even if an
-/// earlier periodic alarm consumed it.
+/// Set by the first runner-stack dump of an iteration so that later alarms do not repeat it.
+/// Reset at the start of every `LLVMFuzzerTestOneInput` call.
 std::atomic<bool> dump_started{false};
+
+static int64_t realtimeNs()
+{
+    struct timespec ts;
+    (void)clock_gettime(CLOCK_REALTIME, &ts);
+    return static_cast<int64_t>(ts.tv_sec) * 1'000'000'000 + ts.tv_nsec;
+}
 
 /// SIGUSR1 reaches this process from two senders which mean opposite things:
 ///
@@ -220,32 +221,15 @@ static inline void signal_safe_sleep_ms(int ms)
      (void)poll(nullptr, 0, ms);
 }
 
-/// When libfuzzer's timeout fires SIGALRM, it lands on the main thread.
-/// We first dump the runner thread's stack trace (via SIGUSR1), then forward
-/// to libfuzzer's original handler which will print the main thread stack and
-/// `_Exit`.
-///
-/// SIGALRM is also fired periodically by libfuzzer's `setitimer` (every
-/// `UnitTimeout/2 + 1` seconds), not only on an actual timeout. We must
-/// distinguish the two: the runner-stack dump shells out to llvm-symbolizer
-/// (slow, not async-signal-safe), and running it on every periodic alarm has
-/// caused real timeouts where the iteration would otherwise have completed in
-/// time. We skip the dump unless our own monotonic clock matches libfuzzer's
-/// own timeout condition (`elapsed >= UnitTimeoutSec`). We also forward to
-/// libfuzzer's handler *without* permanently restoring it, so the wrapper
-/// continues to intercept later periodic alarms.
+/// Dump the runner's stack (via SIGUSR1) only for the alarm on which libfuzzer's `AlarmCallback`
+/// exits: on the fuzzing thread, inside `LLVMFuzzerTestOneInput`, `-timeout` after its start.
+/// Any other dump leaves the runner in a slow stack print while the next input waits for it.
 static void fuzzerSigalrmHandler(int sig, siginfo_t * info, void * ctx)
 {
-    struct timespec ts;
-    (void)clock_gettime(CLOCK_MONOTONIC, &ts);
-    int64_t elapsed_sec = ts.tv_sec - iteration_start_sec.load(std::memory_order_acquire);
-
-    /// libfuzzer's `AlarmCallback` itself only declares a timeout once
-    /// `elapsed >= UnitTimeoutSec`. Use the same condition so the periodic
-    /// SIGALRMs at `UnitTimeoutSec / 2 + 1` seconds pass through untouched
-    /// regardless of the `-timeout=N` value. The next forwarded SIGALRM
-    /// after this check is libfuzzer's actual timeout that will `_Exit`.
-    if (elapsed_sec >= unit_timeout_sec.load(std::memory_order_acquire))
+    int64_t start = iteration_start_ns.load(std::memory_order_acquire);
+    if (start != 0
+        && pthread_equal(pthread_self(), fuzzing_thread.load(std::memory_order_acquire))
+        && realtimeNs() - start >= unit_timeout_sec.load(std::memory_order_acquire) * 1'000'000'000)
     {
         bool expected = false;
         if (dump_started.compare_exchange_strong(expected, true, std::memory_order_acq_rel))
@@ -350,17 +334,9 @@ int LLVMFuzzerInitialize(const int *argc, char ***argv)
 extern "C"
 int LLVMFuzzerTestOneInput(const uint8_t * data, size_t size)
 {
-    /// Mark the start of this iteration before installing/handling SIGALRM so
-    /// `fuzzerSigalrmHandler` can tell a real timeout from libfuzzer's
-    /// periodic SIGALRM. Also reset the one-shot dump guard so that the
-    /// wrapper still fires on a real timeout in this iteration even if an
-    /// earlier iteration's late `SIGALRM` already consumed it.
-    {
-        struct timespec ts;
-        (void)clock_gettime(CLOCK_MONOTONIC, &ts);
-        iteration_start_sec.store(ts.tv_sec, std::memory_order_release);
-        dump_started.store(false, std::memory_order_release);
-    }
+    /// The start of this input for `fuzzerSigalrmHandler`, cleared on return.
+    iteration_start_ns.store(realtimeNs(), std::memory_order_release);
+    dump_started.store(false, std::memory_order_release);
 
     /// Install our SIGALRM and SIGUSR1 forwarders on the first call, after
     /// libfuzzer has already set up its own handlers (which we save as the
@@ -372,6 +348,8 @@ int LLVMFuzzerTestOneInput(const uint8_t * data, size_t size)
     static bool handlers_installed = false;
     if (!handlers_installed)
     {
+        fuzzing_thread.store(pthread_self(), std::memory_order_release);
+
         /// `glibc` defines `sa_sigaction` as a recursive macro
         /// `#define sa_sigaction __sigaction_handler.sa_sigaction`,
         /// which trips `-Wdisabled-macro-expansion`.
@@ -404,6 +382,7 @@ int LLVMFuzzerTestOneInput(const uint8_t * data, size_t size)
         cv.wait(lock, []{ return state == FuzzerState::WAITING_FOR_INPUT || state == FuzzerState::FINISHED; });
     }
 
+    iteration_start_ns.store(0, std::memory_order_release);
     return 0;
 }
 
