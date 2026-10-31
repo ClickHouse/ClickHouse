@@ -1,0 +1,15 @@
+select
+1	one	0	2	[0,1]
+2	\N	1	0	[]
+3	three	0	1	[0]
+filter, pushdown enabled
+1
+three
+1
+filter, pushdown disabled
+1
+three
+1
+table function
+2	0
+3	1

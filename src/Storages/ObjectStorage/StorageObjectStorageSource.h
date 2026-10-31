@@ -60,6 +60,7 @@ public:
         FormatFilterInfoPtr format_filter_info_,
         bool need_only_count_,
         LazyObjectStorageFileRegistryPtr lazy_row_index_registry_ = nullptr,
+        std::optional<size_t> limit_ = {},
         ObjectStorageTopKQueryConditionCacheKeyPtr top_k_query_condition_cache_key_ = nullptr);
 
     ~StorageObjectStorageSource() override;
@@ -109,6 +110,8 @@ protected:
     const std::optional<FormatSettings> format_settings;
     const UInt64 max_block_size;
     const bool need_only_count;
+    /// Optional row upper bound from SourceStepWithFilter (limit+offset). Consumed by custom readers.
+    const std::optional<size_t> limit;
     FormatParserSharedResourcesPtr parser_shared_resources;
     FormatFilterInfoPtr format_filter_info;
     /// The `table_id` of the query condition cache entries (see `QueryConditionCache::getTableIdForFileEntries`).
@@ -203,6 +206,7 @@ protected:
         FormatParserSharedResourcesPtr parser_shared_resources,
         FormatFilterInfoPtr format_filter_info,
         bool need_only_count,
+        std::optional<size_t> limit = {},
         ObjectStorageTopKQueryConditionCacheKeyPtr top_k_query_condition_cache_key = nullptr);
 
     ReaderHolder createReader();

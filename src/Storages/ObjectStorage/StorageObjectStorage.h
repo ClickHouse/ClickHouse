@@ -18,6 +18,7 @@
 
 #include <memory>
 #include <mutex>
+#include <unordered_map>
 
 #include <Common/MultiVersion.h>
 #include <Storages/IPartitionStrategy.h>
@@ -176,6 +177,10 @@ public:
 
     void updateExternalDynamicMetadataIfExists(ContextPtr query_context) override;
 
+    /// For a data lake table, returns the metadata published by `updateExternalDynamicMetadataIfExists`
+    /// for this query, so a concurrent query refreshing the same table cannot replace the analyzed snapshot.
+    StorageMetadataHandle getInMemoryMetadataPtr(ContextPtr query_context, bool bypass_metadata_cache) const override;
+
     std::shared_ptr<IDataLakeMetadata> getExternalMetadata(ContextPtr query_context);
 
     std::shared_ptr<DataLake::ICatalog> getCatalog() const { return catalog; }
@@ -252,6 +257,9 @@ public:
     }
 
 protected:
+    /// Remembers `metadata` as the metadata of this table for the rest of the query of `query_context`.
+    void pinQueryMetadata(const ContextPtr & query_context, StorageMetadataPtr metadata) const;
+
     /// `ALTER TABLE ... MODIFY SETTING` and `RESET SETTING` of a data lake table.
     void alterSettings(const StorageInMemoryMetadata & new_metadata, ContextPtr context);
 
@@ -304,6 +312,17 @@ protected:
     std::mutex settings_changes_mutex;
     /// Stays false on a failed resolution, so the next query retries it.
     bool hive_partitioning_sample_path_resolved TSA_GUARDED_BY(hive_partitioning_resolution_mutex) = false;
+
+    /// Metadata pinned by `pinQueryMetadata` for each running query, keyed by its query context.
+    /// It does not depend on `QueryMetadataCache`, which exists only with `enable_shared_storage_snapshot_in_query`.
+    /// The weak pointer tells a live query context from a destroyed one whose address was reused.
+    struct QueryPinnedMetadata
+    {
+        ContextWeakPtr query_context;
+        StorageMetadataPtr metadata;
+    };
+    mutable std::mutex query_pinned_metadata_mutex;
+    mutable std::unordered_map<const Context *, QueryPinnedMetadata> query_pinned_metadata TSA_GUARDED_BY(query_pinned_metadata_mutex);
 
     LoggerPtr log;
 

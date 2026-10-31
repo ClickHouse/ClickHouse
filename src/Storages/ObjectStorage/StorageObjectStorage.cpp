@@ -80,12 +80,15 @@ namespace ErrorCodes
     extern const int INCORRECT_DATA;
     extern const int BAD_ARGUMENTS;
     extern const int ACCESS_DENIED;
+    extern const int LOGICAL_ERROR;
     extern const int CANNOT_COMPILE_REGEXP;
 }
 
 namespace FailPoints
 {
     extern const char datalake_simulate_missing_table_state[];
+    extern const char datalake_distributed_worker_latest_snapshot[];
+    extern const char object_storage_after_update_external_metadata_pause[];
 }
 
 namespace
@@ -662,7 +665,7 @@ void StorageObjectStorage::updateExternalDynamicMetadataIfExists(ContextPtr quer
     if (!state)
         return;
 
-    auto current_metadata = getInMemoryMetadataPtr(query_context, false);
+    auto current_metadata = getInMemoryMetadataPtr(query_context, /*bypass_metadata_cache=*/ true);
     auto new_metadata = *current_metadata;
     /// Always pin the current snapshot version to prevent logical races between query
     /// analysis (which picks the schema) and query execution (which iterates files).
@@ -682,10 +685,41 @@ void StorageObjectStorage::updateExternalDynamicMetadataIfExists(ContextPtr quer
         format_settings,
         configuration->partition_strategy_type));
 
-    std::lock_guard lock(settings_changes_mutex);
-    auto latest_metadata = getInMemoryMetadataPtr(query_context, false);
-    metadata_with_virtuals.settings_changes = latest_metadata->settings_changes;
-    setInMemoryMetadata(metadata_with_virtuals);
+    {
+        std::lock_guard lock(settings_changes_mutex);
+        auto latest_metadata = getInMemoryMetadataPtr(query_context, /*bypass_metadata_cache=*/ true);
+        metadata_with_virtuals.settings_changes = latest_metadata->settings_changes;
+        setInMemoryMetadata(metadata_with_virtuals);
+    }
+
+    /// The shared metadata can be replaced by a concurrent query before the caller reads it back,
+    /// so keep the metadata of this query's snapshot for the rest of the query.
+    pinQueryMetadata(query_context, std::make_shared<const StorageInMemoryMetadata>(std::move(metadata_with_virtuals)));
+
+    FailPointInjection::pauseFailPoint(FailPoints::object_storage_after_update_external_metadata_pause);
+}
+
+void StorageObjectStorage::pinQueryMetadata(const ContextPtr & query_context, StorageMetadataPtr metadata) const
+{
+    if (!query_context || !query_context->hasQueryContext())
+        return;
+    ContextPtr owner = query_context->getQueryContext();
+
+    std::lock_guard lock(query_pinned_metadata_mutex);
+    std::erase_if(query_pinned_metadata, [](const auto & entry) { return entry.second.query_context.expired(); });
+    query_pinned_metadata[owner.get()] = QueryPinnedMetadata{owner, std::move(metadata)};
+}
+
+StorageMetadataHandle StorageObjectStorage::getInMemoryMetadataPtr(ContextPtr query_context, bool bypass_metadata_cache) const
+{
+    if (!bypass_metadata_cache && configuration->isDataLakeConfiguration() && query_context && query_context->hasQueryContext())
+    {
+        const Context * owner = query_context->getQueryContext().get();
+        std::lock_guard lock(query_pinned_metadata_mutex);
+        if (auto it = query_pinned_metadata.find(owner); it != query_pinned_metadata.end() && it->second.query_context.lock().get() == owner)
+            return it->second.metadata;
+    }
+    return IStorage::getInMemoryMetadataPtr(query_context, bypass_metadata_cache);
 }
 
 
@@ -849,29 +883,55 @@ void StorageObjectStorage::read(
         && !storage_snapshot->metadata->datalake_table_state.has_value())
     {
         /// Initialize underlying datalake metadata if it has not been yet.
-        /// Cluster table function workers and other paths that bypass the analyzer
-        /// reach `read` without having had `update`/`updateExternalDynamicMetadataIfExists`
-        /// called, so `getTableStateSnapshot` would otherwise hit an "uninitialized" assertion.
+        /// Paths that bypass the analyzer reach `read` without having had
+        /// `update`/`updateExternalDynamicMetadataIfExists` called.
         if (is_table_function)
             configuration->lazyInitializeIfNeeded(object_storage, local_context);
         else
             configuration->update(object_storage, local_context);
 
-        if (auto state = configuration->getTableStateSnapshot(local_context))
+        /// A distributed table-function worker gets its schema in the query sent by the
+        /// initiator and its exact data snapshot in every task object. Fetching the worker's
+        /// local latest snapshot here could combine a new schema with an older task snapshot.
+        /// Formats opting into this contract must keep the initiator schema unchanged.
+        const bool use_explicit_initiator_schema
+            = distributed_processing && is_table_function
+            && configuration->supportsDistributedReadWithExplicitSchema();
+
+        if (use_explicit_initiator_schema)
         {
-            StorageInMemoryMetadata pinned = *storage_snapshot->metadata;
-            pinned.setDataLakeTableState(*state);
-
-            /// Reload columns and sorting key from the same state so they cannot diverge.
-            if (configuration->shouldReloadSchemaForConsistency(local_context))
+            if (storage_snapshot->metadata->getColumns().getAllPhysical().empty())
             {
-                if (auto rebuilt = configuration->buildStorageMetadataFromState(*state, local_context))
-                    pinned = rebuilt->withVirtuals(VirtualColumnUtils::getVirtualsForFileLikeStorage(
-                        rebuilt->columns, local_context, format_settings, configuration->partition_strategy_type));
+                throw Exception(
+                    ErrorCodes::LOGICAL_ERROR,
+                    "Distributed {} read requires an explicit schema from the initiator",
+                    configuration->getEngineName());
             }
+        }
+        else
+        {
+            fiu_do_on(FailPoints::datalake_distributed_worker_latest_snapshot,
+            {
+                if (distributed_processing && is_table_function)
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Distributed data lake worker attempted to fetch its local latest snapshot");
+            });
 
-            storage_snapshot = std::make_shared<StorageSnapshot>(
-                *this, std::make_shared<StorageInMemoryMetadata>(std::move(pinned)));
+            if (auto state = configuration->getTableStateSnapshot(local_context))
+            {
+                StorageInMemoryMetadata pinned = *storage_snapshot->metadata;
+                pinned.setDataLakeTableState(*state);
+
+                /// Reload columns and sorting key from the same state so they cannot diverge.
+                if (configuration->shouldReloadSchemaForConsistency(local_context))
+                {
+                    if (auto rebuilt = configuration->buildStorageMetadataFromState(*state, local_context))
+                        pinned = rebuilt->withVirtuals(VirtualColumnUtils::getVirtualsForFileLikeStorage(
+                            rebuilt->columns, local_context, format_settings, configuration->partition_strategy_type));
+                }
+
+                storage_snapshot = std::make_shared<StorageSnapshot>(
+                    *this, std::make_shared<StorageInMemoryMetadata>(std::move(pinned)));
+            }
         }
     }
 
@@ -1345,7 +1405,7 @@ void StorageObjectStorage::alter(const AlterCommands & params, ContextPtr contex
     /// Do not interleave with the hive partitioning resolution, which also updates the metadata.
     std::lock_guard lock(hive_partitioning_resolution_mutex);
 
-    auto metadata_snapshot = getInMemoryMetadataPtr(context, false);
+    auto metadata_snapshot = getInMemoryMetadataPtr(context, /*bypass_metadata_cache=*/ true);
     StorageInMemoryMetadata new_metadata = *metadata_snapshot;
     params.apply(new_metadata, context);
 
@@ -1367,6 +1427,7 @@ void StorageObjectStorage::alter(const AlterCommands & params, ContextPtr contex
         .getDatabase(storage_id.database_name)
         ->alterTable(context, storage_id, new_metadata, /*validate_new_create_query=*/true);
     setInMemoryMetadata(new_metadata);
+    pinQueryMetadata(context, std::make_shared<const StorageInMemoryMetadata>(std::move(new_metadata)));
 }
 void StorageObjectStorage::alterSettings(const StorageInMemoryMetadata & new_metadata, ContextPtr context)
 {
@@ -1408,10 +1469,11 @@ void StorageObjectStorage::alterSettings(const StorageInMemoryMetadata & new_met
             throw;
         }
         std::lock_guard lock(settings_changes_mutex);
-        auto latest_metadata_snapshot = getInMemoryMetadataPtr(context, false);
+        auto latest_metadata_snapshot = getInMemoryMetadataPtr(context, /*bypass_metadata_cache=*/ true);
         auto latest_metadata = *latest_metadata_snapshot;
         latest_metadata.settings_changes = new_metadata.settings_changes;
         setInMemoryMetadata(latest_metadata);
+        pinQueryMetadata(context, std::make_shared<const StorageInMemoryMetadata>(std::move(latest_metadata)));
     }
     catch (...)
     {

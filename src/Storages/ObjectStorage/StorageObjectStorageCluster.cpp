@@ -562,7 +562,10 @@ RemoteQueryExecutor::Extension StorageObjectStorageCluster::getTaskIteratorExten
         /*ignore_archive_globs=*/false,
         /*skip_object_metadata=*/true);
 
-    if (local_context->getSettingsRef()[Setting::cluster_table_function_split_granularity] == ObjectStorageGranularityLevel::BUCKET)
+    /// Dataset formats (e.g. `Lance`) produce synthetic tasks that carry their own snapshot and fragment metadata.
+    /// They are not physical objects in `configuration->format`, so they cannot be split into buckets.
+    if (local_context->getSettingsRef()[Setting::cluster_table_function_split_granularity] == ObjectStorageGranularityLevel::BUCKET
+        && !configuration->supportsDistributedReadWithExplicitSchema())
     {
         iterator = std::make_shared<ObjectIteratorSplitByBuckets>(
             std::move(iterator),
