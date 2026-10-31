@@ -27,3 +27,11 @@ OK
 OK
 OK
 OK
+-- the query condition cache does not record a row group skipped with rows equal to the threshold
+0
+0
+0
+0
+0
+0
+2	1	1	0

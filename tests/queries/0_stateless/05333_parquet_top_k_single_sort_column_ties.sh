@@ -76,3 +76,31 @@ for query in "${queries[@]}"; do
     compare "${ST[*]}" "${query}"
     compare "${MT[*]}" "${query}"
 done
+
+echo "-- the query condition cache does not record a row group skipped with rows equal to the threshold"
+# Overlapping runs keeping different tied row groups would together record all of them as holding no row of the
+# result. So a rerun skips the same row groups by the threshold again, none by the cache. An mtime in the past
+# makes the cache trust the file version.
+FILE="${CLICKHOUSE_DATABASE}_05333.parquet"
+cp "${DIR}/t.parquet" "${USER_FILES_PATH:?}/${FILE}"
+touch -d '2020-01-01 00:00:00' "${USER_FILES_PATH}/${FILE}"
+SETTINGS="use_query_condition_cache = 1, use_query_condition_cache_for_top_k = 1, use_top_k_dynamic_filtering = 1,
+    query_plan_max_limit_for_top_k_optimization = 10000, max_threads = 1, max_parsing_threads = 1, max_block_size = 65409,
+    input_format_parquet_use_native_reader_v3 = 1, input_format_parquet_filter_push_down = 1,
+    input_format_parquet_preserve_order = 0, enable_parallel_replicas = 0"
+${CLICKHOUSE_CLIENT} --query "
+    DROP TABLE IF EXISTS t_05333;
+    CREATE TABLE t_05333 (k UInt64, v UInt64, n Nullable(UInt64)) ENGINE = File(Parquet, '${FILE}')"
+QUERY_ID="${CLICKHOUSE_TEST_UNIQUE_NAME}_$(random_str 10)"
+for run in 1 2; do
+    ${CLICKHOUSE_CLIENT} --query_id "${QUERY_ID}_${run}" --query "
+        SELECT k FROM t_05333 ORDER BY k LIMIT 3 SETTINGS ${SETTINGS}"
+done
+${CLICKHOUSE_CLIENT} --query "
+    SYSTEM FLUSH LOGS query_log;
+    SELECT count(), min(skipped) > 0, min(skipped) = max(skipped), sum(ProfileEvents['QueryConditionCacheHits'])
+    FROM (SELECT ProfileEvents['ParquetTopKSkippedRowGroups'] AS skipped, ProfileEvents FROM system.query_log
+        WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND event_date >= yesterday()
+            AND query_id IN ('${QUERY_ID}_1', '${QUERY_ID}_2'));
+    DROP TABLE t_05333"
+rm -f "${USER_FILES_PATH}/${FILE}"
