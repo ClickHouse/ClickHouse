@@ -183,7 +183,7 @@ protected:
 std::string signalToErrorMessage(int sig, const siginfo_t & info, const ucontext_t & context);
 
 std::optional<UInt64> getFaultAddress(int sig, const siginfo_t & info);
-std::string getFaultMemoryAccessType(int sig, const ucontext_t & context);
+const char * getFaultMemoryAccessType(int sig, const siginfo_t & info, const ucontext_t & context);
 #endif
 std::string getSignalCodeDescription(int sig, int si_code);
 
