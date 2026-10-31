@@ -25,21 +25,41 @@ ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&sig=${secret}_sig" -d "SELECT 1 FORMAT
 # so masking must too, or the value leaks. --globoff stops curl treating the literal as a glob.
 ${CLICKHOUSE_CURL} -sS --globoff "${CLICKHOUSE_URL}&pass%77ord=${secret}_enc" -d "SELECT 1 FORMAT Null" >/dev/null 2>&1
 
+# The query text and the bound query parameters are logged by executeQuery with secrets masked, so the
+# Request URI line must hide them: a credential in the query, under an encoded name (quer%79 -> query),
+# bound through a parameter, and in the clickhouse.uri attribute of the HTTPHandler span. Each request
+# has its own query_id to find its Request URI line. EXPLAIN AST only parses: nothing connects to s3.
+function s3_query()
+{
+    echo "EXPLAIN AST SELECT * FROM s3('http://127.0.0.1:1/x.csv', 'AKIAEXAMPLE', $1, 'CSV', 'a String')"
+}
+trace_id=$(${CLICKHOUSE_CLIENT} --query="SELECT lower(hex(reverse(reinterpretAsString(generateUUIDv4()))))")
+${CLICKHOUSE_CURL} -sS -G "${CLICKHOUSE_URL}&query_id=${secret}_id_a" \
+    --data-urlencode "query=$(s3_query "'${secret}_qtext'")" >/dev/null 2>&1
+${CLICKHOUSE_CURL} -sS -G --globoff "${CLICKHOUSE_URL}&query_id=${secret}_id_b" \
+    --data-urlencode "quer%79=$(s3_query "'${secret}_qname'")" >/dev/null 2>&1
+${CLICKHOUSE_CURL} -sS -G "${CLICKHOUSE_URL}&query_id=${secret}_id_c" \
+    --data-urlencode "param_s=${secret}_qbound" --data-urlencode "query=$(s3_query '{s:String}')" >/dev/null 2>&1
+${CLICKHOUSE_CURL} -sS -G "${CLICKHOUSE_URL}&query_id=${secret}_id_d" --header "traceparent: 00-${trace_id}-0000000000000073-01" \
+    --data-urlencode "query=$(s3_query "'${secret}_qspan'")" >/dev/null 2>&1
+
 # A non-sensitive parameter must NOT be redacted. Issued last on purpose (see the loop below).
-${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&param_visible=${secret}_visible" -d "SELECT 1 FORMAT Null" >/dev/null 2>&1
+${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&query_id=${secret}_visible" -d "SELECT 1 FORMAT Null" >/dev/null 2>&1
 
 # The "Request URI" trace entry is written asynchronously, after the HTTP response is sent
 # (https://github.com/ClickHouse/ClickHouse/issues/84364), so a single FLUSH LOGS races the
-# log write. Retry FLUSH until both positive-control rows have landed: the masked
-# param_secret_key line and the non-sensitive param_visible line (issued last, so all earlier
-# Request URI lines are flushed by then too). enable_parallel_replicas=0 keeps these
-# system.text_log reads local (CI randomization may otherwise route them to a cluster).
+# log write. Retry FLUSH until the positive-control rows have landed: the masked
+# param_secret_key line, the Request URI lines of the query_id requests and the non-sensitive
+# query_id line (issued last, so all earlier Request URI lines are flushed by then too).
+# enable_parallel_replicas=0 keeps these system.text_log reads local (CI randomization may
+# otherwise route them to a cluster).
 for _ in {1..60}; do
     ${CLICKHOUSE_CLIENT} --query="SYSTEM FLUSH LOGS text_log"
     landed=$(${CLICKHOUSE_CLIENT} --query="
         SELECT
             countIf(message LIKE '%Request URI%' AND message LIKE '%param_secret_key=[HIDDEN]%') > 0
-            AND countIf(message LIKE '%Request URI%' AND message LIKE '%param_visible=${secret}\\_visible%') > 0
+            AND countIf(message LIKE '%Request URI%' AND message LIKE '%query_id=${secret}\\_id\\_%') >= 4
+            AND countIf(message LIKE '%Request URI%' AND message LIKE '%query_id=${secret}\\_visible%') > 0
         FROM system.text_log
         WHERE event_date >= yesterday() AND event_time >= toDateTime(${test_start})
         SETTINGS max_rows_to_read = 0, enable_parallel_replicas = 0")
@@ -80,5 +100,50 @@ ${CLICKHOUSE_CLIENT} --query="
     SELECT count() > 0 FROM system.text_log
     WHERE event_date >= yesterday() AND event_time >= toDateTime(${test_start})
       AND message LIKE '%Request URI%'
-      AND message LIKE '%param_visible=${secret}\\_visible%'
+      AND message LIKE '%query_id=${secret}\\_visible%'
     SETTINGS max_rows_to_read = 0, enable_parallel_replicas = 0"
+
+echo "--- the query text and bound query parameters must NOT appear in text_log ---"
+${CLICKHOUSE_CLIENT} --query="
+    SELECT
+        countIf(message LIKE '%${secret}\\_qtext%'),
+        countIf(message LIKE '%${secret}\\_qname%'),
+        countIf(message LIKE '%${secret}\\_qbound%'),
+        countIf(message LIKE '%${secret}\\_qspan%')
+    FROM system.text_log
+    WHERE event_date >= yesterday() AND event_time >= toDateTime(${test_start})
+    SETTINGS max_rows_to_read = 0, enable_parallel_replicas = 0"
+
+echo "--- their Request URI lines are logged with [HIDDEN] ---"
+${CLICKHOUSE_CLIENT} --query="
+    SELECT
+        countIf(message LIKE '%query_id=${secret}\\_id\\_a%' AND message LIKE '%&query=[HIDDEN]%') > 0,
+        countIf(message LIKE '%query_id=${secret}\\_id\\_b%' AND message LIKE '%&quer\\%79=[HIDDEN]%') > 0,
+        countIf(message LIKE '%query_id=${secret}\\_id\\_c%' AND message LIKE '%&param\\_s=[HIDDEN]&query=[HIDDEN]%') > 0,
+        countIf(message LIKE '%query_id=${secret}\\_id\\_d%' AND message LIKE '%&query=[HIDDEN]%') > 0
+    FROM system.text_log
+    WHERE event_date >= yesterday() AND event_time >= toDateTime(${test_start})
+      AND message LIKE '%Request URI%'
+    SETTINGS max_rows_to_read = 0, enable_parallel_replicas = 0"
+
+echo "--- the credential reached executeQuery, which masks it ---"
+${CLICKHOUSE_CLIENT} --query="
+    SELECT count() > 0 FROM system.text_log
+    WHERE event_date >= yesterday() AND event_time >= toDateTime(${test_start})
+      AND query_id = '${secret}_id_a' AND logger_name = 'executeQuery'
+      AND message LIKE '%''AKIAEXAMPLE'', ''[HIDDEN]''%'
+    SETTINGS max_rows_to_read = 0, enable_parallel_replicas = 0"
+
+echo "--- the clickhouse.uri span attribute hides the query text ---"
+for _ in {1..60}; do
+    ${CLICKHOUSE_CLIENT} --query="SYSTEM FLUSH LOGS opentelemetry_span_log"
+    uri_hidden=$(${CLICKHOUSE_CLIENT} --query="
+        SELECT attribute['clickhouse.uri'] LIKE '%&query=[HIDDEN]%' AND attribute['clickhouse.uri'] NOT LIKE '%${secret}\\_qspan%'
+        FROM system.opentelemetry_span_log
+        WHERE finish_date >= yesterday() AND operation_name = 'HTTPHandler'
+          AND trace_id = UUIDNumToString(toFixedString(unhex('${trace_id}'), 16))
+        SETTINGS max_rows_to_read = 0, enable_parallel_replicas = 0")
+    [ -n "$uri_hidden" ] && break
+    sleep 0.5
+done
+echo "$uri_hidden"

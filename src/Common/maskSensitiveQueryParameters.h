@@ -1,5 +1,6 @@
 #pragma once
 
+#include <functional>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -17,11 +18,13 @@ namespace DB
 /// `param_aws_secret_access_key`), the `password` HTTP parameter, and S3-style
 /// `x-amz-*`/`signature` parameters. The value of every matching parameter is replaced with
 /// "[HIDDEN]", while names, ordering and all other parameters are preserved so the URI stays
-/// useful for debugging.
+/// useful for debugging. The values of parameters whose percent-decoded name satisfies
+/// `is_hidden_parameter` are hidden as well.
 ///
 /// Only the query-string part (after the first '?') is processed; the path is left untouched.
 /// If the URI has no query string, the original string is returned unchanged.
-std::string maskSensitiveQueryParametersInURI(const std::string & uri);
+std::string maskSensitiveQueryParametersInURI(
+    const std::string & uri, const std::function<bool(const std::string &)> & is_hidden_parameter = {});
 
 /// Decode a query-string component (a parameter name or value) the same way the server interprets it:
 /// HTMLForm::readQuery turns '+' into a space and percent-decodes ('%XX'). A name is classified on

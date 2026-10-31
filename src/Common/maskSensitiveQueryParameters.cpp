@@ -91,7 +91,7 @@ std::string decodeQueryComponent(std::string_view name)
     return decoded;
 }
 
-std::string maskSensitiveQueryParametersInURI(const std::string & uri)
+std::string maskSensitiveQueryParametersInURI(const std::string & uri, const std::function<bool(const std::string &)> & is_hidden_parameter)
 {
     const auto question = uri.find('?');
     if (question == std::string::npos)
@@ -127,7 +127,7 @@ std::string maskSensitiveQueryParametersInURI(const std::string & uri)
             const std::string_view name = pair.substr(0, eq);
             result.append(name.data(), name.size());
             result += '=';
-            if (isSensitiveParameterName(name))
+            if (isSensitiveParameterName(name) || (is_hidden_parameter && is_hidden_parameter(decodeQueryComponent(name))))
                 result.append(HIDDEN_SECRET);
             else
                 result.append(pair.data() + eq + 1, pair.size() - eq - 1);
