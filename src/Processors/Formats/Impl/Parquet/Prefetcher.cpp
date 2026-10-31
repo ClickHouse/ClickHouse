@@ -326,7 +326,7 @@ bool Prefetcher::readsSeparately(const std::vector<PrefetchHandle *> & handles)
         if (covered.contains(req) || req->state.load(std::memory_order_acquire) != RequestState::State::HasRange)
             continue;
         any_unread = true;
-        /// Like startPrefetch: in the handles' order, with the requested ranges coalescable with each other and the others as their allow_incidental_read says.
+        /// Must pick the same ranges, in the same order, as startPrefetch.
         auto picked = pickRangesLocked(req, /*splitting=*/ false, 0, 0, &own, /*allow_incidental=*/ true);
         const auto & ranges = range_sets.at(req->range_set_idx).ranges;
         for (size_t idx = picked.start_idx; idx < picked.end_idx; ++idx)

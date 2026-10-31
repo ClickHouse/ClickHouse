@@ -77,7 +77,7 @@ public:
     std::optional<AdjacentRanges> getAdjacentRanges(const std::vector<PrefetchHandle *> & handles);
     bool extendsAdjacentRanges(const AdjacentRanges & run, const AdjacentRanges & next) const;
 
-    /// Whether startPrefetch would read the not yet started of these requests without covering any other request (false if all started).
+    /// Whether startPrefetch would read the unstarted of these requests without covering any other request; false if all are started.
     bool readsSeparately(const std::vector<PrefetchHandle *> & handles);
 
     /// If prefetched, returns prefetched data.
