@@ -9,6 +9,10 @@ namespace DB
 
 bool ask(std::string question, ReadBuffer & in, WriteBuffer & out)
 {
+    /// A failed read cancels `in`, and nothing can be read from it after that: assume the default answer.
+    if (in.isCanceled())
+        return false;
+
     while (true)
     {
         std::string answer;

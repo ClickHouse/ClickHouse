@@ -2534,6 +2534,10 @@ namespace
 {
 bool isStdinNotEmptyAndValid(ReadBuffer & std_in)
 {
+    /// A failed read cancels `std_in`, and nothing can be read from it after that.
+    if (std_in.isCanceled())
+        return false;
+
     try
     {
         return !std_in.eof();
@@ -2923,6 +2927,9 @@ void ClientBase::sendDataFromPipe(Pipe && pipe, ASTPtr parsed_query, bool have_m
 void ClientBase::sendDataFromStdin(Block & sample, const ColumnsDescription & columns_description, ASTPtr parsed_query)
 {
     /// Send data read from stdin.
+    if (std_in->isCanceled())
+        throw Exception(ErrorCodes::NO_DATA_TO_INSERT, "No data to insert");
+
     try
     {
         if (default_input_compression_method != CompressionMethod::None)
