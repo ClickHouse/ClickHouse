@@ -12,6 +12,7 @@
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <Common/NetException.h>
+#include <Interpreters/ClusterProxy/executeQuery.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DDLTask.h>
 #include <Interpreters/DDLWorker.h>
@@ -144,14 +145,17 @@ void DDLLogEntry::setSettingsIfRequired(ContextPtr context)
         /// executing host `USE` the initiator's database, which may not exist there and aborts the task,
         /// leaving `ON CLUSTER` queries hanging until `distributed_ddl_task_timeout`; and a new setting
         /// name reaches an older worker during a rolling upgrade as `UNKNOWN_SETTING`. Strip them here,
-        /// mirroring `ClusterProxy::stripInitiatorOnlySettings`.
-        static constexpr std::array initiator_only_settings = {
-            "database", "select", "order", "sort", "filter", "additional_result_filter",
-            "limit", "offset", "page", "format", "input_format", "output_format", "default_format", "compression",
-            "http_allow_database_as_path", "http_allow_table_as_file", "http_allow_filters_as_path",
-            "http_allow_filters_as_unrecognized_url_parameters", "implicit_table_at_top_level"};
-        for (const auto * name : initiator_only_settings)
+        /// using the same list as `ClusterProxy::stripInitiatorOnlySettings` (which also covers
+        /// `async_insert_select_as_async_insert`, meaningful only for the initiator's local `INSERT ... SELECT`).
+        for (std::string_view name : ClusterProxy::getInitiatorOnlySettingNames())
             settings->removeSetting(name);
+
+        /// An explicit `use_uncompressed_cache = 0` is not resolved into these settings (unlike
+        /// `ClusterProxy::resolveAutomaticUncompressedCacheOptOut` does for the settings packet of a secondary
+        /// query): they are reapplied on the worker without the fallback for unknown settings, so writing
+        /// `enable_automatic_use_uncompressed_cache` here would make an older worker reject the task with
+        /// `UNKNOWN_SETTING` during a rolling upgrade. The opt-out matters only for a DDL query that reads,
+        /// and `executeDDLQueryOnCluster` bakes it into the query text of such a query instead.
     }
 }
 
