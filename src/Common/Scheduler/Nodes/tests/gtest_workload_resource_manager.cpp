@@ -42,6 +42,7 @@
 
 #include <Interpreters/Context.h>
 #include <Interpreters/ProcessList.h>
+#include <Interpreters/QuerySlot.h>
 #include <Processors/Executors/Runtime/V1/PipelineExecutor.h>
 #include <Processors/IProcessor.h>
 #include <Processors/SpillableAdapter.h>
@@ -72,6 +73,7 @@ namespace DB::ErrorCodes
     extern const int SERVER_OVERLOADED;
     extern const int RESOURCE_LIMIT_EXCEEDED;
     extern const int INVALID_SCHEDULER_NODE;
+    extern const int QUERY_SLOT_ACQUISITION_TIMEOUT;
 }
 
 using namespace DB;
@@ -222,12 +224,13 @@ struct ResourceTest : ResourceTestManager<WorkloadResourceManager>
 {
     WorkloadEntityTestStorage storage;
 
-    explicit ResourceTest(size_t thread_count = 1)
+    explicit ResourceTest(size_t thread_count = 1, bool query_slot_admission_uses_priority = true)
         : ResourceTestManager(thread_count, DoNotInitManager)
     {
         /// The test owns `storage` on the stack, so pass a non-owning shared_ptr.
         manager = std::make_shared<WorkloadResourceManager>(
-            std::shared_ptr<IWorkloadEntityStorage>(&storage, [](IWorkloadEntityStorage *) {}));
+            std::shared_ptr<IWorkloadEntityStorage>(&storage, [](IWorkloadEntityStorage *) {}),
+            query_slot_admission_uses_priority);
     }
 
     void query(const String & query_str)
@@ -4426,7 +4429,7 @@ TEST(SchedulerWorkloadResourceManager, CpuLeafUsesConfiguredSchedulerLikeIO)
 {
     // The `scheduler` setting applies to a CPU leaf exactly as to an IO leaf: it is NOT gated on
     // `cpu_slot_preemption`, which is a runtime-only server property affecting slot cost, no longer
-    // captured in the node. Other time-shared leaves (e.g. QuerySlot admission) always run fifo.
+    // captured in the node. Other units always run fifo.
     using Traits = WorkloadNodeTraits<ITimeSharedNode>;
 
     WorkloadSettings ws;
@@ -4940,4 +4943,246 @@ TEST(SchedulerWorkloadResourceManager, UnsubscribeSkipsHandlerNotYetReached)
         << "The notification never reached the handlers after the blocker, so the assertion below is vacuous";
     EXPECT_EQ(probe->unsubscribed_handler_calls.load(), 0)
         << "A handler was called after its subscription guard had already been destroyed";
+}
+
+// ---------- QUERY resource (space-shared query slots) ---------- //
+
+TEST(SchedulerWorkloadResourceManager, QuerySlotIsSpaceShared)
+{
+    ResourceTest t;
+
+    t.query("CREATE RESOURCE query (QUERY)");
+    t.query("CREATE WORKLOAD all SETTINGS max_concurrent_queries = 2");
+
+    ClassifierPtr c = t.manager->acquire("all");
+    ResourceLink link = c->get("query");
+    ASSERT_NE(link.allocation_queue, nullptr);
+    ASSERT_EQ(link.queue, nullptr);
+}
+
+TEST(SchedulerWorkloadResourceManager, QuerySlotMaxConcurrentQueriesBlocksWithoutEviction)
+{
+    ResourceTest t;
+
+    t.query("CREATE RESOURCE query (QUERY)");
+    t.query("CREATE WORKLOAD all SETTINGS max_concurrent_queries = 2");
+
+    ClassifierPtr c = t.manager->acquire("all");
+    ResourceLink link = c->get("query");
+
+    auto s1 = std::make_unique<QuerySlot>(link, std::chrono::steady_clock::time_point::max(), "q1");
+    auto s2 = std::make_unique<QuerySlot>(link, std::chrono::steady_clock::time_point::max(), "q2");
+
+    // The third query must wait for a slot: the limit blocks admission and never evicts a running query.
+    std::atomic<bool> acquired = false;
+    std::unique_ptr<QuerySlot> s3;
+    auto * waiter = t.async([&]
+    {
+        s3 = std::make_unique<QuerySlot>(link, std::chrono::steady_clock::time_point::max(), "q3");
+        acquired = true;
+    });
+    std::this_thread::sleep_for(std::chrono::milliseconds(200));
+    EXPECT_FALSE(acquired.load());
+
+    s1.reset(); // Releasing a slot admits the waiting query
+    waiter->join();
+    EXPECT_TRUE(acquired.load());
+    s2.reset();
+    s3.reset();
+}
+
+TEST(SchedulerWorkloadResourceManager, QuerySlotAdmissionTimeout)
+{
+    ResourceTest t;
+
+    t.query("CREATE RESOURCE query (QUERY)");
+    t.query("CREATE WORKLOAD all SETTINGS max_concurrent_queries = 1");
+
+    ClassifierPtr c = t.manager->acquire("all");
+    ResourceLink link = c->get("query");
+
+    QuerySlot holder(link, std::chrono::steady_clock::time_point::max(), "holder");
+    auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(100);
+    try
+    {
+        QuerySlot waiter(link, deadline, "waiter");
+        FAIL() << "QuerySlot must time out";
+    }
+    catch (const Exception & e)
+    {
+        EXPECT_EQ(e.code(), ErrorCodes::QUERY_SLOT_ACQUISITION_TIMEOUT);
+    }
+    EXPECT_EQ(static_cast<AllocationQueue *>(link.allocation_queue)->getQueueLengthAndSize().first, 0); // The timed out allocation is canceled
+}
+
+TEST(SchedulerWorkloadResourceManager, QuerySlotTimeoutRacingWithGrant)
+{
+    ResourceTest t;
+
+    t.query("CREATE RESOURCE query (QUERY)");
+    t.query("CREATE WORKLOAD all SETTINGS max_concurrent_queries = 1");
+
+    ClassifierPtr c = t.manager->acquire("all");
+    ResourceLink link = c->get("query");
+
+    // An already expired deadline with a free slot: the timeout races with the grant. Either the slot is admitted
+    // and kept, or the query times out with the allocation canceled. A slot is never leaked or released behind
+    // the owner's back, so the hierarchy is empty after every attempt.
+    size_t admitted = 0;
+    size_t timed_out = 0;
+    for (int i = 0; i < 300; ++i)
+    {
+        try
+        {
+            QuerySlot slot(link, std::chrono::steady_clock::now(), "racer");
+            ++admitted;
+        }
+        catch (const Exception & e)
+        {
+            ASSERT_EQ(e.code(), ErrorCodes::QUERY_SLOT_ACQUISITION_TIMEOUT);
+            ++timed_out;
+        }
+        // The next query is admitted at once, so the previous attempt left nothing behind
+        QuerySlot next(link, std::chrono::steady_clock::now() + std::chrono::seconds(10), "next");
+    }
+    EXPECT_EQ(admitted + timed_out, 300);
+}
+
+TEST(SchedulerWorkloadResourceManager, QuerySlotMaxWaitingQueries)
+{
+    ResourceTest t;
+
+    t.query("CREATE RESOURCE query (QUERY)");
+    t.query("CREATE WORKLOAD all SETTINGS max_concurrent_queries = 1, max_waiting_queries = 1");
+
+    ClassifierPtr c = t.manager->acquire("all");
+    ResourceLink link = c->get("query");
+
+    auto holder = std::make_unique<QuerySlot>(link, std::chrono::steady_clock::time_point::max(), "holder");
+    std::unique_ptr<QuerySlot> waiting;
+    auto * waiter = t.async([&] { waiting = std::make_unique<QuerySlot>(link, std::chrono::steady_clock::time_point::max(), "waiting"); });
+    while (static_cast<AllocationQueue *>(link.allocation_queue)->getQueueLengthAndSize().first == 0)
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+
+    try
+    {
+        QuerySlot rejected(link, std::chrono::steady_clock::time_point::max(), "rejected");
+        FAIL() << "QuerySlot must be rejected";
+    }
+    catch (const Exception & e)
+    {
+        EXPECT_EQ(e.code(), ErrorCodes::SERVER_OVERLOADED);
+    }
+
+    holder.reset();
+    waiter->join();
+    waiting.reset();
+}
+
+namespace
+{
+
+/// Two sibling workloads with opposite `priority` and `precedence`. A query of each waits for the only slot;
+/// returns the order in which they were admitted.
+std::vector<String> querySlotAdmissionOrder(bool query_slot_admission_uses_priority)
+{
+    ResourceTest t(1, query_slot_admission_uses_priority);
+
+    t.query("CREATE RESOURCE query (QUERY)");
+    t.query("CREATE WORKLOAD all SETTINGS max_concurrent_queries = 1");
+    t.query("CREATE WORKLOAD a IN all SETTINGS priority = 0, precedence = 1");
+    t.query("CREATE WORKLOAD b IN all SETTINGS priority = 1, precedence = 0");
+
+    ClassifierPtr c_a = t.manager->acquire("a");
+    ClassifierPtr c_b = t.manager->acquire("b");
+    ResourceLink a = c_a->get("query");
+    ResourceLink b = c_b->get("query");
+
+    auto holder = std::make_unique<QuerySlot>(a, std::chrono::steady_clock::time_point::max(), "holder");
+
+    std::mutex order_mutex;
+    std::vector<String> order;
+    auto run = [&] (ResourceLink link, const String & name)
+    {
+        QuerySlot slot(link, std::chrono::steady_clock::time_point::max(), name);
+        std::scoped_lock lock{order_mutex};
+        order.push_back(name);
+    };
+    auto wait_pending = [] (ResourceLink link)
+    {
+        while (static_cast<AllocationQueue *>(link.allocation_queue)->getQueueLengthAndSize().first == 0)
+            std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    };
+
+    auto * t_a = t.async([&] { run(a, "a"); });
+    wait_pending(a);
+    auto * t_b = t.async([&] { run(b, "b"); });
+    wait_pending(b);
+
+    holder.reset();
+    t_a->join();
+    t_b->join();
+    return order;
+}
+
+}
+
+TEST(SchedulerWorkloadResourceManager, QuerySlotAdmissionFollowsPriority)
+{
+    // Compatibility mode (default): admission between sibling workloads follows `priority`
+    EXPECT_EQ(querySlotAdmissionOrder(/*query_slot_admission_uses_priority=*/ true), (std::vector<String>{"a", "b"}));
+}
+
+TEST(SchedulerWorkloadResourceManager, QuerySlotAdmissionFollowsPrecedence)
+{
+    // Admission between sibling workloads follows `precedence`, as for memory reservations
+    EXPECT_EQ(querySlotAdmissionOrder(/*query_slot_admission_uses_priority=*/ false), (std::vector<String>{"b", "a"}));
+}
+
+TEST(SchedulerWorkloadResourceManager, QuerySlotMaxQueriesPerSecond)
+{
+    ResourceTest t;
+
+    t.query("CREATE RESOURCE query (QUERY)");
+    // One query may start right away (burst), then 20 queries per second
+    t.query("CREATE WORKLOAD all SETTINGS max_queries_per_second = 20, max_burst_queries = 1");
+
+    ClassifierPtr c = t.manager->acquire("all");
+    ResourceLink link = c->get("query");
+
+    Stopwatch watch;
+    for (int i = 0; i < 6; ++i)
+        QuerySlot slot(link, std::chrono::steady_clock::time_point::max(), fmt::format("q{}", i));
+    // The bucket admits while it is not in debt, so the first two queries start at once and the other 4 wait 50ms each
+    EXPECT_GE(watch.elapsedMilliseconds(), 150);
+}
+
+TEST(SchedulerWorkloadResourceManager, QuerySlotUpdateRateLimitAndConcurrency)
+{
+    ResourceTest t;
+
+    t.query("CREATE RESOURCE query (QUERY)");
+    // A tiny rate makes the throttling delay exceed the `Int64` nanosecond range, so it must saturate
+    t.query("CREATE WORKLOAD all SETTINGS max_concurrent_queries = 1, max_queries_per_second = 1e-12, max_burst_queries = 1");
+
+    ClassifierPtr c = t.manager->acquire("all");
+    ResourceLink link = c->get("query");
+
+    // The bucket admits while it is not in debt: the first query uses the token, the second goes into debt
+    { QuerySlot slot(link, std::chrono::steady_clock::time_point::max(), "first"); }
+    { QuerySlot slot(link, std::chrono::steady_clock::time_point::max(), "second"); }
+
+    // The next query is throttled practically forever; removing the rate limit must admit it
+    std::atomic<bool> acquired = false;
+    auto * waiter = t.async([&]
+    {
+        QuerySlot slot(link, std::chrono::steady_clock::time_point::max(), "third");
+        acquired = true;
+    });
+    std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    EXPECT_FALSE(acquired.load());
+
+    t.query("CREATE OR REPLACE WORKLOAD all SETTINGS max_concurrent_queries = 2");
+    waiter->join();
+    EXPECT_TRUE(acquired.load());
 }
