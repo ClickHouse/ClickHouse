@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest, no-azure-blob-storage, long, no-random-detach
+# Tags: no-fasttest, no-azure-blob-storage, long, no-random-detach, no-msan
 # no-random-detach: test uses DETACH/ATTACH itself
 # Tag no-fasttest: 45 seconds running
 # Tag long: the test uses background `sleepEachRow` queries (~66s of parallel sleeps and

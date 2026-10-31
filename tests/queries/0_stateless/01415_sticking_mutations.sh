@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: long, no-replicated-database, no-random-detach
+# Tags: long, no-replicated-database, no-random-detach, no-msan
 # Tag long: 7 sequential mutation scenarios with OPTIMIZE TABLE FINAL and mutations_sync=1 are consistently slow under randomized settings in flaky check
 # no-random-detach: test relies on mutations staying in progress; DETACH/ATTACH disrupts them
 

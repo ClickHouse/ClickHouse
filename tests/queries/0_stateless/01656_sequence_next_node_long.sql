@@ -1,4 +1,4 @@
--- Tags: long, no-azure-blob-storage, no-random-detach
+-- Tags: long, no-azure-blob-storage, no-random-detach, no-msan
 -- no-random-detach: long test, DETACH/ATTACH adds too much overhead
 
 SET enable_funnel_functions = 1;

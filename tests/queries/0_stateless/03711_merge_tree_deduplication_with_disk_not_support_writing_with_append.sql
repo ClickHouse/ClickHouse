@@ -1,4 +1,4 @@
--- Tags: long, no-replicated-database, no-fasttest, no-random-detach
+-- Tags: long, no-replicated-database, no-fasttest, no-random-detach, no-msan
 -- no-random-detach: test checks deduplication
 -- Tag no-replicated-database: Unsupported type of ALTER query
 

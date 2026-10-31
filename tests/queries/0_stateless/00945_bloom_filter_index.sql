@@ -1,4 +1,4 @@
--- Tags: long, no-random-detach
+-- Tags: long, no-random-detach, no-msan
 -- no-random-detach: long test, DETACH/ATTACH adds too much overhead
 
 SET parallel_replicas_local_plan = 1;

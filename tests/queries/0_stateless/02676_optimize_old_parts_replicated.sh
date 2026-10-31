@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: long, no-random-detach
+# Tags: long, no-random-detach, no-msan
 # no-random-detach: test checks system.parts
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
