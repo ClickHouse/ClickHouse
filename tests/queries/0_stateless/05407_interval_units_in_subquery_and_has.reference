@@ -1,0 +1,59 @@
+ns key
+1
+1
+1
+99999
+1
+99999
+minute key, nanosecond set
+1
+0
+1000
+month key, day set
+0
+100
+1
+IN
+0
+1
+0
+1
+1
+0
+0
+0
+0
+0
+0
+1
+1
+1
+0
+0
+0
+0	1
+accurate casts
+\N	2
+\N	\N
+0
+2	12
+1
+has
+1	0	1
+1	1	0
+1	0
+2	2
+2
+1	1
+1	0
+2
+0	0	0
+has composite
+1	0
+1	0
+1	0
+2	2	2
+1	1	0
+0
+0
+1

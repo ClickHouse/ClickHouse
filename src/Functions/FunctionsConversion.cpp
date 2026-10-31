@@ -672,6 +672,34 @@ FunctionCast::WrapperType FunctionCast::createFixedStringWrapper(const DataTypeP
 
 FunctionCast::WrapperType FunctionCast::createIntervalWrapper(const DataTypePtr & from_type, IntervalKind kind) const
 {
+    const auto * from_interval = checkAndGetDataType<DataTypeInterval>(from_type.get());
+    if ((cast_type == CastType::accurate || cast_type == CastType::accurateOrNull) && from_interval && from_interval->getKind() != kind)
+    {
+        if (from_interval->getKind().isFixedLength() != kind.isFixedLength())
+        {
+            if (cast_type == CastType::accurateOrNull)
+                return createToNullableColumnWrapper();
+            throw Exception(ErrorCodes::CANNOT_CONVERT_TYPE,
+                "Conversion from {} to {} is not exact because the number of days in a month is not fixed",
+                from_type->getName(), DataTypeInterval(kind).getName());
+        }
+
+        if (cast_type == CastType::accurate)
+            return [this](ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, const ColumnNullable *, size_t input_rows_count)
+            {
+                return ConvertImpl<DataTypeInterval, DataTypeInterval, FunctionCastName>::execute(
+                    arguments, result_type, input_rows_count, BehaviourOnErrorFromString::ConvertDefaultBehaviorTag, settings,
+                    AccurateConvertStrategyAdditions());
+            };
+
+        return [this](ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, const ColumnNullable *, size_t input_rows_count)
+        {
+            return ConvertImpl<DataTypeInterval, DataTypeInterval, FunctionCastName>::execute(
+                arguments, result_type, input_rows_count, BehaviourOnErrorFromString::ConvertDefaultBehaviorTag, settings,
+                AccurateOrNullConvertStrategyAdditions());
+        };
+    }
+
     switch (kind.getKind())
     {
         GENERATE_INTERVAL_CASE(Nanosecond)
