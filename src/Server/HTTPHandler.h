@@ -68,6 +68,14 @@ public:
     /// and SQL-defined handlers own their matched path and must execute their stored query unchanged.
     virtual bool parsesHTTPPath() const { return false; }
 
+    /// Idempotent HTTP methods are read-only by default. A handler may opt into mutating behavior for
+    /// a narrowly defined request shape, such as a PUT upload whose target table comes from the URL path.
+    virtual bool allowMutatingIdempotentMethods(
+        const HTTPServerRequest & /* request */, const HTMLForm & /* params */) const
+    {
+        return false;
+    }
+
     /// `body` is the request body wrapped in the transport decompression chain - the same object the query
     /// itself would read. Handlers must read the body only through it, never through `request.getStream()`
     /// directly: the wrapper snapshots the inner buffer state on construction, so bytes taken from the inner
@@ -243,6 +251,8 @@ class DynamicQueryHandler : public HTTPHandler
 private:
     std::string param_name;
     bool parse_http_path;
+    /// Only the built-in catch-all handler enables the path-table upload mutation exception.
+    bool allow_path_table_uploads = false;
 
 public:
     explicit DynamicQueryHandler(
@@ -252,7 +262,8 @@ public:
         const HTTPResponseHeaderSetup & http_response_headers_override_ = std::nullopt,
         const std::string & url_prefix_ = "",
         HTTPPathHintsPtr path_hints_ = nullptr,
-        bool parse_http_path_ = true);
+        bool parse_http_path_ = true,
+        bool allow_path_table_uploads_ = false);
 
     std::string getQuery(HTTPServerRequest & request, HTMLForm & params, ContextMutablePtr context, ReadBuffer & body) override;
 
@@ -262,6 +273,8 @@ public:
     /// rule owns the path it is matched by, so it interprets only the part below its `url_prefix`,
     /// and nothing at all when it has none.
     bool parsesHTTPPath() const override { return parse_http_path; }
+
+    bool allowMutatingIdempotentMethods(const HTTPServerRequest & request, const HTMLForm & params) const override;
 };
 
 class PredefinedQueryHandler : public HTTPHandler
