@@ -663,6 +663,14 @@ void LocalConnection::sendQueryPlan(const QueryPlan &)
 
 void LocalConnection::sendData(const Block & block, const String &, bool)
 {
+    /// Data sent to the server always has columns. Treating a block of rows without columns as the end
+    /// of the data would silently drop its rows.
+    if (block.columns() == 0 && block.info.num_rows_without_columns > 0)
+        throw Exception(
+            ErrorCodes::NOT_IMPLEMENTED,
+            "Cannot send a block of {} rows without columns as data to the server",
+            block.info.num_rows_without_columns);
+
     if (block.empty())
         return;
 

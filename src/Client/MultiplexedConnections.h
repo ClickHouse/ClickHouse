@@ -1,5 +1,6 @@
 #pragma once
 
+#include <limits>
 #include <mutex>
 #include <Common/Throttler.h>
 #include <Client/Connection.h>
@@ -43,6 +44,8 @@ public:
 
     bool supportsQueryPlanSerializationVersion(UInt64 version) const override;
 
+    UInt64 getServerRevisionOfLastPacket() const override { return server_revision_of_last_packet; }
+
     void sendClusterFunctionReadTaskResponse(const ClusterFunctionReadTaskResponse & response) override;
     void sendMergeTreeReadTaskResponse(const ParallelReadResponse & response) override;
     void sendMergeTreeAllRangesAnnouncementResponse(const InitialAllRangesAnnouncementResponse & response) override;
@@ -82,6 +85,8 @@ private:
     {
         Connection * connection = nullptr;
         ConnectionPool::Entry pool_entry;
+        /// The protocol revision of the replica, known once the query is sent to it.
+        UInt64 server_revision = 0;
     };
 
     /// Get a replica where you can read the data.
@@ -106,6 +111,7 @@ private:
 
     bool sent_query = false;
     bool cancelled = false;
+    UInt64 server_revision_of_last_packet = std::numeric_limits<UInt64>::max();
 
     /// std::nullopt if parallel reading from replicas is not used
     std::optional<ReplicaInfo> replica_info;
