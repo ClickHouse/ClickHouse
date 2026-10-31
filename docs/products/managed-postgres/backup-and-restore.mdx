@@ -7,10 +7,7 @@ keywords: ['backup', 'restore', 'point-in-time recovery', 'pitr', 'disaster reco
 doc_type: 'guide'
 ---
 
-import { BetaBadge } from "/snippets/components/BetaBadge/BetaBadge.jsx";
 import { Image } from "/snippets/components/Image.jsx";
-
-<BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.backup-and-restore-beta" />
 
 ClickHouse Managed Postgres ensures the safety and availability of your data through automated backups and point-in-time recovery. You can view your backup history and initiate restores from the **Backups** view of your instance.
 
@@ -25,6 +22,8 @@ ClickHouse Managed Postgres takes daily full backups of your database. In additi
 ### Retention period {#retention-period}
 
 Backups are retained for 7 days, providing a sufficient window for recovery in case of data loss or corruption. If you need a longer backup retention period, contact [support](https://clickhouse.com/support/program).
+
+Backup storage equal to the provisioned disk capacity is included. Additional backup storage is billed at the ClickHouse Cloud storage price for your region, for example, \$25.30 per TB-month in AWS `us-east-1`. See [Managed Postgres pricing](/products/managed-postgres/pricing).
 
 ### Storage and durability {#storage-and-durability}
 

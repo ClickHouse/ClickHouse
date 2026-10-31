@@ -7,10 +7,7 @@ keywords: ['postgres security', 'ip whitelisting', 'encryption', 'tls', 'ssl', '
 doc_type: 'guide'
 ---
 
-import { BetaBadge } from "/snippets/components/BetaBadge/BetaBadge.jsx";
 import { Image } from "/snippets/components/Image.jsx";
-
-<BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.security-beta" />
 
 ClickHouse Managed Postgres is built with enterprise-grade security features to protect your data and meet compliance requirements. This page covers network security, encryption, and backup retention policies.
 
@@ -163,6 +160,8 @@ ClickHouse Managed Postgres automatically backs up your data to protect against 
 - **Default retention period**: 7 days
 - **Backup frequency**: Daily full backups + continuous WAL archiving (every 60 seconds or 16 MB, whichever comes first)
 - **Recovery granularity**: Point-in-time recovery to any moment within the retention window
+
+Backup storage equal to the provisioned disk capacity is included. Additional backup storage is billed at the ClickHouse Cloud storage price for your region, for example, \$25.30 per TB-month in AWS `us-east-1`. See [Managed Postgres pricing](/products/managed-postgres/pricing).
 
 ### Backup security {#backup-security}
 
