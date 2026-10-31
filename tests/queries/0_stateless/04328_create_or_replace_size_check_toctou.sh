@@ -21,6 +21,7 @@ function cleanup()
 {
     ${CLICKHOUSE_CLIENT} -q "SYSTEM DISABLE FAILPOINT create_or_replace_before_rename" 2>/dev/null ||:
     ${CLICKHOUSE_CLIENT} --max_table_size_to_drop=0 -q "DROP TABLE IF EXISTS t04328" 2>/dev/null ||:
+    ${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS mv04328" 2>/dev/null ||:
 }
 trap cleanup EXIT
 cleanup
@@ -87,3 +88,31 @@ echo "t04328_exists:"
 ${CLICKHOUSE_CLIENT} -q "SELECT count() FROM system.tables WHERE database = currentDatabase() AND name = 't04328'"
 echo "t04328_row_count:"
 ${CLICKHOUSE_CLIENT} -q "SELECT count() FROM t04328"
+
+# The view a `CREATE OR REPLACE` creates is held back until its rename commits: `SYSTEM START VIEWS` must not lift that
+# hold, and a `SYSTEM STOP VIEWS` in the window must survive the commit (only server-wide commands reach the temporary name).
+
+# `PAUSEABLE_ONCE` disarmed itself on Q1 above, so arm it again for this round.
+${CLICKHOUSE_CLIENT} -q "SYSTEM ENABLE FAILPOINT create_or_replace_before_rename"
+
+${CLICKHOUSE_CLIENT} -q "CREATE OR REPLACE MATERIALIZED VIEW mv04328 REFRESH EVERY 1 SECOND ENGINE = MergeTree ORDER BY x AS SELECT 1 AS x" &
+CREATE_PID=$!
+${CLICKHOUSE_CLIENT} -q "SYSTEM WAIT FAILPOINT create_or_replace_before_rename PAUSE"
+
+${CLICKHOUSE_CLIENT} -q "SYSTEM START VIEWS"
+
+# The view refreshes every second, so a second is enough for it to leave `Disabled` if the hold was lifted.
+sleep 2
+
+echo "held_back_during_replace:"
+${CLICKHOUSE_CLIENT} -q "SELECT countIf(status = 'Disabled'), count() FROM system.view_refreshes
+    WHERE database = currentDatabase() AND view LIKE '%tmp_replace%'"
+
+${CLICKHOUSE_CLIENT} -q "SYSTEM STOP VIEWS"
+${CLICKHOUSE_CLIENT} -q "SYSTEM NOTIFY FAILPOINT create_or_replace_before_rename"
+wait $CREATE_PID
+sleep 2
+
+echo "stopped_after_commit:"
+${CLICKHOUSE_CLIENT} -q "SELECT status FROM system.view_refreshes
+    WHERE database = currentDatabase() AND view = 'mv04328'"
