@@ -1,11 +1,23 @@
 #!/usr/bin/env python3
 import logging
+import os
 import sys
 import time
 from pathlib import Path
 from typing import Any
 
 import requests
+
+sys.path.insert(
+    0, os.path.join(os.path.dirname(os.path.realpath(__file__)), "..", "..")
+)
+
+try:
+    # Guarded like grt below: importers needing only the download helpers still work
+    # where ci/ is absent, and get_gh_api fails when it is actually called.
+    from ci.praktika.gh import GH
+except ImportError:
+    GH = None  # type: ignore[assignment]
 
 try:
     # A work around for scripts using this downloading module without required deps
@@ -75,50 +87,58 @@ def get_gh_api(
     It sets auth automatically when ROBOT_TOKEN is already set by get_best_robot_token
     """
 
+    if GH is None:
+        raise APIException(
+            "praktika is not importable, so the GH API retry policy is unavailable"
+        )
+
+    # Mutated in place and passed by reference: the retry loop expands its kwargs once,
+    # so rebinding this name would not reach the requests the failover must authorize.
+    headers = kwargs.pop("headers", None) or {}
+
     def set_auth_header():
-        headers = kwargs.get("headers", {})
         if "Authorization" not in headers:
             headers["Authorization"] = f"Bearer {grt.get_best_robot_token()}"
-        kwargs["headers"] = headers
 
     if grt.ROBOT_TOKEN is not None:
         set_auth_header()
 
-    token_is_set = "Authorization" in kwargs.get("headers", {})
-    exc = Exception("A placeholder to satisfy typing and avoid nesting")
-    try_cnt = 0
-    timeout = kwargs.pop("timeout", 30)
-    while try_cnt < retries:
-        try_cnt += 1
-        try:
-            response = requests.get(url, timeout=timeout, **kwargs)
-            response.raise_for_status()
-            return response
-        except requests.HTTPError as e:
-            exc = e
-            ratelimit_exceeded = (
-                e.response.status_code == 403
-                and b"rate limit exceeded"
-                # pylint:disable-next=protected-access
-                in (e.response._content or b"")
+    token_is_set = "Authorization" in headers
+
+    def failover(e: requests.HTTPError) -> bool:
+        """Set the robot token once and grant a fresh attempt budget."""
+        nonlocal token_is_set
+        ratelimit_exceeded = (
+            e.response.status_code == 403
+            and b"rate limit exceeded"
+            # pylint:disable-next=protected-access
+            in (e.response._content or b"")
+        )
+        try_auth = e.response.status_code == 404
+        if (ratelimit_exceeded or try_auth) and not token_is_set:
+            logger.warning(
+                "Received rate limit exception, setting the auth header and retry"
             )
-            try_auth = e.response.status_code == 404
-            if (ratelimit_exceeded or try_auth) and not token_is_set:
-                logger.warning(
-                    "Received rate limit exception, setting the auth header and retry"
-                )
-                set_auth_header()
-                token_is_set = True
-                try_cnt = 0
-                continue
-        except Exception as e:
-            exc = e
+            set_auth_header()
+            token_is_set = True
+            return True
+        return False
 
-        if try_cnt < retries:
-            logger.info("Exception '%s' while getting, retry %i", exc, try_cnt)
-            time.sleep(sleep)
-
-    raise APIException(f"Unable to request data from GH API: {url}") from exc
+    timeout = kwargs.pop("timeout", 30)
+    try:
+        return GH.api_get(
+            url,
+            retries=retries,
+            sleep=sleep,
+            timeout=timeout,
+            on_http_error=failover,
+            headers=headers,
+            **kwargs,
+        )
+    except RuntimeError as e:
+        # Callers catch APIException to degrade instead of failing, so the praktika error
+        # class must not leak out of here.
+        raise APIException(f"Unable to request data from GH API: {url}") from e
 
 
 def download_build_with_progress(
