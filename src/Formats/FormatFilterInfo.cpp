@@ -174,13 +174,11 @@ std::optional<size_t> FormatFilterInfo::computeConditionHash(
     const PrewhereInfoPtr & prewhere_info,
     const ContextPtr & context)
 {
-    /// PREWHERE runs before the row count this hash describes, so a row group PREWHERE empties looks
-    /// like one the hashed condition rejected. A PREWHERE collected with the read's filters is inside
-    /// `filter_actions_dag`, so the hash covers it; a join runtime filter is moved in afterwards.
+    /// A row group PREWHERE empties is recorded as not matching the hashed condition, so PREWHERE must be covered by it.
     if (prewhere_info)
     {
         const auto * prewhere_node = prewhere_info->prewhere_actions.tryFindInOutputs(prewhere_info->prewhere_column_name);
-        if (!prewhere_node || !VirtualColumnUtils::isDeterministic(prewhere_node))
+        if (!prewhere_node || !VirtualColumnUtils::isCoveredByFilter(*prewhere_node, filter_actions_dag, /*allow_top_k_filter=*/ false))
             return {};
     }
 
