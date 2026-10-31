@@ -83,26 +83,26 @@ ColumnPtr canonicalizeNegativeZeroInEncodedValues(const IColumn & column)
     const auto & column_string = assert_cast<const ColumnString &>(column);
     const size_t size = column_string.size();
 
-    auto res = ColumnString::create();
-    res->reserve(size);
-    bool canonicalized = false;
+    MutableColumnPtr res;
 
     for (size_t i = 0; i < size; ++i)
     {
         std::string_view value = column_string.getDataAt(i);
-        if (std::optional<String> canonical_value = canonicalizeNegativeZeroInEncodedValue(value))
-        {
-            res->insertData(canonical_value->data(), canonical_value->size());
-            canonicalized = true;
-        }
-        else
-        {
-            res->insertData(value.data(), value.size());
-        }
-    }
+        std::optional<String> canonical_value = canonicalizeNegativeZeroInEncodedValue(value);
 
-    if (!canonicalized)
-        return nullptr;
+        if (canonical_value && !res)
+        {
+            /// The first value that changes: copy the values before it, which are already canonical.
+            res = ColumnString::create();
+            res->reserve(size);
+            res->insertRangeFrom(column_string, 0, i);
+        }
+
+        if (canonical_value)
+            res->insertData(canonical_value->data(), canonical_value->size());
+        else if (res)
+            res->insertData(value.data(), value.size());
+    }
 
     return res;
 }
