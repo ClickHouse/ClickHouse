@@ -343,7 +343,7 @@ SELECT arraySort(groupArray(id)) FROM tab WHERE hasPhrase(message, 'a()d') SETTI
 
 DROP TABLE tab;
 
-SELECT '14. An Array(String) indexed column: the tokens of all elements form one sequence.';
+SELECT '14. An Array(String) indexed column: a phrase lies within one element.';
 
 CREATE TABLE tab
 (
@@ -359,7 +359,7 @@ INSERT INTO tab VALUES (1, ['Hello World', 'Foo']), (2, ['zz']);
 
 SELECT arraySort(groupArray(id)) FROM tab WHERE hasPhrase(tags, 'hello world');
 SELECT arraySort(groupArray(id)) FROM tab WHERE hasPhrase(tags, 'hello world') SETTINGS use_skip_indexes = 0;
-SELECT '-- adjacent across elements';
+SELECT '-- a phrase does not span elements';
 SELECT arraySort(groupArray(id)) FROM tab WHERE hasPhrase(tags, 'world foo');
 SELECT arraySort(groupArray(id)) FROM tab WHERE hasPhrase(tags, 'world foo') SETTINGS use_skip_indexes = 0;
 SELECT arraySort(groupArray(id)) FROM tab WHERE hasPhrase(tags, 'hello foo');
@@ -367,7 +367,7 @@ SELECT arraySort(groupArray(id)) FROM tab WHERE hasPhrase(tags, 'hello foo') SET
 
 DROP TABLE tab;
 
-SELECT '15. A NULL array element leaves no position.';
+SELECT '15. A NULL array element does not join the elements around it.';
 
 CREATE TABLE tab
 (
