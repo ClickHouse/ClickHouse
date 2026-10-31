@@ -621,9 +621,29 @@ std::optional<NameAndTypePair> IMergeTreeReader::tryGetColumnInPart(
     /// column's default, which it reads. The keys and TTL expressions are those of the current metadata, so they are
     /// matched by the name in the table: a `RENAME COLUMN` not yet applied to the part gives the column another name
     /// in the part.
+    auto has_missing_column_marker = [&]
+    {
+        const auto & infos = data_part_info_for_read->getSerializationInfos();
+        if (infos.getMissingColumnInfo(name_in_storage))
+            return true;
+
+        /// A column `a.x` requested as the subcolumn `x` of a `Nested` column `a` is recorded as missing under the
+        /// name of the flattened column `a.x`, not under the name of the `Nested` column.
+        if (!requested_as_nested || subcolumn_name.empty())
+            return false;
+
+        if (infos.getMissingColumnInfo(name_in_part))
+            return true;
+
+        /// The flattened column may be followed by a subcolumn of its own (`a.x.size0`).
+        return std::ranges::any_of(
+            Nested::getAllColumnAndSubcolumnPairs(name_in_part),
+            [&](const auto & split)
+            { return split.first.size() > name_in_storage.size() && infos.getMissingColumnInfo(String(split.first)); });
+    };
+
     if (is_missing
-        && (data_part_info_for_read->isProjectionPart() || !isReadByKeyOrTTL(name_in_table)
-            || data_part_info_for_read->getSerializationInfos().getMissingColumnInfo(name_in_storage)))
+        && (data_part_info_for_read->isProjectionPart() || !isReadByKeyOrTTL(name_in_table) || has_missing_column_marker()))
         return {};
 
     auto options = GetColumnsOptions(GetColumnsOptions::AllPhysical).withRegularSubcolumns();

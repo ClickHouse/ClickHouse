@@ -27,3 +27,15 @@ SELECT a, `a.size0` FROM t_missing_marker;
 SELECT count() FROM t_missing_marker WHERE `a.size0` = 0;
 SELECT countIf(`a.size0` = 0) FROM t_missing_marker;
 DROP TABLE t_missing_marker;
+
+-- The same for a flattened `Array` column of a wide part, read as a subcolumn of a `Nested` column next to a `JSON`
+-- column of the same name: the marker is stored under the name of the flattened column.
+DROP TABLE IF EXISTS t_missing_marker_nested;
+CREATE TABLE t_missing_marker_nested (id UInt64, a JSON, `a.x` Array(UInt64)) ENGINE = MergeTree ORDER BY length(`a.x`)
+SETTINGS skip_empty_columns_on_insert = 1, serialization_info_version = 'with_missing_columns', index_granularity = 1,
+    share_nested_offsets = 1, min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, min_level_for_wide_part = 0;
+INSERT INTO t_missing_marker_nested (id, a) VALUES (1, '{"x":[11,22]}');
+SELECT id, `a.x`, length(`a.x`) FROM t_missing_marker_nested;
+SELECT count() FROM t_missing_marker_nested WHERE length(`a.x`) = 0;
+SELECT countIf(length(`a.x`) = 0) FROM t_missing_marker_nested;
+DROP TABLE t_missing_marker_nested;
