@@ -125,6 +125,10 @@ public:
     void setBlockACL(bool block_acl_);
 
     bool isOperationSupported(Coordination::OpNum operation) const;
+    bool isS3ExperimentalChangelog() const;
+    DiskPtr getS3LogDisk() const;
+    /// Whether `s3_log_disk` is configured, regardless of `s3_experimental_changelog`.
+    bool hasS3LogDisk() const;
 
     bool shouldLogRequests() const;
     void setLogRequests(bool log_requests_);
@@ -146,7 +150,9 @@ private:
     Storage getStatePathFromConfig(const Poco::Util::AbstractConfiguration & config) const;
     Storage getDataPathFromConfig(const String & config_elem, const Poco::Util::AbstractConfiguration & config) const;
 
+public:
     DiskPtr getDisk(const Storage & storage) const;
+private:
 
     std::mutex local_logs_preprocessed_cv_mutex;
     std::condition_variable local_logs_preprocessed_cv;
@@ -161,6 +167,8 @@ private:
     bool digest_enabled{true};
     bool digest_enabled_on_commit{false};
     bool remove_orphaned_nodes_on_startup{false};
+    bool s3_experimental_changelog{false};
+    std::string s3_log_disk_name;
 
     std::shared_ptr<DiskSelector> disk_selector;
 
