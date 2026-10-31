@@ -354,6 +354,9 @@ struct Reader
         /// So its dictionary is decoded in the `Dictionary` stage, before the row group is split into
         /// row subgroups, to estimate the size of a chunk, see `intersectColumnIndexResultsAndInitSubgroups`.
         bool decode_dictionary_early = false;
+        bool top_k_bound_from_dictionary = false;
+        /// The `Dictionary` stage decodes the dictionary only for `top_k_bound_from_dictionary`.
+        bool decode_dictionary_for_top_k = false;
 
         /// Prefetches.
         /// TODO [parquet]: Check that all handles and tokens are reset after correct stages.
@@ -364,6 +367,7 @@ struct Reader
         /// need_to_find_bloom_filter_lengths_the_hard_way).
         size_t bloom_filter_data_bytes = 0;
         PrefetchHandle dictionary_page_prefetch;
+        PrefetchHandle top_k_dictionary_page_prefetch;
         PrefetchHandle column_index_prefetch;
         PrefetchHandle offset_index_prefetch;
         PrefetchHandle data_pages_prefetch;
@@ -510,6 +514,7 @@ struct Reader
         ColumnPtr top_k_best_value;
         /// `top_k_best_value` equals the bound of `top_k_sort_column_range` on its side, so no later row can improve it.
         bool top_k_best_value_is_final = false;
+        bool top_k_no_value_passes = false;
 
         std::deque<RowSubgroup> subgroups;
 
@@ -627,6 +632,7 @@ struct Reader
     /// TopN dynamic filtering: index in `primitive_columns` of the sort column, when eligible for
     /// row-group skipping by min/max statistics (see FormatFilterInfo::top_k_filter).
     std::optional<size_t> top_k_primitive_idx;
+    bool top_k_dictionary_bound = false;
     /// TopN dynamic filtering: whether this file physically stores the sort column. If it doesn't,
     /// the reader only produces type defaults for it while the threshold comes from the values the
     /// pipeline puts in their place, so the filter must not be applied at all.
@@ -705,9 +711,11 @@ struct Reader
     /// size the compressed-page limit alone cannot bound; see the memory-budget note in
     /// `hashDictionaryValues`. Pass a default (unbounded) reservation and `nullptr` on the data-read
     /// path, where the dictionary must be decoded regardless of size.
+    /// With `for_top_k_bound`, the page is read from `top_k_dictionary_page_prefetch` if registered, and no string filter mask is built.
     bool decodeDictionaryPage(
         ColumnChunk & column, const PrimitiveColumnInfo & column_info,
-        const PruningMemoryReservation & reservation = {}, size_t * held_reserved_bytes = nullptr);
+        const PruningMemoryReservation & reservation = {}, size_t * held_reserved_bytes = nullptr,
+        bool for_top_k_bound = false);
 
     /// Whether the column chunk is eligible for dictionary-based row group filtering: it has a
     /// dictionary page no larger than `options.dictionary_filter_limit_bytes`, and all of its data
@@ -750,6 +758,8 @@ struct Reader
     /// top-K heap, so the row group can be skipped without reading its column data. The threshold
     /// only ever tightens, so a `false` result is safely revisited by the row filter later.
     bool topKShouldSkipRowGroup(const RowGroup & row_group) const;
+    bool topKRowGroupMayBeBoundedByDictionary(size_t row_group_idx, const std::optional<Range> & statistics_range) const;
+    void refineTopKRangeFromDictionary(RowGroup & row_group) const;
     /// Folds the sort column of a chunk delivered from the row group into RowGroup::top_k_best_value.
     void updateTopKBestValue(RowGroup & row_group, const IColumn & column) const;
 
@@ -834,7 +844,9 @@ private:
     void withdrawColumnsCacheWrite(RowGroup::ColumnsCacheWrite & write) const;
     void initializePrefetches();
     double estimateAverageStringLengthPerRow(const ColumnChunk & column, const RowGroup & row_group) const;
-    void decodeDictionaryPageImpl(const parq::PageHeader & header, std::span<const char> data, ColumnChunk & column, const PrimitiveColumnInfo & column_info);
+    void decodeDictionaryPageImpl(
+        const parq::PageHeader & header, std::span<const char> data, ColumnChunk & column, const PrimitiveColumnInfo & column_info,
+        bool build_string_value_filter_mask = true);
     /// If row_idx is provided, jump to the start of that row. Otherwise go to the start of next page.
     void skipToRowOrNextPage(std::optional<size_t> row_idx, ColumnChunk & column, const PrimitiveColumnInfo & column_info);
     std::tuple<parq::PageHeader, std::span<const char>> decodeAndCheckPageHeader(const char * & data_ptr, const char * data_end) const;

@@ -56,6 +56,14 @@ std::optional<String> tryGetStringInputName(const ActionsDAG::Node * node)
     return node->result_name;
 }
 
+std::optional<String> tryGetStringOrLowCardinalityInputName(const ActionsDAG::Node * node)
+{
+    node = skipAliases(node);
+    if (node->type != ActionsDAG::ActionType::INPUT || !isString(removeNullable(removeLowCardinality(node->result_type))))
+        return {};
+    return node->result_name;
+}
+
 std::optional<String> tryGetConstString(const ActionsDAG::Node * node)
 {
     node = skipAliases(node);
@@ -324,6 +332,66 @@ void tryExtractConditionsFromAtom(const ActionsDAG::Node * atom, ConditionsByCol
     }
 }
 
+bool filterNodeRejectsEmptyString(const ActionsDAG::Node * filter_node, const String & column_name)
+{
+    std::vector<const ActionsDAG::Node *> stack;
+    stack.push_back(skipAliases(filter_node));
+    while (!stack.empty())
+    {
+        const auto * node = stack.back();
+        stack.pop_back();
+        if (node->type != ActionsDAG::ActionType::FUNCTION)
+            continue;
+
+        const String & name = node->function_base->getName();
+        if (name == "and")
+        {
+            for (const auto * child : node->children)
+                stack.push_back(skipAliases(child));
+            continue;
+        }
+
+        if (name == "notEmpty" && node->children.size() == 1)
+        {
+            if (tryGetStringOrLowCardinalityInputName(node->children[0]) == column_name)
+                return true;
+            continue;
+        }
+
+        if ((name == "notEquals" || name == "greater" || name == "less") && node->children.size() == 2)
+        {
+            for (size_t column_pos : {0, 1})
+            {
+                if ((name == "greater" && column_pos != 0) || (name == "less" && column_pos != 1))
+                    continue;
+                auto constant = tryGetConstString(node->children[1 - column_pos]);
+                if (constant && constant->empty() && tryGetStringOrLowCardinalityInputName(node->children[column_pos]) == column_name)
+                    return true;
+            }
+        }
+
+        /// The conditions of string value filters never match the empty string.
+        ConditionsByColumn conditions_by_column;
+        tryExtractConditionsFromAtom(node, conditions_by_column);
+        auto it = conditions_by_column.find(column_name);
+        if (it != conditions_by_column.end() && !it->second.conditions.empty())
+            return true;
+    }
+    return false;
+}
+
+}
+
+bool filterRejectsEmptyString(const ActionsDAG & filter_dag, const String & filter_column_name, const String & column_name)
+{
+    const auto * root = filter_dag.tryFindInOutputs(filter_column_name);
+    return root && filterNodeRejectsEmptyString(root, column_name);
+}
+
+bool filterRejectsEmptyString(const ActionsDAG & filter_dag, const String & column_name)
+{
+    const auto & outputs = filter_dag.getOutputs();
+    return outputs.size() == 1 && filterNodeRejectsEmptyString(outputs.front(), column_name);
 }
 
 bool likePatternHasStringValueFilterConditions(const String & pattern)
