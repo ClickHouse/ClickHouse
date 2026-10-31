@@ -2,13 +2,12 @@
 
 #include <Analyzer/ConstantNode.h>
 #include <Analyzer/FunctionNode.h>
-#include <Analyzer/InDepthQueryTreeVisitor.h>
 #include <Analyzer/QueryNode.h>
+#include <Analyzer/Utils.h>
 #include <Analyzer/WindowFunctionsUtils.h>
 #include <Columns/IColumn.h>
 #include <Core/Settings.h>
 #include <DataTypes/DataTypesNumber.h>
-#include <Functions/FunctionFactory.h>
 #include <Interpreters/convertColumnToType.h>
 #include <QueryPipeline/SizeLimits.h>
 #include <base/arithmeticOverflow.h>
@@ -38,49 +37,6 @@ std::optional<UInt64> tryGetNonNegativeUInt64(const ConstantNode * node)
     if (!converted)
         return std::nullopt;
     return converted->getUInt(0);
-}
-
-/// `arrayJoin` can be spelled through its case-insensitive alias `unnest`, and with
-/// `normalize_function_names = 0` the alias reaches the query tree unchanged, so a literal
-/// name comparison (as in `hasFunctionNode`) would miss it. Compare canonical names instead.
-class CheckArrayJoinExistsVisitor : public ConstInDepthQueryTreeVisitor<CheckArrayJoinExistsVisitor>
-{
-public:
-    void visitImpl(const QueryTreeNodePtr & node)
-    {
-        if (has_array_join)
-            return;
-
-        const auto * function_node = node->as<FunctionNode>();
-        if (!function_node)
-            return;
-
-        has_array_join = getFunctionCanonicalNameIfAny(function_node->getFunctionName()) == "arrayJoin";
-    }
-
-    bool needChildVisit(const QueryTreeNodePtr &, const QueryTreeNodePtr & child_node) const
-    {
-        if (has_array_join)
-            return false;
-
-        auto child_node_type = child_node->getNodeType();
-        return !(child_node_type == QueryTreeNodeType::QUERY || child_node_type == QueryTreeNodeType::UNION);
-    }
-
-    bool hasArrayJoin() const
-    {
-        return has_array_join;
-    }
-
-private:
-    bool has_array_join = false;
-};
-
-bool hasArrayJoinFunctionNode(const QueryTreeNodePtr & node)
-{
-    CheckArrayJoinExistsVisitor visitor;
-    visitor.visit(node);
-    return visitor.hasArrayJoin();
 }
 
 }

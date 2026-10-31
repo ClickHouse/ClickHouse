@@ -222,7 +222,7 @@ DROP TABLE IF EXISTS t_json_array_plain;
 CREATE TABLE t_json_array_plain (j JSON) ENGINE = Memory;
 INSERT INTO t_json_array_plain SELECT CAST('{"arr":[{"b":"FROM_JSON"}]}', 'JSON');
 SELECT count() FROM (EXPLAIN QUERY TREE SELECT j.arr[1].b FROM t_json_array_plain) WHERE explain LIKE '%Array(JSON)%';
-SELECT count() FROM (EXPLAIN QUERY TREE SELECT distinctJSONPaths(j) FROM t_json_array_plain) WHERE explain LIKE '%groupArrayDistinct%';
+SELECT count() FROM (EXPLAIN QUERY TREE SELECT distinctJSONPaths(j) FROM t_json_array_plain) WHERE explain LIKE '%groupUniqArrayArray%';
 
 DROP TABLE IF EXISTS t_nested_plain;
 CREATE TABLE t_nested_plain (n Nested(a Int64, b String)) ENGINE = Memory;
