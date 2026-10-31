@@ -331,7 +331,7 @@ void collectTextIndexInjectInfos(const ReadFromMergeTree * read_from_merge_tree_
         if (!projection.index)
             continue;
 
-        auto index_helper = projection.index->getIndex();
+        auto index_helper = projection.index->getIndex(metadata_snapshot);
         if (!index_helper || !index_helper->isTextIndex())
             continue;
 

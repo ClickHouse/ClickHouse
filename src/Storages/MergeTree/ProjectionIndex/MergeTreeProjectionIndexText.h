@@ -83,7 +83,9 @@ class MergeTreeProjectionIndexText final : public IMergeTreeIndex
 public:
     explicit MergeTreeProjectionIndexText(const ProjectionDescription & projection, std::shared_ptr<const MergeTreeIndexText> text_index_);
 
-    MergeTreeProjectionIndexText(const IndexDescription & index_description, std::shared_ptr<const MergeTreeIndexText> text_index_);
+    /// `parent_metadata` is the metadata of the table the projection belongs to, see `IProjectionIndex::getIndex`.
+    MergeTreeProjectionIndexText(
+        const IndexDescription & index_description, std::shared_ptr<const MergeTreeIndexText> text_index_, StorageMetadataPtr parent_metadata);
 
     ~MergeTreeProjectionIndexText() override = default;
 

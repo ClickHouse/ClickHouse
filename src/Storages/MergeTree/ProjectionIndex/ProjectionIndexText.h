@@ -44,7 +44,7 @@ public:
 
     const IndexDescription * getIndexDescription() const override;
 
-    MergeTreeIndexPtr getIndex() const override;
+    MergeTreeIndexPtr getIndex(StorageMetadataPtr parent_metadata) const override;
 
     UInt64 getMaxRows() const override { return std::numeric_limits<UInt32>::max(); }
 

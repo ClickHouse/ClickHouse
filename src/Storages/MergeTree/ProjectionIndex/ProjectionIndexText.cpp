@@ -96,10 +96,34 @@ void ProjectionIndexText::fillProjectionDescription(
         }
     }
 
+    /// The projection is built by `calculate`, which tokenizes only string columns (also inside `Array`,
+    /// `Nullable` and `LowCardinality`). A `Map` column is accepted by the shared validator for the
+    /// `keyValuePairs` tokenizer, but the projection has no `Map` tokenization, so every insert would fail.
+    for (const auto & data_type : index_description.data_types)
+    {
+        if (isMap(removeNullable(removeLowCardinality(data_type))))
+            throw Exception(
+                ErrorCodes::NOT_IMPLEMENTED,
+                "Projection text index does not support columns of type {}. Index `mapKeys` or `mapValues` of the column instead",
+                data_type->getName());
+    }
+
     /// The inner text index references `index_description`, which is owned by this
     /// `ProjectionIndexText` (not by a storage metadata snapshot), so no snapshot is passed.
     static_cast<ProjectionIndexText &>(*result.index).index = std::make_shared<MergeTreeProjectionIndexText>(
         result, std::static_pointer_cast<const MergeTreeIndexText>(textIndexCreator(nullptr, index_description, projection_settings)));
+
+    /// `calculate` stores the tokens as the tokenizer produces them, while the index condition applies the
+    /// postprocessor to the searched tokens, so they would not match.
+    const auto & text_index_params = index->text_index->params;
+    if (text_index_params.postprocessor)
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Projection text index does not support the `postprocessor` argument");
+
+    /// The positions of a token that occurs in several documents are written only together with the block index.
+    if (text_index_params.enable_phrase_query_support && !text_index_params.has_block_index)
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "Projection text index argument `enable_phrase_query_support` requires `has_block_index` to be enabled");
 
     /// Remember the effective projection settings: `getIndex` must resolve the same
     /// `text_index_*` defaults as the index created above, otherwise the fresh per-query
@@ -210,7 +234,7 @@ const IndexDescription * ProjectionIndexText::getIndexDescription() const
     return &index_description;
 }
 
-MergeTreeIndexPtr ProjectionIndexText::getIndex() const
+MergeTreeIndexPtr ProjectionIndexText::getIndex(StorageMetadataPtr parent_metadata) const
 {
     /// Build a fresh `MergeTreeProjectionIndexText` (with a fresh inner
     /// `MergeTreeIndexText` carrying its own tokenizer) per call. The
@@ -222,8 +246,8 @@ MergeTreeIndexPtr ProjectionIndexText::getIndex() const
     /// `MergeTreeIndexText` per call.
     if (!effective_settings)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Projection text index is not initialized: fillProjectionDescription was not called");
-    auto fresh_text_index = std::static_pointer_cast<const MergeTreeIndexText>(textIndexCreator(nullptr, index_description, *effective_settings));
-    return std::make_shared<MergeTreeProjectionIndexText>(index_description, std::move(fresh_text_index));
+    auto fresh_text_index = std::static_pointer_cast<const MergeTreeIndexText>(textIndexCreator(parent_metadata, index_description, *effective_settings));
+    return std::make_shared<MergeTreeProjectionIndexText>(index_description, std::move(fresh_text_index), std::move(parent_metadata));
 }
 
 namespace
@@ -595,10 +619,17 @@ Block ProjectionIndexText::calculate(
     Block tokenized_block;
     bool phrase_support = index->text_index->params.enable_phrase_query_support;
 
+    /// The index belongs to the shared table metadata, so concurrent inserts and merges calculate
+    /// the projection with the same tokenizer. A stateful tokenizer (e.g. `sparseGrams`) mutates its
+    /// state while tokenizing, so each calculation uses its own copy of it.
+    const ITokenizer & shared_tokenizer = *index->text_index->tokenizer;
+    std::unique_ptr<ITokenizer> owned_tokenizer = shared_tokenizer.isStateful() ? shared_tokenizer.clone() : nullptr;
+    const ITokenizer & tokenizer = owned_tokenizer ? *owned_tokenizer : shared_tokenizer;
+
     auto do_tokenize = [&]<bool phrase>(const auto & col) -> Block
     {
         return tokenize<phrase>(
-            *index->text_index->tokenizer,
+            tokenizer,
             col,
             static_cast<UInt32>(starting_offset),
             projection_desc.sample_block,

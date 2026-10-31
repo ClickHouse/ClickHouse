@@ -633,8 +633,8 @@ MergeTreeProjectionIndexText::MergeTreeProjectionIndexText(
 }
 
 MergeTreeProjectionIndexText::MergeTreeProjectionIndexText(
-    const IndexDescription & index_description, std::shared_ptr<const MergeTreeIndexText> text_index_)
-    : IMergeTreeIndex(nullptr, index_description)
+    const IndexDescription & index_description, std::shared_ptr<const MergeTreeIndexText> text_index_, StorageMetadataPtr parent_metadata)
+    : IMergeTreeIndex(std::move(parent_metadata), index_description)
     , text_index(std::move(text_index_))
 {
 }
@@ -685,10 +685,10 @@ MergeTreeIndexConditionPtr MergeTreeProjectionIndexText::createIndexCondition(co
         /// written only with `enable_phrase_query_support`, and the phrase cursor also needs the block
         /// index (`.pidx`). Without both, `hasPhrase` cannot be evaluated exactly and keeps the row-level filter.
         /*has_positions_=*/ text_index->params.enable_phrase_query_support && text_index->params.has_block_index,
-        /// A projection index is built without a storage metadata snapshot (see the constructors),
-        /// so `getMapSubcolumnShadowingCheck` cannot be evaluated here; the projection's own
-        /// columns are the only ones this condition can read, so nothing shadows them.
-        /*is_column_shadowing_map_subcolumn_=*/ [](const String &) { return false; },
+        /// The predicate refers to the columns of the parent table, so a column of it can shadow a Map
+        /// subcolumn. The parent metadata is known when the index is obtained for a query (see `getIndex`);
+        /// an index built for writing has no metadata and does not analyze predicates.
+        metadata_snapshot ? getMapSubcolumnShadowingCheck() : IsShadowingColumn([](const String &) { return false; }),
         collectJSONIndexArgumentTypes(*text_index->index.expression),
         /*is_projection_index_=*/ true);
 }

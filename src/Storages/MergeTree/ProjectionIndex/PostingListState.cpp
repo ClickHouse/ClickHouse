@@ -502,6 +502,10 @@ static Array convertASTArgumentsToParams(const ASTPtr & arguments)
 
 DataTypePtr createPostingListType(const ASTPtr & text_index_definition, const PostingListParams & posting_list_params)
 {
+    /// Apply the same constraints as `createPostingListTypeFromPartMetadata` does on load, otherwise a part
+    /// could be written with parameters that cannot be loaded back (or that break the writer itself).
+    posting_list_params.validate();
+
     Array params;
     if (text_index_definition && !text_index_definition->children.empty())
         params = convertASTArgumentsToParams(text_index_definition);

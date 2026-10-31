@@ -3436,7 +3436,7 @@ void ReadFromMergeTree::buildIndexes(
                 if (ignored_index_names.contains(projection.name))
                     continue;
 
-                auto index_helper = projection.index->getIndex();
+                auto index_helper = projection.index->getIndex(metadata_snapshot);
                 if (index_helper)
                 {
                     ConditionTemplate<MergeTreeIndexConditionPtr>::Factory factory
