@@ -11,9 +11,9 @@
 # The quadratic decoder produces the right bytes, it just does far more work, so the assertion is
 # on work: the same payload is ingested twice - first as an ordinary multi-block gzip, which every
 # decoder handles in linear time, then as the single block - and the single block must cost at most
-# 10x the user CPU of the baseline. CPU, not elapsed time, because re-decoding is computation while
-# an oversubscribed runner adds wall clock and no CPU: over eight CI runs the CPU ratio stayed in
-# [1.005, 1.099] where wall clock spanned [0.41, 14.89], and a pre-fix binary sits at 122-127x.
+# 10x the CPU time of the baseline. CPU, not elapsed time, because re-decoding is computation while
+# an oversubscribed runner adds wall clock and no CPU: across CI runs the CPU ratio stayed in
+# [0.77, 1.10] where wall clock spanned [0.41, 14.89], and a pre-fix decoder sits at 62-110x.
 # The payload is 90 lines of 400 KB rather than many short ones so that line parsing and the
 # `MergeTree` write cost nothing next to the decompression under test (with 520000 short lines
 # they dominated at 5.8 s). The multi-block baseline is ingested first so that any one-off warm-up
@@ -83,11 +83,13 @@ for _ in {1..60}; do
     sleep 0.5
 done
 
+# User plus system time: the kernel guarantees only their per-thread sum, it splits that sum from
+# timer-tick samples and can bill a whole query to either of them.
 # An aggregate over an empty set still yields 0, so the arithmetic below always gets a number.
 read -r MULTI_US SINGLE_US <<< "$(${CLICKHOUSE_CLIENT} --query "
     SELECT
-        sumIf(ProfileEvents['UserTimeMicroseconds'], query_id = '${qid_multi}'),
-        sumIf(ProfileEvents['UserTimeMicroseconds'], query_id = '${qid_single}')
+        sumIf(ProfileEvents['UserTimeMicroseconds'] + ProfileEvents['SystemTimeMicroseconds'], query_id = '${qid_multi}'),
+        sumIf(ProfileEvents['UserTimeMicroseconds'] + ProfileEvents['SystemTimeMicroseconds'], query_id = '${qid_single}')
     FROM system.query_log
     WHERE query_id IN ('${qid_multi}', '${qid_single}')
         AND type = 'QueryFinish' AND event_date >= yesterday() AND current_database = currentDatabase()")"

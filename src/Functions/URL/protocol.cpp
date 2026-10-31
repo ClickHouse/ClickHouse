@@ -40,6 +40,7 @@ SELECT protocol('https://clickhouse.com/');
     FunctionDocumentation documentation_protocol = {description_protocol, syntax_protocol, arguments_protocol, {}, returned_value_protocol, examples_protocol, introduced_in_protocol, category_protocol};
 
     factory.registerFunction<FunctionProtocol>(documentation_protocol);
+    factory.registerAlias("url_extract_protocol", "protocol", FunctionFactory::Case::Insensitive);
 }
 
 }

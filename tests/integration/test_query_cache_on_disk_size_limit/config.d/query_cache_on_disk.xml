@@ -1,0 +1,12 @@
+<clickhouse>
+    <!-- Every test sets the limit it needs (see `set_max_entry_size_in_bytes` in the test), this is only the placeholder it replaces. -->
+    <query_cache>
+        <max_entry_size_in_bytes>1</max_entry_size_in_bytes>
+    </query_cache>
+    <filesystem_caches>
+        <cache_for_query_results>
+            <path>cache_for_query_results/</path>
+            <max_size>100Mi</max_size>
+        </cache_for_query_results>
+    </filesystem_caches>
+</clickhouse>

@@ -3,6 +3,7 @@
 #include <Backups/BackupFactory.h>
 #include <Core/Settings.h>
 #include <Common/Exception.h>
+#include <Storages/ObjectStorage/Azure/AzureSecretArguments.h>
 
 #if USE_AZURE_BLOB_STORAGE
 
@@ -301,12 +302,11 @@ void registerBackupEngineAzureBlobStorage(BackupFactory & factory)
                 params.write_settings,
                 params.context);
 
-            auto snapshot_reader_creator = [&](const String & endpoint, const String & container_name)
+#if CLICKHOUSE_CLOUD
+            auto snapshot_reader_creator = [&](const String & endpoint, const String & blob_namespace)
             {
-                connection_params.endpoint.storage_account_url = endpoint;
-                connection_params.endpoint.container_name = container_name;
                 return std::make_shared<BackupReaderAzureBlobStorage>(
-                    connection_params,
+                    makeSnapshotSourceConnectionParams(connection_params, endpoint, blob_namespace),
                     "",
                     params.allow_azure_native_copy,
                     params.read_settings,
@@ -315,6 +315,9 @@ void registerBackupEngineAzureBlobStorage(BackupFactory & factory)
             };
 
             return std::make_unique<BackupImpl>(params, archive_params, reader, snapshot_reader_creator);
+#else
+            return std::make_unique<BackupImpl>(params, archive_params, reader);
+#endif
         }
 
         auto writer = std::make_shared<BackupWriterAzureBlobStorage>(
@@ -353,7 +356,7 @@ void registerBackupEngineAzureBlobStorage(BackupFactory & factory)
 #endif
     };
 
-    factory.registerBackupEngine("AzureBlobStorage", creator_fn, destination_identity_fn, source_access_fn);
+    factory.registerBackupEngine("AzureBlobStorage", creator_fn, destination_identity_fn, source_access_fn, azureBackupSecretArguments());
 }
 
 }

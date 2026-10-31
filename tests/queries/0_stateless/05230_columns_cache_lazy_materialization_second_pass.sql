@@ -6,10 +6,12 @@
 -- whose plan is `LazilyReadFromMergeTree` reads the sort and output columns in the first pass and
 -- the payload only in the second one.
 
-SET enable_analyzer = 1;
 SET max_threads = 1;
 SET query_plan_optimize_lazy_materialization = 1, query_plan_max_limit_for_lazy_materialization = 1000;
 SET log_queries = 1;
+-- `enable_parallel_replicas = 0`: with parallel replicas another replica may do the reads,
+-- and their `ProfileEvents` never reach the `query_log` rows checked below.
+SET enable_parallel_replicas = 0;
 
 DROP TABLE IF EXISTS t_cc_lazy;
 

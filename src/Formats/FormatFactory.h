@@ -64,6 +64,9 @@ using BucketSplitter = std::shared_ptr<IBucketSplitter>;
 
 FormatSettings getFormatSettings(const ContextPtr & context);
 FormatSettings getFormatSettings(const ContextPtr & context, const Settings & settings);
+/// For the `Native` blocks of the native protocol. A secondary query carries type names in both directions,
+/// because a server-side `Connection` never takes format settings.
+FormatSettings getNativeWireFormatSettings(const ContextPtr & context);
 
 /** A hash of the session settings `getFormatSettings` derives a `FormatSettings` from, for whatever
   * keys a value by the settings that produced it: a function that captured a `FormatSettings` when it
@@ -410,6 +413,9 @@ public:
         const String & name, const ContextPtr & context, const std::optional<FormatSettings> & format_settings_ = std::nullopt) const;
 
     bool checkParallelizeOutputAfterReading(const String & name, const ContextPtr & context) const;
+    /// The same check for a read whose files can have any format, such as the data files of a data
+    /// lake snapshot: it allows parallelizing only when every format would.
+    bool checkParallelizeOutputAfterReadingForAnyFormat(const ContextPtr & context) const;
 
     void registerAdditionalInfoForSchemaCacheGetter(const String & name, AdditionalInfoForSchemaCacheGetter additional_info_for_schema_cache_getter);
     String getAdditionalInfoForSchemaCache(const String & name, const ContextPtr & context, const std::optional<FormatSettings> & format_settings_ = std::nullopt);
