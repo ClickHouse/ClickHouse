@@ -114,8 +114,31 @@ def send_close_delimited(method, path, params, body):
         return response, response.read()
 
 
+def send_expect_continue(method, path, params=(), headers=None, body=b""):
+    # A client that sends the body only after `100 Continue`, without a fallback timeout.
+    url = quote(path, "/")
+    if params:
+        url += "?" + "&".join(f"{quote(k)}={quote(v)}" for k, v in params)
+    all_headers = {"Host": host_header, "Expect": "100-continue", "Content-Length": str(len(body)), "Connection": "close"}
+    all_headers.update(headers or {})
+    with socket.create_connection((host, port), timeout=30) as sock:
+        sock.sendall(f"{method} {url} HTTP/1.1\r\n".encode() + "".join(f"{k}: {v}\r\n" for k, v in all_headers.items()).encode() + b"\r\n")
+        interim = b""
+        while not interim.endswith(b"\r\n\r\n"):
+            byte = sock.recv(1)
+            if not byte:
+                break
+            interim += byte
+        if not interim.startswith(b"HTTP/1.1 100"):
+            return None, interim
+        sock.sendall(body)
+        response = http.client.HTTPResponse(sock, method=method)
+        response.begin()
+        return response, response.read()
+
+
 def signed_request(method, path, params=(), headers=None, body=b"", payload_hash=None, access_key=user, secret="secret",
-                   sign_headers=None, amz_date=None, tamper_headers=None):
+                   sign_headers=None, amz_date=None, tamper_headers=None, transport=send):
     amz_date = amz_date or datetime.datetime.now(datetime.timezone.utc).strftime("%Y%m%dT%H%M%SZ")
     payload_hash = payload_hash or hashlib.sha256(body).hexdigest()
     headers = dict(headers or {})
@@ -134,7 +157,7 @@ def signed_request(method, path, params=(), headers=None, body=b"", payload_hash
     request_headers["Authorization"] = (
         f"AWS4-HMAC-SHA256 Credential={access_key}/{amz_date[:8]}/us-east-1/s3/aws4_request, "
         f"SignedHeaders={';'.join(signed_headers)}, Signature={sig}")
-    return send(method, path, params, request_headers, body)
+    return transport(method, path, params, request_headers, body)
 
 
 def presigned_params(method, path, params=(), expires=60, amz_date=None, secret="secret"):
@@ -153,6 +176,9 @@ def presigned_params(method, path, params=(), expires=60, amz_date=None, secret=
 
 def show(name, result):
     response, data = result
+    if response is None:
+        print(f"{name}: no 100 Continue, got {data[:12]!r}")
+        return
     text = data.decode(errors="replace").strip()
     if response.status != 200:
         # Keep only the error code, the message contains variable parts.
@@ -266,6 +292,19 @@ show("PUT signed Values with a subquery", signed_request("PUT", values_path, bod
 show("PUT without the INSERT grant", signed_request("PUT", csv_path, body=b"14,\"no grant\"\n", access_key=reader_user))
 show("PUT over the temporary data limit", signed_request("PUT", csv_path, body=b"".join(b"%d,\"large\"\n" % i for i in range(1000, 2000)),
      params=[("max_temporary_data_on_disk_size_for_query", "100")]))
+# A `SETTINGS` clause at the beginning of an unsigned body cannot turn the evaluation of expressions back on.
+show("PUT presigned Values with a SETTINGS clause", send("PUT", values_path,
+     presigned_params("PUT", values_path, [("allow_settings_after_format_in_insert", "1")]),
+     body=f"SETTINGS input_format_values_interpret_expressions = 1 (15, (SELECT s FROM {database}.private LIMIT 1))".encode()))
+# An upload without a table is rejected before its body is staged.
+show("PUT without a table over the temporary data limit", signed_request("PUT", "/query",
+     body=b"".join(b"%d,\"large\"\n" % i for i in range(1000, 2000)), params=[("max_temporary_data_on_disk_size_for_query", "100")]))
+# A deferred `100 Continue` is sent before a signed body is received.
+show("PUT with a deferred 100 Continue", signed_request("PUT", csv_path, body=b"16,\"continue\"\n",
+     headers={"X-ClickHouse-100-Continue": "defer"}, transport=send_expect_continue))
+show("POST with a deferred 100 Continue", signed_request("POST", "/", body=b"17,\"continue\"\n",
+     params=[("query", f"INSERT INTO {database}.t FORMAT CSV")], headers={"X-ClickHouse-100-Continue": "defer"},
+     transport=send_expect_continue))
 show("GET after PUT", signed_request("GET", table_path, params=[("order", "x")]))
 EOF
 

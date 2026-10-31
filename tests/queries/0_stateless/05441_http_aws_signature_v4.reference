@@ -62,6 +62,10 @@ PUT presigned with input_format=Values: 500 Code: 344
 PUT signed Values with a subquery: 200 
 PUT without the INSERT grant: 403 Code: 497
 PUT over the temporary data limit: 500 Code: 396
+PUT presigned Values with a SETTINGS clause: 400 Code: 27
+PUT without a table over the temporary data limit: 400 Code: 36
+PUT with a deferred 100 Continue: 200 
+POST with a deferred 100 Continue: 200 
 GET after PUT: 200 1	Hello
 2	World
 3	PUT
@@ -70,3 +74,5 @@ GET after PUT: 200 1	Hello
 6	chunked
 9	literal
 13	private
+16	continue
+17	continue

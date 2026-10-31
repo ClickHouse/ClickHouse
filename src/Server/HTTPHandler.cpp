@@ -680,6 +680,11 @@ void HTTPHandler::processQuery(
                 settings[Setting::http_allow_filters_as_path]);
     }
 
+    /// Checked before the request body is received: a signed upload is staged before the query starts.
+    if (is_upload_into_table && path_info.table.empty())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "A PUT request must specify the table in the URL path, e.g. `/database/table.format`");
+
     /// Resolve the current database from the path and the `database` setting, in that order.
     /// If both are specified and differ, that's an error. We do this *before* `QueryScope::create`
     /// — if `setCurrentDatabase` throws (e.g. the database doesn't exist), the exception unwinds
@@ -977,6 +982,20 @@ void HTTPHandler::processQuery(
     int zstd_window_log_max = static_cast<int>(context->getSettingsRef()[Setting::zstd_window_log_max]);
 
     std::unique_ptr<ReadBuffer> request_body = wrapReadBufferPointer(request.getStream());
+
+    /// A body covered by the AWS signature is received before the query starts, so a deferred `100 Continue`
+    /// (`X-ClickHouse-100-Continue: defer`), which is sent by the query after the quota checks, has to be sent
+    /// before that: otherwise the client would wait for it while the server waits for the body.
+    bool http_continue_sent = false;
+    auto send_http_continue_before_reading_body = [&]
+    {
+        if (shouldDeferHTTP100Continue(request) && request.getExpectContinue() && response.getStatus() == HTTPResponse::HTTP_OK)
+        {
+            response.sendContinue();
+            http_continue_sent = true;
+        }
+    };
+
     if (is_aws_signature_v4)
     {
         /// Verify the body against the hash covered by the signature, or decode the `aws-chunked` encoding.
@@ -997,7 +1016,6 @@ void HTTPHandler::processQuery(
                 /// The body is received before the query is started, so the access and the limits of the temporary data,
                 /// which are applied to a query when it starts, are checked here: a user who cannot insert into the
                 /// table cannot fill the temporary disk, and a staged body is not larger than any of the limits.
-                if (!path_info.table.empty())
                 {
                     StorageID table_id(path_info.database.empty() ? context->getCurrentDatabase() : path_info.database, path_info.table);
                     auto table = DatabaseCatalog::instance().getTable(table_id, context);
@@ -1006,6 +1024,8 @@ void HTTPHandler::processQuery(
                         AccessType::INSERT, table_id.database_name, table_id.table_name,
                         metadata_snapshot->getSampleBlockInsertable().getNames());
                 }
+
+                send_http_continue_before_reading_body();
 
                 const auto & query_settings = context->getSettingsRef();
                 size_t max_staged_size = 0;
@@ -1031,6 +1051,8 @@ void HTTPHandler::processQuery(
             }
             else
             {
+                send_http_continue_before_reading_body();
+
                 String body;
                 {
                     WriteBufferFromString out(body);
@@ -1241,16 +1263,14 @@ void HTTPHandler::processQuery(
             {
                 context->setSetting("input_format_values_interpret_expressions", false);
                 context->setSetting("input_format_values_deduce_templates_of_expressions", false);
+                /// The body follows the query text, and a `SETTINGS` clause at its beginning would be parsed as a part
+                /// of the `INSERT` query, so it could turn these settings back on.
+                context->setSetting("allow_settings_after_format_in_insert", false);
             }
         }
         /// If there is no user-supplied query (URL param empty AND no body), generate a default one.
         else if (raw_query.empty() && !request_has_body)
             final_query = "SELECT * FROM " + qualified_table;
-    }
-    else if (is_upload_into_table)
-    {
-        throw Exception(ErrorCodes::BAD_ARGUMENTS,
-            "A PUT request must specify the table in the URL path, e.g. `/database/table.format`");
     }
 
     /// With an unsigned payload (always the case for presigned URLs) the body is not covered by the signature.
@@ -1619,9 +1639,9 @@ void HTTPHandler::processQuery(
     HTTPContinueCallback http_continue_callback = {};
     if (shouldDeferHTTP100Continue(request))
     {
-        http_continue_callback = [&request, &response]()
+        http_continue_callback = [&request, &response, &http_continue_sent]()
         {
-            if (request.getExpectContinue() && response.getStatus() == HTTPResponse::HTTP_OK)
+            if (!http_continue_sent && request.getExpectContinue() && response.getStatus() == HTTPResponse::HTTP_OK)
             {
                 response.sendContinue();
             }
