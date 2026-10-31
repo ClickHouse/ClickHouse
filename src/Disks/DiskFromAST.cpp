@@ -1,6 +1,7 @@
 #include <Disks/DiskFromAST.h>
 #include <Disks/getDiskConfigurationFromAST.h>
 #include <Disks/DiskSelector.h>
+#include <Disks/loadLocalDiskConfig.h>
 #include <Common/assert_cast.h>
 #include <Common/checkStackSize.h>
 #include <Common/SipHash.h>
@@ -27,7 +28,11 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
-static std::string getOrCreateCustomDisk(
+/// Build the resolved configuration of a dynamically described disk and run every AST-level and
+/// post-resolution validation on it (the `dynamic_disk_allow_*` gates, the server-managed S3
+/// credential restriction). Shared by the registered (`getOrCreateCustomDisk`) and the transient
+/// (`createTransientDisk`) creation paths.
+static Poco::AutoPtr<Poco::Util::XMLConfiguration> getValidatedDiskConfig(
     const ASTs & disk_args,
     const std::string & serialization,
     ContextPtr context,
@@ -66,7 +71,7 @@ static std::string getOrCreateCustomDisk(
         /// re-validate the resolved config, so an `include` that injects an S3 backend with server-managed
         /// auth (past a literal non-S3 `type` in the AST) is still caught.
         if (s3_disk_info.load_anonymously)
-            forceAnonymousS3DiskConfig(*config);
+            forceAnonymousS3DiskConfig(*config, s3_disk_info);
         else
             validateResolvedS3DiskCredentials(*config, context, attach, s3_disk_info);
 
@@ -86,6 +91,18 @@ static std::string getOrCreateCustomDisk(
             ErrorCodes::BAD_ARGUMENTS,
             "Disk function `{}` must have other arguments apart from `name`, which describe disk configuration. Invalid disk description.",
             serialization);
+
+    return config;
+}
+
+static std::string getOrCreateCustomDisk(
+    const ASTs & disk_args,
+    const std::string & serialization,
+    ContextPtr context,
+    bool attach,
+    bool for_system_database)
+{
+    auto config = getValidatedDiskConfig(disk_args, serialization, context, attach, for_system_database);
 
     auto disk_settings_hash = sipHash128(serialization.data(), serialization.size());
 
@@ -255,6 +272,127 @@ std::string DiskFromAST::createCustomDisk(const ASTPtr & disk_function_ast, Cont
     visitBottomUp<DiskConfigurationFlattener>(ast, data);
 
     return assert_cast<const ASTLiteral &>(*ast).value.safeGet<String>();
+}
+
+/// The local paths a resolved configuration of a query-local disk can carry: the `path` of a `local` disk
+/// or of a local object storage backend (the disk root and every `locations.<name>` child), and the
+/// `metadata_path`. The disk creators check them as well when they create the disk, but a query that
+/// never creates the disk (`DESCRIBE`) has to be held to the same restriction.
+static void checkTransientDiskLocalPaths(const Poco::Util::AbstractConfiguration & config, ContextPtr context)
+{
+    /// `local` is a disk of its own; for every other type the backend is `object_storage_type` when it is
+    /// given and the `type` itself otherwise, the same way `ObjectStorageFactory::create` picks it.
+    auto check_backend = [&](const std::string & prefix, bool is_root)
+    {
+        auto type = config.getString(prefix + "type", is_root ? "local" : "");
+        auto backend = (is_root && type == "local") ? type : config.getString(prefix + "object_storage_type", type);
+        if (backend == "local" || backend == "local_blob_storage" || backend == "local_plain" || backend == "local_plain_rewritable")
+        {
+            checkCustomLocalDiskPath(config.getString(prefix + "path", ""), context);
+
+            /// The same validation of the local configuration (a `path` ending with `/`, `keep_free_space_*`)
+            /// that `registerDiskLocal` and the local object storage creators run when they create the disk.
+            /// It does not create anything. The prefix is passed the same way the creators get it.
+            String path;
+            UInt64 keep_free_space_bytes = 0;
+            String config_prefix = prefix.empty() ? prefix : prefix.substr(0, prefix.size() - 1);
+            loadDiskLocalConfig("query-local disk", config, config_prefix, context, path, keep_free_space_bytes);
+        }
+    };
+
+    check_backend("", /* is_root */ true);
+    if (config.has("locations"))
+    {
+        Poco::Util::AbstractConfiguration::Keys locations;
+        config.keys("locations", locations);
+        for (const auto & location : locations)
+            check_backend("locations." + location + ".", /* is_root */ false);
+    }
+
+    if (config.has("metadata_path"))
+        checkCustomLocalDiskPath(config.getString("metadata_path"), context);
+
+    /// Without a `metadata_type`, an object storage disk picks it from its `type` and, failing that, from its
+    /// backend, the same way `registerDiskObjectStorage` and `MetadataStorageFactory::getCompatibilityMetadataTypeHint`
+    /// do. A `local` metadata storage without a `metadata_path` keeps its metadata in `disks/<disk name>/` under
+    /// the data directory of the server, which `MetadataStorageFactory` creates unchecked, and the name of a
+    /// query-local disk is a hash of its description - so every description would leave a directory behind
+    /// outside `custom_local_disks_base_directory`. A query-local disk with `local` metadata has to give its
+    /// `metadata_path` explicitly, and that is checked above.
+    auto type = config.getString("type", "local");
+    if (type == "local")
+        return;
+
+    auto metadata_type = config.getString("metadata_type", "");
+    if (metadata_type.empty())
+    {
+        if (type.contains("with_keeper"))
+            metadata_type = "keeper";
+        else if (type.contains("plain") && type.contains("rewritable"))
+            metadata_type = "plain_rewritable";
+        else if (type.contains("plain"))
+            metadata_type = "plain";
+        else if (!config.has("locations") && config.getString("object_storage_type", type) == "web")
+            metadata_type = "web";
+        else
+            metadata_type = "local";
+    }
+
+    if (metadata_type == "local" && !config.has("metadata_path"))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "A query-local object storage disk with `local` metadata requires an explicit `metadata_path` inside "
+            "`custom_local_disks_base_directory`; use another `metadata_type` (such as `plain`) to read without local metadata");
+}
+
+/// Resolve and validate the configuration of a query-local disk without creating it.
+static Poco::AutoPtr<Poco::Util::XMLConfiguration> getValidatedTransientDiskConfig(
+    const ASTPtr & disk_function_ast, ContextPtr context, std::string & serialization)
+{
+    if (!isDiskFunction(disk_function_ast))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected a disk function");
+
+    const auto * function = disk_function_ast->as<ASTFunction>();
+    const auto * function_args_expr = assert_cast<const ASTExpressionList *>(function->arguments.get());
+    const auto & disk_args = function_args_expr->children;
+    serialization = function->formatWithSecretsOneLine();
+
+    auto config = getValidatedDiskConfig(
+        disk_args, serialization, context, /* attach */ false, /* for_system_database */ false);
+
+    /// A transient disk is not registered anywhere, so there is nothing a `name` could refer to later,
+    /// and nothing checks it against the disks of the server configuration.
+    if (config->has("name"))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "The description of a query-local disk cannot have a `name`");
+
+    checkTransientDiskLocalPaths(*config, context);
+
+    return config;
+}
+
+void DiskFromAST::validateTransientDisk(const ASTPtr & disk_function_ast, ContextPtr context)
+{
+    std::string serialization;
+    getValidatedTransientDiskConfig(disk_function_ast, context, serialization);
+}
+
+DiskPtr DiskFromAST::createTransientDisk(const ASTPtr & disk_function_ast, ContextPtr context)
+{
+    std::string serialization;
+    auto config = getValidatedTransientDiskConfig(disk_function_ast, context, serialization);
+
+    auto disk_settings_hash = sipHash128(serialization.data(), serialization.size());
+    auto disk_name = DiskSelector::TMP_INTERNAL_DISK_PREFIX + toString(disk_settings_hash);
+
+    /// The disk is created the same way as a registered custom disk, but it is not put into the
+    /// `DiskSelector` of the context: it lives only as long as the returned pointer, so a query
+    /// cannot grow the global disk map. Creating the disk starts it, which can create directories;
+    /// with `custom_disk` and without `attach` the disk creators check every local path against
+    /// `custom_local_disks_base_directory` before anything is created.
+    auto disk = DiskFactory::instance().create(
+        disk_name, *config, /* config_path */"", context, context->getDisksMap(), /* attach */false, /* custom_disk */true);
+    disk->markDiskAsCustom(disk_settings_hash);
+
+    return disk;
 }
 
 void DiskFromAST::ensureDiskIsNotCustom(const std::string & disk_name, ContextPtr context)

@@ -12,6 +12,8 @@
 namespace DB
 {
 
+struct MergeTreePartInfo;
+
 class IMergeTreeDataPart;
 class ASTAssignment;
 
@@ -60,5 +62,9 @@ struct PartitionValueColumn
 };
 
 Field getFieldForConstVirtualColumn(const String & column_name, const IMergeTreeDataPart & part_or_projection);
+
+/// The same, for a part that is read without the table it belongs to (`mergeTreeParts`): only the
+/// virtual columns that the part name itself carries can be materialized.
+Field getFieldForConstVirtualColumnOfBorrowedPart(const String & column_name, const MergeTreePartInfo & part_info);
 
 }

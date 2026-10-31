@@ -1,0 +1,8 @@
+-- a local disk with the trailing slash
+x	UInt8					
+-- a local disk without the trailing slash
+UNKNOWN_ELEMENT_IN_CONFIG
+-- a local object storage without the trailing slash
+UNKNOWN_ELEMENT_IN_CONFIG
+-- both keep_free_space_bytes and keep_free_space_ratio
+EXCESSIVE_ELEMENT_IN_CONFIG
