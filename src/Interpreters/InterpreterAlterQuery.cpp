@@ -181,6 +181,17 @@ CommandSegments parseAlterCommandSegments(const ASTAlterQuery & alter, const Sto
     for (const auto & child : alter.command_list->children)
     {
         auto * command_ast = child->as<ASTAlterCommand>();
+
+        /// The `TTL` of a table is evaluated by background merges without the session, so a `DateTime` string literal in it
+        /// would be read in the server time zone, not in `session_timezone`: make its time zone explicit, as for the
+        /// mutations below.
+        if (const auto & session_tz = settings[Setting::session_timezone].value;
+            !session_tz.empty() && command_ast->type == ASTAlterCommand::MODIFY_TTL && command_ast->ttl)
+        {
+            const auto metadata_snapshot = table->getInMemoryMetadataPtr(context, true);
+            rewriteDateTimeLiteralsWithTimezone(command_ast->ttl->ptr(), metadata_snapshot->columns, session_tz);
+        }
+
         if (command_ast->type == ASTAlterCommand::EXECUTE_COMMAND)
         {
             segments_holder.take<ExecuteCommands>().push_back(command_ast);
