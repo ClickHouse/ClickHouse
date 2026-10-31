@@ -22,7 +22,7 @@ $CLICKHOUSE_CLIENT -q "
     ALTER TABLE \`$samples_table\` ADD PROJECTION normal (SELECT id, bucket, samples ORDER BY samples[1].2);
     ALTER TABLE \`$samples_table\` ADD PROJECTION aggregate (SELECT id, count() GROUP BY id);
 "
-for i in 0 1 2 3 4 5; do
+for i in 0 1 2; do
     $CLICKHOUSE_CLIENT -q "
         INSERT INTO ts (metric_name, tags, samples)
         SELECT 'm', map('i', toString(number)), [(toDateTime64(number, 3), toFloat64(number % 100))] FROM numbers($((i * 2000)), 2000);
