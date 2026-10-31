@@ -3,6 +3,8 @@
 
 SET max_threads = 1;
 SET max_threads_min_free_memory_per_thread = 0;
+-- Statistics of a prior run of the same query can keep the frozen adaptive cells below from freezing.
+SET collect_hash_table_stats_during_aggregation = 0;
 
 SELECT 'one value per block';
 SELECT count() FROM
