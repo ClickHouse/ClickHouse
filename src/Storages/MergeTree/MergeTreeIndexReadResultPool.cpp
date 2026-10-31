@@ -247,10 +247,10 @@ SkipIndexReadResultPtr MergeTreeSkipIndexReader::read(
 
     res->index_granules = std::move(index_granules);
 
-    /// The granules of the top-k index are compared against the threshold reached by the other parts,
-    /// so an index that does not describe the values the part returns (a pending update, `MODIFY COLUMN`,
-    /// `RENAME COLUMN` or `DROP COLUMN` of the indexed column) could make a granule holding the real top
-    /// rows look outside of the threshold. Deleted rows cannot: they only narrow the real range of values.
+    /// The minmax index for TopK filtering is subject to the same staleness check as the other skip
+    /// indexes: a pending mutation that rewrites, drops or renames its column leaves the part with an
+    /// index file that does not describe the values a read returns, so pruning marks by the running
+    /// threshold against it would drop rows the query has to see.
     if (skip_indexes.skip_index_for_top_k_filtering && skip_indexes.threshold_tracker
         && MergeTreeDataSelectExecutor::canUseIndex(skip_indexes.skip_index_for_top_k_filtering, metadata_snapshot, all_updated_columns))
     {

@@ -136,14 +136,6 @@ AlterConversions::AlterConversions(
     for (const auto & patch : patch_parts_)
         addPatchPart(patch);
 
-    columns_with_stale_indexes = all_updated_columns;
-    for (const auto & [rename_to, rename_from] : rename_map)
-    {
-        columns_with_stale_indexes.insert(rename_to);
-        columns_with_stale_indexes.insert(rename_from);
-    }
-    columns_with_stale_indexes.insert(dropped_columns.begin(), dropped_columns.end());
-
     /// Do not throw if there are no mutations or patches.
     if (number_of_alter_mutations > 1)
     {
@@ -216,6 +208,9 @@ void AlterConversions::addMutationCommand(const MutationCommand & command, const
 
     if (command.type == RENAME_COLUMN)
     {
+        columns_touched_by_metadata_mutations.insert(command.column_name);
+        columns_touched_by_metadata_mutations.insert(command.rename_to);
+
         /// Handle chained renames: if column A was renamed to B, and now B is renamed to C,
         /// update the existing entry to map A directly to C instead of having two separate entries.
         bool chained = false;
@@ -233,6 +228,8 @@ void AlterConversions::addMutationCommand(const MutationCommand & command, const
     }
     else if (command.type == DROP_COLUMN)
     {
+        columns_touched_by_metadata_mutations.insert(command.column_name);
+
         /// Handle a drop after a rename: if column A was renamed to B and B is now dropped,
         /// record the drop under A, and erase the mapping of A to B.
         auto dropped_column_name = command.column_name;
@@ -337,6 +334,17 @@ std::string AlterConversions::getColumnOldName(const std::string & new_name) con
             return name_from;
     }
     throw Exception(ErrorCodes::LOGICAL_ERROR, "Column {} was not renamed", new_name);
+}
+
+NameSet AlterConversions::getColumnsInvalidatingIndexes() const
+{
+    /// `rename_map` and `dropped_columns` are normalized (chained renames are collapsed, a drop after
+    /// a rename is recorded under the original name), so they lose the intermediate names. Those names
+    /// can be reused as well, so the raw names of the commands are collected separately.
+    NameSet res = all_updated_columns;
+    res.insert(columns_touched_by_metadata_mutations.begin(), columns_touched_by_metadata_mutations.end());
+    res.insert(dropped_columns.begin(), dropped_columns.end());
+    return res;
 }
 
 bool AlterConversions::isColumnDropped(const std::string & name, bool share_nested_offsets) const

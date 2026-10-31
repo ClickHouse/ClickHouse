@@ -1960,6 +1960,8 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreams(
 
     if (num_streams > 1)
     {
+        const size_t initial_num_streams = num_streams;
+
         /// Reduce the number of num_streams if the data is small.
         /// The comparison is done with a division rather than with `num_streams * info.min_marks_for_concurrent_read`,
         /// because `num_streams` is derived from `max_streams_to_max_threads_ratio`, which is a `Float64` setting,
@@ -1989,12 +1991,34 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreams(
                 num_streams = parts_with_ranges.size();
         }
 
+        const bool is_local_unordered_read
+            = !is_parallel_reading_from_replicas && !isQueryWithFinal() && !checkAnyPartOnRemoteFS(parts_with_ranges);
+
+        /// If that left some streams without a task, use smaller tasks, not below `merge_tree_min_read_task_size`.
+        /// A single stream stays one (it reads in order). Only the plain read pool cuts tasks of exactly this size
+        /// (adaptive granularity, no columns cache, local prefetched pool not allowed).
+        if (allow_spreading_small_read && is_local_unordered_read && data.canUseAdaptiveGranularity() && !info.use_columns_cache
+            && !settings[Setting::allow_prefetched_read_pool_for_local_filesystem]
+            && requested_num_streams <= MIN_STREAMS_TO_CAP_BY_READ_BYTES && num_streams > 1 && num_streams < initial_num_streams)
+        {
+            static constexpr size_t tasks_per_stream = 3;
+            const size_t min_task_marks = settings[Setting::merge_tree_min_read_task_size];
+            const size_t task_marks = std::min(
+                info.min_marks_for_concurrent_read, std::max(info.sum_marks / tasks_per_stream / initial_num_streams, min_task_marks));
+            size_t tasks = 0;
+            for (const size_t part_marks : info.sum_marks_in_parts)
+                tasks += std::max<size_t>(1, part_marks / task_marks);
+            if (std::min(tasks, initial_num_streams) > num_streams)
+            {
+                num_streams = std::min(tasks, initial_num_streams);
+                info.min_marks_for_concurrent_read = task_marks;
+            }
+        }
+
         /// The per-stream cost the cap trades against was measured for local reads. Remote reads
         /// have their own latency and prefetch tradeoffs, and they already get separate
         /// `..._for_remote_filesystem` concurrency thresholds above, so leave them alone.
-        if (!is_parallel_reading_from_replicas
-            && !isQueryWithFinal()
-            && !checkAnyPartOnRemoteFS(parts_with_ranges)
+        if (is_local_unordered_read
             && settings[Setting::merge_tree_read_split_ranges_into_intersecting_and_non_intersecting_injection_probability] == 0)
             capStreamsByReadBytes(
                 num_streams, parts_with_ranges, column_names, storage_snapshot, mutations_snapshot, context, settings, log);
@@ -3876,6 +3900,12 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
     if (filter_depends_on_non_deterministic_virtuals)
         reader_settings.use_query_condition_cache = false;
 
+    /// Mirrors the read side in `filterPartsByQueryConditionCache`: while an alter or metadata mutation
+    /// is pending for any of the parts, a read returns values the part name does not describe, so do
+    /// not record them. Finished mutations kept in the snapshot do not count.
+    if (MergeTreeDataSelectExecutor::hasPendingAlterOrMetadataMutations(parts, mutations_snapshot))
+        reader_settings.use_query_condition_cache = false;
+
     MergeTreeDataSelectExecutor::IndexAnalysisContext filter_context
     {
         .metadata_snapshot = metadata_snapshot,
@@ -4193,11 +4223,6 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
             for (const auto & remaining_ranges : remaining)
             {
                 const auto & data_part = remaining_ranges.data_part;
-                /// The exclusions of a part whose pending `RENAME COLUMN` or `DROP COLUMN` changes which
-                /// data a queried name refers to would be wrong for a read after `KILL MUTATION`, and are
-                /// not consulted (see `filterPartsByQueryConditionCache`).
-                if (MergeTreeDataSelectExecutor::partChangesColumnIdentity(data_part, mutations_snapshot, context_))
-                    continue;
                 String part_name = data_part->isProjectionPart() ? fmt::format("{}:{}", data_part->getParentPartName(), data_part->name)
                                                                  : data_part->name;
                 query_condition_cache->write(
@@ -5642,6 +5667,10 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, [[ma
     if (filterDependsOnNonDeterministicVirtuals(storage_snapshot->metadata->virtuals, query_info))
         reader_settings.use_query_condition_cache = false;
 
+    /// See the same gate in `selectRangesToRead`.
+    if (MergeTreeDataSelectExecutor::hasPendingAlterOrMetadataMutations(result.parts_with_ranges, mutations_snapshot))
+        reader_settings.use_query_condition_cache = false;
+
     /// The granules a TopK read drops depend on the running threshold, i.e. on the rows of every part
     /// in the read, not only on the part being read. The per-part `appliesMutationsBeforePrewhere` guard
     /// of the write paths is therefore not enough: a part without mutations of its own may record its
@@ -5650,12 +5679,8 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, [[ma
     /// later read that does not apply it (`apply_mutations_on_fly = 0`, `apply_patch_parts = 0`, or any
     /// read after `KILL MUTATION`) would skip rows. A read with such a snapshot never consults the cache
     /// (see `filterPartsByQueryConditionCache`), so don't write from it either. See issue #122564.
-    /// The same holds for a pending `RENAME COLUMN` or `DROP COLUMN` (possibly followed by adding a
-    /// column with the same name): the part whose column identity it changes is skipped by the per-part
-    /// guard, but the values it returns still tighten the threshold for the other parts.
     if (top_k_filter_info && mutations_snapshot
-        && (mutations_snapshot->hasDataMutations() || mutations_snapshot->hasPatchParts()
-            || mutations_snapshot->hasMetadataMutations()))
+        && (mutations_snapshot->hasDataMutations() || mutations_snapshot->hasPatchParts()))
         reader_settings.use_query_condition_cache = false;
 
     /// For a TopK read, granules fully filtered by the dynamic `__topKFilter` PREWHERE may be

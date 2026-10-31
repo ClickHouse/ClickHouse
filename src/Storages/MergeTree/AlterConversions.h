@@ -46,12 +46,6 @@ public:
     /// `name` is the name the column has in the part, not in the current metadata.
     bool isColumnDropped(const std::string & name, bool share_nested_offsets = true) const;
 
-    const NameSet & getDroppedColumns() const { return dropped_columns; }
-
-    /// Whether a pending `RENAME COLUMN` or `DROP COLUMN` changes which on-disk column a name refers to
-    /// (a dropped column may be added again, and then its reads return the default instead of the data).
-    bool changesColumnIdentity() const { return !rename_map.empty() || !dropped_columns.empty(); }
-
     static bool isSupportedDataMutation(MutationCommand::Type type);
     static bool isSupportedAlterMutation(MutationCommand::Type type);
     static bool isSupportedMetadataMutation(MutationCommand::Type type);
@@ -61,13 +55,13 @@ public:
 
     const NameSet & getAllUpdatedColumns() const { return all_updated_columns; }
 
-    /// Names of columns for which the skip indexes stored in the part may not describe the values
-    /// returned by reads: the updated columns, plus the columns whose identity is changed by a
-    /// pending `RENAME COLUMN` or `DROP COLUMN` (both the old and the new names). Implicit indexes
-    /// (`add_minmax_index_for_numeric_columns`) are named after their column, so after such a
-    /// metadata mutation the index file found by name may have been built over another column's
-    /// data or over the data of a dropped column whose reads now return the default of a re-added one.
-    const NameSet & getColumnsWithStaleIndexes() const { return columns_with_stale_indexes; }
+    /// The columns a skip index must not depend on to be usable for this part: the columns updated on
+    /// the fly (`getAllUpdatedColumns`) plus every name touched by a pending `DROP COLUMN` or
+    /// `RENAME COLUMN`. A name dropped or renamed away can be reused by a new column right away (and
+    /// an index with the old name can be added on it), while the part still holds the index file
+    /// built over the old column; which column that file was built over is not recorded, so any
+    /// pending drop or rename of an indexed name makes the index unusable until it is materialized.
+    NameSet getColumnsInvalidatingIndexes() const;
     const NameSet & getColumnsUpdatedInPatches() const { return columns_updated_in_patches; }
 
     bool hasPatches() const { return !patch_parts.empty(); }
@@ -129,6 +123,10 @@ private:
     /// If a column with the same name is re-added, old data in parts should be ignored.
     NameSet dropped_columns;
 
+    /// Every name used by a pending `RENAME COLUMN` (both sides) or `DROP COLUMN` command, as written
+    /// in the command, before the normalization done for `rename_map` and `dropped_columns`.
+    NameSet columns_touched_by_metadata_mutations;
+
     /// All mutations commands that should be applied.
     MutationCommands mutation_commands;
 
@@ -143,9 +141,6 @@ private:
     /// Names of columns which are updated by mutation commands.
     /// Used to check dependencies for ALTERs, lightweight deletes and MATERIALIZED columns
     NameSet all_updated_columns;
-
-    /// See `getColumnsWithStaleIndexes`.
-    NameSet columns_with_stale_indexes;
 
     /// Patches required to be applied for a part.
     PatchPartsForReader patch_parts;

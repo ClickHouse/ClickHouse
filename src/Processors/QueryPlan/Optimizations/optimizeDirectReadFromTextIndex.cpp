@@ -197,9 +197,31 @@ String optimizationInfoToString(const IndexReadTasks & index_read_tasks, const N
 /// Columns changed on the fly by patches, mutations and masking policies. The index is not used for them in the
 /// whole query: the preprocessor rewrite and the on-fly mutation steps do not depend on the part. They are taken
 /// from the whole snapshot to avoid looking up the patches of each part.
-NameSet getColumnsUpdatedOnFly(const ReadFromMergeTree & read_from_merge_tree_step)
+/// Also includes every name touched by a pending `DROP COLUMN` or `RENAME COLUMN` of the parts: such a name can be
+/// reused by a new column right away, while the part still holds the index file built over the old column.
+NameSet getColumnsUpdatedOnFly(const ReadFromMergeTree & read_from_merge_tree_step, const std::unordered_set<DataPartPtr> & parts)
 {
-    NameSet updated_columns = read_from_merge_tree_step.getMutationsSnapshot()->getColumnsChangedOnFly();
+    const auto & mutations_snapshot = read_from_merge_tree_step.getMutationsSnapshot();
+    NameSet updated_columns = mutations_snapshot->getColumnsChangedOnFly();
+
+    if (mutations_snapshot->hasMetadataMutations())
+    {
+        for (const auto & part : parts)
+        {
+            for (const auto & command : mutations_snapshot->getOnFlyMutationCommandsForPart(part))
+            {
+                if (command.type == MutationCommand::DROP_COLUMN)
+                {
+                    updated_columns.insert(command.column_name);
+                }
+                else if (command.type == MutationCommand::RENAME_COLUMN)
+                {
+                    updated_columns.insert(command.column_name);
+                    updated_columns.insert(command.rename_to);
+                }
+            }
+        }
+    }
 
 #if CLICKHOUSE_CLOUD
     /// Masking policies are the same for all parts.
@@ -235,26 +257,7 @@ void collectTextIndexReadInfos(const ReadFromMergeTree * read_from_merge_tree_st
     for (const auto & part : parts_with_ranges)
         unique_parts.insert(part.data_part);
 
-    auto updated_columns = getColumnsUpdatedOnFly(*read_from_merge_tree_step);
-
-    /// A pending `RENAME COLUMN` or `DROP COLUMN` changes the identity of a column, so the index stored in a part
-    /// may describe the data of another column. Such mutations depend on the part, but they are rare, so the
-    /// alter conversions of each part are looked up only when the snapshot has metadata mutations.
-    auto mutations_snapshot = read_from_merge_tree_step->getMutationsSnapshot();
-    if (mutations_snapshot->hasMetadataMutations())
-    {
-        const auto & context = read_from_merge_tree_step->getContext();
-        for (const auto & part : unique_parts)
-        {
-            auto alter_conversions = MergeTreeData::getAlterConversionsForPart(part, mutations_snapshot, context
-#if CLICKHOUSE_CLOUD
-                , context->getAccess()->getEnabledMaskingPolicies()
-#endif
-            );
-            const auto & part_stale_columns = alter_conversions->getColumnsWithStaleIndexes();
-            updated_columns.insert(part_stale_columns.begin(), part_stale_columns.end());
-        }
-    }
+    auto updated_columns = getColumnsUpdatedOnFly(*read_from_merge_tree_step, unique_parts);
 
     for (const auto & index : indexes->skip_indexes.useful_indices)
     {
