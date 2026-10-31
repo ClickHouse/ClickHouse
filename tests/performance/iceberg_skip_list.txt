@@ -3,31 +3,48 @@
 ColumnMap.xml                                            # type UInt64 in CREATE ... AS SELECT
 aggregate_functions_deserialization.xml                  # AggregateFunction column
 aggregate_state_serialization.xml                        # AggregateFunction column
+aggregating_merge_tree.xml                               # AggregateFunction column
+aggregating_merge_tree_zero_copy_final.xml               # SimpleAggregateFunction column
 aggregation_in_order_if_null_map.xml                     # a function needs the original narrow type
-alter_select.xml                                         # ReplicatedMergeTree
 and_compare_chain_derived.xml                            # type UInt64 in CREATE ... AS SELECT
-apply_patch_parts_join.xml                               # lightweight UPDATE
-apply_patch_parts_join_intersecting.xml                  # lightweight UPDATE
-apply_patch_parts_merge.xml                              # lightweight UPDATE
-apply_patch_parts_steps.xml                              # lightweight UPDATE
+apply_patch_parts_join.xml                               # OPTIMIZE after an UPDATE (compaction rejects OVERWRITE snapshots)
+apply_patch_parts_join_intersecting.xml                  # OPTIMIZE after an UPDATE (compaction rejects OVERWRITE snapshots)
+array_distance_const_exact_chunks.xml                    # type BFloat16 in CREATE ... AS SELECT
+array_filter_uniform.xml                                 # a function needs the original narrow type
+array_min_max_index.xml                                  # Int256 widened to Decimal
+avg_serialization.xml                                    # AggregateFunction column
 avg_weighted.xml                                         # MATERIALIZED column
+bigint_formatting.xml                                    # UInt128 widened to Decimal
+bitmap_cardinality.xml                                   # AggregateFunction column
+bitmap_contains.xml                                      # AggregateFunction column
 codecs_t64_select.xml                                    # loop() over the table
 compact_part_subcolumns.xml                              # JSON column
 distinct_json_paths.xml                                  # JSON column
+dotProduct.xml                                           # type BFloat16 in CREATE ... AS SELECT
 dynamic_compact_read.xml                                 # Dynamic column
 dynamic_field_serialization_cache.xml                    # JSON column
 enum.xml                                                 # Enum widened to String
 enum16_dense.xml                                         # type Enum16 in CREATE ... AS SELECT
 enum_to_low_cardinality_string.xml                       # type Enum16 in CREATE ... AS SELECT
+final_big_column.xml                                     # FINAL
+final_move_to_prewhere.xml                               # FINAL
+final_read_in_order_limit.xml                            # FINAL
+final_skip_index_exact_mode_scattered.xml                # virtual column _part
+final_with_lonely_parts.xml                              # FINAL
 group_by_dynamic_keys.xml                                # JSON column
 group_by_low_cardinality_array_join.xml                  # UInt128 widened to Decimal
+h3_functions.xml                                         # a function needs the original narrow type
+has_any_has_all_constant_numbers.xml                     # the widened type has no common type with the original
 hash_join_gather.xml                                     # UInt256 widened to Decimal
 hash_join_stats_update.xml                               # MATERIALIZE STATISTICS
-index_bulk_filtering.xml                                 # assertion on the parts of a MergeTree table
-insert_statistics_uniq_v2.xml                            # ALTER DROP_STATISTICS
+hashing_serialized_values.xml                            # AggregateFunction column
+index_bulk_filtering.xml                                 # assertion in the test (throwIf)
+insert_select_squashing_dynamic.xml                      # Dynamic column
+insert_select_squashing_variant.xml                      # Variant column
+insert_statistics_uniq_v2.xml                            # assertion in the test (throwIf)
 jit_aggregate_functions.xml                              # a function needs the original narrow type
-join_convert_outer_to_inner.xml                          # assertion on the parts of a MergeTree table
-join_planning_pruned_statistics.xml                      # ReplacingMergeTree
+join_convert_outer_to_inner.xml                          # assertion in the test (throwIf)
+join_planning_pruned_statistics.xml                      # FINAL
 join_swap_bool_literal_json_path.xml                     # JSON column
 json_advanced_shared_data_read_paths.xml                 # JSON column
 json_compact_shared_path_cache.xml                       # JSON column
@@ -39,46 +56,70 @@ json_shared_typed_paths.xml                              # JSON column
 json_subcolumn_serialization_cache.xml                   # JSON column
 json_subcolumns_required_conversions.xml                 # JSON column
 json_to_string.xml                                       # JSON column
+json_type_skip_regexp.xml                                # JSON column
 json_typed_path_subcolumn_lookup.xml                     # JSON column
 json_typed_paths_insert.xml                              # JSON column
+kway_merge_expensive_comparator.xml                      # FINAL
+lazy_final_early_exit_limit.xml                          # assertion in the test (throwIf)
+lazy_final_replacing.xml                                 # FINAL
+lazy_materialization_final_limit.xml                     # assertion in the test (throwIf)
+linear_regression.xml                                    # AggregateFunction column in CREATE ... AS SELECT
 merge_table_function_many_columns.xml                    # ALTER ADD COLUMN
 merge_tree_huge_pk.xml                                   # type UInt8 in CREATE ... AS SELECT
+merge_tree_reorder_columns_merge.xml                     # FINAL
 min_max_index.xml                                        # a function needs the original narrow type
 min_max_index_with_cast.xml                              # ALIAS column
+min_max_wide_integers.xml                                # UInt128 widened to Decimal
 mingroupby-orderbylimit1.xml                             # type UInt64 in CREATE ... AS SELECT
 mv_analyzer.xml                                          # MATERIALIZED column
 new_json_type.xml                                        # JSON column
+norm_distance.xml                                        # type BFloat16 in CREATE ... AS SELECT
 numeric_indexed_vector.xml                               # a function needs the original narrow type
 optimize_window_funnel.xml                               # a function needs the original narrow type
+optimized_select_final.xml                               # FINAL
+optimized_select_final_one_part.xml                      # FINAL
+parallel_final.xml                                       # FINAL
 polymorphic_parts_l.xml                                  # type UInt64 in CREATE ... AS hits_10m_single
 polymorphic_parts_m.xml                                  # type UInt64 in CREATE ... AS hits_10m_single
 polymorphic_parts_s.xml                                  # type UInt64 in CREATE ... AS hits_10m_single
 prewhere_column_sizes_pruned_parts.xml                   # JSON column
 prewhere_subcolumns.xml                                  # JSON column
 projection_materialize.xml                               # ALTER ADD_PROJECTION, ALTER DROP_PROJECTION
+qbit_distance_transposed_micro.xml                       # QBit column
+qbit_insert_memory.xml                                   # QBit column
+qbit_l2_distance_bfloat16_memory.xml                     # QBit column
+qbit_l2_distance_float32_memory.xml                      # QBit column
+qbit_l2_distance_float64_memory.xml                      # QBit column
 qbit_one_bit_distance.xml                                # QBit column
+query_interpretation_join.xml                            # AggregateFunction column
 read_from_comp_parts.xml                                 # type UInt64 in CREATE ... AS SELECT
+read_in_reverse_order_final.xml                          # assertion in the test (throwIf)
+replace_int256.xml                                       # Int256 widened to Decimal
+replacing_final_non_intersecting.xml                     # FINAL
 scalar.xml                                               # AggregateFunction column
 scalar2.xml                                              # AggregateFunction column
 serialization_pool_lookup.xml                            # PREWHERE on a Nested subcolumn
-set_index.xml                                            # assertion on the parts of a MergeTree table
-skip_index_planning_with_patch_parts.xml                 # lightweight UPDATE
-sorted_key_prefix_runs.xml                               # ReplacingMergeTree
+set_index.xml                                            # assertion in the test (throwIf)
+sorted_key_prefix_runs.xml                               # FINAL
 streaming_queries_read_round.xml                         # STREAM, MATERIALIZE STATISTICS
 subcolumn_deserialization_variant_json_string_array.xml  # Variant column
 text_index_merge.xml                                     # OPTIMIZE DRY RUN
 text_index_partially_materialized.xml                    # ALTER ADD_INDEX
-text_index_trivial_count.xml                             # assertion on the parts of a MergeTree table
+text_index_trivial_count.xml                             # assertion in the test (throwIf)
 threshold_top_k_merge.xml                                # type UInt64 in CREATE ... AS SELECT
 timeseries_id_to_group.xml                               # timeSeriesIdToGroup does not know the ids of rows written to Iceberg
-timeseries_to_grid_aggregation_functions.xml             # assertion on the parts of a MergeTree table
+timeseries_to_grid_aggregation_functions.xml             # assertion in the test (throwIf)
 timeseries_to_grid_deserialization.xml                   # AggregateFunction column
 ttl_column_skip_untouched_blocks.xml                     # TRUNCATE
 ttl_group_by_consecutive_keys.xml                        # TRUNCATE
 uniq_combined_large_states.xml                           # AggregateFunction column
 uniq_combined_merge.xml                                  # AggregateFunction column
+uniq_exact_merge_large_states.xml                        # AggregateFunction column
 uniq_states_read_merge.xml                               # AggregateFunction column
 uniq_stored.xml                                          # AggregateFunction column
+uuid_ip_comparison.xml                                   # IPv4 widened to UInt32
 vector_binary_serialization.xml                          # AggregateFunction column
+wide_integer_comparison.xml                              # UInt128 widened to Decimal
+wide_integer_division.xml                                # UInt256 widened to Decimal
 window_transform.xml                                     # type UInt64 in CREATE ... AS SELECT
 workload_cpu_scheduling.xml                              # assertion on the CPU slots of a MergeTree read

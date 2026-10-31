@@ -1211,10 +1211,16 @@ if not args.use_existing_tables:
             [q for q, _ in create_queries], args.table_engine, test_name, args.binary[-1]
         )
         create_queries = [(q, tolerate) for q, (_, tolerate) in zip(rewritten, create_queries)]
-        print(f"table-engine\t{args.table_engine}\t{tables}")
+        print(f"table-engine\t{args.table_engine}\t{len(tables)}")
         if not tables:
-            print(f"skipped\tTest creates no MergeTree table to run with --table-engine {args.table_engine}.")
+            print(f"skipped\tTest creates no MergeTree or Memory table to run with --table-engine {args.table_engine}.")
             sys.exit(0)
+        # The measured lightweight updates of the rewritten tables too.
+        for q_item in test_queries:
+            if q_item["kind"] == "sql":
+                q_item["statements"] = [
+                    iceberg_engine.rewrite_update(q, args.binary[-1], tables) for q in q_item["statements"]
+                ]
 
     # Disallow temporary tables, because the clickhouse_driver reconnects on
     # errors, and temporary tables are destroyed. We want to be able to continue

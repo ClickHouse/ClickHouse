@@ -1,8 +1,8 @@
 """Rewrite the MergeTree tables of a performance test into Iceberg tables.
 
-`perf.py --table-engine iceberg_local|iceberg_s3` runs a test with every plain
-`MergeTree` table created as an `IcebergLocal` or `IcebergS3` table instead, so
-the same queries measure the Iceberg read and write path. See the "Iceberg
+`perf.py --table-engine iceberg_local|iceberg_s3` runs a test with every
+MergeTree-family and `Memory` table created as an `IcebergLocal` or `IcebergS3`
+table instead, so the same queries measure the Iceberg read and write path. See the "Iceberg
 configuration" section of `tests/performance/README.md`.
 
 A `CREATE TABLE` is first formatted by `clickhouse format --oneline`, so the
@@ -15,10 +15,14 @@ rewrite only has to understand one canonical syntax. The rewrite:
     constraints, codecs and column TTLs;
   * widens column types that Iceberg cannot store to the nearest type it can.
 
-A table that cannot be converted without changing what the test means
-(another MergeTree engine, an `AggregateFunction` or `JSON` column, a
-MATERIALIZED column) raises `IcebergRewriteError`: such a test belongs in
-`tests/performance/iceberg_skip_list.txt`.
+The engine-specific behavior of `ReplacingMergeTree`, `AggregatingMergeTree`
+and the like is lost: the table keeps every inserted row. A lightweight
+`UPDATE t SET ... WHERE ...` of a rewritten table, which Iceberg tables do not
+support, becomes the mutation `ALTER TABLE t UPDATE ... WHERE ...`, which they do.
+
+A column that an Iceberg table cannot store even widened (`AggregateFunction`,
+`JSON`, a MATERIALIZED column) raises `IcebergRewriteError`: such a test
+belongs in `tests/performance/iceberg_skip_list.txt`.
 """
 
 import re
@@ -38,7 +42,8 @@ SETTINGS = {
     "iceberg_delete_data_on_drop": "1",
 }
 
-MERGE_TREE = re.compile(r"(Replicated|Shared)?(\w*)MergeTree")
+# The engines of the tables that are rewritten.
+REWRITTEN_ENGINE = re.compile(r"(Replicated|Shared)?\w*MergeTree|Memory")
 
 # Top-level clauses after `ENGINE = X(...)`, as `clickhouse format` prints them.
 CLAUSES = ["PARTITION BY", "PRIMARY KEY", "ORDER BY", "SAMPLE BY", "TTL", "SETTINGS", "COMMENT", "EMPTY AS", "AS"]
@@ -242,12 +247,8 @@ def rewrite_create(query, table_engine, test_name, rewritten_tables=()):
     engine_clause = re.match(r"ENGINE = `?(\w+)`?", rest[engine_position:])
     if not engine_clause:
         raise IcebergRewriteError(f"Cannot parse the engine of: {query}")
-    engine_name = engine_clause.group(1)
-    merge_tree = MERGE_TREE.fullmatch(engine_name)
-    if not merge_tree:
+    if not REWRITTEN_ENGINE.fullmatch(engine_clause.group(1)):
         return None
-    if engine_name != "MergeTree":
-        raise IcebergRewriteError(f"Table {name}: the semantics of {engine_name} are lost on Iceberg")
     after = rest[engine_position + engine_clause.end():]
     if after.startswith("("):
         after = after[_group_end(after, 0):]
@@ -291,16 +292,31 @@ def format_one_line(binary, query):
     return result.stdout.strip()
 
 
+LIGHTWEIGHT_UPDATE = re.compile(r"UPDATE ((?:`[^`]+`|\w+)(?:\.(?:`[^`]+`|\w+))?) SET (.+)$", re.S)
+
+
+def rewrite_update(query, binary, rewritten_tables):
+    """A lightweight `UPDATE` of a rewritten table as an `ALTER TABLE ... UPDATE`
+    mutation; any other query as it is."""
+    if not re.match(r"\s*UPDATE\s", query, re.I):
+        return query
+    m = LIGHTWEIGHT_UPDATE.match(format_one_line(binary, query))
+    if not m or _unquoted(m.group(1)) not in rewritten_tables:
+        return query
+    return f"ALTER TABLE {m.group(1)} UPDATE {m.group(2)}"
+
+
 def rewrite_setup_queries(queries, table_engine, test_name, binary):
-    """Rewrite the `CREATE TABLE` statements among the setup queries of a test.
+    """Rewrite the `CREATE TABLE` statements among the setup queries of a test,
+    and the lightweight updates of the rewritten tables.
 
     `queries` are substituted setup queries; the others are returned as they are.
-    Returns (queries, the number of rewritten tables)."""
+    Returns (queries, the set of rewritten tables)."""
     result = []
     rewritten_tables = set()
     for query in queries:
         if not re.match(r"\s*CREATE\s+(OR\s+REPLACE\s+)?TABLE\b", query, re.I):
-            result.append(query)
+            result.append(rewrite_update(query, binary, rewritten_tables))
             continue
         canonical = format_one_line(binary, query)
         new_query = rewrite_create(canonical, table_engine, test_name, rewritten_tables)
@@ -309,4 +325,4 @@ def rewrite_setup_queries(queries, table_engine, test_name, binary):
         else:
             result.append(new_query)
             rewritten_tables.add(_unquoted(re.match(r"CREATE (?:OR REPLACE )?TABLE (?:IF NOT EXISTS )?(\S+)", canonical).group(1)))
-    return result, len(rewritten_tables)
+    return result, rewritten_tables

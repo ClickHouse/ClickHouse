@@ -120,7 +120,8 @@ def test_has_failpoint(test_path):
 # Tests that `perf.py --table-engine` cannot run, one name per line with the reason.
 ICEBERG_SKIP_LIST = "iceberg_skip_list.txt"
 
-_MERGE_TREE_ENGINE = re.compile(r"ENGINE\s*=\s*MergeTree\b", re.IGNORECASE)
+# The engines that `perf.py --table-engine` rewrites, see `iceberg_engine.REWRITTEN_ENGINE`.
+_MERGE_TREE_ENGINE = re.compile(r"ENGINE\s*=\s*`?(\w*MergeTree|Memory)\b", re.IGNORECASE)
 
 
 def iceberg_skip_list(perf_dir):
@@ -134,7 +135,7 @@ def iceberg_skip_list(perf_dir):
 
 def test_runs_with_table_engine(test_path, skip_list):
     """Whether the Iceberg configuration runs a test: one of its `create_query`s
-    creates a plain `MergeTree` table, it is not `long`, does not opt out with
+    creates a MergeTree-family or `Memory` table, it is not `long`, does not opt out with
     `<test iceberg="0">` and is not in the skip list."""
     if os.path.basename(test_path) in skip_list or test_is_long(test_path):
         return False
