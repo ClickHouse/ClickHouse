@@ -276,7 +276,8 @@ KeeperHandlingConsumer::getLockedTopicPartitions()
     /// Locks are released and re-acquired as replicas rebalance. A lock listed by
     /// getChildren() may already be gone by the time we read it; such a lock is held
     /// by no one, so skip it instead of failing the whole polling round. Batched tryGet
-    /// also replaces N sequential synchronous gets with a single round-trip.
+    /// also replaces N sequential synchronous gets with a single batched read (or, on a
+    /// cluster without the MultiRead feature, with parallel asynchronous reads).
     auto lock_responses = keeper->tryGet(lock_paths);
 
     for (size_t i = 0; i < lock_nodes.size(); ++i)
