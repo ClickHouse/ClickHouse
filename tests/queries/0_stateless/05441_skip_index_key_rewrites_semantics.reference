@@ -1,0 +1,18 @@
+settings_primary_key	1
+settings_primary_key	1
+settings_partition_key	1
+settings_partition_key	1
+settings_folded_constant	1
+settings_folded_constant	1
+collapse	1
+collapse	1
+collapse	2
+indexed_skip_index	1
+indexed_skip_index	1
+indexed_skip_index	1
+indexed_primary_key	1
+indexed_primary_key	1
+indexed_primary_key	1
+indexed_partition_key	1	1
+indexed_partition_key	49
+indexed_partition_key	49
