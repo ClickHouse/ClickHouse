@@ -21,6 +21,7 @@
 
 namespace ProfileEvents
 {
+    extern const Event PackedSkipIndicesArchiveIndexLoads;
     extern const Event ExternalPackedPartWriterCompressedBytes;
     extern const Event ExternalPackedPartWriterUncompressedBytes;
 }
@@ -777,6 +778,8 @@ std::shared_ptr<const PackedFilesReader> DataPartStorageOnDiskPacked::getSkipInd
         const String data_path = getRelativeDataPath();
         try
         {
+            /// Counts attempts: the catch below does not cache a miss, so a re-probe counts again.
+            ProfileEvents::increment(ProfileEvents::PackedSkipIndicesArchiveIndexLoads);
             auto inner_archive_buf = reader->readFile(
                 volume->getDisk(), data_path, String(SKIP_INDICES_PACKED_FILENAME), getReadSettings(), std::nullopt);
             auto inner_index = PackedFilesReader::readIndex(*inner_archive_buf);
