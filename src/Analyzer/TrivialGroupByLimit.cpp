@@ -101,6 +101,12 @@ std::optional<UInt64> getTrivialGroupByLimit(const QueryNode & query, const Sett
         || query.isGroupByWithRollup() || query.isGroupByWithCube() || query.isGroupByWithGroupingSets())
         return std::nullopt;
 
+    /// `GROUP BY ... WITH CLUSTER` clusters the exact groups after aggregation, so it must see
+    /// all of them. Capping the aggregation at `LIMIT + OFFSET` keys would drop keys before
+    /// clustering and silently change the result.
+    if (query.hasGroupByWithCluster())
+        return std::nullopt;
+
     /// `LIMIT n AFTER cond` / `LIMIT n UNTIL cond` select a window of `n` rows around a boundary
     /// that is only found once the boundary row is produced. Capping the aggregation at
     /// `n + offset` arbitrary groups can stop it before the boundary key ever appears, so the
