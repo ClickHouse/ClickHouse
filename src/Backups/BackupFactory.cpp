@@ -3,6 +3,7 @@
 #include <Interpreters/FunctionSecretArgumentsFinder.h>
 #include <Interpreters/Context.h>
 #include <Common/Exception.h>
+#include <Common/encodeSpacesInURI.h>
 
 #include <Poco/URI.h>
 
@@ -35,7 +36,7 @@ namespace
             return uri;
         try
         {
-            Poco::URI parsed(uri);
+            Poco::URI parsed(encodeSpacesInURI(uri));
             parsed.normalize();
             return parsed.toString();
         }
