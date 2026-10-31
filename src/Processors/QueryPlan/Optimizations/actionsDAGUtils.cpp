@@ -493,8 +493,13 @@ void applyActionsToSortDescription(
         if (sort_colunm.output)
             descr.column_name = sort_colunm.output->result_name;
 
+        /// A decreasing function keeps NaN/NULL at the same end of the stream,
+        /// so their placement relative to the flipped direction flips as well.
         if (sort_colunm.changes_order)
+        {
             descr.direction *= -1;
+            descr.nulls_direction *= -1;
+        }
 
         if (!sort_colunm.is_strict)
             break;
