@@ -39520,6 +39520,18 @@
     "source": "/sql-reference/aggregate-functions/reference/groupconcat"
   },
   {
+    "destination": "/reference/functions/aggregate-functions/groupConvexHull",
+    "source": "/sql-reference/aggregate-functions/reference/groupConvexHull"
+  },
+  {
+    "destination": "/reference/functions/aggregate-functions/groupPolygonIntersection",
+    "source": "/sql-reference/aggregate-functions/reference/groupPolygonIntersection"
+  },
+  {
+    "destination": "/reference/functions/aggregate-functions/groupPolygonUnion",
+    "source": "/sql-reference/aggregate-functions/reference/groupPolygonUnion"
+  },
+  {
     "destination": "/reference/functions/aggregate-functions/groupUniqArray",
     "source": "/sql-reference/aggregate-functions/reference/groupuniqarray"
   },

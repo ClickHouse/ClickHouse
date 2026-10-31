@@ -1,0 +1,18 @@
+disjoint
+1025	1025
+state_merge
+1025	1025
+reused_right_state
+1025	1025
+add_after_finalization
+0	0
+merge_after_finalization
+561	33
+legacy_unordered_chunks
+85	85
+legacy_open_rings
+1	1	5
+containing_polygon_first
+1	16384
+containing_polygon_last
+1	16384
