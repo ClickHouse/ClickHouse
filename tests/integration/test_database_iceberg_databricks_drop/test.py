@@ -9,7 +9,7 @@ from helpers.mock_servers import start_mock_servers
 # Must match the constants in mock_servers/databricks_catalog.py.
 TOKEN = "dapi-test-token"
 CATALOG = "unity"
-SCHEMA = "sch"
+SCHEMA = "sch#\u00e9"
 
 MOCK_PORT = 8780
 REST_URL = f"http://localhost:{MOCK_PORT}/api/2.1/unity-catalog/iceberg-rest"
@@ -47,7 +47,7 @@ def catalog_deletes():
 
 
 def test_drop_follows_unity_table_type(started_cluster):
-    mock_request("POST", "/control/reset", {"managed": "MANAGED", "external": "EXTERNAL", "foreign": "FOREIGN"})
+    mock_request("POST", "/control/reset", {"managed": "MANAGED", "external": "EXTERNAL", "foreign": "FOREIGN", "untyped": ""})
     node.query(
         f"""
         DROP DATABASE IF EXISTS {DATABASE};
@@ -80,5 +80,14 @@ def test_drop_follows_unity_table_type(started_cluster):
     assert "SUPPORT_IS_DISABLED" in error and "FOREIGN" in error, error
     assert len(catalog_deletes()) == 2
     assert node.query(f"EXISTS TABLE {DATABASE}.`{SCHEMA}.foreign`") == "1\n"
+
+    # A table whose type the Unity API does not report is refused whatever the setting says.
+    for delete_data in (0, 1):
+        error = node.query_and_get_error(
+            f"DROP TABLE {DATABASE}.`{SCHEMA}.untyped`", settings={"iceberg_delete_data_on_drop": delete_data}
+        )
+        assert "SUPPORT_IS_DISABLED" in error, error
+    assert len(catalog_deletes()) == 2
+    assert node.query(f"EXISTS TABLE {DATABASE}.`{SCHEMA}.untyped`") == "1\n"
 
     node.query(f"DROP DATABASE {DATABASE}")

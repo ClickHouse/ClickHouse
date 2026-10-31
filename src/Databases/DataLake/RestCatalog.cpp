@@ -2314,7 +2314,12 @@ void RestCatalog::dropTable(const String & namespace_name, const String & table_
     {
         if (const auto unity_catalog_api_url = tryGetUnityCatalogAPIURL(base_url.generic_string()))
         {
-            const auto unity_table_endpoint = fmt::format("{}/tables/{}.{}.{}", *unity_catalog_api_url, warehouse, namespace_name, table_name);
+            const auto unity_table_endpoint = fmt::format(
+                "{}/tables/{}.{}.{}",
+                *unity_catalog_api_url,
+                encodeNamespaceForURI(warehouse),
+                encodeNamespaceForURI(namespace_name),
+                table_name);
             const auto unity_table_response
                 = sendRequest(*state_snapshot, unity_table_endpoint, /* request_body */ nullptr, Poco::Net::HTTPRequest::HTTP_GET, /* ignore_result */ false);
             Poco::JSON::Parser parser;

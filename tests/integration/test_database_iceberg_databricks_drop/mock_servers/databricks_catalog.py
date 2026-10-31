@@ -6,7 +6,8 @@
   `table_type` of every table.
 
 Every route except `/` and `/control/*` requires `Authorization: Bearer <TOKEN>`.
-`POST /control/reset` takes `{table_name: table_type}` for schema `sch` and clears the request log,
+`POST /control/reset` takes `{table_name: table_type}` for schema `SCHEMA` (an empty type is not reported)
+and clears the request log,
 `GET /control/requests` returns the log as a list of `"<METHOD> <path>?<query>"`.
 """
 import json
@@ -15,12 +16,12 @@ import sys
 import threading
 import uuid
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from urllib.parse import urlsplit
+from urllib.parse import unquote, urlsplit
 
 # Must match the constants in test.py.
 TOKEN = "dapi-test-token"
 CATALOG = "unity"
-SCHEMA = "sch"
+SCHEMA = "sch#\u00e9"
 
 UNITY_TABLE = re.compile(r"^/api/2\.1/unity-catalog/tables/(?P<full_name>[^/]+)$")
 REST_CONFIG = re.compile(r"^.*/v1/config$")
@@ -101,7 +102,7 @@ class RequestHandler(BaseHTTPRequestHandler):
 
     def handle_request(self, method):
         url = urlsplit(self.path)
-        path = url.path
+        path = unquote(url.path)
 
         if method == "GET" and path == "/":
             payload = b"OK"
@@ -130,17 +131,17 @@ class RequestHandler(BaseHTTPRequestHandler):
             if table_type is None:
                 self.reply(404, {"error_code": "TABLE_DOES_NOT_EXIST", "message": f"Table '{match.group('full_name')}' does not exist."})
                 return
-            self.reply(
-                200,
-                {
-                    "name": parts[2],
-                    "catalog_name": CATALOG,
-                    "schema_name": SCHEMA,
-                    "full_name": match.group("full_name"),
-                    "table_type": table_type,
-                    "data_source_format": "ICEBERG",
-                },
-            )
+            table = {
+                "name": parts[2],
+                "catalog_name": CATALOG,
+                "schema_name": SCHEMA,
+                "full_name": match.group("full_name"),
+                "data_source_format": "ICEBERG",
+            }
+            # An empty type stands for a table the Unity API reports without `table_type`.
+            if table_type:
+                table["table_type"] = table_type
+            self.reply(200, table)
         elif method == "GET" and REST_CONFIG.match(path):
             self.reply(200, {"defaults": {}, "overrides": {"prefix": f"catalogs/{CATALOG}"}})
         elif method == "GET" and REST_NAMESPACES.match(path):
