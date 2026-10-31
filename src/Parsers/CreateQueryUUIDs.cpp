@@ -121,6 +121,10 @@ CreateQueryUUIDs::CreateQueryUUIDs(const ASTCreateQuery & query, bool generate_r
 
                 if (isTimeSeriesTimeRangesTargetEnabled(query, for_restore))
                     generate_target_uuid(ViewTarget::TimeRanges);
+
+                /// An ON CLUSTER initiator generates the UUIDs before the setting is normalized into a HISTOGRAMS clause.
+                if (isTimeSeriesHistogramsTargetEnabled(query))
+                    generate_target_uuid(ViewTarget::Histograms);
             }
         }
     }
