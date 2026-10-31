@@ -247,6 +247,7 @@ OPTIONS_TO_INSTALL_ARGUMENTS = {
     "DatabaseOrdinary": "--db-ordinary",
     "wide parts enabled": "--wide-parts",
     "ParallelReplicas": "--parallel-rep",
+    "plan-based": "--parallel-rep-plan-based",
     "distributed plan": "--distributed-plan",
     "azure": "--azure",
     "AsyncInsert": " --async-insert",
