@@ -1,0 +1,6 @@
+-- Values: a numeric value for an IPv4 column is valid, only the UUID is bad (no false positive)
+explanation missing
+-- Values: the same holds with input_format_values_interpret_expressions = 0
+explanation missing
+-- Values: a numeric value for an IPv6 column is a genuine structure mismatch
+explanation present

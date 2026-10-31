@@ -1,0 +1,10 @@
+-- JSONColumnsWithMetadata, validation off: metadata types are ignored, only a value fails (no false positive)
+explanation missing
+-- JSONColumnsWithMetadata, validation on: declared type differs from the destination, exact check applies
+explanation present
+-- JSONColumnsWithMetadata, validation on: declared type matches the destination, only a value fails (no false positive)
+explanation missing
+-- JSONCompact, validation off: metadata is ignored and rows are read positionally (no false positive)
+explanation missing
+-- JSON without a metadata section: falls back to JSONEachRow inference, a genuine mismatch is still explained
+explanation present

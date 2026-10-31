@@ -63,6 +63,12 @@ void ParallelParsingInputFormat::parserThreadFunction(size_t current_ticket_numb
     const auto parser_unit_number = current_ticket_number % processing_units.size();
     auto & unit = processing_units[parser_unit_number];
 
+    /// Set while the child parser and its read buffer are still alive: the parser may hold
+    /// references to the buffer (e.g. through a `PeekableReadBuffer`), so it must not outlive
+    /// the `try` block, and the row bound has to be extracted before leaving it
+    /// (see getRowsReachedOnParseError).
+    std::optional<size_t> rows_reached_on_parse_error;
+
     try
     {
         /*
@@ -74,8 +80,12 @@ void ParallelParsingInputFormat::parserThreadFunction(size_t current_ticket_numb
 
         ReadBuffer read_buffer(unit.segment.data(), unit.segment.size(), 0);
 
-        InputFormatPtr input_format = internal_parser_creator(read_buffer);
+        auto input_format = internal_parser_creator(read_buffer);
         input_format->setRowsReadBefore(unit.offset);
+        /// The row offset of a later unit comes from the segmentation engine, which also counts the
+        /// header rows that the first parser read (and did not count as data rows).
+        if (current_ticket_number != 0)
+            input_format->setHeaderRowsReadBefore(header_rows_in_first_unit);
         input_format->setErrorsLogger(errors_logger);
         input_format->setSerializationHints(serialization_hints);
 
@@ -91,23 +101,33 @@ void ParallelParsingInputFormat::parserThreadFunction(size_t current_ticket_numb
 
         // We don't know how many blocks will be. So we have to read them all
         // until an empty block occurred.
-        Chunk chunk;
-        while (!parsing_finished && (chunk = parser.getChunk()))
+        try
         {
-            /// Variable chunk is moved, but it is not really used in the next iteration.
-            /// NOLINTNEXTLINE(bugprone-use-after-move, hicpp-invalid-access-moved)
-            unit.chunk_ext.chunk.emplace_back(std::move(chunk));
+            Chunk chunk;
+            while (!parsing_finished && (chunk = parser.getChunk()))
+            {
+                /// Variable chunk is moved, but it is not really used in the next iteration.
+                /// NOLINTNEXTLINE(bugprone-use-after-move, hicpp-invalid-access-moved)
+                unit.chunk_ext.chunk.emplace_back(std::move(chunk));
 
-            if (const auto * block_missing_values = parser.getMissingValues())
-                unit.chunk_ext.block_missing_values.emplace_back(*block_missing_values);
-            else
-                unit.chunk_ext.block_missing_values.emplace_back(chunk.getNumColumns());
+                if (const auto * block_missing_values = parser.getMissingValues())
+                    unit.chunk_ext.block_missing_values.emplace_back(*block_missing_values);
+                else
+                    unit.chunk_ext.block_missing_values.emplace_back(chunk.getNumColumns());
 
-            size_t approx_chunk_size = input_format->getApproxBytesReadForChunk();
-            /// We could decompress data during file segmentation.
-            /// Correct chunk size using original segment size.
-            approx_chunk_size = static_cast<size_t>(std::ceil(static_cast<double>(approx_chunk_size) / static_cast<double>(unit.segment.size()) * static_cast<double>(unit.original_segment_size)));
-            unit.chunk_ext.approx_chunk_sizes.push_back(approx_chunk_size);
+                size_t approx_chunk_size = input_format->getApproxBytesReadForChunk();
+                /// We could decompress data during file segmentation.
+                /// Correct chunk size using original segment size.
+                approx_chunk_size = static_cast<size_t>(std::ceil(static_cast<double>(approx_chunk_size) / static_cast<double>(unit.segment.size()) * static_cast<double>(unit.original_segment_size)));
+                unit.chunk_ext.approx_chunk_sizes.push_back(approx_chunk_size);
+            }
+        }
+        catch (...)
+        {
+            /// Ask the child parser which row it had reached while it is still alive, then let
+            /// the outer `catch` report the exception.
+            rows_reached_on_parse_error = input_format->getRowsReachedOnParseError();
+            throw;
         }
 
         /// Extract column_mapping from first parser to propagate it to others
@@ -115,6 +135,7 @@ void ParallelParsingInputFormat::parserThreadFunction(size_t current_ticket_numb
         {
             column_mapping = input_format->getColumnMapping();
             column_mapping->is_set = true;
+            header_rows_in_first_unit = input_format->getNumberOfHeaderRows();
             first_parser_finished.set();
         }
 
@@ -124,16 +145,19 @@ void ParallelParsingInputFormat::parserThreadFunction(size_t current_ticket_numb
     }
     catch (...)
     {
-        onBackgroundException();
+        onBackgroundException(rows_reached_on_parse_error);
     }
 }
 
 
-void ParallelParsingInputFormat::onBackgroundException()
+void ParallelParsingInputFormat::onBackgroundException(std::optional<size_t> rows_reached_on_parse_error)
 {
     std::lock_guard lock(mutex);
     if (!background_exception)
+    {
         background_exception = std::current_exception();
+        background_exception_rows_reached = rows_reached_on_parse_error;
+    }
 
     if (is_server)
         tryLogCurrentException(__PRETTY_FUNCTION__);
@@ -142,6 +166,12 @@ void ParallelParsingInputFormat::onBackgroundException()
     first_parser_finished.set();
     reader_condvar.notify_all();
     segmentator_condvar.notify_all();
+}
+
+std::optional<size_t> ParallelParsingInputFormat::getRowsReachedOnParseError() const
+{
+    std::lock_guard lock(mutex);
+    return background_exception_rows_reached;
 }
 
 Chunk ParallelParsingInputFormat::read()

@@ -228,6 +228,23 @@ public:
 
     NamesAndTypesList readSchema() override;
 
+    /// `AvroDeserializer::createAction` builds a skip action for any path with no matching destination
+    /// column, without consulting `input_format_skip_unknown_fields`.
+    bool alwaysSkipsUnknownFields() const override { return true; }
+
+    /// The Avro schema names its fields and `AvroDeserializer` maps them onto the destination
+    /// columns by (exact) name.
+    bool mapsColumnsByName() const override { return true; }
+
+    /// `insertNumber` reads an Avro `int` / `long` / `float` / `double` / `bool` value straight
+    /// into the `UInt32`-backed `IPv4` column (see its `TypeIndex::IPv4` arm).
+    NumericValueIntoIPv4Column readsNumericValueIntoIPv4Column() const override { return NumericValueIntoIPv4Column::AnyNumeric; }
+
+    /// An Avro `date` (inferred as `Date32`) is an `int` and a `timestamp-millis` / `timestamp-micros`
+    /// (inferred as `DateTime64`) is a `long`, and `createDeserializeFn` reads both with `insertNumber`
+    /// into any column it supports, regardless of the logical type.
+    bool readsLogicalDateTimeValuesAsNumbers() const override { return true; }
+
     /// If `allow_nullable_tuple_type` is false, a union [null, record] is converted to a plain
     /// Tuple instead of Nullable(Tuple). Schema inference passes
     /// schema_inference_allow_nullable_tuple_type here, because otherwise it would return a type

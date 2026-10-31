@@ -40,7 +40,18 @@ public:
 private:
     NamesAndTypesList readRowAndGetNamesAndDataTypes(bool & eof) override;
     NamesAndTypesList readRowAndGetNamesAndDataTypesForForm(ReadBuffer & in, const FormatSettings & settings);
+
+    /// `FormRowInputFormat::readField` percent-decodes the value and hands it to `deserializeWholeText`
+    /// of the destination type, so the content of a value inferred as `String` (e.g. when
+    /// `input_format_tsv_use_best_effort_in_schema_inference` is disabled) may be valid for a `Bool`
+    /// or a nested destination: `a=%5B1%2C2%5D` is read into an `Array(UInt8)` column.
+    bool readsStringValuesAsWholeText() const override { return true; }
+
+    /// `FormRowInputFormat::readField` percent-decodes the value and hands it to `deserializeWholeText`,
+    /// so a `Bool` column is read by `SerializationBool`, which accepts only the configured
+    /// representations and the fixed literal forms — exactly as in the other flat-text formats.
+    bool readsNumericValueIntoBoolColumn() const override { return false; }
+    BoolValueIntoNumericColumn readsBoolValueIntoNumericColumn() const override { return BoolValueIntoNumericColumn::None; }
 };
 
 }
-

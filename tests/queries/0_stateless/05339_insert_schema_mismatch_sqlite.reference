@@ -1,0 +1,5 @@
+-- reordered TEXT columns are read fine
+7	2
+-- value parse error
+parse error
+explanation missing

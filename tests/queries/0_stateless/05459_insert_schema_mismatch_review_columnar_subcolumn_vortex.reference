@@ -1,0 +1,13 @@
+-- Arrow: a subcolumn of a struct is not a missing column
+(CANNOT_PARSE_UUID)
+explanation missing
+inserted
+-- Vortex: unknown columns are skipped and string columns are cast
+(CANNOT_PARSE_UUID)
+explanation missing
+inserted
+(CANNOT_PARSE_UUID)
+explanation missing
+inserted
+(CANNOT_READ_ARRAY_FROM_TEXT)
+explanation present

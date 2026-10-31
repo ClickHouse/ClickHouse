@@ -1,0 +1,10 @@
+-- CSVWithNamesAndTypes, input_format_with_types_use_header=0: the ignored types row must not be reported
+explanation missing
+-- CSVWithNamesAndTypes, input_format_with_types_use_header=1 (default): the parser checks the declared types, so the mismatch is reported
+explanation present
+-- CSV with an auto-detected types row, input_format_with_types_use_header=0: the ignored types row must not be reported
+explanation missing
+-- CSV with an auto-detected types row, input_format_with_types_use_header=1 (default): the mismatch is reported
+explanation present
+-- CSV without any header row: the types are inferred from the data, so a genuine mismatch is still reported
+explanation present

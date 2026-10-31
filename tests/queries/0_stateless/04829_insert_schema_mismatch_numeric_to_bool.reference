@@ -1,0 +1,12 @@
+-- JSONEachRow: a numeric value other than 0/1 for a Bool column is a genuine structure mismatch
+explanation present
+-- JSONEachRow: the numeric literal 1 for a Bool column is valid (no false positive)
+explanation missing
+-- TSV: a numeric value other than 0/1 for a Bool column is a genuine structure mismatch
+explanation present
+-- TSV: the numeric literal 0 for a Bool column is valid (no false positive)
+explanation missing
+-- TSV: a bad value in a later row is still a structure mismatch
+explanation present
+-- TSV: a custom bool_true_representation legitimizes the value (no false positive)
+explanation missing

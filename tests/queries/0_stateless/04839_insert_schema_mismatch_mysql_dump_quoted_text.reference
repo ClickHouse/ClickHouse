@@ -1,0 +1,18 @@
+-- MySQLDump: an unquoted value for a String column is a genuine structure mismatch
+explanation present
+-- MySQLDump: a numeric value other than 0/1 for a Bool column is a genuine structure mismatch
+explanation present
+-- MySQLDump: an unquoted value for a Date column is a genuine structure mismatch
+explanation present
+-- MySQLDump: an unquoted value for an Enum column is a genuine structure mismatch
+explanation present
+-- MySQLDump: the numeric literal 1 for a Bool column is valid (no false positive)
+explanation missing
+-- MySQLDump: a bare number for a DateTime column is a Unix timestamp (no false positive)
+explanation missing
+-- MySQLDump: a bare number for a Decimal column is valid (no false positive)
+explanation missing
+-- MySQLDump: a quoted date for a String column is read verbatim (no false positive)
+explanation missing
+-- MySQLDump: a quoted string for a String column is valid (no false positive)
+explanation missing

@@ -17,6 +17,7 @@
 #include <Common/CurrentThread.h>
 #include <Common/logger_useful.h>
 #include <Common/quoteString.h>
+#include <Common/StringUtils.h>
 #include <Core/Settings.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/LiteralTokenInfo.h>
@@ -26,6 +27,7 @@
 #include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeFactory.h>
 #include <IO/ReadBufferFromString.h>
 
 namespace DB
@@ -134,6 +136,7 @@ Chunk ValuesBlockInputFormat::read()
 
         try
         {
+            reading_row = true;
             skipWhitespaceAndSQLComments(*buf);
             if (buf->eof() || *buf->position() == ';')
                 break;
@@ -144,11 +147,13 @@ Chunk ValuesBlockInputFormat::read()
         }
         catch (Exception & e)
         {
-            if (isParseError(e.code()))
+            if (isInsertDataErrorWorthExplaining(e.code()))
                 e.addMessage(" at row " + std::to_string(total_rows));
             throw;
         }
     }
+
+    reading_row = false;
 
     approx_bytes_read_for_chunk = getDataOffsetMaybeCompressed(*buf) - chunk_start;
 
@@ -165,19 +170,33 @@ Chunk ValuesBlockInputFormat::read()
     }
 
     /// Evaluate expressions, which were parsed using templates, if any
-    for (size_t i = 0; i < columns.size(); ++i)
+    try
     {
-        if (!templates[i] || !templates[i]->rowsCount())
-            continue;
-
-        const auto & expected_type = header.getByPosition(i).type;
-        if (columns[i]->empty())
-            columns[i] = IColumn::mutate(templates[i]->evaluateAll(block_missing_values, i, expected_type));
-        else
+        for (size_t i = 0; i < columns.size(); ++i)
         {
-            ColumnPtr evaluated = templates[i]->evaluateAll(block_missing_values, i, expected_type, columns[i]->size());
-            columns[i]->insertRangeFrom(*evaluated, 0, evaluated->size());
+            if (!templates[i] || !templates[i]->rowsCount())
+                continue;
+
+            const auto & expected_type = header.getByPosition(i).type;
+            if (columns[i]->empty())
+                columns[i] = IColumn::mutate(templates[i]->evaluateAll(block_missing_values, i, expected_type));
+            else
+            {
+                ColumnPtr evaluated = templates[i]->evaluateAll(block_missing_values, i, expected_type, columns[i]->size());
+                columns[i]->insertRangeFrom(*evaluated, 0, evaluated->size());
+            }
         }
+    }
+    catch (Exception & e)
+    {
+        /// The batched evaluation covers rows that were already read completely, so the failing row is
+        /// unknown here, but it is one of the `total_rows` rows read so far. Report that bound: it tells
+        /// the user where to look, and it lets the parse-error diagnostics limit schema inference to the
+        /// rows the parser has actually read (see `getRowsReachedFromParseErrorMessage`). The marker must
+        /// cover every error that the diagnostics explain, not only parse errors.
+        if (isInsertDataErrorWorthExplaining(e.code()))
+            e.addMessage(" in one of the first " + std::to_string(total_rows) + " rows");
+        throw;
     }
 
     if (columns.empty() || columns[0]->empty())
@@ -792,6 +811,7 @@ void ValuesBlockInputFormat::resetParser()
     // I'm not resetting parser modes here.
     // There is a good chance that all messages have the same format.
     total_rows = 0;
+    reading_row = false;
 }
 
 void ValuesBlockInputFormat::setReadBuffer(ReadBuffer & in_)
@@ -828,6 +848,39 @@ void ValuesBlockInputFormat::setQueryParameters(const NameToNameMap & parameters
     }
 }
 
+namespace
+{
+
+/// The type of the query parameter `{name:Type}` that `value` consists of, or `nullptr` if it is not a
+/// query parameter. `ValuesBlockInputFormat` parses such a value as an expression and substitutes the
+/// parameter, converted to `Type`, so that type is exactly what the parser reads.
+DataTypePtr tryGetQueryParameterType(std::string_view value)
+{
+    if (value.size() < 2 || value.front() != '{' || value.back() != '}')
+        return nullptr;
+
+    std::string_view content = value.substr(1, value.size() - 2);
+    const size_t colon = content.find(':');
+    if (colon == std::string_view::npos)
+        return nullptr;
+
+    std::string_view name = content.substr(0, colon);
+    trimLeft(name);
+    trimRight(name);
+    if (name.empty() || !std::ranges::all_of(name, [](char c) { return isWordCharASCII(c); }))
+        return nullptr;
+
+    std::string_view type_name = content.substr(colon + 1);
+    trimLeft(type_name);
+    trimRight(type_name);
+    if (type_name.empty())
+        return nullptr;
+
+    return DataTypeFactory::instance().tryGet(String(type_name));
+}
+
+}
+
 ValuesSchemaReader::ValuesSchemaReader(ReadBuffer & in_, const FormatSettings & format_settings_)
     : IRowSchemaReader(buf, format_settings_), buf(in_)
 {
@@ -858,7 +911,9 @@ std::optional<DataTypes> ValuesSchemaReader::readRowAndGetDataTypes()
         }
 
         readQuotedField(value, buf);
-        auto type = tryInferDataTypeByEscapingRule(value, format_settings, FormatSettings::EscapingRule::Quoted);
+        auto type = tryGetQueryParameterType(value);
+        if (!type)
+            type = tryInferDataTypeByEscapingRule(value, format_settings, FormatSettings::EscapingRule::Quoted);
         data_types.push_back(std::move(type));
         skipWhitespaceIfAny(buf);
     }

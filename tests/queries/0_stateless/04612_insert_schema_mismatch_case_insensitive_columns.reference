@@ -1,0 +1,6 @@
+-- Field name differs only in case and its value has the wrong shape (a string for a numeric column): matched case-insensitively, so the mismatch is explained
+explanation present
+-- Field name differs only in case and its value is compatible (a number for a numeric column), only the value fails: no false positive
+explanation missing
+-- With case-sensitive matching the field is genuinely unknown; the parser rejects it when input_format_skip_unknown_fields=0, so the differing structure is explained
+explanation present

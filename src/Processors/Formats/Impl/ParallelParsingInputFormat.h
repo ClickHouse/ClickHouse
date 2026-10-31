@@ -134,6 +134,13 @@ private:
 
     Chunk read() final;
 
+    /// The 1-based number of the input row the failing parser unit had reached when the background
+    /// exception was recorded. The child parser of each unit counts rows globally (it is seeded with
+    /// the unit's offset via `setRowsReadBefore`), so the value refers to the whole input, not the
+    /// unit. `nullopt` when the recorded exception did not come from a row parser (e.g. from the
+    /// segmentator thread).
+    std::optional<size_t> getRowsReachedOnParseError() const override;
+
     void onFinish() final
     {
         /// We have to wait for all threads to finish before calling IInputFormat::onFinish()
@@ -220,7 +227,8 @@ private:
     size_t reader_ticket_number{0};
 
     /// Mutex for internal synchronization between threads
-    std::mutex mutex;
+    /// (mutable: getRowsReachedOnParseError is const and reads state guarded by it).
+    mutable std::mutex mutex;
 
     /// finishAndWait can be called concurrently from
     /// multiple threads. Atomic flag is not enough
@@ -278,6 +286,13 @@ private:
     };
 
     std::exception_ptr background_exception = nullptr;
+
+    /// See getRowsReachedOnParseError. Recorded under `mutex` together with `background_exception`
+    /// (and only for the first exception, whose rethrow the value must match).
+    std::optional<size_t> background_exception_rows_reached;
+    /// The header rows read by the parser of the first unit (see IInputFormat::getNumberOfHeaderRows).
+    /// Written before `first_parser_finished` is set, and the later units are scheduled only after that.
+    size_t header_rows_in_first_unit = 0;
 
     /// We use deque instead of vector, because it does not require a move
     /// constructor, which is absent for atomics that are inside ProcessingUnit.
@@ -339,7 +354,9 @@ private:
     /// threads. This function is used by segmentator and parsed threads.
     /// readImpl() is called from the main thread, so the exception handling
     /// is different.
-    void onBackgroundException();
+    /// A parser thread passes the number of the row its child parser had reached
+    /// (see getRowsReachedOnParseError); the segmentator thread has no row to report.
+    void onBackgroundException(std::optional<size_t> rows_reached_on_parse_error = std::nullopt);
 };
 
 }
