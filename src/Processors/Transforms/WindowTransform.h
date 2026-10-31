@@ -103,6 +103,8 @@ private:
     std::unique_ptr<Arena> arena;
 
     SlidingBlocks blocks;
+    /// One entry per block of `blocks`, in the same order; positions are counted from the current partition start.
+    std::deque<WindowArguments::Block> argument_blocks;
     SlidingIndexes indexes;
     /// The first stored block not yet passed to the consumer.
     Int64 next_output_block_number = 0;

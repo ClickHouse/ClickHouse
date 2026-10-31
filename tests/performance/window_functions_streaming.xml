@@ -21,4 +21,7 @@
 
     <!-- The same lag over a wide row: the pass-through columns dominate. -->
     <query>SELECT number, toString(number) AS s, [number, number] AS a, lag(number) OVER () FROM numbers(20000000) FORMAT Null</query>
+
+    <!-- One partition of many small blocks, all of them kept for the frame that starts at the partition start. -->
+    <query>SELECT lagInFrame(number) OVER (ROWS UNBOUNDED PRECEDING) FROM numbers(1000000) SETTINGS max_block_size = 100 FORMAT Null</query>
 </test>
