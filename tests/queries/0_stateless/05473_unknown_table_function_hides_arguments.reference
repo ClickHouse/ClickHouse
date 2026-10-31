@@ -1,0 +1,11 @@
+SELECT * FROM s3Clustr('[HIDDEN]', '[HIDDEN]', '[HIDDEN]')
+INSERT INTO FUNCTION s3Clustr('[HIDDEN]', '[HIDDEN]', '[HIDDEN]', '[HIDDEN]', '[HIDDEN]') SELECT 1
+CREATE TABLE t AS s3Clustr('[HIDDEN]', '[HIDDEN]', '[HIDDEN]')
+SELECT * FROM unknown_view(param = '[HIDDEN]')
+SELECT * FROM s3Clustr('[HIDDEN]')
+SELECT * FROM viewIfPermitted(SELECT 1 ELSE s3Clustr('[HIDDEN]', '[HIDDEN]', '[HIDDEN]'))
+SELECT * FROM numbers(1)
+SELECT s3Clustr('visible')
+UNKNOWN_FUNCTION
+SELECT * FROM s3Clustr(\'[HIDDEN]\', \'[HIDDEN]\', \'[HIDDEN]\')
+0	1
