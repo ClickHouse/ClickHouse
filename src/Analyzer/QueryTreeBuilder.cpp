@@ -133,6 +133,7 @@ private:
     {
         std::string_view cte_name;
         bool is_materialized = false;
+        bool is_recursive = false;
     };
 
     QueryTreeNodePtr buildSelectOrUnionExpression(
@@ -364,6 +365,7 @@ QueryTreeNodePtr QueryTreeBuilder::buildSelectWithUnionExpression(
     union_node->setIsCTE(!cte_data.cte_name.empty());
     union_node->setCTEName(std::string(cte_data.cte_name));
     union_node->setIsMaterialized(cte_data.is_materialized);
+    union_node->setIsRecursiveCTE(cte_data.is_recursive);
     union_node->setOriginalAST(select_with_union_query);
 
     auto union_context = union_node->getContext();
@@ -431,6 +433,7 @@ QueryTreeNodePtr QueryTreeBuilder::buildSelectIntersectExceptQuery(
     union_node->setIsCTE(!cte_data.cte_name.empty());
     union_node->setCTEName(std::string(cte_data.cte_name));
     union_node->setIsMaterialized(cte_data.is_materialized);
+    union_node->setIsRecursiveCTE(cte_data.is_recursive);
     union_node->setOriginalAST(select_intersect_except_query);
 
     auto union_context = union_node->getContext();
@@ -1119,12 +1122,14 @@ QueryTreeNodePtr QueryTreeBuilder::buildJoinTree(bool is_subquery, const ASTSele
                 const auto & select_with_union_query = subquery_expression.children[0];
 
                 /// Views store CTE references in FROM as subqueries with cte_name set (ApplyWithSubqueryVisitor).
-                /// Propagate it so qualified identifiers like `cte_name.column` still bind, as they do when
-                /// a CTE reference is resolved from the WITH section directly.
+                /// Propagate it so qualified `cte_name.column` identifiers still bind as they do from a WITH
+                /// section, and so a copy of a recursive element binds its self-reference to itself, not by name.
                 auto node = buildSelectWithUnionExpression(
                     select_with_union_query,
                     true /*is_subquery*/,
-                    CommonTableExpressionData{.cte_name = subquery_expression.cte_name},
+                    CommonTableExpressionData{
+                        .cte_name = subquery_expression.cte_name,
+                        .is_recursive = subquery_expression.recursive_with},
                     select_query.aliases(),
                     context);
                 node->setAlias(subquery_expression.tryGetAlias());

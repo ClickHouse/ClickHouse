@@ -186,7 +186,12 @@ void ApplyWithSubqueryVisitor::visit(ASTSelectQuery & ast, const Data & data)
                 if (!new_data)
                     new_data = scope;
                 if (ast_with_elem)
-                    new_data->subqueries[ast_with_elem->name] = ast_with_elem->subquery;
+                {
+                    /// A copy does not carry MATERIALIZED, so marking the copy of a materialized element would bypass
+                    /// the refusal of a materialized recursive CTE: such a copy is left unmarked.
+                    bool recursive_with = ast.recursive_with && !ast_with_elem->is_materialized;
+                    new_data->subqueries[ast_with_elem->name] = {ast_with_elem->subquery, recursive_with};
+                }
                 else
                 {
                     new_data->literals[child_alias] = child;
@@ -226,11 +231,13 @@ void ApplyWithSubqueryVisitor::visit(ASTTableExpression & table, const Data & da
                 auto old_alias = table.database_and_table_name->tryGetAlias();
                 /// The table name is still part of the query here, as `replace` expects: it may count the query
                 /// for the first time and then refund the table name, which must not be refunded if it was never counted.
-                auto new_subquery = data.budget->replace(table.database_and_table_name, subquery_it->second);
+                auto new_subquery = data.budget->replace(table.database_and_table_name, subquery_it->second.ast);
                 table.children.clear();
                 table.database_and_table_name.reset();
                 table.subquery = new_subquery;
-                table.subquery->as<ASTSubquery &>().cte_name = table_id.table_name;
+                auto & subquery = table.subquery->as<ASTSubquery &>();
+                subquery.cte_name = table_id.table_name;
+                subquery.recursive_with = subquery_it->second.recursive_with;
                 if (!old_alias.empty())
                     table.subquery->setAlias(old_alias);
                 table.children.emplace_back(table.subquery);
@@ -256,8 +263,10 @@ void ApplyWithSubqueryVisitor::visit(ASTFunction & func, const Data & data)
                 if (subquery_it != data.subqueries.end())
                 {
                     auto old_alias = func.arguments->children[1]->tryGetAlias();
-                    func.arguments->children[1] = data.budget->replace(func.arguments->children[1], subquery_it->second);
-                    func.arguments->children[1]->as<ASTSubquery>()->cte_name = name;
+                    func.arguments->children[1] = data.budget->replace(func.arguments->children[1], subquery_it->second.ast);
+                    auto & subquery = func.arguments->children[1]->as<ASTSubquery &>();
+                    subquery.cte_name = name;
+                    subquery.recursive_with = subquery_it->second.recursive_with;
                     if (!old_alias.empty())
                         func.arguments->children[1]->setAlias(old_alias);
                 }
