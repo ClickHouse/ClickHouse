@@ -6,6 +6,7 @@
 #include <Backups/IBackupCoordination.h>
 #include <Backups/BackupInfo.h>
 #include <Common/Logger_fwd.h>
+#include <Common/callOnce.h>
 #include <atomic>
 #include <map>
 #include <memory>
@@ -157,6 +158,9 @@ private:
     /// Calculates and sets `compressed_size`.
     void setCompressedSize();
 
+    /// Throws if the destination is case-insensitive and two data files of the backup differ only in case.
+    void checkDataFileNamesDoNotCollideIgnoringCase();
+
     std::unique_ptr<ReadBufferFromFileBase>
     readFileImpl(const String & file_name, const SizeAndChecksum & size_and_checksum, bool read_encrypted) const;
 
@@ -219,6 +223,7 @@ private:
 #endif
     String lock_file_contents;
     std::atomic<bool> lock_file_before_first_file_checked = false;
+    OnceFlag data_file_names_check_once;
 
     bool writing_finalized = false;
     bool corrupted = false;
