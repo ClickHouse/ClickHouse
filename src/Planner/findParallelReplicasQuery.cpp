@@ -764,6 +764,29 @@ public:
     }
 };
 
+/// Settings of the analysis that qualifies the query of `view`. They are set on the context of every query and union,
+/// after `buildQueryTree` has applied their own `SETTINGS` to these: without the optimization, a scalar subquery
+/// becomes a constant rather than `__getScalar`, which names a scalar the replicas do not have; without early
+/// short-circuit, a constant folded from `and` or `or` has a resolved source expression, whose tables are qualified
+/// when it is restored.
+class SetAnalysisSettingsVisitor : public InDepthQueryTreeVisitor<SetAnalysisSettingsVisitor>
+{
+public:
+    static void visitImpl(QueryTreeNodePtr & node)
+    {
+        ContextMutablePtr context;
+        if (auto * query_node = node->as<QueryNode>())
+            context = query_node->getMutableContext();
+        else if (auto * union_node = node->as<UnionNode>())
+            context = union_node->getMutableContext();
+        else
+            return;
+
+        context->setSetting("enable_scalar_subquery_optimization", false);
+        context->setSetting("enable_function_early_short_circuit", false);
+    }
+};
+
 class CollectTableFunctionNodesVisitor : public InDepthQueryTreeVisitor<CollectTableFunctionNodesVisitor>
 {
 public:
@@ -866,13 +889,10 @@ private:
         else
             return;
 
-        /// Without the optimization, a scalar subquery becomes a constant rather than `__getScalar`, which names a
-        /// scalar the replicas do not have. Without early short-circuit, a constant folded from `and` or `or` has a
-        /// resolved source expression, whose tables are qualified when it is restored.
+        /// A copy, which `SetAnalysisSettingsVisitor` changes for the queries that share it.
         auto analysis_context = Context::createCopy(context);
-        analysis_context->setSetting("enable_scalar_subquery_optimization", false);
-        analysis_context->setSetting("enable_function_early_short_circuit", false);
         auto view_query = buildQueryTree(argument->toAST(), analysis_context);
+        SetAnalysisSettingsVisitor().visit(view_query);
         QueryAnalysisPass(/*only_analyze=*/true).run(view_query, analysis_context);
         /// Before the qualification, which does not look into the source expressions of constants.
         RestoreScalarSubqueriesVisitor().visit(view_query);

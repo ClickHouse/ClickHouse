@@ -55,4 +55,16 @@ join_view "SELECT toUInt64(1 OR (SELECT count() FROM source) > 0) AS value" --en
 echo '-- a constant folded by early short-circuit, in viewIfPermitted'
 join_view "SELECT value FROM viewIfPermitted(SELECT assumeNotNull(toUInt64(1 OR (SELECT count() FROM source) > 0)) AS value ELSE null('value UInt64'))" --enable_function_early_short_circuit 1
 
+echo '-- a constant folded by early short-circuit, enabled in the query'
+join_view "SELECT toUInt64(1 OR (SELECT count() FROM source) > 0) AS value SETTINGS enable_function_early_short_circuit = 1"
+
+echo '-- a constant folded by early short-circuit, enabled in a nested query'
+join_view "SELECT value FROM (SELECT toUInt64(1 OR (SELECT count() FROM source) > 0) AS value SETTINGS enable_function_early_short_circuit = 1)"
+
+echo '-- a constant folded by early short-circuit, enabled in the query of viewIfPermitted'
+join_view "SELECT value FROM viewIfPermitted(SELECT assumeNotNull(toUInt64(1 OR (SELECT count() FROM source) > 0)) AS value SETTINGS enable_function_early_short_circuit = 1 ELSE null('value UInt64'))"
+
+echo '-- an array scalar subquery, with the optimization enabled in the query'
+join_view "SELECT arrayJoin((SELECT groupArray(value) FROM source)) AS value SETTINGS enable_scalar_subquery_optimization = 1"
+
 ${CLIENT} -q "DROP TABLE default.${shadow_ts}"

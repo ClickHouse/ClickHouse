@@ -10,3 +10,11 @@
 1
 -- a constant folded by early short-circuit, in viewIfPermitted
 1
+-- a constant folded by early short-circuit, enabled in the query
+1
+-- a constant folded by early short-circuit, enabled in a nested query
+1
+-- a constant folded by early short-circuit, enabled in the query of viewIfPermitted
+1
+-- an array scalar subquery, with the optimization enabled in the query
+1
