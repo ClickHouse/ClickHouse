@@ -66,6 +66,15 @@ public:
 
         bool pipe_stdin_only = false;
 
+        /// When true, the child is the leader of a new process group (with the ID equal to its pid),
+        /// so that it can be terminated together with its descendants by signalling the group.
+        bool new_process_group = false;
+
+        /// When true, the child inherits no descriptors other than its standard streams: the descriptors
+        /// opened without close-on-exec (for example, by third-party libraries) do not leak into it.
+        /// Not compatible with `read_fds` and `write_fds`.
+        bool close_inherited_descriptors = false;
+
         size_t pipe_capacity = 0;
 
         DestructorStrategy terminate_in_destructor_strategy = DestructorStrategy(false, 0);
