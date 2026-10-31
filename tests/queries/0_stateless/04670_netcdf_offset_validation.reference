@@ -1,0 +1,8 @@
+--- a streaming file that ends where its record section begins has zero records
+0
+--- a streaming file whose record section begins past the end of the file
+1
+--- a variable that begins inside the header
+1
+--- a record variable whose slab does not fit inside the record
+1

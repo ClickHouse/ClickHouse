@@ -1,0 +1,8 @@
+--- all 256 values of UInt8 and a NULL: nothing is left for the _FillValue
+1
+--- 255 values of UInt8 and a NULL: the missing value becomes the _FillValue
+256	1	0	254
+--- a Nullable column of all 256 values but no NULL: written without the attribute
+256	0	0	255
+--- a wider type always has a value to spare
+257	1

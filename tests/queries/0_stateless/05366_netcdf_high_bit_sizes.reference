@@ -1,0 +1,15 @@
+--- 0xFFFFFFFE records in the header of a CDF-2 file is a legal count, but the file does not have them
+The data of the variable v does not fit in the NetCDF file
+--- and so is 0x80000000
+The data of the variable v does not fit in the NetCDF file
+--- the streaming marker is still accepted
+3
+3
+--- and so is a concrete count
+0
+1
+2
+--- an unused dimension of 2^31 elements in CDF-2
+42
+--- an unused dimension of 2^63 elements in CDF-5
+42

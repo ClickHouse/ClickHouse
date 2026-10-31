@@ -37,10 +37,12 @@ def run_test(data_format, gen_data_template, settings):
 
 # Vortex is excluded because it is not available in all builds (it is disabled under MSan),
 # so its presence in the list would make the output differ between builds.
+# `NetCDF` is excluded because the data of the test has an `Array` column, and the format has no
+# type for it.
 formats = (
     client.query(
         "SELECT name FROM system.formats WHERE is_input AND is_output \
-    AND name NOT IN ('CapnProto', 'RawBLOB', 'Template', 'ProtobufSingle', 'LineAsString', 'Protobuf', 'ProtobufList', 'Npy', 'HiveText', 'GeoJSON', 'Vortex') ORDER BY name"
+    AND name NOT IN ('CapnProto', 'RawBLOB', 'Template', 'ProtobufSingle', 'LineAsString', 'Protobuf', 'ProtobufList', 'Npy', 'HiveText', 'GeoJSON', 'Vortex', 'NetCDF') ORDER BY name"
     )
     .strip()
     .split("\n")
