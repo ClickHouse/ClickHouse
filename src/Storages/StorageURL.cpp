@@ -814,7 +814,7 @@ StorageURLSource::StorageURLSource(
             {
                 builder.addSimpleTransform([&](const SharedHeader & cur_header)
                 {
-                    return std::make_shared<AddingDefaultsTransform>(cur_header, columns_description, *input_format, getContext());
+                    return std::make_shared<AddingDefaultsTransform>(cur_header, columns_description, *input_format, getContext(), requested_columns);
                 });
             }
         }
@@ -2072,6 +2072,7 @@ void IStorageURLBase::read(
         column_names,
         storage_snapshot,
         local_context,
+        format_settings,
         supportsSubsetOfColumns(local_context),
         /*supports_tuple_elements=*/ supports_prewhere,
         PrepareReadingFromFormatHiveParams {file_columns, hive_partition_columns_to_read_from_file_path.getNameToTypeMap()});
@@ -2251,6 +2252,7 @@ void StorageURLWithFailover::read(
         column_names,
         storage_snapshot,
         local_context,
+        format_settings,
         supportsSubsetOfColumns(local_context),
         /*supports_tuple_elements=*/ supports_prewhere,
         PrepareReadingFromFormatHiveParams {file_columns, hive_partition_columns_to_read_from_file_path.getNameToTypeMap()});

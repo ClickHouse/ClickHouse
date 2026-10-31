@@ -2325,7 +2325,7 @@ Chunk StorageFileSource::generate()
             {
                 builder.addSimpleTransform([&](const SharedHeader & header)
                 {
-                    return std::make_shared<AddingDefaultsTransform>(header, columns_description, *input_format, getContext());
+                    return std::make_shared<AddingDefaultsTransform>(header, columns_description, *input_format, getContext(), requested_columns);
                 });
             }
 
@@ -2801,6 +2801,7 @@ void StorageFile::read(
         column_names,
         storage_snapshot,
         context,
+        format_settings,
         supportsSubsetOfColumns(context),
         /*supports_tuple_elements=*/ supports_prewhere,
         PrepareReadingFromFormatHiveParams {file_columns, hive_partition_columns_to_read_from_file_path.getNameToTypeMap()});
@@ -3173,7 +3174,8 @@ public:
                 {
                     builder.addSimpleTransform([&](const SharedHeader & block_header)
                     {
-                        return std::make_shared<AddingDefaultsTransform>(block_header, info.columns_description, *input_format, getContext());
+                        return std::make_shared<AddingDefaultsTransform>(
+                            block_header, info.columns_description, *input_format, getContext(), info.requested_columns);
                     });
                 }
 

@@ -620,6 +620,7 @@ ReadFromFormatInfo DeltaLakeMetadataDeltaKernel::prepareReadingFromFormat(
     const Strings & requested_columns,
     const StorageSnapshotPtr & storage_snapshot,
     const ContextPtr & context,
+    const std::optional<FormatSettings> & /*format_settings*/,
     bool supports_subset_of_columns,
     bool /*supports_tuple_elements*/)
 {

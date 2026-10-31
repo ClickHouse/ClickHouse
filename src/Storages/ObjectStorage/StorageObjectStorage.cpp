@@ -944,6 +944,7 @@ void StorageObjectStorage::read(
         supportsSubsetOfColumns(local_context),
         supports_tuple_elements,
         local_context,
+        format_settings,
         PrepareReadingFromFormatHiveParams{ hive_columns->file_columns, hive_columns->hive_partition_columns_to_read_from_file_path.getNameToTypeMap() });
 
 
