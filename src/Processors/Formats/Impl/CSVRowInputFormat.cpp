@@ -926,7 +926,8 @@ void registerCSVSchemaReader(FormatFactory & factory)
         factory.registerAdditionalInfoForSchemaCacheGetter(format_name, [with_names](const FormatSettings & settings)
         {
             String result = getAdditionalFormatInfoByEscapingRule(settings, FormatSettings::EscapingRule::CSV);
-            result += fmt::format(", skip_first_lines={}", settings.csv.skip_first_lines);
+            /// `allow_cr_end_of_line` decides whether a bare CR ends a row, so it changes both the schema and the row count.
+            result += fmt::format(", skip_first_lines={}, allow_cr_end_of_line={}", settings.csv.skip_first_lines, settings.csv.allow_cr_end_of_line);
             if (!with_names)
                 result += fmt::format(", column_names_for_schema_inference={}, try_detect_header={}", settings.column_names_for_schema_inference, settings.csv.try_detect_header);
             return result;
