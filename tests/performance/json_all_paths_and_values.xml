@@ -1,0 +1,29 @@
+<test>
+    <create_query>CREATE TABLE json_paths_src_sparse (data JSON) ENGINE = MergeTree ORDER BY tuple()</create_query>
+    <create_query>CREATE TABLE json_paths_src_dense (data JSON) ENGINE = MergeTree ORDER BY tuple()</create_query>
+    <create_query>CREATE TABLE json_paths_idx_sparse (data JSON, INDEX idx JSONAllPaths(data) TYPE text(tokenizer = array)) ENGINE = MergeTree ORDER BY tuple()</create_query>
+    <create_query>CREATE TABLE json_values_idx_sparse (data JSON, INDEX idx JSONAllValues(data) TYPE text(tokenizer = splitByNonAlpha)) ENGINE = MergeTree ORDER BY tuple()</create_query>
+    <create_query>CREATE TABLE json_paths_idx_dense (data JSON, INDEX idx JSONAllPaths(data) TYPE text(tokenizer = array)) ENGINE = MergeTree ORDER BY tuple()</create_query>
+    <create_query>CREATE TABLE json_values_idx_dense (data JSON, INDEX idx JSONAllValues(data) TYPE text(tokenizer = splitByNonAlpha)) ENGINE = MergeTree ORDER BY tuple()</create_query>
+    <create_query>SYSTEM STOP MERGES</create_query>
+
+    <fill_query>INSERT INTO json_paths_src_sparse SELECT concat('{{', arrayStringConcat(arrayMap(k -> concat('"attr_', toString(k), '":"v', toString(cityHash64(number, k) % 1000), '"'), arrayDistinct(arrayMap(i -> cityHash64(number, i) % 200, range(10)))), ','), ',"level":"', ['INFO','WARN','ERROR','DEBUG'][number % 4 + 1], '","message":"', arrayStringConcat(arrayMap(i -> concat('w', toString(cityHash64(number, i) % 20000)), range(8 + number % 8)), ' '), '"}}')::JSON FROM numbers(200000)</fill_query>
+    <fill_query>INSERT INTO json_paths_src_dense SELECT concat('{{"service":"svc-', toString(number % 37), '","host":"host-', toString(number % 997), '","level":"', ['INFO','WARN','ERROR','DEBUG'][number % 4 + 1], '","message":"', arrayStringConcat(arrayMap(i -> concat('w', toString(cityHash64(number, i) % 20000)), range(8 + number % 8)), ' '), '","http":{{"method":"', ['GET','POST','PUT'][number % 3 + 1], '","status":', toString([200,201,404,500][number % 4 + 1]), ',"path":"/api/v', toString(number % 3), '/items/', toString(number % 100000), '","duration_ms":', toString(round((number % 1000) / 7, 2)), '}},"user":{{"id":', toString(number % 50000), ',"name":"user_', toString(number % 50000), '"}},"trace_id":"', hex(sipHash128(number)), '"}}')::JSON FROM numbers(200000)</fill_query>
+
+    <query>INSERT INTO json_paths_idx_sparse SELECT data FROM json_paths_src_sparse</query>
+    <query>INSERT INTO json_values_idx_sparse SELECT data FROM json_paths_src_sparse</query>
+    <query>INSERT INTO json_paths_idx_dense SELECT data FROM json_paths_src_dense</query>
+    <query>INSERT INTO json_values_idx_dense SELECT data FROM json_paths_src_dense</query>
+
+    <query>SELECT sum(length(JSONAllPaths(data))) FROM json_paths_src_sparse FORMAT Null</query>
+    <query>SELECT sum(length(JSONAllValues(data))) FROM json_paths_src_sparse FORMAT Null</query>
+    <query>SELECT sum(length(JSONAllValues(data))) FROM json_paths_src_dense FORMAT Null</query>
+
+    <drop_query>SYSTEM START MERGES</drop_query>
+    <drop_query>DROP TABLE IF EXISTS json_paths_src_sparse</drop_query>
+    <drop_query>DROP TABLE IF EXISTS json_paths_src_dense</drop_query>
+    <drop_query>DROP TABLE IF EXISTS json_paths_idx_sparse</drop_query>
+    <drop_query>DROP TABLE IF EXISTS json_values_idx_sparse</drop_query>
+    <drop_query>DROP TABLE IF EXISTS json_paths_idx_dense</drop_query>
+    <drop_query>DROP TABLE IF EXISTS json_values_idx_dense</drop_query>
+</test>
