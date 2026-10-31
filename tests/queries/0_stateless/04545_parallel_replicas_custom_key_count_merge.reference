@@ -1,0 +1,87 @@
+count analyzer=1
+1000
+count analyzer=0
+1000
+count range mode analyzer=1
+1000
+count range mode analyzer=0
+1000
+count subquery
+1000
+sum analyzer=1
+499500
+sum analyzer=0
+499500
+group by not covering custom key
+0	334
+1	333
+2	333
+group by covering custom key (y)
+0	334
+1	333
+2	333
+group by covering custom key cityHash64(y)
+0	334
+1	333
+2	333
+non-deterministic custom key merged rows analyzer=1
+3
+non-deterministic custom key merged rows analyzer=0
+3
+no_merge on secondary queries per custom key
+0	334
+1	333
+2	333
+0	334
+1	333
+2	333
+0	334
+1	333
+2	333
+0	334
+1	333
+2	333
+333
+333
+334
+333
+333
+334
+0	334
+1	333
+2	333
+0	334
+1	333
+2	333
+0	334
+1	333
+2	333
+0	334
+1	333
+2	333
+04545_folded_nondeterministic_an0	3	
+04545_folded_nondeterministic_an1	3	
+04545_plain_count_an0	3	
+04545_plain_count_an1	3	
+04545_plain_count_range_an0	3	
+04545_plain_count_range_an1	3	
+04545_safe_bare_key_an0	3	2
+04545_safe_bare_key_an1	3	2
+04545_safe_expression_key_an0	3	2
+04545_safe_hash_key_an1	3	2
+04545_server_constant_an0	3	
+04545_server_constant_an1	3	
+04545_server_constant_hostname_an1	3	
+04545_server_constant_is_group_key_an0	3	
+04545_server_constant_is_group_key_an1	3	
+04545_stateful_deterministic_an1	3	
+04545_stateful_tags_to_group_an0	3	
+04545_stateful_tags_to_group_an1	3	
+expression group by covering custom key mod(number,3) analyzer=1
+0	334
+1	333
+2	333
+expression group by covering custom key mod(number,3) analyzer=0
+0	334
+1	333
+2	333
