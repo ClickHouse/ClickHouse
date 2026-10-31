@@ -8035,7 +8035,7 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
                 if (first_constant && current_constant)
                 {
                     need_rename = !projection_columns[i].type->equals(*first_column.type)
-                        || first_constant->getValue() != current_constant->getValue();
+                        || !sameConstantValue(first_constant->getValue(), current_constant->getValue());
                 }
                 else if (projection_nodes[it->second]->getNodeType() != QueryTreeNodeType::COLUMN
                     || projection_nodes[i]->getNodeType() != QueryTreeNodeType::COLUMN)

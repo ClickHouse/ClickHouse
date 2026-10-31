@@ -13,58 +13,6 @@
 namespace DB
 {
 
-namespace
-{
-
-/// Compares two constant values exactly like `Field::operator==`, except the aggregate-state
-/// leaves, which are compared by both the aggregate function name and the serialized state
-/// instead of throwing when the names differ. The plain `Field` comparison of aggregate states
-/// throws for different function names even when the types compare equal (they may be compatible
-/// only by state representation, e.g. `quantileState` vs `quantilesState(0.9)`). Such states must
-/// compare as different here: this comparison drives the replacement of a COLUMN output with the
-/// same-name INPUT, and substituting a state of a different aggregate function would change the
-/// downstream behavior (e.g. the result of `finalizeAggregation`), unlike in the block structure
-/// checks where a relaxed comparison is a pure validation.
-bool sameConstantValue(const Field & lhs, const Field & rhs);
-
-bool sameConstantValueVectors(const FieldVector & lhs, const FieldVector & rhs)
-{
-    if (lhs.size() != rhs.size())
-        return false;
-
-    for (size_t i = 0; i < lhs.size(); ++i)
-        if (!sameConstantValue(lhs[i], rhs[i]))
-            return false;
-
-    return true;
-}
-
-bool sameConstantValue(const Field & lhs, const Field & rhs)
-{
-    if (lhs.getType() != rhs.getType())
-        return false;
-
-    switch (lhs.getType())
-    {
-        case Field::Types::AggregateFunctionState:
-        {
-            const auto & lhs_state = lhs.safeGet<AggregateFunctionStateData>();
-            const auto & rhs_state = rhs.safeGet<AggregateFunctionStateData>();
-            return lhs_state.name == rhs_state.name && lhs_state.data == rhs_state.data;
-        }
-        case Field::Types::Array:
-            return sameConstantValueVectors(lhs.safeGet<Array>(), rhs.safeGet<Array>());
-        case Field::Types::Tuple:
-            return sameConstantValueVectors(lhs.safeGet<Tuple>(), rhs.safeGet<Tuple>());
-        case Field::Types::Map:
-            return sameConstantValueVectors(lhs.safeGet<Map>(), rhs.safeGet<Map>());
-        default:
-            return lhs == rhs;
-    }
-}
-
-}
-
 ActionsChainStep::ActionsChainStep(ActionsAndProjectInputsFlagPtr actions_,
     bool use_actions_nodes_as_output_columns_,
     ColumnsWithTypeAndName additional_output_columns_,
