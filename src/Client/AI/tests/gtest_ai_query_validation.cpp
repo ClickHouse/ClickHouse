@@ -816,6 +816,19 @@ TEST(AIQueryValidation, RejectsParallelReplicasSettings)
     EXPECT_FALSE(isAllowed("SELECT * FROM (SELECT x FROM t SETTINGS cluster_for_parallel_replicas = 'remote_cluster')"));
 }
 
+TEST(AIQueryValidation, RejectsDistributedPlanSettings)
+{
+    /// The distributed query plan dispatches the tasks of the plan to the stateless workers of the
+    /// cluster, which disabling parallel replicas does not prevent.
+    EXPECT_FALSE(isAllowed(
+        "SELECT sum(number) FROM numbers(1000) SETTINGS make_distributed_plan = 1, "
+        "distributed_plan_execute_locally = 0, distributed_plan_fallback_to_local_execution = 0"));
+    EXPECT_FALSE(isAllowed("SELECT sum(number) FROM numbers(1000) SETTINGS make_distributed_plan = 1"));
+    EXPECT_FALSE(isAllowed("SELECT sum(number) FROM numbers(1000) SETTINGS make_distributed_plan = DEFAULT"));
+    EXPECT_FALSE(isAllowed("SELECT x FROM t SETTINGS distributed_plan_execute_locally = 0"));
+    EXPECT_FALSE(isAllowed("SELECT * FROM (SELECT x FROM t SETTINGS make_distributed_plan = 1)"));
+}
+
 TEST(AIQueryValidation, RejectsExpressionsInTheStructureOfTableFunctions)
 {
     /// The structure of `values`, `generateRandom`, `format` and `null` is a string the server parses after

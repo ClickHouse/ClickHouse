@@ -5035,6 +5035,12 @@ String ClientBase::runQueryForAI(const String & query, bool readonly, bool allow
         /// `SETTINGS` clause that touches them.
         client_context->setSetting("allow_experimental_parallel_reading_from_replicas", static_cast<UInt64>(0));
 
+        /// The distributed query plan (`make_distributed_plan`) is a separate execution engine that
+        /// dispatches the tasks of the plan to the stateless workers of the cluster over the network,
+        /// which disabling parallel replicas does not prevent. It is turned off the same way; the
+        /// validation refuses a `SETTINGS` clause that touches it.
+        client_context->setSetting("make_distributed_plan", false);
+
         static constexpr UInt64 max_execution_time_limit = 30;
         static constexpr UInt64 max_memory_usage_limit = 10'000'000'000;
 
@@ -6202,6 +6208,9 @@ Block ClientBase::fetchInternalQueryResult(
     for (const auto * name : query_construction_settings)
         settings_to_send->set(name, String{});
     settings_to_send->set("allow_experimental_parallel_reading_from_replicas", static_cast<UInt64>(0));
+    /// The distributed query plan would dispatch the internal query to the stateless workers of the
+    /// cluster in the same way, so it is switched off as well.
+    settings_to_send->set("make_distributed_plan", false);
 
     /// This is a complete query exchange on the shared connection, so it follows the same
     /// resynchronization discipline as the regular queries: recover from a previous failed

@@ -144,6 +144,16 @@ bool isParallelReplicasSetting(const String & name)
         || name.contains("parallel_replica");
 }
 
+/// The settings of the distributed query plan: with `make_distributed_plan` the server splits the
+/// plan into tasks and, unless `distributed_plan_execute_locally` is set, dispatches them to the
+/// stateless workers of the cluster - a query on other servers than the tables were checked on,
+/// like parallel replicas. The sandbox turns it off, so a `SETTINGS` clause must not turn it back
+/// on or configure it.
+bool isDistributedPlanSetting(const String & name)
+{
+    return name == "make_distributed_plan" || name.starts_with("distributed_plan_");
+}
+
 void checkNoProtectedSettingChanges(const IAST & ast)
 {
     if (const auto * set_query = ast.as<ASTSetQuery>())
@@ -181,6 +191,14 @@ void checkNoProtectedSettingChanges(const IAST & ast)
                 "or add an expression to it after the read-only tool has validated it. Use the run_query tool for this query",
                 name);
         };
+        const auto reject_distributed_plan = [](const String & name)
+        {
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "The query changes the setting `{}` of the distributed query plan, which can run the query on other "
+                "servers. Use the run_query tool for this query",
+                name);
+        };
         for (const auto & change : set_query->changes)
         {
             if (isProtectedSetting(change.name))
@@ -191,6 +209,8 @@ void checkNoProtectedSettingChanges(const IAST & ast)
                 reject_query_construction(change.name);
             if (isParallelReplicasSetting(change.name))
                 reject_parallel_replicas(change.name);
+            if (isDistributedPlanSetting(change.name))
+                reject_distributed_plan(change.name);
         }
         /// `SETTINGS max_execution_time = DEFAULT` lands in `default_settings`, not `changes`,
         /// and resets the limit after the sandbox has tightened it.
@@ -204,6 +224,8 @@ void checkNoProtectedSettingChanges(const IAST & ast)
                 reject_query_construction(name);
             if (isParallelReplicasSetting(name))
                 reject_parallel_replicas(name);
+            if (isDistributedPlanSetting(name))
+                reject_distributed_plan(name);
         }
     }
 
