@@ -682,7 +682,9 @@ StoragePtr DatabaseDataLake::tryGetTableImpl(const String & name, ContextPtr con
             context_,
             /// Use is_table_function = true,
             /// because this table is actually stateless like a table function.
-            /* is_table_function */true);
+            /* is_table_function */true,
+            getFormatSettings(context_copy),
+            getCatalog());
 
         storage_cluster->startup();
         return storage_cluster;
