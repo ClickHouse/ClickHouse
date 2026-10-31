@@ -488,6 +488,11 @@ const QueryNode * findQueryForParallelReplicas(const QueryTreeNodePtr & query_tr
     if (!context->canUseParallelReplicasOnInitiator())
         return nullptr;
 
+    /// Plan-based chooses what to read with replicas while optimizing the plan, so the costly analysis
+    /// below (cloning the tree and building a throwaway plan) is not needed.
+    if (context->getSettingsRef()[Setting::parallel_replicas_plan_based])
+        return nullptr;
+
     /// A shard number shipped for a different cluster cannot scope this read.
     if (ClusterProxy::hasForeignShardScope(context))
         return nullptr;
