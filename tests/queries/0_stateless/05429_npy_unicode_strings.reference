@@ -1,0 +1,23 @@
+--- u_le
+ab	6162	1
+äö	C3A4C3B6	1
+日本	E697A5E69CAC	1
+😀x	F09F988078	1
+Ā	C480	1
+a\0b	610062	1
+		1
+--- u_be
+ab	6162	1
+äö	C3A4C3B6	1
+日本	E697A5E69CAC	1
+😀x	F09F988078	1
+Ā	C480	1
+a\0b	610062	1
+		1
+--- byte strings
+610062
+007879
+78797A
+71
+--- invalid code point
+INCORRECT_DATA
