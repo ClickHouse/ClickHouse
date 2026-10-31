@@ -15,7 +15,7 @@ plan: cross_joins=0 substituted=1 null_prefiltered=0
 plan: cross_joins=0 substituted=1 null_prefiltered=1
 0	1
 1	2
-2	\N
+2	0
 -- Case 6: guarded, the correlated column is also used in a second expression inside the subquery; after substitution that expression would be evaluated on the inner values, so the identifier is not substituted
 plan: substituted=0
 1
