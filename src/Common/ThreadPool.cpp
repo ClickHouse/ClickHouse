@@ -63,6 +63,7 @@ namespace
     /// Such a worker is not long-lived, so `scheduleReturningThreadOrQueueOrThrow` counts on it to free up for
     /// the queued jobs. That does not hold for a job it schedules itself, because the job that runs on this
     /// worker may be waiting for it: for example, a table loader waits for the workers that load its parts.
+    /// Cleared temporarily by `CurrentThreadDoesNotWaitForScheduledThreads`.
     thread_local bool current_global_worker_holds_no_slot = false;
 
     /// Diagnostic registry of `ThreadPoolImpl<ThreadFromGlobalPool*>` instances that
@@ -422,6 +423,12 @@ void ThreadPoolImpl<Thread>::setMaxFreeThreads(size_t value)
         /// purpose of LIFO scheduling.
         wakeUpExcessIdleThreadsNoLock();
     }
+}
+
+template <typename Thread>
+std::atomic<int64_t> & ThreadPoolImpl<Thread>::globalRemainingThreadJobCapacity()
+{
+    return static_cast<FreeThreadPool &>(GlobalThreadPool::instance()).remaining_thread_job_capacity;
 }
 
 template <typename Thread>
@@ -1213,10 +1220,18 @@ ThreadPoolImpl<Thread>::ThreadFromThreadPool::ThreadFromThreadPool(ThreadPoolImp
         /// keep free threads) would exhaust the slots while the global pool is only transiently busy, and
         /// the next worker that takes no slot would be rejected for nothing. They are only rejected when
         /// the long-lived threads hold all the slots, because then no thread would ever be free for them.
+        ///
+        /// But an idle worker of a pool that keeps free threads may never become busy again, and it keeps its
+        /// thread of the global pool all that time. If such workers held no slot, the global pool could be
+        /// held completely by them and by long-lived threads while slots are still left, and a queued thread
+        /// that takes no slot would never start. So such a worker takes a slot while it is idle, see `worker`.
+        /// The pointer is taken here because the global pool outlives all of its threads.
         returns_when_idle = parent_pool.workers_return.load(std::memory_order_relaxed);
+        const bool pool_jobs_are_long_lived = parent_pool.jobs_are_long_lived.load(std::memory_order_relaxed);
+        if (!pool_jobs_are_long_lived)
+            global_slots_for_idle = &globalRemainingThreadJobCapacity();
         thread = Thread(
-            parent_pool.jobs_are_long_lived.load(std::memory_order_relaxed) ? ThreadFromGlobalPoolScheduleMode::ReserveSlot
-                                                                            : ThreadFromGlobalPoolScheduleMode::QueueUnlessSlotsExhausted,
+            pool_jobs_are_long_lived ? ThreadFromGlobalPoolScheduleMode::ReserveSlot : ThreadFromGlobalPoolScheduleMode::QueueUnlessSlotsExhausted,
             &ThreadFromThreadPool::worker,
             this);
     }
@@ -1406,6 +1421,21 @@ void ThreadPoolImpl<Thread>::ThreadFromThreadPool::worker()
                 && !parent_pool.finished
                 && parent_pool.threads.size() <= std::min(parent_pool.max_threads, parent_pool.scheduled_jobs + parent_pool.max_free_threads))
             {
+                /// An idle worker of a local pool keeps its thread of the global pool, so it takes a slot of
+                /// the global pool while it is idle (see the constructor). It never takes the last slot: a
+                /// thread that takes no slot is accepted into the queue of the global pool as long as a slot
+                /// is left, and relies on a thread that does not hold a slot to free up for it. If there is
+                /// no slot to take, the worker leaves the pool instead of waiting, which frees its thread.
+                if (global_slots_for_idle)
+                {
+                    int64_t free_slots = global_slots_for_idle->load(std::memory_order_relaxed);
+                    while (free_slots > 1 && !global_slots_for_idle->compare_exchange_weak(free_slots, free_slots - 1, std::memory_order_relaxed))
+                    {
+                    }
+                    if (free_slots <= 1)
+                        break;
+                }
+
                 idle_wakeup_flag = false;
                 parent_pool.pushIdleThreadNoLock(this);
                 parent_pool.notifyWorkerSettledNoLock();
@@ -1419,6 +1449,9 @@ void ThreadPoolImpl<Thread>::ThreadFromThreadPool::worker()
                 });
 
                 parent_pool.removeIdleThreadNoLock(this);
+
+                if (global_slots_for_idle)
+                    global_slots_for_idle->fetch_add(1, std::memory_order_relaxed);
             }
             }
 
@@ -1717,6 +1750,17 @@ void startThreadFromGlobalPool(
     {
         GlobalThreadPool::instance().scheduleOrThrow(std::move(job), {}, 0, propagate_opentelemetry_context);
     }
+}
+
+CurrentThreadDoesNotWaitForScheduledThreads::CurrentThreadDoesNotWaitForScheduledThreads()
+    : previous_value(current_global_worker_holds_no_slot)
+{
+    current_global_worker_holds_no_slot = false;
+}
+
+CurrentThreadDoesNotWaitForScheduledThreads::~CurrentThreadDoesNotWaitForScheduledThreads()
+{
+    current_global_worker_holds_no_slot = previous_value;
 }
 
 CannotAllocateThreadFaultInjector & CannotAllocateThreadFaultInjector::instance()

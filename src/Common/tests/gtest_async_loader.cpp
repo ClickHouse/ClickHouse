@@ -1813,6 +1813,35 @@ TEST(AsyncLoader, MandatorySpawnWaitsBehindFiniteDirectThreads)
     ASSERT_EQ(jobs_done, 1);
 }
 
+// When the last worker of a pool finishes, it spawns the first worker of the next pool by priority before
+// it returns. That spawn is mandatory, and the new worker has to be queued in the global pool even when the
+// returning worker holds its last free thread: it will be free as soon as the returning worker is gone.
+TEST(AsyncLoader, MandatorySpawnHandoffBetweenPrioritiesOnOneFreeThread)
+{
+    GlobalThreadPoolLimits limits;
+    limits.pool.setMaxThreads(1);
+    limits.pool.setMaxFreeThreads(0);
+    limits.pool.setQueueSize(1000);
+
+    AsyncLoaderTest t({
+        {.max_threads = 1, .priority = Priority{0}},
+        {.max_threads = 1, .priority = Priority{1}},
+    });
+
+    std::atomic<size_t> jobs_done{0};
+    auto job_func = [&] (AsyncLoader &, const LoadJobPtr &) { jobs_done++; };
+    auto task0 = t.schedule({makeLoadJob({}, 0, "job0", job_func)});
+    auto task1 = t.schedule({makeLoadJob({}, 1, "job1", job_func)});
+    t.loader.unpause();
+
+    waitLoad(task0);
+    waitLoad(task1);
+    t.loader.wait();
+    limits.restore();
+
+    ASSERT_EQ(jobs_done, 2);
+}
+
 // A worker blocked in `wait()` cannot take a job from its own pool's ready queue even when it waits
 // for a job of another pool, a case that priority inheritance does not convert into a same-pool wait.
 // Treating it as a drainer leaves that pool's queue with nobody to run it.

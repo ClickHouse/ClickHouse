@@ -103,6 +103,12 @@ public:
         /// it holds without a slot (see `ThreadFromGlobalPoolScheduleMode::QueueUnlessSlotsExhausted`).
         bool returns_when_idle = false;
 
+        /// For a worker of a local pool that takes no slot of the global pool while it runs a job (see
+        /// `setJobsAreLongLived`): the counter of the free slots of the global pool. Such a worker takes a
+        /// slot from it while it waits in the idle stack, because an idle worker keeps its thread of the
+        /// global pool for an unlimited time. If no slot can be taken, the worker leaves instead of waiting.
+        std::atomic<int64_t> * global_slots_for_idle = nullptr;
+
         /// Per-thread condition variable for LIFO idle scheduling.
         /// Each idle thread waits on its own CV, so the scheduler can wake the
         /// LIFO-selected thread directly without disturbing other idle threads.
@@ -258,6 +264,11 @@ public:
 
 private:
     friend class GlobalThreadPool;
+    /// A local pool accesses the slot counter of the global pool, see `globalRemainingThreadJobCapacity`.
+    template <typename> friend class ThreadPoolImpl;
+
+    /// The counter of the free slots of the global pool (`remaining_thread_job_capacity`).
+    static std::atomic<int64_t> & globalRemainingThreadJobCapacity();
 
     mutable std::mutex mutex;
     std::condition_variable job_finished;
@@ -300,6 +311,8 @@ private:
     // `remaining_pool_capacity`. Such a job holds its slot from the moment it is scheduled until it
     // finishes, because it occupies a worker for the whole lifetime of that worker. Once this reaches
     // zero, no further such job can ever start, so it has to be rejected instead of being queued.
+    // In the global pool, an idle worker of a local pool that keeps free threads also holds a slot while
+    // it is idle (see `ThreadFromThreadPool::global_slots_for_idle`), but it never takes the last one.
     std::atomic<int64_t> remaining_thread_job_capacity;
 
     bool finished = false;
@@ -582,6 +595,22 @@ using ThreadFromGlobalPoolWithoutTraceCollector = ThreadFromGlobalPoolImpl<true,
 /// To make sure the tracing context is correctly propagated, we explicitly disable context propagation(including initialization and de-initialization) at underlying worker level.
 ///
 using ThreadPool = ThreadPoolImpl<ThreadFromGlobalPoolNoTracingContextPropagation>;
+
+/// Declares that the current thread does not wait for the threads of the global pool that it schedules
+/// while this object exists. A worker of the global pool that holds no slot is normally not counted on to
+/// free up for a queued thread that it schedules itself, because it may be waiting for that thread, so such
+/// a thread is rejected when the scheduling worker is the last one not held by long-lived threads. This
+/// object lifts that restriction for a worker that is about to return or to move on to other work, such as
+/// a worker of `AsyncLoader` that hands its pool over to a worker of another pool after its job finished.
+class CurrentThreadDoesNotWaitForScheduledThreads : private boost::noncopyable
+{
+public:
+    CurrentThreadDoesNotWaitForScheduledThreads();
+    ~CurrentThreadDoesNotWaitForScheduledThreads();
+
+private:
+    bool previous_value;
+};
 
 /// Enables fault injections globally for all thread pools
 class CannotAllocateThreadFaultInjector

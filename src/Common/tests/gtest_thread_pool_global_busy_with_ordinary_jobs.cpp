@@ -237,6 +237,70 @@ TEST(ThreadPool, NestedReturningWorkerOnLastFreeThreadIsRejected)
     inner_pool.wait();
 }
 
+/// An idle worker of a local pool that keeps free threads holds its thread of the global pool for an
+/// unlimited time. When the other threads of the global pool are held by long-lived threads, it must leave
+/// instead of waiting in the idle stack, otherwise a queued worker of another local pool would never start,
+/// while it is accepted because a slot is left. With a remote metadata disk, the startup could hang this
+/// way with a slightly too small `max_thread_pool_size`: the idle workers of the pools that read from the
+/// disk could hold the threads that the workers parsing the metadata of the `system` database waited for.
+TEST(ThreadPool, IdleLocalWorkerDoesNotHoldLastFreeThread)
+{
+    GlobalThreadPool & global_pool = GlobalThreadPool::instance();
+
+    static constexpr size_t capacity = 3;
+
+    SCOPE_EXIT({
+        global_pool.setMaxThreads(10000);
+        global_pool.setMaxFreeThreads(1000);
+        global_pool.setQueueSize(10000);
+    });
+
+    global_pool.setMaxThreads(capacity);
+    global_pool.setMaxFreeThreads(0);
+    global_pool.setQueueSize(1000);
+    global_pool.wait();
+
+    /// Hold all the slots but one until released.
+    std::atomic<size_t> long_lived_started = 0;
+    std::atomic<bool> release_long_lived = false;
+    std::vector<ThreadFromGlobalPool> long_lived_threads;
+    for (size_t i = 0; i < capacity - 1; ++i)
+    {
+        long_lived_threads.emplace_back(ThreadFromGlobalPoolScheduleMode::FailIfNoWorker, [&]
+        {
+            ++long_lived_started;
+            while (!release_long_lived.load())
+            {
+            }
+        });
+    }
+    while (long_lived_started != capacity - 1)
+        ;
+
+    /// Its worker runs a finite job on the last free thread of the global pool, and would stay idle after it.
+    ThreadPool pool_with_free_threads(
+        CurrentMetrics::LocalThread, CurrentMetrics::LocalThreadActive, CurrentMetrics::LocalThreadScheduled,
+        /* max_threads = */ 1, /* max_free_threads = */ 1, /* queue_size = */ 0);
+    pool_with_free_threads.scheduleOrThrowOnError([] {});
+    pool_with_free_threads.wait();
+
+    /// Its worker takes no slot and is queued until a thread of the global pool frees up.
+    std::atomic<bool> job_ran = false;
+    ThreadPool other_pool(
+        CurrentMetrics::LocalThread, CurrentMetrics::LocalThreadActive, CurrentMetrics::LocalThreadScheduled,
+        /* max_threads = */ 1, /* max_free_threads = */ 0, /* queue_size = */ 0);
+    other_pool.scheduleOrThrowOnError([&] { job_ran = true; });
+    const bool finished_in_time = other_pool.waitUntil(std::chrono::steady_clock::now() + std::chrono::seconds(60));
+
+    release_long_lived = true;
+    for (auto & thread : long_lived_threads)
+        thread.join();
+    other_pool.wait();
+
+    EXPECT_TRUE(finished_in_time) << "an idle worker of a local pool must not hold the last free thread of the global pool";
+    EXPECT_TRUE(job_ran);
+}
+
 TEST(ThreadPool, GlobalThreadCanWaitBehindOrdinaryJobs)
 {
     GlobalThreadPool & global_pool = GlobalThreadPool::instance();
