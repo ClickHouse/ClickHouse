@@ -154,6 +154,7 @@
 #include <Common/RemoteHostFilter.h>
 #include <Common/HTTPHeaderFilter.h>
 #include <Interpreters/parseIdentifiersOrStringLiteralsWithSettings.h>
+#include <Interpreters/parseColumnsListForTableFunction.h>
 #include <Interpreters/StorageID.h>
 #include <Interpreters/SystemLog.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
@@ -3607,6 +3608,7 @@ StoragePtr Context::executeTableFunction(const ASTPtr & table_expression, const 
 
             const auto & insert_column_names = hasInsertionTableColumnNames() ? *getInsertionTableColumnNames() : insert_columns.getOrdinary().getNames();
             DB::ColumnsDescription structure_hint;
+            NameToNameSetMap insertion_columns_by_hint_column;
 
             bool use_columns_from_insert_query = true;
 
@@ -3647,6 +3649,7 @@ StoragePtr Context::executeTableFunction(const ASTPtr & table_expression, const 
                           * A source column has a single type, so the hint is usable only if all the
                           * insert table columns that it is mapped to agree on the type.
                           */
+                        insertion_columns_by_hint_column[column.name].insert(*insert_column_name_it);
                         if (const auto * already_hinted = structure_hint.tryGet(column.name))
                         {
                             if (!already_hinted->type->equals(*column.type))
@@ -3741,12 +3744,16 @@ StoragePtr Context::executeTableFunction(const ASTPtr & table_expression, const 
                             /// Change ephemeral columns to default columns.
                             column.default_desc.kind = ColumnDefaultKind::Default;
 
+                            insertion_columns_by_hint_column[column.name].insert(column.name);
                             structure_hint.add(std::move(column));
                         }
                     }
 
                     if (!structure_hint.empty())
+                    {
+                        removeMisboundDefaultsFromStructureHint(structure_hint, insertion_columns_by_hint_column, insert_columns);
                         table_function_ptr->setStructureHint(structure_hint);
+                    }
                 }
                 else if (use_structure_from_insertion_table_in_table_functions == 1)
                     throw Exception(ErrorCodes::NUMBER_OF_COLUMNS_DOESNT_MATCH, "Number of columns in insert table less than required by SELECT expression.");
