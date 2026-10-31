@@ -9,8 +9,10 @@
 #include <Common/logger_useful.h>
 #include <Interpreters/Context.h>
 
+#include <algorithm>
 #include <filesystem>
 #include <optional>
+#include <vector>
 
 
 namespace DB
@@ -42,66 +44,74 @@ MetadataStoragePtr unwrapEncryptedAndCacheLayers(DiskPtr disk)
     return metadata_storage;
 }
 
-/// The storage a disk stands on, and whether a layer had to be removed to reach it.
-struct UnwrappedStorage
+/// The trail of layers a disk stands on, from the disk itself down to the storage it reads and writes.
+///
+/// A disk that delegates to another one - an `encrypted` disk or a read-only wrapper - contributes its own
+/// identity and continues with its delegate. Once object storage is reached, the trail continues through the
+/// metadata storages instead of the disks, because a `cache` disk is a separate `DiskObjectStorage` that puts
+/// a metadata storage over the metadata storage of the disk it caches and never points at that disk.
+/// A disk not backed by object storage, a `local` disk for example, ends the trail with its own identity.
+std::vector<const void *> unwrapLayerTrail(DiskPtr disk)
 {
-    /// Nothing when the disk is not backed by object storage, a local disk for example.
-    MetadataStoragePtr metadata_storage;
-    /// Whether the disk is a layer at all: an `encrypted` disk, a read-only wrapper or a `cache` disk.
-    bool removed_a_layer = false;
-};
+    std::vector<const void *> trail;
 
-/// Unwraps the layers over a disk - an `encrypted` disk and a read-only wrapper delegate to another
-/// disk, a `cache` disk puts a metadata storage over the metadata storage of the disk it caches.
-/// Unlike `unwrapEncryptedAndCacheLayers`, this one returns nothing instead of dereferencing a null
-/// pointer when the disk is not backed by object storage; it runs for every pair of registered disks.
-UnwrappedStorage tryUnwrapLayers(DiskPtr disk)
-{
-    UnwrappedStorage result;
-
-    /// Any disk that delegates to another one is a layer over it, whatever the layer does.
+    DiskObjectStoragePtr object_storage_disk;
     while (disk)
     {
-        DiskPtr delegate = disk->getDelegateDiskIfExists();
-        if (!delegate)
+        object_storage_disk = std::dynamic_pointer_cast<DiskObjectStorage>(disk);
+        if (object_storage_disk)
             break;
 
+        trail.push_back(disk.get());
+
+        DiskPtr delegate = disk->getDelegateDiskIfExists();
+        if (!delegate)
+            return trail;
+
         disk = std::move(delegate);
-        result.removed_a_layer = true;
     }
 
-    DiskObjectStoragePtr object_storage_disk = std::dynamic_pointer_cast<DiskObjectStorage>(disk);
     if (!object_storage_disk)
-        return result;
+        return trail;
 
-    result.metadata_storage = object_storage_disk->getMetadataStorage();
-    while (auto * cache_metadata = dynamic_cast<MetadataStorageFromCacheObjectStorage *>(result.metadata_storage.get()))
+    MetadataStoragePtr metadata_storage = object_storage_disk->getMetadataStorage();
+    while (true)
     {
-        result.metadata_storage = cache_metadata->getUnderlying();
-        result.removed_a_layer = true;
-    }
+        chassert(metadata_storage);
+        trail.push_back(metadata_storage.get());
 
-    return result;
+        auto * cache_metadata = dynamic_cast<MetadataStorageFromCacheObjectStorage *>(metadata_storage.get());
+        if (!cache_metadata)
+            return trail;
+
+        metadata_storage = cache_metadata->getUnderlying();
+    }
+}
+
+/// Whether the trail of the outer disk ends with the whole trail of the inner one, so that unwrapping the
+/// outer disk reaches the inner disk and goes on to the same storage behind it.
+bool isTrailBelow(const std::vector<const void *> & outer, const std::vector<const void *> & inner)
+{
+    if (inner.empty() || inner.size() >= outer.size())
+        return false;
+
+    return std::equal(inner.rbegin(), inner.rend(), outer.rbegin());
 }
 
 /// Whether one of the two disks is a layer over the other, as a `cache` or `encrypted` disk is over the
 /// disk it wraps. Such a pair reports one storage namespace by design and is not a duplicate registration.
 ///
-/// Sharing the metadata storage is not enough to tell the two apart, because two separately configured
-/// disks over one storage are handed the same cached metadata storage object as well. What distinguishes
-/// a layer is that a layer had to be removed to reach the storage: when neither disk removed one, both
-/// stand directly on the storage and the pair is a duplicate registration after all.
+/// This asks for real ancestry rather than for either disk having removed a layer. Two separately configured
+/// `encrypted` or `cache` disks over one storage both remove a layer and are handed the same metadata storage,
+/// but neither stands on the other: they are two writable ways into the same files, which is the duplicate
+/// registration this rejects. Ancestry also settles the pairs whose storage is not object storage, where there
+/// is no metadata storage to compare at all - an `encrypted` disk over a `local` disk, for one.
 bool isOneDiskALayerOverTheOther(const DiskPtr & lhs, const DiskPtr & rhs)
 {
-    const auto lhs_unwrapped = tryUnwrapLayers(lhs);
-    if (!lhs_unwrapped.metadata_storage)
-        return false;
+    const auto lhs_trail = unwrapLayerTrail(lhs);
+    const auto rhs_trail = unwrapLayerTrail(rhs);
 
-    const auto rhs_unwrapped = tryUnwrapLayers(rhs);
-    if (lhs_unwrapped.metadata_storage.get() != rhs_unwrapped.metadata_storage.get())
-        return false;
-
-    return lhs_unwrapped.removed_a_layer || rhs_unwrapped.removed_a_layer;
+    return isTrailBelow(lhs_trail, rhs_trail) || isTrailBelow(rhs_trail, lhs_trail);
 }
 
 /// Identity of the storage that a disk reads and writes.
