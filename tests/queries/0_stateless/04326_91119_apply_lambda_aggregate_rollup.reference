@@ -1,0 +1,66 @@
+-- GROUPING SETS, materialize key, argMax ---
+0
+0
+-- ROLLUP, argMax ---
+0
+0
+-- CUBE, argMax ---
+0
+0
+-- ROLLUP, sum ---
+0
+1
+2
+3
+-- ROLLUP, function-form aggregate ---
+0
+1
+2
+3
+-- ROLLUP, regex-filtered APPLY ---
+
+\N
+-- nested aggregate inside a function ---
+0
+0
+-- deeply nested aggregate ---
+1
+1
+1
+1
+-- ROLLUP, lambda grouping ---
+0
+1
+-- ROLLUP, function-form grouping ---
+0
+1
+-- CUBE, lambda grouping ---
+0
+1
+-- GROUPING SETS, lambda grouping ---
+0
+1
+-- ROLLUP, grouping nested inside a function ---
+1
+2
+-- non-aggregate APPLY remains Nullable ---
+0
+1
+\N
+-- non-aggregate APPLY result as GROUPING SETS key is Nullable ---
+Nullable(UInt8)
+Nullable(UInt8)
+-- minSimpleState over APPLY-result grouping key (crashed before fix) ---
+0
+-- DISTINCT * APPLY isNull, GROUPING SETS, minSimpleState (fuzzer shape) ---
+0
+-- lambda-form APPLY result as grouping key is Nullable ---
+Nullable(UInt16)
+Nullable(UInt16)
+-- function-form APPLY result as grouping key is Nullable ---
+Nullable(String)
+Nullable(String)
+-- minOrNull over function-form APPLY-result grouping key (bad-cast before fix) ---
+UInt8
+-- mixed lambda tuple(x, sum(x)): the non-aggregate x stays wrapped Nullable per-occurrence ---
+Tuple(Nullable(UInt64), UInt64)
