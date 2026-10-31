@@ -1,0 +1,15 @@
+--- Filesystem: files beneath the directory
+1
+2
+--- Filesystem: a sibling directory
+PATH_ACCESS_DENIED
+PATH_ACCESS_DENIED
+PATH_ACCESS_DENIED
+--- URL: files beneath the directory of the base URL
+1
+2
+--- URL: a sibling directory
+not read
+PATH_ACCESS_DENIED
+--- clickhouse-local accepts any path
+3

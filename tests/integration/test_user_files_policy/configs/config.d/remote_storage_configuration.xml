@@ -1,0 +1,28 @@
+<clickhouse>
+    <storage_configuration>
+        <disks>
+            <disk_s3_plain>
+                <type>s3_plain</type>
+                <endpoint>http://minio1:9001/root/data/disks/user_files/tenant=a/</endpoint>
+                <access_key_id>minio</access_key_id>
+                <secret_access_key>ClickHouse_Minio_P@ssw0rd</secret_access_key>
+            </disk_s3_plain>
+        </disks>
+
+        <policies>
+            <user_files_s3>
+                <volumes>
+                    <main>
+                        <disk>disk_s3_plain</disk>
+                    </main>
+                </volumes>
+            </user_files_s3>
+        </policies>
+    </storage_configuration>
+
+    <user_files_policy>user_files_s3</user_files_policy>
+
+    <!-- With `user_files_policy`, `user_files_path` is a path inside the disk of the policy:
+         the user files are the objects under `tenant=a/files/`. -->
+    <user_files_path>/files/</user_files_path>
+</clickhouse>
