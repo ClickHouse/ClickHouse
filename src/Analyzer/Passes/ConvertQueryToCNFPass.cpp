@@ -800,7 +800,8 @@ public:
         optimize_filter(query_node->getPrewhere());
         optimize_filter(query_node->getHaving());
 
-        if (has_filter && settings[Setting::optimize_substitute_columns])
+        /// A row that WITH FILL adds has values only in the ORDER BY and INTERPOLATE copies of the projection expression.
+        if (has_filter && settings[Setting::optimize_substitute_columns] && !hasWithFill(*query_node))
             substituteColumns(*query_node, table_expressions, context);
     }
 };
