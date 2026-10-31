@@ -122,7 +122,7 @@ struct Metadata
     UInt32 count = 0;
     UInt8 offset_size = 0;
 
-    std::string_view getName(UInt32 id) const
+    [[nodiscard]] std::string_view getName(UInt32 id) const
     {
         if (id >= count)
             throw Exception(
@@ -188,7 +188,7 @@ public:
             path_regexps_to_skip.emplace_back(regexp);
     }
 
-    bool shouldSkip(const String & path) const
+    [[nodiscard]] bool shouldSkip(const String & path) const
     {
         if (type.getPathsToSkip().contains(path))
             return true;
@@ -205,7 +205,7 @@ public:
         return false;
     }
 
-    const DataTypePtr * findTypedPath(const String & path) const
+    [[nodiscard]] const DataTypePtr * findTypedPath(const String & path) const
     {
         const auto & typed_paths = type.getTypedPaths();
         auto it = typed_paths.find(path);
@@ -228,12 +228,12 @@ struct ObjectLayout
     size_t offsets_pos = 0;
     size_t values_pos = 0;
 
-    UInt32 fieldId(std::string_view data, UInt32 i) const
+    [[nodiscard]] UInt32 fieldId(std::string_view data, UInt32 i) const
     {
         return readUnsigned(data, ids_pos + size_t(i) * id_size, id_size);
     }
 
-    size_t valuePos(std::string_view data, UInt32 i) const
+    [[nodiscard]] size_t valuePos(std::string_view data, UInt32 i) const
     {
         return values_pos + readUnsigned(data, offsets_pos + size_t(i) * offset_size, offset_size);
     }
@@ -260,7 +260,7 @@ struct ArrayLayout
     size_t offsets_pos = 0;
     size_t values_pos = 0;
 
-    size_t elementPos(std::string_view data, UInt32 i) const
+    [[nodiscard]] size_t elementPos(std::string_view data, UInt32 i) const
     {
         return values_pos + readUnsigned(data, offsets_pos + size_t(i) * offset_size, offset_size);
     }

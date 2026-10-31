@@ -59,18 +59,18 @@ class SQLDefinedHandlersMetadataStorage::IStorage
 public:
     virtual ~IStorage() = default;
 
-    virtual bool exists(const std::string & path) const = 0;
-    virtual std::vector<std::string> list() const = 0;
+    [[nodiscard]] virtual bool exists(const std::string & path) const = 0;
+    [[nodiscard]] virtual std::vector<std::string> list() const = 0;
     /// List children together with a version token of the whole set (the Keeper root-node data version
     /// for replicated storage; 0 for local). The version is fed back to `write` to make the cross-replica
     /// "read set -> check ambiguity -> persist" sequence atomic via optimistic concurrency.
     virtual std::vector<std::string> list(Int32 & version) const { version = 0; return list(); }
     /// The current version token of the whole set, read without touching the background update watch.
     /// Used to check that the set did not change while the children were being read one by one.
-    virtual Int32 getVersion() const { return 0; }
+    [[nodiscard]] virtual Int32 getVersion() const { return 0; }
     /// The version token observed when the update watch was last armed in `list`.
-    virtual Int32 getArmedVersion() const { return 0; }
-    virtual std::string read(const std::string & path) const = 0;
+    [[nodiscard]] virtual Int32 getArmedVersion() const { return 0; }
+    [[nodiscard]] virtual std::string read(const std::string & path) const = 0;
     /// Persist data. When `expected_root_version >= 0` the write is conditional: it commits only if the
     /// set has not changed since it was read at that version, otherwise nothing is written and `false` is
     /// returned so the caller can re-read and retry. With `expected_root_version == -1` the write is
@@ -78,7 +78,7 @@ public:
     virtual bool write(const std::string & path, const std::string & data, bool replace, Int32 expected_root_version) = 0;
     virtual void remove(const std::string & path) = 0;
     virtual bool removeIfExists(const std::string & path) = 0;
-    virtual bool isReplicated() const = 0;
+    [[nodiscard]] virtual bool isReplicated() const = 0;
     virtual bool waitUpdate(size_t /* timeout */) { return false; }
     /// Promote the version observed when the update watch was last armed (in `list`) to the
     /// "successfully loaded" version that `waitUpdate` compares against. The caller invokes this only
@@ -103,9 +103,9 @@ public:
             cleanup();
     }
 
-    bool isReplicated() const override { return false; }
+    [[nodiscard]] bool isReplicated() const override { return false; }
 
-    std::vector<std::string> list() const override
+    [[nodiscard]] std::vector<std::string> list() const override
     {
         if (!fs::exists(root_path))
             return {};
@@ -123,12 +123,12 @@ public:
         return elements;
     }
 
-    bool exists(const std::string & file_name) const override
+    [[nodiscard]] bool exists(const std::string & file_name) const override
     {
         return fs::exists(getPath(file_name));
     }
 
-    std::string read(const std::string & file_name) const override
+    [[nodiscard]] std::string read(const std::string & file_name) const override
     {
         ReadBufferFromFile in(getPath(file_name));
         std::string data;
@@ -170,7 +170,7 @@ public:
     }
 
 private:
-    std::string getPath(const std::string & file_name) const
+    [[nodiscard]] std::string getPath(const std::string & file_name) const
     {
         const auto file_name_as_path = fs::path(file_name);
         if (file_name_as_path.is_absolute())

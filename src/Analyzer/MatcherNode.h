@@ -71,55 +71,55 @@ public:
     explicit MatcherNode(Identifier qualified_identifier_, Identifiers columns_identifiers_, ColumnTransformersNodes column_transformers_ = {});
 
     /// Get matcher type
-    MatcherNodeType getMatcherType() const
+    [[nodiscard]] MatcherNodeType getMatcherType() const
     {
         return matcher_type;
     }
 
     /// Returns true if matcher is asterisk matcher, false otherwise
-    bool isAsteriskMatcher() const
+    [[nodiscard]] bool isAsteriskMatcher() const
     {
         return matcher_type == MatcherNodeType::ASTERISK;
     }
 
     /// Returns true if matcher is qualified, false otherwise
-    bool isQualified() const
+    [[nodiscard]] bool isQualified() const
     {
         return !qualified_identifier.empty();
     }
 
     /// Returns true if matcher is not qualified, false otherwise
-    bool isUnqualified() const
+    [[nodiscard]] bool isUnqualified() const
     {
         return qualified_identifier.empty();
     }
 
     /// Get qualified identifier
-    const Identifier & getQualifiedIdentifier() const
+    [[nodiscard]] const Identifier & getQualifiedIdentifier() const
     {
         return qualified_identifier;
     }
 
     /// Get columns matcher. Valid only if this matcher has type COLUMNS_REGEXP.
-    const std::shared_ptr<re2::RE2> & getColumnsMatcher() const
+    [[nodiscard]] const std::shared_ptr<re2::RE2> & getColumnsMatcher() const
     {
         return columns_matcher;
     }
 
     /// Get columns identifiers. Valid only if this matcher has type COLUMNS_LIST.
-    const Identifiers & getColumnsIdentifiers() const
+    [[nodiscard]] const Identifiers & getColumnsIdentifiers() const
     {
         return columns_identifiers;
     }
 
     /// Get column transformers
-    const ListNode & getColumnTransformers() const
+    [[nodiscard]] const ListNode & getColumnTransformers() const
     {
         return children[column_transformers_child_index]->as<const ListNode &>();
     }
 
     /// Get column transformers
-    const QueryTreeNodePtr & getColumnTransformersNode() const
+    [[nodiscard]] const QueryTreeNodePtr & getColumnTransformersNode() const
     {
         return children[column_transformers_child_index];
     }
@@ -127,7 +127,7 @@ public:
     /// Returns true if matcher match column name, false otherwise
     bool isMatchingColumn(const std::string & column_name);
 
-    QueryTreeNodeType getNodeType() const override
+    [[nodiscard]] QueryTreeNodeType getNodeType() const override
     {
         return QueryTreeNodeType::MATCHER;
     }
@@ -135,13 +135,13 @@ public:
     void dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state, size_t indent) const override;
 
 protected:
-    bool isEqualImpl(const IQueryTreeNode & rhs, CompareOptions) const override;
+    [[nodiscard]] bool isEqualImpl(const IQueryTreeNode & rhs, CompareOptions) const override;
 
     void updateTreeHashImpl(HashState & hash_state, CompareOptions) const override;
 
-    QueryTreeNodePtr cloneImpl() const override;
+    [[nodiscard]] QueryTreeNodePtr cloneImpl() const override;
 
-    ASTPtr toASTImpl(const ConvertToASTOptions & options) const override;
+    [[nodiscard]] ASTPtr toASTImpl(const ConvertToASTOptions & options) const override;
 
 private:
     explicit MatcherNode(MatcherNodeType matcher_type_,

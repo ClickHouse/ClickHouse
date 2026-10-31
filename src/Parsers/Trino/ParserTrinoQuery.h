@@ -58,7 +58,7 @@ public:
     {
     }
 
-    const char * getName() const override { return "Trino SQL Statement"; }
+    [[nodiscard]] const char * getName() const override { return "Trino SQL Statement"; }
 
 protected:
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;

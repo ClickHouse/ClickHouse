@@ -35,10 +35,10 @@ public:
             , has_columns(has_columns_)
         {}
 
-        bool hasColumn(const String & name) const { return source_columns.contains(name); }
-        bool hasTable() const { return !tables.empty(); }
-        bool processAsterisks() const { return hasTable() && has_columns; }
-        bool unknownColumn(size_t table_pos, const ASTIdentifier & identifier) const;
+        [[nodiscard]] bool hasColumn(const String & name) const { return source_columns.contains(name); }
+        [[nodiscard]] bool hasTable() const { return !tables.empty(); }
+        [[nodiscard]] bool processAsterisks() const { return hasTable() && has_columns; }
+        [[nodiscard]] bool unknownColumn(size_t table_pos, const ASTIdentifier & identifier) const;
         static bool matchColumnName(std::string_view name, const String & column_name, DataTypePtr column_type);
     };
 

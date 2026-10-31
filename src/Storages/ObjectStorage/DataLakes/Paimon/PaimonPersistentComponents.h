@@ -84,9 +84,9 @@ struct PaimonPersistentComponents
     /// be changed via SYSTEM RELOAD CONFIG, so it is evaluated dynamically rather than latched at
     /// create time.  Read paths must use this predicate so that a zero-capacity cache neither
     /// disables the filesystem cache nor records cache misses for entries that can never be kept.
-    bool isMetadataCacheActive() const { return metadata_cache != nullptr && metadata_cache->maxSizeInBytes() > 0; }
+    [[nodiscard]] bool isMetadataCacheActive() const { return metadata_cache != nullptr && metadata_cache->maxSizeInBytes() > 0; }
 
-    bool hasStreamState() const { return stream_state != nullptr && incremental_read_enabled; }
+    [[nodiscard]] bool hasStreamState() const { return stream_state != nullptr && incremental_read_enabled; }
 };
 
 }

@@ -65,7 +65,7 @@ public:
     /// Translates the subtree rooted at `node`, exactly or - in the positions where
     /// `allow_widening` permits - keeping at least every matching row. Returns null when the
     /// subtree cannot be translated. Throws only on logical errors.
-    VortexExpressionPtr tryConvert(const RPNBuilderTreeNode & node, bool allow_widening) const;
+    [[nodiscard]] VortexExpressionPtr tryConvert(const RPNBuilderTreeNode & node, bool allow_widening) const;
 
 private:
     /// A column reference that passed every pushdown gate: it exists in both the header and the
@@ -85,17 +85,17 @@ private:
         /// match, but the conversion from the file type must not turn a non-null value into NULL.
         NullPreserving,
     };
-    std::optional<ResolvedColumn> resolveColumn(const RPNBuilderTreeNode & node, TypeMatch type_match) const;
+    [[nodiscard]] std::optional<ResolvedColumn> resolveColumn(const RPNBuilderTreeNode & node, TypeMatch type_match) const;
 
     /// Whether reading a non-null value of `arrow_type` as `cmp_type` always yields a non-null
     /// value. Not so for a string read as a nullable number, for example: a malformed string is
     /// cast to NULL, while the scan still sees the original non-null string.
-    bool conversionPreservesNulls(const DataTypePtr & cmp_type, const arrow::DataType & arrow_type) const;
+    [[nodiscard]] bool conversionPreservesNulls(const DataTypePtr & cmp_type, const arrow::DataType & arrow_type) const;
 
     /// Whether the two types describe the same set of values. Only then does a comparison mean the
     /// same thing on both sides. `UInt64` in the header against `I64` in the file is the trap: the
     /// same bits, but a different order.
-    bool typesMatchForFilterPushdown(const DataTypePtr & cmp_type, const arrow::DataType & arrow_type) const;
+    [[nodiscard]] bool typesMatchForFilterPushdown(const DataTypePtr & cmp_type, const arrow::DataType & arrow_type) const;
 
     /// Builds a literal in the file column's own type. `value` is converted into `cmp_type` first,
     /// exactly or not at all. Returns null when the value does not fit, and the atom is then not
@@ -115,7 +115,7 @@ private:
     /// every row the ClickHouse comparison keeps: an equality with zero matches both zeros, a range
     /// bound at zero is taken on the side that includes both. A range comparison still lets `NaN`
     /// through, which is only a widening, so it is not pushed where `allow_widening` is false.
-    VortexExpressionPtr makeFloatComparison(
+    [[nodiscard]] VortexExpressionPtr makeFloatComparison(
         const ResolvedColumn & column,
         FFI_VortexComparisonOperator op,
         VortexExpressionPtr literal,
@@ -127,7 +127,7 @@ private:
     /// become a literal, the range degrades to its left half - a widening, so it needs
     /// `allow_widening` unless the right bound is absent because no string is greater than the
     /// prefix (then the left half alone is still exact).
-    VortexExpressionPtr makePrefixRange(const ResolvedColumn & column, const String & prefix, bool allow_widening) const;
+    [[nodiscard]] VortexExpressionPtr makePrefixRange(const ResolvedColumn & column, const String & prefix, bool allow_widening) const;
 
     /// The decoder throws `VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE` for a `DATE32` day number that does not
     /// fit the header type, and an atom on that column must not hide such a row by filtering it out
@@ -135,25 +135,25 @@ private:
     /// range: those rows reach the decoder and throw as without the pushdown, while the zones that
     /// hold only decodable days are pruned as before. Returns `atom` unchanged when the decoder
     /// cannot throw, and null when the widening is not allowed or the range is not known.
-    VortexExpressionPtr keepUndecodableRows(const ResolvedColumn & column, VortexExpressionPtr atom, bool allow_widening) const;
+    [[nodiscard]] VortexExpressionPtr keepUndecodableRows(const ResolvedColumn & column, VortexExpressionPtr atom, bool allow_widening) const;
 
     using Handler = VortexExpressionPtr (VortexExpressionConverter::*)(const RPNBuilderFunctionTreeNode &, bool allow_widening) const;
     static const std::unordered_map<std::string_view, Handler> & handlers();
 
-    VortexExpressionPtr convertAnd(const RPNBuilderFunctionTreeNode & node, bool allow_widening) const;
-    VortexExpressionPtr convertOr(const RPNBuilderFunctionTreeNode & node, bool allow_widening) const;
-    VortexExpressionPtr convertNot(const RPNBuilderFunctionTreeNode & node, bool allow_widening) const;
-    VortexExpressionPtr convertComparison(const RPNBuilderFunctionTreeNode & node, bool allow_widening) const;
-    VortexExpressionPtr convertIsNull(const RPNBuilderFunctionTreeNode & node, bool allow_widening) const;
-    VortexExpressionPtr convertIsNotNull(const RPNBuilderFunctionTreeNode & node, bool allow_widening) const;
-    VortexExpressionPtr convertIn(const RPNBuilderFunctionTreeNode & node, bool allow_widening) const;
-    VortexExpressionPtr convertLike(const RPNBuilderFunctionTreeNode & node, bool allow_widening) const;
-    VortexExpressionPtr convertNotLike(const RPNBuilderFunctionTreeNode & node, bool allow_widening) const;
-    VortexExpressionPtr convertStartsWith(const RPNBuilderFunctionTreeNode & node, bool allow_widening) const;
+    [[nodiscard]] VortexExpressionPtr convertAnd(const RPNBuilderFunctionTreeNode & node, bool allow_widening) const;
+    [[nodiscard]] VortexExpressionPtr convertOr(const RPNBuilderFunctionTreeNode & node, bool allow_widening) const;
+    [[nodiscard]] VortexExpressionPtr convertNot(const RPNBuilderFunctionTreeNode & node, bool allow_widening) const;
+    [[nodiscard]] VortexExpressionPtr convertComparison(const RPNBuilderFunctionTreeNode & node, bool allow_widening) const;
+    [[nodiscard]] VortexExpressionPtr convertIsNull(const RPNBuilderFunctionTreeNode & node, bool allow_widening) const;
+    [[nodiscard]] VortexExpressionPtr convertIsNotNull(const RPNBuilderFunctionTreeNode & node, bool allow_widening) const;
+    [[nodiscard]] VortexExpressionPtr convertIn(const RPNBuilderFunctionTreeNode & node, bool allow_widening) const;
+    [[nodiscard]] VortexExpressionPtr convertLike(const RPNBuilderFunctionTreeNode & node, bool allow_widening) const;
+    [[nodiscard]] VortexExpressionPtr convertNotLike(const RPNBuilderFunctionTreeNode & node, bool allow_widening) const;
+    [[nodiscard]] VortexExpressionPtr convertStartsWith(const RPNBuilderFunctionTreeNode & node, bool allow_widening) const;
 
     /// A column standing on its own as the predicate, `WHERE flag`. Only a boolean file column may
     /// be handed to the scan as a filter of its own.
-    VortexExpressionPtr convertBareBooleanColumn(const RPNBuilderTreeNode & node) const;
+    [[nodiscard]] VortexExpressionPtr convertBareBooleanColumn(const RPNBuilderTreeNode & node) const;
 
     const Block & header;
     const arrow::Schema & file_schema;

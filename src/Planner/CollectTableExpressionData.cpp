@@ -292,7 +292,7 @@ public:
         : query_node(query_node_)
     {}
 
-    const QueryTreeNodePtr & getPrewhereTableExpression() const
+    [[nodiscard]] const QueryTreeNodePtr & getPrewhereTableExpression() const
     {
         return table_expression;
     }

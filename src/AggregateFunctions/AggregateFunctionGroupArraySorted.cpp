@@ -247,7 +247,7 @@ public:
                 aggregate_function_group_array_sorted_max_element_size);
     }
 
-    String getName() const override { return "groupArraySorted"; }
+    [[nodiscard]] String getName() const override { return "groupArraySorted"; }
 
     void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena * arena) const override
     {
@@ -346,7 +346,7 @@ public:
         this->data(place).insertResultInto(to, max_elements, arena);
     }
 
-    bool allocatesMemoryInArena() const override { return true; }
+    [[nodiscard]] bool allocatesMemoryInArena() const override { return true; }
 
 private:
     UInt64 max_elements;

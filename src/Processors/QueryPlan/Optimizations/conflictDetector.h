@@ -76,7 +76,7 @@ struct ConflictOperator
     /// there and spans the two sides, which happens at exactly one join of a plan. An operator whose
     /// ON clause does not span its inputs (degenerate) is applied where all of its relations first
     /// come together; its ON clause may be complete, and even span a split, well inside one input.
-    bool isAppliedAt(UInt32 left, UInt32 right) const
+    [[nodiscard]] bool isAppliedAt(UInt32 left, UInt32 right) const
     {
         const UInt32 joined = left | right;
         const UInt32 located_by = locatedBy();
@@ -85,12 +85,12 @@ struct ConflictOperator
 
     /// The relations that locate the operator, see `isAppliedAt`: once all of them are present, the
     /// operator has been applied, at that join or below it.
-    UInt32 locatedBy() const { return degenerate ? relations : nel; }
+    [[nodiscard]] UInt32 locatedBy() const { return degenerate ? relations : nel; }
 
     /// The relations whose rows the operator pads with defaults or `NULL`, or drops: the right side
     /// of an outer, semi or anti join (normalized to `Left`), both sides of a `FULL` join, nothing
     /// for an inner join.
-    UInt32 nullSupplying() const
+    [[nodiscard]] UInt32 nullSupplying() const
     {
         if (isFull(kind))
             return relations;

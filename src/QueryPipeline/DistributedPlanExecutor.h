@@ -53,9 +53,9 @@ public:
     /// Out-of-line so the `worker_allocation` deleter is instantiated where `StatelessWorkerAllocation` is complete.
     ~TaskToHostMap();
 
-    const VectorWithMemoryTracking<WorkerAddress> & getWorkerAddresses() const { return worker_addresses; }
-    const UnorderedMapWithMemoryTracking<String, WorkerAddress> & getTaskHosts() const { return task_hosts; }
-    const UnorderedMapWithMemoryTracking<String, StreamSourceAddress> & getExchangeStreamSourceHosts() const { return exchange_stream_source_hosts; }
+    [[nodiscard]] const VectorWithMemoryTracking<WorkerAddress> & getWorkerAddresses() const { return worker_addresses; }
+    [[nodiscard]] const UnorderedMapWithMemoryTracking<String, WorkerAddress> & getTaskHosts() const { return task_hosts; }
+    [[nodiscard]] const UnorderedMapWithMemoryTracking<String, StreamSourceAddress> & getExchangeStreamSourceHosts() const { return exchange_stream_source_hosts; }
 
 private:
     void fillWorkerAddresses(ContextPtr context);
@@ -174,7 +174,7 @@ protected:
     virtual void startStage(const String & stage_name, const DistributedQueryStage & stage) = 0;
     virtual bool waitForStage(const String & stage_name, std::optional<UInt64> timeout_ms) = 0;
 
-    virtual bool waitsForFilterOnlyStages() const { return false; }
+    [[nodiscard]] virtual bool waitsForFilterOnlyStages() const { return false; }
 
     void checkCancelled() const;
 

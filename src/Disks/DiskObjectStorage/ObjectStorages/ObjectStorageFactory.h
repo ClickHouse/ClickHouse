@@ -33,7 +33,7 @@ public:
 
     void registerObjectStorageType(const std::string & type, Creator creator);
 
-    ObjectStoragePtr create(
+    [[nodiscard]] ObjectStoragePtr create(
         const std::string & name,
         const Poco::Util::AbstractConfiguration & config,
         const std::string & config_prefix,

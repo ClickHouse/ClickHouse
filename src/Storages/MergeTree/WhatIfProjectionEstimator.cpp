@@ -327,21 +327,21 @@ struct PartFromSample
         }
     }
 
-    size_t sampleRow(size_t part_row) const { return static_cast<size_t>(UInt128(part_row) * sample.rows / rows); }
-    size_t firstPartRow(size_t sample_row) const
+    [[nodiscard]] size_t sampleRow(size_t part_row) const { return static_cast<size_t>(UInt128(part_row) * sample.rows / rows); }
+    [[nodiscard]] size_t firstPartRow(size_t sample_row) const
     {
         return static_cast<size_t>((UInt128(sample_row) * rows + sample.rows - 1) / sample.rows);
     }
     /// the first sample row whose part rows start at or after `part_row`
-    size_t firstSampleRowFrom(size_t part_row) const { return part_row == 0 ? 0 : sampleRow(part_row - 1) + 1; }
+    [[nodiscard]] size_t firstSampleRowFrom(size_t part_row) const { return part_row == 0 ? 0 : sampleRow(part_row - 1) + 1; }
 
-    size_t sampleRowBytes(size_t sample_row) const
+    [[nodiscard]] size_t sampleRowBytes(size_t sample_row) const
     {
         const bool per_row = sample.row_bytes.size() == sample.rows;
         return per_row ? sample.row_bytes[sample.order[sample_row]] : std::max<size_t>(sample.bytes / sample.rows, 1);
     }
 
-    UInt64 bytesBefore(size_t part_row) const
+    [[nodiscard]] UInt64 bytesBefore(size_t part_row) const
     {
         const size_t sample_row = sampleRow(part_row);
         if (sample_row == sample.rows)
@@ -349,8 +349,8 @@ struct PartFromSample
         return bytes_before_sample_row[sample_row] + sampleRowBytes(sample_row) * (part_row - firstPartRow(sample_row));
     }
 
-    UInt64 bytes() const { return bytes_before_sample_row.back(); }
-    UInt64 formatBytes() const { return static_cast<UInt64>(UInt128(sample.format_bytes) * rows / sample.rows); }
+    [[nodiscard]] UInt64 bytes() const { return bytes_before_sample_row.back(); }
+    [[nodiscard]] UInt64 formatBytes() const { return static_cast<UInt64>(UInt128(sample.format_bytes) * rows / sample.rows); }
 };
 
 /// end of the block a writer gets at `row`: at most `rows_limit` rows and `bytes_limit` bytes, but at least one row

@@ -53,7 +53,7 @@ public:
     }
 
     /// Number of bytes read since the checkpoint was set.
-    size_t offsetFromCheckpoint() const;
+    [[nodiscard]] size_t offsetFromCheckpoint() const;
 
     /// Forget checkpoint and all data between checkpoint and position
     ALWAYS_INLINE inline void dropCheckpoint()
@@ -85,9 +85,9 @@ public:
 
     /// Returns true if there unread data extracted from sub-buffer in own memory.
     /// This data will be lost after destruction of peekable buffer.
-    bool hasUnreadData() const;
+    [[nodiscard]] bool hasUnreadData() const;
 
-    const ReadBuffer & getSubBuffer() const { return *sub_buf; }
+    [[nodiscard]] const ReadBuffer & getSubBuffer() const { return *sub_buf; }
 
 private:
     bool nextImpl() override;
@@ -96,9 +96,9 @@ private:
 
     bool peekNext();
 
-    bool useSubbufferOnly() const { return !peeked_size; }
-    bool currentlyReadFromOwnMemory() const { return working_buffer.begin() != sub_buf->buffer().begin(); }
-    bool checkpointInOwnMemory() const { return checkpoint_in_own_memory; }
+    [[nodiscard]] bool useSubbufferOnly() const { return !peeked_size; }
+    [[nodiscard]] bool currentlyReadFromOwnMemory() const { return working_buffer.begin() != sub_buf->buffer().begin(); }
+    [[nodiscard]] bool checkpointInOwnMemory() const { return checkpoint_in_own_memory; }
 
     void checkStateCorrect() const;
 
@@ -107,9 +107,9 @@ private:
     void resizeOwnMemoryIfNecessary(size_t bytes_to_append);
 
     char * getMemoryData() { return use_stack_memory ? stack_memory : memory.data(); }
-    const char * getMemoryData() const { return use_stack_memory ? stack_memory : memory.data(); }
+    [[nodiscard]] const char * getMemoryData() const { return use_stack_memory ? stack_memory : memory.data(); }
 
-    size_t offsetFromCheckpointInOwnMemory() const;
+    [[nodiscard]] size_t offsetFromCheckpointInOwnMemory() const;
 
 
     ReadBuffer * sub_buf;

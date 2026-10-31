@@ -66,7 +66,7 @@ public:
     const std::optional<UUID> initial_user_id;
 
     /// Outputs `ContextAccessParams` to string for logging.
-    String toString() const;
+    [[nodiscard]] String toString() const;
 
     friend bool operator <(const ContextAccessParams & left, const ContextAccessParams & right);
     friend bool operator ==(const ContextAccessParams & left, const ContextAccessParams & right);

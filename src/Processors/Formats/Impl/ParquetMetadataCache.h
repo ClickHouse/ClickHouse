@@ -103,7 +103,7 @@ struct ParquetMetadataCacheCell : private boost::noncopyable
 private:
     static constexpr size_t SIZE_IN_MEMORY_OVERHEAD = 200;
     static constexpr size_t MIN_KEPT_STATISTICS_BYTES = 4096;
-    size_t calculateMemorySize() const;
+    [[nodiscard]] size_t calculateMemorySize() const;
 };
 
 /// Weight function for metadata cache

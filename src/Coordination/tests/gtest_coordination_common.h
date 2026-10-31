@@ -65,7 +65,7 @@ public:
     bool use_lsmt_storage = false;
 
     /// A fully-operational fixture context (logs already preprocessed).
-    DB::KeeperContextPtr makeKeeperContext(std::shared_ptr<DB::CoordinationSettings> settings = nullptr) const
+    [[nodiscard]] DB::KeeperContextPtr makeKeeperContext(std::shared_ptr<DB::CoordinationSettings> settings = nullptr) const
     {
         auto context = ::makeKeeperContext(use_lsmt_storage, std::move(settings));
         context->setLocalLogsPreprocessed();

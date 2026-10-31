@@ -93,7 +93,7 @@ struct NpvCalculator
     }
 
     template <IndexMode index_mode = IndexMode::ZeroBased>
-    double calculate(double rate) const
+    [[nodiscard]] double calculate(double rate) const
     {
         if (rate == 0)
             return std::accumulate(cashflows.begin(), cashflows.end(), 0.0);
@@ -130,7 +130,7 @@ struct NpvCalculator
     }
 
     // Used only for IRR calculation, hence just ZeroBased
-    double derivative(double rate) const
+    [[nodiscard]] double derivative(double rate) const
     {
         if (rate <= -1.0)
             return std::numeric_limits<double>::quiet_NaN();
@@ -172,7 +172,7 @@ struct XnpvCalculator
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Cashflow and date arrays must have the same size");
     }
 
-    double calculate(double rate) const
+    [[nodiscard]] double calculate(double rate) const
     {
         if (rate <= -1.0)
             return std::numeric_limits<double>::infinity();
@@ -191,7 +191,7 @@ struct XnpvCalculator
         return npv;
     }
 
-    double derivative(double rate) const
+    [[nodiscard]] double derivative(double rate) const
     {
         if (rate <= -1.0)
             return std::numeric_limits<double>::infinity();
@@ -371,14 +371,14 @@ public:
     static constexpr auto name = "financialInternalRateOfReturnExtended";
     static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionXirr>(); }
 
-    String getName() const override { return name; }
+    [[nodiscard]] String getName() const override { return name; }
 
-    size_t getNumberOfArguments() const override { return 0; }
-    bool isVariadic() const override { return true; }
+    [[nodiscard]] size_t getNumberOfArguments() const override { return 0; }
+    [[nodiscard]] bool isVariadic() const override { return true; }
 
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
-    String getSignatureString() const override
+    [[nodiscard]] String getSignatureString() const override
     {
         /// Keep this aligned with `dispatchCashflowDate` / `dispatchDate`:
         /// cashflow accepts Int8/16/32/64 and Float32/64 (no UInt, no Decimal,
@@ -396,7 +396,7 @@ public:
                " OR (Array(NativeInt | NativeFloat), Array(Date | Date32), NativeFloat, String) -> Float64";
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         auto cashflow_col = arguments[0].column->convertToFullIfWrapped()->convertToFullColumnIfLowCardinality();
         auto date_col = arguments[1].column->convertToFullIfWrapped()->convertToFullColumnIfLowCardinality();
@@ -487,21 +487,21 @@ public:
     static constexpr auto name = "financialInternalRateOfReturn";
     static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionIRR>(); }
 
-    String getName() const override { return name; }
+    [[nodiscard]] String getName() const override { return name; }
 
-    size_t getNumberOfArguments() const override { return 0; }
-    bool isVariadic() const override { return true; }
+    [[nodiscard]] size_t getNumberOfArguments() const override { return 0; }
+    [[nodiscard]] bool isVariadic() const override { return true; }
 
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
-    String getSignatureString() const override
+    [[nodiscard]] String getSignatureString() const override
     {
         /// Cashflow array must contain only Int8/16/32/64 or Float32/64; see
         /// the inline dispatch in `executeImpl`.
         return "(Array(NativeInt | NativeFloat), [NativeFloat]) -> Float64";
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         auto cashflow_col = arguments[0].column->convertToFullIfWrapped()->convertToFullColumnIfLowCardinality();
         const auto * cashflow_array = checkAndGetColumn<ColumnArray>(cashflow_col.get());
@@ -572,15 +572,15 @@ public:
     static constexpr auto name = "financialNetPresentValueExtended";
     static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionXnpv>(); }
 
-    String getName() const override { return name; }
+    [[nodiscard]] String getName() const override { return name; }
 
-    size_t getNumberOfArguments() const override { return 0; }
-    bool isVariadic() const override { return true; }
+    [[nodiscard]] size_t getNumberOfArguments() const override { return 0; }
+    [[nodiscard]] bool isVariadic() const override { return true; }
 
-    bool isDeterministic() const override { return false; }
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+    [[nodiscard]] bool isDeterministic() const override { return false; }
+    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
-    String getSignatureString() const override
+    [[nodiscard]] String getSignatureString() const override
     {
         /// rate accepts Float32/Float64; cashflow accepts Int8/16/32/64 or
         /// Float32/64; date accepts Date or Date32. See `dispatchCashflowDate`
@@ -588,7 +588,7 @@ public:
         return "(NativeFloat, Array(NativeInt | NativeFloat), Array(Date | Date32), [String]) -> Float64";
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         auto rate_col = arguments[0].column->convertToFullIfWrapped()->convertToFullColumnIfLowCardinality();
         auto cashflow_col = arguments[1].column->convertToFullIfWrapped()->convertToFullColumnIfLowCardinality();
@@ -678,21 +678,21 @@ public:
     static constexpr auto name = "financialNetPresentValue";
     static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionNPV>(); }
 
-    String getName() const override { return name; }
+    [[nodiscard]] String getName() const override { return name; }
 
-    size_t getNumberOfArguments() const override { return 0; }
+    [[nodiscard]] size_t getNumberOfArguments() const override { return 0; }
 
-    bool isVariadic() const override { return true; }
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+    [[nodiscard]] bool isVariadic() const override { return true; }
+    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
-    String getSignatureString() const override
+    [[nodiscard]] String getSignatureString() const override
     {
         /// rate accepts Float32/Float64; cashflow accepts Int8/16/32/64 or
         /// Float32/64. See the dispatch tree in `executeImpl`.
         return "(NativeFloat, Array(NativeInt | NativeFloat), [Integer]) -> Float64";
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         auto rate_col = arguments[0].column->convertToFullIfWrapped()->convertToFullColumnIfLowCardinality();
         auto cashflow_col = arguments[1].column->convertToFullIfWrapped()->convertToFullColumnIfLowCardinality();

@@ -108,7 +108,7 @@ class GlueRetryStrategy : public Aws::Client::DefaultRetryStrategy
 {
 public:
     /// NOLINTNEXTLINE(google-runtime-int)
-    bool ShouldRetry(const Aws::Client::AWSError<Aws::Client::CoreErrors> & error, long attempted_retries) const override
+    [[nodiscard]] bool ShouldRetry(const Aws::Client::AWSError<Aws::Client::CoreErrors> & error, long attempted_retries) const override
     {
         if (attempted_retries >= m_maxRetries)
             return false;

@@ -1996,7 +1996,7 @@ struct ISnapshotLoader
     /// Returns false on any error; the caller is responsible for invalidating the cached loader.
     virtual bool init(uint64_t log_idx, const SnapshotFileInfo & info, LoggerPtr log) = 0;
 
-    virtual uint64_t fileSize() const = 0;
+    [[nodiscard]] virtual uint64_t fileSize() const = 0;
 
     /// Copy bytes [offset, offset+length) into `dst`; throws on error.
     virtual void readChunk(uint64_t offset, uint64_t length, char * dst, LoggerPtr log) = 0;
@@ -2191,7 +2191,7 @@ struct LocalSnapshotLoader : private boost::noncopyable, public ISnapshotLoader
         return true;
     }
 
-    uint64_t fileSize() const override { return file_size; }
+    [[nodiscard]] uint64_t fileSize() const override { return file_size; }
 
     void readChunk(uint64_t offset, uint64_t length, char * dst, LoggerPtr /*log_*/) override
     {
@@ -2234,7 +2234,7 @@ struct StreamingSnapshotLoader : public ISnapshotLoader
         }
     }
 
-    uint64_t fileSize() const override { return file_size; }
+    [[nodiscard]] uint64_t fileSize() const override { return file_size; }
 
     void readChunk(uint64_t offset, uint64_t length, char * dst, LoggerPtr /*log_*/) override
     {

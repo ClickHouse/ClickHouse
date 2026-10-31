@@ -45,13 +45,13 @@ public:
     public:
         explicit MessageInfo(const KafkaConsumer2 & kafka_consumer_);
 
-        String currentTopic() const;
-        int32_t currentPartition() const;
-        int64_t currentOffset() const;
-        String currentKey() const;
-        String currentPayload() const;
-        boost::optional<cppkafka::MessageTimestamp> currentTimestamp() const;
-        const cppkafka::Message::HeaderListType & currentHeaderList() const;
+        [[nodiscard]] String currentTopic() const;
+        [[nodiscard]] int32_t currentPartition() const;
+        [[nodiscard]] int64_t currentOffset() const;
+        [[nodiscard]] String currentKey() const;
+        [[nodiscard]] String currentPayload() const;
+        [[nodiscard]] boost::optional<cppkafka::MessageTimestamp> currentTimestamp() const;
+        [[nodiscard]] const cppkafka::Message::HeaderListType & currentHeaderList() const;
 
     private:
         const KafkaConsumer2 & kafka_consumer;

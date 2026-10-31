@@ -44,7 +44,7 @@ public:
             thread.join();
     }
 
-    UInt16 port() const { return listener.address().port(); }
+    [[nodiscard]] UInt16 port() const { return listener.address().port(); }
 
 private:
     Poco::Net::ServerSocket listener;

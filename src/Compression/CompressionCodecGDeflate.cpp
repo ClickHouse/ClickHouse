@@ -66,7 +66,7 @@ public:
 
     static size_t maxCompressedBytes() { return alignUp(maxPageBytes()); }
 
-    size_t compressedBytes() const { return alignUp(compressed_size); }
+    [[nodiscard]] size_t compressedBytes() const { return alignUp(compressed_size); }
 
     /// Compresses `size` bytes of `source` into `out`, of `maxCompressedBytes`.
     void compress(libdeflate_gdeflate_compressor * compressor, const char * source, size_t size, char * out)
@@ -112,7 +112,7 @@ public:
 
     static size_t maxCompressedBytes(size_t num_chunks) { return descriptorOffset(num_chunks); }
 
-    size_t compressedBytes() const { return descriptorOffset(num_chunks); }
+    [[nodiscard]] size_t compressedBytes() const { return descriptorOffset(num_chunks); }
     static size_t descriptorOffset(size_t chunk) { return sizeof(UInt32) + chunk * Chunk::descriptor_bytes; }
 
     void serialize(char * out) const { unalignedStoreLittleEndian<UInt32>(out, static_cast<UInt32>(num_chunks)); }

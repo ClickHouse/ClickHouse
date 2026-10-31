@@ -228,11 +228,11 @@ public:
         }
     }
 
-    bool hasSnapshot(Int64 snap_id) const { return timestamps.contains(snap_id); }
+    [[nodiscard]] bool hasSnapshot(Int64 snap_id) const { return timestamps.contains(snap_id); }
 
-    Int64 getTimestamp(Int64 snap_id) const { return timestamps.at(snap_id); }
+    [[nodiscard]] Int64 getTimestamp(Int64 snap_id) const { return timestamps.at(snap_id); }
 
-    std::optional<Int64> getParent(Int64 snap_id) const
+    [[nodiscard]] std::optional<Int64> getParent(Int64 snap_id) const
     {
         auto it = parent_chain.find(snap_id);
         return it != parent_chain.end() ? std::optional(it->second) : std::nullopt;

@@ -57,9 +57,9 @@ public:
 
     ValueWithType compile(llvm::IRBuilderBase & builder, const ValuesWithType & input_nodes_values_with_type) const;
 
-    std::string dump() const;
+    [[nodiscard]] std::string dump() const;
 
-    UInt128 hash() const;
+    [[nodiscard]] UInt128 hash() const;
 
     void addNode(Node node)
     {
@@ -67,17 +67,17 @@ public:
         nodes.emplace_back(std::move(node));
     }
 
-    size_t getNodesCount() const { return nodes.size(); }
-    size_t getInputNodesCount() const { return input_nodes_count; }
+    [[nodiscard]] size_t getNodesCount() const { return nodes.size(); }
+    [[nodiscard]] size_t getInputNodesCount() const { return input_nodes_count; }
 
     Node & operator[](size_t index) { return nodes[index]; }
     const Node & operator[](size_t index) const { return nodes[index]; }
 
     Node & front() { return nodes.front(); }
-    const Node & front() const { return nodes.front(); }
+    [[nodiscard]] const Node & front() const { return nodes.front(); }
 
     Node & back() { return nodes.back(); }
-    const Node & back() const { return nodes.back(); }
+    [[nodiscard]] const Node & back() const { return nodes.back(); }
 
 private:
     std::vector<Node> nodes;

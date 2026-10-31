@@ -18,7 +18,7 @@ private:
 public:
     explicit RegionsHierarchyDataSource(const std::string & path_) : path(path_), updates_tracker(path_) {}
 
-    bool isModified() const override;
+    [[nodiscard]] bool isModified() const override;
 
     IRegionsHierarchyReaderPtr createReader() override;
 };
@@ -44,10 +44,10 @@ public:
       */
     explicit RegionsHierarchiesDataProvider(const std::string & path_);
 
-    VectorWithMemoryTracking<std::string> listCustomHierarchies() const override;
+    [[nodiscard]] VectorWithMemoryTracking<std::string> listCustomHierarchies() const override;
 
-    IRegionsHierarchyDataSourcePtr getDefaultHierarchySource() const override;
-    IRegionsHierarchyDataSourcePtr getHierarchySource(const std::string & name) const override;
+    [[nodiscard]] IRegionsHierarchyDataSourcePtr getDefaultHierarchySource() const override;
+    [[nodiscard]] IRegionsHierarchyDataSourcePtr getHierarchySource(const std::string & name) const override;
 
 private:
     void discoverFilesWithCustomHierarchies();

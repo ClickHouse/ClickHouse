@@ -126,7 +126,7 @@ private:
     void validateTableStructure(const ASTCreateQuery & create, const TableProperties & properties) const;
     void validateMaterializedViewColumnsAndEngine(const ASTCreateQuery & create, const TableProperties & properties);
     void setEngine(ASTCreateQuery & create) const;
-    AccessRightsElements getRequiredAccess() const;
+    [[nodiscard]] AccessRightsElements getRequiredAccess() const;
 
     /// Create IStorage and add it to database. If table already exists and IF NOT EXISTS specified, do nothing and return false.
     bool doCreateTable(ASTCreateQuery & create, const TableProperties & properties, DDLGuardPtr & ddl_guard, LoadingStrictnessLevel mode);
@@ -144,12 +144,12 @@ private:
 
     /// Whether this CREATE MATERIALIZED VIEW ... POPULATE should be populated atomically: the feature
     /// setting is enabled and the query is an immediate INSERT SELECT into a non-window, non-clone view.
-    bool shouldPopulateMaterializedViewAtomically(const ASTCreateQuery & create) const;
+    [[nodiscard]] bool shouldPopulateMaterializedViewAtomically(const ASTCreateQuery & create) const;
 
     /// The name of the single source table an atomically populated materialized view would be subscribed
     /// to (the table of its FROM clause), or std::nullopt when the view has no such single source. Pure
     /// AST analysis - it does not touch the catalog, so it can be called before the view is created.
-    std::optional<QualifiedTableName> tryGetAtomicPopulateSourceName(const ASTCreateQuery & create) const;
+    [[nodiscard]] std::optional<QualifiedTableName> tryGetAtomicPopulateSourceName(const ASTCreateQuery & create) const;
 
     /// Resolves the single source table that an atomically populated materialized view is subscribed to,
     /// if it can provide a pinned point-in-time snapshot. Returns nullptr when atomic population does not

@@ -39,9 +39,9 @@ public:
     void registerCombinator(const AggregateFunctionCombinatorPtr & value, Documentation documentation = {});
 
     /// Example: if the name is 'avgIf', it will return combinator -If.
-    AggregateFunctionCombinatorPtr tryFindSuffix(const std::string & name) const;
+    [[nodiscard]] AggregateFunctionCombinatorPtr tryFindSuffix(const std::string & name) const;
 
-    const Dict & getAllAggregateFunctionCombinators() const
+    [[nodiscard]] const Dict & getAllAggregateFunctionCombinators() const
     {
         return dict;
     }

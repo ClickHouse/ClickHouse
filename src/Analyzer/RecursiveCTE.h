@@ -40,7 +40,7 @@ public:
       StoragePtr storage_,
       NamesAndTypes columns_);
 
-    StorageID getStorageID() const;
+    [[nodiscard]] StorageID getStorageID() const;
 
     TemporaryTableHolderPtr holder;
     StoragePtr storage;

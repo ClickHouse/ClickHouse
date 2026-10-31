@@ -27,14 +27,14 @@ public:
     }
 
 
-    String getName() const override { return "ShuffleSend"; }
+    [[nodiscard]] String getName() const override { return "ShuffleSend"; }
 
-    bool hasOutputStream() const { return false; }
+    [[nodiscard]] bool hasOutputStream() const { return false; }
 
     QueryPipelineBuilderPtr updatePipeline(QueryPipelineBuilders pipelines, const BuildQueryPipelineSettings & settings) override;
 
     void serialize(Serialization & ctx) const override;
-    bool isSerializable() const override { return true; }
+    [[nodiscard]] bool isSerializable() const override { return true; }
 
     static std::unique_ptr<IQueryPlanStep> deserialize(Deserialization & ctx);
 

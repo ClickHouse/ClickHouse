@@ -29,17 +29,17 @@ public:
 
     void setSchemaToLastFile(const ColumnsDescription & columns) override;
 
-    String getLastFilePath() const override;
+    [[nodiscard]] String getLastFilePath() const override;
 
     void setFormatName(const String & format_name) override;
 
-    bool supportsLastReadBufferRecreation() const override { return true; }
+    [[nodiscard]] bool supportsLastReadBufferRecreation() const override { return true; }
 
     std::unique_ptr<ReadBuffer> recreateLastReadBuffer() override;
 
 private:
-    SchemaCache::Key getKeyForSchemaCache(const ObjectInfo & object_info, const String & format_name) const;
-    SchemaCache::Keys getKeysForSchemaCache() const;
+    [[nodiscard]] SchemaCache::Key getKeyForSchemaCache(const ObjectInfo & object_info, const String & format_name) const;
+    [[nodiscard]] SchemaCache::Keys getKeysForSchemaCache() const;
     std::optional<ColumnsDescription> tryGetColumnsFromCache(
         const ObjectInfos::iterator & begin, const ObjectInfos::iterator & end);
 

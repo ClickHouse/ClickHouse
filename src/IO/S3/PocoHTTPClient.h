@@ -171,7 +171,7 @@ public:
         body_stream = Aws::Utils::Stream::ResponseStream(std::move(stream));
     }
 
-    Aws::IOStream & GetResponseBody() const override
+    [[nodiscard]] Aws::IOStream & GetResponseBody() const override
     {
         return body_stream.GetUnderlyingStream();
     }

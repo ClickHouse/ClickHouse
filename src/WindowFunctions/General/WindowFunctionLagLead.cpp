@@ -62,7 +62,7 @@ public:
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "The default value type '{}' must be the same as the argument type '{}'", argument_types[2]->getName(), argument_types[0]->getName());
     }
 
-    WindowFunctionRequirements getRequirements(const WindowDescription &) const override
+    [[nodiscard]] WindowFunctionRequirements getRequirements(const WindowDescription &) const override
     {
         if (in_frame)
             return WindowFunctionRequirements{.frame = true};
@@ -70,7 +70,7 @@ public:
         return WindowFunctionRequirements{.partition = true};
     }
 
-    std::optional<WindowFrame> getDefaultFrame() const override
+    [[nodiscard]] std::optional<WindowFrame> getDefaultFrame() const override
     {
         if (in_frame)
             return {};

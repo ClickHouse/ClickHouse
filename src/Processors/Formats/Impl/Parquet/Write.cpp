@@ -118,7 +118,7 @@ struct StatisticsFixedStringRef
 
     void clear() { min = max = nullptr; }
 
-    parq::Statistics get(const WriteOptions & options) const
+    [[nodiscard]] parq::Statistics get(const WriteOptions & options) const
     {
         parq::Statistics s;
         if (min == nullptr || fixed_string_size > options.max_statistics_size)
@@ -168,7 +168,7 @@ struct StatisticsFixedStringCopy
 
     void clear() { empty = true; }
 
-    parq::Statistics get(const WriteOptions &) const
+    [[nodiscard]] parq::Statistics get(const WriteOptions &) const
     {
         parq::Statistics s;
         if (empty)
@@ -221,7 +221,7 @@ struct StatisticsStringRef
 
     void clear() { *this = {}; }
 
-    parq::Statistics get(const WriteOptions & options) const
+    [[nodiscard]] parq::Statistics get(const WriteOptions & options) const
     {
         parq::Statistics s;
         if (min.ptr == nullptr)
@@ -282,7 +282,7 @@ struct StatisticsStringCopy
 
     void clear() { *this = {}; }
 
-    parq::Statistics get(const WriteOptions & options) const
+    [[nodiscard]] parq::Statistics get(const WriteOptions & options) const
     {
         parq::Statistics s;
         if (empty)
@@ -346,13 +346,13 @@ struct StatisticsGeometry
 
     void clear() { geo->Reset(); } // NOLINT(readability-make-member-function-const)
 
-    parq::Statistics get(const WriteOptions &) const
+    [[nodiscard]] parq::Statistics get(const WriteOptions &) const
     {
         return {};
     }
 
     /// Returns nullopt if a value could not be parsed as WKB, then no statistics are written.
-    std::optional<parq::GeospatialStatistics> getGeospatial() const
+    [[nodiscard]] std::optional<parq::GeospatialStatistics> getGeospatial() const
     {
         auto encoded = geo->Encode();
         if (!encoded)

@@ -24,7 +24,7 @@ struct PaddedString
         size = s.size();
     }
 
-    const char * data() const { return buf.data(); }
+    [[nodiscard]] const char * data() const { return buf.data(); }
 
     std::array<char, 64> buf{};
     size_t size = 0;

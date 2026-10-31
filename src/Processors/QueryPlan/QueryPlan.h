@@ -106,7 +106,7 @@ struct ExplainPlanOptions
     /// step rather than by node so this header does not have to know about `QueryPlan::Node`.
     const std::unordered_map<const IQueryPlanStep *, UInt64> * step_hashes = nullptr;
 
-    SettingsChanges toSettingsChanges() const;
+    [[nodiscard]] SettingsChanges toSettingsChanges() const;
 };
 struct DistributedQueryPlan;
 struct DistributedPlanCut;

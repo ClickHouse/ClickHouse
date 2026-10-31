@@ -12,8 +12,8 @@ class SecretArgumentsRegistry final : public ISecretArgumentsFinder
 public:
     static const SecretArgumentsRegistry & instance();
 
-    SecretArgumentsResult find(ASTFunction::Kind kind, const AbstractFunction & function) const override;
-    std::optional<String> renderSecretSetting(const String & name, const Field & value) const override;
+    [[nodiscard]] SecretArgumentsResult find(ASTFunction::Kind kind, const AbstractFunction & function) const override;
+    [[nodiscard]] std::optional<String> renderSecretSetting(const String & name, const Field & value) const override;
     bool maskDictionarySourceValue(const String & key, String & value) const override;
 };
 

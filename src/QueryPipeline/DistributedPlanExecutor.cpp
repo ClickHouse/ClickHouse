@@ -134,7 +134,7 @@ public:
     {
     }
 
-    Field getParameter(const String & name) const override
+    [[nodiscard]] Field getParameter(const String & name) const override
     {
         auto it = parameters.parameters.find(name);
         if (it == parameters.parameters.end())
@@ -613,7 +613,7 @@ public:
     }
 
 private:
-    IExchangeLookup & lookupFor(const String & exchange_id) const
+    [[nodiscard]] IExchangeLookup & lookupFor(const String & exchange_id) const
     {
         auto it = exchanges.find(exchange_id);
         if (it == exchanges.end())
@@ -1323,7 +1323,7 @@ protected:
 
     /// Merge tasks end soon after their inputs here, so waiting for them is cheap and reports
     /// their errors.
-    bool waitsForFilterOnlyStages() const override { return true; }
+    [[nodiscard]] bool waitsForFilterOnlyStages() const override { return true; }
 
 private:
     /// Rethrow the exception of any already-finished failed task across all stages, without blocking.

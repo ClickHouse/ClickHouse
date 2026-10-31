@@ -233,8 +233,8 @@ public:
         own_part = request.temp_part.part;
     }
 
-    String partitionId() const override { return own_part->info.getPartitionId(); }
-    std::string_view writeKind() const override { return "INSERT"; }
+    [[nodiscard]] String partitionId() const override { return own_part->info.getPartitionId(); }
+    [[nodiscard]] std::string_view writeKind() const override { return "INSERT"; }
 
     const IMergeTreeDataPart & publish(
         const PartitionWriteGuard &, const MergeTreeTransactionPtr & txn, const StagedWrite &) override
@@ -248,7 +248,7 @@ public:
 
     std::vector<std::string> run();
 
-    bool partDiscarded() const { return part_discarded; }
+    [[nodiscard]] bool partDiscarded() const { return part_discarded; }
 
 protected:
     bool resolveConflicts() override;
@@ -258,10 +258,10 @@ private:
 
     std::vector<ProbeResult> probeActiveParts(const String & partition_id, const Settings & query_settings);
 
-    const Block & incomingBlock() const { return *block; }
+    [[nodiscard]] const Block & incomingBlock() const { return *block; }
 
     /// Compute the kills of this part's own conflicting rows
-    DeleteBitmapPtr computeOwnKills(const std::vector<size_t> & conflict_rows) const;
+    [[nodiscard]] DeleteBitmapPtr computeOwnKills(const std::vector<size_t> & conflict_rows) const;
 
     StorageMergeTree & storage;
     StorageMetadataPtr metadata_snapshot;
@@ -496,10 +496,10 @@ public:
     {
     }
 
-    String partitionId() const override { return request.merged_part->info.getPartitionId(); }
-    std::string_view writeKind() const override { return "MERGE"; }
+    [[nodiscard]] String partitionId() const override { return request.merged_part->info.getPartitionId(); }
+    [[nodiscard]] std::string_view writeKind() const override { return "MERGE"; }
 
-    const DeleteBitmapPtr & lateKills() const { return own_kills; }
+    [[nodiscard]] const DeleteBitmapPtr & lateKills() const { return own_kills; }
 
 protected:
     std::vector<DeleteBitmapStore::CarriedBitmap> selectCarriedBitmaps() override

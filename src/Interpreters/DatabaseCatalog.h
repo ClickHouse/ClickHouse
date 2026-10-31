@@ -68,11 +68,11 @@ struct TemporaryTableHolder : boost::noncopyable, WithContext
 
     ~TemporaryTableHolder();
 
-    StorageID getGlobalTableID() const;
+    [[nodiscard]] StorageID getGlobalTableID() const;
 
-    StoragePtr getTable() const;
+    [[nodiscard]] StoragePtr getTable() const;
 
-    std::shared_ptr<IDatabase> getDatabase() const;
+    [[nodiscard]] std::shared_ptr<IDatabase> getDatabase() const;
 
     operator bool () const { return id != UUIDHelpers::Nil; } /// NOLINT
 

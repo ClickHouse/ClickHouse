@@ -17,21 +17,21 @@ public:
         InterpolateDescriptionPtr interpolate_description_,
         bool use_with_fill_by_sorting_prefix);
 
-    String getName() const override { return "Filling"; }
+    [[nodiscard]] String getName() const override { return "Filling"; }
 
     void transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override;
 
-    bool supportsDataflowStatisticsCollection() const override { return true; }
+    [[nodiscard]] bool supportsDataflowStatisticsCollection() const override { return true; }
 
     void describeActions(JSONBuilder::JSONMap & map) const override;
     void describeActions(FormatSettings & settings) const override;
 
-    const SortDescription & getSortDescription() const override { return sort_description; }
-    const InterpolateDescriptionPtr & getInterpolateDescription() const { return interpolate_description; }
+    [[nodiscard]] const SortDescription & getSortDescription() const override { return sort_description; }
+    [[nodiscard]] const InterpolateDescriptionPtr & getInterpolateDescription() const { return interpolate_description; }
 
     void serialize(Serialization & ctx) const override;
-    bool isSerializable() const override { return true; }
-    QueryPlanStepPtr clone() const override;
+    [[nodiscard]] bool isSerializable() const override { return true; }
+    [[nodiscard]] QueryPlanStepPtr clone() const override;
 
     static QueryPlanStepPtr deserialize(Deserialization & ctx);
 

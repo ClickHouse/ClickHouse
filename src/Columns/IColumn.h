@@ -50,7 +50,7 @@ struct EqualRange
     size_t from;   /// inclusive
     size_t to;     /// exclusive
     EqualRange(size_t from_, size_t to_) : from(from_), to(to_) { chassert(from <= to); }
-    size_t size() const { return to - from; }
+    [[nodiscard]] size_t size() const { return to - from; }
 };
 
 /// The planes a column's rows live in, for a reader that copies rows by number straight from
@@ -1080,7 +1080,7 @@ private:
     IColumnHelper(const IColumnHelper &) = default;
 
     /// Devirtualize insertFrom.
-    VectorWithMemoryTracking<MutableColumnPtr> scatter(size_t num_columns, const IColumn::Selector & selector) const override;
+    [[nodiscard]] VectorWithMemoryTracking<MutableColumnPtr> scatter(size_t num_columns, const IColumn::Selector & selector) const override;
 
     /// Devirtualize insertFrom and insertRangeFrom.
     void gather(ColumnGathererStream & gatherer) override;
@@ -1095,19 +1095,19 @@ private:
         int nan_direction_hint) const override;
 
     /// Devirtualize compareAt.
-    bool hasEqualValues() const override;
+    [[nodiscard]] bool hasEqualValues() const override;
 
     /// Devirtualize compareAt.
     [[nodiscard]] Int64 compareTrackAt(size_t n, size_t m, const IColumn & rhs, int nan_direction_hint) const override;
 
     /// Devirtualize isDefaultAt.
-    double getRatioOfDefaultRows(double sample_ratio) const override;
+    [[nodiscard]] double getRatioOfDefaultRows(double sample_ratio) const override;
 
     /// Devirtualize isDefaultAt.
-    UInt64 getNumberOfDefaultRows() const override;
+    [[nodiscard]] UInt64 getNumberOfDefaultRows() const override;
 
     /// Devirtualize isDefaultAt — early-exit loop.
-    bool hasOnlyTypeDefaults() const override;
+    [[nodiscard]] bool hasOnlyTypeDefaults() const override;
 
     /// Devirtualize isDefaultAt.
     void getIndicesOfNonDefaultRows(IColumn::Offsets & indices, size_t from, size_t limit) const override;
@@ -1116,7 +1116,7 @@ private:
     void collectSerializedValueSizes(PaddedPODArray<UInt64> & sizes, const UInt8 * is_null, const IColumn::SerializationSettings * settings) const override;
 
     /// Devirtualize insertFrom.
-    ColumnPtr updateFrom(const IColumn::Patch & patch) const override;
+    [[nodiscard]] ColumnPtr updateFrom(const IColumn::Patch & patch) const override;
 
     /// Devirtualize updateAt.
     void updateInplaceFrom(const IColumn::Patch & patch) override;

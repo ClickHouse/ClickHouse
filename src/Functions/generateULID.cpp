@@ -32,24 +32,24 @@ public:
         return std::make_shared<FunctionGenerateULID>();
     }
 
-    String getName() const override { return name; }
+    [[nodiscard]] String getName() const override { return name; }
 
-    size_t getNumberOfArguments() const override { return 0; }
+    [[nodiscard]] size_t getNumberOfArguments() const override { return 0; }
 
-    bool isVariadic() const override { return true; }
-    bool isDeterministic() const override { return false; }
-    bool isDeterministicInScopeOfQuery() const override { return false; }
-    bool useDefaultImplementationForNothing() const override { return false; }
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+    [[nodiscard]] bool isVariadic() const override { return true; }
+    [[nodiscard]] bool isDeterministic() const override { return false; }
+    [[nodiscard]] bool isDeterministicInScopeOfQuery() const override { return false; }
+    [[nodiscard]] bool useDefaultImplementationForNothing() const override { return false; }
+    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
-    String getSignatureString() const override
+    [[nodiscard]] String getSignatureString() const override
     {
         return "([Any]) -> FixedString(26)";
     }
 
     /// The function accepted at most one (ignored) argument and reported anything beyond that as
     /// `TOO_MANY_ARGUMENTS_FOR_FUNCTION` before it adopted the declarative signature; tests pin that code.
-    int getWrongNumberOfArgumentsErrorCode(size_t /*number_of_arguments*/) const override
+    [[nodiscard]] int getWrongNumberOfArgumentsErrorCode(size_t /*number_of_arguments*/) const override
     {
         return ErrorCodes::TOO_MANY_ARGUMENTS_FOR_FUNCTION;
     }
@@ -60,9 +60,9 @@ public:
     ///
     /// The argument is ignored, so it does not take part in null propagation either: `generateULID(NULL)`
     /// generates an identifier, the way `generateUUIDv4(NULL)` and `generateSnowflakeID(NULL)` do.
-    bool useDefaultImplementationForNulls() const override { return false; }
+    [[nodiscard]] bool useDefaultImplementationForNulls() const override { return false; }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & /*arguments*/, const DataTypePtr &, size_t input_rows_count) const override
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & /*arguments*/, const DataTypePtr &, size_t input_rows_count) const override
     {
         auto col_res = ColumnFixedString::create(ULID_LENGTH);
         auto & vec_res = col_res->getChars();

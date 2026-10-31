@@ -38,9 +38,9 @@ class CompressionCodecPco : public ICompressionCodec
 public:
     CompressionCodecPco(UInt8 data_bytes_size_, UInt8 pco_type_byte_, UInt8 compression_level_);
 
-    uint8_t getMethodByte() const override;
+    [[nodiscard]] uint8_t getMethodByte() const override;
 
-    ASTPtr getCodecDescription() const override;
+    [[nodiscard]] ASTPtr getCodecDescription() const override;
 
     void updateHash(SipHash & hash) const override;
 
@@ -53,13 +53,13 @@ public:
 protected:
     UInt32 doCompressData(const char * source, UInt32 source_size, char * dest) const override;
     UInt32 doDecompressData(const char * source, UInt32 source_size, char * dest, UInt32 uncompressed_size) const override;
-    UInt32 getMaxCompressedDataSize(UInt32 uncompressed_size) const override;
+    [[nodiscard]] UInt32 getMaxCompressedDataSize(UInt32 uncompressed_size) const override;
 
-    bool isCompression() const override { return true; }
-    bool isGenericCompression() const override { return false; }
+    [[nodiscard]] bool isCompression() const override { return true; }
+    [[nodiscard]] bool isGenericCompression() const override { return false; }
     /// An instance created without a column type (data_bytes_size == 0) can only decompress.
-    bool requiresColumnTypeToCompress() const override { return data_bytes_size == 0; }
-    String getDescription() const override
+    [[nodiscard]] bool requiresColumnTypeToCompress() const override { return data_bytes_size == 0; }
+    [[nodiscard]] String getDescription() const override
     {
         return "Lossless compression of numeric sequences (pcodec); excellent on numeric columns.";
     }

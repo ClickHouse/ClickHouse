@@ -128,7 +128,7 @@ struct AggregateFunctionFlameGraphTree
 
     using Traces = VectorWithMemoryTracking<Trace>;
 
-    Traces dump(size_t max_depth, size_t min_bytes) const
+    [[nodiscard]] Traces dump(size_t max_depth, size_t min_bytes) const
     {
         Traces traces;
         Trace::Frames frames;

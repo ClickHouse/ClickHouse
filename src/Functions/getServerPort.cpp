@@ -22,11 +22,11 @@ class ExecutableFunctionGetServerPort final : public IExecutableFunction
 public:
     explicit ExecutableFunctionGetServerPort(UInt16 port_) : port(port_) {}
 
-    String getName() const override { return "getServerPort"; }
+    [[nodiscard]] String getName() const override { return "getServerPort"; }
 
-    bool useDefaultImplementationForNulls() const override { return false; }
+    [[nodiscard]] bool useDefaultImplementationForNulls() const override { return false; }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName &, const DataTypePtr &, size_t input_rows_count) const override
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName &, const DataTypePtr &, size_t input_rows_count) const override
     {
         return DataTypeNumber<UInt16>().createColumnConst(input_rows_count, port);
     }

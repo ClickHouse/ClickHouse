@@ -29,195 +29,195 @@ namespace FunctionSignatures
 class TypeMatcherUnsignedInteger : public ITypeMatcher
 {
 public:
-    std::string toString() const override { return "UnsignedInteger"; }
+    [[nodiscard]] std::string toString() const override { return "UnsignedInteger"; }
     bool match(const DataTypePtr & type, Variables &, size_t, size_t, std::string &) const override { return WhichDataType(type).isUInt(); }
-    size_t getIndex() const override { return 0; }
+    [[nodiscard]] size_t getIndex() const override { return 0; }
 };
 
 class TypeMatcherInteger : public ITypeMatcher
 {
 public:
-    std::string toString() const override { return "Integer"; }
+    [[nodiscard]] std::string toString() const override { return "Integer"; }
     bool match(const DataTypePtr & type, Variables &, size_t, size_t, std::string &) const override { return isInteger(type); }
-    size_t getIndex() const override { return 0; }
+    [[nodiscard]] size_t getIndex() const override { return 0; }
 };
 
 class TypeMatcherNumber : public ITypeMatcher
 {
 public:
-    std::string toString() const override { return "Number"; }
+    [[nodiscard]] std::string toString() const override { return "Number"; }
     bool match(const DataTypePtr & type, Variables &, size_t, size_t, std::string &) const override { return isNumber(type); }
-    size_t getIndex() const override { return 0; }
+    [[nodiscard]] size_t getIndex() const override { return 0; }
 };
 
 class TypeMatcherNativeUInt : public ITypeMatcher
 {
 public:
-    std::string toString() const override { return "NativeUInt"; }
+    [[nodiscard]] std::string toString() const override { return "NativeUInt"; }
     bool match(const DataTypePtr & type, Variables &, size_t, size_t, std::string &) const override { return WhichDataType(type).isNativeUInt(); }
-    size_t getIndex() const override { return 0; }
+    [[nodiscard]] size_t getIndex() const override { return 0; }
 };
 
 class TypeMatcherUInt : public ITypeMatcher
 {
 public:
-    std::string toString() const override { return "UInt"; }
+    [[nodiscard]] std::string toString() const override { return "UInt"; }
     bool match(const DataTypePtr & type, Variables &, size_t, size_t, std::string &) const override { return WhichDataType(type).isUInt(); }
-    size_t getIndex() const override { return 0; }
+    [[nodiscard]] size_t getIndex() const override { return 0; }
 };
 
 class TypeMatcherInt : public ITypeMatcher
 {
 public:
-    std::string toString() const override { return "Int"; }
+    [[nodiscard]] std::string toString() const override { return "Int"; }
     bool match(const DataTypePtr & type, Variables &, size_t, size_t, std::string &) const override { return WhichDataType(type).isInt(); }
-    size_t getIndex() const override { return 0; }
+    [[nodiscard]] size_t getIndex() const override { return 0; }
 };
 
 class TypeMatcherNativeInteger : public ITypeMatcher
 {
 public:
-    std::string toString() const override { return "NativeInteger"; }
+    [[nodiscard]] std::string toString() const override { return "NativeInteger"; }
     bool match(const DataTypePtr & type, Variables &, size_t, size_t, std::string &) const override { return WhichDataType(type).isNativeInteger(); }
-    size_t getIndex() const override { return 0; }
+    [[nodiscard]] size_t getIndex() const override { return 0; }
 };
 
 class TypeMatcherNativeInt : public ITypeMatcher
 {
 public:
-    std::string toString() const override { return "NativeInt"; }
+    [[nodiscard]] std::string toString() const override { return "NativeInt"; }
     bool match(const DataTypePtr & type, Variables &, size_t, size_t, std::string &) const override { return WhichDataType(type).isNativeInt(); }
-    size_t getIndex() const override { return 0; }
+    [[nodiscard]] size_t getIndex() const override { return 0; }
 };
 
 class TypeMatcherStringOrFixedString : public ITypeMatcher
 {
 public:
-    std::string toString() const override { return "StringOrFixedString"; }
+    [[nodiscard]] std::string toString() const override { return "StringOrFixedString"; }
     bool match(const DataTypePtr & type, Variables &, size_t, size_t, std::string &) const override { return isStringOrFixedString(type); }
-    size_t getIndex() const override { return 0; }
+    [[nodiscard]] size_t getIndex() const override { return 0; }
 };
 
 class TypeMatcherEnum : public ITypeMatcher
 {
 public:
-    std::string toString() const override { return "Enum"; }
+    [[nodiscard]] std::string toString() const override { return "Enum"; }
     bool match(const DataTypePtr & type, Variables &, size_t, size_t, std::string &) const override { return isEnum(type); }
-    size_t getIndex() const override { return 0; }
+    [[nodiscard]] size_t getIndex() const override { return 0; }
 };
 
 class TypeMatcherEnum8 : public ITypeMatcher
 {
 public:
-    std::string toString() const override { return "Enum8"; }
+    [[nodiscard]] std::string toString() const override { return "Enum8"; }
     bool match(const DataTypePtr & type, Variables &, size_t, size_t, std::string &) const override { return WhichDataType(type).isEnum8(); }
-    size_t getIndex() const override { return 0; }
+    [[nodiscard]] size_t getIndex() const override { return 0; }
 };
 
 class TypeMatcherEnum16 : public ITypeMatcher
 {
 public:
-    std::string toString() const override { return "Enum16"; }
+    [[nodiscard]] std::string toString() const override { return "Enum16"; }
     bool match(const DataTypePtr & type, Variables &, size_t, size_t, std::string &) const override { return WhichDataType(type).isEnum16(); }
-    size_t getIndex() const override { return 0; }
+    [[nodiscard]] size_t getIndex() const override { return 0; }
 };
 
 class TypeMatcherNULL : public ITypeMatcher
 {
 public:
-    std::string toString() const override { return "NULL"; }
+    [[nodiscard]] std::string toString() const override { return "NULL"; }
     bool match(const DataTypePtr & type, Variables &, size_t, size_t, std::string &) const override { return type->onlyNull(); }
-    size_t getIndex() const override { return 0; }
+    [[nodiscard]] size_t getIndex() const override { return 0; }
 };
 
 class TypeMatcherRepresentedByNumber : public ITypeMatcher
 {
 public:
-    std::string toString() const override { return "RepresentedByNumber"; }
+    [[nodiscard]] std::string toString() const override { return "RepresentedByNumber"; }
     bool match(const DataTypePtr & type, Variables &, size_t, size_t, std::string &) const override { return type->isValueRepresentedByNumber(); }
-    size_t getIndex() const override { return 0; }
+    [[nodiscard]] size_t getIndex() const override { return 0; }
 };
 
 class TypeMatcherSet : public ITypeMatcher
 {
 public:
-    std::string toString() const override { return "Set"; }
+    [[nodiscard]] std::string toString() const override { return "Set"; }
     bool match(const DataTypePtr & type, Variables &, size_t, size_t, std::string &) const override { return typeid_cast<const DataTypeSet *>(type.get()) != nullptr; }
-    size_t getIndex() const override { return 0; }
+    [[nodiscard]] size_t getIndex() const override { return 0; }
 };
 
 class TypeMatcherUnambiguouslyRepresentedInContiguousMemoryRegion : public ITypeMatcher
 {
 public:
-    std::string toString() const override { return "UnambiguouslyRepresentedInContiguousMemoryRegion"; }
+    [[nodiscard]] std::string toString() const override { return "UnambiguouslyRepresentedInContiguousMemoryRegion"; }
     bool match(const DataTypePtr & type, Variables &, size_t, size_t, std::string &) const override
     {
         return type->isValueUnambiguouslyRepresentedInContiguousMemoryRegion();
     }
-    size_t getIndex() const override { return 0; }
+    [[nodiscard]] size_t getIndex() const override { return 0; }
 };
 
 class TypeMatcherUnambiguouslyRepresentedInFixedSizeContiguousMemoryRegion : public ITypeMatcher
 {
 public:
-    std::string toString() const override { return "UnambiguouslyRepresentedInFixedSizeContiguousMemoryRegion"; }
+    [[nodiscard]] std::string toString() const override { return "UnambiguouslyRepresentedInFixedSizeContiguousMemoryRegion"; }
     bool match(const DataTypePtr & type, Variables &, size_t, size_t, std::string &) const override
     {
         return type->isValueUnambiguouslyRepresentedInFixedSizeContiguousMemoryRegion();
     }
-    size_t getIndex() const override { return 0; }
+    [[nodiscard]] size_t getIndex() const override { return 0; }
 };
 
 class TypeMatcherDateOrDateTime : public ITypeMatcher
 {
 public:
-    std::string toString() const override { return "DateOrDateTime"; }
+    [[nodiscard]] std::string toString() const override { return "DateOrDateTime"; }
     bool match(const DataTypePtr & type, Variables &, size_t, size_t, std::string &) const override
     {
         WhichDataType which(type);
         return which.isDateOrDate32() || which.isDateTime() || which.isDateTime64();
     }
-    size_t getIndex() const override { return 0; }
+    [[nodiscard]] size_t getIndex() const override { return 0; }
 };
 
 class TypeMatcherAny : public ITypeMatcher
 {
 public:
-    std::string toString() const override { return "Any"; }
+    [[nodiscard]] std::string toString() const override { return "Any"; }
     bool match(const DataTypePtr &, Variables &, size_t, size_t, std::string &) const override { return true; }
-    size_t getIndex() const override { return 0; }
+    [[nodiscard]] size_t getIndex() const override { return 0; }
 };
 
 class TypeMatcherNativeFloat : public ITypeMatcher
 {
 public:
-    std::string toString() const override { return "NativeFloat"; }
+    [[nodiscard]] std::string toString() const override { return "NativeFloat"; }
     bool match(const DataTypePtr & type, Variables &, size_t, size_t, std::string &) const override { return WhichDataType(type).isNativeFloat(); }
-    size_t getIndex() const override { return 0; }
+    [[nodiscard]] size_t getIndex() const override { return 0; }
 };
 
 class TypeMatcherFloat : public ITypeMatcher
 {
 public:
-    std::string toString() const override { return "Float"; }
+    [[nodiscard]] std::string toString() const override { return "Float"; }
     bool match(const DataTypePtr & type, Variables &, size_t, size_t, std::string &) const override { return WhichDataType(type).isFloat(); }
-    size_t getIndex() const override { return 0; }
+    [[nodiscard]] size_t getIndex() const override { return 0; }
 };
 
 class TypeMatcherNativeNumber : public ITypeMatcher
 {
 public:
-    std::string toString() const override { return "NativeNumber"; }
+    [[nodiscard]] std::string toString() const override { return "NativeNumber"; }
     bool match(const DataTypePtr & type, Variables &, size_t, size_t, std::string &) const override { return isNativeNumber(type); }
-    size_t getIndex() const override { return 0; }
+    [[nodiscard]] size_t getIndex() const override { return 0; }
 };
 
 class TypeMatcherDecimal : public ITypeMatcher
 {
 public:
-    std::string toString() const override { return "Decimal"; }
+    [[nodiscard]] std::string toString() const override { return "Decimal"; }
     bool match(const DataTypePtr & type, Variables &, size_t, size_t, std::string &) const override { return isDecimal(type); }
-    size_t getIndex() const override { return 0; }
+    [[nodiscard]] size_t getIndex() const override { return 0; }
 };
 
 /// Matches any type whose value is internally stored as a number — used by hashing functions
@@ -225,73 +225,73 @@ public:
 class TypeMatcherValueRepresentedByNumber : public ITypeMatcher
 {
 public:
-    std::string toString() const override { return "NumberRepresentable"; }
+    [[nodiscard]] std::string toString() const override { return "NumberRepresentable"; }
     bool match(const DataTypePtr & type, Variables &, size_t, size_t, std::string &) const override { return type->isValueRepresentedByNumber(); }
-    size_t getIndex() const override { return 0; }
+    [[nodiscard]] size_t getIndex() const override { return 0; }
 };
 
 class TypeMatcherDecimal32 : public ITypeMatcher
 {
 public:
-    std::string toString() const override { return "Decimal32"; }
+    [[nodiscard]] std::string toString() const override { return "Decimal32"; }
     bool match(const DataTypePtr & type, Variables &, size_t, size_t, std::string &) const override { return WhichDataType(type).isDecimal32(); }
-    size_t getIndex() const override { return 0; }
+    [[nodiscard]] size_t getIndex() const override { return 0; }
 };
 
 class TypeMatcherDecimal64 : public ITypeMatcher
 {
 public:
-    std::string toString() const override { return "Decimal64"; }
+    [[nodiscard]] std::string toString() const override { return "Decimal64"; }
     bool match(const DataTypePtr & type, Variables &, size_t, size_t, std::string &) const override { return WhichDataType(type).isDecimal64(); }
-    size_t getIndex() const override { return 0; }
+    [[nodiscard]] size_t getIndex() const override { return 0; }
 };
 
 class TypeMatcherDecimal128 : public ITypeMatcher
 {
 public:
-    std::string toString() const override { return "Decimal128"; }
+    [[nodiscard]] std::string toString() const override { return "Decimal128"; }
     bool match(const DataTypePtr & type, Variables &, size_t, size_t, std::string &) const override { return WhichDataType(type).isDecimal128(); }
-    size_t getIndex() const override { return 0; }
+    [[nodiscard]] size_t getIndex() const override { return 0; }
 };
 
 class TypeMatcherDecimal256 : public ITypeMatcher
 {
 public:
-    std::string toString() const override { return "Decimal256"; }
+    [[nodiscard]] std::string toString() const override { return "Decimal256"; }
     bool match(const DataTypePtr & type, Variables &, size_t, size_t, std::string &) const override { return WhichDataType(type).isDecimal256(); }
-    size_t getIndex() const override { return 0; }
+    [[nodiscard]] size_t getIndex() const override { return 0; }
 };
 
 class TypeMatcherUUID : public ITypeMatcher
 {
 public:
-    std::string toString() const override { return "UUID"; }
+    [[nodiscard]] std::string toString() const override { return "UUID"; }
     bool match(const DataTypePtr & type, Variables &, size_t, size_t, std::string &) const override { return WhichDataType(type).isUUID(); }
-    size_t getIndex() const override { return 0; }
+    [[nodiscard]] size_t getIndex() const override { return 0; }
 };
 
 class TypeMatcherIPv4 : public ITypeMatcher
 {
 public:
-    std::string toString() const override { return "IPv4"; }
+    [[nodiscard]] std::string toString() const override { return "IPv4"; }
     bool match(const DataTypePtr & type, Variables &, size_t, size_t, std::string &) const override { return WhichDataType(type).isIPv4(); }
-    size_t getIndex() const override { return 0; }
+    [[nodiscard]] size_t getIndex() const override { return 0; }
 };
 
 class TypeMatcherIPv6 : public ITypeMatcher
 {
 public:
-    std::string toString() const override { return "IPv6"; }
+    [[nodiscard]] std::string toString() const override { return "IPv6"; }
     bool match(const DataTypePtr & type, Variables &, size_t, size_t, std::string &) const override { return WhichDataType(type).isIPv6(); }
-    size_t getIndex() const override { return 0; }
+    [[nodiscard]] size_t getIndex() const override { return 0; }
 };
 
 class TypeMatcherMap : public ITypeMatcher
 {
 public:
-    std::string toString() const override { return "Map"; }
+    [[nodiscard]] std::string toString() const override { return "Map"; }
     bool match(const DataTypePtr & type, Variables &, size_t, size_t, std::string &) const override { return isMap(type); }
-    size_t getIndex() const override { return 0; }
+    [[nodiscard]] size_t getIndex() const override { return 0; }
 };
 
 class TypeMatcherMapOf : public ITypeMatcher
@@ -308,7 +308,7 @@ public:
         value_matcher = child_matchers[1];
     }
 
-    std::string toString() const override { return "Map(" + key_matcher->toString() + ", " + value_matcher->toString() + ")"; }
+    [[nodiscard]] std::string toString() const override { return "Map(" + key_matcher->toString() + ", " + value_matcher->toString() + ")"; }
 
     bool match(const DataTypePtr & type, Variables & variables, size_t iteration, size_t arg_num, std::string & out_reason) const override
     {
@@ -331,83 +331,83 @@ public:
         return true;
     }
 
-    size_t getIndex() const override { return getCommonIndex(key_matcher->getIndex(), value_matcher->getIndex()); }
+    [[nodiscard]] size_t getIndex() const override { return getCommonIndex(key_matcher->getIndex(), value_matcher->getIndex()); }
 
-    bool capturesVariables() const override { return anyCapturesVariables({key_matcher, value_matcher}); }
+    [[nodiscard]] bool capturesVariables() const override { return anyCapturesVariables({key_matcher, value_matcher}); }
 };
 
 class TypeMatcherString : public ITypeMatcher
 {
 public:
-    std::string toString() const override { return "String"; }
+    [[nodiscard]] std::string toString() const override { return "String"; }
     bool match(const DataTypePtr & type, Variables &, size_t, size_t, std::string &) const override { return isString(type); }
-    size_t getIndex() const override { return 0; }
+    [[nodiscard]] size_t getIndex() const override { return 0; }
 };
 
 class TypeMatcherFixedString : public ITypeMatcher
 {
 public:
-    std::string toString() const override { return "FixedString"; }
+    [[nodiscard]] std::string toString() const override { return "FixedString"; }
     bool match(const DataTypePtr & type, Variables &, size_t, size_t, std::string &) const override { return isFixedString(type); }
-    size_t getIndex() const override { return 0; }
+    [[nodiscard]] size_t getIndex() const override { return 0; }
 };
 
 /// Matches any DateTime regardless of timezone metadata.
 class TypeMatcherDateTime : public ITypeMatcher
 {
 public:
-    std::string toString() const override { return "DateTime"; }
+    [[nodiscard]] std::string toString() const override { return "DateTime"; }
     bool match(const DataTypePtr & type, Variables &, size_t, size_t, std::string &) const override { return WhichDataType(type).isDateTime(); }
-    size_t getIndex() const override { return 0; }
+    [[nodiscard]] size_t getIndex() const override { return 0; }
 };
 
 /// Matches any DateTime64 regardless of scale/timezone.
 class TypeMatcherDateTime64 : public ITypeMatcher
 {
 public:
-    std::string toString() const override { return "DateTime64"; }
+    [[nodiscard]] std::string toString() const override { return "DateTime64"; }
     bool match(const DataTypePtr & type, Variables &, size_t, size_t, std::string &) const override { return WhichDataType(type).isDateTime64(); }
-    size_t getIndex() const override { return 0; }
+    [[nodiscard]] size_t getIndex() const override { return 0; }
 };
 
 class TypeMatcherTime : public ITypeMatcher
 {
 public:
-    std::string toString() const override { return "Time"; }
+    [[nodiscard]] std::string toString() const override { return "Time"; }
     bool match(const DataTypePtr & type, Variables &, size_t, size_t, std::string &) const override { return WhichDataType(type).isTime(); }
-    size_t getIndex() const override { return 0; }
+    [[nodiscard]] size_t getIndex() const override { return 0; }
 };
 
 class TypeMatcherTime64 : public ITypeMatcher
 {
 public:
-    std::string toString() const override { return "Time64"; }
+    [[nodiscard]] std::string toString() const override { return "Time64"; }
     bool match(const DataTypePtr & type, Variables &, size_t, size_t, std::string &) const override { return WhichDataType(type).isTime64(); }
-    size_t getIndex() const override { return 0; }
+    [[nodiscard]] size_t getIndex() const override { return 0; }
 };
 
 class TypeMatcherDate32 : public ITypeMatcher
 {
 public:
-    std::string toString() const override { return "Date32"; }
+    [[nodiscard]] std::string toString() const override { return "Date32"; }
     bool match(const DataTypePtr & type, Variables &, size_t, size_t, std::string &) const override { return WhichDataType(type).isDate32(); }
-    size_t getIndex() const override { return 0; }
+    [[nodiscard]] size_t getIndex() const override { return 0; }
 };
 
 class TypeMatcherDate : public ITypeMatcher
 {
 public:
-    std::string toString() const override { return "Date"; }
+    [[nodiscard]] std::string toString() const override { return "Date"; }
     bool match(const DataTypePtr & type, Variables &, size_t, size_t, std::string &) const override { return WhichDataType(type).isDate(); }
-    size_t getIndex() const override { return 0; }
+    [[nodiscard]] size_t getIndex() const override { return 0; }
 };
 
 class TypeMatcherLowCardinality : public ITypeMatcher
 {
 public:
-    std::string toString() const override { return "LowCardinality"; }
+    [[nodiscard]] std::string toString() const override { return "LowCardinality"; }
     bool match(const DataTypePtr & type, Variables &, size_t, size_t, std::string &) const override { return type->lowCardinality(); }
-    size_t getIndex() const override { return 0; }
+    [[nodiscard]] size_t getIndex() const override { return 0; }
 };
 
 class TypeMatcherLowCardinalityOf : public ITypeMatcher
@@ -422,7 +422,7 @@ public:
         child_matcher = child_matchers[0];
     }
 
-    std::string toString() const override { return "LowCardinality(" + child_matcher->toString() + ")"; }
+    [[nodiscard]] std::string toString() const override { return "LowCardinality(" + child_matcher->toString() + ")"; }
 
     bool match(const DataTypePtr & type, Variables & variables, size_t iteration, size_t arg_num, std::string & out_reason) const override
     {
@@ -434,17 +434,17 @@ public:
         return child_matcher->match(removeLowCardinality(type), variables, iteration, arg_num, out_reason);
     }
 
-    size_t getIndex() const override { return child_matcher->getIndex(); }
+    [[nodiscard]] size_t getIndex() const override { return child_matcher->getIndex(); }
 
-    bool capturesVariables() const override { return child_matcher->capturesVariables(); }
+    [[nodiscard]] bool capturesVariables() const override { return child_matcher->capturesVariables(); }
 };
 
 class TypeMatcherJSON : public ITypeMatcher
 {
 public:
-    std::string toString() const override { return "JSON"; }
+    [[nodiscard]] std::string toString() const override { return "JSON"; }
     bool match(const DataTypePtr & type, Variables &, size_t, size_t, std::string &) const override { return type->getTypeId() == TypeIndex::Object; }
-    size_t getIndex() const override { return 0; }
+    [[nodiscard]] size_t getIndex() const override { return 0; }
 };
 
 /// Holds a parenthesized list of child matchers. Used as a placeholder carried to a parent
@@ -456,9 +456,9 @@ private:
     TypeMatchers children;
 public:
     explicit TypeMatcherList(TypeMatchers children_) : children(std::move(children_)) {}
-    const TypeMatchers & getChildren() const { return children; }
+    [[nodiscard]] const TypeMatchers & getChildren() const { return children; }
 
-    std::string toString() const override
+    [[nodiscard]] std::string toString() const override
     {
         WriteBufferFromOwnString out;
         out << "(";
@@ -473,7 +473,7 @@ public:
         return false;
     }
 
-    size_t getIndex() const override
+    [[nodiscard]] size_t getIndex() const override
     {
         size_t res = 0;
         for (const auto & c : children)
@@ -481,7 +481,7 @@ public:
         return res;
     }
 
-    bool capturesVariables() const override { return anyCapturesVariables(children); }
+    [[nodiscard]] bool capturesVariables() const override { return anyCapturesVariables(children); }
 };
 
 
@@ -490,7 +490,7 @@ public:
 class TypeMatcherFunction : public ITypeMatcher
 {
 public:
-    std::string toString() const override { return "Function"; }
+    [[nodiscard]] std::string toString() const override { return "Function"; }
     bool match(const DataTypePtr & type, Variables &, size_t, size_t, std::string & out_reason) const override
     {
         if (typeid_cast<const DataTypeFunction *>(type.get()))
@@ -498,7 +498,7 @@ public:
         out_reason = "expected lambda Function, got " + type->getName();
         return false;
     }
-    size_t getIndex() const override { return 0; }
+    [[nodiscard]] size_t getIndex() const override { return 0; }
 };
 
 
@@ -510,13 +510,13 @@ public:
 class TypeMatcherEllipsisMarker : public ITypeMatcher
 {
 public:
-    std::string toString() const override { return "..."; }
+    [[nodiscard]] std::string toString() const override { return "..."; }
     bool match(const DataTypePtr &, Variables &, size_t, size_t, std::string & out_reason) const override
     {
         out_reason = "ellipsis marker cannot be used as a top-level matcher";
         return false;
     }
-    size_t getIndex() const override { return 0; }
+    [[nodiscard]] size_t getIndex() const override { return 0; }
 };
 
 
@@ -559,7 +559,7 @@ public:
         return_matcher = children[1];
     }
 
-    std::string toString() const override
+    [[nodiscard]] std::string toString() const override
     {
         WriteBufferFromOwnString out;
         out << "Function((";
@@ -641,7 +641,7 @@ public:
         return true;
     }
 
-    size_t getIndex() const override
+    [[nodiscard]] size_t getIndex() const override
     {
         size_t res = return_matcher->getIndex();
         for (const auto & m : arg_matchers)
@@ -649,7 +649,7 @@ public:
         return res;
     }
 
-    bool capturesVariables() const override
+    [[nodiscard]] bool capturesVariables() const override
     {
         return return_matcher->capturesVariables() || anyCapturesVariables(arg_matchers);
     }
@@ -664,14 +664,14 @@ private:
     std::string literal;
 public:
     explicit TypeMatcherStringLiteral(std::string literal_) : literal(std::move(literal_)) {}
-    const std::string & getLiteral() const { return literal; }
-    std::string toString() const override { return "'" + literal + "'"; }
+    [[nodiscard]] const std::string & getLiteral() const { return literal; }
+    [[nodiscard]] std::string toString() const override { return "'" + literal + "'"; }
     bool match(const DataTypePtr &, Variables &, size_t, size_t, std::string & out_reason) const override
     {
         out_reason = "string literal '" + literal + "' cannot be used as a top-level type matcher";
         return false;
     }
-    size_t getIndex() const override { return 0; }
+    [[nodiscard]] size_t getIndex() const override { return 0; }
 };
 
 /// Matches any DataTypeAggregateFunction regardless of aggregator name or arguments —
@@ -679,7 +679,7 @@ public:
 class TypeMatcherAggregateFunction : public ITypeMatcher
 {
 public:
-    std::string toString() const override { return "AggregateFunction"; }
+    [[nodiscard]] std::string toString() const override { return "AggregateFunction"; }
     bool match(const DataTypePtr & type, Variables &, size_t, size_t, std::string & out_reason) const override
     {
         if (typeid_cast<const DataTypeAggregateFunction *>(type.get()))
@@ -687,7 +687,7 @@ public:
         out_reason = "expected AggregateFunction, got " + type->getName();
         return false;
     }
-    size_t getIndex() const override { return 0; }
+    [[nodiscard]] size_t getIndex() const override { return 0; }
 };
 
 
@@ -712,7 +712,7 @@ public:
         element_matchers.assign(children.begin() + 1, children.end());
     }
 
-    std::string toString() const override
+    [[nodiscard]] std::string toString() const override
     {
         std::string s = "AggregateFunction('" + agg_name + "'";
         for (const auto & m : element_matchers)
@@ -752,7 +752,7 @@ public:
         return true;
     }
 
-    size_t getIndex() const override
+    [[nodiscard]] size_t getIndex() const override
     {
         size_t res = 0;
         for (const auto & m : element_matchers)
@@ -760,16 +760,16 @@ public:
         return res;
     }
 
-    bool capturesVariables() const override { return anyCapturesVariables(element_matchers); }
+    [[nodiscard]] bool capturesVariables() const override { return anyCapturesVariables(element_matchers); }
 };
 
 /// Matches `Nullable(Nothing)` — i.e. the type of a literal `NULL` or an `onlyNull` column.
 class TypeMatcherNothing : public ITypeMatcher
 {
 public:
-    std::string toString() const override { return "Nothing"; }
+    [[nodiscard]] std::string toString() const override { return "Nothing"; }
     bool match(const DataTypePtr & type, Variables &, size_t, size_t, std::string &) const override { return type->onlyNull(); }
-    size_t getIndex() const override { return 0; }
+    [[nodiscard]] size_t getIndex() const override { return 0; }
 };
 
 /// Matches the bare `Nothing` data type (e.g. the element type of `Array(Nothing)`
@@ -777,27 +777,27 @@ public:
 class TypeMatcherIsNothing : public ITypeMatcher
 {
 public:
-    std::string toString() const override { return "IsNothing"; }
+    [[nodiscard]] std::string toString() const override { return "IsNothing"; }
     bool match(const DataTypePtr & type, Variables &, size_t, size_t, std::string &) const override { return isNothing(type); }
-    size_t getIndex() const override { return 0; }
+    [[nodiscard]] size_t getIndex() const override { return 0; }
 };
 
 /// Matches the `Bool` data type (a UInt8 with the custom-name `Bool`).
 class TypeMatcherBool : public ITypeMatcher
 {
 public:
-    std::string toString() const override { return "Bool"; }
+    [[nodiscard]] std::string toString() const override { return "Bool"; }
     bool match(const DataTypePtr & type, Variables &, size_t, size_t, std::string &) const override { return isBool(type); }
-    size_t getIndex() const override { return 0; }
+    [[nodiscard]] size_t getIndex() const override { return 0; }
 };
 
 /// Matches the `QBit(...)` data type.
 class TypeMatcherQBit : public ITypeMatcher
 {
 public:
-    std::string toString() const override { return "QBit"; }
+    [[nodiscard]] std::string toString() const override { return "QBit"; }
     bool match(const DataTypePtr & type, Variables &, size_t, size_t, std::string &) const override { return isQBit(type); }
-    size_t getIndex() const override { return 0; }
+    [[nodiscard]] size_t getIndex() const override { return 0; }
 };
 
 /// Matches a Tuple with at least one element. The bare `Tuple` matcher accepts
@@ -806,7 +806,7 @@ public:
 class TypeMatcherNonEmptyTuple : public ITypeMatcher
 {
 public:
-    std::string toString() const override { return "NonEmptyTuple"; }
+    [[nodiscard]] std::string toString() const override { return "NonEmptyTuple"; }
     bool match(const DataTypePtr & type, Variables &, size_t, size_t, std::string & out_reason) const override
     {
         const auto * tuple_type = typeid_cast<const DataTypeTuple *>(type.get());
@@ -822,24 +822,24 @@ public:
         }
         return true;
     }
-    size_t getIndex() const override { return 0; }
+    [[nodiscard]] size_t getIndex() const override { return 0; }
 };
 
 /// Matches the `Interval` data type (any `IntervalKind`).
 class TypeMatcherInterval : public ITypeMatcher
 {
 public:
-    std::string toString() const override { return "Interval"; }
+    [[nodiscard]] std::string toString() const override { return "Interval"; }
     bool match(const DataTypePtr & type, Variables &, size_t, size_t, std::string &) const override { return isInterval(type); }
-    size_t getIndex() const override { return 0; }
+    [[nodiscard]] size_t getIndex() const override { return 0; }
 };
 
 class TypeMatcherDynamic : public ITypeMatcher
 {
 public:
-    std::string toString() const override { return "Dynamic"; }
+    [[nodiscard]] std::string toString() const override { return "Dynamic"; }
     bool match(const DataTypePtr & type, Variables &, size_t, size_t, std::string &) const override { return isDynamic(type); }
-    size_t getIndex() const override { return 0; }
+    [[nodiscard]] size_t getIndex() const override { return 0; }
 };
 
 
@@ -857,7 +857,7 @@ public:
             child_matcher = child_matchers[0];
     }
 
-    std::string toString() const override { return child_matcher ? "Array(" + child_matcher->toString() + ")" : "Array"; }
+    [[nodiscard]] std::string toString() const override { return child_matcher ? "Array(" + child_matcher->toString() + ")" : "Array"; }
 
     bool match(const DataTypePtr & type, Variables & variables, size_t iteration, size_t arg_num, std::string & out_reason) const override
     {
@@ -878,12 +878,12 @@ public:
         return true;
     }
 
-    size_t getIndex() const override
+    [[nodiscard]] size_t getIndex() const override
     {
         return child_matcher ? child_matcher->getIndex() : 0;
     }
 
-    bool capturesVariables() const override { return child_matcher && child_matcher->capturesVariables(); }
+    [[nodiscard]] bool capturesVariables() const override { return child_matcher && child_matcher->capturesVariables(); }
 };
 
 /// `TupleOfSize(N)` — matches a `Tuple` with exactly `N` elements, regardless of their
@@ -908,7 +908,7 @@ public:
         expected_size = std::stoull(literal);
     }
 
-    std::string toString() const override
+    [[nodiscard]] std::string toString() const override
     {
         return "TupleOfSize(" + DB::toString(expected_size) + ")";
     }
@@ -931,7 +931,7 @@ public:
         return true;
     }
 
-    size_t getIndex() const override { return 0; }
+    [[nodiscard]] size_t getIndex() const override { return 0; }
 };
 
 
@@ -942,7 +942,7 @@ private:
 public:
     explicit TypeMatcherTuple(const TypeMatchers & child_matchers_) : child_matchers(child_matchers_) {}
 
-    std::string toString() const override
+    [[nodiscard]] std::string toString() const override
     {
         WriteBufferFromOwnString out;
         out << "Tuple(";
@@ -983,7 +983,7 @@ public:
         return true;
     }
 
-    size_t getIndex() const override
+    [[nodiscard]] size_t getIndex() const override
     {
         size_t res = 0;
         for (const auto & child : child_matchers)
@@ -991,7 +991,7 @@ public:
         return res;
     }
 
-    bool capturesVariables() const override { return anyCapturesVariables(child_matchers); }
+    [[nodiscard]] bool capturesVariables() const override { return anyCapturesVariables(child_matchers); }
 };
 
 /// `Not(X)` matches everything that `X` does not match. Useful for functions that accept
@@ -1010,7 +1010,7 @@ public:
         child_matcher = child_matchers[0];
     }
 
-    std::string toString() const override { return "Not(" + child_matcher->toString() + ")"; }
+    [[nodiscard]] std::string toString() const override { return "Not(" + child_matcher->toString() + ")"; }
 
     bool match(const DataTypePtr & type, Variables & variables, size_t iteration, size_t arg_num, std::string &) const override
     {
@@ -1024,10 +1024,10 @@ public:
         return !matchWithoutCapturing(*child_matcher, type, variables, iteration, arg_num, nested_reason);
     }
 
-    size_t getIndex() const override { return 0; }
+    [[nodiscard]] size_t getIndex() const override { return 0; }
 
     /// A capture nested in `Not` never escapes, so it does not constrain the enclosing signature.
-    bool capturesVariables() const override { return false; }
+    [[nodiscard]] bool capturesVariables() const override { return false; }
 };
 
 
@@ -1044,19 +1044,19 @@ public:
         child_matcher = child_matchers[0];
     }
 
-    std::string toString() const override { return "MaybeNullable(" + child_matcher->toString() + ")"; }
+    [[nodiscard]] std::string toString() const override { return "MaybeNullable(" + child_matcher->toString() + ")"; }
 
     bool match(const DataTypePtr & type, Variables & variables, size_t iteration, size_t arg_num, std::string & out_reason) const override
     {
         return child_matcher->match(removeNullable(type), variables, iteration, arg_num, out_reason);
     }
 
-    size_t getIndex() const override
+    [[nodiscard]] size_t getIndex() const override
     {
         return child_matcher->getIndex();
     }
 
-    bool capturesVariables() const override { return child_matcher->capturesVariables(); }
+    [[nodiscard]] bool capturesVariables() const override { return child_matcher->capturesVariables(); }
 };
 
 
@@ -1073,7 +1073,7 @@ public:
         child_matcher = child_matchers[0];
     }
 
-    std::string toString() const override { return "Nullable(" + child_matcher->toString() + ")"; }
+    [[nodiscard]] std::string toString() const override { return "Nullable(" + child_matcher->toString() + ")"; }
 
     bool match(const DataTypePtr & type, Variables & variables, size_t iteration, size_t arg_num, std::string & out_reason) const override
     {
@@ -1085,12 +1085,12 @@ public:
         return child_matcher->match(removeNullable(type), variables, iteration, arg_num, out_reason);
     }
 
-    size_t getIndex() const override
+    [[nodiscard]] size_t getIndex() const override
     {
         return child_matcher->getIndex();
     }
 
-    bool capturesVariables() const override { return child_matcher->capturesVariables(); }
+    [[nodiscard]] bool capturesVariables() const override { return child_matcher->capturesVariables(); }
 };
 
 

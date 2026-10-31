@@ -23,15 +23,15 @@ public:
 
     BuildRuntimeFilterStep(const BuildRuntimeFilterStep & other) = default;
 
-    String getName() const override { return "BuildRuntimeFilter"; }
+    [[nodiscard]] String getName() const override { return "BuildRuntimeFilter"; }
     void transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings & settings) override;
 
-    const String & getFilterColumnName() const { return filter_column_name; }
-    const String & getFilterName() const { return filter_name; }
-    const String & getFilterKey() const { return filter_key; }
-    const DataTypePtr & getFilterColumnType() const { return filter_column_type; }
-    bool allowsNotExactFilter() const { return build_options.polarity == RuntimeFilterPolarity::Contains; }
-    const RuntimeFilterGeometry & getGeometry() const { return build_options.geometry; }
+    [[nodiscard]] const String & getFilterColumnName() const { return filter_column_name; }
+    [[nodiscard]] const String & getFilterName() const { return filter_name; }
+    [[nodiscard]] const String & getFilterKey() const { return filter_key; }
+    [[nodiscard]] const DataTypePtr & getFilterColumnType() const { return filter_column_type; }
+    [[nodiscard]] bool allowsNotExactFilter() const { return build_options.polarity == RuntimeFilterPolarity::Contains; }
+    [[nodiscard]] const RuntimeFilterGeometry & getGeometry() const { return build_options.geometry; }
     void setGeometry(const RuntimeFilterGeometry & geometry_) { build_options.geometry = geometry_; }
 
     struct TreeExchange
@@ -46,10 +46,10 @@ public:
     /// (see `TreeExchange::source_buckets`).
     void setTreeExchange(String exchange_id_, Strings source_buckets_, size_t fan_in_);
 
-    bool hasFilterExchanges() const { return tree_exchange.has_value(); }
+    [[nodiscard]] bool hasFilterExchanges() const { return tree_exchange.has_value(); }
 
     void setEstimatedBuildRows(std::optional<UInt64> estimated_build_rows_) { estimated_build_rows = estimated_build_rows_; }
-    std::optional<UInt64> getEstimatedBuildRows() const { return estimated_build_rows; }
+    [[nodiscard]] std::optional<UInt64> getEstimatedBuildRows() const { return estimated_build_rows; }
 
     /// Make the built filter record its key values/range (see track_key_range). Called by plan
     /// optimizations whose pruning consumes them, e.g. markSealGatedReading.
@@ -60,23 +60,23 @@ public:
     /// (an ANTI-join NOT-contains filter can never prune positively) and a key type whose
     /// [min, max] envelope survives an exact-set overflow. Gating a read on a seal that
     /// fails this could only delay the probe side and then scan it unpruned.
-    bool canSealPrunePrimaryKey() const;
+    [[nodiscard]] bool canSealPrunePrimaryKey() const;
 
     void setConditionForQueryConditionCache(UInt64 condition_hash_, const String & condition_);
 
     void serializeSettings(QueryPlanSerializationSettings & settings, UInt64 version) const override;
     void serialize(Serialization & ctx) const override;
-    bool isSerializable() const override { return true; }
+    [[nodiscard]] bool isSerializable() const override { return true; }
 
     static QueryPlanStepPtr deserialize(Deserialization & ctx);
 
-    QueryPlanStepPtr clone() const override;
+    [[nodiscard]] QueryPlanStepPtr clone() const override;
 
     void describeActions(FormatSettings & settings) const override;
 
     /// The step passes its input through and reads its key, which it finds by name, so the name has to be there once.
-    bool canRemoveUnusedColumns() const override;
-    UnneededInputPositions getUnneededColumns(const std::vector<size_t> & unneeded_output_positions) const override;
+    [[nodiscard]] bool canRemoveUnusedColumns() const override;
+    [[nodiscard]] UnneededInputPositions getUnneededColumns(const std::vector<size_t> & unneeded_output_positions) const override;
     RemoveUnusedColumnsResult removeUnusedColumns(const std::vector<size_t> & unneeded_output_positions, const std::vector<PrunedInput> & inputs) override;
 
 private:

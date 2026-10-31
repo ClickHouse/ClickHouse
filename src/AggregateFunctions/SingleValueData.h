@@ -25,13 +25,13 @@ struct SingleValueDataBase
     static constexpr UInt32 MAX_STORAGE_SIZE = 64;
 
     virtual ~SingleValueDataBase() = default;
-    virtual bool has() const = 0;
+    [[nodiscard]] virtual bool has() const = 0;
     virtual void insertResultInto(IColumn &, const DataTypePtr & type) const = 0;
     virtual void write(WriteBuffer &, const ISerialization &) const = 0;
     virtual void read(ReadBuffer &, const ISerialization &, const DataTypePtr & type, Arena *) = 0;
 
-    virtual bool isEqualTo(const IColumn & column, size_t row_num) const = 0;
-    virtual bool isEqualTo(const SingleValueDataBase &) const = 0;
+    [[nodiscard]] virtual bool isEqualTo(const IColumn & column, size_t row_num) const = 0;
+    [[nodiscard]] virtual bool isEqualTo(const SingleValueDataBase &) const = 0;
     virtual void set(const IColumn &, size_t row_num, Arena *) = 0;
     virtual void set(const SingleValueDataBase &, Arena *) = 0;
     virtual bool setIfSmaller(const IColumn &, size_t row_num, Arena *) = 0;
@@ -39,8 +39,8 @@ struct SingleValueDataBase
     virtual bool setIfGreater(const IColumn &, size_t row_num, Arena *) = 0;
     virtual bool setIfGreater(const SingleValueDataBase &, Arena *) = 0;
     /// Whether `setIfSmaller` / `setIfGreater` with the same argument would replace the value, without replacing it.
-    virtual bool wouldSetIfSmaller(const SingleValueDataBase &) const = 0;
-    virtual bool wouldSetIfGreater(const SingleValueDataBase &) const = 0;
+    [[nodiscard]] [[nodiscard]] virtual bool wouldSetIfSmaller(const SingleValueDataBase &) const = 0;
+    [[nodiscard]] [[nodiscard]] virtual bool wouldSetIfGreater(const SingleValueDataBase &) const = 0;
 
     /// Given a column, sets the internal value to the smallest or greatest value from the column
     /// Used to implement batch min/max
@@ -52,8 +52,8 @@ struct SingleValueDataBase
     /// Given a column returns the index of the smallest or greatest value in it
     /// Doesn't return anything if the column is empty
     /// There are used to implement argMin / argMax
-    virtual std::optional<size_t> getSmallestIndex(const IColumn & column, size_t row_begin, size_t row_end) const;
-    virtual std::optional<size_t> getGreatestIndex(const IColumn & column, size_t row_begin, size_t row_end) const;
+    [[nodiscard]] virtual std::optional<size_t> getSmallestIndex(const IColumn & column, size_t row_begin, size_t row_end) const;
+    [[nodiscard]] virtual std::optional<size_t> getGreatestIndex(const IColumn & column, size_t row_begin, size_t row_end) const;
     virtual std::optional<size_t> getSmallestIndexNotNullIf(
         const IColumn & column, const UInt8 * __restrict null_map, const UInt8 * __restrict if_map, size_t row_begin, size_t row_end) const;
     virtual std::optional<size_t> getGreatestIndexNotNullIf(
@@ -97,7 +97,7 @@ struct SingleValueDataFixed
 
     static constexpr size_t serialized_size_bound = sizeof(bool) + sizeof(T);
 
-    bool has() const { return has_value; }
+    [[nodiscard]] bool has() const { return has_value; }
     void insertResultInto(IColumn & to, const DataTypePtr & type) const;
 
     /// `out` is either a WriteBuffer or a raw `char *` cursor; both are advanced past the state.
@@ -110,8 +110,8 @@ struct SingleValueDataFixed
     }
 
     void read(ReadBuffer & buf, const ISerialization &, const DataTypePtr &, Arena *);
-    bool isEqualTo(const IColumn & column, size_t index) const;
-    bool isEqualTo(const Self & to) const;
+    [[nodiscard]] bool isEqualTo(const IColumn & column, size_t index) const;
+    [[nodiscard]] bool isEqualTo(const Self & to) const;
 
     void set(const IColumn & column, size_t row_num, Arena *);
     void set(const Self & to, Arena *);
@@ -121,8 +121,8 @@ struct SingleValueDataFixed
 
     bool setIfSmaller(const Self & to, Arena * arena);
     bool setIfGreater(const Self & to, Arena * arena);
-    bool wouldSetIfSmaller(const Self & to) const;
-    bool wouldSetIfGreater(const Self & to) const;
+    [[nodiscard]] bool wouldSetIfSmaller(const Self & to) const;
+    [[nodiscard]] bool wouldSetIfGreater(const Self & to) const;
     bool setIfSmaller(const IColumn & column, size_t row_num, Arena * arena);
     bool setIfGreater(const IColumn & column, size_t row_num, Arena * arena);
     void setSmallest(const IColumn & column, size_t row_begin, size_t row_end, Arena *);
@@ -142,8 +142,8 @@ struct SingleValueDataFixed
         size_t row_end,
         Arena *);
 
-    std::optional<size_t> getSmallestIndex(const IColumn & column, size_t row_begin, size_t row_end) const;
-    std::optional<size_t> getGreatestIndex(const IColumn & column, size_t row_begin, size_t row_end) const;
+    [[nodiscard]] std::optional<size_t> getSmallestIndex(const IColumn & column, size_t row_begin, size_t row_end) const;
+    [[nodiscard]] std::optional<size_t> getGreatestIndex(const IColumn & column, size_t row_begin, size_t row_end) const;
     std::optional<size_t> getSmallestIndexNotNullIf(
         const IColumn & column, const UInt8 * __restrict null_map, const UInt8 * __restrict if_map, size_t row_begin, size_t row_end) const;
     std::optional<size_t> getGreatestIndexNotNullIf(
@@ -209,7 +209,7 @@ private:
     {
         char memory[base_memory_reserved_size];
         Base & get() { return *reinterpret_cast<Base *>(memory); }
-        const Base & get() const { return *reinterpret_cast<const Base *>(memory); }
+        [[nodiscard]] const Base & get() const { return *reinterpret_cast<const Base *>(memory); }
     };
     static_assert(sizeof(Base) <= base_memory_reserved_size);
 
@@ -221,20 +221,20 @@ public:
     SingleValueDataNumeric();
     ~SingleValueDataNumeric() override;
 
-    bool has() const override;
+    [[nodiscard]] bool has() const override;
     void insertResultInto(IColumn & to, const DataTypePtr & type) const override;
     void write(WriteBuffer & buf, const ISerialization & serialization) const override;
     void read(ReadBuffer & buf, const ISerialization & serialization, const DataTypePtr &, Arena * arena) override;
-    bool isEqualTo(const IColumn & column, size_t index) const override;
-    bool isEqualTo(const SingleValueDataBase & to) const override;
+    [[nodiscard]] bool isEqualTo(const IColumn & column, size_t index) const override;
+    [[nodiscard]] bool isEqualTo(const SingleValueDataBase & to) const override;
 
     void set(const IColumn & column, size_t row_num, Arena * arena) override;
     void set(const SingleValueDataBase & to, Arena * arena) override;
 
     bool setIfSmaller(const SingleValueDataBase & to, Arena * arena) override;
     bool setIfGreater(const SingleValueDataBase & to, Arena * arena) override;
-    bool wouldSetIfSmaller(const SingleValueDataBase & other) const override;
-    bool wouldSetIfGreater(const SingleValueDataBase & other) const override;
+    [[nodiscard]] [[nodiscard]] bool wouldSetIfSmaller(const SingleValueDataBase & other) const override;
+    [[nodiscard]] [[nodiscard]] bool wouldSetIfGreater(const SingleValueDataBase & other) const override;
     bool setIfSmaller(const IColumn & column, size_t row_num, Arena * arena) override;
     bool setIfGreater(const IColumn & column, size_t row_num, Arena * arena) override;
     void setSmallest(const IColumn & column, size_t row_begin, size_t row_end, Arena * arena) override;
@@ -254,8 +254,8 @@ public:
         size_t row_end,
         Arena * arena) override;
 
-    std::optional<size_t> getSmallestIndex(const IColumn & column, size_t row_begin, size_t row_end) const override;
-    std::optional<size_t> getGreatestIndex(const IColumn & column, size_t row_begin, size_t row_end) const override;
+    [[nodiscard]] std::optional<size_t> getSmallestIndex(const IColumn & column, size_t row_begin, size_t row_end) const override;
+    [[nodiscard]] std::optional<size_t> getGreatestIndex(const IColumn & column, size_t row_begin, size_t row_end) const override;
     std::optional<size_t> getSmallestIndexNotNullIf(
         const IColumn & column,
         const UInt8 * __restrict null_map,
@@ -304,23 +304,23 @@ private:
         char small_data[MAX_SMALL_STRING_SIZE];
     };
 
-    bool isSmall() const { return capacity == 0; }
+    [[nodiscard]] bool isSmall() const { return capacity == 0; }
     char * getDataMutable();
-    const char * getData() const;
-    std::string_view getStringView() const;
+    [[nodiscard]] const char * getData() const;
+    [[nodiscard]] std::string_view getStringView() const;
     void allocateLargeDataIfNeeded(UInt32 size_to_reserve, Arena * arena);
     void changeImpl(std::string_view value, Arena * arena);
 
 public:
     static constexpr bool is_compilable = false;
 
-    bool has() const override { return size != 0; }
+    [[nodiscard]] bool has() const override { return size != 0; }
     void insertResultInto(IColumn & to, const DataTypePtr & type) const override;
     void write(WriteBuffer & buf, const ISerialization & /*serialization*/) const override;
     void read(ReadBuffer & buf, const ISerialization & /*serialization*/, const DataTypePtr & /*type*/, Arena * arena) override;
 
-    bool isEqualTo(const IColumn & column, size_t row_num) const override;
-    bool isEqualTo(const SingleValueDataBase &) const override;
+    [[nodiscard]] bool isEqualTo(const IColumn & column, size_t row_num) const override;
+    [[nodiscard]] bool isEqualTo(const SingleValueDataBase &) const override;
     void set(const IColumn & column, size_t row_num, Arena * arena) override;
     void set(const SingleValueDataBase &, Arena * arena) override;
 
@@ -329,8 +329,8 @@ public:
 
     bool setIfGreater(const IColumn & column, size_t row_num, Arena * arena) override;
     bool setIfGreater(const SingleValueDataBase &, Arena * arena) override;
-    bool wouldSetIfSmaller(const SingleValueDataBase & other) const override;
-    bool wouldSetIfGreater(const SingleValueDataBase & other) const override;
+    [[nodiscard]] [[nodiscard]] bool wouldSetIfSmaller(const SingleValueDataBase & other) const override;
+    [[nodiscard]] [[nodiscard]] bool wouldSetIfGreater(const SingleValueDataBase & other) const override;
 
     static bool allocatesMemoryInArena() { return true; }
 };
@@ -347,13 +347,13 @@ private:
     Field value;
 
 public:
-    bool has() const override { return !value.isNull(); }
+    [[nodiscard]] bool has() const override { return !value.isNull(); }
     void insertResultInto(IColumn & to, const DataTypePtr & type) const override;
     void write(WriteBuffer & buf, const ISerialization & serialization) const override;
     void read(ReadBuffer & buf, const ISerialization & serialization, const DataTypePtr & type, Arena *) override;
 
-    bool isEqualTo(const IColumn & column, size_t row_num) const override;
-    bool isEqualTo(const SingleValueDataBase & other) const override;
+    [[nodiscard]] bool isEqualTo(const IColumn & column, size_t row_num) const override;
+    [[nodiscard]] bool isEqualTo(const SingleValueDataBase & other) const override;
     void set(const IColumn & column, size_t row_num, Arena *) override;
     void set(const SingleValueDataBase & other, Arena *) override;
 
@@ -361,8 +361,8 @@ public:
     bool setIfSmaller(const SingleValueDataBase & other, Arena *) override;
     bool setIfGreater(const IColumn & column, size_t row_num, Arena * arena) override;
     bool setIfGreater(const SingleValueDataBase & other, Arena *) override;
-    bool wouldSetIfSmaller(const SingleValueDataBase & other) const override;
-    bool wouldSetIfGreater(const SingleValueDataBase & other) const override;
+    [[nodiscard]] [[nodiscard]] bool wouldSetIfSmaller(const SingleValueDataBase & other) const override;
+    [[nodiscard]] [[nodiscard]] bool wouldSetIfGreater(const SingleValueDataBase & other) const override;
 
     static bool allocatesMemoryInArena() { return false; }
 };
@@ -382,13 +382,13 @@ private:
     ColumnPtr value;
 
 public:
-    bool has() const override { return value.operator bool(); }
+    [[nodiscard]] bool has() const override { return value.operator bool(); }
     void insertResultInto(IColumn & to, const DataTypePtr & type) const override;
     void write(WriteBuffer & buf, const ISerialization & serialization) const override;
     void read(ReadBuffer & buf, const ISerialization & serialization, const DataTypePtr & type, Arena *) override;
 
-    bool isEqualTo(const IColumn & column, size_t row_num) const override;
-    bool isEqualTo(const SingleValueDataBase & other) const override;
+    [[nodiscard]] bool isEqualTo(const IColumn & column, size_t row_num) const override;
+    [[nodiscard]] bool isEqualTo(const SingleValueDataBase & other) const override;
     void set(const IColumn & column, size_t row_num, Arena *) override;
     void set(const SingleValueDataBase & other, Arena *) override;
 
@@ -396,8 +396,8 @@ public:
     bool setIfSmaller(const SingleValueDataBase & other, Arena *) override;
     bool setIfGreater(const IColumn & column, size_t row_num, Arena * arena) override;
     bool setIfGreater(const SingleValueDataBase & other, Arena *) override;
-    bool wouldSetIfSmaller(const SingleValueDataBase & other) const override;
-    bool wouldSetIfGreater(const SingleValueDataBase & other) const override;
+    [[nodiscard]] [[nodiscard]] bool wouldSetIfSmaller(const SingleValueDataBase & other) const override;
+    [[nodiscard]] [[nodiscard]] bool wouldSetIfGreater(const SingleValueDataBase & other) const override;
 
     static bool allocatesMemoryInArena() { return false; }
 };
@@ -413,13 +413,13 @@ struct SingleValueReference final : public SingleValueDataBase
     ColumnPtr column_ref;
     size_t row_number{};
 
-    bool has() const override { return column_ref != nullptr; }
+    [[nodiscard]] bool has() const override { return column_ref != nullptr; }
     void insertResultInto(IColumn & to, const DataTypePtr & type) const override;
     void write(WriteBuffer & buf, const ISerialization & /*serialization*/) const override;
     void read(ReadBuffer & buf, const ISerialization & /*serialization*/, const DataTypePtr & /*type*/, Arena * arena) override;
 
-    bool isEqualTo(const IColumn & column, size_t row_num) const override;
-    bool isEqualTo(const SingleValueDataBase &) const override;
+    [[nodiscard]] bool isEqualTo(const IColumn & column, size_t row_num) const override;
+    [[nodiscard]] bool isEqualTo(const SingleValueDataBase &) const override;
     void set(const IColumn & column, size_t row_num, Arena * arena) override;
     void set(const SingleValueDataBase &, Arena * arena) override;
 
@@ -428,8 +428,8 @@ struct SingleValueReference final : public SingleValueDataBase
 
     bool setIfGreater(const IColumn & column, size_t row_num, Arena * arena) override;
     bool setIfGreater(const SingleValueDataBase &, Arena * arena) override;
-    bool wouldSetIfSmaller(const SingleValueDataBase & other) const override;
-    bool wouldSetIfGreater(const SingleValueDataBase & other) const override;
+    [[nodiscard]] [[nodiscard]] bool wouldSetIfSmaller(const SingleValueDataBase & other) const override;
+    [[nodiscard]] [[nodiscard]] bool wouldSetIfGreater(const SingleValueDataBase & other) const override;
 
     static bool allocatesMemoryInArena() { return false; }
 };
@@ -480,7 +480,7 @@ struct SingleValueDataBaseMemoryBlock
         SingleValueDataGenericWithColumn>
         memory;
     SingleValueDataBase & get() { return *reinterpret_cast<SingleValueDataBase *>(&memory); }
-    const SingleValueDataBase & get() const { return *reinterpret_cast<const SingleValueDataBase *>(&memory); }
+    [[nodiscard]] const SingleValueDataBase & get() const { return *reinterpret_cast<const SingleValueDataBase *>(&memory); }
 };
 
 static_assert(alignof(SingleValueDataBaseMemoryBlock) == 8);

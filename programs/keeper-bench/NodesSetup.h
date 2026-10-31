@@ -40,7 +40,7 @@ public:
         void createAt(const std::string & path, const CreateRequestSink & sink, const Coordination::ACLs & acls, pcg64 & rng_) const;
         /// Number of nodes one instance of this node expands to (itself plus
         /// descendants, with `repeat_count`s applied).
-        size_t countNodes() const;
+        [[nodiscard]] size_t countNodes() const;
         void dumpTree(int level = 0) const;
     };
 
@@ -78,7 +78,7 @@ public:
 
     /// One-line summary of the dynamic sets' current sizes (and targets), for
     /// periodic reports. Empty if there are no dynamic sets.
-    std::string describeDynamicPathSets() const;
+    [[nodiscard]] std::string describeDynamicPathSets() const;
 
     /// --- Node creation ---
 
@@ -91,9 +91,9 @@ public:
     void createNodes(const CreateRequestSink & sink);
 
     /// How many nodes `createNodes` would create.
-    size_t countTotalNodes() const;
+    [[nodiscard]] size_t countTotalNodes() const;
 
-    bool hasNodes() const { return !root_nodes.empty(); }
+    [[nodiscard]] bool hasNodes() const { return !root_nodes.empty(); }
 
 private:
     std::shared_ptr<Node> parseNode(const std::string & key, const Poco::Util::AbstractConfiguration & config);

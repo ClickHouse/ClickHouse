@@ -79,7 +79,7 @@ public:
             decrementRefCount();
         }
 
-        bool isNull() const
+        [[nodiscard]] bool isNull() const
         {
             return data == nullptr;
         }
@@ -114,7 +114,7 @@ public:
             incrementRefCount();
         }
 
-        std::string getDescription() const
+        [[nodiscard]] std::string getDescription() const
         {
             if (pool)
                 return pool->getDescription();
@@ -135,7 +135,7 @@ public:
         void forceConnected() const;
 
         /// Connects to database. If connection is failed then returns false.
-        bool tryForceConnected() const;
+        [[nodiscard]] bool tryForceConnected() const;
 
         void incrementRefCount();
         void decrementRefCount();

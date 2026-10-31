@@ -50,7 +50,7 @@ namespace
             return (left.access_flags < right.access_flags);
         }
 
-        AccessRightsElement getResult() const
+        [[nodiscard]] AccessRightsElement getResult() const
         {
             AccessRightsElement res;
             res.access_flags = access_flags;
@@ -98,7 +98,7 @@ namespace
     class ProtoElements : public std::vector<ProtoElement>
     {
     public:
-        AccessRightsElements getResult() const
+        [[nodiscard]] AccessRightsElements getResult() const
         {
             ProtoElements sorted = *this;
             ::sort(sorted.begin(), sorted.end());
@@ -152,7 +152,7 @@ namespace
         }
 
     private:
-        size_t countElementsWithDifferenceInColumnOnly(size_t start) const
+        [[nodiscard]] size_t countElementsWithDifferenceInColumnOnly(size_t start) const
         {
             const auto & start_element = (*this)[start];
             if ((start_element.full_name.size() != 3) || (start == size() - 1))
@@ -347,7 +347,7 @@ public:
             return *this;
         }
 
-        String getPath() const
+        [[nodiscard]] String getPath() const
         {
             String res;
             for (const auto & it : iters)
@@ -375,8 +375,8 @@ public:
     Node(Node && src) noexcept = default;
     Node & operator=(Node && src) noexcept = default;
 
-    Iterator begin() const { return ++Iterator{*this}; }
-    Iterator end() const { return Iterator{*this}; }
+    [[nodiscard]] Iterator begin() const { return ++Iterator{*this}; }
+    [[nodiscard]] Iterator end() const { return Iterator{*this}; }
 
     Node & operator =(const Node & src)
     {
@@ -396,7 +396,7 @@ public:
         return *this;
     }
 
-    Node makeLightCopy() const
+    [[nodiscard]] Node makeLightCopy() const
     {
         Node res;
         res.node_name = node_name;
@@ -409,7 +409,7 @@ public:
         return res;
     }
 
-    bool isLeaf() const { return node_name.empty(); }
+    [[nodiscard]] bool isLeaf() const { return node_name.empty(); }
 
     template <bool wildcard = false>
     void grant(const AccessFlags & flags_)
@@ -487,13 +487,13 @@ public:
     }
 
     template <bool wildcard = false>
-    bool isGranted(const AccessFlags & flags_) const
+    [[nodiscard]] bool isGranted(const AccessFlags & flags_) const
     {
         return min_flags_with_children.contains(flags_);
     }
 
     template <bool wildcard = false, typename... Args>
-    bool isGranted(const AccessFlags & flags_, std::string_view name, const Args &... subnames) const
+    [[nodiscard]] bool isGranted(const AccessFlags & flags_, std::string_view name, const Args &... subnames) const
     {
         const auto next_level = static_cast<Level>(level + 1);
 
@@ -524,7 +524,7 @@ public:
     }
 
     template <bool wildcard = false, typename StringT>
-    bool isGranted(const AccessFlags & flags_, const std::vector<StringT> & names) const
+    [[nodiscard]] bool isGranted(const AccessFlags & flags_, const std::vector<StringT> & names) const
     {
         AccessFlags flags_to_check = flags_ - min_flags_with_children;
         if (!flags_to_check)
@@ -563,7 +563,7 @@ public:
     friend bool operator!=(const Node & left, const Node & right) { return !(left == right); }
 
     /// Checks whether `this` node's access rights are a superset of `other`'s
-    bool contains(const Node & other) const
+    [[nodiscard]] bool contains(const Node & other) const
     {
         /// The check traverses children from both sides:
         /// 1) For each child in `other`, find the matching node in `this` and verify containment.
@@ -653,7 +653,7 @@ public:
         optimizeTree();
     }
 
-    ProtoElements getElements() const
+    [[nodiscard]] ProtoElements getElements() const
     {
         ProtoElements res;
         getElementsRec(res, {}, *this, {}, "");
@@ -692,7 +692,7 @@ public:
         }
     }
 
-    std::vector<Filter> getFilters(std::string_view parameter) const
+    [[nodiscard]] std::vector<Filter> getFilters(std::string_view parameter) const
     {
         std::vector<Filter> res;
         /// `tryGetLeaf` returns by value and its light copy shares `children` with this tree,
@@ -705,8 +705,8 @@ public:
     }
 
 private:
-    AccessFlags getAllGrantableFlags() const { return ::DB::getAllGrantableFlags(level); }
-    AccessFlags getChildAllGrantableFlags() const { return ::DB::getAllGrantableFlags(static_cast<Level>(level == Level::MAX ? level : (level + 1))); }
+    [[nodiscard]] AccessFlags getAllGrantableFlags() const { return ::DB::getAllGrantableFlags(level); }
+    [[nodiscard]] AccessFlags getChildAllGrantableFlags() const { return ::DB::getAllGrantableFlags(static_cast<Level>(level == Level::MAX ? level : (level + 1))); }
 
     /// Finds a leaf in the prefix tree. If no leaf is found, creates a new one with specified *level_*.
     /// Boolean modifier *return_parent_node* allows to return of a parent node for the intended leaf's path instead of the leaf itself.
@@ -776,7 +776,7 @@ private:
 
     /// Same logic as `getLeaf`, but const.
     /// Using non-move copy on the returned node will make a full copy of all underlying children.
-    Node tryGetLeaf(std::string_view path, Level level_ = Level::GLOBAL_LEVEL, bool return_parent_node = false) const
+    [[nodiscard]] Node tryGetLeaf(std::string_view path, Level level_ = Level::GLOBAL_LEVEL, bool return_parent_node = false) const
     {
         /// The implementation of this function is almost the same as `getLeaf`.
         /// Instead of creating new nodes in-place, this function creates ephemeral nodes without modifying the tree structure.
@@ -845,7 +845,7 @@ private:
         return new_child;
     }
 
-    Node createChildNode(const std::string_view name, const Level level_ = Level::GLOBAL_LEVEL) const
+    [[nodiscard]] Node createChildNode(const std::string_view name, const Level level_ = Level::GLOBAL_LEVEL) const
     {
         Node child;
         child.node_name = name;
@@ -858,7 +858,7 @@ private:
     }
 
     /// Similar to `getChildNode`, but returns nullptr if no child node was found.
-    Node * tryGetChildNode(std::string_view name) const
+    [[nodiscard]] Node * tryGetChildNode(std::string_view name) const
     {
         if (!children)
             return nullptr;
@@ -868,12 +868,12 @@ private:
         return &*it;
     }
 
-    bool canMergeChild(const Node & child) const
+    [[nodiscard]] bool canMergeChild(const Node & child) const
     {
         return ((flags & child.getAllGrantableFlags()) == child.flags);
     }
 
-    bool canEraseChild(const Node & child) const
+    [[nodiscard]] bool canEraseChild(const Node & child) const
     {
         return canMergeChild(child) && !child.children;
     }

@@ -15,30 +15,30 @@ public:
         bool with_ties_ = false,
         SortDescription description_ = {});
 
-    String getName() const override { return "NegativeLimit"; }
+    [[nodiscard]] String getName() const override { return "NegativeLimit"; }
 
     void transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override;
 
     void describeActions(JSONBuilder::JSONMap & map) const override;
     void describeActions(FormatSettings & settings) const override;
 
-    UInt64 getLimit() const { return limit; }
+    [[nodiscard]] UInt64 getLimit() const { return limit; }
 
     void markAsShardLimit() { is_shard_limit = true; }
 
-    QueryPlanStepPtr clone() const override;
+    [[nodiscard]] QueryPlanStepPtr clone() const override;
 
     void serialize(Serialization & ctx) const override;
-    bool isSerializable() const override { return true; }
+    [[nodiscard]] bool isSerializable() const override { return true; }
 
     static QueryPlanStepPtr deserialize(Deserialization & ctx);
 
-    bool hasCorrelatedExpressions() const override { return false; }
+    [[nodiscard]] bool hasCorrelatedExpressions() const override { return false; }
 
     /// `LIMIT -n` returns the *last* `n` rows, and `addPreliminaryLimitStep` can push it to the shard, so
     /// this step can be the replica-output boundary. It is a top-N taken from the tail, so like
     /// `LimitStep` its output is replicated: every replica ships its own last `n` rows.
-    bool supportsDataflowStatisticsCollection() const override { return true; }
+    [[nodiscard]] bool supportsDataflowStatisticsCollection() const override { return true; }
 
 private:
     void updateOutputHeader() override

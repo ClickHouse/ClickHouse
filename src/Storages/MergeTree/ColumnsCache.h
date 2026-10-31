@@ -110,9 +110,9 @@ struct ColumnsCacheStripes
     /// The stripes of a part, from the average size of its granules.
     static ColumnsCacheStripes forPart(const MergeTreeIndexGranularity & index_granularity);
 
-    size_t stripeOf(size_t mark) const { return mark / stripe_marks; }
-    size_t firstMark(size_t stripe) const { return stripe * stripe_marks; }
-    size_t endMark(size_t stripe, size_t marks_in_part) const { return std::min((stripe + 1) * stripe_marks, marks_in_part); }
+    [[nodiscard]] size_t stripeOf(size_t mark) const { return mark / stripe_marks; }
+    [[nodiscard]] size_t firstMark(size_t stripe) const { return stripe * stripe_marks; }
+    [[nodiscard]] size_t endMark(size_t stripe, size_t marks_in_part) const { return std::min((stripe + 1) * stripe_marks, marks_in_part); }
 };
 
 /// Cached deserialized column data: a contiguous run of granules of one stripe.

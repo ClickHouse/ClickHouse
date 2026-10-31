@@ -41,36 +41,36 @@ public:
         , function_name(mode == ErrorHandlingMode::Exception ? "getSetting" : "getSettingOrDefault")
     {}
 
-    String getName() const override { return function_name; }
-    bool isDeterministic() const override { return false; }
-    bool isDeterministicInScopeOfQuery() const override { return false; }
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
-    size_t getNumberOfArguments() const override { return (mode == ErrorHandlingMode::Default) ? 2 : 1; }
-    ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {0, 1}; }
+    [[nodiscard]] String getName() const override { return function_name; }
+    [[nodiscard]] bool isDeterministic() const override { return false; }
+    [[nodiscard]] bool isDeterministicInScopeOfQuery() const override { return false; }
+    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+    [[nodiscard]] size_t getNumberOfArguments() const override { return (mode == ErrorHandlingMode::Default) ? 2 : 1; }
+    [[nodiscard]] ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {0, 1}; }
 
     /// Documentation-only — the result type is the dynamic type of the
     /// setting value resolved at query time from its const-string name.
-    String getSignatureString() const override
+    [[nodiscard]] String getSignatureString() const override
     {
         if (mode == ErrorHandlingMode::Default)
             return "(const String, Any) -> Any";
         return "(const String) -> Any";
     }
 
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    [[nodiscard]] DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         auto value = getValue(arguments);
         return applyVisitor(FieldToDataType{}, value);
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
         auto value = getValue(arguments);
         return result_type->createColumnConst(input_rows_count, convertFieldToType(value, *result_type));
     }
 
 private:
-    Field getValue(const ColumnsWithTypeAndName & arguments) const
+    [[nodiscard]] Field getValue(const ColumnsWithTypeAndName & arguments) const
     {
         if (!isString(arguments[0].type))
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,

@@ -285,7 +285,7 @@ private:
     }
 
     /// The members of the set the local query builds for `lhs IN rhs`, as a scalar, a row or a list of them.
-    QueryTreeNodePtr renderInSet(const QueryTreeNodePtr & lhs, const QueryTreeNodePtr & rhs) const
+    [[nodiscard]] QueryTreeNodePtr renderInSet(const QueryTreeNodePtr & lhs, const QueryTreeNodePtr & rhs) const
     {
         const auto * constant_node = rhs->as<ConstantNode>();
         if (!constant_node || !holdsEnumValue(constant_node->getColumn()->getDataColumnPtr(), constant_node->getResultType()))

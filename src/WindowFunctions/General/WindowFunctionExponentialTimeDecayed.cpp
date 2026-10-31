@@ -89,13 +89,13 @@ public:
         checkValueAndTimeArguments(name_, argument_types);
     }
 
-    WindowFunctionRequirements getRequirements(const WindowDescription &) const override
+    [[nodiscard]] WindowFunctionRequirements getRequirements(const WindowDescription &) const override
     {
         return WindowFunctionRequirements{.frame = true};
     }
 
-    size_t sizeOfState() const override { return sizeof(DecayedSumState); }
-    size_t alignOfState() const override { return alignof(DecayedSumState); }
+    [[nodiscard]] size_t sizeOfState() const override { return sizeof(DecayedSumState); }
+    [[nodiscard]] size_t alignOfState() const override { return alignof(DecayedSumState); }
     void createState(char * place) const override { new (place) DecayedSumState(); }
     void resetPartition(char * place) const override { new (place) DecayedSumState(); }
 
@@ -147,7 +147,7 @@ public:
         checkValueAndTimeArguments(name_, argument_types);
     }
 
-    WindowFunctionRequirements getRequirements(const WindowDescription &) const override
+    [[nodiscard]] WindowFunctionRequirements getRequirements(const WindowDescription &) const override
     {
         return WindowFunctionRequirements{.frame = true};
     }
@@ -193,13 +193,13 @@ public:
         checkTimeArgument(argument_types, 0);
     }
 
-    WindowFunctionRequirements getRequirements(const WindowDescription &) const override
+    [[nodiscard]] WindowFunctionRequirements getRequirements(const WindowDescription &) const override
     {
         return WindowFunctionRequirements{.frame = true};
     }
 
-    size_t sizeOfState() const override { return sizeof(DecayedSumState); }
-    size_t alignOfState() const override { return alignof(DecayedSumState); }
+    [[nodiscard]] size_t sizeOfState() const override { return sizeof(DecayedSumState); }
+    [[nodiscard]] size_t alignOfState() const override { return alignof(DecayedSumState); }
     void createState(char * place) const override { new (place) DecayedSumState(); }
     void resetPartition(char * place) const override { new (place) DecayedSumState(); }
 
@@ -251,13 +251,13 @@ public:
         checkValueAndTimeArguments(name_, argument_types);
     }
 
-    WindowFunctionRequirements getRequirements(const WindowDescription &) const override
+    [[nodiscard]] WindowFunctionRequirements getRequirements(const WindowDescription &) const override
     {
         return WindowFunctionRequirements{.frame = true};
     }
 
-    size_t sizeOfState() const override { return sizeof(DecayedAvgState); }
-    size_t alignOfState() const override { return alignof(DecayedAvgState); }
+    [[nodiscard]] size_t sizeOfState() const override { return sizeof(DecayedAvgState); }
+    [[nodiscard]] size_t alignOfState() const override { return alignof(DecayedAvgState); }
     void createState(char * place) const override { new (place) DecayedAvgState(); }
     void resetPartition(char * place) const override { new (place) DecayedAvgState(); }
 

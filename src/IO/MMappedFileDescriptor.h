@@ -27,11 +27,11 @@ public:
     virtual ~MMappedFileDescriptor();
 
     char * getData() { return data; }
-    const char * getData() const { return data; }
+    [[nodiscard]] const char * getData() const { return data; }
 
-    int getFD() const { return fd; }
-    size_t getOffset() const { return offset; }
-    size_t getLength() const { return length; }
+    [[nodiscard]] int getFD() const { return fd; }
+    [[nodiscard]] size_t getOffset() const { return offset; }
+    [[nodiscard]] size_t getLength() const { return length; }
 
     /// Unmap memory before call to destructor
     void finish();

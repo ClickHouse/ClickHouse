@@ -50,9 +50,9 @@ class ConditionSelectivityEstimator : public WithContext
         Selectivity() : true_sel(0), null_sel(0) {}
         explicit Selectivity(Float64 true_sel_) : true_sel(true_sel_), null_sel(0) {}
         Selectivity(Float64 true_sel_, Float64 null_sel_) : true_sel(true_sel_), null_sel(null_sel_) {}
-        Selectivity applyNot() const;
-        Selectivity applyOr(const Selectivity & other) const;
-        Selectivity applyAnd(const Selectivity & other) const;
+        [[nodiscard]] Selectivity applyNot() const;
+        [[nodiscard]] Selectivity applyOr(const Selectivity & other) const;
+        [[nodiscard]] Selectivity applyAnd(const Selectivity & other) const;
     };
 
     friend class ConditionSelectivityEstimatorBuilder;
@@ -61,9 +61,9 @@ public:
 
     RelationProfile estimateRelationProfile(const StorageMetadataPtr & metadata, const ActionsDAG::Node * filter, const ActionsDAG::Node * prewhere) const;
     RelationProfile estimateRelationProfile(const StorageMetadataPtr & metadata, const ActionsDAG::Node * node) const;
-    RelationProfile estimateRelationProfile(const StorageMetadataPtr & metadata, const RPNBuilderTreeNode & node) const;
-    RelationProfile estimateRelationProfile(const StorageMetadataPtr & metadata, const std::vector<RPNBuilderTreeNode> & nodes) const;
-    RelationProfile estimateRelationProfile() const;
+    [[nodiscard]] RelationProfile estimateRelationProfile(const StorageMetadataPtr & metadata, const RPNBuilderTreeNode & node) const;
+    [[nodiscard]] RelationProfile estimateRelationProfile(const StorageMetadataPtr & metadata, const std::vector<RPNBuilderTreeNode> & nodes) const;
+    [[nodiscard]] RelationProfile estimateRelationProfile() const;
 
     struct RPNElement
     {
@@ -104,7 +104,7 @@ public:
         /// Only meaningful under `FUNCTION_AND`: `P(a OR unknown)` is not `P(a) * f`.
         Selectivity absorbed_and_selectivity{1.0, 0.0};
 
-        bool hasAbsorbed() const { return absorbed_and_selectivity.true_sel != 1.0 || absorbed_and_selectivity.null_sel != 0.0; }
+        [[nodiscard]] bool hasAbsorbed() const { return absorbed_and_selectivity.true_sel != 1.0 || absorbed_and_selectivity.null_sel != 0.0; }
 
         /// Carries no ranges and no null checks, so it contributes a bare number and nothing a merge
         /// could represent: an unknown atom, a `LIKE` estimated by a default, or a clause already
@@ -116,7 +116,7 @@ public:
         /// constant operand by its tag, and `NOT` flips the tag - while `finalize` only ever sets
         /// `selectivity`. Treating them as a factor would leave the tag saying the opposite of the
         /// number and the folding would act on the tag.
-        bool isConstantFactor() const
+        [[nodiscard]] bool isConstantFactor() const
         {
             if (function == ALWAYS_TRUE || function == ALWAYS_FALSE)
                 return false;
@@ -131,7 +131,7 @@ public:
     using AtomMap = std::unordered_map<std::string, void(*)(RPNElement & out, const String & column, const Field & value)>;
     static const AtomMap atom_map;
 
-    UInt64 getTotalRows() const { return total_rows; }
+    [[nodiscard]] UInt64 getTotalRows() const { return total_rows; }
 
 private:
     friend class ColumnStatistics;
@@ -140,8 +140,8 @@ private:
     {
         ColumnStatisticsPtr stats;
 
-        Selectivity estimateRanges(const PlainRanges & ranges) const;
-        UInt64 estimateCardinality() const;
+        [[nodiscard]] Selectivity estimateRanges(const PlainRanges & ranges) const;
+        [[nodiscard]] UInt64 estimateCardinality() const;
     };
 
     RelationProfile estimateRelationProfileImpl(std::vector<RPNElement> & rpn, const StorageMetadataPtr & metadata) const;
@@ -151,10 +151,10 @@ private:
     /// the share of rows inside the set's bounding range, capped by the share of distinct values the set
     /// can possibly cover. Costs one pass for the bounds and a single statistics probe, where turning the
     /// set into ranges costs a `Field` per element, a sort and one probe per element.
-    Selectivity estimateSelectivityFromSetSize(
+    [[nodiscard]] Selectivity estimateSelectivityFromSetSize(
         const StorageMetadataPtr & metadata, const String & column_name, const IColumn & set_elements,
         const DataTypePtr & set_type, bool negative) const;
-    UInt64 estimateSelectivity(const RPNBuilderTreeNode & node) const;
+    [[nodiscard]] UInt64 estimateSelectivity(const RPNBuilderTreeNode & node) const;
 
     /// Selectivity of an equality with any of `num_values` values of `type` when no statistics can estimate it.
     /// Only a `Bool` counts the values: the default for other types is flat.
@@ -185,7 +185,7 @@ public:
     explicit ConditionSelectivityEstimatorBuilder(ContextPtr context_);
     void addStatistics(const String & column_name, const ColumnStatisticsPtr & column_stats);
     void incrementRowCount(UInt64 rows);
-    ConditionSelectivityEstimatorPtr getEstimator() const;
+    [[nodiscard]] ConditionSelectivityEstimatorPtr getEstimator() const;
 
 private:
     bool has_data = false;

@@ -36,7 +36,7 @@ public:
     /// The result is `Date` by default, or `Date32` when the input is
     /// `Date32`/`DateTime64` and `enable_extended_results_for_datetime_functions`
     /// is set — a runtime-setting-dependent choice the DSL can't express.
-    String getSignatureString() const override
+    [[nodiscard]] String getSignatureString() const override
     {
         /// The optional `mode` and `timezone` arguments are positional (see
         /// `IFunctionCustomWeek::checkArguments`): argument 2 is always the `week_mode` (`UInt8`)
@@ -55,7 +55,7 @@ public:
     /// Route the types-only path to it as well, so the base
     /// `IFunction::getReturnTypeImpl(DataTypes)` never applies the documentation string (which
     /// would reject valid calls or evaluate an uncaptured return-type name).
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    [[nodiscard]] DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         ColumnsWithTypeAndName columns;
         columns.reserve(arguments.size());
@@ -64,7 +64,7 @@ public:
         return getReturnTypeImpl(columns);
     }
 
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    [[nodiscard]] DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         this->checkArguments(arguments, /*is_result_type_date_or_date32*/ true, Transform::value_may_be_string);
 
@@ -75,7 +75,7 @@ public:
         return std::make_shared<DataTypeDate>();
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
         const IDataType * from_type = arguments[0].type.get();
         WhichDataType which(from_type);

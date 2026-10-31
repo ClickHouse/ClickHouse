@@ -25,17 +25,17 @@ public:
     }
     ~ClientEmbeddedRunner();
 
-    bool hasStarted() const;
-    bool hasFinished() const;
+    [[nodiscard]] bool hasStarted() const;
+    [[nodiscard]] bool hasFinished() const;
     /// Whether the client waits for the user to type a query, i.e. no query is being processed.
     bool isWaitingForQueryInput() const { return waiting_for_query_input.load(); }
     /// How many times the client has started waiting for a query, i.e. returned to the prompt.
     /// Unlike `isWaitingForQueryInput`, it allows noticing queries that finish between two checks.
     UInt64 getPromptsCount() const { return prompts_count.load(); }
-    int getExitCode() const;
+    [[nodiscard]] int getExitCode() const;
     IClientDescriptorSet::DescriptorSet getDescriptorsForServer();
     void closeStdIn() const;
-    bool hasPty() const { return client_descriptors->isPty(); }
+    [[nodiscard]] bool hasPty() const { return client_descriptors->isPty(); }
     // Sets new window size for tty. Works only if IClientDescriptorSet is pty
     void changeWindowSize(int width, int height, int width_pixels, int height_pixels);
 

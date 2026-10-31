@@ -54,7 +54,7 @@ struct ChunkBuffer
         --unfinished_inputs;
     }
 
-    bool isReady() const { return unfinished_inputs == 0; }
+    [[nodiscard]] bool isReady() const { return unfinished_inputs == 0; }
 
     void setInputsNumber(size_t num) { unfinished_inputs = num; }
 

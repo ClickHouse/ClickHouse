@@ -467,7 +467,7 @@ public:
         return {std::move(data.block), nullptr, is_last};
     }
 
-    std::optional<size_t> getMatchedRightRows() const override { return matched_right_rows; }
+    [[nodiscard]] std::optional<size_t> getMatchedRightRows() const override { return matched_right_rows; }
 };
 
 JoinResultPtr ConcurrentHashJoin::joinBlock(Block block)

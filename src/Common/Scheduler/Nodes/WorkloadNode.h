@@ -300,7 +300,7 @@ protected:
         NodePtr root; /// FairPolicy node is used if multiple children with the same priority are attached
         std::unordered_map<String, SelfPtr> children; // basename -> child
 
-        bool empty() const { return children.empty(); }
+        [[nodiscard]] bool empty() const { return children.empty(); }
 
         NodePtr getRoot()
         {
@@ -372,7 +372,7 @@ protected:
         std::unordered_map<Priority::Value, FairnessBranch> branches; /// Branches for different priority values
 
         // Returns true iff there are no workload children attached
-        bool empty() const { return branches.empty(); }
+        [[nodiscard]] bool empty() const { return branches.empty(); }
 
         NodePtr getRoot()
         {
@@ -710,27 +710,27 @@ public:
     /// Sharing-mode specific implementation of scheduling settings propagation
     virtual void propagateUpdateSchedulingSettings() = 0;
 
-    CostUnit getCostUnit() const final
+    [[nodiscard]] CostUnit getCostUnit() const final
     {
         return impl.unit;
     }
 
-    const String & getWorkload() const final
+    [[nodiscard]] const String & getWorkload() const final
     {
         return this->basename;
     }
 
-    const String & getResource() const final
+    [[nodiscard]] const String & getResource() const final
     {
         return impl.resource;
     }
 
-    const WorkloadSettings & getSettings() const final
+    [[nodiscard]] const WorkloadSettings & getSettings() const final
     {
         return impl.settings;
     }
 
-    ResourceLink getLink() const final
+    [[nodiscard]] ResourceLink getLink() const final
     {
         if (impl.branch.queue)
             return Traits::getLink(impl.branch.queue);
@@ -767,7 +767,7 @@ public:
         impl.branch.purgeDroppedQueue();
     }
 
-    bool hasWorkloadChildren() const final
+    [[nodiscard]] bool hasWorkloadChildren() const final
     {
         return impl.branch.queue == nullptr;
     }
@@ -791,7 +791,7 @@ public:
     }
 
 protected: // Hide all the ISchedulerNode interface methods as an implementation details
-    std::string_view getTypeName() const override { return "workload"; }
+    [[nodiscard]] std::string_view getTypeName() const override { return "workload"; }
 
     ConstraintsBranch impl;
 };

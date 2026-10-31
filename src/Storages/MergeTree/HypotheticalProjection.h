@@ -42,7 +42,7 @@ struct HypotheticalProjection
     };
     Outcome outcome;
 
-    MergeTreeDataPartPtr findPart(const String & parent_part_name) const
+    [[nodiscard]] MergeTreeDataPartPtr findPart(const String & parent_part_name) const
     {
         auto it = parts.find(parent_part_name);
         return it == parts.end() ? nullptr : it->second;

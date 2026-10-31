@@ -686,7 +686,7 @@ StorageKeeperMap::StorageKeeperMap(
 class ReadFromKeeperMap : public SourceStepWithFilter
 {
 public:
-    std::string getName() const override { return "ReadFromKeeperMap"; }
+    [[nodiscard]] std::string getName() const override { return "ReadFromKeeperMap"; }
     void initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override;
     void applyFilters(ActionDAGNodes added_filter_nodes) override;
     void describeActions(FormatSettings & format_settings) const override;
@@ -723,7 +723,7 @@ private:
     template<typename KeyContainerPtr>
     void initializePipelineImpl(QueryPipelineBuilder & pipeline, KeyContainerPtr key_container);
 
-    Strings getAllKeys() const;
+    [[nodiscard]] Strings getAllKeys() const;
 };
 
 VirtualColumnsDescription StorageKeeperMap::createVirtuals()

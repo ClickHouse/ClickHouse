@@ -29,7 +29,7 @@ public:
     /// the function will add a default value to this column.
     void addDefaults(MutableColumns & columns, size_t row_num) const;
 
-    const NamesAndTypesList & getNamesAndTypes() const;
+    [[nodiscard]] const NamesAndTypesList & getNamesAndTypes() const;
 
 private:
     void setNestedGroups(std::unordered_map<std::string_view, std::vector<size_t>> && nested_groups, size_t num_columns);

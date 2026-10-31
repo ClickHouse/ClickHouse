@@ -201,7 +201,7 @@ public:
         }
     }
 
-    ALWAYS_INLINE bool has(T value) const
+    [[nodiscard]] [[nodiscard]] ALWAYS_INLINE bool has(T value) const
     {
         Key<T> key{};
         if (!makeKey(value, key))
@@ -286,7 +286,7 @@ public:
     }
 
     /// The number of counted values.
-    size_t size() const { return count; }
+    [[nodiscard]] [[nodiscard]] size_t size() const { return count; }
 
 private:
     static constexpr UInt32 not_counted = std::numeric_limits<UInt32>::max();
@@ -318,9 +318,9 @@ struct Work
     /// is given a part of the work of the lookup.
     size_t table_shift = 0;
 
-    size_t allowed() const { return table >> table_shift; }
+    [[nodiscard]] [[nodiscard]] size_t allowed() const { return table >> table_shift; }
     /// The table would have been faster for the rows searched so far.
-    bool exceeded() const { return search > allowed(); }
+    [[nodiscard]] [[nodiscard]] bool exceeded() const { return search > allowed(); }
 };
 
 /// Returns the position of the first of the non-NULL values of the array in `[begin, end)` that is in the row, or `end`. The search

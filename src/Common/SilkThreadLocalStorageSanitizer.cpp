@@ -46,7 +46,8 @@ constinit FiberLocal<bool, FiberLocalSlot::THREAD_LOCAL_STORAGE_SANITIZER_INSIDE
 
 extern "C" void silk_thread_local_storage_sanitizer_fiber_init_hook() noexcept
 {
-    first_seen.get();
+    /// Called only for the side effect of allocating the fiber-local slot.
+    [[maybe_unused]] auto & first_seen_ref = first_seen.get();
 }
 #endif
 

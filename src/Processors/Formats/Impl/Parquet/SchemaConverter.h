@@ -96,12 +96,12 @@ private:
         const parq::SchemaElement * element = nullptr;
         std::optional<size_t> output_idx; // index in output_columns
 
-        const String & getParquetName() const
+        [[nodiscard]] const String & getParquetName() const
         {
             return parquet_name.has_value() ? *parquet_name : name;
         }
 
-        String getNameForLogging() const
+        [[nodiscard]] String getNameForLogging() const
         {
             if (parquet_name.has_value() && *parquet_name != name)
                 return fmt::format("{} (mapped to {})", *parquet_name, name);
@@ -157,7 +157,7 @@ private:
     /// all its column chunks list the same single 2D geometry type, returns that type. If any of
     /// them lists a geometry type with Z and/or M coordinates (which cannot be parsed), returns
     /// `std::nullopt`. Otherwise returns `GeoType::Mixed`.
-    std::optional<GeoType> getGeoTypeFromGeospatialStatistics(size_t column_idx) const;
+    [[nodiscard]] std::optional<GeoType> getGeoTypeFromGeospatialStatistics(size_t column_idx) const;
 
     /// Returns element.name or a corresponding name from ColumnMapper.
     /// For nested tuple elements, returns just the element name like `x`, not the whole path like `t.x`.

@@ -696,7 +696,7 @@ private:
 class ReadFromSystemStackTrace : public SourceStepWithFilter
 {
 public:
-    std::string getName() const override { return "ReadFromSystemStackTrace"; }
+    [[nodiscard]] std::string getName() const override { return "ReadFromSystemStackTrace"; }
 
     void initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override
     {

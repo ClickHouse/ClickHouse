@@ -47,9 +47,9 @@ struct ExpressionUsage
     /// Filled after pruning: old 1-based tupleElement index -> new 1-based index.
     std::unordered_map<UInt64, UInt64> index_remap;
 
-    bool hasNested() const { return !nested_subcolumn_names.empty(); }
+    [[nodiscard]] bool hasNested() const { return !nested_subcolumn_names.empty(); }
 
-    bool isUsed() const { return fully_used || !used_subcolumns.empty(); }
+    [[nodiscard]] bool isUsed() const { return fully_used || !used_subcolumns.empty(); }
 };
 
 struct ArrayJoinUsage

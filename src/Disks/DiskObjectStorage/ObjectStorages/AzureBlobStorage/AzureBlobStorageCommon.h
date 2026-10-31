@@ -71,7 +71,7 @@ struct Endpoint
     std::optional<bool> container_already_exists;
     std::optional<bool> add_account_name_to_url;
 
-    String getContainerEndpoint() const
+    [[nodiscard]] String getContainerEndpoint() const
     {
         String url = storage_account_url;
         if (url.ends_with('/'))
@@ -92,7 +92,7 @@ struct Endpoint
         return url;
     }
 
-    String getServiceEndpoint() const
+    [[nodiscard]] String getServiceEndpoint() const
     {
         String url = storage_account_url;
 
@@ -131,15 +131,15 @@ class ContainerClientWrapper
 public:
     ContainerClientWrapper(RawContainerClient client_, String blob_prefix_);
 
-    bool IsClientForDisk() const;
-    BlobClient GetBlobClient(const String & blob_name) const;
-    BlockBlobClient GetBlockBlobClient(const String & blob_name) const;
-    BlobContainerPropertiesRespones GetProperties() const;
-    ListBlobsPagedResponse ListBlobs(const ListBlobsOptions & options) const;
+    [[nodiscard]] bool IsClientForDisk() const;
+    [[nodiscard]] BlobClient GetBlobClient(const String & blob_name) const;
+    [[nodiscard]] BlockBlobClient GetBlockBlobClient(const String & blob_name) const;
+    [[nodiscard]] BlobContainerPropertiesRespones GetProperties() const;
+    [[nodiscard]] ListBlobsPagedResponse ListBlobs(const ListBlobsOptions & options) const;
 
-    BlobContainerBatch CreateBatch() const;
-    BlobBatchResultResponse SubmitBatch(const BlobContainerBatch & batch) const;
-    String GetBlobPath(const String & blob_name) const;
+    [[nodiscard]] BlobContainerBatch CreateBatch() const;
+    BlobBatchResultResponse SubmitBatch(const BlobContainerBatch & batch) const; /// NOLINT(modernize-use-nodiscard): often called only for its side effect
+    [[nodiscard]] String GetBlobPath(const String & blob_name) const;
 
 private:
     RawContainerClient client;
@@ -166,22 +166,22 @@ struct ConnectionParams
     /// table on a disk, whose configuration comes from the server.
     bool follows_session_restriction = false;
 
-    String getContainer() const { return endpoint.container_name; }
-    String getConnectionURL() const;
+    [[nodiscard]] String getContainer() const { return endpoint.container_name; }
+    [[nodiscard]] String getConnectionURL() const;
     /// Without the query, which can be a SAS, for where the url only names the endpoint (logs, errors, cache keys).
-    String getConnectionURLWithoutQuery() const;
+    [[nodiscard]] String getConnectionURLWithoutQuery() const;
 
-    std::unique_ptr<ServiceClient> createForService() const;
-    std::unique_ptr<ContainerClient> createForContainer() const;
+    [[nodiscard]] std::unique_ptr<ServiceClient> createForService() const;
+    [[nodiscard]] std::unique_ptr<ContainerClient> createForContainer() const;
 
     /// Throws `ACCESS_DENIED` when the credential is off limits and the anonymous fallback is not allowed.
-    bool checkOrDropServerManagedCredentials() const;
+    bool checkOrDropServerManagedCredentials() const; /// NOLINT(modernize-use-nodiscard): often called only for its side effect
 
     /// Whether requests would authenticate with the server's own identity: no SAS token and a server-managed `auth_method`.
-    bool usesServerManagedCredentials() const;
+    [[nodiscard]] bool usesServerManagedCredentials() const;
 
     /// `auth_method` for a caller that obtains tokens from it directly; throws `ACCESS_DENIED` if it is off limits.
-    AuthMethod getPermittedAuthMethod() const;
+    [[nodiscard]] AuthMethod getPermittedAuthMethod() const;
 
     /// Throws `ACCESS_DENIED` if a storage defined in user SQL uses the server's own identity and the accessing session
     /// is restricted. Does not change the parameters, so a client kept for others is not affected.

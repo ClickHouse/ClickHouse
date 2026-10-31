@@ -28,11 +28,11 @@ struct ClusterFunctionReadTaskResponse
     std::optional<Iceberg::IcebergObjectSerializableInfo> iceberg_info;
 
     /// Convert received response into ObjectInfo.
-    ObjectInfoPtr getObjectInfo() const;
+    [[nodiscard]] ObjectInfoPtr getObjectInfo() const;
 
     /// Whether response is empty.
     /// It is used to identify an end of processing.
-    bool isEmpty() const { return path.empty(); }
+    [[nodiscard]] bool isEmpty() const { return path.empty(); }
 
     /// Serialize according to the protocol version.
     void serialize(WriteBuffer & out, size_t worker_protocol_version) const;

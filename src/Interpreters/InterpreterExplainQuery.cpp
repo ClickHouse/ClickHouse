@@ -715,17 +715,17 @@ struct ExplainSettings : public Settings
     using Settings::boolean_settings;
     using Settings::integer_settings;
 
-    bool has(const std::string & name_) const
+    [[nodiscard]] bool has(const std::string & name_) const
     {
         return hasBooleanSetting(name_) || hasIntegerSetting(name_);
     }
 
-    bool hasBooleanSetting(const std::string & name_) const
+    [[nodiscard]] bool hasBooleanSetting(const std::string & name_) const
     {
         return boolean_settings.count(name_) > 0;
     }
 
-    bool hasIntegerSetting(const std::string & name_) const
+    [[nodiscard]] bool hasIntegerSetting(const std::string & name_) const
     {
         return integer_settings.count(name_) > 0;
     }
@@ -748,7 +748,7 @@ struct ExplainSettings : public Settings
         it->second.get() = value;
     }
 
-    std::string getSettingsList() const
+    [[nodiscard]] std::string getSettingsList() const
     {
         std::string res;
         for (const auto & setting : boolean_settings)

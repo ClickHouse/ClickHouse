@@ -73,7 +73,7 @@ public:
       const PlannerContextPtr & planner_context);
 
     RawTableExpressionDataMap & getTableExpressionDataMap() noexcept { return shared_table_expression_data; }
-    const RawTableExpressionDataMap & getTableExpressionDataMap() const noexcept { return shared_table_expression_data; }
+    [[nodiscard]] const RawTableExpressionDataMap & getTableExpressionDataMap() const noexcept { return shared_table_expression_data; }
 
     /// The query which will be executed with parallel replicas.
     /// In case if only the most inner subquery can be executed with parallel replicas, node is nullptr.
@@ -113,13 +113,13 @@ public:
     PlannerContext(ContextMutablePtr query_context_, PlannerContextPtr planner_context_);
 
     /// Get planner context query context
-    ContextPtr getQueryContext() const
+    [[nodiscard]] ContextPtr getQueryContext() const
     {
         return query_context;
     }
 
     /// Get planner context mutable query context
-    const ContextMutablePtr & getMutableQueryContext() const
+    [[nodiscard]] const ContextMutablePtr & getMutableQueryContext() const
     {
         return query_context;
     }
@@ -131,7 +131,7 @@ public:
     }
 
     /// Get global planner context
-    const GlobalPlannerContextPtr & getGlobalPlannerContext() const
+    [[nodiscard]] const GlobalPlannerContextPtr & getGlobalPlannerContext() const
     {
         return global_planner_context;
     }
@@ -148,7 +148,7 @@ public:
     /** Get table expression data.
       * Exception is thrown if there are no table expression data for table expression node.
       */
-    const TableExpressionData & getTableExpressionDataOrThrow(const QueryTreeNodePtr & table_expression_node) const;
+    [[nodiscard]] const TableExpressionData & getTableExpressionDataOrThrow(const QueryTreeNodePtr & table_expression_node) const;
 
     /** Get table expression data.
       * Exception is thrown if there are no table expression data for table expression node.
@@ -158,7 +158,7 @@ public:
     /** Get table expression data.
       * Null is returned if there are no table expression data for table expression node.
       */
-    const TableExpressionData * getTableExpressionDataOrNull(const QueryTreeNodePtr & table_expression_node) const;
+    [[nodiscard]] const TableExpressionData * getTableExpressionDataOrNull(const QueryTreeNodePtr & table_expression_node) const;
 
     /** Get table expression data.
       * Null is returned if there are no table expression data for table expression node.
@@ -166,7 +166,7 @@ public:
     TableExpressionData * getTableExpressionDataOrNull(const QueryTreeNodePtr & table_expression_node);
 
     /// Get table expression node to data map
-    const std::unordered_map<QueryTreeNodePtr, TableExpressionData> & getTableExpressionNodeToData() const
+    [[nodiscard]] const std::unordered_map<QueryTreeNodePtr, TableExpressionData> & getTableExpressionNodeToData() const
     {
         return table_expression_node_to_data;
     }
@@ -182,14 +182,14 @@ public:
       * If table expression data is not registered exception is thrown.
       * In table expression data get column node identifier using column name.
       */
-    const ColumnIdentifier & getColumnNodeIdentifierOrThrow(const QueryTreeNodePtr & column_node) const;
+    [[nodiscard]] const ColumnIdentifier & getColumnNodeIdentifierOrThrow(const QueryTreeNodePtr & column_node) const;
 
     /** Get column node identifier.
       * For column node source check if table expression data is registered.
       * If table expression data is not registered null is returned.
       * In table expression data get column node identifier or null using column name.
       */
-    const ColumnIdentifier * getColumnNodeIdentifierOrNull(const QueryTreeNodePtr & column_node) const;
+    [[nodiscard]] const ColumnIdentifier * getColumnNodeIdentifierOrNull(const QueryTreeNodePtr & column_node) const;
 
     using SetKey = std::string;
 
@@ -201,7 +201,7 @@ public:
     /// Returns false if any of following conditions met:
     /// 1. Query is executed on a follower node.
     /// 2. ignore_ast_optimizations is set.
-    bool isASTLevelOptimizationAllowed() const { return is_ast_level_optimization_allowed; }
+    [[nodiscard]] bool isASTLevelOptimizationAllowed() const { return is_ast_level_optimization_allowed; }
 
     /// True when this plan, or a fragment of it, may be serialized and shipped to another node: a
     /// logical plan built for a shard under `serialize_query_plan`, or a local plan from which
@@ -209,13 +209,13 @@ public:
     /// replicas. Everything materialized while planning must then survive serialization, which rules
     /// out a JIT-compiled expression: a compiled function has no name in `FunctionFactory`, so the
     /// receiving node cannot resolve it.
-    bool mayBeSerializedForRemoteExecution() const { return may_be_serialized_for_remote_execution; }
+    [[nodiscard]] bool mayBeSerializedForRemoteExecution() const { return may_be_serialized_for_remote_execution; }
 
 private:
 
     RawTableExpressionDataMap & getSharedTableExpressionDataMap() noexcept { return global_planner_context->getTableExpressionDataMap(); }
 
-    const RawTableExpressionDataMap & getSharedTableExpressionDataMap() const noexcept { return global_planner_context->getTableExpressionDataMap(); }
+    [[nodiscard]] const RawTableExpressionDataMap & getSharedTableExpressionDataMap() const noexcept { return global_planner_context->getTableExpressionDataMap(); }
 
     /// Query context
     ContextMutablePtr query_context;

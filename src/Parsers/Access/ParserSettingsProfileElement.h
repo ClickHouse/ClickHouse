@@ -15,7 +15,7 @@ public:
     ParserSettingsProfileElement & useInheritKeyword(bool use_inherit_keyword_ = true) { use_inherit_keyword = use_inherit_keyword_; return *this; }
 
 protected:
-    const char * getName() const override { return "SettingsProfileElement"; }
+    [[nodiscard]] const char * getName() const override { return "SettingsProfileElement"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 
 private:
@@ -31,7 +31,7 @@ public:
     ParserSettingsProfileElements & useInheritKeyword(bool use_inherit_keyword_ = true) { use_inherit_keyword = use_inherit_keyword_; return *this; }
 
 protected:
-    const char * getName() const override { return "SettingsProfileElements"; }
+    [[nodiscard]] const char * getName() const override { return "SettingsProfileElements"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 
 private:
@@ -46,7 +46,7 @@ public:
     ParserAlterSettingsProfileElements & useInheritKeyword(bool use_inherit_keyword_ = true) { use_inherit_keyword = use_inherit_keyword_; return *this; }
 
 protected:
-    const char * getName() const override { return "AlterSettingsProfileElements"; }
+    [[nodiscard]] const char * getName() const override { return "AlterSettingsProfileElements"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 
 private:

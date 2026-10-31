@@ -15,8 +15,8 @@ struct EventFD
 
     /// Both read() and write() are blocking.
     /// TODO: add non-blocking flag to ctor.
-    uint64_t read() const;
-    bool write(uint64_t increase = 1) const;
+    uint64_t read() const; /// NOLINT(modernize-use-nodiscard): often called only for its side effect
+    bool write(uint64_t increase = 1) const; /// NOLINT(modernize-use-nodiscard): often called only for its side effect
 
     /// Readable (pollable) descriptor. On Linux it is the eventfd itself and is used for both
     /// read() and write(); on macOS it is the read end of a self-pipe (see write_fd below).

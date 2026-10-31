@@ -375,12 +375,12 @@ struct BlockCursor
     {
     }
 
-    ALWAYS_INLINE size_t blockNumber() const { return (*block_number)[row]; }
-    ALWAYS_INLINE size_t blockOffset() const { return (*block_offset)[row]; }
-    ALWAYS_INLINE size_t runLength() const { return run_end - row; }
-    ALWAYS_INLINE bool isFinished() const { return row >= num_rows; }
+    [[nodiscard]] ALWAYS_INLINE size_t blockNumber() const { return (*block_number)[row]; }
+    [[nodiscard]] ALWAYS_INLINE size_t blockOffset() const { return (*block_offset)[row]; }
+    [[nodiscard]] ALWAYS_INLINE size_t runLength() const { return run_end - row; }
+    [[nodiscard]] ALWAYS_INLINE bool isFinished() const { return row >= num_rows; }
 
-    ALWAYS_INLINE int compare(const BlockCursor & other, const std::vector<bool> & reverse_flags) const
+    [[nodiscard]] ALWAYS_INLINE int compare(const BlockCursor & other, const std::vector<bool> & reverse_flags) const
     {
         return compareSortKeyRows(sorting_key_columns, row, other.sorting_key_columns, other.row, reverse_flags);
     }

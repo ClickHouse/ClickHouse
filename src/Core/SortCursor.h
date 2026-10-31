@@ -83,7 +83,7 @@ struct SortCursorImpl
         reset(columns, header, num_rows, perm);
     }
 
-    bool empty() const { return rows == 0; }
+    [[nodiscard]] bool empty() const { return rows == 0; }
 
     /// Set the cursor to the beginning of the new block.
     void reset(const Block & block, IColumnPermutation * perm = nullptr);
@@ -91,7 +91,7 @@ struct SortCursorImpl
     /// Set the cursor to the beginning of the new block.
     void reset(const Columns & columns, const Block & block, UInt64 num_rows, IColumnPermutation * perm = nullptr);
 
-    size_t getRow() const
+    [[nodiscard]] size_t getRow() const
     {
         if (permutation)
             return (*permutation)[pos];
@@ -100,18 +100,18 @@ struct SortCursorImpl
 
     /// We need a possibility to change pos (see MergeJoin).
     size_t & getPosRef() { return pos; }
-    size_t getPos() const { return pos; }
+    [[nodiscard]] size_t getPos() const { return pos; }
 
-    bool isFirst() const { return pos == 0; }
-    bool isLast() const { return pos + 1 >= rows; }
-    bool isLast(size_t size) const { return pos + size >= rows; }
-    bool isValid() const { return pos < rows; }
+    [[nodiscard]] bool isFirst() const { return pos == 0; }
+    [[nodiscard]] bool isLast() const { return pos + 1 >= rows; }
+    [[nodiscard]] bool isLast(size_t size) const { return pos + size >= rows; }
+    [[nodiscard]] bool isValid() const { return pos < rows; }
 
     void next() { ++pos; }
     void next(size_t size) { pos += size; }
 
-    size_t getSize() const { return rows; }
-    size_t rowsLeft() const { return rows - pos; }
+    [[nodiscard]] size_t getSize() const { return rows; }
+    [[nodiscard]] size_t rowsLeft() const { return rows - pos; }
 
 /// Prevent using pos instead of getRow()
 private:
@@ -127,18 +127,18 @@ struct SortCursorHelper
 {
     SortCursorImpl * impl;
 
-    const Derived & derived() const { return static_cast<const Derived &>(*this); }
+    [[nodiscard]] const Derived & derived() const { return static_cast<const Derived &>(*this); }
 
     explicit SortCursorHelper(SortCursorImpl * impl_) : impl(impl_) {}
     SortCursorImpl * operator-> () { return impl; }
     const SortCursorImpl * operator-> () const { return impl; }
 
-    bool ALWAYS_INLINE greater(const SortCursorHelper & rhs) const
+    [[nodiscard]] bool ALWAYS_INLINE greater(const SortCursorHelper & rhs) const
     {
         return derived().greaterAt(rhs.derived(), impl->getRow(), rhs.impl->getRow());
     }
 
-    bool ALWAYS_INLINE greaterWithOffset(const SortCursorHelper & rhs, size_t lhs_offset, size_t rhs_offset) const
+    [[nodiscard]] bool ALWAYS_INLINE greaterWithOffset(const SortCursorHelper & rhs, size_t lhs_offset, size_t rhs_offset) const
     {
         return derived().greaterAt(rhs.derived(), impl->getRow() + lhs_offset, rhs.impl->getRow() + rhs_offset);
     }
@@ -150,7 +150,7 @@ struct SortCursorHelper
     }
 
     /// Checks that all rows in the current block of this cursor are less than or equal to all the rows of the current block of another cursor.
-    bool ALWAYS_INLINE totallyLessOrEquals(const SortCursorHelper & rhs) const
+    [[nodiscard]] bool ALWAYS_INLINE totallyLessOrEquals(const SortCursorHelper & rhs) const
     {
         if (impl->rows == 0 || rhs.impl->rows == 0)
             return false;
@@ -159,7 +159,7 @@ struct SortCursorHelper
         return !derived().greaterAt(rhs.derived(), impl->rows - 1, 0);
     }
 
-    bool ALWAYS_INLINE totallyLess(const SortCursorHelper & rhs) const
+    [[nodiscard]] bool ALWAYS_INLINE totallyLess(const SortCursorHelper & rhs) const
     {
         if (impl->rows == 0 || rhs.impl->rows == 0)
             return false;
@@ -176,7 +176,7 @@ struct SortCursor : SortCursorHelper<SortCursor>
 
     /// The specified row of this cursor is greater than the specified row of another cursor.
     template <bool consider_order = true>
-    bool ALWAYS_INLINE greaterAt(const SortCursor & rhs, size_t lhs_pos, size_t rhs_pos) const
+    [[nodiscard]] bool ALWAYS_INLINE greaterAt(const SortCursor & rhs, size_t lhs_pos, size_t rhs_pos) const
     {
 #if USE_EMBEDDED_COMPILER
         if (impl->desc.compiled_sort_description && rhs.impl->desc.compiled_sort_description)
@@ -229,7 +229,7 @@ struct SimpleSortCursor : SortCursorHelper<SimpleSortCursor>
     using SortCursorHelper<SimpleSortCursor>::SortCursorHelper;
 
     template <bool consider_order = true>
-    bool ALWAYS_INLINE greaterAt(const SimpleSortCursor & rhs, size_t lhs_pos, size_t rhs_pos) const
+    [[nodiscard]] bool ALWAYS_INLINE greaterAt(const SimpleSortCursor & rhs, size_t lhs_pos, size_t rhs_pos) const
     {
         int res = 0;
 
@@ -263,7 +263,7 @@ struct SpecializedSingleColumnSortCursor : SortCursorHelper<SpecializedSingleCol
     using SortCursorHelper<SpecializedSingleColumnSortCursor>::SortCursorHelper;
 
     template <bool consider_order = true>
-    bool ALWAYS_INLINE greaterAt(const SortCursorHelper<SpecializedSingleColumnSortCursor> & rhs, size_t lhs_pos, size_t rhs_pos) const
+    [[nodiscard]] bool ALWAYS_INLINE greaterAt(const SortCursorHelper<SpecializedSingleColumnSortCursor> & rhs, size_t lhs_pos, size_t rhs_pos) const
     {
         auto & this_impl = this->impl;
 
@@ -293,7 +293,7 @@ struct SpecializedSingleNullableColumnSortCursor : SortCursorHelper<SpecializedS
     using SortCursorHelper<SpecializedSingleNullableColumnSortCursor>::SortCursorHelper;
 
     template <bool consider_order = true>
-    bool ALWAYS_INLINE greaterAt(const SortCursorHelper<SpecializedSingleNullableColumnSortCursor> & rhs, size_t lhs_pos, size_t rhs_pos) const
+    [[nodiscard]] bool ALWAYS_INLINE greaterAt(const SortCursorHelper<SpecializedSingleNullableColumnSortCursor> & rhs, size_t lhs_pos, size_t rhs_pos) const
     {
         auto & this_impl = this->impl;
 
@@ -343,7 +343,7 @@ struct SortCursorWithCollation : SortCursorHelper<SortCursorWithCollation>
     using SortCursorHelper<SortCursorWithCollation>::SortCursorHelper;
 
     template <bool consider_order = true>
-    bool ALWAYS_INLINE greaterAt(const SortCursorWithCollation & rhs, size_t lhs_pos, size_t rhs_pos) const
+    [[nodiscard]] bool ALWAYS_INLINE greaterAt(const SortCursorWithCollation & rhs, size_t lhs_pos, size_t rhs_pos) const
     {
         for (size_t i = 0; i < impl->sort_columns_size; ++i)
         {
@@ -481,7 +481,7 @@ public:
         }
     }
 
-    bool isValid() const { return !queue.empty(); }
+    [[nodiscard]] bool isValid() const { return !queue.empty(); }
 
     Cursor & current() requires (strategy == SortingQueueStrategy::Default)
     {
@@ -609,7 +609,7 @@ private:
     static constexpr size_t max_array_container_size = 256;
     bool array_mode = false;
 
-    bool ALWAYS_INLINE isArrayMode() const
+    [[nodiscard]] bool ALWAYS_INLINE isArrayMode() const
     {
         if constexpr (container == SortingQueueContainer::Heap)
             return false;
@@ -618,7 +618,7 @@ private:
     }
 
     /// The first position in [first, queue.size()) whose cursor is greater than the given one.
-    size_t ALWAYS_INLINE arrayUpperBound(const Cursor & cursor, size_t first) const
+    [[nodiscard]] size_t ALWAYS_INLINE arrayUpperBound(const Cursor & cursor, size_t first) const
     {
         size_t lo = first;
         size_t hi = queue.size();
@@ -873,7 +873,7 @@ public:
         return std::visit(func, batch_queue_variants);
     }
 
-    bool variantSupportJITCompilation() const
+    [[nodiscard]] bool variantSupportJITCompilation() const
     {
         return std::holds_alternative<SortingQueueForCursor<SimpleSortCursor, SortingQueueStrategy::Default>>(default_queue_variants)
             || std::holds_alternative<SortingQueueForCursor<SortCursor, SortingQueueStrategy::Default>>(default_queue_variants)

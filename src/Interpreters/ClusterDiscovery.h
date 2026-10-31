@@ -59,7 +59,7 @@ private:
         {}
 
         static bool parse(const String & data, NodeInfo & result);
-        String serialize() const;
+        [[nodiscard]] String serialize() const;
     };
 
     // node uuid -> address ("host:port")

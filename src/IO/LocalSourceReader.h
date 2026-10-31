@@ -16,7 +16,7 @@ public:
 
     std::unique_ptr<ReadBufferFromFileBase> open(const StoredObject & object) override;
 
-    String name() const override { return "LocalSourceReader"; }
+    [[nodiscard]] String name() const override { return "LocalSourceReader"; }
 
 private:
     ReadSettings read_settings;

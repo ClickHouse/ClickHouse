@@ -21,7 +21,7 @@ public:
     ParserRolesOrUsersSet & allowQueryParameters(bool allow_query_parameter_ = true) { allow_query_parameter = allow_query_parameter_; return *this; }
 
 protected:
-    const char * getName() const override { return "RolesOrUsersSet"; }
+    [[nodiscard]] const char * getName() const override { return "RolesOrUsersSet"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 
 private:

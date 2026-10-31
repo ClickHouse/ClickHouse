@@ -2937,7 +2937,7 @@ FunctionCast::WrapperType FunctionCast::createNumberToEnumWrapper() const
                     throw Exception(ErrorCodes::CANNOT_CONVERT_TYPE, "Value {} cannot be converted to enum type", toString(in_data[i]));
 
                 /// Validate that value exists in Enum (throws if not found)
-                result_type.getNameForValue(converted_value);
+                (void)result_type.getNameForValue(converted_value);
                 out_data[i] = converted_value;
             }
         }
@@ -3058,7 +3058,7 @@ static FunctionCast::WrapperType createEnumToLowCardinalityStringWrapper(const D
             else if (pos < value_to_index.size() && value_to_index[pos] != missing)
                 indexes_data[i] = value_to_index[pos];
             else
-                enum_type->getNameForValue(data[i]); /// Throws for a value missing in the enum.
+                (void)enum_type->getNameForValue(data[i]); /// Throws for a value missing in the enum.
         }
 
         /// A private source dictionary makes `insertRangeFrom` copy only the used names instead of adopting all of them.

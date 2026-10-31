@@ -318,7 +318,7 @@ public:
     /// Get schema meta info (id, path) for the latest schema file.
     std::pair<Int32, String> getLatestTableSchemaInfo();
     /// Get schema meta info for a specific schema_id.
-    std::pair<Int32, String> getTableSchemaInfoById(Int32 schema_id) const;
+    [[nodiscard]] std::pair<Int32, String> getTableSchemaInfoById(Int32 schema_id) const;
     std::optional<std::pair<Int64, String>> getLatestTableSnapshotInfo();
     /// Smallest snapshot id still present in the warehouse. Snapshots below it were
     /// expired by Paimon; ids in [earliest, latest] are contiguous and must be readable.
@@ -332,7 +332,7 @@ private:
     /// Build ReadSettings for metadata reads.  When the caller knows that the
     /// in-memory Paimon metadata cache is active it passes disable_filesystem_cache=true
     /// so the same bytes are not stored twice (once raw in fs cache, once parsed in memory).
-    ReadSettings getPaimonMetadataReadSettings(bool disable_filesystem_cache) const;
+    [[nodiscard]] ReadSettings getPaimonMetadataReadSettings(bool disable_filesystem_cache) const;
 
     const ObjectStoragePtr object_storage;
     const String table_location;

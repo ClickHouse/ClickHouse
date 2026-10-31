@@ -29,21 +29,21 @@ class CompressionCodecQuantized : public ICompressionCodec
 public:
     explicit CompressionCodecQuantized(const QuantizedCodecParams & params_);
 
-    uint8_t getMethodByte() const override;
-    ASTPtr getCodecDescription() const override;
+    [[nodiscard]] uint8_t getMethodByte() const override;
+    [[nodiscard]] ASTPtr getCodecDescription() const override;
     void updateHash(SipHash & hash) const override;
 
-    const QuantizedCodecParams & getParams() const { return params; }
+    [[nodiscard]] const QuantizedCodecParams & getParams() const { return params; }
 
 protected:
     UInt32 doCompressData(const char * source, UInt32 source_size, char * dest) const override;
     UInt32 doDecompressData(const char * source, UInt32 source_size, char * dest, UInt32 uncompressed_size) const override;
 
-    bool isCompression() const override { return false; }
-    bool isGenericCompression() const override { return false; }
-    bool isNone() const override { return true; } /// see the class-level comment
+    [[nodiscard]] bool isCompression() const override { return false; }
+    [[nodiscard]] bool isGenericCompression() const override { return false; }
+    [[nodiscard]] bool isNone() const override { return true; } /// see the class-level comment
 
-    String getDescription() const override
+    [[nodiscard]] String getDescription() const override
     {
         return "Stores a compact quantized companion stream of a dense vector column for fast nearest-neighbour search; "
                "the full-precision data is stored uncompressed.";

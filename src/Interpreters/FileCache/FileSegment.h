@@ -104,13 +104,13 @@ public:
 
         bool operator<(const Range & other) const { return right < other.left; }
 
-        size_t size() const { return right - left + 1; }
+        [[nodiscard]] size_t size() const { return right - left + 1; }
 
-        bool contains(size_t point) const { return left <= point && point <= right; }
+        [[nodiscard]] bool contains(size_t point) const { return left <= point && point <= right; }
 
-        bool contains(const Range & other) const { return contains(other.left) && contains(other.right); }
+        [[nodiscard]] bool contains(const Range & other) const { return contains(other.left) && contains(other.right); }
 
-        String toString() const { return fmt::format("[{}, {}]", std::to_string(left), std::to_string(right)); }
+        [[nodiscard]] String toString() const { return fmt::format("[{}, {}]", std::to_string(left), std::to_string(right)); }
     };
 
     static String getCallerId();
@@ -397,28 +397,28 @@ struct FileSegmentsHolder final : private boost::noncopyable
 
     ~FileSegmentsHolder();
 
-    bool empty() const { return file_segments.empty(); }
+    [[nodiscard]] bool empty() const { return file_segments.empty(); }
 
-    size_t size() const { return file_segments.size(); }
+    [[nodiscard]] size_t size() const { return file_segments.size(); }
 
-    String toString(bool with_state = false) const;
+    [[nodiscard]] String toString(bool with_state = false) const;
 
     void completeAndPopFront(bool allow_background_download, bool force_shrink_to_downloaded_size) { completeAndPopFrontImpl(allow_background_download, force_shrink_to_downloaded_size); }
 
     FileSegment & front() { return *file_segments.front(); }
-    const FileSegment & front() const { return *file_segments.front(); }
+    [[nodiscard]] const FileSegment & front() const { return *file_segments.front(); }
 
     FileSegment & back() { return *file_segments.back(); }
-    const FileSegment & back() const { return *file_segments.back(); }
+    [[nodiscard]] const FileSegment & back() const { return *file_segments.back(); }
 
     FileSegment & add(FileSegmentPtr && file_segment);
 
     FileSegments::iterator begin() { return file_segments.begin(); }
     FileSegments::iterator end() { return file_segments.end(); }
 
-    FileSegments::const_iterator begin() const { return file_segments.begin(); }
-    FileSegments::const_iterator end() const { return file_segments.end(); }
-    FileSegmentPtr getSingleFileSegment() const;
+    [[nodiscard]] FileSegments::const_iterator begin() const { return file_segments.begin(); }
+    [[nodiscard]] FileSegments::const_iterator end() const { return file_segments.end(); }
+    [[nodiscard]] FileSegmentPtr getSingleFileSegment() const;
 
     void reset();
 

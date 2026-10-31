@@ -17,7 +17,7 @@ public:
     static constexpr UInt32 MAX_BUCKET = NUM_BUCKETS - 1;
 
     /// The hash does not depend on the bucket, so any submap's hash function serves.
-    size_t hash(const Key & x) const { return impls[0].hash(x); }
+    [[nodiscard]] size_t hash(const Key & x) const { return impls[0].hash(x); }
 
     size_t operator()(const Key & x) const { return hash(x); }
 
@@ -105,7 +105,7 @@ public:
         return impls[getBucketFromHash(hash_value)].find(x, hash_value);
     }
 
-    ConstLookupResult ALWAYS_INLINE find(const Key & x, size_t hash_value) const
+    [[nodiscard]] ConstLookupResult ALWAYS_INLINE find(const Key & x, size_t hash_value) const
     {
         return impls[getBucketFromHash(hash_value)].find(x, hash_value);
     }
@@ -127,7 +127,7 @@ public:
         return dispatch(*this, x, typename Impl::FindCallable{});
     }
 
-    ConstLookupResult ALWAYS_INLINE find(const Key & x) const
+    [[nodiscard]] ConstLookupResult ALWAYS_INLINE find(const Key & x) const
     {
         return dispatch(*this, x, typename Impl::FindCallable{});
     }
@@ -171,7 +171,7 @@ public:
         }
     }
 
-    size_t size() const
+    [[nodiscard]] size_t size() const
     {
         size_t res = 0;
         for (UInt32 i = 0; i < NUM_BUCKETS; ++i)
@@ -180,7 +180,7 @@ public:
         return res;
     }
 
-    bool empty() const
+    [[nodiscard]] bool empty() const
     {
         for (UInt32 i = 0; i < NUM_BUCKETS; ++i)
             if (!impls[i].empty())
@@ -189,7 +189,7 @@ public:
         return true;
     }
 
-    size_t getBufferSizeInBytes() const
+    [[nodiscard]] size_t getBufferSizeInBytes() const
     {
         size_t res = 0;
         for (UInt32 i = 0; i < NUM_BUCKETS; ++i)

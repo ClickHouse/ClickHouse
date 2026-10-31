@@ -82,11 +82,11 @@ namespace
 class AggregateFunctionCombinatorMerge final : public IAggregateFunctionCombinator
 {
 public:
-    String getName() const override { return "Merge"; }
+    [[nodiscard]] String getName() const override { return "Merge"; }
 
-    bool transformsArgumentTypes() const override { return true; }
+    [[nodiscard]] bool transformsArgumentTypes() const override { return true; }
 
-    DataTypes transformArguments(const DataTypes & arguments) const override
+    [[nodiscard]] DataTypes transformArguments(const DataTypes & arguments) const override
     {
         if (arguments.size() != 1)
             throw Exception(
@@ -107,7 +107,7 @@ public:
         return function->getArgumentsDataTypes();
     }
 
-    AggregateFunctionPtr transformAggregateFunction(
+    [[nodiscard]] AggregateFunctionPtr transformAggregateFunction(
         const AggregateFunctionPtr & nested_function,
         const AggregateFunctionProperties &,
         const DataTypes & arguments,

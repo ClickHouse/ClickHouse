@@ -19,8 +19,8 @@ public:
     ChunkInfo(const ChunkInfo&) = default;
     ChunkInfo(ChunkInfo&&) = default;
 
-    virtual Ptr clone() const = 0;
-    virtual Ptr merge(const Ptr & right) const
+    [[nodiscard]] virtual Ptr clone() const = 0;
+    [[nodiscard]] virtual Ptr merge(const Ptr & right) const
     {
         return right; // merge left into right by default returns right
     }
@@ -38,7 +38,7 @@ private:
     ChunkInfoCloneable(const ChunkInfoCloneable & other) = default;
 
 public:
-    Ptr clone() const override
+    [[nodiscard]] Ptr clone() const override
     {
         return std::static_pointer_cast<ChunkInfo>(std::make_shared<Derived>(*static_cast<const Derived*>(this)));
     }
@@ -86,7 +86,7 @@ public:
         return *this;
     }
 
-    Chunk clone() const;
+    [[nodiscard]] Chunk clone() const;
 
     void swap(Chunk & other) noexcept
     {
@@ -102,33 +102,33 @@ public:
         chunk_infos.clear();
     }
 
-    const Columns & getColumns() const { return columns; }
+    [[nodiscard]] const Columns & getColumns() const { return columns; }
     void setColumns(Columns columns_, UInt64 num_rows_);
     void setColumns(MutableColumns columns_, UInt64 num_rows_);
     Columns detachColumns();
     MutableColumns mutateColumns();
     /** Get empty columns with the same types as in block. */
-    MutableColumns cloneEmptyColumns() const;
+    [[nodiscard]] MutableColumns cloneEmptyColumns() const;
 
     ChunkInfoCollection & getChunkInfos() { return chunk_infos; }
-    const ChunkInfoCollection & getChunkInfos() const { return chunk_infos; }
+    [[nodiscard]] const ChunkInfoCollection & getChunkInfos() const { return chunk_infos; }
     void setChunkInfos(ChunkInfoCollection chunk_infos_) { chunk_infos = std::move(chunk_infos_); }
 
-    UInt64 getNumRows() const { return num_rows; }
-    UInt64 getNumColumns() const { return columns.size(); }
-    bool hasRows() const { return num_rows > 0; }
-    bool hasColumns() const { return !columns.empty(); }
-    bool empty() const { return !hasRows() && !hasColumns(); }
+    [[nodiscard]] UInt64 getNumRows() const { return num_rows; }
+    [[nodiscard]] UInt64 getNumColumns() const { return columns.size(); }
+    [[nodiscard]] bool hasRows() const { return num_rows > 0; }
+    [[nodiscard]] bool hasColumns() const { return !columns.empty(); }
+    [[nodiscard]] bool empty() const { return !hasRows() && !hasColumns(); }
     explicit operator bool() const { return !empty(); }
 
     void addColumn(ColumnPtr column);
     void addColumn(size_t position, ColumnPtr column);
     void erase(size_t position);
 
-    UInt64 bytes() const;
-    UInt64 allocatedBytes() const;
+    [[nodiscard]] UInt64 bytes() const;
+    [[nodiscard]] UInt64 allocatedBytes() const;
 
-    std::string dumpStructure() const;
+    [[nodiscard]] std::string dumpStructure() const;
 
     void append(const Chunk & chunk);
     void append(const Chunk & chunk, size_t from, size_t length); // append rows [from, from+length) of chunk

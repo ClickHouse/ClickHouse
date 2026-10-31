@@ -118,7 +118,7 @@ public:
         : database_catalog(database_catalog_)
     {}
 
-    VectorWithMemoryTracking<String> getAllRegisteredNames() const override
+    [[nodiscard]] VectorWithMemoryTracking<String> getAllRegisteredNames() const override
     {
         auto context = CurrentThread::tryGetQueryContext();
         if (!context)

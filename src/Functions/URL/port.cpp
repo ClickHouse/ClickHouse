@@ -20,16 +20,16 @@ namespace ErrorCodes
 template<bool conform_rfc>
 struct FunctionPortImpl : public IFunction
 {
-    bool isVariadic() const override { return true; }
-    size_t getNumberOfArguments() const override { return 0; }
-    bool useDefaultImplementationForConstants() const override { return true; }
-    ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; }
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+    [[nodiscard]] bool isVariadic() const override { return true; }
+    [[nodiscard]] size_t getNumberOfArguments() const override { return 0; }
+    [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
+    [[nodiscard]] ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; }
+    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
-    String getSignatureString() const override { return "(String, [const UInt16]) -> UInt16"; }
+    [[nodiscard]] String getSignatureString() const override { return "(String, [const UInt16]) -> UInt16"; }
 
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         UInt16 default_port = 0;
         if (arguments.size() == 2)
@@ -118,14 +118,14 @@ private:
 struct FunctionPort final : public FunctionPortImpl<false>
 {
     static constexpr auto name = "port";
-    String getName() const override { return name; }
+    [[nodiscard]] String getName() const override { return name; }
     static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionPort>(); }
 };
 
 struct FunctionPortRFC final : public FunctionPortImpl<true>
 {
     static constexpr auto name = "portRFC";
-    String getName() const override { return name; }
+    [[nodiscard]] String getName() const override { return name; }
     static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionPortRFC>(); }
 };
 

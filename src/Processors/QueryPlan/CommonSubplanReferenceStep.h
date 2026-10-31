@@ -21,21 +21,21 @@ public:
         , columns_to_use(std::move(columns_to_use_))
     {}
 
-    String getName() const override { return "CommonSubplanReference"; }
+    [[nodiscard]] String getName() const override { return "CommonSubplanReference"; }
 
     void initializePipeline(QueryPipelineBuilder &, const BuildQueryPipelineSettings &) override;
 
-    QueryPlanStepPtr clone() const override
+    [[nodiscard]] QueryPlanStepPtr clone() const override
     {
         return std::make_unique<CommonSubplanReferenceStep>(getOutputHeader(), subplan_root, columns_to_use);
     }
 
-    QueryPlan::Node * getSubplanReferenceRoot() const { return subplan_root; }
+    [[nodiscard]] QueryPlan::Node * getSubplanReferenceRoot() const { return subplan_root; }
 
     /// Used to redirect the reference to the corresponding cloned node when a subplan is cloned.
     void setSubplanReferenceRoot(QueryPlan::Node * subplan_root_) { subplan_root = subplan_root_; }
 
-    const ColumnIdentifiers & getColumnsToUse() const { return columns_to_use; }
+    [[nodiscard]] const ColumnIdentifiers & getColumnsToUse() const { return columns_to_use; }
 
     ColumnIdentifiers extractColumnsToUse() { return std::move(columns_to_use); }
 

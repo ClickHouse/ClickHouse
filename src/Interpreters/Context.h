@@ -373,7 +373,7 @@ struct SharedContextHolder
 
     SharedContextHolder & operator=(SharedContextHolder &&) noexcept;
 
-    ContextSharedPart * get() const { return shared.get(); }
+    [[nodiscard]] ContextSharedPart * get() const { return shared.get(); }
     void reset();
 
 private:
@@ -2392,23 +2392,23 @@ struct HTTPContext : public IHTTPContext
         : context(Context::createCopy(context_))
     {}
 
-    uint64_t getMaxHstsAge() const override;
+    [[nodiscard]] uint64_t getMaxHstsAge() const override;
 
-    uint64_t getMaxUriSize() const override;
+    [[nodiscard]] uint64_t getMaxUriSize() const override;
 
-    uint64_t getMaxFields() const override;
+    [[nodiscard]] uint64_t getMaxFields() const override;
 
-    uint64_t getMaxFieldNameSize() const override;
+    [[nodiscard]] uint64_t getMaxFieldNameSize() const override;
 
-    uint64_t getMaxFieldValueSize() const override;
+    [[nodiscard]] uint64_t getMaxFieldValueSize() const override;
 
-    uint64_t getMaxRequestHeaderSize() const override;
+    [[nodiscard]] uint64_t getMaxRequestHeaderSize() const override;
 
-    Poco::Timespan getHeadersReadTimeout() const override;
+    [[nodiscard]] Poco::Timespan getHeadersReadTimeout() const override;
 
-    Poco::Timespan getReceiveTimeout() const override;
+    [[nodiscard]] Poco::Timespan getReceiveTimeout() const override;
 
-    Poco::Timespan getSendTimeout() const override;
+    [[nodiscard]] Poco::Timespan getSendTimeout() const override;
 
     ContextPtr context;
 };

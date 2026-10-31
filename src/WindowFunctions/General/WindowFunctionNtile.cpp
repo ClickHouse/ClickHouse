@@ -49,17 +49,17 @@ public:
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "'{}' argument type must be an unsigned integer (not larger than 64-bit), got {}", name_, argument_types[0]->getName());
     }
 
-    WindowFunctionRequirements getRequirements(const WindowDescription &) const override
+    [[nodiscard]] WindowFunctionRequirements getRequirements(const WindowDescription &) const override
     {
         return WindowFunctionRequirements{.partition = true, .order_by = true};
     }
 
-    size_t sizeOfState() const override { return sizeof(NtileState); }
-    size_t alignOfState() const override { return alignof(NtileState); }
+    [[nodiscard]] size_t sizeOfState() const override { return sizeof(NtileState); }
+    [[nodiscard]] size_t alignOfState() const override { return alignof(NtileState); }
     void createState(char * place) const override { new (place) NtileState(); }
     void resetPartition(char * place) const override { new (place) NtileState(); }
 
-    std::optional<WindowFrame> getDefaultFrame() const override
+    [[nodiscard]] std::optional<WindowFrame> getDefaultFrame() const override
     {
         WindowFrame frame;
         frame.type = WindowFrame::FrameType::ROWS;

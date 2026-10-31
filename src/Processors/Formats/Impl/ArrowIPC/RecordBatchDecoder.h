@@ -66,7 +66,7 @@ public:
         VectorWithMemoryTracking<Values> segments;
         VectorWithMemoryTracking<size_t> offsets;
 
-        size_t size() const
+        [[nodiscard]] size_t size() const
         {
             return offsets.back();
         }
@@ -76,7 +76,7 @@ public:
     /// `position`. A delta batch is decoded for the same positions as its base and must decode to the same
     /// column layout there, so referenced values can be gathered into a common output column.
     void set(Int64 id, const FieldPosition & position, Values values, bool is_delta);
-    const Dictionary & get(Int64 id, const FieldPosition & position) const;
+    [[nodiscard]] const Dictionary & get(Int64 id, const FieldPosition & position) const;
     /// Drops all dictionaries (used when an `IInputFormat` is reset to read another stream).
     void clear() { dictionaries.clear(); }
 
@@ -239,9 +239,9 @@ private:
     Slice nextBuffer();
     const flatbuf::FieldNode & nextNode();
     /// Returns the `FieldNode` at `offset` from the next node without consuming it.
-    const flatbuf::FieldNode & peekNode(size_t offset) const;
+    [[nodiscard]] const flatbuf::FieldNode & peekNode(size_t offset) const;
     /// Returns the next `FieldNode` length without consuming it.
-    Int64 peekNextNodeLength() const;
+    [[nodiscard]] Int64 peekNextNodeLength() const;
     /// Validates the next node's row count before decoding or skipping it. `what` identifies the field
     /// in the error message.
     void expectNextNodeLength(size_t expected, const String & what) const;
@@ -254,7 +254,7 @@ private:
     /// node is consumed). The child of a List/FixedSizeList/Map/Union field is the next node in the
     /// pre-order layout, and its row count is needed to size the child's invisible-rows mask before
     /// `decodeField` consumes the node.
-    size_t peekNodeRows() const;
+    [[nodiscard]] size_t peekNodeRows() const;
 
     /// Checks that a buffered subtree's declared row count fits the body's total bits before decoding.
     /// This also bounds allocations for bufferless fields declared ahead of their buffered siblings.
@@ -273,7 +273,7 @@ private:
     /// nulls, so every `null` leaf is all NULL and every struct row is valid. A buffer-less subtree that
     /// does declare nulls carries a validity bitmap, which bounds its length physically, and decodes on the
     /// ordinary path.
-    bool isSizeDeterminedSubtree(const ArrowField & field) const;
+    [[nodiscard]] bool isSizeDeterminedSubtree(const ArrowField & field) const;
     /// The recursive walk of `isSizeDeterminedSubtree` over the nodes of a buffer-less subtree. `node_offset`
     /// is the subtree's first node relative to the next node and is advanced past the subtree.
     bool bufferlessSubtreeDeclaresNulls(const ArrowField & field, size_t & node_offset) const;
@@ -333,10 +333,10 @@ private:
     ColumnPtr decodeDictionary(
         const ArrowField & field, size_t rows, bool allow_low_cardinality, const InvisibleRowsMask * invisible_rows,
         const String & path, size_t list_depth);
-    ColumnUInt8::Ptr buildNullMap(const Slice & validity, size_t rows, Int64 null_count) const;
+    [[nodiscard]] ColumnUInt8::Ptr buildNullMap(const Slice & validity, size_t rows, Int64 null_count) const;
     /// Nullable structs retain their null maps when tuples are nullable or a tuple conversion is
     /// requested. The reader applies the destination nullability after converting visible rows.
-    bool wrapsInNullable(const ArrowField & field, const IColumn & inner, const DataTypePtr & effective_hint) const;
+    [[nodiscard]] bool wrapsInNullable(const ArrowField & field, const IColumn & inner, const DataTypePtr & effective_hint) const;
     /// Decodes a RunEndEncoded field (which has no buffers of its own) into a column of its values type, with each
     /// run's value repeated for its rows. The nulls are those of the values.
     ColumnPtr decodeRunEndEncoded(
@@ -354,7 +354,7 @@ private:
     /// The requested ClickHouse type for a field: `resolveHint` over the requested types of the batch being
     /// decoded (`target_types`), preferring the hint derived from the parent and otherwise looking up `path`,
     /// the dotted column name, `list_depth` lists below the top level.
-    DataTypePtr resolveTargetHint(const DataTypePtr & parent_hint, const String & path, size_t list_depth) const;
+    [[nodiscard]] DataTypePtr resolveTargetHint(const DataTypePtr & parent_hint, const String & path, size_t list_depth) const;
 
     void prepareBuffers(const flatbuf::RecordBatch & batch, const PODArray<char> & body, const VectorWithMemoryTracking<char> * reachable);
 
@@ -378,15 +378,15 @@ private:
 
     /// A field name as the reader matches it against the header: lower-cased when column matching is
     /// case-insensitive. The keys of `keep_top_level_fields` and `target_types` use the same normalization.
-    String normalizedName(const String & name) const;
+    [[nodiscard]] String normalizedName(const String & name) const;
     /// The dotted name of a struct child for the requested-type lookups (`resolveTargetHint`): the child's
     /// normalized name appended to its parent's path.
-    String childPath(const String & path, const String & child_name) const;
+    [[nodiscard]] String childPath(const String & path, const String & child_name) const;
     /// The requested type hint and the path of the `i`-th field of a struct: by name, or by position (the path
     /// then uses the 1-based element number, as for an unnamed `Tuple`) when the struct has `positional_fields`.
     /// Positional paths keep equally named fields apart in the dictionary uses, which are keyed by path.
-    DataTypePtr structFieldHint(const DataTypePtr & hint, const ArrowType & type, size_t i) const;
-    String structFieldPath(const String & path, const ArrowType & type, size_t i) const;
+    [[nodiscard]] DataTypePtr structFieldHint(const DataTypePtr & hint, const ArrowType & type, size_t i) const;
+    [[nodiscard]] String structFieldPath(const String & path, const ArrowType & type, size_t i) const;
 
     const ArrowSchema & schema;
     const FormatSettings & settings;

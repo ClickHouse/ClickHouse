@@ -104,10 +104,10 @@ public:
 
     StackTrace(FramePointers frame_pointers_, size_t size_, size_t offset_ = 0);
 
-    constexpr size_t getSize() const { return size; }
-    constexpr size_t getOffset() const { return offset; }
-    const FramePointers & getFramePointers() const { return frame_pointers; }
-    std::string toString() const;
+    [[nodiscard]] constexpr size_t getSize() const { return size; }
+    [[nodiscard]] constexpr size_t getOffset() const { return offset; }
+    [[nodiscard]] const FramePointers & getFramePointers() const { return frame_pointers; }
+    [[nodiscard]] std::string toString() const;
 
     static std::string toString(void * const * frame_pointers, size_t offset, size_t size);
     static void dropCache();

@@ -95,12 +95,12 @@ public:
         parts.emplace(new_max_block, PartInfo{std::move(new_part_info), replica_name});
     }
 
-    bool isCoveredByAnotherPart(const String & part_name) const
+    [[nodiscard]] bool isCoveredByAnotherPart(const String & part_name) const
     {
         return isCoveredByAnotherPart(MergeTreePartInfo::fromPartName(part_name, MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING));
     }
 
-    bool isCoveredByAnotherPart(const MergeTreePartInfo & part_info) const
+    [[nodiscard]] bool isCoveredByAnotherPart(const MergeTreePartInfo & part_info) const
     {
         auto partition_it = partitions.find(part_info.getPartitionId());
         if (partition_it == partitions.end())

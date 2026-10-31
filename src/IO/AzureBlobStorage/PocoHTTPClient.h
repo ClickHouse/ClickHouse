@@ -68,8 +68,8 @@ public:
     /// caller (buffer) to this low-level class
     static const Azure::Core::Context::Key & getSDKContextKeyForBufferRetry();
 
-    ThrottlerPtr getThrottler() const { return request_throttler.get_throttler; }
-    ThrottlerPtr putThrottler() const { return request_throttler.put_throttler; }
+    [[nodiscard]] ThrottlerPtr getThrottler() const { return request_throttler.get_throttler; }
+    [[nodiscard]] ThrottlerPtr putThrottler() const { return request_throttler.put_throttler; }
 
 private:
     enum class AzureMetricType : uint8_t
@@ -98,16 +98,16 @@ private:
         EnumSize,
     };
 
-    AzureMetricKind getMetricKind(const std::string & method) const;
+    [[nodiscard]] AzureMetricKind getMetricKind(const std::string & method) const;
 
     std::unique_ptr<Azure::Core::Http::RawResponse> makeRequestInternalImpl(
         Azure::Core::Http::Request & request,
         const Azure::Core::Context & context,
         size_t redirects_left);
 
-    ConnectionTimeouts getTimeouts(const std::string & method, bool first_attempt, bool first_byte) const;
+    [[nodiscard]] ConnectionTimeouts getTimeouts(const std::string & method, bool first_attempt, bool first_byte) const;
 
-    AzureLatencyType getByteLatencyType(size_t sdk_attempt, size_t ch_attempt) const;
+    [[nodiscard]] AzureLatencyType getByteLatencyType(size_t sdk_attempt, size_t ch_attempt) const;
     void addMetric(const std::string & method, AzureMetricType type, ProfileEvents::Count amount = 1) const;
     void observeLatency(const std::string & method, AzureLatencyType type, HistogramMetrics::Value latency) const;
 

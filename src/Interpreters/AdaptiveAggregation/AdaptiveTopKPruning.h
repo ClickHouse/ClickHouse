@@ -45,7 +45,7 @@ inline size_t ALWAYS_INLINE bucketCountBin(UInt64 hash)
 class AdaptiveTopKCountBins
 {
 public:
-    bool isAllocated() const { return bins != nullptr; }
+    [[nodiscard]] bool isAllocated() const { return bins != nullptr; }
 
     /// Allocates the zeroed bins.
     void allocate() { bins = std::make_unique<UInt16[]>(adaptive_count_bins); }

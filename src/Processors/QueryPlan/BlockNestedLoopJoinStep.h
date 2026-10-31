@@ -42,12 +42,12 @@ public:
     /// Whether the step can execute this join type.
     static bool isSupportedJoinType(JoinKind kind, JoinStrictness strictness);
 
-    String getName() const override { return "BlockNestedLoopJoin"; }
+    [[nodiscard]] String getName() const override { return "BlockNestedLoopJoin"; }
 
     /// The join the step executes. It never swaps its inputs, so its left input is the probe side and
     /// its right one the build side.
-    JoinKind getKind() const { return kind; }
-    JoinStrictness getStrictness() const { return strictness; }
+    [[nodiscard]] JoinKind getKind() const { return kind; }
+    [[nodiscard]] JoinStrictness getStrictness() const { return strictness; }
 
     QueryPipelineBuilderPtr updatePipeline(QueryPipelineBuilders pipelines, const BuildQueryPipelineSettings &) override;
 
@@ -56,15 +56,15 @@ public:
     void describeActions(JSONBuilder::JSONMap & map) const override;
     void describeActions(FormatSettings & settings) const override;
 
-    std::vector<size_t> getStepGroups() const override;
-    String getStepGroupName(size_t group) const override;
+    [[nodiscard]] std::vector<size_t> getStepGroups() const override;
+    [[nodiscard]] String getStepGroupName(size_t group) const override;
 
-    StepAnalysisReport getAnalysisReport(StepProcessors step_processors) const override;
+    [[nodiscard]] StepAnalysisReport getAnalysisReport(StepProcessors step_processors) const override;
 
 private:
     void updateOutputHeader() override;
 
-    const String & getConditionName() const;
+    [[nodiscard]] const String & getConditionName() const;
 
     /// Appends the stage that emits the build rows no probe row matched, held back until every probe
     /// stream has finished.

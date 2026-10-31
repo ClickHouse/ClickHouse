@@ -81,41 +81,41 @@ private:
     template <class TDPTable, class TOptimizer>
     friend class DB::EnumeratorCheckerWithCosts;
 
-    std::optional<UInt64> estimateCardinality(
+    [[nodiscard]] std::optional<UInt64> estimateCardinality(
         std::optional<UInt64> left_rows, std::optional<UInt64> right_rows, const SelectivityEstimate & selectivity, JoinKind join_kind,
         JoinStrictness strictness = JoinStrictness::All) const;
 
     /// Native-mask counterparts used exclusively by the DPsub acceptor.
     void initDPsubScratch();
-    std::optional<JoinKind> isValidJoinOrderMask(UInt32 left_mask, UInt32 right_mask) const;
+    [[nodiscard]] std::optional<JoinKind> isValidJoinOrderMask(UInt32 left_mask, UInt32 right_mask) const;
 
     /// Conflict-detector (CD) variant: decide validity and the resulting (kind, strictness) using the
     /// per-operator descriptors in `dpsub_data.conflict_operators` (CD-A or CD-C), which support
     /// outer and semi/anti reordering. Returns nullopt to reject the split.
-    std::optional<std::pair<JoinKind, JoinStrictness>> isValidJoinOrderMaskConflict(UInt32 left_mask, UInt32 right_mask) const;
+    [[nodiscard]] std::optional<std::pair<JoinKind, JoinStrictness>> isValidJoinOrderMaskConflict(UInt32 left_mask, UInt32 right_mask) const;
 
     /// Dispatch used by the DPsub acceptor: routes to the per-operator conflict-detector check when
     /// a conflict detector (CD-A or CD-C) is enabled, otherwise to the per-relation
     /// `isValidJoinOrderMask` (with strictness fixed to All, its only supported case).
-    std::optional<std::pair<JoinKind, JoinStrictness>> resolveJoinMask(UInt32 left_mask, UInt32 right_mask) const;
+    [[nodiscard]] std::optional<std::pair<JoinKind, JoinStrictness>> resolveJoinMask(UInt32 left_mask, UInt32 right_mask) const;
 
     /// True when an inner-join condition joins the two sides here: all its tables are present and it
     /// mentions both sides. Skips pinned conditions as those belong to an outer or semi/anti join's
-    bool hasInnerEdgeAcross(UInt32 left_mask, UInt32 right_mask) const;
+    [[nodiscard]] bool hasInnerEdgeAcross(UInt32 left_mask, UInt32 right_mask) const;
 
     /// The join kind as the query wrote it (`Left` or `Right`) of the semi/anti join step applied where
     /// `left_mask` and `right_mask` are joined, if there is one.
-    std::optional<JoinKind> writtenSemiAntiKind(UInt32 left_mask, UInt32 right_mask, JoinStrictness strictness) const;
+    [[nodiscard]] std::optional<JoinKind> writtenSemiAntiKind(UInt32 left_mask, UInt32 right_mask, JoinStrictness strictness) const;
 
     /// True when a column equivalence ties the two sides together: some equivalence class has a
     /// member on each side. The mask counterpart of `QueryGraph::areTransitivelyConnected`.
-    bool areTransitivelyConnectedMask(UInt32 left_mask, UInt32 right_mask) const;
+    [[nodiscard]] bool areTransitivelyConnectedMask(UInt32 left_mask, UInt32 right_mask) const;
 
-    bool useConflictDetector() const
+    [[nodiscard]] bool useConflictDetector() const
     {
         return query_graph.conflict_detector != JoinOrderConflictDetector::NONE;
     }
-    ConflictDetector conflictDetectorKind() const
+    [[nodiscard]] ConflictDetector conflictDetectorKind() const
     {
         return query_graph.conflict_detector == JoinOrderConflictDetector::CD_C ? ConflictDetector::CDC : ConflictDetector::CDA;
     }

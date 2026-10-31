@@ -26,7 +26,7 @@ class IProjectionIndex
 public:
     virtual ~IProjectionIndex();
 
-    virtual String getName() const = 0;
+    [[nodiscard]] virtual String getName() const = 0;
 
     virtual void fillProjectionDescription(
         ProjectionDescription & result,
@@ -47,12 +47,12 @@ public:
 
     /// Returns default MergeTreeSettings for this projection index type.
     /// These defaults are applied before any user-specified SETTINGS overrides.
-    virtual std::shared_ptr<MergeTreeSettings> getDefaultSettings() const;
+    [[nodiscard]] virtual std::shared_ptr<MergeTreeSettings> getDefaultSettings() const;
 
     /// Returns the maximum number of rows supported by this index.
     /// Some indices are limited to 32-bit row counts (approx. 4.29 billion).
     /// Defaults to the maximum possible value if no specific limit exists.
-    virtual UInt64 getMaxRows() const { return std::numeric_limits<UInt64>::max(); }
+    [[nodiscard]] virtual UInt64 getMaxRows() const { return std::numeric_limits<UInt64>::max(); }
 };
 
 using ProjectionIndexPtr = std::shared_ptr<IProjectionIndex>;
@@ -64,7 +64,7 @@ public:
 
     using Creator = std::function<ProjectionIndexPtr(const ASTProjectionDeclaration & proj)>;
 
-    ProjectionIndexPtr get(const ASTProjectionDeclaration & proj) const;
+    [[nodiscard]] ProjectionIndexPtr get(const ASTProjectionDeclaration & proj) const;
 
     template <typename ProjectionIndex>
     void registerProjectionIndex()

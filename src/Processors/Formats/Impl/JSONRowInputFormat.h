@@ -47,7 +47,7 @@ public:
 
     NamesAndTypesList readSchema() override;
 
-    bool hasStrictOrderOfColumns() const override { return false; }
+    [[nodiscard]] bool hasStrictOrderOfColumns() const override { return false; }
 
 private:
     JSONRowSchemaReader(std::unique_ptr<PeekableReadBuffer> buf, const FormatSettings & format_settings_, bool fallback_to_json_each_row_);

@@ -32,25 +32,25 @@ public:
     FunctionToInterval(IntervalFunctionResolvers to_interval_functions_, IntervalKind kind_)
         : to_interval_functions(std::move(to_interval_functions_)), kind(kind_) {}
 
-    String getName() const override { return name; }
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
-    size_t getNumberOfArguments() const override { return 2; }
-    bool useDefaultImplementationForConstants() const override { return true; }
-    ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; }
+    [[nodiscard]] String getName() const override { return name; }
+    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+    [[nodiscard]] size_t getNumberOfArguments() const override { return 2; }
+    [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
+    [[nodiscard]] ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; }
 
-    bool hasInformationAboutMonotonicity() const override { return true; }
+    [[nodiscard]] bool hasInformationAboutMonotonicity() const override { return true; }
 
-    Monotonicity getMonotonicityForRange(const IDataType &, const Field &, const Field &) const override
+    [[nodiscard]] Monotonicity getMonotonicityForRange(const IDataType &, const Field &, const Field &) const override
     {
         return { .is_monotonic = true, .is_always_monotonic = true };
     }
 
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & /*arguments*/) const override
+    [[nodiscard]] DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & /*arguments*/) const override
     {
         return std::make_shared<DataTypeInterval>(kind);
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
         ColumnsWithTypeAndName temp_columns(1);
         temp_columns[0] = arguments[0];

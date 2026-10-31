@@ -364,7 +364,7 @@ public:
         impl = std::make_unique<TargetSpecific::Default::FunctionGeoDistance<method>>(context);
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
         return impl->executeImpl(arguments, result_type, input_rows_count);
     }

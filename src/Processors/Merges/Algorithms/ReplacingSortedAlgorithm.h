@@ -59,7 +59,7 @@ public:
         bool enable_vertical_final_ = false,
         bool read_in_reverse_ = false);
 
-    const char * getName() const override { return "ReplacingSortedAlgorithm"; }
+    [[nodiscard]] const char * getName() const override { return "ReplacingSortedAlgorithm"; }
     void initialize(Inputs inputs) override;
     void consume(Input & input, size_t source_num) override;
     Status merge() override;
@@ -99,7 +99,7 @@ private:
     /// Sources of rows with the current primary key.
     PODArray<RowSourcePart> current_row_sources;
 
-    bool isSelectedRowSkipped() const;
+    [[nodiscard]] bool isSelectedRowSkipped() const;
     void insertRow();
     void insertRowImpl();
     void flushCurrentRowSources(bool keep_selected_row);

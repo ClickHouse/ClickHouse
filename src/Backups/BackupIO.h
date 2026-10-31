@@ -45,12 +45,12 @@ public:
                                      bool encrypted_in_backup, DiskPtr destination_disk, const String & destination_path,
                                      WriteMode write_mode) = 0;
 
-    virtual const ReadSettings & getReadSettings() const = 0;
-    virtual const WriteSettings & getWriteSettings() const = 0;
-    virtual size_t getWriteBufferSize() const = 0;
+    [[nodiscard]] virtual const ReadSettings & getReadSettings() const = 0;
+    [[nodiscard]] virtual const WriteSettings & getWriteSettings() const = 0;
+    [[nodiscard]] virtual size_t getWriteBufferSize() const = 0;
 
     /// Settings effectively used by this reader (e.g. S3 request settings). Empty if none.
-    virtual std::map<String, String> getSerializedSettings() const { return {}; }
+    [[nodiscard]] virtual std::map<String, String> getSerializedSettings() const { return {}; }
 };
 
 /// Represents operations of storing to disk or uploading for writing a backup.
@@ -74,7 +74,7 @@ public:
     /// `writeFile`, which overwrites, so only writers that override both may answer `true`. Callers that
     /// take the destination with a lock file rely on this: with an overwriting writer, finding one's own
     /// contents in the lock proves nothing, because the write could have destroyed a foreign lock.
-    virtual bool supportsAtomicCreateIfNotExists() const { return false; }
+    [[nodiscard]] virtual bool supportsAtomicCreateIfNotExists() const { return false; }
 
     /// Whether `writeFileIfNotExists` creates the file exclusively already when it returns the buffer, before
     /// any of its contents are written (an `O_EXCL` open). If the write fails afterwards, the file left in the
@@ -82,7 +82,7 @@ public:
     /// write. It is not proof that the file is still the caller's: another writer reaching the same path in
     /// rewrite mode can have written over it since. Object-storage writers create the object only when the
     /// buffer is finalized, so they answer `false`.
-    virtual bool createsFileOnOpenIfNotExists() const { return false; }
+    [[nodiscard]] virtual bool createsFileOnOpenIfNotExists() const { return false; }
 
     using CreateReadBufferFunction = std::function<std::unique_ptr<SeekableReadBuffer>()>;
     virtual void copyDataToFile(const String & path_in_backup, const CreateReadBufferFunction & create_read_buffer, UInt64 start_pos, UInt64 length) = 0;
@@ -113,12 +113,12 @@ public:
     /// its parent directory entry is persisted. Called once after all files are synced.
     virtual void syncDirectoriesToDisk() {}
 
-    virtual const ReadSettings & getReadSettings() const = 0;
-    virtual const WriteSettings & getWriteSettings() const = 0;
-    virtual size_t getWriteBufferSize() const = 0;
+    [[nodiscard]] virtual const ReadSettings & getReadSettings() const = 0;
+    [[nodiscard]] virtual const WriteSettings & getWriteSettings() const = 0;
+    [[nodiscard]] virtual size_t getWriteBufferSize() const = 0;
 
     /// Settings effectively used by this writer (e.g. S3 request settings). Empty if none.
-    virtual std::map<String, String> getSerializedSettings() const { return {}; }
+    [[nodiscard]] virtual std::map<String, String> getSerializedSettings() const { return {}; }
 };
 
 }

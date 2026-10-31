@@ -74,7 +74,7 @@ struct MergeTreeMutationEntry
 
     void writeCSN(CSN csn_);
 
-    std::shared_ptr<const IBackupEntry> backup() const;
+    [[nodiscard]] std::shared_ptr<const IBackupEntry> backup() const;
 
     static String versionToFileName(UInt64 block_number_);
     static UInt64 tryParseFileName(const String & file_name_);

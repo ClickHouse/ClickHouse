@@ -96,7 +96,7 @@ class IdentifierMembershipCollector
 {
 public:
     IdentifierMembershipCollector(const ASTSelectQuery & select, ContextPtr context);
-    std::optional<size_t> getIdentsMembership(ASTPtr ast) const;
+    [[nodiscard]] std::optional<size_t> getIdentsMembership(ASTPtr ast) const;
 
 private:
     std::vector<TableWithColumnNamesAndTypes> tables;

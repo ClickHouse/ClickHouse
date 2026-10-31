@@ -69,7 +69,7 @@ private:
     {
     public:
         void add(MutableColumns && columns);
-        size_t size() const;
+        [[nodiscard]] size_t size() const;
         Columns releaseColumns();
     private:
         MutableColumns accumulated_columns;

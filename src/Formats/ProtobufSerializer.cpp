@@ -289,7 +289,7 @@ namespace
         void readStrAndAppend(PaddedPODArray<UInt8> & str) { reader->readStringAndAppend(str); }
 
         template <typename DestType>
-        DestType parseFromStr(std::string_view str) const
+        [[nodiscard]] DestType parseFromStr(std::string_view str) const
         {
             try
             {
@@ -305,7 +305,7 @@ namespace
         }
 
         template <typename DestType, typename SrcType>
-        DestType castNumber(SrcType value) const
+        [[nodiscard]] DestType castNumber(SrcType value) const
         {
             if constexpr (std::is_same_v<DestType, SrcType>)
                 return value;
@@ -1056,7 +1056,7 @@ namespace
 
         void checkEnumDataTypeValue(NumberType value)
         {
-            enum_data_type->getNameForValue(value); /// Throws an exception if the value isn't defined in the DataTypeEnum.
+            (void)enum_data_type->getNameForValue(value); /// Throws an exception if the value isn't defined in the DataTypeEnum.
         }
 
         std::string_view enumDataTypeValueToString(NumberType value) const { return std::string_view{enum_data_type->getNameForValue(value)}; }

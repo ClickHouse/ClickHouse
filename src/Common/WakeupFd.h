@@ -33,7 +33,7 @@ public:
     WakeupFd & operator=(WakeupFd &&) = delete;
 
     /// Readable end — register this with epoll/kqueue/poll for POLLIN.
-    int fd() const { return pipe.fds_rw[0]; }
+    [[nodiscard]] int fd() const { return pipe.fds_rw[0]; }
 
     /// Wake any waiter polling on fd().
     /// Idempotent: multiple notify() between drains collapse to "at least one byte is readable".

@@ -649,24 +649,24 @@ public:
     {
     }
 
-    String getName() const override { return Data::getName(); }
+    [[nodiscard]] String getName() const override { return Data::getName(); }
 
-    bool allocatesMemoryInArena() const override { return false; }
+    [[nodiscard]] bool allocatesMemoryInArena() const override { return false; }
 
     /// Version 1 of the `uniq` state carries an additional small sample of 64-bit hashes,
     /// which fixes the overflow of the estimate at cardinalities above ten billion (issue #6078).
-    bool isVersioned() const override { return is_uniques_hash_set; }
+    [[nodiscard]] bool isVersioned() const override { return is_uniques_hash_set; }
 
     /// The default version - the one used when the type carries no explicit version - must stay 0,
     /// so that unversioned `AggregateFunction(uniq, ...)` types in persisted data keep the byte
     /// layout unversioned data always had. Version 1 applies only where it is spelled out
     /// in the type name (see `getStateType`) or derived from the negotiated revision on the `Native` wire.
     /// See the analogous comment for `quantileDeterministic` in AggregateFunctionQuantile.h for the full reasoning.
-    size_t getDefaultVersion() const override { return 0; }
+    [[nodiscard]] size_t getDefaultVersion() const override { return 0; }
 
     /// The state type spells the version out, so that the type name and the payload stay consistent
     /// on every medium the state can travel through.
-    DataTypePtr getStateType() const override
+    [[nodiscard]] DataTypePtr getStateType() const override
     {
         if constexpr (is_uniques_hash_set)
             return std::make_shared<DataTypeAggregateFunction>(this->shared_from_this(), this->argument_types, this->parameters, 1);
@@ -674,7 +674,7 @@ public:
             return IAggregateFunction::getStateType();
     }
 
-    size_t getVersionFromRevision(size_t revision) const override
+    [[nodiscard]] size_t getVersionFromRevision(size_t revision) const override
     {
         if (is_uniques_hash_set && revision >= DBMS_MIN_REVISION_WITH_UNIQ_STATE_VERSION_1)
             return 1;
@@ -753,7 +753,7 @@ public:
         detail::Adder<T, ColumnType, Data>::addMany(this->data(place), columns, num_args, row_begin, row_end, flags, null_map);
     }
 
-    bool isParallelizeMergePrepareNeeded() const override { return is_parallelize_merge_prepare_needed; }
+    [[nodiscard]] bool isParallelizeMergePrepareNeeded() const override { return is_parallelize_merge_prepare_needed; }
 
     size_t getEstimatedMergeWork(ConstAggregateDataPtr place) const override
     {
@@ -762,7 +762,7 @@ public:
         return 0;
     }
 
-    size_t getStateBytesPerDistinctInput() const override
+    [[nodiscard]] size_t getStateBytesPerDistinctInput() const override
     {
         if constexpr (detail::IsUniqExactSet<typename Data::Set>::value)
             return Data::Set::getEstimatedBytesPerValue();
@@ -788,8 +788,8 @@ public:
         this->data(place).set.merge(this->data(rhs).set);
     }
 
-    bool isAbleToParallelizeMerge() const override { return is_able_to_parallelize_merge; }
-    bool canOptimizeEqualKeysRanges() const override { return !is_able_to_parallelize_merge; }
+    [[nodiscard]] bool isAbleToParallelizeMerge() const override { return is_able_to_parallelize_merge; }
+    [[nodiscard]] bool canOptimizeEqualKeysRanges() const override { return !is_able_to_parallelize_merge; }
 
     bool isLargeMergePair(ConstAggregateDataPtr __restrict place, ConstAggregateDataPtr __restrict rhs) const override
     {
@@ -843,7 +843,7 @@ public:
     /// `uniqExact` counts an exact set union: at least the largest and at most the sum of the
     /// partial counts. The bound is not declared for the estimating variants (`uniq`,
     /// `uniqHLL12`): their estimates are only approximately subadditive.
-    MergedValueBound getMergedValueBound() const override
+    [[nodiscard]] MergedValueBound getMergedValueBound() const override
     {
         if constexpr (detail::IsUniqExactSet<typename Data::Set>::value)
             return MergedValueBound::Subadditive;
@@ -880,25 +880,25 @@ public:
             num_args = arguments.size();
     }
 
-    String getName() const override { return Data::getName(); }
+    [[nodiscard]] String getName() const override { return Data::getName(); }
 
-    size_t getStateBytesPerDistinctInput() const override
+    [[nodiscard]] size_t getStateBytesPerDistinctInput() const override
     {
         if constexpr (detail::IsUniqExactSet<typename Data::Set>::value)
             return Data::Set::getEstimatedBytesPerValue();
         return 0;
     }
 
-    bool allocatesMemoryInArena() const override { return false; }
+    [[nodiscard]] bool allocatesMemoryInArena() const override { return false; }
 
     /// Version 1 of the `uniq` state carries an additional small sample of 64-bit hashes,
     /// which fixes the overflow of the estimate at cardinalities above ten billion (issue #6078).
     /// The versioning follows the same scheme as the single-argument `uniq` above, see the comments there.
-    bool isVersioned() const override { return is_uniques_hash_set; }
+    [[nodiscard]] bool isVersioned() const override { return is_uniques_hash_set; }
 
-    size_t getDefaultVersion() const override { return 0; }
+    [[nodiscard]] size_t getDefaultVersion() const override { return 0; }
 
-    DataTypePtr getStateType() const override
+    [[nodiscard]] DataTypePtr getStateType() const override
     {
         if constexpr (is_uniques_hash_set)
             return std::make_shared<DataTypeAggregateFunction>(this->shared_from_this(), this->argument_types, this->parameters, 1);
@@ -906,7 +906,7 @@ public:
             return IAggregateFunction::getStateType();
     }
 
-    size_t getVersionFromRevision(size_t revision) const override
+    [[nodiscard]] size_t getVersionFromRevision(size_t revision) const override
     {
         if (is_uniques_hash_set && revision >= DBMS_MIN_REVISION_WITH_UNIQ_STATE_VERSION_1)
             return 1;
@@ -950,16 +950,16 @@ public:
         this->data(place).set.merge(this->data(rhs).set);
     }
 
-    bool isAbleToParallelizeMerge() const override { return is_able_to_parallelize_merge; }
-    size_t getEstimatedMergeWork(ConstAggregateDataPtr place) const override
+    [[nodiscard]] bool isAbleToParallelizeMerge() const override { return is_able_to_parallelize_merge; }
+    [[nodiscard]] size_t getEstimatedMergeWork(ConstAggregateDataPtr place) const override
     {
         if constexpr (detail::IsUniqExactSet<typename Data::Set>::value)
             return this->data(place).set.size();
         return 0;
     }
-    bool canOptimizeEqualKeysRanges() const override { return !is_able_to_parallelize_merge; }
+    [[nodiscard]] bool canOptimizeEqualKeysRanges() const override { return !is_able_to_parallelize_merge; }
 
-    bool isParallelizeMergePrepareNeeded() const override { return is_parallelize_merge_prepare_needed; }
+    [[nodiscard]] bool isParallelizeMergePrepareNeeded() const override { return is_parallelize_merge_prepare_needed; }
 
     constexpr static bool parallelizeMergeWithKey() { return true; }
 
@@ -1027,7 +1027,7 @@ public:
     }
 
     /// See `AggregateFunctionUniq::getMergedValueBound`.
-    MergedValueBound getMergedValueBound() const override
+    [[nodiscard]] MergedValueBound getMergedValueBound() const override
     {
         if constexpr (detail::IsUniqExactSet<typename Data::Set>::value)
             return MergedValueBound::Subadditive;

@@ -22,7 +22,7 @@ struct OneTimePasswordParams
 
     bool operator==(const OneTimePasswordParams &) const = default;
 
-    std::string_view getAlgorithmName() const;
+    [[nodiscard]] std::string_view getAlgorithmName() const;
 };
 
 struct OneTimePasswordSecret

@@ -16,7 +16,7 @@ public:
 
     explicit CoroutineStack(size_t stack_size_ = default_stack_size);
 
-    boost::context::stack_context allocate() const;
+    [[nodiscard]] boost::context::stack_context allocate() const;
     void deallocate(boost::context::stack_context & sctx) const;
 
 private:

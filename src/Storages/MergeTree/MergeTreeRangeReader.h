@@ -65,8 +65,8 @@ struct PrewhereExprInfo
 {
     PrewhereExprSteps steps;
 
-    std::string dump() const;
-    std::string dumpConditions() const;
+    [[nodiscard]] std::string dump() const;
+    [[nodiscard]] std::string dumpConditions() const;
 };
 
 struct ReadStepPerformanceCounters
@@ -212,12 +212,12 @@ private:
         ///       some columns may have different size (for example, default columns may be zero size).
         size_t read(MutableColumns & columns, Columns & shared_columns, size_t from_mark, size_t offset, size_t num_rows);
 
-        size_t numDelayedRows() const { return num_delayed_rows; }
+        [[nodiscard]] size_t numDelayedRows() const { return num_delayed_rows; }
 
         /// Skip extra rows to current_offset and perform actual reading
         size_t finalize(MutableColumns & columns, Columns & shared_columns);
 
-        bool isFinished() const { return is_finished; }
+        [[nodiscard]] bool isFinished() const { return is_finished; }
 
     private:
         size_t current_mark = 0;
@@ -236,7 +236,7 @@ private:
         bool is_finished = true;
 
         /// Current position from the beginning of file in rows
-        size_t position() const;
+        [[nodiscard]] size_t position() const;
         size_t readRows(MutableColumns & columns, Columns & shared_columns, size_t num_rows);
     };
 
@@ -254,18 +254,18 @@ private:
         void skip(size_t num_rows);
 
         void finish() { current_mark = last_mark; }
-        bool isFinished() const { return current_mark >= last_mark; }
+        [[nodiscard]] bool isFinished() const { return current_mark >= last_mark; }
 
-        size_t numReadRowsInCurrentGranule() const { return offset_after_current_mark; }
-        size_t numPendingRowsInCurrentGranule() const
+        [[nodiscard]] size_t numReadRowsInCurrentGranule() const { return offset_after_current_mark; }
+        [[nodiscard]] size_t numPendingRowsInCurrentGranule() const
         {
             return current_mark_index_granularity - numReadRowsInCurrentGranule();
         }
-        size_t numPendingGranules() const { return last_mark - current_mark; }
-        size_t numPendingRows() const;
-        size_t currentMark() const { return current_mark; }
-        UInt64 currentPartOffset() const;
-        UInt64 lastPartOffset() const;
+        [[nodiscard]] size_t numPendingGranules() const { return last_mark - current_mark; }
+        [[nodiscard]] size_t numPendingRows() const;
+        [[nodiscard]] size_t currentMark() const { return current_mark; }
+        [[nodiscard]] UInt64 currentPartOffset() const;
+        [[nodiscard]] UInt64 lastPartOffset() const;
 
         IMergeTreeReader * merge_tree_reader = nullptr;
         const MergeTreeIndexGranularity * index_granularity = nullptr;
@@ -285,10 +285,10 @@ private:
 
         size_t readRows(MutableColumns & columns, Columns & shared_columns, size_t num_rows);
         void toNextMark();
-        size_t ceilRowsToCompleteGranules(size_t rows_num) const;
-        size_t alignRowsToColumnsCacheStripes(
+        [[nodiscard]] size_t ceilRowsToCompleteGranules(size_t rows_num) const;
+        [[nodiscard]] size_t alignRowsToColumnsCacheStripes(
             size_t rows_num, size_t stripe_marks, size_t max_block_size_rows, std::span<IMergeTreeReader * const> columns_cache_readers) const;
-        size_t alignRowsToColumnsCacheStripesImpl(size_t rows_num, size_t stripe_marks) const;
+        [[nodiscard]] size_t alignRowsToColumnsCacheStripesImpl(size_t rows_num, size_t stripe_marks) const;
     };
 
 public:

@@ -20,7 +20,7 @@ template <typename Derived>
 class FunctionNumericIndexedVectorHelper
 {
 public:
-    ColumnPtr executeHelper(
+    [[nodiscard]] ColumnPtr executeHelper(
         const DataTypePtr index_type,
         const DataTypePtr value_type,
         const Array & parameters,
@@ -31,7 +31,7 @@ public:
         return executeResolveIndexType(index_type, value_type, parameters, arguments, result_type, input_rows_count);
     }
 
-    ColumnPtr executeResolveIndexType(
+    [[nodiscard]] ColumnPtr executeResolveIndexType(
         const DataTypePtr index_type,
         const DataTypePtr value_type,
         const Array & parameters,
@@ -50,7 +50,7 @@ public:
     }
 
     template <typename IndexType>
-    ColumnPtr executeResolveValueType(
+    [[nodiscard]] ColumnPtr executeResolveValueType(
         const DataTypePtr value_type,
         const Array & parameters,
         const ColumnsWithTypeAndName & arguments,
@@ -67,7 +67,7 @@ public:
     }
 
     template <typename IndexType, typename ValueType>
-    ColumnPtr executeDispatcher(
+    [[nodiscard]] ColumnPtr executeDispatcher(
         const Array & parameters, const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const
     {
         if (parameters.empty() || applyVisitor(FieldVisitorToString(), parameters[0]) != "BSI")

@@ -96,12 +96,12 @@ public:
 
     /// Smallest / largest number of arguments any alternative of this signature accepts;
     /// `maxArguments` is `std::numeric_limits<size_t>::max()` for a variadic position.
-    size_t minArguments() const;
-    size_t maxArguments() const;
+    [[nodiscard]] size_t minArguments() const;
+    [[nodiscard]] size_t maxArguments() const;
     /// Whether `num_arguments` is within `[minArguments, maxArguments]`.
-    bool isArgumentCountInRange(size_t num_arguments) const;
+    [[nodiscard]] bool isArgumentCountInRange(size_t num_arguments) const;
 
-    std::string toString() const;
+    [[nodiscard]] std::string toString() const;
 
 private:
     std::shared_ptr<FunctionSignatures::IFunctionSignatureImpl> impl;
@@ -180,13 +180,13 @@ namespace FunctionSignatures
 
         bool operator==(const Value & rhs) const;
 
-        const DataTypePtr & type() const;
-        const Field & field() const;
+        [[nodiscard]] const DataTypePtr & type() const;
+        [[nodiscard]] const Field & field() const;
 
         /// For implementation of constraints.
-        bool isTrue() const;
+        [[nodiscard]] bool isTrue() const;
 
-        std::string toString() const;
+        [[nodiscard]] std::string toString() const;
     };
 
     /// A list of arguments for type function.
@@ -209,18 +209,18 @@ namespace FunctionSignatures
         virtual ~ITypeMatcher() = default;
 
         /// Text description of this matcher exactly as in function signature.
-        virtual std::string toString() const = 0;
+        [[nodiscard]] virtual std::string toString() const = 0;
 
         virtual bool match(const DataTypePtr & what, Variables & vars, size_t iteration, size_t arg_num, std::string & out_reason) const = 0;
 
         /// Extract common index of variables participating in expression.
-        virtual size_t getIndex() const = 0;
+        [[nodiscard]] virtual size_t getIndex() const = 0;
 
         /// True if this matcher, or any matcher nested in it, binds a variable when it matches.
         /// Composite matchers must report the disjunction over their children, so that the parser
         /// can reject a capture wrapped anywhere inside a construct that does not support it
         /// (currently a quantified repeat, `T...{a..b}`).
-        virtual bool capturesVariables() const { return false; }
+        [[nodiscard]] virtual bool capturesVariables() const { return false; }
     };
 
     using TypeMatcherPtr = std::shared_ptr<ITypeMatcher>;
@@ -266,8 +266,8 @@ namespace FunctionSignatures
     {
     public:
         virtual ~ITypeFunction() = default;
-        virtual Value apply(const Values & args) const = 0;
-        virtual std::string name() const = 0;
+        [[nodiscard]] virtual Value apply(const Values & args) const = 0;
+        [[nodiscard]] virtual std::string name() const = 0;
     };
 
     using TypeFunctionPtr = std::shared_ptr<ITypeFunction>;

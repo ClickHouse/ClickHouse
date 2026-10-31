@@ -64,7 +64,7 @@ struct ScopeAliases
         return &it->second;
     }
 
-    const QueryTreeNodePtr * find(IdentifierLookup lookup, FindOption find_option) const
+    [[nodiscard]] const QueryTreeNodePtr * find(IdentifierLookup lookup, FindOption find_option) const
     {
         return const_cast<ScopeAliases *>(this)->find(lookup, find_option);
     }

@@ -759,7 +759,7 @@ public:
     {
         /// Number of entries left to check.
         /// It decreases after each call to checkDataNext().
-        virtual size_t size() const = 0;
+        [[nodiscard]] virtual size_t size() const = 0;
         virtual ~DataValidationTasksBase() = default;
     };
 

@@ -52,13 +52,13 @@ private:
         Float64 b;
     };
 
-    String getName() const override { return name; }
+    [[nodiscard]] String getName() const override { return name; }
 
-    bool isVariadic() const override { return true; }
+    [[nodiscard]] bool isVariadic() const override { return true; }
 
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
-    size_t getNumberOfArguments() const override { return 0; }
+    [[nodiscard]] size_t getNumberOfArguments() const override { return 0; }
 
     /// No declarative signature. The contract is `pointInEllipses(x, y, x1, y1, a1, b1,
     /// ..., xN, yN, aN, bN)` — `2 + 4*N` `Float64` arguments with `N >= 1` — which the DSL
@@ -67,12 +67,12 @@ private:
     /// permit the invalid `N == 0` case. Leave the signature empty so the
     /// `getReturnTypeImpl(DataTypes)` override below stays authoritative on both the
     /// column and the types-only paths.
-    String getSignatureString() const override
+    [[nodiscard]] String getSignatureString() const override
     {
         return "";
     }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    [[nodiscard]] DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         if (arguments.size() < 6 || arguments.size() % 4 != 2)
         {
@@ -102,12 +102,12 @@ private:
         return std::make_shared<DataTypeUInt8>();
     }
 
-    DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
+    [[nodiscard]] DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
     {
         return std::make_shared<DataTypeUInt8>();
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         /// Prepare array of ellipses.
         size_t ellipses_count = (arguments.size() - 2) / 4;

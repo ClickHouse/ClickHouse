@@ -99,9 +99,9 @@ struct FragmentGraph
     std::vector<FragmentExchange> exchanges;
 
     /// Throws `LOGICAL_ERROR` when absent.
-    const QueryFragment & getFragment(UInt32 id) const;
+    [[nodiscard]] const QueryFragment & getFragment(UInt32 id) const;
     /// Throws `LOGICAL_ERROR` when absent.
-    const FragmentExchange & getExchange(UInt32 id) const;
+    [[nodiscard]] const FragmentExchange & getExchange(UInt32 id) const;
 };
 
 /// Builds the graph from the stages of a cut distributed plan. The merge stages of runtime filters (`filter_only`) and

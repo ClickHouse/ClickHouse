@@ -39,9 +39,9 @@ struct QueueEvictionInfo
     /// release. No-op if null.
     void absorbHoldSpace(IFileCachePriority::HoldSpacePtr other_hold);
 
-    std::string toString() const;
+    [[nodiscard]] std::string toString() const;
     /// Whether actual eviction is needed to be done.
-    bool requiresEviction() const { return size_to_evict || elements_to_evict; }
+    [[nodiscard]] bool requiresEviction() const { return size_to_evict || elements_to_evict; }
     /// Release hold space if still hold.
     void releaseHoldSpace(const CacheStateGuard::Lock & lock);
 };
@@ -67,24 +67,24 @@ public:
     ~EvictionInfo() { clear(); }
 
     /// Get eviction info by queue id.
-    const QueueEvictionInfo & get(const QueueID & queue_id) const;
+    [[nodiscard]] const QueueEvictionInfo & get(const QueueID & queue_id) const;
     /// Add eviction info under the queue_id.
     /// Throws exception if eviction info with the same queue_id already exists.
     void add(EvictionInfoPtr && info);
     void addOrUpdate(EvictionInfoPtr && info);
 
-    size_t getSizeToEvict() const { return size_to_evict; }
-    size_t getElementsToEvict() const { return elements_to_evict; }
-    size_t getHoldSize() const { return hold_size; }
-    size_t getHoldElements() const { return hold_elements; }
+    [[nodiscard]] size_t getSizeToEvict() const { return size_to_evict; }
+    [[nodiscard]] size_t getElementsToEvict() const { return elements_to_evict; }
+    [[nodiscard]] size_t getHoldSize() const { return hold_size; }
+    [[nodiscard]] size_t getHoldElements() const { return hold_elements; }
     /// Whether actual eviction is needed to be done.
-    bool requiresEviction() const { return size_to_evict || elements_to_evict; }
+    [[nodiscard]] bool requiresEviction() const { return size_to_evict || elements_to_evict; }
     /// Whether we "hold" some space.
-    bool hasHoldSpace() const { return hold_size || hold_elements; }
+    [[nodiscard]] bool hasHoldSpace() const { return hold_size || hold_elements; }
     /// Release hold space if still hold.
     void releaseHoldSpace(const CacheStateGuard::Lock & lock);
 
-    std::string toString() const;
+    [[nodiscard]] std::string toString() const;
 
     /// Keep `usage` alive so a concurrent `cache_usage.snapshot` cannot destroy
     /// the user's per-user priority while we hold raw pointers into it.
@@ -186,9 +186,9 @@ public:
         size_t total_cache_size = 0;
         size_t total_cache_elements = 0;
 
-        size_t size() const { return failed_candidates_per_key.size(); }
+        [[nodiscard]] size_t size() const { return failed_candidates_per_key.size(); }
 
-        std::string getFirstErrorMessage() const;
+        [[nodiscard]] std::string getFirstErrorMessage() const;
     };
 
     /// Get eviction candidates which failed to be evicted during `evict`.

@@ -34,19 +34,19 @@ public:
         , condition(other.condition)
     {}
 
-    String getName() const override { return "Filter"; }
+    [[nodiscard]] String getName() const override { return "Filter"; }
     void transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings & settings) override;
 
     void describeActions(JSONBuilder::JSONMap & map) const override;
     void describeActions(FormatSettings & settings) const override;
 
-    const ActionsDAG & getExpression() const { return actions_dag; }
+    [[nodiscard]] const ActionsDAG & getExpression() const { return actions_dag; }
     ActionsDAG & getExpression() { return actions_dag; }
-    const String & getFilterColumnName() const { return filter_column_name; }
-    bool removesFilterColumn() const { return remove_filter_column; }
+    [[nodiscard]] const String & getFilterColumnName() const { return filter_column_name; }
+    [[nodiscard]] bool removesFilterColumn() const { return remove_filter_column; }
 
     void setConditionForQueryConditionCache(UInt64 condition_hash_, const String & condition_);
-    bool hasConditionForQueryConditionCache() const { return condition.has_value(); }
+    [[nodiscard]] bool hasConditionForQueryConditionCache() const { return condition.has_value(); }
     /// Forget a previously attached query condition cache key, e.g. when a later optimization pass
     /// discovers that the filter's verdict is no longer reusable across executions.
     void resetConditionForQueryConditionCache() { condition.reset(); }
@@ -56,21 +56,21 @@ public:
     static bool canUseType(const DataTypePtr & type);
 
     void serialize(Serialization & ctx) const override;
-    bool isSerializable() const override { return true; }
+    [[nodiscard]] bool isSerializable() const override { return true; }
 
     static QueryPlanStepPtr deserialize(Deserialization & ctx);
 
-    QueryPlanStepPtr clone() const override;
+    [[nodiscard]] QueryPlanStepPtr clone() const override;
 
-    bool hasCorrelatedExpressions() const override { return actions_dag.hasCorrelatedColumns(); }
+    [[nodiscard]] bool hasCorrelatedExpressions() const override { return actions_dag.hasCorrelatedColumns(); }
     void decorrelateActions() { actions_dag.decorrelate(); }
 
-    bool canRemoveUnusedColumns() const override;
+    [[nodiscard]] bool canRemoveUnusedColumns() const override;
     RemoveUnusedColumnsResult removeUnusedColumns(const std::vector<size_t> & unneeded_output_positions, const std::vector<PrunedInput> & inputs) override;
 
-    UnneededInputPositions getUnneededColumns(const std::vector<size_t> & unneeded_output_positions) const override;
+    [[nodiscard]] UnneededInputPositions getUnneededColumns(const std::vector<size_t> & unneeded_output_positions) const override;
 
-    bool supportsDataflowStatisticsCollection() const override { return true; }
+    [[nodiscard]] bool supportsDataflowStatisticsCollection() const override { return true; }
 
     /// Removes the outputs of a filter DAG at `unneeded_output_positions` of its output header, and says which input
     /// positions the remaining outputs and the filter do not need. For a filter that is not a step of its own, as
@@ -125,16 +125,16 @@ private:
         bool changes_output_header = false;
 
         /// The DAG outputs that remain, in their order.
-        ActionsDAG::NodeRawConstPtrs neededDAGOutputs(const ActionsDAG::NodeRawConstPtrs & outputs) const;
+        [[nodiscard]] ActionsDAG::NodeRawConstPtrs neededDAGOutputs(const ActionsDAG::NodeRawConstPtrs & outputs) const;
 
         /// The part of the pruning that concerns the outputs: the outputs that remain, and the filter column flag.
         void applyToOutputs(ActionsDAG & dag, bool & remove_filter_column_) const;
 
         /// The positions of the input header nothing needs any more: the columns neither read nor passed on.
-        std::vector<size_t> unneededInputPositions() const;
+        [[nodiscard]] std::vector<size_t> unneededInputPositions() const;
 
         /// What the pruning did, once the outputs are pruned and removeUnusedActions has said whether it erased a node.
-        FilterDAGOutputPruningResult toResult(bool removed_any_action) const;
+        [[nodiscard]] FilterDAGOutputPruningResult toResult(bool removed_any_action) const;
     };
 
     static UnneededColumnsPlan analyzeUnneededColumns(
@@ -144,7 +144,7 @@ private:
         const Block & input_header,
         const std::vector<size_t> & unneeded_output_positions);
 
-    UnneededColumnsPlan analyzeUnneededColumns(const std::vector<size_t> & unneeded_output_positions) const;
+    [[nodiscard]] UnneededColumnsPlan analyzeUnneededColumns(const std::vector<size_t> & unneeded_output_positions) const;
 
     ActionsDAG actions_dag;
     String filter_column_name;

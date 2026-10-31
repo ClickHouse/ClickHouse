@@ -60,9 +60,9 @@ struct PrewhereInfo
     explicit PrewhereInfo(ActionsDAG prewhere_actions_, String prewhere_column_name_)
             : prewhere_actions(std::move(prewhere_actions_)), prewhere_column_name(std::move(prewhere_column_name_)) {}
 
-    std::string dump() const;
+    [[nodiscard]] std::string dump() const;
 
-    PrewhereInfo clone() const;
+    [[nodiscard]] PrewhereInfo clone() const;
 
     void serialize(IQueryPlanStep::Serialization & ctx) const;
     static PrewhereInfo deserialize(IQueryPlanStep::Deserialization & ctx);
@@ -75,7 +75,7 @@ struct FilterDAGInfo
     String column_name;
     bool do_remove_column = false;
 
-    std::string dump() const;
+    [[nodiscard]] std::string dump() const;
 
     void serialize(IQueryPlanStep::Serialization & ctx) const;
     static FilterDAGInfo deserialize(IQueryPlanStep::Deserialization & ctx);
@@ -211,7 +211,7 @@ struct SelectQueryInfo
     /// If query has aggregate functions
     bool has_aggregates = false;
 
-    ClusterPtr getCluster() const { return !optimized_cluster ? cluster : optimized_cluster; }
+    [[nodiscard]] ClusterPtr getCluster() const { return !optimized_cluster ? cluster : optimized_cluster; }
 
     bool settings_limit_offset_done = false;
     bool is_internal = false;
@@ -227,19 +227,19 @@ struct SelectQueryInfo
     /// For IStorageSystemOneBlock
     std::vector<UInt8> columns_mask;
 
-    bool isFinal() const;
+    [[nodiscard]] bool isFinal() const;
 
     /// Whether the table expression has the STREAM modifier.
-    bool isStream() const;
+    [[nodiscard]] bool isStream() const;
 
     /// The `SAMPLE` and `SAMPLE ... OFFSET` ratios of the table expression.
-    std::optional<TableExpressionModifiers::Rational> getSampleSizeRatio() const;
-    std::optional<TableExpressionModifiers::Rational> getSampleOffsetRatio() const;
+    [[nodiscard]] std::optional<TableExpressionModifiers::Rational> getSampleSizeRatio() const;
+    [[nodiscard]] std::optional<TableExpressionModifiers::Rational> getSampleOffsetRatio() const;
 
     /// Analyzer generates unique ColumnIdentifiers like __table1.__partition_id in filter nodes,
     /// while key analysis still requires unqualified column names.
     /// This function generates a map that maps the unique names to table column names,
     /// for the current table (`table_expression`).
-    std::unordered_map<std::string, ColumnWithTypeAndName> buildNodeNameToInputNodeColumn() const;
+    [[nodiscard]] std::unordered_map<std::string, ColumnWithTypeAndName> buildNodeNameToInputNodeColumn() const;
 };
 }

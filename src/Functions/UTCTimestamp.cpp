@@ -23,9 +23,9 @@ class ExecutableFunctionUTCTimestamp final : public IExecutableFunction
 public:
     explicit ExecutableFunctionUTCTimestamp(time_t time_) : time_value(time_) {}
 
-    String getName() const override { return "UTCTimestamp"; }
+    [[nodiscard]] String getName() const override { return "UTCTimestamp"; }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName &, const DataTypePtr &, size_t input_rows_count) const override
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName &, const DataTypePtr &, size_t input_rows_count) const override
     {
         return DataTypeDateTime().createColumnConst(
                 input_rows_count,

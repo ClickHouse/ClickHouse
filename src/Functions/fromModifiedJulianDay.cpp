@@ -27,12 +27,12 @@ namespace DB
     class ExecutableFunctionFromModifiedJulianDay final : public IExecutableFunction
     {
     public:
-        String getName() const override
+        [[nodiscard]] String getName() const override
         {
             return Name::name;
         }
 
-        ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+        [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
         {
             using ColVecType = typename FromDataType::ColumnType;
             const ColVecType & col_from = checkAndGetColumn<ColVecType>(*arguments[0].column);
@@ -76,7 +76,7 @@ namespace DB
                 return col_to;
         }
 
-        bool useDefaultImplementationForConstants() const override
+        [[nodiscard]] bool useDefaultImplementationForConstants() const override
         {
             return true;
         }

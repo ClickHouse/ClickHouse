@@ -42,7 +42,7 @@ class BackgroundSchedulePoolLog : public SystemLog<BackgroundSchedulePoolLogElem
 
 public:
     void setDurationMillisecondsThreshold(size_t duration_milliseconds_threshold_) { duration_milliseconds_threshold = duration_milliseconds_threshold_; }
-    size_t getDurationMillisecondsThreshold() const { return duration_milliseconds_threshold; }
+    [[nodiscard]] size_t getDurationMillisecondsThreshold() const { return duration_milliseconds_threshold; }
 };
 
 }

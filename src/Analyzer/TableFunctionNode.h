@@ -45,13 +45,13 @@ public:
     explicit TableFunctionNode(String table_function_name);
 
     /// Get table function name
-    const String & getTableFunctionName() const
+    [[nodiscard]] const String & getTableFunctionName() const
     {
         return table_function_name;
     }
 
     /// Get arguments
-    const ListNode & getArguments() const
+    [[nodiscard]] const ListNode & getArguments() const
     {
         return children[arguments_child_index]->as<const ListNode &>();
     }
@@ -63,7 +63,7 @@ public:
     }
 
     /// Get arguments node
-    const QueryTreeNodePtr & getArgumentsNode() const
+    [[nodiscard]] const QueryTreeNodePtr & getArgumentsNode() const
     {
         return children[arguments_child_index];
     }
@@ -75,25 +75,25 @@ public:
     }
 
     /// Returns true, if table function is resolved, false otherwise
-    bool isResolved() const
+    [[nodiscard]] bool isResolved() const
     {
         return storage != nullptr;
     }
 
     /// Get table function, returns nullptr if table function node is not resolved
-    const TableFunctionPtr & getTableFunction() const
+    [[nodiscard]] const TableFunctionPtr & getTableFunction() const
     {
         return table_function;
     }
 
     /// Get storage, returns nullptr if table function node is not resolved
-    const StoragePtr & getStorage() const
+    [[nodiscard]] const StoragePtr & getStorage() const
     {
         return storage;
     }
 
     /// Get storage, throws exception if table function node is not resolved
-    const StoragePtr & getStorageOrThrow() const
+    [[nodiscard]] const StoragePtr & getStorageOrThrow() const
     {
         if (!storage)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Table function node is not resolved");
@@ -102,30 +102,30 @@ public:
     }
 
     /// True for a parameterized view call resolved into its `StorageView` (no real table function behind it)
-    bool isParameterizedView() const;
+    [[nodiscard]] bool isParameterizedView() const;
 
     /// Resolve table function with table function, storage and context
     void resolve(TableFunctionPtr table_function_value, StoragePtr storage_value, ContextPtr context, VectorWithMemoryTracking<size_t> unresolved_arguments_indexes_);
 
     /// Get storage id, throws exception if function node is not resolved
-    const StorageID & getStorageID() const;
+    [[nodiscard]] const StorageID & getStorageID() const;
 
     /// Get storage snapshot, throws exception if function node is not resolved
-    const StorageSnapshotPtr & getStorageSnapshot() const;
+    [[nodiscard]] const StorageSnapshotPtr & getStorageSnapshot() const;
 
-    const VectorWithMemoryTracking<size_t> & getUnresolvedArgumentIndexes() const
+    [[nodiscard]] const VectorWithMemoryTracking<size_t> & getUnresolvedArgumentIndexes() const
     {
         return unresolved_arguments_indexes;
     }
 
     /// Return true if table function node has table expression modifiers, false otherwise
-    bool hasTableExpressionModifiers() const
+    [[nodiscard]] bool hasTableExpressionModifiers() const
     {
         return table_expression_modifiers.has_value();
     }
 
     /// Get table expression modifiers
-    const std::optional<TableExpressionModifiers> & getTableExpressionModifiers() const
+    [[nodiscard]] const std::optional<TableExpressionModifiers> & getTableExpressionModifiers() const
     {
         return table_expression_modifiers;
     }
@@ -137,7 +137,7 @@ public:
     }
 
     /// Get settings changes passed to table function
-    const SettingsChanges & getSettingsChanges() const
+    [[nodiscard]] const SettingsChanges & getSettingsChanges() const
     {
         return settings_changes;
     }
@@ -151,7 +151,7 @@ public:
     /// Set table expression modifiers and update the storage snapshot metadata accordingly
     void setTableExpressionModifiers(TableExpressionModifiers table_expression_modifiers_value);
 
-    QueryTreeNodeType getNodeType() const override
+    [[nodiscard]] QueryTreeNodeType getNodeType() const override
     {
         return QueryTreeNodeType::TABLE_FUNCTION;
     }
@@ -159,13 +159,13 @@ public:
     void dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state, size_t indent) const override;
 
 protected:
-    bool isEqualImpl(const IQueryTreeNode & rhs, CompareOptions) const override;
+    [[nodiscard]] bool isEqualImpl(const IQueryTreeNode & rhs, CompareOptions) const override;
 
     void updateTreeHashImpl(HashState & state, CompareOptions) const override;
 
-    QueryTreeNodePtr cloneImpl() const override;
+    [[nodiscard]] QueryTreeNodePtr cloneImpl() const override;
 
-    ASTPtr toASTImpl(const ConvertToASTOptions & options) const override;
+    [[nodiscard]] ASTPtr toASTImpl(const ConvertToASTOptions & options) const override;
 
 private:
     String table_function_name;

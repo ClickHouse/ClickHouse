@@ -40,26 +40,26 @@ public:
     void serialize(WriteBuffer & buf) override;
     void deserialize(ReadBuffer & buf, StatisticsFileVersion version) override;
 
-    std::optional<Float64> estimateLess(const Field & val) const override;
-    std::optional<Float64> estimateEqual(const Field & val) const override;
-    String getNameForLogs() const override;
-    size_t allocatedBytes() const override;
+    [[nodiscard]] std::optional<Float64> estimateLess(const Field & val) const override;
+    [[nodiscard]] std::optional<Float64> estimateEqual(const Field & val) const override;
+    [[nodiscard]] String getNameForLogs() const override;
+    [[nodiscard]] size_t allocatedBytes() const override;
 
-    bool isCompatibleWith(const IStatistics & other) const override;
+    [[nodiscard]] bool isCompatibleWith(const IStatistics & other) const override;
     void copyStructureFrom(const IStatistics & other) override;
 
-    bool hasNumericMinMax() const { return tracks_numeric; }
-    bool hasStringLengthAvg() const { return tracks_string; }
-    bool hasNullCount() const { return is_nullable && has_default_count; }
-    bool hasDefaultCount() const { return has_default_count; }
+    [[nodiscard]] bool hasNumericMinMax() const { return tracks_numeric; }
+    [[nodiscard]] bool hasStringLengthAvg() const { return tracks_string; }
+    [[nodiscard]] bool hasNullCount() const { return is_nullable && has_default_count; }
+    [[nodiscard]] bool hasDefaultCount() const { return has_default_count; }
 
-    const Field & getMin() const { return min; }
-    const Field & getMax() const { return max; }
-    UInt64 getStringTotalBytes() const { return string_total_bytes; }
-    Int64 getStringLengthAvg() const;
-    UInt64 getNullCount() const { return (is_nullable && has_default_count) ? default_count : 0; }
-    UInt64 getDefaultCount() const { return default_count; }
-    UInt64 getRowCount() const { return row_count; }
+    [[nodiscard]] const Field & getMin() const { return min; }
+    [[nodiscard]] const Field & getMax() const { return max; }
+    [[nodiscard]] UInt64 getStringTotalBytes() const { return string_total_bytes; }
+    [[nodiscard]] Int64 getStringLengthAvg() const;
+    [[nodiscard]] UInt64 getNullCount() const { return (is_nullable && has_default_count) ? default_count : 0; }
+    [[nodiscard]] UInt64 getDefaultCount() const { return default_count; }
+    [[nodiscard]] UInt64 getRowCount() const { return row_count; }
 
 private:
     Field min; /// null Field means "not initialized" (e.g. all values seen so far were NULL)

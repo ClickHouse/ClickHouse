@@ -18,7 +18,7 @@ struct CramersVBiasCorrectedData : CrossTabAggregateData
         return "cramersVBiasCorrected";
     }
 
-    Float64 getResult() const
+    [[nodiscard]] Float64 getResult() const
     {
         if (count < 2)
             return std::numeric_limits<Float64>::quiet_NaN();
@@ -52,7 +52,7 @@ struct CramersVBiasCorrectedWindowData : CrossTabPhiSquaredWindowData
         return CramersVBiasCorrectedData::getName();
     }
 
-    Float64 getResult() const
+    [[nodiscard]] Float64 getResult() const
     {
         if (count < 2)
             return std::numeric_limits<Float64>::quiet_NaN();

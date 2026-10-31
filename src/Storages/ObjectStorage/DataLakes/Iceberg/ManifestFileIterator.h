@@ -56,24 +56,24 @@ public:
     {
         using FilesPtr = std::shared_ptr<const std::vector<ProcessedManifestFileEntryPtr>>;
 
-        const std::vector<ProcessedManifestFileEntryPtr> & getFilesWithoutDeleted(FileContentType content_type) const;
+        [[nodiscard]] const std::vector<ProcessedManifestFileEntryPtr> & getFilesWithoutDeleted(FileContentType content_type) const;
 
-        bool areAllDataFilesSortedBySortOrderID(Int32 sort_order_id) const;
+        [[nodiscard]] bool areAllDataFilesSortedBySortOrderID(Int32 sort_order_id) const;
 
         /// Whether LIMIT lazy materialization can re-read every data file of this manifest
         /// by physical row numbers: all data files are Parquet, none of them needs schema
         /// evolution, and there are no equality deletes (both schema evolution and equality
         /// deletes force reading all physical columns, see IcebergMetadata::getInitialSchemaByPath).
-        bool areAllDataFilesEligibleForLazyMaterialization(Int32 table_schema_id) const;
+        [[nodiscard]] bool areAllDataFilesEligibleForLazyMaterialization(Int32 table_schema_id) const;
 
         /// Sum of the file-level `record_count` over the live files of the given content type.
         /// Returns std::nullopt if any file carries a malformed (negative) record count.
-        std::optional<UInt64> getRowsCountInAllFilesExcludingDeleted(FileContentType content) const;
+        [[nodiscard]] std::optional<UInt64> getRowsCountInAllFilesExcludingDeleted(FileContentType content) const;
 
-        std::optional<Int64> getBytesCountInAllDataFilesExcludingDeleted() const;
+        [[nodiscard]] std::optional<Int64> getBytesCountInAllDataFilesExcludingDeleted() const;
 
         /// nullptr if the partition spec has no usable field. Kept in the handle so files can be pruned after the iterator is gone.
-        const DB::KeyDescription * getPartitionKeyDescription() const { return partition_key.get(); }
+        [[nodiscard]] [[nodiscard]] [[nodiscard]] [[nodiscard]] [[nodiscard]] [[nodiscard]] [[nodiscard]] const DB::KeyDescription * getPartitionKeyDescription() const { return partition_key.get(); }
 
     private:
         friend class ManifestFileIterator;

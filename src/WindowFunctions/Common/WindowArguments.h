@@ -16,11 +16,11 @@ class ArgumentValue
 public:
     ArgumentValue(const IColumn & column_, size_t row_);
 
-    bool isNull() const;
-    UInt64 getUInt() const;
-    Int64 getInt() const;
-    Float64 getFloat64() const;
-    Field getField() const;
+    [[nodiscard]] bool isNull() const;
+    [[nodiscard]] UInt64 getUInt() const;
+    [[nodiscard]] Int64 getInt() const;
+    [[nodiscard]] Float64 getFloat64() const;
+    [[nodiscard]] Field getField() const;
     void appendTo(IColumn & result) const;
 
 private:

@@ -30,7 +30,7 @@ public:
     TemporarySecretFile(const TemporarySecretFile &) = delete;
     TemporarySecretFile & operator=(const TemporarySecretFile &) = delete;
 
-    const std::string & getPath() const { return path; }
+    [[nodiscard]] const std::string & getPath() const { return path; }
 
 private:
     std::string path;

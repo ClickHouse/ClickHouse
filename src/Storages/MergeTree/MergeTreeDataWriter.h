@@ -109,7 +109,7 @@ public:
         ContextPtr context,
         bool may_have_leftover = true);
 
-    MergeTreeData::MergingParams::Mode getMergingMode() const
+    [[nodiscard]] MergeTreeData::MergingParams::Mode getMergingMode() const
     {
         return data.merging_params.mode;
     }

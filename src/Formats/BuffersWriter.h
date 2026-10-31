@@ -24,7 +24,7 @@ class BuffersWriter
 public:
     BuffersWriter(WriteBuffer & ostr_, SharedHeader header_, const FormatSettings & format_settings_);
 
-    SharedHeader getHeader() const { return header; }
+    [[nodiscard]] SharedHeader getHeader() const { return header; }
 
     /// Returns the number of bytes written
     void write(const Block & block);

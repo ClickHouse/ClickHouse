@@ -983,12 +983,12 @@ public:
     {
     }
 
-    String getName() const override
+    [[nodiscard]] String getName() const override
     {
         return name;
     }
 
-    bool useDefaultImplementationForConstants() const override { return true; }
+    [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
 
     /// A LowCardinality dictionary always contains the default value, and the empty string is not a
     /// valid time zone: executing on the dictionary as is would throw for a time zone column that
@@ -998,12 +998,12 @@ public:
     /// LowCardinality date or integer, for which the default value is harmless. Only the former
     /// has to pay for the minimal dictionary, so `tryExecuteLowCardinality` below makes that
     /// distinction and keeps the cheap dictionary-only execution for every other argument.
-    bool canBeExecutedOnDefaultArguments() const override { return execute_on_dictionary_default; }
+    [[nodiscard]] bool canBeExecutedOnDefaultArguments() const override { return execute_on_dictionary_default; }
 
     /// Fast path hook for `FunctionWithLowCardinalityFastPath` (see `FunctionLowCardinalityFastPath.h`).
     /// Returns nullptr to decline, in which case the call is redone with the defaults enabled, i.e.
     /// on a minimal dictionary as `canBeExecutedOnDefaultArguments` above asks for.
-    ColumnPtr
+    [[nodiscard]] ColumnPtr
     tryExecuteLowCardinality(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const
     {
         if (!hasLowCardinalityTypes(arguments))
@@ -1020,14 +1020,14 @@ public:
             .execute(arguments, result_type, input_rows_count, /*dry_run=*/false);
     }
 
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
-    ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; }
+    [[nodiscard]] ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; }
 
-    bool isVariadic() const override { return true; }
-    size_t getNumberOfArguments() const override { return 0; }
+    [[nodiscard]] bool isVariadic() const override { return true; }
+    [[nodiscard]] size_t getNumberOfArguments() const override { return 0; }
 
-    String getSignatureString() const override
+    [[nodiscard]] String getSignatureString() const override
     {
         if constexpr (support_integer == SupportInteger::Yes)
             return
@@ -1037,7 +1037,7 @@ public:
             return "(Date | Date32 | DateTime | DateTime64, const String, [String]) -> String";
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
         ColumnPtr res;
         if constexpr (support_integer == SupportInteger::Yes)
@@ -1084,7 +1084,7 @@ public:
     }
 
     /// Tries Date, Date32, DateTime and DateTime64 in order; returns nullptr if none matches.
-    ColumnPtr executeDateOrDateTime(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const
+    [[nodiscard]] ColumnPtr executeDateOrDateTime(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const
     {
         ColumnPtr res;
         TypeListUtils::forEach(TypeList<DataTypeDate, DataTypeDate32, DataTypeDateTime, DataTypeDateTime64>{}, [&]<typename DataType>(TypeList<DataType>)
@@ -1096,7 +1096,7 @@ public:
     }
 
     template <typename DataType>
-    ColumnPtr executeType(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const
+    [[nodiscard]] ColumnPtr executeType(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const
     {
         auto non_const_datetime = arguments[0].column->convertToFullColumnIfConst();
         auto * times = checkAndGetColumn<typename DataType::ColumnType>(non_const_datetime.get());

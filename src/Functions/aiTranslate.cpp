@@ -21,11 +21,11 @@ public:
 
     static FunctionPtr create(ContextPtr context_) { return std::make_shared<FunctionAiTranslate>(context_); }
 
-    String getName() const override { return name; }
-    bool isVariadic() const override { return true; }
-    size_t getNumberOfArguments() const override { return 0; }
+    [[nodiscard]] String getName() const override { return name; }
+    [[nodiscard]] bool isVariadic() const override { return true; }
+    [[nodiscard]] size_t getNumberOfArguments() const override { return 0; }
 
-    String getSignatureString() const override
+    [[nodiscard]] String getSignatureString() const override
     {
         /// `instructions` and `temperature` are optional, but `temperature` is only
         /// valid once `instructions` is present, so the optional positions are spelled
@@ -40,7 +40,7 @@ public:
             " OR (const String, String, const String, const String, const Number) -> String";
     }
 
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    [[nodiscard]] DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         FunctionArgumentDescriptors mandatory_args{
             {"text", static_cast<FunctionArgumentDescriptor::TypeValidator>(&FunctionBaseAI::isStringOrNullableString), nullptr, "String"},
@@ -57,7 +57,7 @@ private:
     static constexpr float default_temp = 0.3f;
     static constexpr size_t target_language_arg_index = 1;
 
-    AIParamSpecs functionParams() const override
+    [[nodiscard]] AIParamSpecs functionParams() const override
     {
         return {
             {"temperature", AIParamKind::Float, Field(static_cast<Float64>(default_temp))},
@@ -72,7 +72,7 @@ private:
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "aiTranslate: 'target_language' must not be empty");
     }
 
-    String buildSystemPrompt(const ColumnsWithTypeAndName & arguments, const AIParams & params) const override
+    [[nodiscard]] String buildSystemPrompt(const ColumnsWithTypeAndName & arguments, const AIParams & params) const override
     {
         auto target_language = String(arguments[target_language_arg_index].column->getDataAt(0));
         auto prompt = "Translate the following text into " + target_language + ". Return only the translation, nothing else.";
@@ -83,7 +83,7 @@ private:
         return prompt;
     }
 
-    String buildUserMessage(const ColumnsWithTypeAndName & arguments, size_t row) const override
+    [[nodiscard]] String buildUserMessage(const ColumnsWithTypeAndName & arguments, size_t row) const override
     {
         return String(arguments[0].column->getDataAt(row));
     }

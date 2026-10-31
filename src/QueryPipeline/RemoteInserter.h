@@ -40,8 +40,8 @@ public:
 
     ~RemoteInserter();
 
-    const Block & getHeader() const { return header; }
-    UInt64 getServerRevision() const { return server_revision; }
+    [[nodiscard]] const Block & getHeader() const { return header; }
+    [[nodiscard]] UInt64 getServerRevision() const { return server_revision; }
 
 private:
     const Settings & insert_settings;

@@ -205,17 +205,17 @@ public:
         return std::make_shared<FunctionGeometry>();
     }
 
-    String getName() const override
+    [[nodiscard]] String getName() const override
     {
         return name;
     }
 
-    bool isVariadic() const override
+    [[nodiscard]] bool isVariadic() const override
     {
         return false;
     }
 
-    size_t getNumberOfArguments() const override
+    [[nodiscard]] size_t getNumberOfArguments() const override
     {
         return 1;
     }
@@ -223,7 +223,7 @@ public:
     /// Declarative signature — covers `areaCartesian`, `areaSpherical`,
     /// `perimeterCartesian`, `perimeterSpherical`: a single geometry-typed
     /// argument, a `Float64` result.
-    String getSignatureString() const override
+    [[nodiscard]] String getSignatureString() const override
     {
         return "(Any) -> Float64";
     }
@@ -231,7 +231,7 @@ public:
     /// The `(Any)` signature is documentation-only: the DSL cannot express "must be a Geometry
     /// (or a custom Variant) type", so keep the legacy `getReturnTypeImpl(DataTypes)` authoritative
     /// to reject non-geometry arguments at analysis time instead of failing later in execution.
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    [[nodiscard]] DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         DataTypes data_types(arguments.size());
         for (size_t i = 0; i < arguments.size(); ++i)
@@ -239,7 +239,7 @@ public:
         return getReturnTypeImpl(data_types);
     }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    [[nodiscard]] DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         if (arguments[0]->getName() != "Geometry" && !getGeometryColumnTypeFromDataType(arguments[0]))
         {
@@ -249,18 +249,18 @@ public:
         return std::make_shared<DataTypeFloat64>();
     }
 
-    DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
+    [[nodiscard]] DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
     {
         return std::make_shared<DataTypeFloat64>();
     }
 
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
     /// Geometry functions work with the Geometry type directly which is a Variant with custom name,
     /// and not with individual variant alternatives. So, don't use default implementation.
-    bool useDefaultImplementationForVariant() const override { return false; }
+    [[nodiscard]] bool useDefaultImplementationForVariant() const override { return false; }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & /*result_type*/, size_t input_rows_count) const override
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & /*result_type*/, size_t input_rows_count) const override
     {
         auto res_column = ColumnFloat64::create();
         auto & res_data = res_column->getData();
@@ -359,7 +359,7 @@ private:
 
 public:
 
-    bool useDefaultImplementationForConstants() const override
+    [[nodiscard]] bool useDefaultImplementationForConstants() const override
     {
         return true;
     }

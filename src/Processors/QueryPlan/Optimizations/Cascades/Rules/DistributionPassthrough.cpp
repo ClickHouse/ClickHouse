@@ -35,15 +35,15 @@ static const ActionsDAG * tryGetActionsDAG(const IQueryPlanStep * step)
 class DistributionPassthrough : public IOptimizationRule
 {
 public:
-    String getName() const override { return "DistributionPassthrough"; }
+    [[nodiscard]] String getName() const override { return "DistributionPassthrough"; }
 
-    bool checkPattern(GroupExpressionPtr expression, const ExpressionProperties & /*required_properties*/, const Memo & /*memo*/) const override
+    [[nodiscard]] bool checkPattern(GroupExpressionPtr expression, const ExpressionProperties & /*required_properties*/, const Memo & /*memo*/) const override
     {
         return isDistributionPassthroughStep(*expression->getQueryPlanStep());
     }
 
-    Promise getPromise() const override { return 1; }
-    bool isTransformation() const override { return false; }
+    [[nodiscard]] Promise getPromise() const override { return 1; }
+    [[nodiscard]] bool isTransformation() const override { return false; }
 
 protected:
     std::vector<GroupExpressionPtr> applyImpl(GroupExpressionPtr expression, const ExpressionProperties & required_properties, Memo & memo) const override
@@ -122,7 +122,7 @@ protected:
     }
 
 private:
-    GroupExpressionPtr tryCreateAtDistribution(
+    [[nodiscard]] GroupExpressionPtr tryCreateAtDistribution(
         const GroupExpressionPtr & expression,
         const DistributionDescription & distribution) const
     {

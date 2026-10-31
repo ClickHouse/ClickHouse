@@ -44,12 +44,12 @@ public:
     /// number of entries). A filesystem cache dedicated to query results keeps the former cheap.
     static void clear(const Settings & settings, const std::optional<String> & tag);
 
-    bool readsEnabled() const { return enable_reads; }
-    bool writesEnabled() const { return enable_writes; }
+    [[nodiscard]] bool readsEnabled() const { return enable_reads; }
+    [[nodiscard]] bool writesEnabled() const { return enable_writes; }
 
     /// Look up the query result for the key. The returned reader is empty (no cache entry) if the entry does not exist, is stale,
     /// was partially evicted, or is not accessible to the user in the key.
-    QueryResultCacheReader createReader(const QueryResultCache::Key & key) const;
+    [[nodiscard]] QueryResultCacheReader createReader(const QueryResultCache::Key & key) const;
 
     /// Store the query result. Best-effort: an entry which cannot be written (no space, a concurrent writer, a fresh entry already
     /// exists) is skipped and the reason is logged, no exception is thrown.
@@ -71,7 +71,7 @@ private:
         UInt64 server_build_fingerprint = 0; /// identifies the server build which wrote the entry, an entry of another build is unusable
         UInt128 checksum = 0; /// SipHash-128 of the preceding fixed header bytes and of everything after the fixed header
 
-        bool isStale() const;
+        [[nodiscard]] bool isStale() const;
     };
 
     enum class ProbeResult
@@ -90,11 +90,11 @@ private:
     /// body is corrupt. The caller must have verified that all `header.total_size` bytes of the entry are downloaded.
     static std::optional<String> readCheckedBody(const FileSegmentsHolder & holder, const FixedHeader & header);
 
-    ProbeResult probeExistingEntry(const FileCacheKey & cache_key) const;
+    [[nodiscard]] ProbeResult probeExistingEntry(const FileCacheKey & cache_key) const;
 
     /// Reads the entry stored under `cache_key`, if there is a usable one. Returns std::nullopt if the entry does not exist, is stale,
     /// was partially evicted, is unreadable, or is not accessible to the user in `key`, so that the caller can try another key.
-    std::optional<QueryResultCacheReader> tryCreateReader(const QueryResultCache::Key & key, const FileCacheKey & cache_key) const;
+    [[nodiscard]] std::optional<QueryResultCacheReader> tryCreateReader(const QueryResultCache::Key & key, const FileCacheKey & cache_key) const;
 
     FileCachePtr file_cache;
     const bool enable_reads;

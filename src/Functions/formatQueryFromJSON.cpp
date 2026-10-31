@@ -261,13 +261,13 @@ public:
         implicit_select = settings[Setting::implicit_select];
     }
 
-    String getName() const override { return name; }
-    bool isVariadic() const override { return true; }
-    size_t getNumberOfArguments() const override { return 0; }
-    bool useDefaultImplementationForConstants() const override { return true; }
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo &) const override { return true; }
+    [[nodiscard]] String getName() const override { return name; }
+    [[nodiscard]] bool isVariadic() const override { return true; }
+    [[nodiscard]] size_t getNumberOfArguments() const override { return 0; }
+    [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
+    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo &) const override { return true; }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    [[nodiscard]] DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         if (arguments.empty() || arguments.size() > 2)
             throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
@@ -287,7 +287,7 @@ public:
         return std::make_shared<DataTypeString>();
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         auto result = ColumnString::create();
 
@@ -344,7 +344,7 @@ public:
     /// identifier spelled like a keyword (e.g. a column named `DATE`, which the canonical formatter prints
     /// bare as `DATE`). Reparsing the merged text and comparing back to `canonical` catches any such
     /// semantic divergence; on mismatch (or if the merged text fails to reparse) fall back to canonical.
-    String formatWithOriginalWhitespaceChecked(const String & canonical, const String & original) const
+    [[nodiscard]] String formatWithOriginalWhitespaceChecked(const String & canonical, const String & original) const
     {
         /// Skip the whitespace-preservation pass (which tokenizes the whole `original_query`) when the
         /// original exceeds `max_query_size`, so a large second argument cannot spend unbounded CPU/memory

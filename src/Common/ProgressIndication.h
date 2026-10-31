@@ -19,7 +19,7 @@ class WriteBufferFromFileDescriptor;
 
 struct ThreadEventData
 {
-    UInt64 time() const noexcept { return user_ms + system_ms; }
+    [[nodiscard]] UInt64 time() const noexcept { return user_ms + system_ms; }
 
     UInt64 user_ms      = 0;
     UInt64 system_ms    = 0;

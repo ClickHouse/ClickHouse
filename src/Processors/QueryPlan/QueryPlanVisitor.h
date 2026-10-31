@@ -69,7 +69,7 @@ public:
 private:
     Derived & getDerived() { return *static_cast<Derived *>(this); }
 
-    const Derived & getDerived() const { return *static_cast<Derived *>(this); }
+    [[nodiscard]] const Derived & getDerived() const { return *static_cast<Derived *>(this); }
 };
 
 }

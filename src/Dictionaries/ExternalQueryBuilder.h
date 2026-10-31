@@ -40,13 +40,13 @@ struct ExternalQueryBuilder
     virtual ~ExternalQueryBuilder() = default;
 
     /** Generate a query to load all data. */
-    std::string composeLoadAllQuery() const;
+    [[nodiscard]] std::string composeLoadAllQuery() const;
 
     /** Generate a query to load data after certain time point */
-    std::string composeUpdateQuery(const std::string & update_field, const std::string & time_point) const;
+    [[nodiscard]] std::string composeUpdateQuery(const std::string & update_field, const std::string & time_point) const;
 
     /** Generate a query to load data by set of UInt64 keys. */
-    std::string composeLoadIdsQuery(const VectorWithMemoryTracking<UInt64> & ids) const;
+    [[nodiscard]] std::string composeLoadIdsQuery(const VectorWithMemoryTracking<UInt64> & ids) const;
 
     /** Generate a query to load data by set of composite keys.
       * There are three methods of specification of composite keys in WHERE:
@@ -61,7 +61,7 @@ struct ExternalQueryBuilder
         CASSANDRA_SEPARATE_PARTITION_KEY,
     };
 
-    std::string composeLoadKeysQuery(const Columns & key_columns, const VectorWithMemoryTracking<size_t> & requested_rows, LoadKeysMethod method, size_t partition_key_prefix = 0) const;
+    [[nodiscard]] std::string composeLoadKeysQuery(const Columns & key_columns, const VectorWithMemoryTracking<size_t> & requested_rows, LoadKeysMethod method, size_t partition_key_prefix = 0) const;
 
 
 protected:

@@ -83,7 +83,7 @@ struct ManifestFileCacheableInfo
     static ManifestFileCacheableInfo fromBytes(String bytes, const IcebergPathFromMetadata & path, const FormatSettings & format_settings);
 
     /// Thread-safe. Concurrent callers wait for one parse; if it throws, the next caller parses again.
-    std::shared_ptr<AvroForIcebergDeserializer> getDeserializer() const;
+    [[nodiscard]] std::shared_ptr<AvroForIcebergDeserializer> getDeserializer() const;
 
     std::shared_ptr<State> state;
     size_t file_bytes_size = 0;
@@ -123,7 +123,7 @@ struct ParsedManifestFileEntry : boost::noncopyable
     Int64 record_count;
     Int64 file_size_in_bytes;
 
-    bool isDeletionVector() const;
+    [[nodiscard]] bool isDeletionVector() const;
 
     ParsedManifestFileEntry(
         FileContentType content_type_,
@@ -190,7 +190,7 @@ struct ProcessedManifestFileEntry
     /// that compares, groups or shows partition values has to use this one.
     DB::Row normalized_partition_key_value;
 
-    String dumpDeletesMatchingInfo() const;
+    [[nodiscard]] String dumpDeletesMatchingInfo() const;
 };
 
 using ProcessedManifestFileEntryPtr = std::shared_ptr<const ProcessedManifestFileEntry>;

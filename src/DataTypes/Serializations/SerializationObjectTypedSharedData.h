@@ -117,7 +117,7 @@ public:
         size_t remainder_consumed = 0;
 
         void requestPath(size_t path_index, const SharedTypedPath & path);
-        bool allPathsRequested() const { return requested_paths.size() == num_paths; }
+        [[nodiscard]] bool allPathsRequested() const { return requested_paths.size() == num_paths; }
 
         DeserializeBinaryBulkStatePtr cloneImpl(DeserializeBinaryBulkStateCloneContext &) const override
         {

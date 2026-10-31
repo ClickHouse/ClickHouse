@@ -223,7 +223,7 @@ public:
         output_header = input_headers.front();
     }
 
-    String getName() const override { return "BuildStatistics"; }
+    [[nodiscard]] String getName() const override { return "BuildStatistics"; }
 
 private:
     static Traits getTraits()
@@ -2134,7 +2134,7 @@ public:
         , is_result_sparse(is_result_sparse_)
     {}
 
-    String getName() const override { return "ColumnGatherer"; }
+    [[nodiscard]] String getName() const override { return "ColumnGatherer"; }
 
     void transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings & pipeline_settings) override
     {
@@ -3002,7 +3002,7 @@ public:
         , time_of_merge(time_of_merge_)
     {}
 
-    String getName() const override { return "MergeParts"; }
+    [[nodiscard]] String getName() const override { return "MergeParts"; }
 
     void transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings & pipeline_settings) override
     {
@@ -3096,7 +3096,7 @@ public:
 #endif
     }
 
-    QueryPlanStepPtr clone() const override
+    [[nodiscard]] QueryPlanStepPtr clone() const override
     {
         return std::make_unique<MergePartsStep>(
             input_headers.front(),
@@ -3180,7 +3180,7 @@ public:
             subquery->buildSetInplace(context_);
     }
 
-    String getName() const override { return "TTLDeleteFilter"; }
+    [[nodiscard]] String getName() const override { return "TTLDeleteFilter"; }
 
     void transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override
     {
@@ -3241,7 +3241,7 @@ public:
             subquery->buildSetInplace(context_);
     }
 
-    String getName() const override { return "TTL"; }
+    [[nodiscard]] String getName() const override { return "TTL"; }
 
     void transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override
     {
@@ -3314,7 +3314,7 @@ public:
         output_header = original_output_header;
     }
 
-    String getName() const override { return "BuildTextIndex"; }
+    [[nodiscard]] String getName() const override { return "BuildTextIndex"; }
 
 private:
     static Traits getTraits()
