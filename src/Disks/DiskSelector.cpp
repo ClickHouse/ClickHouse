@@ -9,6 +9,11 @@
 #include <Common/logger_useful.h>
 #include <Interpreters/Context.h>
 
+#include <algorithm>
+#include <filesystem>
+#include <optional>
+#include <vector>
+
 
 namespace DB
 {
@@ -39,6 +44,144 @@ MetadataStoragePtr unwrapEncryptedAndCacheLayers(DiskPtr disk)
     return metadata_storage;
 }
 
+/// The trail of layers a disk stands on, from the disk itself down to the storage it reads and writes.
+///
+/// A disk that delegates to another one - an `encrypted` disk or a read-only wrapper - contributes its own
+/// identity and continues with its delegate. Once object storage is reached, the trail continues through the
+/// metadata storages instead of the disks, because a `cache` disk is a separate `DiskObjectStorage` that puts
+/// a metadata storage over the metadata storage of the disk it caches and never points at that disk.
+/// A disk not backed by object storage, a `local` disk for example, ends the trail with its own identity.
+std::vector<const void *> unwrapLayerTrail(DiskPtr disk)
+{
+    std::vector<const void *> trail;
+
+    DiskObjectStoragePtr object_storage_disk;
+    while (disk)
+    {
+        object_storage_disk = std::dynamic_pointer_cast<DiskObjectStorage>(disk);
+        if (object_storage_disk)
+            break;
+
+        trail.push_back(disk.get());
+
+        DiskPtr delegate = disk->getDelegateDiskIfExists();
+        if (!delegate)
+            return trail;
+
+        disk = std::move(delegate);
+    }
+
+    if (!object_storage_disk)
+        return trail;
+
+    MetadataStoragePtr metadata_storage = object_storage_disk->getMetadataStorage();
+    while (true)
+    {
+        chassert(metadata_storage);
+        trail.push_back(metadata_storage.get());
+
+        auto * cache_metadata = dynamic_cast<MetadataStorageFromCacheObjectStorage *>(metadata_storage.get());
+        if (!cache_metadata)
+            return trail;
+
+        metadata_storage = cache_metadata->getUnderlying();
+    }
+}
+
+/// Whether the trail of the outer disk ends with the whole trail of the inner one, so that unwrapping the
+/// outer disk reaches the inner disk and goes on to the same storage behind it.
+bool isTrailBelow(const std::vector<const void *> & outer, const std::vector<const void *> & inner)
+{
+    if (inner.empty() || inner.size() >= outer.size())
+        return false;
+
+    return std::equal(inner.rbegin(), inner.rend(), outer.rbegin());
+}
+
+/// Whether one of the two disks is a layer over the other, as a `cache` or `encrypted` disk is over the
+/// disk it wraps. Such a pair reports one storage namespace by design and is not a duplicate registration.
+///
+/// This asks for real ancestry rather than for either disk having removed a layer. Two separately configured
+/// `encrypted` or `cache` disks over one storage both remove a layer and are handed the same metadata storage,
+/// but neither stands on the other: they are two writable ways into the same files, which is the duplicate
+/// registration this rejects. Ancestry also settles the pairs whose storage is not object storage, where there
+/// is no metadata storage to compare at all - an `encrypted` disk over a `local` disk, for one.
+bool isOneDiskALayerOverTheOther(const DiskPtr & lhs, const DiskPtr & rhs)
+{
+    const auto lhs_trail = unwrapLayerTrail(lhs);
+    const auto rhs_trail = unwrapLayerTrail(rhs);
+
+    return isTrailBelow(lhs_trail, rhs_trail) || isTrailBelow(rhs_trail, lhs_trail);
+}
+
+/// Identity of the storage that a disk reads and writes.
+struct StorageNamespace
+{
+    DataSourceType type;
+    ObjectStorageType object_storage_type;
+    String description;
+    String objects_namespace;
+    String zookeeper_name;
+    String path;
+
+    bool operator==(const StorageNamespace &) const = default;
+};
+
+/// Returns the storage namespace of a disk, or nothing when the disk has no persistent one.
+std::optional<StorageNamespace> getStorageNamespace(const DiskPtr & disk)
+{
+    const auto data_source = disk->getDataSourceDescription();
+
+    /// Separate in-memory disks do not share a persistent namespace even though their paths are empty.
+    if (data_source.type == DataSourceType::RAM)
+        return {};
+
+    /// Resolve symlinks of a local directory so that two aliases of one directory match.
+    auto path = std::filesystem::path(disk->getPath()).lexically_normal();
+    if (data_source.isPathLocal())
+        path = std::filesystem::weakly_canonical(path);
+
+    /// `DiskBackup` reports `ObjectStorage` with `ObjectStorageType::None` and has no object storage behind it,
+    /// so its identity is its description and its path.
+    String objects_namespace;
+    if (data_source.type == DataSourceType::ObjectStorage && data_source.object_storage_type != ObjectStorageType::None)
+        objects_namespace = disk->getObjectStorage()->getObjectsNamespace();
+
+    return StorageNamespace{
+        .type = data_source.type,
+        .object_storage_type = data_source.object_storage_type,
+        .description = data_source.type == DataSourceType::ObjectStorage ? data_source.description : String{},
+        .objects_namespace = std::move(objects_namespace),
+        .zookeeper_name = data_source.type == DataSourceType::ObjectStorage ? data_source.zookeeper_name : String{},
+        .path = path.string(),
+    };
+}
+
+}
+
+bool haveSameStorageNamespace(const DiskPtr & lhs, const DiskPtr & rhs)
+{
+    const auto lhs_namespace = getStorageNamespace(lhs);
+    if (!lhs_namespace)
+        return false;
+
+    return lhs_namespace == getStorageNamespace(rhs);
+}
+
+bool areDisksDuplicateStorage(const DiskPtr & lhs, const DiskPtr & rhs)
+{
+    /// Only two writable disks load a part twice and then remove one copy, which is what deletes the data.
+    /// Reading one storage through a second disk is a supported setup - a reader disk beside a writer disk,
+    /// or a cache layer over a read-only copy.
+    if (lhs->isReadOnly() || lhs->isWriteOnce() || rhs->isReadOnly() || rhs->isWriteOnce())
+        return false;
+
+    /// A `cache` or `encrypted` disk stands on the disk it wraps and reports that disk's namespace. The two
+    /// are one storage behind one metadata storage, not two ways into the same files.
+    if (isOneDiskALayerOverTheOther(lhs, rhs))
+        return false;
+
+    return haveSameStorageNamespace(lhs, rhs);
 }
 
 void DiskSelector::assertInitialized() const
