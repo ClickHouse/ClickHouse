@@ -19,6 +19,10 @@
                 <path>encrypted/</path>
                 <key>1234567812345678</key>
             </encrypted_disk>
+            <uk_move_local>
+                <type>local</type>
+                <path>/var/lib/clickhouse/uk_move_local/</path>
+            </uk_move_local>
         </disks>
         <policies>
             <!-- Extends the built-in `default` policy so a UNIQUE KEY table can
@@ -41,6 +45,20 @@
                 </volumes>
                 <move_factor>0.0</move_factor>
             </s3_extending>
+            <!-- Background moves are the only way to move a UNIQUE KEY part (no
+                 ALTER ... MOVE, no TTL). `move_factor = 1` makes every part on the
+                 local volume a move candidate; tests gate it with STOP/START MOVES. -->
+            <uk_local_to_s3>
+                <volumes>
+                    <local>
+                        <disk>uk_move_local</disk>
+                    </local>
+                    <s3>
+                        <disk>s3_disk</disk>
+                    </s3>
+                </volumes>
+                <move_factor>1.0</move_factor>
+            </uk_local_to_s3>
         </policies>
     </storage_configuration>
 </clickhouse>
