@@ -1,5 +1,35 @@
 In our fork of librdkafka we have a few patches that are not yet merged to upstream and we might also have to do some thing differently than in upstream librdkafka. For this reasons here are the steps we did to upgrade to new librdkafka versions.
 
+# 2.15.1 -> 2.16.0
+
+## Fixes to apply
+
+Exactly the same patch set as for 2.15.1, rebased onto v2.16.0 without conflicts
+(the branch is `ClickHouse/v2.16.0`, 16 commits on top of the tag):
+
+- pthread_set_name_np on freebsd - https://github.com/confluentinc/librdkafka/pull/4982 (no CH PR)
+- Do not set _POSIX_C_SOURCE for FreeBSD (makes clang-15 happy) - https://github.com/confluentinc/librdkafka/pull/4157 (no CH PR)
+- Race in rd_kafka_fetch_pos2str - https://github.com/confluentinc/librdkafka/pull/4788 (no CH PR)
+- Fix possible data-race for statistics - https://github.com/confluentinc/librdkafka/pull/4630 (https://github.com/ClickHouse/librdkafka/pull/11)
+- Lock topic partition when reading leader epoch while fetching topic partitions - https://github.com/confluentinc/librdkafka/pull/5266 (https://github.com/ClickHouse/librdkafka/pull/14)
+- Fix lock-order-inversion in queue refcount operations - https://github.com/confluentinc/librdkafka/pull/5445 (https://github.com/ClickHouse/librdkafka/pull/15)
+- Fix lock-order-inversion in rd_kafka_q_concat0 and rd_kafka_q_prepend0 - https://github.com/confluentinc/librdkafka/pull/5446 (https://github.com/ClickHouse/librdkafka/pull/16)
+
+## ClickHouse only fixes
+
+Unchanged from 2.15.1: the `kafka_` cJSON prefix rename and the uncurlify patch. Upstream did not touch
+`src/cJSON.c`, `src/cJSON.h`, `src/rdhttp.c`, `src/rdhttp.h`, `src/rdkafka_conf.c` or
+`src/rdkafka_sasl_oauthbearer_oidc.c` between the two tags, so all of them applied unchanged and
+`contrib/librdkafka-cmake/rdhttp_poco.c` needed no update.
+
+## ClickHouse-side changes
+
+None. v2.16.0 adds no source files under `src/`, so the explicit list in
+`contrib/librdkafka-cmake/CMakeLists.txt` stays as it is, and upstream `config.h.in` is unchanged
+(no new `WITH_*`/`HAVE_*` macros; the only newly referenced macro is `WITH_HTTP`, which comes from the
+fork's uncurlify patch and is already defined). The new unittest entry point `unittest_assignment`
+declared in `src/rdunittest.c` is defined in `src/rdkafka_assignment.c`, which is already compiled.
+
 # 2.14.1 -> 2.15.1
 
 ## Fixes to apply
