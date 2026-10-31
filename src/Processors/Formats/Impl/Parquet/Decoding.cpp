@@ -2,6 +2,7 @@
 #include <Processors/Formats/Impl/Parquet/ALPEncoding.h>
 
 #include <base/arithmeticOverflow.h>
+#include <bit>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsCommon.h>
 #include <Common/FloatUtils.h>
@@ -23,6 +24,60 @@ namespace DB::ErrorCodes
 namespace DB::Parquet
 {
 
+namespace
+{
+
+/// Sets bit i of `bits` iff `filter[i]` is nonzero and returns the number of set bits.
+/// A zero word follows, so `getFilterBits` may read the word after any position below `size`.
+size_t filterToBits(const UInt8 * filter, size_t size, PaddedPODArray<UInt64> & bits)
+{
+    const size_t words = (size + 63) / 64;
+    bits.resize(words + 1);
+    size_t pass_count = 0;
+    size_t i = 0;
+    for (; i + 64 <= size; i += 64)
+    {
+        const UInt64 word = bytes64MaskToBits64Mask(filter + i);
+        bits[i / 64] = word;
+        pass_count += std::popcount(word);
+    }
+    if (i < size)
+    {
+        UInt64 word = 0;
+        for (size_t k = 0; i + k < size; ++k)
+            word |= UInt64(filter[i + k] != 0) << k;
+        bits[i / 64] = word;
+        pass_count += std::popcount(word);
+    }
+    bits[words] = 0;
+    return pass_count;
+}
+
+/// The `len` (1..64) bits of `bits` starting at bit `pos`, in the low bits of the result.
+ALWAYS_INLINE inline UInt64 getFilterBits(const UInt64 * bits, size_t pos, size_t len)
+{
+    const size_t word = pos / 64;
+    const size_t shift = pos % 64;
+    UInt64 x = bits[word] >> shift;
+    if (shift)
+        x |= bits[word + 1] << (64 - shift);
+    if (len < 64)
+        x &= (UInt64(1) << len) - 1;
+    return x;
+}
+
+ALWAYS_INLINE inline size_t countFilterBits(const UInt64 * bits, size_t pos, size_t len)
+{
+    size_t count = 0;
+    for (; len >= 64; pos += 64, len -= 64)
+        count += std::popcount(getFilterBits(bits, pos, 64));
+    if (len)
+        count += std::popcount(getFilterBits(bits, pos, len));
+    return count;
+}
+
+}
+
 /// Used for dictionary indices and repetition/definition levels.
 /// Throws if any decoded value is >= `limit`.
 template <typename T>
@@ -35,6 +90,8 @@ struct BitPackedRLEDecoder : public PageDecoder
     size_t bit_idx = 0; // if bit-packed run
     T val = 0; // if RLE run
     bool run_is_rle = false; // otherwise bit-packed
+    /// The filter of the current `decode` call as a bitmask, see `filterToBits`.
+    PaddedPODArray<UInt64> filter_bits;
 
     BitPackedRLEDecoder(std::span<const char> data_, size_t limit_, bool has_header_byte, bool has_length_bytes = false)
         : PageDecoder(data_), limit(limit_)
@@ -85,9 +142,10 @@ struct BitPackedRLEDecoder : public PageDecoder
             return;
         }
         filter += filter_offset;
+        const size_t pass_count = filterToBits(filter, num_values, filter_bits);
         size_t start = out.size();
-        out.resize(start + countBytesInFilter(filter, 0, num_values));
-        skipOrDecode<false, /*count_zeros=*/ false, /*filtered=*/ true>(num_values, out.data() + start, nullptr, filter);
+        out.resize(start + pass_count);
+        skipOrDecode<false, /*count_zeros=*/ false, /*filtered=*/ true>(num_values, out.data() + start, nullptr, filter_bits.data());
     }
     void decodeArray(size_t num_values, PaddedPODArray<T> & out)
     {
@@ -199,9 +257,9 @@ struct BitPackedRLEDecoder : public PageDecoder
         }
     }
 
-    /// With filtered, only the values whose filter byte is nonzero are written to out, packed.
+    /// With filtered, only the values whose bit in `filter_bits_data` is set are written to out, packed.
     template <bool skip, bool count_zeros = false, bool filtered = false>
-    void skipOrDecode(size_t num_values, T * out, size_t * num_zeros = nullptr, const UInt8 * filter = nullptr)
+    void skipOrDecode(size_t num_values, T * out, size_t * num_zeros = nullptr, const UInt64 * filter_bits_data = nullptr)
     {
         /// The skip path below advances `bit_idx` past a bit-packed run without looking at the
         /// values, so it can't count zeros. Counting requires decoding.
@@ -213,7 +271,7 @@ struct BitPackedRLEDecoder : public PageDecoder
             /// bit_width == 0 means all values are 0.
             size_t count = num_values;
             if constexpr (filtered)
-                count = countBytesInFilter(filter, 0, num_values);
+                count = countFilterBits(filter_bits_data, 0, num_values);
             if constexpr (!skip)
             {
                 if (count && limit == 0)
@@ -227,6 +285,7 @@ struct BitPackedRLEDecoder : public PageDecoder
         /// Accumulate in a local: a store through num_zeros may alias `out`, which would cost a
         /// load and a store per value in the bit-packed loop below.
         [[maybe_unused]] size_t zeros_acc = 0;
+        [[maybe_unused]] size_t filter_pos = 0;
 
         const T value_mask = T((1ul << bit_width) - 1);
         /// TODO [parquet]: May make sense to have specialized version of this loop for bit_width=1,
@@ -250,7 +309,7 @@ struct BitPackedRLEDecoder : public PageDecoder
                 {
                     size_t count = n;
                     if constexpr (filtered)
-                        count = countBytesInFilter(filter, 0, n);
+                        count = countFilterBits(filter_bits_data, filter_pos, n);
                     const T v = val; // without this std::fill reloads it from memory on each iteration
                     std::fill(out, out + count, v);
                     out += count;
@@ -268,12 +327,7 @@ struct BitPackedRLEDecoder : public PageDecoder
                     for (size_t i = 0; i < n; i += 64)
                     {
                         const size_t len = std::min<size_t>(64, n - i);
-                        UInt64 mask = 0;
-                        if (len == 64)
-                            mask = bytes64MaskToBits64Mask(filter + i);
-                        else
-                            for (size_t k = 0; k < len; ++k)
-                                mask |= UInt64(filter[i + k] != 0) << k;
+                        UInt64 mask = getFilterBits(filter_bits_data, filter_pos + i, len);
                         for (; mask; mask &= mask - 1)
                         {
                             size_t pos = bit_idx + (i + std::countr_zero(mask)) * bit_width;
@@ -315,7 +369,7 @@ struct BitPackedRLEDecoder : public PageDecoder
             }
 
             if constexpr (filtered)
-                filter += n;
+                filter_pos += n;
         }
         if constexpr (count_zeros)
             *num_zeros += zeros_acc;
