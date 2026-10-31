@@ -4,6 +4,7 @@
 #include <Columns/ColumnsCommon.h>
 #include <Columns/ColumnsNumber.h>
 #include <Core/Block.h>
+#include <Core/SortDescription.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/NullableUtils.h>
 #include <Common/BitHelpers.h>
@@ -371,6 +372,14 @@ class KeyExtractorImpl final : public DistinctSetFilter::KeyExtractor
 {
 public:
     KeyExtractorImpl(
+        const Method & method, std::unique_ptr<SetVariants> data_, DataTypes key_types_, Sizes key_sizes_,
+        DistinctKeyRepresentation representation_)
+        : data(std::move(data_))
+        , key_types(std::move(key_types_))
+        , key_sizes(std::move(key_sizes_))
+        , position(method.data.begin())
+        , end(method.data.end())
+        , representation(representation_)
         const Method & method, std::unique_ptr<SetVariants> data_, DataTypes key_types, Sizes key_sizes)
         : data(std::move(data_))
         , reader(method, std::move(key_types), std::move(key_sizes))
@@ -382,6 +391,50 @@ public:
         if (!data)
             return {};
 
+        MutableColumns columns;
+        std::vector<IColumn *> raw_columns;
+        if (representation == DistinctKeyRepresentation::Columns)
+        {
+            columns.reserve(key_types.size());
+            raw_columns.reserve(key_types.size());
+            for (const auto & key_type : key_types)
+            {
+                columns.push_back(key_type->createColumn());
+                raw_columns.push_back(columns.back().get());
+            }
+        }
+        else
+            columns.push_back(getDistinctKeyRepresentationType(representation)->createColumn());
+
+        size_t rows = 0;
+        while (position != end && rows < max_rows)
+        {
+            if (representation == DistinctKeyRepresentation::Columns)
+            {
+                if constexpr (requires { Method::State::packedKeysOrder(key_sizes); })
+                    Method::insertKeyIntoColumns(
+                        position->getValue(), raw_columns, key_sizes, unpack_order ? &*unpack_order : nullptr);
+                else
+                    Method::insertKeyIntoColumns(position->getValue(), raw_columns, key_sizes);
+            }
+            else
+            {
+                const auto & key = position->getValue();
+                columns.front()->insertData(reinterpret_cast<const char *>(&key), sizeof(key));
+            }
+
+            ++position;
+            ++rows;
+
+            if (max_bytes)
+            {
+                size_t bytes = 0;
+                for (const auto & column : columns)
+                    bytes += column->allocatedBytes();
+                if (bytes >= max_bytes)
+                    break;
+            }
+        }
         auto columns = reader.read(max_rows, max_bytes);
 
         /// Returned columns own their values, including strings extracted from the arena.
@@ -398,15 +451,75 @@ public:
 
 private:
     std::unique_ptr<SetVariants> data;
+    const DataTypes key_types;
+    const Sizes key_sizes;
+    typename Method::Data::const_iterator position;
+    const typename Method::Data::const_iterator end;
+    const DistinctKeyRepresentation representation;
+    std::optional<Sizes> unpack_order;
     SetMethodKeyReader<Method> reader;
 };
 
 }
 
+DataTypePtr getDistinctKeyRepresentationType(DistinctKeyRepresentation representation)
+{
+    switch (representation)
+    {
+        case DistinctKeyRepresentation::Columns:
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "The column DISTINCT representation has no service-column type");
+        case DistinctKeyRepresentation::Key16:
+            return std::make_shared<DataTypeUInt16>();
+        case DistinctKeyRepresentation::Key32:
+        case DistinctKeyRepresentation::Keys32:
+            return std::make_shared<DataTypeUInt32>();
+        case DistinctKeyRepresentation::Key64:
+        case DistinctKeyRepresentation::Keys64:
+            return std::make_shared<DataTypeUInt64>();
+        case DistinctKeyRepresentation::Hash128:
+        case DistinctKeyRepresentation::Keys128:
+        case DistinctKeyRepresentation::NullableKeys128:
+            return std::make_shared<DataTypeUInt128>();
+        case DistinctKeyRepresentation::Keys256:
+        case DistinctKeyRepresentation::NullableKeys256:
+            return std::make_shared<DataTypeUInt256>();
+    }
+    UNREACHABLE();
+}
+
 DistinctKeyRepresentation DistinctSetFilter::getKeyRepresentation() const
 {
     chassert(!data->empty());
-    return data->type == SetVariants::Type::hashed ? DistinctKeyRepresentation::Hash128 : DistinctKeyRepresentation::Columns;
+    if (data->type == SetVariants::Type::hashed)
+        return DistinctKeyRepresentation::Hash128;
+
+    bool comparison_can_merge = false;
+    for (const auto & type : key_types)
+        if (comparisonCanMergeDistinctValues(*type))
+            comparison_can_merge = true;
+
+    if (!comparison_can_merge)
+        return DistinctKeyRepresentation::Columns;
+
+    switch (data->type)
+    {
+        case SetVariants::Type::key16: return DistinctKeyRepresentation::Key16;
+        case SetVariants::Type::key32: return DistinctKeyRepresentation::Key32;
+        case SetVariants::Type::key64: return DistinctKeyRepresentation::Key64;
+        case SetVariants::Type::keys32: return DistinctKeyRepresentation::Keys32;
+        case SetVariants::Type::keys64: return DistinctKeyRepresentation::Keys64;
+        case SetVariants::Type::keys128: return DistinctKeyRepresentation::Keys128;
+        case SetVariants::Type::keys256: return DistinctKeyRepresentation::Keys256;
+        case SetVariants::Type::nullable_keys128: return DistinctKeyRepresentation::NullableKeys128;
+        case SetVariants::Type::nullable_keys256: return DistinctKeyRepresentation::NullableKeys256;
+        case SetVariants::Type::EMPTY:
+        case SetVariants::Type::key8:
+        case SetVariants::Type::key_string:
+        case SetVariants::Type::key_fixed_string:
+        case SetVariants::Type::hashed:
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected DISTINCT set method for comparison-ambiguous keys");
+    }
+    UNREACHABLE();
 }
 
 std::unique_ptr<DistinctSetFilter::KeyExtractor> DistinctSetFilter::extractKeys() &&
@@ -414,13 +527,12 @@ std::unique_ptr<DistinctSetFilter::KeyExtractor> DistinctSetFilter::extractKeys(
     chassert(!skip_null_keys);
     chassert(getTotalRowCount() > 0);
 
-    if (getKeyRepresentation() == DistinctKeyRepresentation::Hash128)
-        key_types = {std::make_shared<DataTypeUInt128>()};
+    const auto representation = getKeyRepresentation();
 
-    auto create_extractor = [this]<typename Method>(const Method & method) -> std::unique_ptr<KeyExtractor>
+    auto create_extractor = [this, representation]<typename Method>(const Method & method) -> std::unique_ptr<KeyExtractor>
     {
         return std::make_unique<KeyExtractorImpl<Method>>(
-            method, std::move(data), std::move(key_types), std::move(key_sizes));
+            method, std::move(data), std::move(key_types), std::move(key_sizes), representation);
     };
 
     return data->callOnMethod(create_extractor);
