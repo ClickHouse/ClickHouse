@@ -1,6 +1,7 @@
 #pragma once
 
 #include <string>
+#include <Core/Names.h>
 #include <Storages/ColumnsDescription.h>
 
 
@@ -30,5 +31,14 @@ void validateDataType(const DataTypePtr & type, const DataTypeValidationSettings
 [[nodiscard]] ColumnsDescription parseColumnsListFromString(const std::string & structure, const ContextPtr & context);
 
 bool tryParseColumnsListFromString(const std::string & structure, ColumnsDescription & columns, const ContextPtr & context, String & error);
+
+/// The storage columns of `columns` read by the `DEFAULT` of `column`: a read of a subcolumn is a read of its storage column,
+/// and the first argument of `dictGet`/`joinGet` functions and the right operand of `IN` name a dictionary, a table or a set
+/// unless they are a column of `columns`.
+NameSet getStorageColumnsReadByDefault(const ColumnsDescription & columns, const ColumnDescription & column);
+
+/// Removes the `DEFAULT` of each column of `structure_hint` that reads a hint column none of whose insertion table columns
+/// has the name it reads, and of each column whose `DEFAULT` reads a column whose `DEFAULT` is removed.
+void removeMisboundDefaultsFromStructureHint(ColumnsDescription & structure_hint, const NameToNameSetMap & insertion_columns_by_hint_column);
 
 }

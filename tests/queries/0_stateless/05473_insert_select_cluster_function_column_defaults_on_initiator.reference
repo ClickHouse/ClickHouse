@@ -1,0 +1,49 @@
+--- Distributed with a deterministic sharding key ---
+1	2000-01-01	7	10
+2	2001-02-03	5	6
+3	2000-01-01	7	30
+--- parallel_distributed_insert_select = 0 ---
+1	2000-01-01	7	10
+2	2001-02-03	5	6
+3	2000-01-01	7	30
+--- non-replicated destination ---
+1	2000-01-01	7	10
+2	2001-02-03	5	6
+3	2000-01-01	7	30
+--- s3 with parallel replicas into Distributed with a deterministic sharding key ---
+1	2000-01-01	7	10
+2	2001-02-03	5	6
+3	2000-01-01	7	30
+--- explicit structure with a DEFAULT as key-value argument ---
+1	2000-01-01	42	10
+2	2000-01-01	5	20
+3	2000-01-01	42	30
+--- DEFAULT reading a column of the files, with TTL ---
+2	1
+--- DEFAULT reading a MATERIALIZED column ---
+1	7	1
+3	7	1
+--- DEFAULT reading a subcolumn ---
+1	5
+--- DEFAULT reading a dictionary, a Join table and a Set table by identifier ---
+1	100	10	1
+3	300	30	1
+--- explicit structure with a DEFAULT reading a Set table by identifier ---
+1	1
+3	1
+--- DEFAULT with a secret argument ---
+0	1
+--- DEFAULT reading a column bound to another column, s3 ---
+1	1
+--- DEFAULT reading a column bound to another column, s3Cluster ---
+1	1
+--- DEFAULT reading a column bound to another column, input() ---
+1	1
+--- column selected twice, s3 ---
+5	5	6
+--- column selected twice, s3Cluster ---
+5	5	6
+--- column selected twice, s3Cluster into Distributed with a deterministic sharding key ---
+5	5	6
+--- column selected twice, input() ---
+5	5	6
