@@ -1,0 +1,11 @@
+asc	1500	a02000	a03499
+desc	1500	B02500	B03999
+offset	600	a03000	a03599
+plain_then_collated	1500	a02000	a03499
+collated_then_plain	1500	a02000	a03499
+collated_ties	1500	1000	0	499
+nullable	1500	100	a02000	a03399
+low_cardinality	1500	a02000	a03499
+low_cardinality_nullable	1500	a02000	a03499
+array	1500	a02000	a03499
+tuple	1500	a02000	a03499
