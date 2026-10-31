@@ -1,0 +1,5 @@
+<clickhouse>
+<!-- The stock template, expanded once for a table of an Ordinary database and stored literally. -->
+<default_replica_path>/clickhouse/tables/{uuid}/{shard}</default_replica_path>
+<default_replica_name>{replica}</default_replica_name>
+</clickhouse>

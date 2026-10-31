@@ -1,0 +1,17 @@
+A wide row of numbers is inferred
+24
+The widest row of tab-separated strings within the default bound is inferred
+10
+The narrowest row of tab-separated strings beyond the default bound is refused
+BAD_ARGUMENTS
+It is inferred when the bound is raised or removed
+11
+11
+11
+A schema cached under a raised bound is not reused under the default bound
+11
+BAD_ARGUMENTS
+A wide row of tab-separated strings is refused
+BAD_ARGUMENTS
+A wide row of quoted strings is refused
+BAD_ARGUMENTS

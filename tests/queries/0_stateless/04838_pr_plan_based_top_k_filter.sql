@@ -19,7 +19,6 @@ ENGINE = MergeTree ORDER BY a SETTINGS index_granularity = 128;
 INSERT INTO t_pr_top_k SELECT number, number % 1000 FROM numbers(100000);
 OPTIMIZE TABLE t_pr_top_k FINAL;
 
-SET enable_analyzer = 1;
 SET enable_parallel_replicas = 1;
 SET parallel_replicas_for_non_replicated_merge_tree = 1;
 SET max_parallel_replicas = 3;
@@ -83,9 +82,6 @@ SELECT countIf(explain LIKE '%ReadFromParallelReplicas%') > 0 AS has_remote_read
 FROM (EXPLAIN SELECT b, a FROM t_pr_top_k ORDER BY b, a LIMIT 5)
 SETTINGS use_top_k_dynamic_filtering = 0, use_skip_indexes_for_top_k = 0;
 
--- The scope is reads that end up carrying the filter, not every read that qualifies for one. The filter is
--- not merged into a PREWHERE whose value depends on the block it is evaluated on (`blockSize` reports that
--- block's row count), and a read left without the filter distributes like any other.
 SELECT '--- explain: read distributed when the PREWHERE cannot carry the filter ---';
 SELECT countIf(explain LIKE '%ReadFromParallelReplicas%') > 0 AS has_remote_read
 FROM (EXPLAIN SELECT b, a FROM t_pr_top_k PREWHERE blockSize() > 100 ORDER BY b, a LIMIT 5)

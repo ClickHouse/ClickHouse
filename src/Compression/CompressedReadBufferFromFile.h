@@ -67,6 +67,8 @@ public:
     void setReadUntilPosition(size_t position) override { file_in.setReadUntilPosition(position); }
 
     void setReadUntilEnd() override { file_in.setReadUntilEnd(); }
+
+    void setRequestMap(ByteRangeSet ranges) override { file_in.setRequestMap(std::move(ranges)); }
 };
 
 }

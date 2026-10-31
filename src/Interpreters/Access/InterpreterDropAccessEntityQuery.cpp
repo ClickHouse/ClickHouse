@@ -7,6 +7,7 @@
 #include <Access/DefinerDependencies.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
+#include <Databases/IDatabase.h>
 #include <Interpreters/executeDDLQueryOnCluster.h>
 #include <Interpreters/removeOnClusterClauseIfNeeded.h>
 #include <IO/WriteHelpers.h>
@@ -55,15 +56,22 @@ BlockIO InterpreterDropAccessEntityQuery::execute()
         }
 
         if (query.if_exists)
-            storage->tryRemove(storage->find(query.type, names));
+            access_control.tryRemove(storage->find(query.type, names));
         else
-            storage->remove(storage->getIDs(query.type, names));
+            access_control.remove(storage->getIDs(query.type, names));
     };
 
     if (query.type == AccessEntityType::USER)
     {
+        /// Definer dependencies are registered when a table is constructed, which happens in its load job
+        /// with the asynchronous loading of databases. Wait for all tables to be loaded, otherwise
+        /// a view that is still loading would not be found as a dependent. The startup of a database
+        /// ignores the failures of its tables, so a broken table does not prevent the drop.
+        for (const auto & [_, database] : DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{}))
+            database->waitDatabaseStarted();
+
         auto & definer_dependencies = DefinerDependencies::instance();
-        for (const auto & name : query.names)
+        for (const auto & name : query.names->toStrings())
         {
             std::vector<String> objects;
             for (const auto & uuid : definer_dependencies.getObjectsForDefiner(name))
@@ -86,7 +94,7 @@ BlockIO InterpreterDropAccessEntityQuery::execute()
     else if (query.type == AccessEntityType::MASKING_POLICY)
         do_drop(Strings{query.masking_policy_name->toString()}, query.storage_name);
     else
-        do_drop(query.names, query.storage_name);
+        do_drop(query.names->toStrings(), query.storage_name);
 
     return {};
 }
@@ -100,13 +108,13 @@ AccessRightsElements InterpreterDropAccessEntityQuery::getRequiredAccess() const
     {
         case AccessEntityType::USER:
         {
-            for (const auto & name : query.names)
+            for (const auto & name : query.names->toStrings())
                 res.emplace_back(AccessType::DROP_USER, name);
             return res;
         }
         case AccessEntityType::ROLE:
         {
-            for (const auto & name : query.names)
+            for (const auto & name : query.names->toStrings())
                 res.emplace_back(AccessType::DROP_ROLE, name);
             return res;
         }

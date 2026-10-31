@@ -131,7 +131,7 @@ private:
 
     static void addMany(Data & data, const T * __restrict ptr, size_t row_begin, size_t row_end)
     {
-#if USE_MULTITARGET_CODE
+#if USE_X86_64_MULTITARGET_CODE
         if (isArchSupported(TargetArch::x86_64_v4))
         {
             addManyImpl_x86_64_v4(data, ptr, row_begin, row_end);
@@ -176,7 +176,7 @@ private:
     template <bool add_if_zero>
     static void addManyConditional(Data & data, const T * __restrict ptr, const UInt8 * __restrict condition_map, size_t row_begin, size_t row_end)
     {
-#if USE_MULTITARGET_CODE
+#if USE_X86_64_MULTITARGET_CODE
         if (isArchSupported(TargetArch::x86_64_v4))
         {
             addManyConditionalImpl_x86_64_v4<add_if_zero>(data, ptr, condition_map, row_begin, row_end);
@@ -241,12 +241,12 @@ public:
             /// Merging the two sets of flags into a temporary buffer vectorizes better
             /// than fusing both flags into the accumulation loop.
             const auto * if_flags = assert_cast<const ColumnUInt8 &>(*columns[if_argument_pos]).getData().data();
-            /// Default-init: the loop below fills [row_begin, row_end) and nothing reads the rest.
-            std::unique_ptr<UInt8[]> final_flags(new UInt8[row_end]);
+            const size_t span = row_end - row_begin;
+            auto final_flags = std::make_unique_for_overwrite<UInt8[]>(span);
             for (size_t i = row_begin; i < row_end; ++i)
-                final_flags[i] = (!null_map[i]) & !!if_flags[i];
+                final_flags[i - row_begin] = (!null_map[i]) & !!if_flags[i];
 
-            addManyConditional<false>(this->data(place), column.getData().data(), final_flags.get(), row_begin, row_end);
+            addManyConditional<false>(this->data(place), column.getData().data() + row_begin, final_flags.get(), 0, span);
         }
         else
         {
@@ -482,6 +482,9 @@ SELECT groupBitXor(num) FROM t;
     factory.registerAlias("BIT_OR", "groupBitOr", AggregateFunctionFactory::Case::Insensitive);
     factory.registerAlias("BIT_AND", "groupBitAnd", AggregateFunctionFactory::Case::Insensitive);
     factory.registerAlias("BIT_XOR", "groupBitXor", AggregateFunctionFactory::Case::Insensitive);
+    factory.registerAlias("bitwise_or_agg", "groupBitOr", AggregateFunctionFactory::Case::Insensitive);
+    factory.registerAlias("bitwise_and_agg", "groupBitAnd", AggregateFunctionFactory::Case::Insensitive);
+    factory.registerAlias("bitwise_xor_agg", "groupBitXor", AggregateFunctionFactory::Case::Insensitive);
 }
 
 }

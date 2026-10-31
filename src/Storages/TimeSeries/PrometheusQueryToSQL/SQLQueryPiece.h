@@ -31,7 +31,8 @@ enum class StoreMethod
     SINGLE_SCALAR,
 
     /// Data are stored in one row and one column named `values` (Array(Float64)).
-    /// The values are aligned to the time grid.
+    /// The values are aligned to the time grid, and there is a value at every point of the grid (NaN is a value too).
+    /// A grid with missing values must be stored as VECTOR_GRID, SCALAR_GRID is never nullable.
     /// SCALAR_GRID is produced by functions returning a scalar, for example scalar().
     /// Can be used with types ResultType::SCALAR, ResultType::INSTANT_VECTOR, ResultType::RANGE_VECTOR.
     SCALAR_GRID,
@@ -44,16 +45,28 @@ enum class StoreMethod
     /// Can be used with types ResultType::INSTANT_VECTOR, ResultType::RANGE_VECTOR.
     VECTOR_GRID,
 
-    /// Data are stored in three columns:
-    /// - `group` (UInt64),
-    /// - `timestamp` (the type of the timestamps in the TimeSeries table,
-    ///   or `ConverterContext::result_timestamp_type` after applying an offset),
-    /// - `value` (Float64 or Float32, the type of the values in the table).
-    /// The columns keep the types they have in the table because raw data can be big: the aggregate functions accept
+    /// The two store methods below hold the samples read from the TimeSeries table by a selector, not aligned to the time grid.
+    /// The layout follows the samples table of the TimeSeries table (see fromRangeSelector()).
+    /// The samples keep the types they have in the table because raw data can be big: the aggregate functions accept
     /// any of these types, and the result is converted to `ConverterContext::result_timestamp_type` and Float64 later.
-    /// RAW_DATA is produced by selectors in a prometheus query.
-    /// Can be used only with type ResultType::RANGE_VECTOR.
-    RAW_DATA,
+    /// A `group` can appear in multiple rows: the aggregate functions consuming the samples merge the rows of a group.
+    /// Both can be used only with type ResultType::RANGE_VECTOR.
+
+    /// Data are stored in two columns:
+    /// - `group` (UInt64),
+    /// - `samples` (Array(Tuple(timestamp, value)): the samples of a time series sorted by timestamp, where `timestamp` has
+    ///   the type of the timestamps in the TimeSeries table (or `ConverterContext::result_timestamp_type` after applying an offset)
+    ///   and `value` has the type of the values in the table (Float64 or Float32)).
+    /// A row usually holds one time bucket of the samples table.
+    /// SAMPLES is produced by selectors over a table storing buckets of samples.
+    SAMPLES,
+
+    /// Data are stored in three columns, one sample per row:
+    /// - `group` (UInt64),
+    /// - `timestamp` and `value` (the same types as the elements of `samples` in SAMPLES).
+    /// TIMESTAMP_AND_VALUE is produced by selectors over a table storing one sample per row
+    /// (a table of a version before TimeSeriesVersion::MIN_WITH_BUCKETED_SAMPLES).
+    TIMESTAMP_AND_VALUE,
 };
 
 
@@ -77,7 +90,7 @@ struct SQLQueryPiece
     /// [CONST_SCALAR, CONST_STRING, SCALAR_GRID, VECTOR_GRID].
     /// They use the scale `ConverterContext::result_timestamp_scale`.
     /// If `store_method` is CONST_STRING then `start_time` is always equal to `end_time`.
-    /// If `store_method` is RAW_DATA then these fields are not used.
+    /// If `store_method` is SAMPLES or TIMESTAMP_AND_VALUE then these fields are not used.
     TimestampType start_time = {};
     TimestampType end_time = {};
     DurationType step = {};
@@ -88,12 +101,13 @@ struct SQLQueryPiece
     /// `string_value` is used only if `store_method` is CONST_STRING.
     String string_value;
 
-    /// `select_query` is used only if `store_method` is one of [SINGLE_SCALAR, SCALAR_GRID, VECTOR_GRID, RAW_DATA].
+    /// `select_query` is used only if `store_method` is one of [SINGLE_SCALAR, SCALAR_GRID, VECTOR_GRID, SAMPLES, TIMESTAMP_AND_VALUE].
     /// If `store_method` is SINGLE_SCALAR then the SELECT query outputs one column `value` (Float64) with a single row.
     /// If `store_method` is SCALAR_GRID then the SELECT query outputs one column `values` (Array(Float64)) with a single row.
     /// If `store_method` is VECTOR_GRID then the SELECT query outputs two columns `group` (UInt64), `values` (Array(Nullable(Float64))).
-    /// If `store_method` is RAW_DATA then the SELECT query outputs three columns `group` (UInt64), `timestamp`, `value`
-    /// (see the comment for StoreMethod::RAW_DATA for their types).
+    /// If `store_method` is SAMPLES then the SELECT query outputs two columns `group` (UInt64), `samples`.
+    /// If `store_method` is TIMESTAMP_AND_VALUE then the SELECT query outputs three columns `group` (UInt64), `timestamp`, `value`
+    /// (see the comments for these store methods for the types of `samples`, `timestamp` and `value`).
     /// If `store_method` is CONST_SCALAR or CONST_STRING then the SELECT query is not used.
     ASTPtr select_query;
 };

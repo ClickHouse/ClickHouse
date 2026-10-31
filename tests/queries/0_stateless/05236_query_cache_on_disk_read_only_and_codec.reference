@@ -1,0 +1,16 @@
+-- Reads only: nothing is written, so the repeated query is a miss as well
+QueryCacheOnDiskMisses
+-- Neither reads nor writes: the query cache on disk is not consulted at all
+-- Written with codec LZ4
+QueryCacheOnDiskMisses
+QueryCacheOnDiskWrittenBytes
+-- Read with a different codec setting: the compression frames are self-describing
+QueryCacheOnDiskHits
+QueryCacheOnDiskReadBytes
+-- Reads only: the entry is served, and the codec setting is not validated because it is not needed
+QueryCacheOnDiskHits
+QueryCacheOnDiskReadBytes
+-- An invalid codec fails the query when writes are enabled
+UNKNOWN_CODEC
+-- The codec setting takes effect: the same result is bigger uncompressed than compressed
+ok
