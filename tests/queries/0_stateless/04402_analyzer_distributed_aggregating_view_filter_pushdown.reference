@@ -1,0 +1,117 @@
+--- outer filter on aggregating view
+2024-01-05	60002
+1	0
+--- HAVING inside aggregating view
+2024-01-05	60002
+1	0
+--- HAVING on Distributed table
+2024-01-05	60002
+1	0
+--- HAVING with grouping key and aggregate conjuncts
+2024-01-05	4	602
+2024-01-05	14	600
+2024-01-05	24	598
+1	0
+--- HAVING with grouping and arrayJoin
+2024-01-05	60002
+2024-01-05	60002
+2024-01-05	60002
+2024-01-05	60002
+2024-01-05	60002
+--- HAVING with indexHint
+10	599990
+10	599990
+--- HAVING with deterministic subquery
+2024-01-05	60002
+1	0
+--- HAVING with non-deterministic subquery
+2024-01-05	60002
+0	1
+--- HAVING with stateful function in subquery
+2024-01-05	60002
+0	1
+--- HAVING with shardNum
+2024-01-01	59998
+2024-01-02	59992
+2024-01-03	60000
+2024-01-04	60008
+2024-01-05	60002
+2024-01-06	59996
+2024-01-07	60004
+2024-01-08	59998
+2024-01-09	59992
+2024-01-10	60000
+0	1
+--- HAVING with subquery reading a table
+2024-01-05	60002
+0	1
+--- HAVING with subquery reading a table function
+2024-01-05	60002
+0	1
+--- HAVING with GLOBAL IN subquery reading a table
+2024-01-05	60002
+1	0
+--- HAVING with GLOBAL NOT IN subquery reading a table function
+9
+1	0
+--- HAVING with IN on a key that is not a Date
+5	606
+5	606
+7	600
+5	606
+--- WITH ROLLUP
+2024-01-05	60002
+--- WITH TOTALS
+2024-01-05	60002
+
+1970-01-01	60002
+--- complete-stage remote() with outer filter on aggregate alias
+2024-01-04	30004
+2024-01-05	30001
+2024-01-07	30002
+--- complete-stage remote() with outer filter on grouping key
+2024-01-05	30001
+--- distributed_group_by_no_merge = 2
+2024-01-05	60002
+1	0
+--- no GROUP BY, constant HAVING
+599990
+--- group_by_use_nulls = 1
+2024-01-05	Date	60002
+0
+1	0
+--- HAVING with sleepEachRow
+1	90
+--- HAVING with sleepEachRow and a grouping-key conjunct
+--- sleepEachRow in the argument of an aggregate function
+--- HAVING depending on the time zone of the server
+42
+42
+0	1
+1	0
+1
+--- HAVING with a Dynamic value
+10
+1
+--- HAVING converting a Unix timestamp in the time zone of the server
+1704151800	2
+1
+1
+1
+1	0
+--- HAVING converting a Date to a point in time in the time zone of the server
+2024-01-01	2
+1
+1
+1	0
+--- stateful function in the argument of an aggregate function
+0	900
+0	900
+0	1
+0
+5
+0
+0
+0	2000
+0
+0

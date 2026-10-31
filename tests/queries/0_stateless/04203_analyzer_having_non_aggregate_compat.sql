@@ -197,6 +197,28 @@ HAVING ((service = 'svc1' AND sum(value) > 0) AND sum(value) < 100) AND category
 ORDER BY category
 SETTINGS analyzer_compatibility_allow_non_aggregate_in_having = 1;
 
+-- A.12 - `indexHint` conjunct moves to WHERE like in the legacy rewrite, so a non-key column inside it is allowed.
+SELECT 'A.12 indexHint conjunct moves to WHERE';
+SELECT category, sum(value) AS total FROM test_a1 GROUP BY category HAVING indexHint(id = 1)
+ORDER BY category
+SETTINGS enable_analyzer = 1, analyzer_compatibility_allow_non_aggregate_in_having = 1;
+
+-- A.13 - `arrayJoin` is not deterministic in the scope of the query, so its conjunct stays in HAVING and multiplies
+-- the aggregated rows, as with the old analyzer, instead of the source rows before aggregation.
+SELECT 'A.13 arrayJoin conjunct stays in HAVING';
+SELECT category, sum(value) AS total FROM test_a1 GROUP BY category HAVING arrayJoin([category, category]) = 'a'
+ORDER BY category
+SETTINGS enable_analyzer = 1, analyzer_compatibility_allow_non_aggregate_in_having = 1;
+SELECT category, sum(value) AS total FROM test_a1 GROUP BY category HAVING arrayJoin([category, category]) = 'a'
+ORDER BY category
+SETTINGS enable_analyzer = 0;
+
+-- A.14 - the same with the `unnest` alias of `arrayJoin`.
+SELECT 'A.14 unnest conjunct stays in HAVING';
+SELECT category, sum(value) AS total FROM test_a1 GROUP BY category HAVING unnest([category, category]) = 'a'
+ORDER BY category
+SETTINGS enable_analyzer = 1, analyzer_compatibility_allow_non_aggregate_in_having = 1;
+
 DROP TABLE test_a1;
 DROP TABLE test_a2;
 DROP TABLE test_a3;
