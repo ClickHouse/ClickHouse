@@ -72,12 +72,12 @@ mls	String
 mpg	String
 mpt	String
 geom	String
-ls EPSG:4326
-mls EPSG:4326
-mpg EPSG:4326
-mpt EPSG:4326
-pg EPSG:4326
-pt EPSG:4326
+ls None
+mls None
+mpg None
+mpt None
+pg None
+pt None
 --- output_format_parquet_geometadata = 0
 1	DOUBLE	None
 2	DOUBLE	None
