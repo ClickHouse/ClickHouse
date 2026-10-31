@@ -837,9 +837,12 @@ public:
 
     FunctionBasePtr build(const ColumnsWithTypeAndName & arguments) const override
     {
-        DataTypePtr json_return_type = Impl<DummyJSONParser>::getReturnType(Name::name, createBlockWithNestedColumns(arguments));
-        NullPresence null_presence = getNullPresense(arguments);
-        DataTypePtr return_type = wrapReturnType(arguments, json_return_type, null_presence);
+        const ColumnsWithTypeAndName arguments_without_low_cardinality = removeLowCardinalityFromArguments(arguments);
+
+        DataTypePtr json_return_type
+            = Impl<DummyJSONParser>::getReturnType(Name::name, createBlockWithNestedColumns(arguments_without_low_cardinality));
+        NullPresence null_presence = getNullPresense(arguments_without_low_cardinality);
+        DataTypePtr return_type = wrapReturnType(arguments_without_low_cardinality, json_return_type, null_presence);
 
         DataTypes argument_types;
         argument_types.reserve(arguments.size());
@@ -850,6 +853,28 @@ public:
     }
 
 private:
+    /// `LowCardinality` arguments are unwrapped by the default implementation before `executeImpl` runs,
+    /// so the null presence and the result type must be computed from the types without it. A
+    /// `LowCardinality(Nullable(T))` argument otherwise reports no nullable argument, because
+    /// `DataTypeLowCardinality::isNullable` is false, and `executeImpl` then skips
+    /// `createBlockWithNestedColumns` and receives a `Nullable` column it does not accept.
+    static ColumnsWithTypeAndName removeLowCardinalityFromArguments(const ColumnsWithTypeAndName & arguments)
+    {
+        ColumnsWithTypeAndName res = arguments;
+        for (auto & column : res)
+        {
+            /// The column has to be converted together with the type: `createBlockWithNestedColumns` reads
+            /// the type to decide how to unwrap the column, so a `Nullable` type over a `LowCardinality`
+            /// column would make it unwrap the wrong thing.
+            /// `getReturnTypeImpl(const DataTypes &)` builds arguments that carry no column at all, so
+            /// convert a column only when one is present.
+            if (column.column)
+                column.column = recursiveRemoveLowCardinality(column.column);
+            column.type = recursiveRemoveLowCardinality(column.type);
+        }
+        return res;
+    }
+
     /// Applies the `Nothing` / `Nullable` handling on top of the type `Impl` computed.
     static DataTypePtr wrapReturnType(
         const ColumnsWithTypeAndName & arguments, const DataTypePtr & json_return_type, const NullPresence & null_presence)
@@ -871,8 +896,12 @@ private:
 
     static DataTypePtr calculateResultType(const ColumnsWithTypeAndName & arguments)
     {
-        DataTypePtr json_return_type = Impl<DummyJSONParser>::getReturnType(Name::name, createBlockWithNestedColumns(arguments));
-        return wrapReturnType(arguments, json_return_type, getNullPresense(arguments));
+        const ColumnsWithTypeAndName arguments_without_low_cardinality = removeLowCardinalityFromArguments(arguments);
+
+        DataTypePtr json_return_type
+            = Impl<DummyJSONParser>::getReturnType(Name::name, createBlockWithNestedColumns(arguments_without_low_cardinality));
+        return wrapReturnType(
+            arguments_without_low_cardinality, json_return_type, getNullPresense(arguments_without_low_cardinality));
     }
 
     const bool allow_simdjson;
