@@ -77,7 +77,7 @@ def test_reads_above_soft_limit_do_not_hold_connections(started_cluster):
         requests[instance.name] = get_object_requests(instance, query_id)
 
     # The limited node fetches every 64 KiB of every stream with its own request.
-    assert requests["node_limited"] >= 5 * requests["node"], requests
+    assert requests["node_limited"] >= 5 * requests["node"] > 0, requests
 
     for instance in [node, node_limited]:
         query_id = f"merge_{instance.name}"
@@ -94,4 +94,4 @@ def test_reads_above_soft_limit_do_not_hold_connections(started_cluster):
 
     # The merge reads whole `.bin` files: one request per file on the default node, one per
     # buffer fill of 1 MiB on the limited node.
-    assert requests["node_limited"] >= 5 * requests["node"], requests
+    assert requests["node_limited"] >= 5 * requests["node"] > 0, requests
