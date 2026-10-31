@@ -59,6 +59,9 @@ public:
     ContextMutablePtr getContext() const { return context; }
     const ZooKeeperRetriesInfo & getZooKeeperRetriesInfo() const { return zookeeper_retries_info; }
 
+    /// Whether the definition of the table was checked to be the same as in the backup.
+    bool isTableDefinitionSameAsInBackup(const IStorage & storage) const;
+
     /// Adds a data restore task which will be later returned by getDataRestoreTasks().
     /// This function can be called by implementations of IStorage::restoreFromBackup() in inherited storage classes.
     void addDataRestoreTask(DataRestoreTask && new_task);
@@ -128,6 +131,8 @@ private:
     /// Databases skipped during restore because they use external engines
     /// and restore_replace_external_engines_to_null is set.
     std::unordered_set<String> skipped_databases TSA_GUARDED_BY(mutex);
+
+    std::unordered_set<const IStorage *> tables_with_same_definition TSA_GUARDED_BY(mutex);
 };
 
 }
