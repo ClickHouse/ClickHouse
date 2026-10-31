@@ -10,6 +10,10 @@ overwritten_rows	1	a_over
 overwritten_rows	2	b
 overwritten_rows	3	c
 overwritten_rows	4	d
+merged_rows	1	a_over
+merged_rows	2	b
+merged_rows	3	c
+merged_rows	4	d
 conflict	probe_1	part all_1_1_0 (row 0)
 conflict	probe_3	part all_2_2_0 (row 1)
 conflict	reattached_1	part all_1_1_0 (row 0)

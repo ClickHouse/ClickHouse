@@ -31,6 +31,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int ABORTED;
+    extern const int SERIALIZATION_ERROR;
     extern const int SUPPORT_IS_DISABLED;
     extern const int UNKNOWN_STATUS_OF_TRANSACTION;
 }
@@ -94,6 +95,29 @@ std::mutex & UniqueKeyTxnManager::partitionLock(const String & partition_id)
     return partition_locks[partition_id];
 }
 
+void UniqueKeyTxnManager::waitForCommitsInFlight(const String & partition_id)
+{
+    std::lock_guard wait_out(partitionLock(partition_id));
+}
+
+/// A part is active from `publish` on, inside its commit's partition guard, so an unresolved creation is
+/// waited out there.
+CSN UniqueKeyTxnManager::creationCSN(const IMergeTreeDataPart & part)
+{
+    const VersionInfo info = part.version->getInfo();
+    CSN csn = info.creation_csn != Tx::UnknownCSN ? info.creation_csn : TransactionManager::getCSN(info.creation_tid);
+    if (csn == Tx::UnknownCSN)
+    {
+        waitForCommitsInFlight(part.info.getPartitionId());
+        csn = TransactionManager::getCSN(info.creation_tid);
+    }
+
+    if (csn == Tx::UnknownCSN || csn == Tx::RolledBackCSN)
+        throw Exception(ErrorCodes::SERIALIZATION_ERROR,
+            "Source part {} was created by transaction {}, which is not committed", part.name, info.creation_tid);
+    return csn;
+}
+
 void throwIfInsideTransaction(const MergeTreeTransactionPtr & current, std::string_view operation)
 {
     if (current)
@@ -101,16 +125,29 @@ void throwIfInsideTransaction(const MergeTreeTransactionPtr & current, std::stri
             "{} on a UNIQUE KEY table is not supported inside an explicit transaction", operation);
 }
 
-MergeTreeTransactionHolder beginUniqueKeyTransaction(const MergeTreeTransactionPtr & current, std::string_view operation)
+MergeTreeTransactionHolder beginUniqueKeyTransaction(
+    const MergeTreeTransactionPtr & current, std::string_view operation, const std::vector<MergeTreeDataPartPtr> & source_parts)
 {
     throwIfInsideTransaction(current, operation);
 
-    return MergeTreeTransactionHolder(TransactionManager::instance().beginTransaction(), /*autocommit=*/false);
+    /// A commit stamps its parts' csn before `latest_snapshot` reaches it, and the scheduler takes a part
+    /// as soon as its creation resolves. A snapshot below that csn misses the source and still sees the part
+    /// the source replaced, which the commit then fails to remove.
+    auto & manager = TransactionManager::instance();
+    CSN sources_csn = Tx::NonTransactionalCSN;
+    for (const auto & part : source_parts)
+        sources_csn = std::max(sources_csn, part->storage.uniqueKeyTxnManager().creationCSN(*part));
+    manager.waitForCSNLoaded(sources_csn);
+
+    auto txn = manager.beginTransaction();
+    chassert(txn->getSnapshot() >= sources_csn || manager.isShuttingDown(),
+        fmt::format("snapshot {}, newest source csn {}", txn->getSnapshot(), sources_csn));
+    return MergeTreeTransactionHolder(txn, /*autocommit=*/false);
 }
 
 MergeTreeTransactionHolder beginUniqueKeyTransaction(const ContextPtr & context, std::string_view operation)
 {
-    return beginUniqueKeyTransaction(context->getCurrentTransaction(), operation);
+    return beginUniqueKeyTransaction(context->getCurrentTransaction(), operation, /*source_parts=*/{});
 }
 
 CSN UniqueKeyTxnManager::commitTransaction(

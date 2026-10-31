@@ -62,12 +62,6 @@ public:
     /// Per-part ATTACH hook: `ensureValidDenseIndex`.
     void onPartAttach(MutableDataPartPtr & part) const;
 
-    /// MERGE-path entry point: writes the finalized merged part's `unique_key_index.sst`
-    /// from `unique_key_columns`, the UK columns the merge retained from its own output
-    /// (row i == part offset i). No-op on an empty part, fails closed otherwise.
-    void writeDenseIndexOnMerge(
-        MutableDataPartPtr & part, const StorageMetadataPtr & metadata_snapshot, const Block & unique_key_columns) const;
-
 private:
     MergeTreeData & data;
 };
