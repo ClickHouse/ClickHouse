@@ -25,6 +25,7 @@ namespace ErrorCodes
     extern const int HDFS_ERROR;
     extern const int ACCESS_DENIED;
     extern const int LOGICAL_ERROR;
+    extern const int READONLY;
 }
 
 /// HDFS has no native ETag, so we synthesise a version identifier from the
@@ -144,6 +145,8 @@ std::unique_ptr<WriteBufferFromFileBase> HDFSObjectStorage::writeObject( /// NOL
     size_t buf_size,
     const WriteSettings & write_settings)
 {
+    throwIfReadonly();
+
     /// A conditional write is a compare-and-swap request. HDFS can express only its If-None-Match
     /// half: `O_CREAT` maps to `Hdfs::Create` alone, which the NameNode rejects when the file exists,
     /// whereas the bare `O_WRONLY` used below maps to `Hdfs::Create | Hdfs::Overwrite` and truncates
@@ -204,6 +207,7 @@ std::unique_ptr<WriteBufferFromFileBase> HDFSObjectStorage::writeObject( /// NOL
 /// Remove file. Throws exception if file doesn't exists or it's a directory.
 void HDFSObjectStorage::removeObject(const StoredObject & object)
 {
+    throwIfReadonly();
     initializeHDFSFS();
     auto path = object.remote_path;
     if (path.starts_with(url_without_path))
@@ -341,6 +345,12 @@ void HDFSObjectStorage::listObjects(const std::string & path, RelativePathsWithM
         if (max_keys && children.size() >= max_keys)
             break;
     }
+}
+
+void HDFSObjectStorage::throwIfReadonly() const
+{
+    if (settings->read_only)
+        throw Exception(ErrorCodes::READONLY, "HDFS object storage `{}` is readonly", url);
 }
 
 void HDFSObjectStorage::copyObject( /// NOLINT

@@ -4,6 +4,8 @@
 #include <array>
 #include <memory>
 #include <Databases/DataLake/DatabaseDataLake.h>
+#include <Access/ContextAccess.h>
+#include <Access/Common/AccessFlags.h>
 #include <Core/SettingsEnums.h>
 #include <Core/UUID.h>
 #include <Databases/DataLake/HiveCatalog.h>
@@ -20,6 +22,7 @@
 #include <IO/ReadHelpers.h>
 #include <Poco/JSON/Parser.h>
 #include <Poco/JSON/Object.h>
+#include <Poco/URI.h>
 
 
 #if USE_AVRO && USE_PARQUET
@@ -162,6 +165,26 @@ namespace FailPoints
 
 namespace
 {
+
+/// Throws `ACCESS_DENIED` unless the session of `context` has `READ ON HDFS` for `location`, normalized as
+/// `ITableFunction::getFunctionURINormalized` does so that grant filters match alike.
+void checkHDFSReadAccess(const ContextPtr & context, const String & location)
+{
+    String normalized_location;
+    try
+    {
+        Poco::URI uri(location);
+        uri.normalize();
+        normalized_location = uri.toString();
+    }
+    catch (const Poco::Exception &)
+    {
+        /// An unparsable location matches only an unfiltered grant.
+        normalized_location.clear();
+    }
+    context->getAccess()->checkAccessWithFilter(
+        AccessType::READ, toStringSource(AccessTypeObjects::Source::HDFS), normalized_location);
+}
 
 /// In refresh-token mode a single token, minted with `auth_scope`, serves both the OneLake
 /// catalog and Azure storage requests, so the scope must be the Azure storage audience.
@@ -810,7 +833,9 @@ DatabaseDataLake::TableEngineArgs DatabaseDataLake::buildTableEngineArgs(
             static_credentials->addCredentialsToEngineArgs(result.args);
             result.static_credentials_applied = true;
         }
-        else if (!lightweight && table_metadata.requiresCredentials() && !catalogConfiguresStorageAccess(catalog))
+        /// HDFS authenticates (e.g. with Kerberos) through the server's `hdfs` configuration, not through engine arguments.
+        else if (!lightweight && table_metadata.requiresCredentials() && !catalogConfiguresStorageAccess(catalog)
+                 && result.storage_type != DatabaseDataLakeStorageType::HDFS)
         {
             throw Exception(
                ErrorCodes::BAD_ARGUMENTS,
@@ -1139,6 +1164,11 @@ StoragePtr DatabaseDataLake::tryGetTableImpl(
     const auto table_endpoint = args[0]->as<ASTLiteral>()->value.safeGet<String>();
     LOG_TEST(log, "Using table endpoint: {}", table_endpoint);
 
+    /// HDFS is read with the server's own identity, so require the same `READ ON HDFS` grant as `icebergHDFS`.
+    /// Checked before the stateful cache below, so that a cached storage is not handed to a user without the grant.
+    if (storage_type == DatabaseDataLakeStorageType::HDFS)
+        checkHDFSReadAccess(context_, table_endpoint);
+
     auto storage_settings = std::make_shared<DataLakeStorageSettings>();
     storage_settings->loadFromSettingsChanges(settings.allChanged());
 
@@ -1205,6 +1235,13 @@ StoragePtr DatabaseDataLake::tryGetTableImpl(
     /// with_table_structure = false: because there will be
     /// no table structure in table definition AST.
     StorageObjectStorageConfiguration::initialize(*configuration, args, context_copy, /* with_table_structure */false);
+
+#if USE_HDFS
+    /// Writes reach HDFS through many entrypoints (`INSERT` and its cluster variant, `ALTER`, `OPTIMIZE`, `DROP`...) and
+    /// would use the server's own identity, so rather than authorizing each, catalog tables on HDFS are read-only.
+    if (auto * hdfs_configuration = dynamic_cast<StorageHDFSConfiguration *>(configuration.get()))
+        hdfs_configuration->setReadOnly();
+#endif
 
 #if USE_AWS_S3
     /// Amazon S3 Tables rejects user-defined object metadata (`x-amz-meta-*`) in its data buckets with
