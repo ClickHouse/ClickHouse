@@ -43,7 +43,9 @@ JEMALLOC_PROFILER_SAMPLING_RATE=16
 # REPORT_LOCAL_{QUERY,SERVER}_SETTINGS in performance_tests.py.
 # Keep report aggregations in RAM: report/tmp cannot hold a spill of the
 # heaviest randomization queries, so spilling only fails with NOT_ENOUGH_SPACE.
-CHPC_REPORT_LOCAL_QUERY_SETTINGS="--max_bytes_before_external_group_by=0 --max_bytes_ratio_before_external_group_by=0 --max_bytes_before_external_sort=0 --max_bytes_ratio_before_external_sort=0"
+# --tmp: report-building invocations run concurrently and must not share
+# (and lock) the default designated data directory in the home directory.
+CHPC_REPORT_LOCAL_QUERY_SETTINGS="--tmp --max_bytes_before_external_group_by=0 --max_bytes_ratio_before_external_group_by=0 --max_bytes_before_external_sort=0 --max_bytes_ratio_before_external_sort=0"
 # Track each process against its own RSS, not the job cgroup (MEMORY_LIMIT_EXCEEDED).
 CHPC_REPORT_LOCAL_SERVER_SETTINGS="--memory_worker_use_cgroup=0"
 
@@ -138,6 +140,14 @@ function configure
     fi
 }
 
+# Prints `--tmp` if `clickhouse local` of the binary $1 has the option (see local_command in ci/jobs/performance_tests.py).
+function local_tmp_option
+{
+    if grep -qE '^[[:space:]]*--tmp[[:space:]]' < <("$1" local --help 2>/dev/null); then
+        echo --tmp
+    fi
+}
+
 # addressToLine resolves a frame to "file:line" only where DWARF covers
 # ClickHouse code. PR builds use -g0 (DISABLE_ALL_DEBUG_SYMBOLS): the symbol
 # table remains (addressToSymbol works) but there is no line info, so the patched
@@ -149,13 +159,15 @@ function configure
 # resolves comparably on both and is left untouched.
 function match_reference_debug_info
 {
-    local left right left_lines right_lines
+    local left right left_lines right_lines left_tmp right_tmp
     left=$(readlink -f left/clickhouse-server)
     right=$(readlink -f right/clickhouse-server)
+    left_tmp=$(local_tmp_option "$left")
+    right_tmp=$(local_tmp_option "$right")
     # Running clickhouse also decompresses the self-extracting binary in place.
     local probe="select countIf(addressToLine(arrayJoin(trace)) like '%:%') from system.stack_trace"
-    left_lines=$("$left" local --allow_introspection_functions=1 --query "$probe" 2>/dev/null ||:)
-    right_lines=$("$right" local --allow_introspection_functions=1 --query "$probe" 2>/dev/null ||:)
+    left_lines=$("$left" local ${left_tmp:+"$left_tmp"} --allow_introspection_functions=1 --query "$probe" 2>/dev/null ||:)
+    right_lines=$("$right" local ${right_tmp:+"$right_tmp"} --allow_introspection_functions=1 --query "$probe" 2>/dev/null ||:)
     if [ "$(( ${right_lines:-0} * 4 ))" -lt "${left_lines:-0}" ]; then
         strip --strip-debug "$left"
     fi

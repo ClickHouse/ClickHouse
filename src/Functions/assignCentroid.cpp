@@ -150,7 +150,7 @@ void scoreTile(
     const Float32 * tile_centroids, const Float32 * tile_sq_norms, const UInt32 * tile_ids,
     size_t width, Float32 * best_score, UInt32 * result_ids)
 {
-#if USE_MULTITARGET_CODE
+#if USE_X86_64_MULTITARGET_CODE
     if (isArchSupported(TargetArch::x86_64_v4))
     {
         TargetSpecific::x86_64_v4::scoreTile(vec_data, num_rows, dim, tile_centroids, tile_sq_norms, tile_ids, width, best_score, result_ids);
