@@ -126,6 +126,9 @@ std::pair<Poco::JSON::Object::Ptr, String> createEmptyMetadataFile(
     ContextPtr context,
     UInt64 format_version = 2);
 
+/// Format version 1 requires `schema` (the current schema) and `partition-spec` (the default spec's fields) next to `schemas` and `partition-specs`.
+void setFormatVersion1SchemaAndPartitionSpec(Poco::JSON::Object::Ptr metadata);
+
 /// Parses the version out of a metadata file name: `v<N>.metadata.json`, `v<N>-<uuid>.metadata.json` or `<N>-<uuid>.metadata.json`.
 MetadataFileWithInfo getMetadataFileAndVersion(const std::string & path);
 

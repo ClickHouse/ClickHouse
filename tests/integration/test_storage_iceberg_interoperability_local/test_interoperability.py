@@ -489,3 +489,40 @@ def test_ch_write_pyiceberg_read_bound_width(started_cluster_iceberg):
         assert len(table.scan(row_filter=row_filter).to_arrow()) == 0, row_filter
 
     assert len(table.scan().to_arrow()) == 1
+
+
+def test_ch_write_v1_pyiceberg_read(started_cluster_iceberg):
+    """
+    ClickHouse writes a format version 1 table, pyiceberg opens every metadata file.
+
+    Regression for issue #128301: format version 1 requires `schema` and `partition-spec`
+    in the table metadata, and pyiceberg refused the table with `schema Field required`.
+    """
+    node1 = started_cluster_iceberg.instances["node1"]
+
+    TABLE_NAME = "test_v1_pyiceberg_read_" + get_uuid_str()
+    table_dir = f"{ICEBERG_DIR_NODE1}/default/{TABLE_NAME}"
+    ch_settings = {"allow_insert_into_iceberg": 1}
+
+    node1.query(
+        f"""
+        CREATE TABLE {TABLE_NAME} (id Int32, s String)
+        ENGINE=IcebergLocal(local,
+            path = '{table_dir}', format=Parquet)
+        SETTINGS iceberg_format_version = 1
+        """,
+        settings=ch_settings,
+    )
+    node1.query(f"INSERT INTO {TABLE_NAME} VALUES (1, 'a')", settings=ch_settings)
+    node1.query(f"ALTER TABLE {TABLE_NAME} ADD COLUMN x Nullable(Int64)", settings=ch_settings)
+    node1.query(f"INSERT INTO {TABLE_NAME} VALUES (2, 'b', 3)", settings=ch_settings)
+
+    # CREATE, INSERT, ALTER and INSERT each wrote one metadata file.
+    metadata_files = glob.glob(os.path.join(table_dir, "metadata", "v*.metadata.json"))
+    assert len(metadata_files) == 4, metadata_files
+    for metadata_file in metadata_files:
+        StaticTable.from_metadata(metadata_file)
+
+    table = StaticTable.from_metadata(latest_metadata_file(table_dir))
+    rows = sorted(table.scan().to_arrow().to_pylist(), key=lambda row: row["id"])
+    assert rows == [{"id": 1, "s": "a", "x": None}, {"id": 2, "s": "b", "x": 3}]

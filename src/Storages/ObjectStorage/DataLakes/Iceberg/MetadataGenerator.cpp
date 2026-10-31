@@ -339,6 +339,7 @@ MetadataGenerator::NextMetadataResult MetadataGenerator::generateNextMetadata(
         properties->set("write.merge.mode", "merge-on-read");
         properties->set("write.update.mode", "merge-on-read");
     }
+    Iceberg::setFormatVersion1SchemaAndPartitionSpec(metadata_object);
     return {new_snapshot, manifest_list_path};
 }
 
