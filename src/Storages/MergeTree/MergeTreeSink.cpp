@@ -81,8 +81,12 @@ MergeTreeSink::MergeTreeSink(
     , context(context_)
     , storage_snapshot(storage.getStorageSnapshotWithoutData(metadata_snapshot, context_))
     , deduplicate((*storage.getSettings())[MergeTreeSetting::non_replicated_deduplication_window] > 0 && storage.getDeduplicationLog() != nullptr)
+    , parts_to_sync([&storage_](const MergeTreeDataPartPtr & part) { storage_.detachPartAfterFailedFsync(part); })
 {
     LOG_TEST(storage.log, "Create MergeTreeSink, deduplicate={}", deduplicate);
+
+    defer_fsync = DeferredPartsSync::isEnabled(storage, metadata_snapshot);
+    sync_existing_parts = DeferredPartsSync::shouldSyncExistingParts(storage);
 
     /// It's only allowed to throw "too many parts" before write,
     /// because interrupting long-running INSERT query in the middle is not convenient for users.
@@ -132,6 +136,7 @@ void MergeTreeSink::onFinish()
         return;
 
     finishDelayedChunk();
+    parts_to_sync.syncAll();
 }
 
 void MergeTreeSink::consume(Chunk & chunk)
@@ -333,6 +338,9 @@ void MergeTreeSink::finishDelayedChunk()
 
             if (conflicts.empty())
             {
+                if (defer_fsync)
+                    parts_to_sync.add(part);
+
                 partition.temp_part->prewarmCaches();
 
                 profile_events_scope.reset();
@@ -422,11 +430,13 @@ void MergeTreeSink::finishDelayedChunk()
     /// Any partition transaction that never reached a commit -- a deduplicated block, a
     /// discarded part -- is rolled back by its `MergeTreeTransactionHolder` here.
     delayed_chunk.reset();
+
+    parts_to_sync.syncOld();
 }
 
 MergeTreeTemporaryPartPtr MergeTreeSink::writeNewTempPart(BlockWithPartition & block, const MergeTreeTransactionPtr & txn)
 {
-    return storage.writer.writeTempPart(block, metadata_snapshot, context, /*may_have_leftover=*/true, txn);
+    return storage.writer.writeTempPart(block, metadata_snapshot, context, /*may_have_leftover=*/ true, defer_fsync, txn);
 }
 
 UniqueKeyInsertOutcome MergeTreeSink::commitUniqueKeyPart(
@@ -473,6 +483,13 @@ std::vector<std::string> MergeTreeSink::commitPart(MergeTreeMutableDataPartPtr &
             {
                 LOG_INFO(storage.log, "Block with ID {} already exists as part {}; ignoring it", res.block_id, res.part_info.getPartNameForLogs());
                 conflict_block_ids.push_back(res.block_id);
+
+                /// The existing part may be committed by another insert that has not synced it yet,
+                /// or its sync may have failed. This insert relies on it, so it must not be acknowledged
+                /// before the part is durable, even if this insert syncs its own parts inline.
+                if (sync_existing_parts)
+                    if (auto existing_part = storage.getActiveContainingPart(res.part_info, MergeTreeDataPartState::Active, lock))
+                        parts_to_sync.add(existing_part);
             }
 
             if (!conflict_block_ids.empty())

@@ -153,8 +153,10 @@ public:
     /// Whether at least one of the block ids is already present, so `addPart` would report a duplicate.
     bool containsAny(const std::vector<std::string> & block_ids);
 
-    /// Remove all covered parts from in memory table and add DROP records to the disk
-    void dropPart(const MergeTreePartInfo & drop_part_info);
+    /// Remove all covered parts from in memory table and add DROP records to the disk.
+    /// With `sync_to_disk`, the records are fsynced before returning, and a failure to sync them is propagated.
+    /// After such a failure, every later call with `sync_to_disk` throws, because the removal may not be durable.
+    void dropPart(const MergeTreePartInfo & drop_part_info, bool sync_to_disk = false);
 
     /// Load history from disk. Ignores broken logs.
     void load();
@@ -194,6 +196,10 @@ private:
     const bool disk_supports_writing_with_append;
 
     bool stopped{false};
+
+    /// A durable removal (`dropPart` with `sync_to_disk`) did not complete: its records are already removed from memory,
+    /// but they may be lost on disk, and syncing the log again does not prove otherwise. Further durable removals fail.
+    bool durable_drop_failed{false};
 
     /// Start new log
     void rotate();

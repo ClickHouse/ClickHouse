@@ -16,6 +16,7 @@
 #include <Common/JemallocMergeTreeArena.h>
 #include <Common/MemoryTrackerBlockerInThread.h>
 #include <Common/Exception.h>
+#include <Common/FailPoint.h>
 #include <Common/logger_useful.h>
 
 namespace DB
@@ -24,6 +25,12 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int ABORTED;
+    extern const int CANNOT_FSYNC;
+}
+
+namespace FailPoints
+{
+    extern const char deduplication_log_fail_durable_drop_sync[];
 }
 
 namespace
@@ -368,7 +375,7 @@ std::vector<MergeTreeDeduplicationLog::AddPartResult> MergeTreeDeduplicationLog:
     return {};
 }
 
-void MergeTreeDeduplicationLog::dropPart(const MergeTreePartInfo & drop_part_info)
+void MergeTreeDeduplicationLog::dropPart(const MergeTreePartInfo & drop_part_info, bool sync_to_disk)
 {
     MemoryTrackerBlockerInThread table_state_not_charged_to_the_query;
     ScopedJemallocThreadArena table_state_arena_scope(JemallocMergeTreeArena::getArenaIndex());
@@ -386,6 +393,18 @@ void MergeTreeDeduplicationLog::dropPart(const MergeTreePartInfo & drop_part_inf
         throw Exception(ErrorCodes::ABORTED, "Storage has been shutdown when we drop this part.");
     }
 
+    /// A previous durable removal failed after removing its records from memory, so this call would not write them again,
+    /// and a later successful sync of the log does not make the earlier records durable.
+    if (sync_to_disk && durable_drop_failed)
+        throw Exception(ErrorCodes::CANNOT_FSYNC,
+            "Cannot durably remove part {} from the deduplication log, because a previous durable removal failed",
+            drop_part_info.getPartNameForLogs());
+
+    /// Reset only after everything is synced, so it remains set if anything below throws.
+    if (sync_to_disk)
+        durable_drop_failed = true;
+
+    bool written_records = false;
     for (auto itr = deduplication_map.begin(); itr != deduplication_map.end(); /* no increment here, we erasing from map */)
     {
         const auto & part_info = itr->value;
@@ -410,6 +429,17 @@ void MergeTreeDeduplicationLog::dropPart(const MergeTreePartInfo & drop_part_inf
             /// Remove block_id from in-memory table
             deduplication_map.erase(record.block_id);
 
+            /// Sync before the rotation, which only logs a failure to sync the log it finalizes.
+            if (sync_to_disk)
+            {
+                fiu_do_on(FailPoints::deduplication_log_fail_durable_drop_sync,
+                {
+                    throw Exception(ErrorCodes::CANNOT_FSYNC, "Injected failure to sync the deduplication log");
+                });
+                current_writer->sync();
+                written_records = true;
+            }
+
             rotateAndDropIfNeededAfterWrite();
         }
         else
@@ -417,6 +447,16 @@ void MergeTreeDeduplicationLog::dropPart(const MergeTreePartInfo & drop_part_inf
             ++itr;
         }
     }
+
+    /// The record may be in a log that was created just now, so its directory entry must be durable too.
+    if (written_records)
+    {
+        if (auto guard = disk->getDirectorySyncGuard(logs_dir))
+            guard->sync();
+    }
+
+    if (sync_to_disk)
+        durable_drop_failed = false;
 }
 
 void MergeTreeDeduplicationLog::setDeduplicationWindowSize(size_t deduplication_window_)
