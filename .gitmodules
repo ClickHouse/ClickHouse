@@ -417,6 +417,9 @@
 [submodule "contrib/zxc"]
 	path = contrib/zxc
 	url = https://github.com/hellobertrand/zxc
+[submodule "contrib/pulsar-client-cpp"]
+	path = contrib/pulsar-client-cpp
+	url = https://github.com/ClickHouse/pulsar-client-cpp
 [submodule "contrib/dmlc-core"]
 	path = contrib/dmlc-core
 	url = https://github.com/dmlc/dmlc-core
