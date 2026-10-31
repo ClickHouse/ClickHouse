@@ -43,6 +43,7 @@
 namespace DB::ErrorCodes
 {
 extern const int BAD_ARGUMENTS;
+extern const int DATALAKE_CATALOG_COMMIT_STATE_UNKNOWN;
 extern const int LOGICAL_ERROR;
 extern const int LIMIT_EXCEEDED;
 extern const int NOT_IMPLEMENTED;
@@ -588,7 +589,9 @@ static bool writeMetadataFiles(
     }
     catch (...)
     {
-        cleanup();
+        /// The catalog may have published the new snapshot, which then references these files.
+        if (getCurrentExceptionCode() != ErrorCodes::DATALAKE_CATALOG_COMMIT_STATE_UNKNOWN)
+            cleanup();
         throw;
     }
     return true;
