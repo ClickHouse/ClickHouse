@@ -199,6 +199,16 @@ static bool isVersionNumberedCommitScheme(const String & file_name)
     return std::all_of(file_name.begin() + 1, file_name.begin() + end_pos, isdigit);
 }
 
+bool isUuidNamedMetadataFile(const String & file_name)
+{
+    const auto dash_pos = file_name.find('-');
+    const auto dot_pos = file_name.find('.');
+    if (dash_pos == String::npos || dot_pos == String::npos || dot_pos < dash_pos)
+        return false;
+    const String name_uuid = file_name.substr(dash_pos + 1, dot_pos - dash_pos - 1);
+    return name_uuid.size() == 36 && Poco::UUID{}.tryParse(name_uuid);
+}
+
 /// The file name a configured pointer addresses, resolved the way the reader resolves it: a bare
 /// version number can only address `v<N>`, any other content names a file directly, and a
 /// directory part is dropped because the reader reads the name alone under `metadata/`.

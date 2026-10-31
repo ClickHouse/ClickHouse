@@ -92,6 +92,9 @@ String normalizeIcebergTransformFunctionName(const String & function_name);
 
 CompressionMethod getCompressionMethodFromMetadataFile(const String & path);
 
+/// True for `[v]N-<uuid>[.<codec>].metadata.json`: writers pick a new uuid for each file, so no other table reuses the name.
+bool isUuidNamedMetadataFile(const String & file_name);
+
 Poco::JSON::Object::Ptr getMetadataJSONObject(
     const String & metadata_file_path,
     ObjectStoragePtr object_storage,
