@@ -4,6 +4,7 @@
 
 #include <Common/Exception.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
+#include <IO/WriteHelpers.h>
 #include <Interpreters/Context.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTLiteral.h>
@@ -117,7 +118,8 @@ IcebergRESTCatalogWarehousePtr createIcebergRESTCatalogWarehouse(
     ContextPtr context, const String & name, const IcebergRESTCatalogWarehouseDefinition & definition, const IcebergRESTCatalogKeeperConfig & keeper_config)
 {
     auto store = std::make_shared<KeeperIcebergRESTCatalogStore>(
-        [context, keeper_config] { return keeper_config.getZooKeeper(*context); }, keeper_config.warehousePath(name));
+        [context, keeper_config] { return keeper_config.getZooKeeper(*context); },
+        keeper_config.warehousePath(name) + "/" + toString(definition.uuid));
     auto object_storage = createObjectStorage(context, definition);
     return std::make_shared<const IcebergRESTCatalogWarehouse>(name, definition.base_location, std::move(store), std::move(object_storage));
 }

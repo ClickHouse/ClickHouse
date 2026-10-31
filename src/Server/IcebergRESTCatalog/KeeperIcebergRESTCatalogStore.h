@@ -27,8 +27,8 @@ struct IcebergTablePointer
 
 /// Storage backend of the native Iceberg REST catalog (RFC: issue #114697), backed by Keeper.
 /// Work in progress, not ready for production use.
-/// Layout under `root_path` (one root per warehouse). `<root>` and `<root>/namespaces` are created with the warehouse.
-///   <root>                                 data: warehouse definition, see `IcebergRESTCatalogWarehouseDefinition`
+/// Layout under `root_path`, which is `<warehouse node>/<warehouse uuid>`. `<root>/namespaces` is created with the warehouse.
+/// A warehouse dropped and created again gets a new uuid. So a request that still holds the old warehouse cannot write into the new one.
 ///   <root>/namespaces/<level>              data: JSON object of namespace properties
 ///   <root>/namespaces/<level>/namespaces   child namespaces, same shape recursively
 ///   <root>/namespaces/<level>/tables       one child per table
@@ -41,8 +41,15 @@ class KeeperIcebergRESTCatalogStore
 public:
     KeeperIcebergRESTCatalogStore(zkutil::GetZooKeeper get_zookeeper_, String root_path_);
 
-    /// Returns false if the namespace already exists. Any other failure throws.
-    bool createNamespace(const IcebergNamespaceName & name, const std::map<String, String> & properties);
+    enum class CreateNamespaceResult
+    {
+        Created,
+        NamespaceExists,
+        /// The warehouse or a parent namespace was dropped during the call.
+        ParentMissing,
+    };
+
+    CreateNamespaceResult createNamespace(const IcebergNamespaceName & name, const std::map<String, String> & properties);
 
     bool namespaceExists(const IcebergNamespaceName & name) const;
 

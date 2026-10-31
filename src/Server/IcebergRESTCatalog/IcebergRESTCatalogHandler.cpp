@@ -597,14 +597,24 @@ void IcebergRESTCatalogHandler::handleCreateNamespace(const IcebergRESTCatalogWa
     if (const auto it = properties.find("location"); it != properties.end())
         warehouse.validateLocation(it->second);
 
-    if (!warehouse.store->createNamespace(name, properties))
+    switch (warehouse.store->createNamespace(name, properties))
     {
-        sendError(
-            response,
-            Poco::Net::HTTPResponse::HTTP_CONFLICT,
-            "AlreadyExistsException",
-            fmt::format("Namespace already exists: {}", joinNamespace(name)));
-        return;
+        case KeeperIcebergRESTCatalogStore::CreateNamespaceResult::Created:
+            break;
+        case KeeperIcebergRESTCatalogStore::CreateNamespaceResult::NamespaceExists:
+            sendError(
+                response,
+                Poco::Net::HTTPResponse::HTTP_CONFLICT,
+                "AlreadyExistsException",
+                fmt::format("Namespace already exists: {}", joinNamespace(name)));
+            return;
+        case KeeperIcebergRESTCatalogStore::CreateNamespaceResult::ParentMissing:
+            sendError(
+                response,
+                Poco::Net::HTTPResponse::HTTP_NOT_FOUND,
+                "NotFoundException",
+                fmt::format("Parent of namespace {} does not exist", joinNamespace(name)));
+            return;
     }
     LOG_INFO(log, "Created namespace {}", joinNamespace(name));
 

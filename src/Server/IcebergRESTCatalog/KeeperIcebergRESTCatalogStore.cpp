@@ -92,7 +92,8 @@ String KeeperIcebergRESTCatalogStore::tableUuidPath(const IcebergNamespaceName &
     return tablePath(name, table) + "/" + uuid;
 }
 
-bool KeeperIcebergRESTCatalogStore::createNamespace(const IcebergNamespaceName & name, const std::map<String, String> & properties)
+KeeperIcebergRESTCatalogStore::CreateNamespaceResult
+KeeperIcebergRESTCatalogStore::createNamespace(const IcebergNamespaceName & name, const std::map<String, String> & properties)
 {
     auto component_guard = Coordination::setCurrentComponent("KeeperIcebergRESTCatalogStore::createNamespace");
     auto zookeeper = getZooKeeper();
@@ -107,10 +108,12 @@ bool KeeperIcebergRESTCatalogStore::createNamespace(const IcebergNamespaceName &
         Coordination::Responses responses;
         const auto code = zookeeper->tryMulti(ops, responses);
         if (code == Coordination::Error::ZNODEEXISTS)
-            return false;
+            return CreateNamespaceResult::NamespaceExists;
+        if (code == Coordination::Error::ZNONODE)
+            return CreateNamespaceResult::ParentMissing;
 
         zkutil::KeeperMultiException::check(code, ops, responses);
-        return true;
+        return CreateNamespaceResult::Created;
     };
 
     /// Keep the tree walkable from the root.

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <base/types.h>
+#include <Core/UUID.h>
 
 #include <Poco/JSON/Object.h>
 
@@ -24,6 +25,8 @@ struct IcebergRESTCatalogWarehouseCredential
 /// Definition of a warehouse of the Iceberg REST catalog (RFC: issue #114697), stored on its Keeper root node.
 struct IcebergRESTCatalogWarehouseDefinition
 {
+    /// Identity of this incarnation of the warehouse. A warehouse dropped and created again under the same name gets a new one.
+    UUID uuid = UUIDHelpers::Nil;
     /// Default storage prefix for tables, without trailing slashes.
     String base_location;
     IcebergRESTCatalogWarehouseCredential credential;
@@ -31,7 +34,7 @@ struct IcebergRESTCatalogWarehouseDefinition
     /// Parses `{"base_location": "s3://...", "credential": {...}}`. Other keys, such as `name`, are ignored.
     static IcebergRESTCatalogWarehouseDefinition fromJSON(const Poco::JSON::Object & json);
 
-    /// Data of the warehouse root node: the JSON above plus a `format_version` field.
+    /// Data of the warehouse root node: the JSON above plus the `format_version` and `uuid` fields.
     String toKeeperData() const;
     static IcebergRESTCatalogWarehouseDefinition fromKeeperData(const String & data, const String & path);
 };

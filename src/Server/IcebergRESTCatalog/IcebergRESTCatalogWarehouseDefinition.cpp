@@ -1,6 +1,8 @@
 #include <Server/IcebergRESTCatalog/IcebergRESTCatalogWarehouseDefinition.h>
 
 #include <Common/Exception.h>
+#include <IO/ReadHelpers.h>
+#include <IO/WriteHelpers.h>
 #include <Server/IcebergRESTCatalog/IcebergRESTCatalogJSON.h>
 #include <Server/IcebergRESTCatalog/IcebergRESTCatalogWarehouse.h>
 
@@ -17,7 +19,7 @@ namespace
 {
 
 /// Bump on any layout change so data of another layout is refused, not misread.
-constexpr Int64 FORMAT_VERSION = 2;
+constexpr Int64 FORMAT_VERSION = 3;
 
 String getRequiredString(const Poco::JSON::Object & json, const String & key)
 {
@@ -77,6 +79,7 @@ String IcebergRESTCatalogWarehouseDefinition::toKeeperData() const
 {
     Poco::JSON::Object json;
     json.set("format_version", FORMAT_VERSION);
+    json.set("uuid", toString(uuid));
     json.set("base_location", base_location);
     json.set("credential", credential.toJSON());
     return IcebergRESTCatalog::toJSONString(json);
@@ -91,7 +94,9 @@ IcebergRESTCatalogWarehouseDefinition IcebergRESTCatalogWarehouseDefinition::fro
     if (format_version != FORMAT_VERSION)
         throw Exception(ErrorCodes::INCORRECT_DATA, "{} has an unsupported format version: expected {}, found {}", what, FORMAT_VERSION, format_version);
 
-    return fromJSON(*json);
+    auto definition = fromJSON(*json);
+    definition.uuid = parseFromString<UUID>(getRequiredString(*json, "uuid"));
+    return definition;
 }
 
 }
