@@ -143,6 +143,8 @@ AsynchronousInsertQueue::InsertQuery::InsertQuery(
     const String & initial_user_,
     const String & authenticated_user_,
     const String & quota_key_,
+    const String & client_address_,
+    const String & forwarded_address_,
     const Settings & settings_,
     AsynchronousInsertQueueDataKind data_kind_)
     : query(query_->clone())
@@ -156,6 +158,8 @@ AsynchronousInsertQueue::InsertQuery::InsertQuery(
     , initial_user(initial_user_)
     , authenticated_user(authenticated_user_)
     , quota_key(quota_key_)
+    , client_address(client_address_)
+    , forwarded_address(forwarded_address_)
     , settings(std::make_unique<Settings>(settings_))
     , data_kind(data_kind_)
 {
@@ -197,7 +201,7 @@ AsynchronousInsertQueue::InsertQuery::InsertQuery(
 
     /// Length-prefix each field: update(String) streams only bytes and the queue is keyed
     /// by hash alone, so otherwise "a"/"a"/"aaa" and "aa"/"aa"/"a" would collide.
-    for (const String & identity_field : {current_user, initial_user, authenticated_user, quota_key})
+    for (const String & identity_field : {current_user, initial_user, authenticated_user, quota_key, client_address, forwarded_address})
     {
         siphash.update(identity_field.size());
         siphash.update(identity_field);
@@ -234,6 +238,8 @@ AsynchronousInsertQueue::InsertQuery::InsertQuery(const InsertQuery & other)
     initial_user = other.initial_user;
     authenticated_user = other.authenticated_user;
     quota_key = other.quota_key;
+    client_address = other.client_address;
+    forwarded_address = other.forwarded_address;
     settings = std::make_unique<Settings>(*other.settings);
     data_kind = other.data_kind;
     hash = other.hash;
@@ -256,6 +262,8 @@ AsynchronousInsertQueue::InsertQuery::operator=(const InsertQuery & other)
         initial_user = other.initial_user;
         authenticated_user = other.authenticated_user;
         quota_key = other.quota_key;
+        client_address = other.client_address;
+        forwarded_address = other.forwarded_address;
         settings = std::make_unique<Settings>(*other.settings);
         data_kind = other.data_kind;
         hash = other.hash;
@@ -717,6 +725,18 @@ AsynchronousInsertQueue::PushResult AsynchronousInsertQueue::pushDataChunk(
     }
 
     const auto & client_info = query_context->getClientInfo();
+
+    /// Kept empty unless a quota is keyed by them, so inserts from different hosts still share a batch.
+    String client_address;
+    String forwarded_address;
+    if (auto quota = query_context->getQuota())
+    {
+        if (quota->isKeyedByClientAddress() && client_info.current_address)
+            client_address = client_info.current_address->host().toString();
+        if (quota->isKeyedByForwardedAddress())
+            forwarded_address = client_info.getLastForwardedForHost();
+    }
+
     InsertQuery key{
         query,
         query_context->getUserID(),
@@ -728,6 +748,8 @@ AsynchronousInsertQueue::PushResult AsynchronousInsertQueue::pushDataChunk(
         client_info.initial_user,
         client_info.authenticated_user,
         client_info.quota_key,
+        client_address,
+        forwarded_address,
         settings,
         data_kind};
     InsertDataPtr data_to_process;
@@ -1296,6 +1318,10 @@ try
     insert_context->setAuthenticatedUserName(key.authenticated_user);
     /// Restore the quota key so `KEYED BY client_key` quotas bill the originating bucket.
     insert_context->setQuotaClientKey(key.quota_key);
+    if (!key.client_address.empty())
+        insert_context->setCurrentAddress(Poco::Net::SocketAddress(Poco::Net::IPAddress(key.client_address), 0));
+    if (!key.forwarded_address.empty())
+        insert_context->setForwardedFor(key.forwarded_address);
 
     insert_context->setSettings(*key.settings);
 

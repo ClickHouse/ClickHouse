@@ -394,6 +394,9 @@ void QuotaCache::chooseQuotaToConsumeFor(EnabledQuota & enabled)
         auto single = std::make_unique<SingleQuota>();
         single->intervals = info.getOrBuildIntervals(key);
         single->requires_client_key = (info.quota->key_type == QuotaKeyType::CLIENT_KEY) && enabled.params.client_key.empty();
+        single->keyed_by_client_address = (info.quota->key_type == QuotaKeyType::IP_ADDRESS)
+            || (info.quota->key_type == QuotaKeyType::CLIENT_KEY_OR_IP_ADDRESS && enabled.params.client_key.empty());
+        single->keyed_by_forwarded_address = (info.quota->key_type == QuotaKeyType::FORWARDED_IP_ADDRESS);
 
         /// For NORMALIZED_QUERY_HASH keyed quotas, set up a resolver callback
         /// so that EnabledQuota can lazily resolve intervals per query hash.
