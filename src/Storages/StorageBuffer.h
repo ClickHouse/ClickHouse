@@ -91,6 +91,7 @@ public:
     bool readRequiresAnalyzedQuery() const override;
     bool readsFromOtherTables() const override { return static_cast<bool>(destination_id); }
     StoragePtr getDestinationTable() const;
+    const StorageID & getDestinationId() const { return destination_id; }
 
     bool supportsParallelInsert() const override { return true; }
 
