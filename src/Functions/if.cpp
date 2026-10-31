@@ -1238,7 +1238,14 @@ private:
                     dynamic_column->applyNullMap(assert_cast<const ColumnUInt8 &>(*arg_cond.column).getData());
                     return result_column;
                 }
-                return ColumnNullable::create(materializeColumnIfConst(result_column), arg_cond.column);
+
+                const auto & cond_data = cond_col->getData();
+                auto null_map = ColumnUInt8::create(input_rows_count);
+                auto & null_map_data = null_map->getData();
+                for (size_t i = 0; i < input_rows_count; ++i)
+                    null_map_data[i] = cond_data[i] != 0;
+
+                return ColumnNullable::create(materializeColumnIfConst(result_column), std::move(null_map));
             }
             if (cond_const_col)
             {

@@ -92,40 +92,42 @@ FROM (SELECT CAST(arrayMap(v -> assumeNotNull(v), a), 'Array(UInt64)') AS x, CAS
 
 DROP TABLE arrays;
 
--- A null-map byte can be any nonzero value: without short-circuit evaluation, `if` uses its condition as the null map.
--- Every value is null at all of its positions (with the byte 1 or 2) or at none of them, so `has` gives the expected result.
+-- A null-map byte can be any nonzero value, and Native input keeps the bytes it is given: element `i` of `a` is `i % 128`,
+-- NULL with the byte `i % 128 % 3` when that is not 0. Every value is null at all of its positions (with the byte 1 or 2)
+-- or at none of them, so `has` gives the expected result.
+CREATE TABLE raw_null_map (a Array(Nullable(Int64))) ENGINE = Memory;
+INSERT INTO raw_null_map SELECT a FROM format(Native, concat('\x01\x01\x01a\x16Array(Nullable(Int64))', '\x40\x01\x00\x00\x00\x00\x00\x00',
+    arrayStringConcat(arrayMap(i -> char(i % 128 % 3), range(320))),
+    arrayStringConcat(arrayMap(i -> concat(char(i % 128), repeat('\x00', 7)), range(320)))));
+
 SELECT 'Int8', 'if null map', count(), countIf(has(x, v)) AS found,
     countIf(hasAll(x, [v]) != has(x, v) OR hasAny(x, [v]) != has(x, v)) AS mismatches,
     countIf(hasAll(x, y) != arrayAll(w -> has(x, w), y) OR hasAny(x, y) != arrayExists(w -> has(x, w), y)) AS long_mismatches
-FROM (SELECT toInt8(number) AS v, arrayMap(i -> if(toUInt8(i % 128 % 3), NULL, toInt8(i % 128)), materialize(range(300))) AS x, arrayMap(i -> if(toUInt8(i % 128 % 3), NULL, toInt8(i % 128)), materialize(range(number, number + 20))) AS y FROM numbers(128))
-SETTINGS short_circuit_function_evaluation = 'disable';
+FROM (SELECT toInt8(number) AS v, CAST(arraySlice(a, 1, 300), 'Array(Nullable(Int8))') AS x, CAST(arraySlice(a, number + 1, 20), 'Array(Nullable(Int8))') AS y FROM raw_null_map ARRAY JOIN range(128) AS number);
 
 SELECT 'UInt8', 'if null map', count(), countIf(has(x, v)) AS found,
     countIf(hasAll(x, [v]) != has(x, v) OR hasAny(x, [v]) != has(x, v)) AS mismatches,
     countIf(hasAll(x, y) != arrayAll(w -> has(x, w), y) OR hasAny(x, y) != arrayExists(w -> has(x, w), y)) AS long_mismatches
-FROM (SELECT toUInt8(number) AS v, arrayMap(i -> if(toUInt8(i % 128 % 3), NULL, toUInt8(i % 128)), materialize(range(300))) AS x, arrayMap(i -> if(toUInt8(i % 128 % 3), NULL, toUInt8(i % 128)), materialize(range(number, number + 20))) AS y FROM numbers(128))
-SETTINGS short_circuit_function_evaluation = 'disable';
+FROM (SELECT toUInt8(number) AS v, CAST(arraySlice(a, 1, 300), 'Array(Nullable(UInt8))') AS x, CAST(arraySlice(a, number + 1, 20), 'Array(Nullable(UInt8))') AS y FROM raw_null_map ARRAY JOIN range(128) AS number);
 
 SELECT 'Int16', 'if null map', count(), countIf(has(x, v)) AS found,
     countIf(hasAll(x, [v]) != has(x, v) OR hasAny(x, [v]) != has(x, v)) AS mismatches,
     countIf(hasAll(x, y) != arrayAll(w -> has(x, w), y) OR hasAny(x, y) != arrayExists(w -> has(x, w), y)) AS long_mismatches
-FROM (SELECT toInt16(number) AS v, arrayMap(i -> if(toUInt8(i % 128 % 3), NULL, toInt16(i % 128)), materialize(range(300))) AS x, arrayMap(i -> if(toUInt8(i % 128 % 3), NULL, toInt16(i % 128)), materialize(range(number, number + 20))) AS y FROM numbers(128))
-SETTINGS short_circuit_function_evaluation = 'disable';
+FROM (SELECT toInt16(number) AS v, CAST(arraySlice(a, 1, 300), 'Array(Nullable(Int16))') AS x, CAST(arraySlice(a, number + 1, 20), 'Array(Nullable(Int16))') AS y FROM raw_null_map ARRAY JOIN range(128) AS number);
 
 SELECT 'Int32', 'if null map', count(), countIf(has(x, v)) AS found,
     countIf(hasAll(x, [v]) != has(x, v) OR hasAny(x, [v]) != has(x, v)) AS mismatches,
     countIf(hasAll(x, y) != arrayAll(w -> has(x, w), y) OR hasAny(x, y) != arrayExists(w -> has(x, w), y)) AS long_mismatches
-FROM (SELECT toInt32(number) AS v, arrayMap(i -> if(toUInt8(i % 128 % 3), NULL, toInt32(i % 128)), materialize(range(300))) AS x, arrayMap(i -> if(toUInt8(i % 128 % 3), NULL, toInt32(i % 128)), materialize(range(number, number + 20))) AS y FROM numbers(128))
-SETTINGS short_circuit_function_evaluation = 'disable';
+FROM (SELECT toInt32(number) AS v, CAST(arraySlice(a, 1, 300), 'Array(Nullable(Int32))') AS x, CAST(arraySlice(a, number + 1, 20), 'Array(Nullable(Int32))') AS y FROM raw_null_map ARRAY JOIN range(128) AS number);
 
 SELECT 'Int64', 'if null map', count(), countIf(has(x, v)) AS found,
     countIf(hasAll(x, [v]) != has(x, v) OR hasAny(x, [v]) != has(x, v)) AS mismatches,
     countIf(hasAll(x, y) != arrayAll(w -> has(x, w), y) OR hasAny(x, y) != arrayExists(w -> has(x, w), y)) AS long_mismatches
-FROM (SELECT toInt64(number) AS v, arrayMap(i -> if(toUInt8(i % 128 % 3), NULL, toInt64(i % 128)), materialize(range(300))) AS x, arrayMap(i -> if(toUInt8(i % 128 % 3), NULL, toInt64(i % 128)), materialize(range(number, number + 20))) AS y FROM numbers(128))
-SETTINGS short_circuit_function_evaluation = 'disable';
+FROM (SELECT toInt64(number) AS v, CAST(arraySlice(a, 1, 300), 'Array(Nullable(Int64))') AS x, CAST(arraySlice(a, number + 1, 20), 'Array(Nullable(Int64))') AS y FROM raw_null_map ARRAY JOIN range(128) AS number);
 
 SELECT 'UInt64', 'if null map', count(), countIf(has(x, v)) AS found,
     countIf(hasAll(x, [v]) != has(x, v) OR hasAny(x, [v]) != has(x, v)) AS mismatches,
     countIf(hasAll(x, y) != arrayAll(w -> has(x, w), y) OR hasAny(x, y) != arrayExists(w -> has(x, w), y)) AS long_mismatches
-FROM (SELECT toUInt64(number) AS v, arrayMap(i -> if(toUInt8(i % 128 % 3), NULL, toUInt64(i % 128)), materialize(range(300))) AS x, arrayMap(i -> if(toUInt8(i % 128 % 3), NULL, toUInt64(i % 128)), materialize(range(number, number + 20))) AS y FROM numbers(128))
-SETTINGS short_circuit_function_evaluation = 'disable';
+FROM (SELECT toUInt64(number) AS v, CAST(arraySlice(a, 1, 300), 'Array(Nullable(UInt64))') AS x, CAST(arraySlice(a, number + 1, 20), 'Array(Nullable(UInt64))') AS y FROM raw_null_map ARRAY JOIN range(128) AS number);
+
+DROP TABLE raw_null_map;
