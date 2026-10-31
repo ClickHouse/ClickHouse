@@ -2,13 +2,13 @@
 # Tags: no-fasttest
 # Tag no-fasttest: Iceberg needs Avro and Parquet, which the fasttest build lacks.
 
-# Issue 120440: the manifest row count under a filter, as MergeTree without column statistics reports it:
-# the rows of the remaining files (imprecise), unknown if nothing is pruned, 0 if everything is.
+# Issue 120440: the manifest row count under a filter: the remaining files, with the filter estimated on their column
+# statistics (imprecise), 0 if everything is pruned.
 # - T1: partition pruning by the manifest list, with the setting off and on; `PREWHERE` prunes as `WHERE` does.
 # - T2: min/max pruning.
 # - T3: partition pruning per data file (bucket transform).
 # - T4: every file pruned.
-# - T5: a filter that prunes nothing.
+# - T5: a filter that prunes nothing is estimated.
 # - T6: position deletes are not subtracted.
 # - T7: no double counting of pruned files between planning and the read.
 # - T8: planning builds no `IN` set.
