@@ -56,9 +56,7 @@ namespace FailPoints
     extern const char storage_cluster_read_sleep[];
 }
 
-/// Names and types of `columns`, with the `DEFAULT` of each column whose `DEFAULT` has no secret arguments and reads only
-/// columns of `columns` that have no default expression or whose `DEFAULT` is sent too, so that the nodes fill the fields
-/// missing in the files the way a non-distributed read does.
+/// Names and types of `columns`, plus each `DEFAULT` without secret arguments that the nodes can evaluate from them.
 static String getStructureToSend(const ColumnsDescription & columns)
 {
     const auto names = columns.getAll().getNameSet();
