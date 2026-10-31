@@ -8,6 +8,7 @@
 #include <Processors/QueryPlan/Serialization.h>
 #include <Processors/Transforms/DistinctLimitsCheckingTransform.h>
 #include <Processors/Transforms/DistinctSortedStreamTransform.h>
+#include <Processors/Transforms/DistinctTopKTransform.h>
 #include <Processors/Transforms/DistinctTransform.h>
 #include <Processors/Transforms/ExternalDistinctTransform.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
@@ -246,6 +247,20 @@ void DistinctStep::transformPipeline(QueryPipelineBuilder & pipeline, const Buil
         return;
     }
 
+    if (top_k)
+    {
+        pipeline.addSimpleTransform(
+            [&](const SharedHeader & header, QueryPipelineBuilder::StreamType stream_type) -> ProcessorPtr
+            {
+                if (stream_type != QueryPipelineBuilder::StreamType::Main)
+                    return nullptr;
+
+                return std::make_shared<DistinctTopKTransform>(
+                    header, columns, top_k->k, top_k->sort_description, top_k->threshold_tracker);
+            });
+        return;
+    }
+
     const auto shared_set_bytes = global_limits ? std::make_shared<std::atomic<UInt64>>(0) : nullptr;
     if (external)
     {
@@ -339,6 +354,15 @@ void DistinctStep::describeActions(FormatSettings & format_settings) const
         format_settings.out << prefix << "Skip stream merging: 1\n";
     if (preserve_input_order)
         format_settings.out << prefix << "Preserve input order: 1\n";
+    if (top_k)
+    {
+        format_settings.out << prefix << "Top-K: " << top_k->k << '\n';
+        format_settings.out << prefix << "Top-K sort description: ";
+        dumpSortDescription(top_k->sort_description, format_settings);
+        format_settings.out << '\n';
+        if (top_k->threshold_tracker)
+            format_settings.out << prefix << "Top-K dynamic filtering: 1\n";
+    }
 }
 
 void DistinctStep::describeActions(JSONBuilder::JSONMap & map) const
@@ -352,6 +376,13 @@ void DistinctStep::describeActions(JSONBuilder::JSONMap & map) const
         map.add("Skip stream merging", true);
     if (preserve_input_order)
         map.add("Preserve input order", true);
+    if (top_k)
+    {
+        map.add("Top-K", top_k->k);
+        map.add("Top-K Sort Description", explainSortDescription(top_k->sort_description));
+        if (top_k->threshold_tracker)
+            map.add("Top-K Dynamic Filtering", true);
+    }
 }
 
 void DistinctStep::updateOutputHeader()

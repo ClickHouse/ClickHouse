@@ -1,0 +1,56 @@
+plan
+│  Top-K: 15
+│  Top-K sort description: ts ASC
+│  Top-K dynamic filtering: 1
+0
+0
+0
+1
+1
+0
+order by the key
+0
+1
+10
+100
+1000
+996
+995
+994
+993
+992
+\N
+2999
+2998
+2997
+2
+3
+4
+999
+998
+997
+order by another column: the best row of each key
+0
+2679
+358
+3037
+716
+4642	199998
+1963	199997
+4284	199996
+1605	199995
+3926	199994
+1
+1
+1
+1
+read in order: the preliminary DISTINCT stops after the first keys of each stream
+1
+1
+memory is bounded by the limit
+9999999
+9999998
+9999997
+0
+500001
+1000003
