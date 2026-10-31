@@ -899,8 +899,8 @@ if (TARGET ch_contrib::vectorscan)
     target_link_libraries(dbms PRIVATE ch_contrib::vectorscan)
 endif()
 
-if (TARGET ch_contrib::simsimd)
-    target_link_libraries(dbms PRIVATE ch_contrib::simsimd)
+if (TARGET ch_contrib::numkong)
+    target_link_libraries(dbms PRIVATE ch_contrib::numkong)
 endif()
 
 if (TARGET ch_contrib::brotli)

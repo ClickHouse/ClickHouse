@@ -294,12 +294,6 @@
 [submodule "contrib/usearch"]
 	path = contrib/usearch
 	url = https://github.com/ClickHouse/usearch.git
-[submodule "contrib/SimSIMD"]
-	path = contrib/SimSIMD
-	url = https://github.com/ClickHouse/SimSIMD.git
-[submodule "contrib/FP16"]
-	path = contrib/FP16
-	url = https://github.com/Maratyszcza/FP16.git
 [submodule "contrib/pocketfft"]
 	path = contrib/pocketfft
 	url = https://github.com/mreineck/pocketfft.git
@@ -480,3 +474,6 @@
 [submodule "contrib/gdeflate"]
 	path = contrib/gdeflate
 	url = https://github.com/NVIDIA/libdeflate.git
+[submodule "contrib/NumKong"]
+	path = contrib/NumKong
+	url = https://github.com/ashvardanian/NumKong.git

@@ -2697,7 +2697,7 @@ Calculates the approximate [cosine distance](https://en.wikipedia.org/wiki/Cosin
         = {"Returns the approximate cosine distance (one minus the cosine similarity). Always returns Float64.", {"Float64"}};
     /// The example rounds the result, and the one of `cosineDistanceTransposedQuantized` below does the same, because the
     /// unrounded value is not the same on every architecture: the cosine kernels normalize with a reciprocal square root
-    /// approximation, which SimSIMD implements per instruction set, so the result differs in its last digits between an
+    /// approximation, which NumKong implements per instruction set, so the result differs in its last digits between an
     /// aarch64 and an x86_64 server (and between x86_64 servers of different capabilities, since the kernel is resolved from
     /// the CPU at run time). The distance is documented as approximate anyway - the surplus digits carried no meaning.
     FunctionDocumentation::Examples examples_cosine_distance_transposed
