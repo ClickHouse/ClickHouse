@@ -128,8 +128,7 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t * data, size_t size)
         ISerialization::DeserializeBinaryBulkSettings settings;
         settings.getter = [&](ISerialization::SubstreamPath) -> ReadBuffer * { return &in; };
         settings.position_independent_encoding = false;
-        /// Fuzz input is untrusted, so read it like `NativeReader::readData` does: outside the Native
-        /// format inconsistent data is a LOGICAL_ERROR, and the other bulk settings are MergeTree-only.
+        /// Fuzz input is untrusted: outside the Native format, inconsistent data is a LOGICAL_ERROR by design.
         settings.native_format = true;
         settings.format_settings = &format_settings;
 
