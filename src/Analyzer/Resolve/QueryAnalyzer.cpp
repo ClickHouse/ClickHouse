@@ -6807,10 +6807,6 @@ void QueryAnalyzer::inlineViewSubqueryIfNeeded(QueryTreeNodePtr & join_tree_node
     /// Get the view's inner query AST.
     const auto & storage_snapshot = table_node->getStorageSnapshot();
 
-    /// Inlining would make a sealed view transparent to all optimizations.
-    if (view->isSealed(*storage_snapshot->metadata, scope.context))
-        return;
-
     auto storage_id = storage->getStorageID();
 
     /// Inlining replaces the view's TableNode with the view body, so the SELECT check the planner
@@ -6822,8 +6818,10 @@ void QueryAnalyzer::inlineViewSubqueryIfNeeded(QueryTreeNodePtr & join_tree_node
     /// Use getAll() rather than getOrdinary(): a view can expose ALIAS (and MATERIALIZED) columns,
     /// which the planner's per-column SELECT check treats as separate privileges, so they must be
     /// covered here too - otherwise a caller lacking SELECT on an ALIAS column would still inline.
+    /// A sealed view is never inlined: inlining would make it transparent to all optimizations.
     const bool can_inline = scope.context->getSettingsRef()[Setting::analyzer_inline_views]
         && !table_node->hasTableExpressionModifiers()
+        && !view->isSealed(*storage_snapshot->metadata, scope.context)
         && scope.context->getAccess()->isGranted(
             AccessType::SELECT,
             storage_id.getDatabaseName(),
