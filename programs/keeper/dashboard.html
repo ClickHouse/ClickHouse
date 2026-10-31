@@ -536,6 +536,15 @@
             background-color: var(--input-background-color);
         }
 
+        /* Hidden while waiting for y/n on "Display all N possibilities?".
+           Keep the textarea in the DOM (and focused) so keydown still receives y/n. */
+        .command-prompt.pending-completion {
+            opacity: 0;
+            height: 0;
+            overflow: hidden;
+            pointer-events: none;
+        }
+
         .command-prompt-symbol {
             padding-left: 0.25rem;
             padding-right: 0.25rem;
@@ -672,7 +681,7 @@
         .ansi-bright-green { color: #4e9a06; }
         .ansi-bright-yellow { color: #fce94f; }
         .ansi-bright-blue { color: #729fcf; }
-        .ansi-bright-magenta { color: #ef2929; }
+        .ansi-bright-magenta { color: #ad7fa8; }
         .ansi-bright-cyan { color: #34e2e2; }
         .ansi-bright-white { color: #fff; }
         .ansi-bold { font-weight: bold; }
@@ -818,7 +827,7 @@
                         <a class="cli-link" href="https://clickhouse.com/docs/en/guides/sre/keeper/clickhouse-keeper#four-letter-word-commands">4LW Commands</a>
                     </div>
                     <div>
-                        <span class="cli-hint">Up/Down: history | Ctrl+L: clear</span>
+                        <span class="cli-hint">Tab: autocomplete | Up/Down: history | Ctrl+L: clear</span>
                         <button class="cli-button monospace" id="cli-clear-btn" onclick="clearCommandOutput()">Clear</button>
                     </div>
                 </div>
@@ -1947,8 +1956,158 @@
     let cli_history_index = -1;
     let cli_cwd = "/";
 
+    const COMPLETION_DISPLAY_LIMIT = 1000;
+    let pending_completion_display = null;
+
+    function setPendingCompletionDisplay(matches) {
+        pending_completion_display = matches;
+        const prompt = document.querySelector(".command-prompt");
+        if (prompt)
+            prompt.classList.toggle("pending-completion", matches !== null);
+    }
+
+    function longestCommonPrefix(strings) {
+        if (strings.length === 0) return "";
+        let common = strings[0];
+        for (let i = 1; i < strings.length; i++) {
+            while (!strings[i].startsWith(common)) {
+                common = common.slice(0, -1);
+            }
+        }
+        return common;
+    }
+
+    /// Server `replace_start` is a UTF-8 byte offset into the `complete` prefix
+    /// (C++ `String`). Slice the JS string by that byte offset rather than using
+    /// it as a UTF-16 index — otherwise non-ASCII text before the replacement
+    /// point shifts the cut.
+    function sliceByUtf8ByteOffset(str, byteOffset) {
+        const bytes = new TextEncoder().encode(str);
+        const n = Math.max(0, Math.min(Number(byteOffset) || 0, bytes.length));
+        return new TextDecoder().decode(bytes.subarray(0, n));
+    }
+
+    function formatColumns(items) {
+        if (items.length === 0) return "";
+        const maxLen = items.reduce((max, s) => Math.max(max, s.length), 0);
+        const colWidth = maxLen + 2;
+        const termWidth = 80;
+        const cols = Math.max(1, Math.floor(termWidth / colWidth));
+        const rows = Math.ceil(items.length / cols);
+        let result = "";
+        for (let r = 0; r < rows; r++) {
+            for (let c = 0; c < cols; c++) {
+                const idx = r + c * rows;
+                if (idx >= items.length) break;
+                result += items[idx].padEnd(c < cols - 1 ? colWidth : 0);
+            }
+            result += "\n";
+        }
+        return result;
+    }
+
+    /// Match replxx (keeper-client) LCP highlighting, using magenta (35) rather than
+    /// bright-magenta (95) so the dashboard palette (.ansi-magenta) stays consistent.
+    function formatCompletionColumns(items) {
+        if (items.length === 0) return "";
+        const lcp = longestCommonPrefix(items);
+        const maxLen = items.reduce((max, s) => Math.max(max, s.length), 0);
+        const colWidth = maxLen + 2;
+        const termWidth = 80;
+        const cols = Math.max(1, Math.floor(termWidth / colWidth));
+        const rows = Math.ceil(items.length / cols);
+        let result = "";
+        for (let r = 0; r < rows; r++) {
+            for (let c = 0; c < cols; c++) {
+                const idx = r + c * rows;
+                if (idx >= items.length) break;
+                const item = items[idx];
+                const colored = lcp.length > 0
+                    ? ("\x1b[35m" + item.slice(0, lcp.length) + "\x1b[0m" + item.slice(lcp.length))
+                    : item;
+                /// Pad by visible length, not ANSI-expanded length.
+                if (c < cols - 1)
+                    result += colored + " ".repeat(colWidth - item.length);
+                else
+                    result += colored;
+            }
+            result += "\n";
+        }
+        return result;
+    }
+
+    function showCompletionMatches(inputValue, matches) {
+        const container = document.getElementById("command-scrolling-container");
+        /// Mirror keeper-client: echo the prompt line, then the match columns, then
+        /// the live prompt below continues to show the same command.
+        appendToOutput(`➜ ${cli_cwd} ${inputValue}\n`);
+        if (matches.length > COMPLETION_DISPLAY_LIMIT) {
+            /// Hide the live prompt until y/n/Tab.
+            setPendingCompletionDisplay(matches);
+            appendToOutput(`Display all ${matches.length} possibilities? (y/n) `);
+        } else {
+            appendToOutput(formatCompletionColumns(matches));
+        }
+        container.scrollTop = container.scrollHeight;
+    }
+
+    let tab_completion_in_progress = false;
+
+    async function handleTabCompletion(input) {
+        if (tab_completion_in_progress) return;
+        tab_completion_in_progress = true;
+        try { await handleTabCompletionImpl(input); } finally { tab_completion_in_progress = false; }
+    }
+
+    async function handleTabCompletionImpl(input) {
+        const requestValue = input.value;
+        const requestCwd = cli_cwd;
+        const cursor = input.selectionStart ?? input.value.length;
+        const prefix = input.value.substring(0, cursor);
+        const suffix = input.value.substring(cursor);
+
+        try {
+            const url = new URL(window.location);
+            url.pathname = "/api/v1/commands";
+            url.search = "?" + new URLSearchParams({
+                complete: prefix,
+                cwd: cli_cwd,
+            }).toString();
+            const res = await fetch(url.toString());
+            if (!res.ok) return;
+            const data = await res.json();
+            // Discard if the user typed or changed cwd while the request was in flight.
+            if (input.value !== requestValue || cli_cwd !== requestCwd)
+                return;
+
+            const matches = Array.isArray(data.completions) ? data.completions : [];
+            if (matches.length === 0) return;
+
+            const replaceStart = Number.isFinite(data.replace_start) ? data.replace_start : 0;
+            const head = sliceByUtf8ByteOffset(prefix, replaceStart);
+
+            const applyCompletion = (inserted) => {
+                const completedPrefix = head + inserted;
+                input.value = completedPrefix + suffix;
+                input.setSelectionRange(completedPrefix.length, completedPrefix.length);
+            };
+
+            if (matches.length === 1) {
+                applyCompletion(matches[0]);
+                return;
+            }
+
+            applyCompletion(longestCommonPrefix(matches));
+            /// Echo the post-LCP line (same text the live prompt shows), like keeper-client.
+            showCompletionMatches(input.value, matches);
+        } catch (e) { /* ignore fetch errors */ }
+    }
+
     function clearCommandOutput() {
         document.querySelector("#command-output").innerHTML = "";
+        /// Cancel any in-flight "Display all N possibilities? (y/n)" so Clear /
+        /// Ctrl+L cannot leave the prompt hidden via .pending-completion.
+        setPendingCompletionDisplay(null);
     }
 
     function appendToOutput(text) {
@@ -1962,45 +2121,11 @@
 
     function runQuickCommand(command) {
         let command_input = document.querySelector("#command");
-        command_input.value = command;
-        command_input.dispatchEvent(new KeyboardEvent("keydown", { code: "Enter" }));
+        command_input.value = "";
+        executeCommand(command);
     }
 
-    function handleCdCommand(command) {
-        const trimmed = command.trim();
-        if (!trimmed.startsWith("cd ") && trimmed !== "cd") return false;
-
-        let newPath = trimmed === "cd" ? "/" : trimmed.substring(3).trim();
-
-        if ((newPath.startsWith("'") && newPath.endsWith("'")) ||
-            (newPath.startsWith('"') && newPath.endsWith('"'))) {
-            newPath = newPath.slice(1, -1);
-        }
-
-        let absolutePath;
-        if (newPath.startsWith("/")) {
-            absolutePath = newPath;
-        } else {
-            absolutePath = cli_cwd === "/" ? "/" + newPath : cli_cwd + "/" + newPath;
-        }
-
-        const parts = absolutePath.split("/");
-        const resolved = [];
-        for (const part of parts) {
-            if (part === "" || part === ".") {
-                continue;
-            } else if (part === "..") {
-                resolved.pop();
-            } else {
-                resolved.push(part);
-            }
-        }
-        cli_cwd = "/" + resolved.join("/");
-        updateCwdDisplay();
-        return true;
-    }
-
-    function executeCommand(command) {
+    async function executeCommand(command) {
         let command_input = document.querySelector("#command");
         let command_output = document.querySelector("#command-output");
         let command_container = document.getElementById("command-scrolling-container");
@@ -2011,14 +2136,13 @@
             cli_history.push(command);
         }
         cli_history_index = cli_history.length;
+        /// Mouse-triggered actions (quick-command buttons) bypass the keydown
+        /// handler that dismisses y/n; clear pending state so the prompt is not
+        /// left invisible under .pending-completion while the command runs.
+        setPendingCompletionDisplay(null);
 
         appendToOutput(`➜ ${cli_cwd} ${command}\n`);
         command_container.scrollTop = command_container.scrollHeight;
-
-        if (handleCdCommand(command)) {
-            command_input.focus();
-            return;
-        }
 
         command_input.disabled = true;
 
@@ -2031,6 +2155,10 @@
         }).toString())
             .then(response => response.json())
             .then(data => {
+                if (data.cwd) {
+                    cli_cwd = data.cwd;
+                    updateCwdDisplay();
+                }
                 if (data.result !== undefined) {
                     appendToOutput(data.result);
                 } else if (data.message !== undefined) {
@@ -2050,6 +2178,7 @@
                 appendToOutput(`Unexpected error: ${err}\n`);
                 command_input.disabled = false;
                 command_input.focus();
+                command_container.scrollTop = command_container.scrollHeight;
             });
     }
 
@@ -2068,7 +2197,49 @@
         });
 
         command_input.addEventListener("keydown", function (event) {
-            if (event.code === "Enter") {
+            if (pending_completion_display !== null) {
+                /// Tab / y → show all. n → decline. Other keys cancel the prompt.
+                /// Previously Tab fell through: it cleared the question then re-asked,
+                /// which looked like the completion hints "disappeared".
+                if (event.key === "y" || event.key === "Y" || event.code === "Tab") {
+                    event.preventDefault();
+                    const answer = (event.code === "Tab") ? "" : "y";
+                    appendToOutput(answer + "\n" + formatCompletionColumns(pending_completion_display));
+                    setPendingCompletionDisplay(null);
+                    command_container.scrollTop = command_container.scrollHeight;
+                    return;
+                }
+                if (event.key === "n" || event.key === "N") {
+                    event.preventDefault();
+                    appendToOutput("n\n");
+                    setPendingCompletionDisplay(null);
+                    command_container.scrollTop = command_container.scrollHeight;
+                    return;
+                }
+                /// Enter only dismisses the prompt — never fall through to executeCommand,
+                /// or a mutating line like `rm /partial` would run from a y/n question.
+                if (event.code === "Enter") {
+                    event.preventDefault();
+                    appendToOutput("\n");
+                    setPendingCompletionDisplay(null);
+                    command_container.scrollTop = command_container.scrollHeight;
+                    return;
+                }
+                if (event.code === "KeyC" && event.ctrlKey) {
+                    event.preventDefault();
+                    appendToOutput("^C\n");
+                    setPendingCompletionDisplay(null);
+                    command_container.scrollTop = command_container.scrollHeight;
+                    return;
+                }
+                appendToOutput("\n");
+                setPendingCompletionDisplay(null);
+                command_container.scrollTop = command_container.scrollHeight;
+            }
+            if (event.code === "Tab") {
+                event.preventDefault();
+                handleTabCompletion(command_input);
+            } else if (event.code === "Enter") {
                 event.preventDefault();
                 let command = command_input.value;
                 command_input.value = "";
