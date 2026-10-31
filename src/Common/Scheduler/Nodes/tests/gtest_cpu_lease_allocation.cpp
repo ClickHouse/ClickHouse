@@ -210,6 +210,79 @@ TEST(SchedulerCPULeaseAllocation, ParkGivesSlotBackToScheduler)
     scheduler.stop();
 }
 
+/// Master and worker threads share one resource, which is the mode with parking. The worker parks and unparks many
+/// times without consuming CPU: each park gives a slot back, each unpark asks for one again. The query must still give a
+/// slot to another query after about one quantum of CPU, not after a quantum per park. Then a park cancels the pending
+/// renewal, and the cancelled request must not count as CPU time granted to the query.
+TEST(SchedulerCPULeaseAllocation, ParkingDoesNotExtendSlotLease)
+{
+    TimeSharedScheduler scheduler;
+    auto semaphore = std::make_shared<SemaphoreConstraint>(scheduler.event_queue, SchedulerNodeInfo{}, /*max_requests=*/ 2);
+    auto queue = std::make_shared<RequestQueue>(scheduler.event_queue, SchedulerNodeInfo{});
+    queue->basename = "queue";
+    semaphore->attachChild(queue);
+    scheduler.attachChild(semaphore);
+    scheduler.start(ThreadName::TEST_SCHEDULER);
+
+    constexpr ResourceCost quantum_ns = 10'000'000;
+    CPULeaseSettings settings;
+    settings.quantum_ns = quantum_ns;
+    settings.report_ns = quantum_ns / 10;
+    settings.parking_enabled = true;
+    ResourceLink link;
+    link.queue = queue.get();
+    auto allocation = std::make_shared<CPULeaseAllocation>(/*max_threads=*/ 2, link, link, settings);
+
+    // Both requests of the query are granted
+    while (semaphore->getInflights().first != 2)
+        std::this_thread::yield();
+    auto master_slot = allocation->acquire();
+    auto worker_slot = allocation->acquire();
+    auto * master = dynamic_cast<ISlotLease *>(master_slot.get());
+    auto * worker = dynamic_cast<ISlotLease *>(worker_slot.get());
+
+    for (size_t i = 0; i < 20; ++i)
+    {
+        ASSERT_TRUE(worker->park());
+        worker->unpark();
+        ASSERT_TRUE(waitUntil([&] { return !allocation->isRequesting(); }));
+    }
+
+    // Another query waits for a slot, while the master consumes CPU
+    auto other = std::make_shared<CPULeaseAllocation>(/*max_threads=*/ 1, link, link, settings);
+    ASSERT_TRUE(waitUntil([&] { return queue->getQueueLengthAndCost().first == 1; }));
+    auto master_thread = std::async(std::launch::async, [&]
+    {
+        master->startConsumption();
+        ResourceCost burned_ns = 0;
+        while (other->isRequesting() && burned_ns < 15 * quantum_ns)
+        {
+            burnCPU(settings.report_ns);
+            burned_ns += settings.report_ns;
+            master->renew();
+        }
+        return burned_ns;
+    });
+    bool finished = master_thread.wait_for(std::chrono::seconds(30)) == std::future_status::ready;
+    if (!finished)
+        allocation->free(); // Wakes the master thread, so the test fails instead of hanging
+    ASSERT_TRUE(finished);
+    EXPECT_LT(master_thread.get(), 5 * quantum_ns) << "the query keeps its slot for a quantum per park";
+
+    // The renewal of the master waits behind the other query. A park cancels it, the unpark asks for the same CPU time.
+    const auto [queued, queued_cost] = queue->getQueueLengthAndCost();
+    EXPECT_EQ(queued, 1u);
+    ASSERT_TRUE(worker->park());
+    worker->unpark();
+    EXPECT_EQ(queue->getQueueLengthAndCost().second, queued_cost) << "the cancelled request is counted as granted CPU time";
+
+    master_slot.reset();
+    worker_slot.reset();
+    other->free();
+    allocation->free();
+    scheduler.stop();
+}
+
 /// The allocation is shut down while two of its threads are parked. Their unparks come after the shutdown:
 /// they must not throw and must not ask the scheduler for slots again.
 TEST(SchedulerCPULeaseAllocation, UnparkAfterShutdown)
