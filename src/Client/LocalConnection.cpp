@@ -1,7 +1,7 @@
 #include <Core/ProtocolDefines.h>
 #include <Client/LocalConnection.h>
 #include <memory>
-#include <thread>
+#include <base/getThreadId.h>
 #include <Client/ClientBase.h>
 #include <Client/ClientApplicationBase.h>
 #include <Core/Protocol.h>
@@ -329,14 +329,14 @@ void LocalConnection::sendQuery(
     {
         query_context->setInteractiveCancelCallback(
             [this, check_cancelled = is_cancelled_callback, progress_callback = process_progress_callback,
-             client_thread_id = std::this_thread::get_id()]() -> bool
+             client_thread_id = getThreadId()]() -> bool
         {
             /// Send accumulated progress to the client so the progress bar updates during analysis.
             /// The callback may be invoked concurrently from pipeline threads, e.g. by a scalar subquery
             /// of a materialized view during `INSERT`, while `progress_callback` (`ClientBase::onProgress`)
             /// is not thread-safe. Only the thread of the client sends the progress, the rest is accumulated
             /// in `state->progress` and sent later.
-            if (progress_callback && std::this_thread::get_id() == client_thread_id)
+            if (progress_callback && getThreadId() == client_thread_id)
             {
                 auto progress = state->progress.fetchAndResetPiecewiseAtomically();
                 if (progress.read_rows || progress.read_bytes)
