@@ -3164,16 +3164,17 @@ ColumnPtr executeStringInteger(const ColumnsWithTypeAndName & arguments, const A
     }
 
     /// Decides whether a division-or-null operation must return NULL for the given operands.
-    /// The null condition has to match exactly when the underlying operation would raise an FPE:
+    /// For division, the null condition matches exactly the cases where the operation raises an FPE. Integer modulo
+    /// raises only for a zero divisor, but its `*OrNull` variants keep `NULL` for `INT_MIN % -1`, as documented:
     ///  - floating division (`divideOrNull`): only division by zero (the signed `INT_MIN / -1`
     ///    overflow is a valid floating-point result, not an FPE);
     ///  - integer division (`intDivOrNull`): division by zero and signed `INT_MIN / -1`, computed
     ///    with the same operand casts as `DivideIntegralImpl::apply` (so mixed signed/unsigned
     ///    operands such as `Int8(-128) / UInt8(255)` are handled like the actual division);
     ///  - modulo (`moduloOrNull`, `positiveModuloOrNull`): for integer modulo, division by zero and
-    ///    signed `INT_MIN / -1` (the `idiv` instruction computes the quotient too, so the overflow
-    ///    raises just like division); for floating modulo, only division by zero, because the float
-    ///    modulo path never raises (`INT_MIN % -1` is a finite remainder). See `moduloLeadsToFPE`.
+    ///    signed `INT_MIN % -1` (documented as `NULL`, although plain `modulo` returns `0` there);
+    ///    for floating modulo, only division by zero, because the float modulo path never raises
+    ///    (`INT_MIN % -1` is a finite remainder). See `moduloLeadsToFPE`.
     template <typename A, typename B>
     static bool divisionOrNullLeadsToNull(A a, B b)
     {
