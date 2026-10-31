@@ -1,0 +1,49 @@
+anf ON 	nan
+anf ON  dflt	nan
+anf OFF	nan
+lead ON 	9999
+lead ON 	9998
+lead ON 	9997
+lead ON  nodyn	9999
+lead ON  nodyn	9998
+lead ON  nodyn	9997
+lead OFF	9999
+lead OFF	9998
+lead OFF	9997
+lc lead ON 	9999
+lc lead ON 	9998
+lc lead ON 	9997
+lc lead OFF	9999
+lc lead OFF	9998
+lc lead OFF	9997
+lc anf ON 	nan
+lc anf OFF	nan
+max ON 	1003
+max ON 	1002
+max ON 	1001
+max OFF	1003
+max OFF	1002
+max OFF	1001
+min ON 	1
+min ON 	2
+min ON 	3
+min ON  nodyn	1
+min ON  nodyn	2
+min ON  nodyn	3
+min OFF	1
+min OFF	2
+min OFF	3
+anl ON 	100
+anl ON 	101
+anl ON 	102
+anl OFF	100
+anl OFF	101
+anl OFF	102
+idx anl	1
+idx anl nodyn	1
+idx min	1
+idx anf nodyn	0
+idx anf	0
+idx dnl	0
+prdist dnf	1
+prdist anl	0
