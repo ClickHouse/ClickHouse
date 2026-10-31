@@ -164,6 +164,14 @@ public:
         ContextPtr context,
         std::shared_ptr<DataLake::ICatalog> catalog) override;
 
+    ProcessorPtr createInsertCommitSink(
+        SharedHeader sample_block,
+        const StorageID & table_id,
+        ObjectStoragePtr object_storage,
+        StorageObjectStorageConfigurationPtr configuration,
+        ContextPtr context,
+        std::shared_ptr<DataLake::ICatalog> catalog) override;
+
     CompressionMethod getCompressionMethod() const { return persistent_components.metadata_compression_method; }
 
     bool optimize(

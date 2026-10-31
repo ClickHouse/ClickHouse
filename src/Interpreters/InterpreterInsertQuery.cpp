@@ -696,8 +696,20 @@ QueryPipeline InterpreterInsertQuery::addInsertToSelectPipeline(
     // resize() does not lower, so limitMaxThreads is needed even after resize(sink_stream_size).
     pipeline.limitMaxThreads(insert_dependencies->getViewProcessingNumThreads());
 
-    pipeline.setSinks([&](const SharedHeader & cur_header, QueryPipelineBuilder::StreamType) -> ProcessorPtr
+    /// With dependent views, the sinks' output goes to the views.
+    ProcessorPtr commit_sink;
+    if (!no_destination && !insert_dependencies->isViewsInvolved())
     {
+        auto metadata_snapshot = table->getInMemoryMetadataPtr(context, false);
+        commit_sink = table->createInsertCommitSink(metadata_snapshot, context);
+    }
+    if (commit_sink)
+        pipeline.resize(1);
+
+    pipeline.setSinks([&](const SharedHeader & cur_header, QueryPipelineBuilder::StreamType stream_type) -> ProcessorPtr
+    {
+        if (commit_sink && stream_type == QueryPipelineBuilder::StreamType::Main)
+            return std::exchange(commit_sink, nullptr);
         return std::make_shared<EmptySink>(cur_header);
     });
 
