@@ -16,7 +16,6 @@ INSERT INTO mh_d1 SELECT number, number FROM numbers(2000);
 INSERT INTO mh_d2 SELECT number, number FROM numbers(2000);
 INSERT INTO mh_d3 SELECT number, if(number < 64, 'hot', 'cold') FROM numbers(2000);
 
-SET enable_analyzer = 1;
 SET enable_join_runtime_filters = 1;
 SET join_runtime_filter_min_probe_rows = 0;
 SET enable_join_runtime_filters_index_analysis = 1;
@@ -36,6 +35,9 @@ SET join_algorithm = 'hash';
 -- Disable cost-based join reordering so the syntactic chain order is preserved; otherwise the
 -- reorderer can rearrange the tables and the transferred filter never reaches mh_fact.
 SET query_plan_optimize_join_order_limit = 0;
+-- mh_d2 and mh_d1 feed the build side of the next join, so a filter on them that disables itself for a
+-- while (pass-ratio heuristic) lets unmatched keys into the next filter and mh_fact may lose its pruning.
+SET join_runtime_filter_blocks_to_skip_before_reenabling = 0;
 
 -- 2-hop: the predicate on mh_d2 is transferred mh_d2 -> mh_d1 -> mh_fact and prunes mh_fact by its primary key.
 SELECT count(), sum(f.v)
@@ -50,7 +52,8 @@ SYSTEM FLUSH LOGS query_log;
 
 SELECT
     ProfileEvents['RuntimeFilterGranulesConsidered'] > 0,
-    ProfileEvents['RuntimeFilterGranulesDropped'] > 0
+    ProfileEvents['RuntimeFilterGranulesDropped'] > 0,
+    ProfileEvents['RuntimeFilterBlocksSkipped'] = 0
 FROM system.query_log
 WHERE current_database = currentDatabase() AND log_comment = '04498_mh_2hop' AND type = 'QueryFinish'
 ORDER BY event_time DESC
@@ -70,7 +73,8 @@ SYSTEM FLUSH LOGS query_log;
 
 SELECT
     ProfileEvents['RuntimeFilterGranulesConsidered'] > 0,
-    ProfileEvents['RuntimeFilterGranulesDropped'] > 0
+    ProfileEvents['RuntimeFilterGranulesDropped'] > 0,
+    ProfileEvents['RuntimeFilterBlocksSkipped'] = 0
 FROM system.query_log
 WHERE current_database = currentDatabase() AND log_comment = '04498_mh_3hop' AND type = 'QueryFinish'
 ORDER BY event_time DESC

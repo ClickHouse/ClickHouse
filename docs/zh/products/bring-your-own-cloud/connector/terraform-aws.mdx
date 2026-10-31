@@ -1,0 +1,179 @@
+---
+title: '使用 Terraform 置备 AWS 基础设施'
+sidebarTitle: '在 AWS 上使用 Terraform'
+slug: /products/bring-your-own-cloud/connector/terraform-aws
+description: '使用 Terraform 或 OpenTofu 为托管模式创建 Amazon EKS cluster，或在现有的 VPC 或集群中添加托管模式所需的资源'
+keywords: ['BYOC', 'cloud', 'bring your own cloud', 'connector', 'terraform', 'opentofu', 'EKS', 'AWS']
+doc_type: 'guide'
+---
+
+import { PrivatePreviewBadge } from '/snippets/zh/components/PrivatePreviewBadge/PrivatePreviewBadge.jsx';
+import { Image } from "/snippets/zh/components/Image.jsx";
+
+<PrivatePreviewBadge />
+
+托管模式运行在您自有的 Amazon EKS cluster 上。每个发行版都附带四个 Terraform 根模块 (下文简称“根模块”) ，它们既可以创建满足要求的集群，也可以在您现有的 VPC 或集群中补充所需资源。根模块会创建集群及其系统节点组和托管插件 (`vpc-cni`、`kube-proxy`、`coredns`、`aws-ebs-csi-driver`) ，以及 IAM 角色、KMS 密钥和标签；`existing-eks` 则仅安装您在 `install_addons` 中指定的插件。对于 Helm 目标，接下来由 `clicklink clctl init` 根据这些输出和平台支持包安装平台层，包括 Karpenter、AWS Load Balancer 控制器、存储类以及固定版本的组件 (请参阅[根据 Terraform 输出初始化连接器](#hand-off)) 。根模块要求 Terraform 1.10+ 或 OpenTofu 1.12+，以及 AWS 提供商 `~> 6.0`。本页所有命令中的 `terraform` 均可替换为 `tofu`。
+
+<Image img="/images/cloud/reference/byoc-connector-terraform-flow.svg" size="lg" alt="AWS 上 ClickHouse 连接器的 Terraform 预配流程" />
+
+## 开始之前 {#before-you-begin}
+
+您需要：
+
+* Terraform 1.10+ 或 OpenTofu 1.12+，以及 AWS 提供商 `~> 6.0`。
+* 一个 AWS 身份，且有权创建和修改所选根模块所需的资源。
+* `curl`、SHA-256 工具 (`sha256sum` 或 `shasum`) 以及 `cosign`，用于下载并验证发行版归档文件。
+* 在[注册](/zh/products/bring-your-own-cloud/connector/onboarding#registration)步骤中获取的以下信息：所有根模块都需要的 `chart_repository_arn`，以及最后执行 `init` 交接时所需的连接器端点、注册标记和平台支持包。
+
+对于 `production` 和 `existing-vpc`，请提前规划运行 `clicklink clctl init` 和 `kubectl` 的机器如何访问私网 EKS API，例如通过 VPN、堡垒机、对等网络或 SSM 端口转发。
+
+<Steps titleSize="h2">
+  <Step title="选择适用于您环境的 Terraform 根目录" id="choose-a-root">
+    这四个根配置都会生成相同的 `clicklink` 输出。无论应用哪一个，后续交由 `clicklink clctl init` 处理的方式都完全一致。
+
+    | 根目录            | 起始环境         | 创建的资源                        |
+    | -------------- | ------------ | ---------------------------- |
+    | `minimal`      | 用于开发和概念验证的集群 | 同上，单个可用区，公网端点，无其他端点或 CMK     |
+    | `production`   | 尚未部署资源的账户和区域 | VPC、EKS cluster、节点组、IAM、KMS  |
+    | `existing-vpc` | 您已有的 VPC     | EKS cluster、节点组、IAM、KMS、子网标签 |
+    | `existing-eks` | 您正在运行的集群     | IAM、指定名称的附加组件、密钥授权、自动发现标签    |
+
+### `minimal` {#minimal}
+
+    `minimal` 放宽了公网端点、接口端点、流日志、日志保留期以及系统节点池大小的配置。每个被放宽的变量在两个根模块中名称都相同。要将其中某个变量改为生产环境的值，只需修改 `terraform.tfvars` 并重新 apply。而单一工作负载可用区和缺失的 KMS 密钥则是固定的：子网无法更换可用区，且该根模块也没有用于 EKS 机密信息加密的变量。要弥补这些差距，只能以新集群的方式部署 `production`。
+
+### `production` {#production}
+
+    该 VPC 跨三个可用区 (`availability_zone_count`，取值 2 到 4) ，每个可用区包含一个私网 `/19` 子网、一个公网 `/21` 子网和一个 NAT 网关；此外还包括一个 S3 网关端点，ECR、STS、EKS、EC2、CloudWatch 日志、SSM、SQS、KMS 和 ELB 的接口端点，并启用了 VPC 流日志。 该 EKS cluster 使用私网 API 端点和 access-entries 身份验证，所有类型的控制平面日志均写入根模块所拥有的日志组，secrets 则使用客户管理的 KMS 密钥加密。 该集群会安装托管插件 `vpc-cni`、`kube-proxy`、`coredns` 和 `aws-ebs-csi-driver`，并包含一个未设置污点、带有 `clickhouseGroup=system` 标签的系统节点组 (默认包含两到四个 `m7g.large` 节点) 。 根模块还会创建 Karpenter IAM (包含中断队列和 `karpenter.sh/discovery` 标签) 、用于 AWS Load Balancer 控制器和连接器 executor 的 IRSA 角色，以及用于 EBS 卷和对象存储桶的 KMS 密钥。
+
+### `existing-vpc` 和 `existing-eks` {#existing-infrastructure}
+
+    两个根模块都不会更改非自身创建的资源，包括路由表、NAT 网关、端点、安全组规则、节点组、启动模板、集群配置以及 KMS 密钥。两者都会为私有子网添加 `karpenter.sh/discovery=<cluster_name>` 和 `kubernetes.io/role/internal-elb=1` 标签；此外，`existing-vpc` 还会为公有子网添加 `kubernetes.io/role/elb=1` 标签，`existing-eks` 则会为集群安全组添加标签。
+
+    使用 `existing-vpc` 时，该 VPC 必须已具备以下条件：
+
+    * 已启用 DNS 支持和 DNS 主机名。
+    * 至少分布在两个可用区中的两到四个私有子网，关闭 `map_public_ip_on_launch`，并路由到 NAT 网关，或路由到 ECR、STS、EKS、EC2、CloudWatch 日志、SSM、SQS、KMS 和 ELB 的接口端点。请添加 S3 网关端点，否则对象存储流量会经过 NAT 网关。
+    * 仅当需要面向互联网的负载均衡器时才需要公有子网。如果 VPC 没有公网层级，请将 `public_subnet_ids` 留空。
+
+    使用 `existing-eks` 时，集群必须已满足以下条件：
+
+    * Kubernetes 1.34 或更高版本。
+    * 身份验证模式为 `API` 或 `API_AND_CONFIG_MAP`。对于使用 `CONFIG_MAP` 的集群，plan 会输出切换所需的命令。
+    * 与集群签发方对应的 IAM OIDC 提供商。
+    * 至少分布在两个可用区的私有子网，且能够通过 NAT 或接口端点出站访问 AWS API。默认情况下，root 会基于集群的子网推导出这些子网，并剔除路由表可通往 internet gateway 的子网。如果集群的子网是仅供控制平面使用的 `/28` 子网，或者节点需要部署在其他子网中，请设置 `private_subnet_ids`。
+    * 尚未安装 Karpenter；此 root 会创建 Karpenter 所需的 IAM 资源和中断队列。该队列命名为 `<cluster_name>-clicklink`，因此不会与先前卸载 Karpenter 后遗留的队列发生冲突。
+    * 未设置污点、且带有 `system_node_selector` 中所列标签 (默认为 `clickhouseGroup=system`) 的系统节点。此 root 不会创建任何节点组。
+
+    只要缺少其中任意一项，`terraform plan` 就会执行失败。
+
+    如果 `install_addons` 中的某个插件已以自管理方式安装并在运行，EKS 会返回 `Conflicts found when trying to apply`。此时可设置 `addon_resolve_conflicts_on_create = "OVERWRITE"`，让托管插件接管该插件；也可以将其从 `install_addons` 中移除。
+  </Step>
+
+  <Step title="下载并验证 Terraform 发行版归档文件" id="download-the-release-archive">
+    这些根证书随每个发行版以单个归档文件的形式提供，其版本与 `clicklink` 二进制文件保持一致。请下载当前发行版的归档文件，以及对应的校验和与 cosign 签名包：
+
+    ```bash
+    CLICKLINK_VERSION="$(curl -fsSL https://releases.clicklink.clickhouse.com/latest-version.txt)"
+    # Or pin a specific release: CLICKLINK_VERSION='vX.Y.Z'
+    TERRAFORM_TARBALL="clicklink-terraform-${CLICKLINK_VERSION}.tar.gz"
+    for suffix in '' .sha256 .bundle; do
+      curl -fsSLO "https://releases.clicklink.clickhouse.com/${TERRAFORM_TARBALL}${suffix}"
+    done
+    if command -v sha256sum >/dev/null; then
+      sha256sum -c "${TERRAFORM_TARBALL}.sha256"
+    else
+      shasum -a 256 -c "${TERRAFORM_TARBALL}.sha256"
+    fi
+    ```
+
+    解压前，请先使用 cosign 验证签名：
+
+    ```bash
+    cosign verify-blob \
+      --bundle "${TERRAFORM_TARBALL}.bundle" \
+      --certificate-identity-regexp '^https://github\.com/ClickHouse/data-plane-clicklink/\.github/workflows/release\.yaml@refs/tags/v[0-9]+\.[0-9]+\.[0-9]+(-.*)?$' \
+      --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+      "${TERRAFORM_TARBALL}"
+    ```
+
+    然后将其解压：
+
+    ```bash
+    tar -xzf "${TERRAFORM_TARBALL}"
+    cd "clicklink-terraform-${CLICKLINK_VERSION}"
+    ```
+
+    该归档文件解压后会生成一个目录，其中包含 `aws/production`、`aws/minimal`、`aws/existing-vpc`、`aws/existing-eks` 和 `aws/modules`。各根模块通过 `../modules` 引用这些模块。请保持解压后的目录树完整，不要将某个根模块单独复制出来。归档中根模块的 README 所示的 `init` 交接命令可能未包含 `--platform-bundle`；请以[根据 Terraform 输出初始化连接器](#hand-off)中的命令为准，该命令才是受支持的用法。
+  </Step>
+
+  <Step title="配置并应用所选根" id="apply">
+    在根目录下，复制示例变量文件并填入相应的值：
+
+    ```bash
+    cp terraform.tfvars.example terraform.tfvars
+    ```
+
+    每个根模块都需要 `region`、`cluster_name` 和 `chart_repository_arn`。`cluster_name` 用于命名集群，会作为所有资源名称的前缀，同时也是用于发现的标签值。在 `production`、`minimal` 和 `existing-vpc` 中，它必须由 3 到 32 个小写字母、数字或连字符组成，以字母开头，且不能以连字符结尾。`existing-eks` 则使用您现有集群的名称，最多 32 个字符。`chart_repository_arn` 是 ClickHouse 集群 chart 所在的 ECR 仓库，由您的客户团队在[注册](/zh/products/bring-your-own-cloud/connector/onboarding#registration)时提供。会创建集群的根模块还需要 `cluster_admin_principal_arns`，即通过 EKS 访问条目获得集群管理员权限的主体。运行该根模块的身份必须包含在此列表中，否则之后将无法访问该集群，因为集群创建者不会自动获得任何访问权限。各根模块的具体要求如下：
+
+    * `minimal` 需要 `endpoint_public_access_cidrs`，即公网 API 端点的 IPv4 允许列表。您运行 `init` 和 `kubectl` 时所在的网络必须包含在内。除非设置 `allow_public_endpoint_from_anywhere = true`，否则 `/0` 会被拒绝。若设置 `endpoint_public_access = false`，该列表可以为空，此时端点仅支持私网访问，与 `production` 相同。
+    * `existing-vpc` 需要 `vpc_id` 和 `private_subnet_ids`。`public_subnet_ids` 为可选项，用于面向互联网的负载均衡器。
+    * `existing-eks` 无其他必需变量。`install_addons` 用于指定集群尚未安装的托管插件，`ebs_kms_key_arn` 用于为服务卷提供密钥。
+
+    然后依次执行 init、plan 和 apply：
+
+    ```bash
+    terraform init
+    terraform providers lock -platform=linux_amd64 -platform=darwin_arm64
+    terraform plan
+    terraform apply
+    ```
+
+    该归档中不包含提供程序锁文件。运行 `terraform providers lock` 即可生成该文件，然后将其提交到你自己的副本中。状态默认存储在本地。`versions.tf` 中包含一个已注释掉的 `backend "s3"` 块，展示了共享状态的配置方式。
+
+    <Note>
+      `production` 和 `existing-vpc` 的 API 端点均为私网端点。请在 VPC 内部运行 `init` 和 `kubectl` (可通过到系统节点的 SSM 端口转发、堡垒机、VPN 或对等网络实现) ，或者设置 `endpoint_public_access = true`，并在 `endpoint_public_access_cidrs` 中配置允许列表，以启用公网访问。
+    </Note>
+  </Step>
+
+  <Step title="使用 Terraform 输出初始化连接器" id="hand-off">
+    导出这些输出值，然后在 kube 上下文指向新集群的机器上，将其与平台包一并传给 `init`：
+
+    ```bash
+    terraform output -json > outputs.json
+    clicklink clctl init --enroll https://<subdomain>.<connector-domain> --target helm --managed \
+      --from-terraform outputs.json --platform-bundle bundle.yaml
+    ```
+
+    这些 roots 仅支持 Helm 目标。在虚拟机上 (`--target systemd`) ，`init` 会拒绝 `--platform-bundle`，而 `clicklink clctl platform approve --bundle` 只会安装固定版本的组件，因此集群中没有节点供应程序。仅当连接器注册的是您自行运行的 ClickHouse 时，才应使用 `--target systemd`；这些 roots 不支持该选项。
+
+    `--platform-bundle` 会安装 roots 未包含的内容：带有 `EC2NodeClass` 以及 `clickhouse-server` 和 `clickhouse-keeper` NodePool 的 Karpenter、AWS Load Balancer controller、`gp3-encrypted` 存储类 (若输出中包含 EBS 密钥，则使用该密钥加密) ，以及支持包所固定版本的平台组件：快照控制器、ClickHouse operator 和监控 collector。该支持包是 ClickHouse Cloud 针对您的环境生成的平台清单，由您的客户团队在 onboarding 期间交付，其 `cluster:` 部分固定了 Karpenter 和负载均衡器控制器的版本。该标志须与 `--target helm`、`--managed` 和 `--from-terraform` 配合使用。已存在的组件会保持不变，因此可以放心地重复运行该命令；`init` 会输出一份报告，列出安装了哪些内容、跳过了哪些内容以及跳过的原因。如果不使用该标志，`init` 只会注册连接器，而不会安装上述任何组件；在这些组件就位之前，集群无法运行服务。之后的[平台更新](/zh/products/bring-your-own-cloud/connector/platform-updates)会变更快照控制器、operator 和 collector；Karpenter、负载均衡器控制器和存储类则保持 `init` 安装时的状态。
+
+    `--from-terraform` 既接受 `terraform output -json` 输出的完整文档，也接受 `terraform output -json clicklink` 输出的单个对象。`clicklink` 输出包含集群身份 (`account_id`、`region`、`cluster_name`、`cluster_endpoint`、`cluster_ca`) 、OIDC 提供方、连接器命名空间、executor 的 IAM 角色 (`executor_role_arn`) 、EBS 密钥、Karpenter 节点角色和队列、负载均衡器控制器角色，以及 `system_node_selector`。`init` 会从该文件中读取集群身份和连接器命名空间，将 `executor_role_arn` 设置为连接器 `pcm-executor` ServiceAccount 上的 IRSA 注解，并为连接器 Pod 配置节点选择器。managed service 不共用该角色：`clicklink clctl executor prepare` 会为每个服务单独创建一个角色 (默认为 `CH-S3-<service>-<region>-00-Role`) ，并在服务创建时与其绑定；请参阅[特权模型](/zh/products/bring-your-own-cloud/connector/reference/privilege-model#identities)。
+
+    如果 `--cluster-name` 或 `--target-namespace` 等标志与文件内容不一致，`init` 会拒绝执行，并给出两个值。请删除该标志或修正输出。如果 kube 上下文的 API 服务器不是 `cluster_endpoint`，或其 EKS ARN 指向其他集群，`init` 同样会拒绝执行。输出中包含一个 `schema` 字段，当前值为 `1`。如果文件的 `schema` 不受支持，`clctl` 会拒绝该文件。
+
+    其余注册步骤遵循 [onboarding](/zh/products/bring-your-own-cloud/connector/onboarding#install-and-enroll) 中的标准流程。
+  </Step>
+</Steps>
+
+## KMS 密钥与所需授权 {#keys}
+
+`production` 和 `existing-vpc` 会创建三个启用轮换的客户管理的 KMS 密钥，分别用于 EKS 机密信息、EBS 卷和对象存储桶；如果在 `kms` 中传入了 ARN，则不会创建。`existing-eks` 会创建存储密钥 (除非设置了 `storage_kms_key_arn`) ，服务卷所用的密钥则通过 `ebs_kms_key_arn` 传入，不会自行创建。`minimal` 不创建任何密钥；如果未设置 `storage_kms_key_arn`，其桶将继续使用 SSE-S3。自动创建的密钥包含一条账户根用户语句，用于将访问权限委托给 IAM。您自行提供的密钥需要具备相同的委托，或者在其密钥策略中包含以下授权：
+
+| 密钥       | 主体                                                                                                  | 操作                                                                                                                                                  |
+| -------- | --------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- |
+| EKS 机密信息 | `<cluster_name>-cluster`                                                                            | `kms:Encrypt`、`kms:Decrypt`、`kms:DescribeKey`                                                                                                       |
+| EBS      | `<cluster_name>-ebs-csi-driver`、`<cluster_name>-karpenter-controller`                               | `kms:Encrypt`、`kms:Decrypt`、`kms:ReEncrypt*`、`kms:GenerateDataKey*`、`kms:DescribeKey`，以及带有 `kms:GrantIsForAWSResource = true` 条件的 `kms:CreateGrant` |
+| 存储       | 由 `clicklink clctl executor prepare --storage-kms-key-arn` 创建的每个 `CH-S3-<service>-<region>-00-Role` | `kms:Decrypt`、`kms:GenerateDataKey`、`kms:DescribeKey`                                                                                               |
+| 存储       | `<cluster_name>-clicklink-executor`，用于服务备份旁的 `_tde/` 密钥记录                                           | `kms:GenerateDataKey`、`kms:Decrypt`                                                                                                                 |
+
+无论哪种情况，根模块都会为 EKS 机密信息密钥和 EBS 密钥附加 IAM role 策略；只要根模块包含存储密钥，还会附加 executor 的存储密钥策略。每个服务角色的策略则由 `executor prepare` 附加。系统节点的根卷仅存放镜像和 kubelet 节点代理日志，不存放服务数据，使用的是账户的默认 EBS 密钥。
+
+## 销毁由 Terraform 管理的基础设施 {#destroy}
+
+`terraform destroy` 会删除根模块创建的所有资源。已创建的 KMS 密钥将进入 30 天的删除等待期。日志组及其保留的日志会一并删除，因此请提前导出所需内容。由 Karpenter 启动的实例和由 ClickHouse Operator 创建的卷不在 Terraform 状态中；请先删除您的服务并卸载 Karpenter，否则删除 VPC 和节点角色时会失败。
+
+`existing-eks` 会保留集群，但会删除它所添加的角色、中断队列及规则、访问条目和标签。它所安装的 `vpc-cni`、`kube-proxy` 和 `coredns` 插件将不再由 EKS 管理，相应的 Pod (容器组) 会继续运行。如果 EBS CSI 驱动程序插件是由它安装的，则会随根模块一同删除，因为对应的 IRSA 角色也会被销毁。如需保留该驱动程序，请在执行销毁前使用您自己的角色重新创建该插件。
+
+销毁操作会删除这些根模块添加的所有标签，包括在根模块创建之前就已存在的 `kubernetes.io/role/internal-elb` 标签，因为 `aws_ec2_tag` 会接管已有标签的所有权。如需保留这些标签，请在销毁前设置 `manage_subnet_tags = false` (`existing-vpc`) 或 `manage_discovery_tags = false` (`existing-eks`) 并执行 apply，或者使用 `terraform state rm` 移除 `aws_ec2_tag` 资源。

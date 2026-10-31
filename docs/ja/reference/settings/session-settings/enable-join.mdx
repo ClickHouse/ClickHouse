@@ -14,7 +14,7 @@ import { BetaBadge } from "/snippets/ja/components/BetaBadge/BetaBadge.jsx";
 
 これらの設定は [system.settings](/ja/reference/system-tables/settings) で確認でき、[ソースコード](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp) から自動生成されています。
 
-## enable_join_fixed_hash_table_conversion
+## enable_join_fixed_hash_table_conversion {#enable_join_fixed_hash_table_conversion}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -22,7 +22,7 @@ import { BetaBadge } from "/snippets/ja/components/BetaBadge/BetaBadge.jsx";
 
 キーが値域の小さい単一の整数である場合に、join 用のハッシュテーブルをフラットな配列に変換できるようにします。
 
-## enable_join_key_only_hash_tables
+## enable_join_key_only_hash_tables {#enable_join_key_only_hash_tables}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -30,7 +30,7 @@ import { BetaBadge } from "/snippets/ja/components/BetaBadge/BetaBadge.jsx";
 
 結果に右側の行由来の値が決して含まれない join、すなわち `LEFT ANTI` および右側のカラムが選択されていない場合の `LEFT SEMI` では、右側の行への参照を持たず結合キーのみを格納する ハッシュテーブル を使用します。この種の ハッシュテーブル は cell が小さく、右側の block を保持せずに drop できます。
 
-## enable_join_runtime_filters
+## enable_join_runtime_filters {#enable_join_runtime_filters}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -38,15 +38,22 @@ import { BetaBadge } from "/snippets/ja/components/BetaBadge/BetaBadge.jsx";
 
 実行時に右側から収集した結合キーの集合で左側をフィルタリングします。
 
-## enable_join_runtime_filters_index_analysis
+## enable_join_runtime_filters_index_analysis {#enable_join_runtime_filters_index_analysis}
 
-<SettingsInfoBlock type="Bool" default_value="0" />
+<SettingsInfoBlock type="Bool" default_value="1" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "JOIN runtime filters が Production tier の機能になりました。"}]}, {"id": "row-2","items": [{"label": "26.7"},{"label": "0"},{"label": "動的な索引解析を使用した JOIN フィルタリングを有効にする新しい設定"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "JOINランタイムフィルタがProduction tierの機能になりました。"}]}, {"id": "row-2","items": [{"label": "26.7"},{"label": "0"},{"label": "動的な索引解析による結合時のフィルタリングを有効にする新しい設定"}]}, {"id": "row-3","items": [{"label": "26.10"},{"label": "1"},{"label": "ビルド側（右側）で収集したランタイムフィルタを使い、JOINのプローブ側（左側）のグラニュールを刈り込みます。"}]}]} />
 
-JOIN の左辺にあるグラニュールを刈り込むため、2 回目の索引解析 (`use_skip_indexes_on_data_read` 経由) を実行します。
+ビルド側で収集したランタイムフィルタを使い、JOINのプローブ側のグラニュールを刈り込みます。`enable_join_runtime_filters`を参照してください。
+`use_skip_indexes_on_data_read = 1`の場合にのみ効果があります。
+刈り込みの対象となるのは、プローブ側の主キー列であるか、`minmax`、`set`、`bloom_filter`のいずれかのスキップ索引でカバーされている結合キーのみです。
+ランタイムフィルタがキーの正確な値を保持している場合、それらの値を含む`IN`集合を刈り込み条件に使用します。それ以外の場合はキーの最小値から最大値までの範囲を使用しますが、刈り込み効果は低くなります。
 
-## enable_join_transitive_predicates
+結合のプローブ側をローカルで読み取る場合にのみ有効です。刈り込みを制御するディスクリプタは、クエリプランの最適化時に読み取りステップに付与されますが、そのステップをリモート実行用に再構築する際には引き継がれません。そのため、並列レプリカ (`enable_parallel_replicas = 1`) または分散クエリプラン (`make_distributed_plan = 1`) では、グラニュールの刈り込みは行われません。これらのモードでは、この設定は効果を持ちません。クエリの結果は変わらず、JOINランタイムフィルタ自体もこの設定を無効にした場合とまったく同じように動作します。行われなくなるのはグラニュールの刈り込みだけです。
+
+プローブ側を`FINAL`で読み取る場合も、グラニュールの刈り込みは行われません (`FINAL`を使用した読み取りでは刈り込みが実装されておらず、`optimizeLazyFinal`はディスクリプタなしで読み取りを再構築します) 。処理待ちのデータ、`ALTER`ミューテーション、またはパッチパートがあるテーブルでも同様です。これらの場合も、この設定は効果を持ちません。
+
+## enable_join_transitive_predicates {#enable_join_transitive_predicates}
 
 <BetaBadge />
 

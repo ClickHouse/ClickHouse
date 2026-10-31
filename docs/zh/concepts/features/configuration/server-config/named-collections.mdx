@@ -16,22 +16,21 @@ doc_type: 'reference'
 
 命名集合可以通过 DDL 或在配置文件中进行配置，并在
 ClickHouse 启动时生效。它们可以简化对象的创建，并向
-没有管理权限的用户隐藏凭据。
+没有管理权限的用户隐藏凭证。
 
 命名集合中的键必须与相应
 函数、表引擎、数据库等的参数名称匹配。下面的示例中，
 每种类型都链接到了对应的参数列表。
 
-在命名集合中设置的参数可以在 SQL 中被覆盖，下面的示例
-展示了这一点。可以使用 `[NOT] OVERRIDABLE` 关键字、XML 属性
-和/或配置选项 `allow_named_collection_override_by_default` 来限制这种能力。
+要覆盖命名集合中存储的参数，必须对该集合拥有 `SHOW NAMED COLLECTIONS SECRETS` 特权，即使该参数已标记为 `OVERRIDABLE` 也不例外。在 SQL 中标记为 `NOT OVERRIDABLE` 或在 XML 中标记为 `overridable="false"` 的键无法被覆盖。添加集合中未存储的参数则无需此额外特权。使用别名 (例如 `host` 的别名 `addresses_expr`) 同样视为覆盖已存储的参数。
 
-<Warning>
-  如果允许覆盖，可能会让没有管理权限的用户
-  推断出您试图隐藏的凭据。
-  如果您出于这个目的使用命名集合，应禁用
-  `allow_named_collection_override_by_default` (默认启用) 。
-</Warning>
+```sql
+GRANT SHOW NAMED COLLECTIONS SECRETS ON my_collection TO my_user;
+```
+
+此检查仅要求具备该特权，与控制机密信息显示的设置无关。`allow_named_collection_override_by_default` 设置已废弃，不再起任何作用。
+
+字典源遵循同样的规则：在创建、附加或恢复字典时会检查该特权；而在加载字典时，仅对标记为 `NOT OVERRIDABLE` 的键强制执行限制。
 
 ## 将命名集合存储在 system 数据库中 {#storing-named-collections-in-the-system-database}
 
@@ -46,9 +45,9 @@ url = 'https://connection.url/'
 
 在上述示例中：
 
-* `key_1` 始终可以被覆盖。
+* 对该集合拥有 `SHOW NAMED COLLECTIONS SECRETS` 权限的用户可以覆盖 `key_1`。
 * `key_2` 永远不能被覆盖。
-* `url` 是否可以被覆盖，取决于 `allow_named_collection_override_by_default` 的值。
+* 对该集合拥有 `SHOW NAMED COLLECTIONS SECRETS` 权限的用户可以覆盖 `url`。
 
 ### 使用 DDL 创建 命名集合 的权限要求 {#permissions-to-create-named-collections-with-ddl}
 
@@ -128,9 +127,9 @@ WHERE name = 'named_collections_storage.type';
 
 在上述示例中：
 
-* `key_1` 始终可以被覆盖。
+* 对该集合拥有 `SHOW NAMED COLLECTIONS SECRETS` 权限的用户可以覆盖 `key_1`。
 * `key_2` 绝不会被覆盖。
-* `url` 是否可以被覆盖，取决于 `allow_named_collection_override_by_default` 的值。
+* 对该集合拥有 `SHOW NAMED COLLECTIONS SECRETS` 权限的用户可以覆盖 `url`。
 
 ## 修改命名集合 {#modifying-named-collections}
 
@@ -503,9 +502,16 @@ SELECT * FROM remote(remote1, database = default, table = test);
 ### 使用源为 ClickHouse 的字典和命名集合的示例 {#example-of-using-named-collections-with-a-dictionary-with-source-clickhouse}
 
 ```sql
+CREATE NAMED COLLECTION remote_dict AS
+host = 'localhost',
+port = 9000,
+database = 'default',
+user = 'default',
+password = '';
+
 CREATE DICTIONARY dict(a Int64, b String)
 PRIMARY KEY a
-SOURCE(CLICKHOUSE(NAME remote1 TABLE test DB default))
+SOURCE(CLICKHOUSE(NAME remote_dict TABLE test))
 LIFETIME(MIN 1 MAX 2)
 LAYOUT(HASHED());
 
@@ -689,7 +695,7 @@ CREATE DICTIONARY dict
     `b` String
 )
 PRIMARY KEY a
-SOURCE(MONGODB(NAME mymongo COLLECTION my_dict))
+SOURCE(MONGODB(NAME mymongo))
 LIFETIME(MIN 1 MAX 2)
 LAYOUT(HASHED())
 
@@ -701,5 +707,5 @@ SELECT dictGet('dict', 'b', 2);
 ```
 
 <Note>
-  该命名集合将 `my_collection` 指定为集合名称。在函数调用中，可通过 `collection = 'my_dict'` 将其覆盖，以选择另一个集合。
+  该字典使用命名集合中指定的 `my_collection`。如需使用其他 MongoDB 集合，请另行定义一个以该值作为集合名称的命名集合。
 </Note>

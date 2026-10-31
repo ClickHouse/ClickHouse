@@ -16,8 +16,10 @@ namespace DB
 
 class BlockMissingValues;
 struct SelectQueryInfo;
+class ColumnMapper;
 
 using ColumnMappingPtr = std::shared_ptr<ColumnMapping>;
+using ColumnMapperPtr = std::shared_ptr<ColumnMapper>;
 using IColumnFilter = PaddedPODArray<UInt8>;
 
 /// Most (all?) file formats have a natural order of rows within the file.
@@ -124,7 +126,12 @@ public:
     /// in custom serializations (e.g. Sparse) for parsing and avoid extra conversion.
     virtual void setSerializationHints(const SerializationInfoByName & /*hints*/) {}
 
-    void addBuffer(std::unique_ptr<ReadBuffer> buffer) { owned_buffers.emplace_back(std::move(buffer)); }
+    /// `FormatFilterInfo::column_mapper`, for a format whose creator does not receive the `FormatFilterInfo`.
+    virtual void setColumnMapper(const ColumnMapperPtr & /*column_mapper*/) {}
+
+    /// Not by value: if the insertion throws, `buffer` must stay with the caller, since this format still reads it.
+    template <typename Buffer>
+    void addBuffer(std::unique_ptr<Buffer> && buffer) { owned_buffers.emplace_back(std::move(buffer)); }
 
     void setErrorsLogger(const InputFormatErrorsLoggerPtr & errors_logger_) { errors_logger = errors_logger_; }
 
@@ -144,6 +151,10 @@ public:
     /// Whether the format has applied TopN dynamic filtering (`FormatFilterInfo::top_k_filter`) to the
     /// rows it read. A format can decline it per file, e.g. when the file does not store the sort column.
     virtual bool isTopKFilterApplied() const { return false; }
+    /// Whether the rows returned for this file were built from statistics (`FormatFilterInfo::min_max_from_statistics`).
+    virtual bool isMinMaxFromStatisticsApplied() const { return false; }
+    /// Called after the file was read, if its version provably did not change during the read.
+    virtual void cacheFilterColumnStatistics() {}
 
 protected:
     ReadBuffer & getReadBuffer() const { chassert(in); return *in; }

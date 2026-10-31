@@ -2,19 +2,34 @@
 
 import logging
 import re
-from typing import Dict, List, Optional, Tuple
+import time
+from typing import Dict, Iterable, List, Optional, Tuple
 
 from build_download_helper import get_gh_api
 from git_helper import TAG_REGEXP
-from version_helper import (
+from ci.jobs.scripts.clickhouse_version import (
     ClickHouseVersion,
     get_version_from_string,
     get_version_from_tag,
 )
 
 CLICKHOUSE_TAGS_URL = "https://api.github.com/repos/ClickHouse/ClickHouse/releases"
-PACKAGE_REGEXP = r"\Aclickhouse-common-static_.+[.]deb"
 RELEASES_PER_PAGE = 100
+# A degraded GitHub API can answer HTTP 200 with a short page, and its edge caches each
+# answer for `s-maxage=60` seconds.
+RELEASES_FIRST_PAGE_ATTEMPTS = 4
+RELEASES_FIRST_PAGE_RETRY_SLEEP = 60
+
+# Packages that the upgrade check actually installs (see `install_packages` in
+# `tests/docker_scripts/stress_tests.lib`). Only these are essential; a hiccup
+# while downloading any of the other assets (e.g. `clickhouse-keeper`) must not
+# fail the job.
+REQUIRED_PACKAGE_PREFIXES = (
+    "clickhouse-common-static_",
+    "clickhouse-common-static-dbg_",
+    "clickhouse-server_",
+    "clickhouse-client_",
+)
 
 logger = logging.getLogger(__name__)
 
@@ -36,6 +51,22 @@ class ReleaseInfo:
         return f"ReleaseInfo: {self.version.describe}"
 
 
+def required_package_prefixes(debug: bool) -> Tuple[str, ...]:
+    # The debug-symbols package is only downloaded (and installed) in debug mode.
+    return tuple(
+        prefix for prefix in REQUIRED_PACKAGE_PREFIXES if debug or "-dbg_" not in prefix
+    )
+
+
+def missing_required_packages(assets: Iterable[str], debug: bool) -> List[str]:
+    names = list(assets)
+    return [
+        prefix
+        for prefix in required_package_prefixes(debug)
+        if not any(n.startswith(prefix) and n.endswith("_amd64.deb") for n in names)
+    ]
+
+
 def find_previous_release(
     server_version: Optional[ClickHouseVersion], releases: List[ReleaseInfo]
 ) -> Tuple[bool, Optional[ReleaseInfo]]:
@@ -50,39 +81,64 @@ def find_previous_release(
     for release in releases:
         if release.version < server_version:
             # A tag exists for a short period before its packages are uploaded.
-            if any(re.match(PACKAGE_REGEXP, name) for name in release.assets.keys()):
+            # The upgrade check installs the debug-symbols package as well.
+            missing = missing_required_packages(release.assets, debug=True)
+            if not missing:
                 return True, release
 
             logger.warning(
-                "Skipping v%s-%s: no uploaded package matching %s",
+                "Skipping v%s-%s: required packages not uploaded yet: %s",
                 release.version,
                 release.type,
-                PACKAGE_REGEXP,
+                ", ".join(missing),
             )
 
     return False, None
 
 
+def _get_first_page_of_releases() -> list:
+    for attempt in range(1, RELEASES_FIRST_PAGE_ATTEMPTS + 1):
+        response = get_gh_api(
+            CLICKHOUSE_TAGS_URL,
+            params={"page": 1, "per_page": RELEASES_PER_PAGE},
+            timeout=10,
+        )
+        if not response.ok:
+            logger.error(
+                "Cannot load the list of tags from github: %s", response.reason
+            )
+            response.raise_for_status()
+
+        releases = response.json()
+        # The first page carries the newest releases, so a page shorter than requested
+        # is a degraded response rather than the end of the feed.
+        if len(releases) >= RELEASES_PER_PAGE:
+            return releases
+
+        if attempt < RELEASES_FIRST_PAGE_ATTEMPTS:
+            logger.warning(
+                "The first page of %s returned %d releases, expected %d; "
+                "retrying in %d s (attempt %d/%d)",
+                CLICKHOUSE_TAGS_URL,
+                len(releases),
+                RELEASES_PER_PAGE,
+                RELEASES_FIRST_PAGE_RETRY_SLEEP,
+                attempt,
+                RELEASES_FIRST_PAGE_ATTEMPTS,
+            )
+            time.sleep(RELEASES_FIRST_PAGE_RETRY_SLEEP)
+
+    raise ReleaseNotFoundException(
+        f"The first page of {CLICKHOUSE_TAGS_URL} returned {len(releases)} "
+        f"releases, expected {RELEASES_PER_PAGE}, after "
+        f"{RELEASES_FIRST_PAGE_ATTEMPTS} attempts"
+    )
+
+
 def get_previous_release(
     server_version: Optional[ClickHouseVersion],
 ) -> Optional[ReleaseInfo]:
-    response = get_gh_api(
-        CLICKHOUSE_TAGS_URL,
-        params={"page": 1, "per_page": RELEASES_PER_PAGE},
-        timeout=10,
-    )
-    if not response.ok:
-        logger.error("Cannot load the list of tags from github: %s", response.reason)
-        response.raise_for_status()
-
-    releases = response.json()
-    # The first page carries the newest releases, so a page shorter than requested is a
-    # degraded response rather than the end of the feed.
-    if len(releases) < RELEASES_PER_PAGE:
-        raise ReleaseNotFoundException(
-            f"The first page of {CLICKHOUSE_TAGS_URL} returned {len(releases)} "
-            f"releases, expected {RELEASES_PER_PAGE}"
-        )
+    releases = _get_first_page_of_releases()
 
     release_infos = []  # type: List[ReleaseInfo]
     for r in releases:

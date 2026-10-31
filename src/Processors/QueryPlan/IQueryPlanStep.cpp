@@ -7,6 +7,10 @@
 #include <Processors/IProcessor.h>
 #include <Processors/Port.h>
 #include <Processors/QueryPlan/IQueryPlanStep.h>
+
+#include <Analyzer/TableQualifiers.h>
+#include <Processors/QueryPlan/Serialization.h>
+#include <IO/WriteHelpers.h>
 #include <Processors/QueryPlan/Optimizations/actionsDAGUtils.h>
 #include <Processors/QueryPlan/QueryPlanFormat.h>
 #include <fmt/format.h>
@@ -23,9 +27,11 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
 }
 
-IQueryPlanStep::IQueryPlanStep()
+IQueryPlanStep::IQueryPlanStep() = default;
+
+IQueryPlanStep::StepIndex::StepIndex()
+    : value(CurrentThread::isInitialized() ? CurrentThread::get().getNextPlanStepIndex() : 0)
 {
-    step_index = CurrentThread::isInitialized() ? CurrentThread::get().getNextPlanStepIndex() : 0;
 }
 
 void IQueryPlanStep::updateInputHeaders(SharedHeaders input_headers_)
@@ -560,7 +566,7 @@ void IQueryPlanStep::appendExtraProcessors(const Processors & extra_processors)
 
 String IQueryPlanStep::getUniqID() const
 {
-    return fmt::format("{}_{}", getName(), step_index);
+    return fmt::format("{}_{}", getName(), step_index.value);
 }
 
 void IQueryPlanStep::serialize(Serialization & /*ctx*/) const
@@ -569,5 +575,13 @@ void IQueryPlanStep::serialize(Serialization & /*ctx*/) const
 }
 
 void IQueryPlanStep::updateOutputHeader() { throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Not implemented"); }
+
+void IQueryPlanStep::Serialization::writeColumnName(const String & name) const
+{
+    if (for_cache_key)
+        writeCacheKeyColumnName(name, input_header, out);
+    else
+        writeStringBinary(name, out);
+}
 
 }
