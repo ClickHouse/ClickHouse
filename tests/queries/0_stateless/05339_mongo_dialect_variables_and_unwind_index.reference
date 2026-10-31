@@ -1,0 +1,20 @@
+-- a bound variable
+[11,21]
+[]
+-- an unbound variable is not a column
+Use of undefined variable: 'missing'
+-- a variable is bound only in the body
+Use of undefined variable: 'missing'
+Use of undefined variable: 'e'
+-- includeArrayIndex overwrites the field
+10	0
+20	1
+-- includeArrayIndex overwrites the field of a preserved document
+x	10	0
+x	20	1
+y	\N	\N
+-- includeArrayIndex creates a new field
+10	0	old
+20	1	old
+-- includeArrayIndex naming the unwound field
+The 'includeArrayIndex' of '$unwind' must name a field other than the one that is unwound

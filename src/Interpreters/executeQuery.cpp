@@ -1,3 +1,5 @@
+#include "config.h"
+
 #include <Common/DateLUTImpl.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/CurrentThread.h>
@@ -111,6 +113,10 @@
 #include <Core/SettingsFields.h>
 #include <Core/SettingsEnums.h>
 #include <Core/SettingsSecrets.h>
+#if USE_RAPIDJSON
+#include <Parsers/Mongo/ParserMongoQuery.h>
+#include <Parsers/Mongo/parseMongoQuery.h>
+#endif
 
 #include <IO/CompressionMethod.h>
 
@@ -178,6 +184,7 @@ namespace Setting
 {
     extern const SettingsBool allow_experimental_analyzer;
     extern const SettingsBool enable_json_ast_dialect;
+    extern const SettingsBool allow_experimental_mongo_dialect;
     extern const SettingsBool allow_experimental_polyglot_dialect;
     extern const SettingsBool allow_experimental_kusto_dialect;
     extern const SettingsBool allow_experimental_prql_dialect;
@@ -2404,6 +2411,9 @@ static BlockIO executeQueryImpl(
     String query_for_logging;
     UInt64 normalized_query_hash = 0;
     size_t log_queries_cut_to_length = settings[Setting::log_queries_cut_to_length];
+    /// Whether the text was parsed as a Mongo statement, whose `{` are the documents of the
+    /// statement rather than query parameters.
+    bool parsed_as_mongo = false;
 
     /// Parse the query from string.
     try
@@ -2461,6 +2471,33 @@ static BlockIO executeQueryImpl(
                 end,
                 settings[Setting::allow_experimental_polyglot_dialect]);
             out_ast = parseQuery(parser, begin, end, "", max_query_size_for_query_text, max_parser_depth_for_query_text, max_parser_backtracks_for_query_text);
+        }
+        else if (settings[Setting::dialect] == Dialect::mongo && use_request_dialect)
+        {
+            /// A leading `SET` must bypass the experimental gate: it is how a session that
+            /// turned `allow_experimental_mongo_dialect` back off runs `SET dialect = 'clickhouse'`
+            /// to leave the dialect, the same way the `clickhouse_json` dialect escapes below.
+            /// The Mongo parser itself parses a `SET` with the ClickHouse parser, so only the
+            /// gate needs the exception. A Mongo statement always starts with the collection
+            /// path (`db.<collection>.<command>`), never with a bare `SET` word.
+            const bool is_set_escape = isClickHouseJSONSetEscape(
+                begin, end, max_query_size_for_query_text, max_parser_depth_for_query_text, max_parser_backtracks_for_query_text);
+#if USE_RAPIDJSON
+            if (!settings[Setting::allow_experimental_mongo_dialect] && !is_set_escape)
+                throw Exception(
+                    ErrorCodes::SUPPORT_IS_DISABLED,
+                    "Support for the MongoDB dialect is disabled (turn on setting 'allow_experimental_mongo_dialect')");
+            Mongo::ParserMongoQuery parser(max_query_size_for_query_text, max_parser_depth_for_query_text, max_parser_backtracks_for_query_text);
+            out_ast = parseMongoQuery(parser, begin, end, "", max_query_size_for_query_text, max_parser_depth_for_query_text, max_parser_backtracks_for_query_text);
+            parsed_as_mongo = !is_set_escape;
+#else
+            /// A build without rapidjson must not strand a session whose dialect was set to
+            /// `mongo` either: a `SET` is plain SQL and needs nothing of the Mongo parser.
+            if (!is_set_escape)
+                throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Support for the MongoDB dialect is disabled: ClickHouse is built without rapidjson");
+            ParserQuery parser(end, settings[Setting::allow_settings_after_format_in_insert], settings[Setting::implicit_select]);
+            out_ast = parseQuery(parser, begin, end, "", max_query_size_for_query_text, max_parser_depth_for_query_text, max_parser_backtracks_for_query_text);
+#endif
         }
         else if (settings[Setting::dialect] == Dialect::trino && use_request_dialect)
         {
@@ -2717,7 +2754,7 @@ static BlockIO executeQueryImpl(
         /// DDL parts (database, table, columns, storage, targets) while preserving placeholders
         /// in the SELECT body, which form the view's parameterizable interface.
         bool probably_has_params = find_first_symbols<'{'>(begin, end) != end;
-        if (out_ast && probably_has_params)
+        if (out_ast && probably_has_params && !parsed_as_mongo)
         {
             ReplaceQueryParameterVisitor visitor(context->getQueryParameters());
             visitor.visit(out_ast);

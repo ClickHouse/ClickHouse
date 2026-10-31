@@ -1,0 +1,12 @@
+-- the grants of the reader, after the implied ones were revoked
+GRANT SELECT ON <database>.probe_collection TO reader_<database>
+-- the existence probes of the endpoint answer for it
+1
+1
+-- and so do the shape probes
+1	1	2
+1
+-- a user who may create a table in the database may not create the database
+the grant CREATE DATABASE is missing
+-- while the probe that replaces it answers
+1
