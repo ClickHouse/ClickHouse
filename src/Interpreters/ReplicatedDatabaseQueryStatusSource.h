@@ -22,6 +22,11 @@ public:
 
 protected:
     ExecutionStatus checkStatus(const String & host_id) override;
+    /// Only opt into the atomic list-with-data when we wait on finished/<host_id> (whose payload is a serialized
+    /// ExecutionStatus). Under database_replicated_enforce_synchronous_settings getNodesToWait() waits on synced/,
+    /// whose nodes carry an empty payload; caching that would make checkStatus deserialize "" and keep the (-1)
+    /// sentinel, so fall back to the per-host finished/ get in that mode.
+    bool wantsFinishedNodeData() const override;
     Chunk generateChunkWithUnfinishedHosts() const override;
     Strings getNodesToWait() override;
     Chunk handleTimeoutExceeded() override;
