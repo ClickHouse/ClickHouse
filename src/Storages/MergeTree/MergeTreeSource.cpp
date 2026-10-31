@@ -159,6 +159,11 @@ std::string MergeTreeSource::getName() const
     return processor->getName();
 }
 
+bool MergeTreeSource::hasVirtualRowConversions() const
+{
+    return processor->hasVirtualRowConversions();
+}
+
 void MergeTreeSource::cancel(CancelReason reason) noexcept
 {
     if (reason == CancelReason::PartialResult && keep_reading_on_partial_result)
