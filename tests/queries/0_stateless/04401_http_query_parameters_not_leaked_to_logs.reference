@@ -15,3 +15,5 @@
 1
 --- the clickhouse.uri span attribute hides the query text ---
 1
+--- the SQL-defined handler hides its receive parameter and param_* in the Request URI line ---
+0	1
