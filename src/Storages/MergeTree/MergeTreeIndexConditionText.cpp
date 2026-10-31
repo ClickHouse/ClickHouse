@@ -1352,10 +1352,14 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
         if (patterns.size() != 1)
             return false;
 
+        /// The projection text index reader cannot evaluate a pattern-only query, so it must not be `Exact`
+        /// for it: that would drop the original predicate. See the same exclusion for `like` below.
+        const auto read_mode = is_projection_index ? getHintOrNoneMode() : TextIndexDirectReadMode::Exact;
+
         out.function = RPNElement::FUNCTION_LIKE;
         out.text_search_queries.emplace_back(
             std::make_shared<TextSearchQuery>(
-                function_name, TextSearchMode::Any, TextIndexDirectReadMode::Exact,
+                function_name, TextSearchMode::Any, read_mode,
                 VectorWithMemoryTracking<String>(), std::move(patterns)));
         return true;
     };
