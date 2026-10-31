@@ -179,14 +179,21 @@ void TimeSeriesDeduplicationCache::markRowsAsWritten(PendingRows && pending_rows
 {
     PendingRows pending_rows = std::move(pending_rows_);
 
+    std::vector<KeyHash> key_hashes;
+    std::vector<Cache::MappedPtr> written_rows;
+    key_hashes.reserve(pending_rows.size());
+    written_rows.reserve(pending_rows.size());
+
     /// A row already in the cache is replaced: either its values have changed, or a concurrent insert has just written the same
     /// row, and then the time of writing is correct anyway.
     auto now = std::chrono::steady_clock::now();
     for (const auto & [key_hash, row_hash] : pending_rows)
     {
-        WrittenRow written_row{.row_hash = row_hash, .written_at = now};
-        cache.set(key_hash, std::make_shared<WrittenRow>(written_row));
+        key_hashes.push_back(key_hash);
+        written_rows.push_back(std::make_shared<WrittenRow>(WrittenRow{.row_hash = row_hash, .written_at = now}));
     }
+
+    cache.setMany(key_hashes, written_rows);
 }
 
 }
