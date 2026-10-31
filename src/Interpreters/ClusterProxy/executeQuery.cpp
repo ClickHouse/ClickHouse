@@ -1581,7 +1581,7 @@ bool isSuitableForInsertSelectWithParallelReplicas(const ASTPtr & select, const 
 /// find and remove ReadFromParallelRemoteReplicasStep in query plan,
 /// also returns the parallel replicas coordinator, connection pools and local replica index
 /// stored in ReadFromParallelRemoteReplicasStep, so the remote-pool pass can reuse them.
-LocalPlanParallelReplicasInfo dropReadFromRemoteInPlan(QueryPlan & query_plan)
+std::optional<LocalPlanParallelReplicasInfo> dropReadFromRemoteInPlan(QueryPlan & query_plan)
 {
     struct Frame
     {
@@ -1604,6 +1604,10 @@ LocalPlanParallelReplicasInfo dropReadFromRemoteInPlan(QueryPlan & query_plan)
             const auto * step = frame.node->step.get();
             if (const auto * read_from_remote = typeid_cast<const ReadFromParallelRemoteReplicasStep *>(step))
             {
+                /// Without a local replica this step is the plan's only reading step.
+                if (!read_from_remote->getExcludePoolIndex())
+                    return {};
+
                 auto & children = frame.parent->children;
                 for (auto it = begin(children); it != end(children); ++it)
                 {
