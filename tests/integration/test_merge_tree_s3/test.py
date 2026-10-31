@@ -756,9 +756,12 @@ def test_s3_disk_reads_on_unstable_connection(cluster, node_name):
     node.query(
         "INSERT INTO s3_test SELECT today(), *, toString(*) FROM system.numbers LIMIT 9000000"
     )
+    # The columns cache is disabled, otherwise the repeated reads are served from it, not from S3.
     for i in range(30):
         print(f"Read sequence {i}")
-        assert node.query("SELECT sum(id) FROM s3_test").splitlines() == [
+        assert node.query(
+            "SELECT sum(id) FROM s3_test", settings={"use_columns_cache": 0}
+        ).splitlines() == [
             "40499995500000"
         ]
     check_no_objects_after_drop(cluster)
