@@ -6,6 +6,7 @@
 #include <Functions/extractTimeZoneFromFunctionArguments.h>
 
 #include <Interpreters/Context.h>
+#include <Common/DateLUT.h>
 
 #include <IO/WriteHelpers.h>
 #include <Common/assert_cast.h>
@@ -16,12 +17,14 @@ namespace DB
 namespace Setting
 {
     extern const SettingsBool allow_nonconst_timezone_arguments;
+    extern const SettingsBool to_timezone_requires_constant_timezone;
 }
 
 namespace ErrorCodes
 {
-    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
+    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+    extern const int ILLEGAL_COLUMN;
 }
 
 namespace
@@ -29,14 +32,47 @@ namespace
 class ExecutableFunctionToTimeZone final : public IExecutableFunction
 {
 public:
-    explicit ExecutableFunctionToTimeZone() = default;
+    explicit ExecutableFunctionToTimeZone(bool requires_constant_timezone_)
+        : requires_constant_timezone(requires_constant_timezone_) {}
 
     String getName() const override { return "toTimezone"; }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & /*result_type*/, size_t /*input_rows_count*/) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t /*input_rows_count*/) const override
     {
+        if (arguments.size() > 1 && requires_constant_timezone)
+        {
+            /// The result type has a single time zone, therefore a non-constant time zone
+            /// argument cannot be honored: silently returning wrong values is not allowed.
+            const auto & tz_column = arguments[1].column;
+            if (!tz_column || !isColumnConst(*tz_column))
+                throw Exception(ErrorCodes::ILLEGAL_COLUMN,
+                    "Illegal column {} of time zone argument of function {}, must be a constant string",
+                    arguments[1].name, getName());
+
+            /// During type resolution a non-constant time zone argument is not visible as a
+            /// constant column, so the resolved result type may have fallen back to the time
+            /// zone of the first argument. The analyzer can replace this function with a folded
+            /// constant afterwards (e.g. when the arguments come from a single-row subquery),
+            /// and such a folded constant would silently show values in the wrong time zone.
+            /// Reject the mismatched result type at execution for the same reason.
+            /// An empty time zone name selects the default (session) time zone, so it has to
+            /// match as well.
+            std::string expected_tz_name = extractTimeZoneNameFromColumn(tz_column.get(), arguments[1].name);
+            if (expected_tz_name.empty())
+                expected_tz_name = DateLUT::instance().getTimeZone();
+
+            const auto * timezone_mixin = dynamic_cast<const TimezoneMixin *>(result_type.get());
+            if (timezone_mixin && timezone_mixin->getTimeZone().getTimeZone() != expected_tz_name)
+                throw Exception(ErrorCodes::ILLEGAL_COLUMN,
+                    "Illegal column {} of time zone argument of function {}, must be a constant string",
+                    arguments[1].name, getName());
+        }
+
         return arguments[0].column;
     }
+
+private:
+    bool requires_constant_timezone;
 };
 
 class FunctionBaseToTimeZone final : public IFunctionBase
@@ -44,9 +80,11 @@ class FunctionBaseToTimeZone final : public IFunctionBase
 public:
     FunctionBaseToTimeZone(
         bool is_constant_timezone_,
+        bool requires_constant_timezone_,
         DataTypes argument_types_,
         DataTypePtr return_type_)
         : is_constant_timezone(is_constant_timezone_)
+        , requires_constant_timezone(requires_constant_timezone_)
         , argument_types(std::move(argument_types_))
         , return_type(std::move(return_type_)) {}
 
@@ -66,7 +104,7 @@ public:
 
     ExecutableFunctionPtr prepare(const ColumnsWithTypeAndName & /*arguments*/) const override
     {
-        return std::make_unique<ExecutableFunctionToTimeZone>();
+        return std::make_unique<ExecutableFunctionToTimeZone>(requires_constant_timezone);
     }
 
     bool hasInformationAboutMonotonicity() const override { return is_constant_timezone; }
@@ -79,6 +117,7 @@ public:
 
 private:
     bool is_constant_timezone;
+    bool requires_constant_timezone;
     DataTypes argument_types;
     DataTypePtr return_type;
 };
@@ -92,15 +131,17 @@ public:
     String getName() const override { return name; }
 
     size_t getNumberOfArguments() const override { return 2; }
-    static FunctionOverloadResolverPtr create(ContextPtr context) { return std::make_unique<ToTimeZoneOverloadResolver>(context); }
+    static FunctionOverloadResolverPtr create(ContextPtr context)
+    {
+        /// The setting is read at creation time, from the context of the query that uses
+        /// the function - the same behavior as in the other functions with time zone arguments.
+        return std::make_unique<ToTimeZoneOverloadResolver>(context);
+    }
     explicit ToTimeZoneOverloadResolver(ContextPtr context)
         : allow_nonconst_timezone_arguments(context->getSettingsRef()[Setting::allow_nonconst_timezone_arguments])
+        , requires_constant_timezone(context->getSettingsRef()[Setting::to_timezone_requires_constant_timezone])
     {}
 
-    /// Not declarative: the timezone argument's constness requirement is
-    /// gated by the `allow_nonconst_timezone_arguments` setting, which the DSL
-    /// cannot express. With the setting enabled, a non-constant timezone is
-    /// accepted and the result becomes tz-less `DateTime`/`DateTime64`.
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         if (arguments.size() != 2)
@@ -132,10 +173,11 @@ public:
         for (size_t i = 0; i < arguments.size(); ++i)
             data_types[i] = arguments[i].type;
 
-        return std::make_unique<FunctionBaseToTimeZone>(is_constant_timezone, data_types, result_type);
+        return std::make_unique<FunctionBaseToTimeZone>(is_constant_timezone, requires_constant_timezone, data_types, result_type);
     }
 private:
     const bool allow_nonconst_timezone_arguments;
+    const bool requires_constant_timezone;
 };
 
 }
