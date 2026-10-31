@@ -409,6 +409,14 @@ def parquet_files(path):
     }
 
 
+def partition_file_ids(path, partition):
+    return {
+        name.split("_")[0]
+        for name in os.listdir(os.path.join(path, partition))
+        if name.endswith(".parquet")
+    }
+
+
 def assert_rows(instance, source, columns, expected):
     result = instance.query(f"SELECT {columns} FROM {source} ORDER BY id")
     assert result == "".join("\t".join(map(str, row)) + "\n" for row in expected)
@@ -522,14 +530,27 @@ def test_replaced_file_groups(started_cluster, table_version):
         expected += [(i, i * 7) for i in range(10, 15)]
         assert_rows(instance, source, "id, v", expected)
 
-        # B: a partitioned table, insert_overwrite of one partition.
+        # B: a partitioned table, insert_overwrite of one partition, then of the table.
         path = os.path.join(tmp_dir, f"{name}_partitioned")
         prefix = f"{name}_partitioned/"
         source = f"hudi(s3, filename='{prefix}')"
         rows = [(i, "x/a" if i < 15 else "y/a", i * 7, 1) for i in range(30)]
-        write_hudi_table(spark, path, rows, "insert", table_version, True)
+        write_hudi_table(
+            spark,
+            path,
+            rows,
+            "insert",
+            table_version,
+            True,
+            {
+                "hoodie.copyonwrite.insert.auto.split": "false",
+                "hoodie.copyonwrite.insert.split.size": "5",
+            },
+        )
         assert os.path.isdir(os.path.join(path, "x", "a"))
         assert os.path.isdir(os.path.join(path, "y", "a"))
+        assert len(partition_file_ids(path, "x/a")) >= 2
+        assert len(partition_file_ids(path, "y/a")) >= 2
         files = parquet_files(path)
         write_hudi_table(
             spark,
@@ -545,6 +566,22 @@ def test_replaced_file_groups(started_cluster, table_version):
         expected = [(i, "x/a", i * 100) for i in range(5)] + [
             (i, "y/a", i * 7) for i in range(15, 30)
         ]
+        assert_rows(instance, source, "id, p, v", expected)
+
+        # insert_overwrite_table replaces the file groups of every partition.
+        files = parquet_files(path)
+        write_hudi_table(
+            spark,
+            path,
+            [(i, "x/a", i * 1000, 3) for i in range(5)],
+            "insert_overwrite_table",
+            table_version,
+            True,
+        )
+        assert len(completed_replace_commits(path, table_version)) == 2
+        assert files <= parquet_files(path)
+        upload_hudi_table(minio_client, bucket, path, prefix)
+        expected = [(i, "x/a", i * 1000) for i in range(5)]
         assert_rows(instance, source, "id, p, v", expected)
 
         if table_version == 9:
