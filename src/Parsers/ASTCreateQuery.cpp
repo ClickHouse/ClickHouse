@@ -1282,6 +1282,11 @@ bool ASTCreateQuery::isParameterizedView() const
     return false;
 }
 
+bool ASTCreateQuery::isAliasEngine() const
+{
+    return storage && storage->engine && storage->engine->name == "Alias";
+}
+
 NameToNameMap ASTCreateQuery::getQueryParameters() const
 {
     if (!select || !isParameterizedView())

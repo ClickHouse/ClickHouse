@@ -1,0 +1,8 @@
+Read through the alias over a SQL SECURITY INVOKER view
+6
+Read through the alias over a Merge table
+30
+Reading the underlying base table directly is still denied
+ACCESS_DENIED
+Reading the INVOKER view directly is still denied (view runs as the reader)
+ACCESS_DENIED
