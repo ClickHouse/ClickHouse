@@ -11,12 +11,14 @@
 
 #if USE_AVRO
 
+#include <Columns/ColumnTuple.h>
 #include <Processors/Formats/Impl/AvroRowInputFormat.h>
 #include <Processors/Formats/Impl/JSONObjectEachRowRowOutputFormat.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/PositionDeleteTransform.h>
 #include <base/find_symbols.h>
 #include <Common/assert_cast.h>
 #include <Common/logger_useful.h>
+#include <Common/typeid_cast.h>
 
 namespace DB::ErrorCodes
 {
@@ -471,6 +473,31 @@ ParsedManifestFileEntryPtr AvroForIcebergDeserializer::getParsedManifestFileEntr
     return parsed_manifest_file_entries[row_index];
 }
 
+namespace
+{
+
+/// Resolves a path made only of named Tuple elements, giving the same column and type as `IDataType::getSubcolumn`.
+std::optional<std::pair<ColumnPtr, DataTypePtr>> tryGetTupleElement(ColumnPtr column, DataTypePtr type, std::string_view path)
+{
+    while (true)
+    {
+        const auto * tuple_type = typeid_cast<const DataTypeTuple *>(type.get());
+        if (!tuple_type)
+            return {};
+        const size_t dot = path.find('.');
+        const auto position = tuple_type->tryGetPositionByName(path.substr(0, dot));
+        if (!position)
+            return {};
+        column = assert_cast<const ColumnTuple &>(*column).getColumnPtr(*position);
+        type = tuple_type->getElement(*position);
+        if (dot == std::string_view::npos)
+            return std::make_pair(std::move(column), std::move(type));
+        path.remove_prefix(dot + 1);
+    }
+}
+
+}
+
 std::optional<std::pair<ColumnPtr, DataTypePtr>> & AvroForIcebergDeserializer::extractSubcolumnWithType(const std::string & path) const
 {
     // First, try to read from cache with shared lock (for concurrent reads)
@@ -490,7 +517,11 @@ std::optional<std::pair<ColumnPtr, DataTypePtr>> & AvroForIcebergDeserializer::e
         return it->second;
 
     // Populate cache
-    if (parsed_column_data_type->hasSubcolumn(path))
+    if (auto element = tryGetTupleElement(parsed_column, parsed_column_data_type, path))
+    {
+        cache_extracted_subcolumns_with_types[path] = std::move(element);
+    }
+    else if (parsed_column_data_type->hasSubcolumn(path))
     {
         auto column = parsed_column_data_type->getSubcolumn(path, parsed_column);
         auto data_type = parsed_column_data_type->getSubcolumnType(path);
