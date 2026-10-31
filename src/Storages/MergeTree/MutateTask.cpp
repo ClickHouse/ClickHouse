@@ -653,7 +653,7 @@ static NameSet collectIndicesRebuiltByMutation(
         if (command.type == MutationCommand::Type::READ_COLUMN)
         {
             DataTypePtr old_type;
-            if (auto part_column = part->tryGetColumn(command.column_name))
+            if (auto part_column = part->tryGetColumnForTable(command.column_name, metadata_snapshot->getColumns()))
                 old_type = part_column->type;
             else if (const auto * missing = serialization_infos.getMissingColumnInfo(markerName(command.column_name));
                      missing && !missing->type_name.empty())
