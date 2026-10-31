@@ -42,18 +42,20 @@ namespace ErrorCodes
 struct StorageObjectStorageQuerySettings
 {
     /// Insert settings:
-    bool truncate_on_insert;
-    bool create_new_file_on_insert;
+    bool truncate_on_insert = false;
+    bool create_new_file_on_insert = false;
 
     /// Schema inference settings:
-    bool schema_inference_use_cache;
-    SchemaInferenceMode schema_inference_mode;
+    bool schema_inference_use_cache = false;
+    SchemaInferenceMode schema_inference_mode = SchemaInferenceMode::DEFAULT;
 
     /// List settings:
-    bool skip_empty_files;
-    size_t list_object_keys_size;
-    bool throw_on_zero_files_match;
-    bool ignore_non_existent_file;
+    bool skip_empty_files = false;
+    size_t list_object_keys_size = 0;
+    bool throw_on_zero_files_match = false;
+    bool ignore_non_existent_file = false;
+    /// Number of threads used to list a globbed path in parallel (1 = serial listing).
+    size_t list_object_parallelism = 1;
 };
 
 
