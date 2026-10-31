@@ -94,17 +94,23 @@ set parallel_replicas_for_queries_with_multiple_tables=0;
 select count() > 0 from X as s inner join Y as j on s.id = j.id where exists (select 1 from Z final where Z.id = s.id)
     settings enable_parallel_replicas = 2;
 
--- That analyzer pass turns parallel replicas off only for the query nodes it leaves after having met the
--- correlated subquery, so a subquery table expression that precedes the correlated subquery in the query tree
--- keeps them on. With the setting disabled the kill switch has to reach that subquery as well, even though the
--- enclosing multi-table query already runs without parallel replicas because of the correlated subquery. The
--- probe is the same `FINAL` refusal: with the setting enabled the query is refused (the control that the probe
--- is not vacuous), with the setting disabled it must run.
+-- That analyzer pass also turns parallel replicas off for the subqueries of the query that evaluates the
+-- correlated subquery, because decorrelation may clone their plans, so this `FINAL` read runs for both values
+-- of the setting.
 set parallel_replicas_for_queries_with_multiple_tables=1;
 select count() > 0 from (select id from Z final) as s inner join Y as j on s.id = j.id where exists (select 1 from X where X.id = s.id)
+    settings enable_parallel_replicas = 2;
+
+-- A subquery table expression joined with a subquery that evaluates a correlated subquery keeps parallel
+-- replicas on. With the setting disabled the kill switch has to reach it as well, even though the enclosing
+-- multi-table query already runs without parallel replicas because of the correlated subquery. The probe is
+-- the same `FINAL` refusal: with the setting enabled the query is refused (the control that the probe is not
+-- vacuous), with the setting disabled it must run.
+set parallel_replicas_for_queries_with_multiple_tables=1;
+select count() > 0 from (select id from Z final) as s inner join (select id from Y where exists (select 1 from X where X.id = Y.id)) as j on s.id = j.id
     settings enable_parallel_replicas = 2; -- { serverError SUPPORT_IS_DISABLED }
 set parallel_replicas_for_queries_with_multiple_tables=0;
-select count() > 0 from (select id from Z final) as s inner join Y as j on s.id = j.id where exists (select 1 from X where X.id = s.id)
+select count() > 0 from (select id from Z final) as s inner join (select id from Y where exists (select 1 from X where X.id = Y.id)) as j on s.id = j.id
     settings enable_parallel_replicas = 2;
 
 drop table X;
