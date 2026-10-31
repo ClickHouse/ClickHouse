@@ -1,5 +1,7 @@
 #include <Processors/Transforms/ArrayJoinTransform.h>
 #include <Interpreters/ArrayJoinAction.h>
+#include <Interpreters/ExpressionActions.h>
+#include <Functions/IFunction.h>
 #include <Core/Field.h>
 
 namespace DB
@@ -54,8 +56,22 @@ Chunk ArrayJoinTransform::generate()
     if (!canGenerate())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Can't generate chunk in ArrayJoinTransform");
 
-    auto block = result_iterator->next();
+    auto block = result_iterator->next(&getCancellationFlag());
+    if (isCancelled())
+        return Chunk(getOutputPort().getHeader().cloneEmptyColumns(), 0);
     return Chunk(block.getColumns(), block.rows());
+}
+
+void ArrayJoinTransform::onCancel() noexcept
+{
+    IInflatingTransform::onCancel();
+    if (!array_join->element_filter)
+        return;
+    for (const auto & node : array_join->element_filter->getNodes())
+    {
+        if (node.type == ActionsDAG::ActionType::FUNCTION && node.function)
+            node.function->cancelExecution();
+    }
 }
 
 }

@@ -4,6 +4,7 @@
 #include <Core/Names.h>
 #include <Common/PODArray.h>
 
+#include <atomic>
 #include <map>
 
 namespace DB
@@ -62,13 +63,14 @@ public:
     explicit ArrayJoinResultIterator(const ArrayJoinAction * array_join_, Block block_, bool enable_lazy_columns_replication_);
     ~ArrayJoinResultIterator() = default;
 
-    Block next();
+    /// Returns an empty block without columns once is_cancelled is set (only the element-filter path checks it).
+    Block next(const std::atomic<bool> * is_cancelled);
     bool hasNext() const;
 
 private:
     /// Element-space filtered variant of next(): runs the element filter over one window (row columns
     /// it reads are broadcast to the elements) and expands only the survivors.
-    Block nextWithElementFilter();
+    Block nextWithElementFilter(const std::atomic<bool> * is_cancelled);
 
     void initAnyArray();
     const PaddedPODArray<UInt64> & anyOffsets() const;
