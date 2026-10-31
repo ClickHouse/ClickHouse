@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
-# Tags: no-random-detach, no-replicated-database
+# Tags: no-random-detach, no-replicated-database, no-fasttest
 # no-random-detach: test uses DETACH/ATTACH itself
 # no-replicated-database: like the rest of the reattach suite
+# no-fasttest: `predictXGBoost` is not built in the fast test
 
 # `reattach_tables_before_query_execution` walks a scalar `WITH` binding used through a named-tuple field or
 # called as a lambda, and skips a query calling a model function that reads a dictionary named in its arguments.
