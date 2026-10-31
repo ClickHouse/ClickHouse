@@ -132,6 +132,14 @@ public:
         const Identifier & table_identifier,
         const ContextPtr & context);
 
+    /// When a table identifier cannot be resolved, and its database can tell why the table is missing
+    /// (see `IDatabase::canExplainMissingTable`), asks the database for the table again with the throwing
+    /// `getTable`, so that its exception reaches the user. For example, in clickhouse-local
+    /// `SELECT * FROM 'data.json'` reports that the file does not exist, with its resolved path.
+    static void throwIfDatabaseCanExplainMissingTable(
+        const Identifier & table_identifier,
+        const ContextPtr & context);
+
     QueryTreeNodePtr tryResolveIdentifierFromCompoundExpression(
         const Identifier & expression_identifier,
         size_t identifier_bind_size,

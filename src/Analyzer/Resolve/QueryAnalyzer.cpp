@@ -5137,6 +5137,10 @@ void QueryAnalyzer::initializeQueryJoinTreeNode(QueryTreeNodePtr & join_tree_nod
 
                 if (!resolved_identifier)
                 {
+                    /// The database may know why the table is missing, for example that the file
+                    /// named by `FROM 'data.json'` in clickhouse-local does not exist.
+                    IdentifierResolver::throwIfDatabaseCanExplainMissingTable(from_table_identifier.getIdentifier(), scope.context);
+
                     /// Suggest a similar table name, possibly from another database (e.g.
                     /// `system.functions` for a bare `functions`), matching the old analyzer's hint.
                     auto [hint_database_name, hint_table_name]

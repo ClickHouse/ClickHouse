@@ -27,6 +27,11 @@ public:
 
     StoragePtr tryGetTable(const String & table_name, ContextPtr context) const override;
 
+    /// When no database has the table, the first one that can explain why it is missing throws its exception.
+    StoragePtr getTable(const String & table_name, ContextPtr context) const override;
+
+    bool canExplainMissingTable(const String & table_name, ContextPtr context) const override;
+
     void createTable(ContextPtr context, const String & table_name, const StoragePtr & table, const ASTPtr & query) override;
 
     void dropTable(ContextPtr context, const String & table_name, bool sync) override;
