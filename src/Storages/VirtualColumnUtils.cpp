@@ -626,9 +626,9 @@ void addRequestedFileLikeStorageVirtualsToChunk(
             else
                 chunk.addColumn(virtual_column.type->createColumnConstWithDefaultValue(chunk.getNumRows())->convertToFullColumnIfConst());
         }
-        else if (!isReaderOnlyVirtualColumn(virtual_column.name))
+        else
         {
-            /// Any other virtual column, except the reader-only ones the caller adds later, is a Hive partition column.
+            /// All other file-like virtual columns are hive partition columns. HTTP sources remove their `_headers` before the call.
             if (!hive_map)
             {
                 hive_map = HivePartitioningUtils::parseHivePartitioningKeysAndValues(virtual_values.path);
