@@ -49,6 +49,9 @@ mv_analyzer.xml                                          # MATERIALIZED column
 new_json_type.xml                                        # JSON column
 numeric_indexed_vector.xml                               # a function needs the original narrow type
 optimize_window_funnel.xml                               # a function needs the original narrow type
+polymorphic_parts_l.xml                                  # type UInt64 in CREATE ... AS hits_10m_single
+polymorphic_parts_m.xml                                  # type UInt64 in CREATE ... AS hits_10m_single
+polymorphic_parts_s.xml                                  # type UInt64 in CREATE ... AS hits_10m_single
 prewhere_column_sizes_pruned_parts.xml                   # JSON column
 prewhere_subcolumns.xml                                  # JSON column
 projection_materialize.xml                               # ALTER ADD_PROJECTION, ALTER DROP_PROJECTION
@@ -57,6 +60,7 @@ read_from_comp_parts.xml                                 # type UInt64 in CREATE
 scalar.xml                                               # AggregateFunction column
 scalar2.xml                                              # AggregateFunction column
 serialization_pool_lookup.xml                            # PREWHERE on a Nested subcolumn
+set_index.xml                                            # assertion on the parts of a MergeTree table
 skip_index_planning_with_patch_parts.xml                 # lightweight UPDATE
 sorted_key_prefix_runs.xml                               # ReplacingMergeTree
 streaming_queries_read_round.xml                         # STREAM, MATERIALIZE STATISTICS
@@ -65,10 +69,15 @@ text_index_merge.xml                                     # OPTIMIZE DRY RUN
 text_index_partially_materialized.xml                    # ALTER ADD_INDEX
 text_index_trivial_count.xml                             # assertion on the parts of a MergeTree table
 threshold_top_k_merge.xml                                # type UInt64 in CREATE ... AS SELECT
+timeseries_id_to_group.xml                               # timeSeriesIdToGroup does not know the ids of rows written to Iceberg
+timeseries_to_grid_aggregation_functions.xml             # assertion on the parts of a MergeTree table
 timeseries_to_grid_deserialization.xml                   # AggregateFunction column
+ttl_column_skip_untouched_blocks.xml                     # TRUNCATE
+ttl_group_by_consecutive_keys.xml                        # TRUNCATE
 uniq_combined_large_states.xml                           # AggregateFunction column
 uniq_combined_merge.xml                                  # AggregateFunction column
 uniq_states_read_merge.xml                               # AggregateFunction column
 uniq_stored.xml                                          # AggregateFunction column
 vector_binary_serialization.xml                          # AggregateFunction column
 window_transform.xml                                     # type UInt64 in CREATE ... AS SELECT
+workload_cpu_scheduling.xml                              # assertion on the CPU slots of a MergeTree read
