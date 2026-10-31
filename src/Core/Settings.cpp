@@ -10319,7 +10319,7 @@ At or above the threshold, and also when there is no estimate, the join splits t
 The largest value, `18446744073709551615`, always builds one part, also when there is no estimate. `0` always splits the hash table.
 The estimate comes from the query plan, or from the statistics of earlier runs of the same join (see `collect_hash_table_stats_during_joins`).
 `ASOF` joins never get an estimate, and with `query_plan_optimize_join_order_limit = 0` no join gets one.
-A right table known to be empty, such as a `MergeTree` table without data parts, counts as 0 rows for `INNER`, `RIGHT` and `LEFT SEMI` joins, which return no rows with it.
+A right table known to be empty, such as a `MergeTree` table without data parts, is estimated as 0 rows.
 )", 0, \
         {"25.5", 0, 100'000, "New setting"}, \
         {"25.4", 0, 0, "New setting"}, \

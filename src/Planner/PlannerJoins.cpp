@@ -1209,12 +1209,7 @@ static std::shared_ptr<IJoin> tryCreateJoin(
                 && static_cast<double>(*row_store_output) >= static_cast<double>(*params.rhs_size_estimation) * row_store_ratio));
     table_join->setRowStoreEnabled(enable_row_store);
 
-    /// A known-empty right side counts as 0 rows for the joins that then return nothing and stop reading the left side.
-    /// The other kinds still probe every left row, and the parallel layout spreads that probe over more streams.
-    const bool rhs_empty = params.rhs_known_empty
-        && (isInnerOrRight(table_join->kind()) || (isLeft(table_join->kind()) && table_join->strictness() == JoinStrictness::Semi));
-    const auto rhs_rows = rhs_empty ? std::optional<UInt64>(0) : params.rhs_size_estimation;
-    const auto build_layout = table_join->preferParallelHashLayout(rhs_rows, params.parallel_hash_join_threshold)
+    const auto build_layout = table_join->preferParallelHashLayout(params.rhs_size_estimation, params.parallel_hash_join_threshold)
         ? HashJoinBuildLayout::twoLevel(params.max_threads)
         : HashJoinBuildLayout::oneBucket(1);
 
