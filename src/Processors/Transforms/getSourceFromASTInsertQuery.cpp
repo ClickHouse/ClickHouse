@@ -357,6 +357,7 @@ String getInsertDataSchemaMismatchDescription(
     bool format_reads_numeric_into_bool = true;
     BoolValueIntoNumericColumn format_bool_value_into_numeric = BoolValueIntoNumericColumn::AllNumeric;
     bool format_stores_typed_numeric_values = false;
+    bool format_reads_logical_date_time_values_as_numbers = false;
     bool format_always_skips_unknown_fields = false;
     bool format_allows_missing_named_columns = true;
     bool format_read_rows_ahead_to_detect_header = false;
@@ -403,6 +404,7 @@ String getInsertDataSchemaMismatchDescription(
         format_reads_numeric_into_bool = schema_reader->readsNumericValueIntoBoolColumn();
         format_bool_value_into_numeric = schema_reader->readsBoolValueIntoNumericColumn();
         format_stores_typed_numeric_values = schema_reader->storesTypedNumericValues();
+        format_reads_logical_date_time_values_as_numbers = schema_reader->readsLogicalDateTimeValuesAsNumbers();
         format_always_skips_unknown_fields = schema_reader->alwaysSkipsUnknownFields();
         format_allows_missing_named_columns = schema_reader->allowsMissingNamedColumns();
         format_read_rows_ahead_to_detect_header = schema_reader->readRowsAheadToDetectHeaderAndFoundNone();
@@ -872,6 +874,17 @@ String getInsertDataSchemaMismatchDescription(
         /// `Array(Dynamic)`) means the actual value types are unknown at the type level. Treat both as
         /// compatible rather than risk a misleading explanation.
         if (which_inferred.isDynamic() || which_inferred.isVariant() || which_expected.isDynamic() || which_expected.isVariant())
+            return true;
+
+        /// `Avro` infers a logical `date` / `timestamp-*` as `Date32` / `DateTime64`, but the value is
+        /// physically an `int` / `long`, which `AvroDeserializer` reads with `insertNumber` into every
+        /// column that function supports (see `readsLogicalDateTimeValuesAsNumbers`), e.g. a `date` into
+        /// a `UInt8` column. Such a pair shares no supertype, so without this rule it would be reported
+        /// as a mismatch for a valid field.
+        if (format_reads_logical_date_time_values_as_numbers && (which_inferred.isDate32() || which_inferred.isDateTime64())
+            && (which_expected.isNativeInt() || which_expected.isNativeUInt() || which_expected.isFloat()
+                || which_expected.isDateOrDate32() || which_expected.isDateTime() || which_expected.isDateTime64()
+                || which_expected.isDecimal32() || which_expected.isDecimal64() || which_expected.isIPv4()))
             return true;
 
         const bool inferred_is_numeric = which_inferred.isInt() || which_inferred.isUInt() || which_inferred.isFloat();

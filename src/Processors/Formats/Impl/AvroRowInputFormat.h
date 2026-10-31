@@ -236,6 +236,11 @@ public:
     /// into the `UInt32`-backed `IPv4` column (see its `TypeIndex::IPv4` arm).
     NumericValueIntoIPv4Column readsNumericValueIntoIPv4Column() const override { return NumericValueIntoIPv4Column::AnyNumeric; }
 
+    /// An Avro `date` (inferred as `Date32`) is an `int` and a `timestamp-millis` / `timestamp-micros`
+    /// (inferred as `DateTime64`) is a `long`, and `createDeserializeFn` reads both with `insertNumber`
+    /// into any column it supports, regardless of the logical type.
+    bool readsLogicalDateTimeValuesAsNumbers() const override { return true; }
+
     /// If `allow_nullable_tuple_type` is false, a union [null, record] is converted to a plain
     /// Tuple instead of Nullable(Tuple). Schema inference passes
     /// schema_inference_allow_nullable_tuple_type here, because otherwise it would return a type

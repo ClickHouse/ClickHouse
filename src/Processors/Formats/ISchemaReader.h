@@ -287,6 +287,16 @@ public:
     /// destination (and vice versa) in such formats.
     virtual bool storesTypedNumericValues() const { return false; }
 
+    /// True when the schema reader reports a logical date / time type (`Date32`, `DateTime64`) for a
+    /// value that the format physically stores as a plain integer, and the parser reads that integer
+    /// into any integer-backed destination column as well. `Avro` infers an `int` annotated as `date`
+    /// as `Date32` and a `long` annotated as `timestamp-millis` / `timestamp-micros` as `DateTime64`,
+    /// while `AvroDeserializer` inserts the raw integer with `insertNumber` into a `UInt8`, `Int64`,
+    /// `Float64`, `Decimal32`, `IPv4`, ... column. A caller comparing an inferred schema against an
+    /// expected one uses this to know that such an inferred type is not a structure mismatch for
+    /// those destinations, even though it shares no supertype with them.
+    virtual bool readsLogicalDateTimeValuesAsNumbers() const { return false; }
+
     /// True when the parser skips input fields that are absent from the destination unconditionally,
     /// without consulting `input_format_skip_unknown_fields`. `Avro` recurses past a path with no
     /// matching column in `AvroDeserializer::createAction`, building a skip action for it, and the
