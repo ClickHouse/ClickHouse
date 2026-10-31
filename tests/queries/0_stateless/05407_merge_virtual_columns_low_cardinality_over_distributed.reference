@@ -1,0 +1,4 @@
+1	1	LowCardinality(String)	LowCardinality(String)	dist
+1	1	LowCardinality(String)	LowCardinality(String)	m
+dist	1
+m	1
