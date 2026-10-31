@@ -300,6 +300,12 @@ public:
         metadata.set(std::make_unique<StorageInMemoryMetadata>(metadata_));
     }
 
+    /// Same as above, but publishes an already built object instead of deep-copying it.
+    void setInMemoryMetadata(std::unique_ptr<const StorageInMemoryMetadata> && metadata_)
+    {
+        metadata.set(std::move(metadata_));
+    }
+
     void setInMemoryMetadataComment(const String & comment)
     {
         auto updated = std::make_unique<StorageInMemoryMetadata>(*metadata.get());
