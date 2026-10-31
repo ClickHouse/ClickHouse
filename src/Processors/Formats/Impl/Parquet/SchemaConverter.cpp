@@ -2002,7 +2002,7 @@ void SchemaConverter::processPrimitiveColumn(
     {
         throw Exception(ErrorCodes::INCORRECT_DATA, "Unexpected compound logical type for leaf column: {}", thriftToString(element));
     }
-    else if (logical.__isset.UNKNOWN)
+    else if (logical.__isset.UNKNOWN || (converted && static_cast<int>(*converted) == LEGACY_NULL_CONVERTED_TYPE))
     {
         /// This means all values are nulls. We could use DataTypeNothing here, or fall through to
         /// dispatch by physical type. Either way seems fine, currently we do the latter.
