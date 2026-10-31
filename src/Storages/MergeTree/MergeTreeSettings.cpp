@@ -3012,6 +3012,7 @@ struct MergeTreeSettingsImpl : public BaseSettings<MergeTreeSettingsTraits>
 
     /// Check that the values are sane taking also query-level settings into account.
     void sanityCheck(size_t background_pool_tasks, bool background_pool_auto_lowered) const;
+    void sanityCheckWithoutBackgroundPool() const;
 
     /// Subscript operators so that MergeTreeSetting::NAME can be used inside Impl methods.
     /// Delegate to `BaseSettings::operator[]` so the Impl->Data subobject offset is handled
@@ -3163,6 +3164,11 @@ void MergeTreeSettingsImpl::sanityCheck(size_t background_pool_tasks, bool backg
             background_pool_tasks);
     }
 
+    sanityCheckWithoutBackgroundPool();
+}
+
+void MergeTreeSettingsImpl::sanityCheckWithoutBackgroundPool() const
+{
     /// Only the Simple and StochasticSimple selectors read min_partition_age_to_force_merge_seconds,
     /// so only they can pre-empt the whole-partition (final) merge with a regular one.
     const auto merge_selector_algorithm = (*this)[MergeTreeSetting::merge_selector_algorithm].value;
@@ -3600,6 +3606,11 @@ bool MergeTreeSettings::needSyncPart(size_t input_rows, size_t input_bytes) cons
 void MergeTreeSettings::sanityCheck(size_t background_pool_tasks, bool background_pool_auto_lowered) const
 {
     impl->sanityCheck(background_pool_tasks, background_pool_auto_lowered);
+}
+
+void MergeTreeSettings::sanityCheckWithoutBackgroundPool() const
+{
+    impl->sanityCheckWithoutBackgroundPool();
 }
 
 void MergeTreeSettings::dumpToSystemMergeTreeSettingsColumns(MutableColumnsAndConstraints & params) const
