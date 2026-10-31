@@ -15,6 +15,12 @@ using KeeperIcebergRESTCatalogStorePtr = std::shared_ptr<KeeperIcebergRESTCatalo
 /// One warehouse of the Iceberg REST catalog (RFC: issue #114697).
 struct IcebergRESTCatalogWarehouse
 {
+    struct S3Location
+    {
+        String bucket;
+        String key;
+    };
+
     IcebergRESTCatalogWarehouse(
         String name_, String base_location_, KeeperIcebergRESTCatalogStorePtr store_, ObjectStoragePtr object_storage_);
 
@@ -25,17 +31,16 @@ struct IcebergRESTCatalogWarehouse
     const KeeperIcebergRESTCatalogStorePtr store;
     const ObjectStoragePtr object_storage;
 
-    /// Whether the S3 client of this warehouse can address `location`.
-    bool isInBucket(const String & location) const;
-    /// Throws `INCORRECT_DATA`. Callers validate client input with `isInBucket` first.
+    void validateLocation(const String & location) const;
     String objectKey(const String & location) const;
+
+private:
+    void validateLocation(const S3Location & location) const;
 };
 
 using IcebergRESTCatalogWarehousePtr = std::shared_ptr<const IcebergRESTCatalogWarehouse>;
 
 String stripTrailingSlashes(String location);
-/// The server reads only `s3://` locations. A bare key cannot be checked against the bucket.
-bool hasS3Scheme(const String & location);
 
 /// Experimental scaffolding. Currently, the server config holds the warehouse definition.
 /// It is only read on startup.
