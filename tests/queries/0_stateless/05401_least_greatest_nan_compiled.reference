@@ -1,0 +1,27 @@
+Float64 JIT off	1	1	1	1	1
+Float64 JIT off	2	1	1	1	1
+Float64 JIT off	3	nan	nan	nan	nan
+Float64 JIT off	4	inf	inf	inf	inf
+Float64 JIT off	5	-1	-1	2	2
+Float64 JIT on	1	1	1	1	1
+Float64 JIT on	2	1	1	1	1
+Float64 JIT on	3	nan	nan	nan	nan
+Float64 JIT on	4	inf	inf	inf	inf
+Float64 JIT on	5	-1	-1	2	2
+Float32 JIT off	1	1	1	1	1
+Float32 JIT off	2	1	1	1	1
+Float32 JIT off	3	nan	nan	nan	nan
+Float32 JIT off	4	inf	inf	inf	inf
+Float32 JIT off	5	-1	-1	2	2
+Float32 JIT on	1	1	1	1	1
+Float32 JIT on	2	1	1	1	1
+Float32 JIT on	3	nan	nan	nan	nan
+Float32 JIT on	4	inf	inf	inf	inf
+Float32 JIT on	5	-1	-1	2	2
+promoted JIT off	1	1	1	1
+promoted JIT on	1	1	1	1
+signed zero JIT off	inf	-inf	inf	-inf
+signed zero JIT on	inf	-inf	inf	-inf
+constant	1	1	1	1
+BFloat16	1	1	1	1
+legacy null	1	1

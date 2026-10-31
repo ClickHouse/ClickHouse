@@ -22,6 +22,8 @@
 namespace DB
 {
 
+struct IOSchedulingSettings;
+
 /// A consistent snapshot of a remote object's metadata, fetched in a single request.
 struct RemoteFileMetadata
 {
@@ -77,6 +79,10 @@ public:
     /// between listing and reading.
     /// Returns std::nullopt for non-remote or local file buffers.
     virtual std::optional<RemoteFileMetadata> getRemoteFileMetadata() const { return std::nullopt; }
+
+    /// IO issued from now on uses the given links. An open request issued with the previous links is
+    /// dropped first, so the caller must call it while the previous links are still valid.
+    virtual void setIOSchedulingSettings(const IOSchedulingSettings & /*io_scheduling*/) {}
 
 protected:
     std::optional<size_t> file_size;

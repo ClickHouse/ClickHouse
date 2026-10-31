@@ -210,6 +210,14 @@ class LogCluster:
         self._read_deadline = (
             None if read_budget_s is None else time.monotonic() + read_budget_s
         )
+        # Why the last `is_ready` probe failed, when the server itself answered
+        # it with an exception, classified like a `select` answer: a
+        # LogClusterUnavailable for the codes about its own load, a
+        # LogClusterQueryError otherwise (e.g. Code 516 for a rotated
+        # password). When the probe got no response at all, its transport
+        # exception. None when the probe succeeded, had no secret, or got
+        # another answer (a gateway).
+        self.probe_error = None
 
     def close_session(self):
         if self._session:
@@ -217,7 +225,7 @@ class LogCluster:
             self._session = None
 
     def is_ready(self):
-        self._probe_error = None
+        self.probe_error = None
         if not self.url:
             url = Secret.Config(
                 name=self.URL_SECRET,
@@ -254,16 +262,28 @@ class LogCluster:
                 # included, before its body is read.
                 hooks={"response": lambda r, **kwargs: answers.append(r)},
             )
-            if not response.ok:
-                print("ERROR: No connection to LogCluster")
-                return False
-            if not response.json() == 1:
-                print("ERROR: LogCluster failure 1 != 1")
-                return False
         except Exception as ex:
             print(f"ERROR: LogCluster connection failed with exception [{ex}]")
             if not answers:
-                self._probe_error = ex
+                self.probe_error = ex
+            return False
+        if not response.ok:
+            print(
+                f"ERROR: No connection to LogCluster: code {response.status_code}:"
+                f" {response.text.strip()[:512]}"
+            )
+            # Only an answer of the server itself is classified: no connection
+            # or a gateway answer is also what a wrong or deleted endpoint in
+            # the AWS SSM parameter looks like, and stays fail-closed.
+            if self.EXCEPTION_CODE_HEADER in response.headers:
+                self.probe_error = self._classify(response)
+            return False
+        try:
+            answer = response.json()
+        except ValueError:
+            answer = None
+        if answer != 1:
+            print("ERROR: LogCluster failure 1 != 1")
             return False
         return True
 
@@ -300,7 +320,7 @@ class LogCluster:
             # `select` below does.
             if not self.is_ready():
                 if isinstance(
-                    self._probe_error,
+                    self.probe_error,
                     (requests.exceptions.ConnectionError, requests.exceptions.Timeout),
                 ):
                     unanswered_probes += 1
@@ -362,7 +382,7 @@ class LogCluster:
                 # Not even the constant `SELECT 1` got an answer (no HTTP
                 # response at all), so nothing about this data was rejected.
                 raise LogClusterUnavailable(
-                    f"no readiness probe got an answer, the last one failed with [{self._probe_error}]"
+                    f"no readiness probe got an answer, the last one failed with [{self.probe_error}]"
                 )
         return False
 
@@ -506,7 +526,18 @@ class LogCluster:
                 reason += f"; stopped retrying after the {self._read_budget_s} s read budget"
             raise LogClusterUnavailable(reason)
         # Every attempt gave up before its POST: `is_ready()` was false for all
-        # of them (no secret, or `SELECT 1` never succeeded).
+        # of them (no secret, or `SELECT 1` never succeeded). When the last
+        # probe was answered by the server rejecting even `SELECT 1` about its
+        # own load (a replica stuck above its memory limit answers Code 241 to
+        # every query, for days), it is the same outage `select` reports green
+        # after a POST, and the endpoint is not in question: the server itself
+        # answered. A missing secret, no connection, a gateway answer or a
+        # probe the server rejected (Code 516 for a rotated password) stay
+        # fail-closed.
+        if isinstance(self.probe_error, LogClusterUnavailable):
+            raise LogClusterUnavailable(
+                f"the endpoint never became ready: {self.probe_error}"
+            )
         raise LogClusterNotReady("the endpoint never became ready")
 
 

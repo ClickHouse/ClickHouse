@@ -2,11 +2,13 @@
 
 #include <base/types.h>
 #include <Common/ZooKeeper/Common.h>
+#include <Common/ZooKeeperNodeVersion.h>
 
 #include <map>
 #include <memory>
 #include <mutex>
 #include <optional>
+#include <set>
 #include <vector>
 
 namespace DB
@@ -14,12 +16,24 @@ namespace DB
 
 /// Support multi-level namespace names.
 using IcebergNamespaceName = std::vector<String>;
+/// Joins the levels of a namespace in a REST path. A level must not contain it.
+constexpr char NAMESPACE_LEVEL_SEPARATOR = '\x1F';
 
 /// What Keeper stores for a table: the current `metadata.json` on object storage.
 struct IcebergTablePointer
 {
     String uuid;
     String metadata_location;
+    /// Znode version of the uuid node. Set by `getTable`, checked by `updateTable`.
+    ZooKeeperNodeVersion version{};
+};
+
+struct UpdateNamespacePropertiesResult
+{
+    Strings updated;
+    Strings removed;
+    /// Keys from `removals` that were not present.
+    Strings missing;
 };
 
 /// Storage backend of the native Iceberg REST catalog (RFC: issue #114697), backed by Keeper.
@@ -31,6 +45,7 @@ struct IcebergTablePointer
 ///   <root>/namespaces/<level>/tables       one child per table
 ///   <root>/namespaces/<level>/tables/<t>        data: table uuid, written once at create
 ///   <root>/namespaces/<level>/tables/<t>/<uuid> data: metadata location, the node a commit updates
+/// A table commit replaces the uuid node data with a version check, so concurrent commits are serialized by Keeper.
 /// Namespace levels and table names are encoded with `escapeForFileName`.
 class KeeperIcebergRESTCatalogStore
 {
@@ -43,6 +58,10 @@ public:
     bool namespaceExists(const IcebergNamespaceName & name) const;
 
     std::optional<std::map<String, String>> getNamespaceProperties(const IcebergNamespaceName & name) const;
+
+    /// Applies `removals` first, then `updates`. nullopt if the namespace does not exist.
+    std::optional<UpdateNamespacePropertiesResult> updateNamespaceProperties(
+        const IcebergNamespaceName & name, const std::map<String, String> & updates, const std::set<String> & removals);
 
     /// Lists direct children of `parent` or top-level namespaces when `parent` is empty.
     std::vector<IcebergNamespaceName> listNamespaces(const IcebergNamespaceName & parent) const;
@@ -64,6 +83,21 @@ public:
     std::optional<Strings> listTables(const IcebergNamespaceName & ns) const;
 
     bool dropTable(const IcebergNamespaceName & ns, const String & table);
+
+    enum class UpdateTableResult
+    {
+        Updated,
+        /// The node changed since `expected` was read.
+        VersionMismatch,
+        TableMissing,
+        /// The name exists, but it was dropped and re-created with another uuid.
+        UuidMismatch,
+    };
+
+    /// Replaces the metadata location only if the uuid node still has `expected.version`.
+    /// Throws `KeeperException` for session or hardware errors. The caller must treat those as an unknown outcome.
+    UpdateTableResult updateTable(
+        const IcebergNamespaceName & ns, const String & table, const IcebergTablePointer & expected, const IcebergTablePointer & new_pointer);
 
 private:
     /// Returns the current session. Runs `initRoot` once per new session.
