@@ -5,6 +5,8 @@
 #include <Parsers/ASTDropQuery.h>
 #include <Parsers/IAST_fwd.h>
 
+#include <memory>
+#include <set>
 
 namespace DB
 {
@@ -49,6 +51,8 @@ private:
     ASTPtr current_query_ptr;
     /// Is this a step of another statement rather than a DROP the user issued.
     bool internal = false;
+    /// Storages whose size limit `executeToDatabaseImpl` has checked; a second check would consume `force_drop_table` again.
+    std::set<std::weak_ptr<IStorage>, std::owner_less<>> tables_with_checked_size;
 
     BlockIO executeSingleDropQuery(const ASTPtr & drop_query_ptr);
     BlockIO executeToDatabase(const ASTDropQuery & query);

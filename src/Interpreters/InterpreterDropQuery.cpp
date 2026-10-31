@@ -13,6 +13,7 @@
 #include <Parsers/ASTDropQuery.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Storages/IStorage.h>
+#include <Storages/MaterializedView/RefreshSet.h>
 #include <Storages/StorageMaterializedView.h>
 #include <Storages/StorageTableFunction.h>
 #include <Storages/StorageTableProxy.h>
@@ -384,7 +385,7 @@ BlockIO InterpreterDropQuery::executeToTableImpl(const ContextPtr & context_, AS
                 if (!query.is_dictionary)
                     table->checkTableCanBeDropped(context_);
             }
-            else
+            else if (!tables_with_checked_size.contains(table))
                 table->checkTableCanBeDropped(context_);
 
             /// Check dependencies before shutting table down
@@ -514,6 +515,8 @@ BlockIO InterpreterDropQuery::executeToDatabaseImpl(const ASTDropQuery & query, 
 
     bool drop = query.kind == ASTDropQuery::Kind::Drop;
     bool truncate = query.kind == ASTDropQuery::Kind::Truncate;
+    /// Stopped below after `check_tables`, so that a refused drop leaves the replication running.
+    bool stop_replication = false;
 
     getContext()->checkAccess(AccessType::DROP_DATABASE, database_name);
 
@@ -543,7 +546,7 @@ BlockIO InterpreterDropQuery::executeToDatabaseImpl(const ASTDropQuery & query, 
 
     getContext()->onQueryExecutionStarted();
     if (!truncate && database->hasReplicationThread())
-        database->stopReplication();
+        stop_replication = true;
 
     if (database->shouldBeEmptyOnDetach())
     {
@@ -627,19 +630,77 @@ BlockIO InterpreterDropQuery::executeToDatabaseImpl(const ASTDropQuery & query, 
                 tables.clear(); // don't hold extra shared pointers
             };
 
-            collect_tables();
+            /// Preparing a table for shutdown cannot be undone, so every check that can refuse the drop runs for all tables first.
+            auto check_tables = [&](const std::unordered_set<String> & skip_size_check)
+            {
+                const auto & settings = getContext()->getSettingsRef();
+                bool check_ref_deps = settings[Setting::check_referential_table_dependencies];
+                bool check_loading_deps = !check_ref_deps && settings[Setting::check_table_dependencies];
+                std::vector<StoragePtr> tables_to_check_size;
+                for (const auto & [table_id, _] : tables_to_drop)
+                {
+                    auto table = DatabaseCatalog::instance().tryGetTable(table_id, table_context);
+                    if (!table)
+                        continue;
+                    checkStorageSupportsTransactionsIfNeeded(table, table_context);
+                    if (query_for_table.kind != ASTDropQuery::Kind::Drop)
+                        continue;
+                    DatabaseCatalog::instance().checkTableCanBeRemovedOrRenamed(table_id, check_ref_deps, check_loading_deps, /*is_drop_database=*/ true);
+                    if (!table->isDictionary() && !tables_with_checked_size.contains(table)
+                        && !skip_size_check.contains(table_id.table_name))
+                        tables_to_check_size.push_back(std::move(table));
+                }
+                /// Last, because it may consume the `force_drop_table` flag.
+                for (const auto & table : tables_to_check_size)
+                {
+                    table->checkTableCanBeDropped(table_context);
+                    tables_with_checked_size.insert(table);
+                }
+            };
 
             /// If there are refreshable materialized views, we need to stop them before getting the
             /// final list of tables to drop.
             std::vector<StoragePtr> tables_to_prepare_early;
-            for (const StoragePtr & table_ptr : tables_to_prepare)
+            std::unordered_set<String> running_refresh_tables;
+            auto collect_and_check_tables = [&]
             {
-                if (const auto * materialized_view = typeid_cast<const StorageMaterializedView *>(table_ptr.get()))
+                collect_tables();
+
+                tables_to_prepare_early.clear();
+                for (const StoragePtr & table_ptr : tables_to_prepare)
                 {
-                    if (materialized_view->canCreateOrDropOtherTables())
-                        tables_to_prepare_early.push_back(table_ptr);
+                    if (const auto * materialized_view = typeid_cast<const StorageMaterializedView *>(table_ptr.get()))
+                    {
+                        if (materialized_view->canCreateOrDropOtherTables())
+                            tables_to_prepare_early.push_back(table_ptr);
+                    }
                 }
+
+                /// Stopping a refreshable view drops, without a size check, the temporary table its refresh has created.
+                running_refresh_tables.clear();
+                for (const StoragePtr & view : tables_to_prepare_early)
+                {
+                    StorageID view_id = view->getStorageID();
+                    for (const auto & task : getContext()->getRefreshSet().findTasks(view_id))
+                        if (task->hasRefreshTemporaryTable())
+                            running_refresh_tables.insert(".tmp" + StorageMaterializedView::generateInnerTableName(view_id));
+                }
+                check_tables(running_refresh_tables);
+            };
+
+            collect_and_check_tables();
+
+            if (stop_replication)
+            {
+                /// The replication can create, drop and rename tables until it is stopped, and its
+                /// `DROP TABLE ... SYNC` waits for the last reference to the table, so none is held here.
+                tables_to_prepare.clear();
+                tables_to_prepare_early.clear();
+                tables_to_drop.clear();
+                database->stopReplication();
+                collect_and_check_tables();
             }
+
             if (!tables_to_prepare_early.empty())
             {
                 tables_to_prepare.clear();
@@ -648,6 +709,7 @@ BlockIO InterpreterDropQuery::executeToDatabaseImpl(const ASTDropQuery & query, 
                 prepare_tables(tables_to_prepare_early);
 
                 collect_tables();
+                check_tables({});
             }
 
             prepare_tables(tables_to_prepare);
@@ -748,8 +810,8 @@ BlockIO InterpreterDropQuery::executeToDatabaseImpl(const ASTDropQuery & query, 
                 query_for_table.sync = original_sync;
                 DatabasePtr db;
                 UUID table_to_wait = UUIDHelpers::Nil;
-                /// Note: if this throws exception, the remaining tables won't be dropped and will stay in a
-                /// limbo state where flushAndPrepareForShutdown() was called but no shutdown() followed. Not ideal.
+                /// A failure here (`KILL QUERY`, a dependent created after `check_tables`, a Keeper error) leaves the
+                /// remaining tables prepared for shutdown but not shut down.
                 executeToTableImpl(table_context, query_for_table, db, table_to_wait);
                 uuids_to_wait.push_back(table_to_wait);
             }
