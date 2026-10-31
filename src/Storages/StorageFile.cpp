@@ -2173,10 +2173,11 @@ Chunk StorageFileSource::generate()
             /// same predicate, and the TopK key of this query (see `TopKQueryConditionCacheKey`), whose
             /// entries only a previous run of the same TopN over the same file set could have written.
             /// A row group may be skipped iff either verdict excludes it.
+            /// A statistics-only TopN read (`filter_rows = false`) is a plain read for the cache.
             FileBucketInfoPtr buckets_to_read;
             std::optional<UInt64> plain_condition_hash;
             if (format_filter_info && format_filter_info->condition_hash
-                && (!format_filter_info->top_k_filter
+                && (!format_filter_info->top_k_filter || !format_filter_info->top_k_filter->filter_rows
                     || getContext()->getSettingsRef()[Setting::use_query_condition_cache_for_top_k]))
                 plain_condition_hash = format_filter_info->condition_hash;
 
@@ -2486,7 +2487,7 @@ Chunk StorageFileSource::generate()
             {
                 auto buckets_opt = input_format->getMatchedBuckets();
                 const String cache_file_key = QueryConditionCache::makeFilePartName(current_path, *current_file_cache_version);
-                if (buckets_opt.has_value() && format_filter_info->top_k_filter)
+                if (buckets_opt.has_value() && format_filter_info->top_k_filter && format_filter_info->top_k_filter->filter_rows)
                 {
                     if (getTopKConditionHashForCurrentFile())
                         pending_top_k_query_condition_cache_entries.push_back(PendingTopKQueryConditionCacheEntry{
@@ -2665,7 +2666,7 @@ void ReadFromFile::applyFilters(ActionDAGNodes added_filter_nodes)
     if (filter_actions_dag)
         predicate = filter_actions_dag->getOutputs().at(0);
 
-    if (boost::iequals(storage->format_name, "Parquet") || boost::iequals(storage->format_name, "ORC"))
+    if (formatNeedsEagerKeyConditionSets(storage->format_name))
         prepareEagerKeyConditionSets(
             filter_actions_dag,
             storage_snapshot, info.source_header,
@@ -2688,8 +2689,9 @@ bool ReadFromFile::canUseLazyMaterialization() const
 
     /// The global row index requires per-row file row numbers (ChunkInfoRowNumbers), and the lazy
     /// branch requires reading an explicit set of rows (FormatFilterInfo::rows_to_read).
-    /// Only the Parquet reader supports both.
-    if (!boost::iequals(storage->format_name, "Parquet"))
+    /// Only the Parquet and Vortex readers support both.
+    if (!boost::iequals(storage->format_name, "Parquet")
+        && !boost::iequals(storage->format_name, "Vortex"))
         return false;
 
     /// A file descriptor (e.g. stdin) is consumed by the main read and cannot be reopened.
@@ -2847,6 +2849,9 @@ StorageFileSource::TopKQueryConditionCacheKeyPtr ReadFromFile::makeTopKQueryCond
     if (!top_k_filter || !settings[Setting::use_query_condition_cache] || !settings[Setting::use_query_condition_cache_for_top_k])
         return {};
 
+    if (!top_k_filter->filter_rows)
+        return {};
+
     /// Only plain local files have version tokens. A table without a UUID (the `file` table function, or a
     /// `File` table in a database without UUIDs) keeps its entries under a synthetic `table_id`
     /// (see `QueryConditionCache::getTableIdForFileEntries`), which partitions the TopK entries as well.
@@ -2907,9 +2912,23 @@ StorageFileSource::TopKQueryConditionCacheKeyPtr ReadFromFile::makeTopKQueryCond
     table_name_hash.update(table_name.size());
     table_name_hash.update(table_name);
 
+    /// The key covers the whole filter including the conjuncts on hive partition columns, and whether a column
+    /// is read from the path or from the file depends on `use_hive_partitioning` of the query that created the
+    /// storage (for the `file` table function it is created per query), which the `table_id` does not cover.
+    SipHash hive_columns_hash;
+    for (const auto & column : storage->hive_partition_columns_to_read_from_file_path)
+    {
+        hive_columns_hash.update(column.name.size());
+        hive_columns_hash.update(column.name);
+        const String type_name = column.type->getName();
+        hive_columns_hash.update(type_name.size());
+        hive_columns_hash.update(type_name);
+    }
+
     boost::hash_combine(condition_hash, top_k_filter->plan_hash);
     boost::hash_combine(condition_hash, files_hash.get64());
     boost::hash_combine(condition_hash, table_name_hash.get64());
+    boost::hash_combine(condition_hash, hive_columns_hash.get64());
     key->condition_hash = condition_hash;
     return key;
 }
@@ -2943,6 +2962,8 @@ void ReadFromFile::initializePipeline(QueryPipelineBuilder & pipeline, const Bui
     auto parser_shared_resources = std::make_shared<FormatParserSharedResources>(ctx->getSettingsRef(), num_streams);
     auto format_filter_info = std::make_shared<FormatFilterInfo>(
         info.getFormatFilter(filter_actions_dag), ctx, nullptr, query_info.row_level_filter, query_info.prewhere_info);
+    format_filter_info->need_row_numbers
+        = lazy_row_index_registry != nullptr || VirtualColumnUtils::hasRowDependentVirtualColumns(info.requested_virtual_columns);
     format_filter_info->top_k_filter = top_k_filter;
     format_filter_info->min_max_from_statistics = read_min_max_from_statistics && !filter_actions_dag
         && !query_info.prewhere_info && !query_info.row_level_filter;
@@ -3104,11 +3125,13 @@ public:
                 /// LazyMaterializingTransform would restore the original row order incorrectly.
                 FormatSettings format_settings = storage->format_settings ? *storage->format_settings : getFormatSettings(getContext());
                 format_settings.parquet.preserve_order = true;
+                format_settings.vortex.preserve_order = true;
 
                 /// There is no filter and no prewhere here: the surviving rows are known exactly,
                 /// so the deferred columns are read without any filtering expressions.
                 auto format_filter_info = std::make_shared<FormatFilterInfo>(nullptr, getContext(), nullptr, nullptr, nullptr);
                 format_filter_info->rows_to_read = file.rows;
+                format_filter_info->need_row_numbers = true;
 
                 if (object_with_metadata)
                 {

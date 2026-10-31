@@ -22,7 +22,7 @@ bool ClientEmbeddedRunner::hasFinished() const
 
 int ClientEmbeddedRunner::getExitCode() const
 {
-    return exit_code;
+    return exit_code.load();
 }
 
 IClientDescriptorSet::DescriptorSet ClientEmbeddedRunner::getDescriptorsForServer()
@@ -77,7 +77,7 @@ void ClientEmbeddedRunner::clientRoutine(NameToNameMap envs, String starting_que
                 prompts_count.fetch_add(1);
             waiting_for_query_input.store(waiting);
         });
-        exit_code = client.run(envs, starting_query);
+        exit_code.store(client.run(envs, starting_query));
     }
     catch (...)
     {

@@ -2042,6 +2042,11 @@ FunctionCast::WrapperType FunctionCast::createMapWrapper(const DataTypePtr & fro
 
 FunctionCast::WrapperType FunctionCast::createObjectWrapper(const DataTypePtr & from_type, const DataTypeObject * to_object, bool requested_result_is_nullable) const
 {
+    /// Types that differ only in SHARED marks of typed paths have identical columns, no conversion is needed.
+    if (const auto * from_object = checkAndGetDataType<DataTypeObject>(from_type.get());
+        from_object && from_object->equalsIgnoringSharedTypedPaths(*to_object))
+        return createIdentityWrapper(from_type);
+
     if (checkAndGetDataType<DataTypeString>(from_type.get()))
     {
         return [this, requested_result_is_nullable](ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, const ColumnNullable * nullable_source, size_t input_rows_count)
@@ -2966,6 +2971,24 @@ FunctionCast::WrapperType FunctionCast::createEnumToStringWrapper() const
 
             auto res = res_type->createColumn();
 
+            if (auto * res_string = typeid_cast<ColumnString *>(res.get()))
+            {
+                const auto * null_map = nullable_col ? &nullable_col->getNullMapData() : nullptr;
+                auto & chars = res_string->getChars();
+                auto & offsets = res_string->getOffsets();
+                offsets.resize(size);
+                for (size_t i = 0; i < size; ++i)
+                {
+                    if (!null_map || !(*null_map)[i])
+                    {
+                        auto name = enum_type->getNameForValue(enum_data[i]);
+                        chars.insert(name.data(), name.data() + name.size());
+                    }
+                    offsets[i] = chars.size();
+                }
+                return res;
+            }
+
             if (nullable_col)
             {
                 for (size_t i = 0; i < size; ++i)
@@ -2993,6 +3016,55 @@ FunctionCast::WrapperType FunctionCast::createEnumToStringWrapper() const
         else
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected column {} as first argument of function {}",
                 first_col->getName(), function_name);
+    };
+}
+
+/// Maps enum values to indexes in a dictionary of all enum names built once,
+/// so that each block inserts into the result dictionary only the names it uses.
+template <typename EnumType>
+static FunctionCast::WrapperType createEnumToLowCardinalityStringWrapper(const DataTypePtr & from_type)
+{
+    auto enum_type = std::static_pointer_cast<const EnumType>(from_type);
+    const auto & values = enum_type->getValues();
+    const Int32 min_value = values.front().second;
+
+    constexpr auto missing = std::numeric_limits<UInt32>::max();
+    VectorWithMemoryTracking<UInt32> value_to_index(values.back().second - min_value + 1, missing);
+
+    /// The dictionary starts with the default value at index 0. Enum names are unique, so it is built without hashing.
+    auto names = ColumnString::create();
+    names->insertDefault();
+    for (const auto & [name, value] : values)
+    {
+        if (!name.empty())
+            names->insertData(name.data(), name.size());
+        value_to_index[value - min_value] = name.empty() ? 0 : static_cast<UInt32>(names->size() - 1);
+    }
+    ColumnPtr dictionary = DataTypeLowCardinality::createColumnUnique(DataTypeString(), std::move(names));
+
+    return [enum_type, min_value, value_to_index, dictionary]
+        (ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, const ColumnNullable * nullable_source, size_t) -> ColumnPtr
+    {
+        const auto & data = typeid_cast<const typename EnumType::ColumnType &>(*arguments.front().column).getData();
+        /// Set by a surrounding `Nullable(Tuple(...))`, whose NULL rows hold placeholder values.
+        const auto * null_map = nullable_source ? &nullable_source->getNullMapData() : nullptr;
+        auto indexes = ColumnUInt32::create(data.size());
+        auto & indexes_data = indexes->getData();
+        for (size_t i = 0; i < data.size(); ++i)
+        {
+            size_t pos = data[i] - min_value;
+            if (null_map && (*null_map)[i])
+                indexes_data[i] = 0;
+            else if (pos < value_to_index.size() && value_to_index[pos] != missing)
+                indexes_data[i] = value_to_index[pos];
+            else
+                enum_type->getNameForValue(data[i]); /// Throws for a value missing in the enum.
+        }
+
+        /// A private source dictionary makes `insertRangeFrom` copy only the used names instead of adopting all of them.
+        auto res = result_type->createColumn();
+        res->insertRangeFrom(*ColumnLowCardinality::create(dictionary, std::move(indexes), /*is_shared=*/ false), 0, data.size());
+        return res;
     };
 }
 
@@ -3035,6 +3107,14 @@ FunctionCast::WrapperType FunctionCast::prepareUnpackDictionaries(const DataType
         {
             return result_type->createColumnConstWithDefaultValue(input_rows_count)->convertToFullColumnIfConst();
         };
+    }
+
+    if (to_low_cardinality && isString(to_nested))
+    {
+        if (isEnum8(from_type))
+            return createEnumToLowCardinalityStringWrapper<DataTypeEnum8>(from_type);
+        if (isEnum16(from_type))
+            return createEnumToLowCardinalityStringWrapper<DataTypeEnum16>(from_type);
     }
 
     bool skip_not_null_check = false;
