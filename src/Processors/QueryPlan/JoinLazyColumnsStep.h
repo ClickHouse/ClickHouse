@@ -19,8 +19,8 @@ public:
         const SharedHeader & left_header_,
         const SharedHeader & right_header_,
         ILazyMaterializingRowsPtr lazy_materializing_rows_,
+        String index_column_name_ = "__global_row_index",
         bool preserve_output_order_ = true);
-        String index_column_name_ = "__global_row_index");
     ~JoinLazyColumnsStep() override;
 
     String getName() const override { return "JoinLazyColumnsStep"; }

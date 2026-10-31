@@ -851,6 +851,7 @@ bool optimizeLazyMaterialization2(QueryPlan::Node & root, QueryPlan & query_plan
         lhs_plan_header,
         rhs_plan_header,
         lazy_materializing_rows,
+        LazyMaterializingTransform::default_index_column_name,
         !allow_unordered_output);
 
     QueryPlan result_plan;

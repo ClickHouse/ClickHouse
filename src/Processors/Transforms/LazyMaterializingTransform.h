@@ -59,8 +59,8 @@ public:
         SharedHeader lazy_header,
         ILazyMaterializingRowsPtr lazy_materializing_rows_,
         RuntimeDataflowStatisticsCacheUpdaterPtr updater_,
-        bool preserve_output_order_);
-        String index_column_name_ = default_index_column_name);
+        String index_column_name_ = default_index_column_name,
+        bool preserve_output_order_ = true);
 
     static constexpr auto default_index_column_name = "__global_row_index";
 

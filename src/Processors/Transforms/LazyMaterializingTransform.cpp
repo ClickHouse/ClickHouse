@@ -36,15 +36,15 @@ LazyMaterializingTransform::LazyMaterializingTransform(
     SharedHeader lazy_header,
     ILazyMaterializingRowsPtr lazy_materializing_rows_,
     RuntimeDataflowStatisticsCacheUpdaterPtr updater_,
+    String index_column_name_,
     bool preserve_output_order_)
-    String index_column_name_)
     : IProcessor(
         InputPorts({main_header, lazy_header}),
         OutputPorts({OutputPort(std::make_shared<Block>(transformHeader(*main_header, *lazy_header, index_column_name_)))}))
     , lazy_materializing_rows(std::move(lazy_materializing_rows_))
     , updater(std::move(updater_))
-    , preserve_output_order(preserve_output_order_)
     , index_column_name(std::move(index_column_name_))
+    , preserve_output_order(preserve_output_order_)
 {
 }
 
@@ -304,6 +304,10 @@ void LazyMaterializingTransform::prepareMainChunk()
             (*matched_rows)[row] = !null_map[row];
 
         index_col = nullable_index->getNestedColumnPtr()->filter(*matched_rows, -1);
+
+        /// The permutation covers the matched rows only, so the main chunk cannot be reordered by it.
+        /// Keep the original order of the rows instead.
+        preserve_output_order = true;
     }
 
     auto rows = index_col->size();
