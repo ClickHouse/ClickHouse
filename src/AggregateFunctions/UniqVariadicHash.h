@@ -5,7 +5,11 @@
 #include <Common/SipHash.h>
 #include <Common/assert_cast.h>
 #include <Columns/ColumnTuple.h>
+#include <Columns/ColumnsNumber.h>
+#include <Columns/canonicalizeNegativeZero.h>
+#include <Common/PODArray.h>
 #include <DataTypes/IDataType.h>
+#include <base/normalizeNegativeZero.h>
 
 
 namespace DB
@@ -34,11 +38,90 @@ struct UniqVariadicHash;
 /// Note that we treat single tuple argument in the same way as multiple arguments.
 bool isAllArgumentsContiguousInMemory(const DataTypes & argument_types);
 
+/// Whether a value of some argument (or of some element of a single tuple argument) can contain floating point
+/// values whose negative zeros `UniqVariadicHash` has to normalize, see below. It is decided once from the
+/// argument types, so that the arguments that cannot contain them, which is by far the most common case,
+/// are hashed without the per-row dispatch on the type of the column.
+bool isNegativeZeroNormalizationNeeded(const DataTypes & argument_types);
+
+
+/// The values are hashed here by their raw bytes, but negative zero has to hash like
+/// positive zero, so that `uniq*` agree with the `equals` function - see `base/normalizeNegativeZero.h`.
+/// Floating point columns are intercepted and their values are normalized before hashing.
+/// Only top-level floating point arguments (including the elements of a single tuple argument)
+/// are handled: a floating point value nested deeper, e.g. inside an `Array` argument,
+/// is still hashed by its raw representation.
+/// The callers pass `normalize_floats` computed with `isNegativeZeroNormalizationNeeded` from the argument types.
+/// It is a template parameter of `apply` for the loops over the rows, so that without it the code is the same as before.
+template <typename F>
+bool ALWAYS_INLINE withNormalizedFloatValue(const IColumn & column, size_t row_num, F && f)
+{
+    if (const auto * column_float64 = typeid_cast<const ColumnFloat64 *>(&column))
+    {
+        f(normalizeNegativeZero(column_float64->getData()[row_num]));
+        return true;
+    }
+    if (const auto * column_float32 = typeid_cast<const ColumnFloat32 *>(&column))
+    {
+        f(normalizeNegativeZero(column_float32->getData()[row_num]));
+        return true;
+    }
+    if (const auto * column_bfloat16 = typeid_cast<const ColumnBFloat16 *>(&column))
+    {
+        f(normalizeNegativeZero(column_bfloat16->getData()[row_num]));
+        return true;
+    }
+    return false;
+}
+
+template <bool normalize_floats>
+inline UInt64 ALWAYS_INLINE cityHashValueAt(const IColumn & column, size_t row_num)
+{
+    if constexpr (!normalize_floats)
+    {
+        auto value = column.getDataAt(row_num);
+        return CityHash_v1_0_2::CityHash64(value.data(), value.size());
+    }
+
+    UInt64 res = 0;
+    if (withNormalizedFloatValue(column, row_num, [&](auto value) { res = CityHash_v1_0_2::CityHash64(reinterpret_cast<const char *>(&value), sizeof(value)); }))
+        return res;
+
+    auto value = column.getDataAt(row_num);
+
+    /// The raw bytes of the value can be a sequence of floating point values, e.g. for an
+    /// `Array(Float64)` argument, and they cannot be canonicalized in place - see `rawFloatValueWidth`.
+    if (size_t float_width = rawFloatValueWidth(column))
+    {
+        PODArrayWithStackMemory<char, 64> canonical(value.size());
+        canonicalizeNegativeZeroInRawValue(value, float_width, canonical.data());
+        return CityHash_v1_0_2::CityHash64(canonical.data(), canonical.size());
+    }
+
+    return CityHash_v1_0_2::CityHash64(value.data(), value.size());
+}
+
+template <bool normalize_floats>
+inline void ALWAYS_INLINE updateSipHashWithValueAt(const IColumn & column, size_t row_num, SipHash & hash)
+{
+    if constexpr (normalize_floats)
+        if (withNormalizedFloatValue(column, row_num, [&](auto value) { hash.update(value); }))
+            return;
+
+    column.updateHashWithValue(row_num, hash);
+}
+
 
 template <>
 struct UniqVariadicHash<false, false>
 {
-    static UInt64 apply(size_t num_args, const IColumn ** columns, size_t row_num)
+    static UInt64 apply(size_t num_args, const IColumn ** columns, size_t row_num, bool normalize_floats = true)
+    {
+        return normalize_floats ? apply<true>(num_args, columns, row_num) : apply<false>(num_args, columns, row_num);
+    }
+
+    template <bool normalize_floats>
+    static ALWAYS_INLINE UInt64 apply(size_t num_args, const IColumn ** columns, size_t row_num)
     {
         UInt64 hash = 0;
 
@@ -46,15 +129,13 @@ struct UniqVariadicHash<false, false>
         const IColumn ** columns_end = column + num_args;
 
         {
-            auto value = (*column)->getDataAt(row_num);
-            hash = CityHash_v1_0_2::CityHash64(value.data(), value.size());
+            hash = cityHashValueAt<normalize_floats>(**column, row_num);
             ++column;
         }
 
         while (column < columns_end)
         {
-            auto value = (*column)->getDataAt(row_num);
-            hash = CityHash_v1_0_2::Hash128to64(CityHash_v1_0_2::uint128(CityHash_v1_0_2::CityHash64(value.data(), value.size()), hash));
+            hash = CityHash_v1_0_2::Hash128to64(CityHash_v1_0_2::uint128(cityHashValueAt<normalize_floats>(**column, row_num), hash));
             ++column;
         }
 
@@ -65,7 +146,13 @@ struct UniqVariadicHash<false, false>
 template <>
 struct UniqVariadicHash<false, true>
 {
-    static UInt64 apply(size_t num_args, const IColumn ** columns, size_t row_num)
+    static UInt64 apply(size_t num_args, const IColumn ** columns, size_t row_num, bool normalize_floats = true)
+    {
+        return normalize_floats ? apply<true>(num_args, columns, row_num) : apply<false>(num_args, columns, row_num);
+    }
+
+    template <bool normalize_floats>
+    static ALWAYS_INLINE UInt64 apply(size_t num_args, const IColumn ** columns, size_t row_num)
     {
         if (!num_args)
             return 0;
@@ -78,15 +165,13 @@ struct UniqVariadicHash<false, true>
         const auto * columns_end = column + num_args;
 
         {
-            auto value = column->get()->getDataAt(row_num);
-            hash = CityHash_v1_0_2::CityHash64(value.data(), value.size());
+            hash = cityHashValueAt<normalize_floats>(**column, row_num);
             ++column;
         }
 
         while (column < columns_end)
         {
-            auto value = column->get()->getDataAt(row_num);
-            hash = CityHash_v1_0_2::Hash128to64(CityHash_v1_0_2::uint128(CityHash_v1_0_2::CityHash64(value.data(), value.size()), hash));
+            hash = CityHash_v1_0_2::Hash128to64(CityHash_v1_0_2::uint128(cityHashValueAt<normalize_floats>(**column, row_num), hash));
             ++column;
         }
 
@@ -97,7 +182,13 @@ struct UniqVariadicHash<false, true>
 template <>
 struct UniqVariadicHash<true, false>
 {
-    static UInt128 apply(size_t num_args, const IColumn ** columns, size_t row_num)
+    static UInt128 apply(size_t num_args, const IColumn ** columns, size_t row_num, bool normalize_floats = true)
+    {
+        return normalize_floats ? apply<true>(num_args, columns, row_num) : apply<false>(num_args, columns, row_num);
+    }
+
+    template <bool normalize_floats>
+    static ALWAYS_INLINE UInt128 apply(size_t num_args, const IColumn ** columns, size_t row_num)
     {
         const IColumn ** column = columns;
         const IColumn ** columns_end = column + num_args;
@@ -106,7 +197,7 @@ struct UniqVariadicHash<true, false>
 
         while (column < columns_end)
         {
-            (*column)->updateHashWithValue(row_num, hash);
+            updateSipHashWithValueAt<normalize_floats>(**column, row_num, hash);
             ++column;
         }
 
@@ -117,7 +208,13 @@ struct UniqVariadicHash<true, false>
 template <>
 struct UniqVariadicHash<true, true>
 {
-    static UInt128 apply(size_t num_args, const IColumn ** columns, size_t row_num)
+    static UInt128 apply(size_t num_args, const IColumn ** columns, size_t row_num, bool normalize_floats = true)
+    {
+        return normalize_floats ? apply<true>(num_args, columns, row_num) : apply<false>(num_args, columns, row_num);
+    }
+
+    template <bool normalize_floats>
+    static ALWAYS_INLINE UInt128 apply(size_t num_args, const IColumn ** columns, size_t row_num)
     {
         const auto & tuple_columns = assert_cast<const ColumnTuple *>(columns[0])->getColumns();
 
@@ -128,7 +225,7 @@ struct UniqVariadicHash<true, true>
 
         while (column < columns_end)
         {
-            (*column)->updateHashWithValue(row_num, hash);
+            updateSipHashWithValueAt<normalize_floats>(**column, row_num, hash);
             ++column;
         }
 

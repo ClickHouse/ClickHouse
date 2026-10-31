@@ -16,6 +16,21 @@ namespace ErrorCodes
 namespace
 {
 
+/// Maps a floating point value to an unsigned integer as `RadixSortFloatTransform` does, except that negative
+/// zero gets the integer of zero: it is equal to zero, as in the tables of the sets in memory (see
+/// `normalizeNegativeZero`), so the disk keys of both have to be equal.
+template <typename KeyBits>
+struct DiskSetFloatTransform
+{
+    static KeyBits forward(KeyBits x)
+    {
+        constexpr KeyBits sign_bit = KeyBits(1) << (sizeof(KeyBits) * 8 - 1);
+        if (x == sign_bit)
+            x = 0;
+        return RadixSortFloatTransform<KeyBits>::forward(x);
+    }
+};
+
 /// Calls `f` with the function that maps a value of a fixed-size key column, at a pointer to its `size`
 /// bytes, to an unsigned integer in a way that keeps the order, so that a smaller value gets a smaller
 /// integer. `encodeFixedSizeKeys` builds disk keys from these integers.
@@ -47,7 +62,7 @@ void callWithOrderedBits(const IColumn & column, size_t size, F && f)
     if (isFixedString(type) || isIPv6(type))
         f([size](const char * value) { return unalignedLoadBigEndian<Key>(value, size); });
     else if (isFloat(type))
-        call_with_number_bits.template operator()<RadixSortFloatTransform>();
+        call_with_number_bits.template operator()<DiskSetFloatTransform>();
     /// Signed integers, and decimals, whose values are signed integers.
     else if (isInt(type) || isColumnedAsDecimal(type))
         call_with_number_bits.template operator()<RadixSortSignedTransform>();

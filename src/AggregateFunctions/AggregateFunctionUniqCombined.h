@@ -11,6 +11,7 @@
 #include <DataTypes/DataTypeIPv4andIPv6.h>
 
 #include <base/bit_cast.h>
+#include <base/normalizeNegativeZero.h>
 
 #include <Common/CombinedCardinalityEstimator.h>
 #include <Common/SipHash.h>
@@ -71,7 +72,8 @@ struct AggregateFunctionUniqCombinedTraits
         }
         else if constexpr (is_floating_point<T>)
         {
-            return static_cast<Key>(intHash64(bit_cast<UInt64>(x)));
+            /// Negative zero is equal to positive zero, but has a different binary representation.
+            return static_cast<Key>(intHash64(bit_cast<UInt64>(normalizeNegativeZero(x))));
         }
         else if constexpr (sizeof(T) > sizeof(UInt64))
         {
@@ -320,11 +322,13 @@ class AggregateFunctionUniqCombinedVariadic final : public IAggregateFunctionDat
 {
 private:
     size_t num_args = 0;
+    bool normalize_floats = true;
 
 public:
     explicit AggregateFunctionUniqCombinedVariadic(const DataTypes & arguments, const Array & params)
         : IAggregateFunctionDataHelper<AggregateFunctionUniqCombinedData<UInt64, K, HashValueType>,
             AggregateFunctionUniqCombinedVariadic<is_exact, argument_is_tuple, K, HashValueType>>(arguments, params, std::make_shared<DataTypeUInt64>())
+        , normalize_floats(isNegativeZeroNormalizationNeeded(arguments))
     {
         if (argument_is_tuple)
             num_args = typeid_cast<const DataTypeTuple &>(*arguments[0]).getElements().size();
@@ -345,7 +349,7 @@ public:
     void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena *) const override
     {
         this->data(place).set.insert(typename AggregateFunctionUniqCombinedData<UInt64, K, HashValueType>::Set::value_type(
-            UniqVariadicHash<is_exact, argument_is_tuple>::apply(num_args, columns, row_num)));
+            UniqVariadicHash<is_exact, argument_is_tuple>::apply(num_args, columns, row_num, normalize_floats)));
     }
 
     void mergeImpl(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override

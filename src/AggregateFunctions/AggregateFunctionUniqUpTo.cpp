@@ -251,11 +251,13 @@ class AggregateFunctionUniqUpToVariadic final
 {
 private:
     size_t num_args = 0;
+    bool normalize_floats = true;
     UInt8 threshold;
 
 public:
     AggregateFunctionUniqUpToVariadic(const DataTypes & arguments, const Array & params, UInt8 threshold_)
         : IAggregateFunctionDataHelper<AggregateFunctionUniqUpToData<UInt64>, AggregateFunctionUniqUpToVariadic<is_exact, argument_is_tuple>>(arguments, params, std::make_shared<DataTypeUInt64>())
+        , normalize_floats(isNegativeZeroNormalizationNeeded(arguments))
         , threshold(threshold_)
     {
         if (argument_is_tuple)
@@ -279,7 +281,7 @@ public:
         if (state.count > threshold)
             return;
 
-        state.insert(UInt64(UniqVariadicHash<is_exact, argument_is_tuple>::apply(num_args, columns, row_num)), threshold);
+        state.insert(UInt64(UniqVariadicHash<is_exact, argument_is_tuple>::apply(num_args, columns, row_num, normalize_floats)), threshold);
     }
 
     void mergeImpl(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override

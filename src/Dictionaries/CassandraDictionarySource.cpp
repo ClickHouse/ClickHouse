@@ -1,5 +1,6 @@
 #include <Dictionaries/CassandraDictionarySource.h>
 #include <Columns/IColumn.h>
+#include <Columns/canonicalizeNegativeZero.h>
 #include <Interpreters/Context.h>
 #include <QueryPipeline/Pipe.h>
 #include <QueryPipeline/QueryPipeline.h>
@@ -371,9 +372,11 @@ BlockIO CassandraDictionarySource::loadKeys(const Columns & key_columns, const V
     UnorderedMapWithMemoryTracking<UInt64, VectorWithMemoryTracking<size_t>> partitions;
     for (const auto & row : requested_rows)
     {
+        /// Rows of one bucket are queried with the partition key literals of its first row, and Cassandra
+        /// distinguishes negative zero from positive zero, so the values are hashed by their raw bits.
         SipHash partition_key;
         for (size_t i = 0; i < configuration.partition_key_prefix; ++i)
-            key_columns[i]->updateHashWithValue(row, partition_key);
+            updateHashWithRawValue(*key_columns[i], row, partition_key);
         partitions[partition_key.get64()].push_back(row);
     }
 

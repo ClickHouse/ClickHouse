@@ -9,6 +9,7 @@
 #include <Common/SipHash.h>
 #include <Common/FieldVisitorToString.h>
 #include <Columns/ColumnConst.h>
+#include <Columns/canonicalizeNegativeZero.h>
 #include <DataTypes/Native.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
@@ -138,7 +139,12 @@ UInt128 CompileDAG::hash() const
         {
             case CompileType::CONSTANT:
             {
-                node.column->getDataColumn().updateHashWithValue(0, hash);
+                const IColumn & data_column = node.column->getDataColumn();
+                data_column.updateHashWithValue(0, hash);
+                /// `updateHashWithValue` does not tell `-0.` and `0.` apart, but a function compiled for one
+                /// of them must not be used for the other.
+                if (auto value = serializeValueIfContainsNegativeZero(data_column, 0))
+                    hash.update(*value);
                 break;
             }
             case CompileType::FUNCTION:

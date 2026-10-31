@@ -522,8 +522,9 @@ TEST(ComputeHashInto, ColumnDecimalDistinctHashes)
 
 // ──────────────────────────────────────────────────────────────────────
 // 10b. ColumnBFloat16: hash the raw 16-bit value, not a Float32-truncated int.
-//      Distinct fractional values must not collapse. Raw-bit hashing matches
-//      old getWeakHash32 behavior, so -0.0 and +0.0 hash differently.
+//      Distinct fractional values must not collapse. Negative zero is the one
+//      exception to raw-bit hashing: it is equal to positive zero, so it is
+//      canonicalized before hashing and -0.0 and +0.0 hash identically.
 // ──────────────────────────────────────────────────────────────────────
 TEST(ComputeHashInto, ColumnBFloat16RawBitsAndSignedZero)
 {
@@ -543,13 +544,14 @@ TEST(ComputeHashInto, ColumnBFloat16RawBitsAndSignedZero)
     const size_t unique = static_cast<size_t>(std::unique(sorted.begin(), sorted.end()) - sorted.begin());
     EXPECT_EQ(unique, n) << "Distinct BFloat16 values must hash distinctly (raw-bit hashing)";
 
-    // Signed zero: raw-bit hashing matches old getWeakHash32, so -0.0 and +0.0 hash differently.
+    // Signed zero: -0.0 is equal to +0.0, so it is canonicalized before hashing,
+    // and hash tables agree with `equals` on negative zero.
     auto zeros = ColumnBFloat16::create();
     zeros->insertValue(BFloat16(0.0f));
     zeros->insertValue(BFloat16(-0.0f));
     std::vector<uint32_t> hz(2);
     zeros->computeHashInto(0, 2, hz.data(), true);
-    EXPECT_NE(hz[0], hz[1]) << "BFloat16 -0.0 and +0.0 hash differently (raw-bit hashing, matching old getWeakHash32)";
+    EXPECT_EQ(hz[0], hz[1]) << "BFloat16 -0.0 and +0.0 must hash identically (negative zero is canonicalized)";
 }
 
 

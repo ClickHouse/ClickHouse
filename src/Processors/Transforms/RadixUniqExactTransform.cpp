@@ -4,6 +4,7 @@
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnSparse.h>
+#include <Columns/canonicalizeNegativeZero.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
 #include <Common/Arena.h>
@@ -1407,7 +1408,7 @@ private:
 };
 
 /// The keys of up to 8 bytes are the values themselves, zero-extended to `UInt32` or `UInt64`. They are compared by
-/// their bits, as `uniqExact` does.
+/// their bits, as `uniqExact` does. Negative zeros are canonicalized before the routing.
 template <typename Key, typename T>
 void routeFixed(RadixUniqExactState<Key> & state, size_t stream, const IColumn & column, const UInt8 * null_map)
 {
@@ -1691,6 +1692,9 @@ void RadixUniqExactRouteTransform::work()
         column = column_sparse->getNumberOfDefaultRows() ? values : values->cut(1, values->size() - 1);
     }
     column = column->convertToFullIfWrapped();
+    /// The keys are compared by their bits, and negative zero is equal to positive zero, but has a different binary representation.
+    if (ColumnPtr canonical_column = canonicalizeNegativeZero(*column))
+        column = canonical_column;
     {
         RADIX_UNIQ_EXACT_TRACK_MEMORY(state);
         if (const auto * column_nullable = typeid_cast<const ColumnNullable *>(column.get()))
