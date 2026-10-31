@@ -1,4 +1,5 @@
 #include <mutex>
+#include <optional>
 #include <base/bit_cast.h>
 
 #include <Columns/ColumnArray.h>
@@ -71,6 +72,13 @@ namespace
         ColumnPtr from_column;
         ColumnPtr to_column;
         ColumnPtr default_column;
+
+        /// For a `Nullable` `x`, the tables hold the nested values of the non-NULL `from` entries, and a NULL `x`
+        /// maps to the first NULL `from` entry, if any.
+        bool lookup_nested = false;
+        std::optional<size_t> null_from_idx;
+        /// The `to` values followed by the constant default, to gather the result of a nested lookup from.
+        ColumnPtr to_column_with_default;
 
         bool is_empty = false;
     };
@@ -192,6 +200,11 @@ namespace
                     ? default_non_const
                     : castColumn(arguments[0], result_type);
             }
+            if (cache->lookup_nested)
+            {
+                if (const auto * in_nullable = checkAndGetColumn<ColumnNullable>(in))
+                    return executeNullable(*in_nullable, result_type, default_non_const, *in_cast, input_rows_count);
+            }
             if (cache->table_num_to_idx)
             {
                 if (!executeNum<ColumnVector<UInt8>>(in, *column_result, default_non_const, *in_cast, input_rows_count)
@@ -257,6 +270,95 @@ namespace
                     column_result.insertFrom(*default_non_const, i);
                 else
                     column_result.insertFrom(in_cast, i);
+            }
+        }
+
+        ColumnPtr executeNullable(
+            const ColumnNullable & in, const DataTypePtr & result_type, const ColumnPtr & default_non_const,
+            const IColumn & in_cast, size_t input_rows_count) const
+        {
+            const size_t not_found = cache->to_column->size();
+            auto indexes_column = ColumnUInt64::create(input_rows_count);
+            auto & indexes = indexes_column->getData();
+
+            /// The value under a NULL is ignored.
+            const auto & null_map = in.getNullMapData();
+            const size_t null_idx = cache->null_from_idx.value_or(not_found);
+
+            const IColumn & nested = in.getNestedColumn();
+            if (cache->table_num_to_idx)
+            {
+                if (!lookupNum<ColumnVector<UInt8>>(nested, indexes, not_found)
+                    && !lookupNum<ColumnVector<UInt16>>(nested, indexes, not_found)
+                    && !lookupNum<ColumnVector<UInt32>>(nested, indexes, not_found)
+                    && !lookupNum<ColumnVector<UInt64>>(nested, indexes, not_found)
+                    && !lookupNum<ColumnVector<Int8>>(nested, indexes, not_found)
+                    && !lookupNum<ColumnVector<Int16>>(nested, indexes, not_found)
+                    && !lookupNum<ColumnVector<Int32>>(nested, indexes, not_found)
+                    && !lookupNum<ColumnVector<Int64>>(nested, indexes, not_found)
+                    && !lookupNum<ColumnVector<Float32>>(nested, indexes, not_found)
+                    && !lookupNum<ColumnVector<Float64>>(nested, indexes, not_found)
+                    && !lookupNum<ColumnDecimal<Decimal32>>(nested, indexes, not_found)
+                    && !lookupNum<ColumnDecimal<Decimal64>>(nested, indexes, not_found))
+                    throw Exception(
+                        ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of first argument of function {}", in.getName(), getName());
+
+                for (size_t i = 0; i < input_rows_count; ++i)
+                    if (null_map[i])
+                        indexes[i] = null_idx;
+            }
+            else if (const auto * nested_string = checkAndGetColumn<ColumnString>(&nested))
+                lookupString(*nested_string, null_map, null_idx, indexes, not_found);
+            else
+                lookupString(nested, null_map, null_idx, indexes, not_found);
+
+            if (cache->to_column_with_default)
+                return cache->to_column_with_default->index(*indexes_column, 0);
+
+            auto column_result = result_type->createColumn();
+            column_result->reserve(input_rows_count);
+            for (size_t i = 0; i < input_rows_count; ++i)
+            {
+                if (indexes[i] != not_found)
+                    column_result->insertFrom(*cache->to_column, indexes[i]);
+                else if (default_non_const)
+                    column_result->insertFrom(*default_non_const, i);
+                else
+                    column_result->insertFrom(in_cast, i);
+            }
+            return column_result;
+        }
+
+        template <typename T>
+        bool lookupNum(const IColumn & column, PaddedPODArray<UInt64> & indexes, size_t not_found) const
+        {
+            const auto * typed = checkAndGetColumn<T>(&column);
+            if (!typed)
+                return false;
+            const auto & table = *cache->table_num_to_idx;
+            const auto & data = typed->getData();
+            for (size_t i = 0; i < data.size(); ++i)
+            {
+                const auto * it = table.find(bit_cast<UInt64>(data[i]));
+                indexes[i] = it ? it->getMapped() : not_found;
+            }
+            return true;
+        }
+
+        template <typename Column>
+        void lookupString(
+            const Column & column, const NullMap & null_map, size_t null_idx, PaddedPODArray<UInt64> & indexes, size_t not_found) const
+        {
+            const auto & table = *cache->table_string_to_idx;
+            for (size_t i = 0; i < column.size(); ++i)
+            {
+                if (null_map[i])
+                {
+                    indexes[i] = null_idx;
+                    continue;
+                }
+                const auto * it = table.find(column.getDataAt(i));
+                indexes[i] = it ? it->getMapped() : not_found;
             }
         }
 
@@ -769,13 +871,49 @@ namespace
             }
         }
 
-        WhichDataType which(from_type);
+        DataTypePtr lookup_type = from_type;
+        const IColumn * lookup_from = cache->from_column.get();
+        const NullMap * from_null_map = nullptr;
+        if (const auto * from_nullable = checkAndGetColumn<ColumnNullable>(cache->from_column.get()))
+        {
+            DataTypePtr nested_type = removeNullable(from_type);
+            if (nested_type->isValueUnambiguouslyRepresentedInContiguousMemoryRegion())
+            {
+                lookup_type = std::move(nested_type);
+                lookup_from = &from_nullable->getNestedColumn();
+                from_null_map = &from_nullable->getNullMapData();
+                cache->lookup_nested = true;
+                if (cache->default_column)
+                {
+                    auto to_column_with_default = cache->to_column->cloneEmpty();
+                    to_column_with_default->insertRangeFrom(*cache->to_column, 0, size);
+                    to_column_with_default->insertFrom(*cache->default_column, 0);
+                    cache->to_column_with_default = std::move(to_column_with_default);
+                }
+            }
+        }
+
+        WhichDataType which(lookup_type);
 
         /// A `String`/`FixedString` entry that is not an `Enum` member is already rejected by the cast
         /// above, and comparing it below would put the member's numeric value against its name.
         /// A numeric entry is cast without a membership check, so it still needs the comparison.
         const bool cast_checked_enum_membership = isEnum(removeNullable(from_type))
             && isStringOrFixedString(removeNullable(from_array_nested_type));
+
+        /// Whether the `from` entry `i` goes into the table; a NULL entry of a nested lookup is kept aside.
+        auto use_from_entry = [&](size_t i)
+        {
+            if (!cast_checked_enum_membership && !accurateEquals((*cache->from_column)[i], (*from_column_uncast)[i]))
+                return false;
+            if (from_null_map && (*from_null_map)[i])
+            {
+                if (!cache->null_from_idx)
+                    cache->null_from_idx = i;
+                return false;
+            }
+            return true;
+        };
 
         /// Field may be of Float type, but for the purpose of bitwise equality we can treat them as UInt64
         if (isNativeNumber(which) || which.isDecimal32() || which.isDecimal64() || which.isEnum())
@@ -784,11 +922,11 @@ namespace
             auto & table = *cache->table_num_to_idx;
             for (size_t i = 0; i < size; ++i)
             {
-                if (cast_checked_enum_membership || accurateEquals((*cache->from_column)[i], (*from_column_uncast)[i]))
+                if (use_from_entry(i))
                 {
                     UInt64 key = 0;
                     auto * dst = reinterpret_cast<char *>(&key);
-                    const auto ref = cache->from_column->getDataAt(i);
+                    const auto ref = lookup_from->getDataAt(i);
 
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wunreachable-code"
@@ -801,15 +939,15 @@ namespace
                 }
             }
         }
-        else if (from_type->isValueUnambiguouslyRepresentedInContiguousMemoryRegion())
+        else if (lookup_type->isValueUnambiguouslyRepresentedInContiguousMemoryRegion())
         {
             cache->table_string_to_idx = std::make_unique<TransformCache::StringToIdx>();
             auto & table = *cache->table_string_to_idx;
             for (size_t i = 0; i < size; ++i)
             {
-                if (cast_checked_enum_membership || accurateEquals((*cache->from_column)[i], (*from_column_uncast)[i]))
+                if (use_from_entry(i))
                 {
-                    std::string_view ref = cache->from_column->getDataAt(i);
+                    std::string_view ref = lookup_from->getDataAt(i);
                     table.insertIfNotPresent(ref, i);
                 }
             }

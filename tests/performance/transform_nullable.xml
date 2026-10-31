@@ -1,0 +1,17 @@
+<test>
+    <create_query>CREATE TABLE transform_nullable (s String, ns Nullable(String), nfs Nullable(FixedString(9)), ni Nullable(Int32)) ENGINE = MergeTree ORDER BY tuple()</create_query>
+    <fill_query>INSERT INTO transform_nullable SELECT arrayElement(['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Holiday', 'Unknown', 'Other'], (h % 10) + 1) AS d, if(h2 % 10 = 0, NULL, d), if(h2 % 10 = 0, NULL, toFixedString(d, 9)), if(h2 % 10 = 0, NULL, toInt32(h % 10)) FROM (SELECT cityHash64(number) AS h, intHash64(number) AS h2 FROM numbers(50000000))</fill_query>
+    <fill_query>OPTIMIZE TABLE transform_nullable FINAL</fill_query>
+    <create_query>CREATE TABLE transform_nullable_long (s String, is_null UInt8) ENGINE = MergeTree ORDER BY tuple()</create_query>
+    <fill_query>INSERT INTO transform_nullable_long SELECT concat(toString(number), repeat('x', 2048)), number % 100 != 0 FROM numbers(2000000)</fill_query>
+    <fill_query>OPTIMIZE TABLE transform_nullable_long FINAL</fill_query>
+    <query>SELECT sum(transform(nfs, ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'], [1, 2, 3, 4, 5, 6, 7], 0)) FROM transform_nullable</query>
+    <query>SELECT sum(CASE ns WHEN 'Sunday' THEN 1 WHEN 'Monday' THEN 2 WHEN 'Tuesday' THEN 3 WHEN 'Wednesday' THEN 4 WHEN 'Thursday' THEN 5 WHEN 'Friday' THEN 6 WHEN 'Saturday' THEN 7 ELSE 0 END) FROM transform_nullable</query>
+    <query>SELECT sum(CASE ns WHEN 'Sunday' THEN 1 WHEN 'Monday' THEN 2 WHEN 'Tuesday' THEN 3 WHEN 'Wednesday' THEN 4 WHEN 'Thursday' THEN 5 WHEN 'Friday' THEN 6 WHEN 'Saturday' THEN 7 END) FROM transform_nullable</query>
+    <query>SELECT CASE ns WHEN 'Sunday' THEN 'weekend' WHEN 'Saturday' THEN 'weekend' WHEN 'Holiday' THEN 'off' ELSE 'weekday' END AS k, count() FROM transform_nullable GROUP BY k FORMAT Null</query>
+    <query>SELECT sum(transform(ni, [0, 1, 2, 3, 4, 5, 6], [1, 2, 3, 4, 5, 6, 7], 0)) FROM transform_nullable</query>
+    <query>SELECT sum(transform(if(is_null, NULL, s), ['a', 'b'], [1, 2], 0)) FROM transform_nullable_long</query>
+    <query>SELECT sum(transform(s, ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'], [1, 2, 3, 4, 5, 6, 7], 0)) FROM transform_nullable</query>
+    <drop_query>DROP TABLE IF EXISTS transform_nullable</drop_query>
+    <drop_query>DROP TABLE IF EXISTS transform_nullable_long</drop_query>
+</test>
