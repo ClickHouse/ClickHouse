@@ -83,9 +83,12 @@ bool foldedConstantsMatchKeyExpression(const QueryTreeNodePtr & node, const Acti
 
 /// Reproduce the rewrites of the query analyzer (the query tree passes) on the key expressions.
 /// Returns nullopt if the rewritten expressions are not proven to compute the stored key.
+/// `columns_without_subcolumns` are the source columns whose functions the query does not rewrite to
+/// subcolumn reads, see `getAlternativeExpression`.
 std::optional<ActionsDAG> buildRewrittenExpressionWithAnalyzer(
     const ASTPtr & expression_list_ast,
     const ExpressionActionsPtr & expression,
+    const Names & columns_without_subcolumns,
     const std::function<void(StorageInMemoryMetadata &)> & register_key,
     const ContextMutablePtr & context)
 {
@@ -107,7 +110,13 @@ std::optional<ActionsDAG> buildRewrittenExpressionWithAnalyzer(
     auto query_node = std::make_shared<QueryNode>(context);
     /// The description is shared through the metadata snapshot, so do not let the resolution
     /// touch its AST.
-    query_node->getProjectionNode() = buildQueryTree(expression_list_ast->clone(), context);
+    /// `FunctionToSubcolumnsPass` does not rewrite the functions of a column to subcolumn reads when
+    /// the query uses the whole column elsewhere. Add such a use of every column the query does not
+    /// rewrite; these extra outputs are removed from the result.
+    auto projection_ast = expression_list_ast->clone();
+    for (const auto & column : columns_without_subcolumns)
+        projection_ast->children.push_back(make_intrusive<ASTIdentifier>(column));
+    query_node->getProjectionNode() = buildQueryTree(projection_ast, context);
     query_node->getJoinTreeNode() = table_expression;
 
     QueryTreeNodePtr query_tree = query_node;
@@ -139,6 +148,15 @@ std::optional<ActionsDAG> buildRewrittenExpressionWithAnalyzer(
         empty_correlated_columns_set,
         /*use_column_identifier_as_action_node_name=*/ false);
     correlated_subtrees.assertEmpty("in an index or key expression");
+
+    auto & outputs = dag.getOutputs();
+    if (outputs.size() != expression_list_ast->children.size() + columns_without_subcolumns.size())
+        return std::nullopt;
+    if (!columns_without_subcolumns.empty())
+    {
+        outputs.resize(expression_list_ast->children.size());
+        dag.removeUnusedActions(/*allow_remove_inputs=*/ true, /*allow_constant_folding=*/ false);
+    }
 
     return std::move(dag);
 }
@@ -183,12 +201,13 @@ AlternativeKeyExpressionPtr computeAlternativeExpression(
     const ASTPtr & expression_list_ast,
     const ExpressionActionsPtr & expression,
     const Names & column_names,
+    const Names & columns_without_subcolumns,
     const std::function<void(StorageInMemoryMetadata &)> & register_key,
     const ContextPtr & context)
 {
     auto execution_context = Context::createCopy(context);
 
-    auto dag = buildRewrittenExpressionWithAnalyzer(expression_list_ast, expression, register_key, execution_context);
+    auto dag = buildRewrittenExpressionWithAnalyzer(expression_list_ast, expression, columns_without_subcolumns, register_key, execution_context);
     if (!dag)
         return nullptr;
 
@@ -412,27 +431,48 @@ NameSet getPredicateInputNames(const ActionsDAG::Node * predicate)
     return result;
 }
 
-/// Whether the alternative form reads a subcolumn (e.g. `m.key_k` after `FunctionToSubcolumnsPass`)
-/// that the filter does not read. Then the query did not apply that rewrite.
-bool readsSubcolumnMissingInPredicate(
+/// The source columns of the key whose subcolumns (e.g. `m.key_k` after `FunctionToSubcolumnsPass`)
+/// the alternative form reads but the filter does not read: the query did not apply those rewrites.
+/// Returns nullopt if such a subcolumn cannot be attributed to a source column of the key.
+std::optional<NameSet> getSourceColumnsOfSubcolumnsMissingInPredicate(
     const AlternativeKeyExpression & alternative_key, const ExpressionActionsPtr & expression, const NameSet & predicate_inputs)
 {
     NameSet key_source_columns;
     for (const auto & column : expression->getRequiredColumns())
         key_source_columns.insert(column);
 
+    NameSet result;
     for (const auto & node : alternative_key.expression->getActionsDAG().getNodes())
-        if (node.type == ActionsDAG::ActionType::INPUT && !key_source_columns.contains(node.result_name)
-            && !predicate_inputs.contains(node.result_name))
-            return true;
+    {
+        if (node.type != ActionsDAG::ActionType::INPUT || key_source_columns.contains(node.result_name)
+            || predicate_inputs.contains(node.result_name))
+            continue;
 
-    return false;
+        /// The storage column the subcolumn is read from: the longest prefix that is a source column
+        /// of the key, see `getRequiredStorageColumns`.
+        String source_column;
+        for (size_t pos = node.result_name.rfind('.'); pos != String::npos && pos != 0; pos = node.result_name.rfind('.', pos - 1))
+        {
+            String prefix = node.result_name.substr(0, pos);
+            if (key_source_columns.contains(prefix))
+            {
+                source_column = std::move(prefix);
+                break;
+            }
+        }
+        if (source_column.empty())
+            return std::nullopt;
+        result.insert(std::move(source_column));
+    }
+
+    return result;
 }
 
 AlternativeKeyExpressionPtr getAlternativeExpressionImpl(
     const ASTPtr & expression_list_ast,
     const ExpressionActionsPtr & expression,
     const Names & column_names,
+    const Names & columns_without_subcolumns,
     const ColumnsDescription & table_columns,
     const std::function<void(StorageInMemoryMetadata &)> & register_key,
     const String & key_kind,
@@ -463,9 +503,15 @@ AlternativeKeyExpressionPtr getAlternativeExpressionImpl(
             expression_list_ast,
             expression,
             column_names,
-            key_kind,
+            /// The columns that are not rewritten to subcolumn reads are part of the identity of the result.
+            columns_without_subcolumns.empty() ? key_kind
+                                               : fmt::format("{} without subcolumns of: {}", key_kind, fmt::join(columns_without_subcolumns, ", ")),
             context,
-            [&] { return computeAlternativeExpression(expression_list_ast, expression, column_names, register_key, context); });
+            [&]
+            {
+                return computeAlternativeExpression(
+                    expression_list_ast, expression, column_names, columns_without_subcolumns, register_key, context);
+            });
         if (alternative_key && collidesWithOtherTableColumn(*alternative_key, expression, table_columns))
             return nullptr;
         return alternative_key;
@@ -480,12 +526,13 @@ AlternativeKeyExpressionPtr getAlternativeExpressionImpl(
     }
 }
 
-/// `FunctionToSubcolumnsPass` decides for the whole query whether to rewrite the functions of a
-/// column to subcolumn reads: it does not when the query uses the column in another way (e.g.
-/// `mapKeys(m)` in the projection) or reads the table with `FINAL`. The replay against the dummy table
-/// does not see that, so it can rewrite `m['k']` to `m.key_k` while the query does not. If the
-/// alternative form reads a subcolumn that the filter does not read, compute it again without that
-/// rewrite, keeping the other ones (e.g. `multiIf` to `if`).
+/// `FunctionToSubcolumnsPass` decides for every column of the query whether to rewrite its functions
+/// to subcolumn reads: it does not when the query uses the column in another way (e.g. `mapKeys(m)` in
+/// the projection) or reads the table with `FINAL`. The replay against the dummy table does not see
+/// that, so it can rewrite `m['k']` to `m.key_k` while the query does not. If the alternative form reads
+/// subcolumns that the filter does not read, compute it again without the rewrites of their source
+/// columns, keeping the other ones (e.g. `multiIf` to `if`, or `n['k']` to `n.key_k` when the filter
+/// reads `n.key_k`).
 AlternativeKeyExpressionPtr getAlternativeExpression(
     const ASTPtr & expression_list_ast,
     const ExpressionActionsPtr & expression,
@@ -497,18 +544,37 @@ AlternativeKeyExpressionPtr getAlternativeExpression(
     const ActionsDAG::Node * predicate,
     const ContextPtr & context)
 {
+    NameSet columns_without_subcolumns;
     auto alternative_key = getAlternativeExpressionImpl(
-        expression_list_ast, expression, column_names, table_columns, register_key, key_kind, description_for_log, context);
+        expression_list_ast, expression, column_names, {}, table_columns, register_key, key_kind, description_for_log, context);
 
-    if (!alternative_key || !predicate || !context->getSettingsRef()[Setting::optimize_functions_to_subcolumns]
-        || !readsSubcolumnMissingInPredicate(*alternative_key, expression, getPredicateInputNames(predicate)))
+    if (!alternative_key || !predicate || !context->getSettingsRef()[Setting::optimize_functions_to_subcolumns])
         return alternative_key;
 
-    /// The changed setting is a part of the identity of the cached result.
-    auto context_without_subcolumns = Context::createCopy(context);
-    context_without_subcolumns->setSetting("optimize_functions_to_subcolumns", Field(false));
-    return getAlternativeExpressionImpl(
-        expression_list_ast, expression, column_names, table_columns, register_key, key_kind, description_for_log, context_without_subcolumns);
+    const NameSet predicate_inputs = getPredicateInputNames(predicate);
+
+    /// Every iteration adds at least one source column, so this terminates.
+    while (alternative_key)
+    {
+        auto missing = getSourceColumnsOfSubcolumnsMissingInPredicate(*alternative_key, expression, predicate_inputs);
+        if (!missing)
+            return nullptr;
+        if (missing->empty())
+            return alternative_key;
+
+        size_t previous_size = columns_without_subcolumns.size();
+        columns_without_subcolumns.insert(missing->begin(), missing->end());
+        /// The rewrite of a column that is already excluded cannot be suppressed further.
+        if (columns_without_subcolumns.size() == previous_size)
+            return nullptr;
+
+        Names sorted_columns(columns_without_subcolumns.begin(), columns_without_subcolumns.end());
+        std::sort(sorted_columns.begin(), sorted_columns.end());
+        alternative_key = getAlternativeExpressionImpl(
+            expression_list_ast, expression, column_names, sorted_columns, table_columns, register_key, key_kind, description_for_log, context);
+    }
+
+    return alternative_key;
 }
 
 }

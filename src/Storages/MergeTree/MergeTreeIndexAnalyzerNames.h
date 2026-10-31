@@ -56,8 +56,9 @@ class MergeTreeIndexMinMax;
   *
   * `predicate` is the query's filter. `FunctionToSubcolumnsPass` does not rewrite the functions of a
   * column to subcolumn reads when the query uses the column in another way or reads with `FINAL`,
-  * which the replay does not see. If the rewritten form reads a subcolumn the filter does not read,
-  * it is computed again with `optimize_functions_to_subcolumns` disabled.
+  * which the replay does not see. If the rewritten form reads subcolumns the filter does not read, it
+  * is computed again without the subcolumn rewrites of their source columns, keeping the rewrites of
+  * the other columns.
   *
   * `index_is_in_table` is false for a hypothetical index of `EXPLAIN WHATIF`: the query was analyzed
   * against `table_metadata` without the index, so the passes see only the keys and indexes of the

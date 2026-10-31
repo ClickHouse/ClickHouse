@@ -16,3 +16,15 @@ partition key, subcolumn not rewritten
 Parts: 2/2
 Parts: 1/2
 Parts: 1/1
+primary key, subcolumn of one column not rewritten
+Granules: 1/25
+98	['k']
+99	['k']
+skip index, subcolumn of one column not rewritten
+Granules: 25/25
+Name: idx
+Granules: 1/25
+partition key, subcolumn of one column not rewritten
+Parts: 2/2
+Parts: 1/2
+Parts: 1/1
