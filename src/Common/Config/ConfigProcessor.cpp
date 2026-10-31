@@ -15,6 +15,8 @@
 #include <Poco/XML/XMLWriter.h>
 #include <Poco/Util/XMLConfiguration.h>
 #include <Poco/NumberParser.h>
+#include <Poco/SAX/InputSource.h>
+#include <Poco/Exception.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/ZooKeeper/ZooKeeperNodeCache.h>
 #include <Common/ZooKeeper/KeeperException.h>
@@ -797,6 +799,32 @@ ConfigProcessor::Files ConfigProcessor::getConfigMergeFiles(const std::string & 
     return files;
 }
 
+/// Parses an XML configuration file by opening it here instead of passing its path to `Poco::XML::DOMParser`.
+///
+/// `DOMParser::parse` with a path resolves it through `Poco::URIStreamOpener`, which parses it into a `Poco::Path`,
+/// and `Poco::Path::pushDirectory` collapses `..` lexically. That makes the parser read a different file than the
+/// path names whenever the component before a `..` is a symlink: with `conf` pointing to `releases/r1/conf`,
+/// `conf/../config.xml` is `releases/r1/config.xml` on the filesystem, but Poco would open `config.xml` next to
+/// the symlink. The path is kept as the system id, so relative external entities still resolve against it.
+static XMLDocumentPtr parseXMLConfig(const std::string & config_path, Poco::XML::DOMParser & dom_parser)
+{
+    errno = 0;
+    std::ifstream stream(config_path);
+    if (!stream)
+    {
+        /// `DOMParser::parse` with a path threw `Poco::FileNotFoundException` for a missing file, and callers match
+        /// on its message, so keep it for that case.
+        if (errno == ENOENT)
+            throw Poco::FileNotFoundException(config_path);
+        throw Exception(
+            ErrorCodes::CANNOT_LOAD_CONFIG, "Cannot open the configuration file '{}': {}", config_path, errnoToString());
+    }
+
+    Poco::XML::InputSource input_source(stream);
+    input_source.setSystemId(config_path);
+    return dom_parser.parse(&input_source);
+}
+
 XMLDocumentPtr ConfigProcessor::parseConfig(const std::string & config_path, Poco::XML::DOMParser & dom_parser)
 {
     fs::path p(config_path);
@@ -804,13 +832,13 @@ XMLDocumentPtr ConfigProcessor::parseConfig(const std::string & config_path, Poc
     boost::algorithm::to_lower(extension);
 
     if (extension == ".xml")
-        return dom_parser.parse(config_path);
+        return parseXMLConfig(config_path, dom_parser);
     if (extension == ".yaml" || extension == ".yml")
         return YAMLParser::parse(config_path);
 
     /// Suppose non regular file parsed as XML, such as pipe: /dev/fd/X (regardless it has .xml extension or not)
     if (!fs::is_regular_file(config_path))
-        return dom_parser.parse(config_path);
+        return parseXMLConfig(config_path, dom_parser);
 
     /// If the regular file begins with < it might be XML, otherwise it might be YAML.
     bool maybe_xml = false;
@@ -834,7 +862,7 @@ XMLDocumentPtr ConfigProcessor::parseConfig(const std::string & config_path, Poc
         }
     }
     if (maybe_xml)
-        return dom_parser.parse(config_path);
+        return parseXMLConfig(config_path, dom_parser);
     return YAMLParser::parse(config_path);
 }
 
