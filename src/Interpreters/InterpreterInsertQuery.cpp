@@ -699,7 +699,10 @@ QueryPipeline InterpreterInsertQuery::addInsertToSelectPipeline(
     /// With dependent views, the sinks' output goes to the views.
     ProcessorPtr commit_sink;
     if (!no_destination && !insert_dependencies->isViewsInvolved())
-        commit_sink = table->createInsertCommitSink(table->getInMemoryMetadataPtr(context, false), context);
+    {
+        auto metadata_snapshot = table->getInMemoryMetadataPtr(context, false);
+        commit_sink = table->createInsertCommitSink(metadata_snapshot, context);
+    }
     if (commit_sink)
         pipeline.resize(1);
 
