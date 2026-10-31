@@ -15,6 +15,7 @@
 #include <Interpreters/PreparedSets.h>
 #include <Interpreters/Set.h>
 #include <Processors/Chunk.h>
+#include <Processors/QueryResultPreview.h>
 #include <Processors/Formats/IInputFormat.h>
 #include <Storages/MergeTree/MarkRange.h>
 #include <Processors/Merges/Algorithms/ReplacingSortedAlgorithm.h>
@@ -234,6 +235,11 @@ void FilterTransform::removeFilterIfNeed(Columns & columns) const
         columns.erase(columns.begin() + filter_column_position);
 }
 
+bool FilterTransform::supportsQueryResultPreviews() const
+{
+    return !expression || canEvaluateOnQueryResultPreviews(expression->getActionsDAG());
+}
+
 void FilterTransform::onCancel() noexcept
 {
     ISimpleTransform::onCancel();
@@ -251,9 +257,39 @@ void FilterTransform::onCancel() noexcept
 void FilterTransform::transform(Chunk & chunk)
 {
     auto chunk_rows_before = chunk.getNumRows();
-    doTransform(chunk);
+    const auto preview = chunk.getChunkInfos().get<QueryResultPreviewInfo>();
+    if (!preview)
+    {
+        doTransform(chunk);
+        if (rows_filtered)
+            *rows_filtered += chunk_rows_before - chunk.getNumRows();
+        return;
+    }
+
+    /// A function may throw on the intermediate values of a preview (see `QueryResultPreview.h`).
+    /// Then the preview is dropped: nothing is pushed, not even an empty chunk, which would lose
+    /// the preview marker and reach the main output format as part of the real result.
+    try
+    {
+        doTransform(chunk);
+    }
+    catch (const Exception & e)
+    {
+        onQueryResultPreviewEvaluationError(e, *preview, isCancelled());
+        chunk.clear();
+        dropOutput();
+        return;
+    }
+
     if (rows_filtered)
         *rows_filtered += chunk_rows_before - chunk.getNumRows();
+
+    /// A preview replaces the previous one, so a preview that the filter (e.g. `HAVING`) empties
+    /// has to be delivered as well - dropping it would leave the previous, stale rows on the
+    /// screen. `ISimpleTransform` skips a chunk without columns, so give the empty preview the
+    /// columns of the output header; the chunk keeps its `QueryResultPreviewInfo`.
+    if (!chunk.hasColumns())
+        chunk.setColumns(getOutputPort().getHeader().cloneEmptyColumns(), 0);
 }
 
 namespace

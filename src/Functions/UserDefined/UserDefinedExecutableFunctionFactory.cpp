@@ -171,6 +171,10 @@ public:
     bool useDefaultImplementationForNulls() const override { return false; }
     bool isDeterministic() const override { return executable_function->getConfiguration().is_deterministic; }
     bool isDeterministicInScopeOfQuery() const override { return executable_function->getConfiguration().is_deterministic; }
+    /// The function runs an external program, which can perform external actions and, with a pool of
+    /// reused processes, keep state between invocations. Evaluating it on more rows or more times
+    /// (e.g. on a query result preview) is observable even if the function is declared deterministic.
+    bool hasObservableSideEffects() const override { return true; }
 
     DataTypePtr getReturnTypeImpl(const DataTypes &) const override
     {

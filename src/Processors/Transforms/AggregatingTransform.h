@@ -7,6 +7,7 @@
 #include <Interpreters/Aggregator.h>
 #include <Processors/Chunk.h>
 #include <Processors/IAccumulatingTransform.h>
+#include <Processors/QueryResultPreview.h>
 #include <Processors/SpillableAdapter.h>
 #include <Processors/RowsBeforeStepCounter.h>
 #include <Common/CurrentMetrics.h>
@@ -139,6 +140,19 @@ struct ManyAggregatedData
 using AggregatingTransformParamsPtr = std::shared_ptr<AggregatingTransformParams>;
 using ManyAggregatedDataPtr = std::shared_ptr<ManyAggregatedData>;
 
+/// Shared state of the query result previews of one aggregation (see `QueryResultPreview.h`).
+struct AggregationQueryResultPreviews
+{
+    QueryResultPreviewsControl control;
+
+    AggregationQueryResultPreviews(const QueryResultPreviewsSettings & settings_, size_t num_participants)
+        : control(settings_, num_participants)
+    {
+    }
+};
+
+using AggregationQueryResultPreviewsPtr = std::shared_ptr<AggregationQueryResultPreviews>;
+
 /** Aggregates the stream of blocks using the specified key columns and aggregate functions.
   * Columns with aggregate functions adds to the end of the block.
   * If final = false, the aggregate functions are not finalized, that is, they are not replaced by their value, but contain an intermediate state of calculations.
@@ -154,10 +168,15 @@ using ManyAggregatedDataPtr = std::shared_ptr<ManyAggregatedData>;
   * At aggregation step, every transform uses it's own AggregatedDataVariants structure.
   * At merging step, all structures pass to ConvertingAggregatedToChunksTransform.
   */
-class AggregatingTransform final : public IProcessor
+class AggregatingTransform final : public IProcessor, public IQueryResultPreviewEmitter
 {
 public:
-    AggregatingTransform(SharedHeader header, AggregatingTransformParamsPtr params_, RuntimeDataflowStatisticsCacheUpdaterPtr updater_, size_t output_streams_ = 1);
+    AggregatingTransform(
+        SharedHeader header,
+        AggregatingTransformParamsPtr params_,
+        RuntimeDataflowStatisticsCacheUpdaterPtr updater_,
+        size_t output_streams_ = 1,
+        AggregationQueryResultPreviewsPtr query_result_previews_ = nullptr);
 
     /// For Parallel aggregating.
     AggregatingTransform(
@@ -170,7 +189,8 @@ public:
         bool should_produce_results_in_order_of_bucket_number_ = true,
         bool skip_merging_ = false,
         RuntimeDataflowStatisticsCacheUpdaterPtr updater_ = nullptr,
-        size_t output_streams_ = 1);
+        size_t output_streams_ = 1,
+        AggregationQueryResultPreviewsPtr query_result_previews_ = nullptr);
 
     ~AggregatingTransform() override;
 
@@ -181,6 +201,8 @@ public:
     void work() override;
     PipelineUpdate updatePipeline() override;
     void setRowsBeforeAggregationCounter(RowsBeforeStepCounterPtr counter) override { rows_before_aggregation.swap(counter); }
+
+    QueryResultPreviewsControl * getQueryResultPreviewsControl() override;
 
     std::span<ISpillable * const> getSpillables() override { return {spillables.data(), adaptive_spillable ? 2uz : 1uz}; }
     ProcessorMemoryStats getMemoryStats() const;
@@ -226,8 +248,14 @@ private:
 
     ManyAggregatedDataPtr many_data;
     AggregatedDataVariants & variants;
-    /// Index of `variants` in `many_data->variants` (for `SharedKeptKeys::applied`).
+    /// Index of `variants` in `many_data->variants` (for `SharedKeptKeys::applied` and the
+    /// participant lock of query result previews).
     size_t variant_index = 0;
+
+    /// Query result previews (see `QueryResultPreview.h`); nullptr when they cannot be emitted
+    /// by this aggregation. Emission additionally requires activation by `QueryPipeline::complete`.
+    AggregationQueryResultPreviewsPtr query_result_previews;
+    Chunk pending_query_result_preview;
 
     /// Per-transform context of the adaptive aggregation, created when the shared state exists
     /// on `many_data`. Held by pointer: the producer's definition stays out of this widely
@@ -267,6 +295,7 @@ private:
     size_t output_streams = 1;
 
     void initGenerate();
+    void tryEmitQueryResultPreview(UInt64 num_rows, UInt64 num_bytes);
 };
 
 Chunk convertToChunk(const Block & block);

@@ -100,6 +100,24 @@ private:
         return {uncompressed_size, compressed_size};
     }
 
+    /// The same sizes as `finalizeAndGetSizes`, but the state is left as it is, so the aggregation can continue
+    /// into it: serialization is used to copy a live state, e.g. for query result previews.
+    std::pair<UInt64, UInt64> getSizesWithoutFinalizing(ConstAggregateDataPtr __restrict place) const
+    {
+        const Data & data_ref = data(place);
+
+        UInt64 uncompressed_size = data_ref.merged_uncompressed_size;
+        UInt64 compressed_size = data_ref.merged_compressed_size;
+
+        if (data_ref.calculator)
+        {
+            uncompressed_size += data_ref.calculator->getUncompressedBytes();
+            compressed_size += data_ref.calculator->peekCompressedBytes();
+        }
+
+        return {uncompressed_size, compressed_size};
+    }
+
     CompressionCodecPtr getCodecOrDefault() const
     {
         if (codec.has_value())
@@ -193,7 +211,7 @@ public:
 
     void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t>) const override
     {
-        auto [uncompressed_size, compressed_size] = finalizeAndGetSizes(place);
+        auto [uncompressed_size, compressed_size] = getSizesWithoutFinalizing(place);
 
         writeVarUInt(uncompressed_size, buf);
         writeVarUInt(compressed_size, buf);

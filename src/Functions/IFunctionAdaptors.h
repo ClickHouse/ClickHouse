@@ -174,6 +174,7 @@ public:
 
     String getName() const override { return function->getName(); }
     bool isStateful() const override { return function->isStateful(); }
+    bool hasObservableSideEffects() const override { return function->hasObservableSideEffects(); }
     bool isVariadic() const override { return function->isVariadic(); }
     bool isServerConstant() const override { return function->isServerConstant(); }
     bool isVolumeReducing() const override { return function->isVolumeReducing(); }

@@ -42,6 +42,9 @@ public:
 
     String getName() const override { return "Offset"; }
 
+    /// Preview chunks get the offset applied standalone, without advancing `rows_read`.
+    bool supportsQueryResultPreviews() const override { return true; }
+
     Status prepare(const UpdatedInputPorts & /*updated_input_ports*/, const UpdatedOutputPorts & /*updated_output_ports*/) override;
     Status prepare() override; /// Compatibility for TreeExecutor.
     Status preparePair(PortsData & data);

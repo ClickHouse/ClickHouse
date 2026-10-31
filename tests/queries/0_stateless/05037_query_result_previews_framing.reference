@@ -1,0 +1,35 @@
+--- previews are emitted and every preview payload is a complete document
+has previews
+previews are well-formed
+--- no preview packet follows the first data packet
+ok
+--- the data payloads are identical with and without previews
+identical
+--- the final counters do not include preview rows
+"result_rows":"4"
+--- previews of a sorting with a limit
+has previews
+previews are cut to the limit
+--- DISTINCT deduplicates each preview standalone
+has previews
+previews are deduplicated
+{"packet":"data","data":"[250000]\n"}
+--- window functions are computed over each preview standalone
+has previews
+previews carry their own window maximum
+{"packet":"data","data":"[0, 1]\n[1, 1]\n[2, 1]\n[3, 1]\n"}
+--- a preview emptied by HAVING is still delivered
+has previews
+previews are empty
+--- a preview emptied by OFFSET is still delivered
+has previews
+previews are empty
+--- a preview emptied by LIMIT with an offset is still delivered
+has previews
+previews are empty
+--- the state-size threshold in bytes stops previews
+has previews below the threshold
+no previews above the threshold
+identical
+--- without framing, previews are not emitted into the plain output
+identical

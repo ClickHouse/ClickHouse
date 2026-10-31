@@ -46,6 +46,12 @@ private:
     size_t unique_rows_observed = 0;
 };
 
+/// Deduplicates one chunk standalone with a fresh set, keeping the first occurrence of every key
+/// in the original order. For query result previews (see `QueryResultPreview.h`): each preview is
+/// a self-contained intermediate result, so `DISTINCT` applies to the preview chunk alone, and the
+/// accumulated state of the transform must not be involved in either direction.
+void deduplicateChunkForQueryResultPreview(Chunk & chunk, const ColumnNumbers & key_columns_pos);
+
 /// The streaming hash-based `DISTINCT`: emits the first occurrence of each key as soon as it is seen. The
 /// deduplication logic itself lives in `DistinctSetFilter` (shared with `ExternalDistinctTransform`, which
 /// additionally spills to disk under memory pressure).
@@ -85,6 +91,9 @@ public:
     String getName() const override { return "DistinctTransform"; }
 
     Status prepare() override;
+
+    /// Preview chunks are deduplicated standalone, without touching the accumulated set.
+    bool supportsQueryResultPreviews() const override { return true; }
 
     std::span<ISpillable * const> getSpillables() override { return {&spillable_ptr, allow_spilling ? 1uz : 0uz}; }
     ProcessorMemoryStats getMemoryStats() const;

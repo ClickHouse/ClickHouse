@@ -1,0 +1,9 @@
+--- a single aggregation
+has previews
+--- UNION ALL of two aggregations
+no previews
+--- UNION ALL of an aggregation and a branch without previews
+no previews
+--- the result of UNION ALL
+10000000
+49999995000000

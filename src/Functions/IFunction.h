@@ -499,6 +499,10 @@ public:
     /// Override and return true if function needs to depend on the state of the data.
     virtual bool isStateful() const { return false; }
 
+    /// See `IFunctionBase::hasObservableSideEffects`. Used by the `Dynamic` and `Variant` adaptors,
+    /// which build the actual function for each type inside the column only during execution.
+    virtual bool hasObservableSideEffects() const { return false; }
+
     /// Override and return true if function could take different number of arguments.
     virtual bool isVariadic() const { return false; }
 

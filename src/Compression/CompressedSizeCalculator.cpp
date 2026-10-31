@@ -41,4 +41,16 @@ void CompressedSizeCalculator::nextImpl()
         += sizeof(CityHash_v1_0_2::uint128) + getCompressedBlockSize(*codec, working_buffer.begin(), decompressed_size, scratch);
 }
 
+UInt64 CompressedSizeCalculator::peekCompressedBytes() const
+{
+    /// Finalization flushes the pending data as the last block, unless there is none.
+    if (isFinalized() || offset() == 0)
+        return compressed_total;
+
+    chassert(offset() <= INT_MAX);
+    PODArray<char> pending_scratch;
+    return compressed_total + sizeof(CityHash_v1_0_2::uint128)
+        + getCompressedBlockSize(*codec, working_buffer.begin(), static_cast<UInt32>(offset()), pending_scratch);
+}
+
 }

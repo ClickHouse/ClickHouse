@@ -1,6 +1,7 @@
 #include <IO/NullWriteBuffer.h>
 #include <Processors/Formats/LazyOutputFormat.h>
 #include <Processors/Port.h>
+#include <Processors/QueryResultPreview.h>
 #include <Processors/Transforms/AggregatingTransform.h>
 
 
@@ -9,8 +10,8 @@ namespace DB
 
 NullWriteBuffer LazyOutputFormat::out;
 
-LazyOutputFormat::LazyOutputFormat(SharedHeader header)
-    : IOutputFormat(header, out), queue(2)
+LazyOutputFormat::LazyOutputFormat(SharedHeader header, bool with_query_result_previews_)
+    : IOutputFormat(header, out), queue(2), with_query_result_previews(with_query_result_previews_)
 {
 }
 
@@ -31,7 +32,9 @@ Chunk LazyOutputFormat::getChunk(UInt64 milliseconds)
             return {};
     }
 
-    if (chunk)
+    /// Query result previews (see `QueryResultPreview.h`) are not part of the result and must not
+    /// count towards the rows and bytes of `ProfileInfo`.
+    if (chunk && !isQueryResultPreview(chunk))
         info.update(chunk.getNumRows(), chunk.allocatedBytes());
 
     return chunk;
