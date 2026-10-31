@@ -100,6 +100,30 @@ $CLICKHOUSE_CLIENT -q "
 echo "--- DEFAULT reading a MATERIALIZED column ---"
 $CLICKHOUSE_CLIENT -q "SELECT id, q, b != 1 FROM mat_05473 ORDER BY id"
 
+# A name the analyzer resolves as a function is not a column the nodes lack.
+$CLICKHOUSE_CLIENT -q "
+    DROP TABLE IF EXISTS fn_05473;
+    CREATE TABLE fn_05473 (id UInt32, ts DateTime DEFAULT CURRENT_TIMESTAMP, ids Array(UInt32) DEFAULT [id, id + 1],
+        s Array(String) DEFAULT arrayMap(toString, ids)) ENGINE = MergeTree ORDER BY id;
+"
+$CLICKHOUSE_CLIENT -q "
+    INSERT INTO fn_05473 SELECT * FROM s3Cluster('${CLUSTER}', '${S3_DIR}/part_1.jsonl', 'JSONEachRow')
+    SETTINGS parallel_distributed_insert_select = 0"
+echo "--- DEFAULT calling functions written without arguments ---"
+$CLICKHOUSE_CLIENT -q "SELECT id, ts > '2020-01-01', s FROM fn_05473 ORDER BY id"
+
+# The `DEFAULT` of a structure written by the user is resolved against that structure, not against the table.
+$CLICKHOUSE_CLIENT -q "
+    DROP TABLE IF EXISTS fn_user_05473;
+    CREATE TABLE fn_user_05473 (id UInt32, ts DateTime, now UInt8) ENGINE = MergeTree ORDER BY id;
+"
+$CLICKHOUSE_CLIENT -q "
+    INSERT INTO fn_user_05473 (id, ts) SELECT * FROM s3Cluster('${CLUSTER}', '${S3_DIR}/part_1.jsonl', format = 'JSONEachRow',
+        structure = 'id UInt32, ts DateTime DEFAULT now')
+    SETTINGS parallel_distributed_insert_select = 0"
+echo "--- explicit structure with a DEFAULT calling a function named like a column of the table ---"
+$CLICKHOUSE_CLIENT -q "SELECT id, ts > '2020-01-01' FROM fn_user_05473 ORDER BY id"
+
 write_file sub.jsonl "id UInt32, payload Tuple(v UInt32)" "(1, tuple(5))"
 $CLICKHOUSE_CLIENT -q "
     DROP TABLE IF EXISTS sub_05473;
@@ -193,6 +217,24 @@ check_col "DEFAULT reading a column bound to another column, s3Cluster" col_0547
 echo '{"a":1,"x":2}' | $CLICKHOUSE_CLIENT -q "INSERT INTO col_input_05473 SELECT a, x, z, w FROM input() FORMAT JSONEachRow"
 check_col "DEFAULT reading a column bound to another column, input()" col_input_05473
 
+# A column of the files named `toString` is bound to `junk`, and in the files' structure it shadows the function the
+# `DEFAULT` calls, so the `INSERT` fails instead of the `DEFAULT` being dropped.
+write_file fname.jsonl "id UInt32, toString UInt32" "(1, 7)"
+$CLICKHOUSE_CLIENT -q "
+    DROP TABLE IF EXISTS fname_dist_05473;
+    DROP TABLE IF EXISTS fname_05473;
+    CREATE TABLE fname_05473 (id UInt32, junk UInt32, s Array(String) DEFAULT arrayMap(toString, [id])) ENGINE = MergeTree ORDER BY id;
+    CREATE TABLE fname_dist_05473 AS fname_05473 ENGINE = Distributed('test_cluster_two_shards_localhost', currentDatabase(), fname_05473, id);
+"
+echo "--- column of the files named like a function a DEFAULT calls ---"
+$CLICKHOUSE_CLIENT -q "
+    INSERT INTO fname_05473 SELECT id, toString, s FROM s3('${S3_DIR}/fname.jsonl', 'JSONEachRow')
+    SETTINGS parallel_replicas_for_cluster_engines = 0" 2>&1 | grep -o -m1 ILLEGAL_TYPE_OF_ARGUMENT
+$CLICKHOUSE_CLIENT -q "
+    INSERT INTO fname_dist_05473 SELECT id, toString, s FROM s3Cluster('${CLUSTER}', '${S3_DIR}/fname.jsonl', 'JSONEachRow')
+    SETTINGS parallel_distributed_insert_select = 2, distributed_foreground_insert = 1" 2>&1 | grep -o -m1 ILLEGAL_TYPE_OF_ARGUMENT
+$CLICKHOUSE_CLIENT -q "SELECT count() FROM fname_05473"
+
 # `SELECT y, y, z` binds the column `y` of the files to both `x` and `y` of the table, so `DEFAULT y + 1` reads it.
 write_file dup.jsonl "y UInt32" "(5)"
 $CLICKHOUSE_CLIENT -q "
@@ -236,6 +278,8 @@ $CLICKHOUSE_CLIENT -q "
     DROP TABLE events_dist_05473;
     DROP TABLE events_local_05473;
     DROP TABLE mat_05473;
+    DROP TABLE fn_05473;
+    DROP TABLE fn_user_05473;
     DROP TABLE sub_05473;
     DROP TABLE dict_dst_05473;
     DROP TABLE in_05473;
@@ -247,6 +291,8 @@ $CLICKHOUSE_CLIENT -q "
     DROP TABLE col_dist_05473;
     DROP TABLE col_05473;
     DROP TABLE col_input_05473;
+    DROP TABLE fname_dist_05473;
+    DROP TABLE fname_05473;
     DROP TABLE dup_dist_05473;
     DROP TABLE dup_05473;
     DROP TABLE dup_input_05473;

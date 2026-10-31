@@ -3751,7 +3751,7 @@ StoragePtr Context::executeTableFunction(const ASTPtr & table_expression, const 
 
                     if (!structure_hint.empty())
                     {
-                        removeMisboundDefaultsFromStructureHint(structure_hint, insertion_columns_by_hint_column);
+                        removeMisboundDefaultsFromStructureHint(structure_hint, insertion_columns_by_hint_column, insert_columns);
                         table_function_ptr->setStructureHint(structure_hint);
                     }
                 }

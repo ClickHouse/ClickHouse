@@ -57,7 +57,7 @@ namespace FailPoints
 }
 
 /// Names and types of `columns`, plus each `DEFAULT` without secret arguments that the nodes can evaluate from them.
-static String getStructureToSend(const ColumnsDescription & columns)
+static String getStructureToSend(const ColumnsDescription & columns, const ColumnsDescription * insertion_columns)
 {
     const auto names = columns.getAll().getNameSet();
     std::unordered_map<String, NameSet> reads;
@@ -77,7 +77,13 @@ static String getStructureToSend(const ColumnsDescription & columns)
         for (const auto & [name, required] : reads)
         {
             if (!sent.contains(name) && std::ranges::all_of(required, [&](const String & read)
-                    { return names.contains(read) && (!columns.hasDefault(read) || sent.contains(read)); }))
+                    {
+                        if (names.contains(read))
+                            return !columns.hasDefault(read) || sent.contains(read);
+                        /// Not a column of the table the `DEFAULT`s come from either: the nodes resolve the name the same way as
+                        /// this server, as a function, dictionary, table or set.
+                        return !insertion_columns || !insertion_columns->hasColumnOrSubcolumn(GetColumnsOptions::All, read);
+                    }))
                 changed |= sent.insert(name).second;
         }
     }
@@ -471,9 +477,11 @@ void StorageObjectStorageCluster::updateQueryToSendIfNeeded(
 
     ASTs & args = expression_list->children;
     const auto & columns = storage_snapshot->metadata->getColumns();
+    /// The `DEFAULT`s of an `'auto'` structure are the insertion table's, those of a written one are resolved against it alone.
+    const auto * insertion_columns = configuration->structure == "auto" ? context->getInsertionTableColumnsDescription().get() : nullptr;
     const String structure = !add_structure_and_format ? String{}
         : configuration->isDataLakeConfiguration() ? columns.getAll().toNamesAndTypesDescription()
-        : getStructureToSend(columns);
+        : getStructureToSend(columns, insertion_columns);
     if (args.empty())
     {
         throw Exception(

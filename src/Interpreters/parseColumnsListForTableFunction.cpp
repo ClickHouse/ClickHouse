@@ -279,7 +279,8 @@ NameSet getStorageColumnsReadByDefault(const ColumnsDescription & columns, const
     return storage_reads;
 }
 
-void removeMisboundDefaultsFromStructureHint(ColumnsDescription & structure_hint, const NameToNameSetMap & insertion_columns_by_hint_column)
+void removeMisboundDefaultsFromStructureHint(
+    ColumnsDescription & structure_hint, const NameToNameSetMap & insertion_columns_by_hint_column, const ColumnsDescription & insertion_columns)
 {
     std::unordered_map<String, NameSet> reads;
     for (const auto & column : structure_hint)
@@ -292,7 +293,8 @@ void removeMisboundDefaultsFromStructureHint(ColumnsDescription & structure_hint
         if (std::ranges::any_of(required, [&](const String & read)
             {
                 auto it = insertion_columns_by_hint_column.find(read);
-                return it != insertion_columns_by_hint_column.end() && !it->second.contains(read);
+                return it != insertion_columns_by_hint_column.end() && !it->second.contains(read)
+                    && insertion_columns.hasColumnOrSubcolumn(GetColumnsOptions::All, read);
             }))
             removed.insert(name);
     }
