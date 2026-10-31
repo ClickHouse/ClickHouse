@@ -27,7 +27,7 @@ HDFS namenode run as sidecars for their modules. Shared helpers:
   after restart, explicit `DETACH`/`ATTACH`, reads under parallel replicas,
   `Paimon` disk autodetection.
 - `test_types.py` — full supported type matrix (composites are `NOT NULL`
-  until ClickHouse#113337 is fixed).
+  until ClickHouse#113337 is fixed) and `ROW` columns read as named `Tuple`s.
 - `test_partition_pruning.py` — INT/DATE/STRING/DECIMAL partitions, pruned
   file counts via `EngineFileLikeReadFiles`, path-escaped partition values.
 - `test_schema_evolution.py` — ADD/RENAME/DROP column across snapshots (pins
@@ -63,7 +63,7 @@ HDFS namenode run as sidecars for their modules. Shared helpers:
   snapshot-by-snapshot into a warehouse consumed by Keeper incremental reads.
 - `test_hdfs.py` — `paimonHDFS` + `PaimonHDFS` against the HDFS namenode
   embedded in the Hive test image (amd64-only image, ARM runners skip).
-- `test_errors.py` — unsupported `ROW` type, unsupported and supported
+- `test_errors.py` — unsupported and supported
   `scan.mode` values, unsupported schema version (hand-corrupted fixture),
   schema-without-snapshots, nonexistent path.
 
