@@ -656,6 +656,15 @@ static void applyASTNamingAndAppendSourceColumns(
             const_cast<ActionsDAG::Node *>(outputs[i])->result_name = ast_column_names[i];
     }
 
+    /// Keep one output per name, as the legacy `ExpressionAnalyzer` did: its outputs were
+    /// filled by name, so an expression listed twice (e.g. a column used by two skip indices
+    /// in the combined recalculation list of `MutateTask`) produced a single column. A
+    /// duplicate column in the result block would be written twice by the part writer.
+    {
+        NameSet seen_names;
+        std::erase_if(outputs, [&](const ActionsDAG::Node * output) { return !seen_names.insert(output->result_name).second; });
+    }
+
     /// Add source columns to outputs to match ExpressionAnalyzer::getActions(false) behavior.
     /// The old code included all source columns in the output; buildActionsDAGFromExpressionNode
     /// only outputs the expression results.
