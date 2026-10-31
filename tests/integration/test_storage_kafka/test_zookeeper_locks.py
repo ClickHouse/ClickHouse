@@ -1,4 +1,6 @@
 import json
+import random
+import threading
 import time
 import pytest
 
@@ -354,3 +356,90 @@ def test_inactive_replica_not_counted_with_shard_affinity(kafka_cluster):
             sleep_time=1,
         )
         wait_for_locks(kafka_cluster, base, expected_locks, "r1")
+
+
+def test_vanished_lock_does_not_abort_polling(kafka_cluster):
+    """A lock node that disappears between getChildren() and get() must be skipped
+    instead of aborting the whole polling round.
+
+    Regression test: getLockedTopicPartitions() used to read every listed lock with
+    a throwing keeper->get(), so a lock released between the listing and the read
+    (a normal event during a replica rebalance) failed the round with
+    "Code: 999 ... Can't get data for node ... node doesn't exist"."""
+    admin = k.get_admin_client(kafka_cluster)
+    topic_name = "zk_vanished_lock_topic"
+    num_partitions = 100
+    keeper_path = "/clickhouse/test/zk_vanished_lock"
+
+    k.kafka_create_topic(admin, topic_name, num_partitions=num_partitions)
+    with k.existing_kafka_topic(admin, topic_name):
+        create_kafka = k.generate_new_create_table_query(
+            table_name="kafka",
+            columns_def="key UInt64, value UInt64",
+            database="test",
+            topic_list=topic_name,
+            consumer_group=topic_name,
+            keeper_path=keeper_path,
+            replica_name="r1",
+        )
+        instance.query(
+            f"""
+            DROP TABLE IF EXISTS test.kafka;
+            DROP TABLE IF EXISTS test.view;
+            DROP TABLE IF EXISTS test.consumer;
+
+            {create_kafka};
+            CREATE TABLE test.view (key UInt64, value UInt64) ENGINE = MergeTree() ORDER BY key;
+            CREATE MATERIALIZED VIEW test.consumer TO test.view AS SELECT * FROM test.kafka;
+            """
+        )
+
+        messages = [json.dumps({"key": i, "value": i}) for i in range(num_partitions)]
+        k.kafka_produce(kafka_cluster, topic_name, messages, retries=5)
+        instance.query_with_retry(
+            "SELECT count() FROM test.view",
+            check_callback=lambda res: int(res.strip()) >= len(messages),
+            retry_count=60,
+            sleep_time=1,
+        )
+
+        base = f"{keeper_path}/topic_partition_locks"
+
+        # Widen the getChildren() -> get() window: every extra lock node adds one more
+        # read to getLockedTopicPartitions(), so a bulk of fake locks makes the race
+        # window seconds wide instead of milliseconds.
+        num_fake_locks = 1000
+        with KeeperClient.from_cluster(kafka_cluster, keeper_node="zoo1") as zk:
+            for i in range(num_fake_locks):
+                zk.create(f"{base}/vanish_{i}.lock", "ghost")
+
+            # Deleting lock nodes while the consumer polls simulates a mass replica
+            # rebalance. Keep producing so polling rounds (and lock refreshes) keep
+            # running through the churn.
+            stop = threading.Event()
+
+            def produce_worker():
+                while not stop.is_set():
+                    k.kafka_produce(kafka_cluster, topic_name, messages, retries=1)
+                    time.sleep(2.0)
+
+            producer = threading.Thread(target=produce_worker)
+            producer.start()
+            try:
+                deadline = time.time() + 30.0
+                while time.time() < deadline:
+                    zk.rm(f"{base}/vanish_{random.randint(0, num_fake_locks - 1)}.lock")
+            finally:
+                stop.set()
+                producer.join()
+
+        instance.query_with_retry(
+            "SELECT count() FROM test.view",
+            check_callback=lambda res: int(res.strip()) > len(messages),
+            retry_count=60,
+            sleep_time=1,
+        )
+
+        assert not instance.contains_in_log("Can't get data for node"), (
+            "A lock node vanished between getChildren() and get() and aborted a polling round"
+        )
