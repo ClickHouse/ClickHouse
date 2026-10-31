@@ -255,9 +255,9 @@ void DatabaseDataLake::validateSettings()
     }
 
     const String & snapshot_loading_mode = settings[DatabaseDataLakeSetting::snapshot_loading_mode].value;
-    if (snapshot_loading_mode != "all" && snapshot_loading_mode != "refs")
+    if (!snapshot_loading_mode.empty() && snapshot_loading_mode != "all" && snapshot_loading_mode != "refs")
         throw Exception(
-            ErrorCodes::BAD_ARGUMENTS, "Setting `snapshot_loading_mode` must be 'all' or 'refs', got '{}'", snapshot_loading_mode);
+            ErrorCodes::BAD_ARGUMENTS, "Setting `snapshot_loading_mode` must be empty, 'all' or 'refs', got '{}'", snapshot_loading_mode);
 }
 
 void DatabaseDataLake::initialize() const
@@ -280,7 +280,7 @@ void DatabaseDataLake::initialize() const
         .aws_external_id = settings[DatabaseDataLakeSetting::aws_external_id].value,
     };
 
-    const bool load_only_referenced_snapshots = settings[DatabaseDataLakeSetting::snapshot_loading_mode].value == "refs";
+    const String & snapshot_loading_mode = settings[DatabaseDataLakeSetting::snapshot_loading_mode].value;
 
     switch (settings[DatabaseDataLakeSetting::catalog_type].value)
     {
@@ -296,7 +296,7 @@ void DatabaseDataLake::initialize() const
                 settings[DatabaseDataLakeSetting::oauth_server_use_request_body].value,
                 settings[DatabaseDataLakeSetting::flat_namespaces].value,
                 Context::getGlobalContextInstance(),
-                load_only_referenced_snapshots);
+                snapshot_loading_mode);
             break;
         }
         case DB::DatabaseDataLakeCatalogType::ICEBERG_DELTA_SHARING:
@@ -313,7 +313,7 @@ void DatabaseDataLake::initialize() const
                 settings[DatabaseDataLakeSetting::oauth_server_use_request_body].value,
                 settings[DatabaseDataLakeSetting::flat_namespaces].value,
                 Context::getGlobalContextInstance(),
-                load_only_referenced_snapshots);
+                snapshot_loading_mode);
             break;
         }
         case DB::DatabaseDataLakeCatalogType::ICEBERG_HORIZON:
@@ -331,7 +331,7 @@ void DatabaseDataLake::initialize() const
                 settings[DatabaseDataLakeSetting::oauth_server_use_request_body].value,
                 settings[DatabaseDataLakeSetting::flat_namespaces].value,
                 Context::getGlobalContextInstance(),
-                load_only_referenced_snapshots);
+                snapshot_loading_mode);
             break;
         }
         case DB::DatabaseDataLakeCatalogType::ICEBERG_ONELAKE:
@@ -354,7 +354,7 @@ void DatabaseDataLake::initialize() const
                 settings[DatabaseDataLakeSetting::oauth_server_use_request_body].value,
                 settings[DatabaseDataLakeSetting::flat_namespaces].value,
                 Context::getGlobalContextInstance(),
-                load_only_referenced_snapshots);
+                snapshot_loading_mode);
             break;
         }
         case DB::DatabaseDataLakeCatalogType::ICEBERG_BIGLAKE:
@@ -386,7 +386,7 @@ void DatabaseDataLake::initialize() const
                 google_adc_quota_project_id,
                 Context::getGlobalContextInstance(),
                 allow_server_credentials_in_user_queries,
-                load_only_referenced_snapshots);
+                snapshot_loading_mode);
             break;
         }
         case DB::DatabaseDataLakeCatalogType::UNITY:
@@ -413,7 +413,7 @@ void DatabaseDataLake::initialize() const
                 settings[DatabaseDataLakeSetting::auth_header].value,
                 settings[DatabaseDataLakeSetting::oauth_server_uri].value,
                 Context::getGlobalContextInstance(),
-                load_only_referenced_snapshots);
+                snapshot_loading_mode);
             break;
         }
 
@@ -486,7 +486,7 @@ void DatabaseDataLake::initialize() const
                 catalog_parameters,
                 Context::getGlobalContextInstance(),
                 allow_server_credentials_in_user_queries,
-                load_only_referenced_snapshots);
+                snapshot_loading_mode);
 #else
             throw Exception(
                 ErrorCodes::SUPPORT_IS_DISABLED,
@@ -2161,7 +2161,7 @@ The following settings are supported:
 | `dlf_access_key_id`     | Access key ID for DLF access                                                            |
 | `dlf_access_key_secret` | Access key Secret for DLF access                                                        |
 | `force_add_bucket`      | When constructing object-storage URLs from the catalog-provided table location and `storage_endpoint`, prepend the bucket/container name even if the endpoint already contains it. Default: `false`. Set to `true` for catalogs that hand back paths without the bucket and require it to be added at the URL-construction step (Polaris-style paths). |
-| `snapshot_loading_mode` | For Iceberg REST based catalogs: the `snapshots` query parameter of the load-table request. `all` (the default) loads every snapshot of the table, `refs` loads only the snapshots referenced by branches and tags. ClickHouse reads snapshots from the table's metadata file, so `refs` only makes the catalog response smaller, which matters for tables with a long snapshot history. Requires catalog support: some catalogs reject `refs` for tables with statistics files, or omit `metadata-location` from the response. |
+| `snapshot_loading_mode` | For Iceberg REST based catalogs: the `snapshots` query parameter of the load-table request. `all` loads every snapshot of the table, `refs` loads only the snapshots referenced by branches and tags. Empty (the default) uses the `snapshot-loading-mode` that the catalog advertises in its configuration, or `all` if it advertises none. A `snapshot-loading-mode` in the catalog's `overrides` is used even when the setting is set. ClickHouse reads snapshots from the table's metadata file, so `refs` only makes the catalog response smaller, which matters for tables with a long snapshot history. Requires catalog support: some catalogs reject `refs` for tables with statistics files, or omit `metadata-location` from the response. |
 
 ## Examples {#examples}
 

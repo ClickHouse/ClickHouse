@@ -108,6 +108,10 @@ enum class CatalogShape
     /// so the status has to decide too: reading this one as a race would report a broken catalog as
     /// an empty namespace.
     TableListingServerErrorWithNamespaceBody,
+    /// `/v1/config` advertises `snapshot-loading-mode` (case-insensitive): `REFS` in `defaults` (Databricks Unity Catalog
+    /// advertises `refs` there), or `all` in `overrides`.
+    SnapshotLoadingModeRefsDefault,
+    SnapshotLoadingModeAllOverride,
 };
 
 bool advertisesDoomedNamespace(CatalogShape shape)
@@ -211,7 +215,12 @@ public:
 
         if (path == "/v1/config")
         {
-            writeJSON(response, R"({"defaults":{},"overrides":{}})");
+            if (shape == CatalogShape::SnapshotLoadingModeRefsDefault)
+                writeJSON(response, R"({"defaults":{"snapshot-loading-mode":"REFS"},"overrides":{}})");
+            else if (shape == CatalogShape::SnapshotLoadingModeAllOverride)
+                writeJSON(response, R"({"defaults":{},"overrides":{"snapshot-loading-mode":"all"}})");
+            else
+                writeJSON(response, R"({"defaults":{},"overrides":{}})");
             return;
         }
 
@@ -573,6 +582,19 @@ std::shared_ptr<DB::DatabaseDataLake> makeRestDataLakeDatabase(const RestCatalog
         DB::UUIDHelpers::Nil, /* allow_server_credentials_in_user_queries */ false,
         /* is_loading_from_existing_metadata */ false, /* lazy_init */ true);
 }
+
+/// Whether the one load-table request of a database with `settings` on a catalog of `shape` asked for `snapshots=refs`.
+bool loadTableRequestsReferencedSnapshots(CatalogShape shape, const DB::SettingsChanges & settings)
+{
+    RequestCounters counters;
+    RestCatalogTestServer server(shape, /* token_expires_in_seconds */ DEFAULT_TOKEN_EXPIRES_IN_SECONDS, &counters);
+    auto catalog = makeRestDataLakeDatabase(server, settings)->getCatalog();
+
+    auto metadata = TableMetadata().withLocation();
+    EXPECT_TRUE(catalog->tryGetTableMetadata("namespace", "snapshots_table", metadata));
+    EXPECT_EQ(counters.load_table_refs.load() + counters.load_table_without_snapshots_param.load(), 1u);
+    return counters.load_table_refs.load() == 1;
+}
 #endif
 
 DB::Names sortedTableNames(const CatalogTables & tables)
@@ -856,6 +878,14 @@ TEST(RestCatalog, LoadTableRequestsReferencedSnapshotsWhenConfigured)
     EXPECT_EQ((*refresh_credentials)(), nullptr);
     EXPECT_EQ(counters.load_table_refs.load(), 2u);
     EXPECT_EQ(counters.load_table_without_snapshots_param.load(), 0u);
+}
+
+TEST(RestCatalog, LoadTableFollowsSnapshotLoadingModeOfCatalogConfig)
+{
+    /// The catalog's `overrides` win over the setting, which wins over the catalog's `defaults`.
+    EXPECT_TRUE(loadTableRequestsReferencedSnapshots(CatalogShape::SnapshotLoadingModeRefsDefault, {}));
+    EXPECT_FALSE(loadTableRequestsReferencedSnapshots(CatalogShape::SnapshotLoadingModeRefsDefault, {{"snapshot_loading_mode", "all"}}));
+    EXPECT_FALSE(loadTableRequestsReferencedSnapshots(CatalogShape::SnapshotLoadingModeAllOverride, {{"snapshot_loading_mode", "refs"}}));
 }
 #endif
 

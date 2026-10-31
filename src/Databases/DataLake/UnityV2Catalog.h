@@ -30,7 +30,7 @@ public:
         const std::string & auth_header_,
         const std::string & oauth_server_uri_,
         DB::ContextPtr context_,
-        bool load_only_referenced_snapshots_ = false);
+        const std::string & snapshot_loading_mode_ = {});
 
     ~UnityV2Catalog() override;
 
@@ -121,7 +121,7 @@ private:
     std::string auth_scope;
     std::string oauth_server_uri;
     bool use_oauth = false;
-    const bool load_only_referenced_snapshots = false;
+    const std::string snapshot_loading_mode;
 
     /// Guards the token and everything derived from it, because `iceberg_rest_catalog` embeds the token in its auth header.
     mutable std::mutex token_mutex;
