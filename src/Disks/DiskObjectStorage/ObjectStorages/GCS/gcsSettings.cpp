@@ -625,6 +625,17 @@ std::shared_ptr<gc::Credentials> makeGCSCredentials(
     UNREACHABLE();
 }
 
+std::shared_ptr<gc::Credentials> makeGCSCredentials(const GCSObjectStorageSettings & settings)
+{
+    String service_account_key;
+    const auto credential_source = chooseGCSCredentialSource(settings);
+    if (credential_source == GCSCredentialSource::ServiceAccountKey)
+        service_account_key = settings.service_account_key;
+    else if (credential_source == GCSCredentialSource::ServiceAccountKeyFile)
+        service_account_key = readFileToString(settings.service_account_key_file);
+    return makeGCSCredentials(settings, service_account_key);
+}
+
 namespace
 {
 

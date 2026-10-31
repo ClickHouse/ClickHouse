@@ -263,6 +263,10 @@ void resolveGCSRequestRateLimit(
 std::shared_ptr<google::cloud::Credentials> makeGCSCredentials(
     const GCSObjectStorageSettings & settings, const String & service_account_key, google::cloud::Options token_request_options = {});
 
+/// The same, reading the service-account key from the settings (the inline key, or the key file) itself,
+/// for a consumer that needs only the credentials and builds no client from these settings.
+std::shared_ptr<google::cloud::Credentials> makeGCSCredentials(const GCSObjectStorageSettings & settings);
+
 /// Build a native GCS storage client from the parsed settings. The resolved network destination
 /// (`CLOUD_STORAGE_EMULATOR_ENDPOINT` when the server's environment sets it, else the endpoint
 /// override, else the default GCS endpoint) and a token endpoint the configuration picks (a
