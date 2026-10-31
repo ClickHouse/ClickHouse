@@ -259,10 +259,14 @@ void ExecutorTasks::init(size_t num_threads_, size_t use_threads_, const SlotAll
     task_queue.init(num_threads);
     fast_task_queue.init(num_threads);
 
+    bool already_finished = false;
     {
         std::lock_guard lock(mutex); // In case finish() is executed concurrently with init() due to exception
         cpu_slots = cpu_slots_;
+        already_finished = finished;
     }
+    if (already_finished)
+        freeCPU();
 
     // Initialize slot counters with zeros up to max_threads
     slot_count.resize(num_threads, 0);

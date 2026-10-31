@@ -271,8 +271,9 @@ bool PipelineExecutor::executeUntil(std::atomic_bool * yield_flag)
 
         // Acquire slot until we are done
         single_thread_cpu_slot = cpu_slots->acquire();
-        tasks.upscale(single_thread_cpu_slot->slot_id);
-        chassert(single_thread_cpu_slot && "Unable to allocate cpu slot for the first thread, but we just allocated at least one slot");
+        chassert(single_thread_cpu_slot || tasks.isFinished());
+        if (single_thread_cpu_slot)
+            tasks.upscale(single_thread_cpu_slot->slot_id);
 
         if (yield_flag && *yield_flag)
             return true;
@@ -799,8 +800,12 @@ void PipelineExecutor::executeImpl(size_t num_threads, bool concurrency_control)
         else
         {
             auto slot = cpu_slots->acquire();
-            tasks.upscale(slot->slot_id);
-            executeSingleThread(slot->slot_id, WorkloadResources(slot.get(), process_list_element));
+            chassert(slot || tasks.isFinished());
+            if (slot)
+            {
+                tasks.upscale(slot->slot_id);
+                executeSingleThread(slot->slot_id, WorkloadResources(slot.get(), process_list_element));
+            }
         }
     }
     catch (...)

@@ -167,10 +167,21 @@ CPUSlotsAllocation::~CPUSlotsAllocation()
         if (auto result = tryAcquire())
             return result;
         std::unique_lock lock{schedule_mutex};
+        if (freed)
+            return {};
         waiters++;
-        schedule_cv.wait(lock, [this] { return granted > 0 || noncompeting > 0; });
+        schedule_cv.wait(lock, [this] { return granted > 0 || noncompeting > 0 || freed; });
         waiters--;
     }
+}
+
+void CPUSlotsAllocation::free()
+{
+    // Requests are returned by the destructor: `tryAcquire` may still take a granted slot concurrently
+    std::scoped_lock lock{schedule_mutex};
+    freed = true;
+    wait_timer.reset();
+    schedule_cv.notify_all();
 }
 
 void CPUSlotsAllocation::failed(const std::exception_ptr & ptr)
