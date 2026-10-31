@@ -28,5 +28,14 @@ webterminal?cluster=a"b<c&password=p /clickhouse/js/xterm.min.css?cluster=a%22b%
 webterminal?cluster=a"b<c&password=p /clickhouse/js/xterm.min.js?cluster=a%22b%3Cc 200
 webterminal?cluster=a"b<c&password=p /clickhouse/js/addon-fit.min.js?cluster=a%22b%3Cc 200
 webterminal?cluster=a"b<c&password=p /clickhouse/js/addon-web-links.min.js?cluster=a%22b%3Cc 200
+docs?cluster=a&%70assword=p /clickhouse/js/katex.min.css?cluster=a 200
+docs?cluster=a&%70assword=p /clickhouse/js/marked.min.js?cluster=a 200
+docs?cluster=a&%70assword=p /clickhouse/js/katex.min.js?cluster=a 200
+dashboard?pass%77ord=p&cluster=a /clickhouse/js/uplot.js?cluster=a 200
+dashboard?pass%77ord=p&cluster=a /clickhouse/js/lz-string.js?cluster=a 200
+webterminal?cluster=a&us%65r=u&q%75ery=x /clickhouse/js/xterm.min.css?cluster=a 200
+webterminal?cluster=a&us%65r=u&q%75ery=x /clickhouse/js/xterm.min.js?cluster=a 200
+webterminal?cluster=a&us%65r=u&q%75ery=x /clickhouse/js/addon-fit.min.js?cluster=a 200
+webterminal?cluster=a&us%65r=u&q%75ery=x /clickhouse/js/addon-web-links.min.js?cluster=a 200
 play relative
 processors-profile relative

@@ -3,6 +3,7 @@
 #include <Server/HTTPResponseHeaderWriter.h>
 
 #include <Common/re2.h>
+#include <Common/Hex.h>
 #include <Common/StringUtils.h>
 #include <Core/ServerSettings.h>
 #include <IO/HTTPCommon.h>
@@ -121,6 +122,31 @@ String relativeServerRootURL(const HTTPServerRequest & request)
     return url;
 }
 
+/// Decodes a parameter name of a query string as `URLSearchParams` in the browser does: `+` is a space,
+/// a valid `%XX` escape is the byte it encodes, and an invalid escape is kept as is.
+static String decodeQueryParameterName(std::string_view name)
+{
+    String result;
+    result.reserve(name.size());
+    for (size_t i = 0; i < name.size(); ++i)
+    {
+        if (name[i] == '+')
+        {
+            result += ' ';
+        }
+        else if (name[i] == '%' && i + 2 < name.size() && isHexDigit(name[i + 1]) && isHexDigit(name[i + 2]))
+        {
+            result += static_cast<char>(unhex2(&name[i + 1]));
+            i += 2;
+        }
+        else
+        {
+            result += name[i];
+        }
+    }
+    return result;
+}
+
 String routingQueryOfRequest(const HTTPServerRequest & request)
 {
     std::string_view query = request.getURI();
@@ -138,7 +164,9 @@ String routingQueryOfRequest(const HTTPServerRequest & request)
         query = end == std::string_view::npos ? std::string_view() : query.substr(end + 1);
 
         /// The credentials are never routing information, and neither is `query`, which the HTTP interface executes.
-        std::string_view name = parameter.substr(0, parameter.find('='));
+        /// The name is compared decoded, as the page and the HTTP interface see it, so that an encoded
+        /// `%70assword` is dropped as well, while the retained parameters keep their original bytes.
+        String name = decodeQueryParameterName(parameter.substr(0, parameter.find('=')));
         if (parameter.empty() || name == "user" || name == "password" || name == "query")
             continue;
 

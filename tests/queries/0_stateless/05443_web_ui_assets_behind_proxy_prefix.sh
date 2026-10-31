@@ -6,7 +6,8 @@
 # nothing - and a page whose scripts fail to load does not run at all. The links have to be relative
 # to the page, for every route suffix the page is served under (the routes are non-strict paths).
 # The proxy can also select a backend with a routing parameter in the query string (`?cluster=a`), so the
-# links carry the query string of the page as well - without the credentials and `query`.
+# links carry the query string of the page as well - without the credentials and `query`, even when
+# their names are percent-encoded (`%70assword`), as the browser decodes them.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -16,7 +17,8 @@ SERVER="${CLICKHOUSE_PORT_HTTP_PROTO}://${CLICKHOUSE_HOST}:${CLICKHOUSE_PORT_HTT
 PROXY="https://proxy.example/clickhouse"
 
 for route in 'docs' 'docs/' 'docs/a/b?x=/y' 'dashboard' 'dashboard/' 'webterminal' 'webterminal/' \
-    'docs?cluster=a&user=u&password=p' 'dashboard/?query=SELECT%201&cluster=a' 'webterminal?cluster=a"b<c&password=p'
+    'docs?cluster=a&user=u&password=p' 'dashboard/?query=SELECT%201&cluster=a' 'webterminal?cluster=a"b<c&password=p' \
+    'docs?cluster=a&%70assword=p' 'dashboard?pass%77ord=p&cluster=a' 'webterminal?cluster=a&us%65r=u&q%75ery=x'
 do
     # The links to the embedded files, as the browser sees them in the served page.
     links=$(${CLICKHOUSE_CURL} -sS "${SERVER}/${route}" | grep -oE '(src|href)="[^"]*js/[^"]*"' | grep -vF '"http' | sed -E 's/^(src|href)="(.*)"$/\2/')
