@@ -634,10 +634,11 @@ SplitPartsRangesResult splitPartsRangesImpl(RangesInDataParts ranges_in_data_par
             if (!end_optional)
                 continue;
 
-            size_t begin = *end_optional;
+            size_t begin = *begin_optional;
             size_t end = *end_optional;
 
-            if (end - begin >= min_number_of_marks_for_non_intersecting_range)
+            /// `begin` is after `end` if no mark of the range has a value strictly between the two values.
+            if (end > begin && end - begin >= min_number_of_marks_for_non_intersecting_range)
             {
                 other_interval_it->second.begin = end;
                 add_intersecting_range(other_interval_part_index, MarkRange{other_interval_range.begin, begin});
