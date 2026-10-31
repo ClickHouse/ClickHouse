@@ -394,6 +394,7 @@ void Loggers::updateLevels(Poco::Util::AbstractConfiguration & config, Poco::Log
     {
         int text_log_level = Poco::Logger::parseLevel(config.getString("text_log.level"));
         max_log_level = std::max(text_log_level, max_log_level);
+        split->setTextLogLevel(text_log_level);
     }
 
     // Global logging level (it can be overridden for specific loggers).

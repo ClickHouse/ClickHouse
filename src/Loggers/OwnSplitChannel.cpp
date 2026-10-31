@@ -234,6 +234,11 @@ void OwnSplitChannel::addTextLog(std::shared_ptr<SystemLogQueue<TextLogElement>>
     text_log_max_priority.store(max_priority, std::memory_order_relaxed);
 }
 
+void OwnSplitChannel::setTextLogLevel(int max_priority)
+{
+    text_log_max_priority.store(max_priority, std::memory_order_relaxed);
+}
+
 void OwnSplitChannel::setLevel(const std::string & name, int level)
 {
      auto it = channels.find(name);
@@ -806,6 +811,15 @@ void OwnAsyncSplitChannel::addTextLog(std::shared_ptr<DB::TextLogQueue> log_queu
     text_log_max_priority.store(max_priority, std::memory_order_relaxed);
     text_log_thread = nullptr;
     text_log_runnable = std::make_unique<OwnRunnableForTextLog>(*this);
+}
+
+void OwnAsyncSplitChannel::setTextLogLevel(int max_priority)
+{
+    /// The consumer thread is started in open() only when the initial level is not 0. Without it,
+    /// raising the level would enqueue messages nobody drains, so keep text_log off in that case.
+    if (is_open && !text_log_thread)
+        return;
+    text_log_max_priority.store(max_priority, std::memory_order_relaxed);
 }
 
 void OwnAsyncSplitChannel::setLevel(const std::string & name, int level)
