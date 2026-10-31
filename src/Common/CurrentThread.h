@@ -63,6 +63,9 @@ public:
 
     /// Group to which belongs current thread
     static ThreadGroupPtr getGroup();
+    /// Same as `getGroup() != nullptr`, but doesn't touch the reference counter of the group, which
+    /// is shared by all threads of the query: it is called on every log message, even a disabled one.
+    static bool hasGroup();
 
     /// MemoryTracker for user that owns current thread if any
 

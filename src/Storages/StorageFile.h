@@ -18,6 +18,7 @@
 #include <atomic>
 #include <mutex>
 #include <unordered_map>
+#include <unordered_set>
 #include <sys/stat.h>
 
 namespace DB
@@ -28,6 +29,9 @@ using OutputFormatPtr = std::shared_ptr<IOutputFormat>;
 
 class IInputFormat;
 using InputFormatPtr = std::shared_ptr<IInputFormat>;
+
+struct FileBucketInfo;
+using FileBucketInfoPtr = std::shared_ptr<FileBucketInfo>;
 
 class PullingPipelineExecutor;
 
@@ -348,6 +352,26 @@ private:
     };
     using TopKQueryConditionCacheKeyPtr = std::shared_ptr<const TopKQueryConditionCacheKey>;
 
+    /// A single file that is read by several sources in parallel, each reading one bucket (a subset of
+    /// the row groups) of it. Made by `ReadFromFile::trySplitSingleFile` and shared by these sources.
+    struct SplitFile
+    {
+        String path;
+        /// The version of the file that was split, see `computeFileCacheVersionToken`. The buckets
+        /// describe this version only, so every source checks that it reads this version.
+        String file_cache_version;
+        std::vector<FileBucketInfoPtr> buckets;
+
+        /// Every source reads only the row groups of its own bucket, so the query condition cache entry
+        /// for the file can be written only after all buckets are read.
+        std::mutex mutex;
+        size_t buckets_read TSA_GUARDED_BY(mutex) = 0;
+        bool can_write_query_condition_cache TSA_GUARDED_BY(mutex) = true;
+        size_t total_row_groups TSA_GUARDED_BY(mutex) = 0;
+        std::unordered_set<size_t> matched_row_groups TSA_GUARDED_BY(mutex);
+    };
+    using SplitFilePtr = std::shared_ptr<SplitFile>;
+
     StorageFileSource(
         const ReadFromFormatInfo & info,
         std::shared_ptr<StorageFile> storage_,
@@ -360,7 +384,9 @@ private:
         FormatFilterInfoPtr format_filter_info_,
         LazyFileRegistryPtr lazy_row_index_registry_ = nullptr,
         TopKQueryConditionCacheKeyPtr top_k_query_condition_cache_key_ = nullptr,
-        const UUID & query_condition_cache_table_id_ = UUIDHelpers::Nil);
+        const UUID & query_condition_cache_table_id_ = UUIDHelpers::Nil,
+        SplitFilePtr split_file_ = nullptr,
+        size_t split_file_bucket_ = 0);
 
     /**
       * If specified option --rename_files_after_processing and files created by TableFunctionFile
@@ -397,6 +423,10 @@ private:
 
     /// Writes `pending_top_k_query_condition_cache_entries` to the query condition cache.
     void writePendingTopKQueryConditionCacheEntries();
+
+    /// Records the row groups of the bucket of `split_file` this source has read that produced rows,
+    /// and writes the query condition cache entry for the file once all buckets are read.
+    void finishReadingSplitFileBucket();
 
     std::shared_ptr<StorageFile> storage;
     FilesIteratorPtr files_iterator;
@@ -442,6 +472,10 @@ private:
         std::vector<std::pair<size_t, Field>> best_values;
     };
     std::vector<PendingTopKQueryConditionCacheEntry> pending_top_k_query_condition_cache_entries;
+
+    /// If set, this source reads only bucket `split_file_bucket` of `split_file`.
+    SplitFilePtr split_file;
+    size_t split_file_bucket = 0;
 
     std::shared_ptr<IArchiveReader> archive_reader;
     std::unique_ptr<IArchiveReader::FileEnumerator> file_enumerator;
@@ -523,6 +557,15 @@ public:
 
 private:
     StorageFileSource::TopKQueryConditionCacheKeyPtr makeTopKQueryConditionCacheKey() const;
+
+    /// If the query reads a single file that can be split into buckets, returns the buckets to read by
+    /// separate sources. Otherwise the file is read by one source, whose reader may still use several
+    /// threads, but that is much less efficient: the rest of the pipeline then starts with a single
+    /// stream, and the reader can't keep as many threads busy as independent sources do.
+    /// Takes the read lock of the storage into `read_lock` before looking at the file, so that the
+    /// caller keeps it until the sources (which take their own read locks) are constructed.
+    StorageFileSource::SplitFilePtr trySplitSingleFile(
+        const FormatFilterInfoPtr & format_filter_info, const UUID & query_condition_cache_table_id, RWLockImpl::LockHolder & read_lock) const;
 
     std::shared_ptr<StorageFile> storage;
     const Strings paths_snapshot;
