@@ -3,8 +3,8 @@
         Lazy materialization over joins: for a query with a LIMIT over joins, the columns that only the result needs
         are read for the rows the LIMIT returns, by the row index of each table, instead of being read for every row
         and carried through the joins. The joins are pinned so that both sides are read directly and keep the order
-        they are written in. The last query is a control: a single table, which the other lazy materialization path
-        handles, must not change.
+        they are written in. The query on a single table is a control: the other lazy materialization path handles
+        it, and it must not change.
     -->
     <settings>
         <join_algorithm>hash</join_algorithm>
@@ -47,6 +47,10 @@
 
     <!-- Control: a single table, which the other lazy materialization path handles. -->
     <query>SELECT k, payload FROM lazy_join_facts ORDER BY sipHash64(k, ts) LIMIT 10 FORMAT Null</query>
+
+    <!-- The two joins again, with the layout that `parallel_hash_join_threshold` picks for the default `join_algorithm`
+         list. There are no row estimates here, so both hash tables are built in parallel. -->
+    <query>SELECT f.k, f.payload, d.descr, o.info FROM lazy_join_facts f JOIN lazy_join_dim d ON f.dim_key = d.dim_key JOIN lazy_join_other o ON f.other_key = o.other_key ORDER BY f.ts LIMIT 100 SETTINGS join_algorithm = 'parallel_hash,hash', parallel_hash_join_threshold = 100000 FORMAT Null</query>
 
     <drop_query>DROP TABLE IF EXISTS lazy_join_facts</drop_query>
     <drop_query>DROP TABLE IF EXISTS lazy_join_dim</drop_query>
