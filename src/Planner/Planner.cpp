@@ -2784,6 +2784,9 @@ void Planner::buildPlanForUnionNode()
             return;
     }
 
+    /// Each arm is checked only against its own context, so compare the arms with the union here.
+    checkParallelReplicasImplementationOfSubqueries(query_tree, query_context);
+
     const auto & union_queries_nodes = union_node.getQueries().getNodes();
     size_t queries_size = union_queries_nodes.size();
 
@@ -2980,6 +2983,9 @@ void Planner::buildPlanForQueryNode()
 
         query_node.getHaving() = {};
     }
+
+    /// Before collecting sets and materialized CTEs, whose subqueries are planned separately.
+    checkParallelReplicasImplementationOfSubqueries(query_tree, query_context);
 
     collectSets(query_tree, *planner_context);
     auto materialized_ctes = collectMaterializedCTEs(query_tree, select_query_options);

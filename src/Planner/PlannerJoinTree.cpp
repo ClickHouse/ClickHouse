@@ -130,6 +130,7 @@ namespace Setting
 {
     extern const SettingsMap additional_table_filters;
     extern const SettingsUInt64 allow_experimental_parallel_reading_from_replicas;
+    extern const SettingsUInt64 automatic_parallel_replicas_mode;
     extern const SettingsBool optimize_trivial_view_pushdown_to_distributed;
     extern const SettingsUInt64 distributed_group_by_no_merge;
     extern const SettingsBool optimize_skip_unused_shards;
@@ -195,6 +196,7 @@ namespace ErrorCodes
     extern const int UNSUPPORTED_METHOD;
     extern const int NOT_IMPLEMENTED;
     extern const int ACCESS_DENIED;
+    extern const int INCORRECT_QUERY;
 }
 
 namespace
@@ -1823,6 +1825,43 @@ void disableParallelReplicasForSubqueries(const QueryTreeNodePtr & node)
     });
 }
 
+}
+
+void checkParallelReplicasImplementationOfSubqueries(const QueryTreeNodePtr & node, const ContextPtr & query_context)
+{
+    /// Query-based and plan-based parallel replicas cannot be mixed in one query: the subtree planned for
+    /// the other one reads without parallel replicas. Any subquery (table expression, `IN` set, CTE,
+    /// correlated subquery) has its own context, so it can set a different `parallel_replicas_plan_based`.
+    /// A (sub)query with parallel replicas disabled is skipped: the setting has no effect there.
+    auto parallel_replicas_enabled = [](const Settings & settings)
+    {
+        return settings[Setting::allow_experimental_parallel_reading_from_replicas] || settings[Setting::automatic_parallel_replicas_mode];
+    };
+
+    const auto & settings = query_context->getSettingsRef();
+    if (!parallel_replicas_enabled(settings))
+        return;
+    if (query_context->getClientInfo().collaborate_with_initiator)
+        return;
+
+    const bool plan_based = settings[Setting::parallel_replicas_plan_based];
+    auto check = [plan_based, &parallel_replicas_enabled](const ContextPtr & context)
+    {
+        const auto & context_settings = context->getSettingsRef();
+        if (parallel_replicas_enabled(context_settings) && context_settings[Setting::parallel_replicas_plan_based] != plan_based)
+            throw Exception(ErrorCodes::INCORRECT_QUERY,
+                "A subquery sets `parallel_replicas_plan_based` = {}, while the query reads with parallel replicas with "
+                "`parallel_replicas_plan_based` = {}. One query uses one implementation of parallel replicas: set it for the whole query",
+                !plan_based, plan_based);
+    };
+
+    traverseQueryTree(node, Everything{}, [&check](const QueryTreeNodePtr & current_node)
+    {
+        if (const auto * query_node = current_node->as<QueryNode>())
+            check(query_node->getContext());
+        else if (const auto * union_node = current_node->as<UnionNode>())
+            check(union_node->getContext());
+    });
 }
 
 void disableParallelReplicasForMultipleTablesQueryIfNeeded(const QueryTreeNodePtr & query_node, const PlannerContextPtr & planner_context)
