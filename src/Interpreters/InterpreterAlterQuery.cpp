@@ -588,13 +588,33 @@ BlockIO InterpreterAlterQuery::executeToTable(const ASTAlterQuery & alter)
     /// `DatabaseCatalog::isBoundHierarchicalName`), so `db.ns.t` must already be the table `db`.`ns.t` it denotes here.
     /// This is the same expansion and qualification as below, which is idempotent; the table is qualified with the
     /// database of the altered table, as each host does.
-    if (modify_query && table_id)
+    /// The same holds for the table operands of the mutation expressions (`DELETE WHERE x IN db.ns.src`).
+    if (table_id)
     {
         ExpandedASTBudget binding_budget(settings[Setting::max_expanded_ast_elements], *query_ptr);
-        ApplyWithSubqueryVisitor::visit(*modify_query, binding_budget);
         AddDefaultDatabaseVisitor binding_visitor(getContext(), table_id.getDatabaseName());
-        ASTPtr modify_query_ptr = modify_query->ptr();
-        binding_visitor.visit(modify_query_ptr);
+        if (modify_query)
+        {
+            ApplyWithSubqueryVisitor::visit(*modify_query, binding_budget);
+            ASTPtr modify_query_ptr = modify_query->ptr();
+            binding_visitor.visit(modify_query_ptr);
+        }
+        for (const auto & child : alter.command_list->children)
+        {
+            const auto * command = child->as<ASTAlterCommand>();
+            if (!command || (command->type != ASTAlterCommand::UPDATE && command->type != ASTAlterCommand::DELETE))
+                continue;
+
+            for (IAST * expression : {command->predicate, command->update_assignments})
+            {
+                if (!expression)
+                    continue;
+                ASTPtr expression_ptr = expression->ptr();
+                ApplyWithSubqueryVisitor::visit(expression_ptr, getContext(), binding_budget);
+            }
+            ASTPtr command_ptr = child;
+            binding_visitor.visit(command_ptr);
+        }
     }
 
     if (!alter.cluster.empty() && !maybeRemoveOnCluster(query_ptr, getContext()))
@@ -607,8 +627,8 @@ BlockIO InterpreterAlterQuery::executeToTable(const ASTAlterQuery & alter)
         /// implicitly, e.g. `merge('tables_regexp')` in a mutation, so that they read the same tables
         /// as in the non-clustered case. It has to be done before `executeDDLQueryOnCluster`,
         /// which replaces `currentDatabase()` with the database of the session.
-        /// The table identifiers are not qualified here: they are qualified with the database
-        /// of the altered table when the query is interpreted on each host.
+        /// The table identifiers of the mutation expressions are already qualified above, with the database
+        /// of the altered table, as each host would qualify them.
         if (table_id)
         {
             AddDefaultDatabaseVisitor visitor(getContext(), table_id.getDatabaseName());
