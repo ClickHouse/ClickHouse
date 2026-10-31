@@ -1731,6 +1731,12 @@ bool IcebergStorageSink::initializeMetadata()
         /// Invalidate the cache so the next reader gets the latest version, which a concurrent catalog update may have changed.
         persistent_table_components.invalidateMetadataCache();
     }
+    catch (const Exception & e)
+    {
+        if (!Iceberg::isCommitStateUnknown(e))
+            cleanup(false);
+        throw;
+    }
     catch (...)
     {
         /// TODO: keep the files when the catalog reports an unknown commit outcome (`CommitStateUnknownException` or a 5xx), because the snapshot may already reference them.
