@@ -33,6 +33,7 @@
 #include <Common/CurrentThread.h>
 #include <Common/StringUtils.h>
 #include <Common/ProfileEvents.h>
+#include <Common/FailPoint.h>
 #include <Interpreters/InternalTextLogsQueue.h>
 #include <Parsers/ParserQuery.h>
 #include <Parsers/ASTFromJSON.h>
@@ -50,6 +51,11 @@ namespace ProfileEvents
 
 namespace DB
 {
+namespace FailPoints
+{
+    extern const char local_connection_receive_packet_throw[];
+}
+
 namespace Setting
 {
     extern const SettingsBool allow_settings_after_format_in_insert;
@@ -92,6 +98,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int SUPPORT_IS_DISABLED;
     extern const int SYNTAX_ERROR;
+    extern const int FAULT_INJECTED;
 }
 
 LocalConnection::LocalConnection(ContextPtr context_, ReadBuffer * in_, bool send_progress_, bool send_profile_events_, const String & server_display_name_)
@@ -712,6 +719,28 @@ void LocalConnection::sendCancel()
         state->pushing_async_executor->cancel();
 }
 
+bool LocalConnection::checkConnected(const ConnectionTimeouts &)
+{
+    /// The client calls it to resynchronize after a failed query exchange: end the query it has abandoned.
+    if (state)
+    {
+        if (!state->is_finished && !state->is_cancelled)
+        {
+            try
+            {
+                sendCancel();
+            }
+            catch (...) // NOLINT(bugprone-empty-catch) Ok: the cancellation can rethrow the failure of the abandoned pipeline
+            {
+            }
+        }
+        state.reset();
+        next_packet_type.reset();
+        last_sent_snapshots.clear();
+    }
+    return true;
+}
+
 bool LocalConnection::pullBlock(Block & block)
 {
     chassert(state);
@@ -996,6 +1025,11 @@ Packet LocalConnection::receivePacket()
         packet.type = Protocol::Server::EndOfStream;
         return packet;
     }
+
+    fiu_do_on(FailPoints::local_connection_receive_packet_throw,
+    {
+        throw Exception(ErrorCodes::FAULT_INJECTED, "Injecting fault while receiving a packet of a local connection");
+    });
 
     if (!next_packet_type)
         poll(0);

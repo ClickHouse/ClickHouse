@@ -210,6 +210,7 @@ static struct InitFiu
     ONCE(framing_pump_logs_throw) \
     ONCE(framing_exception_packet_throw) \
     ONCE(framing_throw_after_final_progress) \
+    ONCE(local_connection_receive_packet_throw) \
     ONCE(write_buffer_valid_utf8_finalize_throw) \
     ONCE(http_output_finalize_throw) \
     ONCE(http_push_delayed_results_throw) \
