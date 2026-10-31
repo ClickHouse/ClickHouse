@@ -1,0 +1,98 @@
+#include <Parsers/ParserCreateTypeQuery.h>
+#include <Parsers/ASTCreateTypeQuery.h>
+#include <Parsers/ASTExpressionList.h>
+#include <Parsers/ASTIdentifier.h>
+#include <Parsers/CommonParsers.h>
+#include <Parsers/ParserDataType.h>
+#include <Parsers/ExpressionElementParsers.h>
+#include <Parsers/ExpressionListParsers.h>
+
+namespace DB
+{
+
+bool ParserCreateTypeQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
+{
+    ParserKeyword s_create(Keyword::CREATE);
+    ParserKeyword s_type(Keyword::TYPE);
+    ParserKeyword s_if_not_exists(Keyword::IF_NOT_EXISTS);
+    ParserKeyword s_or_replace(Keyword::OR_REPLACE);
+    ParserKeyword s_as(Keyword::AS);
+
+    ParserIdentifier name_p;
+    ParserDataType type_p;
+
+    ASTPtr name;
+    ASTPtr base_type;
+    ASTPtr params_ast;
+    bool if_not_exists = false;
+    bool or_replace = false;
+
+    if (!s_create.ignore(pos, expected))
+        return false;
+
+    if (!s_type.ignore(pos, expected))
+        return false;
+
+    if (s_if_not_exists.ignore(pos, expected))
+        if_not_exists = true;
+    else if (s_or_replace.ignore(pos, expected))
+        or_replace = true;
+
+    /// The name of the type and the names of its parameters are used where `ParserDataType` parses a type name, so
+    /// only the names it accepts are allowed: ``CREATE TYPE `Type-With-Dashes` AS String`` would create a type that no
+    /// column declaration or `CAST` could refer to.
+    auto parse_type_name = [&](ASTPtr & result)
+    {
+        auto begin = pos;
+        if (!name_p.parse(pos, result, expected))
+            return false;
+        if (!isValidDataTypeName(typeid_cast<const ASTIdentifier &>(*result).name()))
+        {
+            pos = begin;
+            expected.add(pos, "type name");
+            return false;
+        }
+        return true;
+    };
+
+    if (!parse_type_name(name))
+        return false;
+
+    if (ParserToken(TokenType::OpeningRoundBracket).ignore(pos, expected))
+    {
+        params_ast = make_intrusive<ASTExpressionList>();
+        do
+        {
+            ASTPtr param;
+            if (!parse_type_name(param))
+                return false;
+            params_ast->children.push_back(param);
+        } while (ParserToken(TokenType::Comma).ignore(pos, expected));
+
+        if (!ParserToken(TokenType::ClosingRoundBracket).ignore(pos, expected))
+            return false;
+    }
+
+    if (!s_as.ignore(pos, expected))
+        return false;
+
+    if (!type_p.parse(pos, base_type, expected))
+        return false;
+
+    auto query = make_intrusive<ASTCreateTypeQuery>();
+    query->name = typeid_cast<ASTIdentifier &>(*name).name();
+    query->base_type = base_type;
+    query->type_parameters = params_ast;
+    query->if_not_exists = if_not_exists;
+    query->or_replace = or_replace;
+
+    if (query->base_type)
+        query->children.push_back(query->base_type);
+    if (query->type_parameters)
+        query->children.push_back(query->type_parameters);
+
+    node = query;
+    return true;
+}
+
+}

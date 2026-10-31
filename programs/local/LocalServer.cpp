@@ -2092,7 +2092,10 @@ void LocalServer::processConfig()
             deferSystemDatabaseTables(global_context, *createMemoryDatabaseIfNotExists(global_context, DatabaseCatalog::SYSTEM_DATABASE));
 
         if (fs::exists(fs::path(path) / "user_defined"))
+        {
             global_context->getUserDefinedSQLObjectsStorage().loadObjects();
+            global_context->getUserDefinedTypesStorage().loadObjects();
+        }
     }
     else if (attach_system_tables)
     {

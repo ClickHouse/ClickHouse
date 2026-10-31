@@ -99,6 +99,12 @@ namespace
         return (table_name.database == DatabaseCatalog::SYSTEM_DATABASE) && (table_name.table == "functions");
     }
 
+    /// Whether a specified name corresponds to the system table backing user-defined types.
+    bool isSystemUserDefinedTypesTableName(const QualifiedTableName & table_name)
+    {
+        return (table_name.database == DatabaseCatalog::SYSTEM_DATABASE) && (table_name.table == "user_defined_types");
+    }
+
     /// Whether a specified name corresponds to the system table backing WORKLOAD entities.
     bool isSystemWorkloadsTableName(const QualifiedTableName & table_name)
     {
@@ -352,6 +358,17 @@ void RestorerFromBackup::checkAccessForObjectsFoundInBackup() const
                     /// CREATE_FUNCTION privilege is required to restore the "system.functions" table.
                     if (table_info.has_data && restore_settings.shouldRestoreFunctions())
                         required_access.emplace_back(AccessType::CREATE_FUNCTION);
+                }
+                else if (isSystemUserDefinedTypesTableName(table_name))
+                {
+                    /// RESTORE registers the types directly, bypassing InterpreterCreateTypeQuery's own access check,
+                    /// so require the access of CREATE TYPE, and of CREATE OR REPLACE TYPE in 'replace' mode.
+                    if (table_info.has_data && restore_settings.shouldRestoreTableData())
+                    {
+                        required_access.emplace_back(AccessType::CREATE_TYPE);
+                        if (restore_settings.create_function == RestoreUDFCreationMode::kReplace)
+                            required_access.emplace_back(AccessType::DROP_TYPE);
+                    }
                 }
                 else if (isSystemWorkloadsTableName(table_name))
                 {

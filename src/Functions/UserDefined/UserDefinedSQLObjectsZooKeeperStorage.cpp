@@ -1,9 +1,9 @@
 #include <Functions/UserDefined/UserDefinedSQLObjectsZooKeeperStorage.h>
 
-#include <Functions/UserDefined/UserDefinedSQLFunctionFactory.h>
 #include <Functions/UserDefined/UserDefinedSQLObjectType.h>
 #include <Interpreters/Context.h>
 #include <Parsers/ParserCreateFunctionQuery.h>
+#include <Parsers/ParserCreateTypeQuery.h>
 #include <Parsers/parseQuery.h>
 #include <base/sleep.h>
 #include <Common/Exception.h>
@@ -34,8 +34,6 @@ extern const SettingsUInt64 max_parser_depth;
 
 namespace ErrorCodes
 {
-    extern const int FUNCTION_ALREADY_EXISTS;
-    extern const int UNKNOWN_FUNCTION;
     extern const int BAD_ARGUMENTS;
 }
 
@@ -47,6 +45,8 @@ namespace
         {
             case UserDefinedSQLObjectType::Function:
                 return "function_";
+            case UserDefinedSQLObjectType::Type:
+                return "type_";
         }
     }
 
@@ -70,8 +70,8 @@ namespace
 
 
 UserDefinedSQLObjectsZooKeeperStorage::UserDefinedSQLObjectsZooKeeperStorage(
-    const ContextPtr & global_context_, const String & zookeeper_path_)
-    : UserDefinedSQLObjectsStorageBase(global_context_)
+    const ContextPtr & global_context_, UserDefinedSQLObjectType object_type, const String & zookeeper_path_)
+    : UserDefinedSQLObjectsStorageBase(global_context_, object_type)
     , zookeeper_getter{[global_context_]() { return global_context_->getZooKeeper(); }}
     , zookeeper_path{zookeeper_path_}
     , watch_queue{std::make_shared<ConcurrentBoundedQueue<std::pair<UserDefinedSQLObjectType, String>>>(std::numeric_limits<size_t>::max())}
@@ -256,7 +256,8 @@ bool UserDefinedSQLObjectsZooKeeperStorage::storeObjectImpl(
         if (code == Coordination::Error::ZNODEEXISTS)
         {
             if (throw_if_exists)
-                throw Exception(ErrorCodes::FUNCTION_ALREADY_EXISTS, "User-defined function '{}' already exists", object_name);
+                throw Exception(getUserDefinedSQLObjectAlreadyExistsErrorCode(object_type),
+                    "User-defined {} '{}' already exists", getUserDefinedSQLObjectTypeName(object_type), object_name);
             if (!replace_if_exists)
                 return false;
 
@@ -299,7 +300,8 @@ bool UserDefinedSQLObjectsZooKeeperStorage::removeObjectImpl(
     if (code == Coordination::Error::ZNONODE)
     {
         if (throw_if_not_exists)
-            throw Exception(ErrorCodes::UNKNOWN_FUNCTION, "User-defined object '{}' doesn't exist", object_name);
+            throw Exception(getUnknownUserDefinedSQLObjectErrorCode(object_type),
+                "User-defined {} '{}' doesn't exist", getUserDefinedSQLObjectTypeName(object_type), object_name);
         return false;
     }
 
@@ -334,23 +336,32 @@ bool UserDefinedSQLObjectsZooKeeperStorage::getObjectDataAndSetWatch(
 
 ASTPtr UserDefinedSQLObjectsZooKeeperStorage::parseObjectData(const String & object_data, UserDefinedSQLObjectType object_type)
 {
+    auto context = getContext();
+    auto parse = [&](IParser & parser)
+    {
+        return parseQuery(
+            parser,
+            object_data.data(),
+            object_data.data() + object_data.size(),
+            "",
+            0,
+            context->getSettingsRef()[Setting::max_parser_depth],
+            context->getSettingsRef()[Setting::max_parser_backtracks]);
+    };
+
     switch (object_type)
     {
-        case UserDefinedSQLObjectType::Function: {
-            auto context = getContext();
+        case UserDefinedSQLObjectType::Function:
+        {
             ParserCreateFunctionQuery parser;
-            ASTPtr ast = parseQuery(
-                parser,
-                object_data.data(),
-                object_data.data() + object_data.size(),
-                "",
-                0,
-                context->getSettingsRef()[Setting::max_parser_depth],
-                context->getSettingsRef()[Setting::max_parser_backtracks]);
-            return ast;
+            return parse(parser);
+        }
+        case UserDefinedSQLObjectType::Type:
+        {
+            ParserCreateTypeQuery parser;
+            return parse(parser);
         }
     }
-    UNREACHABLE();
 }
 
 ASTPtr UserDefinedSQLObjectsZooKeeperStorage::tryLoadObject(
@@ -427,7 +438,7 @@ void UserDefinedSQLObjectsZooKeeperStorage::refreshAllObjects(const zkutil::ZooK
     /// It doesn't make sense to keep the old watch events because we will reread everything in this function.
     watch_queue->clear();
 
-    refreshObjects(zookeeper, UserDefinedSQLObjectType::Function);
+    refreshObjects(zookeeper, storage_object_type);
     objects_loaded = true;
 }
 
@@ -446,7 +457,7 @@ void UserDefinedSQLObjectsZooKeeperStorage::refreshObjects(const zkutil::ZooKeep
     static constexpr UInt64 initial_backoff_ms = 200;
     static constexpr UInt64 max_backoff_ms = 5000;
 
-    VectorWithMemoryTracking<std::pair<String, ASTPtr>> function_names_and_asts;
+    VectorWithMemoryTracking<std::pair<String, ASTPtr>> object_names_and_asts;
     zkutil::ZooKeeperPtr current_zookeeper = zookeeper;
 
     ZooKeeperRetriesControl retries_ctl(
@@ -462,15 +473,15 @@ void UserDefinedSQLObjectsZooKeeperStorage::refreshObjects(const zkutil::ZooKeep
 
         Strings object_names = getObjectNamesAndSetWatch(current_zookeeper, object_type);
 
-        function_names_and_asts.clear();
-        for (const auto & function_name : object_names)
+        object_names_and_asts.clear();
+        for (const auto & object_name : object_names)
         {
-            if (auto ast = tryLoadObject(current_zookeeper, UserDefinedSQLObjectType::Function, function_name))
-                function_names_and_asts.emplace_back(function_name, ast);
+            if (auto ast = tryLoadObject(current_zookeeper, object_type, object_name))
+                object_names_and_asts.emplace_back(object_name, ast);
         }
     });
 
-    setAllObjects(function_names_and_asts);
+    setAllObjects(object_names_and_asts);
 
     LOG_DEBUG(log, "All user-defined {} objects refreshed", object_type);
 }
@@ -485,10 +496,10 @@ void UserDefinedSQLObjectsZooKeeperStorage::syncObjects(const zkutil::ZooKeeperP
     /// Remove stale objects
     removeAllObjectsExcept(object_names);
     /// Read & parse only new SQL objects from ZooKeeper
-    for (const auto & function_name : object_names)
+    for (const auto & object_name : object_names)
     {
-        if (!UserDefinedSQLFunctionFactory::instance().has(function_name))
-            refreshObject(zookeeper, UserDefinedSQLObjectType::Function, function_name);
+        if (!has(object_name))
+            refreshObject(zookeeper, object_type, object_name);
     }
 
     LOG_DEBUG(log, "User-defined {} objects synced", object_type);

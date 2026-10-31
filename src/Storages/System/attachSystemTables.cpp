@@ -144,6 +144,7 @@
 #include <DistributedCache/Utils.h>
 #endif
 #include <Storages/System/StorageSystemIcebergHistory.h>
+#include <Storages/System/StorageSystemUserDefinedTypes.h>
 #include <Storages/System/StorageSystemIcebergMetadataLogEntries.h>
 #if USE_ICU
 #   include <Storages/System/StorageSystemUnicode.h>
@@ -4038,6 +4039,7 @@ SELECT code_point, code_point_value, notation FROM system.unicode WHERE code_poi
 ```
 )DOCS_MD");
 #endif
+    attach<StorageSystemUserDefinedTypes>(context, system_database, "user_defined_types", "Contains a list of all currently existing user-defined types.");
 
     if (has_zookeeper)
         attachSystemTablesGatedOnZooKeeper(context, system_database);

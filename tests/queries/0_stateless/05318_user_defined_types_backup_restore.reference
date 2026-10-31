@@ -1,0 +1,15 @@
+BACKUP_CREATED
+--- dropped
+RESTORED
+--- restored
+BackupA_DB	CREATE TYPE BackupA_DB AS Tuple(UInt64, BackupZ_DB(String))
+BackupZ_DB	CREATE TYPE BackupZ_DB(T) AS Array(T)
+Tuple(UInt64, Array(String))
+RESTORED
+--- kept
+BackupA_DB	CREATE TYPE BackupA_DB AS Tuple(UInt64, BackupZ_DB(String))
+BackupZ_DB	CREATE TYPE BackupZ_DB(T) AS Array(Nullable(T))
+RESTORED
+--- replaced
+BackupA_DB	CREATE TYPE BackupA_DB AS Tuple(UInt64, BackupZ_DB(String))
+BackupZ_DB	CREATE TYPE BackupZ_DB(T) AS Array(T)

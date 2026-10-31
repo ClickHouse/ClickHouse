@@ -1,0 +1,7 @@
+BACKUP_CREATED
+--- before
+RollbackB_DB	CREATE TYPE RollbackB_DB AS String
+TYPE_ALREADY_EXISTS
+--- after the failed restore
+RollbackB_DB	CREATE TYPE RollbackB_DB AS String
+String
