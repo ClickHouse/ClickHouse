@@ -6,6 +6,8 @@ String keys
 9000000	1	1
 uniqExact
 9000000
+Merge of two large uniqExact states
+18000000
 Merge of two-level states
 9000000	18000000
 JOIN
