@@ -1744,7 +1744,8 @@ bool DynamicQueryHandler::customizeQueryParam(NameToNameMap & query_parameters, 
 
 bool DynamicQueryHandler::isQueryTextParameter(const std::string & name) const
 {
-    return name == param_name || startsWith(name, QUERY_PARAMETER_NAME_PREFIX);
+    /// Case-insensitive, like the params.get(param_name) lookup in getQuery.
+    return Poco::icompare(name, param_name) == 0 || startsWith(name, QUERY_PARAMETER_NAME_PREFIX);
 }
 
 std::string DynamicQueryHandler::getQuery(HTTPServerRequest & request, HTMLForm & params, ContextMutablePtr context, ReadBuffer & body)

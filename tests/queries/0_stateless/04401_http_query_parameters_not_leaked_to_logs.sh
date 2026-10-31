@@ -50,6 +50,9 @@ ${CLICKHOUSE_CURL} -sS -G "${CLICKHOUSE_URL}&query_id=${secret}_id_d" --header "
     --data-urlencode "query=$(s3_query "'${secret}_qspan'")" >/dev/null 2>&1
 # The SQL-defined handler: `v` is a receive parameter, `param_w` an undeclared one.
 ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_PORT_HTTP_PROTO}://${CLICKHOUSE_HOST}:${CLICKHOUSE_PORT_HTTP}/${handler}?v=${secret}_hrecv&param_w=${secret}_hprm&query_id=${secret}_id_e" >/dev/null 2>&1
+# A case variant of the query parameter name (the lookup is case-insensitive).
+${CLICKHOUSE_CURL} -sS -G "${CLICKHOUSE_URL}&query_id=${secret}_id_f" \
+    --data-urlencode "QUERY=$(s3_query "'${secret}_qcase'")" >/dev/null 2>&1
 
 # A non-sensitive parameter must NOT be redacted. Issued last on purpose (see the loop below).
 ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&query_id=${secret}_visible" -d "SELECT 1 FORMAT Null" >/dev/null 2>&1
@@ -66,7 +69,7 @@ for _ in {1..60}; do
     landed=$(${CLICKHOUSE_CLIENT} --query="
         SELECT
             countIf(message LIKE '%Request URI%' AND message LIKE '%param_secret_key=[HIDDEN]%') > 0
-            AND countIf(message LIKE '%Request URI%' AND message LIKE '%query_id=${secret}\\_id\\_%') >= 5
+            AND countIf(message LIKE '%Request URI%' AND message LIKE '%query_id=${secret}\\_id\\_%') >= 6
             AND countIf(message LIKE '%Request URI%' AND message LIKE '%query_id=${secret}\\_visible%') > 0
         FROM system.text_log
         WHERE event_date >= yesterday() AND event_time >= toDateTime(${test_start})
@@ -161,6 +164,16 @@ ${CLICKHOUSE_CLIENT} --query="
     SELECT
         countIf(message LIKE '%${secret}\\_hrecv%' OR message LIKE '%${secret}\\_hprm%'),
         countIf(message LIKE '%query_id=${secret}\\_id\\_e%' AND message LIKE '%?v=[HIDDEN]&param\\_w=[HIDDEN]&%') > 0
+    FROM system.text_log
+    WHERE event_date >= yesterday() AND event_time >= toDateTime(${test_start})
+      AND message LIKE '%Request URI%'
+    SETTINGS max_rows_to_read = 0, enable_parallel_replicas = 0"
+
+echo "--- a case variant of the query parameter name is hidden in the Request URI line ---"
+${CLICKHOUSE_CLIENT} --query="
+    SELECT
+        countIf(message LIKE '%${secret}\\_qcase%'),
+        countIf(message LIKE '%query_id=${secret}\\_id\\_f%' AND message LIKE '%&QUERY=[HIDDEN]%') > 0
     FROM system.text_log
     WHERE event_date >= yesterday() AND event_time >= toDateTime(${test_start})
       AND message LIKE '%Request URI%'

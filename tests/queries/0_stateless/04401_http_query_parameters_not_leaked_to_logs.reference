@@ -17,3 +17,5 @@
 1
 --- the SQL-defined handler hides its receive parameter and param_* in the Request URI line ---
 0	1
+--- a case variant of the query parameter name is hidden in the Request URI line ---
+0	1
