@@ -3344,9 +3344,9 @@ struct Transformer
         /// `999:59:59.5` is a good `Time64(1)` value even though `999:59:60` is not a good number of seconds.
         [[maybe_unused]] Int64 whole_seconds_lower_bound = 0;
         [[maybe_unused]] Int64 whole_seconds_upper_bound = 0;
-        /// A `BFloat16` source is checked in `Float32`, the carrier the transform computes in: every `BFloat16`
-        /// value is exact there, while the 8-bit mantissa of the source could not even hold the scale multiplier.
-        using FloatCheckType = std::conditional_t<std::is_same_v<FromValueType, BFloat16>, Float32, FromValueType>;
+        /// A floating-point source is checked in `Float64`, the carrier the transform computes in: every `BFloat16`
+        /// and `Float32` value is exact there, while the narrower mantissa of the source would round the tick count.
+        using FloatCheckType = std::conditional_t<is_floating_point<FromValueType>, Float64, FromValueType>;
         [[maybe_unused]] FloatCheckType ticks_lower_bound {};
         [[maybe_unused]] FloatCheckType ticks_upper_bound {};
         /// A `Date32` day is not always representable as a high-precision `DateTime64` - a scale-9 one ends at

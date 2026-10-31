@@ -818,8 +818,13 @@ struct ToDateTime64TransformFloat
         return static_cast<DateTime64::NativeType>(ticks);
     }
 
-    /// A `BFloat16` source is widened to the carrier type the transform computes in; the conversion is exact.
+    /// A `BFloat16` or `Float32` source is widened to the carrier type the transform computes in; the conversion is exact.
     DateTime64::NativeType execute(BFloat16 from, const DateLUTImpl & time_zone) const
+    {
+        return execute(static_cast<FromType>(from), time_zone);
+    }
+
+    DateTime64::NativeType execute(Float32 from, const DateLUTImpl & time_zone) const
     {
         return execute(static_cast<FromType>(from), time_zone);
     }
@@ -994,8 +999,13 @@ struct ToTime64TransformFloat
         return static_cast<Time64::NativeType>(ticks);
     }
 
-    /// A `BFloat16` source is widened to the carrier type the transform computes in; the conversion is exact.
+    /// A `BFloat16` or `Float32` source is widened to the carrier type the transform computes in; the conversion is exact.
     Time64::NativeType execute(BFloat16 from, const DateLUTImpl & time_zone) const
+    {
+        return execute(static_cast<FromType>(from), time_zone);
+    }
+
+    Time64::NativeType execute(Float32 from, const DateLUTImpl & time_zone) const
     {
         return execute(static_cast<FromType>(from), time_zone);
     }
@@ -2473,11 +2483,13 @@ struct ConvertImpl
                 || std::is_same_v<FromDataType, DataTypeFloat64>)
             && (std::is_same_v<ToDataType, DataTypeDateTime64> || std::is_same_v<ToDataType, DataTypeTime64>))
         {
-            /// `BFloat16` is a `Float32` truncated to its top 16 bits, so every `BFloat16` value is exactly
-            /// representable in a `Float32`; the transform computes in that carrier, whose arithmetic and bounds
-            /// are exact enough for the tick domain, instead of in the 8-bit mantissa of the source.
-            using FloatCarrierDataType = std::conditional_t<std::is_same_v<FromDataType, DataTypeBFloat16>, DataTypeFloat32, FromDataType>;
-            using FloatCarrierType = typename FloatCarrierDataType::FieldType;
+            /// The transform computes in `Float64` for every floating-point source. Every `BFloat16` and `Float32`
+            /// value is exactly representable there, while the tick count is not: in the 24-bit mantissa of a
+            /// `Float32` the product with the scale multiplier is rounded - `toFloat32(1665519700)` at scale 3
+            /// would land 30 seconds off, and an in-range value near the end of the scale-9 window would round
+            /// past the `Int64` ticks and be clamped or rejected as out of range.
+            using FloatCarrierDataType = DataTypeFloat64;
+            using FloatCarrierType = Float64;
             if constexpr (std::is_same_v<ToDataType, DataTypeDateTime64>)
                 return DateTimeTransformImpl<FromDataType, ToDataType, ToDateTime64TransformFloat<FloatCarrierDataType, FloatCarrierType, date_time_overflow_behavior>, false>::template execute<Additions>(
                     arguments, result_type, input_rows_count, targetScale(additions));
