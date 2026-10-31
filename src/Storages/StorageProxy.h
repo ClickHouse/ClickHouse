@@ -181,6 +181,11 @@ public:
 
     ActionLock getActionLock(StorageActionBlockType action_type) override { return getNested()->getActionLock(action_type); }
 
+    /// Every proxy forwards its lock to the nested storage, so that storage owns the registry entry.
+    /// Returning it here keeps the two in step for every proxy, including the ones that do not
+    /// forward the lock explicitly. Never loads: an unloaded stand-in has no entry to report.
+    StoragePtr getActionLockOwner(StorageActionBlockType /* action_type */) const override { return tryGetNested(); }
+
     DataValidationTasksPtr getCheckTaskList(const CheckTaskFilter & check_task_filter, ContextPtr context) override
     {
         return getNested()->getCheckTaskList(check_task_filter, context);

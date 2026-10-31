@@ -105,6 +105,10 @@ public:
     StorageID getTargetTableId() const;
 
     ActionLock getActionLock(StorageActionBlockType type) override;
+    /// The lock above belongs to the inner table's blocker, so the inner table owns the entry. The
+    /// refresh actions act on the refresher instead and return no blocker, so the view owns nothing
+    /// for them, and without an inner table it owns nothing at all.
+    StoragePtr getActionLockOwner(StorageActionBlockType action_type) const override;
     void onActionLockRemove(StorageActionBlockType action_type) override;
 
     StorageMetadataHandle getInMemoryMetadataPtr(ContextPtr context, bool bypass_metadata_cache) const override;

@@ -2058,6 +2058,8 @@ The per-table and wildcard forms differ in how they treat tables without a backg
 None of these states persist across a server restart. After a restart, refreshable views resume their configured schedules and streaming engines resume consuming.
 </Note>
 
+To see which of these states are currently in effect, read [`system.tables.stopped_actions`](/reference/system-tables/tables), which lists the actions that `SYSTEM STOP` or `SYSTEM PAUSE` registered for the table. A command issued through an `Alias`, or through a materialized view that has an implicit inner table, is reported on the table it forwards to; a view created with a `TO` clause owns no blocker and reports nothing. The column reads the local server's in-memory registry only, so it does not report states held in Keeper, volume policies, or internal blockers, and a refreshable view reports its refresh state in [`system.view_refreshes`](/reference/system-tables/view_refreshes).
+
 ### SYSTEM STOP {#stop-background}
 
 Stop the background activity and keep it stopped: interrupt what is running now, and run nothing further until `SYSTEM START`. Equivalent to `PAUSE` + `CANCEL`.

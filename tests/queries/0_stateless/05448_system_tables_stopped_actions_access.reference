@@ -1,0 +1,13 @@
+a	[]
+stopped_actions_target	['merges']
+a	[]
+a	[]
+stopped_actions_target	['merges']
+[]
+TableProxy	[]
+TableProxy
+TableProxy
+MergeTree	['merges']
+MergeTree	[]
+MergeTree	['merges']
+[]

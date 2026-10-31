@@ -1251,6 +1251,18 @@ bool StorageMaterializedView::readRequiresAnalyzedQuery() const
     return false;
 }
 
+StoragePtr StorageMaterializedView::getActionLockOwner(StorageActionBlockType action_type) const
+{
+    /// `getActionLock` acts on the refresher for these and returns no blocker, so nothing is
+    /// registered and no storage owns an entry.
+    if (action_type == ActionLocks::ViewRefresh || action_type == ActionLocks::ViewRefreshPause)
+        return nullptr;
+
+    if (!has_inner_table)
+        return nullptr;
+    return tryGetTargetTable();
+}
+
 void StorageMaterializedView::onActionLockRemove(StorageActionBlockType action_type)
 {
     if ((action_type == ActionLocks::ViewRefresh || action_type == ActionLocks::ViewRefreshPause) && refresher)
