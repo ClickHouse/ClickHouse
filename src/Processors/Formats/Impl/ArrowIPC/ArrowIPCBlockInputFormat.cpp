@@ -568,6 +568,8 @@ void ArrowIPCBlockInputFormat::decodeDictionaryBatch(
     /// dereferencing null below.
     if (!dict_batch.data())
         throw Exception(ErrorCodes::INCORRECT_DATA, "Arrow IPC dictionary batch has no data");
+    /// Checked here rather than in `readNextMessage`, so a dictionary that is skipped is never validated.
+    ArrowIPC::MessageReader::checkRecordBatchAlignment(*dict_batch.data());
     auto field_it = dictionary_value_fields.find(id);
     if (field_it == dictionary_value_fields.end())
         throw Exception(ErrorCodes::INCORRECT_DATA, "Arrow IPC dictionary batch for unknown dictionary id {}", id);

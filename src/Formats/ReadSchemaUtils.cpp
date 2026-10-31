@@ -55,6 +55,14 @@ static std::optional<NamesAndTypesList> getOrderedColumnsList(const NamesAndType
     return res;
 }
 
+/// Some formats like CSVWithNames can contain empty column names. We don't support empty column names and further processing can fail with an exception. Let's just remove columns with empty names from the structure.
+static void removeColumnsWithEmptyNames(NamesAndTypesList & names_and_types)
+{
+    names_and_types.erase(
+        std::remove_if(names_and_types.begin(), names_and_types.end(), [](const NameAndTypePair & pair) { return pair.name.empty(); }),
+        names_and_types.end());
+}
+
 static bool isRetryableSchemaInferenceError(int code)
 {
     return code == ErrorCodes::EMPTY_DATA_PASSED || code == ErrorCodes::ONLY_NULLS_WHILE_READING_SCHEMA;
@@ -171,7 +179,15 @@ try
                         throw Exception(ErrorCodes::LOGICAL_ERROR, "Schema from cache was returned, but format name is unknown");
 
                     if (mode == SchemaInferenceMode::DEFAULT)
-                        return {*iterator_data.cached_columns, *format_name};
+                    {
+                        /// The schema is cached before the columns with empty names are removed from it.
+                        if (!iterator_data.cached_columns->has(""))
+                            return {*iterator_data.cached_columns, *format_name};
+
+                        auto cached_names_and_types = iterator_data.cached_columns->getAll();
+                        removeColumnsWithEmptyNames(cached_names_and_types);
+                        return {ColumnsDescription(cached_names_and_types), *format_name};
+                    }
 
                     schemas_for_union_mode.emplace_back(iterator_data.cached_columns->getAll(), read_buffer_iterator.getLastFilePath());
                     continue;
@@ -539,10 +555,7 @@ try
                 names_and_types = *ordered_list;
         }
 
-        /// Some formats like CSVWithNames can contain empty column names. We don't support empty column names and further processing can fail with an exception. Let's just remove columns with empty names from the structure.
-        names_and_types.erase(
-            std::remove_if(names_and_types.begin(), names_and_types.end(), [](const NameAndTypePair & pair) { return pair.name.empty(); }),
-            names_and_types.end());
+        removeColumnsWithEmptyNames(names_and_types);
 
         return {ColumnsDescription(names_and_types), *format_name};
     }
