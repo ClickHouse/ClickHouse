@@ -205,6 +205,8 @@ struct Reader
         /// Only the last prewhere step reads this column; read dictionary-encoded pages as a
         /// `ColumnReplicated` of dictionary values, so that functions applied to it run once per value.
         bool decode_dictionary_as_replicated = false;
+        /// A function of the last step may throw on a dictionary value, so the values that no read row references are dropped first.
+        bool last_step_can_throw = false;
 
         /// A filter extracted from a substring search condition on this column in PREWHERE.
         /// String values that do not match it are decoded as empty strings (they are guaranteed
