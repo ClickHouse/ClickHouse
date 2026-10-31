@@ -103,6 +103,7 @@
 #include <Parsers/ASTAssignment.h>
 #include <Parsers/ASTConstraintDeclaration.h>
 #include <Parsers/ASTExpressionList.h>
+#include <Parsers/ASTWithAlias.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTHelpers.h>
@@ -5967,8 +5968,17 @@ void MergeTreeData::checkStoredExpressions(const StorageInMemoryMetadata & metad
     for (const auto & projection : metadata.projections)
         ProjectionDescription::getProjectionFromAST(projection.definition_ast, columns, &metadata.partition_key, context);
 
+    /// A column TTL resets the column to its `DEFAULT` or `MATERIALIZED` expression in merges.
+    ASTPtr ttl_default_expr_list = make_intrusive<ASTExpressionList>();
     for (const auto & [name, ttl_ast] : columns.getColumnTTLs())
+    {
         TTLDescription::getTTLFromAST(ttl_ast, columns, context, metadata.primary_key, TTLValidationMode::SkipValidation);
+        const auto & default_desc = columns.get(name).default_desc;
+        if (default_desc.expression && (default_desc.kind == ColumnDefaultKind::Default || default_desc.kind == ColumnDefaultKind::Materialized))
+            ttl_default_expr_list->children.emplace_back(setAlias(default_desc.expression->clone(), name + "_tmp_ttl_default"));
+    }
+    if (!ttl_default_expr_list->children.empty())
+        validateColumnsDefaultsAndGetSampleBlock(ttl_default_expr_list, columns.getAll(), context);
     if (metadata.table_ttl.definition_ast)
         TTLTableDescription::getTTLForTableFromAST(
             metadata.table_ttl.definition_ast, columns, context, metadata.primary_key, TTLValidationMode::SkipValidation);

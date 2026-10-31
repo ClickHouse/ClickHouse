@@ -29,6 +29,7 @@
 #include <Interpreters/parseColumnsListForTableFunction.h>
 #include <Interpreters/QueryConstructionSettings.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/DDLTask.h>
 #include <Storages/Statistics/Statistics.h>
 #include <Storages/StorageView.h>
 #include <Storages/StorageMaterializedView.h>
@@ -2243,6 +2244,8 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
     /// to its target using the target metadata and never evaluates its own column defaults, so a default
     /// over a virtual column is inert there and is left out of this set.
     NameSet insert_time_default_columns;
+    /// New `DEFAULT` and `MATERIALIZED` expressions of a `MergeTree` table, also computed in the background for existing parts.
+    ASTPtr background_default_expr_list = make_intrusive<ASTExpressionList>();
     bool defaults_evaluated_at_insert_time = true;
     if (const auto * mv = dynamic_cast<const StorageMaterializedView *>(table.get()))
         defaults_evaluated_at_insert_time = mv->hasInnerTable();
@@ -2642,6 +2645,9 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
                 if (defaults_evaluated_at_insert_time
                     && (command.default_kind == ColumnDefaultKind::Default || command.default_kind == ColumnDefaultKind::Materialized))
                     insert_time_default_columns.insert(final_column_name);
+
+                if (command.default_kind == ColumnDefaultKind::Default || command.default_kind == ColumnDefaultKind::Materialized)
+                    background_default_expr_list->children.emplace_back(setAlias(command.default_expression->clone(), tmp_column_name));
             } /// if we change data type for column with default
             else if (all_columns.has(column_name) && command.data_type)
             {
@@ -2674,6 +2680,16 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot DROP or CLEAR all columns");
 
     validateColumnsDefaultsAndGetSampleBlock(default_expr_list, all_columns.getAll(), context, insert_time_default_columns);
+
+    /// A replica replaying the `ALTER` of a Replicated database does not repeat the check.
+    auto txn = context->getZooKeeperMetadataTransaction();
+    if (!background_default_expr_list->children.empty() && castStorage<MergeTreeData>(table, DeferredTable::Load)
+        && (!txn || txn->isInitialQuery()))
+    {
+        auto background_context = Context::createCopy(context);
+        background_context->setAnalyzingBackgroundExpressions(true);
+        validateColumnsDefaultsAndGetSampleBlock(background_default_expr_list, all_columns.getAll(), background_context, {});
+    }
 }
 
 bool AlterCommands::hasNonReplicatedAlterCommand() const

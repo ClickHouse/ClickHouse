@@ -33,6 +33,16 @@ EXECUTE AS u_05442 CREATE TABLE t3 (x String) ENGINE = MergeTree PARTITION BY le
 EXECUTE AS u_05442 CREATE TABLE t4 (x String, INDEX i length(aiEmbed(x, 'm')) TYPE minmax) ENGINE = MergeTree ORDER BY x; -- { serverError NOT_IMPLEMENTED }
 EXECUTE AS u_05442 ALTER TABLE t7 ADD INDEX i length(aiEmbed(x, 'm')) TYPE minmax; -- { serverError NOT_IMPLEMENTED }
 EXECUTE AS u_05442 ALTER TABLE t7 ADD COLUMN y String, MODIFY ORDER BY (x, length(aiEmbed(y, 'm'))); -- { serverError NOT_IMPLEMENTED }
+
+-- Defaults computed in the background: of a column with a TTL, and added by `ALTER` for existing parts.
+EXECUTE AS u_05442 CREATE TABLE t9 (x String, d DateTime, y String DEFAULT aiGenerate(x) TTL d + INTERVAL 1 DAY) ENGINE = MergeTree ORDER BY x; -- { serverError NOT_IMPLEMENTED }
+EXECUTE AS u_05442 CREATE TABLE t9 (x String, d DateTime, y String MATERIALIZED aiGenerate(x) TTL d + INTERVAL 1 DAY) ENGINE = MergeTree ORDER BY x; -- { serverError NOT_IMPLEMENTED }
+EXECUTE AS u_05442 ALTER TABLE t7 ADD COLUMN y String DEFAULT aiGenerate(x); -- { serverError NOT_IMPLEMENTED }
+EXECUTE AS u_05442 ALTER TABLE t7 ADD COLUMN y String MATERIALIZED aiGenerate(x); -- { serverError NOT_IMPLEMENTED }
+EXECUTE AS u_05442 ALTER TABLE t7 ADD COLUMN y String, MODIFY COLUMN x String DEFAULT aiGenerate(y); -- { serverError NOT_IMPLEMENTED }
+EXECUTE AS u_05442 ALTER TABLE t7 ADD COLUMN y String ALIAS aiGenerate(x);
+EXECUTE AS u_05442 CREATE TABLE t9 (x String, y String DEFAULT aiGenerate(x)) ENGINE = MergeTree ORDER BY x;
+DROP TABLE t9;
 SELECT count() FROM system.mutations WHERE database = currentDatabase() AND table = 't7';
 
 DROP TABLE t7;
