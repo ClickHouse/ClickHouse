@@ -1,0 +1,3 @@
+target engine	TableProxy
+rows	30000
+distributed write	1
