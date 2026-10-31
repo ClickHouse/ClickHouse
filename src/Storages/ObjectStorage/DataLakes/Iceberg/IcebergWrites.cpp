@@ -1219,7 +1219,6 @@ IcebergStorageSink::IcebergStorageSink(
         persistent_table_components.metadata_cache,
         context,
         log,
-        compression_method,
         persistent_table_components.table_uuid));
     metadata_compression_method = compression_method;
     filename_generator = FileNamesGenerator(
@@ -1557,7 +1556,6 @@ bool IcebergStorageSink::initializeMetadata()
                 persistent_table_components.metadata_cache,
                 context,
                 getLogger("IcebergWrites"),
-                compression_method,
                 persistent_table_components.table_uuid));
 
             auto new_schema_id = metadata->getValue<Int64>(Iceberg::f_current_schema_id);
