@@ -24,6 +24,10 @@ public:
     virtual const DateLUTImpl & getWriterTimezone() const = 0;
     virtual const DateLUTImpl & getReaderTimezone() const = 0;
     virtual UInt64 getNumberOfRows() const = 0;
+    /// Whether the file has the format version 1.9999 (`UNSTABLE_PRE_2_0` in the reference implementation),
+    /// where DECIMAL columns with the precision up to 18 are written as signed RLEv2 integers in the DATA stream
+    /// without the SECONDARY stream of scales.
+    virtual bool isDecimalAsLong() const = 0;
 };
 
 class ColumnReader

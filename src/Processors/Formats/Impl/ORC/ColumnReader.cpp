@@ -612,6 +612,54 @@ public:
     }
 };
 
+/// The DECIMAL columns with the precision up to 18 in the files of the format version 1.9999
+/// (`UNSTABLE_PRE_2_0`): the unscaled values are signed RLEv2 integers in the DATA stream,
+/// all with the scale of the type, and there is no SECONDARY stream.
+class Decimal64V2ColumnReader final : public ColumnReader
+{
+public:
+    Decimal64V2ColumnReader(const Type & type, StripeStreams & stripe)
+        : ColumnReader(type, stripe)
+        , precision(static_cast<Int32>(type.getPrecision()))
+        , scale(static_cast<Int32>(type.getScale()))
+    {
+        if (type.getScale() > type.getPrecision())
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Invalid precision {} or scale {} of decimal ORC column {}",
+                type.getPrecision(), type.getScale(), column_id);
+        /// As in the reference implementation, RLEv2 is used regardless of the column encoding.
+        value_decoder = createIntRleDecoder(
+            getRequiredStream(stripe, column_id, Proto::StreamKind::DATA, "DATA", "decimal"), true, RleVersion::V2);
+    }
+
+    size_t skip(size_t num_values) override
+    {
+        num_values = ColumnReader::skip(num_values);
+        value_decoder->skip(num_values);
+        return num_values;
+    }
+
+    void next(ColumnVectorBatch & batch, size_t num_values, const char * incoming_mask) override
+    {
+        ColumnReader::next(batch, num_values, incoming_mask);
+        auto & decimal_batch = typeid_cast<Decimal64VectorBatch &>(batch);
+        decimal_batch.precision = precision;
+        decimal_batch.scale = scale;
+        decimal_batch.values.resize(num_values);
+        value_decoder->next(decimal_batch.values.data(), num_values, batch.hasNulls ? batch.notNull.data() : nullptr);
+    }
+
+    void seekToRowGroup(std::unordered_map<UInt64, PositionProvider> & positions) override
+    {
+        ColumnReader::seekToRowGroup(positions);
+        value_decoder->seek(positions.at(column_id));
+    }
+
+private:
+    const Int32 precision;
+    const Int32 scale;
+    std::unique_ptr<IntRleDecoder> value_decoder;
+};
+
 /// The DECIMAL columns written by Hive 0.11, without the precision and the scale in the type.
 /// As in the reference implementation, the values are read with the scale 6 and must have at most 38 digits.
 class DecimalHive11ColumnReader final : public DecimalColumnReader
@@ -1117,7 +1165,11 @@ std::unique_ptr<ColumnReader> buildColumnReader(const Type & type, StripeStreams
             if (type.getPrecision() == 0)
                 return std::make_unique<DecimalHive11ColumnReader>(type, stripe);
             if (type.getPrecision() <= MAX_PRECISION_64)
+            {
+                if (stripe.isDecimalAsLong())
+                    return std::make_unique<Decimal64V2ColumnReader>(type, stripe);
                 return std::make_unique<Decimal64ColumnReader>(type, stripe);
+            }
             return std::make_unique<Decimal128ColumnReader>(type, stripe);
         case STRUCT:
             return std::make_unique<StructColumnReader>(type, stripe);

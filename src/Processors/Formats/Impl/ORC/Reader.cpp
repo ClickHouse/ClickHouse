@@ -414,6 +414,11 @@ public:
     const DateLUTImpl & getWriterTimezone() const override { return writer_timezone; }
     const DateLUTImpl & getReaderTimezone() const override { return reader_timezone; }
     UInt64 getNumberOfRows() const override { return reader.getStripe(stripe_index).number_of_rows; }
+    bool isDecimalAsLong() const override
+    {
+        const auto & version = reader.getPostScript().version;
+        return version.size() == 2 && version[0] == 1 && version[1] == 9999;
+    }
 
     const Proto::StripeFooter & getFooter() const { return footer; }
 
