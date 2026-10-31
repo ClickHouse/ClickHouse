@@ -256,6 +256,12 @@ void HedgedConnections::sendQuery(
             "enable_packed_string_keys_in_aggregation",
             static_cast<bool>(modified_settings[Setting::enable_packed_string_keys_in_aggregation]));
 
+        /// The quotas over profile events charge the initiating user with what the remote servers report
+        /// in their `ProfileEvents` packets, so the reports must not depend on `send_profile_events` of the
+        /// query or of the user's profile on the remote server. Force it into the changed set, so it is
+        /// always sent. The initiator does not pass the reports on to its client unless the client asked.
+        modified_settings.set("send_profile_events", true);
+
         replica.connection->sendQuery(
             timeouts, query, /* query_parameters */ {}, query_id, stage, &modified_settings, &client_info, with_pending_data, external_roles, {});
 

@@ -132,6 +132,19 @@ protected:
     /// Progress of output stream
     Progress progress_out;
 
+    /// Profile events reported by the remote servers executing parts of this query. They are not
+    /// part of the local counters of `thread_group` and are collected for the quotas over profile
+    /// events; allocated on the first report.
+    mutable std::mutex remote_profile_events_mutex;
+    std::unique_ptr<ProfileEvents::Counters> remote_profile_events TSA_GUARDED_BY(remote_profile_events_mutex);
+
+    /// Profile events of the queries nested in this one that are part of the local counters of `thread_group`,
+    /// but have been charged to the quotas over profile events on their own, so they are excluded from what
+    /// this query is charged with: the flushes of asynchronous inserts run by `SYSTEM FLUSH ASYNC INSERT QUEUE`.
+    /// Allocated on the first exclusion.
+    mutable std::mutex excluded_profile_events_mutex;
+    std::unique_ptr<ProfileEvents::Counters> excluded_profile_events TSA_GUARDED_BY(excluded_profile_events_mutex);
+
     /// Used to externally check for the query time limits
     /// They are saved in the constructor to limit the overhead of each call to checkTimeLimit()
     ExecutionSpeedLimits limits;
@@ -271,6 +284,21 @@ public:
     bool updateProgressOut(const Progress & value);
 
     QueryStatusInfo getInfo(bool get_thread_list = false, bool get_profile_events = false, bool get_settings = false) const;
+
+    /// Adds the increments of a `ProfileEvents` packet received from a remote server executing a part
+    /// of this query. Gauges and events unknown to this server are skipped. `from_insert` is set for the
+    /// packets of the remote side of a distributed `INSERT`, which does not report its read progress, so
+    /// what it reads is taken from its `SelectedRows` / `SelectedBytes`.
+    void addRemoteProfileEvents(const Block & block, bool from_insert = false);
+
+    /// Returns the sum of the profile events reported by the remote servers, if any were reported.
+    std::optional<ProfileEvents::Counters::Snapshot> getRemoteProfileEvents() const;
+
+    /// Adds the profile events of a nested query charged to the quotas on its own (see `excluded_profile_events`).
+    void addExcludedProfileEvents(const ProfileEvents::Counters::Snapshot & snapshot);
+
+    /// Returns the sum of the excluded profile events, if any were added.
+    std::optional<ProfileEvents::Counters::Snapshot> getExcludedProfileEvents() const;
 
     void throwProperExceptionIfNeeded(const UInt64 & max_execution_time_us, const UInt64 & elapsed_ns);
 
