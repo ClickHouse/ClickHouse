@@ -448,6 +448,14 @@ if (NOT OS_DARWIN AND NOT OS_SUNOS AND (ARCH_AMD64 OR ARCH_AARCH64 OR ARCH_PPC64
     set (COMPILER_FLAGS "${COMPILER_FLAGS} -fstack-clash-protection")
 endif ()
 
+# Clear the general purpose registers a function used before it returns, so that its epilogue cannot hand their
+# values to a return-oriented programming chain. Clang supports it only on x86-64 and AArch64. Not in sanitizer and
+# fuzzer builds: they are not shipped, and their images are already close to the 2 GiB reach of 32-bit PC-relative
+# references. contrib/compiler-rt-cmake resets it like the flags above.
+if ((ARCH_AMD64 OR ARCH_AARCH64) AND NOT SANITIZE AND NOT ENABLE_FUZZING)
+    set (COMPILER_FLAGS "${COMPILER_FLAGS} -fzero-call-used-regs=used-gpr")
+endif ()
+
 # Disable floating-point expression contraction in order to get consistent floating point calculation results across platforms
 set (COMPILER_FLAGS "${COMPILER_FLAGS} -ffp-contract=off")
 
