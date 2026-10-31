@@ -3,6 +3,7 @@
 #include <Storages/MergeTree/Compaction/PartsCollectors/IPartsCollector.h>
 #include <Storages/MergeTree/Compaction/MergePredicates/MergeTreeMergePredicate.h>
 #include <Storages/StorageMergeTree.h>
+#include <Storages/MergeTree/PartitionIds.h>
 
 namespace DB
 {

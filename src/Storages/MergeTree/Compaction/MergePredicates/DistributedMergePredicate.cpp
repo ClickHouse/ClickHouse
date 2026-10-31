@@ -1,4 +1,5 @@
 #include <Storages/MergeTree/Compaction/MergePredicates/DistributedMergePredicate.h>
+#include <Storages/MergeTree/PartitionIds.h>
 
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <IO/ReadHelpers.h>
@@ -26,7 +27,7 @@ CommittingBlocks getCommittingBlocks(zkutil::ZooKeeperPtr & zookeeper, const std
     }
     else
     {
-        NameSet partitions_set = *partition_ids_hint;
+        auto partitions_set = *partition_ids_hint;
 
         /// We need to get committing blocks for original partitions of patch parts
         /// because the corretness of merge of patch parts depends on them.

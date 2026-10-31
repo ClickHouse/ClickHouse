@@ -19,6 +19,7 @@
 #include <Common/CurrentMetrics.h>
 #include <Common/formatReadable.h>
 #include <Storages/MutationCommands.h>
+#include <Storages/MergeTree/PartitionIds.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <base/defines.h>
 #include <base/sort.h>
@@ -1257,8 +1258,18 @@ int32_t ReplicatedMergeTreeQueue::updateMutations(zkutil::ZooKeeperPtr zookeeper
                 LOG_WARNING(log, "Cannot get mutation node {} ({}), probably it was concurrently removed", entries_to_load[i], maybe_response.error);
                 continue;
             }
-            new_mutations.push_back(std::make_shared<ReplicatedMergeTreeMutationEntry>(
-                ReplicatedMergeTreeMutationEntry::parse(maybe_response.data, entries_to_load[i])));
+            auto new_entry = std::make_shared<ReplicatedMergeTreeMutationEntry>(
+                ReplicatedMergeTreeMutationEntry::parse(maybe_response.data, entries_to_load[i]));
+
+            /// An entry written by an older server version still scopes its commands with the
+            /// original `IN PARTITION <value>` literals (new entries are rewritten to the
+            /// `IN PARTITION ID` form at creation). Pin the resolved scope once at load, so
+            /// that executing the commands does not have to decode the literals through the
+            /// current partition key, which can throw after a key-safe partition key type
+            /// change (e.g. `Enum8 -> Int8`).
+            storage.pinPartitionScopeOfLegacyCommands(new_entry->commands, new_entry->block_numbers, storage.getContext());
+
+            new_mutations.push_back(std::move(new_entry));
         }
 
         bool some_mutations_are_probably_done = false;
@@ -2302,11 +2313,40 @@ std::map<std::string, MutationCommands> ReplicatedMergeTreeQueue::getUnfinishedM
     std::map<std::string, MutationCommands> result;
     std::lock_guard lock(state_mutex);
 
-    for (const auto & [name, status] : mutations_by_znode | std::views::reverse)
+    /// The finished mutations are not necessarily a prefix of `mutations_by_znode`: a mutation
+    /// can be marked as done while an earlier one is still pending (see `tryFinalizeMutations`),
+    /// so all entries are checked.
+    for (const auto & [name, status] : mutations_by_znode)
     {
         if (status.is_done)
-            break;
+            continue;
         result.emplace(name, status.entry->commands);
+    }
+
+    return result;
+}
+
+Strings ReplicatedMergeTreeQueue::getMutationsWithLegacyPartitionScope(const String & min_replicas_mutation_pointer) const
+{
+    Strings result;
+    std::lock_guard lock(state_mutex);
+
+    /// Not a prefix scan, see `getUnfinishedMutations`.
+    for (const auto & [name, status] : mutations_by_znode)
+    {
+        /// `is_done` is local to this replica: a lagging replica may still have to load and execute
+        /// the entry, so it is skipped only once every replica has passed it. The local `is_done` is
+        /// not checked: an entry just loaded by `updateMutations` (e.g. after a restart) is not marked
+        /// done until `tryFinalizeMutations` runs, but every entry not greater than the `mutation_pointer`
+        /// of this replica is marked done there unconditionally, and `clearOldMutations` removes it.
+        if (!min_replicas_mutation_pointer.empty() && name <= min_replicas_mutation_pointer)
+            continue;
+
+        /// The znode keeps the original literals whatever this replica pinned in memory, so every
+        /// replica that loads the entry later (and this one after a restart) has to decode them again.
+        if (MergeTreeData::hasUnresolvedPartitionScope(status.entry->commands)
+            && !MergeTreeData::isLegacyPartitionScopeRecoverableFromBlockNumbers(status.entry->commands, status.entry->block_numbers))
+            result.push_back(name);
     }
 
     return result;
@@ -2422,11 +2462,11 @@ MutationCommands ReplicatedMergeTreeQueue::MutationsSnapshot::getOnFlyMutationCo
             if (alter_version > part_metadata_version)
             {
                 if (alter_version > params.min_part_metadata_version)
-                    addSupportedCommands(entry->commands, mutation_version, result);
+                    addSupportedCommands(entry->commands, mutation_version, partition_id, result);
                 /// A patch at metadata version 0 may have been written after the ALTER, so for it the data version decides.
                 else if (part->info.isPatch()
                     && (part_metadata_version > 0 || static_cast<Int64>(part->getPatchPartIndex().getMaxDataVersion()) < mutation_version))
-                    addSupportedCommands(getMetadataMutationCommands(entry->commands), mutation_version, result);
+                    addSupportedCommands(getMetadataMutationCommands(entry->commands), mutation_version, partition_id, result);
             }
             else
                 seen_all_metadata_mutations = true;
@@ -2434,7 +2474,7 @@ MutationCommands ReplicatedMergeTreeQueue::MutationsSnapshot::getOnFlyMutationCo
         else if (!seen_all_data_mutations)
         {
             if (mutation_version > part_data_version)
-                addSupportedCommands(entry->commands, mutation_version, result);
+                addSupportedCommands(entry->commands, mutation_version, partition_id, result);
             else
                 seen_all_data_mutations = true;
         }
