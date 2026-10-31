@@ -115,6 +115,7 @@
     M(UniqueKeyDedupProbes, "Number of new-row keys probed against existing parts on the UNIQUE KEY INSERT write-path.", ValueType::Number) \
     M(UniqueKeyConflictOverwriteRows, "Number of new-row keys that superseded a live row in an existing part on the UNIQUE KEY INSERT write-path.", ValueType::Number) \
     M(UniqueKeyConflictIgnoredRows, "Number of incoming rows dropped by unique_key_conflict_action = ignore because the key was already live in the partition.", ValueType::Number) \
+    M(UniqueKeyDeleteRows, "Number of rows marked dead by synchronous DELETE on UNIQUE KEY tables.", ValueType::Number) \
     M(PrimaryIndexCacheHits, "Number of times an entry has been found in the primary index cache, so we didn't have to load a index file.", ValueType::Number) \
     M(StatisticsCacheHits, "Number of times the statistics of a column of a data part have been found in the statistics cache.", ValueType::Number) \
     M(StatisticsCacheMisses, "Number of times the statistics of a column of a data part have not been found in the statistics cache, so they had to be loaded from the part.", ValueType::Number) \
