@@ -5300,7 +5300,12 @@ void ReadFromMergeTree::recordIndexUsage(const AnalysisResult & result, const St
     });
     ProfileEvents::increment(ProfileEvents::GranulesDroppedByPrimaryKey, result.granules_dropped_by_primary_key);
     ProfileEvents::increment(ProfileEvents::GranulesDroppedBySkipIndexes, result.granules_dropped_by_skip_indexes);
-    addUsedSkipIndexes(result.used_skip_indexes, storage_id, query_context);
+
+    /// the drops of projections that excluded whole parts are in the counters above
+    NameSet used_skip_indexes = result.used_skip_indexes;
+    for (const auto & [_, exclusion] : result.parts_excluded_by_projection)
+        used_skip_indexes.insert(exclusion.used_skip_indexes.begin(), exclusion.used_skip_indexes.end());
+    addUsedSkipIndexes(used_skip_indexes, storage_id, query_context);
 }
 
 void ReadFromMergeTree::addUsedSkipIndexes(const NameSet & index_names, const StorageID & storage_id, const ContextMutablePtr & query_context)

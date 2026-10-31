@@ -1168,6 +1168,8 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
     std::atomic<size_t> sum_marks_dropped_by_skip_indexes = 0;
 
     std::vector<size_t> skip_index_used_in_part(parts_with_ranges.size(), 0);
+    /// filled for projection parts: a projection that excludes the part reports them in the parent read
+    std::vector<NameSet> skip_indexes_applied_in_projection_part(parts_with_ranges.size());
     /// by index position in `useful_indices`, not in the per-part order
     std::vector<std::atomic<bool>> skip_index_applied(skip_indexes.useful_indices.size());
     std::atomic<bool> top_k_index_applied = false;
@@ -1389,7 +1391,11 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
                     }
 
                     if (index_applied)
+                    {
                         skip_index_applied[index_idx].store(true, std::memory_order_relaxed);
+                        if (ranges.data_part->isProjectionPart())
+                            skip_indexes_applied_in_projection_part[part_index].insert(index_and_condition.index->index.name);
+                    }
 
                     stat.granules_dropped.fetch_add(total_granules - ranges.getMarksCount(), std::memory_order_relaxed);
                     if (ranges.ranges.empty())
@@ -1431,6 +1437,8 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
                 {
                     min_max_granules->getTopKMarks(top_k_filter_info->limit_n, top_k_handle_ties, parts_top_k_granules[part_index]);
                     top_k_index_applied.store(true, std::memory_order_relaxed);
+                    if (ranges.data_part->isProjectionPart())
+                        skip_indexes_applied_in_projection_part[part_index].insert(skip_indexes.skip_index_for_top_k_filtering->index.name);
                 }
                 top_k_elapsed_us.fetch_add(watch.elapsed(), std::memory_order_relaxed);
             }
@@ -1656,7 +1664,7 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
 
             if (part.data_part && part.ranges.empty() && part.data_part->isProjectionPart())
                 result.parts_excluded_by_projection[part.data_part->getParentPart()]
-                    = {part.marks_dropped_by_primary_key, part.marks_dropped_by_skip_indexes};
+                    = {part.marks_dropped_by_primary_key, part.marks_dropped_by_skip_indexes, std::move(skip_indexes_applied_in_projection_part[index])};
 
             return !part.data_part || part.ranges.empty();
         });

@@ -324,12 +324,15 @@ size_t filterPartsByProjection(
             {
                 /// not listed if the projection analysis excluded the part before the primary key
                 auto excluded = projection_result->parts_excluded_by_projection.find(part.data_part.get());
-                auto drops = excluded != projection_result->parts_excluded_by_projection.end() ? excluded->second : std::pair<UInt64, UInt64>{};
+                auto exclusion = excluded != projection_result->parts_excluded_by_projection.end()
+                    ? excluded->second : ReadFromMergeTree::AnalysisResult::ProjectionExclusion{};
                 auto & dropped_by_primary_key = reading_select_result.granules_dropped_by_primary_key;
                 auto & dropped_by_skip_indexes = reading_select_result.granules_dropped_by_skip_indexes;
-                dropped_by_primary_key = dropped_by_primary_key - std::min(dropped_by_primary_key, part.marks_dropped_by_primary_key) + drops.first;
-                dropped_by_skip_indexes = dropped_by_skip_indexes - std::min(dropped_by_skip_indexes, part.marks_dropped_by_skip_indexes) + drops.second;
-                reading_select_result.parts_excluded_by_projection[part.data_part.get()] = drops;
+                dropped_by_primary_key = dropped_by_primary_key - std::min(dropped_by_primary_key, part.marks_dropped_by_primary_key)
+                    + exclusion.granules_dropped_by_primary_key;
+                dropped_by_skip_indexes = dropped_by_skip_indexes - std::min(dropped_by_skip_indexes, part.marks_dropped_by_skip_indexes)
+                    + exclusion.granules_dropped_by_skip_indexes;
+                reading_select_result.parts_excluded_by_projection[part.data_part.get()] = std::move(exclusion);
             }
         }
     }
@@ -343,15 +346,21 @@ void filterPartsByChosenProjection(ReadFromMergeTree::AnalysisResult & parent_re
     filterPartsByProjection(parent_reading_select_result, candidate.parent_parts);
 
     /// A projection that excluded such a part, this one or a later one, replaced the parent drops in it with its own
-    const auto & excluded_parts = parent_reading_select_result.parts_excluded_by_projection;
+    auto & excluded_parts = parent_reading_select_result.parts_excluded_by_projection;
     auto & dropped_by_primary_key = parent_reading_select_result.granules_dropped_by_primary_key;
     auto & dropped_by_skip_indexes = parent_reading_select_result.granules_dropped_by_skip_indexes;
     for (const auto & [part, parent_drops] : candidate.parent_drops_in_analyzed_parts)
     {
-        auto excluded = excluded_parts.find(part);
-        const auto & drops = excluded != excluded_parts.end() ? excluded->second : parent_drops;
-        dropped_by_primary_key -= std::min(dropped_by_primary_key, drops.first);
-        dropped_by_skip_indexes -= std::min(dropped_by_skip_indexes, drops.second);
+        auto [part_dropped_by_primary_key, part_dropped_by_skip_indexes] = parent_drops;
+        if (auto excluded = excluded_parts.find(part); excluded != excluded_parts.end())
+        {
+            part_dropped_by_primary_key = excluded->second.granules_dropped_by_primary_key;
+            part_dropped_by_skip_indexes = excluded->second.granules_dropped_by_skip_indexes;
+            /// the chosen projection reports its own analysis of the part, so the indexes of the exclusion are not used
+            excluded_parts.erase(excluded);
+        }
+        dropped_by_primary_key -= std::min(dropped_by_primary_key, part_dropped_by_primary_key);
+        dropped_by_skip_indexes -= std::min(dropped_by_skip_indexes, part_dropped_by_skip_indexes);
     }
 }
 
