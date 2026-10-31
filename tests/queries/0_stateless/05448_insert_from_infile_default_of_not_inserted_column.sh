@@ -43,4 +43,20 @@ $CLICKHOUSE_CLIENT --input_format_null_as_default 1 -q "INSERT INTO t_capture (z
 $CLICKHOUSE_CLIENT -q "SELECT z, a, b FROM t_capture"
 $CLICKHOUSE_CLIENT -q "DROP TABLE t_capture"
 
-rm -f "${DATA_FILE}.json" "${DATA_FILE}.jsonl" "${DATA_FILE}_c.json" "${DATA_FILE}_lambda.jsonl" "${DATA_FILE}_capture.jsonl"
+# The new name of a lambda argument does not capture an alias of the expression. The same as the inline insert: 5, 33.
+$CLICKHOUSE_CLIENT -q "CREATE TABLE t_alias_capture (a UInt32 DEFAULT 5, b UInt32 DEFAULT arraySum(arrayMap(x -> x + __lambda_argument_0, [1, 2])) + (10 AS __lambda_argument_0)) ENGINE = Memory"
+printf '{"b":null}\n' > "${DATA_FILE}_alias_capture.jsonl"
+$CLICKHOUSE_CLIENT --input_format_null_as_default 1 -q "INSERT INTO t_alias_capture (b) FROM INFILE '${DATA_FILE}_alias_capture.jsonl' FORMAT JSONEachRow"
+$CLICKHOUSE_CLIENT --input_format_null_as_default 1 -q "INSERT INTO t_alias_capture (b) FORMAT JSONEachRow {\"b\":null}"
+$CLICKHOUSE_CLIENT -q "SELECT a, b FROM t_alias_capture"
+$CLICKHOUSE_CLIENT -q "DROP TABLE t_alias_capture"
+
+# The alias of a substituted not inserted column is kept. The same as the inline insert: 5, 10.
+$CLICKHOUSE_CLIENT -q "CREATE TABLE t_alias (a UInt32 DEFAULT 5, b UInt32 DEFAULT (a AS x) + x) ENGINE = Memory"
+printf '{"b":null}\n' > "${DATA_FILE}_alias.jsonl"
+$CLICKHOUSE_CLIENT --input_format_null_as_default 1 -q "INSERT INTO t_alias (b) FROM INFILE '${DATA_FILE}_alias.jsonl' FORMAT JSONEachRow"
+$CLICKHOUSE_CLIENT --input_format_null_as_default 1 -q "INSERT INTO t_alias (b) FORMAT JSONEachRow {\"b\":null}"
+$CLICKHOUSE_CLIENT -q "SELECT a, b FROM t_alias"
+$CLICKHOUSE_CLIENT -q "DROP TABLE t_alias"
+
+rm -f "${DATA_FILE}.json" "${DATA_FILE}.jsonl" "${DATA_FILE}_c.json" "${DATA_FILE}_lambda.jsonl" "${DATA_FILE}_capture.jsonl" "${DATA_FILE}_alias_capture.jsonl" "${DATA_FILE}_alias.jsonl"

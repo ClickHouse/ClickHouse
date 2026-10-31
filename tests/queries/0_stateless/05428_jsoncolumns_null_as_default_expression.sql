@@ -49,3 +49,9 @@ INSERT INTO FUNCTION file(currentDatabase() || '_05428_unparsable.json', JSONCol
 
 SELECT b FROM file(currentDatabase() || '_05428_unparsable.json', JSONColumns, 'a UInt32, b UInt32 DEFAULT a * 2')
     SETTINGS input_format_defaults_for_omitted_fields = 0;
+
+-- The default of a column which is read only for a DEFAULT is computed only if that DEFAULT is computed:
+-- "b" is present, so the default of "c" (which fails for "oops") is not needed.
+SELECT b FROM file(currentDatabase() || '_05428_unparsable.json', JSONColumns, 'a String, c UInt32 DEFAULT toUInt32(a), b UInt32 DEFAULT c * 2');
+-- "d" is not in the file, its default is computed for the missing "b".
+SELECT b FROM file(currentDatabase() || '_05428.json', JSONColumns, 'a UInt32, d UInt32 DEFAULT a + 1, b UInt32 DEFAULT d * 2');

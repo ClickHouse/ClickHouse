@@ -814,7 +814,7 @@ StorageURLSource::StorageURLSource(
             {
                 builder.addSimpleTransform([&](const SharedHeader & cur_header)
                 {
-                    return std::make_shared<AddingDefaultsTransform>(cur_header, columns_description, *input_format, getContext());
+                    return std::make_shared<AddingDefaultsTransform>(cur_header, columns_description, *input_format, getContext(), requested_columns);
                 });
             }
         }
