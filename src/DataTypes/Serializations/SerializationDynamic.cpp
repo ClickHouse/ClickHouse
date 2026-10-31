@@ -1191,7 +1191,6 @@ void SerializationDynamic::serializeTextJSONPretty(const IColumn & column, size_
 
 void SerializationDynamic::serializeBinaryEncodedValueTextJSON(std::string_view value, WriteBuffer & ostr, const FormatSettings & settings, bool pretty, size_t indent)
 {
-    /// The nesting depth comes from the data, as in serializeTextImpl.
     checkStackSize();
     auto serialize_null = [](WriteBuffer & buf) { SerializationNullable::serializeNullJSON(buf); };
     if (pretty)
