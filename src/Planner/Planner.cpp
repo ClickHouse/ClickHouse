@@ -58,6 +58,7 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/convertColumnToType.h>
 #include <Interpreters/HashTablesStatistics.h>
+#include <Interpreters/ProcessList.h>
 #include <Interpreters/StorageID.h>
 #include <Interpreters/Cache/QueryResultCache.h>
 #include <Interpreters/Cache/QueryResultCacheOnDisk.h>
@@ -148,6 +149,7 @@ namespace Setting
     extern const SettingsUInt64 parallel_replicas_min_number_of_rows_per_replica;
     extern const SettingsBool parallel_replicas_plan_based;
     extern const SettingsBool query_cache_compress_entries;
+    extern const SettingsSeconds query_cache_herd_wait_timeout;
     extern const SettingsUInt64 query_cache_max_entries;
     extern const SettingsUInt64 query_cache_max_size_in_bytes;
     extern const SettingsMilliseconds query_cache_min_query_duration;
@@ -2667,6 +2669,10 @@ static bool tryAddReadFromQueryResultCacheStep(
 /// `skip_context_check` is for the explicit per-subquery opt-in, where the outer query did not set
 /// `use_query_cache` itself: the context flag check in `checkCanWriteQueryResultCache` is skipped
 /// while all the other safety checks still apply.
+/// `herd_token_holder` (optional) holds the herd token of the caller, see `QueryResultCache::acquireOrWaitHerdToken`.
+/// If a step is added, the token is moved into it: it must then be released once the subquery's pipeline has actually
+/// streamed its result (or been torn down trying), not when the caller returns. If no step is added, the holder is left
+/// untouched, so the caller keeps the ownership and the token is released when the holder goes out of scope.
 static void addStreamInQueryResultCacheStepIfNeeded(
     QueryPlan & query_plan,
     const ASTPtr & ast,
@@ -2675,7 +2681,8 @@ static void addStreamInQueryResultCacheStepIfNeeded(
     const Settings & settings_for_key,
     const QueryResultCachePtr & query_result_cache,
     const QueryResultCacheOnDiskPtr & query_result_cache_on_disk,
-    bool skip_context_check)
+    bool skip_context_check,
+    QueryResultCacheHerdTokenHolder * herd_token_holder = nullptr)
 {
     if (!checkCanWriteQueryResultCache(ast, query_context, query_result_cache_on_disk, skip_context_check))
         return;
@@ -2717,7 +2724,12 @@ static void addStreamInQueryResultCacheStepIfNeeded(
                         write_to_memory_cache,
                         write_to_on_disk_cache));
 
-    auto stream_into_query_result_cache_step = std::make_unique<StreamInQueryResultCacheStep>(query_plan.getRootNode()->step->getOutputHeader(), query_result_cache_writer);
+    std::shared_ptr<QueryResultCacheHerdTokenHolder> step_herd_token_holder;
+    if (herd_token_holder)
+        step_herd_token_holder = std::make_shared<QueryResultCacheHerdTokenHolder>(std::move(*herd_token_holder));
+
+    auto stream_into_query_result_cache_step = std::make_unique<StreamInQueryResultCacheStep>(
+        query_plan.getRootNode()->step->getOutputHeader(), query_result_cache_writer, step_herd_token_holder);
     query_plan.addStep(std::move(stream_into_query_result_cache_step));
 }
 
@@ -2929,6 +2941,13 @@ void Planner::buildPlanForQueryNode()
     if (should_cache && !query_result_cache)
         should_cache = false;
 
+    /// Explicit per-subquery opt-in (SETTINGS use_query_cache = 1 on the subquery) can enable the Planner-level cache
+    /// even when the outer query runs with use_query_cache = 0, in which case the equivalent check in executeQuery()
+    /// never fired. Without it, a non-THROW overflow mode could store a truncated subquery result which later cache
+    /// hits would reuse as if it were complete.
+    if (should_cache)
+        throwIfQueryResultCacheUsedWithNonThrowOverflowMode(settings);
+
     /// For explicit per-subquery opt-in, we track cache eligibility locally
     /// without mutating the shared query context (which would leak to the outer query).
     bool local_can_use_cache = can_use_query_result_cache || should_cache;
@@ -2951,6 +2970,84 @@ void Planner::buildPlanForQueryNode()
     if (should_cache
         && tryAddReadFromQueryResultCacheStep(query_plan, ast, query_context, settings, *settings_copy, query_result_cache, query_result_cache_on_disk))
         return;
+
+    /// Avoid the "thundering herd" effect for this subquery. herd_token_holder is a plain local RAII object: as long as
+    /// it is not explicitly moved into a StreamInQueryResultCacheStep further below, any return/exception between
+    /// here and the end of this function releases the token via its destructor.
+    /// When should_cache is true but the outer query didn't set use_query_cache (explicit subquery opt-in), skip
+    /// the context flag check while still respecting safety checks for same condition used for the write path below.
+    bool skip_context_check_for_herd = should_cache && !can_use_query_result_cache;
+    QueryResultCacheHerdTokenHolder herd_token_holder;
+    if (should_cache)
+    {
+        const auto herd_wait_timeout = std::chrono::milliseconds(settings[Setting::query_cache_herd_wait_timeout].totalMilliseconds());
+        if (herd_wait_timeout.count() > 0
+            && settings[Setting::enable_reads_from_query_cache]
+            /// Coalescing is tied to the in-memory query result cache (the herd tokens live in it, and the waiters re-probe it
+            /// once the executor is done), so the executor must be able to write to it, same as in `executeQuery`.
+            && canWriteToQueryResultCacheInMemory(query_context)
+            && settings[Setting::query_cache_min_query_runs] == 0
+            && settings[Setting::query_cache_min_query_duration].totalMilliseconds() == 0
+            && checkCanWriteQueryResultCache(
+                ast, query_context, query_result_cache_on_disk, skip_context_check_for_herd, /*throw_on_error=*/ false))
+        {
+            QueryResultCache::Key coalescing_probe_key(
+                ast, query_context->getCurrentDatabase(), *settings_copy, query_context->getCurrentQueryId(),
+                query_context->getUserID(), query_context->getCurrentRoles(), /* is_subquery = */ true);
+            QueryResultCache::CoalescingKey herd_key{
+                .ast_hash = coalescing_probe_key.ast_hash,
+                .user_id = query_context->getUserID(),
+                .current_user_roles = query_context->getCurrentRoles(),
+                .share_between_users = settings[Setting::query_cache_share_between_users],
+                .is_subquery = true};
+
+            QueryStatusPtr herd_wait_process_list_elem = query_context->getProcessListElement();
+            auto herd_is_cancelled = [herd_wait_process_list_elem]()
+            {
+                return herd_wait_process_list_elem && herd_wait_process_list_elem->isKilled();
+            };
+
+            /// Retry loop, bounded by the overall herd_wait_timeout budget
+            const auto herd_wait_deadline = std::chrono::steady_clock::now() + herd_wait_timeout;
+            QueryResultCache::HerdTokenPtr herd_token;
+            while (true)
+            {
+                const auto herd_wait_remaining = std::chrono::duration_cast<std::chrono::milliseconds>(
+                    herd_wait_deadline - std::chrono::steady_clock::now());
+                if (herd_wait_remaining.count() <= 0)
+                    break;
+
+                herd_token = query_result_cache->acquireOrWaitHerdToken(
+                    herd_key, herd_wait_remaining, query_context->getCurrentQueryId(), herd_is_cancelled);
+                if (herd_token)
+                    break;
+
+                /// Distinguish "waited and gave up/got woken" from "was cancelled while waiting" exactly as the
+                /// query would be without coalescing.
+                if (herd_wait_process_list_elem)
+                    herd_wait_process_list_elem->throwIfKilled();
+
+                if (query_result_cache->isHerdExecutor(herd_key, query_context->getCurrentQueryId()))
+                    break;
+
+                if (tryAddReadFromQueryResultCacheStep(
+                        query_plan, ast, query_context, settings, *settings_copy, query_result_cache, query_result_cache_on_disk))
+                    return;
+
+                /// Still a miss: the previous executor may have thrown, been cancelled, timed out, or the cache
+                /// may have been cleared in the meantime. Try to take over as executor.
+                herd_token = query_result_cache->tryBecomeHerdExecutor(herd_key, query_context->getCurrentQueryId());
+                if (herd_token)
+                    break;
+
+                /// Lost the takeover race to yet another concurrent query: loop back and wait on its new token
+                /// instead of planning this subquery independently, as long as the overall budget allows.
+            }
+
+            if (herd_token)
+                herd_token_holder = QueryResultCacheHerdTokenHolder(query_result_cache, herd_key, herd_token);
+        }
+    }
 
     StorageLimitsList current_storage_limits = storage_limits;
     select_query_info.local_storage_limits = buildStorageLimits(*query_context, select_query_options);
@@ -3568,10 +3665,12 @@ void Planner::buildPlanForQueryNode()
 
     /// If it is a non-internal SELECT query, and active (write) use of the query cache is enabled,
     /// then add a step which stores the result in the query cache.
+    /// The herd token (if this query became the herd executor above) is handed over to the added step, see
+    /// `addStreamInQueryResultCacheStepIfNeeded`. If no step is added, `herd_token_holder` releases it on scope exit.
     if (should_cache)
         addStreamInQueryResultCacheStepIfNeeded(
             query_plan, ast, query_context, settings, *settings_copy, query_result_cache, query_result_cache_on_disk,
-            /* skip_context_check = */ !can_use_query_result_cache);
+            /* skip_context_check = */ !can_use_query_result_cache, &herd_token_holder);
 
     query_node_to_plan_step_mapping[&query_node] = query_plan.getRootNode();
 }
