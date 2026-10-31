@@ -70,16 +70,16 @@ public:
     }
 
     /// Reserving every bucket up front would be serial work before the build. So each slot reserves its
-    /// share of `size_hint_` keys in a map at its first insert into that map, under its own lock.
-    void setReserve(size_t num_maps, size_t size_hint_, size_t max_reserve_bytes_)
+    /// share of `reserve_keys_` keys in a map at its first insert into that map, under its own lock.
+    void setReserve(size_t num_maps, size_t reserve_keys_)
     {
-        size_hint = size_hint_;
-        max_reserve_bytes = max_reserve_bytes_;
+        reserve_keys = reserve_keys_;
         reserved.assign(num_maps, std::vector<char>(slots.size(), 0));
     }
 
     /// Call under the lock of `slot`; `map` is map `map_idx`. On the first insert of `slot` into it, reserves the
-    /// slot's share of the size hint over the slot's buckets. Returns that share, or 0 when nothing was reserved.
+    /// slot's share of `reserve_keys` over the slot's buckets. Returns that share, or 0 when nothing was reserved.
+    /// The share is used only for `HashJoinPreallocatedElementsInHashTables`.
     template <typename Map>
     size_t reserveOnFirstInsert(Map & map, size_t map_idx, size_t slot)
     {
@@ -88,13 +88,12 @@ public:
             return 0;
         else
         {
-            if (!size_hint || reserved[map_idx][slot])
+            if (!reserve_keys || reserved[map_idx][slot])
                 return 0;
-            const size_t keys = clampReserve<Map>(size_hint, max_reserve_bytes);
             for (size_t bucket = slot; bucket < Map::NUM_BUCKETS; bucket += slots.size())
-                map.impls[bucket].reserve(keys / Map::NUM_BUCKETS);
+                map.impls[bucket].reserve(reserve_keys / Map::NUM_BUCKETS);
             reserved[map_idx][slot] = 1;
-            return keys / slots.size();
+            return reserve_keys / slots.size();
         }
     }
 
@@ -134,20 +133,6 @@ public:
     }
 
 private:
-    /// A statistics-derived reserve is an estimate, so cap it at the spill budget.
-    template <typename Table>
-    static size_t clampReserve(size_t reserve, size_t max_reserve_bytes)
-    {
-        /// `HashTableGrowerWithPrecalculation::set` keeps a buffer at most half full and rounds its size up to a power of two.
-        static constexpr size_t max_cells_per_key = 4;
-        /// `SpillingHashJoin` switches to `GraceHashJoin` at half of the budget, so the reserve stays under that half.
-        static constexpr size_t budget_divisor = 2;
-
-        if (!max_reserve_bytes)
-            return reserve;
-        return std::min(reserve, max_reserve_bytes / (budget_divisor * max_cells_per_key * sizeof(typename Table::cell_type)));
-    }
-
     struct alignas(CH_CACHE_LINE_SIZE) Slot
     {
         std::mutex mutex;
@@ -162,8 +147,7 @@ private:
 
     std::vector<Slot> slots;
 
-    size_t size_hint = 0;
-    size_t max_reserve_bytes = 0;
+    size_t reserve_keys = 0;
     /// Per map, per slot. A slot's flags are used only under its lock.
     std::vector<std::vector<char>> reserved;
 };

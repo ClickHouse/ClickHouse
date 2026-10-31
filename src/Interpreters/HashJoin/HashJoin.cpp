@@ -120,6 +120,24 @@ bool useZeroCopyApproach(const Block & from_block)
         > threshold;
 }
 
+/// A reserve is an estimate, so cap it at the spill budget. The maps of all disjuncts have the same type, so `maps` is any of them.
+size_t capReserveAtSpillBudget(size_t keys, size_t max_reserve_bytes, const HashJoin::MapsVariant & maps, HashJoin::Type type)
+{
+    /// `HashTableGrowerWithPrecalculation::set` keeps a buffer at most half full and rounds its size up to a power of two.
+    static constexpr size_t max_cells_per_key = 4;
+    /// `SpillingHashJoin` switches to `GraceHashJoin` at half of the budget, so the reserve stays under that half.
+    static constexpr size_t budget_divisor = 2;
+
+    if (!keys || !max_reserve_bytes)
+        return keys;
+    size_t cell_size = 0;
+    std::visit(
+        [&](const auto & maps_)
+        { maps_.visit(type, [&]<typename Table>(const std::shared_ptr<Table> &) { cell_size = sizeof(typename Table::cell_type); }); },
+        maps);
+    return std::min(keys, max_reserve_bytes / (budget_divisor * max_cells_per_key * cell_size));
+}
+
 Block filterColumnsPresentInSampleBlock(const Block & block, const Block & sample_block)
 {
     Block filtered_block;
@@ -528,7 +546,8 @@ HashJoin::HashJoin(
     if (!size_hint && build_layout.two_level)
         if (const auto hint = getSizeHint(stats_collecting_params.build))
             size_hint = hint->ht_size;
-    data->slots.setReserve(data->maps.size(), size_hint, table_join->maxBytesBeforeExternalJoin());
+    data->slots.setReserve(
+        data->maps.size(), capReserveAtSpillBudget(size_hint, table_join->maxBytesBeforeExternalJoin(), data->maps.front(), data->type));
 
     /// `bucket_bytes` only accumulates insert deltas, so seed it with what `create` allocated.
     recomputeBucketBytes();
