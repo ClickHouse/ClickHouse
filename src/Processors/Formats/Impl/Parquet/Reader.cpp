@@ -30,6 +30,7 @@
 #include <Common/findExtreme.h>
 #include <Formats/FormatFilterInfo.h>
 #include <Functions/FunctionTopKFilter.h>
+#include <Functions/IFunction.h>
 #include <Interpreters/castColumn.h>
 #include <Interpreters/convertFieldToType.h>
 #include <Interpreters/extractStringValueFilters.h>
@@ -2052,7 +2053,24 @@ void Reader::preparePrewhere()
         return;
     if (pc.first_step_to_calculate == steps.size() && !pc.output_nullable && !pc.group_nullable && pc.levels.back().rep == 0
         && isLazyReplicationUseful(pc.decoded_type->createColumn()))
+    {
         pc.decode_dictionary_as_replicated = true;
+        for (const auto & node : steps.back().actions.getActionsDAG().getNodes())
+        {
+            /// A function whose result is already known is not executed.
+            if (node.type != ActionsDAG::ActionType::FUNCTION || node.column)
+                continue;
+            DataTypesWithConstInfo arguments;
+            arguments.reserve(node.children.size());
+            for (const auto * child : node.children)
+                arguments.push_back({child->result_type, child->column && isColumnConst(*child->column)});
+            if (!node.function_base || node.function_base->canThrow(arguments))
+            {
+                pc.last_step_can_throw = true;
+                break;
+            }
+        }
+    }
 }
 
 void Reader::processBloomFilterHeader(ColumnChunk & column, const PrimitiveColumnInfo & column_info)
@@ -3489,10 +3507,15 @@ void Reader::decodePrimitiveColumn(ColumnChunk & column, const PrimitiveColumnIn
 
     if (subchunk.dictionary_values)
     {
-        /// Drop the values no read row references: the step must not evaluate them.
-        ColumnIndex indexes(std::move(subchunk.column));
-        ColumnPtr values = indexes.removeUnusedRowsInIndexedData(subchunk.dictionary_values);
-        subchunk.column = ColumnReplicated::create(values->assumeMutable(), indexes.detachIndexes());
+        if (column_info.last_step_can_throw)
+        {
+            /// Drop the values no read row references: the step must not evaluate them.
+            ColumnIndex indexes(std::move(subchunk.column));
+            ColumnPtr values = indexes.removeUnusedRowsInIndexedData(subchunk.dictionary_values);
+            subchunk.column = ColumnReplicated::create(values->assumeMutable(), indexes.detachIndexes());
+        }
+        else
+            subchunk.column = ColumnReplicated::create(subchunk.dictionary_values->assumeMutable(), std::move(subchunk.column));
         subchunk.dictionary_values = nullptr;
         ProfileEvents::increment(ProfileEvents::ParquetRowsDecodedAsDictionaryIndexes, row_subgroup.filter.rows_pass);
     }
