@@ -5867,6 +5867,26 @@ bool isSafeForKeyConversion(const IDataType * from, const IDataType * to)
     return false;
 }
 
+/// The time zone of a `DateTime` or `DateTime64` type, also inside `Nullable` and `LowCardinality`, or an empty string for
+/// any other type.
+String getTimeZoneOfDateTime(const DataTypePtr & type)
+{
+    const auto plain_type = removeLowCardinalityAndNullable(type);
+    if (const auto * date_time = typeid_cast<const DataTypeDateTime *>(plain_type.get()))
+        return date_time->getTimeZone().getTimeZone();
+    if (const auto * date_time64 = typeid_cast<const DataTypeDateTime64 *>(plain_type.get()))
+        return date_time64->getTimeZone().getTimeZone();
+    return {};
+}
+
+/// Whether a type change moves a `DateTime` or `DateTime64` to another time zone.
+bool changesTimeZone(const DataTypePtr & from, const DataTypePtr & to)
+{
+    const String from_time_zone = getTimeZoneOfDateTime(from);
+    const String to_time_zone = getTimeZoneOfDateTime(to);
+    return !from_time_zone.empty() && !to_time_zone.empty() && from_time_zone != to_time_zone;
+}
+
 /// Comma-separated list of backquoted identifiers, for exception messages.
 String backQuotedList(const std::vector<String> & identifiers)
 {
@@ -6802,6 +6822,21 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
                                     "Cannot reset setting '{}' because it doesn't exist for MergeTree engines family",
                                     reset_setting);
             }
+        }
+        else if (command.type == AlterCommand::MODIFY_COLUMN && command.data_type
+            && columns_alter_type_forbidden.contains(command.column_name)
+            && old_metadata.getColumns().hasPhysical(command.column_name)
+            && changesTimeZone(old_metadata.getColumns().getPhysical(command.column_name).type, command.data_type))
+        {
+            /// Changing only the time zone keeps the stored values and needs no mutation, so it is not checked below, but an
+            /// expression of the key over the column, such as `toHour(dt)`, gives other values afterwards: the primary key and
+            /// the partitions of the existing parts would no longer match the key, and pruning would drop their rows.
+            throw Exception(ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN,
+                "ALTER of key column {} from type {} to type {} is forbidden, because the column is used in a key expression "
+                "whose values can depend on the time zone",
+                backQuoteIfNeed(command.column_name),
+                old_metadata.getColumns().getPhysical(command.column_name).type->getName(),
+                command.data_type->getName());
         }
         else if (const auto mutation_stage = command.getMutationStageDecision(*storage_metadata_snapshot, local_context);
                  mutation_stage.requires_mutation)
