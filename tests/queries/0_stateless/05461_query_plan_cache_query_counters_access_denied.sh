@@ -36,7 +36,7 @@ $CLICKHOUSE_CLIENT --query "SYSTEM FLUSH LOGS query_log"
 $CLICKHOUSE_CLIENT --query "
     SELECT log_comment, type, ProfileEvents['Query'], ProfileEvents['SelectQuery'], ProfileEvents['InitialQuery'], ProfileEvents['InitialSelectQuery']
     FROM system.query_log
-    WHERE event_date >= yesterday() AND type != 'QueryStart' AND log_comment IN ('05461_warm', '05461_denied_on', '05461_denied_off') AND user = '$user'
+    WHERE event_date >= yesterday() AND type != 'QueryStart' AND log_comment IN ('05461_warm', '05461_denied_on', '05461_denied_off') AND user = '$user' AND current_database = '$CLICKHOUSE_DATABASE'
     ORDER BY event_time_microseconds"
 
 $CLICKHOUSE_CLIENT --query "
