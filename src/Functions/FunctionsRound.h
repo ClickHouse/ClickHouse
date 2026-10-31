@@ -7,6 +7,7 @@
 #include <Core/callOnTypeIndex.h>
 #include <Columns/ColumnVector.h>
 #include <Common/intExp10.h>
+#include <base/preciseExp10.h>
 #include <Interpreters/castColumn.h>
 #include <Functions/IFunction.h>
 #include <Common/intExp.h>
@@ -224,26 +225,109 @@ inline BFloat16 roundWithMode(BFloat16 x, RoundingMode mode)
 template <typename T, RoundingMode rounding_mode, ScaleMode scale_mode>
 struct FloatRoundingComputation
 {
-    static T prepare(size_t scale)
+    static T prepare(int digits)
     {
-        return T(scale);
+        return T(intExp10(digits));
     }
 
     static ALWAYS_INLINE T compute(T val, T scale)
     {
         if constexpr (scale_mode == ScaleMode::Positive)
-            val = val * scale;
+        {
+            /// `val * scale` overflows only if `val` has no digits after the N-th decimal place.
+            const T scaled = val * scale;
+            const T res = roundWithMode(scaled, rounding_mode) / scale;
+            return isFinite(scaled) ? res : val;
+        }
         else if constexpr (scale_mode == ScaleMode::Negative)
-            val = val / scale;
+        {
+            const T res = roundWithMode(val / scale, rounding_mode) * scale;
+            /// Overflows only for `val` at the type max, which has no digits below `scale`.
+            return isFinite(res) ? res : val;
+        }
+        else
+            return roundWithMode(val, rounding_mode);
+    }
+};
 
-        val = roundWithMode(val, rounding_mode);
 
+/// Rounding with `|N| > 19`, where `10^N` is not exact in the argument type or out of its range. Computed in `Float64`.
+template <RoundingMode rounding_mode, ScaleMode scale_mode>
+struct FloatRoundingLargeScale
+{
+    static constexpr int max_exp10 = 308;
+    /// From 2^52 on every `Float64` is an integer, so rounding returns it unchanged.
+    static constexpr Float64 integer_limit = 4503599627370496.0;
+
+    struct Scales
+    {
+        int digits;
+        Float64 scale;
+        Float64 extra_scale;
+    };
+
+    /// 10^digits = scale * extra_scale, with scale <= 10^308.
+    static Scales prepare(int digits)
+    {
+        if (digits <= max_exp10)
+            return {digits, preciseExp10(digits), 1.0};
+        return {digits, preciseExp10(max_exp10), preciseExp10(digits - max_exp10)};
+    }
+
+    /// An inexact `10^N` may move the result to the wrong side of `x`.
+    static Float64 clampToDirection(Float64 res, Float64 x)
+    {
+        if constexpr (rounding_mode == RoundingMode::Floor)
+            return std::min(res, x);
+        else if constexpr (rounding_mode == RoundingMode::Ceil)
+            return std::max(res, x);
+        else if constexpr (rounding_mode == RoundingMode::Trunc)
+            return x > 0 ? std::min(res, x) : std::max(res, x);
+        else
+            return res;
+    }
+
+    static Float64 compute(Float64 x, const Scales & scales)
+    {
         if constexpr (scale_mode == ScaleMode::Positive)
-            val = val / scale;
-        else if constexpr (scale_mode == ScaleMode::Negative)
-            val = val * scale;
+        {
+            const Float64 scaled = x * scales.extra_scale * scales.scale;
+            if (!(std::abs(scaled) < integer_limit))
+                return x;
+            return clampToDirection(roundWithMode(scaled, rounding_mode) / scales.scale / scales.extra_scale, x);
+        }
+        else
+        {
+            if (scales.digits > max_exp10)
+            {
+                /// Every finite `x` is smaller than 10^digits in magnitude.
+                if (!std::isfinite(x) || x == 0)
+                    return x;
+                if constexpr (rounding_mode == RoundingMode::Ceil)
+                {
+                    if (x > 0)
+                        return std::numeric_limits<Float64>::infinity();
+                }
+                else if constexpr (rounding_mode == RoundingMode::Floor)
+                {
+                    if (x < 0)
+                        return -std::numeric_limits<Float64>::infinity();
+                }
+                return std::copysign(0.0, x);
+            }
 
-        return val;
+            const Float64 quotient = x / scales.scale;
+            if (!(std::abs(quotient) < integer_limit))
+                return x;
+
+            Float64 res = roundWithMode(quotient, rounding_mode);
+            /// `x / scale` underflows to zero for a tiny nonzero `x`.
+            if constexpr (rounding_mode == RoundingMode::Ceil)
+                res = (quotient == 0 && x > 0) ? 1 : res;
+            else if constexpr (rounding_mode == RoundingMode::Floor)
+                res = (quotient == 0 && x < 0) ? -1 : res;
+            return clampToDirection(res * scales.scale, x);
+        }
     }
 };
 
@@ -257,23 +341,47 @@ private:
     static_assert(!is_decimal<T>);
 
     using Op = FloatRoundingComputation<T, rounding_mode, scale_mode>;
+    using LargeScaleOp = FloatRoundingLargeScale<rounding_mode, scale_mode>;
     using Container = typename ColumnVector<T>::Container;
 
+    /// `intExp10` is exact up to 10^19.
+    static constexpr int max_exact_digits = std::numeric_limits<UInt64>::digits10;
+
 public:
-    static NO_INLINE void apply(const Container & in, size_t scale, Container & out)
+    static NO_INLINE void apply(const Container & in, int digits, Container & out)
     {
-        const T scale_value = Op::prepare(scale);
         const size_t size = in.size();
         const T * __restrict p_in = in.data();
         T * __restrict p_out = out.data();
 
+        if constexpr (scale_mode != ScaleMode::Zero)
+        {
+            if (digits > max_exact_digits)
+            {
+                const auto scales = LargeScaleOp::prepare(digits);
+                for (size_t i = 0; i < size; ++i)
+                    p_out[i] = T(LargeScaleOp::compute(Float64(p_in[i]), scales));
+                return;
+            }
+        }
+
+        const T scale_value = Op::prepare(digits);
         for (size_t i = 0; i < size; ++i)
             p_out[i] = Op::compute(p_in[i], scale_value);
     }
 
-    static void applyOne(T in, size_t scale, T & out)
+    static void applyOne(T in, int digits, T & out)
     {
-        out = Op::compute(in, Op::prepare(scale));
+        if constexpr (scale_mode != ScaleMode::Zero)
+        {
+            if (digits > max_exact_digits)
+            {
+                out = T(LargeScaleOp::compute(Float64(in), LargeScaleOp::prepare(digits)));
+                return;
+            }
+        }
+
+        out = Op::compute(in, Op::prepare(digits));
     }
 };
 
@@ -317,10 +425,10 @@ public:
         }
     }
 
-    static NO_INLINE void apply(const Container & in, size_t scale, Container & out)
+    static NO_INLINE void apply(const Container & in, int digits, Container & out)
     {
         /// Manual function cloning for compiler to generate integer division by constant.
-        switch (scale)
+        switch (intExp10(digits))
         {
             case 1ULL: return applyImpl<1ULL>(in, out);
             case 10ULL: return applyImpl<10ULL>(in, out);
@@ -347,9 +455,9 @@ public:
         }
     }
 
-    static void applyOne(T in, size_t scale, T& out)
+    static void applyOne(T in, int digits, T& out)
     {
-        Op::compute(&in, scale, &out);
+        Op::compute(&in, intExp10(digits), &out);
     }
 };
 
@@ -447,20 +555,11 @@ struct Dispatcher
                 {
                     auto scale_arg = (scale_col == nullptr) ? 0 : getScaleArg(checkAndGetColumnConst<ColumnVector<ScaleType>>(scale_col));
                     if (scale_arg == 0)
-                    {
-                        size_t scale = 1;
-                        FunctionRoundingImpl<ScaleMode::Zero>::apply(value_col_typed->getData(), scale, vec_res);
-                    }
+                        FunctionRoundingImpl<ScaleMode::Zero>::apply(value_col_typed->getData(), 0, vec_res);
                     else if (scale_arg > 0)
-                    {
-                        size_t scale = intExp10(scale_arg);
-                        FunctionRoundingImpl<ScaleMode::Positive>::apply(value_col_typed->getData(), scale, vec_res);
-                    }
+                        FunctionRoundingImpl<ScaleMode::Positive>::apply(value_col_typed->getData(), scale_arg, vec_res);
                     else
-                    {
-                        size_t scale = intExp10(-scale_arg);
-                        FunctionRoundingImpl<ScaleMode::Negative>::apply(value_col_typed->getData(), scale, vec_res);
-                    }
+                        FunctionRoundingImpl<ScaleMode::Negative>::apply(value_col_typed->getData(), -scale_arg, vec_res);
                 }
                 /// Non-const scale argument:
                 else if (const auto * scale_col_typed = checkAndGetColumn<ColumnVector<ScaleType>>(scale_col))
@@ -476,20 +575,11 @@ struct Dispatcher
                         Scale raw_scale = static_cast<Scale>(scale64);
 
                         if (raw_scale == 0)
-                        {
-                            size_t scale = 1;
-                            FunctionRoundingImpl<ScaleMode::Zero>::applyOne(value_data[i], scale, vec_res[i]);
-                        }
+                            FunctionRoundingImpl<ScaleMode::Zero>::applyOne(value_data[i], 0, vec_res[i]);
                         else if (raw_scale > 0)
-                        {
-                            size_t scale = intExp10(raw_scale);
-                            FunctionRoundingImpl<ScaleMode::Positive>::applyOne(value_data[i], scale, vec_res[i]);
-                        }
+                            FunctionRoundingImpl<ScaleMode::Positive>::applyOne(value_data[i], raw_scale, vec_res[i]);
                         else
-                        {
-                            size_t scale = intExp10(-raw_scale);
-                            FunctionRoundingImpl<ScaleMode::Negative>::applyOne(value_data[i], scale, vec_res[i]);
-                        }
+                            FunctionRoundingImpl<ScaleMode::Negative>::applyOne(value_data[i], -raw_scale, vec_res[i]);
                     }
                 }
             }
