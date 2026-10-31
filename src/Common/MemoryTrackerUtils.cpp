@@ -154,31 +154,33 @@ std::unique_ptr<MemoryTracker> tryCreateMemoryTrackerUnderCurrentQuery(VariableC
 
 extern MemoryTracker total_memory_tracker;
 
-static size_t getMaxThreadsForAvailableMemoryImpl(size_t max_threads, UInt64 min_free_per_thread)
+std::optional<Int64> getServerFreeMemory()
 {
-    if (min_free_per_thread == 0 || max_threads <= 1)
-        return max_threads;
-
     Int64 hard_limit = total_memory_tracker.getHardLimit();
     if (hard_limit <= 0)
+        return std::nullopt;
+    return hard_limit - total_memory_tracker.get();
+}
+
+static size_t getMaxThreadsForFreeMemoryImpl(size_t max_threads, UInt64 min_free_per_thread, std::optional<Int64> free_memory)
+{
+    if (min_free_per_thread == 0 || max_threads <= 1 || !free_memory)
         return max_threads;
 
-    Int64 tracked = total_memory_tracker.get();
-    Int64 free_memory = hard_limit - tracked;
-
-    if (free_memory <= 0)
+    if (*free_memory <= 0)
         return 1;
 
-    auto allowed = static_cast<size_t>(static_cast<UInt64>(free_memory) / min_free_per_thread);
+    auto allowed = static_cast<size_t>(static_cast<UInt64>(*free_memory) / min_free_per_thread);
     if (allowed < 1)
         return 1;
     if (allowed < max_threads)
         return allowed;
     return max_threads;
 }
-size_t getMaxThreadsForAvailableMemory(size_t max_threads, UInt64 min_free_per_thread)
+
+size_t getMaxThreadsForFreeMemory(size_t max_threads, UInt64 min_free_per_thread, std::optional<Int64> free_memory)
 {
-    size_t effective_threads = getMaxThreadsForAvailableMemoryImpl(max_threads, min_free_per_thread);
+    size_t effective_threads = getMaxThreadsForFreeMemoryImpl(max_threads, min_free_per_thread, free_memory);
     if (effective_threads != max_threads)
         LOG_DEBUG(getLogger("MemoryTrackerUtils"), "Lower number of threads for query to {} ({} requested)", effective_threads, max_threads);
     return effective_threads;

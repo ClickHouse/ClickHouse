@@ -1943,7 +1943,7 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(TableExpressionNodePtr table_
             pushOrderByIntoView(storage, storage_snapshot, select_query_info, table_expression, is_single_table_expression, query_context, table_expression_query_info);
         }
 
-        const size_t effective_max_threads = getEffectiveMaxThreads(settings);
+        const size_t effective_max_threads = getEffectiveMaxThreads(*query_context);
         size_t max_streams = effective_max_threads;
         size_t max_threads_execute_query = effective_max_threads;
 
