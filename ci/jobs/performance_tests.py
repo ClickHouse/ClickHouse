@@ -1547,6 +1547,74 @@ class CHServer:
         if self.log_fd:
             self.log_fd.close()
 
+    # The `futex` syscall number, by `uname -m`.
+    FUTEX_SYSCALL = {"x86_64": 202, "aarch64": 98}
+
+    def thread_stack_alignment(self):
+        """Count the server threads blocked in `futex` by their sp mod 64.
+
+        The residue is the same from run to run of one binary, because thread
+        stacks start at a fixed offset from a page boundary (glibc puts the
+        static TLS block at the top of every thread stack), and the idle threads
+        sleep at the same depth of the same frames. A libc or toolchain change
+        that moves the stacks shows up as a shifted histogram, which explains a
+        slowdown of identical code (split stores, store-forwarding blocks).
+
+        Reading `/proc/<pid>/task/<tid>/syscall` needs ptrace access, which Yama
+        (`ptrace_scope` = 1) grants to an ancestor of the process without extra
+        capabilities: this job started the servers, a `compare.sh` started later
+        could not read it. Returns a row for the report.
+        """
+        proc = getattr(self, "proc", None)
+        if proc is None or proc.poll() is not None:
+            return ["", "server is not running in this process"]
+        futex = self.FUTEX_SYSCALL[os.uname().machine]
+
+        children = {}
+        for entry in os.listdir("/proc"):
+            if not entry.isdigit():
+                continue
+            try:
+                stat = Path(f"/proc/{entry}/stat").read_text()
+            except FileNotFoundError:
+                continue  # exited meanwhile
+            # The command name in parentheses may contain spaces.
+            ppid = int(stat.rsplit(")", 1)[1].split()[1])
+            children.setdefault(ppid, []).append(entry)
+        pids, queue = [], [str(proc.pid)]
+        while queue:
+            pid = queue.pop()
+            pids.append(pid)
+            queue.extend(children.get(int(pid), []))
+
+        residues = {}
+        try:
+            for pid in pids:
+                for task in Path(f"/proc/{pid}/task").iterdir():
+                    try:
+                        fields = (task / "syscall").read_text().split()
+                    except (FileNotFoundError, ProcessLookupError):
+                        continue  # exited meanwhile
+                    # "<nr> <6 args> <sp> <pc>", or "running", or "-1 <sp> <pc>" outside a syscall.
+                    if fields[0] == str(futex):
+                        residue = int(fields[7], 16) % 64
+                        residues[residue] = residues.get(residue, 0) + 1
+        except PermissionError as e:
+            return ["", f"cannot read thread state: {e}"]
+        return [
+            str(sum(residues.values())),
+            ", ".join(f"{residue}: {count}" for residue, count in sorted(residues.items())),
+        ]
+
+
+def write_thread_stack_alignment(servers, path):
+    """Write the thread stack alignment of the running servers for the report."""
+    with open(path, "w", encoding="utf-8") as f:
+        for name, server in servers:
+            row = [name] + server.thread_stack_alignment()
+            print(f"Thread stack alignment: {' | '.join(row)}")
+            f.write("\t".join(row) + "\n")
+
 
 def parse_args():
     parser = argparse.ArgumentParser(description="ClickHouse Performance Tests Job")
@@ -3328,6 +3396,10 @@ def main():
     # TODO: refactor to use native Praktika report from Result and remove
     if res and JobStages.REPORT in stages:
         print("Build Report")
+        # While the servers are still running: compare.sh::get_profiles stops them.
+        write_thread_stack_alignment(
+            log_export_servers, f"{perf_wd}/thread-stack-alignment.tsv"
+        )
         script_path = Shell.get_output(
             "readlink -f ./ci/jobs/scripts/perf/compare.sh", strict=True
         )
