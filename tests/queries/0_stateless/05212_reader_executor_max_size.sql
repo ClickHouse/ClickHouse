@@ -11,8 +11,9 @@ SELECT sum(a) FROM t_reader_executor_max_size SETTINGS reader_executor_block_siz
 SELECT sum(a) FROM t_reader_executor_max_size SETTINGS reader_executor_plan_look_ahead = 41943041; -- { serverError INVALID_SETTING_VALUE }
 
 -- 40 MiB is the accepted maximum for all three, so the shared ceiling always leaves
--- `reader_executor_plan_look_ahead >= reader_executor_block_size` satisfiable.
+-- `reader_executor_plan_look_ahead >= reader_executor_block_size` satisfiable. The window can be at most
+-- half of the plan look-ahead, so its largest accepted value is 20 MiB.
 SELECT sum(a) FROM t_reader_executor_max_size
-SETTINGS reader_executor_window_size = 41943040, reader_executor_block_size = 41943040, reader_executor_plan_look_ahead = 41943040;
+SETTINGS reader_executor_window_size = 20971520, reader_executor_block_size = 41943040, reader_executor_plan_look_ahead = 41943040;
 
 DROP TABLE t_reader_executor_max_size;
