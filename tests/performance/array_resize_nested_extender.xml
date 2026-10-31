@@ -1,0 +1,18 @@
+<test>
+    <settings>
+        <max_threads>1</max_threads>
+        <max_block_size>100</max_block_size>
+    </settings>
+
+    <query>SELECT sum(length(arrayResize(CAST(materialize([]) AS Array(Array(UInt8))), 1, range(100000)::Array(UInt8)))) FROM numbers(20000)</query>
+    <query>SELECT sum(length(arrayResize(CAST(materialize([]) AS Array(Array(UInt8))), 1, materialize(range(100000)::Array(UInt8))))) FROM numbers(20000)</query>
+    <query>SELECT sum(length(arrayResize(CAST(materialize([]) AS Array(Array(String))), 1, arrayMap(x -> toString(x), range(10000))))) FROM numbers(20000)</query>
+    <query>SELECT sum(length(arrayResize(CAST(materialize([]) AS Array(Array(String))), 1, materialize(arrayMap(x -> toString(x), range(10000)))))) FROM numbers(20000)</query>
+    <query>SELECT sum(length(arrayResize(CAST(materialize([]) AS Array(Array(Array(UInt8)))), 1, materialize(arrayMap(x -> range(x % 100)::Array(UInt8), range(2000)))))) FROM numbers(20000)</query>
+    <query>SELECT sum(length(arrayResize(CAST(materialize([]) AS Array(Tuple(Array(UInt8)))), 1, tuple(materialize(range(100000)::Array(UInt8)))))) FROM numbers(20000)</query>
+    <query>SELECT sum(length(arrayResize(CAST(materialize([]) AS Array(Array(Nullable(String)))), 1, materialize(arrayMap(x -> toNullable(toString(x)), range(10000)))))) FROM numbers(20000)</query>
+    <query>SELECT sum(length(arrayResize(CAST(materialize([]) AS Array(Map(UInt32, UInt8))), 1, materialize(mapFromArrays(range(10000)::Array(UInt32), range(10000)::Array(UInt8)))))) FROM numbers(20000)</query>
+    <query>SELECT sum(length(arrayResize(CAST(materialize([]) AS Array(Variant(Array(UInt8), String))), 1, materialize(range(100000)::Array(UInt8))::Variant(Array(UInt8), String)))) FROM numbers(20000)</query>
+    <query>SELECT sum(length(arrayResize(CAST(materialize([]) AS Array(Tuple(UInt8, String))), 1, materialize(tuple(number::UInt8, toString(number)))))) FROM numbers(1000000)</query>
+    <query>SELECT sum(length(arrayResize(CAST(materialize([]) AS Array(Dynamic)), 1, materialize(number::UInt32)::Dynamic))) FROM numbers(1000000)</query>
+</test>

@@ -5,6 +5,7 @@
 #include <Common/Logger.h>
 #include <Core/ColumnsWithTypeAndName.h>
 #include <Core/Joins.h>
+#include <Functions/CancellationBudget.h>
 #include <Interpreters/ActionsDAG.h>
 #include <Interpreters/JoinUtils.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
@@ -47,9 +48,10 @@ FilterResult filterResultForMatchedRows(ActionsDAG pre_actions_dag, const Action
             /*input_rows_count=*/1,
             { .skip_materialize = true });
     }
-    catch (const Exception &)
+    catch (const Exception & e)
     {
         /// If we cannot evaluate the filter expression, return UNKNOWN
+        rethrowIfQueryCancelled(e);
         return FilterResult::UNKNOWN;
     }
 
