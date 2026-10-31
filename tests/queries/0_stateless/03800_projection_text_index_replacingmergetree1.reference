@@ -1,0 +1,25 @@
+Updated: foo
+-- direct read disabled
+foo
+foo updated
+foo updated
+-- direct read enabled
+foo
+foo updated
+foo updated
+Removed: bar
+-- direct read disabled
+-- -- value exists without FINAL
+bar
+-- -- value does not exist with FINAL
+-- direct read enabled
+-- -- value exists without FINAL
+bar
+-- -- value does not exist with FINAL
+New: baz
+-- direct read disabled
+baz
+baz
+-- direct read enabled
+baz
+baz

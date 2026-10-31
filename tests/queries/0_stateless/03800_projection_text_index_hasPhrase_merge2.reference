@@ -1,0 +1,4 @@
+before_optimize_hasPhrase	8
+before_optimize_hasAllTokens	8
+after_optimize_hasPhrase	8
+after_optimize_hasAllTokens	8

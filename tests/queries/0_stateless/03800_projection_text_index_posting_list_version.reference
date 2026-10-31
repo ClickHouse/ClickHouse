@@ -1,0 +1,24 @@
+Test 1: Default format (auto lazy mode)
+100
+100
+0
+Test 2: Large data with default format (lazy, triggers large posting list)
+1000
+1000
+0
+Test 3: Large data after merge (block index preserved)
+1000
+1000
+Test 4: Explicit has_block_index=1 (same as default)
+1000
+1000
+0
+Test 5: has_block_index=0 (no block index, non-lazy apply mode)
+1000
+1000
+0
+Test 6: has_block_index=0 with large data after merge
+1000
+1000
+Test 7: Invalid has_block_index=2 is rejected
+Test 8: Invalid DDL parameter posting_list_version is rejected

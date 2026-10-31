@@ -18,6 +18,14 @@ using IColumnPermutation = PaddedPODArray<size_t>;
 
 class ASTProjectionDeclaration;
 
+struct IndexDescription;
+
+struct IMergeTreeIndex;
+using MergeTreeIndexPtr = std::shared_ptr<const IMergeTreeIndex>;
+
+struct StorageInMemoryMetadata;
+using StorageMetadataPtr = std::shared_ptr<const StorageInMemoryMetadata>;
+
 struct MergeTreeSettings;
 
 /// Base interface for projection index implementations.
@@ -48,6 +56,12 @@ public:
     /// Returns default MergeTreeSettings for this projection index type.
     /// These defaults are applied before any user-specified SETTINGS overrides.
     virtual std::shared_ptr<MergeTreeSettings> getDefaultSettings() const;
+
+    virtual const IndexDescription * getIndexDescription() const { return nullptr; }
+
+    /// Returns the index helper used to analyze and read the index. `parent_metadata` is the metadata
+    /// of the table the projection belongs to: the predicates analyzed by the index refer to its columns.
+    virtual MergeTreeIndexPtr getIndex(StorageMetadataPtr /* parent_metadata */) const { return nullptr; }
 
     /// Returns the maximum number of rows supported by this index.
     /// Some indices are limited to 32-bit row counts (approx. 4.29 billion).

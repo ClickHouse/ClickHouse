@@ -1,6 +1,7 @@
 #include <Columns/ColumnsCommon.h>
 #include <IO/ReadHelpers.h>
 #include <Storages/MergeTree/MergeTreeIndexText.h>
+#include <Storages/MergeTree/ProjectionIndex/MergeTreeReaderTextProjectionIndex.h>
 #include <Storages/MergeTree/TextIndexAnalyzer.h>
 #include <Storages/MergeTree/IPostingListCodec.h>
 #include <Storages/MergeTree/PostingListBlockCodec.h>
@@ -1411,6 +1412,8 @@ MergeTreeReaderPtr createMergeTreeReaderTextIndex(
     const NamesAndTypesList & columns_to_read,
     MergeTreeIndexGranulePtr index_granule)
 {
+    if (index_read_task.index.index->isProjectionIndex())
+        return std::make_unique<MergeTreeReaderTextProjectionIndex>(main_reader, index_read_task, columns_to_read, std::move(index_granule));
     return std::make_unique<MergeTreeReaderTextIndex>(main_reader, index_read_task, columns_to_read, std::move(index_granule));
 }
 

@@ -1,6 +1,7 @@
 #pragma once
 #include "config.h"
 
+#include <optional>
 #include <Common/Documentation.h>
 #include <DataTypes/DataTypeMapHelpers.h>
 #include <Storages/IndicesDescription.h>
@@ -94,6 +95,20 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
 }
 
+/// Closed range of rows.
+struct RowsRange
+{
+    size_t begin;
+    size_t end;
+
+    RowsRange() = default;
+    RowsRange(size_t begin_, size_t end_) : begin(begin_), end(end_) {}
+
+    bool intersects(const RowsRange & other) const;
+    std::optional<RowsRange> intersectWith(const RowsRange & other) const;
+    RowsRange unionWith(const RowsRange & other) const;
+};
+
 /// Stores some info about a single block of data.
 struct IMergeTreeIndexGranule
 {
@@ -129,6 +144,10 @@ struct IMergeTreeIndexGranule
 
     /// The in-memory size of the granule. Not expected to be 100% accurate.
     virtual size_t memoryUsageBytes() const = 0;
+
+    /// Updates the range of rows currently being processed.
+    /// Some indices (e.g. text indices) may use this information to make more precise `mayBeTrueOnGranule` decisions.
+    virtual void setCurrentRange(RowsRange) {}
 };
 
 using MergeTreeIndexGranulePtr = std::shared_ptr<IMergeTreeIndexGranule>;
@@ -301,6 +320,11 @@ struct IMergeTreeIndex
     MergeTreeIndexFormat getPhysicalFormat(const IMergeTreeDataPart & part, const std::string & relative_path_prefix) const;
     MergeTreeIndexFormat getPhysicalFormat(const IMergeTreeDataPartInfoForReader & part_info, const std::string & relative_path_prefix) const;
 
+    /// Index-specific usability check of a part's copy of the index, consulted by
+    /// getDeserializedFormat() after the physical format was found. For example, a projection
+    /// text index is not usable when its projection subpart failed to load (is broken).
+    virtual bool isUsableInPart(const IMergeTreeDataPart & /* part */) const { return true; }
+
     /// Deliberately NON-virtual: the usability checks below must not be bypassable by a format
     /// override. Reimplement getPhysicalFormat() instead.
     MergeTreeIndexFormat getDeserializedFormat(const IMergeTreeDataPartInfoForReader & part_info, const std::string & relative_path_prefix) const;
@@ -358,6 +382,7 @@ struct IMergeTreeIndex
 
     virtual bool isVectorSimilarityIndex() const { return false; }
     virtual bool isTextIndex() const { return false; }
+    virtual bool isProjectionIndex() const { return false; }
 
     /// An inert index holds no on-disk data and cannot be (re)computed. It exists only so old
     /// tables that still reference a removed index type stay attachable. Merge and mutation must
@@ -461,6 +486,15 @@ void ginIndexValidator(const IndexDescription & index, bool attach, const MergeT
 
 MergeTreeIndexPtr textIndexCreator(StorageMetadataPtr metadata_snapshot, const IndexDescription & index, const MergeTreeSettings & settings);
 void textIndexValidator(const IndexDescription & index, bool attach, const MergeTreeSettings & settings);
+
+/// Extract `dictionary_block_size` from a text-index argument AST (the AST stored on
+/// `ASTIndexDeclaration::type->arguments`). Returns the default from the given settings
+/// (`text_index_dictionary_block_size`) when the option is absent.
+/// Used by callers that need the value before constructing a full `MergeTreeIndexText`
+/// (e.g. projection text indexes that must propagate `dictionary_block_size` into the
+/// projection part's `index_granularity` setting at DDL time, before the underlying
+/// text index instance has been created).
+UInt64 getTextIndexDictionaryBlockSizeFromAST(const ASTPtr & text_index_arguments, const MergeTreeSettings & settings);
 
 String getIndexFileName(const String & index_name, bool escape_filename);
 
