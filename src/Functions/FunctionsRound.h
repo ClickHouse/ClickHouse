@@ -187,7 +187,7 @@ struct IntegerRoundingComputation
         if constexpr (scale_mode == ScaleMode::Negative && is_big_int_v<T> && !is_signed_v<T>
                       && (rounding_mode == RoundingMode::Ceil || rounding_mode == RoundingMode::Round))
         {
-            /// Only `*in > ~scale` can overflow, so a smaller top limb skips the saturation (a full wide comparison per row).
+            /// Only `*in > ~scale` can overflow, so a smaller top limb needs no saturation.
             if (unlikely(in->items[T::_impl::big(0)] >= ~scale.items[T::_impl::big(0)]))
                 computeSaturated(in, scale, out);
             else
