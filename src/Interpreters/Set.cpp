@@ -7,6 +7,8 @@
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnTuple.h>
 
+#include <Common/CurrentThread.h>
+#include <Common/FailPoint.h>
 #include <Common/Logger.h>
 #include <Common/MemoryTrackerBlockerInThread.h>
 #include <Common/MemoryTrackerUtils.h>
@@ -62,6 +64,11 @@ namespace ErrorCodes
     extern const int SET_SIZE_LIMIT_EXCEEDED;
     extern const int TYPE_MISMATCH;
     extern const int NUMBER_OF_COLUMNS_DOESNT_MATCH;
+}
+
+namespace FailPoints
+{
+    extern const char creating_sets_transform_pause[];
 }
 
 Set::Set(const SizeLimits & limits_, size_t max_elements_to_fill_, bool transform_null_in_)
@@ -372,6 +379,21 @@ void NO_INLINE Set::insertFromBlockImplCase(
     /// For all rows
     for (size_t i = 0; i < rows; ++i)
     {
+        /// The `QueryStatus`, not an `IProcessor::isCancelled`: `Set` is not a processor and has no
+        /// cancel flag of its own, while the thread that fills the set has the query attached.
+        /// Polled once per 4096 rows, so that a `KILL QUERY` (or a subquery timeout) lands in the
+        /// middle of hashing a chunk instead of after all of it.
+        if ((i & 0xFFF) == 0)
+        {
+            /// Not at the first boundary: a test releases the pause by resuming the fail point, and
+            /// pausing at the entry of a chunk would make it a window before the work instead of
+            /// one inside it.
+            if (i > 0) [[unlikely]]
+                FailPointInjection::pauseFailPoint(FailPoints::creating_sets_transform_pause);
+
+            CurrentThread::checkIfNotCancelled();
+        }
+
         if constexpr (has_null_map)
         {
             if ((*null_map)[i])
