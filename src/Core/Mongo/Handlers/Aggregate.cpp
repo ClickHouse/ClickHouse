@@ -70,9 +70,15 @@ bool pipelineReadsOtherCollections(const rapidjson::Value & pipeline)
 void writeNestedFieldNames(const DataTypePtr & type, WriteBuffer & out)
 {
     if (const auto * nullable = typeid_cast<const DataTypeNullable *>(type.get()))
-        return writeNestedFieldNames(nullable->getNestedType(), out);
+    {
+        writeNestedFieldNames(nullable->getNestedType(), out);
+        return;
+    }
     if (const auto * low_cardinality = typeid_cast<const DataTypeLowCardinality *>(type.get()))
-        return writeNestedFieldNames(low_cardinality->getDictionaryType(), out);
+    {
+        writeNestedFieldNames(low_cardinality->getDictionaryType(), out);
+        return;
+    }
     if (const auto * array = typeid_cast<const DataTypeArray *>(type.get()))
     {
         writeCString("[", out);

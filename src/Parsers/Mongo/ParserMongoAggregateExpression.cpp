@@ -1088,11 +1088,9 @@ ASTPtr makeAdd(const std::vector<ASTPtr> & arguments)
     date_of_term.erase(date_of_term.end() - 2);
     ASTPtr moved = date_of_term.size() == 1 ? std::move(date_of_term.front()) : makeFunction("multiIf", std::move(date_of_term));
     auto type = makeTypeOfMovedDate(makeASTFunction("toTypeName", sum->clone()));
-    return makeASTFunction(
-        "if",
-        std::move(any_date),
-        makeASTFunction("CAST", std::move(moved), type->clone()),
-        makeASTFunction("CAST", std::move(sum), std::move(type)));
+    auto moved_cast = makeASTFunction("CAST", std::move(moved), type->clone());
+    auto sum_cast = makeASTFunction("CAST", std::move(sum), std::move(type));
+    return makeASTFunction("if", std::move(any_date), std::move(moved_cast), std::move(sum_cast));
 }
 
 /** The lowering of `$subtract`: the difference of two dates is the number of milliseconds between
@@ -1897,9 +1895,10 @@ ASTPtr parseMongoAccumulator(const rapidjson::Value & value, const MongoGroupOrd
         /// `stddevSamp` answers `nan`, which is a number. `count` counts the values that are not
         /// `NULL`, the ones `stddevSamp` reads.
         auto input = parseMongoAggregateExpression(member.value);
+        auto single_value = makeASTFunction("lessOrEquals", makeASTFunction("count", input->clone()), makeLiteral(Field(UInt64(1))));
         return makeASTFunction(
             "if",
-            makeASTFunction("lessOrEquals", makeASTFunction("count", input->clone()), makeLiteral(Field(UInt64(1)))),
+            std::move(single_value),
             make_intrusive<ASTLiteral>(Field()),
             makeASTFunction("stddevSamp", std::move(input)));
     }
