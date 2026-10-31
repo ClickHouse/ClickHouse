@@ -2,6 +2,8 @@
 
 #include <base/defines.h>
 
+#include "config.h"
+
 #ifdef OS_LINUX /// Because of futex
 
 #include <base/types.h>
@@ -79,7 +81,7 @@ public:
 
 #endif
 
-#if defined(USE_NSYNC) && USE_NSYNC
+#if USE_NSYNC
 
 #include <nsync_mu.h>
 

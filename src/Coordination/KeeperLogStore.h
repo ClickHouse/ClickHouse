@@ -99,7 +99,7 @@ public:
     void setForceSerialStartupReadForTesting(bool value);
 
 private:
-#if defined(USE_NSYNC) && USE_NSYNC
+#if USE_NSYNC
     using ChangelogMutex = NsyncSharedMutex;
 #else
     using ChangelogMutex = SharedMutex;

@@ -85,6 +85,7 @@
 #cmakedefine01 USE_ANTLR4_GRAMMARS
 #cmakedefine01 USE_MONGODB
 #cmakedefine01 USE_JWT_CPP
+#cmakedefine01 USE_NSYNC
 #cmakedefine01 USE_FUZZING_MODE
 #cmakedefine01 USE_BUZZHOUSE
 #cmakedefine01 USE_DELTA_KERNEL_RS

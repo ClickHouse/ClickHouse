@@ -1,3 +1,10 @@
+option(ENABLE_NSYNC "Enable google/nsync synchronization primitives" ${ENABLE_LIBRARIES})
+
+if (NOT ENABLE_NSYNC)
+    message(STATUS "Not using nsync")
+    return()
+endif()
+
 set(NSYNC_SOURCE_DIR "${ClickHouse_SOURCE_DIR}/contrib/nsync")
 
 set(NSYNC_CPP_SOURCES
