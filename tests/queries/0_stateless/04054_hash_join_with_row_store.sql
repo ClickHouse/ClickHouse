@@ -14,6 +14,7 @@ INSERT INTO right VALUES (7, NULL, 5, 'dup');
 INSERT INTO right_asof SELECT number, toDateTime('2024-01-01 00:00:00', 'UTC') + number, number, toString(number) FROM numbers(5);
 
 SET join_algorithm = 'hash';
+SET enable_join_in_memory_compression = 0; -- it disables the row store
 
 SELECT '--- Row store planner decision test ---';
 

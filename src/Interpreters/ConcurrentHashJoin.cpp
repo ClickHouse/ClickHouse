@@ -236,6 +236,8 @@ ConcurrentHashJoin::ConcurrentHashJoin(
 
                     inner_hash_join->data->setMaxJoinedBlockRows(table_join->maxJoinedBlockRows());
                     inner_hash_join->data->setMaxJoinedBlockBytes(table_join->maxJoinedBlockBytes());
+                    /// `join_in_memory_compression_min_bytes` is for the whole join, and each slot holds its share of it.
+                    inner_hash_join->data->setInMemoryCompressionMinBytes(table_join->joinInMemoryCompressionMinBytes() / slots);
                     inner_hash_join->local_total_bytes = inner_hash_join->data->getTotalByteCount();
                     global_total_bytes.fetch_add(inner_hash_join->local_total_bytes, std::memory_order_relaxed);
                     hash_joins[i] = std::move(inner_hash_join);
@@ -252,7 +254,13 @@ ConcurrentHashJoin::ConcurrentHashJoin(
             getData(hash_joins[i])->stored_columns_index = shared_index;
 
         /// Decision must be done on the materialized block.
-        use_zero_copy_right = useZeroCopyApproach(hash_joins[0]->data->materializeColumnsFromRightBlock(*right_sample_block));
+        /// With in-memory compression enabled, never scatter the build side zero-copy. The zero-copy
+        /// scatter shares one full block across all slots through per-slot row selectors, so compressing
+        /// the stored blocks would compress the whole shared block once per slot, keeping `slots` compressed
+        /// copies of every row while `StoredBlock::allocatedBytes` counts only a selector-sized fraction of
+        /// each copy. Materialized shards hold exactly their own rows.
+        use_zero_copy_right = !table_join->enableJoinInMemoryCompression()
+            && useZeroCopyApproach(hash_joins[0]->data->materializeColumnsFromRightBlock(*right_sample_block));
     }
     catch (...)
     {
@@ -868,7 +876,7 @@ void ConcurrentHashJoin::resetTotalRowsAndBytesUnlocked(std::shared_ptr<Internal
     hash_join->local_total_bytes = 0;
 }
 
-BlocksList ConcurrentHashJoin::releaseSlotBlocks(size_t slot_idx)
+HashJoin::ReleasedJoinedBlocks ConcurrentHashJoin::releaseSlotBlocks(size_t slot_idx)
 {
     chassert(slot_idx < hash_joins.size());
     auto & hash_join = hash_joins[slot_idx];
@@ -924,6 +932,10 @@ void ConcurrentHashJoin::onBuildPhaseFinish()
             getData(hash_joins[0])->rows_to_join += getData(hash_joins[i])->rows_to_join;
             getData(hash_joins[0])->keys_to_join += getData(hash_joins[i])->keys_to_join;
 
+            /// Slot 0's `allocated_size` now includes slot i's compressed blocks.
+            hash_joins[0]->data->in_memory_compression_stats.source_bytes += hash_joins[i]->data->in_memory_compression_stats.source_bytes;
+            hash_joins[0]->data->in_memory_compression_stats.stored_bytes += hash_joins[i]->data->in_memory_compression_stats.stored_bytes;
+
             getData(hash_joins[i])->allocated_size = 0;
             getData(hash_joins[i])->rows_to_join = 0;
             getData(hash_joins[i])->keys_to_join = 0;
@@ -954,6 +966,19 @@ void ConcurrentHashJoin::onBuildPhaseFinish()
 
     for (const auto & hash_join : hash_joins)
         hash_join->data->all_values_unique = all_values_unique;
+
+    /// Synchronize all `HashJoin`s on the `have_compressed` flag. The slots share one `StoredColumnsIndex`
+    /// (and, with a two-level map, the merged map references the stored blocks of every slot), so a slot
+    /// that did not compress anything itself can still reach the blocks another slot compressed
+    /// (`enable_join_in_memory_compression`): every slot must then decompress at probe time and must not
+    /// build the emit table over the shared index, which would contain `ColumnCompressed` placeholders.
+    bool have_compressed = false;
+    for (const auto & hash_join : hash_joins)
+        have_compressed |= hash_join->data->haveCompressed();
+
+    if (have_compressed)
+        for (const auto & hash_join : hash_joins)
+            hash_join->data->setHaveCompressed(true);
 
     // `onBuildPhaseFinish` cannot be called concurrently with other IJoin methods, so we don't need a lock to access internal joins.
     // The following calls must be done after the final common map is constructed, otherwise we will incorrectly initialize `used_flags`.
