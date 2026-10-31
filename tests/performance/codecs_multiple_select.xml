@@ -1,0 +1,24 @@
+<test>
+    <settings>
+        <enable_alp_codec>1</enable_alp_codec>
+        <max_threads>1</max_threads>
+        <use_uncompressed_cache>0</use_uncompressed_cache>
+    </settings>
+
+    <create_query>
+        CREATE TABLE codecs_multiple (n Float64 CODEC(ALP, ZSTD))
+        ENGINE = MergeTree ORDER BY tuple()
+        SETTINGS min_compress_block_size = 65536, max_compress_block_size = 65536
+    </create_query>
+
+    <fill_query>
+        INSERT INTO codecs_multiple
+        SELECT (intHash64(number) % 100000) / 100.0
+        FROM numbers(640000000)
+    </fill_query>
+    <fill_query>OPTIMIZE TABLE codecs_multiple FINAL</fill_query>
+
+    <query>SELECT * FROM codecs_multiple FORMAT Null</query>
+
+    <drop_query>DROP TABLE IF EXISTS codecs_multiple</drop_query>
+</test>

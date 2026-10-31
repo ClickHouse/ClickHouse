@@ -4,7 +4,6 @@
 -- add_minmax_index_for_numeric_columns=0: Different plan
 SET explain_query_plan_default = 'legacy';
 
-SET query_plan_optimize_prewhere = 1;
 SET optimize_move_to_prewhere = 1;
 SET use_skip_indexes_on_data_read = 1;
 

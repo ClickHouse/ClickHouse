@@ -1,7 +1,7 @@
 {
   "groups": [
     {
-      "group": "About ClickHouse",
+      "group": "关于 ClickHouse",
       "pages": [
         "zh/resources/about/index",
         "zh/resources/about/adopters",
@@ -10,5 +10,5 @@
     }
   ],
   "icon": "/images/icons/icon-about.svg",
-  "item": "About"
+  "item": "关于"
 }

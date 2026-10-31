@@ -34,18 +34,20 @@ const ReleaseSchedule = ({ releases = [] }) => {
       <colgroup span={2} />
       <colgroup span={2} />
       <colgroup span={2} />
+      <colgroup />
       <thead>
         <tr>
           <th rowSpan={2} scope="col">Версия</th>
           <th colSpan={2} scope="colgroup" style={groupStartStyle}>
-            <a href="/docs/manage/updates#fast-release-channel-early-upgrades">Быстрый канал</a>
+            <a href="/ru/products/cloud/features/admin-features/upgrades#fast-release-channel-early-upgrades">Быстрый канал</a>
           </th>
           <th colSpan={2} scope="colgroup" style={groupStartStyle}>
-            <a href="/docs/manage/updates#regular-release-channel">Стандартный канал</a>
+            <a href="/ru/products/cloud/features/admin-features/upgrades#regular-release-channel">Стандартный канал</a>
           </th>
           <th colSpan={2} scope="colgroup" style={groupStartStyle}>
-            <a href="/docs/manage/updates#slow-release-channel-deferred-upgrades">Медленный канал</a>
+            <a href="/ru/products/cloud/features/admin-features/upgrades#slow-release-channel-deferred-upgrades">Медленный канал</a>
           </th>
+          <th rowSpan={2} scope="col" style={groupStartStyle}>Дата окончания срока службы (EOL)</th>
         </tr>
         <tr>
           <th scope="col" style={groupStartStyle}>Начало</th>
@@ -92,6 +94,7 @@ const ReleaseSchedule = ({ releases = [] }) => {
                   <td><DateCell date={release.slow_end_date} status={release.slow_progress} /></td>
                 </>
               )}
+              <td style={groupStartStyle}><DateCell date={release.eol_date} /></td>
             </tr>
           );
         })}

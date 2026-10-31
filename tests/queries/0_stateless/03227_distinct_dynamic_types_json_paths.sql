@@ -61,3 +61,21 @@ select distinctDynamicTypes(json.a2, 42) from test_json_dynamic_aggregate_functi
 select distinctDynamicTypes(42) from test_json_dynamic_aggregate_functions; -- {serverError ILLEGAL_TYPE_OF_ARGUMENT}
 
 drop table test_json_dynamic_aggregate_functions;
+
+-- Coverage for AggregateFunctionDistinctDynamicTypes.cpp:
+-- Two paths not exercised by existing 03227 queries:
+--   lines 95-96: add() skips NULLs via isNullAt check (all-NULL input gives empty array)
+--   lines 123-126: mergeImpl triggered by Merge combinator (distinctDynamicTypesMerge)
+
+-- All-NULL input: add() skips all rows, result is empty array
+select distinctDynamicTypes(d) from VALUES('d Dynamic', (NULL), (NULL));
+
+-- Merge combinator: forces mergeImpl + AggregateFunctionDistinctDynamicTypesData::merge
+select distinctDynamicTypesMerge(s)
+from (
+    select distinctDynamicTypesState(d) as s
+    from VALUES('d Dynamic', ('hello'), (42))
+    union all
+    select distinctDynamicTypesState(d) as s
+    from VALUES('d Dynamic', (3.14))
+);

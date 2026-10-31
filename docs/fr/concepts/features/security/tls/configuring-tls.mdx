@@ -667,6 +667,19 @@ Pour `clickhouse-client`, vous pouvez également utiliser l’option de CLI `--a
 </openSSL>
 ```
 
+## Rotation des certificats et des certificats CA sans redémarrage {#rotating-certificates-without-restart}
+
+Le ClickHouse server et ClickHouse Keeper surveillent les fichiers référencés par `certificateFile`, `privateKeyFile` et `caConfig`
+dans les sections `openSSL.server` et `openSSL.client` (ainsi que dans `protocols.*` pour les composable protocols), ou les fichiers du
+répertoire si `caConfig` désigne un répertoire. Lorsque l&#39;un de ces fichiers change, ou lorsque `SYSTEM RELOAD CONFIG` est exécuté, les
+certificats sont rechargés et utilisés pour toutes les nouvelles connexions TLS, y compris HTTPS, le native protocol sécurisé, les
+connexions interserveur, les connexions vers Keeper et les connexions Raft entre les nœuds Keeper. Les connexions déjà établies continuent d&#39;utiliser les
+certificats avec lesquels elles ont été ouvertes.
+
+Pour effectuer la rotation d&#39;un CA sans interruption de service, remplacez d&#39;abord le fichier `caConfig` par un bundle contenant à la fois l&#39;ancien et le nouveau
+certificat CA, puis basculez les certificats de node et de client vers ceux émis par le nouveau CA, et enfin remplacez le bundle
+par le nouveau certificat CA uniquement.
+
 <div id="summary">
   ## Résumé
 </div>

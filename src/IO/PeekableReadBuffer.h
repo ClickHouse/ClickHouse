@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Common/StackWithMemoryTracking.h>
 #include <IO/ReadBuffer.h>
 #include <IO/BufferWithOwnMemory.h>
 #include <stack>
@@ -50,6 +51,9 @@ public:
         }
         checkpoint.emplace(pos);
     }
+
+    /// Number of bytes read since the checkpoint was set.
+    size_t offsetFromCheckpoint() const;
 
     /// Forget checkpoint and all data between checkpoint and position
     ALWAYS_INLINE inline void dropCheckpoint()
@@ -106,7 +110,6 @@ private:
     const char * getMemoryData() const { return use_stack_memory ? stack_memory : memory.data(); }
 
     size_t offsetFromCheckpointInOwnMemory() const;
-    size_t offsetFromCheckpoint() const;
 
 
     ReadBuffer * sub_buf;
@@ -121,7 +124,7 @@ private:
     char stack_memory[PADDING_FOR_SIMD]; // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init) - scratch buffer, written before read
     bool use_stack_memory = true;
 
-    std::stack<size_t> recursive_checkpoints_offsets;
+    StackWithMemoryTracking<size_t> recursive_checkpoints_offsets;
 };
 
 

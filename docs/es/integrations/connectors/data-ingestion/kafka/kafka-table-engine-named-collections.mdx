@@ -6,9 +6,7 @@ slug: /integrations/data-ingestion/kafka/kafka-table-engine-named-collections
 doc_type: 'guide'
 ---
 
-<div id="introduction">
-  ## Introducción
-</div>
+## Introducción {#introduction}
 
 En esta guía, veremos cómo conectar ClickHouse a Kafka mediante colecciones con nombre. Usar el archivo de configuración para las colecciones con nombre ofrece varias ventajas:
 
@@ -18,9 +16,7 @@ En esta guía, veremos cómo conectar ClickHouse a Kafka mediante colecciones co
 
 Esta guía se ha probado con Apache Kafka 3.4.1 y ClickHouse 24.5.1.
 
-<div id="assumptions">
-  ## Supuestos
-</div>
+## Supuestos {#assumptions}
 
 Este documento da por hecho que cuentas con:
 
@@ -28,24 +24,19 @@ Este documento da por hecho que cuentas con:
 2. Un clúster de ClickHouse configurado y en ejecución.
 3. Conocimientos básicos de SQL y familiaridad con la configuración de ClickHouse y Kafka.
 
-<div id="prerequisites">
-  ## Requisitos previos
-</div>
+## Requisitos previos {#prerequisites}
 
 Asegúrese de que el usuario que cree la colección con nombre tenga los permisos de acceso necesarios:
 
 ```xml
 <access_management>1</access_management>
 <named_collection_control>1</named_collection_control>
-<show_named_collections>1</show_named_collections>
 <show_named_collections_secrets>1</show_named_collections_secrets>
 ```
 
 Consulta la [Guía de gestión de usuarios](/es/concepts/features/security/access-rights) para obtener más información sobre cómo habilitar el control de acceso.
 
-<div id="configuration">
-  ## Configuración
-</div>
+## Configuración {#configuration}
 
 Añade la siguiente sección al archivo `config.xml` de ClickHouse:
 
@@ -98,32 +89,24 @@ Añade la siguiente sección al archivo `config.xml` de ClickHouse:
 </named_collections>
 ```
 
-<div id="configuration-notes">
-  ### Notas de configuración
-</div>
+### Notas de configuración {#configuration-notes}
 
 1. Ajusta las direcciones de Kafka y la configuración relacionada según la configuración de tu clúster de Kafka.
 2. La sección anterior a `<kafka>` contiene los parámetros del motor Kafka de ClickHouse. Para ver la lista completa de parámetros, consulta [parámetros del motor Kafka ](/es/reference/engines/table-engines/integrations/kafka).
 3. La sección dentro de `<kafka>` contiene opciones adicionales de configuración de Kafka. Para ver más opciones, consulta la [configuración de librdkafka](https://github.com/confluentinc/librdkafka/blob/master/CONFIGURATION.md).
 4. Este ejemplo usa el protocolo de seguridad `SASL_SSL` y el mecanismo `PLAIN`. Ajusta estos valores según la configuración de tu clúster de Kafka.
 
-<div id="creating-tables-and-databases">
-  ## Creación de tablas y bases de datos
-</div>
+## Creación de tablas y bases de datos {#creating-tables-and-databases}
 
 Cree las bases de datos y tablas necesarias en su clúster de ClickHouse. Si ejecuta ClickHouse en un solo nodo, omita la parte del clúster en el comando SQL y use cualquier otro motor en lugar de `ReplicatedMergeTree`.
 
-<div id="create-the-database">
-  ### Crear la base de datos
-</div>
+### Crear la base de datos {#create-the-database}
 
 ```sql
 CREATE DATABASE kafka_testing ON CLUSTER LAB_CLICKHOUSE_CLUSTER;
 ```
 
-<div id="create-kafka-tables">
-  ### Crear tablas de Kafka
-</div>
+### Crear tablas de Kafka {#create-kafka-tables}
 
 Cree la primera tabla de Kafka para el primer clúster de Kafka:
 
@@ -149,9 +132,7 @@ CREATE TABLE kafka_testing.second_kafka_table ON CLUSTER STAGE_CLICKHOUSE_CLUSTE
 ENGINE = Kafka(cluster_2);
 ```
 
-<div id="create-replicated-tables">
-  ### Crear tablas replicadas
-</div>
+### Crear tablas replicadas {#create-replicated-tables}
 
 Cree una tabla para la primera de las tablas de Kafka:
 
@@ -177,9 +158,7 @@ CREATE TABLE kafka_testing.second_replicated_table ON CLUSTER STAGE_CLICKHOUSE_C
 ORDER BY id;
 ```
 
-<div id="create-materialized-views">
-  ### Crear vistas materializadas
-</div>
+### Crear vistas materializadas {#create-materialized-views}
 
 Cree una vista materializada para insertar datos de la primera tabla de Kafka en la primera tabla replicada:
 
@@ -203,9 +182,7 @@ SELECT
 FROM second_kafka_table;
 ```
 
-<div id="verifying-the-setup">
-  ## Verificación de la configuración
-</div>
+## Verificación de la configuración {#verifying-the-setup}
 
 Ahora deberías ver los grupos de consumidores correspondientes en tus clústeres de Kafka:
 
@@ -222,9 +199,7 @@ SELECT * FROM first_replicated_table LIMIT 10;
 SELECT * FROM second_replicated_table LIMIT 10;
 ```
 
-<div id="note">
-  ### Nota
-</div>
+### Nota {#note}
 
 En esta guía, los datos que se ingieren en ambos topics de Kafka son los mismos. En su caso, serían distintos. Puede añadir tantos clústeres de Kafka como desee.
 

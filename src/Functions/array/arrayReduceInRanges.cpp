@@ -54,13 +54,44 @@ public:
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
-    bool useDefaultImplementationForConstants() const override { return true; }
+    /// With a non-deterministic aggregate this must stay off: the default implementation executes the
+    /// function on a single row and replicates the result to the whole block, which turns per-row draws
+    /// into one draw for the query. `executeImpl` materializes a constant array argument itself.
+    bool useDefaultImplementationForConstants() const override { return aggregate_function->isDeterministic(); }
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {0}; }
+
+    /// Documentation-only — the result is `Array(<agg>::ResultType)` where
+    /// `<agg>` is resolved at query time from the const-string first argument.
+    String getSignatureString() const override
+    {
+        return "(const String, Array(Tuple(Integer, Integer)), Array, ...) -> Array";
+    }
+
+    /// The declarative signature above is documentation-only — the exact result type isn't
+    /// expressible in the DSL, so the `ColumnsWithTypeAndName` override below is authoritative.
+    /// Route the types-only path to it too, so the base `IFunction::getReturnTypeImpl(DataTypes)`
+    /// fallback never evaluates the bare container return type (which would yield a wrong type or
+    /// an internal error).
+    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    {
+        ColumnsWithTypeAndName columns;
+        columns.reserve(arguments.size());
+        for (const auto & type : arguments)
+            columns.emplace_back(nullptr, type, String{});
+        return getReturnTypeImpl(columns);
+    }
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & /*arguments*/) const override
     {
         return std::make_shared<DataTypeArray>(aggregate_function->getResultType());
     }
+
+    /// The aggregate that the string argument names decides this: a `groupArraySample` without a seed
+    /// makes the expression non-deterministic, and both the filter push-down and constant folding have
+    /// to see that. A deterministic aggregate - the overwhelmingly common case - is unaffected.
+    bool isDeterministic() const override { return aggregate_function->isDeterministic(); }
+    bool isDeterministicInScopeOfQuery() const override { return aggregate_function->isDeterministic(); }
+    bool isSuitableForConstantFolding() const override { return aggregate_function->isDeterministic(); }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override;
 
@@ -245,27 +276,36 @@ ColumnPtr FunctionArrayReduceInRanges::executeImpl(
                 Int64 index = indices_col.getInt(j);
                 UInt64 length = lengths_col.getUInt(j);
 
-                /// Keep the same as in arraySlice
+                /// Keep the same as in arraySlice: the range is clipped to the array.
+                /// The bounds are compared with the remaining size instead of being added to the user-controlled
+                /// `index` and `length`, which could wrap around.
+                const size_t size = end - begin;
 
                 if (index > 0)
                 {
-                    local_begin = index - 1;
-                    if (local_begin + length < end - begin)
-                        local_end = local_begin + length;
-                    else
-                        local_end = end - begin;
+                    const UInt64 offset = static_cast<UInt64>(index) - 1;
+                    if (offset < size)
+                    {
+                        local_begin = offset;
+                        local_end = local_begin + std::min<UInt64>(length, size - local_begin);
+                    }
                 }
                 else if (index < 0)
                 {
-                    if (end - begin + index > 0)
-                        local_begin = end - begin + index;
+                    /// Written this way to not overflow for the minimum `Int64`.
+                    const UInt64 offset_from_end = static_cast<UInt64>(-(index + 1)) + 1;
+                    if (offset_from_end <= size)
+                    {
+                        local_begin = size - offset_from_end;
+                        local_end = local_begin + std::min<UInt64>(length, size - local_begin);
+                    }
                     else
-                        local_begin = 0;
-
-                    if (local_begin + length < end - begin)
-                        local_end = local_begin + length;
-                    else
-                        local_end = end - begin;
+                    {
+                        /// The range starts before the array: skip the part of it that is before the start.
+                        const UInt64 before_start = offset_from_end - size;
+                        if (length > before_start)
+                            local_end = std::min<UInt64>(length - before_start, size);
+                    }
                 }
             }
 
@@ -343,6 +383,14 @@ public:
     bool isVariadic() const override { return true; }
     size_t getNumberOfArguments() const override { return 0; }
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {0}; }
+
+    /// Declarative signature — like `arrayReduce` but per-range; the result
+    /// is `Array(R)` where `R` is the named aggregator's finalised return
+    /// type computed over the array element types.
+    String getSignatureString() const override
+    {
+        return "(const a String, Array(Tuple(UInt, UInt)), Array(T1 : Any), ...) -> Array(aggregateFunctionReturnType(AggregateFunction(a, T1, ...)))";
+    }
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
@@ -434,6 +482,8 @@ REGISTER_FUNCTION(ArrayReduceInRanges)
     FunctionDocumentation::Description description = R"(
 Applies an aggregate function to array elements in the given ranges and returns an array containing the result corresponding to each range.
 The function will return the same result as multiple `arrayReduce(agg_func, arraySlice(arr1, index, length), ...)`.
+The only difference is that the length is unsigned: a length greater than the maximum `Int64` value selects the rest of the array,
+while `arraySlice` interprets such a value as a negative length.
 )";
     FunctionDocumentation::Syntax syntax = "arrayReduceInRanges(agg_f, ranges, arr1[, arr2, ... ,arrN])";
     FunctionDocumentation::Arguments arguments = {

@@ -1,0 +1,6 @@
+Values and SQLite storage classes (UInt64 above INT64_MAX stays exact, Bool is INTEGER 0/1, NaN is text):
+1|text|0|integer|0.5|real
+18446744073709551615|text|1|integer|nan|text
+Read back through ClickHouse (u as String shows the full stored value):
+1	false	0.5
+18446744073709551615	true	nan

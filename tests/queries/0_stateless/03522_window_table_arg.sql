@@ -1,5 +1,4 @@
 SET explain_query_plan_default = 'legacy';
-SET enable_analyzer=1;
 
 SELECT * FROM view(
     SELECT row_number() OVER w

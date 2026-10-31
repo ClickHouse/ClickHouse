@@ -2487,8 +2487,11 @@
         };
         let statusWidget = addStatusWidget(result.name, result.status, result.start_time, result.duration);
         addLabelsWidget(result.ext);
+        // Render the result's own file/log links on every page, including the
+        // top-level workflow page (e.g. orchestrator debug logs attached to the
+        // top-level result). Previously shown only on drilled-in job pages.
+        addFileLinksWidget(result.links, result.ext?.storage_usage);
         if (nameParams.length > 1) {
-            addFileLinksWidget(result.links, result.ext?.storage_usage);
             if (nameParams.length === 2) {
                 addStatisticsWidget(nameParams[1], result.duration * 1000)
             }

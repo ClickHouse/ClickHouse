@@ -220,8 +220,8 @@ const std::unordered_set<String> non_deterministic_functions_lower = []
 }();
 
 /// Aggregate-function combinator suffixes — shared with the fuzzer, see
-/// `aggregate_combinator_suffixes` in `QueryFuzzer.h`.
-const Strings & combinator_suffixes = aggregate_combinator_suffixes;
+/// `aggregateCombinatorSuffixes` in `QueryFuzzer.h`.
+const Strings & combinator_suffixes = aggregateCombinatorSuffixes();
 
 /// Strip the LONGEST matching combinator suffix from `name`, returning false
 /// when nothing matched. Longest-match (rather than first-in-list) is what
