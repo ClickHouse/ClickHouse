@@ -4,6 +4,7 @@
 #include <Interpreters/ActionsDAG.h>
 
 #include <optional>
+#include <unordered_set>
 
 namespace DB
 {
@@ -32,6 +33,7 @@ public:
         , filter_column_name(other.filter_column_name)
         , remove_filter_column(other.remove_filter_column)
         , condition(other.condition)
+        , prefiltered_conditions(other.prefiltered_conditions)
     {}
 
     String getName() const override { return "Filter"; }
@@ -54,6 +56,10 @@ public:
     void saltConditionForQueryConditionCache(UInt64 salt);
 
     static bool canUseType(const DataTypePtr & type);
+
+    /// The rows of the chunks with `PrefilteredChunkInfo` with `token` already passed the conditions with these hashes
+    /// (see `optimize_move_to_prewhere_if_final_non_intersecting`), so they are not evaluated again for these chunks.
+    void setPrefilteredConditions(UInt64 token, std::unordered_set<UInt64> condition_hashes);
 
     void serialize(Serialization & ctx) const override;
     bool isSerializable() const override { return true; }
@@ -151,6 +157,13 @@ private:
     bool remove_filter_column;
 
     std::optional<std::pair<UInt64, String>> condition; /// for query condition cache
+
+    struct PrefilteredConditions
+    {
+        UInt64 token = 0;
+        std::unordered_set<UInt64> condition_hashes;
+    };
+    std::optional<PrefilteredConditions> prefiltered_conditions;
 };
 
 }

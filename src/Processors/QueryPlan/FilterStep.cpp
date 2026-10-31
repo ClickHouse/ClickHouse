@@ -7,11 +7,14 @@
 #include <stack>
 #include <unordered_map>
 #include <unordered_set>
+#include <Columns/ColumnConst.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/IFunction.h>
+#include <Functions/IFunctionAdaptors.h>
+#include <Functions/FunctionsLogical.h>
 #include <IO/Operators.h>
 #include <Interpreters/ActionsDAG.h>
 #include <Interpreters/ExpressionActions.h>
@@ -500,9 +503,159 @@ FilterStep::FilterStep(
     actions_dag.removeUnusedActions(false, false);
 }
 
+void FilterStep::setPrefilteredConditions(UInt64 token, std::unordered_set<UInt64> condition_hashes)
+{
+    prefiltered_conditions = PrefilteredConditions{.token = token, .condition_hashes = std::move(condition_hashes)};
+}
+
+/// The atoms of the AND chain of `node` from left to right, the order of short-circuit evaluation, and its `and` nodes.
+static void collectConjunctionAtoms(
+    const ActionsDAG::Node * node, ActionsDAG::NodeRawConstPtrs & atoms, std::unordered_set<const ActionsDAG::Node *> & and_nodes)
+{
+    if (node->type == ActionsDAG::ActionType::FUNCTION && node->function_base->getName() == "and")
+    {
+        and_nodes.insert(node);
+        for (const auto * child : node->children)
+            collectConjunctionAtoms(child, atoms, and_nodes);
+        return;
+    }
+    atoms.push_back(node);
+}
+
+/// A filter split in two: the leading atoms of its AND chain that the rows of the prefiltered chunks already passed,
+/// and the rest. Applied one after the other, they filter the same rows and give the same columns as the filter.
+struct PrefilteredConditionsSplit
+{
+    /// Filters by the conjunction of the atoms, and passes the input columns through.
+    ActionsDAG conditions;
+    /// The same columns as `conditions`, without evaluating them: for the prefiltered chunks.
+    ActionsDAG skipped_conditions;
+    /// The actions of the filter, with the conjunction of the other atoms as the filter column.
+    ActionsDAG rest;
+    /// The filter column of `conditions` and `skipped_conditions`, which is not a column of the input.
+    String conditions_column_name;
+};
+
+/// Conjunction of `atoms` in `dag` as a new node: `and` also converts a single atom to the truth value of a conjunction.
+static const ActionsDAG::Node & addConjunction(ActionsDAG & dag, ActionsDAG::NodeRawConstPtrs atoms)
+{
+    auto true_type = std::make_shared<DataTypeUInt8>();
+    const auto & true_node = dag.addColumn(true_type->createColumnConst(1, Field(UInt64(1))), true_type, "__prefiltered_true");
+    if (atoms.empty())
+        return true_node;
+    if (atoms.size() == 1)
+        atoms.push_back(&true_node);
+    FunctionOverloadResolverPtr func_builder_and = std::make_unique<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionAnd>());
+    return dag.addFunction(func_builder_and, std::move(atoms), {});
+}
+
+/// Whether the blocks have the same columns, with the same constness.
+static bool haveSameStructureAndConstness(const Block & lhs, const Block & rhs)
+{
+    if (!blocksHaveEqualStructure(lhs, rhs))
+        return false;
+    auto is_const = [](const ColumnWithTypeAndName & column) { return column.column && isColumnConst(*column.column); };
+    for (size_t i = 0; i < lhs.columns(); ++i)
+        if (is_const(lhs.getByPosition(i)) != is_const(rhs.getByPosition(i)))
+            return false;
+    return true;
+}
+
+/// Splits off the leading atoms of the AND chain of the filter with `condition_hashes`. Only if their values are used only by
+/// the AND chain: otherwise the rest computes them once more. Not for stateful functions: the rest would see fewer rows.
+static std::optional<PrefilteredConditionsSplit> splitPrefilteredConditions(
+    const ActionsDAG & dag,
+    const String & filter_column_name,
+    bool remove_filter_column,
+    const std::unordered_set<UInt64> & condition_hashes,
+    const Block & input_header)
+{
+    const auto & outputs = dag.getOutputs();
+    if (dag.hasStatefulFunctions()
+        || std::ranges::count_if(outputs, [&](const auto * node) { return node->result_name == filter_column_name; }) != 1)
+        return std::nullopt;
+
+    const auto * filter_node = &dag.findInOutputs(filter_column_name);
+    ActionsDAG::NodeRawConstPtrs atoms;
+    std::unordered_set<const ActionsDAG::Node *> and_nodes;
+    collectConjunctionAtoms(filter_node, atoms, and_nodes);
+
+    size_t num_prefiltered = 0;
+    while (num_prefiltered < atoms.size() && atoms[num_prefiltered]->type == ActionsDAG::ActionType::FUNCTION
+           && condition_hashes.contains(atoms[num_prefiltered]->getHash()))
+        ++num_prefiltered;
+    if (num_prefiltered == 0)
+        return std::nullopt;
+
+    const ActionsDAG::NodeRawConstPtrs prefiltered_atoms(atoms.begin(), atoms.begin() + num_prefiltered);
+    for (const auto * atom : prefiltered_atoms)
+        if (!isComputedOnlyForItself(dag, atom, and_nodes, atom == filter_node && remove_filter_column))
+            return std::nullopt;
+
+    String conditions_column_name = "__prefiltered_conditions";
+    while (input_header.has(conditions_column_name))
+        conditions_column_name += "_";
+
+    /// The conditions, with all input columns passed through in the order of the header.
+    ActionsDAG conditions(input_header.getColumnsWithTypeAndName());
+    ActionsDAG::NodeRawConstPtrs condition_nodes;
+    conditions.mergeNodes(ActionsDAG::cloneSubDAG(prefiltered_atoms, /*remove_aliases=*/ false), &condition_nodes);
+    conditions.getOutputs().insert(
+        conditions.getOutputs().begin(), &conditions.addAlias(addConjunction(conditions, condition_nodes), conditions_column_name));
+    conditions.removeUnusedActions(false, false);
+
+    ActionsDAG skipped_conditions(input_header.getColumnsWithTypeAndName());
+    skipped_conditions.getOutputs().insert(
+        skipped_conditions.getOutputs().begin(), &skipped_conditions.addAlias(addConjunction(skipped_conditions, {}), conditions_column_name));
+
+    /// The filter column keeps its name and its position among the outputs: `FilterTransform` finds it by position.
+    ActionsDAG::NodeMapping copy_map;
+    ActionsDAG rest = dag.clone(copy_map);
+    ActionsDAG::NodeRawConstPtrs rest_atoms;
+    for (size_t i = num_prefiltered; i < atoms.size(); ++i)
+        rest_atoms.push_back(copy_map.at(atoms[i]));
+    auto & rest_outputs = rest.getOutputs();
+    auto rest_filter_it = std::ranges::find(rest_outputs, copy_map.at(filter_node));
+    *rest_filter_it = &rest.addAlias(addConjunction(rest, std::move(rest_atoms)), filter_column_name);
+    rest.removeUnusedActions(false, false);
+
+    /// The two filters one after the other must give the same columns as the filter.
+    const Block conditions_header = FilterTransform::transformHeader(input_header, &conditions, conditions_column_name, true);
+    if (!haveSameStructureAndConstness(conditions_header, input_header)
+        || !haveSameStructureAndConstness(
+            FilterTransform::transformHeader(input_header, &skipped_conditions, conditions_column_name, true), input_header)
+        || !haveSameStructureAndConstness(
+            FilterTransform::transformHeader(conditions_header, &rest, filter_column_name, remove_filter_column),
+            FilterTransform::transformHeader(input_header, &dag, filter_column_name, remove_filter_column)))
+        return std::nullopt;
+
+    return PrefilteredConditionsSplit{std::move(conditions), std::move(skipped_conditions), std::move(rest), std::move(conditions_column_name)};
+}
+
 void FilterStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings & settings)
 {
     std::vector<ActionsAndName> and_atoms;
+
+    /// The chunks of the rows that already passed the leading conditions skip them (see `setPrefilteredConditions`).
+    if (prefiltered_conditions)
+    {
+        if (auto split = splitPrefilteredConditions(
+                actions_dag, filter_column_name, remove_filter_column, prefiltered_conditions->condition_hashes, pipeline.getHeader()))
+        {
+            auto expression = std::make_shared<ExpressionActions>(std::move(split->conditions), settings.getActionsSettings());
+            auto skipped_expression = std::make_shared<ExpressionActions>(std::move(split->skipped_conditions), settings.getActionsSettings());
+            auto transformed_header = std::make_shared<const Block>(expression->getActionsDAG().updateHeader(pipeline.getHeader()));
+            pipeline.addSimpleTransform([&](const SharedHeader & header, QueryPipelineBuilder::StreamType stream_type)
+            {
+                bool on_totals = stream_type == QueryPipelineBuilder::StreamType::Totals;
+                auto transform = std::make_shared<FilterTransform>(
+                    header, transformed_header, expression, split->conditions_column_name, true, on_totals, nullptr, condition);
+                transform->setPrefilteredExpression(skipped_expression, prefiltered_conditions->token);
+                return transform;
+            });
+            actions_dag = std::move(split->rest);
+        }
+    }
 
     /// Splitting AND filter condition to steps under the setting, which is enabled with merge_filters optimization.
     /// This is needed to support short-circuit properly.

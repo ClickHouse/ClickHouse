@@ -1,0 +1,50 @@
+Only deterministic conditions are applied
+Filter of non-intersecting FINAL ranges column: equals(v, 5_UInt8)
+Conditions do not see the rows that FINAL hides
+2000
+1990
+A row policy applied after FINAL disables it
+0
+1002	13029526825395379813
+1002	13029526825395379813
+Conditions see the values of lightweight updates
+20	190140
+20	190140
+The WHERE does not evaluate the conditions again, but keeps their values
+19700	198445150
+19700	198445150
+40300
+40300
+19700	198445150
+19700	198445150
+0
+Nullable and LowCardinality conditions, with the AND chain of the WHERE split into steps and not
+6567
+6567
+6567
+A condition after one that stays in the WHERE stays there too
+19803	198015300
+The conditions applied early keep the order of the WHERE
+19800	88002
+19800	88002
+Not applied with SAMPLE, which drops rows after reading
+3320	33262499
+3320	33262499
+Not applied with a stateful function in the WHERE, which depends on the rows it sees
+5
+5
+A condition that can throw is not applied early after another condition
+5	20
+5	20
+Not applied with a stateful function in PREWHERE, which would see fewer rows after the filter of the engine
+0	0
+0	0
+A condition that can throw is not applied early before another condition, which the WHERE may evaluate first
+5	20
+5	20
+8	41
+A column with the name of the filter of the conditions applied early
+1250
+Not applied to a column that a part lacks, whose default the reader computes before the other filters
+1	1
+1	1

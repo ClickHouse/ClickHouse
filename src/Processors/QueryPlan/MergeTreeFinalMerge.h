@@ -51,6 +51,12 @@ Pipe readNonIntersectingFinalWithEngineFilter(
     ContextPtr context,
     const std::function<Pipe(const Names & columns)> & read);
 
+/// The filter that `readNonIntersectingFinalWithEngineFilter` applies instead of the merge, as a filter over the engine's column of
+/// `header`: `sign = 1` for `Collapsing`, `is_deleted = 0` for `Replacing` with an is-deleted column, nullopt for the other engines.
+/// The engine's column stays in the output of the filter.
+std::optional<FilterDAGInfo> createNonIntersectingFinalEngineFilter(
+    const MergeTreeData::MergingParams & merging_params, const Block & header, const ContextPtr & context);
+
 /// Builds a single full FINAL merge over all parts: sorts the in-order streams from `read_all_parts_in_order`
 /// by the sorting key and merges them in one group to remove duplicate rows, with no primary-key-range split.
 /// Used when a FINAL read was not split by primary-key range (a distributed read that lands every part on one

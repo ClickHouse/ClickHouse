@@ -10,6 +10,7 @@
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
+#include <Processors/QueryPlan/Optimizations/actionsDAGUtils.h>
 #include <Processors/QueryPlan/Optimizations/optimizePrewhere.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Processors/QueryPlan/SourceStepWithFilter.h>
@@ -18,6 +19,7 @@
 #include <Storages/StorageMerge.h>
 #include <Storages/VirtualColumnUtils.h>
 #include <Common/Exception.h>
+#include <Common/thread_local_rng.h>
 
 namespace DB
 {
@@ -26,6 +28,7 @@ namespace Setting
     extern const SettingsBool allow_calculating_subcolumns_sizes_for_merge_tree_reading;
     extern const SettingsBool optimize_move_to_prewhere;
     extern const SettingsBool optimize_move_to_prewhere_if_final;
+    extern const SettingsBool optimize_move_to_prewhere_if_final_non_intersecting;
     extern const SettingsBool optimize_prewhere_after_pushdown;
     extern const SettingsBool use_query_condition_cache;
     extern const SettingsBool vector_search_with_rescoring;
@@ -170,6 +173,78 @@ ActionsDAG splitAndFillPrewhereInfo(
     }
 
     return std::move(split_result.second);
+}
+
+/// Whether the condition can be evaluated on rows that the conditions before it in the WHERE would drop: none of its
+/// functions can throw. The reader may evaluate several conditions of PREWHERE at once, so their order is not enough.
+static bool canBeEvaluatedOnMoreRows(const ActionsDAG::Node * condition)
+{
+    std::vector<const ActionsDAG::Node *> stack{condition};
+    while (!stack.empty())
+    {
+        const auto * node = stack.back();
+        stack.pop_back();
+
+        if (node->type == ActionsDAG::ActionType::ARRAY_JOIN || node->type == ActionsDAG::ActionType::PLACEHOLDER)
+            return false;
+
+        if (node->type == ActionsDAG::ActionType::FUNCTION && !node->column)
+        {
+            DataTypesWithConstInfo arguments;
+            arguments.reserve(node->children.size());
+            for (const auto * child : node->children)
+                arguments.push_back({child->result_type, child->column != nullptr});
+            if (node->function_base->canThrow(arguments) || node->function_base->hasObservableSideEffects())
+                return false;
+        }
+
+        stack.insert(stack.end(), node->children.begin(), node->children.end());
+    }
+    return true;
+}
+
+/// The filter that a `FINAL` read applies as PREWHERE to the key ranges it reads without merging: the conjunction of
+/// `conditions` except the ones in `moved_to_prewhere`, which the PREWHERE of all ranges already has.
+/// The filter keeps all its inputs in the output, so it only drops rows and does not change the header of the read.
+/// Returns nullptr if there is nothing left to apply.
+static FilterDAGInfoPtr buildNonIntersectingFinalFilter(
+    const std::list<const ActionsDAG::Node *> & conditions,
+    const std::unordered_set<const ActionsDAG::Node *> & moved_to_prewhere)
+{
+    ActionsDAG::NodeRawConstPtrs remaining;
+    for (const auto * condition : conditions)
+        if (!moved_to_prewhere.contains(condition))
+            remaining.push_back(condition);
+
+    if (remaining.empty())
+        return nullptr;
+
+    auto dag = ActionsDAG::cloneSubDAG(remaining, /*remove_aliases=*/ false);
+    const ActionsDAG::Node * filter_node = nullptr;
+    if (dag.getOutputs().size() == 1)
+    {
+        filter_node = dag.getOutputs().front();
+    }
+    else
+    {
+        FunctionOverloadResolverPtr func_builder_and = std::make_unique<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionAnd>());
+        filter_node = &dag.addFunction(func_builder_and, dag.getOutputs(), {});
+    }
+
+    auto filter = std::make_shared<FilterDAGInfo>();
+    filter->column_name = filter_node->result_name;
+    /// A filter that is a column itself (`WHERE flag`) has to stay in the output.
+    filter->do_remove_column = filter_node->type != ActionsDAG::ActionType::INPUT;
+
+    auto & outputs = dag.getOutputs();
+    outputs.clear();
+    if (filter->do_remove_column)
+        outputs.push_back(filter_node);
+    for (const auto * input : dag.getInputs())
+        outputs.push_back(input);
+
+    filter->actions = std::move(dag);
+    return filter;
 }
 
 /// Hash of `node` that does not depend on the names the node reads through.
@@ -342,14 +417,93 @@ void optimizePrewhere(QueryPlan::Node & parent_node, const bool remove_unused_co
     if (read_from_merge_tree_step && read_from_merge_tree_step->hasPendingTopKDynamicFilter())
         columns_read_before_filter.insert(read_from_merge_tree_step->getTopKFilterInfo()->column_name);
 
+    /// The conditions that a `FINAL` read can apply as PREWHERE to the key ranges it reads without merging. A row of such a range
+    /// has no other version, so any deterministic condition gives the same result before and after `FINAL`. They are collected
+    /// before the conditions on the sorting key are moved out of the filter below, and stay in the filter.
+    /// Not with stateful functions in the WHERE, like `runningDifference`: their results depend on the rows they see.
+    std::list<const ActionsDAG::Node *> non_intersecting_final_conditions;
+    if (is_final && read_from_merge_tree_step && settings[Setting::optimize_move_to_prewhere_if_final_non_intersecting]
+        && !filter_step->getExpression().hasStatefulFunctions())
+        non_intersecting_final_conditions = where_optimizer.optimize(filter_step->getExpression(),
+            filter_step->getFilterColumnName(),
+            source_step_with_filter->getContext(),
+            MergeTreeWhereOptimizer::FinalMode::NonIntersecting,
+            columns_read_before_filter).prewhere_nodes_list;
+
     auto optimize_result = where_optimizer.optimize(filter_step->getExpression(),
         filter_step->getFilterColumnName(),
         source_step_with_filter->getContext(),
-        is_final,
+        is_final ? MergeTreeWhereOptimizer::FinalMode::SortingKeyOnly : MergeTreeWhereOptimizer::FinalMode::None,
         columns_read_before_filter);
 
+    /// The WHERE evaluates a condition only on the rows that passed the conditions before it, e.g. `toUInt64(s) > 0` in
+    /// `WHERE s != 'bad' AND toUInt64(s) > 0`. Keep that: apply early the conditions in the order of the WHERE, up to the
+    /// first one that is applied neither early on these ranges nor as the PREWHERE of all ranges, or that can throw. The WHERE
+    /// may also evaluate a cheap condition before one that can throw (`short_circuit_function_evaluation_reorder_arguments`),
+    /// so a condition that can throw is applied early only if it is the only condition, and there is no other PREWHERE.
+    if (!non_intersecting_final_conditions.empty())
+    {
+        const auto & filter_dag = filter_step->getExpression();
+        const auto * filter_node = &filter_dag.findInOutputs(filter_step->getFilterColumnName());
+        ActionsDAG::NodeRawConstPtrs atoms;
+        std::unordered_set<const ActionsDAG::Node *> and_nodes;
+        std::vector<const ActionsDAG::Node *> stack{filter_node};
+        while (!stack.empty())
+        {
+            const auto * node = stack.back();
+            stack.pop_back();
+            if (node->type == ActionsDAG::ActionType::FUNCTION && node->function_base->getName() == "and")
+            {
+                and_nodes.insert(node);
+                stack.insert(stack.end(), node->children.rbegin(), node->children.rend());
+            }
+            else
+                atoms.push_back(node);
+        }
+
+        std::unordered_set<const ActionsDAG::Node *> non_intersecting(non_intersecting_final_conditions.begin(), non_intersecting_final_conditions.end());
+        non_intersecting_final_conditions.clear();
+        const bool has_prewhere = existing_prewhere_info || !optimize_result.prewhere_nodes.empty();
+        for (const auto * atom : atoms)
+        {
+            if (optimize_result.prewhere_nodes.contains(atom))
+                continue;
+            if (!non_intersecting.contains(atom) || ((atoms.size() != 1 || has_prewhere) && !canBeEvaluatedOnMoreRows(atom)))
+                break;
+            /// A condition that shares a computation with another column of the WHERE, e.g. `notEmpty(extractAll(s, 'x'))`
+            /// in `SELECT length(extractAll(s, 'x')) ... WHERE notEmpty(extractAll(s, 'x'))`, would compute it once more.
+            if (!isComputedOnlyForItself(filter_dag, atom, and_nodes, atom == filter_node && filter_step->removesFilterColumn()))
+                break;
+            non_intersecting_final_conditions.push_back(atom);
+        }
+    }
+
+    /// The filter stays above the read, so a filter built by an earlier call is replaced only by a filter
+    /// built from the same or more conditions (see `optimize_prewhere_after_pushdown`).
+    /// The read marks the chunks of the non-intersecting ranges with a token, and the filter above it skips
+    /// the conditions they already passed for them.
+    std::optional<std::pair<UInt64, std::unordered_set<UInt64>>> prefiltered_conditions;
+    if (!non_intersecting_final_conditions.empty())
+    {
+        if (auto filter = buildNonIntersectingFinalFilter(non_intersecting_final_conditions, optimize_result.prewhere_nodes))
+        {
+            const UInt64 token = thread_local_rng();
+            std::unordered_set<UInt64> condition_hashes;
+            for (const auto * condition : non_intersecting_final_conditions)
+                if (!optimize_result.prewhere_nodes.contains(condition))
+                    condition_hashes.insert(condition->getHash());
+
+            read_from_merge_tree_step->setNonIntersectingFinalFilter(std::move(filter), token);
+            prefiltered_conditions.emplace(token, std::move(condition_hashes));
+        }
+    }
+
     if (optimize_result.prewhere_nodes.empty())
+    {
+        if (prefiltered_conditions)
+            filter_step->setPrefilteredConditions(prefiltered_conditions->first, std::move(prefiltered_conditions->second));
         return;
+    }
 
     PrewhereInfoPtr prewhere_info = std::make_shared<PrewhereInfo>();
 
@@ -413,11 +567,14 @@ void optimizePrewhere(QueryPlan::Node & parent_node, const bool remove_unused_co
     QueryPlanStepPtr new_step;
     if (!optimize_result.fully_moved_to_prewhere)
     {
-        new_step = std::make_unique<FilterStep>(
+        auto new_filter_step = std::make_unique<FilterStep>(
             source_step_with_filter->getOutputHeader(),
             std::move(remaining_expr),
             filter_step->getFilterColumnName(),
             filter_step->removesFilterColumn());
+        if (prefiltered_conditions)
+            new_filter_step->setPrefilteredConditions(prefiltered_conditions->first, std::move(prefiltered_conditions->second));
+        new_step = std::move(new_filter_step);
     }
     else
     {

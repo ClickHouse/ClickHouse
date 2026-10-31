@@ -77,6 +77,8 @@ struct FilterDAGInfo
 
     std::string dump() const;
 
+    FilterDAGInfo clone() const;
+
     void serialize(IQueryPlanStep::Serialization & ctx) const;
     static FilterDAGInfo deserialize(IQueryPlanStep::Deserialization & ctx);
 };

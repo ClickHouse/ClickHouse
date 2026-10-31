@@ -1170,6 +1170,31 @@ Possible values:
 - [optimize_move_to_prewhere](#optimize_move_to_prewhere) setting
 )", 0, \
         {"26.10", false, true, "Enable the automatic PREWHERE optimization for queries with FINAL by default. Only conditions that depend on the sorting key alone and are deterministic within the query are moved, so results are not affected. `compatibility` below 26.10 restores the previous behavior."}) \
+    DECLARE(Bool, optimize_move_to_prewhere_if_final_non_intersecting, true, R"(
+In [SELECT](/reference/statements/select/index) queries with [FINAL](/reference/statements/select/from#final-modifier) modifier,
+apply all deterministic conditions of `WHERE` as [PREWHERE](/reference/statements/select/prewhere) to the key ranges that `FINAL` reads without merging,
+because no other part contains a row with the same sorting key.
+
+A row of such a range has no other version, so filtering it before `FINAL` gives the same result as filtering it after.
+The ranges that need merging still apply only the conditions on the sorting key early, and the whole `WHERE` is still applied after `FINAL`.
+This lets a `FINAL` query with a selective condition on columns outside the sorting key read only the rows that pass it in most of the table,
+like the same query without `FINAL` does.
+
+The conditions are applied in the order of `WHERE`, and only the conditions before the first one that cannot be applied early,
+so a condition is still evaluated only on the rows that passed the conditions before it. A condition that can throw an exception,
+like `toUInt64(s) > 0`, is applied early only if it is the only condition and there is no other `PREWHERE`.
+Not applied with stateful functions in `WHERE` or `PREWHERE`.
+
+Requires [optimize_move_to_prewhere](#optimize_move_to_prewhere) and [optimize_move_to_prewhere_if_final](#optimize_move_to_prewhere_if_final).
+Not applied to [GraphiteMergeTree](/reference/engines/table-engines/mergetree-family/graphitemergetree) tables,
+with a row policy that has to be applied after `FINAL`, with `SAMPLE`, or with parallel replicas.
+
+Possible values:
+
+- 0 — Only the conditions on the sorting key are applied before `FINAL` on all ranges.
+- 1 — All deterministic conditions are applied before `FINAL` on the ranges that are read without merging.
+)", 0, \
+        {"26.11", false, true, "New setting to apply all deterministic conditions of `WHERE` as `PREWHERE` to the key ranges that `FINAL` reads without merging."}) \
     DECLARE(Bool, move_all_conditions_to_prewhere, true, R"(
 Move all viable conditions from WHERE to PREWHERE
 )", 0) \
