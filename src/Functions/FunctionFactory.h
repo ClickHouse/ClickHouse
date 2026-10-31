@@ -7,6 +7,7 @@
 #include <Common/IFactoryWithAliases.h>
 #include <Common/FunctionDocumentation.h>
 #include <Functions/IFunction.h>
+#include <Functions/FunctionNamedArguments.h>
 
 #include <functional>
 #include <memory>
@@ -45,6 +46,14 @@ public:
         secret_arguments.emplace(Function::name, std::move(secret_arguments_));
     }
 
+    /// For functions whose arguments can be passed by name: `f(name => value)`.
+    template <typename Function, size_t N>
+    void registerFunction(FunctionDocumentation documentation, Case case_sensitiveness, const FunctionArgumentsSpec<N> & named_arguments_)
+    {
+        registerNamedArguments(Function::name, named_arguments_.toNamedArguments(), documentation.arguments);
+        registerFunction<Function>(Function::name, std::move(documentation), case_sensitiveness);
+    }
+
     /// This function is used by YQL - innovative transactional DBMS that depends on ClickHouse by source code.
     Strings getAllNames() const;
 
@@ -79,12 +88,20 @@ public:
     const SecretArgumentsSpec * tryGetSecretArgumentsSpec(const std::string & name) const;
     bool hasArgumentSecretsIgnoringCase(const std::string & name) const;
 
+    /// Returns nullptr if the function does not take named arguments.
+    const FunctionNamedArguments * tryGetNamedArguments(const std::string & name) const;
+
 private:
     using Functions = std::unordered_map<std::string, Value>; // STYLE_CHECK_ALLOW_STD_CONTAINERS
 
     Functions functions;
     Functions case_insensitive_functions;
     std::unordered_map<std::string, SecretArgumentsSpec> secret_arguments; // STYLE_CHECK_ALLOW_STD_CONTAINERS
+    std::unordered_map<std::string, FunctionNamedArguments> named_arguments; // STYLE_CHECK_ALLOW_STD_CONTAINERS
+
+    /// Also checks that the names are the documented argument names.
+    void registerNamedArguments(
+        const std::string & name, FunctionNamedArguments named_arguments_, const FunctionDocumentation::Arguments & documented_arguments);
 
     const Functions & getMap() const override { return functions; }
 

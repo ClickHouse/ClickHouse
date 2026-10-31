@@ -73,9 +73,13 @@ SecretArgumentsResult SecretArgumentsRegistry::find(ASTFunction::Kind kind, cons
     }
 
     FunctionSecretArgumentsFinder finder(function);
-    /// Not a registered engine (a typo, or a process that did not register that factory), or a function name in the wrong
-    /// case. The statement is logged before validation rejects it, so fail closed.
-    if (!spec)
+    bool has_named_arguments = false;
+    for (size_t i = 0; function.hasArguments() && i < function.arguments->size(); ++i)
+        has_named_arguments |= function.arguments->at(i)->isNamedArgument();
+
+    /// An unregistered engine, a function name in the wrong case, or named arguments: the statement is logged before
+    /// validation, so fail closed.
+    if (!spec || has_named_arguments)
         finder.maskEveryArgument();
     else
         finder.apply(*spec, generic_rules);

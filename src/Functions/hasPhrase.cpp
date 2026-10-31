@@ -33,9 +33,10 @@ namespace ErrorCodes
 namespace
 {
 
-constexpr size_t arg_input = 0;
-constexpr size_t arg_phrase = 1;
-constexpr size_t arg_tokenizer = 2;
+constexpr FunctionArgumentsSpec<3> function_arguments = {{{"input"}, {"phrase"}, {"tokenizer", /*optional=*/ true}}};
+constexpr size_t arg_input = function_arguments.index("input");
+constexpr size_t arg_phrase = function_arguments.index("phrase");
+constexpr size_t arg_tokenizer = function_arguments.index("tokenizer");
 
 VectorWithMemoryTracking<String> initializePhraseTokens(const ColumnsWithTypeAndName & arguments, const ITokenizer & tokenizer, std::string_view function_name)
 {
@@ -237,9 +238,10 @@ FunctionHasPhraseOverloadResolver::buildImpl(const ColumnsWithTypeAndName & argu
 
     DataTypes argument_types{std::from_range_t{}, arguments | std::views::transform([](auto & elem) { return elem.type; })};
 
-    const auto tokenizer_name = arguments.size() < 3 || !arguments[arg_tokenizer].column
+    const auto * tokenizer_argument = function_arguments.tryGet(arguments, arg_tokenizer);
+    const auto tokenizer_name = !tokenizer_argument || !tokenizer_argument->column
         ? SplitByNonAlphaTokenizer::getExternalName()
-        : arguments[arg_tokenizer].column->getDataAt(0);
+        : tokenizer_argument->column->getDataAt(0);
     auto tokenizer = TokenizerFactory::instance().get(tokenizer_name);
     static const UnorderedSetWithMemoryTracking<ITokenizer::Type> supported_types = {
         ITokenizer::Type::SplitByNonAlpha,
@@ -396,7 +398,7 @@ because "brown" appears between "quick" and "fox".
     FunctionDocumentation::Category category = FunctionDocumentation::Category::StringSearch;
     FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
-    factory.registerFunction<FunctionHasPhraseOverloadResolver>(documentation);
+    factory.registerFunction<FunctionHasPhraseOverloadResolver>(documentation, FunctionFactory::Case::Sensitive, function_arguments);
     factory.registerAlias("matchPhrase", FunctionHasPhraseOverloadResolver::name);
 }
 

@@ -20,6 +20,7 @@
 #include <Parsers/ASTColumnsMatcher.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTFunction.h>
+#include <Parsers/ASTNamedArgument.h>
 #include <Parsers/ASTSubquery.h>
 #include <Parsers/ASTWithElement.h>
 #include <Parsers/ASTColumnsTransformers.h>
@@ -853,8 +854,20 @@ QueryTreeNodePtr QueryTreeBuilder::buildExpression(const ASTPtr & expression, co
                 if (function->arguments)
                 {
                     const auto & function_arguments_list = function->arguments->as<ASTExpressionList>()->children;
-                    for (const auto & argument : function_arguments_list)
-                        function_node->getArguments().getNodes().push_back(buildExpression(argument, context));
+                    std::vector<String> argument_names;
+                    for (size_t i = 0; i < function_arguments_list.size(); ++i)
+                    {
+                        const auto & argument = function_arguments_list[i];
+                        if (const auto * named_argument = argument->as<ASTNamedArgument>())
+                        {
+                            argument_names.resize(function_arguments_list.size());
+                            argument_names[i] = named_argument->name;
+                            function_node->getArguments().getNodes().push_back(buildExpression(named_argument->value(), context));
+                        }
+                        else
+                            function_node->getArguments().getNodes().push_back(buildExpression(argument, context));
+                    }
+                    function_node->setArgumentNames(std::move(argument_names));
                 }
 
                 if (function->isWindowFunction())
@@ -942,6 +955,12 @@ QueryTreeNodePtr QueryTreeBuilder::buildExpression(const ASTPtr & expression, co
         throw Exception(ErrorCodes::UNKNOWN_QUERY_PARAMETER,
             "Query parameter {} was not set",
             backQuote(query_parameter->name));
+    }
+    else if (expression->as<ASTNamedArgument>())
+    {
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "Named argument {} is allowed only as an argument of an ordinary function",
+            backQuoteIfNeed(expression->as<ASTNamedArgument &>().name));
     }
     else
     {
