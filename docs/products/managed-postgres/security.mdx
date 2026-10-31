@@ -18,23 +18,23 @@ ClickHouse Managed Postgres is built with enterprise-grade security features to 
 
 IP filters control which source IP addresses are permitted to connect to your ClickHouse Managed Postgres instance, providing network-level access control to protect your database from unauthorized connections.
 
+{/* TODO: ip-filters.webp is probably out of date. Replace it with a screenshot of the new "IP Access List" flyout. */}
 <Image img="/images/managed-postgres/ip-filters.webp" alt="IP Access List configuration" size="md" border/>
 
 ### Configuring IP filters {#configuring-ip-filters}
 
 To configure IP filters:
 
-1. Navigate to the **Settings** tab
-2. Under **IP Filters**, click **Edit**
-3. Add IP addresses or CIDR ranges that should be allowed to connect
-4. Click **Save** to apply the changes
+1. Open your Managed Postgres service and go to **Settings** → **Security**.
+2. Under **IP access list**, click **Add IPs** to open the **IP Access List** flyout.
+3. Under **Allow access to this service from**, select one of the following:
+   - **Anywhere**: allow all IP addresses. Not recommended for production.
+   - **Specific locations**: allow only the entries you list.
+   - **Nowhere**: block all connections.
+4. If you selected **Specific locations**, add entries [manually](#adding-entries-manually), [import them from a JSON file](#importing-ip-list-json), or both.
+5. Click **Save** to apply the changes, or **Cancel** to discard them.
 
-You can specify:
-- Individual IP addresses (e.g., `203.0.113.5`)
-- CIDR ranges for networks (e.g., `192.168.1.0/24`)
-- **Anywhere** to allow all IP addresses (not recommended for production)
-- **Nowhere** to block all connections
-
+{/* TODO (Amogh): Is "no filters configured = all IPs allowed" (see the warning below) still true now that the Anywhere / Specific locations / Nowhere options exist? */}
 <Warning>
 **Production best practices**
 
@@ -44,6 +44,58 @@ If no IP filters are configured, connections from all IP addresses are permitted
 - Bastion hosts for administrative access
 - CI/CD pipeline IPs for automated deployments
 </Warning>
+
+### Adding entries manually {#adding-entries-manually}
+
+With **Specific locations** selected, click **Add new IP** to add a row. Each row has the following fields:
+
+| Field | Required | Description |
+|---|---|---|
+| **IP address or CIDR** | Yes | An individual IP address (for example, `203.0.113.5`) or a CIDR range (for example, `192.168.1.0/24`). |
+| **Port range** | Yes | A single port (for example, `5432`) or a range written as `start..end` (for example, `5432..6432`). Ports must be between 1 and 65535, and the start must be less than or equal to the end. |
+| **Description** | No | A free-text note, such as "Office VPN". |
+
+**Save** stays disabled until every row is valid.
+
+Click **Use current IP** to add a row with your current IP address and the port range `5432..6432`.
+
+{/* TODO (Amogh): Is there a maximum number of entries? The client enforces no limit, but the backend might. */}
+{/* TODO (Amogh): Are IPv6 addresses supported? A code comment in getInvalidSources says "Only accept IPv4 addresses". If IPv4 only, state it here and in the JSON section. */}
+
+### Importing an IP list from JSON {#importing-ip-list-json}
+
+To add many entries at once, click **Import IP list (.json)** in the **IP Access List** flyout and select a file.
+
+The file must be a JSON array of objects:
+
+```json
+[
+  { "source": "203.0.113.10", "port": "5432..6432", "description": "Office VPN" },
+  { "source": "10.0.0.0/24", "port": "6432", "description": "App subnet" },
+  { "source": "198.51.100.24", "port": 5432 }
+]
+```
+
+Each object supports the following fields:
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `source` | string | Yes | An IP address or CIDR range. |
+| `port` | string or number | Yes | A single port, or a range written as the string `"start..end"`. There is no default, so every entry must specify a port. |
+| `description` | string | No | A note for the entry. Descriptions longer than the maximum length are truncated. |
+
+{/* TODO (Amogh): Confirm the maximum description length and state it above. */}
+
+Imports behave as follows:
+
+- Imported entries are appended to the existing list. They don't replace it. Empty rows are dropped.
+- An entry is a duplicate when both its `source` and its `port` match an existing entry. Duplicates are skipped. The same IP address with a different port is kept.
+- If any entry is invalid, nothing is imported and the first error is shown, for example `Missing or invalid "port" field.` or `Invalid IP address or CIDR: <value>.`
+- Leading and trailing whitespace is trimmed from `source` and `port`.
+- If **Anywhere** or **Nowhere** is selected when you import, the option switches to **Specific locations**.
+- Imported entries aren't applied until you click **Save**.
+
+{/* TODO (Amogh): Confirm the JSON format, the port handling (range must be a string), and append vs. replace behavior. */}
 
 ## Encryption {#encryption}
 
