@@ -3,8 +3,14 @@ import pytest
 from helpers.cluster import ClickHouseCluster
 
 cluster = ClickHouseCluster(__file__)
+# The server runs with `max_server_memory_usage` of 1 GB, which an ASan build
+# fills up to a couple of MiB at startup already: the export of the system logs
+# to the CI Logs cluster (see helpers/ci_logs_export.py) does not fit in.
 node = cluster.add_instance(
-    "node", main_configs=["configs/config.xml"], with_zookeeper=True
+    "node",
+    main_configs=["configs/config.xml"],
+    with_zookeeper=True,
+    with_ci_logs_export=False,
 )
 
 
