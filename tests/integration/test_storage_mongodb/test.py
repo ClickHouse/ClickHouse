@@ -1001,6 +1001,67 @@ def test_where(started_cluster):
     where_mongo_table.drop()
 
 
+@pytest.mark.parametrize("bool_type", ["Bool", "Nullable(Bool)"])
+def test_where_bool_number_comparisons(started_cluster, bool_type):
+    mongo_connection = get_mongo_connection(started_cluster)
+    db = mongo_connection["test"]
+    db.command("dropAllUsersFromDatabase")
+    db.command("createUser", "root", pwd=mongo_pass, roles=["readWrite"])
+    collection_name = "bool_number_comparisons"
+    drop_mongo_collection_if_exists(db, collection_name)
+    collection = db[collection_name]
+    collection.insert_many(
+        [
+            {"flag": False, "n": 0},
+            {"flag": True, "n": 1},
+            {"flag": True, "n": 1},
+            {"flag": False, "n": 2},
+        ]
+    )
+
+    node = started_cluster.instances["node"]
+    structure = f"flag {bool_type}, n UInt8"
+    arguments = f"'mongo1:27017', 'test', '{collection_name}', 'root', '{mongo_pass}'"
+    node.query(
+        f"CREATE OR REPLACE TABLE {collection_name} ({structure}) "
+        f"ENGINE = MongoDB({arguments})"
+    )
+    try:
+        for source in (collection_name, f"mongodb({arguments}, '{structure}')"):
+            expected = {
+                "flag = 1": "2\n",
+                "flag = 0": "2\n",
+                "flag > 0": "2\n",
+                "flag >= 1": "2\n",
+                "flag <= 0": "2\n",
+                "0 < flag": "2\n",
+                "n = true": "2\n",
+                "true < n": "1\n",
+                "flag IN (1)": "2\n",
+            }
+            actual = {
+                predicate: node.query(f"SELECT count() FROM {source} WHERE {predicate}")
+                for predicate in expected
+            }
+            assert actual == expected
+
+            for predicate, count in {
+                "flag < 2": "4\n",
+                "flag > -1": "4\n",
+                "flag > 0.5": "2\n",
+            }.items():
+                assert (
+                    node.query(
+                        f"SELECT count() FROM {source} WHERE {predicate}",
+                        settings={"mongodb_throw_on_unsupported_query": 0},
+                    )
+                    == count
+                )
+    finally:
+        node.query(f"DROP TABLE {collection_name}")
+        collection.drop()
+
+
 def test_defaults(started_cluster):
     mongo_connection = get_mongo_connection(started_cluster)
     db = mongo_connection["test"]
