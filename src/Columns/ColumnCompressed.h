@@ -79,6 +79,7 @@ public:
     /// If data is not worth to be compressed - returns nullptr.
     /// By default it requires that compressed data is at least 50% smaller than original.
     /// With `force_compression` set to true, it requires compressed data to be not larger than the source data.
+    /// Data larger than `LZ4_MAX_INPUT_SIZE` is never compressed.
     /// Note: shared_ptr is to allow to be captured by std::function.
     static std::shared_ptr<Memory<>> compressBuffer(const void * data, size_t data_size, bool force_compression);
 
