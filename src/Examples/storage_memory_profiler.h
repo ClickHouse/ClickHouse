@@ -45,6 +45,8 @@ private:
     /// Execute all queries from a SQL file
     void executeQueriesFromFile(const std::string & filepath);
 
+    void waitForBackgroundTasks();
+
     /// jemalloc profiling helpers
     void flushJemallocThreadCache();
     void refreshJemallocEpoch();
