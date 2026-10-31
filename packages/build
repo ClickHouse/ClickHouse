@@ -6,11 +6,8 @@ set -o pipefail
 # Avoid dependency on locale
 LC_ALL=C
 
-PKG_ROOT='root'
-
 DEB_ARCH=${DEB_ARCH:-amd64}
 SANITIZER=${SANITIZER:-""}
-SOURCE=${SOURCE:-$PKG_ROOT}
 
 cd "$(dirname "${BASH_SOURCE[0]}")"
 
@@ -27,8 +24,10 @@ Used envs:
   DEB_ARCH='${DEB_ARCH}'
   OUTPUT_DIR='${OUTPUT_DIR}' - where the artifact will be placed
   SANITIZER='${SANITIZER}' - if any sanitizer is used, affects version string
-  SOURCE='${SOURCE}' - directory with sources tree
   VERSION_STRING='${VERSION_STRING}' - the package version to overwrite
+
+./build-dir must link to the build directory, configured with -DSPLIT_DEBUG_SYMBOLS=ON -DBUILD_STANDALONE_KEEPER=1
+and with chdig enabled
 "
 
 CLICKHOUSE_VERSION_STRING=${VERSION_STRING}
@@ -247,14 +246,16 @@ elif [[ $BUILD_TYPE == 'cfi' ]]; then
     VERSION_POSTFIX+="+cfi"
 fi
 
-if [[ "$PKG_ROOT" != "$SOURCE" ]]; then
-    # packages are built only from PKG_SOURCE
-    rm -rf "./$PKG_ROOT"
-    ln -sf "$SOURCE" "$PKG_SOURCE"
-fi
-
 CLICKHOUSE_VERSION_STRING+=$VERSION_POSTFIX
 echo -e "\nCurrent version is $CLICKHOUSE_VERSION_STRING"
+
+# The manifests package `clickhouse-chdig` and `chdig` as links to `clickhouse`, which only
+# work when the build includes chdig. It is disabled e.g. in the sanitizer builds, where the
+# links would silently run `clickhouse` itself, so refuse to package such a build.
+if [ ! -L build-dir/programs/chdig ]; then
+    echo "The build in ./build-dir does not include chdig (build-dir/programs/chdig is missing), cannot package it" >&2
+    exit 4
+fi
 
 for config in clickhouse*.yaml; do
     if [ -n "$MAKE_DEB" ] || [ -n "$MAKE_TGZ" ]; then
