@@ -37,6 +37,7 @@
 #include <Common/Exception.h>
 #include <Common/FailPoint.h>
 #include <Common/logger_useful.h>
+#include <chrono>
 #include <limits>
 #include <unordered_set>
 
@@ -411,7 +412,6 @@ static bool writeMetadataFiles(
 
     auto result = MetadataGenerator(metadata).generateNextMetadata(
         filename_generator,
-        metadata_info.path,
         parent_snapshot,
         /* added_files */ data_files_count,
         /* added_records */ data_rows,
@@ -718,6 +718,7 @@ void mutate(
         filename_generator.setCompressionMethod(compression_method);
 
         auto metadata = deepCopy(getMetadataJSONObject(metadata_path, object_storage, persistent_table_components.metadata_cache, context, log, compression_method, persistent_table_components.table_uuid));
+        MetadataGenerator(metadata).addPreviousMetadataFile(persistent_table_components.path_resolver.reverseResolve(metadata_path));
 
         const auto format_version = metadata->getValue<Int32>(f_format_version);
         if (format_version < 2)
@@ -847,6 +848,7 @@ void alter(
         filename_generator.setCompressionMethod(compression_method);
 
         auto metadata = deepCopy(getMetadataJSONObject(metadata_path, object_storage, persistent_table_components.metadata_cache, context, log, compression_method, persistent_table_components.table_uuid));
+        MetadataGenerator(metadata).addPreviousMetadataFile(persistent_table_components.path_resolver.reverseResolve(metadata_path));
 
         const auto previous_schema_id = metadata->getValue<Int32>(Iceberg::f_current_schema_id);
 
@@ -884,6 +886,7 @@ void alter(
             }
         }
 
+        metadata->set(Iceberg::f_last_updated_ms, std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count());
         std::string json_representation = stringifyJSON(metadata, 4);
 
         auto metadata_info = filename_generator.generateMetadataPathWithInfo();
