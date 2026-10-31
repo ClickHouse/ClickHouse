@@ -993,17 +993,17 @@ static Block makeBlockWithMinMaxFromStatistics(
     size_t covered_marks = 0;
     size_t covered_ranges = 0;
 
-    /// The columns whose estimates are needed, so that only their statistics are read.
-    NameSet required_columns;
+    /// `count` needs no statistics.
+    bool need_estimates = false;
     for (const auto & stats_aggregate : stats_aggregates)
         if (stats_aggregate.kind != StatisticsMinMaxAggregate::Kind::Count)
-            required_columns.insert(stats_aggregate.column_name);
+            need_estimates = true;
 
     auto & parts_with_ranges = remaining_select_result.parts_with_ranges;
 
     /// The estimates of the parts whose statistics may answer the query, loaded in parallel and released once
     /// consumed; `std::nullopt` for a part that is read instead.
-    std::vector<std::optional<Estimates>> parts_estimates(parts_with_ranges.size());
+    std::vector<EstimatesPtr> parts_estimates(parts_with_ranges.size());
     auto part_may_use_statistics = [&](size_t part_index)
     {
         const auto & part_with_ranges = parts_with_ranges[part_index];
@@ -1039,13 +1039,12 @@ static Block makeBlockWithMinMaxFromStatistics(
         const auto & part = parts_with_ranges[part_index].data_part;
         try
         {
-            /// An empty set would mean all columns, but `count` needs no statistics.
-            if (required_columns.empty())
-                parts_estimates[part_index] = Estimates{};
+            if (!need_estimates)
+                parts_estimates[part_index] = std::make_shared<const Estimates>();
             else if (!only_from_memory)
-                parts_estimates[part_index] = part->getEstimates(required_columns);
-            else if (auto estimates = part->tryGetEstimatesFromMemory(required_columns))
-                parts_estimates[part_index] = std::move(*estimates);
+                parts_estimates[part_index] = part->getEstimates();
+            else if (auto estimates = part->tryGetEstimatesFromMemory())
+                parts_estimates[part_index] = std::move(estimates);
             else
                 return false;
         }
@@ -1138,7 +1137,7 @@ static Block makeBlockWithMinMaxFromStatistics(
     /// `count` alone reads nothing, so there is nothing to parallelize then.
     MergeTreeData::loadStatisticsOfPartsInParallel(
         parts_with_ranges.size(),
-        required_columns.empty() ? 1 : static_cast<size_t>(context->getSettingsRef()[Setting::max_threads]),
+        !need_estimates ? 1 : static_cast<size_t>(context->getSettingsRef()[Setting::max_threads]),
         [&](size_t part_index) { return load_part_estimates(part_index, /* only_from_memory = */ true); },
         [&](size_t part_index) { load_part_estimates(part_index, /* only_from_memory = */ false); },
         consume_part_estimates);

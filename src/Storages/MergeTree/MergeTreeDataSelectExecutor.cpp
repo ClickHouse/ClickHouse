@@ -928,7 +928,7 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByStatistics(
     for (size_t part_index = 0; part_index < parts.size(); ++part_index)
         part_has_pending_mutations[part_index] = partHasPendingAlterOrMetadataMutations(parts[part_index].data_part, mutations_snapshot);
 
-    std::vector<Estimates> parts_estimates(parts.size());
+    std::vector<EstimatesPtr> parts_estimates(parts.size());
     MergeTreeData::loadStatisticsOfPartsInParallel(
         parts.size(),
         settings[Setting::max_threads],
@@ -937,10 +937,10 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByStatistics(
             if (part_has_pending_mutations[part_index])
                 return true;
 
-            auto estimates = parts[part_index].data_part->tryGetEstimatesFromMemory(required_columns);
+            auto estimates = parts[part_index].data_part->tryGetEstimatesFromMemory();
             if (!estimates)
                 return false;
-            parts_estimates[part_index] = std::move(*estimates);
+            parts_estimates[part_index] = std::move(estimates);
             return true;
         },
         [&](size_t part_index)
@@ -948,7 +948,7 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByStatistics(
             if (part_has_pending_mutations[part_index])
                 return;
 
-            parts_estimates[part_index] = parts[part_index].data_part->getEstimates(required_columns);
+            parts_estimates[part_index] = parts[part_index].data_part->getEstimates();
         },
         [&](size_t part_index)
         {
@@ -959,7 +959,7 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByStatistics(
                 return;
             }
 
-            Estimates estimates = std::move(parts_estimates[part_index]);
+            EstimatesPtr estimates = std::move(parts_estimates[part_index]);
 
             /// The statistics describe the values as they are stored in the part. When the part stores a
             /// column with a type different from the current metadata, a read converts the values to the
@@ -968,21 +968,27 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByStatistics(
             /// extended `Enum`). This happens independently of the mutations snapshot: e.g. with
             /// `apply_mutations_on_fly = 0` the pending `MODIFY COLUMN` is not in the snapshot, and after
             /// `KILL MUTATION` it is gone, while the conversion on read still happens.
-            /// Only the required columns are checked: the estimates may hold every column of the part.
+            /// Only the required columns are checked: the estimates hold every column of the part.
+            /// The estimates are shared with other callers, so they are copied only when a column has to be removed.
+            std::optional<Estimates> filtered_estimates;
             for (const auto & [column_name, metadata_type] : required_column_types)
             {
-                auto it = estimates.find(column_name);
-                if (it == estimates.end())
+                if (!estimates->contains(column_name))
                     continue;
 
                 auto part_column = part.data_part->tryGetColumn(column_name);
                 if (!part_column || !metadata_type || !isRepresentationPreservingConversion(part_column->type.get(), metadata_type.get()))
-                    estimates.erase(it);
+                {
+                    if (!filtered_estimates)
+                        filtered_estimates.emplace(*estimates);
+                    filtered_estimates->erase(column_name);
+                }
             }
+            const Estimates & part_estimates = filtered_estimates ? *filtered_estimates : *estimates;
 
             try
             {
-                if (!statistics_pruner.checkPartCanMatch(estimates).can_be_true)
+                if (!statistics_pruner.checkPartCanMatch(part_estimates).can_be_true)
                 {
                     LOG_TRACE(log, "Part {} pruned by statistics", part.data_part->name);
                     return;

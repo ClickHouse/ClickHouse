@@ -3,9 +3,9 @@
 -- Tag no-parallel-replicas: the statistics are loaded on the initiator only.
 
 -- The weight of a statistics cache entry is the memory retained by the statistics, not their serialized size:
--- a `uniq_v2` sketch of a column with a single value is serialized in a few bytes, but its aggregate function
--- state lives in an arena with a 4 KiB chunk. The `basic` statistics have no arena, but the entry retains the ASTs
--- of their descriptions: one in the description of the column statistics and one in the statistics object.
+-- a `uniq_v2` sketch of a column with a single value is serialized in a few bytes, but the entry retains its
+-- aggregate function state and the ASTs of the descriptions of the statistics: one in the description of the
+-- column statistics and one in the statistics object.
 
 SET use_statistics = 1;
 SET materialize_statistics_on_insert = 1;
@@ -26,10 +26,10 @@ SYSTEM DROP STATISTICS CACHE;
 
 SELECT count() FROM t_05394 WHERE c = 1 AND id < 5 FORMAT Null;
 
--- 10 parts, 2 columns.
+-- 10 parts, one entry per part.
 SELECT
     (SELECT value FROM system.metrics WHERE metric = 'StatisticsCacheCells') AS cells,
-    (SELECT value FROM system.metrics WHERE metric = 'StatisticsCacheBytes') / cells >= 4096 AS weight_includes_arena;
+    (SELECT value FROM system.metrics WHERE metric = 'StatisticsCacheBytes') / cells >= 2048 AS weight_includes_state_and_descriptions;
 
 DROP TABLE t_05394;
 

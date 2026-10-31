@@ -1014,6 +1014,59 @@ TEST(Statistics, DeserializeV3SkipsRevertedNullCount)
     EXPECT_FALSE(restored->hasNullCount());
 }
 
+/// `V4` length-prefixes every statistic, so a type written by a newer build (unknown here) is skipped
+/// and the known statistics next to it are still read.
+TEST(Statistics, DeserializeV4SkipsUnknownType)
+{
+    auto data_type = std::make_shared<DataTypeInt32>();
+
+    auto lengthPrefixed = [](WriteBuffer & out, const String & stat_payload)
+    {
+        writeIntBinary(static_cast<UInt64>(stat_payload.size()), out);
+        out.write(stat_payload.data(), stat_payload.size());
+    };
+
+    String minmax_payload;
+    {
+        WriteBufferFromString buf(minmax_payload);
+        writeIntBinary(static_cast<UInt64>(100), buf); /// row_count
+        writeStringBinary(data_type->getName(), buf);
+        writeFieldBinary(Field(Int64(-5)), buf);
+        writeFieldBinary(Field(Int64(42)), buf);
+        buf.finalize();
+    }
+
+    const String unknown_payload = "payload of a statistics type unknown to this build";
+
+    String file;
+    {
+        WriteBufferFromString buf(file);
+        writeIntBinary(static_cast<UInt16>(4), buf); /// StatisticsFileVersion::V4
+        /// bit 3 = `MinMax`, bit 6 = a type that is not known to this build
+        writeIntBinary(static_cast<UInt64>((1ULL << 3) | (1ULL << 6)), buf);
+        writeStringBinary(data_type->getName(), buf); /// stored_type_name
+        writeIntBinary(static_cast<UInt64>(100), buf); /// rows
+        lengthPrefixed(buf, minmax_payload);
+        lengthPrefixed(buf, unknown_payload);
+        buf.finalize();
+    }
+
+    ReadBufferFromString rb(file);
+    auto restored = ColumnStatistics::deserialize(rb, data_type);
+
+    ASSERT_TRUE(restored != nullptr);
+    EXPECT_EQ(restored->getNumRows(), 100u);
+    EXPECT_TRUE(rb.eof());
+
+    ASSERT_TRUE(restored->hasMinMax());
+    auto estimate = restored->getEstimate();
+    ASSERT_TRUE(estimate.estimated_min.has_value());
+    ASSERT_TRUE(estimate.estimated_max.has_value());
+    EXPECT_EQ(*estimate.estimated_min, Field(Int64(-5)));
+    EXPECT_EQ(*estimate.estimated_max, Field(Int64(42)));
+    EXPECT_EQ(restored->getStats().size(), 1u);
+}
+
 #if USE_DATASKETCHES
 
 TEST(Statistics, CountMinSketchRoundTrip)
@@ -1071,7 +1124,8 @@ TEST(Statistics, CountMinSketchDeserializeCorrupted)
     /// `StatisticsCountMinSketch` itself, without the `ColumnStatistics` wrapper.
     auto create = [&]
     {
-        auto stats = MergeTreeStatisticsFactory::instance().tryCreateSingle(StatisticsType::CountMinSketch, data_type);
+        auto stats = MergeTreeStatisticsFactory::instance().tryCreateSingle(
+            SingleStatisticsDescription(StatisticsType::CountMinSketch, nullptr, false), data_type);
         EXPECT_TRUE(stats != nullptr);
         return stats;
     };

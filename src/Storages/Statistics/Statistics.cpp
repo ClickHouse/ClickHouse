@@ -527,9 +527,6 @@ Estimate ColumnStatistics::getEstimate() const
     for (const auto & [type, _] : stats)
         info.types.insert(type);
 
-    if (const IStatistics * uniq_stats = findUniqStats(stats))
-        info.estimated_cardinality = uniq_stats->estimateCardinality();
-
     if (auto it = stats.find(StatisticsType::Basic); it != stats.end())
     {
         const auto & basic_stats = assert_cast<const StatisticsBasic &>(*it->second);
@@ -682,7 +679,16 @@ std::shared_ptr<ColumnStatistics> ColumnStatistics::deserialize(ReadBuffer & buf
                 continue;
             }
 
-            if (auto stat_ptr = factory.tryCreateSingle(type, data_type))
+            /// A type written by a newer build is unknown here and has no name, so it is skipped before
+            /// its description is created.
+            if (!factory.isRegistered(type))
+            {
+                buf.ignore(stat_size);
+                continue;
+            }
+
+            SingleStatisticsDescription single_desc(type, make_intrusive<ASTIdentifier>(statisticsTypeToString(type)), false);
+            if (auto stat_ptr = factory.tryCreateSingle(single_desc, data_type))
             {
                 /// Track bytes consumed so we can detect a per-stat parser drift and either pad the
                 /// remainder or refuse to continue on overrun (which would corrupt the next stat).
@@ -700,8 +706,7 @@ std::shared_ptr<ColumnStatistics> ColumnStatistics::deserialize(ReadBuffer & buf
                         consumed,
                         stat_size);
 
-                auto ast = make_intrusive<ASTIdentifier>(statisticsTypeToString(type));
-                result->stats_desc.types_to_desc.emplace(type, SingleStatisticsDescription(type, ast, false));
+                result->stats_desc.types_to_desc.emplace(type, std::move(single_desc));
                 result->stats[type] = std::move(stat_ptr);
             }
             else
@@ -970,19 +975,16 @@ MergeTreeStatisticsFactory::get(const std::vector<StatisticsType> & stat_types, 
     return result;
 }
 
-StatisticsPtr MergeTreeStatisticsFactory::tryCreateSingle(StatisticsType type, const DataTypePtr & data_type) const
+StatisticsPtr MergeTreeStatisticsFactory::tryCreateSingle(const SingleStatisticsDescription & desc, const DataTypePtr & data_type) const
 {
-    auto vit = validators.find(type);
+    auto vit = validators.find(desc.type);
     if (vit == validators.end())
         return nullptr;
-
-    auto ast = make_intrusive<ASTIdentifier>(statisticsTypeToString(type));
-    SingleStatisticsDescription desc(type, ast, false);
 
     if (!vit->second(desc, data_type))
         return nullptr;
 
-    auto cit = creators.find(type);
+    auto cit = creators.find(desc.type);
     if (cit == creators.end())
         return nullptr;
 
