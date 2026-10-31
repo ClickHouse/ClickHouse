@@ -862,7 +862,7 @@ public:
 
         if (auto * ast_with_alias = dynamic_cast<ASTWithAlias *>(operands.back().get()))
         {
-            tryGetIdentifierNameInto(node, ast_with_alias->alias);
+            setParsedAlias(*ast_with_alias, node);
             return true;
         }
 
@@ -1407,7 +1407,7 @@ public:
                 /// This keeps `1 IN (((1), (2)))` equivalent to `1 IN (1, 2)`.
                 if (auto * literal = elements[0]->as<ASTLiteral>())
                 {
-                    if (literal->value.getType() == Field::Types::Tuple && elements[0]->tryGetAlias().empty())
+                    if (literal->value.getType() == Field::Types::Tuple && !elements[0]->hasAlias())
                     {
                         /// Save the tuple value before clearing elements,
                         /// because elements.clear() destroys the ASTLiteral
@@ -1546,7 +1546,7 @@ public:
             {
                 auto old_pos = pos;
 
-                if (ParserIdentifier().parse(pos, alias, expected) &&
+                if (ParserIdentifier(/*allow_query_parameter=*/ true).parse(pos, alias, expected) &&
                     as_keyword_parser.ignore(pos, expected))
                 {
                     type_text = parseDataTypeAsText(pos, expected);
@@ -1567,7 +1567,7 @@ public:
 
                 pos = old_pos;
 
-                if (ParserIdentifier().parse(pos, alias, expected) &&
+                if (ParserIdentifier(/*allow_query_parameter=*/ true).parse(pos, alias, expected) &&
                     ParserToken(TokenType::Comma).ignore(pos, expected))
                 {
                     action = Action::OPERAND;
