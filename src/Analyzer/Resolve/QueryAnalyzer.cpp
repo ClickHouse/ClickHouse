@@ -2838,9 +2838,39 @@ QueryAnalyzer::QueryTreeNodesWithNames QueryAnalyzer::resolveUnqualifiedMatcher(
                         is_column_from_parent_scope(join_using_column_nodes.at(1)))
                         continue;
 
-                    /// `join_use_nulls` and the PREWHERE rollback map `join_columns_with_changed_types` live on the query scope.
-                    QueryTreeNodePtr matched_column_node = createProjectionForUsing(
-                        join_using_column_node, join_node->getKind(), *nearest_query_scope, semi_anti_star_checker.preservedSideOrNone());
+                    /// `PREWHERE` is evaluated by reading a single table before the join, so there the `USING` column is
+                    /// the column of the left table expression with its own storage type, as for an identifier. A matcher
+                    /// reaches this point in `PREWHERE` only from inside a lambda, because `PREWHERE` itself is resolved with
+                    /// `allow_resolve_from_using` disabled. The column is taken from the columns already matched in the left
+                    /// table expression rather than from the arguments of the `USING` column: for a nested join, the first
+                    /// argument is the already resolved key of the inner join, which is the column of its right table for
+                    /// an inner `RIGHT JOIN`, and has the type of the inner `USING` key. The columns matched in the left table
+                    /// expression are resolved by this same rule, so the key is the column of the leftmost table that has it,
+                    /// and they keep the storage types, because the type of the `USING` key is not applied to them.
+                    /// The same applies when the right side of a `SEMI`/`ANTI` join is hidden. When the left side is hidden,
+                    /// the key is the column of the right table, as `createProjectionForUsing` returns it.
+                    /// The conversion to the common `USING` type is not applied: the `PREWHERE` rollback of the changed types
+                    /// does not descend into a lambda.
+                    auto preserved_side = semi_anti_star_checker.preservedSideOrNone();
+                    QueryTreeNodePtr matched_column_node;
+                    if (scope.in_prewhere && preserved_side != JoinTableSide::Right)
+                    {
+                        auto left_column_it = std::ranges::find_if(left_table_expression_columns,
+                            [&](const auto & left_column_with_name) { return left_column_with_name.second == join_using_column_name; });
+                        if (left_column_it != left_table_expression_columns.end())
+                        {
+                            matched_column_node = left_column_it->first->clone();
+                        }
+                    }
+
+                    /// The left table expression has no such column when the `USING` key is resolved from an alias of the
+                    /// projection (`analyzer_compatibility_join_using_top_level_identifier`).
+                    if (!matched_column_node)
+                    {
+                        /// `join_use_nulls` and the PREWHERE rollback map `join_columns_with_changed_types` live on the query scope.
+                        matched_column_node = createProjectionForUsing(
+                            join_using_column_node, join_node->getKind(), *nearest_query_scope, preserved_side);
+                    }
                     matched_column_node->setAlias(join_using_column_name);
 
                     table_expression_column_names_to_skip.insert(join_using_column_name);
@@ -2912,7 +2942,11 @@ QueryAnalyzer::QueryTreeNodesWithNames QueryAnalyzer::resolveUnqualifiedMatcher(
             table_expression_columns,
             scope);
 
-        updateMatchedColumnsFromJoinUsing(matched_column_nodes_with_names, /*is_qualified_matcher=*/ false, {}, scope);
+        /// In a lambda in `PREWHERE` the columns of a table keep their storage types, see the handling of the `USING`
+        /// columns above. A matcher directly in `PREWHERE` is resolved with `allow_resolve_from_using` disabled, so it
+        /// keeps the columns of both tables, and their types are widened here and rolled back after `PREWHERE` is resolved.
+        if (!scope.in_prewhere || !scope.allow_resolve_from_using)
+            updateMatchedColumnsFromJoinUsing(matched_column_nodes_with_names, /*is_qualified_matcher=*/ false, {}, scope);
 
         table_expressions_column_nodes_with_names_stack.push_back(std::move(matched_column_nodes_with_names));
     }
