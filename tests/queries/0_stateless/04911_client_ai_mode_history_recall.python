@@ -1,0 +1,192 @@
+import multiprocessing
+import os
+import pty
+import re
+import select
+import shlex
+import time
+
+TIMEOUT_SECONDS = 30
+
+# How long to keep reading after the last keystroke while waiting for the expected output. The
+# committed-query case only sees the result once the query has executed, which can take longer
+# than the inter-keystroke drain on slow (sanitizer) builds.
+FINAL_WAIT_SECONDS = 20
+
+DEBUG_LOG = os.path.join(
+    os.environ["CLICKHOUSE_TMP"],
+    os.path.basename(os.path.abspath(__file__)).strip(".python") + ".debuglog",
+)
+
+# The magenta `:?` of the AI-chat mode prompt (see ReplxxLineReader::aiModePrompt).
+AI_PROMPT = "\x1b[1;35m:?"
+
+
+def make_history_file(name, entries):
+    """Write a replxx-format history file with the given entries, oldest first."""
+    path = os.path.join(
+        os.environ["CLICKHOUSE_TMP"],
+        os.path.basename(os.path.abspath(__file__)).strip(".python")
+        + f".{name}.history",
+    )
+    with open(path, "w") as f:
+        for i, entry in enumerate(entries):
+            f.write(f"### 2020-01-01 00:00:{i:02}.000\n{entry}\n")
+    return path
+
+
+def read_until(master, debug_log_fd, predicate, timeout):
+    output = ""
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        r, _, _ = select.select([master], [], [], 0.3)
+        if not r:
+            if predicate(output):
+                return output
+            continue
+        try:
+            chunk = os.read(master, 4096)
+        except OSError:
+            break
+        debug_log_fd.write(repr(chunk) + "\n")
+        debug_log_fd.flush()
+        output += chunk.decode(errors="replace")
+        if predicate(output):
+            return output
+    return output
+
+
+def drain(master, debug_log_fd, idle):
+    output = ""
+    while True:
+        r, _, _ = select.select([master], [], [], idle)
+        if not r:
+            break
+        try:
+            chunk = os.read(master, 4096)
+        except OSError:
+            break
+        debug_log_fd.write(repr(chunk) + "\n")
+        debug_log_fd.flush()
+        output += chunk.decode(errors="replace")
+    return output
+
+
+def run_case(program, argv, name, keystrokes, check, state=None):
+    """Fork a PTY, wait for the prompt, send keystrokes (with a small pause between
+    them so replxx repaints), then run `check` over the collected output."""
+    shell_pid, master = pty.fork()
+    if shell_pid == 0:
+        os.environ["TERM"] = "xterm"
+        os.execv(program, argv)
+        return
+
+    debug_log_fd = open(DEBUG_LOG, "a")
+    try:
+        read_until(master, debug_log_fd, lambda o: ":)" in o, TIMEOUT_SECONDS)
+
+        output = ""
+        for keys in keystrokes:
+            os.write(master, keys)
+            output += drain(master, debug_log_fd, 0.4)
+
+        # The expected output may arrive only after the committed query executes, which can
+        # outlast the inter-keystroke drain on slow builds. Keep reading until the check passes
+        # instead of giving up after a single drain window.
+        if not check(output):
+            output += read_until(
+                master,
+                debug_log_fd,
+                lambda extra: check(output + extra),
+                FINAL_WAIT_SECONDS,
+            )
+
+        ok = check(output)
+        print(f"{name}: {'OK' if ok else 'FAIL'}")
+        state.value = 0 if ok else 1
+    finally:
+        os.close(master)
+        debug_log_fd.close()
+
+
+def run_with_timeout(program, argv, name, keystrokes, check):
+    for attempt in range(5):
+        state = multiprocessing.Value("i", -1)
+        process = multiprocessing.Process(
+            target=run_case,
+            args=(program, argv, name, keystrokes, check),
+            kwargs={"state": state},
+        )
+        process.start()
+        process.join(TIMEOUT_SECONDS + FINAL_WAIT_SECONDS)
+        if process.is_alive():
+            process.terminate()
+        if state.value in (0, 1):
+            return
+        # transient timeout on a loaded machine - retry
+    print(f"{name}: FAIL")
+
+
+def main():
+    program = os.environ["CLICKHOUSE_LOCAL"]
+    base = shlex.split(program)
+    args = base + ["--wait_for_suggestions_to_load"]
+
+    # An entry brought from the history that is an AI question (stored with a `? ` prefix) must
+    # switch the client into AI-chat mode: the prompt becomes the magenta `:?` and the editable
+    # line shows the question without the prefix. This must hold for every way of bringing an
+    # entry from the history, not only the Up/Down navigation.
+
+    # 1. Up recalls the AI question and switches into AI-chat mode.
+    history = make_history_file("up_recall", ["? what is clickhouse"])
+    run_with_timeout(
+        base[0],
+        args + [f"--history_file={history}"],
+        "up_recall_switches_to_ai",
+        [b"\x1b[A"],
+        lambda o: AI_PROMPT in o,
+    )
+
+    # 2. The incremental history search (C-T), terminated by a cursor key (C-E) that keeps the
+    #    found line, also switches into AI-chat mode.
+    history = make_history_file(
+        "search_recall", ["? what is clickhouse", "SELECT 1 AS one"]
+    )
+    run_with_timeout(
+        base[0],
+        args + [f"--history_file={history}"],
+        "search_recall_switches_to_ai",
+        [b"\x14", b"clickhouse", b"\x05"],
+        lambda o: AI_PROMPT in o,
+    )
+
+    # 3. Page Up jumps to the first history entry - an AI question here.
+    history = make_history_file(
+        "page_up_recall", ["? first question", "SELECT 1 AS one"]
+    )
+    run_with_timeout(
+        base[0],
+        args + [f"--history_file={history}"],
+        "page_up_switches_to_ai",
+        [b"\x1b[5~"],
+        lambda o: AI_PROMPT in o,
+    )
+
+    # 4. Walking past the AI question back to a SQL entry leaves AI-chat mode again: Enter runs
+    #    the recalled entry as SQL and its result (42) is printed. The mode switches are asserted
+    #    by the outcome, because replxx may paint the recalled line before the prompt is swapped.
+    history = make_history_file("back_to_sql", ["SELECT 42 AS answer", "? question"])
+    run_with_timeout(
+        base[0],
+        args + [f"--history_file={history}"],
+        "recall_back_to_sql",
+        [b"\x1b[A", b"\x1b[A", b"\r"],
+        lambda o: AI_PROMPT in o and re.search(r"│\s*42\s*│", o) is not None,
+    )
+
+
+if __name__ == "__main__":
+    # The check lambdas are not picklable, so the subprocesses must be forked (not spawned,
+    # which became the default on newer Python).
+    multiprocessing.set_start_method("fork")
+    main()

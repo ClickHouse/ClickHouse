@@ -1,0 +1,5 @@
+readonly_query: OK
+raw_osc: absent
+raw_c1: absent
+visible_osc: present
+visible_c1: present
