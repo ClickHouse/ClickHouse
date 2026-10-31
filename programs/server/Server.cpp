@@ -61,6 +61,7 @@
 #include <Common/getMappedArea.h>
 #include <Common/SignalHandlers.h>
 #include <Common/remapExecutable.h>
+#include <Common/FilesystemIsolation.h>
 #include <Common/SeccompFilter.h>
 #include <Common/TLDListsHolder.h>
 #include <Common/Config/AbstractConfigurationComparison.h>
@@ -129,6 +130,7 @@
 #include <Common/Config/ConfigReloader.h>
 #include <Server/HTTPHandlerFactory.h>
 #include <Common/ReplicasReconnector.h>
+#include <FilesystemIsolationPaths.h>
 #include <MetricsTransmitter.h>
 #include <Common/StatusFile.h>
 #include <Server/TCPHandlerFactory.h>
@@ -498,6 +500,7 @@ namespace ServerSetting
     extern const ServerSettingsBool mlock_executable;
     extern const ServerSettingsUInt64 mlock_executable_min_total_memory_amount_bytes;
     extern const ServerSettingsSeccompMode seccomp;
+    extern const ServerSettingsFilesystemIsolationMode filesystem_isolation;
     extern const ServerSettingsUInt32 listen_backlog;
     extern const ServerSettingsBool listen_reuse_port;
     extern const ServerSettingsBool listen_try;
@@ -844,6 +847,27 @@ void setOOMScore(int value, LoggerRawPtr log)
 }
 #endif
 
+
+void Server::beforeStartingThreads()
+{
+    /// As in `main`, but from the configuration as it is before a `from_zk` value arrives: the isolation can only be
+    /// done while the process has a single thread, and connecting to ZooKeeper takes several.
+    ServerSettings server_settings;
+    server_settings.loadSettingsFromConfig(config());
+    const FilesystemIsolationMode mode = server_settings[ServerSetting::filesystem_isolation];
+    if (mode == FilesystemIsolationMode::Disabled)
+    {
+        isolateFilesystem(mode, {});
+        return;
+    }
+#if USE_JEMALLOC
+    /// The only threads by now are the background threads of jemalloc, which `background_thread:true` in its
+    /// compiled-in configuration starts at the first allocation. Disabling them joins them, and `Jemalloc::setup`,
+    /// right after this, starts them again.
+    Jemalloc::setBackgroundThreads(false);
+#endif
+    isolateFilesystem(mode, collectFilesystemIsolationPaths(config(), config_path, original_working_directory));
+}
 
 void Server::uninitialize()
 {
@@ -1882,6 +1906,31 @@ try
     JemallocMergeTreeArena::initialize(server_settings[ServerSetting::jemalloc_merge_tree_arenas]);
     addMergeTreeArenaPoolWarnings(global_context);
 
+    /// The filesystem was isolated in `beforeStartingThreads`, before the logger existed.
+    if (const auto filesystem_isolation = getFilesystemIsolationStatus())
+    {
+        if (filesystem_isolation->isolated)
+        {
+            LOG_INFO(
+                log,
+                "Isolated the filesystem of this process{}. Only these paths are visible: {}",
+                filesystem_isolation->created_user_namespace ? " in a new user and mount namespace" : " in a new mount namespace",
+                fmt::join(filesystem_isolation->visible_paths, ", "));
+            if (!filesystem_isolation->lost_capabilities.empty())
+                LOG_WARNING(
+                    log,
+                    "The process had to create a user namespace to isolate its filesystem, because it does not have `CAP_SYS_ADMIN`, "
+                    "and lost its capabilities {}. Grant it `CAP_SYS_ADMIN`, which it drops right after the isolation, to keep them",
+                    fmt::join(filesystem_isolation->lost_capabilities, ", "));
+        }
+        else if (!filesystem_isolation->not_isolated_reason.empty())
+            LOG_WARNING(
+                log,
+                "The `filesystem_isolation` server setting is set to `best_effort`, but the filesystem cannot be isolated: {}. "
+                "The server is running without the isolation",
+                filesystem_isolation->not_isolated_reason);
+    }
+
     /// Restrict the server to the system calls it is known to use, as early in the startup as the
     /// configuration allows. That is after the ZooKeeper-include reload above, not before it: a
     /// filter cannot be removed or relaxed afterwards, so one installed from the configuration as it
@@ -2694,6 +2743,16 @@ try
             DB::abort_on_logical_error.store(new_server_settings[ServerSetting::abort_on_logical_error], std::memory_order_relaxed);
 
             ConnectionRegistry::instance().setEnabled(new_server_settings[ServerSetting::collect_connection_metrics]);
+
+            if (const auto requested_filesystem_isolation_mode = getRequestedFilesystemIsolationMode();
+                requested_filesystem_isolation_mode
+                && *requested_filesystem_isolation_mode != new_server_settings[ServerSetting::filesystem_isolation].value)
+                LOG_WARNING(
+                    log,
+                    "The `filesystem_isolation` server setting was changed from `{}` to `{}` in the configuration, but it takes effect only "
+                    "after a restart: the filesystem of a running process is isolated once, at startup",
+                    SettingFieldFilesystemIsolationMode(*requested_filesystem_isolation_mode).toString(),
+                    new_server_settings[ServerSetting::filesystem_isolation].toString());
 
             /// The seccomp filter cannot be changed once installed; `system.server_settings` keeps showing the mode in force.
             if (const auto requested_seccomp_mode = getRequestedSeccompMode();
