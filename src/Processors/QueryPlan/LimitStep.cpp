@@ -139,6 +139,7 @@ void LimitStep::describeActions(JSONBuilder::JSONMap & map) const
     map.add("Reads All Data", always_read_till_end);
 }
 
+
 void LimitStep::serialize(Serialization & ctx) const
 {
     UInt8 flags = 0;
