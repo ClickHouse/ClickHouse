@@ -2437,13 +2437,11 @@ struct KeyRuns
 };
 
 template <typename T>
-bool findKeyRunsImpl(const char * data, size_t begin, size_t end, KeyRuns & runs)
+void findKeyRunsImpl(const char * data, size_t begin, size_t end, KeyRuns & runs)
 {
     const auto at = [data](size_t row) { return unalignedLoad<T>(data + row * sizeof(T)); };
-    for (size_t row = begin; row < end;)
+    for (size_t row = begin; row < end && runs.count < max_key_runs;)
     {
-        if (runs.count == max_key_runs)
-            return false;
         const T value = at(row);
         size_t run_end = row + 1;
         /// 64 rows at a time without a branch inside, so the scan vectorizes.
@@ -2460,28 +2458,27 @@ bool findKeyRunsImpl(const char * data, size_t begin, size_t end, KeyRuns & runs
         runs.ends[runs.count++] = run_end;
         row = run_end;
     }
-    return true;
 }
 
-/// Rows [begin, end) of a fixed-size key column as one run of one value, or as up to `max_key_runs` runs of
-/// `min_average_key_run_rows` rows on average; otherwise no runs. Rows with equal key bytes are one group for every
-/// method of a single fixed-size key, so each run can be aggregated like a constant key.
+/// Up to `max_key_runs` runs of one value at the start of rows [begin, end) of a fixed-size key column, kept when there
+/// is one run or they hold `min_average_key_run_rows` rows on average; otherwise no runs. The rows after the last run
+/// are in no run. Rows with equal key bytes are one group for every method of a single fixed-size key, so each run can
+/// be aggregated like a constant key.
 KeyRuns findKeyRuns(const IColumn & column, size_t begin, size_t end)
 {
     KeyRuns runs;
     if (end - begin < 2 || !column.isFixedAndContiguous())
         return runs;
     const char * data = column.getRawData().data();
-    bool found = false;
     switch (column.sizeOfValueIfFixed())
     {
-        case 1: found = findKeyRunsImpl<UInt8>(data, begin, end, runs); break;
-        case 2: found = findKeyRunsImpl<UInt16>(data, begin, end, runs); break;
-        case 4: found = findKeyRunsImpl<UInt32>(data, begin, end, runs); break;
-        case 8: found = findKeyRunsImpl<UInt64>(data, begin, end, runs); break;
+        case 1: findKeyRunsImpl<UInt8>(data, begin, end, runs); break;
+        case 2: findKeyRunsImpl<UInt16>(data, begin, end, runs); break;
+        case 4: findKeyRunsImpl<UInt32>(data, begin, end, runs); break;
+        case 8: findKeyRunsImpl<UInt64>(data, begin, end, runs); break;
         default: break;
     }
-    if (!found || (runs.count > 1 && (end - begin) / runs.count < min_average_key_run_rows))
+    if (runs.count > 1 && (runs.ends[runs.count - 1] - begin) / runs.count < min_average_key_run_rows)
         runs.count = 0;
     return runs;
 }
@@ -2628,6 +2625,7 @@ bool Aggregator::executeOnBlock(Columns columns,
             execute(row_begin, row_end, all_keys_are_const);
             return;
         }
+        const IColumn * key_column = key_columns[0];
         size_t run_begin = row_begin;
         for (size_t i = 0; i < key_runs.count; ++i)
         {
@@ -2635,6 +2633,9 @@ bool Aggregator::executeOnBlock(Columns columns,
             execute(run_begin, key_runs.ends[i], /*all_keys_are_const=*/true);
             run_begin = key_runs.ends[i];
         }
+        key_columns[0] = key_column;
+        if (run_begin < row_end)
+            execute(run_begin, row_end, /*all_keys_are_const=*/false);
     };
 
     if ((params.overflow_row || result.type == AggregatedDataVariants::Type::without_key) && !result.without_key)

@@ -1,4 +1,4 @@
--- Blocks whose only GROUP BY key holds one value or a few long runs of values are aggregated like a constant key.
+-- Blocks whose only `GROUP BY` key holds one value or a few long runs of values are aggregated like a constant key.
 -- Every cell compares the result with `optimize_group_by_constant_keys = 0` by `EXCEPT ALL` in both directions and prints 0.
 
 SET max_threads = 1;
@@ -28,6 +28,18 @@ SELECT count() FROM
      SELECT * FROM (SELECT bitShiftLeft(toUInt64(intDiv(number, 3000) % 5), 32) AS k, count(), sum(number), uniqExact(number % 1000), groupBitmap(toUInt32(number)) FROM numbers(300000) GROUP BY k SETTINGS max_block_size = 20000, optimize_group_by_constant_keys = 1))
 );
 
+SELECT 'more than eight runs per block';
+SELECT count() FROM
+(
+    (SELECT * FROM (SELECT bitShiftLeft(toUInt64(intDiv(number, 1500) % 7), 32) AS k, count(), sum(number), groupBitmap(toUInt32(number)) FROM numbers(300000) GROUP BY k SETTINGS max_block_size = 20000, optimize_group_by_constant_keys = 1)
+     EXCEPT ALL
+     SELECT * FROM (SELECT bitShiftLeft(toUInt64(intDiv(number, 1500) % 7), 32) AS k, count(), sum(number), groupBitmap(toUInt32(number)) FROM numbers(300000) GROUP BY k SETTINGS max_block_size = 20000, optimize_group_by_constant_keys = 0))
+    UNION ALL
+    (SELECT * FROM (SELECT bitShiftLeft(toUInt64(intDiv(number, 1500) % 7), 32) AS k, count(), sum(number), groupBitmap(toUInt32(number)) FROM numbers(300000) GROUP BY k SETTINGS max_block_size = 20000, optimize_group_by_constant_keys = 0)
+     EXCEPT ALL
+     SELECT * FROM (SELECT bitShiftLeft(toUInt64(intDiv(number, 1500) % 7), 32) AS k, count(), sum(number), groupBitmap(toUInt32(number)) FROM numbers(300000) GROUP BY k SETTINGS max_block_size = 20000, optimize_group_by_constant_keys = 1))
+);
+
 SELECT 'UInt8 key';
 SELECT count() FROM
 (
@@ -38,6 +50,18 @@ SELECT count() FROM
     (SELECT * FROM (SELECT toUInt8(intDiv(number, 3000) % 200) AS k, count(), sum(number) FROM numbers(300000) GROUP BY k SETTINGS max_block_size = 20000, optimize_group_by_constant_keys = 0)
      EXCEPT ALL
      SELECT * FROM (SELECT toUInt8(intDiv(number, 3000) % 200) AS k, count(), sum(number) FROM numbers(300000) GROUP BY k SETTINGS max_block_size = 20000, optimize_group_by_constant_keys = 1))
+);
+
+SELECT 'UInt8 key, count only, more than eight runs per block';
+SELECT count() FROM
+(
+    (SELECT * FROM (SELECT toUInt8(intDiv(number, 1500) % 200) AS k, count() FROM numbers(300000) GROUP BY k SETTINGS max_block_size = 20000, optimize_group_by_constant_keys = 1)
+     EXCEPT ALL
+     SELECT * FROM (SELECT toUInt8(intDiv(number, 1500) % 200) AS k, count() FROM numbers(300000) GROUP BY k SETTINGS max_block_size = 20000, optimize_group_by_constant_keys = 0))
+    UNION ALL
+    (SELECT * FROM (SELECT toUInt8(intDiv(number, 1500) % 200) AS k, count() FROM numbers(300000) GROUP BY k SETTINGS max_block_size = 20000, optimize_group_by_constant_keys = 0)
+     EXCEPT ALL
+     SELECT * FROM (SELECT toUInt8(intDiv(number, 1500) % 200) AS k, count() FROM numbers(300000) GROUP BY k SETTINGS max_block_size = 20000, optimize_group_by_constant_keys = 1))
 );
 
 SELECT 'Date key';
@@ -110,6 +134,18 @@ SELECT count() FROM
     (SELECT * FROM (SELECT intDiv(number, 2000) AS k, count() FROM numbers_mt(1000000) GROUP BY k SETTINGS max_threads = 4, max_block_size = 8192, enable_adaptive_aggregator = 1, adaptive_aggregator_freeze_threshold = 128, adaptive_aggregator_freeze_threshold_bytes = 0, optimize_group_by_constant_keys = 0)
      EXCEPT ALL
      SELECT * FROM (SELECT intDiv(number, 2000) AS k, count() FROM numbers_mt(1000000) GROUP BY k SETTINGS max_threads = 4, max_block_size = 8192, enable_adaptive_aggregator = 1, adaptive_aggregator_freeze_threshold = 128, adaptive_aggregator_freeze_threshold_bytes = 0, optimize_group_by_constant_keys = 1))
+);
+
+SELECT 'frozen adaptive tables, more than eight runs per block';
+SELECT count() FROM
+(
+    (SELECT * FROM (SELECT intDiv(number, 700) AS k, count(), sum(number) FROM numbers_mt(1000000) GROUP BY k SETTINGS max_threads = 4, max_block_size = 8192, enable_adaptive_aggregator = 1, adaptive_aggregator_freeze_threshold = 128, adaptive_aggregator_freeze_threshold_bytes = 0, optimize_group_by_constant_keys = 1)
+     EXCEPT ALL
+     SELECT * FROM (SELECT intDiv(number, 700) AS k, count(), sum(number) FROM numbers_mt(1000000) GROUP BY k SETTINGS max_threads = 4, max_block_size = 8192, enable_adaptive_aggregator = 1, adaptive_aggregator_freeze_threshold = 128, adaptive_aggregator_freeze_threshold_bytes = 0, optimize_group_by_constant_keys = 0))
+    UNION ALL
+    (SELECT * FROM (SELECT intDiv(number, 700) AS k, count(), sum(number) FROM numbers_mt(1000000) GROUP BY k SETTINGS max_threads = 4, max_block_size = 8192, enable_adaptive_aggregator = 1, adaptive_aggregator_freeze_threshold = 128, adaptive_aggregator_freeze_threshold_bytes = 0, optimize_group_by_constant_keys = 0)
+     EXCEPT ALL
+     SELECT * FROM (SELECT intDiv(number, 700) AS k, count(), sum(number) FROM numbers_mt(1000000) GROUP BY k SETTINGS max_threads = 4, max_block_size = 8192, enable_adaptive_aggregator = 1, adaptive_aggregator_freeze_threshold = 128, adaptive_aggregator_freeze_threshold_bytes = 0, optimize_group_by_constant_keys = 1))
 );
 
 -- Part `p` holds keys `4p` to `4p + 20` in runs of 10000 rows, so `GROUP BY k LIMIT 3` refuses new keys in the middle

@@ -2,7 +2,11 @@ one value per block
 0
 several runs per block, keys repeating out of order
 0
+more than eight runs per block
+0
 UInt8 key
+0
+UInt8 key, count only, more than eight runs per block
 0
 Date key
 0
@@ -15,6 +19,8 @@ no aggregate functions
 frozen adaptive tables
 0
 frozen adaptive tables, count only
+0
+frozen adaptive tables, more than eight runs per block
 0
 GROUP BY LIMIT keeps exact keys
 3	0
