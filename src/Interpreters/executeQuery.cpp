@@ -2903,8 +2903,9 @@ bool functionChecksOwnAccess(const String & name)
 /// Whether `ast` calls a function from `functionChecksOwnAccess` anywhere inside it, or a function that
 /// checks the access to an object it names (`joinGet`, the `dictGet` family, `predictXGBoost`,
 /// `assignCentroid`). `collectTablesInQuery` collects the objects of the latter only from the submitted
-/// query, so they are not preflighted when they come from a stored column expression.
-bool astCallsFunctionCheckingOwnAccess(const ASTPtr & ast)
+/// query, so they are not preflighted when they come from a stored column expression. If
+/// `tables_in_subqueries` is set, a subquery or the right side of `IN` naming a table counts as well.
+bool astCallsFunctionCheckingOwnAccess(const ASTPtr & ast, bool tables_in_subqueries = true)
 {
     if (const auto * function = ast->as<ASTFunction>(); function
         && (functionChecksOwnAccess(function->name) || functionIsJoinGet(function->name) || functionIsDictGet(function->name)
@@ -2914,16 +2915,35 @@ bool astCallsFunctionCheckingOwnAccess(const ASTPtr & ast)
     /// A stored expression can name a table without calling a function: the right side of `IN`
     /// (`v UInt8 ALIAS k IN db.s`) or a subquery. The access to such a table is checked only when the
     /// expression is analyzed, after the hook, so treat it the same way.
-    if (ast->as<ASTSubquery>())
-        return true;
-    if (const auto * function = ast->as<ASTFunction>(); function && functionIsInOrGlobalInOperator(function->name)
-        && function->arguments && function->arguments->children.size() == 2
-        && dynamic_cast<const ASTIdentifier *>(function->arguments->children[1].get()))
-        return true;
+    if (tables_in_subqueries)
+    {
+        if (ast->as<ASTSubquery>())
+            return true;
+        if (const auto * function = ast->as<ASTFunction>(); function && functionIsInOrGlobalInOperator(function->name)
+            && function->arguments && function->arguments->children.size() == 2
+            && dynamic_cast<const ASTIdentifier *>(function->arguments->children[1].get()))
+            return true;
+    }
 
     for (const auto & child : ast->children)
-        if (astCallsFunctionCheckingOwnAccess(child))
+        if (astCallsFunctionCheckingOwnAccess(child, tables_in_subqueries))
             return true;
+    return false;
+}
+
+/// `astCallsFunctionCheckingOwnAccess` over the stored columns definition of a table the query reads or
+/// writes. The constraints are the exception for the tables named in them: a read never analyzes a
+/// `CHECK` constraint, only an insert does (after the hook), and the scalar subqueries of the constraints
+/// are executed under the caller's access already when the hook validates the definition for the
+/// `ATTACH` back. So a subquery in a constraint disables the hook only for a write to the table.
+bool columnsDefinitionCallsFunctionCheckingOwnAccess(const ASTColumns & columns_list, bool writes)
+{
+    for (const auto & child : columns_list.children)
+    {
+        const bool is_constraints = child.get() == columns_list.constraints;
+        if (astCallsFunctionCheckingOwnAccess(child, /* tables_in_subqueries */ !is_constraints || writes))
+            return true;
+    }
     return false;
 }
 
@@ -3557,13 +3577,14 @@ static void reattachTablesUsedInQuery(const ASTPtr & query, ContextMutablePtr co
         if (!database || !database->supportsDetachingTables())
             continue;
 
-        if (const auto create_query = database->tryGetCreateTableQuery(table.id.getTableName(), context))
-            if (const auto * create = create_query->as<ASTCreateQuery>();
-                create && create->columns_list && astCallsFunctionCheckingOwnAccess(create->columns_list->ptr()))
-                return;
-
         const bool reads = table.required_access.contains(AccessType::SELECT);
         const bool writes = table.required_access.contains(AccessType::INSERT);
+
+        if (const auto create_query = database->tryGetCreateTableQuery(table.id.getTableName(), context))
+            if (const auto * create = create_query->as<ASTCreateQuery>();
+                create && create->columns_list && columnsDefinitionCallsFunctionCheckingOwnAccess(*create->columns_list, writes))
+                return;
+
         if (!reads && !writes)
             continue;
 
