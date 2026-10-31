@@ -1698,6 +1698,7 @@ IcebergMetadata::estimateRead(StorageMetadataPtr storage_metadata_snapshot, cons
                         data_file->resolved_schema_id,
                         pruning_filter,
                         files_handle.getPartitionKeyDescription(),
+                        *data_file->common_partition_specification,
                         context,
                         /* require_ready_sets */ true);
 
