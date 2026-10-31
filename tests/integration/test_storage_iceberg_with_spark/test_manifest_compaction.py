@@ -648,10 +648,8 @@ def test_optimize_manifest_files_dropped_partition_source_column_schema_header(
 def test_optimize_manifest_files_bucket_partition(started_cluster_iceberg_with_spark, storage_type):
     """
     OPTIMIZE TABLE ... MANIFEST on a bucket-partitioned table must recompute the manifest-list
-    partition summary for the bucket value. The `icebergBucket` transform resolves to ClickHouse
-    `UInt32`, which `getAvroType` maps to Avro `int`; the byte encoder must serialize that unsigned
-    type instead of throwing 'Can not dump such stats', otherwise a valid Iceberg bucket partition
-    cannot be compacted.
+    partition summary for the bucket value and write the bucket field as the Iceberg `int`, so
+    that Spark can still read the rewritten table filtered on the bucketed column.
     """
     instance = started_cluster_iceberg_with_spark.instances["node1"]
     spark = started_cluster_iceberg_with_spark.spark_session
@@ -664,9 +662,10 @@ def test_optimize_manifest_files_bucket_partition(started_cluster_iceberg_with_s
         TBLPROPERTIES ('format-version' = '2')
         """
     )
-    for lo in range(0, 80, 20):
+    # More manifests than buckets, so `OPTIMIZE ... MANIFEST` has something to consolidate.
+    for lo in range(0, 80, 10):
         spark.sql(
-            f"INSERT INTO {TABLE_NAME} SELECT id, char(id + ascii('a')) FROM range({lo}, {lo + 20})"
+            f"INSERT INTO {TABLE_NAME} SELECT id, char(id + ascii('a')) FROM range({lo}, {lo + 10})"
         )
 
     default_upload_directory(
@@ -699,11 +698,21 @@ def test_optimize_manifest_files_bucket_partition(started_cluster_iceberg_with_s
         f"/var/lib/clickhouse/user_files/iceberg_data/default/{TABLE_NAME}/",
         f"/var/lib/clickhouse/user_files/iceberg_data/default/{TABLE_NAME}/",
     )
+    # Compaction committed a manifest rewrite, so Spark reads the manifests ClickHouse wrote.
+    assert get_current_snapshot_summary(
+        f"/var/lib/clickhouse/user_files/iceberg_data/default/{TABLE_NAME}/"
+    ).get("operation") == "replace"
     spark_rows = spark.read.format("iceberg").load(
         f"/var/lib/clickhouse/user_files/iceberg_data/default/{TABLE_NAME}"
     ).collect()
     assert len(spark_rows) == 80
     assert sorted(row["id"] for row in spark_rows) == list(range(0, 80))
+
+    # A filter on the bucketed column makes Spark evaluate the partition values and bounds compaction rewrote.
+    filtered = spark.read.format("iceberg").load(
+        f"/var/lib/clickhouse/user_files/iceberg_data/default/{TABLE_NAME}"
+    ).where("id = 5").collect()
+    assert [row["id"] for row in filtered] == [5]
 
 
 def test_optimize_manifest_files_preserves_entry_lineage(started_cluster_iceberg_with_spark):
