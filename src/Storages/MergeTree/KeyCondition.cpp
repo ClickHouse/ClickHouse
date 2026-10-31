@@ -870,8 +870,8 @@ static const ActionsDAG::Node * tryRewriteCoalesceComparison(
         /// own `KeyCondition` via `createIndexCondition`) would expand it then, producing a `KeyCondition`
         /// whose RPN no longer matches the template's RPN. The disjunction-tracking machinery in
         /// `MergeTreeDataSelectExecutor::filterMarksUsingIndex` assumes both RPNs share the same length and
-        /// position layout; the mismatch causes an out-of-bounds write into `partial_disjunction_result`
-        /// when the index RPN exceeds `MAX_BITS_FOR_PARTIAL_DISJUNCTION_RESULT`.
+        /// position layout; the mismatch puts partial results at the wrong positions of `partial_disjunction_result`,
+        /// which can skip granules that match the filter.
         if (const auto * rewritten = tryRewriteCoalesceComparison(cmp_node, canonical_op_str, inverted_dag, inputs_mapping, context))
             return *rewritten;
         return cmp_node;
