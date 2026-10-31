@@ -5298,7 +5298,7 @@ static void serializeConstant(
     type.getDefaultSerialization()->serializeBinary(data, 0, out, FormatSettings{});
 }
 
-/// The maximum nesting depth of lambda captures in a deserialized `ActionsDAG`.
+/// The maximum nesting depth of lambda captures and `indexHint` predicates in a deserialized `ActionsDAG`.
 /// The serialized data may come from a client, and the deserialization is recursive.
 static constexpr size_t MAX_ACTIONS_DAG_DESERIALIZATION_DEPTH = 1000;
 
@@ -5309,7 +5309,7 @@ static void checkActionsDAGDeserializationDepth(size_t nesting_depth)
     if (nesting_depth > MAX_ACTIONS_DAG_DESERIALIZATION_DEPTH)
         throw Exception(
             ErrorCodes::TOO_DEEP_RECURSION,
-            "Too deep nesting of lambda captures in deserialized ActionsDAG (more than {} levels)",
+            "Too deep nesting of lambda captures or indexHint in deserialized ActionsDAG (more than {} levels)",
             MAX_ACTIONS_DAG_DESERIALIZATION_DEPTH);
 }
 
@@ -5479,10 +5479,7 @@ void ActionsDAG::serialize(WriteBuffer & out, SerializedSetsRegistry & registry,
         /// `indexHint` keeps its predicate in its own DAG, not in the children of the node.
         const FunctionIndexHint * index_hint = nullptr;
         if (node.type == ActionType::FUNCTION && !registry.for_cache_key)
-        {
-            if (const auto * adaptor = typeid_cast<const FunctionToFunctionBaseAdaptor *>(node.function_base.get()))
-                index_hint = typeid_cast<const FunctionIndexHint *>(adaptor->getFunction().get());
-        }
+            index_hint = FunctionIndexHint::tryGet(node.function_base);
 
         if (index_hint)
         {
@@ -5673,7 +5670,7 @@ ActionsDAG ActionsDAG::deserialize(
                 if (column_flags & 8)
                 {
                     auto index_hint = std::make_shared<FunctionIndexHint>();
-                    index_hint->setActions(ActionsDAG::deserialize(in, registry, context, max_type_complexity));
+                    index_hint->setActions(ActionsDAG::deserialize(in, registry, context, max_type_complexity, nesting_depth + 1));
                     function = std::make_shared<FunctionToOverloadResolverAdaptor>(std::move(index_hint));
                 }
                 else

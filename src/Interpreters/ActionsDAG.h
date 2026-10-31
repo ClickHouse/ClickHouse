@@ -196,7 +196,7 @@ public:
     /// max_type_complexity guards binary type decoding (0 == unlimited). Callers pass the effective
     /// input_format_binary_max_type_complexity for client-reachable QueryPlan packets, or leave it at the
     /// default 0 for trusted internal metadata (e.g. data-lake schema transforms).
-    /// `nesting_depth` is the depth of lambda captures, it is used internally to limit the recursion.
+    /// `nesting_depth` is the depth of lambda captures and `indexHint` predicates, it is used internally to limit the recursion.
     static ActionsDAG deserialize(
         ReadBuffer & in,
         DeserializedSetsRegistry & registry,
