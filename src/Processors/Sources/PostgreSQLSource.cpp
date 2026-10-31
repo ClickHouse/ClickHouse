@@ -71,7 +71,7 @@ PostgreSQLSource<T>::PostgreSQLSource(
     SharedHeader sample_block,
     UInt64 max_block_size_,
     const String & structure_hint_)
-    : ISource(std::make_shared<const Block>(sample_block->cloneEmpty()))
+    : ISource(sample_block)
     , max_block_size(max_block_size_)
     , structure_hint(structure_hint_)
     , connection_holder(std::move(connection_holder_))
@@ -88,7 +88,7 @@ PostgreSQLSource<T>::PostgreSQLSource(
     SharedHeader sample_block,
     UInt64 max_block_size_,
     bool auto_commit_)
-    : ISource(std::make_shared<const Block>(sample_block->cloneEmpty()))
+    : ISource(sample_block)
     , max_block_size(max_block_size_)
     , auto_commit(auto_commit_)
     , query_str(query_str_)
