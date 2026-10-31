@@ -6,10 +6,9 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 # `--send_logs_level=fatal` keeps the server-side log of the exception out of
 # stderr, so we only have to count the single client-side error string.
-# `--enable_analyzer=1` forces the analyzer: the hint is implemented in
-# `QueryAnalyzer.cpp` and is not produced by the legacy analyzer.
+# The hint is implemented in `QueryAnalyzer.cpp`.
 
-CLIENT="$CLICKHOUSE_CLIENT --enable_analyzer=1 --send_logs_level=fatal"
+CLIENT="$CLICKHOUSE_CLIENT --send_logs_level=fatal"
 
 check_hint() {
     if grep -qF 'Did you forget to add it?'; then

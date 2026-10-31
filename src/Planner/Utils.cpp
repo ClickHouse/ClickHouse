@@ -29,10 +29,11 @@
 
 #include <Interpreters/Context.h>
 #include <Interpreters/ExpressionContainsColumnMatcher.h>
+#include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTLiteral.h>
 
-#include <WindowFunctions/IWindowFunction.h>
+#include <WindowFunctions/IGeneralWindowFunction.h>
 
 #include <Analyzer/Utils.h>
 #include <Analyzer/traverseQueryTree.h>
@@ -337,7 +338,8 @@ StorageLimits buildStorageLimits(const Context & context, const SelectQueryOptio
     if (!options.ignore_limits)
     {
         limits = getLimitsForStorage(settings, options);
-        leaf_limits = SizeLimits(settings[Setting::max_rows_to_read_leaf], settings[Setting::max_bytes_to_read_leaf], settings[Setting::read_overflow_mode_leaf]);
+        if (context.getClientInfo().distributed_depth > 0)
+            leaf_limits = SizeLimits(settings[Setting::max_rows_to_read_leaf], settings[Setting::max_bytes_to_read_leaf], settings[Setting::read_overflow_mode_leaf]);
     }
 
     return {limits, leaf_limits};
@@ -586,6 +588,9 @@ NameSet checkAccessRights(
     if (typeid_cast<const StorageDummy *>(storage.get()))
         return {};
 
+    if (isInsertedDataOfTableFunction(storage, storage_id, query_context))
+        return {};
+
     if (column_names.empty())
     {
         NameSet accessible_columns;
@@ -734,6 +739,10 @@ QueryTreeNodePtr buildFilterQueryTree(ASTPtr filter_expression,
     if (check_access_rights)
         checkAccessRightsForFilter(filter_query_tree, table_expression, query_context);
 
+    /// The inner query of an ordinary view reads the table itself, not the inserted block.
+    if (auto view_source = query_context->getViewSource(); view_source && !query_context->isViewInnerQuery())
+        replaceStorageInQueryTree(filter_query_tree, query_context, view_source);
+
     return filter_query_tree;
 }
 
@@ -851,11 +860,9 @@ std::optional<WindowFrame> extractWindowFrame(const FunctionNode & node)
     const auto & window_frame = window_node.getWindowFrame();
     if (!window_frame.is_default)
         return window_frame;
-    auto aggregate_function = node.getAggregateFunction();
-    if (const auto * win_func = dynamic_cast<const IWindowFunction *>(aggregate_function.get()))
-    {
-        return win_func->getDefaultFrame();
-    }
+    if (const auto general = asGeneralWindowFunction(node.getAggregateFunction()))
+        return general->getDefaultFrame();
+
     return {};
 }
 

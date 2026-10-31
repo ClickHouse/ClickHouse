@@ -66,7 +66,8 @@ KafkaConsumer2::~KafkaConsumer2()
     if (!consumer)
         return;
 
-    moveConsumer();
+    auto consumer_to_close = moveConsumer();
+    consumer_to_close.reset();
 }
 
 void KafkaConsumer2::createConsumer(cppkafka::Configuration consumer_config)
@@ -313,7 +314,7 @@ void KafkaConsumer2::commit(const TopicPartitionOffset & topic_partition_offset)
     {
         try
         {
-            // See https://github.com/edenhill/librdkafka/issues/1470
+            // See https://github.com/confluentinc/librdkafka/issues/1470
             // broker may reject commit if during offsets.commit.timeout.ms (5000 by default), there were not enough
             // replicas available for the __consumer_offsets topic. also some other temporary issues like client-server
             // connectivity problems are possible
@@ -461,6 +462,9 @@ void KafkaConsumer2::resetIfStopped()
     if (stopped)
     {
         stalled_status = StalledStatus::CONSUMER_STOPPED;
+        /// Discard the interrupted batch; a later batch must not continue from its middle.
+        messages.clear();
+        current = messages.end();
     }
 }
 
