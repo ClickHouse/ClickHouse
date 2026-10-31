@@ -28,7 +28,10 @@ if [ "$1" = configure ] || [ -n "$not_deb_os" ]; then
             "${KEEPER_USER}"
     fi
 
-    if [ -x "/bin/systemctl" ] && [ -f /lib/systemd/system/clickhouse-keeper.service ] && [ -d /run/systemd/system ]; then
+    if [ -x "/bin/systemctl" ] && [ -d /run/systemd/system ] &&
+        { [ -f /etc/systemd/system/$PROGRAM.service ] ||
+          [ -f /lib/systemd/system/$PROGRAM.service ] ||
+          [ -f /usr/lib/systemd/system/$PROGRAM.service ]; }; then
         # if old rc.d service present - remove it
         if [ -x "/etc/init.d/clickhouse-keeper" ] && [ -x "/usr/sbin/update-rc.d" ]; then
             /usr/sbin/update-rc.d clickhouse-keeper remove
