@@ -222,9 +222,14 @@ public:
             {
                 auto unwrap = [](const DataTypePtr & type) { return removeNullable(removeLowCardinality(type)); };
                 /// Also inside composite types, such as `Tuple(FixedString(2))` against `Tuple(String)`.
+                /// `Dynamic`, `Variant` and `JSON` can carry a `FixedString` at runtime, such as `Tuple(Dynamic)`,
+                /// and the conversion of the key to the common type would keep its padding as well.
                 bool has_fixed_string = std::ranges::any_of(types, [](const DataTypePtr & type)
                 {
-                    return anyInTypeTree(*type, [](const IDataType & t) { return isFixedString(t); });
+                    return anyInTypeTree(*type, [](const IDataType & t)
+                    {
+                        return isFixedString(t) || isDynamic(t) || isVariant(t) || isObject(t);
+                    });
                 });
                 bool all_same = std::ranges::all_of(types, [&](const DataTypePtr & type) { return unwrap(type)->equals(*unwrap(types.front())); });
                 return has_fixed_string && !all_same;
