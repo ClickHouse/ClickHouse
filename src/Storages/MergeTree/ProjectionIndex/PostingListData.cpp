@@ -1156,8 +1156,8 @@ std::string ReaderStreamEntry::toString() const
         block_strs.push_back(block.toString());
 
     return fmt::format(
-        "ReaderStreamEntry(stream_ptr: {}, first_doc_id: {}, doc_count: {}, blocks: [{}])",
-        static_cast<const void *>(stream.get()),
+        "ReaderStreamEntry(has_stream: {}, first_doc_id: {}, doc_count: {}, blocks: [{}])",
+        stream != nullptr,
         first_doc_id,
         doc_count,
         fmt::join(block_strs, ", "));
