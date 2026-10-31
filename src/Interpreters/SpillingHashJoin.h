@@ -25,7 +25,7 @@ struct HashJoinBuildLayout;
 /// Blocks are fed into a HashJoin, possibly from multiple threads concurrently.
 /// A SharedMutex protects the COLLECTING -> GRACE_HASH_JOIN transition: addBlockToJoin takes a shared lock, while
 /// switchToGraceHashJoin takes an exclusive lock.
-/// If the data exceeds max_bytes_before_external_join, a GraceHashJoin is created and HashJoin workers are converted via
+/// If the data exceeds max_bytes_before_external_join, a GraceHashJoin is created and the HashJoin build streams are converted via
 /// addBlockToJoin calls possibly from multiple threads.
 /// If all blocks fit in memory, the HashJoin is promoted to chosen_join with zero rework.
 ///
@@ -72,7 +72,7 @@ public:
 
     ISpillable * getSpillable() override { return &spillable; }
     /// While collecting: the whole right side, spilled by switching to the grace join.
-    /// After the switch: the grace join and the blocks of unconverted workers. Nothing once the build ended in memory.
+    /// After the switch: the grace join and the blocks of unconverted build streams. Nothing once the build ended in memory.
     ProcessorMemoryStats getMemoryStats() const;
     size_t spill(size_t at_least_bytes);
 
@@ -117,13 +117,13 @@ private:
     enum class State
     {
         COLLECTING, // Right-side blocks are being collected in HashJoin, no spilling yet.
-        GRACE_HASH_JOIN, // Spilled to disk and switched to GraceHashJoin, but the blocks of some workers may still be unconverted.
+        GRACE_HASH_JOIN, // Spilled to disk and switched to GraceHashJoin, but the blocks of some build streams may still be unconverted.
         IN_MEMORY_JOIN, // All blocks fit in memory, using HashJoin directly without switching.
         FAILED // A switch requested by `spill` threw after freeing the maps, so no join can take more blocks.
     };
 
     void switchToGraceHashJoin(JoinBuildContext context, bool spill_immediately = false);
-    void tryConvertWorkers(JoinBuildContext context);
+    void tryConvertBuildStreams(JoinBuildContext context);
     void throwIfSwitchFailed() const;
 
     LoggerPtr log;
@@ -137,7 +137,7 @@ private:
     size_t max_bytes_before_external_join;
 
     SharedMutex switch_mutex;
-    std::atomic<size_t> next_worker_to_convert{0};
+    std::atomic<size_t> next_build_stream_to_convert{0};
     mutable std::mutex totals_mutex;
     bool supports_parallel_non_joined_blocks_processing{false};
 

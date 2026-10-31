@@ -921,7 +921,7 @@ public:
 protected:
     Chunk generate() override
     {
-        if (join->data->workers.front().columns.empty())
+        if (join->data->build_streams.front().columns.empty())
             return {};
 
         Chunk chunk;

@@ -1,5 +1,5 @@
--- A hash join built by several workers frees a right table of many heap objects on the `HashJoinDtor` pool.
--- The thread that destroys the join frees a table built by a single worker, and a table of few objects,
+-- A hash join built by several build streams frees a right table of many heap objects on the `HashJoinDtor` pool.
+-- The thread that destroys the join frees a table built by a single build stream, and a table of few objects,
 -- however many bytes they hold. `query_log.thread_ids` lists the pool threads too, but they come from the
 -- global pool and also run the pipeline, so only the thread names in `system.query_thread_log` show the pool.
 
@@ -28,15 +28,15 @@ FROM numbers(10) AS l
 JOIN (SELECT number AS k, repeat('x', 1000) AS s FROM numbers(120000)) AS r ON l.number = r.k
 SETTINGS log_comment = 'few_objects', max_block_size = 1000;
 
--- The build stops at the row limit and never reaches `onBuildPhaseFinish`, so the lists stay per worker.
+-- The build stops at the row limit and never reaches `onBuildPhaseFinish`, so the lists stay per build stream.
 SELECT count(), uniqExact(r.a, r.b, r.c, r.d)
 FROM numbers(10) AS l
 JOIN (SELECT number AS k, toString(number) AS a, toString(number + 1) AS b, toString(number + 2) AS c, toString(number + 3) AS d
     FROM numbers(10000)) AS r ON l.number = r.k
 SETTINGS log_comment = 'cancelled', max_block_size = 10, max_rows_in_join = 9500; -- { serverError SET_SIZE_LIMIT_EXCEEDED }
 
--- The row count of the `Memory` table is below the threshold, so one worker builds its 1250 blocks of four columns.
--- Debug and sanitizer builds walk all blocks of one worker after each insert, so few wide blocks keep the build fast.
+-- The row count of the `Memory` table is below the threshold, so one build stream inserts its 1250 blocks of four columns.
+-- Debug and sanitizer builds walk all blocks of a single build stream after each insert, so few wide blocks keep the build fast.
 CREATE TABLE right_memory (k UInt64, a String, b String, c String, d String) ENGINE = Memory;
 INSERT INTO right_memory
 SELECT number, toString(number), toString(number + 1), toString(number + 2), toString(number + 3) FROM numbers(12500)

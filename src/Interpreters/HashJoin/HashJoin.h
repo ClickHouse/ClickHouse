@@ -81,17 +81,17 @@ constexpr size_t NUM_HASH_TABLE_BUCKETS = 1ull << DEFAULT_BITS_FOR_BUCKET;
 struct HashJoinBuildLayout
 {
     bool two_level;
-    size_t num_build_workers;
+    size_t num_build_streams;
     size_t num_slots;
 
-    /// One-bucket maps behind one slot, whatever the number of workers.
-    static HashJoinBuildLayout oneBucket(size_t num_build_workers) { return {false, std::max<size_t>(1, num_build_workers), 1}; }
+    /// One-bucket maps behind one slot, whatever the number of build streams.
+    static HashJoinBuildLayout oneBucket(size_t num_build_streams) { return {false, std::max<size_t>(1, num_build_streams), 1}; }
 
-    /// Two-level maps with one slot per worker, rounded up to a power of two and capped at the bucket count.
-    static HashJoinBuildLayout twoLevel(size_t num_build_workers)
+    /// Two-level maps with one slot per build stream, rounded up to a power of two and capped at the bucket count.
+    static HashJoinBuildLayout twoLevel(size_t num_build_streams)
     {
-        const size_t workers = std::max<size_t>(1, num_build_workers);
-        return {true, workers, std::min<size_t>(std::bit_ceil(workers), NUM_HASH_TABLE_BUCKETS)};
+        const size_t streams = std::max<size_t>(1, num_build_streams);
+        return {true, streams, std::min<size_t>(std::bit_ceil(streams), NUM_HASH_TABLE_BUCKETS)};
     }
 };
 
@@ -143,7 +143,7 @@ struct BuildResult
   * that is always filled under the same lock. It is a sub-table of a `TwoLevelHashTable`, or a set of cache lines
   * of the flat `PartitionedFixedHashTable`. The parallel layout has `NUM_HASH_TABLE_BUCKETS` buckets, and the
   * serial layout has one. A slot is a group of buckets with one lock and one arena (see `BuildSlots`). The serial
-  * layout has one slot, and the parallel layout one per build thread. A worker is one build stream (see `WorkerStoredData`).
+  * layout has one slot, and the parallel layout one per build stream.
   *
   * 2. Process "left" table and join corresponding rows from "right" table by lookups in the map.
   * This is done in joinBlock methods.
@@ -261,7 +261,7 @@ public:
     /// A concurrent fill needs several slots. The planner fills a join with one slot, in either layout, from one
     /// stream, so its output row order stays reproducible.
     bool supportParallelJoin() const override { return build_layout.num_slots > 1; }
-    size_t getMaxBuildThreads() const override { return build_layout.num_build_workers; }
+    size_t getMaxBuildThreads() const override { return build_layout.num_build_streams; }
 
     bool supportParallelNonJoinedBlocksProcessing() const override;
 
@@ -590,8 +590,8 @@ public:
     };
 
     /// The lists of one build stream: only its inserts change them, and they are moved only after the inserts stop,
-    /// so they need no mutex. `onBuildPhaseFinish` splices them into the lists of the first worker.
-    struct WorkerStoredData
+    /// so they need no mutex. `onBuildPhaseFinish` splices them into the lists of the first build stream.
+    struct BuildStreamData
     {
         StoredBlocksList columns;
         NullmapList nullmaps;
@@ -601,7 +601,7 @@ public:
     struct RightTableData
     {
         explicit RightTableData(const HashJoinBuildLayout & layout)
-            : workers(layout.num_build_workers)
+            : build_streams(layout.num_build_streams)
             , slots(layout.num_slots)
         {
         }
@@ -609,7 +609,7 @@ public:
         /// Frees a large table on a thread pool, see the definition.
         ~RightTableData();
 
-        void spliceWorkerLists();
+        void spliceBuildStreamLists();
 
         Type type = Type::hashed;
 
@@ -622,8 +622,8 @@ public:
         /// Track index of "right" table columns in columns list or row store.
         ColumnAccessIndexes column_access_indexes;
 
-        /// `StorageJoin` has one worker.
-        std::vector<WorkerStoredData> workers;
+        /// `StorageJoin` has one build stream.
+        std::vector<BuildStreamData> build_streams;
 
         /// Resolves RowRef::block_no to the stored block.
         StoredColumnsIndexPtr stored_columns_index = std::make_shared<StoredColumnsIndex>();
@@ -639,7 +639,7 @@ public:
         std::atomic<size_t> keys_to_join = 0;
         std::atomic<size_t> bucket_bytes = 0;
 
-        /// `allocated_size + nullmaps_allocated_size + bucket_bytes` in one atomic: summing the three while workers
+        /// `allocated_size + nullmaps_allocated_size + bucket_bytes` in one atomic: summing the three while build streams
         /// update them can under-count `max_bytes_in_join`. Size-limit checks and `peak_build_bytes` read only this.
         std::atomic<size_t> total_bytes = 0;
 
@@ -707,7 +707,7 @@ public:
 
     RightTableDataPtr getJoinedData() const { return data; }
     BlocksList releaseJoinedBlocks(bool restructure = false);
-    BlocksList releaseWorkerBlocks(size_t worker_id);
+    BlocksList releaseBuildStreamBlocks(size_t stream);
     void releaseJoinMaps();
 
     /// Modify right block (update structure according to sample block) to save it in block list
@@ -721,7 +721,7 @@ public:
 
     void debugKeys() const;
 
-    void shrinkStoredBlocksToFit(size_t & total_bytes_in_join, bool force_optimize = false, size_t worker_id = 0);
+    void shrinkStoredBlocksToFit(size_t & total_bytes_in_join, bool force_optimize = false, size_t stream = 0);
 
     void setMaxJoinedBlockRows(size_t value) { max_joined_block_rows = value; }
     void setMaxJoinedBlockBytes(size_t value) { max_joined_block_bytes = value; }
@@ -886,7 +886,7 @@ private:
     bool right_blocks_may_be_taken = false;
     bool canRemoveColumnsFromLeftBlock() const;
 
-    void shrinkWorkerStoredBlocks(WorkerStoredData & worker);
+    void shrinkBuildStreamBlocks(BuildStreamData & build_stream);
 
     void validateAdditionalFilterExpression(std::shared_ptr<ExpressionActions> additional_filter_expression);
     bool needUsedFlagsForPerRightTableRow(std::shared_ptr<TableJoin> table_join_) const;

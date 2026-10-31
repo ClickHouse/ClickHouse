@@ -56,22 +56,22 @@ SpillingHashJoin::SpillingHashJoin(
 
 SpillingHashJoin::~SpillingHashJoin() = default;
 
-void SpillingHashJoin::tryConvertWorkers(JoinBuildContext context)
+void SpillingHashJoin::tryConvertBuildStreams(JoinBuildContext context)
 {
     chassert(grace_join);
 
-    const size_t num_workers = hash_join->getMaxBuildThreads();
+    const size_t num_build_streams = hash_join->getMaxBuildThreads();
 
-    if (next_worker_to_convert.load(std::memory_order_acquire) >= num_workers)
+    if (next_build_stream_to_convert.load(std::memory_order_acquire) >= num_build_streams)
         return;
 
     while (true)
     {
-        size_t worker = next_worker_to_convert.fetch_add(1);
-        if (worker >= num_workers)
+        size_t stream = next_build_stream_to_convert.fetch_add(1);
+        if (stream >= num_build_streams)
             break;
 
-        auto blocks = hash_join->releaseWorkerBlocks(worker);
+        auto blocks = hash_join->releaseBuildStreamBlocks(stream);
         while (!blocks.empty())
         {
             grace_join->addBlockToJoin(blocks.front(), blocks.front().rows(), context.callerChecksLimits());
@@ -111,7 +111,7 @@ bool SpillingHashJoin::addBlockToJoin(const Block & block, size_t num_rows, Join
     if (state.load(std::memory_order_acquire) != State::COLLECTING)
     {
         throwIfSwitchFailed();
-        tryConvertWorkers(context);
+        tryConvertBuildStreams(context);
         return chosen_join->addBlockToJoin(block, num_rows, context);
     }
 
@@ -129,7 +129,7 @@ bool SpillingHashJoin::addBlockToJoin(const Block & block, size_t num_rows, Join
     if (state.load(std::memory_order_acquire) != State::COLLECTING)
     {
         throwIfSwitchFailed();
-        tryConvertWorkers(context);
+        tryConvertBuildStreams(context);
         return chosen_join->addBlockToJoin(block, num_rows, context);
     }
 
@@ -155,7 +155,7 @@ ProcessorMemoryStats SpillingHashJoin::getMemoryStats() const
         auto res = grace_join->getMemoryStats();
         if (getMaxBuildThreads() > 1)
         {
-            /// Unconverted workers still own memory; their counters are cleared by `releaseWorkerBlocks`.
+            /// Unconverted build streams still own memory; their counters are cleared by `releaseBuildStreamBlocks`.
             const auto unconverted_bytes = hash_join->getTotalByteCount();
             res.spillable_memory_bytes += unconverted_bytes;
             res.need_reserved_memory_bytes += unconverted_bytes;
@@ -232,7 +232,7 @@ void SpillingHashJoin::switchToGraceHashJoin(JoinBuildContext context, bool spil
                 {
                     throw Exception(ErrorCodes::FAULT_INJECTED, "Injected failure after the in-memory maps were released");
                 });
-                tryConvertWorkers(context);
+                tryConvertBuildStreams(context);
             }
             catch (...)
             {
@@ -256,7 +256,7 @@ void SpillingHashJoin::switchToGraceHashJoin(JoinBuildContext context, bool spil
     /// Every insert into the in-memory join holds `switch_mutex` shared, so none runs any more, and threads
     /// queued on the lock need not wait for the free. Freeing before the conversion lowers its peak.
     hash_join->releaseJoinMaps();
-    tryConvertWorkers(context);
+    tryConvertBuildStreams(context);
 }
 
 void SpillingHashJoin::throwIfSwitchFailed() const

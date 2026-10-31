@@ -851,7 +851,7 @@ GraceHashJoin::InMemoryJoinPtr GraceHashJoin::makeInMemoryJoin(const String & bu
 {
     /// One bucket: 256 buckets of empty buffers would count against `max_bytes_before_external_join` and could make
     /// Grace rehash past `grace_hash_join_max_buckets`. The inserts are serialized, but each fill stream finds its
-    /// worker by its own id, so the join gets `max_threads` workers.
+    /// lists by its own id, so the join gets `max_threads` build streams.
     auto join = std::make_unique<HashJoin>(
         table_join, right_sample_block, any_take_last_row, reserve_num, bucket_id, HashJoinBuildLayout::oneBucket(max_threads));
     /// A bucket that outgrows memory is rebucketed, which reads its right blocks back out - and that

@@ -417,7 +417,7 @@ HashJoin::HashJoin(
     validateAdditionalFilterExpression(table_join->getMixedJoinExpression());
 
     used_flags = std::make_unique<JoinStuff::JoinUsedFlags>();
-    used_flags->setPendingFlagWorkers(data->workers.size());
+    used_flags->setNumBuildStreams(data->build_streams.size());
 
     if (table_join->collectAnalyzeStats())
         matched_rows_stats = std::make_unique<MatchedRowsStats>(kind, strictness, table_join->analyzeMode());
@@ -794,18 +794,18 @@ void HashJoin::dropRightBlocksKeptForAnotherAlgorithm()
     /// A nullmap holds a raw pointer into a stored block, and the non-joined stream reads the block
     /// through it. Both nullmaps are only stored for a RIGHT or FULL join, which never gets a set
     /// map, so this holds today - it is here so that the drop stays honest if that ever changes.
-    if (!data->workers.front().nullmaps.empty())
+    if (!data->build_streams.front().nullmaps.empty())
         return;
 
     doDebugAsserts();
-    for (auto & stored_columns : data->workers.front().columns)
+    for (auto & stored_columns : data->build_streams.front().columns)
     {
         data->subBytes(data->allocated_size, stored_columns.allocatedBytes());
         /// No cell refers to the block, but null the index entry anyway, so that a stale reference
         /// trips the chassert in `StoredColumnsIndex::at` rather than reading freed memory.
         data->stored_columns_index->clearEntry(stored_columns.block_no);
     }
-    data->workers.front().columns.clear();
+    data->build_streams.front().columns.clear();
     doDebugAsserts();
 }
 
@@ -850,14 +850,14 @@ void HashJoin::recomputeBucketBytes()
 void HashJoin::doDebugAsserts() const
 {
 #ifdef DEBUG_OR_SANITIZER_BUILD
-    /// Build threads append to per-worker lists with no shared lock. Walking every
-    /// worker here races with those pushes (TSan) and can disagree with the atomics.
-    if (data->workers.size() > 1 && !build_phase_finished)
+    /// Build streams append to their own lists with no shared lock. Walking every
+    /// build stream here races with those pushes (TSan) and can disagree with the atomics.
+    if (data->build_streams.size() > 1 && !build_phase_finished)
         return;
 
     size_t debug_allocated_size = 0;
-    for (const auto & worker : data->workers)
-        for (const auto & columns : worker.columns)
+    for (const auto & build_stream : data->build_streams)
+        for (const auto & columns : build_stream.columns)
             debug_allocated_size += columns.allocatedBytes();
 
     if (data->allocated_size != debug_allocated_size)
@@ -868,8 +868,8 @@ void HashJoin::doDebugAsserts() const
             debug_allocated_size);
 
     size_t debug_nullmaps_allocated_size = 0;
-    for (const auto & worker : data->workers)
-        for (const auto & nullmap : worker.nullmaps)
+    for (const auto & build_stream : data->build_streams)
+        for (const auto & nullmap : build_stream.nullmaps)
             debug_nullmaps_allocated_size += nullmap.allocatedBytes();
 
     if (data->nullmaps_allocated_size != debug_nullmaps_allocated_size)
@@ -1165,10 +1165,13 @@ bool HashJoin::addBlockToJoin(const Block & source_block, size_t /* num_rows */,
         block_to_save = block_to_save.shrinkToFit();
 
     const auto maps_kind = getMapsKind();
-    if (context.getNumStreams() > data->workers.size())
+    if (context.getNumStreams() > data->build_streams.size())
         throw Exception(
-            ErrorCodes::LOGICAL_ERROR, "Too many HashJoin build streams: {}, capacity {}", context.getNumStreams(), data->workers.size());
-    auto & worker = data->workers[context.getStream()];
+            ErrorCodes::LOGICAL_ERROR,
+            "Too many HashJoin build streams: {}, capacity {}",
+            context.getNumStreams(),
+            data->build_streams.size());
+    auto & build_stream = data->build_streams[context.getStream()];
 
     size_t total_rows = 0;
     size_t total_bytes = 0;
@@ -1191,7 +1194,7 @@ bool HashJoin::addBlockToJoin(const Block & source_block, size_t /* num_rows */,
 
         doDebugAsserts();
         /// Register the block and account for it while a local list still owns it: `splice` cannot throw,
-        /// so the worker's list, `data->allocated_size` and `data->rows_to_join` always describe the same set
+        /// so the build stream's list, `data->allocated_size` and `data->rows_to_join` always describe the same set
         /// of stored blocks. Same ordering as `tryRerangeRightTableDataImpl`; a list node keeps its address.
         StoredBlocksList new_block;
         new_block.emplace_back(std::move(columns), std::move(selector), std::move(row_store));
@@ -1200,7 +1203,7 @@ bool HashJoin::addBlockToJoin(const Block & source_block, size_t /* num_rows */,
         stored_columns->block_no = data->stored_columns_index->add(stored_columns);
         data->addBytes(data->allocated_size, data_allocated_bytes);
         data->rows_to_join.fetch_add(rows, std::memory_order_relaxed);
-        worker.columns.splice(worker.columns.end(), new_block);
+        build_stream.columns.splice(build_stream.columns.end(), new_block);
         doDebugAsserts();
 
         bool flag_per_row = needUsedFlagsForPerRightTableRow(table_join);
@@ -1307,14 +1310,14 @@ bool HashJoin::addBlockToJoin(const Block & source_block, size_t /* num_rows */,
 
             if (!flag_per_row && save_nullmap && is_inserted)
             {
-                auto & h = worker.nullmaps.emplace_back(stored_columns, null_map_holder);
+                auto & h = build_stream.nullmaps.emplace_back(stored_columns, null_map_holder);
                 data->addBytes(data->nullmaps_allocated_size, h.allocatedBytes());
                 nullmap_stored_for_block = true;
             }
 
             if (!flag_per_row && not_joined_map && has_right_not_joined)
             {
-                auto & h = worker.nullmaps.emplace_back(stored_columns, std::move(not_joined_map));
+                auto & h = build_stream.nullmaps.emplace_back(stored_columns, std::move(not_joined_map));
                 data->addBytes(data->nullmaps_allocated_size, h.allocatedBytes());
                 nullmap_stored_for_block = true;
             }
@@ -1342,7 +1345,7 @@ bool HashJoin::addBlockToJoin(const Block & source_block, size_t /* num_rows */,
                 /// (and dereferences nullptr deterministically in release builds) instead of
                 /// silently reading freed memory.
                 data->stored_columns_index->clearEntry(stored_columns->block_no);
-                worker.columns.pop_back();
+                build_stream.columns.pop_back();
                 doDebugAsserts();
             }
 
@@ -1362,7 +1365,7 @@ bool HashJoin::addBlockToJoin(const Block & source_block, size_t /* num_rows */,
     return table_join->sizeLimits().check(total_rows, total_bytes, "JOIN", ErrorCodes::SET_SIZE_LIMIT_EXCEEDED);
 }
 
-void HashJoin::shrinkStoredBlocksToFit(size_t & total_bytes_in_join, bool force_optimize, size_t worker_id)
+void HashJoin::shrinkStoredBlocksToFit(size_t & total_bytes_in_join, bool force_optimize, size_t stream)
 {
     /// The CAS decides once for the whole join; each thread then rewrites only its own list.
     const auto max_total_bytes_in_join = table_join->sizeLimits().max_bytes;
@@ -1376,8 +1379,8 @@ void HashJoin::shrinkStoredBlocksToFit(size_t & total_bytes_in_join, bool force_
     {
         if (shrink_blocks.load(std::memory_order_relaxed))
         {
-            /// Another thread already decided to shrink; catch this worker up.
-            shrinkWorkerStoredBlocks(data->workers[worker_id]);
+            /// Another thread already decided to shrink; catch this build stream up.
+            shrinkBuildStreamBlocks(data->build_streams[stream]);
             total_bytes_in_join = getTotalByteCount();
             return;
         }
@@ -1395,13 +1398,13 @@ void HashJoin::shrinkStoredBlocksToFit(size_t & total_bytes_in_join, bool force_
         bool expected = false;
         if (!shrink_blocks.compare_exchange_strong(expected, true, std::memory_order_relaxed))
         {
-            shrinkWorkerStoredBlocks(data->workers[worker_id]);
+            shrinkBuildStreamBlocks(data->build_streams[stream]);
             total_bytes_in_join = getTotalByteCount();
             return;
         }
     }
     else
-        data->workers[worker_id].shrink_done = false; /// Only `StorageJoin` forces, and its join has one worker.
+        data->build_streams[stream].shrink_done = false; /// Only `StorageJoin` forces, and its join has one build stream.
 
     LOG_DEBUG(
         log,
@@ -1411,11 +1414,12 @@ void HashJoin::shrinkStoredBlocksToFit(size_t & total_bytes_in_join, bool force_
         ReadableSize(query_memory_usage_delta),
         max_total_bytes_for_query ? fmt::format("/ {}", ReadableSize(max_total_bytes_for_query)) : "");
 
-    /// The other workers catch up on their next call.
-    shrinkWorkerStoredBlocks(data->workers[worker_id]);
-    /// A forced shrink leaves the worker not done, so a shrink that the limits decide later still rewrites the blocks stored until then.
+    /// The other build streams catch up on their next call.
+    shrinkBuildStreamBlocks(data->build_streams[stream]);
+    /// A forced shrink leaves the build stream not done, so a shrink that the limits decide later still rewrites
+    /// the blocks stored until then.
     if (force_optimize)
-        data->workers[worker_id].shrink_done = false;
+        data->build_streams[stream].shrink_done = false;
 
     auto new_total_bytes_in_join = getTotalByteCount();
     Int64 new_current_memory_usage = JoinCommon::getCurrentQueryMemoryUsage();
@@ -1431,9 +1435,9 @@ void HashJoin::shrinkStoredBlocksToFit(size_t & total_bytes_in_join, bool force_
     total_bytes_in_join = new_total_bytes_in_join;
 }
 
-void HashJoin::shrinkWorkerStoredBlocks(WorkerStoredData & worker)
+void HashJoin::shrinkBuildStreamBlocks(BuildStreamData & build_stream)
 {
-    if (worker.shrink_done)
+    if (build_stream.shrink_done)
         return;
 
     /// Each cloneResized below replaces a stored column object in place, so any emit table built by a
@@ -1443,7 +1447,7 @@ void HashJoin::shrinkWorkerStoredBlocks(WorkerStoredData & worker)
     /// columns. invalidateEmitTable only takes a mutex and increments a counter, so it is unwind-safe.
     SCOPE_EXIT({ data->stored_columns_index->invalidateEmitTable(); });
 
-    for (auto & stored_columns : worker.columns)
+    for (auto & stored_columns : build_stream.columns)
     {
         doDebugAsserts();
 
@@ -1495,7 +1499,7 @@ void HashJoin::shrinkWorkerStoredBlocks(WorkerStoredData & worker)
         doDebugAsserts();
     }
 
-    worker.shrink_done = true;
+    build_stream.shrink_done = true;
 }
 
 DataTypePtr HashJoin::joinGetCheckAndGetReturnType(const DataTypes & data_types, const String & column_name, bool or_null) const
@@ -1737,9 +1741,9 @@ HashJoin::RightTableData::~RightTableData()
                     });
         };
 
-        /// A cancelled build never reached `onBuildPhaseFinish`, so its lists may still be per worker.
-        spliceWorkerLists();
-        auto & stored = workers.front();
+        /// A cancelled build never reached `onBuildPhaseFinish`, so its lists may still be per build stream.
+        spliceBuildStreamLists();
+        auto & stored = build_streams.front();
         const size_t num_blocks = stored.columns.size();
         size_t num_asof_buckets = 0;
         size_t num_asof_keys = 0;
@@ -1750,8 +1754,8 @@ HashJoin::RightTableData::~RightTableData()
         });
         /// Every stored block has the columns of `sample_block`, though a row store keeps several of them in one buffer.
         const size_t num_objects = num_blocks * sample_block.columns() + stored.nullmaps.size() + num_asof_keys;
-        /// The planner gives one worker to a join with the serial layout or with one thread, so its table is freed serially.
-        const size_t num_threads = std::min(workers.size(), num_blocks + num_asof_buckets);
+        /// The planner gives one build stream to a join with the serial layout or with one thread, so its table is freed serially.
+        const size_t num_threads = std::min(build_streams.size(), num_blocks + num_asof_buckets);
         if (num_threads <= 1 || num_objects < PARALLEL_DESTROY_THRESHOLD_OBJECTS)
             return;
 
@@ -1805,14 +1809,14 @@ HashJoin::RightTableData::~RightTableData()
     }
 }
 
-void HashJoin::RightTableData::spliceWorkerLists()
+void HashJoin::RightTableData::spliceBuildStreamLists()
 {
-    auto & stored = workers.front();
-    for (auto & worker : workers | std::views::drop(1))
+    auto & stored = build_streams.front();
+    for (auto & build_stream : build_streams | std::views::drop(1))
     {
-        stored.columns.splice(stored.columns.end(), worker.columns);
-        std::ranges::move(worker.nullmaps, std::back_inserter(stored.nullmaps));
-        worker.nullmaps.clear();
+        stored.columns.splice(stored.columns.end(), build_stream.columns);
+        std::ranges::move(build_stream.nullmaps, std::back_inserter(stored.nullmaps));
+        build_stream.nullmaps.clear();
     }
 }
 
@@ -2001,9 +2005,9 @@ private:
             /// parent.data->columns is not partitioned by hash bucket, so distribute the stored
             /// right blocks across streams by their globally unique block_no instead
             if (!used_position.has_value())
-                used_position = parent.data->workers.front().columns.begin();
+                used_position = parent.data->build_streams.front().columns.begin();
 
-            auto end = parent.data->workers.front().columns.end();
+            auto end = parent.data->build_streams.front().columns.end();
 
             for (auto & it = *used_position; it != end && rows_added < max_block_size; ++it)
             {
@@ -2108,9 +2112,9 @@ private:
             return;
 
         if (!nulls_position.has_value())
-            nulls_position = parent.data->workers.front().nullmaps.begin();
+            nulls_position = parent.data->build_streams.front().nullmaps.begin();
 
-        auto end = parent.data->workers.front().nullmaps.end();
+        auto end = parent.data->build_streams.front().nullmaps.end();
 
         size_t nulls_added = 0;
 
@@ -2217,7 +2221,7 @@ void HashJoin::reuseJoinedData(const HashJoin & join)
     }
 
     if (matched_rows_stats)
-        matched_rows_stats->prepareRightFlagsIfNeeded(data->workers.front().columns);
+        matched_rows_stats->prepareRightFlagsIfNeeded(data->build_streams.front().columns);
 }
 
 BlocksList HashJoin::releaseJoinedBlocks(bool restructure [[maybe_unused]])
@@ -2246,8 +2250,8 @@ BlocksList HashJoin::releaseJoinedBlocks(bool restructure [[maybe_unused]])
         return result;
     };
 
-    data->spliceWorkerLists();
-    StoredBlocksList right_columns = std::move(data->workers.front().columns);
+    data->spliceBuildStreamLists();
+    StoredBlocksList right_columns = std::move(data->build_streams.front().columns);
     if (!restructure)
     {
         auto sample_block = std::move(data->sample_block);
@@ -2261,7 +2265,7 @@ BlocksList HashJoin::releaseJoinedBlocks(bool restructure [[maybe_unused]])
     }
 
     data->maps.clear();
-    data->workers.front().nullmaps.clear();
+    data->build_streams.front().nullmaps.clear();
 
     BlocksList restored_blocks;
 
@@ -2296,17 +2300,17 @@ BlocksList HashJoin::releaseJoinedBlocks(bool restructure [[maybe_unused]])
     return restored_blocks;
 }
 
-BlocksList HashJoin::releaseWorkerBlocks(size_t worker_id)
+BlocksList HashJoin::releaseBuildStreamBlocks(size_t stream)
 {
-    auto & worker = data->workers[worker_id];
-    StoredBlocksList right_columns = std::move(worker.columns);
-    /// `data` outlives the last worker's list on purpose: other threads may still be draining theirs,
+    auto & build_stream = data->build_streams[stream];
+    StoredBlocksList right_columns = std::move(build_stream.columns);
+    /// `data` outlives the last build stream's list on purpose: other threads may still be draining theirs,
     /// and the sample block is shared. So its byte counts drop with the blocks.
     for (const auto & columns : right_columns)
         data->subBytes(data->allocated_size, columns.allocatedBytes());
-    for (const auto & nullmap : worker.nullmaps)
+    for (const auto & nullmap : build_stream.nullmaps)
         data->subBytes(data->nullmaps_allocated_size, nullmap.allocatedBytes());
-    worker.nullmaps.clear();
+    build_stream.nullmaps.clear();
 
     BlocksList result;
     for (auto & columns : right_columns)
@@ -2486,13 +2490,13 @@ void HashJoin::tryRerangeRightTableDataImpl(Map & map [[maybe_unused]])
         StoredBlocksList sorted_columns;
         visit_rows_map(sorted_columns, map);
         doDebugAsserts();
-        data->workers.front().columns.swap(sorted_columns);
+        data->build_streams.front().columns.swap(sorted_columns);
         /// The replaced blocks are destroyed below; null their index entries so that any stale
         /// ref fails loudly instead of reading freed memory. All live cells were rewritten above.
         for (const auto & old_columns : sorted_columns)
             data->stored_columns_index->clearEntry(old_columns.block_no);
         size_t new_blocks_allocated_size = 0;
-        for (auto & columns : data->workers.front().columns)
+        for (auto & columns : data->build_streams.front().columns)
         {
             columns.selector = ScatteredBlock::Selector(columns.columns.at(0)->size());
             new_blocks_allocated_size += columns.allocatedBytes();
@@ -2502,7 +2506,7 @@ void HashJoin::tryRerangeRightTableDataImpl(Map & map [[maybe_unused]])
         /// Every stored block was replaced by a merged one with a fresh block_no, so the flags
         /// keyed by the old numbers are stale. Nothing has been marked yet - the probe runs later.
         if (matched_rows_stats && matched_rows_stats->hasRightFlags())
-            matched_rows_stats->prepareRightFlags(data->workers.front().columns);
+            matched_rows_stats->prepareRightFlags(data->build_streams.front().columns);
 
         doDebugAsserts();
     }
@@ -2525,7 +2529,7 @@ bool HashJoin::isRightTableRerangeEnabled() const
 ///    insignificant performance improvement after reranging by key.
 bool HashJoin::rightTableCanBeReranged() const
 {
-    return isRightTableRerangeEnabled() && !data->workers.front().columns.empty()
+    return isRightTableRerangeEnabled() && !data->build_streams.front().columns.empty()
         && data->rows_to_join <= table_join->sortRightMaximumTableRows()
         && data->avgPerKeyRows() >= table_join->sortRightMinimumPerkeyRows();
 }
@@ -3119,7 +3123,7 @@ void HashJoin::onBuildPhaseFinish()
     reinitUsedFlags();
 
     used_flags->finalizePerRowFlags(data->stored_columns_index->size());
-    data->spliceWorkerLists();
+    data->spliceBuildStreamLists();
 
     if (all_values_unique && strictness == JoinStrictness::All && isInnerOrLeft(kind) && data->maps.size() == 1)
     {
@@ -3142,7 +3146,7 @@ void HashJoin::onBuildPhaseFinish()
     recomputeBucketBytes();
 
     if (matched_rows_stats)
-        matched_rows_stats->prepareRightFlagsIfNeeded(data->workers.front().columns);
+        matched_rows_stats->prepareRightFlagsIfNeeded(data->build_streams.front().columns);
     LOG_TRACE(
         log,
         "{}Join data is built, {} and {} rows in hash table",
