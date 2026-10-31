@@ -380,6 +380,8 @@ namespace Setting
     extern const SettingsBool page_cache_inject_eviction;
     extern const SettingsParallelReplicasMode parallel_replicas_mode;
     extern const SettingsString parallel_replicas_custom_key;
+    extern const SettingsUInt64 parallel_replicas_count;
+    extern const SettingsBool parallel_replicas_plan_based;
     extern const SettingsBool parallel_replicas_prefer_local_replica;
     extern const SettingsUInt64 prefetch_buffer_size;
     extern const SettingsBool read_from_filesystem_cache_if_exists_otherwise_bypass_cache;
@@ -1689,6 +1691,7 @@ ContextData::ContextData(const ContextData &o) :
     is_recovery_from_stored_metadata(o.is_recovery_from_stored_metadata),
     skip_forced_projection_check(o.skip_forced_projection_check),
     is_view_inner_query(o.is_view_inner_query),
+    is_sql_security_overridden_body(o.is_sql_security_overridden_body),
     join_analyze_mode(o.join_analyze_mode),
     is_automatic_parallel_replicas_probe(o.is_automatic_parallel_replicas_probe),
     temp_data_on_disk(o.temp_data_on_disk),
@@ -10171,7 +10174,8 @@ bool Context::canReplaceClusterEngineWithClusterVariant() const
 
 bool Context::canUseParallelReplicasOnInitiator() const
 {
-    return canUseTaskBasedParallelReplicas() && !getClientInfo().collaborate_with_initiator;
+    return canUseTaskBasedParallelReplicas() && !getClientInfo().collaborate_with_initiator
+        && (!is_sql_security_overridden_body || getSettingsRef()[Setting::parallel_replicas_plan_based]);
 }
 
 bool Context::canUseParallelReplicasOnFollower() const
@@ -10194,7 +10198,8 @@ bool Context::canUseParallelReplicasCustomKey() const
 
 bool Context::canUseParallelReplicasCustomKeyForCluster(const Cluster & cluster) const
 {
-    return canUseParallelReplicasCustomKey() && cluster.getShardCount() == 1 && cluster.getShardsInfo()[0].getAllNodeCount() > 1;
+    return canUseParallelReplicasCustomKey() && cluster.getShardCount() == 1 && cluster.getShardsInfo()[0].getAllNodeCount() > 1
+        && !is_sql_security_overridden_body;
 }
 
 bool Context::canUseOffsetParallelReplicas() const
@@ -10216,6 +10221,38 @@ bool Context::canUseOffsetParallelReplicas() const
            has_enough_servers &&
            parallel_replicas_enabled &&
            is_parallel_replicas_with_custom_key_or_native_sampling_key;
+}
+
+void Context::restrictParallelReplicasInSQLSecurityOverriddenBody()
+{
+    chassert(is_sql_security_overridden_body);
+
+    /// The body is read locally unless plan-based parallel replicas ship its already resolved plan, see `canUseParallelReplicasOnInitiator`.
+    /// Turn the other modes off in the body itself, so that the checks rejecting what parallel replicas do not support
+    /// (`FINAL`, `JOIN` with a custom key, ...) do not fire for a body that does not use them.
+    /// A follower keeps task-based parallel replicas to read its part.
+    if (getClientInfo().collaborate_with_initiator)
+        return;
+
+    const auto & settings_ref = getSettingsRef();
+
+    /// A `sampling_key` follower reads the slice it is assigned by `parallel_replicas_count` / `parallel_replica_offset`.
+    /// Without the setting it would read the whole table, and the result would be multiplied by the number of replicas.
+    /// The body cannot fan out on its own: `updateSettingsAndClientInfoForCluster` turns parallel replicas off for its shards.
+    if (getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY
+        && settings_ref[Setting::parallel_replicas_mode] == ParallelReplicasMode::SAMPLING_KEY
+        && settings_ref[Setting::parallel_replicas_count] > 1)
+        return;
+
+    if (!settings_ref[Setting::parallel_replicas_custom_key].value.empty())
+    {
+        setSetting("allow_experimental_parallel_reading_from_replicas", Field(0));
+        setSetting("parallel_replicas_custom_key", String{});
+    }
+
+    if (settings_ref[Setting::allow_experimental_parallel_reading_from_replicas] > 0
+        && !(canUseTaskBasedParallelReplicas() && settings_ref[Setting::parallel_replicas_plan_based]))
+        setSetting("allow_experimental_parallel_reading_from_replicas", Field(0));
 }
 
 void Context::disableOffsetParallelReplicas()

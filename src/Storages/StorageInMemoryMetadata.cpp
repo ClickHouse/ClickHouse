@@ -177,6 +177,7 @@ ContextMutablePtr StorageInMemoryMetadata::getSQLSecurityOverriddenContext(Conte
     else
         new_context->setClientInfo(context->getClientInfo());
     new_context->makeQueryContext();
+    new_context->setSQLSecurityOverriddenBody(true);
 
     const auto & database = context->getCurrentDatabase();
     if (!database.empty() && database != new_context->getCurrentDatabase())
@@ -245,6 +246,9 @@ ContextMutablePtr StorageInMemoryMetadata::getSQLSecurityOverriddenContext(Conte
         if (drop_custom_key)
             dropParallelReplicasCustomKey(*new_context);
     }
+
+    /// After the definer's profile has been applied: it can enable parallel replicas on its own.
+    new_context->restrictParallelReplicasInSQLSecurityOverriddenBody();
 
     /// The obsolete `allow_experimental_analyzer` is normalized in `executeQuery`, which this context
     /// does not go through: it starts from the global context and then takes the definer's profile,
