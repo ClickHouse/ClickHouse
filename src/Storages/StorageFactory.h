@@ -106,6 +106,10 @@ public:
         LoadingStrictnessLevel mode,
         bool is_restore_from_backup = false) const;
 
+    /// Throw if the CREATE query uses a clause that the table engine does not support. `get` runs the same checks.
+    void checkEngineFeatures(
+        const ASTCreateQuery & query, const ColumnsDescription & columns, LoadingStrictnessLevel mode, const ContextPtr & local_context) const;
+
     /// Register a table engine by its name.
     /// No locking, you must register all engines before usage of get.
     void registerStorage(const std::string & name, CreatorFn creator_fn, SecretArgumentsSpec secret_arguments, StorageFeatures features = StorageFeatures{

@@ -39,6 +39,8 @@ public:
     CatalogTables listTablesInNamespaceDirect(const std::string & namespace_name) const override;
     bool existsTable(const std::string & schema_name, const std::string & table_name) const override;
 
+    /// TODO: Managed Iceberg tables could be created through the inner Iceberg REST catalog without a location.
+    /// Override `writesInitialMetadata` and `createTableAtDefaultLocation` and forward them to `getIcebergRestCatalog`.
     void createTable(
         const String & namespace_name,
         const String & table_name,
