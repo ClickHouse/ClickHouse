@@ -491,6 +491,108 @@ TEST(ObjectStorageParallelListing, GapsOutsideSampledAlphabet)
     assertCompleteForAllParallelism(s3, "p/", expectedUnder(s3, "p/"));
 }
 
+namespace
+{
+
+/// Strict UTF-8 validation (no overlong forms, no surrogates, nothing above U+10FFFF).
+bool isValidUTF8(const std::string & s)
+{
+    size_t i = 0;
+    while (i < s.size())
+    {
+        const auto c = static_cast<unsigned char>(s[i]);
+        size_t len = 0;
+        unsigned char lo = 0x80;
+        unsigned char hi = 0xBF;
+        if (c < 0x80)
+            len = 1;
+        else if (c >= 0xC2 && c <= 0xDF)
+            len = 2;
+        else if (c >= 0xE0 && c <= 0xEF)
+        {
+            len = 3;
+            if (c == 0xE0)
+                lo = 0xA0;
+            else if (c == 0xED)
+                hi = 0x9F;
+        }
+        else if (c >= 0xF0 && c <= 0xF4)
+        {
+            len = 4;
+            if (c == 0xF0)
+                lo = 0x90;
+            else if (c == 0xF4)
+                hi = 0x8F;
+        }
+        else
+            return false;
+        if (i + len > s.size())
+            return false;
+        for (size_t j = 1; j < len; ++j)
+        {
+            const auto cc = static_cast<unsigned char>(s[i + j]);
+            if (cc < (j == 1 ? lo : 0x80) || cc > (j == 1 ? hi : 0xBF))
+                return false;
+        }
+        i += len;
+    }
+    return true;
+}
+
+}
+
+TEST(ObjectStorageParallelListing, KeyspaceSplitSendsValidUTF8StartAfter)
+{
+    /// Regression test: S3-compatible storages (e.g. OpenStack Swift) reject a `StartAfter` that is not valid
+    /// UTF-8. The flat keyspace split builds synthetic `StartAfter` values (the existence probe and the slice
+    /// boundaries) by appending or incrementing single bytes, which must never cut a multi-byte character or
+    /// produce a lone continuation byte. Cover names beginning with a non-ASCII character as well as
+    /// ASCII-leading names with a non-ASCII suffix, mixed with plain ASCII names so that splitting does happen.
+    auto fill = [](FakeS3 & s3)
+    {
+        for (size_t i = 0; i < 2000; ++i)
+            s3.add("p/" + hexName(i, 8) + ".csv");
+        for (const char * name : {"é", "ê", "ü", "я", "日本", "😀", "a\xC3\xA9", "b\xC3\xAA", "f\xE6\x97\xA5", "z\xF0\x9F\x98\x80"})
+            for (int j = 0; j < 3; ++j)
+                s3.add(fmt::format("p/{}{}.csv", name, j));
+        s3.add("p/\x7F" "del.csv");
+        s3.finalize();
+    };
+
+    for (size_t page_size : {1, 7, 50})
+    {
+        FakeS3 s3;
+        s3.page_size = page_size;
+        fill(s3);
+
+        std::atomic<size_t> invalid_start_after{0};
+        auto validated = [&invalid_start_after](auto base)
+        {
+            return [&invalid_start_after, base](
+                const std::string & prefix, const std::string & delimiter, const std::string & start_after, const std::string & token)
+            {
+                if (!isValidUTF8(start_after))
+                    invalid_start_after.fetch_add(1, std::memory_order_relaxed);
+                return base(prefix, delimiter, start_after, token);
+            };
+        };
+
+        for (size_t threads : {1, 4, 16})
+        {
+            s3.requests_with_start_after = 0;
+            ObjectStorageParallelListingIterator iterator(
+                "p/", threads, /* max_buffered_keys */ 256, validated(makeListLevel(s3)), validated(makeProbeLevel(s3)), descendAll,
+                /* allow_keyspace_split */ true);
+            auto got = drain(iterator);
+            std::sort(got.begin(), got.end());
+            EXPECT_EQ(got, expectedUnder(s3, "p/")) << "page_size=" << page_size << " threads=" << threads;
+            EXPECT_EQ(invalid_start_after.load(), 0u) << "page_size=" << page_size << " threads=" << threads;
+            /// The ASCII part of the directory is still split.
+            EXPECT_GT(s3.requests_with_start_after.load(), 0u) << "page_size=" << page_size << " threads=" << threads;
+        }
+    }
+}
+
 TEST(ObjectStorageParallelListing, SharedLongPrefixThenDiverge)
 {
     /// All keys share a long common prefix beyond the directory before diverging — the split position

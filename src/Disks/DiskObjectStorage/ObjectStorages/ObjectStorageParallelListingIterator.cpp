@@ -1,6 +1,7 @@
 #include <Disks/DiskObjectStorage/ObjectStorages/ObjectStorageParallelListingIterator.h>
 
 #include <Common/CurrentMetrics.h>
+#include <Common/StringUtils.h>
 #include <Common/ThreadGroupSwitcher.h>
 #include <Common/setThreadName.h>
 
@@ -452,6 +453,12 @@ std::vector<ObjectStorageParallelListingIterator::ListRange> ObjectStorageParall
     const size_t pos = range.split_pos;
     if (pos >= last_key.size())
         return result; /// Cannot form a boundary at this position; caller paginates instead.
+    /// The boundaries become `StartAfter` values of the sub-ranges, and S3-compatible storages may reject a
+    /// `StartAfter` that is not valid UTF-8. A boundary is the prefix of `last_key` up to the split position
+    /// followed by one byte, so it is valid UTF-8 only if that prefix ends on a character boundary (the byte
+    /// at the split position is ASCII) and the appended byte is ASCII itself.
+    if (!isASCII(last_key[pos]))
+        return result;
 
     /// Bytes shared by all keys up to the split position (taken from the last listed key).
     const std::string base = last_key.substr(0, pos);
@@ -468,7 +475,9 @@ std::vector<ObjectStorageParallelListingIterator::ListRange> ObjectStorageParall
     }
 
     std::vector<std::string> boundaries;
-    for (int v = 0; v < 256; ++v)
+    /// Only ASCII bytes form valid UTF-8 boundaries (see above). Keys whose byte at the split position is
+    /// not ASCII are still covered: they sort after every ASCII boundary and fall into the last slice.
+    for (int v = 0; v < 0x80; ++v)
     {
         if (!seen[v])
             continue;
@@ -546,8 +555,11 @@ bool ObjectStorageParallelListingIterator::splitWouldHelp(
     if (range.split_pos >= last_key.size())
         return false;
     const auto bucket_byte = static_cast<unsigned char>(last_key[range.split_pos]);
-    if (bucket_byte == 0xff)
-        return false; /// No higher bucket: everything left is in the current bucket.
+    /// The probe below is sent as `StartAfter`, which S3-compatible storages may reject unless it is valid
+    /// UTF-8. It is valid only if the byte at the split position is ASCII (so the prefix before it ends on a
+    /// character boundary) and its successor is ASCII too; otherwise do not split (paginate serially).
+    if (bucket_byte >= 0x7f)
+        return false;
 
     /// The smallest key of the *next* bucket; listing after it returns keys whose byte at the split
     /// position is greater than the current one (i.e. any data beyond the current bucket).
