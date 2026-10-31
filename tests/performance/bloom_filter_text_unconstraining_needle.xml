@@ -1,0 +1,44 @@
+<test>
+  <create_query>
+    CREATE TABLE t_bf_text_unconstraining
+    (
+        s String,
+        arr Array(String),
+        m Map(String, String),
+        INDEX idx_s s TYPE tokenbf_v1(32768, 3, 0) GRANULARITY 1,
+        INDEX idx_arr arr TYPE tokenbf_v1(32768, 3, 0) GRANULARITY 1,
+        INDEX idx_m mapKeys(m) TYPE ngrambf_v1(4, 32768, 3, 0) GRANULARITY 1
+    )
+    ENGINE = MergeTree
+    ORDER BY tuple()
+    SETTINGS index_granularity = 8192
+  </create_query>
+
+  <fill_query>
+    INSERT INTO t_bf_text_unconstraining
+    SELECT
+        concat('common ', 'medium' || intDiv(number, 1000), ' rare' || number),
+        ['common', 'medium' || intDiv(number, 1000), 'rare' || number],
+        map('K' || intDiv(number, 1000), 'V' || number)
+    FROM numbers(8000000)
+  </fill_query>
+  <fill_query>OPTIMIZE TABLE t_bf_text_unconstraining FINAL</fill_query>
+
+  <!-- Unconstraining needles: a single unanchored token contributes no bits to a tokenbf_v1 needle
+       filter, and a needle shorter than the ngram length contributes none to an ngrambf_v1 one. -->
+  <query>SELECT count() FROM t_bf_text_unconstraining WHERE multiSearchAny(s, ['zzabsent1', 'zzabsent2', 'zzabsent3', 'zzabsent4', 'zzabsent5', 'zzabsent6', 'zzabsent7', 'zzabsent8', 'zzabsent9', 'zzabsent10', 'zzabsent11', 'zzabsent12', 'zzabsent13', 'zzabsent14', 'zzabsent15', 'zzabsent16', 'zzabsent17', 'zzabsent18', 'zzabsent19', 'zzabsent20', 'zzabsent21', 'zzabsent22', 'zzabsent23', 'zzabsent24', 'zzabsent25', 'zzabsent26', 'zzabsent27', 'zzabsent28', 'zzabsent29', 'zzabsent30', 'zzabsent31', 'zzabsent32'])</query>
+  <query>SELECT count() FROM t_bf_text_unconstraining WHERE multiSearchAny(s, ['aa medium500 bb', 'aa medium501 bb', 'aa medium502 bb', 'aa medium503 bb', 'aa medium504 bb', 'aa medium505 bb', 'aa medium506 bb', 'aa medium507 bb', 'aa medium508 bb', 'aa medium509 bb', 'aa medium510 bb', 'aa medium511 bb', 'aa medium512 bb', 'aa medium513 bb', 'aa medium514 bb', 'aa medium515 bb', 'aa medium516 bb', 'aa medium517 bb', 'aa medium518 bb', 'aa medium519 bb', 'aa medium520 bb', 'aa medium521 bb', 'aa medium522 bb', 'aa medium523 bb', 'aa medium524 bb', 'aa medium525 bb', 'aa medium526 bb', 'aa medium527 bb', 'aa medium528 bb', 'aa medium529 bb', 'aa medium530 bb', 'zzabsent'])</query>
+  <query>SELECT count() FROM t_bf_text_unconstraining WHERE match(s, 'rare4242')</query>
+  <query>SELECT count() FROM t_bf_text_unconstraining WHERE s LIKE '%rare4242%'</query>
+  <query>SELECT count() FROM t_bf_text_unconstraining WHERE m['K0'] = 'V0'</query>
+  <query>SELECT count() FROM t_bf_text_unconstraining WHERE hasAll(arr, ['', 'rare4242'])</query>
+
+  <!-- Constraining needles: the granule probes must still run, so these shapes must not regress. -->
+  <query>SELECT count() FROM t_bf_text_unconstraining WHERE multiSearchAny(s, ['aa medium500 bb', 'aa medium501 bb', 'aa medium502 bb', 'aa medium503 bb', 'aa medium504 bb', 'aa medium505 bb', 'aa medium506 bb', 'aa medium507 bb', 'aa medium508 bb', 'aa medium509 bb', 'aa medium510 bb', 'aa medium511 bb', 'aa medium512 bb', 'aa medium513 bb', 'aa medium514 bb', 'aa medium515 bb', 'aa medium516 bb', 'aa medium517 bb', 'aa medium518 bb', 'aa medium519 bb', 'aa medium520 bb', 'aa medium521 bb', 'aa medium522 bb', 'aa medium523 bb', 'aa medium524 bb', 'aa medium525 bb', 'aa medium526 bb', 'aa medium527 bb', 'aa medium528 bb', 'aa medium529 bb', 'aa medium530 bb', 'aa medium531 bb'])</query>
+  <query>SELECT count() FROM t_bf_text_unconstraining WHERE s IN ('common medium500 rare500000', 'common medium501 rare501000', 'common medium502 rare502000', 'common medium503 rare503000', 'common medium504 rare504000', 'common medium505 rare505000', 'common medium506 rare506000', 'common medium507 rare507000', 'common medium508 rare508000', 'common medium509 rare509000', 'common medium510 rare510000', 'common medium511 rare511000', 'common medium512 rare512000', 'common medium513 rare513000', 'common medium514 rare514000', 'common medium515 rare515000', 'common medium516 rare516000', 'common medium517 rare517000', 'common medium518 rare518000', 'common medium519 rare519000', 'common medium520 rare520000', 'common medium521 rare521000', 'common medium522 rare522000', 'common medium523 rare523000', 'common medium524 rare524000', 'common medium525 rare525000', 'common medium526 rare526000', 'common medium527 rare527000', 'common medium528 rare528000', 'common medium529 rare529000', 'common medium530 rare530000', 'common medium531 rare531000')</query>
+  <query>SELECT count() FROM t_bf_text_unconstraining WHERE hasAny(arr, ['rare1', 'rare2', 'rare3', 'rare4', 'rare5', 'rare6', 'rare7', 'rare8', 'rare9', 'rare10', 'rare11', 'rare12', 'rare13', 'rare14', 'rare15', 'rare16', 'rare17', 'rare18', 'rare19', 'rare20', 'rare21', 'rare22', 'rare23', 'rare24', 'rare25', 'rare26', 'rare27', 'rare28', 'rare29', 'rare30', 'rare31', 'rare32'])</query>
+  <query>SELECT count() FROM t_bf_text_unconstraining WHERE hasToken(s, 'rare4242')</query>
+  <query>SELECT count() FROM t_bf_text_unconstraining WHERE m['K4242'] = 'V4242000'</query>
+
+  <drop_query>DROP TABLE IF EXISTS t_bf_text_unconstraining</drop_query>
+</test>
