@@ -1,0 +1,16 @@
+[[],[],[0]]
+[[],[0],[1]]
+[[],[0,1],[2]]
+[[],[0,1,2],[3]]
+[([],'a'),([0],'b')]
+[([0],'a'),([1],'b')]
+[([0,1],'a'),([2],'b')]
+Array(Array(Decimal(9, 2)))
+UInt8	0
+UInt64	0
+Decimal	0
+FixedString	0
+String	0
+Nullable	0
+Array	0
+Const	0
