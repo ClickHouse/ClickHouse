@@ -4,6 +4,7 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <Columns/ColumnConst.h>
+#include <Columns/ColumnFunction.h>
 
 
 namespace DB
@@ -43,6 +44,17 @@ public:
     bool isVariadic() const override { return true; }
     bool useDefaultImplementationForConstants() const override { return false; }
     bool useDefaultImplementationForNulls() const override { return false; }
+    bool isShortCircuit(ShortCircuitSettings & settings, size_t number_of_arguments) const override
+    {
+        /// The expression and every WHEN value are needed to choose a branch. THEN values and
+        /// ELSE can be evaluated lazily by the `multiIf` path in `executeImpl`.
+        settings.arguments_with_disabled_lazy_execution.insert(0);
+        for (size_t i = 1; i + 1 < number_of_arguments; i += 2)
+            settings.arguments_with_disabled_lazy_execution.insert(i);
+        settings.enable_lazy_execution_for_common_descendants_of_arguments = false;
+        settings.force_enable_lazy_execution = false;
+        return true;
+    }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
     size_t getNumberOfArguments() const override { return 0; }
     String getName() const override { return name; }
@@ -157,7 +169,9 @@ public:
         /// - It requires a common supertype for all WHEN values and all THEN values.
         /// - It doesn't support types larger than 8 bytes (e.g. Int128).
         /// When `transform` is not applicable, we fall through to the `multiIf` path.
-        if (all_when_then_values_constant)
+        /// `transform` evaluates its default argument eagerly. Keep a lazy ELSE result on the
+        /// `multiIf` path, which applies the row mask before reducing a `ColumnFunction`.
+        if (all_when_then_values_constant && !checkAndGetShortCircuitArgument(args.back().column))
         {
             ColumnsWithTypeAndName src_array_elems;
             DataTypes src_array_types;
