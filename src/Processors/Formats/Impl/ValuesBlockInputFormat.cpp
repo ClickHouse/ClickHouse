@@ -466,24 +466,43 @@ namespace
         }
     }
 
-    /// Whether a value is NULL or has a NULL element at any depth.
-    bool hasNullElement(const Field & value)
+    /// Whether a value has a NULL at any depth in a place where its type cannot hold one.
+    bool hasNullThatTypeCannotHold(const Field & value, const IDataType & data_type)
     {
         checkStackSize();
 
-        switch (value.getType())
+        if (value.isNull())
+            return !canContainNull(data_type);
+
+        const auto type = removeNullable(removeLowCardinality(data_type.getPtr()));
+
+        if (const auto * type_array = typeid_cast<const DataTypeArray *>(type.get()); type_array && value.getType() == Field::Types::Array)
         {
-            case Field::Types::Null:
-                return true;
-            case Field::Types::Array:
-                return std::ranges::any_of(value.safeGet<Array>(), hasNullElement);
-            case Field::Types::Tuple:
-                return std::ranges::any_of(value.safeGet<Tuple>(), hasNullElement);
-            case Field::Types::Map:
-                return std::ranges::any_of(value.safeGet<Map>(), hasNullElement);
-            default:
-                return false;
+            const auto & element_type = *type_array->getNestedType();
+            return std::ranges::any_of(value.safeGet<Array>(), [&](const Field & element) { return hasNullThatTypeCannotHold(element, element_type); });
         }
+
+        if (const auto * type_tuple = typeid_cast<const DataTypeTuple *>(type.get()); type_tuple && value.getType() == Field::Types::Tuple)
+        {
+            const auto & tuple = value.safeGet<Tuple>();
+            const auto & element_types = type_tuple->getElements();
+            for (size_t i = 0; i < std::min(tuple.size(), element_types.size()); ++i)
+                if (hasNullThatTypeCannotHold(tuple[i], *element_types[i]))
+                    return true;
+            return false;
+        }
+
+        if (const auto * type_map = typeid_cast<const DataTypeMap *>(type.get()); type_map && value.getType() == Field::Types::Map)
+        {
+            return std::ranges::any_of(value.safeGet<Map>(), [&](const Field & entry)
+            {
+                const auto & key_and_value = entry.safeGet<Tuple>();
+                return hasNullThatTypeCannotHold(key_and_value[0], *type_map->getKeyType())
+                    || hasNullThatTypeCannotHold(key_and_value[1], *type_map->getValueType());
+            });
+        }
+
+        return false;
     }
 }
 
@@ -699,9 +718,11 @@ bool ValuesBlockInputFormat::parseExpression(IColumn & column, size_t column_idx
 
     /// A value of a composite type with an element that does not fit, e.g. a `Map` with a negative value for `UInt64`, is converted to NULL.
     /// It is not a NULL value: inserting NULL or the default instead would silently lose the whole value, so it is rejected as by `values`.
-    /// A NULL element that the type cannot hold is reported as a NULL below (with `input_format_null_as_default` it is replaced above).
+    /// A NULL element that the type cannot hold is reported as a NULL below (with `input_format_null_as_default` it is replaced above),
+    /// but a NULL in a `Nullable` element is valid and does not explain the conversion failure.
     const auto nested_type = removeNullable(removeLowCardinality(type.getPtr()));
-    if (value.isNull() && !hasNullElement(expression_value) && (isArray(nested_type) || isMap(nested_type) || isTuple(nested_type)))
+    if (value.isNull() && !expression_value.isNull() && !hasNullThatTypeCannotHold(expression_value, type)
+        && (isArray(nested_type) || isMap(nested_type) || isTuple(nested_type)))
         throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "Cannot convert value '{}' from {}: it cannot be represented as {}",
                         fieldToString(expression_value), value_raw.second->getName(), type.getName());
 

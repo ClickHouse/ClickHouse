@@ -32,3 +32,30 @@ INSERT INTO t_values_composite_no_templates VALUES (6, '[1]', '(1,''x'')', NULL)
 
 SELECT * FROM t_values_composite_no_templates ORDER BY id;
 DROP TABLE t_values_composite_no_templates;
+
+-- A valid NULL in a `Nullable` element does not hide an element that does not fit.
+DROP TABLE IF EXISTS t_values_composite_nullable_element;
+CREATE TABLE t_values_composite_nullable_element
+(
+    id UInt8,
+    m Map(String, Tuple(Nullable(UInt8), UInt64, String)),
+    nt Nullable(Tuple(Nullable(UInt8), UInt64)),
+    a Array(Tuple(Nullable(UInt8), UInt64))
+) ENGINE = Memory;
+
+SET input_format_null_as_default = 0;
+
+INSERT INTO t_values_composite_nullable_element VALUES (1, map('a', tuple(NULL, 1, 'x')), tuple(NULL, 1), [tuple(NULL, 1)]);
+INSERT INTO t_values_composite_nullable_element VALUES (2, map('a', tuple(NULL, -1, 'x')), tuple(1, 1), [tuple(1, 1)]); -- { error ARGUMENT_OUT_OF_BOUND }
+INSERT INTO t_values_composite_nullable_element VALUES (3, map('a', tuple(1, 1, 'x')), tuple(NULL, -1), [tuple(1, 1)]); -- { error ARGUMENT_OUT_OF_BOUND }
+INSERT INTO t_values_composite_nullable_element VALUES (4, map('a', tuple(1, 1, 'x')), tuple(1, 1), [tuple(NULL, -1)]); -- { error ARGUMENT_OUT_OF_BOUND }
+
+SELECT * FROM t_values_composite_nullable_element ORDER BY id;
+DROP TABLE t_values_composite_nullable_element;
+
+-- An element that does not fit for another reason than an integer overflow is rejected the same way.
+DROP TABLE IF EXISTS t_values_composite_date;
+CREATE TABLE t_values_composite_date (a Array(Date)) ENGINE = Memory;
+INSERT INTO t_values_composite_date VALUES ([toDate32('2300-01-01')]); -- { error ARGUMENT_OUT_OF_BOUND }
+SELECT count() FROM t_values_composite_date;
+DROP TABLE t_values_composite_date;
