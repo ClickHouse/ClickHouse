@@ -157,6 +157,8 @@ CIDB_TEST_CASES_RESULT_NAME = "Tests"
 
 RAW_QUERY_METRICS_TABLE = "query_metric_runs_v1"
 HISTORICAL_DATA_TABLE = "query_metrics_v2"
+# The public read-only endpoint the job reads the history in `HISTORICAL_DATA_TABLE` from.
+PLAY_CIDB_URL = "https://play.clickhouse.com?user=play"
 
 # --- Aggregate report tables on the play cluster --------------------------
 # These capture everything that used to only live in the static HTML report
@@ -196,10 +198,16 @@ DASHBOARD_INPUT_TABLES = (RAW_QUERY_METRICS_TABLE, HISTORICAL_DATA_TABLE, TEST_T
 # this shard's rows, counted from the start of the uploads.
 DASHBOARD_INGEST_TIMEOUT_SEC = 600
 DASHBOARD_POLL_INTERVAL_SEC = 15
+# Without a dashboard verdict, a PR shard is not failed on a slower query that at least this many other PRs
+# had at this fraction of its difference or more, on the same arch within this many days.
+FALLBACK_SHARED_MIN_OTHER_PRS = 3
+FALLBACK_SHARED_MIN_FRACTION = 0.8
+FALLBACK_SHARED_DAYS = 7
 # A few seconds after praktika started the job's timeout: the time the job has left is counted from here.
 JOB_START = time.monotonic()
 # Kept free at the end of the job: a dashboard poll in flight at the deadline, the end of a cut
-# confirmation rerun, the uploads' minimum below, packing the logs and writing the result.
+# confirmation rerun, the fallback's CIDB lookup, the uploads' minimum below, packing the logs and
+# writing the result.
 JOB_END_RESERVE_SEC = 300
 # The uploads get at least this long, however late the job is.
 DASHBOARD_MIN_UPLOAD_SEC = 60
@@ -2051,19 +2059,98 @@ def perf_dashboard_gate(info, arch, metrics_tsv_path, deadline, missing_inputs):
     return [row for row in rows if row["tier"] in DASHBOARD_BLOCKING_TIERS]
 
 
-def judge_without_dashboard(summary, error):
+_TSV_UINT_RE = re.compile(r"[0-9]+")
+_TSV_FLOAT_RE = re.compile(r"-?[0-9]+(\.[0-9]+)?(e[-+]?[0-9]+)?")
+
+
+def read_slower_queries(path):
+    """The rows of `report/changed-perf.tsv` that `report.py` counts as slower, as
+    {(test, query_index): (query_display_name, diff)} with the strings escaped as in the file.
+    None when the file is missing or a row does not parse."""
+    if not os.path.isfile(path):
+        return None
+    slower = {}
+    with open(path, "r", encoding="utf-8", newline="") as f:
+        lines = f.read().split("\n")
+    for line in filter(None, lines):
+        fields = line.split("\t")
+        if (
+            len(fields) != 9
+            or not _TSV_UINT_RE.fullmatch(fields[5])
+            or not _TSV_UINT_RE.fullmatch(fields[7])
+            or not _TSV_FLOAT_RE.fullmatch(fields[3])
+            or not math.isfinite(float(fields[3]))
+        ):
+            print(f"WARNING: unexpected row in [{path}]: {line[:200]!r}")
+            return None
+        diff = float(fields[3])
+        if int(fields[5]) and diff >= 0:
+            slower[(fields[6], int(fields[7]))] = (fields[8], diff)
+    return slower
+
+
+def shared_slowdowns(slower, arch, pr_number):
+    """The keys of `slower` (see `read_slower_queries`) that at least `FALLBACK_SHARED_MIN_OTHER_PRS` other PRs
+    had with the same display name, at `FALLBACK_SHARED_MIN_FRACTION` of the difference or more, on `arch` within
+    `FALLBACK_SHARED_DAYS` days. None when CIDB did not answer or the answer does not parse."""
+    if not slower:
+        return set()
+    terms = " OR ".join(
+        f"(test = '{escape_sql_string(test)}' AND query_index = {query_index}"
+        f" AND diff >= {FALLBACK_SHARED_MIN_FRACTION * diff!r})"
+        for (test, query_index), (_, diff) in slower.items()
+    )
+    query = f"""\
+SELECT test, query_index, query_display_name, uniqExact(pr_number)
+FROM {HISTORICAL_DATA_TABLE}
+WHERE event_date >= today() - {FALLBACK_SHARED_DAYS + 1}
+    AND event_time >= now() - INTERVAL {FALLBACK_SHARED_DAYS} DAY
+    AND metric = '{DASHBOARD_GATE_METRIC}' AND arch = '{escape_sql_string(arch)}' AND pr_number != {int(pr_number)}
+    AND workflow_name IN ('PR', 'MasterCI')
+    AND ({terms})
+GROUP BY test, query_index, query_display_name
+FORMAT TSV"""
+    answer = CIDBCluster(url=PLAY_CIDB_URL, user="", pwd="").do_select_query(query, retries=1, timeout=20)
+    if answer is None:
+        return None
+    other_prs = {}
+    for line in filter(None, answer.split("\n")):
+        fields = line.split("\t")
+        if len(fields) != 4 or not _TSV_UINT_RE.fullmatch(fields[1]) or not _TSV_UINT_RE.fullmatch(fields[3]):
+            print(f"WARNING: unexpected line in the CIDB answer: {line[:200]!r}")
+            return None
+        other_prs[(fields[0], int(fields[1]), fields[2])] = int(fields[3])
+    return {
+        key
+        for key, (display_name, _) in slower.items()
+        if other_prs.get((*key, display_name), 0) >= FALLBACK_SHARED_MIN_OTHER_PRS
+    }
+
+
+def judge_without_dashboard(summary, error, slower=None, shared=None):
     """Status and message suffix for a `master_head` shard whose dashboard verdict is unavailable.
 
     The dashboard replaced a gate that failed only above 10 slower queries and so passed a single
-    large regression; without the dashboard, any slower query of this shard's report fails."""
+    large regression; without the dashboard, any slower query of this shard's report fails, except
+    those in `shared` (`shared_slowdowns` of `slower`, given for a PR shard)."""
     suffix = f"; performance dashboard verdict unavailable: {error}"
     if not is_perf_summary_message(summary.lower()):
         return Result.Status.FAIL, suffix
-    slower = parse_slower_count(summary.lower())
-    return (
-        Result.Status.FAIL if slower else Result.Status.OK,
-        f"{suffix}; judged by this shard's report instead: {slower} slower",
-    )
+    count = parse_slower_count(summary.lower())
+    suffix += f"; judged by this shard's report instead: {count} slower"
+    if not count:
+        return Result.Status.OK, suffix
+    if slower is None or len(slower) != count:
+        return Result.Status.FAIL, suffix
+    if shared is None:
+        return Result.Status.FAIL, f"{suffix}; the CIDB lookup of other PRs' slowdowns failed"
+    if shared:
+        suffix += (
+            f"; not counted, about as slow in {FALLBACK_SHARED_MIN_OTHER_PRS} or more other PRs on this arch"
+            f" within {FALLBACK_SHARED_DAYS} days: "
+            + ", ".join(f"{test} #{query_index}" for test, query_index in sorted(shared))
+        )
+    return (Result.Status.FAIL if any(key not in shared for key in slower) else Result.Status.OK), suffix
 
 
 def confirm_dashboard_regressions(regressions, pr_number, workdir, end=None):
@@ -3025,9 +3112,7 @@ def main():
     if res and not info.is_local_run:
 
         def prepare_historical_data():
-            cidb = CIDBCluster(
-                url="https://play.clickhouse.com?user=play", user="", pwd=""
-            )
+            cidb = CIDBCluster(url=PLAY_CIDB_URL, user="", pwd="")
             if not cidb.is_ready():
                 print(
                     "WARNING: CIDB is not ready, will proceed without historical thresholds"
@@ -3639,7 +3724,12 @@ def main():
                     )
                 except PerfDashboardUnavailable as e:
                     print(f"ERROR: {e}")
-                    status, suffix = judge_without_dashboard(message, e)
+                    slower = shared = None
+                    if info.pr_number > 0 and parse_slower_count(message.lower()):
+                        slower = read_slower_queries(f"{perf_wd}/report/changed-perf.tsv")
+                        if slower is not None:
+                            shared = shared_slowdowns(slower, get_perf_arch(), info.pr_number)
+                    status, suffix = judge_without_dashboard(message, e, slower, shared)
                     message += suffix
                 except PerfDashboardError as e:
                     print(f"ERROR: {e}")
