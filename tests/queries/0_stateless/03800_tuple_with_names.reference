@@ -1,0 +1,19 @@
+(1,'hello')	Tuple(\n    x UInt8,\n    y String)	1	hello
+(42,3.14,'world')	Tuple(\n    a UInt8,\n    b Float64,\n    c String)	42	3.14	world
+('2023-01-01','2024-01-01 01:01:01',[1,2,3],{'key':'value'})	Tuple(\n    d Date,\n    e DateTime,\n    f Array(UInt8),\n    g Map(String, String))
+(2,4)	Tuple(\n    result1 UInt16,\n    result2 UInt16)
+((1,2),3)	Tuple(\n    outer Tuple(\n        inner1 UInt8,\n        inner2 UInt8),\n    outer_val UInt8)
+[(1,'a'),(2,'b')]	Array(Tuple(\n    id UInt8,\n    name String))
+(10,20,30)	10	10	20	20	30	30
+4
+[2,4]
+1	2
+(100,200,300)	Tuple(\n    n1 UInt8,\n    n2 UInt8,\n    n3 UInt16)
+('hello','world','foo','bar')	Tuple(\n    greeting String,\n    place String,\n    g1 String,\n    g2 String)
+(1.5,2.5,3.5)	Tuple(\n    f1 Float64,\n    f2 Float64,\n    f3 Float64)
+(true,false,1)	Tuple(\n    b1 Bool,\n    b2 Bool,\n    b3 UInt8)
+(1,'hello')	Tuple(\n    n1 Nullable(UInt8),\n    s1 Nullable(String))
+('','value')	Tuple(\n    empty String,\n    filled String)
+(255,1000,1000000)	Tuple(\n    u8 UInt8,\n    i32 Int32,\n    i64 Int64)
+['a','b','c']
+()
