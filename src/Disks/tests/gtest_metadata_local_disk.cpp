@@ -4,6 +4,7 @@
 #include <filesystem>
 #include <memory>
 #include <mutex>
+#include <set>
 #include <Core/ServerUUID.h>
 #include <Disks/DiskLocal.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/Local/MetadataStorageFromDisk.h>
@@ -14,6 +15,7 @@
 #include <Common/ThreadStatus.h>
 #include <Common/getRandomASCIIString.h>
 #include <Common/Exception.h>
+#include <Common/LockMemoryExceptionInThread.h>
 #include <Interpreters/Context.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/WriteBufferFromFile.h>
@@ -23,6 +25,94 @@
 
 namespace fs = std::filesystem;
 
+namespace DB::ErrorCodes
+{
+    extern const int FAULT_INJECTED;
+    extern const int MEMORY_LIMIT_EXCEEDED;
+}
+
+/// Throws on the chosen calls of `writeFile`, `prepareRead`, `moveDirectory` and `getLastModified`, numbered from 1 since the last `arm`.
+class FaultInjectingDiskLocal : public DB::DiskLocal
+{
+public:
+    struct Faults
+    {
+        std::set<size_t> write_file = {};
+        std::set<size_t> prepare_read = {};
+        std::set<size_t> move_directory = {};
+        std::set<size_t> get_last_modified = {};
+        /// Throw `MEMORY_LIMIT_EXCEEDED`, and only where the memory tracker of a query would throw it.
+        bool memory_limit = false;
+    };
+
+    using DB::DiskLocal::DiskLocal;
+
+    void arm(Faults faults_)
+    {
+        faults = std::move(faults_);
+        write_file_calls = 0;
+        prepare_read_calls = 0;
+        move_directory_calls = 0;
+        get_last_modified_calls = 0;
+        fired_faults = 0;
+    }
+
+    void disarm() { arm({}); }
+
+    size_t firedFaults() const { return fired_faults; }
+
+    std::unique_ptr<DB::WriteBufferFromFileBase> writeFile(
+        const std::string & path, size_t buf_size, DB::WriteMode mode, const DB::WriteSettings & settings) override
+    {
+        injectFault(faults.write_file, write_file_calls, "writeFile", path);
+        return DB::DiskLocal::writeFile(path, buf_size, mode, settings);
+    }
+
+    void prepareRead(const std::string & path, const DB::ReadSettings & settings, std::optional<size_t> read_hint, DB::ReadPipeline & pipeline) const override
+    {
+        injectFault(faults.prepare_read, prepare_read_calls, "prepareRead", path);
+        DB::DiskLocal::prepareRead(path, settings, read_hint, pipeline);
+    }
+
+    void moveDirectory(const std::string & from_path, const std::string & to_path) override
+    {
+        injectFault(faults.move_directory, move_directory_calls, "moveDirectory", from_path);
+        DB::DiskLocal::moveDirectory(from_path, to_path);
+    }
+
+    Poco::Timestamp getLastModified(const std::string & path) const override
+    {
+        injectFault(faults.get_last_modified, get_last_modified_calls, "getLastModified", path);
+        return DB::DiskLocal::getLastModified(path);
+    }
+
+private:
+    void injectFault(const std::set<size_t> & armed, size_t & calls, std::string_view method, const std::string & path) const
+    {
+        if (!armed.contains(++calls))
+            return;
+
+        if (faults.memory_limit)
+        {
+            if (LockMemoryExceptionInThread::isBlocked(VariableContext::Process, /*fault_injection=*/true) || std::uncaught_exceptions())
+                return;
+
+            ++fired_faults;
+            throw DB::Exception(DB::ErrorCodes::MEMORY_LIMIT_EXCEEDED, "Injected memory limit in {} #{} of {}", method, calls, path);
+        }
+
+        ++fired_faults;
+        throw DB::Exception(DB::ErrorCodes::FAULT_INJECTED, "Injected fault in {} #{} of {}", method, calls, path);
+    }
+
+    Faults faults;
+    size_t write_file_calls = 0;
+    mutable size_t prepare_read_calls = 0;
+    size_t move_directory_calls = 0;
+    mutable size_t get_last_modified_calls = 0;
+    mutable size_t fired_faults = 0;
+};
+
 class MetadataLocalDiskTest : public testing::Test
 {
 public:
@@ -31,11 +121,12 @@ public:
         DB::ServerUUID::setRandomForUnitTests();
     }
 
+    template <typename Disk = DB::DiskLocal>
     std::shared_ptr<DB::IMetadataStorage> getMetadataStorage(const std::string & path)
     {
         std::unique_lock<std::mutex> lock(active_metadatas_mutex);
         if (!active_metadatas[path])
-            active_metadatas[path] = createMetadataStorage(path);
+            active_metadatas[path] = createMetadataStorage<Disk>(path);
         return active_metadatas[path];
     }
 
@@ -44,6 +135,14 @@ public:
         std::unique_lock<std::mutex> lock(active_metadatas_mutex);
         chassert(active_disks.contains(path));
         return active_disks[path];
+    }
+
+    std::pair<std::shared_ptr<DB::IMetadataStorage>, std::shared_ptr<FaultInjectingDiskLocal>> getFaultInjectingMetadataStorage(const std::string & path)
+    {
+        auto metadata = getMetadataStorage<FaultInjectingDiskLocal>(path);
+        auto disk = std::dynamic_pointer_cast<FaultInjectingDiskLocal>(getMetadataDisk(path));
+        chassert(disk);
+        return {metadata, disk};
     }
 
     void TearDown() override
@@ -56,12 +155,13 @@ public:
     }
 
 private:
+    template <typename Disk>
     std::shared_ptr<DB::IMetadataStorage> createMetadataStorage(const std::string & path)
     {
         const auto local_disk_metadata_dir = "./test-metadata-dir." + DB::getRandomASCIIString(6);
         fs::create_directories(local_disk_metadata_dir);
 
-        auto disk = active_disks[path] = std::make_shared<DB::DiskLocal>("test-metadata", local_disk_metadata_dir);
+        auto disk = active_disks[path] = std::make_shared<Disk>("test-metadata", local_disk_metadata_dir);
         auto key_generator = DB::createObjectStorageKeyGeneratorByTemplate("[a-z]{32}");
         auto metadata = active_metadatas[path] = std::make_shared<DB::MetadataStorageFromDisk>(disk, path, key_generator, /*persist_removal_queue_=*/true, /*removal_log_compaction_threshold_=*/1000);
 
@@ -1462,5 +1562,335 @@ TEST_F(MetadataLocalDiskTest, TestNonExistingObjectsInTransaction)
                 transaction->removeRecursive("non-existing/non-existing", /*should_remove_objects=*/nullptr);
                 transaction->commit(DB::NoCommitOptions{});
             });
+    }
+}
+
+/// Creates `part/<name>` holding the blob `key`, hard-linked to `detached/<name>`, like a part and its detached copy.
+static void createPartWithDetachedCopy(const DB::MetadataStoragePtr & metadata, const std::vector<std::pair<std::string, std::string>> & files)
+{
+    auto tx = metadata->createTransaction();
+    tx->createDirectory("part");
+    tx->createDirectory("detached");
+    for (const auto & [name, key] : files)
+    {
+        tx->createMetadataFile("part/" + name, {DB::StoredObject(key, "part/" + name, 1)});
+        tx->createHardLink("part/" + name, "detached/" + name);
+    }
+    tx->commit(DB::NoCommitOptions{});
+}
+
+/// The memory limit cannot stop a rollback, or a file shared with another part keeps a decremented count.
+TEST_F(MetadataLocalDiskTest, TestRollbackIsNotStoppedByMemoryLimit)
+{
+    auto [metadata, disk] = getFaultInjectingMetadataStorage("/TestRollbackIsNotStoppedByMemoryLimit");
+    createPartWithDetachedCopy(metadata, {{"f", "kf"}});
+
+    /// Write #1 decrements the count of "detached/f", #2 fails the transaction, #3 restores the count in the rollback.
+    disk->arm({.write_file = {3, 4, 5, 6, 7}, .memory_limit = true});
+    {
+        auto tx = metadata->createTransaction();
+        tx->removeRecursive("detached", /*should_remove_objects=*/nullptr);
+        tx->createMetadataFile("non-existing/fail-tx", /*objects=*/{});
+        EXPECT_THROW(tx->commit(DB::NoCommitOptions{}), std::exception);
+    }
+    EXPECT_EQ(disk->firedFaults(), 0);
+    disk->disarm();
+
+    EXPECT_EQ(metadata->getHardlinkCount("part/f"), 1);
+
+    {
+        auto tx = metadata->createTransaction();
+        tx->removeRecursive("part", /*should_remove_objects=*/nullptr);
+        tx->commit(DB::NoCommitOptions{});
+        verifyBlobsToRemove(metadata, {});
+    }
+    {
+        auto tx = metadata->createTransaction();
+        tx->removeRecursive("detached", /*should_remove_objects=*/nullptr);
+        tx->commit(DB::NoCommitOptions{});
+        verifyBlobsToRemove(metadata, {"kf"});
+    }
+}
+
+/// Rolling back a recursive removal restores the count of a file that has two links inside the removed directory.
+TEST_F(MetadataLocalDiskTest, TestRemoveRecursiveRollbackRestoresSharedInodeCount)
+{
+    auto metadata = getMetadataStorage("/TestRemoveRecursiveRollbackRestoresSharedInodeCount");
+
+    {
+        auto tx = metadata->createTransaction();
+        tx->createDirectory("root");
+        tx->createDirectory("outside");
+        tx->createMetadataFile("root/A", {DB::StoredObject("k", "root/A", 1)});
+        tx->createHardLink("root/A", "root/B");
+        tx->createHardLink("root/A", "outside/C");
+        tx->commit(DB::NoCommitOptions{});
+    }
+
+    {
+        auto tx = metadata->createTransaction();
+        tx->removeRecursive("root", /*should_remove_objects=*/nullptr);
+        tx->createMetadataFile("non-existing/fail-tx", /*objects=*/{});
+        EXPECT_THROW(tx->commit(DB::NoCommitOptions{}), std::exception);
+    }
+
+    EXPECT_EQ(metadata->getHardlinkCount("outside/C"), 2);
+
+    {
+        auto tx = metadata->createTransaction();
+        tx->removeRecursive("root", /*should_remove_objects=*/nullptr);
+        tx->commit(DB::NoCommitOptions{});
+        verifyBlobsToRemove(metadata, {});
+    }
+    {
+        auto tx = metadata->createTransaction();
+        tx->unlinkFile("outside/C", /*if_exists=*/false, /*should_remove_objects=*/true);
+        tx->commit(DB::NoCommitOptions{});
+        verifyBlobsToRemove(metadata, {"k"});
+    }
+}
+
+/// When reading the source file fails while creating a hard link, the rollback keeps the source file.
+TEST_F(MetadataLocalDiskTest, TestHardlinkRollbackKeepsSourceWhenReadFails)
+{
+    auto [metadata, disk] = getFaultInjectingMetadataStorage("/TestHardlinkRollbackKeepsSourceWhenReadFails");
+
+    {
+        auto tx = metadata->createTransaction();
+        tx->createMetadataFile("a", {DB::StoredObject("ka", "a", 1)});
+        tx->commit(DB::NoCommitOptions{});
+    }
+
+    /// Read #1 parses "a", #2 reads its previous content before writing the count.
+    disk->arm({.prepare_read = {2}});
+    {
+        auto tx = metadata->createTransaction();
+        tx->createHardLink("a", "b");
+        EXPECT_THROW(tx->commit(DB::NoCommitOptions{}), std::exception);
+    }
+    EXPECT_EQ(disk->firedFaults(), 1);
+    disk->disarm();
+
+    ASSERT_TRUE(metadata->existsFile("a"));
+    EXPECT_FALSE(metadata->existsFile("b"));
+    EXPECT_EQ(metadata->getHardlinkCount("a"), 0);
+
+    {
+        auto tx = metadata->createTransaction();
+        tx->unlinkFile("a", /*if_exists=*/false, /*should_remove_objects=*/true);
+        tx->commit(DB::NoCommitOptions{});
+        verifyBlobsToRemove(metadata, {"ka"});
+    }
+}
+
+/// An operation that failed before changing anything is skipped by the rollback, which then restores the operations before it.
+TEST_F(MetadataLocalDiskTest, TestRollbackUndoesOnlyWhatAFailedOperationDid)
+{
+    using Metadata = DB::MetadataStoragePtr;
+    using Transaction = DB::IMetadataTransaction;
+
+    struct Case
+    {
+        std::string name = {};
+        std::function<void(const Metadata &)> setup = {};
+        FaultInjectingDiskLocal::Faults faults = {};
+        std::function<void(Transaction &)> operation = {};
+        std::function<void(const Metadata &)> check = {};
+    };
+
+    auto create_files = [](const Metadata & metadata, const std::vector<std::string> & paths)
+    {
+        auto tx = metadata->createTransaction();
+        for (const auto & path : paths)
+            tx->createMetadataFile(path, {DB::StoredObject("k" + path, path, 1)});
+        tx->commit(DB::NoCommitOptions{});
+    };
+
+    auto expect_blob = [](const Metadata & metadata, const std::string & path)
+    {
+        ASSERT_TRUE(metadata->existsFile(path));
+        EXPECT_EQ(metadata->getStorageObjects(path).front().remote_path, "k" + path);
+    };
+
+    const auto old_time = Poco::Timestamp::fromEpochTime(1000000000);
+
+    const std::vector<Case> cases =
+    {
+        {
+            .name = "move a file onto an existing one",
+            .setup = [&](const Metadata & metadata) { create_files(metadata, {"x", "y"}); },
+            .operation = [](Transaction & tx) { tx.moveFile("x", "y"); },
+            .check = [&](const Metadata & metadata) { expect_blob(metadata, "x"); expect_blob(metadata, "y"); },
+        },
+        {
+            .name = "move a directory onto an empty one, the move fails",
+            .setup = [&](const Metadata & metadata)
+            {
+                auto tx = metadata->createTransaction();
+                tx->createDirectory("dx");
+                tx->createDirectory("dy");
+                tx->commit(DB::NoCommitOptions{});
+                create_files(metadata, {"dx/f"});
+            },
+            .faults = {.move_directory = {1}},
+            .operation = [](Transaction & tx) { tx.moveDirectory("dx", "dy"); },
+            .check = [&](const Metadata & metadata)
+            {
+                expect_blob(metadata, "dx/f");
+                EXPECT_TRUE(metadata->existsDirectory("dy"));
+                EXPECT_TRUE(metadata->listDirectory("dy").empty());
+            },
+        },
+        {
+            .name = "create a directory that exists and is not empty",
+            .setup = [&](const Metadata & metadata)
+            {
+                auto tx = metadata->createTransaction();
+                tx->createDirectory("d");
+                tx->commit(DB::NoCommitOptions{});
+                create_files(metadata, {"d/f"});
+            },
+            .operation = [](Transaction & tx) { tx.createDirectory("d"); },
+            .check = [&](const Metadata & metadata) { expect_blob(metadata, "d/f"); },
+        },
+        {
+            .name = "set the modification time, reading the old one fails",
+            .setup = [&](const Metadata & metadata)
+            {
+                create_files(metadata, {"s"});
+                auto tx = metadata->createTransaction();
+                tx->setLastModified("s", old_time);
+                tx->commit(DB::NoCommitOptions{});
+            },
+            .faults = {.get_last_modified = {1}},
+            .operation = [](Transaction & tx) { tx.setLastModified("s", Poco::Timestamp::fromEpochTime(2000000000)); },
+            .check = [&](const Metadata & metadata) { EXPECT_EQ(metadata->getLastModified("s").epochTime(), old_time.epochTime()); },
+        },
+        {
+            .name = "write a file onto an existing directory",
+            .setup = [&](const Metadata & metadata)
+            {
+                auto tx = metadata->createTransaction();
+                tx->createDirectory("wd");
+                tx->commit(DB::NoCommitOptions{});
+            },
+            .operation = [](Transaction & tx) { tx.createMetadataFile("wd", {}); },
+            .check = [&](const Metadata & metadata) { EXPECT_TRUE(metadata->existsDirectory("wd")); },
+        },
+        {
+            .name = "change the mode of a missing file",
+            .operation = [](Transaction & tx) { tx.chmod("missing", 0644); },
+        },
+        {
+            .name = "move a file",
+            .setup = [&](const Metadata & metadata) { create_files(metadata, {"mf"}); },
+            .operation = [](Transaction & tx) { tx.moveFile("mf", "mf2"); },
+            .check = [&](const Metadata & metadata) { expect_blob(metadata, "mf"); EXPECT_FALSE(metadata->existsFile("mf2")); },
+        },
+        {
+            .name = "move a directory",
+            .setup = [&](const Metadata & metadata)
+            {
+                auto tx = metadata->createTransaction();
+                tx->createDirectory("md");
+                tx->commit(DB::NoCommitOptions{});
+                create_files(metadata, {"md/f"});
+            },
+            .operation = [](Transaction & tx) { tx.moveDirectory("md", "md2"); },
+            .check = [&](const Metadata & metadata) { expect_blob(metadata, "md/f"); EXPECT_FALSE(metadata->existsDirectory("md2")); },
+        },
+        {
+            .name = "create a directory",
+            .operation = [](Transaction & tx) { tx.createDirectory("nd"); },
+            .check = [&](const Metadata & metadata) { EXPECT_FALSE(metadata->existsDirectory("nd")); },
+        },
+        {
+            .name = "set the modification time",
+            .setup = [&](const Metadata & metadata)
+            {
+                create_files(metadata, {"t"});
+                auto tx = metadata->createTransaction();
+                tx->setLastModified("t", old_time);
+                tx->commit(DB::NoCommitOptions{});
+            },
+            .operation = [](Transaction & tx) { tx.setLastModified("t", Poco::Timestamp::fromEpochTime(2000000000)); },
+            .check = [&](const Metadata & metadata) { EXPECT_EQ(metadata->getLastModified("t").epochTime(), old_time.epochTime()); },
+        },
+        {
+            .name = "change the mode of a file",
+            .setup = [&](const Metadata & metadata)
+            {
+                create_files(metadata, {"m"});
+                auto tx = metadata->createTransaction();
+                tx->chmod("m", 0640);
+                tx->commit(DB::NoCommitOptions{});
+            },
+            .operation = [](Transaction & tx) { tx.chmod("m", 0600); },
+            .check = [&](const Metadata & metadata) { EXPECT_EQ(metadata->stat("m").st_mode & 0777, 0640u); },
+        },
+        {
+            .name = "create a hard link",
+            .setup = [&](const Metadata & metadata) { create_files(metadata, {"a1"}); },
+            .operation = [](Transaction & tx) { tx.createHardLink("a1", "l1"); },
+            .check = [&](const Metadata & metadata)
+            {
+                EXPECT_FALSE(metadata->existsFile("l1"));
+                EXPECT_EQ(metadata->getHardlinkCount("a1"), 0);
+            },
+        },
+        {
+            .name = "create a hard link onto another file",
+            .setup = [&](const Metadata & metadata) { create_files(metadata, {"a2", "b"}); },
+            .operation = [](Transaction & tx) { tx.createHardLink("a2", "b"); },
+            .check = [&](const Metadata & metadata)
+            {
+                expect_blob(metadata, "b");
+                EXPECT_EQ(metadata->getHardlinkCount("a2"), 0);
+            },
+        },
+        {
+            .name = "create a hard link that exists",
+            .setup = [&](const Metadata & metadata)
+            {
+                create_files(metadata, {"a3"});
+                auto tx = metadata->createTransaction();
+                tx->createHardLink("a3", "c");
+                tx->commit(DB::NoCommitOptions{});
+            },
+            .operation = [](Transaction & tx) { tx.createHardLink("a3", "c"); },
+            .check = [&](const Metadata & metadata)
+            {
+                EXPECT_TRUE(metadata->existsFile("c"));
+                EXPECT_EQ(metadata->getHardlinkCount("a3"), 1);
+            },
+        },
+    };
+
+    for (size_t i = 0; i < cases.size(); ++i)
+    {
+        const auto & test_case = cases[i];
+        SCOPED_TRACE(test_case.name);
+
+        auto [metadata, disk] = getFaultInjectingMetadataStorage("/TestRollbackUndoesOnlyWhatAFailedOperationDid/" + std::to_string(i));
+        createPartWithDetachedCopy(metadata, {{"a", "ka"}});
+        if (test_case.setup)
+            test_case.setup(metadata);
+
+        disk->arm(test_case.faults);
+        {
+            auto tx = metadata->createTransaction();
+            tx->unlinkFile("part/a", /*if_exists=*/false, /*should_remove_objects=*/true);
+            test_case.operation(*tx);
+            tx->createMetadataFile("non-existing/fail-tx", /*objects=*/{});
+            EXPECT_THROW(tx->commit(DB::NoCommitOptions{}), std::exception);
+        }
+        disk->disarm();
+
+        EXPECT_TRUE(metadata->existsFile("part/a"));
+        if (metadata->existsFile("part/a"))
+            EXPECT_EQ(metadata->getHardlinkCount("part/a"), 1);
+
+        if (test_case.check)
+            test_case.check(metadata);
     }
 }
