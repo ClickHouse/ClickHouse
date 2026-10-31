@@ -3,8 +3,11 @@
 #include <Interpreters/convertFieldToType.h>
 #include <Interpreters/castColumn.h>
 #include <Columns/IColumn.h>
+#include <Columns/ColumnArray.h>
 #include <Columns/ColumnDynamic.h>
+#include <Columns/ColumnMap.h>
 #include <Columns/ColumnNullable.h>
+#include <Columns/ColumnTuple.h>
 #include <Columns/ColumnDecimal.h>
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnVariant.h>
@@ -21,6 +24,10 @@
 #include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeVariant.h>
+#include <DataTypes/DataTypeString.h>
+#include <DataTypes/DataTypesBinaryEncoding.h>
+#include <IO/ReadBufferFromMemory.h>
+#include <IO/WriteBufferFromString.h>
 #include <base/DayNum.h>
 #include <Common/Exception.h>
 #include <Common/FieldAccurateComparison.h>
@@ -305,7 +312,7 @@ std::optional<ColumnPtr> tryConvertBetweenDateAndDateTimeColumnNative(
 /// `from`. Verified by `gtest_convert_column_to_type`.
 ///
 /// A `Bool` under `Variant`/`Dynamic` is reached as well, because the callers resolve the active
-/// alternative with `resolveActiveAlternativeType` and pass its type here. Other tag-sensitive types
+/// alternative with `resolveActiveAlternative` and pass its type here. Other tag-sensitive types
 /// (IPv4/IPv6/UUID/Decimal) have dedicated columns/`Field` types and round-trip through `get` already.
 void retagBoolInField(Field & field, const DataTypePtr & type)
 {
@@ -356,9 +363,9 @@ void retagBoolInField(Field & field, const DataTypePtr & type)
 /// that range, and inserting it into a `DateTime` column would truncate it modulo 2^32, so such a value is not
 /// representable. This guards the `Field` fallback whatever wraps the source (`Nullable`, `LowCardinality`, the
 /// active alternative of `Dynamic`/`Variant`) or the target; the plain types take the same check in
-/// `tryConvertBetweenDateAndDateTimeColumnNative`. Composites are not covered: inside `Array`/`Tuple`/`Map`,
-/// `convertFieldToType` does not convert `Date` -> `DateTime` at all (pre-existing; the composite step of
-/// closing B3).
+/// `tryConvertBetweenDateAndDateTimeColumnNative`. The leaves of `Array`/`Tuple`/`Map` are checked too: with the
+/// source element type passed down, `convertFieldToType` converts a nested `Date32` to `DateTime` the same way,
+/// and one out-of-range leaf makes the whole value not representable.
 bool dateTimeValueFitsStorage(const Field & field, const IDataType & type)
 {
     if (field.isNull())
@@ -368,6 +375,44 @@ bool dateTimeValueFitsStorage(const Field & field, const IDataType & type)
         return dateTimeValueFitsStorage(field, *nullable->getNestedType());
     if (const auto * low_cardinality = typeid_cast<const DataTypeLowCardinality *>(&type))
         return dateTimeValueFitsStorage(field, *low_cardinality->getDictionaryType());
+
+    if (const auto * array_type = typeid_cast<const DataTypeArray *>(&type))
+    {
+        if (field.getType() != Field::Types::Array)
+            return true;
+        const auto & element_type = *array_type->getNestedType();
+        for (const auto & element : field.safeGet<Array>())
+            if (!dateTimeValueFitsStorage(element, element_type))
+                return false;
+        return true;
+    }
+
+    if (const auto * tuple_type = typeid_cast<const DataTypeTuple *>(&type))
+    {
+        if (field.getType() != Field::Types::Tuple)
+            return true;
+        const auto & tuple = field.safeGet<Tuple>();
+        const auto & element_types = tuple_type->getElements();
+        for (size_t i = 0; i < tuple.size() && i < element_types.size(); ++i)
+            if (!dateTimeValueFitsStorage(tuple[i], *element_types[i]))
+                return false;
+        return true;
+    }
+
+    if (const auto * map_type = typeid_cast<const DataTypeMap *>(&type))
+    {
+        if (field.getType() != Field::Types::Map)
+            return true;
+        for (const auto & entry : field.safeGet<Map>())
+        {
+            const auto & key_and_value = entry.safeGet<Tuple>();
+            if (key_and_value.size() == 2
+                && (!dateTimeValueFitsStorage(key_and_value[0], *map_type->getKeyType())
+                    || !dateTimeValueFitsStorage(key_and_value[1], *map_type->getValueType())))
+                return false;
+        }
+        return true;
+    }
 
     if (!WhichDataType(type).isDateTime())
         return true;
@@ -381,30 +426,342 @@ bool dateTimeValueFitsStorage(const Field & field, const IDataType & type)
     return true;
 }
 
-/// The type of the alternative that row 0 of a `Variant`/`Dynamic` column occupies, else `from`. A
-/// genuine value of such a constant has that type rather than the carrier's - the carrier only records
-/// which alternative it is - and `convertFieldToType` keys its conversions on the source type (an `Enum`
-/// renders as its name, a `Bool` as `'true'`/`'false'`), while `IColumn::get` returns the nested value
-/// alone. One layer is enough: an alternative may not itself be a `Variant` or a `Dynamic`. A `NULL` row
-/// has no alternative, and the callers own the `NULL` contract.
-DataTypePtr resolveActiveAlternativeType(const IColumn & value, const DataTypePtr & from)
+}
+
+ActiveAlternative resolveActiveAlternative(const IColumn & value, const DataTypePtr & from, size_t row)
 {
     if (const auto * dynamic_column = checkAndGetColumn<ColumnDynamic>(&value))
     {
-        if (DataTypePtr alternative = dynamic_column->getTypeAt(0))
-            return alternative;
+        const auto & variant_column = dynamic_column->getVariantColumn();
+        const auto discriminator = variant_column.globalDiscriminatorAt(row);
+        if (discriminator == ColumnVariant::NULL_DISCRIMINATOR)
+            return {from, &value, row, {}};
+
+        if (discriminator == dynamic_column->getSharedVariantDiscriminator())
+        {
+            /// A value of a type beyond `max_types` is stored in the shared variant in binary, after its type.
+            const auto data = dynamic_column->getSharedVariant().getDataAt(variant_column.offsetAt(row));
+            ReadBufferFromMemory buf(data);
+            DataTypePtr type = decodeDataType(buf);
+            auto column = type->createColumn();
+            type->getDefaultSerialization()->deserializeBinary(*column, buf, FormatSettings{});
+            ColumnPtr holder = std::move(column);
+            return {std::move(type), holder.get(), 0, holder};
+        }
+
+        const auto & variant_type = assert_cast<const DataTypeVariant &>(*dynamic_column->getVariantInfo().variant_type);
+        return {
+            variant_type.getVariant(discriminator),
+            &variant_column.getVariantByGlobalDiscriminator(discriminator),
+            variant_column.offsetAt(row),
+            {}};
     }
-    else if (const auto * variant_column = checkAndGetColumn<ColumnVariant>(&value))
+
+    if (const auto * variant_column = checkAndGetColumn<ColumnVariant>(&value))
     {
         /// `ColumnVariant` does not store the alternatives' types, so they are named by `from`. The bound
         /// also rejects `NULL_DISCRIMINATOR`, which is above every valid alternative index.
-        const auto discriminator = variant_column->globalDiscriminatorAt(0);
+        const auto discriminator = variant_column->globalDiscriminatorAt(row);
         const auto * variant_type = typeid_cast<const DataTypeVariant *>(from.get());
         if (variant_type && discriminator < variant_type->getVariants().size())
-            return variant_type->getVariant(discriminator);
+            return {
+                variant_type->getVariant(discriminator),
+                &variant_column->getVariantByGlobalDiscriminator(discriminator),
+                variant_column->offsetAt(row),
+                {}};
+    }
+
+    return {from, &value, row, {}};
+}
+
+namespace
+{
+
+bool isVariantOrDynamic(const IDataType & type)
+{
+    return typeid_cast<const DataTypeVariant *>(&type) || isDynamic(type);
+}
+
+/// A `JSON` value materialized as a `Field` loses the types of its paths in the same way: the dynamic
+/// paths are `Dynamic` columns, and an `Object` field keeps only the nested values.
+bool hasAlternatives(const IDataType & type)
+{
+    return isVariantOrDynamic(type) || isObject(type);
+}
+
+bool containsAlternatives(const DataTypePtr & type)
+{
+    if (hasAlternatives(*type))
+        return true;
+    if (const auto * nullable_type = typeid_cast<const DataTypeNullable *>(type.get()))
+        return containsAlternatives(nullable_type->getNestedType());
+    if (const auto * array_type = typeid_cast<const DataTypeArray *>(type.get()))
+        return containsAlternatives(array_type->getNestedType());
+    if (const auto * tuple_type = typeid_cast<const DataTypeTuple *>(type.get()))
+        return std::ranges::any_of(tuple_type->getElements(), [](const DataTypePtr & element) { return containsAlternatives(element); });
+    if (const auto * map_type = typeid_cast<const DataTypeMap *>(type.get()))
+        return containsAlternatives(map_type->getKeyType()) || containsAlternatives(map_type->getValueType());
+    return false;
+}
+
+/// A `JSON` value, or a composite holding a `Variant`/`Dynamic`/`JSON`, converted to a `String` as a whole
+/// is rendered from its column: its `Field` keeps none of the members' alternatives, so it cannot be
+/// rendered as `CAST` renders it.
+bool isRenderedFromColumnToString(const DataTypePtr & from, const DataTypePtr & unwrapped_to)
+{
+    if (!isStringOrFixedString(unwrapped_to))
+        return false;
+    return isObject(from) || ((isArray(from) || isTuple(from) || isMap(from)) && containsAlternatives(from));
+}
+
+/// `resolveActiveAlternative` recovers the alternative of a top-level `Variant`/`Dynamic` only. Inside a
+/// composite (`Array(Dynamic)`, `Tuple(Variant(...))`, `Map(K, Dynamic)`) every member may occupy a
+/// different alternative, so no single source type describes them and `convertFieldToType` would see just
+/// the carrier - a `Bool` member then renders as `'1'` instead of what `CAST` writes. So convert each such
+/// member here, with its own alternative as the source type, straight to the matching member of `to`.
+/// `rewriteNestedAlternativesType` gives the source type of the result: those members already have the
+/// type of `to`, and `convertFieldToType` leaves a value whose source type equals the target as it is. A
+/// `JSON` value, and a composite that holds such members, converted to a `String` as a whole is rendered
+/// here as well. `from` is never a `Variant`/`Dynamic` itself at the top level: the callers resolve that
+/// alternative first.
+DataTypePtr rewriteNestedAlternativesType(const DataTypePtr & from, const DataTypePtr & to)
+{
+    if (isVariantOrDynamic(*from))
+        return to;
+
+    if (const auto * nullable_from = typeid_cast<const DataTypeNullable *>(from.get()))
+    {
+        const DataTypePtr nested = rewriteNestedAlternativesType(nullable_from->getNestedType(), to);
+        return nested == nullable_from->getNestedType() ? from : makeNullable(nested);
+    }
+
+    const DataTypePtr unwrapped_to = removeLowCardinalityAndNullable(to);
+
+    if (isRenderedFromColumnToString(from, unwrapped_to))
+        return std::make_shared<DataTypeString>();
+
+    if (const auto * array_from = typeid_cast<const DataTypeArray *>(from.get()))
+    {
+        const auto * array_to = typeid_cast<const DataTypeArray *>(unwrapped_to.get());
+        if (!array_to)
+            return from;
+        const DataTypePtr nested = rewriteNestedAlternativesType(array_from->getNestedType(), array_to->getNestedType());
+        return nested == array_from->getNestedType() ? from : std::make_shared<DataTypeArray>(nested);
+    }
+
+    if (const auto * tuple_from = typeid_cast<const DataTypeTuple *>(from.get()))
+    {
+        const auto * tuple_to = typeid_cast<const DataTypeTuple *>(unwrapped_to.get());
+        if (!tuple_to || tuple_to->getElements().size() != tuple_from->getElements().size())
+            return from;
+        DataTypes elements = tuple_from->getElements();
+        bool changed = false;
+        for (size_t i = 0; i < elements.size(); ++i)
+        {
+            DataTypePtr element = rewriteNestedAlternativesType(elements[i], tuple_to->getElements()[i]);
+            changed |= element != elements[i];
+            elements[i] = std::move(element);
+        }
+        if (!changed)
+            return from;
+        if (tuple_from->hasExplicitNames())
+            return std::make_shared<DataTypeTuple>(elements, tuple_from->getElementNames());
+        return std::make_shared<DataTypeTuple>(elements);
+    }
+
+    if (const auto * map_from = typeid_cast<const DataTypeMap *>(from.get()))
+    {
+        const auto * map_to = typeid_cast<const DataTypeMap *>(unwrapped_to.get());
+        if (!map_to)
+            return from;
+        const DataTypePtr key = rewriteNestedAlternativesType(map_from->getKeyType(), map_to->getKeyType());
+        const DataTypePtr value = rewriteNestedAlternativesType(map_from->getValueType(), map_to->getValueType());
+        if (key == map_from->getKeyType() && value == map_from->getValueType())
+            return from;
+        return std::make_shared<DataTypeMap>(key, value);
     }
 
     return from;
+}
+
+/// Converts the members of `field` that `rewriteNestedAlternativesType` retypes, walking row `row` of `column`
+/// alongside it to find the alternative of each member. `field` was read from that row, so its shape matches.
+/// Returns false when a member cannot be represented in its target, which a non-`Nullable` target cannot hold
+/// as `NULL` either: then, as in `convertFieldToType`, the whole value cannot be represented.
+bool rewriteNestedAlternatives(
+    Field & field,
+    const IColumn & column,
+    size_t row,
+    const DataTypePtr & from,
+    const DataTypePtr & to,
+    const FormatSettings & format_settings,
+    bool strict,
+    bool convert_inexact_floats);
+
+/// Converts `field`, read from row `row` of `column` of type `from`, which may be a `Variant`/`Dynamic`,
+/// to `to`. Returns false if it cannot be represented.
+bool convertAlternative(
+    Field & field,
+    const IColumn & column,
+    size_t row,
+    const DataTypePtr & from,
+    const DataTypePtr & to,
+    const FormatSettings & format_settings,
+    bool strict,
+    bool convert_inexact_floats)
+{
+    if (field.isNull())
+        return canContainNull(*to);
+
+    const ActiveAlternative alternative = resolveActiveAlternative(column, from, row);
+    retagBoolInField(field, alternative.type);
+    /// The alternative can be a composite holding `Variant`/`Dynamic` members of its own.
+    const DataTypePtr source = rewriteNestedAlternativesType(alternative.type, to);
+    if (source != alternative.type
+        && !rewriteNestedAlternatives(
+            field, *alternative.column, alternative.row, alternative.type, to, format_settings, strict, convert_inexact_floats))
+        return false;
+    field = convertFieldToType(field, *to, source.get(), format_settings, strict, convert_inexact_floats);
+    /// Strict: a member that is not representable is not a `NULL` member, even if `to` can hold one.
+    return !field.isNull() || (canContainNull(*to) && !strict);
+}
+
+bool rewriteNestedAlternatives(
+    Field & field,
+    const IColumn & column,
+    size_t row,
+    const DataTypePtr & from,
+    const DataTypePtr & to,
+    const FormatSettings & format_settings,
+    bool strict,
+    bool convert_inexact_floats)
+{
+    if (isVariantOrDynamic(*from))
+        return convertAlternative(field, column, row, from, to, format_settings, strict, convert_inexact_floats);
+
+    /// A `NULL` of a `Nullable` member is left to `convertFieldToType`, as its type is not retyped to `to`.
+    if (field.isNull())
+        return true;
+
+    if (const auto * nullable_from = typeid_cast<const DataTypeNullable *>(from.get()))
+    {
+        const auto & nullable_column = assert_cast<const ColumnNullable &>(column);
+        return rewriteNestedAlternatives(
+            field, nullable_column.getNestedColumn(), row, nullable_from->getNestedType(), to,
+            format_settings, strict, convert_inexact_floats);
+    }
+
+    const DataTypePtr unwrapped_to = removeLowCardinalityAndNullable(to);
+
+    if (isRenderedFromColumnToString(from, unwrapped_to))
+    {
+        WriteBufferFromOwnString out;
+        from->getDefaultSerialization()->serializeText(column, row, out, format_settings);
+        field = out.str();
+        return true;
+    }
+
+    if (const auto * array_from = typeid_cast<const DataTypeArray *>(from.get()))
+    {
+        const auto * array_to = typeid_cast<const DataTypeArray *>(unwrapped_to.get());
+        if (!array_to)
+            return true;
+        const auto & array_column = assert_cast<const ColumnArray &>(column);
+        const size_t offset = row == 0 ? 0 : array_column.getOffsets()[row - 1];
+        auto & elements = field.safeGet<Array>();
+        for (size_t i = 0; i < elements.size(); ++i)
+            if (!rewriteNestedAlternatives(
+                    elements[i], array_column.getData(), offset + i, array_from->getNestedType(), array_to->getNestedType(),
+                    format_settings, strict, convert_inexact_floats))
+                return false;
+        return true;
+    }
+
+    if (const auto * tuple_from = typeid_cast<const DataTypeTuple *>(from.get()))
+    {
+        const auto * tuple_to = typeid_cast<const DataTypeTuple *>(unwrapped_to.get());
+        if (!tuple_to || tuple_to->getElements().size() != tuple_from->getElements().size())
+            return true;
+        const auto & tuple_column = assert_cast<const ColumnTuple &>(column);
+        auto & elements = field.safeGet<Tuple>();
+        for (size_t i = 0; i < elements.size(); ++i)
+            if (!rewriteNestedAlternatives(
+                    elements[i], tuple_column.getColumn(i), row, tuple_from->getElements()[i], tuple_to->getElements()[i],
+                    format_settings, strict, convert_inexact_floats))
+                return false;
+        return true;
+    }
+
+    if (const auto * map_from = typeid_cast<const DataTypeMap *>(from.get()))
+    {
+        const auto * map_to = typeid_cast<const DataTypeMap *>(unwrapped_to.get());
+        if (!map_to)
+            return true;
+        const auto & nested_array = assert_cast<const ColumnMap &>(column).getNestedColumn();
+        const auto & key_value_columns = assert_cast<const ColumnTuple &>(nested_array.getData());
+        const size_t offset = row == 0 ? 0 : nested_array.getOffsets()[row - 1];
+        auto & entries = field.safeGet<Map>();
+        for (size_t i = 0; i < entries.size(); ++i)
+        {
+            auto & key_and_value = entries[i].safeGet<Tuple>();
+            if (!rewriteNestedAlternatives(
+                    key_and_value[0], key_value_columns.getColumn(0), offset + i, map_from->getKeyType(), map_to->getKeyType(),
+                    format_settings, strict, convert_inexact_floats)
+                || !rewriteNestedAlternatives(
+                    key_and_value[1], key_value_columns.getColumn(1), offset + i, map_from->getValueType(), map_to->getValueType(),
+                    format_settings, strict, convert_inexact_floats))
+                return false;
+        }
+        return true;
+    }
+
+    return true;
+}
+
+/// Row 0 of `value` as the `Field` and the source type that the delegated `convertFieldToType` should see.
+struct SourceField
+{
+    Field field;
+    DataTypePtr type;
+    /// False when a member of a composite cannot be represented in the matching member of `to`, so that
+    /// the whole value cannot be represented either. Then `field` and `type` are the value as it was read.
+    bool representable = true;
+};
+
+SourceField getSourceField(
+    const IColumn & value,
+    const DataTypePtr & from,
+    const DataTypePtr & to,
+    const FormatSettings & format_settings,
+    bool strict,
+    bool convert_inexact_floats)
+{
+    SourceField source;
+    value.get(0, source.field);
+    /// `get` keeps neither the `Bool` tag nor the active `Variant`/`Dynamic` alternative; restore both so
+    /// the delegated `convertFieldToType` behaves as it would for a genuine value of the constant.
+    const ActiveAlternative alternative = resolveActiveAlternative(value, from, 0);
+    source.type = alternative.type;
+    retagBoolInField(source.field, source.type);
+
+    if (source.field.isNull())
+        return source;
+
+    const DataTypePtr rewritten_type = rewriteNestedAlternativesType(source.type, to);
+    if (rewritten_type == source.type)
+        return source;
+
+    Field rewritten_field = source.field;
+    if (!rewriteNestedAlternatives(
+            rewritten_field, *alternative.column, alternative.row, source.type, to, format_settings, strict, convert_inexact_floats))
+    {
+        source.representable = false;
+        return source;
+    }
+
+    source.field = std::move(rewritten_field);
+    source.type = rewritten_type;
+    return source;
 }
 
 }
@@ -443,14 +800,12 @@ ColumnPtr convertColumnToTypeOrNull(
 
     /// Fallback: materialize a `Field`, reuse `convertFieldToType`, rebuild a column. Column-native
     /// fast paths above shrink this over time; the differential test pins equivalence.
-    Field field;
-    unwrapped.get(0, field);
-    /// `get` keeps neither the `Bool` tag nor the active `Variant`/`Dynamic` alternative; restore both so
-    /// the delegated `convertFieldToType` behaves as it would for a genuine value of the constant.
-    const DataTypePtr source = resolveActiveAlternativeType(unwrapped, from);
-    retagBoolInField(field, source);
+    const SourceField source = getSourceField(unwrapped, from, to, format_settings, strict, convert_inexact_floats);
+    if (!source.representable)
+        return {};
+    const Field & field = source.field;
 
-    const Field converted = convertFieldToType(field, *to, source.get(), format_settings, strict, convert_inexact_floats);
+    const Field converted = convertFieldToType(field, *to, source.type.get(), format_settings, strict, convert_inexact_floats);
 
     if (converted.isNull())
     {
@@ -516,11 +871,15 @@ ColumnPtr convertColumnToTypeOrThrow(
         /// types) instead of a generic message - materializing a `Field` only on this exceptional path;
         /// the happy path in `convertColumnToTypeOrNull` stays `Field`-free.
         const ColumnPtr full = value.convertToFullColumnIfConst();
-        Field field;
-        full->get(0, field);
-        const DataTypePtr source = resolveActiveAlternativeType(*full, from);
-        retagBoolInField(field, source);
-        convertFieldToTypeOrThrow(field, *to, source.get(), format_settings, convert_inexact_floats);
+        const SourceField source = getSourceField(*full, from, to, format_settings, /*strict=*/false, convert_inexact_floats);
+        if (!source.representable)
+            throw Exception(
+                ErrorCodes::ARGUMENT_OUT_OF_BOUND,
+                "Cannot convert value '{}' from {}: it cannot be represented as {}",
+                fieldToString(source.field),
+                source.type->getName(),
+                to->getName());
+        convertFieldToTypeOrThrow(source.field, *to, source.type.get(), format_settings, convert_inexact_floats);
 
         /// `convertFieldToTypeOrThrow` must have thrown for a value that `convertColumnToTypeOrNull`
         /// reported as not representable; guard in case the two ever disagree.

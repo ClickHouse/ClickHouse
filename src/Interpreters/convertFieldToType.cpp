@@ -1,6 +1,8 @@
 #include <Interpreters/convertFieldToType.h>
 
 #include <IO/ReadBufferFromString.h>
+#include <IO/WriteBufferFromString.h>
+#include <IO/WriteHelpers.h>
 #include <IO/ReadHelpers.h>
 
 #include <DataTypes/DataTypeArray.h>
@@ -28,6 +30,7 @@
 
 #include <Functions/DateTimeTransforms.h>
 
+#include <Common/assert_cast.h>
 #include <Common/typeid_cast.h>
 #include <Common/checkStackSize.h>
 #include <Common/DateLUTImpl.h>
@@ -460,6 +463,22 @@ std::optional<Int64> dateTime64TicksFromField(const Field & src, Int64 scale_mul
     }
 }
 
+/// Only `to_type` is unwrapped by `convertFieldToType`, so the source type hint can still be wrapped in
+/// `Nullable` or `LowCardinality` (`Nullable(Tuple(Date, UUID))` converted to `Tuple(String, String)`).
+const IDataType * unwrapTypeHint(const IDataType * hint)
+{
+    while (hint)
+    {
+        if (const auto * nullable_hint = typeid_cast<const DataTypeNullable *>(hint))
+            hint = nullable_hint->getNestedType().get();
+        else if (const auto * low_cardinality_hint = typeid_cast<const DataTypeLowCardinality *>(hint))
+            hint = low_cardinality_hint->getDictionaryType().get();
+        else
+            break;
+    }
+    return hint;
+}
+
 /// Splits a decimal integer literal into sign and magnitude; `magnitude_overflowed` leaves only the sign meaningful.
 bool parseDecimalIntegerLiteral(std::string_view literal, bool & negative, UInt256 & magnitude, bool & magnitude_overflowed)
 {
@@ -579,6 +598,40 @@ DataTypePtr widenIntegerElements(const DataTypePtr & type, WideIntegerCarrier ca
     if (to_signed)
         return which.isInt256() ? nullptr : std::make_shared<DataTypeInt256>();
     return which.isUInt256() ? nullptr : std::make_shared<DataTypeUInt256>();
+}
+
+/// Under `strict`, a `DateTime` / `DateTime64` member of an `Array`, `Tuple` or `Map` constant that has a time of
+/// day is not representable as a `Date` / `Date32`: comparing a `Date` with it converts the `Date` to midnight in
+/// the time zone of the `DateTime`, so it can never be equal. Truncating it to its day (as `CAST` does) would make
+/// `[toDate('2020-01-01')] IN ([toDateTime('2020-01-01 12:00:00')])` true, while the comparison with `=` is false.
+/// A scalar constant keeps the truncation: the set of `IN` built from a plain `DateTime` constant truncates it, and
+/// the same constant wrapped in `Dynamic` must agree with it.
+bool isDateTimeElementWithTimeOfDay(const Field & src, const IDataType & to_type, const IDataType * from_type_hint)
+{
+    const WhichDataType which_to(removeLowCardinalityAndNullable(to_type.getPtr()));
+    if (!which_to.isDate() && !which_to.isDate32())
+        return false;
+
+    const IDataType * hint = unwrapTypeHint(from_type_hint);
+    const auto is_midnight = [](const DateLUTImpl & time_zone, Int64 seconds)
+    {
+        return time_zone.fromDayNum(time_zone.toDayNum(seconds)) == seconds;
+    };
+
+    if (const auto * date_time_type = typeid_cast<const DataTypeDateTime *>(hint); date_time_type && src.getType() == Field::Types::UInt64)
+        return !is_midnight(date_time_type->getTimeZone(), static_cast<Int64>(src.safeGet<UInt64>()));
+
+    if (const auto * date_time64_type = typeid_cast<const DataTypeDateTime64 *>(hint); date_time64_type && src.getType() == Field::Types::Decimal64)
+    {
+        const auto & decimal = src.safeGet<Decimal64>();
+        const Int64 value = decimal.getValue().value;
+        const Int64 scale_multiplier = decimal.getScaleMultiplier().value;
+        if (value % scale_multiplier != 0)
+            return true;
+        return !is_midnight(date_time64_type->getTimeZone(), value / scale_multiplier);
+    }
+
+    return false;
 }
 
 Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const IDataType * from_type_hint, const FormatSettings & format_settings, bool strict, bool convert_inexact_floats)
@@ -909,32 +962,14 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
 
         return DecimalField<Time64>(Time64(local_seconds * to_scale_multiplier + fraction_to), time64_type.getScale());
     }
-    if (which_type.isTime() && which_from_type.isDate())
+    if ((which_type.isTime() || which_type.isTime64()) && (which_from_type.isDate() || which_from_type.isDate32()))
     {
-        return static_cast<const DataTypeTime &>(type).getTimeZone().fromDayNum(DayNum(static_cast<DayNum::UnderlyingType>(src.safeGet<UInt64>())));
-    }
-    if (which_type.isTime() && which_from_type.isDate32())
-    {
-        /// Same as above: use `ExtendedDayNum` instead of narrowing the day number to `UInt16`.
-        return static_cast<const DataTypeTime &>(type).getTimeZone().fromDayNum(ExtendedDayNum(static_cast<Int32>(src.safeGet<Int32>())));
-    }
-    if (which_type.isTime64() && which_from_type.isDate())
-    {
-        const auto & time64_type = static_cast<const DataTypeTime64 &>(type);
-        const auto value = time64_type.getTimeZone().fromDayNum(DayNum(static_cast<DayNum::UnderlyingType>(src.safeGet<UInt16>())));
-        return DecimalField<Time64>(
-            DecimalUtils::decimalFromComponentsWithMultiplier<Time64>(value, 0, time64_type.getScaleMultiplier()),
-            time64_type.getScale());
-    }
-    if (which_type.isTime64() && which_from_type.isDate32())
-    {
-        const auto & time64_type = static_cast<const DataTypeTime64 &>(type);
-        const auto value = time64_type.getTimeZone().fromDayNum(ExtendedDayNum(static_cast<Int32>(src.safeGet<Int32>())));
-        /// Same as the `Date32` -> `DateTime64` branch above: an unrepresentable value cannot match anything.
-        Time64 result;
-        if (!DecimalUtils::tryGetDecimalFromComponentsWithMultiplier<Time64>(value, 0, time64_type.getScaleMultiplier(), result))
-            return {};
-        return DecimalField<Time64>(result, time64_type.getScale());
+        /// A date carries no time of day, so `CAST(x AS Time)` and `CAST(x AS Time64)` give midnight for every
+        /// `Date` and `Date32`. Writing the day's Unix timestamp instead would make `IN` and `values` disagree
+        /// with `CAST`, and a timestamp beyond the `Time` range would wrap when inserted into its `Int32` column.
+        if (which_type.isTime())
+            return static_cast<Int64>(0);
+        return DecimalField<Time64>(Time64(0), static_cast<const DataTypeTime64 &>(type).getScale());
     }
     if (type.isValueRepresentedByNumber() && src.getType() != Field::Types::String)
     {
@@ -1133,22 +1168,63 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
         }
 
         /// An Enum arrives as its underlying number, but `CAST(enum AS String)` uses the name.
-        /// Only `to_type` is unwrapped by the caller, so unwrap the hint here.
-        const IDataType * unwrapped_hint = from_type_hint;
-        while (unwrapped_hint)
-        {
-            if (const auto * nullable_hint = typeid_cast<const DataTypeNullable *>(unwrapped_hint))
-                unwrapped_hint = nullable_hint->getNestedType().get();
-            else if (const auto * low_cardinality_hint = typeid_cast<const DataTypeLowCardinality *>(unwrapped_hint))
-                unwrapped_hint = low_cardinality_hint->getDictionaryType().get();
-            else
-                break;
-        }
+        const IDataType * unwrapped_hint = unwrapTypeHint(from_type_hint);
 
         /// Re-enter so that a `FixedString` target still zero-pads the name to its width.
         if (const auto * enum_from_type = dynamic_cast<const IDataTypeEnum *>(unwrapped_hint))
             return convertFieldToTypeImpl(
                 enum_from_type->castToName(src), type, nullptr, format_settings, strict, convert_inexact_floats);
+
+        /// Every other known source type is rendered with its own text serialization, so that a set
+        /// built for `IN` holds what `CAST(x AS String)` produces. `FieldVisitorToString` below writes
+        /// a query literal instead, which for several types is not the value's text at all: a `Date`
+        /// comes out as its day number, a `Float64` as `1.`, and a `UUID` or an `IPv4` carries the
+        /// quote characters of the literal inside the string.
+        if (unwrapped_hint)
+        {
+            auto column = unwrapped_hint->createColumn();
+            if (column->tryInsert(src))
+            {
+                /// `CAST(x AS String)` writes numbers, decimals, dates and times with fixed text
+                /// (`FormatImpl` in `FunctionsConversion.h`), so `date_time_output_format` or
+                /// `decimal_trailing_zeros` do not apply to them, and it serializes every other type
+                /// with the query's format settings, so `bool_true_representation` does apply. A type with
+                /// a custom serialization (`Bool`, also wrapped as `SimpleAggregateFunction(any, Bool)`)
+                /// takes the latter path in `CAST` even though its underlying type is a number. Mirror
+                /// that split, or the set would hold a text that `CAST` never produces. The one setting
+                /// that `CAST` does apply to the fixed text is
+                /// `date_time_64_output_format_cut_trailing_zeros_align_to_groups_of_thousands`, for
+                /// `DateTime64` and `Time64`.
+                static const FormatSettings fixed_text_format_settings;
+                static const FormatSettings fixed_text_cut_trailing_zeros_format_settings = []
+                {
+                    FormatSettings settings;
+                    settings.date_time_64_output_format_cut_trailing_zeros_align_to_groups_of_thousands = true;
+                    return settings;
+                }();
+                WhichDataType which_hint(*unwrapped_hint);
+                bool fixed_text = !unwrapped_hint->getCustomSerialization()
+                    && (which_hint.isNumber() || which_hint.isDateOrDate32OrTimeOrTime64OrDateTimeOrDateTime64());
+                bool cut_trailing_zeros = format_settings.date_time_64_output_format_cut_trailing_zeros_align_to_groups_of_thousands;
+
+                WriteBufferFromOwnString out;
+                if (cut_trailing_zeros && which_hint.isTime64())
+                {
+                    /// `SerializationTime64::serializeText` ignores the setting, so write it as `CAST` does.
+                    const auto & time64_type = assert_cast<const DataTypeTime64 &>(*unwrapped_hint);
+                    writeTime64TextCutTrailingZerosAlignToGroupOfThousands(
+                        assert_cast<const DataTypeTime64::ColumnType &>(*column).getElement(0), time64_type.getScale(), out);
+                }
+                else
+                {
+                    const FormatSettings & settings_for_text = !fixed_text
+                        ? format_settings
+                        : (cut_trailing_zeros ? fixed_text_cut_trailing_zeros_format_settings : fixed_text_format_settings);
+                    unwrapped_hint->getDefaultSerialization()->serializeText(*column, 0, out, settings_for_text);
+                }
+                return convertFieldToTypeImpl(out.str(), type, nullptr, format_settings, strict, convert_inexact_floats);
+            }
+        }
 
         return applyVisitor(FieldVisitorToString(), src);
     }
@@ -1160,11 +1236,17 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
             size_t src_arr_size = src_arr.size();
 
             const auto & element_type = *(type_array->getNestedType());
+            /// Pass the source element type down, so that an element rendered to `String` is written as
+            /// `CAST` writes it (`[toDate('2020-01-01')]` to `Array(String)` gives `['2020-01-01']`).
+            const auto * array_hint = typeid_cast<const DataTypeArray *>(unwrapTypeHint(from_type_hint));
+            const IDataType * element_hint = array_hint ? array_hint->getNestedType().get() : nullptr;
             bool have_unconvertible_element = false;
             Array res(src_arr_size);
             for (size_t i = 0; i < src_arr_size; ++i)
             {
-                res[i] = convertFieldToType(src_arr[i], element_type, nullptr, format_settings, strict, convert_inexact_floats);
+                if (strict && isDateTimeElementWithTimeOfDay(src_arr[i], element_type, element_hint))
+                    have_unconvertible_element = true;
+                res[i] = convertFieldToType(src_arr[i], element_type, element_hint, format_settings, strict, convert_inexact_floats);
                 /// Strict: a value that is not representable is not a NULL element.
                 if (res[i].isNull() && (!canContainNull(element_type) || (strict && !src_arr[i].isNull())))
                 {
@@ -1192,12 +1274,20 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
                     dst_tuple_size,
                     src_tuple_size);
 
+            /// Pass the source element types down, see the comment for arrays above.
+            const auto * tuple_hint = typeid_cast<const DataTypeTuple *>(unwrapTypeHint(from_type_hint));
+            if (tuple_hint && tuple_hint->getElements().size() != src_tuple_size)
+                tuple_hint = nullptr;
+
             Tuple res(dst_tuple_size);
             bool have_unconvertible_element = false;
             for (size_t i = 0; i < dst_tuple_size; ++i)
             {
                 const auto & element_type = *(type_tuple->getElements()[i]);
-                res[i] = convertFieldToType(src_tuple[i], element_type, nullptr, format_settings, strict, convert_inexact_floats);
+                const IDataType * element_hint = tuple_hint ? tuple_hint->getElements()[i].get() : nullptr;
+                if (strict && isDateTimeElementWithTimeOfDay(src_tuple[i], element_type, element_hint))
+                    have_unconvertible_element = true;
+                res[i] = convertFieldToType(src_tuple[i], element_type, element_hint, format_settings, strict, convert_inexact_floats);
                 if (res[i].isNull() && (!canContainNull(element_type) || (strict && !src_tuple[i].isNull())))
                 {
                     /*
@@ -1373,6 +1463,11 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
             const auto & key_type = *type_map->getKeyType();
             const auto & value_type = *type_map->getValueType();
 
+            /// Pass the source key and value types down, see the comment for arrays above.
+            const auto * map_hint = typeid_cast<const DataTypeMap *>(unwrapTypeHint(from_type_hint));
+            const IDataType * key_hint = map_hint ? map_hint->getKeyType().get() : nullptr;
+            const IDataType * value_hint = map_hint ? map_hint->getValueType().get() : nullptr;
+
             const auto & map = src.safeGet<Map>();
             size_t map_size = map.size();
 
@@ -1389,12 +1484,15 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
 
                 Tuple updated_entry(2);
 
-                updated_entry[0] = convertFieldToType(key, key_type, nullptr, format_settings, strict, convert_inexact_floats);
+                if (strict && (isDateTimeElementWithTimeOfDay(key, key_type, key_hint) || isDateTimeElementWithTimeOfDay(value, value_type, value_hint)))
+                    have_unconvertible_element = true;
+
+                updated_entry[0] = convertFieldToType(key, key_type, key_hint, format_settings, strict, convert_inexact_floats);
 
                 if (updated_entry[0].isNull() && (!canContainNull(key_type) || (strict && !key.isNull())))
                     have_unconvertible_element = true;
 
-                updated_entry[1] = convertFieldToType(value, value_type, nullptr, format_settings, strict, convert_inexact_floats);
+                updated_entry[1] = convertFieldToType(value, value_type, value_hint, format_settings, strict, convert_inexact_floats);
                 if (updated_entry[1].isNull() && (!canContainNull(value_type) || (strict && !value.isNull())))
                     have_unconvertible_element = true;
 
