@@ -389,6 +389,8 @@
     M(IcebergMetadataFilesCacheFiles, "Number of cached files in the Iceberg metadata cache") \
     M(GlueCatalogSchemaCacheBytes, "Size of the cache of current Iceberg schema field types in Glue catalogs in bytes") \
     M(GlueCatalogSchemaCacheEntries, "Number of entries in the cache of current Iceberg schema field types in Glue catalogs") \
+    M(IcebergRESTCatalogWarehouseCacheSize, "Size of the warehouse cache of the Iceberg REST catalog server. Each warehouse counts as 1") \
+    M(IcebergRESTCatalogWarehouseCacheEntries, "Number of warehouses in the warehouse cache of the Iceberg REST catalog server") \
     M(PaimonMetadataFilesCacheBytes, "Size of the Paimon metadata cache in bytes") \
     M(PaimonMetadataFilesCacheFiles, "Number of cached files in the Paimon metadata cache") \
     M(ParquetMetadataCacheBytes, "Size of the Parquet metadata cache in bytes") \
