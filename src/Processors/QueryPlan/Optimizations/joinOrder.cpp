@@ -121,6 +121,15 @@ static std::optional<JoinActionRef> resolveInput(const JoinActionRef & ref)
 
 void QueryGraph::buildColumnEquivalences()
 {
+    std::unordered_map<const ActionsDAG::Node *, bool> constant_columns;
+    auto is_constant = [&](size_t relation, const JoinActionRef & column)
+    {
+        auto [it, inserted] = constant_columns.try_emplace(column.getNode(), false);
+        if (inserted && is_constant_column)
+            it->second = is_constant_column(relation, column.getColumnName());
+        return it->second;
+    };
+
     for (const auto & edge : edges)
     {
         if (!edge)
@@ -150,6 +159,9 @@ void QueryGraph::buildColumnEquivalences()
             continue;
 
         if (outer_join_conditions.contains(edge))
+            continue;
+
+        if (is_constant(*lhs_rel, *lhs_resolved) || is_constant(*rhs_rel, *rhs_resolved))
             continue;
 
         column_equivalences.add(*lhs_resolved, *rhs_resolved);
