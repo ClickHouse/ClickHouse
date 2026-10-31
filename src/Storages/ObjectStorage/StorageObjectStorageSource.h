@@ -213,6 +213,9 @@ protected:
     std::future<ReaderHolder> createReaderAsync();
 
     void addNumRowsToCache(const ObjectInfo & object_info, size_t num_rows);
+    /// Add the number of rows of the object recorded in the table metadata (e.g. `record_count` of an
+    /// Iceberg data file) to the total number of rows to read, so that the progress of the query is known.
+    void addTotalRowsApproxFromMetadata(const ObjectInfo & object_info);
     void lazyInitialize();
 };
 

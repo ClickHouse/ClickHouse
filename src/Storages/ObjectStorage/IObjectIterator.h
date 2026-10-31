@@ -51,6 +51,15 @@ struct ObjectInfo
     /// The exact size of the object as the table metadata records it, if it records a positive one.
     virtual std::optional<size_t> getFileSizeHint() const { return std::nullopt; }
 
+    /// The number of rows of the object as the table metadata records it, before applying deletes, if known.
+    /// It is only an estimate used to report the progress of a query, not to compute any result.
+    virtual std::optional<size_t> getNumRowsHint() const
+    {
+        if (data_lake_metadata)
+            return data_lake_metadata->num_rows;
+        return std::nullopt;
+    }
+
     std::optional<ObjectMetadata> getObjectMetadata() const { return relative_path_with_metadata.metadata; }
     void setObjectMetadata(const ObjectMetadata & metadata) { relative_path_with_metadata.metadata = metadata; }
 
