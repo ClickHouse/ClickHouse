@@ -8565,6 +8565,18 @@ CustomDiskRegistrationPtr Context::tryGetCustomDiskRegistration(const String & n
     return shared->custom_disk_registry.tryGet(name);
 }
 
+std::pair<DiskPtr, CustomDiskRegistrationPtr> Context::getDiskWithCustomDiskRegistration(const String & name) const
+{
+    std::lock_guard lock(shared->storage_policies_mutex);
+
+    /// `releaseCustomDisk` removes a disk from the selector together with its registration, under
+    /// `storage_policies_mutex`, and `getOrCreateCustomDisk` adds it together with the registration.
+    auto disk = getDiskSelector(lock)->get(name);
+    if (!disk->isCustomDisk())
+        return {disk, nullptr};
+    return {disk, shared->custom_disk_registry.tryGet(name)};
+}
+
 CustomDiskRegistrationPtr Context::getCustomDiskRegistrationOfStoragePolicy(const String & policy_name) const
 {
     std::lock_guard lock(shared->storage_policies_mutex);

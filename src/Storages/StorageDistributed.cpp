@@ -644,11 +644,11 @@ StorageDistributed::StorageDistributed(
     if (!relative_data_path.empty())
     {
         /// The single-disk storage policy implicitly created for a custom disk can be named directly. Keep the
-        /// disk registered for as long as the table uses the policy. The registration is taken before the
-        /// policy is looked up, so the disk cannot be released in between.
+        /// disk registered for as long as the table uses the policy. The policy and the registration are looked
+        /// up together, so a table defining the disk cannot create the policy in between, and the policy is not
+        /// removed until the registration is gone.
         if (storage_policy_name_.starts_with(StoragePolicySelector::TMP_STORAGE_POLICY_PREFIX))
-            custom_disk_registration = getContext()->tryGetCustomDiskRegistration(
-                storage_policy_name_.substr(strlen(StoragePolicySelector::TMP_STORAGE_POLICY_PREFIX)));
+            custom_disk_registration = getContext()->getCustomDiskRegistrationOfStoragePolicy(storage_policy_name_);
         storage_policy = getContext()->getStoragePolicy(storage_policy_name_);
         data_volume = storage_policy->getVolume(0);
         if (storage_policy->getVolumes().size() > 1)

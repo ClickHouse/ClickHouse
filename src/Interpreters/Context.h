@@ -2009,6 +2009,10 @@ public:
     /// A registration for a custom disk that already exists, or nullptr if `name` is not one.
     /// Throws if the disk is being unregistered, see `CustomDiskRegistry::tryGet`.
     CustomDiskRegistrationPtr tryGetCustomDiskRegistration(const String & name) const;
+    /// The disk `name` together with a registration for it if it is a custom disk, or nullptr otherwise.
+    /// Throws if there is no such disk. The disk and the registration are looked up together, so a custom
+    /// disk cannot appear between the lookup of the registration and the lookup of the disk.
+    std::pair<DiskPtr, CustomDiskRegistrationPtr> getDiskWithCustomDiskRegistration(const String & name) const;
     /// A registration for the custom disk of the storage policy `policy_name`, or nullptr if it has none.
     /// Throws if there is no such policy, or if its disk is being unregistered. The policy and the
     /// registration are looked up together, so the policy cannot appear or disappear in between.
