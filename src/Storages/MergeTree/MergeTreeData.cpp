@@ -13831,6 +13831,36 @@ MergeTreeData & MergeTreeData::checkStructureAndGetMergeTreeData(IStorage & sour
     if (!check_definitions(my_snapshot->getSecondaryIndices(), src_snapshot->getSecondaryIndices(), index_to_string))
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Tables have different secondary indices");
 
+    /// The destination may have indices that the source does not declare, but the parts of the source may still
+    /// have files under their names: dropping an `ALIAS` column removes its implicit index from the metadata without
+    /// a mutation, and so does `DROP INDEX` until its mutation finishes. The copied parts would bring these files
+    /// along, and the index of the destination would read them as if they had been built for its own expression.
+    {
+        NameSet src_index_names;
+        for (const auto & index : src_snapshot->getSecondaryIndices())
+            src_index_names.insert(index.name);
+
+        Names destination_only_indices;
+        for (const auto & index : my_snapshot->getSecondaryIndices())
+            if (!src_index_names.contains(index.name))
+                destination_only_indices.push_back(index.name);
+
+        if (!destination_only_indices.empty())
+        {
+            for (const auto & part : src_data->getDataPartsVectorForInternalUsage())
+            {
+                for (const auto & index_name : destination_only_indices)
+                {
+                    if (part->hasSecondaryIndex(index_name, src_snapshot->escape_index_filenames))
+                        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                            "Tables have different secondary indices: index {} is not declared in the source table, "
+                            "but its part {} has files of a previous index with the same name",
+                            backQuote(index_name), part->name);
+                }
+            }
+        }
+    }
+
     if (!check_definitions(my_snapshot->getProjections(), src_snapshot->getProjections(), projection_to_string))
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Tables have different projections");
 
