@@ -81,6 +81,9 @@ public:
 
     bool isExpensive() const override { return function_overload_resolver->isExpensive(); }
 
+    /// The function rebuilt for each alternative captures its settings in the resolver, see `IFunctionOverloadResolver::updateHash`.
+    void updateHash(SipHash & hash) const override { function_overload_resolver->updateHash(hash); }
+
     const IFunctionOverloadResolver & getFunctionOverloadResolver() const { return *function_overload_resolver; }
 
 private:
