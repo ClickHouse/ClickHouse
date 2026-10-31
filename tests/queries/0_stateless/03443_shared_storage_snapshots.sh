@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Tags: long, no-parallel, no-parallel-replicas
+# Tags: long, no-parallel, no-parallel-replicas, no-random-detach
+# no-random-detach: long test, DETACH/ATTACH adds too much overhead
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 

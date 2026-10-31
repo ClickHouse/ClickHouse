@@ -6,6 +6,11 @@ namespace DB
 struct QueryFlags
 {
     bool internal = false; /// If true, this query is caused by another query and thus needn't be registered in the ProcessList.
+    bool inherit_process_list_element = false; /// If true, run under the process list element already present in the context.
+    /// If true, the query is not accounted in the quota of the user. For maintenance statements that the server runs
+    /// on behalf of another query, which is accounted itself, e.g. the `DETACH`/`ATTACH` pair of
+    /// `reattach_tables_before_query_execution`: failing the `ATTACH` on an exhausted quota would leave the table detached.
+    bool ignore_quota = false;
     /// If true, the query was written by the user even though it is executed as an `internal` query, i.e. it is not
     /// initiated by the server itself. Subqueries of `PARALLEL WITH` are like that: they are re-executed as nested
     /// queries, but their text comes from the user. Such queries must be subject to all the restrictions of a regular

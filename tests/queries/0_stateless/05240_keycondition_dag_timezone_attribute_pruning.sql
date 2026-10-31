@@ -1,6 +1,7 @@
--- Tags: no-parallel-replicas, long, no-msan
+-- Tags: no-parallel-replicas, long, no-msan, no-random-detach
 -- no-msan: it takes minutes under MSan even with local metadata, and over the 600 s timeout with `meta in keeper`
 -- and `s3 storage`. It checks the result of index analysis, which other builds cover as well.
+-- no-random-detach: the internal `ATTACH` rebinds a bare `DateTime` column to another timezone (carrier 10), and the test checks `system.parts`.
 -- long: it creates and drops dozens of tables, which takes over the 180 s flaky-check limit with `meta in keeper` and `s3 storage`.
 -- no-parallel-replicas: the `pruning_selected_parts` row below reads `ProfileEvents` from the
 -- initiator's `query_log`, and with parallel replicas the counters are reported where each

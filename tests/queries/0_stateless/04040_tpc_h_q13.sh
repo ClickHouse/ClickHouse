@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest, no-random-settings, no-replicated-database, no-flaky-check
+# Tags: no-fasttest, no-random-settings, no-replicated-database, no-flaky-check, no-random-detach
 # no-fasttest: the `tpch` database is not created in fasttest.
 # no-replicated-database: the `tpch` database is not created in DatabaseReplicated mode.
 # no-random-settings: these tests verify correctness, not behavior under random settings that may cause memory issues.

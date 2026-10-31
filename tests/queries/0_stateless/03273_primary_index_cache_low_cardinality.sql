@@ -1,4 +1,6 @@
--- Tags: no-parallel
+-- Tags: no-parallel, no-random-detach
+-- no-random-detach: the internal `ATTACH` before the reload query prewarms the primary index cache again,
+-- so the query finds the index in the cache and its `LoadedPrimaryIndex*` profile events are zero.
 
 SET parallel_replicas_local_plan = 1;
 

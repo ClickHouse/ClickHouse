@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+# Tags: no-random-detach
+
+# no-random-detach: parallel async inserts can race with random DETACH/ATTACH and lose the `Keep-Alive` response header
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh

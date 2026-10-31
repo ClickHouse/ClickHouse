@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: race
+# Tags: race, no-random-detach
 # Regression test for debug assertion in calculateEachColumnSizes.
 #
 # The assertion fires when a numeric column is declared in columns.txt but has

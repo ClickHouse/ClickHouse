@@ -1,4 +1,5 @@
--- Tags: no-parallel
+-- Tags: no-parallel, no-random-detach
+-- no-random-detach: test uses DETACH/ATTACH itself
 
 DROP TABLE IF EXISTS dict;
 create table dict engine=MergeTree() order by id as

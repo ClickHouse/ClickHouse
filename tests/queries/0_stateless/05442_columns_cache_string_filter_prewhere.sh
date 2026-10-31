@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest, no-parallel, no-parallel-replicas, no-random-settings, no-random-merge-tree-settings
+# Tags: no-fasttest, no-parallel, no-parallel-replicas, no-random-settings, no-random-merge-tree-settings, no-random-detach
+# no-random-detach: the internal `DETACH` destroys the parts of the table, which removes their entries from the columns cache
 # no-fasttest: Parquet support is not built in fast-test images
 # no-parallel: the columns cache is system-wide, and the test drops it and checks what it holds
 # no-parallel-replicas: profile events are not available on the second replica

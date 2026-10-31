@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Tags: no-parallel, no-random-settings, no-random-merge-tree-settings, no-replicated-database
+# Tags: no-parallel, no-random-settings, no-random-merge-tree-settings, no-replicated-database, no-random-detach
+# no-random-detach: the internal `DETACH` destroys the parts of the table, which removes their entries from the columns cache
 # Cache entries are identified by the name the schema gives a column, not by the name the part
 # stores it under. After `RENAME COLUMN a TO b` an old part still keeps the data as `a`, but
 # `system.columns_cache` must report the entries as `b`, a user granted only `b` must see them,

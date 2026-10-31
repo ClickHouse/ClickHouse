@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Tags: long, no-msan
+# Tags: long, no-random-detach, no-msan
+# no-random-detach: test checks mutation state
 
 #
 # Check that KILL MUTATION can be executed in parallel for different tables.

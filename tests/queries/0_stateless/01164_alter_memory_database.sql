@@ -1,4 +1,5 @@
--- Tags: zookeeper, no-parallel, no-shared-merge-tree, no-flaky-check
+-- Tags: zookeeper, no-parallel, no-shared-merge-tree, no-random-detach, no-flaky-check
+-- no-random-detach: test checks table metadata
 -- no-shared-merge-tree: doesn't support databases without UUID
 
 drop database if exists test_1164_memory;

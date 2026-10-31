@@ -1,4 +1,5 @@
--- Tags: no-parallel, no-flaky-check
+-- Tags: no-parallel, no-random-detach, no-flaky-check
+-- no-random-detach: test checks table metadata
 
 DROP DATABASE IF EXISTS 02111_modify_table_comment;
 CREATE DATABASE 02111_modify_table_comment;

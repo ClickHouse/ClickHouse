@@ -1,4 +1,5 @@
--- Tags: no-random-settings, no-fasttest, no-parallel
+-- Tags: no-random-settings, no-fasttest, no-parallel, no-random-detach
+-- no-random-detach: test checks profile events
 
 SET allow_prefetched_read_pool_for_remote_filesystem=0;
 SET allow_prefetched_read_pool_for_local_filesystem=0;

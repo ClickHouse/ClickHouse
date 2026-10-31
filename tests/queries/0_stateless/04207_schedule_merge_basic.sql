@@ -1,4 +1,8 @@
--- Tags: no-random-settings, no-random-merge-tree-settings, no-shared-merge-tree
+-- Tags: no-random-settings, no-random-merge-tree-settings, no-shared-merge-tree, no-random-detach
+-- no-random-detach: the test relies on the merge scheduled by `SYSTEM SCHEDULE MERGE`
+-- persisting until `SYSTEM SYNC MERGES` returns. Random `DETACH`/`ATTACH` between the
+-- two statements discards the scheduled merge, so `SYSTEM SYNC MERGES` hangs forever
+-- (triggers the hung-query check).
 
 DROP TABLE IF EXISTS t_manual;
 

@@ -1,7 +1,8 @@
--- Tags: no-parallel, no-parallel-replicas
+-- Tags: no-parallel, no-parallel-replicas, no-random-detach
 -- Tag no-parallel: the test counts the misses of the process-wide statistics cache, but concurrent queries load the statistics
 -- of all tables (`system.parts_columns`) and evict the entries of reattached parts (destroyed late, they share the key).
 -- Tag no-parallel-replicas: the statistics are loaded on the initiator only, and the test counts the loads.
+-- Tag no-random-detach: reattaching a table before the query creates its parts anew, so the warm queries miss the statistics cache.
 
 -- The statistics of many parts are loaded in parallel (up to `max_threads` threads) by the part pruning,
 -- the ordering of PREWHERE conditions and `min`/`max`/`count` from statistics. The results must not depend

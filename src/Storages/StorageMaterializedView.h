@@ -105,6 +105,9 @@ public:
     StorageID getTargetTableId() const;
 
     ActionLock getActionLock(StorageActionBlockType type) override;
+    /// Same as `getActionLock`, and also returns the inner table the lock was taken on (null when none was),
+    /// resolved once: the inner table of a non-`APPEND` refreshable view is bound by name and may change.
+    ActionLock getActionLock(StorageActionBlockType type, StoragePtr & locked_target);
     void onActionLockRemove(StorageActionBlockType action_type) override;
 
     StorageMetadataHandle getInMemoryMetadataPtr(ContextPtr context, bool bypass_metadata_cache) const override;

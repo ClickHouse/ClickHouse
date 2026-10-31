@@ -1,3 +1,6 @@
+-- Tags: no-random-detach
+-- no-random-detach: test checks system.parts
+
 -- Check MergeTree declaration in new format
 CREATE TABLE check_system_tables
   (

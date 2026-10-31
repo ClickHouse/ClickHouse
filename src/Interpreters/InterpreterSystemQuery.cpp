@@ -315,6 +315,17 @@ AccessType getRequiredAccessType(StorageActionBlockType action_type)
 
 constexpr std::string_view table_is_not_replicated = "Table {} is not replicated";
 
+/// A lock taken through a forwarding storage (`Alias`, ...) blocks the storage it resolved to, and releasing
+/// it there needs the same access on that storage as a `SYSTEM START` naming it directly.
+ActionLocksManager::OwnerReleaseCheck mayReleaseActionLockOwner(const std::shared_ptr<const ContextAccessWrapper> & access, AccessType required_access_type)
+{
+    return [access, required_access_type](const StoragePtr & owner)
+    {
+        auto owner_id = owner->getStorageID();
+        return access->isGranted(required_access_type, owner_id.database_name, owner_id.table_name);
+    };
+}
+
 }
 
 /// Implements SYSTEM [START|STOP] <something action from ActionLocks>
@@ -339,7 +350,10 @@ void InterpreterSystemQuery::startStopAction(StorageActionBlockType action_type,
         {
             if (start)
             {
-                manager->remove(table, action_type);
+                /// The table is named explicitly, so a forwarding storage (`Alias`, ...) also releases a lock
+                /// taken directly on its target, if the user may do that on the target as well. The loop over
+                /// all tables below reaches the target by itself.
+                manager->remove(table, action_type, /* resolve_forwarding_target */ true, mayReleaseActionLockOwner(access, required_access_type));
                 table->onActionLockRemove(action_type);
             }
             else
@@ -377,7 +391,7 @@ void InterpreterSystemQuery::startStopActionInDatabase(StorageActionBlockType ac
 
         if (start)
         {
-            manager->remove(table, action_type);
+            manager->remove(table, action_type, /* resolve_forwarding_target */ false, mayReleaseActionLockOwner(access, required_access_type));
             table->onActionLockRemove(action_type);
         }
         else
