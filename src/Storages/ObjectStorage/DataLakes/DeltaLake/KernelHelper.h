@@ -48,11 +48,13 @@ public:
     /// (while full location would be "s3://bucket/path/to/table/data")
     virtual const std::string & getDataPath() const = 0;
 
+protected:
     /// Create "EngineBuilder" which allows to work with
     /// delta-kernel-rs ffi api and performs all interactions
     /// with object storage layer.
     virtual ffi::EngineBuilder * createBuilder() const = 0;
 
+public:
     /// Make the table location ready for a brand-new table; the local helper creates the root directory, object stores (S3/Azure) default to a no-op.
     virtual void prepareForTableCreation() const {}
 

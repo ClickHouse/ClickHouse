@@ -7076,6 +7076,8 @@ def test_delta_kernel_connections_do_not_grow_with_commits(started_cluster):
     minio_port = f":{started_cluster.minio_port:04X}"
 
     def kernel_connections():
+        # Close ClickHouse's own idle sessions, so the subtraction below only cancels its active ones.
+        instance.query("SYSTEM DROP CONNECTIONS CACHE")
         established = 0
         for line in instance.exec_in_container(["cat", "/proc/net/tcp", "/proc/net/tcp6"]).splitlines():
             fields = line.split()
