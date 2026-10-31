@@ -1,0 +1,32 @@
+3
+3
+10
+500
+500
+500
+3
+1000
+1000
+1000
+FS3 roundtrip rows / mismatches:	101	0
+FS5 roundtrip rows / mismatches:	7	0
+00000
+00001
+00002
+00003
+00004
+00005
+00006
+F32 spot-check diffs:
+F32 NaN identity:
+1
+F64 spot-check diffs:
+UUID inferred-width round trip:	1000	1000
+UUID compression_codec:	CODEC(ByteStreamSplit(16), LZ4)
+IPv6 inferred-width round trip:	1000	1000
+IPv6 compression_codec:	CODEC(ByteStreamSplit(16), LZ4)
+Array(Float32) round-trip:
+[]
+[6]
+[4,5]
+[1,2,3]
