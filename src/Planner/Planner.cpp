@@ -431,6 +431,8 @@ FiltersForTableExpressionMap collectFiltersForAnalysis(const QueryTreeNodePtr & 
     return res;
 }
 
+}
+
 FiltersForTableExpressionMap collectFiltersForAnalysis(const QueryTreeNodePtr & query_tree_node, const SelectQueryOptions & select_query_options, const ActionsDAG * post_filter)
 {
     if (select_query_options.only_analyze)
@@ -451,6 +453,9 @@ FiltersForTableExpressionMap collectFiltersForAnalysis(const QueryTreeNodePtr & 
 
     return collectFiltersForAnalysis(query_tree_node, table_expressions_nodes, context, post_filter);
 }
+
+namespace
+{
 
 /// Extend lifetime of query context, storages, and table locks
 void extendQueryContextAndStoragesLifetime(QueryPlan & query_plan, const PlannerContextPtr & planner_context)
@@ -2349,6 +2354,10 @@ void addAdditionalFilterStepIfNeeded(QueryPlan & query_plan,
     auto filter_info = buildFilterInfo(additional_result_filter_ast, fake_table_expression, planner_context, std::move(fake_name_set));
     if (!query_plan.isInitialized())
         return;
+
+    /// The filter must not reorder the result columns.
+    const auto * filter_node = &filter_info.actions.findInOutputs(filter_info.column_name);
+    filter_info.do_remove_column = makeFilterKeepHeader(filter_info.actions, *query_plan.getCurrentHeader(), filter_node, filter_info.column_name);
 
     auto filter_step = std::make_unique<FilterStep>(query_plan.getCurrentHeader(),
         std::move(filter_info.actions),

@@ -56,6 +56,11 @@ void ReplaceAliasByExpressionMatcher::visit(const ASTIdentifier & column, ASTPtr
     if (data.private_aliases.contains(column_name))
         return;
 
+    /// A compound identifier rooted at a lambda parameter, e.g. `z.a` in `arrayMap(z -> z.a, arr)`, is a
+    /// field of that parameter, even if an ALIAS column is literally named `z.a`.
+    if (column.name_parts.size() > 1 && data.private_aliases.contains(column.name_parts.front()))
+        return;
+
     if (data.columns.hasAlias(column_name))
     {
         /// Alias expr is saved in default expr.
