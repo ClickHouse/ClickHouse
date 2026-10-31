@@ -517,6 +517,15 @@ public:
     /// `ColumnArray::getExtremes`), but their comparison orders it, so it can also make a predicate true.
     static bool typeMayHideNaN(const DataTypePtr & type);
 
+    /// Whether `getExtremes` of a column of this type can return a max below one of its values in the order a
+    /// comparison uses: an `Array` or `Map`, at any depth, holding a `Nullable` or floating-point element, in a type
+    /// with no `Dynamic`, `Variant` or `JSON` node.
+    static bool typeMayHideValueAboveMax(const DataTypePtr & type);
+    static std::vector<size_t> getColumnsMayHideValueAboveMax(const DataTypes & types);
+    /// A copy of `getExtremes`-derived bounds whose given columns can be compared safely: the upper end is `+inf`,
+    /// and a lower end holding a NULL, which a merge in `Field` order can place above a row, is `-inf`.
+    static Hyperrectangle widenBoundsMayHideValues(const Hyperrectangle & bounds, const std::vector<size_t> & columns);
+
     /// Weaken the atoms over a `typeMayHideNaN` key column. Only for a condition evaluated against a
     /// `getExtremes`-derived hyperrectangle, and only before `alwaysUnknownOrTrue()`. A hidden NaN satisfies
     /// no ordering comparison, so it makes an atom true only through an enclosing negation: `can_be_true`

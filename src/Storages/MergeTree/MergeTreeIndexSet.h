@@ -151,6 +151,7 @@ private:
     String actions_output_column_name;
 
     DataTypes index_data_types;
+    std::vector<size_t> columns_may_hide_value_above_max;
     KeyCondition condition;
 };
 
