@@ -68,7 +68,8 @@ public:
     }
 
     /// Throws an exception if not found.
-    TableFunctionPtr get(const ASTPtr & ast_function, ContextPtr context) const;
+    /// `is_replayed_definition` is passed on to `ITableFunction::setReplayedDefinition`.
+    TableFunctionPtr get(const ASTPtr & ast_function, ContextPtr context, bool is_replayed_definition = false) const;
 
     /// Returns nullptr if not found.
     TableFunctionPtr tryGet(const std::string & name, ContextPtr context) const;

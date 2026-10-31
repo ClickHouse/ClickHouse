@@ -64,6 +64,11 @@ public:
 
     virtual void parseArguments(const ASTPtr & /*ast_function*/, ContextPtr /*context*/) {}
 
+    /// Set before `parseArguments` when the arguments come from a table definition the server stored
+    /// itself (`CREATE TABLE ... AS f(...)` loaded back from metadata), see `isReplayedTableDefinition`.
+    /// Such a definition has to load even if a newer version validates the arguments more strictly.
+    void setReplayedDefinition(bool value) { arguments_from_stored_definition = value; }
+
     /// Returns actual table structure probably requested from remote server, may fail
     virtual ColumnsDescription getActualTableStructure(ContextPtr /*context*/, bool is_insert_query) const = 0;
 
@@ -169,6 +174,8 @@ private:
 
 protected:
     String getFunctionURINormalized() const;
+
+    bool arguments_from_stored_definition = false;
 };
 
 /// Properties of table function that are independent of argument types and parameters.
