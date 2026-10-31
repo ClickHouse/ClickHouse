@@ -225,30 +225,20 @@ size_t tryOptimizeTopK(QueryPlan::Node * parent_node, QueryPlan::Nodes & /*nodes
 
     const auto & sort_column = sorting_step->getInputHeaders().front()->getByName(sort_column_name);
 
-    ///remove alias
-    if (sort_column_name.contains('.'))
+    /// The steps between the read and the sort may rename the sort column, but not compute it.
+    for (const ActionsDAG * dag : {expression_step ? &expression_step->getExpression() : nullptr,
+                                   filter_step ? &filter_step->getExpression() : nullptr})
     {
-        if (!expression_step && !filter_step)
-            return 0;
+        if (!dag)
+            continue;
 
-        const ActionsDAG::Node * column_node = nullptr;
-        if (filter_step)
-            column_node = filter_step->getExpression().tryFindInOutputs(sort_column_name);
-        else
-            column_node = expression_step->getExpression().tryFindInOutputs(sort_column_name);
-
-        if (unlikely(!column_node))
-            return 0;
-
-        if (column_node->type == ActionsDAG::ActionType::ALIAS)
+        auto input_name = findPassedThroughInput(*dag, sort_column_name);
+        if (!input_name)
         {
-            sort_column_name = column_node->children.at(0)->result_name;
-        }
-        else
-        {
-            LOG_DEBUG(getLogger("optimizeTopK"), "Could not resolve column alias {} {}", sort_column_name, column_node->type);
+            LOG_DEBUG(getLogger("optimizeTopK"), "Sort column {} is computed below the sorting step", sort_column_name);
             return 0;
         }
+        sort_column_name = std::move(*input_name);
     }
 
     const auto & sort_col_desc = sort_description.front();
