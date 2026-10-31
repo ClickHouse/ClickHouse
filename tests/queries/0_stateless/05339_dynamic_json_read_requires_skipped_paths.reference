@@ -1,0 +1,18 @@
+-- in memory
+JSON	\N	\N	\N	{"a":1,"b":2,"c":3}
+JSON(SKIP b)	{"a":4,"c":6}	{"a":4,"c":6}	\N	{"a":4,"c":6}
+JSON(SKIP b, SKIP REGEXP \'^c\')	{"a":7}	{"a":7}	{"a":7}	{"a":7}
+UInt8	\N	\N	\N	\N
+-- array
+Array(JSON)	[]
+Array(JSON(SKIP b))	['{"a":3}']
+-- named variants
+1	JSON	\N	\N	\N
+2	JSON(SKIP b)	{"a":4,"c":6}	{"a":4,"c":6}	\N
+3	JSON(SKIP b, SKIP REGEXP \'^c\')	{"a":7}	{"a":7}	{"a":7}
+4	Int64	\N	\N	\N
+-- shared variant
+1	JSON	\N	\N	\N
+2	JSON(SKIP b)	{"a":4,"c":6}	{"a":4,"c":6}	\N
+3	JSON(SKIP b, SKIP REGEXP \'^c\')	{"a":7}	{"a":7}	{"a":7}
+4	Int64	\N	\N	\N

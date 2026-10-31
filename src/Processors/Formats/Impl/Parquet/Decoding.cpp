@@ -1,7 +1,9 @@
 #include <Processors/Formats/Impl/Parquet/Decoding.h>
 #include <Processors/Formats/Impl/Parquet/ALPEncoding.h>
+#include <Processors/Formats/Impl/Parquet/UUIDUtils.h>
 
 #include <base/arithmeticOverflow.h>
+#include <Columns/ColumnLowCardinality.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsCommon.h>
 #include <Common/FloatUtils.h>
@@ -320,6 +322,7 @@ struct BitPackedRLEDecoder : public PageDecoder
         if constexpr (count_zeros)
             *num_zeros += zeros_acc;
     }
+
 };
 
 struct PlainFixedSizeDecoder : public PageDecoder
@@ -1922,6 +1925,53 @@ void Dictionary::appendRepeated(size_t idx, size_t n, IColumn & out)
     }
 }
 
+void Dictionary::insertIndexesIntoLowCardinalityColumn(const ColumnUInt32 & indexes_col, ColumnLowCardinality & out)
+{
+    if (mode == Mode::StringPlain && !col)
+    {
+        auto keys = ColumnString::create();
+        keys->reserve(count);
+        for (size_t idx = 0; idx < count; ++idx)
+        {
+            size_t start = offsets[ssize_t(idx) - 1] + 4; // offsets[-1] is ok because of padding
+            size_t len = offsets[idx] - start;
+            keys->insertData(data.data() + start, len);
+        }
+        col = std::move(keys);
+    }
+
+    switch (mode)
+    {
+        case Mode::StringPlain:
+        case Mode::Column:
+            out.insertRangeFromDictionaryEncodedColumn(*col, indexes_col);
+            break;
+        case Mode::FixedSize:
+        {
+            if (!col)
+            {
+                auto keys = out.getDictionary().getNestedColumn()->cloneEmpty();
+                keys->reserve(count);
+
+                auto dictionary_indexes = ColumnUInt32::create();
+                auto & dictionary_indexes_data = dictionary_indexes->getData();
+                dictionary_indexes_data.resize(count);
+                for (size_t idx = 0; idx < count; ++idx)
+                    dictionary_indexes_data[idx] = static_cast<UInt32>(idx);
+
+                index(*dictionary_indexes, *keys);
+                col = std::move(keys);
+            }
+
+            out.insertRangeFromDictionaryEncodedColumn(*col, indexes_col);
+            break;
+        }
+        case Mode::Uninitialized:
+            chassert(false);
+            break;
+    }
+}
+
 void memcpyIntoColumn(const char * data, size_t num_values, size_t value_size, IColumn & col)
 {
     auto to = col.insertRawUninitialized(num_values);
@@ -2107,7 +2157,7 @@ std::optional<Field> FloatConverter<T>::convertField(std::span<const char> data,
     if (data.size() != input_size)
         throw Exception(ErrorCodes::CANNOT_PARSE_NUMBER, "Unexpected value size in float statistics: {} != {}", data.size(), input_size);
 
-    T x;
+    T x = 0;
     memcpy(&x, data.data(), sizeof(x));
 
     /// parquet.thrift says:
@@ -2141,26 +2191,6 @@ void Float16Converter::convertColumn(std::span<const char> data, size_t num_valu
         memcpy(&x, data.data() + i * 2, 2);
         out_data.push_back(convertFloat16ToFloat32(x));
     }
-}
-
-static inline UUID decodeParquetUUID(const char * data)
-{
-    UUID res;
-    std::memcpy(&res, data, 16);
-    auto * bytes = reinterpret_cast<uint8_t *>(&res);
-
-    // Parquet demands Big-Endian (network byte order) for UUIDs
-    if constexpr (std::endian::native == std::endian::little)
-    {
-        std::reverse(bytes, bytes + 8);
-        std::reverse(bytes + 8, bytes + 16);
-    }
-    else
-    {
-        std::swap_ranges(bytes, bytes + 8, bytes + 8);
-    }
-
-    return res;
 }
 
 void UUIDConverter::convertColumn(std::span<const char> data, size_t num_values, IColumn & col) const
