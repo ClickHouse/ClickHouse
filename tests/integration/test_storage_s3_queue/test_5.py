@@ -991,8 +991,8 @@ def test_cancel_during_commit_on_select(started_cluster):
             "commit_on_select": 1,
             # Disable hash-ring batching so the FileIterator does not hold pre-fetched
             # file metadata after we throw from the failpoint. Without this, the
-            # iterator destructor runs after the source has thrown, and the
-            # file_metadata destructor hits a `checkProcessingOwnership` chassert.
+            # iterator destructor runs after the source has thrown and adds unrelated
+            # processing-node cleanup to the failure path exercised by this test.
             # See the same workaround in `test_failed_commit_after_success_select`.
             "enable_hash_ring_filtering": 0,
         },
@@ -2286,9 +2286,9 @@ def test_failed_commit_after_success(started_cluster):
     Test "failed after operation": the ZK multi-op succeeds but the connection is lost
     before the client receives the confirmation. On retry the commit fails with `ZNONODE`
     (processing node already removed). Without the fix the server aborts on a `chassert`
-    in `~ObjectStorageQueueIFileMetadata`. With the fix the `uncertain_commit` flag makes
-    the destructor check ownership instead of asserting; the file stays processed in ZK
-    and is skipped on the next background iteration.
+    in `~ObjectStorageQueueIFileMetadata`. With the fix the destructor always re-reads
+    the exact owner and uses a versioned, registry-fenced removal; the file stays processed
+    in ZK and is skipped on the next background iteration.
     """
     node = started_cluster.instances["instance_without_keeper_fault_injection"]
 

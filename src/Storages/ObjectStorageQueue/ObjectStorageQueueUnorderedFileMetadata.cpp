@@ -19,6 +19,7 @@ ObjectStorageQueueUnorderedFileMetadata::ObjectStorageQueueUnorderedFileMetadata
     size_t max_loading_retries_,
     std::atomic<size_t> & metadata_ref_count_,
     bool use_persistent_processing_nodes_,
+    const std::string & active_registry_id_,
     const std::atomic<size_t> & processing_state_cache_ttl_seconds_,
     const std::string & zookeeper_name_,
     LoggerPtr log_)
@@ -32,6 +33,7 @@ ObjectStorageQueueUnorderedFileMetadata::ObjectStorageQueueUnorderedFileMetadata
         max_loading_retries_,
         metadata_ref_count_,
         use_persistent_processing_nodes_,
+        active_registry_id_,
         processing_state_cache_ttl_seconds_,
         log_)
 {
@@ -47,7 +49,7 @@ ObjectStorageQueueUnorderedFileMetadata::prepareProcessingRequestsImpl(
     const std::string & processing_id)
 {
     auto zk_client = ObjectStorageQueueMetadata::getZooKeeper(log, zookeeper_name);
-    processor_info = getProcessorInfo(processing_id);
+    processor_info = getProcessorInfo(processing_id, active_registry_id);
 
     SetProcessingResponseIndexes result;
 
@@ -126,7 +128,7 @@ void ObjectStorageQueueUnorderedFileMetadata::prepareProcessedRequestsImpl(
     Coordination::Requests & requests,
     LastProcessedFileInfoMapPtr /* created_nodes */)
 {
-    requests.push_back(zkutil::makeRemoveRequest(processing_node_path, -1));
+    addProcessingNodeRemovalRequest(requests);
     requests.push_back(
         zkutil::makeCreateRequest(
             processed_node_path, node_metadata.toString(), zkutil::CreateMode::Persistent));

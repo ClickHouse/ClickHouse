@@ -141,6 +141,7 @@ namespace ObjectStorageQueueSetting
     extern const ObjectStorageQueueSettingsBool commit_on_select;
     extern const ObjectStorageQueueSettingsBool deduplication_v2;
     extern const ObjectStorageQueueSettingsUInt32 persistent_processing_node_ttl_seconds;
+    extern const ObjectStorageQueueSettingsUInt32 persistent_processing_node_abandoned_reclaim_ttl_seconds;
     extern const ObjectStorageQueueSettingsUInt32 processing_state_cache_ttl_seconds;
     extern const ObjectStorageQueueSettingsUInt32 after_processing_retries;
     extern const ObjectStorageQueueSettingsString after_processing_move_uri;
@@ -477,6 +478,7 @@ StorageObjectStorageQueue::StorageObjectStorageQueue(
         (*queue_settings_)[ObjectStorageQueueSetting::cleanup_interval_max_ms],
         /* use_persistent_processing_nodes */true,
         (*queue_settings_)[ObjectStorageQueueSetting::persistent_processing_node_ttl_seconds],
+        (*queue_settings_)[ObjectStorageQueueSetting::persistent_processing_node_abandoned_reclaim_ttl_seconds],
         (*queue_settings_)[ObjectStorageQueueSetting::processing_state_cache_ttl_seconds],
         getContext()->getServerSettings()[ServerSetting::keeper_multiread_batch_size],
         (*queue_settings_)[ObjectStorageQueueSetting::metadata_cache_size_bytes],
@@ -489,6 +491,7 @@ StorageObjectStorageQueue::StorageObjectStorageQueue(
         streaming_tasks.emplace_back(std::move(task));
     }
     streaming_task_refresh_epochs.resize(task_count, 0);
+    streaming_task_has_active_registry.resize(task_count, false);
     max_files_override = 0;
 }
 
@@ -692,7 +695,7 @@ void ReadFromObjectStorageQueue::createIterator(const ActionsDAG::Node * predica
     if (iterator)
         return;
 
-    iterator = storage->createFileIterator(context, predicate);
+    iterator = storage->createFileIterator(context, predicate, /* track_active_registry */ false);
 }
 
 
@@ -852,6 +855,39 @@ size_t StorageObjectStorageQueue::getDependencies() const
     return DatabaseCatalog::instance().getReadyDependentViews(getStorageID(), getContext()).size();
 }
 
+void StorageObjectStorageQueue::setStreamingTaskActiveRegistry(
+    size_t streaming_tasks_index,
+    bool active,
+    ObjectStorageQueueMetadata & metadata)
+{
+    std::lock_guard lock(active_registry_mutex);
+    auto & task_has_active_registry = streaming_task_has_active_registry.at(streaming_tasks_index);
+
+    if (active)
+    {
+        /// Ensure the ephemeral node exists on every polling cycle. If Keeper replaced the
+        /// session between cycles, this recreates the node even when this task already has a lease.
+        metadata.registerActive(getStorageID());
+
+        if (!task_has_active_registry)
+        {
+            task_has_active_registry = true;
+            ++active_registry_users;
+        }
+        return;
+    }
+
+    if (!task_has_active_registry)
+        return;
+
+    task_has_active_registry = false;
+    chassert(active_registry_users > 0);
+    --active_registry_users;
+
+    if (active_registry_users == 0)
+        metadata.unregisterActive(getStorageID());
+}
+
 void StorageObjectStorageQueue::threadFunc(size_t streaming_tasks_index)
 {
     chassert(streaming_tasks_index < streaming_tasks.size());
@@ -887,7 +923,7 @@ void StorageObjectStorageQueue::threadFunc(size_t streaming_tasks_index)
 
         try
         {
-            metadata->unregisterActive(storage_id);
+            setStreamingTaskActiveRegistry(streaming_tasks_index, false, *metadata);
         }
         catch (...)
         {
@@ -903,6 +939,15 @@ void StorageObjectStorageQueue::threadFunc(size_t streaming_tasks_index)
 
         LOG_TRACE(log, "Streaming is disabled, rescheduling next check in {} ms", disabled_streaming_reschedule_period);
 
+        try
+        {
+            setStreamingTaskActiveRegistry(streaming_tasks_index, false, *metadata);
+        }
+        catch (...)
+        {
+            tryLogCurrentException(log);
+        }
+
         std::lock_guard lock(mutex);
         reschedule_processing_interval_ms = disabled_streaming_reschedule_period;
     }
@@ -914,7 +959,7 @@ void StorageObjectStorageQueue::threadFunc(size_t streaming_tasks_index)
             {
                 LOG_DEBUG(log, "Started streaming to {} attached views", dependencies_count);
 
-                metadata->registerActive(storage_id);
+                setStreamingTaskActiveRegistry(streaming_tasks_index, true, *metadata);
 
                 if (streamToViews(streaming_tasks_index, cycle_epoch))
                 {
@@ -935,6 +980,7 @@ void StorageObjectStorageQueue::threadFunc(size_t streaming_tasks_index)
             }
             else
             {
+                setStreamingTaskActiveRegistry(streaming_tasks_index, false, *metadata);
                 LOG_TEST(log, "No ready attached dependencies");
             }
         }
@@ -959,7 +1005,7 @@ void StorageObjectStorageQueue::threadFunc(size_t streaming_tasks_index)
         {
             try
             {
-                metadata->unregisterActive(storage_id);
+                setStreamingTaskActiveRegistry(streaming_tasks_index, false, *metadata);
             }
             catch (...)
             {
@@ -1026,7 +1072,7 @@ bool StorageObjectStorageQueue::streamToViews(size_t streaming_tasks_index, UInt
         std::lock_guard streaming_lock(streaming_mutex);
         if (!streaming_file_iterator || streaming_file_iterator->isFinished())
         {
-            streaming_file_iterator = createFileIterator(queue_context, nullptr);
+            streaming_file_iterator = createFileIterator(queue_context, nullptr, /* track_active_registry */ true);
         }
         file_iterator = streaming_file_iterator;
     }
@@ -1339,12 +1385,8 @@ void StorageObjectStorageQueue::commit(
                 DimensionalMetrics::ObjectStorageQueueFailures,
                 {getStorageID().getDatabaseName(), getStorageID().getTableName(), "commit", String(magic_enum::enum_name(e.code))});
 
-            /// A tryMulti attempt may have succeeded in Keeper before the connection dropped
-            /// ("failed after operation") - we never received its response, so the commit outcome
-            /// is unknown. Mark all metadata objects so their destructors check ownership before
-            /// removing the processing node, same as the replay-error branch below.
-            for (auto & source : sources)
-                source->setUncertainCommit();
+            /// The commit outcome may be unknown after a connection loss. File metadata
+            /// destructors always re-read and fence ownership before removing a claim.
             throw;
         }
 
@@ -1370,15 +1412,6 @@ void StorageObjectStorageQueue::commit(
             DimensionalMetrics::add(
                 DimensionalMetrics::ObjectStorageQueueFailures,
                 {getStorageID().getDatabaseName(), getStorageID().getTableName(), "commit", String(magic_enum::enum_name(reported_code))});
-            if (try_num > 1)
-            {
-                /// We had at least one hardware error retry, so the first attempt may have succeeded
-                /// ("failed after operation"): the multi-op applied in ZK but the connection was lost
-                /// before we received the response. Mark all metadata objects so their destructors
-                /// check ownership before removing the processing node instead of asserting.
-                for (auto & source : sources)
-                    source->setUncertainCommit();
-            }
             throw zkutil::KeeperMultiException(code.value(), requests, responses);
         }
     }
@@ -1910,7 +1943,8 @@ std::shared_ptr<ObjectStorageQueueMetadata> StorageObjectStorageQueue::tryGetFil
 }
 
 std::shared_ptr<StorageObjectStorageQueue::FileIterator>
-StorageObjectStorageQueue::createFileIterator(ContextPtr local_context, const ActionsDAG::Node * predicate)
+StorageObjectStorageQueue::createFileIterator(
+    ContextPtr local_context, const ActionsDAG::Node * predicate, bool track_active_registry)
 {
     auto component_guard = Coordination::setCurrentComponent("StorageObjectStorageQueue::createFileIterator");
 
@@ -1944,6 +1978,7 @@ StorageObjectStorageQueue::createFileIterator(ContextPtr local_context, const Ac
         log,
         enable_hash_ring_filtering_copy,
         file_deletion_enabled,
+        track_active_registry,
         shutdown_called);
 }
 
@@ -1986,6 +2021,8 @@ ObjectStorageQueueSettings StorageObjectStorageQueue::getSettings() const
     settings[ObjectStorageQueueSetting::cleanup_interval_min_ms] = static_cast<UInt32>(cleanup_interval_ms.first);
     settings[ObjectStorageQueueSetting::cleanup_interval_max_ms] = static_cast<UInt32>(cleanup_interval_ms.second);
     settings[ObjectStorageQueueSetting::persistent_processing_node_ttl_seconds] = static_cast<UInt32>(metadata->getPersistentProcessingNodeTTLSeconds());
+    settings[ObjectStorageQueueSetting::persistent_processing_node_abandoned_reclaim_ttl_seconds]
+        = static_cast<UInt32>(metadata->getPersistentProcessingNodeAbandonedReclaimTTLSeconds());
     settings[ObjectStorageQueueSetting::processing_state_cache_ttl_seconds] = static_cast<UInt32>(metadata->getProcessingStateCacheTTLSeconds());
     settings[ObjectStorageQueueSetting::use_persistent_processing_nodes] = metadata->usePersistentProcessingNode();
     const auto & file_statuses_cache = metadata->getFileStatusesCache();

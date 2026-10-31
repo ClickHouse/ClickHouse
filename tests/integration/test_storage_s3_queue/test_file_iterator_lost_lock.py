@@ -1,3 +1,4 @@
+import json
 import logging
 import time
 import uuid
@@ -10,6 +11,16 @@ from helpers.s3_queue_common import (
     generate_random_files,
     create_table,
 )
+
+
+def wait_until(predicate, timeout=30, interval=0.1):
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        result = predicate()
+        if result:
+            return result
+        time.sleep(interval)
+    return None
 
 
 def wait_for_processed_files_in_log(node, table_name, expected_count):
@@ -52,8 +63,7 @@ def started_cluster():
 
         yield cluster
     finally:
-        # The test deliberately provokes a logical error
-        # about lost bucket lock ownership.
+        # The test deliberately provokes an ownership-loss exception.
         cluster.shutdown(ignore_logical_errors=True)
 
 
@@ -63,7 +73,7 @@ def test_streaming_recovers_after_lost_bucket_lock(started_cluster):
     if node.is_debug_build() or node.is_built_with_sanitizer():
         pytest.skip(
             "Debug and sanitizer builds abort on the deliberately provoked "
-            "logical error about lost bucket lock ownership"
+            "ownership-loss exception"
         )
 
     table_name = f"test_lost_bucket_lock_{uuid.uuid4().hex[:8]}"
@@ -185,7 +195,7 @@ def test_streaming_recovers_after_lost_bucket_lock(started_cluster):
 
     # The ownership loss must have been detected exactly once: after the
     # iterator invalidation the fresh iterator must not fail on it again.
-    # ForcedCriticalErrorsLogger mirrors every logical error into the log,
+    # ForcedCriticalErrorsLogger mirrors every logical exception into the log,
     # so filter its duplicate of the same single exception out.
     detections = [
         line
@@ -215,6 +225,259 @@ def test_streaming_recovers_after_lost_bucket_lock(started_cluster):
         f"WHERE table = '{table_name}' AND status = 'Processed' "
         f"GROUP BY file_name HAVING count() > 1"
     )
+    assert "" == node.query(
+        f"SELECT file_name FROM system.s3queue_log "
+        f"WHERE table = '{table_name}' AND status = 'Failed'"
+    )
+
+
+def test_reclaims_persistent_claims_after_process_restart(started_cluster):
+    node = started_cluster.instances["instance"]
+
+    table_name = f"test_abandoned_bucket_lock_{uuid.uuid4().hex[:8]}"
+    dst_table_name = f"{table_name}_dst"
+    keeper_path = f"/clickhouse/test_{table_name}"
+    files_path = f"{table_name}_data"
+    files_to_generate = 10
+
+    create_table(
+        started_cluster,
+        node,
+        table_name,
+        "ordered",
+        files_path,
+        additional_settings={
+            "keeper_path": keeper_path,
+            "buckets": 2,
+            "processing_threads_num": 1,
+            "persistent_processing_node_ttl_seconds": 21600,
+            "persistent_processing_node_abandoned_reclaim_ttl_seconds": 3,
+            "cleanup_interval_min_ms": 100,
+            "cleanup_interval_max_ms": 100,
+            "max_processed_files_before_commit": 1,
+            "polling_min_timeout_ms": 100,
+        },
+    )
+
+    generate_random_files(
+        started_cluster, files_path, files_to_generate, start_ind=0, row_num=1
+    )
+
+    node.query(
+        f"""
+        CREATE TABLE {dst_table_name}
+        (column1 UInt32, column2 UInt32, column3 UInt32, _path String)
+        ENGINE = MergeTree ORDER BY column1
+        """
+    )
+    node.query(
+        f"""
+        CREATE MATERIALIZED VIEW {table_name}_mv TO {dst_table_name} AS
+        SELECT column1, column2, column3, _path
+        FROM {table_name}
+        WHERE ignore(sleepEachRow(2)) = 0
+        """
+    )
+
+    zk = started_cluster.get_kazoo_client("zoo1")
+    lock_path = None
+    previous_lock_data = None
+    previous_registry_id = None
+    previous_registry_path = None
+    previous_processing_data = None
+    previous_processing_path = None
+
+    for _ in range(300):
+        for bucket in range(2):
+            candidate_lock_path = f"{keeper_path}/buckets/{bucket}/lock"
+            try:
+                lock_data, _ = zk.get(candidate_lock_path)
+                lock_info = json.loads(lock_data)
+                active_registry_id = lock_info.get("active_registry_id")
+                if active_registry_id:
+                    registry_path = f"{keeper_path}/registry/{active_registry_id}"
+                    if zk.exists(registry_path):
+                        for processing_node in zk.get_children(
+                            f"{keeper_path}/processing"
+                        ):
+                            processing_path = (
+                                f"{keeper_path}/processing/{processing_node}"
+                            )
+                            try:
+                                processing_data, _ = zk.get(processing_path)
+                                processing_info = json.loads(processing_data)
+                                if (
+                                    processing_info.get("active_registry_id")
+                                    == active_registry_id
+                                ):
+                                    lock_path = candidate_lock_path
+                                    previous_lock_data = lock_data
+                                    previous_registry_id = active_registry_id
+                                    previous_registry_path = registry_path
+                                    previous_processing_data = processing_data
+                                    previous_processing_path = processing_path
+                                    break
+                            except NoNodeError:
+                                pass
+            except NoNodeError:
+                pass
+        if lock_path is not None:
+            break
+        time.sleep(0.1)
+
+    assert lock_path is not None
+    assert previous_lock_data is not None
+    assert previous_registry_id is not None
+    assert previous_registry_path is not None
+    assert previous_processing_data is not None
+    assert previous_processing_path is not None
+
+    node.stop_clickhouse(kill=True)
+    clickhouse_started = False
+    try:
+        for _ in range(600):
+            if not zk.exists(previous_registry_path):
+                break
+            time.sleep(0.1)
+        assert not zk.exists(previous_registry_path)
+
+        # A missing ephemeral registry entry alone is not enough to reclaim a
+        # persistent claim. Both claims must survive until the grace period.
+        time.sleep(1)
+        lock_data, _ = zk.get(lock_path)
+        assert lock_data == previous_lock_data
+        processing_data, _ = zk.get(previous_processing_path)
+        assert processing_data == previous_processing_data
+
+        node.start_clickhouse()
+        clickhouse_started = True
+
+        current_registry_id = None
+        for _ in range(300):
+            try:
+                registry_ids = zk.get_children(f"{keeper_path}/registry")
+                current_registry_id = next(
+                    (
+                        registry_id
+                        for registry_id in registry_ids
+                        if registry_id != previous_registry_id
+                    ),
+                    None,
+                )
+                if current_registry_id:
+                    break
+            except NoNodeError:
+                pass
+            time.sleep(0.1)
+
+        assert current_registry_id is not None
+
+        def get_processed_count():
+            return int(node.query(f"SELECT uniqExact(_path) FROM {dst_table_name}"))
+
+        for _ in range(150):
+            if get_processed_count() == files_to_generate:
+                break
+            time.sleep(1)
+
+        assert get_processed_count() == files_to_generate
+        assert node.contains_in_log(
+            f"active registry entry {previous_registry_id} remained absent"
+        )
+    finally:
+        if not clickhouse_started:
+            node.start_clickhouse()
+
+
+def test_inflight_claim_survives_keeper_session_reconnect(started_cluster):
+    node = started_cluster.instances["instance"]
+
+    table_name = f"test_session_reconnect_{uuid.uuid4().hex[:8]}"
+    dst_table_name = f"{table_name}_dst"
+    keeper_path = f"/clickhouse/test_{table_name}"
+    files_path = f"{table_name}_data"
+
+    create_table(
+        started_cluster,
+        node,
+        table_name,
+        "unordered",
+        files_path,
+        additional_settings={
+            "keeper_path": keeper_path,
+            "processing_threads_num": 1,
+            "persistent_processing_node_ttl_seconds": 21600,
+            "persistent_processing_node_abandoned_reclaim_ttl_seconds": 20,
+            "cleanup_interval_min_ms": 100,
+            "cleanup_interval_max_ms": 100,
+            "max_processed_files_before_commit": 1,
+            "polling_min_timeout_ms": 100,
+        },
+    )
+    generate_random_files(started_cluster, files_path, 1, start_ind=0, row_num=1)
+
+    node.query(
+        f"""
+        CREATE TABLE {dst_table_name}
+        (column1 UInt32, column2 UInt32, column3 UInt32, _path String)
+        ENGINE = MergeTree ORDER BY column1
+        """
+    )
+    node.query(
+        f"""
+        CREATE MATERIALIZED VIEW {table_name}_mv TO {dst_table_name} AS
+        SELECT column1, column2, column3, _path
+        FROM {table_name}
+        WHERE ignore(sleepEachRow(10)) = 0
+        """
+    )
+
+    zk = started_cluster.get_kazoo_client("zoo1")
+
+    def get_claim():
+        try:
+            for child in zk.get_children(f"{keeper_path}/processing"):
+                path = f"{keeper_path}/processing/{child}"
+                data, _ = zk.get(path)
+                registry_id = json.loads(data).get("active_registry_id")
+                if registry_id:
+                    return path, f"{keeper_path}/registry/{registry_id}"
+        except NoNodeError:
+            pass
+        return None
+
+    claim = wait_until(get_claim, timeout=30)
+    assert claim is not None
+    processing_path, registry_path = claim
+    assert zk.exists(registry_path)
+
+    old_session_id = int(
+        node.query(
+            "SELECT client_id FROM system.zookeeper_connection WHERE name = 'default'"
+        ).strip()
+    )
+    node.query("SYSTEM RECONNECT ZOOKEEPER")
+
+    # The persistent claim survives the session replacement. The absence of the old
+    # ephemeral node can be too short to observe because the source recreates it promptly.
+    assert zk.exists(processing_path)
+
+    assert wait_until(
+        lambda: int(
+            node.query(
+                "SELECT client_id FROM system.zookeeper_connection WHERE name = 'default'"
+            ).strip()
+        )
+        != old_session_id,
+        timeout=10,
+    )
+    assert wait_until(lambda: zk.exists(registry_path), timeout=10)
+    assert wait_until(
+        lambda: int(node.query(f"SELECT count() FROM {dst_table_name}")) == 1,
+        timeout=30,
+    )
+    assert wait_until(lambda: not zk.exists(processing_path), timeout=10)
+    assert 1 == wait_for_processed_files_in_log(node, table_name, 1)
 
 
 def test_lost_bucket_lock_detected_during_release(started_cluster):
@@ -223,7 +486,7 @@ def test_lost_bucket_lock_detected_during_release(started_cluster):
     if node.is_debug_build() or node.is_built_with_sanitizer():
         pytest.skip(
             "Debug and sanitizer builds abort on the deliberately provoked "
-            "logical error about lost bucket lock ownership"
+            "ownership-loss exception"
         )
 
     table_name = f"test_lost_lock_release_{uuid.uuid4().hex[:8]}"
