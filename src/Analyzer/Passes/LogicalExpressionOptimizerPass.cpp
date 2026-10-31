@@ -7,9 +7,13 @@
 #include <Analyzer/InDepthQueryTreeVisitor.h>
 #include <Analyzer/JoinNode.h>
 #include <Analyzer/LambdaNode.h>
+#include <Analyzer/Passes/OptimizeKeyExpressionsUtils.h>
+#include <Analyzer/QueryNode.h>
 #include <Analyzer/Utils.h>
+#include <Analyzer/ValidationUtils.h>
 #include <Common/FieldAccurateComparison.h>
 #include <Common/NaNUtils.h>
+#include <Common/SipHash.h>
 #include <Core/AccurateComparison.h>
 #include <Core/Settings.h>
 #include <DataTypes/DataTypeDateTime64.h>
@@ -30,6 +34,7 @@ namespace DB
 {
 namespace Setting
 {
+    extern const SettingsBool group_by_use_nulls;
     extern const SettingsUInt64 optimize_min_equality_disjunction_chain_length;
     extern const SettingsUInt64 optimize_min_inequality_conjunction_chain_length;
     extern const SettingsBool optimize_extract_common_expressions;
@@ -194,7 +199,9 @@ static bool isImpliedIndexHint(const QueryTreeNodePtr & node)
 }
 
 // Returns the flattened AND/OR node if the passed-in node can be flattened. Doesn't modify the passed-in node.
-static std::shared_ptr<FunctionNode> getFlattenedLogicalExpression(const FunctionNode & node, const ContextPtr & context)
+// A nested node in `keep_whole` is not lifted.
+static std::shared_ptr<FunctionNode> getFlattenedLogicalExpression(
+    const FunctionNode & node, const ContextPtr & context, const std::unordered_set<QueryTreeNodePtr> * keep_whole = nullptr)
 {
     const auto & function_name = node.getFunctionName();
     if (function_name != "or" && function_name != "and")
@@ -209,7 +216,7 @@ static std::shared_ptr<FunctionNode> getFlattenedLogicalExpression(const Functio
     {
         auto * maybe_function = argument->as<FunctionNode>();
         // If the nested function is not the same, just use it as is
-        if (!maybe_function || maybe_function->getFunctionName() != function_name)
+        if (!maybe_function || maybe_function->getFunctionName() != function_name || (keep_whole && keep_whole->contains(argument)))
         {
             new_arguments.push_back(argument);
             continue;
@@ -218,7 +225,7 @@ static std::shared_ptr<FunctionNode> getFlattenedLogicalExpression(const Functio
         flattened_anything = true;
 
         // If the nested function is the same, just lift the its or its flattened form's arguments
-        auto maybe_flattened = getFlattenedLogicalExpression(*maybe_function, context);
+        auto maybe_flattened = getFlattenedLogicalExpression(*maybe_function, context, keep_whole);
         if (maybe_flattened)
         {
             auto & flattened_arguments = maybe_flattened->getArguments().getNodes();
@@ -306,6 +313,181 @@ static std::optional<ComparisonFunction> toComparisonFunction(const String & nam
     if (it == name_to_function.end())
         return std::nullopt;
     return it->second;
+}
+
+/// Inserts the function nodes and the subqueries in `node`. Column nodes are left out: they are shared with the rest of the query.
+static void insertFunctionsAndSubqueries(const QueryTreeNodePtr & node, std::unordered_set<QueryTreeNodePtr> & nodes)
+{
+    std::vector<QueryTreeNodePtr> nodes_to_process{node};
+    while (!nodes_to_process.empty())
+    {
+        auto current = std::move(nodes_to_process.back());
+        nodes_to_process.pop_back();
+
+        const auto node_type = current->getNodeType();
+        if (node_type == QueryTreeNodeType::QUERY || node_type == QueryTreeNodeType::UNION)
+        {
+            nodes.insert(current);
+            continue;
+        }
+
+        if (node_type == QueryTreeNodeType::FUNCTION && !nodes.insert(current).second)
+            continue;
+
+        for (const auto & child : current->getChildren())
+            if (child)
+                nodes_to_process.push_back(child);
+    }
+}
+
+/// The same for the nodes that `compareGroupByKeys` matches. Column sources and subqueries are not hashed.
+static UInt64 getGroupByKeyHash(const IQueryTreeNode & node)
+{
+    SipHash hash;
+    std::vector<const IQueryTreeNode *> nodes_to_process{&node};
+    while (!nodes_to_process.empty())
+    {
+        const auto * current = nodes_to_process.back();
+        nodes_to_process.pop_back();
+
+        const auto node_type = current->getNodeType();
+        hash.update(static_cast<size_t>(node_type));
+        if (node_type == QueryTreeNodeType::QUERY || node_type == QueryTreeNodeType::UNION)
+            continue;
+
+        if (const auto * function_node = current->as<FunctionNode>())
+            hash.update(function_node->getFunctionName());
+        else if (const auto * column_node = current->as<ColumnNode>())
+            hash.update(column_node->getColumnName());
+        else if (const auto * constant_node = current->as<ConstantNode>())
+            constant_node->getColumn()->updateHashFast(hash);
+
+        for (const auto & child : current->getChildren())
+            if (child)
+                nodes_to_process.push_back(child.get());
+    }
+    return hash.get64();
+}
+
+/// Whether `node` or a node below it, outside of subqueries, is in `nodes`.
+static bool containsAnyOf(const QueryTreeNodePtr & node, const std::unordered_set<QueryTreeNodePtr> & nodes)
+{
+    if (nodes.empty())
+        return false;
+
+    if (nodes.contains(node))
+        return true;
+
+    std::vector<const IQueryTreeNode *> nodes_to_process{node.get()};
+    while (!nodes_to_process.empty())
+    {
+        const auto * current = nodes_to_process.back();
+        nodes_to_process.pop_back();
+
+        for (const auto & child : current->getChildren())
+        {
+            if (!child || child->getNodeType() == QueryTreeNodeType::QUERY || child->getNodeType() == QueryTreeNodeType::UNION)
+                continue;
+
+            if (nodes.contains(child))
+                return true;
+
+            nodes_to_process.push_back(child.get());
+        }
+    }
+
+    return false;
+}
+
+/// The comparison and `and` nodes of `query_node`, outside of its subqueries, that are equal to one of its `GROUP BY` keys,
+/// or under `group_by_use_nulls` to the `Nullable` shape of a key that the analyzer puts after `GROUP BY`, with the functions below them.
+/// Then the same for every other key that contains one of these nodes, until there is none.
+/// Collected before the query is rewritten, because the rewrites change `or`/`and` nodes inside a key in place.
+static std::unordered_set<QueryTreeNodePtr> collectGroupByKeyNodes(const QueryNode & query_node, bool group_by_use_nulls)
+{
+    std::unordered_set<QueryTreeNodePtr> result;
+
+    const bool add_nullable_shape = group_by_use_nulls
+        && (query_node.isGroupByWithGroupingSets() || query_node.isGroupByWithRollup() || query_node.isGroupByWithCube());
+
+    std::unordered_map<UInt64, QueryTreeNodes> keys_by_hash;
+    std::unordered_set<String> key_function_names;
+    auto add_key = [&](const QueryTreeNodePtr & key)
+    {
+        key_function_names.insert(key->as<FunctionNode &>().getFunctionName());
+        keys_by_hash[getGroupByKeyHash(*key)].push_back(key);
+        if (add_nullable_shape)
+        {
+            auto nullable_key = key->clone();
+            nullable_key->convertToNullable();
+            keys_by_hash[getGroupByKeyHash(*nullable_key)].push_back(std::move(nullable_key));
+        }
+    };
+
+    QueryTreeNodes other_keys;
+    for (const auto & key : getGroupByKeys(query_node))
+    {
+        const auto * function_node = key->as<FunctionNode>();
+        if (!function_node)
+            continue;
+
+        if (function_node->getFunctionName() == "and" || toComparisonFunction(function_node->getFunctionName()))
+            add_key(key);
+        else
+            other_keys.push_back(key);
+    }
+
+    if (keys_by_hash.empty())
+        return result;
+
+    auto is_key = [&](const QueryTreeNodePtr & node)
+    {
+        const auto * function_node = node->as<FunctionNode>();
+        if (!function_node || !key_function_names.contains(function_node->getFunctionName()))
+            return false;
+
+        auto it = keys_by_hash.find(getGroupByKeyHash(*node));
+        return it != keys_by_hash.end()
+            && std::ranges::any_of(it->second, [&](const QueryTreeNodePtr & key) { return compareGroupByKeys(node, key); });
+    };
+
+    while (true)
+    {
+        std::unordered_set<const IQueryTreeNode *> visited;
+        std::vector<const IQueryTreeNode *> nodes_to_process{&query_node};
+        while (!nodes_to_process.empty())
+        {
+            const auto * node = nodes_to_process.back();
+            nodes_to_process.pop_back();
+
+            for (const auto & child : node->getChildren())
+            {
+                if (!child || child->getNodeType() == QueryTreeNodeType::QUERY || child->getNodeType() == QueryTreeNodeType::UNION
+                    || result.contains(child) || !visited.insert(child.get()).second)
+                    continue;
+
+                if (is_key(child))
+                    insertFunctionsAndSubqueries(child, result);
+                else
+                    nodes_to_process.push_back(child.get());
+            }
+        }
+
+        /// The identifier resolve cache can make a key and a part of another key the same node.
+        QueryTreeNodes remaining_keys;
+        for (auto & key : other_keys)
+        {
+            if (containsAnyOf(key, result))
+                add_key(key);
+            else
+                remaining_keys.push_back(std::move(key));
+        }
+
+        if (remaining_keys.size() == other_keys.size())
+            return result;
+
+        other_keys = std::move(remaining_keys);
+    }
 }
 
 static bool isLessThanCompare(ComparisonFunction f)
@@ -1339,10 +1521,10 @@ static std::optional<CommonExpressionExtractionResult> tryExtractCommonExpressio
     QueryTreeNodes new_or_arguments;
     bool has_completely_extracted_and_expression = false;
 
-    for (auto & or_argument : or_argument_nodes)
+    for (const auto & original_or_argument : or_argument_nodes)
     {
-        if (auto it = flattened_ands.find(or_argument); it != flattened_ands.end())
-            or_argument = it->second;
+        auto it = flattened_ands.find(original_or_argument);
+        const auto & or_argument = it != flattened_ands.end() ? it->second : original_or_argument;
 
         // Avoid changing the original tree, it might be used later
         const auto & and_node = or_argument->as<FunctionNode &>();
@@ -1882,8 +2064,17 @@ public:
         std::swap(join_left_side_preserved, left_side_preserved);
     }
 
+    /// For each enclosing query, the nodes `collectGroupByKeyNodes` returned for it: a copy of a key is read from the
+    /// aggregation result, so these nodes are kept as written. The first set is for an expression outside of any query.
+    std::vector<std::unordered_set<QueryTreeNodePtr>> group_by_key_nodes_stack{1};
+
+    bool isInGroupByKey(const QueryTreeNodePtr & node) const { return group_by_key_nodes_stack.back().contains(node); }
+
     bool needChildVisit(QueryTreeNodePtr & parent, QueryTreeNodePtr & child)
     {
+        if (isInGroupByKey(child))
+            return false;
+
         /// a subquery is a separate query, the sides of a join around it do not apply
         if (isQueryOrUnionNode(child))
         {
@@ -1915,6 +2106,12 @@ public:
 
     void enterImpl(QueryTreeNodePtr & node)
     {
+        if (const auto * query_node = node->as<QueryNode>())
+        {
+            group_by_key_nodes_stack.push_back(collectGroupByKeyNodes(*query_node, getSettings()[Setting::group_by_use_nulls]));
+            return;
+        }
+
         if (auto * join_node = node->as<JoinNode>())
         {
             /// Operator <=> is not supported outside of JOIN ON section
@@ -1925,6 +2122,10 @@ public:
             }
             return;
         }
+
+        /// Each copy of a key must stay equal to the key, and a rewrite can treat the copies differently.
+        if (isInGroupByKey(node))
+            return;
 
         if (mode == Mode::JOIN_ON_AND_COMPARE_CHAIN)
         {
@@ -1960,6 +2161,9 @@ public:
 
     void leaveImpl(QueryTreeNodePtr & node)
     {
+        if (node->getNodeType() == QueryTreeNodeType::QUERY)
+            group_by_key_nodes_stack.pop_back();
+
         if (mode == Mode::JOIN_ON_AND_COMPARE_CHAIN)
             return;
 
@@ -2040,8 +2244,8 @@ private:
                 ? toComparisonFunction(argument_function->getFunctionName())
                 : std::nullopt;
 
-            /// Not a comparison — keep as-is.
-            if (!comparison_func)
+            /// Not a comparison, or a GROUP BY key, keep as-is.
+            if (!comparison_func || isInGroupByKey(argument))
             {
                 all_operands.emplace_back(argument_index, argument);
                 ++argument_index;
@@ -2368,7 +2572,7 @@ private:
         /// this AND and could not remove e.g. `x < 3` derived for `(x < 2 AND x < y) AND y < 3`.
         ComparisonFilterMap derived_conjunct_filters;
 
-        auto flattened_and_node = getFlattenedLogicalExpression(function_node, getContext());
+        auto flattened_and_node = getFlattenedLogicalExpression(function_node, getContext(), &group_by_key_nodes_stack.back());
         const auto & arguments = flattened_and_node ? flattened_and_node->getArguments().getNodes()
                                                     : function_node.getArguments().getNodes();
 
@@ -2388,7 +2592,7 @@ private:
             /// `x != 3`) has to stay plain so the next pass folds the AND to `false`.
             const auto valid_functions = std::unordered_set<std::string>{
                 "less", "greater", "lessOrEquals", "greaterOrEquals", "equals", "notEquals"};
-            if (!argument_function || !valid_functions.contains(argument_function->getFunctionName()))
+            if (!argument_function || !valid_functions.contains(argument_function->getFunctionName()) || isInGroupByKey(argument))
                 continue;
 
             const auto function_name = argument_function->getFunctionName();
@@ -2556,7 +2760,8 @@ private:
                     CompareType compare_type = std::min(type, left.type);
 
                     /// Non-sense to have both sides as constant, and no repeat of equal function
-                    if (constant && !left.node->as<ConstantNode>()
+                    /// A key node in `left.node` would be cloned into the derived conjunct, where the key set does not record it.
+                    if (constant && !left.node->as<ConstantNode>() && !containsAnyOf(left.node, group_by_key_nodes_stack.back())
                         && (compare_type != CompareType::equals || equal_funcs[left.node].insert(constant).second))
                     {
                         String compare_function_name;
@@ -2668,7 +2873,7 @@ private:
         for (const auto & argument : function_node.getArguments())
         {
             auto * argument_function = argument->as<FunctionNode>();
-            if (!argument_function || argument_function->getFunctionName() != "equals")
+            if (!argument_function || argument_function->getFunctionName() != "equals" || isInGroupByKey(argument))
             {
                 or_operands.push_back(argument);
                 continue;
