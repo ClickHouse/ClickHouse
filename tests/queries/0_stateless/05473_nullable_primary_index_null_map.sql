@@ -43,7 +43,7 @@ SELECT sum(isZeroOrNull(k)) FROM mergeTreeIndex(currentDatabase(), 't_nullable_p
 SYSTEM FLUSH LOGS query_log;
 SELECT log_comment, count(), min(ProfileEvents['NullableNullMapMaterializations']) = max(ProfileEvents['NullableNullMapMaterializations'])
 FROM system.query_log
-WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND log_comment LIKE '05473_%' AND event_date >= yesterday()
+WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND log_comment IN ('05473_set', '05473_load', '05473_cache', '05473_cache_load') AND event_date >= yesterday()
 GROUP BY log_comment
 ORDER BY min(event_time_microseconds);
 
