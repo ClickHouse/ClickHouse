@@ -297,8 +297,31 @@ bool ParserTablesInSelectQueryElement::parseImpl(Pos & pos, ASTPtr & node, Expec
                 return false;
         }
 
-        if (!ParserTableExpression(allow_alias_without_as_keyword).parse(pos, res->table_expression, expected))
-            return false;
+        /// `LATERAL` is only a keyword when it is followed by a subquery, the only supported lateral shape.
+        /// Otherwise it is left to `ParserTableExpression`, so a table, view or table function named `lateral`
+        /// (`JOIN lateral ON ...`, `JOIN lateral(...) ON ...`) still parses.
+        Pos before_lateral = pos;
+        bool is_lateral = false;
+        if (ParserKeyword(Keyword::LATERAL).ignore(pos, expected) && pos->type == TokenType::OpeningRoundBracket)
+        {
+            is_lateral = ParserTableExpression(allow_alias_without_as_keyword).parse(pos, res->table_expression, expected)
+                && res->table_expression->as<ASTTableExpression &>().subquery;
+        }
+
+        if (is_lateral)
+        {
+            table_join->lateral = true;
+
+            if (table_join->kind == JoinKind::Cross || table_join->kind == JoinKind::Comma)
+                throw Exception(ErrorCodes::SYNTAX_ERROR, "LATERAL is not supported with {} JOIN", toString(table_join->kind));
+        }
+        else
+        {
+            pos = before_lateral;
+            res->table_expression = nullptr;
+            if (!ParserTableExpression(allow_alias_without_as_keyword).parse(pos, res->table_expression, expected))
+                return false;
+        }
 
         if (table_join->kind != JoinKind::Comma
             && table_join->kind != JoinKind::Cross && table_join->kind != JoinKind::Paste)
@@ -559,8 +582,93 @@ Additional join types available in ClickHouse are:
 | `PASTE JOIN`                                | Performs a horizontal concatenation of two tables.                                                                                          |
 
 <Note>
+When using the analyzer, disabling the `semi_join_include_columns_from_both_sides` or `anti_join_include_columns_from_both_sides` setting makes the corresponding join expose only its preserved side to expressions resolved after the join result is formed.
+
+- `LEFT SEMI JOIN` and `LEFT ANTI JOIN` expose only left-side columns.
+- `RIGHT SEMI JOIN` and `RIGHT ANTI JOIN` expose only right-side columns.
+- This affects clauses such as `SELECT`, `PREWHERE`, `WHERE`, `GROUP BY`, `HAVING`, `QUALIFY`, `ORDER BY`, and `LIMIT BY`, including qualified wildcards like `t1.*`.
+- The `ON` expression of the same `JOIN` can still reference both sides.
+
+When these settings are enabled (the default), ClickHouse keeps the legacy behavior, where both sides remain accessible and `SELECT *` expands columns from both tables.
+</Note>
+
+<Note>
 When [join_algorithm](/reference/settings/session-settings/join#join_algorithm) is set to `partial_merge`, `RIGHT JOIN` and `FULL JOIN` are supported only with `ALL` strictness (`SEMI`, `ANTI`, `ANY`, and `ASOF` are not supported).
 </Note>
+
+## LATERAL JOIN {#lateral-join}
+
+`JOIN LATERAL` lets the subquery on the right side of a join reference columns of the table
+expressions on its left side. The result is as if the subquery were evaluated for each distinct combination
+of the left-side column values it references, and its result were joined to every left row with that combination:
+
+```sql
+SELECT ...
+FROM <left_table>
+[INNER|LEFT] JOIN LATERAL (SELECT ... WHERE <expr referencing left_table>) AS <alias> ON true
+```
+
+The `ON true` predicate is mandatory, as for any other `INNER` or `LEFT JOIN`; omitting it is a syntax error.
+
+It is experimental and disabled by default; enable it with the
+[`allow_experimental_lateral_join`](/reference/settings/session-settings/allow-experimental#allow_experimental_lateral_join) setting.
+
+The lateral subquery is not executed once per left row or once per distinct combination. Like other correlated
+subqueries, it is decorrelated into a single query over all left rows: the left-side columns it references are
+added to its `GROUP BY` keys if it aggregates, its `LIMIT` (if any) becomes `LIMIT ... BY` these columns, and its
+result is joined to the left rows on them. When the correlation is a simple equality, such as `orders.user_id = u.id`,
+the left-side column can be replaced by the equal column of the subquery
+(`correlated_subqueries_substitute_equivalent_expressions`, enabled by default), which can let the subquery avoid
+reading the left rows. This is not guaranteed: for example, an aggregate without `GROUP BY` (such as `count`) still
+reads the distinct left values to produce its result for left values with no matching rows. Whenever the distinct
+left values are passed to the subquery, with the default settings this goes through an in-memory buffer, and only
+when such a buffer is actually used the join is always a hash join. In all other cases, such as when the equality
+substitution avoids reading the left rows or the buffer is disabled
+(`correlated_subqueries_use_in_memory_buffer = 0` or `correlated_subqueries_default_join_kind = 'left'`), the
+algorithm is chosen by the `join_algorithm` setting. For example, `EXPLAIN` of a lateral subquery with `LIMIT`
+shows a `Join` step over a `LimitBy (LIMIT BY for decorrelated correlated subquery)` step; a subquery without
+`LIMIT` has no such step.
+
+Only the following subset is supported so far; anything else is rejected with an error:
+
+- `INNER JOIN LATERAL` and `LEFT JOIN LATERAL` only; `RIGHT`, `FULL`, `PASTE` and `NATURAL` joins are not supported, and `LATERAL` cannot be combined with a `CROSS` or comma join at all.
+- The default `ALL` strictness only; `ANY`, `SEMI`, `ANTI` and `ASOF` are not supported.
+- No join predicate other than `ON true` (`ON 1` is also accepted); `USING` is not supported, and the predicate
+  cannot be omitted. Put the filters that relate the two sides into the `WHERE` clause of the lateral subquery.
+- The `GLOBAL` and `LOCAL` join modifiers are not supported.
+- The lateral subquery must reference at least one column of the left side. Use a regular join for a
+  non-correlated subquery.
+- Because the lateral subquery is decorrelated rather than evaluated separately for each left value, it
+  must not contain functions that are non-deterministic within a query, such as
+  `rand` or `generateUUIDv4`, or table functions that generate random rows, such as `generateRandom`.
+  Functions that are constant within a query, such as `now`, are allowed.
+- Only a subquery is supported as the lateral table expression. The PostgreSQL table-source forms
+  `LATERAL unnest(...)` and `CROSS JOIN UNNEST(...)` are not supported - use the
+  [`ARRAY JOIN`](/reference/statements/select/array-join) clause instead.
+- The `GROUP BY` and `ORDER BY` of the lateral subquery run once for all left values together, so the
+  `max_rows_to_group_by`, `max_rows_to_sort` and `max_bytes_to_sort` limits count the rows for all left values,
+  not for one. They are only supported with the `throw` overflow mode; `any` and `break` are rejected.
+- The result of the decorrelated subquery is matched to the left rows by a single join. As for any hash join,
+  `max_rows_in_join` and `max_bytes_in_join` limit the side of this join that is kept in memory, and the
+  planner chooses that side: when the in-memory buffer described above is actually used, it is the left side
+  of `JOIN LATERAL`, because the left rows must be fully read before the lateral subquery is evaluated; otherwise it can be the result of the decorrelated subquery. The limits are always
+  enforced as if `join_overflow_mode` were `throw`: with `break`, the join would silently drop unrelated left rows.
+
+**Example**
+
+```sql
+SELECT u.id, o.total
+FROM users AS u
+LEFT JOIN LATERAL
+(
+    SELECT total
+    FROM orders
+    WHERE orders.user_id = u.id
+    ORDER BY total DESC
+    LIMIT 1
+) AS o ON true
+SETTINGS allow_experimental_lateral_join = 1;
+```
 
 ## Settings {#settings}
 
@@ -1128,7 +1236,7 @@ It is a common operation for tables that contain an array column to produce a ne
 Its name comes from the fact that it can be looked at as executing `JOIN` with an array or nested data structure. The intent is similar to the [arrayJoin](/reference/functions/regular-functions/array-join) function, but the clause functionality is broader.
 
 <Note>
-PostgreSQL `FROM unnest(...)`, `CROSS JOIN UNNEST(...)`, and `LATERAL` are not supported. Use `ARRAY JOIN` instead. The `unnest` name (since version 26.5) is a function-call alias of `arrayJoin` (`SELECT unnest(arr)`), not a table function.
+PostgreSQL's `FROM unnest(...)`, `CROSS JOIN UNNEST(...)` and `LATERAL unnest(...)` table-source forms are not supported. Use `ARRAY JOIN` instead. The `unnest` name (since version 26.5) is a function-call alias of `arrayJoin` (`SELECT unnest(arr)`), not a table function. `JOIN LATERAL <subquery>` over a correlated subquery is supported separately as an experimental feature, see [`JOIN`](/reference/statements/select/join#lateral-join).
 </Note>
 
 Syntax:
@@ -1492,6 +1600,42 @@ ARRAY JOIN nest AS n, arrayEnumerate(`nest.x`) AS num;
 │ World │   5 │  50 │ [3,4,5] │ [30,40,50] │   3 │
 └───────┴─────┴─────┴─────────┴────────────┴─────┘
 ```
+
+## Row Order and Paging {#row-order-and-paging}
+
+`ARRAY JOIN` keeps the order of the rows that it receives. For each row, it produces the elements in their order in the array. If a query has more than one `ARRAY JOIN` clause, the first clause is the outer loop:
+
+```sql
+SELECT x, y
+FROM (SELECT ['a', 'b'] AS xs, [1, 2] AS ys)
+ARRAY JOIN xs AS x
+ARRAY JOIN ys AS y;
+```
+
+```response
+┌─x─┬─y─┐
+│ a │ 1 │
+│ a │ 2 │
+│ b │ 1 │
+│ b │ 2 │
+└───┴───┘
+```
+
+If one `ARRAY JOIN` clause has more than one array, for example `ARRAY JOIN xs AS x, ys AS y`, the elements at the same position go to the same row. In this example, the result is the two rows `('a', 1)` and `('b', 2)`.
+
+Without `ORDER BY`, the order of the rows that `ARRAY JOIN` receives is not guaranteed. For example, a query can read a table in parallel streams. To get a stable order, add `ORDER BY` with the columns that identify the source row and the position of the element. You must do this to read the result in pages with `LIMIT` and `OFFSET`:
+
+```sql
+SELECT id, num, x
+FROM t
+ARRAY JOIN xs AS x, arrayEnumerate(xs) AS num
+ORDER BY id, num
+LIMIT 10 OFFSET 20;
+```
+
+If `ORDER BY` starts with the columns of the sorting key of a `MergeTree` table, the query reads the table in the order of the key. In the example, this is true when the table has `ORDER BY id`. The query then stops when it has the rows for `LIMIT`, and it does not expand the arrays of the other rows. For more information, see [Optimization of Data Reading](/reference/statements/select/order-by#optimization-of-data-reading) and the setting [optimize_read_in_order](/reference/settings/session-settings/optimize#optimize_read_in_order). If `ORDER BY` starts with an element of the array, for example `ORDER BY num, id`, the query expands and sorts all the rows.
+
+The [arrayJoin](/reference/functions/regular-functions/array-join) function also produces the elements of each array in their order in the array. But if a query has more than one `arrayJoin` call, the first call is not always the outer loop. For more information, see [Row order](/reference/functions/regular-functions/array-join#row-order).
 
 ## Implementation Details {#implementation-details}
 

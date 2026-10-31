@@ -1362,6 +1362,31 @@ public:
     ColumnNumbers getArgumentsThatDontImplyNullableReturnType(size_t /*number_of_arguments*/) const override { return {0}; }
     bool canBeExecutedOnLowCardinalityDictionary() const override { return false; }
 
+    /// `if(cond, then, else)` accepts UInt8 / Nullable(UInt8) / NULL for `cond`;
+    /// the result is `leastSupertype{,OrVariant}(then, else)`. The Variant
+    /// branch is selected by the `use_variant_when_no_common_type` setting.
+    String getSignatureString() const override
+    {
+        if (use_variant_when_no_common_type)
+            return "(MaybeNullable(UInt8) | Nothing, T1, T2) -> leastSupertypeOrVariant(T1, T2)";
+        return "(MaybeNullable(UInt8) | Nothing, T1, T2) -> leastSupertype(T1, T2)";
+    }
+
+    /// The declarative signature cannot express `allow_lossy_numeric_supertype` (the `leastSupertype`
+    /// type-function always uses the strict mode), so when that setting is enabled, compute the common
+    /// type explicitly, mirroring the legacy implementation. Otherwise the signature stays authoritative.
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    {
+        if (!allow_lossy_numeric_supertype)
+            return FunctionIfBase::getReturnTypeImpl(arguments);
+
+        DataTypes types;
+        types.reserve(arguments.size());
+        for (const auto & arg : arguments)
+            types.push_back(arg.type);
+        return getReturnTypeImpl(types);
+    }
+
     /// Get result types by argument types. If the function does not apply to these arguments, throw an exception.
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
@@ -1386,10 +1411,12 @@ public:
     {
         ColumnsWithTypeAndName arguments = args;
         executeShortCircuitArguments(arguments);
-        ColumnPtr res;
-        if (   (res = executeForConstAndNullableCondition(arguments, result_type, input_rows_count))
-            || (res = executeForNullThenElse(arguments, result_type, input_rows_count))
-            || (res = executeForNullableThenElse(arguments, result_type, input_rows_count)))
+        ColumnPtr res = executeForConstAndNullableCondition(arguments, result_type, input_rows_count);
+        if (!res)
+            res = executeForNullThenElse(arguments, result_type, input_rows_count);
+        if (!res)
+            res = executeForNullableThenElse(arguments, result_type, input_rows_count);
+        if (res)
             return res;
 
         const ColumnWithTypeAndName & arg_cond = arguments[0];
@@ -1478,15 +1505,20 @@ public:
 
         /// TODO optimize for map type
         /// TODO optimize for nullable type
-        if (!(callOnBasicTypes<true, true, true, false>(left_id, right_id, call)
-            || (res = executeTyped<UUID, UUID>(cond_col, arguments, result_type, input_rows_count))
-            || (res = executeString(cond_col, arguments, result_type))
-            || (res = executeGenericArray(cond_col, arguments, result_type))
-            || (res = executeTuple(arguments, result_type, input_rows_count))
-            || (res = executeMap(arguments, result_type, input_rows_count))))
-        {
+        if (callOnBasicTypes<true, true, true, false>(left_id, right_id, call))
+            return res;
+
+        res = executeTyped<UUID, UUID>(cond_col, arguments, result_type, input_rows_count);
+        if (!res)
+            res = executeString(cond_col, arguments, result_type);
+        if (!res)
+            res = executeGenericArray(cond_col, arguments, result_type);
+        if (!res)
+            res = executeTuple(arguments, result_type, input_rows_count);
+        if (!res)
+            res = executeMap(arguments, result_type, input_rows_count);
+        if (!res)
             return executeGeneric(cond_col, arguments, result_type, input_rows_count);
-        }
 
         return res;
     }

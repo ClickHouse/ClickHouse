@@ -25,7 +25,7 @@ Possible values:
 
 - 1 — skipping enabled.
 
-    If a shard is unavailable, ClickHouse returns a result based on partial data and does not report node availability issues.
+    If a shard is unavailable, ClickHouse returns a result based on partial data and does not report node availability issues. On a read, if *every* shard was skipped before returning any data there is no partial data left to return, so the query throws `ALL_CONNECTION_TRIES_FAILED` instead of returning an empty result. This check covers reads only; `INSERT` has its own handling of a fully unavailable destination cluster.
 
 - 0 — skipping disabled.
 

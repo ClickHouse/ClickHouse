@@ -17,7 +17,7 @@ pip install "clickhouse-connect[sqlalchemy]"
 
 ## SQLAlchemy で接続する {#sqlalchemy-connect}
 
-`clickhousedb://` または `clickhousedb+connect://` のいずれかの URL 形式で engine を作成します。
+`clickhousedb://` または `clickhousedb+connect://` のいずれかの URL 形式でエンジンを作成します。
 
 ```python
 from sqlalchemy import create_engine, text
@@ -30,6 +30,14 @@ with engine.connect() as conn:
     version = conn.execute(text("SELECT version()")).scalar_one()
     print(version)
 ```
+
+`clickhouse-sqlalchemy` も併せてインストールされている場合は、これらの明示的な URL 形式を使用してください。
+`clickhouse_connect.cc_sqlalchemy` をインポートしても、そのパッケージによる `clickhouse://`
+の登録はそのまま維持されます。インストール済みの別のプロバイダーによって本パッケージの別名
+登録が妨げられる場合、インポート時に明示的な ClickHouse Connect URL の使用を推奨する
+`UserWarning` が発行されます。ランタイムで既に登録されているものは、警告なしでそのまま維持されます。
+他のプロバイダーが `clickhouse://` を登録していない場合は、このインポートによって
+`clickhouse://` が ClickHouse Connect の互換用の別名として利用可能になります。
 
 ### ClickHouseのセッションID {#sqlalchemy-session-ids}
 
@@ -134,6 +142,8 @@ with engine.connect() as conn:
 ### エラー処理 {#sqlalchemy-error-handling}
 
 SQLAlchemy の接続を介してドライバーが送出するエラーには、`clickhouse_connect.dbapi` からエクスポートされている DB-API クラスが使用されます。これらは `clickhouse_connect.driver.exceptions` 内の対応するクラスと同一のクラスオブジェクトであるため、SQLAlchemy はこれらを該当する `sqlalchemy.exc.DBAPIError` サブクラスでラップします。`StreamFailureError` は `OperationalError` の一種であり、`sqlalchemy.exc.OperationalError` としてラップされます。
+
+SQL の実行には、ドライバーの [HTTP 再試行ポリシー](/ja/integrations/language-clients/python/driver-api#http-retries)が適用されます。ネイティブの一括挿入処理には、[挿入の再試行ポリシー](/ja/integrations/language-clients/python/advanced-inserting#insert-retries-and-deduplication)が適用されます。
 
 呼び出し元によるキャンセルが明示的な `AsyncConnection.invalidate()` の呼び出しを中断する可能性がある場合は、無効化処理を自身が管理するタスク内で実行し、キャンセルを伝播させる前にそのタスクの完了を待機してください。これにより、SQLAlchemy は接続レコードの管理処理を最後まで完了できます:
 
@@ -432,7 +442,9 @@ ClickHouse は再帰的なマテリアライズド CTE をサポートしてい�
 
 ClickHouse Connect は、ClickHouse データ型、テーブルエンジン、Dictionary 機能、データベース DDL、テーブルリフレクションをサポートしています。
 
-単独の `Variant` カラムは SQLAlchemy の内部型を通じてリフレクションされ、Alembic の 自動生成 は型変更を繰り返すことなく、その canonical な生の型名を保持します。`Geometry` および `MultiPoint` カラムは、公開されている SQLAlchemy の型としてリフレクションされます。
+`clickhouse_connect.cc_sqlalchemy.datatypes.sqltypes` の `Nullable()` と `LowCardinality()` は、ClickHouse の SQLAlchemy 型クラスまたはインスタンスを受け取り、型チェッカーに対して元の具体的な型を保持します。例えば、`Nullable(String)` は `String` インスタンスを返すため、そのまま `Column` に渡せます。型チェッカーは `[Nullable(String)]` の型を `list[String]` と推論します。リストに他の ClickHouse の型も含まれる場合は、`clickhouse_connect.cc_sqlalchemy.datatypes.base` から `ChSqlaType` をインポートし、`list[ChSqlaType]` として型注釈を付けてください。
+
+単独の `Variant` カラムは SQLAlchemy の内部型を通じてリフレクションされ、Alembic の 自動生成 は型変更を繰り返すことなく、その 標準的な生の型名を保持します。`Geometry` および `MultiPoint` カラムは、公開されている SQLAlchemy の型としてリフレクションされます。
 
 ```python
 import sqlalchemy as db
@@ -460,7 +472,23 @@ with engine.connect() as conn:
     assert reflected.engine is not None
 ```
 
-リフレクションで取得されたカラムには、`DEFAULT` 式に対応する `server_default` に加え、存在する場合は `clickhouse_codec`、`clickhouse_ttl`、`clickhouse_materialized`、`clickhouse_alias` などのダイアレクト 固有の属性も含まれます。
+リフレクションで取得されたカラムには、`DEFAULT` 式に対応する `server_default` が含まれます。リフレクションで取得された
+SQLAlchemy オブジェクトでは、存在する場合、`clickhousedb_codec`、
+`clickhousedb_ttl`、`clickhousedb_materialized`、`clickhousedb_alias` などのダイアレクト固有のオプションが使用されます。
+`Inspector.get_columns()` が返す公開の辞書には、
+対応する `clickhouse_*` キーが引き続き含まれます。
+
+新しいテーブルおよびカラムの宣言には `clickhousedb_*` を使用してください。ドライバーが生成する
+メタデータおよび Alembic のリビジョンでは、これらの名前が使用されます。ClickHouse Connect は
+明示的に指定された従来の `clickhouse_*` オプションも読み取りますが、SQLAlchemy はそれらを
+`clickhouse` を所有するダイアレクトに基づいて検証します。複数のダイアレクトが混在するインストール環境では、`clickhouse_engine`、`clickhouse_ttl`、`clickhouse_settings`、
+`clickhouse_table_type`、`clickhouse_dictionary_*` などの ClickHouse Connect のオプションによって `ArgumentError` が発生する場合があります。
+これらは `clickhousedb_*` に名前を変更してください。
+
+ClickHouse Connect はデフォルト値を `clickhousedb` からのみ読み取ります。デフォルト値は
+`Table.argument_for("clickhousedb", ...)` または
+`Column.argument_for("clickhousedb", ...)` で登録してください。`op.add_column(..., clickhouse_settings={...})` などの
+Alembic の操作引数は、従来の名前のまま使用できます。
 
 `DEFAULT`、`MATERIALIZED`、`ALIAS`、`TTL` 句内の文字列値では、ClickHouse の文字列エスケープを使用します。同じエスケープは、Alembic によって出力されるコメントを含む、テーブル、Dictionary、カラムのコメントにも適用されます。
 
@@ -550,6 +578,10 @@ alembic init -t async alembic
 生成される `alembic.ini` では `script_location = %(here)s/alembic` が使用されます。移行ディレクトリの名前が `alembic` の場合はこの設定をそのまま使用し、それ以外の場合は `alembic init` に渡したディレクトリに更新してください。`alembic/env.py` をリポジトリに含まれている [非同期 Alembic `env.py` の例](https://github.com/ClickHouse/clickhouse-connect/blob/main/examples/alembic_async/env.py) に置き換え、`alembic.ini` で `sqlalchemy.url` を設定します。
 
 ダイアレクトのインテグレーションを登録するには、Alembic の `env.py` で `clickhouse_connect.cc_sqlalchemy.alembic` をインポートします。自動生成では、テーブルの作成と削除、カラムの追加/変更/削除、デフォルト値、コメントなど、一般的なテーブル変更に対応しています。テーブル名やカラム名のリネームには手動操作を使用してください。生成された移行は、適用前に必ずすべて確認してください。
+
+メタデータで `AggregateFunction` のステートバージョンが省略されている場合、自動生成ではリフレクションされた既存のバージョンをそのまま受け入れます。たとえば、`AggregateFunction(uniq, UInt32)` はリフレクションされた `AggregateFunction(1, uniq, UInt32)` と一致するものとみなされます。これはネストされた型の内部でも同様です。ただし、集約関数、そのパラメータ、または引数の型を変更した場合は、型の変更として検出されます。
+
+メタデータでバージョンを明示的に指定する場合は、リフレクションされたバージョンと一致している必要があります。リフレクションされたレガシー型のうちバージョンを持たないものは、明示的なバージョン `0` と一致します。なお、バージョンを省略しても、サーバーのアップグレード後に既存のステートフォーマットのアップグレードが要求されるわけではありません。ステートフォーマットを変更したい場合は、バージョンを明示的に宣言してください。
 
 Alembic の移行関数は同期のままです。非同期環境では `AsyncEngine` を作成し、`AsyncConnection` を開いたうえで、同期の移行関数を `await connection.run_sync(...)` に渡します。オフライン移行ではエンジンを作成せず、`context.configure(url=..., literal_binds=True, dialect_opts={"paramstyle": "named"})` を直接呼び出します。リポジトリに含まれている [非同期 Alembic `env.py` の例](https://github.com/ClickHouse/clickhouse-connect/blob/main/examples/alembic_async/env.py) は両方の処理に対応しており、Alembic 標準の `sqlalchemy.url` 設定から接続 URL を読み取ります。また、実例で使用している ClickHouse 用の Alembic フックとオプション (`include_object`、`make_include_name(...)`、`clickhouse_writer`、`version_table` など) もそのまま引き継いでいます。非同期移行の実行や破棄には `engine.sync_engine` を使用しないでください。
 

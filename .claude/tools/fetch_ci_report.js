@@ -810,6 +810,8 @@ async function fetchReport(inputUrl, options = {}) {
       // top-level report whose workflow has no job report linked explicitly.
       const workflowOf = u => u.replace(/&name_1=[^&]*/, '');
       const topLevelUrls = ciUrls.filter(u => /[?&]name_0=/.test(u) && !/[?&]name_1=/.test(u));
+      const allGreenTopLevel = [];
+      let failedChildCount = 0;
       for (const topLevelUrl of topLevelUrls) {
         if (ciUrls.some(u => /[?&]name_1=/.test(u) && workflowOf(u) === topLevelUrl)) continue;
         try {
@@ -819,20 +821,30 @@ async function fetchReport(inputUrl, options = {}) {
             if (!ciUrls.includes(childUrl)) ciUrls.push(childUrl);
           }
           if (childUrls.length > 0) {
+            failedChildCount += childUrls.length;
             console.log(`Top-level report ${topLevelUrl} is an index — descending into ${childUrls.length} failed job report(s).`);
           } else {
-            // No failures (all-green PR): expand to ALL concrete children so the display list
-            // and --report N indices are consistent with each other.
-            const allChildren = allChildReportUrls(topLevelUrl, top.jsonData).filter(isConcreteJobUrl);
-            if (allChildren.length > 0) {
-              for (const childUrl of allChildren) {
-                if (!ciUrls.includes(childUrl)) ciUrls.push(childUrl);
-              }
-              console.log(`Top-level report ${topLevelUrl} is all-green — expanded into ${allChildren.length} concrete job report(s).`);
-            }
+            allGreenTopLevel.push({ topLevelUrl, jsonData: top.jsonData });
           }
         } catch (e) {
           console.log(`Note: could not expand the top-level report ${topLevelUrl} into job reports (${e.message}); showing job-level failures only.`);
+        }
+      }
+      // An all-green top-level report is expanded into ALL its concrete children, so the display list
+      // and --report N indices are consistent with each other. But when another workflow already
+      // contributed failed jobs (e.g. a green `PR` run of a PR rejected by `MergeQueueCI`), its ~150
+      // green jobs would only bury the failures, so leave it out.
+      for (const { topLevelUrl, jsonData } of allGreenTopLevel) {
+        if (failedChildCount > 0) {
+          console.log(`Top-level report ${topLevelUrl} is all-green — not expanded, because another workflow has failed jobs.`);
+          continue;
+        }
+        const allChildren = allChildReportUrls(topLevelUrl, jsonData).filter(isConcreteJobUrl);
+        if (allChildren.length > 0) {
+          for (const childUrl of allChildren) {
+            if (!ciUrls.includes(childUrl)) ciUrls.push(childUrl);
+          }
+          console.log(`Top-level report ${topLevelUrl} is all-green — expanded into ${allChildren.length} concrete job report(s).`);
         }
       }
 

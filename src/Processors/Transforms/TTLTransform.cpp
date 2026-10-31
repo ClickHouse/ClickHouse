@@ -4,6 +4,7 @@
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Columns/ColumnConst.h>
+#include <Common/quoteString.h>
 #include <Interpreters/addTypeConversionToAST.h>
 #include <Interpreters/MaterializedColumnDependencies.h>
 #include <Interpreters/Context.h>
@@ -16,6 +17,11 @@
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int ILLEGAL_COLUMN;
+}
 
 static TTLExpressions getExpressions(const TTLDescription & ttl_descr, PreparedSets::Subqueries & subqueries_for_sets, const ContextPtr & context)
 {
@@ -88,12 +94,7 @@ std::vector<std::vector<TTLTransform::DependentMaterializedColumn>> TTLTransform
     /// written. Such a column is left in `dependents` above: nothing changes it, so the dependents
     /// reading it get the value they already have, and dropping it here does not make them stale.
     NameSet unrecomputable_columns = columns_to_leave_alone;
-    for (const auto & name : metadata_snapshot->getColumnsRequiredForSortingKey())
-        unrecomputable_columns.insert(name);
-    for (const auto & name : metadata_snapshot->getColumnsRequiredForPrimaryKey())
-        unrecomputable_columns.insert(name);
-    for (const auto & name : metadata_snapshot->getColumnsRequiredForPartitionKey())
-        unrecomputable_columns.insert(name);
+    unrecomputable_columns.merge(metadata_snapshot->getStorageColumnsRequiredForKeys());
 
     std::vector<std::vector<DependentMaterializedColumn>> levels(number_of_levels);
     for (const auto & column : storage_columns)
@@ -205,6 +206,14 @@ TTLTransform::TTLTransform(
     }
 
     const auto column_ttls = metadata_snapshot_->getColumnTTLs();
+
+    const NameSet key_columns = metadata_snapshot_->getStorageColumnsRequiredForKeys();
+    for (const auto & [name, _] : column_ttls)
+        if (key_columns.contains(name))
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN,
+                "Cannot apply the TTL of column {} because a table key reads it. Remove the TTL with ALTER TABLE ... MODIFY COLUMN {} REMOVE TTL",
+                backQuote(name), backQuote(name));
+
     const auto expired_columns_map = expired_columns.getNameToTypeMap();
 
     /// The columns this transform resets to their default.

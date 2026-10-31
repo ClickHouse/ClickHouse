@@ -13,6 +13,7 @@
 #include <Common/MemoryTrackerUntrackedAllocationsBlockerInThread.h>
 #include <Common/OvercommitTracker.h>
 #include <Common/PageCache.h>
+#include <Common/IMemoryReleasableCache.h>
 #include <Common/ProfileEvents.h>
 #include <Common/Stopwatch.h>
 #include <Common/TraceSender.h>
@@ -23,6 +24,7 @@
 #include <Common/setThreadName.h>
 #include <Common/thread_local_rng.h>
 #include <base/defines.h>
+#include <base/scope_guard.h>
 
 #include "config.h"
 
@@ -482,21 +484,37 @@ AllocationTrace MemoryTracker::allocImpl(Int64 size, bool enforce_memory_limit, 
         /// otherwise all allocations may get slow when above memory limit.
         if (memoryTrackerCanThrow(level, false) && enforce_memory_limit)
         {
+            refusing_amount.fetch_add(size, std::memory_order_relaxed);
+            SCOPE_EXIT(refusing_amount.fetch_sub(size, std::memory_order_relaxed));
+
             OvercommitResult overcommit_result = OvercommitResult::NONE;
 
             /// Try to shrink the userspace page cache.
             DB::PageCache * page_cache_ptr = nullptr;
-            if (level == VariableContext::Global && (page_cache_ptr = page_cache.load(std::memory_order_relaxed)))
+            if (level == VariableContext::Global)
+                page_cache_ptr = page_cache.load(std::memory_order_relaxed);
+            if (page_cache_ptr)
             {
                 ProfileEvents::increment(ProfileEvents::PageCacheOvercommitResize);
                 if (page_cache_ptr->autoResize(std::max(will_be, will_be_rss), current_hard_limit))
                     overcommit_result = OvercommitResult::MEMORY_FREED;
             }
 
+            /// Then the columns cache, which also gives its memory back on demand.
+            DB::IMemoryReleasableCache * releasable_cache_ptr = nullptr;
+            if (overcommit_result == OvercommitResult::NONE && level == VariableContext::Global
+                && (releasable_cache_ptr = DB::getMemoryReleasableCache()))
+            {
+                if (releasable_cache_ptr->autoResize(std::max(will_be, will_be_rss), current_hard_limit))
+                    overcommit_result = OvercommitResult::MEMORY_FREED;
+            }
+
             /// If that wasn't enough, try to stop some query.
-            OvercommitTracker * overcommit_tracker_ptr = nullptr;
-            if (overcommit_result == OvercommitResult::NONE && (overcommit_tracker_ptr = overcommit_tracker.load(std::memory_order_relaxed)) && query_tracker != nullptr)
-                overcommit_result = overcommit_tracker_ptr->needToStopQuery(query_tracker, size);
+            if (overcommit_result == OvercommitResult::NONE)
+            {
+                if (auto * overcommit_tracker_ptr = overcommit_tracker.load(std::memory_order_relaxed); overcommit_tracker_ptr && query_tracker != nullptr)
+                    overcommit_result = overcommit_tracker_ptr->needToStopQuery(query_tracker, size);
+            }
 
             if (overcommit_result != OvercommitResult::MEMORY_FREED)
             {
@@ -630,9 +648,14 @@ void MemoryTracker::commitAllocation(Int64 size, Int64 will_be, bool memory_limi
         allocation_traced = true;
     }
 
-    bool peak_updated = false;
-    if (!memory_limit_exceeded_ignored)
-        peak_updated = updatePeak(will_be, enforce_memory_limit);
+    /// An allocation over the limit without a check is real memory, but `will_be` may include the allocations that are
+    /// being refused, and `refusing_amount` read later may not match them. Both are read now, so that the peak excludes the
+    /// allocations being refused at this moment. A refusal that ends between the two loads makes the peak slightly off,
+    /// which is close enough for a peak, and much closer than ignoring these allocations.
+    const Int64 peak_candidate = memory_limit_exceeded_ignored
+        ? amount.load(std::memory_order_relaxed) - refusing_amount.load(std::memory_order_relaxed)
+        : will_be;
+    const bool peak_updated = updatePeak(peak_candidate, enforce_memory_limit);
 
     if (memory_limit_exceeded_ignored || !enforce_memory_limit)
         incrementAllocationWithoutCheck(size);
@@ -702,6 +725,18 @@ void MemoryTracker::settleDriftOnQueryEnd()
 }
 
 
+void MemoryTracker::handOverToServer(Int64 size)
+{
+    for (auto * tracker = this; size > 0 && tracker && tracker->level != VariableContext::Global;
+         tracker = tracker->parent.load(std::memory_order_relaxed))
+    {
+        /// A thread's tracker counts what the thread allocated, not what the query holds.
+        if (tracker->level != VariableContext::Thread)
+            size = tracker->adjustLocally(size);
+    }
+}
+
+
 Int64 MemoryTracker::unexpectedDrift() const
 {
 #ifdef DEBUG_OR_SANITIZER_BUILD
@@ -709,6 +744,10 @@ Int64 MemoryTracker::unexpectedDrift() const
     if (!loaded_parent || loaded_parent->level != VariableContext::User || drift_expected.load(std::memory_order_relaxed))
         return 0;
     Int64 drift = amount.load(std::memory_order_relaxed);
+    /// Threads batch what they allocate and free (`max_untracked_memory`), so a free can arrive before the allocation
+    /// it matches. It goes to the server total, and the allocation, arriving later, stays here without being drift.
+    if (drift > 0)
+        drift = std::max<Int64>(drift - freed_beyond_held.load(std::memory_order_relaxed), 0);
     return std::abs(drift) > drift_warn_threshold ? drift : 0;
 #else
     return 0;
@@ -907,6 +946,9 @@ AllocationTrace MemoryTracker::free(Int64 size, double _sample_probability)
     if (accounted_size < size && loaded_next->level == VariableContext::User)
     {
         std::ignore = total_memory_tracker.free(size - accounted_size, _sample_probability);
+#ifdef DEBUG_OR_SANITIZER_BUILD
+        freed_beyond_held.fetch_add(size - accounted_size, std::memory_order_relaxed);
+#endif
         size = accounted_size;
     }
 

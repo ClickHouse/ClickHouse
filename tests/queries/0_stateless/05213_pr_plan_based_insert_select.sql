@@ -11,7 +11,6 @@
 -- 2 + 1 = 3. All three replicas of `test_cluster_one_shard_three_replicas_localhost` are this same
 -- server, so every one of those rows lands in this `system.query_log`.
 
-SET enable_analyzer = 1; -- parallel distributed insert select for replicated tables works only with analyzer
 SET parallel_distributed_insert_select = 2;
 
 DROP TABLE IF EXISTS t_mt_source;

@@ -1,0 +1,31 @@
+<test>
+    <!-- The input arrays are materialized in Memory tables, so the queries measure `arrayDistinct`
+         rather than the cost of producing its input. A new element costs a hash computation, a
+         probe and an append; a repeated one only a hash computation and a probe. The mostly-distinct
+         inputs therefore stress insertion, the duplicate-heavy one stresses lookups of existing keys. -->
+    <settings>
+        <max_threads>1</max_threads>
+    </settings>
+
+    <create_query>CREATE TABLE array_distinct_numbers (distinct_values Array(UInt64), duplicate_values Array(UInt64)) ENGINE = Memory</create_query>
+    <create_query>CREATE TABLE array_distinct_strings (distinct_values Array(String)) ENGINE = Memory</create_query>
+
+    <!-- 30 elements per row: all distinct, or 5 distinct values repeated. -->
+    <fill_query>
+        INSERT INTO array_distinct_numbers
+        SELECT arrayMap(i -> (number + i) % 40, range(30)), arrayMap(i -> (number + i) % 5, range(30))
+        FROM numbers(1000000)
+    </fill_query>
+    <fill_query>
+        INSERT INTO array_distinct_strings
+        SELECT arrayMap(i -> toString((number + i) % 40), range(30))
+        FROM numbers(500000)
+    </fill_query>
+
+    <query>SELECT sum(length(arrayDistinct(distinct_values))) FROM array_distinct_numbers FORMAT Null</query>
+    <query>SELECT sum(length(arrayDistinct(duplicate_values))) FROM array_distinct_numbers FORMAT Null</query>
+    <query>SELECT sum(length(arrayDistinct(distinct_values))) FROM array_distinct_strings FORMAT Null</query>
+
+    <drop_query>DROP TABLE IF EXISTS array_distinct_numbers</drop_query>
+    <drop_query>DROP TABLE IF EXISTS array_distinct_strings</drop_query>
+</test>

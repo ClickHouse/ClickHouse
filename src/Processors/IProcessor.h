@@ -1,12 +1,13 @@
 #pragma once
 
+#include <Common/VectorWithMemoryTracking.h>
 #include <Processors/Port.h>
-#include <Common/ProcessorMemoryStats.h>
 #include <Common/Stopwatch.h>
 
 #include <atomic>
 #include <list>
 #include <memory>
+#include <span>
 #include <vector>
 #include <Processors/ProcessorsProfileLogInfo.h>
 #include <Processors/IProcessor_fwd.h>
@@ -18,6 +19,8 @@ namespace DB
 {
 
 class IQueryPlanStep;
+
+class ISpillable;
 
 struct StorageLimits;
 using StorageLimitsList = std::list<StorageLimits>;
@@ -131,6 +134,9 @@ protected:
     InputPorts inputs;
     OutputPorts outputs;
 
+    /// True if an unfinished output asks for data.
+    bool isAnyOutputNeeded() const;
+
 public:
 
     IProcessor();
@@ -189,8 +195,8 @@ public:
     virtual Status prepare();
 
     /// Optimization for prepare in case we know ports were updated.
-    using UpdatedInputPorts  = std::vector<InputPort *>;
-    using UpdatedOutputPorts = std::vector<OutputPort *>;
+    using UpdatedInputPorts  = VectorWithMemoryTracking<InputPort *>;
+    using UpdatedOutputPorts = VectorWithMemoryTracking<OutputPort *>;
     virtual Status prepare(const UpdatedInputPorts & /*updated_input_ports*/, const UpdatedOutputPorts & /*updated_output_ports*/) { return prepare(); }
 
     /** You may call this method if 'prepare' returned Ready.
@@ -274,12 +280,21 @@ public:
     /// In case if query was cancelled executor will wait till all processors finish their jobs.
     /// Generally, there is no reason to check this flag. However, it may be reasonable for long operations (e.g. i/o).
     bool isCancelled() const { return is_cancelled.load(std::memory_order_acquire); }
+    const std::atomic<bool> & getCancellationFlag() const { return is_cancelled; }
     virtual void cancel(CancelReason reason) noexcept;
     void cancel() noexcept { cancel(CancelReason::Unknown); }
 
     /// Additional method which is called in case if ports were updated while work() method.
     /// May be used to stop execution in rare cases.
     virtual void onUpdatePorts() {}
+
+    /// Called by the executor once the whole pipeline has finished successfully, and the read progress of every
+    /// source has been reported. The progress of a source may arrive after all its consumers have finished
+    /// (e.g. `RemoteSource` drains the remaining packets of a connection after `LIMIT`), so anything that depends
+    /// on the final statistics, such as the epilogue of an output format, belongs here.
+    /// A query broken off by `timeout_overflow_mode = 'break'` also returns its partial result as a success,
+    /// so the hook is called for it as well, even though not every processor is finished in that case.
+    virtual void onPipelineFinished() {}
 
     virtual ~IProcessor() = default;
 
@@ -382,18 +397,9 @@ public:
     /// This counter is used to calculate the number of rows right before AggregatingTransform.
     virtual void setRowsBeforeAggregationCounter(RowsBeforeStepCounterPtr /* counter */) { }
 
-    /// Returns true if processor can spill memory to disk.
-    /// Aggregate, join and sort processors can be spillable.
-    /// For unspillable processors, the memory usage is not tracked.
-    inline bool isSpillable() const { return spillable; }
-
-    virtual ProcessorMemoryStats getMemoryStats()
-    {
-        return {};
-    }
-
-    // If the in-memory data's size is not larger then bytes, it doesn't spill
-    virtual bool spillOnSize(size_t /*bytes*/) { return false; }
+    /// Distinct, non-null components this processor can service. The range and its objects remain
+    /// valid through graph removal, including after `Finished`.
+    virtual std::span<ISpillable * const> getSpillables() { return {}; }
 
     /// True for a fan-out that cannot take its next input chunk until every one of its outputs has
     /// accepted a share of the current one, so it cannot progress while an output is undemanded.
@@ -404,7 +410,6 @@ protected:
     virtual void onCancel() noexcept {}
 
     std::atomic<bool> is_cancelled{false};
-    bool spillable = false;
 
 private:
     /// For:
@@ -431,6 +436,8 @@ private:
 
     const IQueryPlanStep * query_plan_step = nullptr;
     String step_uniq_id;
+    /// One plus `IQueryPlanStep::getStepIndex` of `query_plan_step`, or 0 without a step.
+    size_t query_plan_step_id = 0;
     size_t query_plan_step_group = 0;
     StepWallClock * query_plan_step_wall_clock_ptr = nullptr;
 

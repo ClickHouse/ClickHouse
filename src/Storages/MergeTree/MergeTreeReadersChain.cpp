@@ -36,6 +36,15 @@ MergeTreeReadersChain::MergeTreeReadersChain(RangeReaders range_readers_, MergeT
     , columns_consumed_by_chain_actions(collectColumnsConsumedByChainActions(range_readers))
     , is_initialized(true)
 {
+    for (const auto & range_reader : range_readers)
+    {
+        if (!range_reader.getReader()->producesFilterOnly())
+            columns_cache_readers.push_back(range_reader.getReader());
+    }
+    previous_steps_columns.resize(range_readers.size());
+    for (size_t i = 1; i < range_readers.size(); ++i)
+        for (const auto & column : range_readers[i - 1].getSampleBlock())
+            previous_steps_columns[i].insert(column.name);
 }
 
 size_t MergeTreeReadersChain::numReadRowsInCurrentGranule() const
@@ -290,7 +299,8 @@ MergeTreeReadersChain::ReadResult MergeTreeReadersChain::read(
     size_t max_rows,
     MarkRanges & ranges,
     std::vector<MarkRanges> & patch_ranges,
-    const DataflowCacheUpdateCallback & dataflow_cache_update_cb)
+    const DataflowCacheUpdateCallback & dataflow_cache_update_cb,
+    size_t max_block_size_rows)
 {
     if (max_rows == 0)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected at least 1 row to read, got 0.");
@@ -302,9 +312,15 @@ MergeTreeReadersChain::ReadResult MergeTreeReadersChain::read(
 
     auto & first_reader = range_readers.front();
 
+    size_t num_attributed_readers = 0;
+    if (first_reader.getReader()->getMergeTreeReaderSettings().use_query_condition_cache)
+        for (size_t i = 0; i < range_readers.size(); ++i)
+            if (const auto * step = range_readers[i].getPrewhereInfo(); step && step->query_condition_cache_attribution_boundary)
+                num_attributed_readers = i + 1;
+
     try
     {
-        read_result = first_reader.startReadingChain(max_rows, ranges);
+        read_result = first_reader.startReadingChain(max_rows, ranges, max_block_size_rows, columns_cache_readers);
         LOG_TEST(log, "First reader returned: {}, requested columns: {}", read_result.dumpInfo(), first_reader.getSampleBlock().dumpNames());
     }
     catch (Exception & e)
@@ -327,10 +343,13 @@ MergeTreeReadersChain::ReadResult MergeTreeReadersChain::read(
                 should_continue_sampling);
 
         readPatches(first_reader.getReadSampleBlock(), patch_ranges, read_result);
-        executeActionsBeforePrewhere(read_result, read_result.columns, first_reader, {}, read_result.num_rows);
+        executeActionsBeforePrewhere(read_result, read_result.columns, first_reader, {}, previous_steps_columns.front(), read_result.num_rows);
 
         executePrewhereActions(first_reader, read_result, {}, range_readers.size() == 1);
         addPatchVirtuals(read_result, first_reader.getSampleBlock());
+
+        if (num_attributed_readers != 0)
+            read_result.query_condition_cache_attributable_marks = read_result.computeUnmatchedMarkRanges();
     }
 
     for (size_t i = 1; i < range_readers.size(); ++i)
@@ -366,11 +385,14 @@ MergeTreeReadersChain::ReadResult MergeTreeReadersChain::read(
                     should_continue_sampling);
             }
 
-            executeActionsBeforePrewhere(read_result, columns, range_readers[i], previous_header, num_read_rows);
+            executeActionsBeforePrewhere(read_result, columns, range_readers[i], previous_header, previous_steps_columns[i], num_read_rows);
             read_result.columns.insert(read_result.columns.end(), columns.begin(), columns.end());
         }
 
         executePrewhereActions(range_readers[i], read_result, previous_header, i + 1 == range_readers.size());
+
+        if (i < num_attributed_readers)
+            read_result.query_condition_cache_attributable_marks = read_result.computeUnmatchedMarkRanges();
     }
 
     applyPatchesAfterReader(read_result, range_readers.size() - 1);
@@ -382,6 +404,7 @@ void MergeTreeReadersChain::executeActionsBeforePrewhere(
     Columns & read_columns,
     MergeTreeRangeReader & range_reader,
     const Block & previous_header,
+    const NameSet & previous_step_columns,
     size_t num_read_rows) const
 {
     auto * merge_tree_reader = range_reader.getReader();
@@ -394,9 +417,6 @@ void MergeTreeReadersChain::executeActionsBeforePrewhere(
     /// fillMissingColumns() fixes this.
     /// Names of columns produced by earlier chain steps (advertised in `previous_header`), so a
     /// subcolumn whose parent is among them is deferred to evaluateMissingDefaults, not default-filled.
-    NameSet previous_step_columns;
-    for (const auto & col : previous_header)
-        previous_step_columns.insert(col.name);
     bool should_evaluate_missing_defaults = false;
     merge_tree_reader->fillMissingColumns(read_columns, should_evaluate_missing_defaults, num_read_rows, previous_step_columns);
 
@@ -720,6 +740,9 @@ void MergeTreeReadersChain::readPatches(const Block & result_header, std::vector
 ColumnsForPatches MergeTreeReadersChain::getColumnsForPatches(const Block & header, const Columns & columns) const
 {
     ColumnsForPatches res;
+    if (patch_readers.empty())
+        return res;
+
     auto block = header.cloneWithColumns(columns);
     using enum ColumnForPatch::Order;
 

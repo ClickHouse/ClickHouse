@@ -14,7 +14,7 @@ INSERT INTO logs_05175 VALUES
     ('2024-01-01 00:00:01', 'bb', '123'),
     ('2024-01-01 00:00:02', 'ccc', '18446744073709551616');
 
-SET allow_experimental_logsql_dialect = 1;
+SET enable_logsql_dialect = 1;
 SET logsql_table = 'logs_05175';
 SET dialect = 'logsql';
 

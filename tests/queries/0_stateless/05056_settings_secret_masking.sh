@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# Tags: no-fasttest
+# no-fasttest: the fast test build has no NATS, RabbitMQ or Kafka, whose settings it then does not mask
 
 # A password embedded in the value of a setting must not reach any place that prints setting values.
 # The test server does not enable `display_secrets_in_show_and_select`, so everything below is always
@@ -132,3 +134,6 @@ $CLICKHOUSE_CLIENT -q "SELECT getSetting('s3_base') SETTINGS s3_base = 's3://buc
 
 $CLICKHOUSE_CLIENT -q "DROP USER $GS_USER"
 $CLICKHOUSE_CLIENT -q "DROP SETTINGS PROFILE $GS_PROFILE"
+
+# `sig` is the signature of an Azure SAS, also when its name is percent-encoded; the other SAS fields stay visible.
+$CLICKHOUSE_CLIENT -q "SELECT getSetting('url_base') SETTINGS url_base = 'https://a.blob.core.windows.net/c/d?sp=r&sig=c05056sas&%73ig=c05056sas&design=x'"

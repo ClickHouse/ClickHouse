@@ -165,7 +165,9 @@ A table with the specified structure for reading data in the specified ytsaurus 
 **See Also**
 
 - [ytsaurus engine](/reference/engines/table-engines/integrations/ytsaurus)
-)DOCS_MD", .category = FunctionDocumentation::Category::TableFunction});
+)DOCS_MD", .category = FunctionDocumentation::Category::TableFunction},
+        /// ytsaurus('http_proxy_url', 'cypress_path', 'oauth_token', 'structure')
+        SecretArgumentsSpec{.positional_secret_slots = {2}, .secret_keys = {"oauth_token"}});
 }
 
 }

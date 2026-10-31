@@ -1,180 +1,383 @@
-import io
-
+import json
 import pytest
+from datetime import datetime, timezone
+import time
 
 from helpers.iceberg_utils import (
     create_iceberg_table,
+    default_upload_directory,
+    default_download_directory,
     get_uuid_str,
+    get_last_snapshot,
+    parse_manifest_entry
 )
 
-LOCAL_TABLE_PREFIX = "/var/lib/clickhouse/user_files/iceberg_data/default"
-S3_TABLE_PREFIX = "var/lib/clickhouse/user_files/iceberg_data/default"
+@pytest.mark.parametrize("storage_type", ["local", "s3", "azure"])
+def test_optimize(started_cluster_iceberg_with_spark, storage_type):
+    instance = started_cluster_iceberg_with_spark.instances["node1"]
+    spark = started_cluster_iceberg_with_spark.spark_session
+    TABLE_NAME = "test_optimize_" + storage_type + "_" + get_uuid_str()
 
-CH_WRITE_SETTINGS = {"allow_insert_into_iceberg": 1}
-COMPACTION_SETTINGS = {"allow_experimental_iceberg_compaction": 1}
+    spark.sql(
+        f"""
+        CREATE TABLE {TABLE_NAME} (id long, data string) USING iceberg TBLPROPERTIES ('format-version' = '2', 'write.update.mode'=
+        'merge-on-read', 'write.delete.mode'='merge-on-read', 'write.merge.mode'='merge-on-read')
+        """
+    )
+    spark.sql(f"INSERT INTO {TABLE_NAME} select id, char(id + ascii('a')) from range(10, 100)")
 
-
-def _list_files(cluster, instance, storage_type, table_name):
-    """Every object under the table root, as storage-relative paths."""
-    if storage_type == "local":
-        table_dir = f"{LOCAL_TABLE_PREFIX}/{table_name}"
-        output = instance.exec_in_container(
-            ["bash", "-c", f"find {table_dir} -type f 2>/dev/null | sort"]
-        ).strip()
-        return sorted(output.split("\n")) if output else []
-    prefix = f"{S3_TABLE_PREFIX}/{table_name}/"
-    return sorted(
-        obj.object_name
-        for obj in cluster.minio_client.list_objects(
-            cluster.minio_bucket, prefix=prefix, recursive=True
-        )
+    default_upload_directory(
+        started_cluster_iceberg_with_spark,
+        storage_type,
+        f"/iceberg_data/default/{TABLE_NAME}/",
+        f"/iceberg_data/default/{TABLE_NAME}/",
     )
 
+    create_iceberg_table(storage_type, instance, TABLE_NAME, started_cluster_iceberg_with_spark)
+    snapshot_id = get_last_snapshot(f"/var/lib/clickhouse/user_files/iceberg_data/default/{TABLE_NAME}/")
+    snapshot_timestamp = datetime.now(timezone.utc)
 
-def _write_version_hint(cluster, instance, storage_type, table_name, version):
-    if storage_type == "local":
-        path = f"{LOCAL_TABLE_PREFIX}/{table_name}/metadata/version-hint.text"
-        instance.exec_in_container(["bash", "-c", f"echo {version} > {path}"])
+    time.sleep(0.1)
+    assert int(instance.query(f"SELECT count() FROM {TABLE_NAME}")) == 90
+
+    spark.sql(f"DELETE FROM {TABLE_NAME} WHERE id < 20")
+    default_upload_directory(
+        started_cluster_iceberg_with_spark,
+        storage_type,
+        f"/iceberg_data/default/{TABLE_NAME}/",
+        f"/iceberg_data/default/{TABLE_NAME}/",
+    )
+    spark.sql(f"INSERT INTO {TABLE_NAME} select id, char(id + ascii('a')) from range(100, 110)")
+    default_upload_directory(
+        started_cluster_iceberg_with_spark,
+        storage_type,
+        f"/iceberg_data/default/{TABLE_NAME}/",
+        f"/iceberg_data/default/{TABLE_NAME}/",
+    )
+
+    assert int(instance.query(f"SELECT count() FROM {TABLE_NAME}")) == 90
+
+    instance.query(f"OPTIMIZE TABLE {TABLE_NAME};", settings={"allow_experimental_iceberg_compaction" : 1})
+
+    assert int(instance.query(f"SELECT count() FROM {TABLE_NAME}")) == 90
+    assert instance.query(f"SELECT id FROM {TABLE_NAME} ORDER BY id") == instance.query(
+        "SELECT number FROM numbers(20, 90)"
+    )
+
+    # check that timetravel works with previous snapshot_ids and timestamps
+    assert instance.query(f"SELECT id FROM {TABLE_NAME} ORDER BY id SETTINGS iceberg_snapshot_id = {snapshot_id}") == instance.query(
+        "SELECT number FROM numbers(20, 80)"
+    )
+
+    assert instance.query(f"SELECT id FROM {TABLE_NAME} ORDER BY id SETTINGS iceberg_timestamp_ms = {int(snapshot_timestamp.timestamp() * 1000)}") == instance.query(
+        "SELECT number FROM numbers(20, 80)"
+    )
+    if storage_type == "azure":
         return
 
-    key = f"{S3_TABLE_PREFIX}/{table_name}/metadata/version-hint.text"
-    payload = f"{version}\n".encode()
-    cluster.minio_client.put_object(
-        cluster.minio_bucket, key, io.BytesIO(payload), len(payload)
-    )
-
-
-def _newest_metadata_version(files):
-    """Highest N over the `vN.metadata.json` files in a listing."""
-    versions = []
-    for path in files:
-        name = path.rsplit("/", 1)[-1]
-        if name.startswith("v") and name.endswith(".metadata.json"):
-            candidate = name[1:-len(".metadata.json")]
-            if candidate.isdigit():
-                versions.append(int(candidate))
-    assert versions, f"no vN.metadata.json in listing: {files}"
-    return max(versions)
-
-
-@pytest.mark.parametrize("storage_type", ["local", "s3"])
-@pytest.mark.parametrize("hint_state", ["current", "stale", "absent"])
-def test_optimize_never_deletes_reachable_files(
-    started_cluster_iceberg_with_spark, storage_type, hint_state
-):
-    """`OPTIMIZE TABLE` must not delete a file that a retained snapshot still references.
-
-    Data compaction used to rewrite the table rooted at whatever version the hint named and
-    then delete a raw listing of `metadata/` and `data/`, which removed `version-hint.text`,
-    every `vN.metadata.json` and the data files of snapshots kept in the `snapshots` array.
-    The three hint states are the three measured shapes: with the hint behind the newest
-    metadata the acked third insert is lost outright, and with any hint present the table
-    stops reading at all.
-
-    The outcome of `OPTIMIZE` itself is deliberately not asserted: the property below must
-    hold whether the operation is refused or one day publishes its result correctly.
-    """
-    instance = started_cluster_iceberg_with_spark.instances["node1"]
-    table_name = f"test_optimize_reachable_{hint_state}_{storage_type}_{get_uuid_str()}"
-
-    create_iceberg_table(
-        storage_type,
-        instance,
-        table_name,
+    default_download_directory(
         started_cluster_iceberg_with_spark,
-        "(x Int)",
-        use_version_hint=(hint_state != "absent"),
+        storage_type,
+        f"/var/lib/clickhouse/user_files/iceberg_data/default/{TABLE_NAME}/",
+        f"/var/lib/clickhouse/user_files/iceberg_data/default/{TABLE_NAME}/",
     )
-    instance.query(f"INSERT INTO {table_name} VALUES (1);", settings=CH_WRITE_SETTINGS)
-    instance.query(f"INSERT INTO {table_name} VALUES (2);", settings=CH_WRITE_SETTINGS)
-    # Retained in the table's history after the delete below, so its rows must stay readable.
-    pre_delete_snapshot_id = int(
-        instance.query(
-            f"SELECT snapshot_id FROM system.iceberg_history "
-            f"WHERE database = currentDatabase() AND table = '{table_name}' "
-            f"AND snapshot_id NOT IN (SELECT parent_id FROM system.iceberg_history "
-            f"WHERE database = currentDatabase() AND table = '{table_name}')"
+    df = spark.read.format("iceberg").load(f"/var/lib/clickhouse/user_files/iceberg_data/default/{TABLE_NAME}").collect()
+    assert len(df) == 90
+
+
+def test_optimize_manifest_per_file_stats(started_cluster_iceberg_with_spark):
+    instance = started_cluster_iceberg_with_spark.instances["node1"]
+    spark = started_cluster_iceberg_with_spark.spark_session
+    storage_type = "local"
+    TABLE_NAME = "test_optimize_stats_" + storage_type + "_" + get_uuid_str()
+
+    spark.sql(
+        f"""
+        CREATE TABLE {TABLE_NAME} (id long, data string) USING iceberg TBLPROPERTIES (
+            'format-version' = '2',
+            'write.update.mode' = 'merge-on-read',
+            'write.delete.mode' = 'merge-on-read',
+            'write.merge.mode' = 'merge-on-read'
         )
+        """
     )
-    # A position delete file: `plan.need_optimize` is false without one, and then compaction
-    # returns before reaching the deletion at all, which would make this test vacuous.
+    spark.sql(
+        f"INSERT INTO {TABLE_NAME} SELECT id, char(id + ascii('a')) FROM range(10, 100)"
+    )
+
+    default_upload_directory(
+        started_cluster_iceberg_with_spark,
+        storage_type,
+        f"/iceberg_data/default/{TABLE_NAME}/",
+        f"/iceberg_data/default/{TABLE_NAME}/",
+    )
+    create_iceberg_table(
+        storage_type, instance, TABLE_NAME, started_cluster_iceberg_with_spark
+    )
+
+    spark.sql(f"DELETE FROM {TABLE_NAME} WHERE id < 20")
+    default_upload_directory(
+        started_cluster_iceberg_with_spark,
+        storage_type,
+        f"/iceberg_data/default/{TABLE_NAME}/",
+        f"/iceberg_data/default/{TABLE_NAME}/",
+    )
+
     instance.query(
-        f"ALTER TABLE {table_name} DELETE WHERE x = 2;",
-        settings={**CH_WRITE_SETTINGS, "mutations_sync": 2},
+        f"OPTIMIZE TABLE {TABLE_NAME};",
+        settings={"allow_experimental_iceberg_compaction": 1},
     )
-    # Committed and acknowledged after the position delete. A rewrite rooted at an older
-    # version does not carry this row forward.
-    instance.query(f"INSERT INTO {table_name} VALUES (99);", settings=CH_WRITE_SETTINGS)
+    assert int(instance.query(f"SELECT count() FROM {TABLE_NAME}")) == 80
 
-    assert instance.query(f"SELECT x FROM {table_name} ORDER BY x") == "1\n99\n"
+    metadata_dir = (
+        f"/var/lib/clickhouse/user_files/iceberg_data/default/{TABLE_NAME}/metadata"
+    )
+    manifest_files = (
+        instance.exec_in_container(
+            [
+                "bash",
+                "-c",
+                f"find '{metadata_dir}' -maxdepth 1 -name '*.avro' "
+                f"-not -name 'snap-*.avro' -type f",
+            ]
+        )
+        .strip()
+        .splitlines()
+    )
+    assert manifest_files
+
+    data_entries_checked = 0
+    for manifest in manifest_files:
+        result = instance.query(
+            f"""
+            SELECT
+                tupleElement(data_file, 'content')             AS content,
+                tupleElement(data_file, 'file_path')           AS file_path,
+                tupleElement(data_file, 'record_count')        AS record_count,
+                tupleElement(data_file, 'file_size_in_bytes')  AS file_size
+            FROM file('{manifest}', Avro)
+            FORMAT TSV
+            """
+        ).strip()
+        if not result:
+            continue
+        for line in result.splitlines():
+            content, file_path, record_count, file_size = line.split("\t")
+            if int(content) != 0:
+                continue
+
+            exists = instance.exec_in_container(
+                ["bash", "-c", f"test -f '{file_path}' && echo yes || echo no"]
+            ).strip()
+            if exists != "yes":
+                continue
+
+            actual_size = int(
+                instance.exec_in_container(
+                    ["bash", "-c", f"wc -c < '{file_path}'"]
+                ).strip()
+            )
+            assert int(file_size) == actual_size
+
+            actual_rows = int(
+                instance.query(
+                    f"SELECT count() FROM file('{file_path}', Parquet)"
+                ).strip()
+            )
+            assert int(record_count) == actual_rows
+            data_entries_checked += 1
+
+    assert data_entries_checked > 0
+
+
+def test_optimize_mixed_format_position_delete_reference_bounds(
+    started_cluster_iceberg_with_spark,
+):
+    instance = started_cluster_iceberg_with_spark.instances["node1"]
+    spark = started_cluster_iceberg_with_spark.spark_session
+    storage_type = "local"
+    TABLE_NAME = "test_optimize_mixed_format_bounds_" + get_uuid_str()
+
+    # An ORC data file whose sequence number is below a position delete that references only the
+    # Parquet data file. Every write is Spark's: ClickHouse refuses its own DELETE while a
+    # non-Parquet data file is live in the current snapshot.
+    spark.sql(
+        f"""
+        CREATE TABLE {TABLE_NAME} (id long, data string) USING iceberg TBLPROPERTIES (
+            'format-version' = '2',
+            'write.update.mode' = 'merge-on-read',
+            'write.delete.mode' = 'merge-on-read',
+            'write.merge.mode' = 'merge-on-read',
+            'write.format.default' = 'orc',
+            'write.delete.format.default' = 'parquet'
+        )
+        """
+    )
+    spark.sql(f"INSERT INTO {TABLE_NAME} select id, char(id + ascii('a')) from range(0, 10)")
+    spark.sql(f"ALTER TABLE {TABLE_NAME} SET TBLPROPERTIES ('write.format.default' = 'parquet')")
+    spark.sql(f"INSERT INTO {TABLE_NAME} select id, char(id + ascii('a')) from range(10, 20)")
+    spark.sql(f"DELETE FROM {TABLE_NAME} WHERE id = 15")
+
+    default_upload_directory(
+        started_cluster_iceberg_with_spark,
+        storage_type,
+        f"/iceberg_data/default/{TABLE_NAME}/",
+        f"/iceberg_data/default/{TABLE_NAME}/",
+    )
+    create_iceberg_table(
+        storage_type, instance, TABLE_NAME, started_cluster_iceberg_with_spark
+    )
+
+    # Arming condition: the current snapshot mixes one ORC and one Parquet data file, and the ORC
+    # one is not newer than the position delete. Without both, compaction never reaches the
+    # data-file format restriction and this test would pass whatever the planning pass decides.
+    files = [
+        line.split("\t")
+        for line in instance.query(
+            f"""
+            SELECT content, file_format, sequence_number, file_path FROM system.iceberg_files
+            WHERE database = currentDatabase() AND table = '{TABLE_NAME}' FORMAT TSV
+            """
+        )
+        .strip()
+        .splitlines()
+    ]
+    orc = [f for f in files if f[0] == "DATA" and f[1].upper() == "ORC"]
+    parquet = [f for f in files if f[0] == "DATA" and f[1].upper() == "PARQUET"]
+    deletes = [f for f in files if f[0] == "POSITION_DELETE"]
     assert (
-        instance.query(
-            f"SELECT x FROM {table_name} ORDER BY x "
-            f"SETTINGS iceberg_snapshot_id = {pre_delete_snapshot_id}"
-        )
-        == "1\n2\n"
+        len(orc) == len(parquet) == len(deletes) == 1
+    ), f"not the mixed-format carrier: {files}"
+    assert int(orc[0][2]) <= int(
+        deletes[0][2]
+    ), f"the ORC data file is newer than the position delete: {files}"
+
+    # Arming condition: the position delete records reference-data-file bounds that exclude the
+    # ORC data file. With no bounds recorded, a read of this snapshot throws too, and compaction
+    # is then right to refuse it.
+    query_id = TABLE_NAME + "_manifest_entries"
+    instance.query(
+        f"SELECT count() FROM {TABLE_NAME} SETTINGS iceberg_metadata_log_level = 'manifest_file_entry'",
+        query_id=query_id,
     )
-
-    files_before = _list_files(
-        started_cluster_iceberg_with_spark, instance, storage_type, table_name
-    )
-    hint_path = "metadata/version-hint.text"
-    if hint_state == "absent":
-        assert not any(p.endswith(hint_path) for p in files_before)
-    else:
-        assert any(p.endswith(hint_path) for p in files_before)
-
-    newest_before = _newest_metadata_version(files_before)
-    if hint_state == "stale":
-        # An ordinary steady state, not a rare crash: an external engine committing a new
-        # metadata version without touching ClickHouse's hint leaves the hint behind, and a
-        # failed hint write is swallowed.
-        _write_version_hint(
-            started_cluster_iceberg_with_spark,
-            instance,
-            storage_type,
-            table_name,
-            newest_before - 1,
+    instance.query("SYSTEM FLUSH LOGS")
+    entries = [
+        parse_manifest_entry(json.loads(line))
+        for line in instance.query(
+            f"""
+            SELECT DISTINCT content FROM system.iceberg_metadata_log
+            WHERE content != '' AND content IS NOT NULL
+              AND content_type = 'ManifestFileEntry' AND query_id = '{query_id}'
+            """
         )
-
-    try:
-        instance.query(
-            f"OPTIMIZE TABLE {table_name};", settings=COMPACTION_SETTINGS
-        )
-    except Exception as exception:
-        # Any failure is acceptable; silently destroying files is not.
-        assert "Logical error" not in str(exception), str(exception)
-
-    files_after = _list_files(
-        started_cluster_iceberg_with_spark, instance, storage_type, table_name
-    )
-    removed = sorted(set(files_before) - set(files_after))
-    assert not removed, f"OPTIMIZE deleted pre-existing files: {removed}"
-
-    if hint_state == "stale":
-        # Reading through a stale hint legitimately returns an older version, so point it at the
-        # newest version after `OPTIMIZE`, which is the one a published result would be.
-        _write_version_hint(
-            started_cluster_iceberg_with_spark,
-            instance,
-            storage_type,
-            table_name,
-            _newest_metadata_version(files_after),
-        )
-
-    # Read from storage rather than from metadata cached before `OPTIMIZE`.
-    instance.query("SYSTEM DROP ICEBERG METADATA CACHE")
-
-    # The acked third insert must still be there, and the snapshot before the delete must still
-    # be readable.
-    assert instance.query(f"SELECT x FROM {table_name} ORDER BY x") == "1\n99\n"
-    assert int(instance.query(f"SELECT count() FROM {table_name}")) == 2
+        .strip()
+        .splitlines()
+        if line
+    ]
+    delete_entries = [e for e in entries if e.content_type == 1]
+    assert len(delete_entries) == 1, f"expected one position delete manifest entry, got {entries}"
+    lower, upper = delete_entries[0].lower_bound, delete_entries[0].upper_bound
+    orc_path, parquet_path = orc[0][3], parquet[0][3]
     assert (
-        instance.query(
-            f"SELECT x FROM {table_name} ORDER BY x "
-            f"SETTINGS iceberg_snapshot_id = {pre_delete_snapshot_id}"
-        )
-        == "1\n2\n"
+        lower is not None and upper is not None
+    ), f"the position delete records no reference-data-file bounds: {delete_entries[0].file_path}"
+    # The Parquet file being inside the bounds is what makes the ORC file being outside them a
+    # real exclusion rather than a difference in how the two sources spell the same path.
+    assert lower <= parquet_path <= upper, f"bounds ({lower}, {upper}) miss {parquet_path}"
+    assert not lower <= orc_path <= upper, f"bounds ({lower}, {upper}) cover {orc_path}"
+
+    expected_ids = instance.query("SELECT number FROM numbers(20) WHERE number != 15")
+    assert instance.query(f"SELECT id FROM {TABLE_NAME} ORDER BY id") == expected_ids
+
+    instance.query(
+        f"OPTIMIZE TABLE {TABLE_NAME};",
+        settings={"allow_experimental_iceberg_compaction": 1},
     )
 
-    instance.query(f"DROP TABLE {table_name} SYNC;")
+    assert instance.query(f"SELECT id FROM {TABLE_NAME} ORDER BY id") == expected_ids
+    assert (
+        int(
+            instance.query(
+                f"""
+                SELECT count() FROM system.iceberg_files
+                WHERE database = currentDatabase() AND table = '{TABLE_NAME}'
+                  AND content = 'POSITION_DELETE'
+                """
+            )
+        )
+        == 0
+    )
+
+
+def test_optimize_position_delete_other_partition_spec(started_cluster_iceberg_with_spark):
+    instance = started_cluster_iceberg_with_spark.instances["node1"]
+    spark = started_cluster_iceberg_with_spark.spark_session
+    TABLE_NAME = "test_optimize_delete_other_spec_" + get_uuid_str()
+    table_path = f"/var/lib/clickhouse/user_files/iceberg_data/default/{TABLE_NAME}"
+
+    # OPTIMIZE must not apply a position delete to a data file of another partition spec. An ORC
+    # data file under `identity(region)` and a position delete under `truncate(1, region)` share the
+    # partition tuple, and `write.data.path` places the ORC file between the two Parquet files the
+    # delete references, so only the partition spec tells the ORC file apart.
+    spark.sql(
+        f"""
+        CREATE TABLE {TABLE_NAME} (id long, region string) USING iceberg PARTITIONED BY (region)
+        TBLPROPERTIES (
+            'format-version' = '2',
+            'write.delete.mode' = 'merge-on-read',
+            'write.delete.granularity' = 'partition',
+            'write.format.default' = 'orc',
+            'write.data.path' = '{table_path}/data_b'
+        )
+        """
+    )
+    spark.sql(f"INSERT INTO {TABLE_NAME} VALUES (0, 'a')")
+    spark.sql(f"ALTER TABLE {TABLE_NAME} REPLACE PARTITION FIELD region WITH truncate(1, region)")
+    for data_dir, rows in [("data_a", "(1, 'ab'), (3, 'ab')"), ("data_c", "(2, 'ac'), (4, 'ac')")]:
+        spark.sql(
+            f"ALTER TABLE {TABLE_NAME} SET TBLPROPERTIES "
+            f"('write.format.default' = 'parquet', 'write.data.path' = '{table_path}/{data_dir}')"
+        )
+        spark.sql(f"INSERT INTO {TABLE_NAME} VALUES {rows}")
+    spark.sql(f"DELETE FROM {TABLE_NAME} WHERE id IN (1, 2)")
+
+    default_upload_directory(
+        started_cluster_iceberg_with_spark,
+        "local",
+        f"/iceberg_data/default/{TABLE_NAME}/",
+        f"/iceberg_data/default/{TABLE_NAME}/",
+    )
+    create_iceberg_table("local", instance, TABLE_NAME, started_cluster_iceberg_with_spark)
+
+    # Arming condition: one partition tuple across both specs, and the ORC file sorting between
+    # the two Parquet files whose deleted rows the single position delete records.
+    files = [
+        line.split("\t")
+        for line in instance.query(
+            f"""
+            SELECT content, file_format, partition, file_path FROM system.iceberg_files
+            WHERE database = currentDatabase() AND table = '{TABLE_NAME}' FORMAT TSV
+            """
+        )
+        .strip()
+        .splitlines()
+    ]
+    orc = [f[3] for f in files if f[0] == "DATA" and f[1].upper() == "ORC"]
+    parquet = sorted(f[3] for f in files if f[0] == "DATA" and f[1].upper() == "PARQUET")
+    deletes = [f for f in files if f[0] == "POSITION_DELETE"]
+    assert len(orc) == 1 and len(parquet) == 2 and len(deletes) == 1, files
+    assert len({f[2] for f in files}) == 1, files
+    assert parquet[0] < orc[0] < parquet[1], files
+
+    expected_ids = "0\n3\n4\n"
+    assert instance.query(f"SELECT id FROM {TABLE_NAME} ORDER BY id") == expected_ids
+
+    instance.query(
+        f"OPTIMIZE TABLE {TABLE_NAME};",
+        settings={"allow_experimental_iceberg_compaction": 1},
+    )
+
+    assert instance.query(f"SELECT id FROM {TABLE_NAME} ORDER BY id") == expected_ids
+    assert "POSITION_DELETE" not in instance.query(
+        f"SELECT content FROM system.iceberg_files WHERE database = currentDatabase() AND table = '{TABLE_NAME}'"
+    )
