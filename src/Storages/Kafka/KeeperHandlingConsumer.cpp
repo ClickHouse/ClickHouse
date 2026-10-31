@@ -23,7 +23,6 @@ namespace
 const std::string lock_file_name{"lock"};
 const std::string commit_file_name{"committed"};
 const std::string intent_file_name{"intention"};
-constexpr auto LOCKS_REFRESH_POLLS = 15;
 
 std::optional<int64_t> getNumber(zkutil::ZooKeeper & keeper, const fs::path & path)
 {
@@ -152,7 +151,7 @@ void KeeperHandlingConsumer::setKeeper(const std::shared_ptr<zkutil::ZooKeeper> 
     poll_count = 0;
 }
 
-std::optional<KeeperHandlingConsumer::CannotPollReason> KeeperHandlingConsumer::prepareToPoll()
+std::optional<KeeperHandlingConsumer::CannotPollReason> KeeperHandlingConsumer::prepareToPoll(UInt64 locks_refresh_polls)
 {
     chassert(isInUse());
     LOG_TRACE(log, "Polling consumer {} for events", idx);
@@ -160,8 +159,16 @@ std::optional<KeeperHandlingConsumer::CannotPollReason> KeeperHandlingConsumer::
     kafka_consumer->pollEvents();
 
     /// If the consumer has some permanent locks and the lock mustn't be refreshed yet, the consumer should be able to poll.
-    if (!assigned_topic_partitions.empty() && poll_count <= LOCKS_REFRESH_POLLS)
+    if (!assigned_topic_partitions.empty() && poll_count <= locks_refresh_polls)
         return std::nullopt;
+
+    if (!assigned_topic_partitions.empty())
+        LOG_DEBUG(
+            log,
+            "Consumer {} refreshing its Keeper locks after {} polls (stream_kafka_locks_refresh_polls = {})",
+            idx,
+            poll_count,
+            locks_refresh_polls);
 
     assigned_topic_partitions.clear();
     // Clear temporary locks to give a chance to lock them as permanent locks and to make it possible to gather available topic partitions only once.

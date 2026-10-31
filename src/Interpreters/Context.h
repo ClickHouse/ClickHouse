@@ -1517,6 +1517,11 @@ public:
 
     bool getMessageQueueDisableInsertion() const;
 
+    /// How many extra poll cycles a Keeper-backed Kafka consumer keeps its assignment before
+    /// refreshing its Keeper locks. Mutated at runtime by the config reloader, so read it per use.
+    UInt64 getKafkaLocksRefreshPolls() const;
+    void setKafkaLocksRefreshPolls(UInt64 stream_kafka_locks_refresh_polls) const;
+
     /// The server-level distributed cache switches. They live in `shared`, which is common to every context
     /// (including the background and buffer contexts created once at startup), so a config reload is observed
     /// by background operations as well. A query may deviate from them with the `force_*` settings.

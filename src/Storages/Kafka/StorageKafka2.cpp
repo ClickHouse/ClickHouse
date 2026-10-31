@@ -737,6 +737,12 @@ size_t StorageKafka2::getPollTimeoutMillisecond() const
                                                          : getContext()->getSettingsRef()[Setting::stream_poll_timeout_ms].totalMilliseconds();
 }
 
+UInt64 StorageKafka2::getLocksRefreshPolls() const
+{
+    /// Read per call rather than cached: the config reloader mutates this at runtime.
+    return getContext()->getKafkaLocksRefreshPolls();
+}
+
 size_t StorageKafka2::getSchemaRegistrySkipBytes() const
 {
     return (*kafka_settings)[KafkaSetting::kafka_schema_registry_skip_bytes].value;
@@ -1401,7 +1407,7 @@ std::optional<StorageKafka2::StallKind> StorageKafka2::streamToViews(size_t idx,
         if (consumer->needsNewKeeper())
             consumer->setKeeper(getZooKeeperAndAssertActive());
 
-        if (const auto cannot_poll_reason = consumer->prepareToPoll(); cannot_poll_reason.has_value())
+        if (const auto cannot_poll_reason = consumer->prepareToPoll(getLocksRefreshPolls()); cannot_poll_reason.has_value())
             return getStallKind(*cannot_poll_reason);
 
         LOG_TRACE(log, "Trying to consume from consumer {}", idx);
