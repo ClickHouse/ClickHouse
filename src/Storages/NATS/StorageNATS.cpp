@@ -235,7 +235,8 @@ StorageNATS::StorageNATS(
            .client_key_file = nats_client_key_file,
            .max_connect_tries = static_cast<UInt64>((*nats_settings)[NATSSetting::nats_startup_connect_tries].value),
            .reconnect_wait = static_cast<int>((*nats_settings)[NATSSetting::nats_reconnect_wait].value),
-           .secure = (*nats_settings)[NATSSetting::nats_secure].value};
+           .secure = (*nats_settings)[NATSSetting::nats_secure].value,
+           .secure_explicitly_set = (*nats_settings)[NATSSetting::nats_secure].changed};
 
     const auto & remote_host_filter = context_->getRemoteHostFilter();
     if (!configuration.url.empty())
@@ -1580,7 +1581,7 @@ Optional parameters:
 
 SSL connection:
 
-For secure connection use `nats_secure = 1`.
+For secure connection use `nats_secure = 1`. A `tls://` address in `nats_url` or `nats_server_list` enables TLS as well, unless `nats_secure = 0` is set explicitly.
 Certificate verification is controlled by the `CLICKHOUSE_NATS_TLS_SECURE` environment variable;
 If the certificate is expired, self-signed, missing, or otherwise invalid, disable verification by setting `CLICKHOUSE_NATS_TLS_SECURE=0`.
 
