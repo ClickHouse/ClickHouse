@@ -117,6 +117,45 @@ public:
     }
 };
 
+struct SnapshotInventoryLatch
+{
+    void arriveAndWait()
+    {
+        std::unique_lock lock(mutex);
+        const size_t count = ++arrivals;
+        if (count == 2)
+            cv.notify_all();
+        else if (!cv.wait_for(lock, std::chrono::seconds(30), [&] { return arrivals.load() >= 2; }))
+            throw std::runtime_error("Timed out waiting for parallel snapshot inventory");
+    }
+
+    std::atomic<size_t> arrivals{0};
+    std::mutex mutex;
+    std::condition_variable cv;
+};
+
+class SnapshotInventoryLatchDisk final : public DB::DiskLocal
+{
+public:
+    SnapshotInventoryLatchDisk(
+        const String & disk_name,
+        const String & path,
+        std::shared_ptr<SnapshotInventoryLatch> latch_)
+        : DB::DiskLocal(disk_name, path)
+        , latch(std::move(latch_))
+    {
+    }
+
+    DB::DirectoryIteratorPtr iterateDirectory(const String & path) const override
+    {
+        latch->arriveAndWait();
+        return DB::DiskLocal::iterateDirectory(path);
+    }
+
+private:
+    std::shared_ptr<SnapshotInventoryLatch> latch;
+};
+
 enum class SnapshotDiskFailureMode
 {
     OpenFileAfterCreate,
@@ -344,6 +383,12 @@ public:
     {
         removals.push_back({path, liveGuardPaths()});
         DB::DiskLocal::removeFile(path);
+    }
+
+    void removeFileIfExists(const String & path) override
+    {
+        removals.push_back({path, liveGuardPaths()});
+        DB::DiskLocal::removeFileIfExists(path);
     }
 
     struct Removal
@@ -1466,6 +1511,231 @@ static DB::SnapshotFileInfoPtr executeCreateSnapshotTask(
     DB::CreateSnapshotTask snapshot_task;
     EXPECT_TRUE(snapshots_queue.pop(snapshot_task));
     return snapshot_task.create_snapshot(std::move(snapshot_task.snapshot), /*execute_only_cleanup=*/false);
+}
+
+static void writeMoveMarker(const DB::DiskPtr & disk, const std::string & snapshot_path, bool legacy)
+{
+    auto marker = disk->writeFile("tmp_" + snapshot_path);
+    if (!legacy)
+    {
+        const auto payload = DB::serializeKeeperMoveMarker(DB::computeKeeperFileDigest(disk, snapshot_path));
+        marker->write(payload.data(), payload.size());
+    }
+    marker->finalize();
+}
+
+TEST_P(CoordinationTest, StartupRemovesValidatedSnapshotMarkerImmediately)
+{
+    ChangelogDirTest snapshots("./snapshots");
+    auto ctx = makeContextForSnapshotApply(GetParam(), "./snapshots");
+    const auto disk = ctx->getSnapshotDisk();
+    const auto buffer = makeSingleNodeSnapshotBuffer(ctx, 10, "/survives", "complete");
+
+    const std::string path = "snapshot_10_version1.bin.zstd";
+    writeSnapshotBufferToFile(disk, path, buffer);
+    writeMoveMarker(disk, path, /*legacy=*/false);
+
+    DB::SnapshotsQueue snapshots_queue{1};
+    auto state_machine = std::make_shared<DB::KeeperStateMachine>(nullptr, snapshots_queue, ctx, nullptr);
+    EXPECT_TRUE(disk->existsFile(path));
+    EXPECT_FALSE(disk->existsFile("tmp_" + path));
+    ASSERT_NO_THROW(state_machine->init());
+    EXPECT_EQ(committedNodeData(state_machine->getStorageUnsafe(), "/survives"), "complete");
+}
+
+TEST_P(CoordinationTest, StartupRemovesPartialSnapshotWithLegacyEmptyMarker)
+{
+    ChangelogDirTest snapshots("./snapshots_partial_legacy_marker");
+    ChangelogDirTest rocks("./rocksdb_partial_legacy_marker");
+    auto ctx = makeContextForSnapshotApply(GetParam(), snapshots.path, rocks.path);
+    const auto disk = ctx->getSnapshotDisk();
+
+    constexpr std::string_view previous_path = "snapshot_9_previous.bin.zstd";
+    const auto previous = makeSingleNodeSnapshotBuffer(ctx, 9, "/previous", "complete");
+    writeSnapshotBufferToFile(disk, String(previous_path), previous);
+
+    constexpr std::string_view partial_path = "snapshot_10_partial0.bin.zstd";
+    const auto next = makeSingleNodeSnapshotBuffer(ctx, 10, "/next", "partial");
+    writeSnapshotBufferToFile(disk, String(partial_path), sliceBuffer(next, 0, next->size() / 2));
+    writeMoveMarker(disk, String(partial_path), /*legacy=*/true);
+
+    DB::SnapshotsQueue snapshots_queue{1};
+    auto state_machine = std::make_shared<DB::KeeperStateMachine>(nullptr, snapshots_queue, ctx, nullptr);
+    EXPECT_FALSE(disk->existsFile(String(partial_path)));
+    EXPECT_FALSE(disk->existsFile("tmp_" + String(partial_path)));
+    ASSERT_NO_THROW(state_machine->init());
+    EXPECT_EQ(state_machine->last_commit_index(), 9);
+    EXPECT_EQ(committedNodeData(state_machine->getStorageUnsafe(), "/previous"), "complete");
+}
+
+TEST_P(CoordinationTest, StartupPreservesOnlySnapshotCandidateWithInvalidMarker)
+{
+    for (const std::string_view marker_kind : {"malformed", "unknown", "mismatch"})
+    {
+        SCOPED_TRACE(std::string(marker_kind));
+        ChangelogDirTest snapshots(fmt::format("./snapshots_{}_marker", marker_kind));
+        ChangelogDirTest rocks(fmt::format("./rocksdb_{}_marker", marker_kind));
+        auto ctx = makeContextForSnapshotApply(GetParam(), snapshots.path, rocks.path);
+        const auto disk = ctx->getSnapshotDisk();
+        const String path = fmt::format("snapshot_10_{}000.bin.zstd", marker_kind);
+        const auto buffer = makeSingleNodeSnapshotBuffer(ctx, 10, "/survives", "complete");
+        writeSnapshotBufferToFile(disk, path, buffer);
+
+        String marker_contents = "malformed";
+        if (marker_kind != "malformed")
+        {
+            auto digest = DB::computeKeeperFileDigest(disk, path);
+            if (marker_kind == "mismatch")
+                ++digest.size;
+            marker_contents = DB::serializeKeeperMoveMarker(digest);
+            if (marker_kind == "unknown")
+                marker_contents[8] = 2;
+        }
+        {
+            auto marker = disk->writeFile("tmp_" + path);
+            marker->write(marker_contents.data(), marker_contents.size());
+            marker->finalize();
+        }
+
+        DB::SnapshotsQueue snapshots_queue{1};
+        auto state_machine = std::make_shared<DB::KeeperStateMachine>(nullptr, snapshots_queue, ctx, nullptr);
+        EXPECT_TRUE(disk->existsFile(path));
+        EXPECT_FALSE(disk->existsFile("tmp_" + path));
+        ASSERT_NO_THROW(state_machine->init());
+        EXPECT_EQ(committedNodeData(state_machine->getStorageUnsafe(), "/survives"), "complete");
+        EXPECT_TRUE(disk->existsFile(path));
+        EXPECT_FALSE(disk->existsFile("tmp_" + path));
+    }
+}
+
+TEST_P(CoordinationTest, StartupRecoversPartialMarkedSnapshotFromValidatedSource)
+{
+    for (const bool legacy_marker : {false, true})
+    {
+        SCOPED_TRACE(std::string("legacy_marker=") + (legacy_marker ? "true" : "false"));
+        ChangelogDirTest regular("./snapshots_recovery_regular");
+        ChangelogDirTest latest("./snapshots_recovery_latest");
+        ChangelogDirTest rocks("./rocksdb");
+        auto ctx = makeContextForSnapshotApply(GetParam(), regular.path, rocks.path);
+        DB::DiskPtr regular_disk = std::make_shared<DB::DiskLocal>("regular", regular.path);
+        DB::DiskPtr latest_disk = std::make_shared<DB::DiskLocal>("latest", latest.path);
+        ctx->setSnapshotDisk(regular_disk);
+        ctx->setLatestSnapshotDisk(latest_disk);
+
+        constexpr std::string_view path = "snapshot_10_recovery.bin.zstd";
+        auto complete = makeSingleNodeSnapshotBuffer(ctx, 10, "/recovered", "source");
+        writeSnapshotBufferToFile(regular_disk, String(path), complete);
+        const auto complete_digest = DB::computeKeeperFileDigest(regular_disk, String(path));
+        writeSnapshotBufferToFile(latest_disk, String(path), sliceBuffer(complete, 0, complete->size() / 2));
+        auto marker = latest_disk->writeFile("tmp_" + String(path));
+        if (!legacy_marker)
+        {
+            const auto payload = DB::serializeKeeperMoveMarker(complete_digest);
+            marker->write(payload.data(), payload.size());
+        }
+        marker->finalize();
+
+        DB::SnapshotsQueue snapshots_queue{1};
+        auto state_machine = std::make_shared<DB::KeeperStateMachine>(nullptr, snapshots_queue, ctx, nullptr);
+        ASSERT_NO_THROW(state_machine->init());
+        EXPECT_EQ(state_machine->last_commit_index(), 10);
+        EXPECT_EQ(committedNodeData(state_machine->getStorageUnsafe(), "/recovered"), "source");
+        EXPECT_TRUE(regular_disk->existsFile(String(path)));
+        EXPECT_FALSE(latest_disk->existsFile(String(path)));
+        EXPECT_FALSE(latest_disk->existsFile("tmp_" + String(path)));
+        EXPECT_EQ(DB::computeKeeperFileDigest(regular_disk, String(path)), complete_digest);
+    }
+}
+
+TEST_P(CoordinationTest, StartupKeepsUnknownVersionSnapshotCandidateWhenAlternativeExists)
+{
+    ChangelogDirTest regular("./snapshots_unknown_marker_regular");
+    ChangelogDirTest latest("./snapshots_unknown_marker_latest");
+    ChangelogDirTest rocks("./rocksdb_unknown_marker");
+    auto ctx = makeContextForSnapshotApply(GetParam(), regular.path, rocks.path);
+    auto regular_disk = ctx->getSnapshotDisk();
+    DB::DiskPtr latest_disk = std::make_shared<DB::DiskLocal>("latest", latest.path);
+    ctx->setLatestSnapshotDisk(latest_disk);
+
+    constexpr std::string_view path = "snapshot_10_unknown0.bin.zstd";
+    const auto valid_buffer = makeSingleNodeSnapshotBuffer(ctx, 10, "/survives", "complete");
+    writeSnapshotBufferToFile(regular_disk, String(path), valid_buffer);
+    {
+        auto output = latest_disk->writeFile(String(path));
+        constexpr std::string_view partial = "partial";
+        output->write(partial.data(), partial.size());
+        output->finalize();
+    }
+    {
+        auto marker_contents = DB::serializeKeeperMoveMarker(DB::computeKeeperFileDigest(regular_disk, String(path)));
+        marker_contents[8] = 2;
+        auto marker = latest_disk->writeFile("tmp_" + String(path));
+        marker->write(marker_contents.data(), marker_contents.size());
+        marker->finalize();
+    }
+
+    DB::SnapshotsQueue snapshots_queue{1};
+    auto state_machine = std::make_shared<DB::KeeperStateMachine>(nullptr, snapshots_queue, ctx, nullptr);
+    EXPECT_TRUE(regular_disk->existsFile(String(path)));
+    EXPECT_TRUE(latest_disk->existsFile(String(path)));
+    EXPECT_TRUE(latest_disk->existsFile("tmp_" + String(path)));
+    ASSERT_NO_THROW(state_machine->init());
+    EXPECT_EQ(committedNodeData(state_machine->getStorageUnsafe(), "/survives"), "complete");
+}
+
+TEST_P(CoordinationTest, StartupSelectsHigherPrecedenceSameIndexSnapshot)
+{
+    ChangelogDirTest regular("./snapshots_conflict_regular");
+    ChangelogDirTest latest("./snapshots_conflict_latest");
+    ChangelogDirTest rocks("./rocksdb");
+    auto ctx = makeContextForSnapshotApply(GetParam(), regular.path, rocks.path);
+    DB::DiskPtr regular_disk = std::make_shared<DB::DiskLocal>("regular", regular.path);
+    DB::DiskPtr latest_disk = std::make_shared<DB::DiskLocal>("latest", latest.path);
+    ctx->setSnapshotDisk(regular_disk);
+    ctx->setLatestSnapshotDisk(latest_disk);
+
+    constexpr std::string_view path = "snapshot_10_conflict.bin.zstd";
+    writeSnapshotBufferToFile(regular_disk, String(path), makeSingleNodeSnapshotBuffer(ctx, 10, "/copy", "regular"));
+    writeSnapshotBufferToFile(latest_disk, String(path), makeSingleNodeSnapshotBuffer(ctx, 10, "/copy", "latest"));
+
+    DB::SnapshotsQueue snapshots_queue{1};
+    auto state_machine = std::make_shared<DB::KeeperStateMachine>(nullptr, snapshots_queue, ctx, nullptr);
+    EXPECT_TRUE(regular_disk->existsFile(String(path)));
+    EXPECT_TRUE(latest_disk->existsFile(String(path)));
+    ASSERT_NO_THROW(state_machine->init());
+    EXPECT_EQ(committedNodeData(state_machine->getStorageUnsafe(), "/copy"), "latest");
+}
+
+TEST_P(CoordinationTest, StartupInventoriesDistinctSnapshotDisksInParallel)
+{
+    ChangelogDirTest regular("./snapshots_parallel_inventory_regular");
+    ChangelogDirTest latest("./snapshots_parallel_inventory_latest");
+    ChangelogDirTest rocks("./rocksdb");
+    auto ctx = makeContextForSnapshotApply(GetParam(), regular.path, rocks.path);
+    auto latch = std::make_shared<SnapshotInventoryLatch>();
+    auto regular_disk = std::make_shared<SnapshotInventoryLatchDisk>("regular", regular.path, latch);
+    auto latest_disk = std::make_shared<SnapshotInventoryLatchDisk>("latest", latest.path, latch);
+    ctx->setSnapshotDisk(regular_disk);
+    ctx->setLatestSnapshotDisk(latest_disk);
+
+    DB::KeeperSnapshotManager manager(3, ctx, true);
+    EXPECT_EQ(latch->arrivals, 2);
+    EXPECT_EQ(manager.totalSnapshots(), 0);
+}
+
+TEST_P(CoordinationTest, StartupRemovesOrphanSnapshotMarkerImmediately)
+{
+    ChangelogDirTest snapshots("./snapshots");
+    auto ctx = makeContextForSnapshotApply(GetParam(), snapshots.path);
+    const auto disk = ctx->getSnapshotDisk();
+    auto marker = disk->writeFile("tmp_snapshot_10_orphan000.bin.zstd");
+    marker->finalize();
+
+    DB::SnapshotsQueue snapshots_queue{1};
+    auto state_machine = std::make_shared<DB::KeeperStateMachine>(nullptr, snapshots_queue, ctx, nullptr);
+    EXPECT_FALSE(disk->existsFile("tmp_snapshot_10_orphan000.bin.zstd"));
+    state_machine->init();
+    EXPECT_FALSE(disk->existsFile("tmp_snapshot_10_orphan000.bin.zstd"));
 }
 
 TEST_P(CoordinationTest, ApplySnapshotReplacesCommittedState)
@@ -3000,6 +3270,46 @@ TEST_P(CoordinationTestWithCompression, OrphanRemovalArchivesSameIndexDuplicates
         EXPECT_EQ(committedNodeData(restarted.getStorageUnsafe(), "/present"), "present");
         EXPECT_FALSE(committedNodeExists(restarted.getStorageUnsafe(), "/missing/child"));
     }
+}
+
+/// Startup can retain a same-index copy on the latest disk (its move marker has an unknown version) while
+/// it registers the copy on the regular disk. `finishSnapshotRecovery` then moves the registered snapshot
+/// onto the path of the retained copy, so both refer to one file, which orphan recovery must archive once.
+TEST_P(CoordinationTestWithCompression, OrphanRemovalArchivesMovedOntoRetainedCopyOnce)
+{
+    if (GetParam().use_lsmt_storage)
+        GTEST_SKIP() << "Orphaned-nodes cleanup is only supported by the in-memory nodes storage";
+
+    ChangelogDirTest snapshots("./snapshots");
+    ChangelogDirTest latest_snapshots("./latest_snapshots");
+    ChangelogDirTest logs("./logs");
+    auto ctx = makeContextForOrphanRemoval(false, this->enable_compression, "./snapshots", "./logs");
+    writeSnapshotWithOrphans(ctx, this->enable_compression, 2, {"/present"}, {"/missing/child"});
+    const auto name = snapshotFilesForIdx("./snapshots", 2).at(0);
+    fs::copy_file(fs::path("./snapshots") / name, fs::path("./latest_snapshots") / name);
+    DB::DiskPtr latest_disk = std::make_shared<DB::DiskLocal>("LatestSnapshotDisk", "./latest_snapshots");
+    {
+        auto marker_contents = DB::serializeKeeperMoveMarker(DB::computeKeeperFileDigest(latest_disk, name));
+        marker_contents[8] = 2;
+        auto marker = latest_disk->writeFile("tmp_" + name);
+        marker->write(marker_contents.data(), marker_contents.size());
+        marker->finalize();
+    }
+    ctx->setLatestSnapshotDisk(latest_disk);
+
+    DB::SnapshotsQueue queue{1};
+    {
+        DB::KeeperStateMachine state_machine(nullptr, queue, ctx, nullptr);
+        state_machine.init();
+        state_machine.finishSnapshotRecovery();
+        ASSERT_FALSE(state_machine.findOrphanConflictInLogTail(3, 3).has_value());
+    }
+
+    ctx->setRemoveOrphanedNodesOnStartup(false);
+    DB::KeeperStateMachine restarted(nullptr, queue, ctx, nullptr);
+    ASSERT_NO_THROW(restarted.init());
+    EXPECT_EQ(committedNodeData(restarted.getStorageUnsafe(), "/present"), "present");
+    EXPECT_FALSE(committedNodeExists(restarted.getStorageUnsafe(), "/missing/child"));
 }
 
 TEST_P(CoordinationTestWithCompression, OrphanRemovalRewriteFailurePreservesOriginal)
@@ -4771,7 +5081,7 @@ TEST_P(CoordinationTest, ReceiveDuplicateSnapshotRepublishIsIdempotent)
     EXPECT_FALSE(restored_storage->nodes_storage->getCommittedNodeSimple("/after_duplicate", /*out_stats=*/nullptr, /*out_data=*/nullptr));
 }
 
-TEST_P(CoordinationTest, StartupScanKeepsOneRegisteredSnapshotPerIndex)
+TEST_P(CoordinationTest, StartupInventoryKeepsRetainedRecoveryCopies)
 {
     ChangelogDirTest snapshots("./snapshots");
     ChangelogDirTest rocks("./rocksdb");
@@ -4785,37 +5095,22 @@ TEST_P(CoordinationTest, StartupScanKeepsOneRegisteredSnapshotPerIndex)
     /// Short suffixes are fine in test fixture files — only production generation
     /// must use full UUIDs.
     auto disk = ctx->getSnapshotDisk();
-    /// Outside the retained window (4 indexes, keep = 3): the duplicate is deleted by
-    /// the dedup pass and the registered file by outdated-snapshot maintenance.
+    /// Same-index duplicates inside the retained window remain available for recovery.
     writeSnapshotBufferToFile(disk, "snapshot_55.bin.zstd", buf_55);
     writeSnapshotBufferToFile(disk, "snapshot_55_aaaaaaaa.bin.zstd", buf_55);
-    /// Retained indexes: duplicates are kept as unvalidated redundant recovery copies.
     writeSnapshotBufferToFile(disk, "snapshot_66_aaaaaaaa.bin.zstd", buf_66);
     writeSnapshotBufferToFile(disk, "snapshot_66_bbbbbbbb.bin.zstd", buf_66);
-    /// Upgrade race: legacy deterministic + unique name for the same index.
     writeSnapshotBufferToFile(disk, "snapshot_77.bin.zstd", buf_77);
     writeSnapshotBufferToFile(disk, "snapshot_77_aaaaaaaa.bin.zstd", buf_77);
-    /// Crashed publish-loses-race cleanup: two unique names for the same index.
     writeSnapshotBufferToFile(disk, "snapshot_88_aaaaaaaa.bin.zstd", buf_88);
     writeSnapshotBufferToFile(disk, "snapshot_88_bbbbbbbb.bin.zstd", buf_88);
-    /// Incomplete write: data file + tmp_ marker — both must be removed.
-    {
-        auto out = disk->writeFile("tmp_snapshot_99_cccccccc.bin.zstd");
-        out->finalize();
-    }
-    writeSnapshotBufferToFile(disk, "snapshot_99_cccccccc.bin.zstd", buf_88);
-
     DB::KeeperSnapshotManager manager(3, ctx, true);
-    EXPECT_EQ(manager.totalSnapshots(), 3);
+    EXPECT_EQ(manager.totalSnapshots(), 4);
     EXPECT_EQ(manager.getLatestSnapshotIndex(), 88);
-    /// idx 55 left the retained window: duplicate deleted by dedup, registered file
-    /// retired by maintenance — nothing remains.
-    EXPECT_TRUE(snapshotFilesForIdx("./snapshots", 55, /*include_tmp_markers=*/true).empty());
-    /// Retained indexes keep BOTH copies (one registered + one unvalidated recovery copy).
+    EXPECT_EQ(snapshotFilesForIdx("./snapshots", 55).size(), 1);
     EXPECT_EQ(snapshotFilesForIdx("./snapshots", 66).size(), 2);
     EXPECT_EQ(snapshotFilesForIdx("./snapshots", 77).size(), 2);
     EXPECT_EQ(snapshotFilesForIdx("./snapshots", 88).size(), 2);
-    EXPECT_TRUE(snapshotFilesForIdx("./snapshots", 99, /*include_tmp_markers=*/true).empty());
 
     {
         auto restored_storage = DB::KeeperStorage::create(500, "", this->keeper_context, /* initialize_system_nodes */ false);
@@ -4848,13 +5143,8 @@ TEST_P(CoordinationTest, StartupScanKeepsLatestIndexDuplicatesForRecovery)
     auto buf_90 = makeSingleNodeSnapshotBuffer(ctx, 90, "/latest_valid", "valid");
 
     auto disk = ctx->getSnapshotDisk();
-    /// Retained non-latest index (2 indexes, keep = 3): the duplicate is kept too —
-    /// the operator drill can turn idx 80 into the boot point with one `rm`.
     writeSnapshotBufferToFile(disk, "snapshot_80_aaaaaaaa.bin.zstd", buf_80);
     writeSnapshotBufferToFile(disk, "snapshot_80_bbbbbbbb.bin.zstd", buf_80);
-    /// Latest-index duplicate pair: one valid copy, one corrupt copy. Scan order is
-    /// unspecified, so either may end up registered — the scan must not unlink the
-    /// other (potentially the only readable) copy.
     constexpr auto valid_latest_file = "snapshot_90_valid000.bin.zstd";
     writeSnapshotBufferToFile(disk, valid_latest_file, buf_90);
     {
@@ -4868,13 +5158,9 @@ TEST_P(CoordinationTest, StartupScanKeepsLatestIndexDuplicatesForRecovery)
     EXPECT_EQ(manager.totalSnapshots(), 2);
     EXPECT_EQ(manager.getLatestSnapshotIndex(), 90);
     EXPECT_EQ(snapshotFilesForIdx("./snapshots", 80).size(), 2);
-    /// Both latest-index copies survive the scan; in particular the valid one.
     EXPECT_EQ(snapshotFilesForIdx("./snapshots", 90).size(), 2);
     EXPECT_TRUE(fs::exists(std::string("./snapshots/") + valid_latest_file));
 
-    /// Recovery drill: whichever idx-90 copy got registered, the latest snapshot is
-    /// recoverable — directly when the valid copy was registered, or by removing the
-    /// corrupt copy and restarting otherwise (the documented operator procedure).
     bool registered_copy_is_valid = true;
     try
     {
@@ -4882,7 +5168,7 @@ TEST_P(CoordinationTest, StartupScanKeepsLatestIndexDuplicatesForRecovery)
         auto restored = manager.deserializeSnapshotFromBuffer(manager.deserializeSnapshotBufferFromDisk(90), *restored_storage);
         EXPECT_TRUE(restored_storage->nodes_storage->getCommittedNodeSimple("/latest_valid", /*out_stats=*/nullptr, /*out_data=*/nullptr));
     }
-    catch (...) // Ok: exception means the registered copy is corrupt; we use the boolean to drive the recovery path below
+    catch (...) // Ok: an exception means the registered copy is corrupt and the recovery path below is required.
     {
         registered_copy_is_valid = false;
     }
@@ -4907,7 +5193,6 @@ TEST_P(CoordinationTest, StartupScanKeepsRetainedIndexDuplicatesForDrillRecovery
     auto buf_80 = makeSingleNodeSnapshotBuffer(ctx, 80, "/drill_valid", "valid");
 
     auto disk = ctx->getSnapshotDisk();
-    /// Retained NON-latest index with one valid and one corrupt copy.
     constexpr auto valid_retained_file = "snapshot_80_valid000.bin.zstd";
     writeSnapshotBufferToFile(disk, valid_retained_file, buf_80);
     {
@@ -4916,8 +5201,6 @@ TEST_P(CoordinationTest, StartupScanKeepsRetainedIndexDuplicatesForDrillRecovery
         out->write(garbage.data(), garbage.size());
         out->finalize();
     }
-    /// Corrupt LATEST snapshot: the documented operator drill (`test_invalid_snapshot`)
-    /// removes it and restarts, which turns the retained idx 80 into the boot point.
     {
         auto out = disk->writeFile("snapshot_90_corrupt0.bin.zstd");
         const std::string garbage = "corrupt latest snapshot";
@@ -4929,23 +5212,16 @@ TEST_P(CoordinationTest, StartupScanKeepsRetainedIndexDuplicatesForDrillRecovery
         DB::KeeperSnapshotManager manager(3, ctx, true);
         EXPECT_EQ(manager.totalSnapshots(), 2);
         EXPECT_EQ(manager.getLatestSnapshotIndex(), 90);
-        /// Both retained idx-80 copies must survive the first scan — in particular the
-        /// valid one, whichever of the two got registered (scan order is unspecified).
         EXPECT_EQ(snapshotFilesForIdx("./snapshots", 80).size(), 2);
         EXPECT_TRUE(fs::exists(std::string("./snapshots/") + valid_retained_file));
     }
 
-    /// Drill step 1: the latest snapshot is unreadable — the operator removes it and
-    /// restarts; idx 80 becomes the latest.
     disk->removeFileIfExists("snapshot_90_corrupt0.bin.zstd");
 
     DB::KeeperSnapshotManager manager(3, ctx, true);
     EXPECT_EQ(manager.getLatestSnapshotIndex(), 80);
     EXPECT_EQ(snapshotFilesForIdx("./snapshots", 80).size(), 2);
 
-    /// Drill step 2 (scan-order-robust): whichever idx-80 copy got registered, the
-    /// data is recoverable — directly when the valid copy was registered, or by
-    /// removing the corrupt copy and restarting otherwise.
     bool registered_copy_is_valid = true;
     try
     {
@@ -4953,7 +5229,7 @@ TEST_P(CoordinationTest, StartupScanKeepsRetainedIndexDuplicatesForDrillRecovery
         auto restored = manager.deserializeSnapshotFromBuffer(manager.deserializeSnapshotBufferFromDisk(80), *restored_storage);
         EXPECT_TRUE(restored_storage->nodes_storage->getCommittedNodeSimple("/drill_valid", /*out_stats=*/nullptr, /*out_data=*/nullptr));
     }
-    catch (...) // Ok: exception means the registered copy is corrupt; we use the boolean to drive the recovery path below
+    catch (...) // Ok: an exception means the registered copy is corrupt and the recovery path below is required.
     {
         registered_copy_is_valid = false;
     }
@@ -4969,7 +5245,7 @@ TEST_P(CoordinationTest, StartupScanKeepsRetainedIndexDuplicatesForDrillRecovery
     }
 }
 
-TEST_P(CoordinationTest, RetainedDuplicateAgesOutWithoutRestart)
+TEST_P(CoordinationTest, RetainedDuplicateAgesOutWithRegisteredSnapshot)
 {
     ChangelogDirTest snapshots("./snapshots");
     ChangelogDirTest rocks("./rocksdb");
@@ -4979,19 +5255,24 @@ TEST_P(CoordinationTest, RetainedDuplicateAgesOutWithoutRestart)
     auto buf_90 = makeSingleNodeSnapshotBuffer(ctx, 90, "/kept90", "from_90");
 
     auto disk = ctx->getSnapshotDisk();
-    /// Retained non-latest index (2 indexes, keep = 3): the startup scan keeps both same-index
-    /// copies — one registered, one redundant recovery copy.
+    /// Startup keeps the duplicate as a recovery copy while the index is retained.
     writeSnapshotBufferToFile(disk, "snapshot_80_aaaaaaaa.bin.zstd", buf_80);
     writeSnapshotBufferToFile(disk, "snapshot_80_bbbbbbbb.bin.zstd", buf_80);
+    {
+        auto marker_contents = DB::serializeKeeperMoveMarker(DB::computeKeeperFileDigest(disk, "snapshot_80_bbbbbbbb.bin.zstd"));
+        marker_contents[8] = 2;
+        auto marker = disk->writeFile("tmp_snapshot_80_bbbbbbbb.bin.zstd");
+        marker->write(marker_contents.data(), marker_contents.size());
+        marker->finalize();
+    }
     writeSnapshotBufferToFile(disk, "snapshot_90_cccccccc.bin.zstd", buf_90);
 
     DB::KeeperSnapshotManager manager(3, ctx, true);
     EXPECT_EQ(manager.totalSnapshots(), 2);
     EXPECT_EQ(snapshotFilesForIdx("./snapshots", 80).size(), 2);
+    EXPECT_TRUE(disk->existsFile("tmp_snapshot_80_bbbbbbbb.bin.zstd"));
 
-    /// Age idx 80 out WITHOUT a restart. Both the registered copy and the tracked duplicate
-    /// must be unlinked together. Before the fix the unregistered duplicate was invisible to
-    /// retention and leaked until the next restart, leaving size() == 1 here.
+    /// Age the index out without a restart; both copies are removed together.
     manager.removeSnapshot(80);
     EXPECT_EQ(manager.totalSnapshots(), 1);
     EXPECT_TRUE(snapshotFilesForIdx("./snapshots", 80, /*include_tmp_markers=*/true).empty());
@@ -5656,6 +5937,48 @@ TEST_P(CoordinationTest, MoveSnapshotCandidateHonorsBoolPublishCallback)
     auto restored_storage = DB::KeeperStorage::create(500, "", this->keeper_context, /* initialize_system_nodes */ false);
     auto restored = manager.deserializeSnapshotFromBuffer(manager.deserializeSnapshotBufferFromDisk(10), *restored_storage);
     EXPECT_TRUE(restored_storage->nodes_storage->getCommittedNodeSimple("/move_me", /*out_stats=*/nullptr, /*out_data=*/nullptr));
+}
+
+TEST_P(CoordinationTest, MoveOntoRetainedCopyKeepsPinnedSnapshot)
+{
+    ChangelogDirTest snapshots("./snapshots");
+    ChangelogDirTest latest("./snapshots_latest");
+    ChangelogDirTest rocks("./rocksdb");
+
+    auto ctx = makeContextForSnapshotApply(use_lsmt_storage, "./snapshots", "./rocksdb");
+    auto latest_disk = std::make_shared<DB::DiskLocal>("LatestSnapshotDisk", "./snapshots_latest");
+    ctx->setLatestSnapshotDisk(latest_disk);
+    auto buf_80 = makeSingleNodeSnapshotBuffer(ctx, 80, "/kept80", "from_80");
+    auto buf_90 = makeSingleNodeSnapshotBuffer(ctx, 90, "/kept90", "from_90");
+
+    /// The same snapshot file on both disks: startup selects the latest-disk copy and retains the other one.
+    constexpr auto path_80 = "snapshot_80_aaaaaaaa.bin.zstd";
+    auto regular_disk = ctx->getSnapshotDisk();
+    writeSnapshotBufferToFile(regular_disk, path_80, buf_80);
+    writeSnapshotBufferToFile(latest_disk, path_80, buf_80);
+    writeSnapshotBufferToFile(latest_disk, "snapshot_90_bbbbbbbb.bin.zstd", buf_90);
+    const auto digest_80 = DB::computeKeeperFileDigest(latest_disk, path_80);
+
+    DB::KeeperSnapshotManager manager(3, ctx, true);
+    EXPECT_EQ(manager.totalSnapshots(), 2);
+    EXPECT_EQ(manager.getSnapshotPin(80)->disk, latest_disk);
+
+    /// Maintenance moves the non-latest snapshot onto the path of its retained copy.
+    manager.runMaintenanceInline(0);
+    auto pin = manager.getSnapshotPin(80);
+    ASSERT_NE(pin, nullptr);
+    EXPECT_EQ(pin->disk, regular_disk);
+    EXPECT_FALSE(latest_disk->existsFile(path_80));
+    EXPECT_TRUE(regular_disk->existsFile(path_80));
+
+    /// Retiring the index must not unlink the file while the registered snapshot is pinned.
+    manager.removeSnapshot(80);
+    EXPECT_TRUE(regular_disk->existsFile(path_80));
+    EXPECT_EQ(DB::computeKeeperFileDigest(pin->disk, pin->path), digest_80);
+
+    pin.reset();
+    EXPECT_FALSE(regular_disk->existsFile(path_80));
+    EXPECT_EQ(manager.totalSnapshots(), 1);
 }
 
 TEST(KeeperSnapshotFileNameTest, CanonicalSnapshotS3Name)

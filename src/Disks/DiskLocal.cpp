@@ -18,11 +18,13 @@
 #include <filesystem>
 #include <memory>
 #include <system_error>
+#include <utility>
 #include <fcntl.h>
 #include <unistd.h>
 #include <sys/stat.h>
 
 #include <Disks/IO/WriteBufferFromTemporaryFile.h>
+#include <base/scope_guard.h>
 
 #include <Common/randomSeed.h>
 #include <IO/ReadHelpers.h>
@@ -55,12 +57,48 @@ namespace ErrorCodes
     extern const int CANNOT_TRUNCATE_FILE;
     extern const int CANNOT_UNLINK;
     extern const int CANNOT_RMDIR;
+    extern const int CANNOT_FSYNC;
+    extern const int CANNOT_OPEN_FILE;
+    extern const int CANNOT_CLOSE_FILE;
     extern const int BAD_ARGUMENTS;
     extern const int CANNOT_STAT;
 }
 
 namespace
 {
+
+void syncLocalPath(const fs::path & path, int open_flags, bool is_directory)
+{
+    /// `O_CLOEXEC` keeps the descriptor from leaking into processes spawned concurrently, which would pin unlinked files.
+    int fd = ::open(path.c_str(), open_flags | O_CLOEXEC);
+    if (fd == -1)
+        ErrnoException::throwFromPath(ErrorCodes::CANNOT_OPEN_FILE, path, "Cannot open {} {}", is_directory ? "directory" : "file", path);
+
+    SCOPE_EXIT({
+        if (fd != -1)
+        {
+            [[maybe_unused]] int err = ::close(fd);
+            chassert(!err || errno == EINTR);
+        }
+    });
+
+    const int sync_result =
+#if defined(OS_DARWIN)
+        ::fsync(fd);
+#else
+        is_directory ? ::fsync(fd) : ::fdatasync(fd);
+#endif
+    if (sync_result == -1)
+        ErrnoException::throwFromPath(
+            ErrorCodes::CANNOT_FSYNC,
+            path,
+            "Cannot synchronize {} {}",
+            is_directory ? "directory" : "file",
+            path);
+
+    if (::close(std::exchange(fd, -1)) == -1)
+        ErrnoException::throwFromPath(ErrorCodes::CANNOT_CLOSE_FILE, path, "Cannot close {} {}", is_directory ? "directory" : "file", path);
+}
 
 bool errnoIndicatesReadOnlyDisk(int err)
 {
@@ -607,6 +645,21 @@ void DiskLocal::copyDirectoryContent(
 SyncGuardPtr DiskLocal::getDirectorySyncGuard(const String & path) const
 {
     return std::make_unique<LocalDirectorySyncGuard>(fs::path(disk_path) / path);
+}
+
+void DiskLocal::syncFile(const String & path) const
+{
+    syncLocalPath(fs::path(disk_path) / path, O_RDONLY, /*is_directory=*/false);
+}
+
+void DiskLocal::syncDirectory(const String & path) const
+{
+#ifdef O_DIRECTORY
+    constexpr int directory_flags = O_RDONLY | O_DIRECTORY;
+#else
+    constexpr int directory_flags = O_RDONLY;
+#endif
+    syncLocalPath(fs::path(disk_path) / path, directory_flags, /*is_directory=*/true);
 }
 
 

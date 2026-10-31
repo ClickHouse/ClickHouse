@@ -37,6 +37,7 @@
 #include <Common/assert_cast.h>
 #include <Common/logger_useful.h>
 #include <Common/CurrentMetrics.h>
+#include <Common/ProfileEvents.h>
 #include <Common/ProxyConfigurationResolverProvider.h>
 
 #include <Core/Settings.h>
@@ -55,6 +56,7 @@ namespace ProfileEvents
     extern const Event S3ReadRequestsErrors;
     extern const Event S3ReadRequestAttempts;
     extern const Event S3ReadRequestRetryableErrors;
+    extern const Event S3CompleteMultipartUploadAdoptedExistingObject;
 
     extern const Event DiskS3WriteRequestsErrors;
     extern const Event DiskS3WriteRequestAttempts;
@@ -617,6 +619,7 @@ Model::CompleteMultipartUploadOutcome Client::CompleteMultipartUpload(CompleteMu
                 log,
                 "Multipart upload was completed by an earlier attempt of this upload ({}). Key: {}, Bucket: {}",
                 outcome.GetError().GetExceptionName(), key, bucket);
+            ProfileEvents::increment(ProfileEvents::S3CompleteMultipartUploadAdoptedExistingObject);
             outcome = Aws::S3::Model::CompleteMultipartUploadOutcome(Aws::S3::Model::CompleteMultipartUploadResult());
         }
     }
