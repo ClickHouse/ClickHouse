@@ -88,6 +88,52 @@ namespace ProfileEvents
 namespace DB::Parquet
 {
 
+namespace
+{
+
+struct FilterRuns
+{
+    size_t first = 0; /// First passing row.
+    size_t last = 0; /// One past the last passing row.
+    size_t runs = 0; /// Number of runs of consecutive passing rows.
+};
+
+FilterRuns countFilterRuns(const UInt8 * filter, size_t size)
+{
+    FilterRuns res{.first = size, .last = 0, .runs = 0};
+    UInt64 prev_bit = 0;
+    size_t i = 0;
+    for (; i + 64 <= size; i += 64)
+    {
+        UInt64 bits = bytes64MaskToBits64Mask(filter + i);
+        if (bits)
+        {
+            if (res.first == size)
+                res.first = i + std::countr_zero(bits);
+            res.last = i + 64 - std::countl_zero(bits);
+            res.runs += std::popcount(bits & ~((bits << 1) | prev_bit));
+        }
+        prev_bit = bits >> 63;
+    }
+    for (; i < size; ++i)
+    {
+        UInt64 bit = filter[i] != 0;
+        if (bit)
+        {
+            if (res.first == size)
+                res.first = i;
+            res.last = i + 1;
+            res.runs += !prev_bit;
+        }
+        prev_bit = bit;
+    }
+    if (res.first == size)
+        res.first = res.last = 0;
+    return res;
+}
+
+}
+
 /// parquet-cpp before Arrow 3.0 wrote `DataPageV2` pages compressed but set their `is_compressed` flag to false
 /// (ARROW-10353). Such files carry the application name `parquet-cpp` with a version below 2.0.0; later versions
 /// call themselves `parquet-cpp-arrow`. Arrow C++ decompresses their pages anyway (ARROW-17100), and so do we.
@@ -3384,6 +3430,116 @@ void Reader::decodePrimitiveColumn(ColumnChunk & column, const PrimitiveColumnIn
         !column.need_null_map;
     const size_t subgroup_end_row_idx = row_subgroup.start_row_idx + row_subgroup.filter.rows_total;
 
+    /// Decodes all rows from the first to the last passing row and filters them, instead of seeking to each run.
+    auto try_decode_densely = [&]() -> bool
+    {
+        if (column_info.levels.back().rep != 0 || row_subgroup.filter.filter.empty())
+            return false;
+        /// Not for large values, even dictionary-encoded (a chunk may fall back to plain pages): filtering copies them again.
+        if (!column_info.decoded_type->haveMaximumSizeOfValue() || column_info.decoded_type->getMaximumSizeOfValueInMemory() > 16)
+            return false;
+        /// Nor when converting a value can throw: the rows filtered out must not be converted.
+        const PageDecoderInfo & decoder_info = column_info.decoder;
+        if ((decoder_info.fixed_size_converter && decoder_info.fixed_size_converter->canRejectValues())
+            || (decoder_info.string_converter && decoder_info.string_converter->canRejectValues()))
+            return false;
+
+        const auto & filter = row_subgroup.filter.filter;
+        const auto [first, last, runs] = countFilterRuns(filter.data(), row_subgroup.filter.rows_total);
+        /// Seeking to a run costs about as much as decoding and filtering 16 rows.
+        if (runs < 2 || runs * 16 < last - first)
+            return false;
+
+        /// Ranges of rows to decode, relative to the row subgroup. With an offset index, a range must
+        /// not cover a page without passing rows (or a page not listed at all): it may not be fetched.
+        const size_t subgroup_start = row_subgroup.start_row_idx;
+        std::vector<std::pair<size_t, size_t>> ranges;
+        if (column.data_pages.empty())
+            ranges.emplace_back(first, last);
+        else
+        {
+            auto it = std::partition_point(column.data_pages.begin(), column.data_pages.end(),
+                [&](const DataPage & data_page) { return data_page.end_row_idx <= subgroup_start + first; });
+            for (; it != column.data_pages.end(); ++it)
+            {
+                const auto & data_page = *it;
+                const size_t page_first_row = size_t(data_page.meta->first_row_index);
+                if (page_first_row >= subgroup_start + last)
+                    break;
+                const size_t range_start = std::max(page_first_row, subgroup_start + first) - subgroup_start;
+                const size_t range_end = std::min(data_page.end_row_idx, subgroup_start + last) - subgroup_start;
+                if (range_start >= range_end || memoryIsZero(filter.data(), range_start, range_end))
+                    continue;
+                if (!ranges.empty() && ranges.back().second == range_start)
+                    ranges.back().second = range_end;
+                else
+                    ranges.emplace_back(range_start, range_end);
+            }
+            if (ranges.empty())
+                return false;
+        }
+
+        size_t rows_to_decode = 0;
+        for (const auto & [range_start, range_end] : ranges)
+            rows_to_decode += range_end - range_start;
+        subchunk.column->reserve(rows_to_decode);
+        if (subchunk.null_map)
+            subchunk.null_map->reserve(rows_to_decode);
+        IColumn::Filter rows_filter;
+        rows_filter.reserve(rows_to_decode);
+
+        for (const auto & [range_start, range_end] : ranges)
+        {
+            const size_t end_row_idx = subgroup_start + range_end;
+            skipToRowOrNextPage(subgroup_start + range_start, column, column_info);
+            while (true) // loop over pages
+            {
+                readRowsInPage(end_row_idx, subchunk, column, column_info);
+
+                auto & page = column.page;
+                if (page.next_row_idx == end_row_idx &&
+                    (page.value_idx < page.num_values ||
+                     page.end_row_idx.has_value() ||
+                     column.next_page_offset >= column.data_pages_bytes))
+                    break;
+
+                chassert(page.value_idx == page.num_values);
+                skipToRowOrNextPage(std::nullopt, column, column_info);
+                chassert(page.value_idx == 0);
+            }
+            rows_filter.insert(filter.begin() + range_start, filter.begin() + range_end);
+        }
+        if (subchunk.null_map)
+        {
+            /// The values column holds only the non-null values, the null map has an entry per row.
+            const auto & null_map = assert_cast<const ColumnUInt8 &>(*subchunk.null_map).getData();
+            if (null_map.size() != rows_filter.size())
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected null map size {} for {} rows", null_map.size(), rows_filter.size());
+            IColumn::Filter values_filter;
+            values_filter.reserve(subchunk.column->size());
+            size_t values_pass = 0;
+            for (size_t i = 0; i < null_map.size(); ++i)
+            {
+                if (!null_map[i])
+                {
+                    values_filter.push_back(rows_filter[i]);
+                    values_pass += rows_filter[i] != 0;
+                }
+            }
+            if (values_filter.size() != subchunk.column->size())
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected number of values {} for {} non-null rows", subchunk.column->size(), values_filter.size());
+            subchunk.column = IColumn::mutate(subchunk.column->filter(values_filter, values_pass));
+            subchunk.null_map = IColumn::mutate(subchunk.null_map->filter(rows_filter, row_subgroup.filter.rows_pass));
+        }
+        else
+        {
+            if (subchunk.column->size() != rows_filter.size())
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected number of values {} for {} rows", subchunk.column->size(), rows_filter.size());
+            subchunk.column = IColumn::mutate(subchunk.column->filter(rows_filter, row_subgroup.filter.rows_pass));
+        }
+        return true;
+    };
+
     if (use_filter_in_decoder)
     {
         skipToRowOrNextPage(row_subgroup.start_row_idx, column, column_info);
@@ -3404,7 +3560,7 @@ void Reader::decodePrimitiveColumn(ColumnChunk & column, const PrimitiveColumnIn
             chassert(page.value_idx == 0);
         }
     }
-    else
+    else if (!try_decode_densely())
     {
         size_t row_subidx = 0;
         while (true) // loop over row ranges that pass the filter
