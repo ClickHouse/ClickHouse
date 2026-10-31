@@ -1818,17 +1818,23 @@ set_source_files_properties(
 )
 target_compile_options(musl-crtn PRIVATE -Qunused-arguments -Wa,--noexecstack)
 
+# static_pie_pad.o: one byte that cmake/linux/static_pie_pad.ld places 4 GiB above the image so that the
+# kernel loads a static PIE 4 GiB below the top of the address space (see the linker script). Linked
+# like the CRT objects, before everything else.
+add_library(musl-static_pie_pad OBJECT "${ClickHouse_SOURCE_DIR}/cmake/linux/static_pie_pad.c")
+target_compile_options(musl-static_pie_pad PRIVATE -std=c99 -fPIC -ffreestanding -fno-stack-protector -fno-sanitize=all -fno-lto -fno-whole-program-vtables)
+
 # The CRT object libraries must not participate in the global link interface: they
 # inherit a (weak) dependency back on `musl` through `global-group`, and together with
 # the `musl` -> `musl-crt` dependency below that would form a dependency cycle
 # involving non-static-library targets, which CMake rejects. They also don't link
 # anything — they only compile standalone startup objects.
-set_target_properties(musl-crt1 musl-rcrt1 musl-crti musl-crtn PROPERTIES LINK_LIBRARIES "" INTERFACE_LINK_LIBRARIES "")
+set_target_properties(musl-crt1 musl-rcrt1 musl-crti musl-crtn musl-static_pie_pad PROPERTIES LINK_LIBRARIES "" INTERFACE_LINK_LIBRARIES "")
 
 # Copy the CRT objects to stable paths so that the link flags in
 # cmake/linux/default_libs.cmake can reference them. Every executable links the `musl`
 # library, and `musl` depends on `musl-crt`, so the copies exist before any link runs.
-foreach (crt crt1 rcrt1 crti crtn)
+foreach (crt crt1 rcrt1 crti crtn static_pie_pad)
     add_custom_command(
         OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/${crt}.o"
         COMMAND ${CMAKE_COMMAND} -E copy_if_different "$<TARGET_OBJECTS:musl-${crt}>" "${CMAKE_CURRENT_BINARY_DIR}/${crt}.o"
@@ -1843,5 +1849,6 @@ add_custom_target(musl-crt
         "${CMAKE_CURRENT_BINARY_DIR}/rcrt1.o"
         "${CMAKE_CURRENT_BINARY_DIR}/crti.o"
         "${CMAKE_CURRENT_BINARY_DIR}/crtn.o"
+        "${CMAKE_CURRENT_BINARY_DIR}/static_pie_pad.o"
 )
 add_dependencies(musl musl-crt)
