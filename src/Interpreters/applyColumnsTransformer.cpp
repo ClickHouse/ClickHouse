@@ -1,5 +1,6 @@
 #include <Interpreters/applyColumnsTransformer.h>
 
+#include <Parsers/ASTColumnsMatcher.h>
 #include <Parsers/ASTColumnsTransformers.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
@@ -88,13 +89,36 @@ void collectIdentifierRoots(const IAST & ast, std::unordered_set<String> & roots
         collectIdentifierRoots(*apply->lambda, roots);
 }
 
+/// The column names of `EXCEPT` applied to an explicit list like `COLUMNS(a) EXCEPT a` name the elements of the list,
+/// which may be lambda parameters, so they are renamed together with the elements of the list.
+void renameListMatcherExceptOperands(IAST & transformers, const String & from, const String & to)
+{
+    for (const auto & transformer : transformers.children)
+    {
+        auto * except = transformer->as<ASTColumnsExceptTransformer>();
+        if (!except || except->getPattern())
+            continue;
+
+        for (auto & operand : except->children)
+        {
+            const auto * identifier = operand->as<ASTIdentifier>();
+            if (identifier && !identifier->compound() && identifier->name() == from)
+                operand = make_intrusive<ASTIdentifier>(to);
+        }
+    }
+}
+
 /// Renames the references to the lambda parameter `from` inside `ast`, including the roots of compound
 /// identifiers like `from.id`, but not inside nested lambdas that declare their own `from`. The column names
-/// of `EXCEPT` select table columns, not lambda parameters, so they are kept.
+/// of `EXCEPT` of a table matcher like `*` or `COLUMNS('regexp')` select table columns, not lambda parameters,
+/// so they are kept.
 void renameLambdaParameterReferences(ASTPtr & ast, const String & from, const String & to)
 {
     if (!ast || ast->as<ASTColumnsExceptTransformer>())
         return;
+
+    if (const auto * list_matcher = ast->as<ASTColumnsListMatcher>(); list_matcher && list_matcher->transformers)
+        renameListMatcherExceptOperands(*list_matcher->transformers, from, to);
 
     if (const auto * identifier = ast->as<ASTIdentifier>())
     {
