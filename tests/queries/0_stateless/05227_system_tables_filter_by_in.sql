@@ -25,7 +25,11 @@ CREATE TABLE t_dist (k UInt64) ENGINE = Distributed(test_shard_localhost, curren
 INSERT INTO t_a SELECT number, toString(number) FROM numbers(10);
 INSERT INTO t_b SELECT number, toString(number) FROM numbers(10);
 INSERT INTO t_c SELECT number, toString(number) FROM numbers(10);
+-- The entry of the insert into `t_rep` stays in its replication queue only until a background thread
+-- executes it: hold it there, so that both scans of `system.replication_queue` below see it.
+SYSTEM STOP REPLICATION QUEUES t_rep;
 INSERT INTO t_rep SELECT number FROM numbers(10);
+SYSTEM SYNC REPLICA t_rep PULL;
 
 ALTER TABLE t_a DELETE WHERE k = 1 SETTINGS mutations_sync = 2;
 ALTER TABLE t_b DELETE WHERE k = 1 SETTINGS mutations_sync = 2;
