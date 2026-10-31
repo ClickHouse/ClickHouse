@@ -15,7 +15,7 @@ FROM
     UNION DISTINCT
     SELECT materialize(toUInt64(1)) AS k FROM system.numbers_mt
 )
-SETTINGS max_rows_in_distinct = 2, distinct_overflow_mode = 'break';
+SETTINGS max_rows_in_distinct = 2, distinct_overflow_mode = 'break', max_rows_to_read = 0;
 
 -- Each preliminary set holds one key below its limit, then suppresses every remaining chunk.
 SELECT count() BETWEEN 1 AND 2
@@ -25,7 +25,7 @@ FROM
     UNION DISTINCT
     SELECT materialize(toUInt64(1)) AS k FROM system.numbers_mt
 )
-SETTINGS max_bytes_in_distinct = 4096, distinct_overflow_mode = 'break';
+SETTINGS max_bytes_in_distinct = 4096, distinct_overflow_mode = 'break', max_rows_to_read = 0;
 
 -- Each local set fits, but the combined set exceeds the global limit.
 SELECT materialize(toUInt64(0)) AS k FROM numbers_mt(10000)

@@ -52,9 +52,15 @@ SELECT uniqCombined64(x) FROM
     SELECT bitXor(b, bitShiftRight(b, 33)) AS x FROM numbers(131072)
 );
 
--- The counts of `crafted` say that every register has rank 1, but its registers are 0. Merging `legit` into it takes
--- the count of rank 0 below zero, which makes the estimate negative.
+-- The counts of `crafted` say that every register has rank 1, but its registers are 0. Inserting the 1000 values of
+-- `small` (a hash set, not a HyperLogLog yet) into it takes the count of rank 0 below zero, which makes the estimate negative.
+WITH
+    (SELECT uniqCombinedState(number) FROM numbers(1000)) AS small,
+    CAST(unhex(concat('03', repeat('00', 81920), '00000000', '00000200', repeat('00000000', 16))), 'AggregateFunction(uniqCombined, UInt64)') AS crafted
+SELECT arrayReduce('uniqCombinedMerge', [crafted, small]); -- { serverError INCORRECT_DATA }
+
+-- Merging `legit` raises so many registers that the counts are recounted from the registers, so the wrong counts are replaced.
 WITH
     (SELECT uniqCombinedState(number) FROM numbers(100000)) AS legit,
     CAST(unhex(concat('03', repeat('00', 81920), '00000000', '00000200', repeat('00000000', 16))), 'AggregateFunction(uniqCombined, UInt64)') AS crafted
-SELECT arrayReduce('uniqCombinedMerge', [crafted, legit]); -- { serverError INCORRECT_DATA }
+SELECT arrayReduce('uniqCombinedMerge', [crafted, legit]) = finalizeAggregation(legit);
