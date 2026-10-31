@@ -6,6 +6,7 @@
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnConst.h>
 #include <Interpreters/inplaceBlockConversions.h>
+#include <Interpreters/createSubcolumnsExtractionActions.h>
 #include <Core/Block.h>
 #include <Storages/ColumnsDescription.h>
 #include <Interpreters/ExpressionActions.h>
@@ -88,7 +89,10 @@ ActionsDAG addMissingDefaults(
 
     /// Computes explicitly specified values by default and materialized columns.
     if (auto dag = evaluateMissingDefaults(actions.getResultColumns(), required_columns, columns, context, true, null_as_default))
-        actions = ActionsDAG::merge(std::move(actions), std::move(*dag));
+    {
+        auto extracting_subcolumns_dag = createSubcolumnsExtractionActions(Block(actions.getResultColumns()), dag->getRequiredColumnsNames(), context);
+        actions = ActionsDAG::merge(std::move(actions), ActionsDAG::merge(std::move(extracting_subcolumns_dag), std::move(*dag)));
+    }
 
     /// Removes unused columns and reorders result.
     actions.removeUnusedActions(required_columns.getNames(), false);
