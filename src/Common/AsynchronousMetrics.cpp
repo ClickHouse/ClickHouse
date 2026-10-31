@@ -1436,7 +1436,7 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
     /// `arenas.page`), not the OS page size: the two differ on platforms where jemalloc is
     /// built with `LG_PAGE=16` (64 KiB pages — aarch64, ppc64le, riscv64) but the kernel uses
     /// 4 KiB pages. Using `getPageSize()` would under-report by 16× there.
-    static const Jemalloc::MibCache<size_t> jemalloc_page_size_mib{"arenas.page"};
+    static const Jemalloc::NumericPathCache<size_t> jemalloc_page_size_numeric_path{"arenas.page"};
 
     /// Per-arena metrics for the dedicated JIT arena (LLVM bookkeeping: TargetMachine, IR modules,
     /// optimization passes, RuntimeDyld relocation tables, etc.).
@@ -1452,7 +1452,7 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
 
         if (jit_pactive && jit_pdirty)
         {
-            const size_t page_size = jemalloc_page_size_mib.getValue();
+            const size_t page_size = jemalloc_page_size_numeric_path.getValue();
             new_values["jemalloc.jit_arena.active_bytes"] = { *jit_pactive * page_size,
                 "Active bytes in the dedicated jemalloc JIT arena. Includes both (a) LLVM heap state "
                 "(TargetMachine and its target-specific Subtarget, IR modules, optimization-pass analyses, "
@@ -1507,7 +1507,7 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
             new_values["jemalloc.mergetree_arena.pdirty"] = { mt_pdirty,
                 "Dirty pages summed across the dedicated jemalloc MergeTree arena pool." };
 
-            const size_t page_size = jemalloc_page_size_mib.getValue();
+            const size_t page_size = jemalloc_page_size_numeric_path.getValue();
             new_values["jemalloc.mergetree_arena.active_bytes"] = { mt_pactive * page_size,
                 "Active bytes summed across the dedicated jemalloc MergeTree arena pool "
                 "(`jemalloc.mergetree_arena.count` arenas). Holds long-lived table state, for every engine "

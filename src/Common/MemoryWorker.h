@@ -281,16 +281,16 @@ private:
     /// Current state of the decay control state machine
     std::atomic<DecayState> decay_state{DecayState::Enabled};
 
-    Jemalloc::MibCache<uint64_t> epoch_mib{"epoch"};
-    Jemalloc::MibCache<size_t> resident_mib{"stats.resident"};
-    Jemalloc::MibCache<size_t> allocated_mib{"stats.allocated"};
-    Jemalloc::MibCache<size_t> pagesize_mib{"arenas.page"};
-    Jemalloc::MibCache<size_t> dirty_decay_ms_mib{"arenas.dirty_decay_ms"};
+    Jemalloc::NumericPathCache<uint64_t> epoch_numeric_path{"epoch"};
+    Jemalloc::NumericPathCache<size_t> resident_numeric_path{"stats.resident"};
+    Jemalloc::NumericPathCache<size_t> allocated_numeric_path{"stats.allocated"};
+    Jemalloc::NumericPathCache<size_t> pagesize_numeric_path{"arenas.page"};
+    Jemalloc::NumericPathCache<size_t> dirty_decay_ms_numeric_path{"arenas.dirty_decay_ms"};
 
 #define STRINGIFY_HELPER(x) #x
 #define STRINGIFY(x) STRINGIFY_HELPER(x)
-    Jemalloc::MibCache<size_t> pdirty_mib{"stats.arenas." STRINGIFY(MALLCTL_ARENAS_ALL) ".pdirty"};
-    Jemalloc::MibCache<size_t> purge_mib{"arena." STRINGIFY(MALLCTL_ARENAS_ALL) ".purge"};
+    Jemalloc::NumericPathCache<size_t> pdirty_numeric_path{"stats.arenas." STRINGIFY(MALLCTL_ARENAS_ALL) ".pdirty"};
+    Jemalloc::NumericPathCache<size_t> purge_numeric_path{"arena." STRINGIFY(MALLCTL_ARENAS_ALL) ".purge"};
 #undef STRINGIFY
 #undef STRINGIFY_HELPER
 #endif
