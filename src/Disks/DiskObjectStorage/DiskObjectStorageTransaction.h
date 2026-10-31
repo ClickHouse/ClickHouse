@@ -59,6 +59,7 @@ public:
         BlobKillerThreadPtr blob_killer_,
         std::shared_ptr<ThreadPool> copy_object_pool_,
         bool wait_blob_removal_);
+    ~DiskObjectStorageTransaction() override;
 
     void commit() override;
     TransactionCommitOutcomeVariant tryCommit(const TransactionCommitOptionsVariant & options) override;
