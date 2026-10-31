@@ -5,6 +5,13 @@
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnsCommon.h>
 #include <Columns/MaskOperations.h>
+#include <Columns/ColumnObject.h>
+#include <Columns/ColumnTuple.h>
+#include <Columns/ColumnVector.h>
+#include <DataTypes/DataTypeEnum.h>
+#include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeObject.h>
+#include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/IDataType.h>
 #include <Common/assert_cast.h>
 
@@ -275,6 +282,83 @@ void inverseMask(PaddedPODArray<UInt8> & mask, MaskInfo & mask_info)
     std::swap(mask_info.has_ones, mask_info.has_zeros);
 }
 
+/// Whether the default value of a column of this type (the zero value, as inserted by `IColumn::insertDefault`
+/// and `IColumn::expand`) can be not a valid value of the type. It is the case for `Enum` without an element
+/// with the value 0, also nested in `Nullable`, `Tuple` or a typed path of `JSON`. Other types are not checked,
+/// because their default value is either valid, or empty (`Array`, `Map`) or `NULL` (`Variant`, `Dynamic`).
+static bool hasInvalidColumnDefault(const IDataType & type)
+{
+    if (const auto * enum8_type = typeid_cast<const DataTypeEnum8 *>(&type))
+        return !enum8_type->hasValue(0);
+    if (const auto * enum16_type = typeid_cast<const DataTypeEnum16 *>(&type))
+        return !enum16_type->hasValue(0);
+    if (const auto * nullable_type = typeid_cast<const DataTypeNullable *>(&type))
+        return hasInvalidColumnDefault(*nullable_type->getNestedType());
+    if (const auto * tuple_type = typeid_cast<const DataTypeTuple *>(&type))
+        return std::ranges::any_of(tuple_type->getElements(), [](const auto & element) { return hasInvalidColumnDefault(*element); });
+    if (const auto * object_type = typeid_cast<const DataTypeObject *>(&type))
+        return std::ranges::any_of(object_type->getTypedPaths(), [](const auto & path) { return hasInvalidColumnDefault(*path.second); });
+    return false;
+}
+
+template <typename EnumType>
+static void fillUnusedEnumRows(IColumn & column, const EnumType & type, const PaddedPODArray<UInt8> & mask)
+{
+    auto & data = assert_cast<typename EnumType::ColumnType &>(column).getData();
+    if (data.size() != mask.size())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Mask size {} does not match the column size {}", mask.size(), data.size());
+
+    const auto valid_value = type.getValues().front().second;
+    for (size_t i = 0; i < data.size(); ++i)
+        data[i] = mask[i] ? data[i] : valid_value;
+}
+
+/// Replace the values in the rows outside of `mask` in the subcolumns of `column` where the default value
+/// of the column is not a valid value of the type (see `hasInvalidColumnDefault`) with a valid value.
+/// The unused rows are still converted together with the used rows, e.g. when `if` converts its branches
+/// to the common type, so they must be valid values of the type. In `Nullable`, the rows can stay `NULL`,
+/// but the nested column is fixed too, because the conversion of `Nullable` converts the nested column entirely.
+static void fillUnusedRowsWithValidValues(IColumn & column, const IDataType & type, const PaddedPODArray<UInt8> & mask)
+{
+    if (!hasInvalidColumnDefault(type))
+        return;
+
+    /// A constant column has the same value in all rows, including the unused ones. The value is a result
+    /// of the execution of the function on the used rows, so it is a valid value of the type.
+    if (isColumnConst(column))
+        return;
+
+    if (const auto * enum8_type = typeid_cast<const DataTypeEnum8 *>(&type))
+    {
+        fillUnusedEnumRows(column, *enum8_type, mask);
+    }
+    else if (const auto * enum16_type = typeid_cast<const DataTypeEnum16 *>(&type))
+    {
+        fillUnusedEnumRows(column, *enum16_type, mask);
+    }
+    else if (const auto * nullable_type = typeid_cast<const DataTypeNullable *>(&type))
+    {
+        fillUnusedRowsWithValidValues(assert_cast<ColumnNullable &>(column).getNestedColumn(), *nullable_type->getNestedType(), mask);
+    }
+    else if (const auto * tuple_type = typeid_cast<const DataTypeTuple *>(&type))
+    {
+        auto & tuple_column = assert_cast<ColumnTuple &>(column);
+        const auto & elements = tuple_type->getElements();
+        for (size_t i = 0; i < elements.size(); ++i)
+            fillUnusedRowsWithValidValues(tuple_column.getColumn(i), *elements[i], mask);
+    }
+    else if (const auto * object_type = typeid_cast<const DataTypeObject *>(&type))
+    {
+        auto & typed_paths = assert_cast<ColumnObject &>(column).getTypedPaths();
+        for (const auto & [path, path_type] : object_type->getTypedPaths())
+        {
+            auto it = typed_paths.find(path);
+            if (it != typed_paths.end())
+                fillUnusedRowsWithValidValues(it->second->assumeMutableRef(), *path_type, mask);
+        }
+    }
+}
+
 void maskedExecute(ColumnWithTypeAndName & column, const PaddedPODArray<UInt8> & mask, const MaskInfo & mask_info)
 {
     const auto * column_function = checkAndGetShortCircuitArgument(column.column);
@@ -286,9 +370,16 @@ void maskedExecute(ColumnWithTypeAndName & column, const PaddedPODArray<UInt8> &
     ColumnWithTypeAndName result;
     if (!mask_info.has_ones)
     {
-        /// If mask contains only zeros, we can just create a column with default values as it will be ignored
+        /// If mask contains only zeros, we can just create a column with default values as it will be ignored.
+        /// But it is still converted together with other columns, so the values must be valid values of the type.
         auto result_type = column_function->getResultType();
         auto default_column = result_type->createColumnConstWithDefaultValue(original_size)->convertToFullColumnIfConst();
+        if (hasInvalidColumnDefault(*result_type))
+        {
+            auto mut_default_column = IColumn::mutate(std::move(default_column));
+            fillUnusedRowsWithValidValues(*mut_default_column, *result_type, mask);
+            default_column = std::move(mut_default_column);
+        }
         column = {default_column, result_type, ""};
     }
     else if (mask_info.has_zeros)
@@ -296,11 +387,13 @@ void maskedExecute(ColumnWithTypeAndName & column, const PaddedPODArray<UInt8> &
         /// If it contains both zeros and ones, we need to execute the function only on the mask values
         /// First we filter the column, which creates a new column, then we apply the column, and finally we expand it
         /// Expanding is done to keep consistency in function calls (all columns the same size) and it's ok
-        /// since the values won't be used by `if`
+        /// since the values won't be used by `if`. But they are still converted together with the used values,
+        /// e.g. when `if` converts its branches to the common type, so they must be valid values of the type.
         auto filtered = column_function->filter(mask, -1);
         auto filter_after_execution = typeid_cast<const ColumnFunction *>(filtered.get())->reduce();
         auto mut_column = IColumn::mutate(std::move(filter_after_execution.column));
         mut_column->expand(mask, false);
+        fillUnusedRowsWithValidValues(*mut_column, *filter_after_execution.type, mask);
         column.column = std::move(mut_column);
     }
     else

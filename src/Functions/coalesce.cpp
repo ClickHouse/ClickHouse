@@ -1,5 +1,7 @@
 #include <Columns/ColumnLowCardinality.h>
 #include <Columns/ColumnNullable.h>
+#include <Columns/ColumnSparse.h>
+#include <Columns/MaskOperations.h>
 #include <Core/ColumnNumbers.h>
 #include <Core/Settings.h>
 #include <Interpreters/Context.h>
@@ -59,6 +61,39 @@ public:
     bool isVariadic() const override { return true; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
     size_t getNumberOfArguments() const override { return 0; }
+
+    bool isShortCircuitForArgumentTypes(ShortCircuitSettings & settings, const DataTypes & arguments) const override
+    {
+        /// `executeImpl` removes the constant NULL arguments, so the planning is done for the remaining (live) arguments.
+        /// The first live argument is always needed. Every other one is needed only for the rows
+        /// where all the preceding arguments are NULL, so it is evaluated lazily.
+        /// The arguments after the first one that cannot contain NULL are counted as well, although `executeImpl`
+        /// never executes them: a node shared by such an argument and a reachable lazy argument should stay lazy,
+        /// because it is then evaluated only once, under the mask of the reachable argument.
+        std::optional<size_t> first_live_argument;
+        size_t number_of_live_arguments = 0;
+        for (size_t i = 0; i < arguments.size(); ++i)
+        {
+            if (arguments[i]->onlyNull())
+                continue;
+
+            if (!first_live_argument)
+                first_live_argument = i;
+            ++number_of_live_arguments;
+        }
+        settings.arguments_with_disabled_lazy_execution.insert(first_live_argument.value_or(0));
+        /// As in `and`, the masks of the live arguments are nested: the rows needed by an argument are a subset
+        /// of the rows needed by every preceding argument. So a node that is a common descendant of several
+        /// lazy arguments can be lazily executed as well, it is evaluated under the mask of each argument it belongs to.
+        /// E.g. in `coalesce(a, f(x), g(x))` the node `x` must not be evaluated for the rows where `a` is not NULL.
+        /// A node shared with the first live argument is evaluated eagerly, once for all rows.
+        /// With two live arguments `coalesce` is the same as `ifNull`, there is only one lazy argument, and nothing
+        /// is gained, so keep the same settings as in `ifNull` (as `multiIf` does for its `if` form).
+        settings.enable_lazy_execution_for_common_descendants_of_arguments = (number_of_live_arguments > 2);
+        settings.force_enable_lazy_execution = false;
+        return true;
+    }
+
     ColumnNumbers getArgumentsThatDontImplyNullableReturnType(size_t number_of_arguments) const override
     {
         ColumnNumbers args;
@@ -174,6 +209,20 @@ public:
                 break;
         }
 
+        /// Short-circuit evaluation: the arguments after the first one can be lazily executed
+        /// (see `isShortCircuit`). The i-th argument is needed only for the rows where all the
+        /// preceding arguments are NULL, so we execute it under the mask of exactly these rows.
+        const int last_lazy_argument_index = checkShortCircuitArguments(filtered_args);
+        /// The first argument is always needed, but it can still be lazily executed when `coalesce`
+        /// itself is an argument of an enclosing short-circuit function.
+        if (last_lazy_argument_index >= 0)
+            executeColumnIfNeeded(filtered_args[0]);
+
+        const bool has_lazy_arguments = last_lazy_argument_index > 0;
+        IColumn::Filter mask;
+        MaskInfo mask_info{.has_ones = true, .has_zeros = false};
+        if (has_lazy_arguments)
+            mask.resize_fill(input_rows_count, 1);
 
         ColumnsWithTypeAndName multi_if_args;
         ColumnsWithTypeAndName tmp_args(1);
@@ -182,6 +231,9 @@ public:
         {
             bool is_last = i + 1 == filtered_args.size();
 
+            if (has_lazy_arguments && i > 0)
+                maskedExecute(filtered_args[i], mask, mask_info);
+
             if (is_last)
             {
                 multi_if_args.push_back(filtered_args[i]);
@@ -189,12 +241,25 @@ public:
             else
             {
                 tmp_args[0] = filtered_args[i];
-                auto & cond = multi_if_args.emplace_back(ColumnWithTypeAndName{nullptr, std::make_shared<DataTypeUInt8>(), ""});
-                cond.column = is_not_null->build(tmp_args)->execute(tmp_args, cond.type, input_rows_count, /* dry_run = */ false);
 
-                tmp_args[0] = filtered_args[i];
-                auto & val = multi_if_args.emplace_back(ColumnWithTypeAndName{nullptr, removeNullable(filtered_args[i].type), ""});
-                val.column = assume_not_null->build(tmp_args)->execute(tmp_args, val.type, input_rows_count, /* dry_run = */ false);
+                DataTypePtr cond_type = std::make_shared<DataTypeUInt8>();
+                ColumnPtr cond_column
+                    = is_not_null->build(tmp_args)->execute(tmp_args, cond_type, input_rows_count, /* dry_run = */ false);
+
+                DataTypePtr val_type = removeNullable(filtered_args[i].type);
+                ColumnPtr val_column
+                    = assume_not_null->build(tmp_args)->execute(tmp_args, val_type, input_rows_count, /* dry_run = */ false);
+
+                multi_if_args.emplace_back(cond_column, cond_type, "");
+                multi_if_args.emplace_back(val_column, val_type, "");
+
+                /// Narrow the mask down to the rows where this argument is NULL - only these rows
+                /// need the next arguments. When the mask becomes all zeros, `maskedExecute` does not
+                /// execute the remaining arguments at all and substitutes default values instead.
+                /// A lazily executed argument can be reduced to a sparse column (and then `isNotNull`
+                /// keeps it sparse), while mask extraction supports only full and constant columns.
+                if (has_lazy_arguments && static_cast<int>(i) < last_lazy_argument_index)
+                    mask_info = extractInvertedMask(mask, recursiveRemoveSparse(cond_column));
             }
         }
 
@@ -259,6 +324,16 @@ REGISTER_FUNCTION(Coalesce)
 {
     FunctionDocumentation::Description description = R"(
 Returns the leftmost non-`NULL` argument.
+
+The setting [`short_circuit_function_evaluation`](/reference/settings/session-settings/short-circuit-function-evaluation#short_circuit_function_evaluation) controls whether short-circuit evaluation is used.
+
+If enabled, an argument is evaluated only on the rows where all the preceding arguments are `NULL`.
+
+For example, with short-circuit evaluation, no division-by-zero exception is thrown when executing the following query:
+
+```sql
+SELECT coalesce(if(number = 0, toNullable(0), NULL), intDiv(42, number)) FROM numbers(10)
+```
     )";
     FunctionDocumentation::Syntax syntax = "coalesce(x[, y, ...])";
     FunctionDocumentation::Arguments arguments = {
