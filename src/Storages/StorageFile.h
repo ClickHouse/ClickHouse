@@ -481,6 +481,10 @@ public:
     void updatePrewhereInfo(const PrewhereInfoPtr & prewhere_info_value) override;
     bool canUpdatePrewhereInfoMultipleTimes() const override { return false; }
 
+    /// Only removes PREWHERE inputs that the steps above do not use (see `removeUnusedPrewhereInputsFromFormatInfo`).
+    bool canRemoveUnusedColumns() const override;
+    RemoveUnusedColumnsResult removeUnusedColumns(const std::vector<size_t> & unneeded_output_positions, const std::vector<PrunedInput> & inputs) override;
+
     /// TopN dynamic filtering: only the Parquet reader consumes `FormatFilterInfo::top_k_filter`,
     /// and only for a sort column it physically reads from the file.
     bool supportsTopKDynamicFilter(const ColumnWithTypeAndName & sort_column) const override;
