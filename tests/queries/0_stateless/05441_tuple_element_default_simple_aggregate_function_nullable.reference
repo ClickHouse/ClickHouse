@@ -1,0 +1,3 @@
+c	Tuple(a SimpleAggregateFunction(any, Nullable(UInt64)))	DEFAULT	tuple(NULL)
+d	Tuple(a SimpleAggregateFunction(anyLast, LowCardinality(Nullable(String))))	DEFAULT	tuple(NULL)
+(NULL)	(NULL)

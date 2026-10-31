@@ -6,6 +6,7 @@
 #include <Core/UUID.h>
 #include <DataTypes/DataTypeCustomSimpleAggregateFunction.h>
 #include <Interpreters/InterpreterCreateQuery.h>
+#include <Interpreters/pullUpTupleElementDefaults.h>
 #include <Interpreters/StorageID.h>
 #include <Common/typeid_cast.h>
 #include <DataTypes/DataTypeDateTime64.h>
@@ -118,6 +119,28 @@ namespace
     {
         const auto * simple_aggregate_function = typeid_cast<const DataTypeCustomSimpleAggregateFunction *>(type->getCustomName());
         return simple_aggregate_function && (simple_aggregate_function->getFunctionName() == "timeSeriesGroupArray");
+    }
+
+    /// Normalize `DEFAULT` expressions written inside `Tuple` data types by pulling them up to the column
+    /// level for every column declaration of a `TimeSeries` table - both the outer columns and the columns
+    /// of the inner tables (`SAMPLES INNER COLUMNS (...)` and so on). This must happen before any of the
+    /// declared types is reified with `DataTypeFactory`, because a type AST that still carries a `DEFAULT`
+    /// is rejected by `DataTypeTuple::create`.
+    /// See https://github.com/ClickHouse/ClickHouse/issues/2797.
+    void pullUpTupleElementDefaultsInColumnList(ASTColumns * columns_list, TupleElementDefaultStateVersion state_version)
+    {
+        if (!columns_list || !columns_list->columns)
+            return;
+
+        pullUpTupleElementDefaultsInColumnList(*columns_list->columns, state_version);
+    }
+
+    void pullUpTupleElementDefaultsInTimeSeriesDefinition(ASTCreateQuery & create_query, TupleElementDefaultStateVersion state_version)
+    {
+        pullUpTupleElementDefaultsInColumnList(create_query.columns_list, state_version);
+
+        for (auto kind : getTargetKinds())
+            pullUpTupleElementDefaultsInColumnList(create_query.getTargetInnerColumns(kind), state_version);
     }
 
     /// Conflict-checking setter for `DataTypePtr`.
@@ -2573,6 +2596,15 @@ void normalizeTimeSeriesDefinitionImpl(ASTCreateQuery & create_query, const Norm
     /// so the flags don't count a target copied from the `AS <other_table>` clause.
     bool has_recent_samples_definition = hasTimeSeriesTargetDefinition(create_query, ViewTarget::RecentSamples);
     bool has_time_ranges_definition = hasTimeSeriesTargetDefinition(create_query, ViewTarget::TimeRanges);
+
+    /// Pull up `DEFAULT` expressions written inside `Tuple` data types of the outer and inner columns.
+    /// It has to be done before the declared types are reified below.
+    /// A user-written definition gets the current aggregate-function state version pinned into the column types
+    /// (see `InterpreterCreateQuery::getColumnType`); a replayed one carries no `DEFAULT` inside types anyway.
+    pullUpTupleElementDefaultsInTimeSeriesDefinition(create_query,
+        params.mode == LoadingStrictnessLevel::CREATE && !params.is_restore_from_backup
+            ? TupleElementDefaultStateVersion::PinCurrent
+            : TupleElementDefaultStateVersion::PinOldest);
 
     /// The definition of the table from the clause `AS <other_table>` if any, and its resolved types.
     /// The clause is used only for a new table: the stored definition of an existing table has no such clause.

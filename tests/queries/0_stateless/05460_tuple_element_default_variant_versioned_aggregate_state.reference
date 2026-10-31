@@ -1,0 +1,1 @@
+Tuple(s AggregateFunction(1, quantileDeterministic, UInt64, UInt64), a UInt8)	1	Tuple(s AggregateFunction(1, quantileDeterministic, UInt64, UInt64), a UInt8)	2
