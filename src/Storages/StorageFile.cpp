@@ -2196,10 +2196,11 @@ Chunk StorageFileSource::generate()
             /// same predicate, and the TopK key of this query (see `TopKQueryConditionCacheKey`), whose
             /// entries only a previous run of the same TopN over the same file set could have written.
             /// A row group may be skipped iff either verdict excludes it.
+            /// A statistics-only TopN read (`filter_rows = false`) is a plain read for the cache.
             FileBucketInfoPtr buckets_to_read;
             std::optional<UInt64> plain_condition_hash;
             if (format_filter_info && format_filter_info->condition_hash
-                && (!format_filter_info->top_k_filter
+                && (!format_filter_info->top_k_filter || !format_filter_info->top_k_filter->filter_rows
                     || getContext()->getSettingsRef()[Setting::use_query_condition_cache_for_top_k]))
                 plain_condition_hash = format_filter_info->condition_hash;
 
@@ -2524,7 +2525,7 @@ Chunk StorageFileSource::generate()
             {
                 auto buckets_opt = input_format->getMatchedBuckets();
                 const String cache_file_key = QueryConditionCache::makeFilePartName(current_path, *current_file_cache_version);
-                if (buckets_opt.has_value() && format_filter_info->top_k_filter)
+                if (buckets_opt.has_value() && format_filter_info->top_k_filter && format_filter_info->top_k_filter->filter_rows)
                 {
                     if (getTopKConditionHashForCurrentFile())
                         pending_top_k_query_condition_cache_entries.push_back(PendingTopKQueryConditionCacheEntry{
@@ -2932,6 +2933,9 @@ StorageFileSource::TopKQueryConditionCacheKeyPtr ReadFromFile::makeTopKQueryCond
 {
     const auto & settings = getContext()->getSettingsRef();
     if (!top_k_filter || !settings[Setting::use_query_condition_cache] || !settings[Setting::use_query_condition_cache_for_top_k])
+        return {};
+
+    if (!top_k_filter->filter_rows)
         return {};
 
     /// Only plain local files have version tokens. A table without a UUID (the `file` table function, or a
