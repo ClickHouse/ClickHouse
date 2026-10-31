@@ -66,6 +66,7 @@ namespace DB
 {
 namespace Setting
 {
+    extern const SettingsString additional_result_filter;
     extern const SettingsSetOperationMode except_default_mode;
     extern const SettingsBool extremes;
     extern const SettingsSetOperationMode intersect_default_mode;
@@ -351,6 +352,7 @@ ContextPtr getViewContext(ContextPtr context, const StorageSnapshotPtr & storage
     view_settings[Setting::max_result_rows] = 0;
     view_settings[Setting::max_result_bytes] = 0;
     view_settings[Setting::extremes] = false;
+    view_settings[Setting::additional_result_filter] = "";
     view_context->setSettings(view_settings);
     view_context->setIsViewInnerQuery(true);
     return view_context;
