@@ -96,7 +96,7 @@ bool endsWith(const std::string & s, const char * suffix, size_t suffix_size)
 
 bool isAllASCII(const UInt8 * data, size_t size)
 {
-#if USE_MULTITARGET_CODE
+#if USE_X86_64_MULTITARGET_CODE
     if (DB::isArchSupported(DB::TargetArch::x86_64_v4))
         return isAllASCIIImpl_x86_64_v4(data, size);
 #endif
@@ -106,7 +106,7 @@ bool isAllASCII(const UInt8 * data, size_t size)
 
 size_t findFirstNonASCII(const UInt8 * data, size_t size)
 {
-#if USE_MULTITARGET_CODE
+#if USE_X86_64_MULTITARGET_CODE
     if (DB::isArchSupported(DB::TargetArch::x86_64_v4))
         return findFirstNonASCIIImpl_x86_64_v4(data, size);
 #endif

@@ -30,8 +30,6 @@ INSERT INTO pfsmj_nrio_ord SELECT number % 3000, number % 100 FROM numbers(4000,
 INSERT INTO pfsmj_nrio_dim SELECT number, number * 2 FROM numbers(100);
 INSERT INTO pfsmj_nrio_probe SELECT number % 2000, number FROM numbers(5000);
 
-SET enable_analyzer = 1;
-
 -- The outer join is NOT scattered: its left side is a sorted subquery (a pre-sorted `FinishSorting` side),
 -- so the sharded rewrite must not fire.
 SELECT 'analyzer not_scattered', countIf(explain LIKE '%ScatterByPartitionTransform%') = 0

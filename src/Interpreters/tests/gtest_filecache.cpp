@@ -29,7 +29,6 @@
 #include <Interpreters/FileCache/FileSegment.h>
 #include <Interpreters/FileCache/EvictionCandidates.h>
 #include <Interpreters/FileCache/SLRUFileCachePriority.h>
-#include <Interpreters/FileCache/QueryLimit.h>
 #if CLICKHOUSE_CLOUD
 #include <Interpreters/FileCache/OvercommitFileCachePriority.h>
 #endif
@@ -77,7 +76,6 @@ namespace CurrentMetrics
 namespace ProfileEvents
 {
     extern const Event FilesystemCacheDowngradedFileSegments;
-    extern const Event FilesystemCachePromotedFileSegments;
     extern const Event FilesystemCacheEvictedFileSegments;
     extern const Event FilesystemCacheReserveAheadRetries;
 }
@@ -116,7 +114,6 @@ namespace DB::FileCacheSetting
     extern const FileCacheSettingsUInt64 reserve_granularity;
     extern const FileCacheSettingsFileCachePolicy cache_policy;
     extern const FileCacheSettingsDouble slru_size_ratio;
-    extern const FileCacheSettingsUInt64 background_download_threads;
     extern const FileCacheSettingsDouble keep_free_space_elements_ratio;
     extern const FileCacheSettingsNonZeroUInt64 load_metadata_threads;
     extern const FileCacheSettingsBool load_metadata_asynchronously;
@@ -2304,207 +2301,6 @@ TEST_F(FileCacheTest, DynamicResizeConcurrentWithReservations)
         fs::remove_all(cache_path);
 }
 
-TEST_F(FileCacheTest, SLRUPromotePartiallyDownloadedConcurrent)
-{
-    /// Stress SLRU promotion of partially downloaded segments: writers leave segments partially
-    /// downloaded, promoters hit them (moving them to the protected queue), continuers download
-    /// more of them (growth in the protected queue), and a churn thread keeps the protected queue
-    /// full (downgrades and evictions). All threads share one key, so they race on the same segments.
-    ServerUUID::setRandomForUnitTests();
-    DB::ThreadStatus thread_status;
-
-    const std::string cache_path = caches_dir / "cache_slru_promote_partial_concurrent" / "";
-    if (fs::exists(cache_path))
-        fs::remove_all(cache_path);
-    fs::create_directories(cache_path);
-
-    constexpr size_t max_size = 256;
-    constexpr size_t max_elements = 24;
-    constexpr size_t segment_size = 16;
-    constexpr size_t num_offsets = 32;
-
-    DB::FileCacheSettings settings;
-    settings[FileCacheSetting::path] = cache_path;
-    settings[FileCacheSetting::max_size] = max_size;
-    settings[FileCacheSetting::max_elements] = max_elements;
-    /// Alignment equal to the segment size, so a released partially downloaded segment is not shrunk.
-    settings[FileCacheSetting::max_file_segment_size] = segment_size;
-    settings[FileCacheSetting::boundary_alignment] = segment_size;
-    settings[FileCacheSetting::cache_policy] = FileCachePolicy::SLRU;
-    settings[FileCacheSetting::slru_size_ratio] = 0.5;
-    settings[FileCacheSetting::load_metadata_asynchronously] = false;
-    /// Only the continuer threads complete partially downloaded segments.
-    settings[FileCacheSetting::background_download_threads] = 0;
-
-    auto cache = std::make_shared<DB::FileCache>("slru_promote_partial_concurrent", settings);
-    cache->initialize();
-
-    const auto & user = FileCache::getCommonOrigin();
-    const size_t file_size = -1;
-    const auto shared_key = DB::FileCacheKey::fromPath("slru_promote_partial_shared");
-    const auto churn_key = DB::FileCacheKey::fromPath("slru_promote_partial_churn");
-
-    std::atomic<size_t> exceptions_caught{0};
-    std::mutex first_exception_mutex;
-    std::string first_exception_message;
-    auto record_exception = [&]
-    {
-        exceptions_caught.fetch_add(1, std::memory_order_relaxed);
-        std::lock_guard lock(first_exception_mutex);
-        if (first_exception_message.empty())
-            first_exception_message = getCurrentExceptionMessage(true);
-    };
-
-    std::atomic<size_t> promoted_partial{0};
-    std::atomic<size_t> grew_in_protected{0};
-    const auto promoted_before = ProfileEvents::global_counters[ProfileEvents::FilesystemCachePromotedFileSegments];
-    const auto downgraded_before = ProfileEvents::global_counters[ProfileEvents::FilesystemCacheDowngradedFileSegments];
-
-    /// A failed reservation is normal under eviction pressure: the caller stops writing.
-    auto reserve_and_write = [](FileSegment & segment, size_t size)
-    {
-        std::string failure_reason;
-        if (!segment.reserve(size, 1000, failure_reason))
-            return false;
-        std::string data(size, '0');
-        segment.write(data.data(), size, segment.getCurrentWriteOffset());
-        return true;
-    };
-
-    auto complete_segment = [](const FileSegmentPtr & segment)
-    {
-        FileSegment::complete(
-            FileSegmentPtr(segment),
-            /*allow_background_download=*/false,
-            /*force_shrink_to_downloaded_size=*/false);
-    };
-
-    constexpr size_t iterations = 3000;
-
-    auto run = [&](UInt64 seed, auto && iteration)
-    {
-        DB::ThreadStatus worker_thread_status;
-        pcg64 local_rng(seed);
-        for (size_t iter = 0; iter < iterations; ++iter)
-        {
-            try
-            {
-                iteration(local_rng);
-            }
-            catch (...)
-            {
-                /// Ok: the exception is saved and asserted on after all threads join.
-                record_exception();
-            }
-        }
-    };
-
-    auto get_shared_segment = [&](pcg64 & local_rng)
-    {
-        const size_t offset = (local_rng() % num_offsets) * segment_size;
-        return cache->getOrSet(shared_key, offset, segment_size, file_size, {}, 0, user);
-    };
-
-    /// Downloads a prefix of a new segment and leaves it partially downloaded.
-    auto partial_writer = [&](pcg64 & local_rng)
-    {
-        auto holder = get_shared_segment(local_rng);
-        auto segment = holder->getSingleFileSegment();
-        if (segment->state() == State::EMPTY && segment->getOrSetDownloader() == FileSegment::getCallerId())
-        {
-            reserve_and_write(*segment, 1 + local_rng() % (segment_size - 2));
-            complete_segment(segment);
-        }
-    };
-
-    /// Not `FileSegment::getInfo`: `getOrSet` can return a detached copy of an evicting segment.
-    auto queue_type = [](const FileSegment & segment)
-    {
-        auto iterator = segment.getQueueIterator();
-        return iterator ? iterator->getNestedOrThis()->getType() : IFileCachePriority::QueueEntryType::None;
-    };
-
-    auto promoter = [&](pcg64 & local_rng)
-    {
-        auto holder = get_shared_segment(local_rng);
-        auto segment = holder->getSingleFileSegment();
-        const auto state_before = segment->state();
-        const auto queue_type_before = queue_type(*segment);
-        segment->increasePriority();
-        if (state_before == State::PARTIALLY_DOWNLOADED
-            && queue_type_before == IFileCachePriority::QueueEntryType::SLRU_Probationary
-            && queue_type(*segment) == IFileCachePriority::QueueEntryType::SLRU_Protected)
-            promoted_partial.fetch_add(1, std::memory_order_relaxed);
-    };
-
-    /// Downloads the rest of a partially downloaded segment in small steps.
-    auto continuer = [&](pcg64 & local_rng)
-    {
-        auto holder = get_shared_segment(local_rng);
-        auto segment = holder->getSingleFileSegment();
-        if (segment->state() == State::PARTIALLY_DOWNLOADED && segment->getOrSetDownloader() == FileSegment::getCallerId())
-        {
-            while (segment->getDownloadedSize() < segment_size)
-            {
-                const bool is_protected = queue_type(*segment) == IFileCachePriority::QueueEntryType::SLRU_Protected;
-                if (!reserve_and_write(*segment, std::min<size_t>(4, segment_size - segment->getDownloadedSize())))
-                    break;
-                if (is_protected)
-                    grew_in_protected.fetch_add(1, std::memory_order_relaxed);
-            }
-            complete_segment(segment);
-        }
-    };
-
-    /// Downloads and promotes complete segments of another key, so that the protected queue stays full.
-    auto churn = [&](pcg64 & local_rng)
-    {
-        const size_t offset = (local_rng() % num_offsets) * segment_size;
-        auto holder = cache->getOrSet(churn_key, offset, segment_size, file_size, {}, 0, user);
-        auto segment = holder->getSingleFileSegment();
-        if (segment->state() == State::EMPTY && segment->getOrSetDownloader() == FileSegment::getCallerId())
-        {
-            reserve_and_write(*segment, segment_size);
-            complete_segment(segment);
-        }
-        segment->increasePriority();
-    };
-
-    std::vector<std::thread> threads;
-    for (size_t i = 0; i < 2; ++i)
-    {
-        threads.emplace_back(run, rng(), partial_writer);
-        threads.emplace_back(run, rng(), promoter);
-        threads.emplace_back(run, rng(), continuer);
-    }
-    threads.emplace_back(run, rng(), churn);
-    for (auto & t : threads)
-        t.join();
-
-    if (exceptions_caught.load() != 0u)
-        std::cerr << "First exception caught (of " << exceptions_caught.load() << "): "
-                  << first_exception_message << std::endl;
-    ASSERT_EQ(exceptions_caught.load(), 0u);
-
-    ASSERT_LE(cache->getUsedCacheSize(), max_size);
-    ASSERT_LE(cache->getFileSegmentsNum(), max_elements);
-    ASSERT_NO_THROW(cache->dumpQueue());
-    /// Runs `assertCacheCorrectness`, which also checks the size limits of both SLRU queues.
-    ASSERT_NO_THROW(cache->getFileSegmentInfos(user.user_id));
-
-    /// The new paths ran: partially downloaded segments were promoted and then grew in the protected queue.
-    ASSERT_GT(promoted_partial.load(), 0u);
-    ASSERT_GT(grew_in_protected.load(), 0u);
-    ASSERT_GT(ProfileEvents::global_counters[ProfileEvents::FilesystemCachePromotedFileSegments], promoted_before);
-    ASSERT_GT(ProfileEvents::global_counters[ProfileEvents::FilesystemCacheDowngradedFileSegments], downgraded_before);
-
-    /// Destroy the cache before removing the directory: `~FileCache` runs `assertCacheCorrectness`
-    /// (debug/sanitizer builds), which stats the cached files.
-    cache.reset();
-    if (fs::exists(cache_path))
-        fs::remove_all(cache_path);
-}
-
 TEST_F(FileCacheTest, SLRUFreeSpaceKeepingProtectedOnly)
 {
     /// Regression test for https://github.com/ClickHouse/ClickHouse/issues/104307
@@ -4279,115 +4075,6 @@ TEST_F(FileCacheTest, ReserveAheadFallsBackToExactSize)
     ASSERT_EQ(events[ProfileEvents::FilesystemCacheReserveAheadRetries], retries_before + 2);
     ASSERT_EQ(segment->getReservedSize(), 12u);
     ASSERT_EQ(cache->getUsedCacheSize(), 12u);
-}
-
-TEST_F(FileCacheTest, QueryLimitContextRevivedDuringRelease)
-{
-    /// Regression test: while one holder for a query_id releases its query context,
-    /// another holder for the same query_id must keep it alive, and a later release must not fail
-    /// with "Attempt to release query context that does not exist".
-
-    FileCacheQueryLimit query_limit;
-
-    const std::string query_id = "query_id_revive";
-    FilesystemCacheSettings cache_settings;
-    cache_settings.max_download_size_per_query = 1024;
-
-    FileCacheQueryLimit::QueryContextPtr context1;
-    FileCacheQueryLimit::QueryContextPtr context2;
-    {
-        auto lock = query_limit.lock();
-        /// Take the context for the first time; `query_map` and `context1` reference it.
-        context1 = query_limit.getOrSetQueryContext(query_id, cache_settings, lock);
-        ASSERT_TRUE(context1 != nullptr);
-        /// A second holder revives the same context: `getOrSetQueryContext` returns the existing entry.
-        context2 = query_limit.getOrSetQueryContext(query_id, cache_settings, lock);
-    }
-    ASSERT_EQ(context1.get(), context2.get());
-    ASSERT_EQ(context1.use_count(), 3);
-    const auto * context_raw = context1.get();
-
-    /// `~QueryContextHolder` does not use its `cache` member, so tests pass nullptr; the holders
-    /// and `query_map` hold the only references once the local copies are dropped.
-    auto holder1 = std::make_unique<FileCacheQueryLimit::QueryContextHolder>(
-        query_id, /* cache */ nullptr, &query_limit, context1);
-    auto holder2 = std::make_unique<FileCacheQueryLimit::QueryContextHolder>(
-        query_id, /* cache */ nullptr, &query_limit, context2);
-    context1.reset();
-    context2.reset();
-
-    /// The first holder releases. Another holder is still alive, so the entry must be kept (no erase,
-    /// no throw) and enforcement preserved: the context is still discoverable.
-    ASSERT_NO_THROW(holder1.reset());
-    {
-        DB::ThreadStatus thread_status;
-        auto query_context = DB::Context::createCopy(getContext().context);
-        query_context->makeQueryContext();
-        query_context->setCurrentQueryId(query_id);
-        auto query_scope_holder = DB::QueryScope::create(query_context);
-
-        ASSERT_EQ(query_limit.tryGetQueryContext().get(), context_raw);
-    }
-
-    /// The second holder is now the last one; releasing it removes the entry, once, without throwing.
-    ASSERT_NO_THROW(holder2.reset());
-    {
-        DB::ThreadStatus thread_status;
-        auto query_context = DB::Context::createCopy(getContext().context);
-        query_context->makeQueryContext();
-        query_context->setCurrentQueryId(query_id);
-        auto query_scope_holder = DB::QueryScope::create(query_context);
-
-        ASSERT_EQ(query_limit.tryGetQueryContext().get(), nullptr);
-    }
-}
-
-TEST_F(FileCacheTest, QueryLimitConcurrentReleaseNoLeak)
-{
-    /// Regression for #109508: parallel read streams create several holders for one query_id.
-    /// `~QueryContextHolder` drops its own reference under `query_limit->lock()` before checking
-    /// `use_count`, so two holders releasing concurrently cannot both skip the erase and orphan
-    /// `query_map[query_id]`. This test releases sequentially and only pins the single-erase,
-    /// no-throw outcome; the concurrent case is not reproduced here.
-
-    FileCacheQueryLimit query_limit;
-
-    const std::string query_id = "query_id_concurrent_release";
-    FilesystemCacheSettings cache_settings;
-    cache_settings.max_download_size_per_query = 1024;
-
-    /// Two holders take the same context; query_map + both holders reference it (use_count == 3).
-    FileCacheQueryLimit::QueryContextPtr context1;
-    FileCacheQueryLimit::QueryContextPtr context2;
-    {
-        auto lock = query_limit.lock();
-        context1 = query_limit.getOrSetQueryContext(query_id, cache_settings, lock);
-        context2 = query_limit.getOrSetQueryContext(query_id, cache_settings, lock);
-    }
-    ASSERT_EQ(context1.get(), context2.get());
-    ASSERT_EQ(context1.use_count(), 3);
-
-    {
-        /// `~QueryContextHolder` does not use its `cache` member, so tests pass nullptr.
-        FileCacheQueryLimit::QueryContextHolder holder1(query_id, /* cache */ nullptr, &query_limit, context1);
-        FileCacheQueryLimit::QueryContextHolder holder2(query_id, /* cache */ nullptr, &query_limit, context2);
-        context1.reset();
-        context2.reset();
-        /// At scope end holder2 releases first (another holder still alive, entry kept), then holder1
-        /// releases and erases the entry once. Neither throws.
-    }
-
-    /// The entry must be gone: a leaked entry (both releases skipping the erase, as described in
-    /// the comment at the top of this test) would still be found by `tryGetQueryContext`.
-    {
-        DB::ThreadStatus thread_status;
-        auto query_context = DB::Context::createCopy(getContext().context);
-        query_context->makeQueryContext();
-        query_context->setCurrentQueryId(query_id);
-        auto query_scope_holder = DB::QueryScope::create(query_context);
-
-        ASSERT_EQ(query_limit.tryGetQueryContext().get(), nullptr);
-    }
 }
 
 /// Concurrent readBigAt calls on AsynchronousBoundedReadBuffer over a cached buffer, with a

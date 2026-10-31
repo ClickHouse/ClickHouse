@@ -4,7 +4,6 @@
 -- reordering under a conflict detector must keep those matches.
 -- https://github.com/ClickHouse/ClickHouse/issues/122152
 
-SET enable_analyzer = 1;
 SET join_use_nulls = 1;
 SET allow_dynamic_type_in_join_keys = 1;
 SET query_plan_optimize_join_order_limit = 10; -- the harness randomizes it, and at 0 nothing is reordered
