@@ -1,0 +1,119 @@
+-- 01 two sibling branches over one table: fuses
+01	1	1
+01	1	1
+01 fused	1
+01 tables off	2
+01 tables on	1
+-- 02 a Nullable(UInt8) and a LowCardinality(UInt8) residual: both fuse
+02a	1	1
+02a	1	1
+02a fused	1
+02b	99	99
+02b	99	99
+02b fused	1
+-- 03 a conjunct that can throw for a row the branch excluded is refused
+03 fused	0
+03 fused disable	0
+03 fused enable	0
+03 fused force	0
+-- 03b intDiv(k, -1) throws while canThrow answers false, so a blacklist would let it through
+03b fused	0
+-- 03c the guard also covers a shared conjunct, whose position in the fused AND changes
+03c fused	0
+-- 03d a Dynamic nested in a tuple dispatches on each row own types, so it is refused
+03d	1	1
+03d	1	1
+03d disable	1	1
+03d enable	1	1
+03d force	1	1
+03d fused	0
+-- 04 a branch whose conjuncts are all shared has no -If and keeps every row the shared part keeps
+04	994	1
+04	994	1
+04 fused	1
+-- 05 a filter that is not reproducible keeps its own scan
+05 fused	0
+06a fused	0
+06b fused	0
+-- 07 the analyzer folds now() into a constant before the reproducibility check can see it, so it does not block fusion
+07	994	1
+07	994	1
+07 fused	1
+-- 08 a NULL -If condition excludes its row exactly as a NULL WHERE does
+08	1	1
+08	1	1
+08 fused	1
+-- 09 an empty branch, and the same for an argument-less aggregate that carries a combinator suffix
+09a	1	0
+09a	1	0
+09a fused	1
+09b	1	\N
+09b	1	\N
+09b fused	1
+09b tables off	2
+09b tables on	1
+-- 10 with empty_result_for_aggregation_by_empty_set an empty branch empties the whole join, which one fused aggregation cannot reproduce
+10	1	1
+10	1	1
+10 fused	0
+-- 11 an aggregate with an argument is out of scope: the -If condition would stop protecting it
+11a fused	0
+11b fused	0
+11b tables	2
+11c fused	0
+11c tables	2
+11c	300	500
+11c	300	500
+11d	1	1
+11d	1	1
+11d fused	1
+-- 12 a residual that is not a UInt8 condition cannot become an -If argument
+12	994	1
+12	994	1
+12 fused	0
+-- 13 two branches whose outputs share a name cannot both live in one projection
+13	1	1
+13	1	1
+13 fused	0
+-- 14 a non-fusable sibling in the same join does not stop the others
+14	1	1	500
+14	1	1	500
+14 fused	1
+-- 15 a table expression that carries any modifier is refused: what the modifier makes the read return is not preserved by the fused filter (arm 31), and branches differing in FINAL are not siblings to begin with
+15a	1	1
+15a	1	1
+15a fused	0
+15b fused	0
+15c fused	1
+-- 16 an ALIAS column carries an expression whose own column sources are not rebuilt
+16	1	1
+16	1	1
+16 fused	0
+-- 17 the enclosing query keeps referring to both branches after one of them is fused away
+17	1
+17	1
+17 fused	1
+-- 18 eight branches, the arity TPC-DS query 88 uses
+18	1	1	1	1	1	1	1	1
+18	1	1	1	1	1	1	1	1
+18 countIf	8
+18 tables off	8
+18 tables on	1
+-- 19 an ARRAY JOIN is not a table expression the pass can substitute positionally
+19	2	2
+19	2	2
+19 fused	0
+-- 20 only comparisons and logical connectives are accepted; a Decimal compared with an integer literal is rescaled, which can overflow, while the same comparison at equal scale is accepted
+20a fused	0
+20b fused	0
+20c	91	79
+20c	91	79
+20c fused	1
+-- 21 two occurrences of one table compare equal, so a conjunct binding p is matched against one binding q and dropped as shared; branch y answers 0 only while the occurrences stay distinct
+21	4	0
+21	4	0
+21 fused	0
+-- 22 a column whose value is produced by a DEFAULT expression is materialized for more rows once the residual moves inside the OR
+22	2	1
+22	2	1
+22 fused	0
