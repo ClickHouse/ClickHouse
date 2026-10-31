@@ -253,8 +253,11 @@ public:
     void validate(const StoragePtr & table, ContextPtr context) const;
 
     /// Prepare alter commands. Set ignore flag to some of them and set some
-    /// parts to commands from storage's metadata (for example, absent default)
-    void prepare(const StorageInMemoryMetadata & metadata, bool share_nested_offsets = true);
+    /// parts to commands from storage's metadata (for example, absent default).
+    /// `context` is forwarded to the snapshot advancement, which shares the
+    /// flatten_nested-aware `columnsAddedByAlter` with `validate` and `apply`,
+    /// so `IF [NOT] EXISTS` decisions match the columns those stages see.
+    void prepare(const StorageInMemoryMetadata & metadata, ContextPtr context, bool share_nested_offsets = true);
 
     /// Apply all alter command in sequential order to storage metadata.
     /// Commands have to be prepared before apply.

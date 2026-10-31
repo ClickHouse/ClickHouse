@@ -2002,7 +2002,7 @@ void AlterCommands::apply(
 }
 
 
-void AlterCommands::prepare(const StorageInMemoryMetadata & metadata, bool share_nested_offsets)
+void AlterCommands::prepare(const StorageInMemoryMetadata & metadata, ContextPtr context, bool share_nested_offsets)
 {
     auto columns = metadata.columns;
     std::unordered_set<String> columns_with_full_type_modify;
@@ -2160,6 +2160,50 @@ void AlterCommands::prepare(const StorageInMemoryMetadata & metadata, bool share
         {
             if (ast_to_str(command.order_by) == ast_to_str(metadata.sorting_key.definition_ast))
                 command.ignore = true;
+        }
+
+        /// Advance the working snapshot with what this command does to the columns, so the `has_column`
+        /// check of the NEXT commands sees the effect of the EARLIER ones. This mirrors `validate`,
+        /// which walks the same per-command view (an earlier static view made `ADD COLUMN IF NOT EXISTS`
+        /// after `DROP COLUMN`/`RENAME COLUMN` in one statement silently drop the add). Being wrong by
+        /// NOT ignoring is safe: `apply` re-checks `IF NOT EXISTS` against the advanced metadata anyway;
+        /// only wrongly ignoring loses a column. Ignored commands are no-ops and advance nothing.
+        if (command.ignore)
+            continue;
+        switch (command.type)
+        {
+            case AlterCommand::ADD_COLUMN:
+            {
+                /// The exact columns the ADD materializes (flatten_nested expansion + the same
+                /// IF NOT EXISTS filter), shared with `validate` and `apply` for one shared truth.
+                /// An empty result is a whole-command no-op, `validate` skips it the same way.
+                for (auto & column_to_add : columnsAddedByAlter(
+                         columns,
+                         ColumnDescription(command.column_name, command.data_type),
+                         context,
+                         command.if_not_exists,
+                         share_nested_offsets))
+                    columns.add(std::move(column_to_add));
+                break;
+            }
+            case AlterCommand::DROP_COLUMN:
+            {
+                /// CLEAR COLUMN and DROP COLUMN ... FROM PARTITION keep the column, they only touch data.
+                /// `remove` erases a whole `n.*` range when given a Nested group name, so no extra handling.
+                if (!command.clear && !command.partition && (columns.has(command.column_name) || columns.hasNested(command.column_name)))
+                    columns.remove(command.column_name);
+                break;
+            }
+            case AlterCommand::RENAME_COLUMN:
+            {
+                /// The plain rename keeps Nested groups intact (`n.a` -> `n.b` stays in `n`); nested-to-plain
+                /// conversions are rejected by `validate` anyway, so no branching is needed here.
+                if (columns.has(command.column_name))
+                    columns.rename(command.column_name, command.rename_to);
+                break;
+            }
+            default:
+                break;
         }
     }
 
