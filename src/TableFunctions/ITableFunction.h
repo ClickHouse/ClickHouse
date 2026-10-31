@@ -2,6 +2,7 @@
 
 #include <Parsers/IAST_fwd.h>
 #include <Storages/IStorage_fwd.h>
+#include <Interpreters/StorageID.h>
 #include <Storages/ColumnsDescription.h>
 #include <Access/Common/AccessType.h>
 #include <Common/FunctionDocumentation.h>
@@ -80,6 +81,21 @@ public:
       * that storage's name.
       */
     virtual std::optional<String> getParallelReplicasReadID() const { return std::nullopt; }
+
+    /// The table named by the leading arguments of a call, and how many leading arguments name it.
+    struct TableArgument
+    {
+        StorageID table_id = StorageID::createEmpty();
+        size_t num_arguments = 0;
+    };
+
+    /** If this call names a table in its leading arguments, and also accepts that table there as the two
+      * arguments `'database', 'table'`, returns it, resolved against the current database. A call sent to
+      * other servers is rewritten to that form (see `TableFunctionNode::qualifyTableArgument`), because a
+      * receiving server resolves an unqualified name against its own default database, not the initiator's
+      * current one. `timeSeriesSamples(ts)` is sent as `timeSeriesSamples('db', 'ts')`.
+      */
+    virtual std::optional<TableArgument> getTableArgument() const { return {}; }
 
     /// Returns actual table structure probably requested from remote server, may fail
     virtual ColumnsDescription getActualTableStructure(ContextPtr /*context*/, bool is_insert_query) const = 0;

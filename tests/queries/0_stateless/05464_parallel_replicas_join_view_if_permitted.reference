@@ -1,0 +1,14 @@
+-- a table
+1
+-- a table function
+1
+-- inside view
+1
+-- not permitted
+-- not permitted, inside view
+-- not permitted, ELSE view
+1
+-- not permitted, ELSE viewIfPermitted
+1
+-- the replicas do not choose a branch
+1	0

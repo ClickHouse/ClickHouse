@@ -1,0 +1,20 @@
+-- a scalar subquery
+1
+-- an expression of a scalar subquery
+1
+-- an array scalar subquery
+1
+-- a scalar subquery over a table function
+1
+-- a constant folded by early short-circuit
+1
+-- a constant folded by early short-circuit, in viewIfPermitted
+1
+-- a constant folded by early short-circuit, enabled in the query
+1
+-- a constant folded by early short-circuit, enabled in a nested query
+1
+-- a constant folded by early short-circuit, enabled in the query of viewIfPermitted
+1
+-- an array scalar subquery, with the optimization enabled in the query
+1
