@@ -48,6 +48,7 @@ void ProtobufRowInputFormat::destroyReaderAndSerializer()
 {
     serializer = nullptr;
     reader = nullptr;
+    bound_column = nullptr;
 }
 
 bool ProtobufRowInputFormat::readRow(MutableColumns & columns, RowReadExtension & row_read_extension)
@@ -63,13 +64,19 @@ try
     if (reader->eof())
         return false;
 
-    /// Point the serializer at the current columns before reading. Besides the start
-    /// of a block (row_num == 0), this is also needed mid-block when error recovery
-    /// recreated the serializer with a valid row already buffered (row_num > 0) —
-    /// otherwise readRow dereferences its null column.
+    /// Point the serializer at the current columns before reading. Besides a new set of
+    /// columns (a new block, or `readInto` after the caller took the accumulated columns),
+    /// this is also needed mid-block when error recovery recreated the serializer with a
+    /// valid row already buffered (row_num > 0) — otherwise readRow dereferences its null
+    /// column. Re-binding is expensive for wide nested schemas, so with `readInto` appending
+    /// one message at a time into the same columns it must not happen per row.
     size_t row_num = columns.empty() ? 0 : columns[0]->size();
-    if (!row_num || serializer_recreated)
+    const IColumn * first_column = columns.empty() ? nullptr : columns[0].get();
+    if (!row_num || serializer_recreated || first_column != bound_column)
+    {
         serializer->setColumns(columns.data(), columns.size());
+        bound_column = first_column;
+    }
 
     serializer->readRow(row_num);
 

@@ -23,6 +23,7 @@ public:
 
     void setReadBuffer(ReadBuffer & in_) override;
     void resetReadBuffer() override;
+    void resetParser() override;
 
 private:
     JSONRowInputFormat(

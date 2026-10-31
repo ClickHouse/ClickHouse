@@ -1,4 +1,5 @@
 #include <Columns/IColumn.h>
+#include <DataTypes/Serializations/ISerialization.h>
 #include <IO/WithFileName.h>
 #include <IO/WithFileSize.h>
 #include <IO/WriteHelpers.h> // toString
@@ -7,12 +8,15 @@
 #include <Common/CurrentThread.h>
 #include <Common/logger_useful.h>
 
+#include <algorithm>
+
 
 namespace DB
 {
 
 namespace ErrorCodes
 {
+    extern const int LOGICAL_ERROR;
     extern const int NOT_IMPLEMENTED;
     extern const int INCORRECT_NUMBER_OF_COLUMNS;
     extern const int SOCKET_TIMEOUT;
@@ -61,11 +65,8 @@ void IRowInputFormat::logError()
     errors_logger->logError(InputFormatErrorsLogger::ErrorEntry{now_time, total_rows, diagnostic, raw_data});
 }
 
-Chunk IRowInputFormat::read()
+void IRowInputFormat::readPrefixIfNeeded()
 {
-    if (got_connection_exception)
-        return {};
-
     if (total_rows == 0)
     {
         try
@@ -78,31 +79,88 @@ Chunk IRowInputFormat::read()
             throw;
         }
     }
+}
+
+Chunk IRowInputFormat::read()
+{
+    if (got_connection_exception)
+        return {};
+
+    /// Before `chunk_start_offset`, so the prefix bytes are not counted in the first chunk.
+    readPrefixIfNeeded();
 
     const Block & header = getPort().getHeader();
-    size_t num_columns = header.columns();
     MutableColumns columns = header.cloneEmptyColumns(serializations);
+
+    size_t total_rows_before_read = total_rows;
+    size_t chunk_start_offset = getDataOffsetMaybeCompressed(getReadBuffer());
+    bool only_count = false;
+    size_t num_rows = readRows(columns, only_count);
+    approx_bytes_read_for_chunk = getDataOffsetMaybeCompressed(getReadBuffer()) - chunk_start_offset;
+
+    if (only_count)
+    {
+        if (num_rows == 0)
+            return {};
+        auto chunk = getChunkForCount(num_rows);
+        chunk.getChunkInfos().add(std::make_shared<ChunkInfoRowNumbers>(total_rows_before_read));
+        return chunk;
+    }
+
+    if (columns.empty() || num_rows == 0)
+        return {};
+
+    for (const auto & column : columns)
+        column->finalize();
+
+    Chunk chunk(std::move(columns), num_rows);
+    chunk.getChunkInfos().add(std::make_shared<ChunkInfoRowNumbers>(total_rows_before_read));
+    return chunk;
+}
+
+size_t IRowInputFormat::readInto(MutableColumns & columns)
+{
+    if (got_connection_exception)
+        return 0;
+
+    readPrefixIfNeeded();
+
+    bool only_count = false;
+    size_t num_rows = readRows(columns, only_count);
+    if (only_count)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Method readInto cannot be used to only count rows in input format {}", getName());
+    return num_rows;
+}
+
+bool IRowInputFormat::canReadInto() const
+{
+    if (!supportsReadInto())
+        return false;
+    const ISerialization::KindStack default_kind{ISerialization::Kind::DEFAULT};
+    return std::ranges::all_of(serializations, [&](const auto & serialization) { return serialization->getKindStack() == default_kind; });
+}
+
+size_t IRowInputFormat::readRows(MutableColumns & columns, bool & only_count)
+{
+
+    size_t num_columns = columns.size();
+    /// Rows are appended after the ones `columns` already hold; `num_rows` and
+    /// `block_missing_values` count only the appended rows.
+    const size_t base_rows = columns.empty() ? 0 : columns.front()->size();
 
     block_missing_values.clear();
 
     size_t num_rows = 0;
-    size_t total_rows_before_read = total_rows;
-    size_t chunk_start_offset = getDataOffsetMaybeCompressed(getReadBuffer());
     try
     {
         if (need_only_count && supportsCountRows())
         {
+            only_count = true;
             num_rows = countRows(params.max_block_size_rows);
             if (num_rows == 0)
-            {
                 readSuffix();
-                return {};
-            }
             total_rows += num_rows;
-            approx_bytes_read_for_chunk = getDataOffsetMaybeCompressed(getReadBuffer()) - chunk_start_offset;
-            auto chunk = getChunkForCount(num_rows);
-            chunk.getChunkInfos().add(std::make_shared<ChunkInfoRowNumbers>(total_rows_before_read));
-            return chunk;
+            return num_rows;
         }
 
         RowReadExtension info;
@@ -155,9 +213,9 @@ Chunk IRowInputFormat::read()
                     if (!info.read_columns[column_idx])
                     {
                         size_t column_size = columns[column_idx]->size();
-                        if (column_size == 0)
+                        if (column_size <= base_rows)
                             throw Exception(ErrorCodes::INCORRECT_NUMBER_OF_COLUMNS, "Unexpected empty column");
-                        block_missing_values.setBit(column_idx, column_size - 1);
+                        block_missing_values.setBit(column_idx, column_size - base_rows - 1);
                     }
                 }
 
@@ -166,7 +224,7 @@ Chunk IRowInputFormat::read()
                 /// Some formats may read row AND say the read is finished.
                 /// For such a case, get the number or rows from first column.
                 if (!columns.empty())
-                    num_rows = columns.front()->size();
+                    num_rows = columns.front()->size() - base_rows;
 
                 if (!continue_reading)
                     break;
@@ -227,8 +285,8 @@ Chunk IRowInputFormat::read()
                 for (size_t column_idx = 0; column_idx < num_columns; ++column_idx)
                 {
                     auto & column = columns[column_idx];
-                    if (column->size() > num_rows)
-                        column->popBack(column->size() - num_rows);
+                    if (column->size() > base_rows + num_rows)
+                        column->popBack(column->size() - base_rows - num_rows);
                 }
             }
         }
@@ -242,8 +300,8 @@ Chunk IRowInputFormat::read()
             for (size_t column_idx = 0; column_idx < num_columns; ++column_idx)
             {
                 auto & column = columns[column_idx];
-                if (column->size() > num_rows)
-                    column->popBack(column->size() - num_rows);
+                if (column->size() > base_rows + num_rows)
+                    column->popBack(column->size() - base_rows - num_rows);
             }
         }
         else
@@ -275,7 +333,7 @@ Chunk IRowInputFormat::read()
 
     }
 
-    if (columns.empty() || columns[0]->empty())
+    if (columns.empty() || num_rows == 0)
     {
         if (num_errors && (params.allow_errors_num > 0 || params.allow_errors_ratio > 0))
         {
@@ -284,18 +342,10 @@ Chunk IRowInputFormat::read()
         }
 
         readSuffix();
-        return {};
+        return 0;
     }
 
-    for (const auto & column : columns)
-        column->finalize();
-
-    Chunk chunk(std::move(columns), num_rows);
-    chunk.getChunkInfos().add(std::make_shared<ChunkInfoRowNumbers>(total_rows_before_read));
-    approx_bytes_read_for_chunk = getDataOffsetMaybeCompressed(getReadBuffer()) - chunk_start_offset;
-
-
-    return chunk;
+    return num_rows;
 }
 
 void IRowInputFormat::syncAfterError()
