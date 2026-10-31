@@ -12,6 +12,8 @@
 #include <Databases/DataLake/ICatalog.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
+#include <IO/WriteBufferFromString.h>
+#include <IO/WriteHelpers.h>
 #include <Storages/AlterCommands.h>
 #include <Storages/ObjectStorage/DataLakes/IDataLakeMetadata.h>
 #include <TableFunctions/TableFunctionFactory.h>
@@ -51,6 +53,29 @@ namespace ErrorCodes
 namespace FailPoints
 {
     extern const char storage_cluster_read_sleep[];
+}
+
+/// Names and types of `columns` with their `DEFAULT` expressions, except those with secret arguments, which would reach
+/// the query logs of the nodes.
+static String getStructureWithDefaults(const ColumnsDescription & columns)
+{
+    WriteBufferFromOwnString buf;
+    bool first = true;
+    for (const auto & column : columns)
+    {
+        if (!std::exchange(first, false))
+            writeCString(", ", buf);
+        writeBackQuotedString(column.name, buf);
+        writeChar(' ', buf);
+        writeString(column.type->getName(), buf);
+        const auto & default_expression = column.default_desc.expression;
+        if (column.default_desc.kind == ColumnDefaultKind::Default && default_expression && !default_expression->hasSecretParts())
+        {
+            writeCString(" DEFAULT ", buf);
+            writeString(default_expression->formatWithSecretsOneLine(), buf);
+        }
+    }
+    return buf.str();
 }
 
 String StorageObjectStorageCluster::getPathSample(ContextPtr context)
@@ -423,7 +448,13 @@ void StorageObjectStorageCluster::updateQueryToSendIfNeeded(
     }
 
     ASTs & args = expression_list->children;
-    const auto & structure = storage_snapshot->metadata->getColumns().getAll().toNamesAndTypesDescription();
+    /// When the columns come from the insertion table (`use_structure_from_insertion_table_in_table_functions`), they carry
+    /// its `DEFAULT` expressions, and the nodes need them to fill the fields missing in the files the same way as a read on
+    /// this server does. The data lakes take their columns from the table metadata.
+    const auto & columns = storage_snapshot->metadata->getColumns();
+    const String structure = configuration->isDataLakeConfiguration()
+        ? columns.getAll().toNamesAndTypesDescription()
+        : getStructureWithDefaults(columns);
     if (args.empty())
     {
         throw Exception(
