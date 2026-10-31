@@ -57,6 +57,12 @@ public:
         return "(Any, Any) -> UInt8";
     }
 
+    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    {
+        checkArealPredicateArgumentTypes<Point>(arguments[0], arguments[1], getName());
+        return IFunction::getReturnTypeImpl(arguments);
+    }
+
     DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
     {
         return std::make_shared<DataTypeUInt8>();
