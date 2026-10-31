@@ -840,10 +840,12 @@ class Utils:
     def fix_ownership_after_docker(path, docker_image: str) -> None:
         uid = os.getuid()
         gid = os.getgid()
-        Shell.run(
+        if Shell.run(
             f"docker run --rm --user root --volume {path}:{path} {docker_image} chown -R {uid}:{gid} {path}",
             verbose=True,
-        )
+        ) != 0:
+            # The docker daemon can go away together with the job container.
+            Shell.run(f"sudo -n chown -R {uid}:{gid} {quote(str(path))}", verbose=True)
 
     @classmethod
     def encrypt(cls, path: str, key_path: str, aes_key_path: str) -> str:
