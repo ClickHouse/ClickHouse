@@ -3125,9 +3125,11 @@ void Reader::intersectColumnIndexResultsAndInitSubgroups(RowGroup & row_group)
                 max_chunk_bytes = std::max(max_chunk_bytes, chunk->byteSize());
             chunk_bytes += static_cast<double>(max_chunk_bytes);
         }
+        /// The chunks of the files read in parallel are processed at the same time, and the scheduler cannot split them,
+        /// so each file takes its share of the allowance.
         const size_t memory_limit = memoryLimitOfCurrentThread();
         const bool chunk_too_large = memory_limit != 0 && rows_per_subgroup < COLUMNS_CACHE_CHUNK_ROWS
-            && (size_unknown || chunk_bytes > static_cast<double>(memory_limit) / 4);
+            && (size_unknown || chunk_bytes > maxColumnsCacheChunkBytes(memory_limit));
         if (chunk_too_large)
             row_group.columns_cache_writes.clear();
         else
@@ -3479,6 +3481,11 @@ size_t Reader::memoryEstimateLimit() const
 {
     size_t watermark = std::max(options.format.parquet.memory_low_watermark, options.format.parquet.memory_high_watermark);
     return std::min(watermark, MAX_ALLOCATION_SIZE / 4) + 1;
+}
+
+double Reader::maxColumnsCacheChunkBytes(size_t memory_limit) const
+{
+    return static_cast<double>(memory_limit) / 4 * memory_fraction_per_reader;
 }
 
 void Reader::decodePrimitiveColumn(ColumnChunk & column, const PrimitiveColumnInfo & column_info, ColumnSubchunk & subchunk, RowGroup & row_group, RowSubgroup & row_subgroup)
@@ -4933,7 +4940,7 @@ void Reader::initColumnsCache()
                         && !decoderMayExpandStrings(primitive_columns[i])
                         && (decodedSizeIsUnknown(column, primitive_columns[i])
                             || (memory_limit != 0 && !primitive_columns[i].output_type->haveMaximumSizeOfValue()
-                                && estimateMaxColumnMemoryBytesOfChunk(column, row_group, primitive_columns[i]) > static_cast<double>(memory_limit) / 4));
+                                && estimateMaxColumnMemoryBytesOfChunk(column, row_group, primitive_columns[i]) > maxColumnsCacheChunkBytes(memory_limit)));
                     if (need_dictionary && meta.data_page_offset > meta.dictionary_page_offset)
                     {
                         const size_t dictionary_bytes = size_t(meta.data_page_offset - meta.dictionary_page_offset);

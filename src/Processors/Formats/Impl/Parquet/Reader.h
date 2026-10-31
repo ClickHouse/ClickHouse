@@ -787,6 +787,10 @@ struct Reader
     /// Bound for memory estimates charged to the read scheduler: the larger memory watermark plus one,
     /// capped far below overflow.
     size_t memoryEstimateLimit() const;
+    /// The size of a chunk of the columns cache that a row group may be read in, while the block size settings ask for
+    /// less: a quarter of the memory limit of the query, of which each file read in parallel takes its share. Zero if
+    /// the query has no memory limit.
+    double maxColumnsCacheChunkBytes(size_t memory_limit) const;
 
     void decodePrimitiveColumn(ColumnChunk & column, const PrimitiveColumnInfo & column_info, ColumnSubchunk & subchunk, RowGroup & row_group, RowSubgroup & row_subgroup);
 
