@@ -1840,10 +1840,12 @@ def test_s3_brace_alternative_outside_prefix_rejected():
         assert "DATABASE_ACCESS_DENIED" in err, err
 
 
-def test_local_embedded_rocksdb_truncate_rechecks_retargeted_symlink():
+def test_local_embedded_rocksdb_pins_resolved_directory():
     """An explicit `EmbeddedRocksDB` path is checked at `CREATE TABLE`, but a symlink on the way
-    may be retargeted outside the disk root afterwards: `TRUNCATE TABLE` deletes the directory
-    recursively, so it checks the path again and leaves the files outside intact."""
+    may be retargeted outside the disk root afterwards. The table keeps using the directory
+    resolved at creation, so neither an `INSERT` (a bulk insert writes temporary SST files into
+    the database directory) nor `TRUNCATE TABLE` (a recursive deletion) touches the files
+    outside."""
     node_local.exec_in_container(
         [
             "bash",
@@ -1868,13 +1870,16 @@ def test_local_embedded_rocksdb_truncate_rechecks_retargeted_symlink():
                 "ln -snf /tmp/rocksdb_outside /test_user_files_disk1/rocksdb_live",
             ]
         )
-        err = node_local.query_and_get_error("TRUNCATE TABLE rocksdb_retarget")
-        assert "Path must be inside user-files path" in err, err
+        node_local.query("INSERT INTO rocksdb_retarget VALUES (2, 'b')")
+        assert node_local.query("SELECT count() FROM rocksdb_retarget").strip() == "2"
+        node_local.query("TRUNCATE TABLE rocksdb_retarget")
+        node_local.query("INSERT INTO rocksdb_retarget VALUES (3, 'c')")
+        assert node_local.query("SELECT k FROM rocksdb_retarget").strip() == "3"
         assert (
             node_local.exec_in_container(
-                ["bash", "-c", "cat /tmp/rocksdb_outside/db/keep.txt"]
+                ["bash", "-c", "ls -A /tmp/rocksdb_outside/db"]
             ).strip()
-            == "keep"
+            == "keep.txt"
         )
     finally:
         node_local.query("DROP TABLE IF EXISTS rocksdb_retarget SYNC")

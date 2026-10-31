@@ -326,6 +326,19 @@ StorageEmbeddedRocksDB::StorageEmbeddedRocksDB(
         else
             rocksdb_dir = fs::absolute(rocksdb_dir).lexically_normal();
 
+        if (!is_local && getContext()->getUserFilesVolume())
+        {
+            /// Pin the directory with every symlink resolved. The database, its temporary
+            /// files of a bulk insert, and the files that RocksDB creates in the background all
+            /// use `rocksdb_dir`, so a symlink on the way that is retargeted later must not
+            /// move them outside of the user files directory checked here.
+            std::error_code ec;
+            const fs::path resolved_dir = canonicalPathFollowingDanglingSymlinks(rocksdb_dir, ec);
+            if (ec)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot resolve the path of the RocksDB directory: {}", ec.message());
+            rocksdb_dir = resolved_dir.string();
+        }
+
         if (!is_local && !getContext()->isUserFilesPath(rocksdb_dir))
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Path must be inside user-files path");
     }
