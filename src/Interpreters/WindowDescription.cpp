@@ -83,7 +83,11 @@ void WindowFrame::toString(WriteBuffer & buf) const
     }
     else
     {
+        if (begin_offset_interval_kind)
+            buf << "INTERVAL ";
         buf << applyVisitor(FieldVisitorToString(), begin_offset);
+        if (begin_offset_interval_kind)
+            buf << " " << begin_offset_interval_kind->toKeyword();
         buf << " "
             << (begin_preceding ? "PRECEDING" : "FOLLOWING");
     }
@@ -100,7 +104,11 @@ void WindowFrame::toString(WriteBuffer & buf) const
     }
     else
     {
+        if (end_offset_interval_kind)
+            buf << "INTERVAL ";
         buf << applyVisitor(FieldVisitorToString(), end_offset);
+        if (end_offset_interval_kind)
+            buf << " " << end_offset_interval_kind->toKeyword();
         buf << " "
             << (end_preceding ? "PRECEDING" : "FOLLOWING");
     }
@@ -108,6 +116,15 @@ void WindowFrame::toString(WriteBuffer & buf) const
 
 void WindowFrame::checkValid() const
 {
+    // An interval offset only makes sense for RANGE frames over a date/time ORDER BY key.
+    if (type != FrameType::RANGE
+        && ((begin_type == BoundaryType::Offset && begin_offset_interval_kind)
+            || (end_type == BoundaryType::Offset && end_offset_interval_kind)))
+    {
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "Interval offset is only allowed in RANGE window frames, got '{}' frame", type);
+    }
+
     // Check the validity of offsets.
     if (begin_type == BoundaryType::Offset
         && !((begin_offset.getType() == Field::Types::UInt64
@@ -172,6 +189,12 @@ void WindowFrame::checkValid() const
     if (end_type == BoundaryType::Offset
         && begin_type == BoundaryType::Offset)
     {
+        // Offsets in different units cannot be compared without the ORDER BY key type.
+        // Such a frame is accepted, and if it turns out to end before it starts,
+        // WindowTransform produces an empty frame for the row, like PostgreSQL does.
+        if (begin_offset_interval_kind != end_offset_interval_kind)
+            return;
+
         // Frame start offset must be less or equal that the frame end offset.
         bool begin_less_equal_end = false;
         if (begin_preceding && end_preceding)
