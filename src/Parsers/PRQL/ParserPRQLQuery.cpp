@@ -31,7 +31,7 @@ bool ParserPRQLQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 
 #if !USE_PRQL
     throw Exception(
-        ErrorCodes::SUPPORT_IS_DISABLED, "PRQL is not available. Rust code or PRQL itself may be disabled. Use another dialect!");
+        ErrorCodes::SUPPORT_IS_DISABLED, "PRQL is not available. Rust code or PRQL itself may be disabled. Use another dialect.");
 #else
     const auto * begin = pos->begin;
 
