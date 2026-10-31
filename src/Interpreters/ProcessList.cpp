@@ -157,6 +157,7 @@ ProcessList::EntryPtr ProcessList::insert(
     /// Read before `mutex` is taken: `Context::getUserID` locks the context, and `QueryStatus` is
     /// constructed with `mutex` held (see the constructor's own note about holding both locks).
     const std::optional<UUID> user_id = query_context->getUserID();
+    const bool is_ddl_or_on_cluster_internal = query_context->isDDLOrOnClusterInternal();
 
     if (client_info.current_query_id.empty())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Query id cannot be empty");
@@ -370,6 +371,8 @@ ProcessList::EntryPtr ProcessList::insert(
         /// cancellation paths can still cancel it (see `cancelAdmissionWaitersLocked`).
         AdmissionWaiter waiter{
             .query_id = client_info.current_query_id, .user = client_info.current_user, .user_id = user_id, .interface = client_info.interface,
+            .is_ddl_backup_or_restore = is_ddl_or_on_cluster_internal
+                && (query_kind == IAST::QueryKind::Backup || query_kind == IAST::QueryKind::Restore),
             .granted = false, .cancelled = false, .cv = {}};
         admission_waiters.push_back(&waiter);
         SCOPE_EXIT(std::erase(admission_waiters, &waiter));
@@ -1563,6 +1566,13 @@ void ProcessList::killAllQueries(bool except_ddl_backups_and_restores)
             cancelled_processes.push_back(process);
             process->is_cancelling = true;
         }
+
+        /// Also cancel the queries that are being admitted, under the same lock: otherwise a queued query would
+        /// receive the slot released by a cancelled one, register after this snapshot and run (e.g. during shutdown).
+        cancelAdmissionWaitersLocked([&](const AdmissionWaiter & waiter)
+        {
+            return !(except_ddl_backups_and_restores && waiter.is_ddl_backup_or_restore);
+        });
     }
 
     for (auto & cancelled_process : cancelled_processes)

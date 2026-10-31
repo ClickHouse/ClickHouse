@@ -514,6 +514,8 @@ protected:
         const String & user;
         const std::optional<UUID> & user_id;
         ClientInfo::Interface interface;
+        /// A `BACKUP` or `RESTORE` run by the DDL worker or `ON CLUSTER`: `killAllQueries` may spare it.
+        bool is_ddl_backup_or_restore = false;
         bool granted = false;
         /// Set by `cancelAdmissionWaitersLocked`; `insert` throws `QUERY_WAS_CANCELLED` once it observes it.
         bool cancelled = false;
