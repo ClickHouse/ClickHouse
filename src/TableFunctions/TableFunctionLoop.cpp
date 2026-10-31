@@ -142,6 +142,7 @@ namespace DB
             bool is_insert_query) const
     {
         StoragePtr storage;
+        StorageID source_table_id = StorageID::createEmpty();
         if (!inner_table_function_ast)
         {
             String database_name = loop_database_name;
@@ -166,6 +167,11 @@ namespace DB
 
             /// `StorageLoop` takes its columns from this table's metadata.
             refreshExternalMetadata(storage, context);
+
+            /// The name the user wrote, not `storage`'s own id: a table-function-backed database
+            /// (`Filesystem`, `S3`, `HDFS`) hands out a storage stamped with the synthetic
+            /// `_table_function` database, which resolves against no database at all.
+            source_table_id = StorageID{database_name, loop_table_name};
         }
         else
         {
@@ -180,6 +186,7 @@ namespace DB
         }
         auto res = std::make_shared<StorageLoop>(
                 StorageID(getDatabaseName(), table_name),
+                source_table_id,
                 storage,
                 inner_table_function_ast ? inner_table_function_ast->clone() : nullptr
         );
