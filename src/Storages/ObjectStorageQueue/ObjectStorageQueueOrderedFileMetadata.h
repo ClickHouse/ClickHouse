@@ -42,6 +42,7 @@ public:
         ObjectStorageQueueBucketingMode bucketing_mode_,
         ObjectStorageQueuePartitioningMode partitioning_mode_,
         const ObjectStorageQueueFilenameParser * parser_,
+        const std::string & partition_key_,
         LoggerPtr log_);
 
     struct BucketHolder;
@@ -68,6 +69,8 @@ public:
         const ObjectStorageQueueFilenameParser * parser);
 
     static std::vector<std::string> getMetadataPaths(size_t buckets_num);
+
+    static Bucket getBucketForPartition(const std::string & partition_key, size_t buckets_num);
 
     static std::string getProcessedPathForPartition(
         const std::filesystem::path & zk_path,

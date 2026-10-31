@@ -9892,7 +9892,7 @@ void MergeTreeData::checkAlterPartitionIsPossible(
                                 "is disabled (see allow_drop_detached setting)");
 
         if (command.type == PartitionCommand::ADD_PARTITION)
-            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Partition operation ALTER TABLE ADD PARTITION is not supported by {}", getName());
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Partition operation ALTER TABLE {} is not supported by {}", command.typeToString(), getName());
 
         for (const auto & disk : disks)
         {

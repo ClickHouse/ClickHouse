@@ -109,9 +109,12 @@ public:
         bool is_finished = false;
         std::mutex next_mutex;
         size_t index = 0;
+        std::map<std::string, std::string> partition_key_by_prefix;
         std::deque<std::pair<std::string, std::string>> partitions_to_list TSA_GUARDED_BY(next_mutex);
+        std::string partition_last_processed_path;
 
         std::pair<ObjectInfoPtr, FileMetadataPtr> next();
+        void listPartitions(const Strings & partition_prefixes) TSA_REQUIRES(next_mutex);
         void filterProcessableFiles(ObjectInfos & objects);
         void filterOutProcessedAndFailed(ObjectInfos & objects);
 
@@ -130,7 +133,7 @@ public:
         /// We store a vector of holders, because we cannot release them until processed files are committed.
         std::unordered_map<size_t, std::shared_ptr<BucketHolders>> bucket_holders TSA_GUARDED_BY(mutex);
 
-        std::map<Bucket, std::deque<std::pair<std::string, std::string>>> partitions_per_bucket TSA_GUARDED_BY(mutex);
+        std::map<Bucket, Strings> partitions_per_bucket TSA_GUARDED_BY(mutex);
         std::optional<Bucket> listing_bucket TSA_GUARDED_BY(mutex);
 
         /// Is glob_iterator finished?

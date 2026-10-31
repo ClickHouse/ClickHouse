@@ -2195,7 +2195,11 @@ void StorageObjectStorageQueue::waitForPathToBeProcessed(
     const bool is_ordered = metadata->getTableMetadata().getMode() == ObjectStorageQueueMode::ORDERED;
     const bool is_exclusive = metadata->getTableMetadata().getMode() == ObjectStorageQueueMode::EXCLUSIVE;
 
-    auto file_metadata = metadata->getFileMetadata(path);
+    const auto partition_key = metadata->getPartitioningMode() == ObjectStorageQueuePartitioningMode::EXPLICIT
+        ? ObjectStorageQueueMetadata::getPartitionKeyForPath(
+            metadata->getExplicitPartitions(configuration->getPathForRead().cutGlobs(configuration->supportsPartialPathPrefix())), path)
+        : "";
+    auto file_metadata = metadata->getFileMetadata(path, /* bucket_info */ {}, partition_key);
     const auto & processed_node_path = file_metadata->getProcessedNodePath();
     const auto & failed_node_path = file_metadata->getFailedNodePath();
 

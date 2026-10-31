@@ -168,10 +168,6 @@ ObjectStorageQueueMetadata::ObjectStorageQueueMetadata(
 
         LOG_DEBUG(log, "Successfully initialized regex-based filename parser for partitioning");
     }
-    else if (partitioning_mode == ObjectStorageQueuePartitioningMode::EXPLICIT)
-    {
-        filename_parser = std::make_unique<ObjectStorageQueueFilenameParser>("", "");
-    }
 
     LOG_TRACE(
         log, "Mode: {}, buckets: {}, processing threads: {}, metadata_cache_size_bytes: {},"
@@ -250,7 +246,8 @@ void ObjectStorageQueueMetadata::shutdown()
 
 ObjectStorageQueueMetadata::FileMetadataPtr ObjectStorageQueueMetadata::getFileMetadata(
     const std::string & path,
-    ObjectStorageQueueOrderedFileMetadata::BucketInfoPtr bucket_info)
+    ObjectStorageQueueOrderedFileMetadata::BucketInfoPtr bucket_info,
+    const std::string & partition_key)
 {
     chassert(metadata_ref_count);
     auto [file_status, _] = local_file_statuses.getOrSet(
@@ -275,6 +272,7 @@ ObjectStorageQueueMetadata::FileMetadataPtr ObjectStorageQueueMetadata::getFileM
                 bucketing_mode,
                 partitioning_mode,
                 filename_parser.get(),
+                partition_key,
                 log);
         case ObjectStorageQueueMode::UNORDERED:
             return std::make_shared<ObjectStorageQueueUnorderedFileMetadata>(
@@ -367,39 +365,50 @@ std::optional<std::string> ObjectStorageQueueMetadata::getStartAfterForListing()
     return min_path;
 }
 
-std::vector<std::pair<std::string, std::string>> ObjectStorageQueueMetadata::getExplicitPartitions(const std::string & prefix)
+std::map<std::string, std::string> ObjectStorageQueueMetadata::getExplicitPartitions(const std::string & prefix) const
 {
     Strings partition_keys;
-    auto zk_retry = getKeeperRetriesControl(log);
-    zk_retry.retryLoop([&]
+    getKeeperRetriesControl(log).retryLoop([&]
     {
         partition_keys = getZooKeeper()->getChildren(zookeeper_path / "partitions");
     });
 
+    std::map<std::string, std::string> partition_key_by_prefix;
+    for (auto & partition_key : partition_keys)
+        partition_key_by_prefix.emplace(prefix + unescapeForFileName(partition_key), std::move(partition_key));
+    return partition_key_by_prefix;
+}
+
+std::string ObjectStorageQueueMetadata::getPartitionKeyForPath(
+    const std::map<std::string, std::string> & partition_key_by_prefix,
+    const std::string & path)
+{
+    auto it = partition_key_by_prefix.upper_bound(path);
+    if (it == partition_key_by_prefix.begin() || !path.starts_with(std::prev(it)->first))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "File {} does not belong to any registered partition", path);
+    return std::prev(it)->second;
+}
+
+Strings ObjectStorageQueueMetadata::getLastProcessedPathsOfPartitions(const Strings & partition_keys) const
+{
     Strings processed_paths;
     for (const auto & partition_key : partition_keys)
         processed_paths.push_back(ObjectStorageQueueOrderedFileMetadata::getProcessedPathForPartition(zookeeper_path, buckets_num, partition_key));
 
     zkutil::ZooKeeper::MultiTryGetResponse responses;
-    zk_retry.resetFailures();
-    zk_retry.retryLoop([&]
+    getKeeperRetriesControl(log).retryLoop([&]
     {
         responses = getZooKeeper()->tryGet(processed_paths);
     });
 
-    std::vector<std::pair<std::string, std::string>> result;
-    std::map<std::string, std::string> partition_key_by_prefix;
-    for (size_t i = 0; i < partition_keys.size(); ++i)
+    Strings last_processed_paths;
+    for (size_t i = 0; i < processed_paths.size(); ++i)
     {
         if (responses[i].error != Coordination::Error::ZOK && responses[i].error != Coordination::Error::ZNONODE)
             throw zkutil::KeeperException::fromPath(responses[i].error, processed_paths[i]);
-        auto partition_prefix = prefix + unescapeForFileName(partition_keys[i]);
-        partition_key_by_prefix.emplace(partition_prefix, partition_keys[i]);
-        result.emplace_back(std::move(partition_prefix), responses[i].data);
+        last_processed_paths.push_back(responses[i].data);
     }
-
-    filename_parser->setExplicitPartitions(std::move(partition_key_by_prefix));
-    return result;
+    return last_processed_paths;
 }
 
 void ObjectStorageQueueMetadata::addPartition(const std::string & partition)
@@ -442,25 +451,31 @@ void ObjectStorageQueueMetadata::addPartition(const std::string & partition)
 void ObjectStorageQueueMetadata::forgetPartition(const std::string & partition)
 {
     const auto partition_key = escapeForFileName(partition);
-    const auto processed_path = ObjectStorageQueueOrderedFileMetadata::getProcessedPathForPartition(zookeeper_path, buckets_num, partition_key);
+    const Strings paths{
+        ObjectStorageQueueOrderedFileMetadata::getProcessedPathForPartition(zookeeper_path, buckets_num, partition_key),
+        zookeeper_path / "partitions" / partition_key};
     auto zk_retry = getKeeperRetriesControl(log);
     zk_retry.retryLoop([&]
     {
         auto zk_client = getZooKeeper();
-        zk_client->tryRemove(processed_path);
-        zk_client->tryRemove(zookeeper_path / "partitions" / partition_key);
-    });
-}
-
-void ObjectStorageQueueMetadata::removeProcessedFileStatuses(const Strings & paths)
-{
-    for (const auto & path : paths)
-    {
-        local_file_statuses.removeIfMatches(getMetadataCacheKey(path), [](const FileStatusesCache::MappedPtr & file_status)
+        while (true)
         {
-            return file_status->state == ObjectStorageQueueIFileMetadata::FileStatus::State::Processed;
-        });
-    }
+            Coordination::Requests requests;
+            for (const auto & path : paths)
+            {
+                if (zk_client->exists(path))
+                    requests.push_back(zkutil::makeRemoveRequest(path, -1));
+            }
+
+            Coordination::Responses responses;
+            const auto code = zk_client->tryMulti(requests, responses);
+            if (code != Coordination::Error::ZNONODE)
+            {
+                zkutil::KeeperMultiException::check(code, requests, responses);
+                return;
+            }
+        }
+    });
 }
 
 ObjectStorageQueueOrderedFileMetadata::BucketHolderPtr
@@ -608,6 +623,13 @@ void ObjectStorageQueueMetadata::alterSettings(const SettingsChanges & changes, 
                     ErrorCodes::SUPPORT_IS_DISABLED,
                     "It is not allowed to modify `buckets` settings "
                     "when it is already set to a non-zero value");
+            }
+            if (partitioning_mode == ObjectStorageQueuePartitioningMode::EXPLICIT && value > 1
+                && bucketing_mode != ObjectStorageQueueBucketingMode::PARTITION)
+            {
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS,
+                    "partitioning_mode='explicit' with more than one bucket requires bucketing_mode='partition'");
             }
             migrateToBucketsInKeeper(value);
             new_table_metadata.buckets = value;
@@ -769,6 +791,7 @@ ObjectStorageQueueTableMetadata ObjectStorageQueueMetadata::syncWithKeeper(
                     table_metadata.getBucketingMode(),
                     table_metadata.getPartitioningMode(),
                     parser.get(),
+                    /* partition_key */"",
                     log).prepareProcessedAtStartRequests(requests);
             }
 

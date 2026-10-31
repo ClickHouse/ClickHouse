@@ -1,12 +1,9 @@
 #pragma once
 
-#include <map>
 #include <memory>
-#include <mutex>
 #include <optional>
 #include <string>
 
-#include <base/defines.h>
 #include <base/types.h>
 #include <Common/re2.h>
 #include <Common/Logger.h>
@@ -27,10 +24,6 @@ public:
     /// @returns partition key if successful, std::nullopt if parsing fails
     std::optional<std::string> parse(const std::string & file_name) const;
 
-    void setExplicitPartitions(std::map<std::string, std::string> explicit_partitions_);
-
-    std::optional<std::string> getExplicitPartition(const std::string & path) const;
-
     /// Check if parser is valid (regex compiled successfully)
     bool isValid() const { return partition_pattern != nullptr; }
 
@@ -41,9 +34,6 @@ private:
     std::unique_ptr<re2::RE2> partition_pattern;
     std::string partition_component_name;
     std::string error_message;
-
-    mutable std::mutex explicit_partitions_mutex;
-    std::map<std::string, std::string> explicit_partitions TSA_GUARDED_BY(explicit_partitions_mutex);
 
     LoggerPtr log;
 };
