@@ -1,10 +1,11 @@
 -- A `MODIFY COLUMN` that changes the type of a column rebuilt only the projections having the column in their key. A
 -- projection that computes something from the column, such as `toHour(dt)` or an aggregate state, kept the values it
--- computed with the old type, and returned them for the queries it served.
+-- computed with the old type, or the rows that its `WHERE` selected with it, and returned them for the queries it served.
 
 DROP TABLE IF EXISTS t_aggregate;
 DROP TABLE IF EXISTS t_expression;
 DROP TABLE IF EXISTS t_plain;
+DROP TABLE IF EXISTS t_filter;
 
 CREATE TABLE t_aggregate (id UInt64, dt DateTime('UTC'), PROJECTION p (SELECT toHour(dt) AS h, count() GROUP BY h))
 ENGINE = MergeTree ORDER BY id;
@@ -22,6 +23,15 @@ ALTER TABLE t_expression MODIFY COLUMN dt DateTime64(0, 'Asia/Tokyo') SETTINGS m
 SELECT groupArray(id) FROM t_expression WHERE toHour(dt) = 9 SETTINGS optimize_use_projections = 1, force_optimize_projection = 1;
 SELECT groupArray(id) FROM t_expression WHERE toHour(dt) = 9 SETTINGS optimize_use_projections = 0;
 
+-- A projection with a `WHERE` on the column selected its rows with the old type, even if it stores the column as is.
+CREATE TABLE t_filter (id UInt64, dt DateTime('UTC'), PROJECTION p (SELECT id, dt WHERE toHour(dt) = 9 ORDER BY id))
+ENGINE = MergeTree ORDER BY id;
+INSERT INTO t_filter SELECT number, toDateTime('2026-01-01 00:00:00', 'UTC') + INTERVAL number HOUR FROM numbers(24);
+ALTER TABLE t_filter MODIFY COLUMN dt DateTime64(0, 'Asia/Tokyo') SETTINGS mutations_sync = 2;
+SELECT groupArray(id) FROM t_filter WHERE toHour(dt) = 9
+SETTINGS optimize_use_projections = 1, force_optimize_projection = 1, optimize_read_in_order = 0;
+SELECT groupArray(id) FROM t_filter WHERE toHour(dt) = 9 SETTINGS optimize_use_projections = 0;
+
 -- A projection that stores the column as is answers correctly without being rebuilt.
 CREATE TABLE t_plain (id UInt64, dt DateTime('UTC'), PROJECTION p (SELECT * ORDER BY dt)) ENGINE = MergeTree ORDER BY id;
 INSERT INTO t_plain SELECT number, toDateTime('2026-01-01 00:00:00', 'UTC') + INTERVAL number HOUR FROM numbers(5);
@@ -32,3 +42,4 @@ SETTINGS optimize_use_projections = 1, force_optimize_projection = 1;
 DROP TABLE t_aggregate;
 DROP TABLE t_expression;
 DROP TABLE t_plain;
+DROP TABLE t_filter;
