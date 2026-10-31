@@ -9891,6 +9891,9 @@ void MergeTreeData::checkAlterPartitionIsPossible(
                                 "Cannot execute query: DROP DETACHED PART "
                                 "is disabled (see allow_drop_detached setting)");
 
+        if (command.type == PartitionCommand::ADD_PARTITION)
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Partition operation ALTER TABLE ADD PARTITION is not supported by {}", getName());
+
         for (const auto & disk : disks)
         {
             const auto data_source_description = disk->getDataSourceDescription();

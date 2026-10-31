@@ -196,6 +196,11 @@ public:
     /// Compute StartAfter for ordered S3 listing when it is safe.
     std::optional<std::string> getStartAfterForListing() const;
 
+    std::vector<std::pair<std::string, std::string>> getExplicitPartitions(const std::string & prefix);
+    void addPartition(const std::string & partition);
+    void forgetPartition(const std::string & partition);
+    void removeProcessedFileStatuses(const Strings & paths);
+
     void updateSettings(const SettingsChanges & changes);
 
     std::pair<size_t, size_t> getCleanupIntervalMS() const { return {cleanup_interval_min_ms, cleanup_interval_max_ms }; }

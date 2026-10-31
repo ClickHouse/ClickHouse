@@ -21,6 +21,7 @@ namespace DB
 {
 namespace ErrorCodes
 {
+    extern const int BAD_ARGUMENTS;
     extern const int LOGICAL_ERROR;
     extern const int SUPPORT_IS_DISABLED;
     extern const int UNEXPECTED_ZOOKEEPER_ERROR;
@@ -77,6 +78,15 @@ namespace
                         return *partition_key;
                 }
                 return "";
+            }
+            case ObjectStorageQueuePartitioningMode::EXPLICIT:
+            {
+                if (parser)
+                {
+                    if (auto partition_key = parser->getExplicitPartition(file_path))
+                        return *partition_key;
+                }
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "File {} does not belong to any registered partition", file_path);
             }
             case ObjectStorageQueuePartitioningMode::NONE:
                 return "";
@@ -151,6 +161,17 @@ std::string ObjectStorageQueueOrderedFileMetadata::BucketInfo::toString() const
     wb << "bucket " << bucket << ", ";
     wb << "processor info " << processor_info;
     return wb.str();
+}
+
+std::string ObjectStorageQueueOrderedFileMetadata::getProcessedPathForPartition(
+    const std::filesystem::path & zk_path_,
+    size_t buckets_num_,
+    const std::string & partition_key_)
+{
+    const std::filesystem::path bucket_path = DB::useBucketsForProcessing(buckets_num_)
+        ? getProcessedPathWithBucket(zk_path_, sipHash64(partition_key_) % buckets_num_)
+        : getProcessedPathWithoutBucket(zk_path_);
+    return bucket_path / partition_key_;
 }
 
 std::vector<std::string> ObjectStorageQueueOrderedFileMetadata::getLastProcessedPaths(

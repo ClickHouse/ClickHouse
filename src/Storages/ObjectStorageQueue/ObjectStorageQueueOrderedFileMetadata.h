@@ -69,6 +69,11 @@ public:
 
     static std::vector<std::string> getMetadataPaths(size_t buckets_num);
 
+    static std::string getProcessedPathForPartition(
+        const std::filesystem::path & zk_path,
+        size_t buckets_num,
+        const std::string & partition_key);
+
     static std::vector<std::string> getLastProcessedPaths(
         const std::filesystem::path & zk_path,
         size_t buckets_num,

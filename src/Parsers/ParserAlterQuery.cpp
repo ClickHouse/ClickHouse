@@ -85,6 +85,7 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
     ParserKeyword s_drop_partition(Keyword::DROP_PARTITION);
     ParserKeyword s_drop_part(Keyword::DROP_PART);
     ParserKeyword s_forget_partition(Keyword::FORGET_PARTITION);
+    ParserKeyword s_add_partition(Keyword::ADD_PARTITION);
     ParserKeyword s_move_partition(Keyword::MOVE_PARTITION);
     ParserKeyword s_move_part(Keyword::MOVE_PART);
     ParserKeyword s_drop_detached_partition(Keyword::DROP_DETACHED_PARTITION);
@@ -285,6 +286,13 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
                     return false;
 
                 command->type = ASTAlterCommand::FORGET_PARTITION;
+            }
+            else if (s_add_partition.ignore(pos, expected))
+            {
+                if (!parser_partition.parse(pos, command_partition, expected))
+                    return false;
+
+                command->type = ASTAlterCommand::ADD_PARTITION;
             }
             else if (s_drop_detached_partition.ignore(pos, expected))
             {
@@ -1858,6 +1866,7 @@ The following operations with [partitions](/reference/engines/table-engines/merg
 - [DROP PARTITION\|PART](#drop-partitionpart) — Deletes a partition or part.
 - [DROP DETACHED PARTITION\|PART](#drop-detached-partitionpart) - Delete a part or all parts of a partition from `detached`.
 - [FORGET PARTITION](#forget-partition) — Deletes a partition metadata from zookeeper if it's empty.
+- [ADD PARTITION](#add-partition) — Registers a key prefix for processing in an `S3Queue` or `AzureQueue` table.
 - [ATTACH PARTITION\|PART](#attach-partitionpart) — Adds a partition or part from the `detached` directory to the table.
 - [ATTACH PARTITION FROM](#attach-partition-from) — Copies the data partition from one table to another and adds.
 - [REPLACE PARTITION](#replace-partition) — Copies the data partition from one table to another and replaces.
@@ -1938,6 +1947,16 @@ Example:
 ```sql
 ALTER TABLE mt FORGET PARTITION '20201121';
 ```
+
+For `S3Queue` and `AzureQueue` tables with `partitioning_mode = 'explicit'`, removes a key prefix registered with [ADD PARTITION](#add-partition) together with its last processed file. Unknown prefixes are ignored.
+
+## ADD PARTITION {#add-partition}
+
+```sql
+ALTER TABLE table_name ADD PARTITION 'prefix'
+```
+
+Registers a key prefix for processing in an `S3Queue` or `AzureQueue` table with `partitioning_mode = 'explicit'`. Adding a registered prefix does nothing. See [explicit partitions](/reference/engines/table-engines/integrations/s3queue#explicit-partitions).
 
 ## ATTACH PARTITION\|PART {#attach-partitionpart}
 
@@ -2237,6 +2256,7 @@ ALTER TABLE table_name [ON CLUSTER cluster] DETACH PARTITION|PART partition_expr
 ALTER TABLE table_name [ON CLUSTER cluster] DROP PARTITION|PART partition_expr
 ALTER TABLE table_name [ON CLUSTER cluster] DROP DETACHED PARTITION|PART ALL|partition_expr
 ALTER TABLE table_name [ON CLUSTER cluster] FORGET PARTITION partition_expr
+ALTER TABLE table_name [ON CLUSTER cluster] ADD PARTITION 'prefix'
 ALTER TABLE table_name [ON CLUSTER cluster] ATTACH PARTITION|PART partition_expr
 ALTER TABLE table2 [ON CLUSTER cluster] ATTACH PARTITION partition_expr FROM table1
 ALTER TABLE table2 [ON CLUSTER cluster] REPLACE PARTITION partition_expr FROM table1

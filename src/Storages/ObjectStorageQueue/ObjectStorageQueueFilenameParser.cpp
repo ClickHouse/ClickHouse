@@ -96,4 +96,22 @@ std::optional<std::string> ObjectStorageQueueFilenameParser::parse(const std::st
     return partition_key;
 }
 
+void ObjectStorageQueueFilenameParser::setExplicitPartitions(std::map<std::string, std::string> explicit_partitions_)
+{
+    std::lock_guard lock(explicit_partitions_mutex);
+    explicit_partitions = std::move(explicit_partitions_);
+}
+
+std::optional<std::string> ObjectStorageQueueFilenameParser::getExplicitPartition(const std::string & path) const
+{
+    std::lock_guard lock(explicit_partitions_mutex);
+    auto it = explicit_partitions.upper_bound(path);
+    if (it == explicit_partitions.begin())
+        return std::nullopt;
+    --it;
+    if (!path.starts_with(it->first))
+        return std::nullopt;
+    return it->second;
+}
+
 }

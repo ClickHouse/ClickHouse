@@ -62,6 +62,14 @@ public:
         AlterLockHolder & table_lock_holder,
         DDLGuardPtr & ddl_guard) override;
 
+    void checkAlterPartitionIsPossible(
+        const PartitionCommands & commands,
+        const StorageMetadataPtr & metadata_snapshot,
+        const Settings & settings,
+        ContextPtr local_context) const override;
+
+    Pipe alterPartition(const StorageMetadataPtr & metadata_snapshot, const PartitionCommands & commands, ContextPtr local_context) override;
+
     void renameInMemory(const StorageID & new_table_id) override;
 
     const auto & getFormatName() const { return configuration->format; }

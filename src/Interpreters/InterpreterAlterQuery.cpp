@@ -1045,6 +1045,7 @@ AccessRightsElements InterpreterAlterQuery::getRequiredAccessForCommand(
             break;
         }
         case ASTAlterCommand::ATTACH_PARTITION:
+        case ASTAlterCommand::ADD_PARTITION:
         {
             required_access.emplace_back(AccessType::INSERT, database, table);
             break;
