@@ -269,6 +269,10 @@ public:
     void addFilter(FilterDAGInfo filter);
 
 private:
+    /// Calls `setPreferMultipleStreams` on every reader below `node` that has a step computing
+    /// something per row between it and the root of the child plan.
+    static void preferMultipleStreamsForComputationAboveReads(QueryPlan::Node & node, bool computes_above);
+
     const size_t required_max_block_size;
     const size_t requested_num_streams;
     SharedHeader common_header;

@@ -59,6 +59,7 @@
 #include <Planner/Utils.h>
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
 #include <Processors/QueryPlan/CreatingSetsStep.h>
+#include <Processors/QueryPlan/Optimizations/Optimizations.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
@@ -2747,9 +2748,45 @@ bool ReadFromMerge::requestReadingInOrder(InputOrderInfoPtr order_info_, size_t 
     if (!ok)
         return false;
 
+    /// The outer plan cannot see the child plans, so `optimizeReadInOrder` does not notice a
+    /// computation between a child reader and the sorting above this step - typically a `WHERE`
+    /// pushed down by `addFilter` and not moved to `PREWHERE`. Keep the streams of such a reader,
+    /// so per-part `PrefetchingConcat` does not take the parallelism away from that computation.
+    for (const auto & child_plan : *child_plans)
+        if (child_plan.plan.isInitialized())
+            preferMultipleStreamsForComputationAboveReads(*child_plan.plan.getRootNode(), false);
+
     order_info = order_info_;
     query_info.input_order_info = order_info;
     return true;
+}
+
+void ReadFromMerge::preferMultipleStreamsForComputationAboveReads(QueryPlan::Node & node, bool computes_above)
+{
+    if (auto * read_from_merge_tree = typeid_cast<ReadFromMergeTree *>(node.step.get()))
+    {
+        if (computes_above)
+            read_from_merge_tree->setPreferMultipleStreams();
+        return;
+    }
+    /// A nested `Merge` table checks its own child plans in its own `requestReadingInOrder`.
+    if (auto * read_from_merge = typeid_cast<ReadFromMerge *>(node.step.get()))
+    {
+        if (computes_above)
+            read_from_merge->setPreferMultipleStreams();
+        return;
+    }
+
+    computes_above = computes_above || QueryPlanOptimizations::stepComputesPerStream(*node.step);
+    /// Only the first child of a set-creating step is the main pipeline.
+    if (typeid_cast<CreatingSetsStep *>(node.step.get()) || typeid_cast<DelayedCreatingSetsStep *>(node.step.get()))
+    {
+        if (!node.children.empty())
+            preferMultipleStreamsForComputationAboveReads(*node.children.front(), computes_above);
+        return;
+    }
+    for (auto * child : node.children)
+        preferMultipleStreamsForComputationAboveReads(*child, computes_above);
 }
 
 void ReadFromMerge::setPreferMultipleStreams()

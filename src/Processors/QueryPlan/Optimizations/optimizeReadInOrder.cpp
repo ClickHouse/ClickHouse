@@ -2034,23 +2034,27 @@ static void preferMultipleStreamsForPushedDownLimitByBelowSorting(
     preferMultipleStreamsForPushedDownLimitBy(sorting, node, sort_description_for_merging, optimization_settings);
 }
 
-/// Whether evaluating the actions does more than pass columns through: renames, constants and
-/// inputs are free, anything else (a function, an `arrayJoin`) is work done for every row.
+/// Whether evaluating the actions does more than pass columns through: renames, constants, inputs
+/// and `materialize` (a no-op for a column read from a table; the child plans of a `Merge` table
+/// wrap their columns in it) are free, anything else (a function, an `arrayJoin`) is work done
+/// for every row.
 static bool actionsComputeSomething(const ActionsDAG & dag)
 {
     for (const auto & dag_node : dag.getNodes())
     {
-        if (dag_node.type != ActionsDAG::ActionType::INPUT
-            && dag_node.type != ActionsDAG::ActionType::ALIAS
-            && dag_node.type != ActionsDAG::ActionType::COLUMN)
-            return true;
+        if (dag_node.type == ActionsDAG::ActionType::INPUT
+            || dag_node.type == ActionsDAG::ActionType::ALIAS
+            || dag_node.type == ActionsDAG::ActionType::COLUMN)
+            continue;
+        if (dag_node.type == ActionsDAG::ActionType::FUNCTION && dag_node.function_base
+            && dag_node.function_base->getName() == "materialize")
+            continue;
+        return true;
     }
     return false;
 }
 
-/// Whether the step does per-row work that runs once per input stream. `findReadingStep` descends
-/// only through steps that keep the number of streams, so each of them is instantiated per stream.
-static bool stepComputesPerStream(const IQueryPlanStep & step)
+bool stepComputesPerStream(const IQueryPlanStep & step)
 {
     if (const auto * expression = typeid_cast<const ExpressionStep *>(&step))
         return actionsComputeSomething(expression->getExpression());

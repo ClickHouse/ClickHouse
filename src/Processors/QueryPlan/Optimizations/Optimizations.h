@@ -320,6 +320,10 @@ void collectAppliedJoinRuntimeFilters(const Stack & stack);
 void processAndOptimizeTextIndexFunctions(
     const Stack & stack, QueryPlan::Nodes & nodes, bool direct_read_from_text_index, const Optimization::ExtraSettings & settings);
 void optimizeReadInOrder(QueryPlan::Node & node, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & optimization_settings);
+/// Whether the step does per-row work that runs once per input stream: a filter, an `ARRAY JOIN`,
+/// an expression that is more than renames and constants. Such a step loses its parallelism when
+/// per-part `PrefetchingConcat` concatenates the streams of a part right at the read.
+bool stepComputesPerStream(const IQueryPlanStep & step);
 /// A full sorting without LIMIT or PARTITION BY merges all its streams in one thread, so a small read below it keeps its
 /// default stream count.
 void disableSpreadingSmallReadUnderFullSorting(QueryPlan::Node & node);
