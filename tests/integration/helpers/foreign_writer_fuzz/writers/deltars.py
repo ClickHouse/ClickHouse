@@ -29,6 +29,7 @@ def _sql_value(t, v):
 
 class DeltaRsWriter(Writer):
     name = "deltars"
+    required_table_functions = ("deltaLake",)
     caps = Capabilities(
         # No `decimal`: delta-rs 0.25 writes decimal statistics through a float and cannot parse them
         # back when a value uses all digits of the precision ("parse decimal overflow"), after which every
@@ -159,11 +160,10 @@ class DeltaRsWriter(Writer):
         return table.select([n for n, _ in self.model.columns])
 
     def sources(self):
-        url = f"{self.ctx.minio_endpoint_from_clickhouse}/{self.ctx.bucket}/{self.prefix}/"
         return [
             Source(
                 "deltaLake",
-                f"deltaLake('{url}', {self.ctx.s3_credentials_sql()})",
+                f"deltaLake({self.ctx.s3_source_sql(self.ctx.bucket, self.prefix)})",
                 "delta",
                 time_travel=True,
             )

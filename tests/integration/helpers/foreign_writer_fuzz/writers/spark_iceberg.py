@@ -223,11 +223,10 @@ class SparkIcebergWriter(Writer):
         return to_arrow(self.spark.table(self.ident), self.model.columns)
 
     def sources(self):
-        url = f"{self.ctx.minio_endpoint_from_clickhouse}/{self.ctx.bucket}/{self.prefix}/"
         return [
             Source(
                 "icebergS3",
-                f"icebergS3('{url}', {self.ctx.s3_credentials_sql()})",
+                f"icebergS3({self.ctx.s3_source_sql(self.ctx.bucket, self.prefix)})",
                 "iceberg",
                 time_travel=True,
             ),

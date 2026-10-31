@@ -20,6 +20,7 @@ def _options(rng, gates):
 
 class SparkDeltaWriter(Writer):
     name = "spark_delta"
+    required_table_functions = ("deltaLake",)
     caps = Capabilities(
         primitive_kinds=tuple(k for k in PRIMITIVE_KINDS if k != "uuid"),
         partition_transforms=("identity",),
@@ -141,11 +142,10 @@ class SparkDeltaWriter(Writer):
         )
 
     def sources(self):
-        url = f"{self.ctx.minio_endpoint_from_clickhouse}/{self.ctx.bucket}/{self.prefix}/"
         return [
             Source(
                 "deltaLake",
-                f"deltaLake('{url}', {self.ctx.s3_credentials_sql()})",
+                f"deltaLake({self.ctx.s3_source_sql(self.ctx.bucket, self.prefix)})",
                 "delta",
                 time_travel=True,
             )

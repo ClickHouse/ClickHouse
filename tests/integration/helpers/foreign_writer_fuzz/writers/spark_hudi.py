@@ -155,9 +155,12 @@ class SparkHudiWriter(Writer):
         return to_arrow(self._current(), self.model.columns)
 
     def sources(self):
-        url = f"{self.ctx.minio_endpoint_from_clickhouse}/{self.ctx.bucket}/{self.prefix}/"
         return [
-            Source("hudi", f"hudi('{url}', {self.ctx.s3_credentials_sql()})", "hudi")
+            Source(
+                "hudi",
+                f"hudi({self.ctx.s3_source_sql(self.ctx.bucket, self.prefix)})",
+                "hudi",
+            )
         ]
 
     def cleanup(self):

@@ -296,11 +296,10 @@ class PyIcebergRestWriter(Writer):
             return arrow_schema(self.model.columns, storage=True).empty_table()
 
     def sources(self):
-        url = f"{self.ctx.minio_endpoint_from_clickhouse}/{REST_BUCKET}/{NAMESPACE}/{self.table_name}/"
         result = [
             Source(
                 "icebergS3",
-                f"icebergS3('{url}', {self.ctx.s3_credentials_sql()})",
+                f"icebergS3({self.ctx.s3_source_sql(REST_BUCKET, NAMESPACE + '/' + self.table_name)})",
                 "iceberg",
                 time_travel=True,
             )

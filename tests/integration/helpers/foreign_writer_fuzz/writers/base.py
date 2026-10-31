@@ -77,6 +77,8 @@ class Writer:
     caps: Capabilities = None
     # True when ClickHouse writes the table and `read` is a foreign reader.
     clickhouse_writes = False
+    # Table functions the server must have; a build without one of them skips the writer (`deltaLake` needs `delta-kernel-rs`, which MSan builds do not have).
+    required_table_functions = ()
 
     @staticmethod
     def adjust_caps(caps, gates):

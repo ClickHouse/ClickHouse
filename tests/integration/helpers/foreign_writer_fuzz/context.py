@@ -41,6 +41,7 @@ class FuzzContext:
     rest_catalog_database: Optional[str] = None
     gates: Optional[object] = None
     known_settings: set = field(default_factory=set)
+    table_functions: set = field(default_factory=set)
 
     # ----------------------------------------------------------------- object storage
     @property
@@ -63,7 +64,15 @@ class FuzzContext:
     def minio_secret_key(self):
         return minio_secret_key
 
+    def s3_source_sql(self, bucket, path):
+        """Arguments of an S3 table function or table engine reading the table under `path` in `bucket`.
+
+        The credentials come from the `s3` named collection (`configs/config.d/named_collections.xml`) and are never in the query text: the server logs a statement before it resolves the table function, and the secret of a table function it does not know (not compiled in, such as `deltaLake` without Rust) is not masked, https://github.com/ClickHouse/ClickHouse/issues/128372.
+        """
+        return f"s3, filename = '{path}/', url = '{self.minio_endpoint_from_clickhouse}/{bucket}/'"
+
     def s3_credentials_sql(self):
+        """Positional credentials, only for `DataLakeCatalog`, which takes no named collection."""
         return f"'{minio_access_key}', '{minio_secret_key}'"
 
     def delta_rs_storage_options(self):
@@ -171,6 +180,9 @@ class FuzzContext:
     def load_known_settings(self):
         self.known_settings = set(
             self.node.query("SELECT name FROM system.settings").split()
+        )
+        self.table_functions = set(
+            self.node.query("SELECT name FROM system.table_functions").split()
         )
 
     def server_log_lines(self):

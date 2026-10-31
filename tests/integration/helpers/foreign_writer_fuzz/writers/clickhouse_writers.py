@@ -228,6 +228,7 @@ def _delta_options(rng, gates):
 
 class ClickHouseDeltaWriter(Writer):
     name = "clickhouse_delta"
+    required_table_functions = ("deltaLake",)
     clickhouse_writes = True
     caps = Capabilities(
         primitive_kinds=(
@@ -270,9 +271,8 @@ class ClickHouseDeltaWriter(Writer):
             partition_by=[p.column for p in self.model.partitioning] or None,
             storage_options=self.ctx.delta_rs_storage_options(),
         )
-        url = f"{self.ctx.minio_endpoint_from_clickhouse}/{self.ctx.bucket}/{self.prefix}/"
         self.ctx.query(
-            f"CREATE TABLE {self.ch_table} ENGINE = DeltaLake('{url}', {self.ctx.s3_credentials_sql()})"
+            f"CREATE TABLE {self.ch_table} ENGINE = DeltaLake({self.ctx.s3_source_sql(self.ctx.bucket, self.prefix)})"
         )
 
     def execute(self, op, payload):

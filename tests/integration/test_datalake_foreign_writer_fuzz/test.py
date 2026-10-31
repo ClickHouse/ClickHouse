@@ -36,6 +36,13 @@ log = logging.getLogger("foreign_writer_fuzz")
 @pytest.mark.parametrize("writer", WRITER_NAMES)
 def test_foreign_writer_fuzz(fuzz_context, writer):
     ctx = fuzz_context
+    missing = [
+        f
+        for f in WRITERS[writer].required_table_functions
+        if f not in ctx.table_functions
+    ]
+    if missing:
+        pytest.skip(f"the server has no table function {', '.join(missing)}")
     log.info(
         "Writer %s, seeds %s, %s ops each, budget %s s, %s",
         writer,
