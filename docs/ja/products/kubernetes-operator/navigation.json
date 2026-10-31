@@ -5,7 +5,7 @@
     "ja/products/kubernetes-operator/overview",
     {
       "expanded": true,
-      "group": "Install",
+      "group": "インストール",
       "pages": [
         "ja/products/kubernetes-operator/install/kubectl",
         "ja/products/kubernetes-operator/install/helm",
@@ -14,7 +14,7 @@
     },
     {
       "expanded": true,
-      "group": "Guides",
+      "group": "ガイド",
       "pages": [
         "ja/products/kubernetes-operator/guides/introduction",
         "ja/products/kubernetes-operator/guides/configuration",
@@ -28,7 +28,7 @@
     },
     {
       "expanded": true,
-      "group": "Reference",
+      "group": "リファレンス",
       "pages": [
         "ja/products/kubernetes-operator/reference/api-reference"
       ]

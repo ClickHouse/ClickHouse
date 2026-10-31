@@ -1,0 +1,274 @@
+---
+slug: /cloud/managed-postgres/guides/laravel
+sidebarTitle: 'Laravel'
+title: 'Использование Laravel с ClickHouse Managed Postgres'
+description: 'Подключите приложение Laravel к ClickHouse Managed Postgres через PgBouncer, выполните миграции и выполняйте запросы с помощью Eloquent по TLS с проверкой сертификата'
+keywords: ['managed postgres', 'laravel', 'php', 'eloquent', 'artisan', 'pdo', 'pdo_pgsql', 'pgbouncer', 'migrations']
+doc_type: 'guide'
+---
+
+import { BetaBadge } from "/snippets/ru/components/BetaBadge/BetaBadge.jsx";
+
+<BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.guides-laravel-beta" />
+
+[Laravel](https://laravel.com/) — это веб-фреймворк для PHP со встроенной ORM (Eloquent), системой миграций и инструментом командной строки `artisan`. В этом руководстве вы подключите новое приложение Laravel к ClickHouse Managed Postgres, создадите таблицу `tasks` с помощью миграции и настроите маршрут, который будет возвращать её строки. Все соединения защищены TLS с полной проверкой сертификата.
+
+## Предварительные требования {#prerequisites}
+
+* PHP 8.3 или новее (этого требует Laravel 13) с расширением `pdo_pgsql`. Выполните `php -m` и убедитесь, что `pdo_pgsql` есть в списке.
+* [Composer](https://getcomposer.org/)
+* Аккаунт ClickHouse Cloud
+* [`psql`](https://www.postgresql.org/download/) для создания базы данных. Также можно выполнить оператор `CREATE DATABASE` в [консоли SQL](/ru/integrations/connectors/sql-clients/sql-console).
+
+## Создание сервиса ClickHouse Managed Postgres {#create-service}
+
+В консоли ClickHouse Cloud нажмите **New service** и выберите **Postgres**. Инстанс будет готов через несколько минут. Подробное пошаговое описание приведено в [руководстве по быстрому старту](/ru/products/managed-postgres/quickstart).
+
+## Получите сведения о подключении {#connection-details}
+
+Нажмите **Подключение** на левой боковой панели вашего сервиса. В открывшемся модальном окне отображаются имя пользователя, пароль, сервер и порт, а также переключатель **Directly** / **via PgBouncer**.
+
+PHP-приложение не сохраняет пул соединений между запросами. По умолчанию каждый запрос открывает новое соединение с Postgres и закрывает его по завершении. В этом руководстве приложение подключается через встроенный [PgBouncer](/ru/products/managed-postgres/connection#pgbouncer) на порту `6432`, благодаря чему кратковременные соединения совместно используют небольшой набор backend-соединений Postgres. Миграции подключаются к Postgres напрямую через порт `5432`, поскольку они выполняют DDL и могут удерживать длительные транзакции.
+
+Выберите **via PgBouncer**, чтобы увидеть сведения о подключении через пул. Порт сменится на `6432`, а строки подключения будут содержать `sslmode=verify-full`.
+
+В том же модальном окне нажмите **Download CA‑сертификат**. Его также можно скачать в разделе **Settings → CA‑сертификат**. Сертификат уникален для вашего инстанса, поэтому с его помощью драйвер может убедиться, что подключается именно к вашему серверу.
+
+## Настройка проекта {#project-setup}
+
+Создайте проект Laravel:
+
+```bash
+composer create-project laravel/laravel laravel-managed-postgres
+cd laravel-managed-postgres
+```
+
+<Tip>
+  **Добавляете в существующее приложение?**
+
+  Пропустите `composer create-project`. Убедитесь, что в вашем проекте `php -m` выводит `pdo_pgsql`, затем выполните остальные шаги этого раздела и перейдите к разделу [Настройка соединения](#configure), где приложение переводится с SQLite на Postgres. После этого `php artisan migrate` создаст ваши существующие таблицы в Postgres, но данные из SQLite не перенесёт.
+</Tip>
+
+Переместите скачанный CA‑сертификат в каталог проекта и переименуйте его в `ca-certificate.pem`.
+
+Создайте базу данных для приложения. Замените `<PASSWORD>` и хост значениями из модального окна **Подключение**:
+
+```bash
+psql "postgresql://postgres:<PASSWORD>@your-instance.pg.clickhouse.cloud:5432/postgres?sslmode=verify-full&sslrootcert=ca-certificate.pem" -c "CREATE DATABASE guide_laravel;"
+```
+
+```text
+CREATE DATABASE
+```
+
+## Настройка соединения {#configure}
+
+По умолчанию Laravel использует SQLite. Откройте файл `.env` и замените строку `DB_CONNECTION=sqlite`, а также расположенные под ней закомментированные строки `DB_`, следующим фрагментом:
+
+```bash title=".env"
+DB_CONNECTION=pgsql
+DB_HOST=your-instance.pg.clickhouse.cloud
+DB_PORT=6432
+DB_DATABASE=guide_laravel
+DB_USERNAME=postgres
+DB_PASSWORD=<PASSWORD>
+DB_SSLMODE=verify-full
+DB_SSLROOTCERT=/absolute/path/to/your-project/ca-certificate.pem
+```
+
+Укажите абсолютный путь к `ca-certificate.pem`. `libpq` разрешает относительные пути от рабочего каталога процесса PHP, а он зависит от того, как PHP запускает ваше приложение. Если пароль содержит пробелы или `#`, заключите его в двойные кавычки. Не добавляйте `.env` в систему контроля версий.
+
+Стандартное соединение `pgsql` в `config/database.php` считывает `DB_SSLMODE`, но не путь к CA‑сертификату. Откройте `config/database.php` и добавьте в соединение `pgsql` записи `sslrootcert` и `options`:
+
+```php title="config/database.php"
+        'pgsql' => [
+            'driver' => 'pgsql',
+            'url' => env('DB_URL'),
+            'host' => env('DB_HOST', '127.0.0.1'),
+            'port' => env('DB_PORT', '5432'),
+            'database' => env('DB_DATABASE', 'laravel'),
+            'username' => env('DB_USERNAME', 'root'),
+            'password' => env('DB_PASSWORD', ''),
+            'charset' => env('DB_CHARSET', 'utf8'),
+            'prefix' => '',
+            'prefix_indexes' => true,
+            'search_path' => 'public',
+            'sslmode' => env('DB_SSLMODE', 'prefer'),
+            'sslrootcert' => env('DB_SSLROOTCERT'),
+            'options' => [
+                PDO::ATTR_EMULATE_PREPARES => true,
+            ],
+        ],
+```
+
+Laravel добавляет `sslmode` и `sslrootcert` в DSN PDO, а расширение `pdo_pgsql` передаёт их в `libpq`, которая проверяет цепочку сертификатов и имя хоста.
+
+`PDO::ATTR_EMULATE_PREPARES` заставляет PDO отправлять каждый запрос с уже подставленными значениями, а не создавать подготовленный оператор на стороне сервера. Включите этот параметр, если подключаетесь через PgBouncer. Если `pdo_pgsql` собран с `libpq` версии 16 или более ранней (например, в Debian 12), PHP освобождает каждый подготовленный оператор с помощью SQL-оператора `DEALLOCATE`. PgBouncer переименовывает подготовленные операторы на сервере, поэтому `DEALLOCATE` завершается ошибкой. Внутри транзакции это приводит к её прерыванию, и следующий запрос завершается ошибкой `current transaction is aborted`. С `libpq` версии 17 и новее работают и настройки по умолчанию. Чтобы узнать свою версию, выполните `php -i | grep libpq`.
+
+Проверьте соединение:
+
+```bash
+php artisan db:show
+```
+
+```text
+  PostgreSQL ................................ 18.6 (Ubuntu 18.6-1.pgdg22.04+2)  
+  Connection ........................................................... pgsql  
+  Database ..................................................... guide_laravel  
+  Host ..................................... your-instance.pg.clickhouse.cloud  
+  Port .................................................................. 6432  
+  Username .......................................................... postgres  
+  URL ........................................................................  
+  Open Connections ........................................................ 44  
+  Tables ................................................................... 0  
+```
+
+<Note>
+  Без строки `sslrootcert` режим `verify-full` завершается ошибкой `root certificate file ".../.postgresql/root.crt" does not exist`, поскольку `libpq` в этом случае ищет CA‑сертификат в расположении по умолчанию. Если указан неверный CA, соединение завершается ошибкой `SSL error: certificate verify failed`.
+</Note>
+
+## Создание модели и миграции {#migrations}
+
+Создайте модель Eloquent и миграцию для таблицы `tasks`:
+
+```bash
+php artisan make:model Task -m
+```
+
+Откройте новую миграцию в `database/migrations/` (имя её файла оканчивается на `_create_tasks_table.php`) и добавьте в метод `up` столбцы `title` и `done`:
+
+```php title="database/migrations/xxxx_xx_xx_xxxxxx_create_tasks_table.php"
+    public function up(): void
+    {
+        Schema::create('tasks', function (Blueprint $table) {
+            $table->id();
+            $table->string('title');
+            $table->boolean('done')->default(false);
+            $table->timestamps();
+        });
+    }
+```
+
+Замените содержимое `app/Models/Task.php`, чтобы столбцы можно было заполнять массово, а `done` возвращался как булево значение:
+
+```php title="app/Models/Task.php"
+<?php
+
+namespace App\Models;
+
+use Illuminate\Database\Eloquent\Attributes\Fillable;
+use Illuminate\Database\Eloquent\Model;
+
+#[Fillable(['title', 'done'])]
+class Task extends Model
+{
+    protected function casts(): array
+    {
+        return [
+            'done' => 'boolean',
+        ];
+    }
+}
+```
+
+Выполните миграции через прямое соединение. Переменная окружения имеет приоритет над значением в `.env`, поэтому достаточно изменить только порт:
+
+```bash
+DB_PORT=5432 php artisan migrate
+```
+
+```text
+   INFO  Preparing database.  
+
+  Creating migration table ..................................... 289.95ms DONE
+
+   INFO  Running migrations.  
+
+  0001_01_01_000000_create_users_table ............................... 1s DONE
+  0001_01_01_000001_create_cache_table ......................... 949.69ms DONE
+  0001_01_01_000002_create_jobs_table ................................ 1s DONE
+  2026_09_30_165735_create_tasks_table ......................... 240.59ms DONE
+```
+
+Помимо `tasks`, эта команда создаёт таблицы `users`, `sessions`, `cache` и `jobs`, которые новое приложение Laravel использует по умолчанию. Laravel сохраняет сведения о применённых миграциях в таблице `migrations` и при последующих запусках выполняет только новые.
+
+## Запросы к базе данных {#query}
+
+Добавьте несколько строк с помощью Eloquent в `artisan tinker`:
+
+```bash
+php artisan tinker --execute="App\Models\Task::create(['title' => 'Create a Managed Postgres service', 'done' => true]); App\Models\Task::create(['title' => 'Connect Laravel with verify-full TLS', 'done' => true]); App\Models\Task::create(['title' => 'Ship the app']); echo App\Models\Task::count();"
+```
+
+```text
+3
+```
+
+Добавьте в конец файла `routes/web.php` маршрут, который возвращает все задачи в формате JSON:
+
+```php title="routes/web.php"
+Route::get('/tasks', function () {
+    return App\Models\Task::orderBy('id')->get();
+});
+```
+
+<Note>
+  При подключении Laravel задаёт параметры соединения `search_path`, `timezone` и `isolation_level` с помощью операторов `SET` на уровне сеанса, а при работе через PgBouncer эти настройки не сохраняются между транзакциями. Оставьте для этих параметров значения по умолчанию или, если они вам нужны, подключайтесь напрямую через порт `5432`. Возможности уровня сеанса, такие как `LISTEN` и сеансовые рекомендательные блокировки (advisory locks), через PgBouncer также не работают. Подробнее см. в [FAQ](/ru/products/managed-postgres/faq#prepared-statement-errors).
+</Note>
+
+## Запуск и проверка {#verify}
+
+Запустите сервер для разработки:
+
+```bash
+php artisan serve --port=3104
+```
+
+```text
+   INFO  Server running on [http://127.0.0.1:3104].  
+
+  Press Ctrl+C to stop the server
+```
+
+Откройте `http://localhost:3104/tasks` в браузере. Ответ будет выглядеть примерно так:
+
+```json
+[
+  {
+    "id": 1,
+    "title": "Create a Managed Postgres service",
+    "done": true,
+    "created_at": "2026-09-30T17:10:28.000000Z",
+    "updated_at": "2026-09-30T17:10:28.000000Z"
+  },
+  {
+    "id": 2,
+    "title": "Connect Laravel with verify-full TLS",
+    "done": true,
+    "created_at": "2026-09-30T17:10:29.000000Z",
+    "updated_at": "2026-09-30T17:10:29.000000Z"
+  },
+  {
+    "id": 3,
+    "title": "Ship the app",
+    "done": false,
+    "created_at": "2026-09-30T17:10:29.000000Z",
+    "updated_at": "2026-09-30T17:10:29.000000Z"
+  }
+]
+```
+
+Чтобы просмотреть данные в консоли, откройте **консоль SQL** на левой боковой панели вашего сервиса, разверните `guide_laravel`, затем `public` и выберите таблицу `tasks`. В схеме `public` также отображаются стандартные таблицы Laravel, например `users`, `sessions` и `migrations`:
+
+| id | title                                | done  | created&#95;at      | updated&#95;at      |
+| -- | ------------------------------------ | ----- | ------------------- | ------------------- |
+| 1  | Create a Managed Postgres service    | true  | 2026-09-30 17:10:28 | 2026-09-30 17:10:28 |
+| 2  | Connect Laravel with verify-full TLS | true  | 2026-09-30 17:10:29 | 2026-09-30 17:10:29 |
+| 3  | Ship the app                         | false | 2026-09-30 17:10:29 | 2026-09-30 17:10:29 |
+
+## Дальнейшие шаги {#next-steps}
+
+* [Подключение](/ru/products/managed-postgres/connection): строки подключения, PgBouncer и TLS
+* [Настройки](/ru/products/managed-postgres/settings): параметры Postgres и PgBouncer, например `max_connections`
+* [Реплики для чтения](/ru/products/managed-postgres/read-replicas): перенаправление запросов на чтение в реплику с помощью [соединений для чтения и записи](https://laravel.com/docs/database#read-and-write-connections) в Laravel
+* [Безопасность](/ru/products/managed-postgres/security): списки IP Access List и частное сетевое подключение

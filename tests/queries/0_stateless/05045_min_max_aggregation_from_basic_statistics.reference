@@ -1,0 +1,19 @@
+the default auto_statistics_types: answered from statistics
+-500	499	2020-01-01	2020-12-30	2020-01-01 00:00:00	2020-01-02 03:46:39	0	14285.571	100000
+the same values without the optimization
+-500	499	2020-01-01	2020-12-30	2020-01-01 00:00:00	2020-01-02 03:46:39	0	14285.571	100000
+1
+explicit auto_statistics_types = basic: answered from statistics
+-500	499	2020-01-01	2020-12-30	2020-01-01 00:00:00	2020-01-02 03:46:39	0	14285.571	100000
+the same values without the optimization
+-500	499	2020-01-01	2020-12-30	2020-01-01 00:00:00	2020-01-02 03:46:39	0	14285.571	100000
+1
+nothing is read when every part is answered from statistics
+0
+not applied: basic statistics do not track the min/max of a String column
+0	99999
+0
+0
+not applied: a single unsupported column disables the whole aggregation
+-500	99999
+0

@@ -29,18 +29,13 @@ ${CLICKHOUSE_CLIENT} "${LEGACY[@]}" --distributed_ddl_entry_format_version 1 -q 
 CREATE TABLE ${CLICKHOUSE_DATABASE}.dst_clone_v1 ON CLUSTER test_shard_localhost CLONE AS ${CLICKHOUSE_DATABASE}.src;
 " 2>&1 | grep -o -m1 'NOT_IMPLEMENTED' | sed 's/^/oldest_clone /'
 
-# The entry format that carries the settings executes deterministically on the worker.
-${CLICKHOUSE_CLIENT} "${LEGACY[@]}" --distributed_ddl_entry_format_version 2 -q "
-CREATE TABLE ${CLICKHOUSE_DATABASE}.dst_v2 ON CLUSTER test_shard_localhost AS ${CLICKHOUSE_DATABASE}.src;
-SELECT 'settings_in_zk_as', sorting_key FROM system.tables WHERE database = currentDatabase() AND name = 'dst_v2';
-"
-
 # A clone must keep its source definition verbatim, so it cannot be made unambiguous by the setting.
 ${CLICKHOUSE_CLIENT} "${LEGACY[@]}" --distributed_ddl_entry_format_version 2 -q "
 CREATE TABLE ${CLICKHOUSE_DATABASE}.dst_clone_v2 ON CLUSTER test_shard_localhost CLONE AS ${CLICKHOUSE_DATABASE}.src;
 " 2>&1 | grep -o -m1 'NOT_IMPLEMENTED' | sed 's/^/settings_in_zk_clone /'
 
-# The same query without ON CLUSTER: the version-2 result above must match it.
+# The same query without ON CLUSTER: this is the spelling a worker has to end up with too, asserted
+# for `ON CLUSTER` in `05030_totime_on_cluster_as_settings_in_zk_worker.sh`.
 ${CLICKHOUSE_CLIENT} --allow_experimental_time_time64_type 1 --use_legacy_to_time 1 -q "
 CREATE TABLE dst_local AS src;
 SELECT 'local_as', sorting_key FROM system.tables WHERE database = currentDatabase() AND name = 'dst_local';
@@ -48,6 +43,5 @@ SELECT 'local_as', sorting_key FROM system.tables WHERE database = currentDataba
 
 ${CLICKHOUSE_CLIENT} -q "
 DROP TABLE dst_local;
-DROP TABLE dst_v2;
 DROP TABLE src;
 "

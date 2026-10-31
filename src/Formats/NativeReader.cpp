@@ -36,8 +36,12 @@ namespace ErrorCodes
 }
 
 
-NativeReader::NativeReader(ReadBuffer & istr_, UInt64 server_revision_, std::optional<FormatSettings> format_settings_)
-    : istr(istr_), server_revision(server_revision_), format_settings(format_settings_)
+NativeReader::NativeReader(
+    ReadBuffer & istr_,
+    UInt64 server_revision_,
+    std::optional<FormatSettings> format_settings_,
+    ISerialization::KindSet allowed_kinds_)
+    : istr(istr_), server_revision(server_revision_), format_settings(format_settings_), allowed_kinds(allowed_kinds_)
 {
 }
 
@@ -225,7 +229,7 @@ Block NativeReader::read()
             UInt8 has_custom = 0;
             readBinary(has_custom, istr);
             if (has_custom)
-                info->deserializeFromKindsBinary(istr);
+                info->deserializeFromKindsBinary(istr, allowed_kinds);
 
             serialization = column.type->getSerialization(*info);
             auto new_column = column.type->createColumn(*serialization);
@@ -301,6 +305,14 @@ Block NativeReader::read()
                         column.column = recursiveLowCardinalityTypeConversion(column.column, column.type, header_column.type);
                     }
 
+                    column.type = header_column.type;
+                }
+                else if (!haveSameAggregateStateVersions(*header_column.type, *column.type))
+                {
+                    /// `equals` ignores the state version of `AggregateFunction` types, e.g. a version `0` state
+                    /// from an older writer read into a `AggregateFunction(1, uniq, UInt64)` header, where the query
+                    /// expects the version of the header. So relabel the column with the header type.
+                    column.column = relabelAggregateStateVersions(column.column, header_column.type);
                     column.type = header_column.type;
                 }
             }

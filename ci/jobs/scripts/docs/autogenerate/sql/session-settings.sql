@@ -67,7 +67,7 @@ WITH
         format('## {}{}{}{}{}{}{}{}\n\n',
         name,
         ' {#'||name||'} \n\n',
-        multiIf(tier == 'Experimental', '<ExperimentalBadge/>\n\n', tier == 'Beta', '<BetaBadge/>\n\n', ''),
+        multiIf(tier == 'Experimental', '<ExperimentalBadge/>\n\n', tier == 'Beta', '<BetaBadge/>\n\n', tier == 'PrivatePreview', '<PrivatePreviewBadge/>\n\n', ''),
         if(description LIKE '%Only has an effect in ClickHouse Cloud%', '<CloudOnlyBadge/>\n\n', ''),
         if(sa.aliases IS NOT NULL AND length(sa.aliases) > 0,
            '**Aliases**: ' || arrayStringConcat(arrayMap(x -> '`' || x || '`', sa.aliases), ', ') || '\n\n',
@@ -82,7 +82,10 @@ WITH
             ''
         ),
         if(rows != '', printf('\n\n<VersionHistory rows={%s}/>\n\n', rows), ''),
-        replaceOne(trim(BOTH '\\n' FROM description), ' and [MaterializedMySQL](../../engines/database-engines/materialized-mysql.md)',''))
+        -- `system.settings` already trims the newlines surrounding a description, so no
+        -- trimming is needed here. `trim(BOTH ...)` takes a set of characters rather than a
+        -- suffix, so trimming '\n' would strip trailing `n` and `\` from the text itself.
+        replaceOne(description, ' and [MaterializedMySQL](../../engines/database-engines/materialized-mysql.md)',''))
     FROM settings_with_change_history
     LEFT JOIN setting_aliases sa ON settings_with_change_history.name = sa.alias_for
     ORDER BY name
@@ -98,6 +101,7 @@ doc_type: ''reference''
 
 import ExperimentalBadge from \'@theme/badges/ExperimentalBadge\';
 import BetaBadge from \'@theme/badges/BetaBadge\';
+import PrivatePreviewBadge from \'@theme/badges/PrivatePreviewBadge\';
 import CloudOnlyBadge from \'@theme/badges/CloudOnlyBadge\';
 import SettingsInfoBlock from \'@theme/SettingsInfoBlock/SettingsInfoBlock\';
 import VersionHistory from \'@theme/VersionHistory/VersionHistory\';

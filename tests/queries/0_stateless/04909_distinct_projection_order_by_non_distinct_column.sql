@@ -7,6 +7,13 @@
 -- leaves ambiguous. Each shape that must keep using the projection also asserts its selection, so a
 -- silent fallback to the ordinary read cannot pass as a correct result.
 
+-- Read-in-order and distinct-in-order now run before projection selection, and an in-order base
+-- read declines projections; almost every shape below orders or distincts by the sorting key, so
+-- the selection assertions would observe the ordinary read instead. Plan ordering is not this
+-- test's subject; pin both off.
+SET optimize_read_in_order = 0;
+SET optimize_distinct_in_order = 0;
+
 DROP TABLE IF EXISTS t_distinct_proj;
 
 CREATE TABLE t_distinct_proj

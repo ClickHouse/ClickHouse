@@ -1,0 +1,9 @@
+-- without the CREATE TABLE privilege, directly
+ACCESS_DENIED
+-- without the CREATE TABLE privilege, inside PARALLEL WITH
+ACCESS_DENIED
+-- nothing was created
+0
+-- with the CREATE TABLE privilege, PARALLEL WITH still works
+t_parallel_1
+t_parallel_2

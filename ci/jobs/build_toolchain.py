@@ -48,9 +48,9 @@ CROSS_BUILTIN_TARGETS = [
     ("powerpc64le-unknown-linux-gnu", "Linux"),
     ("riscv64-unknown-linux-gnu", "Linux"),
     ("loongarch64-unknown-linux-gnu", "Linux"),
-    ("x86_64-pc-freebsd13", "FreeBSD"),
-    ("aarch64-unknown-freebsd13", "FreeBSD"),
-    ("powerpc64le-unknown-freebsd13", "FreeBSD"),
+    ("x86_64-pc-freebsd14", "FreeBSD"),
+    ("aarch64-unknown-freebsd14", "FreeBSD"),
+    ("powerpc64le-unknown-freebsd14", "FreeBSD"),
 ]
 
 

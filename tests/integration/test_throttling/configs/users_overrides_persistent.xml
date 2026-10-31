@@ -1,7 +1,0 @@
-<clickhouse>
-    <profiles>
-        <default>
-            <s3_disable_checksum>true</s3_disable_checksum>
-        </default>
-    </profiles>
-</clickhouse>

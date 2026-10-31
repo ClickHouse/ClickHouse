@@ -1,5 +1,6 @@
 #pragma once
 
+#include <functional>
 #include <memory>
 #include <optional>
 #include <vector>
@@ -198,6 +199,11 @@ public:
     /// Returns true if underlying blob ids generator uses random.
     virtual bool areBlobPathsRandom() const = 0;
 
+    /// Whether a cache keyed by the object path may hold a file's data. An object named after the
+    /// path and rewritten in place would be read back as its previous content, since nothing
+    /// invalidates it. Read-only metadata rewrites nothing, so its paths need not be random.
+    bool mayCacheByObjectPath() const { return areBlobPathsRandom() || isReadOnly(); }
+
     /// ==== General purpose methods. Define properties of object storage file based on metadata files ====
 
     virtual bool existsFile(const std::string & path) const = 0;
@@ -295,6 +301,7 @@ public:
     }
 
     virtual bool isReadOnly() const = 0;
+    virtual bool isRemote() const = 0;
 
     /// True if transactions apply operations immediately instead of accumulating them until commit.
     virtual bool appliesOperationsEagerly() const
@@ -323,11 +330,31 @@ public:
         return false;
     }
 
+    /// Whether a hard link created by `createHardLink` really shares the blob between the two files,
+    /// instead of copying it. The write-once (`plain`) metadata cannot represent hard links at all,
+    /// and `plain_rewritable` does it only when the disk is configured for it.
+    virtual bool supportsHardLinks() const
+    {
+        return !isWriteOnce() && !isPlain();
+    }
+
     using BlobsToRemove = std::unordered_map<StoredObject, LocationSet>;
     virtual BlobsToRemove getBlobsToRemove(const ClusterConfigurationPtr & /*cluster*/, int64_t /*max_count*/) { return {}; }
     virtual int64_t recordAsRemoved(const StoredObjects & /*blobs*/) { return 0; }
     virtual bool hasPendingRemovalBlobs(const StoredObjects & /*blobs*/) const { return false; }
     virtual int64_t getDeadBlobsQueueEstimate() { return 0; }
+
+    /// Whether this storage ever puts anything into the queue of dead blobs above. The queue is drained in
+    /// background by `BlobKillerThread`, which never schedules its task for a storage that answers `false`:
+    /// `plain` and `plain_rewritable` remove blobs synchronously inside the transaction and the `web`
+    /// storages are read-only, so for them the task would only wake up every second to find nothing to do.
+    virtual bool hasDeadBlobsQueue() const { return true; }
+
+    /// For a storage whose `hasDeadBlobsQueue` may change from `false` to `true` at runtime (a cache layer over
+    /// a read-only `plain` disk, which still drains the blobs queued before a reload), `BlobKillerThread` stops
+    /// polling once there is nothing left to do. The storage calls `callback` after it queued new dead blobs,
+    /// so that the blob killer wakes up. An empty `callback` unregisters it.
+    virtual void setDeadBlobsQueuedCallback(std::function<void()> /*callback*/) {}
 
     struct BlobsReplication
     {
@@ -340,6 +367,11 @@ public:
     virtual int64_t recordAsReplicated(const BlobsToReplicate & /*blobs*/) { return 0; }
     virtual bool hasUnreplicatedBlobs(const Location & /*location_to_check*/) { return false; }
     virtual int64_t getMissingBlobsQueueEstimate() { return 0; }
+
+    /// The same as `hasDeadBlobsQueue`, but for the queue of blobs missing in some of the cluster locations,
+    /// which is drained in background by `BlobCopierThread`. Only a storage spanning several locations
+    /// fills it, so every single-location storage, including `local`, answers `false`.
+    virtual bool hasMissingBlobsQueue() const { return true; }
 
     /// Re-read paths or their full subtrees from disk and update cache.
     /// Can return serialized description of cache update which can be used to populate cache on other nodes.

@@ -330,6 +330,7 @@ public:
     bool isBroken() const override { return delegate->isBroken(); }
     bool supportParallelWrite() const override { return delegate->supportParallelWrite(); }
     bool supportsHardLinks() const override { return delegate->supportsHardLinks(); }
+    bool prefersRecursiveRemoval() const override { return delegate->prefersRecursiveRemoval(); }
     bool supportsStat() const override { return delegate->supportsStat(); }
     bool supportsChmod() const override { return delegate->supportsChmod(); }
     bool isSymlinkSupported() const override { return delegate->isSymlinkSupported(); }

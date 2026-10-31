@@ -16,7 +16,6 @@ CREATE TABLE test_trivial_count_types_dist AS test_trivial_count_types_local
     ENGINE = Distributed('test_cluster_two_shards', currentDatabase(), test_trivial_count_types_local);
 
 SET optimize_trivial_count_query = 1;
-SET allow_experimental_analyzer = 1;
 
 SELECT count(v0 + v1) FROM test_trivial_count_types_dist;
 

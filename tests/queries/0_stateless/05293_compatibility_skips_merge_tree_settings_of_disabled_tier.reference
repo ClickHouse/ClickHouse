@@ -1,0 +1,6 @@
+allow_feature_tier = 2
+compute_exact_num_defaults_for_sparse_columns	0
+replicated_deduplication_window	0
+allow_feature_tier = 3
+compute_exact_num_defaults_for_sparse_columns	1
+replicated_deduplication_window	0

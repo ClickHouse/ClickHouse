@@ -1,0 +1,57 @@
+0 | x | value IN (0, 1) | 2000 | 2000
+0 | x | value NOT IN (0, 1) | 2000 | 2000
+0 | x | value IN (0, NULL) | 2000 | 2000
+0 | x | value NOT IN (0, NULL) | 2000 | 2000
+0 | x | value IN (NULL) | 0 | 0
+0 | x | value NOT IN (NULL) | 4000 | 4000
+0 | x | nullIn(value, (0, 1)) | 2000 | 2000
+0 | x | notNullIn(value, (0, 1)) | 6000 | 6000
+0 | x | NOT (value IN (0, 1)) | 2000 | 2000
+0 | x | NOT (value NOT IN (0, 1)) | 2000 | 2000
+0 | x | (value NOT IN (0, 1)) OR isNull(value) | 6000 | 6000
+0 | x | (value NOT IN (0, 1)) AND isNotNull(value) | 2000 | 2000
+0 | x | value IN (0.5, 1.5) | 0 | 0
+0 | x | value NOT IN (0.5, 1.5) | 4000 | 4000
+0 | tupleElement(t, 'x') | value IN (0, 1) | 2000 | 2000
+0 | tupleElement(t, 'x') | value NOT IN (0, 1) | 2000 | 2000
+0 | tupleElement(t, 'x') | value IN (0, NULL) | 2000 | 2000
+0 | tupleElement(t, 'x') | value NOT IN (0, NULL) | 2000 | 2000
+0 | tupleElement(t, 'x') | value IN (NULL) | 0 | 0
+0 | tupleElement(t, 'x') | value NOT IN (NULL) | 4000 | 4000
+0 | tupleElement(t, 'x') | nullIn(value, (0, 1)) | 2000 | 2000
+0 | tupleElement(t, 'x') | notNullIn(value, (0, 1)) | 6000 | 6000
+0 | tupleElement(t, 'x') | NOT (value IN (0, 1)) | 2000 | 2000
+0 | tupleElement(t, 'x') | NOT (value NOT IN (0, 1)) | 2000 | 2000
+0 | tupleElement(t, 'x') | (value NOT IN (0, 1)) OR isNull(value) | 6000 | 6000
+0 | tupleElement(t, 'x') | (value NOT IN (0, 1)) AND isNotNull(value) | 2000 | 2000
+0 | tupleElement(t, 'x') | value IN (0.5, 1.5) | 0 | 0
+0 | tupleElement(t, 'x') | value NOT IN (0.5, 1.5) | 4000 | 4000
+1 | x | value IN (0, 1) | 2000 | 2000
+1 | x | value NOT IN (0, 1) | 6000 | 6000
+1 | x | value IN (0, NULL) | 6000 | 6000
+1 | x | value NOT IN (0, NULL) | 2000 | 2000
+1 | x | value IN (NULL) | 4000 | 4000
+1 | x | value NOT IN (NULL) | 4000 | 4000
+1 | x | nullIn(value, (0, 1)) | 2000 | 2000
+1 | x | notNullIn(value, (0, 1)) | 6000 | 6000
+1 | x | NOT (value IN (0, 1)) | 6000 | 6000
+1 | x | NOT (value NOT IN (0, 1)) | 2000 | 2000
+1 | x | (value NOT IN (0, 1)) OR isNull(value) | 6000 | 6000
+1 | x | (value NOT IN (0, 1)) AND isNotNull(value) | 2000 | 2000
+1 | x | value IN (0.5, 1.5) | 0 | 0
+1 | x | value NOT IN (0.5, 1.5) | 8000 | 8000
+1 | tupleElement(t, 'x') | value IN (0, 1) | 2000 | 2000
+1 | tupleElement(t, 'x') | value NOT IN (0, 1) | 6000 | 6000
+1 | tupleElement(t, 'x') | value IN (0, NULL) | 6000 | 6000
+1 | tupleElement(t, 'x') | value NOT IN (0, NULL) | 2000 | 2000
+1 | tupleElement(t, 'x') | value IN (NULL) | 4000 | 4000
+1 | tupleElement(t, 'x') | value NOT IN (NULL) | 4000 | 4000
+1 | tupleElement(t, 'x') | nullIn(value, (0, 1)) | 2000 | 2000
+1 | tupleElement(t, 'x') | notNullIn(value, (0, 1)) | 6000 | 6000
+1 | tupleElement(t, 'x') | NOT (value IN (0, 1)) | 6000 | 6000
+1 | tupleElement(t, 'x') | NOT (value NOT IN (0, 1)) | 2000 | 2000
+1 | tupleElement(t, 'x') | (value NOT IN (0, 1)) OR isNull(value) | 6000 | 6000
+1 | tupleElement(t, 'x') | (value NOT IN (0, 1)) AND isNotNull(value) | 2000 | 2000
+1 | tupleElement(t, 'x') | value IN (0.5, 1.5) | 0 | 0
+1 | tupleElement(t, 'x') | value NOT IN (0.5, 1.5) | 8000 | 8000
+{"result":[{"count()":6000}],"rows_read":6000}
