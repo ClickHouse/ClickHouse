@@ -553,7 +553,9 @@ void optimizeTreeSecondPass(
     /// The runtime filters were pushed down while the joins were logical, so merge what the conversion
     /// added around the joins, as that push-down did when the joins were converted before it. With the
     /// same `extra_settings`: a default-constructed one truncates the description of a merged step.
-    if (join_runtime_filters_were_added)
+    /// The plan-based parallel replicas local plan needs it too, otherwise automatic parallel replicas
+    /// cannot match it with the single-node plan.
+    if (join_runtime_filters_were_added || optimization_settings.parallel_replicas_local_plan_has_join_runtime_filters)
     {
         traverseQueryPlan(stack, root,
             [&](auto & frame_node)
@@ -750,7 +752,10 @@ void optimizeTreeSecondPass(
                 /// coordinated read twice. Classic PR (this same step, with parallel_replicas_local_plan)
                 /// builds a fresh local plan with no filters yet, so it must still add them.
                 if (optimization_settings.enable_parallel_replicas)
+                {
                     local_optimization_settings.enable_join_runtime_filters = false;
+                    local_optimization_settings.parallel_replicas_local_plan_has_join_runtime_filters = join_runtime_filters_were_added;
+                }
             }
 
             auto local_plan = read_from_local->extractQueryPlan();

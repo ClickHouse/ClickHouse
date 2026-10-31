@@ -276,6 +276,10 @@ struct QueryPlanOptimizationSettings
     /// JOIN runtime filter settings
     bool enable_join_runtime_filters = false; /// Filter left side by set of JOIN keys collected from the right side at runtime
     bool enable_join_runtime_filters_index_analysis = false; /// Filter left side using pk/skip indexes
+    /// Plan-based parallel replicas local plan inherited join runtime filters from the outer plan.
+    /// Enables the merge after join conversion. The local plan is optimized separately, so the merge can
+    /// drop QCC keys there; the outer pass re-walk restores them after the local plan is spliced in.
+    bool parallel_replicas_local_plan_has_join_runtime_filters = false;
     UInt64 join_runtime_filter_exact_values_limit = 0;
     UInt64 join_runtime_bloom_filter_bytes = 0;
     UInt64 join_runtime_bloom_filter_hash_functions = 0;
