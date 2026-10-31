@@ -7479,6 +7479,12 @@ Enable collecting hash table statistics to optimize memory allocation
 Enable using collected hash table statistics for cardinality estimation during join reordering
 )", 0, \
         {"26.1", true, true, "New setting. Previously mirrored 'collect_hash_table_stats_during_joins' setting."}) \
+    DECLARE(Bool, query_plan_join_order_equivalence_class_ndv_bound, true, R"(
+When join keys have no NDV statistics, the join order optimizer assumes that the smallest of all tables joined on one key
+holds the unique key, so a join of two larger tables on that key is estimated as many-to-many instead of as a key lookup.
+Needs `enable_join_transitive_predicates`.
+)", 0, \
+        {"26.11", false, true, "New setting."}) \
     DECLARE(UInt64, max_size_to_preallocate_for_joins, 1'000'000'000'000, R"(
 For how many elements it is allowed to preallocate space in all hash tables in total before join
 )", 0, \

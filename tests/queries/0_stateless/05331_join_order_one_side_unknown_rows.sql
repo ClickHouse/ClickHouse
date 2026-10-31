@@ -71,6 +71,117 @@ SELECT replaceOne(explain, currentDatabase() || '.', '') FROM
 )
 WHERE explain LIKE '%Join (%' OR explain LIKE '%ReadFromMergeTree%';
 
+-- With a row estimate for every relation, as on a repeat run once the hash table statistics gave every input a size,
+-- `customer` and `supplier` share the nation key of the 25-row `nation`: joining them on it alone is many-to-many,
+-- so `customer` is joined with `orders` first. https://github.com/ClickHouse/ClickHouse/issues/128094
+SET param__internal_join_table_stat_hints = '{
+    "customer": { "cardinality": 1500000 },
+    "orders":   { "cardinality": 2278186 },
+    "lineitem": { "cardinality": 59986052 },
+    "supplier": { "cardinality": 100000 },
+    "nation":   { "cardinality": 25 },
+    "region":   { "cardinality": 1 }
+}';
+
+SELECT replaceOne(explain, currentDatabase() || '.', '') FROM
+(
+    EXPLAIN
+    SELECT n_name, sum(l_extendedprice * (1 - l_discount)) AS revenue
+    FROM customer, orders, lineitem, supplier, nation, region
+    WHERE c_custkey = o_custkey
+        AND l_orderkey = o_orderkey
+        AND l_suppkey = s_suppkey
+        AND c_nationkey = s_nationkey
+        AND s_nationkey = n_nationkey
+        AND n_regionkey = r_regionkey
+        AND r_name = 'ASIA'
+        AND o_orderdate >= DATE '1994-01-01'
+        AND o_orderdate < DATE '1995-01-01'
+    GROUP BY n_name
+    ORDER BY revenue DESC
+)
+WHERE explain LIKE '%Join (%' OR explain LIKE '%ReadFromMergeTree%';
+
+-- A second key between `customer` and `supplier` that is in no key class (`<=>`) keeps the old estimate of the composite key.
+SELECT replaceOne(explain, currentDatabase() || '.', '') FROM
+(
+    EXPLAIN
+    SELECT n_name, sum(l_extendedprice * (1 - l_discount)) AS revenue
+    FROM customer
+    INNER JOIN orders ON c_custkey = o_custkey
+    INNER JOIN lineitem ON l_orderkey = o_orderkey
+    INNER JOIN supplier ON l_suppkey = s_suppkey AND c_nationkey = s_nationkey AND (c_custkey <=> s_suppkey)
+    INNER JOIN nation ON s_nationkey = n_nationkey
+    INNER JOIN region ON n_regionkey = r_regionkey
+    WHERE r_name = 'ASIA'
+        AND o_orderdate >= DATE '1994-01-01'
+        AND o_orderdate < DATE '1995-01-01'
+    GROUP BY n_name
+    ORDER BY revenue DESC
+)
+WHERE explain LIKE '%Join (%' OR explain LIKE '%ReadFromMergeTree%';
+
+SET query_plan_optimize_join_order_algorithm = 'dpsub';
+
+SELECT replaceOne(explain, currentDatabase() || '.', '') FROM
+(
+    EXPLAIN
+    SELECT n_name, sum(l_extendedprice * (1 - l_discount)) AS revenue
+    FROM customer, orders, lineitem, supplier, nation, region
+    WHERE c_custkey = o_custkey
+        AND l_orderkey = o_orderkey
+        AND l_suppkey = s_suppkey
+        AND c_nationkey = s_nationkey
+        AND s_nationkey = n_nationkey
+        AND n_regionkey = r_regionkey
+        AND r_name = 'ASIA'
+        AND o_orderdate >= DATE '1994-01-01'
+        AND o_orderdate < DATE '1995-01-01'
+    GROUP BY n_name
+    ORDER BY revenue DESC
+)
+WHERE explain LIKE '%Join (%' OR explain LIKE '%ReadFromMergeTree%';
+
+SELECT replaceOne(explain, currentDatabase() || '.', '') FROM
+(
+    EXPLAIN
+    SELECT n_name, sum(l_extendedprice * (1 - l_discount)) AS revenue
+    FROM customer
+    INNER JOIN orders ON c_custkey = o_custkey
+    INNER JOIN lineitem ON l_orderkey = o_orderkey
+    INNER JOIN supplier ON l_suppkey = s_suppkey AND c_nationkey = s_nationkey AND (c_custkey <=> s_suppkey)
+    INNER JOIN nation ON s_nationkey = n_nationkey
+    INNER JOIN region ON n_regionkey = r_regionkey
+    WHERE r_name = 'ASIA'
+        AND o_orderdate >= DATE '1994-01-01'
+        AND o_orderdate < DATE '1995-01-01'
+    GROUP BY n_name
+    ORDER BY revenue DESC
+)
+WHERE explain LIKE '%Join (%' OR explain LIKE '%ReadFromMergeTree%';
+
+-- Without the bound the nation key join is costed as a key lookup and `customer` meets `supplier` before `orders`.
+SET query_plan_join_order_equivalence_class_ndv_bound = 0;
+
+SELECT replaceOne(explain, currentDatabase() || '.', '') FROM
+(
+    EXPLAIN
+    SELECT n_name, sum(l_extendedprice * (1 - l_discount)) AS revenue
+    FROM customer, orders, lineitem, supplier, nation, region
+    WHERE c_custkey = o_custkey
+        AND l_orderkey = o_orderkey
+        AND l_suppkey = s_suppkey
+        AND c_nationkey = s_nationkey
+        AND s_nationkey = n_nationkey
+        AND n_regionkey = r_regionkey
+        AND r_name = 'ASIA'
+        AND o_orderdate >= DATE '1994-01-01'
+        AND o_orderdate < DATE '1995-01-01'
+    GROUP BY n_name
+    ORDER BY revenue DESC
+)
+WHERE explain LIKE '%Join (%' OR explain LIKE '%ReadFromMergeTree%';
+
 DROP TABLE region;
 DROP TABLE nation;
 DROP TABLE supplier;
