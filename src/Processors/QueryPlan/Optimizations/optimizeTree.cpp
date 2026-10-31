@@ -731,8 +731,13 @@ void optimizeTreeSecondPass(
             /// subquery's values, exactly the settings that gate an optimization which can call
             /// `requestReadingInOrder`: `optimizeReadInOrder` (`read_in_order`, `read_in_order_through_join`
             /// and, for a sort with window partitions, `reuse_storage_ordering_for_window_functions`),
-            /// `optimizeAggregationInOrder` (`aggregation_in_order`) and `optimizeDistinctInOrder`
-            /// (`distinct_in_order`). If a new such optimization is added, its gate must be added here too.
+            /// `optimizeAggregationInOrder` (`aggregation_in_order`), `optimizeDistinctInOrder`
+            /// (`distinct_in_order`) and `optimizeLimitByInOrder` (`limit_by_in_order`; it skips parallel
+            /// replicas reads for now, but takes the subquery's value so that this stays correct once it does
+            /// not). Also take `push_limit_by_into_sort`: `pushLimitByIntoSort` does not request reading in
+            /// order, but it decides whether the read opts out of `PrefetchingConcatProcessor`, which should
+            /// follow the same settings as the rest of the read-in-order decision. If a new such optimization
+            /// is added, its gate must be added here too.
             auto local_optimization_settings = optimization_settings;
             if (auto local_context = read_from_local->getContext())
             {
@@ -742,6 +747,8 @@ void optimizeTreeSecondPass(
                 local_optimization_settings.distributed_plan_read_in_order = subquery_optimization_settings.distributed_plan_read_in_order;
                 local_optimization_settings.aggregation_in_order = subquery_optimization_settings.aggregation_in_order;
                 local_optimization_settings.distinct_in_order = subquery_optimization_settings.distinct_in_order;
+                local_optimization_settings.limit_by_in_order = subquery_optimization_settings.limit_by_in_order;
+                local_optimization_settings.push_limit_by_into_sort = subquery_optimization_settings.push_limit_by_into_sort;
                 local_optimization_settings.reuse_storage_ordering_for_window_functions
                     = subquery_optimization_settings.reuse_storage_ordering_for_window_functions;
                 local_optimization_settings.enable_parallel_replicas = false;

@@ -224,6 +224,11 @@ public:
     bool canReadInOrder(const InputOrderInfo & order_info_, bool allow_shorter_read_key = false);
     const InputOrderInfoPtr & getInputOrder() const { return order_info; }
 
+    /// Forwards `ReadFromMergeTree::setPreferMultipleStreams` to the child reading steps of the ordered
+    /// pipeline (not to the build side of a join or the source of a set), so that
+    /// per-stream work installed above a `Merge` table is not serialized by the child reads.
+    void setPreferMultipleStreams();
+
     /// Whether the child plans have been created (`filterTablesAndCreateChildrenPlans`).
     bool hasChildPlans() const { return child_plans.has_value(); }
     /// Drops the child plans, so that they are created again when they are needed next. For a first-pass
