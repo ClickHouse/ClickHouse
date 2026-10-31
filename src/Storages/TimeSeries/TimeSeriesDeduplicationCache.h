@@ -8,6 +8,7 @@
 #include <base/types.h>
 
 #include <chrono>
+#include <functional>
 #include <memory>
 #include <unordered_map>
 #include <vector>
@@ -24,8 +25,10 @@ class Block;
 /// A row with a changed value is written and replaces the remembered one, so the target table gets the changes in their order.
 /// Collapsing the duplicates is the job of the target table's engine (`ReplacingMergeTree` or `AggregatingMergeTree`).
 ///
-/// An entry expires a fixed time after the row was written, hits don't prolong it. So every row is written again at least once
-/// per expiration period, and any difference between the cache and the table disappears within that period.
+/// An entry expires when the expiration period has passed since the row was written, hits don't prolong it. Each entry expires
+/// up to a quarter of the period early by a random offset, so the rows written together aren't all written again at the same moment.
+/// So every row is written again at least once per expiration period, and any difference between the cache and the table
+/// disappears within that period.
 /// When the cache is full, the entries used only once are evicted first, then the least recently used ones (the `SLRU` policy).
 /// The size of the cache is estimated from the number of entries.
 ///
@@ -43,13 +46,25 @@ public:
     /// forgotten and removed from the cache too, so that an older row of such a key isn't skipped when it's written again.
     using PendingRows = std::unordered_map<KeyHash, RowHash, UInt128TrivialHash>;
 
+    using TimePoint = std::chrono::steady_clock::time_point;
+
+    /// The sources of the current time and of the random values, replaceable by tests. Empty functions use the steady clock
+    /// and the thread-local random generator.
+    using Clock = std::function<TimePoint()>;
+    using RandomSource = std::function<UInt64()>;
+
     TimeSeriesDeduplicationCache(
         size_t max_size_bytes_,
         UInt64 expiration_seconds_,
         CurrentMetrics::Metric entries_metric,
         CurrentMetrics::Metric bytes_metric,
         ProfileEvents::Event hits_event_,
-        ProfileEvents::Event misses_event_);
+        ProfileEvents::Event misses_event_,
+        Clock clock_ = {},
+        RandomSource random_source_ = {});
+
+    /// The number of seconds an entry expires early, chosen from `random_value`: at most a quarter of `expiration_seconds`.
+    static UInt64 expirationOffsetSeconds(UInt64 expiration_seconds, UInt64 random_value);
 
     /// Returns `block` without the rows already written by earlier inserts (found in the cache) and without the rows pending
     /// in the same insert (found in `pending_rows`). A row is identified by the column `key_column_index` and counts as the same
@@ -63,13 +78,12 @@ public:
     void markRowsAsWritten(PendingRows && pending_rows);
 
 private:
-    using TimePoint = std::chrono::steady_clock::time_point;
-
-    /// The latest row written for a key.
+    /// The latest row written for a key. `lifetime_seconds` is the expiration period shortened by the random offset of the entry.
     struct WrittenRow
     {
         RowHash row_hash{};
         TimePoint written_at{};
+        UInt64 lifetime_seconds{};
     };
 
     struct WrittenRowWeight
@@ -124,14 +138,19 @@ private:
         PendingRows & pending_rows,
         const PaddedPODArray<UInt8> & filter);
 
-    /// Whether `expiration_seconds` have passed since `written_row` was written: such an entry doesn't make a row a duplicate.
+    /// Whether the lifetime of `written_row` has passed since it was written: such an entry doesn't make a row a duplicate.
     bool isExpired(const WrittenRow & written_row, TimePoint now) const;
+
+    TimePoint currentTime() const;
+    UInt64 randomValue() const;
 
     Cache cache;
     const UInt64 expiration_seconds;
     const size_t max_pending_rows;
     const ProfileEvents::Event hits_event;
     const ProfileEvents::Event misses_event;
+    const Clock clock;
+    const RandomSource random_source;
 };
 
 using TimeSeriesDeduplicationCachePtr = std::shared_ptr<TimeSeriesDeduplicationCache>;

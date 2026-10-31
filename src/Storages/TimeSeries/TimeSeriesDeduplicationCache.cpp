@@ -4,6 +4,7 @@
 #include <Columns/IColumn.h>
 #include <Common/PODArray.h>
 #include <Common/SipHash.h>
+#include <Common/thread_local_rng.h>
 #include <Core/Block.h>
 
 
@@ -34,13 +35,35 @@ TimeSeriesDeduplicationCache::TimeSeriesDeduplicationCache(
     CurrentMetrics::Metric entries_metric,
     CurrentMetrics::Metric bytes_metric,
     ProfileEvents::Event hits_event_,
-    ProfileEvents::Event misses_event_)
+    ProfileEvents::Event misses_event_,
+    Clock clock_,
+    RandomSource random_source_)
     : cache(bytes_metric, entries_metric, max_size_bytes_)
     , expiration_seconds(expiration_seconds_)
     , max_pending_rows(max_size_bytes_ / APPROXIMATE_ENTRY_SIZE)
     , hits_event(hits_event_)
     , misses_event(misses_event_)
+    , clock(std::move(clock_))
+    , random_source(std::move(random_source_))
 {
+}
+
+UInt64 TimeSeriesDeduplicationCache::expirationOffsetSeconds(UInt64 expiration_seconds, UInt64 random_value)
+{
+    UInt64 max_offset_seconds = expiration_seconds / 4;
+    if (!max_offset_seconds)
+        return 0;
+    return random_value % (max_offset_seconds + 1);
+}
+
+TimeSeriesDeduplicationCache::TimePoint TimeSeriesDeduplicationCache::currentTime() const
+{
+    return clock ? clock() : std::chrono::steady_clock::now();
+}
+
+UInt64 TimeSeriesDeduplicationCache::randomValue() const
+{
+    return random_source ? random_source() : thread_local_rng();
 }
 
 Block TimeSeriesDeduplicationCache::filterOutWrittenRows(
@@ -110,7 +133,7 @@ size_t TimeSeriesDeduplicationCache::excludeDuplicateRowsFromFilter(
     const HashedRows & hashed_rows, const WrittenRows & written_rows, PaddedPODArray<UInt8> & filter, PendingRows & pending_rows) const
 {
     size_t num_excluded_rows = 0;
-    auto now = std::chrono::steady_clock::now();
+    auto now = currentTime();
 
     for (size_t i = 0; i != hashed_rows.size(); ++i)
     {
@@ -172,7 +195,7 @@ bool TimeSeriesDeduplicationCache::isExpired(const WrittenRow & written_row, Tim
 {
     /// The elapsed time is compared in seconds, so that any value of the setting fits without overflow.
     auto elapsed_seconds = std::chrono::duration_cast<std::chrono::seconds>(now - written_row.written_at).count();
-    return (elapsed_seconds >= 0) && (static_cast<UInt64>(elapsed_seconds) >= expiration_seconds);
+    return (elapsed_seconds >= 0) && (static_cast<UInt64>(elapsed_seconds) >= written_row.lifetime_seconds);
 }
 
 void TimeSeriesDeduplicationCache::markRowsAsWritten(PendingRows && pending_rows_)
@@ -181,10 +204,12 @@ void TimeSeriesDeduplicationCache::markRowsAsWritten(PendingRows && pending_rows
 
     /// A row already in the cache is replaced: either its values have changed, or a concurrent insert has just written the same
     /// row, and then the time of writing is correct anyway.
-    auto now = std::chrono::steady_clock::now();
+    /// The lifetime of each row is shortened by its own random offset, so the rows written together don't expire together.
+    auto now = currentTime();
     for (const auto & [key_hash, row_hash] : pending_rows)
     {
-        WrittenRow written_row{.row_hash = row_hash, .written_at = now};
+        UInt64 lifetime_seconds = expiration_seconds - expirationOffsetSeconds(expiration_seconds, randomValue());
+        WrittenRow written_row{.row_hash = row_hash, .written_at = now, .lifetime_seconds = lifetime_seconds};
         cache.set(key_hash, std::make_shared<WrittenRow>(written_row));
     }
 }

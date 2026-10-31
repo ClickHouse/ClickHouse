@@ -46,7 +46,7 @@ SELECT count() FROM timeSeriesMetricFamilies({CLICKHOUSE_DATABASE:Identifier}.ts
 
 SELECT '--- the least recently used entry is evicted when the cache is full, a used entry survives ---';
 SYSTEM CLEAR TIME SERIES CACHES ts;
-ALTER TABLE ts MODIFY SETTING metric_families_deduplication_cache_size_bytes = 432; -- three entries of about 144 bytes, see APPROXIMATE_ENTRY_SIZE in TimeSeriesDeduplicationCache.h
+ALTER TABLE ts MODIFY SETTING metric_families_deduplication_cache_size_bytes = 456; -- three entries of about 152 bytes, see APPROXIMATE_ENTRY_SIZE in TimeSeriesDeduplicationCache.h
 INSERT INTO ts (metric_family, type, unit, help) VALUES ('e1', 'gauge', '', '');
 INSERT INTO ts (metric_family, type, unit, help) VALUES ('e2', 'gauge', '', '');
 INSERT INTO ts (metric_family, type, unit, help) VALUES ('e3', 'gauge', '', '');
