@@ -1838,3 +1838,50 @@ def test_s3_brace_alternative_outside_prefix_rejected():
     for pattern in ["{/private/secret.csv,missing}", "{../secret,missing}.csv"]:
         err = node_s3.query_and_get_error(f"SELECT * FROM file('{pattern}', 'CSV', 'x String')")
         assert "DATABASE_ACCESS_DENIED" in err, err
+
+
+def test_local_embedded_rocksdb_truncate_rechecks_retargeted_symlink():
+    """An explicit `EmbeddedRocksDB` path is checked at `CREATE TABLE`, but a symlink on the way
+    may be retargeted outside the disk root afterwards: `TRUNCATE TABLE` deletes the directory
+    recursively, so it checks the path again and leaves the files outside intact."""
+    node_local.exec_in_container(
+        [
+            "bash",
+            "-c",
+            "rm -rf /test_user_files_disk1/rocksdb_safe /test_user_files_disk1/rocksdb_live /tmp/rocksdb_outside && "
+            "mkdir -p /test_user_files_disk1/rocksdb_safe /tmp/rocksdb_outside/db && "
+            "chown -R clickhouse:clickhouse /tmp/rocksdb_outside 2>/dev/null; "
+            "echo keep > /tmp/rocksdb_outside/db/keep.txt && "
+            "ln -snf /test_user_files_disk1/rocksdb_safe /test_user_files_disk1/rocksdb_live",
+        ]
+    )
+    try:
+        node_local.query(
+            "CREATE TABLE rocksdb_retarget (k UInt64, v String) "
+            "ENGINE = EmbeddedRocksDB(0, 'rocksdb_live/db') PRIMARY KEY(k)"
+        )
+        node_local.query("INSERT INTO rocksdb_retarget VALUES (1, 'a')")
+        node_local.exec_in_container(
+            [
+                "bash",
+                "-c",
+                "ln -snf /tmp/rocksdb_outside /test_user_files_disk1/rocksdb_live",
+            ]
+        )
+        err = node_local.query_and_get_error("TRUNCATE TABLE rocksdb_retarget")
+        assert "Path must be inside user-files path" in err, err
+        assert (
+            node_local.exec_in_container(
+                ["bash", "-c", "cat /tmp/rocksdb_outside/db/keep.txt"]
+            ).strip()
+            == "keep"
+        )
+    finally:
+        node_local.query("DROP TABLE IF EXISTS rocksdb_retarget SYNC")
+        node_local.exec_in_container(
+            [
+                "bash",
+                "-c",
+                "rm -rf /test_user_files_disk1/rocksdb_safe /test_user_files_disk1/rocksdb_live /tmp/rocksdb_outside",
+            ]
+        )

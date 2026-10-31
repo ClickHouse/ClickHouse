@@ -365,6 +365,13 @@ void StorageEmbeddedRocksDB::truncate(const ASTPtr &, const StorageMetadataPtr &
     /// rocksdb_dir may differ from the metadata path, which is what a reload opens.
     throwIfHandleUnusable();
 
+    /// The fence was checked against the resolved target at creation, but a symlink on the way may
+    /// have been retargeted since then. Check it again before deleting the directory recursively,
+    /// so that an explicit path never removes anything outside the user files directory.
+    if (!implicit_path && getContext()->getApplicationType() != Context::ApplicationType::LOCAL
+        && !getContext()->isUserFilesPath(rocksdb_dir))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Path must be inside user-files path");
+
     /// rocksdb_ptr may already be null if a previous truncate() emptied the directory and
     /// the following initDB() threw (e.g. a read_only table whose data was wiped).
     if (rocksdb_ptr)
