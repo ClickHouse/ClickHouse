@@ -2384,9 +2384,12 @@ using StopReplicatedDDLQueriesFlag = std::pair<String, String>;
 
 /// Flags that `SYSTEM STOP REPLICATED DDL QUERIES` has created, with the Keeper sessions that created them.
 /// `START` removes all of them, even if their `Replicated` databases were detached or dropped in the meantime.
-/// The flags are ephemeral, so a flag exists only while its session is alive. The session is referenced weakly:
-/// if it is gone (e.g. its auxiliary Keeper was removed from the configuration), the flag is gone as well,
-/// and `START` does not need to resolve the Keeper name, which may be no longer configured.
+/// If the Keeper is still configured, `START` removes the flag through the current session: the expiration of the
+/// creating session on the client does not prove that Keeper has already removed its ephemeral nodes (e.g. after
+/// a broken connection they remain until the session timeout on the server), and the remaining flag would make
+/// the DDL queries fail after the database is attached again. The session is referenced weakly only for the Keepers
+/// that were removed from the configuration: their names cannot be resolved anymore, no database can be attached
+/// to them, and the flag is removed with the creating session if it is still alive.
 std::map<StopReplicatedDDLQueriesFlag, std::weak_ptr<zkutil::ZooKeeper>> created_stop_flags TSA_GUARDED_BY(replicated_ddl_queries_mutex);
 
 /// Flags for all `Replicated` databases: their initial DDL entries check the flag in their replica path.
@@ -2448,11 +2451,17 @@ void InterpreterSystemQuery::startReplicatedDDLQueries()
         created_stop_flags.erase(flag);
     }
 
-    /// The flags of the detached or dropped databases are removed with the sessions that created them, if they are still alive.
+    /// The flags of the detached or dropped databases.
     for (auto it = created_stop_flags.begin(); it != created_stop_flags.end();)
     {
-        if (auto zookeeper = it->second.lock(); zookeeper && !zookeeper->expired())
-            remove_flag(*zookeeper, it->first.second);
+        const auto & [zookeeper_name, path] = it->first;
+        bool is_keeper_configured = zookeeper_name == zkutil::DEFAULT_ZOOKEEPER_NAME
+            ? getContext()->hasZooKeeper()
+            : getContext()->hasAuxiliaryZooKeeper(zookeeper_name);
+        if (is_keeper_configured)
+            remove_flag(*getContext()->getDefaultOrAuxiliaryZooKeeper(zookeeper_name), path);
+        else if (auto zookeeper = it->second.lock(); zookeeper && !zookeeper->expired())
+            remove_flag(*zookeeper, path);
         it = created_stop_flags.erase(it);
     }
 
