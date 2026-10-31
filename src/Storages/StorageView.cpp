@@ -1,7 +1,10 @@
+
 #include <Access/DefinerDependencies.h>
 #include <DataTypes/DataTypeString.h>
 #include <Interpreters/Context_fwd.h>
+#include <Interpreters/Cache/QueryResultCache.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
+#include <Interpreters/InterpreterSetQuery.h>
 #include <Interpreters/formatWithPossiblyHidingSecrets.h>
 #include <Access/ContextAccess.h>
 #include <Interpreters/NormalizeSelectWithUnionQueryVisitor.h>
@@ -25,6 +28,8 @@
 #include <Storages/SelectQueryDescription.h>
 
 #include <Common/CurrentThread.h>
+#include <Common/SipHash.h>
+#include <Common/scope_guard_safe.h>
 #include <IO/WriteBufferFromString.h>
 
 #include <ranges>
@@ -820,6 +825,98 @@ void StorageView::alter(
         instance.removeDependencies(table_id);
 
     setInMemoryMetadata(new_metadata);
+}
+
+std::optional<UInt128> StorageView::getModificationHash(const StorageSnapshotPtr & storage_snapshot, ContextPtr query_context) const
+{
+    static constexpr size_t max_view_nesting_depth = 32;
+    static thread_local std::unordered_set<const IStorage *> views_being_hashed;
+    if (views_being_hashed.size() >= max_view_nesting_depth)
+        return {};
+    if (!views_being_hashed.insert(this).second)
+        return {};
+    SCOPE_EXIT({ views_being_hashed.erase(this); });
+
+    /// A parameterized view is not readable without its parameters, so it has no stable dependency set.
+    if (is_parameterized_view)
+        return {};
+
+    /// An `Ordinary`-database view has no incarnation-safe identity.
+    if (!getStorageID().hasUUID())
+        return {};
+
+    /// `system.tables.modification_hash` introspection requires only `SELECT` on the row's table, so it
+    /// must not observe, through this view's effective context, the churn of sources the caller cannot
+    /// read. The wrapper engines (`Merge`, the local shard of `Distributed`) reach this view from a row
+    /// whose own storage is not a view, so the fail-close lives here rather than in the caller.
+    if (isModificationHashIntrospection()
+        && storage_snapshot->metadata->sql_security_type
+        && *storage_snapshot->metadata->sql_security_type != SQLSecurityType::INVOKER)
+        return {};
+
+    try
+    {
+        const auto & inner_query = storage_snapshot->metadata->getSelectQuery().inner_query;
+        if (!inner_query)
+            return {};
+
+        /// Hash dependencies under the same context that executes the view query: the SQL-security
+        /// overridden context, normalized exactly like the read path normalizes it (`getViewContext`).
+        /// Hashing the raw overridden context instead would fold in settings the view never runs with.
+        /// The stored query's own `SETTINGS` apply on top of it when the view is read, so hash under them as well:
+        /// a profile value that the stored query overrides does not change a row, and a source view reached
+        /// from here reads under these settings too. `RefreshTask` hashes the sources of a refresh the same way.
+        /// `view_context` is kept alive: under `SQL SECURITY DEFINER` / `NONE` it can be the query context of the copy.
+        const auto view_context = getViewContext(query_context, storage_snapshot, this);
+        auto effective_context = Context::createCopy(view_context);
+        InterpreterSetQuery::applySettingsFromQuery(inner_query->clone(), effective_context);
+
+        /// An `additional_table_filters` entry keyed by the view itself applies to the rows it returns: the
+        /// planner folds it into the `WHERE` of the query that reads the view. Under `SQL SECURITY DEFINER`
+        /// / `NONE` such an entry can come from the effective reader's profile rather than from the
+        /// caller's settings, so it is not covered by the caller's own cache key. Treat the view's own
+        /// names as matchable, so that both the entry and the tables its filter reads are hashed.
+        /// The bare name matches only when this view is in the current database of the reading query.
+        const NameSet own_names = getNamesMatchableByAdditionalTableFilters(getStorageID(), query_context);
+
+        auto referenced_tables_hash = computeQueryReferencedTablesModificationHash(inner_query, effective_context, &own_names);
+        if (!referenced_tables_hash)
+            return {};
+
+        SipHash hash;
+        hash.update(getStorageID().uuid);
+        hash.update(storage_snapshot->metadata->getColumns().toString(/*include_comments=*/ false));
+        /// `getMetadataVersionForModificationHash` is deliberately not folded: every input that determines
+        /// the rows of a view (its columns, stored query, effective security and settings, and the loop-free
+        /// hashes of the tables it reads) is folded directly, so a definition that returns to an earlier
+        /// state returns the same rows and may repeat the earlier hash. Folding the version would instead
+        /// move the hash on an `ALTER TABLE ... MODIFY QUERY` that only changes operational `SETTINGS` of
+        /// the stored query, which the normalization below leaves out on purpose.
+        /// Canonicalized, so that a semantic no-op such as spelling out the default `SQL SECURITY
+        /// INVOKER` on a legacy view, or a `MODIFY DEFINER` under `INVOKER` / `NONE`, does not move
+        /// the hash: `getSQLSecurityOverriddenContext` reads neither.
+        updateHashWithEffectiveSQLSecurity(hash, *storage_snapshot->metadata);
+        /// The effective reader's settings can change the rows this view returns (for example,
+        /// a definer's read limits), so a settings-profile update must invalidate consistency users.
+        /// Purely operational settings are left out: a definer's profile carries them without
+        /// changing a single row.
+        /// An `additional_table_filters` entry keyed by neither the view nor a table it reads is left out.
+        auto additional_table_filters_matchable_names = collectNamesMatchableByAdditionalTableFilters(inner_query, effective_context, &own_names);
+        updateHashWithRowAffectingSettings(
+            hash,
+            effective_context->getSettingsRef(),
+            additional_table_filters_matchable_names ? &*additional_table_filters_matchable_names : nullptr);
+        /// The operational entries of the stored query's own `SETTINGS` are left out as well.
+        updateHashWithQueryIgnoringOperationalSettings(
+            hash, *inner_query, additional_table_filters_matchable_names ? &*additional_table_filters_matchable_names : nullptr);
+        hash.update(*referenced_tables_hash);
+        return hash.get128();
+    }
+    catch (...)
+    {
+        /// Ok to fail closed: if a dependency cannot be inspected, cached data must not be reused.
+        return {};
+    }
 }
 
 static ASTTableExpression * getFirstTableExpression(ASTSelectQuery & select_query)

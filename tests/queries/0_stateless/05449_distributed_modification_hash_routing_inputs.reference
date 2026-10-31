@@ -1,0 +1,4 @@
+non-deterministic key, not used	1
+non-deterministic key, used for routing	1
+both known	2
+local shard probed over TCP	1

@@ -1,5 +1,6 @@
 #include <Storages/IStorage.h>
 
+#include <Access/ContextAccess.h>
 #include <Disks/IStoragePolicy.h>
 #include <Common/CurrentThread.h>
 #include <Common/StringUtils.h>
@@ -7,6 +8,7 @@
 #include <Core/Settings.h>
 #include <IO/Operators.h>
 #include <IO/WriteBufferFromString.h>
+#include <Interpreters/Cache/QueryResultCache.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/InterpreterSelectQuery.h>
@@ -509,6 +511,91 @@ std::string FilterDAGInfo::dump() const
     ss << "actions " << actions.dumpDAG() << "\n";
 
     return ss.str();
+}
+
+std::optional<UInt128> getModificationHashWithRefreshedMetadata(const StoragePtr & storage, const ContextPtr & context)
+{
+    if (!storage)
+        return {};
+
+    /// The same call the interpreter makes before analysis, so that the hash taken here agrees with the
+    /// one taken after a read has already triggered the lazy update. It may perform credentialed I/O (an
+    /// object listing), so every caller must have checked the user's access to the table first.
+    auto metadata_before_refresh = storage->getInMemoryMetadataPtr(context, false);
+    try
+    {
+        storage->updateExternalDynamicMetadataIfExists(context);
+    }
+    catch (...)
+    {
+        /// Ok to ignore: the metadata update failed, so we cannot tell whether the table changed and
+        /// conservatively bail out.
+        return {};
+    }
+
+    auto metadata = storage->getInMemoryMetadataPtr(context, false);
+
+    /// The callers check access with `canComputeModificationHash` against the metadata before the refresh,
+    /// but a schema-lazy storage (`Iceberg`, `Paimon`, `DeltaLake`, ...) can discover new columns during
+    /// it. Inside a `ModificationHashIntrospectionScope` the user must be able to read every column the
+    /// hash covers, so check the refreshed columns again. Outside of it, `SELECT` on any one column is
+    /// enough, and new columns cannot take that away.
+    if (isModificationHashIntrospection() && metadata->getColumns() != metadata_before_refresh->getColumns())
+    {
+        const auto storage_id = storage->getStorageID();
+        if (!canComputeModificationHash(context, storage_id.database_name, storage_id.table_name, metadata->getColumns()))
+            return {};
+    }
+
+    /// A column expression evaluated by the read can change the rows without changing the table. Checked
+    /// here rather than by each consumer, so that every probe - the query cache, the local and remote shards
+    /// of `Distributed` (through `system.tables.modification_hash`) - applies it.
+    if (columnExpressionsMayChangeWithoutTable(storage, *metadata, context))
+        return {};
+
+    auto snapshot = storage->getStorageSnapshotWithoutData(metadata, context);
+    return storage->getModificationHash(snapshot, context);
+}
+
+namespace
+{
+
+thread_local bool modification_hash_introspection = false;
+
+}
+
+ModificationHashIntrospectionScope::ModificationHashIntrospectionScope()
+    : previous(modification_hash_introspection)
+{
+    modification_hash_introspection = true;
+}
+
+ModificationHashIntrospectionScope::~ModificationHashIntrospectionScope()
+{
+    modification_hash_introspection = previous;
+}
+
+bool isModificationHashIntrospection()
+{
+    return modification_hash_introspection;
+}
+
+bool canComputeModificationHash(const ContextPtr & context, const String & database, const String & table, const ColumnsDescription & columns)
+{
+    const auto access = context->getAccess();
+    if (access->isGranted(AccessType::SELECT, database, table))
+        return true;
+
+    bool any_granted = false;
+    bool all_granted = true;
+    for (const auto & column : columns)
+    {
+        if (access->isGranted(AccessType::SELECT, database, table, column.name))
+            any_granted = true;
+        else
+            all_granted = false;
+    }
+    return isModificationHashIntrospection() ? any_granted && all_granted : any_granted;
 }
 
 }

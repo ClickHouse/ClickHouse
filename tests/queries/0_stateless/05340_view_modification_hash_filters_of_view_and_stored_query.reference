@@ -1,0 +1,5 @@
+a filter keyed by the view changes its hash: yes
+a table read by a filter keyed by the view changes its hash: yes
+a table read by a filter of the stored query changes its hash: yes
+2
+3

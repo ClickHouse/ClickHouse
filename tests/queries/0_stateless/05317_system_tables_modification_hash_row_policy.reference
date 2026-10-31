@@ -1,0 +1,7 @@
+no policy	d_05317	1
+no policy	t_05317	1
+filtering policy	d_05317	0
+filtering policy	t_05317	0
+visible rows	1
+always true policy	d_05317	1
+always true policy	t_05317	1

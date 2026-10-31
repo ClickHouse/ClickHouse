@@ -1,0 +1,6 @@
+2	qc_04843_implicit
+2	qc_04843_implicit
+query with implicit_transaction not stored	1
+implicit_transaction queries did not touch the cache	1
+2	qc_04843_control
+control query stored	1

@@ -1,0 +1,4 @@
+without parallel replicas	0
+local replicas	0
+remote replica	1
+unknown cluster	1

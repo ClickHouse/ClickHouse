@@ -1,0 +1,5 @@
+hash is computed
+max_result_rows in the definer profile changes the hash
+max_result_bytes in the definer profile changes the hash
+the hash is back after the limits are dropped
+a definer result limit invalidates the watermark: yes

@@ -11,6 +11,7 @@
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/PartitionCommands.h>
 #include <Common/CurrentThread.h>
+#include <Common/SipHash.h>
 #include <Common/ThreadGroupSwitcher.h>
 #include <Common/ThreadPool.h>
 #include <Common/setThreadName.h>
@@ -71,6 +72,7 @@
 #include <IO/WriteHelpers.h>
 #include <Interpreters/Aggregator.h>
 #include <Interpreters/Cache/QueryConditionCache.h>
+#include <Interpreters/Cluster.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/DDLTask.h>
@@ -277,6 +279,8 @@ namespace DB
 namespace Setting
 {
     extern const SettingsBool allow_drop_detached;
+    extern const SettingsUInt64 allow_experimental_parallel_reading_from_replicas;
+    extern const SettingsString cluster_for_parallel_replicas;
     extern const SettingsBool enable_full_text_index;
     extern const SettingsBool allow_non_metadata_alters;
     extern const SettingsBool allow_suspicious_indexes;
@@ -3757,7 +3761,8 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks, std::optional<std::un
                 = !is_static_storage && !is_table_readonly && !p->isStoredOnReadonlyDisk();
             unique_key_dense_index_ops->ensureValidDenseIndex(p, part_storage_is_writable);
             if (const auto bytes_on_disk_after = p->getBytesOnDisk(); bytes_on_disk_after != bytes_on_disk_before)
-                increaseDataVolume(static_cast<ssize_t>(bytes_on_disk_after - bytes_on_disk_before), 0, 0);
+                increaseDataVolume(
+                    static_cast<ssize_t>(bytes_on_disk_after - bytes_on_disk_before), 0, 0, /* membership_changes= */ 0);
         }
         catch (...)
         {
@@ -9462,7 +9467,9 @@ void MergeTreeData::swapActivePart(MergeTreeData::DataPartPtr part_copy, DataPar
 
             ssize_t diff_bytes = part_copy->getBytesOnDisk() - original_active_part->getBytesOnDisk();
             ssize_t diff_rows = part_copy->rows_count - original_active_part->rows_count;
-            increaseDataVolume(diff_bytes, diff_rows, /* parts= */ 0);
+            /// The part is swapped for its byte-identical copy on another disk (same name, same
+            /// checksums), so the table's data state is unchanged and the loop-free version must not move.
+            increaseDataVolume(diff_bytes, diff_rows, /* parts= */ 0, /* membership_changes= */ 0);
 
             return;
         }
@@ -13079,7 +13086,10 @@ MergeTreeData::DataPartsVector MergeTreeData::Transaction::commit(DataPartsLock 
             ssize_t diff_bytes = add_bytes - reduce_bytes;
             ssize_t diff_rows = add_rows - reduce_rows;
             ssize_t diff_parts  = add_parts - reduce_parts;
-            data.increaseDataVolume(diff_bytes, diff_rows, diff_parts);
+            /// The loop-free version must see every membership change, not the net delta: a count-neutral
+            /// commit (e.g. `REPLACE PARTITION FROM` swapping one part for one part) has `diff_parts == 0`
+            /// but does change the active-part set.
+            data.increaseDataVolume(diff_bytes, diff_rows, diff_parts, add_parts + reduce_parts);
         });
     }
     clear();
@@ -14965,19 +14975,29 @@ size_t MergeTreeData::getTotalMergesWithTTLInMergeList() const
 
 void MergeTreeData::addPartContributionToDataVolume(const DataPartPtr & part)
 {
-    increaseDataVolume(part->getBytesOnDisk(), part->rows_count, 1);
+    increaseDataVolume(part->getBytesOnDisk(), part->rows_count, 1, /* membership_changes= */ 1);
 }
 
 void MergeTreeData::removePartContributionToDataVolume(const DataPartPtr & part)
 {
-    increaseDataVolume(-part->getBytesOnDisk(), -part->rows_count, -1);
+    increaseDataVolume(-part->getBytesOnDisk(), -part->rows_count, -1, /* membership_changes= */ 1);
 }
 
-void MergeTreeData::increaseDataVolume(ssize_t bytes, ssize_t rows, ssize_t parts)
+void MergeTreeData::increaseDataVolume(ssize_t bytes, ssize_t rows, ssize_t parts, size_t membership_changes)
 {
     total_active_size_bytes.fetch_add(bytes);
     total_active_size_rows.fetch_add(rows);
     total_active_size_parts.fetch_add(parts);
+
+    /// Every change to the membership of the active-part set advances the loop-free version folded into
+    /// `getModificationHash` (see the field declaration). `membership_changes` is the number of parts
+    /// added to plus removed from the active set, NOT the net `parts` delta: a count-neutral batch (e.g.
+    /// `REPLACE PARTITION FROM` swapping one part for one part) changes the set and must bump the
+    /// version even though `parts == 0`. Conversely, size-only updates (an in-place byte/row adjustment,
+    /// or a part swapped for its byte-identical copy on another disk) pass 0 and must not bump it,
+    /// otherwise every such update would needlessly invalidate the query cache for the table.
+    if (membership_changes != 0)
+        active_parts_set_version.fetch_add(membership_changes);
 }
 
 void MergeTreeData::setDataVolume(size_t bytes, size_t rows, size_t parts)
@@ -15476,6 +15496,175 @@ MergeTreeData::getStorageSnapshotWithoutData(const StorageMetadataPtr & metadata
     return createStorageSnapshot(metadata_snapshot, query_context, true);
 }
 
+/// With parallel replicas, `PlannerJoinTree` can replace a direct read of the table with a read through the servers of
+/// `cluster_for_parallel_replicas`, which read their own parts (or only a remote replica reads, e.g. with
+/// `parallel_replicas_prefer_local_replica = 0`). The modification hash covers only the local parts, so it cannot tell
+/// whether such a read has changed unless every replica of the cluster is this server.
+static bool mayReadThroughRemoteParallelReplicas(const ContextPtr & context)
+{
+    const auto & settings = context->getSettingsRef();
+    if (!settings[Setting::allow_experimental_parallel_reading_from_replicas])
+        return false;
+
+    const String & cluster_name = settings[Setting::cluster_for_parallel_replicas].value;
+    if (cluster_name.empty())
+        return false;
+
+    /// A cluster that does not exist makes the read fail on its own, but the hash should not claim anything about it.
+    auto cluster = context->tryGetCluster(cluster_name);
+    if (!cluster)
+        return true;
+
+    for (const auto & shard_addresses : cluster->getShardsAddresses())
+        for (const auto & address : shard_addresses)
+            if (!address.is_local)
+                return true;
+
+    return false;
+}
+
+std::optional<UInt128> MergeTreeData::getModificationHash(const StorageSnapshotPtr & storage_snapshot, ContextPtr query_context) const
+{
+    /// Without a table UUID (e.g. a table in an `Ordinary` database) we cannot distinguish incarnations of
+    /// a same-named table: a DROP + CREATE can keep identical parts and checksums while changing
+    /// query-visible semantics (e.g. switching the engine to `ReplacingMergeTree` or changing its
+    /// version column), and block numbers also restart. The part checksums alone do not capture that, so
+    /// fail closed.
+    if (!getStorageID().hasUUID())
+        return {};
+
+    /// A `UNIQUE KEY` table reads the parts visible at its internal snapshot (`makeDeleteBitmapSnapshot`),
+    /// not every active one: an inserted part is active before its transaction commits, and the commit
+    /// only stamps CSNs, which changes neither the active-part set, the checksums, nor
+    /// `active_parts_set_version`. A result read before the commit would then keep the same hash after it,
+    /// although the rows it shows have changed. Fail closed until the hash tracks committed visibility.
+    if (storage_snapshot->metadata->hasUniqueKey())
+        return {};
+
+    if (mayReadThroughRemoteParallelReplicas(query_context))
+        return {};
+
+    SipHash hash;
+
+    /// Table identity: the UUID distinguishes different incarnations of a table with the same name.
+    /// Block numbers restart from scratch after DROP + CREATE, so without this a recreated table could
+    /// produce the same hash for different data.
+    hash.update(getStorageID().uuid);
+
+    /// Structure version: column definitions (names, types, and DEFAULT/MATERIALIZED/ALIAS expressions)
+    /// affect query results without creating a mutation, e.g. ADD COLUMN with a DEFAULT or changing an
+    /// ALIAS expression.
+    hash.update(storage_snapshot->metadata->getColumns().toString(/*include_comments=*/ false));
+
+    /// Key metadata is not part of the column list but can change query-visible results without
+    /// rewriting any parts, so fold each key's expression:
+    ///   - the sorting key is the deduplication/aggregation key of the ReplacingMergeTree /
+    ///     SummingMergeTree / CollapsingMergeTree / ... family, so `ALTER ... MODIFY ORDER BY` changes
+    ///     `FINAL` (and implicit-final) results;
+    ///   - the sampling key changes which rows a `SAMPLE` query returns;
+    ///   - the partition and primary keys are folded for completeness (at worst an unrelated metadata
+    ///     `ALTER` causes a harmless extra cache miss).
+    /// Secondary indices, projections and table settings only affect performance, not the result of a
+    /// query over the same parts, so they are intentionally not folded.
+    const auto & table_metadata = *storage_snapshot->metadata;
+    for (const auto & key_ast : {table_metadata.getPartitionKeyAST(), table_metadata.getSortingKeyAST(),
+                                 table_metadata.getPrimaryKeyAST(), table_metadata.getSamplingKeyAST()})
+    {
+        if (key_ast)
+            hash.update(key_ast->formatWithSecretsOneLine());
+    }
+
+    /// Loop-free version. The active-part set hashed below repeats under an `A -> B -> A` transition: a
+    /// table at parts `{p1}` that accepts an insert (`{p1, p2}`) and then `DROP PART`s `p2` returns to an
+    /// identical `{p1}` with the same part info and checksums. Folding a per-lifetime counter that advances
+    /// on every active-part-set change (the insert and the drop each bump it) makes such a round trip
+    /// produce a different hash, so the query-cache / `REFRESH ... IF CHANGED` pre/post equality checks
+    /// cannot mistake "changed and changed back" for "never changed" and store a result that was actually
+    /// read from the transient state `B`. Sampled live here, which is exactly what those checks need (they
+    /// hash before and after the read): equal hashes then mean no active-part-set change happened in
+    /// between. See `active_parts_set_version`.
+    hash.update(active_parts_set_version.load());
+
+    /// Same loop-free guard for metadata: the column/key strings folded above repeat under a metadata
+    /// `A -> B -> A` transition (e.g. `ALTER ... MODIFY COLUMN ... ALIAS ...` then back), and the
+    /// active-part counter would not move because no part changes. The metadata version advances on every
+    /// metadata application, so the round trip yields a different hash. See
+    /// `IStorage::getMetadataVersionForModificationHash`.
+    hash.update(getMetadataVersionForModificationHash());
+
+    /// Data version: the set of active data parts. Each part is uniquely identified within a table
+    /// incarnation by its (partition_id, min_block, max_block, level, mutation), which changes on every
+    /// insert, merge (level/blocks change) and mutation (mutation version changes). For engines that
+    /// rewrite data on merges (Replacing, Collapsing, ...) this is exactly the "block ranges of data parts".
+    auto add_part = [&](const IMergeTreeDataPart & part)
+    {
+        const auto & info = part.info;
+        hash.update(info.getPartitionId());
+        hash.update(info.min_block);
+        hash.update(info.max_block);
+        hash.update(info.level);
+        hash.update(info.mutation);
+
+        /// Fold the part's content checksum. The part-info tuple alone can repeat for different contents
+        /// within a single table incarnation: e.g. `DETACH PART '201901_2_2_0'` then `ATTACH PART
+        /// '201901_2_2_0' FROM '<dir>'` (or `FETCH PART`) brings back the same (partition_id, min_block,
+        /// max_block, level, mutation) with different data. The total checksum is computed in memory from
+        /// the part's file checksums (no I/O), so different contents yield a different hash.
+        const auto checksum = part.checksums.getTotalChecksumUInt128();
+        hash.update(checksum.low64);
+        hash.update(checksum.high64);
+    };
+
+    const auto * snapshot_data = dynamic_cast<const SnapshotData *>(storage_snapshot->data.get());
+
+    /// On-the-fly mutations (unmaterialized ALTER UPDATE/DELETE applied during reads when
+    /// `apply_mutations_on_fly` is set) change query-visible rows without changing the active parts that
+    /// are hashed below. We cannot represent them cheaply here, so fail closed (return nullopt) while any
+    /// such mutation is pending. Once it materializes into parts, the part info (mutation version) reflects
+    /// it and the hash works again.
+    if (snapshot_data && snapshot_data->mutations_snapshot)
+    {
+        const auto & mutations = *snapshot_data->mutations_snapshot;
+        if (mutations.hasDataMutations() || mutations.hasAlterMutations() || mutations.hasMetadataMutations())
+            return {};
+    }
+    else
+    {
+        const auto counters = getMutationCounters();
+        if (counters.num_data > 0 || counters.num_alter > 0 || counters.num_metadata > 0)
+            return {};
+    }
+
+    /// The check above only sees the mutations pending right now. A mutation that is enqueued after the
+    /// pre-read hash, captured by the read's mutations snapshot (and applied on the fly), and cancelled
+    /// with `KILL MUTATION` before the post-read hash leaves the parts, the metadata and the pending
+    /// counters exactly as they were. Fold the loop-free version of the counters, so that such a round
+    /// trip changes the hash. Like `active_parts_set_version`, it is sampled live.
+    hash.update(getMutationCounters().version);
+
+    /// Prefer the parts captured by the snapshot, so the result describes exactly the data that the
+    /// snapshot refers to. Fall back to the current set of active parts for snapshots taken without data.
+    if (snapshot_data && snapshot_data->parts)
+    {
+        for (const auto & part : *snapshot_data->parts)
+            add_part(*part.data_part);
+    }
+    else
+    {
+        for (const auto & part : getDataPartsVectorForInternalUsage())
+            add_part(*part);
+    }
+
+    /// Active patch parts (created by lightweight updates/deletes) are applied during reads when
+    /// `apply_patch_parts` is enabled, so they change query-visible rows and must be part of the hash.
+    /// They live in a separate part kind, so the regular-parts query above does not see them.
+    hash.update("patch");
+    for (const auto & part : getPatchPartsVectorForInternalUsage())
+        add_part(*part);
+
+    return hash.get128();
+}
+
 void MergeTreeData::incrementInsertedPartsProfileEvent(MergeTreeDataPartType type)
 {
     switch (type.getValue())
@@ -15966,6 +16155,9 @@ static void updateMutationsCounters(MutationCounters & mutation_counters, const 
 
         mutation_counters.assertNotNegative();
     }
+
+    if (has_data_mutation || has_alter_mutation || has_metadata_mutation)
+        ++mutation_counters.version;
 }
 
 void incrementMutationsCounters(MutationCounters & mutation_counters, const MutationCommands & commands)

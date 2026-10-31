@@ -1,0 +1,7 @@
+default evaluated on read has no hash	1
+a
+b
+default stored in every part has a hash	1
+dist_local_05444	1
+dist_plain_05444	0
+dist_remote_05444	1

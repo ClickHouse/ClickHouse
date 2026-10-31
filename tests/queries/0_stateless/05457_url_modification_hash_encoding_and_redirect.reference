@@ -1,0 +1,4 @@
+read before	1	1
+read after	2	2
+t_url_encoded not null changed
+t_url_redirect not null changed
