@@ -39,7 +39,7 @@ struct JoinedElement
         }
     }
 
-    void checkTableName(const DatabaseAndTableWithAlias & table, const String & current_database) const
+    void checkTableName(const DatabaseAndTableWithAlias & table, const String & current_database, ContextPtr context) const
     {
         if (!element.table_expression)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Not a table expression in JOIN (ARRAY JOIN?)");
@@ -48,7 +48,11 @@ struct JoinedElement
         if (!table_expression)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Wrong table expression in JOIN");
 
-        if (!table.same(DatabaseAndTableWithAlias(*table_expression, current_database)))
+        DatabaseAndTableWithAlias expected(*table_expression, current_database);
+        /// `table` carries canonical names, so compare canonical spellings.
+        if (table_expression->database_and_table_name)
+            expected.resolveCanonicalNames(context);
+        if (!table.same(expected))
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Inconsistent table names");
     }
 
@@ -237,7 +241,7 @@ void CrossToInnerJoinMatcher::visit(ASTSelectQuery & select, ASTPtr &, Data & da
                             joined_tables.size(), data.tables_with_columns.size());
 
         for (size_t i = 0; i < joined_tables.size(); ++i)
-            joined_tables[i].checkTableName(data.tables_with_columns[i].table, data.current_database);
+            joined_tables[i].checkTableName(data.tables_with_columns[i].table, data.current_database, data.context);
     }
 
     /// CROSS to INNER

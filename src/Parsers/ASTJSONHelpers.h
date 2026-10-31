@@ -3,6 +3,7 @@
 #include <IO/Operators.h>
 #include <IO/WriteBuffer.h>
 #include <IO/WriteHelpers.h>
+#include <Core/IdentifierName.h>
 #include <Formats/FormatSettings.h>
 #include <Parsers/IAST.h>
 #include <Common/checkStackSize.h>
@@ -134,6 +135,19 @@ public:
 
     /// Write alias and prefer_alias_to_column_name for ASTWithAlias nodes.
     void writeAlias(const ASTWithAlias & node);
+
+    /// Write the quote style of a name; nothing for an unquoted one. Double quotes are semantic under
+    /// `standard` name matching, so the JSON form must keep them to round-trip to the same query.
+    void writeQuote(const char * k, IdentifierPartQuote quote)
+    {
+        if (quote != IdentifierPartQuote::Unquoted)
+            writeString(k, quoteToJSONString(quote));
+    }
+
+    static std::string_view quoteToJSONString(IdentifierPartQuote quote)
+    {
+        return quote == IdentifierPartQuote::DoubleQuoted ? "double_quoted" : (quote == IdentifierPartQuote::Backticked ? "backticked" : "unquoted");
+    }
 
     /// Write a Field value as a JSON object with field_type and value.
     void writeFieldValue(const char * k, const Field & field);

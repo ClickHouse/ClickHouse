@@ -22,6 +22,12 @@ LambdaArgumentsNode::LambdaArgumentsNode(Names argument_names)
 {
 }
 
+void LambdaArgumentsNode::setQuotes(std::vector<IdentifierPartQuote> argument_quotes)
+{
+    chassert(argument_quotes.empty() || argument_quotes.size() == names.size());
+    quotes = std::move(argument_quotes);
+}
+
 void LambdaArgumentsNode::dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state, size_t indent) const
 {
     buffer << std::string(indent, ' ') << "ARGUMENTS id: " << format_state.getNodeId(this);
@@ -33,6 +39,8 @@ void LambdaArgumentsNode::dumpTreeImpl(WriteBuffer & buffer, FormatState & forma
     for (size_t i = 0; i < names_size; ++i)
     {
         buffer << '\n' << std::string(indent + 2, ' ') << "ARGUMENT id: " << i << ", name: " << names[i];
+        if (isPinned(i))
+            buffer << ", double_quoted";
         if (i < types.size() && types[i])
             buffer << ", type: " << types[i]->getName();
     }
@@ -41,7 +49,14 @@ void LambdaArgumentsNode::dumpTreeImpl(WriteBuffer & buffer, FormatState & forma
 bool LambdaArgumentsNode::isEqualImpl(const IQueryTreeNode & rhs, CompareOptions) const
 {
     const auto & rhs_typed = assert_cast<const LambdaArgumentsNode &>(rhs);
-    return names == rhs_typed.names;
+    if (names != rhs_typed.names)
+        return false;
+
+    for (size_t i = 0; i < names.size(); ++i)
+        if (isPinned(i) != rhs_typed.isPinned(i))
+            return false;
+
+    return true;
 }
 
 void LambdaArgumentsNode::updateTreeHashImpl(HashState & hash_state, CompareOptions) const
@@ -52,11 +67,17 @@ void LambdaArgumentsNode::updateTreeHashImpl(HashState & hash_state, CompareOpti
         hash_state.update(name.size());
         hash_state.update(name);
     }
+
+    /// Only pinned arguments are mixed in, so the hash of an unquoted lambda stays unchanged.
+    for (size_t i = 0; i < names.size(); ++i)
+        if (isPinned(i))
+            hash_state.update(i);
 }
 
 QueryTreeNodePtr LambdaArgumentsNode::cloneImpl() const
 {
     auto result = std::make_shared<LambdaArgumentsNode>(names);
+    result->quotes = quotes;
     result->types = types;
     return result;
 }
@@ -66,8 +87,9 @@ ASTPtr LambdaArgumentsNode::toASTImpl(const ConvertToASTOptions & /*options*/) c
     auto expression_list_ast = make_intrusive<ASTExpressionList>();
     expression_list_ast->children.reserve(names.size());
 
-    for (const auto & name : names)
-        expression_list_ast->children.push_back(make_intrusive<ASTIdentifier>(name));
+    for (size_t i = 0; i < names.size(); ++i)
+        expression_list_ast->children.push_back(make_intrusive<ASTIdentifier>(
+            IdentifierName({IdentifierPart{names[i], i < quotes.size() ? quotes[i] : IdentifierPartQuote::Unquoted}})));
 
     return expression_list_ast;
 }

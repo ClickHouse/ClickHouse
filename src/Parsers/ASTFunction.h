@@ -21,7 +21,7 @@ class ASTFunction : public ASTWithAlias
     struct ASTFunctionFlags
     {
         using ParentFlags = ASTWithAlias::ASTWithAliasFlags;
-        static constexpr UInt32 RESERVED_BITS = ParentFlags::RESERVED_BITS + 12;
+        static constexpr UInt32 RESERVED_BITS = ParentFlags::RESERVED_BITS + 14;
 
         UInt32 _parent_reserved : ParentFlags::RESERVED_BITS;
         UInt32 is_operator : 1;
@@ -33,7 +33,8 @@ class ASTFunction : public ASTWithAlias
         UInt32 is_compound_name : 1;
         UInt32 nulls_action : 2; /// 2 bits for NullsAction (3 values)
         UInt32 kind : 3; /// 3 bits for Kind (8 values)
-        UInt32 unused : 19;
+        UInt32 window_name_quote : 2; /// 2 bits for IdentifierPartQuote of `window_name`
+        UInt32 unused : 15;
     };
 
 public:
@@ -74,6 +75,10 @@ public:
 
     String window_name;
     ASTPtr window_definition;
+
+    /// Quoting of the `OVER window_name` reference as written in the query.
+    IdentifierPartQuote getWindowNameQuote() const { return static_cast<IdentifierPartQuote>(flags<ASTFunctionFlags>().window_name_quote); }
+    void setWindowNameQuote(IdentifierPartQuote quote) { flags<ASTFunctionFlags>().window_name_quote = static_cast<UInt32>(quote); }
 
     NullsAction getNullsAction() const { return static_cast<NullsAction>(flags<ASTFunctionFlags>().nulls_action); }
     void setNullsAction(NullsAction value) { flags<ASTFunctionFlags>().nulls_action = static_cast<UInt32>(value); }
