@@ -18,6 +18,7 @@
 #include <Databases/DataLake/DatabaseDataLakeSettings.h>
 #include <Databases/DataLake/HTTPBasedCatalogUtils.h>
 #include <Databases/DataLake/StorageCredentials.h>
+#include <Databases/DataLake/UnityCatalogUtils.h>
 #include <base/find_symbols.h>
 #include <Core/Settings.h>
 #include <Common/escapeForFileName.h>
@@ -172,6 +173,16 @@ std::string correctAPIURI(const std::string & uri)
     if (uri.ends_with("v1"))
         return uri;
     return std::filesystem::path(uri) / "v1";
+}
+
+/// `https://<workspace>/api/2.1/unity-catalog/iceberg-rest/v1` (Databricks) -> `https://<workspace>/api/2.1/unity-catalog`.
+std::optional<std::string> tryGetUnityCatalogAPIURL(const std::string & base_url)
+{
+    static constexpr std::string_view unity_catalog_api_path = "/api/2.1/unity-catalog/";
+    const auto pos = base_url.find(unity_catalog_api_path);
+    if (pos == std::string::npos)
+        return std::nullopt;
+    return base_url.substr(0, pos + unity_catalog_api_path.size() - 1);
 }
 
 /// Percent-encodes every byte of a level outside the RFC 3986 unreserved set and joins the levels with `%1F`.
@@ -2301,6 +2312,21 @@ void RestCatalog::dropTable(const String & namespace_name, const String & table_
     Poco::JSON::Object::Ptr request_body = nullptr;
     try
     {
+        if (const auto unity_catalog_api_url = tryGetUnityCatalogAPIURL(base_url.generic_string()))
+        {
+            const auto unity_table_endpoint = fmt::format(
+                "{}/tables/{}.{}.{}",
+                *unity_catalog_api_url,
+                encodeNamespaceForURI(warehouse),
+                encodeNamespaceForURI(namespace_name),
+                table_name);
+            const auto unity_table_response
+                = sendRequest(*state_snapshot, unity_table_endpoint, /* request_body */ nullptr, Poco::Net::HTTPRequest::HTTP_GET, /* ignore_result */ false);
+            Poco::JSON::Parser parser;
+            const auto unity_table = parser.parse(unity_table_response);
+            checkUnityTableDrop(unity_table.extract<Poco::JSON::Object::Ptr>(), namespace_name, table_name, delete_data);
+        }
+
         sendRequest(*state_snapshot, endpoint, request_body, Poco::Net::HTTPRequest::HTTP_DELETE, true);
         LOG_INFO(log, "Dropped table {}.{} from the catalog (purgeRequested={})", namespace_name, table_name, delete_data);
     }

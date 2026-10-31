@@ -143,9 +143,6 @@ private:
 
     void deleteRequest(const std::string & route) const;
 
-    /// The `table_type` field of the table, such as `MANAGED` or `EXTERNAL`.
-    String getTableType(const String & full_table_name) const;
-
     std::string getBearerToken(bool force_refresh = false) const;
 
     /// `auth_header` when set, otherwise the Bearer token.
