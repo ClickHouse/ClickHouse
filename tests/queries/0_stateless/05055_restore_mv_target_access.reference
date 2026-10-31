@@ -1,0 +1,34 @@
+-- forging the backup needs no privilege on the target it renames the view onto
+allowed
+-- restoring the forged view is denied
+denied
+-- and the denial names the target, not some unrelated grant
+1
+-- the view was not created by the rejected restore
+0
+-- INSERT alone is not enough: the SELECT half of the requirement is pinned here
+denied
+1
+-- and with both halves granted the same restore succeeds
+allowed
+-- the direct CREATE path already requires the same grant
+denied
+-- restoring a view whose target is granted is still allowed
+allowed
+allowed
+-- a view with an inner table carries no target id, so it is still allowed
+allowed
+allowed
+-- a temporary TimeSeries table forges the same primitive through an external target
+forged
+denied
+-- and that denial names the forged target too
+1
+-- a view under a database the restore skips does not require its target
+allowed
+-- nothing was created, so the grant it used to demand was never needed
+0
+-- with the setting off the same backup is restored, and then it does require the target
+denied
+-- and the setting does not lift the check for a database that is not skipped
+denied
