@@ -6,6 +6,14 @@
 # before their decoding is scheduled, up to its share of max_download_threads. 02588_data.parquet has 35
 # row groups; with one stream and max_parsing_threads = 4 the reader decodes one row group's column data
 # at a time, so max_download_threads = 4 leaves room to read ahead and max_download_threads = 1 does not.
+# With as many streams as max_download_threads (k: two), each reader's share is the row group it decodes, yet
+# it keeps one small row group ahead (_gaps.parquet: ~9 KB chunks of x between ~64 KB chunks of an unread
+# column), but not with max_download_threads = 1 (m). One stream with max_parsing_threads = 16 and
+# max_download_threads = 2 is the same case throughout (with two streams, the one left when the other
+# finishes gets a larger share and reads ahead normally): it reads no row group ahead that admission would
+# read together with the next ones (l, _adj.parquet: adjacent ~16 KB row groups), since reading it alone
+# would split that request, nor a read above remote_read_min_bytes_for_seek (n: ~9 KB chunks of
+# _gaps_1.parquet over a 4 KB threshold).
 # Local files are not read ahead. The columns cache is off: the columns it serves have no column data to read.
 # With max_parsing_threads = 16 four decoders admit row groups concurrently while reading ahead.
 # Read-ahead takes at most the column data stage's share (0.2) of the memory the query may still use:
@@ -34,6 +42,10 @@ $CLICKHOUSE_CLIENT --query "INSERT INTO FUNCTION s3(s3_conn, filename = '${CLICK
 $CLICKHOUSE_CLIENT --query "INSERT INTO FUNCTION s3(s3_conn, filename = '${CLICKHOUSE_TEST_UNIQUE_NAME}_pi.parquet', format = 'Parquet') SELECT number AS x FROM numbers(200000) SETTINGS s3_truncate_on_insert = 1, output_format_parquet_row_group_size = 100000, output_format_parquet_write_page_index = 1"
 $CLICKHOUSE_CLIENT --query "INSERT INTO FUNCTION s3(s3_conn, filename = '${CLICKHOUSE_TEST_UNIQUE_NAME}_small.parquet', format = 'Parquet') SELECT number AS x, number AS y FROM numbers(90000) SETTINGS s3_truncate_on_insert = 1, output_format_parquet_row_group_size = 300, output_format_parquet_compression_method = 'none', output_format_parquet_write_page_index = 0, output_format_parquet_write_bloom_filter = 0"
 $CLICKHOUSE_CLIENT --query "INSERT INTO FUNCTION s3(s3_conn, filename = '${CLICKHOUSE_TEST_UNIQUE_NAME}_medium.parquet', format = 'Parquet') SELECT number AS x FROM numbers(200000) SETTINGS s3_truncate_on_insert = 1, output_format_parquet_row_group_size = 2000, output_format_parquet_compression_method = 'none', output_format_parquet_write_page_index = 0, output_format_parquet_write_bloom_filter = 0"
+for i in 1 2; do
+    $CLICKHOUSE_CLIENT --query "INSERT INTO FUNCTION s3(s3_conn, filename = '${CLICKHOUSE_TEST_UNIQUE_NAME}_gaps_${i}.parquet', format = 'Parquet') SELECT number AS x, leftPad(toString(number), 60, '0') AS pad FROM numbers(40000) SETTINGS s3_truncate_on_insert = 1, output_format_parquet_row_group_size = 1000, output_format_parquet_compression_method = 'none', output_format_parquet_write_page_index = 0, output_format_parquet_write_bloom_filter = 0"
+done
+$CLICKHOUSE_CLIENT --query "INSERT INTO FUNCTION s3(s3_conn, filename = '${CLICKHOUSE_TEST_UNIQUE_NAME}_adj.parquet', format = 'Parquet') SELECT number AS x FROM numbers(200000) SETTINGS s3_truncate_on_insert = 1, output_format_parquet_row_group_size = 2000, output_format_parquet_compression_method = 'none', output_format_parquet_write_page_index = 0, output_format_parquet_write_bloom_filter = 0"
 
 query="SELECT count(), sum(seqnum), sum(length(market))"
 s3_files="s3(s3_conn, filename = '${CLICKHOUSE_TEST_UNIQUE_NAME}_{1,2}.parquet', format = 'Parquet')"
@@ -42,9 +54,13 @@ settings="max_threads = 1, max_parsing_threads = 4, input_format_parquet_memory_
 
 $CLICKHOUSE_CLIENT --query "$query FROM $s3_files SETTINGS $settings, max_download_threads = 4, log_comment = '${CLICKHOUSE_TEST_UNIQUE_NAME}_a_s3_4'"
 $CLICKHOUSE_CLIENT --query "$query FROM $s3_files SETTINGS $settings, max_download_threads = 1, log_comment = '${CLICKHOUSE_TEST_UNIQUE_NAME}_b_s3_1'"
+gaps_files="s3(s3_conn, filename = '${CLICKHOUSE_TEST_UNIQUE_NAME}_gaps_{1,2}.parquet', format = 'Parquet', structure = 'x UInt64')"
+$CLICKHOUSE_CLIENT --query "SELECT count(), sum(x) FROM $gaps_files SETTINGS ${settings/max_threads = 1/max_threads = 2}, max_download_threads = 2, remote_read_min_bytes_for_seek = 32768, log_comment = '${CLICKHOUSE_TEST_UNIQUE_NAME}_k_s3_2_streams_2'"
+$CLICKHOUSE_CLIENT --query "SELECT count(), sum(x) FROM $gaps_files SETTINGS ${settings/max_threads = 1/max_threads = 2}, max_download_threads = 1, remote_read_min_bytes_for_seek = 32768, log_comment = '${CLICKHOUSE_TEST_UNIQUE_NAME}_m_s3_2_streams_1'"
 $CLICKHOUSE_CLIENT --query "$query FROM $local_files SETTINGS $settings, max_download_threads = 4, log_comment = '${CLICKHOUSE_TEST_UNIQUE_NAME}_c_local_4'"
 settings_16="max_threads = 1, max_parsing_threads = 16, input_format_parquet_memory_low_watermark = 0, input_format_parquet_memory_high_watermark = 4294967296, input_format_parquet_enable_row_group_prefetch = 1, enable_parallel_replicas = 0, use_page_cache_for_object_storage = 0, use_columns_cache = 0"
 $CLICKHOUSE_CLIENT --query "$query FROM $s3_files SETTINGS $settings_16, max_download_threads = 16, log_comment = '${CLICKHOUSE_TEST_UNIQUE_NAME}_g_s3_16_decoders'"
+$CLICKHOUSE_CLIENT --query "SELECT count(), sum(x) FROM s3(s3_conn, filename = '${CLICKHOUSE_TEST_UNIQUE_NAME}_gaps_1.parquet', format = 'Parquet', structure = 'x UInt64') SETTINGS $settings_16, max_download_threads = 2, remote_read_min_bytes_for_seek = 4096, log_comment = '${CLICKHOUSE_TEST_UNIQUE_NAME}_n_s3_1_stream_large_reads'"
 
 big_file="s3(s3_conn, filename = '${CLICKHOUSE_TEST_UNIQUE_NAME}_big.parquet', format = 'Parquet')"
 $CLICKHOUSE_CLIENT --query "SELECT count(), sum(x) FROM $big_file SETTINGS $settings, max_download_threads = 4, max_memory_usage = 32000000, log_comment = '${CLICKHOUSE_TEST_UNIQUE_NAME}_d_s3_limit_32mb'"
@@ -54,8 +70,15 @@ small_file="s3(s3_conn, filename = '${CLICKHOUSE_TEST_UNIQUE_NAME}_small.parquet
 $CLICKHOUSE_CLIENT --query "SELECT count(), sum(x), sum(y) FROM $small_file SETTINGS $settings, max_download_threads = 4, remote_read_min_bytes_for_seek = 131072, log_comment = '${CLICKHOUSE_TEST_UNIQUE_NAME}_h_s3_small_row_groups'"
 $CLICKHOUSE_CLIENT --query "SELECT count(), sum(x) FROM $small_file SETTINGS $settings, max_download_threads = 4, remote_read_min_bytes_for_seek = 131072, log_comment = '${CLICKHOUSE_TEST_UNIQUE_NAME}_i_s3_small_row_groups_one_column'"
 $CLICKHOUSE_CLIENT --query "SELECT count(), sum(x) FROM s3(s3_conn, filename = '${CLICKHOUSE_TEST_UNIQUE_NAME}_medium.parquet', format = 'Parquet', structure = 'x UInt64') SETTINGS $settings, max_download_threads = 64, remote_read_min_bytes_for_seek = 131072, log_comment = '${CLICKHOUSE_TEST_UNIQUE_NAME}_j_s3_medium_row_groups'"
+$CLICKHOUSE_CLIENT --query "SELECT count(), sum(x) FROM s3(s3_conn, filename = '${CLICKHOUSE_TEST_UNIQUE_NAME}_adj.parquet', format = 'Parquet', structure = 'x UInt64') SETTINGS $settings_16, max_download_threads = 2, remote_read_min_bytes_for_seek = 131072, log_comment = '${CLICKHOUSE_TEST_UNIQUE_NAME}_l_s3_1_stream_adjacent'"
 
 $CLICKHOUSE_CLIENT --query "SYSTEM FLUSH LOGS query_log"
+$CLICKHOUSE_CLIENT --query "
+    SELECT ProfileEvents['ParquetColumnDataReadAheadRowGroups'] * 2 > ProfileEvents['ParquetReadRowGroups']
+    FROM system.query_log
+    WHERE event_date >= yesterday() AND current_database = currentDatabase() AND type = 'QueryFinish'
+        AND log_comment = '${CLICKHOUSE_TEST_UNIQUE_NAME}_k_s3_2_streams_2'
+    SETTINGS enable_parallel_replicas = 0"
 $CLICKHOUSE_CLIENT --query "
     SELECT substring(log_comment, length('${CLICKHOUSE_TEST_UNIQUE_NAME}_') + 1) AS read, ProfileEvents['ParquetColumnDataReadAheadRowGroups'] > 0
     FROM system.query_log

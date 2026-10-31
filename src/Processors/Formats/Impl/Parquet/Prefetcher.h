@@ -77,6 +77,9 @@ public:
     std::optional<AdjacentRanges> getAdjacentRanges(const std::vector<PrefetchHandle *> & handles);
     bool extendsAdjacentRanges(const AdjacentRanges & run, const AdjacentRanges & next) const;
 
+    /// Whether startPrefetch would read the unstarted of these requests without covering any other request; false if all are started.
+    bool readsSeparately(const std::vector<PrefetchHandle *> & handles);
+
     /// If prefetched, returns prefetched data.
     /// If prefetch in progress, waits for it to complete.
     /// If prefetch not started, reads the data right here.
@@ -240,6 +243,18 @@ private:
     void pickRangesAndCreateTaskIfNotExists(RequestState *, const PrefetchHandle &, bool splitting, size_t start_offset, size_t end_offset, std::unique_lock<std::mutex> lock);
     /// Returns nullptr if the request already has a task. If set, only requests in `coalesce_only` are coalesced into it.
     Task * pickRangesAndCreateTaskLocked(RequestState * initial_req, bool splitting, size_t start_offset, size_t end_offset, const std::unordered_set<const RequestState *> * coalesce_only);
+    struct PickedRanges
+    {
+        size_t start_idx;
+        size_t end_idx;
+        size_t start_offset;
+        size_t end_offset;
+        size_t total_length_of_covered_ranges;
+    };
+    /// The ranges a task for `initial_req` covers. A neighbour may be covered if it is in `coalesce_set`, or if `allow_incidental` and
+    /// its `allow_incidental_read` is set.
+    PickedRanges pickRangesLocked(const RequestState * initial_req, bool splitting, size_t start_offset, size_t end_offset,
+        const std::unordered_set<const RequestState *> * coalesce_set, bool allow_incidental) const;
     static void decreaseTaskRefcount(Task * task, size_t amount);
     void scheduleTask(Task * task);
     Task::State runTask(Task * task);
