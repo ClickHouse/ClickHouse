@@ -11,7 +11,9 @@
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/InterpreterCreateQuery.h>
 #include <Interpreters/ExpressionAnalyzer.h>
+#include <base/defines.h>
 #include <memory>
+#include <mutex>
 
 
 namespace DB
@@ -75,6 +77,7 @@ public:
     StorageMaterializedPostgreSQL(
         const StorageID & table_id_,
         LoadingStrictnessLevel mode,
+        bool is_fresh_definition,
         const String & remote_database_name,
         const String & remote_table_name,
         const postgres::ConnectionInfo & connection_info,
@@ -134,8 +137,13 @@ public:
 
     /// This method is called only from MateriaizePostgreSQL database engine, because it needs to maintain
     /// an invariant: a table exists only if its nested table exists. This atomic variable is set to _true_
-    /// only once - when nested table is successfully created and is never changed afterwards.
+    /// when nested table is successfully created, and reset to _false_ only when the replication handler drops
+    /// an incomplete nested table to load it from a new snapshot (see `resetNested`).
     bool hasNested() { return has_nested.load(); }
+
+    /// Called after the nested table of this table was dropped, so that `hasNested` does not report a nested table
+    /// that does not exist anymore (for example, if the replacement snapshot fails).
+    void resetNested() { has_nested.store(false); }
 
     void createNestedIfNeeded(PostgreSQLTableStructurePtr table_structure, const ASTTableOverride * table_override);
 
@@ -198,8 +206,10 @@ private:
     ContextMutablePtr nested_context;
 
     /// Save nested storageID to be able to fetch it. It is set once nested is created and will be
-    /// updated only when nested is reloaded or renamed.
-    std::optional<StorageID> nested_table_id;
+    /// updated only when nested is reloaded or renamed. It is guarded by a mutex, because it is replaced
+    /// when an incomplete nested table is loaded again from a new snapshot, while concurrent queries may read it.
+    mutable std::mutex nested_table_id_mutex;
+    std::optional<StorageID> nested_table_id TSA_GUARDED_BY(nested_table_id_mutex);
 
     /// Needed only for the case of single MaterializedPostgreSQL storage - in order to make
     /// delayed storage forwarding into replication handler.
