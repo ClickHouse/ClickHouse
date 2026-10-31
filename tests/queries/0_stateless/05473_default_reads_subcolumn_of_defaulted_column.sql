@@ -4,6 +4,7 @@
 DROP TABLE IF EXISTS t_subcolumns;
 DROP TABLE IF EXISTS t_through;
 DROP TABLE IF EXISTS t_chain;
+DROP TABLE IF EXISTS t_flat;
 DROP TABLE IF EXISTS t_cycle;
 
 CREATE TABLE t_subcolumns
@@ -50,6 +51,11 @@ INSERT INTO t_chain FORMAT JSONEachRow {"id" : 1}, {"id" : 2, "x" : 5}, {"id" : 
 
 SELECT id, x, tup.v, d FROM t_chain ORDER BY id;
 
+CREATE TABLE t_flat (id UInt32, `n.v` Array(UInt32) DEFAULT [7, 7, 7], d UInt64 DEFAULT n.v.size0) ENGINE = MergeTree ORDER BY id;
+INSERT INTO t_flat FORMAT JSONEachRow {"id" : 1}, {"id" : 2, "n.v" : [5]};
+
+SELECT id, n.v, d FROM t_flat ORDER BY id;
+
 -- Defaults that read each other through a subcolumn cannot be ordered, as for `INSERT INTO t_cycle (id) VALUES`.
 CREATE TABLE t_cycle (id UInt32, a Tuple(x UInt32) DEFAULT tuple(b), b UInt32 DEFAULT a.x) ENGINE = MergeTree ORDER BY id;
 INSERT INTO t_cycle -- { error UNKNOWN_IDENTIFIER }
@@ -58,4 +64,5 @@ FORMAT JSONEachRow {"id" : 1, "a" : {"x" : 5}}, {"id" : 2, "b" : 4};
 DROP TABLE t_subcolumns;
 DROP TABLE t_through;
 DROP TABLE t_chain;
+DROP TABLE t_flat;
 DROP TABLE t_cycle;
