@@ -78,8 +78,7 @@ bool isCompletedReplaceCommitName(std::string_view file_name, bool with_completi
     return with_completion_time && isNumber(file_name.substr(0, separator)) && isNumber(file_name.substr(separator + 1));
 }
 
-/// Java `Properties.load`: a port of `parse_properties` of hudi-rs (`crates/core/src/config/properties.rs`).
-/// Returns nothing for a malformed `\uXXXX` escape.
+/// Parses the Java `Properties.load` format. Returns nothing for a malformed `\uXXXX` escape.
 std::optional<std::unordered_map<String, String>> parseJavaProperties(std::string_view content)
 {
     auto is_space = [](char c) { return c == ' ' || c == '\t' || c == '\f'; };
@@ -175,8 +174,8 @@ std::optional<std::unordered_map<String, String>> parseJavaProperties(std::strin
     return properties;
 }
 
-/// The one timeline Hudi reads, chosen by `hoodie.timeline.layout.version` of `hoodie.properties` (else of its
-/// backup, as Hudi's `ConfigUtils.fetchConfigs`). Nothing if neither is readable or the version is absent.
+/// The timeline Hudi reads, chosen by `hoodie.timeline.layout.version` of `hoodie.properties`, else of its backup.
+/// Nothing if neither is readable or the version is absent.
 std::optional<ActiveTimeline> getActiveTimeline(
     std::optional<RelativePathWithMetadata> & properties_file,
     std::optional<RelativePathWithMetadata> & backup_file,
@@ -213,7 +212,6 @@ std::optional<ActiveTimeline> getActiveTimeline(
     return ActiveTimeline{".hoodie/timeline", true};
 }
 
-/// Adds the file groups that the `replacecommit` instant `instant` replaced.
 void collectReplacedFileGroups(
     RelativePathWithMetadata & instant,
     const ObjectStoragePtr & object_storage,
