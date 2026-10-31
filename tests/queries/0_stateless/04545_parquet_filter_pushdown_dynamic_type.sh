@@ -1,5 +1,4 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest
 # Regression test for https://github.com/ClickHouse/ClickHouse/issues/87695
 # Parquet filter pushdown must not use row-group min/max or page-index statistics for
 # Dynamic, Object (JSON), and Variant columns. Their physical Parquet type is String, but a

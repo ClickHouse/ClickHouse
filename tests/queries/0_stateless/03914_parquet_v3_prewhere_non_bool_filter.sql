@@ -1,5 +1,3 @@
--- Tags: no-fasttest
-
 -- Regression test for an assertion failure in Parquet V3 reader when PREWHERE
 -- produces a UInt8 filter with values > 1. The old assertion used std::accumulate
 -- (which sums values) instead of countBytesInFilter (which counts non-zero values),

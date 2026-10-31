@@ -1,5 +1,4 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest
 # Regression test for heap-use-after-free in Parquet UUID writer column statistics.
 #
 # Bug: ConverterUUID stored UUIDs in a member PODArray (`swapped_buf`) and `StatisticsFixedStringRef`

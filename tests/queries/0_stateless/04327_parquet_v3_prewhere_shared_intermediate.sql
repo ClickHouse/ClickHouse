@@ -1,6 +1,3 @@
--- Tags: no-fasttest
--- no-fasttest: needs the native Parquet V3 reader.
-
 -- Regression test for https://github.com/ClickHouse/ClickHouse/issues/106147
 -- A PREWHERE whose conjuncts share an intermediate expression (here the common
 -- subexpression equals(a, 'foo') used by both multiIf columns) used to throw

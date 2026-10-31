@@ -1,6 +1,4 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest
-# no-fasttest: Arrow format is not available in fasttest builds
 
 # The `Arrow` (file) format needs random access. When the input is not seekable the reader loads it
 # into memory; doing so must not abort the server (a previous `assert_cast<SeekableReadBuffer *>` on the

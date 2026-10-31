@@ -1,6 +1,4 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest
-# no-fasttest: Parquet is not supported in the fast test.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh

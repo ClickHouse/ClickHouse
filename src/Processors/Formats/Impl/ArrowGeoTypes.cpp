@@ -24,7 +24,7 @@ extern const int BAD_ARGUMENTS;
 extern const int LOGICAL_ERROR;
 }
 
-#if USE_ARROW
+#if USE_ARROW_LIBRARY
 const std::string * extractGeoMetadata(std::shared_ptr<const arrow::KeyValueMetadata> metadata)
 {
     if (!metadata)

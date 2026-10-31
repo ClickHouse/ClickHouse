@@ -1,6 +1,3 @@
--- Tags: no-fasttest
--- no-fasttest: the Parquet format is not built in the fast-test image.
-
 -- A Parquet UINT_8 column read with a `Bool` hint: every nonzero value is read as `true`, so `x = true`,
 -- `x IN (true)` and `WHERE x` agree, and min/max statistics above 1 bound the column as 1.
 

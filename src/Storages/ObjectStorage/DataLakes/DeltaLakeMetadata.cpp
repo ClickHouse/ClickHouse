@@ -25,9 +25,8 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/DeltaMetadataLog.h>
 
-#include <Processors/Formats/Impl/ArrowBufferedStreams.h>
 #include <Processors/Formats/Impl/ParquetV3BlockInputFormat.h>
-#include <Processors/Formats/Impl/ArrowColumnToCHColumn.h>
+#include <Formats/FormatParserSharedResources.h>
 
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeArray.h>
@@ -46,8 +45,6 @@
 
 #include <boost/algorithm/string/case_conv.hpp>
 #include <fmt/ranges.h>
-#include <parquet/file_reader.h>
-#include <parquet/arrow/reader.h>
 #include <Poco/JSON/Array.h>
 #include <Poco/JSON/Object.h>
 #include <Poco/JSON/Parser.h>
@@ -75,6 +72,7 @@ namespace Setting
     extern const SettingsInt64 delta_lake_snapshot_version;
     extern const SettingsInt64 delta_lake_snapshot_start_version;
     extern const SettingsInt64 delta_lake_snapshot_end_version;
+    extern const SettingsNonZeroUInt64 max_block_size;
 }
 
 
@@ -563,31 +561,27 @@ struct DeltaLakeMetadataImpl
         for (const auto & column : columns)
             header.insert({column.type->createColumn(), column.type, column.name});
 
-        std::atomic<int> is_stopped{0};
+        format_settings.null_as_default = true;
+        format_settings.parquet.case_insensitive_column_matching = false;
 
-        auto open_file_res = parquet::arrow::OpenFile(
-            asArrowFile(*buf, format_settings, is_stopped, "Parquet", PARQUET_MAGIC_BYTES), ArrowMemoryPool::instance());
-        if (!open_file_res.ok())
-            throwFromArrowStatus(open_file_res.status(), ErrorCodes::BAD_ARGUMENTS, "Failed to open Parquet checkpoint file");
-        auto reader = *std::move(open_file_res);
-
-        ArrowColumnToCHColumn column_reader(
-            header, "Parquet",
+        auto input_format = FormatFactory::instance().getInput(
+            "Parquet",
+            *buf,
+            header,
+            context,
+            context->getSettingsRef()[Setting::max_block_size],
             format_settings,
-            std::nullopt,
-            std::nullopt,
-            format_settings.parquet.allow_missing_columns,
-            /* null_as_default */true,
-            format_settings.date_time_overflow_behavior,
-            format_settings.parquet.allow_geoparquet_parser,
-            /* case_insensitive_column_matching */false);
+            FormatParserSharedResources::singleThreaded(context->getSettingsRef()));
 
-        std::shared_ptr<arrow::Table> table;
-        if (auto read_status = reader->ReadTable(&table); !read_status.ok())
-            throwFromArrowStatus(read_status, ErrorCodes::BAD_ARGUMENTS, "Failed to read Parquet checkpoint file");
-
-        Chunk chunk = column_reader.arrowTableToCHChunk(table, reader->parquet_reader()->metadata()->num_rows(), reader->parquet_reader()->metadata()->key_value_metadata());
-        auto res_block = header.cloneWithColumns(chunk.detachColumns());
+        auto res_columns = header.cloneEmptyColumns();
+        while (Chunk chunk = input_format->read())
+        {
+            size_t rows = chunk.getNumRows();
+            auto chunk_columns = chunk.detachColumns();
+            for (size_t i = 0; i < res_columns.size(); ++i)
+                res_columns[i]->insertRangeFrom(*chunk_columns[i], 0, rows);
+        }
+        auto res_block = header.cloneWithColumns(std::move(res_columns));
         res_block = Nested::flatten(res_block);
 
         const auto * nullable_path_column = assert_cast<const ColumnNullable *>(res_block.getByName("add.path").column.get());
