@@ -26,6 +26,7 @@
 
 #include <Storages/StorageAlias.h>
 #include <Storages/StorageDummy.h>
+#include <Storages/StorageSnapshot.h>
 
 #include <Interpreters/Context.h>
 #include <Interpreters/ExpressionContainsColumnMatcher.h>
@@ -350,14 +351,36 @@ std::pair<ActionsDAG, CorrelatedSubtrees> buildActionsDAGFromExpressionNode(
     const ColumnsWithTypeAndName & input_columns,
     const PlannerContextPtr & planner_context,
     const ColumnNodePtrWithHashSet & correlated_columns_set,
-    bool use_column_identifier_as_action_node_name)
+    bool use_column_identifier_as_action_node_name,
+    const IsInputColumnName & is_input_column_name)
 {
     ActionsDAG action_dag(input_columns);
-    PlannerActionsVisitor actions_visitor(planner_context, correlated_columns_set, use_column_identifier_as_action_node_name);
+    PlannerActionsVisitor actions_visitor(planner_context, correlated_columns_set, use_column_identifier_as_action_node_name, is_input_column_name);
     auto [expression_dag_index_nodes, correlated_subtrees] = actions_visitor.visit(action_dag, expression_node);
     action_dag.getOutputs() = std::move(expression_dag_index_nodes);
 
     return std::make_pair(std::move(action_dag), std::move(correlated_subtrees));
+}
+
+IsInputColumnName makeIsStorageColumnName(const StorageSnapshotPtr & storage_snapshot)
+{
+    if (!storage_snapshot)
+        return {};
+
+    return [storage_snapshot](const String & name)
+    {
+        auto options = GetColumnsOptions(GetColumnsOptions::All).withSubcolumns().withVirtuals(VirtualsKind::All, VirtualsMaterializationPlace::All);
+        return storage_snapshot->tryGetColumn(options, name).has_value();
+    };
+}
+
+IsInputColumnName makeIsStorageColumnName(const QueryTreeNodePtr & table_expression)
+{
+    if (const auto * table_node = table_expression->as<TableNode>())
+        return makeIsStorageColumnName(table_node->getStorageSnapshot());
+    if (const auto * table_function_node = table_expression->as<TableFunctionNode>())
+        return makeIsStorageColumnName(table_function_node->getStorageSnapshot());
+    return {};
 }
 
 bool sortDescriptionIsPrefix(const SortDescription & prefix, const SortDescription & full)
@@ -788,7 +811,8 @@ FilterDAGInfo buildFilterInfo(QueryTreeNodePtr filter_query_tree,
     ActionsDAG filter_actions_dag;
 
     ColumnNodePtrWithHashSet empty_correlated_columns_set;
-    PlannerActionsVisitor actions_visitor(planner_context, empty_correlated_columns_set, false /*use_column_identifier_as_action_node_name*/);
+    PlannerActionsVisitor actions_visitor(
+        planner_context, empty_correlated_columns_set, false /*use_column_identifier_as_action_node_name*/, makeIsStorageColumnName(table_expression));
     auto [expression_nodes, correlated_subtrees] = actions_visitor.visit(filter_actions_dag, filter_query_tree);
     correlated_subtrees.assertEmpty("in row-policy and additional table filters");
     if (expression_nodes.size() != 1)

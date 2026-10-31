@@ -1577,7 +1577,9 @@ std::optional<Block> validateDefaultsWithAnalyzer(ASTPtr default_expr_list, cons
         expression_list,
         {},
         planner_context,
-        empty_correlated_columns_set);
+        empty_correlated_columns_set,
+        /*use_column_identifier_as_action_node_name=*/true,
+        makeIsStorageColumnName(fake_table_expression));
 
     // Get all projected column names from actions dag and rename/alias each output result to match the original column names in the sample output block.
     const auto & projection_columns = query_node->getProjectionColumns();

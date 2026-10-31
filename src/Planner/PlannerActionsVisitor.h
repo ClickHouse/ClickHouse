@@ -2,6 +2,8 @@
 
 #include <Core/Names.h>
 
+#include <functional>
+
 #include <Interpreters/Context_fwd.h>
 
 #include <Analyzer/ConstantNode.h>
@@ -23,6 +25,9 @@ class ColumnNode;
 using ColumnNodePtr = std::shared_ptr<ColumnNode>;
 using ColumnNodes = std::vector<ColumnNodePtr>;
 
+/// Whether a name is an input column of the actions; a function with such a name gets another action node name.
+using IsInputColumnName = std::function<bool(const String &)>;
+
 /** Planner actions visitor is responsible for adding necessary actions to calculate query tree expression node
   * into actions dag.
   *
@@ -42,7 +47,8 @@ public:
     explicit PlannerActionsVisitor(
       const PlannerContextPtr & planner_context_,
       const ColumnNodePtrWithHashSet & correlated_columns_set_,
-      bool use_column_identifier_as_action_node_name_ = true);
+      bool use_column_identifier_as_action_node_name_ = true,
+      IsInputColumnName is_input_column_name_ = {});
 
     /** Add actions necessary to calculate expression node into expression dag.
       * Necessary actions are not added in actions dag output.
@@ -54,6 +60,7 @@ private:
     const PlannerContextPtr planner_context;
     const ColumnNodePtrWithHashSet & correlated_columns_set;
     bool use_column_identifier_as_action_node_name = true;
+    IsInputColumnName is_input_column_name;
 };
 
 /** Calculate query tree expression node action dag name and add them into node to name map.

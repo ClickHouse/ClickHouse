@@ -92,7 +92,13 @@ ActionsDAG buildWatermarkActionsDAG(
         SelectQueryOptions{});
     collectSourceColumns(expression, planner_context, /*keep_alias_columns=*/false);
 
-    auto [dag, _] = buildActionsDAGFromExpressionNode(expression, header.getColumnsWithTypeAndName(), planner_context, {});
+    auto [dag, _] = buildActionsDAGFromExpressionNode(
+        expression,
+        header.getColumnsWithTypeAndName(),
+        planner_context,
+        {},
+        /*use_column_identifier_as_action_node_name=*/true,
+        [&header](const String & name) { return header.has(name); });
     return std::move(dag);
 }
 

@@ -16,6 +16,7 @@
 
 #include <QueryPipeline/StreamLocalLimits.h>
 
+#include <Planner/PlannerActionsVisitor.h>
 #include <Planner/PlannerContext.h>
 #include <Planner/PlannerCorrelatedSubqueries.h>
 
@@ -63,7 +64,12 @@ std::pair<ActionsDAG, CorrelatedSubtrees> buildActionsDAGFromExpressionNode(
     const ColumnsWithTypeAndName & input_columns,
     const PlannerContextPtr & planner_context,
     const ColumnNodePtrWithHashSet & correlated_columns_set,
-    bool use_column_identifier_as_action_node_name = true);
+    bool use_column_identifier_as_action_node_name = true,
+    const IsInputColumnName & is_input_column_name = {});
+
+/// Whether a name is a column, subcolumn or virtual column of the storage (of a table or table function; empty otherwise).
+IsInputColumnName makeIsStorageColumnName(const StorageSnapshotPtr & storage_snapshot);
+IsInputColumnName makeIsStorageColumnName(const QueryTreeNodePtr & table_expression);
 
 /// Returns true if prefix sort description is prefix of full sort descriptor, false otherwise
 bool sortDescriptionIsPrefix(const SortDescription & prefix, const SortDescription & full);
