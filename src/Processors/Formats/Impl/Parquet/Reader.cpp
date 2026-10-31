@@ -209,8 +209,7 @@ static bool tryDecompressLZ4Hadoop(const char * data, size_t compressed_size, si
 
 static void decompress(const char * data, size_t compressed_size, size_t uncompressed_size, parq::CompressionCodec::type codec, char * out)
 {
-    /// Nothing to decompress (e.g. the values of an all-null DataPageV2). Some writers store no
-    /// bytes for it, which is not valid input for most codecs.
+    /// Some writers store no bytes for an empty values section (all-null DataPageV2); most codecs reject that.
     if (uncompressed_size == 0)
         return;
 
@@ -3160,9 +3159,8 @@ void Reader::decodeOffsetIndex(ColumnChunk & column, const RowGroup & row_group)
         prev_row_index = loc.first_row_index;
     }
 
-    /// Some writers (Arrow C++ in repeated columns) give a page with no rows the next page's first
-    /// row. Such a page can't be checked against the index without reading it, so the chunk is read
-    /// without the offset and column indexes.
+    /// Arrow C++ gives a page with no rows (repeated columns) the next page's first_row_index. Such a
+    /// page can't be checked against the index without reading it, so neither index is used here.
     if (has_page_without_rows)
     {
         column.offset_index.page_locations.clear();
