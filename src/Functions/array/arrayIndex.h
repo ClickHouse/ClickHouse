@@ -839,10 +839,23 @@ private:
         {
             /// The `Field`s of a constant array lose the kind of an `Interval` nested in a composite value, so compare those in the common type.
             const auto is_interval = [](const IDataType & type) { return isInterval(type); };
-            if (isColumnConst(*arguments[0].column) && !element_type->equals(*needle_type)
-                && (anyInTypeTree(*element_type, is_interval) || anyInTypeTree(*needle_type, is_interval)))
-                return executeInCommonType(arguments, result_type);
-            return nullptr;
+            if (!isColumnConst(*arguments[0].column) || element_type->equals(*needle_type)
+                || !(anyInTypeTree(*element_type, is_interval) || anyInTypeTree(*needle_type, is_interval)))
+                return nullptr;
+
+            /// The cast can wrap and unsort the array, which `executeConst` binary-searches for a constant needle;
+            /// a non-constant array is searched linearly.
+            if constexpr (std::is_same_v<ConcreteAction, IndexOfAssumeSorted>)
+            {
+                if (isColumnConst(*arguments[1].column))
+                {
+                    ColumnsWithTypeAndName one_row = arguments;
+                    one_row[0].column = assert_cast<const ColumnConst &>(*arguments[0].column).getDataColumnPtr();
+                    one_row[1].column = assert_cast<const ColumnConst &>(*arguments[1].column).getDataColumnPtr();
+                    return result_type->createColumnConst(arguments[0].column->size(), (*executeInCommonType(one_row, result_type))[0]);
+                }
+            }
+            return executeInCommonType(arguments, result_type);
         }
 
         if (element_interval->getKind() == needle_interval->getKind())

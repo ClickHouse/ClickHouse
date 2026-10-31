@@ -85,6 +85,7 @@ SELECT has([(INTERVAL 1 MINUTE, 7)], (toIntervalSecond(60), 7)), has([(INTERVAL 
 SELECT has([[INTERVAL 1 MINUTE]], [toIntervalSecond(60)]), has([[INTERVAL 1 MINUTE]], [toIntervalSecond(1)]);
 SELECT has([INTERVAL '1:30' HOUR TO MINUTE], (toIntervalMinute(60), toIntervalSecond(1800))), has([INTERVAL '1:30' HOUR TO MINUTE], (toIntervalMinute(1), toIntervalSecond(30)));
 SELECT indexOf([(INTERVAL 1 MINUTE, 1), (INTERVAL 2 MINUTE, 1)], (toIntervalSecond(120), 1)), indexOfAssumeSorted([(INTERVAL 1 MINUTE, 1), (INTERVAL 2 MINUTE, 1)], (toIntervalSecond(120), 1)), countEqual([(INTERVAL 1 MINUTE, 1), (INTERVAL 1 MINUTE, 1)], (toIntervalSecond(60), 1));
+SELECT indexOfAssumeSorted([(toIntervalWeek(0), 7), (toIntervalWeek(20000), 7)], (toIntervalNanosecond(0), 7)), indexOfAssumeSorted([[toIntervalWeek(0)], [toIntervalWeek(20000)]], [toIntervalNanosecond(0)]), indexOfAssumeSorted([(toIntervalWeek(0), 7), (toIntervalWeek(20000), 7)], (toIntervalNanosecond(1), 7));
 SELECT has([(INTERVAL 1 MINUTE, 7)], (toIntervalSecond(number * 30), 7)) FROM numbers(3) ORDER BY number;
 
 DROP TABLE t_interval_ns;
