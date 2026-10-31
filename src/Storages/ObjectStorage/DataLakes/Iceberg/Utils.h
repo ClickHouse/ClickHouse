@@ -101,6 +101,18 @@ Poco::JSON::Object::Ptr getMetadataJSONObject(
     CompressionMethod compression_method,
     const std::optional<String> & table_uuid);
 
+String readMetadataJSONString(
+    const String & metadata_file_path,
+    ObjectStoragePtr object_storage,
+    bool use_metadata_cache,
+    const ContextPtr & local_context,
+    LoggerPtr log,
+    CompressionMethod compression_method);
+
+Poco::JSON::Object::Ptr parseMetadataJSONString(const String & metadata_json_str);
+
+Poco::JSON::Object::Ptr deepCopy(const Poco::JSON::Object::Ptr & object);
+
 
 std::pair<Poco::Dynamic::Var, bool> getIcebergType(DataTypePtr type, Int32 & iter);
 Poco::Dynamic::Var getAvroType(DataTypePtr type, Int32 field_id);
@@ -113,6 +125,9 @@ std::pair<Poco::JSON::Object::Ptr, String> createEmptyMetadataFile(
     ASTPtr order_by,
     ContextPtr context,
     UInt64 format_version = 2);
+
+/// Parses the version out of a metadata file name: `v<N>.metadata.json`, `v<N>-<uuid>.metadata.json` or `<N>-<uuid>.metadata.json`.
+MetadataFileWithInfo getMetadataFileAndVersion(const std::string & path);
 
 /// `ignore_metadata_pointer_overrides` distrusts the version a configured pointer names
 /// (`iceberg_metadata_file_path`, `version-hint.text`) and resolves by listing; the scheme that name

@@ -4,8 +4,6 @@
 -- produces a NULL group that count() would include, while countDistinct
 -- / uniqExact skip NULLs. The optimization must not change semantics.
 
-SET enable_analyzer = 1;
-
 DROP TABLE IF EXISTS t_cd_nullable;
 CREATE TABLE t_cd_nullable (x Nullable(UInt64)) ENGINE = MergeTree ORDER BY tuple();
 INSERT INTO t_cd_nullable VALUES (NULL)(NULL)(NULL);
