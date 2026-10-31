@@ -16944,12 +16944,15 @@ function runEntryImplicitUser(server_address, user, implicit_user) {
 /// named explicitly, so the request fails visibly or reproduces the result as that account, rather
 /// than silently exporting the data of another user. A stamp that denotes no known name (recorded by
 /// an earlier visit before the name was learned) keeps the empty field. `password` is the one the
-/// request will be sent with, snapshotted by the caller.
+/// request will be sent with, snapshotted by the caller. The verification is required, so it is not
+/// skipped after an earlier export to the same server (`required` in `learnImplicitUser`): a skipped
+/// verification would be taken for a changed account, and naming the account breaks the authentication
+/// by a proxy or a certificate.
 async function replayConnectionUser(server_address, user, implicit_user, password) {
     if (effectiveConnectionUser(server_address, user)) return user;
     const account = resolvedImplicitUser(server_address, implicit_user);
     if (!account) return '';
-    if (!learnedImplicitUser(server_address)) await learnImplicitUser(server_address, password);
+    if (!learnedImplicitUser(server_address)) await learnImplicitUser(server_address, password, /* required = */ true);
     return account === learnedImplicitUser(server_address) ? '' : account;
 }
 
@@ -16966,21 +16969,43 @@ async function replayConnectionUser(server_address, user, implicit_user, passwor
 /// the Run has settled, while the first one may still be waiting for admission or in flight. With
 /// `max_concurrent_queries_for_user = 1` the second probe would be rejected with
 /// `TOO_MANY_SIMULTANEOUS_QUERIES`, and the login would not be offered to the password manager.
+///
+/// The probe request does not depend on the session, so connections that differ only in it (e.g. two
+/// tabs with different `session_id`) send the same probe: its last answer during this visit is kept
+/// (`answers`) and taken for any of them, without sending the probe again, as `learnedImplicitUser`
+/// is for one connection. A probe that returns no name forgets the answer. A `required` probe (the
+/// verification of `replayConnectionUser`) is sent even after an export to the server, when the probes
+/// are otherwise skipped (`implicitUserProbeAdmission`), unless the answer to the same probe request
+/// is already known.
 const IMPLICIT_USER_PROBE_TIMEOUT_MS = 5000;
-async function learnImplicitUser(server_address, password) {
+async function learnImplicitUser(server_address, password, required = false) {
     const probe_address = serverAddressWithoutSession(server_address);
     if (!probe_address) return '';
+    const answers = learnImplicitUser.answers ??= new Map();
+    const answer_key = JSON.stringify([probe_address, password]);
+    if (required && answers.has(answer_key)) {
+        const known = answers.get(answer_key);
+        rememberImplicitUser(server_address, known);
+        return known;
+    }
     const pending = learnImplicitUser.pending ??= new Map();
-    const key = JSON.stringify([probe_address, password]);
+    /// A skipped probe returns no name at once, so a required probe must not share an optional one.
+    const key = JSON.stringify([probe_address, password, required]);
     if (!pending.has(key)) {
         const probe = admitImplicitUserProbe(server_address, () => {
             const controller = new AbortController();
             const timer = setTimeout(() => controller.abort(), IMPLICIT_USER_PROBE_TIMEOUT_MS);
             return getServerStatus(probe_address, '', password, controller.signal).finally(() => clearTimeout(timer));
+        }, required).then(json => {
+            if (json === IMPLICIT_USER_PROBE_SKIPPED) return json;
+            if (json && json.u) answers.set(answer_key, json.u);
+            else answers.delete(answer_key);
+            return json;
         }).finally(() => pending.delete(key));
         pending.set(key, probe);
     }
-    const json = await pending.get(key);
+    let json = await pending.get(key);
+    if (json === IMPLICIT_USER_PROBE_SKIPPED) json = answers.has(answer_key) ? { u: answers.get(answer_key) } : null;
     if (!json || !json.u) return '';
     rememberImplicitUser(server_address, json.u);
     return json.u;
@@ -17005,7 +17030,11 @@ async function learnImplicitUser(server_address, password) {
 /// page can observe neither when the request is dispatched nor when the response ends, so there is no
 /// point at which the export could stop counting as a run. Once an export has been submitted to a
 /// server (`exported`), the probes of that server are skipped for the rest of the visit, without being
-/// sent: they are best-effort, and a skipped probe returns no name, as when the server cannot tell.
+/// sent: they are best-effort, and a skipped probe returns the last answer to the same probe request
+/// (`learnImplicitUser`), or no name, as when the server cannot tell. The exception to that is the
+/// `required` verification of a replay (`replayConnectionUser`): the user started another export, so
+/// the earlier one has normally been dispatched, and a probe that loses the query slot to an export
+/// still streaming fails the verification visibly, which names the account (fail closed).
 function implicitUserProbeAdmission(server_address) {
     const all = implicitUserProbeAdmission.servers ??= new Map();
     const key = serverAdmissionKey(server_address) ?? server_address;
@@ -17027,11 +17056,12 @@ async function admitRunQuery(server_address, signal, run) {
         if (--admission.runs === 0) for (const wake of admission.idle.splice(0)) wake();
     }
 }
-async function admitImplicitUserProbe(server_address, probe) {
+const IMPLICIT_USER_PROBE_SKIPPED = Symbol('implicit user probe skipped');
+async function admitImplicitUserProbe(server_address, probe, required = false) {
     const admission = implicitUserProbeAdmission(server_address);
     /// Rechecked after every wake-up: a run may have been admitted between the wake-up and this point.
     while (admission.runs) await new Promise(resolve => admission.idle.push(resolve));
-    if (admission.exported) return null;
+    if (admission.exported && !required) return IMPLICIT_USER_PROBE_SKIPPED;
     const pending = probe();
     admission.probes.add(pending);
     try {

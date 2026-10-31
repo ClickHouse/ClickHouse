@@ -119,6 +119,8 @@ function makeContext(storage) {
         PASSWORDLESS_LOGINS_KEY: 'passwordless_logins',
         /// The bounded lifetime of an implicit-user probe (`learnImplicitUser`).
         IMPLICIT_USER_PROBE_TIMEOUT_MS: 5000,
+        /// What `admitImplicitUserProbe` returns for a probe skipped after an export.
+        IMPLICIT_USER_PROBE_SKIPPED: Symbol('implicit user probe skipped'),
         AbortController,
         setTimeout,
         clearTimeout,
@@ -690,6 +692,43 @@ scenario('probe-after-download-is-skipped', async js => {
     assertEqual(ctx.fetched.length, 0, 'no probe is sent after the Download');
     ctx.other = 'http://other:8123/';
     assertEqual(await vm.runInContext("learnImplicitUser(other, 'secret')", ctx), 'alice', 'the probes of another server are sent');
+});
+
+/// Two restored implicit results of a proxy-authenticated server, recorded on connections that differ
+/// only in the session, are downloaded one after the other. The export of the first must not suppress
+/// the verification of the second (`replayConnectionUser`): a skipped verification would name the
+/// account, and the server rejects a `user` parameter combined with the proxy headers. The answer of the
+/// first probe is taken for the second connection (the probe request is the same), and a required
+/// verification of a connection with another probe request is still sent after the export.
+scenario('proxy-authenticated-replay-after-export', async js => {
+    const ctx = boot(js);
+    ctx.proxy_user = 'alice';
+    ctx.password_elem.value = '';
+    const download = async server => {
+        ctx.entry = { server, user: '', implicitUser: 'alice' };
+        const user = await vm.runInContext('replayConnectionUser(entry.server, entry.user, entry.implicitUser, password_elem.value)', ctx);
+        ctx.replay_user = user;
+        await vm.runInContext("submitDownload(entry.server, entry.server + (entry.server.includes('?') ? '&' : '?') + 'default_format=CSV', 'SELECT 1')", ctx);
+        return user;
+    };
+    const probes = () => ctx.fetched.filter(f => String(f.options.body).includes('currentUser()')).length;
+    assertEqual(await download('http://host:8123/?session_id=a'), '', 'the first download keeps the empty field');
+    assertEqual(probes(), 1, 'the first download verifies the account');
+    assertEqual(await download('http://host:8123/?session_id=b'), '', 'the second download keeps the empty field too');
+    assertEqual(probes(), 1, 'the answer to the same probe request is reused');
+    assertEqual(ctx.submitted.length, 2, 'both downloads are submitted');
+    assertEqual(await download('http://host:8123/proxied/'), '', 'a connection with another probe request keeps the empty field');
+    assertEqual(probes(), 2, 'its required verification is sent after the export');
+
+    /// The verification still fails closed: an account that changed is named.
+    const changed = boot(js);
+    changed.proxy_user = 'bob';
+    changed.password_elem.value = '';
+    changed.server = 'http://host:8123/';
+    await vm.runInContext("submitDownload(server, server + '?default_format=CSV', 'SELECT 1')", changed);
+    changed.entry = { server: 'http://host:8123/?session_id=a', user: '', implicitUser: 'alice' };
+    assertEqual(await vm.runInContext('replayConnectionUser(entry.server, entry.user, entry.implicitUser, password_elem.value)', changed),
+        'alice', 'the recorded account is named after an export when the implicit account changed');
 });
 
 /// The login of an empty field is saved under the name of the account (`storeCredentials`), so the

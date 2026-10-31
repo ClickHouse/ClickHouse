@@ -92,6 +92,7 @@ def test_play_credentials_store(started_cluster, nodejs_container):
         "run-snapshot-before-implicit-user-learned",
         "run-link-carries-implicit-account",
         "proxy-authenticated-implicit-replay",
+        "proxy-authenticated-replay-after-export",
         "learned-implicit-user-restamps-recorded-run",
         "explicit-default-sent-without-userinfo",
         "userinfo-nothing-stored",
