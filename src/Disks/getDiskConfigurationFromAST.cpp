@@ -504,6 +504,8 @@ AzureBlobStorage::ConnectionParams getAzureDiskConnectionParams(
         .endpoint = AzureBlobStorage::processEndpoint(config, prefix),
         .auth_method = AzureBlobStorage::getAuthMethod(config, prefix),
         .client_options = {},
+        .workload_identity_client_id = "",
+        .workload_identity_tenant_id = "",
         .forbid_implicit_credentials = true,
         .anonymous_fallback_for_server_credentials = anonymous_fallback,
         .follows_session_restriction = false,

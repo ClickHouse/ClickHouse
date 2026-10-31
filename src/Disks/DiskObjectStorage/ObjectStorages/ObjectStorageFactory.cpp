@@ -264,6 +264,8 @@ static void registerAzureObjectStorage(ObjectStorageFactory & factory)
             .endpoint = AzureBlobStorage::processEndpoint(config, config_prefix),
             .auth_method = AzureBlobStorage::getAuthMethod(config, config_prefix),
             .client_options = AzureBlobStorage::getClientOptions(context, context->getSettingsRef(), *azure_settings, /*for_disk=*/ true),
+            .workload_identity_client_id = "",
+            .workload_identity_tenant_id = "",
             /// Only a custom disk, `disk(...)` in user SQL, is checked; a disk from the server config may use the server's identity.
             .forbid_implicit_credentials = remote_host_filter_check != RemoteHostFilterCheck::None
                 && !server_credentials_allowed && context->shouldRestrictUserQueryS3Credentials(),
