@@ -1,0 +1,6 @@
+--- postgresql
+ AS postgresql(\'127.0.0.1:5432\', \'db\', \'tbl\', \'user\', \'[HIDDEN]\', SETTINGS postgresql_connection_pool_size = 3)
+PostgreSQL connection pool size: 3
+--- mysql
+ AS mysql(\'127.0.0.1:3306\', \'db\', \'tbl\', \'user\', \'[HIDDEN]\', SETTINGS connect_timeout = 1)
+ AS mysql(\'127.0.0.1:3306\', \'db\', \'tbl\', \'user\', \'[HIDDEN]\', SETTINGS connect_timeout = 1)
