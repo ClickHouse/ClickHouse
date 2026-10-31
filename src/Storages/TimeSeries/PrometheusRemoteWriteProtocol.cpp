@@ -9,7 +9,6 @@
 #include <Columns/ColumnTuple.h>
 #include <Common/logger_useful.h>
 #include <Common/saturatedDuration.h>
-#include <Core/DecimalFunctions.h>
 #include <Core/Settings.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeMap.h>
@@ -44,6 +43,7 @@ namespace Setting
 namespace ErrorCodes
 {
     extern const int ASYNC_INSERT_FLUSH_TIMEOUT;
+    extern const int BAD_ARGUMENTS;
     extern const int ILLEGAL_COLUMN;
     extern const int ILLEGAL_TIME_SERIES_TAGS;
     extern const int LOGICAL_ERROR;
@@ -73,9 +73,19 @@ std::string_view metricTypeToString(prometheus::MetricMetadata::MetricType metri
 void insertTimestamp(Int64 timestamp_ms, UInt32 scale, IColumn & column)
 {
     if (typeid_cast<ColumnDecimal<DateTime64> *>(&column))
-        column.insert(DecimalUtils::convertTo<DateTime64>(scale, DateTime64{timestamp_ms}, 3));
+    {
+        DateTime64 timestamp;
+        if (!tryConvertDecimals<DataTypeDateTime64, DataTypeDateTime64>(DateTime64{timestamp_ms}, 3, scale, timestamp))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Timestamp {} ms is out of range of DateTime64({})", timestamp_ms, scale);
+        column.insert(timestamp);
+    }
     else
-        column.insert(DecimalUtils::convertTo<UInt32>(DateTime64{timestamp_ms}, 3));
+    {
+        const Int64 seconds = timestamp_ms / 1000;
+        if (seconds < 0 || seconds > std::numeric_limits<UInt32>::max())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Timestamp {} ms is out of range of DateTime", timestamp_ms);
+        column.insert(static_cast<UInt32>(seconds));
+    }
 }
 
 Block makeTimeSeriesBlock(
