@@ -648,6 +648,7 @@ public:
         {
             QueryPlan lazy_plan;
             ILazyMaterializingRowsPtr lazy_materializing_rows;
+            const bool reads_merge_tree = lazy.merge_tree_reading != nullptr;
             if (lazy.merge_tree_reading)
             {
                 auto rows = std::make_shared<LazyMaterializingRows>(std::move(lazy.parts));
@@ -688,6 +689,7 @@ public:
 
             auto join_lazy_columns = std::make_unique<JoinLazyColumnsStep>(
                 main_plan.getCurrentHeader(), lazy_plan.getCurrentHeader(), lazy_materializing_rows, makeRowIndexName(source));
+            join_lazy_columns->setLazyReadExpands(reads_merge_tree);
 
             QueryPlan joined;
             std::vector<QueryPlanPtr> plans;
