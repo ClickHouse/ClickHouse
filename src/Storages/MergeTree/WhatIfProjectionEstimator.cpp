@@ -2,6 +2,8 @@
 
 #include <Access/Common/AccessFlags.h>
 #include <Access/ContextAccess.h>
+#include <AggregateFunctions/IAggregateFunction.h>
+#include <Columns/ColumnAggregateFunction.h>
 #include <Columns/ColumnSparse.h>
 #include <Common/FailPoint.h>
 #include <Common/HashTable/Hash.h>
@@ -12,6 +14,7 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/InterpreterHypotheticalObjectQuery.h>
+#include <IO/NullWriteBuffer.h>
 #include <Interpreters/sortBlock.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Processors/IProcessor.h>
@@ -106,6 +109,24 @@ void appendRowSizes(PaddedPODArray<UInt32> & row_bytes, bool & variable_width, c
     {
         if (!elem.column)
             continue;
+        /// the writer sizes a state as it serializes it, see `ColumnAggregateFunction::serializedSizeEstimate`
+        if (const auto * states = typeid_cast<const ColumnAggregateFunction *>(elem.column.get()))
+        {
+            const auto & function = *states->getAggregateFunction();
+            if (function.hasTrivialDestructor() && !function.allocatesMemoryInArena())
+            {
+                fixed += static_cast<UInt32>(sizeof(AggregateDataPtr) + function.sizeOfData());
+                continue;
+            }
+            variable_width = true;
+            for (size_t i = 0; i < rows; ++i)
+            {
+                NullWriteBuffer serialized;
+                function.serialize(states->getData()[i], serialized);
+                row_bytes[offset + i] += static_cast<UInt32>(sizeof(AggregateDataPtr) + serialized.count());
+            }
+            continue;
+        }
         if (elem.column->valuesHaveFixedSize())
             fixed += static_cast<UInt32>(elem.column->sizeOfValueIfFixed());
         else
@@ -196,6 +217,53 @@ Pipe makePartPipe(
     return pipe;
 }
 
+/// one row for each group, with the merged states, as in a merged aggregate projection part
+Block mergeGroups(const Blocks & blocks)
+{
+    Block all = concatenateBlocks(blocks);
+    std::vector<bool> is_state(all.columns());
+    SortDescription groups;
+    for (size_t i = 0; i < all.columns(); ++i)
+    {
+        auto & elem = all.getByPosition(i);
+        elem.column = elem.column->convertToFullColumnIfConst();
+        is_state[i] = typeid_cast<const ColumnAggregateFunction *>(elem.column.get()) != nullptr;
+        if (!is_state[i])
+            groups.emplace_back(elem.name, 1, 1);
+    }
+    IColumn::Permutation order;
+    stableGetPermutation(all, groups, order);
+
+    auto same_group = [&](size_t lhs, size_t rhs)
+    {
+        for (size_t i = 0; i < all.columns(); ++i)
+            if (!is_state[i] && all.getByPosition(i).column->compareAt(lhs, rhs, *all.getByPosition(i).column, 1) != 0)
+                return false;
+        return true;
+    };
+
+    MutableColumns merged = all.cloneEmptyColumns();
+    for (size_t pos = 0; pos < order.size(); ++pos)
+    {
+        const size_t row = order[pos];
+        const bool new_group = pos == 0 || !same_group(row, order[pos - 1]);
+        for (size_t i = 0; i < all.columns(); ++i)
+        {
+            const auto & source = *all.getByPosition(i).column;
+            if (is_state[i])
+            {
+                auto & states = assert_cast<ColumnAggregateFunction &>(*merged[i]);
+                if (new_group)
+                    states.insertDefault();
+                states.insertMergeFrom(source, row);
+            }
+            else if (new_group)
+                merged[i]->insertFrom(source, row);
+        }
+    }
+    return all.cloneWithColumns(std::move(merged));
+}
+
 /// read only the key columns, false if a read limit was hit
 bool buildProjectionPart(
     ProjectionPartData & out,
@@ -235,17 +303,9 @@ bool buildProjectionPart(
     Blocks batch;
     size_t batch_rows = 0;
     MutableColumns key_columns;
-    auto flush = [&]
+    /// the stored columns, as the writer gets them
+    auto add = [&](Block projected)
     {
-        if (batch.empty())
-            return;
-        /// the stored columns, as the writer gets them
-        auto projected = projection.calculate(concatenateBlocks(batch), out.read_rows - batch_rows, context);
-        batch.clear();
-        batch_rows = 0;
-        if (per_granule)
-            out.granule_rows.push_back(static_cast<UInt32>(projected.rows()));
-
         /// the writer chooses the part format before the key expression and sizes the granules after it
         out.format_bytes += projected.bytes();
         /// `required_columns` can skip a subcolumn the key needs, add it back like the writer does
@@ -266,6 +326,23 @@ bool buildProjectionPart(
             auto source = projected.getByName(proj_key.column_names[i]).column->convertToFullColumnIfConst();
             key_columns[i]->insertRangeFrom(*source, 0, source->size());
         }
+    };
+    /// an aggregate projection part has one row for each group of the part, so the groups of all batches merge first
+    const bool aggregate = projection.type == ProjectionDescription::Type::Aggregate;
+    Blocks groups;
+    auto flush = [&]
+    {
+        if (batch.empty())
+            return;
+        auto projected = projection.calculate(concatenateBlocks(batch), out.read_rows - batch_rows, context);
+        batch.clear();
+        batch_rows = 0;
+        if (per_granule)
+            out.granule_rows.push_back(static_cast<UInt32>(projected.rows()));
+        if (aggregate)
+            groups.push_back(std::move(projected));
+        else
+            add(std::move(projected));
     };
 
     Block block;
@@ -298,6 +375,8 @@ bool buildProjectionPart(
             flush();
     }
     flush();
+    if (!groups.empty())
+        add(mergeGroups(groups));
 
     if (key_columns.empty() || key_columns[0]->empty())
         return true;
@@ -792,8 +871,10 @@ void setVerdict(
     const UInt64 marks_low = result.estimated_marks_low;
     const UInt64 marks_high = result.estimated_marks_high;
     auto marks_text = [](UInt64 marks) { return fmt::format("{} mark{}", marks, marks == 1 ? "" : "s"); };
-    /// the rule against the base table: fewer marks, or the same marks and a served ORDER BY
-    auto beats_base = [&](UInt64 marks) { return marks < baseline_marks || (marks == baseline_marks && outcome.serves_order); };
+    const bool aggregated = built.scenarios[0]->projection.type == ProjectionDescription::Type::Aggregate;
+    /// the rule against the base table: fewer marks, or the same marks and a served ORDER BY or aggregated rows
+    auto beats_base = [&](UInt64 marks)
+    { return marks < baseline_marks || (marks == baseline_marks && (outcome.serves_order || aggregated)); };
     if (chosen_in == weighed && outcome.forced)
     {
         String cost;
@@ -801,7 +882,7 @@ void setVerdict(
             cost = "the query has no filter or ORDER BY for the projection to help with";
         else if (projection_marks > baseline_marks)
             cost = fmt::format("the projection reads {} instead of {} from the base table", marks_text(projection_marks), baseline_marks);
-        else if (projection_marks == baseline_marks && !outcome.serves_order)
+        else if (projection_marks == baseline_marks && !outcome.serves_order && !aggregated)
             cost = fmt::format("the projection reads the same {} as the base table and serves no ORDER BY", marks_text(projection_marks));
         else
             cost = fmt::format("the projection reads {} against {} from the base table", marks_text(projection_marks), baseline_marks);
@@ -834,6 +915,8 @@ void setVerdict(
         if (projection_marks != baseline_marks)
             result.verdict_reason
                 = fmt::format("{} would be read instead of {} from the base table", marks_text(projection_marks), baseline_marks);
+        else if (aggregated)
+            result.verdict_reason = fmt::format("the same {} would be read, of aggregated rows", marks_text(projection_marks));
         else
             result.verdict_reason = fmt::format(
                 "the same {} would be read, and the projection order {}",
@@ -861,6 +944,13 @@ bool tryEstimateProjection(
     ScanPlan plan;
     if (!planScan(result, plan, baseline_parts, filters_on_offsets, projection_scan_budget_rows, context->getSettingsRef()))
         return false;
+    /// the groups of a sample do not scale to the groups of the part
+    if (projection.type == ProjectionDescription::Type::Aggregate && plan.sample_step > 1)
+    {
+        result.empirical_unsupported_reason = "EXPLAIN WHATIF estimates an aggregate projection only from a full scan, because a sample "
+                                              "cannot show the number of groups of a part (see projection_scan_budget_rows)";
+        return false;
+    }
 
     Stopwatch watch;
     Scenarios built;
@@ -990,17 +1080,11 @@ WhatIfCandidateResult evaluateProjection(
     auto projection = refreshHypotheticalProjection(stored_projection, data, metadata, context, result.not_applicable_reason);
     if (!projection)
         return result;
+    const bool aggregate = projection->type == ProjectionDescription::Type::Aggregate;
 
     if (!context->getSettingsRef()[Setting::optimize_use_projections])
     {
         result.not_applicable_reason = "Projections are disabled by `optimize_use_projections = 0`";
-        return result;
-    }
-
-    if (projection->type == ProjectionDescription::Type::Aggregate)
-    {
-        result.not_applicable_reason
-            = "EXPLAIN WHATIF estimates normal (sorted) hypothetical projections only, aggregate projections are not estimated yet";
         return result;
     }
 
@@ -1024,7 +1108,8 @@ WhatIfCandidateResult evaluateProjection(
         return result;
     }
 
-    for (const auto & column_name : read_step->getAllColumnNames())
+    /// the optimization of aggregate projections matches the aggregation of the query, not the columns that the query reads
+    for (const auto & column_name : aggregate ? Names{} : read_step->getAllColumnNames())
     {
         if (!projection->sample_block.findColumnOrSubcolumnByName(column_name) && !projection->metadata->virtuals.has(column_name))
         {
@@ -1039,7 +1124,9 @@ WhatIfCandidateResult evaluateProjection(
     const auto & proj_key = projection->metadata->getSortingKey();
     if (proj_key.column_names.empty())
     {
-        result.not_applicable_reason = "Projection has no sort key to prune on";
+        result.not_applicable_reason = aggregate
+            ? "Aggregate projection has no GROUP BY keys, which EXPLAIN WHATIF does not estimate yet"
+            : "Projection has no sort key to prune on";
         return result;
     }
 
@@ -1054,7 +1141,9 @@ WhatIfCandidateResult evaluateProjection(
                 backQuote(BlockOffsetColumn::name));
             return result;
         }
-        if (!metadata->getColumns().hasColumnOrSubcolumn(GetColumnsOptions::AllPhysical, required))
+        /// the key of an aggregate projection is over its own `GROUP BY` columns
+        const auto & stored = aggregate ? projection->metadata : metadata;
+        if (!stored->getColumns().hasColumnOrSubcolumn(GetColumnsOptions::AllPhysical, required))
         {
             result.not_applicable_reason = fmt::format(
                 "Projection orders by {}, which it does not store, so EXPLAIN WHATIF cannot rebuild its key",
@@ -1099,6 +1188,13 @@ WhatIfCandidateResult evaluateProjection(
     /// with no parts, the optimizer still rejects a projection that the query cannot use, and WHATIF reads no data
     auto probe = std::make_shared<HypotheticalProjection>(projection->clone());
     weigh(probe);
+    if (!probe->outcome.weighed)
+    {
+        result.not_applicable_reason = aggregate
+            ? "The optimizer weighs an aggregate projection only for a query with GROUP BY or DISTINCT on this table"
+            : "The optimizer does not weigh projections for this read";
+        return result;
+    }
     if (probe->outcome.rejected_for_query)
     {
         result.not_applicable_reason = probe->outcome.reason;
@@ -1109,8 +1205,10 @@ WhatIfCandidateResult evaluateProjection(
 
     if (settings.empirical)
     {
+        /// an exact count can remove parts from the base read, but the optimizer weighs an aggregate projection on all of them
+        const auto & parts_to_scan = aggregate ? probe->outcome.parent_read : baseline_parts;
         if (tryEstimateProjection(
-                result, *projection, filters_on_offsets, relaxing_setting, read_step, baseline_parts, analysis.selected_marks,
+                result, *projection, filters_on_offsets, relaxing_setting, read_step, parts_to_scan, analysis.selected_marks,
                 settings.projection_scan_budget_rows, weigh))
             return result;
         result.empirical_status = WhatIfCandidateResult::Unsupported;

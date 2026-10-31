@@ -296,7 +296,7 @@ DROP HYPOTHETICAL INDEX [IF EXISTS] name ON [db.]table_name
         .description = R"DOCS_MD(
 Hypothetical projections are virtual, session-scoped projections that you can attach to a `MergeTree` family table without actually building or storing them. They exist only inside the current session and are listed by [`EXPLAIN WHATIF`](/reference/statements/explain#explain-whatif).
 
-`EXPLAIN WHATIF` estimates normal (sorted) hypothetical projections. For a query, it shows how many marks and rows a read of the projection would touch. It also shows whether the optimizer would choose the projection over the base table. It does not estimate aggregate projections and some other projections, and it lists each such candidate with the reason. See [`EXPLAIN WHATIF`](/reference/statements/explain#explain-whatif) for the full list. The session's hypothetical projections are also visible in [`system.hypothetical_projections`](/reference/system-tables/hypothetical_projections).
+`EXPLAIN WHATIF` estimates normal (sorted) and aggregate hypothetical projections. For a query, it shows how many marks and rows a read of the projection would touch. It also shows whether the optimizer would choose the projection over the base table. It does not estimate some other projections, and it lists each such candidate with the reason. See [`EXPLAIN WHATIF`](/reference/statements/explain#explain-whatif) for the full list. The session's hypothetical projections are also visible in [`system.hypothetical_projections`](/reference/system-tables/hypothetical_projections).
 
 ## CREATE HYPOTHETICAL PROJECTION {#create-hypothetical-projection}
 

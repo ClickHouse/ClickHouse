@@ -1352,13 +1352,13 @@ EXPLAIN ESTIMATE SELECT * FROM ttt;
 
 Estimates the benefit a hypothetical skip index would have on a `SELECT` query, *without* materializing the index on disk. Define one or more candidates with [`CREATE HYPOTHETICAL INDEX`](/reference/statements/hypothetical-index#create-hypothetical-index), then run `EXPLAIN WHATIF SELECT ...` to see, for each candidate: applicability, estimated marks read, estimated bytes, and skip ratio.
 
-Hypothetical projections defined with [`CREATE HYPOTHETICAL PROJECTION`](/reference/statements/hypothetical-projection#create-hypothetical-projection) are candidates too. For a normal projection, the estimate builds its primary index in memory over the parts the query would read and prunes it as a materialized projection would be pruned.
+Hypothetical projections defined with [`CREATE HYPOTHETICAL PROJECTION`](/reference/statements/hypothetical-projection#create-hypothetical-projection) are candidates too. For a normal projection, the estimate builds its primary index in memory over the parts that the query would read. It prunes the index as the optimizer prunes a materialized projection. For an aggregate projection, the estimate first aggregates the rows of each part into one row for each group, as in a materialized projection part. It estimates an aggregate projection only from a full scan.
 
 The report gives the marks and rows it would read, a `read_ratio` against the base-table read, and a `verdict` on whether the optimizer would choose it. With `force_optimize_projection = 1` or `prefer_optimize_projection = 1` the optimizer uses any usable projection, so one it would not pick by cost is reported as `chosen (forced)`.
 
 When the result depends on how the projection part would be laid out, `marks_span` gives the range, and a decision that could go either way is reported as `too close to call`. On large tables the estimate reads a sample of granules (see `projection_scan_budget_rows`).
 
-WHATIF reports aggregate projections and projections with their own skip indexes as `not_applicable`. It also reports projections with a commit-order key, a virtual-column key or a stored `_block_number` as `not_applicable`. The same applies to projections that do not have every column that the query reads. WHATIF ignores `force_optimize_projection_name` and `preferred_optimize_projection_name`, and `force_optimize_projection` does not fail the statement.
+WHATIF reports projections with their own skip indexes, and aggregate projections without `GROUP BY` keys, as `not_applicable`. It also reports projections with a commit-order key, a virtual-column key or a stored `_block_number` as `not_applicable`. The same applies to normal projections that do not have every column that the query reads. WHATIF ignores `force_optimize_projection_name` and `preferred_optimize_projection_name`, and `force_optimize_projection` does not fail the statement.
 
 **Syntax**
 

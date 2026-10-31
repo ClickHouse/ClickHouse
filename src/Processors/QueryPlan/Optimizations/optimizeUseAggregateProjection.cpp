@@ -1,6 +1,7 @@
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
 #include <Processors/QueryPlan/Optimizations/projectionsCommon.h>
+#include <Storages/MergeTree/HypotheticalProjection.h>
 #include <Columns/ColumnConst.h>
 #include <Common/FieldAccurateComparison.h>
 #include <Functions/FunctionFactory.h>
@@ -760,7 +761,8 @@ static AggregateProjectionCandidates getAggregateProjectionCandidates(
     ReadFromMergeTree & reading,
     const PartitionIdToMaxBlockPtr & max_added_blocks,
     bool allow_implicit_projections,
-    size_t max_set_size_for_match)
+    size_t max_set_size_for_match,
+    std::vector<const ProjectionDescription *> agg_projections)
 {
     const auto & keys = aggregating.getParams().keys;
     const auto & aggregates = aggregating.getParams().aggregates;
@@ -770,13 +772,6 @@ static AggregateProjectionCandidates getAggregateProjectionCandidates(
     AggregateProjectionCandidates candidates;
 
     ContextPtr context = reading.getContext();
-
-    const auto & projections = metadata->projections;
-    std::vector<const ProjectionDescription *> agg_projections;
-
-    for (const auto & projection : projections)
-        if (projection.type == ProjectionDescription::Type::Aggregate)
-            agg_projections.push_back(&projection);
 
     bool can_use_minmax_projection = allow_implicit_projections
         && metadata->minmax_count_projection
@@ -895,19 +890,16 @@ static AggregateProjectionCandidates getAggregateProjectionCandidates(
 }
 
 static AggregateProjectionCandidates getAggregateProjectionCandidates(
-    QueryPlan::Node & node, DistinctStep & distinct, ReadFromMergeTree & reading, size_t max_set_size_for_match)
+    QueryPlan::Node & node,
+    DistinctStep & distinct,
+    ReadFromMergeTree & reading,
+    size_t max_set_size_for_match,
+    std::vector<const ProjectionDescription *> agg_projections)
 {
     const auto metadata = reading.getStorageMetadata();
     Block key_virtual_columns = reading.getMergeTreeData().getHeaderWithVirtualsForFilter(metadata);
 
     ContextPtr context = reading.getContext();
-
-    const auto & projections = metadata->projections;
-    std::vector<const ProjectionDescription *> agg_projections;
-
-    for (const auto & projection : projections)
-        if (projection.type == ProjectionDescription::Type::Aggregate)
-            agg_projections.push_back(&projection);
 
     AggregateProjectionCandidates candidates;
 
@@ -1243,9 +1235,26 @@ UseProjectionsResult optimizeUseAggregateProjections(
         if (projection.type == ProjectionDescription::Type::Aggregate)
             agg_projections.push_back(&projection);
 
+    /// a hypothetical aggregate projection of `EXPLAIN WHATIF`, the optimization weighs it but never reads it
+    auto hypothetical = reading->getHypotheticalProjection();
+    if (hypothetical && hypothetical->projection.type != ProjectionDescription::Type::Aggregate)
+        hypothetical = nullptr;
+    const ProjectionDescription * hypothetical_projection = hypothetical ? &hypothetical->projection : nullptr;
+    if (hypothetical)
+    {
+        agg_projections.push_back(hypothetical_projection);
+        hypothetical->outcome = {};
+        hypothetical->outcome.weighed = true;
+    }
+
     auto reject_all = [&](const String & reason)
     {
         rejectProjections(result.projection_reject_reasons, agg_projections, {}, reason);
+        if (hypothetical)
+        {
+            hypothetical->outcome.rejected_for_query = true;
+            recordHypotheticalOutcome(*hypothetical, result, nullptr, false);
+        }
         return std::move(result);
     };
 
@@ -1274,16 +1283,24 @@ UseProjectionsResult optimizeUseAggregateProjections(
 
     const size_t max_set_size_for_match = optimization_settings.max_set_size_for_projection_match;
     auto candidates
-        = (distinct ? getAggregateProjectionCandidates(node, *distinct, *reading, max_set_size_for_match)
+        = (distinct ? getAggregateProjectionCandidates(node, *distinct, *reading, max_set_size_for_match, agg_projections)
                     : getAggregateProjectionCandidates(
                           node,
                           *aggregating,
                           *reading,
                           max_added_blocks,
                           optimization_settings.optimize_use_implicit_projections,
-                          max_set_size_for_match));
+                          max_set_size_for_match,
+                          agg_projections));
 
     result.projection_reject_reasons = std::move(candidates.reject_reasons);
+
+    /// the matching rejects a projection for the query, whatever the parts
+    if (hypothetical && result.projection_reject_reasons.contains(hypothetical_projection->name))
+    {
+        hypothetical->outcome.rejected_for_query = true;
+        recordHypotheticalOutcome(*hypothetical, result, nullptr, false);
+    }
 
     auto logger = getLogger("optimizeUseAggregateProjections");
     const auto & query_info = reading->getQueryInfo();
@@ -1300,6 +1317,11 @@ UseProjectionsResult optimizeUseAggregateProjections(
     if (candidates.minmax_projection)
     {
         best_candidate = &candidates.minmax_projection->candidate;
+        if (hypothetical)
+        {
+            hypothetical->outcome.rejected_for_query = true;
+            hypothetical->outcome.reason = "the implicit projection of min, max and count serves the query";
+        }
     }
     else if (!candidates.statistics_min_max_aggregates.empty())
     {
@@ -1326,6 +1348,8 @@ UseProjectionsResult optimizeUseAggregateProjections(
         bool find_exact_ranges = !candidates.only_count_column.empty();
         if (!parent_reading_select_result || (!parent_reading_select_result->has_exact_ranges && find_exact_ranges))
             parent_reading_select_result = reading->selectRangesToRead(find_exact_ranges);
+        if (hypothetical)
+            hypothetical->outcome.parent_read = parent_reading_select_result->parts_with_ranges;
 
         const bool relax_projection_checks = context->getSettingsRef()[Setting::force_optimize_projection] || context->getSettingsRef()[Setting::prefer_optimize_projection];
 
@@ -1469,7 +1493,8 @@ UseProjectionsResult optimizeUseAggregateProjections(
                     reading->getTopKFilterInfo(),
                     reading->isQueryConditionCacheAllowed(),
                     reading->isTopKPrewhereQueryConditionCacheAllowed(),
-                    context);
+                    context,
+                    candidate.projection == hypothetical_projection ? hypothetical.get() : nullptr);
 
                 if (!analyzed)
                 {
@@ -1495,6 +1520,8 @@ UseProjectionsResult optimizeUseAggregateProjections(
                 candidate.stat = &stat;
 
                 size_t parent_reading_marks = parent_reading_select_result->selected_marks;
+                if (candidate.projection == hypothetical_projection)
+                    hypothetical->outcome.forced = relax_projection_checks && candidate.sum_marks > parent_reading_marks;
                 if (!relax_projection_checks && candidate.sum_marks > parent_reading_marks)
                 {
                     stat.description = fmt::format(
@@ -1515,7 +1542,11 @@ UseProjectionsResult optimizeUseAggregateProjections(
 
         /// No suitable projection found, and exact count optimization is not used.
         if (!best_candidate && exact_count == 0)
+        {
+            if (hypothetical)
+                recordHypotheticalOutcome(*hypothetical, result, findCandidate(candidates.real, hypothetical_projection), false);
             return result;
+        }
     }
     else
     {
@@ -1552,6 +1583,15 @@ UseProjectionsResult optimizeUseAggregateProjections(
                 LOG_DEBUG(logger, "{}", candidate.stat->description);
             }
         }
+    }
+
+    if (hypothetical)
+    {
+        const auto * own = findCandidate(candidates.real, hypothetical_projection);
+        recordHypotheticalOutcome(*hypothetical, result, own, own == best_candidate);
+        /// never read a hypothetical projection
+        if (best_candidate && best_candidate->projection == hypothetical_projection)
+            return result;
     }
 
     QueryPlanStepPtr projection_reading;

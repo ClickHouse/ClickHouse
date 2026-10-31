@@ -5,6 +5,7 @@
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
+#include <Processors/QueryPlan/Optimizations/Optimizations.h>
 #include <Processors/QueryPlan/Optimizations/projectionsCommon.h>
 #include <Storages/MergeTree/HypotheticalProjection.h>
 
@@ -470,6 +471,7 @@ bool analyzeProjectionCandidate(
         {
             candidate.parent_parts.emplace(part_with_ranges.data_part.get());
             parent_parts_sum_marks += part_with_ranges.getMarksCount();
+            candidate.parent_rows += part_with_ranges.getRowsCount();
         }
     }
 
@@ -517,6 +519,26 @@ bool analyzeProjectionCandidate(
     candidate.sum_marks += candidate.merge_tree_projection_select_result_ptr->selected_marks + parent_parts_sum_marks;
 
     return true;
+}
+
+void recordHypotheticalOutcome(
+    HypotheticalProjection & hypothetical, const UseProjectionsResult & result, const ProjectionCandidate * candidate, bool chosen)
+{
+    auto & outcome = hypothetical.outcome;
+    if (auto it = result.projection_reject_reasons.find(hypothetical.projection.name); it != result.projection_reject_reasons.end())
+        outcome.reason = it->second;
+    if (candidate && candidate->stat)
+    {
+        outcome.marks = candidate->sum_marks;
+        outcome.rows = candidate->selected_rows + candidate->parent_rows;
+        outcome.chosen = chosen;
+        if (!candidate->stat->description.empty())
+            outcome.reason = candidate->stat->description;
+        if (candidate->merge_tree_projection_select_result_ptr)
+            for (const auto & part : candidate->merge_tree_projection_select_result_ptr->parts_with_ranges)
+                outcome.ranges[part.parent_part->name] = part.ranges;
+    }
+    outcome.forced = outcome.forced && outcome.chosen;
 }
 
 void filterPartsAndCollectProjectionCandidates(
