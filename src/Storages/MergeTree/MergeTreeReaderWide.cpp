@@ -95,10 +95,17 @@ MergeTreeReaderWide::MergeTreeReaderWide(
 
     try
     {
+        /// Must be decided before any stream name is resolved: for a subcolumn absent from the part's
+        /// type, `getStreamNameForColumn` resolves an existing stream of the parent, so a check made
+        /// after resolution cannot tell the two apart.
+        columns_skipped_from_part.resize(columns_to_read.size());
+        for (size_t i = 0; i < columns_to_read.size(); ++i)
+            columns_skipped_from_part[i]
+                = isColumnDroppedByPendingMutation(i) || isSystemColumnInvalidated(i) || isSubcolumnMissingInPart(i);
+
         for (size_t i = 0; i < columns_to_read.size(); ++i)
         {
-            /// Column was dropped by a pending mutation or invalidated. Don't read stale data;
-            if (!isColumnDroppedByPendingMutation(i) && !isSystemColumnInvalidated(i))
+            if (!columns_skipped_from_part[i])
                 addStreams(columns_to_read[i], serializations[i]);
         }
     }
@@ -401,7 +408,8 @@ bool MergeTreeReaderWide::isColumnPartiallyRead(size_t pos) const
 
 bool MergeTreeReaderWide::isColumnSkipped(size_t pos) const
 {
-    return isColumnDroppedByPendingMutation(pos) || isSystemColumnInvalidated(pos);
+    /// Decided once in the constructor, see `columns_skipped_from_part`.
+    return columns_skipped_from_part[pos];
 }
 
 void MergeTreeReaderWide::lookupColumnsCache(
@@ -1352,7 +1360,7 @@ void MergeTreeReaderWide::deserializePrefixForAllColumnsImpl(size_t num_columns,
         DeserializeBinaryBulkStateMap deserialize_state_map;
         for (size_t pos = 0; pos < num_columns; ++pos)
         {
-            if (isColumnDroppedByPendingMutation(pos) || isSystemColumnInvalidated(pos))
+            if (columns_skipped_from_part[pos])
                 continue;
 
             try
@@ -1574,6 +1582,9 @@ std::unordered_map<String, std::vector<StreamWithSizeHint>> MergeTreeReaderWide:
     std::unordered_map<String, std::vector<StreamWithSizeHint>> column_to_streams;
     for (size_t i = 0; i < columns_to_read.size(); ++i)
     {
+        if (columns_skipped_from_part[i])
+            continue;
+
         const auto & name_and_type = columns_to_read[i];
         const auto & serialization = serializations[i];
         /// Under the requested name: the part may read the column under another one, as the `size0` of a Nested
