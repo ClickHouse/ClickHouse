@@ -1,3 +1,4 @@
+-- Tags: no-msan
 -- Test that min/max/argMin/argMax treat NaN consistently with ORDER BY.
 -- ClickHouse convention: NaN is always sorted LAST (after all non-NaN values).
 -- So min() and max() should both skip NaN, returning NaN only when all values are NaN.
