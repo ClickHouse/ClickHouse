@@ -774,7 +774,15 @@ std::pair<Poco::Dynamic::Var, bool> getIcebergType(DataTypePtr type, Int32 & ite
 {
     switch (type->getTypeId())
     {
+        case TypeIndex::UInt8:
+            if (isBool(type))
+                return {Iceberg::f_boolean, true};
+            [[fallthrough]];
+        case TypeIndex::Int8:
+        case TypeIndex::Int16:
+        case TypeIndex::UInt16:
         case TypeIndex::Int32:
+            /// Iceberg has no 8- or 16-bit integers.
             return {"int", true};
         case TypeIndex::UInt32:
         case TypeIndex::Int64:
@@ -878,6 +886,9 @@ Poco::Dynamic::Var getAvroType(DataTypePtr type, Int32 field_id)
     switch (type->getTypeId())
     {
         case TypeIndex::UInt8:
+            if (isBool(type))
+                return "boolean";
+            [[fallthrough]];
         case TypeIndex::Int8:
         case TypeIndex::UInt16:
         case TypeIndex::Int16:
@@ -2083,6 +2094,10 @@ Field normalizePartitionValue(const Field & value, const DataTypePtr & type)
     /// ClickHouse used to write a timestamp partition value as a simple long in Avro.
     if (value.getType() == Field::Types::Int64 && WhichDataType(value_type).isDateTime64())
         return DecimalField<Decimal64>(value.safeGet<Int64>(), getDecimalScale(*value_type));
+
+    /// ClickHouse used to write a `boolean` partition value as an Avro `int`.
+    if (value.getType() == Field::Types::Int64 && isBool(value_type))
+        return Field(static_cast<UInt64>(value.safeGet<Int64>() != 0));
 
     if (value.getType() == Field::Types::String && WhichDataType(value_type).isDecimal())
         return decodePartitionDecimalByType(value.safeGet<String>(), *value_type);

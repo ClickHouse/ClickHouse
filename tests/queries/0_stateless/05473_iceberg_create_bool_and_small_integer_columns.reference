@@ -1,0 +1,50 @@
+--- Iceberg schema ---
+1	b	boolean	1
+2	nb	boolean	0
+3	ab	list<boolean>	1
+4	mb	map<string, boolean>	1
+5	tb	struct<x: boolean>	1
+6	i8	int	1
+7	u8	int	1
+8	i16	int	1
+9	u16	int	1
+10	ni8	int	0
+--- DESCRIBE ---
+b	Bool
+nb	Nullable(Bool)
+ab	Array(Bool)
+mb	Map(String, Bool)
+tb	Tuple(\n    x Bool)
+i8	Int32
+u8	Int32
+i16	Int32
+u16	Int32
+ni8	Nullable(Int32)
+--- bounds: Bool is 1 byte, the widened integers are 4-byte little-endian int ---
+1	01	01
+6	80FFFFFF	80FFFFFF
+7	FF000000	FF000000
+8	0080FFFF	0080FFFF
+9	FFFF0000	FFFF0000
+--- data ---
+true	\N	[true,false]	{'k':true}	(false)	-128	255	-32768	65535	\N
+false	false	[]	{}	(true)	127	0	32767	0	-1
+--- Parquet physical types ---
+b	BOOLEAN	None
+i16	INT32	None
+i8	INT32	None
+u16	INT32	None
+u8	INT32	None
+--- ADD COLUMN ---
+nb2	Nullable(Bool)
+ni16	Nullable(Int32)
+-128	\N	\N
+1	true	-32768
+127	\N	\N
+--- Bool partitions ---
+(false,true)	Tuple(\n    b Bool,\n    nb Nullable(Bool))
+(true,NULL)	Tuple(\n    b Bool,\n    nb Nullable(Bool))
+(true,true)	Tuple(\n    b Bool,\n    nb Nullable(Bool))
+2	1	2	1
+1
+3
