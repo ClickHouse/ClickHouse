@@ -220,6 +220,17 @@ FieldVector getFieldsFromIndexArgumentsAST(const ASTPtr & arguments)
     return result;
 }
 
+void IndexDescription::checkExpandedExpressionDoesntContainSubqueries() const
+{
+    if (expression_list_ast)
+        checkExpressionDoesntContainSubqueries(*expression_list_ast);
+}
+
+bool IndexDescription::expandedExpressionContainsSubqueries() const
+{
+    return expression_list_ast && expressionContainsSubqueries(*expression_list_ast);
+}
+
 bool IndexDescription::isSimpleSingleColumnIndex() const
 {
     return expression_list_ast && expression_list_ast->children.size() == 1 && expression_list_ast->children[0]->as<ASTIdentifier>();

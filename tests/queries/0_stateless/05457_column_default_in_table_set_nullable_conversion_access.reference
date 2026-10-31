@@ -1,0 +1,12 @@
+owner
+1	1
+2	1
+3	1
+4	5
+no SELECT on the right-hand table
+ACCESS_DENIED
+row policy on the right-hand table
+1	0
+2	0
+3	0
+4	5

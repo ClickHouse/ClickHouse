@@ -190,7 +190,10 @@ void MergeTreeReaderTextIndex::initializeFallbackReader(const IMergeTreeReader *
         /// We pass a header with all physical columns so that createExpressionsAnalyzer
         /// can build a non-empty StorageDummy (it requires at least one column).
         NamesAndTypesList need_col{{column.name, column.type}};
-        auto dag = DB::evaluateMissingDefaults(physical_header, need_col, combined_columns, context_copy);
+        auto dag = DB::evaluateMissingDefaults(
+            physical_header, need_col, combined_columns, context_copy,
+            /*save_unneeded_columns=*/ true, /*null_as_default=*/ false,
+            /*allow_reading_tables=*/ settings.read_context != nullptr);
         if (!dag)
             continue;
 

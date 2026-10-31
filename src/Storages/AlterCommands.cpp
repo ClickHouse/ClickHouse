@@ -1084,10 +1084,10 @@ void AlterCommand::apply(
             ++insert_it;
         }
 
-        metadata.secondary_indices.emplace(
-            insert_it,
-            IndexDescription::getIndexFromAST(
-                index_decl, metadata.columns, /* is_implicitly_created */ false, metadata.escape_index_filenames, context));
+        auto index = IndexDescription::getIndexFromAST(
+            index_decl, metadata.columns, /* is_implicitly_created */ false, metadata.escape_index_filenames, context);
+        index.checkExpandedExpressionDoesntContainSubqueries();
+        metadata.secondary_indices.emplace(insert_it, std::move(index));
     }
     else if (type == DROP_INDEX)
     {
@@ -1910,8 +1910,12 @@ void AlterCommands::apply(
     {
         try
         {
+            /// Do not break an index accepted before the check of its expanded expression existed.
+            const bool had_subqueries = index.expandedExpressionContainsSubqueries();
             index = IndexDescription::getIndexFromAST(
                 index.definition_ast, columns_with_virtuals, index.isImplicitlyCreated(), index.escape_filenames, index_context);
+            if (!had_subqueries)
+                index.checkExpandedExpressionDoesntContainSubqueries();
         }
         catch (const Exception & exception)
         {

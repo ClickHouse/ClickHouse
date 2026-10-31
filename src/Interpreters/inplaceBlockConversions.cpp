@@ -62,6 +62,7 @@ namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int BAD_ARGUMENTS;
+    extern const int ACCESS_DENIED;
 }
 
 namespace
@@ -233,6 +234,14 @@ struct ResolvedExpressionList
 ResolvedExpressionList resolveExpressionList(const Block & header, const ASTPtr & expr_list, ContextPtr context)
 {
     auto execution_context = Context::createCopy(context);
+
+    /// A column default containing `x IN table` has its set built in place (see `buildPreparedSetsInplace`),
+    /// by a standalone plan with no initial query around it. Reading old parts passes the global context of
+    /// the storage, which never went through `makeQueryContext` and so carries a zero client version, which a
+    /// distributed set subquery refuses to send. Do as for the scalar subqueries of a standalone expression.
+    execution_context->setSetting("allow_experimental_parallel_reading_from_replicas", Field(0));
+    execution_context->setInitiatorVersionIfUnset();
+
     auto expression = buildQueryTree(expr_list, execution_context);
 
     ColumnsDescription fake_column_descriptions{};
@@ -252,7 +261,8 @@ std::optional<ActionsDAG> createExpressionsAnalyzer(
     const Block & header,
     ASTPtr expr_list,
     bool save_unneeded_columns,
-    ContextPtr context)
+    ContextPtr context,
+    bool allow_reading_tables = true)
 {
     if (!expr_list)
         return {};
@@ -268,6 +278,24 @@ std::optional<ActionsDAG> createExpressionsAnalyzer(
 
     auto actions = buildActionsDAGFromExpressionNode(expression, header.getColumnsWithTypeAndName(), planner_context, {}).first;
     chassert(expression->getChildren().size() == actions.getOutputs().size());
+
+    /// The actions are executed as a standalone `ExpressionActions` over a block, with no query plan
+    /// to carry a `CreatingSet` step, so a column default containing `x IN table` has to have its set
+    /// filled here. This must come after the actions are built: planning a set subquery renames the
+    /// table expressions it reads, and the renamed node is the very `IN` right-hand side the actions
+    /// look the set up by, so building first would make the lookup miss.
+    /// Without a query on whose behalf to read, as for the background merges and mutations, there is no
+    /// user to check the access to the tables of the sets for, nor whose row policies to apply. Do not
+    /// read them with the full access of the storage: that would store their contents in the new part.
+    /// This includes the tables with `ENGINE = Set`, whose sets are ready and so are not subqueries.
+    const auto & prepared_sets = planner_context->getPreparedSets();
+    if (!allow_reading_tables && (prepared_sets.hasSubqueries() || prepared_sets.hasSetsFromStorage()))
+        throw Exception(ErrorCodes::ACCESS_DENIED,
+            "Cannot evaluate the default expression of a column without a reading query, "
+            "because it reads a table (as in `x IN table`). Background merges and mutations are not authorized "
+            "to read other tables on behalf of any user");
+
+    buildPreparedSetsInplace(planner_context, execution_context);
 
     NamesWithAliases result_columns;
     for (size_t i = 0; i < expression->getChildren().size(); ++i)
@@ -290,13 +318,19 @@ std::optional<ActionsDAG> createExpressionsAnalyzer(
 }
 }
 
-void performRequiredConversions(Block & block, const NamesAndTypesList & required_columns, ContextPtr context, const ColumnDefaults & column_defaults, bool forbid_default_defaults)
+void performRequiredConversions(
+    Block & block,
+    const NamesAndTypesList & required_columns,
+    ContextPtr context,
+    const ColumnDefaults & column_defaults,
+    bool forbid_default_defaults,
+    bool allow_reading_tables)
 {
     ASTPtr conversion_expr_list = convertRequiredExpressions(block, required_columns, column_defaults, forbid_default_defaults);
     if (conversion_expr_list->children.empty())
         return;
 
-    std::optional<ActionsDAG> dag = createExpressionsAnalyzer(block, conversion_expr_list, true, context);
+    std::optional<ActionsDAG> dag = createExpressionsAnalyzer(block, conversion_expr_list, true, context, allow_reading_tables);
 
     if (dag)
     {
@@ -334,13 +368,14 @@ std::optional<ActionsDAG> evaluateMissingDefaults(
     const ColumnsDescription & columns,
     ContextPtr context,
     bool save_unneeded_columns,
-    bool null_as_default)
+    bool null_as_default,
+    bool allow_reading_tables)
 {
     if (!columns.hasDefaults() && (!null_as_default || !needConvertAnyNullToDefault(header, required_columns, columns)))
         return {};
 
     ASTPtr expr_list = defaultRequiredExpressions(header, required_columns, columns, null_as_default);
-    return createExpressionsAnalyzer(header, expr_list, save_unneeded_columns, context);
+    return createExpressionsAnalyzer(header, expr_list, save_unneeded_columns, context, allow_reading_tables);
 }
 
 /// Checks that a type-directed `enumerateStreams` walk over `column` cannot meet a column class

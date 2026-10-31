@@ -882,6 +882,12 @@ std::shared_ptr<FutureSetFromStorage> PreparedSets::findStorage(const Hash & key
     return it->second;
 }
 
+void PreparedSets::addOrReplaceSubquery(FutureSetFromSubqueryPtr subquery)
+{
+    auto key = subquery->getHash();
+    sets_from_subqueries[key] = std::move(subquery);
+}
+
 PreparedSets::Subqueries PreparedSets::getSubqueries() const
 {
     PreparedSets::Subqueries res;

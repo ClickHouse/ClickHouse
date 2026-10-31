@@ -84,6 +84,14 @@ struct IndexDescription
     void initExpressionInfo(ASTPtr index_expression, const ColumnsDescription & columns, ContextPtr context);
 
     bool isSimpleSingleColumnIndex() const;
+
+    /// An ALIAS column can bring in an `x IN table` that the check of the declared expression in `getIndexFromAST`
+    /// does not see, and a skip index cannot evaluate such a set. These look at the expression with ALIAS columns
+    /// expanded. `getIndexFromAST` does not throw for it itself, because it also loads definitions accepted before
+    /// this check existed (e.g. with a `Set` table on the right-hand side, which works): only new definitions
+    /// (`CREATE`, `ALTER ADD INDEX`, `ALTER` that changes the expression of an existing index) are checked.
+    void checkExpandedExpressionDoesntContainSubqueries() const;
+    bool expandedExpressionContainsSubqueries() const;
 };
 
 /// All secondary indices in storage
