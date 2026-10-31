@@ -102,9 +102,6 @@ public:
     void setRawPath(const Path & path) override { blob_path = path; }
     const String & getRawURI() const override { return blob_path.path; }
 
-    const Paths & getPaths() const override { return blobs_paths; }
-    void setPaths(const Paths & paths) override { blobs_paths = paths; }
-
     String getNamespace() const override { return connection_params.getContainer(); }
 
     std::string getMetadataLocationURI() const override;
@@ -145,6 +142,9 @@ public:
     }
 
 protected:
+    const Paths & getPathsImpl() const override { return blobs_paths; }
+    void setPathsImpl(const Paths & paths) override { blobs_paths = paths; }
+
     void fromDisk(const String & disk_name, ASTs & args, ContextPtr context, bool with_structure) override;
 private:
     void fromNamedCollection(const NamedCollection & collection, ContextPtr context) override;
