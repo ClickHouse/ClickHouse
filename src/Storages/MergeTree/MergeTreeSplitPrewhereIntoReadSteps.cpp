@@ -29,8 +29,8 @@ struct NodeInfo
     /// Names of the indexes whose readers fill the virtual columns required to compute this node.
     /// Used for grouping like `required_storage_columns`: one reader fills all virtual columns of an index.
     NameSet required_indexes;
-    /// True if computing this node may throw an exception, so it must not be evaluated on rows
-    /// that a preceding condition rejects.
+    /// True if computing this node may throw an exception or is expensive, so it must not be evaluated
+    /// on rows that a preceding condition rejects.
     bool may_throw = false;
 
     /// True if both nodes read the same storage columns and indexes, so their conditions may share a step.
@@ -119,7 +119,8 @@ void fillRequiredColumns(
     /// FunctionDateOrDateTimeAddInterval). There is no sound can-throw oracle in the tree yet,
     /// see the TODO on canThrow in IFunctionAdaptors.h.
     if (!node_info.may_throw && node->type == ActionsDAG::ActionType::FUNCTION && node->function_base
-        && node->function_base->isSuitableForShortCircuitArgumentsExecution(getArgumentTypesWithConstInfo(node->children)))
+        && (node->function_base->isSuitableForShortCircuitArgumentsExecution(getArgumentTypesWithConstInfo(node->children))
+            || node->function_base->isExpensive()))
         node_info.may_throw = true;
 }
 
