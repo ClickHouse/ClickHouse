@@ -2,6 +2,7 @@
 #include <Storages/MergeTree/MergeTreeReadersChain.h>
 #include <Storages/MergeTree/PatchParts/PatchPartsUtils.h>
 #include <Storages/KeyDescription.h>
+#include <Storages/StorageSnapshot.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Common/logger_useful.h>
 #include <Common/typeid_cast.h>
@@ -28,12 +29,14 @@ LoggerPtr getMergeTreeReadersChainLogger()
 }
 
 static NameSet collectColumnsConsumedByChainActions(const RangeReaders & range_readers);
+static NameSet collectColumnsComputedByMutationSteps(const RangeReaders & range_readers);
 
 MergeTreeReadersChain::MergeTreeReadersChain(RangeReaders range_readers_, MergeTreePatchReaders patch_readers_)
     : range_readers(std::move(range_readers_))
     , patch_readers(std::move(patch_readers_))
     , patches_results(patch_readers.size())
     , columns_consumed_by_chain_actions(collectColumnsConsumedByChainActions(range_readers))
+    , columns_computed_by_mutation_steps(collectColumnsComputedByMutationSteps(range_readers))
     , is_initialized(true)
 {
     for (const auto & range_reader : range_readers)
@@ -273,6 +276,25 @@ static NameSet collectColumnsConsumedByChainActions(const RangeReaders & range_r
     return must_convert;
 }
 
+static NameSet collectColumnsComputedByMutationSteps(const RangeReaders & range_readers)
+{
+    NameSet computed;
+    for (const auto & reader : range_readers)
+    {
+        const auto * prewhere_info = reader.getPrewhereInfo();
+        if (!prewhere_info || !prewhere_info->actions || !prewhere_info->is_mutation_step)
+            continue;
+
+        for (const auto * output : prewhere_info->actions->getActionsDAG().getOutputs())
+        {
+            if (output->type == ActionsDAG::ActionType::INPUT)
+                continue;
+            computed.insert(output->result_name);
+        }
+    }
+    return computed;
+}
+
 /// Builds `ColumnsWithTypeAndName` using the on-disk column descriptions (from `IMergeTreeReader::getColumnsToRead`).
 /// This is important when columns have not yet been converted, i.e. their types with differ those contained in `getReadSampleBlock`.
 static ColumnsWithTypeAndName toColumnsWithTypeAndName(const Columns & columns, const NamesAndTypes & on_disk_columns)
@@ -412,13 +434,51 @@ void MergeTreeReadersChain::executeActionsBeforePrewhere(
 
     merge_tree_reader->fillVirtualColumns(read_columns, num_read_rows);
 
+    /// A subcolumn's own stream in the part is stale when an on-fly mutation step recomputed its parent.
+    NameSet derived_from_mutation_result;
+    std::optional<NameSet> previous_step_columns_with_derived_parents;
+    if (!columns_computed_by_mutation_steps.empty() && !(previous_header.empty() && result.additional_columns.empty()))
+    {
+        const auto options = GetColumnsOptions(GetColumnsOptions::AllPhysical).withSubcolumns();
+        const auto & storage_snapshot = merge_tree_reader->getStorageSnapshot();
+        size_t pos = 0;
+        for (const auto & name_and_type : merge_tree_reader->getColumns())
+        {
+            auto column_in_storage = storage_snapshot->tryGetColumn(options, name_and_type.name);
+            if (column_in_storage && column_in_storage->isSubcolumn())
+            {
+                const auto & name_in_storage = column_in_storage->getNameInStorage();
+                const bool parent_available
+                    = previous_header.has(name_in_storage) || result.additional_columns.has(name_in_storage);
+
+                if (parent_available && columns_computed_by_mutation_steps.contains(name_in_storage))
+                {
+                    read_columns[pos] = nullptr;
+                    derived_from_mutation_result.insert(name_and_type.name);
+                    /// A parent projected out by a PREWHERE step is only in `result.additional_columns`, not in `previous_step_columns`.
+                    if (!previous_step_columns.contains(name_in_storage))
+                    {
+                        if (!previous_step_columns_with_derived_parents)
+                            previous_step_columns_with_derived_parents.emplace(previous_step_columns);
+                        previous_step_columns_with_derived_parents->insert(name_in_storage);
+                    }
+                }
+            }
+            ++pos;
+        }
+    }
+
     /// fillMissingColumns() must be called after reading but before any filterings because
     /// some columns (e.g. arrays) might be only partially filled and thus not be valid and
     /// fillMissingColumns() fixes this.
     /// Names of columns produced by earlier chain steps (advertised in `previous_header`), so a
     /// subcolumn whose parent is among them is deferred to evaluateMissingDefaults, not default-filled.
     bool should_evaluate_missing_defaults = false;
-    merge_tree_reader->fillMissingColumns(read_columns, should_evaluate_missing_defaults, num_read_rows, previous_step_columns);
+    merge_tree_reader->fillMissingColumns(
+        read_columns,
+        should_evaluate_missing_defaults,
+        num_read_rows,
+        previous_step_columns_with_derived_parents ? *previous_step_columns_with_derived_parents : previous_step_columns);
 
     if (result.total_rows_per_granule != num_read_rows)
     {
@@ -446,6 +506,11 @@ void MergeTreeReadersChain::executeActionsBeforePrewhere(
     auto patch_max_version = getMaxPatchVersionForStep(range_reader);
     const auto & result_header = range_reader.getReadSampleBlock();
     auto columns_for_patches = getColumnsForPatches(result_header, read_columns);
+
+    /// A derived slot inherits the parent's patches, already applied in version order around the mutation step.
+    if (!derived_from_mutation_result.empty())
+        for (auto & columns_for_patch : columns_for_patches)
+            std::erase_if(columns_for_patch, [&](const ColumnForPatch & column) { return derived_from_mutation_result.contains(column.column_name); });
 
     auto apply_patches = [&](ColumnForPatch::Order order)
     {
