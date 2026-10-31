@@ -6,6 +6,7 @@
 #include <Client/ClientBase.h>
 #include <Common/EnvironmentChecks.h>
 #include <Common/Exception.h>
+#include <Common/StackTrace.h>
 #include <Common/StringUtils.h>
 #include <Common/getHashOfLoadedBinary.h>
 #include <Common/Crypto/OpenSSLInitializer.h>
@@ -17,7 +18,6 @@
 #include <csignal>
 #include <ctime>
 #include <pthread.h>
-#include <sanitizer/common_interface_defs.h>
 #include <poll.h>
 #include <unistd.h>
 
@@ -146,8 +146,16 @@ static void signalSafeWrite(const char * msg)
     (void)write(STDERR_FILENO, msg, __builtin_strlen(msg));
 }
 
-/// Flag set by the SIGUSR1 handler on the runner thread after printing its stack.
-static std::atomic<bool> runner_stack_printed{false};
+/// The stack of the runner thread, captured by its SIGUSR1 handler. The handler
+/// only records the frame addresses: symbolizing a multi-gigabyte binary takes
+/// many seconds, and while a thread is inside a signal handler it cannot run
+/// anything else - a symbolizing runner could not take the next input, so the
+/// dump made the next input time out. The main thread symbolizes and prints the
+/// frames after libfuzzer's timeout is certain.
+static StackTrace runner_stack_trace{NoCapture{}};
+
+/// Flag set by the SIGUSR1 handler on the runner thread after capturing its stack.
+static std::atomic<bool> runner_stack_captured{false};
 
 /// Forward a signal to the handler that was installed before ours.
 static void forwardToOriginalHandler(const struct sigaction & original, int sig, siginfo_t * info, void * ctx)
@@ -205,10 +213,10 @@ static void fuzzerSigusr1Handler(int sig, siginfo_t * info, void * ctx)
 {
     if (info && info->si_code == SI_TKILL)
     {
-        signalSafeWrite("\n=== Runner thread stack trace (where the query is stuck) ===\n");
-        __sanitizer_print_stack_trace();
-        signalSafeWrite("=== End runner thread stack trace ===\n\n");
-        runner_stack_printed.store(true, std::memory_order_release);
+        /// The same async-signal-safe capture of the interrupted code that
+        /// `system.stack_trace` uses for other threads.
+        runner_stack_trace = StackTrace(*reinterpret_cast<const ucontext_t *>(ctx));
+        runner_stack_captured.store(true, std::memory_order_release);
         return;
     }
 
@@ -227,10 +235,10 @@ static inline void signal_safe_sleep_ms(int ms)
 ///
 /// SIGALRM is also fired periodically by libfuzzer's `setitimer` (every
 /// `UnitTimeout/2 + 1` seconds), not only on an actual timeout. We must
-/// distinguish the two: the runner-stack dump shells out to llvm-symbolizer
-/// (slow, not async-signal-safe), and running it on every periodic alarm has
-/// caused real timeouts where the iteration would otherwise have completed in
-/// time. We skip the dump unless our own monotonic clock matches libfuzzer's
+/// distinguish the two: symbolizing the runner stack is slow and not
+/// async-signal-safe, and running it on every periodic alarm has caused real
+/// timeouts where the iteration would otherwise have completed in time. We
+/// skip the dump unless our own monotonic clock matches libfuzzer's
 /// own timeout condition (`elapsed >= UnitTimeoutSec`). We also forward to
 /// libfuzzer's handler *without* permanently restoring it, so the wrapper
 /// continues to intercept later periodic alarms.
@@ -252,7 +260,7 @@ static void fuzzerSigalrmHandler(int sig, siginfo_t * info, void * ctx)
         {
             signalSafeWrite("[fuzzer] SIGALRM handler: sending SIGUSR1 to runner thread\n");
 
-            runner_stack_printed.store(false, std::memory_order_release);
+            runner_stack_captured.store(false, std::memory_order_release);
             int rc = pthread_kill(runner_thread_id, SIGUSR1);
 
             if (rc != 0)
@@ -272,16 +280,31 @@ static void fuzzerSigalrmHandler(int sig, siginfo_t * info, void * ctx)
                 signalSafeWrite(err_buf + pos);
             }
 
-            /// Wait for the runner thread to print its stack, yielding CPU.
+            /// Wait for the runner thread to capture its stack, yielding CPU.
             constexpr int max_iterations = 3000;
             int i = 0;
-            for (; i < max_iterations && !runner_stack_printed.load(std::memory_order_acquire); ++i)
+            for (; i < max_iterations && !runner_stack_captured.load(std::memory_order_acquire); ++i)
                 signal_safe_sleep_ms(1);
 
             if (i == max_iterations)
+            {
                 signalSafeWrite("[fuzzer] Timed out waiting for runner thread stack trace\n");
+            }
             else
-                signalSafeWrite("[fuzzer] Runner thread stack trace printed successfully\n");
+            {
+                /// Symbolization allocates, which is not async-signal-safe. The
+                /// main thread is blocked in `LLVMFuzzerTestOneInput` waiting for
+                /// the runner, not inside the allocator, and libfuzzer's own
+                /// handler symbolizes the main-thread stack right after this in
+                /// the same way before it calls `_Exit`.
+                signalSafeWrite("\n=== Runner thread stack trace (where the query is stuck) ===\n");
+                runner_stack_trace.toStringEveryLine([](std::string_view line)
+                {
+                    (void)write(STDERR_FILENO, line.data(), line.size());
+                    signalSafeWrite("\n");
+                });
+                signalSafeWrite("=== End runner thread stack trace ===\n\n");
+            }
         }
     }
 
