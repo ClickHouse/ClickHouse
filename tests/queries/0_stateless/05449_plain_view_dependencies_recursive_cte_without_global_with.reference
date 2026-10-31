@@ -1,0 +1,10 @@
+v_setting	1
+v_setting	3
+v_enclosing_setting	1
+v_enclosing_setting	3
+v_body_setting	1
+v_body_setting	3
+v_cte	1
+v_cte	2
+v_cte	3
+r	['v_body_setting','v_enclosing_setting','v_setting']

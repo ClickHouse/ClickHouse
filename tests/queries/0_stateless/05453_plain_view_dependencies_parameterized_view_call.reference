@@ -1,0 +1,6 @@
+pv	['v']
+pv_other	1	['v_qualified']
+1
+2
+after drop	pv	[]
+after drop	pv_other	[]

@@ -1,7 +1,9 @@
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Databases/DDLDependencyVisitor.h>
 #include <Dictionaries/getDictionaryConfigurationFromAST.h>
+#include <Analyzer/Identifier.h>
 #include <Databases/removeWhereConditionPlaceholder.h>
+#include <Interpreters/AddDefaultDatabaseVisitor.h>
 #include <Interpreters/ApplyWithSubqueryVisitor.h>
 #include <Interpreters/Cluster.h>
 #include <Interpreters/Context.h>
@@ -10,13 +12,19 @@
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/getClusterName.h>
 #include <Storages/StorageMaterializedView.h>
+#include <TableFunctions/TableFunctionFactory.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
+#include <Parsers/ASTSelectIntersectExceptQuery.h>
+#include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
+#include <Parsers/ASTSetQuery.h>
+#include <Parsers/ASTSubquery.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Parsers/ASTViewTargets.h>
+#include <Parsers/ASTWithElement.h>
 #include <Parsers/ParserSelectWithUnionQuery.h>
 #include <Parsers/parseQuery.h>
 #include <Common/KnownObjectNames.h>
@@ -24,12 +32,14 @@
 #include <Core/Settings.h>
 #include <Core/UUID.h>
 #include <Poco/String.h>
+#include <base/scope_guard.h>
 
 
 namespace DB
 {
 namespace Setting
 {
+    extern const SettingsBool enable_global_with_statement;
     extern const SettingsUInt64 max_parser_backtracks;
     extern const SettingsUInt64 max_parser_depth;
     extern const SettingsUInt64 max_query_size;
@@ -37,14 +47,41 @@ namespace Setting
 
 namespace
 {
+    /// The value of `enable_global_with_statement` in the scope of the `SETTINGS` clause `settings_ast`, given its value outside.
+    bool applyEnableGlobalWithStatement(const ASTPtr & settings_ast, bool enabled)
+    {
+        if (!settings_ast)
+            return enabled;
+
+        const auto & set_query = settings_ast->as<const ASTSetQuery &>();
+        if (const auto * value = set_query.changes.tryGet("enable_global_with_statement"))
+            enabled = Settings::castValueUtil("enable_global_with_statement", *value).safeGet<bool>();
+        if (std::ranges::contains(set_query.default_settings, "enable_global_with_statement"))
+            enabled = Settings{}[Setting::enable_global_with_statement];
+        return enabled;
+    }
+
+    /// Like in `ApplyWithSubqueryVisitor`, a trailing `SETTINGS` clause of a set operation with several operands
+    /// applies to every operand, not only to the last one, where `ParserSelectQuery` leaves it.
+    bool applySetOperationEnableGlobalWithStatement(const ASTs & operands, const ASTPtr & settings_ast, bool enabled)
+    {
+        enabled = applyEnableGlobalWithStatement(settings_ast, enabled);
+        if (operands.size() > 1)
+        {
+            if (const auto * last_select = operands.back()->as<ASTSelectQuery>())
+                enabled = applyEnableGlobalWithStatement(last_select->settings(), enabled);
+        }
+        return enabled;
+    }
+
     /// Data for DDLDependencyVisitor.
     /// Used to visits ASTCreateQuery and extracts the names of all tables explicitly referenced in the create query.
     class DDLDependencyVisitorData
     {
         friend void tryVisitNestedSelect(const String & query, DDLDependencyVisitorData & data);
     public:
-        DDLDependencyVisitorData(const ContextPtr & global_context_, const QualifiedTableName & table_name_, const ASTPtr & ast_, const String & current_database_, bool can_throw_, bool validate_current_database_, size_t max_expanded_ast_elements_)
-            : create_query(ast_), table_name(table_name_), default_database(global_context_->getCurrentDatabase()), current_database(current_database_), global_context(global_context_), can_throw(can_throw_), validate_current_database(validate_current_database_), max_expanded_ast_elements(max_expanded_ast_elements_)
+        DDLDependencyVisitorData(const ContextPtr & global_context_, const QualifiedTableName & table_name_, const ASTPtr & ast_, const String & current_database_, bool can_throw_, bool validate_current_database_, size_t max_expanded_ast_elements_, const String & engine_arguments_database_)
+            : create_query(ast_), table_name(table_name_), default_database(global_context_->getCurrentDatabase()), current_database(current_database_), engine_arguments_database(engine_arguments_database_), global_context(global_context_), can_throw(can_throw_), validate_current_database(validate_current_database_), max_expanded_ast_elements(max_expanded_ast_elements_), enable_global_with_statement(global_context_->getSettingsRef()[Setting::enable_global_with_statement])
         {
         }
 
@@ -61,6 +98,17 @@ namespace
         std::optional<StorageID> getMvFromDependency()
         {
             return mv_from_dependency;
+        }
+
+        TableNamesSet getPlainViewDependencies()
+        {
+            if (!is_plain_view)
+                return {};
+
+            /// Every table the definition of the view refers to, not only its table expressions: a table named
+            /// in `x IN table`, `joinGet` or `dictGet` blocks `DROP` through the referential graph just the same,
+            /// so it lists the view among its dependents as well.
+            return getDependencies();
         }
 
         bool needChildVisit(const ASTPtr & child) const { return !skip_asts.contains(child.get()); }
@@ -94,13 +142,36 @@ namespace
         QualifiedTableName table_name;
         String default_database;
         String current_database;
+        String engine_arguments_database;
         ContextPtr global_context;
         TableNamesSet dependencies;
         bool can_throw;
         bool validate_current_database;
+        bool is_plain_view = false;
         size_t max_expanded_ast_elements;
         std::optional<StorageID> mv_to_dependency;
         std::optional<StorageID> mv_from_dependency;
+
+        struct WithDeclaration
+        {
+            /// Whether a bare name that refers to the declaration is not a table.
+            bool hides_table = false;
+            bool is_recursive = false;
+        };
+
+        /// The declarations of the common table expressions of the enclosing select queries by name, the nearest last.
+        std::unordered_map<String, std::vector<WithDeclaration>> with_declarations;
+        /// The value of `enable_global_with_statement` in the current select query.
+        bool enable_global_with_statement;
+        /// The aliases of the expressions of the `WITH` clauses of the enclosing select queries, visible in the nested select queries.
+        std::unordered_set<String> with_expression_aliases;
+        /// The aliases of the expressions of the current select query.
+        std::unordered_set<String> expression_aliases;
+        /// The aliases of the expressions of the current select query which enclose the visited node. Like the analyzer,
+        /// a name does not refer to the alias of an expression while that expression is resolved, e.g. `1 IN ids AS ids`.
+        std::vector<String> enclosing_aliases;
+        /// The table names which refer to a common table expression or to an alias of an expression rather than to a table.
+        std::unordered_set<const IAST *> non_table_references;
 
         /// CREATE TABLE or CREATE DICTIONARY or CREATE VIEW or CREATE TEMPORARY TABLE or CREATE DATABASE query.
         void visitCreateQuery(const ASTCreateQuery & create)
@@ -198,6 +269,8 @@ namespace
                             mv_from_dependency->uuid = UUIDHelpers::Nil;
                         }
                     }
+                    else if (create.is_ordinary_view)
+                        is_plain_view = true;
                 }
                 else
                     skip_asts.insert(create.select);
@@ -243,11 +316,14 @@ namespace
         /// (for example, CREATE VIEW).
         void visitTableExpression(const ASTTableExpression & expr)
         {
+            if (expr.table_function)
+                visitParameterizedViewCall(*expr.table_function);
+
             if (!expr.database_and_table_name)
                 return;
 
             const ASTIdentifier * identifier = dynamic_cast<const ASTIdentifier *>(expr.database_and_table_name.get());
-            if (!identifier)
+            if (!identifier || non_table_references.contains(identifier))
                 return;
 
             auto table_identifier = identifier->createTable();
@@ -267,9 +343,213 @@ namespace
             dependencies.emplace(qualified_name);
         }
 
+        /// Like in the analyzer, a table function which is not registered is a call of a parameterized view,
+        /// e.g. `pv(id = 1)` or `db.pv(id = 1)`.
+        void visitParameterizedViewCall(const IAST & table_function)
+        {
+            const auto * function = table_function.as<ASTFunction>();
+            if (!function || TableFunctionFactory::instance().isTableFunctionName(function->name))
+                return;
+
+            Identifier identifier{function->name};
+            if (identifier.getPartsSize() == 1)
+                dependencies.emplace(QualifiedTableName{current_database, identifier[0]});
+            else if (identifier.getPartsSize() == 2)
+                dependencies.emplace(QualifiedTableName{identifier[0], identifier[1]});
+        }
+
+    public:
+        /// The references of a recursive common table expression to itself stay bare names in the stored definition,
+        /// in its `WITH RECURSIVE` list and in the copies of its body `ApplyWithSubqueryVisitor` substitutes for it.
+        /// Collects them with the scoping `AddDefaultDatabaseVisitor` leaves them unqualified with. Like the analyzer,
+        /// a select query in which `enable_global_with_statement` is disabled sees only its own common table expressions.
+        /// Also collects the right arguments of `IN` which are aliases of expressions, which `AddDefaultDatabaseVisitor`
+        /// leaves unqualified with the same scoping, except the aliases of the enclosing expressions.
+        /// Runs on the whole query before it is visited, so that the `SETTINGS` clauses of the enclosing select queries are known.
+        void collectNonTableReferences(const ASTPtr & ast)
+        {
+            if (const auto * select = ast->as<ASTSelectQuery>())
+            {
+                auto enclosing_with_declarations = with_declarations;
+                auto enclosing_with_expression_aliases = with_expression_aliases;
+                auto enclosing_expression_aliases = std::move(expression_aliases);
+                auto outer_enclosing_aliases = std::move(enclosing_aliases);
+                enclosing_aliases.clear();
+                const bool enclosing_enable_global_with_statement = enable_global_with_statement;
+                enable_global_with_statement = applyEnableGlobalWithStatement(select->settings(), enable_global_with_statement);
+                if (!enable_global_with_statement)
+                    with_declarations.clear();
+
+                expression_aliases.clear();
+                for (const auto & child : select->children)
+                    AddDefaultDatabaseVisitor::collectAliases(child, expression_aliases);
+
+                if (select->with())
+                {
+                    for (const auto & child : select->with()->children)
+                    {
+                        if (const auto * with_element = child->as<ASTWithElement>())
+                            with_declarations[with_element->name].push_back(
+                            {
+                                .hides_table = select->recursive_with,
+                                .is_recursive = select->recursive_with && AddDefaultDatabaseVisitor::getRecursiveBodyBranches(with_element->subquery),
+                            });
+                        else
+                            AddDefaultDatabaseVisitor::collectWithExpressionAliases(*child, with_expression_aliases);
+                    }
+                }
+
+                for (const auto & child : select->children)
+                {
+                    if (child.get() != select->with().get())
+                    {
+                        collectNonTableReferences(child);
+                        continue;
+                    }
+
+                    for (const auto & element : child->children)
+                    {
+                        if (const auto * with_element = element->as<ASTWithElement>())
+                            collectNonTableReferencesInBody(with_element->name, with_element->subquery, element);
+                        else
+                            collectNonTableReferences(element);
+                    }
+                }
+
+                with_declarations = std::move(enclosing_with_declarations);
+                with_expression_aliases = std::move(enclosing_with_expression_aliases);
+                expression_aliases = std::move(enclosing_expression_aliases);
+                enclosing_aliases = std::move(outer_enclosing_aliases);
+                enable_global_with_statement = enclosing_enable_global_with_statement;
+                return;
+            }
+
+            if (const auto * union_query = ast->as<ASTSelectWithUnionQuery>(); union_query && union_query->list_of_selects)
+            {
+                collectNonTableReferencesInOperands(union_query->list_of_selects->children, union_query->settings_ast);
+                return;
+            }
+
+            if (const auto * intersect_except = ast->as<ASTSelectIntersectExceptQuery>())
+            {
+                collectNonTableReferencesInOperands(intersect_except->getListOfSelects(), nullptr);
+                return;
+            }
+
+            if (const auto * subquery = ast->as<ASTSubquery>(); subquery && !subquery->cte_name.empty())
+            {
+                auto it = with_declarations.find(subquery->cte_name);
+                if (it != with_declarations.end() && !it->second.empty())
+                {
+                    for (const auto & child : subquery->children)
+                        collectNonTableReferencesInBody(subquery->cte_name, ast, child);
+                    return;
+                }
+            }
+
+            if (const auto * table_expression = ast->as<ASTTableExpression>(); table_expression && table_expression->database_and_table_name)
+                addCteReference(*table_expression->database_and_table_name);
+
+            const String alias = ast->tryGetAlias();
+            if (!alias.empty())
+                enclosing_aliases.push_back(alias);
+
+            if (const auto * function = ast->as<ASTFunction>();
+                function && functionIsInOrGlobalInOperator(function->name) && function->arguments && function->arguments->children.size() > 1)
+            {
+                addCteReference(*function->arguments->children[1]);
+                addExpressionAliasReference(*function->arguments->children[1]);
+            }
+
+            if (const auto * function = ast->as<ASTFunction>(); function && function->name == "lambda")
+            {
+                auto enclosing_expression_aliases = expression_aliases;
+                AddDefaultDatabaseVisitor::collectLambdaAliases(*function, expression_aliases);
+                for (const auto & child : ast->children)
+                    collectNonTableReferences(child);
+                expression_aliases = std::move(enclosing_expression_aliases);
+            }
+            else
+            {
+                for (const auto & child : ast->children)
+                    collectNonTableReferences(child);
+            }
+
+            if (!alias.empty())
+                enclosing_aliases.pop_back();
+        }
+
+    private:
+        /// Only the recursive members of a recursive common table expression reference it. Inside the body of an ordinary one,
+        /// and inside the seed of a recursive one, its name is a table, unless an enclosing select query declares the same name.
+        void collectNonTableReferencesInBody(const String & name, const ASTPtr & subquery, const ASTPtr & node)
+        {
+            auto & declarations = with_declarations[name];
+            const WithDeclaration declaration = declarations.back();
+            const ASTs * branches = declaration.is_recursive ? AddDefaultDatabaseVisitor::getRecursiveBodyBranches(subquery) : nullptr;
+
+            /// The branches are the operands of the set operation of the body.
+            const bool enclosing_enable_global_with_statement = enable_global_with_statement;
+            if (branches)
+                enable_global_with_statement = applySetOperationEnableGlobalWithStatement(*branches, nullptr, enable_global_with_statement);
+
+            declarations.pop_back();
+            collectNonTableReferences(branches ? branches->front() : node);
+            with_declarations[name].push_back(declaration);
+
+            if (branches)
+            {
+                for (size_t i = 1; i < branches->size(); ++i)
+                    collectNonTableReferences((*branches)[i]);
+            }
+
+            enable_global_with_statement = enclosing_enable_global_with_statement;
+        }
+
+        void collectNonTableReferencesInOperands(const ASTs & operands, const ASTPtr & settings_ast)
+        {
+            const bool enclosing_enable_global_with_statement = enable_global_with_statement;
+            enable_global_with_statement = applySetOperationEnableGlobalWithStatement(operands, settings_ast, enable_global_with_statement);
+
+            for (const auto & operand : operands)
+                collectNonTableReferences(operand);
+
+            enable_global_with_statement = enclosing_enable_global_with_statement;
+        }
+
+        void addCteReference(const IAST & table_name_ast)
+        {
+            const auto * identifier = dynamic_cast<const ASTIdentifier *>(&table_name_ast);
+            if (!identifier || identifier->compound())
+                return;
+
+            auto it = with_declarations.find(identifier->name());
+            if (it != with_declarations.end() && !it->second.empty() && it->second.back().hides_table)
+                non_table_references.insert(identifier);
+        }
+
+        void addExpressionAliasReference(const IAST & table_name_ast)
+        {
+            const auto * identifier = dynamic_cast<const ASTIdentifier *>(&table_name_ast);
+            if (!identifier || identifier->compound())
+                return;
+
+            const String & name = identifier->name();
+            if (std::ranges::contains(enclosing_aliases, name))
+                return;
+
+            if (expression_aliases.contains(name) || with_expression_aliases.contains(name))
+                non_table_references.insert(identifier);
+        }
+
         /// Finds dependencies of a table engine.
         void visitTableEngine(const ASTFunction & table_engine)
         {
+            /// The arguments of the engine are resolved against the database the storage factory evaluates them with.
+            String current_database_ = current_database;
+            current_database = engine_arguments_database;
+            SCOPE_EXIT({ current_database = current_database_; });
+
             /// Dictionary(db_name.dictionary_name)
             if (table_engine.name == "Dictionary")
                 addQualifiedNameFromArgument(table_engine, 0);
@@ -325,7 +605,8 @@ namespace
             {
                 /// x IN table_name. A literal, as in x IN ('db.table'), is a set of values, not a table name.
                 /// We set evaluate=false here because we don't want to evaluate a subquery in "x IN subquery".
-                if (function.arguments && function.arguments->children.size() > 1 && !function.arguments->children[1]->as<ASTLiteral>())
+                if (function.arguments && function.arguments->children.size() > 1 && !function.arguments->children[1]->as<ASTLiteral>()
+                    && !non_table_references.contains(function.arguments->children[1].get()))
                     addQualifiedNameFromArgument(function, 1, /* evaluate= */ false);
             }
             else if (function.name == "dictionary")
@@ -443,7 +724,12 @@ namespace
                 /// Use copy of the global_context and set current database, because expressions can contain currentDatabase() function.
                 ContextMutablePtr global_context_copy = Context::createCopy(global_context);
                 if (!current_database.empty())
-                    global_context_copy->setCurrentDatabase(current_database);
+                {
+                    if (validate_current_database)
+                        global_context_copy->setCurrentDatabase(current_database);
+                    else
+                        global_context_copy->setCurrentDatabaseUnchecked(current_database);
+                }
                 auto evaluated = evaluateConstantExpressionOrIdentifierAsLiteral(arg, global_context_copy);
                 const auto * literal = evaluated->as<ASTLiteral>();
                 if (!literal || (literal->value.getType() != Field::Types::String))
@@ -590,6 +876,7 @@ namespace
             ASTPtr select = parseQuery(
                 parser, fixed_query, description, settings[Setting::max_query_size], settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
 
+            data.collectNonTableReferences(select);
             DDLDependencyVisitor::Visitor visitor{data};
             visitor.visit(select);
         }
@@ -604,17 +891,18 @@ namespace
 }
 
 
-CreateQueryDependencies getDependenciesFromCreateQuery(const ContextPtr & global_global_context, const QualifiedTableName & table_name, const ASTPtr & ast, const String & current_database, bool can_throw, bool validate_current_database, size_t max_expanded_ast_elements)
+CreateQueryDependencies getDependenciesFromCreateQuery(const ContextPtr & global_global_context, const QualifiedTableName & table_name, const ASTPtr & ast, const String & current_database, bool can_throw, bool validate_current_database, size_t max_expanded_ast_elements, const std::optional<String> & engine_arguments_database)
 {
-    DDLDependencyVisitor::Data data{global_global_context, table_name, ast, current_database, can_throw, validate_current_database, max_expanded_ast_elements};
+    DDLDependencyVisitor::Data data{global_global_context, table_name, ast, current_database, can_throw, validate_current_database, max_expanded_ast_elements, engine_arguments_database.value_or(current_database)};
+    data.collectNonTableReferences(ast);
     DDLDependencyVisitor::Visitor visitor{data};
     visitor.visit(ast);
-    return {data.getDependencies(), data.getMvToDependency(), data.getMvFromDependency()};
+    return {data.getDependencies(), data.getMvToDependency(), data.getMvFromDependency(), data.getPlainViewDependencies()};
 }
 
 TableNamesSet getDependenciesFromDictionaryNestedSelectQuery(const ContextPtr & global_context, const QualifiedTableName & table_name, const ASTPtr & ast, const String & select_query, const String & current_database, bool can_throw)
 {
-    DDLDependencyVisitor::Data data{global_context, table_name, ast, current_database, can_throw, /*validate_current_database=*/true, /*max_expanded_ast_elements=*/0};
+    DDLDependencyVisitor::Data data{global_context, table_name, ast, current_database, can_throw, /*validate_current_database=*/true, /*max_expanded_ast_elements=*/0, current_database};
     tryVisitNestedSelect(select_query, data);
     return std::move(data).getDependencies();
 }
