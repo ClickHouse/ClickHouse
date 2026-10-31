@@ -39,7 +39,7 @@ void WhatIfResult::format(WriteBuffer & out) const
             writeString(fmt::format("  marks:        {}\n", *idx.estimated_marks), out);
         if (idx.estimated_rows)
             writeString(fmt::format("  rows:         {}\n", *idx.estimated_rows), out);
-        /// the layout a projection part would get is not recorded in a part, so the estimate can only span them
+        /// a projection part layout is not recorded in a part, and a sample knows the marks only to its error
         if (idx.estimated_marks_high > idx.estimated_marks_low)
             writeString(
                 fmt::format("  marks_span:   {} to {}\n", idx.estimated_marks_low, idx.estimated_marks_high), out);

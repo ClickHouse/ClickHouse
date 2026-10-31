@@ -317,7 +317,16 @@ WhatIfCandidateResult evaluateIndex(
 
     if (settings.empirical)
     {
-        if (tryEstimateEmpirical(result, index_helper, condition, read_step, analysis, saved_parts, surviving_marks, context))
+        if (tryEstimateEmpirical(
+                result,
+                index_helper,
+                condition,
+                read_step,
+                analysis,
+                saved_parts,
+                surviving_marks,
+                settings.index_scan_budget_rows,
+                context))
             return result;
         result.empirical_status = WhatIfCandidateResult::Unsupported;
     }
@@ -519,6 +528,8 @@ WhatIfResult estimateHypotheticalObjects(
     std::vector<UInt8> combined_surviving_marks;
     bool combined_started = false;
     std::vector<String> combined_names;
+    /// a sampled candidate knows only its sampled windows, so the bitmaps can't be intersected
+    bool combined_sampled = false;
     UInt64 combined_total_parts = 0;
     UInt64 combined_total_marks = 0;
 
@@ -553,6 +564,7 @@ WhatIfResult estimateHypotheticalObjects(
                 for (size_t m = 0; m < combined_surviving_marks.size(); ++m)
                     combined_surviving_marks[m] &= surviving_marks[m];
             combined_names.push_back(index_result.name);
+            combined_sampled |= index_result.sampled_marks < result.baseline_marks;
             combined_total_parts = index_result.total_parts;
             combined_total_marks = index_result.total_marks;
         }
@@ -576,14 +588,23 @@ WhatIfResult estimateHypotheticalObjects(
             joined += (i ? ", " : "") + combined_names[i];
         combined.name = "(combined: " + joined + ")";
         combined.status = WhatIfCandidateResult::Applicable;
-        combined.empirical_status = WhatIfCandidateResult::Ok;
-        combined.estimate_source = WhatIfCandidateResult::Empirical;
-        combined.estimated_marks = survivors;
-        combined.skip_ratio = static_cast<double>(result.baseline_marks - survivors) / static_cast<double>(result.baseline_marks);
-        combined.sampled_parts = analysis.selected_parts;
-        combined.sampled_marks = analysis.selected_marks;
-        combined.total_parts = combined_total_parts;
-        combined.total_marks = combined_total_marks;
+        if (combined_sampled)
+        {
+            combined.empirical_status = WhatIfCandidateResult::Unsupported;
+            combined.empirical_unsupported_reason = "The estimate of at least one candidate used a sample of index windows, and the "
+                "windows out of the sample are unknown, so EXPLAIN WHATIF cannot combine the candidates (see `index_scan_budget_rows`)";
+        }
+        else
+        {
+            combined.empirical_status = WhatIfCandidateResult::Ok;
+            combined.estimate_source = WhatIfCandidateResult::Empirical;
+            combined.estimated_marks = survivors;
+            combined.skip_ratio = static_cast<double>(result.baseline_marks - survivors) / static_cast<double>(result.baseline_marks);
+            combined.sampled_parts = analysis.selected_parts;
+            combined.sampled_marks = analysis.selected_marks;
+            combined.total_parts = combined_total_parts;
+            combined.total_marks = combined_total_marks;
+        }
         result.candidates.push_back(std::move(combined));
     }
 
