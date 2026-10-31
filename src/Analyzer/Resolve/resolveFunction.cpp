@@ -259,18 +259,6 @@ bool hasNestedQueryOrUnion(const IQueryTreeNode & node)
     return false;
 }
 
-bool isFunctionAliasInScope(const String & name, const IdentifierResolveScope & scope)
-{
-    for (const auto * current_scope = &scope; current_scope; current_scope = current_scope->parent_scope)
-    {
-        if (current_scope->aliases.alias_name_to_lambda_node.contains(name)
-            || current_scope->global_with_aliases.alias_name_to_lambda_node.contains(name))
-            return true;
-    }
-
-    return false;
-}
-
 bool isSafeCountScalarSubqueryForEarlyShortCircuit(
     const QueryNode & query,
     const IdentifierResolveScope & scope);
@@ -286,7 +274,7 @@ bool hasUnsafeFunctionForEarlyShortCircuit(
 
     if (const auto * function = node->as<FunctionNode>())
     {
-        if (isFunctionAliasInScope(function->getFunctionName(), scope))
+        if (scope.hasFunctionAlias(function->getFunctionName()))
             return true;
 
         /// throwIf is eligible for runtime lazy execution itself, but when it is inside a
@@ -1594,35 +1582,8 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
           *
           * Example: SELECT count(*) FROM test_table
           * Example: SELECT countState(*) FROM test_table;
-          *
-          * To determine if it's safe to remove the asterisk, we check the transformsArgumentTypes() method
-          * of each combinator. If any combinator transforms argument types (returns true), it's not safe to remove the asterisk.
           */
-        String base_function_name = function_name;
-        bool safe_to_remove_asterisk = true;
-
-        while (AggregateFunctionCombinatorPtr combinator = AggregateFunctionCombinatorFactory::instance().tryFindSuffix(base_function_name))
-        {
-            if (combinator->transformsArgumentTypes())
-            {
-                safe_to_remove_asterisk = false;
-                break;
-            }
-
-            base_function_name = base_function_name.substr(0, base_function_name.size() - combinator->getName().size());
-        }
-
-        auto base_function_name_lowercase = Poco::toLower(base_function_name);
-        auto function_name_lowercase = Poco::toLower(function_name);
-
-        /// Only remove asterisks for exactly "count" or "countstate" (possibly with combinators),
-        /// not for other functions like "countDistinct" which is a separate function
-        /// countDistinct gets transformed to uniqExact and requires arguments
-        bool is_count_function = (base_function_name_lowercase == "count" || base_function_name_lowercase == "countstate");
-        bool is_count_variant = is_count_function && function_name_lowercase.starts_with(base_function_name_lowercase);
-        bool is_not_count_distinct = function_name_lowercase != "countdistinct";
-
-        if (safe_to_remove_asterisk && is_count_variant && is_not_count_distinct)
+        if (functionDropsUnqualifiedMatcherArgument(function_name))
         {
             auto & arguments = function_node_ptr->getArguments().getNodes();
 
@@ -2426,7 +2387,7 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                 bool any_placeholder_resolves = false;
                 for (const auto & placeholder_name : placeholder_names)
                 {
-                    if (isFunctionAliasInScope(placeholder_name, scope)
+                    if (scope.hasFunctionAlias(placeholder_name)
                         || tryResolveIdentifier({Identifier{placeholder_name}, IdentifierLookupContext::EXPRESSION}, scope, {}).isResolved())
                     {
                         any_placeholder_resolves = true;
