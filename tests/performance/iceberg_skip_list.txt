@@ -17,6 +17,7 @@ distinct_json_paths.xml                                  # JSON column
 dynamic_compact_read.xml                                 # Dynamic column
 dynamic_field_serialization_cache.xml                    # JSON column
 enum.xml                                                 # Enum widened to String
+enum16_dense.xml                                         # type Enum16 in CREATE ... AS SELECT
 enum_to_low_cardinality_string.xml                       # type Enum16 in CREATE ... AS SELECT
 group_by_dynamic_keys.xml                                # JSON column
 group_by_low_cardinality_array_join.xml                  # UInt128 widened to Decimal
