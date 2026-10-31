@@ -101,11 +101,18 @@ String firstMetadataLocation(const String & location, const String & uuid, Compr
     return fmt::format("{}/metadata/v1-{}{}.metadata.json", location, uuid, getMetadataCompressionSuffix(compression_method));
 }
 
-void validateTableLocation(const IcebergRESTCatalogWarehouse & warehouse, const String & location)
+/// The catalog owns every table path, so two tables can never share a directory.
+String tableLocation(
+    const IcebergRESTCatalogWarehouse & warehouse,
+    const IcebergNamespaceName & ns,
+    const std::map<String, String> & namespace_properties,
+    const String & name,
+    const String & uuid)
 {
-    /// A table at the bucket root would own every object in the bucket.
-    if (warehouse.objectKey(location).empty())
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "'location' {} must not be the bucket root", location);
+    /// The uuid suffix keeps a dropped and recreated table away from the old files.
+    if (const auto it = namespace_properties.find("location"); it != namespace_properties.end())
+        return fmt::format("{}/{}-{}", stripTrailingSlashes(it->second), name, uuid);
+    return fmt::format("{}/{}/{}-{}", warehouse.base_location, fmt::join(ns, "/"), name, uuid);
 }
 
 void validateNamespace(const IcebergNamespaceName & name)
@@ -760,7 +767,6 @@ void IcebergRESTCatalogHandler::handleCreateTable(
 
         stage_create = json->optValue<bool>("stage-create", false);
 
-        /// The catalog owns every table path, so two tables can never share a directory.
         /// TODO: Allow the ClickHouse client to send no location, so that the catalog can assign it.
         /// Currently the ClickHouse client always sends `location`. This needs a refactor of the client:
         /// create through the catalog first, then load the table from the answer.
@@ -768,15 +774,7 @@ void IcebergRESTCatalogHandler::handleCreateTable(
         if (json->has("location") && !json->isNull("location"))
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "'location' is not supported, the catalog chooses the table location");
 
-        if (const auto it = namespace_properties->find("location"); it != namespace_properties->end())
-        {
-            /// The uuid suffix keeps a dropped and recreated table away from the old files.
-            location = fmt::format("{}/{}-{}", stripTrailingSlashes(it->second), name, uuid);
-        }
-        else
-        {
-            location = fmt::format("{}/{}/{}-{}", warehouse.base_location, fmt::join(ns, "/"), name, uuid);
-        }
+        location = tableLocation(warehouse, ns, *namespace_properties, name, uuid);
 
         std::map<String, String> properties;
         if (const auto properties_object = getOptionalObject(*json, "properties"))
@@ -978,11 +976,23 @@ void IcebergRESTCatalogHandler::handleStagedCreateCommit(
         validateTableName(table);
         metadata = buildCreatedTableMetadata(*updates);
         const auto location = getString(*metadata, Iceberg::f_location);
-        validateTableLocation(warehouse, location);
         compression_method = getMetadataCompressionMethod(*metadata);
-
         pointer.uuid = getString(*metadata, Iceberg::f_table_uuid);
-        pointer.metadata_location = firstMetadataLocation(location, pointer.uuid, compression_method);
+
+        const auto namespace_properties = warehouse.store->getNamespaceProperties(ns);
+        if (!namespace_properties)
+        {
+            sendNoSuchNamespace(response, ns);
+            return;
+        }
+
+        /// The client sends the location, so it must be the one the catalog assigned at stage time.
+        const auto expected_location = tableLocation(warehouse, ns, *namespace_properties, table, pointer.uuid);
+        if (location != expected_location)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "'location' {} must be {}, the location assigned by the catalog", location, expected_location);
+
+        /// The table uuid is the same on each retry. A fresh file name lets a retry succeed after a failed attempt left its file.
+        pointer.metadata_location = firstMetadataLocation(location, toString(UUIDHelpers::generateV4()), compression_method);
     }
     catch (const Exception & e)
     {

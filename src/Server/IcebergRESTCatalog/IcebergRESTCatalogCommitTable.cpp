@@ -418,6 +418,7 @@ Poco::JSON::Object::Ptr buildCreatedTableMetadata(const Poco::JSON::Array & upda
             UUID parsed;
             if (!tryParse(parsed, uuid))
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "'{}' is not a valid uuid", uuid);
+            uuid = toString(parsed);
         }
         else if (action == "upgrade-format-version")
         {

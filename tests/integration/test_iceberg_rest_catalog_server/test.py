@@ -1348,7 +1348,8 @@ def test_stage_create(started_cluster):
     committed = commit_table(
         ns, "events", ASSERT_CREATE, create_updates_from_metadata(metadata) + append_updates(snapshot)
     ).json()
-    assert committed["metadata-location"] == f"{location}/metadata/v1-{table_uuid}.metadata.json"
+    assert committed["metadata-location"].startswith(f"{location}/metadata/v1-")
+    assert committed["metadata-location"].endswith(".metadata.json")
     created = committed["metadata"]
 
     # The table is the staged one.
@@ -1395,9 +1396,11 @@ def test_stage_create_conflicts(started_cluster):
     assert_error_shape(response, "TableAlreadyExistsException")
 
     # Someone created the table between staging and the commit.
-    response = commit_table(ns, "existing", ASSERT_CREATE, create_updates, expected_code=409)
+    existing_location = f"{BASE_LOCATION}/{ns}/existing-{staged['table-uuid']}"
+    existing_updates = create_updates_from_metadata({**staged, "location": existing_location})
+    response = commit_table(ns, "existing", ASSERT_CREATE, existing_updates, expected_code=409)
     assert_error_shape(response, "CommitFailedException")
-    assert list_metadata_files(staged["location"]) == []
+    assert list_metadata_files(existing_location) == []
 
     # Requirements.
 
