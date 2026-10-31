@@ -193,11 +193,13 @@ public:
         /// needs every group counted, which a skipped unit is not.
         bool adaptiveTopKPrunes() const { return bucket_top_k && !bucket_top_k_ascending && !max_rows_to_group_by; }
 
-        /// Whether a frozen producer of the adaptive aggregation may thaw: not with `adaptive_aggregator_disable_thaw`,
-        /// and not under the top-K pruning. There the frozen tables pay even for a repetitive stream: the merge skips
-        /// the units whose groups cannot reach the top, which a thawed table, a source of every unit, would no longer
-        /// allow.
-        bool adaptiveMayThaw() const { return !adaptive_aggregator_disable_thaw && !adaptiveTopKPrunes(); }
+        /// Whether a frozen producer of the adaptive aggregation may thaw: not with `adaptive_aggregator_disable_thaw`.
+        /// A thaw keeps the top-K pruning exact: a frozen producer counts the groups of its table into its bins at its finish.
+        bool adaptiveMayThaw() const { return !adaptive_aggregator_disable_thaw; }
+
+        /// Whether a run measures and uses the verdict that sends later runs to the ordinary path: not under the top-K
+        /// pruning, whose gain the ordinary path gives up and the verdict does not weigh.
+        bool adaptiveMeasuresVerdict() const { return adaptiveMayThaw() && !adaptiveTopKPrunes(); }
 
         /// Top-K threshold merge (Fagin's Threshold Algorithm), set by the same plan optimization
         /// as `bucket_top_k` (never by users) when the plan proves this aggregation feeds
@@ -974,6 +976,9 @@ private:
     /// The thaw verdict of a frozen producer, checked between blocks: its own staged stream repeats its misses so much
     /// that its table would do better absorbing them in place (see the tuning constants in `AdaptiveAggregationImpl.h`).
     bool adaptiveStagingRepeats(const AdaptiveAggregationProducer & adaptive) const;
+
+    /// Whether a frozen producer gathers the thaw evidence and may thaw (see `adaptiveStagingRepeats`).
+    bool adaptiveProducerMayThaw() const;
 
     /// The frozen consume path: rows whose key the local table holds are aggregated in place,
     /// the other rows are appended to the producer's partitions as delayed records for the merge.

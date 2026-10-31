@@ -10,7 +10,7 @@
 
 #include <AggregateFunctions/IAggregateFunction_fwd.h>
 #include <Columns/IColumn.h>
-#include <Common/HashTable/HashSet.h>
+#include <Common/HashTable/Hash.h>
 #include <Common/HyperLogLogCounter.h>
 #include <Common/PODArray.h>
 #include <Common/PartitionedRecordBuffer.h>
@@ -447,7 +447,10 @@ struct AdaptiveAggregationProducer
         size_t rows = 0;
         size_t staged_records = 0;
         size_t staged_bytes = 0;
-        HashSet<UInt64> distinct_sampled_hashes;
+        HyperLogLogCounter<12, UInt64, TrivialHash, UInt64> distinct_sampled_hashes;
+
+        /// Sampled hashes share their low bits (the sample mask) and may be 32-bit, so they are mixed before the sketch.
+        void addSampledHash(UInt64 hash) { distinct_sampled_hashes.insert(intHash64(hash)); }
 
         size_t getEstimatedStagedKeyCount() const
         {

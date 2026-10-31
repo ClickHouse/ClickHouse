@@ -101,7 +101,8 @@ void Aggregator::accountStagedBatch(
     ///   `adaptive_thaw_record_cost` per record for the lookup of its group at the drain. A column read
     ///   by several aggregates is staged once, so it is counted once; an argument read from its numeric
     ///   key's bytes takes none of its own; a count record carries the combined multiplicity instead of
-    ///   arguments.
+    ///   arguments. Under the top-K pruning a record takes no lookup cost: the merge frees the records
+    ///   of the pruned bins unread.
     ///   Variable-width arguments count in full because staging such a value pays real work
     ///   at every step. The record copies it out of the block, the record pins that memory
     ///   until the merge drains it, and updating the aggregate state from it copies the value
@@ -116,32 +117,44 @@ void Aggregator::accountStagedBatch(
     ///   stream of five `UInt64` arguments at global repeat 10 can therefore remain profitable when
     ///   its local streams repeat little.
     /// - The sample receives routing hashes matching `hash & 0xFF == 0`. Each distinct key has the
-    ///   same sampling probability, and `distinct_sampled_hashes` collapses its repeats onto one entry.
+    ///   same sampling probability, and `distinct_sampled_hashes` counts its repeats once.
     ///   For a growing set aggregate, a bounded sketch also counts distinct argument tuples of these
     ///   keys, including the key in their hash because equal arguments in different groups occupy
     ///   separate states.
-    if (params.adaptiveMayThaw())
+    if (adaptiveProducerMayThaw())
     {
         chassert(!adaptive_state_bytes_per_distinct_input || adaptive_distinct_input_aggregate < aggregates_positions.size());
         auto & frozen = std::get<AdaptiveAggregationProducer::FrozenState>(adaptive.phase);
         frozen.staged_records += total;
-        frozen.staged_bytes += staged.record_bytes + total * adaptive_thaw_record_cost;
-        for (size_t i = 0; i < total; ++i)
+        frozen.staged_bytes += staged.record_bytes + (params.adaptiveTopKPrunes() ? 0 : total * adaptive_thaw_record_cost);
+        const auto sample = [&](size_t i)
         {
             const auto hash = hashes[i];
-            if ((hash & adaptive_thaw_sample_mask) == 0)
+            if ((hash & adaptive_thaw_sample_mask) != 0)
+                return;
+            frozen.addSampledHash(hash);
+            if (adaptive_state_bytes_per_distinct_input)
             {
-                frozen.distinct_sampled_hashes.insert(hash);
-                if (adaptive_state_bytes_per_distinct_input)
-                {
-                    SipHash input_hash;
-                    input_hash.update(hash);
-                    for (const auto position : aggregates_positions[adaptive_distinct_input_aggregate])
-                        columns[position]->updateHashWithValue(misses.getSourceRows()[i], input_hash);
-                    frozen.addSampledInputHash(input_hash.get64());
-                }
+                SipHash input_hash;
+                input_hash.update(hash);
+                for (const auto position : aggregates_positions[adaptive_distinct_input_aggregate])
+                    columns[position]->updateHashWithValue(misses.getSourceRows()[i], input_hash);
+                frozen.addSampledInputHash(input_hash.get64());
             }
+        };
+        constexpr size_t sample_test_block = 8;
+        size_t i = 0;
+        for (; i + sample_test_block <= total; i += sample_test_block)
+        {
+            bool sampled = false;
+            for (size_t j = i; j < i + sample_test_block; ++j)
+                sampled |= (hashes[j] & adaptive_thaw_sample_mask) == 0;
+            if (sampled)
+                for (size_t j = i; j < i + sample_test_block; ++j)
+                    sample(j);
         }
+        for (; i < total; ++i)
+            sample(i);
     }
 
     misses.clear();
@@ -309,7 +322,7 @@ void Aggregator::finishAdaptiveProducer(AggregatedDataVariants & local_variants,
     /// A producer that thawed was repeat-dominated. One that finishes frozen is when its whole staged stream repeated
     /// past the bound of the verdict.
     bool repeat_dominated = adaptive.isBaseline();
-    if (adaptive.isFrozen() && params.adaptiveMayThaw())
+    if (adaptive.isFrozen() && params.adaptiveMeasuresVerdict())
     {
         /// Admission compares complete executions, so its state cost includes the hash buffer and arenas
         /// an ordinary local table would retain. A populated table's snapshot at the freeze includes hash-table
@@ -534,11 +547,17 @@ void AdaptiveAggregationSession::SpilledPartition::readBack(const std::function<
     }
 }
 
+bool Aggregator::adaptiveProducerMayThaw() const
+{
+    /// A lone `count()` stays frozen under the top-K pruning: its records combine repeats, and pruned bins are freed unread.
+    return params.adaptiveMayThaw() && !(is_simple_count && params.adaptiveTopKPrunes());
+}
+
 bool Aggregator::adaptiveStagingRepeats(const AdaptiveAggregationProducer & adaptive) const
 {
     /// Switching in the middle of a stream retains the staged records as well as the new table. Apply
     /// the same hysteresis to the estimated state cost as the calibrated bounds apply to cheap states.
-    return params.adaptiveMayThaw()
+    return adaptiveProducerMayThaw()
         && adaptiveStagingWastes(
             adaptive,
             total_size_of_aggregate_states,
@@ -551,7 +570,7 @@ std::optional<bool> Aggregator::adaptiveStagingVerdict(const AdaptiveAggregation
     /// gathers no evidence, and keeping its tables frozen whatever the repeats is what it asked for. The verdict needs
     /// half of the frozen producers repeat-dominated, so a few threads that repeat on an otherwise healthy stream do
     /// not keep the next runs off the adaptive path.
-    if (!shared.frozen_producers || !params.adaptiveMayThaw())
+    if (!shared.frozen_producers || !params.adaptiveMeasuresVerdict())
         return std::nullopt;
     return 2 * shared.repeat_dominated_producers >= shared.frozen_producers;
 }
