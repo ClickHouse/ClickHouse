@@ -575,10 +575,79 @@ public:
 
 class AggregateFunctionCombinatorMap final : public IAggregateFunctionCombinator
 {
+    /// The arrays of the keys and the values of the legacy form, either the arguments themselves
+    /// or the elements of a single tuple argument, the same as in `transformArguments`. Otherwise, nullptr.
+    static const DataTypes * getLegacyValueArrays(const DataTypes & arguments)
+    {
+        auto is_array = [](const DataTypePtr & type) { return type->getTypeId() == TypeIndex::Array; };
+        if (arguments.empty())
+            return nullptr;
+        if (const auto * tuple_type = checkAndGetDataType<DataTypeTuple>(arguments[0].get()))
+        {
+            const auto & elements = tuple_type->getElements();
+            if (arguments.size() == 1 && elements.size() >= 2 && std::all_of(elements.begin(), elements.end(), is_array))
+                return &elements;
+            return nullptr;
+        }
+        if (arguments.size() >= 2 && std::all_of(arguments.begin(), arguments.end(), is_array))
+            return &arguments;
+        return nullptr;
+    }
+
 public:
     String getName() const override { return "Map"; }
 
     bool transformsArgumentTypes() const override { return true; }
+
+    /// The values of the maps are passed to the nested function one by one, so the maps are converted around.
+    VariantArgumentsOfNestedFunction getVariantArgumentsOfNestedFunction() const override { return VariantArgumentsOfNestedFunction::ConvertedAround; }
+
+    /// The legacy form `sumMap(keys, values1, values2, ...)` (or a tuple of these arrays) passes every value array
+    /// to `sumMappedArrays`, while `transformArguments` returns only the type of the first values.
+    /// So every value array is probed and converted independently.
+    DataTypes transformArgumentsForVariantConversion(const DataTypes & arguments) const override
+    {
+        if (const auto * value_arrays = getLegacyValueArrays(arguments))
+        {
+            DataTypes res;
+            res.reserve(value_arrays->size() - 1);
+            for (size_t i = 1; i < value_arrays->size(); ++i)
+                res.push_back(assert_cast<const DataTypeArray &>(*(*value_arrays)[i]).getNestedType());
+            return res;
+        }
+        return transformArguments(arguments);
+    }
+
+    void convertVariantArgumentsAround(
+        DataTypes & arguments, const DataTypes & nested_arguments, const DataTypes & converted_nested_arguments) const override
+    {
+        /// The same modes as in `transformArguments`.
+        const auto * map_type = arguments.size() == 1 ? checkAndGetDataType<DataTypeMap>(arguments[0].get()) : nullptr;
+        if (map_type)
+        {
+            arguments[0] = std::make_shared<DataTypeMap>(map_type->getKeyType(), converted_nested_arguments[0]);
+            return;
+        }
+
+        if (const auto * value_arrays = getLegacyValueArrays(arguments))
+        {
+            /// The arrays of the keys and the values, see `transformArgumentsForVariantConversion`.
+            DataTypes arrays = *value_arrays;
+            chassert(arrays.size() == converted_nested_arguments.size() + 1);
+            for (size_t i = 0; i < converted_nested_arguments.size(); ++i)
+                arrays[i + 1] = std::make_shared<DataTypeArray>(converted_nested_arguments[i]);
+
+            if (const auto * tuple_type = checkAndGetDataType<DataTypeTuple>(arguments[0].get()))
+                arguments[0] = tuple_type->hasExplicitNames()
+                    ? std::make_shared<DataTypeTuple>(arrays, tuple_type->getElementNames())
+                    : std::make_shared<DataTypeTuple>(arrays);
+            else
+                arguments = std::move(arrays);
+            return;
+        }
+
+        IAggregateFunctionCombinator::convertVariantArgumentsAround(arguments, nested_arguments, converted_nested_arguments);
+    }
 
     DataTypes transformArguments(const DataTypes & arguments) const override
     {

@@ -1,6 +1,7 @@
 #include <AggregateFunctions/Combinators/AggregateFunctionArray.h>
 #include <AggregateFunctions/Combinators/AggregateFunctionCombinatorFactory.h>
 
+#include <DataTypes/DataTypeArray.h>
 #include <Common/typeid_cast.h>
 
 namespace DB
@@ -24,6 +25,17 @@ public:
     bool supportsNesting() const override { return true; }
 
     bool transformsArgumentTypes() const override { return true; }
+
+    /// The rows of the arrays are passed to the nested function one by one, so the arrays are converted around.
+    VariantArgumentsOfNestedFunction getVariantArgumentsOfNestedFunction() const override { return VariantArgumentsOfNestedFunction::ConvertedAround; }
+
+    void convertVariantArgumentsAround(
+        DataTypes & arguments, const DataTypes & nested_arguments, const DataTypes & converted_nested_arguments) const override
+    {
+        for (size_t i = 0; i < nested_arguments.size(); ++i)
+            if (!converted_nested_arguments[i]->equals(*nested_arguments[i]))
+                arguments[i] = std::make_shared<DataTypeArray>(converted_nested_arguments[i]);
+    }
 
     DataTypes transformArguments(const DataTypes & arguments) const override
     {

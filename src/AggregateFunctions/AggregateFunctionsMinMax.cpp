@@ -286,7 +286,7 @@ SELECT department, min(revenue) FROM sales GROUP BY department ORDER BY departme
     FunctionDocumentation::Category min_category = FunctionDocumentation::Category::AggregateFunction;
     FunctionDocumentation min_documentation = {min_description, min_syntax, min_arguments, {}, min_returned_value, min_examples, min_introduced_in, min_category};
 
-    factory.registerFunction("min", {createAggregateFunctionMinMax<true>, min_documentation}, AggregateFunctionFactory::Case::Insensitive);
+    factory.registerFunction("min", {createAggregateFunctionMinMax<true>, min_documentation, {.variant_arguments_conversion = VariantArgumentsConversion::All}}, AggregateFunctionFactory::Case::Insensitive);
     /// For boolean arguments, the minimum is the logical AND.
     factory.registerAlias("bool_and", "min", AggregateFunctionFactory::Case::Insensitive);
 
@@ -348,7 +348,7 @@ SELECT greatest(a, b) FROM values('a Int32, b Int32', (1, 2), (5, 3));
     FunctionDocumentation::Category max_category = FunctionDocumentation::Category::AggregateFunction;
     FunctionDocumentation max_documentation = {max_description, max_syntax, max_arguments, {}, max_returned_value, max_examples, max_introduced_in, max_category};
 
-    factory.registerFunction("max", {createAggregateFunctionMinMax<false>, max_documentation}, AggregateFunctionFactory::Case::Insensitive);
+    factory.registerFunction("max", {createAggregateFunctionMinMax<false>, max_documentation, {.variant_arguments_conversion = VariantArgumentsConversion::All}}, AggregateFunctionFactory::Case::Insensitive);
     /// For boolean arguments, the maximum is the logical OR.
     factory.registerAlias("bool_or", "max", AggregateFunctionFactory::Case::Insensitive);
 }
