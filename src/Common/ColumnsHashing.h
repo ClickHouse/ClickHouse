@@ -129,7 +129,7 @@ struct HashMethodSingleLowCardinalityColumn : public SingleColumnMethod
     /// The inline count runs only through `StateNoCache`, so the cached state has it off at compile time.
     bool mapped_in_table_only = false;
 
-    ALWAYS_INLINE bool mappedInTableOnly() const { return !use_cache && mapped_in_table_only; }
+    [[nodiscard]] ALWAYS_INLINE bool mappedInTableOnly() const { return !use_cache && mapped_in_table_only; }
 
     /// Scratch of `forEachPositionCount`: per dictionary position, the row count (zero between calls) and the
     /// first row relative to the range, plus the positions a call counted.
@@ -402,7 +402,7 @@ struct HashMethodSingleLowCardinalityColumn : public SingleColumnMethod
     }
 
     /// Whether `forEachPositionCount` can count the rows [row_begin, row_end) in its 32-bit scratch.
-    bool canCountPositions(size_t row_begin, size_t row_end) const
+    [[nodiscard]] bool canCountPositions(size_t row_begin, size_t row_end) const
     {
         return size_of_index_type < sizeof(UInt64) && row_end - row_begin <= std::numeric_limits<UInt32>::max();
     }

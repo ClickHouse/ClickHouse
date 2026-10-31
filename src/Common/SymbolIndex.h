@@ -61,8 +61,8 @@ public:
             offset_or_index = offset_or_index_;
         }
 
-        uint32_t nameSourceId() const { return source_id; }
-        uint32_t nameOffsetOrIndex() const { return offset_or_index; }
+        [[nodiscard]] uint32_t nameSourceId() const { return source_id; }
+        [[nodiscard]] uint32_t nameOffsetOrIndex() const { return offset_or_index; }
 
     private:
         /// Names are resolved through `Data::name_sources`. Direct sources interpret
@@ -163,14 +163,14 @@ public:
     const Symbol * findSymbol(const void * address) const;
     /// The returned view is NUL-terminated at `data()[size()]` and remains valid only until
     /// the next call to `getSymbolName` or an iterator method on the same thread. Copy it if needed longer.
-    std::string_view getSymbolName(const Symbol & symbol) const;
+    [[nodiscard]] std::string_view getSymbolName(const Symbol & symbol) const;
     /// The returned pointer is never null and remains valid only until the next call to
     /// `getSymbolNameCString`, `getSymbolName`, or an iterator method on the same thread.
     /// An empty string is returned on failure. Copy it if needed longer.
-    const char * getSymbolNameCString(const Symbol & symbol) const;
+    [[nodiscard]] const char * getSymbolNameCString(const Symbol & symbol) const;
     /// Preallocates the compact-name workspace for the current thread.
     void warmUp() const;
-    SymbolIterator iterateSymbols() const { return SymbolIterator(*this); }
+    [[nodiscard]] SymbolIterator iterateSymbols() const { return SymbolIterator(*this); }
     const Object * findObject(const void * address) const;
     [[nodiscard]] const Object * thisObject() const;
 
@@ -193,7 +193,7 @@ public:
             return source_id;
         }
 
-        const NameSource * nameSource(const Symbol & symbol) const
+        [[nodiscard]] const NameSource * nameSource(const Symbol & symbol) const
         {
             if (symbol.nameSourceId() >= name_sources.size())
                 return nullptr;
@@ -201,7 +201,7 @@ public:
         }
 
 #if defined(__ELF__)
-        bool hasCompactName(const Symbol & symbol) const
+        [[nodiscard]] bool hasCompactName(const Symbol & symbol) const
         {
             const NameSource * source = nameSource(symbol);
             return source && source->kind == NameSource::Kind::Compact;

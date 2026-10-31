@@ -84,7 +84,7 @@ public:
     /// with `attachExtremes`, through `converting` (may be nullptr) if the header has changed meanwhile.
     /// The processors producing the extremes stay in the pipe. The pipe cannot be united while the extremes are detached.
     void detachExtremes();
-    OutputPort * getDetachedExtremesPort() const { return detached_extremes_port; }
+    [[nodiscard]] OutputPort * getDetachedExtremesPort() const { return detached_extremes_port; }
     void attachExtremes(ProcessorPtr converting);
 
     /// Add processor to list. It should have size() input ports with compatible header.
