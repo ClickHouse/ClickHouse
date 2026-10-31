@@ -20,6 +20,7 @@
 #include <Core/Settings.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <Functions/FunctionFactory.h>
+#include <Interpreters/MaterializedColumnDependencies.h>
 #include <Storages/IStorage.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/StorageSnapshot.h>
@@ -188,6 +189,8 @@ bool storageReadsDynamicSubcolumnWithoutConversion(const StorageSnapshotPtr & st
 /// `apply_mutations_on_fly`. The reader applies such a change to the whole column, but not to a subcolumn read
 /// directly: after a pending `ALTER TABLE t UPDATE tup = tuple(42, 'z')` reading `tup.a` still exposes the old
 /// value. The columns updated by patch parts are rejected as well, because the snapshot reports them together.
+/// A `MATERIALIZED` column is recalculated by the reader when a column its expression depends on (directly or
+/// through other `MATERIALIZED` columns) is changed on the fly, so such a column is rejected too.
 /// Other storages that can read a `MergeTree` behind them (`Distributed`, `Merge`, `Buffer`, ...) are not accepted
 /// when mutations are applied on the fly.
 bool storageMayChangeColumnOnFly(const StorageSnapshotPtr & storage_snapshot, const NameAndTypePair & column_in_table, const ContextPtr & context)
@@ -201,7 +204,17 @@ bool storageMayChangeColumnOnFly(const StorageSnapshotPtr & storage_snapshot, co
     if (!snapshot_data || !snapshot_data->mutations_snapshot)
         return context->getSettingsRef()[Setting::apply_mutations_on_fly];
 
-    return snapshot_data->mutations_snapshot->getColumnsChangedOnFly().contains(column_in_table.getNameInStorage());
+    const auto columns_changed_on_fly = snapshot_data->mutations_snapshot->getColumnsChangedOnFly();
+    if (columns_changed_on_fly.empty())
+        return false;
+
+    const auto & name_in_storage = column_in_table.getNameInStorage();
+    if (columns_changed_on_fly.contains(name_in_storage))
+        return true;
+
+    /// The same check `AlterConversions` uses to decide which `MATERIALIZED` columns to recalculate for a read.
+    MaterializedColumnDependencies materialized_dependencies(storage_snapshot->metadata->getColumns(), context);
+    return !materialized_dependencies.findColumnsToRecalculate(name_in_storage, columns_changed_on_fly).empty();
 }
 
 /// Whether the storage behind `proj_column` can serve its subcolumn `subcolumn_name` directly. This is the same
@@ -256,6 +269,8 @@ bool columnSourceHasFinal(const QueryTreeNodePtr & column_source)
 
 /// Check if a projection column can be optimized and return the new projection node.
 /// Returns nullptr if optimization is not possible.
+/// `context` must be the context of the source query the projection column belongs to: the table is read
+/// with its settings (`apply_mutations_on_fly`, ...), which can differ from the settings of the outer query.
 QueryTreeNodePtr tryCreateSubcolumnProjectionNode(
     const ColumnNode * proj_column,
     const String & subcolumn_name,
@@ -531,9 +546,8 @@ class CollectSubcolumnAccessesVisitor : public InDepthQueryTreeVisitor<CollectSu
 public:
     using Base = InDepthQueryTreeVisitor<CollectSubcolumnAccessesVisitor>;
 
-    CollectSubcolumnAccessesVisitor(ContextPtr context_, NodeSet nodes_to_skip_)
-        : context(std::move(context_))
-        , nodes_to_skip(std::move(nodes_to_skip_))
+    explicit CollectSubcolumnAccessesVisitor(NodeSet nodes_to_skip_)
+        : nodes_to_skip(std::move(nodes_to_skip_))
     {}
 
     void visitImpl(QueryTreeNodePtr & node)
@@ -626,7 +640,7 @@ public:
                 return;
 
             /// Verify this can actually be optimized before recording
-            auto new_proj_node = tryCreateSubcolumnProjectionNode(proj_column, subcolumn_name, subcolumn_type, context);
+            auto new_proj_node = tryCreateSubcolumnProjectionNode(proj_column, subcolumn_name, subcolumn_type, query_source->getContext());
 
             /// Skip if we can't create the optimized projection node
             if (!new_proj_node)
@@ -657,7 +671,6 @@ public:
     }
 
 private:
-    ContextPtr context;
     NodeSet nodes_to_skip;
     std::unordered_map<IQueryTreeNode *, std::vector<SubcolumnAccess>> subcolumn_accesses_by_source;
     std::unordered_map<IQueryTreeNode *, std::vector<ColumnNode *>> all_columns_by_source;
@@ -705,7 +718,7 @@ void SubcolumnPushdownPass::run(QueryTreeNodePtr & query_tree_node, ContextPtr c
     collectSubcolumnAccessesExposedToAggregationInAllScopes(query_tree_node, nodes_to_skip);
     CorrelatedColumns correlated_columns;
     collectSubcolumnAccessesOfCorrelatedColumns(query_tree_node, correlated_columns, nodes_to_skip);
-    CollectSubcolumnAccessesVisitor collector(context, std::move(nodes_to_skip));
+    CollectSubcolumnAccessesVisitor collector(std::move(nodes_to_skip));
     collector.visit(query_tree_node);
 
     auto & subcolumn_accesses_by_source = collector.getSubcolumnAccessesBySource();
@@ -814,7 +827,7 @@ void SubcolumnPushdownPass::run(QueryTreeNodePtr & query_tree_node, ContextPtr c
 
         /// Create the subcolumn projection node
         auto new_proj_node = tryCreateSubcolumnProjectionNode(
-            proj_column, access.subcolumn_name, access.subcolumn_type, context);
+            proj_column, access.subcolumn_name, access.subcolumn_type, cloned_query_source->getContext());
 
         /// Skip if we couldn't create the projection node
         if (!new_proj_node)
