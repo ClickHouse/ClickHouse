@@ -1,0 +1,15 @@
+-- a privileged function folded inside an invoker view
+foo()
+foo()
+-- hits (must be 0): 0
+ACCESS_DENIED
+-- a Dictionary table read inside a folded scalar subquery
+30
+30
+-- hits (must be 0): 0
+ACCESS_DENIED
+-- a Set table on the right side of IN inside a folded scalar subquery
+2
+2
+-- hits (warm): 1
+ACCESS_DENIED

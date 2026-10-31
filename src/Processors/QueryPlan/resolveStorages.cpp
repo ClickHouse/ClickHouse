@@ -4,15 +4,19 @@
 #include <Processors/QueryPlan/ReadFromTableFunctionStep.h>
 #include <Processors/QueryPlan/ReadFromPreparedSource.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
+#include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/CreatingSetsStep.h>
 #include <Processors/Sources/NullSource.h>
 
+#include <Access/Common/RowPolicyDefs.h>
+#include <Access/EnabledRowPolicies.h>
 #include <Analyzer/Resolve/IdentifierResolver.h>
 #include <Analyzer/Resolve/QueryAnalyzer.h>
 #include <Analyzer/QueryTreeBuilder.h>
 #include <Analyzer/TableNode.h>
 #include <Analyzer/TableFunctionNode.h>
 
+#include <Interpreters/Cache/QueryPlanCacheUtils.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Interpreters/NormalizeSelectWithUnionQueryVisitor.h>
 #include <Interpreters/SelectIntersectExceptQueryVisitor.h>
@@ -122,7 +126,11 @@ static ASTPtr wrapWithUnion(ASTPtr select)
     return select_with_union;
 }
 
-static QueryPlanResourceHolder replaceReadingFromTable(QueryPlan::Node & node, QueryPlan::Nodes & nodes, const ContextPtr & context)
+static QueryPlanResourceHolder replaceReadingFromTable(
+    QueryPlan::Node & node,
+    QueryPlan::Nodes & nodes,
+    const ContextPtr & context,
+    const QueryPlan::ExpectedStorageIdentities * expected_identities)
 {
     const auto * reading_from_table = typeid_cast<const ReadFromTableStep *>(node.step.get());
     const auto * reading_from_table_function = typeid_cast<const ReadFromTableFunctionStep *>(node.step.get());
@@ -202,6 +210,45 @@ static QueryPlanResourceHolder replaceReadingFromTable(QueryPlan::Node & node, Q
         select_query_info.table_expression_modifiers = reading_from_table_function->getTableExpressionModifiers();
     }
 
+    /// Bind the read to the identity the caller has already validated. The check must happen here,
+    /// between name resolution and `lockForShare`, exactly where normal planning pins the storage:
+    /// once the lock is taken the resolved storage cannot be replaced underneath the query, so an
+    /// identity proven here is the identity that executes. Anything the caller did not validate -
+    /// a different UUID after a concurrent `DROP`/`CREATE` in an `Atomic` database, an unexpected
+    /// table, or a table function (which has no UUID and can never be a cached-plan leaf) - is
+    /// rejected with `INCORRECT_DATA`, which the query plan cache treats as a stale entry and
+    /// recovers from by re-planning. Note that in UUID-less databases the recorded UUID is
+    /// `Nil` for every table, so there the comparison only confirms the table name, exactly like
+    /// the validation that produced it.
+    if (expected_identities)
+    {
+        const auto & storage_id = storage->getStorageID();
+        auto it = expected_identities->find({storage_id.getDatabaseName(), storage_id.table_name});
+        if (it == expected_identities->end() || it->second.uuid != storage_id.uuid)
+            throw Exception(
+                ErrorCodes::INCORRECT_DATA,
+                "Table {} resolved to a storage that was not validated for this query plan",
+                storage->getStorageID().getNameForLogs());
+
+        /// The UUID pins the table object, but not its semantics: an in-place change
+        /// (`ALTER TABLE ... MODIFY COLUMN`, `ALTER ROW POLICY`) landing between the caller's
+        /// validation and this point keeps the UUID while the plan still bakes in the old schema
+        /// or row-policy filter. The read would then execute the stale plan over the snapshot
+        /// bound here. Re-check the proven semantics fingerprint against this exact snapshot -
+        /// the metadata the read executes with - and reject the plan on any drift, exactly like
+        /// an unexpected UUID. Note this must use the pre-modifier metadata: FINAL/SAMPLE extend
+        /// the metadata below, after the identity is pinned, on both the validation and this side.
+        if (computeQueryPlanCacheSemanticsFingerprint(
+                snapshot->metadata,
+                context->getRowPolicyFilter(storage_id.getDatabaseName(), storage_id.table_name, RowPolicyFilterType::SELECT_FILTER),
+                context)
+            != it->second.semantics_fingerprint)
+            throw Exception(
+                ErrorCodes::INCORRECT_DATA,
+                "Table {} was altered between query plan validation and execution",
+                storage->getStorageID().getNameForLogs());
+    }
+
     if (select_query_info.table_expression_modifiers)
         snapshot = snapshot->clone(extendMetadataWithModifiers(snapshot->metadata, *select_query_info.table_expression_modifiers), snapshot->data);
 
@@ -262,6 +309,18 @@ static QueryPlanResourceHolder replaceReadingFromTable(QueryPlan::Node & node, Q
         InterpreterSelectQueryAnalyzer interpreter(wrapWithUnion(std::move(query)), context, options);
         reading_plan = std::move(interpreter).extractQueryPlan();
         reading_plan.addInterpreterContext(context);
+
+        /// The interpreter applies the row policy of the table by itself; this filter repeats it on top
+        /// to keep the plan independent of that.
+        if (reading_from_table && reading_from_table->getRowLevelFilter() && reading_plan.isInitialized())
+        {
+            const auto & row_level_filter = *reading_from_table->getRowLevelFilter();
+            reading_plan.addStep(std::make_unique<FilterStep>(
+                reading_plan.getCurrentHeader(),
+                row_level_filter.actions.clone(),
+                row_level_filter.column_name,
+                row_level_filter.do_remove_column));
+        }
     }
     else
     {
@@ -270,6 +329,14 @@ static QueryPlanResourceHolder replaceReadingFromTable(QueryPlan::Node & node, Q
         storage_limits->emplace_back(buildStorageLimits(*context, options));
         select_query_info.storage_limits = std::move(storage_limits);
         select_query_info.query = std::move(query);
+        /// The planner put the row policy here only for a storage that applies it inside the read (see
+        /// `ReadFromTableStep::getRowLevelFilter`), and the identity check above pins that very storage.
+        if (reading_from_table && reading_from_table->getRowLevelFilter())
+        {
+            const auto & row_level_filter = *reading_from_table->getRowLevelFilter();
+            select_query_info.row_level_filter = std::make_shared<FilterDAGInfo>(
+                FilterDAGInfo{row_level_filter.actions.clone(), row_level_filter.column_name, row_level_filter.do_remove_column});
+        }
 
         bool use_parallel_replicas = false;
         if (reading_from_table)
@@ -325,7 +392,7 @@ static QueryPlanResourceHolder replaceReadingFromTable(QueryPlan::Node & node, Q
     return std::move(nodes_and_resource.second);
 }
 
-void QueryPlan::resolveStorages(const ContextPtr & context)
+void QueryPlan::resolveStorages(const ContextPtr & context, const ExpectedStorageIdentities * expected_identities)
 {
     std::stack<QueryPlan::Node *> stack;
     stack.push(getRootNode());
@@ -339,7 +406,7 @@ void QueryPlan::resolveStorages(const ContextPtr & context)
             for (const auto & set : delayed_creating_sets->getSets())
             {
                 auto * set_plan = set->getQueryPlan();
-                set_plan->resolveStorages(context);
+                set_plan->resolveStorages(context, expected_identities);
                 /// The set-source plan is kept aside, so the contexts its resolved reads captured must be handed to
                 /// this plan for a fallback to reach them, as the planner does for the set sources it builds.
                 takeContextsFrom(*set_plan);
@@ -350,7 +417,7 @@ void QueryPlan::resolveStorages(const ContextPtr & context)
             stack.push(child);
 
         if (node->children.empty())
-            addResources(replaceReadingFromTable(*node, nodes, context));
+            addResources(replaceReadingFromTable(*node, nodes, context, expected_identities));
     }
 }
 

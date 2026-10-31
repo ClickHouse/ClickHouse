@@ -203,6 +203,10 @@ public:
     /// 2. ignore_ast_optimizations is set.
     bool isASTLevelOptimizationAllowed() const { return is_ast_level_optimization_allowed; }
 
+    /// True when the planner builds a logical plan for the query plan cache (see
+    /// `SelectQueryOptions::cacheable_logical_plan`).
+    bool isBuildingCacheableLogicalPlan() const { return is_building_cacheable_logical_plan; }
+
     /// True when this plan, or a fragment of it, may be serialized and shipped to another node: a
     /// logical plan built for a shard under `serialize_query_plan`, or a local plan from which
     /// plan-based parallel replicas (`parallel_replicas_plan_based`) later cut a fragment for the
@@ -225,6 +229,7 @@ private:
 
     bool is_ast_level_optimization_allowed;
 
+    bool is_building_cacheable_logical_plan = false;
     bool may_be_serialized_for_remote_execution = false;
 
     /// Column node to column identifier
