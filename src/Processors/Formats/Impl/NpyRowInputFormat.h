@@ -28,7 +28,7 @@ public:
     String getName() const override { return "NpyRowInputFormat"; }
 
 private:
-    bool supportsCountRows() const override { return true; }
+    bool supportsCountRows() const override { return data_size_confirmed; }
     size_t countRows(size_t max_block_size) override;
 
     void readPrefix() override;
@@ -55,6 +55,7 @@ private:
     NumpyHeader header;
     size_t counted_rows = 0;
     size_t read_rows = 0;
+    bool data_size_confirmed = false;
 };
 
 class NpySchemaReader final : public ISchemaReader
@@ -63,7 +64,6 @@ public:
     explicit NpySchemaReader(ReadBuffer & in_);
 
 private:
-    std::optional<size_t> readNumberOrRows() override;
     NamesAndTypesList readSchema() override;
     NumpyHeader header;
 };
