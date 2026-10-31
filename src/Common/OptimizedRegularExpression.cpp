@@ -240,7 +240,8 @@ const char * analyzeImpl(
     Literal & required_substring,
     bool & is_trivial,
     bool & has_capture,
-    Literals & global_alternatives)
+    Literals & global_alternatives,
+    bool has_case_insensitive_flag = false)
 {
     checkStackSize();
 
@@ -256,12 +257,11 @@ const char * analyzeImpl(
     const char * end = regexp.data() + regexp.size();
     bool is_first_call = begin == regexp.data();
     int depth = 0;
-    is_trivial = true;
+    is_trivial = !has_case_insensitive_flag;
     has_capture = false;
     bool is_prefix = true;
     required_substring.clear();
     bool has_alternative_on_depth_0 = false;
-    bool has_case_insensitive_flag = false;
 
     /// Substring with is_prefix.
     using Substring = std::pair<std::string, bool>;
@@ -274,8 +274,11 @@ const char * analyzeImpl(
 
     auto finish_cur_alternatives = [&]()
     {
-        if (cur_alternatives.empty())
+        if (cur_alternatives.empty() || has_case_insensitive_flag)
+        {
+            cur_alternatives.clear();
             return;
+        }
 
         if (global_alternatives.empty())
         {
@@ -410,6 +413,7 @@ const char * analyzeImpl(
                 if (!in_square_braces)
                 {
                     bool is_non_capturing_group = false;
+                    bool group_has_case_insensitive_flag = has_case_insensitive_flag;
 
                     /// it means flag negation
                     /// there are various possible flags
@@ -422,12 +426,13 @@ const char * analyzeImpl(
                     if (pos + 2 < end && pos[1] == '?' && (is_flag_char(pos[2]) || pos[2] == ')'))
                     {
                         size_t offset = 2;
+                        bool seen_i = false;
                         for (; pos + offset < end; ++offset)
                         {
                             if (pos[offset] == 'i')
                             {
                                 /// Actually it can be negated case-insensitive flag. But we don't care.
-                                has_case_insensitive_flag = true;
+                                seen_i = true;
                             }
                             else if (!is_flag_char(pos[offset]))
                                 break;
@@ -438,6 +443,8 @@ const char * analyzeImpl(
                         /// if this group only contains flags, we have nothing to do.
                         if (*pos == ')')
                         {
+                            if (seen_i)
+                                has_case_insensitive_flag = true;
                             /// A flag group captures nothing - RE2 counts no capture group for
                             /// `(?i)` - and `extract` returns the whole match for such a pattern.
                             ++pos;
@@ -447,7 +454,11 @@ const char * analyzeImpl(
                         /// `(?flags:regex)` sets the flags for the group it opens, and captures
                         /// nothing either.
                         if (*pos == ':')
+                        {
                             is_non_capturing_group = true;
+                            if (seen_i)
+                                group_has_case_insensitive_flag = true;
+                        }
                     }
                     /// (?:regex) means non-capturing parentheses group
                     else if (pos + 2 < end && pos[1] == '?' && pos[2] == ':')
@@ -464,7 +475,7 @@ const char * analyzeImpl(
                     bool group_is_trival = true;
                     bool group_has_capture = false;
                     Literals group_alters;
-                    pos = analyzeImpl(regexp, pos + 1, group_required_substr, group_is_trival, group_has_capture, group_alters);
+                    pos = analyzeImpl(regexp, pos + 1, group_required_substr, group_is_trival, group_has_capture, group_alters, group_has_case_insensitive_flag);
                     /// pos should be ')', if not, then it is not a valid regular expression
                     if (pos == end)
                         return pos;
@@ -618,36 +629,48 @@ finish:
     }
     else if (!trivial_substrings.empty())
     {
-        required_substring.literal = trivial_substrings.front().first;
-        /// trivial string means the whole regex is a simple string literal, so the prefix and suffix should be true.
-        required_substring.prefix = true;
-        required_substring.suffix = true;
+        if (!has_case_insensitive_flag)
+        {
+            required_substring.literal = trivial_substrings.front().first;
+            /// trivial string means the whole regex is a simple string literal, so the prefix and suffix should be true.
+            required_substring.prefix = true;
+            required_substring.suffix = true;
+        }
     }
 
     /// if it is xxx|xxx|xxx, we should call the next xxx|xxx recursively and collect the result.
     if (has_alternative_on_depth_0)
     {
         /// compare the quality of required substring and alternatives and choose the better one.
-        if (global_alternatives.empty() || shortest_literal_length(global_alternatives) < required_substring.literal.size())
-            global_alternatives = {required_substring};
+        if (!has_case_insensitive_flag)
+        {
+            if (global_alternatives.empty() || shortest_literal_length(global_alternatives) < required_substring.literal.size())
+                global_alternatives = {required_substring};
+        }
         /// this two vals are useless, xxx|xxx cannot be trivial nor prefix.
         Literals next_alternatives;
         bool next_is_trivial = true;
         bool next_has_capture = false;
-        pos = analyzeImpl(regexp, pos, required_substring, next_is_trivial, next_has_capture, next_alternatives);
+        pos = analyzeImpl(regexp, pos, required_substring, next_is_trivial, next_has_capture, next_alternatives, has_case_insensitive_flag);
 
         /// has_capture is true when all alternatives have captures
         has_capture &= next_has_capture;
         /// For xxx|xxx|xxx, we only combine the alternatives and return a empty required_substring.
-        if (next_alternatives.empty() || shortest_literal_length(next_alternatives) < required_substring.literal.size())
+        if (!has_case_insensitive_flag)
         {
-            global_alternatives.push_back(required_substring);
-        }
-        else
-        {
-            global_alternatives.insert(global_alternatives.end(), next_alternatives.begin(), next_alternatives.end());
+            if (next_alternatives.empty() || shortest_literal_length(next_alternatives) < required_substring.literal.size())
+                global_alternatives.push_back(required_substring);
+            else
+                global_alternatives.insert(global_alternatives.end(), next_alternatives.begin(), next_alternatives.end());
         }
         required_substring.clear();
+    }
+
+    if (has_case_insensitive_flag)
+    {
+        is_trivial = false;
+        required_substring.clear();
+        global_alternatives.clear();
     }
 
     return pos;
