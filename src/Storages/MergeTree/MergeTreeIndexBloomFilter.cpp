@@ -683,6 +683,18 @@ static Field coerceConstantForBloomFilterHash(
         return buf.str();
     }
 
+    /// `equals` compares a `DateTime` with a signed integer numerically, while `convertFieldToType`
+    /// accepts only a `UInt64` `Field` for a `DateTime` and throws `TYPE_MISMATCH` for an `Int64`.
+    /// A non-negative value is the same number as a `UInt64`; a negative one equals no stored value,
+    /// and the index declines instead of hashing it.
+    if (value_field.getType() == Field::Types::Int64 && WhichDataType(actual_type).isDateTime())
+    {
+        const Int64 signed_value = value_field.safeGet<Int64>();
+        if (signed_value < 0)
+            return {};
+        return convertFieldToType(Field(static_cast<UInt64>(signed_value)), *actual_type, value_type.get());
+    }
+
     return convertFieldToType(value_field, *actual_type, value_type.get());
 }
 
