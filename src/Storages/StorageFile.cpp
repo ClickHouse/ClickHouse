@@ -633,16 +633,19 @@ String normalizeDiskRelativePath(const String & input)
 /// being used as `link/passwd` to escape the disk root.
 ///
 /// The check applies to every disk whose user-visible paths are filesystem paths under
-/// `disk->getPath()`: a local disk, and a `local_blob_storage` object storage with `plain`
-/// metadata, which follows filesystem symlinks too. The check must hold for such a disk
-/// even when the backend has its own boundary, because that boundary is the whole disk,
-/// while a `SubdirectoryDiskWrapper` confines user files to a subdirectory of it. For other
-/// object-storage disks there is no symlink concept in the user-visible namespace, so the
-/// check trivially passes.
+/// `disk->getPath()`: a local disk, a `local_blob_storage` object storage with `plain`
+/// metadata, and any object storage with `local` metadata, where `disk->getPath()` is the
+/// root of the local metadata files and a metadata path follows filesystem symlinks. The
+/// check must hold for such a disk even when the backend has its own boundary, because that
+/// boundary is the whole disk, while a `SubdirectoryDiskWrapper` confines user files to a
+/// subdirectory of it. For other object-storage disks there is no symlink concept in the
+/// user-visible namespace, so the check trivially passes.
 bool isDiskRelativePathInsideRoot(const DiskPtr & disk, const String & relative_path)
 {
     const auto description = disk->getDataSourceDescription();
     const bool paths_are_filesystem_paths = description.type == DataSourceType::Local
+        || (description.type == DataSourceType::ObjectStorage
+            && description.metadata_type == MetadataStorageType::Local)
         || (description.type == DataSourceType::ObjectStorage
             && description.object_storage_type == ObjectStorageType::Local
             && description.metadata_type == MetadataStorageType::Plain);
