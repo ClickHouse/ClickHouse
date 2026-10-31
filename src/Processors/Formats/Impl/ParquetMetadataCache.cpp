@@ -2,6 +2,8 @@
 
 #if USE_PARQUET
 
+#include <Common/MemoryTrackerBlockerInThread.h>
+#include <IO/UncompressedCache.h>
 #include <Processors/Formats/Impl/Parquet/ThriftUtil.h>
 
 namespace CurrentMetrics
@@ -32,10 +34,19 @@ size_t ParquetMetadataCacheKeyHash::operator()(const ParquetMetadataCacheKey & k
 }
 
 ParquetMetadataCacheCell::ParquetMetadataCacheCell(
-    std::shared_ptr<const Parquet::FileFooter> footer_, std::vector<Parquet::FileColumnChunksPtr> column_chunks_)
+    std::shared_ptr<const Parquet::FileFooter> footer_,
+    std::vector<Parquet::FileColumnChunksPtr> column_chunks_,
+    std::shared_ptr<ParquetKeptStatistics> kept_statistics_)
     : footer(std::move(footer_))
     , column_chunks(std::move(column_chunks_))
     , memory_bytes(calculateMemorySize() + SIZE_IN_MEMORY_OVERHEAD)
+    /// Kept statistics may add a quarter of the footer's size to the cell, and at least 4 KiB for a small footer, so the
+    /// cache limits still bound the cell. The columns kept first use up this budget for the lifetime of the cell.
+    , kept_statistics(
+          kept_statistics_ ? std::move(kept_statistics_)
+                           : std::allocate_shared<ParquetKeptStatistics>(
+                                 ServerOwnedCacheEntryAllocator<ParquetKeptStatistics>(),
+                                 std::max<size_t>(memory_bytes / 4, MIN_KEPT_STATISTICS_BYTES)))
 {
 }
 size_t ParquetMetadataCacheCell::calculateMemorySize() const
@@ -85,9 +96,68 @@ size_t ParquetMetadataCacheCell::calculateMemorySize() const
     return total_size;
 }
 
+namespace
+{
+
+void deleteKeptRanges(const ParquetKeptStatistics::Ranges * ranges)
+{
+    MemoryTrackerBlockerInThread not_charged_to_query_or_user;
+    delete ranges;
+}
+
+}
+
+/// Kept statistics are released like they are allocated, see `ParquetMetadataCache::keepStatistics`.
+ParquetKeptStatistics::~ParquetKeptStatistics()
+{
+    MemoryTrackerBlockerInThread not_charged_to_query_or_user;
+    std::unordered_map<String, RangesPtr>().swap(ranges_by_column);
+}
+
+std::optional<ParquetKeptStatistics::Column>
+ParquetKeptStatistics::prepare(const String & column_key, const Ranges & ranges, size_t ranges_bytes) const
+{
+    size_t bytes = sizeof(Ranges) + column_key.size() + ranges_bytes;
+    {
+        std::lock_guard lock(mutex);
+        if (ranges_by_column.contains(column_key) || total_bytes + bytes > max_bytes)
+            return std::nullopt;
+    }
+    return Column{column_key, RangesPtr(new Ranges(ranges), deleteKeptRanges, ServerOwnedCacheEntryAllocator<Ranges>()), bytes};
+}
+
+bool ParquetKeptStatistics::add(Column column)
+{
+    std::lock_guard lock(mutex);
+    if (ranges_by_column.contains(column.key) || total_bytes + column.bytes > max_bytes)
+        return false;
+    ranges_by_column.emplace(std::move(column.key), std::move(column.ranges));
+    total_bytes += column.bytes;
+    return true;
+}
+
+ParquetKeptStatistics::RangesPtr ParquetKeptStatistics::get(const String & column_key) const
+{
+    std::lock_guard lock(mutex);
+    auto it = ranges_by_column.find(column_key);
+    return it == ranges_by_column.end() ? nullptr : it->second;
+}
+
+size_t ParquetKeptStatistics::bytes() const
+{
+    std::lock_guard lock(mutex);
+    return total_bytes;
+}
+
+size_t ParquetKeptStatistics::remainingBytes() const
+{
+    std::lock_guard lock(mutex);
+    return max_bytes - total_bytes;
+}
+
 size_t ParquetMetadataCacheWeightFunction::operator()(const ParquetMetadataCacheCell & cell) const
 {
-    return cell.memory_bytes;
+    return cell.memory_bytes + cell.kept_statistics->bytes();
 }
 
 ParquetMetadataCache::ParquetMetadataCache(
@@ -124,7 +194,25 @@ void ParquetMetadataCache::addColumnChunks(
     }
     if (!added)
         return;
-    Base::replaceIfMatches(key, cell, std::make_shared<ParquetMetadataCacheCell>(cell->footer, std::move(merged)));
+    Base::replaceIfMatches(key, cell, std::make_shared<ParquetMetadataCacheCell>(cell->footer, std::move(merged), cell->kept_statistics));
+}
+
+void ParquetMetadataCache::keepStatistics(
+    const ParquetMetadataCacheKey & key,
+    const MappedPtr & cell,
+    const String & column_key,
+    const ParquetKeptStatistics::Ranges & ranges,
+    size_t ranges_bytes)
+{
+    /// The kept ranges belong to the shared cache, not to the query that reads the file.
+    MemoryTrackerBlockerInThread not_charged_to_query_or_user;
+    auto column = cell->kept_statistics->prepare(column_key, ranges, ranges_bytes);
+    if (!column)
+        return;
+    Base::updateIfMatches(
+        key,
+        [&](const MappedPtr & resident)
+        { return resident->kept_statistics == cell->kept_statistics && cell->kept_statistics->add(std::move(*column)); });
 }
 
 void ParquetMetadataCache::onEntryRemoval(const size_t weight_loss, const MappedPtr &)

@@ -114,9 +114,6 @@ public:
         const Settings & settings,
         LoggerPtr log);
 
-    static std::vector<std::optional<size_t>> buildPrimaryKeyToMinMaxSlotMapping(
-        const StorageMetadataPtr & metadata_snapshot, const MergeTreeSettingsPtr & data_settings);
-
     static std::pair<MarkRanges, RangesInDataPartReadHints> filterMarksUsingIndex(
         MergeTreeIndexPtr index_helper,
         MergeTreeIndexConditionPtr condition,
@@ -330,7 +327,7 @@ public:
 
     /// Calculate row limits for reading based on settings and query info.
     /// Returns limits and leaf_limits that should be applied during part processing.
-    static RowLimits getRowLimits(const Settings & settings, const SelectQueryInfo & query_info);
+    static RowLimits getRowLimits(const Context & context, const SelectQueryInfo & query_info);
 
     static MarkRanges mergePartialResultsForDisjunctions(
         const IMergeTreeDataPartInfoForReader & part_info,
@@ -342,10 +339,25 @@ public:
 
     /// Check if a skip index can be used when there are lightweight updates.
     /// Returns an error message if the index depends on a column that will be updated on the fly.
+    /// Per-part callers pass `AlterConversions::getColumnsInvalidatingIndexes`, which also holds the
+    /// names touched by a pending `DROP COLUMN` / `RENAME COLUMN`.
     static std::expected<void, PreformattedMessage> canUseIndex(
         const MergeTreeIndexPtr & index,
         const StorageMetadataPtr & metadata_snapshot,
         const NameSet & all_updated_columns);
+
+    /// Whether a pending alter mutation (e.g. `MODIFY COLUMN`) or metadata mutation (`DROP COLUMN`,
+    /// `RENAME COLUMN`) applies to the part. The counters of the snapshot (`hasAlterMutations`,
+    /// `hasMetadataMutations`) also include finished mutations kept for `system.mutations`, so only the
+    /// commands newer than the part are checked.
+    static bool partHasPendingAlterOrMetadataMutations(
+        const MergeTreeData::DataPartPtr & part,
+        const MergeTreeData::MutationsSnapshotPtr & mutations_snapshot);
+
+    /// Same as `partHasPendingAlterOrMetadataMutations` for any of the parts.
+    static bool hasPendingAlterOrMetadataMutations(
+        const RangesInDataParts & parts,
+        const MergeTreeData::MutationsSnapshotPtr & mutations_snapshot);
 
 
 };
