@@ -18,6 +18,7 @@ public:
     ExpressionStep(const ExpressionStep & other)
         : ITransformingStep(other)
         , actions_dag(other.actions_dag.clone())
+        , parallelize_single_stream(other.parallelize_single_stream)
     {}
 
     String getName() const override { return "Expression"; }
@@ -48,6 +49,11 @@ public:
 
     UnneededInputPositions getUnneededColumns(const std::vector<size_t> & unneeded_output_positions) const override;
 
+    /// `transformPipeline` decides on its own whether the parallel evaluation is also safe,
+    /// so this may be set on any expression.
+    void setParallelizeSingleStream() { parallelize_single_stream = true; }
+    bool isSingleStreamParallelized() const { return parallelize_single_stream; }
+
 private:
     void updateOutputHeader() override;
 
@@ -74,6 +80,7 @@ private:
     UnneededColumnsPlan analyzeUnneededColumns(const std::vector<size_t> & unneeded_output_positions) const;
 
     ActionsDAG actions_dag;
+    bool parallelize_single_stream = false;
 };
 
 }
