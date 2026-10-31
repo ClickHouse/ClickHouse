@@ -320,7 +320,6 @@ private:
         return true;
     }
 
-    /// Elements are arrays: write their offsets directly and copy their nested ranges, as raw bytes when the nested type is fixed-width.
     bool executeArray(const ColumnRawPtrs & columns, IColumn & out_data, size_t input_rows_count) const
     {
         auto * out_array = typeid_cast<ColumnArray *>(&out_data);
