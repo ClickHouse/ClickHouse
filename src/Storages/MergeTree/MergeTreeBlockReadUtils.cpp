@@ -74,7 +74,12 @@ bool hasMaterializedTextIndex(
     {
         if (projection.index && projection.name == text_index_name)
             if (const auto * loaded_part = dynamic_cast<const LoadedMergeTreeDataPartInfoForReader *>(&data_part_info_for_reader))
-                return loaded_part->getDataPart()->hasProjection(text_index_name);
+            {
+                /// A broken projection is not usable for reading (see `MergeTreeProjectionIndexText::isUsableInPart`),
+                /// so the virtual column must be computed from the physical columns it depends on.
+                const auto & data_part = loaded_part->getDataPart();
+                return data_part->hasProjection(text_index_name) && !data_part->hasBrokenProjection(text_index_name);
+            }
     }
 
     return false;
