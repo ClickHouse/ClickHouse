@@ -1,0 +1,20 @@
+one value per block
+0
+several runs per block, keys repeating out of order
+0
+UInt8 key
+0
+Date key
+0
+Float64 key with -0, 0 and NaN
+0
+FixedString key
+0
+no aggregate functions
+0
+frozen adaptive tables
+0
+frozen adaptive tables, count only
+0
+GROUP BY LIMIT keeps exact keys
+3	0
