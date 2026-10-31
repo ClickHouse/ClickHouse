@@ -565,9 +565,13 @@ static std::optional<std::pair<DB::ObjectStoragePtr, std::string>> tryResolveObj
         }
 
         /// Re-rooted at the queried table directory, where the base storage validates the translated path.
+        /// A `..` segment may leave the queried directory after re-rooting, so access is checked on the re-rooted key.
         if (base_scheme_normalized == "file" && table_location_decomposed.authority == target_decomposed.authority
             && keyIsInsidePrefix(table_location_decomposed.key, target_decomposed.key, /*is_filesystem_path*/ true))
+        {
+            check_base_storage_access();
             return std::nullopt;
+        }
 
     }
 
@@ -1168,7 +1172,12 @@ bool isObjectInTableDirectory(
     const ObjectStoragePtr & table_storage,
     const std::string & table_path)
 {
-    if (storage != table_storage || !key.starts_with(table_path))
+    if (storage != table_storage)
+        return false;
+    /// The filesystem resolves `.` and `..` segments, so a local key is compared by the file it opens.
+    if (storage->getType() == ObjectStorageType::Local)
+        return keyIsInsidePrefix(table_path, key, /*is_filesystem_path*/ true);
+    if (!key.starts_with(table_path))
         return false;
     return table_path.empty() || table_path.ends_with('/')
         || (key.size() > table_path.size() && key[table_path.size()] == '/');

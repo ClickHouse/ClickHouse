@@ -232,3 +232,69 @@ def test_copied_local_table_reads_files_from_its_own_directory(started_cluster_i
     instance.exec_in_container(["bash", "-c", f"cp -r {host_path} {copy_path} && rm -f {host_path}/data/*.parquet"])
 
     assert instance.query(f"SELECT * FROM icebergLocal(local, path = '{copy_path}', format=Parquet) ORDER BY id") == ALL_ROWS
+
+
+def test_copied_local_table_checks_dot_dot_paths_leaving_its_directory(started_cluster_iceberg_with_spark):
+    instance = started_cluster_iceberg_with_spark.instances["node1"]
+    spark = started_cluster_iceberg_with_spark.spark_session
+
+    TABLE_NAME = f"test_copied_local_dot_dot_{get_uuid_str()}"
+    host_path = f"/var/lib/clickhouse/user_files/iceberg_data/default/{TABLE_NAME}"
+    copy_root = f"/var/lib/clickhouse/user_files/iceberg_copy_{get_uuid_str()}"
+    copy_path = f"{copy_root}/copy"
+    # Re-rooted at `copy_path`, `{host_path}/../{TABLE_NAME}` names this sibling of the copy.
+    sibling_dir = f"{copy_root}/{TABLE_NAME}/data"
+    user = f"user_{TABLE_NAME}"
+
+    spark.sql(f"CREATE TABLE {TABLE_NAME} (id INT, value STRING) USING iceberg OPTIONS('format-version'='2')")
+    spark.sql(f"INSERT INTO {TABLE_NAME} VALUES (1, 'alpha')")
+    spark.sql(f"INSERT INTO {TABLE_NAME} VALUES (2, 'beta')")
+    spark.sql(f"DELETE FROM {TABLE_NAME} WHERE id = 1")
+
+    # Data paths stay inside the source `location` only after `..` is resolved against it.
+    metadata_dir = os.path.join(host_path, "metadata")
+    to_metadata_uri = lambda p: f"file://{host_path}/metadata/{os.path.basename(p)}"
+    for metadata_json in find_files(metadata_dir, ".metadata.json"):
+        with open(metadata_json) as f:
+            metadata = json.load(f)
+        metadata["location"] = f"file://{host_path}"
+        for snapshot in metadata.get("snapshots", []):
+            snapshot["manifest-list"] = to_metadata_uri(snapshot["manifest-list"])
+        with open(metadata_json, "w") as f:
+            json.dump(metadata, f)
+    for avro_file in find_files(metadata_dir, ".avro"):
+        if os.path.basename(avro_file).startswith("snap-"):
+            modify_avro_file(avro_file, ["manifest_path"], to_metadata_uri)
+        else:
+            modify_avro_file(
+                avro_file, ["data_file", "file_path"],
+                lambda p: f"file://{host_path}/../{TABLE_NAME}/data/{os.path.basename(p)}")
+
+    default_upload_directory(started_cluster_iceberg_with_spark, "local", f"/iceberg_data/default/{TABLE_NAME}/", f"/iceberg_data/default/{TABLE_NAME}/")
+    instance.exec_in_container(["bash", "-c",
+        f"mkdir -p {sibling_dir} && cp -r {host_path} {copy_path} && mv {copy_path}/data/*.parquet {sibling_dir}/ "
+        f"&& rm -f {host_path}/data/*.parquet"])
+
+    instance.query(f"DROP TABLE IF EXISTS {TABLE_NAME}")
+    instance.query(f"CREATE TABLE {TABLE_NAME} ENGINE=IcebergLocal(local, path = '{copy_path}', format=Parquet)")
+
+    instance.query(f"DROP USER IF EXISTS {user}")
+    instance.query(f"CREATE USER {user}")
+    instance.query(f"GRANT SELECT ON {TABLE_NAME} TO {user}")
+    error = instance.query_and_get_error(f"SELECT * FROM {TABLE_NAME} ORDER BY id", user=user)
+    assert "ACCESS_DENIED" in error, error
+
+    instance.query(f"GRANT READ ON FILE('{sibling_dir}/.*') TO {user}")
+    assert instance.query(f"SELECT * FROM {TABLE_NAME} ORDER BY id", user=user) == "2\tbeta\n"
+    instance.query(f"DROP USER {user}")
+
+    list_sibling = ["bash", "-c", f"ls {sibling_dir}"]
+    files_before = instance.exec_in_container(list_sibling)
+    error = instance.query_and_get_error(
+        f"ALTER TABLE {TABLE_NAME} EXECUTE expire_snapshots("
+        f"expire_before = '2099-12-31 23:59:59', retain_last = 1, retention_period = '1ms')",
+        settings={"allow_insert_into_iceberg": 1, "allow_experimental_expire_snapshots": 1})
+    assert "outside the table's base directory" in error, error
+    assert instance.exec_in_container(list_sibling) == files_before
+
+    instance.query(f"DROP TABLE {TABLE_NAME} SYNC")
