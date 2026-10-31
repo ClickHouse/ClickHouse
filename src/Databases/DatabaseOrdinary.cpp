@@ -67,6 +67,7 @@ namespace Setting
 namespace MergeTreeSetting
 {
     extern const MergeTreeSettingsString storage_policy;
+    extern const MergeTreeSettingsBool leader_election;
     extern const MergeTreeSettingsBool table_readonly;
 }
 
@@ -148,17 +149,28 @@ static void checkReplicaPathExists(const TableZnodeInfo & znode_info, const Stor
         );
 }
 
-bool DatabaseOrdinary::isTableReadonlyAsReplicated(const ASTCreateQuery & create_query, ContextPtr local_context)
+/// Resolved the way `registerStorageMergeTree` resolves the settings of a `ReplicatedMergeTree`:
+/// the definition's own `SETTINGS` over the `merge_tree` and `replicated_merge_tree` config defaults.
+static bool isBoolSettingEnabledAsReplicated(
+    const ASTCreateQuery & create_query, ContextPtr local_context, std::string_view name, MergeTreeSettingsBool setting)
 {
-    /// Resolved the way `registerStorageMergeTree` resolves the settings of a `ReplicatedMergeTree`:
-    /// the definition's own `SETTINGS` over the `merge_tree` and `replicated_merge_tree` config defaults.
     if (create_query.storage && create_query.storage->settings)
     {
-        if (const Field * readonly_setting = create_query.storage->settings->changes.tryGet("table_readonly"))
-            return SettingFieldBool{*readonly_setting}.value;
+        if (const Field * value = create_query.storage->settings->changes.tryGet(name))
+            return SettingFieldBool{*value}.value;
     }
 
-    return local_context->getReplicatedMergeTreeSettings()[MergeTreeSetting::table_readonly];
+    return local_context->getReplicatedMergeTreeSettings()[setting];
+}
+
+bool DatabaseOrdinary::isTableReadonlyAsReplicated(const ASTCreateQuery & create_query, ContextPtr local_context)
+{
+    return isBoolSettingEnabledAsReplicated(create_query, local_context, "table_readonly", MergeTreeSetting::table_readonly);
+}
+
+bool DatabaseOrdinary::hasLeaderElectionAsReplicated(const ASTCreateQuery & create_query, ContextPtr local_context)
+{
+    return isBoolSettingEnabledAsReplicated(create_query, local_context, "leader_election", MergeTreeSetting::leader_election);
 }
 
 TableZnodeInfo DatabaseOrdinary::checkReplicaPathIsSafe(const ASTCreateQuery & create_query, ContextPtr local_context, bool stores_path_literally)
@@ -342,6 +354,21 @@ void DatabaseOrdinary::convertMergeTreeToReplicatedIfNeeded(ASTPtr ast, const Qu
             "`merge_tree` / `replicated_merge_tree` defaults), which is not supported for "
             "ReplicatedMergeTree. Turn it off with `ALTER TABLE ... MODIFY SETTING table_readonly = 0`; the {} flag is kept, "
             "so the conversion runs on the next start.",
+            backQuote(qualified_name.getFullName()),
+            CONVERT_TO_REPLICATED_FLAG_NAME);
+        return;
+    }
+
+    /// `leader_election` is supported only for `MergeTree`, and `StorageReplicatedMergeTree` refuses
+    /// to attach with it. Converting would persist a definition that can no longer be loaded at all,
+    /// so the table is left alone the same way.
+    if (hasLeaderElectionAsReplicated(create_query, getContext()))
+    {
+        LOG_ERROR(
+            log,
+            "Not converting table {} to replicated: it would have `leader_election = 1` (from its definition or the server's "
+            "`merge_tree` / `replicated_merge_tree` defaults), which is not supported for "
+            "ReplicatedMergeTree. The {} flag is kept, so the conversion runs on the next start once the setting is off.",
             backQuote(qualified_name.getFullName()),
             CONVERT_TO_REPLICATED_FLAG_NAME);
         return;
