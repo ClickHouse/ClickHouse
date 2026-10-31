@@ -1,0 +1,6 @@
+tuple subcolumn index dropped first	1000
+1
+index over a subcolumn of another column	1000
+1
+lossless tuple subcolumn dependent	1000	1000
+1
