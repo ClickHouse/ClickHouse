@@ -223,7 +223,6 @@ static inline void signal_safe_sleep_ms(int ms)
 
 /// Dump the runner's stack (via SIGUSR1) only for the alarm on which libfuzzer's `AlarmCallback`
 /// exits: on the fuzzing thread, inside `LLVMFuzzerTestOneInput`, `-timeout` after its start.
-/// Any other dump leaves the runner in a slow stack print while the next input waits for it.
 static void fuzzerSigalrmHandler(int sig, siginfo_t * info, void * ctx)
 {
     int64_t start = iteration_start_ns.load(std::memory_order_acquire);
@@ -334,7 +333,6 @@ int LLVMFuzzerInitialize(const int *argc, char ***argv)
 extern "C"
 int LLVMFuzzerTestOneInput(const uint8_t * data, size_t size)
 {
-    /// The start of this input for `fuzzerSigalrmHandler`, cleared on return.
     iteration_start_ns.store(realtimeNs(), std::memory_order_release);
     dump_started.store(false, std::memory_order_release);
 
