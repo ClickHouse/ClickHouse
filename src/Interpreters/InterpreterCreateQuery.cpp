@@ -245,39 +245,10 @@ size_t getNumberOfTablesToCreate(const ASTCreateQuery & create, LoadingStrictnes
     return result;
 }
 
-/// Substitutes SQL UDFs the way `createTable` does, but never into an engine: an engine is an
-/// `ASTFunction` too, and a UDF may carry an engine's name, so substituting there would replace the
-/// engine with a function body. Key expressions live in several places (storage, a view's inner
-/// engine, a projection's own `ORDER BY`), so the walk covers the query rather than a list of slots.
-void substituteUserDefinedFunctionsOutsideEngines(ASTPtr & ast, const ContextPtr & context)
-{
-    for (auto & child : ast->children)
-    {
-        if (!child)
-            continue;
-
-        const auto * storage = ast->as<ASTStorage>();
-        if (storage && child.get() == storage->engine)
-            continue;
-
-        const IAST * old_ptr = child.get();
-        substituteUserDefinedFunctionsOutsideEngines(child, context);
-        if (child.get() != old_ptr)
-            ast->updatePointerToChild(old_ptr, child);
-    }
-
-    if (ast->as<ASTFunction>() && !ast->as<ASTStorage>())
-    {
-        ASTPtr expression = ast;
-        UserDefinedSQLFunctionVisitor::visit(expression, context);
-        ast = expression;
-    }
-}
-
 void normalizeLegacyToTimeInCreateQuery(ASTPtr & query, const ContextPtr & context)
 {
     if (!UserDefinedSQLFunctionFactory::instance().empty())
-        substituteUserDefinedFunctionsOutsideEngines(query, context);
+        UserDefinedSQLFunctionVisitor::visit(query, context);
     replaceLegacyToTime(*query);
 }
 
