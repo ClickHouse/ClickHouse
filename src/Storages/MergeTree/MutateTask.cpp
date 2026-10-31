@@ -3355,6 +3355,7 @@ void PartMergerWriter::finalizeTempProjectionsAndIndexes()
             ctx->time_of_mutation,
             ctx->new_data_part,
             ctx->space_reservation,
+            ctx->data->getSettings(),
             (*ctx->mutate_entry)->ptr()
         );
 

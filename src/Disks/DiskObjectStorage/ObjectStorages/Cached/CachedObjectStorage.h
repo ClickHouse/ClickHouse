@@ -114,6 +114,11 @@ public:
 
     bool supportParallelWrite() const override { return object_storage->supportParallelWrite(); }
 
+    MultipartUploadMemory getWriteBufferMemory(const WriteSettings & write_settings) const override
+    {
+        return object_storage->getWriteBufferMemory(write_settings);
+    }
+
     bool supportsAtomicWrite() const override { return object_storage->supportsAtomicWrite(); }
 
     bool supportsObjectGenerationComparison() const override { return object_storage->supportsObjectGenerationComparison(); }

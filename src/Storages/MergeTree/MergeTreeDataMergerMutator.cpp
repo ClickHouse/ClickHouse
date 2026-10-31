@@ -490,6 +490,7 @@ std::expected<MergeSelectorChoices, SelectMergeFailure> MergeTreeDataMergerMutat
 MergeTaskPtr MergeTreeDataMergerMutator::mergePartsToTemporaryPart(
     FutureMergedMutatedPartPtr future_part,
     StorageMetadataPtr metadata_snapshot,
+    MergeTreeSettingsPtr data_settings,
     MergeList::Entry * merge_entry,
     std::unique_ptr<MergeListElement> projection_merge_list_element,
     TableLockHolder & holder,
@@ -501,6 +502,7 @@ MergeTaskPtr MergeTreeDataMergerMutator::mergePartsToTemporaryPart(
     bool cleanup,
     MergeTreeData::MergingParams merging_params,
     MergeTreeTransactionPtr txn,
+    MergeTreeData::MutationsSnapshotPtr mutations_snapshot,
     ProjectionDescriptionRawPtr projection,
     IMergeTreeDataPart * parent_part,
     const String & suffix)
@@ -534,6 +536,8 @@ MergeTaskPtr MergeTreeDataMergerMutator::mergePartsToTemporaryPart(
         auto patch_metadata = std::make_shared<StorageInMemoryMetadata>(*future_part->parts.front()->getMetadataSnapshot());
         patch_metadata->setMetadataVersion(metadata_version);
         metadata_snapshot = std::move(patch_metadata);
+        /// The caller's snapshot was taken against the table's metadata version, not the patch's.
+        mutations_snapshot = nullptr;
     }
 
     return std::make_shared<MergeTask>(
@@ -557,7 +561,9 @@ MergeTaskPtr MergeTreeDataMergerMutator::mergePartsToTemporaryPart(
         &data,
         this,
         &merges_blocker,
-        &ttl_merges_blocker);
+        &ttl_merges_blocker,
+        std::move(data_settings),
+        std::move(mutations_snapshot));
 }
 
 MutateTaskPtr MergeTreeDataMergerMutator::mutatePartToTemporaryPart(

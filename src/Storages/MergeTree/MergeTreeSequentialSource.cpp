@@ -67,7 +67,8 @@ public:
         MergeTreeReadTaskInfoPtr read_task_info_,
         std::optional<MarkRanges> mark_ranges_,
         bool read_with_direct_io_,
-        bool prefetch);
+        bool prefetch,
+        ContextPtr context);
 
     ~MergeTreeSequentialSource() override;
 
@@ -116,7 +117,8 @@ MergeTreeSequentialSource::MergeTreeSequentialSource(
     MergeTreeReadTaskInfoPtr read_task_info_,
     std::optional<MarkRanges> mark_ranges_,
     bool read_with_direct_io_,
-    bool prefetch)
+    bool prefetch,
+    ContextPtr context)
     : ISource(std::move(result_header))
     , storage(storage_)
     , storage_snapshot(std::move(storage_snapshot_))
@@ -157,7 +159,10 @@ MergeTreeSequentialSource::MergeTreeSequentialSource(
         patch_join_cache->init(ranges_in_patch_parts);
     }
 
-    const auto & context = storage.getContext();
+    /// The read settings come from the context the merge or mutation runs under, not from the global
+    /// context of the storage: a merge is executed under a frozen copy of the background context (see
+    /// makeQueryContextForMerge), and its memory reservation is estimated against the same copy, so the
+    /// read buffers it allocates must be sized from it as well.
     ReadSettings read_settings = context->getReadSettings();
     const bool read_if_exists_otherwise_bypass
         = !(*storage.getSettings())[MergeTreeSetting::force_read_through_cache_for_merges];
@@ -352,7 +357,8 @@ Pipe createMergeTreeSequentialSource(
     std::shared_ptr<std::atomic<size_t>> filtered_rows_count,
     bool apply_deleted_mask,
     bool read_with_direct_io,
-    bool prefetch)
+    bool prefetch,
+    ContextPtr context)
 {
     auto info = std::make_shared<MergeTreeReadTaskInfo>();
     info->alter_conversions = std::move(alter_conversions);
@@ -409,7 +415,8 @@ Pipe createMergeTreeSequentialSource(
         std::move(info),
         std::move(mark_ranges),
         read_with_direct_io,
-        prefetch);
+        prefetch,
+        std::move(context));
 
     Pipe pipe(std::move(column_part_source));
 
@@ -511,7 +518,8 @@ public:
             filtered_rows_count,
             apply_deleted_mask,
             read_with_direct_io,
-            prefetch);
+            prefetch,
+            context);
 
         pipeline.init(Pipe(std::move(source)));
     }

@@ -116,7 +116,9 @@ public:
         MergeTreeData * data_,
         MergeTreeDataMergerMutator * mutator_,
         PartitionActionBlocker * merges_blocker_,
-        ActionBlocker * ttl_merges_blocker_)
+        ActionBlocker * ttl_merges_blocker_,
+        MergeTreeSettingsPtr base_data_settings_,
+        MergeTreeData::MutationsSnapshotPtr frozen_mutations_snapshot_ = nullptr)
         {
             global_ctx = std::make_shared<GlobalRuntimeContext>();
 
@@ -145,8 +147,18 @@ public:
             global_ctx->suffix = std::move(suffix_);
             global_ctx->merging_params = std::move(merging_params_);
 
-            global_ctx->data_settings
-                = global_ctx->data->getSettings(global_ctx->projection ? &global_ctx->projection->settings_changes : nullptr);
+            /// The MergeTree settings snapshot the caller froze when it priced this merge's memory
+            /// reservation (see MergeMutateSelectedEntry::data_settings / MergeFromLogEntryTask). Re-reading
+            /// the live settings here would let a concurrent ALTER ... MODIFY SETTING change
+            /// max_compress_block_size, the projection decisions or the vertical-merge rules after the
+            /// admission gate already accepted the merge at the old price. A projection's own
+            /// WITH SETTINGS are applied on top of that same frozen snapshot, exactly as
+            /// MergeTreeData::getSettings would apply them to the live one; the snapshot itself is
+            /// carried unchanged to the nested projection merges.
+            global_ctx->base_data_settings = std::move(base_data_settings_);
+            global_ctx->frozen_mutations_snapshot = std::move(frozen_mutations_snapshot_);
+            global_ctx->data_settings = global_ctx->data->applySettingsChanges(
+                global_ctx->base_data_settings, global_ctx->projection ? &global_ctx->projection->settings_changes : nullptr);
 
             auto prepare_stage_ctx = std::make_shared<ExecuteAndFinalizeHorizontalPartRuntimeContext>();
             (*stages.begin())->setRuntimeContext(std::move(prepare_stage_ctx), global_ctx);
@@ -216,6 +228,12 @@ private:
         MergeListElement * merge_list_element_ptr{nullptr};
         MergeTreeData * data{nullptr};
         MergeTreeSettingsPtr data_settings;
+        /// The table-level settings snapshot `data_settings` is derived from (without any projection's
+        /// WITH SETTINGS applied), passed on to the nested merges of the projections.
+        MergeTreeSettingsPtr base_data_settings;
+        /// If not null, the snapshot of pending mutations the caller priced this merge's memory reservation
+        /// against; the merge applies exactly these mutations instead of taking a fresh snapshot.
+        MergeTreeData::MutationsSnapshotPtr frozen_mutations_snapshot;
         MergeTreeDataMergerMutator * mutator{nullptr};
         PartitionActionBlocker * merges_blocker{nullptr};
         ActionBlocker * ttl_merges_blocker{nullptr};
@@ -553,6 +571,10 @@ private:
         using MergeTasks = std::deque<MergeTaskPtr>;
         MergeTasks tasks_for_projections;
         MergeTasks::iterator projections_iterator;
+        /// The parts of the projections merged so far. A finished projection task is released right away
+        /// (its slot in `tasks_for_projections` is reset), so the buffers its writer still holds are freed
+        /// before the next projection runs.
+        std::vector<MergeTreeData::MutableDataPartPtr> merged_projection_parts;
 
         LoggerPtr log{getLogger("MergeTask::MergeProjectionsStage")};
         UInt64 elapsed_execute_ns{0};
