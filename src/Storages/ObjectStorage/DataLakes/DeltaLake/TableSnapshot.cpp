@@ -599,6 +599,8 @@ public:
             context->getDataPath(), DB::unescapeForFileName(KernelUtils::fromDeltaString(path)));
         auto object = std::make_shared<DB::ObjectInfo>(DB::RelativePathWithMetadata(std::move(full_path)));
         object->data_lake_metadata.emplace();
+        if (stats)
+            object->data_lake_metadata->num_rows = stats->num_records;
 
         LOG_TEST(
             context->log,
