@@ -4,6 +4,7 @@
 #if USE_AZURE_BLOB_STORAGE
 
 #include <azure/storage/blobs.hpp>
+#include <azure/core/etag.hpp>
 #include <azure/core/response.hpp>
 #include <azure/storage/blobs/blob_client.hpp>
 #include <azure/storage/blobs/blob_options.hpp>
@@ -15,6 +16,7 @@
 #include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
 #include <Interpreters/Context_fwd.h>
 #include <mutex>
+#include <string_view>
 
 namespace DB
 {
@@ -214,6 +216,34 @@ struct AuthConfig
 AuthConfig readAuthConfig(const Poco::Util::AbstractConfiguration & config, const String & config_prefix);
 AuthMethod getAuthMethod(const AuthConfig & auth_config);
 AuthMethod getAuthMethod(const Poco::Util::AbstractConfiguration & config, const String & config_prefix);
+
+/// `Azure::ETag::ToString` aborts when the optional `ETag` header is absent (even in release builds),
+/// so never call it directly on a value from a remote endpoint.
+inline String getETagOrEmpty(const Azure::ETag & etag)
+{
+    return etag.HasValue() ? etag.ToString() : "";
+}
+
+/// A listing gives the bare tag (`0x8D...`) while a download or `HEAD` gives it quoted, so compare
+/// only the opaque part: the quotes and a `W/` weak prefix are dropped.
+inline String normalizeETag(const String & etag)
+{
+    std::string_view tag = etag;
+    if (tag.starts_with("W/"))
+        tag.remove_prefix(2);
+    if (tag.size() >= 2 && tag.front() == '"' && tag.back() == '"')
+    {
+        tag.remove_prefix(1);
+        tag.remove_suffix(1);
+    }
+    return String(tag);
+}
+
+/// The quoted form of `etag`, as conditional headers such as `If-Match` require (a listing gives it bare).
+inline String toQuotedETag(const String & etag)
+{
+    return "\"" + normalizeETag(etag) + "\"";
+}
 
 #endif
 

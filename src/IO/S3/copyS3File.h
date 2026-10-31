@@ -5,6 +5,7 @@
 #if USE_AWS_S3
 
 #include <IO/S3Settings.h>
+#include <IO/S3/getObjectInfo.h>
 #include <Common/threadPoolCallbackRunner.h>
 #include <Common/BlobStorageLogWriter.h>
 #include <base/types.h>
@@ -19,6 +20,22 @@ class SeekableReadBuffer;
 class StdStreamFromReadBuffer;
 
 using CreateReadBuffer = std::function<std::unique_ptr<SeekableReadBuffer>()>;
+
+/// What a guarded copy asks of the DESTINATION, and which generation of the SOURCE it may read.
+struct S3CopyFileSettings
+{
+    /// Refuses the write when the destination already exists, as `If-None-Match: *`.
+    String if_none_match;
+    /// Restated on the re-upload a guard forces, which `CopyObject` would have carried for free.
+    std::optional<S3::ObjectHeaders> source_headers;
+    std::optional<ObjectAttributes> source_tags;
+    /// The source `ETag` to pin the copy to (sent as `x-amz-copy-source-if-match` on `CopyObject` and every
+    /// `UploadPartCopy`), or empty; the caller must pin `fallback_file_reader` to the same generation.
+    String source_if_match;
+    /// The source version to copy on a versioned bucket, or empty for the current one; the read-and-write
+    /// fallback must be opened at the same version by the caller.
+    String source_version_id;
+};
 
 /// Builds the S3 upload request body for the part [offset, offset + size) of the source.
 /// The part is read fully into memory up front, so the returned body has no failable inner
@@ -51,7 +68,8 @@ void copyS3File(
     BlobStorageLogWriterPtr blob_storage_log,
     ThreadPoolCallbackRunnerUnsafe<void> schedule,
     const CreateReadBuffer & fallback_file_reader,
-    const std::optional<ObjectAttributes> & object_metadata = std::nullopt);
+    const std::optional<ObjectAttributes> & object_metadata = std::nullopt,
+    const S3CopyFileSettings & copy_settings = {});
 
 /// Copies exactly `[src_offset, src_offset + src_size)` of a LARGER source object of size `src_object_size`.
 ///
@@ -91,8 +109,8 @@ void copyDataToS3File(
     const S3::S3RequestSettings & settings,
     BlobStorageLogWriterPtr blob_storage_log,
     ThreadPoolCallbackRunnerUnsafe<void> schedule,
-    const std::optional<ObjectAttributes> & object_metadata = std::nullopt);
-
+    const std::optional<ObjectAttributes> & object_metadata = std::nullopt,
+    const S3CopyFileSettings & copy_settings = {});
 }
 
 #endif
