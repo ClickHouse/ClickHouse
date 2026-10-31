@@ -1324,7 +1324,7 @@ void SchemaConverter::processPrimitiveColumn(
             : !converter.input_signed && output_bits > stored_bits;
     };
 
-    auto dispatch_int_stats_converter = [&](bool allow_datetime_and_ipv4, IntConverter & converter) -> bool
+    auto dispatch_int_stats_converter = [&](bool allow_datetime_and_address, IntConverter & converter) -> bool
     {
         WhichDataType which(get_output_type_index());
         /// An Enum orders and compares by its underlying signed integer, so it belongs with the
@@ -1347,10 +1347,22 @@ void SchemaConverter::processPrimitiveColumn(
             case TypeIndex::IPv4:
                 /// There is no cast to IPv4 from a signed integer, and the one from a 64-bit integer wraps.
                 converter.field_signed = false;
-                if (!allow_datetime_and_ipv4 || !stats_order_preserved(converter))
+                if (!allow_datetime_and_address || !stats_order_preserved(converter))
                     return false;
                 converter.field_ipv4 = true;
                 break;
+            case TypeIndex::MacAddress:
+            {
+                /// The cast to `MacAddress` keeps only the low 48 bits, so a signed stored value or
+                /// one wider than 48 bits wraps and its endpoints bound nothing.
+                converter.field_signed = false;
+                const size_t stored_bits = type == parq::Type::BOOLEAN
+                    ? 1 : converter.output_size.value_or(converter.input_size) * 8;
+                if (!allow_datetime_and_address || converter.input_signed || stored_bits > 48)
+                    return false;
+                converter.field_mac_address = true;
+                break;
+            }
             case TypeIndex::Date:
                 converter.field_signed = false;
                 /// The `Date` window is the whole UInt16 domain (DATE_LUT_MAX_DAY_NUM is 0xFFFF), so
@@ -1359,7 +1371,7 @@ void SchemaConverter::processPrimitiveColumn(
                     return false;
                 break;
             case TypeIndex::DateTime:
-                if (!allow_datetime_and_ipv4)
+                if (!allow_datetime_and_address)
                     return false;
                 converter.field_signed = false;
                 converter.field_datetime = true;
@@ -1462,12 +1474,12 @@ void SchemaConverter::processPrimitiveColumn(
         return get_output_type_index() == TypeIndex::String;
     };
 
-    auto set_plain_int64_decoder = [&](bool allow_datetime_and_ipv4)
+    auto set_plain_int64_decoder = [&](bool allow_datetime_and_address)
     {
         out_inferred_type = std::make_shared<DataTypeInt64>();
         auto converter = std::make_shared<IntConverter>();
         converter->input_size = 8;
-        out_decoder.allow_stats = dispatch_int_stats_converter(allow_datetime_and_ipv4, *converter);
+        out_decoder.allow_stats = dispatch_int_stats_converter(allow_datetime_and_address, *converter);
         out_decoder.allow_hash_filters = allow_int_hash_filters(64, true, 64);
         out_decoder.fixed_size_converter = std::move(converter);
     };
@@ -1684,7 +1696,7 @@ void SchemaConverter::processPrimitiveColumn(
         else if (bits == 16)
             converter->output_size = 2;
 
-        out_decoder.allow_stats = dispatch_int_stats_converter(/*allow_datetime_and_ipv4=*/ true, *converter);
+        out_decoder.allow_stats = dispatch_int_stats_converter(/*allow_datetime_and_address=*/ true, *converter);
         out_decoder.allow_hash_filters = allow_int_hash_filters(physical_bits == 64 ? 64 : bits, is_signed, physical_bits);
         out_decoder.fixed_size_converter = std::move(converter);
 
@@ -1714,7 +1726,7 @@ void SchemaConverter::processPrimitiveColumn(
 
         if (time_as_stored_integer && is_time_of_day && scale == 6 && type == parq::Type::INT64)
         {
-            set_plain_int64_decoder(/*allow_datetime_and_ipv4=*/ false);
+            set_plain_int64_decoder(/*allow_datetime_and_address=*/ false);
             return;
         }
 
@@ -1813,7 +1825,7 @@ void SchemaConverter::processPrimitiveColumn(
                     DecimalUtils::scaleMultiplier<DateTime64::NativeType>(dt64_hint->getScale()), dt64_hint->getTimeZone());
         }
 
-        out_decoder.allow_stats = dispatch_int_stats_converter(/*allow_datetime_and_ipv4=*/ false, *converter);
+        out_decoder.allow_stats = dispatch_int_stats_converter(/*allow_datetime_and_address=*/ false, *converter);
         out_decoder.fixed_size_converter = std::move(converter);
 
         return;
@@ -2049,7 +2061,7 @@ void SchemaConverter::processPrimitiveColumn(
             converter->input_size = 1;
             converter->input_signed = false;
             converter->field_signed = false;
-            out_decoder.allow_stats = dispatch_int_stats_converter(/*allow_datetime_and_ipv4=*/ false, *converter);
+            out_decoder.allow_stats = dispatch_int_stats_converter(/*allow_datetime_and_address=*/ false, *converter);
             out_decoder.fixed_size_converter = std::move(converter);
             return;
         }
@@ -2058,14 +2070,14 @@ void SchemaConverter::processPrimitiveColumn(
             out_inferred_type = std::make_shared<DataTypeInt32>();
             auto converter = std::make_shared<IntConverter>();
             converter->input_size = 4;
-            out_decoder.allow_stats = dispatch_int_stats_converter(/*allow_datetime_and_ipv4=*/ true, *converter);
+            out_decoder.allow_stats = dispatch_int_stats_converter(/*allow_datetime_and_address=*/ true, *converter);
             out_decoder.allow_hash_filters = allow_int_hash_filters(32, true, 32);
             out_decoder.fixed_size_converter = std::move(converter);
             return;
         }
         case parq::Type::INT64:
         {
-            set_plain_int64_decoder(/*allow_datetime_and_ipv4=*/ true);
+            set_plain_int64_decoder(/*allow_datetime_and_address=*/ true);
             return;
         }
         case parq::Type::INT96:

@@ -21,6 +21,7 @@ namespace Setting
 {
     extern const SettingsBool enable_time_time64_type;
     extern const SettingsBool enable_nullable_tuple_type;
+    extern const SettingsBool allow_experimental_macaddress_type;
     extern const SettingsBool allow_suspicious_fixed_string_types;
     extern const SettingsBool allow_suspicious_low_cardinality_types;
     extern const SettingsBool allow_suspicious_variant_types;
@@ -45,6 +46,7 @@ DataTypeValidationSettings::DataTypeValidationSettings(const DB::Settings & sett
     , validate_nested_types(settings[Setting::validate_experimental_and_suspicious_types_inside_nested_types])
     , enable_time_time64_type(settings[Setting::enable_time_time64_type])
     , enable_nullable_tuple_type(settings[Setting::enable_nullable_tuple_type])
+    , allow_experimental_macaddress_type(settings[Setting::allow_experimental_macaddress_type])
 {
 }
 
@@ -153,6 +155,18 @@ void validateDataType(const DataTypePtr & type_to_check, const DataTypeValidatio
                         "Set setting enable_nullable_tuple_type = 1 in order to allow it",
                         data_type.getName());
                 }
+            }
+        }
+
+        if (!settings.allow_experimental_macaddress_type)
+        {
+            if (isMacAddress(data_type))
+            {
+                throw Exception(
+                    ErrorCodes::ILLEGAL_COLUMN,
+                    "Cannot create column with type '{}' because MacAddress type is not allowed. "
+                    "Set setting allow_experimental_macaddress_type = 1 in order to allow it",
+                    data_type.getName());
             }
         }
     };

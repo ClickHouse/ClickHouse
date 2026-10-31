@@ -1,0 +1,9 @@
+INSERT VALUES with a string literal
+1	00:1a:2b:3c:4d:5e
+2	00:1a:2b:3c:4d:5f
+3	ff:ff:ff:ff:ff:ff
+IN with string literals
+1
+3
+Equality against a string literal
+1

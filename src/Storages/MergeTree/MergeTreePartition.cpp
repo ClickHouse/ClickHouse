@@ -97,6 +97,12 @@ namespace
         {
             operator()(String(reinterpret_cast<const char *>(&x), 16));
         }
+        void operator() (const MacAddress & x) const
+        {
+            UInt8 type = Field::Types::MacAddress;
+            hash.update(type);
+            hash.update(x.toUInt64());
+        }
         void operator() (const Float64 & x) const
         {
             UInt8 type = Field::Types::Float64;

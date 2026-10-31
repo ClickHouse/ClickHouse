@@ -34,6 +34,7 @@ void enableAllExperimentalSettings(ContextMutablePtr context)
     context->setSetting("allow_experimental_lateral_join", 1);
     context->setSetting("allow_experimental_unique_key", 1);
     context->setSetting("allow_deprecated_error_prone_window_functions", 1);
+    context->setSetting("allow_experimental_macaddress_type", 1);
 
     context->setSetting("enable_xgboost", 1);
 
