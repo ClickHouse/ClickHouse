@@ -5,7 +5,7 @@
 #include <Processors/QueryPlan/ReadFromMemoryStorageStep.h>
 #include <Processors/QueryPlan/ReadFromObjectStorageStep.h>
 #include <Functions/IFunction.h>
-#include <Interpreters/Cache/QueryConditionCacheTimeConditions.h>
+#include <Interpreters/Cache/QueryConditionCacheBounds.h>
 #include <Interpreters/Cache/QueryConditionCache.h>
 #include <Interpreters/Context.h>
 #include <Storages/VirtualColumnUtils.h>
@@ -105,54 +105,30 @@ void updateQueryConditionCache(const Stack & stack, const QueryPlanOptimizationS
     if (outputs.size() != 1)
         return;
 
-    /// Non-deterministic conditions must not be cached under their own hash (issues #81506 and #84508).
-    /// However, for conditions that are non-deterministic only because of folded current-time constants
-    /// (e.g. `time >= now() - INTERVAL 10 DAY`), a deterministic condition can be derived by rounding
-    /// the constants onto a time grid (issue #115504). Since this is the write side, the rounding must
-    /// *strengthen* the condition: "the WHERE filter matched no rows of this granule" then implies
-    /// "the derived condition matches no rows of this granule", so the entry stored under the derived
-    /// hash is sound. The read side (filterPartsByQueryConditionCache) probes the weakened variant;
-    /// the two coincide for grid-aligned constants and are one grid cell apart otherwise.
-    /// A TopK read never stores entries under a derived condition, see `deriveDeterministicTimeCondition`.
+    /// Non-deterministic conditions must not be cached under their own hash (issues #81506 and #84508),
+    /// except for conditions that are non-deterministic only because of folded constants of their
+    /// bounds, e.g. `time >= now() - INTERVAL 10 DAY` (issue #115504): the hash includes the value
+    /// of the constant, so an entry states that no rows of a granule match the condition with this value.
+    /// Later queries with another value reuse such entries, see `ConditionBounds`.
+    /// A TopK read does not store entries for such conditions.
     const bool is_top_k_read = read_from_merge_tree->isSelectedForTopKFilterOptimization();
-    const bool derive_time_conditions = optimization_settings.use_query_condition_cache_for_time_conditions && !is_top_k_read;
+    const bool cache_conditions_with_bounds = optimization_settings.use_query_condition_cache_for_changing_bounds && !is_top_k_read;
 
-    std::optional<DeterministicTimeCondition> derived;
-    for (const auto * output : outputs)
-    {
-        if (!isDeterministicAllowingTopKFilter(output))
-        {
-            if (derive_time_conditions)
-                derived = deriveDeterministicTimeCondition(
-                    output,
-                    TimeConditionRounding::Strengthen,
-                    optimization_settings.query_condition_cache_time_condition_grid_factor,
-                    time(nullptr));
-            if (!derived)
-                return;
-        }
-    }
-
-    /// The step's filter corresponds to the DAG output whose hash we store, so it must be
-    /// deterministic or coarsenable in the same way (a pushed-down runtime filter, for example, is neither).
     auto is_deterministic_or_time_condition = [&](const ActionsDAG::Node * node)
     {
-        if (isDeterministicAllowingTopKFilter(node))
-            return true;
-        return derived
-            && deriveDeterministicTimeCondition(
-                node,
-                TimeConditionRounding::Strengthen,
-                optimization_settings.query_condition_cache_time_condition_grid_factor,
-                time(nullptr));
+        return isDeterministicAllowingTopKFilter(node) || (cache_conditions_with_bounds && isDeterministicExceptBounds(node));
     };
+
+    for (const auto * output : outputs)
+        if (!is_deterministic_or_time_condition(output))
+            return;
 
     /// PREWHERE runs before the tagged filter sees a row, so a granule that filter empties may still
     /// hold rows only PREWHERE removed. Sound while the PREWHERE condition is in `filter_actions_dag`
     /// (the hash covers it) or is `__topKFilter` (key salted with the TopK plan); a runtime filter is neither.
     /// A PREWHERE condition involving the current time (e.g. `time >= today() - 10` moved to PREWHERE
-    /// out of `WHERE time >= today() - 10 AND flag = 1`) is part of `filter_actions_dag` as well, so the
-    /// derived condition covers it.
+    /// out of `WHERE time >= today() - 10 AND flag = 1`) is part of `filter_actions_dag` as well, so its
+    /// hash covers it.
     if (const auto & prewhere_info = read_from_merge_tree->getPrewhereInfo())
     {
         const auto * prewhere_node = prewhere_info->prewhere_actions.tryFindInOutputs(prewhere_info->prewhere_column_name);
@@ -197,7 +173,7 @@ void updateQueryConditionCache(const Stack & stack, const QueryPlanOptimizationS
     /// `size_t` (not `UInt64`) so `boost::hash_combine` binds on platforms where
     /// they differ (e.g. Apple, where `size_t` is `unsigned long` but `UInt64` is `unsigned long long`).
     size_t condition_hash = queryConditionCacheHash(
-        derived ? derived->hash : filter_actions_dag->getOutputs()[0]->getHash(),
+        filter_actions_dag->getOutputs()[0]->getHash(),
         queryConditionCacheSettingsSalt(read_from_merge_tree->getContext()->getSettingsRef()));
 
     /// `ORDER BY ... LIMIT N` may drop granules during reading, so the result of the WHERE
@@ -209,7 +185,7 @@ void updateQueryConditionCache(const Stack & stack, const QueryPlanOptimizationS
     if (const auto & top_k_filter_info = read_from_merge_tree->getTopKFilterInfo())
         boost::hash_combine(condition_hash, top_k_filter_info->condition_hash);
 
-    String condition = derived ? derived->condition : filter_actions_dag->getNames()[0];
+    String condition = filter_actions_dag->getNames()[0];
     filter_step_to_tag->setConditionForQueryConditionCache(condition_hash, condition);
 }
 

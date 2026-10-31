@@ -9,7 +9,7 @@
 #include <city.h>
 #include <Core/Settings.h>
 #include <Interpreters/Cache/QueryConditionCache.h>
-#include <Interpreters/Cache/QueryConditionCacheTimeConditions.h>
+#include <Interpreters/Cache/QueryConditionCacheBounds.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/PredicateStatisticsLog.h>
@@ -266,13 +266,9 @@ MergeTreeSelectProcessor::MergeTreeSelectProcessor(
             set_spillables.add(step->actions->getActionsDAG());
 
     /// Determine the condition under which PREWHERE-filtered granules can be recorded in the query
-    /// condition cache. A deterministic PREWHERE condition is cached under its own hash. A condition
-    /// that is non-deterministic only because of folded current-time constants (e.g.
-    /// `time >= now() - INTERVAL 10 DAY`) is cached under the hash of the deterministic condition
-    /// derived by rounding the constants onto a time grid (issue #115504). Since this is a write
-    /// side, the rounding must *strengthen* the condition: "PREWHERE matched no rows of this granule"
-    /// then implies "the derived condition matches no rows of this granule". The consult side in
-    /// MergeTreeDataSelectExecutor::filterPartsByQueryConditionCache probes the weakened variant.
+    /// condition cache. A deterministic PREWHERE condition is cached under its own hash, and so is a
+    /// condition that is non-deterministic only because of folded constants of its bounds (e.g.
+    /// `time >= now() - INTERVAL 10 DAY`, see `ConditionBounds`), whose hash includes their values.
     if (prewhere_info && reader_settings.use_query_condition_cache)
     {
         for (const auto * output : prewhere_info->prewhere_actions.getOutputs())
@@ -296,23 +292,17 @@ MergeTreeSelectProcessor::MergeTreeSelectProcessor(
                 /// `filterPartsByQueryConditionCache`), so only the same TopK plan, part set,
                 /// and post-PREWHERE predicate ever reuses it. The consult side salts every
                 /// non-deterministic PREWHERE of a TopK read, so do the same here, also for a
-                /// condition involving the current time. The latter never contains `__topKFilter`
-                /// (see `deriveDeterministicTimeCondition`), so its granule drops do not depend on
-                /// the running threshold.
+                /// condition involving the current time. The latter never contains `__topKFilter`,
+                /// so its granule drops do not depend on the running threshold.
                 const auto & top_k_salt = reader_settings.query_condition_cache_top_k_salt;
                 std::optional<std::pair<UInt64, String>> condition;
                 if (top_k_salt && VirtualColumnUtils::isDeterministicAllowingTopKFilter(output))
                 {
                     condition.emplace(output->getHash(), prewhere_info->prewhere_actions.getNames()[0]);
                 }
-                else if (reader_settings.use_query_condition_cache_for_time_conditions)
+                else if (reader_settings.use_query_condition_cache_for_changing_bounds && isDeterministicExceptBounds(output))
                 {
-                    if (auto derived = deriveDeterministicTimeCondition(
-                            output,
-                            TimeConditionRounding::Strengthen,
-                            reader_settings.query_condition_cache_time_condition_grid_factor,
-                            time(nullptr)))
-                        condition.emplace(derived->hash, derived->condition);
+                    condition.emplace(output->getHash(), prewhere_info->prewhere_actions.getNames()[0]);
                 }
 
                 if (condition && top_k_salt)
