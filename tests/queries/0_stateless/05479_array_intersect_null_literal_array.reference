@@ -1,0 +1,26 @@
+[NULL]
+[NULL]
+[NULL]
+[NULL]
+[NULL]
+[NULL]
+[NULL]
+[NULL]
+Array(Nullable(UInt8))
+no NULL in the other array
+[]
+[]
+Array(Nullable(UInt8))
+the other array is not Nullable
+[]
+[]
+[]
+Array(Nothing)
+non-const arguments
+[1,NULL]	[NULL]	[NULL]
+[2]	[]	[]
+[]	[]	[]
+[NULL,NULL]	[NULL]	[NULL]
+only NULL arrays
+[NULL]
+Array(Nullable(Nothing))
