@@ -5,6 +5,7 @@
 
 #include <Common/QueryScope.h>
 
+#include <Storages/DeferredRefreshErrors.h>
 #include <Storages/StorageWithCommonVirtualColumns.h>
 #include <Storages/StorageInMemoryMetadata.h>
 #include <Storages/MaterializedView/RefreshTask.h>
@@ -109,6 +110,8 @@ public:
 
     StorageMetadataHandle getInMemoryMetadataPtr(ContextPtr context, bool bypass_metadata_cache) const override;
 
+    void updateExternalDynamicMetadataIfExists(ContextPtr query_context) override;
+
     void readImpl(
         QueryPlan & query_plan,
         const Names & column_names,
@@ -155,6 +158,9 @@ private:
     /// If false, inner table is replaced on each refresh. In that case, target_table_id doesn't
     /// have UUID, and we do inner table lookup by name instead.
     bool fixed_uuid = true;
+
+    /// Rethrown by `read`.
+    DeferredRefreshErrors target_refresh_errors;
 
     friend class RefreshTask;
 

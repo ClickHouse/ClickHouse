@@ -5,6 +5,7 @@
 
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/SourceStepWithFilter.h>
+#include <Storages/DeferredRefreshErrors.h>
 #include <Storages/IStorage.h>
 #include <Storages/SelectQueryInfo.h>
 #include <Common/OptimizedRegularExpression.h>
@@ -73,6 +74,8 @@ public:
     getQueryProcessingStage(ContextPtr, QueryProcessingStage::Enum, const StorageSnapshotPtr &, SelectQueryInfo &) const override;
 
     StorageMetadataHandle getInMemoryMetadataPtr(ContextPtr context, bool bypass_metadata_cache) const override;
+
+    void updateExternalDynamicMetadataIfExists(ContextPtr query_context) override;
 
     void read(
         QueryPlan & query_plan,
@@ -155,6 +158,12 @@ private:
     using SourceMetadata = std::unordered_map<
         StorageID, InferredSourceMetadata, StorageID::DatabaseAndTableNameAndUUIDHash, StorageID::DatabaseAndTableNameAndUUIDEqual>;
     SourceMetadata inferred_source_metadata;
+
+    /// The analyzer does not refresh a table function, so a `merge` table function that inferred its structure refreshes the children in `read`.
+    const bool refresh_children_in_read = false;
+
+    /// Rethrown by `read` for the children it reads.
+    DeferredRefreshErrors child_refresh_errors;
 
     template <typename F>
     StoragePtr traverseTablesUntil(F && predicate) const;
