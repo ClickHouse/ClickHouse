@@ -627,19 +627,26 @@ bool ConditionSelectivityEstimator::extractAtomFromTree(const StorageMetadataPtr
     return false;
 }
 
-ConditionSelectivityEstimatorBuilder::ConditionSelectivityEstimatorBuilder(ContextPtr context_)
-    : estimator(std::make_shared<ConditionSelectivityEstimator>(context_))
+ConditionSelectivityEstimatorBuilder::ConditionSelectivityEstimatorBuilder(ContextPtr context_, bool require_complete_part_statistics_)
+    : require_complete_part_statistics(require_complete_part_statistics_)
+    , estimator(std::make_shared<ConditionSelectivityEstimator>(context_))
 {
 }
 
 void ConditionSelectivityEstimatorBuilder::incrementRowCount(UInt64 rows)
 {
+    current_part_rows = rows;
     estimator->total_rows += rows;
 }
 
 void ConditionSelectivityEstimatorBuilder::addStatistics(const String & column_name, const ColumnStatisticsPtr & column_stats)
 {
     if (column_stats == nullptr)
+        return;
+
+    /// In MergeTree, each part contributes independently. Reject mismatched statistics before merging:
+    /// later parts must not make incomplete coverage look complete by coincidence.
+    if (require_complete_part_statistics && column_stats->getNumRows() != current_part_rows)
         return;
 
     has_data = true;
@@ -664,6 +671,20 @@ void ConditionSelectivityEstimatorBuilder::addStatistics(const String & column_n
 
 ConditionSelectivityEstimatorPtr ConditionSelectivityEstimatorBuilder::getEstimator() const
 {
+    if (require_complete_part_statistics)
+    {
+        /// A column is usable only when its merged statistics cover every selected part.
+        for (auto it = estimator->column_estimators.begin(); it != estimator->column_estimators.end();)
+        {
+            if (it->second.stats->getNumRows() != estimator->total_rows)
+                it = estimator->column_estimators.erase(it);
+            else
+                ++it;
+        }
+
+        return estimator->column_estimators.empty() ? nullptr : estimator;
+    }
+
     return has_data ? estimator : nullptr;
 }
 
