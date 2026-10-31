@@ -8,6 +8,7 @@
 
 #include <base/unit.h>
 #include <base/getL2CacheSize.h>
+#include <base/unaligned.h>
 
 #include <AggregateFunctions/AggregateFunctionCount.h>
 #include <AggregateFunctions/Combinators/AggregateFunctionArray.h>
@@ -756,6 +757,9 @@ Aggregator::Aggregator(const Block & header_, const Params & params_)
         aggregate_functions[i] = params.aggregates[i].function.get();
         has_function_with_parallelizable_merge |= aggregate_functions[i]->isAbleToParallelizeMerge();
     }
+
+    aggregate_key_runs_as_constant = params.optimize_group_by_constant_keys && params.keys_size == 1
+        && std::ranges::all_of(aggregate_functions, [](const IAggregateFunction * function) { return function->canOptimizeEqualKeysRanges(); });
 
     /// Initialize sizes of aggregation states and its offsets.
     offsets_of_aggregate_states.resize(params.aggregates_size);
@@ -2418,6 +2422,68 @@ void Aggregator::buildAggregateFunctionInstruction(
     aggregate_functions_instructions[i].batch_that = that;
 }
 
+namespace
+{
+
+constexpr size_t max_key_runs = 8;
+constexpr size_t min_average_key_run_rows = 512;
+
+/// `ends[i]` ends run `i` of one value; `keys[i]` is a one-row column holding its key.
+struct KeyRuns
+{
+    size_t count = 0;
+    std::array<size_t, max_key_runs> ends{};
+    std::array<const IColumn *, max_key_runs> keys{};
+};
+
+template <typename T>
+void findKeyRunsImpl(const char * data, size_t begin, size_t end, KeyRuns & runs)
+{
+    const auto at = [data](size_t row) { return unalignedLoad<T>(data + row * sizeof(T)); };
+    for (size_t row = begin; row < end && runs.count < max_key_runs;)
+    {
+        const T value = at(row);
+        size_t run_end = row + 1;
+        /// 64 rows at a time without a branch inside, so the scan vectorizes.
+        for (; run_end + 64 <= end; run_end += 64)
+        {
+            bool differs = false;
+            for (size_t i = 0; i < 64; ++i)
+                differs |= at(run_end + i) != value;
+            if (differs)
+                break;
+        }
+        while (run_end < end && at(run_end) == value)
+            ++run_end;
+        runs.ends[runs.count++] = run_end;
+        row = run_end;
+    }
+}
+
+/// Up to `max_key_runs` runs of one value at the start of rows [begin, end) of a fixed-size key column, kept if there is
+/// one run or they average `min_average_key_run_rows` rows; rows after the last run are in none. Equal key bytes are one
+/// group for every method of a single fixed-size key, so a run can be aggregated like a constant key.
+KeyRuns findKeyRuns(const IColumn & column, size_t begin, size_t end)
+{
+    KeyRuns runs;
+    if (end - begin < 2 || !column.isFixedAndContiguous())
+        return runs;
+    const char * data = column.getRawData().data();
+    switch (column.sizeOfValueIfFixed())
+    {
+        case 1: findKeyRunsImpl<UInt8>(data, begin, end, runs); break;
+        case 2: findKeyRunsImpl<UInt16>(data, begin, end, runs); break;
+        case 4: findKeyRunsImpl<UInt32>(data, begin, end, runs); break;
+        case 8: findKeyRunsImpl<UInt64>(data, begin, end, runs); break;
+        default: break;
+    }
+    if (runs.count > 1 && (runs.ends[runs.count - 1] - begin) / runs.count < min_average_key_run_rows)
+        runs.count = 0;
+    return runs;
+}
+
+}
+
 bool Aggregator::executeOnBlock(Columns columns,
     size_t row_begin, size_t row_end,
     AggregatedDataVariants & result,
@@ -2534,7 +2600,42 @@ bool Aggregator::executeOnBlock(Columns columns,
     }
 
     prepareAggregateInstructions(columns, aggregate_columns, materialized_columns, aggregate_functions_instructions, nested_columns_holder);
+
+    /// Not once new keys are refused, where the constant-key path behaves differently, and not while the top-K heap ranks
+    /// rows, which the constant-key path neither checks nor feeds.
+    KeyRuns key_runs;
+    if (aggregate_key_runs_as_constant && !all_keys_are_const && !no_more_keys && !top_k_active)
+    {
+        key_runs = findKeyRuns(*key_columns[0], row_begin, row_end);
+        size_t run_begin = row_begin;
+        for (size_t i = 0; i < key_runs.count; ++i)
+        {
+            materialized_columns.push_back(key_columns[0]->cut(run_begin, 1));
+            key_runs.keys[i] = materialized_columns.back().get();
+            run_begin = key_runs.ends[i];
+        }
+    }
     block_columns_scope.reset();
+
+    const auto for_each_key_run = [&](auto && execute)
+    {
+        if (key_runs.count == 0)
+        {
+            execute(row_begin, row_end, all_keys_are_const);
+            return;
+        }
+        const IColumn * key_column = key_columns[0];
+        size_t run_begin = row_begin;
+        for (size_t i = 0; i < key_runs.count; ++i)
+        {
+            key_columns[0] = key_runs.keys[i];
+            execute(run_begin, key_runs.ends[i], /*all_keys_are_const=*/true);
+            run_begin = key_runs.ends[i];
+        }
+        key_columns[0] = key_column;
+        if (run_begin < row_end)
+            execute(run_begin, row_end, /*all_keys_are_const=*/false);
+    };
 
     if ((params.overflow_row || result.type == AggregatedDataVariants::Type::without_key) && !result.without_key)
     {
@@ -2564,9 +2665,12 @@ bool Aggregator::executeOnBlock(Columns columns,
         /// in the producer's partition buffers for the merge.
         std::optional<MemoryTrackerSwitcher> scope;
         aggregator_scope(scope, /*table_may_freeze=*/false);
-        executeFrozen(
-            columns, row_begin, row_end, result, key_columns, aggregate_functions_instructions.data(), *adaptive, all_keys_are_const,
-            aggregator_tracker ? result.memory_tracker.get() : nullptr);
+        for_each_key_run([&](size_t begin, size_t end, bool keys_are_const)
+        {
+            executeFrozen(
+                columns, begin, end, result, key_columns, aggregate_functions_instructions.data(), *adaptive, keys_are_const,
+                aggregator_tracker ? result.memory_tracker.get() : nullptr);
+        });
     }
     else if (adaptive && adaptive->isLearning() && result.isConvertibleToTwoLevel() && !all_keys_are_const
              && result.sizeWithoutOverflowRow() + (row_end - row_begin) > params.adaptive_aggregator_freeze_threshold
@@ -2605,7 +2709,10 @@ bool Aggregator::executeOnBlock(Columns columns,
     {
         /// This is where data is written that does not fit in `max_rows_to_group_by` with `group_by_overflow_mode = any`.
         AggregateDataPtr overflow_row_ptr = params.overflow_row ? result.without_key : nullptr;
-        executeImpl(result, row_begin, row_end, key_columns, aggregate_functions_instructions.data(), no_more_keys, all_keys_are_const, overflow_row_ptr);
+        for_each_key_run([&](size_t begin, size_t end, bool keys_are_const)
+        {
+            executeImpl(result, begin, end, key_columns, aggregate_functions_instructions.data(), no_more_keys, keys_are_const, overflow_row_ptr);
+        });
     }
 
     size_t result_size = result.sizeWithoutOverflowRow();

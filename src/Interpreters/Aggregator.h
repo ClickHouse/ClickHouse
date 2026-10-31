@@ -760,6 +760,9 @@ private:
     /// - There's no need to allocate and maintain full aggregation state.
     bool is_simple_count = false;
 
+    /// Runs of the single key may be aggregated like a constant key, see `findKeyRuns`.
+    bool aggregate_key_runs_as_constant = false;
+
     /// How a group's rank by the aggregate of `Params::bucket_top_k` is read: the inline count of an aggregation by a
     /// lone `count`, the state of a `count` among other aggregates, which is the count itself, or the result of
     /// `uniqExact` or `uniqExactIf`, which `finalizeBucketTopKRank` reads from its state.

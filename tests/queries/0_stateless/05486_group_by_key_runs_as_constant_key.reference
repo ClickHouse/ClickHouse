@@ -1,0 +1,37 @@
+one value per block
+0
+several runs per block, keys repeating out of order
+0
+more than eight runs per block
+0
+UInt8 key
+0
+UInt8 key, count only, more than eight runs per block
+0
+Date key
+0
+Float64 key with -0, 0 and NaN
+0
+FixedString key
+0
+no aggregate functions
+0
+frozen adaptive tables
+0
+frozen adaptive tables, count only
+0
+frozen adaptive tables, more than eight runs per block
+0
+GROUP BY LIMIT keeps exact keys
+3	0
+several runs per block, one place per run
+05486_key_runs_off	0
+05486_key_runs_on	1
+05486_key_runs_one_value_uint8_off	0
+05486_key_runs_one_value_uint8_on	1
+05486_key_runs_over_eight_off	0
+05486_key_runs_over_eight_on	1
+05486_key_runs_uint16_off	0
+05486_key_runs_uint16_on	1
+05486_key_runs_uint32_off	0
+05486_key_runs_uint32_on	1
