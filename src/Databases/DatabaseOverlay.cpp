@@ -535,77 +535,27 @@ LoadTaskPtr DatabaseOverlay::startupDatabaseAsync(
         getEngineName());
 }
 
+/// Unlike loading, waiting and stopping are supported by every database (the default implementation does nothing), so they are done
+/// in each writable database, and an exception, such as the load error of the table, is propagated.
 void DatabaseOverlay::waitTableStarted(const String & name) const
 {
     for (const auto & db : databases)
-    {
-        if (db->isReadOnly())
-            continue;
-
-        try
-        {
+        if (!db->isReadOnly())
             db->waitTableStarted(name);
-            return;
-        }
-        catch (const std::exception &)
-        {
-            continue;
-        }
-    }
-    throw Exception(
-        ErrorCodes::LOGICAL_ERROR,
-        "There are no databases capable of waiting for table startup `{}` in database `{}` (engine {})",
-        name,
-        getDatabaseName(),
-        getEngineName());
 }
 
 void DatabaseOverlay::waitDatabaseStarted() const
 {
     for (const auto & db : databases)
-    {
-        if (db->isReadOnly())
-            continue;
-
-        try
-        {
+        if (!db->isReadOnly())
             db->waitDatabaseStarted();
-            return;
-        }
-        catch (const std::exception &)
-        {
-            continue;
-        }
-    }
-    throw Exception(
-        ErrorCodes::LOGICAL_ERROR,
-        "There are no databases capable of waiting for startup in database `{}` (engine {})",
-        getDatabaseName(),
-        getEngineName());
 }
 
 void DatabaseOverlay::stopLoading()
 {
     for (auto & db : databases)
-    {
-        if (db->isReadOnly())
-            continue;
-
-        try
-        {
+        if (!db->isReadOnly())
             db->stopLoading();
-            return;
-        }
-        catch (const std::exception &)
-        {
-            continue;
-        }
-    }
-    throw Exception(
-        ErrorCodes::LOGICAL_ERROR,
-        "There are no databases capable of stop loading in database `{}` (engine {})",
-        getDatabaseName(),
-        getEngineName());
 }
 
 void DatabaseOverlay::checkMetadataFilenameAvailability(const String & table_name) const
