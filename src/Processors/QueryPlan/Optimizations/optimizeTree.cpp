@@ -971,6 +971,9 @@ void optimizeTreeSecondPass(
     if (optimization_settings.optimize_aggregation_in_order_limit)
         optimizeLimitForAggregationInOrder(root);
 
+    if (optimization_settings.optimize_aggregation_max_by_sorting_key)
+        optimizeAggregationMaxBySortingKey(root);
+
     /// Propagate stream disjointness so that DISTINCT / LIMIT BY / GROUP BY can skip merging streams.
     applyStreamDisjointness(optimization_settings, root);
 

@@ -1,0 +1,32 @@
+-- DESC, LIMIT 5: 4 + 1 rows follow the first granule of each run
+Granules: 4/6
+A	[8,9,10,11,12]
+B	[8,9,10,11,12]
+A	[8,9,10,11,12]
+B	[8,9,10,11,12]
+-- DESC, LIMIT 20: longer than the runs
+Granules: 6/6
+A	12	1	12
+B	12	1	12
+A	12	1	12
+B	12	1	12
+-- ASC, LIMIT 4: the second granule of each run follows 4 rows
+Granules: 4/6
+A	[1,2,3,4]
+B	[1,2,3,4]
+A	[1,2,3,4]
+B	[1,2,3,4]
+-- ASC, LIMIT 20: longer than the runs
+Granules: 6/6
+A	12	1	12
+B	12	1	12
+A	12	1	12
+B	12	1	12
+-- long run, LIMIT longer than the run, DESC and ASC
+Granules: 100000/100000
+Granules: 100000/100000
+-- long run, LIMIT 3 DESC: the last 3 granules are read
+Granules: 3/100000
+1	99999
+1	99998
+1	99997
