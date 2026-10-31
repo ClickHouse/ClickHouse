@@ -1,6 +1,7 @@
 #include <Common/StatusFile.h>
 
 #include <sys/file.h>
+#include <sys/stat.h>
 #include <fcntl.h>
 #include <cerrno>
 
@@ -62,14 +63,26 @@ StatusFile::StatusFile(std::string path_, FillFunction fill)
             LOG_INFO(getLogger("StatusFile"), "Status file {} already exists and is empty - probably unclean hardware restart.", path);
     }
 
-    fd = ::open(path.c_str(), O_WRONLY | O_CREAT | O_CLOEXEC, 0666);
+    /// The previous holder may have unlinked the file before we locked it; such a lock protects nothing, so open the path again.
+    int flock_ret = -1;
+    while (true)
+    {
+        fd = ::open(path.c_str(), O_WRONLY | O_CREAT | O_CLOEXEC, 0666);
 
-    if (-1 == fd)
-        ErrnoException::throwFromPath(ErrorCodes::CANNOT_OPEN_FILE, path, "Cannot open file {}", path);
+        if (-1 == fd)
+            ErrnoException::throwFromPath(ErrorCodes::CANNOT_OPEN_FILE, path, "Cannot open file {}", path);
+
+        flock_ret = flock(fd, LOCK_EX | LOCK_NB);
+        struct stat st{};
+        if (-1 == flock_ret || 0 != fstat(fd, &st) || st.st_nlink > 0)
+            break;
+
+        [[maybe_unused]] int err = close(fd);
+        chassert(!err || errno == EINTR);
+    }
 
     try
     {
-        int flock_ret = flock(fd, LOCK_EX | LOCK_NB);
         if (-1 == flock_ret)
         {
             if (errno == EWOULDBLOCK)
@@ -108,11 +121,12 @@ StatusFile::StatusFile(std::string path_, FillFunction fill)
 
 StatusFile::~StatusFile()
 {
-    if (0 != close(fd))
-        LOG_ERROR(getLogger("StatusFile"), "Cannot close file {}, {}", path, errnoToString());
-
+    /// Unlink before releasing the lock, so whoever takes the released lock never finds the path still naming this file.
     if (0 != unlink(path.c_str()))
         LOG_ERROR(getLogger("StatusFile"), "Cannot unlink file {}, {}", path, errnoToString());
+
+    if (0 != close(fd))
+        LOG_ERROR(getLogger("StatusFile"), "Cannot close file {}, {}", path, errnoToString());
 }
 
 }
