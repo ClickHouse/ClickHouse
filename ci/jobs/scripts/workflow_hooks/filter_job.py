@@ -14,6 +14,11 @@ from ci.jobs.scripts.workflow_hooks.new_tests_check import (
     has_new_integration_tests,
 )
 from ci.jobs.scripts.workflow_hooks.pr_labels_and_category import Labels
+from ci.jobs.scripts.workflow_hooks.review_threads import (
+    KV_OVERRIDE,
+    KV_UNRESOLVED_COUNT,
+    should_limit_pipeline,
+)
 from ci.jobs.scripts.workflow_hooks.store_data import PRODUCT_CODE_PATHS
 from ci.praktika.info import Info
 from ci.praktika.utils import Shell
@@ -72,6 +77,21 @@ BUILDS_FOR_TESTS = [
     for j in JobConfigs.build_jobs
     + JobConfigs.coverage_build_jobs
     + JobConfigs.release_build_jobs
+]
+
+# Keep this in sync with the build jobs configured in
+# ci/workflows/pull_request.py. Unlike a name-based check, this excludes jobs
+# such as `Build profile diff` that are not builds despite their names.
+REVIEW_THREADS_BUILD_JOBS = [
+    j.name
+    for j in JobConfigs.tidy_build_arm_jobs
+    + JobConfigs.build_jobs
+    + JobConfigs.extra_validation_build_jobs
+    + JobConfigs.release_build_jobs_with_examples
+    + JobConfigs.special_build_jobs
+    + JobConfigs.build_llvm_coverage_job
+    + JobConfigs.toolchain_build_jobs
+    + JobConfigs.wasm_parser_build_jobs
 ]
 
 INTEGRATION_TEST_FLAKY_CHECK_JOBS = [
@@ -695,72 +715,118 @@ def _is_empty_merge_commit(sha):
     return num_parents >= 2 and num_files == 0
 
 
-def should_skip_job(job_name):
-    global _info_cache
-    if _info_cache is None:
-        _info_cache = Info()
-        print(f"INFO: PR labels: {_info_cache.pr_labels}")
+def _llvm_coverage_only_decision(job_name):
+    """Skip decision of the `ci-llvm-coverage` label, or `None` when it has
+    nothing to say about the job.
 
-    if Labels.CI_FORCE_ALL in _info_cache.pr_labels:
-        return False, ""
+    The coverage family and `LLVM_COVERAGE_ONLY_JOBS` only. The family jobs go on to the family
+    rule (`_coverage_family_decision`), which runs them (`_llvm_coverage_requested`), and the flaky
+    checks to their own rule, which skips them when the pull request changes no test. With
+    `ci-no-coverage` on top, the family is skipped and the `arm_binary` replacement jobs with their
+    build take its place, as with `ci-coverage`: they go on to the replacement rules.
 
-    # There is no way to prevent GitHub Actions from running the PR workflow on
-    # release branches, so we skip all jobs here. The ReleaseCI workflow is used
-    # for testing on release branches instead.
-    if (
-        Labels.RELEASE in _info_cache.pr_labels
-        or Labels.RELEASE_LTS in _info_cache.pr_labels
+    Factored out of `should_skip_job` so the review-thread gate can apply it to its allowlisted
+    builds: the gate may only shrink the PR surface.
+    """
+    if Labels.CI_LLVM_COVERAGE in _info_cache.pr_labels and not (
+        _is_llvm_coverage_family_job(job_name)
+        or job_name in LLVM_COVERAGE_ONLY_JOBS
+        or (
+            job_name in COVERAGE_REPLACEMENT_JOBS + COVERAGE_REPLACEMENT_BUILDS
+            and Labels.CI_NO_COVERAGE in _info_cache.pr_labels
+        )
     ):
-        return True, "Skipped for release PR"
+        _add_pipeline_note(Labels.CI_LLVM_COVERAGE)
+        return (
+            True,
+            f"Skipped, labeled with '{Labels.CI_LLVM_COVERAGE}' - run the LLVM coverage jobs only",
+        )
+    return None
 
-    if (
-        _info_cache.pr_number > 0
-        and job_name != JobNames.STYLE_CHECK
-        and is_net_revert_pr(_info_cache.pr_title)
-    ):
-        _add_revert_note()
-        return True, REVERT_PR_SKIP_REASON
 
-    # The AI `Code Review` job reviews the PR's code. When the PR's latest commit is
-    # an empty merge commit (base branch merged in with no net change - e.g. the
-    # GitHub "Update branch" button), the code is identical to the previous head and
-    # a fresh review would only repeat itself, so skip it.
+def _coverage_family_decision(job_name, notes=True):
+    """Filter decision for the coverage job family, or `None` when the job is
+    not part of it (or the family rules have nothing to say about it).
+
+    Factored out of `should_skip_job` so the review-thread gate can consult the
+    skip half of it before limiting the pipeline: the gate may only shrink the
+    PR surface, so it must not start the coverage family when a full run would
+    have skipped it. Pass `notes=False` to probe the decision without emitting
+    the workflow note for a decision that the caller may discard.
+    """
+    # Skip the whole coverage family together: the coverage build, the amd_llvm_coverage test shards, the excluded_from_llvm jobs
+    # (they only run the tests the coverage shards skip, so they are pointless without them), and the final "LLVM Coverage" merge job.
+    #
+    # Pull requests run the family only with the `ci-coverage` or `ci-llvm-coverage` label; by
+    # default they run the same test configurations on the `arm_binary` build instead
+    # (`COVERAGE_REPLACEMENT_JOBS`), which finds the same failures several times cheaper. Outside
+    # pull requests (pr_number gate) the family is never skipped here: master does not run it, it
+    # runs in the scheduled coverage workflow.
+    if _is_llvm_coverage_family_job(job_name):
+        if Labels.CI_NO_COVERAGE in _info_cache.pr_labels:
+            if notes:
+                _add_pipeline_note(Labels.CI_NO_COVERAGE)
+            return True, f"Skipped, labeled with '{Labels.CI_NO_COVERAGE}'"
+        if _info_cache.pr_number > 0:
+            if not _llvm_coverage_requested():
+                return (
+                    True,
+                    f"Skipped: pull requests run LLVM coverage only with the '{Labels.CI_COVERAGE}' "
+                    f"or '{Labels.CI_LLVM_COVERAGE}' label or when changing the coverage code",
+                )
+            if notes:
+                if Labels.CI_LLVM_COVERAGE in _info_cache.pr_labels:
+                    _add_pipeline_note(Labels.CI_LLVM_COVERAGE)
+                else:
+                    _add_pipeline_note(Labels.CI_COVERAGE)
+
+    # With `ci-coverage` or `ci-llvm-coverage` (or changed coverage code) the coverage jobs run these
+    # configurations themselves. `ci-no-coverage` wins over both for the coverage jobs, so with both
+    # labels the replacement jobs still run.
     if (
-        job_name == JobNames.CODE_REVIEW
+        job_name in COVERAGE_REPLACEMENT_JOBS
         and _info_cache.pr_number > 0
-        and _is_empty_merge_commit(_info_cache.sha)
+        and _llvm_coverage_requested()
+        and Labels.CI_NO_COVERAGE not in _info_cache.pr_labels
     ):
-        return True, "Skipped, PR latest commit is an empty merge commit"
+        return True, "Skipped: the LLVM coverage jobs run this configuration"
 
-    changed_files = _info_cache.get_kv_data("changed_files")
-    if not changed_files:
-        print("WARNING: no changed files found for PR - do not filter jobs")
-        return False, ""
-
-    if job_name == JobNames.BUILD_PROFILE_DIFF and only_docs(changed_files):
-        return True, "Skipped, only documentation changed"
-
-    # The full TSan integration run is only for the PRs that bump a submodule, see
-    # `JobConfigs.integration_test_contrib_tsan_pr_jobs`. Other PRs get the targeted selection.
-    # The other workflows run the same jobs on every commit, so only the PR workflow is gated.
+    # The replacement jobs keep the rule the coverage jobs had before they became opt-in: this also
+    # fires whenever a PR has no build-digest-affecting changes (i.e. it only touches tests/docs/CI
+    # scripts) AND does not touch the test pipeline's own code (`_has_coverage_pipeline_changes`).
+    # The changed tests themselves run in the targeted and flaky-check jobs, and rerunning the whole
+    # suite on a binary identical to master's would find nothing new.
+    # The exception is a PR that changes stateless tests: the targeted jobs do not run the
+    # `DBReplicated`, `ParallelReplicas` and `AsyncInsert` configurations, and a test can change its
+    # membership in them by its own tags (`no-replicated-database`, `no-parallel-replicas`,
+    # `no-async-insert`). The functional replacement jobs run then, and `functional_tests.py`
+    # narrows each of them down to the batches containing a changed test.
     if (
-        job_name in CONTRIB_TSAN_INTEGRATION_JOBS
+        job_name in COVERAGE_REPLACEMENT_JOBS
         and _info_cache.pr_number > 0
-        and _info_cache.workflow_name == SMALL_PR_WORKFLOW
-        and not _has_submodule_changes(changed_files)
-    ):
-        return True, "Skipped, no submodule (gitlink) changes"
-
-    # Run Keeper Stress jobs only when there are changes in src/Coordination,
-    # tests/stress/keeper, or ci/jobs/keeper_stress_job.py
-    if job_name == KEEPER_STRESS_PR_NAME:
-        if not _has_keeper_stress_changes(changed_files):
-            return (
-                True,
-                "Skipped, no changes in src/Coordination, tests/stress/keeper, or keeper_stress_job.py",
+        and not _has_build_digest_changes(_info_cache.get_changed_files() or [])
+        and not _has_coverage_pipeline_changes(_info_cache.get_changed_files() or [])
+        and not (
+            job_name in FUNCTIONAL_COVERAGE_REPLACEMENT_JOBS
+            and any(
+                f.removeprefix("./").startswith("tests/queries/0_stateless/")
+                for f in _info_cache.get_changed_files() or []
             )
-        return False, ""
+        )
+    ):
+        return True, "Skipped: no build-affecting changes; the full suite would run on a binary identical to master"
 
+    return None
+
+
+def _small_pr_skip_decision(job_name, changed_files):
+    """Skip decision of the small-PR and single-architecture rules, or `None`
+    when they have nothing to say about the job.
+
+    Factored out of `should_skip_job` so the review-thread gate can apply it
+    to its allowlisted builds: the gate may only shrink the PR surface, so it
+    must not start builds that a full run would have skipped.
+    """
     # Skip the stress tests, fuzzers and SQL conformance suites on small PRs. Each
     # of these jobs takes up to 1-3 hours and they rarely catch anything a change
     # of this size introduces;
@@ -811,6 +877,143 @@ def should_skip_job(job_name):
             f"architecture, and master runs both (add the '{Labels.CI_FORCE_ALL}' label to run)",
         )
 
+    return None
+
+
+def should_skip_job(job_name):
+    global _info_cache
+    if _info_cache is None:
+        _info_cache = Info()
+        print(f"INFO: PR labels: {_info_cache.pr_labels}")
+
+    if Labels.CI_FORCE_ALL in _info_cache.pr_labels:
+        return False, ""
+
+    # There is no way to prevent GitHub Actions from running the PR workflow on
+    # release branches, so we skip all jobs here. The ReleaseCI workflow is used
+    # for testing on release branches instead.
+    if (
+        Labels.RELEASE in _info_cache.pr_labels
+        or Labels.RELEASE_LTS in _info_cache.pr_labels
+    ):
+        return True, "Skipped for release PR"
+
+    if (
+        _info_cache.pr_number > 0
+        and job_name != JobNames.STYLE_CHECK
+        and is_net_revert_pr(_info_cache.pr_title)
+    ):
+        _add_revert_note()
+        return True, REVERT_PR_SKIP_REASON
+
+    # The AI `Code Review` job reviews the PR's code. When the PR's latest commit is
+    # an empty merge commit (base branch merged in with no net change - e.g. the
+    # GitHub "Update branch" button), the code is identical to the previous head and
+    # a fresh review would only repeat itself, so skip it.
+    if (
+        job_name == JobNames.CODE_REVIEW
+        and _info_cache.pr_number > 0
+        and _is_empty_merge_commit(_info_cache.sha)
+    ):
+        return True, "Skipped, PR latest commit is an empty merge commit"
+
+    changed_files = _info_cache.get_kv_data("changed_files")
+    if not changed_files:
+        print("WARNING: no changed files found for PR - do not filter jobs")
+        return False, ""
+
+    # `Build Toolchain (PGO, BOLT)` is opt-in: it occupies a large runner for
+    # hours. This check stays ahead of the review-thread gate below, which is
+    # allowed to shrink the pipeline but never to widen it - a limited run must
+    # not start toolchain builds that a full run would have skipped.
+    if (
+        JobNames.BUILD_TOOLCHAIN in job_name
+        and _info_cache.pr_number
+        and Labels.CI_TOOLCHAIN not in _info_cache.pr_labels
+    ):
+        return True, f"Skipped, not labeled with '{Labels.CI_TOOLCHAIN}'"
+
+    # While the PR has unresolved review threads, run only builds and the
+    # preliminary checks - the code is expected to change again, so the full
+    # test suite would be wasted (https://github.com/ClickHouse/ClickHouse/issues/114724).
+    # The `Code Review` job keeps running so the AI review re-checks the new
+    # code and resolves its own addressed threads, which re-triggers the full
+    # suite via rerun_on_review_threads.yml. The kv data is stored by the
+    # review_threads.py pre-hook; when it is missing (e.g. the GitHub API was
+    # unavailable), nothing is skipped.
+    unresolved_threads = _info_cache.get_kv_data(KV_UNRESOLVED_COUNT) or 0
+    limited_by_review_threads = should_limit_pipeline(
+        unresolved_threads, bool(_info_cache.get_kv_data(KV_OVERRIDE))
+    )
+    if (
+        limited_by_review_threads
+        and job_name not in REVIEW_THREADS_BUILD_JOBS
+        and job_name not in PRELIMINARY_JOBS
+        and job_name != JobNames.CODE_REVIEW
+    ):
+        if "unresolved-review-threads" not in _pipeline_note_labels:
+            _pipeline_note_labels.add("unresolved-review-threads")
+            _info_cache.add_workflow_note(
+                f"The PR has {unresolved_threads} unresolved review thread(s): only "
+                "builds and preliminary checks run, and merge is blocked. Resolve the "
+                "threads before this run finishes to re-run the full test suite automatically; "
+                "otherwise re-run CI manually, or add the "
+                f"`{Labels.IGNORE_UNRESOLVED_THREADS}` label to bypass the gate."
+            )
+        return True, f"Skipped, {unresolved_threads} unresolved review thread(s)"
+
+    # The limited pipeline is a fixed allowlist. Do not let other labels turn
+    # it into a smaller pipeline: it must retain the builds, preliminary jobs,
+    # and `Code Review` needed to validate the gate and trigger its re-run.
+    if limited_by_review_threads:
+        # The gate may only shrink the pipeline, never widen it: the allowlisted
+        # coverage build is as expensive as any other build, so it must keep the
+        # skip a full run would give it. Only a skip decision is honoured: a
+        # neutral answer must not turn into anything wider than the allowlist.
+        coverage_decision = _coverage_family_decision(job_name)
+        if coverage_decision is not None and coverage_decision[0]:
+            return coverage_decision
+        # The same holds for the builds that `ci-llvm-coverage` skips (the
+        # preliminary checks are kept: the gate needs them).
+        if job_name in REVIEW_THREADS_BUILD_JOBS:
+            llvm_coverage_only_decision = _llvm_coverage_only_decision(job_name)
+            if llvm_coverage_only_decision is not None:
+                return llvm_coverage_only_decision
+        # The same holds for the builds that a small PR or a single-architecture
+        # run skips (`SMALL_PR_SKIPPED_BUILDS`, `PR_SINGLE_ARCH_SKIPPED_BUILDS`).
+        small_pr_decision = _small_pr_skip_decision(job_name, changed_files)
+        if small_pr_decision is not None:
+            return small_pr_decision
+        return False, ""
+
+    if job_name == JobNames.BUILD_PROFILE_DIFF and only_docs(changed_files):
+        return True, "Skipped, only documentation changed"
+
+    # The full TSan integration run is only for the PRs that bump a submodule, see
+    # `JobConfigs.integration_test_contrib_tsan_pr_jobs`. Other PRs get the targeted selection.
+    # The other workflows run the same jobs on every commit, so only the PR workflow is gated.
+    if (
+        job_name in CONTRIB_TSAN_INTEGRATION_JOBS
+        and _info_cache.pr_number > 0
+        and _info_cache.workflow_name == SMALL_PR_WORKFLOW
+        and not _has_submodule_changes(changed_files)
+    ):
+        return True, "Skipped, no submodule (gitlink) changes"
+
+    # Run Keeper Stress jobs only when there are changes in src/Coordination,
+    # tests/stress/keeper, or ci/jobs/keeper_stress_job.py
+    if job_name == KEEPER_STRESS_PR_NAME:
+        if not _has_keeper_stress_changes(changed_files):
+            return (
+                True,
+                "Skipped, no changes in src/Coordination, tests/stress/keeper, or keeper_stress_job.py",
+            )
+        return False, ""
+
+    small_pr_decision = _small_pr_skip_decision(job_name, changed_files)
+    if small_pr_decision is not None:
+        return small_pr_decision
+
     if (
         Labels.CI_BUILD in _info_cache.pr_labels
         and "build" not in job_name.lower()
@@ -826,13 +1029,6 @@ def should_skip_job(job_name):
     if Labels.NO_FAST_TESTS in _info_cache.pr_labels and job_name in PRELIMINARY_JOBS:
         _add_pipeline_note(Labels.NO_FAST_TESTS)
         return True, f"Skipped, labeled with '{Labels.NO_FAST_TESTS}'"
-
-    if (
-        JobNames.BUILD_TOOLCHAIN in job_name
-        and _info_cache.pr_number
-        and Labels.CI_TOOLCHAIN not in _info_cache.pr_labels
-    ):
-        return True, f"Skipped, not labeled with '{Labels.CI_TOOLCHAIN}'"
 
     if (
         Labels.CI_INTEGRATION_FLAKY in _info_cache.pr_labels
@@ -905,84 +1101,13 @@ def should_skip_job(job_name):
             "Skipped, labeled with 'ci-performance' - run performance jobs only",
         )
 
-    # The coverage family and `LLVM_COVERAGE_ONLY_JOBS` only. The family jobs go on to the family
-    # rule below, which runs them (`_llvm_coverage_requested`), and the flaky checks to their own
-    # rule, which skips them when the pull request changes no test. With `ci-no-coverage` on top,
-    # the family is skipped and the `arm_binary` replacement jobs with their build take its place,
-    # as with `ci-coverage`: they go on to the replacement rules below.
-    if Labels.CI_LLVM_COVERAGE in _info_cache.pr_labels and not (
-        _is_llvm_coverage_family_job(job_name)
-        or job_name in LLVM_COVERAGE_ONLY_JOBS
-        or (
-            job_name in COVERAGE_REPLACEMENT_JOBS + COVERAGE_REPLACEMENT_BUILDS
-            and Labels.CI_NO_COVERAGE in _info_cache.pr_labels
-        )
-    ):
-        _add_pipeline_note(Labels.CI_LLVM_COVERAGE)
-        return (
-            True,
-            f"Skipped, labeled with '{Labels.CI_LLVM_COVERAGE}' - run the LLVM coverage jobs only",
-        )
+    llvm_coverage_only_decision = _llvm_coverage_only_decision(job_name)
+    if llvm_coverage_only_decision is not None:
+        return llvm_coverage_only_decision
 
-    # Skip the whole coverage family together: the coverage build, the amd_llvm_coverage test shards, the excluded_from_llvm jobs
-    # (they only run the tests the coverage shards skip, so they are pointless without them), and the final "LLVM Coverage" merge job.
-    #
-    # Pull requests run the family only with the `ci-coverage` or `ci-llvm-coverage` label; by
-    # default they run the same test configurations on the `arm_binary` build instead
-    # (`COVERAGE_REPLACEMENT_JOBS`), which finds the same failures several times cheaper. Outside
-    # pull requests (pr_number gate) the family is never skipped here: master does not run it, it
-    # runs in the scheduled coverage workflow.
-    if _is_llvm_coverage_family_job(job_name):
-        if Labels.CI_NO_COVERAGE in _info_cache.pr_labels:
-            _add_pipeline_note(Labels.CI_NO_COVERAGE)
-            return True, f"Skipped, labeled with '{Labels.CI_NO_COVERAGE}'"
-        if _info_cache.pr_number > 0:
-            if not _llvm_coverage_requested():
-                return (
-                    True,
-                    f"Skipped: pull requests run LLVM coverage only with the '{Labels.CI_COVERAGE}' "
-                    f"or '{Labels.CI_LLVM_COVERAGE}' label or when changing the coverage code",
-                )
-            if Labels.CI_LLVM_COVERAGE in _info_cache.pr_labels:
-                _add_pipeline_note(Labels.CI_LLVM_COVERAGE)
-            else:
-                _add_pipeline_note(Labels.CI_COVERAGE)
-
-    # With `ci-coverage` or `ci-llvm-coverage` (or changed coverage code) the coverage jobs run these
-    # configurations themselves. `ci-no-coverage` wins over both for the coverage jobs, so with both
-    # labels the replacement jobs still run.
-    if (
-        job_name in COVERAGE_REPLACEMENT_JOBS
-        and _info_cache.pr_number > 0
-        and _llvm_coverage_requested()
-        and Labels.CI_NO_COVERAGE not in _info_cache.pr_labels
-    ):
-        return True, "Skipped: the LLVM coverage jobs run this configuration"
-
-    # The replacement jobs keep the rule the coverage jobs had before they became opt-in: this also
-    # fires whenever a PR has no build-digest-affecting changes (i.e. it only touches tests/docs/CI
-    # scripts) AND does not touch the test pipeline's own code (`_has_coverage_pipeline_changes`).
-    # The changed tests themselves run in the targeted and flaky-check jobs, and rerunning the whole
-    # suite on a binary identical to master's would find nothing new.
-    # The exception is a PR that changes stateless tests: the targeted jobs do not run the
-    # `DBReplicated`, `ParallelReplicas` and `AsyncInsert` configurations, and a test can change its
-    # membership in them by its own tags (`no-replicated-database`, `no-parallel-replicas`,
-    # `no-async-insert`). The functional replacement jobs run then, and `functional_tests.py`
-    # narrows each of them down to the batches containing a changed test.
-    if (
-        job_name in COVERAGE_REPLACEMENT_JOBS
-        and _info_cache.pr_number > 0
-        and not _has_build_digest_changes(_info_cache.get_changed_files() or [])
-        and not _has_coverage_pipeline_changes(_info_cache.get_changed_files() or [])
-        and not (
-            job_name in FUNCTIONAL_COVERAGE_REPLACEMENT_JOBS
-            and any(
-                f.removeprefix("./").startswith("tests/queries/0_stateless/")
-                for f in _info_cache.get_changed_files() or []
-            )
-        )
-    ):
-        return True, "Skipped: no build-affecting changes; the full suite would run on a binary identical to master"
+    coverage_decision = _coverage_family_decision(job_name)
+    if coverage_decision is not None:
+        return coverage_decision
 
     if not _is_bugfix_pr() and "Bugfix" in job_name:
         # Don't skip if the corresponding test job file was changed
