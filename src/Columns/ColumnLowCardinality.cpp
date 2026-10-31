@@ -357,6 +357,11 @@ char * ColumnLowCardinality::serializeValueIntoMemory(size_t n, char * memory, c
     return getDictionary().serializeValueIntoMemory(getIndexes().getUInt(n), memory, settings);
 }
 
+void ColumnLowCardinality::serializeAsComparable(size_t n, String & out) const
+{
+    getDictionary().getNestedColumn()->serializeAsComparable(getIndexes().getUInt(n), out);
+}
+
 namespace
 {
 
@@ -408,6 +413,20 @@ void collectLowCardinalityStringSizes(
     }
 }
 
+template <typename IndexType>
+void batchSerializeAsComparableLowCardinality(
+    const IColumn & nested_dict,
+    const ColumnVector<IndexType> & indexes,
+    size_t num_rows,
+    VectorWithMemoryTracking<String> & out,
+    const IColumn::Permutation * permutation,
+    const UInt8 * null_map)
+{
+    const auto & data = indexes.getData();
+    batchSerializeAsComparableImpl(num_rows, out, permutation, null_map,
+        [&](size_t src, String & dst) { nested_dict.serializeAsComparable(data[src], dst); });
+}
+
 }
 
 void ColumnLowCardinality::batchSerializeValueIntoMemory(
@@ -447,6 +466,31 @@ void ColumnLowCardinality::batchSerializeValueIntoMemory(
     const IColumn & indexes = getIndexes();
     for (size_t i = 0; i < memories.size(); ++i)
         memories[i] = getDictionary().serializeValueIntoMemory(indexes.getUInt(start_row + i), memories[i], settings);
+}
+
+void ColumnLowCardinality::batchSerializeAsComparable(
+    size_t num_rows, VectorWithMemoryTracking<String> & out,
+    const Permutation * permutation, const UInt8 * null_map) const
+{
+    const IColumn & nested_dict = *getDictionary().getNestedColumn();
+    const IColumn & indexes = getIndexes();
+    switch (getSizeOfIndexType())
+    {
+        case sizeof(UInt8):
+            batchSerializeAsComparableLowCardinality(nested_dict, assert_cast<const ColumnUInt8 &>(indexes), num_rows, out, permutation, null_map);
+            return;
+        case sizeof(UInt16):
+            batchSerializeAsComparableLowCardinality(nested_dict, assert_cast<const ColumnUInt16 &>(indexes), num_rows, out, permutation, null_map);
+            return;
+        case sizeof(UInt32):
+            batchSerializeAsComparableLowCardinality(nested_dict, assert_cast<const ColumnUInt32 &>(indexes), num_rows, out, permutation, null_map);
+            return;
+        case sizeof(UInt64):
+            batchSerializeAsComparableLowCardinality(nested_dict, assert_cast<const ColumnUInt64 &>(indexes), num_rows, out, permutation, null_map);
+            return;
+        default:
+            throwUnexpectedLowCardinalityIndexType(getSizeOfIndexType());
+    }
 }
 
 std::optional<size_t> ColumnLowCardinality::getSerializedValueSize(size_t n, const IColumn::SerializationSettings * settings) const
