@@ -7,6 +7,7 @@
 #include <Analyzer/Utils.h>
 #include <Core/Settings.h>
 #include <DataTypes/DataTypeString.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <Functions/FunctionFactory.h>
 #include <Parsers/ASTLiteral.h>
@@ -75,10 +76,17 @@ public:
         /// For Nullable, both the comparison and the function return NULL for NULL.
         /// Only Nullable(String) is supported, because `empty` and `notEmpty` of Nullable(FixedString)
         /// are neither read from a subcolumn nor analyzed by the primary key.
+        /// For the same reason, LowCardinality is supported only over String and Nullable(String).
         const auto expr_type = expr_node->getResultType();
         if (!expr_type)
             return;
-        if (expr_type->isNullable() ? !isString(removeNullable(expr_type)) : !isStringOrFixedString(expr_type))
+
+        if (expr_type->lowCardinality())
+        {
+            if (!isString(removeNullable(removeLowCardinality(expr_type))))
+                return;
+        }
+        else if (expr_type->isNullable() ? !isString(removeNullable(expr_type)) : !isStringOrFixedString(expr_type))
             return;
 
         const String replacement_func = (func_name == "equals") ? "empty" : "notEmpty";
