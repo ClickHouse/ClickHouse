@@ -1,6 +1,7 @@
 #pragma once
 
 #include <functional>
+#include <optional>
 #include <unordered_map>
 #include <utility>
 #include <vector>
@@ -222,7 +223,14 @@ public:
         const FunctionBasePtr & function_base,
         NodeRawConstPtrs children,
         std::string result_name);
-    const Node & addCast(const Node & node_to_cast, const DataTypePtr & cast_type, std::string result_name, ContextPtr context);
+    /// `fixed_string_to_string_strip_trailing_zeros` overrides the setting `cast_fixed_string_to_string_strip_trailing_zeros`
+    /// if set (see `createInternalCast`).
+    const Node & addCast(
+        const Node & node_to_cast,
+        const DataTypePtr & cast_type,
+        std::string result_name,
+        ContextPtr context,
+        std::optional<bool> fixed_string_to_string_strip_trailing_zeros = {});
     /// Convert a node used as a condition to `result_type` keeping its truth value, e.g. 256 and 0.5
     /// stay true where a bare cast to `UInt8` would make them false. `context` is only needed to turn
     /// a NULL into false, which happens when `result_type` cannot hold a NULL.
@@ -445,6 +453,7 @@ public:
     /// @param ignore_constant_values - Do not check that constants are same. Use value from result_header.
     /// @param add_cast_columns - Create new columns with converted values instead of replacing original.
     /// @param new_names - Output parameter for new column names when add_cast_columns is used.
+    /// @param fixed_string_to_string_strip_trailing_zeros - Overrides the setting `cast_fixed_string_to_string_strip_trailing_zeros` if set.
     static ActionsDAG makeConvertingActions(
         const ColumnsWithTypeAndName & source,
         const ColumnsWithTypeAndName & result,
@@ -454,7 +463,8 @@ public:
         bool add_cast_columns = false,
         NameToNameMap * new_names = nullptr,
         NameSet * columns_contain_compiled_function = nullptr,
-        bool materialize_constants=true);
+        bool materialize_constants=true,
+        std::optional<bool> fixed_string_to_string_strip_trailing_zeros = {});
     /// Create expression which add const column and then materialize it.
     static ActionsDAG makeAddingColumnActions(ColumnConstPtr column, DataTypePtr type, std::string name);
     static ActionsDAG makeAddingConstantColumnActions(const std::string & name, const DataTypePtr & type, const Field & value);

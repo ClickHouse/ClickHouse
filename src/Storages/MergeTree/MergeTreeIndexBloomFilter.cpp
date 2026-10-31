@@ -15,6 +15,7 @@
 #include <DataTypes/DataTypeMapHelpers.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeTuple.h>
+#include <DataTypes/TypeTree.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/BloomFilterHash.h>
@@ -640,6 +641,15 @@ static bool bloomFilterHashDomainMatches(const DataTypePtr & value_type, const D
     return (isInteger(value) && isInteger(element)) || value->equals(*element);
 }
 
+/// `IN` casts the key into the type of the set, where a `FixedString` element pads the key, so
+/// `s IN (SELECT toFixedString('a', 2))` matches both `'a'` and `'a\0'` of a `String` column. The cast
+/// of the set into the type of the index keeps the padding and would hash `'a\0'` only, so such a set is declined.
+static bool setCastChangesFixedStringMembership(const DataTypePtr & set_type, const DataTypePtr & index_type)
+{
+    return anyInTypeTree(*set_type, [](const IDataType & t) { return isFixedString(t); })
+        && !recursiveRemoveLowCardinality(removeNullable(set_type))->equals(*recursiveRemoveLowCardinality(removeNullable(index_type)));
+}
+
 /// LEFT ARRAY JOIN is arrayJoin(emptyArrayToSingle(col)), the default element it adds is not in an index on col
 static String getArrayJoinColumnName(const RPNBuilderTreeNode & node, const Block & header, bool & padded)
 {
@@ -669,6 +679,9 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeIn(
         /// A NULL of a set built for `toNullable(key)` does not cast to the key type and matches no stored value.
         const auto * nullable_column = typeid_cast<const ColumnNullable *>(column.get());
         if (nullable_column && !index_type->isNullable() && std::ranges::any_of(nullable_column->getNullMapData(), [](UInt8 is_null) { return is_null != 0; }))
+            return false;
+
+        if (setCastChangesFixedStringMembership(type, index_type))
             return false;
 
         const auto & converted_column = castColumn(ColumnWithTypeAndName{column, type, ""}, index_type);
@@ -808,6 +821,8 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeIn(
             const DataTypePtr & index_type = header.getByPosition(position).type;
             const auto & array_type = assert_cast<const DataTypeArray &>(*index_type);
             const auto & array_nested_type = array_type.getNestedType();
+            if (setCastChangesFixedStringMembership(type, array_nested_type))
+                return false;
             const auto & converted_column = castColumn(ColumnWithTypeAndName{column, type, ""}, array_nested_type);
             out.predicate.emplace_back(std::make_pair(position, BloomFilterHash::hashWithColumn(array_nested_type, converted_column, 0, row_size)));
         }
@@ -863,35 +878,23 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeIn(
 /// `hasAny`/`hasAll`, and `has`/`indexOf` over a `FixedString` element, cast both sides to the least
 /// supertype (hasAllAny.h, arrayIndex.h `executeGeneric`), and `has`/`indexOf` over a `LowCardinality`
 /// element cast the constant straight to the dictionary type (LowCardinalityExecutionHelpers.h
-/// `dictionaryIndexForConstant`). A CAST of `FixedString` to `String` strips the trailing zero
-/// padding, while `convertFieldToType` keeps it, so the index hashed a value the function never
-/// compares and wrongly pruned granules.
+/// `dictionaryIndexForConstant`). These casts run without a query context, so a CAST of `FixedString`
+/// to `String` keeps every byte of the value, including its trailing zero padding.
 ///
-/// Replicate that coercion at the `Field` level: strip the padding of a `FixedString` constant, then
-/// re-pad it to the width of the element type, which is the stored form of every element the function
-/// can match. Returns a null `Field` (the `convertFieldToType` convention) when no stored element can
-/// match, or when the runtime CAST would throw `TOO_LARGE_STRING_SIZE`; the caller must then decline
-/// the index, so that the error stays reachable instead of turning into silently pruned granules.
-static Field coerceStringFieldLikeSearchFunction(
-    const Field & field, const DataTypePtr & value_type, const DataTypePtr & actual_type, bool cast_to_supertype)
+/// Replicate that coercion at the `Field` level: pad the constant to the width of a `FixedString`
+/// element type, which is the stored form of every element the function can match. Returns a null
+/// `Field` (the `convertFieldToType` convention) when the constant is wider than the element, where
+/// either no stored element can match or the runtime CAST would throw `TOO_LARGE_STRING_SIZE`; the
+/// caller must then decline the index, so that the error stays reachable instead of turning into
+/// silently pruned granules.
+static Field coerceStringFieldLikeSearchFunction(const Field & field, const DataTypePtr & actual_type)
 {
     if (field.isNull())
         return {};
 
     String value = field.safeGet<String>();
-    const auto * fixed_string_type = typeid_cast<const DataTypeFixedString *>(actual_type.get());
 
-    if (isFixedString(removeLowCardinalityAndNullable(value_type)))
-    {
-        /// The direct cast to a dictionary type rejects a `FixedString` constant wider than the
-        /// element up front, by width alone, while the supertype cast strips the padding first.
-        if (!cast_to_supertype && fixed_string_type && value.size() > fixed_string_type->getN())
-            return {};
-
-        value.resize(value.find_last_not_of('\0') + 1);
-    }
-
-    if (fixed_string_type)
+    if (const auto * fixed_string_type = typeid_cast<const DataTypeFixedString *>(actual_type.get()))
     {
         if (value.size() > fixed_string_type->getN())
             return {};
@@ -918,19 +921,23 @@ static bool searchFunctionCoercesConstant(const DataTypePtr & value_type, const 
 /// to hash. The test must read the type before `getPrimitiveType` strips `LowCardinality`, whose
 /// elements do coerce.
 /// Over `Enum` values a `String` or `FixedString` constant is compared by the name of the enum value,
-/// after the cast of both arguments to their common type `String`, which strips the padding of a
-/// `FixedString` (arrayIndex.h `executeGeneric`, hasAllAny.h). Do the same, and return the value of the
-/// enum to hash. A name that is not in the `Enum` does not throw there, it does not match, so return a
+/// after the cast of both arguments to their common type `String` (arrayIndex.h `executeGeneric`,
+/// hasAllAny.h). That cast keeps the zero padding of a `FixedString`, so the search functions match the
+/// name with all the bytes of the constant (an enum name can itself end with a zero byte), while `equals`
+/// compares a `FixedString` with the name zero-padded. With `strip_fixed_string_padding` (for `equals`)
+/// the padding is stripped, otherwise (for the search functions) the name is taken as is. Return the
+/// value of the enum to hash. A name that is not in the `Enum` does not throw there, it does not match, so return a
 /// null `Field` for it: the caller declines the index instead of throwing `UNKNOWN_ELEMENT_OF_ENUM`
 /// while it is prepared. Returns `std::nullopt` when the constant is not a name of an enum value.
-static std::optional<Field> tryConvertEnumNameConstant(const Field & value_field, const DataTypePtr & value_type, const DataTypePtr & enum_type)
+static std::optional<Field> tryConvertEnumNameConstant(
+    const Field & value_field, const DataTypePtr & value_type, const DataTypePtr & enum_type, bool strip_fixed_string_padding)
 {
     if (!isEnum(enum_type) || value_field.getType() != Field::Types::String || !value_type
         || !isStringOrFixedString(removeLowCardinalityAndNullable(value_type)))
         return std::nullopt;
 
     String name = value_field.safeGet<String>();
-    if (isFixedString(removeLowCardinalityAndNullable(value_type)))
+    if (strip_fixed_string_padding && isFixedString(removeLowCardinalityAndNullable(value_type)))
         name.resize(name.find_last_not_of('\0') + 1);
 
     return tryConvertFieldToType(Field(std::move(name)), *enum_type, nullptr, {}, /* strict */ true);
@@ -939,13 +946,13 @@ static std::optional<Field> tryConvertEnumNameConstant(const Field & value_field
 static Field convertConstantForArrayIndexFunction(
     const Field & value_field, const DataTypePtr & value_type, const DataTypePtr & nested_type, const DataTypePtr & actual_type)
 {
-    if (auto enum_value = tryConvertEnumNameConstant(value_field, value_type, actual_type))
+    if (auto enum_value = tryConvertEnumNameConstant(value_field, value_type, actual_type, /*strip_fixed_string_padding=*/ false))
         return std::move(*enum_value);
 
     if (WhichDataType(removeNullable(nested_type)).isString() || !searchFunctionCoercesConstant(value_type, actual_type))
         return convertFieldToType(value_field, *actual_type, value_type.get());
 
-    return coerceStringFieldLikeSearchFunction(value_field, value_type, actual_type, /*cast_to_supertype=*/ !nested_type->lowCardinality());
+    return coerceStringFieldLikeSearchFunction(value_field, actual_type);
 }
 
 static ColumnPtr createColumnFromConstantArray(
@@ -975,13 +982,13 @@ static ColumnPtr createColumnFromConstantArray(
 
         /// `has`, `hasAny` and `hasAll` compare a `String` or `FixedString` constant with an `Enum` by the name
         /// of the enum value, see `tryConvertEnumNameConstant`.
-        std::optional<Field> enum_value = tryConvertEnumNameConstant(f, element_type, actual_type);
+        std::optional<Field> enum_value = tryConvertEnumNameConstant(f, element_type, actual_type, /*strip_fixed_string_padding=*/ false);
 
         Field converted;
         if (enum_value)
             converted = std::move(*enum_value);
         else if (coerce)
-            converted = coerceStringFieldLikeSearchFunction(f, element_type, actual_type, /*cast_to_supertype=*/ true);
+            converted = coerceStringFieldLikeSearchFunction(f, actual_type);
         else
             converted = convertFieldToType(f, *actual_type, element_type.get());
         if (converted.isNull())
@@ -1359,7 +1366,7 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeEquals(
                 const DataTypePtr map_value_type = removeLowCardinalityAndNullable(dag_node->result_type);
                 if (isEnum(map_value_type))
                 {
-                    if (auto enum_value = tryConvertEnumNameConstant(value_field, value_type, map_value_type))
+                    if (auto enum_value = tryConvertEnumNameConstant(value_field, value_type, map_value_type, /*strip_fixed_string_padding=*/ true))
                         map_value_field = std::move(*enum_value);
                     else
                         map_value_field = tryConvertFieldToType(value_field, *map_value_type, value_type.get(), {}, /* strict */ true);

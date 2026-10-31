@@ -171,6 +171,7 @@ public:
     bool isInjective(const ColumnsWithTypeAndName & columns) const override { return function->isInjective(columns); }
     bool isSpatialPredicate() const override { return function->isSpatialPredicate(); }
     bool isExpensive() const override { return function->isExpensive(); }
+    void updateHash(SipHash & hash) const override { function->updateHash(hash); }
 
     String getName() const override { return function->getName(); }
     bool isStateful() const override { return function->isStateful(); }

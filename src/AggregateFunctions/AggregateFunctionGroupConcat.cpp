@@ -1,11 +1,17 @@
 #include <AggregateFunctions/AggregateFunctionGroupConcat.h>
 #include <DataTypes/DataTypeString.h>
 #include <Columns/ColumnFixedString.h>
+#include <Columns/ColumnSparse.h>
 #include <Columns/ColumnString.h>
+#include <Core/Settings.h>
 
 namespace DB
 {
-struct Settings;
+
+namespace Setting
+{
+    extern const SettingsBool cast_fixed_string_to_string_strip_trailing_zeros;
+}
 
 namespace ErrorCodes
 {
@@ -67,13 +73,14 @@ void GroupConcatData::insert(const IColumn * column, const SerializationPtr & se
 
 template <bool has_limit>
 GroupConcatImpl<has_limit>::GroupConcatImpl(
-    const DataTypePtr & data_type_, const Array & parameters_, UInt64 limit_, const String & delimiter_)
+    const DataTypePtr & data_type_, const Array & parameters_, UInt64 limit_, const String & delimiter_, bool strip_trailing_zeros_)
     : IAggregateFunctionDataHelper<GroupConcatData, GroupConcatImpl<has_limit>>(
         {data_type_}, parameters_, std::make_shared<DataTypeString>())
     , limit(limit_)
     , delimiter(delimiter_)
     , is_string(isString(data_type_))
     , is_fixed_string(isFixedString(data_type_))
+    , strip_trailing_zeros(strip_trailing_zeros_)
 {
     serialization = this->argument_types[0]->getDefaultSerialization();
 }
@@ -108,14 +115,30 @@ void GroupConcatImpl<has_limit>::add(
     }
     else if (is_fixed_string)
     {
-        /// Trailing zero bytes are cut, matching `CAST(FixedString AS String)`.
+        /// Matches `CAST(FixedString AS String)`: all bytes are kept, including the trailing zero padding,
+        /// unless `cast_fixed_string_to_string_strip_trailing_zeros` is enabled.
         std::string_view ref = assert_cast<const ColumnFixedString &>(*columns[0]).getDataAt(row_num);
-        while (!ref.empty() && ref.back() == 0)
-            ref.remove_suffix(1);
+        if (strip_trailing_zeros)
+            while (!ref.empty() && ref.back() == 0)
+                ref.remove_suffix(1);
         cur_data.template insertString<has_limit>(ref, arena);
     }
     else
         cur_data.template insert<has_limit>(columns[0], serialization, row_num, arena);
+}
+
+template <bool has_limit>
+void GroupConcatImpl<has_limit>::addBatchSparseSinglePlace(
+    size_t row_begin, size_t row_end, AggregateDataPtr __restrict place, const IColumn ** columns, Arena * arena) const
+{
+    /// `groupConcat` is order-dependent, so rows must be processed in input order. The inherited
+    /// implementation adds all non-default values first and then the default rows, which would reorder the result.
+    const auto & column_sparse = assert_cast<const ColumnSparse &>(*columns[0]);
+    const auto * values = &column_sparse.getValuesColumn();
+    auto offset_it = column_sparse.getIterator(row_begin);
+
+    for (size_t row = row_begin; row < row_end; ++row, ++offset_it)
+        add(place, &values, offset_it.getValueIndex(), arena);
 }
 
 template <bool has_limit>
@@ -237,9 +260,11 @@ template <bool has_limit>
 bool GroupConcatImpl<has_limit>::allocatesMemoryInArena() const { return true; }
 
 static AggregateFunctionPtr createAggregateFunctionGroupConcat(
-    const std::string & name, const DataTypes & argument_types, const Array & parameters, const Settings *)
+    const std::string & name, const DataTypes & argument_types, const Array & parameters, const Settings * settings)
 {
     assertUnary(name, argument_types);
+
+    bool strip_trailing_zeros = settings && (*settings)[Setting::cast_fixed_string_to_string_strip_trailing_zeros];
 
     bool has_limit = false;
     UInt64 limit = 0;
@@ -273,8 +298,8 @@ static AggregateFunctionPtr createAggregateFunctionGroupConcat(
     }
 
     if (has_limit)
-        return std::make_shared<GroupConcatImpl</* has_limit= */ true>>(argument_types[0], parameters, limit, delimiter);
-    return std::make_shared<GroupConcatImpl</* has_limit= */ false>>(argument_types[0], parameters, limit, delimiter);
+        return std::make_shared<GroupConcatImpl</* has_limit= */ true>>(argument_types[0], parameters, limit, delimiter, strip_trailing_zeros);
+    return std::make_shared<GroupConcatImpl</* has_limit= */ false>>(argument_types[0], parameters, limit, delimiter, strip_trailing_zeros);
 }
 
 void registerAggregateFunctionGroupConcat(AggregateFunctionFactory & factory);

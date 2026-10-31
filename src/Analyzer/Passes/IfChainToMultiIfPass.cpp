@@ -18,6 +18,7 @@ namespace Setting
     extern const SettingsBool optimize_if_chain_to_multiif;
     extern const SettingsBool use_variant_as_common_type;
     extern const SettingsBool allow_lossy_numeric_supertype;
+    extern const SettingsBool cast_fixed_string_to_string_strip_trailing_zeros;
 }
 
 namespace
@@ -62,9 +63,8 @@ public:
     using Base = InDepthQueryTreeVisitorWithContext<IfChainToMultiIfPassVisitor>;
     using Base::Base;
 
-    explicit IfChainToMultiIfPassVisitor(FunctionOverloadResolverPtr multi_if_function_ptr_, ContextPtr context)
+    explicit IfChainToMultiIfPassVisitor(ContextPtr context)
         : Base(std::move(context))
-        , multi_if_function_ptr(std::move(multi_if_function_ptr_))
     {
         group_by_key_if_nodes_stack.emplace_back();
     }
@@ -79,6 +79,13 @@ public:
         }
 
         if (!getSettings()[Setting::optimize_if_chain_to_multiif])
+            return;
+
+        /// With this setting `multiIf` removes the zero padding of a `FixedString` branch converted to `String`,
+        /// but `if` keeps it, so the rewrite would change the result. An internal `multiIf` that keeps the padding
+        /// is not an option: it would share the name and the arguments with a user-written `multiIf`, so the
+        /// planner could reuse one for the other, and a remote shard would rebuild it as an ordinary `multiIf`.
+        if (getSettings()[Setting::cast_fixed_string_to_string_strip_trailing_zeros])
             return;
 
         auto * function_node = node->as<FunctionNode>();
@@ -118,6 +125,14 @@ public:
         if (multi_if_arguments.size() <= 3)
             return;
 
+        /// The resolver is built from the settings of the scope being rewritten: a subquery can override them.
+        const auto & settings = getSettings();
+        auto multi_if_function_ptr = createInternalMultiIfOverloadResolver(
+            settings[Setting::allow_execute_multiif_columnar],
+            settings[Setting::use_variant_as_common_type],
+            settings[Setting::allow_lossy_numeric_supertype],
+            settings[Setting::cast_fixed_string_to_string_strip_trailing_zeros]);
+
         auto multi_if_function = std::make_shared<FunctionNode>("multiIf");
         multi_if_function->getArguments().getNodes() = std::move(multi_if_arguments);
         multi_if_function->resolveAsFunction(multi_if_function_ptr->build(multi_if_function->getArgumentColumns()));
@@ -141,8 +156,6 @@ public:
     }
 
 private:
-    FunctionOverloadResolverPtr multi_if_function_ptr;
-
     /// For each enclosing query, its `if` nodes that are `GROUP BY` keys; the first set is for an expression outside of any query.
     std::vector<std::unordered_set<QueryTreeNodePtr>> group_by_key_if_nodes_stack;
 };
@@ -151,12 +164,7 @@ private:
 
 void IfChainToMultiIfPass::run(QueryTreeNodePtr & query_tree_node, ContextPtr context)
 {
-    const auto & settings = context->getSettingsRef();
-    auto multi_if_function_ptr = createInternalMultiIfOverloadResolver(
-        settings[Setting::allow_execute_multiif_columnar],
-        settings[Setting::use_variant_as_common_type],
-        settings[Setting::allow_lossy_numeric_supertype]);
-    IfChainToMultiIfPassVisitor visitor(std::move(multi_if_function_ptr), std::move(context));
+    IfChainToMultiIfPassVisitor visitor(std::move(context));
     visitor.visit(query_tree_node);
 }
 

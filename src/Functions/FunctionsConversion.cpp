@@ -1,4 +1,6 @@
 #include <Functions/FunctionsConversion.h>
+#include <Functions/FunctionDynamicAdaptor.h>
+#include <Functions/FunctionVariantAdaptor.h>
 #include <Common/UnorderedMapWithMemoryTracking.h>
 #include <Common/VectorWithMemoryTracking.h>
 #include <Common/iota.h>
@@ -3557,9 +3559,46 @@ FunctionCast::WrapperType FunctionCast::prepareImpl(const DataTypePtr & from_typ
 
 FunctionConvertSettingsPtr createFunctionConvertSettings(
     const ContextPtr & context,
-    FormatSettings::DateTimeOverflowBehavior date_time_overflow_behavior)
+    FormatSettings::DateTimeOverflowBehavior date_time_overflow_behavior,
+    std::optional<bool> fixed_string_to_string_strip_trailing_zeros_override)
 {
-    return std::make_shared<const FunctionConvertSettings>(context, date_time_overflow_behavior);
+    return std::make_shared<const FunctionConvertSettings>(
+        context, date_time_overflow_behavior, fixed_string_to_string_strip_trailing_zeros_override);
+}
+
+std::optional<bool> getCastFixedStringToStringStripTrailingZeros(const IFunctionBase & function)
+{
+    if (const auto * cast = typeid_cast<const detail::FunctionCast *>(&function))
+        return cast->getSettings().cast_fixed_string_to_string_strip_trailing_zeros;
+    return {};
+}
+
+std::optional<bool> getFixedStringToStringStripTrailingZeros(const IFunctionBase & function)
+{
+    if (auto cast_mode = getCastFixedStringToStringStripTrailingZeros(function))
+        return cast_mode;
+    const IFunction * wrapped_function = nullptr;
+    if (const auto * adaptor = typeid_cast<const FunctionToFunctionBaseAdaptor *>(&function))
+    {
+        wrapped_function = adaptor->getFunction().get();
+    }
+    else
+    {
+        /// A function with a `Dynamic` or `Variant` argument is wrapped into an adaptor that rebuilds it for each
+        /// alternative from its overload resolver, so the mode is the one captured by the function of the resolver.
+        const IFunctionOverloadResolver * resolver = nullptr;
+        if (const auto * dynamic_adaptor = typeid_cast<const FunctionBaseDynamicAdaptor *>(&function))
+            resolver = &dynamic_adaptor->getFunctionOverloadResolver();
+        else if (const auto * variant_adaptor = typeid_cast<const FunctionBaseVariantAdaptor *>(&function))
+            resolver = &variant_adaptor->getFunctionOverloadResolver();
+
+        if (const auto * resolver_adaptor = typeid_cast<const FunctionToOverloadResolverAdaptor *>(resolver))
+            wrapped_function = resolver_adaptor->getFunction();
+    }
+
+    if (const auto * function_with_mode = dynamic_cast<const IFunctionWithFixedStringToStringMode *>(wrapped_function))
+        return function_with_mode->getFixedStringToStringStripTrailingZeros();
+    return {};
 }
 
 FunctionBasePtr createFunctionBaseCast(

@@ -134,6 +134,8 @@ SELECT 'FixedString hasAny', countIf(hasAny(fs_lc, [toFixedString('k1', 3), toFi
     sum(cityHash64(id, hasAny(fs_lc, [toFixedString('k1', 3), toFixedString('k2', 3)]))) = sum(cityHash64(id, hasAny(fs_plain, [toFixedString('k1', 3), toFixedString('k2', 3)]))) FROM typed;
 SELECT 'FixedString hasSubstr', countIf(hasSubstr(fs_lc, [toFixedString('k1', 3)])), countIf(hasSubstr(fs_plain, [toFixedString('k1', 3)])),
     sum(cityHash64(id, hasSubstr(fs_lc, [toFixedString('k1', 3)]))) = sum(cityHash64(id, hasSubstr(fs_plain, [toFixedString('k1', 3)]))) FROM typed;
+-- The cast to the common type `String` keeps the zero padding of a `FixedString`, so a `String` needle
+-- matches only with the same trailing zero bytes.
 SELECT 'FixedString String needle', countIf(hasAll(fs_lc, ['k1'])), countIf(hasAll(fs_plain, ['k1'])),
     sum(cityHash64(id, hasAll(fs_lc, ['k1']))) = sum(cityHash64(id, hasAll(fs_plain, ['k1']))) FROM typed;
 SELECT 'FixedString NUL tail needle', countIf(hasAll(fs_lc, ['k1\0'])), countIf(hasAll(fs_plain, ['k1\0'])),
@@ -231,6 +233,7 @@ CREATE TABLE indexed_fixed_string (id UInt64, lc Array(LowCardinality(FixedStrin
 ENGINE = MergeTree ORDER BY id SETTINGS index_granularity = 8;
 INSERT INTO indexed_fixed_string SELECT number, arr, arr FROM (SELECT number, arrayMap(j -> toFixedString(concat('p', toString((number + j) % 12)), 3), range(1 + number % 3)) AS arr FROM numbers(200));
 SELECT 'bloom_filter FixedString needle', (SELECT count() FROM indexed_fixed_string WHERE hasAll(lc, [toFixedString('p3', 3)]) SETTINGS use_skip_indexes = 0), (SELECT count() FROM indexed_fixed_string WHERE hasAll(lc, [toFixedString('p3', 3)]) SETTINGS use_skip_indexes = 1, force_data_skipping_indices = 'bf'), (SELECT count() FROM indexed_fixed_string WHERE hasAll(plain, [toFixedString('p3', 3)]));
+-- The same with the index: a `String` needle matches only with the same trailing zero bytes.
 SELECT 'bloom_filter String needle', (SELECT count() FROM indexed_fixed_string WHERE hasAll(lc, ['p3']) SETTINGS use_skip_indexes = 0), (SELECT count() FROM indexed_fixed_string WHERE hasAll(lc, ['p3']) SETTINGS use_skip_indexes = 1, force_data_skipping_indices = 'bf'), (SELECT count() FROM indexed_fixed_string WHERE hasAll(plain, ['p3']));
 SELECT 'bloom_filter NUL tail needle', (SELECT count() FROM indexed_fixed_string WHERE hasAny(lc, ['p3\0']) SETTINGS use_skip_indexes = 0), (SELECT count() FROM indexed_fixed_string WHERE hasAny(lc, ['p3\0']) SETTINGS use_skip_indexes = 1, force_data_skipping_indices = 'bf'), (SELECT count() FROM indexed_fixed_string WHERE hasAny(plain, ['p3\0']));
 
