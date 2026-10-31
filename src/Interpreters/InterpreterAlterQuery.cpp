@@ -5,6 +5,7 @@
 #include <Access/AccessControl.h>
 #include <Access/Common/AccessRightsElement.h>
 #include <Access/Common/SQLSecurityDefs.h>
+#include <Access/EnabledRowPolicies.h>
 #include <Access/User.h>
 #include <Backups/BackupsWorker.h>
 #include <Common/typeid_cast.h>
@@ -35,9 +36,11 @@
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTIdentifier_fwd.h>
 #include <Parsers/ASTColumnDeclaration.h>
+#include <Parsers/ASTSetQuery.h>
 #include <QueryPipeline/QueryPlanResourceHolder.h>
 #include <Storages/AlterCommands.h>
 #include <Storages/MutationCommands.h>
+#include <Storages/StorageFactory.h>
 #include <Storages/PartitionCommands.h>
 #include <Storages/ExecuteCommands.h>
 #include <Storages/StorageKeeperMap.h>
@@ -85,6 +88,7 @@ namespace ServerSetting
 
 namespace ErrorCodes
 {
+    extern const int ACCESS_DENIED;
     extern const int LOGICAL_ERROR;
     extern const int NOT_IMPLEMENTED;
     extern const int TABLE_IS_PERMANENTLY_READ_ONLY;
@@ -484,6 +488,31 @@ BlockIO runCommandSegments(CommandSegments & segments, const StoragePtr & table,
     return res;
 }
 
+/// A setting that sends the table's data elsewhere copies the data as it is stored, so nothing can filter the rows
+/// that a row policy hides (as `StorageSet::checkNoRowPolicy`). It reads only the query and the access entities,
+/// not the table, so it runs on the initiator.
+void checkNoRowPolicyForExport(const ASTAlterQuery & alter, const String & database, const ContextPtr & context)
+{
+    for (const auto & child : alter.command_list->children)
+    {
+        const auto & command = child->as<const ASTAlterCommand &>();
+        if (command.type != ASTAlterCommand::MODIFY_SETTING || !command.settings_changes)
+            continue;
+
+        const auto & changes = command.settings_changes->as<ASTSetQuery &>().changes;
+        if (StorageFactory::instance().getExportAccessOfAnyEngine(changes).empty())
+            continue;
+
+        auto row_policy_filter = context->getRowPolicyFilter(database, alter.getTable(), RowPolicyFilterType::SELECT_FILTER);
+        if (row_policy_filter && !row_policy_filter->isAlwaysTrue())
+            throw Exception(
+                ErrorCodes::ACCESS_DENIED,
+                "Cannot change the settings of table {}.{} that send its data elsewhere because a row policy applies to it. "
+                "The data is copied as it is stored, so its rows cannot be filtered",
+                backQuoteIfNeed(database), backQuoteIfNeed(alter.getTable()));
+    }
+}
+
 }
 
 InterpreterAlterQuery::InterpreterAlterQuery(const ASTPtr & query_ptr_, ContextMutablePtr context_) : WithMutableContext(context_), query_ptr(query_ptr_)
@@ -582,12 +611,18 @@ BlockIO InterpreterAlterQuery::executeToTable(const ASTAlterQuery & alter)
                 if (command.type == ASTAlterCommand::DELETE || command.type == ASTAlterCommand::UPDATE)
                     checkNoRowPolicyForSetOperands(child, default_database, context, throw_if_unresolved);
             }
+
+            /// The hosts run the entry without the user, so the row policy is checked here before the entry is enqueued.
+            checkNoRowPolicyForExport(captured_alter, default_database, context);
         };
         return executeDDLQueryOnCluster(query_ptr, getContext(), params);
     }
 
     if (!skip_access_check)
+    {
         getContext()->checkAccess(getRequiredAccess(table));
+        checkNoRowPolicyForExport(alter, getContext()->resolveDatabase(alter.getDatabase()), getContext());
+    }
 
     if (!table_id)
         throw Exception(ErrorCodes::UNKNOWN_DATABASE, "Database {} does not exist", backQuoteIfNeed(alter.getDatabase()));
@@ -1042,6 +1077,20 @@ AccessRightsElements InterpreterAlterQuery::getRequiredAccessForCommand(
         case ASTAlterCommand::MODIFY_SETTING:
         {
             required_access.emplace_back(AccessType::ALTER_SETTINGS, database, table);
+
+            /// A setting that sends the table's data elsewhere, e.g. the move destination of a queue, is the same data flow as
+            /// `INSERT INTO FUNCTION s3(...) SELECT * FROM <table>`. The creator of the table supplied its source and credentials,
+            /// so the reading part is `SELECT` on the table. The grants do not depend on the engine of the table, so the initiator
+            /// of `ON CLUSTER` can check them without the table.
+            if (command.type == ASTAlterCommand::MODIFY_SETTING && command.settings_changes)
+            {
+                auto export_access = StorageFactory::instance().getExportAccessOfAnyEngine(command.settings_changes->as<ASTSetQuery &>().changes);
+                if (!export_access.empty())
+                {
+                    required_access.append_range(std::move(export_access));
+                    required_access.emplace_back(AccessType::SELECT, database, table);
+                }
+            }
             break;
         }
         case ASTAlterCommand::ATTACH_PARTITION:

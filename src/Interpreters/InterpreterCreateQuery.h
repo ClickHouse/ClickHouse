@@ -128,6 +128,10 @@ private:
     void setEngine(ASTCreateQuery & create) const;
     AccessRightsElements getRequiredAccess() const;
 
+    /// The part of `getRequiredAccess` for settings that send the table's data elsewhere, checked again once
+    /// `setEngine` has resolved an engine inherited through `AS`, which `getRequiredAccess` cannot see.
+    void checkExportAccess(const ASTCreateQuery & create) const;
+
     /// Create IStorage and add it to database. If table already exists and IF NOT EXISTS specified, do nothing and return false.
     bool doCreateTable(ASTCreateQuery & create, const TableProperties & properties, DDLGuardPtr & ddl_guard, LoadingStrictnessLevel mode);
     BlockIO doCreateOrReplaceTable(ASTCreateQuery & create, const InterpreterCreateQuery::TableProperties & properties, LoadingStrictnessLevel mode);
