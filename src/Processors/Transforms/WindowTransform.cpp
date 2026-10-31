@@ -211,8 +211,10 @@ void WindowTransform::addInputBlock(Chunk chunk)
 {
     auto rows_count = static_cast<int64_t>(chunk.getNumRows());
     auto materialized_columns = materializeColumns(chunk.getColumns(), params.should_materialize);
-    auto index = indexes.calculate(materialized_columns, rows_count);
+    std::vector<bool> block_order_by_peer_group_starts;
+    auto index = indexes.calculate(materialized_columns, rows_count, block_order_by_peer_group_starts);
     auto & block = blocks.add(std::move(chunk), std::move(materialized_columns), std::move(index));
+    order_by_peer_group_starts.push_back(std::move(block_order_by_peer_group_starts));
     partition.advance(blocks);
 
     block.result_columns.resize(general_functions.size() + workspaces.size());
@@ -293,11 +295,35 @@ void WindowTransform::flushBatch()
             slot.arguments.setBlocks(argument_blocks);
     }
 
+    if (params.separate_order_by_peer_groups)
+        assignOrderByPeerGroups();
+
     const SlidingBlock & block = blocks.blockAt(batch_start.block);
     for (const auto & slot : general_functions)
         slot.function->evaluate(slot.state, bounds, slot.arguments, *block.result_columns[slot.result_column]);
 
     clearBounds(bounds);
+}
+
+void WindowTransform::assignOrderByPeerGroups()
+{
+    /// Under ROWS the peers of the frame are single rows, while `rank` and `dense_rank` count ORDER BY peer groups.
+    /// A batch holds consecutive rows of one block and one partition.
+    const std::vector<bool> & starts = order_by_peer_group_starts[static_cast<size_t>(batch_start.block - blocks.begin().block)];
+    const size_t first_row = static_cast<size_t>(batch_start.row);
+    chassert(first_row + bounds.rows <= starts.size());
+
+    for (size_t i = 0; i < bounds.rows; ++i)
+    {
+        const Int64 row_in_partition = bounds.row[i];
+        if (row_in_partition == 0 || starts[first_row + i])
+        {
+            order_by_peer_group_index = row_in_partition == 0 ? 0 : order_by_peer_group_index + 1;
+            order_by_peer_group_start = row_in_partition;
+        }
+        bounds.peers_start[i] = order_by_peer_group_start;
+        bounds.peer_group_index[i] = order_by_peer_group_index;
+    }
 }
 
 void WindowTransform::startNextPartition()
@@ -412,7 +438,10 @@ void WindowTransform::releaseUnusedBlocks()
     /// The previous frame start is never after the current one, and the frame can start after the current row.
     const auto first_used_block = std::min({next_output_block_number, prev_frame.start.location.block, peers.current().location.block});
     while (blocks.begin().block < first_used_block)
+    {
         blocks.pop();
+        order_by_peer_group_starts.pop_front();
+    }
 }
 
 }

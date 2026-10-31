@@ -16,6 +16,7 @@
 #include <base/arithmeticOverflow.h>
 #include <base/defines.h>
 
+#include <algorithm>
 #include <optional>
 #include <ranges>
 
@@ -196,6 +197,18 @@ WindowFrame applyFunctionDefaultFrame(const WindowFrame & frame, const std::vect
     return window_function->getDefaultFrame().value_or(frame);
 }
 
+bool needsSeparateOrderByPeerGroups(const WindowDescription & description, const std::vector<WindowFunctionDescription> & functions)
+{
+    if (description.frame.type != WindowFrame::FrameType::ROWS)
+        return false;
+
+    return std::ranges::any_of(functions, [&](const WindowFunctionDescription & function)
+    {
+        const auto window_function = asGeneralWindowFunction(function.aggregate_function);
+        return window_function && window_function->getRequirements(description).peers;
+    });
+}
+
 /// We need convert offsets to order by type to be able to use them in shift function.
 WindowFrame prepareRangeOffsets(const WindowFrame & frame, const DataTypePtr & order_by_type)
 {
@@ -248,6 +261,7 @@ WindowTransformParams WindowTransformParams::create(
     auto frame = applyFunctionDefaultFrame(window_description.frame, functions);
     auto range_offset_comparator = chooseRangeOffsetComparator(header, frame, window_description.order_by, order_by_indices);
     auto description = prepareDescriptionForExecution(header, window_description, frame, order_by_indices);
+    auto separate_order_by_peer_groups = needsSeparateOrderByPeerGroups(description, functions);
 
     return WindowTransformParams{
         std::move(header),
@@ -256,6 +270,7 @@ WindowTransformParams WindowTransformParams::create(
         std::move(order_by_indices),
         std::move(should_materialize),
         std::move(range_offset_comparator),
+        separate_order_by_peer_groups,
     };
 }
 
