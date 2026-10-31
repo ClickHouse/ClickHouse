@@ -9,6 +9,7 @@
 #include <Processors/QueryPlan/Optimizations/Cascades/GroupExpression.h>
 #include <Processors/QueryPlan/Optimizations/Cascades/ImplementationStrategy.h>
 #include <Processors/QueryPlan/Optimizations/Cascades/Memo.h>
+#include <Processors/QueryPlan/Optimizations/Cascades/RuleUtils.h>
 #include <Processors/QueryPlan/SortingStep.h>
 
 using namespace DB;
@@ -98,8 +99,15 @@ TEST(CascadesPartialTopNCost, GatherPricedOnPhysicalRowsOfSelectedChild)
     const auto gather_cost = estimator.estimateCost(gather);
     const Float64 physical_rows = limit * node_count;
     EXPECT_DOUBLE_EQ(gather_cost.cost.network, physical_rows * bytes_per_row);
-    /// The gather funnel is priced on the same physical rows.
-    EXPECT_GE(gather_cost.cost.sequential, physical_rows);
+    /// The limit above stops the receiver after the trimmed L rows, so the funnel and the
+    /// receive merge are priced on L; the sender merge sees its node's share of the
+    /// shipped rows.
+    const auto & config = memo.getContext().cost_config;
+    EXPECT_DOUBLE_EQ(gather_cost.cost.sequential,
+        config.exchange_fixed_overhead
+        + config.funnel_sequential_cost_per_row * limit
+        + config.merge_sequential_cost_per_row * limit
+        + config.merge_sequential_cost_per_row * physical_rows / node_count);
 }
 
 TEST(CascadesPartialTopNCost, PhysicalRowsClampedByInput)
@@ -174,4 +182,73 @@ TEST(CascadesUnbuildableExpression, UnsatisfiableInputMarksCostUnbuildable)
     buildable->group_id = group_id;
 
     EXPECT_TRUE(estimator.estimateCost(buildable).buildable);
+}
+
+/// A bounded partitioned sort keeps one stream per hash partition instead of merging to a
+/// global top-N, so the top-N rules (which promise one sorted stream) must not take it.
+TEST(CascadesTopNSort, PartitionedBoundedSortIsNotTopN)
+{
+    auto header = makeHeader();
+
+    SortingStep plain_bounded(header, makeSortDescription(), /*limit_=*/10, SortingStep::Settings(65000));
+    EXPECT_TRUE(isTopNSort(plain_bounded));
+
+    SortingStep partitioned_bounded(
+        header, makeSortDescription(), /*partition_by_description_=*/makeSortDescription(), /*limit_=*/10, SortingStep::Settings(65000));
+    EXPECT_FALSE(isTopNSort(partitioned_bounded));
+}
+
+/// A sorted gather pays the receiver's merge of the bucket streams into one, and a sender
+/// with several streams per node (disjoint layout) also pays its own merge before shipping.
+TEST(CascadesSortedGatherCost, SendAndReceiveMergesPriced)
+{
+    constexpr Float64 rows = 10000;
+    constexpr size_t node_count = 4;
+
+    Memo memo(getLogger("gtest_cascades_partial_topn_cost"));
+    CostEstimator estimator(memo);
+    auto header = makeHeader();
+
+    auto make_source = [&](StreamLayout layout)
+    {
+        auto source = std::make_shared<GroupExpression>(QueryPlanStepPtr{});
+        source->properties.distribution.node_count = node_count;
+        source->properties.sorting = makeSortDescription();
+        if (layout == StreamLayout::Disjoint)
+            source->properties.setDisjointStreams({NameSet{"x"}});
+        else
+            source->properties.stream_layout = layout;
+        source->cost = ExpressionCost{};
+        auto group_id = memo.addGroup(source);
+        memo.getGroup(group_id)->statistics = makeStats(rows, 10);
+        memo.getGroup(group_id)->updateBestImplementation(source, memo.getContext().cost_config);
+        return std::pair{group_id, source};
+    };
+
+    auto gather_cost_over = [&](StreamLayout layout, bool sorted)
+    {
+        auto [group_id, source] = make_source(layout);
+        std::optional<SortDescription> maintain_sort;
+        if (sorted)
+            maintain_sort = makeSortDescription();
+        auto gather = std::make_shared<GroupExpression>(
+            std::make_unique<GatherExchangeStep>(header, node_count, std::move(maintain_sort)));
+        gather->properties.distribution.node_count = 1;
+        if (sorted)
+            gather->properties.sorting = makeSortDescription();
+        gather->inputs.push_back({group_id, source->properties});
+        auto gather_group_id = memo.addGroup(gather);
+        memo.getGroup(gather_group_id)->statistics = makeStats(rows, 10);
+        return estimator.estimateCost(gather).cost.sequential;
+    };
+
+    const Float64 unordered = gather_cost_over(StreamLayout::Single, /*sorted=*/false);
+    const Float64 over_single = gather_cost_over(StreamLayout::Single, /*sorted=*/true);
+    const Float64 over_disjoint = gather_cost_over(StreamLayout::Disjoint, /*sorted=*/true);
+
+    const auto & config = memo.getContext().cost_config;
+    /// The receiver merges the sorted bucket streams into one: a full per-row merge.
+    EXPECT_DOUBLE_EQ(over_single - unordered, config.merge_sequential_cost_per_row * rows);
+    /// A sender with several streams per node merges its node's share before shipping.
+    EXPECT_DOUBLE_EQ(over_disjoint - over_single, config.merge_sequential_cost_per_row * rows / node_count);
 }
