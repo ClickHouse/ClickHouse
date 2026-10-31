@@ -214,6 +214,17 @@ std::optional<Field> deserializeDecimalFromBinaryRepr(
     return std::nullopt;
 }
 
+std::optional<Field> deserializeUUIDFromBinaryRepr(const String & str)
+{
+    if (str.size() != sizeof(UUID))
+        return std::nullopt;
+
+    UUID uuid;
+    UUIDHelpers::getHighBytes(uuid) = unalignedLoadBigEndian<UInt64>(str.data());
+    UUIDHelpers::getLowBytes(uuid) = unalignedLoadBigEndian<UInt64>(str.data() + sizeof(UInt64));
+    return Field(uuid);
+}
+
 std::optional<Field> deserializeFieldFromBinaryRepr(
     const String & str, const DataTypePtr & expected_type, bool lower_bound, bool compensate_rounding)
 {
