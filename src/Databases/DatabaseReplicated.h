@@ -159,6 +159,8 @@ public:
 
     void renameDatabase(ContextPtr query_context, const String & new_name) override;
 
+    bool canAlterTableDefinition() const override { return !is_readonly && !is_probably_dropped; }
+
     static ASTPtr parseQueryFromMetadataInZooKeeper(
         ContextPtr context_, const String & database_name_, const String & zookeeper_path_, const String & node_name, const String & query);
 
@@ -172,6 +174,9 @@ protected:
     void commitAlterTable(const StorageID & table_id,
                           const String & table_metadata_tmp_path, const String & table_metadata_path,
                           const String & statement, ContextPtr query_context) override;
+    void commitAlterTableDefinition(const StorageID & table_id,
+                                    const String & table_metadata_tmp_path, const String & table_metadata_path,
+                                    const String & statement, ContextPtr query_context) override;
     /// We need to reset the cached cluster objects, if `cluster_secret` is used, since the authentication is affected.
     void onDatabaseRenamed() override TSA_REQUIRES(mutex);
 

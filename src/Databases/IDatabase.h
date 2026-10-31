@@ -469,6 +469,14 @@ public:
         const StorageInMemoryMetadata & /*metadata*/,
         bool validate_new_create_query);
 
+    using CreateQueryModifier = std::function<void(const ASTPtr & create_query)>;
+
+    virtual bool canAlterTableDefinition() const { return false; }
+
+    /// Like `alterTable`, but applies `modifier` to the stored CREATE query, so it can change any part of it (e.g. `TO`).
+    /// You must call under the alter_lock of the corresponding table.
+    virtual void alterTableDefinition(ContextPtr /*context*/, const StorageID & /*table_id*/, const CreateQueryModifier & /*modifier*/);
+
     /// Special method for ReplicatedMergeTree and DatabaseReplicated
     virtual bool canExecuteReplicatedMetadataAlter() const { return true; }
 

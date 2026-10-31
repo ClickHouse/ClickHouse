@@ -313,7 +313,11 @@ StoragePtr StorageTimeSeries::getTargetTableImpl(ViewTarget::Kind target_kind, c
         }
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected target kind {}", target_kind);
     }
-    const auto & target = *target_ptr;
+    StorageID target_table_id = StorageID::createEmpty();
+    {
+        std::lock_guard lock(targets_mutex);
+        target_table_id = target_ptr->table_id;
+    }
 
     auto lookup = [&](const StorageID & id) -> StoragePtr
     {
@@ -322,31 +326,31 @@ StoragePtr StorageTimeSeries::getTargetTableImpl(ViewTarget::Kind target_kind, c
             .second;
     };
 
-    /// For external targets `target.table_id` contains a table name.
-    if (!target.table_id.table_name.empty())
+    /// For external targets `target_table_id` contains a table name.
+    if (!target_table_id.table_name.empty())
     {
-        auto res = lookup(target.table_id);
+        auto res = lookup(target_table_id);
         if (!res && throw_if_not_found)
         {
             throw Exception(ErrorCodes::UNKNOWN_TABLE, "The {} target table {} for TimeSeries table {} doesn't exist",
-                            target_kind, target.table_id.getNameForLogs(), getStorageID().getNameForLogs());
+                            target_kind, target_table_id.getNameForLogs(), getStorageID().getNameForLogs());
         }
         return res;
     }
 
-    /// For inner targets in Atomic databases `target.table_id` has a UUID but no name — look up directly by UUID.
-    if (target.table_id.hasUUID())
+    /// For inner targets in Atomic databases `target_table_id` has a UUID but no name, so look up directly by UUID.
+    if (target_table_id.hasUUID())
     {
-        auto res = DatabaseCatalog::instance().tryGetByUUID(target.table_id.uuid).second;
+        auto res = DatabaseCatalog::instance().tryGetByUUID(target_table_id.uuid).second;
         if (!res && throw_if_not_found)
             throw Exception(ErrorCodes::UNKNOWN_TABLE, "The {} inner table {} for TimeSeries table {} doesn't exist",
-                            target_kind, target.table_id.getNameForLogs(), getStorageID().getNameForLogs());
+                            target_kind, target_table_id.getNameForLogs(), getStorageID().getNameForLogs());
         return res;
     }
 
-    chassert(target.table_id.empty());
+    chassert(target_table_id.empty());
 
-    /// For inner targets in non-Atomic databases, `target.table_id` is empty and we look up the inner table by its constructed name.
+    /// For inner targets in non-Atomic databases, `target_table_id` is empty and we look up the inner table by its constructed name.
     StorageID time_series_table_id = getStorageID();
     StorageID inner_table_id{time_series_table_id.getDatabaseName(), getTimeSeriesInnerTableName(target_kind, time_series_table_id, getVersion())};
 
@@ -795,6 +799,20 @@ void StorageTimeSeries::renameInMemory(const StorageID & new_table_id)
     }
 
     IStorage::renameInMemory(new_table_id);
+}
+
+
+void StorageTimeSeries::updateReferencedTables(const ASTCreateQuery & create, ContextPtr)
+{
+    std::lock_guard lock(targets_mutex);
+    for (auto & target : targets)
+    {
+        if (target.is_inner_table)
+            continue;
+        auto target_table_id = create.getTargetTableID(target.kind);
+        if (!target_table_id.table_name.empty())
+            target.table_id = target_table_id;
+    }
 }
 
 

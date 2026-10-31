@@ -608,6 +608,11 @@ public:
      */
     virtual void renameInMemory(const StorageID & new_table_id);
 
+    /** Re-reads the references to other tables (the query, the targets) from `create`, the definition of this
+      * table after the tables it references were renamed. Changes nothing on disk.
+      */
+    virtual void updateReferencedTables(const ASTCreateQuery & create, ContextPtr context);
+
     /** ALTER tables in the form of column changes that do not affect the change
       * to Storage or its parameters. Executes under alter lock (lockForAlter).
       *

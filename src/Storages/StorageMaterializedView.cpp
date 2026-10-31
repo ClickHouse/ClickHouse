@@ -118,6 +118,14 @@ static void removeNonCommonColumns(const Block & src_header, Block & target_head
 
 namespace
 {
+    /// Nested views in the query of a materialized view are resolved in the database of the view.
+    ContextMutablePtr createViewDatabaseContext(const ContextPtr & context, const StorageID & view_id)
+    {
+        auto view_database_context = Context::createCopy(context);
+        view_database_context->setCurrentDatabase(view_id.database_name);
+        return view_database_context;
+    }
+
     void checkTargetTableHasQueryOutputColumns(const ColumnsDescription & target_table_columns, const ColumnsDescription & select_query_output_columns)
     {
         for (const auto & column : select_query_output_columns)
@@ -267,9 +275,7 @@ StorageMaterializedView::StorageMaterializedView(
                                                                      storage_metadata.columns,
                                                                      {},
                                                                      local_context->getGlobalContext());
-    /// Use the database where the materialized view is created to resolve nested views
-    ContextMutablePtr mv_db_context = Context::createCopy(local_context);
-    mv_db_context->setCurrentDatabase(table_id_.database_name);
+    ContextMutablePtr mv_db_context = createViewDatabaseContext(local_context, table_id_);
 
     auto select = SelectQueryDescription::getSelectQueryFromASTForMatView(query.select->clone(), query.refresh_strategy != nullptr, mv_db_context);
     if (mode == LoadingStrictnessLevel::CREATE && !query.refresh_strategy && selectReadsView(table_id_, select.select_query, mv_db_context))
@@ -920,9 +926,7 @@ void StorageMaterializedView::alter(
     auto view_metadata = getInMemoryMetadataPtr(local_context, false);
     StorageInMemoryMetadata new_metadata = *view_metadata;
 
-    /// Use the database where the materialized view is created to resolve nested views
-    ContextMutablePtr mv_db_context = Context::createCopy(local_context);
-    mv_db_context->setCurrentDatabase(table_id.database_name);
+    ContextMutablePtr mv_db_context = createViewDatabaseContext(local_context, table_id);
 
     params.apply(new_metadata, mv_db_context);
 
@@ -1095,6 +1099,33 @@ void StorageMaterializedView::renameInMemory(const StorageID & new_table_id)
 
     if (refresher)
         refresher->rename(new_table_id, getTargetTableId());
+}
+
+void StorageMaterializedView::updateReferencedTables(const ASTCreateQuery & create, ContextPtr local_context)
+{
+    auto view_id = getStorageID();
+    auto metadata = getInMemoryMetadataPtr(local_context, /*bypass_metadata_cache=*/ true);
+    StorageInMemoryMetadata new_metadata = *metadata;
+    new_metadata.setSelectQuery(SelectQueryDescription::getSelectQueryFromASTForMatView(
+        create.select->clone(), create.refresh_strategy != nullptr, createViewDatabaseContext(local_context, view_id)));
+    if (create.refresh_strategy)
+        new_metadata.setRefresh(create.refresh_strategy->clone());
+    if (create.columns_list && create.columns_list->columns)
+        new_metadata.setColumns(InterpreterCreateQuery::getColumnsDescription(*create.columns_list, local_context, LoadingStrictnessLevel::ATTACH));
+    setInMemoryMetadata(new_metadata);
+
+    if (!has_inner_table)
+    {
+        auto to_table_id = create.getTargetTableID(ViewTarget::To);
+        updateTargetTableId(to_table_id.database_name, to_table_id.table_name);
+    }
+
+    if (refresher)
+    {
+        refresher->alterRefreshParams(*create.refresh_strategy);
+        /// Re-keys the target of the view in the set of refresh tasks.
+        refresher->rename(view_id, getTargetTableId());
+    }
 }
 
 void StorageMaterializedView::startup()
