@@ -292,10 +292,15 @@ endif ()
 option(DISABLE_ALL_DEBUG_SYMBOLS "Disable debug symbols, independently of which build type is used" OFF)
 option(SPLIT_DEBUG_SYMBOLS "Split binaries and debug symbols" OFF)
 set(SYMBOL_SECTIONS "symtab" CACHE STRING "Symbol table format retained in packaged binaries")
-set_property(CACHE SYMBOL_SECTIONS PROPERTY STRINGS symtab gnu_debugdata)
+set_property(CACHE SYMBOL_SECTIONS PROPERTY STRINGS symtab gnu_debugdata compact)
 
-if (NOT SYMBOL_SECTIONS STREQUAL "symtab" AND NOT SYMBOL_SECTIONS STREQUAL "gnu_debugdata")
-    message(FATAL_ERROR "Unsupported SYMBOL_SECTIONS value '${SYMBOL_SECTIONS}'. Expected 'symtab' or 'gnu_debugdata'.")
+set(SYMBOL_SECTIONS_VALID_VALUES symtab gnu_debugdata compact)
+if (NOT SYMBOL_SECTIONS IN_LIST SYMBOL_SECTIONS_VALID_VALUES)
+    message(FATAL_ERROR "Unsupported SYMBOL_SECTIONS value '${SYMBOL_SECTIONS}'. Valid values: ${SYMBOL_SECTIONS_VALID_VALUES}")
+endif()
+
+if (SYMBOL_SECTIONS STREQUAL "compact" AND NOT SPLIT_DEBUG_SYMBOLS)
+    message(FATAL_ERROR "SYMBOL_SECTIONS=compact requires SPLIT_DEBUG_SYMBOLS=ON")
 endif()
 
 if (SYMBOL_SECTIONS STREQUAL "gnu_debugdata")
@@ -938,10 +943,13 @@ if (FUZZER)
         OUTPUT_VARIABLE FUZZER_SOURCE_DICT_OUTPUT
         ERROR_VARIABLE FUZZER_SOURCE_DICT_OUTPUT)
     string (STRIP "${FUZZER_SOURCE_DICT_OUTPUT}" FUZZER_SOURCE_DICT_OUTPUT)
-    # Fail loudly: a missing dictionary makes a consumer's `cp tests/fuzz/*.dict`
-    # abort on an unmatched glob far from here.
+    # Fail here: consumers copy tests/fuzz/*.dict, a glob the committed
+    # per-target dictionaries satisfy even when all.dict is missing.
     if (NOT FUZZER_SOURCE_DICT_RESULT EQUAL 0)
         message (FATAL_ERROR "Failed to generate tests/fuzz/all.dict: ${FUZZER_SOURCE_DICT_OUTPUT}")
+    endif()
+    if (NOT EXISTS "${CMAKE_SOURCE_DIR}/tests/fuzz/all.dict")
+        message (FATAL_ERROR "tests/fuzz/all.dict is missing after generation")
     endif()
     message (STATUS "${FUZZER_SOURCE_DICT_OUTPUT}")
 
@@ -1049,6 +1057,8 @@ if (NATIVE_BUILD_TARGETS
             "-DENABLE_RUST=OFF"
             "-DENABLE_CLICKHOUSE_SELF_EXTRACTING=${ENABLE_CLICKHOUSE_SELF_EXTRACTING}"
             "-DUSE_BINARY_HASH=${USE_BINARY_HASH}"
+            "-DSPLIT_DEBUG_SYMBOLS=${SPLIT_DEBUG_SYMBOLS}"
+            "-DSYMBOL_SECTIONS=${SYMBOL_SECTIONS}"
         ${PROJECT_SOURCE_DIR}
         WORKING_DIRECTORY "${NATIVE_BUILD_DIR}"
         COMMAND_ECHO STDOUT

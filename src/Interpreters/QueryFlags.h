@@ -32,6 +32,9 @@ struct QueryFlags
     /// If true, the query is not accounted in the quota. Used by the internal `DETACH`/`ATTACH` pair of the
     /// `reattach_tables_before_query_execution` testing hook, which must not consume the user's quota.
     bool ignore_quota = false;
+    /// If true, `QueryResultDetails::result_column_origins` is filled for `SELECT` queries, so that a protocol
+    /// can report which table column each result column comes from (e.g. the MySQL protocol does).
+    bool collect_result_column_origins = false;
 };
 
 }
