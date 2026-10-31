@@ -106,7 +106,9 @@ private:
 
     // Methods for CPU scheduling
     SlotAllocationPtr allocateCPU(size_t num_threads, bool concurrency_control, bool lazy_allocation);
-    void spawnThreads(AcquiredSlotPtr slot) TSA_REQUIRES(spawn_mutex);
+    bool spawnThreads(AcquiredSlotPtr slot) TSA_REQUIRES(spawn_mutex);
+
+    std::atomic<bool> slots_outstanding{false};
 };
 
 }
