@@ -42,10 +42,10 @@ namespace
 
 using RequirementCheck = std::function<std::expected<void, String>(const Poco::JSON::Object & metadata, const Poco::JSON::Object & requirement)>;
 
-/// Verify table does not exist.
+/// Verify table does not yet exist.
 std::expected<void, String> checkCreate(const Poco::JSON::Object &, const Poco::JSON::Object &)
 {
-    /// The table exists at this point. A commit to a missing table goes through `checkCreateRequirements`.
+    /// The table exists at this point.
     return std::unexpected("Table already exists");
 }
 
@@ -111,15 +111,19 @@ const std::unordered_map<String, RequirementCheck> REQUIREMENT_CHECKS = {
 
 }
 
-bool hasAssertCreate(const Poco::JSON::Array & requirements)
+bool isCreateCommit(const Poco::JSON::Array & requirements)
 {
+    size_t assert_create_count = 0;
     for (const auto & requirement : requirements)
     {
-        if (requirement.type() == typeid(Poco::JSON::Object::Ptr)
-            && requirement.extract<Poco::JSON::Object::Ptr>()->optValue<String>(f_type, "") == "assert-create")
-            return true;
+        if (requirement.type() != typeid(Poco::JSON::Object::Ptr))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Every requirement must be an object");
+        if (getString(*requirement.extract<Poco::JSON::Object::Ptr>(), f_type) == "assert-create")
+            ++assert_create_count;
     }
-    return false;
+    if (assert_create_count && assert_create_count != requirements.size())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "A create commit cannot have requirements other than 'assert-create'");
+    return assert_create_count;
 }
 
 std::expected<void, String> checkTableRequirements(const Poco::JSON::Object & metadata, const Poco::JSON::Array & requirements)
@@ -137,24 +141,6 @@ std::expected<void, String> checkTableRequirements(const Poco::JSON::Object & me
 
         if (auto result = it->second(metadata, *requirement_object); !result)
             return result;
-    }
-    return {};
-}
-
-std::expected<void, String> checkCreateRequirements(const Poco::JSON::Array & requirements)
-{
-    for (const auto & requirement : requirements)
-    {
-        if (requirement.type() != typeid(Poco::JSON::Object::Ptr))
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Every requirement must be an object");
-        const auto & requirement_object = requirement.extract<Poco::JSON::Object::Ptr>();
-
-        const auto type = getString(*requirement_object, f_type);
-        if (type == "assert-create")
-            continue;
-        if (!REQUIREMENT_CHECKS.contains(type))
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown requirement type '{}'", type);
-        return std::unexpected(fmt::format("Cannot check '{}': table does not exist", type));
     }
     return {};
 }

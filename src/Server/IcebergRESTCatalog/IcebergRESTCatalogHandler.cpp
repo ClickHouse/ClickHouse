@@ -128,6 +128,7 @@ IcebergNamespaceName splitNamespace(const String & value)
     return result;
 }
 
+/// The handler maps `BAD_ARGUMENTS` to a 400 response.
 void validateTableName(const String & name)
 {
     if (name.empty() || name.size() > MAX_TABLE_NAME_LENGTH)
@@ -158,6 +159,7 @@ std::optional<String> getQueryParameter(const Poco::URI & uri, const String & na
 }
 
 /// Boolean query parameters arrive as `true`, `True` or `TRUE` depending on the client, so compare case-insensitively.
+/// Throws for a value that is not a boolean.
 bool getBooleanQueryParameter(const Poco::URI & uri, const String & name, bool default_value)
 {
     const auto value = getQueryParameter(uri, name);
@@ -1025,15 +1027,9 @@ void IcebergRESTCatalogHandler::handleStagedCreateCommit(
         const auto requirements = getArray(*json, "requirements");
         const auto updates = getArray(*json, "updates");
 
-        if (!hasAssertCreate(*requirements))
+        if (!isCreateCommit(*requirements))
         {
             sendNoSuchTable(response, ns, table);
-            return;
-        }
-
-        if (const auto result = checkCreateRequirements(*requirements); !result)
-        {
-            sendError(response, Poco::Net::HTTPResponse::HTTP_CONFLICT, "CommitFailedException", result.error());
             return;
         }
 
