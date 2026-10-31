@@ -4,7 +4,7 @@ title: 'Alerts with ClickStack'
 sidebarTitle: 'Alerts'
 description: 'Alerts with ClickStack'
 doc_type: 'guide'
-keywords: ['ClickStack', 'observability', 'alerts', 'search-alerts', 'notifications', 'thresholds', 'slack', 'email', 'pagerduty', 'error-monitoring', 'performance-monitoring', 'user-events']
+keywords: ['ClickStack', 'observability', 'alerts', 'search-alerts', 'anomaly-detection', 'notifications', 'thresholds', 'slack', 'email', 'pagerduty', 'error-monitoring', 'performance-monitoring', 'user-events']
 ---
 
 import { Image } from "/snippets/components/Image.jsx";
@@ -18,6 +18,11 @@ Alerting works seamlessly across your ClickStack data, helping you track system 
 ## Types of alerts {#types-of-alerts}
 
 ClickStack supports two complementary ways to create alerts: **Search alerts** and **Dashboard chart alerts**. Once the alert is created, it is attached to either the search or the chart.
+
+Each alert uses one of two detection modes, selected under **Alert type** in the alert editor:
+
+- **Static threshold**: fires when the value crosses a number you choose. This is the default, and the mode described on this page.
+- **Anomaly detection** (Managed ClickStack only): fires when the value moves outside its expected range, learned from recent history. See [Anomaly detection alerts](/clickstack/features/anomaly-detection).
 
 ### 1. Search alerts {#search-alerts}
 
@@ -285,6 +290,10 @@ In this query, `ServiceName` is a non-numeric, non-timestamp column, so each ser
 
 Alert on excess error counts that exceed a rolling average by more than two standard deviations. This catches spikes relative to recent baseline behavior rather than a fixed threshold.
 
+<Tip>
+On Managed ClickStack, [anomaly detection alerts](/clickstack/features/anomaly-detection) do this without custom SQL, and add a preview, a backtest, and per-group baselines. Use the SQL approach below when you need full control over the baseline calculation, or on ClickStack Open Source.
+</Tip>
+
 ```sql
 WITH buckets AS (
   SELECT
@@ -344,3 +353,8 @@ occurring.
 
 **User Events:** You can also set up alerts for customer-facing teams to be
 notified when new users sign up or a critical user action is performed.
+
+**Unusual changes:** When there is no obvious threshold, such as error counts
+that vary by service or traffic that changes over the day, use an
+[anomaly detection alert](/clickstack/features/anomaly-detection) grouped by
+`ServiceName`.

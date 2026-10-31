@@ -21,7 +21,7 @@ The connector has one configuration surface per install target.
 `clicklink clctl init` stages a values overlay named `clicklink-values.yaml` in the working directory and deploys the `clicklink-connector` chart with it. The overlay is the durable record of your deployment: re-running `init` keeps it unless you pass `--force`, so your edits survive re-runs and recovery.
 
 <Note>
-Day-2 commands on this page and in [operations](/products/bring-your-own-cloud/connector/operations) use the `helm` CLI. Only `init` carries a built-in Helm client.
+The `helm upgrade` blocks on this page need the `helm` CLI on your workstation; only `init` and `connector upgrade` carry one built in.
 </Note>
 
 Edit the overlay, then apply it:

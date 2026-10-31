@@ -83,7 +83,9 @@ struct Dictionary
     void appendRepeated(size_t idx, size_t n, IColumn & out);
     void decode(parq::Encoding::type encoding, const PageDecoderInfo & info, size_t num_values, std::span<const char> data_, const IDataType & raw_decoded_type);
     /// Checks every dictionary entry against the filter, see `string_value_filter_mask`.
-    void buildStringValueFilterMask(const StringValueFilter & filter);
+    /// `num_rows` is the number of rows expected to consult the mask, or 0 to credit every entry with a single row.
+    /// Does not build the mask if the filter disables itself meanwhile.
+    void buildStringValueFilterMask(const StringValueFilter & filter, size_t num_rows);
 
     /// Upper bound on `allocatedBytes()` after `decode()` with the given arguments, computed from the
     /// page header *before* decoding anything. Lets a memory-bounded caller (the dictionary-filter
@@ -455,6 +457,9 @@ extern template struct BigEndianDecimalStringConverter<Int256>;
 
 struct Int96Converter : public FixedSizeConverter
 {
+    /// A value that does not fit into Int64 nanoseconds is clamped to the `DateTime64(9)` range with Saturate, otherwise throws.
+    FormatSettings::DateTimeOverflowBehavior overflow_behavior = FormatSettings::DateTimeOverflowBehavior::Ignore;
+
     Int96Converter();
 
     void convertColumn(std::span<const char> data, size_t num_values, IColumn & col) const override;

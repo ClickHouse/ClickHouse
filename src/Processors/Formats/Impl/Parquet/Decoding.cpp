@@ -1,4 +1,5 @@
 #include <Processors/Formats/Impl/Parquet/Decoding.h>
+#include <Processors/Formats/Impl/Parquet/ALPEncoding.h>
 
 #include <base/arithmeticOverflow.h>
 #include <Columns/ColumnString.h>
@@ -212,13 +213,13 @@ struct BitPackedRLEDecoder : public PageDecoder
             /// bit_width == 0 means all values are 0.
             size_t count = num_values;
             if constexpr (filtered)
-            {
                 count = countBytesInFilter(filter, 0, num_values);
+            if constexpr (!skip)
+            {
                 if (count && limit == 0)
                     throw Exception(ErrorCodes::INCORRECT_DATA, "Dict index or rep/def level out of bounds (rle)");
-            }
-            if constexpr (!skip)
                 memset(out, 0, count * sizeof(T));
+            }
             if constexpr (count_zeros)
                 *num_zeros += num_values;
             return;
@@ -337,20 +338,83 @@ struct PlainFixedSizeDecoder : public PageDecoder
     void decode(size_t num_values, IColumn & col, const UInt8 * filter, size_t filter_offset) override
     {
         const char * from = data;
-        if (!filter)
+        skip(num_values);
+        size_t pass_count = num_values;
+        if (filter)
         {
-            skip(num_values);
-            converter->convertColumn(std::span(from, num_values * converter->input_size), num_values, col);
+            filter += filter_offset;
+            pass_count = countBytesInFilter(filter, 0, num_values);
+            if (pass_count == 0)
+                return;
+        }
+        const size_t value_size = converter->input_size;
+        if (pass_count == num_values)
+        {
+            converter->convertColumn(std::span(from, num_values * value_size), num_values, col);
             return;
         }
-        size_t value_size = converter->input_size;
-        for (size_t i = 0; i < num_values; ++i)
+
+        const bool direct = converter->isTrivial();
+        char * to = nullptr;
+        if (direct)
         {
-            requireRemainingBytes(value_size);
-            if (filter[filter_offset + i])
-                converter->convertColumn(std::span(from + i * value_size, value_size), 1, col);
-            data += value_size;
+            auto to_span = col.insertRawUninitialized(pass_count);
+            chassert(to_span.size() == pass_count * value_size);
+            to = to_span.data();
         }
+        else
+        {
+            temp_buffer.resize(pass_count * value_size);
+            to = temp_buffer.data();
+        }
+        char * to_end = nullptr;
+        switch (value_size)
+        {
+            case 1: to_end = copyPassingValues<1>(from, filter, num_values, value_size, to); break;
+            case 2: to_end = copyPassingValues<2>(from, filter, num_values, value_size, to); break;
+            case 4: to_end = copyPassingValues<4>(from, filter, num_values, value_size, to); break;
+            case 8: to_end = copyPassingValues<8>(from, filter, num_values, value_size, to); break;
+            case 16: to_end = copyPassingValues<16>(from, filter, num_values, value_size, to); break;
+            default: to_end = copyPassingValues<0>(from, filter, num_values, value_size, to); break;
+        }
+        chassert(to_end == to + pass_count * value_size);
+        if (!direct)
+            converter->convertColumn(std::span(to, pass_count * value_size), pass_count, col);
+    }
+
+private:
+    PaddedPODArray<char> temp_buffer;
+
+    /// Appends the passing values to `to` and returns the new end; `static_value_size` 0 means `value_size`.
+    template <size_t static_value_size>
+    static char * copyPassingValues(const char * from, const UInt8 * filter, size_t num_values, size_t value_size, char * to)
+    {
+        const size_t size = static_value_size ? static_value_size : value_size;
+        size_t i = 0;
+        for (; i + 64 <= num_values; i += 64)
+        {
+            UInt64 mask = bytes64MaskToBits64Mask(filter + i);
+            if (mask == ~UInt64(0))
+            {
+                memcpy(to, from + i * size, 64 * size);
+                to += 64 * size;
+                continue;
+            }
+            for (; mask; mask &= mask - 1)
+            {
+                memcpy(to, from + (i + std::countr_zero(mask)) * size, size);
+                to += size;
+            }
+        }
+        for (; i < num_values; ++i)
+        {
+            if (filter[i])
+            {
+                memcpy(to, from + i * size, size);
+                to += size;
+            }
+        }
+        return to;
     }
 };
 
@@ -519,6 +583,15 @@ struct PlainStringDecoder : public PageDecoder
                             ++values_replaced;
                             bytes_skipped += size_t(x);
                         }
+                        if (values_checked == StringValueFilter::MAX_VALUES_BETWEEN_STATS_UPDATES)
+                        {
+                            active_value_filter->updateStats(values_checked, values_replaced, bytes_skipped);
+                            values_checked = 0;
+                            values_replaced = 0;
+                            bytes_skipped = 0;
+                            if (!active_value_filter->isEnabled())
+                                active_value_filter = nullptr;
+                        }
                     }
                     else
                     {
@@ -679,6 +752,12 @@ struct DeltaBinaryPackedDecoder : public PageDecoder
             nextBlock();
         chassert(miniblock_idx < miniblocks_per_block);
 
+        /// Larger bit widths are not supported by the unpacking routine, which would leave the output uninitialized.
+        /// Without a converter (lengths in `DeltaByteArrayDecoder`), the values are decoded as `UInt64`.
+        const size_t max_bit_width = converter ? converter->input_size * 8 : 64;
+        if (miniblock_bit_widths[miniblock_idx] > max_bit_width)
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Invalid DELTA_BINARY_PACKED miniblock bit width: {}", int(miniblock_bit_widths[miniblock_idx]));
+
         miniblock_values_remaining = values_per_block / miniblocks_per_block;
         size_t bytes = (miniblock_values_remaining * miniblock_bit_widths[miniblock_idx] + 7) / 8;
 
@@ -827,12 +906,16 @@ struct DeltaBinaryPackedDecoder : public PageDecoder
             int read_count = bit_reader.GetBatch(bits_per_delta, out_values, static_cast<int>(n));
             chassert(read_count == int(n));
 
+            /// Locals, because `out_values` may alias the members.
+            UInt64 value = current_value;
+            const UInt64 delta_base = min_delta;
             for (size_t i = 0; i < n; ++i)
             {
-                current_value += min_delta + UInt64(*out_values);
-                *out_values = func(T(current_value));
+                value += delta_base + UInt64(*out_values);
+                *out_values = func(T(value));
                 ++out_values;
             }
+            current_value = value;
         }
     }
 };
@@ -915,6 +998,15 @@ struct DeltaLengthByteArrayDecoder : public PageDecoder
                             col_str.insertDefault();
                             ++values_replaced;
                             bytes_skipped += len;
+                        }
+                        if (values_checked == StringValueFilter::MAX_VALUES_BETWEEN_STATS_UPDATES)
+                        {
+                            active_value_filter->updateStats(values_checked, values_replaced, bytes_skipped);
+                            values_checked = 0;
+                            values_replaced = 0;
+                            bytes_skipped = 0;
+                            if (!active_value_filter->isEnabled())
+                                active_value_filter = nullptr;
                         }
                     }
                     else
@@ -1156,6 +1248,15 @@ struct DeltaByteArrayDecoder : public PageDecoder
                         ++values_replaced;
                         bytes_skipped += current_value.size();
                     }
+                    if (values_checked == StringValueFilter::MAX_VALUES_BETWEEN_STATS_UPDATES)
+                    {
+                        active_value_filter->updateStats(values_checked, values_replaced, bytes_skipped);
+                        values_checked = 0;
+                        values_replaced = 0;
+                        bytes_skipped = 0;
+                        if (!active_value_filter->isEnabled())
+                            active_value_filter = nullptr;
+                    }
                 }
                 else
                 {
@@ -1380,6 +1481,10 @@ std::unique_ptr<PageDecoder> PageDecoderInfo::makeDecoder(
             if (fixed_size_converter)
                 return std::make_unique<ByteStreamSplitDecoder>(data, fixed_size_converter);
             break;
+        case parq::Encoding::ALP:
+            if (physical_type == parq::Type::FLOAT || physical_type == parq::Type::DOUBLE)
+                return makeALPDecoder(physical_type, data, fixed_size_converter);
+            break;
         default: throw Exception(ErrorCodes::INCORRECT_DATA, "Unexpected page encoding: {}", thriftToString(encoding));
     }
 
@@ -1534,20 +1639,47 @@ void Dictionary::decode(parq::Encoding::type encoding, const PageDecoderInfo & i
         throw Exception(ErrorCodes::INCORRECT_DATA, "Incorrect dictionary page size: {} != {} * {}", data.size(), count, value_size);
 }
 
-void Dictionary::buildStringValueFilterMask(const StringValueFilter & filter)
+void Dictionary::buildStringValueFilterMask(const StringValueFilter & filter, size_t num_rows)
 {
     /// Other modes are not used together with the filter: it is attached only when
     /// the string converter is trivial, see Reader::preparePrewhere.
-    if (mode != Mode::StringPlain)
+    if (mode != Mode::StringPlain || count == 0)
         return;
+
+    /// Every entry is expected to be referenced by this many rows, and the mask skips the data of
+    /// a non-matching entry in all of them.
+    const double rows_per_entry = std::max(1.0, double(num_rows) / double(count));
 
     string_value_filter = &filter;
     string_value_filter_mask.resize(count);
+    size_t entries_checked = 0;
+    size_t bytes_skipped = 0;
     for (size_t i = 0; i < count; ++i)
     {
         size_t start = offsets[ssize_t(i) - 1] + 4; // offsets[-1] is ok because of padding
         size_t len = offsets[i] - start;
-        string_value_filter_mask[i] = len != 0 && filter.match(data.data() + start, len);
+        bool matches = len != 0 && filter.match(data.data() + start, len);
+        string_value_filter_mask[i] = matches;
+
+        ++entries_checked;
+        if (!matches)
+            bytes_skipped += len;
+
+        if (entries_checked == StringValueFilter::MAX_VALUES_BETWEEN_STATS_UPDATES || i + 1 == count)
+        {
+            filter.updateStatsOfDictionaryEntries(entries_checked, size_t(double(bytes_skipped) * rows_per_entry));
+            entries_checked = 0;
+            bytes_skipped = 0;
+
+            /// The mask would never be consulted, do not check the rest of the entries.
+            if (!filter.isEnabled())
+            {
+                string_value_filter_mask.clear();
+                string_value_filter_mask.shrink_to_fit();
+                string_value_filter = nullptr;
+                return;
+            }
+        }
     }
 }
 
@@ -1715,7 +1847,7 @@ void Dictionary::appendIndexes(const UInt32 * indexes, size_t n, IColumn & out, 
                 }
                 /// Report the observed selectivity to the shared filter, so that a non-selective
                 /// filter disables itself for all readers, same as in the non-dictionary paths.
-                string_value_filter->updateStats(n, values_replaced, bytes_skipped);
+                string_value_filter->updateStatsWithoutPerValueChecks(n, values_replaced, bytes_skipped);
                 break;
             }
             for (size_t i = 0; i < n; ++i)
@@ -1779,10 +1911,10 @@ void Dictionary::appendRepeated(size_t idx, size_t n, IColumn & out)
                 if (!string_value_filter_mask[idx])
                 {
                     c.insertManyDefaults(n);
-                    string_value_filter->updateStats(n, n, len * n);
+                    string_value_filter->updateStatsWithoutPerValueChecks(n, n, len * n);
                     break;
                 }
-                string_value_filter->updateStats(n, 0, 0);
+                string_value_filter->updateStatsWithoutPerValueChecks(n, 0, 0);
             }
             c.reserve(c.size() + n);
             for (size_t i = 0; i < n; ++i)
@@ -2358,6 +2490,8 @@ Int96Converter::Int96Converter()
 
 void Int96Converter::convertColumn(std::span<const char> data, size_t num_values, IColumn & col) const
 {
+    const bool saturate = overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Saturate;
+
     std::span<char> to_span = col.insertRawUninitialized(num_values);
     Int64 * to = reinterpret_cast<Int64 *>(to_span.data());
     for (size_t i = 0; i < num_values; ++i)
@@ -2382,21 +2516,25 @@ void Int96Converter::convertColumn(std::span<const char> data, size_t num_values
         /// This interpretation is consistent with the arrow reader code (DecodeInt96Timestamp in
         /// arrow/cpp/src/parquet/types.h) and with a test file written by spark
         /// (tests/queries/0_stateless/02998_native_parquet_reader.sh).
-        bool overflow = false;
-        Int64 x = 0;
-        overflow |= common::subOverflow(julian_day, static_cast<Int64>(2440588l), x); // unix day number
-        overflow |= common::mulOverflow(x, day_nanos, x); // unix nanoseconds
-        overflow |= common::addOverflow(x, nanos, x);
 
-        if (overflow)
-            throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "INT96 timestamp out of range: julian day {}, time of day {} ns", julian_day, nanos);
-
-        to[i] = x;
+        /// julian_day comes from Int32, so neither the subtraction nor the product can overflow Int128.
+        const Int128 total = Int128(julian_day - 2440588l) * day_nanos + nanos;
+        if (total < std::numeric_limits<Int64>::min() || total > std::numeric_limits<Int64>::max())
+        {
+            if (!saturate)
+                throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "INT96 timestamp out of range: julian day {}, time of day {} ns", julian_day, nanos);
+            to[i] = julian_day < 2440588l ? std::numeric_limits<Int64>::min() : std::numeric_limits<Int64>::max();
+        }
+        else
+            to[i] = static_cast<Int64>(total);
     }
 }
 
 void GeoConverter::convertColumn(std::span<const char> chars, const UInt64 * offsets, size_t separator_bytes, size_t num_values, IColumn & col) const
 {
+    /// E.g. the dictionary page of a column chunk with only NULLs. `offsets[num_values - 1]` is not valid then.
+    if (num_values == 0)
+        return;
     col.reserve(col.size() + num_values);
     chassert(chars.size() >= offsets[num_values - 1]);
     for (ssize_t i = 0; i < ssize_t(num_values); ++i)

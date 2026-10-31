@@ -1,4 +1,3 @@
-SET enable_analyzer = 1;
 
 DROP TABLE IF EXISTS t1;
 DROP TABLE IF EXISTS t2;

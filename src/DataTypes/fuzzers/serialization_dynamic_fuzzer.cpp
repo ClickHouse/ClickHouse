@@ -47,9 +47,7 @@ extern "C" int LLVMFuzzerInitialize(int *, char ***)
 
 /// Auxiliary header at the start of the fuzz input:
 ///   [0]    max_types_selector: chooses max_dynamic_types (1, 4, 16, 255)
-///   [1]    flags: bit 0 = native_format, bit 1 = use_specialized_prefixes,
-///          bit 2 = read_statistics, bit 3 = decode_types_in_binary_format,
-///          bit 4 = limit_binary_type_complexity
+///   [1]    flags: bit 3 = decode_types_in_binary_format, bit 4 = limit_binary_type_complexity
 ///   [2..9] rows: uint64_t LE, capped at 65536
 ///
 /// SerializationDynamic binary layout (simplified):
@@ -93,18 +91,9 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t * data, size_t size)
 
         const auto * aux = reinterpret_cast<const AuxiliaryRandomData *>(data);
         const size_t rows = static_cast<size_t>(aux->rows % 65536);
-        const bool use_native_format = (aux->flags & 1) != 0;
-        const bool use_specialized_prefixes = (aux->flags & 2) != 0;
-        /// Both MergeTree part readers enable statistics reading on the production
-        /// read path, and the V2/V3 statistics block in the prefix is only parsed
-        /// when it is set, so fuzz both states.
-        const bool read_statistics = (aux->flags & 4) != 0;
         const bool decode_types_in_binary_format = (aux->flags & 8) != 0;
-        /// Both limits are real: a `Native` input format built by `FormatFactory` carries
-        /// `input_format_binary_max_type_complexity` (default 1000), while a V3 part read passes 0
-        /// (unlimited) - see `SerializationDynamic::deserializeBinaryBulkStatePrefix`. With the
-        /// `FormatSettings` default of 0 the rejection branch in `decodeDataTypeImpl` is unreachable,
-        /// so pick between the two explicitly.
+        /// Both limits are reachable through the Native format: `input_format_binary_max_type_complexity` is 1000
+        /// by default and 0 means unlimited. The `FormatSettings` default is 0, so pick between them explicitly.
         const bool limit_binary_type_complexity = (aux->flags & 16) != 0;
         const size_t max_dynamic_types = selectMaxTypes(aux->max_types_selector);
 
@@ -125,10 +114,9 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t * data, size_t size)
         ISerialization::DeserializeBinaryBulkSettings settings;
         settings.getter = [&](ISerialization::SubstreamPath) -> ReadBuffer * { return &in; };
         settings.position_independent_encoding = false;
-        settings.native_format = use_native_format;
+        /// Fuzz input is untrusted: outside the Native format, inconsistent data is a LOGICAL_ERROR by design.
+        settings.native_format = true;
         settings.format_settings = &format_settings;
-        settings.use_specialized_prefixes_and_suffixes_substreams = use_specialized_prefixes;
-        settings.object_and_dynamic_read_statistics = read_statistics;
 
         ISerialization::DeserializeBinaryBulkStatePtr state;
         serialization->deserializeBinaryBulkStatePrefix(settings, state, nullptr);

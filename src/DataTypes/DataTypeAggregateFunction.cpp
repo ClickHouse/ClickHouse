@@ -3,12 +3,12 @@
 
 #include <Columns/ColumnAggregateFunction.h>
 #include <Columns/ColumnConst.h>
+#include <Columns/ColumnReplicated.h>
 #include <Columns/ColumnSparse.h>
 #include <Core/ProtocolDefines.h>
 
 #include <Common/SipHash.h>
 #include <Common/AlignedBuffer.h>
-#include <Common/FieldVisitorToString.h>
 
 #include <Formats/FormatSettings.h>
 #include <DataTypes/DataTypeAggregateFunction.h>
@@ -90,12 +90,10 @@ bool DataTypeAggregateFunction::isVersioned() const
     return function->isVersioned();
 }
 
-String DataTypeAggregateFunction::formatParameters(const IAggregateFunction & function, const Array & parameters)
+String DataTypeAggregateFunction::formatParameters(const Array & parameters)
 {
     if (parameters.empty())
         return {};
-
-    const bool with_types = function.shouldPrintParametersWithTypes();
 
     WriteBufferFromOwnString stream;
     stream << '(';
@@ -103,10 +101,7 @@ String DataTypeAggregateFunction::formatParameters(const IAggregateFunction & fu
     {
         if (i)
             stream << ", ";
-        if (with_types)
-            stream << applyVisitor(FieldVisitorToCastedLiteral(), parameters[i]);
-        else
-            stream << applyVisitor(FieldVisitorToString(), parameters[i]);
+        stream << applyVisitor(FieldVisitorToCastedLiteral(), parameters[i]);
     }
     stream << ')';
     return stream.str();
@@ -122,7 +117,7 @@ String DataTypeAggregateFunction::getNameImpl(bool with_version) const
     if (with_version && data_type_version)
         stream << data_type_version << ", ";
     stream << function->getName();
-    stream << formatParameters(*function, parameters);
+    stream << formatParameters(parameters);
 
     for (const auto & argument_type : argument_types)
         stream << ", " << argument_type->getName();
@@ -588,6 +583,10 @@ ColumnPtr relabelAggregateStateVersions(const ColumnPtr & column, const DataType
 {
     if (const auto * const_column = typeid_cast<const ColumnConst *>(column.get()))
         return ColumnConst::create(relabelAggregateStateVersions(const_column->getDataColumnPtr(), type), column->size());
+
+    if (const auto * replicated_column = typeid_cast<const ColumnReplicated *>(column.get()))
+        return ColumnReplicated::create(
+            relabelAggregateStateVersions(replicated_column->getNestedColumn(), type), replicated_column->getIndexesColumn());
 
     auto relabelled_column = type->createColumn();
     relabelled_column->insertRangeFrom(*recursiveRemoveSparse(column), 0, column->size());

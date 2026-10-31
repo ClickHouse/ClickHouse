@@ -1,0 +1,124 @@
+<!--
+    Vector similarity index (HNSW, usearch) on 1 M LAION-5B CLIP embeddings (768 dimensions, `BFloat16`), see
+    https://clickhouse.com/docs/engines/table-engines/mergetree-family/annindexes. Data: the first 1 M rows (file order) of
+    the 10 M-row file of `ci/jobs/vector_search_stress_tests.py`.
+    Searches (`vector_index_laion.sql`, the `{search}` substitution): k = 10 and 100, a larger candidate list, rescoring,
+    post-filtering (half of the rows pass, not on the primary key), pre-filtering on the primary key (1 % pass, brute force
+    over the selected granules) and a key range keeping half of the rows (today the index is not used). One search takes
+    5-10 ms, mostly per-query work, so each timed query runs 60 query vectors (rows of the table chosen by hash) in sequence.
+    Controls where the index does not help: exact search (index disabled; `vector_index_laion_exact.sql`, 10 query vectors in
+    sequence, as one brute-force scan of 0.18 s was noisy), `LIMIT` above `max_limit_for_vector_search_queries`, a metric the
+    index was not built for. The timed build: `CLEAR` + `MATERIALIZE` of the index of a 100 K-row copy (1 M rows would take
+    minutes per run), a shell query because a cut build would keep mutating into the next query; its budget stays well above
+    the build time, otherwise the next run cannot clear the index.
+    The setup runs every search per query vector and checks k rows and the average recall against brute force (at least
+    0.95, 0.9 filtered, 0.99 pre-filter: HNSW results depend on the build, so bounds, not constants), the controls against
+    brute-force distances, and runs the build once and searches the rebuilt index. `laion` gets no inserts and keeps merges
+    running: `SYSTEM STOP MERGES` would block the `MATERIALIZE INDEX` mutations.
+    Per server and invocation: 1.8 GiB read from public S3 (5 of 51 row groups); about 6 GiB written on local disk (the
+    1 M-row table twice, its index, the 100 K-row copy and its index builds); no job-local S3.
+-->
+<test run_all_queries="1" max_query_seconds="300">
+
+<tags><tag>long</tag></tags>
+
+<settings>
+    <max_execution_time>0</max_execution_time>
+</settings>
+
+<substitutions>
+    <substitution>
+        <name>n</name>
+        <values>
+            <value>1</value> <value>2</value> <value>3</value> <value>4</value> <value>5</value> <value>6</value>
+            <value>7</value> <value>8</value> <value>9</value> <value>10</value> <value>11</value> <value>12</value>
+            <value>13</value> <value>14</value> <value>15</value> <value>16</value> <value>17</value> <value>18</value>
+            <value>19</value> <value>20</value> <value>21</value> <value>22</value> <value>23</value> <value>24</value>
+            <value>25</value> <value>26</value> <value>27</value> <value>28</value> <value>29</value> <value>30</value>
+            <value>31</value> <value>32</value> <value>33</value> <value>34</value> <value>35</value> <value>36</value>
+            <value>37</value> <value>38</value> <value>39</value> <value>40</value> <value>41</value> <value>42</value>
+            <value>43</value> <value>44</value> <value>45</value> <value>46</value> <value>47</value> <value>48</value>
+            <value>49</value> <value>50</value> <value>51</value> <value>52</value> <value>53</value> <value>54</value>
+            <value>55</value> <value>56</value> <value>57</value> <value>58</value> <value>59</value> <value>60</value>
+        </values>
+    </substitution>
+    <substitution>
+        <name>exact</name>
+        <values>
+            <value>1</value> <value>2</value> <value>3</value> <value>4</value> <value>5</value> <value>6</value>
+            <value>7</value> <value>8</value> <value>9</value> <value>10</value>
+        </values>
+    </substitution>
+    <substitution>
+        <name>search</name>
+        <values>
+            <value>ORDER BY cosineDistance(vector, q) LIMIT 10 SETTINGS vector_search_with_rescoring = 0</value>
+            <value>ORDER BY cosineDistance(vector, q) LIMIT 100 SETTINGS vector_search_with_rescoring = 0</value>
+            <value>ORDER BY cosineDistance(vector, q) LIMIT 100 SETTINGS hnsw_candidate_list_size_for_search = 1024, vector_search_with_rescoring = 0</value>
+            <value>ORDER BY cosineDistance(vector, q) LIMIT 100 SETTINGS vector_search_with_rescoring = 1, vector_search_index_fetch_multiplier = 4</value>
+            <value>WHERE id % 2 = 0 ORDER BY cosineDistance(vector, q) LIMIT 10 SETTINGS vector_search_filter_strategy = 'postfilter', vector_search_index_fetch_multiplier = 4, vector_search_with_rescoring = 0</value>
+            <value>WHERE id &lt; 413533 ORDER BY cosineDistance(vector, q) LIMIT 10 SETTINGS vector_search_filter_strategy = 'prefilter', vector_search_with_rescoring = 0</value>
+            <value>WHERE id &lt; 1870119 ORDER BY cosineDistance(vector, q) LIMIT 10 SETTINGS vector_search_filter_strategy = 'postfilter', vector_search_index_fetch_multiplier = 4, vector_search_with_rescoring = 0</value>
+        </values>
+    </substitution>
+</substitutions>
+
+<create_query>CREATE TABLE laion (id UInt32, vector Array(BFloat16) CODEC(NONE)) ORDER BY id</create_query>
+<create_query>CREATE TABLE laion_queries (n UInt8, id UInt32, qv Array(BFloat16)) ORDER BY n</create_query>
+<create_query>CREATE TABLE laion_exact (v String, n UInt8, ids Array(UInt32)) ORDER BY (v, n)</create_query>
+<create_query>CREATE TABLE laion_ann (v String, n UInt8, ids Array(UInt32)) ORDER BY (v, n)</create_query>
+<create_query>CREATE TABLE laion_build (id UInt32, vector Array(BFloat16) CODEC(NONE)) ORDER BY id</create_query>
+
+<fill_query>INSERT INTO laion SELECT id, vector FROM s3('https://clickhouse-datasets.s3.amazonaws.com/laion-5b/laion5b_100m_part_1_of_10.parquet', NOSIGN, Parquet) LIMIT 1000000 SETTINGS input_format_parquet_preserve_order = 1, max_insert_threads = 16</fill_query>
+<fill_query>ALTER TABLE laion MODIFY SETTING lock_acquire_timeout_for_background_operations = 600</fill_query>
+<fill_query>OPTIMIZE TABLE laion FINAL SETTINGS optimize_throw_if_noop = 1, optimize_skip_merged_partitions = 1</fill_query>
+<fill_query>SELECT throwIf(count() != 1000000 OR sum(id) != 2349976459807 OR countIf(length(vector) != 768) != 0) FROM laion</fill_query>
+<fill_query>SELECT throwIf(count() != 1) FROM system.parts WHERE database = 'default' AND table = 'laion' AND active</fill_query>
+<fill_query>ALTER TABLE laion ADD INDEX vi vector TYPE vector_similarity('hnsw', 'cosineDistance', 768, 'bf16', 16, 128)</fill_query>
+<fill_query>ALTER TABLE laion MATERIALIZE INDEX vi SETTINGS mutations_sync = 2</fill_query>
+
+<fill_query>INSERT INTO laion_build SELECT id, vector FROM laion ORDER BY id LIMIT 100000</fill_query>
+<fill_query>OPTIMIZE TABLE laion_build FINAL SETTINGS optimize_throw_if_noop = 1, optimize_skip_merged_partitions = 1</fill_query>
+<fill_query>SELECT throwIf(count() != 100000) FROM laion_build</fill_query>
+<fill_query>ALTER TABLE laion_build ADD INDEX vi vector TYPE vector_similarity('hnsw', 'cosineDistance', 768, 'bf16', 16, 128)</fill_query>
+<fill_query>ALTER TABLE laion_build CLEAR INDEX vi, MATERIALIZE INDEX vi SETTINGS mutations_sync = 2</fill_query>
+
+<fill_query>INSERT INTO laion_queries SELECT row_number() OVER (ORDER BY cityHash64(id)) AS n, id, vector FROM laion ORDER BY cityHash64(id) LIMIT 60</fill_query>
+<fill_query>INSERT INTO laion_exact SELECT 'all', q.n, arrayMap(x -> x.2, groupArraySorted(100)((cosineDistance(t.vector, q.qv), t.id))) FROM laion AS t CROSS JOIN laion_queries AS q GROUP BY q.n SETTINGS use_skip_indexes = 0</fill_query>
+<fill_query>INSERT INTO laion_exact SELECT 'pre', q.n, arrayMap(x -> x.2, groupArraySorted(10)((cosineDistance(t.vector, q.qv), t.id))) FROM laion AS t CROSS JOIN laion_queries AS q WHERE t.id &lt; 413533 GROUP BY q.n SETTINGS use_skip_indexes = 0</fill_query>
+<fill_query>INSERT INTO laion_exact SELECT 'build', q.n, arrayMap(x -> x.2, groupArraySorted(10)((cosineDistance(t.vector, q.qv), t.id))) FROM laion_build AS t CROSS JOIN laion_queries AS q GROUP BY q.n SETTINGS use_skip_indexes = 0</fill_query>
+<fill_query>INSERT INTO laion_ann SELECT 'k10', {n}, groupArray(id) FROM (WITH (SELECT qv FROM laion_queries WHERE n = {n}) AS q SELECT id FROM laion ORDER BY cosineDistance(vector, q) LIMIT 10) SETTINGS vector_search_with_rescoring = 0, log_comment = 'vector_index_laion.index'</fill_query>
+<fill_query>INSERT INTO laion_ann SELECT 'k100', {n}, groupArray(id) FROM (WITH (SELECT qv FROM laion_queries WHERE n = {n}) AS q SELECT id FROM laion ORDER BY cosineDistance(vector, q) LIMIT 100) SETTINGS vector_search_with_rescoring = 0, log_comment = 'vector_index_laion.index'</fill_query>
+<fill_query>INSERT INTO laion_ann SELECT 'ef1024', {n}, groupArray(id) FROM (WITH (SELECT qv FROM laion_queries WHERE n = {n}) AS q SELECT id FROM laion ORDER BY cosineDistance(vector, q) LIMIT 100) SETTINGS hnsw_candidate_list_size_for_search = 1024, vector_search_with_rescoring = 0, log_comment = 'vector_index_laion.index'</fill_query>
+<fill_query>INSERT INTO laion_ann SELECT 'rescoring', {n}, groupArray(id) FROM (WITH (SELECT qv FROM laion_queries WHERE n = {n}) AS q SELECT id FROM laion ORDER BY cosineDistance(vector, q) LIMIT 100) SETTINGS vector_search_with_rescoring = 1, vector_search_index_fetch_multiplier = 4, log_comment = 'vector_index_laion.index'</fill_query>
+<fill_query>INSERT INTO laion_ann SELECT 'post', {n}, groupArray(id) FROM (WITH (SELECT qv FROM laion_queries WHERE n = {n}) AS q SELECT id FROM laion WHERE id % 2 = 0 ORDER BY cosineDistance(vector, q) LIMIT 10) SETTINGS vector_search_filter_strategy = 'postfilter', vector_search_index_fetch_multiplier = 4, vector_search_with_rescoring = 0, log_comment = 'vector_index_laion.index'</fill_query>
+<fill_query>INSERT INTO laion_ann SELECT 'pre', {n}, groupArray(id) FROM (WITH (SELECT qv FROM laion_queries WHERE n = {n}) AS q SELECT id FROM laion WHERE id &lt; 413533 ORDER BY cosineDistance(vector, q) LIMIT 10) SETTINGS vector_search_filter_strategy = 'prefilter', vector_search_with_rescoring = 0</fill_query>
+<fill_query>INSERT INTO laion_ann SELECT 'pk50', {n}, groupArray(id) FROM (WITH (SELECT qv FROM laion_queries WHERE n = {n}) AS q SELECT id FROM laion WHERE id &lt; 1870119 ORDER BY cosineDistance(vector, q) LIMIT 10) SETTINGS vector_search_filter_strategy = 'postfilter', vector_search_index_fetch_multiplier = 4, vector_search_with_rescoring = 0</fill_query>
+<fill_query>INSERT INTO laion_ann SELECT 'build', {n}, groupArray(id) FROM (WITH (SELECT qv FROM laion_queries WHERE n = {n}) AS q SELECT id FROM laion_build ORDER BY cosineDistance(vector, q) LIMIT 10) SETTINGS vector_search_with_rescoring = 0, log_comment = 'vector_index_laion.index'</fill_query>
+<fill_query>SYSTEM FLUSH LOGS</fill_query>
+<fill_query>SELECT throwIf(count() != 360 OR min(ProfileEvents['USearchSearchCount']) = 0) FROM system.query_log WHERE type = 'QueryFinish' AND query_kind = 'Insert' AND log_comment = 'vector_index_laion.index' AND event_time >= (SELECT metadata_modification_time FROM system.tables WHERE database = 'default' AND name = 'laion_ann')</fill_query>
+<fill_query>SELECT throwIf(groupArray(v) != ['build', 'ef1024', 'k10', 'k100', 'pk50', 'post', 'pre', 'rescoring'] OR min(c) != 60 OR max(bad) != 0 OR min(recall - multiIf(v = 'pre', 0.99, v IN ('post', 'pk50'), 0.9, 0.95)) &lt; 0) FROM (
+    SELECT v, count() AS c, countIf(length(ids) != if(v IN ('k100', 'ef1024', 'rescoring'), 100, 10) OR length(truth) != length(ids)) AS bad, avg(length(arrayIntersect(ids, truth)) / length(ids)) AS recall FROM (
+        SELECT a.v AS v, a.ids AS ids, multiIf(
+            v IN ('pre', 'build'), e.ids,
+            v = 'post', arraySlice(arrayFilter(x -> x % 2 = 0, e.ids), 1, 10),
+            v = 'pk50', arraySlice(arrayFilter(x -> x &lt; 1870119, e.ids), 1, 10),
+            arraySlice(e.ids, 1, length(a.ids))) AS truth
+        FROM laion_ann AS a INNER JOIN laion_exact AS e ON e.v = if(a.v IN ('pre', 'build'), a.v, 'all') AND e.n = a.n)
+    GROUP BY v ORDER BY v)</fill_query>
+
+<fill_query>SELECT throwIf(arraySort(groupArray(d)) != (SELECT groupArraySorted(10)(cosineDistance(vector, (SELECT qv FROM laion_queries WHERE n = {exact}))) FROM laion)) FROM (SELECT id, cosineDistance(vector, (SELECT qv FROM laion_queries WHERE n = {exact})) AS d FROM laion ORDER BY d LIMIT 10) SETTINGS use_skip_indexes = 0, vector_search_with_rescoring = 0</fill_query>
+<fill_query>SELECT throwIf(arraySort(groupArray(d)) != (SELECT groupArraySorted(2000)(cosineDistance(vector, (SELECT qv FROM laion_queries WHERE n = 7))) FROM laion)) FROM (SELECT id, cosineDistance(vector, (SELECT qv FROM laion_queries WHERE n = 7)) AS d FROM laion ORDER BY d LIMIT 2000) SETTINGS vector_search_with_rescoring = 0</fill_query>
+<fill_query>SELECT throwIf(arraySort(groupArray(d)) != (SELECT groupArraySorted(10)(L2Distance(vector, (SELECT qv FROM laion_queries WHERE n = 8))) FROM laion)) FROM (SELECT id, L2Distance(vector, (SELECT qv FROM laion_queries WHERE n = 8)) AS d FROM laion ORDER BY d LIMIT 10) SETTINGS vector_search_with_rescoring = 0</fill_query>
+
+<query file="vector_index_laion.sql"/>
+<query file="vector_index_laion_exact.sql"/>
+<query>SELECT id FROM laion ORDER BY cosineDistance(vector, (SELECT qv FROM laion_queries WHERE n = 7)) LIMIT 2000 FORMAT Null SETTINGS vector_search_with_rescoring = 0</query>
+<query>SELECT id FROM laion ORDER BY L2Distance(vector, (SELECT qv FROM laion_queries WHERE n = 8)) LIMIT 10 FORMAT Null SETTINGS vector_search_with_rescoring = 0</query>
+<query type="shell"><![CDATA[
+    ${CLICKHOUSE_CLIENT} --mutations_sync 2 --query "ALTER TABLE laion_build CLEAR INDEX vi, MATERIALIZE INDEX vi"
+]]></query>
+
+<drop_query>DROP TABLE IF EXISTS laion, laion_queries, laion_exact, laion_ann, laion_build SYNC</drop_query>
+
+</test>

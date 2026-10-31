@@ -16,13 +16,25 @@ if (NOT (ARCH_AMD64 OR ARCH_AARCH64))
 endif()
 
 if (ENABLE_LLVM_LIBC_MATH)
-    link_directories("${CMAKE_BINARY_DIR}/contrib/libllvmlibc-cmake")
+    # Named by path: a `link_directories` entry would also end up in the RUNPATH of every binary.
+    set (LLVM_LIBC_LIBRARY "${CMAKE_BINARY_DIR}/contrib/libllvmlibc-cmake/liblibllvmlibc.a")
     target_link_libraries(global-libs INTERFACE libllvmlibc)
-    set (DEFAULT_LIBS "${DEFAULT_LIBS} -llibllvmlibc")
+    set (DEFAULT_LIBS "${DEFAULT_LIBS} ${LLVM_LIBC_LIBRARY}")
+
+    if (ARCH_AARCH64 AND NOT SANITIZE)
+        # AdvSIMD/MTE string routines from ARM's optimized-routines
+        # (see contrib/optimized-routines-cmake). Not linked under sanitizers at all:
+        # the definitions are strong, so the interceptors would otherwise only stay
+        # in effect for as long as every routine here is intercepted and the
+        # sanitizer runtimes stay ahead of `aor` on the link line.
+        set (AOR_LIBRARY "${CMAKE_BINARY_DIR}/contrib/optimized-routines-cmake/libaor.a")
+        target_link_libraries(global-libs INTERFACE aor)
+        set (DEFAULT_LIBS "${DEFAULT_LIBS} ${AOR_LIBRARY}")
+    endif()
 
     if (NOT SANITIZE)
         # Force every llvm-libc member into the link ahead of all objects and archives
-        # (linker flags precede them on the link line; -L placement does not matter to ld).
+        # (linker flags precede them on the link line).
         # Symbol resolution in archives is first-definition-wins in command-line order, and
         # the Rust static libraries precede libllvmlibc there, so without this the libm
         # functions Rust's compiler_builtins exports (cbrt, fmod, fma - baseline-CPU builds)
@@ -32,7 +44,10 @@ if (ENABLE_LLVM_LIBC_MATH)
         #
         # Skipped under sanitizers, where the interceptors must wrap the libc mem functions
         # instead (same reason the -u forcing was skipped before).
-        set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,--whole-archive -llibllvmlibc -Wl,--no-whole-archive")
+        set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,--whole-archive ${LLVM_LIBC_LIBRARY} -Wl,--no-whole-archive")
+        if (ARCH_AARCH64)
+            set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,--whole-archive ${AOR_LIBRARY} -Wl,--no-whole-archive")
+        endif()
         # Redundant with --whole-archive above, but kept as a backstop for the mem functions
         # in case the whole-archive link is ever weakened or repositioned.
         set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,-u,memcpy -Wl,-u,memmove -Wl,-u,memset -Wl,-u,memcmp")
@@ -45,14 +60,19 @@ if (OS_ANDROID)
 elseif (USE_MUSL)
     # musl itself is linked in cmake/musl.cmake. -nostartfiles: don't use glibc's crt*.o
     # from the sysroot; musl's own startup files (copied to stable paths in
-    # contrib/musl-cmake) are wired here in the canonical order: crt1.o and crti.o go
+    # contrib/musl-cmake) are wired here in the canonical order: rcrt1.o and crti.o go
     # through CMAKE_EXE_LINKER_FLAGS, which the link line places before all object
     # files, and crtn.o goes at the end of DEFAULT_LIBS, after all libraries — crti and
     # crtn provide the prologue/epilogue of the `.init`/`.fini` sections and must wrap
     # every other contribution to them.
     set (MUSL_CRT_DIR "${CMAKE_BINARY_DIR}/contrib/musl-cmake")
-    set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} ${MUSL_CRT_DIR}/crt1.o ${MUSL_CRT_DIR}/crti.o")
-    set (DEFAULT_LIBS "${DEFAULT_LIBS} -static -nostartfiles ${MUSL_CRT_DIR}/crtn.o")
+    # -static-pie: a static executable that relocates itself at startup (rcrt1.o), so it keeps ASLR.
+    set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} ${MUSL_CRT_DIR}/rcrt1.o ${MUSL_CRT_DIR}/crti.o")
+    set (DEFAULT_LIBS "${DEFAULT_LIBS} -static-pie -nostartfiles ${MUSL_CRT_DIR}/crtn.o")
+    # Every pointer in the binary's data still has to be patched at startup, but packed relative relocations
+    # (DT_RELR, applied by musl's ldso/dlstart.c) describe them in ~250 KB instead of ~34 MB of `.rela.dyn`:
+    # the binary is that much smaller, and a start with a cold page cache reads that much less.
+    set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,-z,pack-relative-relocs")
 else ()
     set (DEFAULT_LIBS "${DEFAULT_LIBS} -lc -lm -lrt -lpthread -ldl")
 endif ()
@@ -72,8 +92,21 @@ set(CMAKE_C_STANDARD_LIBRARIES ${DEFAULT_LIBS})
 
 add_library(Threads::Threads INTERFACE IMPORTED)
 if (USE_MUSL)
+    # Sanitizer builds link the copy of musl with the intercepted functions
+    # renamed to __real_* (see contrib/compiler-rt-cmake). Standalone UBSan is
+    # the one sanitizer without libc interceptors (no REAL() bindings), so it
+    # links the plain musl; contrib/compiler-rt-cmake does not produce
+    # musl_intercepted for it. Any future sanitizer mode intentionally falls
+    # into the musl_intercepted branch: if compiler-rt does not build the
+    # archive for it, the configure fails loudly instead of silently linking
+    # a libc whose functions the runtime expects to intercept.
+    if (SANITIZE AND NOT SANITIZE STREQUAL "undefined")
+        set (MUSL_LIBC_TARGET musl_intercepted)
+    else ()
+        set (MUSL_LIBC_TARGET musl)
+    endif ()
     # musl provides pthread in libc.
-    set_target_properties(Threads::Threads PROPERTIES INTERFACE_LINK_LIBRARIES musl)
+    set_target_properties(Threads::Threads PROPERTIES INTERFACE_LINK_LIBRARIES ${MUSL_LIBC_TARGET})
 else ()
     set_target_properties(Threads::Threads PROPERTIES INTERFACE_LINK_LIBRARIES pthread)
 endif ()
