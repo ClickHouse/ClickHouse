@@ -17,7 +17,6 @@
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
-#include <Interpreters/QueryMetadataCache.h>
 
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/ReadFromObjectStorageStep.h>
@@ -704,23 +703,21 @@ void StorageObjectStorage::pinQueryMetadata(const ContextPtr & query_context, St
 {
     if (!query_context || !query_context->hasQueryContext())
         return;
-    auto query_metadata_cache = query_context->getQueryMetadataCache();
-    if (!query_metadata_cache)
-        return;
-    auto [cache, lock] = query_metadata_cache->getStorageMetadataCache();
-    (*cache)[this] = std::move(metadata);
+    ContextPtr owner = query_context->getQueryContext();
+
+    std::lock_guard lock(query_pinned_metadata_mutex);
+    std::erase_if(query_pinned_metadata, [](const auto & entry) { return entry.second.query_context.expired(); });
+    query_pinned_metadata[owner.get()] = QueryPinnedMetadata{owner, std::move(metadata)};
 }
 
 StorageMetadataHandle StorageObjectStorage::getInMemoryMetadataPtr(ContextPtr query_context, bool bypass_metadata_cache) const
 {
     if (!bypass_metadata_cache && configuration->isDataLakeConfiguration() && query_context && query_context->hasQueryContext())
     {
-        if (auto query_metadata_cache = query_context->getQueryMetadataCache())
-        {
-            auto [cache, lock] = query_metadata_cache->getStorageMetadataCache();
-            if (auto it = cache->find(this); it != cache->end())
-                return it->second;
-        }
+        const Context * owner = query_context->getQueryContext().get();
+        std::lock_guard lock(query_pinned_metadata_mutex);
+        if (auto it = query_pinned_metadata.find(owner); it != query_pinned_metadata.end() && it->second.query_context.lock().get() == owner)
+            return it->second.metadata;
     }
     return IStorage::getInMemoryMetadataPtr(query_context, bypass_metadata_cache);
 }

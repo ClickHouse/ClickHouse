@@ -18,6 +18,7 @@
 
 #include <memory>
 #include <mutex>
+#include <unordered_map>
 
 #include <Common/MultiVersion.h>
 #include <Storages/IPartitionStrategy.h>
@@ -311,6 +312,17 @@ protected:
     std::mutex settings_changes_mutex;
     /// Stays false on a failed resolution, so the next query retries it.
     bool hive_partitioning_sample_path_resolved TSA_GUARDED_BY(hive_partitioning_resolution_mutex) = false;
+
+    /// Metadata pinned by `pinQueryMetadata` for each running query, keyed by its query context.
+    /// It does not depend on `QueryMetadataCache`, which exists only with `enable_shared_storage_snapshot_in_query`.
+    /// The weak pointer tells a live query context from a destroyed one whose address was reused.
+    struct QueryPinnedMetadata
+    {
+        ContextWeakPtr query_context;
+        StorageMetadataPtr metadata;
+    };
+    mutable std::mutex query_pinned_metadata_mutex;
+    mutable std::unordered_map<const Context *, QueryPinnedMetadata> query_pinned_metadata TSA_GUARDED_BY(query_pinned_metadata_mutex);
 
     LoggerPtr log;
 

@@ -440,7 +440,11 @@ def test_lance_s3_query_pins_dataset_version(started_cluster, failpoint, reuse_d
             query_executor.shutdown(wait=True)
 
 
-def test_lance_s3_table_concurrent_refresh_keeps_query_snapshot(started_cluster):
+# The query keeps its snapshot regardless of the optional query-scoped `QueryMetadataCache`.
+@pytest.mark.parametrize("shared_storage_snapshot", [0, 1])
+def test_lance_s3_table_concurrent_refresh_keeps_query_snapshot(
+    started_cluster, shared_storage_snapshot
+):
     """A query refreshing a named table keeps its own snapshot when another query publishes a newer one."""
     skip_if_lance_s3_unavailable()
 
@@ -467,9 +471,10 @@ def test_lance_s3_table_concurrent_refresh_keeps_query_snapshot(started_cluster)
     )
 
     failpoint = "object_storage_after_update_external_metadata_pause"
-    query = """
+    query = f"""
         SELECT count(), sum(id), min(_data_lake_snapshot_version), max(_data_lake_snapshot_version)
         FROM lance_s3_concurrent_refresh
+        SETTINGS enable_shared_storage_snapshot_in_query = {shared_storage_snapshot}
         """
 
     node.query(f"SYSTEM ENABLE FAILPOINT {failpoint}")
@@ -479,7 +484,11 @@ def test_lance_s3_table_concurrent_refresh_keeps_query_snapshot(started_cluster)
             lambda: node.query(f"SYSTEM WAIT FAILPOINT {failpoint} PAUSE", timeout=30)
         )
         paused_future = query_executor.submit(
-            lambda: node.query(query, query_id="lance_concurrent_refresh_paused", timeout=60)
+            lambda: node.query(
+                query,
+                query_id=f"lance_concurrent_refresh_paused_{shared_storage_snapshot}",
+                timeout=60,
+            )
         )
         wait_future.result(timeout=30)
 
