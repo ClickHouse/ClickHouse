@@ -12,6 +12,7 @@ namespace DB
 
 class ActionsDAG;
 struct Settings;
+struct FormatSettings;
 class KeyCondition;
 struct PrewhereInfo;
 using PrewhereInfoPtr = std::shared_ptr<PrewhereInfo>;
@@ -19,6 +20,12 @@ struct FilterDAGInfo;
 using FilterDAGInfoPtr = std::shared_ptr<FilterDAGInfo>;
 class ITopKThresholdTracker;
 using TopKThresholdTrackerPtr = std::shared_ptr<ITopKThresholdTracker>;
+
+/// The settings of the file format readers that change which row groups a read prunes or which
+/// physical column it binds a column to. They are folded into the query condition cache keys of files.
+UInt64 fileFormatPruningSettingsSalt(const Settings & settings);
+/// The same, from the format settings of a reader, e.g. the ones a table fixed at `CREATE`.
+UInt64 fileFormatPruningSettingsSalt(const FormatSettings & format_settings);
 
 /// TopN dynamic filtering (`ORDER BY x LIMIT n`, see `tryOptimizeTopK`): the format may drop rows
 /// that cannot enter the query's top-K, and skip whole row groups / pages whose statistics prove
@@ -41,6 +48,8 @@ struct FormatTopKFilterInfo
     /// tight enough to drop them. Set by a reading step that writes such verdicts to the query
     /// condition cache.
     bool track_row_group_best_values = false;
+    /// If false, the threshold only orders and skips whole row groups by their statistics: no row is compared with it.
+    bool filter_rows = true;
 };
 
 /// Some formats needs to custom mapping between columns in file and clickhouse columns.
@@ -148,9 +157,10 @@ struct FormatFilterInfo
 
     ColumnMapperPtr column_mapper;
 
-    /// Only set when `column_mapper` above was swapped for a per-file mapper (data lake schema
-    /// evolution, e.g. Iceberg): the CURRENT/query-side mapper, i.e. the one `column_mapper` held
-    /// before the swap. Filters built from the query (like `filter_actions_dag`, or a `SpatialFilter`
+    /// The CURRENT/query-side mapper of a data lake (e.g. Iceberg). It matters when `column_mapper`
+    /// above was swapped for a per-file mapper (schema evolution), and it is set even when the
+    /// current-schema mapper is not given to the reader as `column_mapper` (a table whose write
+    /// format differs from the format of the file). Filters built from the query (like `filter_actions_dag`, or a `SpatialFilter`
     /// extracted from it) reference columns by their current/query-side name, not the name they had
     /// in the schema this particular file was written under, so resolving a filter's column name back
     /// to a `field_id` requires this mapper, not the per-file one.
@@ -162,8 +172,11 @@ struct FormatFilterInfo
     /// Lazy materialization: if set, read only the rows with these row numbers and skip everything
     /// else. Sorted, unique, absolute (pre-filtering) row indexes within the file. The format must
     /// return exactly these rows; with `FormatSettings::parquet::preserve_order` they are returned
-    /// in this exact order. Only supported by the Parquet format.
+    /// in this exact order. Supported by Parquet and Vortex.
     std::shared_ptr<const PaddedPODArray<UInt64>> rows_to_read;
+
+    // True if someone will use ChunkInfoRowNumbers downstream
+    bool need_row_numbers = false;
 
     /// TopN dynamic filtering; see the struct comment. Assigned by the reading step when the plan
     /// optimization applies (`SourceStepWithFilterBase::setTopKFilter`); formats that don't support

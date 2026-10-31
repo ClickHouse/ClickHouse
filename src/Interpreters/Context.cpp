@@ -342,7 +342,6 @@ namespace Setting
     extern const SettingsBool enable_blob_storage_log;
     extern const SettingsBool enable_blob_storage_log_for_read_operations;
     extern const SettingsUInt64 filesystem_cache_boundary_alignment;
-    extern const SettingsUInt64 filesystem_cache_max_download_size;
     extern const SettingsUInt64 filesystem_cache_reserve_space_wait_lock_timeout_milliseconds;
     extern const SettingsUInt64 filesystem_cache_wait_for_concurrent_download_timeout_milliseconds;
     extern const SettingsUInt64 filesystem_cache_segments_batch_size;
@@ -395,7 +394,6 @@ namespace Setting
     extern const SettingsUInt64 remote_fs_read_backoff_max_tries;
     extern const SettingsUInt64 remote_read_min_bytes_for_seek;
     extern const SettingsBool throw_on_error_from_cache_on_write_operations;
-    extern const SettingsBool filesystem_cache_skip_download_if_exceeds_per_query_cache_write_limit;
     extern const SettingsBool s3_allow_parallel_part_upload;
     extern const SettingsBool s3_allow_server_credentials_in_user_queries;
     extern const SettingsBool use_reader_executor;
@@ -4727,16 +4725,37 @@ void Context::tryCreateEmbeddedDictionaries() const
         static_cast<void>(getEmbeddedDictionariesImpl(true));
 }
 
+void Context::registerDictionariesBeforeLoadingMetadata(const Poco::Util::AbstractConfiguration & config)
+{
+    std::lock_guard lock(shared->external_dictionaries_mutex);
+
+    /// The tables are attached before the dictionaries are allowed to load, but they can refer to dictionaries
+    /// declared in configuration files: in a projection, in a column default, or in their loading dependencies.
+    /// So the definitions are registered now, while no dictionary starts loading until `loadOrReloadDictionaries`:
+    /// a dictionary may read from a table which is not attached yet, or from this server, which does not listen yet.
+    auto & external_dictionaries_loader = getExternalDictionariesLoaderWithLock(lock);
+    external_dictionaries_loader.enableAutomaticLoading(false);
+    addDictionariesConfigRepository(config, lock);
+}
+
 void Context::loadOrReloadDictionaries(const Poco::Util::AbstractConfiguration & config)
 {
     bool dictionaries_lazy_load = shared->server_settings[ServerSetting::dictionaries_lazy_load];
-    auto patterns_values = getMultipleValuesFromConfig(config, "", "dictionaries_config");
-    std::unordered_set<std::string> patterns(patterns_values.begin(), patterns_values.end());
 
     std::lock_guard lock(shared->external_dictionaries_mutex);
 
     auto & external_dictionaries_loader = getExternalDictionariesLoaderWithLock(lock);
     external_dictionaries_loader.enableAlwaysLoadEverything(!dictionaries_lazy_load);
+    addDictionariesConfigRepository(config, lock);
+    external_dictionaries_loader.enableAutomaticLoading(true);
+}
+
+void Context::addDictionariesConfigRepository(const Poco::Util::AbstractConfiguration & config, const std::lock_guard<std::mutex> & lock) TSA_REQUIRES(shared->external_dictionaries_mutex)
+{
+    auto patterns_values = getMultipleValuesFromConfig(config, "", "dictionaries_config");
+    std::unordered_set<std::string> patterns(patterns_values.begin(), patterns_values.end());
+
+    auto & external_dictionaries_loader = getExternalDictionariesLoaderWithLock(lock);
 
     if (shared->external_dictionaries_config_repository)
     {
@@ -9142,12 +9161,12 @@ void Context::setInputInitializer(InputInitializer && initializer)
 }
 
 
-void Context::initializeInput(const StoragePtr & input_storage)
+void Context::initializeInput(const ColumnsDescription & columns, const Block & header)
 {
     if (!input_initializer_callback)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Input initializer is not set");
 
-    input_initializer_callback(shared_from_this(), input_storage);
+    input_initializer_callback(shared_from_this(), columns, header);
     /// Reset callback
     input_initializer_callback = {};
 }
@@ -9972,10 +9991,6 @@ ReadSettings Context::getReadSettings() const
 
     if (settings_ref[Setting::filesystem_cache_boundary_alignment])
         res.filesystem_cache_settings.boundary_alignment = settings_ref[Setting::filesystem_cache_boundary_alignment];
-
-    res.filesystem_cache_settings.max_download_size_per_query = settings_ref[Setting::filesystem_cache_max_download_size];
-    res.filesystem_cache_settings.skip_download_if_exceeds_per_query_cache_write_limit
-        = settings_ref[Setting::filesystem_cache_skip_download_if_exceeds_per_query_cache_write_limit];
 
     res.use_page_cache_for_disks_without_file_cache = settings_ref[Setting::use_page_cache_for_disks_without_file_cache];
     res.use_page_cache_with_distributed_cache = settings_ref[Setting::use_page_cache_with_distributed_cache];
