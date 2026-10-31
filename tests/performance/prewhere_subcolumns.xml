@@ -8,7 +8,7 @@
     <!-- No merges and a pinned block size give every server the same 8 parts: the column statistics prune `n.null` to the part holding row 0. -->
     <fill_query>system stop merges test</fill_query>
     <fill_query>insert into test select number, number = 0 ? NULL : number, repeat('a', 1000), tuple(number, randomString(1000)), toJSONString(map('a', number::Int32, 'b', repeat('a', 1000))) from numbers(1000000) settings max_insert_threads = 1, max_block_size = 65536, min_insert_block_size_rows = 131072, min_insert_block_size_bytes = 0</fill_query>
-    <fill_query>select throwIf(count() != 8 or max(rows) != 131072, 'prewhere_subcolumns: expected 8 active parts of at most 131072 rows') from system.parts where database = currentDatabase() and table = 'test' and active</fill_query>
+    <fill_query>select throwIf(groupArray(rows) != [131072, 131072, 131072, 131072, 131072, 131072, 131072, 82496], 'prewhere_subcolumns: expected 7 active parts of 131072 rows followed by one of 82496 rows') from (select rows from system.parts where database = currentDatabase() and table = 'test' and active order by min_block_number)</fill_query>
 
     <query>select * from test where t.a = 42 format Null</query>
     <query>select * from test where n.null format Null</query>
