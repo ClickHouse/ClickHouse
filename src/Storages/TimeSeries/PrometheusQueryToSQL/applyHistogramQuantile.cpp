@@ -15,7 +15,6 @@
 
 namespace DB::ErrorCodes
 {
-    extern const int NOT_IMPLEMENTED;
     extern const int CANNOT_EXECUTE_PROMQL_QUERY;
 }
 
@@ -60,6 +59,52 @@ namespace
                             getPromQLText(vector_arg, context), vector_arg.type);
         }
     }
+
+    /// Converts a phi which is not constant to a scalar, or to an array with one value per time step.
+    ASTPtr getPhi(SQLQueryPiece && phi_arg, ConverterContext & context)
+    {
+        switch (phi_arg.store_method)
+        {
+            case StoreMethod::SINGLE_SCALAR:
+            {
+                context.subqueries.emplace_back(SQLSubquery{context.subqueries.size(), std::move(phi_arg.select_query), SQLSubqueryType::SCALAR});
+                return makeASTFunction("assumeNotNull", make_intrusive<ASTIdentifier>(context.subqueries.back().name));
+            }
+            case StoreMethod::SCALAR_GRID:
+            {
+                context.subqueries.emplace_back(SQLSubquery{context.subqueries.size(), std::move(phi_arg.select_query), SQLSubqueryType::SCALAR});
+                return make_intrusive<ASTIdentifier>(context.subqueries.back().name);
+            }
+            default:
+            {
+                throwUnexpectedStoreMethod(phi_arg, context);
+            }
+        }
+    }
+
+    /// Clamps phi to [0, 1] so that the quantile function does not throw.
+    ASTPtr clampPhi(const ASTPtr & phi)
+    {
+        return makeASTFunction("least",
+            makeASTFunction("greatest", phi->clone(), make_intrusive<ASTLiteral>(0.)),
+            make_intrusive<ASTLiteral>(1.));
+    }
+
+    /// Returns `if(isNotNull(x), multiIf(isNaN(phi), nan, phi < 0, -inf, phi > 1, inf, x), NULL)`.
+    ASTPtr substituteOutOfRangePhi(const ASTPtr & phi)
+    {
+        return makeASTFunction("if",
+            makeASTFunction("isNotNull", make_intrusive<ASTIdentifier>("x")),
+            makeASTFunction("multiIf",
+                makeASTFunction("isNaN", phi->clone()),
+                make_intrusive<ASTLiteral>(std::numeric_limits<Float64>::quiet_NaN()),
+                makeASTFunction("less", phi->clone(), make_intrusive<ASTLiteral>(0.)),
+                make_intrusive<ASTLiteral>(-std::numeric_limits<Float64>::infinity()),
+                makeASTFunction("greater", phi->clone(), make_intrusive<ASTLiteral>(1.)),
+                make_intrusive<ASTLiteral>(std::numeric_limits<Float64>::infinity()),
+                make_intrusive<ASTIdentifier>("x")),
+            make_intrusive<ASTLiteral>(Field{} /* NULL */));
+    }
 }
 
 
@@ -78,18 +123,18 @@ SQLQueryPiece applyHistogramQuantile(
     auto & phi_arg = arguments[0];
     auto & expression = arguments[1];
 
-    if (phi_arg.store_method != StoreMethod::CONST_SCALAR)
-    {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
-            "Function 'histogram_quantile' currently requires a constant phi parameter");
-    }
-
     expression = toVectorGrid(std::move(expression), context);
 
-    if (expression.store_method == StoreMethod::EMPTY)
+    if (phi_arg.store_method == StoreMethod::EMPTY || expression.store_method == StoreMethod::EMPTY)
         return SQLQueryPiece{function_node, function_node->result_type, StoreMethod::EMPTY};
 
+    bool const_phi = (phi_arg.store_method == StoreMethod::CONST_SCALAR);
+    bool per_step_phi = (phi_arg.store_method == StoreMethod::SCALAR_GRID);
     Float64 phi = phi_arg.scalar_value;
+
+    ASTPtr phi_expr;
+    if (!const_phi)
+        phi_expr = getPhi(std::move(phi_arg), context);
 
     /// Step 1: Extract le tags, group by non-le labels (keeping __name__ so that
     /// distinct histograms remain separate), and compute quantile.
@@ -127,7 +172,7 @@ SQLQueryPiece applyHistogramQuantile(
         /// calling quantilePrometheusHistogramForEach we emit a constant-valued array
         /// aligned to the time grid (preserving NULL at positions where no input existed).
         ASTPtr quantile_expr;
-        if (std::isnan(phi) || phi < 0.0 || phi > 1.0)
+        if (const_phi && (std::isnan(phi) || phi < 0.0 || phi > 1.0))
         {
             Float64 out_of_range_value = std::numeric_limits<Float64>::quiet_NaN();
             if (std::isnan(phi))
@@ -174,11 +219,36 @@ SQLQueryPiece applyHistogramQuantile(
                             make_intrusive<ASTLiteral>("le"))),
                     make_intrusive<ASTLiteral>(std::numeric_limits<Float64>::quiet_NaN())));
 
-            quantile_expr = addParametersToAggregateFunction(
-                makeASTFunction("quantilePrometheusHistogramForEach",
-                    std::move(le_array_expr),
-                    make_intrusive<ASTIdentifier>(ColumnNames::Values)),
-                make_intrusive<ASTLiteral>(phi));
+            if (const_phi)
+            {
+                quantile_expr = addParametersToAggregateFunction(
+                    makeASTFunction("quantilePrometheusHistogramForEach",
+                        std::move(le_array_expr),
+                        make_intrusive<ASTIdentifier>(ColumnNames::Values)),
+                    make_intrusive<ASTLiteral>(phi));
+            }
+            else if (!per_step_phi)
+            {
+                /// A phi which is the same at each time step is clamped and passed as the parameter, then an out-of-range phi replaces the result.
+                quantile_expr = makeASTFunction("arrayMap",
+                    makeASTLambda({"x"}, substituteOutOfRangePhi(phi_expr)),
+                    addParametersToAggregateFunction(
+                        makeASTFunction("quantilePrometheusHistogramForEach",
+                            std::move(le_array_expr),
+                            make_intrusive<ASTIdentifier>(ColumnNames::Values)),
+                        clampPhi(phi_expr)));
+            }
+            else
+            {
+                /// A phi which changes from step to step is passed to timeSeriesQuantilePrometheusHistogram as an argument.
+                quantile_expr = makeASTFunction("arrayMap",
+                    makeASTLambda({"x", "p"}, substituteOutOfRangePhi(make_intrusive<ASTIdentifier>("p"))),
+                    makeASTFunction("timeSeriesQuantilePrometheusHistogramForEach",
+                        std::move(le_array_expr),
+                        make_intrusive<ASTIdentifier>(ColumnNames::Values),
+                        makeASTFunction("arrayMap", makeASTLambda({"p"}, clampPhi(make_intrusive<ASTIdentifier>("p"))), phi_expr->clone())),
+                    phi_expr);
+            }
         }
 
         quantile_expr->setAlias(ColumnNames::Values);
