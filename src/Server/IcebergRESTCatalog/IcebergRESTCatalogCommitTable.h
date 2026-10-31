@@ -10,12 +10,16 @@
 namespace DB::IcebergRESTCatalog
 {
 
+bool isCreateCommit(const Poco::JSON::Array & requirements);
+
 /// Checks CommitTableRequest `requirements`. Returns the reason of the first failed requirement, if any.
 std::expected<void, String> checkTableRequirements(const Poco::JSON::Object & metadata, const Poco::JSON::Array & requirements);
 
 /// Applies CommitTableRequest `updates` to `metadata` in place.
 /// On exception, `metadata` may be partially updated.
 void applyTableUpdatesToJSON(Poco::JSON::Object & metadata, const Poco::JSON::Array & updates, const String & current_metadata_location);
+
+Poco::JSON::Object::Ptr buildCreatedTableMetadata(const Poco::JSON::Array & updates);
 
 /// `<location>/metadata/v<N+1>-<random uuid><compression suffix>.metadata.json`, where N is parsed from the current file name.
 String nextMetadataLocation(
