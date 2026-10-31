@@ -113,7 +113,7 @@ private:
     enum class ThreadPoolId : uint8_t;
 
     /// Builds file infos for specified backup entries.
-    void buildFileInfosForBackupEntries(const BackupPtr & backup, const BackupEntries & backup_entries, const ReadSettings & read_settings, std::shared_ptr<IBackupCoordination> backup_coordination, ThreadPoolId thread_pool_id, QueryStatusPtr process_list_element);
+    void buildFileInfosForBackupEntries(const BackupPtr & backup, BackupEntries & backup_entries, const ReadSettings & read_settings, std::shared_ptr<IBackupCoordination> backup_coordination, ThreadPoolId thread_pool_id, QueryStatusPtr process_list_element);
 
     /// Write backup entries to an opened backup.
     void writeBackupEntries(BackupMutablePtr backup, BackupEntries && backup_entries, const BackupOperationID & backup_id, std::shared_ptr<IBackupCoordination> backup_coordination, bool is_internal_backup, ThreadPoolId thread_pool_id, QueryStatusPtr process_list_element);
