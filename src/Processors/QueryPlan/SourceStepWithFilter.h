@@ -78,7 +78,7 @@ public:
     [[nodiscard]] virtual bool supportsTopKDynamicFilter(const ColumnWithTypeAndName & /*sort_column*/) const { return false; }
     virtual void setTopKFilter(std::shared_ptr<const FormatTopKFilterInfo> /*info*/) {}
     /// True only if the source honors `FormatTopKFilterInfo::filter_rows = false` (no per-row filter).
-    virtual bool supportsTopKStatisticsOnlyFilter() const { return false; }
+    [[nodiscard]] virtual bool supportsTopKStatisticsOnlyFilter() const { return false; }
 
     /// The whole output is consumed only by `min` / `max` (see `FormatFilterInfo::min_max_from_statistics`).
     [[nodiscard]] virtual bool supportsMinMaxFromStatistics() const { return false; }
