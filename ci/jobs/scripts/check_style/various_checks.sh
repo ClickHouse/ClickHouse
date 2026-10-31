@@ -171,8 +171,6 @@ FUNCTIONS_WITH_CONTEXT_EXCEPTIONS=(
     # without a query context (e.g. by `system.functions` which only needs to read
     # `getSignatureString`). These are non-deterministic functions and are not used
     # in default expressions.
-    -e /timeSeriesTagsToGroup.cpp
-    -e /timeSeriesStoreTags.cpp
     -e /FunctionsTransactionCounters.cpp
     -e /FunctionNaiveBayesClassifier.cpp
     # Holds the context weakly and only touches it from getReturnTypeImpl (type analysis, while the
