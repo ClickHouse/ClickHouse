@@ -4917,7 +4917,11 @@ bool MutateTask::prepare()
             /// row timestamp is non-zero and lies in `[min, max]`. It remains to reject a shift that
             /// could move some row's timestamp ONTO zero - silently flipping it from "expired long ago"
             /// to "never expires" - which is possible only when the shifted range covers zero.
-            if (delta && shifted_min <= 0 && shifted_max >= 0)
+            /// A shifted range entirely before the epoch is rejected as well: a full recalculation
+            /// stores `max = 0` for it (`MergeTreeDataPartTTLInfo::update` starts `max` at zero), while
+            /// the shift would persist a negative `max`, which a later `MODIFY TTL` takes as "the part
+            /// is fully expired" (`all_data_dropped` in `TTLTransform`) before evaluating the new TTL.
+            if (delta && shifted_min <= 0)
             {
                 delta.reset();
             }
