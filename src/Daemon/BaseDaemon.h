@@ -119,6 +119,9 @@ public:
     /// argv0 is needed to change process name (consequently, it is needed for scripts involving "pgrep", "pidof" to work correctly).
     void shouldSetupWatchdog(char * argv0_);
 
+    /// Returns true if this process is the server that the watchdog re-executed, after restoring what `execve` reset.
+    bool setupWatchdogChild(const char * argv0_);
+
     /// Hash of the binary for integrity checks.
     String getStoredBinaryHash() const;
 
@@ -147,6 +150,8 @@ protected:
     void setupWatchdog();
 
     void waitForTerminationRequest() override;
+
+    bool shouldDetach() const override;
 
     template <class Daemon>
     static std::optional<std::reference_wrapper<Daemon>> tryGetInstance();
@@ -186,6 +191,8 @@ protected:
 
     bool should_setup_watchdog = false;
     char * argv0 = nullptr;
+    /// The pid of the watchdog that re-executed this process, 0 if it was not started this way.
+    pid_t watchdog_pid = 0;
 };
 
 
