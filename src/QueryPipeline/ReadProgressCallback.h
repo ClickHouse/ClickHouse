@@ -27,6 +27,9 @@ public:
     void addTotalRowsApprox(size_t value) { total_rows_approx += value; }
     void addTotalBytes(size_t value) { total_bytes += value; }
 
+    /// Reports the totals with no read progress and consumes them: Progress sums totals over events.
+    void publishTotals();
+
     /// Skip updating profile events.
     /// For merges in mutations it may need special logic, it's done inside ProgressCallback.
     void disableProfileEventUpdate() { update_profile_events = false; }

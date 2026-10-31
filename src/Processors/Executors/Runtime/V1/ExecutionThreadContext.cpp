@@ -157,10 +157,8 @@ static void executeJob(IProcessor & processor, ReadProgressCallback * read_progr
         if (spill_target)
             return;
 
-        /// Update read progress only for source nodes.
-        bool is_source = processor.getInputs().empty();
-
-        if (is_source && read_progress_callback)
+        /// Not only sources read: a seal-gated read has an input.
+        if (read_progress_callback)
         {
             if (auto read_progress = processor.getReadProgress())
             {

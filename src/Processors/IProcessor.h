@@ -384,7 +384,7 @@ public:
     /// This method needs to be overridden only for sources.
     virtual void setStorageLimits(const std::shared_ptr<const StorageLimitsList> & /*storage_limits*/) {}
 
-    /// This method is called for every processor without input ports.
+    /// This method is called for every processor.
     /// Processor can return new progress for the last read operation.
     /// You should zero internal counters in the call, in order to make in idempotent.
     virtual std::optional<ReadProgress> getReadProgress() { return std::nullopt; }

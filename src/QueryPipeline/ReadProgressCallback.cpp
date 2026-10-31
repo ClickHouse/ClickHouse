@@ -19,6 +19,24 @@ namespace ErrorCodes
     extern const int TOO_MANY_BYTES;
 }
 
+void ReadProgressCallback::publishTotals()
+{
+    /// Undeliverable yet: keep the totals for the first onProgress().
+    if (!progress_callback)
+        return;
+
+    size_t rows_approx = total_rows_approx.exchange(0);
+    size_t bytes = total_bytes.exchange(0);
+    if (!rows_approx && !bytes)
+        return;
+
+    Progress total_progress = {0, 0, rows_approx, bytes};
+
+    progress_callback(total_progress);
+    if (process_list_elem)
+        process_list_elem->updateProgressIn(total_progress);
+}
+
 void ReadProgressCallback::setProcessListElement(QueryStatusPtr elem)
 {
     process_list_elem = elem;
@@ -34,17 +52,7 @@ void ReadProgressCallback::setProcessListElement(QueryStatusPtr elem)
     ///
     /// NOTE: This can be done only if progress callback already set, since
     /// otherwise total_rows_approx will lost.
-    if (!progress_callback)
-        return;
-
-    size_t rows_approx = total_rows_approx.exchange(0);
-    if (rows_approx != 0)
-    {
-        Progress total_rows_progress = {0, 0, rows_approx};
-
-        progress_callback(total_rows_progress);
-        process_list_elem->updateProgressIn(total_rows_progress);
-    }
+    publishTotals();
 }
 
 bool ReadProgressCallback::onProgress(uint64_t read_rows, uint64_t read_bytes, const StorageLimitsList & storage_limits)
