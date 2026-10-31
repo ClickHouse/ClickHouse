@@ -1171,10 +1171,10 @@ private:
         ManyAggregatedDataVariants & data, Int32 bucket, const AdaptiveTopKPruning & pruning, std::span<UInt64> bounds, Arena * arena) const;
 
     /// Writes the staged records of `partitions`, a producer's or a finished producer's handed over to `shared`, to the
-    /// session's spill streams, a block per partition, and frees them; a producer then keeps appending into new chunks.
+    /// session's spill stream `spill_stream`, and frees them; a producer then keeps appending into new chunks.
     /// Called over the external-aggregation threshold and on request of the memory scheduler (see
     /// `spillAdaptiveProducer` and `spillHandedOverStagedRecords`).
-    void spillAdaptivePartitions(AdaptiveAggregationSession & shared, PartitionedRecordBuffer & partitions) const;
+    void spillAdaptivePartitions(AdaptiveAggregationSession & shared, PartitionedRecordBuffer & partitions, size_t spill_stream) const;
 
     /// Writes the producer's learning or frozen table to disk as a part of the ordinary external aggregation, then lets
     /// the producer learn its keys again in an empty single-level table. Called for a table over the

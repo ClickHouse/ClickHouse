@@ -5,8 +5,8 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 . "$CUR_DIR"/../shell_config.sh
 
 # A table of the adaptive aggregator freezes within its first few thousand of the 100000 keys, so the records of the
-# other keys are staged, and over the external-aggregation threshold they spill to one stream per partition, which the
-# later spills append to. A spill checks the disk of the existing streams it appends to, once per disk. The failpoint
+# other keys are staged, and over the external-aggregation threshold they spill to the stream of their thread, which the
+# later spills of the thread append to. A spill checks the disk of the existing stream it appends to. The failpoint
 # makes that check ask for the largest possible size, as for a disk without room, so the query fails with
 # `NOT_ENOUGH_SPACE` for a size that no stream creation asks for. The thresholds are pinned because the runner
 # randomizes them, and clickhouse-local runs the query in a process of its own, so the failpoint affects no other test.

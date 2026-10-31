@@ -1455,7 +1455,7 @@ AggregatingTransform::AggregatingTransform(
     /// staged, so the merge-time drains find empty backlogs and do nothing.
     if (many_data->adaptive_session && params->aggregator.getParams().enable_adaptive_aggregator)
     {
-        adaptive_context = std::make_unique<AdaptiveAggregationProducer>(many_data->adaptive_session);
+        adaptive_context = std::make_unique<AdaptiveAggregationProducer>(many_data->adaptive_session, variant_index);
         if (!many_data->adaptive_spillable)
             many_data->adaptive_spillable = std::make_shared<AdaptiveSessionSpillable>(params, many_data->adaptive_session);
         adaptive_spillable = many_data->adaptive_spillable;
