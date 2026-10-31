@@ -47,6 +47,11 @@ struct PocoAzureHTTPClientConfiguration
     UInt64 http_max_fields = 1000000;
     UInt64 http_max_field_name_size = 128 * 1024;
     UInt64 http_max_field_value_size = 128 * 1024;
+
+    /// Whether the requests sent by this client are the ones `system.blob_storage_log` logs, so they
+    /// may publish their connection to it. False for the transport that only carries the token
+    /// requests of the SDK's credentials, see `HTTPConnectionInfoHelperRequests`.
+    bool publish_connection_info = true;
 };
 
 /// ClickHouse "native" HTTP client for Azure Blob Storage, based on Poco HTTP client.
@@ -119,6 +124,7 @@ private:
     const UInt64 http_max_field_name_size;
     const UInt64 http_max_field_value_size;
     bool for_disk_azure = false;
+    bool publish_connection_info = true;
 
     HTTPRequestThrottler request_throttler;
 
