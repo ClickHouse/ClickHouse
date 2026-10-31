@@ -4,8 +4,12 @@
 #include <Storages/MergeTree/ProjectionIndex/PostingCursor.h>
 #include <Storages/MergeTree/ProjectionIndex/PostingListCursor.h>
 
+#include <absl/container/flat_hash_set.h>
+
 namespace DB
 {
+
+struct MergeTreeProjectionIndexGranuleText;
 
 class MergeTreeReaderTextProjectionIndex : public MergeTreeReaderTextIndex
 {
@@ -51,6 +55,10 @@ private:
     using CursorMap = absl::flat_hash_map<std::string_view, PostingCursorPtr>;
     CursorMap buildCursorMap();
 
+    /// Builds a cursor over the posting list of one token, or returns nullptr when the token has no postings.
+    PostingCursorPtr buildTokenCursor(
+        MergeTreeProjectionIndexGranuleText & granule_text, const String & token, const ProjectionTokenInfo & token_info, DecodedBlockCache * block_cache);
+
     void fillColumnLazy(IColumn & column, const String & column_name, size_t column_offset, size_t row_offset, size_t num_rows);
 
     void fillBatch(MutableColumns & res_columns, size_t from_row, size_t batch_rows);
@@ -59,6 +67,10 @@ private:
 
     CursorMap cursor_map;
     bool cursor_map_built = false;
+    /// The tokens whose cursor from `cursor_map` is already used by the cursor of a virtual column. A cursor
+    /// has a mutable position, so another virtual column with the same token gets a cursor of its own:
+    /// otherwise filling one column would advance the cursor past the rows the other one has yet to see.
+    absl::flat_hash_set<std::string_view> claimed_tokens;
     absl::flat_hash_map<String, PostingCursorPtr> column_cursors;
 };
 

@@ -149,49 +149,49 @@ MergeTreeReaderTextProjectionIndex::CursorMap MergeTreeReaderTextProjectionIndex
     CursorMap result;
 
     for (const auto & [token, token_info] : remaining_tokens)
-    {
-        /// Check if the token was materialized into a Roaring bitmap (has_block_index=0 low-cardinality path).
-        auto rare_posting = granule_text.getPostingsForRareToken(token);
-        if (rare_posting)
-        {
-            result.emplace(token, std::make_shared<BitmapCursor>(std::move(rare_posting)));
-            continue;
-        }
-
-        if (!token_info->large_block_metas.empty())
-        {
-            auto independent_idx_stream = createIndependentIndexStream();
-            if (!independent_idx_stream)
-            {
-                /// No .pidx (has_block_index=0, high-cardinality token not pre-materialized).
-                /// Materialize all large blocks into a Roaring bitmap on demand.
-                auto independent_stream = createIndependentPostingStream();
-                auto bitmap = std::make_shared<PostingList>();
-                for (size_t b = 0; b < token_info->large_block_metas.size(); ++b)
-                {
-                    auto block_bitmap = MergeTreeProjectionIndexGranuleText::materializeFromTokenInfo(
-                        *independent_stream, *token_info, b);
-                    if (block_bitmap)
-                        *bitmap |= *block_bitmap;
-                }
-                result.emplace(token, std::make_shared<BitmapCursor>(std::move(bitmap)));
-                continue;
-            }
-
-            auto independent_stream = createIndependentPostingStream();
-            auto cursor = std::make_shared<ProjectionPostingListCursor>(
-                std::move(independent_stream), *token_info, std::move(independent_idx_stream),
-                nullptr /* pos_stream */, block_cache);
+        if (auto cursor = buildTokenCursor(granule_text, token, *token_info, block_cache))
             result.emplace(token, std::move(cursor));
-        }
-        else if (!token_info->ranges.empty())
-        {
-            auto cursor = std::make_shared<ProjectionPostingListCursor>(*token_info);
-            result.emplace(token, std::move(cursor));
-        }
-    }
 
     return result;
+}
+
+PostingCursorPtr MergeTreeReaderTextProjectionIndex::buildTokenCursor(
+    MergeTreeProjectionIndexGranuleText & granule_text, const String & token, const ProjectionTokenInfo & token_info, DecodedBlockCache * block_cache)
+{
+    /// Check if the token was materialized into a Roaring bitmap (has_block_index=0 low-cardinality path).
+    auto rare_posting = granule_text.getPostingsForRareToken(token);
+    if (rare_posting)
+        return std::make_shared<BitmapCursor>(std::move(rare_posting));
+
+    if (!token_info.large_block_metas.empty())
+    {
+        auto independent_idx_stream = createIndependentIndexStream();
+        if (!independent_idx_stream)
+        {
+            /// No .pidx (has_block_index=0, high-cardinality token not pre-materialized).
+            /// Materialize all large blocks into a Roaring bitmap on demand.
+            auto independent_stream = createIndependentPostingStream();
+            auto bitmap = std::make_shared<PostingList>();
+            for (size_t b = 0; b < token_info.large_block_metas.size(); ++b)
+            {
+                auto block_bitmap = MergeTreeProjectionIndexGranuleText::materializeFromTokenInfo(
+                    *independent_stream, token_info, b);
+                if (block_bitmap)
+                    *bitmap |= *block_bitmap;
+            }
+            return std::make_shared<BitmapCursor>(std::move(bitmap));
+        }
+
+        auto independent_stream = createIndependentPostingStream();
+        return std::make_shared<ProjectionPostingListCursor>(
+            std::move(independent_stream), token_info, std::move(independent_idx_stream),
+            nullptr /* pos_stream */, block_cache);
+    }
+
+    if (!token_info.ranges.empty())
+        return std::make_shared<ProjectionPostingListCursor>(token_info);
+
+    return nullptr;
 }
 
 void MergeTreeReaderTextProjectionIndex::ensureInitialized()
@@ -248,8 +248,19 @@ PostingCursorPtr & MergeTreeReaderTextProjectionIndex::getOrBuildCursor(const St
     for (const auto & token : search_query->getTokens())
     {
         auto cursor_it = cursor_map.find(token);
-        if (cursor_it != cursor_map.end())
+        if (cursor_it == cursor_map.end())
+            continue;
+
+        if (claimed_tokens.insert(cursor_it->first).second)
+        {
             token_cursors.emplace_back(cursor_it->second);
+            continue;
+        }
+
+        /// The cursor of the token is already used by another virtual column, see `claimed_tokens`.
+        auto & granule_text = assert_cast<MergeTreeProjectionIndexGranuleText &>(*projection_granule);
+        const auto & token_info = granule_text.getRemainingTokens().at(token);
+        token_cursors.emplace_back(buildTokenCursor(granule_text, token, *token_info, granule_text.decoded_block_cache.get()));
     }
 
     if (token_cursors.empty())
@@ -454,6 +465,7 @@ size_t MergeTreeReaderTextProjectionIndex::readRows(
         {
             cursor_map.clear();
             column_cursors.clear();
+            claimed_tokens.clear();
             cursor_map_built = false;
         }
     }
