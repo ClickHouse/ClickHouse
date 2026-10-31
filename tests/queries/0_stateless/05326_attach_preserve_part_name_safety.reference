@@ -1,0 +1,8 @@
+quorum_restored	0	1	1
+quorum_restored	1	2	3
+BAD_DATA_PART_NAME
+BAD_ARGUMENTS
+dropped_seed_preserved	1
+BAD_ARGUMENTS
+BAD_ARGUMENTS
+unrelated_partition_command	0
