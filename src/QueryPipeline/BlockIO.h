@@ -47,6 +47,11 @@ struct BlockIO
     /// Called with `log_as_error` and the pipeline, which is not reset yet, so the callback can log its processors.
     VectorWithMemoryTracking<std::function<void(bool, const QueryPipeline &)>> exception_callbacks;
 
+    /// Called by `onCancelOrConnectionLoss`, which terminates the query without running the finish or
+    /// exception callbacks. They are dropped once the query reaches `onFinish` or `onException`, so
+    /// the query is reported by exactly one of the three paths.
+    VectorWithMemoryTracking<std::function<void()>> cancel_callbacks;
+
     /// When it is true, don't bother sending any non-empty blocks to the out stream
     bool null_format = false;
 

@@ -2358,6 +2358,10 @@ void TCPHandler::receiveHello()
 
                 tryLogCurrentException(log, "SSL authentication failed, falling back to password authentication", LogsLevel::information);
                 /// ^^ Log at debug level instead of default error level as authentication failures are not an unusual event.
+
+                /// The certificate failure above was audited; the password fallback below is a
+                /// distinct authentication attempt, so allow it to be audited independently.
+                session->resetAuditLoginFailureLatch();
             }
         }
     }
@@ -2367,44 +2371,59 @@ void TCPHandler::receiveHello()
     /// Perform handshake for SSH authentication
     if (is_ssh_based_auth)
     {
-        if (client_tcp_protocol_version < DBMS_MIN_REVISION_WITH_SSH_AUTHENTICATION)
-            throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Cannot authenticate user with SSH key, because client version is too old");
-
-        readVarUInt(packet_type, *in);
-        if (packet_type != Protocol::Client::SSHChallengeRequest)
-            throw Exception(ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT, "Server expected to receive a packet for requesting a challenge string");
-
-        auto create_challenge = []()
+        /// Route any authentication failure during SSH negotiation through the audit log.
+        /// This covers failures that happen before Session::authenticate is reached
+        /// (too-old client, unexpected packets). recordAuditLoginFailure is idempotent,
+        /// so a failure already audited by Session::authenticate is not written to the audit log twice.
+        try
         {
-            pcg64_fast rng(randomSeed());
-            UInt64 rand = rng();
-            return encodeSHA256(&rand, sizeof(rand));
-        };
+            if (client_tcp_protocol_version < DBMS_MIN_REVISION_WITH_SSH_AUTHENTICATION)
+                throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Cannot authenticate user with SSH key, because client version is too old");
 
-        String challenge = create_challenge();
-        writeVarUInt(Protocol::Server::SSHChallenge, *out);
-        writeStringBinary(challenge, *out);
-        out->sync();
+            readVarUInt(packet_type, *in);
+            if (packet_type != Protocol::Client::SSHChallengeRequest)
+                throw Exception(
+                    ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT, "Server expected to receive a packet for requesting a challenge string");
 
-        String signature;
-        readVarUInt(packet_type, *in);
-        if (packet_type != Protocol::Client::SSHChallengeResponse)
-            throw Exception(ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT, "Server expected to receive a packet with a response for a challenge");
-        readStringBinary(signature, *in, MAX_HELLO_STRING_SIZE);
+            auto create_challenge = []()
+            {
+                pcg64_fast rng(randomSeed());
+                UInt64 rand = rng();
+                return encodeSHA256(&rand, sizeof(rand));
+            };
 
-        auto prepare_string_for_ssh_validation = [&](const String & username, const String & challenge_)
+            String challenge = create_challenge();
+            writeVarUInt(Protocol::Server::SSHChallenge, *out);
+            writeStringBinary(challenge, *out);
+            out->sync();
+
+            String signature;
+            readVarUInt(packet_type, *in);
+            if (packet_type != Protocol::Client::SSHChallengeResponse)
+                throw Exception(
+                    ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT, "Server expected to receive a packet with a response for a challenge");
+
+            readStringBinary(signature, *in, MAX_HELLO_STRING_SIZE);
+
+            auto prepare_string_for_ssh_validation = [&](const String & username, const String & challenge_)
+            {
+                String output;
+                output.append(std::to_string(client_tcp_protocol_version));
+                output.append(default_database);
+                output.append(username);
+                output.append(challenge_);
+                return output;
+            };
+
+            auto cred = SshCredentials(user, signature, prepare_string_for_ssh_validation(user, challenge));
+            session->authenticate(cred, getClientAddress(client_info), socket().peerAddress());
+            return;
+        }
+        catch (const Exception &)
         {
-            String output;
-            output.append(std::to_string(client_tcp_protocol_version));
-            output.append(default_database);
-            output.append(username);
-            output.append(challenge_);
-            return output;
-        };
-
-        auto cred = SshCredentials(user, signature, prepare_string_for_ssh_validation(user, challenge));
-        session->authenticate(cred, getClientAddress(client_info), socket().peerAddress());
-        return;
+            session->recordAuditLoginFailure(user, socket().peerAddress());
+            throw;
+        }
     }
 #endif
 

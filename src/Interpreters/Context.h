@@ -2251,6 +2251,21 @@ public:
     /// be used to read fields that are never changed after startup.
     ServerSettings getServerSettingsCopy() const;
 
+    enum class AuditLogTypes : uint8_t
+    {
+        USER = 1 << 0,
+        DDL  = 1 << 1,
+        DML  = 1 << 2,
+        DCL  = 1 << 3,
+        MISC = 1 << 4,
+        ALL  = USER | DDL | DML | DCL | MISC
+    };
+
+    /// Used for audit log
+    bool isEnabledAuditType(const AuditLogTypes & audit_type) const;
+    void resetAuditTypes() const;
+    void loadOrReloadAuditTypes(const Poco::Util::AbstractConfiguration & config);
+
 private:
     /// `ignore_automatic_parallel_replicas` is for cluster engines (`s3`, `url`, a table of a data lake catalog, ...):
     /// `automatic_parallel_replicas_mode` only decides for `MergeTree` reads, so they use parallel replicas whenever
