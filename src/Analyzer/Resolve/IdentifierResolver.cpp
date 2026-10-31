@@ -923,6 +923,35 @@ static bool isMatchedOnExactBoundaryByOtherTableExpression(
     return false;
 }
 
+/// A table name of several parts (`a.b` for the table `a.b`) is a qualifier only since table names are hierarchical (see
+/// `DatabaseCatalog`), so it must not take precedence over the qualifiers that already denoted another table expression
+/// before: the explicit alias of another table expression equal to the first part (`a` in `... CROSS JOIN t AS a`), or the
+/// database and the table name of another table expression matched exactly (the table `b` of the database `a`).
+/// Only the table expressions of the same scope (the sources of a join) compete: the nearest scope still wins.
+static bool isQualifiedByOtherTableExpression(
+    const Identifier & identifier,
+    size_t qualifier_parts,
+    bool check_alias,
+    const TableExpressionNodePtr & table_expression_node,
+    const IdentifierResolveScope & scope)
+{
+    const auto & path_start = identifier.getParts().front();
+    for (const auto & [other_table_expression_node, other_table_expression_data] : scope.table_expression_node_to_data)
+    {
+        if (other_table_expression_node == table_expression_node)
+            continue;
+
+        if (check_alias && other_table_expression_node->hasAlias() && other_table_expression_node->getAlias() == path_start)
+            return true;
+
+        bool other_crosses_boundary = false;
+        if (other_table_expression_data.matchDatabaseAndTableName(identifier, &other_crosses_boundary) == qualifier_parts
+            && !other_crosses_boundary)
+            return true;
+    }
+    return false;
+}
+
 IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromTableExpression(const IdentifierLookup & identifier_lookup,
     const TableExpressionNodePtr & table_expression_node,
     IdentifierResolveScope & scope)
@@ -949,7 +978,10 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromTableExpress
 
         /// The whole identifier is the table name or the database and the table name. Both are hierarchical
         /// (`db.ns.t`, see `DatabaseCatalog`), so they can cover any number of parts.
-        if (table_expression_data.matchTableName(identifier, scope.context) == parts_size)
+        if (table_expression_data.matchTableName(identifier, scope.context) == parts_size
+            && !(parts_size > 1
+                 && isQualifiedByOtherTableExpression(
+                     identifier, parts_size, false /*check_alias*/, table_expression_node, scope)))
             return { .resolved_identifier = table_expression_node, .resolve_place = IdentifierResolvePlace::JOIN_TREE };
 
         /// A name crossing the boundary between the database and the table (`"a.b".c.*` for the table `a`.`b.c`) is
@@ -1094,8 +1126,12 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromTableExpress
     /// The table name (hierarchical, possibly covering several parts) or the alias qualifies the column. An explicit alias
     /// is tried first: for the table `a.b` aliased `a`, `a.b.c` is the subcolumn `b.c` qualified with the alias, as before
     /// hierarchical names, rather than the column `c` qualified with the longer table name.
-    const size_t table_name_parts = table_expression_data.matchTableName(identifier, scope.context);
+    size_t table_name_parts = table_expression_data.matchTableName(identifier, scope.context);
     const bool alias_matches = table_expression_node->hasAlias() && path_start == table_expression_node->getAlias();
+    if (!alias_matches && table_name_parts > 1
+        && isQualifiedByOtherTableExpression(
+            identifier, table_name_parts, true /*check_alias*/, table_expression_node, scope))
+        table_name_parts = 0;
     if (table_name_parts > 0 || alias_matches)
     {
         const size_t qualifier_parts = alias_matches ? 1 : table_name_parts;
