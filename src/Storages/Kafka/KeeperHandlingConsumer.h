@@ -205,8 +205,9 @@ private:
 
     void saveCommittedOffset(int64_t new_offset);
     void saveIntentSize(const KafkaConsumer2::TopicPartition & topic_partition, const std::optional<int64_t> & offset, uint64_t intent);
-    // To save commit and intent nodes
-    void writeTopicPartitionInfoToKeeper(const std::filesystem::path & keeper_path_to_data, const String & data);
+    // To build and execute the transactions that save the commit and intent nodes
+    void addSetOrCreateRequest(Coordination::Requests & ops, const std::filesystem::path & path, const String & data);
+    void executeMultiInKeeper(Coordination::Requests ops);
     // Searches first in permanent_locks, then in tmp_locks.
 
 
