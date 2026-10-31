@@ -526,13 +526,15 @@ def test_replaced_file_groups(started_cluster, table_version):
         path = os.path.join(tmp_dir, f"{name}_partitioned")
         prefix = f"{name}_partitioned/"
         source = f"hudi(s3, filename='{prefix}')"
-        rows = [(i, "a" if i < 15 else "b", i * 7, 1) for i in range(30)]
+        rows = [(i, "x/a" if i < 15 else "y/a", i * 7, 1) for i in range(30)]
         write_hudi_table(spark, path, rows, "insert", table_version, True)
+        assert os.path.isdir(os.path.join(path, "x", "a"))
+        assert os.path.isdir(os.path.join(path, "y", "a"))
         files = parquet_files(path)
         write_hudi_table(
             spark,
             path,
-            [(i, "a", i * 100, 2) for i in range(5)],
+            [(i, "x/a", i * 100, 2) for i in range(5)],
             "insert_overwrite",
             table_version,
             True,
@@ -540,8 +542,8 @@ def test_replaced_file_groups(started_cluster, table_version):
         assert len(completed_replace_commits(path, table_version)) == 1
         assert files <= parquet_files(path)
         upload_hudi_table(minio_client, bucket, path, prefix)
-        expected = [(i, "a", i * 100) for i in range(5)] + [
-            (i, "b", i * 7) for i in range(15, 30)
+        expected = [(i, "x/a", i * 100) for i in range(5)] + [
+            (i, "y/a", i * 7) for i in range(15, 30)
         ]
         assert_rows(instance, source, "id, p, v", expected)
 
@@ -557,14 +559,13 @@ def test_replaced_file_groups(started_cluster, table_version):
             )
             assert_rows(instance, source, "id, p, v", expected)
 
-            file_ids = sorted(
-                {
-                    file.split("_")[0]
-                    for file in os.listdir(os.path.join(path, "a"))
-                    if file.endswith(".parquet")
-                }
+            data_files = sorted(
+                file
+                for file in os.listdir(os.path.join(path, "x", "a"))
+                if file.endswith(".parquet")
             )
-            replaced = '{"partitionToReplaceFileIds": {"a": [%s]}}' % ", ".join(
+            file_ids = sorted({file.split("_")[0] for file in data_files})
+            replaced = '{"partitionToReplaceFileIds": {"x/a": [%s]}}' % ", ".join(
                 f'"{file_id}"' for file_id in file_ids
             )
             put_object(
@@ -573,6 +574,17 @@ def test_replaced_file_groups(started_cluster, table_version):
                 prefix + ".hoodie/99991231235959999.replacecommit",
                 replaced.encode(),
             )
+            assert_rows(instance, source, "id, p, v", expected)
+
+            # The archived timeline of a layout 2 table is stored as Parquet.
+            with open(os.path.join(path, "x", "a", data_files[0]), "rb") as f:
+                put_object(
+                    minio_client,
+                    bucket,
+                    prefix
+                    + ".hoodie/timeline/history/00000000000000001_00000000000000002_0.parquet",
+                    f.read(),
+                )
             assert_rows(instance, source, "id, p, v", expected)
 
             # Java properties keep trailing whitespace and decode escapes.
@@ -597,6 +609,25 @@ def test_replaced_file_groups(started_cluster, table_version):
                         f"SELECT count() FROM {source}"
                     )
                     assert "NOT_IMPLEMENTED" in error
+
+            put_hudi_properties(
+                minio_client,
+                bucket,
+                path,
+                prefix,
+                "hoodie.timeline.layout.version=2",
+                "hoodie.timeline.layout.version=3",
+            )
+            error = instance.query_and_get_error(f"SELECT count() FROM {source}")
+            assert "NOT_IMPLEMENTED" in error
+
+            minio_client.remove_object(bucket, prefix + ".hoodie/hoodie.properties")
+            minio_client.fput_object(
+                bucket,
+                prefix + ".hoodie/hoodie.properties.backup",
+                os.path.join(path, ".hoodie", "hoodie.properties"),
+            )
+            assert_rows(instance, source, "id, p, v", expected)
     finally:
         shutil.rmtree(tmp_dir, ignore_errors=True)
         remove_directory(minio_client, bucket, name)

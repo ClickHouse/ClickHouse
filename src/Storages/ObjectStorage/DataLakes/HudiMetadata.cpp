@@ -355,14 +355,15 @@ Strings HudiMetadata::getDataFilesImpl(const ContextPtr & local_context) const
             if (!key.starts_with(table_path))
                 return key.ends_with(data_file_suffix);
             std::string_view path_in_table = std::string_view(key).substr(table_path.size());
+            if (!path_in_table.starts_with(".hoodie/"))
+                return key.ends_with(data_file_suffix);
             if (path_in_table == ".hoodie/hoodie.properties")
                 properties_file.emplace(object);
             else if (path_in_table == ".hoodie/hoodie.properties.backup")
                 backup_file.emplace(object);
-            else if (path_in_table.starts_with(".hoodie/") && path_in_table.ends_with(".replacecommit"))
+            else if (path_in_table.ends_with(".replacecommit"))
                 instants.push_back(object);
-            else
-                return key.ends_with(data_file_suffix);
+            /// Nothing under `.hoodie/` is a data file of the table.
             return false;
         });
 
