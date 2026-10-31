@@ -360,6 +360,8 @@ public:
 
 #if USE_EMBEDDED_COMPILER
     void compileExpressions(size_t min_count_to_compile_expression, const std::unordered_set<const Node *> & lazy_executed_nodes = {});
+    /// The functions `compileExpressions` compiled into `function`, or nullptr if it is not a compiled expression.
+    static const std::vector<FunctionBasePtr> * getCompiledFunctions(const IFunctionBase & function);
 #endif
 
     using NodeMapping = std::unordered_map<const Node *, const Node *>;
