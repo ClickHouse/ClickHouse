@@ -718,6 +718,28 @@ def write_max_threads_override():
     return True
 
 
+ICEBERG_PROFILE_OVERRIDE_FILE = "zzz-perf-iceberg.xml"
+
+
+def write_iceberg_profile_override():
+    """The settings of `iceberg_engine.SETTINGS` in the default profile of both
+    servers. `perf.py` sets them for its own statements, but a dropped table
+    deletes its data later, in the background, with the default profile."""
+    for config_dir in (perf_left_config, perf_right_config):
+        target = Path(config_dir) / "users.d" / ICEBERG_PROFILE_OVERRIDE_FILE
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(
+            "<!-- Written by ci/jobs/performance_tests.py for the Iceberg configuration (perf.py --table-engine). -->\n"
+            "<clickhouse>\n    <profiles>\n        <default>\n"
+            "            <allow_insert_into_iceberg>1</allow_insert_into_iceberg>\n"
+            "            <allow_experimental_iceberg_compaction>1</allow_experimental_iceberg_compaction>\n"
+            "            <iceberg_delete_data_on_drop>1</iceberg_delete_data_on_drop>\n"
+            "        </default>\n    </profiles>\n</clickhouse>\n"
+        )
+        print(f"Wrote the Iceberg profile override to [{target}]")
+    return True
+
+
 def build_perf_query_history_link(test_name, check_name):
     """Build a ClickHouse Play link showing performance history for a query on master."""
     table = Settings.CI_DB_TABLE_NAME or "checks"
@@ -3190,6 +3212,8 @@ def main():
             # Same: the CI Logs cluster must be in the config of both servers.
             create_log_export_configs,
         ]
+        if TABLE_ENGINE:
+            commands.append(write_iceberg_profile_override)
 
         if needs_s3:
             commands.append(prepare_s3)

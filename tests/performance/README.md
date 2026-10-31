@@ -176,6 +176,12 @@ Where it runs: `Performance Comparison (arm_release, master_head, iceberg_local|
 
 Run one test locally against two running servers: `tests/performance/scripts/perf.py --table-engine iceberg_local --host localhost localhost --port 9001 9002 --binary <old> <new> --http-port 8123 8124 tests/performance/<test>.xml`.
 
+### Comparison of query results
+
+`perf.py` compares the result of every SQL query between the servers, on its prewarm run, so the measured runs are not affected. A query whose result the server sends is digested on the client: the number of rows and the sum of a 64-bit hash of each row, so the order of rows does not matter, with floats rounded to 6 significant digits (parallel aggregation changes the last bits), `Bool` and an integral `Decimal` as integers. A `SELECT ... FORMAT Null`, whose rows the server does not send, is digested on the server by one more query, `SELECT count(), sum(cityHash64(toString(tuple(*)))) FROM (<query>)`; a query that cannot be a subquery is listed as `result-digest-skipped`. A result of more than 200000 rows is not compared.
+
+Every digest is a `result-digest` line in the raw output of the test, so digests can be compared across jobs too, e.g. a test in the Iceberg configuration with the same test on MergeTree. When the servers return different results, `perf.py` prints a `result-mismatch` line and the report lists the query in "Queries with Different Results". It is not an error: a pull request that fixes a result changes it. Not compared: the queries of a test whose setup generates data with `rand`, `now` and the like (the servers hold different data), and queries whose own result is not deterministic (`rand`, `any`, `groupArray`, `LIMIT`, `system` tables and the like).
+
 ### How to run performance test
 
 TODO
