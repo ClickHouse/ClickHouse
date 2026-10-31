@@ -17,6 +17,8 @@
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTInsertQuery.h>
+#include <Parsers/ASTLiteral.h>
+#include <Parsers/ASTPartition.h>
 #include <Processors/Executors/CompletedPipelineExecutor.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Processors/ISource.h>
@@ -25,6 +27,7 @@
 #include <Processors/Sources/NullSource.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Storages/AlterCommands.h>
+#include <Storages/PartitionCommands.h>
 #include <Storages/ObjectStorage/Utils.h>
 #include <Databases/LoadingStrictnessLevel.h>
 #include <Storages/ObjectStorageQueue/ObjectStorageQueueIFileMetadata.h>
@@ -287,6 +290,16 @@ namespace
             default:
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected object storage type: {}", storage->getType());
         }
+    }
+
+    String getPartitionPrefix(const PartitionCommand & command)
+    {
+        const auto & partition = command.partition->as<ASTPartition &>();
+        const auto * literal = partition.value ? partition.value->as<ASTLiteral>() : nullptr;
+        String prefix;
+        if (!literal || !literal->value.tryGet(prefix) || prefix.empty())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Partition must be a non-empty string literal");
+        return prefix;
     }
 }
 
@@ -1682,6 +1695,46 @@ void StorageObjectStorageQueue::checkAlterIsPossible(const AlterCommands & comma
     }
 }
 
+void StorageObjectStorageQueue::checkAlterPartitionIsPossible(
+    const PartitionCommands & commands,
+    const StorageMetadataPtr & /*metadata_snapshot*/,
+    const Settings & /*settings*/,
+    ContextPtr /*local_context*/) const
+{
+    auto metadata = tryGetFilesMetadata();
+    if (!metadata)
+        throw Exception(ErrorCodes::TABLE_IS_DROPPED, "Table {} is dropped or detached", getStorageID());
+
+    for (const auto & command : commands)
+    {
+        if (command.type != PartitionCommand::ADD_PARTITION && command.type != PartitionCommand::FORGET_PARTITION)
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Partition operation ALTER TABLE {} is not supported by {}", command.typeToString(), getName());
+        if (metadata->getPartitioningMode() != ObjectStorageQueuePartitioningMode::EXPLICIT)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Partition operations are allowed for {} only with partitioning_mode='explicit'", getName());
+        getPartitionPrefix(command);
+    }
+}
+
+Pipe StorageObjectStorageQueue::alterPartition(
+    const StorageMetadataPtr & /*metadata_snapshot*/,
+    const PartitionCommands & commands,
+    ContextPtr /*local_context*/)
+{
+    auto component_guard = Coordination::setCurrentComponent("StorageObjectStorageQueue::alterPartition");
+    auto metadata = tryGetFilesMetadata();
+    if (!metadata)
+        throw Exception(ErrorCodes::TABLE_IS_DROPPED, "Table {} is dropped or detached", getStorageID());
+
+    for (const auto & command : commands)
+    {
+        if (command.type == PartitionCommand::ADD_PARTITION)
+            metadata->addPartition(getPartitionPrefix(command));
+        else
+            metadata->forgetPartition(getPartitionPrefix(command));
+    }
+    return {};
+}
+
 void StorageObjectStorageQueue::alter(
     const AlterCommands & commands,
     ContextPtr local_context,
@@ -2142,7 +2195,11 @@ void StorageObjectStorageQueue::waitForPathToBeProcessed(
     const bool is_ordered = metadata->getTableMetadata().getMode() == ObjectStorageQueueMode::ORDERED;
     const bool is_exclusive = metadata->getTableMetadata().getMode() == ObjectStorageQueueMode::EXCLUSIVE;
 
-    auto file_metadata = metadata->getFileMetadata(path);
+    const auto partition_key = metadata->getPartitioningMode() == ObjectStorageQueuePartitioningMode::EXPLICIT
+        ? ObjectStorageQueueMetadata::getPartitionKeyForPath(
+            metadata->getExplicitPartitions(configuration->getPathForRead().cutGlobs(configuration->supportsPartialPathPrefix())), path)
+        : "";
+    auto file_metadata = metadata->getFileMetadata(path, /* bucket_info */ {}, partition_key);
     const auto & processed_node_path = file_metadata->getProcessedNodePath();
     const auto & failed_node_path = file_metadata->getFailedNodePath();
 

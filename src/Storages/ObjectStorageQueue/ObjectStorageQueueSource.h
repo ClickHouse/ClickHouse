@@ -97,6 +97,7 @@ public:
         const StorageID storage_id;
         const bool use_buckets_for_processing;
         const size_t buckets_num = 0;
+        const size_t list_objects_batch_size;
 
         ObjectStorageIteratorPtr object_storage_iterator;
         std::unique_ptr<re2::RE2> matcher;
@@ -108,8 +109,12 @@ public:
         bool is_finished = false;
         std::mutex next_mutex;
         size_t index = 0;
+        std::map<std::string, std::string> partition_key_by_prefix;
+        std::deque<std::pair<std::string, std::string>> partitions_to_list TSA_GUARDED_BY(next_mutex);
+        std::string partition_last_processed_path;
 
         std::pair<ObjectInfoPtr, FileMetadataPtr> next();
+        void listPartitions(const std::map<std::string, std::string> & partitions) TSA_REQUIRES(next_mutex);
         void filterProcessableFiles(ObjectInfos & objects);
         void filterOutProcessedAndFailed(ObjectInfos & objects);
 
@@ -127,6 +132,9 @@ public:
 
         /// We store a vector of holders, because we cannot release them until processed files are committed.
         std::unordered_map<size_t, std::shared_ptr<BucketHolders>> bucket_holders TSA_GUARDED_BY(mutex);
+
+        std::map<Bucket, std::map<std::string, std::string>> partitions_per_bucket TSA_GUARDED_BY(mutex);
+        std::optional<Bucket> listing_bucket TSA_GUARDED_BY(mutex);
 
         /// Is glob_iterator finished?
         std::atomic_bool iterator_finished = false;

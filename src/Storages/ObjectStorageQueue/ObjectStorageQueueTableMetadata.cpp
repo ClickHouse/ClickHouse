@@ -100,7 +100,20 @@ ObjectStorageQueueTableMetadata::ObjectStorageQueueTableMetadata(
     if (bucketing_mode == "partition" && partitioning_mode == "none")
     {
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
-            "bucketing_mode='partition' requires partitioning_mode to be set to 'hive' or 'regex'");
+            "bucketing_mode='partition' requires partitioning_mode to be set to 'hive', 'regex' or 'explicit'");
+    }
+
+    if (partitioning_mode == "explicit")
+    {
+        if (mode != "ordered")
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "partitioning_mode='explicit' requires mode='ordered'");
+        if (getBucketsNum() > 1 && bucketing_mode != "partition")
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "partitioning_mode='explicit' with more than one bucket requires bucketing_mode='partition'");
+        if (!last_processed_path.empty())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "last_processed_path is not supported with partitioning_mode='explicit'");
     }
 }
 
@@ -178,6 +191,8 @@ ObjectStorageQueuePartitioningMode ObjectStorageQueueTableMetadata::getPartition
         return ObjectStorageQueuePartitioningMode::HIVE;
     if (partitioning_mode == "regex")
         return ObjectStorageQueuePartitioningMode::REGEX;
+    if (partitioning_mode == "explicit")
+        return ObjectStorageQueuePartitioningMode::EXPLICIT;
     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unexpected ObjectStorageQueue partitioning mode: {}", partitioning_mode);
 }
 

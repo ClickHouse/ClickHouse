@@ -326,7 +326,9 @@ IMPLEMENT_SETTING_ENUM(ObjectStorageQueuePartitioningMode, ErrorCodes::BAD_ARGUM
      {"hive", ObjectStorageQueuePartitioningMode::HIVE},
      {"HIVE", ObjectStorageQueuePartitioningMode::HIVE},
      {"regex", ObjectStorageQueuePartitioningMode::REGEX},
-     {"REGEX", ObjectStorageQueuePartitioningMode::REGEX}})
+     {"REGEX", ObjectStorageQueuePartitioningMode::REGEX},
+     {"explicit", ObjectStorageQueuePartitioningMode::EXPLICIT},
+     {"EXPLICIT", ObjectStorageQueuePartitioningMode::EXPLICIT}})
 
 IMPLEMENT_SETTING_ENUM(ObjectStorageQueueBucketingMode, ErrorCodes::BAD_ARGUMENTS,
     {{"path", ObjectStorageQueueBucketingMode::PATH},

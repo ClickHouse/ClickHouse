@@ -134,7 +134,8 @@ public:
     /// allows to manage metadata of a concrete file.
     FileMetadataPtr getFileMetadata(
         const std::string & path,
-        ObjectStorageQueueOrderedFileMetadata::BucketInfoPtr bucket_info = {});
+        ObjectStorageQueueOrderedFileMetadata::BucketInfoPtr bucket_info,
+        const std::string & partition_key);
 
     bool tryAcquireExclusiveProcessing(const std::string & path);
     void releaseExclusiveProcessing(const std::string & path);
@@ -195,6 +196,12 @@ public:
 
     /// Compute StartAfter for ordered S3 listing when it is safe.
     std::optional<std::string> getStartAfterForListing() const;
+
+    std::map<std::string, std::string> getExplicitPartitions(const std::string & prefix) const;
+    static std::string getPartitionKeyForPath(const std::map<std::string, std::string> & partition_key_by_prefix, const std::string & path);
+    Strings getLastProcessedPathsOfPartitions(const Strings & partition_keys) const;
+    void addPartition(const std::string & partition);
+    void forgetPartition(const std::string & partition);
 
     void updateSettings(const SettingsChanges & changes);
 

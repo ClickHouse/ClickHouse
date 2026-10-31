@@ -78,6 +78,8 @@ namespace
                 }
                 return "";
             }
+            case ObjectStorageQueuePartitioningMode::EXPLICIT:
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Partition key of file {} cannot be derived from its path", file_path);
             case ObjectStorageQueuePartitioningMode::NONE:
                 return "";
         }
@@ -151,6 +153,24 @@ std::string ObjectStorageQueueOrderedFileMetadata::BucketInfo::toString() const
     wb << "bucket " << bucket << ", ";
     wb << "processor info " << processor_info;
     return wb.str();
+}
+
+ObjectStorageQueueOrderedFileMetadata::Bucket ObjectStorageQueueOrderedFileMetadata::getBucketForPartition(
+    const std::string & partition_key_,
+    size_t buckets_num_)
+{
+    return sipHash64(partition_key_) % buckets_num_;
+}
+
+std::string ObjectStorageQueueOrderedFileMetadata::getProcessedPathForPartition(
+    const std::filesystem::path & zk_path_,
+    size_t buckets_num_,
+    const std::string & partition_key_)
+{
+    const std::filesystem::path bucket_path = DB::useBucketsForProcessing(buckets_num_)
+        ? getProcessedPathWithBucket(zk_path_, getBucketForPartition(partition_key_, buckets_num_))
+        : getProcessedPathWithoutBucket(zk_path_);
+    return bucket_path / partition_key_;
 }
 
 std::vector<std::string> ObjectStorageQueueOrderedFileMetadata::getLastProcessedPaths(
@@ -418,12 +438,15 @@ ObjectStorageQueueOrderedFileMetadata::ObjectStorageQueueOrderedFileMetadata(
     ObjectStorageQueueBucketingMode bucketing_mode_,
     ObjectStorageQueuePartitioningMode partitioning_mode_,
     const ObjectStorageQueueFilenameParser * parser_,
+    const std::string & partition_key_,
     LoggerPtr log_)
     : ObjectStorageQueueIFileMetadata(
         path_,
         zookeeper_name_,
         /* processing_node_path */zk_path_ / "processing" / getNodeName(path_),
-        /* processed_node_path */getProcessedPath(zk_path_, path_, buckets_num_, bucketing_mode_, partitioning_mode_, parser_),
+        /* processed_node_path */partitioning_mode_ == ObjectStorageQueuePartitioningMode::EXPLICIT
+            ? getProcessedPathForPartition(zk_path_, buckets_num_, partition_key_)
+            : getProcessedPath(zk_path_, path_, buckets_num_, bucketing_mode_, partitioning_mode_, parser_),
         /* failed_node_path */zk_path_ / "failed" / getNodeName(path_),
         file_status_,
         max_loading_retries_,
@@ -436,7 +459,9 @@ ObjectStorageQueueOrderedFileMetadata::ObjectStorageQueueOrderedFileMetadata(
     , bucket_info(bucket_info_)
     , partitioning_mode(partitioning_mode_)
     , parser(parser_)
-    , processed_bucket_path(getProcessedBucketPath(zk_path_, path_, buckets_num_, bucketing_mode_, partitioning_mode_, parser_))
+    , processed_bucket_path(partitioning_mode_ == ObjectStorageQueuePartitioningMode::EXPLICIT
+        ? std::filesystem::path(processed_node_path).parent_path().string()
+        : getProcessedBucketPath(zk_path_, path_, buckets_num_, bucketing_mode_, partitioning_mode_, parser_))
 {
     chassert(hasPartitioningMode(partitioning_mode) || processed_bucket_path == processed_node_path);
 
@@ -943,8 +968,7 @@ void ObjectStorageQueueOrderedFileMetadata::preparePartitionProcessedMap(Partiti
         return;
 
     /// In REGEX mode the regex might not match; skip partition tracking in that case.
-    const auto partition_key = getPartitionKey(path, partitioning_mode, parser);
-    if (partition_key.empty())
+    if (partitioning_mode != ObjectStorageQueuePartitioningMode::EXPLICIT && getPartitionKey(path, partitioning_mode, parser).empty())
     {
         LOG_TEST(log, "Partition key is empty for '{}', skipping per-partition tracking", path);
         return;

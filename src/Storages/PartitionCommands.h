@@ -26,6 +26,7 @@ struct PartitionCommand
         DROP_PARTITION,
         DROP_DETACHED_PARTITION,
         FORGET_PARTITION,
+        ADD_PARTITION,
         FETCH_PARTITION,
         FREEZE_ALL_PARTITIONS,
         FREEZE_PARTITION,

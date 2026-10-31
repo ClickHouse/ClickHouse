@@ -439,6 +439,7 @@ enum class ObjectStorageQueuePartitioningMode : uint8_t
     NONE,   /// No per-partition tracking (default)
     HIVE,   /// Extract partition from path structure (key=value pairs)
     REGEX,  /// Extract partition from filename using regex
+    EXPLICIT,
 };
 
 DECLARE_SETTING_ENUM(ObjectStorageQueuePartitioningMode)

@@ -587,10 +587,25 @@ SETTINGS
 `S3Queue` `ordered` mode, as well as `unordered`, supports `(s3queue_)processing_threads_num` setting (`s3queue_` prefix is optional), which allows to control number of threads, which would do processing of `S3` files locally on the server.
 
 For `ordered` mode without partitioning, ClickHouse may resume S3 listing from the last processed key to avoid re-listing the full prefix history. In bucketed ordered mode, the resume point is conservatively chosen as the smallest processed key across all buckets to avoid skipping unprocessed files.
-This resume-listing optimization is used only for S3-backed queues in ordered mode without partitioning (not for AzureQueue or when `partitioning_mode` is set).
+This resume-listing optimization is used only for S3-backed queues in ordered mode without partitioning or with [explicit partitions](#explicit-partitions) (not for AzureQueue or when `partitioning_mode` is `hive` or `regex`).
 In addition, `ordered` mode also introduces another setting called `(s3queue_)buckets` which means "logical threads". It means that in distributed scenario, when there are several servers with `S3Queue` table replicas, where this setting defines the number of processing units. E.g. each processing thread on each `S3Queue` replica will try to lock a certain `bucket` for processing, each `bucket` is attributed to certain files by hash of the file name. Therefore, in distributed scenario it is highly recommended to have `(s3queue_)buckets` setting to be at least equal to the number of replicas or bigger. This is fine to have the number of buckets bigger than the number of replicas. The most optimal scenario would be for `(s3queue_)buckets` setting to equal a multiplication of `number_of_replicas` and `(s3queue_)processing_threads_num`.
 The setting `(s3queue_)processing_threads_num` is not recommended for usage before version `24.6`.
 The setting `(s3queue_)buckets` is available starting with version `24.6`.
+
+## Explicit partitions {#explicit-partitions}
+
+With `partitioning_mode = 'explicit'` in `ordered` mode, the table processes only the objects under key prefixes registered with `ALTER TABLE`:
+
+```sql
+ALTER TABLE queue ADD PARTITION 'server-1_';
+ALTER TABLE queue FORGET PARTITION 'server-1_';
+```
+
+A partition is a key prefix relative to the table path with the wildcards cut off: for the path `logs/*` the partition `'server-1_'` covers the objects whose keys start with `logs/server-1_`. Registered partitions are stored in Keeper under `keeper_path` and are shared by all replicas. They must not overlap, that is, no registered partition can be a prefix of another one. Both commands are idempotent.
+
+Each partition keeps its own last processed file. On every poll each partition is listed separately, and on S3 its listing starts after its last processed file, so the cost of listing does not grow with the number of processed files kept in the bucket, for example with `after_processing = 'keep'`. Objects outside registered partitions are ignored. `FORGET PARTITION` removes the partition and its progress. It is meant for prefixes that no longer receive or hold objects, because objects still under the prefix may be processed again if it is added back.
+
+`bucketing_mode = 'partition'` is required unless `buckets = 1`, because `processing_threads_num`, which is at least 16 by default, is used as the number of buckets if `buckets` is not set. Changing `buckets` with `ALTER TABLE ... MODIFY SETTING` is not allowed.
 
 ## SELECT from S3Queue table engine {#select}
 
