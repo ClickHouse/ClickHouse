@@ -120,8 +120,13 @@ IMergeTreeReader::IMergeTreeReader(
     /// queries, which must not see the substituted empty strings. Read the values in full then.
     /// The readers of wide and compact parts write to the cache, but only for the parts the cache can hold
     /// (see `initColumnsCache` and `IMergeTreeDataPart::mayStoreColumnsInColumnsCache`).
-    const bool may_write_to_columns_cache = columns_cache && settings.enable_columns_cache_writes
-        && canUseColumnsCacheForPart(data_part_info_for_read->getTableUUID());
+    /// Not when the write budget has already disabled the writes for the rest of the query: the flag
+    /// is never reset, so such a reader never writes.
+    const bool columns_cache_writes_disabled = settings.columns_cache_writes_disabled
+        && settings.columns_cache_writes_disabled->load(std::memory_order_relaxed);
+    const bool may_write_to_columns_cache = settings.enable_columns_cache_writes
+        && !columns_cache_writes_disabled
+        && isColumnsCachePossibleForPart(columns_cache, *data_part_info_for_read);
 
     if (settings.string_value_filters && !settings.string_value_filters->empty() && !has_mutations_on_fly && !may_write_to_columns_cache)
     {
@@ -675,8 +680,7 @@ void IMergeTreeReader::initColumnsCache(bool can_read)
         requested_column_names.push_back(column.name);
 
     /// `columns_cache` is null when the cache is disabled or sized zero, see `getColumnsCacheIfEnabled`.
-    const bool cache_possible = columns_cache
-        && canUseColumnsCacheForPart(data_part_info_for_read->getTableUUID());
+    const bool cache_possible = isColumnsCachePossibleForPart(columns_cache, *data_part_info_for_read);
 
     columns_cache_reads_possible = cache_possible && settings.enable_columns_cache_reads && can_read;
     columns_cache_writes_possible = cache_possible && settings.enable_columns_cache_writes;
@@ -1044,6 +1048,12 @@ MergeTreeReaderPtr createMergeTreeReaderWide(
     const MergeTreeReaderSettings & reader_settings,
     const ValueSizeMap & avg_value_size_hints,
     const ReadBufferFromFileBase::ProfileCallback & profile_callback);
+
+bool isColumnsCachePossibleForPart(const ColumnsCache * columns_cache, const IMergeTreeDataPartInfoForReader & part)
+{
+    return columns_cache
+        && canUseColumnsCacheForPart(part.getTableUUID());
+}
 
 MergeTreeReaderPtr createMergeTreeReader(
     const MergeTreeDataPartInfoForReaderPtr & read_info,

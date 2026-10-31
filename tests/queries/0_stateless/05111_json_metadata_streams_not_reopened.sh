@@ -41,7 +41,7 @@ function read_with_prefetch()
 
     ${CLICKHOUSE_CLIENT} --query_id "${query_id}" -q "
         SELECT json FROM t_json_metadata_streams WHERE t = 4 FORMAT Null
-        SETTINGS max_threads = 1, load_marks_asynchronously = 0, local_filesystem_read_prefetch = ${prefetch}, use_uncompressed_cache = 0, enable_parallel_replicas = 0
+        SETTINGS max_threads = 1, load_marks_asynchronously = 0, local_filesystem_read_prefetch = ${prefetch}, use_uncompressed_cache = 0, use_columns_cache = 0, enable_parallel_replicas = 0
     "
 
     ${CLICKHOUSE_CLIENT} -q "SYSTEM FLUSH LOGS query_log"

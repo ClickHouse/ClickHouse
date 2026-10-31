@@ -1,0 +1,8 @@
+<clickhouse>
+    <profiles>
+        <default>
+            <!-- The tests check reads through the filesystem cache and the inner disk, so the data must not be served from the columns cache above them. -->
+            <use_columns_cache>0</use_columns_cache>
+        </default>
+    </profiles>
+</clickhouse>

@@ -7,6 +7,9 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
+# The test checks the filesystem cache, so the reads must not be served from the columns cache above it.
+CLICKHOUSE_CLIENT="$CLICKHOUSE_CLIENT --use_columns_cache=0"
+
 for STORAGE_POLICY in 's3_cache' 'local_cache' 'azure_cache'; do
     echo "Using storage policy: $STORAGE_POLICY"
 
