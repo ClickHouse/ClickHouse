@@ -72,7 +72,6 @@
 #include <base/sleep.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Storages/MergeTree/MergeTreeIndexText.h>
-#include <Storages/MergeTree/MergeTreeIndexVectorSimilarity.h>
 #include <Storages/MergeTree/ConditionTemplate.h>
 
 
@@ -1222,15 +1221,12 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
                 auto l_index_priority = l_is_minmax ? 1 : 2;
                 auto r_index_priority = r_is_minmax ? 1 : 2;
 
-#if USE_USEARCH
-                // A vector similarity index (if present) is the most selective, hence move it to front
-                bool l_is_vectorsimilarity = typeid_cast<const MergeTreeIndexVectorSimilarity *>(l_index.get());
-                bool r_is_vectorsimilarity = typeid_cast<const MergeTreeIndexVectorSimilarity *>(r_index.get());
-                if (l_is_vectorsimilarity)
+                // Vector similarity indexes require all_match (no prior mark filtering),
+                // so move them to the front regardless of which backend is used.
+                if (l_index->isVectorSimilarityIndex())
                     l_index_priority = 0;
-                if (r_is_vectorsimilarity)
+                if (r_index->isVectorSimilarityIndex())
                     r_index_priority = 0;
-#endif
                 // negated since we want to prioritize coarser indexes
                 const auto neg_l_granularity = -l_index->getGranularity();
                 const auto neg_r_granularity = -r_index->getGranularity();
@@ -3326,6 +3322,8 @@ std::pair<MarkRanges, RangesInDataPartReadHints> MergeTreeDataSelectExecutor::fi
         /// this variable is stored to avoid reading the same granule twice.
         MergeTreeIndexGranulePtr granule = nullptr;
         size_t last_index_mark = 0;
+        /// Distance hints must cover every selected granule, not only those with ANN results.
+        bool vector_distance_hints_valid = true;
 
         for (size_t i = 0; i < ranges_size; ++i)
         {
@@ -3342,6 +3340,23 @@ std::pair<MarkRanges, RangesInDataPartReadHints> MergeTreeDataSelectExecutor::fi
                 {
                     auto vector_search_results = condition->calculateApproximateNearestNeighbors(granule);
 
+                    if (vector_search_results.scan_full_granule)
+                    {
+                        vector_distance_hints_valid = false;
+                        read_hints = {};
+
+                        MarkRange data_range(
+                            std::max(ranges[i].begin, index_mark * skip_index_granularity),
+                            std::min(ranges[i].end, (index_mark + 1) * skip_index_granularity));
+
+                        if (res.empty() || data_range.begin - res.back().end > min_marks_for_seek)
+                            res.push_back(data_range);
+                        else
+                            res.back().end = data_range.end;
+
+                        continue;
+                    }
+
                     /// We need to sort the result ranges ascendingly
                     auto rows = vector_search_results.rows;
                     std::sort(rows.begin(), rows.end());
@@ -3353,9 +3368,10 @@ std::pair<MarkRanges, RangesInDataPartReadHints> MergeTreeDataSelectExecutor::fi
 #endif
                     if (!vector_search_results.distances.has_value())
                     {
+                        vector_distance_hints_valid = false;
                         read_hints = {};
                     }
-                    else
+                    else if (vector_distance_hints_valid)
                     {
                         const auto & distances = vector_search_results.distances.value();
                         if (vector_search_results.rows.size() != distances.size())
