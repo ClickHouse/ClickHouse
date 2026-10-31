@@ -15,6 +15,7 @@
 #include <Parsers/Mongo/Utils.h>
 #include <Parsers/ASTExpressionList.h>
 
+#include <bit>
 #include <cmath>
 #include <map>
 #include <string_view>
@@ -116,6 +117,17 @@ ASTPtr parseFieldOperator(
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "The argument of '{}' must be a constant", name);
         /// Mongo's equality is also its array membership test (see `makeEqualityCondition`).
         auto category = constantCategory(argument);
+        /** To a Mongo query, `null` is equal to itself and to a missing field, and the range
+          * operators keep to the type bracket of `null`, which holds nothing else: `$lte` and `$gte`
+          * select what `$eq` selects, and `$lt` and `$gt` select nothing. A comparison with a `NULL`
+          * in ClickHouse is `NULL`, which would select nothing for all four.
+          */
+        if (argument.IsNull() && name != "$eq" && name != "$ne")
+        {
+            if (name == "$lte" || name == "$gte")
+                return makeEqualityCondition(field, constant, category);
+            return make_intrusive<ASTLiteral>(Field(false));
+        }
         if (name == "$eq")
             return makeEqualityCondition(field, constant, category);
         if (name == "$ne")
@@ -294,18 +306,38 @@ ASTPtr parseFieldOperator(
         else
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "The argument of '{}' must be a bit mask or an array of bit positions", name);
 
-        auto masked = makeASTFunction("bitAnd", identifier(), make_intrusive<ASTLiteral>(Field(mask)));
-        auto mask_literal = make_intrusive<ASTLiteral>(Field(mask));
-        auto zero = make_intrusive<ASTLiteral>(Field(UInt64(0)));
+        /** Mongo tests the bits of a number that is a signed 64-bit integer, also when it is stored
+          * as a double, and no bit test matches another value: a fraction, a number out of that
+          * range, or a boolean. So the field is converted to an `Int64`, which is `NULL` out of the
+          * range, a fraction is excluded before, and a `Bool`, which `bitAnd` would take for the
+          * number `1`, by the type of the field, which is a constant. The mask is compared as an
+          * `Int64` as well, so that its 63rd bit is the sign of the field.
+          */
+        auto is_not_boolean = makeASTFunction(
+            "not",
+            makeASTFunction(
+                "match",
+                makeASTFunction("toTypeName", identifier()),
+                make_intrusive<ASTLiteral>(Field(String("^((Nullable|LowCardinality)\\()*Bool\\)*$")))));
+        auto is_whole = makeASTFunction("equals", identifier(), makeASTFunction("floor", identifier()));
+        auto as_integer = makeASTFunction("accurateCastOrNull", identifier(), make_intrusive<ASTLiteral>(Field(String("Int64"))));
+        const auto signed_mask = std::bit_cast<Int64>(mask);
+        auto masked = makeASTFunction("bitAnd", std::move(as_integer), make_intrusive<ASTLiteral>(Field(signed_mask)));
+        auto mask_literal = make_intrusive<ASTLiteral>(Field(signed_mask));
+        auto zero = make_intrusive<ASTLiteral>(Field(Int64(0)));
 
+        ASTPtr test;
         if (name == "$bitsAllSet")
-            return makeASTFunction("equals", masked, mask_literal);
-        if (name == "$bitsAnySet")
-            return makeASTFunction("notEquals", masked, zero);
-        if (name == "$bitsAllClear")
-            return makeASTFunction("equals", masked, zero);
-        if (name == "$bitsAnyClear")
-            return makeASTFunction("notEquals", masked, mask_literal);
+            test = makeASTFunction("equals", masked, mask_literal);
+        else if (name == "$bitsAnySet")
+            test = makeASTFunction("notEquals", masked, zero);
+        else if (name == "$bitsAllClear")
+            test = makeASTFunction("equals", masked, zero);
+        else if (name == "$bitsAnyClear")
+            test = makeASTFunction("notEquals", masked, mask_literal);
+        else
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "The filter operator '{}' is not supported", name);
+        return makeASTFunction("and", std::move(is_not_boolean), std::move(is_whole), std::move(test));
     }
 
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "The filter operator '{}' is not supported", name);

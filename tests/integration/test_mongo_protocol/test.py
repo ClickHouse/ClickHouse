@@ -3110,3 +3110,51 @@ def test_create_collection_in_an_existing_database_needs_no_create_database(star
 
     node.query("DROP TABLE db.created_with_a_table_grant", password="123")
     node.query("DROP USER mongo_creator", password="123")
+
+
+def test_a_null_byte_in_a_namespace_is_rejected(started_cluster):
+    """A BSON string may hold a null byte. A collection or database name holding one is an error,
+    and does not address the collection or database named by the part before the null byte."""
+    node = cluster.instances["node"]
+    node.query("CREATE DATABASE IF NOT EXISTS db", password="123")
+    node.query("CREATE DATABASE IF NOT EXISTS victim_db", password="123")
+    node.query("DROP TABLE IF EXISTS db.victim", password="123")
+    node.query("CREATE TABLE db.victim (id Int32) ENGINE = MergeTree ORDER BY id", password="123")
+
+    sock = connect_raw()
+    authenticate_raw(sock)
+    for command in [
+        {"drop": "victim\x00other", "$db": "db"},
+        {"find": "victim\x00other", "$db": "db"},
+        {"drop": "victim", "$db": "db\x00other"},
+        {"listCollections": 1, "$db": "db\x00other"},
+        {"dropDatabase": 1, "$db": "victim_db\x00other"},
+    ]:
+        sock.sendall(encode_op_msg(command))
+        reply = read_op_msg(sock)
+        assert reply["ok"] == 0, (command, reply)
+    sock.close()
+
+    assert node.query("EXISTS TABLE db.victim", password="123") == "1\n"
+    assert node.query("EXISTS DATABASE victim_db", password="123") == "1\n"
+
+    node.query("DROP TABLE db.victim", password="123")
+    node.query("DROP DATABASE victim_db", password="123")
+
+
+def test_doubles_keep_full_precision(started_cluster):
+    """A double whose shortest text needs all its digits is stored, filtered on and read back
+    exactly, by `find` and by `distinct`."""
+    client = make_client()
+    collection = client["db"]["full_precision_doubles"]
+
+    value = 0.013697458904123693
+    collection.drop()
+    collection.insert_one({"id": 1, "x": value})
+
+    node = cluster.instances["node"]
+    assert node.query("SELECT x = 0.013697458904123693 FROM db.full_precision_doubles", password="123") == "1\n"
+    assert [document["x"] for document in collection.find({"x": value})] == [value]
+    assert collection.distinct("x") == [value]
+
+    collection.drop()

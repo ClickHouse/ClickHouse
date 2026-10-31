@@ -363,8 +363,9 @@ parseData(const char * begin, const char * end, rapidjson::Document::AllocatorTy
     rapidjson::Document document;
 
     /// The iterative parser does not recurse, so a deeply nested input cannot exhaust the stack
-    /// before its depth is checked.
-    if (document.Parse<rapidjson::kParseIterativeFlag>(input.data()).HasParseError())
+    /// before its depth is checked. Without full precision a number may be rounded to a
+    /// neighbouring double.
+    if (document.Parse<rapidjson::kParseIterativeFlag | rapidjson::kParseFullPrecisionFlag>(input.data()).HasParseError())
     {
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Error while parsing json in parseData {}", input);
     }

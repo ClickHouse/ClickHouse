@@ -620,7 +620,7 @@ std::vector<Document> executeSelectIntoCursor(
         auto output = executor->execute(sql_query, {}, client_settings);
 
         rapidjson::Document result_json;
-        if (result_json.Parse(output.data()).HasParseError())
+        if (result_json.Parse<rapidjson::kParseFullPrecisionFlag>(output.data()).HasParseError())
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Can not parse the result of the query");
 
         auto columns = extractResultColumns(result_json);
@@ -683,7 +683,7 @@ std::vector<Document> makeEmptyCursorReply(const CollectionRef & collection)
 String modifyFilter(const String & json)
 {
     rapidjson::Document doc;
-    doc.Parse(json.c_str());
+    doc.Parse<rapidjson::kParseFullPrecisionFlag>(json.c_str());
 
     if (doc.HasParseError())
     {
@@ -723,7 +723,7 @@ static void normalizeMatchStages(rapidjson::Value & pipeline, rapidjson::Documen
             }
 
             rapidjson::Document modified;
-            if (modified.Parse(modifyFilter(serialized_match).c_str()).HasParseError())
+            if (modified.Parse<rapidjson::kParseFullPrecisionFlag>(modifyFilter(serialized_match).c_str()).HasParseError())
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Can not parse the normalized filter of a '$match' stage");
             match_it->value.CopyFrom(modified, allocator);
         }
@@ -1050,7 +1050,11 @@ CollectionRef getCollectionRef(const Document & command, const String & command_
     if (database_it == json.MemberEnd() || !database_it->value.IsString())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Mongo command '{}' does not contain the '$db' database name", command_name);
 
-    CollectionRef result{.database = database_it->value.GetString(), .collection = collection_it->value.GetString()};
+    /// The names keep their length: a BSON string may hold a null byte, and a name cut at it would
+    /// address another, existing collection or database.
+    CollectionRef result{
+        .database = String(database_it->value.GetString(), database_it->value.GetStringLength()),
+        .collection = String(collection_it->value.GetString(), collection_it->value.GetStringLength())};
 
     if (result.database.empty() || result.collection.empty())
         throw Exception(
@@ -1061,6 +1065,10 @@ CollectionRef getCollectionRef(const Document & command, const String & command_
             result.collection);
 
     validateMongoDatabaseName(result.database, command_name);
+
+    if (result.collection.contains('\0'))
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS, "Invalid Mongo collection name in the command '{}': it contains a null byte", command_name);
 
     return result;
 }

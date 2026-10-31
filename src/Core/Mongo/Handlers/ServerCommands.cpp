@@ -36,7 +36,8 @@ String databaseName(const Document & command, const String & command_name)
     if (database_it == json.MemberEnd() || !database_it->value.IsString())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Mongo command '{}' does not contain the '$db' database name", command_name);
 
-    String database = database_it->value.GetString();
+    /// The length is kept, so that a null byte is rejected rather than cutting the name.
+    String database(database_it->value.GetString(), database_it->value.GetStringLength());
     validateMongoDatabaseName(database, command_name);
     return database;
 }

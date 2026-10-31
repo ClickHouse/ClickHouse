@@ -9,6 +9,7 @@
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
+#include <Parsers/ASTSetQuery.h>
 #include <Parsers/ASTSubquery.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Parsers/ASTWithElement.h>
@@ -99,6 +100,16 @@ bool ParserMongoSelectQuery::parseImpl(ASTPtr & node)
         }
         select_query->setExpression(ASTSelectQuery::Expression::ORDER_BY, std::move(order_by_node));
     }
+
+    /** The filter, the sort and the fields a projection computes from always name the fields of the
+      * stored document, while a computed field of the projection is an alias in the same select:
+      * `{"a": {"$literal": 99}, "original": "$a"}` would read `original` from the alias instead of
+      * the column, and a filter on `a` would compare the literal.
+      */
+    auto settings = make_intrusive<ASTSetQuery>();
+    settings->is_standalone = false;
+    settings->changes.emplace_back("prefer_column_name_to_alias", Field(UInt64(1)));
+    select_query->setExpression(ASTSelectQuery::Expression::SETTINGS, std::move(settings));
 
     /// Traverse data tree for WHERE operator
     ASTPtr where_condition;

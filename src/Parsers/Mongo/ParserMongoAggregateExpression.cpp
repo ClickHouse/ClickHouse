@@ -1676,7 +1676,8 @@ ASTPtr unwrapArrayFromTuples(ASTPtr aggregated)
 
 /** Whether `value` is a number to the numeric accumulators. A ClickHouse `Bool` is a `UInt8`, which
   * `sum` and `avg` would add up, while `$sum`, `$avg` and the standard deviations of Mongo skip a
-  * boolean, as any other value that is not a number. The condition is a constant, and the
+  * boolean, as any other value that is not a number, also when it is wrapped into `Nullable` or
+  * `LowCardinality`, which `toTypeName` keeps. The condition is a constant, and the
   * accumulators are lowered to their `-If` forms with it. The value is an argument of an aggregate
   * function, which cannot nest, so the copy does not compound.
   */
@@ -1687,7 +1688,7 @@ ASTPtr makeIsAccumulatedNumber(const ASTPtr & value)
         makeASTFunction(
             "match",
             makeASTFunction("toTypeName", value->clone()),
-            makeLiteral(Field(String(R"(^(Nullable\()?Bool\)?$)")))));
+            makeLiteral(Field(String(R"(^(Nullable\(|LowCardinality\()*Bool\)*$)")))));
 }
 
 }
@@ -1782,9 +1783,10 @@ ASTPtr parseMongoAccumulator(const rapidjson::Value & value, const MongoGroupOrd
     {
         auto sampled = parseMongoAggregateExpression(member.value);
         auto is_number = makeIsAccumulatedNumber(sampled);
+        auto counted = makeASTFunction("countIf", sampled->clone(), is_number->clone());
         return makeASTFunction(
             "if",
-            makeASTFunction("greater", makeASTFunction("countIf", sampled->clone(), is_number->clone()), makeLiteral(Field(UInt64(1)))),
+            makeASTFunction("greater", std::move(counted), makeLiteral(Field(UInt64(1)))),
             makeASTFunction("stddevSampIf", sampled, std::move(is_number)),
             makeNull());
     }

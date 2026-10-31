@@ -73,7 +73,8 @@ std::vector<Document> ListCollectionsHandler::handle(
         auto database_it = json.FindMember("$db");
         if (database_it == json.MemberEnd() || !database_it->value.IsString())
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "The 'listCollections' command does not contain the '$db' database name");
-        database = database_it->value.GetString();
+        /// The length is kept, so that a null byte is rejected rather than cutting the name.
+        database = String(database_it->value.GetString(), database_it->value.GetStringLength());
         validateMongoDatabaseName(database, "listCollections");
         name_filter = getNameFilter(json, "listCollections");
         name_only = getBoolOption(json, "nameOnly", "listCollections").value_or(false);

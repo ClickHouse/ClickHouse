@@ -115,7 +115,9 @@ rapidjson::Document Document::getRapidJSONRepresentation() const
 {
     String json = getJSON();
     rapidjson::Document json_doc;
-    if (json_doc.Parse(json.c_str()).HasParseError())
+    /// Without full precision RapidJSON may round a number to a neighbouring double, which would
+    /// then be stored or compared instead of the one the client sent.
+    if (json_doc.Parse<rapidjson::kParseFullPrecisionFlag>(json.c_str()).HasParseError())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Incorrect bson: can not convert the document to JSON");
     return json_doc;
 }
