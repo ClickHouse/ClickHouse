@@ -1,8 +1,6 @@
 -- An expression bound to an alias outside of a lambda must not see the lambda arguments,
 -- even when an argument has the same name as an identifier of that expression.
 
-SET enable_analyzer = 1;
-
 -- The original report: the aggregate argument inside `steps` was captured by the lambda argument `step`.
 SELECT
     groupArray(step) AS steps,

@@ -686,9 +686,9 @@ MergeTreeIndexConditionPtr MergeTreeProjectionIndexText::createIndexCondition(co
         /// index (`.pidx`). Without both, `hasPhrase` cannot be evaluated exactly and keeps the row-level filter.
         /*has_positions_=*/ text_index->params.enable_phrase_query_support && text_index->params.has_block_index,
         /// A projection index is built without a storage metadata snapshot (see the constructors),
-        /// so `getColumnsShadowingMapSubcolumns` cannot be evaluated here; the projection's own
+        /// so `getMapSubcolumnShadowingCheck` cannot be evaluated here; the projection's own
         /// columns are the only ones this condition can read, so nothing shadows them.
-        /*columns_shadowing_map_subcolumns_=*/ NameSet{},
+        /*is_column_shadowing_map_subcolumn_=*/ [](const String &) { return false; },
         collectJSONIndexArgumentTypes(*text_index->index.expression),
         /*is_projection_index_=*/ true);
 }

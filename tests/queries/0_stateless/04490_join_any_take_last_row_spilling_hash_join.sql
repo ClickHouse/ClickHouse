@@ -14,7 +14,6 @@ CREATE TABLE t2 (k UInt32, v UInt32, just_for_size String) ENGINE MergeTree ORDE
 INSERT INTO t2 VALUES (1, 42, ''), (1, 43, '');
 INSERT INTO t2 SELECT number + 2 AS k, number + 2 AS v, randomPrintableASCII(1000) AS just_for_size FROM system.numbers LIMIT 20000;
 
-SET enable_analyzer = 1; -- The old analyzer didn't pass `join_any_take_last_row` to the joins, so we need the analyzer
 -- Auto-spilling path (SpillingHashJoin) with spill.
 SET max_bytes_before_external_join = 10000000, max_bytes_ratio_before_external_join = 0.8;
 SELECT 'a1', * FROM t1 ANY JOIN t2 ON t1.k = t2.k SETTINGS join_any_take_last_row = 0;
