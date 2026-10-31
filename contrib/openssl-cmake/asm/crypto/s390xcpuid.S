@@ -424,5 +424,3 @@ s390x_flip_endian64:
 	lmg	%r6,%r9,6*8(%r15)
 	br	%r14
 .size	s390x_flip_endian64,.-s390x_flip_endian64
-.section	.init
-	brasl	%r14,OPENSSL_cpuid_setup

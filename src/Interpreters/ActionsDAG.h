@@ -196,7 +196,13 @@ public:
     /// max_type_complexity guards binary type decoding (0 == unlimited). Callers pass the effective
     /// input_format_binary_max_type_complexity for client-reachable QueryPlan packets, or leave it at the
     /// default 0 for trusted internal metadata (e.g. data-lake schema transforms).
-    static ActionsDAG deserialize(ReadBuffer & in, DeserializedSetsRegistry & registry, const ContextPtr & context, size_t max_type_complexity = 0);
+    /// `nesting_depth` is the depth of lambda captures, it is used internally to limit the recursion.
+    static ActionsDAG deserialize(
+        ReadBuffer & in,
+        DeserializedSetsRegistry & registry,
+        const ContextPtr & context,
+        size_t max_type_complexity = 0,
+        size_t nesting_depth = 0);
 
     static Node createAlias(const Node & child, std::string alias);
 
@@ -521,6 +527,17 @@ public:
     bool isFilterAlwaysFalseForDefaultValueInputs(const std::string & filter_name, const Block & input_stream_header) const;
 
     struct ActionsForFilterPushDown;
+
+    enum class PushDownIndexHints : uint8_t
+    {
+        All,
+        /// For key steps like GROUP BY: a hint prunes whole granules, which can leave a key with part of its rows.
+        /// An implied hint (`FunctionIndexHint::isImplied`) still passes: the rows it prunes fail the filter anyway.
+        Implied,
+        /// For totals: the totals row is not filtered, so it must not lose the rows a hint prunes.
+        None,
+    };
+
     /// Create actions which may calculate part of filter using only available_inputs.
     /// If nothing may be calculated, returns nullptr.
     /// Otherwise, return actions which inputs are from available_inputs.
@@ -539,14 +556,14 @@ public:
     /// To avoid it, add inputs from `all_inputs` list,
     /// so actions `x, y, z -> z > 0, x, y, z` -(remove filter)-> `x, y, z` will not change columns order.
     ///
-    /// @param allow_index_hints - false for key steps like window: a hint prunes whole granules, which can leave a key with part of its rows
+    /// @param index_hints - which `indexHint` conjuncts may be pushed.
     std::optional<ActionsForFilterPushDown> splitActionsForFilterPushDown(
         const std::string & filter_name,
         bool removes_filter,
         const Names & available_inputs,
         const ColumnsWithTypeAndName & all_inputs,
         bool allow_non_deterministic_functions,
-        bool allow_index_hints = true);
+        PushDownIndexHints index_hints = PushDownIndexHints::All);
 
     /// The same, for conjuncts the caller has chosen rather than those computable from some inputs. Each of
     /// `conjunctions_to_push` is one of the atoms `extractConjunctionAtoms` finds in the filter column.

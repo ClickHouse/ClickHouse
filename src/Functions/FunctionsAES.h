@@ -179,7 +179,7 @@ struct KeyHolder<CipherMode::MySQLCompatibility>
         // MySQL does something fancy with the keys that are too long,
         // ruining compatibility with OpenSSL and not improving security.
         // But we have to do the same to be compatitable with MySQL.
-        // see https://github.com/mysql/mysql-server/blob/8.0/router/src/harness/src/my_aes_openssl.cc#L71
+        // see https://github.com/mysql/mysql-server/blob/mysql-8.0.20/router/src/harness/src/my_aes_openssl.cc#L71
         // (my_aes_create_key function)
         return foldEncryptionKeyInMySQLCompatitableMode(cipher_key_size, key, folded_key);
     }

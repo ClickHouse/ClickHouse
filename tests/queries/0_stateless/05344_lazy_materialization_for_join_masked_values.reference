@@ -1,0 +1,28 @@
+-- constants of the side the join can leave unmatched
+0	const	42	LowCardinality(String)	r0
+1		0		
+2	const	42	LowCardinality(String)	r1
+3		0		
+4	const	42	LowCardinality(String)	r2
+5		0		
+0	const	42	LowCardinality(String)	r0
+1		0		
+2	const	42	LowCardinality(String)	r1
+3		0		
+4	const	42	LowCardinality(String)	r2
+5		0		
+Lazily read columns: heavy
+-- LowCardinality values, which keep their type
+0	0	LowCardinality(String)	0	LowCardinality(UInt8)	r0
+1		LowCardinality(String)	0	LowCardinality(UInt8)	
+2	1	LowCardinality(String)	1	LowCardinality(UInt8)	r1
+3		LowCardinality(String)	0	LowCardinality(UInt8)	
+4	2	LowCardinality(String)	0	LowCardinality(UInt8)	r2
+5		LowCardinality(String)	0	LowCardinality(UInt8)	
+0	0	LowCardinality(String)	0	LowCardinality(UInt8)	r0
+1		LowCardinality(String)	0	LowCardinality(UInt8)	
+2	1	LowCardinality(String)	1	LowCardinality(UInt8)	r1
+3		LowCardinality(String)	0	LowCardinality(UInt8)	
+4	2	LowCardinality(String)	0	LowCardinality(UInt8)	r2
+5		LowCardinality(String)	0	LowCardinality(UInt8)	
+Lazily read columns: lc, heavy
