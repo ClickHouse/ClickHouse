@@ -1657,46 +1657,189 @@ TEST(AsyncLoader, SpawnFailureFromFinishDoesNotTerminate)
     t.loader.wait();
 }
 
-// A submitted but not yet started worker cannot take a job from the ready queue, so a pool holding
-// only such workers still needs a spawn. Measurements are taken into locals and asserted only after
-// the limits are restored: an early return while the pool cannot run jobs hangs in `~LoadTask`.
-TEST(AsyncLoader, SpawnIsRequiredWhileNoWorkerHasStarted)
+// An idle loader must spawn a worker, and the spawn is not allowed to fail. When every thread of the
+// global pool is busy with an ordinary job but its queue has room, the worker of the loader's pool
+// waits in that queue and starts once an ordinary job finishes, instead of failing the spawn and
+// terminating the process.
+TEST(AsyncLoader, MandatorySpawnWaitsBehindOrdinaryGlobalJobs)
 {
     GlobalThreadPoolLimits limits;
+    static constexpr size_t capacity = 2;
+    limits.pool.setMaxThreads(capacity);
+    limits.pool.setMaxFreeThreads(0);
+    limits.pool.setQueueSize(1000);
 
     AsyncLoaderTest t(16);
+    t.loader.unpause(); // Idle: the pool has no worker, so the next enqueue requires a spawn
+
+    std::atomic<size_t> started{0};
+    std::atomic<size_t> finished{0};
+    std::atomic<bool> release{false};
+    for (size_t i = 0; i < capacity; i++)
+    {
+        limits.pool.scheduleOrThrow([&]
+        {
+            started++;
+            while (!release.load())
+                std::this_thread::yield();
+            finished++;
+        });
+    }
+    while (started != capacity)
+        std::this_thread::yield();
+
+    // Enqueue more independent jobs than the global pool has threads, one by one: every enqueue
+    // spawns a worker, and none of the workers can start before the ordinary jobs finish.
+    static constexpr size_t jobs_count = capacity + 2;
+    std::atomic<size_t> jobs_done{0};
+    std::vector<LoadTaskPtr> tasks;
+    for (size_t i = 0; i < jobs_count; i++)
+        tasks.push_back(t.schedule({makeLoadJob({}, fmt::format("job{}", i), [&] (AsyncLoader &, const LoadJobPtr &) { jobs_done++; })}));
+    const size_t jobs_done_while_busy = jobs_done;
+
+    release = true;
+    for (const auto & task : tasks)
+        waitLoad(task);
+    while (finished != capacity)
+        std::this_thread::yield();
+    limits.restore();
+
+    ASSERT_EQ(jobs_done_while_busy, 0);
+    ASSERT_EQ(jobs_done, jobs_count);
+    t.loader.wait();
+}
+
+// The workers of an ordinary local pool run finite jobs, so they must not use up the slots that a
+// mandatory spawn of a loader worker needs. This holds both for pools that keep no free threads, such as
+// most of the shared pools, and for pools that keep them, such as the pools of query pipelines.
+static void testMandatorySpawnWaitsBehindFiniteLocalPoolWorkers(size_t local_pool_max_free_threads)
+{
+    GlobalThreadPoolLimits limits;
+    static constexpr size_t capacity = 2;
+    limits.pool.setMaxThreads(capacity);
+    limits.pool.setMaxFreeThreads(0);
+    limits.pool.setQueueSize(1000);
+
+    AsyncLoaderTest t(16);
+    t.loader.unpause(); // Idle: the pool has no worker, so the next enqueue requires a spawn
+
+    std::atomic<size_t> started{0};
+    std::atomic<bool> release{false};
+    ThreadPool local_pool(
+        CurrentMetrics::TablesLoaderBackgroundThreads,
+        CurrentMetrics::TablesLoaderBackgroundThreadsActive,
+        CurrentMetrics::TablesLoaderBackgroundThreadsScheduled,
+        /* max_threads = */ capacity,
+        /* max_free_threads = */ local_pool_max_free_threads,
+        /* queue_size = */ 0);
+    for (size_t i = 0; i < capacity; i++)
+    {
+        local_pool.scheduleOrThrowOnError([&]
+        {
+            started++;
+            while (!release.load())
+                std::this_thread::yield();
+        });
+    }
+    while (started != capacity)
+        std::this_thread::yield();
+
+    std::atomic<size_t> jobs_done{0};
+    auto task = t.schedule({makeLoadJob({}, "job", [&] (AsyncLoader &, const LoadJobPtr &) { jobs_done++; })});
+    const size_t jobs_done_while_busy = jobs_done;
+
+    release = true;
+    waitLoad(task);
+    local_pool.wait();
+    t.loader.wait();
+    limits.restore();
+
+    ASSERT_EQ(jobs_done_while_busy, 0);
+    ASSERT_EQ(jobs_done, 1);
+}
+
+TEST(AsyncLoader, MandatorySpawnWaitsBehindFiniteLocalPoolWorkers)
+{
+    testMandatorySpawnWaitsBehindFiniteLocalPoolWorkers(/* local_pool_max_free_threads = */ 0);
+}
+
+TEST(AsyncLoader, MandatorySpawnWaitsBehindFiniteLocalPoolWorkersWithFreeThreads)
+{
+    /// One of the two workers stays idle in the local pool after the callbacks return, the other one
+    /// leaves and frees a thread of the global pool for the loader worker.
+    testMandatorySpawnWaitsBehindFiniteLocalPoolWorkers(/* local_pool_max_free_threads = */ 1);
+}
+
+// Finite threads that are started directly and need a worker right away, such as the thread of a gRPC
+// call or of a dictionary load, must not use up the slots that a mandatory spawn of a loader worker needs.
+TEST(AsyncLoader, MandatorySpawnWaitsBehindFiniteDirectThreads)
+{
+    GlobalThreadPoolLimits limits;
+    static constexpr size_t capacity = 2;
+    limits.pool.setMaxThreads(capacity);
+    limits.pool.setMaxFreeThreads(0);
+    limits.pool.setQueueSize(1000);
+
+    AsyncLoaderTest t(16);
+    t.loader.unpause(); // Idle: the pool has no worker, so the next enqueue requires a spawn
+
+    std::atomic<size_t> started{0};
+    std::atomic<bool> release{false};
+    std::vector<ThreadFromGlobalPool> threads;
+    for (size_t i = 0; i < capacity; i++)
+    {
+        threads.emplace_back(ThreadFromGlobalPoolScheduleMode::ReturningFailIfNoWorker, [&]
+        {
+            started++;
+            while (!release.load())
+                std::this_thread::yield();
+        });
+    }
+    while (started != capacity)
+        std::this_thread::yield();
+
+    std::atomic<size_t> jobs_done{0};
+    auto task = t.schedule({makeLoadJob({}, "job", [&] (AsyncLoader &, const LoadJobPtr &) { jobs_done++; })});
+    const size_t jobs_done_while_busy = jobs_done;
+
+    release = true;
+    waitLoad(task);
+    for (auto & thread : threads)
+        thread.join();
+    t.loader.wait();
+    limits.restore();
+
+    ASSERT_EQ(jobs_done_while_busy, 0);
+    ASSERT_EQ(jobs_done, 1);
+}
+
+// When the last worker of a pool finishes, it spawns the first worker of the next pool by priority before
+// it returns. That spawn is mandatory, and the new worker has to be queued in the global pool even when the
+// returning worker holds its last free thread: it will be free as soon as the returning worker is gone.
+TEST(AsyncLoader, MandatorySpawnHandoffBetweenPrioritiesOnOneFreeThread)
+{
+    GlobalThreadPoolLimits limits;
+    limits.pool.setMaxThreads(1);
+    limits.pool.setMaxFreeThreads(0);
+    limits.pool.setQueueSize(1000);
+
+    AsyncLoaderTest t({
+        {.max_threads = 1, .priority = Priority{0}},
+        {.max_threads = 1, .priority = Priority{1}},
+    });
+
     std::atomic<size_t> jobs_done{0};
     auto job_func = [&] (AsyncLoader &, const LoadJobPtr &) { jobs_done++; };
-
+    auto task0 = t.schedule({makeLoadJob({}, 0, "job0", job_func)});
+    auto task1 = t.schedule({makeLoadJob({}, 1, "job1", job_func)});
     t.loader.unpause();
-    limits.submitWithoutStarting(1000); // Loader workers get queued in the global pool but never start
 
-    LoadTaskPtrs tasks;
-    tasks.reserve(8);
-    for (size_t i = 0; i < 4; i++)
-        tasks.push_back(t.schedule({makeLoadJob({}, "job", job_func)}));
-
-    // No worker has started, so every spawn here runs with injections blocked and succeeds. One that
-    // counted a queued worker as a drainer would call `trySchedule`, which the injector fails.
-    const auto failures_before = spawnFailures();
-    const auto submitted_before = limits.pool.active();
-    {
-        AlwaysFailToAllocateThread always_fail;
-        for (size_t i = 0; i < 4; i++)
-            tasks.push_back(t.schedule({makeLoadJob({}, "job", job_func)}));
-    }
-    const auto failures = spawnFailures() - failures_before;
-    // Zero failures alone would also hold if no spawn had been attempted, so require that each of the
-    // four enqueues submitted a worker of its own.
-    const auto submitted = limits.pool.active() - submitted_before;
-
-    limits.restore(); // Let the submitted workers start and drain everything
-    waitLoad(tasks);
-
-    ASSERT_EQ(failures, 0);
-    ASSERT_EQ(submitted, 4);
-    ASSERT_EQ(jobs_done, 8);
+    waitLoad(task0);
+    waitLoad(task1);
     t.loader.wait();
+    limits.restore();
+
+    ASSERT_EQ(jobs_done, 2);
 }
 
 // A worker blocked in `wait()` cannot take a job from its own pool's ready queue even when it waits

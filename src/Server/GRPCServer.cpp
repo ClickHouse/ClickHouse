@@ -108,6 +108,7 @@ namespace ErrorCodes
     extern const int NO_DATA_TO_INSERT;
     extern const int SUPPORT_IS_DISABLED;
     extern const int BAD_REQUEST_PARAMETER;
+    extern const int CANNOT_SCHEDULE_TASK;
 }
 
 namespace
@@ -851,7 +852,20 @@ namespace
             }
             on_finish_call_callback();
         };
-        call_thread = ThreadFromGlobalPool(runner_function);
+        try
+        {
+            /// The thread returns when the call is finished, so it does not take one of the slots reserved
+            /// for the long-lived threads of the global pool.
+            call_thread = ThreadFromGlobalPool{ThreadFromGlobalPoolScheduleMode::ReturningFailIfNoWorker, runner_function};
+        }
+        catch (...)
+        {
+            /// The RPC is already accepted, and destroying the responder neither finishes nor cancels it:
+            /// gRPC keeps the call alive, so the client would wait for a status forever, and so would
+            /// `grpc::Server::Shutdown`. Cancel it, so that the client gets a terminal status right away.
+            responder->cancel();
+            throw;
+        }
     }
 
     void Call::run()
@@ -1924,9 +1938,10 @@ public:
 
     void start()
     {
-        startReceivingNewCalls();
-
         /// We run queue in a separate thread.
+        /// The thread is started before any request is registered in the completion queue: if the
+        /// global pool cannot provide a worker, the queue is still empty, so it can be shut down and
+        /// destroyed without draining (gRPC requires a drained queue before its destruction).
         auto runner_function = [this]
         {
             try
@@ -1938,7 +1953,11 @@ public:
                 tryLogCurrentException(log, "run");
             }
         };
-        queue_thread = ThreadFromGlobalPool{runner_function};
+        queue_thread = ThreadFromGlobalPool{ThreadFromGlobalPoolScheduleMode::FailIfNoWorker, runner_function};
+
+        /// `CompletionQueue::Next` in the queue thread waits until the first request is registered here.
+        /// If this throws, `~Runner` shuts down the queue and joins the queue thread, which drains it.
+        startReceivingNewCalls();
     }
 
     void stop()
@@ -1996,7 +2015,24 @@ private:
             auto new_call = std::make_unique<Call>(call_type, std::move(responder), owner.iserver, owner.log);
             auto * new_call_ptr = new_call.get();
             current_calls[new_call_ptr] = std::move(new_call);
-            new_call_ptr->start([this, new_call_ptr]() { onFinishCall(new_call_ptr); });
+            try
+            {
+                new_call_ptr->start([this, new_call_ptr]() { onFinishCall(new_call_ptr); });
+            }
+            catch (...)
+            {
+                /// Never leave the half-published `Call` in `current_calls`: it would block the
+                /// empty-call fast path of the shutdown, so `shutdownQueue` would never be called.
+                current_calls.erase(new_call_ptr);
+
+                if (getCurrentExceptionCode() != ErrorCodes::CANNOT_SCHEDULE_TASK)
+                    throw;
+
+                /// Letting the saturation exception escape would kill the completion-queue
+                /// thread. Treat the call as a rejected connection instead: `Call::start` has
+                /// already cancelled the RPC, so destroying the call only releases the responder.
+                tryLogCurrentException(log, "Cannot start a worker thread for a new call");
+            }
         }
     }
 
