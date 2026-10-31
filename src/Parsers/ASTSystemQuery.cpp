@@ -148,10 +148,10 @@ void ASTSystemQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
         {
             print_keyword(" FROM DATABASE ");
             print_identifier(getDatabase());
-
-            if (with_tables)
-                print_keyword(" WITH TABLES");
         }
+
+        if (with_tables)
+            print_keyword(" WITH TABLES");
     };
 
     auto print_on_volume = [&]
