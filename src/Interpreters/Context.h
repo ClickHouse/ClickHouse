@@ -664,6 +664,14 @@ protected:
     bool skip_forced_projection_check = false;
     /// True when this context belongs to the inner query of an expanded view.
     bool is_view_inner_query = false;
+    /// Marks mutation analysis so `LIMIT SHUFFLE` is rejected even inside stored views.
+    bool is_mutation_query = false;
+    /// True when positional arguments in the outer query have already been resolved by the
+    /// initiator node. Set by distributed/parallel-replicas local plan builders to prevent
+    /// double-resolution. Unlike disabling enable_positional_arguments, this flag is a context
+    /// field and does not propagate through settings copies (e.g. getSQLSecurityOverriddenContext),
+    /// so view-inner queries on the same node are unaffected.
+    bool positional_arguments_already_resolved = false;
     /// Which join statistics EXPLAIN ANALYZE needs. It is a context field rather than a setting on
     /// purpose: only Interpreter may turn it on, but it must reach every join of the
     /// query, including joins in nested plans, which EXPLAIN also prints.
@@ -2039,6 +2047,8 @@ public:
 
     bool isViewInnerQuery() const { return is_view_inner_query; }
     void setIsViewInnerQuery(bool value) { is_view_inner_query = value; }
+    bool isMutationQuery() const { return is_mutation_query; }
+    void setIsMutationQuery(bool value) { is_mutation_query = value; }
 
     JoinAnalyzeMode getJoinAnalyzeMode() const { return join_analyze_mode; }
     void setJoinAnalyzeMode(JoinAnalyzeMode value) { join_analyze_mode = value; }

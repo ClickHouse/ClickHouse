@@ -5544,6 +5544,12 @@ void QueryAnalyzer::resolveTableFunction(QueryTreeNodePtr & table_function_node,
         }
 
         auto context = scope_context->getQueryContext();
+        if (scope_context->isMutationQuery())
+        {
+            auto mutation_context = Context::createCopy(context);
+            mutation_context->setIsMutationQuery(true);
+            context = std::move(mutation_context);
+        }
         auto parameterized_view_storage = context->buildParameterizedViewStorage(
             database_name,
             table_name,
@@ -6786,7 +6792,7 @@ void QueryAnalyzer::resolveJoin(QueryTreeNodePtr & join_node, IdentifierResolveS
   */
 void QueryAnalyzer::inlineViewSubqueryIfNeeded(QueryTreeNodePtr & join_tree_node, IdentifierResolveScope & scope)
 {
-    if (!scope.context->getSettingsRef()[Setting::analyzer_inline_views])
+    if (!scope.context->isMutationQuery() && !scope.context->getSettingsRef()[Setting::analyzer_inline_views])
         return;
 
     auto * table_node = join_tree_node->as<TableNode>();
@@ -6798,16 +6804,8 @@ void QueryAnalyzer::inlineViewSubqueryIfNeeded(QueryTreeNodePtr & join_tree_node
     if (!view || view->isParameterizedView())
         return;
 
-    /// Do not inline views with FINAL/SAMPLE modifiers for now.
-    if (table_node->hasTableExpressionModifiers())
-        return;
-
     /// Get the view's inner query AST.
     const auto & storage_snapshot = table_node->getStorageSnapshot();
-
-    /// Inlining would make a sealed view transparent to all optimizations.
-    if (view->isSealed(*storage_snapshot->metadata, scope.context))
-        return;
 
     auto storage_id = storage->getStorageID();
 
@@ -6820,12 +6818,27 @@ void QueryAnalyzer::inlineViewSubqueryIfNeeded(QueryTreeNodePtr & join_tree_node
     /// Use getAll() rather than getOrdinary(): a view can expose ALIAS (and MATERIALIZED) columns,
     /// which the planner's per-column SELECT check treats as separate privileges, so they must be
     /// covered here too - otherwise a caller lacking SELECT on an ALIAS column would still inline.
-    if (!scope.context->getAccess()->isGranted(
+    /// A sealed view is never inlined: inlining would make it transparent to all optimizations.
+    const bool can_inline = scope.context->getSettingsRef()[Setting::analyzer_inline_views]
+        && !table_node->hasTableExpressionModifiers()
+        && !view->isSealed(*storage_snapshot->metadata, scope.context)
+        && scope.context->getAccess()->isGranted(
             AccessType::SELECT,
             storage_id.getDatabaseName(),
             storage_id.getTableName(),
-            storage_snapshot->metadata->getColumns().getAll().getNames()))
+            storage_snapshot->metadata->getColumns().getAll().getNames());
+    if (!can_inline)
+    {
+        /// Dry-run planning skips non-inlined view bodies. Validate them before a mutation is queued.
+        if (scope.context->isMutationQuery())
+        {
+            auto view_context = StorageView::getViewSubqueryContext(scope.context, storage_snapshot);
+            auto view_tree = buildQueryTree(storage_snapshot->metadata->getSelectQuery().inner_query->clone(), view_context);
+            QueryAnalyzer view_analyzer(/*only_analyze=*/true);
+            view_analyzer.resolve(view_tree, {}, view_context);
+        }
         return;
+    }
 
     auto view_context = StorageView::getViewSubqueryContext(scope.context, storage_snapshot);
 
@@ -7436,6 +7449,11 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
         throw Exception(ErrorCodes::TOO_DEEP_SUBQUERIES, "Too deep subqueries. Maximum: {}", max_subquery_depth);
 
     auto & query_node_typed = query_node->as<QueryNode &>();
+
+    /// Check before scalar folding can replace a mutation subquery with a constant.
+    if (scope.context->isMutationQuery()
+        && (query_node_typed.isLimitShuffle() || query_node_typed.isLimitShuffleForUnorderedOutput()))
+        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "LIMIT SHUFFLE is not supported in mutations");
 
     /** It is unsafe to call resolveQuery on already resolved query node, because during identifier resolution process
       * we replace identifiers with expressions without aliases, also at the end of resolveQuery all aliases from all nodes will be removed.

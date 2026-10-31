@@ -36,13 +36,15 @@ LazyMaterializingTransform::LazyMaterializingTransform(
     SharedHeader lazy_header,
     ILazyMaterializingRowsPtr lazy_materializing_rows_,
     RuntimeDataflowStatisticsCacheUpdaterPtr updater_,
-    String index_column_name_)
+    String index_column_name_,
+    bool preserve_output_order_)
     : IProcessor(
         InputPorts({main_header, lazy_header}),
         OutputPorts({OutputPort(std::make_shared<Block>(transformHeader(*main_header, *lazy_header, index_column_name_)))}))
     , lazy_materializing_rows(std::move(lazy_materializing_rows_))
     , updater(std::move(updater_))
     , index_column_name(std::move(index_column_name_))
+    , preserve_output_order(preserve_output_order_)
 {
 }
 
@@ -302,6 +304,10 @@ void LazyMaterializingTransform::prepareMainChunk()
             (*matched_rows)[row] = !null_map[row];
 
         index_col = nullable_index->getNestedColumnPtr()->filter(*matched_rows, -1);
+
+        /// The permutation covers the matched rows only, so the main chunk cannot be reordered by it.
+        /// Keep the original order of the rows instead.
+        preserve_output_order = true;
     }
 
     auto rows = index_col->size();
@@ -373,6 +379,14 @@ void LazyMaterializingTransform::prepareMainChunk()
         filter_intervals_ms = filter_intervals_watch.elapsedMilliseconds();
     }
 
+    if (!preserve_output_order && !pass_through && !isIdentityPermutation(permutation, rows))
+    {
+        auto sorted_columns = result_chunk->detachColumns();
+        for (auto & column : sorted_columns)
+            column = column->permute(permutation, rows);
+        result_chunk = Chunk(std::move(sorted_columns), rows);
+    }
+
     auto total_ms = main_chunk_watch.elapsedMilliseconds();
 
     /// Do not spam too much in logs
@@ -420,7 +434,9 @@ void LazyMaterializingTransform::prepareLazyChunk()
     bool is_identity_permutation = isIdentityPermutation(permutation, rows);
     bool should_replicate = offsets.size() != rows;
 
-    if (!is_identity_permutation)
+    bool should_restore_output_order = preserve_output_order && !is_identity_permutation;
+
+    if (should_restore_output_order)
     {
         Stopwatch make_reverse_permutation_watch;
         inverted_permutation.resize(rows);
@@ -439,7 +455,7 @@ void LazyMaterializingTransform::prepareLazyChunk()
             if (should_replicate)
                 col = col->replicate(offsets);
 
-            if (!is_identity_permutation)
+            if (should_restore_output_order)
                 col = col->permute(inverted_permutation, rows);
         }
         permute_ms = permute_watch.elapsedMilliseconds();
