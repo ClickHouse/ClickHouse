@@ -6,6 +6,7 @@
 #include <Common/ZooKeeper/ZooKeeperNodeCache.h>
 #include <Common/quoteString.h>
 #include <Core/Settings.h>
+#include <Poco/String.h>
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Poco/JSON/Object.h>
 #include <Poco/JSON/Stringifier.h>
@@ -66,23 +67,52 @@ void UsersConfigAccessStorage::parseFromConfig(const Poco::Util::AbstractConfigu
         auto role_ids_from_users_config = UsersConfigParser::getAllowedIDs(config, "roles", AccessEntityType::ROLE);
 
         std::vector<std::pair<UUID, AccessEntityPtr>> all_entities;
+        std::unordered_map<UUID, UUID> aliases;
+
+        auto add = [&](const AccessEntityPtr & entity)
+        {
+            auto canonical = UsersConfigParser::generateID(*entity);
+            all_entities.emplace_back(canonical, entity);
+
+            /// Only entities whose UUID can be referenced from another storage need a legacy alias, and only
+            /// these have a plain name that is a single escaped config key (a row policy name is composite, so
+            /// re-escaping its dots would not reproduce a config key).
+            auto type = entity->getType();
+            if (type != AccessEntityType::USER && type != AccessEntityType::ROLE
+                && type != AccessEntityType::QUOTA && type != AccessEntityType::SETTINGS_PROFILE)
+                return;
+
+            const auto & name = entity->getName();
+            if (name.find('.') == String::npos)
+                return;
+            /// unescapeDots only ever undoes '.' -> '\.', so re-escaping every dot reproduces the original
+            /// config key an older server generated the entity UUID from. Alias that UUID to the canonical one
+            /// so references persisted in other storages (disk/replicated `GRANT ID(...)`) still resolve.
+            auto legacy = UsersConfigParser::generateID(type, Poco::replace(name, ".", "\\."));
+            if (legacy != canonical)
+                aliases.emplace(legacy, canonical);
+        };
 
         for (const auto & entity : parser.parseUsers(config, allowed_profile_ids, role_ids_from_users_config))
-            all_entities.emplace_back(UsersConfigParser::generateID(*entity), entity);
+            add(entity);
 
         for (const auto & entity : parser.parseQuotas(config))
-            all_entities.emplace_back(UsersConfigParser::generateID(*entity), entity);
+            add(entity);
 
         for (const auto & entity : parser.parseRowPolicies(config))
-            all_entities.emplace_back(UsersConfigParser::generateID(*entity), entity);
+            add(entity);
 
         for (const auto & entity : parser.parseSettingsProfiles(config, allowed_profile_ids))
-            all_entities.emplace_back(UsersConfigParser::generateID(*entity), entity);
+            add(entity);
 
         for (const auto & entity : parser.parseRoles(config, role_ids_from_users_config))
-            all_entities.emplace_back(UsersConfigParser::generateID(*entity), entity);
+            add(entity);
 
         memory_storage.setAll(all_entities);
+        {
+            std::lock_guard lock{legacy_ids_mutex};
+            legacy_ids = std::move(aliases);
+        }
     }
     catch (Exception & e)
     {
@@ -148,21 +178,29 @@ std::vector<UUID> UsersConfigAccessStorage::findAllImpl(AccessEntityType type) c
 }
 
 
+UUID UsersConfigAccessStorage::resolveLegacyID(const UUID & id) const
+{
+    std::lock_guard lock{legacy_ids_mutex};
+    auto it = legacy_ids.find(id);
+    return it == legacy_ids.end() ? id : it->second;
+}
+
+
 bool UsersConfigAccessStorage::exists(const UUID & id) const
 {
-    return memory_storage.exists(id);
+    return memory_storage.exists(id) || memory_storage.exists(resolveLegacyID(id));
 }
 
 
 AccessEntityPtr UsersConfigAccessStorage::readImpl(const UUID & id, bool throw_if_not_exists) const
 {
-    return memory_storage.read(id, throw_if_not_exists);
+    return memory_storage.read(resolveLegacyID(id), throw_if_not_exists);
 }
 
 
 std::optional<std::pair<String, AccessEntityType>> UsersConfigAccessStorage::readNameWithTypeImpl(const UUID & id, bool throw_if_not_exists) const
 {
-    return memory_storage.readNameWithType(id, throw_if_not_exists);
+    return memory_storage.readNameWithType(resolveLegacyID(id), throw_if_not_exists);
 }
 
 }
