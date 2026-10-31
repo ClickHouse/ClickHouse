@@ -1,14 +1,13 @@
 #pragma once
 
 #include <base/types.h>
+#include <Common/CacheBase.h>
 #include <Common/Logger.h>
 #include <Interpreters/Context_fwd.h>
 #include <Server/IcebergRESTCatalog/IcebergRESTCatalogKeeperConfig.h>
 #include <Server/IcebergRESTCatalog/IcebergRESTCatalogWarehouse.h>
 
-#include <map>
 #include <memory>
-#include <mutex>
 
 namespace DB
 {
@@ -36,8 +35,9 @@ private:
     const IcebergRESTCatalogKeeperConfig keeper_config;
     const LoggerPtr log;
 
-    mutable std::mutex mutex;
-    mutable std::map<String, Entry> warehouses TSA_GUARDED_BY(mutex);
+    /// Bounded, so dropped or idle warehouses do not keep their S3 clients forever.
+    static constexpr size_t MAX_CACHED_WAREHOUSES = 50;
+    mutable CacheBase<String, Entry> warehouses;
 };
 
 using IcebergRESTCatalogWarehouseRegistryPtr = std::shared_ptr<const IcebergRESTCatalogWarehouseRegistry>;
