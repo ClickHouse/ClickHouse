@@ -59,6 +59,11 @@ public:
         /// Check if query is changed by this visitor.
         bool changed = false;
 
+        /// An expanded ALIAS definition is written at table scope, so rename the lambda parameters that would capture
+        /// it, and read a lambda parameter's field as its subcolumn. Only for an expression that is evaluated, never stored.
+        bool rename_lambda_parameters = false;
+        NameSet generated_names;
+
         Data(const ColumnsDescription & columns_, const NameToNameMap & array_join_result_columns_, ContextPtr context_, const std::unordered_set<IAST *> & excluded_nodes_)
             : columns(columns_), context(context_), excluded_nodes(excluded_nodes_)
         {
