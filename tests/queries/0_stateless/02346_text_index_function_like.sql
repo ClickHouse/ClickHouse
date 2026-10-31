@@ -1,4 +1,4 @@
--- Tags: no-parallel-replicas
+-- Tags: no-parallel-replicas, no-msan
 -- Tests if a text index LIKE evaluation by scanning the inverted index dictionary is properly applied.
 -- Disable force_primary_key_reverse_order: Test output depends on the physical sort order or on index analysis of an ascending key
 SET force_primary_key_reverse_order = 0;

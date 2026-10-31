@@ -1,4 +1,4 @@
--- Tags: long
+-- Tags: long, no-msan
 -- Disable force_primary_key_reverse_order: reversed key changes data layout in granules breaking max_rows_to_read limits
 SET force_primary_key_reverse_order = 0;
 

@@ -1,5 +1,4 @@
--- Tags: long
--- Tag long: it runs about 3 minutes in the flaky check with MSan
+-- Tags: no-msan
 -- Disable force_primary_key_reverse_order: Test output depends on the physical sort order or on index analysis of an ascending key
 SET force_primary_key_reverse_order = 0;
 

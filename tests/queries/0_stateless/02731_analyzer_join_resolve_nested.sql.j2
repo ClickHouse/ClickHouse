@@ -1,7 +1,6 @@
+-- Tags: long, no-msan
 -- Disable force_primary_key_reverse_order: tests join with nested types on MergeTree, output depends on key direction
 SET force_primary_key_reverse_order = 0;
-
--- Tags: long
 
 DROP TABLE IF EXISTS ta;
 DROP TABLE IF EXISTS tb;

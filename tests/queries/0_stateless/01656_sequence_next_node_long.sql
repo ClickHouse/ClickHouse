@@ -1,4 +1,4 @@
--- Tags: long, no-azure-blob-storage
+-- Tags: long, no-azure-blob-storage, no-msan
 
 -- sequenceNextNode traverses events within partitions in physical key order; reversing keys changes traversal direction
 SET force_primary_key_reverse_order = 0;
