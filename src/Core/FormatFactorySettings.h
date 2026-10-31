@@ -1825,6 +1825,31 @@ Name of the table in SQLite output
 )", 0, \
         {"26.10", "table", "table", "New setting for the `SQLite` output format: the name of the table to write."}) \
     \
+    DECLARE(String, input_format_excel_sheet, "", R"(
+The sheet to read from `XLSX` and `XLS` input: its name, or its 1-based index if no sheet has such a name. If empty, the first visible worksheet is read.
+)", 0, \
+        {"26.11", "", "", "New setting for the `XLSX` and `XLS` input formats: the sheet to read."}) \
+    DECLARE(String, input_format_excel_range, "", R"(
+The range of cells to read from `XLSX` and `XLS` input, like `B2:D10`. The range can be open-ended: `B2:D` (from row 2 to the end of the data), `A:C` (whole columns), `3:10` (whole rows), or just the top-left cell like `B2`. If empty, the used range of the sheet is read.
+)", 0, \
+        {"26.11", "", "", "New setting for the `XLSX` and `XLS` input formats: the range of cells to read."}) \
+    DECLARE(UInt64Auto, input_format_excel_header, "auto", R"(
+Whether the first row of the range in `XLSX` and `XLS` input is a header with the column names. Possible values: `1`, `0`, or `auto` - the first row is a header if all its non-empty cells are strings.
+)", 0, \
+        {"26.11", "auto", "auto", "New setting for the `XLSX` and `XLS` input formats: whether the first row is a header."}) \
+    DECLARE(Bool, input_format_excel_skip_empty_rows, true, R"(
+Skip empty rows inside the data in `XLSX` and `XLS` input. If disabled, empty rows are read as rows with all values empty (`NULL` or default values). Empty rows before and after the data are always skipped.
+)", 0, \
+        {"26.11", true, true, "New setting for the `XLSX` and `XLS` input formats: skip empty rows."}) \
+    DECLARE(String, output_format_xlsx_sheet_name, "Sheet1", R"(
+The name of the sheet in `XLSX` output. If the output has more rows than a sheet can contain, the following sheets are named with a suffix like ` (2)`.
+)", 0, \
+        {"26.11", "Sheet1", "Sheet1", "New setting for the `XLSX` output format: the name of the sheet."}) \
+    DECLARE(Bool, output_format_xlsx_write_header, true, R"(
+Write the column names in the first row of each sheet in `XLSX` output.
+)", 0, \
+        {"26.11", true, true, "New setting for the `XLSX` output format: write the column names."}) \
+    \
     DECLARE(Bool, output_format_values_escape_quote_with_quote, false, R"(
 If true escape ' with '', otherwise quoted with \\'
 )", 0, \

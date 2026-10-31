@@ -424,6 +424,13 @@ FormatSettings getFormatSettings(const ContextPtr & context, const Settings & se
     format_settings.sql_insert.quote_names = settings[Setting::output_format_sql_insert_quote_names];
     format_settings.sqlite.input_table_name = settings[Setting::input_format_sqlite_table_name];
     format_settings.sqlite.output_table_name = settings[Setting::output_format_sqlite_table_name];
+    format_settings.excel.sheet = settings[Setting::input_format_excel_sheet];
+    format_settings.excel.range = settings[Setting::input_format_excel_range];
+    if (auto header = settings[Setting::input_format_excel_header].valueOrNullopt())
+        format_settings.excel.header = *header != 0;
+    format_settings.excel.skip_empty_rows = settings[Setting::input_format_excel_skip_empty_rows];
+    format_settings.excel.output_sheet_name = settings[Setting::output_format_xlsx_sheet_name];
+    format_settings.excel.output_write_header = settings[Setting::output_format_xlsx_write_header];
     format_settings.precise_float_parsing = settings[Setting::precise_float_parsing];
     format_settings.try_infer_integers = settings[Setting::input_format_try_infer_integers];
     format_settings.try_infer_dates = settings[Setting::input_format_try_infer_dates];
