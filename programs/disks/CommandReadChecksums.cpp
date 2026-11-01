@@ -5,7 +5,7 @@
 #include <IO/WriteHelpers.h>
 #include <Storages/MergeTree/MergeTreeDataPartChecksum.h>
 #include <Common/logger_useful.h>
-#include <base/hex.h>
+#include <Common/Hex.h>
 
 namespace DB
 {

@@ -1,4 +1,5 @@
 #include <Disks/DiskObjectStorage/MetadataStorages/PlainRewritable/Metadata/BlobLinkCounts.h>
+#include <Disks/DiskObjectStorage/MetadataStorages/PlainRewritable/Metadata/FsMetadata.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/PlainRewritable/Metadata/FsSnapshot.h>
 
 #include <gtest/gtest.h>
@@ -37,6 +38,32 @@ TEST(FsSnapshot, BranchesRemainIndependent)
     EXPECT_THROW(original.moveDirectory("table", "table/part/child"), std::exception);
     EXPECT_THROW(original.recordFile("table/part/data", {0, 0, ""}), std::exception);
     EXPECT_TRUE(original.existsFile("table/part/data"));
+}
+
+TEST(FsSnapshot, ConcurrentRemovalsOfLinksFindTheLastLink)
+{
+    FsMetadata fs(CurrentMetrics::end(), CurrentMetrics::end());
+    std::unordered_map<std::string, DirectoryRemoteInfo> layout;
+    layout["a"] = {.remote_path = "ra", .etag = "", .files = {{"data", {1, 0, "shared"}}}, .has_explicit_file_list = true};
+    layout["b"] = {.remote_path = "rb", .etag = "", .files = {{"data", {1, 0, "shared"}}}, .has_explicit_file_list = true};
+    fs.applyLayout(std::move(layout));
+
+    /// Two transactions on different directories start from the same committed state, so each sees the other link left.
+    auto first = fs.takeReadWriteSnapshot();
+    auto second = fs.takeReadWriteSnapshot();
+    first->resetToRoot(fs.takeReadOnlySnapshot()->getRoot());
+    second->resetToRoot(fs.takeReadOnlySnapshot()->getRoot());
+    ASSERT_EQ(first->getBlobLinkCount("shared"), 2);
+    ASSERT_EQ(second->getBlobLinkCount("shared"), 2);
+    first->removeFile("a/data");
+    first->removeBlobLink("shared");
+    second->removeFile("b/data");
+    second->removeBlobLink("shared");
+
+    EXPECT_TRUE(fs.applyJournal(first->getJournal()).empty());
+    EXPECT_EQ(fs.applyJournal(second->getJournal()), std::vector<std::string>{"shared"});
+    EXPECT_FALSE(fs.takeReadOnlySnapshot()->existsFile("a/data"));
+    EXPECT_FALSE(fs.takeReadOnlySnapshot()->existsFile("b/data"));
 }
 
 TEST(FsSnapshot, WideDirectorySharesUnchangedEntries)

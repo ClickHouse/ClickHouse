@@ -1,6 +1,5 @@
 -- Tags: no-parallel-replicas
 
-set enable_analyzer = 1;
 set mutations_sync = 2;
 
 drop table if exists mt_materialize sync;

@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <atomic>
+#include <cstring>
 #include <exception>
 #include <memory>
 
@@ -88,9 +89,33 @@ public:
             next();
     }
 
-    void write(const char * from, size_t n);
+    /// The common case, where the data fits into the working buffer of a buffer that is neither finalized nor
+    /// canceled, is inlined: delimiters, numbers and short strings are written a few bytes at a time, and a call
+    /// would cost more than the copy. Everything else, including the exceptions, is in `writeSlow`.
+    void write(const char * from, size_t n)
+    {
+        /// `closed` is checked first: after `finalize` some buffers reset their storage to null (`set(nullptr, 0)`),
+        /// and the pointer arithmetic in `available` must not be evaluated then.
+        /// The comparison is unsigned as in `available`: for a constant `n` it is a single `cmp`.
+        if (!closed && n <= available()) [[likely]]
+        {
+            copyBytes(pos, from, n);
+            pos += n;
+            return;
+        }
+        writeSlow(from, n);
+    }
 
-    void write(char x);
+    void write(char x)
+    {
+        if (!closed && hasPendingData()) [[likely]]
+        {
+            *pos = x;
+            ++pos;
+            return;
+        }
+        writeSlow(x);
+    }
 
     /// This method may be called before finalize() to tell there would not be any more data written.
     /// Used does not have to call it, implementation should check it itself if needed.
@@ -134,6 +159,8 @@ protected:
     virtual void cancelImpl() noexcept { }
 
     bool finalized = false;
+    /// `finalized || canceled`, in one flag for the inlined `write`. Set and reset together with them.
+    bool closed = false;
 
     /// The number of bytes to preserve from the initial position of `working_buffer`
     /// buffer. Apparently this is an additional out-parameter for nextImpl(),
@@ -153,9 +180,24 @@ private:
 
     /// Out of line, like `ReadBuffer::throwReadAfterEOF`: an inlined `throw` would put a
     /// `-fstack-protector-strong` canary on `write`, which runs per byte. `NO_INLINE` because they sit
-    /// in the same translation unit as `write`.
+    /// in the same translation unit as `writeSlow`.
     [[noreturn]] NO_INLINE static void throwWriteToFinalizedBuffer();
     [[noreturn]] NO_INLINE static void throwWriteToCanceledBuffer(int code);
+
+    /// Flushes the buffer as many times as needed, and throws for a finalized or canceled buffer.
+    void writeSlow(const char * from, size_t n);
+    void writeSlow(char x);
+
+    /// A size known at compile time becomes plain moves. A run-time size is copied with `memcpy`, which keeps
+    /// the inlined code small: a larger fast path changes how its callers are optimized (inlining, loop unswitching).
+    /// Zero bytes, which is common for empty strings and empty delimiters, does not call `memcpy` at all.
+    ALWAYS_INLINE static void copyBytes(char * __restrict to, const char * __restrict from, size_t n)
+    {
+        if (__builtin_constant_p(n))
+            __builtin_memcpy(to, from, n);
+        else if (n != 0)
+            memcpy(to, from, n);
+    }
 
     int exception_level = std::uncaught_exceptions();
 

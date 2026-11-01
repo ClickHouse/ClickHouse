@@ -15,19 +15,13 @@ doc_type: '참고'
 | -- | -- | -- |
 | ✔  | ✔  |    |
 
-<div id="description">
-  ## 설명
-</div>
+## 설명 {#description}
 
 이 포맷에서는 모든 데이터가 하나의 JSON 객체로 표현되며, 각 행은 [`JSONEachRow`](/ko/reference/formats/JSON/JSONEachRow) 포맷과 유사하게 해당 객체의 개별 필드로 표현됩니다.
 
-<div id="example-usage">
-  ## 사용 예시
-</div>
+## 사용 예시 {#example-usage}
 
-<div id="basic-example">
-  ### 기본 예시
-</div>
+### 기본 예시 {#basic-example}
 
 다음과 같은 JSON이 주어졌다고 가정합니다:
 
@@ -42,9 +36,7 @@ doc_type: '참고'
 객체 이름을 컬럼 값으로 사용하려면 특수 설정 [`format_json_object_each_row_column_for_object_name`](/ko/reference/settings/formats/format#format_json_object_each_row_column_for_object_name)을 사용할 수 있습니다.
 이 설정의 값에는 컬럼 이름을 지정하며, 이 컬럼 이름은 결과 객체에서 각 행의 JSON 키로 사용됩니다.
 
-<div id="output">
-  #### 출력
-</div>
+#### 출력 {#output}
 
 `test` 테이블에 2개의 컬럼이 있다고 가정하겠습니다:
 
@@ -70,9 +62,7 @@ SELECT * FROM test SETTINGS format_json_object_each_row_column_for_object_name='
 }
 ```
 
-<div id="input">
-  #### 입력
-</div>
+#### 입력 {#input}
 
 이전 예시의 출력을 `data.json` 파일에 저장해 두었다고 가정하겠습니다:
 
@@ -101,9 +91,7 @@ DESCRIBE file('data.json', JSONObjectEachRow) SETTING format_json_object_each_ro
 └─────────────┴─────────────────┘
 ```
 
-<div id="json-inserting-data">
-  ### 데이터 삽입
-</div>
+### 데이터 삽입 {#json-inserting-data}
 
 ```sql title="Query"
 INSERT INTO UserActivity FORMAT JSONEachRow {"PageViews":5, "UserID":"4324182021466249494", "Duration":146,"Sign":-1} {"UserID":"4324182021466249494","PageViews":6,"Duration":185,"Sign":1}
@@ -116,9 +104,7 @@ ClickHouse에서는 다음이 허용됩니다:
 
 ClickHouse는 요소 사이의 공백과 객체 뒤의 쉼표를 무시합니다. 모든 객체를 한 줄에 전달할 수 있습니다. 줄바꿈으로 구분할 필요는 없습니다.
 
-<div id="omitted-values-processing">
-  #### 생략된 값 처리
-</div>
+#### 생략된 값 처리 {#omitted-values-processing}
 
 ClickHouse는 생략된 값을 해당 [데이터 타입](/ko/reference/data-types/index)의 기본값으로 채웁니다.
 
@@ -141,9 +127,7 @@ CREATE TABLE IF NOT EXISTS example_table
   `input_format_defaults_for_omitted_fields = 1`로 데이터를 삽입하면, `input_format_defaults_for_omitted_fields = 0`으로 삽입할 때보다 ClickHouse가 더 많은 계산 리소스를 사용합니다.
 </Note>
 
-<div id="json-selecting-data">
-  ### 데이터 조회
-</div>
+### 데이터 조회 {#json-selecting-data}
 
 예시로 `UserActivity` 테이블을 살펴보겠습니다:
 
@@ -167,9 +151,7 @@ CREATE TABLE IF NOT EXISTS example_table
   문자열에는 임의의 바이트 집합도 출력할 수 있습니다. 테이블의 데이터를 정보 손실 없이 JSON으로 포맷할 수 있다고 확신하는 경우 [`JSONEachRow`](/ko/reference/formats/JSON/JSONEachRow) 포맷을 사용하십시오.
 </Info>
 
-<div id="jsoneachrow-nested">
-  ### 중첩 구조 사용
-</div>
+### 중첩 구조 사용 {#jsoneachrow-nested}
 
 [`Nested`](/ko/reference/data-types/nested-data-structures/index) 데이터 타입 컬럼이 있는 테이블에서는 동일한 구조의 JSON 데이터를 삽입할 수 있습니다. 이 기능은 [input&#95;format&#95;import&#95;nested&#95;json](/ko/reference/settings/formats/input-format#input_format_import_nested_json) 설정을 활성화하면 사용할 수 있습니다.
 
@@ -228,9 +210,7 @@ SELECT * FROM json_each_row_nested
 └───────────────┴────────┘
 ```
 
-<div id="format-settings">
-  ## 포맷 설정
-</div>
+## 포맷 설정 {#format-settings}
 
 | 설정                                                                                                                                                                          | 설명                                                                                                                   | 기본값      | 참고 사항                                                                                                                                                             |
 | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------- | -------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -249,7 +229,7 @@ SELECT * FROM json_each_row_nested
 | [`input_format_json_compact_allow_variable_number_of_columns`](/ko/reference/settings/formats/input-format#input_format_json_compact_allow_variable_number_of_columns)         | JSONCompact/JSONCompactEachRow 포맷에서 컬럼 수가 가변적인 것을 허용하고, 추가 컬럼은 무시하며 누락된 컬럼에는 기본값을 사용합니다.                             | `false`  |                                                                                                                                                                   |
 | [`input_format_json_throw_on_bad_escape_sequence`](/ko/reference/settings/formats/input-format#input_format_json_throw_on_bad_escape_sequence)                                 | JSON string에 잘못된 이스케이프 시퀀스가 포함되어 있으면 예외를 발생시킵니다. 비활성화하면 잘못된 이스케이프 시퀀스가 데이터에 그대로 유지됩니다.                               | `true`   |                                                                                                                                                                   |
 | [`input_format_json_empty_as_default`](/ko/reference/settings/formats/input-format#input_format_json_empty_as_default)                                                         | JSON 입력의 빈 필드를 기본값으로 처리합니다.                                                                                          | `false`. | 복잡한 기본값 표현식을 사용하려면 [`input_format_defaults_for_omitted_fields`](/ko/reference/settings/formats/input-format#input_format_defaults_for_omitted_fields)도 함께 활성화해야 합니다. |
-| [`output_format_json_quote_64bit_integers`](/ko/reference/settings/formats/output-format#output_format_json_quote_64bit_integers)                                              | JSON 출력 형식에서 64비트 정수의 quoting을 제어합니다.                                                                                | `true`   |                                                                                                                                                                   |
+| [`output_format_json_quote_64bit_integers`](/ko/reference/settings/formats/output-format#output_format_json_quote_64bit_integers)                                              | JSON 출력 형식에서 64비트 이상의 정수의 quoting을 제어합니다.                                                                            | `false`  |                                                                                                                                                                   |
 | [`output_format_json_quote_64bit_floats`](/ko/reference/settings/formats/output-format#output_format_json_quote_64bit_floats)                                                  | JSON 출력 형식에서 64비트 부동소수점 수의 quoting을 제어합니다.                                                                           | `false`  |                                                                                                                                                                   |
 | [`output_format_json_quote_denormals`](/ko/reference/settings/formats/output-format#output_format_json_quote_denormals)                                                        | JSON 출력 형식에서 &#39;+nan&#39;, &#39;-nan&#39;, &#39;+inf&#39;, &#39;-inf&#39;를 출력할 수 있도록 합니다.                          | `false`  |                                                                                                                                                                   |
 | [`output_format_json_quote_decimals`](/ko/reference/settings/formats/output-format#output_format_json_quote_decimals)                                                          | JSON 출력 형식에서 Decimal 값의 따옴표 처리를 제어합니다.                                                                               | `false`  |                                                                                                                                                                   |
