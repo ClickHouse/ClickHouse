@@ -1386,6 +1386,7 @@ public:
     /// Does the change of the storage column `column_name` from `old_metadata` to `new_metadata` change
     /// the type of a column or a subcolumn that the partition key reads? Such a change can make an
     /// `IN PARTITION <value>` literal undecodable, even if it keeps the partition ids (e.g. `Enum8 -> Int8`).
+    /// A change which keeps both the literals and the partition ids (adding members to an `Enum`) is not counted.
     static bool changesTypeOfPartitionKeyColumns(
         const StorageInMemoryMetadata & old_metadata, const StorageInMemoryMetadata & new_metadata, const String & column_name);
 

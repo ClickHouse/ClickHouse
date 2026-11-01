@@ -57,6 +57,17 @@ ${CLICKHOUSE_CLIENT} --query "
     SELECT 'pending legacy mutations:', count() FROM system.mutations
     WHERE database = currentDatabase() AND table = '$TABLE' AND NOT is_done"
 
+# Adding a member to the partition key `Enum` keeps both the decoding of the literals and the
+# partition ids, so it is accepted while the legacy multi-partition entry is pending.
+${CLICKHOUSE_CLIENT} --query "
+    ALTER TABLE $TABLE MODIFY COLUMN p Enum8('a' = 1, 'b' = 2, 'c' = 3, 'd' = 4) SETTINGS alter_sync = 2"
+${CLICKHOUSE_CLIENT} --query "SELECT toTypeName(p) FROM $TABLE LIMIT 1"
+
+# Renaming a member keeps the partition ids but makes the literal 'a' undecodable, so it is refused.
+${CLICKHOUSE_CLIENT} --query "
+    ALTER TABLE $TABLE MODIFY COLUMN p Enum8('x' = 1, 'b' = 2, 'c' = 3, 'd' = 4) SETTINGS alter_sync = 2" 2>&1 \
+    | grep -o "ALTER_OF_COLUMN_IS_FORBIDDEN" | head -n 1
+
 # The partition key type change is refused while the legacy multi-partition entry is pending.
 ${CLICKHOUSE_CLIENT} --query "ALTER TABLE $TABLE MODIFY COLUMN p Int8 SETTINGS alter_sync = 2" 2>&1 \
     | grep -o "ALTER_OF_COLUMN_IS_FORBIDDEN" | head -n 1

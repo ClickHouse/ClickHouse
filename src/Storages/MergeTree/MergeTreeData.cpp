@@ -11918,6 +11918,60 @@ PartitionIds MergeTreeData::rewritePartitionScopeToIds(MutationCommands & comman
     return PartitionIds{area.begin(), area.end()};
 }
 
+namespace
+{
+
+/// Does the change of a partition key column type from `old_type` to `new_type` keep both the decoding of
+/// every `IN PARTITION <value>` literal valid for `old_type` and the partition ids? That is the case for an
+/// unchanged type and for an extension of an `Enum` with new members (the width and the existing name to
+/// value mapping stay the same), possibly inside the same `Nullable` / `LowCardinality` wrappers.
+/// Does `new_enum` keep every member of `old_enum` under the same name and with the same value?
+/// Unlike `IDataTypeEnum::contains`, a member renamed while keeping its value does not count.
+template <typename T>
+bool keepsEnumMembers(const DataTypeEnum<T> & old_enum, const DataTypeEnum<T> & new_enum)
+{
+    return std::ranges::all_of(old_enum.getValues(), [&](const auto & member)
+    {
+        std::string_view new_name;
+        return new_enum.getNameForValue(member.second, new_name) && new_name == member.first;
+    });
+}
+
+bool preservesPartitionScope(const IDataType & old_type, const IDataType & new_type)
+{
+    if (old_type.equals(new_type))
+        return true;
+
+    if (const auto * old_nullable = typeid_cast<const DataTypeNullable *>(&old_type))
+    {
+        const auto * new_nullable = typeid_cast<const DataTypeNullable *>(&new_type);
+        return new_nullable && preservesPartitionScope(*old_nullable->getNestedType(), *new_nullable->getNestedType());
+    }
+
+    if (const auto * old_low_cardinality = typeid_cast<const DataTypeLowCardinality *>(&old_type))
+    {
+        const auto * new_low_cardinality = typeid_cast<const DataTypeLowCardinality *>(&new_type);
+        return new_low_cardinality
+            && preservesPartitionScope(*old_low_cardinality->getDictionaryType(), *new_low_cardinality->getDictionaryType());
+    }
+
+    if (const auto * old_enum8 = typeid_cast<const DataTypeEnum8 *>(&old_type))
+    {
+        const auto * new_enum8 = typeid_cast<const DataTypeEnum8 *>(&new_type);
+        return new_enum8 && keepsEnumMembers(*old_enum8, *new_enum8);
+    }
+
+    if (const auto * old_enum16 = typeid_cast<const DataTypeEnum16 *>(&old_type))
+    {
+        const auto * new_enum16 = typeid_cast<const DataTypeEnum16 *>(&new_type);
+        return new_enum16 && keepsEnumMembers(*old_enum16, *new_enum16);
+    }
+
+    return false;
+}
+
+}
+
 bool MergeTreeData::changesTypeOfPartitionKeyColumns(
     const StorageInMemoryMetadata & old_metadata, const StorageInMemoryMetadata & new_metadata, const String & column_name)
 {
@@ -11935,7 +11989,7 @@ bool MergeTreeData::changesTypeOfPartitionKeyColumns(
 
         /// A key column which disappears is refused by the other checks of the `ALTER`.
         auto new_column = new_columns.tryGetColumnOrSubcolumn(GetColumnsOptions::All, key_column);
-        if (new_column && !old_column->type->equals(*new_column->type))
+        if (new_column && !preservesPartitionScope(*old_column->type, *new_column->type))
             return true;
     }
 

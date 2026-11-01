@@ -1,5 +1,7 @@
 legacy znodes:	1
 pending legacy mutations:	1
+Enum8(\'a\' = 1, \'b\' = 2, \'c\' = 3, \'d\' = 4)
+ALTER_OF_COLUMN_IS_FORBIDDEN
 ALTER_OF_COLUMN_IS_FORBIDDEN
 Int8
 1	1
