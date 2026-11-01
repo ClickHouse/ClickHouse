@@ -182,6 +182,50 @@ static void AddPrefixToKeys(
 namespace
 {
 
+/** The text `<digits>E<exponent>` of the decimal number `text` - an optional sign, the digits and an
+  * optional point - without its leading and trailing zeros, if at most 34 digits remain, which a
+  * decimal128 holds exactly; `std::nullopt` otherwise.
+  */
+std::optional<String> significantDecimalDigits(std::string_view text)
+{
+    String sign;
+    if (!text.empty() && (text.front() == '-' || text.front() == '+'))
+    {
+        if (text.front() == '-')
+            sign = "-";
+        text.remove_prefix(1);
+    }
+
+    String digits;
+    Int64 exponent = 0;
+    bool after_point = false;
+    for (char c : text)
+    {
+        if (c == '.' && !after_point)
+            after_point = true;
+        else if (c >= '0' && c <= '9')
+        {
+            digits.push_back(c);
+            exponent -= after_point;
+        }
+        else
+            return std::nullopt;
+    }
+
+    while (!digits.empty() && digits.back() == '0')
+    {
+        digits.pop_back();
+        ++exponent;
+    }
+    size_t first_nonzero = digits.find_first_not_of('0');
+    if (first_nonzero == String::npos)
+        return "0";
+    digits.erase(0, first_nonzero);
+    if (digits.size() > 34)
+        return std::nullopt;
+    return fmt::format("{}{}E{}", sign, digits, exponent);
+}
+
 /** Appends an unsigned integer that does not fit a signed 64-bit one, which is the widest integer
   * BSON has. A `double` would lose its low digits, so the value goes as a BSON decimal128 - the
   * type a Mongo client spells as `$numberDecimal` - which holds 34 significant digits and
@@ -395,6 +439,15 @@ void appendTypedValue(bson_t * document, const String & key, const rapidjson::Va
         }
         bson_decimal128_t decimal;
         if (digits <= 34 && bson_decimal128_from_string(value.GetString(), &decimal))
+        {
+            bson_append_decimal128(document, key.data(), key_length, &decimal);
+            return;
+        }
+        /// The trailing zeros of a value - of a sum of `Decimal256`, or the scale an average is
+        /// computed with (see `parseMongoAccumulator`) - are not significant digits: such a value
+        /// is held exactly as its significant digits and an exponent.
+        if (auto significant = significantDecimalDigits(text);
+            significant && bson_decimal128_from_string(significant->c_str(), &decimal))
         {
             bson_append_decimal128(document, key.data(), key_length, &decimal);
             return;

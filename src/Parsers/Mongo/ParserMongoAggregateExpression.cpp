@@ -1337,8 +1337,22 @@ ASTPtr parseOperator(std::string_view name, const rapidjson::Value & argument)
         auto input = parseMongoAggregateExpression(requireMember(argument, "input", name));
         if (argument.FindMember("chars") != argument.MemberEnd())
             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "The 'chars' of '{}' is not supported", name);
-        const char * function = name == "$trim" ? "trimBoth" : (name == "$ltrim" ? "trimLeft" : "trimRight");
-        return makeASTFunction(function, std::move(input));
+        /** Mongo trims the null character, the ASCII whitespace and the Unicode spaces U+00A0,
+          * U+1680 and U+2000 to U+200A by default, while `trimBoth` and the like trim only the
+          * ASCII space, so the whitespace is removed with a regular expression instead.
+          */
+        static constexpr auto whitespace = R"([\x00\t\n\x0B\x0C\r \x{00A0}\x{1680}\x{2000}-\x{200A}]+)";
+        if (name == "$trim")
+            return makeASTFunction(
+                "replaceRegexpAll",
+                std::move(input),
+                makeLiteral(Field(fmt::format("^{0}|{0}$", whitespace))),
+                makeLiteral(Field(String())));
+        return makeASTFunction(
+            "replaceRegexpOne",
+            std::move(input),
+            makeLiteral(Field(name == "$ltrim" ? fmt::format("^{}", whitespace) : fmt::format("{}$", whitespace))),
+            makeLiteral(Field(String())));
     }
 
     if (name == "$replaceOne" || name == "$replaceAll")
@@ -1687,21 +1701,63 @@ ASTPtr unwrapArrayFromTuples(ASTPtr aggregated)
     return makeASTFunction("arrayMap", makeLambda("x", std::move(element)), std::move(aggregated));
 }
 
-/** Whether `value` is a number to the numeric accumulators. A ClickHouse `Bool` is a `UInt8`, which
-  * `sum` and `avg` would add up, while `$sum`, `$avg` and the standard deviations of Mongo skip a
-  * boolean, as any other value that is not a number, also when it is wrapped into `Nullable` or
-  * `LowCardinality`, which `toTypeName` keeps. The condition is a constant, and the
-  * accumulators are lowered to their `-If` forms with it. The value is an argument of an aggregate
-  * function, which cannot nest, so the copy does not compound.
+/** Whether `value` is a number to the numeric accumulators: an integer, a float or a decimal, also
+  * when it is wrapped into `Nullable` or `LowCardinality`, which `toTypeName` keeps. `$sum`, `$avg`
+  * and the standard deviations of Mongo skip any other value: a boolean - a ClickHouse `Bool` is a
+  * `UInt8`, which `sum` and `avg` would add up -, a date, which `avg` would average into a date, a
+  * string. The condition is a constant, and the accumulators are lowered to their `-If` forms with
+  * it. The value is an argument of an aggregate function, which cannot nest, so the copies of it
+  * here and below do not compound.
   */
 ASTPtr makeIsAccumulatedNumber(const ASTPtr & value)
 {
     return makeASTFunction(
-        "not",
-        makeASTFunction(
-            "match",
-            makeASTFunction("toTypeName", value->clone()),
-            makeLiteral(Field(String(R"(^(Nullable\(|LowCardinality\()*Bool\)*$)")))));
+        "match",
+        makeASTFunction("toTypeName", value->clone()),
+        makeLiteral(Field(String(R"(^(Nullable\(|LowCardinality\()*(U?Int\d+|B?Float\d+|Decimal\d*\(.*\))\)*$)"))));
+}
+
+/// Whether `value` is a decimal, also a `Nullable` one. A constant, as `makeIsAccumulatedNumber`.
+ASTPtr makeIsDecimal(const ASTPtr & value)
+{
+    return makeASTFunction(
+        "match", makeASTFunction("toTypeName", value->clone()), makeLiteral(Field(String(R"(^(Nullable\()*Decimal)"))));
+}
+
+/// The element `if(condition, 1, 2)` of the tuple of `first` and `second`: as `condition` is a
+/// constant, the type of the result is the type of only one of them, unlike the one of `if`, which
+/// needs a common type of both.
+ASTPtr makeConstantChoice(ASTPtr condition, ASTPtr first, ASTPtr second)
+{
+    return makeASTFunction(
+        "tupleElement",
+        makeASTFunction("tuple", std::move(first), std::move(second)),
+        makeASTFunction("if", std::move(condition), makeLiteral(Field(UInt64(1))), makeLiteral(Field(UInt64(2)))));
+}
+
+/** The value a numeric accumulator is applied to: `value` itself if it is a number, see
+  * `makeIsAccumulatedNumber`, and `0` otherwise, which the condition of the accumulator skips. A
+  * numeric aggregate function does not accept a string, and would accept a date, so it is never
+  * applied to a value that is not a number.
+  */
+ASTPtr makeAccumulatedNumber(const ASTPtr & value)
+{
+    return makeConstantChoice(makeIsAccumulatedNumber(value), value->clone(), makeLiteral(Field(UInt64(0))));
+}
+
+/** `number`, widened to `Decimal256` with at least `scale` digits after the point if it is a
+  * decimal, and to the type of `otherwise` - added as a zero - if it is not. `sum` accumulates a
+  * `Decimal128` in a `Decimal128`, which wraps around without an error, while the sum of Mongo
+  * decimals is a decimal floating point number of 34 significant digits, so it does not overflow:
+  * the sum of `Decimal256` can not reach its bound for any count of `Decimal128` values.
+  */
+ASTPtr makeWidenedNumber(const ASTPtr & value, ASTPtr number, UInt64 scale, ASTPtr otherwise)
+{
+    auto widening = makeConstantChoice(
+        makeIsDecimal(value),
+        makeASTFunction("toDecimal256", makeLiteral(Field(UInt64(0))), makeLiteral(Field(scale))),
+        std::move(otherwise));
+    return makeASTFunction("plus", std::move(number), std::move(widening));
 }
 
 }
@@ -1765,10 +1821,13 @@ ASTPtr parseMongoAccumulator(const rapidjson::Value & value, const MongoGroupOrd
         auto argument = parseMongoAggregateExpression(member.value);
         if (const auto * literal = argument->as<ASTLiteral>(); literal && literal->value == Field(Int64(1)))
             return makeASTFunction("count");
-        /// A sum of integers that wraps around is an error, see `withIntegerOverflowCheck`.
+        /// A sum of integers that wraps around is an error, see `withIntegerOverflowCheck`, and a sum
+        /// of decimals is accumulated wide enough not to, see `makeWidenedNumber`.
         auto is_number = makeIsAccumulatedNumber(argument);
-        auto approximate = makeASTFunction("sumIf", makeASTFunction("toFloat64", argument->clone()), is_number->clone());
-        return withIntegerOverflowCheck(makeASTFunction("sumIf", std::move(argument), std::move(is_number)), std::move(approximate));
+        auto number = makeAccumulatedNumber(argument);
+        auto approximate = makeASTFunction("sumIf", makeASTFunction("toFloat64", number->clone()), is_number->clone());
+        auto widened = makeWidenedNumber(argument, number, 0, makeLiteral(Field(UInt64(0))));
+        return withIntegerOverflowCheck(makeASTFunction("sumIf", std::move(widened), std::move(is_number)), std::move(approximate));
     }
 
     /** `$first`, `$last` and `$push` read the documents of the group in the order of the stream,
@@ -1794,8 +1853,9 @@ ASTPtr parseMongoAccumulator(const rapidjson::Value & value, const MongoGroupOrd
     /// nest, so the copy does not compound.
     if (name == "$stdDevSamp")
     {
-        auto sampled = parseMongoAggregateExpression(member.value);
-        auto is_number = makeIsAccumulatedNumber(sampled);
+        auto input = parseMongoAggregateExpression(member.value);
+        auto is_number = makeIsAccumulatedNumber(input);
+        auto sampled = makeAccumulatedNumber(input);
         auto counted = makeASTFunction("countIf", sampled->clone(), is_number->clone());
         return makeASTFunction(
             "if",
@@ -1805,11 +1865,30 @@ ASTPtr parseMongoAccumulator(const rapidjson::Value & value, const MongoGroupOrd
     }
 
     /// `$avg` and `$stdDevPop` of a group without a number are `null`, see `makeIsAccumulatedNumber`.
-    if (name == "$avg" || name == "$stdDevPop")
+    if (name == "$stdDevPop")
     {
         auto input = parseMongoAggregateExpression(member.value);
         auto is_number = makeIsAccumulatedNumber(input);
-        return makeASTFunction(name == "$avg" ? "avgOrNullIf" : "stddevPopOrNullIf", std::move(input), std::move(is_number));
+        return makeASTFunction("stddevPopOrNullIf", makeAccumulatedNumber(input), std::move(is_number));
+    }
+
+    /** The average of Mongo is a decimal when the values are decimals, while `avg` is a `Float64`
+      * that keeps only 16 significant digits of a decimal. So it is the sum divided by the count of
+      * the values, accumulated as a `Float64` for numbers of other types, as `avg` does, and as a
+      * `Decimal256` with at least 20 digits after the point for decimals, see `makeWidenedNumber`.
+      * The count of a group without a number is zero, which makes the average `null`.
+      */
+    if (name == "$avg")
+    {
+        auto input = parseMongoAggregateExpression(member.value);
+        auto is_number = makeIsAccumulatedNumber(input);
+        auto number = makeAccumulatedNumber(input);
+        auto count = makeASTFunction("countIf", number->clone(), is_number->clone());
+        auto widened = makeWidenedNumber(input, number, 20, makeASTFunction("toFloat64", makeLiteral(Field(UInt64(0)))));
+        return makeASTFunction(
+            "divide",
+            makeASTFunction("sumIf", std::move(widened), std::move(is_number)),
+            makeASTFunction("nullIf", std::move(count), makeLiteral(Field(UInt64(0)))));
     }
 
     if (auto it = accumulators.find(name); it != accumulators.end())

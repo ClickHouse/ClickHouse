@@ -58,7 +58,10 @@ bool ParserMongoDeleteQuery::parseImpl(ASTPtr & node)
     if (!where_condition)
         where_condition = make_intrusive<ASTLiteral>(Field(UInt64(1)));
 
+    /// The condition is one of the `children` as well, as `ParserDeleteQuery` makes it: the checks of
+    /// `max_ast_elements` and `max_ast_depth` and the other visitors walk only `children`.
     delete_query->predicate = std::move(where_condition);
+    delete_query->children.push_back(delete_query->predicate);
     return true;
 }
 

@@ -17,6 +17,7 @@
 
 #include <bit>
 #include <cmath>
+#include <limits>
 #include <map>
 #include <string_view>
 #include <unordered_map>
@@ -214,13 +215,53 @@ ASTPtr parseFieldOperator(
     {
         if (!argument.IsArray() || argument.Size() != 2)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "The argument of '$mod' must be an array of a divisor and a remainder");
-        auto divisor = tryParseMongoConstant(argument[0]);
-        auto remainder = tryParseMongoConstant(argument[1]);
-        if (!divisor || !remainder)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "The divisor and the remainder of '$mod' must be constants");
-        if (argument[0].IsNumber() && argument[0].GetDouble() == 0)
+        /// Mongo truncates the divisor and the remainder towards zero to 64-bit integers, and
+        /// rejects a value that is not a number, not finite or out of the range of `Int64`.
+        const auto to_integer = [](const rapidjson::Value & value, const char * what) -> Int64
+        {
+            auto constant = tryParseMongoConstant(value);
+            const auto * literal = constant ? constant->as<ASTLiteral>() : nullptr;
+            if (literal && literal->value.getType() == Field::Types::Int64)
+                return literal->value.safeGet<Int64>();
+            if (literal && literal->value.getType() == Field::Types::UInt64
+                && literal->value.safeGet<UInt64>() <= static_cast<UInt64>(std::numeric_limits<Int64>::max()))
+                return static_cast<Int64>(literal->value.safeGet<UInt64>());
+            if (literal && literal->value.getType() == Field::Types::Float64)
+            {
+                double truncated = std::trunc(literal->value.safeGet<Float64>());
+                /// `2^63` is the first double out of the range, and `-2^63` the last one in it.
+                if (std::isfinite(truncated) && truncated >= -0x1p63 && truncated < 0x1p63)
+                    return static_cast<Int64>(truncated);
+            }
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS, "The {} of '$mod' must be a finite number in the range of a 64-bit integer", what);
+        };
+        Int64 divisor = to_integer(argument[0], "divisor");
+        Int64 remainder = to_integer(argument[1], "remainder");
+        if (divisor == 0)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "The divisor of '$mod' must not be zero");
-        return makeASTFunction("equals", makeASTFunction("modulo", identifier(), divisor), remainder);
+
+        /** Only a number matches, truncated towards zero as well: a fractional field is not a match
+          * by a fractional remainder, a string that `accurateCastOrNull` would parse does not match
+          * at all, nor does a boolean. A value out of the range of `Int64` - a float, a `UInt64` -
+          * becomes `NULL`, which does not match either. The type is a constant (see `toTypeName`).
+          */
+        auto is_number = makeASTFunction(
+            "match",
+            makeASTFunction("toTypeName", identifier()),
+            make_intrusive<ASTLiteral>(Field(String(R"(^(Nullable\(|LowCardinality\()*(U?Int\d+|B?Float\d+|Decimal\d*\(.*\))\)*$)"))));
+        auto value = makeASTFunction(
+            "if",
+            std::move(is_number),
+            makeASTFunction("accurateCastOrNull", makeASTFunction("trunc", identifier()), make_intrusive<ASTLiteral>(Field(String("Int64")))),
+            make_intrusive<ASTLiteral>(Field()));
+        /// `Int64` divided by -1 is the one quotient that does not fit, and every remainder by -1 is zero.
+        if (divisor == -1)
+            divisor = 1;
+        return makeASTFunction(
+            "equals",
+            makeASTFunction("modulo", std::move(value), make_intrusive<ASTLiteral>(Field(divisor))),
+            make_intrusive<ASTLiteral>(Field(remainder)));
     }
 
     if (name == "$size")

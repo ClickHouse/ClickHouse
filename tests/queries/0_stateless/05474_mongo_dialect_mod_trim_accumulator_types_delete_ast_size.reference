@@ -1,0 +1,24 @@
+-- $mod
+{"id":1}
+{"id":1}
+{"id":2}
+{"id":1}
+{"id":1}
+{"id":2}
+(BAD_ARGUMENTS)
+(BAD_ARGUMENTS)
+(BAD_ARGUMENTS)
+2
+-- $trim
+{"t":"alpha beta","l":"　 alpha ","r":" alpha"}
+{"t":"","e":"","n":null}
+-- non-numbers in numeric accumulators
+{"_id":null,"a":null,"an":null,"as":null,"s":0,"ss":0,"p":null,"q":null}
+{"_id":null,"a":null,"s":0}
+{"_id":null,"a":0,"f":0,"s":0,"p":9}
+-- decimals in $sum and $avg
+{"_id":null,"s":180000000000000000000000000000000000000,"c":180000000000000000000000000000000000000}
+{"_id":null,"a":9007199254740993,"h":1.5}
+-- the size of the filter of deleteMany
+(TOO_BIG_AST)
+2

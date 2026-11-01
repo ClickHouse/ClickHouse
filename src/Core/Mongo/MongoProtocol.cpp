@@ -178,6 +178,12 @@ String QueryExecutor::execute(const String & query, const SettingsChanges & extr
     query_context->setDefaultFormat("TabSeparated");
     query_context->setSetting("output_format_tsv_crlf_end_of_line", false);
 
+    /// A BSON double is written into the `JSONEachRow` data of an internal `INSERT` as the shortest
+    /// text that reads back as the same double, but only the precise reader does read it back so:
+    /// with `precise_float_parsing = 0` from the profile, or from an older `compatibility`, `1.6725`
+    /// would be stored as `1.6724999999999999`.
+    query_context->setSetting("precise_float_parsing", true);
+
     /// The output of a `FORMAT JSON` query is parsed back into the BSON reply, so its shape must
     /// not depend on the output settings of the authenticated user's profile: with
     /// `output_format_json_quote_64bit_integers` an `Int64` column would come back as a BSON

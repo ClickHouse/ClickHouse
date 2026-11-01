@@ -3158,3 +3158,42 @@ def test_doubles_keep_full_precision(started_cluster):
     assert collection.distinct("x") == [value]
 
     collection.drop()
+
+    # The imprecise reader of a profile (or of an older `compatibility`) does not apply to the data
+    # of an internal `INSERT`: it would store `1.6725` as `1.6724999999999999`.
+    node.query("DROP USER IF EXISTS mongo_imprecise_floats", password="123")
+    node.query(
+        "CREATE USER mongo_imprecise_floats IDENTIFIED WITH plaintext_password BY 'mongo_pass' SETTINGS precise_float_parsing = 0",
+        password="123",
+    )
+    node.query("GRANT SELECT, INSERT, CREATE TABLE, DROP TABLE, CREATE DATABASE ON db.* TO mongo_imprecise_floats", password="123")
+    imprecise = make_client(user="mongo_imprecise_floats", password="mongo_pass", database="db")["db"]["imprecise_float_profile"]
+    imprecise.drop()
+    imprecise.insert_one({"id": 1, "x": 1.6725, "xs": [1.6725]})
+    assert node.query("SELECT x = 1.6725, xs = [1.6725] FROM db.imprecise_float_profile", password="123") == "1\t1\n"
+    assert [document["x"] for document in imprecise.find({"x": 1.6725})] == [1.6725]
+    assert [document["xs"] for document in imprecise.find({}, {"_id": 0, "xs": 1})] == [[1.6725]]
+    assert imprecise.distinct("x") == [1.6725]
+    imprecise.drop()
+    node.query("DROP USER mongo_imprecise_floats", password="123")
+
+
+def test_decimal_accumulators_keep_exact_values(started_cluster):
+    """`$sum` of decimals does not wrap around and `$avg` of decimals is a decimal, and both arrive
+    as BSON decimal128 values, also when their text has more than 34 digits of trailing zeros."""
+    from bson.decimal128 import Decimal128
+
+    collection = make_client()["db"]["decimal_accumulators"]
+    collection.drop()
+    collection.insert_many(
+        [
+            {"id": 1, "big": Decimal128("9E+37"), "exact": Decimal128("9007199254740993")},
+            {"id": 2, "big": Decimal128("9E+37"), "exact": Decimal128("9007199254740993")},
+        ]
+    )
+    [result] = list(
+        collection.aggregate([{"$group": {"_id": None, "s": {"$sum": "$big"}, "a": {"$avg": "$exact"}}}])
+    )
+    assert type(result["s"]) == Decimal128 and result["s"].to_decimal() == Decimal128("1.8E+38").to_decimal()
+    assert type(result["a"]) == Decimal128 and result["a"].to_decimal() == Decimal128("9007199254740993").to_decimal()
+    collection.drop()
