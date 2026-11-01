@@ -4177,10 +4177,10 @@ void KeyCondition::prepareSetAtomsForIn(
     /// column comparator. Set indexes are not projected into that key domain yet,
     /// so leave IN/NOT IN to the row-level predicate for now.
     if (std::ranges::any_of(
-            data_types,
-            [](const DataTypePtr & type)
+            analysis->componentwise_candidate.column_mappings,
+            [](const SetColumnMapping & mapping)
             {
-                return isExponentialTimeDecaying(removeNullable(type));
+                return isExponentialTimeDecaying(removeNullable(mapping.key_expr_type));
             }))
         return;
 
