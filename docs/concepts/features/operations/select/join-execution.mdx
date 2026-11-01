@@ -1,0 +1,51 @@
+---
+title: 'How ClickHouse executes JOINs'
+sidebar_label: 'Execution'
+description: 'Build and probe phases, and query-planner optimizations for JOINs.'
+keywords: ['JOIN execution', 'build side', 'probe side', 'JOIN planner', 'JOIN reordering', 'filter pushdown']
+doc_type: 'guide'
+---
+
+Most JOIN algorithms execute in two phases:
+
+- **Build phase.** ClickHouse reads one input completely and stores it in a data structure that supports matching, such as a hash table or a set of sorted blocks. This input is the build side.
+- **Probe phase.** ClickHouse streams the other input block by block and matches each row against the data structure from the build phase. This input is the probe side.
+
+The probe phase starts only after the build phase finishes. The memory that a JOIN needs is therefore determined mostly by the size of the build side.
+
+By default, the right-hand side of the JOIN is the build side, and the left-hand side is the probe side. Some algorithms differ from this model. The [`direct` algorithm](/concepts/features/operations/select/join-algorithms#direct) has no build phase, because the right-hand side already exists as a key-value structure. The [`full_sorting_merge` algorithm](/concepts/features/operations/select/join-algorithms#full-sorting-merge) sorts both inputs and merges them. The [`ie_join` algorithm](/concepts/features/operations/select/join-algorithms#ie-join) accumulates both inputs before it joins them.
+
+## Query planner behavior {#query-planner-behavior}
+
+The query planner can change the inputs of a JOIN before an algorithm runs. The following optimizations apply.
+
+### Automatic build-side selection {#automatic-build-side-selection}
+
+Since version 24.12, the planner can swap the two inputs of a JOIN so that the smaller input becomes the build side. It compares the estimated row counts of both inputs and swaps them for a hash-based JOIN when the left input is estimated to be smaller. The [`query_plan_join_swap_table`](/reference/settings/session-settings/query-plan#query_plan_join_swap_table) setting controls this behavior.
+
+When the inputs are swapped, a `LEFT` JOIN is executed as a `RIGHT` JOIN, and the reverse. The swapped order is visible in `EXPLAIN` output.
+
+### Multi-table JOIN reordering {#multi-table-join-reordering}
+
+For a query that joins several tables in the same subquery, the planner can change the order in which the tables are joined. The [`query_plan_optimize_join_order_limit`](/reference/settings/session-settings/query-plan#query_plan_optimize_join_order_limit) setting sets the maximum number of tables that the planner reorders. The default value is `10`. The value `1` disables reordering.
+
+### Use of column statistics {#use-of-column-statistics}
+
+Build-side selection and JOIN reordering depend on row-count estimates. Without column statistics, the planner derives estimates from the primary index, and these estimates can be imprecise. With [column statistics](/reference/engines/table-engines/mergetree-family/mergetree#column-statistics), the planner uses statistics to estimate the selectivity of filters and the cardinality of JOIN keys.
+
+The [`use_statistics`](/reference/settings/session-settings/use-statistics#use_statistics) setting controls whether the optimizer uses statistics. The [`materialize_statistics_on_insert`](/reference/settings/session-settings/materialize-statistics-on-insert#materialize_statistics_on_insert) setting controls whether statistics are built for newly inserted data.
+
+### Filter pushdown {#filter-pushdown}
+
+When [`query_plan_filter_push_down`](/reference/settings/session-settings/query-plan#query_plan_filter_push_down) is enabled, the planner moves `WHERE` conditions below the JOIN so that each input is filtered before the build and probe phases.
+
+- A condition that references columns of only one input is applied to that input.
+- For a `LEFT` JOIN, conditions are not pushed to the right input. For a `RIGHT` JOIN, conditions are not pushed to the left input.
+- A condition on a JOIN key of one input can also be applied to the other input, because the key columns of both inputs are equal for every matched row.
+- Conditions are not pushed into a right-hand side that is already filled, such as a dictionary, or into the right-hand side of an `ASOF` JOIN.
+
+## Related pages {#related-pages}
+
+- [Using JOINs in ClickHouse](/concepts/features/operations/select/joining-tables)
+- [JOIN algorithms](/concepts/features/operations/select/join-algorithms)
+- [JOIN memory management and spilling](/concepts/features/operations/select/join-memory-management)
