@@ -3189,7 +3189,8 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                 function_name);
 
         auto action = function_node_ptr->getNullsAction();
-        std::string aggregate_function_name = rewriteAggregateFunctionNameIfNeeded(function_name, action, scope.context);
+        std::string aggregate_function_name
+            = rewriteAggregateFunctionNameIfNeeded(function_name, action, argument_types, parameters, scope.context);
 
         argument_types = bindWindowFunctionArgumentTypes(function_name, std::move(argument_types));
         for (size_t i = 0; i < argument_types.size(); ++i)
@@ -3323,7 +3324,8 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                 backQuote(function_name));
 
         auto action = function_node_ptr->getNullsAction();
-        std::string aggregate_function_name = rewriteAggregateFunctionNameIfNeeded(function_name, action, scope.context);
+        std::string aggregate_function_name
+            = rewriteAggregateFunctionNameIfNeeded(function_name, action, argument_types, parameters, scope.context);
 
         AggregateFunctionProperties properties;
         auto aggregate_function
