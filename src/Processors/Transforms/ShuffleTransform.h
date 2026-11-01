@@ -61,6 +61,7 @@ private:
 
     void consumeWithLimit(const Columns & columns, size_t num_rows);
     void pruneReservoir();
+    UInt64 sampleRowsToSkip();
 
     void prepareResult();
     void prepareResultWithLimit();
@@ -94,6 +95,8 @@ private:
     MutableColumns accumulated_columns;
     Keys reservoir_keys;
     UInt64 threshold;
+    /// The number of the next rows that are skipped because their keys are not less than the threshold.
+    UInt64 rows_to_skip = 0;
 
     /// The rows which are being returned: shuffled columns and their sorted internal keys.
     bool result_prepared = false;

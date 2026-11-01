@@ -11,6 +11,7 @@
 #include <base/sort.h>
 
 #include <algorithm>
+#include <cmath>
 #include <limits>
 #include <numeric>
 
@@ -131,59 +132,84 @@ void PartialShuffleTransform::consume(Chunk chunk)
     accumulated_rows += num_rows;
 }
 
+UInt64 PartialShuffleTransform::sampleRowsToSkip()
+{
+    /// The number of rows before the next row with a key less than the threshold has the geometric distribution
+    /// with the probability p = threshold / 2^64 of success.
+    const double p = static_cast<double>(threshold) / 18446744073709551616.0;
+    if (p >= 1.0)
+        return 0;
+    if (p <= 0.0)
+        return std::numeric_limits<UInt64>::max();
+
+    /// A uniformly distributed number in (0, 1].
+    const double u = (static_cast<double>(rng() >> 11) + 1.0) / 9007199254740992.0;
+    const double skip = std::floor(std::log(u) / std::log1p(-p));
+    if (!(skip < 1.8e19))
+        return std::numeric_limits<UInt64>::max();
+    return static_cast<UInt64>(skip);
+}
+
 void PartialShuffleTransform::consumeWithLimit(const Columns & columns, size_t num_rows)
 {
-    Keys keys(num_rows);
-    for (auto & key : keys)
-        key = rng();
-
     /// Before the first pruning, the threshold is the maximum value and all rows are accepted.
-    size_t num_accepted = num_rows;
-    IColumn::Filter filter;
-    if (threshold != std::numeric_limits<UInt64>::max())
-    {
-        filter.resize(num_rows);
-        num_accepted = 0;
-        for (size_t row = 0; row < num_rows; ++row)
-        {
-            filter[row] = keys[row] < threshold;
-            num_accepted += filter[row];
-        }
-    }
-
-    if (num_accepted == 0)
-        return;
-
-    if (num_accepted == num_rows)
+    if (threshold == std::numeric_limits<UInt64>::max())
     {
         for (size_t i = 0; i < columns.size(); ++i)
             if (accumulated_columns[i])
                 accumulated_columns[i]->insertRangeFrom(*columns[i], 0, num_rows);
 
-        reservoir_keys.insert(keys.begin(), keys.end());
+        reservoir_keys.reserve(reservoir_keys.size() + num_rows);
+        for (size_t row = 0; row < num_rows; ++row)
+            reservoir_keys.push_back(rng());
+
+        accumulated_rows += num_rows;
     }
     else
     {
+        /// Only a row with a key less than the threshold can be selected. Instead of generating a key for every row,
+        /// skip the rows with larger keys: the number of skipped rows is sampled from the geometric distribution,
+        /// and the key of a selected row is uniformly distributed in [0, threshold).
+        /// The expected number of selected rows of a stream of n rows is O(limit * log(n / limit)), so this is much
+        /// faster than looking at every row. The pruning lowers the threshold; the number of rows to skip is then
+        /// sampled again, which is correct because the geometric distribution is memoryless.
+        auto indices = ColumnUInt64::create();
+        auto & indices_data = indices->getData();
+
+        UInt64 row = rows_to_skip;
+        while (row < num_rows)
+        {
+            indices_data.push_back(row);
+            reservoir_keys.push_back(randomBelow(rng, threshold));
+
+            const UInt64 skip = sampleRowsToSkip();
+            row = (skip >= std::numeric_limits<UInt64>::max() - row) ? std::numeric_limits<UInt64>::max() : row + 1 + skip;
+        }
+        rows_to_skip = (row == std::numeric_limits<UInt64>::max()) ? row : row - num_rows;
+
+        const size_t num_accepted = indices_data.size();
+        if (num_accepted == 0)
+            return;
+
         for (size_t i = 0; i < columns.size(); ++i)
         {
             if (accumulated_columns[i])
             {
-                auto filtered = columns[i]->filter(filter, num_accepted);
-                accumulated_columns[i]->insertRangeFrom(*filtered, 0, num_accepted);
+                auto selected = columns[i]->index(*indices, 0);
+                accumulated_columns[i]->insertRangeFrom(*selected, 0, num_accepted);
             }
         }
 
-        for (size_t row = 0; row < num_rows; ++row)
-            if (filter[row])
-                reservoir_keys.push_back(keys[row]);
+        accumulated_rows += num_accepted;
     }
-
-    accumulated_rows += num_accepted;
 
     /// Prune when there are `limit` excess rows (but not too often if the limit is small),
     /// so that the amortized cost of pruning is O(1) per accepted row.
     if (accumulated_rows > limit && accumulated_rows - limit >= std::max<UInt64>(limit, max_block_size))
+    {
         pruneReservoir();
+        rows_to_skip = sampleRowsToSkip();
+    }
 }
 
 void PartialShuffleTransform::pruneReservoir()
