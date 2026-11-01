@@ -17,6 +17,7 @@
 #include <Storages/MergeTree/ColumnsSubstreams.h>
 #include <Storages/ProjectionsDescription.h>
 #include <Storages/StorageInMemoryMetadata.h>
+#include <Storages/SubcolumnCodecs.h>
 #include <Storages/TTLDescription.h>
 #include <DataTypes/IDataType.h>
 #include <DataTypes/DataTypeDynamic.h>
@@ -314,8 +315,9 @@ size_t countColumnStreams(const NamesAndTypesList & columns)
 /// `CompressedWriteBuffer` between all streams whose resolved codec has the same hash (`streams_by_codec`), and
 /// creates every such compressor at the default `DBMS_DEFAULT_BUFFER_SIZE`, not at `max_compress_block_size`.
 /// This mirrors its keying (`MergeTreeDataPartWriterCompact::addStreams`): the codec of every stream is resolved
-/// the same way `MergeTreeDataPartWriterOnDisk::getSubstreamCodec` does - the column's codec (or the part's default
-/// one) for a data substream, its generic codecs only for a structural substream, wrapped in
+/// the same way `MergeTreeDataPartWriterOnDisk::getSubstreamCodec` does - the codec declared for the stream (the codec
+/// of the subcolumn it belongs to, see `getSubstreamCodecDescription`, otherwise the column's codec, otherwise the part's
+/// default one) for a data substream, its generic codecs only for a structural substream, wrapped in
 /// `CompressionCodecAdaptive` for a default-codec column under adaptive codec selection - and keyed by its hash,
 /// salted with the stream name for a codec that needs the vector dimension up front, so such a codec is never
 /// shared. Streams with the same file name (the shared offsets of `Nested`) are counted once. The dynamic
@@ -339,14 +341,9 @@ std::unordered_map<UInt64, CompressionCodecPtr> collectWriterStreamCodecs(
     for (const auto & column : columns)
     {
         const String name_in_storage = column.getNameInStorage();
-        ASTPtr column_codec_desc;
-        if (const auto * column_desc = columns_description.tryGet(name_in_storage))
-            column_codec_desc = column_desc->codec;
-        else if (const auto * virtual_desc = metadata.virtuals.tryGetDescription(
-                     name_in_storage, VirtualsKind::All, VirtualsMaterializationPlace::Reader))
-            column_codec_desc = virtual_desc->codec;
-        const bool column_uses_default_codec = CompressionCodecFactory::isDefaultCodec(column_codec_desc);
-        const ASTPtr & effective_codec_desc = column_codec_desc ? column_codec_desc : default_codec_desc;
+        const ColumnDescription * column_desc = columns_description.tryGet(name_in_storage);
+        if (!column_desc)
+            column_desc = metadata.virtuals.tryGetDescription(name_in_storage, VirtualsKind::All, VirtualsMaterializationPlace::Reader);
 
         column.type->getDefaultSerialization()->enumerateStreams([&](const ISerialization::SubstreamPath & substream_path)
         {
@@ -355,6 +352,12 @@ std::unordered_map<UInt64, CompressionCodecPtr> collectWriterStreamCodecs(
             String stream_name = ISerialization::getFileNameForStream(column, substream_path, stream_file_name_settings);
             if (!stream_names.insert(stream_name).second)
                 return;
+
+            /// The declaration of this stream, resolved like `getSubstreamCodec`: a codec declared for a subcolumn
+            /// (`ColumnDescription::subcolumn_codecs`) overrides the column's one for the streams of that subcolumn.
+            const ASTPtr declared_codec_desc = column_desc ? getSubstreamCodecDescription(substream_path, *column_desc) : nullptr;
+            const bool column_uses_default_codec = CompressionCodecFactory::isDefaultCodec(declared_codec_desc);
+            const ASTPtr & effective_codec_desc = declared_codec_desc ? declared_codec_desc : default_codec_desc;
 
             const auto & substream_type = substream_path.back().data.type;
             const bool is_data_substream = ISerialization::isSpecialCompressionAllowed(substream_path);
@@ -2266,11 +2269,17 @@ static UInt64 estimateNeededMemoryForMergeImpl(
     /// A data file buffer has the size of the compressor block (or less on object storage), and the marks
     /// file buffer is much smaller than the marks block, so a full block always goes through the scratch
     /// buffer. It is a PODArray, so its capacity is rounded up to a power of two: a 1 MiB block keeps a
-    /// 2 MiB scratch buffer alive until the stream is finalized. Columns with their own codecs have reserve
-    /// sizes close to the part codec's one (every codec bound is a little over the block size).
-    const auto compression_scratch = [&](UInt64 compress_block_size) -> UInt64
+    /// 2 MiB scratch buffer alive until the stream is finalized. The reserve is the largest one of the codecs
+    /// the streams are really written with (`data_codecs` or `marks_codecs`): a column's own codec can have a
+    /// larger reserve than the part codec (`FPC` with a 2000000-byte block needs more than 2 MiB, so its scratch
+    /// buffer is 4 MiB while an `LZ4` one is 2 MiB).
+    const auto compression_scratch = [&](UInt64 compress_block_size, const std::vector<CompressionCodecPtr> & codecs) -> UInt64
     {
-        return roundUpToPowerOfTwoOrZero(part_codec.codec->getCompressedReserveSize(static_cast<UInt32>(compress_block_size)));
+        const auto size = static_cast<UInt32>(compress_block_size);
+        UInt32 reserve = 0;
+        for (const auto & codec : codecs)
+            reserve = std::max(reserve, codec->getCompressedReserveSize(size));
+        return roundUpToPowerOfTwoOrZero(reserve);
     };
 
     /// Worst case: every stream allocates all of its buffers in full. A zero remote_write_buffer_size
@@ -2446,7 +2455,7 @@ static UInt64 estimateNeededMemoryForMergeImpl(
     };
     /// The marks compressor only writes when the marks are compressed; otherwise its block stays empty and
     /// it never needs a scratch buffer.
-    const UInt64 marks_compression_scratch = settings[MergeTreeSetting::compress_marks] ? compression_scratch(marks_compress_block_size) : 0;
+    const UInt64 marks_compression_scratch = settings[MergeTreeSetting::compress_marks] ? compression_scratch(marks_compress_block_size, marks_codecs) : 0;
     /// The scratch buffers the data-volume bounds must price: a scratch buffer is not an eager allocation,
     /// but it is not data held in an upload buffer either, so neither the eager term nor the in-flight
     /// allowance covers it. A stream allocates it on its first flush, sized for the block it flushes, so
@@ -2454,12 +2463,15 @@ static UInt64 estimateNeededMemoryForMergeImpl(
     /// data the stream writes: the reserve size of a block of y bytes is at most y plus the codec's
     /// overhead for a full block, and rounding up to a power of two less than doubles it. Summed over the
     /// streams, the second bound is twice the written volume plus twice the overhead per stream.
-    const auto scratch_for_written_bytes = [&](size_t streams, UInt64 compress_block_size, UInt64 written_bytes) -> UInt64
+    const auto scratch_for_written_bytes = [&](size_t streams, UInt64 compress_block_size, UInt64 written_bytes,
+                                               const std::vector<CompressionCodecPtr> & codecs) -> UInt64
     {
-        const UInt64 codec_overhead
-            = part_codec.codec->getCompressedReserveSize(static_cast<UInt32>(compress_block_size)) - compress_block_size;
+        UInt64 codec_reserve = compress_block_size;
+        for (const auto & codec : codecs)
+            codec_reserve = std::max<UInt64>(codec_reserve, codec->getCompressedReserveSize(static_cast<UInt32>(compress_block_size)));
+        const UInt64 codec_overhead = codec_reserve - compress_block_size;
         return std::min(
-            saturatingStreamsTimesBuffer(streams, compression_scratch(compress_block_size)),
+            saturatingStreamsTimesBuffer(streams, compression_scratch(compress_block_size, codecs)),
             saturatingAdd(
                 saturatingStreamsTimesBuffer(2, written_bytes),
                 saturatingStreamsTimesBuffer(streams, 2 * codec_overhead)));
@@ -2480,8 +2492,8 @@ static UInt64 estimateNeededMemoryForMergeImpl(
         const UInt64 data_worst_case = remote_write_buffer_size != 0
             ? saturatingAdd(
                 stream_remote_write_buffer_size(max_compress_block_size, adaptive_stream, multipart_written_bytes, remote_write_buffer_size),
-                max_compress_block_size + compression_scratch(max_compress_block_size))
-            : 2 * max_compress_block_size + compression_scratch(max_compress_block_size);
+                max_compress_block_size + compression_scratch(max_compress_block_size, data_codecs))
+            : 2 * max_compress_block_size + compression_scratch(max_compress_block_size, data_codecs);
         return saturatingAdd(data_worst_case, marks_worst_case_write_buffer_size(adaptive_stream, marks_file_bytes));
     };
     /// The worst case of a non-adaptive stream, also used where the adaptive split is not known.
@@ -2523,7 +2535,7 @@ static UInt64 estimateNeededMemoryForMergeImpl(
     const auto compact_worst_case = [&](UInt64 compact_block_size, size_t compressors, UInt64 marks_file_bytes)
     {
         const UInt64 compressors_size
-            = saturatingStreamsTimesBuffer(compressors, DBMS_DEFAULT_BUFFER_SIZE + compression_scratch(DBMS_DEFAULT_BUFFER_SIZE));
+            = saturatingStreamsTimesBuffer(compressors, DBMS_DEFAULT_BUFFER_SIZE + compression_scratch(DBMS_DEFAULT_BUFFER_SIZE, data_codecs));
         /// The compact writer does not take the per-stream adaptive decision: its data file starts from
         /// compact_block_size, the buf_size it is opened with.
         const UInt64 data_worst_case = remote_write_buffer_size != 0
@@ -2595,9 +2607,9 @@ static UInt64 estimateNeededMemoryForMergeImpl(
     const auto scratch_for_streams = [&](size_t data_compressors, UInt64 data_block_size, size_t marks_streams)
     {
         return saturatingAdd(
-            scratch_for_written_bytes(data_compressors, data_block_size, output_written_bytes),
+            scratch_for_written_bytes(data_compressors, data_block_size, output_written_bytes, data_codecs),
             settings[MergeTreeSetting::compress_marks]
-                ? scratch_for_written_bytes(marks_streams, marks_compress_block_size, output_marks_bytes)
+                ? scratch_for_written_bytes(marks_streams, marks_compress_block_size, output_marks_bytes, marks_codecs)
                 : 0);
     };
     const UInt64 output_scratch = output_is_compact
