@@ -28,3 +28,30 @@ echo "index off"
 $CLICKHOUSE_CLIENT -q "SELECT count() FROM text_dfa_budget WHERE ${WHERE} SETTINGS ${SETTINGS}, use_skip_indexes = 0"
 
 $CLICKHOUSE_CLIENT -q "DROP TABLE text_dfa_budget"
+
+# With `use_constant_folding_in_index_analysis`, every partition gets its own condition. They must share the automata
+# and the budget of the query instead of compiling all patterns again, so the number of built automata must not grow
+# with the number of partitions (8 here). Without sharing, each partition builds ~20 automata until its budget is spent.
+$CLICKHOUSE_CLIENT -q "
+DROP TABLE IF EXISTS text_dfa_budget_partitioned;
+CREATE TABLE text_dfa_budget_partitioned (id UInt64, body String, INDEX idx body TYPE text(tokenizer = array, dictionary_block_size = 128))
+ENGINE = MergeTree PARTITION BY id % 8 ORDER BY id;
+INSERT INTO text_dfa_budget_partitioned SELECT number, concat('unrelated', toString(number), 'error') FROM numbers(8000);
+"
+
+WHERE=$(for i in $(seq 1 40); do printf "body LIKE 'service%%a______%d' OR " "$i"; done)
+WHERE="${WHERE} body LIKE 'unrelated1error'"
+
+PARTITIONED_SETTINGS="${SETTINGS}, use_constant_folding_in_index_analysis = 1"
+echo "partitioned, constant folding"
+$CLICKHOUSE_CLIENT -q "SELECT count() FROM text_dfa_budget_partitioned WHERE (${WHERE}) AND id % 8 < 100 SETTINGS ${PARTITIONED_SETTINGS}, log_comment = '05238_budget_partitioned'"
+$CLICKHOUSE_CLIENT -q "SELECT count() FROM text_dfa_budget_partitioned WHERE (${WHERE}) AND id % 8 < 100 SETTINGS ${PARTITIONED_SETTINGS}, use_skip_indexes = 0"
+
+$CLICKHOUSE_CLIENT -q "SYSTEM FLUSH LOGS query_log"
+$CLICKHOUSE_CLIENT -q "
+SELECT count() > 0 AND max(ProfileEvents['TextIndexDictionaryDFABuilds']) BETWEEN 1 AND 41
+FROM system.query_log
+WHERE type = 'QueryFinish' AND current_database = currentDatabase() AND log_comment = '05238_budget_partitioned'
+    AND event_date >= yesterday() AND event_time >= now() - 600"
+
+$CLICKHOUSE_CLIENT -q "DROP TABLE text_dfa_budget_partitioned"
