@@ -33,7 +33,7 @@ public:
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Relative accuracy must be between 0 and 1 but is {}", relative_accuracy);
         }
 
-        gamma = (1 + relative_accuracy) / (1 - relative_accuracy);
+        gamma = canonicalGamma((1 + relative_accuracy) / (1 - relative_accuracy));
         multiplier = 1 / std::log(gamma);
         key_multiplier = multiplier;
         updateBounds();
@@ -74,6 +74,22 @@ public:
 
     /// Whether two gammas give the same bins. They may differ by one ulp, because the same gamma computed another way can round differently
     static bool sameGamma(Float64 lhs, Float64 rhs) { return std::nextafter(lhs, rhs) == rhs; }
+
+    /// The exact gamma of the recognized scale, or `gamma_` unchanged
+    static Float64 canonicalGamma(Float64 gamma_)
+    {
+        /// `scaleOfGamma` needs a finite gamma above 1
+        if (std::isfinite(gamma_) && gamma_ > 1.0)
+        {
+            if (const auto scale = scaleOfGamma(gamma_))
+            {
+                /// The gamma of scale −10 is infinity, not usable
+                if (const Float64 canonical = gammaOfScale(*scale); std::isfinite(canonical))
+                    return canonical;
+            }
+        }
+        return gamma_;
+    }
 
     /// The mapping with 2^shift times wider bins: e.g. for shift 2, its bin 1 is bins 4 to 7 of this one. Scale `s` becomes
     /// scale `s - shift`
@@ -217,7 +233,7 @@ protected:
     /// Sets `gamma` and everything derived from it; the callers validate the result
     void setGamma(Float64 gamma_)
     {
-        gamma = gamma_;
+        gamma = canonicalGamma(gamma_);
         multiplier = 1 / std::log(gamma);
         key_multiplier = multiplier;
         relative_accuracy = (gamma - 1) / (gamma + 1);

@@ -314,6 +314,28 @@ SELECT ulps, toExpHistogram(off),
     toExpHistogram(arrayReduce('quantileDDMergeState(0.000001)', [scale_9, off]))
 FROM (SELECT arrayJoin([-1, 1, 2]) AS ulps);
 
+-- A gamma an ulp below and one an ulp above the base of scale 10 merge as scale 10, whatever the merge grouping
+WITH fromExpHistogram(10, 0, 0, [1], 0, [], 0.000001) AS base
+SELECT
+    CAST(arrayReduce('quantileDDMergeState(0.000001)', [arrayReduce('quantileDDMergeState(0.000001)', [minus, base]), plus]), 'String')
+        = CAST(arrayReduce('quantileDDMergeState(0.000001)', [minus, arrayReduce('quantileDDMergeState(0.000001)', [base, plus])]), 'String'),
+    toExpHistogram(arrayReduce('quantileDDMergeState(0.000001)', [arrayReduce('quantileDDMergeState(0.000001)', [minus, base]), plus]))
+FROM
+(
+    SELECT
+        CAST(concat(substring(canonical, 1, 1), reinterpretAsFixedString(reinterpretAsUInt64(substring(canonical, 2, 8)) - 1), substring(canonical, 10)), 'AggregateFunction(quantileDD(0.000001), Float64)') AS minus,
+        CAST(concat(substring(canonical, 1, 1), reinterpretAsFixedString(reinterpretAsUInt64(substring(canonical, 2, 8)) + 1), substring(canonical, 10)), 'AggregateFunction(quantileDD(0.000001), Float64)') AS plus
+    FROM (SELECT CAST(fromExpHistogram(10, 0, 0, [1, 2, 3, 4], 0, [], 0.000001), 'String') AS canonical)
+)
+;
+
+-- These relative accuracies give gammas an ulp below and above the base of scale 10: the constructor gives both the exact gamma
+WITH hex(reverse(substring(CAST(fromExpHistogram(10, 0, 0, [], 0, [], 0.000001), 'String'), 2, 8))) AS scale_10_gamma_bits
+SELECT
+    hex(reverse(substring(CAST(quantileDDState(0.00033845075883464363)(toFloat64(1)), 'String'), 2, 8))) = scale_10_gamma_bits,
+    hex(reverse(substring(CAST(quantileDDState(0.00033845075883486556)(toFloat64(1)), 'String'), 2, 8))) = scale_10_gamma_bits
+;
+
 -- Downscaled, a state an ulp off scale 10 gets the gamma of scale 9 exactly, whatever the order of the merge, and then
 -- merges with a state of scale 9 without losing resolution
 WITH CAST(fromExpHistogram(10, 0, 0, [1, 2, 3, 4], 0, [], 0.000001), 'String') AS canonical,
