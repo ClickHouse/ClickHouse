@@ -13,6 +13,7 @@ import traceback
 import urllib.error
 import urllib.parse
 import urllib.request
+from collections.abc import Mapping
 from datetime import datetime, timezone
 from pathlib import Path
 from shlex import quote
@@ -52,6 +53,9 @@ raw_query_metrics_path = f"{perf_wd}/analyze/raw-query-metrics-upload.tsv"
 # measured servers). Keep in sync with CHPC_REPORT_LOCAL_{QUERY,SERVER}_SETTINGS
 # in compare.sh.
 REPORT_LOCAL_QUERY_SETTINGS = [
+    # Report-building invocations run concurrently and must not share (and lock)
+    # the default designated data directory in the home directory.
+    "--tmp",
     # Keep report aggregations in RAM: report/tmp cannot hold a spill of the
     # heaviest randomization queries, so spilling only fails with NOT_ENOUGH_SPACE.
     "--max_bytes_before_external_group_by=0",
@@ -192,6 +196,13 @@ DASHBOARD_INPUT_TABLES = (RAW_QUERY_METRICS_TABLE, HISTORICAL_DATA_TABLE, TEST_T
 # this shard's rows, counted from the start of the uploads.
 DASHBOARD_INGEST_TIMEOUT_SEC = 600
 DASHBOARD_POLL_INTERVAL_SEC = 15
+# A few seconds after praktika started the job's timeout: the time the job has left is counted from here.
+JOB_START = time.monotonic()
+# Kept free at the end of the job: a dashboard poll in flight at the deadline, the end of a cut
+# confirmation rerun, the uploads' minimum below, packing the logs and writing the result.
+JOB_END_RESERVE_SEC = 300
+# The uploads get at least this long, however late the job is.
+DASHBOARD_MIN_UPLOAD_SEC = 60
 # Longest pause between the attempts of an upload in `DASHBOARD_INPUT_TABLES` that CIDB failed.
 CIDB_UPLOAD_RETRY_INTERVAL_SEC = 60
 # Pause between the log export flushes of a nightly run.
@@ -891,11 +902,32 @@ def get_server_commit_sha(server):
     return sha if GIT_HASH_RE.fullmatch(sha) else ""
 
 
+def local_command(binary):
+    """`clickhouse local` of `binary`, independent of `HOME`.
+
+    Without `--tmp`, a build that has the option uses the persistent default
+    directory in the home, so a locked or broken directory there would fail the
+    probe. The reference build can be older than the option and rejects it as
+    an unrecognized argument, but it already uses a unique temporary directory,
+    so `--tmp` is passed only to a binary that lists it in `--help` (like
+    `shell_env_for` in tests/performance/scripts/perf.py).
+    """
+    local_help = subprocess.run(
+        [binary, "local", "--help"],
+        stdin=subprocess.DEVNULL,
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout
+    tmp_option = " --tmp" if re.search(r"^\s*--tmp\s", local_help, re.MULTILINE) else ""
+    return f"{binary} local{tmp_option}"
+
+
 def get_binary_commit_sha(binary):
     # A downloaded binary may lack the executable bit.
     os.chmod(binary, 0o755)
     sha = Shell.get_output_or_raise(
-        f"{binary} local -q \"SELECT value FROM system.build_options WHERE name='GIT_HASH'\""
+        f"{local_command(binary)} -q \"SELECT value FROM system.build_options WHERE name='GIT_HASH'\""
     )
     assert GIT_HASH_RE.fullmatch(sha), f"no GIT_HASH in [{binary}]: [{sha}]"
     return sha
@@ -913,7 +945,7 @@ def write_ci_logs_sender_user(config_dir, binary):
     """
     known_settings = set(
         Shell.get_output(
-            f'{binary} local --query "SELECT name FROM system.settings"', strict=True
+            f'{local_command(binary)} --query "SELECT name FROM system.settings"', strict=True
         ).split()
     )
     config = yaml.safe_load(Path(log_export.CI_LOGS_SENDER_USER_CONFIG).read_text())
@@ -1103,6 +1135,23 @@ class CIDBUnavailableReason(str):
     """An upload failure reason: CIDB did not answer until the deadline."""
 
 
+def job_end(info):
+    """Until when the dashboard gate and its confirmation may run so that the job ends before its timeout."""
+    config = info.job_config
+    timeout = config.get("timeout") if isinstance(config, Mapping) else getattr(config, "timeout", None)
+    if not isinstance(timeout, (int, float)) or timeout <= 0:
+        raise RuntimeError(f"Cannot bound the dashboard wait: job timeout is [{timeout!r}]")
+    return JOB_START + timeout - JOB_END_RESERVE_SEC
+
+
+def upload_budget(end):
+    """Seconds the uploads may take from now: `DASHBOARD_INGEST_TIMEOUT_SEC`, cut to what is left
+    before `end` (None: no cut), but at least `DASHBOARD_MIN_UPLOAD_SEC`."""
+    if end is None:
+        return DASHBOARD_INGEST_TIMEOUT_SEC
+    return min(DASHBOARD_INGEST_TIMEOUT_SEC, max(DASHBOARD_MIN_UPLOAD_SEC, end - time.monotonic()))
+
+
 class NotAttemptedReason(str):
     """An upload failure reason: the deadline had passed before the first attempt."""
 
@@ -1155,8 +1204,8 @@ def insert_into_cidb(cidb, info, table, query, data, deadline, token_key=None):
         print(f"WARNING: insert into [{table}] failed, retrying in {pause:.0f}s")
         time.sleep(pause)
     if error is None:
-        return NotAttemptedReason(f"not attempted, the {DASHBOARD_INGEST_TIMEOUT_SEC}s budget was spent")
-    reason = f"the {DASHBOARD_INGEST_TIMEOUT_SEC}s budget was spent, last error: {error}"
+        return NotAttemptedReason("not attempted, the upload budget was spent")
+    reason = f"the upload budget was spent, last error: {error}"
     if hard_error is None:
         return CIDBUnavailableReason(reason)
     return reason if hard_error == error else f"{reason}, earlier error: {hard_error}"
@@ -1282,7 +1331,7 @@ def match_reference_debug_info():
     def resolved_lines(binary):
         # Running clickhouse also decompresses the self-extracting binary in place.
         out = Shell.get_output(
-            f'{binary} local --allow_introspection_functions=1 --query "{probe}"'
+            f'{local_command(binary)} --allow_introspection_functions=1 --query "{probe}"'
         )
         return int(out) if out and out.strip().isdigit() else 0
 
@@ -1783,7 +1832,7 @@ class PerfDashboardUnavailable(PerfDashboardError):
 
 
 # Measured backend-outage signatures in the dashboard's application errors.
-DASHBOARD_OUTAGE_SIGNATURES = ("connect: connection refused", "context canceled")
+DASHBOARD_OUTAGE_SIGNATURES = ("connect: connection refused", "context canceled", "Unknown table expression identifier")
 
 
 def dashboard_did_not_answer(status, body):
@@ -1952,7 +2001,7 @@ def perf_dashboard_gate(info, arch, metrics_tsv_path, deadline, missing_inputs):
     `PerfDashboardUnavailable` when no verdict could be obtained because CIDB
     or the dashboard did not answer, and a plain `PerfDashboardError` for every
     other reason; the caller fails the check on the latter rather than passing
-    a run nobody has judged."""
+    a run nobody has judged. No request starts once `deadline` has passed."""
     if missing_inputs:
         reasons = missing_inputs.values()
         unavailable = any(isinstance(r, CIDBUnavailableReason) for r in reasons) and all(
@@ -1970,7 +2019,14 @@ def perf_dashboard_gate(info, arch, metrics_tsv_path, deadline, missing_inputs):
 
     run_id = None
     hard_reason = None
+    reason = "it was spent before the first request"
     while True:
+        if time.monotonic() >= deadline:
+            if hard_reason not in (None, reason):
+                reason = f"{reason}; earlier: {hard_reason}"
+            raise (PerfDashboardError if hard_reason else PerfDashboardUnavailable)(
+                f"dashboard did not serve this shard within the upload budget: {reason}"
+            )
         try:
             if run_id is None:
                 run_id = dashboard_run_id(info)
@@ -1983,13 +2039,6 @@ def perf_dashboard_gate(info, arch, metrics_tsv_path, deadline, missing_inputs):
         except PerfDashboardError as e:
             reason = str(e)
             hard_reason = hard_reason or reason
-        if time.monotonic() >= deadline:
-            if hard_reason not in (None, reason):
-                reason = f"{reason}; earlier: {hard_reason}"
-            raise (PerfDashboardError if hard_reason else PerfDashboardUnavailable)(
-                "dashboard did not serve this shard within "
-                f"{DASHBOARD_INGEST_TIMEOUT_SEC}s: {reason}"
-            )
         print(f"Waiting for the performance dashboard: {reason}")
         time.sleep(min(DASHBOARD_POLL_INTERVAL_SEC, max(0, deadline - time.monotonic())))
 
@@ -2017,7 +2066,7 @@ def judge_without_dashboard(summary, error):
     )
 
 
-def confirm_dashboard_regressions(regressions, pr_number, workdir):
+def confirm_dashboard_regressions(regressions, pr_number, workdir, end=None):
     """Rerun dashboard blockers once on fresh servers; missing evidence stays blocking.
 
     Reuse the shard confirmation measurements/randomization test, but carry the
@@ -2064,6 +2113,11 @@ def confirm_dashboard_regressions(regressions, pr_number, workdir):
         selected[test, index] = row
     if not selected:
         return rows
+    timeout = 1500 if end is None else min(1500, end - time.monotonic())
+    if timeout <= 0:
+        for row in selected.values():
+            row["confirmation"] = "Not rerun: no time left before the job timeout; remains blocking"
+        return rows
 
     workdir = Path(workdir).resolve()
     output_dir = workdir / "analyze-dashboard-confirm"
@@ -2090,7 +2144,7 @@ def confirm_dashboard_regressions(regressions, pr_number, workdir):
         cwd=str(workdir),
         env=env,
         log_file=str(workdir / "dashboard-confirm.log"),
-        timeout=1500,
+        timeout=timeout,
     )
     if exit_code:
         for row in selected.values():
@@ -2713,6 +2767,8 @@ def main():
 
     # release_version = CHVersion.get_release_version()
     info = Info()
+    # Before any stage: a job without a usable timeout fails now, not after the benchmarks.
+    end = job_end(info) if compare_against_master and not info.is_local_run else None
     reference_chain = []
 
     # Read before any stage, so that a resume attributes the same commits.
@@ -2810,6 +2866,9 @@ def main():
     s3_paths = [path for path in run_paths if test_discovery.test_requires_s3(path)]
     needs_s3 = bool(s3_paths)
     needs_s3_read_dataset = any(map(test_discovery.test_requires_read_dataset, run_paths))
+    needs_iceberg_read_dataset = needs_s3_read_dataset or any(
+        map(test_discovery.test_requires_local_read_dataset, run_paths)
+    )
     needs_s3_public_data = nightly and any(map(test_discovery.test_requires_public_data, run_paths))
     needs_s3_catalog = nightly and any(map(test_discovery.test_requires_s3_catalog, run_paths))
 
@@ -2824,7 +2883,7 @@ def main():
             return False
         if seed and needs_s3_public_data and not s3_service.seed_public_data(f"{perf_wd}/s3_public_data"):
             return False
-        if seed and needs_s3_catalog and not s3_service.seed_catalog(f"{perf_right}/clickhouse"):
+        if seed and needs_s3_catalog and not s3_service.seed_catalog(local_command(f"{perf_right}/clickhouse")):
             return False
         if not s3_service.write_side_override(perf_left_config, "left"):
             return False
@@ -2955,7 +3014,7 @@ def main():
                 Shell.check(f"touch {perf_left}/.done")
         if res and not nightly:
             reference_sha = Shell.get_output(
-                f"{perf_left}/clickhouse -q \"SELECT value FROM system.build_options WHERE name='GIT_HASH'\""
+                f"{local_command(f'{perf_left}/clickhouse')} -q \"SELECT value FROM system.build_options WHERE name='GIT_HASH'\""
             )
 
     # Also on a resume: never attribute measurements to a different reference.
@@ -3019,7 +3078,11 @@ def main():
 
     if res and JobStages.DOWNLOAD_DATASETS in stages:
         print("Download datasets")
-        if not Path(f"{db_path}/.done").is_file():
+        db_done = Path(f"{db_path}/.done").is_file()
+        iceberg_dir = Path(db_path) / "user_files" / s3_service.READ_DATASET_DIRECTORY
+        iceberg_done = Path(db_path) / f".{s3_service.READ_DATASET_DIRECTORY}.done"
+        # Retry missing or partially extracted Iceberg fixtures in cached db0.
+        if not db_done or (needs_iceberg_read_dataset and (not iceberg_dir.is_dir() or not iceberg_done.is_file())):
             Shell.check(f"mkdir -p {db_path}/data/default/", verbose=True)
             dataset_paths = {
                 "hits10": "https://clickhouse-datasets.s3.amazonaws.com/hits/partitions/hits_10m_single.tar",
@@ -3030,6 +3093,8 @@ def main():
                 "tpch_ice10": "https://clickhouse-datasets.s3.amazonaws.com/h-ice/10/tpch_ice_sf10.tar",
                 "tpcds1": "https://clickhouse-datasets.s3.amazonaws.com/ds/scale_1/tpcds.tar",
             }
+            if db_done:
+                dataset_paths = {"tpch_ice10": dataset_paths["tpch_ice10"]}
             stop_watch = Utils.Stopwatch()
             errors = download_and_extract_datasets(dataset_paths.values(), db_path)
             res = not errors
@@ -3043,7 +3108,9 @@ def main():
                 )
             )
             if res:
-                Shell.check(f"touch {db_path}/.done")
+                iceberg_done.touch()
+                if not db_done:
+                    Shell.check(f"touch {db_path}/.done")
 
     if res and JobStages.CONFIGURE in stages:
         print("Configure")
@@ -3269,7 +3336,7 @@ def main():
         if reference_warning:
             # Read the actual binary's identity, including when resuming at `report`.
             reference_sha = Shell.get_output(
-                f"{perf_left}/clickhouse -q \"SELECT value FROM system.build_options WHERE name='GIT_HASH'\""
+                f"{local_command(f'{perf_left}/clickhouse')} -q \"SELECT value FROM system.build_options WHERE name='GIT_HASH'\""
             )
             with open(f"{perf_wd}/left-commit.txt", "a", encoding="utf-8") as reference:
                 reference.write(
@@ -3312,10 +3379,12 @@ def main():
         res = results[-1].is_ok()
 
     # In `master_head` mode the dashboard gate judges the shard on these
-    # uploads, so they share one deadline with the gate's wait.
-    upload_deadline = (
-        time.monotonic() + DASHBOARD_INGEST_TIMEOUT_SEC if compare_against_master else None
-    )
+    # uploads, so its wait ends by their deadline, and by `end` at the latest.
+    upload_deadline = None
+    if compare_against_master:
+        budget = upload_budget(end)
+        print(f"Upload budget: {budget:.0f}s")
+        upload_deadline = time.monotonic() + budget
     # A dashboard input stays here, with the reason, until its upload succeeds.
     missing_dashboard_inputs = {}
 
@@ -3562,11 +3631,11 @@ def main():
                         info,
                         get_perf_arch(),
                         f"{perf_wd}/report/all-query-metrics.tsv",
-                        upload_deadline,
+                        upload_deadline if end is None else min(upload_deadline, end),
                         missing_dashboard_inputs,
                     )
                     dashboard_regressions = confirm_dashboard_regressions(
-                        dashboard_regressions, info.pr_number, perf_wd
+                        dashboard_regressions, info.pr_number, perf_wd, end
                     )
                 except PerfDashboardUnavailable as e:
                     print(f"ERROR: {e}")
