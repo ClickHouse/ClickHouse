@@ -81,6 +81,7 @@ warnings naming the view's collection: 1
 ordinary scalar function warned: 0
 collections emitted into the dump: 0
 engine carrier dumped naming the collection: 1
+Elasticsearch carrier warned: 1
 --- an RBAC-hidden named collection carrier is reported explicitly ---
 hidden carrier warned: 1
 --- Remote databases replay from database DDL, not proxy table DDL ---

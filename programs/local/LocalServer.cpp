@@ -791,8 +791,16 @@ void LocalServer::tryInitPath()
     /// runaway queries filling up the disk. It can be raised, or lifted entirely with a value of 0,
     /// via the `max_temporary_data_on_disk_size` server setting.
     const auto & max_temporary_data_on_disk_size = server_settings[ServerSetting::max_temporary_data_on_disk_size];
+    fs::path temporary_storage_path = fs::path(path) / "tmp" / "";
+    if (getClientConfiguration().has("dump-schema"))
+    {
+        /// The initialization removes the leftover `tmp*` files of the directory, which the dump must not do to its source.
+        const fs::path scratch = fs::temp_directory_path() / fmt::format("clickhouse-local-{}", UUIDHelpers::generateV4());
+        temporary_directory_to_delete = scratch;
+        temporary_storage_path = scratch / "tmp" / "";
+    }
     global_context->setTemporaryStoragePath(
-        fs::path(path) / "tmp" / "", max_temporary_data_on_disk_size.changed ? max_temporary_data_on_disk_size.value : 1_TiB);
+        temporary_storage_path, max_temporary_data_on_disk_size.changed ? max_temporary_data_on_disk_size.value : 1_TiB);
     global_context->setFlagsPath(fs::path(path) / "flags" / "");
 
     global_context->setUserFilesPath(""); /// user's files are everywhere
@@ -1349,7 +1357,8 @@ void LocalServer::setupUsers()
 
     /// Add a writeable storage for SQL-based access management.
     /// This allows creating users, roles, row policies, etc. via SQL queries.
-    if (!use_temporary_path)
+    /// The dump leaves its source as it was, and opening the directory rebuilds its lists and removes stale files.
+    if (!use_temporary_path && !getClientConfiguration().has("dump-schema"))
     {
         /// Use disk storage for persistence when working with a durable directory
         /// (--path or the default designated directory in the home).
@@ -2101,7 +2110,8 @@ void LocalServer::processConfig()
         bool started_background_tasks = false;
 
         /// With `--only-system-tables` the directory is only inspected, so the default database is not recorded in it.
-        if (!server_default_database.empty() && !getClientConfiguration().has("only-system-tables"))
+        /// The same holds for `--dump-schema`: a database that lacks its metadata file is refused when loading.
+        if (!server_default_database.empty() && !getClientConfiguration().has("only-system-tables") && !dump_schema)
             writeMissingDatabaseMetadataFile(*DatabaseCatalog::instance().getDatabase(server_default_database), global_context);
 
         if (fs::exists(fs::path(path) / "metadata"))

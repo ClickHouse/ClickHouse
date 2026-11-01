@@ -52,6 +52,9 @@ cp "$src/metadata/d/lg.sql" "$src/metadata/d/half.sql.tmp"
 echo 'x' > "$src/metadata/d/m.tmp_move_from"
 cp "$src/metadata/d.sql" "$src/metadata/e.sql.tmp"
 cp "$src/metadata/o/t.sql" "$src/metadata/o/gone.sql.tmp_drop"
+# A leftover of the temporary storage, which its initialization removes, and a mark that the access lists need a rebuild.
+mkdir -p "$src/tmp" "$src/access"
+touch "$src/tmp/tmp_leftover" "$src/access/need_rebuild_lists.mark"
 
 before=$(snapshot "$src")
 $CLICKHOUSE_LOCAL --path "$src" --dump-schema=d,o > "$work/dump.sql" 2> "$work/err.txt" || echo "FAIL: dump failed: $(cat "$work/err.txt")"
@@ -63,6 +66,15 @@ else
     echo 'FAIL: the dump changed the data path:'
     diff <(echo "$before") <(echo "$after")
 fi
+
+echo '--- a dump does not record a missing metadata file of the default database ---'
+rm -rf "$work/nodefault"
+$CLICKHOUSE_LOCAL --path "$work/nodefault" -n -q "CREATE DATABASE d; CREATE TABLE d.t (a UInt8) ENGINE = Memory;"
+rm "$work/nodefault/metadata/default.sql"
+before=$(snapshot "$work/nodefault")
+$CLICKHOUSE_LOCAL --path "$work/nodefault" --dump-schema=d > /dev/null 2>&1
+after=$(snapshot "$work/nodefault")
+[ "$before" = "$after" ] && echo 'data path unchanged by the dump' || diff <(echo "$before") <(echo "$after")
 
 echo '--- an object that was not dropped completely is refused ---'
 # The object still has its data, so loading would restore its metadata file.

@@ -1499,7 +1499,7 @@ std::optional<size_t> promQLTableFunctionShortArgumentCount(std::string_view nam
     if (name == "prometheusQuery")
         return 3;
     if (name == "timeSeriesSelector")
-        return 4;
+        return 5;
     if (name == "prometheusQueryRange")
         return 5;
     return std::nullopt;
@@ -1752,6 +1752,7 @@ bool tableFunctionUsesNamedCollections(std::string_view name)
         "bigquery",
         "fuzzJSON",
         "ytsaurus",
+        "elasticsearch",
         "s3",
         "s3Cluster",
         "gcs",
@@ -1807,6 +1808,7 @@ bool tableEngineUsesNamedCollections(std::string_view name)
         "BigQuery",
         "FuzzJSON",
         "YTsaurus",
+        "Elasticsearch",
         "Redis",
         "Kafka",
         "NATS",

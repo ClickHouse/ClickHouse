@@ -476,7 +476,10 @@ NCC_PATH="${CLICKHOUSE_TMP}/${CLICKHOUSE_TEST_UNIQUE_NAME}_nc_carrier"
 NCC_DUMP_FILE="${CLICKHOUSE_TMP}/${CLICKHOUSE_TEST_UNIQUE_NAME}_nc_carrier_dump.sql"
 rm -rf "$NCC_PATH"
 $CLICKHOUSE_LOCAL --path "$NCC_PATH" --multiquery --query "
+SET enable_elasticsearch = 1;
 CREATE DATABASE ${DB};
+CREATE NAMED COLLECTION nc_es AS url = 'http://127.0.0.1:1', index = 'logs';
+CREATE TABLE ${DB}.nc_es_reader (document JSON) ENGINE = Elasticsearch(nc_es);
 CREATE NAMED COLLECTION nc_url AS url = 'http://127.0.0.1:1/', format = 'TSV', structure = 'id UInt64';
 CREATE NAMED COLLECTION nc_dict AS host = '127.0.0.1', port = 9000, db = '${DB}', table = 'nc_dict_src';
 CREATE TABLE ${DB}.nc_url_reader (id UInt64) ENGINE = URL(nc_url);
@@ -499,6 +502,7 @@ if $CLICKHOUSE_LOCAL --path "$NCC_PATH" --dump-schema="${DB}" > "$NCC_DUMP_FILE"
     echo "ordinary scalar function warned: $(grep -c 'nc_scalar_reader.*named collection' "$ERR_FILE")"
     echo "collections emitted into the dump: $(grep -c 'CREATE NAMED COLLECTION' "$NCC_DUMP_FILE")"
     echo "engine carrier dumped naming the collection: $(grep -c 'ENGINE = URL(nc_url)' "$NCC_DUMP_FILE")"
+    echo "Elasticsearch carrier warned: $(grep -c 'nc_es_reader depends on named collection nc_es' "$ERR_FILE")"
 else
     echo "FAIL: dump rejected: $(cat "$ERR_FILE")"
 fi

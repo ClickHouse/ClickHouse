@@ -112,6 +112,21 @@ echo "prometheus_query: dump rc=$?"
 $CLICKHOUSE_LOCAL --path "$work/dst" -n --queries-file "$work/prometheus_query.sql" 2>&1 | grep -o 'Code: [0-9]*' | head -1
 echo "prometheus_query: replay rc=${PIPESTATUS[0]}"
 
+# `timeSeriesSelector` takes the table as `[db.]table` with five arguments, or as 'db', 'table' with six.
+for form in "d.zzz_src, 'foo', 0, 1000, 'samples'" "'d', 'zzz_src', 'foo', 0, 1000, 'samples'"; do
+    name="time_series_selector_${#form}"
+    rm -rf "$work/src" "$work/dst"
+    $CLICKHOUSE_LOCAL --path "$work/src" -n -q "
+        SET allow_experimental_time_series_table = 1;
+        CREATE DATABASE d;
+        CREATE TABLE d.zzz_src ENGINE = TimeSeries;
+        CREATE TABLE d.a_r ENGINE = Remote('127.0.0.1', timeSeriesSelector($form));"
+    $CLICKHOUSE_LOCAL --path "$work/src" --dump-schema d > "$work/$name.sql" 2>/dev/null
+    echo "time_series_selector: dump rc=$?"
+    $CLICKHOUSE_LOCAL --path "$work/dst" -n --queries-file "$work/$name.sql" 2>&1 | grep -o 'Code: [0-9]*' | head -1
+    echo "time_series_selector: replay rc=${PIPESTATUS[0]}"
+done
+
 # An `Overlay` exposes the materialized view's UUID-named inner table, which no emitted statement names.
 round_trip overlay_mv "
     CREATE DATABASE s;

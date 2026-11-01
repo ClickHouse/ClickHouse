@@ -1,6 +1,8 @@
 --- a dump changes no file of the data path ---
 tables dumped: 6
 data path unchanged by the dump
+--- a dump does not record a missing metadata file of the default database ---
+data path unchanged by the dump
 --- an object that was not dropped completely is refused ---
 dump rc=48, refused: 1
 data path unchanged by the refused dump
